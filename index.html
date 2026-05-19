@@ -1065,7 +1065,7 @@
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
       document.getElementById('page-' + target).classList.add('active');
-      const modeMap = { bias: 'Bias', review: 'Review', stats: 'Series of 10', trades: 'Statistics', tradeview: 'Trades Calendar' };
+      const modeMap = { bias: 'Session Bias', review: 'Session Review', stats: 'Series of 10', trades: 'Statistics', tradeview: 'Trades Calendar' };
       document.getElementById('header-mode').textContent = modeMap[target] || 'Bias';
       if (target === 'review') renderSavedBias();
       if (target === 'stats')  renderStats();
@@ -1934,18 +1934,22 @@
     // Compute exact number of week rows this month needs and lock the grid to that many 65px rows.
     const weeks = Math.ceil((daysInMonth + startWeekday) / 7);
     const grid = document.getElementById('cal-grid');
-    grid.style.gridTemplateRows = `auto repeat(${weeks}, 65px)`;
+    let rowsTemplate = 'auto';
+    for (let i = 0; i < weeks; i++) rowsTemplate += ' 65px';
+    grid.style.gridTemplateRows = rowsTemplate;
 
+    const SZ = 'height:65px !important;min-height:65px;max-height:65px;';
     const headers = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
     let html = '';
-    headers.forEach(h => html += `<div class="cal-day-header">${h}</div>`);
-    html += `<div class="cal-day-header week-col">Week</div>`;
+    headers.forEach(h => html += `<div class="cal-day-header" style="grid-row:1;">${h}</div>`);
+    html += `<div class="cal-day-header week-col" style="grid-row:1;">Week</div>`;
 
     let weekIdx = 0;
+    let currentRow = 2; // CSS Grid rows are 1-indexed; row 1 is headers, week rows start at 2
     let currentWeek = { trades: [], net: 0 };
 
-    // Leading empty cells before the 1st of the month
-    for (let i = 0; i < startWeekday; i++) html += `<div class="cal-day empty" style="height:65px !important;min-height:65px;max-height:65px;"></div>`;
+    // Leading empty cells before the 1st of the month — all pinned to row 2
+    for (let i = 0; i < startWeekday; i++) html += `<div class="cal-day empty" style="grid-row:${currentRow};${SZ}"></div>`;
 
     for (let d = 1; d <= daysInMonth; d++) {
       const dateObj = new Date(calendarYear, calendarMonth, d);
@@ -1964,7 +1968,7 @@
       const plLabel = dayTrades.length > 0 ? fmtMoneyShort(net) : '';
       const plCls = net > 0 ? 'good' : net < 0 ? 'bad' : '';
       const tradeCount = dayTrades.length > 0 ? `${dayTrades.length} trade${dayTrades.length === 1 ? '' : 's'}` : '';
-      html += `<div class="cal-day ${cls} ${hasTrade} ${todayCls}" data-date="${key}" style="height:65px !important;min-height:65px;max-height:65px;">
+      html += `<div class="cal-day ${cls} ${hasTrade} ${todayCls}" data-date="${key}" style="grid-row:${currentRow};${SZ}">
         <div class="cal-day-num">${d}</div>
         ${plLabel ? `<div class="cal-day-pl ${plCls}">${plLabel}</div>` : ''}
         ${tradeCount ? `<div class="cal-day-trades">${tradeCount}</div>` : ''}
@@ -1973,21 +1977,22 @@
       currentWeek.net += net;
       const weekday = dateObj.getDay();
       if (weekday === 6 || d === daysInMonth) {
-        // Fill trailing empty cells if month ends mid-week
+        // Fill trailing empty cells if month ends mid-week — also pinned to current row
         if (d === daysInMonth && weekday !== 6) {
-          for (let i = weekday + 1; i <= 6; i++) html += `<div class="cal-day empty" style="height:65px !important;min-height:65px;max-height:65px;"></div>`;
+          for (let i = weekday + 1; i <= 6; i++) html += `<div class="cal-day empty" style="grid-row:${currentRow};${SZ}"></div>`;
         }
-        // Append week summary cell
+        // Append week summary cell — pinned to current row, last column
         weekIdx++;
         const wCls = currentWeek.net > 0 ? 'good' : currentWeek.net < 0 ? 'bad' : '';
         const wLabel = currentWeek.trades.length > 0 ? fmtMoneyShort(currentWeek.net) : '£0';
         const wSub = currentWeek.trades.length > 0 ? `${currentWeek.trades.length} trade${currentWeek.trades.length === 1 ? '' : 's'}` : '';
-        html += `<div class="cal-week-summary" style="height:65px !important;min-height:65px;max-height:65px;">
+        html += `<div class="cal-week-summary" style="grid-row:${currentRow};grid-column:8;${SZ}">
           <div class="pl ${wCls}">${wLabel}</div>
           <div class="label">Week ${weekIdx}</div>
           ${wSub ? `<div class="sub">${wSub}</div>` : ''}
         </div>`;
         currentWeek = { trades: [], net: 0 };
+        currentRow++;
       }
     }
     grid.innerHTML = html;
