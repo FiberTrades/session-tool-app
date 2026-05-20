@@ -760,8 +760,8 @@
   <div class="footer">
     Fiber Trades
     <div class="data-actions">
-      <a id="data-export">Export Data</a>
       <a id="data-import">Import Data</a>
+      <a id="data-backup-settings">Backup Settings</a>
       <input type="file" id="data-import-input" accept=".json" style="display:none" />
     </div>
   </div>
@@ -871,19 +871,22 @@
       <div style="display:flex;flex-direction:column;gap:10px;margin-top:20px;">
         <button class="btn" id="backup-download-once" style="text-align:left;padding:14px 18px;">
           <span style="display:block;font-size:13px;letter-spacing:0.15em;">Download backup now</span>
-          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">One-time download. You'll see this prompt again next save.</span>
+          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">One-time download to your default Downloads folder.</span>
         </button>
-        <button class="btn" id="backup-enable-auto" style="text-align:left;padding:14px 18px;border-color:var(--info);">
-          <span style="display:block;font-size:13px;letter-spacing:0.15em;color:var(--info);">Auto-download every save</span>
-          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">Backup downloads silently every time you save. You won't see this prompt again.</span>
+        <button class="btn" id="backup-enable-auto" style="text-align:left;padding:14px 18px;border-color:var(--good);">
+          <span style="display:block;font-size:13px;letter-spacing:0.15em;color:var(--good);">Auto-backup every save</span>
+          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">Backup happens silently after every save. You may be prompted to pick a backup location the first time.</span>
         </button>
         <button class="btn" id="backup-skip" style="text-align:left;padding:14px 18px;">
           <span style="display:block;font-size:13px;letter-spacing:0.15em;color:var(--text-dim);">Skip for now</span>
-          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">No backup this time. You can always download manually from the footer.</span>
+          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">No backup this time. You can always change this in Backup Settings.</span>
         </button>
       </div>
       <div id="backup-auto-banner" style="display:none;margin-top:20px;padding:14px 18px;background:var(--bg-elev);border:1px solid var(--info);font-size:11px;color:var(--text-mid);">
-        <strong style="color:var(--info);">Auto-backup is on.</strong> Downloads happen silently on every save. <a href="#" id="backup-disable-auto" style="color:var(--bad);text-decoration:underline;">Turn off</a>
+        <strong style="color:var(--info);">Auto-backup is on.</strong> A new timestamped file downloads silently on every save. <a href="#" id="backup-disable-auto" style="color:var(--bad);text-decoration:underline;">Turn off</a>
+      </div>
+      <div id="backup-linked-banner" style="display:none;margin-top:20px;padding:14px 18px;background:var(--bg-elev);border:1px solid var(--good);font-size:11px;color:var(--text-mid);">
+        <strong style="color:var(--good);">Auto-backup is on.</strong> Linked to <span id="backup-linked-name" style="color:var(--text);font-family:'DM Mono',monospace;"></span> — silently overwritten on every save. <a href="#" id="backup-unlink" style="color:var(--bad);text-decoration:underline;">Turn off</a>
       </div>
     </div>
   </div>
@@ -902,6 +905,94 @@
   let calendarYear = today.getFullYear();
   let yearGlanceYear = today.getFullYear();
   let equityMode = 'balance';
+
+  // ----------------------------------------------------------------------------
+  // File System Access API + IndexedDB helpers for "linked backup file" feature
+  // The user picks a file once via a system dialog; the handle is stored in
+  // IndexedDB across sessions. Every save silently overwrites that file.
+  // Chromium-only (Chrome, Edge, Brave, Opera, Arc). Hidden in unsupported browsers.
+  // ----------------------------------------------------------------------------
+  const FS_API_SUPPORTED = typeof window.showSaveFilePicker === 'function';
+
+  function idbOpen() {
+    return new Promise((resolve, reject) => {
+      const req = indexedDB.open('sessionTool', 1);
+      req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
+      req.onsuccess = e => resolve(e.target.result);
+      req.onerror = e => reject(e.target.error);
+    });
+  }
+  async function idbSet(key, val) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').put(val, key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+  async function idbGet(key) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('handles', 'readonly');
+      const r = tx.objectStore('handles').get(key);
+      r.onsuccess = () => res(r.result);
+      r.onerror = () => rej(r.error);
+    });
+  }
+  async function idbDel(key) {
+    const db = await idbOpen();
+    return new Promise((res, rej) => {
+      const tx = db.transaction('handles', 'readwrite');
+      tx.objectStore('handles').delete(key);
+      tx.oncomplete = () => res();
+      tx.onerror = () => rej(tx.error);
+    });
+  }
+
+  async function linkBackupFile() {
+    if (!FS_API_SUPPORTED) return { ok: false, reason: 'unsupported' };
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: 'session-tool-backup.json',
+        types: [{ description: 'Session Tool Backup', accept: { 'application/json': ['.json'] } }],
+      });
+      await idbSet('backupFile', handle);
+      data.settings.linkedFileBackup = true;
+      data.settings.linkedFileName = handle.name;
+      data.settings.autoBackup = false; // mutually exclusive with auto-download
+      saveData();
+      const wrote = await writeLinkedBackup();
+      return { ok: wrote, name: handle.name };
+    } catch (e) {
+      // User cancelled the picker, or browser refused
+      return { ok: false, reason: 'cancelled' };
+    }
+  }
+
+  async function writeLinkedBackup() {
+    try {
+      const handle = await idbGet('backupFile');
+      if (!handle) return false;
+      const opts = { mode: 'readwrite' };
+      let perm = await handle.queryPermission(opts);
+      if (perm !== 'granted') perm = await handle.requestPermission(opts);
+      if (perm !== 'granted') return false;
+      const writable = await handle.createWritable();
+      await writable.write(JSON.stringify(data, null, 2));
+      await writable.close();
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  async function unlinkBackupFile() {
+    try { await idbDel('backupFile'); } catch (e) {}
+    data.settings.linkedFileBackup = false;
+    data.settings.linkedFileName = '';
+    saveData();
+  }
 
   (function autoResetForNewDay() {
     const todayKey = today.toDateString();
@@ -1469,7 +1560,7 @@
   });
 
   document.getElementById('review-copy').addEventListener('click', () => copyToClipboard(buildReviewMessage()));
-  document.getElementById('review-save-stats').addEventListener('click', () => {
+  document.getElementById('review-save-stats').addEventListener('click', async () => {
     const valid = data.review.trades.filter(t => t.result && t.r && !isNaN(parseFloat(t.r)));
     if (valid.length === 0) { showToast('No valid trades to save'); return; }
     const biasSnap = { ...data.bias };
@@ -1500,12 +1591,21 @@
     data.review.sessionDate = todayDateStr();
     const picker = document.getElementById('session-date');
     if (picker) { picker.value = data.review.sessionDate; updateSessionDateStatus(); }
-    // Auto-backup if enabled, otherwise prompt with modal
-    if (data.settings && data.settings.autoBackup) {
+    // Backup behavior: linked file > auto-download > modal prompt
+    if (data.settings.linkedFileBackup) {
+      const ok = await writeLinkedBackup();
+      if (ok) {
+        showToast(`${valid.length} trade${valid.length === 1 ? '' : 's'} saved + backup written`);
+      } else {
+        // Permission denied or file gone — fall back to modal so user can re-link or pick another option
+        showToast('Backup file unreachable — choose a backup option');
+        openBackupModal(valid.length, true);
+      }
+    } else if (data.settings.autoBackup) {
       downloadBackup();
       showToast(`${valid.length} trade${valid.length === 1 ? '' : 's'} saved + backup downloaded`);
     } else {
-      openBackupModal(valid.length);
+      openBackupModal(valid.length, true);
     }
   });
   document.getElementById('review-reset').addEventListener('click', () => {
@@ -2404,13 +2504,25 @@
     URL.revokeObjectURL(url);
   }
 
-  // Backup prompt modal — shown after Save to Series of 10 unless auto-backup is enabled
-  function openBackupModal(savedCount) {
-    document.getElementById('backup-modal-title').textContent =
-      `${savedCount} trade${savedCount === 1 ? '' : 's'} saved`;
-    const isAuto = !!(data.settings && data.settings.autoBackup);
+  // Backup prompt modal — shown after Save to Series of 10 (unless silent flow handles it)
+  // Also available from footer "Backup Settings" link to manage existing settings.
+  function openBackupModal(savedCount, fromSave = false) {
+    const titleEl = document.getElementById('backup-modal-title');
+    const subEl   = document.getElementById('backup-modal-subtitle');
+    if (fromSave) {
+      titleEl.textContent = `${savedCount} trade${savedCount === 1 ? '' : 's'} saved`;
+      subEl.textContent = 'Want to back up your data?';
+    } else {
+      titleEl.textContent = 'Backup settings';
+      subEl.textContent = 'Manage how your data is backed up.';
+    }
+    const isAuto    = !!data.settings.autoBackup;
+    const isLinked  = !!data.settings.linkedFileBackup;
     document.getElementById('backup-auto-banner').style.display = isAuto ? 'block' : 'none';
-    document.getElementById('backup-enable-auto').style.display = isAuto ? 'none' : 'block';
+    document.getElementById('backup-linked-banner').style.display = isLinked ? 'block' : 'none';
+    // Hide the "Auto-backup" button if either mode is already active
+    document.getElementById('backup-enable-auto').style.display = (isAuto || isLinked) ? 'none' : 'block';
+    if (isLinked) document.getElementById('backup-linked-name').textContent = data.settings.linkedFileName || 'backup file';
     document.getElementById('backup-modal-bg').classList.add('show');
   }
   function closeBackupModal() {
@@ -2425,24 +2537,51 @@
     showToast('Backup downloaded');
     closeBackupModal();
   });
-  document.getElementById('backup-enable-auto').addEventListener('click', () => {
-    if (!data.settings) data.settings = {};
-    data.settings.autoBackup = true;
-    saveData();
-    downloadBackup();
-    showToast('Auto-backup enabled');
-    closeBackupModal();
+  // Smart auto-backup button: tries linked-file (Chrome/Edge), falls back to auto-download (Safari/Firefox)
+  document.getElementById('backup-enable-auto').addEventListener('click', async () => {
+    if (FS_API_SUPPORTED) {
+      const result = await linkBackupFile();
+      if (result.ok) {
+        showToast(`Auto-backup linked to ${result.name}`);
+        closeBackupModal();
+      } else if (result.reason === 'cancelled') {
+        // Picker cancelled — modal stays open, user can try again or pick Skip
+      } else {
+        // Unexpected — fall back to auto-download
+        data.settings.autoBackup = true;
+        saveData();
+        downloadBackup();
+        showToast('Auto-backup enabled (download mode)');
+        closeBackupModal();
+      }
+    } else {
+      // Browser doesn't support file picker — use auto-download
+      data.settings.autoBackup = true;
+      saveData();
+      downloadBackup();
+      showToast('Auto-backup enabled');
+      closeBackupModal();
+    }
   });
   document.getElementById('backup-skip').addEventListener('click', closeBackupModal);
-  // Backup banner — turn off auto-backup
   document.getElementById('backup-disable-auto').addEventListener('click', e => {
     e.preventDefault();
-    if (data.settings) data.settings.autoBackup = false;
+    data.settings.autoBackup = false;
     saveData();
     showToast('Auto-backup turned off');
+    closeBackupModal();
   });
-
-  document.getElementById('data-export').addEventListener('click', downloadBackup);
+  document.getElementById('backup-unlink').addEventListener('click', async e => {
+    e.preventDefault();
+    await unlinkBackupFile();
+    showToast('Auto-backup turned off');
+    closeBackupModal();
+  });
+  // Footer "Backup Settings" link — opens modal in management mode
+  document.getElementById('data-backup-settings').addEventListener('click', e => {
+    e.preventDefault();
+    openBackupModal(0, false);
+  });
   document.getElementById('data-import').addEventListener('click', () => document.getElementById('data-import-input').click());
   document.getElementById('data-import-input').addEventListener('change', e => {
     const file = e.target.files[0];
