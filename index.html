@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Fiber Trades — Session Tools</title>
+<title>Session Tool</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;1,9..144,300;1,9..144,400&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
@@ -352,7 +352,7 @@
 <div class="container">
 
   <header class="header">
-    <div class="brand">Fiber Trades — Session Tools</div>
+    <div class="brand">Session Tool</div>
     <h1><span id="header-mode">Bias</span></h1>
     <p class="sub">Your thoughts condition your actions. Actions determine your behaviour. Repeated behaviour creates habits. Habits structure your character — the way you think, the way you are and act as a trader. Your character defines your destiny.</p>
 
@@ -851,6 +851,40 @@
     <div class="actions" style="margin-top:24px;">
       <button class="btn danger" id="edit-trade-delete">Delete Trade</button>
       <button class="btn" id="edit-trade-save">Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-bg" id="backup-modal-bg">
+  <div class="modal" style="max-width:520px;">
+    <div class="modal-header">
+      <div>
+        <h2 id="backup-modal-title">Trades saved</h2>
+        <p id="backup-modal-subtitle" style="margin:6px 0 0;color:var(--text-mid);font-size:13px;">Want to back up your data?</p>
+      </div>
+      <button class="modal-close" id="backup-modal-close">×</button>
+    </div>
+    <div style="padding:0 28px 24px;">
+      <div style="background:var(--bg-elev);border:1px solid var(--border-2);padding:18px 20px;margin-top:8px;font-size:12px;color:var(--text-mid);line-height:1.6;">
+        Your trades are saved in this browser's local storage. If you clear your browser data, switch computers, or your hard drive fails, that data is gone. A backup is a JSON file you can save to Google Drive, Dropbox, or anywhere else for safekeeping. <strong style="color:var(--text);">You can re-import it later from the Import Data button at the bottom of the page.</strong>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px;margin-top:20px;">
+        <button class="btn" id="backup-download-once" style="text-align:left;padding:14px 18px;">
+          <span style="display:block;font-size:13px;letter-spacing:0.15em;">Download backup now</span>
+          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">One-time download. You'll see this prompt again next save.</span>
+        </button>
+        <button class="btn" id="backup-enable-auto" style="text-align:left;padding:14px 18px;border-color:var(--info);">
+          <span style="display:block;font-size:13px;letter-spacing:0.15em;color:var(--info);">Auto-download every save</span>
+          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">Backup downloads silently every time you save. You won't see this prompt again.</span>
+        </button>
+        <button class="btn" id="backup-skip" style="text-align:left;padding:14px 18px;">
+          <span style="display:block;font-size:13px;letter-spacing:0.15em;color:var(--text-dim);">Skip for now</span>
+          <span style="display:block;font-size:10px;color:var(--text-dim);margin-top:4px;text-transform:none;letter-spacing:0.05em;font-style:italic;font-family:'Fraunces',serif;">No backup this time. You can always download manually from the footer.</span>
+        </button>
+      </div>
+      <div id="backup-auto-banner" style="display:none;margin-top:20px;padding:14px 18px;background:var(--bg-elev);border:1px solid var(--info);font-size:11px;color:var(--text-mid);">
+        <strong style="color:var(--info);">Auto-backup is on.</strong> Downloads happen silently on every save. <a href="#" id="backup-disable-auto" style="color:var(--bad);text-decoration:underline;">Turn off</a>
+      </div>
     </div>
   </div>
 </div>
@@ -1466,7 +1500,13 @@
     data.review.sessionDate = todayDateStr();
     const picker = document.getElementById('session-date');
     if (picker) { picker.value = data.review.sessionDate; updateSessionDateStatus(); }
-    showToast(`${valid.length} trade${valid.length === 1 ? '' : 's'} saved`);
+    // Auto-backup if enabled, otherwise prompt with modal
+    if (data.settings && data.settings.autoBackup) {
+      downloadBackup();
+      showToast(`${valid.length} trade${valid.length === 1 ? '' : 's'} saved + backup downloaded`);
+    } else {
+      openBackupModal(valid.length);
+    }
   });
   document.getElementById('review-reset').addEventListener('click', () => {
     data.review = newReviewBlank();
@@ -2351,15 +2391,58 @@
     setTimeout(() => toast.classList.remove('show'), 1800);
   }
 
-  document.getElementById('data-export').addEventListener('click', () => {
+  // Shared backup-download function used by footer Export and the Save backup modal
+  function downloadBackup() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `fibertrades-data-${today.toISOString().split('T')[0]}.json`;
+    const dateStr = new Date().toISOString().split('T')[0];
+    const timeStr = new Date().toTimeString().slice(0,5).replace(':', '');
+    a.download = `session-tool-backup-${dateStr}-${timeStr}.json`;
     a.click();
     URL.revokeObjectURL(url);
+  }
+
+  // Backup prompt modal — shown after Save to Series of 10 unless auto-backup is enabled
+  function openBackupModal(savedCount) {
+    document.getElementById('backup-modal-title').textContent =
+      `${savedCount} trade${savedCount === 1 ? '' : 's'} saved`;
+    const isAuto = !!(data.settings && data.settings.autoBackup);
+    document.getElementById('backup-auto-banner').style.display = isAuto ? 'block' : 'none';
+    document.getElementById('backup-enable-auto').style.display = isAuto ? 'none' : 'block';
+    document.getElementById('backup-modal-bg').classList.add('show');
+  }
+  function closeBackupModal() {
+    document.getElementById('backup-modal-bg').classList.remove('show');
+  }
+  document.getElementById('backup-modal-close').addEventListener('click', closeBackupModal);
+  document.getElementById('backup-modal-bg').addEventListener('click', e => {
+    if (e.target.id === 'backup-modal-bg') closeBackupModal();
   });
+  document.getElementById('backup-download-once').addEventListener('click', () => {
+    downloadBackup();
+    showToast('Backup downloaded');
+    closeBackupModal();
+  });
+  document.getElementById('backup-enable-auto').addEventListener('click', () => {
+    if (!data.settings) data.settings = {};
+    data.settings.autoBackup = true;
+    saveData();
+    downloadBackup();
+    showToast('Auto-backup enabled');
+    closeBackupModal();
+  });
+  document.getElementById('backup-skip').addEventListener('click', closeBackupModal);
+  // Backup banner — turn off auto-backup
+  document.getElementById('backup-disable-auto').addEventListener('click', e => {
+    e.preventDefault();
+    if (data.settings) data.settings.autoBackup = false;
+    saveData();
+    showToast('Auto-backup turned off');
+  });
+
+  document.getElementById('data-export').addEventListener('click', downloadBackup);
   document.getElementById('data-import').addEventListener('click', () => document.getElementById('data-import-input').click());
   document.getElementById('data-import-input').addEventListener('change', e => {
     const file = e.target.files[0];
