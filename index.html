@@ -1091,8 +1091,8 @@
     </section>
 
     <section>
-      <div class="section-header"><span class="section-num">—</span><span class="section-title">Potential R Analysis</span></div>
-      <p class="section-hint">Average R you capture on winning trades vs. what was available, plus a "hold longer" simulator. Click any bucket value below to change it.</p>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title">Potential R · Pips Analysis</span></div>
+      <p class="section-hint">Average captured vs. available across your tracked wins, plus a "hold longer" simulator. Switches between R and pips based on your Display unit setting above. Click any bucket value below to change it.</p>
       <div id="potr-sim-wrap"></div>
     </section>
 
@@ -2599,11 +2599,19 @@
         if (t.result || t.r) {
           const arrow = t.result === 'Win' ? '✓' : t.result === 'Lose' ? '✗' : t.result === 'BE' ? '=' : '·';
           const sideStr = t.side ? ` ${t.side}` : '';
-          lines.push(`            ${i + 1}. ${arrow} ${t.result || '—'}${sideStr}${t.r ? '   ' + t.r + 'R' : ''}`);
+          const rPart    = t.r ? '   ' + t.r + 'R' : '';
+          const pipsPart = (typeof t.pips === 'number' && !isNaN(t.pips)) ? '   ' + (t.pips >= 0 ? '+' : '') + t.pips + 'p' : '';
+          lines.push(`            ${i + 1}. ${arrow} ${t.result || '—'}${sideStr}${rPart}${pipsPart}`);
         }
       });
       const netR = calcNetR();
       if (netR !== null) lines.push(`            Net: ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`);
+      // Total pips line — show whenever any trade in the session has pips logged
+      const tradesWithPips = r.trades.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+      if (tradesWithPips.length > 0) {
+        const netPips = tradesWithPips.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0);
+        lines.push(`            Net pips: ${netPips >= 0 ? '+' : ''}${netPips.toFixed(0)}p`);
+      }
       if (r.execution) lines.push(`Execution   ${r.execution}`);
     }
     if (r.focus) lines.push(`Focus       ${r.focus}`);
@@ -2844,13 +2852,38 @@
       }
       const elAvgWin = document.getElementById(`${prefix}-avgwin`);
       if (elAvgWin) {
-        elAvgWin.textContent = b.avgWin !== null ? '+' + b.avgWin.toFixed(2) + 'R' : '—';
-        elAvgWin.className = 'stat-value' + (b.avgWin !== null ? ' good' : '');
+        if (isPipsView) {
+          // Avg pips across wins with pips logged (in current series only — match elTotal's scope)
+          const seriesWins = (data.currentSeries || []).filter(t => t.result === 'Win');
+          const winsWithPips = seriesWins.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+          if (winsWithPips.length === 0) { elAvgWin.textContent = '—'; elAvgWin.className = 'stat-value'; }
+          else {
+            const avgPips = winsWithPips.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0) / winsWithPips.length;
+            elAvgWin.textContent = '+' + avgPips.toFixed(0) + 'p';
+            elAvgWin.className = 'stat-value good';
+          }
+        } else {
+          elAvgWin.textContent = b.avgWin !== null ? '+' + b.avgWin.toFixed(2) + 'R' : '—';
+          elAvgWin.className = 'stat-value' + (b.avgWin !== null ? ' good' : '');
+        }
       }
       const elExp = document.getElementById(`${prefix}-exp`);
       if (elExp) {
-        elExp.textContent = b.exp !== null ? (b.exp >= 0 ? '+' : '') + b.exp.toFixed(2) + 'R' : '—';
-        elExp.className = 'stat-value' + (b.exp !== null ? (b.exp > 0 ? ' good' : b.exp < 0 ? ' bad' : '') : '');
+        if (isPipsView) {
+          // Expectancy in pips: total pips ÷ trades with pips logged
+          const seriesAll = data.currentSeries || [];
+          const withPips = seriesAll.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+          if (withPips.length === 0) { elExp.textContent = '—'; elExp.className = 'stat-value'; }
+          else {
+            const totalPipsAll = seriesAll.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0);
+            const expPips = totalPipsAll / withPips.length;
+            elExp.textContent = (expPips >= 0 ? '+' : '') + expPips.toFixed(1) + 'p';
+            elExp.className = 'stat-value' + (expPips > 0 ? ' good' : expPips < 0 ? ' bad' : '');
+          }
+        } else {
+          elExp.textContent = b.exp !== null ? (b.exp >= 0 ? '+' : '') + b.exp.toFixed(2) + 'R' : '—';
+          elExp.className = 'stat-value' + (b.exp !== null ? (b.exp > 0 ? ' good' : b.exp < 0 ? ' bad' : '') : '');
+        }
       }
     }
 
@@ -3063,7 +3096,11 @@
     const wr = dec > 0 ? Math.round(w/dec * 100) : null;
     const netR = trades.reduce((s,t) => s + tradeRforMath(t), 0);
     const avgR = trades.length > 0 ? netR/trades.length : null;
-    return { count: trades.length, w, l, be, wr, netR, avgR };
+    // Pips equivalent — each trade contributes its logged pips (signed). Skip trades with no pips.
+    const tradesWithPips = trades.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+    const netPips = tradesWithPips.reduce((s,t) => s + (parseFloat(t.pips) || 0), 0);
+    const avgPips = tradesWithPips.length > 0 ? netPips/tradesWithPips.length : null;
+    return { count: trades.length, w, l, be, wr, netR, avgR, netPips, avgPips, pipsCount: tradesWithPips.length };
   }
 
   function renderTradesStats() {
@@ -3186,15 +3223,29 @@
 
     const totalWinR = wins.reduce((s,t) => s + t.r, 0);
     const totalLossR = losses.length;
+    const totalWinPips = wins.reduce((s,t) => s + (parseFloat(t.pips) || 0), 0);
+    const totalLossPips = losses.reduce((s,t) => s + (parseFloat(t.pips) || 0), 0); // expected negative
+    const winsWithPips = wins.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
     document.getElementById('wl-win-count').textContent = wins.length;
     document.getElementById('wl-loss-count').textContent = losses.length;
     document.getElementById('wl-be-count').textContent = bes.length;
-    document.getElementById('wl-win-detail').innerHTML = wins.length > 0
-      ? `Total: +${totalWinR.toFixed(2)}R<br>Avg: +${(totalWinR/wins.length).toFixed(2)}R per win`
-      : 'No wins yet';
-    document.getElementById('wl-loss-detail').innerHTML = losses.length > 0
-      ? `Total: -${totalLossR.toFixed(2)}R<br>Each: -1R`
-      : 'No losses yet';
+    if (isPipsView) {
+      document.getElementById('wl-win-detail').innerHTML = wins.length > 0
+        ? (winsWithPips.length > 0
+            ? `Total: +${totalWinPips.toFixed(0)}p<br>Avg: +${(totalWinPips/winsWithPips.length).toFixed(0)}p per win`
+            : `No pips logged on wins`)
+        : 'No wins yet';
+      document.getElementById('wl-loss-detail').innerHTML = losses.length > 0
+        ? `Total: ${totalLossPips.toFixed(0)}p<br>${losses.length} loss${losses.length === 1 ? '' : 'es'}`
+        : 'No losses yet';
+    } else {
+      document.getElementById('wl-win-detail').innerHTML = wins.length > 0
+        ? `Total: +${totalWinR.toFixed(2)}R<br>Avg: +${(totalWinR/wins.length).toFixed(2)}R per win`
+        : 'No wins yet';
+      document.getElementById('wl-loss-detail').innerHTML = losses.length > 0
+        ? `Total: -${totalLossR.toFixed(2)}R<br>Each: -1R`
+        : 'No losses yet';
+    }
     const beCosts = bes.reduce((s,t) => s + (parseFloat(t.costs) || 0), 0);
     document.getElementById('wl-be-detail').innerHTML = bes.length > 0
       ? `0R contribution<br>Costs: -£${beCosts.toFixed(2)}`
@@ -3217,26 +3268,42 @@
     const dowNames = { 1:'Monday', 2:'Tuesday', 3:'Wednesday', 4:'Thursday', 5:'Friday' };
     const dowWrap = document.getElementById('dow-breakdown');
     const anyDow = all.some(t => t.dayOfWeek !== undefined && t.dayOfWeek !== null);
+    // Small helpers: format Avg + Net based on tool-wide unitView. "Net" uses signed prefix; "Avg" also signed.
+    // For pips: trades that don't have a logged pips value contribute nothing to the avg/net.
+    function fmtAvgUnit(s) {
+      if (isPipsView) {
+        if (s.avgPips === null) return '—';
+        return (s.avgPips >= 0 ? '+' : '') + s.avgPips.toFixed(0);
+      }
+      if (s.avgR === null) return '—';
+      return (s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2);
+    }
+    function fmtNetUnit(s) {
+      if (isPipsView) {
+        if (s.pipsCount === 0) return '—';
+        return (s.netPips >= 0 ? '+' : '') + s.netPips.toFixed(0) + 'p';
+      }
+      if (s.count === 0) return '—';
+      return (s.netR >= 0 ? '+' : '') + s.netR.toFixed(2) + 'R';
+    }
+    function netUnitCls(s) {
+      const v = isPipsView ? s.netPips : s.netR;
+      return v > 0 ? 'pl-good' : v < 0 ? 'pl-bad' : 'pl-be';
+    }
+    const avgLabel = isPipsView ? 'Avg P' : 'Avg R';
     if (!anyDow) dowWrap.innerHTML = '<div class="empty">Log a few trades to populate.</div>';
     else {
       let html = '<div class="history-list" style="margin-top:0;">';
       dows.forEach(d => {
         const dt = all.filter(t => t.dayOfWeek === d);
-        const w = dt.filter(t => t.result === 'Win').length;
-        const l = dt.filter(t => t.result === 'Lose').length;
-        const be = dt.filter(t => t.result === 'BE').length;
-        const dec = w + l;
-        const wr = dec > 0 ? Math.round(w/dec * 100) : null;
-        const netR = dt.reduce((s,t) => s + tradeRforMath(t), 0);
-        const avgR = dt.length > 0 ? netR/dt.length : null;
-        const cls = netR > 0 ? 'pl-good' : netR < 0 ? 'pl-bad' : 'pl-be';
+        const s = sideStats(dt);
         html += `<div class="history-row">
           <div class="history-cell label center">${dowNames[d]}</div>
-          <div class="history-cell"><span class="label">Trades</span> ${dt.length}</div>
-          <div class="history-cell"><span class="label">WR</span> ${wr !== null ? wr + '%' : '—'}</div>
-          <div class="history-cell"><span class="label">Avg R</span> ${avgR !== null ? (avgR >= 0 ? '+' : '') + avgR.toFixed(2) : '—'}</div>
-          <div class="history-cell"><span class="label">W/L/BE</span> ${w}/${l}/${be}</div>
-          <div class="history-cell right ${cls}">${dt.length > 0 ? (netR >= 0 ? '+' : '') + netR.toFixed(2) + 'R' : '—'}</div>
+          <div class="history-cell"><span class="label">Trades</span> ${s.count}</div>
+          <div class="history-cell"><span class="label">WR</span> ${s.wr !== null ? s.wr + '%' : '—'}</div>
+          <div class="history-cell"><span class="label">${avgLabel}</span> ${fmtAvgUnit(s)}</div>
+          <div class="history-cell"><span class="label">W/L/BE</span> ${s.w}/${s.l}/${s.be}</div>
+          <div class="history-cell right ${netUnitCls(s)}">${fmtNetUnit(s)}</div>
         </div>`;
       });
       html += '</div>';
@@ -3258,17 +3325,17 @@
             <div class="history-cell label center">Long</div>
             <div class="history-cell"><span class="label">Trades</span> ${lo.count}</div>
             <div class="history-cell"><span class="label">WR</span> ${lo.wr !== null ? lo.wr + '%' : '—'}</div>
-            <div class="history-cell"><span class="label">Avg R</span> ${lo.avgR !== null ? (lo.avgR >= 0 ? '+' : '') + lo.avgR.toFixed(2) : '—'}</div>
+            <div class="history-cell"><span class="label">${avgLabel}</span> ${fmtAvgUnit(lo)}</div>
             <div class="history-cell"><span class="label">W/L/BE</span> ${lo.w}/${lo.l}/${lo.be}</div>
-            <div class="history-cell right ${lo.netR > 0 ? 'pl-good' : lo.netR < 0 ? 'pl-bad' : 'pl-be'}">${lo.netR >= 0 ? '+' : ''}${lo.netR.toFixed(2)}R</div>
+            <div class="history-cell right ${netUnitCls(lo)}">${fmtNetUnit(lo)}</div>
           </div>
           <div class="history-row">
             <div class="history-cell label center">Short</div>
             <div class="history-cell"><span class="label">Trades</span> ${sh.count}</div>
             <div class="history-cell"><span class="label">WR</span> ${sh.wr !== null ? sh.wr + '%' : '—'}</div>
-            <div class="history-cell"><span class="label">Avg R</span> ${sh.avgR !== null ? (sh.avgR >= 0 ? '+' : '') + sh.avgR.toFixed(2) : '—'}</div>
+            <div class="history-cell"><span class="label">${avgLabel}</span> ${fmtAvgUnit(sh)}</div>
             <div class="history-cell"><span class="label">W/L/BE</span> ${sh.w}/${sh.l}/${sh.be}</div>
-            <div class="history-cell right ${sh.netR > 0 ? 'pl-good' : sh.netR < 0 ? 'pl-bad' : 'pl-be'}">${sh.netR >= 0 ? '+' : ''}${sh.netR.toFixed(2)}R</div>
+            <div class="history-cell right ${netUnitCls(sh)}">${fmtNetUnit(sh)}</div>
           </div>
           ${untaggedSide > 0 ? `<div style="font-size:10px;color:var(--text-dim);letter-spacing:0.2em;text-transform:uppercase;margin-top:12px;text-align:center;">${untaggedSide} trade${untaggedSide === 1 ? '' : 's'} untagged</div>` : ''}
         </div>`;
@@ -3289,17 +3356,17 @@
             <div class="history-cell label center">Reaction</div>
             <div class="history-cell"><span class="label">Trades</span> ${r.count}</div>
             <div class="history-cell"><span class="label">WR</span> ${r.wr !== null ? r.wr + '%' : '—'}</div>
-            <div class="history-cell"><span class="label">Avg R</span> ${r.avgR !== null ? (r.avgR >= 0 ? '+' : '') + r.avgR.toFixed(2) : '—'}</div>
+            <div class="history-cell"><span class="label">${avgLabel}</span> ${fmtAvgUnit(r)}</div>
             <div class="history-cell"><span class="label">W/L/BE</span> ${r.w}/${r.l}/${r.be}</div>
-            <div class="history-cell right ${r.netR > 0 ? 'pl-good' : r.netR < 0 ? 'pl-bad' : 'pl-be'}">${r.netR >= 0 ? '+' : ''}${r.netR.toFixed(2)}R</div>
+            <div class="history-cell right ${netUnitCls(r)}">${fmtNetUnit(r)}</div>
           </div>
           <div class="history-row">
             <div class="history-cell label center">Continuation</div>
             <div class="history-cell"><span class="label">Trades</span> ${c.count}</div>
             <div class="history-cell"><span class="label">WR</span> ${c.wr !== null ? c.wr + '%' : '—'}</div>
-            <div class="history-cell"><span class="label">Avg R</span> ${c.avgR !== null ? (c.avgR >= 0 ? '+' : '') + c.avgR.toFixed(2) : '—'}</div>
+            <div class="history-cell"><span class="label">${avgLabel}</span> ${fmtAvgUnit(c)}</div>
             <div class="history-cell"><span class="label">W/L/BE</span> ${c.w}/${c.l}/${c.be}</div>
-            <div class="history-cell right ${c.netR > 0 ? 'pl-good' : c.netR < 0 ? 'pl-bad' : 'pl-be'}">${c.netR >= 0 ? '+' : ''}${c.netR.toFixed(2)}R</div>
+            <div class="history-cell right ${netUnitCls(c)}">${fmtNetUnit(c)}</div>
           </div>
           ${untaggedType > 0 ? `<div style="font-size:10px;color:var(--text-dim);letter-spacing:0.2em;text-transform:uppercase;margin-top:12px;text-align:center;">${untaggedType} trade${untaggedType === 1 ? '' : 's'} untagged</div>` : ''}
         </div>`;
@@ -4755,15 +4822,31 @@
       return td >= periodStart && td < new Date(periodEnd.getTime() + 24*3600*1000);
     });
 
-    // R-per-trade helper used across this block (Win→r, Lose→-1, BE→0)
+    // Tool-wide unit view: 'r' or 'pips'. All insight blocks below display in this unit.
+    const isPipsView = data.settings.unitView === 'pips';
+    const unitLetter = isPipsView ? 'p' : 'R';
+
+    // R-per-trade helper (Win→r, Lose→-1, BE→0).
     function tradeR(t) {
       if (t.result === 'Win')  return parseFloat(t.r) || 0;
       if (t.result === 'Lose') return -1;
       return 0;
     }
+    // Pips-per-trade helper. Uses each trade's logged pips (signed). BEs and untracked → 0.
+    function tradePips(t) {
+      const p = parseFloat(t.pips);
+      return !isNaN(p) ? p : 0;
+    }
+    // Returns whichever metric applies under the active unit view.
+    const tradeMetric = t => isPipsView ? tradePips(t) : tradeR(t);
+    // Unified formatter for any monthly-insight value.
+    function fmtMetric(v) {
+      if (isPipsView) return (v >= 0 ? '+' : '') + v.toFixed(0) + 'p';
+      return (v >= 0 ? '+' : '') + v.toFixed(1) + 'R';
+    }
 
     // === 1. Best & worst week ===
-    // Group trades by ISO week start (Monday-rooted). Compute Total R per week.
+    // Group trades by ISO week start (Monday-rooted). Compute the metric (R or pips) per week.
     function weekKey(d) {
       const dt = new Date(d.getFullYear(), d.getMonth(), d.getDate());
       const day = (dt.getDay() + 6) % 7; // 0 = Mon, 6 = Sun
@@ -4773,14 +4856,14 @@
     const weekBuckets = {};
     monthTrades.forEach(t => {
       const k = weekKey(new Date(t.date));
-      if (!weekBuckets[k]) weekBuckets[k] = { key: k, totalR: 0, trades: 0 };
-      weekBuckets[k].totalR += tradeR(t);
+      if (!weekBuckets[k]) weekBuckets[k] = { key: k, total: 0, trades: 0 };
+      weekBuckets[k].total += tradeMetric(t);
       weekBuckets[k].trades++;
     });
     const weeks = Object.values(weekBuckets);
     let weekSectionHtml = '';
     if (weeks.length >= 2) {
-      const sorted = weeks.slice().sort((a, b) => b.totalR - a.totalR);
+      const sorted = weeks.slice().sort((a, b) => b.total - a.total);
       const best = sorted[0], worst = sorted[sorted.length - 1];
       const fmtWeek = k => {
         const d = new Date(k);
@@ -4788,8 +4871,7 @@
         const f = dt => dt.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
         return `${f(d)} – ${f(end)}`;
       };
-      const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
-      const cls = r => r > 0 ? 'good' : r < 0 ? 'bad' : '';
+      const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
       weekSectionHtml = `
         <div class="month-insight-block">
           <div class="month-insight-title">Best & worst week</div>
@@ -4797,12 +4879,12 @@
             <div class="month-insight-cell">
               <div class="month-insight-label"><span class="icon good">↑</span>Best week</div>
               <div class="month-insight-value">${fmtWeek(best.key)}</div>
-              <div class="month-insight-sub ${cls(best.totalR)}">${fmtR(best.totalR)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
+              <div class="month-insight-sub ${cls(best.total)}">${fmtMetric(best.total)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
             </div>
             <div class="month-insight-cell">
               <div class="month-insight-label"><span class="icon bad">↓</span>Worst week</div>
               <div class="month-insight-value">${fmtWeek(worst.key)}</div>
-              <div class="month-insight-sub ${cls(worst.totalR)}">${fmtR(worst.totalR)} across ${worst.trades} trade${worst.trades === 1 ? '' : 's'}</div>
+              <div class="month-insight-sub ${cls(worst.total)}">${fmtMetric(worst.total)} across ${worst.trades} trade${worst.trades === 1 ? '' : 's'}</div>
             </div>
           </div>
         </div>`;
@@ -4841,15 +4923,15 @@
       </div>`;
 
     // === 3 & 4. Tag winners & losers (concepts + mindset) ===
-    // For each tag: sum R across trades carrying that tag. Min 3 trades required.
+    // For each tag: sum the active unit's metric across trades carrying that tag. Min 3 trades required.
     function tagAggregate(tagKey) {
       const buckets = {};
       monthTrades.forEach(t => {
         const tags = (t.reviewSnap && Array.isArray(t.reviewSnap[tagKey])) ? t.reviewSnap[tagKey] : [];
-        const r = tradeR(t);
+        const v = tradeMetric(t);
         tags.forEach(tag => {
-          if (!buckets[tag]) buckets[tag] = { tag, totalR: 0, trades: 0 };
-          buckets[tag].totalR += r;
+          if (!buckets[tag]) buckets[tag] = { tag, total: 0, trades: 0 };
+          buckets[tag].total += v;
           buckets[tag].trades++;
         });
       });
@@ -4862,10 +4944,9 @@
           <div class="month-insight-empty">Need ≥3 trades carrying the same tag to rank.</div>
         </div>`;
       }
-      const sorted = eligible.slice().sort((a, b) => b.totalR - a.totalR);
+      const sorted = eligible.slice().sort((a, b) => b.total - a.total);
       const best = sorted[0], worst = sorted[sorted.length - 1];
-      const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
-      const cls = r => r > 0 ? 'good' : r < 0 ? 'bad' : '';
+      const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
       // If best === worst (only one eligible tag), show only the one
       if (best.tag === worst.tag) {
         return `<div class="month-insight-block">
@@ -4874,7 +4955,7 @@
             <div class="month-insight-cell">
               <div class="month-insight-label"><span class="icon info">◆</span>Only ranked tag</div>
               <div class="month-insight-value">${best.tag}</div>
-              <div class="month-insight-sub ${cls(best.totalR)}">${fmtR(best.totalR)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
+              <div class="month-insight-sub ${cls(best.total)}">${fmtMetric(best.total)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
             </div>
           </div>
         </div>`;
@@ -4885,12 +4966,12 @@
           <div class="month-insight-cell">
             <div class="month-insight-label"><span class="icon good">↑</span>Best</div>
             <div class="month-insight-value">${best.tag}</div>
-            <div class="month-insight-sub ${cls(best.totalR)}">${fmtR(best.totalR)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
+            <div class="month-insight-sub ${cls(best.total)}">${fmtMetric(best.total)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
           </div>
           <div class="month-insight-cell">
             <div class="month-insight-label"><span class="icon bad">↓</span>Worst</div>
             <div class="month-insight-value">${worst.tag}</div>
-            <div class="month-insight-sub ${cls(worst.totalR)}">${fmtR(worst.totalR)} across ${worst.trades} trade${worst.trades === 1 ? '' : 's'}</div>
+            <div class="month-insight-sub ${cls(worst.total)}">${fmtMetric(worst.total)} across ${worst.trades} trade${worst.trades === 1 ? '' : 's'}</div>
           </div>
         </div>
       </div>`;
@@ -4906,29 +4987,28 @@
       const day = d.getDay();
       if (day === 0 || day === 6) return; // skip weekends defensively
       const name = WEEKDAY_NAMES[day];
-      if (!dowBuckets[name]) dowBuckets[name] = { name, totalR: 0, trades: 0 };
-      dowBuckets[name].totalR += tradeR(t);
+      if (!dowBuckets[name]) dowBuckets[name] = { name, total: 0, trades: 0 };
+      dowBuckets[name].total += tradeMetric(t);
       dowBuckets[name].trades++;
     });
     const eligibleDays = Object.values(dowBuckets).filter(d => d.trades >= 3);
     let dowHtml = '';
     if (eligibleDays.length >= 2) {
-      const sorted = eligibleDays.slice().sort((a, b) => b.totalR - a.totalR);
+      const sorted = eligibleDays.slice().sort((a, b) => b.total - a.total);
       const best = sorted[0], worst = sorted[sorted.length - 1];
-      const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
-      const cls = r => r > 0 ? 'good' : r < 0 ? 'bad' : '';
+      const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
       dowHtml = `<div class="month-insight-block">
         <div class="month-insight-title">Best & worst weekday</div>
         <div class="month-insight-row">
           <div class="month-insight-cell">
             <div class="month-insight-label"><span class="icon good">↑</span>Best day</div>
             <div class="month-insight-value">${best.name}</div>
-            <div class="month-insight-sub ${cls(best.totalR)}">${fmtR(best.totalR)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
+            <div class="month-insight-sub ${cls(best.total)}">${fmtMetric(best.total)} across ${best.trades} trade${best.trades === 1 ? '' : 's'}</div>
           </div>
           <div class="month-insight-cell">
             <div class="month-insight-label"><span class="icon bad">↓</span>Worst day</div>
             <div class="month-insight-value">${worst.name}</div>
-            <div class="month-insight-sub ${cls(worst.totalR)}">${fmtR(worst.totalR)} across ${worst.trades} trade${worst.trades === 1 ? '' : 's'}</div>
+            <div class="month-insight-sub ${cls(worst.total)}">${fmtMetric(worst.total)} across ${worst.trades} trade${worst.trades === 1 ? '' : 's'}</div>
           </div>
         </div>
       </div>`;
@@ -4951,27 +5031,29 @@
         <div class="month-insight-empty">No data from previous month to compare.</div>
       </div>`;
     } else {
-      const rDelta   = thisStats.totalR - prevStats.totalR;
-      const netDelta = thisStats.net    - prevStats.net;
+      const thisVal = isPipsView ? thisStats.totalPips : thisStats.totalR;
+      const prevVal = isPipsView ? prevStats.totalPips : prevStats.totalR;
+      const vDelta = thisVal - prevVal;
+      const netDelta = thisStats.net - prevStats.net;
       const wrThis = thisStats.wr;
       const wrPrev = prevStats.wr;
       const wrDelta = (wrThis != null && wrPrev != null) ? Math.round((wrThis - wrPrev) * 100) : null;
-      const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
       const fmtM = m => (m >= 0 ? '+£' : '-£') + Math.abs(m).toFixed(2);
       const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
       const wrDeltaStr = wrDelta == null ? '—' : (wrDelta >= 0 ? '+' : '') + wrDelta + 'pp';
       const prevName = prevStart.toLocaleDateString('en-GB', { month: 'long' });
+      const totalLabel = isPipsView ? 'Total Pips' : 'Total R';
       comparisonHtml = `<div class="month-insight-block">
         <div class="month-insight-title">vs ${prevName}</div>
         <div class="month-insight-compare">
           <div class="month-insight-compare-cell">
-            <div class="month-insight-label">Total R</div>
+            <div class="month-insight-label">${totalLabel}</div>
             <div class="month-insight-compare-vals">
-              <span class="now">${fmtR(thisStats.totalR)}</span>
+              <span class="now">${fmtMetric(thisVal)}</span>
               <span class="vs">vs</span>
-              <span class="then">${fmtR(prevStats.totalR)}</span>
+              <span class="then">${fmtMetric(prevVal)}</span>
             </div>
-            <div class="month-insight-sub ${cls(rDelta)}">${fmtR(rDelta)} change</div>
+            <div class="month-insight-sub ${cls(vDelta)}">${fmtMetric(vDelta)} change</div>
           </div>
           <div class="month-insight-compare-cell">
             <div class="month-insight-label">Net P&L</div>
@@ -5073,24 +5155,29 @@
       monthTrades.forEach(t => {
         const tags = (t.reviewSnap && Array.isArray(t.reviewSnap[tagKey])) ? t.reviewSnap[tagKey] : [];
         const r = tradeR(t);
+        const p = tradePips(t);
         tags.forEach(tag => {
-          if (!buckets[tag]) buckets[tag] = { tag, totalR: 0, trades: 0 };
+          if (!buckets[tag]) buckets[tag] = { tag, totalR: 0, totalPips: 0, trades: 0 };
           buckets[tag].totalR += r;
+          buckets[tag].totalPips += p;
           buckets[tag].trades++;
         });
       });
       Object.values(buckets).forEach(b => {
+        // Detection always uses R-thresholds — they normalise for varying stop sizes across traders.
+        const displayTotal = isPipsView ? b.totalPips : b.totalR;
+        const displayStr = fmtMetric(displayTotal);
         if (b.trades >= PATTERN_LEAN_TRADES && b.totalR >= PATTERN_LEAN_R) {
           patterns.push({
             kind: 'lean',
             magnitude: b.totalR,
-            text: `Your <strong>${b.tag}</strong> ${tagKey === 'mindset' ? 'mindset' : 'setups'} paid +${b.totalR.toFixed(1)}R across ${b.trades} trades. This is your edge — keep selecting for these.`
+            text: `Your <strong>${b.tag}</strong> ${tagKey === 'mindset' ? 'mindset' : 'setups'} paid ${displayStr} across ${b.trades} trades. This is your edge — keep selecting for these.`
           });
         } else if (b.trades >= PATTERN_AVOID_TRADES && b.totalR <= PATTERN_AVOID_R) {
           patterns.push({
             kind: 'avoid',
             magnitude: Math.abs(b.totalR),
-            text: `You're ${tagKey === 'mindset' ? 'trading <strong>' + b.tag + '</strong>' : 'taking <strong>' + b.tag + '</strong> setups'} at a ${b.totalR.toFixed(1)}R cost (${b.trades} trades). ${tagKey === 'mindset' ? 'Consider stepping aside on those days.' : 'Worth interrogating why these aren\'t working.'}`
+            text: `You're ${tagKey === 'mindset' ? 'trading <strong>' + b.tag + '</strong>' : 'taking <strong>' + b.tag + '</strong> setups'} at a ${displayStr} cost (${b.trades} trades). ${tagKey === 'mindset' ? 'Consider stepping aside on those days.' : 'Worth interrogating why these aren\'t working.'}`
           });
         }
       });
@@ -5114,23 +5201,30 @@
       const slotEnd = slot + BUCKET_MIN;
       const h2 = Math.floor(slotEnd / 60), m2 = slotEnd % 60;
       const key = `${String(h1).padStart(2,'0')}:${String(m1).padStart(2,'0')}–${String(h2).padStart(2,'0')}:${String(m2).padStart(2,'0')}`;
-      if (!slotBuckets[key]) slotBuckets[key] = { key, totalR: 0, trades: 0 };
+      if (!slotBuckets[key]) slotBuckets[key] = { key, totalR: 0, totalPips: 0, trades: 0 };
       slotBuckets[key].totalR += tradeR(t);
+      slotBuckets[key].totalPips += tradePips(t);
       slotBuckets[key].trades++;
     });
     Object.values(slotBuckets).forEach(b => {
-      const avg = b.totalR / b.trades;
-      if (b.trades >= PATTERN_SLOT_PAY_TRADES && avg >= PATTERN_SLOT_PAY_AVG) {
+      const avgR = b.totalR / b.trades;
+      const displayTotal = isPipsView ? b.totalPips : b.totalR;
+      const displayAvg = displayTotal / b.trades;
+      const displayTotalStr = fmtMetric(displayTotal);
+      const displayAvgStr = isPipsView
+        ? (displayAvg >= 0 ? '+' : '') + displayAvg.toFixed(1) + 'p'
+        : (displayAvg >= 0 ? '+' : '') + displayAvg.toFixed(2) + 'R';
+      if (b.trades >= PATTERN_SLOT_PAY_TRADES && avgR >= PATTERN_SLOT_PAY_AVG) {
         patterns.push({
           kind: 'slot-pay',
-          magnitude: avg * b.trades,
-          text: `The <strong>${b.key}</strong> slot is your money-maker (+${b.totalR.toFixed(1)}R across ${b.trades} trades, +${avg.toFixed(2)}R avg). Lean into this window.`
+          magnitude: avgR * b.trades,
+          text: `The <strong>${b.key}</strong> slot is your money-maker (${displayTotalStr} across ${b.trades} trades, ${displayAvgStr} avg). Lean into this window.`
         });
-      } else if (b.trades >= PATTERN_SLOT_SKIP_TRADES && avg <= PATTERN_SLOT_SKIP_AVG) {
+      } else if (b.trades >= PATTERN_SLOT_SKIP_TRADES && avgR <= PATTERN_SLOT_SKIP_AVG) {
         patterns.push({
           kind: 'slot-skip',
-          magnitude: Math.abs(avg * b.trades),
-          text: `The <strong>${b.key}</strong> slot cost ${b.totalR.toFixed(1)}R across ${b.trades} trades (${avg.toFixed(2)}R avg). Worth skipping that window.`
+          magnitude: Math.abs(avgR * b.trades),
+          text: `The <strong>${b.key}</strong> slot cost ${displayTotalStr} across ${b.trades} trades (${displayAvgStr} avg). Worth skipping that window.`
         });
       }
     });
@@ -5142,23 +5236,26 @@
       const dow = new Date(t.date).getDay();
       if (dow === 0 || dow === 6) return;
       const name = WEEKDAY_NAMES_PAT[dow];
-      if (!dayBuckets[name]) dayBuckets[name] = { name, totalR: 0, trades: 0 };
+      if (!dayBuckets[name]) dayBuckets[name] = { name, totalR: 0, totalPips: 0, trades: 0 };
       dayBuckets[name].totalR += tradeR(t);
+      dayBuckets[name].totalPips += tradePips(t);
       dayBuckets[name].trades++;
     });
     Object.values(dayBuckets).forEach(b => {
-      const avg = b.totalR / b.trades;
-      if (b.trades >= PATTERN_DAY_PAY_TRADES && avg >= PATTERN_DAY_PAY_AVG) {
+      const avgR = b.totalR / b.trades;
+      const displayTotal = isPipsView ? b.totalPips : b.totalR;
+      const displayTotalStr = fmtMetric(displayTotal);
+      if (b.trades >= PATTERN_DAY_PAY_TRADES && avgR >= PATTERN_DAY_PAY_AVG) {
         patterns.push({
           kind: 'day-pay',
-          magnitude: avg * b.trades,
-          text: `<strong>${b.name}days</strong> are paying you (+${b.totalR.toFixed(1)}R across ${b.trades} trades). Trade these with conviction.`
+          magnitude: avgR * b.trades,
+          text: `<strong>${b.name}days</strong> are paying you (${displayTotalStr} across ${b.trades} trades). Trade these with conviction.`
         });
-      } else if (b.trades >= PATTERN_DAY_SKIP_TRADES && avg <= PATTERN_DAY_SKIP_AVG) {
+      } else if (b.trades >= PATTERN_DAY_SKIP_TRADES && avgR <= PATTERN_DAY_SKIP_AVG) {
         patterns.push({
           kind: 'day-skip',
-          magnitude: Math.abs(avg * b.trades),
-          text: `<strong>${b.name}days</strong> cost you ${b.totalR.toFixed(1)}R across ${b.trades} trades. Consider sitting them out, or trading them smaller until the data shifts.`
+          magnitude: Math.abs(avgR * b.trades),
+          text: `<strong>${b.name}days</strong> cost you ${displayTotalStr} across ${b.trades} trades. Consider sitting them out, or trading them smaller until the data shifts.`
         });
       }
     });
@@ -5642,13 +5739,28 @@
     }
     const sorted = data.weeklyReviews.slice().sort((a, b) => new Date(b.weekEnd) - new Date(a.weekEnd));
     const fmtDate = iso => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+    const isPipsView = data.settings.unitView === 'pips';
     wrap.innerHTML = sorted.map(r => {
       const s = r.stats;
       const wrStr = s.wr != null ? Math.round(s.wr * 100) + '%' : '—';
-      const rStr  = (s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(2) + 'R';
       const netStr = (s.net >= 0 ? '+' : '-') + '£' + Math.abs(s.net).toFixed(2);
       const netCls = s.net > 0 ? 'good' : s.net < 0 ? 'bad' : '';
-      const rCls   = s.totalR > 0 ? 'good' : s.totalR < 0 ? 'bad' : '';
+      // Legacy reviews may not have totalPips stored — fall back to '—' if missing.
+      let totalLabel, totalStr, totalCls;
+      if (isPipsView) {
+        totalLabel = 'Total Pips';
+        if (typeof s.totalPips === 'number' && !isNaN(s.totalPips)) {
+          totalStr = (s.totalPips >= 0 ? '+' : '') + s.totalPips.toFixed(0) + 'p';
+          totalCls = s.totalPips > 0 ? 'good' : s.totalPips < 0 ? 'bad' : '';
+        } else {
+          totalStr = '—';
+          totalCls = '';
+        }
+      } else {
+        totalLabel = 'Total R';
+        totalStr = (s.totalR >= 0 ? '+' : '') + s.totalR.toFixed(2) + 'R';
+        totalCls = s.totalR > 0 ? 'good' : s.totalR < 0 ? 'bad' : '';
+      }
       const notesHtml = r.notes && r.notes.trim()
         ? `<div style="margin-top:14px;padding-top:14px;border-top:1px dashed var(--border-2);color:var(--text-mid);font-size:13px;line-height:1.6;font-style:italic;">"${r.notes.replace(/</g,'&lt;')}"</div>`
         : '';
@@ -5660,7 +5772,7 @@
         <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;font-size:12px;">
           <div><div style="color:var(--text-dim);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;">Trades</div><div style="font-family:'Fraunces',serif;font-size:18px;margin-top:4px;">${s.totalTrades}</div></div>
           <div><div style="color:var(--text-dim);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;">Net P&L</div><div class="${netCls}" style="font-family:'Fraunces',serif;font-size:18px;margin-top:4px;">${netStr}</div></div>
-          <div><div style="color:var(--text-dim);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;">Total R</div><div class="${rCls}" style="font-family:'Fraunces',serif;font-size:18px;margin-top:4px;">${rStr}</div></div>
+          <div><div style="color:var(--text-dim);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;">${totalLabel}</div><div class="${totalCls}" style="font-family:'Fraunces',serif;font-size:18px;margin-top:4px;">${totalStr}</div></div>
           <div><div style="color:var(--text-dim);font-size:10px;letter-spacing:0.2em;text-transform:uppercase;">Win Rate</div><div style="font-family:'Fraunces',serif;font-size:18px;margin-top:4px;">${wrStr}</div></div>
         </div>
         ${notesHtml}
