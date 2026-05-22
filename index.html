@@ -190,9 +190,15 @@
   .stat-value.dd { color: var(--bad); }
   .stat-value.dd.zero { color: var(--good); }
   .stat-cell { background: var(--bg); padding: 26px 18px; text-align: center; position: relative; }
-  .stat-cell:hover .stat-tooltip { opacity: 1; transform: translateY(0); pointer-events: auto; }
-  .stat-tooltip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(8px); background: var(--bg-elev); border: 1px solid var(--border-2); padding: 12px 16px; font-size: 11px; line-height: 1.5; color: var(--text-mid); text-align: left; width: 230px; z-index: 5; opacity: 0; pointer-events: none; transition: opacity 200ms, transform 200ms; }
+  /* Note: this hover rule MUST preserve translateX(-50%) so the tooltip stays horizontally centered.
+     A previous version had just translateY(0) which dropped centering and pushed the tooltip off-screen. */
+  .stat-cell:hover .stat-tooltip { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
+  .stat-tooltip { position: absolute; bottom: calc(100% + 8px); left: 50%; transform: translateX(-50%) translateY(8px); background: var(--bg-elev); border: 1px solid var(--border-2); padding: 12px 16px; font-size: 11px; line-height: 1.5; color: var(--text-mid); text-align: left; width: 230px; max-width: calc(100vw - 32px); z-index: 5; opacity: 0; pointer-events: none; transition: opacity 200ms, transform 200ms; }
   .stat-tooltip::after { content: ''; position: absolute; top: 100%; left: 50%; transform: translateX(-50%); border: 6px solid transparent; border-top-color: var(--border-2); }
+  /* Inside a scrollable modal, tooltips on the top row of KPI cells would be clipped by the modal's
+     overflow boundary if they popped UPWARD. Flip them downward inside any .modal context. */
+  .modal .stat-tooltip { bottom: auto; top: calc(100% + 8px); }
+  .modal .stat-tooltip::after { top: auto; bottom: 100%; border-top-color: transparent; border-bottom-color: var(--border-2); }
   .stat-label { font-size: 9px; text-transform: uppercase; letter-spacing: 0.3em; color: var(--text-dim); margin-bottom: 10px; cursor: help; }
   .stat-value { font-family: 'Fraunces', serif; font-size: 32px; letter-spacing: -0.02em; line-height: 1; }
   .stat-value.good { color: var(--good); }
@@ -333,6 +339,21 @@
   /* Trade of month — clickable cells that drill into the day's modal */
   .trade-of-month-cell { cursor: pointer; padding: 12px; border: 1px solid var(--border-2); transition: border-color 150ms, background 150ms; }
   .trade-of-month-cell:hover { border-color: var(--text-mid); background: var(--bg-elev); }
+  /* Small auto-pulled chart thumbnail inside trade-of-month + weekly best/worst cards */
+  .trade-thumb { margin: 6px 0 8px; border: 1px solid var(--border-2); background: var(--bg-elev); overflow: hidden; }
+  .trade-thumb a { display: block; transition: opacity 150ms; }
+  .trade-thumb a:hover { opacity: 0.85; }
+  .trade-thumb img { display: block; width: 100%; height: 110px; object-fit: cover; }
+  /* Auto-trade card inside the weekly Best/Worst reflection questions */
+  .auto-trade-card { padding: 12px; border: 1px solid var(--border-2); background: var(--bg-elev); margin-bottom: 8px; }
+  .auto-trade-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
+  .auto-trade-label .icon { font-family: 'DM Mono', monospace; font-size: 10px; }
+  .auto-trade-label .icon.good { color: var(--good); }
+  .auto-trade-label .icon.bad  { color: var(--bad); }
+  .auto-trade-meta { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-mid); letter-spacing: 0.02em; }
+  .auto-trade-meta .good { color: var(--good); }
+  .auto-trade-meta .bad  { color: var(--bad); }
+  .auto-trade-meta .auto-trade-date { color: var(--text); font-family: 'Fraunces', serif; font-style: italic; font-size: 14px; }
   /* Weekly Reflection structured form — separate question blocks for the weekend ritual */
   .reflect-block { margin-top: 28px; padding-top: 22px; border-top: 1px dashed var(--border-2); }
   .reflect-header { font-size: 11px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 6px; }
@@ -4158,6 +4179,39 @@
     </div>`;
   }
 
+  // Returns the first valid TradingView snapshot URL attached to a trade, or null.
+  // Prefers reviewSnap.tvLinks (post-trade analysis) over biasSnap.tvLinks (pre-session bias).
+  function pickTradeChartUrl(t) {
+    function firstValidUrl(arr) {
+      if (!Array.isArray(arr)) return null;
+      for (const link of arr) {
+        const url = (link && link.url || '').trim();
+        if (/^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(url)) return url;
+      }
+      return null;
+    }
+    return firstValidUrl(t.reviewSnap && t.reviewSnap.tvLinks)
+        || firstValidUrl(t.biasSnap   && t.biasSnap.tvLinks);
+  }
+
+  // Renders a small clickable chart thumbnail for a trade. Empty string if no chart logged.
+  // Reuses the same TradingView snapshot URL pattern + .reflect-q-preview grid styling.
+  function pickTradeChartThumb(t) {
+    const url = pickTradeChartUrl(t);
+    if (!url) return '';
+    const m = url.match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+    if (!m) return '';
+    const imgUrl = `https://www.tradingview.com/x/${m[1]}/`;
+    const safeUrl = url.replace(/"/g, '&quot;');
+    // Single-thumb wrapper. Click goes through but the parent cell click also fires — stop propagation
+    // so opening the chart in a new tab doesn't also close the modal and open the day view.
+    return `<div class="trade-thumb">
+      <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" onclick="event.stopPropagation()" title="Open chart in new tab">
+        <img src="${imgUrl}" alt="Chart" onerror="this.parentElement.parentElement.style.display='none';" />
+      </a>
+    </div>`;
+  }
+
   // Monthly-only insights block. Rendered only inside the monthly review modal.
   // Five sections: best/worst week · trading-day consistency · concept-tag winners/losers ·
   // mindset-tag winners/losers · best/worst weekday · previous-month comparison.
@@ -4427,8 +4481,12 @@
       const net = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
       const netStr = (net >= 0 ? '+£' : '-£') + Math.abs(net).toFixed(2);
       const dateIso = dt.toISOString();
+      // Pull a thumbnail from the trade's logged charts. Prefer post-session review chart
+      // (more likely to show entry/exit), fall back to bias chart, otherwise none.
+      const thumbHtml = pickTradeChartThumb(t);
       return `<div class="month-insight-cell trade-of-month-cell" data-trade-date="${dateIso}" title="Click to open this day's review">
         <div class="month-insight-label"><span class="icon ${iconCls}">${icon}</span>${label}</div>
+        ${thumbHtml}
         <div class="month-insight-value">${dateStr} · ${sideStr}</div>
         <div class="month-insight-sub ${rCls}">${rStr} · ${netStr}</div>
       </div>`;
@@ -4680,8 +4738,8 @@
     // Read existing answers; legacy reviews may have only `notes` — fold that into the "what worked" field
     const e = existing || {};
     const weekChartUrl = (e.weekChart && e.weekChart.url) || '';
-    const bestTradeUrl = (e.bestTrade && e.bestTrade.url) || '';
-    const bestTradeNotes = (e.bestTrade && e.bestTrade.notes) || '';
+    const bestTradeNotes  = (e.bestTrade  && e.bestTrade.notes)  || '';
+    const worstTradeNotes = (e.worstTrade && e.worstTrade.notes) || '';
     const missedUrl   = (e.missedTrade && e.missedTrade.url) || '';
     const missedWins  = e.reflectionMissedWins  || '';
     const focusNext   = e.reflectionFocusNext   || '';
@@ -4695,8 +4753,44 @@
     else if (hadWentWell)               learned = e.reflectionWentWell;
     else                                learned = e.notes || '';
 
+    // Auto-pick best Win + worst Lose for the week from raw trades.
+    const allTrades = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
+    const wkEndExc = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
+    const weekTradesAll = allTrades.filter(t => {
+      const td = new Date(t.date);
+      return td >= weekStart && td < wkEndExc;
+    });
+    const weekWins   = weekTradesAll.filter(t => t.result === 'Win');
+    const weekLosses = weekTradesAll.filter(t => t.result === 'Lose');
+    function tradeRLocal(t) {
+      if (t.result === 'Win')  return parseFloat(t.r) || 0;
+      if (t.result === 'Lose') return -1;
+      return 0;
+    }
+    const bestWinTrade   = weekWins.length   > 0 ? weekWins.slice().sort((a, b) => tradeRLocal(b) - tradeRLocal(a))[0]   : null;
+    const worstLoseTrade = weekLosses.length > 0 ? weekLosses.slice().sort((a, b) => tradeRLocal(a) - tradeRLocal(b))[0] : null;
+
     // Escape HTML in values that get injected back into the DOM
     function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+    // Render a small auto-trade summary card with date/side/R/£ + thumbnail (if a chart is logged on the trade)
+    function autoTradeCard(t, label, iconCls, icon) {
+      if (!t) return '';
+      const r = tradeRLocal(t);
+      const rStr = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
+      const rCls = r > 0 ? 'good' : r < 0 ? 'bad' : '';
+      const dt = new Date(t.date);
+      const dateStr = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      const sideStr = t.side || '—';
+      const net = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
+      const netStr = (net >= 0 ? '+£' : '-£') + Math.abs(net).toFixed(2);
+      const thumbHtml = (typeof pickTradeChartThumb === 'function') ? pickTradeChartThumb(t) : '';
+      return `<div class="auto-trade-card">
+        <div class="auto-trade-label"><span class="icon ${iconCls}">${icon}</span>${label}</div>
+        ${thumbHtml}
+        <div class="auto-trade-meta"><span class="auto-trade-date">${dateStr}</span> · <span>${sideStr}</span> · <span class="${rCls}">${rStr}</span> · <span class="${rCls}">${netStr}</span></div>
+      </div>`;
+    }
 
     // Parse one URL per line. Trims whitespace and drops empty lines.
     // Returns just the URLs that look like TradingView snapshot links.
@@ -4733,12 +4827,17 @@
           <div id="rfx-week-chart-preview" class="reflect-q-preview">${tvPreviewMultiHtml(weekChartUrl)}</div>
         </div>
 
-        <div class="reflect-question">
+        ${bestWinTrade ? `<div class="reflect-question">
           <div class="reflect-q-label">My best trade of the week — and why</div>
-          <textarea id="rfx-best-trade-url" class="reflect-q-urls" rows="2" placeholder="Paste TradingView snapshot URLs — one per line. Setup + entry + result charts all welcome.">${esc(bestTradeUrl)}</textarea>
-          <div id="rfx-best-trade-preview" class="reflect-q-preview">${tvPreviewMultiHtml(bestTradeUrl)}</div>
-          <textarea id="rfx-best-trade-notes" class="reflect-q-textarea" placeholder="The trade itself + what made it your best…">${esc(bestTradeNotes)}</textarea>
-        </div>
+          ${autoTradeCard(bestWinTrade, 'Best trade', 'good', '★')}
+          <textarea id="rfx-best-trade-notes" class="reflect-q-textarea" placeholder="What made it your best? Read, execution, patience, conviction…">${esc(bestTradeNotes)}</textarea>
+        </div>` : ''}
+
+        ${worstLoseTrade ? `<div class="reflect-question">
+          <div class="reflect-q-label">My worst trade of the week — and what went wrong</div>
+          ${autoTradeCard(worstLoseTrade, 'Worst trade', 'bad', '✕')}
+          <textarea id="rfx-worst-trade-notes" class="reflect-q-textarea" placeholder="Where did this go wrong? Read, entry, sizing, exit, emotional state…">${esc(worstTradeNotes)}</textarea>
+        </div>` : ''}
 
         <div class="reflect-question">
           <div class="reflect-q-label">Winning trades I didn't take?</div>
@@ -4764,6 +4863,12 @@
     `;
 
     // Wire auto-save on every input. Each keystroke persists.
+    // Use a safe optional read because some fields are conditionally rendered (e.g. no Win this week → no
+    // "best trade" textarea exists in the DOM).
+    function valOf(id) {
+      const el = document.getElementById(id);
+      return el ? el.value : '';
+    }
     function persist() {
       if (!currentReview || currentReview.kind !== 'weekly') return;
       const idx = data.weeklyReviews.findIndex(r => r.weekKey === currentReview.key);
@@ -4771,17 +4876,13 @@
         weekKey: currentReview.key,
         weekStart: currentReview.start.toISOString(),
         weekEnd: currentReview.end.toISOString(),
-        weekChart: { url: document.getElementById('rfx-week-chart-url').value },
-        bestTrade: {
-          url:   document.getElementById('rfx-best-trade-url').value,
-          notes: document.getElementById('rfx-best-trade-notes').value
-        },
-        missedTrade: {
-          url: document.getElementById('rfx-missed-url').value
-        },
-        reflectionMissedWins: document.getElementById('rfx-missed-wins').value,
-        reflectionFocusNext:  document.getElementById('rfx-focus-next').value,
-        reflectionLearned:    document.getElementById('rfx-learned').value,
+        weekChart: { url: valOf('rfx-week-chart-url') },
+        bestTrade:  { notes: valOf('rfx-best-trade-notes') },
+        worstTrade: { notes: valOf('rfx-worst-trade-notes') },
+        missedTrade: { url: valOf('rfx-missed-url') },
+        reflectionMissedWins: valOf('rfx-missed-wins'),
+        reflectionFocusNext:  valOf('rfx-focus-next'),
+        reflectionLearned:    valOf('rfx-learned'),
         savedAt: new Date().toISOString()
       };
       if (idx >= 0) data.weeklyReviews[idx] = entry; else data.weeklyReviews.push(entry);
@@ -4793,14 +4894,16 @@
     function wireUrlPreview(urlInputId, previewContainerId) {
       const inp = document.getElementById(urlInputId);
       const prv = document.getElementById(previewContainerId);
+      if (!inp || !prv) return; // conditionally-rendered fields may be absent
       inp.addEventListener('blur', () => { prv.innerHTML = tvPreviewMultiHtml(inp.value); persist(); });
       inp.addEventListener('input', persist);
     }
     wireUrlPreview('rfx-week-chart-url', 'rfx-week-chart-preview');
-    wireUrlPreview('rfx-best-trade-url', 'rfx-best-trade-preview');
     wireUrlPreview('rfx-missed-url',     'rfx-missed-preview');
-    ['rfx-missed-wins', 'rfx-best-trade-notes', 'rfx-focus-next', 'rfx-learned'].forEach(id => {
-      document.getElementById(id).addEventListener('input', persist);
+    // Best/worst trade notes only exist when wins/losses occurred — attach if present.
+    ['rfx-missed-wins', 'rfx-best-trade-notes', 'rfx-worst-trade-notes', 'rfx-focus-next', 'rfx-learned'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.addEventListener('input', persist);
     });
 
     // Copy to Discord — builds a markdown-friendly weekly review post and copies it to the clipboard.
@@ -4851,24 +4954,58 @@
         /^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(s)
       );
     }
-    const weekChartUrls = extractTvUrls(document.getElementById('rfx-week-chart-url').value);
-    const bestTradeUrls = extractTvUrls(document.getElementById('rfx-best-trade-url').value);
-    const bestTradeTxt  = document.getElementById('rfx-best-trade-notes').value.trim();
-    const missedUrls    = extractTvUrls(document.getElementById('rfx-missed-url').value);
-    const missedWins    = document.getElementById('rfx-missed-wins').value.trim();
-    const focusNext     = document.getElementById('rfx-focus-next').value.trim();
-    const learned       = document.getElementById('rfx-learned').value.trim();
+    function valTrim(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
+    function valOf(id)   { const el = document.getElementById(id); return el ? el.value       : ''; }
+    const weekChartUrls = extractTvUrls(valOf('rfx-week-chart-url'));
+    const bestTradeTxt  = valTrim('rfx-best-trade-notes');
+    const worstTradeTxt = valTrim('rfx-worst-trade-notes');
+    const missedUrls    = extractTvUrls(valOf('rfx-missed-url'));
+    const missedWins    = valTrim('rfx-missed-wins');
+    const focusNext     = valTrim('rfx-focus-next');
+    const learned       = valTrim('rfx-learned');
+
+    // Recompute the week's best Win + worst Lose for the Discord post — same data the UI shows.
+    const wkEnd = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
+    const wkAllTrades = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
+    const weekTradesD = wkAllTrades.filter(t => {
+      const td = new Date(t.date);
+      return td >= weekStart && td < wkEnd;
+    });
+    function tRD(t) { return t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0; }
+    const weekWinsD = weekTradesD.filter(t => t.result === 'Win');
+    const weekLossesD = weekTradesD.filter(t => t.result === 'Lose');
+    const dBestWin = weekWinsD.length > 0 ? weekWinsD.slice().sort((a, b) => tRD(b) - tRD(a))[0] : null;
+    const dWorstLose = weekLossesD.length > 0 ? weekLossesD.slice().sort((a, b) => tRD(a) - tRD(b))[0] : null;
+    function tradeOneLiner(t) {
+      const dt = new Date(t.date);
+      const dateStr = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
+      const r = tRD(t);
+      const rStr = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
+      const net = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
+      const netStr = (net >= 0 ? '+£' : '-£') + Math.abs(net).toFixed(2);
+      return `${dateStr} · ${t.side || '—'} · ${rStr} · ${netStr}`;
+    }
 
     if (weekChartUrls.length > 0) {
       lines.push('');
       lines.push('**Week\'s chart**');
       weekChartUrls.forEach(u => lines.push(u));
     }
-    if (bestTradeUrls.length > 0 || bestTradeTxt) {
+    if (dBestWin) {
       lines.push('');
       lines.push('**Best trade of the week**');
-      bestTradeUrls.forEach(u => lines.push(u));
+      lines.push(tradeOneLiner(dBestWin));
+      const chartUrl = (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
+      if (chartUrl) lines.push(chartUrl);
       if (bestTradeTxt) lines.push(bestTradeTxt);
+    }
+    if (dWorstLose) {
+      lines.push('');
+      lines.push('**Worst trade of the week**');
+      lines.push(tradeOneLiner(dWorstLose));
+      const chartUrl = (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dWorstLose) : null;
+      if (chartUrl) lines.push(chartUrl);
+      if (worstTradeTxt) lines.push(worstTradeTxt);
     }
     if (missedUrls.length > 0 || missedWins) {
       lines.push('');
@@ -4982,7 +5119,8 @@
       const hasReflection = existing && (
         existing.reflectionFocusNext || existing.reflectionLearned ||
         existing.reflectionMissedWins || existing.reflectionWentWell || // legacy field, kept for back-compat
-        (existing.bestTrade && existing.bestTrade.notes) ||
+        (existing.bestTrade  && existing.bestTrade.notes) ||
+        (existing.worstTrade && existing.worstTrade.notes) ||
         (existing.weekChart && existing.weekChart.url) ||
         (existing.missedTrade && existing.missedTrade.url) ||
         existing.notes
