@@ -1128,6 +1128,33 @@
   </div>
 </div>
 
+<!-- Add-trade popup: confirm Risk + Costs for the new trade row -->
+<div class="modal-bg" id="add-trade-modal-bg">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title">New trade</div>
+        <p style="margin:6px 0 0;color:var(--text-mid);font-size:13px;">Confirm risk and costs for this trade.</p>
+      </div>
+      <button type="button" class="modal-close" id="add-trade-modal-cancel">Cancel</button>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:8px;">
+      <div>
+        <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Risk £</div>
+        <input type="number" id="add-trade-risk" step="any" style="width:100%;background:var(--bg-elev);border:1px solid var(--border-2);color:var(--text);padding:10px 12px;font-family:'DM Mono',monospace;font-size:14px;outline:none;" />
+      </div>
+      <div>
+        <div style="font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">Costs £</div>
+        <input type="number" id="add-trade-costs" step="any" style="width:100%;background:var(--bg-elev);border:1px solid var(--border-2);color:var(--text);padding:10px 12px;font-family:'DM Mono',monospace;font-size:14px;outline:none;" />
+      </div>
+    </div>
+    <p style="margin-top:14px;color:var(--text-dim);font-size:11px;line-height:1.5;letter-spacing:0.02em;">Defaults from the section above are pre-filled — adjust per trade if needed.</p>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button type="button" id="add-trade-modal-confirm" style="background:var(--text);color:var(--bg);border:none;padding:8px 18px;font-family:'DM Mono',monospace;font-size:11px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;">Add Trade</button>
+    </div>
+  </div>
+</div>
+
 <!-- Period review modal (used for both Weekly and Monthly reviews) -->
 <div class="modal-bg" id="review-modal-bg">
   <div class="modal">
@@ -1946,7 +1973,7 @@
             if (btn.dataset.value === 'Yes') {
               ts.classList.remove('hidden');
               es.classList.remove('hidden');
-              if (data.review.trades.length === 0) addTradeRow();
+              if (data.review.trades.length === 0) silentAddFirstTrade();
             } else {
               ts.classList.add('hidden');
               es.classList.add('hidden');
@@ -2214,11 +2241,51 @@
       row.querySelector('.trade-remove').addEventListener('click', () => { data.review.trades.splice(idx, 1); fullUpdate(); });
     });
   }
-  function addTradeRow() {
+  // Silent add — used for the auto-first-trade when the user signals "Yes I traded" on the
+  // Did You Trade? question. Doesn't open the popup since the user has already taken an action.
+  function silentAddFirstTrade() {
     data.review.trades.push(newTradeBlank());
     renderTrades(); renderReviewPreview(); saveData();
   }
-  document.getElementById('add-trade').addEventListener('click', addTradeRow);
+
+  // "+ Add Trade" opens a small popup that confirms Risk + Costs for this trade.
+  // Pre-fills from data.defaults so the common case (same risk every trade) is one click.
+  function openAddTradeModal() {
+    const riskInput  = document.getElementById('add-trade-risk');
+    const costsInput = document.getElementById('add-trade-costs');
+    riskInput.value  = (data.defaults && data.defaults.risk)  || '';
+    costsInput.value = (data.defaults && data.defaults.costs) || '';
+    document.getElementById('add-trade-modal-bg').classList.add('show');
+    // Focus + select the risk input so you can type to overwrite immediately
+    setTimeout(() => { riskInput.focus(); riskInput.select(); }, 50);
+  }
+  function closeAddTradeModal() {
+    document.getElementById('add-trade-modal-bg').classList.remove('show');
+  }
+  function confirmAddTrade() {
+    const risk  = document.getElementById('add-trade-risk').value.trim();
+    const costs = document.getElementById('add-trade-costs').value.trim();
+    const t = newTradeBlank();
+    if (risk)  t.risk  = risk;
+    if (costs) t.costs = costs;
+    data.review.trades.push(t);
+    closeAddTradeModal();
+    renderTrades(); renderReviewPreview(); saveData();
+  }
+  document.getElementById('add-trade').addEventListener('click', openAddTradeModal);
+  document.getElementById('add-trade-modal-confirm').addEventListener('click', confirmAddTrade);
+  document.getElementById('add-trade-modal-cancel').addEventListener('click', closeAddTradeModal);
+  // Click outside the modal to cancel
+  document.getElementById('add-trade-modal-bg').addEventListener('click', e => {
+    if (e.target.id === 'add-trade-modal-bg') closeAddTradeModal();
+  });
+  // Enter confirms, Escape cancels (anywhere in the modal)
+  ['add-trade-risk', 'add-trade-costs'].forEach(id => {
+    document.getElementById(id).addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); confirmAddTrade(); }
+      else if (e.key === 'Escape') closeAddTradeModal();
+    });
+  });
 
   // Render the dynamic list of TV links for Review.
   function renderReviewTvLinks() {
