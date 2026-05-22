@@ -334,16 +334,19 @@
   .reflect-q-url { width: 100%; background: var(--bg-elev); border: 1px solid var(--border-2); color: var(--text); padding: 9px 12px; font-family: 'DM Mono', monospace; font-size: 11px; outline: none; box-sizing: border-box; margin-bottom: 8px; }
   .reflect-q-url:focus { border-color: var(--text-mid); }
   .reflect-q-url::placeholder { color: var(--text-dim); }
-  .reflect-q-preview { margin-bottom: 8px; border: 1px solid var(--border-2); background: var(--bg-elev); padding: 4px; }
-  .reflect-q-preview img { display: block; max-width: 100%; max-height: 360px; margin: 0 auto; }
-  /* Auto-stats card showing potential vs actual R for wins */
-  .reflect-autostat { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 22px; }
-  .reflect-autostat-cell { background: var(--bg-elev); padding: 14px 12px; }
-  .reflect-autostat-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
-  .reflect-autostat-value { font-family: 'Fraunces', serif; font-size: 22px; color: var(--text); }
-  .reflect-autostat-value.good { color: var(--good); }
-  .reflect-autostat-value.bad  { color: var(--bad); }
-  .reflect-autostat-sub { font-size: 10px; color: var(--text-dim); margin-top: 4px; }
+  /* Multi-URL textarea — one TradingView snapshot link per line */
+  .reflect-q-urls { width: 100%; background: var(--bg-elev); border: 1px solid var(--border-2); color: var(--text); padding: 9px 12px; font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.5; outline: none; resize: vertical; min-height: 48px; box-sizing: border-box; margin-bottom: 8px; }
+  .reflect-q-urls:focus { border-color: var(--text-mid); }
+  .reflect-q-urls::placeholder { color: var(--text-dim); font-style: italic; }
+  /* Grid of small thumbnails. Each thumb is clickable — opens the TradingView URL in a new tab. */
+  .reflect-q-preview { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 8px; }
+  .reflect-q-preview:empty { display: none; }
+  .reflect-q-preview a { display: block; border: 1px solid var(--border-2); background: var(--bg-elev); overflow: hidden; transition: border-color 150ms, transform 150ms; cursor: pointer; }
+  .reflect-q-preview a:hover { border-color: var(--text-mid); transform: translateY(-1px); }
+  .reflect-q-preview img { display: block; width: 100%; height: 90px; object-fit: cover; }
+  @media (max-width: 600px) {
+    .reflect-q-preview { grid-template-columns: repeat(2, 1fr); }
+  }
   .chart-card { margin-top: 28px; padding: 22px; border: 1px solid var(--border-2); background: var(--bg-elev); }
   .chart-card-title { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
   .chart-card-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
@@ -4408,7 +4411,6 @@
   }
 
   function fillReviewModalBody(stats, titleText, greetingNoun, monthRange) {
-    const wrStr = stats.wr != null ? Math.round(stats.wr * 100) + '%' : '—';
     const rStr  = (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(2) + 'R';
     const netStr = (stats.net >= 0 ? '+' : '-') + '£' + Math.abs(stats.net).toFixed(2);
     document.getElementById('review-modal-title').textContent = titleText;
@@ -4416,6 +4418,10 @@
     const greeting = n ? `Here's how your ${greetingNoun} went, ${n}.` : `Here's how your ${greetingNoun} went.`;
     const netCls = stats.net > 0 ? 'good' : stats.net < 0 ? 'bad' : '';
     const rCls   = stats.totalR > 0 ? 'good' : stats.totalR < 0 ? 'bad' : '';
+    // Potential R — total R left on table across this period's wins with Potential R logged
+    const potLeft = (stats.mfe && stats.mfe.tracked > 0) ? stats.mfe.totalLeft : null;
+    const potStr  = potLeft == null ? '—' : (potLeft >= 0 ? '+' : '') + potLeft.toFixed(2) + 'R';
+    const potCls  = potLeft == null ? '' : (potLeft > 0.5 ? 'bad' : '');
     const monthlyExtra = (greetingNoun === 'month' && monthRange) ? renderMonthlyInsights(monthRange.start, monthRange.end) : '';
     document.getElementById('review-modal-body').innerHTML = `
       <p style="color:var(--text-mid);font-size:13px;margin-bottom:20px;">${greeting}</p>
@@ -4423,7 +4429,7 @@
         <div class="stat-cell"><div class="stat-label">Trades</div><div class="stat-value medium">${stats.totalTrades}</div></div>
         <div class="stat-cell"><div class="stat-label">Net P&L</div><div class="stat-value medium ${netCls}">${netStr}</div></div>
         <div class="stat-cell"><div class="stat-label">Total R</div><div class="stat-value medium ${rCls}">${rStr}</div></div>
-        <div class="stat-cell"><div class="stat-label">Win Rate</div><div class="stat-value medium">${wrStr}</div></div>
+        <div class="stat-cell"><div class="stat-tooltip">Total R left on the table across this period's winning trades. Potential R minus actual R captured. Only counts wins with Potential R logged.</div><div class="stat-label">Potential R</div><div class="stat-value medium ${potCls}">${potStr}</div></div>
       </div>
       <div class="wl-summary" style="margin-top:16px;">
         <div class="wl-cell win"><div class="big">${stats.wins}</div><div class="small">Wins</div></div>
@@ -4466,46 +4472,52 @@
   }
 
   // Render the structured weekly reflection: prompts for the weekend ritual.
-  // Auto-stats (Potential R, Actual R, Gap) are read-only and recomputed live from raw trades.
-  // Free-text questions auto-save on every keystroke to data.weeklyReviews.
+  // Auto-saves on every keystroke to data.weeklyReviews. Period stats (incl. Potential R left)
+  // are shown in the shared KPI block above and recomputed live from raw trades.
   function renderWeeklyReflection(weekStart, weekEnd, existing) {
-    const all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
-    const wkEnd = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
-    const weekTrades = all.filter(t => {
-      const td = new Date(t.date);
-      return td >= weekStart && td < wkEnd;
-    });
-    const wins = weekTrades.filter(t => t.result === 'Win');
-    const actualR = wins.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
-    const trackedWins = wins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
-    const potentialR = trackedWins.reduce((s, t) => s + (t.potentialR || 0), 0);
-    const gap = potentialR - trackedWins.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
-    const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
-    const actualStr    = wins.length === 0 ? '—' : fmtR(actualR);
-    const potStr       = trackedWins.length === 0 ? '—' : fmtR(potentialR);
-    const gapStr       = trackedWins.length === 0 ? '—' : fmtR(gap);
-    const gapCls       = trackedWins.length === 0 ? '' : (gap > 0.5 ? 'bad' : '');
-
-    // Read existing answers; legacy reviews may have only `notes` — fold that into "What went well?"
+    // Read existing answers; legacy reviews may have only `notes` — fold that into the "what worked" field
     const e = existing || {};
     const weekChartUrl = (e.weekChart && e.weekChart.url) || '';
     const bestTradeUrl = (e.bestTrade && e.bestTrade.url) || '';
     const bestTradeNotes = (e.bestTrade && e.bestTrade.notes) || '';
-    const wentWell    = e.reflectionWentWell    != null ? e.reflectionWentWell    : (e.notes || '');
+    const missedUrl   = (e.missedTrade && e.missedTrade.url) || '';
+    const missedWins  = e.reflectionMissedWins  || '';
     const focusNext   = e.reflectionFocusNext   || '';
-    const learned     = e.reflectionLearned     || '';
+    // Q "what worked + what learned" merges the old wentWell + learned. If a legacy review
+    // had both fields filled, concatenate them so no text is lost. Otherwise fall back through.
+    let learned;
+    const hadLearned  = e.reflectionLearned  && e.reflectionLearned.trim().length;
+    const hadWentWell = e.reflectionWentWell && e.reflectionWentWell.trim().length;
+    if (hadLearned && hadWentWell)      learned = e.reflectionWentWell + '\n\n' + e.reflectionLearned;
+    else if (hadLearned)                learned = e.reflectionLearned;
+    else if (hadWentWell)               learned = e.reflectionWentWell;
+    else                                learned = e.notes || '';
 
     // Escape HTML in values that get injected back into the DOM
     function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
-    // TV preview helper — same shape as bias/review previews used elsewhere in the app
-    function tvPreviewHtml(url) {
-      if (!url || !/^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(url)) return '';
-      // TV public chart URLs follow the pattern /x/<slug>/ — converting to /x/<slug>.png yields the image
-      const m = url.match(/tradingview\.com\/x\/([^\/\?#]+)/i);
-      if (!m) return '';
-      const imgUrl = `https://www.tradingview.com/x/${m[1]}/`;
-      return `<div class="reflect-q-preview"><img src="${imgUrl}" alt="Chart preview" onerror="this.parentElement.style.display='none';" /></div>`;
+    // Parse one URL per line. Trims whitespace and drops empty lines.
+    // Returns just the URLs that look like TradingView snapshot links.
+    function parseTvUrls(text) {
+      if (!text) return [];
+      return text.split(/\r?\n/).map(s => s.trim()).filter(s =>
+        /^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(s)
+      );
+    }
+
+    // Render preview thumbnails for each valid TV URL. Empty when no valid URLs found.
+    // Each thumbnail is wrapped in an <a> link that opens the TV chart in a new tab on click.
+    function tvPreviewMultiHtml(text) {
+      const urls = parseTvUrls(text);
+      if (urls.length === 0) return '';
+      const cards = urls.map(url => {
+        const m = url.match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+        if (!m) return '';
+        const imgUrl = `https://www.tradingview.com/x/${m[1]}/`;
+        const safeUrl = url.replace(/"/g, '&quot;');
+        return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="Open chart in new tab"><img src="${imgUrl}" alt="Chart preview" onerror="this.parentElement.style.display='none';" /></a>`;
+      }).filter(Boolean).join('');
+      return cards;
     }
 
     document.getElementById('review-modal-reflection').innerHTML = `
@@ -4515,38 +4527,22 @@
 
         <div class="reflect-question">
           <div class="reflect-q-label">Picture of the week's opportunities</div>
-          <input id="rfx-week-chart-url" class="reflect-q-url" type="url" placeholder="Paste TradingView snapshot URL (https://www.tradingview.com/x/...)" value="${esc(weekChartUrl)}" />
-          <div id="rfx-week-chart-preview">${tvPreviewHtml(weekChartUrl)}</div>
-        </div>
-
-        <div class="reflect-autostat">
-          <div class="reflect-autostat-cell">
-            <div class="reflect-autostat-label">Potential R (wins)</div>
-            <div class="reflect-autostat-value">${potStr}</div>
-            <div class="reflect-autostat-sub">${trackedWins.length} of ${wins.length} wins tracked</div>
-          </div>
-          <div class="reflect-autostat-cell">
-            <div class="reflect-autostat-label">Actual R (wins)</div>
-            <div class="reflect-autostat-value ${actualR > 0 ? 'good' : ''}">${actualStr}</div>
-            <div class="reflect-autostat-sub">${wins.length} winning trade${wins.length === 1 ? '' : 's'}</div>
-          </div>
-          <div class="reflect-autostat-cell">
-            <div class="reflect-autostat-label">Left on table</div>
-            <div class="reflect-autostat-value ${gapCls}">${gapStr}</div>
-            <div class="reflect-autostat-sub">${trackedWins.length === 0 ? 'No Potential R logged' : 'Potential − Actual'}</div>
-          </div>
-        </div>
-
-        <div class="reflect-question">
-          <div class="reflect-q-label">What went well?</div>
-          <textarea id="rfx-went-well" class="reflect-q-textarea" placeholder="Decisions, executions, patience moments…">${esc(wentWell)}</textarea>
+          <textarea id="rfx-week-chart-url" class="reflect-q-urls" rows="2" placeholder="Paste TradingView snapshot URLs — one per line.">${esc(weekChartUrl)}</textarea>
+          <div id="rfx-week-chart-preview" class="reflect-q-preview">${tvPreviewMultiHtml(weekChartUrl)}</div>
         </div>
 
         <div class="reflect-question">
           <div class="reflect-q-label">My best trade of the week — and why</div>
-          <input id="rfx-best-trade-url" class="reflect-q-url" type="url" placeholder="Paste TradingView snapshot URL for the trade" value="${esc(bestTradeUrl)}" />
-          <div id="rfx-best-trade-preview">${tvPreviewHtml(bestTradeUrl)}</div>
+          <textarea id="rfx-best-trade-url" class="reflect-q-urls" rows="2" placeholder="Paste TradingView snapshot URLs — one per line. Setup + entry + result charts all welcome.">${esc(bestTradeUrl)}</textarea>
+          <div id="rfx-best-trade-preview" class="reflect-q-preview">${tvPreviewMultiHtml(bestTradeUrl)}</div>
           <textarea id="rfx-best-trade-notes" class="reflect-q-textarea" placeholder="The trade itself + what made it your best…">${esc(bestTradeNotes)}</textarea>
+        </div>
+
+        <div class="reflect-question">
+          <div class="reflect-q-label">Winning trades I didn't take?</div>
+          <textarea id="rfx-missed-url" class="reflect-q-urls" rows="2" placeholder="Paste TradingView snapshot URLs — one per line. One chart per missed setup.">${esc(missedUrl)}</textarea>
+          <div id="rfx-missed-preview" class="reflect-q-preview">${tvPreviewMultiHtml(missedUrl)}</div>
+          <textarea id="rfx-missed-wins" class="reflect-q-textarea" placeholder="Setups you saw but skipped. What stopped you — fear, distraction, missed entry, wrong filter?">${esc(missedWins)}</textarea>
         </div>
 
         <div class="reflect-question">
@@ -4556,7 +4552,7 @@
 
         <div class="reflect-question">
           <div class="reflect-q-label">What did I learn about myself or the markets this week?</div>
-          <textarea id="rfx-learned" class="reflect-q-textarea" placeholder="Something you didn't know on Monday.">${esc(learned)}</textarea>
+          <textarea id="rfx-learned" class="reflect-q-textarea" placeholder="Something you didn't know on Monday. Process wins, executions, patience moments all count.">${esc(learned)}</textarea>
         </div>
 
         <div style="display:flex;justify-content:flex-end;margin-top:18px;">
@@ -4573,30 +4569,35 @@
         weekKey: currentReview.key,
         weekStart: currentReview.start.toISOString(),
         weekEnd: currentReview.end.toISOString(),
-        weekChart: { url: document.getElementById('rfx-week-chart-url').value.trim() },
-        reflectionWentWell:  document.getElementById('rfx-went-well').value,
+        weekChart: { url: document.getElementById('rfx-week-chart-url').value },
         bestTrade: {
-          url:   document.getElementById('rfx-best-trade-url').value.trim(),
+          url:   document.getElementById('rfx-best-trade-url').value,
           notes: document.getElementById('rfx-best-trade-notes').value
         },
-        reflectionFocusNext: document.getElementById('rfx-focus-next').value,
-        reflectionLearned:   document.getElementById('rfx-learned').value,
+        missedTrade: {
+          url: document.getElementById('rfx-missed-url').value
+        },
+        reflectionMissedWins: document.getElementById('rfx-missed-wins').value,
+        reflectionFocusNext:  document.getElementById('rfx-focus-next').value,
+        reflectionLearned:    document.getElementById('rfx-learned').value,
         savedAt: new Date().toISOString()
       };
       if (idx >= 0) data.weeklyReviews[idx] = entry; else data.weeklyReviews.push(entry);
       saveData();
     }
 
-    // Refresh the TV preview when the URL field loses focus (avoids spamming requests on every keystroke)
+    // Refresh the TV preview when the URL field loses focus (avoids spamming requests on every keystroke).
+    // Each field is a textarea holding one URL per line — the multi-URL helper handles parsing + rendering.
     function wireUrlPreview(urlInputId, previewContainerId) {
       const inp = document.getElementById(urlInputId);
       const prv = document.getElementById(previewContainerId);
-      inp.addEventListener('blur', () => { prv.innerHTML = tvPreviewHtml(inp.value.trim()); persist(); });
+      inp.addEventListener('blur', () => { prv.innerHTML = tvPreviewMultiHtml(inp.value); persist(); });
       inp.addEventListener('input', persist);
     }
     wireUrlPreview('rfx-week-chart-url', 'rfx-week-chart-preview');
     wireUrlPreview('rfx-best-trade-url', 'rfx-best-trade-preview');
-    ['rfx-went-well', 'rfx-best-trade-notes', 'rfx-focus-next', 'rfx-learned'].forEach(id => {
+    wireUrlPreview('rfx-missed-url',     'rfx-missed-preview');
+    ['rfx-missed-wins', 'rfx-best-trade-notes', 'rfx-focus-next', 'rfx-learned'].forEach(id => {
       document.getElementById(id).addEventListener('input', persist);
     });
 
@@ -4621,21 +4622,12 @@
       ? `**${n}'s Week — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`
       : `**Weekly Review — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`;
 
-    // Win-specific R aggregates — also shown in the auto-stats card in the UI
-    const all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
-    const wkEnd = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
-    const wins = all.filter(t => {
-      const td = new Date(t.date);
-      return td >= weekStart && td < wkEnd && t.result === 'Win';
-    });
-    const tracked = wins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
-    const actualR    = wins.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
-    const potentialR = tracked.reduce((s, t) => s + (t.potentialR || 0), 0);
-    const gap        = potentialR - tracked.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
-    const fmtR  = r => (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
-    const wrStr = stats.wr != null ? Math.round(stats.wr * 100) + '%' : '—';
+    // Potential R left on the table — same value as the KPI card in the modal
+    const potLeft = (stats.mfe && stats.mfe.tracked > 0) ? stats.mfe.totalLeft : null;
+    const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
     const totalRStr = (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(2) + 'R';
     const netStr   = (stats.net >= 0 ? '+£' : '-£') + Math.abs(stats.net).toFixed(2);
+    const potStr   = potLeft == null ? '—' : fmtR(potLeft);
 
     const lines = [header, ''];
     // Numbers block — fixed-width labels for clean alignment in Discord's monospace blocks
@@ -4644,40 +4636,43 @@
     lines.push(`Wins         ${stats.wins}`);
     lines.push(`Losses       ${stats.losses}`);
     lines.push(`Break-even   ${stats.bes}`);
-    lines.push(`Win Rate     ${wrStr}`);
     lines.push(`Total R      ${totalRStr}`);
     lines.push(`Net P&L      ${netStr}`);
-    if (tracked.length > 0) {
-      lines.push('');
-      lines.push(`Potential R  ${fmtR(potentialR)}   (wins tracked: ${tracked.length}/${wins.length})`);
-      lines.push(`Actual R     ${fmtR(actualR)}`);
-      lines.push(`Left on table ${fmtR(gap)}`);
-    }
+    lines.push(`Potential R  ${potStr}${potLeft == null ? '   (no Potential R logged)' : '   (left on table)'}`);
     lines.push('```');
 
-    // Pull the latest text from the form (not the persisted snapshot — user might have unfocused fields)
-    const weekChartUrl = document.getElementById('rfx-week-chart-url').value.trim();
-    const wentWell     = document.getElementById('rfx-went-well').value.trim();
-    const bestTradeUrl = document.getElementById('rfx-best-trade-url').value.trim();
-    const bestTradeTxt = document.getElementById('rfx-best-trade-notes').value.trim();
-    const focusNext    = document.getElementById('rfx-focus-next').value.trim();
-    const learned      = document.getElementById('rfx-learned').value.trim();
+    // Pull the latest text from the form (not the persisted snapshot — user might have unfocused fields).
+    // URL fields are multi-line: each line is treated as a separate TV link Discord can auto-embed.
+    function extractTvUrls(raw) {
+      if (!raw) return [];
+      return raw.split(/\r?\n/).map(s => s.trim()).filter(s =>
+        /^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(s)
+      );
+    }
+    const weekChartUrls = extractTvUrls(document.getElementById('rfx-week-chart-url').value);
+    const bestTradeUrls = extractTvUrls(document.getElementById('rfx-best-trade-url').value);
+    const bestTradeTxt  = document.getElementById('rfx-best-trade-notes').value.trim();
+    const missedUrls    = extractTvUrls(document.getElementById('rfx-missed-url').value);
+    const missedWins    = document.getElementById('rfx-missed-wins').value.trim();
+    const focusNext     = document.getElementById('rfx-focus-next').value.trim();
+    const learned       = document.getElementById('rfx-learned').value.trim();
 
-    if (weekChartUrl) {
+    if (weekChartUrls.length > 0) {
       lines.push('');
       lines.push('**Week\'s chart**');
-      lines.push(weekChartUrl);
+      weekChartUrls.forEach(u => lines.push(u));
     }
-    if (wentWell) {
-      lines.push('');
-      lines.push('**What went well**');
-      lines.push(wentWell);
-    }
-    if (bestTradeUrl || bestTradeTxt) {
+    if (bestTradeUrls.length > 0 || bestTradeTxt) {
       lines.push('');
       lines.push('**Best trade of the week**');
-      if (bestTradeUrl) lines.push(bestTradeUrl);
+      bestTradeUrls.forEach(u => lines.push(u));
       if (bestTradeTxt) lines.push(bestTradeTxt);
+    }
+    if (missedUrls.length > 0 || missedWins) {
+      lines.push('');
+      lines.push('**Winning trades I didn\'t take**');
+      missedUrls.forEach(u => lines.push(u));
+      if (missedWins) lines.push(missedWins);
     }
     if (focusNext) {
       lines.push('');
@@ -4783,9 +4778,12 @@
       // Only nudge if no reflection has been started for this week yet
       const existing = (data.weeklyReviews || []).find(r => r.weekKey === weekKey);
       const hasReflection = existing && (
-        existing.reflectionWentWell || existing.reflectionFocusNext ||
-        existing.reflectionLearned  || (existing.bestTrade && existing.bestTrade.notes) ||
-        (existing.weekChart && existing.weekChart.url) || existing.notes
+        existing.reflectionFocusNext || existing.reflectionLearned ||
+        existing.reflectionMissedWins || existing.reflectionWentWell || // legacy field, kept for back-compat
+        (existing.bestTrade && existing.bestTrade.notes) ||
+        (existing.weekChart && existing.weekChart.url) ||
+        (existing.missedTrade && existing.missedTrade.url) ||
+        existing.notes
       );
       if (hasReflection) return;
       data._lastWeeklyPrompt = nudgeKey;
