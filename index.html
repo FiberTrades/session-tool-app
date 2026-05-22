@@ -164,7 +164,7 @@
   .import-mt5-btn { background: transparent; border: 1px solid var(--text-mid); color: var(--text); padding: 8px 16px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: all 200ms; }
   .import-mt5-btn:hover { background: var(--text); color: var(--bg); }
   .trades-wrap { margin-left: 60px; }
-  .trade-row, .trade-row-headers { display: grid; grid-template-columns: 32px minmax(75px, 1fr) 70px 78px minmax(120px, 1.4fr) 70px 88px 88px 65px 65px minmax(85px, 1fr) minmax(85px, 1fr) 32px; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; width: 100%; }
+  .trade-row, .trade-row-headers { display: grid; grid-template-columns: 32px minmax(75px, 1fr) 70px 78px minmax(120px, 1.4fr) 70px 88px 88px 72px 65px minmax(85px, 1fr) minmax(85px, 1fr) 32px; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; width: 100%; }
   .trade-row-headers { margin-bottom: 4px; }
   .trade-header-cell { background: var(--bg-elev); padding: 8px 8px; font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); text-align: center; }
   .trade-cell { background: var(--bg); padding: 8px 8px; display: flex; align-items: center; }
@@ -785,7 +785,7 @@
           <div class="trade-header-cell">Side</div>
           <div class="trade-header-cell">Entry</div>
           <div class="trade-header-cell">Exit</div>
-          <div class="trade-header-cell">Risk £</div>
+          <div class="trade-header-cell">Risk £ · SL</div>
           <div class="trade-header-cell">Costs £</div>
           <div class="trade-header-cell">Gross £</div>
           <div class="trade-header-cell">Net £</div>
@@ -1238,8 +1238,11 @@
       <div class="label">Exit Time</div>
       <div class="field"><input id="edit-exit" type="time" /></div>
 
-      <div class="label">Risk £</div>
-      <div class="field"><input id="edit-risk" type="number" step="any" /></div>
+      <div class="label">Risk £ &amp; SL <span style="color:var(--text-dim);font-size:10px;text-transform:none;letter-spacing:0;">(SL = stop distance in pips)</span></div>
+      <div class="field" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+        <input id="edit-risk" type="number" step="any" placeholder="Risk £" />
+        <input id="edit-sl" type="number" step="any" placeholder="SL (pips)" />
+      </div>
 
       <div class="label">Gross £</div>
       <div class="field"><input id="edit-profit" type="number" step="any" placeholder="(auto from R × Risk if blank)" /></div>
@@ -1695,7 +1698,7 @@
     return { traded: null, trades: [], execution: null, focus: null, close: null, rice: null, tvLinks: [], concepts: [], mindset: [], reflection: '' };
   }
   function newTradeBlank() {
-    return { result: '', r: '', type: '', side: '', entryTime: '', exitTime: '', risk: '', costs: '' };
+    return { result: '', r: '', type: '', side: '', entryTime: '', exitTime: '', risk: '', sl: '', costs: '' };
   }
 
   function loadData() {
@@ -1890,6 +1893,7 @@
     if (t.entryTime === undefined) t.entryTime = '';
     if (t.exitTime === undefined) t.exitTime = '';
     if (t.risk === undefined) t.risk = '';
+    if (t.sl === undefined) t.sl = '';
     if (t.costs === undefined) t.costs = '';
     if (t.side === undefined) t.side = '';
     if (!t.id) t.id = genId();
@@ -1947,6 +1951,27 @@
     if (t.result === 'Win')  return parseFloat(t.r) || 0;
     if (t.result === 'Lose') return -1;
     return 0;
+  }
+  // Pips equivalent of tradeRforMath. Wins use captured pips; losses derive from per-trade SL; BE = 0.
+  function tradePipsForMath(t) {
+    if (t.result === 'Win') {
+      const v = parseFloat(t.pips);
+      return !isNaN(v) ? v : 0;
+    }
+    if (t.result === 'Lose') {
+      const sl = parseFloat(t.sl);
+      return !isNaN(sl) && sl > 0 ? -sl : 0;
+    }
+    return 0;
+  }
+  // True when this trade contributes a tracked pips value (rather than defaulting to 0).
+  function tradeHasTrackedPips(t) {
+    if (t.result === 'Win') return typeof t.pips === 'number' && !isNaN(t.pips);
+    if (t.result === 'Lose') {
+      const sl = parseFloat(t.sl);
+      return !isNaN(sl) && sl > 0;
+    }
+    return false;
   }
   function calcSeriesStats(trades) {
     const w = trades.filter(t => t.result === 'Win').length;
@@ -2333,7 +2358,11 @@
         </select></div>
         <div class="trade-cell"><input class="trade-input entry-input" type="time" /></div>
         <div class="trade-cell"><input class="trade-input exit-input" type="time" /></div>
-        <div class="trade-cell"><input class="trade-input risk-input" type="number" step="any" placeholder="£" /></div>
+        <div class="trade-cell trade-cell-dual">
+          <input class="trade-input trade-input-tiny risk-input" type="number" step="any" placeholder="£" title="Risk in £" />
+          <span class="trade-sep">·</span>
+          <input class="trade-input trade-input-tiny sl-input" type="number" step="any" placeholder="SL" title="Stop loss distance in pips" />
+        </div>
         <div class="trade-cell"><input class="trade-input costs-input" type="number" step="any" placeholder="£" /></div>
         <div class="trade-cell"><input class="trade-input gross-input" type="number" step="any" placeholder="auto" style="font-family:'Fraunces',serif;font-size:13px;" /></div>
         <div class="trade-cell"><input class="trade-input net-input" type="number" step="any" placeholder="auto" style="font-family:'Fraunces',serif;font-size:13px;" /></div>
@@ -2346,7 +2375,6 @@
       const pipsInput    = row.querySelector('.pips-input');
       const potpipsInput = row.querySelector('.potpips-input');
       rInput.value    = t.r || '';
-      pipsInput.value = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : '';
       potrInput.value    = (typeof t.potentialR    === 'number' && !isNaN(t.potentialR))    ? t.potentialR    : '';
       potpipsInput.value = (typeof t.potentialPips === 'number' && !isNaN(t.potentialPips)) ? t.potentialPips : '';
       // Pot R / Pot pips only meaningful on Wins — dim/disable visually for other results
@@ -2360,11 +2388,43 @@
         });
       };
       syncPotREnabled();
+      // Pips input: editable on Win (user logs captured pips), locked on Lose (auto -SL) and BE (always 0).
+      const syncPipsCell = () => {
+        const tr = data.review.trades[idx];
+        if (tr.result === 'Win') {
+          pipsInput.readOnly = false;
+          pipsInput.style.opacity = '';
+          pipsInput.placeholder = 'P';
+          if (document.activeElement !== pipsInput) {
+            pipsInput.value = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips : '';
+          }
+        } else if (tr.result === 'Lose') {
+          pipsInput.readOnly = true;
+          pipsInput.style.opacity = '0.6';
+          pipsInput.placeholder = 'auto';
+          const slVal = parseFloat(tr.sl);
+          pipsInput.value = (!isNaN(slVal) && slVal > 0) ? -slVal : '';
+          tr.pips = null;
+        } else if (tr.result === 'BE') {
+          pipsInput.readOnly = true;
+          pipsInput.style.opacity = '0.6';
+          pipsInput.placeholder = '';
+          pipsInput.value = '0';
+          tr.pips = null;
+        } else {
+          pipsInput.readOnly = false;
+          pipsInput.style.opacity = '';
+          pipsInput.placeholder = 'P';
+          pipsInput.value = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips : '';
+        }
+      };
+      syncPipsCell();
       row.querySelector('.type-select').value = t.type || '';
       row.querySelector('.side-select').value = t.side || '';
       row.querySelector('.entry-input').value = t.entryTime || '';
       row.querySelector('.exit-input').value = t.exitTime || '';
       row.querySelector('.risk-input').value = t.risk || '';
+      row.querySelector('.sl-input').value = t.sl || '';
       row.querySelector('.costs-input').value = t.costs || '';
       // Initialise gross + net inputs with displayed values
       const grossEl = row.querySelector('.gross-input');
@@ -2400,6 +2460,7 @@
           data.review.trades[idx].potentialPips = null;
         }
         syncPotREnabled();
+        syncPipsCell();
         lightUpdate();
       });
       rInput.addEventListener('input', e => {
@@ -2440,6 +2501,12 @@
       row.querySelector('.entry-input').addEventListener('input', e => { data.review.trades[idx].entryTime = e.target.value; saveData(); });
       row.querySelector('.exit-input').addEventListener('input', e => { data.review.trades[idx].exitTime = e.target.value; saveData(); });
       row.querySelector('.risk-input').addEventListener('input', e => { data.review.trades[idx].risk = e.target.value.trim(); lightUpdate(); });
+      row.querySelector('.sl-input').addEventListener('input', e => {
+        data.review.trades[idx].sl = e.target.value.trim();
+        // SL changing on a Lose row updates the derived pips display
+        if (data.review.trades[idx].result === 'Lose') syncPipsCell();
+        lightUpdate();
+      });
       row.querySelector('.costs-input').addEventListener('input', e => { data.review.trades[idx].costs = e.target.value.trim(); lightUpdate(); });
       grossEl.addEventListener('input', e => {
         const v = e.target.value.trim();
@@ -2620,9 +2687,9 @@
       const netR = calcNetR();
       if (netR !== null) lines.push(`            Net: ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`);
       // Total pips line — show whenever any trade in the session has pips logged
-      const tradesWithPips = r.trades.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+      const tradesWithPips = r.trades.filter(t => tradeHasTrackedPips(t));
       if (tradesWithPips.length > 0) {
-        const netPips = tradesWithPips.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0);
+        const netPips = tradesWithPips.reduce((s, t) => s + tradePipsForMath(t), 0);
         lines.push(`            Net pips: ${netPips >= 0 ? '+' : ''}${netPips.toFixed(0)}p`);
       }
       if (r.execution) lines.push(`Execution   ${r.execution}`);
@@ -2770,6 +2837,7 @@
         entryTime: t.entryTime || '',
         exitTime: t.exitTime || '',
         risk: t.risk ? parseFloat(t.risk) : null,
+        sl: t.sl ? parseFloat(t.sl) : null,
         costs: t.costs ? parseFloat(t.costs) : null,
         actualGross: (t.actualGross != null && !isNaN(t.actualGross)) ? parseFloat(t.actualGross) : null,
         date: sessionDate.toISOString(),
@@ -2842,8 +2910,8 @@
       const elTotal = document.getElementById(`${prefix}-total`);
       if (elTotal) {
         // Both R and pips always shown — stacked, primary R + secondary pips.
-        const totalPips = (data.currentSeries || []).reduce((s, t) => s + (parseFloat(t.pips) || 0), 0);
-        const tradesWithPips = (data.currentSeries || []).filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+        const totalPips = (data.currentSeries || []).reduce((s, t) => s + tradePipsForMath(t), 0);
+        const tradesWithPips = (data.currentSeries || []).filter(t => tradeHasTrackedPips(t));
         const rStr  = b.total > 0 ? (b.totalR >= 0 ? '+' : '') + b.totalR.toFixed(1) + 'R' : '0';
         const rCls  = b.totalR > 0 ? 'good' : b.totalR < 0 ? 'bad' : '';
         const pipsStr = tradesWithPips.length > 0
@@ -2865,10 +2933,10 @@
         if (isPipsView) {
           // Avg pips across wins with pips logged (in current series only — match elTotal's scope)
           const seriesWins = (data.currentSeries || []).filter(t => t.result === 'Win');
-          const winsWithPips = seriesWins.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+          const winsWithPips = seriesWins.filter(t => tradeHasTrackedPips(t));
           if (winsWithPips.length === 0) { elAvgWin.textContent = '—'; elAvgWin.className = 'stat-value'; }
           else {
-            const avgPips = winsWithPips.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0) / winsWithPips.length;
+            const avgPips = winsWithPips.reduce((s, t) => s + tradePipsForMath(t), 0) / winsWithPips.length;
             elAvgWin.textContent = '+' + avgPips.toFixed(0) + 'p';
             elAvgWin.className = 'stat-value good';
           }
@@ -2882,10 +2950,10 @@
         if (isPipsView) {
           // Expectancy in pips: total pips ÷ trades with pips logged
           const seriesAll = data.currentSeries || [];
-          const withPips = seriesAll.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+          const withPips = seriesAll.filter(t => tradeHasTrackedPips(t));
           if (withPips.length === 0) { elExp.textContent = '—'; elExp.className = 'stat-value'; }
           else {
-            const totalPipsAll = seriesAll.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0);
+            const totalPipsAll = seriesAll.reduce((s, t) => s + tradePipsForMath(t), 0);
             const expPips = totalPipsAll / withPips.length;
             elExp.textContent = (expPips >= 0 ? '+' : '') + expPips.toFixed(1) + 'p';
             elExp.className = 'stat-value' + (expPips > 0 ? ' good' : expPips < 0 ? ' bad' : '');
@@ -2925,7 +2993,7 @@
     const seriesRLeftTracked = currentSeriesWins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     const seriesRLeft = seriesRLeftTracked.reduce((s, t) => s + ((t.potentialR || 0) - (parseFloat(t.r) || 0)), 0);
     const seriesPipsTracked = currentSeriesWins.filter(t => typeof t.potentialPips === 'number' && !isNaN(t.potentialPips));
-    const seriesPipsLeft = seriesPipsTracked.reduce((s, t) => s + ((t.potentialPips || 0) - (parseFloat(t.pips) || 0)), 0);
+    const seriesPipsLeft = seriesPipsTracked.reduce((s, t) => s + ((t.potentialPips || 0) - tradePipsForMath(t)), 0);
     const seriesRLeftStr = seriesRLeftTracked.length === 0 ? '—'
       : (seriesRLeft >= 0 ? '+' : '') + seriesRLeft.toFixed(2) + 'R';
     const seriesRLeftCls = seriesRLeft > 0.5 ? 'bad' : '';
@@ -2994,8 +3062,8 @@
     let gW=0, gL=0;
     all.forEach(t => { if (t.result==='Win') gW+=t.r; if (t.result==='Lose') gL+=1; });
     const totalR = gW - gL;
-    const totalPips = all.reduce((s, t) => s + (parseFloat(t.pips) || 0), 0);
-    const tradesWithPips = all.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+    const totalPips = all.reduce((s, t) => s + tradePipsForMath(t), 0);
+    const tradesWithPips = all.filter(t => tradeHasTrackedPips(t));
     const pf = gL > 0 ? gW/gL : (gW > 0 ? Infinity : null);
     const exp = all.length > 0 ? totalR/all.length : null;
     const expPips = tradesWithPips.length > 0 ? totalPips/tradesWithPips.length : null;
@@ -3012,8 +3080,8 @@
     if (expPips !== null) lines.push(`Expectancy Pips:   ${expPips >= 0 ? '+' : ''}${expPips.toFixed(1)}p / trade`);
     if (cs.length > 0) {
       const s = calcSeriesStats(cs);
-      const seriesPips = cs.reduce((sum, t) => sum + (parseFloat(t.pips) || 0), 0);
-      const seriesPipsTracked = cs.filter(t => typeof t.pips === 'number' && !isNaN(t.pips)).length;
+      const seriesPips = cs.reduce((sum, t) => sum + tradePipsForMath(t), 0);
+      const seriesPipsTracked = cs.filter(t => tradeHasTrackedPips(t)).length;
       lines.push('');
       lines.push(`Current Series (${cs.length}/10): W:${s.w} L:${s.l} BE:${s.be} Net:${s.netR >= 0 ? '+' : ''}${s.netR.toFixed(2)}R${seriesPipsTracked > 0 ? ` · ${seriesPips >= 0 ? '+' : ''}${seriesPips.toFixed(0)}p` : ''}`);
     }
@@ -3069,8 +3137,8 @@
     const netR = trades.reduce((s,t) => s + tradeRforMath(t), 0);
     const avgR = trades.length > 0 ? netR/trades.length : null;
     // Pips equivalent — each trade contributes its logged pips (signed). Skip trades with no pips.
-    const tradesWithPips = trades.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
-    const netPips = tradesWithPips.reduce((s,t) => s + (parseFloat(t.pips) || 0), 0);
+    const tradesWithPips = trades.filter(t => tradeHasTrackedPips(t));
+    const netPips = tradesWithPips.reduce((s,t) => s + tradePipsForMath(t), 0);
     const avgPips = tradesWithPips.length > 0 ? netPips/tradesWithPips.length : null;
     return { count: trades.length, w, l, be, wr, netR, avgR, netPips, avgPips, pipsCount: tradesWithPips.length };
   }
@@ -3122,14 +3190,14 @@
       const p = parseFloat(t.pips);
       return s + (!isNaN(p) ? p : 0);
     }, 0);
-    const tradesWithPips = all.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+    const tradesWithPips = all.filter(t => tradeHasTrackedPips(t));
     const expPipsVal = tradesWithPips.length > 0 ? totalPips / tradesWithPips.length : null;
 
     const isPipsView = data.settings.unitView === 'pips';
 
     // Total R · Pips (lifetime) — always show both values stacked
     const totalREl = document.getElementById('kpi-totalr');
-    const tradesWithPipsLifetime = all.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+    const tradesWithPipsLifetime = all.filter(t => tradeHasTrackedPips(t));
     const totalRStr  = (totalR >= 0 ? '+' : '') + totalR.toFixed(1) + 'R';
     const totalRCls  = totalR > 0 ? 'good' : totalR < 0 ? 'bad' : '';
     const totalPipsStr = tradesWithPipsLifetime.length > 0
@@ -3166,7 +3234,7 @@
     const ltRLeftTracked = wins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     const ltRLeft = ltRLeftTracked.reduce((s, t) => s + ((t.potentialR || 0) - (parseFloat(t.r) || 0)), 0);
     const trackedPipsWins = wins.filter(t => typeof t.potentialPips === 'number' && !isNaN(t.potentialPips));
-    const ltPipsLeft = trackedPipsWins.reduce((s, t) => s + ((t.potentialPips || 0) - (parseFloat(t.pips) || 0)), 0);
+    const ltPipsLeft = trackedPipsWins.reduce((s, t) => s + ((t.potentialPips || 0) - tradePipsForMath(t)), 0);
     const rLeftStr  = ltRLeftTracked.length === 0 ? '—'
                     : (ltRLeft >= 0 ? '+' : '') + ltRLeft.toFixed(2) + 'R';
     const rLeftCls  = ltRLeft > 0.5 ? 'bad' : '';
@@ -3178,9 +3246,9 @@
 
     const totalWinR = wins.reduce((s,t) => s + t.r, 0);
     const totalLossR = losses.length;
-    const totalWinPips = wins.reduce((s,t) => s + (parseFloat(t.pips) || 0), 0);
-    const totalLossPips = losses.reduce((s,t) => s + (parseFloat(t.pips) || 0), 0); // expected negative
-    const winsWithPips = wins.filter(t => typeof t.pips === 'number' && !isNaN(t.pips));
+    const totalWinPips = wins.reduce((s,t) => s + tradePipsForMath(t), 0);
+    const totalLossPips = losses.reduce((s,t) => s + tradePipsForMath(t), 0); // expected negative
+    const winsWithPips = wins.filter(t => tradeHasTrackedPips(t));
     document.getElementById('wl-win-count').textContent = wins.length;
     document.getElementById('wl-loss-count').textContent = losses.length;
     document.getElementById('wl-be-count').textContent = bes.length;
@@ -4323,6 +4391,7 @@
     document.getElementById('edit-entry').value = t.entryTime || '';
     document.getElementById('edit-exit').value = t.exitTime || '';
     document.getElementById('edit-risk').value = t.risk != null ? t.risk : '';
+    document.getElementById('edit-sl').value = t.sl != null ? t.sl : '';
     document.getElementById('edit-profit').value = t.actualGross != null ? t.actualGross.toFixed(2) : '';
     document.getElementById('edit-costs').value = t.costs != null ? t.costs : '';
     document.getElementById('edit-netpl').value = (t.result && (t.r != null || t.actualGross != null)) ? tradeNetPL(t).toFixed(2) : '';
@@ -4438,6 +4507,8 @@
     t.exitTime = document.getElementById('edit-exit').value || '';
     const riskVal = parseFloat(document.getElementById('edit-risk').value);
     t.risk = isNaN(riskVal) ? null : riskVal;
+    const slVal = parseFloat(document.getElementById('edit-sl').value);
+    t.sl = isNaN(slVal) ? null : slVal;
     const profitRaw = document.getElementById('edit-profit').value;
     const profitVal = parseFloat(profitRaw);
     t.actualGross = (profitRaw !== '' && !isNaN(profitVal)) ? profitVal : null;
@@ -4699,7 +4770,7 @@
     // Pips-mode
     const trackedP = winsArr.filter(t => typeof t.potentialPips === 'number' && !isNaN(t.potentialPips));
     const totalLeftPips = trackedP.length === 0 ? 0
-      : trackedP.reduce((s, t) => s + ((t.potentialPips || 0) - (parseFloat(t.pips) || 0)), 0);
+      : trackedP.reduce((s, t) => s + ((t.potentialPips || 0) - tradePipsForMath(t)), 0);
     const avgLeftPips = trackedP.length === 0 ? 0 : totalLeftPips / trackedP.length;
     // Maintain the legacy fields (tracked, totalLeft, avgLeft) for back-compat with any caller
     // that hasn't been updated yet — these still reflect R-mode.
