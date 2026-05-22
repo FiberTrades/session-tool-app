@@ -87,15 +87,23 @@
   .collapsible-caret { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 18px; color: var(--text-dim); transition: transform 200ms; display: inline-block; }
   .collapsible-header[aria-expanded="true"] .collapsible-caret { transform: rotate(90deg); }
   .collapsible-body { margin-left: 0; }
-  /* Potential R trade-by-trade table */
+  /* Potential R trade-by-trade table — list-style density. Small inline thumbnail per row. */
   .potr-table { width: 100%; border-collapse: collapse; margin: 0 0 24px 60px; width: calc(100% - 60px); font-family: 'DM Mono', monospace; font-size: 11px; }
-  .potr-table th { text-align: left; padding: 10px 12px; color: var(--text-dim); font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; font-size: 9px; border-bottom: 1px solid var(--border-2); }
-  .potr-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); color: var(--text-mid); }
+  .potr-table th { text-align: left; padding: 8px 10px; color: var(--text-dim); font-weight: 400; letter-spacing: 0.1em; text-transform: uppercase; font-size: 9px; border-bottom: 1px solid var(--border-2); background: var(--bg-elev); }
+  .potr-table td { padding: 6px 10px; border-bottom: 1px solid var(--border); color: var(--text-mid); vertical-align: middle; }
+  .potr-table tbody tr { transition: background 100ms; }
+  .potr-table tbody tr:hover { background: var(--bg-elev); }
   .potr-table td.numeric { text-align: right; }
   .potr-table td.good { color: var(--good); }
   .potr-table td.bad  { color: var(--bad); }
   .potr-table tr:last-child td { border-bottom: none; }
-  .potr-table .potr-trade-date { color: var(--text); font-family: 'Fraunces', serif; font-style: italic; font-size: 13px; }
+  .potr-date-cell { color: var(--text); }
+  /* Thumbnail cell — small inline chart that opens in new tab. Sized to fit row line-height. */
+  .potr-thumb-cell { padding: 4px 10px; width: 60px; }
+  .potr-row-thumb { display: inline-block; width: 50px; height: 28px; border: 1px solid var(--border-2); background: var(--bg-elev); overflow: hidden; transition: border-color 150ms; }
+  .potr-row-thumb:hover { border-color: var(--text-mid); }
+  .potr-row-thumb img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .potr-row-thumb-empty { display: inline-block; width: 50px; text-align: center; color: var(--text-dim); }
   .potr-empty { color: var(--text-dim); font-family: 'Fraunces', serif; font-style: italic; font-size: 14px; margin: 0 0 24px 60px; }
   /* Simulator: cards in a row showing what-if R totals at different "hold longer" buckets */
   .potr-sim-title { font-family: 'Fraunces', serif; font-size: 16px; color: var(--text); margin: 0 0 4px 60px; }
@@ -1087,6 +1095,19 @@
     </section>
 
     <section>
+      <button type="button" id="potr-toggle" class="collapsible-header" aria-expanded="false">
+        <span class="section-num">—</span>
+        <span class="section-title">Potential R Analysis</span>
+        <span class="collapsible-caret">›</span>
+      </button>
+      <div class="collapsible-body" id="potr-body" style="display:none;">
+        <p class="section-hint">A trade-by-trade look at the R you captured vs. the R that was available. The "what if" simulator shows the theoretical ceiling if you held winners longer — not a guarantee you would have actually captured it.</p>
+        <div id="potr-table-wrap"></div>
+        <div id="potr-sim-wrap"></div>
+      </div>
+    </section>
+
+    <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title">Tags Analysis</span></div>
       <p class="section-hint">Your 10 most-used concept and mindset tags across all trades.</p>
 
@@ -1104,20 +1125,9 @@
         </div>
       </div>
     </section>
-
-    <section>
-      <button type="button" id="potr-toggle" class="collapsible-header" aria-expanded="false">
-        <span class="section-num">—</span>
-        <span class="section-title">Potential R Analysis</span>
-        <span class="collapsible-caret">›</span>
-      </button>
-      <div class="collapsible-body" id="potr-body" style="display:none;">
-        <p class="section-hint">A trade-by-trade look at the R you captured vs. the R that was available. The "what if" simulator shows the theoretical ceiling if you held winners longer — not a guarantee you would have actually captured it.</p>
-        <div id="potr-table-wrap"></div>
-        <div id="potr-sim-wrap"></div>
-      </div>
-    </section>
   </div>
+
+  <div class="page" id="page-tradeview">
     <p style="font-family:'Fraunces',serif;font-style:italic;color:var(--text-mid);font-size:15px;margin-top:24px;">Every trade you've ever logged. Click any day on the calendar to see details.</p>
 
     <div class="year-glance" id="year-glance"></div>
@@ -3371,18 +3381,36 @@
       return;
     }
 
-    // Build the trade-by-trade table, sorted by date descending (most recent first).
+    // Build the trade-by-trade list, sorted by date descending (most recent first).
     const sorted = trackedWins.slice().sort((a, b) => new Date(b.date) - new Date(a.date));
     const rows = sorted.map(t => {
       const dt = new Date(t.date);
-      const dateStr = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+      // Compact date format — DD MMM YY — to keep rows tight
+      const dateStr = dt.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' });
       const captured = parseFloat(t.r) || 0;
       const potential = t.potentialR || 0;
       const left = potential - captured;
       const sign = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
       const leftCls = left > 0.5 ? 'bad' : left < 0.01 ? 'good' : '';
+      // Small inline thumbnail column. Pulls the trade's chart URL (review preferred, bias fallback).
+      // If no chart attached, show a muted dash placeholder instead of an empty cell.
+      const chartUrl = (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(t) : null;
+      let thumbCell;
+      if (chartUrl) {
+        const m = chartUrl.match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+        if (m) {
+          const imgUrl = `https://www.tradingview.com/x/${m[1]}/`;
+          const safeUrl = chartUrl.replace(/"/g, '&quot;');
+          thumbCell = `<a class="potr-row-thumb" href="${safeUrl}" target="_blank" rel="noopener noreferrer" title="Open chart in new tab"><img src="${imgUrl}" alt="" onerror="this.parentElement.innerHTML='<span class=&quot;potr-row-thumb-empty&quot;>—</span>';" /></a>`;
+        } else {
+          thumbCell = `<span class="potr-row-thumb-empty">—</span>`;
+        }
+      } else {
+        thumbCell = `<span class="potr-row-thumb-empty">—</span>`;
+      }
       return `<tr>
-        <td><span class="potr-trade-date">${dateStr}</span></td>
+        <td class="potr-thumb-cell">${thumbCell}</td>
+        <td class="potr-date-cell">${dateStr}</td>
         <td>${t.side || '—'}</td>
         <td class="numeric good">${sign(captured)}</td>
         <td class="numeric">${sign(potential)}</td>
@@ -3392,6 +3420,7 @@
     tableWrap.innerHTML = `<table class="potr-table">
       <thead>
         <tr>
+          <th style="width: 60px;"></th>
           <th>Date</th>
           <th>Side</th>
           <th style="text-align:right;">Captured</th>
