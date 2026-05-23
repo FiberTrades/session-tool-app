@@ -763,6 +763,11 @@
   .btn.danger:hover { background: var(--bad); color: var(--bg); }
   .toast { position: fixed; bottom: 32px; left: 50%; transform: translateX(-50%) translateY(100px); background: var(--text); color: var(--bg); padding: 14px 26px; font-size: 10px; font-weight: 500; letter-spacing: 0.3em; text-transform: uppercase; transition: transform 350ms cubic-bezier(0.16, 1, 0.3, 1); z-index: 200; }
   .toast.show { transform: translateX(-50%) translateY(0); }
+  /* Snackbar variant with inline action button (e.g. UNDO after a delete) */
+  .toast.with-action { display: flex; align-items: center; gap: 18px; padding: 10px 10px 10px 26px; letter-spacing: 0.18em; font-size: 11px; }
+  .toast.with-action .toast-msg { font-weight: 500; }
+  .toast-action-btn { background: transparent; color: var(--bg); border: 1px solid rgba(0,0,0,0.35); padding: 9px 18px; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; cursor: pointer; transition: all 180ms; }
+  .toast-action-btn:hover { background: var(--bg); color: var(--text); border-color: var(--bg); }
   /* Session-alert variant — larger, mixed case, longer message */
   .toast.session-alert { font-size: 14px; letter-spacing: 0.02em; text-transform: none; padding: 20px 32px; font-family: 'Fraunces', serif; font-weight: 400; border: 1px solid var(--border-2); box-shadow: 0 4px 24px rgba(0,0,0,0.45); }
   /* Both start and end session toasts now inherit the base white-bg / black-text styling.
@@ -1160,7 +1165,6 @@
 
     <div class="actions" style="margin-top:40px;">
       <button class="btn" id="stats-export">Copy for Discord</button>
-      <button class="btn danger" id="stats-clear">Clear All Stats</button>
     </div>
   </div>
 
@@ -3274,13 +3278,48 @@
     }
     copyToClipboard(lines.join('\n'));
   });
-  document.getElementById('stats-clear').addEventListener('click', () => {
-    if (confirm('Clear all logged trades?')) {
-      data.currentSeries = []; data.history = []; saveData();
-      renderStats(); renderTradesStats(); renderTradeView();
-      showToast('Stats cleared');
-    }
-  });
+  // ===== Snapshot helpers for snackbar-style undo =====
+  // Each destructive action captures a snapshot of the data BEFORE mutating,
+  // then shows a toast with an UNDO button that restores it for ~10 seconds.
+  // No stack — only the most recent action can be undone, matching Gmail/macOS
+  // expectations. Simple, predictable, no ambiguous "what does undo do now?"
+  function _snapshotData() { return JSON.parse(JSON.stringify(data)); }
+  function _applySnapshot(snap) {
+    Object.keys(data).forEach(k => { delete data[k]; });
+    Object.assign(data, snap);
+    saveData();
+    if (typeof renderStats === 'function') renderStats();
+    if (typeof renderTradesStats === 'function' && document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
+    if (typeof renderTradeView === 'function' && document.getElementById('page-tradeview').classList.contains('active')) renderTradeView();
+    if (typeof renderTrades === 'function') renderTrades();
+    if (typeof renderReviewPreview === 'function') renderReviewPreview();
+    if (typeof renderBiasPreview === 'function') renderBiasPreview();
+  }
+
+  // Snackbar-style undo toast. Stays up for `duration` ms (default 10s) and
+  // shows an inline UNDO button. Clicking it calls undoFn and dismisses.
+  let _undoToastTimer = null;
+  function showUndoToast(message, undoFn, duration = 10000) {
+    const toast = document.getElementById('toast');
+    if (!toast) return;
+    if (_undoToastTimer) { clearTimeout(_undoToastTimer); _undoToastTimer = null; }
+    toast.classList.remove('show', 'session-alert', 'start', 'end', 'with-action');
+    toast.innerHTML = `<span class="toast-msg">${message}</span><button type="button" class="toast-action-btn" id="toast-undo-btn">Undo</button>`;
+    toast.classList.add('with-action', 'show');
+    const btn = document.getElementById('toast-undo-btn');
+    btn.addEventListener('click', () => {
+      if (_undoToastTimer) { clearTimeout(_undoToastTimer); _undoToastTimer = null; }
+      undoFn();
+      toast.classList.remove('show');
+      // Brief delay before clearing markup so the slide-out animation finishes
+      setTimeout(() => { toast.classList.remove('with-action'); toast.innerHTML = ''; }, 400);
+    });
+    _undoToastTimer = setTimeout(() => {
+      toast.classList.remove('show');
+      setTimeout(() => { toast.classList.remove('with-action'); toast.innerHTML = ''; }, 400);
+      _undoToastTimer = null;
+    }, duration);
+  }
 
   function syncSettingsInputs() {
     document.getElementById('setting-balance').value = data.settings.startingBalance || '';
@@ -3891,7 +3930,10 @@
       } else if (rec.suggested < (rec.decimals === 0 ? 1 : 0.2)) {
         body = `<span class="rec-text"><strong>${rec.unitName}:</strong> avg captured ${fmt(rec.avgCaptured)} vs ${fmt(rec.avgPotential)} potential. Gap too small to meaningfully suggest holding longer.</span>`;
       } else {
-        body = `<span class="rec-text"><strong>${rec.unitName}:</strong> capturing <strong>${rec.captureRate.toFixed(0)}%</strong> of available (avg ${fmt(rec.avgCaptured)} vs ${fmt(rec.avgPotential)} potential per win). Try holding <strong class="rec-suggest">${fmt(rec.suggested)}</strong> longer per win.</span>`;
+        // Concrete impact: if you'd held `suggested` more per win across all n wins
+        const totalExtra = rec.suggested * rec.n;
+        const totalExtraStr = fmt(totalExtra);
+        body = `<span class="rec-text"><strong>${rec.unitName}:</strong> capturing <strong>${rec.captureRate.toFixed(0)}%</strong> of available (avg ${fmt(rec.avgCaptured)} vs ${fmt(rec.avgPotential)} potential per win). Holding <strong class="rec-suggest">${fmt(rec.suggested)}</strong> longer per win would have added <strong class="rec-suggest">${totalExtraStr}</strong> across your ${rec.n} win${rec.n === 1 ? '' : 's'}.</span>`;
       }
       return `<div class="rec-row">
         <span class="rec-tier ${t.cls}">${t.label} <span class="rec-tier-n">· ${rec.n} ${rec.unitName.toLowerCase()} win${rec.n === 1 ? '' : 's'}</span></span>
@@ -4810,16 +4852,23 @@
 
   document.getElementById('edit-trade-delete').addEventListener('click', () => {
     if (!editingTradeId) return;
-    if (!confirm('Delete this trade? This cannot be undone.')) return;
+    // First safety net: explicit confirmation popup
+    if (!confirm('Are you sure you want to delete this trade?')) return;
+    // Capture snapshot BEFORE mutating so the undo toast can restore it
+    const snap = _snapshotData();
     deleteTradeById(editingTradeId);
     rebuildSeriesByDate();
     saveData();
     document.getElementById('edit-trade-modal-bg').classList.remove('show');
     editingTradeId = null;
-    showToast('Trade deleted');
     renderStats();
     if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
     if (document.getElementById('page-tradeview').classList.contains('active')) renderTradeView();
+    // Second safety net: snackbar with UNDO button, stays up for 10 seconds
+    showUndoToast('Trade deleted', () => {
+      _applySnapshot(snap);
+      showToast('Trade restored');
+    });
   });
 
   async function copyToClipboard(text) {
