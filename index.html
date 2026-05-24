@@ -265,6 +265,7 @@
   .saved-bias { margin-top: 40px; padding: 28px; border: 1px solid var(--border-2); background: var(--bg-elev); }
   /* Session-live coaching banner — shows on Review tab when current time is within the session window */
   .session-live-banner { position: relative; margin-top: 12px; padding: 18px 24px; background: var(--bg-elev); border: 1px solid var(--border-2); border-left: 3px solid var(--good); }
+
   .rule-banner { margin-bottom: 28px; padding: 14px 20px; background: var(--bg-elev); border: 1px solid var(--border-2); border-left: 3px solid var(--info); display: inline-flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 100%; }
   .rule-banner.hidden { display: none; }
   .rule-banner-eyebrow { font-size: 9px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); flex-shrink: 0; }
@@ -936,6 +937,12 @@
       <span class="rule-banner-text" id="rule-banner-text-bias"></span>
       <span class="rule-banner-meta" id="rule-banner-meta-bias"></span>
     </div>
+    <!-- Bias date strip — mirrors the Review tab's "Logging trades for" picker. -->
+    <div style="margin-bottom:24px;padding:14px 20px;background:var(--bg-elev);border:1px solid var(--border-2);display:flex;align-items:center;gap:16px;flex-wrap:wrap;">
+      <span style="font-size:10px;color:var(--text-dim);letter-spacing:0.25em;text-transform:uppercase;" data-i18n="bias.bias_for">Bias for</span>
+      <input type="date" id="bias-date" style="background:var(--bg);border:1px solid var(--border-2);color:var(--text);padding:8px 12px;font-family:'DM Mono',monospace;font-size:13px;outline:none;" />
+      <button type="button" id="bias-date-today" data-i18n="btn.today" style="background:transparent;border:1px solid var(--border-2);color:var(--text-mid);padding:6px 12px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.15em;text-transform:uppercase;cursor:pointer;transition:all 200ms;">Today</button>
+    </div>
     <div id="bias-greeting" class="bias-greeting"></div>
     <section>
       <div class="section-header"><span class="section-num">01</span><span class="section-title" data-i18n="bias.s1.title">Trading Mode</span></div>
@@ -993,6 +1000,7 @@
         <button class="btn" id="bias-reset" data-i18n="btn.reset">Reset</button>
       </div>
     </div>
+
   </div>
 
   <div class="page" id="page-review">
@@ -1835,6 +1843,7 @@
       // ----- Page captions / section hints -----
       'stats.hint.series_history': 'Completed series of 10 — your trajectory over time.',
       // ----- Dynamic JS strings, result values, placeholders -----
+      'bias.bias_for': "Bias for",
       'rule.eyebrow_pending': "Rule from last week \u2014 grade it",
       'rule.eyebrow_next': "Rule for next week",
       'backup.title_trades_saved': "Trades saved",
@@ -2382,6 +2391,7 @@
       // ----- Page captions / section hints -----
       'stats.hint.series_history': 'Series de 10 completadas — tu trayectoria a lo largo del tiempo.',
       // ----- Dynamic JS strings, result values, placeholders -----
+      'bias.bias_for': "Sesgo para",
       'rule.eyebrow_pending': "Regla de la semana pasada \u2014 calif\u00edcala",
       'rule.eyebrow_next': "Regla para la pr\u00f3xima semana",
       'backup.title_trades_saved': "Operaciones guardadas",
@@ -3340,7 +3350,7 @@
   function genId() { return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
 
   function newBiasBlank() {
-    return { mode: null, structure: null, location: null, direction: null, tvLinks: [], notes: '', date: null };
+    return { mode: null, structure: null, location: null, direction: null, tvLinks: [], notes: '', date: null, sessionDate: null };
   }
   function newReviewBlank() {
     return { traded: null, trades: [], execution: null, focus: null, close: null, rice: null, tvLinks: [], concepts: [], mindset: [], reflection: '' };
@@ -3416,6 +3426,7 @@
     }
     if (!d.review) d.review = newReviewBlank();
     if (!d.bias) d.bias = newBiasBlank();
+    if (d.bias && !d.bias.sessionDate) d.bias.sessionDate = null;
     if (!d.currentSeries) d.currentSeries = [];
     if (!d.history) d.history = [];
     // Migrate single tvLink string → tvLinks array on bias and review.
@@ -3813,7 +3824,12 @@
   function buildBiasMessage() {
     const b = data.bias;
     const dir = b.direction === 'Bullish' ? '↑' : b.direction === 'Bearish' ? '↓' : '';
-    const lines = [`**${data.settings.pair} Bias — ${dateStr}**`, ''];
+    // Use the bias session date in the Discord header (defaults to today, can be back-filled via picker).
+    let headerDate = dateStr;
+    if (b.sessionDate && b.sessionDate !== todayDateStr()) {
+      try { headerDate = new Date(b.sessionDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }); } catch {}
+    }
+    const lines = [`**${data.settings.pair} Bias — ${headerDate}**`, ''];
     if (b.mode)      lines.push(`Mode        ${b.mode}`);
     if (b.structure) lines.push(`Structure   ${b.structure}`);
     if (b.location)  lines.push(`Location    ${b.location}`);
@@ -3853,12 +3869,17 @@
   });
   document.getElementById('bias-reset').addEventListener('click', () => {
     data.bias = newBiasBlank();
+    // Reset the bias session date back to today so the next post is dated correctly.
+    data.bias.sessionDate = todayDateStr();
     saveData();
     document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
     renderBiasTvLinks();
     document.getElementById('bias-notes').value = '';
+    const biasPicker = document.getElementById('bias-date');
+    if (biasPicker) biasPicker.value = data.bias.sessionDate;
     renderBiasPreview();
   });
+
   function bindReviewOptions() {
     document.querySelectorAll('[data-review]').forEach(group => {
       const key = group.dataset.review;
@@ -4354,7 +4375,12 @@
   }
   function buildReviewMessage() {
     const r = data.review, b = data.bias;
-    const lines = [`**${data.settings.pair} Review — ${dateStr}**`, ''];
+    // Use the picked session date in the Discord header (defaults to today, but back-fillable).
+    let headerDate = dateStr;
+    if (r.sessionDate && r.sessionDate !== todayDateStr()) {
+      try { headerDate = new Date(r.sessionDate + 'T12:00:00').toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }); } catch {}
+    }
+    const lines = [`**${data.settings.pair} Review — ${headerDate}**`, ''];
     if (b.direction && b.date) {
       const dir = b.direction === 'Bullish' ? '↑' : b.direction === 'Bearish' ? '↓' : '';
       lines.push(`Bias        ${dir} ${b.direction}  ·  ${b.structure || '—'}  ·  ${b.location || '—'}`);
@@ -4465,6 +4491,7 @@
     renderReviewPreview();
     renderSavedBias();
     initSessionDatePicker();
+  initBiasDatePicker();
   }
   function todayDateStr() {
     const d = new Date();
@@ -4496,6 +4523,14 @@
     updateSessionDateStatus();
   }
 
+  function initBiasDatePicker() {
+    const picker = document.getElementById('bias-date');
+    if (!picker) return;
+    if (!data.bias.sessionDate) data.bias.sessionDate = todayDateStr();
+    picker.value = data.bias.sessionDate;
+    picker.max = todayDateStr();
+  }
+
   document.getElementById('session-date').addEventListener('change', e => {
     data.review.sessionDate = e.target.value;
     saveData();
@@ -4507,6 +4542,19 @@
     document.getElementById('session-date').value = data.review.sessionDate;
     saveData();
     updateSessionDateStatus();
+  });
+
+  // Bias date picker handlers — mirror the Review session-date pattern.
+  document.getElementById('bias-date').addEventListener('change', e => {
+    data.bias.sessionDate = e.target.value;
+    saveData();
+    renderBiasPreview();
+  });
+  document.getElementById('bias-date-today').addEventListener('click', () => {
+    data.bias.sessionDate = todayDateStr();
+    document.getElementById('bias-date').value = data.bias.sessionDate;
+    saveData();
+    renderBiasPreview();
   });
 
   document.getElementById('review-copy').addEventListener('click', () => copyToClipboard(buildReviewMessage()));
