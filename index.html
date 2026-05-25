@@ -3744,6 +3744,16 @@
       });
       d._perTradeReviewMigrated = true;
     }
+    // Rescue: if there are orphan tvLinks at the session level (e.g. typed after the
+    // per-trade migration but before the input handlers got rewired), move them to the
+    // first trade that has no tvLinks of its own. Runs every load to catch any leakage.
+    if (d.review && Array.isArray(d.review.tvLinks) && d.review.tvLinks.some(l => l && l.url)) {
+      const targetTrade = (d.review.trades || []).find(tr => !Array.isArray(tr.tvLinks) || tr.tvLinks.length === 0 || tr.tvLinks.every(l => !l.url));
+      if (targetTrade) {
+        targetTrade.tvLinks = d.review.tvLinks.map(l => ({ url: l.url || '', notes: l.notes || '' }));
+      }
+      d.review.tvLinks = []; // clear the orphan so this doesn't run again
+    }
     // Migrate concepts inside historical trade snapshots too — keeps stats/analytics consistent.
     const _migrateConcepts = arr => Array.isArray(arr) ? arr.map(c =>
       c === 'Premium' ? 'Premium Edge' :
@@ -4736,7 +4746,7 @@
       urlInput.value   = linkObj.url || '';
       notesInput.value = linkObj.notes || '';
       const refreshPreview = () => {
-        const u = (data.review.tvLinks[idx] && data.review.tvLinks[idx].url) || '';
+        const u = (tr.tvLinks[idx] && tr.tvLinks[idx].url) || '';
         const img = tradingViewImageUrl(u);
         if (img) {
           const safe = u.replace(/"/g, '&quot;');
@@ -4748,11 +4758,11 @@
       refreshPreview();
       urlInput.addEventListener('input', e => {
         const v = e.target.value.trim();
-        if (!data.review.tvLinks[idx]) data.review.tvLinks[idx] = { url: '', notes: '' };
-        data.review.tvLinks[idx].url = v;
-        while (data.review.tvLinks.length > 0) {
-          const last = data.review.tvLinks[data.review.tvLinks.length - 1];
-          if (!last.url && !last.notes) data.review.tvLinks.pop();
+        if (!tr.tvLinks[idx]) tr.tvLinks[idx] = { url: '', notes: '' };
+        tr.tvLinks[idx].url = v;
+        while (tr.tvLinks.length > 0) {
+          const last = tr.tvLinks[tr.tvLinks.length - 1];
+          if (!last.url && !last.notes) tr.tvLinks.pop();
           else break;
         }
         refreshPreview();
@@ -4761,13 +4771,13 @@
       });
       notesInput.addEventListener('input', e => {
         const v = e.target.value;
-        if (!data.review.tvLinks[idx]) data.review.tvLinks[idx] = { url: '', notes: '' };
-        data.review.tvLinks[idx].notes = v;
+        if (!tr.tvLinks[idx]) tr.tvLinks[idx] = { url: '', notes: '' };
+        tr.tvLinks[idx].notes = v;
         renderReviewPreview();
         saveData();
       });
       card.querySelector('.tv-link-remove').addEventListener('click', () => {
-        if (data.review.tvLinks.length > idx) data.review.tvLinks.splice(idx, 1);
+        if (tr.tvLinks.length > idx) tr.tvLinks.splice(idx, 1);
         saveData();
         renderReviewTvLinks();
         renderReviewPreview();
@@ -4776,8 +4786,10 @@
     });
   }
   document.getElementById('review-tv-add').addEventListener('click', () => {
-    if (!Array.isArray(data.review.tvLinks)) data.review.tvLinks = [];
-    data.review.tvLinks.push({ url: '', notes: '' });
+    const tr = getActiveReviewTrade();
+    if (!tr) return;
+    if (!Array.isArray(tr.tvLinks)) tr.tvLinks = [];
+    tr.tvLinks.push({ url: '', notes: '' });
     saveData();
     renderReviewTvLinks();
     const inputs = document.querySelectorAll('#review-tv-list .tv-link-url');
