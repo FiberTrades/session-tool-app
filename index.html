@@ -219,6 +219,10 @@
   .tv-link-notes:focus { border-color: var(--text-mid); }
   .tv-link-notes::placeholder { color: var(--text-dim); }
   #bias-tv-add:hover, #review-tv-add:hover { border-color: var(--text-mid); color: var(--text); }
+  .reflect-q-tv-list { margin-top: 8px; }
+  .reflect-q-tv-list:empty { display: none; }
+  .reflect-q-tv-add { margin-top: 8px; background: transparent; border: 1px dashed var(--border-2); padding: 10px 16px; color: var(--text-dim); cursor: pointer; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; transition: all 200ms; }
+  .reflect-q-tv-add:hover { border-color: var(--text-mid); color: var(--text); }
   .input::placeholder, .textarea::placeholder { color: var(--text-dim); }
   .input:focus, .textarea:focus { outline: none; border-bottom-color: var(--text); }
   .textarea { resize: vertical; min-height: 88px; line-height: 1.7; }
@@ -4207,14 +4211,22 @@
       }
     } catch(e) {}
     const links = (b.tvLinks || []).filter(l => l && l.url);
+    // Inline reference + charts emitted in a dedicated section at the bottom — Discord
+    // stacks previews at the bottom of the message anyway, so [N] markers let the reader
+    // match each chart to its position in the post.
     if (links.length > 0) {
       lines.push('');
-      links.forEach(l => {
-        lines.push(l.url);
-        if (l.notes) lines.push(l.notes);
-      });
+      lines.push(`Charts      ${links.map((_, i) => `[${i + 1}]`).join(' ')}`);
     }
     if (b.notes)  { lines.push(''); lines.push(b.notes); }
+    if (links.length > 0) {
+      lines.push('');
+      lines.push('— Charts —');
+      links.forEach((l, i) => {
+        lines.push(`[${i + 1}]   ${l.url}`);
+        if (l.notes) lines.push(`      "${l.notes}"`);
+      });
+    }
     return lines.join('\n');
   }
   function renderBiasPreview() {
@@ -8245,6 +8257,42 @@
       return cards;
     }
 
+    // Render existing chart cards for the two weekly sections. Each card matches the
+    // Bias/Review tab pattern: URL input + remove button + image preview + notes textarea.
+    // If no cards exist, show one empty card so the form looks ready for input.
+    function renderTvLinksList(linksArr) {
+      const arr = (linksArr && linksArr.length > 0) ? linksArr : [{ url: '', notes: '' }];
+      return arr.map((linkObj, i) => {
+        const safeUrl = esc(linkObj.url || '');
+        const safeNotes = esc(linkObj.notes || '');
+        const previewMatch = (linkObj.url || '').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+        const imgHtml = previewMatch
+          ? `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/${previewMatch[1]}/" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>`
+          : '';
+        return `<div class="tv-link-card" data-idx="${i}">
+          <div class="tv-link-row">
+            <input type="url" class="tv-link-url" placeholder="https://www.tradingview.com/x/..." value="${safeUrl}" />
+            <button type="button" class="tv-link-remove" title="Remove link">×</button>
+          </div>
+          <div class="tv-link-preview-wrap">${imgHtml}</div>
+          <textarea class="tv-link-notes" placeholder="${esc(t('ph.chart_notes'))}" rows="2">${safeNotes}</textarea>
+        </div>`;
+      }).join('');
+    }
+
+    // Existing per-card data (or empty arrays for a fresh review). Legacy migrate: if
+    // existing review has a `url` newline-joined string, convert it to an array of cards.
+    function migrateLegacyUrls(o) {
+      if (!o) return [];
+      if (Array.isArray(o.tvLinks) && o.tvLinks.length > 0) return o.tvLinks;
+      if (o.url && o.url.trim()) {
+        return o.url.split(/\r?\n/).map(s => s.trim()).filter(Boolean).map(u => ({ url: u, notes: '' }));
+      }
+      return [];
+    }
+    const weekChartLinks  = migrateLegacyUrls(e.weekChart);
+    const missedTradeLinks = migrateLegacyUrls(e.missedTrade);
+
     document.getElementById('review-modal-reflection').innerHTML = `
       <div class="reflect-block">
         <div class="reflect-header">${t('modal.weekend_reflection')}</div>
@@ -8252,8 +8300,8 @@
 
         <div class="reflect-question">
           <div class="reflect-q-label">${t('modal.picture_week')}</div>
-          <textarea id="rfx-week-chart-url" class="reflect-q-urls" rows="2" placeholder="${t('modal.tv_urls')}">${esc(weekChartUrl)}</textarea>
-          <div id="rfx-week-chart-preview" class="reflect-q-preview">${tvPreviewMultiHtml(weekChartUrl)}</div>
+          <div id="rfx-week-chart-list" class="reflect-q-tv-list">${renderTvLinksList(weekChartLinks)}</div>
+          <button type="button" id="rfx-week-chart-add" class="reflect-q-tv-add">${esc(t('btn.add_link') || '+ Add link')}</button>
         </div>
 
         ${(bestWinTrade || worstLoseTrade) ? `<div class="reflect-question">
@@ -8272,8 +8320,8 @@
 
         <div class="reflect-question">
           <div class="reflect-q-label">${t('modal.missed_wins_label')}</div>
-          <textarea id="rfx-missed-url" class="reflect-q-urls" rows="2" placeholder="${t('modal.tv_urls_missed')}">${esc(missedUrl)}</textarea>
-          <div id="rfx-missed-preview" class="reflect-q-preview">${tvPreviewMultiHtml(missedUrl)}</div>
+          <div id="rfx-missed-list" class="reflect-q-tv-list">${renderTvLinksList(missedTradeLinks)}</div>
+          <button type="button" id="rfx-missed-add" class="reflect-q-tv-add">${esc(t('btn.add_link') || '+ Add link')}</button>
           <textarea id="rfx-missed-wins" class="reflect-q-textarea" placeholder="${t('modal.missed_wins_placeholder')}">${esc(missedWins)}</textarea>
         </div>
 
@@ -8363,17 +8411,26 @@
       const el = document.getElementById(id);
       return el ? el.value : '';
     }
+
+    // Live-state arrays for the two chart sections. Bound by the card handlers below
+    // (whose `idx` references positions in these arrays). Persisted on every change.
+    let weekChartState  = weekChartLinks.length > 0 ? weekChartLinks.map(l => ({ url: l.url || '', notes: l.notes || '' })) : [{ url: '', notes: '' }];
+    let missedState     = missedTradeLinks.length > 0 ? missedTradeLinks.map(l => ({ url: l.url || '', notes: l.notes || '' })) : [{ url: '', notes: '' }];
+
     function persist() {
       if (!currentReview || currentReview.kind !== 'weekly') return;
       const idx = data.weeklyReviews.findIndex(r => r.weekKey === currentReview.key);
+      // Trim out trailing empty cards before saving so the array stays clean.
+      const cleanLinks = arr => arr.filter(l => (l.url && l.url.trim()) || (l.notes && l.notes.trim()))
+        .map(l => ({ url: (l.url || '').trim(), notes: (l.notes || '').trim() }));
       const entry = {
         weekKey: currentReview.key,
         weekStart: currentReview.start.toISOString(),
         weekEnd: currentReview.end.toISOString(),
-        weekChart: { url: valOf('rfx-week-chart-url') },
-        bestTrade:  { notes: valOf('rfx-best-trade-notes') },
-        worstTrade: { notes: valOf('rfx-worst-trade-notes') },
-        missedTrade: { url: valOf('rfx-missed-url') },
+        weekChart:   { tvLinks: cleanLinks(weekChartState) },
+        bestTrade:   { notes: valOf('rfx-best-trade-notes') },
+        worstTrade:  { notes: valOf('rfx-worst-trade-notes') },
+        missedTrade: { tvLinks: cleanLinks(missedState) },
         reflectionMissedWins: valOf('rfx-missed-wins'),
         reflectionFocusNext:  valOf('rfx-focus-next'),
         reflectionLearned:    valOf('rfx-learned'),
@@ -8383,17 +8440,94 @@
       saveData();
     }
 
-    // Refresh the TV preview when the URL field loses focus (avoids spamming requests on every keystroke).
-    // Each field is a textarea holding one URL per line — the multi-URL helper handles parsing + rendering.
-    function wireUrlPreview(urlInputId, previewContainerId) {
-      const inp = document.getElementById(urlInputId);
-      const prv = document.getElementById(previewContainerId);
-      if (!inp || !prv) return; // conditionally-rendered fields may be absent
-      inp.addEventListener('blur', () => { prv.innerHTML = tvPreviewMultiHtml(inp.value); persist(); });
-      inp.addEventListener('input', persist);
+    // Wire each chart-card section (week-chart and missed-trade lists).
+    // Handles URL input, notes input, × remove, and + Add link.
+    function wireTvLinksList(listId, addBtnId, stateArr) {
+      const list = document.getElementById(listId);
+      const addBtn = document.getElementById(addBtnId);
+      if (!list || !addBtn) return;
+
+      function refreshPreview(card, url) {
+        const previewWrap = card.querySelector('.tv-link-preview-wrap');
+        if (!previewWrap) return;
+        const m = (url || '').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+        if (m) {
+          const safe = url.replace(/"/g, '&quot;');
+          previewWrap.innerHTML = `<a href="${safe}" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/${m[1]}/" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>`;
+        } else {
+          previewWrap.innerHTML = '';
+        }
+      }
+
+      function rebindCards() {
+        list.querySelectorAll('.tv-link-card').forEach((card, i) => {
+          const urlInput   = card.querySelector('.tv-link-url');
+          const notesInput = card.querySelector('.tv-link-notes');
+          const removeBtn  = card.querySelector('.tv-link-remove');
+          if (!urlInput || !notesInput || !removeBtn) return;
+          // Strip any previously-bound handlers (cards are re-rendered on add/remove, so this is safe to reset)
+          const newUrl   = urlInput.cloneNode(true);   urlInput.replaceWith(newUrl);
+          const newNotes = notesInput.cloneNode(true); notesInput.replaceWith(newNotes);
+          const newRem   = removeBtn.cloneNode(true);  removeBtn.replaceWith(newRem);
+          newUrl.addEventListener('input', e => {
+            if (!stateArr[i]) stateArr[i] = { url: '', notes: '' };
+            stateArr[i].url = e.target.value.trim();
+            refreshPreview(card, stateArr[i].url);
+            persist();
+          });
+          newNotes.addEventListener('input', e => {
+            if (!stateArr[i]) stateArr[i] = { url: '', notes: '' };
+            stateArr[i].notes = e.target.value;
+            persist();
+          });
+          newRem.addEventListener('click', () => {
+            stateArr.splice(i, 1);
+            if (stateArr.length === 0) stateArr.push({ url: '', notes: '' });
+            // Re-render the list
+            list.innerHTML = stateArr.map((l, j) => {
+              const safeUrl = (l.url || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
+              const safeNotes = (l.notes || '').replace(/</g, '&lt;');
+              const pm = (l.url || '').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+              const imgHtml = pm ? `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/${pm[1]}/" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>` : '';
+              return `<div class="tv-link-card" data-idx="${j}">
+                <div class="tv-link-row">
+                  <input type="url" class="tv-link-url" placeholder="https://www.tradingview.com/x/..." value="${safeUrl}" />
+                  <button type="button" class="tv-link-remove" title="Remove link">×</button>
+                </div>
+                <div class="tv-link-preview-wrap">${imgHtml}</div>
+                <textarea class="tv-link-notes" placeholder="${(t('ph.chart_notes')||'').replace(/"/g,'&quot;')}" rows="2">${safeNotes}</textarea>
+              </div>`;
+            }).join('');
+            rebindCards();
+            persist();
+          });
+        });
+      }
+      rebindCards();
+
+      addBtn.addEventListener('click', () => {
+        stateArr.push({ url: '', notes: '' });
+        // Append a fresh empty card to the list
+        const idx = stateArr.length - 1;
+        const html = `<div class="tv-link-card" data-idx="${idx}">
+          <div class="tv-link-row">
+            <input type="url" class="tv-link-url" placeholder="https://www.tradingview.com/x/..." />
+            <button type="button" class="tv-link-remove" title="Remove link">×</button>
+          </div>
+          <div class="tv-link-preview-wrap"></div>
+          <textarea class="tv-link-notes" placeholder="${(t('ph.chart_notes')||'').replace(/"/g,'&quot;')}" rows="2"></textarea>
+        </div>`;
+        list.insertAdjacentHTML('beforeend', html);
+        rebindCards();
+        // Focus the new URL input for quick paste
+        const inputs = list.querySelectorAll('.tv-link-url');
+        if (inputs.length > 0) inputs[inputs.length - 1].focus();
+        persist();
+      });
     }
-    wireUrlPreview('rfx-week-chart-url', 'rfx-week-chart-preview');
-    wireUrlPreview('rfx-missed-url',     'rfx-missed-preview');
+    wireTvLinksList('rfx-week-chart-list', 'rfx-week-chart-add', weekChartState);
+    wireTvLinksList('rfx-missed-list',     'rfx-missed-add',     missedState);
+
     // Best/worst trade notes only exist when wins/losses occurred — attach if present.
     ['rfx-missed-wins', 'rfx-best-trade-notes', 'rfx-worst-trade-notes', 'rfx-focus-next', 'rfx-learned'].forEach(id => {
       const el = document.getElementById(id);
@@ -8446,20 +8580,30 @@
     lines.push(`Potential R    ${potRStr}${potLeftR == null ? '   (no Potential R logged)' : '   (left on table)'}`);
     lines.push('```');
 
-    // Pull the latest text from the form (not the persisted snapshot — user might have unfocused fields).
-    // URL fields are multi-line: each line is treated as a separate TV link Discord can auto-embed.
-    function extractTvUrls(raw) {
-      if (!raw) return [];
-      return raw.split(/\r?\n/).map(s => s.trim()).filter(s =>
-        /^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(s)
-      );
-    }
+    // Pull the latest URLs + text from the persisted weekly review (per-card arrays).
+    // Falls back to the legacy single-URL `url` field if a review was saved before the
+    // card-based UI shipped.
     function valTrim(id) { const el = document.getElementById(id); return el ? el.value.trim() : ''; }
-    function valOf(id)   { const el = document.getElementById(id); return el ? el.value       : ''; }
-    const weekChartUrls = extractTvUrls(valOf('rfx-week-chart-url'));
+    function pullTvLinks(section) {
+      if (!section) return [];
+      if (Array.isArray(section.tvLinks)) {
+        return section.tvLinks.filter(l => l && l.url).map(l => ({ url: l.url, notes: l.notes || '' }));
+      }
+      // Legacy: `url` was a newline-joined string of URLs
+      if (section.url && typeof section.url === 'string') {
+        return section.url.split(/\r?\n/).map(s => s.trim()).filter(s =>
+          /^https?:\/\/(www\.)?tradingview\.com\/x\//i.test(s)
+        ).map(u => ({ url: u, notes: '' }));
+      }
+      return [];
+    }
+    const persistedEntry = (data.weeklyReviews || []).find(r => r.weekKey === currentReview?.key);
+    const weekChartLinksOut  = pullTvLinks(persistedEntry && persistedEntry.weekChart);
+    const missedLinksOut     = pullTvLinks(persistedEntry && persistedEntry.missedTrade);
+    const weekChartUrls = weekChartLinksOut.map(l => l.url);
+    const missedUrls    = missedLinksOut.map(l => l.url);
     const bestTradeTxt  = valTrim('rfx-best-trade-notes');
     const worstTradeTxt = valTrim('rfx-worst-trade-notes');
-    const missedUrls    = extractTvUrls(valOf('rfx-missed-url'));
     const missedWins    = valTrim('rfx-missed-wins');
     const focusNext     = valTrim('rfx-focus-next');
     const learned       = valTrim('rfx-learned');
@@ -8486,31 +8630,41 @@
       return `${dateStr} · ${t.side || '—'} · ${rStr} · ${netStr}`;
     }
 
+    // Pre-collect every chart URL across this week's sections, assign sequential [N] numbers.
+    // Each section then references its charts inline, and all URLs are emitted at the bottom
+    // — Discord stacks the previews there anyway, so [N] markers let the reader match each.
+    const chartIndex = []; // { num, url, source }
+    weekChartUrls.forEach(url => chartIndex.push({ num: chartIndex.length + 1, url, source: 'week' }));
+    const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
+    if (bestTradeChart) chartIndex.push({ num: chartIndex.length + 1, url: bestTradeChart, source: 'best' });
+    const worstTradeChart = dWorstLose && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dWorstLose) : null;
+    if (worstTradeChart) chartIndex.push({ num: chartIndex.length + 1, url: worstTradeChart, source: 'worst' });
+    missedUrls.forEach(url => chartIndex.push({ num: chartIndex.length + 1, url, source: 'missed' }));
+
+    const refsBySource = src => chartIndex.filter(c => c.source === src).map(c => `[${c.num}]`).join(' ');
+
     if (weekChartUrls.length > 0) {
       lines.push('');
-      lines.push('**Week\'s chart**');
-      weekChartUrls.forEach(u => lines.push(u));
+      lines.push(`**Week's chart**   ${refsBySource('week')}`);
     }
     if (dBestWin) {
       lines.push('');
-      lines.push('**Best trade of the week**');
+      const ref = bestTradeChart ? `   ${refsBySource('best')}` : '';
+      lines.push(`**Best trade of the week**${ref}`);
       lines.push(tradeOneLiner(dBestWin));
-      const chartUrl = (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
-      if (chartUrl) lines.push(chartUrl);
       if (bestTradeTxt) lines.push(bestTradeTxt);
     }
     if (dWorstLose) {
       lines.push('');
-      lines.push('**Worst trade of the week**');
+      const ref = worstTradeChart ? `   ${refsBySource('worst')}` : '';
+      lines.push(`**Worst trade of the week**${ref}`);
       lines.push(tradeOneLiner(dWorstLose));
-      const chartUrl = (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dWorstLose) : null;
-      if (chartUrl) lines.push(chartUrl);
       if (worstTradeTxt) lines.push(worstTradeTxt);
     }
     if (missedUrls.length > 0 || missedWins) {
       lines.push('');
-      lines.push('**Winning trades I didn\'t take**');
-      missedUrls.forEach(u => lines.push(u));
+      const ref = missedUrls.length > 0 ? `   ${refsBySource('missed')}` : '';
+      lines.push(`**Winning trades I didn't take**${ref}`);
       if (missedWins) lines.push(missedWins);
     }
     if (focusNext) {
@@ -8522,6 +8676,12 @@
       lines.push('');
       lines.push('**What I learned**');
       lines.push(learned);
+    }
+    // All chart URLs at the bottom, numbered in section order to match Discord's preview stack.
+    if (chartIndex.length > 0) {
+      lines.push('');
+      lines.push('— Charts —');
+      chartIndex.forEach(c => lines.push(`[${c.num}]   ${c.url}`));
     }
     return lines.join('\n');
   }
