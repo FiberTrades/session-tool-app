@@ -621,6 +621,10 @@
   /* Trade of month — clickable cells that drill into the day's modal */
   .trade-of-month-cell { cursor: pointer; padding: 12px; border: 1px solid var(--border-2); transition: border-color 150ms, background 150ms; }
   .trade-of-month-cell:hover { border-color: var(--text-mid); background: var(--bg-elev); }
+  /* When .trade-of-month-cell is a "shell" wrapper around .auto-trade-card (used in monthly Top 3 grid),
+     the inner card carries its own border/bg, so hover styling needs to lift the inner card instead. */
+  .trade-of-month-cell .auto-trade-card { transition: border-color 150ms, background 150ms; }
+  .trade-of-month-cell:hover .auto-trade-card { border-color: var(--text-mid); background: var(--bg-elev); }
   /* Inline thumbnail used in trade-of-month + weekly best/worst cards.
      Sized as a small visual identifier (~60×40, natural 16:9). Sits left of the trade meta text. */
   .trade-thumb { border: 1px solid var(--border-2); background: var(--bg-elev); overflow: hidden; flex: 0 0 50%; max-width: 200px; }
@@ -1905,6 +1909,8 @@
       // ----- Page captions / section hints -----
       'stats.hint.series_history': 'Completed series of 10 — your trajectory over time.',
       // ----- Dynamic JS strings, result values, placeholders -----
+      "modal.top_trades_month": "Top {N} trades of the month",
+      "modal.no_wins_month": "No wins this month yet \u2014 keep showing up.",
       "modal.no_bias_logged": "No session bias logged for this day.",
       "trades.consistency_title": "Consistency \u2014 showed up vs traded",
       "hint.lifetime_consistency": "Across every weekday you've traded or logged a bias. High showed-up + low traded means disciplined selectivity \u2014 you watched the market and only acted when the setup aligned.",
@@ -2520,6 +2526,8 @@
       // ----- Page captions / section hints -----
       'stats.hint.series_history': 'Series de 10 completadas — tu trayectoria a lo largo del tiempo.',
       // ----- Dynamic JS strings, result values, placeholders -----
+      "modal.top_trades_month": "Top {N} operaciones del mes",
+      "modal.no_wins_month": "A\u00fan no hay ganancias este mes \u2014 sigue present\u00e1ndote.",
       "modal.no_bias_logged": "No se registr\u00f3 sesgo de sesi\u00f3n para este d\u00eda.",
       "trades.consistency_title": "Consistencia \u2014 presente vs operado",
       "hint.lifetime_consistency": "A trav\u00e9s de cada d\u00eda laborable en el que has operado o registrado un sesgo. Alta presencia + baja operativa significa selectividad disciplinada \u2014 observaste el mercado y actuaste s\u00f3lo cuando el setup se aline\u00f3.",
@@ -7678,6 +7686,69 @@
   // Monthly-only insights block. Rendered only inside the monthly review modal.
   // Five sections: best/worst week · trading-day consistency · concept-tag winners/losers ·
   // mindset-tag winners/losers · best/worst weekday · previous-month comparison.
+  // Reusable consistency block — used by both weekly and monthly review modals.
+  // Two metrics, both computed against the same denominator (weekdays in the period):
+  //   - Showed up: days a bias was completed (read from biasHistory) — trade days auto-count
+  //   - Traded:    days at least one trade was logged
+  // The gap between them is the interpretive value — disciplined waiting shows as
+  // high showed-up + low traded, which is healthy for a selective trader.
+  function renderConsistencyBlock(periodStart, periodEnd, periodTrades) {
+    // Count weekdays in the period (Mon–Fri only)
+    let weekdaysInPeriod = 0;
+    for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) weekdaysInPeriod++;
+    }
+    // Days with at least one logged trade
+    const tradedDaySet = new Set();
+    periodTrades.forEach(t => {
+      const d = new Date(t.date);
+      const day = d.getDay();
+      if (day !== 0 && day !== 6) tradedDaySet.add(d.toDateString());
+    });
+    const tradedDays = tradedDaySet.size;
+    const tradedPct = weekdaysInPeriod > 0 ? Math.round(tradedDays / weekdaysInPeriod * 100) : 0;
+    // Days with a completed bias entry in this period (read from biasHistory)
+    const showedUpSet = new Set();
+    const biasHist = Array.isArray(data.biasHistory) ? data.biasHistory : [];
+    biasHist.forEach(b => {
+      if (!b || !b.dateKey) return;
+      const d = new Date(b.dateKey + 'T12:00:00');
+      if (d < periodStart || d > periodEnd) return;
+      const day = d.getDay();
+      if (day === 0 || day === 6) return;
+      showedUpSet.add(d.toDateString());
+    });
+    // Trade days are also "showed up" days even if no bias was logged that day
+    tradedDaySet.forEach(k => showedUpSet.add(k));
+    const showedUpDays = showedUpSet.size;
+    const showedUpPct = weekdaysInPeriod > 0 ? Math.round(showedUpDays / weekdaysInPeriod * 100) : 0;
+    // Interpretive sub-line based on the gap between the two numbers.
+    let consistencyNote = '';
+    if (showedUpPct >= 70 && tradedPct >= 50) consistencyNote = t('modal.consistency_note_active');
+    else if (showedUpPct >= 60 && tradedPct < showedUpPct - 25) consistencyNote = t('modal.consistency_note_selective');
+    else if (showedUpPct < 40) consistencyNote = t('modal.consistency_note_absent');
+    else if (showedUpPct >= 40 && tradedPct >= 40) consistencyNote = t('modal.consistency_note_balanced');
+    else if (showedUpDays > 0 || tradedDays > 0) consistencyNote = t('modal.consistency_note_neutral');
+    return `
+      <div class="month-insight-block">
+        <div class="month-insight-title">${t('modal.consistency')}</div>
+        <div class="consistency-row">
+          <div class="consistency-line">
+            <span class="consistency-label">${t('modal.consistency_showed_up')}</span>
+            <span class="consistency-vals"><span class="consistency-big">${showedUpDays}</span> <span class="consistency-of">/ ${weekdaysInPeriod}</span></span>
+            <span class="consistency-pct">${showedUpPct}%</span>
+          </div>
+          <div class="consistency-line">
+            <span class="consistency-label">${t('modal.consistency_traded')}</span>
+            <span class="consistency-vals"><span class="consistency-big">${tradedDays}</span> <span class="consistency-of">/ ${weekdaysInPeriod}</span></span>
+            <span class="consistency-pct">${tradedPct}%</span>
+          </div>
+        </div>
+        ${consistencyNote ? `<div class="consistency-note">${consistencyNote}</div>` : ''}
+      </div>`;
+  }
+
   function renderMonthlyInsights(periodStart, periodEnd) {
     const all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
     const monthTrades = all.filter(t => {
@@ -7760,74 +7831,9 @@
     }
 
     // === 2. Trading days vs total days (weekdays only, Mon–Fri) ===
-    // Two metrics, both computed against the same denominator (weekdays in the month):
-    //   - Showed up: days a bias was completed (read from biasHistory)
-    //   - Traded:    days at least one trade was logged
-    // The gap between them is the interpretive value — disciplined waiting shows as
-    // high showed-up + low traded, which is healthy for a selective trader.
-    let weekdaysInMonth = 0;
-    for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) weekdaysInMonth++;
-    }
-    // Days with at least one logged trade (existing logic)
-    const tradedDaySet = new Set();
-    monthTrades.forEach(t => {
-      const d = new Date(t.date);
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) {
-        tradedDaySet.add(d.toDateString());
-      }
-    });
-    const tradedDays = tradedDaySet.size;
-    const tradedPct = weekdaysInMonth > 0 ? Math.round(tradedDays / weekdaysInMonth * 100) : 0;
-    // Days with a completed bias entry in this month (read from biasHistory)
-    const showedUpSet = new Set();
-    const biasHist = Array.isArray(data.biasHistory) ? data.biasHistory : [];
-    biasHist.forEach(b => {
-      if (!b || !b.dateKey) return;
-      const d = new Date(b.dateKey + 'T12:00:00');
-      if (d < periodStart || d > periodEnd) return;
-      const day = d.getDay();
-      if (day === 0 || day === 6) return;
-      showedUpSet.add(d.toDateString());
-    });
-    // Trade days are also "showed up" days even if no bias was logged that day
-    tradedDaySet.forEach(k => showedUpSet.add(k));
-    const showedUpDays = showedUpSet.size;
-    const showedUpPct = weekdaysInMonth > 0 ? Math.round(showedUpDays / weekdaysInMonth * 100) : 0;
-    // Interpretive sub-line based on the gap between the two numbers.
-    // High both: consistent active trader. High showed-up + low traded: disciplined / selective.
-    // Low both: inconsistent presence. Roughly equal mid-range: balanced.
-    let consistencyNote = '';
-    if (showedUpPct >= 70 && tradedPct >= 50) {
-      consistencyNote = t('modal.consistency_note_active');
-    } else if (showedUpPct >= 60 && tradedPct < showedUpPct - 25) {
-      consistencyNote = t('modal.consistency_note_selective');
-    } else if (showedUpPct < 40) {
-      consistencyNote = t('modal.consistency_note_absent');
-    } else if (showedUpPct >= 40 && tradedPct >= 40) {
-      consistencyNote = t('modal.consistency_note_balanced');
-    } else if (showedUpDays > 0 || tradedDays > 0) {
-      consistencyNote = t('modal.consistency_note_neutral');
-    }
-    const consistencyHtml = `
-      <div class="month-insight-block">
-        <div class="month-insight-title">${t('modal.consistency')}</div>
-        <div class="consistency-row">
-          <div class="consistency-line">
-            <span class="consistency-label">${t('modal.consistency_showed_up')}</span>
-            <span class="consistency-vals"><span class="consistency-big">${showedUpDays}</span> <span class="consistency-of">/ ${weekdaysInMonth}</span></span>
-            <span class="consistency-pct">${showedUpPct}%</span>
-          </div>
-          <div class="consistency-line">
-            <span class="consistency-label">${t('modal.consistency_traded')}</span>
-            <span class="consistency-vals"><span class="consistency-big">${tradedDays}</span> <span class="consistency-of">/ ${weekdaysInMonth}</span></span>
-            <span class="consistency-pct">${tradedPct}%</span>
-          </div>
-        </div>
-        ${consistencyNote ? `<div class="consistency-note">${consistencyNote}</div>` : ''}
-      </div>`;
+    // Uses the shared `renderConsistencyBlock` helper so weekly + monthly modals look
+    // identical and the logic stays in one place.
+    const consistencyHtml = renderConsistencyBlock(periodStart, periodEnd, monthTrades);
 
     // === 3 & 4. Tag winners & losers (concepts + mindset) ===
     // For each tag: sum the active unit's metric across trades carrying that tag. Min 3 trades required.
@@ -7984,63 +7990,35 @@
       </div>`;
     }
 
-    // === Best & worst trade of the month ===
-    // Show whatever decisive trades exist:
-    //   ≥1 Win + ≥1 Loss → both Best and Worst cards
-    //   only Wins        → just the Best card
-    //   only Losses      → just the Worst card
-    //   only BEs / none  → section hidden entirely
+    // === Top trades of the month ===
+    // Up to 3 winning trades, ranked by R descending. Compact grid layout mirroring the
+    // weekly "This week's trades" cards (autoTradeCard). #1 is the biggest R win.
+    // BEs and losses are deliberately excluded — "best" here means best wins, not least bad.
     let tradeOfMonthHtml = '';
     const winsThisMonth = monthTrades.filter(t => t.result === 'Win');
-    const lossesThisMonth = monthTrades.filter(t => t.result === 'Lose');
-    function fmtTradeCell(t, label, iconCls, icon) {
-      const r = tradeR(t);
-      const rStr = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
-      const rCls = r > 0 ? 'good' : r < 0 ? 'bad' : '';
-      const dt = new Date(t.date);
-      const dateStr = dt.toLocaleDateString(tLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
-      const sideStr = tSide(t.side) || '—';
-      const net = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
-      const netStr = (net >= 0 ? '+' : '-') + curSym() + Math.abs(net).toFixed(2);
-      const dateIso = dt.toISOString();
-      // Show pips alongside R when logged — same visual weight, both peers.
-      const pipsHtml = (typeof t.pips === 'number' && !isNaN(t.pips))
-        ? ` · <span class="${rCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(0)}p</span>`
-        : '';
-      // Pull a thumbnail from the trade's logged charts. Prefer post-session review chart
-      // (more likely to show entry/exit), fall back to bias chart, otherwise none.
-      const thumbHtml = pickTradeChartThumb(t);
-      // Compact horizontal layout: small thumb on the left, date/side/R+pips/£ stacked on the right.
-      return `<div class="month-insight-cell trade-of-month-cell" data-trade-date="${dateIso}" title="Click to open this day's review">
-        <div class="month-insight-label"><span class="icon ${iconCls}">${icon}</span>${label}</div>
-        <div class="auto-trade-body">
-          ${thumbHtml}
-          <div class="auto-trade-meta">
-            <div><span class="auto-trade-date">${dateStr}</span> · ${sideStr}</div>
-            <div><span class="${rCls}">${rStr}</span>${pipsHtml} · <span class="${rCls}">${netStr}</span></div>
-          </div>
-        </div>
-      </div>`;
-    }
-    if (winsThisMonth.length > 0 || lossesThisMonth.length > 0) {
-      const cells = [];
-      let title;
-      if (winsThisMonth.length > 0) {
-        const best = winsThisMonth.slice().sort((a, b) => tradeR(b) - tradeR(a))[0];
-        cells.push(fmtTradeCell(best, t('modal.best_trade_title'), 'good', '★'));
-      }
-      if (lossesThisMonth.length > 0) {
-        const worst = lossesThisMonth.slice().sort((a, b) => tradeR(a) - tradeR(b))[0];
-        cells.push(fmtTradeCell(worst, t('modal.worst_trade_title'), 'bad', '✕'));
-      }
-      if (cells.length === 2) title = t('modal.best_worst_trade_month');
-      else if (winsThisMonth.length > 0) title = t('modal.trade_of_month_title');
-      else title = t('modal.toughest_trade_month');
+    if (winsThisMonth.length > 0) {
+      // Sort by R descending, take top 3
+      const topN = winsThisMonth.slice().sort((a, b) => tradeR(b) - tradeR(a)).slice(0, 3);
+      // Wrap each autoTradeCard in a clickable shell — the existing .trade-of-month-cell
+      // click handler reads data-trade-date and opens that day's modal.
+      const cells = topN.map((tr, i) => {
+        const dateIso = new Date(tr.date).toISOString();
+        return `<div class="trade-of-month-cell" data-trade-date="${dateIso}" title="Click to open this day's review" style="padding:0;border:none;background:transparent;">
+          ${autoTradeCard(tr, `#${i + 1}`, 'good', '★')}
+        </div>`;
+      }).join('');
+      const title = topN.length === 1 ? t('modal.trade_of_month_title') : t('modal.top_trades_month').replace('{N}', topN.length);
       tradeOfMonthHtml = `<div class="month-insight-block">
         <div class="month-insight-title">${title}</div>
-        <div class="month-insight-row">
-          ${cells.join('')}
+        <div class="reflect-week-grid">
+          ${cells}
         </div>
+      </div>`;
+    } else {
+      // No wins this month — explicit empty state.
+      tradeOfMonthHtml = `<div class="month-insight-block">
+        <div class="month-insight-title">${t('modal.top_trades_month').replace('{N}', 3)}</div>
+        <div class="month-insight-empty">${t('modal.no_wins_month')}</div>
       </div>`;
     }
 
@@ -8396,6 +8374,21 @@
     const potPCls  = potLeftPips == null ? '' : potLeftPips > 5 ? 'bad' : '';
 
     const monthlyExtra = (greetingNoun === 'month' && monthRange) ? renderMonthlyInsights(monthRange.start, monthRange.end) : '';
+    // Weekly modal: show the consistency block (showed-up vs traded) in its own section.
+    // For monthly, the block is already embedded inside renderMonthlyInsights, so we only emit
+    // a standalone one here for weekly to avoid duplicating it.
+    let weeklyExtra = '';
+    if (greetingNoun === 'week' && currentReview && currentReview.start && currentReview.end) {
+      const weekTrades = (typeof getAllLifetimeTrades === 'function' ? getAllLifetimeTrades() : []).filter(t => {
+        const td = new Date(t.date);
+        return td >= currentReview.start && td <= currentReview.end;
+      });
+      // Wrap the block in a styled section so it slots in cleanly below the stats row.
+      weeklyExtra = `<div class="month-insights" style="margin-top:0;">
+        <div class="month-insights-header">${t('modal.consistency')}</div>
+        ${renderConsistencyBlock(currentReview.start, currentReview.end, weekTrades)}
+      </div>`;
+    }
     // Net P&L now lives in the corner pill; Trades count is implicit from W/L/BE row.
     // No redundant bottom grid needed.
     document.getElementById('review-modal-body').innerHTML = `
@@ -8407,6 +8400,7 @@
         <div class="modal-stat"><div class="label">${t('dmodal.total_rp')}</div><div class="v dual ${totalRCls}"><span class="dual-primary">${totalRStr}</span><span class="dual-secondary ${totalPipsCls}">${totalPipsStr}</span></div></div>
         <div class="modal-stat"><div class="label">${t('dmodal.pot_rp')}</div><div class="v dual ${potRCls}"><span class="dual-primary">${potRStr}</span><span class="dual-secondary ${potPCls}">${potPStr}</span></div></div>
       </div>
+      ${weeklyExtra}
       ${monthlyExtra}
     `;
   }
@@ -8460,7 +8454,6 @@
     // Read existing answers; legacy reviews may have only `notes` — fold that into the "what learned" field
     const e = existing || {};
     const bestTradeNotes  = (e.bestTrade  && e.bestTrade.notes)  || '';
-    const worstTradeNotes = (e.worstTrade && e.worstTrade.notes) || '';
     const missedUrl   = (e.missedTrade && e.missedTrade.url) || '';
     const focusNext   = e.reflectionFocusNext   || '';
     // Two reflection fields:
@@ -8480,14 +8473,12 @@
       return td >= weekStart && td < wkEndExc;
     });
     const weekWins   = weekTradesAll.filter(t => t.result === 'Win');
-    const weekLosses = weekTradesAll.filter(t => t.result === 'Lose');
     function tradeRLocal(t) {
       if (t.result === 'Win')  return parseFloat(t.r) || 0;
       if (t.result === 'Lose') return -1;
       return 0;
     }
     const bestWinTrade   = weekWins.length   > 0 ? weekWins.slice().sort((a, b) => tradeRLocal(b) - tradeRLocal(a))[0]   : null;
-    const worstLoseTrade = weekLosses.length > 0 ? weekLosses.slice().sort((a, b) => tradeRLocal(a) - tradeRLocal(b))[0] : null;
 
     // Escape HTML in values that get injected back into the DOM
     function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
@@ -8593,30 +8584,13 @@
         <div class="reflect-header">${t('modal.weekend_reflection')}</div>
         <div class="reflect-subhead">${t('modal.weekend_sit_with')}</div>
 
-        ${(bestWinTrade || worstLoseTrade) ? `<div class="reflect-question">
-          <div class="reflect-q-label">${t('modal.best_worst_trade')}</div>
+        ${bestWinTrade ? `<div class="reflect-question">
+          <div class="reflect-q-label">${t('modal.best_trade_title')}</div>
           <div class="reflect-bw-grid">
-            ${bestWinTrade ? `<div class="reflect-bw-col">
+            <div class="reflect-bw-col">
               ${autoTradeCard(bestWinTrade, t('modal.best_trade_title'), 'good', '★')}
               <textarea id="rfx-best-trade-notes" class="reflect-q-textarea" placeholder="${t('modal.why_best')}">${esc(bestTradeNotes)}</textarea>
-            </div>` : ''}
-            ${worstLoseTrade ? `<div class="reflect-bw-col">
-              ${autoTradeCard(worstLoseTrade, t('modal.worst_trade_title'), 'bad', '✕')}
-              <textarea id="rfx-worst-trade-notes" class="reflect-q-textarea" placeholder="${t('modal.why_worst')}">${esc(worstTradeNotes)}</textarea>
-            </div>` : ''}
-          </div>
-        </div>` : ''}
-
-        ${weekTradesAll.length > 0 ? `<div class="reflect-question">
-          <div class="reflect-q-label">${esc(t('modal.this_weeks_trades') || "This week's trades")}</div>
-          <div class="reflect-week-grid">
-            ${weekTradesAll.map((trd, i) => {
-              const r = tradeRLocal(trd);
-              const arrow = trd.result === 'Win' ? '★' : trd.result === 'Lose' ? '✕' : '=';
-              const iconCls = trd.result === 'Win' ? 'good' : trd.result === 'Lose' ? 'bad' : '';
-              const label = `#${i + 1}`;
-              return autoTradeCard(trd, label, iconCls, arrow);
-            }).join('')}
+            </div>
           </div>
         </div>` : ''}
 
@@ -8733,7 +8707,6 @@
         weekStart: currentReview.start.toISOString(),
         weekEnd: currentReview.end.toISOString(),
         bestTrade:   { notes: valOf('rfx-best-trade-notes') },
-        worstTrade:  { notes: valOf('rfx-worst-trade-notes') },
         missedTrade: { tvLinks: cleanLinks(missedState) },
         reflectionFocusNext:  valOf('rfx-focus-next'),
         reflectionWentWell:   valOf('rfx-went-well'),
@@ -8832,7 +8805,7 @@
     wireTvLinksList('rfx-missed-list',     'rfx-missed-add',     missedState);
 
     // Best/worst trade notes only exist when wins/losses occurred — attach if present.
-    ['rfx-best-trade-notes', 'rfx-worst-trade-notes', 'rfx-focus-next', 'rfx-went-well', 'rfx-learned'].forEach(id => {
+    ['rfx-best-trade-notes', 'rfx-focus-next', 'rfx-went-well', 'rfx-learned'].forEach(id => {
       const el = document.getElementById(id);
       if (el) el.addEventListener('input', persist);
     });
@@ -8904,14 +8877,13 @@
     const missedLinksOut     = pullTvLinks(persistedEntry && persistedEntry.missedTrade);
     const missedUrls    = missedLinksOut.map(l => l.url);
     const bestTradeTxt  = valTrim('rfx-best-trade-notes');
-    const worstTradeTxt = valTrim('rfx-worst-trade-notes');
     // Legacy: read the missed-wins notes from the persisted review (textarea was removed; per-card notes serve that purpose now). Old reviews may still have a value here, so we keep emitting it for back-compat.
     const missedWins    = (persistedEntry && persistedEntry.reflectionMissedWins) || '';
     const focusNext     = valTrim('rfx-focus-next');
     const wentWell      = valTrim('rfx-went-well');
     const learned       = valTrim('rfx-learned');
 
-    // Recompute the week's best Win + worst Lose for the Discord post — same data the UI shows.
+    // Recompute the week's best Win for the Discord post — same data the UI shows.
     const wkEnd = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
     const wkAllTrades = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
     const weekTradesD = wkAllTrades.filter(t => {
@@ -8920,9 +8892,7 @@
     });
     function tRD(t) { return t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0; }
     const weekWinsD = weekTradesD.filter(t => t.result === 'Win');
-    const weekLossesD = weekTradesD.filter(t => t.result === 'Lose');
     const dBestWin = weekWinsD.length > 0 ? weekWinsD.slice().sort((a, b) => tRD(b) - tRD(a))[0] : null;
-    const dWorstLose = weekLossesD.length > 0 ? weekLossesD.slice().sort((a, b) => tRD(a) - tRD(b))[0] : null;
     function tradeOneLiner(t) {
       const dt = new Date(t.date);
       const dateStr = dt.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
@@ -8937,14 +8907,12 @@
     // Pre-collect every chart URL across this week's sections, assign sequential [N] numbers.
     // Each section then references its charts inline, and all URLs are emitted at the bottom
     // — Discord stacks the previews there anyway, so [N] markers let the reader match each.
-    // Numbering restarts within each source section — Best/Worst/Missed each get their own
+    // Numbering restarts within each source section — Best/Missed each get their own
     // local [1], [2], etc. The section header is the anchor; brackets only matter when a
     // section has multiple charts.
     const chartIndex = []; // { num, url, source }
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
     if (bestTradeChart) chartIndex.push({ num: 1, url: bestTradeChart, source: 'best' });
-    const worstTradeChart = dWorstLose && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dWorstLose) : null;
-    if (worstTradeChart) chartIndex.push({ num: 1, url: worstTradeChart, source: 'worst' });
     missedUrls.forEach((url, idx) => chartIndex.push({ num: idx + 1, url, source: 'missed' }));
 
     const refsBySource = src => chartIndex.filter(c => c.source === src).map(c => `[${c.num}]`).join(' ');
@@ -8955,13 +8923,6 @@
       lines.push(`**Best trade of the week**${ref}`);
       lines.push(tradeOneLiner(dBestWin));
       if (bestTradeTxt) lines.push(bestTradeTxt);
-    }
-    if (dWorstLose) {
-      lines.push('');
-      const ref = worstTradeChart ? `   ${refsBySource('worst')}` : '';
-      lines.push(`**Worst trade of the week**${ref}`);
-      lines.push(tradeOneLiner(dWorstLose));
-      if (worstTradeTxt) lines.push(worstTradeTxt);
     }
     if (missedUrls.length > 0 || missedWins) {
       lines.push('');
@@ -8991,10 +8952,9 @@
       lines.push('');
       const sectionLabels = {
         best:   "Best trade of the week",
-        worst:  "Worst trade of the week",
         missed: "Winning trade I didn't take"
       };
-      // Group by source, preserving the order in chartIndex (already best → worst → missed by construction)
+      // Group by source, preserving the order in chartIndex (already best → missed by construction)
       const bySource = new Map();
       chartIndex.forEach(c => {
         if (!bySource.has(c.source)) bySource.set(c.source, []);
