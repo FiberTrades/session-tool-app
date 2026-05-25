@@ -4974,15 +4974,15 @@
     const netR = calcNetR();
     if (netR !== null) lines.push(`            Net: ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`);
 
-    // Pre-collect every chart URL across trades, assign each a sequential number.
-    // Each trade then references its charts inline as [1] [2] etc., and the URLs
-    // are emitted at the bottom in order — Discord stacks the previews there anyway,
-    // so this way the reader can match each chart to its trade.
+    // Pre-collect every chart URL across trades. Numbering restarts at [1] within each
+    // trade — the "— Trade N —" header is the anchor, and the bracketed number identifies
+    // which chart within that trade if it has multiple. Reader visually maps Discord's
+    // preview stack to the "— Trade N —" headers, not to global numbers.
     const chartIndex = []; // [{ tradeIdx, num, url, notes }]
     r.trades.forEach((t, i) => {
       const links = (t.tvLinks || []).filter(l => l && l.url);
-      links.forEach(l => {
-        chartIndex.push({ tradeIdx: i, num: chartIndex.length + 1, url: l.url, notes: l.notes || '' });
+      links.forEach((l, localIdx) => {
+        chartIndex.push({ tradeIdx: i, num: localIdx + 1, url: l.url, notes: l.notes || '' });
       });
     });
 
@@ -5015,14 +5015,25 @@
       if (t.reflection && t.reflection.trim()) { lines.push(''); lines.push(t.reflection.trim()); }
     });
 
-    // All chart URLs at the bottom, numbered in trade order. Discord will preview them here
-    // anyway — putting them last with [N] labels matches what the reader sees in the embed pile.
+    // All chart URLs at the bottom, grouped by trade with the same "— Trade N —" header.
+    // Discord stacks previews here anyway — grouping by trade lets the reader match each chart
+    // to the trade block above without scrolling back.
     if (chartIndex.length > 0) {
       lines.push('');
-      lines.push('— Charts —');
+      // Group by tradeIdx, preserving the order in which charts appear
+      const byTrade = new Map();
       chartIndex.forEach(c => {
-        lines.push(`[${c.num}]   ${c.url}`);
-        if (c.notes) lines.push(`      "${c.notes}"`);
+        if (!byTrade.has(c.tradeIdx)) byTrade.set(c.tradeIdx, []);
+        byTrade.get(c.tradeIdx).push(c);
+      });
+      // Emit one block per trade with its charts underneath
+      Array.from(byTrade.keys()).sort((a, b) => a - b).forEach(tradeIdx => {
+        lines.push('');
+        lines.push(`— Trade ${tradeIdx + 1} —`);
+        byTrade.get(tradeIdx).forEach(c => {
+          lines.push(`Charts [${c.num}]   ${c.url}`);
+          if (c.notes) lines.push(`      "${c.notes}"`);
+        });
       });
     }
 
@@ -8880,12 +8891,15 @@
     // Pre-collect every chart URL across this week's sections, assign sequential [N] numbers.
     // Each section then references its charts inline, and all URLs are emitted at the bottom
     // — Discord stacks the previews there anyway, so [N] markers let the reader match each.
+    // Numbering restarts within each source section — Best/Worst/Missed each get their own
+    // local [1], [2], etc. The section header is the anchor; brackets only matter when a
+    // section has multiple charts.
     const chartIndex = []; // { num, url, source }
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
-    if (bestTradeChart) chartIndex.push({ num: chartIndex.length + 1, url: bestTradeChart, source: 'best' });
+    if (bestTradeChart) chartIndex.push({ num: 1, url: bestTradeChart, source: 'best' });
     const worstTradeChart = dWorstLose && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dWorstLose) : null;
-    if (worstTradeChart) chartIndex.push({ num: chartIndex.length + 1, url: worstTradeChart, source: 'worst' });
-    missedUrls.forEach(url => chartIndex.push({ num: chartIndex.length + 1, url, source: 'missed' }));
+    if (worstTradeChart) chartIndex.push({ num: 1, url: worstTradeChart, source: 'worst' });
+    missedUrls.forEach((url, idx) => chartIndex.push({ num: idx + 1, url, source: 'missed' }));
 
     const refsBySource = src => chartIndex.filter(c => c.source === src).map(c => `[${c.num}]`).join(' ');
 
@@ -8924,11 +8938,27 @@
       lines.push('**What I did well**');
       lines.push(wentWell);
     }
-    // All chart URLs at the bottom, numbered in section order to match Discord's preview stack.
+    // All chart URLs at the bottom, grouped by their source section (Best / Worst / Missed).
+    // Discord stacks previews here in this order — section labels let the reader match each chart
+    // back to the discussion above without scrolling.
     if (chartIndex.length > 0) {
       lines.push('');
-      lines.push('— Charts —');
-      chartIndex.forEach(c => lines.push(`[${c.num}]   ${c.url}`));
+      const sectionLabels = {
+        best:   "Best trade of the week",
+        worst:  "Worst trade of the week",
+        missed: "Winning trade I didn't take"
+      };
+      // Group by source, preserving the order in chartIndex (already best → worst → missed by construction)
+      const bySource = new Map();
+      chartIndex.forEach(c => {
+        if (!bySource.has(c.source)) bySource.set(c.source, []);
+        bySource.get(c.source).push(c);
+      });
+      bySource.forEach((charts, source) => {
+        lines.push('');
+        lines.push(`— ${sectionLabels[source] || 'Chart'} —`);
+        charts.forEach(c => lines.push(`Charts [${c.num}]   ${c.url}`));
+      });
     }
     return lines.join('\n');
   }
