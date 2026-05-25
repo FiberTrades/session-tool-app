@@ -1902,6 +1902,7 @@
       // ----- Page captions / section hints -----
       'stats.hint.series_history': 'Completed series of 10 — your trajectory over time.',
       // ----- Dynamic JS strings, result values, placeholders -----
+      "modal.no_bias_logged": "No session bias logged for this day.",
       "trades.consistency_title": "Consistency \u2014 showed up vs traded",
       "hint.lifetime_consistency": "Across every weekday you've traded or logged a bias. High showed-up + low traded means disciplined selectivity \u2014 you watched the market and only acted when the setup aligned.",
       "trades.consistency_empty": "No bias entries or trades logged yet. Log a session bias or take a trade and this section fills in.",
@@ -2516,6 +2517,7 @@
       // ----- Page captions / section hints -----
       'stats.hint.series_history': 'Series de 10 completadas — tu trayectoria a lo largo del tiempo.',
       // ----- Dynamic JS strings, result values, placeholders -----
+      "modal.no_bias_logged": "No se registr\u00f3 sesgo de sesi\u00f3n para este d\u00eda.",
       "trades.consistency_title": "Consistencia \u2014 presente vs operado",
       "hint.lifetime_consistency": "A trav\u00e9s de cada d\u00eda laborable en el que has operado o registrado un sesgo. Alta presencia + baja operativa significa selectividad disciplinada \u2014 observaste el mercado y actuaste s\u00f3lo cuando el setup se aline\u00f3.",
       "trades.consistency_empty": "A\u00fan no hay sesgos registrados ni operaciones. Registra un sesgo de sesi\u00f3n o toma una operaci\u00f3n y esta secci\u00f3n se completa.",
@@ -6495,8 +6497,15 @@
       worstCell = emptyCell(labelWorst, '↓', 'bad', t('tta.need_more').replace(/\{N\}/g, need).replace(/\{S\}/g, need === 1 ? '' : 's'));
     }
 
-    // Most active — always shown if any trades exist
-    const mostCell = valueCell(labelMost, '◆', 'info', mostUsed.key, netHtml(mostUsed));
+    // Most active — only shown when ≥5 trades in the busiest bucket. Below that, "most active"
+    // is just "the day you happened to trade", which isn't a pattern. Show a countdown instead.
+    let mostCell;
+    if (mostUsed && mostUsed.trades.length >= MIN_TRADES_PER_BUCKET) {
+      mostCell = valueCell(labelMost, '◆', 'info', mostUsed.key, netHtml(mostUsed));
+    } else {
+      const need = tradesNeededForBestWorst();
+      mostCell = emptyCell(labelMost, '◆', 'info', t('tta.need_more').replace(/\{N\}/g, need).replace(/\{S\}/g, need === 1 ? '' : 's'));
+    }
 
     // Best win rate
     let wrCell;
@@ -6877,27 +6886,44 @@
 
     const biasSection = document.getElementById('modal-bias-section');
     const firstWithBias = dayTrades.find(t => t.biasSnap);
-    if (firstWithBias && firstWithBias.biasSnap && (firstWithBias.biasSnap.direction || firstWithBias.biasSnap.notes)) {
-      const b = firstWithBias.biasSnap;
+    const b = (firstWithBias && firstWithBias.biasSnap) || {};
+    const biasLinks = (b.tvLinks || []).filter(l => l && l.url);
+    const biasUrls = biasLinks.map(l => l.url);
+    const escTxt = str => String(str || '').replace(/</g, '&lt;');
+    // Check what content exists — bias and per-trade reviews are independent now.
+    const hasBiasContent = !!(b.direction || b.notes || biasLinks.length > 0);
+    const hasAnyReviewContent = dayTrades.some(dt => {
+      const r = dt.reviewSnap;
+      if (!r) return false;
+      return r.execution || r.focus || r.close
+        || (Array.isArray(r.rice) && r.rice.length)
+        || (Array.isArray(r.concepts) && r.concepts.length)
+        || (Array.isArray(r.mindset) && r.mindset.length)
+        || (Array.isArray(r.tvLinks) && r.tvLinks.some(l => l && l.url && !biasUrls.includes(l.url)))
+        || (r.reflection && r.reflection.trim());
+    });
+    if (hasBiasContent || hasAnyReviewContent) {
       const dir = b.direction === 'Bullish' ? '↑' : b.direction === 'Bearish' ? '↓' : '';
       let html = `<div class="modal-section-title">${t('modal.bias_review')}</div><div class="modal-bias-text">`;
       // Bias section — session-level, drawn once from first trade with bias.
-      if (b.direction) html += `<strong style="color:var(--text);">${dir} ${tOpt(b.direction)}</strong>`;
-      if (b.structure) html += ` &middot; ${tOpt(b.structure)}`;
-      if (b.location)  html += ` &middot; ${tOpt(b.location)}`;
-      const biasLinks = (b.tvLinks || []).filter(l => l && l.url);
-      biasLinks.forEach(linkObj => {
-        const link = linkObj.url;
-        const note = linkObj.notes || '';
-        const img = tradingViewImageUrl(link);
-        const noteEl = note ? `<div style="font-size:11px;color:var(--text-dim);font-style:italic;margin-top:4px;font-family:'Fraunces',serif;">"${note.replace(/</g,'&lt;')}"</div>` : '';
-        if (img) html += `<br><a href="${link}" target="_blank" rel="noopener"><img src="${img}" alt="Bias chart" class="bias-chart-img" onerror="this.style.display='none'"></a>${noteEl}`;
-        else html += `<br><a href="${link}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${link}</a>${noteEl}`;
-      });
-      if (b.notes) html += `<br><em style="color:var(--text-dim);">"${b.notes}"</em>`;
+      if (hasBiasContent) {
+        if (b.direction) html += `<strong style="color:var(--text);">${dir} ${tOpt(b.direction)}</strong>`;
+        if (b.structure) html += (b.direction ? ' &middot; ' : '') + `${tOpt(b.structure)}`;
+        if (b.location)  html += ((b.direction || b.structure) ? ' &middot; ' : '') + `${tOpt(b.location)}`;
+        biasLinks.forEach(linkObj => {
+          const link = linkObj.url;
+          const note = linkObj.notes || '';
+          const img = tradingViewImageUrl(link);
+          const noteEl = note ? `<div style="font-size:11px;color:var(--text-dim);font-style:italic;margin-top:4px;font-family:'Fraunces',serif;">"${note.replace(/</g,'&lt;')}"</div>` : '';
+          if (img) html += `<br><a href="${link}" target="_blank" rel="noopener"><img src="${img}" alt="Bias chart" class="bias-chart-img" onerror="this.style.display='none'"></a>${noteEl}`;
+          else html += `<br><a href="${link}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${link}</a>${noteEl}`;
+        });
+        if (b.notes) html += `<br><em style="color:var(--text-dim);">"${b.notes}"</em>`;
+      } else {
+        // No bias was logged for this day — show a subtle marker so it's clear the section was skipped.
+        html += `<em style="color:var(--text-dim);">${t('modal.no_bias_logged')}</em>`;
+      }
       // Per-trade reflections + tags + post-session charts — emit one block per trade.
-      const biasUrls = biasLinks.map(l => l.url);
-      const escTxt = str => String(str || '').replace(/</g, '&lt;');
       dayTrades.forEach((dt, idx) => {
         const r = dt.reviewSnap;
         if (!r) return;
