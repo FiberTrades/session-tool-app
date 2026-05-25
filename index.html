@@ -4463,6 +4463,26 @@
       rInput.value    = t.r || '';
       potrInput.value    = (typeof t.potentialR    === 'number' && !isNaN(t.potentialR))    ? t.potentialR    : '';
       potpipsInput.value = (typeof t.potentialPips === 'number' && !isNaN(t.potentialPips)) ? t.potentialPips : '';
+      // R + Pips only meaningful on Wins — for Lose/BE, the result tells the math everything
+      // (Loss = -1R by convention, BE = 0R). Leave the fields visible but empty/dim/disabled.
+      const syncRPipsEnabled = () => {
+        const tr = data.review.trades[idx];
+        const isWin = tr.result === 'Win';
+        const isUnset = !tr.result;
+        const editable = isWin || isUnset;
+        [rInput, pipsInput].forEach(el => {
+          el.disabled = !editable;
+          el.readOnly = !editable;
+          el.style.opacity = editable ? '' : '0.3';
+          if (!editable) el.value = '';
+        });
+        if (!editable) {
+          // Clear the underlying data when we're disabling — don't leave stale values behind.
+          tr.r = '';
+          tr.pips = null;
+        }
+      };
+      syncRPipsEnabled();
       // Pot R / Pot pips only meaningful on Wins — dim/disable visually for other results
       const syncPotREnabled = () => {
         const tr = data.review.trades[idx];
@@ -4474,37 +4494,9 @@
         });
       };
       syncPotREnabled();
-      // Pips input: editable on Win (user logs captured pips), locked on Lose (auto -SL) and BE (always 0).
-      const syncPipsCell = () => {
-        const tr = data.review.trades[idx];
-        if (tr.result === 'Win') {
-          pipsInput.readOnly = false;
-          pipsInput.style.opacity = '';
-          pipsInput.placeholder = 'P';
-          if (document.activeElement !== pipsInput) {
-            pipsInput.value = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips : '';
-          }
-        } else if (tr.result === 'Lose') {
-          pipsInput.readOnly = true;
-          pipsInput.style.opacity = '0.6';
-          pipsInput.placeholder = 'auto';
-          const slVal = parseFloat(tr.sl);
-          pipsInput.value = (!isNaN(slVal) && slVal > 0) ? -slVal : '';
-          tr.pips = null;
-        } else if (tr.result === 'BE') {
-          pipsInput.readOnly = true;
-          pipsInput.style.opacity = '0.6';
-          pipsInput.placeholder = '';
-          pipsInput.value = '0';
-          tr.pips = null;
-        } else {
-          pipsInput.readOnly = false;
-          pipsInput.style.opacity = '';
-          pipsInput.placeholder = 'P';
-          pipsInput.value = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips : '';
-        }
-      };
-      syncPipsCell();
+      // (Old syncPipsCell removed — syncRPipsEnabled now disables both R and Pips uniformly
+      // for Lose/BE rather than auto-filling pips from SL. Cleaner: blank fields signal
+      // "nothing meaningful to capture here, the result tells you everything".)
       row.querySelector('.type-select').value = t.type || '';
       row.querySelector('.side-select').value = t.side || '';
       row.querySelector('.entry-input').value = t.entryTime || '';
@@ -4546,7 +4538,7 @@
           data.review.trades[idx].potentialPips = null;
         }
         syncPotREnabled();
-        syncPipsCell();
+        syncRPipsEnabled();
         lightUpdate();
       });
       rInput.addEventListener('input', e => {
@@ -5011,7 +5003,12 @@
 
   document.getElementById('review-copy').addEventListener('click', () => copyToClipboard(buildReviewMessage()));
   document.getElementById('review-save-stats').addEventListener('click', async () => {
-    const valid = data.review.trades.filter(t => t.result && t.r && !isNaN(parseFloat(t.r)));
+    // Validation: Win needs r; Lose and BE don't (their R is implicit by convention — -1 / 0).
+    const valid = data.review.trades.filter(t => {
+      if (!t.result) return false;
+      if (t.result === 'Win') return t.r && !isNaN(parseFloat(t.r));
+      return true; // Lose or BE — always valid once result is set
+    });
     if (valid.length === 0) { showToast('No valid trades to save'); return; }
     const biasSnap = { ...data.bias, tvLinks: (data.bias.tvLinks || []).map(l => ({ url: l.url || '', notes: l.notes || '' })) };
     // Use session date (defaults to today, can be back-filled)
@@ -5033,7 +5030,8 @@
       data.currentSeries.push({
         id: genId(),
         result: t.result,
-        r: parseFloat(t.r),
+        // R is only stored for Wins (Lose = -1 implicit, BE = 0 implicit).
+        r: t.result === 'Win' ? parseFloat(t.r) : null,
         type: t.type || null,
         side: t.side || null,
         entryTime: t.entryTime || '',
@@ -6738,6 +6736,8 @@
     document.getElementById('edit-pips').value = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : '';
     document.getElementById('edit-potr').value = t.potentialR != null ? t.potentialR : '';
     document.getElementById('edit-potpips').value = (typeof t.potentialPips === 'number' && !isNaN(t.potentialPips)) ? t.potentialPips : '';
+    // Disable R + Pips for Lose/BE (their values are implicit by convention — -1R / 0R).
+    syncEditRPipsEnabled();
     // The Potential row has two children — the label (display: block default) and the field (display: grid).
     // Toggle them separately so the field keeps its 2-col grid when visible.
     document.querySelectorAll('.edit-potr-row').forEach(el => {
@@ -6786,6 +6786,22 @@
     netEl.style.color   = net   > 0 ? 'var(--good)' : net   < 0 ? 'var(--bad)' : 'var(--text-mid)';
   }
 
+  // Disable/enable R + Pips inputs in the edit-trade modal based on the chosen result.
+  // Lose and BE don't take R/Pips values — their R is implicit (-1 / 0).
+  function syncEditRPipsEnabled() {
+    const isWin = editingResult === 'Win';
+    const isUnset = !editingResult;
+    const editable = isWin || isUnset;
+    ['edit-r', 'edit-pips'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.disabled = !editable;
+      el.readOnly = !editable;
+      el.style.opacity = editable ? '' : '0.3';
+      if (!editable) el.value = '';
+    });
+  }
+
   document.querySelectorAll('.edit-result-toggle button').forEach(btn => {
     btn.addEventListener('click', () => {
       editingResult = btn.dataset.result;
@@ -6801,6 +6817,7 @@
         document.getElementById('edit-potr').value = '';
         document.getElementById('edit-potpips').value = '';
       }
+      syncEditRPipsEnabled();
       updateEditNetPL();
     });
   });
@@ -6848,10 +6865,16 @@
       t.dayOfWeek = newDate.getDay();
     }
     t.result = editingResult;
-    const rVal = parseFloat(document.getElementById('edit-r').value);
-    t.r = isNaN(rVal) ? 0 : rVal;
-    const pipsVal = parseFloat(document.getElementById('edit-pips').value);
-    t.pips = isNaN(pipsVal) ? null : pipsVal;
+    // R is only stored for Wins (Lose = -1 implicit, BE = 0 implicit).
+    if (t.result === 'Win') {
+      const rVal = parseFloat(document.getElementById('edit-r').value);
+      t.r = isNaN(rVal) ? 0 : rVal;
+      const pipsVal = parseFloat(document.getElementById('edit-pips').value);
+      t.pips = isNaN(pipsVal) ? null : pipsVal;
+    } else {
+      t.r = null;
+      t.pips = null;
+    }
     // Potential R/pips = how far the move actually went. Only valid on Wins.
     if (t.result === 'Win') {
       const potVal = parseFloat(document.getElementById('edit-potr').value);
