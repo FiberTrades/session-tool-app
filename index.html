@@ -619,6 +619,10 @@
   .trade-thumb img { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; }
   /* Auto-trade card: compact horizontal layout. Label above, thumb+meta side by side below. */
   .auto-trade-card { padding: 10px 12px; border: 1px solid var(--border-2); background: var(--bg-elev); margin-bottom: 8px; }
+  .auto-trade-result-chip { display: inline-block; padding: 1px 6px; font-family: 'DM Mono', monospace; font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; vertical-align: middle; }
+  .auto-trade-result-chip.good { background: var(--good-bg); color: var(--good); }
+  .auto-trade-result-chip.bad  { background: var(--bad-bg);  color: var(--bad); }
+  .auto-trade-result-chip.be   { background: var(--info-bg); color: var(--info); }
   .auto-trade-label { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; display: flex; align-items: center; gap: 6px; }
   .auto-trade-label .icon { font-family: 'DM Mono', monospace; font-size: 10px; }
   .auto-trade-label .icon.good { color: var(--good); }
@@ -8181,7 +8185,6 @@
   function renderWeeklyReflection(weekStart, weekEnd, existing) {
     // Read existing answers; legacy reviews may have only `notes` — fold that into the "what worked" field
     const e = existing || {};
-    const weekChartUrl = (e.weekChart && e.weekChart.url) || '';
     const bestTradeNotes  = (e.bestTrade  && e.bestTrade.notes)  || '';
     const worstTradeNotes = (e.worstTrade && e.worstTrade.notes) || '';
     const missedUrl   = (e.missedTrade && e.missedTrade.url) || '';
@@ -8226,6 +8229,14 @@
       const dt = new Date(t.date);
       const dateStr = dt.toLocaleDateString(tLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
       const sideStr = tSide(t.side) || '—';
+      // Result chip — small inline tag matching the calendar's W/L/BE styling
+      const resultLabel = t.result === 'Win' ? tResult('Win')
+                       : t.result === 'Lose' ? tResult('Lose')
+                       : t.result === 'BE' ? tResult('BE') : '';
+      const resultCls = t.result === 'Win' ? 'good' : t.result === 'Lose' ? 'bad' : 'be';
+      const resultChip = resultLabel
+        ? `<span class="auto-trade-result-chip ${resultCls}">${resultLabel}</span>`
+        : '';
       const net = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
       const netStr = (net >= 0 ? '+' : '-') + curSym() + Math.abs(net).toFixed(2);
       // Show pips alongside R when logged — same visual weight, both peers.
@@ -8233,13 +8244,13 @@
         ? ` · <span class="${rCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(0)}p</span>`
         : '';
       const thumbHtml = (typeof pickTradeChartThumb === 'function') ? pickTradeChartThumb(t) : '';
-      // Two-line meta: date+side on top, R+pips+£ underneath. Reads cleanly even in narrow half-width columns.
+      // Two-line meta: date+side+result chip on top, R+pips+£ underneath. Reads cleanly even in narrow half-width columns.
       return `<div class="auto-trade-card">
         <div class="auto-trade-label"><span class="icon ${iconCls}">${icon}</span>${label}</div>
         <div class="auto-trade-body">
           ${thumbHtml}
           <div class="auto-trade-meta">
-            <div><span class="auto-trade-date">${dateStr}</span> · ${sideStr}</div>
+            <div><span class="auto-trade-date">${dateStr}</span> · ${sideStr}${resultChip ? ' · ' + resultChip : ''}</div>
             <div><span class="${rCls}">${rStr}</span>${pipsHtml} · <span class="${rCls}">${netStr}</span></div>
           </div>
         </div>
@@ -8303,7 +8314,6 @@
       }
       return [];
     }
-    const weekChartLinks  = migrateLegacyUrls(e.weekChart);
     const missedTradeLinks = migrateLegacyUrls(e.missedTrade);
 
     document.getElementById('review-modal-reflection').innerHTML = `
@@ -8337,12 +8347,6 @@
             }).join('')}
           </div>
         </div>` : ''}
-
-        <div class="reflect-question">
-          <div class="reflect-q-label">${t('modal.picture_week')}</div>
-          <div id="rfx-week-chart-list" class="reflect-q-tv-list">${renderTvLinksList(weekChartLinks)}</div>
-          <button type="button" id="rfx-week-chart-add" class="reflect-q-tv-add">${esc(t('btn.add_link') || '+ Add link')}</button>
-        </div>
 
         <div class="reflect-question">
           <div class="reflect-q-label">${t('modal.missed_wins_label')}</div>
@@ -8440,7 +8444,6 @@
 
     // Live-state arrays for the two chart sections. Bound by the card handlers below
     // (whose `idx` references positions in these arrays). Persisted on every change.
-    let weekChartState  = weekChartLinks.length > 0 ? weekChartLinks.map(l => ({ url: l.url || '', notes: l.notes || '' })) : [{ url: '', notes: '' }];
     let missedState     = missedTradeLinks.length > 0 ? missedTradeLinks.map(l => ({ url: l.url || '', notes: l.notes || '' })) : [{ url: '', notes: '' }];
 
     function persist() {
@@ -8453,7 +8456,6 @@
         weekKey: currentReview.key,
         weekStart: currentReview.start.toISOString(),
         weekEnd: currentReview.end.toISOString(),
-        weekChart:   { tvLinks: cleanLinks(weekChartState) },
         bestTrade:   { notes: valOf('rfx-best-trade-notes') },
         worstTrade:  { notes: valOf('rfx-worst-trade-notes') },
         missedTrade: { tvLinks: cleanLinks(missedState) },
@@ -8551,7 +8553,6 @@
         persist();
       });
     }
-    wireTvLinksList('rfx-week-chart-list', 'rfx-week-chart-add', weekChartState);
     wireTvLinksList('rfx-missed-list',     'rfx-missed-add',     missedState);
 
     // Best/worst trade notes only exist when wins/losses occurred — attach if present.
@@ -8624,9 +8625,7 @@
       return [];
     }
     const persistedEntry = (data.weeklyReviews || []).find(r => r.weekKey === currentReview?.key);
-    const weekChartLinksOut  = pullTvLinks(persistedEntry && persistedEntry.weekChart);
     const missedLinksOut     = pullTvLinks(persistedEntry && persistedEntry.missedTrade);
-    const weekChartUrls = weekChartLinksOut.map(l => l.url);
     const missedUrls    = missedLinksOut.map(l => l.url);
     const bestTradeTxt  = valTrim('rfx-best-trade-notes');
     const worstTradeTxt = valTrim('rfx-worst-trade-notes');
@@ -8660,7 +8659,6 @@
     // Each section then references its charts inline, and all URLs are emitted at the bottom
     // — Discord stacks the previews there anyway, so [N] markers let the reader match each.
     const chartIndex = []; // { num, url, source }
-    weekChartUrls.forEach(url => chartIndex.push({ num: chartIndex.length + 1, url, source: 'week' }));
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
     if (bestTradeChart) chartIndex.push({ num: chartIndex.length + 1, url: bestTradeChart, source: 'best' });
     const worstTradeChart = dWorstLose && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dWorstLose) : null;
@@ -8669,10 +8667,6 @@
 
     const refsBySource = src => chartIndex.filter(c => c.source === src).map(c => `[${c.num}]`).join(' ');
 
-    if (weekChartUrls.length > 0) {
-      lines.push('');
-      lines.push(`**Week's chart**   ${refsBySource('week')}`);
-    }
     if (dBestWin) {
       lines.push('');
       const ref = bestTradeChart ? `   ${refsBySource('best')}` : '';
@@ -8823,8 +8817,7 @@
         existing.reflectionMissedWins || existing.reflectionWentWell || // legacy field, kept for back-compat
         (existing.bestTrade  && existing.bestTrade.notes) ||
         (existing.worstTrade && existing.worstTrade.notes) ||
-        (existing.weekChart && existing.weekChart.url) ||
-        (existing.missedTrade && existing.missedTrade.url) ||
+        (existing.missedTrade && (existing.missedTrade.url || (Array.isArray(existing.missedTrade.tvLinks) && existing.missedTrade.tvLinks.some(l => l && l.url)))) ||
         existing.notes
       );
       if (hasReflection) return;
