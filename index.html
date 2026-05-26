@@ -2038,6 +2038,7 @@
       'backup.trade_singular': "trade",
       'backup.trade_plural': "trades",
       'backup.saved_word': "saved",
+      'backup.observed_only_saved': 'Session saved (observed only)',
       'backup.intro_html': "Your trades are saved in this browser's local storage. If you clear your browser data, switch computers, or your hard drive fails, that data is gone. A backup is a JSON file you can save to Google Drive, Dropbox, or anywhere else for safekeeping. <strong style=\"color:var(--text);\">You can re-import it later from the Import Data button at the bottom of the page.</strong>",
       'backup.warning_html': "<strong style=\"color:#f59e0b;\">Before enabling Auto-backup:</strong> backups go to your browser's default Downloads folder unless you change it. Set that to a Google Drive / Dropbox synced folder first so your backups land somewhere safe. Chrome / Edge users will be asked to pick a specific file instead.",
       'backup.download_now': "Download backup now",
@@ -2658,6 +2659,7 @@
       'backup.trade_singular': "operaci\u00f3n",
       'backup.trade_plural': "operaciones",
       'backup.saved_word': "guardadas",
+      'backup.observed_only_saved': 'Sesión guardada (solo observada)',
       'backup.intro_html': "Tus operaciones se guardan en el almacenamiento local de este navegador. Si borras los datos del navegador, cambias de ordenador o falla tu disco duro, esos datos se pierden. Una copia de seguridad es un archivo JSON que puedes guardar en Google Drive, Dropbox o cualquier otro sitio. <strong style=\"color:var(--text);\">Puedes volver a importarlo m\u00e1s tarde desde el bot\u00f3n Importar Datos al final de la p\u00e1gina.</strong>",
       'backup.warning_html': "<strong style=\"color:#f59e0b;\">Antes de activar la copia autom\u00e1tica:</strong> las copias van a la carpeta de Descargas por defecto del navegador a menos que la cambies. Config\u00farala primero a una carpeta sincronizada de Google Drive / Dropbox para que tus copias terminen en un sitio seguro. A los usuarios de Chrome / Edge se les pedir\u00e1 elegir un archivo concreto.",
       'backup.download_now': "Descargar copia ahora",
@@ -3710,23 +3712,18 @@
     const tr = getActiveReviewTrade();
     const label = document.getElementById('review-active-trade-label');
     const sections = ['section-execution', 'section-focus', 'section-close', 'section-rice', 'section-tv', 'section-tags', 'section-mindset', 'section-reflection'];
-    if (!tr) {
-      // No trades — hide all per-trade sections and the label.
-      if (label) label.classList.add('hidden');
-      sections.forEach(id => { const el = document.getElementById(id); if (el) el.classList.add('hidden'); });
-      // Clear reflection textarea to avoid showing stale text.
-      const refEl = document.getElementById('review-reflection');
-      if (refEl) refEl.value = '';
-      // Clear all option .selected states
-      document.querySelectorAll('[data-review] .option, [data-review-multi] .option').forEach(b => b.classList.remove('selected'));
-      document.querySelectorAll('.tag').forEach(b => b.classList.remove('selected'));
-      return;
-    }
-    // Show sections + label
+    // Always show review sections. With trades, they bind per-trade. Without trades, they bind
+    // to data.review (session-level) — letting a no-trade session still log a full review.
     sections.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); });
+    const hasTrades = (data.review.trades || []).length > 0;
     if (label) {
-      label.classList.remove('hidden');
-      label.textContent = t('review.reviewing_trade').replace('{N}', _activeReviewTradeIdx + 1);
+      if (hasTrades) {
+        label.classList.remove('hidden');
+        label.textContent = t('review.reviewing_trade').replace('{N}', _activeReviewTradeIdx + 1);
+      } else {
+        // No "Reviewing Trade N" label since the review is session-level, not per-trade.
+        label.classList.add('hidden');
+      }
     }
     // Paint single-select option groups (execution, focus, close)
     document.querySelectorAll('[data-review]').forEach(group => {
@@ -3761,10 +3758,14 @@
   function newReviewBlank() {
     return { traded: 'No', trades: [], execution: null, focus: null, close: null, rice: [], tvLinks: [], concepts: [], mindset: [], reflection: '' };
   }
-  // Returns the currently-active trade for per-trade review binding, or null if no trades.
+  // Returns the active review binding target.
+  // - With trades: returns the currently-active per-trade review slot (data.review.trades[idx]).
+  // - Without trades: returns the session-level data.review object directly — so a no-trade
+  //   session can still log Execution/Focus/Close/RICE/Tags/Charts/Reflection at the session level.
+  //   (data.review already has those fields from newReviewBlank.)
   function getActiveReviewTrade() {
     const trades = data.review.trades || [];
-    if (trades.length === 0) return null;
+    if (trades.length === 0) return data.review;
     if (_activeReviewTradeIdx >= trades.length) _activeReviewTradeIdx = 0;
     return trades[_activeReviewTradeIdx];
   }
@@ -5027,6 +5028,45 @@
     }
     if (r.traded === 'No' || (r.trades || []).length === 0) {
       lines.push(`Traded      No — Observed Only`);
+      // Session-level review block — when there are no trades, review fields bind to data.review
+      // directly (see getActiveReviewTrade fallback). Emit them as one "— Session Review —" block
+      // mirroring the per-trade block format, so a no-trade session can still post a full review.
+      const sessionChartLinks = (r.tvLinks || []).filter(l => l && l.url);
+      const hasAnySessionReview = r.execution || r.focus || r.close
+        || (Array.isArray(r.rice) && r.rice.length)
+        || (Array.isArray(r.concepts) && r.concepts.length)
+        || (Array.isArray(r.mindset) && r.mindset.length)
+        || sessionChartLinks.length > 0
+        || (r.reflection && r.reflection.trim());
+      if (hasAnySessionReview) {
+        // Continuous chart numbering for the session-level charts.
+        const sessionCharts = sessionChartLinks.map((l, idx) => ({ num: idx + 1, url: l.url, notes: l.notes || '' }));
+        lines.push('');
+        lines.push(`— Session Review —`);
+        if (r.execution) lines.push(`Execution   ${r.execution}`);
+        if (r.focus)     lines.push(`Focus       ${r.focus}`);
+        if (r.close) {
+          const arrow = r.close === 'Bullish' ? '↑' : r.close === 'Bearish' ? '↓' : '↔';
+          lines.push(`Close       ${arrow} ${r.close}`);
+        }
+        if (Array.isArray(r.rice) && r.rice.length > 0) lines.push(`Phase       ${r.rice.join(' · ')}`);
+        if (sessionCharts.length > 0) {
+          const label = sessionCharts.length === 1 ? 'Chart       ' : 'Charts      ';
+          lines.push(`${label}${sessionCharts.map(c => `[${c.num}]`).join(' ')}`);
+        }
+        if (Array.isArray(r.concepts) && r.concepts.length > 0) lines.push(`Concepts:   ${r.concepts.join(', ')}`);
+        if (Array.isArray(r.mindset) && r.mindset.length > 0)   lines.push(`Mindset:    ${r.mindset.join(', ')}`);
+        if (r.reflection && r.reflection.trim()) { lines.push(''); lines.push(r.reflection.trim()); }
+        // Chart URLs at the bottom, one block. Each line refers to one chart, so always "Chart [N]".
+        if (sessionCharts.length > 0) {
+          lines.push('');
+          lines.push(`— Charts —`);
+          sessionCharts.forEach(c => {
+            lines.push(`Chart [${c.num}]   ${c.url}`);
+            if (c.notes) lines.push(`      "${c.notes}"`);
+          });
+        }
+      }
       return lines.join('\n');
     }
     lines.push(`Traded      Yes (${r.trades.length} trade${r.trades.length === 1 ? '' : 's'})`);
@@ -5121,7 +5161,8 @@
     try { refreshTradeCompletionBanner(); } catch(e) {}
     const r = data.review;
     const out = document.getElementById('review-preview');
-    // A review is "filled" if any trade has data, or trades themselves have results.
+    // A review is "filled" if any trade has data, OR the session-level review block has content
+    // (the no-trade case — user wrote a session reflection without logging trades).
     const tradeHasReview = (r.trades || []).some(t =>
       t.execution || t.focus || t.close ||
       (Array.isArray(t.rice) && t.rice.length) ||
@@ -5130,7 +5171,17 @@
       (Array.isArray(t.tvLinks) && t.tvLinks.some(l => l && l.url)) ||
       (t.reflection && t.reflection.trim())
     );
-    const filled = tradeHasReview || (r.trades || []).some(t => t.result || t.r);
+    // Session-level review check — only relevant when there are no trades (otherwise the
+    // session-level fields get shadowed by per-trade ones in the binding).
+    const sessionLevelFilled = (r.trades || []).length === 0 && (
+      r.execution || r.focus || r.close ||
+      (Array.isArray(r.rice) && r.rice.length) ||
+      (Array.isArray(r.concepts) && r.concepts.length) ||
+      (Array.isArray(r.mindset) && r.mindset.length) ||
+      (Array.isArray(r.tvLinks) && r.tvLinks.some(l => l && l.url)) ||
+      (r.reflection && r.reflection.trim())
+    );
+    const filled = tradeHasReview || sessionLevelFilled || (r.trades || []).some(t => t.result || t.r);
     if (!filled) { out.innerHTML = '<em>Fill in the form to preview your Discord post.</em>'; return; }
     const html = buildReviewMessage()
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
@@ -5271,7 +5322,36 @@
       if (t.result === 'Win') return t.r && !isNaN(parseFloat(t.r));
       return true; // Lose or BE — always valid once result is set
     });
-    if (valid.length === 0) { showToast('No valid trades to save'); return; }
+    // No-trade save path: when there are no trades AND session-level review fields are filled,
+    // we still let the user "save". Nothing gets pushed to the series (no P&L), but the session
+    // is acknowledged — the saved-bias snapshot stays available on the day, and any backup is taken.
+    const r = data.review;
+    const hasSessionLevelReview = (r.trades || []).length === 0 && (
+      r.execution || r.focus || r.close ||
+      (Array.isArray(r.rice) && r.rice.length) ||
+      (Array.isArray(r.concepts) && r.concepts.length) ||
+      (Array.isArray(r.mindset) && r.mindset.length) ||
+      (Array.isArray(r.tvLinks) && r.tvLinks.some(l => l && l.url)) ||
+      (r.reflection && r.reflection.trim())
+    );
+    if (valid.length === 0 && !hasSessionLevelReview) { showToast('No valid trades to save'); return; }
+    if (valid.length === 0 && hasSessionLevelReview) {
+      // No trades to push, but acknowledge the session: save current state + run backup logic.
+      saveData();
+      const statsTab = document.querySelector('.tab[data-page="stats"]');
+      if (statsTab) statsTab.click();
+      if (data.settings.linkedFileBackup) {
+        const ok = await writeLinkedBackup();
+        if (ok) showToast('Observed-only session saved + backup written');
+        else { showToast('Backup file unreachable — choose a backup option'); openBackupModal(0, true); }
+      } else if (data.settings.autoBackup) {
+        downloadBackup();
+        showToast('Observed-only session saved + backup downloaded');
+      } else {
+        openBackupModal(0, true);
+      }
+      return;
+    }
     const biasSnap = { ...data.bias, tvLinks: (data.bias.tvLinks || []).map(l => ({ url: l.url || '', notes: l.notes || '' })) };
     // Use session date (defaults to today, can be back-filled)
     const sessionDateStr = data.review.sessionDate || todayDateStr();
@@ -7363,8 +7443,13 @@
     const titleEl = document.getElementById('backup-modal-title');
     const subEl   = document.getElementById('backup-modal-subtitle');
     if (fromSave) {
-      const tradesWord = savedCount === 1 ? t('backup.trade_singular') : t('backup.trade_plural');
-      titleEl.textContent = `${savedCount} ${tradesWord} ${t('backup.saved_word')}`;
+      if (savedCount === 0) {
+        // Observed-only save (no trades) — different title since "0 trades saved" reads oddly.
+        titleEl.textContent = t('backup.observed_only_saved') || 'Session saved (observed only)';
+      } else {
+        const tradesWord = savedCount === 1 ? t('backup.trade_singular') : t('backup.trade_plural');
+        titleEl.textContent = `${savedCount} ${tradesWord} ${t('backup.saved_word')}`;
+      }
       subEl.textContent = t('backup.sub_want_backup');
     } else {
       titleEl.textContent = t('backup.title_settings');
