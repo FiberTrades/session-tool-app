@@ -5415,7 +5415,9 @@
   //   2. No trades but session-level review filled (observed-only) → save state + backup flow
   //   3. Nothing valid → show toast and bail
   // Returns the number of trades actually persisted (0 for observed-only, 0 for bail-out).
-  async function performReviewSave() {
+  async function performReviewSave(opts) {
+    opts = opts || {};
+    const skipBackupModal = !!opts.skipBackupModal;
     const valid = data.review.trades.filter(t => {
       if (!t.result) return false;
       if (t.result === 'Win') return t.r && !isNaN(parseFloat(t.r));
@@ -5438,11 +5440,11 @@
       if (data.settings.linkedFileBackup) {
         const ok = await writeLinkedBackup();
         if (ok) showToast('Observed-only session saved + backup written');
-        else { showToast('Backup file unreachable — choose a backup option'); openBackupModal(0, true); }
+        else { showToast('Backup file unreachable — choose a backup option'); if (!skipBackupModal) openBackupModal(0, true); }
       } else if (data.settings.autoBackup) {
         downloadBackup();
         showToast('Observed-only session saved + backup downloaded');
-      } else {
+      } else if (!skipBackupModal) {
         openBackupModal(0, true);
       }
       return 0;
@@ -5498,27 +5500,26 @@
         showToast(`${valid.length} trade${valid.length === 1 ? '' : 's'} saved + backup written`);
       } else {
         showToast('Backup file unreachable — choose a backup option');
-        openBackupModal(valid.length, true);
+        if (!skipBackupModal) openBackupModal(valid.length, true);
       }
     } else if (data.settings.autoBackup) {
       downloadBackup();
       showToast(`${valid.length} trade${valid.length === 1 ? '' : 's'} saved + backup downloaded`);
-    } else {
+    } else if (!skipBackupModal) {
       openBackupModal(valid.length, true);
     }
     return valid.length;
   }
 
   // Copy for Discord: copies the Discord post + auto-saves when ≥1 trade is logged.
-  // Without trades, just copies (no save, no nag) — the explicit Save button is still there
-  // for backlogging or observed-only flows.
+  // We pass skipBackupModal=true so Copy never interrupts with a backup chooser dialog —
+  // the user's explicit Save button is where the backup modal still fires for new users.
   document.getElementById('review-copy').addEventListener('click', async () => {
     copyToClipboard(buildReviewMessage());
     const hasTrades = (data.review.trades || []).length > 0;
-    if (hasTrades) await performReviewSave();
+    if (hasTrades) await performReviewSave({ skipBackupModal: true });
   });
-  // Save to Series of 10: still works independently for backlogging trades without copying to Discord,
-  // saving observed-only sessions, or fixing historical entries.
+  // Save to Series of 10: full flow including the backup modal for users who haven't set a preference.
   document.getElementById('review-save-stats').addEventListener('click', async () => {
     await performReviewSave();
   });
@@ -5642,9 +5643,10 @@
     try { renderSeriesMessage(); } catch(e) {}
     const dotsWrap = document.getElementById('current-dots');
     dotsWrap.innerHTML = '';
-    // Pre-compute translated W/L/BE labels — inside the loop below, `t` is the trade,
-    // which shadows the global t() translation function.
+    // Pre-compute translated W/L/BE labels + tooltip template — inside the loop below,
+    // `t` is the trade and shadows the global t() translation function.
     const _lblW = t('lbl.w'), _lblL = t('lbl.l'), _lblBE = t('lbl.be');
+    const _tipDot = t('tip.trade_dot_hover');
     for (let i = 0; i < 10; i++) {
       const dot = document.createElement('div');
       dot.className = 'series-dot';
@@ -5656,7 +5658,7 @@
         const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-GB', { day:'2-digit', month:'short' }) : '';
         const rTxt = typeof t.r === 'number' ? t.r.toFixed(2) + 'R' : (t.r || '');
         const pipsTxt = (typeof t.pips === 'number' && !isNaN(t.pips)) ? ` · ${t.pips.toFixed(0)}p` : '';
-        dot.title = t('tip.trade_dot_hover').replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr);
+        dot.title = _tipDot.replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr);
         dot.addEventListener('click', () => openEditTradeModal(t.id));
       }
       dotsWrap.appendChild(dot);
