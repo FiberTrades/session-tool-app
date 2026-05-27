@@ -1175,7 +1175,7 @@
           <span class="bias-date-inline-eyebrow" data-i18n="session_strip.logging_for">Logging trades for</span>
           <input type="date" id="session-date" />
           <button type="button" id="mt5-import-btn" class="bias-date-inline-btn" data-i18n="btn.import_mt5">↓ Import from MT5</button>
-          <button type="button" id="calculator-btn" class="bias-date-inline-btn" data-i18n="btn.calculator">＝ Calculator</button>
+          <button type="button" id="calculator-btn" class="bias-date-inline-btn" data-i18n="btn.calculator">Calculator</button>
         </span>
       </div>
 
@@ -1860,6 +1860,9 @@
       <button class="modal-close" id="calculator-close" title="Close">×</button>
     </div>
     <div style="padding:0 20px 20px;">
+      <!-- Running history line: shows accumulator + pending operator as you build up the expression
+           (e.g. "100 +" while you're typing the next number). Empty when no operation in flight. -->
+      <div id="calc-history" style="min-height:18px;text-align:right;color:var(--text-dim);font-family:'DM Mono',monospace;font-size:13px;letter-spacing:0.04em;padding:0 16px;margin-bottom:4px;">&nbsp;</div>
       <input type="text" id="calc-display" readonly value="0" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border-2);color:var(--text);font-family:'DM Mono',monospace;font-size:22px;text-align:right;padding:14px 16px;margin-bottom:12px;letter-spacing:0.04em;" />
       <div id="calc-buttons" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
         <button type="button" class="calc-btn calc-fn" data-calc="clear">C</button>
@@ -1955,7 +1958,7 @@
       'btn.add_trade': '+ Add Trade',
       'btn.today': 'Today',
       'btn.import_mt5': '↓ Import from MT5',
-      'btn.calculator': '＝ Calculator',
+      'btn.calculator': 'Calculator',
       'calc.title': 'Calculator',
       'btn.cancel': 'Cancel',
       'btn.close': 'Close',
@@ -2615,7 +2618,7 @@
       'btn.add_trade': '+ Añadir Operación',
       'btn.today': 'Hoy',
       'btn.import_mt5': '↓ Importar de MT5',
-      'btn.calculator': '＝ Calculadora',
+      'btn.calculator': 'Calculadora',
       'calc.title': 'Calculadora',
       'btn.cancel': 'Cancelar',
       'btn.close': 'Cerrar',
@@ -12397,17 +12400,27 @@
     const bg = document.getElementById('calculator-modal-bg');
     const closeBtn = document.getElementById('calculator-close');
     const display = document.getElementById('calc-display');
+    const history = document.getElementById('calc-history');
     const buttons = document.getElementById('calc-buttons');
     if (!btn || !bg || !display || !buttons) return;
     let acc = null;          // accumulated value (number or null)
     let pendingOp = null;    // 'add' | 'subtract' | 'multiply' | 'divide' | null
     let entering = false;    // true while typing the next operand (so a digit replaces "0" first)
     let justEvaluated = false; // true right after pressing = (so next digit starts fresh)
+    const opSymbol = (op) => ({ add: '+', subtract: '−', multiply: '×', divide: '÷' })[op] || '';
     const fmt = (n) => {
       if (!isFinite(n)) return 'Error';
       // Keep precision but trim trailing zeros after a decimal
       const s = Number(n.toFixed(10)).toString();
       return s;
+    };
+    const updateHistory = () => {
+      if (!history) return;
+      if (acc !== null && pendingOp !== null) {
+        history.textContent = `${fmt(acc)} ${opSymbol(pendingOp)}`;
+      } else {
+        history.innerHTML = '&nbsp;';
+      }
     };
     const evaluate = (a, op, b) => {
       switch (op) {
@@ -12423,7 +12436,7 @@
     };
     const reset = () => {
       acc = null; pendingOp = null; entering = false; justEvaluated = false;
-      display.value = '0'; clearActiveOp();
+      display.value = '0'; clearActiveOp(); updateHistory();
     };
     const open = () => { reset(); bg.classList.add('show'); };
     const close = () => { bg.classList.remove('show'); };
@@ -12440,7 +12453,7 @@
         if (!entering || justEvaluated) {
           display.value = k;
           entering = true;
-          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); }
+          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); updateHistory(); }
         } else {
           display.value = display.value === '0' ? k : (display.value + k);
         }
@@ -12449,7 +12462,7 @@
       if (k === '.') {
         if (!entering || justEvaluated) {
           display.value = '0.'; entering = true;
-          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); }
+          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); updateHistory(); }
         } else if (!display.value.includes('.')) {
           display.value = display.value + '.';
         }
@@ -12475,6 +12488,8 @@
         if (acc === null) {
           acc = cur;
         } else if (entering) {
+          // User typed a new operand — fold it into the running total so the display
+          // shows the cumulative result.
           acc = evaluate(acc, pendingOp, cur);
           display.value = fmt(acc);
         }
@@ -12483,6 +12498,7 @@
         justEvaluated = false;
         clearActiveOp();
         target.classList.add('active-op');
+        updateHistory();
         return;
       }
       if (k === 'equals') {
@@ -12494,6 +12510,7 @@
         entering = false;
         justEvaluated = true;
         clearActiveOp();
+        updateHistory();
         return;
       }
     });
