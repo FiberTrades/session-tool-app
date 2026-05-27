@@ -334,6 +334,20 @@
   .saved-bias-link > div:last-child { margin-bottom: 0 !important; }
   .bias-chart-img { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-2); display: block; cursor: pointer; transition: opacity 200ms; }
   .bias-chart-img:hover { opacity: 0.85; }
+  /* Calculator modal buttons. 4-col grid (set inline on the parent). DM Mono throughout
+     for consistency with the rest of the data-side of the app. Colour-coded: numbers neutral,
+     operators muted accent, equals strong accent, function buttons (C, ⌫, %) dim. */
+  .calc-btn { background: var(--bg); border: 1px solid var(--border-2); color: var(--text); font-family: 'DM Mono', monospace; font-size: 17px; padding: 14px 0; cursor: pointer; transition: all 120ms; letter-spacing: 0.02em; user-select: none; }
+  .calc-btn:hover { background: var(--bg-elev); border-color: var(--text-mid); }
+  .calc-btn:active { background: var(--border); }
+  .calc-btn.calc-num { color: var(--text); }
+  .calc-btn.calc-op { color: var(--text-mid); border-color: var(--text-mid); }
+  .calc-btn.calc-op:hover { color: var(--text); }
+  .calc-btn.calc-op.active-op { background: var(--text); color: var(--bg); border-color: var(--text); }
+  .calc-btn.calc-fn { color: var(--text-dim); font-size: 14px; }
+  .calc-btn.calc-fn:hover { color: var(--text); }
+  .calc-btn.calc-eq { background: var(--text); color: var(--bg); border-color: var(--text); font-size: 18px; }
+  .calc-btn.calc-eq:hover { background: var(--text-mid); border-color: var(--text-mid); }
   /* Tab strip shown above the "This Morning's Bias" recap when multiple charts exist.
      One tab per chart; clicking switches which chart + notes are visible below. */
   .bias-chart-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -1149,6 +1163,7 @@
           <span class="bias-date-inline-eyebrow" data-i18n="session_strip.logging_for">Logging trades for</span>
           <input type="date" id="session-date" />
           <button type="button" id="mt5-import-btn" data-i18n="btn.import_mt5" style="background:var(--bg);border:1px solid var(--border-2);color:var(--text-mid);padding:5px 10px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.05em;text-transform:none;cursor:pointer;transition:all 200ms;">↓ Import from MT5</button>
+          <button type="button" id="calculator-btn" data-i18n="btn.calculator" style="background:var(--bg);border:1px solid var(--border-2);color:var(--text-mid);padding:5px 10px;font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.05em;text-transform:none;cursor:pointer;transition:all 200ms;margin-left:8px;">＝ Calculator</button>
         </span>
       </div>
 
@@ -1823,6 +1838,46 @@
   </div>
 </div>
 
+<!-- Basic calculator modal — opened from the "Calculator" button next to MT5 import in the
+     Session Review trade-log. Standard 4-function calc for working out costs, spreads, lot
+     sizes, etc. while logging trades. Closed via × button or overlay click. -->
+<div class="modal-bg" id="calculator-modal-bg">
+  <div class="modal" style="max-width:340px;">
+    <div class="modal-header" style="padding-bottom:12px;">
+      <h2 data-i18n="calc.title" style="font-size:16px;margin:0;">Calculator</h2>
+      <button class="modal-close" id="calculator-close" title="Close">×</button>
+    </div>
+    <div style="padding:0 20px 20px;">
+      <input type="text" id="calc-display" readonly value="0" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border-2);color:var(--text);font-family:'DM Mono',monospace;font-size:22px;text-align:right;padding:14px 16px;margin-bottom:12px;letter-spacing:0.04em;" />
+      <div id="calc-buttons" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
+        <button type="button" class="calc-btn calc-fn" data-calc="clear">C</button>
+        <button type="button" class="calc-btn calc-fn" data-calc="back">⌫</button>
+        <button type="button" class="calc-btn calc-fn" data-calc="percent">%</button>
+        <button type="button" class="calc-btn calc-op" data-calc="op-divide">÷</button>
+
+        <button type="button" class="calc-btn calc-num" data-calc="7">7</button>
+        <button type="button" class="calc-btn calc-num" data-calc="8">8</button>
+        <button type="button" class="calc-btn calc-num" data-calc="9">9</button>
+        <button type="button" class="calc-btn calc-op" data-calc="op-multiply">×</button>
+
+        <button type="button" class="calc-btn calc-num" data-calc="4">4</button>
+        <button type="button" class="calc-btn calc-num" data-calc="5">5</button>
+        <button type="button" class="calc-btn calc-num" data-calc="6">6</button>
+        <button type="button" class="calc-btn calc-op" data-calc="op-subtract">−</button>
+
+        <button type="button" class="calc-btn calc-num" data-calc="1">1</button>
+        <button type="button" class="calc-btn calc-num" data-calc="2">2</button>
+        <button type="button" class="calc-btn calc-num" data-calc="3">3</button>
+        <button type="button" class="calc-btn calc-op" data-calc="op-add">+</button>
+
+        <button type="button" class="calc-btn calc-num" data-calc="0" style="grid-column:span 2;">0</button>
+        <button type="button" class="calc-btn calc-num" data-calc=".">.</button>
+        <button type="button" class="calc-btn calc-eq" data-calc="equals">=</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <script>
   const STORAGE_KEY = 'fiberTradesData_v3';
   const OLD_KEYS = ['fiberTradesData_v2', 'fiberTradesData_v1'];
@@ -1888,6 +1943,8 @@
       'btn.add_trade': '+ Add Trade',
       'btn.today': 'Today',
       'btn.import_mt5': '↓ Import from MT5',
+      'btn.calculator': '＝ Calculator',
+      'calc.title': 'Calculator',
       'btn.cancel': 'Cancel',
       'btn.close': 'Close',
       'btn.import_data': 'Import Data',
@@ -2546,6 +2603,8 @@
       'btn.add_trade': '+ Añadir Operación',
       'btn.today': 'Hoy',
       'btn.import_mt5': '↓ Importar de MT5',
+      'btn.calculator': '＝ Calculadora',
+      'calc.title': 'Calculadora',
       'btn.cancel': 'Cancelar',
       'btn.close': 'Cerrar',
       'btn.import_data': 'Importar Datos',
@@ -12314,6 +12373,139 @@
   if (_saveSeriesBtn) {
     _saveSeriesBtn.addEventListener('click', () => { maybePromptForName(); setTimeout(maybeOfferWeeklyReview, 1500); });
   }
+
+
+  // === Calculator ===
+  // Basic 4-function calc + percent + backspace. State machine: a stored value (`accumulator`),
+  // pending operator, and the value being typed (`display`). Operators "commit" the current
+  // display into the accumulator (after evaluating any pending op), then wait for the next number.
+  // Equals evaluates and clears the pending op so further digits start fresh.
+  (function wireCalculator() {
+    const btn = document.getElementById('calculator-btn');
+    const bg = document.getElementById('calculator-modal-bg');
+    const closeBtn = document.getElementById('calculator-close');
+    const display = document.getElementById('calc-display');
+    const buttons = document.getElementById('calc-buttons');
+    if (!btn || !bg || !display || !buttons) return;
+    let acc = null;          // accumulated value (number or null)
+    let pendingOp = null;    // 'add' | 'subtract' | 'multiply' | 'divide' | null
+    let entering = false;    // true while typing the next operand (so a digit replaces "0" first)
+    let justEvaluated = false; // true right after pressing = (so next digit starts fresh)
+    const fmt = (n) => {
+      if (!isFinite(n)) return 'Error';
+      // Keep precision but trim trailing zeros after a decimal
+      const s = Number(n.toFixed(10)).toString();
+      return s;
+    };
+    const evaluate = (a, op, b) => {
+      switch (op) {
+        case 'add':      return a + b;
+        case 'subtract': return a - b;
+        case 'multiply': return a * b;
+        case 'divide':   return b === 0 ? NaN : a / b;
+        default:         return b;
+      }
+    };
+    const clearActiveOp = () => {
+      buttons.querySelectorAll('.calc-op').forEach(b => b.classList.remove('active-op'));
+    };
+    const reset = () => {
+      acc = null; pendingOp = null; entering = false; justEvaluated = false;
+      display.value = '0'; clearActiveOp();
+    };
+    const open = () => { reset(); bg.classList.add('show'); };
+    const close = () => { bg.classList.remove('show'); };
+    btn.addEventListener('click', open);
+    closeBtn.addEventListener('click', close);
+    bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
+    buttons.addEventListener('click', (e) => {
+      const target = e.target.closest('.calc-btn');
+      if (!target) return;
+      const k = target.dataset.calc;
+      if (!k) return;
+      // Number / decimal input
+      if (/^[0-9]$/.test(k)) {
+        if (!entering || justEvaluated) {
+          display.value = k;
+          entering = true;
+          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); }
+        } else {
+          display.value = display.value === '0' ? k : (display.value + k);
+        }
+        return;
+      }
+      if (k === '.') {
+        if (!entering || justEvaluated) {
+          display.value = '0.'; entering = true;
+          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); }
+        } else if (!display.value.includes('.')) {
+          display.value = display.value + '.';
+        }
+        return;
+      }
+      if (k === 'clear') { reset(); return; }
+      if (k === 'back') {
+        if (justEvaluated) return;
+        const s = display.value;
+        display.value = s.length > 1 ? s.slice(0, -1) : '0';
+        if (display.value === '0' || display.value === '-0') entering = false;
+        return;
+      }
+      if (k === 'percent') {
+        const cur = parseFloat(display.value) || 0;
+        display.value = fmt(cur / 100);
+        entering = true;
+        return;
+      }
+      if (k.startsWith('op-')) {
+        const op = k.slice(3);
+        const cur = parseFloat(display.value) || 0;
+        if (acc === null) {
+          acc = cur;
+        } else if (entering) {
+          acc = evaluate(acc, pendingOp, cur);
+          display.value = fmt(acc);
+        }
+        pendingOp = op;
+        entering = false;
+        justEvaluated = false;
+        clearActiveOp();
+        target.classList.add('active-op');
+        return;
+      }
+      if (k === 'equals') {
+        if (pendingOp === null || acc === null) return;
+        const cur = parseFloat(display.value) || 0;
+        acc = evaluate(acc, pendingOp, cur);
+        display.value = fmt(acc);
+        pendingOp = null;
+        entering = false;
+        justEvaluated = true;
+        clearActiveOp();
+        return;
+      }
+    });
+    // Keyboard support — when the modal is open, accept digit keys, operators, Enter, Escape, Backspace.
+    document.addEventListener('keydown', (e) => {
+      if (!bg.classList.contains('show')) return;
+      const k = e.key;
+      const fire = (sel) => {
+        const target = buttons.querySelector(`[data-calc="${sel}"]`);
+        if (target) target.click();
+      };
+      if (/^[0-9]$/.test(k)) { fire(k); e.preventDefault(); return; }
+      if (k === '.') { fire('.'); e.preventDefault(); return; }
+      if (k === '+') { fire('op-add'); e.preventDefault(); return; }
+      if (k === '-') { fire('op-subtract'); e.preventDefault(); return; }
+      if (k === '*' || k === 'x' || k === 'X') { fire('op-multiply'); e.preventDefault(); return; }
+      if (k === '/') { fire('op-divide'); e.preventDefault(); return; }
+      if (k === '%') { fire('percent'); e.preventDefault(); return; }
+      if (k === 'Enter' || k === '=') { fire('equals'); e.preventDefault(); return; }
+      if (k === 'Escape') { close(); e.preventDefault(); return; }
+      if (k === 'Backspace') { fire('back'); e.preventDefault(); return; }
+      if (k === 'Delete' || k === 'c' || k === 'C') { fire('clear'); e.preventDefault(); return; }
+    });
+  })();
 
   // Initial render on load
   checkSkipNudge();
