@@ -5020,6 +5020,8 @@
         syncPotREnabled();
         syncRPipsEnabled();
         lightUpdate();
+        // Greeting depends on today's outcome — refresh it whenever a result changes.
+        if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
       });
       rInput.addEventListener('input', e => {
         data.review.trades[idx].r = e.target.value.trim();
@@ -5087,6 +5089,7 @@
         syncTradedFromTrades();
         fullUpdate();
         syncReviewSectionsToActiveTrade();
+        if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
       });
     });
     _applyCurrency();
@@ -5688,6 +5691,9 @@
     });
     rebuildSeriesByDate();
     saveData();
+    // Trades just moved from review to currentSeries — bump the greeting nonce so the line
+    // refreshes to reflect the latest state.
+    if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     data.review.sessionDate = todayDateStr();
     const picker = document.getElementById('session-date');
     if (picker) { picker.value = data.review.sessionDate; updateSessionDateStatus(); }
@@ -7677,6 +7683,7 @@
     renderStats();
     if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
     if (document.getElementById('page-tradeview').classList.contains('active')) renderTradeView();
+    if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
   });
 
   document.getElementById('edit-trade-delete').addEventListener('click', () => {
@@ -7693,10 +7700,12 @@
     renderStats();
     if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
     if (document.getElementById('page-tradeview').classList.contains('active')) renderTradeView();
+    if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     // Second safety net: snackbar with UNDO button, stays up for 10 seconds
     showUndoToast(t('toast.trade_deleted'), () => {
       _applySnapshot(snap);
       showToast(t('toast.trade_restored'));
+      if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     });
   });
 
@@ -9746,6 +9755,103 @@
       'sin edge, sin operación. Así es como debe funcionar.',
       'BE — y así la cuenta vive para operar otro día.',
     ],
+    // Versiones del mismo tono pero en presente, para hoy (cuando ya hay operaciones logueadas hoy).
+    RECAP_POS_TODAY: [
+      'verde hoy. Fair play. No te cases con ello.',
+      'en el marcador hoy. Tuviste paciencia. Repítelo antes de ponerte ingenioso.',
+      'ganaste hoy. Acepta el cumplido y guárdalo.',
+      'esta sesión: limpia. Sobre todo porque no interferiste — eso es lo bueno.',
+      'cobrado. Cabeza fría. Ahora haz menos, no más.',
+      'hoy se leyó bien. Lo leíste bien. Una de esas dos cosas está bajo tu control.',
+      'verde ahora no es un hábito, es una vela. Una vela bonita, eso sí.',
+      'buena sesión. Disfrútalo — diez minutos — y luego reset.',
+      'ganaste de la forma correcta hoy. Esa es la victoria real.',
+      'hoy: rentable. El próximo setup es un evento completamente distinto.',
+      'hoy premió la disciplina. Sigue — en silencio.',
+      'buenas entradas, salidas limpias, ejecución pagada. No te pongas creativo ahora.',
+      'el gráfico fue amable hoy. Pero no es tu amigo, ¿eh?',
+      'ganaste esperando. Espera otra vez. Aburrido este juego.',
+      'hoy: A+. Lo que quede de sesión: también A+, o te apartas.',
+      'una buena sesión en el bote. No te la gastes en una peor.',
+      'verde y humilde es la única combinación aceptable.',
+      'una victoria es feedback, no un trofeo. Hoy te dio feedback útil.',
+      'sesión cojonuda. No la arruines con ingenios ahora.',
+      'hoy pagó por ser aburrido. Sigue siendo aburrido.',
+      'sesión verde. Tidy. Apártate limpio.',
+      'ojos pacientes ganaron hoy. Ojos pacientes para lo que queda, por favor.',
+      'el beneficio no es personalidad. Mantén el ego a raya.',
+      'hoy: precioso. El próximo setup es, como siempre, otro animal.',
+      'ganaste hoy. La dopamina está dando vueltas. Déjala que se canse sola.',
+      'las ejecuciones fueron amables. No las esperes en la siguiente.',
+      'cobrado. Bien hecho. El mercado es justo, no generoso.',
+      'verde no significa listo. Significa correcto, esta vez.',
+      'el edge funcionó hoy. Anota qué lo hizo funcionar.',
+      '¿contento? Normal. Pero no te cases con ello.',
+    ],
+    RECAP_NEG_TODAY: [
+      'hoy escoció. El mercado no pide disculpas, ¿eh?',
+      'rojo hoy. Tómatelo como profesional. Idealmente sin espiral de venganza.',
+      'hoy: stop ejecutado. Hizo su trabajo. Déjale.',
+      'el gráfico no cooperó. Bueno, en realidad nunca lo prometió.',
+      'hoy fue clase magistral. No la pagues dos veces.',
+      'pérdida hoy. Vale. Ahora, por lo que más quieras, nada de "recuperar lo perdido".',
+      'el stop era la operación. Hónralo. No ensanches el próximo por orgullo.',
+      'hoy fue feedback honesto. Acéptalo. No discutas con él.',
+      'rojo. Pasa. Las ganas de perseguir también son un setup — ese tampoco lo tomes.',
+      'un stop no cambia tu edge. Estás bien.',
+      'las pérdidas afilan los bordes. Hoy probablemente afiló algo.',
+      'hoy fue el precio de la entrada. Sigues en el juego.',
+      'una pérdida es información. Dos seguidas es una hipótesis. Trátalo así.',
+      'hoy: no es tu día. Sacúdetelo. No vuelvas para tomártela.',
+      'el stop hizo su trabajo. El trabajo era: evitar algo peor.',
+      'doloroso, vale. Suma la lección, resta el drama.',
+      'hoy: un impuesto. Págalo, regístralo, sigue.',
+      'las pérdidas no necesitan cierre. Necesitan aceptación.',
+      'rojo hoy. Al próximo setup le da igual.',
+      'el stop saltó. Capital intacto. Ese es el encargo.',
+      'hoy mordió. Da un paso atrás. No claves por enfado.',
+      'una pérdida es una muestra de uno. No sobreajustes tu estrategia a ella.',
+      'hoy: -1R. El sistema sobrevive. Tú también.',
+      'día rojo. El próximo setup es, afortunadamente, otra pregunta.',
+      'la pérdida de hoy es de hoy. No se acumula. Tu humor tampoco debería.',
+      'perdiste. Ahora regístralo, apréndelo, déjalo.',
+      'un stop dentro. Edge intacto. Disciplina intacta. Adelante.',
+      'hoy dolió. El dolor no es fracaso. Los clics imprudentes sí lo serían.',
+      'pinchazo registrado. Ahora no le añadas un berrinche.',
+      'rojo, y razonable. Sacúdetelo.',
+    ],
+    RECAP_BE_TODAY: [
+      'plano hoy. Capital intacto. Esa es la victoria real, aunque la dopamina diga otra cosa.',
+      'BE hoy. Te apartaste. Aburrido. Correcto.',
+      'hoy: nada. Eso es un resultado.',
+      'plano es información. Archívalo.',
+      'BE significa que leíste el lateral. Ahora no malinterpretes la siguiente vela.',
+      'sin edge hoy, sin operación. Esa es la disciplina que la mayoría se salta.',
+      'sesión plana, ojos afilados. La única combinación aceptable.',
+      'no alimentaste al mercado hoy. Pequeña victoria. Tómatela.',
+      'BE en condiciones sucias es una victoria silenciosa.',
+      'hoy no ofreció nada. No aceptaste nada. Intercambio justo.',
+      'capital vivo. Eso ya es suficiente, aunque no lo parezca.',
+      'una sesión plana, bien jugada. Aburrida por diseño.',
+      'sin historia que escribir de hoy. Capítulo excelente.',
+      'te apartaste de una pelea. Eso es habilidad, no fallo.',
+      'BE: ni emocionante, ni caro. Tidy.',
+      'hoy: capital protegido. Respétalo.',
+      'una jugada de ajedrez, no una pelea de damas. Bien.',
+      'sin cicatrices, sin fuegos artificiales. Adelante.',
+      'plano es el nuevo verde, cuando las condiciones lo merecen.',
+      'los días BE construyen carreras. Los emocionantes las pierden, ¿eh?',
+      'hoy: compuesto. Quédate ahí.',
+      'el gráfico no habló. Tú no gritaste. Buen empate.',
+      'sin fuegos artificiales, también sin cicatrices. Trade-off correcto.',
+      'capital vivo, edge intacto. Una sesión genuinamente exitosa.',
+      'leíste el ambiente hoy. Ahora no malinterpretes el próximo setup.',
+      'plano hoy. Bien hecho. La victoria aburrida.',
+      'BE significa que el stop se respetó y la entrada era razonable. Sólido.',
+      'una sesión sin eventos. Sin glamour. Rentable a largo plazo.',
+      'protegiste la cuenta hoy. Ese es el encargo.',
+      'sin edge, sin operación. Así es como debe funcionar.',
+    ],
     SIMPLE_TAILS: [
       'espera tu setup. Luego espera un poco más. Probablemente vas pronto.',
       'la disciplina no es sexy. Pero paga.',
@@ -10278,6 +10384,105 @@
     'no edge, no trade. How it\'s meant to work.',
     'flat day. Tidy. The boring win.',
     'BE — and so the account lives to trade another day.',
+  ];
+  // Today-aware recap pools — used by the greeting AFTER trades have been logged for the current
+  // day. Voice mirrors RECAP_POS/NEG/BE but in present tense, addressing the day-in-progress.
+  // Picked when today.trades.length > 0; otherwise the yesterday-flavoured pools above are used.
+  const RECAP_POS_TODAY = [
+    'green today. Fair play. Don\'t propose marriage to it.',
+    'on the board today. You were patient. Try that again before getting clever.',
+    'won today. Take the compliment, then put it down.',
+    'this session: clean. Mostly because you didn\'t interfere — well in.',
+    'banked. Cool. Now do less, not more.',
+    'today read well. You read it well. One of those is in your control.',
+    'green now is not a habit, it\'s a candle. Lovely candle, mind.',
+    'good session. Feel pleased — for ten minutes — then reset.',
+    'won the right way today. That\'s the actual win.',
+    'today: profitable. The next setup is a separate event entirely.',
+    'today rewarded discipline. Keep going — quietly.',
+    'good fills, clean entries, paid exits. Don\'t get cute now.',
+    'the chart was kind today. It is not, however, your friend.',
+    'won by waiting. Wait again. Boring, this game, innit.',
+    'today: A+. Anything else this session: also A+, or step away.',
+    'one good session in the book. Don\'t spend it on a worse one.',
+    'green and humble is the only acceptable combination.',
+    'a win is feedback, not a trophy. Today gave you useful feedback.',
+    'cracking session. Don\'t ruin it with cleverness now.',
+    'today paid you to be boring. Continue being boring.',
+    'green session. Tidy. Walk away clean.',
+    'patient eyes won today. Patient eyes for what\'s left, please.',
+    'profit isn\'t personality. Keep the ego flat.',
+    'today: lovely. The next setup is, as ever, its own animal.',
+    'won today. Dopamine\'s doing laps. Let it tire itself out.',
+    'fills were kind. Don\'t expect them on the next one.',
+    'banked. Fair play. The landlord is fair, not generous, mind.',
+    'green doesn\'t mean clever. It means right, this once.',
+    'today\'s edge worked. Note what made it work.',
+    'chuffed? Fair enough. Now don\'t propose marriage to it.',
+  ];
+  const RECAP_NEG_TODAY = [
+    'today stung. The market doesn\'t apologise, mind.',
+    'red today. Take it like a professional. Ideally without the revenge spiral.',
+    'today: a stop. It did its job. Let it.',
+    'the chart didn\'t cooperate. Honestly, it never agreed to.',
+    'today was tuition. Please don\'t pay it twice.',
+    'lost today. Fine. Now don\'t, under any circumstances, "make it back."',
+    'the stop was the trade. Honour it. Don\'t widen the next one out of spite.',
+    'today was honest feedback. Accept it. Don\'t argue with it.',
+    'red. Move on. The urge to chase is also a setup — don\'t take that one either.',
+    'a stop doesn\'t change your edge. You\'re fine.',
+    'losses sharpen edges. Today probably sharpened something.',
+    'today was the price of admission. You\'re still in the game.',
+    'one loss is information. Two in a row is a hypothesis. Treat it as such.',
+    'today: not your day. Walk it off. Don\'t walk it back in.',
+    'the stop did its job. The job was: prevent worse.',
+    'painful, fine. Add the lesson, subtract the drama.',
+    'today: a tax. Pay it, log it, move on.',
+    'losses don\'t need closure. They need acceptance.',
+    'red today. Tomorrow\'s setup doesn\'t care.',
+    'stop ran. Capital intact. That\'s the brief.',
+    'today bit. Step back. Don\'t click out of injury.',
+    'a loss is a sample of one. Don\'t over-fit your strategy to it.',
+    'today: -1R. The system survives this. So will you.',
+    'red day. The next setup is, mercifully, a separate question.',
+    'today\'s loss is today\'s. It doesn\'t roll over. Neither should the mood.',
+    'lost. Now log it, learn it, leave it.',
+    'one stop in. Edge intact. Discipline intact. Carry on.',
+    'today hurt. Pain isn\'t failure. Reckless next clicks would be.',
+    'sting noted. Now don\'t add a tantrum to it.',
+    'red, and reasonable. Walk it off.',
+  ];
+  const RECAP_BE_TODAY = [
+    'flat today. Capital intact. That\'s the actual win, despite what dopamine claims.',
+    'BE today. You stepped aside. Boring. Correct.',
+    'today: nothing. That\'s a result.',
+    'flat is information. File it.',
+    'BE means you read the chop. Don\'t now misread the next bar.',
+    'no edge today, no trade taken. That\'s the discipline most miss.',
+    'flat session, sharp eyes. The only acceptable combination.',
+    'you didn\'t feed the market today. Small victory. Take it.',
+    'BE in messy conditions is a quiet win.',
+    'today offered nothing. You accepted nothing. Fair exchange.',
+    'capital alive. That\'s genuinely enough, even if it doesn\'t feel like it.',
+    'a flat session, well played. Dull by design.',
+    'no story to write from today. Excellent chapter.',
+    'you stepped away from a fight. That\'s a skill, not a failing.',
+    'BE: not exciting, not expensive. Tidy.',
+    'today: capital protected. Respect that.',
+    'a chess move, not a checkers brawl. Good.',
+    'no scars, no fireworks. On we go.',
+    'flat is the new green, when conditions earn it.',
+    'BE days build careers. Exciting days lose them, innit.',
+    'today: composed. Stay there.',
+    'the chart didn\'t talk. You didn\'t shout. Good match.',
+    'no fireworks, also no scars. Correct trade-off.',
+    'capital live, edge intact. An actual successful session.',
+    'you read the room today. Don\'t now misread the next setup.',
+    'flat today. Fair play. The boring win.',
+    'BE means the stop was respected and the entry was reasonable. Solid.',
+    'a no-event session. Unsexy. Profitable in the long run.',
+    'you protected the account today. That\'s the brief.',
+    'no edge, no trade. How it\'s meant to work.',
   ];
   const SIMPLE_TAILS = [
     'wait for your setup. Then wait some more. You\'re probably early.',
@@ -11730,6 +11935,41 @@
   }
 
 
+  // Returns the outcome flavour for TODAY's trades — both saved (currentSeries) and in-progress
+  // (data.review.trades that have a result set). Returns 'positive' | 'negative' | 'be' | null.
+  // Used to switch the greeting from "yesterday's recap" to "today's recap" once the user starts
+  // logging trades for the current day.
+  function getTodayOutcome() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const isSameDay = (d) => {
+      if (!d) return false;
+      const dt = new Date(d);
+      dt.setHours(0, 0, 0, 0);
+      return dt.getTime() === today.getTime();
+    };
+    // Gather today's saved trades from currentSeries.
+    const saved = (data.currentSeries || []).filter(t => isSameDay(t.date) && t.result);
+    // Plus in-progress trades from the active review form (only count ones with a result picked).
+    const inProgress = ((data.review && data.review.trades) || []).filter(t => t.result);
+    const all = saved.concat(inProgress);
+    if (all.length === 0) return null;
+    const wins = all.filter(t => t.result === 'Win').length;
+    const losses = all.filter(t => t.result === 'Lose').length;
+    const bes = all.filter(t => t.result === 'BE').length;
+    if (wins > 0 && losses === 0) return 'positive';
+    if (losses > 0 && wins === 0) return 'negative';
+    if (wins === 0 && losses === 0 && bes > 0) return 'be';
+    // Mixed day — tiebreak by total R (Win=typed r, Lose=-1, BE=0)
+    const totalR = all.reduce((s, t) => {
+      if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
+      if (t.result === 'Lose') return s - 1;
+      return s;
+    }, 0);
+    if (totalR >= 0.5) return 'positive';
+    if (totalR <= -0.5) return 'negative';
+    return 'be';
+  }
+
   // Find the most recent past day (within last 7) that had trades. Returns 'positive' | 'negative' | 'be' | null.
   function getRecentDayOutcome() {
     const all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
@@ -11784,14 +12024,17 @@
   function todayKey() {
     return new Date().toDateString();
   }
-  function pickTail(outcome) {
+  function pickTail(outcome, todayMode) {
     // Roll a date-seeded "what kind of tail" choice. Performance questions get the
     // biggest slice now — when there's an eligible stat-aware question, we want to
     // surface it more often (per user request: more questions about recent results).
     //   0–5 (60%): try a performance-aware question (falls through if no signal)
     //   6   (10%): pick a generic bias question
     //   7–9 (30%): pick from the outcome-flavoured recap pools
-    const roll = hashStr(todayKey() + ':tail-bucket') % 10;
+    // The seed advances when trades change (via _greetingNonce) so the line updates
+    // live as the day progresses, instead of being frozen on the first render.
+    const seed = todayKey() + ':nonce:' + _greetingNonce;
+    const roll = hashStr(seed + ':tail-bucket') % 10;
     if (roll <= 5) {
       const pq = pickPerformanceQuestion();
       if (pq) return pq;
@@ -11799,18 +12042,40 @@
     }
     if (roll === 6) {
       const bq = localizedPool(BIAS_QUESTIONS, 'BIAS_QUESTIONS');
-      const idx = hashStr(todayKey() + ':biasq') % bq.length;
+      const idx = hashStr(seed + ':biasq') % bq.length;
       return bq[idx];
     }
     let pool, poolKey;
-    if      (outcome === 'positive') { pool = RECAP_POS; poolKey = 'RECAP_POS'; }
-    else if (outcome === 'negative') { pool = RECAP_NEG; poolKey = 'RECAP_NEG'; }
-    else if (outcome === 'be')       { pool = RECAP_BE;  poolKey = 'RECAP_BE'; }
-    else                             { pool = SIMPLE_TAILS; poolKey = 'SIMPLE_TAILS'; }
+    if (todayMode) {
+      // Today-mode: use the present-tense pools. These say "today" instead of "yesterday".
+      if      (outcome === 'positive') { pool = RECAP_POS_TODAY; poolKey = 'RECAP_POS_TODAY'; }
+      else if (outcome === 'negative') { pool = RECAP_NEG_TODAY; poolKey = 'RECAP_NEG_TODAY'; }
+      else if (outcome === 'be')       { pool = RECAP_BE_TODAY;  poolKey = 'RECAP_BE_TODAY'; }
+      else                             { pool = SIMPLE_TAILS;    poolKey = 'SIMPLE_TAILS'; }
+    } else {
+      // Yesterday-mode: classic pools.
+      if      (outcome === 'positive') { pool = RECAP_POS; poolKey = 'RECAP_POS'; }
+      else if (outcome === 'negative') { pool = RECAP_NEG; poolKey = 'RECAP_NEG'; }
+      else if (outcome === 'be')       { pool = RECAP_BE;  poolKey = 'RECAP_BE'; }
+      else                             { pool = SIMPLE_TAILS; poolKey = 'SIMPLE_TAILS'; }
+    }
     pool = localizedPool(pool, poolKey);
-    // Seed by today's date + outcome label so the line is stable across reloads on the same day
-    const idx = hashStr(todayKey() + ':' + (outcome || 'none')) % pool.length;
+    // Seed by today's date + outcome label + nonce so the line is stable across reloads on the same
+    // day, but advances when the user adds/edits trades within the day.
+    const idx = hashStr(seed + ':' + (outcome || 'none') + ':' + (todayMode ? 'today' : 'yest')) % pool.length;
     return pool[idx];
+  }
+
+  // Nonce bumped whenever the trade set changes — busts cached greeting + reseeds the random pick
+  // so the line refreshes live as the user logs trades during the day.
+  let _greetingNonce = 0;
+  function bumpGreetingNonce() {
+    _greetingNonce++;
+    _cachedTail = null;
+    _cachedOpener = null;
+    if (typeof renderBiasGreeting === 'function') {
+      try { renderBiasGreeting(); } catch (e) {}
+    }
   }
 
   // Memoize so re-renders (e.g. after rename) don't reshuffle the line.
@@ -11825,8 +12090,14 @@
     const nameSpan = `<span class="greet-name" id="greet-name" title="${t('tip.change_name')}">${safeName}</span>`;
     if (!_cachedOpener) _cachedOpener = timeOfDayOpener();
     if (!_cachedTail) {
-      const outcome = getRecentDayOutcome();
-      _cachedTail = pickTail(outcome);
+      // If today has trades, talk about today. Otherwise fall back to yesterday's recap.
+      const todayOutcome = getTodayOutcome();
+      if (todayOutcome) {
+        _cachedTail = pickTail(todayOutcome, true);
+      } else {
+        const outcome = getRecentDayOutcome();
+        _cachedTail = pickTail(outcome, false);
+      }
     }
     // If the opener already addresses the reader (contains "mate", "trader", "night owl",
     // "búho", etc.), appending ", Nestor" makes it a double vocative — awkward.
