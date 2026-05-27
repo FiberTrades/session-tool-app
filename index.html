@@ -1172,7 +1172,7 @@
   </div>
 
   <div class="page" id="page-review">
-    <div class="bias-greeting" data-greeting-mirror></div>
+    <div class="bias-greeting" data-greeting-mirror data-greeting-context="review"></div>
     <div class="session-live-banner hidden" id="session-live-banner">
       <div class="session-live-head">
         <span class="session-live-dot"></span>
@@ -1386,8 +1386,6 @@
   </div>
 
   <div class="page" id="page-stats">
-    <div class="bias-greeting" data-greeting-mirror></div>
-
     <div class="stats-summary stats-summary-3col">
       <div class="stat-cell" id="stat-pnl-cell">
         <div class="stat-tooltip" data-i18n="tip.pnl_series">Net P&L = profit after costs. Gross P&L = profit before costs. Click the toggle to swap. Shared with the Statistics tab.</div>
@@ -1431,8 +1429,6 @@
   </div>
 
   <div class="page" id="page-trades">
-    <div class="bias-greeting" data-greeting-mirror></div>
-
     <div class="settings-panel">
       <span class="label" data-i18n="settings.account">Account Settings</span>
       <div class="settings-field"><span class="k" data-i18n="settings.starting_balance">Starting Balance £</span><input id="setting-balance" type="number" step="any" placeholder="10000" /></div>
@@ -1590,8 +1586,6 @@
   </div>
 
   <div class="page" id="page-tradeview">
-    <div class="bias-greeting" data-greeting-mirror></div>
-
     <div class="year-glance" id="year-glance"></div>
 
     <div class="calendar-wrap">
@@ -9649,6 +9643,12 @@
         'Madrugada por aquí', 'Repaso de medianoche', 'Casi medianoche, planificando. Fair play'
       ]
     },
+    REVIEW_OPENERS: [
+      'Sesión cerrada', 'Hora de repaso', 'Pues, el repaso', 'Hora de ser honesto',
+      'Mirada atrás', 'Repaso de hoy', 'Hora del espejo, colega', 'El repaso honesto',
+      'El post-mortem, pues', 'Revisando los gráficos', 'Marcador a la vista',
+      'El recap'
+    ],
     RECAP_POS: [
       'ayer pagó. Bien hecho. No te cases con ello.',
       'día en verde. Tuviste paciencia. Repite eso antes de ponerte ingenioso.',
@@ -10249,6 +10249,16 @@
       'Past midnight check-in', 'Late, planning the next session. Fair play'
     ]
   };
+
+  // Review-flavoured openers — used on the Session Review tab instead of time-of-day openers.
+  // No "morning/evening/planning" framing because by the time you're on this tab, the session
+  // is over and you're reflecting. Tone: "session done, look at what happened, learn".
+  const REVIEW_OPENERS = [
+    'Session done', 'Review time', 'Right, the recap', 'Time to be honest',
+    'Look back time', 'Reflection bit', 'Mirror time, mate', 'The honest review',
+    'Right, the post-mortem', 'Reviewing the tape', 'Score on the door',
+    'The recap'
+  ];
 
   function timeOfDayOpener() {
     const hr = new Date().getHours();
@@ -12093,6 +12103,7 @@
     _greetingNonce++;
     _cachedTail = null;
     _cachedOpener = null;
+    _cachedReviewOpener = null;
     if (typeof renderBiasGreeting === 'function') {
       try { renderBiasGreeting(); } catch (e) {}
     }
@@ -12101,6 +12112,15 @@
   // Memoize so re-renders (e.g. after rename) don't reshuffle the line.
   let _cachedTail = null;
   let _cachedOpener = null;
+  let _cachedReviewOpener = null;
+
+  // Pick a review-flavoured opener. Used on the Session Review tab — no time-of-day framing
+  // because by then the session is over. Pool is small but rotates by date so it changes.
+  function reviewOpener() {
+    const pool = localizedPool(REVIEW_OPENERS, 'REVIEW_OPENERS');
+    const idx = hashStr(todayKey() + ':rev-opener:' + _greetingNonce) % pool.length;
+    return pool[idx];
+  }
 
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
@@ -12112,9 +12132,8 @@
     const name = (data.userName && data.userName.trim()) || 'friend';
     const safeName = name.replace(/</g, '&lt;');
     const nameSpan = `<span class="greet-name" title="${t('tip.change_name')}">${safeName}</span>`;
-    if (!_cachedOpener) _cachedOpener = timeOfDayOpener();
+    // Tail is shared across all surfaces — same recap regardless of which tab you're on.
     if (!_cachedTail) {
-      // If today has trades, talk about today. Otherwise fall back to yesterday's recap.
       const todayOutcome = getTodayOutcome();
       if (todayOutcome) {
         _cachedTail = pickTail(todayOutcome, true);
@@ -12123,23 +12142,25 @@
         _cachedTail = pickTail(outcome, false);
       }
     }
-    // If the opener already addresses the reader (contains "mate", "trader", "night owl",
-    // "búho", etc.), appending ", Nestor" makes it a double vocative — awkward.
-    // In that case, name them inside the tail instead, or drop the comma-name structure entirely.
+    // Cache the time-of-day opener (Bias-style) and review opener separately. Each target picks
+    // whichever fits its context. Cached so re-renders on the same day don't reshuffle.
+    if (!_cachedOpener) _cachedOpener = timeOfDayOpener();
+    if (!_cachedReviewOpener) _cachedReviewOpener = reviewOpener();
     const vocativePattern = /\b(mate|trader|night owl|owl|caffeinated|búho|amigo|tío|colega)\b/i;
-    const hasBuiltInVocative = vocativePattern.test(_cachedOpener);
-    let composed;
-    if (hasBuiltInVocative) {
-      // Format: "Opener. <name>, tail" — name moves to the start of the tail, no double vocative.
-      composed = `${_cachedOpener}. ${nameSpan}, ${_cachedTail}`;
-    } else {
-      // Standard format: "Opener, <name>. Tail"
-      composed = `${_cachedOpener}, ${nameSpan}. ${_cachedTail.charAt(0).toUpperCase()}${_cachedTail.slice(1)}`;
-    }
-    // Apply the same composed greeting to the primary + every mirror. Each instance gets
-    // its own click-to-edit binding on its name span.
+    // Build a greeting for one target with a specific opener.
+    const compose = (opener) => {
+      const hasBuiltInVocative = vocativePattern.test(opener);
+      if (hasBuiltInVocative) {
+        return `${opener}. ${nameSpan}, ${_cachedTail}`;
+      }
+      return `${opener}, ${nameSpan}. ${_cachedTail.charAt(0).toUpperCase()}${_cachedTail.slice(1)}`;
+    };
     targets.forEach(el => {
-      el.innerHTML = composed;
+      // Pick opener based on the target's context. data-greeting-context="review" gets the
+      // review-flavoured opener; everything else (default = Bias) gets the time-of-day opener.
+      const ctx = el.dataset && el.dataset.greetingContext;
+      const opener = (ctx === 'review') ? _cachedReviewOpener : _cachedOpener;
+      el.innerHTML = compose(opener);
       const nameEl = el.querySelector('.greet-name');
       if (nameEl) nameEl.addEventListener('click', openInlineNameEdit);
     });
