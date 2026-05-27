@@ -7288,7 +7288,8 @@
       <div class="modal-stat"><div class="label">${t('dmodal.total_rp')}</div><div class="v dual ${dayTotalRCls}"><span class="dual-primary">${dayTotalRStr}</span><span class="dual-secondary ${dayTotalPipsCls}">${dayTotalPipsStr}</span></div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.pot_rp')}</div><div class="v dual ${dayPotRCls}"><span class="dual-primary">${dayPotRStr}</span><span class="dual-secondary ${dayPotPipsCls}">${dayPotPipsStr}</span></div></div>`;
 
-    // Stat-aware greeting + question for this day. Uses the existing REVIEW_GREETINGS.day / REVIEW_REFLECTIONS.day pools.
+    // Stat-aware reflection for this day. Consistent with weekly/monthly which only show the
+    // reflection line — the separate "Day in. Let's grade it" greeting was redundant and removed.
     try {
       const greetEl = document.getElementById('modal-day-greeting');
       if (greetEl) {
@@ -7299,13 +7300,11 @@
           wins, losses, bes,
           net,
         };
-        const greet = pickReviewGreeting('day', getName());
         const reflection = pickReviewReflection('day', dayStats);
-        // Inline HTML escape — esc() lives inside other functions, not globally accessible here.
         const escHtml = str => String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-        greetEl.innerHTML = `<div style="color:var(--text);font-family:'Fraunces',serif;font-size:15px;letter-spacing:-0.005em;margin-bottom:6px;line-height:1.5;">${escHtml(greet)}</div><div style="color:var(--text-mid);font-style:italic;font-size:14px;font-family:'Fraunces',serif;line-height:1.6;">${escHtml(reflection)}</div>`;
+        greetEl.innerHTML = `<div style="color:var(--text-mid);font-style:italic;font-size:14px;font-family:'Fraunces',serif;line-height:1.6;">${escHtml(reflection)}</div>`;
       }
-    } catch(e) { console.warn('day modal greeting failed:', e); }
+    } catch(e) { console.warn('day modal reflection failed:', e); }
 
     // Removed: the separate Potential R block below (now folded into the stat row above).
     const mfeContainer = document.getElementById('modal-mfe');
@@ -9647,6 +9646,28 @@
       'El post-mortem, pues', 'Revisando los gráficos', 'Marcador a la vista',
       'El recap'
     ],
+    REVIEW_IDLE: [
+      'ninguna operación registrada todavía. El formulario espera.',
+      'una página en blanco. A veces la mejor.',
+      'nada que revisar hoy aún. La paciencia es una posición.',
+      'sin clics aún. Eso también es una decisión.',
+      '¿esperando el setup? Bien.',
+      'un log vacío no es un fracaso. Es el filtro haciendo su trabajo.',
+      'nada registrado aún. Cuando claves, regístralo en el momento — la observación fresca le gana a la reconstrucción.',
+      'sin entradas aún. Cuando claves, anótalo antes de que el gráfico siga.',
+      'sigues plano por hoy. Mantente afilado, mantente selectivo.',
+      'sesión aún por empezar. La pantalla te avisará cuando toque.',
+      'lápiz hoy, tinta luego. O nada — las dos opciones valen.',
+      'nada aún. El repaso honesto se escribe solo cuando lo hay.',
+      'sin operaciones que registrar. A veces esa es la victoria.',
+      'tabla limpia. Cuando claves, el formulario está listo.',
+      'nada en el libro aún. Un log limpio es más fácil de mantener limpio.',
+      '¿observando aún? Bien. El repaso viene después de clicar.',
+      'sin operaciones registradas. Cuando ocurra una, regístrala antes de leer la siguiente vela.',
+      'sesión en curso, o sesión saltada — las dos están bien. Regístralo aquí cuando importe.',
+      'nada aún. No fuerces una entrada solo para darle algo que registrar a este formulario.',
+      'una mañana tranquila. El mercado no te debe acción.',
+    ],
     RECAP_POS: [
       'ayer pagó. Bien hecho. No te cases con ello.',
       'día en verde. Tuviste paciencia. Repite eso antes de ponerte ingenioso.',
@@ -10256,6 +10277,32 @@
     'Look back time', 'Reflection bit', 'Mirror time, mate', 'The honest review',
     'Right, the post-mortem', 'Reviewing the tape', 'Score on the door',
     'The recap'
+  ];
+  // Review-IDLE pool — used on Session Review when today has NO trades logged yet. The user
+  // is on the Review tab but there's nothing to review. Tone: calm, not pushy, not pretending
+  // there's a session to recap. Acknowledges the blank state and reminds them the form is here
+  // when they're ready. Never asks "how did it go?" — there's no "it" yet.
+  const REVIEW_IDLE = [
+    'no trades logged yet. The form is here when you are.',
+    'a blank page. The best kind, sometimes.',
+    'nothing to review yet today. Patience is a position.',
+    'no clicks yet. That counts as a decision too.',
+    'still waiting on a setup? Fair.',
+    'an empty log is not a failure. It\'s a filter doing its job.',
+    'nothing booked yet. Log the moment you click — fresh observation beats reconstruction.',
+    'no entries yet. When you do click, write it down before the chart moves on.',
+    'still flat for the day. Stay sharp, stay selective.',
+    'no session yet. The screen will let you know when it\'s time.',
+    'paper today, ink later. Or not at all — both are fine.',
+    'nothing yet. The honest review writes itself once there is.',
+    'no trades to log. That\'s sometimes the win.',
+    'blank slate. When you click, this form is ready.',
+    'nothing in the book yet. A clean log is easier to keep clean.',
+    'still observing? Good. Reviewing comes after clicking.',
+    'no trades logged. When one happens, log it before reading the next bar.',
+    'session in progress, or session skipped — either is fine. Log here when it matters.',
+    'nothing yet. Don\'t force a fill just to give this form something to do.',
+    'a quiet morning. The market doesn\'t owe you action.',
   ];
 
   function timeOfDayOpener() {
@@ -12142,14 +12189,17 @@
       _cachedTailBias = pickTail(yesterdayOutcome, false);
     }
     if (!_cachedTailReview) {
-      // Review = reflecting. Prefers today's outcome when trades have been logged; otherwise
-      // falls back to the same yesterday-flavoured tail.
+      // Review = reflecting. Three branches by what's available:
+      //   - Today has trades: today-flavoured recap.
+      //   - Today empty: idle pool — acknowledges the blank state without pretending there's
+      //     a session to recap or pushing the user to click.
       const todayOutcome = getTodayOutcome();
       if (todayOutcome) {
         _cachedTailReview = pickTail(todayOutcome, true);
       } else {
-        const yesterdayOutcome = getRecentDayOutcome();
-        _cachedTailReview = pickTail(yesterdayOutcome, false);
+        const idlePool = localizedPool(REVIEW_IDLE, 'REVIEW_IDLE');
+        const idx = hashStr(todayKey() + ':rev-idle:' + _greetingNonce) % idlePool.length;
+        _cachedTailReview = idlePool[idx];
       }
     }
     if (!_cachedOpener) _cachedOpener = timeOfDayOpener();
