@@ -1172,6 +1172,7 @@
   </div>
 
   <div class="page" id="page-review">
+    <div class="bias-greeting" data-greeting-mirror></div>
     <div class="session-live-banner hidden" id="session-live-banner">
       <div class="session-live-head">
         <span class="session-live-dot"></span>
@@ -1385,8 +1386,7 @@
   </div>
 
   <div class="page" id="page-stats">
-    <!-- Contextual encouragement / math-based feedback about the current series. -->
-    <div id="current-series-message" style="margin-top:32px;margin-bottom:24px;font-family:'Fraunces',serif;font-size:18px;color:var(--text);line-height:1.5;letter-spacing:-0.005em;display:none;"></div>
+    <div class="bias-greeting" data-greeting-mirror></div>
 
     <div class="stats-summary stats-summary-3col">
       <div class="stat-cell" id="stat-pnl-cell">
@@ -1414,6 +1414,11 @@
       <div style="font-size:9px;color:var(--text-dim);letter-spacing:0.2em;text-transform:uppercase;margin-top:6px;" data-i18n="modal.click_dot_edit">CLICK ANY TRADE DOT TO EDIT OR DELETE</div>
     </div>
 
+    <!-- Contextual encouragement / math-based feedback about the current series.
+         Sits just below the Current Series box so the commentary is read in context with the
+         dots/tally above it (e.g. "+6.41R at 7/10. Series is locked in"). -->
+    <div id="current-series-message" style="margin-top:24px;margin-bottom:24px;font-family:'Fraunces',serif;font-size:18px;color:var(--text);line-height:1.5;letter-spacing:-0.005em;display:none;"></div>
+
     <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="stats.s1.title">Series History</span></div>
       <p class="section-hint" data-i18n="stats.hint.series_history">Completed series of 10 — your trajectory over time.</p>
@@ -1426,7 +1431,7 @@
   </div>
 
   <div class="page" id="page-trades">
-    
+    <div class="bias-greeting" data-greeting-mirror></div>
 
     <div class="settings-panel">
       <span class="label" data-i18n="settings.account">Account Settings</span>
@@ -1585,7 +1590,7 @@
   </div>
 
   <div class="page" id="page-tradeview">
-    
+    <div class="bias-greeting" data-greeting-mirror></div>
 
     <div class="year-glance" id="year-glance"></div>
 
@@ -7447,6 +7452,11 @@
   }
 
   document.getElementById('modal-close').addEventListener('click', () => document.getElementById('day-modal-bg').classList.remove('show'));
+  // Also close when clicking the dim backdrop outside the modal box. e.target === bg means the
+  // click landed on the backdrop itself (not on any of its child content).
+  document.getElementById('day-modal-bg').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) e.currentTarget.classList.remove('show');
+  });
 
   function renderFlatTradeList() {
     const all = getAllLifetimeTrades().slice().sort((a,b) => new Date(b.date) - new Date(a.date));
@@ -9470,6 +9480,14 @@
     currentReview = null;
     if (typeof renderCalendar === 'function') renderCalendar();
   });
+  // Click backdrop outside the modal box to close (matches the × button behaviour).
+  document.getElementById('review-modal-bg').addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+      e.currentTarget.classList.remove('show');
+      currentReview = null;
+      if (typeof renderCalendar === 'function') renderCalendar();
+    }
+  });
   function renderWeeklyReviews() {
     const wrap = document.getElementById('weekly-reviews-list');
     if (!wrap) return;
@@ -10228,7 +10246,7 @@
       'Late', 'Right, late', 'Burning the midnight oil', 'Hello, night owl',
       'The candles have gone home', 'Late, mate', 'Markets are asleep',
       'Tomorrow\'s plan, then?', 'Quiet of the night', 'Up late',
-      'Past midnight check-in', 'Half-eleven, planning. Fair play'
+      'Past midnight check-in', 'Late, planning the next session. Fair play'
     ]
   };
 
@@ -12085,11 +12103,15 @@
   let _cachedOpener = null;
 
   function renderBiasGreeting() {
-    const el = document.getElementById('bias-greeting');
-    if (!el) return;
+    const primary = document.getElementById('bias-greeting');
+    const mirrors = Array.from(document.querySelectorAll('[data-greeting-mirror]'));
+    const targets = [];
+    if (primary) targets.push(primary);
+    mirrors.forEach(m => { if (m !== primary) targets.push(m); });
+    if (targets.length === 0) return;
     const name = (data.userName && data.userName.trim()) || 'friend';
     const safeName = name.replace(/</g, '&lt;');
-    const nameSpan = `<span class="greet-name" id="greet-name" title="${t('tip.change_name')}">${safeName}</span>`;
+    const nameSpan = `<span class="greet-name" title="${t('tip.change_name')}">${safeName}</span>`;
     if (!_cachedOpener) _cachedOpener = timeOfDayOpener();
     if (!_cachedTail) {
       // If today has trades, talk about today. Otherwise fall back to yesterday's recap.
@@ -12114,13 +12136,19 @@
       // Standard format: "Opener, <name>. Tail"
       composed = `${_cachedOpener}, ${nameSpan}. ${_cachedTail.charAt(0).toUpperCase()}${_cachedTail.slice(1)}`;
     }
-    el.innerHTML = composed;
-    const nameEl = document.getElementById('greet-name');
-    if (nameEl) nameEl.addEventListener('click', openInlineNameEdit);
+    // Apply the same composed greeting to the primary + every mirror. Each instance gets
+    // its own click-to-edit binding on its name span.
+    targets.forEach(el => {
+      el.innerHTML = composed;
+      const nameEl = el.querySelector('.greet-name');
+      if (nameEl) nameEl.addEventListener('click', openInlineNameEdit);
+    });
   }
 
-  function openInlineNameEdit() {
-    const nameEl = document.getElementById('greet-name');
+  function openInlineNameEdit(e) {
+    // Use the clicked .greet-name (works regardless of which greeting copy was clicked —
+    // primary or a mirror). After save/cancel, the full renderBiasGreeting re-paints all copies.
+    const nameEl = (e && e.currentTarget) || document.querySelector('.greet-name');
     if (!nameEl) return;
     const current = (data.userName && data.userName.trim()) || '';
     nameEl.outerHTML = `<input type="text" id="greet-name-input" value="${current.replace(/"/g, '&quot;')}" maxlength="40" />`;
@@ -12132,9 +12160,9 @@
       if (v) { data.userName = v; saveData(); }
       renderBiasGreeting();
     }
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); commit(); }
-      else if (e.key === 'Escape') renderBiasGreeting();
+    input.addEventListener('keydown', ev => {
+      if (ev.key === 'Enter') { ev.preventDefault(); commit(); }
+      else if (ev.key === 'Escape') renderBiasGreeting();
     });
     input.addEventListener('blur', commit);
   }
