@@ -10867,10 +10867,12 @@
       : Math.max(longs30, shorts30) / (longs30 + shorts30);
     const dominantSide = longs30 >= shorts30 ? 'Long' : 'Short';
 
-    // Biggest recent win (last 30d)
-    const wins30 = last30.filter(t => t.result === 'Win');
-    const biggestWinR = wins30.length > 0
-      ? Math.max(...wins30.map(t => parseFloat(t.r) || 0))
+    // Biggest recent win — last 7 days only. A win from 3+ weeks ago shouldn't read as "recent"
+    // when the user prompts about it; tightening the window means the line only fires when a
+    // notable win is genuinely fresh.
+    const wins7 = last7.filter(t => t.result === 'Win');
+    const biggestWinR = wins7.length > 0
+      ? Math.max(...wins7.map(t => parseFloat(t.r) || 0))
       : 0;
 
     // Current streak (from latest backwards)
@@ -12025,15 +12027,26 @@
     return new Date().toDateString();
   }
   function pickTail(outcome, todayMode) {
-    // Roll a date-seeded "what kind of tail" choice. Performance questions get the
-    // biggest slice now — when there's an eligible stat-aware question, we want to
-    // surface it more often (per user request: more questions about recent results).
+    // Seed evolves with the greeting nonce (bumps on every trade change) so the line
+    // updates live as the day progresses.
+    const seed = todayKey() + ':nonce:' + _greetingNonce;
+    // In today-mode (user has logged trades for today), always use the today-recap pool.
+    // Performance / bias questions reference longer windows and would distract from the
+    // immediate session feedback.
+    if (todayMode) {
+      let pool, poolKey;
+      if      (outcome === 'positive') { pool = RECAP_POS_TODAY; poolKey = 'RECAP_POS_TODAY'; }
+      else if (outcome === 'negative') { pool = RECAP_NEG_TODAY; poolKey = 'RECAP_NEG_TODAY'; }
+      else if (outcome === 'be')       { pool = RECAP_BE_TODAY;  poolKey = 'RECAP_BE_TODAY'; }
+      else                             { pool = SIMPLE_TAILS;    poolKey = 'SIMPLE_TAILS'; }
+      pool = localizedPool(pool, poolKey);
+      const idx = hashStr(seed + ':' + (outcome || 'none') + ':today') % pool.length;
+      return pool[idx];
+    }
+    // No trades today — yesterday-mode. Mix in performance questions + bias questions.
     //   0–5 (60%): try a performance-aware question (falls through if no signal)
     //   6   (10%): pick a generic bias question
     //   7–9 (30%): pick from the outcome-flavoured recap pools
-    // The seed advances when trades change (via _greetingNonce) so the line updates
-    // live as the day progresses, instead of being frozen on the first render.
-    const seed = todayKey() + ':nonce:' + _greetingNonce;
     const roll = hashStr(seed + ':tail-bucket') % 10;
     if (roll <= 5) {
       const pq = pickPerformanceQuestion();
@@ -12046,23 +12059,12 @@
       return bq[idx];
     }
     let pool, poolKey;
-    if (todayMode) {
-      // Today-mode: use the present-tense pools. These say "today" instead of "yesterday".
-      if      (outcome === 'positive') { pool = RECAP_POS_TODAY; poolKey = 'RECAP_POS_TODAY'; }
-      else if (outcome === 'negative') { pool = RECAP_NEG_TODAY; poolKey = 'RECAP_NEG_TODAY'; }
-      else if (outcome === 'be')       { pool = RECAP_BE_TODAY;  poolKey = 'RECAP_BE_TODAY'; }
-      else                             { pool = SIMPLE_TAILS;    poolKey = 'SIMPLE_TAILS'; }
-    } else {
-      // Yesterday-mode: classic pools.
-      if      (outcome === 'positive') { pool = RECAP_POS; poolKey = 'RECAP_POS'; }
-      else if (outcome === 'negative') { pool = RECAP_NEG; poolKey = 'RECAP_NEG'; }
-      else if (outcome === 'be')       { pool = RECAP_BE;  poolKey = 'RECAP_BE'; }
-      else                             { pool = SIMPLE_TAILS; poolKey = 'SIMPLE_TAILS'; }
-    }
+    if      (outcome === 'positive') { pool = RECAP_POS; poolKey = 'RECAP_POS'; }
+    else if (outcome === 'negative') { pool = RECAP_NEG; poolKey = 'RECAP_NEG'; }
+    else if (outcome === 'be')       { pool = RECAP_BE;  poolKey = 'RECAP_BE'; }
+    else                             { pool = SIMPLE_TAILS; poolKey = 'SIMPLE_TAILS'; }
     pool = localizedPool(pool, poolKey);
-    // Seed by today's date + outcome label + nonce so the line is stable across reloads on the same
-    // day, but advances when the user adds/edits trades within the day.
-    const idx = hashStr(seed + ':' + (outcome || 'none') + ':' + (todayMode ? 'today' : 'yest')) % pool.length;
+    const idx = hashStr(seed + ':' + (outcome || 'none') + ':yest') % pool.length;
     return pool[idx];
   }
 
