@@ -334,6 +334,12 @@
   .saved-bias-link > div:last-child { margin-bottom: 0 !important; }
   .bias-chart-img { width: 100%; max-width: 100%; height: auto; border-radius: 4px; border: 1px solid var(--border-2); display: block; cursor: pointer; transition: opacity 200ms; }
   .bias-chart-img:hover { opacity: 0.85; }
+  /* Tab strip shown above the "This Morning's Bias" recap when multiple charts exist.
+     One tab per chart; clicking switches which chart + notes are visible below. */
+  .bias-chart-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
+  .bias-chart-tab { background: transparent; border: 1px solid var(--border-2); color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; padding: 6px 12px; cursor: pointer; transition: all 150ms; }
+  .bias-chart-tab:hover { border-color: var(--text-mid); color: var(--text); }
+  .bias-chart-tab.active { border-color: var(--text); color: var(--text); background: var(--bg-elev); }
   /* Notes — full width below. DM Mono to match the stats row above (Mode, Structure, etc.),
      same dim colour as the K labels, sized for at-a-glance mid-session reading. */
   .saved-bias-notes { margin-top: 20px; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-dim); line-height: 1.75; border-top: 1px solid var(--border); padding-top: 14px; }
@@ -2231,6 +2237,7 @@
       'cal.monthly_summary': 'Monthly Summary',
       'stats.current_series': 'Current Series',
       'review.this_morning_bias': 'This Morning\'s Bias',
+      'tab.bias_chart': 'Chart',
       'settings.defaults_hint_inline': 'Risk & Costs defaults are set in Review tab',
       'kpi.wins': 'Wins',
       'kpi.losses': 'Losses',
@@ -2888,6 +2895,7 @@
       'cal.monthly_summary': 'Resumen Mensual',
       'stats.current_series': 'Serie Actual',
       'review.this_morning_bias': 'El Sesgo de Esta Mañana',
+      'tab.bias_chart': 'Gráfico',
       'settings.defaults_hint_inline': 'Riesgo y Costes por defecto se configuran en Revisión',
       'kpi.wins': 'Ganadoras',
       'kpi.losses': 'Pérdidas',
@@ -5332,21 +5340,55 @@
     });
     const linkEl = document.getElementById('saved-bias-link');
     const links = (b.tvLinks || []).filter(l => l && l.url);
-    if (links.length > 0) {
+    if (links.length === 0) {
+      linkEl.classList.add('hidden');
+    } else if (links.length === 1) {
+      // Single chart — no tabs needed, render directly (preserves original layout for the common case).
       linkEl.classList.remove('hidden');
-      linkEl.innerHTML = links.map(linkObj => {
+      const linkObj = links[0];
+      const link = linkObj.url;
+      const note = linkObj.notes || '';
+      const imgUrl = tradingViewImageUrl(link);
+      const safe = link.replace(/"/g, '&quot;');
+      const noteEl = note ? `<div style="font-size:13px;color:var(--text-dim);margin-top:8px;font-family:'DM Mono',monospace;line-height:1.6;">"${note.replace(/</g,'&lt;')}"</div>` : '';
+      if (imgUrl) {
+        linkEl.innerHTML = `<div><a href="${safe}" target="_blank" rel="noopener"><img src="${imgUrl}" alt="Bias chart" class="bias-chart-img" onerror="this.parentElement.outerHTML='<a href=&quot;${safe}&quot; target=_blank rel=noopener style=color:var(--text-mid)>${safe}</a>'"></a>${noteEl}</div>`;
+      } else {
+        linkEl.innerHTML = `<div><a href="${safe}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${safe}</a>${noteEl}</div>`;
+      }
+    } else {
+      // Multiple charts — render a tab strip (Chart 1 / Chart 2 / ...) above a single preview area.
+      // Click a tab to swap the visible chart + its notes. Avoids stacking all previews vertically.
+      linkEl.classList.remove('hidden');
+      const chartLabel = t('tab.bias_chart') || 'Chart';
+      const tabsHtml = links.map((_, i) =>
+        `<button type="button" class="bias-chart-tab${i === 0 ? ' active' : ''}" data-bias-chart-idx="${i}">${chartLabel} ${i + 1}</button>`
+      ).join('');
+      linkEl.innerHTML = `<div class="bias-chart-tabs">${tabsHtml}</div><div id="bias-chart-active"></div>`;
+      const activeWrap = linkEl.querySelector('#bias-chart-active');
+      const renderActive = (idx) => {
+        const linkObj = links[idx];
         const link = linkObj.url;
         const note = linkObj.notes || '';
         const imgUrl = tradingViewImageUrl(link);
         const safe = link.replace(/"/g, '&quot;');
         const noteEl = note ? `<div style="font-size:13px;color:var(--text-dim);margin-top:8px;font-family:'DM Mono',monospace;line-height:1.6;">"${note.replace(/</g,'&lt;')}"</div>` : '';
         if (imgUrl) {
-          return `<div style="margin-bottom:14px;"><a href="${safe}" target="_blank" rel="noopener"><img src="${imgUrl}" alt="Bias chart" class="bias-chart-img" onerror="this.parentElement.outerHTML='<a href=&quot;${safe}&quot; target=_blank rel=noopener style=color:var(--text-mid)>${safe}</a>'"></a>${noteEl}</div>`;
+          activeWrap.innerHTML = `<a href="${safe}" target="_blank" rel="noopener"><img src="${imgUrl}" alt="Bias chart" class="bias-chart-img" onerror="this.parentElement.outerHTML='<a href=&quot;${safe}&quot; target=_blank rel=noopener style=color:var(--text-mid)>${safe}</a>'"></a>${noteEl}`;
         } else {
-          return `<div style="margin-bottom:14px;"><a href="${safe}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${safe}</a>${noteEl}</div>`;
+          activeWrap.innerHTML = `<a href="${safe}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${safe}</a>${noteEl}`;
         }
-      }).join('');
-    } else linkEl.classList.add('hidden');
+      };
+      renderActive(0);
+      linkEl.querySelectorAll('.bias-chart-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.biasChartIdx);
+          if (isNaN(idx)) return;
+          linkEl.querySelectorAll('.bias-chart-tab').forEach(b => b.classList.toggle('active', b === btn));
+          renderActive(idx);
+        });
+      });
+    }
     const notesEl = document.getElementById('saved-bias-notes');
     // Trim trailing whitespace/newlines from the saved notes — the textarea preserves any
     // empty lines the user typed at the end, which render as visible blank rows below the text.
