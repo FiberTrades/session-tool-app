@@ -573,6 +573,9 @@
   /* Inline dim styling for the · separator and pips part in breakdown table cells */
   .history-cell .dim { color: var(--text-dim); }
   .wl-summary { margin-top: 28px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); }
+  /* Vertical variant — used when the W/L/BE panels sit beside a pie chart inside section-with-pie.
+     Single column instead of 3-col, no top margin (parent flex container handles spacing). */
+  .wl-summary.wl-summary-vertical { margin-top: 0; grid-template-columns: 1fr; }
   .wl-cell { background: var(--bg); padding: 22px; position: relative; text-align: center; }
   .wl-cell:hover .stat-tooltip { opacity: 1; transform: translateX(-50%) translateY(0); pointer-events: auto; }
   .wl-cell .label { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 14px; }
@@ -592,7 +595,7 @@
      stat-grid breakdown table. Pie sits at a fixed ~260px on the left; breakdown table fills
      remaining space. Collapses to single column at narrow viewports. */
   .section-with-pie { display: flex; gap: 32px; align-items: stretch; margin-top: 16px; }
-  .section-with-pie .pie-cell-inline { flex: 0 0 260px; border: 1px solid var(--border); padding: 24px 16px 22px; }
+  .section-with-pie .pie-cell-inline { flex: 0 0 220px; border: none; padding: 0; background: transparent; }
   .section-with-pie-main { flex: 1; min-width: 0; }
   @media (max-width: 900px) {
     .section-with-pie { flex-direction: column; }
@@ -1504,13 +1507,33 @@
 
     <section style="margin-top:40px;">
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="stats.s2.title">Wins vs Losses</span></div>
-      <p class="section-hint" data-i18n="hint.wins_vs_losses">Win/Loss/BE share across all logged trades. Detail below shows R totals and averages.</p>
-      <div class="pie-grid pie-grid-single">
-        <div class="pie-cell">
-          <div class="stat-tooltip" data-i18n="tip.pie_wl">Share of wins, losses, and break-evens across all logged trades. Detail below shows R totals and averages.</div>
+      <p class="section-hint" data-i18n="hint.wins_vs_losses">Win/Loss/BE share across all logged trades. Detail on the right shows R totals and averages.</p>
+      <div class="section-with-pie">
+        <div class="pie-cell pie-cell-inline">
+          <div class="stat-tooltip" data-i18n="tip.pie_wl">Share of wins, losses, and break-evens across all logged trades. Detail to the right shows R totals and averages.</div>
           <div class="pie-svg-wrap"><svg class="pie-svg" id="pie-wl" viewBox="0 0 120 120"></svg></div>
-          <div class="pie-legend" id="pie-wl-legend"></div>
-          <div class="pie-detail" id="pie-wl-detail"></div>
+        </div>
+        <div class="section-with-pie-main">
+          <div class="wl-summary wl-summary-vertical">
+            <div class="wl-cell win">
+              <div class="stat-tooltip" data-i18n="tip.wins_breakdown">Total number of winning trades, total R captured, and average R per win. Higher avg R = bigger winners on average.</div>
+              <div class="label" data-i18n="kpi.wins">Wins</div>
+              <div class="big" id="wl-win-count">0</div>
+              <div class="detail" id="wl-win-detail">—</div>
+            </div>
+            <div class="wl-cell loss">
+              <div class="stat-tooltip" data-i18n="tip.losses_breakdown">Total number of losing trades. Each loss counts as -1R by default. If your imported actual losses were bigger than 1R (slippage), they show as higher R in the average.</div>
+              <div class="label" data-i18n="kpi.losses">Losses</div>
+              <div class="big" id="wl-loss-count">0</div>
+              <div class="detail" id="wl-loss-detail">—</div>
+            </div>
+            <div class="wl-cell be">
+              <div class="stat-tooltip" data-i18n="tip.bes_breakdown">Trades that closed at or near entry, often with SL moved to BE. They contribute 0R to stats but may carry small £ costs (commission + spread).</div>
+              <div class="label" data-i18n="kpi.bes">Break-evens</div>
+              <div class="big" id="wl-be-count">0</div>
+              <div class="detail" id="wl-be-detail">—</div>
+            </div>
+          </div>
         </div>
       </div>
     </section>
@@ -6274,22 +6297,39 @@
       { label: t('type.continuation'), value: typeCont.length,  color: 'var(--good)' },
     ]);
 
-    // === Detail block #1: Wins/Losses/BEs — restores the original cell content. ===
-    // Totals show R captured / lost, avg R per win, and BE count + costs paid.
+    // === Detail block #1: Wins/Losses/BEs — populates the 3 stacked panels beside the W/L pie. ===
+    // These are the original wl-cell panels restored on the right side of the section, matching
+    // the layout of the Long/Short and Reaction/Continuation sections (pie left, stats right).
     const totalWinR  = wins.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
     const totalLossR = losses.length; // 1R per loss by convention
-    const avgWinR    = wins.length > 0 ? totalWinR / wins.length : 0;
     const beCosts    = bes.reduce((s, t) => s + (parseFloat(t.costs) || 0), 0);
-    // Helper — builds a single key/value row.
+    const winCountEl  = document.getElementById('wl-win-count');
+    const lossCountEl = document.getElementById('wl-loss-count');
+    const beCountEl   = document.getElementById('wl-be-count');
+    if (winCountEl)  winCountEl.textContent  = wins.length;
+    if (lossCountEl) lossCountEl.textContent = losses.length;
+    if (beCountEl)   beCountEl.textContent   = bes.length;
+    const winDetailEl  = document.getElementById('wl-win-detail');
+    const lossDetailEl = document.getElementById('wl-loss-detail');
+    const beDetailEl   = document.getElementById('wl-be-detail');
+    if (winDetailEl) {
+      winDetailEl.innerHTML = wins.length > 0
+        ? `${t('wvl.total')} +${totalWinR.toFixed(2)}R<br>${t('wvl.avg_per_win').replace(/\{R\}/g, '+'+(totalWinR/wins.length).toFixed(2)+'R')}`
+        : t('wvl.no_wins');
+    }
+    if (lossDetailEl) {
+      lossDetailEl.innerHTML = losses.length > 0
+        ? `${t('wvl.total')} -${totalLossR.toFixed(2)}R<br>${t('wvl.each_minus_one_r')}`
+        : t('wvl.no_losses');
+    }
+    if (beDetailEl) {
+      beDetailEl.innerHTML = bes.length > 0
+        ? `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} -${curSym()}${beCosts.toFixed(2)}`
+        : t('wvl.no_bes');
+    }
+    // Helper — still used by L/S and R/C detail rows below (kept for compatibility even though
+    // those .pie-detail blocks are hidden by CSS now).
     const detailRow = (key, val, valClass) => `<div class="pie-detail-row"><span class="pie-detail-key">${key}</span><span class="pie-detail-val ${valClass || ''}">${val}</span></div>`;
-    document.getElementById('pie-wl-detail').innerHTML = (wins.length === 0 && losses.length === 0 && bes.length === 0)
-      ? ''
-      : [
-          wins.length   > 0 ? detailRow(t('res.win').toUpperCase()    + ' R',   '+' + totalWinR.toFixed(1) + 'R', 'good') : '',
-          wins.length   > 0 ? detailRow(t('pie.avg').toUpperCase()    + ' R',   '+' + avgWinR.toFixed(2)    + 'R', 'good') : '',
-          losses.length > 0 ? detailRow(t('res.lose').toUpperCase()   + ' R',   '-' + totalLossR.toFixed(1) + 'R', 'bad')  : '',
-          bes.length    > 0 ? detailRow(t('res.be').toUpperCase()              , bes.length + ' · ' + curSym() + beCosts.toFixed(0), '') : '',
-        ].filter(Boolean).join('');
 
     // === Detail block #2: Long/Short — win rate and R total per side. ===
     // Shows which direction is actually your edge, not just which you take more often.
