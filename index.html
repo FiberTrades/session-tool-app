@@ -3655,8 +3655,12 @@
         const waitFor = (closeToast && closeToast._dismissPromise) ? closeToast._dismissPromise : Promise.resolve();
         waitFor.then(() => setTimeout(() => {
           showUndoToast(t('rule.friday_prompt'), () => {
+            // Use calendar week bounds (Mon 00:00 → Fri 23:59:59) instead of the cutoff-based
+            // bounds, so the modal's trade counts match what the calendar shows.
             const { weekStart, weekEnd } = getCurrentWeekBounds(new Date());
-            if (typeof openWeeklyReviewModal === 'function') openWeeklyReviewModal(weekStart, weekEnd);
+            const fullStart = new Date(weekStart); fullStart.setHours(0, 0, 0, 0);
+            const fullEnd   = new Date(weekEnd);   fullEnd.setHours(23, 59, 59, 999);
+            if (typeof openWeeklyReviewModal === 'function') openWeeklyReviewModal(fullStart, fullEnd);
           }, 12000, t('rule.friday_prompt_action'));
         }, 600));
       }
@@ -7180,11 +7184,12 @@
       el.addEventListener('click', () => {
         const monday = new Date(el.dataset.monday);
         const friday = new Date(el.dataset.friday);
-        // Set Monday to cutoff time, Friday to cutoff time (matching getCurrentWeekBounds)
-        const cutoffStr = data.settings.sessionDayCutoff || '22:00';
-        const [hh, mm] = cutoffStr.split(':').map(Number);
-        monday.setHours(hh || 22, mm || 0, 0, 0);
-        friday.setHours(hh || 22, mm || 0, 0, 0);
+        // Use FULL Monday-Friday day bounds (Mon 00:00 → Fri 23:59:59). The calendar cell counts
+        // trades by toDateString() across Mon-Fri, so the modal must use the same boundaries —
+        // otherwise the cell shows N trades but the modal shows fewer. Previously we applied the
+        // session-day cutoff here (Mon 22:00 → Fri 22:00) which excluded trades on Monday morning.
+        monday.setHours(0, 0, 0, 0);
+        friday.setHours(23, 59, 59, 999);
         if (typeof openWeeklyReviewModal === 'function') openWeeklyReviewModal(monday, friday);
       });
     });
@@ -8054,9 +8059,12 @@
   // Generic period stats — works for any [start, end] range. Used by weekly + monthly reviews.
   function computePeriodStats(periodStart, periodEnd) {
     const all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
+    // Strict bounds: [periodStart, periodEnd]. Callers must pass periodEnd at end-of-day
+    // (23:59:59) when they want the whole final day included. The previous +24h fudge
+    // caused over-counting when callers passed precise time boundaries.
     const tradesInPeriod = all.filter(t => {
       const td = new Date(t.date);
-      return td >= periodStart && td < new Date(periodEnd.getTime() + 24*3600*1000);
+      return td >= periodStart && td <= periodEnd;
     });
     const wins = tradesInPeriod.filter(t => t.result === 'Win');
     const losses = tradesInPeriod.filter(t => t.result === 'Lose');
@@ -9543,7 +9551,10 @@
       if (data._lastWeeklyPrompt === weekKey) return;
       data._lastWeeklyPrompt = weekKey;
       saveData();
-      setTimeout(() => openWeeklyReviewModal(weekStart, weekEnd), 600);
+      // Use calendar Mon-Fri day bounds so modal counts match the calendar week summary.
+      const fullStart = new Date(weekStart); fullStart.setHours(0, 0, 0, 0);
+      const fullEnd   = new Date(weekEnd);   fullEnd.setHours(23, 59, 59, 999);
+      setTimeout(() => openWeeklyReviewModal(fullStart, fullEnd), 600);
       return;
     }
 
