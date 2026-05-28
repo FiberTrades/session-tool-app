@@ -6323,15 +6323,33 @@
     const sideShort = all.filter(t => t.side === 'Short');
     const typeReact = all.filter(t => t.type === 'Reaction');
     const typeCont  = all.filter(t => t.type === 'Continuation');
+    // Compute Net R per side/type so each pie slice's colour reflects performance, not category.
+    // Green if positive, red if negative, blue/info if exactly zero (or no trades). This makes
+    // the pies tell a richer story — "how often I trade THIS side" + "is THIS side actually paying".
+    const netR = (trades) => trades.reduce((s, t) => {
+      if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
+      if (t.result === 'Lose') return s - 1;
+      return s;
+    }, 0);
+    const perfColor = (r, hasTrades) => {
+      if (!hasTrades) return 'var(--info)';
+      if (r > 0.001)  return 'var(--good)';
+      if (r < -0.001) return 'var(--bad)';
+      return 'var(--info)';
+    };
+    const longR  = netR(sideLong);
+    const shortR = netR(sideShort);
+    const reactR = netR(typeReact);
+    const contR  = netR(typeCont);
     // W/L pie is no longer rendered — the section reverted to the original 3-column wl-cell row.
     // Only the Long/Short and Reaction/Continuation pies remain on the Statistics tab.
     renderPie('pie-side', 'pie-side-legend', [
-      { label: t('side.long'),  value: sideLong.length,  color: 'var(--good)' },
-      { label: t('side.short'), value: sideShort.length, color: 'var(--bad)' },
+      { label: t('side.long'),  value: sideLong.length,  color: perfColor(longR,  sideLong.length  > 0) },
+      { label: t('side.short'), value: sideShort.length, color: perfColor(shortR, sideShort.length > 0) },
     ]);
     renderPie('pie-type', 'pie-type-legend', [
-      { label: t('type.reaction'),     value: typeReact.length, color: '#e67e3c' },
-      { label: t('type.continuation'), value: typeCont.length,  color: '#e85d8a' },
+      { label: t('type.reaction'),     value: typeReact.length, color: perfColor(reactR, typeReact.length > 0) },
+      { label: t('type.continuation'), value: typeCont.length,  color: perfColor(contR,  typeCont.length  > 0) },
     ]);
 
     // === Detail block #1: Wins/Losses/BEs — populates the 3 stacked panels beside the W/L pie. ===
@@ -6364,46 +6382,9 @@
         ? `${t('wvl.zerorcontrib')}<br>${t('wvl.costs_lbl')} -${curSym()}${beCosts.toFixed(2)}`
         : t('wvl.no_bes');
     }
-    // Helper — still used by L/S and R/C detail rows below (kept for compatibility even though
-    // those .pie-detail blocks are hidden by CSS now).
-    const detailRow = (key, val, valClass) => `<div class="pie-detail-row"><span class="pie-detail-key">${key}</span><span class="pie-detail-val ${valClass || ''}">${val}</span></div>`;
-
-    // === Detail block #2: Long/Short — win rate and R total per side. ===
-    // Shows which direction is actually your edge, not just which you take more often.
-    const longDecided  = sideLong.filter(t  => t.result === 'Win' || t.result === 'Lose');
-    const shortDecided = sideShort.filter(t => t.result === 'Win' || t.result === 'Lose');
-    const longWins  = sideLong.filter(t  => t.result === 'Win');
-    const shortWins = sideShort.filter(t => t.result === 'Win');
-    const longWR  = longDecided.length  > 0 ? Math.round((longWins.length  / longDecided.length)  * 100) : null;
-    const shortWR = shortDecided.length > 0 ? Math.round((shortWins.length / shortDecided.length) * 100) : null;
-    const longR  = sideLong.reduce((s, x)  => s + (x.result === 'Win' ? (parseFloat(x.r) || 0) : x.result === 'Lose' ? -1 : 0), 0);
-    const shortR = sideShort.reduce((s, x) => s + (x.result === 'Win' ? (parseFloat(x.r) || 0) : x.result === 'Lose' ? -1 : 0), 0);
-    document.getElementById('pie-side-detail').innerHTML = (sideLong.length === 0 && sideShort.length === 0)
-      ? ''
-      : [
-          sideLong.length  > 0 ? detailRow(t('side.long').toUpperCase()  + ' WR',  longWR  !== null ? longWR  + '%' : '—', '') : '',
-          sideLong.length  > 0 ? detailRow(t('side.long').toUpperCase()  + ' R',   (longR  >= 0 ? '+' : '') + longR.toFixed(1)  + 'R', longR  >= 0 ? 'good' : 'bad') : '',
-          sideShort.length > 0 ? detailRow(t('side.short').toUpperCase() + ' WR',  shortWR !== null ? shortWR + '%' : '—', '') : '',
-          sideShort.length > 0 ? detailRow(t('side.short').toUpperCase() + ' R',   (shortR >= 0 ? '+' : '') + shortR.toFixed(1) + 'R', shortR >= 0 ? 'good' : 'bad') : '',
-        ].filter(Boolean).join('');
-
-    // === Detail block #3: Reaction/Continuation — same idea, by trade type. ===
-    const reactDecided = typeReact.filter(t => t.result === 'Win' || t.result === 'Lose');
-    const contDecided  = typeCont.filter(t  => t.result === 'Win' || t.result === 'Lose');
-    const reactWins = typeReact.filter(t => t.result === 'Win');
-    const contWins  = typeCont.filter(t  => t.result === 'Win');
-    const reactWR = reactDecided.length > 0 ? Math.round((reactWins.length / reactDecided.length) * 100) : null;
-    const contWR  = contDecided.length  > 0 ? Math.round((contWins.length  / contDecided.length)  * 100) : null;
-    const reactR = typeReact.reduce((s, x) => s + (x.result === 'Win' ? (parseFloat(x.r) || 0) : x.result === 'Lose' ? -1 : 0), 0);
-    const contR  = typeCont.reduce((s, x)  => s + (x.result === 'Win' ? (parseFloat(x.r) || 0) : x.result === 'Lose' ? -1 : 0), 0);
-    document.getElementById('pie-type-detail').innerHTML = (typeReact.length === 0 && typeCont.length === 0)
-      ? ''
-      : [
-          typeReact.length > 0 ? detailRow(t('type.reaction').toUpperCase()     + ' WR',  reactWR !== null ? reactWR + '%' : '—', '') : '',
-          typeReact.length > 0 ? detailRow(t('type.reaction').toUpperCase()     + ' R',   (reactR >= 0 ? '+' : '') + reactR.toFixed(1) + 'R', reactR >= 0 ? 'good' : 'bad') : '',
-          typeCont.length  > 0 ? detailRow(t('type.continuation').toUpperCase() + ' WR',  contWR  !== null ? contWR  + '%' : '—', '') : '',
-          typeCont.length  > 0 ? detailRow(t('type.continuation').toUpperCase() + ' R',   (contR  >= 0 ? '+' : '') + contR.toFixed(1)  + 'R', contR  >= 0 ? 'good' : 'bad') : '',
-        ].filter(Boolean).join('');
+    // (L/S and R/C pie-detail population removed — those .pie-detail elements were dropped when
+    // the pies were stripped to donut-only. The stat-grid table next to each pie carries the
+    // detail now; the slice colour itself encodes per-side Net R performance.)
 
     let mw=0, ml=0, mb=0, cw=0, cl=0, cb=0;
     all.forEach(t => {
