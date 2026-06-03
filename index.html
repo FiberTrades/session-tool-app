@@ -612,6 +612,9 @@
   .pie-svg { width: 100%; height: 100%; display: block; }
   .pie-svg .pie-center-num { font-family: 'DM Mono', monospace; font-size: 18px; fill: var(--text); }
   .pie-svg .pie-center-sub { font-family: 'DM Mono', monospace; font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; fill: var(--text-dim); }
+  /* Inside-arc slice number labels. Small white text positioned at the midpoint angle of each
+     slice, on the donut stroke. Only shown for slices >= 8% to avoid label overlap. */
+  .pie-svg .pie-slice-num { font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 600; fill: #fff; pointer-events: none; }
   .pie-legend { display: flex; flex-direction: column; gap: 4px; width: 100%; max-width: 220px; }
   .pie-legend-row { display: flex; align-items: center; justify-content: space-between; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.02em; }
   .pie-legend-swatch { display: inline-block; width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; margin-right: 8px; }
@@ -5913,21 +5916,36 @@
     const r = 42;
     const circ = 2 * Math.PI * r;
     let offset = 0;
-    const paths = slices.map((sl, i) => {
+    const paths = [];
+    const labels = [];
+    slices.forEach((sl, i) => {
       const val = sl.value || 0;
+      if (val === 0) return; // skip zero-value slices entirely
       const fraction = val / total;
       const dashLen = fraction * circ;
       // Tiny gap between slices so they read as distinct segments. Skip gap when one slice = 100%.
       const gap = (val === total) ? 0 : 1.5;
-      const seg = `<circle cx="60" cy="60" r="${r}" fill="none" stroke="${sl.color}" stroke-width="14" stroke-dasharray="${Math.max(0, dashLen - gap)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)" />`;
+      paths.push(`<circle cx="60" cy="60" r="${r}" fill="none" stroke="${sl.color}" stroke-width="14" stroke-dasharray="${Math.max(0, dashLen - gap)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)" />`);
+      // Slice count label, positioned at the angular midpoint of this slice, on the donut radius.
+      // Hidden for slices smaller than ~8% — there's not enough arc length for the label to sit
+      // legibly without overlapping the next slice's number.
+      if (fraction >= 0.08) {
+        // Midpoint angle in radians, measured from the top (-90deg = 12 o'clock).
+        // The stroke runs along the circle of radius r; the label sits on that same radius.
+        const midFrac = (offset + dashLen / 2) / circ;
+        const midAngleRad = midFrac * 2 * Math.PI - Math.PI / 2;
+        const labelX = 60 + r * Math.cos(midAngleRad);
+        const labelY = 60 + r * Math.sin(midAngleRad) + 3; // +3 ≈ font baseline correction
+        labels.push(`<text x="${labelX.toFixed(2)}" y="${labelY.toFixed(2)}" text-anchor="middle" class="pie-slice-num">${val}</text>`);
+      }
       offset += dashLen;
-      return seg;
-    }).join('');
+    });
     const centerNum = total;
     const centerSub = (t('pie.trades_label') || 'Trades').toUpperCase();
     svg.innerHTML = `
       <circle cx="60" cy="60" r="${r}" fill="none" stroke="var(--bg-elev)" stroke-width="14" />
-      ${paths}
+      ${paths.join('')}
+      ${labels.join('')}
       <text x="60" y="58" text-anchor="middle" class="pie-center-num">${centerNum}</text>
       <text x="60" y="72" text-anchor="middle" class="pie-center-sub">${centerSub}</text>
     `;
@@ -9961,6 +9979,28 @@
       'nada aún. No fuerces una entrada solo para darle algo que registrar a este formulario.',
       'una mañana tranquila. El mercado no te debe acción.',
     ],
+    REVIEW_IDLE_WEEKEND: [
+      'fin de semana. El mercado cerrado, el trabajo de verdad no. Planifica, repasa, afila.',
+      'sábado o domingo — los días de trading más infravalorados del juego.',
+      'sin mercado hoy. Los buenos usan este tiempo para estudiar lo que pasó y planear lo siguiente.',
+      'un fin de semana con el journal es parte de la estrategia, no la ausencia de una.',
+      'cerrado para operar, abierto para repasar. La mejor parte de la semana, sinceramente.',
+      'fin de semana. El trabajo que compone ocurre aquí — en silencio, lejos del ruido.',
+      'sin sesión que perseguir. Hora de repasar la semana, marcar lo que funcionó, arreglar lo que no.',
+      'el mercado duerme. Los buenos traders no — leen su propia cinta.',
+      'modo fin de semana: repasa lo que hiciste, planea lo siguiente, luego apártate limpio.',
+      'sin operaciones que registrar. Mucho que aprender. Repasa la semana con ojos fríos.',
+      'aquí es donde se abre la brecha entre traders. La mayoría no hace nada. Los buenos planifican.',
+      'sin clics, sin setups, sin mercado — solo tú, el historial del gráfico, y un boli honesto.',
+      'fin de semana. La ventaja injusta está aquí. Aprovéchala.',
+      'el repaso del sábado le gana al arrepentimiento del lunes. Siempre.',
+      'mercado cerrado, cuaderno abierto. Ese es el trato.',
+      'sin acción en vivo. Condiciones excelentes para el trabajo que de verdad mueve la aguja.',
+      'fin de semana. Lee tus operaciones como si fueran de otra persona. Menos ego, más señal.',
+      'planifica la semana, escribe la regla, anota la lección. La parte aburrida es la lucrativa.',
+      'el gráfico no se moverá hoy. Tu pensamiento sí debería.',
+      'fin de semana. El interés compuesto funciona también con las horas de estudio. Invierte algunas.',
+    ],
     RECAP_POS: [
       'ayer pagó. Bien hecho. No te cases con ello.',
       'día en verde. Tuviste paciencia. Repite eso antes de ponerte ingenioso.',
@@ -10635,6 +10675,31 @@
     'session in progress, or session skipped — either is fine. Log here when it matters.',
     'nothing yet. Don\'t force a fill just to give this form something to do.',
     'a quiet morning. The market doesn\'t owe you action.',
+  ];
+  // Weekend variant of REVIEW_IDLE — used Saturday/Sunday when the market is closed and
+  // "no clicks yet" type framing is nonsense. Voice: planning, reflecting, recharging — not
+  // "still waiting at the chart". Triggered by getDay() === 0 (Sun) or 6 (Sat) in the picker.
+  const REVIEW_IDLE_WEEKEND = [
+    'weekend. Market\'s closed, the real work isn\'t. Plan, review, sharpen.',
+    'Saturday or Sunday — the most underrated trading days in the game.',
+    'no market today. The good ones use this time to study what happened and plan what\'s next.',
+    'a weekend on the journal is part of the strategy, not the absence of one.',
+    'closed for trading, open for reviewing. The best part of the week, honestly.',
+    'weekend. The work that compounds happens here — quietly, away from the noise.',
+    'no session to chase. Time to review the week, mark what worked, fix what didn\'t.',
+    'the market sleeps. The good traders don\'t — they read their own tape.',
+    'weekend mode: review what you did, plan what\'s next, then walk away clean.',
+    'no trades to log. Plenty to learn from. Go through last week with cold eyes.',
+    'this is when the gap between traders widens. Most do nothing. The good ones plan.',
+    'no clicks, no setups, no market — just you, the chart history, and an honest pen.',
+    'weekend. The unfair advantage is here. Use it.',
+    'Saturday review beats Monday regret. Every time.',
+    'closed market, open notebook. That\'s the deal.',
+    'no live action. Excellent conditions for the work that actually moves the needle.',
+    'weekend. Read your trades like they\'re someone else\'s. Less ego, more signal.',
+    'plan the week, write the rule, log the lesson. The boring bit is the lucrative bit.',
+    'the chart won\'t move today. Your thinking should.',
+    'weekend. Compound interest works on study time too. Spend some.',
   ];
 
   function timeOfDayOpener() {
@@ -12599,14 +12664,20 @@
     if (!_cachedTailReview) {
       // Review = reflecting. Two branches by what's available:
       //   - Today has trades: today-flavoured recap from RECAP_*_TODAY pools.
-      //   - Today empty: REVIEW_IDLE — calm "form is here when you are" lines.
+      //   - Today empty: REVIEW_IDLE (weekdays) or REVIEW_IDLE_WEEKEND (Sat/Sun) — the weekend
+      //     variant exists because lines like "no clicks yet" are nonsense when the market is
+      //     closed. Weekend pool focuses on rest/planning/recharging instead.
       const todayOutcome = getTodayOutcome();
       if (todayOutcome) {
         _cachedTailReview = pickTail(todayOutcome, true);
       } else {
-        const idlePool = localizedPool(REVIEW_IDLE, 'REVIEW_IDLE');
-        const idx = hashStr(todayKey() + ':rev-idle:' + _greetingNonce) % idlePool.length;
-        _cachedTailReview = idlePool[idx];
+        const dow = new Date().getDay(); // 0=Sun, 6=Sat
+        const isWeekend = (dow === 0 || dow === 6);
+        const pool = isWeekend
+          ? localizedPool(REVIEW_IDLE_WEEKEND, 'REVIEW_IDLE_WEEKEND')
+          : localizedPool(REVIEW_IDLE, 'REVIEW_IDLE');
+        const idx = hashStr(todayKey() + ':rev-idle:' + (isWeekend ? 'wkd' : 'wk') + ':' + _greetingNonce) % pool.length;
+        _cachedTailReview = pool[idx];
       }
     }
     if (!_cachedOpener) _cachedOpener = timeOfDayOpener();
