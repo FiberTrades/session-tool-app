@@ -3917,6 +3917,46 @@
     return { start, end };
   }
 
+  // Returns true if the current local time is within (or about to enter) the user's
+  // configured trading session. "About to enter" = within 30 minutes before session start —
+  // so a user opening the app to log a morning bias just before their 8AM session still gets
+  // session-context content. Outside this window, content that presupposes imminent trading
+  // (e.g. "what mood are you in") gets gated off.
+  //
+  // Handles overnight sessions (end < start, e.g. "23:00-04:00") by treating the window as
+  // wrapping midnight. Fails open: if sessionName has no parseable times, returns true so
+  // legacy behaviour (bias questions allowed) is preserved.
+  function isAboutToOrInSession() {
+    try {
+      const parsed = parseSessionTimes(data.settings.sessionName);
+      if (!parsed) return true; // unparseable → don't gate, preserve legacy behaviour
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      const [sh, sm] = parsed.start.split(':').map(Number);
+      const [eh, em] = parsed.end.split(':').map(Number);
+      const startMins = sh * 60 + sm;
+      const endMins   = eh * 60 + em;
+      const GRACE_MIN = 30; // 30 minutes pre-session counts as "about to enter"
+      const startWithGrace = (startMins - GRACE_MIN + 24 * 60) % (24 * 60);
+      // Overnight session detection: end < start means the window wraps midnight (e.g. 23:00-04:00).
+      const isOvernight = endMins < startMins;
+      if (isOvernight) {
+        // In-window if now >= startWithGrace OR now < endMins. Effectively: outside the gap
+        // between session end and session start.
+        return nowMins >= startWithGrace || nowMins < endMins;
+      }
+      // Normal same-day session: in-window if now is between startWithGrace and endMins.
+      // (startWithGrace may have wrapped backwards across midnight — handle that.)
+      if (startWithGrace > startMins) {
+        // Grace pushed us into the previous day — covers e.g. 00:15 grace for 00:45 start.
+        return nowMins >= startWithGrace || nowMins < endMins;
+      }
+      return nowMins >= startWithGrace && nowMins < endMins;
+    } catch (e) {
+      return true; // any error → don't gate
+    }
+  }
+
   // Render configurable meta header values from settings
   function renderMetaHeader() {
     document.getElementById('meta-pair').textContent = data.settings.pair || 'EUR/USD';
@@ -10924,7 +10964,51 @@
         "Cada día operado, mapeado. El expediente honesto.",
         "Tu vida de trading, con forma de calendario. Clica cualquier día."
       ]
-    }
+    },
+    OUT_OF_SESSION_NO_TRADES: [
+      'no es tu sesión ahora. La mejor operación fuera de tu ventana es ninguna operación.',
+      'fuera de tus horas. El setup que "se ve genial" fuera de sesión es el que más caro te cobra.',
+      'este no es tu momento. Planea, repasa, camina — pero no cliques.',
+      'tu ventana de sesión está cerrada. El mercado seguirá ahí mañana. El setup también.',
+      'fuera de horas. La ventaja que has construido vive dentro de tu sesión, no fuera.',
+      'hora equivocada para clicar. Hora correcta para pensar.',
+      'no es hora de sesión. La disciplina está en esperarla, no en improvisar a su alrededor.',
+      'fuera de tu ventana. Una operación aquí no cuenta para tu ventaja — cuenta en su contra.',
+      'tus horas no son ahora. Lee, planea, anota, prepara. Cualquier cosa menos operar.',
+      'fuera de sesión. La operación "solo una más" es como los buenos sistemas se vuelven recuerdos.',
+      'no es tu momento. Usa el hueco para estudiar, no para actuar.',
+      'sesión cerrada para ti. Al gráfico le da igual — pero a tus estadísticas no.',
+      'hora equivocada. Hora correcta para repasar ayer o planear mañana.',
+      'fuera de tus horas. Las operaciones que tomas aquí son las que explicarás más tarde.',
+      'no es tu ventana. El mercado está abierto para todos — tu ventaja no.',
+      'fuera de horas. La disciplina es estar bien con no estar en la acción.',
+      'no es hora de sesión. Guarda el clic para cuando tenga una ventaja detrás.',
+      'tu sesión está en otra parte del reloj. Tu atención también debería estarlo.',
+      'fuera de tus horas. La estrategia funciona porque tú definiste cuándo — respétalo.',
+      'hora equivocada. La correcta está en tu horario, no en un impulso.',
+    ],
+    OUT_OF_SESSION_HAD_TRADES: [
+      'sesión terminada por hoy. Anótala, ciérrala, apártate. No operes pasadas tus horas.',
+      'el trabajo de hoy está en el libro. Resiste el impulso de "solo revisar un gráfico más".',
+      'tu sesión acabó. Cualquier cosa operada ahora está fuera del sistema — y el sistema es la ventaja.',
+      'día terminado. El movimiento disciplinado es cerrar el portátil, no sumarle más.',
+      'sesión cerrada. Has hecho el trabajo — deja que quede así.',
+      'ventana cerrada. Un segundo aire aquí suele ser una tercera pérdida.',
+      'el día está anotado. Ahora resiste al gráfico. Estará ahí mañana.',
+      'sesión terminada. Las operaciones que hiciste cuentan. Lo de aquí no — solo como lección.',
+      'trabajo hecho por hoy. No lo abarates quedándote demasiado.',
+      'tus horas terminaron. Cualquier cosa más es esperanza disfrazada de análisis.',
+      'sesión en el libro. Apartarse limpio es parte de la estrategia, no su final.',
+      'el día está cerrado. Las operaciones tomadas fuera de tu ventana son las que lamentas.',
+      'día terminado. El mercado no te necesita esta noche. Tus estadísticas tampoco.',
+      'ventana cerrada. Los buenos traders son los que saben parar. Sé ese.',
+      'la sesión de hoy está completa. Que sea suficiente.',
+      'fuera de horas ahora. El setup que "ves" ahora es sobre todo el cansancio hablando.',
+      'sesión terminada. Anota, reflexiona, planea mañana. Luego deja el gráfico tranquilo.',
+      'trabajo hecho. Las operaciones fuera de tus horas son las que contaminan los datos.',
+      'sesión finalizada. La disciplina no está en la operación que tomaste — está en la que NO tomaste fuera de horas.',
+      'día en el libro. Cerrar el portátil ahora protege la ventaja que ya ganaste.',
+    ]
   };
   // ============================================================================
   // END SPANISH POOL TRANSLATIONS
@@ -11038,6 +11122,59 @@
     'plan the week, write the rule, log the lesson. The boring bit is the lucrative bit.',
     'the chart won\'t move today. Your thinking should.',
     'weekend. Compound interest works on study time too. Spend some.',
+  ];
+
+  // Out-of-session pools — used when current local time is outside the user's configured
+  // trading session AND today is a weekday (weekends use REVIEW_IDLE_WEEKEND). Two flavours:
+  //   - OUT_OF_SESSION_NO_TRADES: today has no trades logged yet, but we're already outside
+  //     the window. Tone: "your session isn't now, save your edge for when it is".
+  //   - OUT_OF_SESSION_HAD_TRADES: today had trades, session is now closed. Tone: "work's
+  //     done, log what happened, walk away — don't trade past your hours".
+  // Both pools actively discourage taking trades outside the user's defined window. This is
+  // the journal's job: protect the trader's edge by reinforcing the system, not just logging it.
+  const OUT_OF_SESSION_NO_TRADES = [
+    'not your session right now. The best trade outside your window is no trade.',
+    'outside your hours. The setup that "looks great" off-session is the one that pays the most expensive tuition.',
+    'this isn\'t when you trade. Plan, review, walk — but don\'t click.',
+    'your session window is closed. The market will still be here tomorrow. So will the setup.',
+    'off-hours. The edge you\'ve built lives inside your session, not outside it.',
+    'wrong time of day for clicking. Right time of day for thinking.',
+    'not session time. The discipline is in waiting for it, not improvising around it.',
+    'outside your window. A trade taken here doesn\'t count toward your edge — it counts against it.',
+    'your hours are not now. Read, plan, log, prep. Anything but trade.',
+    'off-session. The "just one more" trade is how good systems become memories.',
+    'this is not your time. Use the gap to study, not to act.',
+    'session\'s closed for you. The chart doesn\'t care — but your stats will.',
+    'wrong hour. Right hour for reviewing yesterday or planning tomorrow.',
+    'outside your hours. The trades you take here are the ones you\'ll explain away later.',
+    'not your window. The market\'s open to everyone — your edge isn\'t.',
+    'off-hours. The discipline is being okay with not being in the action.',
+    'not session time. Save the click for when it has an edge behind it.',
+    'your session is elsewhere on the clock. So should your attention be.',
+    'outside your hours. The strategy works because you defined when it does — respect that.',
+    'wrong time. The right time is on your schedule — not on a whim.',
+  ];
+  const OUT_OF_SESSION_HAD_TRADES = [
+    'session\'s done for the day. Log it, close it, walk away. Don\'t trade past your hours.',
+    'today\'s work is in the book. Resist the urge to "just check one more chart".',
+    'your session ended. Anything traded now is outside the system — and the system is the edge.',
+    'day\'s done. The disciplined move is closing the laptop, not adding to it.',
+    'session\'s closed. You\'ve done the work — let it stand.',
+    'window\'s shut. A second wind here is usually a third loss.',
+    'today is logged. Now resist the chart. It will be here tomorrow.',
+    'session over. The trades you took count. Anything from here doesn\'t — except as a lesson.',
+    'work\'s done for the day. Don\'t cheapen it by overstaying.',
+    'your hours are done. Anything more is hope dressed as analysis.',
+    'session\'s in the books. Walking away clean is part of the strategy, not the end of it.',
+    'today is closed. Trades taken outside your window are the ones you regret.',
+    'day\'s done. The market doesn\'t need you tonight. Neither do your stats.',
+    'window\'s closed. The good traders are the ones who can stop. Be that one.',
+    'today\'s session is complete. Let it be enough.',
+    'after-hours now. The setup you "spot" now is mostly fatigue talking.',
+    'session\'s over. Log, reflect, plan tomorrow. Then leave the chart alone.',
+    'work done. The trades from outside your hours are the ones that pollute the data.',
+    'session ended. The discipline isn\'t in the trade you took — it\'s in the one you didn\'t after hours.',
+    'day\'s in the book. Closing the laptop now protects the edge you\'ve already earned.',
   ];
 
   function timeOfDayOpener() {
@@ -12910,6 +13047,26 @@
     // Seed evolves with the greeting nonce (bumps on every trade change) so the line
     // updates live as the day progresses.
     const seed = todayKey() + ':nonce:' + _greetingNonce;
+    // ────────────────────────────────────────────────────────────────────────────────
+    // OUT-OF-SESSION GATE — if the user is outside their configured trading window AND
+    // today is a weekday (weekends already have REVIEW_IDLE_WEEKEND), route to a pool
+    // that actively discourages off-hours trading. Two flavours by today's trade count:
+    //   - todayMode + trades logged → "session's done, walk away" (HAD_TRADES pool)
+    //   - no trades today           → "this isn't your hours, save your edge" (NO_TRADES pool)
+    // The session check fails open (returns true) if sessionName isn't parseable, so
+    // legacy users without configured session times keep their existing behaviour.
+    // ────────────────────────────────────────────────────────────────────────────────
+    try {
+      const dow = new Date().getDay(); // 0=Sun, 6=Sat
+      const isWeekend = (dow === 0 || dow === 6);
+      if (!isWeekend && !isAboutToOrInSession()) {
+        const usePool = todayMode ? OUT_OF_SESSION_HAD_TRADES : OUT_OF_SESSION_NO_TRADES;
+        const poolKey = todayMode ? 'OUT_OF_SESSION_HAD_TRADES' : 'OUT_OF_SESSION_NO_TRADES';
+        const pool = localizedPool(usePool, poolKey);
+        const idx = hashStr(seed + ':oos:' + (todayMode ? 'had' : 'none')) % pool.length;
+        return pool[idx];
+      }
+    } catch (e) { /* fail open — fall through to regular logic */ }
     // In today-mode (user has logged trades for today), always use the today-recap pool.
     // Performance / bias questions reference longer windows and would distract from the
     // immediate session feedback.
@@ -12929,7 +13086,12 @@
     }
     // No trades today — yesterday-mode. Mix in performance questions + bias questions.
     //   0–5 (60%): try a performance-aware question (falls through if no signal)
-    //   6   (10%): pick a generic bias question
+    //   6   (10%): pick a generic bias question — BUT only if user is in (or about to enter)
+    //              their trading session. Outside the session, bias questions like "what mood
+    //              are you in and how does that mood trade?" presuppose imminent trading, which
+    //              isn't true if you opened the app at 6 PM with a London 8-10 AM session.
+    //              Out-of-session, this branch falls through to the recap pools, which are
+    //              time-neutral (they reference yesterday's outcome, not "what's about to happen").
     //   7–9 (30%): pick from the outcome-flavoured recap pools
     const roll = hashStr(seed + ':tail-bucket') % 10;
     if (roll <= 5) {
@@ -12937,7 +13099,7 @@
       if (pq) return pq;
       // Fall through if no eligible perf question
     }
-    if (roll === 6) {
+    if (roll === 6 && isAboutToOrInSession()) {
       const bq = localizedPool(BIAS_QUESTIONS, 'BIAS_QUESTIONS');
       const idx = hashStr(seed + ':biasq') % bq.length;
       return bq[idx];
