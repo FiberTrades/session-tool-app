@@ -487,7 +487,8 @@
   .series-dot.clickable { cursor: pointer; transition: opacity 200ms, transform 200ms; }
   .series-dot.clickable:hover { opacity: 0.78; transform: scale(1.06); }
   .history-list { margin-top: 32px; }
-  .history-row { display: grid; grid-template-columns: 60px repeat(4, 1fr) 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; }
+  .history-row { display: grid; grid-template-columns: 60px 1.5fr 1.4fr 1fr 1fr 0.7fr; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; }
+  .history-cell .hist-sep { color: var(--text-dim); margin: 0 1px; }
   /* Breakdown tables (DOW, Side, Type) — flex-based layout for guaranteed fixed row heights */
   #type-breakdown .history-list, #side-breakdown .history-list, #dow-breakdown .history-list {
     border: 1px solid var(--border-2); background: var(--bg); margin-top: 8px;
@@ -1095,7 +1096,7 @@
     .saved-bias-grid { flex-direction: column; gap: 12px; }
     .saved-bias-row { flex-direction: row; align-items: baseline; gap: 16px; }
     .saved-bias-row .k { min-width: 88px; }
-    .history-row { grid-template-columns: 50px 1fr 1fr 1fr 1fr; }
+    .history-row { grid-template-columns: 44px 1.4fr 1.3fr 1fr 1fr 0.7fr; }
     #type-breakdown .history-row, #side-breakdown .history-row, #dow-breakdown .history-row { grid-template-columns: 100px 60px 80px 100px 1fr; }
     #type-breakdown .history-cell.label, #side-breakdown .history-cell.label, #dow-breakdown .history-cell.label { font-size: 12px; }
     #type-breakdown .history-cell.right, #side-breakdown .history-cell.right, #dow-breakdown .history-cell.right { font-size: 16px; }
@@ -2366,6 +2367,7 @@
       'modal.morning_bias_chart': 'Morning bias chart:',
       'modal.morning_bias_charts': 'Morning bias charts:',
       'lbl.w': 'W',
+      'series.no_completed_yet': 'No completed series yet to copy. Finish your current 10 trades first.',
       'lbl.l': 'L',
       'lbl.be': 'BE',
       'lbl.net': 'Net',
@@ -3077,6 +3079,7 @@
       'modal.morning_bias_chart': 'Gráfico del sesgo matutino:',
       'modal.morning_bias_charts': 'Gráficos del sesgo matutino:',
       'lbl.w': 'G',
+      'series.no_completed_yet': 'Ninguna serie completada aún para copiar. Termina tus 10 operaciones actuales primero.',
       'lbl.l': 'P',
       'lbl.be': 'BE',
       'lbl.net': 'Neto',
@@ -6161,44 +6164,93 @@
     data.history.forEach((s, idx) => {
       const st = calcSeriesStats(s.trades);
       const num = data.history.length - idx;
-      const date = new Date(s.date).toLocaleDateString(tLocale(), { day:'2-digit', month:'short' });
+      // Date range — earliest → latest trade in the series. Computed by sorting trade timestamps
+      // since trades may be entered out of chronological order. If all trades fall on the same
+      // calendar day, collapse to a single date (no arrow). Falls back to s.date if no trades.
+      const tradesArr = s.trades || [];
+      const validDates = tradesArr
+        .map(t => t.date)
+        .filter(d => d)
+        .map(d => new Date(d))
+        .filter(d => !isNaN(d.getTime()))
+        .sort((a, b) => a - b);
+      const fmtDate = d => d.toLocaleDateString(tLocale(), { day: '2-digit', month: 'short' });
+      let dateLabel;
+      if (validDates.length === 0) {
+        dateLabel = s.date ? fmtDate(new Date(s.date)) : '—';
+      } else if (validDates.length === 1 || fmtDate(validDates[0]) === fmtDate(validDates[validDates.length - 1])) {
+        // Single trade or all-same-day series — one date, no arrow.
+        dateLabel = fmtDate(validDates[0]);
+      } else {
+        dateLabel = `${fmtDate(validDates[0])} → ${fmtDate(validDates[validDates.length - 1])}`;
+      }
       const cls = st.netR > 0 ? 'pl-good' : st.netR < 0 ? 'pl-bad' : 'pl-be';
+      // Potential R + % Captured for this series — each gets its own cell so the columns line
+      // up cleanly across rows. Computed from winning trades that have potentialR logged. If no
+      // potential is logged on any winner in this series, both cells show "—".
+      const winnersWithPotR = (s.trades || []).filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
+      let potCellHtml, pctCellHtml;
+      if (winnersWithPotR.length === 0) {
+        potCellHtml = '<span class="label">—</span>';
+        pctCellHtml = '<span class="label">—</span>';
+      } else {
+        const capR = winnersWithPotR.reduce((sum, t) => sum + (parseFloat(t.r) || 0), 0);
+        const potR = winnersWithPotR.reduce((sum, t) => sum + t.potentialR, 0);
+        const pct = potR > 0 ? Math.round((capR / potR) * 100) : 100;
+        potCellHtml = (potR >= 0 ? '+' : '') + potR.toFixed(2) + 'R';
+        pctCellHtml = `${pct}%`;
+      }
       const row = document.createElement('div');
       row.className = 'history-row';
       row.innerHTML = `
         <div class="history-cell label center">#${num}</div>
-        <div class="history-cell"><span class="label">${t('lbl.date')}</span> ${date}</div>
-        <div class="history-cell"><span class="label">${t('lbl.w')}</span> ${st.w}</div>
-        <div class="history-cell"><span class="label">${t('lbl.l')}</span> ${st.l}</div>
-        <div class="history-cell"><span class="label">${t('lbl.be')}</span> ${st.be}</div>
+        <div class="history-cell"><span class="label">${t('lbl.date')}</span> ${dateLabel}</div>
+        <div class="history-cell"><span class="label">${t('lbl.w')}</span> ${st.w} <span class="hist-sep">·</span> <span class="label">${t('lbl.l')}</span> ${st.l} <span class="hist-sep">·</span> <span class="label">${t('lbl.be')}</span> ${st.be}</div>
         <div class="history-cell right ${cls}">${st.netR >= 0 ? '+' : ''}${st.netR.toFixed(2)}R</div>
+        <div class="history-cell right">${potCellHtml}</div>
+        <div class="history-cell right">${pctCellHtml}</div>
       `;
       histWrap.appendChild(row);
     });
   }
   document.getElementById('stats-export').addEventListener('click', () => {
-    const cs = data.currentSeries;
-    const all = getAllLifetimeTrades();
-    const wins = all.filter(t => t.result === 'Win').length;
-    const losses = all.filter(t => t.result === 'Lose').length;
-    const dec = wins + losses;
-    const wr = dec > 0 ? Math.round(wins/dec * 100) : null;
-    let gW=0, gL=0;
-    all.forEach(t => { if (t.result==='Win') gW+=t.r; if (t.result==='Lose') gL+=1; });
-    const totalR = gW - gL;
-    const pf = gL > 0 ? gW/gL : (gW > 0 ? Infinity : null);
-    const exp = all.length > 0 ? totalR/all.length : null;
-    const lines = [`**Fiber Trades — Series of 10 — ${dateStr}**`, ''];
-    lines.push(`Series Completed:  ${data.history.length}`);
-    lines.push(`Total Trades:      ${all.length}`);
-    if (wr !== null) lines.push(`Win Rate:          ${wr}%`);
-    if (totalR !== 0) lines.push(`Total R:           ${totalR >= 0 ? '+' : ''}${totalR.toFixed(2)}R`);
-    if (pf !== null && pf !== Infinity) lines.push(`Profit Factor:     ${pf.toFixed(2)}`);
-    if (exp !== null) lines.push(`Expectancy:        ${exp >= 0 ? '+' : ''}${exp.toFixed(2)}R / trade`);
-    if (cs.length > 0) {
-      const s = calcSeriesStats(cs);
-      lines.push('');
-      lines.push(`Current Series (${cs.length}/10): W:${s.w} L:${s.l} BE:${s.be} Net:${s.netR >= 0 ? '+' : ''}${s.netR.toFixed(2)}R`);
+    // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
+    // series. data.history is ordered newest-first (via unshift on completion), so [0] is the
+    // most recently completed. If no series has been completed yet, show a snackbar instead of
+    // silently copying a misleading empty message.
+    if (!data.history || data.history.length === 0) {
+      if (typeof showToast === 'function') {
+        showToast(t('series.no_completed_yet'));
+      }
+      return;
+    }
+    const latestSeries = data.history[0];
+    const seriesNum = data.history.length; // most recent = highest number completed
+    const trades = latestSeries.trades || [];
+    const stats = calcSeriesStats(trades);
+    // Date stamp: use the series completion date if available, else fall back to today.
+    let seriesDateStr = dateStr;
+    if (latestSeries.date) {
+      try { seriesDateStr = new Date(latestSeries.date).toLocaleDateString('en-GB', { weekday: 'short', day: '2-digit', month: 'short' }); } catch {}
+    }
+    const lines = [`**Fiber Trades — Series #${seriesNum} — ${seriesDateStr}**`, ''];
+    lines.push(`Trades:       ${trades.length}`);
+    lines.push(`Wins:         ${stats.w}`);
+    lines.push(`Losses:       ${stats.l}`);
+    lines.push(`Break-evens:  ${stats.be}`);
+    lines.push(`Net R:        ${stats.netR >= 0 ? '+' : ''}${stats.netR.toFixed(2)}R`);
+    // Potential R line — only shown if winners in this series have potentialR logged. The %
+    // is computed on the SAME subset (captured on tracked winners ÷ available on those winners),
+    // so it's a clean apples-to-apples capture rate. Losses don't enter the calculation here —
+    // potentialR isn't tracked on losers (they didn't reach a winning target).
+    const tradesWithPotR = trades.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
+    if (tradesWithPotR.length > 0) {
+      const capturedR  = tradesWithPotR.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
+      const potentialR = tradesWithPotR.reduce((s, t) => s + t.potentialR, 0);
+      const pct = potentialR > 0 ? Math.round((capturedR / potentialR) * 100) : 100;
+      const potStr = (potentialR >= 0 ? '+' : '') + potentialR.toFixed(2) + 'R';
+      lines.push(`Potential R: ${potStr} available`);
+      lines.push(`% Captured:  ${pct}%`);
     }
     copyToClipboard(lines.join('\n'));
   });
