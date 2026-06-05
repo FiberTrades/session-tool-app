@@ -2392,7 +2392,7 @@
     <div class="settings-nav" id="settings-nav">
       <button type="button" class="settings-nav-item active" data-section="profile" data-i18n="settings.section_profile">Profile</button>
       <button type="button" class="settings-nav-item" data-section="session" data-i18n="settings.section_session">Session</button>
-      <button type="button" class="settings-nav-item" data-section="accounts" data-i18n="settings.section_accounts">Accounts</button>
+      <button type="button" class="settings-nav-item" data-section="accounts" data-i18n="settings.section_accounts">Account</button>
       <button type="button" class="settings-nav-item" data-section="preferences" data-i18n="settings.section_preferences">Preferences</button>
     </div>
     <!-- PROFILE section: change user name. -->
@@ -2423,17 +2423,15 @@
       <div id="settings-session-hint" class="settings-parsed-hint"></div>
       <p class="settings-hint" data-i18n="settings.session_window_hint">Controls news heads-up timing, session-aware greetings, and rule reminders.</p>
     </div>
-    <!-- ACCOUNTS section: list + new + actions. -->
+    <!-- ACCOUNT section: single-account view. The multi-account create form
+         was removed because the app is designed for master-account-with-copier
+         traders, where multiple accounts in the journal cause more confusion
+         than clarity. The underlying multi-account architecture (accountId
+         tagging on every trade, per-trade SB lookup) stays intact — it gives
+         single-account users stable %s when they change their starting
+         balance, which is valuable on its own. -->
     <div class="settings-section" data-section="accounts" style="display:none;">
       <div id="settings-accounts-list"><!-- Filled by renderSettingsAccountsList() --></div>
-      <div class="settings-account-new">
-        <div class="settings-label" data-i18n="settings.new_account_label">+ New account</div>
-        <div class="settings-account-new-row">
-          <input type="text" id="settings-account-new-name" class="settings-input" maxlength="40" placeholder="Nickname (e.g. Funded £100K)" />
-          <input type="number" id="settings-account-new-balance" class="settings-input" min="0" step="any" placeholder="Starting balance" />
-          <button type="button" id="settings-account-new-create" class="settings-btn" data-i18n="settings.create">Create</button>
-        </div>
-      </div>
     </div>
     <!-- PREFERENCES section: display preferences (currency + language) and data
          management (import + backup). Pre-existing IDs are preserved so every
@@ -2662,7 +2660,7 @@
       'settings.title': 'Settings',
       'settings.section_profile': 'Profile',
       'settings.section_session': 'Session',
-      'settings.section_accounts': 'Accounts',
+      'settings.section_accounts': 'Account',
       'settings.section_preferences': 'Preferences',
       'settings.display_label': 'Display',
       'settings.currency_label': 'Currency',
@@ -3450,7 +3448,7 @@
       'settings.title': 'Configuración',
       'settings.section_profile': 'Perfil',
       'settings.section_session': 'Sesión',
-      'settings.section_accounts': 'Cuentas',
+      'settings.section_accounts': 'Cuenta',
       'settings.section_preferences': 'Preferencias',
       'settings.display_label': 'Visualización',
       'settings.currency_label': 'Moneda',
@@ -5471,6 +5469,32 @@
       const eff = d.accounts.filter(a => a.status === 'active').reduce((s, a) => s + (a.startingBalance || 0), 0);
       if (eff > 0) d.settings.startingBalance = eff;
     }
+    // -----------------------------------------------------------------------
+    // Account-tag-backfill migration (V2 restoration). An earlier migration
+    // deliberately stripped accountId from every trade when statsScope was
+    // dropped, on the assumption that trades would live in a single shared
+    // pool indefinitely. That created the multi-account dilution bug — every
+    // % display divides by combined lifetime SB, so adding capital makes
+    // historical trades' captured % shrink retroactively. Restoring accountId
+    // lets each trade compute its % against ITS OWN account's starting balance
+    // (via getTradeAccountSB), keeping historical values stable as new accounts
+    // are added or archived.
+    //
+    // Backfill policy: every trade gets tagged with the SAME default account.
+    // We have no historical record of which trade was on which account, so we
+    // can't reconstruct that retroactively. Tagging everything to the active
+    // (or first) account treats pre-migration trades as having all come from
+    // a single account — equivalent to the pre-multi-account world. Going
+    // forward, new trades carry the correct accountId (set in the trade-
+    // creation code, see addTradeToCurrentSeries / MT5 import).
+    // -----------------------------------------------------------------------
+    if (!d._tradeAccountIdBackfillV2) {
+      const defaultAccId = d.activeAccountId ||
+        (Array.isArray(d.accounts) && d.accounts[0] ? d.accounts[0].id : 'acc_main');
+      (d.currentSeries || []).forEach(tr => { if (!tr.accountId) tr.accountId = defaultAccId; });
+      (d.history || []).forEach(s => (s.trades || []).forEach(tr => { if (!tr.accountId) tr.accountId = defaultAccId; }));
+      d._tradeAccountIdBackfillV2 = true;
+    }
     return d;
   }
 
@@ -5629,6 +5653,32 @@
       return (data.settings && data.settings.startingBalance) || 0;
     }
     return data.accounts.reduce((sum, a) => sum + (a.startingBalance || 0), 0);
+  }
+  // -----------------------------------------------------------------------------
+  // Per-trade account starting balance — THE core helper for the option-2
+  // architecture. Every % calculation in the app that's "this trade as a share
+  // of my account" needs to resolve against the SPECIFIC account that took the
+  // trade, not against the combined lifetime balance. Otherwise adding a second
+  // account dilutes every historical trade's % retroactively (the bug we're
+  // fixing).
+  //
+  // Each trade carries an `accountId` (backfilled onto historical trades via
+  // a one-time migration; set automatically on every new trade going forward).
+  // This helper looks up that account's startingBalance.
+  //
+  // Fallbacks (legacy / corrupt data):
+  //   • Trade has no accountId          → lifetime sum (old behaviour, sensible)
+  //   • Account id doesn't exist        → lifetime sum
+  //   • Account has 0 or no balance set → lifetime sum
+  // Falling back rather than returning 0 keeps the % calculations meaningful
+  // even if a migration missed a row.
+  // -----------------------------------------------------------------------------
+  function getTradeAccountSB(t) {
+    if (!t || !t.accountId) return getStatsLifetimeStartingBalance();
+    const acc = (Array.isArray(data.accounts) ? data.accounts : []).find(a => a.id === t.accountId);
+    return (acc && typeof acc.startingBalance === 'number' && acc.startingBalance > 0)
+      ? acc.startingBalance
+      : getStatsLifetimeStartingBalance();
   }
   function syncEffectiveStartingBalance() {
     // Push the effective (sum-of-active) value into data.settings.startingBalance
@@ -6736,13 +6786,16 @@
     // Net R already exists via calcNetR (copy-weighted). Net % converts net £
     // to a % of lifetime starting balance, same scale as the Weekly Discord export.
     const netR = calcNetR();
-    const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
     if (netR !== null) {
       const netRStr = `${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`;
       let netRow = `${A.lbl}${'Net R | Net %:'.padEnd(PAD)}${A.reset}${sgnColor(netR)}${netRStr}${A.reset}`;
-      if (lifetimeSB > 0) {
-        const netGBP = r.trades.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
-        const balPct = (netGBP / lifetimeSB) * 100;
+      // Net % — sum of per-trade %s using each trade's own account SB.
+      const balPct = r.trades.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
+        return s + (tradeNetPL(t) * tradeCopies(t)) / accSB * 100;
+      }, 0);
+      if (r.trades.length > 0) {
         const balPctStr = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
         netRow += ` ${A.lbl}|${A.reset} ${sgnColor(balPct)}${balPctStr}${A.reset}`;
       }
@@ -6759,16 +6812,16 @@
       const pct = potentialR > 0 ? Math.round((capturedR / potentialR) * 100) : 100;
       const potStr = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
       let potRow = `${A.lbl}${'Pot R | Pot %:'.padEnd(PAD)}${A.reset}${A.bad}${potStr}${A.reset}`;
-      if (lifetimeSB > 0) {
-        const gapGBP = tradesWithPotR.reduce((sum, t) => {
-          const tR    = parseFloat(t.r) || 0;
-          const tRisk = parseFloat(t.risk) || 0;
-          return sum + ((t.potentialR - tR) * tRisk * tradeCopies(t));
-        }, 0);
-        const leftBalPct = (gapGBP / lifetimeSB) * 100;
-        const leftBalPctStr = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
-        potRow += ` ${A.lbl}|${A.reset} ${A.bad}${leftBalPctStr}${A.reset}`;
-      }
+      // Pot % — sum of per-trade gap-%s using each trade's own account SB.
+      const leftBalPct = tradesWithPotR.reduce((sum, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return sum;
+        const tR    = parseFloat(t.r) || 0;
+        const tRisk = parseFloat(t.risk) || 0;
+        return sum + ((t.potentialR - tR) * tRisk * tradeCopies(t)) / accSB * 100;
+      }, 0);
+      const leftBalPctStr = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
+      potRow += ` ${A.lbl}|${A.reset} ${A.bad}${leftBalPctStr}${A.reset}`;
       potRow += ` ${A.bad}left${A.reset}`;
       statsBlock.push(potRow);
       statsBlock.push(`${A.lbl}${'Captured:'.padEnd(PAD)}${A.warn}${pct}/100% total${A.reset}`);
@@ -7159,6 +7212,10 @@
         date: sessionDate.toISOString(),
         dayOfWeek: sessionDate.getDay(),
         biasSnap, reviewSnap,
+        // Account tag — locks this trade's % calculations to whichever account
+        // is active right now. Adding/archiving other accounts later won't
+        // shift this trade's captured % retroactively (see getTradeAccountSB).
+        accountId: data.activeAccountId || (Array.isArray(data.accounts) && data.accounts[0] ? data.accounts[0].id : 'acc_main'),
       });
     });
     rebuildSeriesByDate();
@@ -7316,16 +7373,21 @@
       }
       const elTotal = document.getElementById(`${prefix}-total`);
       if (elTotal) {
-        // Primary: Net R (copy-weighted via b.totalR). Secondary: Net % of account
-        // balance — converts the series' net £ to a % of lifetime starting balance
-        // (same denominator as the Statistics tab so figures stay consistent).
+        // Primary: Net R (copy-weighted via b.totalR). Secondary: Net % — sum
+        // of per-trade %s (each trade weighted to its OWN account's starting
+        // balance). Option-2 stable form: adding a new account later doesn't
+        // dilute this series' historical Net %.
         const seriesAll = (data.currentSeries || []);
-        const seriesNetGBP = seriesAll.reduce((s, t) => s + (tradeNetPL(t) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1)), 0);
-        const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
         const rStr  = b.total > 0 ? (b.totalR >= 0 ? '+' : '') + b.totalR.toFixed(2) + 'R' : '0';
         const rCls  = b.totalR > 0 ? 'good' : b.totalR < 0 ? 'bad' : '';
         let balPct = null;
-        if (lifetimeSB > 0 && b.total > 0) balPct = (seriesNetGBP / lifetimeSB) * 100;
+        if (b.total > 0) {
+          balPct = seriesAll.reduce((s, t) => {
+            const accSB = getTradeAccountSB(t);
+            if (accSB <= 0) return s;
+            return s + (tradeNetPL(t) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1)) / accSB * 100;
+          }, 0);
+        }
         const balPctStr = balPct === null
           ? '0%'
           : (balPct >= 0 ? '+' : '') + balPct.toFixed(2) + '%';
@@ -7383,18 +7445,19 @@
     const seriesRLeftStr = seriesRLeftTracked.length === 0 ? '0'
       : (seriesRLeft >= 0 ? '+' : '') + seriesRLeft.toFixed(2) + 'R';
     const seriesRLeftCls = seriesRLeft > 0.5 ? 'bad' : '';
-    // Pot % — convert the R gap to £ via each trade's risk, then express as %
-    // of lifetime starting balance. Matches the Series History row and Discord
-    // exports so all "what % did I leave" figures use the same denominator.
-    const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+    // Pot % — sum of per-trade gap-%s (each tracked winner's gap × risk × copies
+    // ÷ ITS account SB × 100). Option-2 stable form: adding another account
+    // doesn't dilute this series' Pot %.
     let seriesPotBalPct = null;
-    if (seriesRLeftTracked.length > 0 && ltSB > 0) {
-      const gapGBP = seriesRLeftTracked.reduce((sum, tr) => {
-        const tR    = parseFloat(tr.r) || 0;
-        const tRisk = parseFloat(tr.risk) || 0;
-        return sum + (tr.potentialR - tR) * tRisk;
+    if (seriesRLeftTracked.length > 0) {
+      seriesPotBalPct = seriesRLeftTracked.reduce((sum, tr) => {
+        const accSB = getTradeAccountSB(tr);
+        if (accSB <= 0) return sum;
+        const tR     = parseFloat(tr.r) || 0;
+        const tRisk  = parseFloat(tr.risk) || 0;
+        const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+        return sum + ((tr.potentialR - tR) * tRisk * copies) / accSB * 100;
       }, 0);
-      seriesPotBalPct = (gapGBP / ltSB) * 100;
     }
     // Empty-state matches Net R cell: show "0" rather than an em-dash so both
     // KPI tiles read consistently when the series has no tracked-winner data.
@@ -7478,18 +7541,18 @@
       } else {
         dateLabel = `${fmtDate(validDates[0])} → ${fmtDate(validDates[validDates.length - 1])}`;
       }
+      // Balance % — sum of per-trade %s across this series (each using its
+      // OWN account SB). Option-2 stable form: adding a new account later
+      // doesn't shift historical series rows. Same form Stats tab uses.
       const cls = st.netR > 0 ? 'pl-good' : st.netR < 0 ? 'pl-bad' : 'pl-be';
-      // Balance % — this series' net £ P&L expressed as a % of the lifetime starting balance.
-      // Same denominator as the Stats tab's lifetime % (which uses getStatsLifetimeStartingBalance),
-      // so figures across the app stay consistent. Computed per-trade because R is risk-relative
-      // while balance % wants currency, and only tradeNetPL gives us currency. Now rendered in
-      // its OWN column rather than tucked behind a "·" inside the Net R cell — clearer at a glance.
-      const seriesNetGBP = tradesArr.reduce((sum, tr) => sum + tradeNetPL(tr), 0);
-      const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
       let netBalPctHtml = '<span class="label">—</span>';
       let netBalPctCls = '';
-      if (lifetimeSB > 0) {
-        const balPct = (seriesNetGBP / lifetimeSB) * 100;
+      if (tradesArr.length > 0) {
+        const balPct = tradesArr.reduce((s, tr) => {
+          const accSB = getTradeAccountSB(tr);
+          if (accSB <= 0) return s;
+          return s + tradeNetPL(tr) / accSB * 100;
+        }, 0);
         netBalPctHtml = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
         netBalPctCls = balPct > 0 ? 'pl-good' : balPct < 0 ? 'pl-bad' : '';
       }
@@ -7504,29 +7567,20 @@
         potBalPctHtml = '<span class="label">—</span>';
         pctCellHtml = '<span class="label">—</span>';
       } else {
-        // Pot R column displays the GAP — total potential minus captured — i.e. "R left on
-        // the table." Matches the Statistics tab KPI tiles, day modal, and weekly modal,
-        // which all show the gap. Captured % still uses total potential as the denominator
-        // so it reads as "% of available R that was captured."
         const capR = winnersWithPotR.reduce((sum, t) => sum + (parseFloat(t.r) || 0), 0);
         const totalPotR = winnersWithPotR.reduce((sum, t) => sum + t.potentialR, 0);
         const gapR = totalPotR - capR;
         const pct = totalPotR > 0 ? Math.round((capR / totalPotR) * 100) : 100;
-        // Pot R balance % — same scale as the Total R balance % above. Converts the R-gap
-        // to £ per-trade (each trade has its own risk size) then expresses as % of lifetime
-        // starting balance. Lets the user read Total R % and Pot R % on identical terms.
-        if (lifetimeSB > 0) {
-          const gapGBP = winnersWithPotR.reduce((sum, tr) => {
-            const tR    = parseFloat(tr.r) || 0;
-            const tRisk = parseFloat(tr.risk) || 0;
-            return sum + (tr.potentialR - tR) * tRisk;
-          }, 0);
-          const leftBalPct = (gapGBP / lifetimeSB) * 100;
-          potBalPctHtml = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
-          potBalPctCls = 'pl-bad'; // gap % colours red — it's the "opportunity cost" reading
-        } else {
-          potBalPctHtml = '<span class="label">—</span>';
-        }
+        // Pot R balance % — sum of per-winner gap-%s using each winner's own SB.
+        const leftBalPct = winnersWithPotR.reduce((sum, tr) => {
+          const accSB = getTradeAccountSB(tr);
+          if (accSB <= 0) return sum;
+          const tR    = parseFloat(tr.r) || 0;
+          const tRisk = parseFloat(tr.risk) || 0;
+          return sum + ((tr.potentialR - tR) * tRisk) / accSB * 100;
+        }, 0);
+        potBalPctHtml = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
+        potBalPctCls = 'pl-bad'; // gap % colours red — it's the "opportunity cost" reading
         potCellHtml = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
         // Captured cell — render as a fraction over 100% so the reader sees the
         // score out of the available ceiling. Same idiom as the Statistics tab
@@ -7608,24 +7662,22 @@
     lines.push(`${A.lbl}${'Losses:'.padEnd(PAD)}${A.bad}${stats.l}${A.reset}`);
     lines.push(`${A.lbl}${'BEs:'.padEnd(PAD)}${A.be}${stats.be}${A.reset}`);
     // Net R + Net % on a single combined line — "Net R | Net %:    +9.97R | +4.18%".
-    // The R figure and balance % each get their own sign-color so wins/losses are
-    // immediately legible. Same pattern used by Weekly + Daily Discord exports.
-    const seriesNetGBP = trades.reduce((s, tr) => s + tradeNetPL(tr), 0);
-    const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+    // Both figures are sum-of-per-trade values: Net R is calcNetR (copy-weighted R
+    // sum), Net % is the sum of each trade's £ ÷ ITS account SB × 100. Option-2
+    // stable form so adding accounts later doesn't shift this series' Net %.
     const netRStr = `${stats.netR >= 0 ? '+' : ''}${stats.netR.toFixed(2)}R`;
     let netRow = `${A.lbl}${'Net R | Net %:'.padEnd(PAD)}${A.reset}${sgnColor(stats.netR)}${netRStr}${A.reset}`;
-    if (lifetimeSB > 0) {
-      const balPct = (seriesNetGBP / lifetimeSB) * 100;
+    if (trades.length > 0) {
+      const balPct = trades.reduce((s, tr) => {
+        const accSB = getTradeAccountSB(tr);
+        if (accSB <= 0) return s;
+        return s + tradeNetPL(tr) / accSB * 100;
+      }, 0);
       const balPctStr = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
       netRow += ` ${A.lbl}|${A.reset} ${sgnColor(balPct)}${balPctStr}${A.reset}`;
     }
     lines.push(netRow);
-    // Potential R block — only shown if winners in this series have potentialR logged. The %
-    // is computed on the SAME subset (captured on tracked winners ÷ available on those winners),
-    // so it's a clean apples-to-apples capture rate. Losses don't enter the calculation here —
-    // potentialR isn't tracked on losers (they didn't reach a winning target).
-    // Pot R displays the GAP (potential minus captured) = "R left on the table". Matches the
-    // convention used everywhere else in the app — Series History row, day modal, KPI tiles.
+    // Potential R block — only shown if winners in this series have potentialR logged.
     const tradesWithPotR = trades.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     if (tradesWithPotR.length > 0) {
       const capturedR  = tradesWithPotR.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
@@ -7633,25 +7685,19 @@
       const gapR       = potentialR - capturedR;
       const pct = potentialR > 0 ? Math.round((capturedR / potentialR) * 100) : 100;
       const potStr = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
-      // Pot R + Pot % on a single combined line — both shown in the "bad" red
-      // tone (opportunity cost reading). Costs cancel out in the gap (they're paid
-      // either way), so the £ gap = sum((potentialR − r) × risk) is clean.
       let potRow = `${A.lbl}${'Pot R | Pot %:'.padEnd(PAD)}${A.reset}${A.bad}${potStr}${A.reset}`;
-      if (lifetimeSB > 0) {
-        const gapGBP = tradesWithPotR.reduce((sum, t) => {
-          const tR    = parseFloat(t.r) || 0;
-          const tRisk = parseFloat(t.risk) || 0;
-          return sum + (t.potentialR - tR) * tRisk;
-        }, 0);
-        const leftBalPct = (gapGBP / lifetimeSB) * 100;
-        const leftBalPctStr = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
-        potRow += ` ${A.lbl}|${A.reset} ${A.bad}${leftBalPctStr}${A.reset}`;
-      }
+      // Pot % — sum of per-winner gap-%s using each winner's own SB.
+      const leftBalPct = tradesWithPotR.reduce((sum, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return sum;
+        const tR    = parseFloat(t.r) || 0;
+        const tRisk = parseFloat(t.risk) || 0;
+        return sum + ((t.potentialR - tR) * tRisk) / accSB * 100;
+      }, 0);
+      const leftBalPctStr = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
+      potRow += ` ${A.lbl}|${A.reset} ${A.bad}${leftBalPctStr}${A.reset}`;
       potRow += ` ${A.bad}left${A.reset}`;
       lines.push(potRow);
-      // Captured rendered as a fraction over 100% — "46/100% total" reads as the
-      // score out of the available ceiling. Same idiom as the Weekly Discord
-      // export and the Statistics tab Pot R summary.
       lines.push(`${A.lbl}${'Captured:'.padEnd(PAD)}${A.warn}${pct}/100% total${A.reset}`);
     }
     lines.push('```');
@@ -7831,26 +7877,35 @@
     const expVal = totalCopies > 0 ? totalR / totalCopies : null;
 
     // Expectancy secondary metric — average % of account balance per trade.
-    // Computed as (avg net £ per trade) / lifetime starting balance × 100.
-    // Same denominator used by Net %, Pot %, and every other balance-% surface
-    // so the readings tie out consistently across the app.
-    const avgNetGbpPerTrade = totalCopies > 0
-      ? all.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0) / totalCopies
-      : null;
-    const expPctVal = (avgNetGbpPerTrade !== null && scopedStartingBalance > 0)
-      ? (avgNetGbpPerTrade / scopedStartingBalance) * 100
+    // Each trade's % uses its OWN account's starting balance (option-2 stable
+    // form); we then take the simple mean across trades. So a trade on the
+    // £10k account contributing +1% and one on the £100k account contributing
+    // +0.5% averages to +0.75% per trade — independent of how many of each
+    // type exist or whether you add a new account.
+    const expPctVal = totalCopies > 0
+      ? all.reduce((s, t) => {
+          const accSB = getTradeAccountSB(t);
+          if (accSB <= 0) return s;
+          return s + ((tradeNetPL(t) * tradeCopies(t)) / accSB * 100);
+        }, 0) / totalCopies
       : null;
 
-    // Net R · Net % (lifetime) — primary R, secondary % of lifetime starting balance.
-    // Net % converts copy-weighted total net £ to a share of the lifetime starting
-    // balance, the same denominator used by Series History, Discord exports, and
-    // Account Balance, so all "% of balance" figures speak the same language.
+    // Net R · Net % (lifetime) — primary R, secondary % of account balance.
+    // Net % is the SUM OF PER-TRADE %s (each trade weighted to its OWN account's
+    // starting balance). This is the option-2 stable form: adding or archiving
+    // accounts later doesn't shift historical trades' contribution. Reads as
+    // "the cumulative skill output, normalised by each trade's own account size".
     const totalREl = document.getElementById('kpi-totalr');
     const totalRStr  = (totalR >= 0 ? '+' : '') + totalR.toFixed(2) + 'R';
     const totalRCls  = totalR > 0 ? 'good' : totalR < 0 ? 'bad' : '';
-    const ltNetGBP = all.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
     let ltNetPct = null;
-    if (scopedStartingBalance > 0 && all.length > 0) ltNetPct = (ltNetGBP / scopedStartingBalance) * 100;
+    if (all.length > 0) {
+      ltNetPct = all.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
+        return s + (tradeNetPL(t) * tradeCopies(t)) / accSB * 100;
+      }, 0);
+    }
     const ltNetPctStr = ltNetPct === null ? '0%'
                                           : (ltNetPct >= 0 ? '+' : '') + ltNetPct.toFixed(2) + '%';
     const ltNetPctCls = ltNetPct === null ? ''
@@ -7884,24 +7939,24 @@
     if (wrVal === null) { wrEl.textContent = '—'; wrEl.className = 'stat-value'; }
     else { wrEl.textContent = wrVal + '%'; wrEl.className = 'stat-value' + (wrVal >= 60 ? ' good' : wrVal >= 40 ? '' : ' bad'); }
 
-    // Pot R · Pot % (lifetime) — primary R-gap, secondary same gap expressed as a
-    // % of lifetime starting balance via per-trade risk conversion. Each tracked
-    // winner's (potentialR − r) × risk × copies gives the £ left on the table;
-    // dividing by lifetime SB yields the % impact on account balance.
-    // Copy-weighted: each tracked winner's gap counts N times, matching the
-    // convention used by the day modal, weekly Discord, and other Pot R surfaces.
+    // Pot R · Pot % (lifetime) — primary R-gap, secondary same gap expressed as
+    // sum of per-trade %s. Each tracked winner's (potentialR − r) × risk × copies
+    // gives its £ left on the table, which we divide by THIS trade's account SB
+    // (not the combined lifetime sum) before adding to potBalPct. Keeps each
+    // winner's contribution stable when accounts are added/archived.
     const rLeftEl = document.getElementById('kpi-rleft');
     const ltRLeftTracked = wins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     const ltRLeft = ltRLeftTracked.reduce((s, t) => s + (((t.potentialR || 0) - (parseFloat(t.r) || 0)) * tradeCopies(t)), 0);
     const ltRLeftTrackedCount = ltRLeftTracked.reduce((s, t) => s + tradeCopies(t), 0);
     let ltPotBalPct = null;
-    if (ltRLeftTracked.length > 0 && scopedStartingBalance > 0) {
-      const gapGBP = ltRLeftTracked.reduce((sum, tr) => {
+    if (ltRLeftTracked.length > 0) {
+      ltPotBalPct = ltRLeftTracked.reduce((sum, tr) => {
+        const accSB = getTradeAccountSB(tr);
+        if (accSB <= 0) return sum;
         const tR    = parseFloat(tr.r) || 0;
         const tRisk = parseFloat(tr.risk) || 0;
-        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr));
+        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr)) / accSB * 100;
       }, 0);
-      ltPotBalPct = (gapGBP / scopedStartingBalance) * 100;
     }
     const rLeftStr  = ltRLeftTrackedCount === 0 ? '0'
                     : (ltRLeft >= 0 ? '+' : '') + ltRLeft.toFixed(2) + 'R';
@@ -8853,10 +8908,17 @@
     //   New Net % = Net % + Impact.
     // ------------------------------------------------------------------
     function renderPctRec(recR, scopedTrades) {
-      const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
-      // Set-your-balance fallback. Without a valid starting balance, every %
-      // figure on this rec block would divide by zero — show a hint instead.
-      if (!recR || ltSB <= 0) {
+      // Every % in this rec block uses each trade's OWN account SB as its
+      // denominator (via getTradeAccountSB). The aggregates are sums of per-
+      // trade %s, which is what keeps numbers stable when accounts are added
+      // or archived. Pre-option-2, a single combined lifetimeSB drove every
+      // calculation and any account change diluted historical figures.
+      // Need-balance fallback fires only when literally NO trade in scope
+      // has a usable account SB — otherwise we always have a working
+      // denominator on a per-trade basis.
+      const fallbackLtSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+      const anyValidSB = (scopedTrades || []).some(t => getTradeAccountSB(t) > 0);
+      if (!recR || (!anyValidSB && fallbackLtSB <= 0)) {
         return `<div class="rec-row">
           <span class="rec-text" style="color:var(--text-dim);">${t('pot.pct_need_balance')}</span>
         </div>`;
@@ -8867,49 +8929,56 @@
       const fmtPp  = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'pp';
       const fmtR   = v => (v >= 0 ? '+' : '') + v.toFixed(1) + 'R';
 
-      // Net % — cumulative across every trade in the period (W/L/BE, copy-weighted).
-      // Same calculation Statistics → "Net R · Net %" KPI uses, so the figure ties out.
-      const netGbp = scopedTrades.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
-      const netPct = (netGbp / ltSB) * 100;
+      // Net % — sum of (each trade's net £ ÷ its own account SB × 100). This is
+      // the option-2 stable form: a trade on a £10k account contributes its
+      // skill output expressed against £10k, regardless of what other accounts
+      // also exist. Adding a second account later doesn't dilute this trade's
+      // contribution. Matches the same-shaped Net % in Statistics.
+      const netPct = scopedTrades.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
+        return s + (tradeNetPL(t) * tradeCopies(t)) / accSB * 100;
+      }, 0);
 
-      // Pot % — cumulative across tracked winners only. Same formula used by the
-      // Statistics tab Pot R/Pot % tile and the day/weekly/monthly modals.
+      // Pot % — sum across tracked winners of (per-trade gap £ ÷ its account
+      // SB × 100). Same per-trade-denominator pattern as Net % above.
       const trackedWinsP = scopedTrades.filter(t =>
         t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR)
       );
-      const potGbp = trackedWinsP.reduce((s, t) => {
+      const potPct = trackedWinsP.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
         const r    = parseFloat(t.r) || 0;
         const risk = parseFloat(t.risk) || 0;
-        return s + ((t.potentialR - r) * risk * tradeCopies(t));
+        return s + ((t.potentialR - r) * risk * tradeCopies(t)) / accSB * 100;
       }, 0);
-      const potPct = (potGbp / ltSB) * 100;
 
-      // Project R-mode's optimum stretch onto each tracked winner with precise
-      // per-trade £ accounting (each trade uses its own risk × copies, instead
-      // of recR's averaged gbpPerUnit). Honest worst-case on misses: assume the
-      // wider target wasn't reached → trade reverts to SL (-1R per copy).
+      // Project R-mode's optimum stretch onto each tracked winner. Per-trade £
+      // accounting uses each winner's risk × copies; we then divide each trade's
+      // £ impact by ITS account SB before summing into impactPct. So a winner
+      // on a small account contributes more impact %, and adding new accounts
+      // later doesn't change this winner's contribution. Honest worst-case on
+      // misses: SL hit costs (r+1) × risk × copies in £.
       const optR = recR.optimumStretch || 0;
-      let impactGbp = 0;
+      let impactPct = 0;
       let projHits = 0, projMisses = 0;
       if (optR > 0 && recR.tier !== 'too-few' && recR.projectedNet > 0) {
         trackedWinsP.forEach(t => {
+          const accSB = getTradeAccountSB(t);
+          if (accSB <= 0) return;
           const r      = parseFloat(t.r) || 0;
           const risk   = parseFloat(t.risk) || 0;
           const copies = tradeCopies(t);
           const newTarget = r + optR;
           if (newTarget <= t.potentialR) {
-            // Hit: trade captures the wider target instead of the actual exit.
-            impactGbp += optR * risk * copies;
+            impactPct += (optR * risk * copies) / accSB * 100;
             projHits++;
           } else {
-            // Miss: trade would have reverted to SL instead of the actual exit.
-            // We lose the captured gain AND the SL distance (1R per copy).
-            impactGbp -= (r + 1) * risk * copies;
+            impactPct -= ((r + 1) * risk * copies) / accSB * 100;
             projMisses++;
           }
         });
       }
-      const impactPct = (impactGbp / ltSB) * 100;
       const newNetPct = netPct + impactPct;
 
       // Body text — three branches:
@@ -9016,10 +9085,11 @@
     const _tipOpenDay = t('tip.open_day_review');
     const isPipsActive = (data.settings.potrMetric === 'pips');
     const isPctActive  = (data.settings.potrMetric === 'pct');
-    // Lifetime starting balance — used to convert each trade's £ gap into a
-    // share of the account. Same denominator as the summary line and rule
-    // verdict so all "balance %" figures speak the same language.
-    const potTableLtSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+    // Each row uses its OWN account's starting balance as the % denominator
+    // (via getTradeAccountSB inside the row map). Pre-option-2, this used a
+    // single lifetimeSB for every row — adding a new account would dilute every
+    // historical row's captured % retroactively. Per-trade SBs keep each row
+    // stable against the account the trade was actually taken on.
     const tableRowsHtml = rows.map(r => {
       const t = r.trade;
       const d = new Date(t.date);
@@ -9027,11 +9097,12 @@
       const dateKey = d.toDateString();
       const side = tSide(t.side) || '—';
       // Per-trade balance-% conversion factor: each R of move on this trade
-      // translates to (risk × copies / SB × 100) % of account. Used in pct mode
-      // to render captured/potential/left as % of balance directly.
-      const tRisk   = parseFloat(t.risk) || 0;
-      const tCopies = (typeof tradeCopies === 'function') ? tradeCopies(t) : 1;
-      const pctFactor = potTableLtSB > 0 ? (tRisk * tCopies / potTableLtSB) * 100 : null;
+      // translates to (risk × copies / TRADE'S ACCOUNT SB × 100) % of account.
+      // Used in pct mode to render captured/potential/left as % of balance.
+      const tRisk    = parseFloat(t.risk) || 0;
+      const tCopies  = (typeof tradeCopies === 'function') ? tradeCopies(t) : 1;
+      const tAccSB   = getTradeAccountSB(t);
+      const pctFactor = tAccSB > 0 ? (tRisk * tCopies / tAccSB) * 100 : null;
       // Active-metric formatted values. Each cell shows ONE value (R, pips, or
       // % of balance) based on the toggle. Pct uses the per-trade pctFactor to
       // translate each R figure into the trade's individual contribution to
@@ -9069,9 +9140,11 @@
       // Balance % left on the table for THIS trade — kept in R and Pips modes
       // as a per-row "what's this in % terms" companion column. Hidden in pct
       // mode because LEFT ON TABLE itself is already % there (would duplicate).
+      // Uses THIS trade's account SB so adding a second account later doesn't
+      // dilute historical rows' values.
       let leftPctVal = null;
-      if (r.leftR !== null && potTableLtSB > 0) {
-        leftPctVal = ((r.leftR * tRisk * tCopies) / potTableLtSB) * 100;
+      if (r.leftR !== null && tAccSB > 0) {
+        leftPctVal = ((r.leftR * tRisk * tCopies) / tAccSB) * 100;
       }
       const leftPctStr = leftPctVal === null
         ? '—'
@@ -9666,22 +9739,28 @@
     const dayPotPips = dayPotPipsTracked.reduce((s, t) => s + (((t.potentialPips || 0) - tradePipsForMath(t)) * tradeCopies(t)), 0);
     const dayPotRStr = dayPotRTrackedCount === 0 ? '0' : (dayPotR >= 0 ? '+' : '') + dayPotR.toFixed(2) + 'R';
     const dayPotRCls = dayPotR > 0.5 ? 'bad' : '';
-    // Secondary metric: balance % of account, not pips. Converts the day's net £
-    // (already in `net`) and the day's Pot R gap (£ via per-trade risk) to a %
-    // of lifetime starting balance — same denominator used throughout the app
-    // so the day's reading ties out with weekly/monthly/lifetime totals.
-    const dayLtSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
-    const dayNetPct = dayLtSB > 0 ? (net / dayLtSB) * 100 : null;
+    // Secondary metric: balance % of account, not pips. Both Net % and Pot %
+    // here sum per-trade %s using each trade's OWN account SB — option-2 stable
+    // form, so adding a new account later doesn't shift this day's reading.
+    let dayNetPct = null;
+    if (dayTrades.length > 0) {
+      dayNetPct = dayTrades.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
+        return s + (tradeNetPL(t) * tradeCopies(t)) / accSB * 100;
+      }, 0);
+    }
     const dayNetPctStr = dayNetPct === null ? '0%' : (dayNetPct >= 0 ? '+' : '') + dayNetPct.toFixed(2) + '%';
     const dayNetPctCls = dayNetPct === null ? '' : dayNetPct > 0 ? 'good' : dayNetPct < 0 ? 'bad' : '';
     let dayPotPctVal = null;
-    if (dayPotRTracked.length > 0 && dayLtSB > 0) {
-      const gapGBP = dayPotRTracked.reduce((sum, tr) => {
+    if (dayPotRTracked.length > 0) {
+      dayPotPctVal = dayPotRTracked.reduce((sum, tr) => {
+        const accSB = getTradeAccountSB(tr);
+        if (accSB <= 0) return sum;
         const tR    = parseFloat(tr.r) || 0;
         const tRisk = parseFloat(tr.risk) || 0;
-        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr));
+        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr)) / accSB * 100;
       }, 0);
-      dayPotPctVal = (gapGBP / dayLtSB) * 100;
     }
     const dayPotPctStr = dayPotPctVal === null ? '0%' : (dayPotPctVal >= 0 ? '+' : '') + dayPotPctVal.toFixed(2) + '%';
     const dayPotPctCls = dayPotPctVal === null ? '' : dayPotPctVal > 0.5 ? 'bad' : '';
@@ -10658,14 +10737,13 @@
     const pipsHtml = (typeof tr.pips === 'number' && !isNaN(tr.pips))
       ? ` · <span class="${rCls}">${tr.pips >= 0 ? '+' : ''}${tr.pips.toFixed(0)}p</span>`
       : '';
-    // Net % — this trade's net P&L as a share of lifetime starting balance. Same
-    // denominator as Net %/Pot %/Expectancy % on the Statistics tab so the figure
-    // ties out with every other balance-% surface in the app.
-    const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+    // Net % — this trade's net P&L as a share of THIS trade's account SB.
+    // Stable when accounts are added/archived (option-2 form).
+    const accSB = getTradeAccountSB(tr);
     let pctHtml = '';
-    if (ltSB > 0) {
+    if (accSB > 0) {
       const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
-      const balPct = (net * copies / ltSB) * 100;
+      const balPct = (net * copies / accSB) * 100;
       pctHtml = ` · <span class="${rCls}">${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%</span>`;
     }
     const thumbHtml = (typeof pickTradeChartThumb === 'function') ? pickTradeChartThumb(tr) : '';
@@ -11347,35 +11425,45 @@
     const grossCls = (stats.gross || 0) > 0 ? 'good' : (stats.gross || 0) < 0 ? 'bad' : '';
     const costsStr = curSym() + Math.abs(stats.costs || 0).toFixed(2);
 
-    // Net R · Net % — primary R, secondary balance %. Net % = stats.net (£) /
-    // lifetime starting balance × 100. Same denominator used everywhere across
-    // the app so weekly/monthly totals tie out with daily, series, lifetime.
+    // Net R · Net % — primary R, secondary balance %. Net % is the sum of
+    // per-trade %s across this period's trades (each using its own account SB),
+    // matching the option-2 stable form used elsewhere. The list of trades to
+    // sum over is reconstructed from the period range below; if no period
+    // bounds are available, fall back to null (empty-state).
     const totalRStr = (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(2) + 'R';
     const totalRCls = stats.totalR > 0 ? 'good' : stats.totalR < 0 ? 'bad' : '';
-    const periodLtSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
-    const netPct = periodLtSB > 0 ? ((stats.net || 0) / periodLtSB) * 100 : null;
+    const _periodTrades = (currentReview && currentReview.start && currentReview.end)
+      ? (typeof getAllLifetimeTrades === 'function' ? getAllLifetimeTrades() : []).filter(t => {
+          const td = new Date(t.date);
+          return td >= currentReview.start && td <= currentReview.end;
+        })
+      : [];
+    let netPct = null;
+    if (_periodTrades.length > 0) {
+      netPct = _periodTrades.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
+        return s + (tradeNetPL(t) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1)) / accSB * 100;
+      }, 0);
+    }
     const netPctStr = netPct === null ? '0%' : (netPct >= 0 ? '+' : '') + netPct.toFixed(2) + '%';
     const netPctCls = netPct === null ? '' : netPct > 0 ? 'good' : netPct < 0 ? 'bad' : '';
 
-    // Pot R · Pot % — primary R left on the table, secondary same gap as % of
-    // balance. The MFE block already exposes totalLeftR; we recompute the £ gap
-    // from the period's wins so we can express it as a balance %.
+    // Pot R · Pot % — primary R left on the table, secondary as % of balance.
+    // Same option-2 pattern: sum of per-trade gap-%s using each winner's own SB.
     const potLeftR = (stats.mfe && stats.mfe.trackedR > 0) ? stats.mfe.totalLeftR : null;
     const potRStr  = potLeftR == null ? '0' : (potLeftR >= 0 ? '+' : '') + potLeftR.toFixed(2) + 'R';
     const potRCls  = potLeftR == null ? '' : potLeftR > 0.5 ? 'bad' : '';
     let potPctVal = null;
-    if (potLeftR != null && periodLtSB > 0 && currentReview && currentReview.start && currentReview.end) {
-      const periodTrades = (typeof getAllLifetimeTrades === 'function' ? getAllLifetimeTrades() : []).filter(t => {
-        const td = new Date(t.date);
-        return td >= currentReview.start && td <= currentReview.end;
-      });
-      const trackedWins = periodTrades.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
-      const gapGBP = trackedWins.reduce((sum, tr) => {
+    if (potLeftR != null && _periodTrades.length > 0) {
+      const trackedWins = _periodTrades.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
+      potPctVal = trackedWins.reduce((sum, tr) => {
+        const accSB = getTradeAccountSB(tr);
+        if (accSB <= 0) return sum;
         const tR    = parseFloat(tr.r) || 0;
         const tRisk = parseFloat(tr.risk) || 0;
-        return sum + ((tr.potentialR - tR) * tRisk * (typeof tradeCopies === 'function' ? tradeCopies(tr) : 1));
+        return sum + ((tr.potentialR - tR) * tRisk * (typeof tradeCopies === 'function' ? tradeCopies(tr) : 1)) / accSB * 100;
       }, 0);
-      potPctVal = (gapGBP / periodLtSB) * 100;
     }
     const potPctStr = potPctVal === null ? '0%' : (potPctVal >= 0 ? '+' : '') + potPctVal.toFixed(2) + '%';
     const potPctCls = potPctVal === null ? '' : potPctVal > 0.5 ? 'bad' : '';
@@ -11832,26 +11920,28 @@
     }
     const potGapStr = (potRGap >= 0 ? '+' : '') + potRGap.toFixed(2) + 'R';
 
-    // Balance % — net £ across the period as a share of the lifetime starting balance.
-    // Lives on its own line in the Discord block so the reader can scan R and % separately,
-    // mirroring the new Net % / Pot % columns in the Series History table.
-    const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+    // Balance % — sum of per-trade %s across this period's trades, each using
+    // its OWN account SB. Option-2 stable form: adding/archiving accounts later
+    // doesn't shift this period's reading. Same form as Statistics tab Net %.
     let netBalPctStr = null;
-    if (lifetimeSB > 0) {
-      const netGBP = tradesInPeriod.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
-      const balPct = (netGBP / lifetimeSB) * 100;
+    if (tradesInPeriod.length > 0) {
+      const balPct = tradesInPeriod.reduce((s, t) => {
+        const accSB = getTradeAccountSB(t);
+        if (accSB <= 0) return s;
+        return s + (tradeNetPL(t) * tradeCopies(t)) / accSB * 100;
+      }, 0);
       netBalPctStr = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
     }
-    // Pot R balance % — converts the R gap to £ via each trade's risk, then expresses
-    // as % of lifetime balance. Same scale as Net %, so the two can be compared directly.
+    // Pot R balance % — sum of per-winner gap-%s using each winner's own SB.
     let potBalPctStr = null;
-    if (hasPotData && lifetimeSB > 0) {
-      const gapGBP = tradesWithPotR.reduce((sum, tr) => {
+    if (hasPotData) {
+      const leftBalPct = tradesWithPotR.reduce((sum, tr) => {
+        const accSB = getTradeAccountSB(tr);
+        if (accSB <= 0) return sum;
         const tR    = parseFloat(tr.r) || 0;
         const tRisk = parseFloat(tr.risk) || 0;
-        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr));
+        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr)) / accSB * 100;
       }, 0);
-      const leftBalPct = (gapGBP / lifetimeSB) * 100;
       potBalPctStr = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
     }
 
@@ -11942,14 +12032,13 @@
       // Include pips when logged — they're market measurements, not money. £ deliberately omitted.
       const p = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : null;
       const pStr = p !== null ? ` · ${p >= 0 ? '+' : ''}${p.toFixed(0)}p` : '';
-      // Net % — this trade's net P&L as a share of lifetime starting balance, so
-      // the reader sees how much of the account this single win moved. Same
-      // denominator as every other balance-% surface in the app.
-      const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+      // Net % — this trade's net P&L as a share of ITS account's SB so the
+      // figure stays stable when accounts are added/archived (option-2 form).
+      const accSB = getTradeAccountSB(t);
       let pctStr = '';
-      if (ltSB > 0 && typeof tradeNetPL === 'function') {
+      if (accSB > 0 && typeof tradeNetPL === 'function') {
         const tradeGBP = tradeNetPL(t) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1);
-        const balPct = (tradeGBP / ltSB) * 100;
+        const balPct = (tradeGBP / accSB) * 100;
         pctStr = ` · ${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
       }
       return `${dateStr} · ${t.side || '—'} · ${rStr}${pStr}${pctStr}`;
@@ -17063,11 +17152,19 @@
       if (!wrap || !Array.isArray(data.accounts)) return;
       const fmt = (typeof fmtMoney === 'function') ? fmtMoney : (n => String(n));
       const tt = (k) => (typeof t === 'function') ? t(k) : k;
-      // Summary line at the top: total starting balance across ACTIVE accounts.
-      // Archived accounts are listed below but don't contribute to the total.
+      // Single-account flag — drives the simplified UI. With one account there's
+      // no point showing a "total across N accounts" summary (just shows the same
+      // number twice) and Archive/Delete don't apply (you can't archive your
+      // only account, and Delete would orphan every trade). Rename + balance
+      // edit are the only meaningful actions, so those are the only ones shown.
+      const isSingleAccount = data.accounts.length === 1;
       const activeAccounts = data.accounts.filter(a => a.status === 'active');
       const totalActiveBal = activeAccounts.reduce((s, a) => s + (a.startingBalance || 0), 0);
-      const summary = `<div class="settings-account-total">${tt('settings.total_active_label')} <strong>${fmt(totalActiveBal, { noSign: true })}</strong> ${tt('settings.across_label')} ${activeAccounts.length} ${activeAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div>`;
+      // Multi-account summary only when relevant — with one account, the row
+      // below already shows the balance, so the summary would be redundant.
+      const summary = isSingleAccount
+        ? ''
+        : `<div class="settings-account-total">${tt('settings.total_active_label')} <strong>${fmt(totalActiveBal, { noSign: true })}</strong> ${tt('settings.across_label')} ${activeAccounts.length} ${activeAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div>`;
       const rows = data.accounts.map(acc => {
         const s = computeAccountStats(acc);
         const isArchived = acc.status === 'archived';
@@ -17077,20 +17174,26 @@
         const badgeText = isArchived ? tt('settings.archive') : tt('settings.active_now');
         const pctCls = s.pct > 0 ? 'good' : s.pct < 0 ? 'bad' : '';
         const pctSign = s.pct > 0 ? '+' : '';
-        // Action buttons: rename, archive/unarchive, delete. No "switch to" anymore —
-        // with shared trades there's no functional difference between accounts beyond
-        // their starting balance contribution to the total.
+        // Action buttons: Rename is always available (single or multi-account).
+        // Archive/Unarchive/Delete only show in true multi-account contexts —
+        // they're meaningless on a single account (you can't archive your only
+        // account, delete would orphan every trade you've ever logged).
         const actions = [];
         actions.push(`<button type="button" class="settings-btn" data-action="rename" data-id="${acc.id}">${tt('settings.rename')}</button>`);
-        if (isArchived) {
-          actions.push(`<button type="button" class="settings-btn" data-action="unarchive" data-id="${acc.id}">${tt('settings.unarchive')}</button>`);
-        } else {
-          actions.push(`<button type="button" class="settings-btn" data-action="archive" data-id="${acc.id}">${tt('settings.archive')}</button>`);
+        if (!isSingleAccount) {
+          if (isArchived) {
+            actions.push(`<button type="button" class="settings-btn" data-action="unarchive" data-id="${acc.id}">${tt('settings.unarchive')}</button>`);
+          } else {
+            actions.push(`<button type="button" class="settings-btn" data-action="archive" data-id="${acc.id}">${tt('settings.archive')}</button>`);
+          }
+          actions.push(`<button type="button" class="settings-btn settings-btn-danger" data-action="delete" data-id="${acc.id}">${tt('settings.delete')}</button>`);
         }
-        actions.push(`<button type="button" class="settings-btn settings-btn-danger" data-action="delete" data-id="${acc.id}">${tt('settings.delete')}</button>`);
+        // Active/archived badge only when multi-account — with one account, the
+        // status is implicit (it's your only account, it's active).
+        const badgeHtml = isSingleAccount ? '' : `<span class="settings-account-badge ${badgeKey}">${badgeText}</span>`;
         return `<div class="${rowCls.join(' ')}" data-account-id="${acc.id}">
           <div>
-            <div class="settings-account-name">${escapeHtml(acc.name)} <span class="settings-account-badge ${badgeKey}">${badgeText}</span></div>
+            <div class="settings-account-name">${escapeHtml(acc.name)} ${badgeHtml}</div>
             <div class="settings-account-meta">
               ${tt('settings.starting_label')} <span class="settings-account-start-edit" data-id="${acc.id}" data-cur="${acc.startingBalance}" title="${tt('settings.edit_starting_title')}">${fmt(acc.startingBalance, { noSign: true })}</span>
               · ${tt('settings.current_label')} ${fmt(s.current, { noSign: true })} <span class="${pctCls}">(${pctSign}${s.pct.toFixed(2)}%)</span>
