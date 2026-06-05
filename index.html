@@ -956,6 +956,13 @@
   .chart-card-title { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
   .chart-card-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
   .chart-card-subtitle { font-family: 'Fraunces', serif; font-size: 16px; }
+  /* Lifetime gain/loss % appended to the equity chart subtitle. DM Mono to visually
+     distinguish the number from the serif label, dimmer than the title so it reads
+     as supplementary context. Good/bad colour classes adopt the same green/red palette
+     used for P&L throughout. */
+  .chart-card-subtitle-pct { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-dim); letter-spacing: 0.02em; }
+  .chart-card-subtitle-pct.good { color: var(--good); }
+  .chart-card-subtitle-pct.bad  { color: var(--bad); }
   .chart-toggle { display: flex; border: 1px solid var(--border-2); }
   .chart-toggle button { background: transparent; color: var(--text-dim); border: none; padding: 6px 14px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: all 200ms; }
   .chart-toggle button.active { background: var(--text); color: var(--bg); }
@@ -1620,13 +1627,7 @@
     <div class="stats-summary stats-summary-4col" style="margin-top:24px;">
       <div class="stat-cell" id="kpi-balance-cell">
         <div class="stat-tooltip" data-i18n="tip.account_balance">Your current account balance: Starting Balance (set above) plus Net P&L.</div>
-        <div class="stat-label">
-          <span class="pnl-toggle">
-            <span class="pnl-toggle-opt" data-mode="gbp" data-i18n="kpi.account_balance">Account Balance</span>
-            <span class="pnl-toggle-sep">·</span>
-            <span class="pnl-toggle-opt" data-mode="pct" data-i18n="kpi.account_balance_pct">% Change</span>
-          </span>
-        </div>
+        <div class="stat-label" data-i18n="kpi.account_balance">Account Balance</div>
         <div class="stat-value medium" id="kpi-balance" data-currency-symbol="{C}0">£0</div>
       </div>
       <div class="stat-cell" id="kpi-pnl-cell">
@@ -1652,7 +1653,7 @@
       <div class="chart-card-row">
         <div>
           <div class="chart-card-title" data-i18n="eq.eyebrow">Equity Curve</div>
-          <div class="chart-card-subtitle" id="equity-chart-subtitle" data-i18n="eq.title">Account balance over time</div>
+          <div class="chart-card-subtitle"><span id="equity-chart-subtitle" data-i18n="eq.title">Account balance over time</span><span id="equity-chart-subtitle-pct" class="chart-card-subtitle-pct"></span></div>
         </div>
       </div>
       <div id="equity-chart-wrap"><svg id="equity-chart"></svg></div>
@@ -2500,7 +2501,7 @@
       'lbl.trade': 'Trade',
       'lbl.total_r': 'Net R',
       'lbl.pot_r': 'Pot R',
-      'lbl.captured': 'Capt',
+      'lbl.captured': 'Captured',
       'econ.title': 'Economic Calendar',
       'econ.loading': 'Loading today\'s events…',
       'econ.empty': 'No economic events scheduled today.',
@@ -3239,7 +3240,7 @@
       'lbl.trade': 'Operación',
       'lbl.total_r': 'R Neto',
       'lbl.pot_r': 'R Pot',
-      'lbl.captured': 'Capt',
+      'lbl.captured': 'Capturado',
       'econ.title': 'Calendario Económico',
       'econ.loading': 'Cargando eventos de hoy…',
       'econ.empty': 'No hay eventos económicos programados hoy.',
@@ -6668,18 +6669,6 @@
     renderStats();
   });
 
-  // Account Balance £ / % toggle on the Statistics tab. Same delegation pattern.
-  // Re-renders the Stats tab so the value flips immediately.
-  document.getElementById('kpi-balance-cell').addEventListener('click', e => {
-    const opt = e.target.closest('.pnl-toggle-opt');
-    if (!opt) return;
-    const mode = opt.dataset.mode; // 'gbp' | 'pct'
-    if (mode === data.settings.balanceView) return;
-    data.settings.balanceView = mode;
-    saveData();
-    renderTradesStats();
-  });
-
   // Identical toggle on the Series of 10 P&L cell. Shares data.settings.pnlView so flipping
   // either side updates both immediately on next render.
   document.getElementById('stat-pnl-cell').addEventListener('click', e => {
@@ -6721,32 +6710,28 @@
     const costsSum = all.reduce((s,t) => s + tradeCosts(t), 0);
     const netSum = grossSum - costsSum;
     const balance = (data.settings.startingBalance || 0) + netSum;
-    // Account Balance KPI — renders as £ amount or % change vs starting balance,
-    // controlled by data.settings.balanceView. % is gain/loss relative to starting
-    // capital, the most meaningful "how has my account grown overall" metric.
-    // Edge case: if startingBalance is 0 or unset, % is undefined → show '—'.
+    // Account Balance KPI — just the £ amount. The lifetime % change moved out of here
+    // and into the equity chart subtitle below where it sits next to the curve it summarises.
     const balEl = document.getElementById('kpi-balance');
-    const balMode = data.settings.balanceView === 'pct' ? 'pct' : 'gbp';
-    if (balMode === 'pct') {
+    balEl.textContent = fmtMoney(balance, { noSign: true });
+    balEl.className = 'stat-value medium';
+    // Equity chart subtitle now appends the lifetime % change (gain/loss vs starting balance).
+    // Hidden when there's no starting balance set (would be undefined). Coloured good/bad
+    // so a glance at the chart card tells you the trajectory at a glance.
+    const subEl = document.getElementById('equity-chart-subtitle');
+    const subPctEl = document.getElementById('equity-chart-subtitle-pct');
+    if (subEl && subPctEl) {
       const sb = data.settings.startingBalance;
-      if (!sb || sb <= 0) {
-        balEl.textContent = '—';
-        balEl.className = 'stat-value medium';
+      if (!sb || sb <= 0 || all.length === 0) {
+        subPctEl.textContent = '';
+        subPctEl.className = 'chart-card-subtitle-pct';
       } else {
         const pct = (netSum / sb) * 100;
         const sign = pct > 0 ? '+' : '';
-        balEl.textContent = `${sign}${pct.toFixed(2)}%`;
-        // Colour the % the same way P&L is coloured — green if growth, red if drawdown
-        balEl.className = 'stat-value medium' + (pct > 0 ? ' good' : pct < 0 ? ' bad' : '');
+        subPctEl.textContent = ` · ${sign}${pct.toFixed(2)}%`;
+        subPctEl.className = 'chart-card-subtitle-pct' + (pct > 0 ? ' good' : pct < 0 ? ' bad' : '');
       }
-    } else {
-      balEl.textContent = fmtMoney(balance, { noSign: true });
-      balEl.className = 'stat-value medium';
     }
-    // Sync the toggle's active visual state
-    document.querySelectorAll('#kpi-balance-cell .pnl-toggle-opt').forEach(el => {
-      el.classList.toggle('active', el.dataset.mode === balMode);
-    });
     document.getElementById('kpi-costs').textContent = fmtMoney(costsSum, { noSign: true });
 
     // Net / Gross P&L paired cell — toggle state from data.settings.pnlView
@@ -8277,13 +8262,13 @@
 
     let tHtml = `<div class="modal-trade-row headers" style="background:var(--bg-elev);">
       <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">#</div>
-      <div class="modal-trade-cell" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.time')}</div>
+      <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.time')}</div>
       <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.side')}</div>
       <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.result')}</div>
       <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.rp')}</div>
       <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;" title="${t('tip.pot_rp_header')}">${t('mtbl.pot_rp')}</div>
-      <div class="modal-trade-cell right" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.net')}</div>
-      <div class="modal-trade-cell right" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.hold')}</div>
+      <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.net')}</div>
+      <div class="modal-trade-cell center" style="color:var(--text-dim);font-size:10px;letter-spacing:0.15em;">${t('mtbl.hold')}</div>
     </div>`;
     // Precompute the per-row tooltip — inside the forEach, `t` is the trade and shadows the global t() fn.
     const _tipEdit = t('tip.edit_trade');
@@ -8309,13 +8294,13 @@
       const potRowCls = isWin ? '' : 'be';
       tHtml += `<div class="modal-trade-row" data-id="${t.id}" title="${_tipEdit}">
         <div class="modal-trade-cell center">${i + 1}</div>
-        <div class="modal-trade-cell">${time}</div>
+        <div class="modal-trade-cell center">${time}</div>
         <div class="modal-trade-cell center">${tSide(t.side) || '—'}</div>
         <div class="modal-trade-cell center"><span class="modal-tag ${tagCls}">${tResult(t.result)}</span></div>
         <div class="modal-trade-cell center">${rStr} <span class="modal-trade-sub-inline">· ${pStr}</span></div>
         <div class="modal-trade-cell center ${potRowCls}">${potRStr} <span class="modal-trade-sub-inline">· ${potPStr}</span></div>
-        <div class="modal-trade-cell right ${cls}">${fmtMoney(tn)}</div>
-        <div class="modal-trade-cell right">${formatMinutes(hm)}</div>
+        <div class="modal-trade-cell center ${cls}">${fmtMoney(tn)}</div>
+        <div class="modal-trade-cell center">${formatMinutes(hm)}</div>
       </div>`;
     });
     document.getElementById('modal-trades').innerHTML = tHtml;
