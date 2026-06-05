@@ -13396,41 +13396,6 @@
     // updates live as the day progresses.
     const seed = todayKey() + ':nonce:' + _greetingNonce;
     // ────────────────────────────────────────────────────────────────────────────────
-    // NEWS-AWARE GATE — if today has a high-impact event from session-start onwards
-    // OR a USD/EUR/GBP bank holiday on the calendar, route the tail to a news-aware
-    // pool that surfaces the specific event/holiday. Only fires on weekdays (weekends
-    // get REVIEW_IDLE_WEEKEND regardless of news). Falls through silently if the
-    // calendar cache is empty or unavailable — preserves all existing behaviour.
-    //
-    // Placeholder substitution: {event} → event title, {time} → local HH:MM,
-    // {currency} → 'USD' / 'EUR' / 'GBP'. The 'both' case prefers HIGH_IMPACT pool
-    // since the high-impact event is the more actionable timing cue.
-    // ────────────────────────────────────────────────────────────────────────────────
-    try {
-      const dow = new Date().getDay();
-      const isWeekend = (dow === 0 || dow === 6);
-      if (!isWeekend) {
-        const ctx = (typeof getCalendarContext === 'function') ? getCalendarContext() : null;
-        if (ctx) {
-          let pool, poolKey;
-          // 'both' and 'high_impact' both surface the event details since timing
-          // matters more than the holiday note. 'holiday' alone uses holiday pool.
-          if (ctx.kind === 'holiday') {
-            pool = NEWS_TAIL_HOLIDAY;  poolKey = 'NEWS_TAIL_HOLIDAY';
-          } else {
-            pool = NEWS_TAIL_HIGH_IMPACT; poolKey = 'NEWS_TAIL_HIGH_IMPACT';
-          }
-          pool = localizedPool(pool, poolKey);
-          const idx = hashStr(seed + ':news:' + ctx.kind) % pool.length;
-          let line = pool[idx] || '';
-          line = line.replace(/\{event\}/g,    ctx.event    || '')
-                     .replace(/\{time\}/g,     ctx.time     || '')
-                     .replace(/\{currency\}/g, ctx.currency || '');
-          return line;
-        }
-      }
-    } catch (e) { /* fail open — fall through to regular logic */ }
-    // ────────────────────────────────────────────────────────────────────────────────
     // OUT-OF-SESSION GATE — if the user is outside their configured trading window AND
     // today is a weekday (weekends already have REVIEW_IDLE_WEEKEND), route to a pool
     // that actively discourages off-hours trading. Two flavours by today's trade count:
@@ -13448,6 +13413,53 @@
         const pool = localizedPool(usePool, poolKey);
         const idx = hashStr(seed + ':oos:' + (todayMode ? 'had' : 'none')) % pool.length;
         return pool[idx];
+      }
+    } catch (e) { /* fail open — fall through to regular logic */ }
+    // ────────────────────────────────────────────────────────────────────────────────
+    // PRIORITY GUARD — 2+ LOSSES TODAY
+    // A user with two or more losses on the day needs the "step back" message more than
+    // anything else. This wins over the news heads-up: a bad day is a behavioural signal
+    // that beats any informational note about scheduled releases.
+    // ────────────────────────────────────────────────────────────────────────────────
+    if (todayMode && outcome === 'negative' && _todayLossCount >= 2) {
+      const pool = localizedPool(RECAP_NEG_TODAY_2, 'RECAP_NEG_TODAY_2');
+      const idx = hashStr(seed + ':neg2:today') % pool.length;
+      return pool[idx];
+    }
+    // ────────────────────────────────────────────────────────────────────────────────
+    // NEWS-AWARE BRANCH — if today has a high-impact USD/EUR/GBP event from session-start
+    // onwards OR a USD/EUR/GBP bank holiday on the calendar, route the tail to a calm
+    // heads-up about the event. Only fires on weekdays. Falls through silently if the
+    // calendar cache is empty or unavailable.
+    //
+    // Priority: this branch wins over today-mode recaps, performance questions, and
+    // bias questions — but it loses to the OUT-OF-SESSION gate (above) and the 2+ LOSS
+    // guard (above), since those carry stronger behavioural signals.
+    //
+    // Placeholder substitution: {event} → event title, {time} → local HH:MM,
+    // {currency} → 'USD' / 'EUR' / 'GBP'. The 'both' case prefers HIGH_IMPACT pool
+    // since the high-impact event is the more actionable timing cue.
+    // ────────────────────────────────────────────────────────────────────────────────
+    try {
+      const dow = new Date().getDay();
+      const isWeekend = (dow === 0 || dow === 6);
+      if (!isWeekend) {
+        const ctx = (typeof getCalendarContext === 'function') ? getCalendarContext() : null;
+        if (ctx) {
+          let pool, poolKey;
+          if (ctx.kind === 'holiday') {
+            pool = NEWS_TAIL_HOLIDAY;  poolKey = 'NEWS_TAIL_HOLIDAY';
+          } else {
+            pool = NEWS_TAIL_HIGH_IMPACT; poolKey = 'NEWS_TAIL_HIGH_IMPACT';
+          }
+          pool = localizedPool(pool, poolKey);
+          const idx = hashStr(seed + ':news:' + ctx.kind) % pool.length;
+          let line = pool[idx] || '';
+          line = line.replace(/\{event\}/g,    ctx.event    || '')
+                     .replace(/\{time\}/g,     ctx.time     || '')
+                     .replace(/\{currency\}/g, ctx.currency || '');
+          return line;
+        }
       }
     } catch (e) { /* fail open — fall through to regular logic */ }
     // In today-mode (user has logged trades for today), always use the today-recap pool.
