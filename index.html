@@ -5079,11 +5079,19 @@
   }
 
   function loadData() {
-    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return migrate(JSON.parse(raw)); } catch (e) {}
+    const persist = (obj) => {
+      // Immediately persist the migrated state so repairs (e.g. viewScope /
+      // activeAccountId fixes for the broken-Move bug) get written to disk
+      // and don't have to re-run on every page load. Wrapped in its own
+      // try so a storage failure can't break the rest of init.
+      try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
+      return obj;
+    };
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return persist(migrate(JSON.parse(raw))); } catch (e) {}
     for (const oldKey of OLD_KEYS) {
-      try { const v = localStorage.getItem(oldKey); if (v) return migrate(JSON.parse(v)); } catch (e) {}
+      try { const v = localStorage.getItem(oldKey); if (v) return persist(migrate(JSON.parse(v))); } catch (e) {}
     }
-    return migrate(defaultData());
+    return persist(migrate(defaultData()));
   }
 
   function defaultData() {
@@ -5493,6 +5501,22 @@
     // trading right now". Lifetime is opt-in via the picker.
     if (!d.viewScope || (d.viewScope !== 'lifetime' && !d.accounts.some(a => a.id === d.viewScope))) {
       d.viewScope = d.activeAccountId || 'lifetime';
+    }
+    // One-time aggressive repair for the broken Move state. Older buggy builds of
+    // the Move flow could leave viewScope pinned to a since-archived account
+    // while a different account became the active one. From the user's POV the
+    // picker is stuck showing the old archived account. This repair runs once
+    // per install — if viewScope points at an archived account AND there's a
+    // distinct active account available, snap viewScope to the active. Doesn't
+    // fire after this one-time flag is set, so subsequent deliberate picks of
+    // archived accounts via the picker are preserved across reloads.
+    if (!d._viewScopeArchivedRepairV1) {
+      const scopeAcc = d.accounts.find(a => a.id === d.viewScope);
+      const activeAcc = d.accounts.find(a => a.id === d.activeAccountId);
+      if (scopeAcc && scopeAcc.status === 'archived' && activeAcc && activeAcc.status === 'active' && scopeAcc.id !== activeAcc.id) {
+        d.viewScope = d.activeAccountId;
+      }
+      d._viewScopeArchivedRepairV1 = true;
     }
     // ===========================================================================
     // Shared-trades cleanup migration (V2). Earlier code tagged each trade with
@@ -5935,7 +5959,13 @@
     });
   }
   // Button click → toggle dropdown. Outside-click → close.
-  document.addEventListener('DOMContentLoaded', () => {
+  // NOT wrapped in DOMContentLoaded because (a) the script is at the bottom
+  // of <body>, so all DOM elements already exist when this runs, and (b) the
+  // DOMContentLoaded event may have already fired by the time the parser
+  // reaches this point in the script, which would mean any listener added
+  // here for that event would silently never run. Running the init code
+  // directly avoids the race.
+  (function wireScopePicker() {
     const wrap = document.getElementById('scope-picker');
     const btn  = document.getElementById('scope-picker-btn');
     if (!wrap || !btn) return;
@@ -5955,7 +5985,7 @@
         btn.setAttribute('aria-expanded', 'false');
       }
     });
-  });
+  })();
   function syncEffectiveStartingBalance() {
     // Push the effective (sum-of-active) value into data.settings.startingBalance
     // so any legacy code reading from there still gets the right number. Called
