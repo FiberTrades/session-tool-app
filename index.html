@@ -818,11 +818,15 @@
   .month-insight-of { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 0.02em; }
   .month-insight-pct { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-mid); letter-spacing: 0.02em; }
   .month-insight-compare { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-  .month-insight-compare-cell { display: flex; flex-direction: column; gap: 4px; }
-  .month-insight-compare-vals { display: flex; align-items: baseline; gap: 6px; font-family: 'DM Mono', monospace; letter-spacing: 0.02em; }
-  .month-insight-compare-vals .now { font-size: 14px; color: var(--text); }
-  .month-insight-compare-vals .vs { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.15em; }
-  .month-insight-compare-vals .then { font-size: 12px; color: var(--text-dim); }
+  .month-insight-compare-cell { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); }
+  /* Current month value — the hero. Large, full-contrast. */
+  .month-insight-compare-now { font-family: 'DM Mono', monospace; font-size: 20px; color: var(--text); letter-spacing: 0.01em; line-height: 1.1; }
+  /* Delta — the takeaway. Coloured by good/bad, arrow shows direction. */
+  .month-insight-compare-delta { font-family: 'DM Mono', monospace; font-size: 13px; color: var(--text-dim); letter-spacing: 0.02em; }
+  .month-insight-compare-delta.good { color: var(--good); }
+  .month-insight-compare-delta.bad  { color: var(--bad); }
+  /* Previous month — supporting context. Small, dim. */
+  .month-insight-compare-prev { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 0.05em; opacity: 0.85; }
   /* Patterns worth noting — rule-based actionable insights at the top of monthly review */
   .patterns-block { background: var(--bg); border: 1px solid var(--border-2); position: relative; }
   .patterns-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
@@ -2515,9 +2519,12 @@
       'modal.worst_short': 'Worst',
       'modal.best_worst_weekday': 'Best & worst weekday',
       'modal.need_3_weekdays': 'Need ≥3 trades on at least two different weekdays.',
+      'modal.need_2_weekdays': 'Need at least two different weekdays with a trade to compare.',
+      'modal.weekday_thin_sample': 'Small sample — one trade can swing the ranking. Treat as direction, not signal.',
       'modal.best_day': 'Best day',
       'modal.worst_day': 'Worst day',
-      'modal.vs_prev_month': 'vs Previous month',
+      'modal.vs_prev_month': 'vs {M}',
+      'modal.prev_label': '{M}',
       'modal.no_prev_month': 'No data from previous month to compare.',
       'modal.monthly_notes': 'Monthly Notes',
       'modal.monthly_notes_sub': 'Anything to carry into next month.',
@@ -3247,9 +3254,12 @@
       'modal.worst_short': 'Peor',
       'modal.best_worst_weekday': 'Mejor y peor día de la semana',
       'modal.need_3_weekdays': 'Hacen falta ≥3 operaciones en al menos dos días distintos.',
+      'modal.need_2_weekdays': 'Hacen falta al menos dos días distintos con una operación para comparar.',
+      'modal.weekday_thin_sample': 'Muestra pequeña — una operación puede cambiar el ranking. Trátalo como dirección, no como señal.',
       'modal.best_day': 'Mejor día',
       'modal.worst_day': 'Peor día',
-      'modal.vs_prev_month': 'vs Mes anterior',
+      'modal.vs_prev_month': 'vs {M}',
+      'modal.prev_label': '{M}',
       'modal.no_prev_month': 'Sin datos del mes anterior para comparar.',
       'modal.monthly_notes': 'Notas Mensuales',
       'modal.monthly_notes_sub': 'Algo que llevarte al mes siguiente.',
@@ -9341,12 +9351,19 @@
       dowBuckets[name].total += tradeMetric(t);
       dowBuckets[name].trades++;
     });
-    const eligibleDays = Object.values(dowBuckets).filter(d => d.trades >= 3);
+    const eligibleDays = Object.values(dowBuckets).filter(d => d.trades >= 1);
     let dowHtml = '';
     if (eligibleDays.length >= 2) {
       const sorted = eligibleDays.slice().sort((a, b) => b.total - a.total);
       const best = sorted[0], worst = sorted[sorted.length - 1];
       const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
+      // Sample-size honesty: if any of the displayed days has only 1-2 trades, the comparison
+      // is barely a signal — one lucky/unlucky trade can dominate. Flag it inline so the
+      // reader doesn't over-read what's effectively noise.
+      const minTrades = Math.min(best.trades, worst.trades);
+      const smallSampleNote = minTrades < 3
+        ? `<div class="month-insight-empty" style="margin-top:8px;font-size:11px;opacity:0.8;">${t('modal.weekday_thin_sample')}</div>`
+        : '';
       dowHtml = `<div class="month-insight-block">
         <div class="month-insight-title">${t('modal.best_worst_weekday')}</div>
         <div class="month-insight-row">
@@ -9361,11 +9378,12 @@
             <div class="month-insight-sub ${cls(worst.total)}">${fmtMetric(worst.total)} ${worst.trades === 1 ? t('modal.across_one_trade') : t('modal.across_n_trades').replace(/\{N\}/g, worst.trades)}</div>
           </div>
         </div>
+        ${smallSampleNote}
       </div>`;
     } else {
       dowHtml = `<div class="month-insight-block">
         <div class="month-insight-title">${t('modal.best_worst_weekday')}</div>
-        <div class="month-insight-empty">${t('modal.need_3_weekdays')}</div>
+        <div class="month-insight-empty">${t('modal.need_2_weekdays')}</div>
       </div>`;
     }
 
@@ -9393,35 +9411,30 @@
       const wrDeltaStr = wrDelta == null ? '—' : (wrDelta >= 0 ? '+' : '') + wrDelta + 'pp';
       const prevName = prevStart.toLocaleDateString('en-GB', { month: 'long' });
       const totalLabel = isPipsView ? 'Total Pips' : 'Total R';
+      // Strip the leading '+' or '-' since the arrow already conveys direction. Keeps the
+      // delta visually compact: "↑ 0.85R" instead of the redundant "↑ +0.85R".
+      const stripSign = s => s.replace(/^[+-]/, '');
+      const fmtMUnsigned = m => '£' + Math.abs(m).toFixed(2);
       comparisonHtml = `<div class="month-insight-block">
-        <div class="month-insight-title">vs ${prevName}</div>
+        <div class="month-insight-title">${t('modal.vs_prev_month').replace(/\{M\}/g, prevName)}</div>
         <div class="month-insight-compare">
           <div class="month-insight-compare-cell">
             <div class="month-insight-label">${totalLabel}</div>
-            <div class="month-insight-compare-vals">
-              <span class="now">${fmtMetric(thisVal)}</span>
-              <span class="vs">vs</span>
-              <span class="then">${fmtMetric(prevVal)}</span>
-            </div>
-            <div class="month-insight-sub ${cls(vDelta)}">${fmtMetric(vDelta)} change</div>
+            <div class="month-insight-compare-now">${fmtMetric(thisVal)}</div>
+            <div class="month-insight-compare-delta ${cls(vDelta)}">${vDelta >= 0 ? '↑' : '↓'} ${stripSign(fmtMetric(Math.abs(vDelta)))}</div>
+            <div class="month-insight-compare-prev">${t('modal.prev_label').replace(/\{M\}/g, prevName)}: ${fmtMetric(prevVal)}</div>
           </div>
           <div class="month-insight-compare-cell">
             <div class="month-insight-label">Net P&L</div>
-            <div class="month-insight-compare-vals">
-              <span class="now">${fmtM(thisStats.net)}</span>
-              <span class="vs">vs</span>
-              <span class="then">${fmtM(prevStats.net)}</span>
-            </div>
-            <div class="month-insight-sub ${cls(netDelta)}">${fmtM(netDelta)} change</div>
+            <div class="month-insight-compare-now">${fmtM(thisStats.net)}</div>
+            <div class="month-insight-compare-delta ${cls(netDelta)}">${netDelta >= 0 ? '↑' : '↓'} ${fmtMUnsigned(netDelta)}</div>
+            <div class="month-insight-compare-prev">${t('modal.prev_label').replace(/\{M\}/g, prevName)}: ${fmtM(prevStats.net)}</div>
           </div>
           <div class="month-insight-compare-cell">
             <div class="month-insight-label">Win Rate</div>
-            <div class="month-insight-compare-vals">
-              <span class="now">${wrThis != null ? Math.round(wrThis*100) + '%' : '—'}</span>
-              <span class="vs">vs</span>
-              <span class="then">${wrPrev != null ? Math.round(wrPrev*100) + '%' : '—'}</span>
-            </div>
-            <div class="month-insight-sub ${wrDelta == null ? '' : cls(wrDelta)}">${wrDeltaStr}</div>
+            <div class="month-insight-compare-now">${wrThis != null ? Math.round(wrThis*100) + '%' : '—'}</div>
+            <div class="month-insight-compare-delta ${wrDelta == null ? '' : cls(wrDelta)}">${wrDelta == null ? '—' : (wrDelta >= 0 ? '↑ ' : '↓ ') + Math.abs(wrDelta) + 'pp'}</div>
+            <div class="month-insight-compare-prev">${t('modal.prev_label').replace(/\{M\}/g, prevName)}: ${wrPrev != null ? Math.round(wrPrev*100) + '%' : '—'}</div>
           </div>
         </div>
       </div>`;
