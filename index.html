@@ -462,20 +462,6 @@
   .saved-bias-link > div:last-child { margin-bottom: 0 !important; }
   .bias-chart-img { width: 100%; max-width: 100%; aspect-ratio: 21 / 9; height: auto; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-2); display: block; cursor: pointer; transition: opacity 200ms; }
   .bias-chart-img:hover { opacity: 0.85; }
-  /* Calculator modal buttons. 4-col grid (set inline on the parent). DM Mono throughout
-     for consistency with the rest of the data-side of the app. Colour-coded: numbers neutral,
-     operators muted accent, equals strong accent, function buttons (C, ⌫, %) dim. */
-  .calc-btn { background: var(--bg); border: 1px solid var(--border-2); color: var(--text); font-family: 'DM Mono', monospace; font-size: 16px; padding: 14px 0; cursor: pointer; transition: all 120ms; letter-spacing: 0.02em; user-select: none; }
-  .calc-btn:hover { background: var(--bg-elev); border-color: var(--text-mid); }
-  .calc-btn:active { background: var(--border); }
-  .calc-btn.calc-num { color: var(--text); }
-  .calc-btn.calc-op { color: var(--text-mid); border-color: var(--text-mid); }
-  .calc-btn.calc-op:hover { color: var(--text); }
-  .calc-btn.calc-op.active-op { background: var(--text); color: var(--bg); border-color: var(--text); }
-  .calc-btn.calc-fn { color: var(--text-dim); font-size: 14px; }
-  .calc-btn.calc-fn:hover { color: var(--text); }
-  .calc-btn.calc-eq { background: var(--text); color: var(--bg); border-color: var(--text); font-size: 16px; }
-  .calc-btn.calc-eq:hover { background: var(--text-mid); border-color: var(--text-mid); }
   /* Tab strip shown above the "This Morning's Bias" recap when multiple charts exist.
      One tab per chart; clicking switches which chart + notes are visible below. */
   .bias-chart-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 12px; }
@@ -1385,12 +1371,9 @@
       <div class="section-header">
         <span class="section-num">01</span>
         <span class="section-title" data-i18n="review.s2.title">Trade Log</span>
-        <span class="section-header-spacer"></span>
-        <span class="bias-date-inline">
-          <span class="bias-date-inline-eyebrow" data-i18n="session_strip.logging_for">Logging trades for</span>
+        <span class="bias-date-inline" style="margin-left:auto;">
           <input type="date" id="session-date" />
           <button type="button" id="mt5-import-btn" class="bias-date-inline-btn" data-i18n="btn.import_mt5">↓ Import from MT5</button>
-          <button type="button" id="calculator-btn" class="bias-date-inline-btn" data-i18n="btn.calculator">Calculator</button>
         </span>
       </div>
 
@@ -2071,6 +2054,27 @@
   </div>
 </div>
 
+<!-- Session window prompt — fires after the balance modal on first run.
+     Sets data.settings.sessionName + derived windowStart/windowEnd so the app's
+     session-aware features (news heads-up, in/out-of-session greeting tails,
+     rule reminders) operate around the user's actual trading hours instead of
+     the generic London-morning default. Required — no skip — but the default
+     value is pre-filled so users who DO trade the London 8-10AM session can
+     accept with one click. -->
+<div class="modal-bg" id="session-modal-bg">
+  <div class="modal" style="max-width:480px;">
+    <div class="modal-header">
+      <div class="modal-title" data-i18n="modal.session_title">When do you trade?</div>
+    </div>
+    <p style="color:var(--text-mid);font-size:12px;line-height:1.6;margin-bottom:18px;" data-i18n="modal.session_body">Set your trading session. The app uses this for news heads-up around your hours, session-aware greetings, and rule reminders.</p>
+    <input type="text" id="session-modal-input" class="input" style="margin-left:0;width:100%;" placeholder="e.g. London 8-10AM" maxlength="40" />
+    <div id="session-modal-hint" style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.05em;color:var(--text-dim);margin-top:10px;min-height:14px;"></div>
+    <div style="display:flex;gap:10px;margin-top:20px;justify-content:flex-end;">
+      <button type="button" id="session-modal-save" style="background:var(--text);color:var(--bg);border:none;padding:8px 18px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;" data-i18n="btn.save">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Potential R popup: prompted after R + pips are entered on a Win trade -->
 <div class="modal-bg" id="potr-modal-bg">
   <div class="modal" style="max-width:480px;">
@@ -2112,49 +2116,6 @@
     </div>
     <div id="review-modal-body"></div>
     <div id="review-modal-reflection" style="margin-top:24px;"></div>
-    </div>
-  </div>
-</div>
-
-<!-- Basic calculator modal — opened from the "Calculator" button next to MT5 import in the
-     Session Review trade-log. Standard 4-function calc for working out costs, spreads, lot
-     sizes, etc. while logging trades. Closed via × button or overlay click. -->
-<div class="modal-bg" id="calculator-modal-bg">
-  <div class="modal" style="max-width:340px;">
-    <div class="modal-header" style="padding-bottom:12px;">
-      <h2 data-i18n="calc.title" style="font-size:16px;margin:0;">Calculator</h2>
-      <button class="modal-close" id="calculator-close" title="Close">×</button>
-    </div>
-    <div style="padding:0 20px 20px;">
-      <!-- Running history line: shows accumulator + pending operator as you build up the expression
-           (e.g. "100 +" while you're typing the next number). Empty when no operation in flight. -->
-      <div id="calc-history" style="min-height:18px;text-align:right;color:var(--text-dim);font-family:'DM Mono',monospace;font-size:12px;letter-spacing:0.04em;padding:0 16px;margin-bottom:4px;">&nbsp;</div>
-      <input type="text" id="calc-display" readonly value="0" style="width:100%;box-sizing:border-box;background:var(--bg);border:1px solid var(--border-2);color:var(--text);font-family:'DM Mono',monospace;font-size:20px;text-align:right;padding:14px 16px;margin-bottom:12px;letter-spacing:0.04em;" />
-      <div id="calc-buttons" style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;">
-        <button type="button" class="calc-btn calc-fn" data-calc="clear">C</button>
-        <button type="button" class="calc-btn calc-fn" data-calc="back">⌫</button>
-        <button type="button" class="calc-btn calc-fn" data-calc="percent">%</button>
-        <button type="button" class="calc-btn calc-op" data-calc="op-divide">÷</button>
-
-        <button type="button" class="calc-btn calc-num" data-calc="7">7</button>
-        <button type="button" class="calc-btn calc-num" data-calc="8">8</button>
-        <button type="button" class="calc-btn calc-num" data-calc="9">9</button>
-        <button type="button" class="calc-btn calc-op" data-calc="op-multiply">×</button>
-
-        <button type="button" class="calc-btn calc-num" data-calc="4">4</button>
-        <button type="button" class="calc-btn calc-num" data-calc="5">5</button>
-        <button type="button" class="calc-btn calc-num" data-calc="6">6</button>
-        <button type="button" class="calc-btn calc-op" data-calc="op-subtract">−</button>
-
-        <button type="button" class="calc-btn calc-num" data-calc="1">1</button>
-        <button type="button" class="calc-btn calc-num" data-calc="2">2</button>
-        <button type="button" class="calc-btn calc-num" data-calc="3">3</button>
-        <button type="button" class="calc-btn calc-op" data-calc="op-add">+</button>
-
-        <button type="button" class="calc-btn calc-num" data-calc="0" style="grid-column:span 2;">0</button>
-        <button type="button" class="calc-btn calc-num" data-calc=".">.</button>
-        <button type="button" class="calc-btn calc-eq" data-calc="equals">=</button>
-      </div>
     </div>
   </div>
 </div>
@@ -2224,8 +2185,6 @@
       'btn.add_trade': '+ Add Trade',
       'btn.today': 'Today',
       'btn.import_mt5': '↓ Import from MT5',
-      'btn.calculator': 'Calculator',
-      'calc.title': 'Calculator',
       'btn.cancel': 'Cancel',
       'btn.close': 'Close',
       'btn.import_data': 'Import Data',
@@ -2289,6 +2248,10 @@
       'settings.starting_balance': 'Starting Balance {C}',
       'modal.balance_title': 'One more thing',
       'modal.balance_body': "What's your starting balance? This sets the baseline for Account Balance and P&L on the Statistics tab. You can change or skip this any time.",
+      'modal.session_title': 'When do you trade?',
+      'modal.session_body': 'Set your trading session. The app uses this for news heads-up around your hours, session-aware greetings, and rule reminders.',
+      'modal.session_hint_detected': 'Detected: {S} – {E}',
+      'modal.session_hint_unparseable': 'Add times to your label, e.g. \'London 8-10AM\' or \'NY 9:30-11:30AM\'.',
       'btn.save': 'Save',
       'settings.defaults_hint': 'Risk & Costs defaults are set in Review tab',
       // ----- Toggle / period labels -----
@@ -2963,8 +2926,6 @@
       'btn.add_trade': '+ Añadir Operación',
       'btn.today': 'Hoy',
       'btn.import_mt5': '↓ Importar de MT5',
-      'btn.calculator': 'Calculadora',
-      'calc.title': 'Calculadora',
       'btn.cancel': 'Cancelar',
       'btn.close': 'Cerrar',
       'btn.import_data': 'Importar Datos',
@@ -3028,6 +2989,10 @@
       'settings.starting_balance': 'Balance Inicial {C}',
       'modal.balance_title': 'Una cosa más',
       'modal.balance_body': 'Cuál es tu balance inicial? Esto establece la base para Balance de Cuenta y P&L en la pestaña Estadísticas. Puedes cambiarlo o saltarlo en cualquier momento.',
+      'modal.session_title': '¿Cuándo operas?',
+      'modal.session_body': 'Define tu sesión de trading. La app la usa para avisos de noticias en torno a tu horario, saludos según la sesión y recordatorios de reglas.',
+      'modal.session_hint_detected': 'Detectado: {S} – {E}',
+      'modal.session_hint_unparseable': 'Añade los horarios a tu etiqueta, p. ej. \'Londres 8-10AM\' o \'NY 9:30-11:30AM\'.',
       'btn.save': 'Guardar',
       'settings.defaults_hint': 'Riesgo y Costes por defecto se configuran en Revisión',
       // ----- Toggle / period labels -----
@@ -4773,6 +4738,11 @@
     if (d.userName === undefined) d.userName = '';
     if (d._nameSkipped === undefined) d._nameSkipped = false;
     if (d._balanceSkipped === undefined) d._balanceSkipped = false;
+    // Session prompt is the third onboarding step. Existing users with a userName
+    // already set have completed the original (two-step) onboarding flow — don't
+    // re-prompt them just because we added a third step. Brand-new users (no userName)
+    // hit the full chain.
+    if (d._sessionPrompted === undefined) d._sessionPrompted = !!d.userName;
     if (!Array.isArray(d.weeklyReviews)) d.weeklyReviews = [];
     if (!d.weeklyRules || typeof d.weeklyRules !== 'object') d.weeklyRules = {};
     if (!Array.isArray(d.monthlyReviews)) d.monthlyReviews = [];
@@ -10617,6 +10587,8 @@
     const settingInput = document.getElementById('setting-balance');
     if (settingInput) settingInput.value = v;
     if (typeof renderStats === 'function') try { renderStats(); } catch (e) {}
+    // Chain into the session window prompt — third step of first-run onboarding.
+    setTimeout(maybePromptForSession, 200);
   });
   document.getElementById('balance-modal-input').addEventListener('keydown', e => {
     if (e.key === 'Enter') document.getElementById('balance-modal-save').click();
@@ -10625,6 +10597,8 @@
     document.getElementById('balance-modal-bg').classList.remove('show');
     data._balanceSkipped = true;
     saveData();
+    // Still need to capture the session window — skipping balance doesn't skip session.
+    setTimeout(maybePromptForSession, 200);
   });
   // Backdrop click dismisses (same as Skip ×) — sets the skipped flag so it doesn't re-pop.
   document.getElementById('balance-modal-bg').addEventListener('click', (e) => {
@@ -10632,6 +10606,62 @@
     e.currentTarget.classList.remove('show');
     data._balanceSkipped = true;
     saveData();
+    setTimeout(maybePromptForSession, 200);
+  });
+
+  // ===== Session window prompt =====
+  // Fires once on first run (after the balance modal). Captures the user's trading
+  // session, which drives news heads-up timing, session-aware greeting tails, and
+  // rule reminders. No skip — but the existing default (or current setting) is
+  // pre-filled so a user who's happy with London 8-10AM just hits Save.
+  function maybePromptForSession() {
+    if (data._sessionPrompted) return; // already done
+    const modal = document.getElementById('session-modal-bg');
+    if (!modal) return;
+    modal.classList.add('show');
+    const inp = document.getElementById('session-modal-input');
+    if (inp) {
+      inp.value = data.settings.sessionName || 'London 8-10AM';
+      updateSessionHint();
+      setTimeout(() => inp.focus(), 100);
+    }
+  }
+  function updateSessionHint() {
+    const inp = document.getElementById('session-modal-input');
+    const hint = document.getElementById('session-modal-hint');
+    if (!inp || !hint) return;
+    const v = inp.value.trim();
+    if (!v) { hint.textContent = ''; hint.style.color = 'var(--text-dim)'; return; }
+    const parsed = (typeof parseSessionTimes === 'function') ? parseSessionTimes(v) : null;
+    if (parsed) {
+      hint.textContent = t('modal.session_hint_detected').replace('{S}', parsed.start).replace('{E}', parsed.end);
+      hint.style.color = 'var(--good)';
+    } else {
+      hint.textContent = t('modal.session_hint_unparseable');
+      hint.style.color = 'var(--bad)';
+    }
+  }
+  document.getElementById('session-modal-input').addEventListener('input', updateSessionHint);
+  document.getElementById('session-modal-save').addEventListener('click', () => {
+    const v = document.getElementById('session-modal-input').value.trim();
+    if (!v) return; // empty — keep modal open
+    const parsed = (typeof parseSessionTimes === 'function') ? parseSessionTimes(v) : null;
+    if (!parsed) { updateSessionHint(); return; } // show inline error, don't close
+    data.settings.sessionName = v;
+    data.settings.windowStart = parsed.start;
+    data.settings.windowEnd   = parsed.end;
+    data._sessionPrompted = true;
+    saveData();
+    document.getElementById('session-modal-bg').classList.remove('show');
+    // Refresh anything that depends on session timing
+    try {
+      const metaEl = document.getElementById('meta-session');
+      if (metaEl) metaEl.textContent = v;
+      if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
+    } catch (e) { /* non-fatal */ }
+  });
+  document.getElementById('session-modal-input').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('session-modal-save').click();
   });
 
   // Time-of-day opener — chosen by the user's current local hour
@@ -14678,11 +14708,14 @@
       // Net P&L = profit + commission + swap (commission and swap are negative numbers)
       t.netPL = t.profit + t.commission + t.swap;
       t.costs = Math.abs(t.commission + t.swap);
-      // Result: BE if within £10 net, else Win/Loss based on net
+      // Result: BE if within £10 net, else Win/Loss based on net.
+      // Use 'Lose' (not 'Loss') to match the canonical value used everywhere else in the app —
+      // earlier versions tagged losing imports as 'Loss', which made tradeGross/tradeNetPL
+      // treat them like BE trades and zero out the loss.
       const beAbs = data.settings.beThreshold || 10;
       if (Math.abs(t.netPL) < beAbs) t.result = 'BE';
       else if (t.netPL > 0) t.result = 'Win';
-      else t.result = 'Loss';
+      else t.result = 'Lose';
       // Parse times into Date objects for date grouping
       t.openDate = parseMt5DateTime(t.openTime);
       t.closeDate = parseMt5DateTime(t.closeTime);
@@ -15095,151 +15128,6 @@
   }
 
 
-  // === Calculator ===
-  // Basic 4-function calc + percent + backspace. State machine: a stored value (`accumulator`),
-  // pending operator, and the value being typed (`display`). Operators "commit" the current
-  // display into the accumulator (after evaluating any pending op), then wait for the next number.
-  // Equals evaluates and clears the pending op so further digits start fresh.
-  (function wireCalculator() {
-    const btn = document.getElementById('calculator-btn');
-    const bg = document.getElementById('calculator-modal-bg');
-    const closeBtn = document.getElementById('calculator-close');
-    const display = document.getElementById('calc-display');
-    const history = document.getElementById('calc-history');
-    const buttons = document.getElementById('calc-buttons');
-    if (!btn || !bg || !display || !buttons) return;
-    let acc = null;          // accumulated value (number or null)
-    let pendingOp = null;    // 'add' | 'subtract' | 'multiply' | 'divide' | null
-    let entering = false;    // true while typing the next operand (so a digit replaces "0" first)
-    let justEvaluated = false; // true right after pressing = (so next digit starts fresh)
-    const opSymbol = (op) => ({ add: '+', subtract: '−', multiply: '×', divide: '÷' })[op] || '';
-    const fmt = (n) => {
-      if (!isFinite(n)) return 'Error';
-      // Keep precision but trim trailing zeros after a decimal
-      const s = Number(n.toFixed(10)).toString();
-      return s;
-    };
-    const updateHistory = () => {
-      if (!history) return;
-      if (acc !== null && pendingOp !== null) {
-        history.textContent = `${fmt(acc)} ${opSymbol(pendingOp)}`;
-      } else {
-        history.innerHTML = '&nbsp;';
-      }
-    };
-    const evaluate = (a, op, b) => {
-      switch (op) {
-        case 'add':      return a + b;
-        case 'subtract': return a - b;
-        case 'multiply': return a * b;
-        case 'divide':   return b === 0 ? NaN : a / b;
-        default:         return b;
-      }
-    };
-    const clearActiveOp = () => {
-      buttons.querySelectorAll('.calc-op').forEach(b => b.classList.remove('active-op'));
-    };
-    const reset = () => {
-      acc = null; pendingOp = null; entering = false; justEvaluated = false;
-      display.value = '0'; clearActiveOp(); updateHistory();
-    };
-    const open = () => { reset(); bg.classList.add('show'); };
-    const close = () => { bg.classList.remove('show'); };
-    btn.addEventListener('click', open);
-    closeBtn.addEventListener('click', close);
-    bg.addEventListener('click', (e) => { if (e.target === bg) close(); });
-    buttons.addEventListener('click', (e) => {
-      const target = e.target.closest('.calc-btn');
-      if (!target) return;
-      const k = target.dataset.calc;
-      if (!k) return;
-      // Number / decimal input
-      if (/^[0-9]$/.test(k)) {
-        if (!entering || justEvaluated) {
-          display.value = k;
-          entering = true;
-          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); updateHistory(); }
-        } else {
-          display.value = display.value === '0' ? k : (display.value + k);
-        }
-        return;
-      }
-      if (k === '.') {
-        if (!entering || justEvaluated) {
-          display.value = '0.'; entering = true;
-          if (justEvaluated) { acc = null; pendingOp = null; justEvaluated = false; clearActiveOp(); updateHistory(); }
-        } else if (!display.value.includes('.')) {
-          display.value = display.value + '.';
-        }
-        return;
-      }
-      if (k === 'clear') { reset(); return; }
-      if (k === 'back') {
-        if (justEvaluated) return;
-        const s = display.value;
-        display.value = s.length > 1 ? s.slice(0, -1) : '0';
-        if (display.value === '0' || display.value === '-0') entering = false;
-        return;
-      }
-      if (k === 'percent') {
-        const cur = parseFloat(display.value) || 0;
-        display.value = fmt(cur / 100);
-        entering = true;
-        return;
-      }
-      if (k.startsWith('op-')) {
-        const op = k.slice(3);
-        const cur = parseFloat(display.value) || 0;
-        if (acc === null) {
-          acc = cur;
-        } else if (entering) {
-          // User typed a new operand — fold it into the running total so the display
-          // shows the cumulative result.
-          acc = evaluate(acc, pendingOp, cur);
-          display.value = fmt(acc);
-        }
-        pendingOp = op;
-        entering = false;
-        justEvaluated = false;
-        clearActiveOp();
-        target.classList.add('active-op');
-        updateHistory();
-        return;
-      }
-      if (k === 'equals') {
-        if (pendingOp === null || acc === null) return;
-        const cur = parseFloat(display.value) || 0;
-        acc = evaluate(acc, pendingOp, cur);
-        display.value = fmt(acc);
-        pendingOp = null;
-        entering = false;
-        justEvaluated = true;
-        clearActiveOp();
-        updateHistory();
-        return;
-      }
-    });
-    // Keyboard support — when the modal is open, accept digit keys, operators, Enter, Escape, Backspace.
-    document.addEventListener('keydown', (e) => {
-      if (!bg.classList.contains('show')) return;
-      const k = e.key;
-      const fire = (sel) => {
-        const target = buttons.querySelector(`[data-calc="${sel}"]`);
-        if (target) target.click();
-      };
-      if (/^[0-9]$/.test(k)) { fire(k); e.preventDefault(); return; }
-      if (k === '.') { fire('.'); e.preventDefault(); return; }
-      if (k === '+') { fire('op-add'); e.preventDefault(); return; }
-      if (k === '-') { fire('op-subtract'); e.preventDefault(); return; }
-      if (k === '*' || k === 'x' || k === 'X') { fire('op-multiply'); e.preventDefault(); return; }
-      if (k === '/') { fire('op-divide'); e.preventDefault(); return; }
-      if (k === '%') { fire('percent'); e.preventDefault(); return; }
-      if (k === 'Enter' || k === '=') { fire('equals'); e.preventDefault(); return; }
-      if (k === 'Escape') { close(); e.preventDefault(); return; }
-      if (k === 'Backspace') { fire('back'); e.preventDefault(); return; }
-      if (k === 'Delete' || k === 'c' || k === 'C') { fire('clear'); e.preventDefault(); return; }
-    });
-  })();
 
   // On page load, if there are already ≥2 trades from a previous save, engage the lock so the
   // user explicitly re-picks which trade they're editing. Avoids accidental edits to the wrong trade.
