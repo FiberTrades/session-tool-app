@@ -377,6 +377,11 @@
   /* Per-trade table — full section width */
   .potr-trade-table { margin-left: 0; }
   .potr-trade-row { display: grid; grid-template-columns: 100px 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) 90px 80px; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 4px; cursor: pointer; transition: background 150ms; }
+  /* % mode drops the standalone "LEFT (%)" column — captured/potential/left
+     are already in % there, so the extra column would duplicate data. Six
+     columns instead of seven, with the freed space redistributed across the
+     three numeric columns. */
+  .potr-trade-row.potr-trade-row-pct { grid-template-columns: 100px 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) 80px; }
   .potr-trade-row.headers { cursor: default; background: var(--bg-elev); }
   .potr-trade-row.headers .potr-trade-cell { background: var(--bg-elev); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); padding: 12px 14px; }
   .potr-trade-row:not(.headers):hover .potr-trade-cell { background: var(--bg-elev); }
@@ -403,6 +408,7 @@
     .rec-row { flex-direction: column; gap: 6px; }
     .rec-tier { align-self: flex-start; }
     .potr-trade-row { grid-template-columns: 80px 48px 1fr 1fr 1fr 1fr 55px; }
+    .potr-trade-row.potr-trade-row-pct { grid-template-columns: 80px 48px 1fr 1fr 1fr 55px; }
     .potr-trade-cell { padding: 9px 8px; font-size: 10px; }
     .potr-trade-row.headers .potr-trade-cell { padding: 7px 8px; }
   }
@@ -3132,7 +3138,7 @@
       'pot.pct_need_balance': 'Set your account starting balance in Settings to see how holding winners longer would have moved your account.',
       'pot.pct_too_few': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. Need more tracked wins (15+) before a confident rule can be projected.',
       'pot.pct_no_rule': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. No widening rule beats your current exits — your discipline is paying off.',
-      'pot.pct_with_rule': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. Holding each winner {OPT} longer would have brought you to {NEW_NET} (a {IMPACT} improvement).',
+      'pot.pct_with_rule': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. Holding each winner {OPT} longer would have hit the wider target on {HITS} and reverted to SL on {MISSES} — bringing you to {NEW_NET} overall (a {IMPACT} improvement). The rule helps overall.',
       'pot.col_capture': 'CAPTURE',
       'pot.disclaimer': "The table shows raw figures based on each trade's maximum reach. The recommendation above already accounts for slippage, hesitation, and missed reversals — trades captured within 85% of potential are excluded, and the suggested stretch is half the average meaningful gap. Treat the table as context, not a target.",
       'pot.trades_in_scope': '{N} trades in scope',
@@ -3920,7 +3926,7 @@
       'pot.pct_need_balance': 'Establece el saldo inicial de tu cuenta en Ajustes para ver cómo aguantar a las ganadoras más tiempo habría movido tu cuenta.',
       'pot.pct_too_few': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Necesitas más ganadoras rastreadas (15+) antes de proyectar una regla con confianza.',
       'pot.pct_no_rule': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Ninguna regla de ampliación supera tus salidas actuales — tu disciplina está dando frutos.',
-      'pot.pct_with_rule': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Aguantar cada ganadora {OPT} más habría llevado tu cuenta a {NEW_NET} (una mejora de {IMPACT}).',
+      'pot.pct_with_rule': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Aguantar cada ganadora {OPT} más habría alcanzado el objetivo ampliado en {HITS} y revertido al SL en {MISSES} — llevándote a {NEW_NET} en total (una mejora de {IMPACT}). La regla ayuda en general.',
       'pot.col_capture': 'CAPTURA',
       'pot.disclaimer': 'La tabla muestra cifras brutas basadas en el alcance máximo de cada operación. La recomendación de arriba ya tiene en cuenta el deslizamiento, las dudas y las reversiones perdidas — las operaciones que capturaron el 85% o más del potencial se excluyen, y el estiramiento sugerido es la mitad del promedio del hueco significativo. Trata la tabla como contexto, no como objetivo.',
       'pot.trades_in_scope': '{N} operaciones en alcance',
@@ -8932,6 +8938,8 @@
           .replace(/\{NET\}/g, `<strong>${fmtPct(netPct)}</strong>`)
           .replace(/\{POT\}/g, `<strong class="rec-downside">${fmtPct(potPct)}</strong>`)
           .replace(/\{OPT\}/g, `<strong class="rec-suggest">${fmtR(optR)}</strong>`)
+          .replace(/\{HITS\}/g, `<strong class="rec-suggest">${projHits}</strong>`)
+          .replace(/\{MISSES\}/g, `<strong class="rec-downside">${projMisses}</strong>`)
           .replace(/\{NEW_NET\}/g, `<strong class="rec-suggest">${fmtPct(newNetPct)}</strong>`)
           .replace(/\{IMPACT\}/g, `<strong class="rec-suggest">${fmtPp(impactPct)}</strong>`);
       }
@@ -9007,6 +9015,7 @@
 
     const _tipOpenDay = t('tip.open_day_review');
     const isPipsActive = (data.settings.potrMetric === 'pips');
+    const isPctActive  = (data.settings.potrMetric === 'pct');
     // Lifetime starting balance — used to convert each trade's £ gap into a
     // share of the account. Same denominator as the summary line and rule
     // verdict so all "balance %" figures speak the same language.
@@ -9017,48 +9026,73 @@
       const dateStr = d.toLocaleDateString(tLocale(), { weekday: 'short', day: 'numeric', month: 'short' });
       const dateKey = d.toDateString();
       const side = tSide(t.side) || '—';
-      // Active-metric formatted values. Each cell shows ONE value (R or Pips) based on toggle.
-      const capStr = isPipsActive
-        ? (r.potP !== null || r.capP !== 0 ? (r.capP >= 0 ? '+' : '') + r.capP.toFixed(0) + 'p' : '— p')
-        : (r.capR >= 0 ? '+' : '') + r.capR.toFixed(2) + 'R';
-      const potStr = isPipsActive
-        ? (r.potP !== null ? '+' + r.potP.toFixed(0) + 'p' : '— p')
-        : (r.potR !== null ? '+' + r.potR.toFixed(2) + 'R' : '—');
-      const leftStr = isPipsActive
-        ? (r.leftP !== null ? '+' + r.leftP.toFixed(0) + 'p' : '— p')
-        : (r.leftR !== null ? '+' + r.leftR.toFixed(2) + 'R' : '—');
-      // Left-cell colour: highlight gap-trades in red. Threshold ≈ 0.5R or 10p (gap is "meaningful").
-      const leftCls = isPipsActive
-        ? (r.leftP != null && r.leftP > 10 ? 'bad' : '')
-        : (r.leftR != null && r.leftR > 0.5 ? 'bad' : '');
-      // Balance % left on the table for THIS trade. Converts the R gap to £
-      // via the trade's risk size, then expresses as % of lifetime starting
-      // balance. Lets the user see "this one trade alone cost me +0.42% of my
-      // account by exiting early". Threshold for the red highlight is ~0.25%
-      // — at that point the missed move is material at portfolio scale.
+      // Per-trade balance-% conversion factor: each R of move on this trade
+      // translates to (risk × copies / SB × 100) % of account. Used in pct mode
+      // to render captured/potential/left as % of balance directly.
+      const tRisk   = parseFloat(t.risk) || 0;
+      const tCopies = (typeof tradeCopies === 'function') ? tradeCopies(t) : 1;
+      const pctFactor = potTableLtSB > 0 ? (tRisk * tCopies / potTableLtSB) * 100 : null;
+      // Active-metric formatted values. Each cell shows ONE value (R, pips, or
+      // % of balance) based on the toggle. Pct uses the per-trade pctFactor to
+      // translate each R figure into the trade's individual contribution to
+      // account balance.
+      let capStr, potStr, leftStr, leftCls;
+      if (isPipsActive) {
+        capStr  = r.potP !== null || r.capP !== 0 ? (r.capP >= 0 ? '+' : '') + r.capP.toFixed(0) + 'p' : '— p';
+        potStr  = r.potP  !== null ? '+' + r.potP.toFixed(0)  + 'p' : '— p';
+        leftStr = r.leftP !== null ? '+' + r.leftP.toFixed(0) + 'p' : '— p';
+        leftCls = r.leftP != null && r.leftP > 10 ? 'bad' : '';
+      } else if (isPctActive) {
+        // % mode: convert each trade's R values into per-trade balance %.
+        // If pctFactor is null (no lifetime SB), show em-dashes — the rec
+        // headline above already explains why with a "set your balance" hint.
+        if (pctFactor === null) {
+          capStr = potStr = leftStr = '— %';
+          leftCls = '';
+        } else {
+          const capPctV  = r.capR  * pctFactor;
+          const potPctV  = r.potR  !== null ? r.potR  * pctFactor : null;
+          const leftPctV = r.leftR !== null ? r.leftR * pctFactor : null;
+          capStr  = (capPctV >= 0 ? '+' : '') + capPctV.toFixed(2) + '%';
+          potStr  = potPctV  !== null ? '+' + potPctV.toFixed(2) + '%' : '— %';
+          leftStr = leftPctV !== null ? '+' + leftPctV.toFixed(2) + '%' : '— %';
+          // Threshold for "meaningful gap" in % mode mirrors the LEFT (%)
+          // column's 0.25% red threshold below — material at portfolio scale.
+          leftCls = leftPctV != null && leftPctV > 0.25 ? 'bad' : '';
+        }
+      } else {
+        capStr  = (r.capR >= 0 ? '+' : '') + r.capR.toFixed(2) + 'R';
+        potStr  = r.potR  !== null ? '+' + r.potR.toFixed(2)  + 'R' : '—';
+        leftStr = r.leftR !== null ? '+' + r.leftR.toFixed(2) + 'R' : '—';
+        leftCls = r.leftR != null && r.leftR > 0.5 ? 'bad' : '';
+      }
+      // Balance % left on the table for THIS trade — kept in R and Pips modes
+      // as a per-row "what's this in % terms" companion column. Hidden in pct
+      // mode because LEFT ON TABLE itself is already % there (would duplicate).
       let leftPctVal = null;
       if (r.leftR !== null && potTableLtSB > 0) {
-        const tRisk = parseFloat(t.risk) || 0;
-        const copies = (typeof tradeCopies === 'function') ? tradeCopies(t) : 1;
-        leftPctVal = ((r.leftR * tRisk * copies) / potTableLtSB) * 100;
+        leftPctVal = ((r.leftR * tRisk * tCopies) / potTableLtSB) * 100;
       }
       const leftPctStr = leftPctVal === null
         ? '—'
         : (leftPctVal >= 0 ? '+' : '') + leftPctVal.toFixed(2) + '%';
       const leftPctCls = leftPctVal === null ? '' : leftPctVal > 0.25 ? 'bad' : '';
       // Capture % — use the active-metric capture if available, else fall back to the other.
+      // pct mode uses the R capture ratio (R is the underlying tracking unit).
       const activeCapture = isPipsActive ? r.captureP : r.captureR;
       const fallbackCapture = isPipsActive ? r.captureR : r.captureP;
       const finalCapture = activeCapture !== null ? activeCapture : fallbackCapture;
       const pctStr = finalCapture !== null ? finalCapture.toFixed(0) + '%' : '—';
       const pctCls = finalCapture === null ? '' : finalCapture >= 80 ? 'good' : finalCapture < 50 ? 'bad' : '';
-      return `<div class="potr-trade-row" data-date-key="${dateKey}" title="${_tipOpenDay}">
+      // Pct mode drops the LEFT (%) column (would duplicate LEFT ON TABLE).
+      const leftPctCellHtml = isPctActive ? '' : `<div class="potr-trade-cell ${leftPctCls}">${leftPctStr}</div>`;
+      return `<div class="potr-trade-row${isPctActive ? ' potr-trade-row-pct' : ''}" data-date-key="${dateKey}" title="${_tipOpenDay}">
         <div class="potr-trade-cell">${dateStr}</div>
         <div class="potr-trade-cell">${side}</div>
         <div class="potr-trade-cell">${capStr}</div>
         <div class="potr-trade-cell">${potStr}</div>
         <div class="potr-trade-cell ${leftCls}">${leftStr}</div>
-        <div class="potr-trade-cell ${leftPctCls}">${leftPctStr}</div>
+        ${leftPctCellHtml}
         <div class="potr-trade-cell ${pctCls}">${pctStr}</div>
       </div>`;
     });
@@ -9083,13 +9117,13 @@
 
     const tableHtml = `
       <div class="potr-trade-table">
-        <div class="potr-trade-row headers">
+        <div class="potr-trade-row headers${isPctActive ? ' potr-trade-row-pct' : ''}">
           <div class="potr-trade-cell">${t('pot.col_date')}</div>
           <div class="potr-trade-cell">${t('pot.col_side')}</div>
           <div class="potr-trade-cell">${t('pot.col_captured')}</div>
           <div class="potr-trade-cell">${t('pot.col_potential')}</div>
           <div class="potr-trade-cell">${t('pot.col_left')}</div>
-          <div class="potr-trade-cell">${t('pot.col_left_pct')}</div>
+          ${isPctActive ? '' : `<div class="potr-trade-cell">${t('pot.col_left_pct')}</div>`}
           <div class="potr-trade-cell">${t('pot.col_capture')}</div>
         </div>
         ${visibleRows}
