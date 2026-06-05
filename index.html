@@ -295,6 +295,14 @@
   .add-trade-popover-group-members { font-size: 9px; color: var(--text-dim); letter-spacing: 0.03em; text-transform: none; line-height: 1.3; }
   .add-trade-popover-cancel { display: block; width: 100%; background: transparent; border: none; border-top: 1px solid var(--border-2); color: var(--text-dim); padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: color 150ms, background 150ms; text-align: center; }
   .add-trade-popover-cancel:hover { background: var(--bg); color: var(--text-mid); }
+  /* Per-account breakdown row — sits below + Add Trade when the current
+     session's trades span 2+ accounts. Inline list separated by · between
+     accounts. Account names get a touch more contrast than the surrounding
+     text so the eye can scan them as the anchor of each group. */
+  .trade-account-breakdown { margin-top: 14px; padding: 10px 14px; background: var(--bg-elev); border-left: 2px solid var(--border-2); font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); letter-spacing: 0.03em; line-height: 1.6; }
+  .trade-account-breakdown-label { color: var(--text-mid); text-transform: uppercase; font-size: 9px; letter-spacing: 0.18em; margin-right: 10px; }
+  .trade-account-breakdown-account { color: var(--text); }
+  .trade-account-breakdown-sep { margin: 0 8px; opacity: 0.5; }
   @media (max-width: 600px) {
     .settings-account-new-row { grid-template-columns: 1fr; }
     .settings-account-row { grid-template-columns: 1fr; }
@@ -1851,6 +1859,12 @@
         </div>
         <div id="trade-rows"></div>
         <button class="add-trade" id="add-trade" data-i18n="btn.add_trade">+ Add Trade</button>
+        <!-- Per-account breakdown of trades in the current session. Only renders
+             when there are 2+ trades AND they span 2+ distinct accounts — i.e.
+             a single-account session shows nothing, a multi-account session
+             shows which accounts each trade belongs to. Lives below + Add Trade
+             so users see it right after the action they just took. -->
+        <div class="trade-account-breakdown" id="trade-account-breakdown" style="display:none;"><!-- Filled by renderTradeAccountBreakdown() --></div>
       </div>
     </section>
 
@@ -2872,6 +2886,10 @@
       'logto.group_suffix': 'group',
       'logto.toast_changed': 'Trades will now be logged to {N}',
       'logto.toast_reverted': 'Reverted',
+      'breakdown.label': "You've logged:",
+      'breakdown.trade_word': 'Trade',
+      'breakdown.on_word': 'on',
+      'breakdown.untagged': 'No account',
       'add_trade.popover_title': 'Log this trade to:',
       'add_trade.popover_cancel': 'Cancel',
       'settings.section_preferences': 'Preferences',
@@ -3693,6 +3711,10 @@
       'logto.group_suffix': 'grupo',
       'logto.toast_changed': 'Las operaciones se registrarán en {N}',
       'logto.toast_reverted': 'Revertido',
+      'breakdown.label': 'Has registrado:',
+      'breakdown.trade_word': 'Operación',
+      'breakdown.on_word': 'en',
+      'breakdown.untagged': 'Sin cuenta',
       'add_trade.popover_title': 'Registrar esta operación en:',
       'add_trade.popover_cancel': 'Cancelar',
       'settings.section_preferences': 'Preferencias',
@@ -6298,6 +6320,54 @@
       });
     });
   }
+  // -----------------------------------------------------------------------------
+  // Per-account breakdown row — sits below + Add Trade. Renders only when this
+  // session's trades span 2+ distinct accounts; otherwise the row stays hidden
+  // (single-account sessions would just see redundant noise). Formats as a
+  // natural inline list:
+  //   "You've logged: Trade 1, 2 & 3 on FTMO 140K · Trade 4 & 5 on FTMO 10K"
+  // -----------------------------------------------------------------------------
+  function renderTradeAccountBreakdown() {
+    const wrap = document.getElementById('trade-account-breakdown');
+    if (!wrap) return;
+    const trades = (data.review && data.review.trades) || [];
+    if (trades.length === 0) { wrap.style.display = 'none'; return; }
+    // Group trade indices (1-based) by accountId, preserving the order each
+    // account first appears in the trade log.
+    const groups = new Map();
+    const order = [];
+    trades.forEach((tr, idx) => {
+      const accId = (tr && tr.accountId) ? tr.accountId : '__untagged__';
+      if (!groups.has(accId)) { groups.set(accId, []); order.push(accId); }
+      groups.get(accId).push(idx + 1);
+    });
+    // Single-account session — no useful split to show.
+    if (order.length <= 1) { wrap.style.display = 'none'; return; }
+    // Format helpers:
+    //   1 number  → "1"
+    //   2 numbers → "1 & 2"
+    //   3+        → "1, 2 & 3" (no Oxford comma, ampersand before last)
+    function formatNumbers(nums) {
+      if (nums.length === 1) return String(nums[0]);
+      if (nums.length === 2) return `${nums[0]} & ${nums[1]}`;
+      return nums.slice(0, -1).join(', ') + ' & ' + nums[nums.length - 1];
+    }
+    const tradeWord = (typeof t === 'function') ? t('breakdown.trade_word') : 'Trade';
+    const onWord    = (typeof t === 'function') ? t('breakdown.on_word')    : 'on';
+    const untagLbl  = (typeof t === 'function') ? t('breakdown.untagged')   : 'No account';
+    const parts = order.map(accId => {
+      let accName = untagLbl;
+      if (accId !== '__untagged__') {
+        const account = (data.accounts || []).find(a => a.id === accId);
+        if (account) accName = account.name;
+      }
+      const nums = groups.get(accId);
+      return `${tradeWord} ${formatNumbers(nums)} ${onWord} <span class="trade-account-breakdown-account">${escHtmlGlobal(accName)}</span>`;
+    });
+    const labelText = (typeof t === 'function') ? t('breakdown.label') : "You've logged:";
+    wrap.innerHTML = `<span class="trade-account-breakdown-label">${labelText}</span>${parts.join('<span class="trade-account-breakdown-sep">·</span>')}`;
+    wrap.style.display = '';
+  }
   // Wire the Log-to pill button — toggle dropdown on click, close on outside
   // click. Same pattern as the scope picker; runs once at script load (script
   // sits at the bottom of <body> so the DOM elements exist by this point).
@@ -7362,6 +7432,7 @@
     });
     _applyCurrency();
     refreshTradeCompletionBanner();
+    try { renderTradeAccountBreakdown(); } catch (e) {}
   }
 
   // Potential R + Pips popup — fires on R/pips blur for Win trades.
