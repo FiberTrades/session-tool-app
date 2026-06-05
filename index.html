@@ -132,13 +132,17 @@
   .econ-event-time { color: var(--text); font-weight: 500; }
   .econ-event-currency { color: var(--text-mid); font-size: 10px; letter-spacing: 0.12em; }
   .econ-event-impact { font-size: 24px; text-align: center; line-height: 1; }
-  /* Expanded panel below a clicked event row. Contains description + FF link. */
-  .econ-event-detail { padding: 12px 14px 14px; background: var(--bg); border-bottom: 1px solid var(--border); font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.55; color: var(--text-mid); letter-spacing: 0.01em; }
-  .econ-event-detail-desc { margin-bottom: 10px; }
-  .econ-event-detail-link { display: inline-flex; align-items: center; justify-content: center; padding: 4px; text-decoration: none; color: var(--text); opacity: 0.7; transition: opacity 150ms; cursor: pointer; }
+  /* Expanded panel below a clicked event row. Contains description + FF link.
+     Horizontal layout: description text fills the left side; folder link is
+     always pinned to the right edge, vertically centered, fixed position
+     across all events so it never moves around. The text respects the folder
+     area via flex gap — never crowds it. */
+  .econ-event-detail { display: flex; align-items: center; gap: 20px; padding: 12px 14px; background: var(--bg); border-bottom: 1px solid var(--border); font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.55; color: var(--text-mid); letter-spacing: 0.01em; }
+  .econ-event-detail-desc { flex: 1; min-width: 0; }
+  .econ-event-detail-link { display: inline-flex; align-items: center; justify-content: center; padding: 4px; text-decoration: none; color: var(--text); opacity: 0.7; transition: opacity 150ms; cursor: pointer; flex-shrink: 0; margin-left: auto; }
   .econ-event-detail-link:hover { opacity: 1; }
   .econ-event-detail-link svg { width: 22px; height: 22px; display: block; }
-  .econ-event-detail-empty { color: var(--text-dim); font-style: italic; margin-bottom: 10px; }
+  .econ-event-detail-empty { flex: 1; min-width: 0; color: var(--text-dim); font-style: italic; }
   .econ-event-impact.high    { color: var(--bad); }
   .econ-event-impact.medium  { color: #facc15; }
   .econ-event-impact.low     { color: var(--good); }
@@ -2648,6 +2652,7 @@
       'cal.monthly_summary': 'Monthly Summary',
       'stats.current_series': 'Current Series',
       'review.this_morning_bias': 'This Morning\'s Bias',
+      'review.this_night_bias': 'Tonight\'s Bias',
       'tab.bias_chart': 'Chart',
       'settings.defaults_hint_inline': 'Risk & Costs defaults are set in Review tab',
       'kpi.wins': 'Wins',
@@ -3386,6 +3391,7 @@
       'cal.monthly_summary': 'Resumen Mensual',
       'stats.current_series': 'Serie Actual',
       'review.this_morning_bias': 'El Sesgo de Esta Mañana',
+      'review.this_night_bias': 'El Sesgo de Esta Noche',
       'tab.bias_chart': 'Gráfico',
       'settings.defaults_hint_inline': 'Riesgo y Costes por defecto se configuran en Revisión',
       'kpi.wins': 'Ganadoras',
@@ -4404,7 +4410,7 @@
   function genId() { return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
 
   function newBiasBlank() {
-    return { mode: null, structure: null, location: null, direction: null, tvLinks: [], notes: '', date: null, sessionDate: null };
+    return { mode: null, structure: null, location: null, direction: null, tvLinks: [], notes: '', date: null, sessionDate: null, copiedAt: null };
   }
   // Active trade index for the per-trade review UI. When trades exist, sections 02–09
   // bind to data.review.trades[_activeReviewTradeIdx]. Clicking a trade row's # cell
@@ -5199,6 +5205,11 @@
   }
   document.getElementById('bias-copy').addEventListener('click', () => {
     copyToClipboard(buildBiasMessage());
+    // Mark the bias as "committed for today" — this is the trigger that makes the
+    // "this morning's bias" card appear on Session Review. Filling in the form alone
+    // doesn't show it; the card waits until the user has actually copied it out.
+    data.bias.copiedAt = today.toISOString();
+    saveData();
     // Bias is done — flip to the Review tab so the user lands ready for the session.
     const reviewTab = document.querySelector('.tab[data-page="review"]');
     if (reviewTab) reviewTab.click();
@@ -5971,10 +5982,18 @@
   function getSavedBiasLabelKey() {
     const ws = (data.settings && data.settings.windowStart) || '08:00';
     const h = parseInt((ws.split(':')[0] || '8'), 10);
-    if (h < 12)  return 'review.this_morning_bias';
-    if (h < 18)  return 'review.this_afternoon_bias';
-    if (h < 22)  return 'review.this_evening_bias';
-    return 'review.todays_bias';
+    // Map the session-window start hour to a time-of-day label. Covers all 24
+    // hours so overnight traders (e.g. Asia session in a Western timezone) and
+    // late-night traders (e.g. NY close into Asian liquidity) get a sensible
+    // label instead of a broken key. Boundaries chosen to feel natural:
+    //   05–11 → morning
+    //   12–17 → afternoon
+    //   18–21 → evening
+    //   22–23 + 00–04 → night ("Tonight's Bias")
+    if (h >= 5  && h < 12) return 'review.this_morning_bias';
+    if (h >= 12 && h < 18) return 'review.this_afternoon_bias';
+    if (h >= 18 && h < 22) return 'review.this_evening_bias';
+    return 'review.this_night_bias';
   }
 
   function renderSavedBias() {
@@ -5997,6 +6016,14 @@
     if (!b.date) { hideCard(); return; }
     const sameDay = new Date(b.date).toDateString() === today.toDateString();
     if (!sameDay) { hideCard(); return; }
+    // Gate the card visibility on the user having actually committed the bias by
+    // copying it to Discord today. Filling in the form alone is not enough — the
+    // card stays hidden until the explicit copy action stamps `copiedAt`. This
+    // matches the intent: the "morning bias" panel only shows when the morning
+    // routine has been completed.
+    if (!b.copiedAt) { hideCard(); return; }
+    const copiedToday = new Date(b.copiedAt).toDateString() === today.toDateString();
+    if (!copiedToday) { hideCard(); return; }
     card.classList.remove('hidden');
     const grid = document.getElementById('saved-bias-grid');
     grid.innerHTML = '';
