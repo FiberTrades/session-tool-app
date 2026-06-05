@@ -649,16 +649,17 @@
   .series-dot.clickable { cursor: pointer; transition: opacity 200ms, transform 200ms; }
   .series-dot.clickable:hover { opacity: 0.78; transform: scale(1.06); }
   .history-list { margin-top: 32px; }
-  .history-row { display: grid; grid-template-columns: 50px 1.2fr 1.3fr 1.1fr 1.1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; }
+  .history-row { display: grid; grid-template-columns: 40px 1.4fr 0.7fr 0.7fr 0.7fr 0.9fr 0.7fr 0.9fr; gap: 1px; background: var(--border-2); border: 1px solid var(--border-2); margin-bottom: 6px; }
   .history-cell .hist-sep { color: var(--text-dim); margin: 0 1px; }
-  /* Series History (#history-list) — one row per completed series of 10, each on
-     a single line. A sticky header row at the top labels the columns so we don't
-     have to repeat "Date" / "Total R" / "Pot R" / "Captured" inside every row.
-     Comfortable 12px content font, tighter horizontal padding so all six cells
-     fit cleanly even with the balance % suffixes on Total R and Pot R. */
-  #history-list .history-cell { white-space: nowrap; font-size: 12px; padding: 14px 10px; overflow: hidden; text-overflow: ellipsis; }
-  #history-list .history-row.headers { background: var(--bg); margin-bottom: 8px; }
-  #history-list .history-row.headers .history-cell { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); padding: 10px 10px; }
+  /* Series History (#history-list) — one row per completed series of 10, on a
+     single line. Eight columns total: #, Date, W/L/BE, Net R, Net %, Pot R, Pot %,
+     Captured. Splitting balance % into its own column keeps each cell readable
+     and ties out with the Discord weekly/series-of-10 exports which now also
+     emit Net % and Pot % on their own lines. */
+  #history-list .history-cell { white-space: nowrap; font-size: 12px; padding: 14px 8px; overflow: hidden; text-overflow: ellipsis; background: var(--bg); }
+  #history-list .history-row { background: var(--border-2); border-color: var(--border-2); }
+  #history-list .history-row.headers { background: var(--border-2); margin-bottom: 8px; }
+  #history-list .history-row.headers .history-cell { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); padding: 10px 8px; background: var(--bg); }
   /* Breakdown tables (DOW, Side, Type) — flex-based layout for guaranteed fixed row heights */
   #type-breakdown .history-list, #side-breakdown .history-list, #dow-breakdown .history-list {
     border: 1px solid var(--border-2); background: var(--bg); margin-top: 8px;
@@ -7076,15 +7077,18 @@
 
     const histWrap = document.getElementById('history-list');
     if (data.history.length === 0) { histWrap.innerHTML = `<div class="empty">${t('empty.first_series')}</div>`; return; }
-    // Header row sits at the top of the list. Column labels here replace the inline
-    // per-row labels — repeating "Date / Total R / Pot R / Captured" in every row
-    // ate too much horizontal space and forced wrapping at narrow widths.
+    // Header row sits at the top of the list. Eight columns: #, Date, W/L/BE,
+    // Net R, Net %, Pot R, Pot %, Captured. The two balance-% columns sit next
+    // to their R cousins so the eye can read R alongside % without parsing a
+    // crammed "+5.50R · +2.45%" string.
     histWrap.innerHTML = `<div class="history-row headers">
       <div class="history-cell center">#</div>
       <div class="history-cell center">${t('lbl.date')}</div>
-      <div class="history-cell center">${t('lbl.w')} / ${t('lbl.l')} / ${t('lbl.be')}</div>
+      <div class="history-cell center">${t('lbl.w')}/${t('lbl.l')}/${t('lbl.be')}</div>
       <div class="history-cell center">${t('lbl.total_r')}</div>
+      <div class="history-cell center">%</div>
       <div class="history-cell center">${t('lbl.pot_r')}</div>
+      <div class="history-cell center">%</div>
       <div class="history-cell center">${t('lbl.captured')}</div>
     </div>`;
     data.history.forEach((s, idx) => {
@@ -7114,22 +7118,26 @@
       // Balance % — this series' net £ P&L expressed as a % of the lifetime starting balance.
       // Same denominator as the Stats tab's lifetime % (which uses getStatsLifetimeStartingBalance),
       // so figures across the app stay consistent. Computed per-trade because R is risk-relative
-      // while balance % wants currency, and only tradeNetPL gives us currency.
+      // while balance % wants currency, and only tradeNetPL gives us currency. Now rendered in
+      // its OWN column rather than tucked behind a "·" inside the Net R cell — clearer at a glance.
       const seriesNetGBP = tradesArr.reduce((sum, tr) => sum + tradeNetPL(tr), 0);
       const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
-      let balPctHtml = '';
+      let netBalPctHtml = '<span class="label">—</span>';
+      let netBalPctCls = '';
       if (lifetimeSB > 0) {
         const balPct = (seriesNetGBP / lifetimeSB) * 100;
-        const balSign = balPct > 0 ? '+' : '';
-        balPctHtml = ` <span class="hist-sep">·</span> ${balSign}${balPct.toFixed(2)}%`;
+        netBalPctHtml = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
+        netBalPctCls = balPct > 0 ? 'pl-good' : balPct < 0 ? 'pl-bad' : '';
       }
       // Potential R + % Captured for this series — each gets its own cell so the columns line
       // up cleanly across rows. Computed from winning trades that have potentialR logged. If no
       // potential is logged on any winner in this series, both cells show "—".
       const winnersWithPotR = (s.trades || []).filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
-      let potCellHtml, pctCellHtml;
+      let potCellHtml, potBalPctHtml, pctCellHtml;
+      let potBalPctCls = '';
       if (winnersWithPotR.length === 0) {
         potCellHtml = '<span class="label">—</span>';
+        potBalPctHtml = '<span class="label">—</span>';
         pctCellHtml = '<span class="label">—</span>';
       } else {
         // Pot R column displays the GAP — total potential minus captured — i.e. "R left on
@@ -7143,7 +7151,6 @@
         // Pot R balance % — same scale as the Total R balance % above. Converts the R-gap
         // to £ per-trade (each trade has its own risk size) then expresses as % of lifetime
         // starting balance. Lets the user read Total R % and Pot R % on identical terms.
-        let potBalSuffix = '';
         if (lifetimeSB > 0) {
           const gapGBP = winnersWithPotR.reduce((sum, tr) => {
             const tR    = parseFloat(tr.r) || 0;
@@ -7151,9 +7158,12 @@
             return sum + (tr.potentialR - tR) * tRisk;
           }, 0);
           const leftBalPct = (gapGBP / lifetimeSB) * 100;
-          potBalSuffix = ` <span class="hist-sep">·</span> ${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
+          potBalPctHtml = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
+          potBalPctCls = 'pl-bad'; // gap % colours red — it's the "opportunity cost" reading
+        } else {
+          potBalPctHtml = '<span class="label">—</span>';
         }
-        potCellHtml = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R' + potBalSuffix;
+        potCellHtml = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
         // Captured cell — render as a fraction over 100% so the reader sees the
         // score out of the available ceiling. Same idiom as the Statistics tab
         // summary and both Discord exports.
@@ -7169,8 +7179,10 @@
         <div class="history-cell label center">#${num}</div>
         <div class="history-cell center">${dateLabel}</div>
         <div class="history-cell center">${st.w} <span class="hist-sep">·</span> ${st.l} <span class="hist-sep">·</span> ${st.be}</div>
-        <div class="history-cell center ${cls}">${st.netR >= 0 ? '+' : ''}${st.netR.toFixed(2)}R${balPctHtml}</div>
+        <div class="history-cell center ${cls}">${st.netR >= 0 ? '+' : ''}${st.netR.toFixed(2)}R</div>
+        <div class="history-cell center ${netBalPctCls}">${netBalPctHtml}</div>
         <div class="history-cell center ${potCellCls}">${potCellHtml}</div>
+        <div class="history-cell center ${potBalPctCls}">${potBalPctHtml}</div>
         <div class="history-cell center">${pctCellHtml}</div>
       `;
       histWrap.appendChild(row);
@@ -7222,14 +7234,16 @@
     // Net R line — adds a balance % suffix when a starting balance is available so the
     // reader can immediately see how this series moved the account. Uses the same
     // lifetime starting balance baseline as the Statistics tab for consistency.
+    // Net R line + Net % on its own line. Splitting them mirrors the Series History
+    // table (where Net R and Net % live in separate columns) and the Weekly Discord
+    // export, so all three surfaces emit the same shape.
     const seriesNetGBP = trades.reduce((s, tr) => s + tradeNetPL(tr), 0);
     const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
-    let netRLine = `${stats.netR >= 0 ? '+' : ''}${stats.netR.toFixed(2)}R`;
+    lines.push(`${'Net R:'.padEnd(PAD)}${stats.netR >= 0 ? '+' : ''}${stats.netR.toFixed(2)}R`);
     if (lifetimeSB > 0) {
       const balPct = (seriesNetGBP / lifetimeSB) * 100;
-      netRLine += ` (${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%)`;
+      lines.push(`${'Net %:'.padEnd(PAD)}${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`);
     }
-    lines.push(`${'Net R:'.padEnd(PAD)}${netRLine}`);
     // Potential R block — only shown if winners in this series have potentialR logged. The %
     // is computed on the SAME subset (captured on tracked winners ÷ available on those winners),
     // so it's a clean apples-to-apples capture rate. Losses don't enter the calculation here —
@@ -7242,11 +7256,12 @@
       const potentialR = tradesWithPotR.reduce((s, t) => s + t.potentialR, 0);
       const gapR       = potentialR - capturedR;
       const pct = potentialR > 0 ? Math.round((capturedR / potentialR) * 100) : 100;
+      const potStr = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
+      lines.push(`${'Pot R:'.padEnd(PAD)}${potStr} left`);
       // Pot R balance % — convert the R-gap to £ per-trade (since each trade has its own
       // risk size), then express as % of lifetime starting balance. Same scale as the
-      // Net R balance % above, so the reader can compare "what I captured" with "what I
-      // left" on identical terms. Costs cancel out in the gap (they're paid either way).
-      let potBalPctStr = '';
+      // Net % above, so the reader can compare "what I captured" with "what I left"
+      // on identical terms. Costs cancel out in the gap (they're paid either way).
       if (lifetimeSB > 0) {
         const gapGBP = tradesWithPotR.reduce((sum, t) => {
           const tR    = parseFloat(t.r) || 0;
@@ -7254,10 +7269,8 @@
           return sum + (t.potentialR - tR) * tRisk;
         }, 0);
         const leftBalPct = (gapGBP / lifetimeSB) * 100;
-        potBalPctStr = ` (${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%)`;
+        lines.push(`${'Pot %:'.padEnd(PAD)}${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`);
       }
-      const potStr = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
-      lines.push(`${'Pot R:'.padEnd(PAD)}${potStr} left${potBalPctStr}`);
       // Captured rendered as a fraction over 100% — "46/100% total" reads as the
       // score out of the available ceiling. Same idiom as the Weekly Discord
       // export and the Statistics tab Pot R summary.
@@ -11108,6 +11121,29 @@
     }
     const potGapStr = (potRGap >= 0 ? '+' : '') + potRGap.toFixed(2) + 'R';
 
+    // Balance % — net £ across the period as a share of the lifetime starting balance.
+    // Lives on its own line in the Discord block so the reader can scan R and % separately,
+    // mirroring the new Net % / Pot % columns in the Series History table.
+    const lifetimeSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+    let netBalPctStr = null;
+    if (lifetimeSB > 0) {
+      const netGBP = tradesInPeriod.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
+      const balPct = (netGBP / lifetimeSB) * 100;
+      netBalPctStr = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
+    }
+    // Pot R balance % — converts the R gap to £ via each trade's risk, then expresses
+    // as % of lifetime balance. Same scale as Net %, so the two can be compared directly.
+    let potBalPctStr = null;
+    if (hasPotData && lifetimeSB > 0) {
+      const gapGBP = tradesWithPotR.reduce((sum, tr) => {
+        const tR    = parseFloat(tr.r) || 0;
+        const tRisk = parseFloat(tr.risk) || 0;
+        return sum + ((tr.potentialR - tR) * tRisk * tradeCopies(tr));
+      }, 0);
+      const leftBalPct = (gapGBP / lifetimeSB) * 100;
+      potBalPctStr = `${leftBalPct >= 0 ? '+' : ''}${leftBalPct.toFixed(2)}%`;
+    }
+
     const lines = [header];
     // Numbers block — fixed-width labels for clean alignment in Discord's monospace blocks.
     // Format mirrors the Series-of-10 Discord export so the two posts read consistently.
@@ -11119,8 +11155,10 @@
     lines.push(`${'Losses:'.padEnd(PAD)}${stats.losses}`);
     lines.push(`${'BEs:'.padEnd(PAD)}${stats.bes}`);
     lines.push(`${'Net R:'.padEnd(PAD)}${totalRStr}`);
+    if (netBalPctStr) lines.push(`${'Net %:'.padEnd(PAD)}${netBalPctStr}`);
     if (hasPotData) {
       lines.push(`${'Pot R:'.padEnd(PAD)}${potGapStr} left`);
+      if (potBalPctStr) lines.push(`${'Pot %:'.padEnd(PAD)}${potBalPctStr}`);
       // Captured rendered as a fraction over 100% so the reader sees the score
       // out of the available ceiling — "46/100% total" reads as "you banked 46
       // out of every available 100." Same format used on the Statistics tab and
