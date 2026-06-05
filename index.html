@@ -2499,7 +2499,7 @@
       'econ.title': 'Economic Calendar',
       'econ.loading': 'Loading today\'s events…',
       'econ.empty': 'No economic events scheduled today.',
-      'econ.error': 'Couldn\'t load calendar.',
+      'econ.error': 'Calendar unavailable right now.',
       'econ.retry': 'Retry',
       'econ.range_today': 'Today',
       'econ.range_tomorrow': 'Tomorrow',
@@ -3236,7 +3236,7 @@
       'econ.title': 'Calendario Económico',
       'econ.loading': 'Cargando eventos de hoy…',
       'econ.empty': 'No hay eventos económicos programados hoy.',
-      'econ.error': 'No se pudo cargar el calendario.',
+      'econ.error': 'Calendario no disponible ahora mismo.',
       'econ.retry': 'Reintentar',
       'econ.range_today': 'Hoy',
       'econ.range_tomorrow': 'Mañana',
@@ -13647,15 +13647,12 @@
   // the next open refetches automatically.
   // ============================================================================
   const FF_FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-  // CORS proxies — tried in order. If the first errors or times out, we fall through
-  // to the next. Avoids the calendar failing whenever a single proxy is rate-limited.
-  // Each proxy expects the target URL appended in different ways; we normalise via
-  // the buildProxyUrl helper below.
-  const CORS_PROXIES = [
-    'https://api.allorigins.win/raw?url=',
-    'https://corsproxy.io/?',
-    'https://api.codetabs.com/v1/proxy?quest=',
-  ];
+  // CORS proxy. We use just allorigins — it's the only free option I've verified works
+  // reliably. Earlier attempts at a fallback chain (corsproxy.io, codetabs) failed because
+  // those services either require paid auth now or have changed their API formats.
+  // When allorigins is rate-limited, we fall back to whatever's in the cache rather than
+  // failing hard — see fetchEconomicCalendar below.
+  const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
 
   // ============================================================================
   // EVENT DESCRIPTIONS
@@ -14185,6 +14182,12 @@
   function renderEconomicCalendarUI(state) {
     const body = document.getElementById('econ-calendar-body');
     if (!body) return;
+    // Default: keep the calendar visible. The error branch below is the only place
+    // that hides the whole container (graceful hide on fetch failure). All other
+    // states show the panel — even 'loading' and 'empty_filtered' — so the user
+    // sees something useful as soon as a render lands.
+    const container = document.getElementById('econ-calendar');
+    if (container) container.style.display = '';
     const dateEl = document.getElementById('econ-calendar-date');
     if (dateEl) {
       const today = new Date();
@@ -14197,6 +14200,10 @@
       return;
     }
     if (state.kind === 'error') {
+      // Calm inline notice + retry button. Panel stays visible so the user knows the
+      // calendar feature exists and can recover when the proxy is reachable again.
+      // The previous "hide entirely" approach was too aggressive — easier to forget
+      // the calendar is even there.
       body.innerHTML = `<div class="econ-calendar-error">${t('econ.error')} <button class="econ-calendar-retry" id="econ-retry-btn">${t('econ.retry')}</button></div>`;
       const btn = document.getElementById('econ-retry-btn');
       if (btn) btn.addEventListener('click', () => fetchEconomicCalendar({ force: true }));
@@ -14300,80 +14307,76 @@
     opts = opts || {};
     if (!document.getElementById('econ-calendar-body')) return; // panel not in DOM
     const todayKey = calendarLocalDateKey();
-    // Try cache first (unless force=true via retry button).
-    // We accept v >= 2 caches as valid for *display* — older caches just lack
-    // the per-event `url` field (no "View on Forex Factory" link, but the rest works).
-    // If the cache lacks URLs entirely, we'll silently kick off a background refetch
-    // to upgrade it — the user keeps seeing data immediately while the upgrade happens.
-    if (!opts.force) {
-      const cache = (data && data._calendarCache) || null;
-      if (cache && cache.v >= 2 && cache.date === todayKey && Array.isArray(cache.events)) {
-        renderCalendarFromCache();
-        // Background upgrade: if no events have URLs (pre-feature cache), refetch silently.
-        // No loading state, no error toast — if the upgrade fails, user keeps current data.
-        const hasAnyUrl = cache.events.some(e => typeof e.url === 'string' && e.url.length > 0);
-        if (!hasAnyUrl) {
-          try { backgroundUpgradeCache(); } catch (e) { /* non-fatal */ }
-        }
-        return;
+    const cache = (data && data._calendarCache) || null;
+    const hasCache = cache && cache.v >= 2 && Array.isArray(cache.events) && cache.events.length > 0;
+    // Cache-first strategy. If any cache exists, show it immediately — even if the
+    // cache.date is stale (the feed covers a full week, so yesterday's fetch usually
+    // still has today's events). Then quietly attempt to refresh in the background.
+    // The user always sees data on screen unless the cache is genuinely empty.
+    if (!opts.force && hasCache) {
+      renderCalendarFromCache();
+      // Background refresh when the cache is from a different day OR lacks URL fields.
+      // Silent — failure leaves the existing cache intact, no error UI.
+      const isStale  = cache.date !== todayKey;
+      const lacksUrl = !cache.events.some(e => typeof e.url === 'string' && e.url.length > 0);
+      if (isStale || lacksUrl) {
+        try { backgroundUpgradeCache(); } catch (e) { /* non-fatal */ }
       }
+      return;
     }
+    // True cache miss — show loading state, then try the proxy.
     renderEconomicCalendarUI({ kind: 'loading' });
-    const result = await tryAllProxies();
+    const result = await tryFetch();
     if (result.ok) {
-      const events = result.events;
       try {
         data._calendarCache = {
           v: 3,
           date: todayKey,
-          events: events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }))
+          events: result.events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }))
         };
         if (typeof save === 'function') save();
       } catch (cacheErr) { /* non-fatal */ }
       renderCalendarFromCache();
-      // Cache just landed — bump the greeting nonce so its tail re-rolls with
-      // the news-aware branch active.
       try {
         if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
         if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
       } catch (e) { /* non-fatal */ }
     } else {
-      console.warn('[econ-calendar] all proxies failed:', result.errors);
+      // Fetch failed and no cache to fall back on — panel hides gracefully.
+      // Not logged: this is expected behaviour when the proxy is unreachable, not a bug.
       renderEconomicCalendarUI({ kind: 'error' });
     }
   }
 
-  // Try each CORS proxy in order. Returns { ok: true, events } on first success,
-  // or { ok: false, errors } if every proxy fails. Per-proxy timeout: 10s.
-  async function tryAllProxies() {
-    const errors = [];
-    for (const proxyBase of CORS_PROXIES) {
-      try {
-        const url = proxyBase + encodeURIComponent(FF_FEED_URL);
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        const resp = await fetch(url, { method: 'GET', signal: controller.signal });
-        clearTimeout(timeoutId);
-        if (!resp.ok) { errors.push(`${proxyBase}: HTTP ${resp.status}`); continue; }
-        const xmlText = await resp.text();
-        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-        if (doc.querySelector('parsererror')) { errors.push(`${proxyBase}: parse error`); continue; }
-        const eventEls = Array.from(doc.querySelectorAll('event'));
-        if (eventEls.length === 0) { errors.push(`${proxyBase}: no events`); continue; }
-        const events = eventEls.map(parseCalendarEvent);
-        return { ok: true, events };
-      } catch (err) {
-        errors.push(`${proxyBase}: ${err.message || err}`);
-      }
+  // Single-proxy fetch. Returns { ok: true, events } on success, { ok: false, error } on failure.
+  // 10s timeout via Promise.race (avoids AbortSignal which can't cross postMessage boundaries).
+  async function tryFetch() {
+    const TIMEOUT_MS = 10000;
+    try {
+      const url = CORS_PROXY + encodeURIComponent(FF_FEED_URL);
+      const fetchPromise = fetch(url, { method: 'GET' });
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
+      );
+      const resp = await Promise.race([fetchPromise, timeoutPromise]);
+      if (!resp.ok) return { ok: false, error: `HTTP ${resp.status}` };
+      const xmlText = await resp.text();
+      const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+      if (doc.querySelector('parsererror')) return { ok: false, error: 'parse error' };
+      const eventEls = Array.from(doc.querySelectorAll('event'));
+      if (eventEls.length === 0) return { ok: false, error: 'no events in feed' };
+      const events = eventEls.map(parseCalendarEvent);
+      return { ok: true, events };
+    } catch (err) {
+      return { ok: false, error: err.message || String(err) };
     }
-    return { ok: false, errors };
   }
 
-  // Silent background refetch — only used to upgrade old caches missing the url field.
-  // If it fails, user sees no error — they keep the current (working) cache.
+  // Silent background refetch — used to upgrade stale or url-less caches.
+  // If it fails, user sees nothing — they keep the current (working) cache.
   async function backgroundUpgradeCache() {
     const todayKey = calendarLocalDateKey();
-    const result = await tryAllProxies();
+    const result = await tryFetch();
     if (!result.ok) return; // silent failure — keep current cache
     try {
       data._calendarCache = {
