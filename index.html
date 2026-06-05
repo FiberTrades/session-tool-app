@@ -128,6 +128,11 @@
   .settings-time-row { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; }
   .settings-time-input { flex: 0 0 auto; width: 110px; min-width: 0; padding: 8px 10px; font-size: 12px; }
   .settings-time-sep { font-family: 'DM Mono', monospace; color: var(--text-dim); font-size: 13px; flex: 0 0 auto; }
+  /* Session picker matches the combined Times-row width so the two controls
+     share a right edge. Times row = 110px + 8px gap + ~10px en-dash + 8px gap
+     + 110px ≈ 246px. Locking the session select to that same width creates
+     visual alignment between the two stacked rows. */
+  .settings-session-select { max-width: 246px; width: 246px; }
   .settings-btn { background: transparent; border: 1px solid var(--border-2); color: var(--text-mid); padding: 8px 14px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: all 200ms; }
   .settings-btn:hover { border-color: var(--text-mid); color: var(--text); }
   .settings-btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
@@ -1073,9 +1078,9 @@
     .reflect-q-preview a { max-width: 100%; }
   }
   .chart-card { margin-top: 28px; padding: 22px; border: 1px solid var(--border-2); background: var(--bg-elev); }
-  .chart-card-title { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+  .chart-card-title { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text); margin-bottom: 6px; }
   .chart-card-row { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
-  .chart-card-subtitle { font-family: 'Fraunces', serif; font-size: 16px; }
+  .chart-card-subtitle { font-family: 'Fraunces', serif; font-size: 16px; color: var(--text-dim); }
   /* Lifetime gain/loss % appended to the equity chart subtitle. DM Mono to visually
      distinguish the number from the serif label, dimmer than the title so it reads
      as supplementary context. Good/bad colour classes adopt the same green/red palette
@@ -2015,6 +2020,7 @@
           <span class="potr-metric-group">
             <button type="button" class="potr-metric-btn active" data-metric="r">R</button>
             <button type="button" class="potr-metric-btn" data-metric="pips" data-i18n="period.pips">Pips</button>
+            <button type="button" class="potr-metric-btn" data-metric="pct">%</button>
           </span>
         </span>
         <span class="potr-period-count" id="potr-period-count"></span>
@@ -2379,7 +2385,7 @@
          that reads sessionName as a display string. -->
     <div class="settings-section" data-section="session" style="display:none;">
       <label class="settings-label" data-i18n="settings.session_name_label">Session</label>
-      <select id="settings-session-select" class="settings-input settings-input-compact">
+      <select id="settings-session-select" class="settings-input settings-session-select">
         <option value="London"   data-i18n="settings.session_london">London</option>
         <option value="Asia"     data-i18n="settings.session_asia">Asia</option>
         <option value="New York" data-i18n="settings.session_newyork">New York</option>
@@ -3103,6 +3109,7 @@
       'pot.col_potential': 'POTENTIAL',
       'pot.col_left': 'LEFT ON TABLE',
       'pot.col_left_pct': 'LEFT (%)',
+      'pot.unit_pct': '% of Balance',
       'pot.col_capture': 'CAPTURE',
       'pot.disclaimer': "The table shows raw figures based on each trade's maximum reach. The recommendation above already accounts for slippage, hesitation, and missed reversals — trades captured within 85% of potential are excluded, and the suggested stretch is half the average meaningful gap. Treat the table as context, not a target.",
       'pot.trades_in_scope': '{N} trades in scope',
@@ -3884,6 +3891,7 @@
       'pot.col_potential': 'POTENCIAL',
       'pot.col_left': 'EN LA MESA',
       'pot.col_left_pct': 'EN LA MESA (%)',
+      'pot.unit_pct': '% del Saldo',
       'pot.col_capture': 'CAPTURA',
       'pot.disclaimer': 'La tabla muestra cifras brutas basadas en el alcance máximo de cada operación. La recomendación de arriba ya tiene en cuenta el deslizamiento, las dudas y las reversiones perdidas — las operaciones que capturaron el 85% o más del potencial se excluyen, y el estiramiento sugerido es la mitad del promedio del hueco significativo. Trata la tabla como contexto, no como objetivo.',
       'pot.trades_in_scope': '{N} operaciones en alcance',
@@ -5119,10 +5127,46 @@
           direction: t.biasSnap.direction || null,
           notes: t.biasSnap.notes || '',
           tvLinks: Array.isArray(t.biasSnap.tvLinks) ? t.biasSnap.tvLinks.map(l => ({ url: l.url || '', notes: l.notes || '' })) : [],
-          backfilled: true
+          backfilled: true,
+          // Backfilled entries are treated as "showed up" — the user actually traded
+          // that day (which is why the biasSnap exists on a trade), so they
+          // demonstrably committed to the day even if the original Discord-copy
+          // event wasn't captured. The lifetime consistency block filters on
+          // copiedAt; without this, the user's pre-existing showed-up history
+          // would read 0% on every day that was backfilled from a trade snap.
+          copiedAt: dt.toISOString()
         });
       });
       d._biasHistoryBackfilled = true;
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+    // One-time migration: mark any biasHistory entry as "showed up" if it has
+    // all 4 bias fields completed (mode + structure + location + direction)
+    // but no copiedAt timestamp. Earlier versions of the app didn't always set
+    // copiedAt on bias submission, and the consistency block strictly filters
+    // on that field — so without this migration, completed-but-uncopied bias
+    // days drop out of the "Showed up" counter even though the user clearly
+    // showed up that day to log a full bias.
+    //
+    // Guarded by a one-shot flag so the migration runs exactly once per user
+    // device, then never touches biasHistory again. Future entries inherit
+    // copiedAt the regular way (set when Copy-for-Discord is clicked on the
+    // bias section, see the click handler around line 5944).
+    // ─────────────────────────────────────────────────────────────────────────
+    if (!d._biasHistoryCopiedAtBackfillV1) {
+      d.biasHistory.forEach(b => {
+        if (!b || b.copiedAt) return;
+        if (b.mode && b.structure && b.location && b.direction) {
+          // Stamp with the bias date if we have one, else with the dateKey at noon UTC.
+          let stamp = null;
+          try {
+            if (b.date) stamp = new Date(b.date).toISOString();
+            else if (b.dateKey) stamp = new Date(b.dateKey + 'T12:00:00').toISOString();
+          } catch {}
+          b.copiedAt = stamp || new Date().toISOString();
+        }
+      });
+      d._biasHistoryCopiedAtBackfillV1 = true;
     }
     if (d.bias && !d.bias.sessionDate) d.bias.sessionDate = null;
     if (!d.currentSeries) d.currentSeries = [];
@@ -7248,7 +7292,7 @@
         let balPct = null;
         if (lifetimeSB > 0 && b.total > 0) balPct = (seriesNetGBP / lifetimeSB) * 100;
         const balPctStr = balPct === null
-          ? '— %'
+          ? '0%'
           : (balPct >= 0 ? '+' : '') + balPct.toFixed(2) + '%';
         const balPctCls = balPct === null ? ''
                         : balPct > 0 ? 'good' : balPct < 0 ? 'bad' : '';
@@ -7320,7 +7364,7 @@
     // Empty-state matches Net R cell: show "0" rather than an em-dash so both
     // KPI tiles read consistently when the series has no tracked-winner data.
     const seriesPotPctStr = seriesPotBalPct === null
-      ? '0'
+      ? '0%'
       : (seriesPotBalPct >= 0 ? '+' : '') + seriesPotBalPct.toFixed(2) + '%';
     const seriesPotPctCls = seriesPotBalPct === null ? ''
                           : seriesPotBalPct > 0.5 ? 'bad' : '';
@@ -7772,12 +7816,12 @@
     const ltNetGBP = all.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
     let ltNetPct = null;
     if (scopedStartingBalance > 0 && all.length > 0) ltNetPct = (ltNetGBP / scopedStartingBalance) * 100;
-    const ltNetPctStr = ltNetPct === null ? '— %'
+    const ltNetPctStr = ltNetPct === null ? '0%'
                                           : (ltNetPct >= 0 ? '+' : '') + ltNetPct.toFixed(2) + '%';
     const ltNetPctCls = ltNetPct === null ? ''
                                           : ltNetPct > 0 ? 'good' : ltNetPct < 0 ? 'bad' : '';
     if (all.length === 0) {
-      totalREl.innerHTML = `<span class="dual-primary">0</span><span class="dual-secondary">— %</span>`;
+      totalREl.innerHTML = `<span class="dual-primary">0</span><span class="dual-secondary">0%</span>`;
       totalREl.className = 'stat-value dual';
     } else {
       totalREl.innerHTML = `<span class="dual-primary">${totalRStr}</span><span class="dual-secondary ${ltNetPctCls}">${ltNetPctStr}</span>`;
@@ -7787,9 +7831,9 @@
     // Expectancy R · % — primary average R per trade, secondary average % of
     // account balance per trade. Same denominator as Net %, Pot %, etc.
     const expEl = document.getElementById('kpi-exp');
-    const expRStr  = expVal !== null ? (expVal >= 0 ? '+' : '') + expVal.toFixed(2) + 'R' : '—';
+    const expRStr  = expVal !== null ? (expVal >= 0 ? '+' : '') + expVal.toFixed(2) + 'R' : '0';
     const expRCls  = expVal === null ? '' : expVal > 0 ? 'good' : expVal < 0 ? 'bad' : '';
-    const expPctStr  = expPctVal !== null ? (expPctVal >= 0 ? '+' : '') + expPctVal.toFixed(2) + '%' : '— %';
+    const expPctStr  = expPctVal !== null ? (expPctVal >= 0 ? '+' : '') + expPctVal.toFixed(2) + '%' : '0%';
     const expPctCls  = expPctVal === null ? '' : expPctVal > 0 ? 'good' : expPctVal < 0 ? 'bad' : '';
     expEl.innerHTML = `<span class="dual-primary">${expRStr}</span><span class="dual-secondary ${expPctCls}">${expPctStr}</span>`;
     expEl.className = 'stat-value dual ' + expRCls;
@@ -7824,10 +7868,10 @@
       }, 0);
       ltPotBalPct = (gapGBP / scopedStartingBalance) * 100;
     }
-    const rLeftStr  = ltRLeftTrackedCount === 0 ? '—'
+    const rLeftStr  = ltRLeftTrackedCount === 0 ? '0'
                     : (ltRLeft >= 0 ? '+' : '') + ltRLeft.toFixed(2) + 'R';
     const rLeftCls  = ltRLeft > 0.5 ? 'bad' : '';
-    const potBalPctStr = ltPotBalPct === null ? '— %'
+    const potBalPctStr = ltPotBalPct === null ? '0%'
                                               : (ltPotBalPct >= 0 ? '+' : '') + ltPotBalPct.toFixed(2) + '%';
     const potBalPctCls = ltPotBalPct === null ? ''
                                               : ltPotBalPct > 0.5 ? 'bad' : '';
@@ -8431,34 +8475,57 @@
     // buckets so the recommendation only acts on trades where you genuinely left R on the table.
     const FULLY_CAPTURED_THRESHOLD = 0.85;
 
-    function buildRecommendation(isPips) {
-      const actualField    = isPips ? 'pips'           : 'r';
-      const potentialField = isPips ? 'potentialPips'  : 'potentialR';
-      const unit           = isPips ? 'p' : 'R';
-      const unitName       = isPips ? 'Pips' : 'R';
-      const decimals       = isPips ? 0 : 1;
+    function buildRecommendation(metric) {
+      // metric: 'r' | 'pips' | 'pct'.
+      //   r    — Recommendation in R units (default). Uses tradeRforMath + potentialR.
+      //   pips — Same logic, expressed in pip units. Uses pips + potentialPips.
+      //   pct  — Same logic, but per-trade values are projected as % of lifetime
+      //          starting balance. Per-trade actual = r × risk × copies / SB × 100;
+      //          potential = potentialR × risk × copies / SB × 100. Aggregated
+      //          numbers (sums, capture rate, gap averages, optimum stretch) all
+      //          come out in % of balance, so the rec block reads as "you could
+      //          capture +1.4% more of your account by holding to +0.3% per trade".
+      const isPips = metric === 'pips';
+      const isPct  = metric === 'pct';
+      const ltSB   = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
+      // For pct mode, we need a non-zero lifetime starting balance to do
+      // anything meaningful. Without it, every per-trade % comes out as 0.
+      if (isPct && ltSB <= 0) return null;
+      // Per-trade value getters. For r/pips these read existing fields directly;
+      // for pct they synthesize on the fly using risk × copies × 100 / ltSB.
+      const getActual = isPct
+        ? (t => ((parseFloat(t.r) || 0) * (parseFloat(t.risk) || 0) * tradeCopies(t)) / ltSB * 100)
+        : (t => parseFloat(t[isPips ? 'pips' : 'r']) || 0);
+      const getPotential = isPct
+        ? (t => ((t.potentialR || 0) * (parseFloat(t.risk) || 0) * tradeCopies(t)) / ltSB * 100)
+        : (t => t[isPips ? 'potentialPips' : 'potentialR']);
+      const hasPotential = isPct
+        ? (t => typeof t.potentialR === 'number' && !isNaN(t.potentialR))
+        : (t => typeof t[isPips ? 'potentialPips' : 'potentialR'] === 'number' && !isNaN(t[isPips ? 'potentialPips' : 'potentialR']));
 
-      const trackedM = wins.filter(t =>
-        typeof t[potentialField] === 'number' && !isNaN(t[potentialField])
-      );
+      const unit           = isPct ? '%' : (isPips ? 'p' : 'R');
+      const unitName       = isPct ? t('pot.unit_pct') : (isPips ? 'Pips' : 'R');
+      const decimals       = isPct ? 2 : (isPips ? 0 : 1);
+
+      const trackedM = wins.filter(hasPotential);
       if (trackedM.length === 0) return null;
 
       // Sums + capture-rate over ALL tracked wins (kept for the "headline capture rate" line
       // which is still useful context: "you captured 78% of the available move overall").
-      const capturedSum  = trackedM.reduce((s, t) => s + (parseFloat(t[actualField]) || 0), 0);
-      const potentialSum = trackedM.reduce((s, t) => s + t[potentialField], 0);
+      const capturedSum  = trackedM.reduce((s, t) => s + (getActual(t) || 0), 0);
+      const potentialSum = trackedM.reduce((s, t) => s + getPotential(t), 0);
       const captureRate  = potentialSum === 0 ? 0 : (capturedSum / potentialSum) * 100;
       const avgCaptured  = capturedSum / trackedM.length;
       const avgPotential = potentialSum / trackedM.length;
       const avgGap       = avgPotential - avgCaptured;
 
       // Split into tight (captured >= 85% of potential) vs gap (under that).
-      // A trade with potentialField <= 0 is treated as tight (nothing to capture beyond exit).
+      // A trade with potential <= 0 is treated as tight (nothing to capture beyond exit).
       const tight = [];
       const gap   = [];
       trackedM.forEach(t => {
-        const pot = t[potentialField];
-        const act = parseFloat(t[actualField]) || 0;
+        const pot = getPotential(t);
+        const act = getActual(t) || 0;
         if (pot <= 0) { tight.push(t); return; }
         const tradeCapture = act / pot;
         if (tradeCapture >= FULLY_CAPTURED_THRESHOLD) tight.push(t);
@@ -8467,26 +8534,32 @@
 
       // Meaningful-gap metrics — averages computed across ONLY the under-85% bucket.
       // This is the number the user actually wants: "when I do leave R on the table, how much?"
-      const gapCapturedSum  = gap.reduce((s, t) => s + (parseFloat(t[actualField]) || 0), 0);
-      const gapPotentialSum = gap.reduce((s, t) => s + t[potentialField], 0);
+      const gapCapturedSum  = gap.reduce((s, t) => s + (getActual(t) || 0), 0);
+      const gapPotentialSum = gap.reduce((s, t) => s + getPotential(t), 0);
       const gapAvgGap       = gap.length > 0 ? (gapPotentialSum - gapCapturedSum) / gap.length : 0;
       // Conservative suggestion — half the meaningful-gap average. Realistic stretch goal
       // that respects slippage/hesitation rather than chasing the theoretical ceiling.
       const suggested = Math.max(0, gapAvgGap / 2);
 
       // £-per-unit valuation — uses the trader's ACTUAL realised £/R (or £/pip) from their own
-      // winning trades. Only wins with both a numeric R/pip value AND a non-zero £P&L are used,
+      // winning trades. Only wins with both a numeric value AND a non-zero £P&L are used,
       // because zero-£ trades (likely incomplete imports) would distort the ratio.
-      const valuationSource = wins.filter(t => {
-        const v = parseFloat(t[actualField]);
-        const pl = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
-        return !isNaN(v) && v > 0 && pl > 0;
-      });
-      const totalUnitsForVal = valuationSource.reduce((s, t) => s + (parseFloat(t[actualField]) || 0), 0);
-      const totalGbpForVal   = valuationSource.reduce((s, t) => s + ((typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0), 0);
-      const gbpPerUnit       = (valuationSource.length > 0 && totalUnitsForVal > 0)
-        ? (totalGbpForVal / totalUnitsForVal)
-        : null;
+      // For pct mode the "unit" is already % of balance, so £ valuation is 1 unit = ltSB/100.
+      let gbpPerUnit;
+      if (isPct) {
+        gbpPerUnit = ltSB / 100;
+      } else {
+        const valuationSource = wins.filter(t => {
+          const v = getActual(t);
+          const pl = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
+          return !isNaN(v) && v > 0 && pl > 0;
+        });
+        const totalUnitsForVal = valuationSource.reduce((s, t) => s + (getActual(t) || 0), 0);
+        const totalGbpForVal   = valuationSource.reduce((s, t) => s + ((typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0), 0);
+        gbpPerUnit = (valuationSource.length > 0 && totalUnitsForVal > 0)
+          ? (totalGbpForVal / totalUnitsForVal)
+          : null;
+      }
       // Best-case £: the suggested stretch is always ≤ the trade's observed potentialR/potentialPips.
       // Since the trade ACTUALLY reached its potential at some point (that's what potentialR records),
       // a wider target inside that range would have been hit on the way. So this £ figure is logically
@@ -8507,25 +8580,24 @@
       // Per-stretch projection rules (same as before):
       //   newTarget = actual + stretch
       //   newTarget <= potential → trade captures newTarget (price actually reached that level)
-      //   newTarget >  potential → trade misses → assumed SL hit (-1R or -slPips)
-      //
-      // Candidates: 0.1 to 3.0 R in 0.1 steps (or 1 to 30 pips in 1-pip steps for pips metric).
-      // The optimum is the stretch value with the highest projectedTotal across all trades.
-      // If no positive-stretch candidate beats stretch=0 (current behaviour), the optimum is 0
-      // and the verdict tells the user not to change anything.
+      //   newTarget >  potential → trade misses → assumed SL hit (-1R or -slPips, or pct equivalent)
       // -----------------------------------------------------------------------------------
       function projectAtStretch(stretchValue) {
         let total = 0, hits = 0, misses = 0;
         trackedM.forEach(t => {
-          const actual    = parseFloat(t[actualField]) || 0;
-          const potential = t[potentialField];
+          const actual    = getActual(t) || 0;
+          const potential = getPotential(t);
           const newTarget = actual + stretchValue;
           if (newTarget <= potential) {
             total += newTarget;
             hits  += 1;
           } else {
             let lossUnits;
-            if (!isPips) {
+            if (isPct) {
+              // SL hit on this trade = full risk wiped, expressed as % of balance.
+              const tRisk = parseFloat(t.risk) || 0;
+              lossUnits = -((tRisk * tradeCopies(t)) / ltSB * 100);
+            } else if (!isPips) {
               lossUnits = -1;
             } else {
               const sl = parseFloat(t.sl);
@@ -8537,15 +8609,15 @@
         });
         return { total, hits, misses };
       }
-      const currentTotalActual = trackedM.reduce((s, t) => s + (parseFloat(t[actualField]) || 0), 0);
+      const currentTotalActual = trackedM.reduce((s, t) => s + (getActual(t) || 0), 0);
       // Stretch candidate range — bounded by the largest meaningful gap so we don't waste cycles
-      // testing absurd values. Step size: 0.1 for R, 1 for pips.
+      // testing absurd values. Step size: 0.1 for R, 1 for pips, 0.05 for pct.
       const maxPossibleGap = trackedM.reduce((mx, t) => {
-        const gapVal = (t[potentialField] || 0) - (parseFloat(t[actualField]) || 0);
+        const gapVal = (getPotential(t) || 0) - (getActual(t) || 0);
         return Math.max(mx, gapVal);
       }, 0);
-      const stretchCeiling = Math.max(isPips ? 50 : 5, maxPossibleGap);
-      const stretchStep    = isPips ? 1 : 0.1;
+      const stretchCeiling = Math.max(isPips ? 50 : (isPct ? 3 : 5), maxPossibleGap);
+      const stretchStep    = isPips ? 1 : (isPct ? 0.05 : 0.1);
       // Search.
       let optStretch = 0;
       let optTotal   = currentTotalActual; // baseline = doing nothing
@@ -8560,9 +8632,8 @@
           optMisses  = r.misses;
         }
       }
-      // Round optimum stretch to 1 decimal (R) or integer (pips) — search step is already at
-      // that resolution but floating arithmetic can introduce ugly drift.
-      optStretch = isPips ? Math.round(optStretch) : Math.round(optStretch * 10) / 10;
+      // Round optimum stretch to 1 decimal (R), integer (pips), 2 decimals (pct).
+      optStretch = isPips ? Math.round(optStretch) : (isPct ? Math.round(optStretch * 100) / 100 : Math.round(optStretch * 10) / 10);
       const projectedNet    = optTotal - currentTotalActual;
       const projectedNetGbp = gbpPerUnit !== null ? projectedNet * gbpPerUnit : null;
       const projectedHits   = optHits;
@@ -8572,8 +8643,6 @@
       const optimumStretch = optStretch;
 
       // Conviction tier — primarily driven by the MEANINGFUL-GAP sample size, not total tracked.
-      // Total tracked is a secondary cap: if you've got 100 tracked wins but only 3 had real
-      // gaps, that's still "too-few" for a confident recommendation on the gap bucket.
       let tier;
       const gapN = gap.length;
       if      (gapN < 5)  tier = 'too-few';
@@ -8584,21 +8653,15 @@
       return {
         n: trackedM.length, captureRate, avgCaptured, avgPotential, avgGap, suggested,
         tier, unit, unitName, decimals, capturedSum, potentialSum,
-        // Bucket breakdown — used by the display to say "X tight, Y gap, Y avg gap = Z".
         tightCount: tight.length, gapCount: gap.length, gapAvgGap,
-        // £ best-case figure — logically certain given the data (the move reached the stretch
-        // target on its way to the observed potential). Null if no valid £/unit valuation.
         gbpPerUnit, bestCaseGbp,
-        // OPTIMUM-stretch projection across ALL tracked wins (assumes misses revert to SL).
-        // optimumStretch = the stretch value that maximises net change (could be 0 if no
-        // widening rule beats current). projectedNet = net change vs current actual.
-        // projectedNetGbp = same in £. Positive → rule wins overall; negative → rule loses.
         optimumStretch, projectedNet, projectedNetGbp, projectedHits, projectedMisses
       };
     }
 
-    const recR    = buildRecommendation(false);
-    const recPips = buildRecommendation(true);
+    const recR    = buildRecommendation('r');
+    const recPips = buildRecommendation('pips');
+    const recPct  = buildRecommendation('pct');
 
     // ------------------------------------------------------------------
     // Render recommendation row. Tier label + verdict text. If capture
@@ -8858,7 +8921,7 @@
 
     simWrap.innerHTML = `
       <div class="potr-rec-block">
-        ${activeMetric === 'r' ? renderRec(recR) : renderRec(recPips)}
+        ${activeMetric === 'pct' ? renderRec(recPct) : (activeMetric === 'r' ? renderRec(recR) : renderRec(recPips))}
       </div>
       ${summaryRowHtml}
       ${showTable ? tableHtml : ''}
@@ -9380,7 +9443,7 @@
     const dayPotPipsTracked = dayWins.filter(t => typeof t.potentialPips === 'number' && !isNaN(t.potentialPips));
     const dayPotPipsTrackedCount = dayPotPipsTracked.reduce((s, t) => s + tradeCopies(t), 0);
     const dayPotPips = dayPotPipsTracked.reduce((s, t) => s + (((t.potentialPips || 0) - tradePipsForMath(t)) * tradeCopies(t)), 0);
-    const dayPotRStr = dayPotRTrackedCount === 0 ? '—' : (dayPotR >= 0 ? '+' : '') + dayPotR.toFixed(2) + 'R';
+    const dayPotRStr = dayPotRTrackedCount === 0 ? '0' : (dayPotR >= 0 ? '+' : '') + dayPotR.toFixed(2) + 'R';
     const dayPotRCls = dayPotR > 0.5 ? 'bad' : '';
     // Secondary metric: balance % of account, not pips. Converts the day's net £
     // (already in `net`) and the day's Pot R gap (£ via per-trade risk) to a %
@@ -9388,7 +9451,7 @@
     // so the day's reading ties out with weekly/monthly/lifetime totals.
     const dayLtSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
     const dayNetPct = dayLtSB > 0 ? (net / dayLtSB) * 100 : null;
-    const dayNetPctStr = dayNetPct === null ? '— %' : (dayNetPct >= 0 ? '+' : '') + dayNetPct.toFixed(2) + '%';
+    const dayNetPctStr = dayNetPct === null ? '0%' : (dayNetPct >= 0 ? '+' : '') + dayNetPct.toFixed(2) + '%';
     const dayNetPctCls = dayNetPct === null ? '' : dayNetPct > 0 ? 'good' : dayNetPct < 0 ? 'bad' : '';
     let dayPotPctVal = null;
     if (dayPotRTracked.length > 0 && dayLtSB > 0) {
@@ -9399,7 +9462,7 @@
       }, 0);
       dayPotPctVal = (gapGBP / dayLtSB) * 100;
     }
-    const dayPotPctStr = dayPotPctVal === null ? '— %' : (dayPotPctVal >= 0 ? '+' : '') + dayPotPctVal.toFixed(2) + '%';
+    const dayPotPctStr = dayPotPctVal === null ? '0%' : (dayPotPctVal >= 0 ? '+' : '') + dayPotPctVal.toFixed(2) + '%';
     const dayPotPctCls = dayPotPctVal === null ? '' : dayPotPctVal > 0.5 ? 'bad' : '';
 
     document.getElementById('modal-stats').innerHTML = `
@@ -11070,14 +11133,14 @@
     const totalRCls = stats.totalR > 0 ? 'good' : stats.totalR < 0 ? 'bad' : '';
     const periodLtSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
     const netPct = periodLtSB > 0 ? ((stats.net || 0) / periodLtSB) * 100 : null;
-    const netPctStr = netPct === null ? '— %' : (netPct >= 0 ? '+' : '') + netPct.toFixed(2) + '%';
+    const netPctStr = netPct === null ? '0%' : (netPct >= 0 ? '+' : '') + netPct.toFixed(2) + '%';
     const netPctCls = netPct === null ? '' : netPct > 0 ? 'good' : netPct < 0 ? 'bad' : '';
 
     // Pot R · Pot % — primary R left on the table, secondary same gap as % of
     // balance. The MFE block already exposes totalLeftR; we recompute the £ gap
     // from the period's wins so we can express it as a balance %.
     const potLeftR = (stats.mfe && stats.mfe.trackedR > 0) ? stats.mfe.totalLeftR : null;
-    const potRStr  = potLeftR == null ? '—' : (potLeftR >= 0 ? '+' : '') + potLeftR.toFixed(2) + 'R';
+    const potRStr  = potLeftR == null ? '0' : (potLeftR >= 0 ? '+' : '') + potLeftR.toFixed(2) + 'R';
     const potRCls  = potLeftR == null ? '' : potLeftR > 0.5 ? 'bad' : '';
     let potPctVal = null;
     if (potLeftR != null && periodLtSB > 0 && currentReview && currentReview.start && currentReview.end) {
@@ -11093,7 +11156,7 @@
       }, 0);
       potPctVal = (gapGBP / periodLtSB) * 100;
     }
-    const potPctStr = potPctVal === null ? '— %' : (potPctVal >= 0 ? '+' : '') + potPctVal.toFixed(2) + '%';
+    const potPctStr = potPctVal === null ? '0%' : (potPctVal >= 0 ? '+' : '') + potPctVal.toFixed(2) + '%';
     const potPctCls = potPctVal === null ? '' : potPctVal > 0.5 ? 'bad' : '';
 
     const monthlyExtra = (greetingNoun === 'month' && monthRange) ? renderMonthlyInsights(monthRange.start, monthRange.end) : '';
