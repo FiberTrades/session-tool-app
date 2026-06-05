@@ -72,7 +72,7 @@
   .meta-edit-wrap button { background: var(--text); color: var(--bg); border: none; padding: 6px 12px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; }
   .meta-edit-error { margin-top: 8px; font-size: 10px; color: var(--bad); font-family: 'DM Mono', monospace; font-style: normal; letter-spacing: 0; line-height: 1.4; }
   /* Bias-tab greeting — one-line personal opener at top of Bias page */
-  .bias-greeting { font-family: 'Fraunces', serif; font-size: 20px; color: var(--text); margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid var(--border); letter-spacing: -0.01em; line-height: 1.4; }
+  .bias-greeting { font-family: 'Fraunces', serif; font-size: 16px; color: var(--text); margin-bottom: 32px; padding-bottom: 20px; border-bottom: 1px solid var(--border); letter-spacing: -0.01em; line-height: 1.4; }
   .bias-greeting .greet-name { font-style: normal; cursor: pointer; transition: color 200ms; border-bottom: 1px dashed transparent; padding-bottom: 1px; }
   .bias-greeting .greet-name:hover { color: var(--text-mid); border-bottom-color: var(--text-dim); }
   .bias-greeting input { background: var(--bg-elev); border: 1px solid var(--text-mid); padding: 2px 10px; color: var(--text); font-family: 'DM Mono', monospace; font-size: 14px; font-style: normal; outline: none; max-width: 280px; }
@@ -125,11 +125,19 @@
   .econ-calendar-error { color: var(--text-dim); padding: 8px 0; font-size: 12px; }
   .econ-calendar-retry { background: transparent; border: 1px solid var(--border-2); color: var(--text-mid); padding: 4px 12px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; margin-left: 12px; }
   .econ-calendar-retry:hover { color: var(--text); border-color: var(--text-mid); }
-  .econ-event { display: grid; grid-template-columns: 60px 50px 30px 1fr; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); }
+  .econ-event { display: grid; grid-template-columns: 60px 50px 30px 1fr; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 120ms; }
+  .econ-event:hover { background: rgba(255,255,255,0.02); }
+  .econ-event.expanded { background: rgba(255,255,255,0.025); }
   .econ-event:last-child { border-bottom: none; }
   .econ-event-time { color: var(--text); font-weight: 500; }
   .econ-event-currency { color: var(--text-mid); font-size: 10px; letter-spacing: 0.12em; }
   .econ-event-impact { font-size: 24px; text-align: center; line-height: 1; }
+  /* Expanded panel below a clicked event row. Contains description + FF link. */
+  .econ-event-detail { padding: 12px 14px 14px; background: var(--bg); border-bottom: 1px solid var(--border); font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.55; color: var(--text-mid); letter-spacing: 0.01em; }
+  .econ-event-detail-desc { margin-bottom: 10px; }
+  .econ-event-detail-link { display: inline-block; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); border: 1px solid var(--border-2); padding: 5px 12px; text-decoration: none; transition: all 150ms; }
+  .econ-event-detail-link:hover { color: var(--text-mid); border-color: var(--text-dim); }
+  .econ-event-detail-empty { color: var(--text-dim); font-style: italic; margin-bottom: 10px; }
   .econ-event-impact.high    { color: var(--bad); }
   .econ-event-impact.medium  { color: #facc15; }
   .econ-event-impact.low     { color: var(--good); }
@@ -2504,6 +2512,8 @@
       'econ.impact.low': 'Low',
       'econ.impact.holiday': 'Holiday',
       'econ.empty_filtered': 'No events match your filters.',
+      'econ.view_on_ff': 'View on Forex Factory →',
+      'econ.no_description': 'No description available for this event.',
       'tta.need_more_decided_one': 'Need {N} more decided trade in one slot',
       'tta.need_more_decided_many': 'Need {N} more decided trades in one slot',
       'modal.trade_of_month_title': 'Best trade of the month',
@@ -3239,6 +3249,8 @@
       'econ.impact.low': 'Bajo',
       'econ.impact.holiday': 'Festivo',
       'econ.empty_filtered': 'Ningún evento coincide con tus filtros.',
+      'econ.view_on_ff': 'Ver en Forex Factory →',
+      'econ.no_description': 'No hay descripción disponible para este evento.',
       'tta.need_more_decided_one': 'Falta {N} operación decidida más en una franja',
       'tta.need_more_decided_many': 'Faltan {N} operaciones decididas más en una franja',
       'modal.trade_of_month_title': 'Mejor operación del mes',
@@ -13637,6 +13649,227 @@
   const FF_FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
   const CORS_PROXY  = 'https://api.allorigins.win/raw?url=';
 
+  // ============================================================================
+  // EVENT DESCRIPTIONS
+  // ----------------------------------------------------------------------------
+  // Brief, factual notes about what each economic indicator measures. Written in
+  // our own words — these are descriptions of the public economic concepts, not
+  // reproductions of any data provider's copy. Used by the expandable event row
+  // when a user clicks an event in the calendar panel.
+  //
+  // Two-stage lookup:
+  //   1. EXACT match on title (e.g. "Non-Farm Employment Change")
+  //   2. FUZZY match via regex (e.g. /FOMC Member .* Speaks/ matches dozens of
+  //      individual member-speech entries that share the same generic meaning)
+  //
+  // EN + ES kept in parallel arrays so the user's language toggle picks the
+  // right description automatically. Falls back to null when no match —
+  // caller shows just the "View on Forex Factory" link in that case.
+  // ============================================================================
+  const EVENT_DESCRIPTIONS_EN = {
+    // ─── USD HIGH-IMPACT ─────────────────────────────────────────────────
+    'Non-Farm Employment Change': 'Monthly change in employed people excluding the farming sector. One of the most market-moving US releases — strong numbers usually lift USD, weak numbers pressure it. Out the first Friday of each month.',
+    'Average Hourly Earnings m/m': 'Month-on-month change in hourly pay for non-farm workers. A wages proxy: hot numbers feed inflation concerns and rate-hike expectations.',
+    'Unemployment Rate': 'Share of the labour force without a job and actively looking. Rising rate = labour market softening; falling rate = tightening.',
+    'ADP Non-Farm Employment Change': 'Private-payroll estimate from ADP, released two days before the official NFP. Treated as a preview but doesn\'t always agree with the BLS print.',
+    'Core CPI m/m': 'Consumer Price Index excluding food and energy, month-on-month. The Fed\'s preferred inflation signal — markets watch it closely for rate-path clues.',
+    'CPI m/m': 'Month-on-month change in consumer prices. Headline inflation read.',
+    'CPI y/y': 'Year-on-year change in consumer prices. The classic inflation number.',
+    'Core CPI y/y': 'Annual change in consumer prices excluding food and energy. Underlying inflation trend.',
+    'PPI m/m': 'Producer Price Index — month-on-month change in prices producers receive. Often a leading indicator for consumer inflation.',
+    'Core PPI m/m': 'PPI excluding food and energy. Cleaner read on underlying producer-side inflation.',
+    'Core PCE Price Index m/m': 'The Fed\'s officially preferred inflation gauge. Personal Consumption Expenditures price index excluding food and energy.',
+    'Federal Funds Rate': 'The Fed\'s decision on the benchmark US interest rate. The single most market-moving scheduled USD event.',
+    'FOMC Statement': 'Statement accompanying the Fed\'s rate decision. Markets parse every word for forward guidance.',
+    'FOMC Economic Projections': 'The Fed\'s quarterly forecasts for growth, inflation, unemployment, and the policy rate (the "dot plot").',
+    'FOMC Press Conference': 'Press conference after the rate decision. Fed Chair takes questions — tone and language often swing the market more than the statement itself.',
+    'ISM Manufacturing PMI': 'Survey of manufacturing-sector purchasing managers. Above 50 = expansion, below 50 = contraction. A widely-watched US growth read.',
+    'ISM Services PMI': 'Services-sector PMI. With services >70% of US GDP, this tends to matter as much as manufacturing — sometimes more.',
+    'Retail Sales m/m': 'Month-on-month change in total retail sales. Direct measure of consumer spending strength.',
+    'Core Retail Sales m/m': 'Retail sales excluding autos (which are volatile). Cleaner consumer trend.',
+    'Advance GDP q/q': 'First estimate of US GDP growth for the quarter. Revised twice afterward (Prelim, Final) as more data lands.',
+    'Prelim GDP q/q': 'Second estimate of quarterly GDP growth. More accurate than Advance but less than Final.',
+    'Unemployment Claims': 'Weekly count of new jobless-benefit claims. Real-time labour-market pulse — high-frequency, often noisy.',
+    'JOLTS Job Openings': 'Job Openings and Labour Turnover Survey. Number of open jobs at month-end. The Fed watches this for labour-market tightness.',
+    'Consumer Confidence': 'Conference Board\'s survey of consumer sentiment. Optimistic consumers spend more.',
+
+    // ─── USD MEDIUM-IMPACT ───────────────────────────────────────────────
+    'ISM Manufacturing Prices': 'Prices-paid sub-index of the ISM Manufacturing survey. Inflation pressure proxy from the supply chain.',
+    'Final Manufacturing PMI': 'S&P Global\'s final read on manufacturing PMI for the month. Usually close to the flash estimate.',
+    'Final Services PMI': 'S&P Global\'s final services PMI. Confirmation read.',
+    'Factory Orders m/m': 'Total new orders placed with US manufacturers. Forward-looking demand signal.',
+    'Crude Oil Inventories': 'Weekly change in US crude oil stocks. Moves oil prices, which can ripple into USD via energy trade flows.',
+    'Beige Book': 'Anecdotal economic summary from the 12 Fed districts. Colour, not numbers — but the Fed reads it before policy meetings.',
+    'Building Permits': 'New residential construction permits issued. Forward indicator of housing activity.',
+    'New Home Sales': 'Annualised pace of new single-family home sales.',
+    'Existing Home Sales': 'Annualised pace of completed sales on existing homes.',
+
+    // ─── EUR HIGH-IMPACT ─────────────────────────────────────────────────
+    'Main Refinancing Rate': 'ECB\'s benchmark rate decision. The headline eurozone monetary-policy event.',
+    'Deposit Facility Rate': 'The rate banks earn on overnight deposits at the ECB. Increasingly the policy rate markets actually watch.',
+    'ECB Press Conference': 'ECB President takes questions after the rate decision. Tone often moves the euro more than the decision itself.',
+    'ECB Monetary Policy Statement': 'Written statement explaining the ECB\'s rate decision and policy outlook.',
+    'CPI Flash Estimate y/y': 'Eurozone consumer-price inflation, preliminary read. Released ahead of the final number.',
+    'Core CPI Flash Estimate y/y': 'Eurozone underlying inflation excluding food and energy. The ECB\'s key inflation read.',
+    'German Prelim CPI m/m': 'Germany\'s preliminary inflation read — comes out ahead of the eurozone aggregate, often previews it.',
+    'German ZEW Economic Sentiment': 'Monthly survey of German financial analysts\' six-month outlook. Sentiment indicator.',
+    'German Ifo Business Climate': 'Survey of German business managers. Tends to move EUR via German-economy expectations.',
+
+    // ─── EUR MEDIUM-IMPACT ───────────────────────────────────────────────
+    'German Retail Sales m/m': 'Month-on-month change in German retail spending. Volatile but watched as a consumer read.',
+    'French CPI m/m': 'France\'s month-on-month inflation. Feeds into the eurozone aggregate.',
+    'Spanish CPI y/y': 'Spain\'s annual inflation. Eurozone component.',
+    'Italian CPI m/m': 'Italy\'s monthly inflation. Eurozone component.',
+    'German Industrial Production m/m': 'Output change in German industry. Cyclical read on the eurozone\'s largest economy.',
+    'Final CPI y/y': 'Eurozone confirmed inflation, annual. Usually close to the flash estimate.',
+
+    // ─── GBP HIGH-IMPACT ─────────────────────────────────────────────────
+    'Official Bank Rate': 'Bank of England\'s benchmark rate decision. The main scheduled GBP event.',
+    'Monetary Policy Summary': 'BoE\'s statement accompanying the rate decision. Sets out the policy outlook.',
+    'MPC Official Bank Rate Votes': 'How each Monetary Policy Committee member voted on the rate. Splits hint at the next move.',
+    'MPC Meeting Minutes': 'Detailed record of the BoE\'s policy discussion. Read for hawkish/dovish tones.',
+    'CPI y/y (UK)': 'UK annual consumer-price inflation.',
+    'Core CPI y/y (UK)': 'UK underlying inflation excluding food, energy, alcohol, tobacco.',
+    'Claimant Count Change': 'Monthly change in people claiming unemployment benefits. UK labour-market pulse.',
+    'Average Earnings Index 3m/y': 'UK wage growth over the past 3 months versus the same period last year. Inflation pressure read.',
+    'Retail Sales m/m (UK)': 'UK month-on-month retail sales change.',
+    'Manufacturing PMI (UK)': 'UK manufacturing-sector activity. Same 50-line above/below interpretation.',
+    'Services PMI (UK)': 'UK services-sector PMI. The services-heavy UK economy makes this particularly important.',
+
+    // ─── BANK HOLIDAYS ───────────────────────────────────────────────────
+    'Bank Holiday': 'Bank holiday in the listed country — local markets closed. Expect thinner liquidity, wider spreads, fewer real flows for that currency.',
+  };
+  // Fuzzy matchers run after exact lookup fails. Each entry is [regex, description].
+  // Used for parameterised event titles (e.g. "FOMC Member X Speaks" where X is any name).
+  const EVENT_FUZZY_EN = [
+    [/^FOMC Member .* Speaks$/i,        'A Federal Reserve official giving a speech. Markets parse the language for hints about the rate path. Reactions depend on who\'s speaking and current sensitivity.'],
+    [/^MPC Member .* Speaks$/i,         'A Bank of England Monetary Policy Committee member speaking. Watched for clues on the next UK rate decision.'],
+    [/^BOE Gov Bailey Speaks$/i,        'BoE Governor speaking. Most influential UK voice on monetary policy — every word is parsed.'],
+    [/^ECB President Lagarde Speaks$/i, 'ECB President speaking. Closely watched for hints on eurozone policy direction.'],
+    [/^ECB.*Speaks$/i,                  'European Central Bank official speaking. Watched for monetary-policy signals.'],
+    [/^Fed Chair .* Speaks$/i,          'The Federal Reserve Chair speaking. The single most-watched USD voice — tone often shifts rate expectations.'],
+    [/^Treasury Sec .* Speaks$/i,       'US Treasury Secretary speaking. Fiscal-policy and dollar-policy signals.'],
+    [/^President Trump Speaks$/i,       'The US President speaking. Tone and any policy or trade hints can move USD.'],
+    [/^BOJ Gov .* Speaks$/i,            'Bank of Japan Governor speaking. Watched for yen-policy signals.'],
+    [/^Bank Holiday$/i,                 'Bank holiday in the listed country — local markets closed. Expect thinner liquidity, wider spreads, fewer real flows for that currency.'],
+    [/Bank Holiday/i,                   'Bank holiday — listed country\'s markets closed. Expect thinner liquidity for that currency.'],
+    [/^.*Manufacturing PMI$/i,          'Survey of manufacturing-sector purchasing managers. Above 50 = expansion, below 50 = contraction.'],
+    [/^.*Services PMI$/i,               'Survey of services-sector purchasing managers. Above 50 = expansion, below 50 = contraction.'],
+    [/^.*Construction PMI$/i,           'Survey of construction-sector purchasing managers. Above 50 = expansion, below 50 = contraction.'],
+    [/^Final.*PMI$/i,                   'Final revision of a previously-released flash PMI. Usually close to the flash number.'],
+    [/^.*Bond Auction$/i,               'Government bond auction. The bid-to-cover ratio and yield show how strong demand was — affects yields and currency.'],
+    [/^.*Rate Decision$/i,              'Central bank rate decision. Direct policy signal for the currency.'],
+  ];
+
+  const EVENT_DESCRIPTIONS_ES = {
+    // ─── USD HIGH-IMPACT ─────────────────────────────────────────────────
+    'Non-Farm Employment Change': 'Cambio mensual en empleados excluyendo el sector agrícola. Una de las publicaciones más movedoras del mercado en EE.UU. — cifras fuertes suelen subir el USD, débiles lo presionan. Sale el primer viernes de cada mes.',
+    'Average Hourly Earnings m/m': 'Cambio mes a mes del salario por hora de trabajadores no agrícolas. Indicador de salarios: cifras altas alimentan expectativas de inflación y subidas de tipos.',
+    'Unemployment Rate': 'Porcentaje de la población activa sin trabajo y buscando. Si sube, el mercado laboral se relaja; si baja, se aprieta.',
+    'ADP Non-Farm Employment Change': 'Estimación de nóminas privadas de ADP, publicada dos días antes del NFP oficial. Se trata como anticipo aunque no siempre coincide con el BLS.',
+    'Core CPI m/m': 'IPC excluyendo alimentos y energía, mes a mes. La señal de inflación favorita de la Fed — los mercados la observan para pistas sobre tipos.',
+    'CPI m/m': 'Cambio mes a mes en precios al consumidor. Inflación titular.',
+    'CPI y/y': 'Cambio anual en precios al consumidor. La cifra de inflación clásica.',
+    'Core CPI y/y': 'Cambio anual en precios al consumidor excluyendo alimentos y energía. Tendencia de inflación subyacente.',
+    'PPI m/m': 'Índice de Precios al Productor — cambio mes a mes en precios que reciben los productores. A menudo indicador adelantado de inflación al consumidor.',
+    'Core PPI m/m': 'PPI excluyendo alimentos y energía. Lectura más limpia de inflación subyacente del lado productor.',
+    'Core PCE Price Index m/m': 'El indicador de inflación oficialmente preferido por la Fed. Índice de precios del Consumo Personal excluyendo alimentos y energía.',
+    'Federal Funds Rate': 'Decisión de la Fed sobre el tipo de interés de referencia en EE.UU. El evento USD programado más movedor del mercado.',
+    'FOMC Statement': 'Declaración que acompaña la decisión de tipos de la Fed. Los mercados analizan cada palabra buscando orientación.',
+    'FOMC Economic Projections': 'Previsiones trimestrales de la Fed sobre crecimiento, inflación, paro y tipo de política (el "dot plot").',
+    'FOMC Press Conference': 'Rueda de prensa tras la decisión de tipos. El Presidente de la Fed responde preguntas — tono y lenguaje suelen mover el mercado más que la declaración.',
+    'ISM Manufacturing PMI': 'Encuesta a gestores de compras del sector manufacturero. Por encima de 50 = expansión, por debajo = contracción. Lectura clave de crecimiento en EE.UU.',
+    'ISM Services PMI': 'PMI del sector servicios. Con servicios >70% del PIB de EE.UU., esto suele importar tanto como manufacturas — a veces más.',
+    'Retail Sales m/m': 'Cambio mes a mes en ventas minoristas totales. Medida directa de la fortaleza del consumo.',
+    'Core Retail Sales m/m': 'Ventas minoristas excluyendo automóviles (que son volátiles). Tendencia de consumo más limpia.',
+    'Advance GDP q/q': 'Primera estimación del PIB trimestral de EE.UU. Se revisa dos veces después (Prelim, Final) según llegan más datos.',
+    'Prelim GDP q/q': 'Segunda estimación del PIB trimestral. Más precisa que la Avance pero menos que la Final.',
+    'Unemployment Claims': 'Recuento semanal de nuevas peticiones de subsidio por desempleo. Pulso en tiempo real del mercado laboral — alta frecuencia, a menudo ruidoso.',
+    'JOLTS Job Openings': 'Encuesta sobre vacantes y rotación laboral. Número de puestos abiertos al final del mes. La Fed lo observa para medir la tensión del mercado laboral.',
+    'Consumer Confidence': 'Encuesta del Conference Board sobre el sentimiento del consumidor. Consumidores optimistas gastan más.',
+
+    // ─── USD MEDIUM-IMPACT ───────────────────────────────────────────────
+    'ISM Manufacturing Prices': 'Sub-índice de precios pagados de la encuesta ISM de manufactura. Indicador de presión inflacionaria desde la cadena de suministro.',
+    'Final Manufacturing PMI': 'Lectura final de S&P Global del PMI manufacturero del mes. Suele estar cerca de la estimación flash.',
+    'Final Services PMI': 'PMI final de servicios de S&P Global. Lectura de confirmación.',
+    'Factory Orders m/m': 'Nuevos pedidos totales a fabricantes estadounidenses. Señal de demanda anticipada.',
+    'Crude Oil Inventories': 'Cambio semanal en las existencias de petróleo crudo en EE.UU. Mueve el precio del petróleo, que puede afectar al USD vía flujos energéticos.',
+    'Beige Book': 'Resumen económico anecdótico de los 12 distritos de la Fed. Matices, no números — pero la Fed lo lee antes de las reuniones de política.',
+    'Building Permits': 'Permisos de construcción residencial nuevos emitidos. Indicador adelantado de actividad inmobiliaria.',
+    'New Home Sales': 'Ritmo anualizado de ventas de viviendas unifamiliares nuevas.',
+    'Existing Home Sales': 'Ritmo anualizado de ventas completadas de viviendas existentes.',
+
+    // ─── EUR HIGH-IMPACT ─────────────────────────────────────────────────
+    'Main Refinancing Rate': 'Decisión del BCE sobre su tipo de referencia. El evento titular de política monetaria de la eurozona.',
+    'Deposit Facility Rate': 'Tipo que los bancos cobran por depósitos a un día en el BCE. Cada vez más, el tipo que los mercados realmente observan.',
+    'ECB Press Conference': 'La Presidenta del BCE responde preguntas tras la decisión de tipos. El tono suele mover el euro más que la decisión misma.',
+    'ECB Monetary Policy Statement': 'Declaración escrita explicando la decisión de tipos del BCE y su perspectiva de política.',
+    'CPI Flash Estimate y/y': 'Inflación al consumidor de la eurozona, lectura preliminar. Sale antes de la cifra final.',
+    'Core CPI Flash Estimate y/y': 'Inflación subyacente de la eurozona excluyendo alimentos y energía. La lectura clave de inflación para el BCE.',
+    'German Prelim CPI m/m': 'Lectura preliminar de inflación de Alemania — sale antes del agregado de la eurozona, a menudo lo anticipa.',
+    'German ZEW Economic Sentiment': 'Encuesta mensual a analistas financieros alemanes sobre la perspectiva a seis meses. Indicador de sentimiento.',
+    'German Ifo Business Climate': 'Encuesta a directivos empresariales alemanes. Tiende a mover el EUR según expectativas sobre la economía alemana.',
+
+    // ─── EUR MEDIUM-IMPACT ───────────────────────────────────────────────
+    'German Retail Sales m/m': 'Cambio mes a mes en gasto minorista alemán. Volátil pero observado como lectura del consumo.',
+    'French CPI m/m': 'Inflación francesa mes a mes. Componente del agregado de la eurozona.',
+    'Spanish CPI y/y': 'Inflación anual de España. Componente de la eurozona.',
+    'Italian CPI m/m': 'Inflación mensual de Italia. Componente de la eurozona.',
+    'German Industrial Production m/m': 'Cambio en la producción de la industria alemana. Lectura cíclica de la mayor economía de la eurozona.',
+    'Final CPI y/y': 'Inflación anual confirmada de la eurozona. Suele estar cerca de la estimación flash.',
+
+    // ─── GBP HIGH-IMPACT ─────────────────────────────────────────────────
+    'Official Bank Rate': 'Decisión de tipos del Banco de Inglaterra. El principal evento GBP programado.',
+    'Monetary Policy Summary': 'Declaración del BoE que acompaña la decisión de tipos. Define la perspectiva de política.',
+    'MPC Official Bank Rate Votes': 'Cómo votó cada miembro del Comité de Política Monetaria sobre el tipo. Las divisiones sugieren el próximo movimiento.',
+    'MPC Meeting Minutes': 'Registro detallado de la discusión de política del BoE. Se lee para captar tonos hawkish/dovish.',
+    'CPI y/y (UK)': 'Inflación anual al consumidor en Reino Unido.',
+    'Core CPI y/y (UK)': 'Inflación subyacente del Reino Unido excluyendo alimentos, energía, alcohol y tabaco.',
+    'Claimant Count Change': 'Cambio mensual en personas reclamando subsidios por desempleo. Pulso del mercado laboral británico.',
+    'Average Earnings Index 3m/y': 'Crecimiento salarial en Reino Unido en los últimos 3 meses frente al mismo periodo del año anterior. Lectura de presión inflacionaria.',
+    'Retail Sales m/m (UK)': 'Cambio mes a mes en ventas minoristas en Reino Unido.',
+    'Manufacturing PMI (UK)': 'Actividad del sector manufacturero del Reino Unido. Misma interpretación: por encima/debajo de 50.',
+    'Services PMI (UK)': 'PMI del sector servicios británico. Con la economía británica orientada a servicios, este es particularmente importante.',
+
+    // ─── BANK HOLIDAYS ───────────────────────────────────────────────────
+    'Bank Holiday': 'Festivo bancario en el país listado — mercados locales cerrados. Espera menos liquidez, spreads más amplios, menos flujos reales para esa divisa.',
+  };
+
+  const EVENT_FUZZY_ES = [
+    [/^FOMC Member .* Speaks$/i,        'Un funcionario de la Reserva Federal dando un discurso. Los mercados analizan el lenguaje buscando pistas sobre la senda de tipos. Las reacciones dependen de quién habla y de la sensibilidad actual.'],
+    [/^MPC Member .* Speaks$/i,         'Un miembro del Comité de Política Monetaria del Banco de Inglaterra hablando. Se observa para pistas sobre la próxima decisión de tipos del Reino Unido.'],
+    [/^BOE Gov Bailey Speaks$/i,        'El Gobernador del BoE hablando. La voz más influyente del Reino Unido en política monetaria — cada palabra se analiza.'],
+    [/^ECB President Lagarde Speaks$/i, 'La Presidenta del BCE hablando. Se observa de cerca por pistas sobre la dirección de la política de la eurozona.'],
+    [/^ECB.*Speaks$/i,                  'Funcionario del Banco Central Europeo hablando. Se observa por señales de política monetaria.'],
+    [/^Fed Chair .* Speaks$/i,          'El Presidente de la Reserva Federal hablando. La voz USD más observada — el tono suele cambiar las expectativas de tipos.'],
+    [/^Treasury Sec .* Speaks$/i,       'El Secretario del Tesoro de EE.UU. hablando. Señales sobre política fiscal y política del dólar.'],
+    [/^President Trump Speaks$/i,       'El Presidente de EE.UU. hablando. El tono y cualquier pista de política o comercio pueden mover el USD.'],
+    [/^BOJ Gov .* Speaks$/i,            'El Gobernador del Banco de Japón hablando. Se observa por señales de política sobre el yen.'],
+    [/^Bank Holiday$/i,                 'Festivo bancario en el país listado — mercados locales cerrados. Espera menos liquidez, spreads más amplios, menos flujos reales para esa divisa.'],
+    [/Bank Holiday/i,                   'Festivo bancario — mercados del país listado cerrados. Espera menos liquidez para esa divisa.'],
+    [/^.*Manufacturing PMI$/i,          'Encuesta a gestores de compras del sector manufacturero. Por encima de 50 = expansión, por debajo = contracción.'],
+    [/^.*Services PMI$/i,               'Encuesta a gestores de compras del sector servicios. Por encima de 50 = expansión, por debajo = contracción.'],
+    [/^.*Construction PMI$/i,           'Encuesta a gestores de compras del sector construcción. Por encima de 50 = expansión, por debajo = contracción.'],
+    [/^Final.*PMI$/i,                   'Revisión final de un PMI flash publicado anteriormente. Suele estar cerca del número flash.'],
+    [/^.*Bond Auction$/i,               'Subasta de bonos del Estado. El ratio bid-to-cover y el rendimiento muestran cómo de fuerte fue la demanda — afecta a rendimientos y divisa.'],
+    [/^.*Rate Decision$/i,              'Decisión de tipos del banco central. Señal directa de política para la divisa.'],
+  ];
+
+  // Look up a description for an event title in the current language. Falls back
+  // through: exact EN → fuzzy EN (or ES → fuzzy ES depending on current language).
+  // Returns null when nothing matches — caller renders just the FF link in that case.
+  function getEventDescription(title) {
+    if (!title) return null;
+    const lang = (window.__lang === 'es') ? 'es' : 'en';
+    const dict  = (lang === 'es') ? EVENT_DESCRIPTIONS_ES : EVENT_DESCRIPTIONS_EN;
+    const fuzzy = (lang === 'es') ? EVENT_FUZZY_ES        : EVENT_FUZZY_EN;
+    if (dict[title]) return dict[title];
+    for (const [re, desc] of fuzzy) {
+      if (re.test(title)) return desc;
+    }
+    return null;
+  }
+
   // Returns YYYY-MM-DD for the user's local "today" — matches what the rest
   // of the app uses as a day key (consistent with daily review etc).
   function calendarLocalDateKey(d) {
@@ -13662,6 +13895,7 @@
     const title   = txt('title');
     const country = txt('country');
     const impact  = txt('impact');
+    const url     = txt('url');    // Forex Factory event detail URL (e.g. https://www.forexfactory.com/calendar/66-us-non-farm-employment-change)
     // Feed times are US Eastern. Parse the date/time into a JS Date instance
     // anchored to America/New_York, then JS will display in the user's local
     // time zone automatically via toLocaleTimeString.
@@ -13703,7 +13937,7 @@
       }
     }
     return {
-      title, country, impact,
+      title, country, impact, url,
       when, // Date object, or null if unparseable
       timeStr, // original string ("8:30am", "All Day", "Tentative")
       isTimed
@@ -13925,7 +14159,7 @@
     // Require v >= 2 — earlier caches were written with the wrong timezone
     // and shouldn't be rendered. Falls back to 'loading' so a fresh fetch
     // can re-populate with correctly-timed events.
-    if (!cache || cache.v < 2 || !Array.isArray(cache.events) || cache.events.length === 0) {
+    if (!cache || cache.v < 3 || !Array.isArray(cache.events) || cache.events.length === 0) {
       renderEconomicCalendarUI({ kind: 'loading' });
       return;
     }
@@ -13973,13 +14207,17 @@
     const todayKey = calendarLocalDateKey();
     const groupByDay = f.dateRange === 'week';
     const escape = s => (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+    // Index events so the click handler can look up the right one when the row is clicked.
+    // Stable across this render only — re-renders rebuild the index.
+    const indexedEvents = state.events.map((e, i) => ({ ...e, _idx: i }));
+    body._econEvents = indexedEvents;
     function eventRow(e) {
       const time = e.isTimed
         ? e.when.toLocaleTimeString(tLocale ? tLocale() : 'en-GB', { hour: '2-digit', minute: '2-digit', hour12: false })
         : (e.timeStr || '—');
       const impactKey = (e.impact || '').toLowerCase();
       const impactDot = '●';
-      return `<div class="econ-event">
+      return `<div class="econ-event" data-event-idx="${e._idx}">
         <span class="econ-event-time">${time}</span>
         <span class="econ-event-currency">${escape(e.country)}</span>
         <span class="econ-event-impact ${impactKey}">${impactDot}</span>
@@ -13987,11 +14225,12 @@
       </div>`;
     }
     if (!groupByDay) {
-      body.innerHTML = state.events.map(eventRow).join('');
+      body.innerHTML = indexedEvents.map(eventRow).join('');
+      wireEventRowClicks(body);
       return;
     }
     // Week view — group by day with headers (past days dim)
-    const groups = groupEventsByDay(state.events);
+    const groups = groupEventsByDay(indexedEvents);
     body.innerHTML = groups.map(([dayKey, events]) => {
       const d = new Date(dayKey + 'T12:00:00');
       const isPast = dayKey < todayKey;
@@ -14003,6 +14242,48 @@
         ${events.map(eventRow).join('')}
       </div>`;
     }).join('');
+    wireEventRowClicks(body);
+  }
+
+  // Wire click delegation on the calendar body. Clicking a row toggles an inline
+  // expansion panel directly below it showing the event's description + a link
+  // to its Forex Factory page. Only one row expanded at a time — clicking
+  // another collapses the previously-open one.
+  function wireEventRowClicks(body) {
+    if (!body) return;
+    body.onclick = (ev) => {
+      const row = ev.target.closest('.econ-event');
+      if (!row) return;
+      const idx = parseInt(row.dataset.eventIdx, 10);
+      if (isNaN(idx)) return;
+      const events = body._econEvents || [];
+      const e = events[idx];
+      if (!e) return;
+      // If this row's detail is already open, collapse it.
+      const existingDetail = row.nextElementSibling;
+      if (existingDetail && existingDetail.classList.contains('econ-event-detail')) {
+        existingDetail.remove();
+        row.classList.remove('expanded');
+        return;
+      }
+      // Collapse any other open detail first (single-open behaviour)
+      body.querySelectorAll('.econ-event-detail').forEach(el => el.remove());
+      body.querySelectorAll('.econ-event.expanded').forEach(el => el.classList.remove('expanded'));
+      // Build and insert the detail panel
+      const desc = getEventDescription(e.title);
+      const safeUrl = (typeof e.url === 'string' && /^https:\/\/(www\.)?forexfactory\.com\//i.test(e.url)) ? e.url : null;
+      const descHtml = desc
+        ? `<div class="econ-event-detail-desc">${desc.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]))}</div>`
+        : `<div class="econ-event-detail-empty">${t('econ.no_description')}</div>`;
+      const linkHtml = safeUrl
+        ? `<a class="econ-event-detail-link" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${t('econ.view_on_ff')}</a>`
+        : '';
+      const detail = document.createElement('div');
+      detail.className = 'econ-event-detail';
+      detail.innerHTML = descHtml + linkHtml;
+      row.classList.add('expanded');
+      row.parentNode.insertBefore(detail, row.nextSibling);
+    };
   }
 
   // Main entry point — call this when the bias tab becomes visible. Honours the
@@ -14015,7 +14296,7 @@
     // Require v >= 2 so caches written before the timezone fix get rebuilt automatically.
     if (!opts.force) {
       const cache = (data && data._calendarCache) || null;
-      if (cache && cache.v >= 2 && cache.date === todayKey && Array.isArray(cache.events)) {
+      if (cache && cache.v >= 3 && cache.date === todayKey && Array.isArray(cache.events)) {
         renderCalendarFromCache();
         return;
       }
@@ -14034,11 +14315,10 @@
       const events = eventEls.map(parseCalendarEvent);
       // Cache full week worth of events (so date rollover still works).
       // The `v` (version) field invalidates older caches that were written
-      // with the wrong timezone assumption (pre-fix). Bump if you change the
-      // serialised shape again.
+      // before structural additions. v2 = timezone fix. v3 = includes `url` per event.
       try {
         data._calendarCache = {
-          v: 2,
+          v: 3,
           date: todayKey,
           events: events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }))
         };
