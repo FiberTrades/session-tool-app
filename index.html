@@ -5470,13 +5470,21 @@
       d._mainAccountCreatedAtBackfillV1 = true;
     }
     // Ensure activeAccountId points to an existing active account; if not, snap
-    // to the first active (or first overall). Note: with the current shared-data
-    // model `activeAccountId` no longer has functional impact on stats (which are
-    // always combined). Kept for backward compat and as a "default for onboarding".
+    // to the first active (or first overall). This self-heals broken states from
+    // older builds where a Move flow archived the old active without updating
+    // activeAccountId, leaving the id pointing at an archived account.
     const activeExists = d.accounts.some(a => a.id === d.activeAccountId && a.status === 'active');
     if (!activeExists) {
       const firstActive = d.accounts.find(a => a.status === 'active') || d.accounts[0];
+      const oldActiveId = d.activeAccountId;
       d.activeAccountId = firstActive ? firstActive.id : null;
+      // If viewScope was pinned to the now-archived old active (typical of the
+      // broken-Move state), snap it to the new active too. Otherwise leave it
+      // alone — a user may have deliberately switched to view an archived
+      // account, and we shouldn't override that intent.
+      if (d.viewScope === oldActiveId && d.activeAccountId) {
+        d.viewScope = d.activeAccountId;
+      }
     }
     // viewScope — drives which trades are shown on every render. Possible values:
     //   • an account id (e.g. 'acc_main')  → scoped to that account only
@@ -10677,6 +10685,12 @@
   restoreBiasValues();
   restoreReviewValues();
   renderStats();
+  // Initial render of the account-scope picker. Without this call the picker
+  // markup stays at its inline display:none state until something else triggers
+  // a re-render (e.g. switching tabs, which calls refreshAllSurfaces). The
+  // user-visible symptom was "picker disappears on refresh, comes back when I
+  // click a tab."
+  try { renderScopePicker(); } catch (e) {}
   syncSettingsInputs();
   updateBackupSettingsLabel();
 
@@ -17616,11 +17630,16 @@
         // Step 1: archive the currently active account (if any).
         const currentActive = (data.accounts || []).find(a => a.id === data.activeAccountId);
         if (currentActive) currentActive.status = 'archived';
-        // Step 2: create the new account, becomes active.
-        createAccount(name, balance);
-        // Step 3: switch scope to the new active account so the user immediately
-        // sees their fresh-start view (empty stats, ready to log first trade).
-        data.viewScope = data.activeAccountId;
+        // Step 2: create the new account. createAccount() returns the new account
+        // record but does NOT change data.activeAccountId — so we explicitly point
+        // activeAccountId at the new record here. Without this, the old (now
+        // archived) account stays "active" in id terms, every renderer keeps
+        // filtering to its trades, and the picker shows the wrong label.
+        const newAcc = createAccount(name, balance);
+        data.activeAccountId = newAcc.id;
+        // Step 3: switch scope to the new account so the user immediately sees
+        // their fresh-start view (empty stats, ready to log first trade).
+        data.viewScope = newAcc.id;
         saveData();
         nameInp.value = '';
         balInp.value = '';
@@ -17629,6 +17648,8 @@
         try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
         try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
         try { if (typeof renderTradeView === 'function') renderTradeView(); } catch (e) {}
+        try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
+        try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (e) {}
       });
     }
 
