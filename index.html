@@ -1259,10 +1259,9 @@
       <div class="econ-calendar-collapsible" id="econ-calendar-collapsible">
         <div class="econ-calendar-controls">
           <div class="econ-range-pills" id="econ-range-pills">
-            <button type="button" class="econ-range-pill" data-range="today"     data-i18n="econ.range_today">Today</button>
-            <button type="button" class="econ-range-pill" data-range="tomorrow"  data-i18n="econ.range_tomorrow">Tomorrow</button>
-            <button type="button" class="econ-range-pill" data-range="week"      data-i18n="econ.range_week">This Week</button>
-            <button type="button" class="econ-range-pill" data-range="next_week" data-i18n="econ.range_next_week">Next Week</button>
+            <button type="button" class="econ-range-pill" data-range="today"    data-i18n="econ.range_today">Today</button>
+            <button type="button" class="econ-range-pill" data-range="tomorrow" data-i18n="econ.range_tomorrow">Tomorrow</button>
+            <button type="button" class="econ-range-pill" data-range="week"     data-i18n="econ.range_week">This Week</button>
           </div>
           <button type="button" class="econ-filter-toggle" id="econ-filter-toggle">
             <span data-i18n="econ.filters">Filters</span>
@@ -2505,7 +2504,6 @@
       'econ.range_today': 'Today',
       'econ.range_tomorrow': 'Tomorrow',
       'econ.range_week': 'This Week',
-      'econ.range_next_week': 'Next Week',
       'econ.filters': 'Filters',
       'econ.countries': 'Countries',
       'econ.impact': 'Impact',
@@ -3243,7 +3241,6 @@
       'econ.range_today': 'Hoy',
       'econ.range_tomorrow': 'Mañana',
       'econ.range_week': 'Esta Semana',
-      'econ.range_next_week': 'Próx. Semana',
       'econ.filters': 'Filtros',
       'econ.countries': 'Países',
       'econ.impact': 'Impacto',
@@ -13650,7 +13647,6 @@
   // the next open refetches automatically.
   // ============================================================================
   const FF_FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-  const FF_FEED_NEXTWEEK_URL = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
   // CORS proxy. We use just allorigins — it's the only free option I've verified works
   // reliably. Earlier attempts at a fallback chain (corsproxy.io, codetabs) failed because
   // those services either require paid auth now or have changed their API formats.
@@ -13997,7 +13993,7 @@
   const ECON_DEFAULT_COUNTRIES = ['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD','CNY'];
   const ECON_DEFAULT_IMPACTS   = ['High','Medium'];
   const ECON_ALL_IMPACTS       = ['High','Medium','Low','Holiday'];
-  const ECON_VALID_RANGES      = ['today','tomorrow','week','next_week'];
+  const ECON_VALID_RANGES      = ['today','tomorrow','week'];
 
   // Read the user's saved calendar filter preferences, applying defaults for
   // any missing values. Mutates+saves the canonical shape on first read so
@@ -14030,19 +14026,14 @@
     // to be safe against feed quirks where rollover events leak in.
     const weekStart = new Date(); weekStart.setDate(weekStart.getDate() - weekStart.getDay()); weekStart.setHours(0,0,0,0);
     const weekEnd   = new Date(weekStart); weekEnd.setDate(weekEnd.getDate() + 7);
-    // Next week = the calendar week immediately after this one. Same start-of-week
-    // convention (Sunday) so the bounds line up cleanly with the next-week feed.
-    const nextWeekStart = new Date(weekEnd);
-    const nextWeekEnd   = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekEnd.getDate() + 7);
     const countriesUC = new Set(f.countries.map(c => c.toUpperCase()));
     const impactsLC   = new Set(f.impacts.map(i => i.toLowerCase()));
     return events.filter(e => {
       if (!e.when) return false;
       // date-range gate
-      if (f.dateRange === 'today'     && calendarLocalDateKey(e.when) !== todayKey)    return false;
-      if (f.dateRange === 'tomorrow'  && calendarLocalDateKey(e.when) !== tomorrowKey) return false;
-      if (f.dateRange === 'week'      && (e.when < weekStart     || e.when >= weekEnd))     return false;
-      if (f.dateRange === 'next_week' && (e.when < nextWeekStart || e.when >= nextWeekEnd)) return false;
+      if (f.dateRange === 'today'    && calendarLocalDateKey(e.when) !== todayKey)    return false;
+      if (f.dateRange === 'tomorrow' && calendarLocalDateKey(e.when) !== tomorrowKey) return false;
+      if (f.dateRange === 'week'     && (e.when < weekStart || e.when >= weekEnd))    return false;
       // country gate — empty country slips through (rare; feed sometimes omits)
       if (e.country && !countriesUC.has(e.country.toUpperCase())) return false;
       // impact gate
@@ -14168,36 +14159,16 @@
 
   // Render the calendar body from cached events using the current filter state.
   // Called on filter changes; doesn't refetch the network feed.
-  // Two cache slots: cache.events (this week) and cache.nextWeekEvents (next week).
-  // Active filter decides which slot we read from. If the slot for the active filter
-  // is empty, we trigger a fetch for that week's feed.
   function renderCalendarFromCache() {
     const cache = (data && data._calendarCache) || null;
-    if (!cache || cache.v < 2) {
+    // Require v >= 2 — earlier caches were written with the wrong timezone
+    // and shouldn't be rendered. Falls back to 'loading' so a fresh fetch
+    // can re-populate with correctly-timed events.
+    if (!cache || cache.v < 2 || !Array.isArray(cache.events) || cache.events.length === 0) {
       renderEconomicCalendarUI({ kind: 'loading' });
       return;
     }
-    const f = getCalendarFilters();
-    const isNextWeek = (f.dateRange === 'next_week');
-    // Pick the right slot. Note: for 'today' / 'tomorrow' / 'week' we always read
-    // from this-week cache. Next-week events live in their own slot.
-    const eventsRaw = isNextWeek
-      ? (Array.isArray(cache.nextWeekEvents) ? cache.nextWeekEvents : [])
-      : (Array.isArray(cache.events)         ? cache.events         : []);
-    if (eventsRaw.length === 0) {
-      // No data for this slot yet. If user wants next-week and we haven't fetched it,
-      // kick off a lazy fetch. Show loading while it lands.
-      if (isNextWeek) {
-        renderEconomicCalendarUI({ kind: 'loading' });
-        try { fetchNextWeekIfNeeded(); } catch (e) { /* non-fatal */ }
-        return;
-      }
-      // For this-week slots being empty, the main fetch should have populated them.
-      // Show loading; the next fetch will fix it.
-      renderEconomicCalendarUI({ kind: 'loading' });
-      return;
-    }
-    const events   = eventsRaw.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
+    const events = cache.events.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
     const filtered = applyCalendarFilters(events);
     renderEconomicCalendarUI(filtered.length === 0 ? { kind: 'empty_filtered' } : { kind: 'ok', events: filtered });
   }
@@ -14231,18 +14202,9 @@
     if (state.kind === 'error') {
       // Calm inline notice + retry button. Panel stays visible so the user knows the
       // calendar feature exists and can recover when the proxy is reachable again.
-      // Retry dispatches to the correct fetch (this-week vs next-week) based on the
-      // active filter — so retrying while on Next Week refetches the next-week feed.
       body.innerHTML = `<div class="econ-calendar-error">${t('econ.error')} <button class="econ-calendar-retry" id="econ-retry-btn">${t('econ.retry')}</button></div>`;
       const btn = document.getElementById('econ-retry-btn');
-      if (btn) btn.addEventListener('click', () => {
-        const f = getCalendarFilters();
-        if (f.dateRange === 'next_week') {
-          fetchNextWeekIfNeeded({ force: true });
-        } else {
-          fetchEconomicCalendar({ force: true });
-        }
-      });
+      if (btn) btn.addEventListener('click', () => fetchEconomicCalendar({ force: true }));
       return;
     }
     if (state.kind === 'empty') {
@@ -14386,12 +14348,10 @@
 
   // Single-proxy fetch. Returns { ok: true, events } on success, { ok: false, error } on failure.
   // 10s timeout via Promise.race (avoids AbortSignal which can't cross postMessage boundaries).
-  // Accepts which feed URL to fetch — same proxy used for both this-week and next-week.
-  async function tryFetch(feedUrl) {
-    const target = feedUrl || FF_FEED_URL;
+  async function tryFetch() {
     const TIMEOUT_MS = 10000;
     try {
-      const url = CORS_PROXY + encodeURIComponent(target);
+      const url = CORS_PROXY + encodeURIComponent(FF_FEED_URL);
       const fetchPromise = fetch(url, { method: 'GET' });
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
@@ -14407,43 +14367,6 @@
       return { ok: true, events };
     } catch (err) {
       return { ok: false, error: err.message || String(err) };
-    }
-  }
-
-  // Lazy fetch for the next-week feed. Triggered when the user activates the
-  // "Next Week" pill and the cache doesn't have next-week data yet (or it's stale).
-  // Failure shows the standard "Calendar unavailable" error state with a Retry button.
-  let _nextWeekFetchInFlight = false;
-  async function fetchNextWeekIfNeeded(opts) {
-    opts = opts || {};
-    if (_nextWeekFetchInFlight) return; // dedupe concurrent triggers
-    const todayKey = calendarLocalDateKey();
-    const cache = (data && data._calendarCache) || null;
-    if (!opts.force && cache && cache.nextWeekDate === todayKey && Array.isArray(cache.nextWeekEvents) && cache.nextWeekEvents.length > 0) {
-      // Already have fresh next-week data — render straight from cache.
-      renderCalendarFromCache();
-      return;
-    }
-    _nextWeekFetchInFlight = true;
-    try {
-      const result = await tryFetch(FF_FEED_NEXTWEEK_URL);
-      if (result.ok) {
-        if (!data._calendarCache) data._calendarCache = { v: 3, date: todayKey, events: [] };
-        data._calendarCache.nextWeekEvents = result.events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }));
-        data._calendarCache.nextWeekDate   = todayKey;
-        if (typeof save === 'function') save();
-        renderCalendarFromCache();
-      } else {
-        // Only show the error state if we're still on the next_week filter — otherwise
-        // the user might have already switched back to this-week and we don't want to
-        // stomp the working view.
-        const f = getCalendarFilters();
-        if (f.dateRange === 'next_week') {
-          renderEconomicCalendarUI({ kind: 'error' });
-        }
-      }
-    } finally {
-      _nextWeekFetchInFlight = false;
     }
   }
 
