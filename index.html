@@ -252,14 +252,29 @@
   .settings-group-checkbox input:checked + span { color: var(--text); }
   .settings-group-editor-hint { font-family: 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); letter-spacing: 0.05em; margin-top: 10px; }
   .settings-group-editor-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 12px; }
-  /* "Log to" field in the trade form — shown above the trade-result buttons.
-     Compact when there's only one option (acts as a static label); full
-     dropdown when multiple accounts or groups exist. */
-  .log-to-field { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border-2); background: var(--bg-elev); margin-bottom: 12px; }
-  .log-to-label { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
-  .log-to-select { flex: 1; background: transparent; color: var(--text); border: none; font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.03em; cursor: pointer; padding: 4px 8px; outline: none; }
-  .log-to-select:focus { color: var(--text); }
-  .log-to-static { flex: 1; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); letter-spacing: 0.03em; }
+  /* Log-to picker — sits in the Trade Log section header. Pill button + drop-
+     down panel, same visual language as the header scope picker. The button
+     uses the existing bias-date-inline-btn styling for header continuity. */
+  .logto-picker { position: relative; display: inline-flex; align-items: stretch; }
+  .logto-picker-btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--border-2); color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; padding: 6px 10px; cursor: pointer; transition: color 150ms, border-color 150ms; max-width: 240px; }
+  .logto-picker-btn:hover { color: var(--text); border-color: var(--text-mid); }
+  .logto-picker.open .logto-picker-btn { color: var(--text); border-color: var(--text-mid); }
+  .logto-picker-btn .btn-icon { width: 12px; height: 12px; flex: 0 0 auto; }
+  .logto-picker-label { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 160px; }
+  .logto-picker-chevron { width: 10px; height: 10px; flex: 0 0 auto; opacity: 0.7; transition: transform 200ms; }
+  .logto-picker.open .logto-picker-chevron { transform: rotate(180deg); }
+  /* Dropdown panel — opens below the button, right-aligned so it doesn't
+     overhang the right edge of the section header. */
+  .logto-picker-menu { display: none; position: absolute; top: calc(100% + 4px); right: 0; min-width: 240px; background: var(--bg-elev); border: 1px solid var(--border-2); z-index: 80; max-height: 60vh; overflow-y: auto; }
+  .logto-picker.open .logto-picker-menu { display: block; }
+  .logto-picker-section-header { font-size: 9px; color: var(--text-dim); letter-spacing: 0.18em; text-transform: uppercase; padding: 10px 14px 4px 14px; }
+  .logto-picker-item { display: block; width: 100%; background: transparent; border: none; color: var(--text-mid); padding: 9px 14px; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.05em; text-align: left; cursor: pointer; transition: background 150ms, color 150ms; }
+  .logto-picker-item:hover { background: var(--bg); color: var(--text); }
+  .logto-picker-item.active { color: var(--text); background: var(--bg); }
+  .logto-picker-item.active::before { content: '✓ '; color: var(--good); }
+  .logto-picker-item-group { display: flex !important; flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 14px 10px 14px; }
+  .logto-picker-group-name { font-size: 11px; }
+  .logto-picker-group-members { font-size: 9px; color: var(--text-dim); letter-spacing: 0.03em; text-transform: none; line-height: 1.3; }
   @media (max-width: 600px) {
     .settings-account-new-row { grid-template-columns: 1fr; }
     .settings-account-row { grid-template-columns: 1fr; }
@@ -1773,17 +1788,27 @@
         <span class="bias-date-inline" style="margin-left:auto;">
           <input type="date" id="session-date" />
           <button type="button" id="mt5-import-btn" class="bias-date-inline-btn" title="Import from MT5"><svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="12.5"/><polyline points="4.5,9 8,12.5 11.5,9"/></svg><span data-i18n="btn.import_mt5_label">Import from MT5</span></button>
-          <button type="button" id="trade-copies-btn" class="bias-date-inline-btn" title="Set copy-trade multipliers for this session's trades"><svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="5.25" y="5.25" width="8" height="9.5" rx="0.6"/><path d="M10.5 5.25 V 2.75 C 10.5 2.47 10.28 2.25 10 2.25 H 3.25 C 2.97 2.25 2.75 2.47 2.75 2.75 V 11.5 C 2.75 11.78 2.97 12 3.25 12 H 5.25"/></svg><span data-i18n="btn.trade_copier">Trade Copier</span></button>
+          <!-- Log-to picker — replaces the legacy Trade Copier button. Picks which
+               account or linked-group new trade rows will be tagged to. Clicking
+               the pill opens a dropdown panel showing all available targets,
+               using the same UI pattern as the header scope picker for visual
+               consistency. Hidden when there's only one possible target (single
+               active account, no groups). -->
+          <div class="logto-picker" id="logto-picker" style="display:none;">
+            <button type="button" class="logto-picker-btn" id="logto-picker-btn" aria-haspopup="listbox" aria-expanded="false">
+              <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <rect x="5.25" y="5.25" width="8" height="9.5" rx="0.6"/>
+                <path d="M10.5 5.25 V 2.75 C 10.5 2.47 10.28 2.25 10 2.25 H 3.25 C 2.97 2.25 2.75 2.47 2.75 2.75 V 11.5 C 2.75 11.78 2.97 12 3.25 12 H 5.25"/>
+              </svg>
+              <span class="logto-picker-label" id="logto-picker-label">—</span>
+              <svg class="logto-picker-chevron" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="3,5 6,8 9,5"/></svg>
+            </button>
+            <div class="logto-picker-menu" id="logto-picker-menu" role="listbox"><!-- Filled by renderLogToField() --></div>
+          </div>
         </span>
       </div>
 
       <div class="trades-wrap">
-        <!-- Log-to field — picks which account or linked-group new trades will
-             be tagged to when saved. Always visible (compact static label when
-             there's only one option, dropdown when multiple). The choice is
-             scoped to the trade-entry session, persisted via data.review.logTo
-             so reloads don't lose it mid-session. -->
-        <div class="log-to-field" id="log-to-field"><!-- Filled by renderLogToField() --></div>
         <div class="trade-row-headers">
           <div class="trade-header-cell" data-i18n="tlog.col.num">#</div>
           <div class="trade-header-cell" data-i18n="tlog.col.result">Result</div>
@@ -2540,17 +2565,12 @@
       <div id="settings-session-hint" class="settings-parsed-hint"></div>
       <p class="settings-hint" data-i18n="settings.session_window_hint">Controls news heads-up timing, session-aware greetings, and rule reminders.</p>
     </div>
-    <!-- ACCOUNT section. Two distinct ways to expand your account list:
-           1. + Add account  — creates a parallel active account. For master-
-              account-with-copier setups where multiple funded accounts run
-              in parallel.
-           2. Move to a new account  — archives the current account and
-              creates the next one. For "I'm done with this phase, starting a
-              new one" transitions (e.g. challenge → funded).
-         Linked groups bundle accounts together for one-click "log this trade
-         to all of them" fan-out. Each fanned-out trade is independently
-         editable so divergence between accounts (slippage, partial fills)
-         can be recorded honestly. -->
+    <!-- ACCOUNT section. The + Add account button creates a parallel active
+         account — for master-account-with-copier setups where multiple funded
+         accounts run in parallel. Linked groups bundle accounts together for
+         one-click "log this trade to all of them" fan-out. Each fanned-out
+         trade is independently editable so divergence between accounts
+         (slippage, partial fills) can be recorded honestly. -->
     <div class="settings-section" data-section="accounts" style="display:none;">
       <div id="settings-accounts-list"><!-- Filled by renderSettingsAccountsList() --></div>
       <div class="settings-account-new">
@@ -2560,15 +2580,6 @@
           <input type="text" id="settings-account-add-name" class="settings-input" maxlength="40" placeholder="Account name (e.g. MFF 100K)" />
           <input type="number" id="settings-account-add-balance" class="settings-input" min="0" step="any" placeholder="Starting balance" />
           <button type="button" id="settings-account-add-create" class="settings-btn" data-i18n="settings.add">Add</button>
-        </div>
-      </div>
-      <div class="settings-account-new" style="margin-top: 18px;">
-        <div class="settings-label" data-i18n="settings.transition_label">Move to a new account</div>
-        <p class="settings-hint" data-i18n="settings.transition_hint">Use this when you start a new phase of your trading career — e.g. moving from a challenge account to a funded one. Your current account will be archived (its trade history stays intact and viewable via the account picker). New trades from now on will be logged against the new account.</p>
-        <div class="settings-account-new-row">
-          <input type="text" id="settings-account-new-name" class="settings-input" maxlength="40" placeholder="New account name (e.g. Funded £140k)" />
-          <input type="number" id="settings-account-new-balance" class="settings-input" min="0" step="any" placeholder="Starting balance" />
-          <button type="button" id="settings-account-new-create" class="settings-btn" data-i18n="settings.transition">Move</button>
         </div>
       </div>
       <!-- Linked groups: bundle 2+ accounts so a single "log to group" fans out
@@ -6145,23 +6156,36 @@
     return firstActive ? firstActive.id : null;
   }
   // -----------------------------------------------------------------------------
-  // Log-to field render — sits above the trade log on the Review page. Picks
-  // which account (or linked group) new trade rows will be tagged to. Always
-  // visible: shows a static label when there's only one option, a full
-  // dropdown when multiple accounts and/or groups exist.
+  // Log-to picker — sits in the Trade Log section header (replacing the legacy
+  // Trade Copier button). Pill button + dropdown panel, mirroring the scope
+  // picker pattern. Picks which account or group new trade rows will be tagged
+  // to when added via "+ Add trade". Selection persists in data.review.logTo
+  // so it survives reload mid-session.
+  //
+  // Hidden when there's only one possible target (single active account, no
+  // groups) — the implicit selection still gets persisted to data.review.logTo
+  // so save-time fan-out logic just works.
   // -----------------------------------------------------------------------------
   function renderLogToField() {
-    const wrap = document.getElementById('log-to-field');
-    if (!wrap) return;
+    const wrap = document.getElementById('logto-picker');
+    const btnLbl = document.getElementById('logto-picker-label');
+    const menu = document.getElementById('logto-picker-menu');
+    if (!wrap || !btnLbl || !menu) return;
     const activeAccounts = (data.accounts || []).filter(a => a.status === 'active');
     const groups = data.linkedGroups || [];
-    const labelText = (typeof t === 'function') ? t('logto.label') : 'Log to';
-    const groupSfx  = (typeof t === 'function') ? t('logto.group_suffix') : 'group';
-    // Trivial case: no active accounts at all — render an inert placeholder.
+    // Trivial case: no active accounts — hide entirely.
     if (activeAccounts.length === 0) {
-      wrap.innerHTML = `<span class="log-to-label">${labelText}</span><span class="log-to-static">—</span>`;
+      wrap.style.display = 'none';
       return;
     }
+    // Hide when there's only one possible target — there's nothing to pick.
+    // Persist the implicit single selection so save-time fan-out resolves it.
+    if (activeAccounts.length === 1 && groups.length === 0) {
+      wrap.style.display = 'none';
+      if (data.review) data.review.logTo = activeAccounts[0].id;
+      return;
+    }
+    wrap.style.display = '';
     // Resolve current selection: explicit per-session pick → default → fallback.
     let currentId = data.review && data.review.logTo;
     if (currentId) {
@@ -6169,38 +6193,76 @@
       if (!r.kind) currentId = null;
     }
     if (!currentId) currentId = getDefaultLogTarget();
-    // Compact case: exactly 1 active account and 0 groups → no choice → static label.
-    if (activeAccounts.length === 1 && groups.length === 0) {
-      const acc = activeAccounts[0];
-      wrap.innerHTML = `<span class="log-to-label">${labelText}</span><span class="log-to-static">${escHtmlGlobal(acc.name)}</span>`;
-      // Persist the implicit selection so save-time getLogTargetAccountIds
-      // resolves cleanly without re-deriving each time.
-      if (data.review) data.review.logTo = acc.id;
-      return;
+    // Compute label for the pill button.
+    let label = '—';
+    if (currentId) {
+      const r = resolveLogTarget(currentId);
+      if (r.kind === 'account') label = r.account.name;
+      else if (r.kind === 'group') label = r.group.name;
     }
-    // Multi case: full dropdown — accounts first, then groups in a separate optgroup.
-    const optsAccounts = activeAccounts.map(a =>
-      `<option value="${a.id}" ${a.id === currentId ? 'selected' : ''}>${escHtmlGlobal(a.name)}</option>`
-    ).join('');
-    const optsGroups = groups.map(g =>
-      `<option value="${g.id}" ${g.id === currentId ? 'selected' : ''}>${escHtmlGlobal(g.name)} (${g.accountIds.length}-${groupSfx})</option>`
-    ).join('');
-    const groupsBlock = groups.length > 0
-      ? `<optgroup label="Groups">${optsGroups}</optgroup>`
-      : '';
-    wrap.innerHTML = `<span class="log-to-label">${labelText}</span>
-      <select class="log-to-select" id="log-to-select">
-        <optgroup label="Accounts">${optsAccounts}</optgroup>
-        ${groupsBlock}
-      </select>`;
-    const sel = wrap.querySelector('#log-to-select');
-    if (sel) {
-      sel.addEventListener('change', () => {
-        if (data.review) data.review.logTo = sel.value;
-        saveData();
+    btnLbl.textContent = label;
+    // Build dropdown contents — Accounts header + active accounts, then (if any)
+    // Groups header + groups with their member chips below the name.
+    const parts = [];
+    const accountsHdr = (typeof t === 'function') ? t('scope.accounts_header') : 'Accounts';
+    parts.push(`<div class="logto-picker-section-header">${accountsHdr}</div>`);
+    activeAccounts.forEach(acc => {
+      const cls = 'logto-picker-item' + (currentId === acc.id ? ' active' : '');
+      parts.push(`<button type="button" class="${cls}" data-logto-id="${acc.id}">${escHtmlGlobal(acc.name)}</button>`);
+    });
+    if (groups.length > 0) {
+      const groupsHdr = (typeof t === 'function') ? t('scope.groups_header') : 'Groups';
+      parts.push(`<div class="logto-picker-section-header">${groupsHdr}</div>`);
+      groups.forEach(g => {
+        const memberNames = (g.accountIds || [])
+          .map(id => ((data.accounts || []).find(a => a.id === id) || {}).name)
+          .filter(Boolean);
+        const memberLine = memberNames.length > 0
+          ? `<span class="logto-picker-group-members">${memberNames.map(n => escHtmlGlobal(n)).join(' + ')}</span>`
+          : '';
+        const cls = 'logto-picker-item logto-picker-item-group' + (currentId === g.id ? ' active' : '');
+        parts.push(`<button type="button" class="${cls}" data-logto-id="${g.id}">
+          <span class="logto-picker-group-name">${escHtmlGlobal(g.name)}</span>
+          ${memberLine}
+        </button>`);
       });
     }
+    menu.innerHTML = parts.join('');
+    // Wire item clicks. Set target, save, close menu, re-render so the pill
+    // label updates immediately.
+    menu.querySelectorAll('.logto-picker-item').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const id = btn.dataset.logtoId;
+        if (data.review) data.review.logTo = id;
+        saveData();
+        wrap.classList.remove('open');
+        renderLogToField();
+      });
+    });
   }
+  // Wire the Log-to pill button — toggle dropdown on click, close on outside
+  // click. Same pattern as the scope picker; runs once at script load (script
+  // sits at the bottom of <body> so the DOM elements exist by this point).
+  (function wireLogToPicker() {
+    const wrap = document.getElementById('logto-picker');
+    const btn  = document.getElementById('logto-picker-btn');
+    if (!wrap || !btn) return;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const wasOpen = wrap.classList.contains('open');
+      if (!wasOpen) {
+        try { renderLogToField(); } catch (e) {}
+      }
+      wrap.classList.toggle('open');
+      btn.setAttribute('aria-expanded', String(!wasOpen));
+    });
+    document.addEventListener('click', e => {
+      if (wrap.classList.contains('open') && !wrap.contains(e.target)) {
+        wrap.classList.remove('open');
+        btn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  })();
   // Series-of-10 view scoped to the current scope. In lifetime scope this
   // returns the canonical data.currentSeries / data.history (already maintained
   // as the user's full lifetime journey through 10-trade chunks). In account
