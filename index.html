@@ -104,7 +104,7 @@
      can be positioned and styled (native browser tooltips appear below-right with
      no styling control). Hidden by default; fades in on hover with a small upward
      translate for a subtle pop. */
-  .settings-gear::after { content: attr(data-tooltip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(4px); background: var(--bg-elev); border: 1px solid var(--border-2); color: var(--text-mid); padding: 7px 14px 7px 16px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 150ms, transform 150ms; }
+  .settings-gear::after { content: attr(data-tooltip); position: absolute; bottom: calc(100% + 6px); left: 50%; transform: translateX(-50%) translateY(4px); background: var(--bg-elev); border: 1px solid var(--border-2); color: var(--text-mid); padding: 10px 16px 7px 18px; line-height: 1; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; white-space: nowrap; opacity: 0; pointer-events: none; transition: opacity 150ms, transform 150ms; }
   .settings-gear:hover::after { opacity: 1; transform: translateX(-50%) translateY(0); }
   /* Settings modal sections: nav row + section bodies. Each nav item toggles
      visibility of one section. Active item has a bottom border accent. */
@@ -3129,6 +3129,10 @@
       'pot.col_left_pct': 'LEFT (%)',
       'pot.unit_pct': '% of Balance',
       'pot.pct_headline': 'Across {N} tracked win{S}, your account moved {CAP} of starting balance. The available move was {POT} — that\'s {LEFT} of balance left on the table.',
+      'pot.pct_need_balance': 'Set your account starting balance in Settings to see how holding winners longer would have moved your account.',
+      'pot.pct_too_few': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. Need more tracked wins (15+) before a confident rule can be projected.',
+      'pot.pct_no_rule': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. No widening rule beats your current exits — your discipline is paying off.',
+      'pot.pct_with_rule': 'Across {N} tracked win{S}, your account moved {NET} of starting balance — leaving {POT} on the table. Holding each winner {OPT} longer would have brought you to {NEW_NET} (a {IMPACT} improvement).',
       'pot.col_capture': 'CAPTURE',
       'pot.disclaimer': "The table shows raw figures based on each trade's maximum reach. The recommendation above already accounts for slippage, hesitation, and missed reversals — trades captured within 85% of potential are excluded, and the suggested stretch is half the average meaningful gap. Treat the table as context, not a target.",
       'pot.trades_in_scope': '{N} trades in scope',
@@ -3913,6 +3917,10 @@
       'pot.col_left_pct': 'EN LA MESA (%)',
       'pot.unit_pct': '% del Saldo',
       'pot.pct_headline': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {CAP} del saldo inicial. El movimiento disponible era {POT} — eso es {LEFT} del saldo dejado sobre la mesa.',
+      'pot.pct_need_balance': 'Establece el saldo inicial de tu cuenta en Ajustes para ver cómo aguantar a las ganadoras más tiempo habría movido tu cuenta.',
+      'pot.pct_too_few': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Necesitas más ganadoras rastreadas (15+) antes de proyectar una regla con confianza.',
+      'pot.pct_no_rule': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Ninguna regla de ampliación supera tus salidas actuales — tu disciplina está dando frutos.',
+      'pot.pct_with_rule': 'En {N} ganadora{S} rastreada{S}, tu cuenta se movió {NET} del saldo inicial — dejando {POT} sobre la mesa. Aguantar cada ganadora {OPT} más habría llevado tu cuenta a {NEW_NET} (una mejora de {IMPACT}).',
       'pot.col_capture': 'CAPTURA',
       'pot.disclaimer': 'La tabla muestra cifras brutas basadas en el alcance máximo de cada operación. La recomendación de arriba ya tiene en cuenta el deslizamiento, las dudas y las reversiones perdidas — las operaciones que capturaron el 85% o más del potencial se excluyen, y el estiramiento sugerido es la mitad del promedio del hueco significativo. Trata la tabla como contexto, no como objetivo.',
       'pot.trades_in_scope': '{N} operaciones en alcance',
@@ -8682,7 +8690,6 @@
 
     const recR    = buildRecommendation('r');
     const recPips = buildRecommendation('pips');
-    const recPct  = buildRecommendation('pct');
 
     // ------------------------------------------------------------------
     // Render recommendation row. Tier label + verdict text. If capture
@@ -8811,6 +8818,127 @@
         <span class="rec-tier ${tier.cls}">${tier.label} <span class="rec-tier-n">· ${rec.n} ${rec.unitName.toLowerCase()} ${rec.n === 1 ? tWin(1) : tWin(2)}</span></span>
         ${pctHeadline}
         ${body}
+      </div>`;
+    }
+
+    // ------------------------------------------------------------------
+    // % MODE — cumulative account-balance view. Different shape from the
+    // R/Pips rec block on purpose: instead of "average per-trade gap",
+    // this shows the same Net % and Pot % numbers the user sees on the
+    // Statistics tab and Series-of-10 KPIs, then projects what their
+    // Net % would have been if they'd adopted R-mode's optimum hold rule.
+    //
+    // Why R-mode's optimum drives the projection: the rule (hold every
+    // winner +0.3R longer) is the behavioural change the user can
+    // actually adopt. Expressing that rule in % units doesn't make sense
+    // — a single % stretch maps to different R amounts depending on
+    // each trade's risk size, so it's not a coherent rule. The R rule
+    // IS coherent; the % side just translates its impact into account-
+    // balance terms (which is what the user cares about: "what would my
+    // account be at?").
+    //
+    // Numbers shown:
+    //   Net %  = sum of (net £ × copies) across allTrades ÷ lifetime SB × 100
+    //            — matches Statistics tab Net % verbatim.
+    //   Pot %  = sum of (gap × risk × copies) across tracked winners
+    //            ÷ lifetime SB × 100 — matches Statistics tab Pot %.
+    //   Impact = R-mode optimum stretch projected per-trade (precise £
+    //            via each winner's own risk), divided by SB × 100.
+    //   New Net % = Net % + Impact.
+    // ------------------------------------------------------------------
+    function renderPctRec(recR, scopedTrades) {
+      const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+      // Set-your-balance fallback. Without a valid starting balance, every %
+      // figure on this rec block would divide by zero — show a hint instead.
+      if (!recR || ltSB <= 0) {
+        return `<div class="rec-row">
+          <span class="rec-text" style="color:var(--text-dim);">${t('pot.pct_need_balance')}</span>
+        </div>`;
+      }
+
+      const tier = tierMeta[recR.tier];
+      const fmtPct = v => (v >= 0 ? '+' : '') + v.toFixed(2) + '%';
+      const fmtPp  = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'pp';
+      const fmtR   = v => (v >= 0 ? '+' : '') + v.toFixed(1) + 'R';
+
+      // Net % — cumulative across every trade in the period (W/L/BE, copy-weighted).
+      // Same calculation Statistics → "Net R · Net %" KPI uses, so the figure ties out.
+      const netGbp = scopedTrades.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
+      const netPct = (netGbp / ltSB) * 100;
+
+      // Pot % — cumulative across tracked winners only. Same formula used by the
+      // Statistics tab Pot R/Pot % tile and the day/weekly/monthly modals.
+      const trackedWinsP = scopedTrades.filter(t =>
+        t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR)
+      );
+      const potGbp = trackedWinsP.reduce((s, t) => {
+        const r    = parseFloat(t.r) || 0;
+        const risk = parseFloat(t.risk) || 0;
+        return s + ((t.potentialR - r) * risk * tradeCopies(t));
+      }, 0);
+      const potPct = (potGbp / ltSB) * 100;
+
+      // Project R-mode's optimum stretch onto each tracked winner with precise
+      // per-trade £ accounting (each trade uses its own risk × copies, instead
+      // of recR's averaged gbpPerUnit). Honest worst-case on misses: assume the
+      // wider target wasn't reached → trade reverts to SL (-1R per copy).
+      const optR = recR.optimumStretch || 0;
+      let impactGbp = 0;
+      let projHits = 0, projMisses = 0;
+      if (optR > 0 && recR.tier !== 'too-few' && recR.projectedNet > 0) {
+        trackedWinsP.forEach(t => {
+          const r      = parseFloat(t.r) || 0;
+          const risk   = parseFloat(t.risk) || 0;
+          const copies = tradeCopies(t);
+          const newTarget = r + optR;
+          if (newTarget <= t.potentialR) {
+            // Hit: trade captures the wider target instead of the actual exit.
+            impactGbp += optR * risk * copies;
+            projHits++;
+          } else {
+            // Miss: trade would have reverted to SL instead of the actual exit.
+            // We lose the captured gain AND the SL distance (1R per copy).
+            impactGbp -= (r + 1) * risk * copies;
+            projMisses++;
+          }
+        });
+      }
+      const impactPct = (impactGbp / ltSB) * 100;
+      const newNetPct = netPct + impactPct;
+
+      // Body text — three branches:
+      //   • too-few:  sample too small to project a rule honestly.
+      //   • no-rule:  optimum was 0 (or projected net is non-positive) →
+      //               your current exits are already near-optimal.
+      //   • with-rule: a stretch beats current → tell the user what their
+      //                Net % would have been if they'd adopted it.
+      let body;
+      if (recR.tier === 'too-few') {
+        body = t('pot.pct_too_few')
+          .replace(/\{N\}/g, recR.n)
+          .replace(/\{S\}/g, recR.n === 1 ? '' : 's')
+          .replace(/\{NET\}/g, `<strong>${fmtPct(netPct)}</strong>`)
+          .replace(/\{POT\}/g, `<strong class="rec-downside">${fmtPct(potPct)}</strong>`);
+      } else if (optR === 0 || impactPct <= 0) {
+        body = t('pot.pct_no_rule')
+          .replace(/\{N\}/g, recR.n)
+          .replace(/\{S\}/g, recR.n === 1 ? '' : 's')
+          .replace(/\{NET\}/g, `<strong>${fmtPct(netPct)}</strong>`)
+          .replace(/\{POT\}/g, `<strong class="rec-downside">${fmtPct(potPct)}</strong>`);
+      } else {
+        body = t('pot.pct_with_rule')
+          .replace(/\{N\}/g, recR.n)
+          .replace(/\{S\}/g, recR.n === 1 ? '' : 's')
+          .replace(/\{NET\}/g, `<strong>${fmtPct(netPct)}</strong>`)
+          .replace(/\{POT\}/g, `<strong class="rec-downside">${fmtPct(potPct)}</strong>`)
+          .replace(/\{OPT\}/g, `<strong class="rec-suggest">${fmtR(optR)}</strong>`)
+          .replace(/\{NEW_NET\}/g, `<strong class="rec-suggest">${fmtPct(newNetPct)}</strong>`)
+          .replace(/\{IMPACT\}/g, `<strong class="rec-suggest">${fmtPp(impactPct)}</strong>`);
+      }
+
+      return `<div class="rec-row">
+        <span class="rec-tier ${tier.cls}">${tier.label} <span class="rec-tier-n">· ${recR.n} ${recR.n === 1 ? tWin(1) : tWin(2)}</span></span>
+        <span class="rec-text">${body}</span>
       </div>`;
     }
 
@@ -8980,7 +9108,7 @@
 
     simWrap.innerHTML = `
       <div class="potr-rec-block">
-        ${activeMetric === 'pct' ? renderRec(recPct) : (activeMetric === 'r' ? renderRec(recR) : renderRec(recPips))}
+        ${activeMetric === 'pct' ? renderPctRec(recR, allTrades) : (activeMetric === 'r' ? renderRec(recR) : renderRec(recPips))}
       </div>
       ${summaryRowHtml}
       ${showTable ? tableHtml : ''}
