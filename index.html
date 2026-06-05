@@ -6268,14 +6268,17 @@
       }
     }
     btnLbl.textContent = activeLabel;
-    // Auto-expand a section if the user's current scope lives inside it — so
-    // the visible "selected" item never goes missing in the dropdown.
-    const expanded = { ...{ accounts: _scopePickerSectionsExpanded.accounts,
-                            groups:   _scopePickerSectionsExpanded.groups,
-                            archived: _scopePickerSectionsExpanded.archived } };
-    if (active.some(a => a.id === scopeId))   expanded.accounts = true;
-    if (groups.some(g => g.id === scopeId))   expanded.groups = true;
-    if (archived.some(a => a.id === scopeId)) expanded.archived = true;
+    // Section expand state for this render. The dropdown-open handler is
+    // responsible for setting _scopePickerSectionsExpanded to its desired
+    // initial state (defaults + auto-expand for the current scope's section).
+    // From there, the user's manual toggles drive the state directly — we
+    // don't override per-render, so collapsing a section sticks even when
+    // it contains the current scope.
+    const expanded = {
+      accounts: _scopePickerSectionsExpanded.accounts,
+      groups:   _scopePickerSectionsExpanded.groups,
+      archived: _scopePickerSectionsExpanded.archived
+    };
     // Reusable header builder — keeps each section's styling and toggle logic
     // identical so the picker feels visually consistent across sections.
     const sectionHeader = (key, label, count) => {
@@ -6386,10 +6389,19 @@
       const wasOpen = wrap.classList.contains('open');
       // Re-render before opening so the menu always reflects current state.
       if (!wasOpen) {
-        // Reset section expand states to defaults on every reopen. Auto-expand
-        // for "current scope is inside this section" still kicks in during
-        // render, so the user's current selection is never hidden.
+        // Reset section expand states to defaults on every reopen, then
+        // auto-expand whichever section contains the current scope so the
+        // user's selected item is visible without them having to click around.
+        // After this, manual toggles win — re-renders don't re-apply auto-
+        // expand, so collapsing a section that contains the current scope
+        // actually collapses it.
         _scopePickerSectionsExpanded = { accounts: true, groups: false, archived: false };
+        const scopeId  = currentScopeId();
+        const accounts = Array.isArray(data.accounts) ? data.accounts : [];
+        const groups   = Array.isArray(data.linkedGroups) ? data.linkedGroups : [];
+        if (accounts.some(a => a.status === 'active'   && a.id === scopeId)) _scopePickerSectionsExpanded.accounts = true;
+        if (groups.some(g => g.id === scopeId))                               _scopePickerSectionsExpanded.groups = true;
+        if (accounts.some(a => a.status === 'archived' && a.id === scopeId)) _scopePickerSectionsExpanded.archived = true;
         try { renderScopePicker(); } catch (e) {}
       }
       wrap.classList.toggle('open');
