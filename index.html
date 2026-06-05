@@ -95,6 +95,10 @@
   .settings-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
   .settings-input { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border-2); color: var(--text); padding: 10px 12px; font-family: 'DM Mono', monospace; font-size: 12px; outline: none; transition: border-color 200ms; }
   .settings-input:hover, .settings-input:focus { border-color: var(--text-mid); }
+  /* Compact-width variant: the modal is 780px wide, but a name input or session
+     dropdown only needs ~280px to read comfortably. Stretching the input across
+     the full modal makes the form look like a wall of text fields. */
+  .settings-input.settings-input-compact { max-width: 280px; }
   .settings-hint { font-family: 'Fraunces', serif; font-size: 12px; line-height: 1.5; color: var(--text-dim); margin: 10px 0 0; }
   .settings-parsed-hint { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text-dim); margin-top: 10px; min-height: 14px; }
   /* Session times row: two native time pickers separated by an en-dash. The pickers
@@ -645,13 +649,16 @@
   .series-dot.clickable { cursor: pointer; transition: opacity 200ms, transform 200ms; }
   .series-dot.clickable:hover { opacity: 0.78; transform: scale(1.06); }
   .history-list { margin-top: 32px; }
-  .history-row { display: grid; grid-template-columns: 60px 1.3fr 1.2fr 1.1fr 1.1fr 0.9fr; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; }
+  .history-row { display: grid; grid-template-columns: 50px 1.2fr 1.3fr 1.1fr 1.1fr 1fr; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 6px; }
   .history-cell .hist-sep { color: var(--text-dim); margin: 0 1px; }
-  /* Series History (#history-list) — keep each completed-series row on a single line.
-     The Total R and Pot R cells now include a balance % suffix that risked wrapping to
-     two lines on narrower widths; nowrap + slightly smaller font keeps the table tidy. */
-  #history-list .history-cell { white-space: nowrap; font-size: 11px; padding: 14px 10px; overflow: hidden; text-overflow: ellipsis; }
-  #history-list .history-cell .label { font-size: 9px; }
+  /* Series History (#history-list) — one row per completed series of 10, each on
+     a single line. A sticky header row at the top labels the columns so we don't
+     have to repeat "Date" / "Total R" / "Pot R" / "Captured" inside every row.
+     Comfortable 12px content font, tighter horizontal padding so all six cells
+     fit cleanly even with the balance % suffixes on Total R and Pot R. */
+  #history-list .history-cell { white-space: nowrap; font-size: 12px; padding: 14px 10px; overflow: hidden; text-overflow: ellipsis; }
+  #history-list .history-row.headers { background: var(--bg); margin-bottom: 8px; }
+  #history-list .history-row.headers .history-cell { font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); padding: 10px 10px; }
   /* Breakdown tables (DOW, Side, Type) — flex-based layout for guaranteed fixed row heights */
   #type-breakdown .history-list, #side-breakdown .history-list, #dow-breakdown .history-list {
     border: 1px solid var(--border-2); background: var(--bg); margin-top: 8px;
@@ -2239,7 +2246,7 @@
     <!-- PROFILE section: change user name. -->
     <div class="settings-section" data-section="profile">
       <label class="settings-label" data-i18n="settings.profile_name_label">Your name</label>
-      <input type="text" id="settings-profile-name" class="settings-input" maxlength="40" placeholder="Your name" />
+      <input type="text" id="settings-profile-name" class="settings-input settings-input-compact" maxlength="40" placeholder="Your name" />
       <p class="settings-hint" data-i18n="settings.profile_name_hint">Used in greetings, weekly review messages, and copied Discord posts.</p>
     </div>
     <!-- SESSION section: change session label + times.
@@ -2249,7 +2256,7 @@
          that reads sessionName as a display string. -->
     <div class="settings-section" data-section="session" style="display:none;">
       <label class="settings-label" data-i18n="settings.session_name_label">Session</label>
-      <select id="settings-session-select" class="settings-input">
+      <select id="settings-session-select" class="settings-input settings-input-compact">
         <option value="London"   data-i18n="settings.session_london">London</option>
         <option value="Asia"     data-i18n="settings.session_asia">Asia</option>
         <option value="New York" data-i18n="settings.session_newyork">New York</option>
@@ -5105,7 +5112,13 @@
         id: 'acc_main',
         name: 'Main',
         status: 'active',
-        createdAt: new Date().toISOString(),
+        // Main owns every trade ever logged — it is the legacy account, the one
+        // that existed before multi-account support shipped. Setting createdAt to
+        // epoch ensures every pre-existing trade falls within its lifetime, so the
+        // Settings "current balance" reflects the user's full trading history.
+        // New accounts the user creates later use new Date().toISOString() and so
+        // only own trades dated after their creation, as intended.
+        createdAt: new Date(0).toISOString(),
         // For brand-new users with no settings.startingBalance yet, start at 0.
         // The balance onboarding modal will fire (since 0 isn't > 0) and the
         // user's chosen value will overwrite both the account and data.settings.
@@ -5123,6 +5136,16 @@
       if (!acc.createdAt) acc.createdAt = new Date().toISOString();
       if (typeof acc.startingBalance !== 'number') acc.startingBalance = 0;
     });
+    // One-time backfill: existing users who migrated before the time-aware balance
+    // fix have acc_main.createdAt set to migration-time, which (incorrectly) excludes
+    // all of their pre-existing trades from the per-account current balance. Reset
+    // it to epoch so the legacy Main account owns its entire trading history. Guarded
+    // by a flag so this only runs once per install.
+    if (!d._mainAccountCreatedAtBackfillV1) {
+      const mainAcc = d.accounts.find(a => a.id === 'acc_main');
+      if (mainAcc) mainAcc.createdAt = new Date(0).toISOString();
+      d._mainAccountCreatedAtBackfillV1 = true;
+    }
     // Ensure activeAccountId points to an existing active account; if not, snap
     // to the first active (or first overall). Note: with the current shared-data
     // model `activeAccountId` no longer has functional impact on stats (which are
@@ -7053,7 +7076,17 @@
 
     const histWrap = document.getElementById('history-list');
     if (data.history.length === 0) { histWrap.innerHTML = `<div class="empty">${t('empty.first_series')}</div>`; return; }
-    histWrap.innerHTML = '';
+    // Header row sits at the top of the list. Column labels here replace the inline
+    // per-row labels — repeating "Date / Total R / Pot R / Captured" in every row
+    // ate too much horizontal space and forced wrapping at narrow widths.
+    histWrap.innerHTML = `<div class="history-row headers">
+      <div class="history-cell center">#</div>
+      <div class="history-cell center">${t('lbl.date')}</div>
+      <div class="history-cell center">${t('lbl.w')} / ${t('lbl.l')} / ${t('lbl.be')}</div>
+      <div class="history-cell center">${t('lbl.total_r')}</div>
+      <div class="history-cell center">${t('lbl.pot_r')}</div>
+      <div class="history-cell center">${t('lbl.captured')}</div>
+    </div>`;
     data.history.forEach((s, idx) => {
       const st = calcSeriesStats(s.trades);
       const num = data.history.length - idx;
@@ -7135,10 +7168,10 @@
       row.innerHTML = `
         <div class="history-cell label center">#${num}</div>
         <div class="history-cell center">${dateLabel}</div>
-        <div class="history-cell center"><span class="label">${t('lbl.w')}</span> ${st.w} <span class="hist-sep">·</span> <span class="label">${t('lbl.l')}</span> ${st.l} <span class="hist-sep">·</span> <span class="label">${t('lbl.be')}</span> ${st.be}</div>
-        <div class="history-cell center ${cls}"><span class="label">${t('lbl.total_r')}</span> ${st.netR >= 0 ? '+' : ''}${st.netR.toFixed(2)}R${balPctHtml}</div>
-        <div class="history-cell center ${potCellCls}"><span class="label">${t('lbl.pot_r')}</span> ${potCellHtml}</div>
-        <div class="history-cell center"><span class="label">${t('lbl.captured')}</span> ${pctCellHtml}</div>
+        <div class="history-cell center">${st.w} <span class="hist-sep">·</span> ${st.l} <span class="hist-sep">·</span> ${st.be}</div>
+        <div class="history-cell center ${cls}">${st.netR >= 0 ? '+' : ''}${st.netR.toFixed(2)}R${balPctHtml}</div>
+        <div class="history-cell center ${potCellCls}">${potCellHtml}</div>
+        <div class="history-cell center">${pctCellHtml}</div>
       `;
       histWrap.appendChild(row);
     });
