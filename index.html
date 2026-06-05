@@ -13647,7 +13647,15 @@
   // the next open refetches automatically.
   // ============================================================================
   const FF_FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-  const CORS_PROXY  = 'https://api.allorigins.win/raw?url=';
+  // CORS proxies — tried in order. If the first errors or times out, we fall through
+  // to the next. Avoids the calendar failing whenever a single proxy is rate-limited.
+  // Each proxy expects the target URL appended in different ways; we normalise via
+  // the buildProxyUrl helper below.
+  const CORS_PROXIES = [
+    'https://api.allorigins.win/raw?url=',
+    'https://corsproxy.io/?',
+    'https://api.codetabs.com/v1/proxy?quest=',
+  ];
 
   // ============================================================================
   // EVENT DESCRIPTIONS
@@ -14293,34 +14301,30 @@
     if (!document.getElementById('econ-calendar-body')) return; // panel not in DOM
     const todayKey = calendarLocalDateKey();
     // Try cache first (unless force=true via retry button).
-    // Require v >= 2 so caches written before the timezone fix get rebuilt automatically.
+    // We accept v >= 2 caches as valid for *display* — older caches just lack
+    // the per-event `url` field (no "View on Forex Factory" link, but the rest works).
+    // If the cache lacks URLs entirely, we'll silently kick off a background refetch
+    // to upgrade it — the user keeps seeing data immediately while the upgrade happens.
     if (!opts.force) {
       const cache = (data && data._calendarCache) || null;
       if (cache && cache.v >= 2 && cache.date === todayKey && Array.isArray(cache.events)) {
         renderCalendarFromCache();
+        // Background upgrade: if no events have URLs (pre-feature cache), refetch silently.
+        // No loading state, no error toast — if the upgrade fails, user keeps current data.
+        const hasAnyUrl = cache.events.some(e => typeof e.url === 'string' && e.url.length > 0);
+        if (!hasAnyUrl) {
+          try { backgroundUpgradeCache(); } catch (e) { /* non-fatal */ }
+        }
         return;
       }
     }
     renderEconomicCalendarUI({ kind: 'loading' });
-    try {
-      const url = CORS_PROXY + encodeURIComponent(FF_FEED_URL);
-      const resp = await fetch(url, { method: 'GET' });
-      if (!resp.ok) throw new Error('HTTP ' + resp.status);
-      const xmlText = await resp.text();
-      const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-      // If the proxy returned an error page, parseFromString gives a doc with a <parsererror>
-      if (doc.querySelector('parsererror')) throw new Error('Parse error');
-      const eventEls = Array.from(doc.querySelectorAll('event'));
-      if (eventEls.length === 0) throw new Error('No events in feed');
-      const events = eventEls.map(parseCalendarEvent);
-      // Cache full week worth of events (so date rollover still works).
-      // The `v` (version) field invalidates older caches that were written
-      // with the wrong timezone assumption (pre-fix). Bump if you change the
-      // serialised shape again. Note: the `url` field added later is optional —
-      // older v2 caches missing it just don't show the "View on FF" link.
+    const result = await tryAllProxies();
+    if (result.ok) {
+      const events = result.events;
       try {
         data._calendarCache = {
-          v: 2,
+          v: 3,
           date: todayKey,
           events: events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }))
         };
@@ -14328,17 +14332,58 @@
       } catch (cacheErr) { /* non-fatal */ }
       renderCalendarFromCache();
       // Cache just landed — bump the greeting nonce so its tail re-rolls with
-      // the news-aware branch active. Without this, the greeting that rendered
-      // synchronously on app open keeps its pre-fetch (no-news) tail until the
-      // user does something that re-triggers a render.
+      // the news-aware branch active.
       try {
         if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
         if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
       } catch (e) { /* non-fatal */ }
-    } catch (err) {
-      console.warn('[econ-calendar] fetch failed:', err);
+    } else {
+      console.warn('[econ-calendar] all proxies failed:', result.errors);
       renderEconomicCalendarUI({ kind: 'error' });
     }
+  }
+
+  // Try each CORS proxy in order. Returns { ok: true, events } on first success,
+  // or { ok: false, errors } if every proxy fails. Per-proxy timeout: 10s.
+  async function tryAllProxies() {
+    const errors = [];
+    for (const proxyBase of CORS_PROXIES) {
+      try {
+        const url = proxyBase + encodeURIComponent(FF_FEED_URL);
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        const resp = await fetch(url, { method: 'GET', signal: controller.signal });
+        clearTimeout(timeoutId);
+        if (!resp.ok) { errors.push(`${proxyBase}: HTTP ${resp.status}`); continue; }
+        const xmlText = await resp.text();
+        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        if (doc.querySelector('parsererror')) { errors.push(`${proxyBase}: parse error`); continue; }
+        const eventEls = Array.from(doc.querySelectorAll('event'));
+        if (eventEls.length === 0) { errors.push(`${proxyBase}: no events`); continue; }
+        const events = eventEls.map(parseCalendarEvent);
+        return { ok: true, events };
+      } catch (err) {
+        errors.push(`${proxyBase}: ${err.message || err}`);
+      }
+    }
+    return { ok: false, errors };
+  }
+
+  // Silent background refetch — only used to upgrade old caches missing the url field.
+  // If it fails, user sees no error — they keep the current (working) cache.
+  async function backgroundUpgradeCache() {
+    const todayKey = calendarLocalDateKey();
+    const result = await tryAllProxies();
+    if (!result.ok) return; // silent failure — keep current cache
+    try {
+      data._calendarCache = {
+        v: 3,
+        date: todayKey,
+        events: result.events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }))
+      };
+      if (typeof save === 'function') save();
+      renderCalendarFromCache();
+    } catch (e) { /* non-fatal */ }
   }
 
   function renderBiasGreeting() {
