@@ -9959,30 +9959,45 @@
       ? `**${n}'s Week — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`
       : `**Weekly Review — ${fmtDate(weekStart)} to ${fmtDate(weekEnd)}**`;
 
-    // Potential R + Pips left on table — same values as the KPI cards in the modal
-    const potLeftR    = (stats.mfe && stats.mfe.trackedR    > 0) ? stats.mfe.totalLeftR    : null;
-    const potLeftPips = (stats.mfe && stats.mfe.trackedPips > 0) ? stats.mfe.totalLeftPips : null;
-    const fmtR = r => (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
-    const fmtP = p => (p >= 0 ? '+' : '') + p.toFixed(0) + 'p';
     const totalRStr = (stats.totalR >= 0 ? '+' : '') + stats.totalR.toFixed(2) + 'R';
-    const totalPipsStr = (stats.totalPips >= 0 ? '+' : '') + stats.totalPips.toFixed(0) + 'p';
     // (netStr / £ amount intentionally NOT computed — money figures stay private; R + pips
     // communicate edge fine in Discord exports.)
-    const potRStr    = potLeftR    == null ? '—' : fmtR(potLeftR);
-    const potPipsStr = potLeftPips == null ? '—' : fmtP(potLeftPips);
-    // Show pips lines only if at least one trade in the period has pips logged
-    const tradesInPeriodHavePips = stats.totalPips !== 0 || (stats.mfe && stats.mfe.trackedPips > 0);
 
-    const lines = [header, ''];
+    // Compute tracked-winners Pot R the same way the Series-of-10 Discord export does:
+    // sum potentialR available on winners that have it logged, sum the R captured on those
+    // SAME winners, and derive a clean apples-to-apples capture %. Matches the series row
+    // visual (Pot R = total opportunity available, Captured = % of that opportunity taken)
+    // rather than the "R left on table" gap metric the modal headline shows.
+    const allLifetime = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
+    const tradesInPeriod = allLifetime.filter(t => {
+      const td = new Date(t.date);
+      return td >= weekStart && td <= weekEnd;
+    });
+    const tradesWithPotR = tradesInPeriod.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
+    const hasPotData = tradesWithPotR.length > 0;
+    let potRAvailable = 0, potRCaptured = 0, potPct = 0;
+    if (hasPotData) {
+      potRCaptured = tradesWithPotR.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
+      potRAvailable = tradesWithPotR.reduce((s, t) => s + t.potentialR, 0);
+      potPct = potRAvailable > 0 ? Math.round((potRCaptured / potRAvailable) * 100) : 100;
+    }
+    const potAvailStr = (potRAvailable >= 0 ? '+' : '') + potRAvailable.toFixed(2) + 'R';
+
+    const lines = [header];
     // Numbers block — fixed-width labels for clean alignment in Discord's monospace blocks.
+    // Format mirrors the Series-of-10 Discord export so the two posts read consistently.
     // No £ amounts emitted on purpose — money figures stay private; R + pips communicate edge fine.
     lines.push('```');
-    lines.push(`Trades         ${stats.totalTrades}`);
-    lines.push(`Wins           ${stats.wins}`);
-    lines.push(`Losses         ${stats.losses}`);
-    lines.push(`Break-even     ${stats.bes}`);
-    lines.push(`Total R        ${totalRStr}`);
-    lines.push(`Potential R    ${potRStr}${potLeftR == null ? '   (no Potential R logged)' : '   (left on table)'}`);
+    const PAD = 12; // label column width — values start at column 12 (matches series-of-10)
+    lines.push(`${'Trades:'.padEnd(PAD)}${stats.totalTrades}`);
+    lines.push(`${'Wins:'.padEnd(PAD)}${stats.wins}`);
+    lines.push(`${'Losses:'.padEnd(PAD)}${stats.losses}`);
+    lines.push(`${'BEs:'.padEnd(PAD)}${stats.bes}`);
+    lines.push(`${'Net R:'.padEnd(PAD)}${totalRStr}`);
+    if (hasPotData) {
+      lines.push(`${'Pot R:'.padEnd(PAD)}${potAvailStr} available`);
+      lines.push(`${'Captured:'.padEnd(PAD)}${potPct}% total`);
+    }
     lines.push('```');
 
     // Pull the latest URLs + text from the persisted weekly review (per-card arrays).
