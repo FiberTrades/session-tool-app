@@ -275,6 +275,26 @@
   .logto-picker-item-group { display: flex !important; flex-direction: column; align-items: flex-start; gap: 3px; padding: 8px 14px 10px 14px; }
   .logto-picker-group-name { font-size: 11px; }
   .logto-picker-group-members { font-size: 9px; color: var(--text-dim); letter-spacing: 0.03em; text-transform: none; line-height: 1.3; }
+  /* + Add Trade popover — opens below the button when there's a target choice
+     to make (multi-account / has groups). Each item is a single-tap action:
+     tapping confirms the target AND adds the trade in one motion. The session
+     default (data.review.logTo) gets updated to the picked target so subsequent
+     "+ Add trade" clicks default to that same target. */
+  .add-trade-wrap { position: relative; display: inline-block; }
+  .add-trade-popover { display: none; position: absolute; top: calc(100% + 6px); left: 0; min-width: 260px; background: var(--bg-elev); border: 1px solid var(--border-2); z-index: 75; box-shadow: 0 8px 24px rgba(0,0,0,0.25); }
+  .add-trade-popover.open { display: block; }
+  .add-trade-popover-title { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); padding: 12px 14px 6px 14px; border-bottom: 1px solid var(--border-2); }
+  .add-trade-popover-list { max-height: 50vh; overflow-y: auto; }
+  .add-trade-popover-section-header { font-size: 9px; color: var(--text-dim); letter-spacing: 0.18em; text-transform: uppercase; padding: 10px 14px 4px 14px; }
+  .add-trade-popover-item { display: block; width: 100%; background: transparent; border: none; color: var(--text-mid); padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.05em; text-align: left; cursor: pointer; transition: background 150ms, color 150ms; }
+  .add-trade-popover-item:hover { background: var(--bg); color: var(--text); }
+  .add-trade-popover-item-default { position: relative; }
+  .add-trade-popover-item-default::after { content: 'DEFAULT'; position: absolute; right: 14px; top: 50%; transform: translateY(-50%); font-size: 8px; letter-spacing: 0.18em; color: var(--text-dim); font-style: normal; }
+  .add-trade-popover-item-group { display: flex !important; flex-direction: column; align-items: flex-start; gap: 3px; padding: 9px 14px 11px 14px; }
+  .add-trade-popover-group-name { font-size: 11px; }
+  .add-trade-popover-group-members { font-size: 9px; color: var(--text-dim); letter-spacing: 0.03em; text-transform: none; line-height: 1.3; }
+  .add-trade-popover-cancel { display: block; width: 100%; background: transparent; border: none; border-top: 1px solid var(--border-2); color: var(--text-dim); padding: 10px 14px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: color 150ms, background 150ms; text-align: center; }
+  .add-trade-popover-cancel:hover { background: var(--bg); color: var(--text-mid); }
   @media (max-width: 600px) {
     .settings-account-new-row { grid-template-columns: 1fr; }
     .settings-account-row { grid-template-columns: 1fr; }
@@ -2850,6 +2870,10 @@
       'settings.linked_group_empty': 'No linked groups yet. Create one to fan trades out across multiple accounts in a single click.',
       'logto.label': 'Log to',
       'logto.group_suffix': 'group',
+      'logto.toast_changed': 'Trades will now be logged to {N}',
+      'logto.toast_reverted': 'Reverted',
+      'add_trade.popover_title': 'Log this trade to:',
+      'add_trade.popover_cancel': 'Cancel',
       'settings.section_preferences': 'Preferences',
       'settings.display_label': 'Display',
       'settings.currency_label': 'Currency',
@@ -3667,6 +3691,10 @@
       'settings.linked_group_empty': 'Aún no hay grupos enlazados. Crea uno para replicar operaciones en varias cuentas con un solo clic.',
       'logto.label': 'Registrar en',
       'logto.group_suffix': 'grupo',
+      'logto.toast_changed': 'Las operaciones se registrarán en {N}',
+      'logto.toast_reverted': 'Revertido',
+      'add_trade.popover_title': 'Registrar esta operación en:',
+      'add_trade.popover_cancel': 'Cancelar',
       'settings.section_preferences': 'Preferencias',
       'settings.display_label': 'Visualización',
       'settings.currency_label': 'Moneda',
@@ -6233,10 +6261,40 @@
     menu.querySelectorAll('.logto-picker-item').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.dataset.logtoId;
+        // Capture previous selection for the Undo toast and to detect a no-op
+        // pick (clicking the currently-selected item). On no-op, just close
+        // the dropdown without showing a toast.
+        const previousId = data.review && data.review.logTo;
+        if (!id || id === previousId) {
+          wrap.classList.remove('open');
+          return;
+        }
         if (data.review) data.review.logTo = id;
         saveData();
         wrap.classList.remove('open');
         renderLogToField();
+        // Toast advising the user that the change took effect, with an Undo
+        // button that reverts to the previous selection. Same 10s window
+        // pattern as the account-delete toast.
+        const newLabel = (function() {
+          const r = resolveLogTarget(id);
+          if (r.kind === 'account') return r.account.name;
+          if (r.kind === 'group')   return r.group.name;
+          return '—';
+        })();
+        const tmpl = (typeof t === 'function') ? t('logto.toast_changed') : 'Trades will now be logged to {N}';
+        const msg = tmpl.replace('{N}', newLabel);
+        if (typeof showUndoToast === 'function') {
+          showUndoToast(msg, () => {
+            if (data.review) data.review.logTo = previousId;
+            saveData();
+            renderLogToField();
+            const undoneTmpl = (typeof t === 'function') ? t('logto.toast_reverted') : 'Reverted';
+            if (typeof showToast === 'function') showToast(undoneTmpl);
+          });
+        } else if (typeof showToast === 'function') {
+          showToast(msg);
+        }
       });
     });
   }
@@ -6420,12 +6478,23 @@
           return;
         }
         data.viewScope = id;
+        // Auto-sync the Log-to target to follow the new scope. When scope is
+        // an account or group, that's where new trades should naturally go.
+        // When scope is 'lifetime', leave logTo alone — it'll be derived via
+        // getDefaultLogTarget() at logging time (falls back to active account).
+        if (id !== 'lifetime' && data.review) {
+          const r = resolveLogTarget(id);
+          if (r.kind === 'account' || r.kind === 'group') {
+            data.review.logTo = id;
+          }
+        }
         saveData();
         wrap.classList.remove('open');
         // Re-render everything that depends on scope. The full set of
         // renderers is wide; we trigger the most common ones individually
         // and fall back to a page-aware redraw for the active tab.
         try { renderScopePicker(); } catch (e) {}
+        try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
         try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
         try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
         try { if (typeof renderTradeView === 'function') renderTradeView(); } catch (e) {}
@@ -7375,13 +7444,12 @@
     // Section show/hide + selection clearing now handled by syncReviewSectionsToActiveTrade.
   }
 
-  function addTradeRow() {
-    // Determine the current log-to target. If it's a group, fan out N blank
-    // trades — one per account in the group, each tagged with that account's
-    // id. If it's a single account, just create one tagged blank trade. This
-    // ensures the user sees one row per account they're logging into, and the
-    // saved-to-series flow naturally produces one entry per account.
-    const targetId = data.review.logTo || getDefaultLogTarget();
+  function addTradeRow(opts) {
+    // opts.targetIdOverride lets a caller (e.g. imports) supply the target
+    // explicitly. When omitted, we fall back to the session default (which
+    // auto-syncs with the view scope — see the scope picker click handler).
+    const explicitTarget = opts && opts.targetIdOverride;
+    const targetId = explicitTarget || data.review.logTo || getDefaultLogTarget();
     const ids = getLogTargetAccountIds(targetId);
     if (ids.length === 0) {
       // No accounts available — fall through to legacy single-trade behaviour.
@@ -7403,6 +7471,11 @@
     renderReviewPreview();
     saveData();
   }
+  // + Add Trade — direct add using whichever target the Log-to picker shows.
+  // The picker auto-syncs to the current view scope, so logging follows
+  // wherever the user is currently looking. To log a single trade to a
+  // different account, they pick a new target in the Log-to picker (which
+  // shows a toast notification of the change with undo).
   document.getElementById('add-trade').addEventListener('click', addTradeRow);
 
   // Render the dynamic list of TV links for Review (per-trade — bound to active trade).
