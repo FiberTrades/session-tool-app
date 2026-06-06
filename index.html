@@ -16451,18 +16451,31 @@
   // the next open refetches automatically.
   // ============================================================================
   const FF_FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-  // CORS proxy chain. We try each in order until one succeeds. allorigins is the
-  // primary because it's been the most reliable historically, but a single-proxy
-  // setup fails badly when the provider is rate-limited, regionally blocked, or
-  // briefly down (a Spain-based user hit exactly this — allorigins unreachable
-  // from their network, fetch timed out, no fallback). The chain tolerates per-
-  // proxy issues without blocking the user from any data.
+  // CORS proxy chain. Tried in order until one succeeds.
   //
-  // Each entry is a function taking the target URL and returning the proxied URL,
-  // because the proxies use slightly different query-string formats.
+  // Primary: a Deno Deploy worker deployed by the app owner that fetches the
+  // Forex Factory feed server-side and serves it with permissive CORS
+  // headers. Edge-cached for 1 hour with stale-while-revalidate fallback up
+  // to 7 days. Free up to Deno Deploy's generous limits. Source lives at
+  // forex-calendar-deno.ts.
+  //
+  // Why Deno Deploy and not Cloudflare Workers: Forex Factory's anti-abuse
+  // layer blocks Cloudflare's shared egress IPs (long-standing FF↔Cloudflare
+  // rivalry). Tried a Cloudflare Worker first; it deployed correctly but
+  // upstream returned HTTP 429 regardless of User-Agent. Deno Deploy uses
+  // different infrastructure that FF doesn't block.
+  //
+  // Because the worker always proxies the same URL, the builder ignores its
+  // `url` argument — it doesn't need to encode a target into the query string.
+  //
+  // Fallbacks: public CORS proxies, kept in case the worker is ever offline.
+  // Each public proxy takes the target URL as a query parameter.
+  //   - allorigins.win: most reliable historically but occasional outages
+  //   - codetabs: 5 req/sec rate limit, generally up
+  // Removed: corsproxy.io / corsfix (require paid plans for production domains).
   const CORS_PROXIES = [
+    () => 'https://smooth-quail-95.fibertrades.deno.net',
     url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-    url => 'https://corsproxy.io/?' + encodeURIComponent(url),
     url => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(url),
   ];
 
@@ -17581,17 +17594,25 @@
   }
 
   // Walk the proxy chain in order. Returns on first success; only reports
-  // failure if EVERY proxy fails. Per-proxy errors are silent — we don't want
-  // to spam the console when the user is just on a flaky network that times
-  // out the first attempt but succeeds on the second.
+  // failure if EVERY proxy fails. When the chain is exhausted, logs each
+  // per-proxy error to the console so users (or anyone debugging) can see
+  // exactly what's failing — opaque "calendar unavailable" alone makes
+  // remote troubleshooting impossible.
   async function tryFetch() {
-    let lastError = 'no proxies configured';
+    const failures = [];
     for (let i = 0; i < CORS_PROXIES.length; i++) {
       const result = await tryFetchVia(CORS_PROXIES[i]);
       if (result.ok) return result;
-      lastError = result.error;
+      // Reconstruct the proxy URL for the log so it's clear which one failed.
+      const proxyUrl = CORS_PROXIES[i](FF_FEED_URL).split('?')[0];
+      failures.push(`${proxyUrl}: ${result.error}`);
     }
-    return { ok: false, error: lastError };
+    // Only logged once per fetch attempt, after the whole chain has been tried.
+    // Not an error-level log because this is a recoverable condition — the
+    // calendar UI shows a Retry button. console.warn keeps it visible without
+    // tripping error reporters.
+    console.warn('Economic calendar fetch failed across all proxies:\n' + failures.join('\n'));
+    return { ok: false, error: failures[failures.length - 1] || 'all proxies failed' };
   }
 
   // Silent background refetch — used to upgrade stale or url-less caches.
