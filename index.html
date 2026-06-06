@@ -1363,7 +1363,7 @@
   .modal-close:hover { color: var(--text); border-color: var(--text-mid); }
   .modal-stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 24px; }
   .modal-stat { background: var(--bg-elev); padding: 14px; text-align: center; }
-  .modal-stat .label { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; }
+  .modal-stat .label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .modal-stat .v { font-family: 'DM Mono', monospace; font-size: 16px; letter-spacing: 0.02em; }
   .modal-stat .v.good { color: var(--good); }
   .modal-stat .v.bad  { color: var(--bad); }
@@ -16922,19 +16922,18 @@
     // (the part after /live/ or /watch?v=), and paste it below as
     // BLOOMBERG_LIVE_VIDEO_ID. Whole fix takes ~10 seconds.
     //
-    // The channel-based "live_stream" embed URL would be more durable but
-    // Bloomberg's channel appears to block that endpoint (returns "video
-    // unavailable"). Hardcoded video ID is the working alternative.
-    //
-    // TITLE-BAR CROP: rather than opening the YouTube embed URL directly,
-    // we open a blank popup and write an HTML wrapper into it. The wrapper
-    // positions the iframe with top: -70px and height: calc(100% + 70px)
-    // so the YouTube title overlay (which sits at the top of the player)
-    // is cropped off the visible area, while the bottom controls remain
-    // visible at the bottom of the popup. If 70px isn't enough crop on
-    // your screen, increase the CROP_TOP constant below.
-    const BLOOMBERG_LIVE_VIDEO_ID = 'Ab7T16CiSmY';
-    const CROP_TOP = 70; // px to crop off the top of the iframe
+    // BOTTOM CONTROLS MASK: we wrap the iframe in HTML and overlay a black
+    // mask that covers the bottom controls bar (play/pause, volume, time,
+    // settings, theater, PiP) — leaving a small unmasked rectangle at the
+    // bottom-right corner where YouTube places the fullscreen button. The
+    // user can click that fullscreen button to enter fullscreen mode, where
+    // all native YouTube controls become fully accessible (the mask is part
+    // of our document, not the iframe's content, so it doesn't follow into
+    // fullscreen). MASK_BOTTOM_HEIGHT / FS_BUTTON_WIDTH are tuned to
+    // YouTube's current controls layout — if Bloomberg's UI shifts, adjust.
+    const BLOOMBERG_LIVE_VIDEO_ID = 'iEpJwprxDdk';
+    const MASK_BOTTOM_HEIGHT = 50; // px — covers the controls bar at the bottom
+    const FS_BUTTON_WIDTH    = 50; // px — width left UNCOVERED at the right for the fullscreen button
     // If the browser's popup blocker intercepts the call (window.open
     // returns null), we surface a toast advising how to allow it.
     const bloombergBtn = document.getElementById('econ-bloomberg-btn');
@@ -16952,10 +16951,7 @@
         // Features string: small default size, minimal chrome, resizable.
         // Most browsers honour `popup=yes` to render a chrome-light window.
         const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
-        // Open an empty popup first, then write our HTML wrapper into it.
-        // This is more reliable than data: URLs (some browsers restrict
-        // cross-origin iframes inside data: URLs) and gives us same-origin
-        // access to write the document.
+        // Open empty popup, then write wrapper HTML with iframe + mask.
         _bloombergWin = window.open('', 'fiberTradesBloomberg', features);
         // Popup blocker intercept → window.open returns null. Surface a
         // toast so the user knows to allow popups for the journal domain.
@@ -16965,14 +16961,18 @@
           else alert(msg);
           return;
         }
-        // The wrapper: full-window black background, iframe positioned to
-        // crop the top by CROP_TOP px. Parameters added to the YouTube URL:
-        //   autoplay=1         — start playing immediately
-        //   rel=0              — don't show "related videos" cards at end
+        // YouTube embed parameters:
+        //   autoplay=1         — start playing immediately (muted by browser policy)
+        //   rel=0              — no end-of-video related-videos cards
         //   iv_load_policy=3   — hide annotations
         //   playsinline=1      — don't auto-fullscreen on mobile
-        //   modestbranding=1   — partial effect (deprecated but harmless)
+        //   modestbranding=1   — partial branding reduction (deprecated but harmless)
         const ytUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
+        // Wrapper HTML: iframe at natural size + a bottom-strip mask that
+        // hides the controls area EXCEPT the rightmost FS_BUTTON_WIDTH px
+        // where the fullscreen button lives. pointer-events: auto on the
+        // mask (default) blocks clicks in the masked region so the user
+        // can't accidentally activate hidden controls.
         const wrapperHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16981,13 +16981,15 @@
 <title>Bloomberg TV — Fiber Trades</title>
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
-  .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
-  iframe { position: absolute; top: -${CROP_TOP}px; left: 0; width: 100%; height: calc(100% + ${CROP_TOP}px); border: 0; display: block; }
+  .wrap { position: relative; width: 100%; height: 100%; }
+  iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .bottom-mask { position: absolute; bottom: 0; left: 0; right: ${FS_BUTTON_WIDTH}px; height: ${MASK_BOTTOM_HEIGHT}px; background: #000; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <iframe src="${ytUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+    <div class="bottom-mask"></div>
   </div>
 </body>
 </html>`;
