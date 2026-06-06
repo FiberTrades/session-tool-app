@@ -97,15 +97,15 @@
      management, user name, session window, starting balance, etc. Stays visible
      from any tab. Monochrome line-drawn SVG matching the folder + magnifying glass
      icons elsewhere in the app. */
-  .settings-gear { position: absolute; top: 0; right: 0; background: transparent; border: none; padding: 0; cursor: pointer; color: var(--text-dim); opacity: 0.7; transition: opacity 150ms, color 150ms; line-height: 0; }
+  .settings-gear { position: absolute; top: -8px; right: 0; background: transparent; border: none; padding: 0; cursor: pointer; color: var(--text-dim); opacity: 0.7; transition: opacity 150ms, color 150ms; line-height: 0; }
   .settings-gear:hover { opacity: 1; color: var(--text); }
-  .settings-gear svg { width: 28px; height: 28px; display: block; }
+  .settings-gear svg { width: 26px; height: 26px; display: block; }
   /* Scope picker — sits to the LEFT of the settings gear in the top-right.
      A pill-shaped button + dropdown listing all accounts (active first,
      archived after a divider, then a Lifetime option). The active account
      scope is the default; switching to an archived account lets the user
      view that phase of their trading career as a time-capsule. */
-  .scope-picker { position: absolute; top: 0; right: 44px; }
+  .scope-picker { position: absolute; top: -8px; right: 44px; }
   .scope-picker-btn { display: inline-flex; align-items: center; gap: 8px; background: transparent; border: 1px solid var(--border-2); color: var(--text-mid); padding: 7px 10px 7px 12px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; transition: color 150ms, border-color 150ms; max-width: 240px; }
   .scope-picker-btn:hover { color: var(--text); border-color: var(--text-mid); }
   .scope-picker.open .scope-picker-btn { color: var(--text); border-color: var(--text-mid); }
@@ -16933,13 +16933,14 @@
     // (the part after /live/ or /watch?v=), and paste it below as
     // BLOOMBERG_LIVE_VIDEO_ID. Whole fix takes ~10 seconds.
     //
-    // TOP TITLE CROP: we wrap the iframe in HTML and shift it up by
-    // CROP_TOP pixels (with matching extra height) so the YouTube title
-    // overlay at the top is pushed out of the visible area. Bottom
-    // controls stay visible at the bottom of the popup since the
-    // iframe's bottom edge is anchored at popup_height.
+    // TOP TITLE MASK: we wrap the iframe in HTML and overlay a black mask
+    // div over the top CROP_TOP pixels to hide YouTube's title overlay.
+    // We use a mask rather than shifting the iframe upward because the
+    // shift approach reliably breaks clicks on the bottom controls
+    // (volume / settings). Trade-off: the mask also covers the top
+    // CROP_TOP pixels of actual video content, not just the title.
     const BLOOMBERG_LIVE_VIDEO_ID = 'iEpJwprxDdk';
-    const CROP_TOP = 70; // px to crop off the top of the iframe (hides title overlay)
+    const CROP_TOP = 70; // px to mask off the top of the iframe (hides title overlay)
     // If the browser's popup blocker intercepts the call (window.open
     // returns null), we surface a toast advising how to allow it.
     const bloombergBtn = document.getElementById('econ-bloomberg-btn');
@@ -16974,10 +16975,14 @@
         //   playsinline=1      — don't auto-fullscreen on mobile
         //   modestbranding=1   — partial branding reduction (deprecated but harmless)
         const ytUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
-        // Wrapper HTML: iframe shifted up by CROP_TOP px, with matching
-        // extra height so the bottom edge stays at the popup's bottom
-        // edge. This hides the title overlay at the top of the player
-        // while leaving the bottom controls visible.
+        // Wrapper HTML: iframe at its NATURAL position + a black mask div
+        // overlaying the top of the popup to hide YouTube's title overlay.
+        // Earlier we tried shifting the iframe upward (top: -70px) to crop
+        // the title bar, but that reliably broke clicks on bottom controls
+        // (volume slider, settings gear). The mask approach keeps the iframe
+        // at its natural position so all controls work normally, at the cost
+        // of also covering the top ~70px of actual video content (usually
+        // sky/empty area of the studio set for Bloomberg TV).
         const wrapperHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -16987,12 +16992,14 @@
 <style>
   html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
   .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
-  iframe { position: absolute; top: -${CROP_TOP}px; left: 0; width: 100%; height: calc(100% + ${CROP_TOP}px); border: 0; display: block; }
+  iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .top-mask { position: absolute; top: 0; left: 0; right: 0; height: ${CROP_TOP}px; background: #000; }
 </style>
 </head>
 <body>
   <div class="wrap">
     <iframe src="${ytUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+    <div class="top-mask"></div>
   </div>
 </body>
 </html>`;
