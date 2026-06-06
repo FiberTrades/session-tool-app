@@ -14394,7 +14394,10 @@
   ];
 
   function timeOfDayOpener() {
-    const hr = new Date().getHours();
+    const now = new Date();
+    const hr = now.getHours();
+    const dow = now.getDay(); // 0=Sun, 6=Sat
+    const isWeekend = (dow === 0 || dow === 6);
     let pool, slotName;
     if      (hr >= 5  && hr < 12) { pool = TIME_OPENERS.morning;   slotName = 'morning'; }
     else if (hr >= 12 && hr < 14) { pool = TIME_OPENERS.earlyAft;  slotName = 'earlyAft'; }
@@ -14402,9 +14405,25 @@
     else if (hr >= 18 && hr < 23) { pool = TIME_OPENERS.evening;   slotName = 'evening'; }
     else                           { pool = TIME_OPENERS.lateNight; slotName = 'lateNight'; }
     pool = localizedPool(pool, 'TIME_OPENERS.' + slotName);
+    // ────────────────────────────────────────────────────────────────────────────────
+    // WEEKEND FILTER — on Saturday/Sunday, strip openers that imply active or
+    // imminent trading. Examples removed: "Charts already, eh", "Pre-market,
+    // post-coffee", "Caffeinated and ready, are we", "Open the curtains, then
+    // the charts", "Afternoon, trader", "Tea or trade", "Evening. The markets
+    // are slowing — you don't have to", and their Spanish equivalents. Lines
+    // that *describe* the market being asleep (e.g. "Markets are asleep", "The
+    // candles have gone home") are factually fine on weekends so they stay.
+    // If filtering empties the pool (shouldn't happen with current pools), we
+    // fall back to the unfiltered list so the greeting still renders.
+    // ────────────────────────────────────────────────────────────────────────────────
+    if (isWeekend) {
+      const TRADING_OPENER_PATTERN = /\b(charts?|gráficos?|caffeinated|cafeína|trader)\b|pre[\s-]?(market|mercado)|eyes here|tea or trade|té o trade|candle'?s? not|no\s+ha\s+cerrado|market'?s?\s+(\w+\s+)?(already|late|lying|slowing)|mercado'?s?\s+(ya|llega|miente|miran|aflojan)/i;
+      const filtered = pool.filter(o => !TRADING_OPENER_PATTERN.test(o));
+      if (filtered.length > 0) pool = filtered;
+    }
     // Hash the date + hour-slot so different slots within the same day get different picks
     // (helpful if the user comes back later — opener won't repeat verbatim).
-    const slotKey = `${todayKey()}:opener:${hr < 12 ? 'm' : hr < 14 ? 'ea' : hr < 18 ? 'a' : hr < 23 ? 'e' : 'ln'}`;
+    const slotKey = `${todayKey()}:opener:${hr < 12 ? 'm' : hr < 14 ? 'ea' : hr < 18 ? 'a' : hr < 23 ? 'e' : 'ln'}${isWeekend ? ':wkd' : ''}`;
     const idx = hashStr(slotKey) % pool.length;
     return pool[idx];
   }
@@ -16290,6 +16309,21 @@
     // Seed evolves with the greeting nonce (bumps on every trade change) so the line
     // updates live as the day progresses.
     const seed = todayKey() + ':nonce:' + _greetingNonce;
+    // ────────────────────────────────────────────────────────────────────────────────
+    // WEEKEND GATE — forex markets close Friday evening and reopen Sunday evening.
+    // On Saturday/Sunday no actual trading should be happening, so the bias tail
+    // (which can otherwise include "trade what you see" style nudges) is routed to
+    // the same weekend pool used by the Review page. This keeps the assistant
+    // honest: don't tell the trader to "trade what you see" when there's no market.
+    // ────────────────────────────────────────────────────────────────────────────────
+    try {
+      const dow = new Date().getDay(); // 0=Sun, 6=Sat
+      if (dow === 0 || dow === 6) {
+        const pool = localizedPool(REVIEW_IDLE_WEEKEND, 'REVIEW_IDLE_WEEKEND');
+        const idx = pickWithAntiRepeat(pool, 'REVIEW_IDLE_WEEKEND', seed + ':weekend-bias');
+        return pool[idx];
+      }
+    } catch (e) { /* fail open — fall through to weekday logic */ }
     // ────────────────────────────────────────────────────────────────────────────────
     // OUT-OF-SESSION GATE — if the user is outside their configured trading window AND
     // today is a weekday (weekends already have REVIEW_IDLE_WEEKEND), route to a pool
