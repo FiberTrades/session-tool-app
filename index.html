@@ -16923,13 +16923,15 @@
     // (the part after /live/ or /watch?v=), and paste it below as
     // BLOOMBERG_LIVE_VIDEO_ID. Whole fix takes ~10 seconds.
     //
-    // TITLE BAR NOTE: YouTube's title overlay (with the "Watch on YouTube"
-    // link) auto-hides after ~3 seconds of mouse inactivity. We don't
-    // mask it because every approach we tried either (a) blocked the
-    // bottom controls (iframe shift), or (b) left a visible black block
-    // at the top (mask div). The direct embed URL is the cleanest balance —
-    // title shows briefly on open and on hover, hides itself otherwise.
+    // LINK MASK: small black rectangle in the top-right corner of the
+    // popup that covers ONLY YouTube's "Watch on YouTube" link in the
+    // title overlay. Title text on the left and bottom controls are
+    // untouched. The mask is always visible (we can't detect when the
+    // title overlay hides itself), but it's small enough to blend with
+    // the natural darkness at the top of most Bloomberg shots.
     const BLOOMBERG_LIVE_VIDEO_ID = 'iEpJwprxDdk';
+    const LINK_MASK_WIDTH  = 150; // px — width of the corner mask
+    const LINK_MASK_HEIGHT = 50;  // px — height of the corner mask
     // If the browser's popup blocker intercepts the call (window.open
     // returns null), we surface a toast advising how to allow it.
     const bloombergBtn = document.getElementById('econ-bloomberg-btn');
@@ -16939,13 +16941,6 @@
       let _bloombergWin = null;
       bloombergBtn.onclick = (ev) => {
         ev.stopPropagation();
-        // YouTube embed URL with quality-of-life parameters:
-        //   autoplay=1         — start playing immediately (muted by browser policy)
-        //   rel=0              — no end-of-video related-videos cards
-        //   iv_load_policy=3   — hide annotations
-        //   playsinline=1      — don't auto-fullscreen on mobile
-        //   modestbranding=1   — partial branding reduction (deprecated but harmless)
-        const url = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
         // If we already have a reference and it's still open, just focus it
         // rather than re-opening (which can interrupt the stream).
         if (_bloombergWin && !_bloombergWin.closed) {
@@ -16954,14 +16949,51 @@
         // Features string: small default size, minimal chrome, resizable.
         // Most browsers honour `popup=yes` to render a chrome-light window.
         const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
-        _bloombergWin = window.open(url, 'fiberTradesBloomberg', features);
+        // Open empty popup, then write wrapper HTML with link-mask overlay.
+        _bloombergWin = window.open('', 'fiberTradesBloomberg', features);
         // Popup blocker intercept → window.open returns null. Surface a
         // toast so the user knows to allow popups for the journal domain.
         if (!_bloombergWin) {
           const msg = (typeof t === 'function') ? t('econ.bloomberg_blocked') : 'Allow pop-ups for this site to open Bloomberg TV.';
           if (typeof showToast === 'function') showToast(msg);
           else alert(msg);
+          return;
         }
+        // YouTube embed parameters:
+        //   autoplay=1         — start playing immediately (muted by browser policy)
+        //   rel=0              — no end-of-video related-videos cards
+        //   iv_load_policy=3   — hide annotations
+        //   playsinline=1      — don't auto-fullscreen on mobile
+        //   modestbranding=1   — partial branding reduction (deprecated but harmless)
+        const ytUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
+        // Wrapper HTML: iframe at its NATURAL position + a small black
+        // mask div in the top-right corner covering ONLY the "Watch on
+        // YouTube" link area. Title text, bottom controls, and the rest
+        // of the video are untouched. Tune LINK_MASK_WIDTH/HEIGHT if
+        // YouTube's overlay layout shifts.
+        const wrapperHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bloomberg TV — Fiber Trades</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .link-mask { position: absolute; top: 0; right: 0; width: ${LINK_MASK_WIDTH}px; height: ${LINK_MASK_HEIGHT}px; background: #000; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <iframe src="${ytUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+    <div class="link-mask"></div>
+  </div>
+</body>
+</html>`;
+        _bloombergWin.document.open();
+        _bloombergWin.document.write(wrapperHtml);
+        _bloombergWin.document.close();
       };
     }
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
