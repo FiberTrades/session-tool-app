@@ -97,9 +97,9 @@
      management, user name, session window, starting balance, etc. Stays visible
      from any tab. Monochrome line-drawn SVG matching the folder + magnifying glass
      icons elsewhere in the app. */
-  .settings-gear { position: absolute; top: 0; right: 0; background: transparent; border: 1px solid var(--border-2); padding: 5px 8px; cursor: pointer; color: var(--text-dim); opacity: 0.7; transition: opacity 150ms, color 150ms, border-color 150ms; line-height: 0; }
-  .settings-gear:hover { opacity: 1; color: var(--text); border-color: var(--text-mid); }
-  .settings-gear svg { width: 18px; height: 18px; display: block; }
+  .settings-gear { position: absolute; top: 0; right: 0; background: transparent; border: none; padding: 0; cursor: pointer; color: var(--text-dim); opacity: 0.7; transition: opacity 150ms, color 150ms; line-height: 0; }
+  .settings-gear:hover { opacity: 1; color: var(--text); }
+  .settings-gear svg { width: 28px; height: 28px; display: block; }
   /* Scope picker — sits to the LEFT of the settings gear in the top-right.
      A pill-shaped button + dropdown listing all accounts (active first,
      archived after a divider, then a Lifetime option). The active account
@@ -16932,7 +16932,14 @@
     // Bloomberg live stream on YouTube, copy the video ID from the URL
     // (the part after /live/ or /watch?v=), and paste it below as
     // BLOOMBERG_LIVE_VIDEO_ID. Whole fix takes ~10 seconds.
+    //
+    // TOP TITLE CROP: we wrap the iframe in HTML and shift it up by
+    // CROP_TOP pixels (with matching extra height) so the YouTube title
+    // overlay at the top is pushed out of the visible area. Bottom
+    // controls stay visible at the bottom of the popup since the
+    // iframe's bottom edge is anchored at popup_height.
     const BLOOMBERG_LIVE_VIDEO_ID = 'iEpJwprxDdk';
+    const CROP_TOP = 70; // px to crop off the top of the iframe (hides title overlay)
     // If the browser's popup blocker intercepts the call (window.open
     // returns null), we surface a toast advising how to allow it.
     const bloombergBtn = document.getElementById('econ-bloomberg-btn');
@@ -16942,13 +16949,6 @@
       let _bloombergWin = null;
       bloombergBtn.onclick = (ev) => {
         ev.stopPropagation();
-        // YouTube embed URL with quality-of-life parameters:
-        //   autoplay=1         — start playing immediately (muted by browser policy)
-        //   rel=0              — no end-of-video related-videos cards
-        //   iv_load_policy=3   — hide annotations
-        //   playsinline=1      — don't auto-fullscreen on mobile
-        //   modestbranding=1   — partial branding reduction (deprecated but harmless)
-        const url = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
         // If we already have a reference and it's still open, just focus it
         // rather than re-opening (which can interrupt the stream).
         if (_bloombergWin && !_bloombergWin.closed) {
@@ -16957,14 +16957,48 @@
         // Features string: small default size, minimal chrome, resizable.
         // Most browsers honour `popup=yes` to render a chrome-light window.
         const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
-        _bloombergWin = window.open(url, 'fiberTradesBloomberg', features);
+        // Open empty popup, then write wrapper HTML with top-cropped iframe.
+        _bloombergWin = window.open('', 'fiberTradesBloomberg', features);
         // Popup blocker intercept → window.open returns null. Surface a
         // toast so the user knows to allow popups for the journal domain.
         if (!_bloombergWin) {
           const msg = (typeof t === 'function') ? t('econ.bloomberg_blocked') : 'Allow pop-ups for this site to open Bloomberg TV.';
           if (typeof showToast === 'function') showToast(msg);
           else alert(msg);
+          return;
         }
+        // YouTube embed parameters:
+        //   autoplay=1         — start playing immediately (muted by browser policy)
+        //   rel=0              — no end-of-video related-videos cards
+        //   iv_load_policy=3   — hide annotations
+        //   playsinline=1      — don't auto-fullscreen on mobile
+        //   modestbranding=1   — partial branding reduction (deprecated but harmless)
+        const ytUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
+        // Wrapper HTML: iframe shifted up by CROP_TOP px, with matching
+        // extra height so the bottom edge stays at the popup's bottom
+        // edge. This hides the title overlay at the top of the player
+        // while leaving the bottom controls visible.
+        const wrapperHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bloomberg TV — Fiber Trades</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  iframe { position: absolute; top: -${CROP_TOP}px; left: 0; width: 100%; height: calc(100% + ${CROP_TOP}px); border: 0; display: block; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <iframe src="${ytUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+  </div>
+</body>
+</html>`;
+        _bloombergWin.document.open();
+        _bloombergWin.document.write(wrapperHtml);
+        _bloombergWin.document.close();
       };
     }
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
