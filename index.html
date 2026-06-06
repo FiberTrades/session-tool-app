@@ -1786,7 +1786,7 @@
           </div>
         </div>
         <div class="econ-calendar-body" id="econ-calendar-body">
-          <div class="econ-calendar-loading" data-i18n="econ.loading">Loading today's events…</div>
+          <div class="econ-calendar-loading" data-i18n="econ.loading">Loading events…</div>
         </div>
       </div>
     </div>
@@ -3260,7 +3260,10 @@
       'econ.title': 'Economic Calendar',
       'econ.view': 'View',
       'econ.tap_to_expand': 'Tap to expand',
-      'econ.loading': 'Loading today\'s events…',
+      'econ.loading': 'Loading events…',
+      'econ.loading_today': 'Loading today\'s events…',
+      'econ.loading_tomorrow': 'Loading tomorrow\'s events…',
+      'econ.loading_week': 'Loading this week\'s events…',
       'econ.empty': 'No economic events scheduled today.',
       'econ.error': 'Calendar unavailable right now.',
       'econ.retry': 'Retry',
@@ -4113,7 +4116,10 @@
       'econ.title': 'Calendario Económico',
       'econ.view': 'Ver',
       'econ.tap_to_expand': 'Toca para expandir',
-      'econ.loading': 'Cargando eventos de hoy…',
+      'econ.loading': 'Cargando eventos…',
+      'econ.loading_today': 'Cargando eventos de hoy…',
+      'econ.loading_tomorrow': 'Cargando eventos de mañana…',
+      'econ.loading_week': 'Cargando eventos de esta semana…',
       'econ.empty': 'No hay eventos económicos programados hoy.',
       'econ.error': 'Calendario no disponible ahora mismo.',
       'econ.retry': 'Reintentar',
@@ -17318,10 +17324,17 @@
   function renderCalendarFromCache() {
     const cache = (data && data._calendarCache) || null;
     // Require v >= 2 — earlier caches were written with the wrong timezone
-    // and shouldn't be rendered. Falls back to 'loading' so a fresh fetch
-    // can re-populate with correctly-timed events.
+    // and shouldn't be rendered. With no usable cache, kick off a fresh
+    // fetch instead of sitting on the loading state forever. This handles
+    // the case where the initial fetch failed and the user later clicked a
+    // filter pill (e.g. "This Week") expecting *something* to happen — the
+    // old behaviour was to silently show "loading" with no fetch in flight,
+    // leaving them stuck. fetchEconomicCalendar manages its own state
+    // (loading → ok/error), so there's no infinite-loop risk: when called
+    // with no cache it skips its early-return and goes straight to fetching.
     if (!cache || cache.v < 2 || !Array.isArray(cache.events) || cache.events.length === 0) {
       renderEconomicCalendarUI({ kind: 'loading' });
+      try { fetchEconomicCalendar(); } catch (e) { /* non-fatal */ }
       return;
     }
     const events = cache.events.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
@@ -17379,7 +17392,15 @@
     // Refresh the controls each render so filter labels reflect current language
     renderCalendarControls();
     if (state.kind === 'loading') {
-      body.innerHTML = `<div class="econ-calendar-loading">${t('econ.loading')}</div>`;
+      // Loading text reflects the currently-selected filter so users on
+      // "Tomorrow" or "This Week" don't see "Loading today's events…".
+      // Falls back to the generic key if the filter helper is missing
+      // (defensive — shouldn't happen in normal flow).
+      const f = (typeof getCalendarFilters === 'function') ? getCalendarFilters() : { dateRange: 'today' };
+      const loadingKey = f.dateRange === 'tomorrow' ? 'econ.loading_tomorrow'
+                      : f.dateRange === 'week'     ? 'econ.loading_week'
+                      :                              'econ.loading_today';
+      body.innerHTML = `<div class="econ-calendar-loading">${t(loadingKey)}</div>`;
       return;
     }
     if (state.kind === 'error') {
