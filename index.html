@@ -16445,12 +16445,20 @@
   // the next open refetches automatically.
   // ============================================================================
   const FF_FEED_URL = 'https://nfs.faireconomy.media/ff_calendar_thisweek.xml';
-  // CORS proxy. We use just allorigins — it's the only free option I've verified works
-  // reliably. Earlier attempts at a fallback chain (corsproxy.io, codetabs) failed because
-  // those services either require paid auth now or have changed their API formats.
-  // When allorigins is rate-limited, we fall back to whatever's in the cache rather than
-  // failing hard — see fetchEconomicCalendar below.
-  const CORS_PROXY = 'https://api.allorigins.win/raw?url=';
+  // CORS proxy chain. We try each in order until one succeeds. allorigins is the
+  // primary because it's been the most reliable historically, but a single-proxy
+  // setup fails badly when the provider is rate-limited, regionally blocked, or
+  // briefly down (a Spain-based user hit exactly this — allorigins unreachable
+  // from their network, fetch timed out, no fallback). The chain tolerates per-
+  // proxy issues without blocking the user from any data.
+  //
+  // Each entry is a function taking the target URL and returning the proxied URL,
+  // because the proxies use slightly different query-string formats.
+  const CORS_PROXIES = [
+    url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+    url => 'https://corsproxy.io/?' + encodeURIComponent(url),
+    url => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(url),
+  ];
 
   // ============================================================================
   // EVENT DESCRIPTIONS
@@ -17526,12 +17534,13 @@
     }
   }
 
-  // Single-proxy fetch. Returns { ok: true, events } on success, { ok: false, error } on failure.
+  // Single-proxy attempt — used internally by tryFetch.
+  // Returns { ok: true, events } on success, { ok: false, error } on failure.
   // 10s timeout via Promise.race (avoids AbortSignal which can't cross postMessage boundaries).
-  async function tryFetch() {
+  async function tryFetchVia(buildUrl) {
     const TIMEOUT_MS = 10000;
     try {
-      const url = CORS_PROXY + encodeURIComponent(FF_FEED_URL);
+      const url = buildUrl(FF_FEED_URL);
       const fetchPromise = fetch(url, { method: 'GET' });
       const timeoutPromise = new Promise((_, reject) =>
         setTimeout(() => reject(new Error('timeout')), TIMEOUT_MS)
@@ -17548,6 +17557,20 @@
     } catch (err) {
       return { ok: false, error: err.message || String(err) };
     }
+  }
+
+  // Walk the proxy chain in order. Returns on first success; only reports
+  // failure if EVERY proxy fails. Per-proxy errors are silent — we don't want
+  // to spam the console when the user is just on a flaky network that times
+  // out the first attempt but succeeds on the second.
+  async function tryFetch() {
+    let lastError = 'no proxies configured';
+    for (let i = 0; i < CORS_PROXIES.length; i++) {
+      const result = await tryFetchVia(CORS_PROXIES[i]);
+      if (result.ok) return result;
+      lastError = result.error;
+    }
+    return { ok: false, error: lastError };
   }
 
   // Silent background refetch — used to upgrade stale or url-less caches.
