@@ -2805,10 +2805,10 @@
   <div class="bloomberg-floater-header" id="bloomberg-floater-header">
     <span class="bloomberg-floater-title">BLOOMBERG TV</span>
     <div class="bloomberg-floater-actions">
-      <button type="button" class="bloomberg-floater-btn" id="bloomberg-floater-popout" aria-label="Open in separate window">
+      <button type="button" class="bloomberg-floater-btn" id="bloomberg-floater-popout" aria-label="Open in separate window" title="Unpeg — open in a separate window you can drag to another screen or outside the app">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/></svg>
       </button>
-      <button type="button" class="bloomberg-floater-btn bloomberg-floater-close" id="bloomberg-floater-close" aria-label="Close">×</button>
+      <button type="button" class="bloomberg-floater-btn bloomberg-floater-close" id="bloomberg-floater-close" aria-label="Close" title="Close">×</button>
     </div>
   </div>
   <div class="bloomberg-floater-body">
@@ -17009,6 +17009,16 @@
     // (the part after /live/ or /watch?v=), and paste it below as
     // BLOOMBERG_LIVE_VIDEO_ID. Whole fix takes ~10 seconds.
     const BLOOMBERG_LIVE_VIDEO_ID = 'iEpJwprxDdk';
+    // LINK MASK (popup-only): small black rectangle in the top-right corner of
+    // the SEPARATE popup window covering YouTube's "Watch on YouTube" link in
+    // the title overlay. Title text on the left and bottom controls are
+    // untouched. The mask is always visible (we can't detect when YouTube's
+    // title overlay hides itself), but it's small enough to blend with the
+    // natural darkness at the top of most Bloomberg shots. The in-app floater
+    // does NOT use this mask — the link is visible there because the floater
+    // stays attached to the app context anyway.
+    const LINK_MASK_WIDTH  = 100; // px
+    const LINK_MASK_HEIGHT = 25;  // px
     // Cached refs for the floater DOM. All looked up once, all may be null on
     // pages where the markup wasn't injected (defensive).
     const bloombergBtn      = document.getElementById('econ-bloomberg-btn');
@@ -17034,6 +17044,13 @@
       // every time the user reopens the floater after a transient hide.
       if (!bbFloaterIframe.src) bbFloaterIframe.src = bbYtUrl;
       bbFloater.hidden = false;
+      // If the user closed the floater, then resized the browser (maximize /
+      // un-maximize / responsive shrink), the inline left/top from a previous
+      // drag may now place the floater outside the visible area. Clamp to
+      // current viewport bounds on open. Run after a frame so the browser has
+      // computed the new layout (constrainBloombergFloater uses
+      // getBoundingClientRect which needs a layout pass).
+      requestAnimationFrame(constrainBloombergFloater);
     }
     function bbFloaterClose() {
       if (!bbFloater) return;
@@ -17048,16 +17065,40 @@
         bbFloaterClose();
         return;
       }
-      // Otherwise open a new popup. Small default size, minimal chrome, resizable.
+      // Open empty popup, then write wrapper HTML with link-mask overlay
+      // (vs. navigating directly to bbYtUrl — we need our own document so we
+      // can inject the corner mask div alongside the iframe).
       const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
-      _bloombergWin = window.open(bbYtUrl, 'fiberTradesBloomberg', features);
-      // Popup blocker intercept → window.open returns null. Surface a toast.
+      _bloombergWin = window.open('', 'fiberTradesBloomberg', features);
       if (!_bloombergWin) {
         const msg = (typeof t === 'function') ? t('econ.bloomberg_blocked') : 'Allow pop-ups for this site to open Bloomberg TV.';
         if (typeof showToast === 'function') showToast(msg);
         else alert(msg);
         return;
       }
+      const wrapperHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bloomberg TV — Fiber Trades</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; display: block; }
+  .link-mask { position: absolute; top: 0; right: 0; width: ${LINK_MASK_WIDTH}px; height: ${LINK_MASK_HEIGHT}px; background: #000; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <iframe src="${bbYtUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+    <div class="link-mask"></div>
+  </div>
+</body>
+</html>`;
+      _bloombergWin.document.open();
+      _bloombergWin.document.write(wrapperHtml);
+      _bloombergWin.document.close();
       bbFloaterClose();
     }
 
@@ -17158,6 +17199,43 @@
         document.body.style.userSelect = '';
       });
     }
+
+    // Keep the floater inside the viewport when the browser window changes
+    // size. Fixes "floater disappears after maximize / un-maximize" — without
+    // this, the inline left/top coords from a previous drag can end up outside
+    // the new viewport bounds. We clamp both size (in case the floater was
+    // resized larger than the new viewport) and position (to ensure at least
+    // the floater header stays clickable on-screen).
+    function constrainBloombergFloater() {
+      if (!bbFloater || bbFloater.hidden) return;
+      const rect = bbFloater.getBoundingClientRect();
+      // Clamp size first if the floater exceeds the viewport
+      let w = rect.width, h = rect.height;
+      let sizeChanged = false;
+      if (w > window.innerWidth)  { w = window.innerWidth;  sizeChanged = true; }
+      if (h > window.innerHeight) { h = window.innerHeight; sizeChanged = true; }
+      if (sizeChanged) {
+        bbFloater.style.width  = w + 'px';
+        bbFloater.style.height = h + 'px';
+      }
+      // Then clamp position. Use the (possibly updated) size for max bounds.
+      const maxX = window.innerWidth  - w;
+      const maxY = window.innerHeight - h;
+      let x = rect.left, y = rect.top;
+      let posChanged = false;
+      if (x > maxX) { x = maxX; posChanged = true; }
+      if (y > maxY) { y = maxY; posChanged = true; }
+      if (x < 0)    { x = 0;    posChanged = true; }
+      if (y < 0)    { y = 0;    posChanged = true; }
+      if (posChanged) {
+        // Switch from right-anchored (CSS default) to left/top inline so the
+        // clamp sticks regardless of subsequent viewport changes.
+        bbFloater.style.left  = x + 'px';
+        bbFloater.style.top   = y + 'px';
+        bbFloater.style.right = 'auto';
+      }
+    }
+    window.addEventListener('resize', constrainBloombergFloater);
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
     // The previous count suffix ("· 9/9 · High, Medium") was visual noise on a button
     // whose only job is to open the panel. Counts still visible inside the panel itself.
