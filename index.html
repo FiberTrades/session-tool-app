@@ -16697,6 +16697,12 @@
   // Replacement uses $1, $2 etc. to splice in captured groups (e.g. speaker
   // names in "FOMC Member X Speaks"). Falls through to the original title if
   // no pattern matches — better to show the English event name than nothing.
+  //
+  // NOTE: Bank holidays like "Italian Bank Holiday" are NOT handled here.
+  // They go through a dedicated handler in getEventTitle() below, because the
+  // nationality prefix needs full translation (not just a regex substitution)
+  // — otherwise we'd get half-English frankenstein strings like "Italian Día
+  // Festivo Bancario".
   const EVENT_TITLE_FUZZY_ES = [
     [/^FOMC Member (.+) Speaks$/i,        'Discurso del miembro del FOMC $1'],
     [/^MPC Member (.+) Speaks$/i,         'Discurso del miembro del MPC $1'],
@@ -16714,20 +16720,92 @@
     [/^Flash (.+) PMI$/i,                 'PMI $1 Preliminar'],
     [/^(.+) Bond Auction$/i,              'Subasta de Bonos $1'],
     [/^(.+) Rate Decision$/i,             'Decisión de Tasa $1'],
-    [/Bank Holiday/i,                     'Día Festivo Bancario'],
   ];
+
+  // Nationality adjective → country name in Spanish. Used by the bank-holiday
+  // handler below. The FF feed prefixes country-specific holidays with the
+  // English nationality adjective (e.g. "Italian Bank Holiday"). To render
+  // these naturally in Spanish we convert the adjective to the country name
+  // and use the "Festivo en [Country]" construction, which avoids gender-
+  // agreement headaches and reads as natural Spanish.
+  const NATIONALITY_TO_COUNTRY_ES = {
+    'Italian': 'Italia',
+    'French': 'Francia',
+    'German': 'Alemania',
+    'Spanish': 'España',
+    'British': 'Reino Unido',
+    'UK': 'Reino Unido',
+    'US': 'EE.UU.',
+    'American': 'EE.UU.',
+    'Japanese': 'Japón',
+    'Chinese': 'China',
+    'Canadian': 'Canadá',
+    'Australian': 'Australia',
+    'New Zealand': 'Nueva Zelanda',
+    'NZ': 'Nueva Zelanda',
+    'Swiss': 'Suiza',
+    'Mexican': 'México',
+    'Brazilian': 'Brasil',
+    'South African': 'Sudáfrica',
+    'Russian': 'Rusia',
+    'Indian': 'India',
+    'Singaporean': 'Singapur',
+    'Norwegian': 'Noruega',
+    'Swedish': 'Suecia',
+    'Danish': 'Dinamarca',
+    'Dutch': 'Países Bajos',
+    'Belgian': 'Bélgica',
+    'Austrian': 'Austria',
+    'Polish': 'Polonia',
+    'Portuguese': 'Portugal',
+    'Greek': 'Grecia',
+    'Irish': 'Irlanda',
+    'Finnish': 'Finlandia',
+    'Hong Kong': 'Hong Kong',
+    'Taiwanese': 'Taiwán',
+    'South Korean': 'Corea del Sur',
+    'Korean': 'Corea del Sur',
+    'Turkish': 'Turquía',
+    'Israeli': 'Israel',
+    'Saudi': 'Arabia Saudí',
+    'Thai': 'Tailandia',
+    'Indonesian': 'Indonesia',
+    'Malaysian': 'Malasia',
+    'Filipino': 'Filipinas',
+    'Vietnamese': 'Vietnam',
+    'Argentine': 'Argentina',
+    'Chilean': 'Chile',
+    'Colombian': 'Colombia',
+    'Peruvian': 'Perú',
+  };
 
   // Translate an event title to the active language. Returns the original
   // title unchanged if language is EN or no translation is found.
   function getEventTitle(title) {
     if (!title) return title || '';
     if ((window.__lang) !== 'es') return title;
+    // 1. Exact match in the curated dictionary
     if (EVENT_TITLES_ES[title]) return EVENT_TITLES_ES[title];
+    // 2. Bank Holiday special handling — nationality prefix + "Bank Holiday".
+    //    Matches strings like "Italian Bank Holiday", "French Bank Holiday".
+    //    The "Bank Holiday" suffix MUST be at the end (no other words after).
+    const bankHolidayMatch = title.match(/^(.+) Bank Holiday$/i);
+    if (bankHolidayMatch) {
+      const nationality = bankHolidayMatch[1].trim();
+      const country = NATIONALITY_TO_COUNTRY_ES[nationality];
+      // If we know the country in Spanish, use "Festivo en X". Otherwise
+      // fall back to a generic "Festivo Bancario" with the original
+      // nationality kept (rather than serving a broken half-translated string).
+      if (country) return `Festivo en ${country}`;
+      return `Festivo Bancario (${nationality})`;
+    }
+    // 3. Fuzzy patterns (speakers, PMIs, bond auctions, rate decisions)
     for (const [re, replacement] of EVENT_TITLE_FUZZY_ES) {
       if (re.test(title)) return title.replace(re, replacement);
     }
     return title;
   }
+
 
   const EVENT_DESCRIPTIONS_ES = {
     // ─── USD HIGH-IMPACT ─────────────────────────────────────────────────
