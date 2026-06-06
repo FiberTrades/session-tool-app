@@ -374,6 +374,34 @@
   .econ-bloomberg-btn .btn-icon { width: 12px; height: 12px; opacity: 0.7; transition: opacity 150ms; }
   .econ-bloomberg-btn:hover { color: var(--text); border-color: var(--text-mid); }
   .econ-bloomberg-btn:hover .btn-icon { opacity: 1; }
+  /* Bloomberg TV floater — draggable in-app panel. User can drag it anywhere
+     inside the viewport via the header bar, click the pop-out icon to detach
+     it into a separate browser window (uses the same window.open path), or
+     close it via the × button. While dragging, an invisible shield overlays
+     the iframe so YouTube's iframe doesn't capture the mousemove events and
+     break the drag.
+     z-index 95 sits above page content but below modals (z-index 100+) so
+     opening Settings or any modal correctly covers the floater. */
+  .bloomberg-floater { position: fixed; top: 80px; right: 32px; width: 480px; height: 286px; background: var(--bg); border: 1px solid var(--border-2); z-index: 95; display: flex; flex-direction: column; box-shadow: 0 16px 48px rgba(0,0,0,0.5); overflow: hidden; min-width: 320px; min-height: 220px; max-width: 100vw; max-height: 100vh; }
+  .bloomberg-floater[hidden] { display: none; }
+  .bloomberg-floater-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 12px; background: var(--bg-elev); border-bottom: 1px solid var(--border-2); cursor: move; user-select: none; flex-shrink: 0; }
+  .bloomberg-floater-title { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--text-dim); }
+  .bloomberg-floater-actions { display: flex; gap: 2px; }
+  .bloomberg-floater-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 4px 6px; font-family: inherit; line-height: 1; display: flex; align-items: center; justify-content: center; transition: color 150ms; }
+  .bloomberg-floater-btn:hover { color: var(--text); }
+  .bloomberg-floater-close { font-size: 18px; padding: 2px 8px; }
+  .bloomberg-floater-body { flex: 1; position: relative; overflow: hidden; background: #000; }
+  .bloomberg-floater-body iframe { width: 100%; height: 100%; border: 0; display: block; }
+  .bloomberg-floater-iframe-shield { position: absolute; inset: 0; background: transparent; z-index: 1; }
+  .bloomberg-floater-iframe-shield[hidden] { display: none; }
+  /* Custom resize handle in the bottom-right corner. We can't reliably use
+     CSS `resize: both` because the YouTube iframe intercepts mouse events
+     mid-resize, breaking the drag. This handle sits above the iframe (z-index 2)
+     so its mousedown is captured first; the actual resizing is done in JS by
+     updating .bloomberg-floater width/height on mousemove. */
+  .bloomberg-floater-resize { position: absolute; right: 0; bottom: 0; width: 16px; height: 16px; cursor: nwse-resize; z-index: 2; }
+  .bloomberg-floater-resize::after { content: ''; position: absolute; right: 3px; bottom: 3px; width: 8px; height: 8px; border-right: 2px solid var(--text-dim); border-bottom: 2px solid var(--text-dim); opacity: 0.6; transition: opacity 150ms, border-color 150ms; }
+  .bloomberg-floater-resize:hover::after { opacity: 1; border-right-color: var(--text); border-bottom-color: var(--text); }
   /* Right-side cluster wrapping Bloomberg + Filters so the parent's
      justify-content: space-between treats them as one block and keeps
      the range pills (Today/Tomorrow/Week) on the left edge. */
@@ -2767,6 +2795,26 @@
     <div id="review-modal-body"></div>
     <div id="review-modal-reflection" style="margin-top:24px;"></div>
     </div>
+  </div>
+</div>
+
+<!-- Bloomberg TV floater: draggable in-app panel. Opened by the BLOOMBERG TV
+     button in the economic-calendar controls. Drag via the header. Click the
+     pop-out icon to detach into a separate browser window. Click × to close. -->
+<div id="bloomberg-floater" class="bloomberg-floater" hidden>
+  <div class="bloomberg-floater-header" id="bloomberg-floater-header">
+    <span class="bloomberg-floater-title">BLOOMBERG TV</span>
+    <div class="bloomberg-floater-actions">
+      <button type="button" class="bloomberg-floater-btn" id="bloomberg-floater-popout" aria-label="Open in separate window">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14L21 3"/><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6"/></svg>
+      </button>
+      <button type="button" class="bloomberg-floater-btn bloomberg-floater-close" id="bloomberg-floater-close" aria-label="Close">×</button>
+    </div>
+  </div>
+  <div class="bloomberg-floater-body">
+    <iframe id="bloomberg-floater-iframe" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+    <div class="bloomberg-floater-iframe-shield" id="bloomberg-floater-iframe-shield" hidden></div>
+    <div class="bloomberg-floater-resize" id="bloomberg-floater-resize" title="Resize"></div>
   </div>
 </div>
 
@@ -16947,8 +16995,11 @@
         toggle.classList.toggle('active', !isOpen);
       };
     }
-    // Bloomberg TV pop-out — opens the live YouTube stream in a separate
-    // browser window the user can drag/resize anywhere on their desktop.
+    // Bloomberg TV — opens an in-app draggable floater showing the live YouTube
+    // stream. From inside the floater the user can drag it around the viewport
+    // (via the header), pop it out into a separate browser window (the existing
+    // window.open path), or close it. This replaces the previous behaviour of
+    // immediately opening a separate window.
     //
     // VIDEO ID NOTE: YouTube live streams have a specific video ID per
     // broadcast. If Bloomberg restarts their stream (rare — usually 24/7,
@@ -16957,79 +17008,155 @@
     // Bloomberg live stream on YouTube, copy the video ID from the URL
     // (the part after /live/ or /watch?v=), and paste it below as
     // BLOOMBERG_LIVE_VIDEO_ID. Whole fix takes ~10 seconds.
-    //
-    // LINK MASK: small black rectangle in the top-right corner of the
-    // popup that covers ONLY YouTube's "Watch on YouTube" link in the
-    // title overlay. Title text on the left and bottom controls are
-    // untouched. The mask is always visible (we can't detect when the
-    // title overlay hides itself), but it's small enough to blend with
-    // the natural darkness at the top of most Bloomberg shots.
     const BLOOMBERG_LIVE_VIDEO_ID = 'iEpJwprxDdk';
-    const LINK_MASK_WIDTH  = 1; // px — width of the corner mask
-    const LINK_MASK_HEIGHT = 1; // px — height of the corner mask
-    // If the browser's popup blocker intercepts the call (window.open
-    // returns null), we surface a toast advising how to allow it.
-    const bloombergBtn = document.getElementById('econ-bloomberg-btn');
+    // Cached refs for the floater DOM. All looked up once, all may be null on
+    // pages where the markup wasn't injected (defensive).
+    const bloombergBtn      = document.getElementById('econ-bloomberg-btn');
+    const bbFloater         = document.getElementById('bloomberg-floater');
+    const bbFloaterHeader   = document.getElementById('bloomberg-floater-header');
+    const bbFloaterIframe   = document.getElementById('bloomberg-floater-iframe');
+    const bbFloaterShield   = document.getElementById('bloomberg-floater-iframe-shield');
+    const bbFloaterPopout   = document.getElementById('bloomberg-floater-popout');
+    const bbCloseBtn        = document.getElementById('bloomberg-floater-close');
+    // YouTube embed URL with quality-of-life parameters:
+    //   autoplay=1         — start playing immediately (muted by browser policy)
+    //   rel=0              — no end-of-video related-videos cards
+    //   iv_load_policy=3   — hide annotations
+    //   playsinline=1      — don't auto-fullscreen on mobile
+    //   modestbranding=1   — partial branding reduction (deprecated but harmless)
+    const bbYtUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
+    // Single named external window — reused so repeated pop-outs don't spawn duplicates.
+    let _bloombergWin = null;
+
+    function bbFloaterOpen() {
+      if (!bbFloater) return;
+      // Only (re-)set src when the iframe is empty so we don't restart the stream
+      // every time the user reopens the floater after a transient hide.
+      if (!bbFloaterIframe.src) bbFloaterIframe.src = bbYtUrl;
+      bbFloater.hidden = false;
+    }
+    function bbFloaterClose() {
+      if (!bbFloater) return;
+      bbFloater.hidden = true;
+      // Stop the stream to free resources / mute autoplay continuing in the background.
+      bbFloaterIframe.src = '';
+    }
+    function bbPopOut() {
+      // If popup already exists, just focus it and ditch the floater.
+      if (_bloombergWin && !_bloombergWin.closed) {
+        try { _bloombergWin.focus(); } catch (e) {}
+        bbFloaterClose();
+        return;
+      }
+      // Otherwise open a new popup. Small default size, minimal chrome, resizable.
+      const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
+      _bloombergWin = window.open(bbYtUrl, 'fiberTradesBloomberg', features);
+      // Popup blocker intercept → window.open returns null. Surface a toast.
+      if (!_bloombergWin) {
+        const msg = (typeof t === 'function') ? t('econ.bloomberg_blocked') : 'Allow pop-ups for this site to open Bloomberg TV.';
+        if (typeof showToast === 'function') showToast(msg);
+        else alert(msg);
+        return;
+      }
+      bbFloaterClose();
+    }
+
     if (bloombergBtn) {
-      // Reuse a single named window so repeated clicks bring the same
-      // window to the front rather than opening a second copy.
-      let _bloombergWin = null;
       bloombergBtn.onclick = (ev) => {
         ev.stopPropagation();
-        // If we already have a reference and it's still open, just focus it
-        // rather than re-opening (which can interrupt the stream).
+        // If popup already exists and isn't closed, just focus it (don't restart).
         if (_bloombergWin && !_bloombergWin.closed) {
-          try { _bloombergWin.focus(); return; } catch (e) { /* fall through to re-open */ }
+          try { _bloombergWin.focus(); return; } catch (e) {}
         }
-        // Features string: small default size, minimal chrome, resizable.
-        // Most browsers honour `popup=yes` to render a chrome-light window.
-        const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
-        // Open empty popup, then write wrapper HTML with link-mask overlay.
-        _bloombergWin = window.open('', 'fiberTradesBloomberg', features);
-        // Popup blocker intercept → window.open returns null. Surface a
-        // toast so the user knows to allow popups for the journal domain.
-        if (!_bloombergWin) {
-          const msg = (typeof t === 'function') ? t('econ.bloomberg_blocked') : 'Allow pop-ups for this site to open Bloomberg TV.';
-          if (typeof showToast === 'function') showToast(msg);
-          else alert(msg);
-          return;
-        }
-        // YouTube embed parameters:
-        //   autoplay=1         — start playing immediately (muted by browser policy)
-        //   rel=0              — no end-of-video related-videos cards
-        //   iv_load_policy=3   — hide annotations
-        //   playsinline=1      — don't auto-fullscreen on mobile
-        //   modestbranding=1   — partial branding reduction (deprecated but harmless)
-        const ytUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
-        // Wrapper HTML: iframe at its NATURAL position + a small black
-        // mask div in the top-right corner covering ONLY the "Watch on
-        // YouTube" link area. Title text, bottom controls, and the rest
-        // of the video are untouched. Tune LINK_MASK_WIDTH/HEIGHT if
-        // YouTube's overlay layout shifts.
-        const wrapperHtml = `<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Bloomberg TV — Fiber Trades</title>
-<style>
-  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
-  .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
-  iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; display: block; }
-  .link-mask { position: absolute; top: 0; right: 0; width: ${LINK_MASK_WIDTH}px; height: ${LINK_MASK_HEIGHT}px; background: #000; }
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <iframe src="${ytUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
-    <div class="link-mask"></div>
-  </div>
-</body>
-</html>`;
-        _bloombergWin.document.open();
-        _bloombergWin.document.write(wrapperHtml);
-        _bloombergWin.document.close();
+        // Toggle floater on/off
+        if (bbFloater && bbFloater.hidden) bbFloaterOpen();
+        else bbFloaterClose();
       };
+    }
+    if (bbFloaterPopout) bbFloaterPopout.onclick = bbPopOut;
+    if (bbCloseBtn) bbCloseBtn.onclick = bbFloaterClose;
+
+    // Drag implementation for the floater header. We track mousedown/mousemove/
+    // mouseup on the document so the user can drag the floater even when the
+    // cursor briefly leaves the header. While dragging, we show a transparent
+    // shield over the iframe to prevent YouTube from capturing the mouse events
+    // and breaking the drag.
+    if (bbFloaterHeader && bbFloater) {
+      let dragging = false;
+      let offsetX = 0, offsetY = 0;
+      bbFloaterHeader.addEventListener('mousedown', (e) => {
+        // Don't drag if the click landed on a button
+        if (e.target.closest('button')) return;
+        dragging = true;
+        const rect = bbFloater.getBoundingClientRect();
+        offsetX = e.clientX - rect.left;
+        offsetY = e.clientY - rect.top;
+        // Switch from right-anchored to left/top-anchored so we can move freely
+        bbFloater.style.left = rect.left + 'px';
+        bbFloater.style.top  = rect.top + 'px';
+        bbFloater.style.right = 'auto';
+        bbFloaterShield.hidden = false;
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!dragging) return;
+        let x = e.clientX - offsetX;
+        let y = e.clientY - offsetY;
+        // Constrain to viewport
+        const rect = bbFloater.getBoundingClientRect();
+        const maxX = window.innerWidth  - rect.width;
+        const maxY = window.innerHeight - rect.height;
+        x = Math.max(0, Math.min(x, maxX));
+        y = Math.max(0, Math.min(y, maxY));
+        bbFloater.style.left = x + 'px';
+        bbFloater.style.top  = y + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (!dragging) return;
+        dragging = false;
+        bbFloaterShield.hidden = true;
+        document.body.style.userSelect = '';
+      });
+    }
+
+    // Resize implementation. Custom JS rather than CSS `resize: both` because
+    // the YouTube iframe intercepts mouse events during native resize and
+    // breaks the drag mid-way. Handle is a small div in the bottom-right
+    // corner (above the iframe via z-index). On mousedown we capture the
+    // starting dimensions and pointer position; mousemove updates floater
+    // width/height; mouseup releases. Constraints (min-width/min-height) are
+    // enforced here in JS — the CSS min-* on .bloomberg-floater is a backup.
+    const bbResizeHandle = document.getElementById('bloomberg-floater-resize');
+    if (bbResizeHandle && bbFloater) {
+      let resizing = false;
+      let startW = 0, startH = 0, startX = 0, startY = 0;
+      const MIN_W = 320, MIN_H = 220;
+      bbResizeHandle.addEventListener('mousedown', (e) => {
+        resizing = true;
+        const rect = bbFloater.getBoundingClientRect();
+        startW = rect.width;
+        startH = rect.height;
+        startX = e.clientX;
+        startY = e.clientY;
+        bbFloaterShield.hidden = false;
+        document.body.style.userSelect = 'none';
+        e.preventDefault();
+        e.stopPropagation();
+      });
+      document.addEventListener('mousemove', (e) => {
+        if (!resizing) return;
+        const newW = Math.max(MIN_W, Math.min(window.innerWidth,  startW + (e.clientX - startX)));
+        const newH = Math.max(MIN_H, Math.min(window.innerHeight, startH + (e.clientY - startY)));
+        bbFloater.style.width  = newW + 'px';
+        bbFloater.style.height = newH + 'px';
+      });
+      document.addEventListener('mouseup', () => {
+        if (!resizing) return;
+        resizing = false;
+        bbFloaterShield.hidden = true;
+        document.body.style.userSelect = '';
+      });
     }
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
     // The previous count suffix ("· 9/9 · High, Medium") was visual noise on a button
