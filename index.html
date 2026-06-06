@@ -534,14 +534,14 @@
   .potr-summary-left { color: var(--bad); }
   /* Per-trade table — full section width */
   .potr-trade-table { margin-left: 0; }
-  .potr-trade-row { display: grid; grid-template-columns: 100px 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) 90px 80px; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 4px; cursor: pointer; transition: background 150ms; }
+  .potr-trade-row { display: grid; grid-template-columns: 100px 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) 110px 80px; gap: 1px; background: var(--border); border: 1px solid var(--border); margin-bottom: 4px; cursor: pointer; transition: background 150ms; }
   /* % mode drops the standalone "LEFT (%)" column — captured/potential/left
      are already in % there, so the extra column would duplicate data. Six
      columns instead of seven, with the freed space redistributed across the
      three numeric columns. */
   .potr-trade-row.potr-trade-row-pct { grid-template-columns: 100px 90px minmax(110px, 1fr) minmax(110px, 1fr) minmax(120px, 1fr) 80px; }
   .potr-trade-row.headers { cursor: default; background: var(--bg-elev); }
-  .potr-trade-row.headers .potr-trade-cell { background: var(--bg-elev); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); padding: 12px 14px; }
+  .potr-trade-row.headers .potr-trade-cell { background: var(--bg-elev); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); padding: 12px 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .potr-trade-row:not(.headers):hover .potr-trade-cell { background: var(--bg-elev); }
   .potr-trade-cell { background: var(--bg); padding: 14px 14px; font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text); }
   .potr-trade-cell.bad  { color: var(--bad); }
@@ -16925,7 +16925,16 @@
     // The channel-based "live_stream" embed URL would be more durable but
     // Bloomberg's channel appears to block that endpoint (returns "video
     // unavailable"). Hardcoded video ID is the working alternative.
+    //
+    // TITLE-BAR CROP: rather than opening the YouTube embed URL directly,
+    // we open a blank popup and write an HTML wrapper into it. The wrapper
+    // positions the iframe with top: -70px and height: calc(100% + 70px)
+    // so the YouTube title overlay (which sits at the top of the player)
+    // is cropped off the visible area, while the bottom controls remain
+    // visible at the bottom of the popup. If 70px isn't enough crop on
+    // your screen, increase the CROP_TOP constant below.
     const BLOOMBERG_LIVE_VIDEO_ID = 'Ab7T16CiSmY';
+    const CROP_TOP = 70; // px to crop off the top of the iframe
     // If the browser's popup blocker intercepts the call (window.open
     // returns null), we surface a toast advising how to allow it.
     const bloombergBtn = document.getElementById('econ-bloomberg-btn');
@@ -16935,7 +16944,6 @@
       let _bloombergWin = null;
       bloombergBtn.onclick = (ev) => {
         ev.stopPropagation();
-        const url = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1`;
         // If we already have a reference and it's still open, just focus it
         // rather than re-opening (which can interrupt the stream).
         if (_bloombergWin && !_bloombergWin.closed) {
@@ -16944,14 +16952,48 @@
         // Features string: small default size, minimal chrome, resizable.
         // Most browsers honour `popup=yes` to render a chrome-light window.
         const features = 'popup=yes,width=640,height=360,resizable=yes,scrollbars=no,toolbar=no,location=no,status=no,menubar=no';
-        _bloombergWin = window.open(url, 'fiberTradesBloomberg', features);
+        // Open an empty popup first, then write our HTML wrapper into it.
+        // This is more reliable than data: URLs (some browsers restrict
+        // cross-origin iframes inside data: URLs) and gives us same-origin
+        // access to write the document.
+        _bloombergWin = window.open('', 'fiberTradesBloomberg', features);
         // Popup blocker intercept → window.open returns null. Surface a
         // toast so the user knows to allow popups for the journal domain.
         if (!_bloombergWin) {
           const msg = (typeof t === 'function') ? t('econ.bloomberg_blocked') : 'Allow pop-ups for this site to open Bloomberg TV.';
           if (typeof showToast === 'function') showToast(msg);
           else alert(msg);
+          return;
         }
+        // The wrapper: full-window black background, iframe positioned to
+        // crop the top by CROP_TOP px. Parameters added to the YouTube URL:
+        //   autoplay=1         — start playing immediately
+        //   rel=0              — don't show "related videos" cards at end
+        //   iv_load_policy=3   — hide annotations
+        //   playsinline=1      — don't auto-fullscreen on mobile
+        //   modestbranding=1   — partial effect (deprecated but harmless)
+        const ytUrl = `https://www.youtube.com/embed/${BLOOMBERG_LIVE_VIDEO_ID}?autoplay=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
+        const wrapperHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Bloomberg TV — Fiber Trades</title>
+<style>
+  html, body { margin: 0; padding: 0; height: 100%; background: #000; overflow: hidden; }
+  .wrap { position: relative; width: 100%; height: 100%; overflow: hidden; }
+  iframe { position: absolute; top: -${CROP_TOP}px; left: 0; width: 100%; height: calc(100% + ${CROP_TOP}px); border: 0; display: block; }
+</style>
+</head>
+<body>
+  <div class="wrap">
+    <iframe src="${ytUrl}" allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen></iframe>
+  </div>
+</body>
+</html>`;
+        _bloombergWin.document.open();
+        _bloombergWin.document.write(wrapperHtml);
+        _bloombergWin.document.close();
       };
     }
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
