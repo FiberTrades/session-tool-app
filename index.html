@@ -16822,11 +16822,23 @@
     // "Week" = the current trading week, Monday 00:00 → Saturday 00:00 (Mon-Fri
     // inclusive). Weekends are non-trading days and shouldn't appear under the
     // "This Week" filter — keeps the list focused on actionable news days.
+    //
+    // On weekends (Sat/Sun), the window is extended to also include NEXT week's
+    // Mon-Fri. This handles the seam at the Forex Factory feed rollover:
+    // sometime between Friday close and Monday open, FF rolls `thisweek.xml`
+    // from the just-finished week to the upcoming week. A user on Sat/Sun whose
+    // cache (or fresh fetch) has already rolled over would otherwise see no
+    // events at all under "This Week", because the freshly-fetched events are
+    // for next week but the filter window is the past Mon-Fri. Extending the
+    // window covers both possibilities so the user sees whichever the feed has.
     const now = new Date(); now.setHours(0,0,0,0);
     const day = now.getDay();
     const diffToMon = (day === 0) ? -6 : (1 - day);
     const weekStart = new Date(now); weekStart.setDate(now.getDate() + diffToMon); weekStart.setHours(0,0,0,0);
-    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 5); // Sat 00:00 → covers Mon-Fri
+    const isWeekend = (day === 0) || (day === 6);
+    // Weekday: +5 days → next Saturday 00:00 (covers this Mon-Fri).
+    // Weekend: +12 days → Saturday after next at 00:00 (covers this week Mon-Fri PLUS next week Mon-Fri).
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + (isWeekend ? 12 : 5));
     const countriesUC = new Set(f.countries.map(c => c.toUpperCase()));
     const impactsLC   = new Set(f.impacts.map(i => i.toLowerCase()));
     return events.filter(e => {
