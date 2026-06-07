@@ -3131,10 +3131,10 @@
       'settings.risk_pct_suffix': '% of balance',
       'settings.risk_amt_suffix': '{C} amount',
       'settings.risk_or': 'or',
-      'settings.risk_max_loss_label': 'Max loss per day',
-      'settings.risk_max_loss_hint': "When today's net loss exceeds this limit, you've broken the rule. Pick whichever unit matches how you think about risk — % of balance or money amount.",
-      'settings.risk_max_trade_label': 'Max risk per trade',
-      'settings.risk_max_trade_hint': "Per-trade risk cap. If any logged trade risks more than this limit, you've broken the rule.",
+      'settings.risk_max_loss_label': 'Max loss per day + costs',
+      'settings.risk_max_loss_hint': 'Net loss after commissions and spread. When today\'s total exceeds this, the rule trips. Pick whichever unit matches how you think about risk — % of balance or money amount.',
+      'settings.risk_max_trade_label': 'Max risk per trade + costs',
+      'settings.risk_max_trade_hint': 'Per-trade potential loss including costs (stop distance + commissions/spread). If any trade exceeds this, the rule trips.',
       'settings.risk_max_trades_label': 'Max trades per session',
       'settings.risk_max_trades_hint': 'Number of trades you allow yourself per session before stopping, win or lose. Helps prevent overtrading and revenge trades.',
       'risk_onboard.title': 'Trade with rules',
@@ -4013,10 +4013,10 @@
       'settings.risk_pct_suffix': '% del balance',
       'settings.risk_amt_suffix': 'cantidad en {C}',
       'settings.risk_or': 'o',
-      'settings.risk_max_loss_label': 'Pérdida máxima por día',
-      'settings.risk_max_loss_hint': 'Cuando la pérdida neta del día supera este límite, has roto la regla. Elige la unidad que mejor refleje cómo piensas el riesgo — % del balance o cantidad en dinero.',
-      'settings.risk_max_trade_label': 'Riesgo máximo por operación',
-      'settings.risk_max_trade_hint': 'Tope de riesgo por operación. Si alguna operación registrada arriesga más que este límite, has roto la regla.',
+      'settings.risk_max_loss_label': 'Pérdida máxima por día + costes',
+      'settings.risk_max_loss_hint': 'Pérdida neta después de comisiones y spread. Cuando el total del día supera esto, la regla se activa. Elige la unidad que mejor refleje cómo piensas el riesgo — % del balance o cantidad en dinero.',
+      'settings.risk_max_trade_label': 'Riesgo máximo por operación + costes',
+      'settings.risk_max_trade_hint': 'Pérdida potencial por operación incluyendo costes (distancia al stop + comisiones/spread). Si alguna operación lo supera, la regla se activa.',
       'settings.risk_max_trades_label': 'Máximo de operaciones por sesión',
       'settings.risk_max_trades_hint': 'Número de operaciones que te permites por sesión antes de parar, ganes o pierdas. Ayuda a evitar el sobreoperar y las operaciones de revancha.',
       'risk_onboard.title': 'Opera con reglas',
@@ -16743,10 +16743,14 @@
     const savedSigs = new Set(saved.map(sig));
     const uniqueInProgress = inProgress.filter(t => !savedSigs.has(sig(t)));
     const all = saved.concat(uniqueInProgress);
-    // Net P&L today, scaled by copies for parallel-account trades.
+    // Net P&L today, scaled by copies for parallel-account trades. tradeNetPL
+    // already includes commissions/spread (gross minus costs), so the daily-
+    // loss check naturally counts costs without any extra buffer logic.
     const totalNetPL = all.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
     const tradeCount = all.reduce((s, t) => s + tradeCopies(t), 0);
-    // Daily loss check — single unit, decided by lossMode.
+    // Daily loss check — single unit, decided by lossMode. Net loss = gross
+    // loss + commissions/spread, so the user's "max loss" cap already
+    // reflects total cost-of-trading for the day.
     let dailyLossBroken = false;
     if (lossUsable && totalNetPL < 0) {
       const lossAmount = Math.abs(totalNetPL);
@@ -16757,16 +16761,18 @@
         if (lossPct > rules.maxLossPct) dailyLossBroken = true;
       }
     }
-    // Per-trade risk check — single unit, decided by riskMode.
+    // Per-trade risk check — adds the trade's costs to the price-based risk
+    // so the "max risk" cap reflects total potential loss (stop hit +
+    // commissions paid), consistent with how the label reads to the user.
     let riskBroken = false;
     if (riskUsable) {
       for (const t of all) {
-        const tradeRisk = (parseFloat(t.risk) || 0) * tradeCopies(t);
-        if (tradeRisk <= 0) continue;
+        const tradeRiskPlusCosts = ((parseFloat(t.risk) || 0) + tradeCosts(t)) * tradeCopies(t);
+        if (tradeRiskPlusCosts <= 0) continue;
         if (riskMode === 'amount') {
-          if (tradeRisk > rules.maxRiskAmount) { riskBroken = true; break; }
+          if (tradeRiskPlusCosts > rules.maxRiskAmount) { riskBroken = true; break; }
         } else {
-          if ((tradeRisk / sb) * 100 > rules.maxRiskPct) { riskBroken = true; break; }
+          if ((tradeRiskPlusCosts / sb) * 100 > rules.maxRiskPct) { riskBroken = true; break; }
         }
       }
     }
