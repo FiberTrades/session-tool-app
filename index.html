@@ -174,6 +174,10 @@
   .settings-risk-account-picker { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
   .settings-risk-account-picker .settings-label { margin: 0; }
   .settings-risk-account-picker select { max-width: 220px; }
+  /* Discord translate-notes toggle — plain checkbox styled to match the
+     monochrome look. accent-color tints the check tick to the app's text
+     colour rather than the browser default blue. */
+  .settings-cb-toggle { width: 16px; height: 16px; accent-color: var(--text); cursor: pointer; margin: 0; }
   .settings-risk-label-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .settings-risk-label-row .settings-label { margin: 0; }
   .settings-risk-input-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -2844,6 +2848,13 @@
           <span class="lang-flag" id="lang-flag-es" data-lang="es" data-i18n-title="tip.lang_es" aria-label="Castellano">🇪🇸</span>
         </span>
       </div>
+      <label class="settings-label" style="margin-top:24px;" data-i18n="settings.discord_label">Discord</label>
+      <div class="settings-pref-row">
+        <span class="settings-pref-name" data-i18n="settings.translate_notes_label">Translate notes to English on copy</span>
+        <input type="checkbox" id="translate-notes-toggle" class="settings-cb-toggle" />
+      </div>
+      <p class="settings-hint" data-i18n="settings.translate_notes_hint">When your UI is in Spanish, your free-text notes (bias, reflection, chart comments) get translated to English before being copied to Discord. Uses MyMemory translation service — requires internet. Falls back silently to the original text if the service is unavailable.</p>
+
       <label class="settings-label" style="margin-top:24px;" data-i18n="settings.data_label">Data</label>
       <p class="settings-hint" data-i18n="settings.data_hint">Import a previously saved backup, or configure automatic backups so you never lose your trades.</p>
       <div class="settings-data-actions">
@@ -3059,6 +3070,7 @@
       'trades.s7.title': 'Tags Analysis',
       // ----- Common buttons -----
       'btn.copy_discord': 'Copy for Discord',
+      'btn.translating': 'Translating…',
       'btn.reset': 'Reset',
       'btn.save_series': 'Save to Series of 10',
       'btn.save_changes': 'Save Changes',
@@ -3198,6 +3210,9 @@
       'settings.currency_label': 'Currency',
       'settings.language_label': 'Language',
       'settings.data_label': 'Data',
+      'settings.discord_label': 'Discord',
+      'settings.translate_notes_label': 'Translate notes to English on copy',
+      'settings.translate_notes_hint': "When your UI is in Spanish, your free-text notes (bias, reflection, chart comments) get translated to English before being copied to Discord. Uses the MyMemory translation service — requires internet. Falls back silently to the original text if the service is unavailable.",
       'settings.data_hint': 'Import a previously saved backup, or configure automatic backups so you never lose your trades.',
       'settings.profile_name_label': 'Your name',
       'settings.profile_name_hint': 'Used in greetings, weekly review messages, and copied Discord posts.',
@@ -3943,6 +3958,7 @@
       'trades.s7.title': 'Análisis de Etiquetas',
       // ----- Common buttons -----
       'btn.copy_discord': 'Copiar para Discord',
+      'btn.translating': 'Traduciendo…',
       'btn.reset': 'Reiniciar',
       'btn.save_series': 'Guardar en Serie de 10',
       'btn.save_changes': 'Guardar Cambios',
@@ -4081,6 +4097,9 @@
       'settings.currency_label': 'Moneda',
       'settings.language_label': 'Idioma',
       'settings.data_label': 'Datos',
+      'settings.discord_label': 'Discord',
+      'settings.translate_notes_label': 'Traducir notas al inglés al copiar',
+      'settings.translate_notes_hint': 'Cuando la interfaz está en español, tus notas de texto libre (bias, reflexión, comentarios de gráficos) se traducen al inglés antes de copiarlas a Discord. Usa el servicio de traducción MyMemory — requiere internet. Si el servicio no está disponible, copia el texto original sin avisar.',
       'settings.data_hint': 'Importa una copia de seguridad guardada anteriormente, o configura copias automáticas para no perder nunca tus operaciones.',
       'settings.profile_name_label': 'Tu nombre',
       'settings.profile_name_hint': 'Se usa en los saludos, mensajes de revisión semanal y mensajes copiados de Discord.',
@@ -7428,8 +7447,10 @@
     document.getElementById('bias-notes').value = data.bias.notes || '';
     renderBiasPreview();
   }
-  document.getElementById('bias-copy').addEventListener('click', () => {
-    copyToClipboard(buildBiasMessage());
+  document.getElementById('bias-copy').addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const msg = await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated());
+    await copyToClipboard(msg);
     // Mark the bias as "committed for today" — this is the trigger that makes the
     // "this morning's bias" card appear on Session Review. Filling in the form alone
     // doesn't show it; the card waits until the user has actually copied it out.
@@ -8633,8 +8654,10 @@
   // Copy for Discord: copies the Discord post + auto-saves when ≥1 trade is logged.
   // We pass skipBackupModal=true so Copy never interrupts with a backup chooser dialog —
   // the user's explicit Save button is where the backup modal still fires for new users.
-  document.getElementById('review-copy').addEventListener('click', async () => {
-    copyToClipboard(buildReviewMessage());
+  document.getElementById('review-copy').addEventListener('click', async (ev) => {
+    const btn = ev.currentTarget;
+    const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
+    await copyToClipboard(msg);
     const hasTrades = (data.review.trades || []).length > 0;
     if (hasTrades) await performReviewSave({ skipBackupModal: true });
   });
@@ -11587,6 +11610,185 @@
       if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     });
   });
+
+  // ─── DISCORD COPY: optional notes translation ────────────────────────────
+  // When the user has data.settings.translateNotesOnCopy enabled AND their UI
+  // language is non-English, free-text notes (bias notes, per-link chart
+  // notes, review reflection, trade reflections) are translated to English
+  // via the MyMemory public API before assembly into the Discord post.
+  // Structural labels and predefined option values (e.g. "Bullish") are
+  // already stored in English and need no translation.
+  //
+  // The wrappers (translateBiasCopy / translateReviewCopy) follow a
+  // backup-mutate-build-restore pattern: clone the current values, swap
+  // translated versions in, call the existing buildBiasMessage /
+  // buildReviewMessage, then restore originals in a finally block so the
+  // user's saved data is never mutated by the translation. Failure of any
+  // single translation call falls through to the original text for that
+  // field — the copy still completes, just with mixed-language content.
+  //
+  // MyMemory: free tier, no API key, ~5000 words/day per IP. URL limit
+  // around 500 chars per query, so long notes are split by line.
+  async function mmTranslateOnce(text, source, target) {
+    if (!text || !text.trim()) return text;
+    if (source === target) return text;
+    try {
+      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return text;
+      const json = await resp.json();
+      const translated = json && json.responseData && json.responseData.translatedText;
+      // MyMemory occasionally returns the original text wrapped in quotes,
+      // or an error message embedded in translatedText (e.g. "PLEASE SELECT
+      // TWO DISTINCT LANGUAGES"). Defensive: keep original if response
+      // looks like an error string.
+      if (!translated || typeof translated !== 'string') return text;
+      if (/^(PLEASE|INVALID|MYMEMORY WARNING)/i.test(translated)) return text;
+      return translated;
+    } catch (e) {
+      return text;
+    }
+  }
+  // Splits long text by newlines so each chunk stays under MyMemory's
+  // per-request limit. Empty lines pass through unchanged to preserve
+  // paragraph structure in the Discord post.
+  async function translateNotes(text, source, target) {
+    if (!text || !text.trim()) return text;
+    if (source === target) return text;
+    const lines = text.split('\n');
+    const out = [];
+    for (const line of lines) {
+      if (line.trim() === '') { out.push(line); continue; }
+      // Further split very long lines by sentence to stay under the URL
+      // length limit.
+      if (line.length > 450) {
+        const sentences = line.match(/[^.!?]+[.!?]*/g) || [line];
+        const parts = [];
+        for (const s of sentences) parts.push(await mmTranslateOnce(s, source, target));
+        out.push(parts.join(' '));
+      } else {
+        out.push(await mmTranslateOnce(line, source, target));
+      }
+    }
+    return out.join('\n');
+  }
+  // Returns true when translation should run on the next Discord copy.
+  function shouldTranslateOnCopy() {
+    if (!data.settings || !data.settings.translateNotesOnCopy) return false;
+    const lang = (typeof getLang === 'function') ? getLang() : (data.settings.language || 'en');
+    return lang && lang !== 'en';
+  }
+  // Wraps the bias copy: backs up free-text fields, translates them, calls
+  // buildBiasMessage(), then restores originals. Returns the message string.
+  async function buildBiasMessageMaybeTranslated() {
+    if (!shouldTranslateOnCopy()) return buildBiasMessage();
+    const lang = (typeof getLang === 'function') ? getLang() : 'es';
+    const backup = {
+      notes: data.bias.notes,
+      linkNotes: (data.bias.tvLinks || []).map(l => l && l.notes),
+    };
+    try {
+      if (data.bias.notes && data.bias.notes.trim()) {
+        data.bias.notes = await translateNotes(data.bias.notes, lang, 'en');
+      }
+      const links = data.bias.tvLinks || [];
+      for (let i = 0; i < links.length; i++) {
+        if (links[i] && links[i].notes && links[i].notes.trim()) {
+          links[i].notes = await translateNotes(links[i].notes, lang, 'en');
+        }
+      }
+      return buildBiasMessage();
+    } finally {
+      data.bias.notes = backup.notes;
+      (data.bias.tvLinks || []).forEach((l, i) => {
+        if (l && backup.linkNotes[i] !== undefined) l.notes = backup.linkNotes[i];
+      });
+    }
+  }
+  // Same pattern for review — more fields to back up since review includes
+  // session-level reflection, per-trade reflections, and per-trade chart
+  // notes, plus it embeds the morning bias.
+  async function buildReviewMessageMaybeTranslated() {
+    if (!shouldTranslateOnCopy()) return buildReviewMessage();
+    const lang = (typeof getLang === 'function') ? getLang() : 'es';
+    const r = data.review || {};
+    const backup = {
+      biasNotes: data.bias && data.bias.notes,
+      biasLinkNotes: (data.bias && data.bias.tvLinks || []).map(l => l && l.notes),
+      reviewReflection: r.reflection,
+      reviewLinkNotes: (r.tvLinks || []).map(l => l && l.notes),
+      tradeReflections: (r.trades || []).map(t => t && t.reflection),
+      tradeLinkNotes: (r.trades || []).map(t =>
+        (t && t.tvLinks || []).map(l => l && l.notes)
+      ),
+    };
+    try {
+      // Bias notes
+      if (data.bias && data.bias.notes && data.bias.notes.trim()) {
+        data.bias.notes = await translateNotes(data.bias.notes, lang, 'en');
+      }
+      for (const link of ((data.bias && data.bias.tvLinks) || [])) {
+        if (link && link.notes && link.notes.trim()) {
+          link.notes = await translateNotes(link.notes, lang, 'en');
+        }
+      }
+      // Session reflection
+      if (r.reflection && r.reflection.trim()) {
+        r.reflection = await translateNotes(r.reflection, lang, 'en');
+      }
+      // Session chart notes
+      for (const link of (r.tvLinks || [])) {
+        if (link && link.notes && link.notes.trim()) {
+          link.notes = await translateNotes(link.notes, lang, 'en');
+        }
+      }
+      // Per-trade reflections and chart notes
+      for (const trade of (r.trades || [])) {
+        if (trade && trade.reflection && trade.reflection.trim()) {
+          trade.reflection = await translateNotes(trade.reflection, lang, 'en');
+        }
+        for (const link of ((trade && trade.tvLinks) || [])) {
+          if (link && link.notes && link.notes.trim()) {
+            link.notes = await translateNotes(link.notes, lang, 'en');
+          }
+        }
+      }
+      return buildReviewMessage();
+    } finally {
+      if (data.bias) data.bias.notes = backup.biasNotes;
+      ((data.bias && data.bias.tvLinks) || []).forEach((l, i) => {
+        if (l && backup.biasLinkNotes[i] !== undefined) l.notes = backup.biasLinkNotes[i];
+      });
+      r.reflection = backup.reviewReflection;
+      (r.tvLinks || []).forEach((l, i) => {
+        if (l && backup.reviewLinkNotes[i] !== undefined) l.notes = backup.reviewLinkNotes[i];
+      });
+      (r.trades || []).forEach((t, i) => {
+        if (t && backup.tradeReflections[i] !== undefined) t.reflection = backup.tradeReflections[i];
+        ((t && t.tvLinks) || []).forEach((l, j) => {
+          if (l && backup.tradeLinkNotes[i] && backup.tradeLinkNotes[i][j] !== undefined) {
+            l.notes = backup.tradeLinkNotes[i][j];
+          }
+        });
+      });
+    }
+  }
+  // Briefly swap the button's label to "Translating…" while the API calls
+  // are in flight, then restore. Keeps the user informed since multiple
+  // sequential fetches can take a few seconds on a slow connection.
+  async function withTranslatingButton(btnEl, fn) {
+    if (!btnEl) return await fn();
+    const originalText = btnEl.textContent;
+    const originalDisabled = btnEl.disabled;
+    btnEl.disabled = true;
+    btnEl.textContent = (typeof t === 'function' && t('btn.translating')) || 'Translating…';
+    try {
+      return await fn();
+    } finally {
+      btnEl.textContent = originalText;
+      btnEl.disabled = originalDisabled;
+    }
+  }
 
   async function copyToClipboard(text) {
     try { await navigator.clipboard.writeText(text); }
@@ -18982,6 +19184,20 @@
     sel.value = (data.settings.currency || 'GBP');
     sel.addEventListener('change', e => setCurrency(e.target.value));
   })();
+  // Wire Discord translate-notes toggle. Sync the checkbox to the current
+  // setting on script load and on each settings-modal open, and persist
+  // changes immediately so the next Discord copy picks them up. No
+  // greeting refresh needed — the setting only affects the copy action.
+  (function wireTranslateNotesToggle() {
+    const cb = document.getElementById('translate-notes-toggle');
+    if (!cb) return;
+    cb.checked = !!(data.settings && data.settings.translateNotesOnCopy);
+    cb.addEventListener('change', e => {
+      if (!data.settings) data.settings = {};
+      data.settings.translateNotesOnCopy = !!e.target.checked;
+      saveData();
+    });
+  })();
 
   // ===== MT5 Import =====
   // Parses an MT5 Trade History Report (HTML, typically UTF-16 LE encoded) and
@@ -19699,6 +19915,10 @@
       // every save handler agrees on which account is being edited.
       populateRiskAccountPicker();
       loadRiskRulesIntoSettingsInputs();
+      // Re-sync the Discord translate-notes toggle to current setting in
+      // case it was changed via Settings/code elsewhere between opens.
+      const _trCb = document.getElementById('translate-notes-toggle');
+      if (_trCb) _trCb.checked = !!(data.settings && data.settings.translateNotesOnCopy);
       modal.classList.add('show');
     }
     // Populate the account picker dropdown with currently-active accounts.
