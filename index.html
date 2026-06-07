@@ -17794,11 +17794,18 @@
     // The user always sees data on screen unless the cache is genuinely empty.
     if (!opts.force && hasCache) {
       renderCalendarFromCache();
-      // Background refresh when the cache is from a different day OR lacks URL fields.
+      // Background refresh when the cache is from a different day, lacks URL
+      // fields, or lacks forecast/previous fields (cache predates F/P parsing).
       // Silent — failure leaves the existing cache intact, no error UI.
-      const isStale  = cache.date !== todayKey;
-      const lacksUrl = !cache.events.some(e => typeof e.url === 'string' && e.url.length > 0);
-      if (isStale || lacksUrl) {
+      const isStale         = cache.date !== todayKey;
+      const lacksUrl        = !cache.events.some(e => typeof e.url === 'string' && e.url.length > 0);
+      // 'in' check, not truthy check — many events legitimately have empty
+      // forecast/previous (speeches, holidays). We're asking: do these props
+      // exist on the cached objects at all? If none have them, the cache was
+      // written before the parser learned to extract them.
+      const lacksForecast   = !cache.events.some(e => 'forecast' in e);
+      const lacksPrevious   = !cache.events.some(e => 'previous' in e);
+      if (isStale || lacksUrl || lacksForecast || lacksPrevious) {
         try { backgroundUpgradeCache(); } catch (e) { /* non-fatal */ }
       }
       // Always try to pull fresh actuals — fast (server-cached) and decorates
