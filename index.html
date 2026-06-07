@@ -432,21 +432,25 @@
   /* Day group headers — only used in week view */
   .econ-day-group { margin-top: 14px; }
   .econ-day-group:first-child { margin-top: 0; }
-  /* Top-of-week column header row — sits ABOVE all day groups, holds the
-     ACTUAL / FORECAST / PREVIOUS column labels aligned to their columns.
-     Same grid layout as event rows so labels land directly above their data.
-     Only rendered in week view (when groupByDay is true); single-day views
-     don't need it because there's just one stream of events. */
+  /* Standalone column-header row — used only in single-day views (Today /
+     Tomorrow) where there's no internal date line to attach labels to.
+     Same grid as event rows so labels land directly above their columns. */
   .econ-week-header { display: grid; grid-template-columns: 60px 50px 30px 1fr 64px 64px 64px 32px; gap: 12px; align-items: baseline; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
   .econ-week-header .econ-day-label { grid-column: 1 / 5; }
-  /* Day headers — now just date text, no column labels (those live in the
-     week-header above). Plain block layout, no grid. */
+  /* Day headers — plain text by default (just date). The FIRST day in week
+     view gets `.with-cols`, switching to a grid layout that aligns the date
+     label on the left with ACTUAL / FORECAST / PREVIOUS labels on the right.
+     Subsequent day headers (no `.with-cols`) stay as plain text. */
   .econ-day-header { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-mid); padding: 8px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  .econ-day-header.with-cols { display: grid; grid-template-columns: 60px 50px 30px 1fr 64px 64px 64px 32px; gap: 12px; align-items: baseline; }
+  .econ-day-header.with-cols .econ-day-label { grid-column: 1 / 5; }
   .econ-day-header.past { color: var(--text-dim); opacity: 0.6; }
   .econ-col-header { text-align: center; color: var(--text-dim); font-size: 9px; letter-spacing: 0.15em; }
-  /* Mobile: drop the week header entirely (columns are hidden anyway). */
+  /* Mobile: drop the inline column labels (columns are hidden anyway). */
   @media (max-width: 700px) {
     .econ-week-header { display: none; }
+    .econ-day-header.with-cols { display: block; }
+    .econ-day-header.with-cols .econ-col-header { display: none; }
   }
   .econ-calendar-body { font-family: 'DM Mono', monospace; font-size: 12px; }
   .econ-calendar-loading,
@@ -3323,6 +3327,7 @@
       'econ.col_previous': 'Previous',
       'econ.detail_how_to_read': 'How to read',
       'econ.detail_what_is_it': 'What is it',
+      'econ.today_mark': 'TODAY',
       'econ.loading_tomorrow': 'Loading tomorrow\'s events…',
       'econ.loading_week': 'Loading this week\'s events…',
       'econ.empty': 'No economic events scheduled today.',
@@ -4189,6 +4194,7 @@
       'econ.col_previous': 'Anterior',
       'econ.detail_how_to_read': 'Cómo interpretarlo',
       'econ.detail_what_is_it': 'Qué es',
+      'econ.today_mark': 'HOY',
       'econ.loading_tomorrow': 'Cargando eventos de mañana…',
       'econ.loading_week': 'Cargando eventos de esta semana…',
       'econ.empty': 'No hay eventos económicos programados hoy.',
@@ -17918,35 +17924,57 @@
         <span class="econ-event-chevron" aria-hidden="true">▾</span>
       </div>`;
     }
-    // Top column-header row showing ACTUAL / FORECAST / PREVIOUS labels above
-    // their columns. Rendered once for ALL date-range views (today, tomorrow,
-    // week) so the columns are always labelled consistently. Built before the
-    // single-day vs week branch since both use it.
+    // Column labels for ACTUAL / FORECAST / PREVIOUS, used inline with the
+    // first day's date header in week view and as a standalone header row in
+    // single-day views (Today / Tomorrow have no internal date line to attach
+    // them to).
     const colActual   = t('econ.col_actual');
     const colForecast = t('econ.col_forecast');
     const colPrevious = t('econ.col_previous');
-    const topColumnHeader = `<div class="econ-week-header">
-      <span class="econ-day-label"></span>
-      <span class="econ-col-header">${escape(colActual)}</span>
-      <span class="econ-col-header">${escape(colForecast)}</span>
-      <span class="econ-col-header">${escape(colPrevious)}</span>
-    </div>`;
     if (!groupByDay) {
-      // Single-day view (Today / Tomorrow) — header + events, no day grouping.
-      body.innerHTML = topColumnHeader + indexedEvents.map(eventRow).join('');
+      // Single-day view (Today / Tomorrow) — render a header with the selected
+      // day's date and the column labels inline, matching week view's first-day
+      // header so all three views look the same. "· TODAY" mark when the
+      // selected range is today (same convention as week view day headers).
+      const f = (typeof getCalendarFilters === 'function') ? getCalendarFilters() : { dateRange: 'today' };
+      const targetDate = new Date();
+      if (f.dateRange === 'tomorrow') targetDate.setDate(targetDate.getDate() + 1);
+      const lang = tLocale ? tLocale() : 'en-GB';
+      const dateLabel = targetDate.toLocaleDateString(lang, { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
+      const todayMark = (f.dateRange === 'today') ? ' · ' + t('econ.today_mark') : '';
+      const topHeader = `<div class="econ-day-header with-cols">
+        <span class="econ-day-label">${escape(dateLabel + todayMark)}</span>
+        <span class="econ-col-header">${escape(colActual)}</span>
+        <span class="econ-col-header">${escape(colForecast)}</span>
+        <span class="econ-col-header">${escape(colPrevious)}</span>
+      </div>`;
+      body.innerHTML = topHeader + indexedEvents.map(eventRow).join('');
       wireEventRowClicks(body);
       return;
     }
-    // Week view — group by day with headers (past days dim). Same top header
-    // sits above all day groups; each day-group header below shows just the date.
+    // Week view — group by day with headers (past days dim). Column labels
+    // live INLINE with the FIRST day-group's date header so they sit on the
+    // line of the date, not on a separate row above. Subsequent day groups
+    // get a plain date-only header.
     const groups = groupEventsByDay(indexedEvents);
-    body.innerHTML = topColumnHeader + groups.map(([dayKey, events]) => {
+    body.innerHTML = groups.map(([dayKey, events], idx) => {
       const d = new Date(dayKey + 'T12:00:00');
       const isPast = dayKey < todayKey;
       const isToday = dayKey === todayKey;
+      const isFirst = idx === 0;
       const label = d.toLocaleDateString(tLocale ? tLocale() : 'en-GB', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
-      const todayMark = isToday ? ' · TODAY' : '';
-      return `<div class="econ-day-group">        <div class="econ-day-header${isPast ? ' past' : ''}">${label}${todayMark}</div>
+      const todayMark = isToday ? ' · ' + t('econ.today_mark') : '';
+      // First day header: grid layout — date label spans the leftmost columns,
+      // ACTUAL / FORECAST / PREVIOUS labels occupy the figure columns on the right.
+      // Subsequent day headers: plain text, no grid (date only).
+      const headerInner = isFirst
+        ? `<span class="econ-day-label">${label}${todayMark}</span>
+           <span class="econ-col-header">${escape(colActual)}</span>
+           <span class="econ-col-header">${escape(colForecast)}</span>
+           <span class="econ-col-header">${escape(colPrevious)}</span>`
+        : `${label}${todayMark}`;
+      return `<div class="econ-day-group">
+        <div class="econ-day-header${isPast ? ' past' : ''}${isFirst ? ' with-cols' : ''}">${headerInner}</div>
         ${events.map(eventRow).join('')}
       </div>`;
     }).join('');
