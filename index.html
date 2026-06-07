@@ -432,21 +432,21 @@
   /* Day group headers — only used in week view */
   .econ-day-group { margin-top: 14px; }
   .econ-day-group:first-child { margin-top: 0; }
-  /* Day header is itself a grid that mirrors the event-row column layout.
-     The date label spans the first four columns (time / currency / impact /
-     title), and the next three cells hold the ACTUAL / FORECAST / PREVIOUS
-     labels — perfectly aligned with the numeric columns below. The chevron
-     column is left empty in the header. */
-  .econ-day-header { display: grid; grid-template-columns: 60px 50px 30px 1fr 64px 64px 64px 20px; gap: 12px; align-items: baseline; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-mid); padding: 8px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+  /* Top-of-week column header row — sits ABOVE all day groups, holds the
+     ACTUAL / FORECAST / PREVIOUS column labels aligned to their columns.
+     Same grid layout as event rows so labels land directly above their data.
+     Only rendered in week view (when groupByDay is true); single-day views
+     don't need it because there's just one stream of events. */
+  .econ-week-header { display: grid; grid-template-columns: 60px 50px 30px 1fr 64px 64px 64px 20px; gap: 12px; align-items: baseline; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 0 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); }
+  .econ-week-header .econ-day-label { grid-column: 1 / 5; }
+  /* Day headers — now just date text, no column labels (those live in the
+     week-header above). Plain block layout, no grid. */
+  .econ-day-header { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-mid); padding: 8px 0 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
   .econ-day-header.past { color: var(--text-dim); opacity: 0.6; }
-  .econ-day-label { grid-column: 1 / 5; }
   .econ-col-header { text-align: right; color: var(--text-dim); font-size: 9px; letter-spacing: 0.15em; }
-  /* Mobile: the column-header cells aren't useful when the columns themselves
-     are hidden — let the date span the full row. */
+  /* Mobile: drop the week header entirely (columns are hidden anyway). */
   @media (max-width: 700px) {
-    .econ-day-header { grid-template-columns: 56px 40px 24px 1fr 20px; gap: 8px; }
-    .econ-day-label { grid-column: 1 / -1; }
-    .econ-col-header { display: none; }
+    .econ-week-header { display: none; }
   }
   .econ-calendar-body { font-family: 'DM Mono', monospace; font-size: 12px; }
   .econ-calendar-loading,
@@ -497,11 +497,11 @@
   .econ-event-detail { display: flex; align-items: flex-start; gap: 20px; padding: 12px 14px; background: var(--bg); border-bottom: 1px solid var(--border); font-family: 'DM Mono', monospace; font-size: 11px; line-height: 1.55; color: var(--text-mid); letter-spacing: 0.01em; }
   /* The text column holds description + interpretation stacked. */
   .econ-event-detail-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
-  .econ-event-detail-desc { /* "what it is" — normal weight, dimmer */ }
-  /* "How to read" block — left accent border + label tag + slightly brighter
-     text. Visually pulled out from the descriptive prose because this is the
-     actionable bit the trader is reaching for. */
-  .econ-event-detail-interp { color: var(--text); border-left: 2px solid var(--text-mid); padding: 2px 0 2px 10px; }
+  .econ-event-detail-desc { /* "what it is" — inherits text-mid colour from parent */ }
+  /* "How to read" block — same colour and indent as the description above. The
+     small uppercase "HOW TO READ" label tag below is enough to separate the
+     two blocks visually without needing a colour shift or accent border. */
+  .econ-event-detail-interp { /* inherits text-mid colour from parent */ }
   .econ-event-detail-label { display: block; color: var(--text-dim); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px; }
   .econ-event-detail-link { display: inline-flex; align-items: center; justify-content: center; padding: 4px; text-decoration: none; color: var(--text); opacity: 0.7; transition: opacity 150ms; cursor: pointer; flex-shrink: 0; margin-left: auto; }
   .econ-event-detail-link:hover { opacity: 1; }
@@ -17921,27 +17921,29 @@
       wireEventRowClicks(body);
       return;
     }
-    // Week view — group by day with headers (past days dim)
+    // Week view — group by day with headers (past days dim). A SINGLE column
+    // header row sits at the top of the list (showing ACTUAL / FORECAST /
+    // PREVIOUS labels above their columns). Each subsequent day-group header
+    // just shows the date, since the column labels are already established
+    // above — repeating them on every day group was visual noise.
     const groups = groupEventsByDay(indexedEvents);
-    // Column labels rendered to the right of the date on every day-group
-    // header. Locale-aware ("Actual" / "Real" etc) — display CSS uppercases
-    // them so we store sentence case in the i18n catalog.
     const colActual   = t('econ.col_actual');
     const colForecast = t('econ.col_forecast');
     const colPrevious = t('econ.col_previous');
-    body.innerHTML = groups.map(([dayKey, events]) => {
+    const topColumnHeader = `<div class="econ-week-header">
+      <span class="econ-day-label"></span>
+      <span class="econ-col-header">${escape(colActual)}</span>
+      <span class="econ-col-header">${escape(colForecast)}</span>
+      <span class="econ-col-header">${escape(colPrevious)}</span>
+    </div>`;
+    body.innerHTML = topColumnHeader + groups.map(([dayKey, events]) => {
       const d = new Date(dayKey + 'T12:00:00');
       const isPast = dayKey < todayKey;
       const isToday = dayKey === todayKey;
       const label = d.toLocaleDateString(tLocale ? tLocale() : 'en-GB', { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase();
       const todayMark = isToday ? ' · TODAY' : '';
       return `<div class="econ-day-group">
-        <div class="econ-day-header${isPast ? ' past' : ''}">
-          <span class="econ-day-label">${label}${todayMark}</span>
-          <span class="econ-col-header">${escape(colActual)}</span>
-          <span class="econ-col-header">${escape(colForecast)}</span>
-          <span class="econ-col-header">${escape(colPrevious)}</span>
-        </div>
+        <div class="econ-day-header${isPast ? ' past' : ''}">${label}${todayMark}</div>
         ${events.map(eventRow).join('')}
       </div>`;
     }).join('');
