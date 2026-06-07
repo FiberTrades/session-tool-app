@@ -2853,7 +2853,11 @@
         <span class="settings-pref-name" data-i18n="settings.translate_notes_label">Translate notes to English on copy</span>
         <input type="checkbox" id="translate-notes-toggle" class="settings-cb-toggle" />
       </div>
-      <p class="settings-hint" data-i18n="settings.translate_notes_hint">When your UI is in Spanish, your free-text notes (bias, reflection, chart comments) get translated to English before being copied to Discord. Uses MyMemory translation service — requires internet. Falls back silently to the original text if the service is unavailable.</p>
+      <div class="settings-pref-row">
+        <span class="settings-pref-name" data-i18n="settings.deepl_key_label">DeepL API key (optional)</span>
+        <input type="password" id="deepl-api-key-input" class="settings-input settings-input-compact" placeholder="••••••••" autocomplete="off" spellcheck="false" />
+      </div>
+      <p class="settings-hint" data-i18n="settings.translate_notes_hint">When your UI is in Spanish, your free-text notes (bias, reflection, chart comments, weekly rule) get translated to English before being copied to Discord. Higher-quality translation is available by providing a free DeepL API key from deepl.com/pro-api (500k characters/month). Without a key, the fallback service (MyMemory) is used. Internet required either way; falls back silently to the original text if neither service is reachable. The DeepL key is stored locally in your browser only.</p>
 
       <label class="settings-label" style="margin-top:24px;" data-i18n="settings.data_label">Data</label>
       <p class="settings-hint" data-i18n="settings.data_hint">Import a previously saved backup, or configure automatic backups so you never lose your trades.</p>
@@ -3212,7 +3216,8 @@
       'settings.data_label': 'Data',
       'settings.discord_label': 'Discord',
       'settings.translate_notes_label': 'Translate notes to English on copy',
-      'settings.translate_notes_hint': "When your UI is in Spanish, your free-text notes (bias, reflection, chart comments) get translated to English before being copied to Discord. Uses the MyMemory translation service — requires internet. Falls back silently to the original text if the service is unavailable.",
+      'settings.deepl_key_label': 'DeepL API key (optional)',
+      'settings.translate_notes_hint': "When your UI is in Spanish, your free-text notes (bias, reflection, chart comments, weekly rule) get translated to English before being copied to Discord. Higher-quality translation is available by providing a free DeepL API key from deepl.com/pro-api (500k characters/month). Without a key, the fallback service (MyMemory) is used. Internet required either way; falls back silently to the original text if neither service is reachable. The DeepL key is stored locally in your browser only.",
       'settings.data_hint': 'Import a previously saved backup, or configure automatic backups so you never lose your trades.',
       'settings.profile_name_label': 'Your name',
       'settings.profile_name_hint': 'Used in greetings, weekly review messages, and copied Discord posts.',
@@ -4099,7 +4104,8 @@
       'settings.data_label': 'Datos',
       'settings.discord_label': 'Discord',
       'settings.translate_notes_label': 'Traducir notas al inglés al copiar',
-      'settings.translate_notes_hint': 'Cuando la interfaz está en español, tus notas de texto libre (bias, reflexión, comentarios de gráficos) se traducen al inglés antes de copiarlas a Discord. Usa el servicio de traducción MyMemory — requiere internet. Si el servicio no está disponible, copia el texto original sin avisar.',
+      'settings.deepl_key_label': 'API key de DeepL (opcional)',
+      'settings.translate_notes_hint': 'Cuando la interfaz está en español, tus notas de texto libre (bias, reflexión, comentarios de gráficos, regla semanal) se traducen al inglés antes de copiarlas a Discord. Para una traducción de mayor calidad, puedes añadir una API key gratuita de DeepL en deepl.com/pro-api (500k caracteres/mes). Sin key, se usa el servicio de respaldo (MyMemory). Requiere internet; si ninguno de los dos servicios está disponible, copia el texto original sin avisar. La key de DeepL se guarda solo en tu navegador.',
       'settings.data_hint': 'Importa una copia de seguridad guardada anteriormente, o configura copias automáticas para no perder nunca tus operaciones.',
       'settings.profile_name_label': 'Tu nombre',
       'settings.profile_name_hint': 'Se usa en los saludos, mensajes de revisión semanal y mensajes copiados de Discord.',
@@ -11615,20 +11621,70 @@
   // When the user has data.settings.translateNotesOnCopy enabled AND their UI
   // language is non-English, free-text notes (bias notes, per-link chart
   // notes, review reflection, trade reflections) are translated to English
-  // via the MyMemory public API before assembly into the Discord post.
-  // Structural labels and predefined option values (e.g. "Bullish") are
-  // already stored in English and need no translation.
+  // via DeepL (preferred when an API key is configured) or MyMemory (free
+  // fallback) before assembly into the Discord post. Structural labels and
+  // predefined option values (e.g. "Bullish") are already stored in English
+  // and need no translation.
+  //
+  // DeepL: significantly better quality for prose; needs an API key from
+  //   deepl.com/pro-api (free tier: 500k chars/month). Key suffix ":fx"
+  //   indicates free tier — routed to api-free; everything else to the
+  //   pro endpoint. Failed DeepL calls fall through to MyMemory so a
+  //   broken key never breaks the copy entirely.
+  // MyMemory: free, no key, ~5000 words/day per IP. URL length limit ~500
+  //   chars, so long notes are chunked by line.
   //
   // The wrappers (translateBiasCopy / translateReviewCopy) follow a
   // backup-mutate-build-restore pattern: clone the current values, swap
   // translated versions in, call the existing buildBiasMessage /
   // buildReviewMessage, then restore originals in a finally block so the
-  // user's saved data is never mutated by the translation. Failure of any
-  // single translation call falls through to the original text for that
-  // field — the copy still completes, just with mixed-language content.
-  //
-  // MyMemory: free tier, no API key, ~5000 words/day per IP. URL limit
-  // around 500 chars per query, so long notes are split by line.
+  // user's saved data is never mutated by the translation.
+  async function deeplTranslate(text, source, target, apiKey) {
+    if (!text || !text.trim()) return null;
+    if (source === target) return text;
+    // Route to free vs pro endpoint based on key suffix.
+    const isFree = apiKey.trim().endsWith(':fx');
+    const endpoint = isFree
+      ? 'https://api-free.deepl.com/v2/translate'
+      : 'https://api.deepl.com/v2/translate';
+    // DeepL uses uppercase ISO codes. Default English target to EN-GB
+    // since this app's primary user base is UK-based traders; EN-US would
+    // also work and reads similarly for short notes.
+    const srcCode = (source || '').toUpperCase();
+    const tgtCode = (target && target.toLowerCase() === 'en') ? 'EN-GB' : (target || '').toUpperCase();
+    try {
+      const resp = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Authorization': `DeepL-Auth-Key ${apiKey.trim()}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: `text=${encodeURIComponent(text)}&source_lang=${srcCode}&target_lang=${tgtCode}`,
+      });
+      if (!resp.ok) return null; // signal failure → caller falls back to MyMemory
+      const json = await resp.json();
+      if (json && Array.isArray(json.translations) && json.translations[0] && json.translations[0].text) {
+        return json.translations[0].text;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+  // Dispatcher: tries DeepL first when a key is configured, falls back to
+  // MyMemory on failure (or when no key is set). Both services return the
+  // original text on hard error so the copy operation never fails outright.
+  async function translateChunk(text, source, target) {
+    if (!text || !text.trim()) return text;
+    if (source === target) return text;
+    const deeplKey = data.settings && data.settings.deeplApiKey;
+    if (deeplKey && deeplKey.trim()) {
+      const result = await deeplTranslate(text, source, target, deeplKey);
+      if (result !== null) return result;
+      // DeepL returned null → fall through to MyMemory below.
+    }
+    return await mmTranslateOnce(text, source, target);
+  }
   async function mmTranslateOnce(text, source, target) {
     if (!text || !text.trim()) return text;
     if (source === target) return text;
@@ -11650,8 +11706,10 @@
     }
   }
   // Splits long text by newlines so each chunk stays under MyMemory's
-  // per-request limit. Empty lines pass through unchanged to preserve
-  // paragraph structure in the Discord post.
+  // per-request limit. DeepL has a much higher limit (130k chars) but
+  // the same chunking flow works for both — extra calls cost nothing on
+  // DeepL's character-counted free tier. Empty lines pass through
+  // unchanged to preserve paragraph structure in the Discord post.
   async function translateNotes(text, source, target) {
     if (!text || !text.trim()) return text;
     if (source === target) return text;
@@ -11659,30 +11717,35 @@
     const out = [];
     for (const line of lines) {
       if (line.trim() === '') { out.push(line); continue; }
-      // Further split very long lines by sentence to stay under the URL
-      // length limit.
       if (line.length > 450) {
         const sentences = line.match(/[^.!?]+[.!?]*/g) || [line];
         const parts = [];
-        for (const s of sentences) parts.push(await mmTranslateOnce(s, source, target));
+        for (const s of sentences) parts.push(await translateChunk(s, source, target));
         out.push(parts.join(' '));
       } else {
-        out.push(await mmTranslateOnce(line, source, target));
+        out.push(await translateChunk(line, source, target));
       }
     }
     return out.join('\n');
   }
   // Returns true when translation should run on the next Discord copy.
+  // Language signal lives at window.__lang in this app (set by the lang
+  // toggle); the previously-referenced getLang() function doesn't exist,
+  // which caused shouldTranslateOnCopy() to silently return false even
+  // when the toggle was on. Falls back to 'en' if the global isn't set.
   function shouldTranslateOnCopy() {
     if (!data.settings || !data.settings.translateNotesOnCopy) return false;
-    const lang = (typeof getLang === 'function') ? getLang() : (data.settings.language || 'en');
+    const lang = (typeof window !== 'undefined' && window.__lang) ? window.__lang : 'en';
     return lang && lang !== 'en';
+  }
+  function currentUiLang() {
+    return (typeof window !== 'undefined' && window.__lang) ? window.__lang : 'en';
   }
   // Wraps the bias copy: backs up free-text fields, translates them, calls
   // buildBiasMessage(), then restores originals. Returns the message string.
   async function buildBiasMessageMaybeTranslated() {
     if (!shouldTranslateOnCopy()) return buildBiasMessage();
-    const lang = (typeof getLang === 'function') ? getLang() : 'es';
+    const lang = currentUiLang();
     const backup = {
       notes: data.bias.notes,
       linkNotes: (data.bias.tvLinks || []).map(l => l && l.notes),
@@ -11697,7 +11760,19 @@
           links[i].notes = await translateNotes(links[i].notes, lang, 'en');
         }
       }
-      return buildBiasMessage();
+      // buildBiasMessage pulls the weekly rule fresh from getRuleForWeek()
+      // so we can't pre-mutate it the way we do for notes. Instead, build
+      // the message and then post-process the "Rule        " line — find
+      // it, translate the text after the padding, splice back in.
+      let msg = buildBiasMessage();
+      const ruleMatch = msg.match(/^(Rule\s{2,})(.*)$/m);
+      if (ruleMatch && ruleMatch[2] && ruleMatch[2].trim()) {
+        const translatedRule = await translateNotes(ruleMatch[2], lang, 'en');
+        if (translatedRule && translatedRule !== ruleMatch[2]) {
+          msg = msg.replace(ruleMatch[0], ruleMatch[1] + translatedRule);
+        }
+      }
+      return msg;
     } finally {
       data.bias.notes = backup.notes;
       (data.bias.tvLinks || []).forEach((l, i) => {
@@ -11710,7 +11785,7 @@
   // notes, plus it embeds the morning bias.
   async function buildReviewMessageMaybeTranslated() {
     if (!shouldTranslateOnCopy()) return buildReviewMessage();
-    const lang = (typeof getLang === 'function') ? getLang() : 'es';
+    const lang = currentUiLang();
     const r = data.review || {};
     const backup = {
       biasNotes: data.bias && data.bias.notes,
@@ -11753,7 +11828,18 @@
           }
         }
       }
-      return buildReviewMessage();
+      // Post-process the "Rule        " line — buildReviewMessage embeds
+      // the morning bias which includes the weekly rule from
+      // getRuleForWeek(), so the rule text shows up in the review post too.
+      let msg = buildReviewMessage();
+      const ruleMatch = msg.match(/^(Rule\s{2,})(.*)$/m);
+      if (ruleMatch && ruleMatch[2] && ruleMatch[2].trim()) {
+        const translatedRule = await translateNotes(ruleMatch[2], lang, 'en');
+        if (translatedRule && translatedRule !== ruleMatch[2]) {
+          msg = msg.replace(ruleMatch[0], ruleMatch[1] + translatedRule);
+        }
+      }
+      return msg;
     } finally {
       if (data.bias) data.bias.notes = backup.biasNotes;
       ((data.bias && data.bias.tvLinks) || []).forEach((l, i) => {
@@ -19198,6 +19284,26 @@
       saveData();
     });
   })();
+  // Wire DeepL API key input. The key is stored in localStorage along
+  // with the rest of data.settings, masked as a password input in the UI.
+  // Saved on `change` (blur or Enter) so we don't thrash storage on every
+  // keystroke. Empty value deletes the key entirely so the translateChunk
+  // dispatcher falls back to MyMemory cleanly.
+  (function wireDeeplApiKey() {
+    const inp = document.getElementById('deepl-api-key-input');
+    if (!inp) return;
+    inp.value = (data.settings && data.settings.deeplApiKey) || '';
+    inp.addEventListener('change', e => {
+      if (!data.settings) data.settings = {};
+      const v = (e.target.value || '').trim();
+      if (v) {
+        data.settings.deeplApiKey = v;
+      } else {
+        delete data.settings.deeplApiKey;
+      }
+      saveData();
+    });
+  })();
 
   // ===== MT5 Import =====
   // Parses an MT5 Trade History Report (HTML, typically UTF-16 LE encoded) and
@@ -19915,10 +20021,13 @@
       // every save handler agrees on which account is being edited.
       populateRiskAccountPicker();
       loadRiskRulesIntoSettingsInputs();
-      // Re-sync the Discord translate-notes toggle to current setting in
-      // case it was changed via Settings/code elsewhere between opens.
+      // Re-sync the Discord translate-notes toggle + DeepL key field to
+      // current setting in case they were changed via Settings/code
+      // elsewhere between opens.
       const _trCb = document.getElementById('translate-notes-toggle');
       if (_trCb) _trCb.checked = !!(data.settings && data.settings.translateNotesOnCopy);
+      const _dlKey = document.getElementById('deepl-api-key-input');
+      if (_dlKey) _dlKey.value = (data.settings && data.settings.deeplApiKey) || '';
       modal.classList.add('show');
     }
     // Populate the account picker dropdown with currently-active accounts.
