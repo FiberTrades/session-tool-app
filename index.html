@@ -171,6 +171,9 @@
      the app's monospace aesthetic. Active button = filled, inactive =
      transparent. Currency symbol on the £ button comes from the existing
      data-currency-symbol mechanism so it auto-updates with locale. */
+  .settings-risk-account-picker { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid var(--border); }
+  .settings-risk-account-picker .settings-label { margin: 0; }
+  .settings-risk-account-picker select { max-width: 220px; }
   .settings-risk-label-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 6px; }
   .settings-risk-label-row .settings-label { margin: 0; }
   .settings-risk-input-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -2707,7 +2710,7 @@
       <button type="button" class="settings-nav-item active" data-section="profile" data-i18n="settings.section_profile">Profile</button>
       <button type="button" class="settings-nav-item" data-section="session" data-i18n="settings.section_session">Session</button>
       <button type="button" class="settings-nav-item" data-section="risk_rules" data-i18n="settings.section_risk">Risk Rules</button>
-      <button type="button" class="settings-nav-item" data-section="accounts" data-i18n="settings.section_accounts">Account</button>
+      <button type="button" class="settings-nav-item" data-section="accounts" data-i18n="settings.section_accounts">Accounts</button>
       <button type="button" class="settings-nav-item" data-section="preferences" data-i18n="settings.section_preferences">Preferences</button>
     </div>
     <!-- PROFILE section: change user name. -->
@@ -2749,6 +2752,13 @@
          underlying values are stored so switching back and forth doesn't
          destroy whichever value the user previously entered. -->
     <div class="settings-section" data-section="risk_rules" style="display:none;">
+      <!-- Account picker — only shown when 2+ active accounts exist. Lets
+           the user flick through each account and set rules independently.
+           Hidden in single-account setups since there'd only be one option. -->
+      <div class="settings-risk-account-picker" id="settings-risk-account-picker" style="display:none;">
+        <label class="settings-label" data-i18n="settings.risk_rules_for">Rules for</label>
+        <select id="settings-risk-account-select" class="settings-input settings-input-compact"></select>
+      </div>
       <p class="settings-hint" data-i18n="settings.risk_intro">Define the limits you commit to. The app checks each trade against these and reflects rule-following or rule-breaking in your bias and session-review greetings. Leave a field blank to skip that rule.</p>
 
       <div class="settings-risk-label-row" style="margin-top:14px;">
@@ -3127,6 +3137,7 @@
       'settings.section_profile': 'Profile',
       'settings.section_session': 'Session',
       'settings.section_risk': 'Risk Rules',
+      'settings.risk_rules_for': 'Rules for',
       'settings.risk_intro': "Define the limits you commit to. The app checks each trade against these and reflects rule-following or rule-breaking in your bias and session-review greetings. Leave a field blank to skip that rule.",
       'settings.risk_pct_suffix': '% of balance',
       'settings.risk_amt_suffix': '{C} amount',
@@ -3141,7 +3152,7 @@
       'risk_onboard.intro': "Before you log your first trade, set the risk limits you commit to. The app will track whether you're following them and reflect this in your daily greetings. Leave a field blank to skip that rule — you can edit any of these later in Settings.",
       'risk_onboard.skip': 'Skip for now',
       'risk_onboard.save': 'Save rules',
-      'settings.section_accounts': 'Account',
+      'settings.section_accounts': 'Accounts',
       'scope.lifetime': 'Lifetime (all accounts)',
       'scope.lifetime_label': 'All accounts',
       'scope.archived_header': 'Archived',
@@ -4009,6 +4020,7 @@
       'settings.section_profile': 'Perfil',
       'settings.section_session': 'Sesión',
       'settings.section_risk': 'Reglas de Riesgo',
+      'settings.risk_rules_for': 'Reglas para',
       'settings.risk_intro': 'Define los límites a los que te comprometes. La app verifica cada operación contra estos y refleja si los cumples o los rompes en tus saludos de bias y revisión de sesión. Deja un campo vacío para omitir esa regla.',
       'settings.risk_pct_suffix': '% del balance',
       'settings.risk_amt_suffix': 'cantidad en {C}',
@@ -4023,7 +4035,7 @@
       'risk_onboard.intro': 'Antes de registrar tu primera operación, define los límites de riesgo a los que te comprometes. La app verificará si los cumples y lo reflejará en tus saludos diarios. Deja un campo vacío para omitir esa regla — puedes editarlas todas más tarde en Ajustes.',
       'risk_onboard.skip': 'Omitir por ahora',
       'risk_onboard.save': 'Guardar reglas',
-      'settings.section_accounts': 'Cuenta',
+      'settings.section_accounts': 'Cuentas',
       'scope.lifetime': 'Histórico (todas las cuentas)',
       'scope.lifetime_label': 'Todas las cuentas',
       'scope.archived_header': 'Archivadas',
@@ -6087,6 +6099,32 @@
          !d.accounts.some(a => a.id === d.viewScope) &&
          !(Array.isArray(d.linkedGroups) && d.linkedGroups.some(g => g.id === d.viewScope)))) {
       d.viewScope = d.activeAccountId || 'lifetime';
+    }
+    // ─── Risk Rules: legacy → per-account migration ───────────────────────
+    // Before the per-account picker, all users shared one set of rules at
+    // d.settings.riskRules. After the picker, each account owns its rules
+    // at d.accounts[i].riskRules. On first load after the upgrade we copy
+    // the legacy global rules onto EVERY active account so a multi-account
+    // user's existing rules don't silently disappear from any of them.
+    // Guarded by _riskRulesMigratedV2 so this runs exactly once. The
+    // legacy d.settings.riskRules is left in place untouched as a safety
+    // backup; it's just no longer consulted by getRuleStatus().
+    if (!d._riskRulesMigratedV2 && d.settings && d.settings.riskRules
+        && Array.isArray(d.accounts) && d.accounts.length > 0) {
+      const legacy = d.settings.riskRules;
+      const hasLegacyContent = (legacy.maxLossPct > 0) || (legacy.maxLossAmount > 0)
+                            || (legacy.maxRiskPct > 0) || (legacy.maxRiskAmount > 0)
+                            || (legacy.maxTrades > 0)
+                            || legacy.maxLossMode || legacy.maxRiskMode;
+      if (hasLegacyContent) {
+        d.accounts.forEach(acc => {
+          if (acc.status !== 'active') return;
+          if (acc.riskRules && Object.keys(acc.riskRules).length > 0) return; // don't overwrite
+          // Shallow copy so each account gets its own independent object.
+          acc.riskRules = Object.assign({}, legacy);
+        });
+      }
+      d._riskRulesMigratedV2 = true;
     }
     // One-time aggressive repair for the broken Move state. Older buggy builds of
     // the Move flow could leave viewScope pinned to a since-archived account
@@ -13754,11 +13792,17 @@
     }
     // Skip if rules already exist (e.g. set manually via Settings before this
     // chain ran — unlikely but possible if the user explored Settings during
-    // the earlier prompts). Checks all five possible keys.
-    const existingRules = (data.settings && data.settings.riskRules) || {};
-    if (existingRules.maxLossPct    > 0 || existingRules.maxLossAmount > 0
-     || existingRules.maxRiskPct    > 0 || existingRules.maxRiskAmount > 0
-     || existingRules.maxTrades     > 0) {
+    // the earlier prompts). Checks both legacy global storage AND any
+    // account's per-account rules, since the picker writes per-account.
+    const existingGlobal = (data.settings && data.settings.riskRules) || {};
+    const hasGlobalRules = existingGlobal.maxLossPct    > 0 || existingGlobal.maxLossAmount > 0
+                        || existingGlobal.maxRiskPct    > 0 || existingGlobal.maxRiskAmount > 0
+                        || existingGlobal.maxTrades     > 0;
+    const hasPerAccountRules = (Array.isArray(data.accounts) ? data.accounts : []).some(a => {
+      const r = a.riskRules || {};
+      return r.maxLossPct > 0 || r.maxLossAmount > 0 || r.maxRiskPct > 0 || r.maxRiskAmount > 0 || r.maxTrades > 0;
+    });
+    if (hasGlobalRules || hasPerAccountRules) {
       data._riskRulesPrompted = true;
       saveData();
       return;
@@ -13806,10 +13850,24 @@
   // Save button: read each rule's input, look at which toggle button is
   // active in the same row to know which storage key (pct or amount) to
   // write to. Persists the chosen mode alongside the value. Empty / non-
-  // positive inputs simply don't write anything.
+  // positive inputs simply don't write anything. Writes to the currently-
+  // active account's riskRules (per-account model); falls back to
+  // data.settings.riskRules only if no accounts exist yet.
   document.getElementById('risk-onboard-save').addEventListener('click', () => {
-    if (!data.settings) data.settings = {};
-    if (!data.settings.riskRules) data.settings.riskRules = {};
+    // Find the account to write to — active account preferred, then first
+    // active, then legacy global storage as a last resort.
+    let target = null;
+    if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+      target = data.accounts.find(a => a.id === data.activeAccountId && a.status === 'active')
+        || data.accounts.find(a => a.status === 'active')
+        || data.accounts[0];
+      if (target && !target.riskRules) target.riskRules = {};
+    }
+    const rr = target ? target.riskRules : (() => {
+      if (!data.settings) data.settings = {};
+      if (!data.settings.riskRules) data.settings.riskRules = {};
+      return data.settings.riskRules;
+    })();
     const modal = document.getElementById('risk-onboarding-modal-bg');
     const writeRuleByMode = (rule, inpId, pctKey, amtKey, modeKey) => {
       const toggle = modal.querySelector(`.settings-risk-mode-toggle[data-rule="${rule}"]`);
@@ -13817,11 +13875,11 @@
       if (!toggle || !inp) return;
       const activeBtn = toggle.querySelector('.settings-risk-mode-btn.active');
       const mode = (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
-      data.settings.riskRules[modeKey] = mode;
+      rr[modeKey] = mode;
       const raw = inp.value.trim();
       const n = Number(raw);
       if (raw !== '' && !isNaN(n) && n > 0) {
-        data.settings.riskRules[(mode === 'amount') ? amtKey : pctKey] = n;
+        rr[(mode === 'amount') ? amtKey : pctKey] = n;
       }
     };
     writeRuleByMode('maxLoss', 'risk-onboard-max-loss',  'maxLossPct', 'maxLossAmount', 'maxLossMode');
@@ -13832,7 +13890,7 @@
       const raw = tradesInp.value.trim();
       const n = Number(raw);
       if (raw !== '' && !isNaN(n) && n > 0) {
-        data.settings.riskRules.maxTrades = n;
+        rr.maxTrades = n;
       }
     }
     data._riskRulesPrompted = true;
@@ -16678,47 +16736,45 @@
     return idx;
   }
   // ─── RULE STATUS ────────────────────────────────────────────────────────
-  // Reads data.settings.riskRules and checks today's trades against each set
-  // rule. Returns null when no rules are configured or the starting balance
-  // is zero (we can't compute percentages without it). Otherwise returns an
-  // object with per-rule broken flags + summary booleans. Used by pickTail()
-  // to inject rule-aware tails into bias/review greetings.
+  // Reads each in-scope account's riskRules and checks today's trades for
+  // that account against each set rule. Per-account rules mean each account
+  // has its own commitments; the greeting reflects the strictest signal
+  // across the current scope:
+  //   - account scope → just that account's rules + trades
+  //   - group scope   → the group's member accounts, each checked separately
+  //   - lifetime      → every active account, each checked separately
+  // Aggregation: ANY account breaking a rule → anyBroken=true (with priority
+  // loss > risk > count for picking the broken tail pool). All accounts in
+  // scope must follow their rules (and at least one trade exists overall)
+  // for allFollowed to be true.
   //
-  // Trade matching mirrors getTodayOutcome (same isSameDay logic + same
-  // saved/in-progress dedupe by signature) so the two functions agree on
-  // exactly which trades count toward "today".
+  // Returns null when no in-scope account has any rules set, so the bias
+  // greeting falls through to the regular non-rule pools.
+  //
+  // Trade matching for each account mirrors getTodayOutcome (saved + in-
+  // progress, deduped by signature) but additionally filters by accountId
+  // so an account's rules check only its own trades.
   function getRuleStatus() {
-    const rules = (data.settings && data.settings.riskRules) || {};
-    // Each loss/risk rule has a mode flag (maxLossMode / maxRiskMode) that
-    // says which unit the user committed to — % of balance or money amount.
-    // Mode defaults to 'pct' for legacy data; when only an amount value is
-    // present, the legacy multi-rule path used to OR them both, but the
-    // current single-input UI commits to one unit at a time, so we infer
-    // amount mode from "amount value but no pct value" for that case.
-    const lossMode = (rules.maxLossMode === 'amount' || rules.maxLossMode === 'pct')
-      ? rules.maxLossMode
-      : ((rules.maxLossAmount > 0 && !(rules.maxLossPct > 0)) ? 'amount' : 'pct');
-    const riskMode = (rules.maxRiskMode === 'amount' || rules.maxRiskMode === 'pct')
-      ? rules.maxRiskMode
-      : ((rules.maxRiskAmount > 0 && !(rules.maxRiskPct > 0)) ? 'amount' : 'pct');
-    const hasMaxLoss = (lossMode === 'amount')
-      ? (typeof rules.maxLossAmount === 'number' && rules.maxLossAmount > 0)
-      : (typeof rules.maxLossPct    === 'number' && rules.maxLossPct    > 0);
-    const hasMaxRisk = (riskMode === 'amount')
-      ? (typeof rules.maxRiskAmount === 'number' && rules.maxRiskAmount > 0)
-      : (typeof rules.maxRiskPct    === 'number' && rules.maxRiskPct    > 0);
-    const hasMaxTrades = typeof rules.maxTrades === 'number' && rules.maxTrades > 0;
-    if (!hasMaxLoss && !hasMaxRisk && !hasMaxTrades) return null;
-    const sb = (typeof getEffectiveStartingBalance === 'function')
-      ? getEffectiveStartingBalance()
-      : ((data.settings && data.settings.startingBalance) || 0);
-    // Percentage-mode rules need a starting balance to evaluate; if it's
-    // missing those rules silently skip while amount-mode rules still
-    // function. We return null only when NO rule is checkable.
-    const lossUsable = hasMaxLoss && (lossMode === 'amount' || sb > 0);
-    const riskUsable = hasMaxRisk && (riskMode === 'amount' || sb > 0);
-    if (!lossUsable && !riskUsable && !hasMaxTrades) return null;
-    // Today's trades — same logic as getTodayOutcome.
+    // Resolve which accounts to consider, based on the current view scope.
+    let accountsInScope = [];
+    try {
+      if (typeof currentScopeResolved === 'function') {
+        const s = currentScopeResolved();
+        if (s.kind === 'account') {
+          accountsInScope = [s.account];
+        } else if (s.kind === 'group') {
+          const idSet = new Set(s.accountIds);
+          accountsInScope = (data.accounts || []).filter(a => idSet.has(a.id) && a.status === 'active');
+        } else { // lifetime
+          accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+        }
+      } else {
+        accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+      }
+    } catch (e) {
+      accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+    }
+    // Single-day matcher reused per account.
     const today = new Date(); today.setHours(0, 0, 0, 0);
     const isSameDay = (d) => {
       if (!d) return false;
@@ -16732,62 +16788,110 @@
       dt.setHours(0, 0, 0, 0);
       return dt.getTime() === today.getTime();
     };
-    const saved = (data.currentSeries || []).filter(t => isSameDay(t.date) && t.result);
-    const reviewIsToday = (data.review && data.review.sessionDate)
-      ? isSameDay(data.review.sessionDate)
-      : false;
-    const inProgress = reviewIsToday
-      ? ((data.review && data.review.trades) || []).filter(t => t.result)
-      : [];
-    const sig = (t) => `${t.result}|${t.entryTime || ''}|${t.r || ''}|${t.pips || ''}`;
-    const savedSigs = new Set(saved.map(sig));
-    const uniqueInProgress = inProgress.filter(t => !savedSigs.has(sig(t)));
-    const all = saved.concat(uniqueInProgress);
-    // Net P&L today, scaled by copies for parallel-account trades. tradeNetPL
-    // already includes commissions/spread (gross minus costs), so the daily-
-    // loss check naturally counts costs without any extra buffer logic.
-    const totalNetPL = all.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
-    const tradeCount = all.reduce((s, t) => s + tradeCopies(t), 0);
-    // Daily loss check — single unit, decided by lossMode. Net loss = gross
-    // loss + commissions/spread, so the user's "max loss" cap already
-    // reflects total cost-of-trading for the day.
-    let dailyLossBroken = false;
-    if (lossUsable && totalNetPL < 0) {
-      const lossAmount = Math.abs(totalNetPL);
-      if (lossMode === 'amount') {
-        if (lossAmount > rules.maxLossAmount) dailyLossBroken = true;
-      } else {
-        const lossPct = (lossAmount / sb) * 100;
-        if (lossPct > rules.maxLossPct) dailyLossBroken = true;
-      }
-    }
-    // Per-trade risk check — adds the trade's costs to the price-based risk
-    // so the "max risk" cap reflects total potential loss (stop hit +
-    // commissions paid), consistent with how the label reads to the user.
-    let riskBroken = false;
-    if (riskUsable) {
-      for (const t of all) {
-        const tradeRiskPlusCosts = ((parseFloat(t.risk) || 0) + tradeCosts(t)) * tradeCopies(t);
-        if (tradeRiskPlusCosts <= 0) continue;
-        if (riskMode === 'amount') {
-          if (tradeRiskPlusCosts > rules.maxRiskAmount) { riskBroken = true; break; }
+    // Per-account check — returns { hasRules, status } where status mirrors
+    // the public getRuleStatus return shape but scoped to one account.
+    const checkAccount = (acc) => {
+      const rules = (acc && acc.riskRules) || {};
+      const lossMode = (rules.maxLossMode === 'amount' || rules.maxLossMode === 'pct')
+        ? rules.maxLossMode
+        : ((rules.maxLossAmount > 0 && !(rules.maxLossPct > 0)) ? 'amount' : 'pct');
+      const riskMode = (rules.maxRiskMode === 'amount' || rules.maxRiskMode === 'pct')
+        ? rules.maxRiskMode
+        : ((rules.maxRiskAmount > 0 && !(rules.maxRiskPct > 0)) ? 'amount' : 'pct');
+      const hasMaxLoss = (lossMode === 'amount')
+        ? (typeof rules.maxLossAmount === 'number' && rules.maxLossAmount > 0)
+        : (typeof rules.maxLossPct    === 'number' && rules.maxLossPct    > 0);
+      const hasMaxRisk = (riskMode === 'amount')
+        ? (typeof rules.maxRiskAmount === 'number' && rules.maxRiskAmount > 0)
+        : (typeof rules.maxRiskPct    === 'number' && rules.maxRiskPct    > 0);
+      const hasMaxTrades = typeof rules.maxTrades === 'number' && rules.maxTrades > 0;
+      if (!hasMaxLoss && !hasMaxRisk && !hasMaxTrades) return null;
+      const sb = (typeof acc.startingBalance === 'number' && acc.startingBalance > 0) ? acc.startingBalance : 0;
+      const lossUsable = hasMaxLoss && (lossMode === 'amount' || sb > 0);
+      const riskUsable = hasMaxRisk && (riskMode === 'amount' || sb > 0);
+      if (!lossUsable && !riskUsable && !hasMaxTrades) return null;
+      // Today's trades for THIS account only — same saved/in-progress
+      // dedupe as getTodayOutcome, with an extra accountId filter.
+      const saved = (data.currentSeries || []).filter(t =>
+        isSameDay(t.date) && t.result && t.accountId === acc.id);
+      const reviewIsToday = (data.review && data.review.sessionDate)
+        ? isSameDay(data.review.sessionDate) : false;
+      const inProgress = reviewIsToday
+        ? ((data.review && data.review.trades) || []).filter(t => t.result && t.accountId === acc.id)
+        : [];
+      const sig = (t) => `${t.result}|${t.entryTime || ''}|${t.r || ''}|${t.pips || ''}`;
+      const savedSigs = new Set(saved.map(sig));
+      const uniqueInProgress = inProgress.filter(t => !savedSigs.has(sig(t)));
+      const all = saved.concat(uniqueInProgress);
+      const totalNetPL = all.reduce((s, t) => s + (tradeNetPL(t) * tradeCopies(t)), 0);
+      const tradeCount = all.reduce((s, t) => s + tradeCopies(t), 0);
+      let dailyLossBroken = false;
+      if (lossUsable && totalNetPL < 0) {
+        const lossAmount = Math.abs(totalNetPL);
+        if (lossMode === 'amount') {
+          if (lossAmount > rules.maxLossAmount) dailyLossBroken = true;
         } else {
-          if ((tradeRiskPlusCosts / sb) * 100 > rules.maxRiskPct) { riskBroken = true; break; }
+          const lossPct = (lossAmount / sb) * 100;
+          if (lossPct > rules.maxLossPct) dailyLossBroken = true;
         }
       }
-    }
+      let riskBroken = false;
+      if (riskUsable) {
+        for (const t of all) {
+          const tradeRiskPlusCosts = ((parseFloat(t.risk) || 0) + tradeCosts(t)) * tradeCopies(t);
+          if (tradeRiskPlusCosts <= 0) continue;
+          if (riskMode === 'amount') {
+            if (tradeRiskPlusCosts > rules.maxRiskAmount) { riskBroken = true; break; }
+          } else {
+            if ((tradeRiskPlusCosts / sb) * 100 > rules.maxRiskPct) { riskBroken = true; break; }
+          }
+        }
+      }
+      let tradeCountBroken = false;
+      if (hasMaxTrades) tradeCountBroken = tradeCount > rules.maxTrades;
+      return {
+        tradeCount,
+        dailyLossBroken,
+        riskBroken,
+        tradeCountBroken,
+        anyBroken: dailyLossBroken || riskBroken || tradeCountBroken,
+        allFollowed: tradeCount > 0 && !dailyLossBroken && !riskBroken && !tradeCountBroken,
+      };
+    };
+    // Aggregate across in-scope accounts. Each account is independent —
+    // we OR the broken flags and AND the followed flag.
+    let hasAnyRules = false;
+    let totalTradeCount = 0;
+    let dailyLossBroken = false;
+    let riskBroken = false;
     let tradeCountBroken = false;
-    if (hasMaxTrades) {
-      tradeCountBroken = tradeCount > rules.maxTrades;
+    let anyAccountAllFollowed = false;
+    let anyAccountHasTrades = false;
+    for (const acc of accountsInScope) {
+      const s = checkAccount(acc);
+      if (!s) continue;
+      hasAnyRules = true;
+      totalTradeCount += s.tradeCount;
+      if (s.tradeCount > 0) anyAccountHasTrades = true;
+      if (s.dailyLossBroken)  dailyLossBroken  = true;
+      if (s.riskBroken)       riskBroken       = true;
+      if (s.tradeCountBroken) tradeCountBroken = true;
+      if (s.allFollowed)      anyAccountAllFollowed = true;
     }
+    if (!hasAnyRules) return null;
+    const anyBroken = dailyLossBroken || riskBroken || tradeCountBroken;
     return {
       hasRules: true,
-      tradeCount,
+      tradeCount: totalTradeCount,
       dailyLossBroken,
       riskBroken,
       tradeCountBroken,
-      anyBroken: dailyLossBroken || riskBroken || tradeCountBroken,
-      allFollowed: tradeCount > 0 && !dailyLossBroken && !riskBroken && !tradeCountBroken,
+      anyBroken,
+      // allFollowed = nothing broken AND at least one account had trades.
+      // We don't require ALL accounts to have trades (that would be too
+      // strict — a multi-account user often only trades one or two of
+      // their accounts on any given day).
+      allFollowed: !anyBroken && anyAccountHasTrades,
     };
   }
 
@@ -19587,15 +19691,67 @@
       }
       renderSettingsAccountsList();
       try { renderSettingsLinkedGroupsList(); } catch (e) {}
-      // Risk rules — single input per rule, with a £/% mode toggle that
-      // determines which storage key (maxLossPct/maxLossAmount or
-      // maxRiskPct/maxRiskAmount) the input writes to. Mode is read from
-      // data.settings.riskRules.maxLossMode/maxRiskMode if present; otherwise
-      // inferred from existing values (amount mode wins only if the user has
-      // an amount set and no percentage). The active mode's value is loaded
-      // into the input; the dormant value is preserved in storage so
-      // toggling back restores the user's previous entry.
-      const rr = (data.settings && data.settings.riskRules) || {};
+      // Risk rules — per-account now. The picker dropdown lets the user
+      // switch which account's rules they're editing; the inputs reload
+      // each time. We populate the picker, default to the active account,
+      // then load that account's rules. The actual reading/writing of
+      // rules is centralised in getEditingRiskRules() / saveRiskRule() so
+      // every save handler agrees on which account is being edited.
+      populateRiskAccountPicker();
+      loadRiskRulesIntoSettingsInputs();
+      modal.classList.add('show');
+    }
+    // Populate the account picker dropdown with currently-active accounts.
+    // Hides the picker entirely when only one active account exists (no
+    // value in showing a single-option dropdown) — single-account users
+    // see the same UI they had before per-account rules were introduced.
+    function populateRiskAccountPicker() {
+      const sel = document.getElementById('settings-risk-account-select');
+      const wrap = document.getElementById('settings-risk-account-picker');
+      if (!sel || !wrap) return;
+      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active');
+      if (active.length <= 1) {
+        wrap.style.display = 'none';
+        // Still need a value for sel.value below so save handlers can find
+        // the right account; populate with the single account if there is one.
+        if (active.length === 1) {
+          sel.innerHTML = `<option value="${active[0].id}">${escapeHTML(active[0].name || 'Account')}</option>`;
+          sel.value = active[0].id;
+        } else {
+          sel.innerHTML = '';
+        }
+        return;
+      }
+      wrap.style.display = '';
+      sel.innerHTML = active.map(a =>
+        `<option value="${a.id}">${escapeHTML(a.name || 'Account')}</option>`
+      ).join('');
+      // Default to the currently-active account so the picker opens on the
+      // account the user is most likely thinking about.
+      if (data.activeAccountId && active.some(a => a.id === data.activeAccountId)) {
+        sel.value = data.activeAccountId;
+      }
+    }
+    // Returns the rules object for the account currently selected in the
+    // settings picker. Creates an empty rules object on the account if it
+    // doesn't have one yet. Returns null if no account is selectable
+    // (which shouldn't happen given the picker is populated on open, but
+    // guards against the empty-accounts edge case).
+    function getEditingRiskRules() {
+      const sel = document.getElementById('settings-risk-account-select');
+      const id = sel && sel.value;
+      if (!id) return null;
+      const acc = (data.accounts || []).find(a => a.id === id);
+      if (!acc) return null;
+      if (!acc.riskRules) acc.riskRules = {};
+      return acc.riskRules;
+    }
+    // Load the editing-account's rules into the Settings UI: applies the
+    // mode toggle (% or £), sets each input's value to the active mode's
+    // stored number, and updates the suffix label accordingly. Called on
+    // settings open AND whenever the account picker changes.
+    function loadRiskRulesIntoSettingsInputs() {
+      const rr = getEditingRiskRules() || {};
       const inferMode = (modeKey, pctKey, amtKey) => {
         if (rr[modeKey] === 'amount' || rr[modeKey] === 'pct') return rr[modeKey];
         if (rr[amtKey] > 0 && !(rr[pctKey] > 0)) return 'amount';
@@ -19609,8 +19765,8 @@
           btn.classList.toggle('active', btn.dataset.mode === mode);
         });
       };
-      const lossToggle  = document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="maxLoss"]');
-      const riskToggle  = document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="maxRisk"]');
+      const lossToggle = document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="maxLoss"]');
+      const riskToggle = document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="maxRisk"]');
       applyToggle(lossToggle, lossMode);
       applyToggle(riskToggle, riskMode);
       const rMaxLossInp     = document.getElementById('settings-risk-max-loss');
@@ -19631,7 +19787,6 @@
       showActiveValue(rMaxLossInp,  rMaxLossSuffix,  lossMode, 'maxLossPct', 'maxLossAmount', '1.0', '100');
       showActiveValue(rMaxTradeInp, rMaxTradeSuffix, riskMode, 'maxRiskPct', 'maxRiskAmount', '0.5', '50');
       if (rMaxTradesInp) rMaxTradesInp.value = (rr.maxTrades !== undefined && rr.maxTrades !== null) ? rr.maxTrades : '';
-      modal.classList.add('show');
     }
     function closeSettings() { modal.classList.remove('show'); }
     gear.addEventListener('click', openSettings);
@@ -19747,15 +19902,18 @@
     //     maxRiskAmount). Toggling between modes saves the mode flag,
     //     loads the OTHER key's value into the input, and updates the
     //     suffix label — so the user can stash a value in % then switch
-    //     to £ without losing either entry.
+    //     to £ without losing either entry. All writes target the
+    //     CURRENTLY-PICKED account's riskRules object (per-account rules
+    //     since the account picker was added) so each account stays
+    //     independent.
     function saveRiskRule(key, rawValue) {
-      if (!data.settings) data.settings = {};
-      if (!data.settings.riskRules) data.settings.riskRules = {};
+      const rr = getEditingRiskRules();
+      if (!rr) return;
       const trimmed = (rawValue == null) ? '' : String(rawValue).trim();
       if (trimmed === '' || isNaN(Number(trimmed)) || Number(trimmed) <= 0) {
-        delete data.settings.riskRules[key];
+        delete rr[key];
       } else {
-        data.settings.riskRules[key] = Number(trimmed);
+        rr[key] = Number(trimmed);
       }
       if (typeof save === 'function') save();
       try {
@@ -19766,10 +19924,17 @@
     // Save the chosen mode itself (independent of the value) so an empty
     // input still remembers which unit the user prefers.
     function saveRiskMode(modeKey, mode) {
-      if (!data.settings) data.settings = {};
-      if (!data.settings.riskRules) data.settings.riskRules = {};
-      data.settings.riskRules[modeKey] = mode;
+      const rr = getEditingRiskRules();
+      if (!rr) return;
+      rr[modeKey] = mode;
       if (typeof save === 'function') save();
+    }
+    // Account picker change → reload inputs from the newly-picked account's
+    // rules. Doesn't need to save anything — the picker is purely a "which
+    // account am I editing" selector.
+    const _rAccSel = document.getElementById('settings-risk-account-select');
+    if (_rAccSel) {
+      _rAccSel.addEventListener('change', loadRiskRulesIntoSettingsInputs);
     }
     // Mapping table — one row per loss/risk rule. Centralises everything
     // about a rule (DOM ids, storage keys, default placeholders) so the
@@ -19807,8 +19972,9 @@
             b.classList.toggle('active', b === btn);
           });
           saveRiskMode(def.modeKey, mode);
-          // Load the other mode's stored value into the input.
-          const rrLatest = (data.settings && data.settings.riskRules) || {};
+          // Load the other mode's stored value into the input from the
+          // editing account's rules (NOT the legacy global object).
+          const rrLatest = getEditingRiskRules() || {};
           const key = (mode === 'amount') ? def.amtKey : def.pctKey;
           const v = rrLatest[key];
           inp.value = (v !== undefined && v !== null) ? v : '';
