@@ -436,13 +436,32 @@
   .econ-calendar-error { color: var(--text-dim); padding: 8px 0; font-size: 12px; }
   .econ-calendar-retry { background: transparent; border: 1px solid var(--border-2); color: var(--text-mid); padding: 4px 12px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; margin-left: 12px; }
   .econ-calendar-retry:hover { color: var(--text); border-color: var(--text-mid); }
-  .econ-event { display: grid; grid-template-columns: 60px 50px 30px 1fr 20px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 120ms; }
+  .econ-event { display: grid; grid-template-columns: 60px 50px 30px 1fr 64px 64px 64px 20px; gap: 12px; align-items: center; padding: 7px 0; border-bottom: 1px solid var(--border); cursor: pointer; transition: background 120ms; }
   .econ-event:hover { background: rgba(255,255,255,0.02); }
   .econ-event.expanded { background: rgba(255,255,255,0.025); }
   .econ-event:last-child { border-bottom: none; }
   .econ-event-time { color: var(--text); font-weight: 500; }
   .econ-event-currency { color: var(--text-mid); font-size: 10px; letter-spacing: 0.12em; }
   .econ-event-impact { font-size: 24px; text-align: center; line-height: 1; }
+  /* Actual (released number), Forecast (consensus), Previous (last release).
+     Actual is pulled separately from FF's HTML calendar via the worker's
+     /actuals endpoint and merged in after the XML fetch; for events that
+     haven't released yet — or for which the scraper got nothing — it stays
+     empty and shows a dim em-dash. Forecast/Previous come from the XML feed.
+     Each column shows a small letter tag so users can tell which is which
+     without a header row. */
+  .econ-event-actual, .econ-event-forecast, .econ-event-previous { font-family: 'DM Mono', monospace; font-size: 11px; color: var(--text); text-align: right; white-space: nowrap; letter-spacing: 0.02em; overflow: hidden; text-overflow: ellipsis; }
+  /* Actual stands out — it's the released number, the one traders actually
+     care about post-release. Slight emphasis vs the consensus/historical refs. */
+  .econ-event-actual { color: var(--text); font-weight: 500; }
+  .econ-event-fp-label { color: var(--text-dim); font-size: 9px; letter-spacing: 0.15em; margin-right: 3px; font-weight: 500; }
+  .econ-event-empty { color: var(--text-dim); }
+  /* On mobile the row is already tight — drop the A/F/P columns rather than
+     fighting for space. The click-to-expand panel still shows the figures. */
+  @media (max-width: 700px) {
+    .econ-event { grid-template-columns: 56px 40px 24px 1fr 20px; gap: 8px; }
+    .econ-event-actual, .econ-event-forecast, .econ-event-previous { display: none; }
+  }
   /* Per-row chevron — matches the calendar header chevron in glyph and rotation behaviour.
      Rotates 180deg when the row's `.expanded` class is present, mirroring how the calendar
      header chevron rotates when the panel is collapsed. Pointing down = closed, pointing
@@ -3268,6 +3287,9 @@
       'econ.tap_to_expand': 'Tap to expand',
       'econ.loading': 'Loading events…',
       'econ.loading_today': 'Loading today\'s events…',
+      'econ.col_forecast_short': 'F',
+      'econ.col_previous_short': 'P',
+      'econ.col_actual_short': 'A',
       'econ.loading_tomorrow': 'Loading tomorrow\'s events…',
       'econ.loading_week': 'Loading this week\'s events…',
       'econ.empty': 'No economic events scheduled today.',
@@ -4126,6 +4148,9 @@
       'econ.tap_to_expand': 'Toca para expandir',
       'econ.loading': 'Cargando eventos…',
       'econ.loading_today': 'Cargando eventos de hoy…',
+      'econ.col_forecast_short': 'P',
+      'econ.col_previous_short': 'A',
+      'econ.col_actual_short': 'R',
       'econ.loading_tomorrow': 'Cargando eventos de mañana…',
       'econ.loading_week': 'Cargando eventos de esta semana…',
       'econ.empty': 'No hay eventos económicos programados hoy.',
@@ -16933,6 +16958,14 @@
     const country = txt('country');
     const impact  = txt('impact');
     const url     = txt('url');    // Forex Factory event detail URL (e.g. https://www.forexfactory.com/calendar/66-us-non-farm-employment-change)
+    // Forecast = consensus pre-release estimate (analyst expectations).
+    // Previous = the value released in the previous reporting period.
+    // Both are strings (may include "%", "K", "M", "B", or be empty for events
+    // like speeches and holidays). Actual (the released number) is NOT included
+    // in FF's free XML or JSON feeds — it's only accessible via HTML scraping,
+    // which would tie this app to FF's site layout. Left out by design.
+    const forecast = txt('forecast');
+    const previous = txt('previous');
     // Feed times are US Eastern. Parse the date/time into a JS Date instance
     // anchored to America/New_York, then JS will display in the user's local
     // time zone automatically via toLocaleTimeString.
@@ -16975,6 +17008,7 @@
     }
     return {
       title, country, impact, url,
+      forecast, previous,
       when, // Date object, or null if unparseable
       timeStr, // original string ("8:30am", "All Day", "Tentative")
       isTimed
@@ -17654,11 +17688,29 @@
         : (e.timeStr || '—');
       const impactKey = (e.impact || '').toLowerCase();
       const impactDot = '●';
+      // Small inline A / F / P labels. The translation keys are locale-aware
+      // (e.g. ES uses "R" for Real, "P" for Pronóstico, "A" for Anterior).
+      // Values pass through escape() because feed/scrape data is untrusted text.
+      const aLabel = t('econ.col_actual_short');
+      const fLabel = t('econ.col_forecast_short');
+      const pLabel = t('econ.col_previous_short');
+      const aCell = e.actual
+        ? `<span class="econ-event-fp-label">${escape(aLabel)}</span>${escape(e.actual)}`
+        : `<span class="econ-event-empty">—</span>`;
+      const fCell = e.forecast
+        ? `<span class="econ-event-fp-label">${escape(fLabel)}</span>${escape(e.forecast)}`
+        : `<span class="econ-event-empty">—</span>`;
+      const pCell = e.previous
+        ? `<span class="econ-event-fp-label">${escape(pLabel)}</span>${escape(e.previous)}`
+        : `<span class="econ-event-empty">—</span>`;
       return `<div class="econ-event" data-event-idx="${e._idx}">
         <span class="econ-event-time">${time}</span>
         <span class="econ-event-currency">${escape(e.country)}</span>
         <span class="econ-event-impact ${impactKey}">${impactDot}</span>
         <span class="econ-event-title">${escape(getEventTitle(e.title))}</span>
+        <span class="econ-event-actual">${aCell}</span>
+        <span class="econ-event-forecast">${fCell}</span>
+        <span class="econ-event-previous">${pCell}</span>
         <span class="econ-event-chevron" aria-hidden="true">▾</span>
       </div>`;
     }
@@ -17749,6 +17801,9 @@
       if (isStale || lacksUrl) {
         try { backgroundUpgradeCache(); } catch (e) { /* non-fatal */ }
       }
+      // Always try to pull fresh actuals — fast (server-cached) and decorates
+      // already-rendered events with released numbers as they become available.
+      try { fetchAndMergeActuals(); } catch (e) { /* non-fatal */ }
       return;
     }
     // True cache miss — show loading state, then try the proxy.
@@ -17768,10 +17823,68 @@
         if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
         if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
       } catch (e) { /* non-fatal */ }
+      // Pull actuals once events are on screen. Independent of XML success/failure.
+      try { fetchAndMergeActuals(); } catch (e) { /* non-fatal */ }
     } else {
       // Fetch failed and no cache to fall back on — panel hides gracefully.
       // Not logged: this is expected behaviour when the proxy is unreachable, not a bug.
       renderEconomicCalendarUI({ kind: 'error' });
+    }
+  }
+
+  // Fetch released "Actual" values from the Deno worker's /actuals endpoint,
+  // merge them into the cached events, and re-render. Fully silent on failure
+  // because Actual is a nice-to-have — the rest of the calendar must keep
+  // working if FF changes their HTML or the scraper returns nothing.
+  //
+  // Matching: actuals come from FF's HTML calendar, where each row's day is
+  // its Eastern-time date. XML events are stored as UTC Date objects, so we
+  // convert each event to its Eastern date before building the lookup key.
+  // Key shape: `${easternDateKey}|${country}|${title}`. Title matches the raw
+  // English from the feed — translation happens at render time only.
+  async function fetchAndMergeActuals() {
+    if (!data._calendarCache || !Array.isArray(data._calendarCache.events)) return;
+    // Only the primary proxy (the Deno worker) implements /actuals. Public
+    // proxies don't. If the chain ever fails over to a public proxy, the
+    // actuals fetch silently no-ops — no harm done.
+    if (!CORS_PROXIES || !CORS_PROXIES.length) return;
+    const baseUrl = CORS_PROXIES[0](FF_FEED_URL);
+    // Skip if first proxy isn't a Deno worker (defensive — in case the chain
+    // is reordered). Deno URLs end with .deno.net or .deno.dev.
+    if (!/\.deno\.(net|dev)/i.test(baseUrl)) return;
+    const actualsUrl = baseUrl.replace(/\?.*$/, '').replace(/\/$/, '') + '/actuals';
+    let json;
+    try {
+      const resp = await fetch(actualsUrl, { method: 'GET' });
+      if (!resp.ok) return;
+      json = await resp.json();
+    } catch (e) { return; }
+    if (!json || !Array.isArray(json.actuals) || json.actuals.length === 0) return;
+    // Build lookup by composite key
+    const lookup = new Map();
+    json.actuals.forEach(a => {
+      if (!a || !a.dateKey || !a.country || !a.title || !a.actual) return;
+      lookup.set(`${a.dateKey}|${a.country}|${a.title}`, a.actual);
+    });
+    // Eastern-time date formatter — reused per event below.
+    const etFmt = new Intl.DateTimeFormat('en-CA', {
+      year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York'
+    });
+    let mergedCount = 0;
+    data._calendarCache.events.forEach(e => {
+      if (!e.when || !e.country || !e.title) return;
+      const dt = (typeof e.when === 'string') ? new Date(e.when) : e.when;
+      if (isNaN(dt.getTime())) return;
+      const etKey = etFmt.format(dt);
+      const val = lookup.get(`${etKey}|${e.country}|${e.title}`);
+      if (val && e.actual !== val) {
+        e.actual = val;
+        mergedCount++;
+      }
+    });
+    if (mergedCount > 0) {
+      try { if (typeof save === 'function') save(); } catch (e) { /* non-fatal */ }
+      renderCalendarFromCache();
     }
   }
 
