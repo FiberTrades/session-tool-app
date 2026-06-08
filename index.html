@@ -19747,15 +19747,40 @@
 
   // Look up a description for an event title in the current language. Falls back
   // through: exact EN → fuzzy EN (or ES → fuzzy ES depending on current language).
-  // Returns null when nothing matches — caller renders just the FF link in that case.
-  function getEventDescription(title) {
+  // Returns null when nothing matches AND no impact is given. With impact
+  // (and optionally country), falls back to a generic explanation based on
+  // impact level so low-/medium-impact events never show "No description
+  // available" — the user always gets at least an at-a-glance sense of
+  // what to expect from the release.
+  function getEventDescription(title, impact, country) {
     if (!title) return null;
-    const lang = (window.__lang === 'es') ? 'es' : 'en';
+    const lang  = (window.__lang === 'es') ? 'es' : 'en';
     const dict  = (lang === 'es') ? EVENT_DESCRIPTIONS_ES : EVENT_DESCRIPTIONS_EN;
     const fuzzy = (lang === 'es') ? EVENT_FUZZY_ES        : EVENT_FUZZY_EN;
     if (dict[title]) return dict[title];
     for (const [re, desc] of fuzzy) {
       if (re.test(title)) return desc;
+    }
+    // Generic impact-based fallback. Only kicks in for events not in the
+    // curated dictionary AND not matched by a fuzzy pattern — primarily
+    // low-impact data releases that aren't worth a custom write-up but
+    // still deserve some context for the user.
+    const impactLC = (impact || '').toLowerCase();
+    const ctry     = (country || '').toUpperCase();
+    if (impactLC === 'low') {
+      return lang === 'es'
+        ? `Publicación económica de impacto bajo${ctry ? ' para ' + ctry : ''}. Es poco probable que mueva el mercado por sí sola, pero puede acumularse con otros eventos durante la sesión. Vale la pena saber que está en la agenda; rara vez se opera de forma aislada.`
+        : `Lower-impact economic release${ctry ? ' for ' + ctry : ''}. Unlikely to move the market on its own, but can compound with other news flow during the session. Worth knowing it's on the schedule; rarely traded in isolation.`;
+    }
+    if (impactLC === 'medium') {
+      return lang === 'es'
+        ? `Publicación de impacto medio${ctry ? ' para ' + ctry : ''}. Puede mover el sentimiento si sorprende frente al consenso. Vale la pena seguir la sorpresa frente al pronóstico.`
+        : `Mid-tier economic release${ctry ? ' for ' + ctry : ''}. Can shift sentiment if it surprises versus consensus. Watch the surprise vs forecast more than the absolute number.`;
+    }
+    if (impactLC === 'high') {
+      return lang === 'es'
+        ? `Evento económico importante${ctry ? ' para ' + ctry : ''}. Probable movimiento significativo de mercado, especialmente si sorprende frente al pronóstico. Atención.`
+        : `Major economic event${ctry ? ' for ' + ctry : ''}. Likely to cause significant market movement, especially if it surprises versus forecast. Watch closely.`;
     }
     return null;
   }
@@ -20790,7 +20815,7 @@
       body.querySelectorAll('.econ-event-detail').forEach(el => el.remove());
       body.querySelectorAll('.econ-event.expanded').forEach(el => el.classList.remove('expanded'));
       // Build and insert the detail panel
-      const desc   = getEventDescription(e.title);
+      const desc   = getEventDescription(e.title, e.impact, e.country);
       const interp = getEventInterpretation(e.title);
       const safeUrl = (typeof e.url === 'string' && /^https:\/\/(www\.)?forexfactory\.com\//i.test(e.url)) ? e.url : null;
       // Tiny helper so we don't repeat the entity-encoding inline 3 times.
