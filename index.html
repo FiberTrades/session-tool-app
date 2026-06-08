@@ -906,26 +906,15 @@
      Strip it on the last one so the card doesn't trail extra empty space below the chart/caption. */
   .saved-bias-link > div:last-child { margin-bottom: 0 !important; }
   .bias-chart-img { width: 100%; max-width: 100%; aspect-ratio: 21 / 9; height: auto; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-2); display: block; cursor: pointer; transition: opacity 200ms; }
-  /* Saved-bias card override — the chart screenshot sits inside the
-     "This morning's bias" recap on Session Review. Trim it to ~65% width
-     and centre it horizontally so the card reads more like a compact
-     header card rather than a full-bleed image strip. */
+  /* Saved-bias card override — single-chart treatment: trim the chart to
+     ~65% width and centre it horizontally so the card reads as a compact
+     header rather than a full-bleed image strip. This applies when the
+     bias has exactly one chart (legacy single-chart rendering branch). */
   .saved-bias .bias-chart-img { width: 65%; margin-left: auto; margin-right: auto; }
-  /* Two-card MTF/LTF editor layout in the Bias tab. Stacks vertically on
-     narrow screens, side-by-side from 700px+ for the natural desktop
-     usage. Each card has a timeframe label above its URL+notes. */
-  .bias-tv-fixed-layout { display: grid; grid-template-columns: 1fr; gap: 18px; }
-  @media (min-width: 700px) {
-    .bias-tv-fixed-layout { grid-template-columns: 1fr 1fr; }
-  }
-  .bias-tv-tf-label { display: flex; align-items: baseline; gap: 10px; margin-bottom: 8px; }
-  .bias-tv-tf-name { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.3em; color: var(--text); font-weight: 500; }
-  .bias-tv-tf-sublabel { font-size: 10px; color: var(--text-dim); letter-spacing: 0.05em; }
-  /* Saved-bias chart grid — same two-column layout in the "This Morning's
-     Bias" recap on Session Review. Each card carries a TF label above the
-     screenshot; the screenshot itself sizes 100% of its column so two
-     side-by-side reads at the same vertical scale as the previous single
-     centred chart did. Falls back to one-column on narrow screens. */
+  /* Side-by-side MTF/LTF layout in the "This Morning's Bias" recap on
+     Session Review — only used when the bias has exactly two charts.
+     Each card stacks vertically: timeframe label → chart screenshot →
+     per-chart note. Two cards side-by-side on desktop, stacked on mobile. */
   .saved-bias-charts-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
   @media (max-width: 700px) {
     .saved-bias-charts-grid { grid-template-columns: 1fr; }
@@ -933,9 +922,9 @@
   .saved-bias-chart-card { display: flex; flex-direction: column; }
   .saved-bias-chart-tf-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.3em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; }
   .saved-bias-chart-note { font-size: 12px; color: var(--text-dim); margin-top: 8px; font-family: 'DM Mono', monospace; line-height: 1.6; }
-  /* Inside the saved-bias 2-column grid, the chart image fills its column
-     (overriding the 65% centred treatment above, which only made sense
-     for the legacy single-chart card). */
+  /* Inside the side-by-side grid, the chart image fills its column
+     (overriding the 65%-centred treatment above, which only applies to
+     the single-chart rendering branch). */
   .saved-bias .saved-bias-charts-grid .bias-chart-img { width: 100%; margin-left: 0; margin-right: 0; }
   .bias-chart-img:hover { opacity: 0.85; }
   /* Tab strip shown above the "This Morning's Bias" recap when multiple charts exist.
@@ -1979,8 +1968,9 @@
     </section>
     <section>
       <div class="section-header"><span class="section-num">05</span><span class="section-title" data-i18n="bias.s5.title">Charts</span></div>
-      <p class="section-hint" data-i18n="hint.tradingview_mtf_ltf">Higher-timeframe (MTF) and lower-timeframe (LTF) TradingView snapshots. Both are required before you can copy the bias to Discord.</p>
-      <div id="bias-tv-list" class="bias-tv-fixed-layout" style="margin-left:60px;"></div>
+      <p class="section-hint" data-i18n="hint.tradingview_snapshot_links_discord_embeds_them_aut">TradingView snapshot links — Discord embeds them automatically. Add as many as you need.</p>
+      <div id="bias-tv-list" style="margin-left:60px;"></div>
+      <button type="button" id="bias-tv-add" data-i18n="btn.add_link" style="margin-left:60px;margin-top:8px;background:transparent;border:1px dashed var(--border-2);padding:10px 16px;color:var(--text-dim);cursor:pointer;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;transition:all 200ms;">+ Add link</button>
     </section>
     <section>
       <div class="section-header"><span class="section-num">06</span><span class="section-title" data-i18n="bias.s6.title">Notes</span></div>
@@ -7385,52 +7375,34 @@
       });
     });
   }
-  // Render the two fixed TradingView chart slots for Bias — MTF (higher
-  // timeframe) at index 0, LTF (lower timeframe) at index 1. Both are
-  // mandatory; the bias can't be copied to Discord until both URLs are
-  // filled in. The slots replace the previous "+ Add link" pattern where
-  // the user could add any number of charts. Each slot has a small
-  // timeframe-label above its URL input + textarea, no remove button (the
-  // slots are fixed, not deletable).
-  //
-  // Migration: data.bias.tvLinks is padded to length 2 (empty slots added
-  // if shorter) and trimmed if longer (existing users with 3+ charts keep
-  // only the first two — most users had 1-2 anyway). Each slot also gets
-  // a `kind` field ('mtf' / 'ltf') for downstream code to distinguish.
+  // Render the dynamic list of TV links for Bias. Each row has a URL input, ×, preview image, and notes.
   function renderBiasTvLinks() {
     const wrap = document.getElementById('bias-tv-list');
     if (!wrap) return;
     wrap.innerHTML = '';
     if (!Array.isArray(data.bias.tvLinks)) data.bias.tvLinks = [];
-    while (data.bias.tvLinks.length < 2) data.bias.tvLinks.push({ url: '', notes: '' });
-    if (data.bias.tvLinks.length > 2) data.bias.tvLinks = data.bias.tvLinks.slice(0, 2);
-    const slots = [
-      { idx: 0, kind: 'mtf', labelKey: 'bias.mtf_label', sublabelKey: 'bias.mtf_sublabel' },
-      { idx: 1, kind: 'ltf', labelKey: 'bias.ltf_label', sublabelKey: 'bias.ltf_sublabel' },
-    ];
-    slots.forEach(slot => {
-      const linkObj = data.bias.tvLinks[slot.idx];
-      linkObj.kind = slot.kind;
+    // Always show at least one empty row so the field is discoverable
+    const arr = data.bias.tvLinks.length === 0 ? [{ url: '', notes: '' }] : data.bias.tvLinks;
+    arr.forEach((linkObj, idx) => {
       const card = document.createElement('div');
-      card.className = 'tv-link-card bias-tv-card-' + slot.kind;
+      card.className = 'tv-link-card';
+      const imgUrl = tradingViewImageUrl(linkObj.url || '');
       card.innerHTML = `
-        <div class="bias-tv-tf-label">
-          <span class="bias-tv-tf-name">${t(slot.labelKey)}</span>
-          <span class="bias-tv-tf-sublabel">${t(slot.sublabelKey)}</span>
-        </div>
         <div class="tv-link-row">
           <input type="url" class="tv-link-url" placeholder="https://www.tradingview.com/x/..." />
+          <button type="button" class="tv-link-remove" title="${t('tip.remove_link')}">×</button>
         </div>
         <div class="tv-link-preview-wrap"></div>
         <textarea class="tv-link-notes" data-i18n-placeholder="ph.chart_notes" placeholder="${t('ph.chart_notes')}" rows="2"></textarea>
       `;
-      const urlInput    = card.querySelector('.tv-link-url');
-      const notesInput  = card.querySelector('.tv-link-notes');
-      const previewWrap = card.querySelector('.tv-link-preview-wrap');
-      urlInput.value   = linkObj.url   || '';
+      const urlInput   = card.querySelector('.tv-link-url');
+      const notesInput = card.querySelector('.tv-link-notes');
+      const previewWrap= card.querySelector('.tv-link-preview-wrap');
+      urlInput.value   = linkObj.url || '';
       notesInput.value = linkObj.notes || '';
+      // Render preview if URL parses
       const refreshPreview = () => {
-        const u = (data.bias.tvLinks[slot.idx] && data.bias.tvLinks[slot.idx].url) || '';
+        const u = (data.bias.tvLinks[idx] && data.bias.tvLinks[idx].url) || '';
         const img = tradingViewImageUrl(u);
         if (img) {
           const safe = u.replace(/"/g, '&quot;');
@@ -7442,29 +7414,45 @@
       refreshPreview();
       urlInput.addEventListener('input', e => {
         const v = e.target.value.trim();
-        if (!data.bias.tvLinks[slot.idx]) data.bias.tvLinks[slot.idx] = { url: '', notes: '', kind: slot.kind };
-        data.bias.tvLinks[slot.idx].url = v;
-        data.bias.tvLinks[slot.idx].kind = slot.kind;
-        // Stamp bias.date as soon as any field is filled so the date carries
-        // through to the saved-bias card after copy.
-        if (data.bias.tvLinks.some(l => l && (l.url || l.notes))) data.bias.date = today.toISOString();
+        // Ensure object at this index exists
+        if (!data.bias.tvLinks[idx]) data.bias.tvLinks[idx] = { url: '', notes: '' };
+        data.bias.tvLinks[idx].url = v;
+        // Strip trailing empties (both url and notes blank)
+        while (data.bias.tvLinks.length > 0) {
+          const last = data.bias.tvLinks[data.bias.tvLinks.length - 1];
+          if (!last.url && !last.notes) data.bias.tvLinks.pop();
+          else break;
+        }
+        if (data.bias.tvLinks.length > 0) data.bias.date = today.toISOString();
         refreshPreview();
         renderBiasPreview();
         saveData();
       });
       notesInput.addEventListener('input', e => {
-        if (!data.bias.tvLinks[slot.idx]) data.bias.tvLinks[slot.idx] = { url: '', notes: '', kind: slot.kind };
-        data.bias.tvLinks[slot.idx].notes = e.target.value;
-        data.bias.tvLinks[slot.idx].kind = slot.kind;
+        const v = e.target.value;
+        if (!data.bias.tvLinks[idx]) data.bias.tvLinks[idx] = { url: '', notes: '' };
+        data.bias.tvLinks[idx].notes = v;
         renderBiasPreview();
         saveData();
+      });
+      card.querySelector('.tv-link-remove').addEventListener('click', () => {
+        if (data.bias.tvLinks.length > idx) data.bias.tvLinks.splice(idx, 1);
+        saveData();
+        renderBiasTvLinks();
+        renderBiasPreview();
       });
       wrap.appendChild(card);
     });
   }
-  // (Legacy bias-tv-add button removed — the Charts section now uses two
-  // fixed MTF/LTF slots rendered by renderBiasTvLinks. No add/remove
-  // handlers needed since the slots are permanent.)
+  document.getElementById('bias-tv-add').addEventListener('click', () => {
+    if (!Array.isArray(data.bias.tvLinks)) data.bias.tvLinks = [];
+    data.bias.tvLinks.push({ url: '', notes: '' });
+    saveData();
+    renderBiasTvLinks();
+    // Focus the newly-added row's URL input
+    const inputs = document.querySelectorAll('#bias-tv-list .tv-link-url');
+    if (inputs.length > 0) inputs[inputs.length - 1].focus();
+  });
   document.getElementById('bias-notes').addEventListener('input', e => {
     data.bias.notes = e.target.value.trim();
     if (data.bias.notes) data.bias.date = today.toISOString();
@@ -7511,29 +7499,21 @@
       }
     } catch(e) {}
     const links = (b.tvLinks || []).filter(l => l && l.url);
-    // Inline reference + charts section uses MTF/LTF labels (the two-slot
-    // model) so the Discord reader can tell which timeframe each preview
-    // corresponds to. Falls back to numeric [1]/[2] only for legacy data
-    // where the `kind` field is missing on every link (very old bias).
-    const kindOf = (l, idx) => l.kind || (idx === 0 ? 'mtf' : idx === 1 ? 'ltf' : null);
-    const labelOf = (l, idx) => {
-      const k = kindOf(l, idx);
-      if (k === 'mtf') return 'MTF';
-      if (k === 'ltf') return 'LTF';
-      return `[${idx + 1}]`;
-    };
+    // Inline reference + charts emitted in a dedicated section at the bottom — Discord
+    // stacks previews at the bottom of the message anyway, so [N] markers let the reader
+    // match each chart to its position in the post.
     if (links.length > 0) {
       const label = links.length === 1 ? 'Chart       ' : 'Charts      ';
       lines.push('');
-      lines.push(`${label}${links.map((l, i) => `[${labelOf(l, i)}]`).join(' ')}`);
+      lines.push(`${label}${links.map((_, i) => `[${i + 1}]`).join(' ')}`);
     }
     if (b.notes)  { lines.push(''); lines.push(b.notes); }
     if (links.length > 0) {
       lines.push('');
       lines.push(links.length === 1 ? '— Chart —' : '— Charts —');
       links.forEach((l, i) => {
-        lines.push(`${labelOf(l, i).padEnd(8, ' ')}${l.url}`);
-        if (l.notes) lines.push(`        "${l.notes}"`);
+        lines.push(`Chart [${i + 1}]   ${l.url}`);
+        if (l.notes) lines.push(`      "${l.notes}"`);
       });
     }
     return lines.join('\n');
@@ -7555,17 +7535,6 @@
     renderBiasPreview();
   }
   document.getElementById('bias-copy').addEventListener('click', async (ev) => {
-    // Both MTF and LTF charts are mandatory before the bias can be committed.
-    // The morning bias workflow requires multi-timeframe analysis; an
-    // incomplete bias propagates downstream into Session Review (where the
-    // saved-bias card needs both to render its side-by-side layout) so we
-    // gate the copy action here. Toast a clear error and abort.
-    const mtfLink = (data.bias.tvLinks && data.bias.tvLinks[0]) || {};
-    const ltfLink = (data.bias.tvLinks && data.bias.tvLinks[1]) || {};
-    if (!mtfLink.url || !mtfLink.url.trim() || !ltfLink.url || !ltfLink.url.trim()) {
-      showToast(t('bias.error_missing_charts') || 'Add both MTF and LTF charts before copying');
-      return;
-    }
     const btn = ev.currentTarget;
     const msg = await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated());
     await copyToClipboard(msg);
@@ -8547,20 +8516,31 @@
     const links = (b.tvLinks || []).filter(l => l && l.url);
     if (links.length === 0) {
       linkEl.classList.add('hidden');
-    } else {
-      // Render MTF (index 0) and LTF (index 1) side-by-side. Each card shows
-      // a timeframe label above the chart image and the per-chart notes
-      // below. We render whatever slots are present — if only MTF or only
-      // LTF is filled (legacy data from before the two-slot model), the
-      // single one still displays correctly via the same grid layout.
+    } else if (links.length === 1) {
+      // Single chart — no tabs needed, render directly (preserves original
+      // layout for the common case).
+      linkEl.classList.remove('hidden');
+      const linkObj = links[0];
+      const link = linkObj.url;
+      const note = linkObj.notes || '';
+      const imgUrl = tradingViewImageUrl(link);
+      const safe = link.replace(/"/g, '&quot;');
+      const noteEl = note ? `<div style="font-size:12px;color:var(--text-dim);margin-top:8px;font-family:'DM Mono',monospace;line-height:1.6;">"${note.replace(/</g,'&lt;')}"</div>` : '';
+      if (imgUrl) {
+        linkEl.innerHTML = `<div><a href="${safe}" target="_blank" rel="noopener"><img src="${imgUrl}" alt="Bias chart" class="bias-chart-img" onerror="this.parentElement.outerHTML='<a href=&quot;${safe}&quot; target=_blank rel=noopener style=color:var(--text-mid)>${safe}</a>'"></a>${noteEl}</div>`;
+      } else {
+        linkEl.innerHTML = `<div><a href="${safe}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${safe}</a>${noteEl}</div>`;
+      }
+    } else if (links.length === 2) {
+      // Exactly two charts — render them side-by-side as MTF (left) and
+      // LTF (right). Position-based labelling: first chart = MTF, second
+      // = LTF. Each card shows the timeframe label above the screenshot
+      // and the per-chart note directly below it.
       linkEl.classList.remove('hidden');
       const mtfLabel = t('bias.mtf_label') || 'MTF';
       const ltfLabel = t('bias.ltf_label') || 'LTF';
-      // Decide which kind each provided link is, falling back to position.
-      const cards = (b.tvLinks || []).map((linkObj, idx) => {
-        if (!linkObj || !linkObj.url) return null;
-        const kind = linkObj.kind || (idx === 0 ? 'mtf' : idx === 1 ? 'ltf' : null);
-        const label = kind === 'ltf' ? ltfLabel : mtfLabel;
+      const cards = links.map((linkObj, idx) => {
+        const label = (idx === 0) ? mtfLabel : ltfLabel;
         const link = linkObj.url;
         const note = linkObj.notes || '';
         const imgUrl = tradingViewImageUrl(link);
@@ -8569,13 +8549,46 @@
         const chartContent = imgUrl
           ? `<a href="${safe}" target="_blank" rel="noopener"><img src="${imgUrl}" alt="Bias chart" class="bias-chart-img" onerror="this.parentElement.outerHTML='<a href=&quot;${safe}&quot; target=_blank rel=noopener style=color:var(--text-mid)>${safe}</a>'"></a>`
           : `<a href="${safe}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${safe}</a>`;
-        return `<div class="saved-bias-chart-card saved-bias-chart-${kind || 'other'}">
+        return `<div class="saved-bias-chart-card">
           <div class="saved-bias-chart-tf-label">${label}</div>
           ${chartContent}
           ${noteEl}
         </div>`;
-      }).filter(Boolean);
+      });
       linkEl.innerHTML = `<div class="saved-bias-charts-grid">${cards.join('')}</div>`;
+    } else {
+      // Three or more charts — fall back to the tab-strip layout, since
+      // "MTF/LTF" only makes sense for exactly two timeframes. Click a tab
+      // to swap the visible chart + its notes.
+      linkEl.classList.remove('hidden');
+      const chartLabel = t('tab.bias_chart') || 'Chart';
+      const tabsHtml = links.map((_, i) =>
+        `<button type="button" class="bias-chart-tab${i === 0 ? ' active' : ''}" data-bias-chart-idx="${i}">${chartLabel} ${i + 1}</button>`
+      ).join('');
+      linkEl.innerHTML = `<div class="bias-chart-tabs">${tabsHtml}</div><div id="bias-chart-active"></div>`;
+      const activeWrap = linkEl.querySelector('#bias-chart-active');
+      const renderActive = (idx) => {
+        const linkObj = links[idx];
+        const link = linkObj.url;
+        const note = linkObj.notes || '';
+        const imgUrl = tradingViewImageUrl(link);
+        const safe = link.replace(/"/g, '&quot;');
+        const noteEl = note ? `<div style="font-size:12px;color:var(--text-dim);margin-top:8px;font-family:'DM Mono',monospace;line-height:1.6;">"${note.replace(/</g,'&lt;')}"</div>` : '';
+        if (imgUrl) {
+          activeWrap.innerHTML = `<a href="${safe}" target="_blank" rel="noopener"><img src="${imgUrl}" alt="Bias chart" class="bias-chart-img" onerror="this.parentElement.outerHTML='<a href=&quot;${safe}&quot; target=_blank rel=noopener style=color:var(--text-mid)>${safe}</a>'"></a>${noteEl}`;
+        } else {
+          activeWrap.innerHTML = `<a href="${safe}" target="_blank" rel="noopener" style="color:var(--text-mid);word-break:break-all;">${safe}</a>${noteEl}`;
+        }
+      };
+      renderActive(0);
+      linkEl.querySelectorAll('.bias-chart-tab').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.biasChartIdx);
+          if (isNaN(idx)) return;
+          linkEl.querySelectorAll('.bias-chart-tab').forEach(b => b.classList.toggle('active', b === btn));
+          renderActive(idx);
+        });
+      });
     }
     const notesEl = document.getElementById('saved-bias-notes');
     // Trim trailing whitespace/newlines from the saved notes — the textarea preserves any
