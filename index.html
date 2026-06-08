@@ -664,6 +664,8 @@
   .combo-subsection[open] summary::before { transform: rotate(90deg); }
   .combo-subsection summary:hover .combo-subsection-title { color: var(--text); }
   .combo-subsection-title { flex: 0 0 auto; color: var(--text-mid); font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; transition: color 150ms; }
+  .combo-sort-wrap { display: inline-flex; align-items: center; gap: 10px; margin-left: auto; }
+  .combo-sort-label { color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; }
   .combo-sort-group { display: inline-flex; gap: 0; margin-left: auto; }
   .combo-sort-btn { background: transparent; border: 1px solid var(--border-2); color: var(--text-dim); padding: 4px 10px; font-family: 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; cursor: pointer; transition: all 150ms; }
   .combo-sort-btn + .combo-sort-btn { border-left: 0; }
@@ -4059,6 +4061,7 @@
       'combo.detail_master_heading': 'Detailed breakdown',
       'combo.subsection_wins': 'Wins ({N})',
       'combo.subsection_bes':  'BEs ({N})',
+      'combo.sort_organise_by':  'Organise by',
       'combo.sort_date':         'Date',
       'combo.sort_leftover_r':   'R left',
       'combo.sort_leftover_p':   'Pips left',
@@ -5039,6 +5042,7 @@
       'combo.detail_master_heading': 'Desglose detallado',
       'combo.subsection_wins': 'Ganadoras ({N})',
       'combo.subsection_bes':  'BEs ({N})',
+      'combo.sort_organise_by':  'Ordenar por',
       'combo.sort_date':         'Fecha',
       'combo.sort_leftover_r':   'R dejado',
       'combo.sort_leftover_p':   'Pips dejados',
@@ -10455,11 +10459,16 @@
   function projectAllTrades(allTrades, stretchUnits, capTPUnits, metric) {
     const isPips = metric === 'pips';
     const isPct  = metric === 'pct';
-    const ltSB   = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
+    const ltSB   = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
     if (isPct && ltSB <= 0) {
       return { total: 0, totalGbp: 0, winRate: 0, winCount: 0, loseCount: 0, beCount: 0, tradeCount: allTrades.length };
     }
     const tradeCopiesOf = tr => (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+    // Per-trade account starting balance — matches the rest of the app's
+    // pct math (see kpi-totalr render in renderTradesStats). Each trade's
+    // % contribution is weighted to its OWN account, not the lifetime sum,
+    // so adding/archiving accounts doesn't distort historical trades.
+    const accSBFor = tr => (typeof getTradeAccountSB === 'function') ? getTradeAccountSB(tr) : ltSB;
 
     let totalMetric = 0;
     let totalGbp = 0;
@@ -10472,6 +10481,7 @@
       const sl         = parseFloat(tr.sl)   || 0;
       const actualR    = parseFloat(tr.r)    || 0;
       const actualPips = parseFloat(tr.pips) || 0;
+      const accSB      = accSBFor(tr);
 
       // Track TWO outcomes per trade:
       //   outcomeUnits = value in the active display metric (R / pips / %)
@@ -10489,8 +10499,6 @@
         const winHasPotPips = typeof tr.potentialPips === 'number' && !isNaN(tr.potentialPips);
 
         if (isPips) {
-          // Apply rules in pips domain so the user's "+X pips longer" rule is
-          // applied literally in pips, not via R-conversion.
           const potPips = winHasPotPips ? parseFloat(tr.potentialPips) : actualPips;
           let candPips  = actualPips;
           if (stretchUnits > 0 && winHasPotPips) {
@@ -10502,29 +10510,26 @@
             else if (winHasPotPips && potPips >= capTPUnits)    candPips = capTPUnits;
           }
           outcomeUnits = candPips;
-          // Derive R for £. If the rule didn't change the trade, use logged
-          // tr.r (most accurate). Otherwise derive from new pips via /sl.
           if (candPips === actualPips)      outcomeR = actualR;
           else if (candPips === -sl)        outcomeR = -1;
           else                              outcomeR = sl > 0 ? candPips / sl : 0;
         } else if (isPct) {
-          // Pct is scaled R — apply rule in R domain, convert for display.
+          // Pct is scaled net £ — apply rule in R domain, convert via net £.
           const potR  = winHasPotR ? parseFloat(tr.potentialR) : actualR;
           let candR   = actualR;
           if (stretchUnits > 0 && winHasPotR) {
-            const stretchR = (risk * copies > 0) ? stretchUnits * ltSB / (risk * copies * 100) : 0;
+            // Convert stretchPct → stretchR for THIS trade (using its accSB).
+            const stretchR = (risk * copies > 0 && accSB > 0) ? stretchUnits * accSB / (risk * copies * 100) : 0;
             const newR = actualR + stretchR;
             candR = (newR <= potR) ? newR : -1;
           }
           if (capTPUnits > 0) {
-            const capR = (risk * copies > 0) ? capTPUnits * ltSB / (risk * copies * 100) : 0;
+            const capR = (risk * copies > 0 && accSB > 0) ? capTPUnits * accSB / (risk * copies * 100) : 0;
             if (candR >= capR)                           candR = capR;
             else if (winHasPotR && potR >= capR)         candR = capR;
           }
-          outcomeR     = candR;
-          outcomeUnits = candR * risk * copies / ltSB * 100;
+          outcomeR = candR;
         } else {
-          // R mode — apply rule in R directly.
           const potR = winHasPotR ? parseFloat(tr.potentialR) : actualR;
           let candR  = actualR;
           if (stretchUnits > 0 && winHasPotR) {
@@ -10548,10 +10553,9 @@
             outcomeUnits = capTPUnits;
             outcomeR     = sl > 0 ? capTPUnits / sl : 0;
           } else if (isPct && beHasPotR) {
-            const capR = (risk * copies > 0) ? capTPUnits * ltSB / (risk * copies * 100) : 0;
+            const capR = (risk * copies > 0 && accSB > 0) ? capTPUnits * accSB / (risk * copies * 100) : 0;
             if (parseFloat(tr.bePotentialR) >= capR) {
               outcomeR     = capR;
-              outcomeUnits = capTPUnits;
             }
           } else if (!isPips && !isPct && beHasPotR && parseFloat(tr.bePotentialR) >= capTPUnits) {
             outcomeR     = capTPUnits;
@@ -10561,22 +10565,29 @@
       } else if (tr.result === 'Lose') {
         outcomeR = -1;
         if (isPips)      outcomeUnits = -sl;
-        else if (isPct)  outcomeUnits = -risk * copies / ltSB * 100;
-        else             outcomeUnits = -1;
+        else if (!isPct) outcomeUnits = -1;
+        // isPct: outcomeUnits is derived from net £ below — leave for now
       } else {
         outcomeR = 0;
         outcomeUnits = 0;
       }
 
-      totalMetric += outcomeUnits;
-
       // £ — match the app's per-trade pattern: (gross − costs) × copies.
       // Multiplying costs by copies matters when a trade is logged once
-      // but executed across N accounts. Earlier code missed this and
-      // under-deducted costs, inflating both £ and pct figures.
+      // but executed across N accounts.
       const netPerCopy = outcomeR * risk - costs;
       const net = netPerCopy * copies;
       totalGbp += net;
+
+      // For pct mode, outcomeUnits is the per-trade pct contribution to the
+      // account: net £ / accSB × 100. This matches the rest of the app's
+      // Net Acc % math (see kpi-totalr in renderTradesStats). Doing this
+      // AFTER computing `net` so it's net (not gross) and respects the
+      // costs × copies multiplier.
+      if (isPct) {
+        outcomeUnits = accSB > 0 ? (net / accSB * 100) : 0;
+      }
+      totalMetric += outcomeUnits;
 
       if (net > 0)             winCount++;
       else if (net < -0.0001)  loseCount++;
@@ -11037,13 +11048,19 @@
       : isPct
         ? (t('combo.sort_leftover_pct') || '% left')
         : (t('combo.sort_leftover_r')   || 'R left');
-    const winsSortBtns = `<span class="combo-sort-group" data-section="wins">
-      <button type="button" class="combo-sort-btn${winsSort === 'date' ? ' active' : ''}" data-sort="date">${t('combo.sort_date') || 'Date'}</button>
-      <button type="button" class="combo-sort-btn${winsSort === 'leftover' ? ' active' : ''}" data-sort="leftover">${winsLeftoverLabel}</button>
+    const winsSortBtns = `<span class="combo-sort-wrap">
+      <span class="combo-sort-label">${t('combo.sort_organise_by') || 'Organise by'}</span>
+      <span class="combo-sort-group" data-section="wins">
+        <button type="button" class="combo-sort-btn${winsSort === 'date' ? ' active' : ''}" data-sort="date">${t('combo.sort_date') || 'Date'}</button>
+        <button type="button" class="combo-sort-btn${winsSort === 'leftover' ? ' active' : ''}" data-sort="leftover">${winsLeftoverLabel}</button>
+      </span>
     </span>`;
-    const besSortBtns = `<span class="combo-sort-group" data-section="bes">
-      <button type="button" class="combo-sort-btn${besSort === 'date' ? ' active' : ''}" data-sort="date">${t('combo.sort_date') || 'Date'}</button>
-      <button type="button" class="combo-sort-btn${besSort === 'extension' ? ' active' : ''}" data-sort="extension">${t('combo.sort_extension') || 'Extension'}</button>
+    const besSortBtns = `<span class="combo-sort-wrap">
+      <span class="combo-sort-label">${t('combo.sort_organise_by') || 'Organise by'}</span>
+      <span class="combo-sort-group" data-section="bes">
+        <button type="button" class="combo-sort-btn${besSort === 'date' ? ' active' : ''}" data-sort="date">${t('combo.sort_date') || 'Date'}</button>
+        <button type="button" class="combo-sort-btn${besSort === 'extension' ? ' active' : ''}" data-sort="extension">${t('combo.sort_extension') || 'Extension'}</button>
+      </span>
     </span>`;
 
     let winsTableHtml = '';
