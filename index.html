@@ -920,7 +920,14 @@
     #bias-tv-list { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
   }
   #bias-tv-list .tv-link-notes { min-height: 96px; }
-  .bias-chart-img { width: 100%; max-width: 100%; aspect-ratio: 21 / 9; height: auto; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-2); display: block; cursor: pointer; transition: opacity 200ms; }
+  /* TradingView snapshots are natively captured at 16:9 (the chart
+     viewport's standard aspect). The previous 21:9 container forced
+     horizontal stretching + vertical cropping, which is what was making
+     the charts read as pixelated — the image was being scaled away from
+     its native ratio. 16:9 lets it display at its capture aspect.
+     image-rendering: auto lets the browser pick its highest-quality
+     downscale algorithm. */
+  .bias-chart-img { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; border-radius: 4px; border: 1px solid var(--border-2); display: block; cursor: pointer; transition: opacity 200ms; image-rendering: auto; }
   /* Saved-bias card override — single-chart treatment: trim the chart to
      ~65% width and centre it horizontally so the card reads as a compact
      header rather than a full-bleed image strip. This applies when the
@@ -944,10 +951,9 @@
   }
   .saved-bias-chart-card { display: flex; flex-direction: column; }
   .saved-bias-chart-tf-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.3em; color: var(--text-dim); text-transform: uppercase; margin-bottom: 8px; }
-  /* Per-chart comment below each screenshot — separator border above uses
-     the same brighter colour as the saved-bias card border so the comment
-     reads as a distinct block tied to its chart. */
-  .saved-bias-chart-note { font-size: 12px; color: var(--text-dim); margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border-2); font-family: 'DM Mono', monospace; line-height: 1.6; }
+  /* Per-chart comment below each screenshot — just sits below the chart
+     with a small gap, no horizontal divider between them. */
+  .saved-bias-chart-note { font-size: 12px; color: var(--text-dim); margin-top: 10px; font-family: 'DM Mono', monospace; line-height: 1.6; }
   /* Inside the side-by-side grid, the chart image fills its column
      (overriding the 65%-centred treatment above, which only applies to
      the single-chart rendering branch). */
@@ -962,6 +968,11 @@
   /* Notes — full width below. DM Mono to match the stats row above (Mode, Structure, etc.),
      same dim colour as the K labels, sized for at-a-glance mid-session reading. */
   .saved-bias-notes { margin-top: 20px; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-dim); line-height: 1.75; border-top: 1px solid var(--border-2); padding-top: 14px; }
+  /* Small uppercase eyebrow before the saved-bias notes text — inline so
+     it sits on the same line as the first words of the note, like a
+     prefix label. */
+  .saved-bias-notes-label { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-dim); margin-right: 4px; }
+  .saved-bias-notes-text { font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-dim); line-height: 1.75; }
   .settings-panel { margin-top: 32px; padding: 18px 24px; background: var(--bg-elev); border: 1px solid var(--border-2); display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
   .settings-panel .label { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); }
   .settings-field { display: flex; align-items: center; gap: 8px; }
@@ -4003,6 +4014,7 @@
       'bias.ltf_label': 'LTF',
       'bias.ltf_sublabel': 'Lower timeframe',
       'bias.error_missing_charts': 'Add both MTF and LTF charts before copying',
+      'saved_bias.notes_label': 'Notes:',
       'hint.intentions_news_risk_mindset_reminders': 'Intentions, news risk, mindset reminders.',
       'hint.honest_self_assessment_of_how_you_executed': 'Honest self-assessment of how you executed.',
       'hint.how_present_were_you_during_the_session': 'How present were you during the session.',
@@ -4897,6 +4909,7 @@
       'bias.ltf_label': 'LTF',
       'bias.ltf_sublabel': 'Marco temporal inferior',
       'bias.error_missing_charts': 'Añade los gráficos MTF y LTF antes de copiar',
+      'saved_bias.notes_label': 'Notas:',
       'hint.intentions_news_risk_mindset_reminders': 'Intenciones, riesgo de noticias, recordatorios de mentalidad.',
       'hint.honest_self_assessment_of_how_you_executed': 'Auto-evaluación honesta de cómo ejecutaste.',
       'hint.how_present_were_you_during_the_session': 'Cuánto presente estuviste durante la sesión.',
@@ -8608,7 +8621,18 @@
     const notesEl = document.getElementById('saved-bias-notes');
     // Trim trailing whitespace/newlines from the saved notes — the textarea preserves any
     // empty lines the user typed at the end, which render as visible blank rows below the text.
-    if (b.notes && b.notes.trim()) { notesEl.classList.remove('hidden'); notesEl.textContent = '"' + b.notes.trim() + '"'; }
+    if (b.notes && b.notes.trim()) {
+      notesEl.classList.remove('hidden');
+      // Render an uppercase "NOTES:" eyebrow above the actual note text so
+      // the reader knows what they're looking at. Escape HTML so user input
+      // can't inject markup.
+      const escaped = b.notes.trim()
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+      const notesLabel = t('saved_bias.notes_label') || 'NOTES:';
+      notesEl.innerHTML = `<span class="saved-bias-notes-label">${notesLabel}</span> <span class="saved-bias-notes-text">"${escaped}"</span>`;
+    }
     else notesEl.classList.add('hidden');
     // Apply persisted minimise state — the toggle button next to the
     // label collapses the chart strip + notes when the user prefers a
