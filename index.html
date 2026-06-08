@@ -613,6 +613,22 @@
   .potr-rec-title { font-family: 'Fraunces', serif; font-size: 16px; color: var(--text); margin-bottom: 14px; }
   .rec-row { display: flex; gap: 14px; align-items: baseline; margin-bottom: 12px; font-family: 'DM Mono', monospace; font-size: 12px; line-height: 1.6; }
   .rec-row:last-child { margin-bottom: 0; }
+  /* Synthesis card rows — one per scenario (current / A / B). Label on the
+     left, value cluster on the right (total, £, delta, win rate). The
+     verdict block below distills the rows into a clear directional call. */
+  .syn-block { margin: 18px 0 0; padding: 14px 0 0; border-top: 1px dashed var(--border); }
+  .syn-row { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; padding: 10px 0; border-bottom: 1px dashed var(--border); font-family: 'DM Mono', monospace; font-size: 12px; }
+  .syn-row:last-of-type { border-bottom: none; }
+  .syn-row-label { color: var(--text-mid); flex: 0 0 auto; }
+  .syn-row-vals { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; justify-content: flex-end; }
+  .syn-row-total { color: var(--text); font-weight: 500; }
+  .syn-row-gbp { color: var(--text-dim); font-size: 11px; }
+  .syn-row-delta { color: var(--text-mid); font-size: 11px; }
+  .syn-row-wr { color: var(--text-dim); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; }
+  .syn-verdict-block { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-2); }
+  .syn-verdict-line { color: var(--text); font-family: 'Fraunces', serif; font-size: 14px; line-height: 1.6; margin-bottom: 8px; }
+  .syn-verdict-line:last-child { margin-bottom: 0; }
+  .syn-verdict-line-sub { color: var(--text-mid); font-size: 12px; }
   .rec-tier { flex: 0 0 auto; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 4px 10px; border: 1px solid var(--border-2); white-space: nowrap; }
   .rec-tier-low      { color: var(--text-dim); border-color: var(--border-2); }
   .rec-tier-early    { color: var(--text-mid); border-color: var(--text-mid); }
@@ -2482,6 +2498,64 @@
       <div id="potr-sim-wrap"></div>
     </section>
 
+    <!-- Should I close Break Evens sooner? — counterpart to "Should I hold
+         winners longer?". Uses each BE trade's bePotentialR (how far price
+         extended before stopping out at BE) to compute the optimal shorter
+         TP target that would have caught the most BE trades as small wins.
+         Period filter + metric toggle reused from the hold-winners section
+         visually for consistency, but data is scoped to BEs only. Step 3
+         will add the cross-card synthesis that compares this against the
+         hold-winners recommendation to tell the user which direction
+         (shorter TPs / longer holds) would actually be more profitable. -->
+    <section>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title"><span data-i18n="trades.s8.title">Should I close Break Evens sooner?</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.be_sooner">A recommendation based on how far price typically extends in your favour on BE trades before reversing to stop you out. Uses the BE POT R · P logged on each BE row. Conviction strength scales with the number of tracked BEs — sub-5 is too few to act on, 30+ is a strong pattern. Will eventually talk to "Should I hold winners longer?" to tell you which direction (shorter TPs / longer holds) would have been more profitable.</span></span></span></div>
+      <div class="potr-period-row">
+        <span class="potr-period-label" data-i18n="period.label">Period</span>
+        <select id="be-period-select">
+          <option value="all" data-i18n="period.all">All history</option>
+          <option value="custom" data-i18n="period.custom">Custom…</option>
+        </select>
+        <span class="potr-period-custom" id="be-period-custom" style="display:none">
+          <input type="date" id="be-period-from" />
+          <span class="potr-period-sep" data-i18n="period.to">to</span>
+          <input type="date" id="be-period-to" />
+        </span>
+        <!-- Metric toggle: R vs Pips vs %. Drives both the recommendation
+             and the per-BE table cell values. Default = R, persisted in
+             localStorage via data.settings.bePotrMetric. -->
+        <span class="potr-metric-toggle" id="be-metric-toggle">
+          <span class="potr-period-label" data-i18n="period.metric">Metric</span>
+          <span class="potr-metric-group">
+            <button type="button" class="potr-metric-btn active" data-metric="r">R</button>
+            <button type="button" class="potr-metric-btn" data-metric="pips" data-i18n="period.pips">Pips</button>
+            <button type="button" class="potr-metric-btn" data-metric="pct">%</button>
+          </span>
+        </span>
+        <span class="potr-period-count" id="be-period-count"></span>
+      </div>
+      <div id="be-sim-wrap"></div>
+    </section>
+
+    <!-- Synthesis: Hold longer vs Close sooner. Compares the two
+         recommendations above against the user's actual trade history
+         and tells them which direction is more profitable overall.
+         Independent metric toggle so the user can read the verdict in
+         R, Pips, or % terms. -->
+    <section>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title"><span data-i18n="trades.s9.title">Verdict: Hold longer or close sooner?</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.synthesis">Replays your historical trades under two alternative rules: (A) holding winners {STRETCH} longer per the recommendation above, and (B) using a shorter TP of {TP} per the BE recommendation. Each rule cascades across all trades — Rule B caps wins that exceeded the new TP, but turns BEs that extended to the new TP into small wins. The "best for profit" verdict picks the rule whose total return beats current the most; the "best for consistency" verdict picks the rule that maximises win rate. Both numbers shown so you can choose the trade-off that fits your personality.</span></span></span></div>
+      <div class="potr-period-row">
+        <span class="potr-metric-toggle" id="syn-metric-toggle">
+          <span class="potr-period-label" data-i18n="period.metric">Metric</span>
+          <span class="potr-metric-group">
+            <button type="button" class="potr-metric-btn active" data-metric="r">R</button>
+            <button type="button" class="potr-metric-btn" data-metric="pips" data-i18n="period.pips">Pips</button>
+            <button type="button" class="potr-metric-btn" data-metric="pct">%</button>
+          </span>
+        </span>
+      </div>
+      <div id="syn-wrap"></div>
+    </section>
+
     <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.s7.title">Tags Analysis</span></div>
       <p class="section-hint" data-i18n="hint.tags_analysis">Your 10 most-used concept and mindset tags across all trades.</p>
@@ -3931,6 +4005,49 @@
       'edit.lbl.costs': 'Costs {C}',
       'edit.lbl.net': 'Net {C}',
       'edit.lbl.potr_row': 'Potential R & Pips',
+      'edit.lbl.bepotr_row': 'BE POT R · P',
+      'edit.bepotr_hint': '(how far price extended before stopping you out)',
+      'edit.lbl.bepotr_r': 'BE POT R',
+      'edit.lbl.bepotr_pips': 'BE POT pips',
+      'trades.s8.title': 'Should I close Break Evens sooner?',
+      'tip.be_sooner': 'A recommendation based on how far price typically extends in your favour on BE trades before reversing to stop you out. Uses the BE POT R · P logged on each BE row. Conviction strength scales with the number of tracked BEs — sub-5 is too few to act on, 30+ is a strong pattern. Talks to "Should I hold winners longer?" in the Synthesis card below to tell you which direction (shorter TPs / longer holds) would have been more profitable.',
+      'be.in_scope_one': 'BE in scope',
+      'be.in_scope_many': 'BEs in scope',
+      'be.singular': 'BE',
+      'be.plural': 'BEs',
+      'be.unit_pips': 'Pips',
+      'be.empty_pct': 'Need a lifetime starting balance set to compute % figures.',
+      'be.empty_default': 'No BE trades with BE POT R · P logged yet. Mark a trade as BE and fill in the BE POT R · P field — patterns appear here once you have at least 5 logged.',
+      'be.body_too_few': 'Need at least 5 BE trades with BE POT R · P logged to give a recommendation. You have <strong>{N}</strong>. Keep logging and the pattern will appear here.',
+      'be.body_no_room': 'Across <strong>{N}</strong> BE trades, average extension was just <strong>{AVG}{UNIT}</strong>. Closing sooner wouldn\u2019t have saved much \u2014 these BEs barely extended before reversing.',
+      'be.body_recommend': 'Across <strong>{N}</strong> BE trades, <strong>{HITS}</strong> would have hit a shorter TP of <strong class="rec-suggest">{TP}</strong> before reversing. Closing at that level would have netted <strong class="rec-suggest">{TOTAL}</strong>{GBP} instead of 0.',
+      'be.col.date': 'Date',
+      'be.col.bepot_r': 'BE POT R',
+      'be.col.bepot_pips': 'BE POT P',
+      'be.col.bepot_pct': 'BE POT %',
+      'be.col.planned_r': 'Planned R',
+      'be.col.planned_p': 'Planned P',
+      'be.col.planned_pct': 'Planned %',
+      'be.col.risk': 'Risk',
+      'trades.s9.title': 'Verdict: Hold longer or close sooner?',
+      'tip.synthesis': 'Replays your historical trades under two alternative rules: (A) holding winners longer per the recommendation above, and (B) using a shorter TP per the BE recommendation. Each rule cascades across all trades — Rule B caps wins that exceeded the new TP, but turns BEs that extended to the new TP into small wins. The "best for profit" verdict picks the rule whose total return beats current the most; the "best for win rate" verdict picks the rule that maximises green trades. Both numbers shown so you can choose the trade-off that fits your personality.',
+      'syn.empty_pct': 'Need a lifetime starting balance set to compute % figures.',
+      'syn.no_actionable': 'Not enough tracked data to suggest a rule yet. Log Potential R · P on your wins and BE POT R · P on your BEs — the synthesis appears once both cards above have a recommendation.',
+      'syn.current_label': 'Current',
+      'syn.scenario_a_label': 'A — Hold winners longer',
+      'syn.scenario_b_label': 'B — Cap TP shorter',
+      'syn.win_rate': 'win rate',
+      'syn.verdict_neither': 'Neither rule beats your current behaviour. Stay the course — both alternatives would have netted less.',
+      'syn.verdict_a_only': 'Best for profit: <strong>Hold winners longer</strong> ({STRETCH}). Net <strong class="rec-suggest">{GBP}</strong> better than current. Shortening TPs would have hurt.',
+      'syn.verdict_b_only': 'Best for profit: <strong>Shorten TPs</strong> (cap at {TP}). Net <strong class="rec-suggest">{GBP}</strong> better than current. Holding longer would have hurt.',
+      'syn.verdict_a_wins': 'Best for profit: <strong>Hold winners longer</strong> ({STRETCH}, {GBP_A} better) beats shortening TPs ({TP}, {GBP_B} better).',
+      'syn.verdict_b_wins': 'Best for profit: <strong>Shorten TPs</strong> (cap at {TP}, {GBP_B} better) beats holding winners longer ({STRETCH}, {GBP_A} better).',
+      'syn.verdict_consistency': 'Best for win rate: {NAME} ({WR}%, up from {WR0}%).',
+      'syn.trade_singular': 'trade',
+      'syn.trade_plural': 'trades',
+      'pot.scenario_label_holdlonger': 'Hold winners +{STRETCH} longer',
+      'be.scenario_label_capshort': 'Cap TP at +{TP}',
+      'tip.open_day': 'Click to open day',
       'edit.date_hint': 'Change this to move the trade to a different day on the calendar — use it to back-fill past sessions.',
       'edit.sl_hint': '(SL = stop distance in pips)',
       'edit.potential_hint': '(how far the move actually went)',
@@ -4826,6 +4943,49 @@
       'edit.lbl.costs': 'Costes {C}',
       'edit.lbl.net': 'Neto {C}',
       'edit.lbl.potr_row': 'R Potencial y Pips',
+      'edit.lbl.bepotr_row': 'BE POT R · P',
+      'edit.bepotr_hint': '(hasta dónde llegó el precio antes de sacarte al BE)',
+      'edit.lbl.bepotr_r': 'BE POT R',
+      'edit.lbl.bepotr_pips': 'BE POT pips',
+      'trades.s8.title': '¿Debería cerrar Break Evens antes?',
+      'tip.be_sooner': 'Recomendación basada en hasta dónde se extiende el precio a tu favor en las operaciones BE antes de revertir y sacarte. Usa el BE POT R · P registrado en cada fila BE. La fuerza de convicción escala con el número de BE registradas — menos de 5 son pocas, 30+ es un patrón sólido. Se comunica con "¿Debería sostener ganadoras más tiempo?" en la tarjeta de Síntesis abajo para decirte qué dirección (TPs más cortos / sostener más) habría sido más rentable.',
+      'be.in_scope_one': 'BE en alcance',
+      'be.in_scope_many': 'BEs en alcance',
+      'be.singular': 'BE',
+      'be.plural': 'BEs',
+      'be.unit_pips': 'Pips',
+      'be.empty_pct': 'Necesitas un saldo inicial vitalicio configurado para calcular los porcentajes.',
+      'be.empty_default': 'Aún no hay operaciones BE con BE POT R · P registrado. Marca una operación como BE y rellena el campo BE POT R · P — los patrones aparecerán aquí cuando tengas al menos 5 registradas.',
+      'be.body_too_few': 'Necesitas al menos 5 operaciones BE con BE POT R · P registrado para dar una recomendación. Tienes <strong>{N}</strong>. Sigue registrando y el patrón aparecerá aquí.',
+      'be.body_no_room': 'A lo largo de <strong>{N}</strong> operaciones BE, la extensión media fue solo de <strong>{AVG}{UNIT}</strong>. Cerrar antes no habría salvado mucho \u2014 estas BE apenas se extendieron antes de revertir.',
+      'be.body_recommend': 'A lo largo de <strong>{N}</strong> operaciones BE, <strong>{HITS}</strong> habrían alcanzado un TP más corto de <strong class="rec-suggest">{TP}</strong> antes de revertir. Cerrar a ese nivel habría dado <strong class="rec-suggest">{TOTAL}</strong>{GBP} en lugar de 0.',
+      'be.col.date': 'Fecha',
+      'be.col.bepot_r': 'BE POT R',
+      'be.col.bepot_pips': 'BE POT P',
+      'be.col.bepot_pct': 'BE POT %',
+      'be.col.planned_r': 'R planeado',
+      'be.col.planned_p': 'P planeado',
+      'be.col.planned_pct': '% planeado',
+      'be.col.risk': 'Riesgo',
+      'trades.s9.title': 'Veredicto: ¿Sostener más o cerrar antes?',
+      'tip.synthesis': 'Reproduce tus operaciones bajo dos reglas alternativas: (A) sostener ganadoras más tiempo según la recomendación de arriba, y (B) usar un TP más corto según la recomendación de BE. Cada regla afecta a todas las operaciones — la Regla B limita las ganadoras que excedieron el nuevo TP, pero convierte las BE que se extendieron al nuevo TP en pequeñas ganadoras. El "mejor para beneficio" elige la regla cuyo retorno total supera más al actual; el "mejor para tasa de aciertos" elige la regla que maximiza operaciones en verde. Ambos números se muestran para que elijas el equilibrio que mejor encaja con tu personalidad.',
+      'syn.empty_pct': 'Necesitas un saldo inicial vitalicio configurado para calcular los porcentajes.',
+      'syn.no_actionable': 'Aún no hay datos suficientes para sugerir una regla. Registra el R · P Potencial en tus ganadoras y BE POT R · P en tus BE — la síntesis aparecerá cuando ambas tarjetas tengan recomendación.',
+      'syn.current_label': 'Actual',
+      'syn.scenario_a_label': 'A — Sostener ganadoras más',
+      'syn.scenario_b_label': 'B — TP más corto',
+      'syn.win_rate': 'tasa aciertos',
+      'syn.verdict_neither': 'Ninguna regla supera tu comportamiento actual. Sigue como vas — las dos alternativas habrían dado menos.',
+      'syn.verdict_a_only': 'Mejor para beneficio: <strong>Sostener ganadoras más</strong> ({STRETCH}). Neto <strong class="rec-suggest">{GBP}</strong> mejor que el actual. Acortar TPs habría perjudicado.',
+      'syn.verdict_b_only': 'Mejor para beneficio: <strong>Acortar TPs</strong> (tope en {TP}). Neto <strong class="rec-suggest">{GBP}</strong> mejor que el actual. Sostener más habría perjudicado.',
+      'syn.verdict_a_wins': 'Mejor para beneficio: <strong>Sostener ganadoras más</strong> ({STRETCH}, {GBP_A} mejor) supera a acortar TPs ({TP}, {GBP_B} mejor).',
+      'syn.verdict_b_wins': 'Mejor para beneficio: <strong>Acortar TPs</strong> (tope en {TP}, {GBP_B} mejor) supera a sostener ganadoras más ({STRETCH}, {GBP_A} mejor).',
+      'syn.verdict_consistency': 'Mejor para tasa de aciertos: {NAME} ({WR}%, subiendo desde {WR0}%).',
+      'syn.trade_singular': 'operación',
+      'syn.trade_plural': 'operaciones',
+      'pot.scenario_label_holdlonger': 'Sostener ganadoras +{STRETCH} más',
+      'be.scenario_label_capshort': 'Limitar TP a +{TP}',
+      'tip.open_day': 'Clic para abrir el día',
       'edit.date_hint': 'Cambia esto para mover la operación a otro día del calendario — úsalo para registrar sesiones pasadas.',
       'edit.sl_hint': '(SL = distancia del stop en pips)',
       'edit.potential_hint': '(hasta dónde llegó el movimiento)',
@@ -9818,6 +9978,10 @@
 
     renderPotentialRAnalysis(all);
 
+    renderBePotentialAnalysis(all);
+
+    renderSynthesisCard(all);
+
     drawEquityChart(all);
   }
 
@@ -10184,6 +10348,152 @@
   // Reset to 0 whenever the period filter changes (handled in wirePotRPeriodFilter).
   let potrTablePage = 0;
   const POTR_TABLE_PAGE_SIZE = 10;
+
+  // ============================================================================
+  // Shared projection helper — replays a list of trades under a hypothetical
+  // rule and returns total outcome + win rate. Used by:
+  //   - "Should I hold winners longer?" card (Scenario A: stretchUnits > 0)
+  //   - "Should I close BEs sooner?" card    (Scenario B: capTPUnits > 0)
+  //   - Synthesis card                       (both scenarios + current)
+  //
+  // Args:
+  //   allTrades:    array of trade objects (already period-filtered)
+  //   stretchUnits: positive value applied to wins. Increases their captured R
+  //                 by stretchUnits, IF the trade's potential allowed it.
+  //                 Otherwise the trade misses → SL hit (-1R or -slPips).
+  //   capTPUnits:   positive TP target applied to ALL trades. Caps wins that
+  //                 exceeded it; turns BEs that reached it into small wins.
+  //   metric:       'r' | 'pips' | 'pct' — drives unit reads and scaling.
+  //
+  // Returns: { total, winRate, winCount, tradeCount }
+  // ============================================================================
+  function projectAllTrades(allTrades, stretchUnits, capTPUnits, metric) {
+    const isPips = metric === 'pips';
+    const isPct  = metric === 'pct';
+    const ltSB   = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
+    if (isPct && ltSB <= 0) return { total: 0, winRate: 0, winCount: 0, tradeCount: 0 };
+
+    const winUnits       = tr => isPips ? (parseFloat(tr.pips) || 0) : (parseFloat(tr.r) || 0);
+    const winPotential   = tr => isPips ? (parseFloat(tr.potentialPips) || 0) : (parseFloat(tr.potentialR) || 0);
+    const beUnits        = tr => isPips ? (parseFloat(tr.bePotentialPips) || 0) : (parseFloat(tr.bePotentialR) || 0);
+    const slUnitsForLoss = isPips ? (tr => -(parseFloat(tr.sl) || 0)) : (() => -1);
+    const tradeCopiesOf  = tr => (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+    const unitsToMetric  = (tr, units) => {
+      if (isPct) {
+        const risk = parseFloat(tr.risk) || 0;
+        const copies = tradeCopiesOf(tr);
+        if (ltSB <= 0 || risk <= 0) return 0;
+        return units * risk * copies / ltSB * 100;
+      }
+      return units * tradeCopiesOf(tr);
+    };
+
+    let totalUnits = 0;
+    let winCount   = 0;
+    allTrades.forEach(tr => {
+      let outcomeUnits;
+      const winHasPotential = (tr.result === 'Win') && (isPips ? typeof tr.potentialPips === 'number' : typeof tr.potentialR === 'number');
+      const beHasPotential  = (tr.result === 'BE')  && (isPips ? typeof tr.bePotentialPips === 'number' : typeof tr.bePotentialR === 'number');
+      if (tr.result === 'Win') {
+        const actual = winUnits(tr);
+        const pot    = winHasPotential ? winPotential(tr) : actual;
+        let candidate = actual;
+        if (stretchUnits > 0 && winHasPotential) {
+          const newT = actual + stretchUnits;
+          candidate = (newT <= pot) ? newT : slUnitsForLoss(tr);
+        }
+        if (capTPUnits > 0) {
+          if (candidate >= capTPUnits)                    candidate = capTPUnits;
+          else if (winHasPotential && pot >= capTPUnits)  candidate = capTPUnits;
+        }
+        outcomeUnits = candidate;
+      } else if (tr.result === 'BE') {
+        if (capTPUnits > 0 && beHasPotential && beUnits(tr) >= capTPUnits) {
+          outcomeUnits = capTPUnits;
+        } else {
+          outcomeUnits = 0;
+        }
+      } else if (tr.result === 'Lose') {
+        outcomeUnits = slUnitsForLoss(tr);
+      } else {
+        outcomeUnits = 0;
+      }
+      const metricValue = unitsToMetric(tr, outcomeUnits);
+      totalUnits += metricValue;
+      if (metricValue > 0) winCount++;
+    });
+    return {
+      total: totalUnits,
+      winRate: allTrades.length > 0 ? (winCount / allTrades.length) * 100 : 0,
+      winCount,
+      tradeCount: allTrades.length
+    };
+  }
+
+  // Shared £-per-unit valuation for R/Pips/% — uses user's winning trades
+  // to determine realised £-per-unit. For % mode, 1% = ltSB/100.
+  function gbpPerUnitForMetric(allTradesRaw, metric) {
+    const isPips = metric === 'pips';
+    const isPct  = metric === 'pct';
+    if (isPct) {
+      const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+      return ltSB > 0 ? (ltSB / 100) : null;
+    }
+    const wins = allTradesRaw.filter(tr => tr.result === 'Win');
+    const valuationSource = wins.filter(tr => {
+      const v = isPips ? parseFloat(tr.pips) : parseFloat(tr.r);
+      const pl = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
+      return !isNaN(v) && v > 0 && pl > 0;
+    });
+    const totalUnitsForVal = valuationSource.reduce((s, tr) => s + ((isPips ? parseFloat(tr.pips) : parseFloat(tr.r)) || 0), 0);
+    const totalGbpForVal   = valuationSource.reduce((s, tr) => s + ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0), 0);
+    return (valuationSource.length > 0 && totalUnitsForVal > 0) ? (totalGbpForVal / totalUnitsForVal) : null;
+  }
+
+  // Render a "Current vs Scenario" comparison block — used at the bottom of
+  // both the hold-winners and BE cards. Same visual shape as the synthesis
+  // card's rows. opts.scenarioLabel: text for the alt-rule row. opts.delta:
+  // alt total minus current total (positive = good).
+  function buildScenarioComparisonHtml(current, scenario, opts) {
+    const { metric, scenarioLabel, valPerUnit } = opts;
+    const isPips = metric === 'pips';
+    const isPct  = metric === 'pct';
+    const decimals = isPips ? 0 : (isPct ? 2 : 1);
+    const unit     = isPct ? '%' : (isPips ? 'p' : 'R');
+    const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(decimals) + unit;
+    const fmtGbp = v => {
+      const sym = (typeof curSym === 'function') ? curSym() : '£';
+      const sign = v >= 0 ? '+' : '−';
+      return `${sign}${sym}${Math.abs(v).toFixed(2)}`;
+    };
+    const delta = scenario.total - current.total;
+    const deltaCls = delta > 0 ? 'rec-suggest' : delta < 0 ? 'rec-downside' : '';
+    const deltaStr = `<span class="${deltaCls}">${delta >= 0 ? '\u2b06' : '\u2b07'} ${valPerUnit !== null ? fmtGbp(delta * valPerUnit) : fmt(delta)}</span>`;
+    const currentLabel = t('syn.current_label') || 'Current';
+    const wrLabel = t('syn.win_rate') || 'win rate';
+    const tradesWord = current.tradeCount === 1
+      ? (t('syn.trade_singular') || 'trade')
+      : (t('syn.trade_plural')   || 'trades');
+    const currentGbp = valPerUnit !== null ? ` <span class="syn-row-gbp">(${fmtGbp(current.total * valPerUnit)})</span>` : '';
+    const scenarioGbp = valPerUnit !== null ? ` <span class="syn-row-gbp">(${fmtGbp(scenario.total * valPerUnit)})</span>` : '';
+    return `<div class="syn-block">
+      <div class="syn-row">
+        <div class="syn-row-label">${currentLabel} <span style="color:var(--text-dim);font-size:11px;">(${current.tradeCount} ${tradesWord})</span></div>
+        <div class="syn-row-vals">
+          <span class="syn-row-total">${fmt(current.total)}</span>${currentGbp}
+          <span class="syn-row-wr">${current.winRate.toFixed(0)}% ${wrLabel}</span>
+        </div>
+      </div>
+      <div class="syn-row">
+        <div class="syn-row-label">${scenarioLabel}</div>
+        <div class="syn-row-vals">
+          <span class="syn-row-total">${fmt(scenario.total)}</span>${scenarioGbp}
+          <span class="syn-row-delta">${deltaStr}</span>
+          <span class="syn-row-wr">${scenario.winRate.toFixed(0)}% ${wrLabel}</span>
+        </div>
+      </div>
+    </div>`;
+  }
 
   function renderPotentialRAnalysis(allTradesRaw) {
     const simWrap = document.getElementById('potr-sim-wrap');
@@ -10856,10 +11166,32 @@
 
     const activeMetric = data.settings.potrMetric || 'r';
 
+    // Scenario comparison block — same stats display the BE card and the
+    // synthesis card show, so each individual card can stand on its own
+    // and the user sees the win-rate impact of adopting this card's rule.
+    const compareRec = activeMetric === 'pips' ? recPips : recR;
+    const optStretchForCmp = compareRec ? (compareRec.optimumStretch || 0) : 0;
+    let comparisonHtml = '';
+    if (optStretchForCmp > 0) {
+      const currentProj  = projectAllTrades(allTrades, 0, 0, activeMetric);
+      const scenarioProj = projectAllTrades(allTrades, optStretchForCmp, 0, activeMetric);
+      const valPerUnit   = gbpPerUnitForMetric(allTradesRaw, activeMetric);
+      const cmpDecimals  = activeMetric === 'pips' ? 0 : (activeMetric === 'pct' ? 2 : 1);
+      const cmpUnit      = activeMetric === 'pct' ? '%' : (activeMetric === 'pips' ? 'p' : 'R');
+      const scenarioLabelTpl = t('pot.scenario_label_holdlonger') || 'Hold winners +{STRETCH} longer';
+      const scenarioLabel = scenarioLabelTpl.replace(/\{STRETCH\}/g, '+' + optStretchForCmp.toFixed(cmpDecimals) + cmpUnit);
+      comparisonHtml = buildScenarioComparisonHtml(currentProj, scenarioProj, {
+        metric: activeMetric,
+        scenarioLabel,
+        valPerUnit
+      });
+    }
+
     simWrap.innerHTML = `
       <div class="potr-rec-block">
         ${activeMetric === 'pct' ? renderPctRec(recR, allTrades) : (activeMetric === 'r' ? renderRec(recR) : renderRec(recPips))}
       </div>
+      ${comparisonHtml}
       ${summaryRowHtml}
       ${showTable ? tableHtml : ''}
       ${showTable ? `<div class="potr-sim-note">${t('pot.disclaimer')}</div>` : ''}
@@ -10890,6 +11222,585 @@
       potrTablePage++;
       renderPotentialRAnalysis(allTradesRaw);
     });
+  }
+
+  // ============================================================================
+  // "Should I close Break Evens sooner?" — counterpart to the hold-winners
+  // analysis above. Uses each BE trade's bePotentialR (how far price extended
+  // before stopping out at BE) to find the optimal shorter TP that would have
+  // captured the most BEs as small wins.
+  //
+  // Math: for each candidate TP X (0.1R steps up to max bePotentialR in scope),
+  // count BEs where bePotentialR >= X (they would have hit X before reversing).
+  // Total captured = X × count(hits). The X that maximises this total is the
+  // recommended shorter TP.
+  //
+  // Why not interact with wins/losses here: this card answers one focused
+  // question — "for my BEs, would a shorter TP have helped?" The cross-card
+  // synthesis (next step) compares this recommendation against the hold-winners
+  // recommendation to tell the user which direction is more profitable overall.
+  // ============================================================================
+  function filterTradesByBePeriod(allTrades) {
+    let from = null, to = null;
+    const period = (data.settings && data.settings.bePeriod) || 'all';
+    let label = t('period.all') || 'All history';
+    if (period === 'custom') {
+      if (data.settings.bePeriodFrom) from = new Date(data.settings.bePeriodFrom + 'T00:00:00');
+      if (data.settings.bePeriodTo)   to   = new Date(data.settings.bePeriodTo   + 'T23:59:59');
+      const fmt = d => d ? d.toLocaleDateString(tLocale(), { day: '2-digit', month: 'short', year: 'numeric' }) : '…';
+      label = `${fmt(from)} → ${fmt(to)}`;
+    }
+    const filtered = allTrades.filter(tr => {
+      if (!tr.date) return false;
+      const td = new Date(tr.date);
+      return (!from || td >= from) && (!to || td <= to);
+    });
+    return { trades: filtered, label };
+  }
+
+  function renderBePotentialAnalysis(allTradesRaw) {
+    const simWrap = document.getElementById('be-sim-wrap');
+    if (!simWrap) return;
+    const filtered = filterTradesByBePeriod(allTradesRaw);
+    const allTrades = filtered.trades;
+    const countEl = document.getElementById('be-period-count');
+
+    // Filter to BE trades — count BEs broadly here (anything marked BE)
+    // so the "in scope" pill is accurate. Metric-specific tracking filters
+    // further (e.g. pips mode skips BEs without bePotentialPips logged).
+    const bes = allTrades.filter(tr => tr.result === 'BE');
+    if (countEl) {
+      const label = bes.length === 1
+        ? (t('be.in_scope_one') || 'BE in scope')
+        : (t('be.in_scope_many') || 'BEs in scope');
+      countEl.textContent = `${bes.length} ${label}`;
+    }
+
+    // Active metric — driven by the metric toggle. Default = R.
+    const activeMetric = (data.settings && data.settings.bePotrMetric) || 'r';
+
+    // Build a recommendation for ONE metric. Returns null if no BE trades
+    // have that metric tracked, or if % mode lacks a lifetime starting
+    // balance.
+    function buildRec(metric) {
+      const isPips = metric === 'pips';
+      const isPct  = metric === 'pct';
+      const ltSB   = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
+      if (isPct && ltSB <= 0) return null;
+
+      // Per-BE extractor: pips reads bePotentialPips; pct synthesizes
+      // bePotentialR × risk × copies / ltSB × 100; r reads bePotentialR.
+      const hasValue = isPct
+        ? (tr => typeof tr.bePotentialR === 'number' && !isNaN(tr.bePotentialR))
+        : (tr => typeof tr[isPips ? 'bePotentialPips' : 'bePotentialR'] === 'number' && !isNaN(tr[isPips ? 'bePotentialPips' : 'bePotentialR']));
+      const getValue = isPct
+        ? (tr => ((tr.bePotentialR || 0) * (parseFloat(tr.risk) || 0) * tradeCopies(tr)) / ltSB * 100)
+        : (tr => parseFloat(tr[isPips ? 'bePotentialPips' : 'bePotentialR']) || 0);
+
+      const tracked = bes.filter(hasValue);
+      if (tracked.length === 0) return null;
+
+      // Sweep step size per metric. Pips is coarse (1 pip steps), pct very
+      // fine (0.05% steps), R is the default 0.1R.
+      const step = isPips ? 1 : (isPct ? 0.05 : 0.1);
+      const decimals = isPips ? 0 : (isPct ? 2 : 1);
+      const unit = isPct ? '%' : (isPips ? 'p' : 'R');
+      const unitName = isPct ? (t('pot.unit_pct') || '%') : (isPips ? (t('be.unit_pips') || 'Pips') : 'R');
+
+      const maxVal = Math.max(...tracked.map(getValue));
+      let optTP = 0, optTotal = 0, optHits = 0;
+      if (maxVal > 0) {
+        const stepsCount = Math.floor(maxVal / step) + 1;
+        for (let i = 1; i <= stepsCount; i++) {
+          const x = i * step;
+          // Avoid floating-point drift by rounding to the metric's decimals
+          const xR = Math.round(x * Math.pow(10, decimals)) / Math.pow(10, decimals);
+          const hits = tracked.filter(tr => getValue(tr) >= xR).length;
+          const total = xR * hits;
+          if (total > optTotal) {
+            optTotal = total;
+            optTP    = xR;
+            optHits  = hits;
+          }
+        }
+      }
+
+      // £-per-unit valuation using user's actual winning trades.
+      let gbpPerUnit;
+      if (isPct) {
+        gbpPerUnit = ltSB / 100; // 1% of balance = ltSB/100
+      } else {
+        const wins = allTradesRaw.filter(tr => tr.result === 'Win');
+        const valuationSource = wins.filter(tr => {
+          const v = isPips ? parseFloat(tr.pips) : parseFloat(tr.r);
+          const pl = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
+          return !isNaN(v) && v > 0 && pl > 0;
+        });
+        const totalUnitsForVal = valuationSource.reduce((s, tr) => s + ((isPips ? parseFloat(tr.pips) : parseFloat(tr.r)) || 0), 0);
+        const totalGbpForVal   = valuationSource.reduce((s, tr) => s + ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0), 0);
+        gbpPerUnit = (valuationSource.length > 0 && totalUnitsForVal > 0)
+          ? (totalGbpForVal / totalUnitsForVal)
+          : null;
+      }
+
+      // Tier conviction based on tracked BE count.
+      let tier;
+      if      (tracked.length < 5)  tier = 'too-few';
+      else if (tracked.length < 15) tier = 'early';
+      else if (tracked.length < 30) tier = 'building';
+      else                          tier = 'strong';
+
+      const avgBePot = tracked.reduce((s, tr) => s + getValue(tr), 0) / tracked.length;
+      const optGbp = gbpPerUnit !== null ? optTotal * gbpPerUnit : null;
+
+      return {
+        n: tracked.length, tracked, optTP, optTotal, optHits, optGbp,
+        avgBePot, tier, unit, unitName, decimals, gbpPerUnit, getValue
+      };
+    }
+
+    const rec = buildRec(activeMetric);
+
+    if (!rec) {
+      const empty = (activeMetric === 'pct')
+        ? (t('be.empty_pct') || 'Need a lifetime starting balance set to compute % figures.')
+        : (t('be.empty_default') || 'No BE trades with BE POT R · P logged yet. Mark a trade as BE and fill in the BE POT R · P field — patterns appear here once you have at least 5 logged.');
+      simWrap.innerHTML = `<p class="potr-empty">${empty}</p>`;
+      return;
+    }
+
+    const tierMeta = {
+      'too-few':  { label: t('pot.tier_too_few')   || 'Too few',  cls: 'rec-tier-low'      },
+      'early':    { label: t('pot.tier_early')     || 'Early',    cls: 'rec-tier-early'    },
+      'building': { label: t('pot.tier_building')  || 'Building', cls: 'rec-tier-building' },
+      'strong':   { label: t('pot.tier_strong')    || 'Strong',   cls: 'rec-tier-strong'   }
+    };
+
+    const fmt    = v => (v >= 0 ? '+' : '') + v.toFixed(rec.decimals) + rec.unit;
+    const fmtGbp = v => {
+      const sym = (typeof curSym === 'function') ? curSym() : '£';
+      const sign = v >= 0 ? '+' : '−';
+      return `${sign}${sym}${Math.abs(v).toFixed(2)}`;
+    };
+
+    // Verdict body — i18n templates with {N}, {AVG}, {UNIT_NAME}, {HITS}, {TP}, {TOTAL}, {GBP}.
+    let body;
+    if (rec.tier === 'too-few') {
+      const tpl = t('be.body_too_few') || 'Need at least 5 BE trades with BE POT R · P logged to give a recommendation. You have <strong>{N}</strong>. Keep logging and the pattern will appear here.';
+      body = `<span class="rec-text">${tpl.replace(/\{N\}/g, rec.n)}</span>`;
+    } else if (rec.optTotal <= 0) {
+      const tpl = t('be.body_no_room') || 'Across <strong>{N}</strong> BE trades, average extension was just <strong>{AVG}{UNIT}</strong>. Closing sooner wouldn\u2019t have saved much \u2014 these BEs barely extended before reversing.';
+      body = `<span class="rec-text">${tpl
+        .replace(/\{N\}/g,    rec.n)
+        .replace(/\{AVG\}/g,  rec.avgBePot.toFixed(rec.decimals))
+        .replace(/\{UNIT\}/g, rec.unit)}</span>`;
+    } else {
+      const gbpLine = rec.optGbp !== null ? ` <span class="rec-gbp-line">(${fmtGbp(rec.optGbp)})</span>` : '';
+      const tpl = t('be.body_recommend') || 'Across <strong>{N}</strong> BE trades, <strong>{HITS}</strong> would have hit a shorter TP of <strong class="rec-suggest">{TP}</strong> before reversing. Closing at that level would have netted <strong class="rec-suggest">{TOTAL}</strong>{GBP} instead of 0.';
+      body = `<span class="rec-text">${tpl
+        .replace(/\{N\}/g,     rec.n)
+        .replace(/\{HITS\}/g,  rec.optHits)
+        .replace(/\{TP\}/g,    fmt(rec.optTP))
+        .replace(/\{TOTAL\}/g, fmt(rec.optTotal))
+        .replace(/\{GBP\}/g,   gbpLine)
+        .replace(/\{UNIT_NAME\}/g, rec.unitName.toLowerCase())}</span>`;
+    }
+
+    const beWord = rec.n === 1 ? (t('be.singular') || 'BE') : (t('be.plural') || 'BEs');
+    const tierBlock = `<div class="rec-row">
+      <span class="rec-tier ${tierMeta[rec.tier].cls}">${tierMeta[rec.tier].label} <span class="rec-tier-n">\u00b7 ${rec.n} ${beWord}</span></span>
+      ${body}
+    </div>`;
+
+    // Per-BE table — sorted by the active metric's value, descending.
+    const sortedBes = [...rec.tracked].sort((a, b) => rec.getValue(b) - rec.getValue(a));
+    const tIpRow      = t('tip.open_day') || 'Click to open day';
+    const hdrDate     = t('be.col.date')     || 'Date';
+    const hdrValue    = (activeMetric === 'pips') ? (t('be.col.bepot_pips') || 'BE POT P')
+                      : (activeMetric === 'pct')  ? (t('be.col.bepot_pct')  || 'BE POT %')
+                      :                             (t('be.col.bepot_r')    || 'BE POT R');
+    const hdrPlanned  = (activeMetric === 'pips') ? (t('be.col.planned_p')  || 'Planned P')
+                      : (activeMetric === 'pct')  ? (t('be.col.planned_pct')|| 'Planned %')
+                      :                             (t('be.col.planned_r')  || 'Planned R');
+    const hdrRisk     = t('be.col.risk')     || 'Risk';
+
+    const valOfTrade = tr => rec.getValue(tr);
+    const plannedOfTrade = tr => {
+      if (activeMetric === 'pips') {
+        return (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + 'p' : '\u2014';
+      }
+      if (activeMetric === 'pct') {
+        const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
+        if (ltSB <= 0) return '\u2014';
+        const pct = ((parseFloat(tr.r) || 0) * (parseFloat(tr.risk) || 0) * tradeCopies(tr)) / ltSB * 100;
+        return pct.toFixed(2) + '%';
+      }
+      return (typeof tr.r === 'number' && !isNaN(tr.r)) ? tr.r.toFixed(1) + 'R' : '\u2014';
+    };
+
+    const cols = 'grid-template-columns:110px 100px 100px 100px;';
+    const tableHeaderHtml = `<div class="potr-trade-row headers" style="${cols}">
+      <div class="potr-trade-cell">${hdrDate}</div>
+      <div class="potr-trade-cell">${hdrValue}</div>
+      <div class="potr-trade-cell">${hdrPlanned}</div>
+      <div class="potr-trade-cell">${hdrRisk}</div>
+    </div>`;
+    const tableBodyHtml = sortedBes.map(tr => {
+      const dateStr = new Date(tr.date).toLocaleDateString(tLocale(), { day: '2-digit', month: 'short', year: 'numeric' });
+      const dt = new Date(tr.date);
+      const dateKey = `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,'0')}-${String(dt.getDate()).padStart(2,'0')}`;
+      const valStr = valOfTrade(tr).toFixed(rec.decimals) + rec.unit;
+      const plannedStr = plannedOfTrade(tr);
+      const riskStr = (tr.risk && !isNaN(parseFloat(tr.risk)))
+        ? ((typeof curSym === 'function' ? curSym() : '£') + parseFloat(tr.risk).toFixed(2))
+        : '\u2014';
+      return `<div class="potr-trade-row" style="${cols}" data-date-key="${dateKey}" title="${tIpRow}">
+        <div class="potr-trade-cell">${dateStr}</div>
+        <div class="potr-trade-cell">${valStr}</div>
+        <div class="potr-trade-cell">${plannedStr}</div>
+        <div class="potr-trade-cell">${riskStr}</div>
+      </div>`;
+    }).join('');
+
+    // Scenario comparison block — same stats display the hold-winners card
+    // and the synthesis card show. Lets the user see the win-rate impact
+    // of adopting this card's "shorter TP" rule without scrolling down.
+    let beComparisonHtml = '';
+    if (rec.optTP > 0) {
+      const currentProj  = projectAllTrades(allTrades, 0, 0, activeMetric);
+      const scenarioProj = projectAllTrades(allTrades, 0, rec.optTP, activeMetric);
+      const valPerUnit   = gbpPerUnitForMetric(allTradesRaw, activeMetric);
+      const scenarioLabelTpl = t('be.scenario_label_capshort') || 'Cap TP at +{TP}';
+      const scenarioLabel = scenarioLabelTpl.replace(/\{TP\}/g, '+' + rec.optTP.toFixed(rec.decimals) + rec.unit);
+      beComparisonHtml = buildScenarioComparisonHtml(currentProj, scenarioProj, {
+        metric: activeMetric,
+        scenarioLabel,
+        valPerUnit
+      });
+    }
+
+    simWrap.innerHTML = `${tierBlock}${beComparisonHtml}<div style="margin-top:18px;">${tableHeaderHtml}${tableBodyHtml}</div>`;
+
+    // Wire row clicks to open the day modal.
+    simWrap.querySelectorAll('.potr-trade-row[data-date-key]').forEach(row => {
+      row.addEventListener('click', () => {
+        if (typeof openDayModal === 'function') openDayModal(row.dataset.dateKey);
+      });
+    });
+  }
+
+  // ============================================================================
+  // Synthesis card: "Hold longer vs Close sooner". Replays the user's trades
+  // under each alternative rule and shows which direction would have been
+  // more profitable overall (and which would have improved win rate the most).
+  //
+  // Two scenarios:
+  //   A: Stretch all winners by hold-winners optimum (+sA). BEs/losses unchanged.
+  //   B: Cap TP at BE-card optimum (cB) across ALL trades. Caps wins that
+  //      exceeded cB; turns BEs that extended to cB into small wins.
+  //
+  // Each rule's projection vs current ⇒ direct comparison of (R/Pips/Pct,
+  // £ delta, win rate). Verdict highlights the more profitable direction
+  // and notes when the higher win rate rule is actually less profitable
+  // overall — a real tradeoff the trader needs to know about.
+  // ============================================================================
+  function renderSynthesisCard(allTradesRaw) {
+    const wrap = document.getElementById('syn-wrap');
+    if (!wrap) return;
+    const metric = (data.settings && data.settings.synMetric) || 'r';
+    const isPips = metric === 'pips';
+    const isPct  = metric === 'pct';
+    const decimals = isPips ? 0 : (isPct ? 2 : 1);
+    const unit     = isPct ? '%' : (isPips ? 'p' : 'R');
+
+    // Lifetime starting balance for % mode.
+    const ltSB = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
+    if (isPct && ltSB <= 0) {
+      wrap.innerHTML = `<p class="potr-empty">${t('syn.empty_pct') || 'Need a lifetime starting balance set to compute % figures.'}</p>`;
+      return;
+    }
+
+    // --- Per-trade value helpers ----------------------------------------
+    // For each trade and a hypothetical "captured units" amount (R/pips/%),
+    // these compute consistent figures. Pct mode uses each trade's own
+    // risk × copies / ltSB × 100 as its scaling factor so the % is real.
+    const tradeRiskOf  = tr => parseFloat(tr.risk) || 0;
+    const tradeCopiesOf= tr => (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+    const unitsToValue = (tr, units) => {
+      if (isPct) {
+        const risk = tradeRiskOf(tr);
+        const copies = tradeCopiesOf(tr);
+        if (ltSB <= 0 || risk <= 0) return 0;
+        return units * risk * copies / ltSB * 100;
+      }
+      // For R and Pips, just return the units (caller already converted)
+      return units * tradeCopiesOf(tr);
+    };
+
+    // Actual outcome of a trade in the current metric.
+    const actualOutcome = tr => {
+      if (tr.result === 'Lose') return unitsToValue(tr, -1) * (isPips ? (parseFloat(tr.sl) || 0) / 1 : 1) /* see note */;
+      // Simpler: for losses, R = -1, pips = -SL distance, pct = -1 × risk × copies / ltSB × 100
+      // Let me redo this more carefully below.
+      return 0;
+    };
+
+    // --- Compute actual outcomes per trade in the active metric ---------
+    function getActualUnits(tr) {
+      if (tr.result === 'Win') {
+        if (isPips) return (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips : 0;
+        if (isPct)  return (parseFloat(tr.r) || 0); // We'll multiply by risk later
+        return parseFloat(tr.r) || 0;
+      }
+      if (tr.result === 'Lose') {
+        if (isPips) return -((parseFloat(tr.sl) || 0));
+        return -1; // R or for pct we'll multiply by risk
+      }
+      return 0; // BE
+    }
+
+    // Multiply units by per-trade scale (risk × copies for £, ltSB-relative for %)
+    function unitsToMetric(tr, units) {
+      if (isPct) {
+        const risk = tradeRiskOf(tr);
+        const copies = tradeCopiesOf(tr);
+        if (ltSB <= 0 || risk <= 0) return 0;
+        return units * risk * copies / ltSB * 100;
+      }
+      // R and pips both scale by copies but not risk (R = setup ratio, pips = absolute)
+      return units * tradeCopiesOf(tr);
+    }
+
+    // £ valuation per unit (R or pips). For % mode, 1% = ltSB/100.
+    function gbpPerUnit() {
+      if (isPct) return ltSB / 100;
+      const wins = allTradesRaw.filter(tr => tr.result === 'Win');
+      const valuationSource = wins.filter(tr => {
+        const v = isPips ? parseFloat(tr.pips) : parseFloat(tr.r);
+        const pl = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
+        return !isNaN(v) && v > 0 && pl > 0;
+      });
+      const totalUnitsForVal = valuationSource.reduce((s, tr) => s + ((isPips ? parseFloat(tr.pips) : parseFloat(tr.r)) || 0), 0);
+      const totalGbpForVal   = valuationSource.reduce((s, tr) => s + ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0), 0);
+      return (valuationSource.length > 0 && totalUnitsForVal > 0) ? (totalGbpForVal / totalUnitsForVal) : null;
+    }
+    const valPerUnit = gbpPerUnit();
+
+    // --- Find hold-winners optimum stretch and BE-card optimum TP ------
+    // We need to recompute these here using the same logic as the cards
+    // above. Kept inline so the synthesis is self-contained.
+    const wins = allTradesRaw.filter(tr => tr.result === 'Win');
+    const trackedWins = wins.filter(tr => {
+      if (isPips) return typeof tr.potentialPips === 'number' && !isNaN(tr.potentialPips);
+      return typeof tr.potentialR === 'number' && !isNaN(tr.potentialR);
+    });
+    const winUnits = tr => isPips ? (parseFloat(tr.pips) || 0) : (parseFloat(tr.r) || 0);
+    const winPotential = tr => isPips ? (parseFloat(tr.potentialPips) || 0) : (parseFloat(tr.potentialR) || 0);
+    const slUnitsForLoss = isPips ? (tr => -(parseFloat(tr.sl) || 0)) : (() => -1);
+
+    // Sweep stretch for hold-winners
+    let optStretch = 0, optStretchTotal = -Infinity;
+    if (trackedWins.length > 0) {
+      const step = isPips ? 1 : (isPct ? 0.05 : 0.1);
+      const maxRoom = Math.max(...trackedWins.map(tr => Math.max(0, winPotential(tr) - winUnits(tr))));
+      const stepsCount = Math.floor(maxRoom / step) + 1;
+      // Baseline (stretch=0): captures = current
+      const baselineWinUnits = trackedWins.reduce((s, tr) => s + winUnits(tr), 0);
+      optStretchTotal = baselineWinUnits;
+      for (let i = 1; i <= stepsCount; i++) {
+        const s = i * step;
+        const sR = Math.round(s * Math.pow(10, decimals)) / Math.pow(10, decimals);
+        let total = 0;
+        trackedWins.forEach(tr => {
+          const actual = winUnits(tr);
+          const pot    = winPotential(tr);
+          const newT   = actual + sR;
+          if (newT <= pot) total += newT;
+          else             total += slUnitsForLoss(tr);
+        });
+        if (total > optStretchTotal) {
+          optStretchTotal = total;
+          optStretch = sR;
+        }
+      }
+    }
+
+    // BE optimum TP (recomputed similar to the BE card)
+    const bes = allTradesRaw.filter(tr => tr.result === 'BE');
+    const trackedBEs = bes.filter(tr => {
+      if (isPips) return typeof tr.bePotentialPips === 'number' && !isNaN(tr.bePotentialPips);
+      return typeof tr.bePotentialR === 'number' && !isNaN(tr.bePotentialR);
+    });
+    const beUnits = tr => isPips ? (parseFloat(tr.bePotentialPips) || 0) : (parseFloat(tr.bePotentialR) || 0);
+    let optTP = 0, optTPTotal = 0;
+    if (trackedBEs.length > 0) {
+      const step = isPips ? 1 : (isPct ? 0.05 : 0.1);
+      const maxBE = Math.max(...trackedBEs.map(beUnits));
+      const stepsCount = Math.floor(maxBE / step) + 1;
+      for (let i = 1; i <= stepsCount; i++) {
+        const x = i * step;
+        const xR = Math.round(x * Math.pow(10, decimals)) / Math.pow(10, decimals);
+        const hits = trackedBEs.filter(tr => beUnits(tr) >= xR).length;
+        const total = xR * hits;
+        if (total > optTPTotal) {
+          optTPTotal = total;
+          optTP = xR;
+        }
+      }
+    }
+
+    // --- Scenario projections ------------------------------------------
+    // Build per-trade outcomes for: current, scenarioA (stretch), scenarioB (cap TP).
+    // Win count tracks how many trades end with > 0 units in each scenario.
+    const allInScope = allTradesRaw;
+
+    function projectScenario(stretchUnits, capTPUnits) {
+      // stretchUnits: positive value applied to wins (Scenario A). 0 = no stretch.
+      // capTPUnits: positive TP target applied to ALL trades (Scenario B). 0 = no cap.
+      let totalUnits = 0;
+      let winCount = 0;
+      allInScope.forEach(tr => {
+        let outcomeUnits;
+        // Tracking: does this trade have the necessary data for stretch/cap simulations?
+        const winHasPotential = (tr.result === 'Win') && (isPips ? typeof tr.potentialPips === 'number' : typeof tr.potentialR === 'number');
+        const beHasPotential  = (tr.result === 'BE')  && (isPips ? typeof tr.bePotentialPips === 'number' : typeof tr.bePotentialR === 'number');
+        if (tr.result === 'Win') {
+          const actual = winUnits(tr);
+          const pot    = winHasPotential ? winPotential(tr) : actual;
+          let candidate = actual;
+          // Apply stretch if applicable
+          if (stretchUnits > 0 && winHasPotential) {
+            const newT = actual + stretchUnits;
+            candidate = (newT <= pot) ? newT : slUnitsForLoss(tr);
+          }
+          // Apply cap if applicable (Scenario B caps wins)
+          if (capTPUnits > 0) {
+            if (candidate >= capTPUnits)       candidate = capTPUnits;
+            else if (winHasPotential && pot >= capTPUnits) candidate = capTPUnits;
+            // else: candidate stays at the stretched/actual value
+          }
+          outcomeUnits = candidate;
+        } else if (tr.result === 'BE') {
+          // Apply cap if applicable — BE becomes win at cap if bePotentialR >= cap.
+          if (capTPUnits > 0 && beHasPotential && beUnits(tr) >= capTPUnits) {
+            outcomeUnits = capTPUnits;
+          } else {
+            outcomeUnits = 0;
+          }
+        } else if (tr.result === 'Lose') {
+          outcomeUnits = slUnitsForLoss(tr);
+        } else {
+          outcomeUnits = 0;
+        }
+        const metricValue = unitsToMetric(tr, outcomeUnits);
+        totalUnits += metricValue;
+        if (metricValue > 0) winCount++;
+      });
+      const tradeCount = allInScope.length;
+      const winRate = tradeCount > 0 ? (winCount / tradeCount) * 100 : 0;
+      return { total: totalUnits, winRate, winCount, tradeCount };
+    }
+
+    const current   = projectAllTrades(allInScope, 0, 0, metric);
+    const scenarioA = projectAllTrades(allInScope, optStretch, 0, metric);
+    const scenarioB = projectAllTrades(allInScope, 0, optTP, metric);
+
+    // Empty-state: no actionable rules found.
+    if (optStretch <= 0 && optTP <= 0) {
+      wrap.innerHTML = `<p class="potr-empty">${t('syn.no_actionable') || 'Not enough tracked data to suggest a rule yet. Log Potential R · P on your wins and BE POT R · P on your BEs — the synthesis appears once both cards above have a recommendation.'}</p>`;
+      return;
+    }
+
+    // --- Render --------------------------------------------------------
+    const fmtUnit = v => (v >= 0 ? '+' : '') + v.toFixed(decimals) + unit;
+    const fmtGbp  = v => {
+      const sym = (typeof curSym === 'function') ? curSym() : '£';
+      const sign = v >= 0 ? '+' : '−';
+      return `${sign}${sym}${Math.abs(v).toFixed(2)}`;
+    };
+    const fmtDelta = v => (v >= 0 ? '+' : '') + v.toFixed(decimals) + unit;
+
+    const currentGbp = valPerUnit !== null ? current.total * valPerUnit : null;
+    const aDelta = scenarioA.total - current.total;
+    const bDelta = scenarioB.total - current.total;
+    const aDeltaGbp = valPerUnit !== null ? aDelta * valPerUnit : null;
+    const bDeltaGbp = valPerUnit !== null ? bDelta * valPerUnit : null;
+
+    // Verdict logic
+    const aBeats = aDelta > 0;
+    const bBeats = bDelta > 0;
+    let profitVerdict;
+    if (!aBeats && !bBeats) {
+      profitVerdict = t('syn.verdict_neither') || 'Neither rule beats your current behaviour. Stay the course — both alternatives would have netted less.';
+    } else if (aBeats && !bBeats) {
+      profitVerdict = (t('syn.verdict_a_only') || 'Best for profit: <strong>Hold winners longer</strong> ({STRETCH}). Net <strong class="rec-suggest">{GBP}</strong> better than current. Shortening TPs would have hurt.')
+        .replace(/\{STRETCH\}/g, '+' + optStretch.toFixed(decimals) + unit)
+        .replace(/\{GBP\}/g, aDeltaGbp !== null ? fmtGbp(aDeltaGbp) : fmtDelta(aDelta));
+    } else if (!aBeats && bBeats) {
+      profitVerdict = (t('syn.verdict_b_only') || 'Best for profit: <strong>Shorten TPs</strong> (cap at {TP}). Net <strong class="rec-suggest">{GBP}</strong> better than current. Holding longer would have hurt.')
+        .replace(/\{TP\}/g, '+' + optTP.toFixed(decimals) + unit)
+        .replace(/\{GBP\}/g, bDeltaGbp !== null ? fmtGbp(bDeltaGbp) : fmtDelta(bDelta));
+    } else if (aDelta > bDelta) {
+      profitVerdict = (t('syn.verdict_a_wins') || 'Best for profit: <strong>Hold winners longer</strong> ({STRETCH}, {GBP_A} better) beats shortening TPs ({TP}, {GBP_B} better).')
+        .replace(/\{STRETCH\}/g, '+' + optStretch.toFixed(decimals) + unit)
+        .replace(/\{TP\}/g, '+' + optTP.toFixed(decimals) + unit)
+        .replace(/\{GBP_A\}/g, aDeltaGbp !== null ? fmtGbp(aDeltaGbp) : fmtDelta(aDelta))
+        .replace(/\{GBP_B\}/g, bDeltaGbp !== null ? fmtGbp(bDeltaGbp) : fmtDelta(bDelta));
+    } else {
+      profitVerdict = (t('syn.verdict_b_wins') || 'Best for profit: <strong>Shorten TPs</strong> (cap at {TP}, {GBP_B} better) beats holding winners longer ({STRETCH}, {GBP_A} better).')
+        .replace(/\{STRETCH\}/g, '+' + optStretch.toFixed(decimals) + unit)
+        .replace(/\{TP\}/g, '+' + optTP.toFixed(decimals) + unit)
+        .replace(/\{GBP_A\}/g, aDeltaGbp !== null ? fmtGbp(aDeltaGbp) : fmtDelta(aDelta))
+        .replace(/\{GBP_B\}/g, bDeltaGbp !== null ? fmtGbp(bDeltaGbp) : fmtDelta(bDelta));
+    }
+    // Win rate verdict — separate, in case the profit-best rule is NOT the highest-win-rate rule
+    let consistencyVerdict = '';
+    const wrCurrent = current.winRate;
+    const wrA = scenarioA.winRate;
+    const wrB = scenarioB.winRate;
+    const bestWR = Math.max(wrCurrent, wrA, wrB);
+    if (bestWR > wrCurrent + 0.5) { // > 0.5pp improvement to be worth highlighting
+      let bestName;
+      if (wrA === bestWR && wrB === bestWR) bestName = 'either rule';
+      else if (wrA > wrB)                   bestName = `<strong>Hold winners longer</strong>`;
+      else                                  bestName = `<strong>Shorten TPs</strong>`;
+      consistencyVerdict = (t('syn.verdict_consistency') || 'Best for win rate: {NAME} ({WR}%, up from {WR0}%).')
+        .replace(/\{NAME\}/g, bestName)
+        .replace(/\{WR\}/g,   bestWR.toFixed(0))
+        .replace(/\{WR0\}/g,  wrCurrent.toFixed(0));
+    }
+
+    // Scenario row builder
+    function row(labelKey, fallbackLabel, scenario, deltaUnits, deltaGbp) {
+      const totalStr = (scenario.total >= 0 ? '+' : '') + scenario.total.toFixed(decimals) + unit;
+      const deltaCls = deltaUnits > 0 ? 'rec-suggest' : deltaUnits < 0 ? 'rec-downside' : '';
+      const deltaStr = deltaUnits !== undefined
+        ? `<span class="${deltaCls}">${deltaUnits >= 0 ? '⬆' : '⬇'} ${deltaGbp !== null ? fmtGbp(deltaGbp) : fmtDelta(deltaUnits)}</span>`
+        : '';
+      return `<div class="syn-row">
+        <div class="syn-row-label">${t(labelKey) || fallbackLabel}</div>
+        <div class="syn-row-vals">
+          <span class="syn-row-total">${totalStr}</span>
+          ${valPerUnit !== null && scenario.total !== undefined ? `<span class="syn-row-gbp">(${fmtGbp(scenario.total * valPerUnit)})</span>` : ''}
+          ${deltaStr ? `<span class="syn-row-delta">${deltaStr}</span>` : ''}
+          <span class="syn-row-wr">${scenario.winRate.toFixed(0)}% ${t('syn.win_rate') || 'win rate'}</span>
+        </div>
+      </div>`;
+    }
+
+    const rows = `
+      ${row('syn.current_label', `Current (${current.tradeCount} ${current.tradeCount === 1 ? 'trade' : 'trades'})`, current, undefined, undefined)}
+      ${optStretch > 0 ? row('syn.scenario_a_label', `A — Hold winners +${optStretch.toFixed(decimals)}${unit} longer`, scenarioA, aDelta, aDeltaGbp) : ''}
+      ${optTP > 0 ? row('syn.scenario_b_label', `B — Cap TP at +${optTP.toFixed(decimals)}${unit}`, scenarioB, bDelta, bDeltaGbp) : ''}
+    `;
+
+    wrap.innerHTML = `
+      ${rows}
+      <div class="syn-verdict-block">
+        <div class="syn-verdict-line">${profitVerdict}</div>
+        ${consistencyVerdict ? `<div class="syn-verdict-line syn-verdict-line-sub">${consistencyVerdict}</div>` : ''}
+      </div>
+    `;
   }
 
   // ============================================================================
@@ -12389,6 +13300,67 @@
     });
     if (fromInp) fromInp.addEventListener('change', e => { data.settings.potRPeriodFrom = e.target.value; potrTablePage = 0; saveData(); reRender(); });
     if (toInp)   toInp.addEventListener('change',   e => { data.settings.potRPeriodTo   = e.target.value; potrTablePage = 0; saveData(); reRender(); });
+  })();
+  // "Should I close BEs sooner?" period filter — independent of the
+  // hold-winners filter so the user can scope each card separately. Same
+  // pattern, separate state keys (bePeriod / bePeriodFrom / bePeriodTo).
+  (function wireBePeriodFilter() {
+    const sel = document.getElementById('be-period-select');
+    const customWrap = document.getElementById('be-period-custom');
+    const fromInp = document.getElementById('be-period-from');
+    const toInp   = document.getElementById('be-period-to');
+    if (!sel) return;
+    sel.value = (data.settings && data.settings.bePeriod) || 'all';
+    if (fromInp) fromInp.value = (data.settings && data.settings.bePeriodFrom) || '';
+    if (toInp)   toInp.value   = (data.settings && data.settings.bePeriodTo)   || '';
+    if (customWrap) customWrap.style.display = sel.value === 'custom' ? 'inline-flex' : 'none';
+    const reRender = () => {
+      if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
+    };
+    sel.addEventListener('change', e => {
+      if (!data.settings) data.settings = {};
+      data.settings.bePeriod = e.target.value;
+      if (customWrap) customWrap.style.display = e.target.value === 'custom' ? 'inline-flex' : 'none';
+      saveData(); reRender();
+    });
+    if (fromInp) fromInp.addEventListener('change', e => { if (!data.settings) data.settings = {}; data.settings.bePeriodFrom = e.target.value; saveData(); reRender(); });
+    if (toInp)   toInp.addEventListener('change',   e => { if (!data.settings) data.settings = {}; data.settings.bePeriodTo   = e.target.value; saveData(); reRender(); });
+  })();
+  // BE card metric toggle — R vs Pips vs %. Drives both the recommendation
+  // and the per-BE table cell values. Persisted via data.settings.bePotrMetric.
+  (function wireBeMetricToggle() {
+    const wrap = document.getElementById('be-metric-toggle');
+    if (!wrap) return;
+    const btns = wrap.querySelectorAll('.potr-metric-btn');
+    const current = (data.settings && data.settings.bePotrMetric) || 'r';
+    btns.forEach(b => b.classList.toggle('active', b.dataset.metric === current));
+    btns.forEach(b => b.addEventListener('click', () => {
+      const newMetric = b.dataset.metric;
+      if (newMetric === ((data.settings && data.settings.bePotrMetric) || 'r')) return;
+      if (!data.settings) data.settings = {};
+      data.settings.bePotrMetric = newMetric;
+      btns.forEach(x => x.classList.toggle('active', x.dataset.metric === newMetric));
+      saveData();
+      if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
+    }));
+  })();
+  // Synthesis card metric toggle — independent of the per-card toggles so
+  // the verdict can be read in any metric without changing the cards above.
+  (function wireSynMetricToggle() {
+    const wrap = document.getElementById('syn-metric-toggle');
+    if (!wrap) return;
+    const btns = wrap.querySelectorAll('.potr-metric-btn');
+    const current = (data.settings && data.settings.synMetric) || 'r';
+    btns.forEach(b => b.classList.toggle('active', b.dataset.metric === current));
+    btns.forEach(b => b.addEventListener('click', () => {
+      const newMetric = b.dataset.metric;
+      if (newMetric === ((data.settings && data.settings.synMetric) || 'r')) return;
+      if (!data.settings) data.settings = {};
+      data.settings.synMetric = newMetric;
+      btns.forEach(x => x.classList.toggle('active', x.dataset.metric === newMetric));
+      saveData();
+      if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
+    }));
   })();
   // "What if I held winners longer?" metric toggle — R vs Pips. Drives both the recommendation
   // card shown AND the per-trade table sort/cell display. Persisted via data.settings.potrMetric.
