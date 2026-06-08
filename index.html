@@ -975,9 +975,12 @@
   /* Minimised: hide chart strip + notes, tighten the card padding. The
      label row stays so the user can re-expand. */
   .saved-bias.minimized { padding-top: 18px; padding-bottom: 18px; }
-  .saved-bias.minimized .saved-bias-label-row { margin-bottom: 0; }
-  .saved-bias.minimized .saved-bias-main { display: none; }
+  /* When minimised, keep the key bias info (mode / structure / location /
+     direction) visible — that's the at-a-glance read the user wants. Only
+     the chart link/preview and the long-form notes get hidden. */
+  .saved-bias.minimized .saved-bias-link  { display: none; }
   .saved-bias.minimized .saved-bias-notes { display: none; }
+  .saved-bias.minimized .saved-bias-main  { gap: 0; }
   /* Stats sit in a horizontal strip across the top, chart below — fills the card's width
      cleanly with stats reading left-to-right above the chart they describe. */
   .saved-bias-main { display: flex; flex-direction: column; gap: 18px; }
@@ -2524,16 +2527,6 @@
     <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title"><span data-i18n="trades.s_combo.title">Hold Winners longer or close BEs sooner?</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.combo">Compares two alternative rules against your actual trades: (A) holding winners longer based on how much of the move you typically capture, and (B) using a shorter TP based on how far price extends on your BEs before reversing. Replays your history under each rule and shows which direction is more profitable AND which improves win rate. Tier badges show conviction (too few / early / building / strong) based on sample size. Detailed per-trade breakdown is collapsed below — expand to see exactly which trades drive each recommendation.</span></span></span></div>
       <div class="potr-period-row">
-        <span class="potr-period-label" data-i18n="period.label">Period</span>
-        <select id="combo-period-select">
-          <option value="all" data-i18n="period.all">All history</option>
-          <option value="custom" data-i18n="period.custom">Custom…</option>
-        </select>
-        <span class="potr-period-custom" id="combo-period-custom" style="display:none">
-          <input type="date" id="combo-period-from" />
-          <span class="potr-period-sep" data-i18n="period.to">to</span>
-          <input type="date" id="combo-period-to" />
-        </span>
         <span class="potr-metric-toggle" id="combo-metric-toggle">
           <span class="potr-period-label" data-i18n="period.metric">Metric</span>
           <span class="potr-metric-group">
@@ -10686,18 +10679,11 @@
   // The two directions are computed via projectAllTrades, sweeping stretch
   // (A) and cap-TP (B) values to find each direction's £-maximising rule.
   // ============================================================================
+  // Period filter — removed by user request. The section always operates
+  // on all-history data. Kept as a passthrough so the rest of the renderer
+  // doesn't have to change shape if a period filter is ever reintroduced.
   function filterTradesByComboPeriod(allTrades) {
-    let from = null, to = null;
-    const period = (data.settings && data.settings.comboPeriod) || 'all';
-    if (period === 'custom') {
-      if (data.settings.comboPeriodFrom) from = new Date(data.settings.comboPeriodFrom + 'T00:00:00');
-      if (data.settings.comboPeriodTo)   to   = new Date(data.settings.comboPeriodTo   + 'T23:59:59');
-    }
-    return allTrades.filter(tr => {
-      if (!tr.date) return false;
-      const td = new Date(tr.date);
-      return (!from || td >= from) && (!to || td <= to);
-    });
+    return allTrades;
   }
 
   function renderCombinedAnalysis(allTradesRaw) {
@@ -11165,7 +11151,7 @@
         <div class="combo-verdict-line">${profitVerdict}</div>
         ${consistencyVerdict ? `<div class="combo-verdict-line combo-verdict-sub">${consistencyVerdict}</div>` : ''}
       </div>` : ''}
-      ${showBaseline ? detailHtml : ''}
+      ${detailHtml}
     `;
 
     // Wire row clicks to open the day modal
@@ -13989,33 +13975,13 @@
   syncSettingsInputs();
   updateBackupSettingsLabel();
 
-  // Combined "Hold winners longer or close BEs sooner?" section — single
-  // period filter + metric toggle that drives the whole compressed section.
-  // Replaces the old per-card wiring (potrPeriod / bePeriod / synMetric /
-  // potrMetric / bePotrMetric — kept in storage in case the user reverts,
-  // but no longer read by the renderer).
+  // Combined "Hold winners longer or close BEs sooner?" section — metric
+  // toggle wiring. Period filter was removed by user request; section
+  // always uses all-history data via the passthrough filterTradesByComboPeriod.
   (function wireComboFilters() {
-    const sel        = document.getElementById('combo-period-select');
-    const customWrap = document.getElementById('combo-period-custom');
-    const fromInp    = document.getElementById('combo-period-from');
-    const toInp      = document.getElementById('combo-period-to');
-    const reRender   = () => {
+    const reRender = () => {
       if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
     };
-    if (sel) {
-      sel.value = (data.settings && data.settings.comboPeriod) || 'all';
-      if (fromInp) fromInp.value = (data.settings && data.settings.comboPeriodFrom) || '';
-      if (toInp)   toInp.value   = (data.settings && data.settings.comboPeriodTo)   || '';
-      if (customWrap) customWrap.style.display = sel.value === 'custom' ? 'inline-flex' : 'none';
-      sel.addEventListener('change', e => {
-        if (!data.settings) data.settings = {};
-        data.settings.comboPeriod = e.target.value;
-        if (customWrap) customWrap.style.display = e.target.value === 'custom' ? 'inline-flex' : 'none';
-        saveData(); reRender();
-      });
-      if (fromInp) fromInp.addEventListener('change', e => { if (!data.settings) data.settings = {}; data.settings.comboPeriodFrom = e.target.value; saveData(); reRender(); });
-      if (toInp)   toInp.addEventListener('change',   e => { if (!data.settings) data.settings = {}; data.settings.comboPeriodTo   = e.target.value; saveData(); reRender(); });
-    }
     const metricWrap = document.getElementById('combo-metric-toggle');
     if (metricWrap) {
       const btns = metricWrap.querySelectorAll('.potr-metric-btn');
