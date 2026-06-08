@@ -731,8 +731,15 @@
      aspect ratios depending on the user's screen size when captured, which caused 2nd+ previews
      to render at different heights from the 1st. aspect-ratio: 16/9 + object-fit: cover crops
      them to a uniform shape so all previews in a list look identical. */
-  #bias-tv-list .tv-link-preview,
+  /* Bias editor chart preview — fills the full card width so the image
+     visually matches the URL input and notes textarea above and below it.
+     Review tab still uses the half-width variant (kept separate). */
+  #bias-tv-list .tv-link-preview { width: 100%; max-width: 100%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; }
   #review-tv-list .tv-link-preview { width: 50%; max-width: 50%; aspect-ratio: 16 / 9; height: auto; object-fit: cover; }
+  /* Title strip above each bias chart card — small monospaced eyebrow
+     identifying which timeframe slot this is (MTF vs LTF). Quiet enough
+     not to compete with the URL input but obvious as a label. */
+  .bias-tv-tf-title { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.3em; color: var(--text-mid); text-transform: uppercase; margin-bottom: 10px; font-weight: 500; }
   /* Weekly "Winning trades I didn't take" — match the Best trade card thumbnail size for visual consistency.
      Both width AND height align by using the same aspect-ratio + object-fit:cover as .trade-thumb img. */
   #rfx-missed-list .tv-link-preview { max-width: 260px; aspect-ratio: 16 / 9; height: auto; object-fit: cover; }
@@ -954,7 +961,7 @@
   .bias-chart-tab.active { border-color: var(--text); color: var(--text); background: var(--bg-elev); }
   /* Notes — full width below. DM Mono to match the stats row above (Mode, Structure, etc.),
      same dim colour as the K labels, sized for at-a-glance mid-session reading. */
-  .saved-bias-notes { margin-top: 20px; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-dim); line-height: 1.75; border-top: 1px solid var(--border); padding-top: 14px; }
+  .saved-bias-notes { margin-top: 20px; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-dim); line-height: 1.75; border-top: 1px solid var(--border-2); padding-top: 14px; }
   .settings-panel { margin-top: 32px; padding: 18px 24px; background: var(--bg-elev); border: 1px solid var(--border-2); display: flex; align-items: center; gap: 28px; flex-wrap: wrap; }
   .settings-panel .label { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); }
   .settings-field { display: flex; align-items: center; gap: 8px; }
@@ -1987,9 +1994,8 @@
     </section>
     <section>
       <div class="section-header"><span class="section-num">05</span><span class="section-title" data-i18n="bias.s5.title">Charts</span></div>
-      <p class="section-hint" data-i18n="hint.tradingview_snapshot_links_discord_embeds_them_aut">TradingView snapshot links — Discord embeds them automatically. Add as many as you need.</p>
+      <p class="section-hint" data-i18n="hint.tradingview_mtf_ltf">Higher-timeframe (MTF) and lower-timeframe (LTF) TradingView snapshots — paste a snapshot link into each.</p>
       <div id="bias-tv-list" style="margin-left:60px;"></div>
-      <button type="button" id="bias-tv-add" data-i18n="btn.add_link" style="margin-left:60px;margin-top:8px;background:transparent;border:1px dashed var(--border-2);padding:10px 16px;color:var(--text-dim);cursor:pointer;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;transition:all 200ms;">+ Add link</button>
     </section>
     <section>
       <div class="section-header"><span class="section-num">06</span><span class="section-title" data-i18n="bias.s6.title">Notes</span></div>
@@ -7394,34 +7400,44 @@
       });
     });
   }
-  // Render the dynamic list of TV links for Bias. Each row has a URL input, ×, preview image, and notes.
+  // Render the two fixed TradingView chart slots for Bias — MTF (higher
+  // timeframe) at index 0, LTF (lower timeframe) at index 1. Each slot
+  // shows a small monospaced title above the URL input, then the preview
+  // and notes textarea below. Slots are permanent — no add/remove. The
+  // notes textarea is rendered taller (rows="4") since per-chart
+  // observations are usually multi-line. Migration: pad to length 2,
+  // trim to 2 if longer (legacy data with multiple charts keeps only
+  // the first two).
   function renderBiasTvLinks() {
     const wrap = document.getElementById('bias-tv-list');
     if (!wrap) return;
     wrap.innerHTML = '';
     if (!Array.isArray(data.bias.tvLinks)) data.bias.tvLinks = [];
-    // Always show at least one empty row so the field is discoverable
-    const arr = data.bias.tvLinks.length === 0 ? [{ url: '', notes: '' }] : data.bias.tvLinks;
-    arr.forEach((linkObj, idx) => {
+    while (data.bias.tvLinks.length < 2) data.bias.tvLinks.push({ url: '', notes: '' });
+    if (data.bias.tvLinks.length > 2) data.bias.tvLinks = data.bias.tvLinks.slice(0, 2);
+    const slots = [
+      { idx: 0, labelKey: 'bias.mtf_label' },
+      { idx: 1, labelKey: 'bias.ltf_label' },
+    ];
+    slots.forEach(slot => {
+      const linkObj = data.bias.tvLinks[slot.idx];
       const card = document.createElement('div');
       card.className = 'tv-link-card';
-      const imgUrl = tradingViewImageUrl(linkObj.url || '');
       card.innerHTML = `
+        <div class="bias-tv-tf-title">${t(slot.labelKey)}</div>
         <div class="tv-link-row">
           <input type="url" class="tv-link-url" placeholder="https://www.tradingview.com/x/..." />
-          <button type="button" class="tv-link-remove" title="${t('tip.remove_link')}">×</button>
         </div>
         <div class="tv-link-preview-wrap"></div>
-        <textarea class="tv-link-notes" data-i18n-placeholder="ph.chart_notes" placeholder="${t('ph.chart_notes')}" rows="2"></textarea>
+        <textarea class="tv-link-notes" data-i18n-placeholder="ph.chart_notes" placeholder="${t('ph.chart_notes')}" rows="4"></textarea>
       `;
-      const urlInput   = card.querySelector('.tv-link-url');
-      const notesInput = card.querySelector('.tv-link-notes');
-      const previewWrap= card.querySelector('.tv-link-preview-wrap');
-      urlInput.value   = linkObj.url || '';
+      const urlInput    = card.querySelector('.tv-link-url');
+      const notesInput  = card.querySelector('.tv-link-notes');
+      const previewWrap = card.querySelector('.tv-link-preview-wrap');
+      urlInput.value   = linkObj.url   || '';
       notesInput.value = linkObj.notes || '';
-      // Render preview if URL parses
       const refreshPreview = () => {
-        const u = (data.bias.tvLinks[idx] && data.bias.tvLinks[idx].url) || '';
+        const u = (data.bias.tvLinks[slot.idx] && data.bias.tvLinks[slot.idx].url) || '';
         const img = tradingViewImageUrl(u);
         if (img) {
           const safe = u.replace(/"/g, '&quot;');
@@ -7433,45 +7449,25 @@
       refreshPreview();
       urlInput.addEventListener('input', e => {
         const v = e.target.value.trim();
-        // Ensure object at this index exists
-        if (!data.bias.tvLinks[idx]) data.bias.tvLinks[idx] = { url: '', notes: '' };
-        data.bias.tvLinks[idx].url = v;
-        // Strip trailing empties (both url and notes blank)
-        while (data.bias.tvLinks.length > 0) {
-          const last = data.bias.tvLinks[data.bias.tvLinks.length - 1];
-          if (!last.url && !last.notes) data.bias.tvLinks.pop();
-          else break;
-        }
-        if (data.bias.tvLinks.length > 0) data.bias.date = today.toISOString();
+        if (!data.bias.tvLinks[slot.idx]) data.bias.tvLinks[slot.idx] = { url: '', notes: '' };
+        data.bias.tvLinks[slot.idx].url = v;
+        if (data.bias.tvLinks.some(l => l && (l.url || l.notes))) data.bias.date = today.toISOString();
         refreshPreview();
         renderBiasPreview();
         saveData();
       });
       notesInput.addEventListener('input', e => {
-        const v = e.target.value;
-        if (!data.bias.tvLinks[idx]) data.bias.tvLinks[idx] = { url: '', notes: '' };
-        data.bias.tvLinks[idx].notes = v;
+        if (!data.bias.tvLinks[slot.idx]) data.bias.tvLinks[slot.idx] = { url: '', notes: '' };
+        data.bias.tvLinks[slot.idx].notes = e.target.value;
         renderBiasPreview();
         saveData();
-      });
-      card.querySelector('.tv-link-remove').addEventListener('click', () => {
-        if (data.bias.tvLinks.length > idx) data.bias.tvLinks.splice(idx, 1);
-        saveData();
-        renderBiasTvLinks();
-        renderBiasPreview();
       });
       wrap.appendChild(card);
     });
   }
-  document.getElementById('bias-tv-add').addEventListener('click', () => {
-    if (!Array.isArray(data.bias.tvLinks)) data.bias.tvLinks = [];
-    data.bias.tvLinks.push({ url: '', notes: '' });
-    saveData();
-    renderBiasTvLinks();
-    // Focus the newly-added row's URL input
-    const inputs = document.querySelectorAll('#bias-tv-list .tv-link-url');
-    if (inputs.length > 0) inputs[inputs.length - 1].focus();
-  });
+  // (Legacy bias-tv-add button removed — Bias Charts now uses two fixed
+  // MTF/LTF slots rendered by renderBiasTvLinks. No add/remove handlers
+  // needed since the slots are permanent.)
   document.getElementById('bias-notes').addEventListener('input', e => {
     data.bias.notes = e.target.value.trim();
     if (data.bias.notes) data.bias.date = today.toISOString();
