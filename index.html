@@ -876,6 +876,22 @@
   .session-live-body { font-family: 'Fraunces', serif; font-size: 14px; line-height: 1.7; color: var(--text-mid); margin: 0; }
   .session-live-body strong { color: var(--text); font-weight: normal; }
   .saved-bias-label { font-size: 10px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 20px; }
+  /* Label row holds the "This morning's bias" eyebrow alongside a
+     minimise/maximise toggle button on the right. When the card is in
+     minimised state, the main content (chart + stats + notes) collapses
+     leaving just this row visible — useful for keeping the bias commitments
+     out of the way while still being one click away. State is persisted to
+     data.settings.savedBiasMinimized so it sticks across refreshes. */
+  .saved-bias-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .saved-bias-label-row .saved-bias-label { margin-bottom: 0; }
+  .saved-bias-toggle-btn { background: transparent; border: 1px solid var(--border-2); color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 16px; font-weight: 300; line-height: 1; width: 26px; height: 26px; cursor: pointer; transition: all 150ms; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
+  .saved-bias-toggle-btn:hover { border-color: var(--text-mid); color: var(--text); }
+  /* Minimised: hide chart strip + notes, tighten the card padding. The
+     label row stays so the user can re-expand. */
+  .saved-bias.minimized { padding-top: 18px; padding-bottom: 18px; }
+  .saved-bias.minimized .saved-bias-label-row { margin-bottom: 0; }
+  .saved-bias.minimized .saved-bias-main { display: none; }
+  .saved-bias.minimized .saved-bias-notes { display: none; }
   /* Stats sit in a horizontal strip across the top, chart below — fills the card's width
      cleanly with stats reading left-to-right above the chart they describe. */
   .saved-bias-main { display: flex; flex-direction: column; gap: 18px; }
@@ -1957,7 +1973,10 @@
       <p class="session-live-body" data-i18n-html="banner.body_html">Stay on this tab — your <strong>morning bias sits above</strong>, keeping you anchored. And when you take a trade, <strong>log it the moment you take it</strong> — while the chart's still in front of you. Fresh observation beats yesterday's reconstruction, every time.</p>
     </div>
     <div class="saved-bias hidden" id="saved-bias-card">
-      <div class="saved-bias-label" id="saved-bias-label">This morning's bias</div>
+      <div class="saved-bias-label-row">
+        <div class="saved-bias-label" id="saved-bias-label">This morning's bias</div>
+        <button type="button" class="saved-bias-toggle-btn" id="saved-bias-toggle-btn" aria-label="Toggle bias card size" title="Minimise / maximise">−</button>
+      </div>
       <div class="saved-bias-main">
         <div class="saved-bias-grid" id="saved-bias-grid"></div>
         <div class="saved-bias-link hidden" id="saved-bias-link"></div>
@@ -8511,6 +8530,23 @@
     // empty lines the user typed at the end, which render as visible blank rows below the text.
     if (b.notes && b.notes.trim()) { notesEl.classList.remove('hidden'); notesEl.textContent = '"' + b.notes.trim() + '"'; }
     else notesEl.classList.add('hidden');
+    // Apply persisted minimise state — the toggle button next to the
+    // label collapses the chart strip + notes when the user prefers a
+    // tighter card. Default is maximised (no class) so existing users
+    // see the same UI they had before.
+    applySavedBiasMinimizedState();
+  }
+  // Reflects data.settings.savedBiasMinimized on the card's .minimized
+  // class AND updates the toggle button's label so it always shows the
+  // next-action symbol ("−" when expanded, "+" when collapsed). Called
+  // both on renderSavedBias and after a toggle click.
+  function applySavedBiasMinimizedState() {
+    const card = document.getElementById('saved-bias-card');
+    const btn  = document.getElementById('saved-bias-toggle-btn');
+    if (!card) return;
+    const minimized = !!(data.settings && data.settings.savedBiasMinimized);
+    card.classList.toggle('minimized', minimized);
+    if (btn) btn.textContent = minimized ? '+' : '−';
   }
   function restoreReviewValues() {
     syncTradedFromTrades();
@@ -20909,6 +20945,27 @@
   // Initial render on load
   checkSkipNudge();
   // Offer name prompt on first load if the user hasn't set or skipped one yet.
+  // Saved-bias minimise/maximise toggle — wires the small +/- button next
+  // to the "This morning's bias" eyebrow. Click flips the persistent
+  // setting; applySavedBiasMinimizedState handles applying the class +
+  // updating the button label. Called once on app init since the button
+  // lives in static markup (not re-rendered).
+  (function wireSavedBiasToggle() {
+    const btn = document.getElementById('saved-bias-toggle-btn');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      if (!data.settings) data.settings = {};
+      data.settings.savedBiasMinimized = !data.settings.savedBiasMinimized;
+      if (typeof save === 'function') save();
+      else if (typeof saveData === 'function') saveData();
+      applySavedBiasMinimizedState();
+    });
+    // Sync initial button label so it matches the persisted state even
+    // when the card itself isn't visible yet (e.g. before today's bias
+    // is committed).
+    applySavedBiasMinimizedState();
+  })();
+
   setTimeout(maybePromptForName, 800);
 </script>
 </body>
