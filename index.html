@@ -918,7 +918,7 @@
   .session-live-pill.hidden { display: none; }
   .session-live-pill-label { letter-spacing: 0.25em; }
 
-  .session-live-banner { position: relative; margin-top: 12px; padding: 18px 24px; background: var(--bg-elev); border: 1px solid var(--border-2); border-left: 3px solid var(--good); }
+  .session-live-banner { position: relative; margin-top: 16px; padding: 24px 30px; background: var(--bg-elev); border: 1px solid var(--border-2); border-left: 4px solid var(--good); }
 
   .rule-banner { margin-bottom: 28px; padding: 14px 20px; background: var(--bg-elev); border: 1px solid var(--border-2); border-left: 3px solid var(--info); display: inline-flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 100%; }
   .rule-banner.hidden { display: none; }
@@ -953,13 +953,15 @@
   .rule-banner-graded.good { color: var(--good); }
   .rule-banner-graded.bad  { color: var(--bad); }
   .session-live-banner.hidden { display: none; }
-  .session-live-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .session-live-head { display: flex; align-items: center; gap: 12px; margin-bottom: 14px; }
   .session-live-dot { width: 8px; height: 8px; background: var(--good); border-radius: 50%; display: inline-block; animation: session-live-pulse 1.8s ease-in-out infinite; }
+  /* The Session-live banner (Review tab) shows a larger, glowing dot than the slim all-tabs pill. */
+  .session-live-banner .session-live-dot { width: 14px; height: 14px; box-shadow: 0 0 10px var(--good); }
   @keyframes session-live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-  .session-live-label { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--good); }
+  .session-live-label { font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.28em; text-transform: uppercase; color: var(--good); }
   .session-live-dismiss { margin-left: auto; background: transparent; border: none; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; padding: 0 4px; font-family: 'DM Mono', monospace; transition: color 150ms; }
   .session-live-dismiss:hover { color: var(--text); }
-  .session-live-body { font-family: 'Fraunces', serif; font-size: 14px; line-height: 1.7; color: var(--text-mid); margin: 0; }
+  .session-live-body { font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.75; color: var(--text-mid); margin: 0; }
   .session-live-body strong { color: var(--text); font-weight: normal; }
   .saved-bias-label { font-size: 10px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 20px; }
   /* Label row holds the "This morning's bias" eyebrow alongside a
@@ -7797,7 +7799,12 @@
     if (links.length > 0) {
       const label = links.length === 1 ? 'Chart       ' : 'Charts      ';
       lines.push('');
-      lines.push(`${label}${links.map((_, i) => `[${i + 1}]`).join(' ')}`);
+      // Standard bias = MTF + LTF, so name the summary markers by timeframe to
+      // match the labelled list below; fall back to [N] numbering otherwise.
+      const markers = links.length === 2
+        ? `${t('bias.mtf_label') || 'MTF'}  ${t('bias.ltf_label') || 'LTF'}`
+        : links.map((_, i) => `[${i + 1}]`).join(' ');
+      lines.push(`${label}${markers}`);
     }
     if (b.notes)  { lines.push(''); lines.push(b.notes); }
     if (links.length > 0) {
@@ -8425,6 +8432,9 @@
     syncReviewSectionsToActiveTrade();
     renderReviewPreview();
     saveData();
+    // A trade now exists for this session — refresh the greeting so the Review tab stops
+    // saying "nothing to review yet" and switches to the in-progress nudge.
+    if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
   }
   // + Add Trade — direct add using whichever target the Log-to picker shows.
   // The picker auto-syncs to the current view scope, so logging follows
@@ -8695,16 +8705,14 @@
     lines.push(...statsBlock);
     lines.push('```');
 
-    // Pre-collect every chart URL across the session's trades, assigning continuous [N] numbers.
-    // Continuous numbering (Trade 1 → [1], Trade 2 → [2] [3], etc.) matches the Weekly Review
-    // behaviour and removes the duplicate-[1] confusion that arose with per-trade restart.
-    // The "— Trade N —" header still anchors which trade a chart belongs to; the bracket is
-    // now just a unique identifier for matching to Discord's preview pile.
-    const chartIndex = []; // [{ tradeIdx, num, url, notes }]
+    // Pre-collect every chart URL across the session's trades. Each chart carries a
+    // per-trade number (Trade 1 → Chart 1, Chart 2; Trade 2 → Chart 1; etc.) so it can be
+    // labelled "Trade N Chart M" — self-documenting and unique across the whole post.
+    const chartIndex = []; // [{ tradeIdx, num, tradeNum, url, notes }]
     r.trades.forEach((t, i) => {
       const links = (t.tvLinks || []).filter(l => l && l.url);
-      links.forEach((l) => {
-        chartIndex.push({ tradeIdx: i, num: chartIndex.length + 1, url: l.url, notes: l.notes || '' });
+      links.forEach((l, j) => {
+        chartIndex.push({ tradeIdx: i, num: chartIndex.length + 1, tradeNum: j + 1, url: l.url, notes: l.notes || '' });
       });
     });
 
@@ -8727,38 +8735,28 @@
         lines.push(`Close       ${arrow} ${t.close}`);
       }
       if (Array.isArray(t.rice) && t.rice.length > 0) lines.push(`Phase       ${t.rice.join(' · ')}`);
-      // Chart references inline: "Chart [1]" when one, "Charts [1] [2]" when multiple.
+      // Chart references inline, numbered within this trade (Chart 1, Chart 2…).
       const tradeChartRefs = chartIndex.filter(c => c.tradeIdx === i);
       if (tradeChartRefs.length > 0) {
         // 12-char fixed-width label to align with sibling rows (Execution, Focus, etc.)
         const label = tradeChartRefs.length === 1 ? 'Chart       ' : 'Charts      ';
-        lines.push(`${label}${tradeChartRefs.map(c => `[${c.num}]`).join(' ')}`);
+        lines.push(`${label}${tradeChartRefs.map(c => `[${c.tradeNum}]`).join(' ')}`);
       }
       if (Array.isArray(t.concepts) && t.concepts.length > 0) lines.push(`Concepts:   ${t.concepts.join(', ')}`);
       if (Array.isArray(t.mindset) && t.mindset.length > 0)  lines.push(`Mindset:    ${t.mindset.join(', ')}`);
       if (t.reflection && t.reflection.trim()) { lines.push(''); lines.push(t.reflection.trim()); }
     });
 
-    // All chart URLs at the bottom, grouped by trade with the same "— Trade N —" header.
-    // Discord stacks previews here anyway — grouping by trade lets the reader match each chart
-    // to the trade block above without scrolling back.
+    // All chart URLs at the bottom under a single "— Charts —" header. Each line is fully
+    // labelled "Trade N Chart M", so it names its own trade and chart without needing a
+    // separate per-trade subheader. chartIndex is already in trade order, then chart order,
+    // which also matches the order Discord stacks the previews.
     if (chartIndex.length > 0) {
       lines.push('');
-      // Group by tradeIdx, preserving the order in which charts appear
-      const byTrade = new Map();
+      lines.push(`— Charts —`);
       chartIndex.forEach(c => {
-        if (!byTrade.has(c.tradeIdx)) byTrade.set(c.tradeIdx, []);
-        byTrade.get(c.tradeIdx).push(c);
-      });
-      // Emit one block per trade with its charts underneath. Each URL line refers to one chart,
-      // so always "Chart [N]" (singular) regardless of how many charts the trade has total.
-      Array.from(byTrade.keys()).sort((a, b) => a - b).forEach(tradeIdx => {
-        lines.push('');
-        lines.push(`— Trade ${tradeIdx + 1} —`);
-        byTrade.get(tradeIdx).forEach(c => {
-          lines.push(`Chart [${c.num}]   ${c.url}`);
-          if (c.notes) lines.push(`      "${c.notes}"`);
-        });
+        lines.push(`Trade ${c.tradeIdx + 1} Chart ${c.tradeNum}   ${c.url}`);
+        if (c.notes) lines.push(`      "${c.notes}"`);
       });
     }
 
@@ -15606,23 +15604,24 @@
     // instead of per-section restart — different from Session Review by deliberate choice,
     // because weekly charts come from genuinely different sources (best trade vs missed setups)
     // and continuous numbering reads less ambiguously when Discord stacks the previews at the bottom.
-    const chartIndex = []; // { num, url, source }
+    const chartIndex = []; // { url, source, label }
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
-    if (bestTradeChart) chartIndex.push({ num: chartIndex.length + 1, url: bestTradeChart, source: 'best' });
-    missedUrls.forEach(url => chartIndex.push({ num: chartIndex.length + 1, url, source: 'missed' }));
+    if (bestTradeChart) chartIndex.push({ url: bestTradeChart, source: 'best', label: 'Best Trade' });
+    // Missed setups are numbered within their own section: Trade [1], Trade [2], …
+    missedUrls.forEach((url, i) => chartIndex.push({ url, source: 'missed', label: `Trade [${i + 1}]` }));
 
-    const refsBySource = src => chartIndex.filter(c => c.source === src).map(c => `[${c.num}]`).join(' ');
+    // Inline marker for the "didn't take" header — the same [1] [2]… tags used in the list below.
+    const missedRefs = chartIndex.filter(c => c.source === 'missed').map((c, i) => `[${i + 1}]`).join(' ');
 
     if (dBestWin) {
       lines.push('');
-      const ref = bestTradeChart ? `   ${refsBySource('best')}` : '';
-      lines.push(`**Best trade of the week**${ref}`);
+      lines.push(`**Best trade of the week**`);
       lines.push(tradeOneLiner(dBestWin));
       if (bestTradeTxt) lines.push(bestTradeTxt);
     }
     if (missedUrls.length > 0 || missedWins) {
       lines.push('');
-      const ref = missedUrls.length > 0 ? `   ${refsBySource('missed')}` : '';
+      const ref = missedUrls.length > 0 ? `   ${missedRefs}` : '';
       lines.push(`**Winning trades I didn't take**${ref}`);
       if (missedWins) lines.push(missedWins);
     }
@@ -15659,7 +15658,7 @@
       bySource.forEach((charts, source) => {
         lines.push('');
         lines.push(`— ${sectionLabels[source] || 'Chart'} —`);
-        charts.forEach(c => lines.push(`Chart [${c.num}]   ${c.url}`));
+        charts.forEach(c => lines.push(`${c.label}   ${c.url}`));
       });
     }
     return lines.join('\n');
@@ -16166,6 +16165,17 @@
       'sin operaciones registradas. Cuando ocurra una, regístrala antes de leer la siguiente vela.',
       'sesión en curso, o sesión saltada — las dos están bien. Regístralo aquí cuando importe.',
       'nada aún. No fuerces una entrada solo para darle algo que registrar a este formulario.',
+    ],
+    REVIEW_IN_PROGRESS: [
+      'hay una operación en el libro. Registra los detalles mientras el gráfico sigue delante.',
+      'posición en vivo. Captura el porqué ahora — lo fresco le gana a lo reconstruido.',
+      'estás dentro. Anota la entrada antes de que la siguiente vela te haga dudar.',
+      'operación abierta. Escríbela mientras todavía es honesta.',
+      'una en curso. El repaso se escribe solo si la registras según pasa.',
+      'ya has clicado. Bien — anota el razonamiento antes de que la pantalla siga.',
+      'operación en vivo. Marca el pensamiento mientras es el pensamiento, no la excusa.',
+      'dentro del mercado. Regístrala ahora; la retrospectiva es peor testigo.',
+      'operación corriendo. Apunta el setup y el plan antes de que las velas lo reescriban.',
     ],
     REVIEW_IDLE_WEEKEND: [
       'fin de semana. El mercado cerrado, el trabajo de verdad no. Planifica, repasa, afila.',
@@ -16897,6 +16907,21 @@
     'no trades logged. When one happens, log it before reading the next bar.',
     'session in progress, or session skipped — either is fine. Log here when it matters.',
     'nothing yet. Don\'t force a fill just to give this form something to do.',
+  ];
+  // Review-IN-PROGRESS pool — used on Session Review when a trade has been added for today's
+  // session but no result is set yet (i.e. "+ Add Trade" was clicked and the position is live).
+  // Tone: acknowledges a trade IS on the book and nudges logging it while the chart is fresh.
+  // Never says "nothing to review" — there is something now, it just isn't resolved.
+  const REVIEW_IN_PROGRESS = [
+    'a trade\'s on the book. Log the details while the chart\'s still in front of you.',
+    'position\'s live. Capture the why now — fresh beats reconstructed, every time.',
+    'you\'re in. Note the entry before the next bar talks you out of it.',
+    'trade placed. Write it down while it\'s still honest.',
+    'one in progress. The review writes itself if you log it as it happens.',
+    'you\'ve clicked in. Good — record the reasoning before the screen moves on.',
+    'live trade. Mark the thinking while it\'s the thinking, not the excuse.',
+    'in the market. Log it now; hindsight makes a worse witness.',
+    'trade\'s running. Jot the setup and the plan before the candles rewrite it.',
   ];
   // Weekend variant of REVIEW_IDLE — used Saturday/Sunday when the market is closed and
   // "no clicks yet" type framing is nonsense. Voice: planning, reflecting, recharging — not
@@ -21592,6 +21617,31 @@
     return pool[idx];
   }
 
+  // True when a trade has been added to TODAY's review session but no result is set yet —
+  // i.e. the user clicked "+ Add Trade" and the position is live. getTodayOutcome() only
+  // fires once a trade has a Win/Lose/BE result, so without this an in-progress trade would
+  // still read as "nothing to review yet". A session with no sessionDate is treated as today's
+  // (it was just started); a session dated to another day does not count.
+  function hasInProgressTradeToday() {
+    const trades = (data.review && data.review.trades) || [];
+    if (trades.length === 0) return false;
+    const reviewDateStr = data.review && data.review.sessionDate;
+    if (!reviewDateStr) return true; // freshly started session → today
+    const parts = String(reviewDateStr).split('-').map(Number);
+    if (parts.length !== 3 || parts.some(isNaN)) return true; // unparseable → assume current
+    const dt = new Date(parts[0], parts[1] - 1, parts[2]); dt.setHours(0, 0, 0, 0);
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    return dt.getTime() === today.getTime();
+  }
+
+  // Tail for the Review page when a trade is placed for today but not yet resolved.
+  function pickReviewInProgressTail() {
+    const seed = todayKey() + ':rev-inprog:' + _greetingNonce;
+    const pool = localizedPool(REVIEW_IN_PROGRESS, 'REVIEW_IN_PROGRESS');
+    const idx = pickWithAntiRepeat(pool, 'REVIEW_IN_PROGRESS', seed);
+    return pool[idx];
+  }
+
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
     const mirrors = Array.from(document.querySelectorAll('[data-greeting-mirror]'));
@@ -21611,8 +21661,9 @@
       _cachedTailBias = pickTail(yesterdayOutcome, false);
     }
     if (!_cachedTailReview) {
-      // Review = reflecting. Two branches by what's available:
-      //   - Today has trades: today-flavoured recap from RECAP_*_TODAY pools.
+      // Review = reflecting. Branches by what's available:
+      //   - Today has resolved trades: today-flavoured recap from RECAP_*_TODAY pools.
+      //   - A trade is placed for today but not yet resolved: in-progress nudge.
       //   - Today empty: route through pickReviewIdleTail() which is context-
       //     aware — weekend, holiday, out-of-session weekday, or pre/in-session
       //     weekday all get their own appropriate pool. This avoids lines like
@@ -21620,6 +21671,8 @@
       const todayOutcome = getTodayOutcome();
       if (todayOutcome) {
         _cachedTailReview = pickTail(todayOutcome, true);
+      } else if (hasInProgressTradeToday()) {
+        _cachedTailReview = pickReviewInProgressTail();
       } else {
         _cachedTailReview = pickReviewIdleTail();
       }
