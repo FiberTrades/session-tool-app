@@ -1454,6 +1454,10 @@
   .consistency-pct { font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-mid); letter-spacing: 0.05em; }
   .consistency-note { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-2); font-family: 'DM Mono', monospace; font-size: 12px; color: var(--text-mid); line-height: 1.5; }
   .consistency-alltime { margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--border-2); font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--text-dim); line-height: 1.5; }
+  .consistency-toggle { display: inline-flex; border: 1px solid var(--border-2); margin-bottom: 16px; }
+  .consistency-toggle button { background: transparent; border: none; color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; padding: 7px 16px; cursor: pointer; transition: background 160ms ease, color 160ms ease; }
+  .consistency-toggle button.active { background: var(--bg-elev); color: var(--text); }
+  .consistency-toggle button + button { border-left: 1px solid var(--border-2); }
   .consistency-range { font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.05em; color: var(--text-dim); margin-bottom: 14px; padding-bottom: 10px; border-bottom: 1px dashed var(--border-2); }
   .month-insight-of { font-family: 'DM Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 0.02em; }
   .month-insight-pct { margin-left: auto; font-family: 'DM Mono', monospace; font-size: 14px; color: var(--text-mid); letter-spacing: 0.02em; }
@@ -10428,6 +10432,7 @@
   // Lifetime "showed up vs traded" — the same idea as the monthly consistency block,
   // but spanning from your first activity (earliest bias or trade) to today. The denominator
   // is weekdays in that window; the two numerators come from biasHistory + trade dates.
+  let _consistencyView = 'recent';
   function renderLifetimeConsistency(allTrades) {
     const container = document.getElementById('lifetime-consistency-summary');
     if (!container) return;
@@ -10439,10 +10444,9 @@
       container.innerHTML = `<div class="month-insight-empty">${t('trades.consistency_empty')}</div>`;
       return;
     }
-    // Compute showed-up / traded weekday-sets for a [start, end] window.
+    // Showed-up / traded weekday-sets for a [start, end] window.
     //  - traded: weekdays with >=1 saved trade dated in-window.
-    //  - showed up: weekdays with a bias that was COPIED to Discord (b.copiedAt) in-window.
-    //    Completing the 4 fields without copying doesn't count; trades alone don't either.
+    //  - showed up: weekdays with a bias COPIED to Discord (b.copiedAt) in-window.
     function computeWindow(startDate, endDate) {
       let weekdaysTotal = 0;
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
@@ -10473,42 +10477,52 @@
       };
     }
     const todayEnd = new Date(); todayEnd.setHours(23, 59, 59, 999);
-    // PRIMARY: rolling last 30 calendar days — bounded so a single far-back-dated trade
-    // can't blow up the denominator, and it reflects how you've been doing *lately*.
     const rollingStart = new Date(); rollingStart.setDate(rollingStart.getDate() - 29); rollingStart.setHours(0, 0, 0, 0);
-    const r = computeWindow(rollingStart, todayEnd);
-    // SECONDARY: all-time (earliest activity -> today), shown demoted below.
     const earliest = new Date(Math.min(...allTimestamps)); earliest.setHours(0, 0, 0, 0);
+    // Both windows are computed; the toggle just picks which one's full breakdown shows.
+    const r = computeWindow(rollingStart, todayEnd);
     const a = computeWindow(earliest, todayEnd);
-    // Interpretive note — driven by the recent window. Includes a dedicated note for
-    // "trading more than preparing" (traded clearly outpaces showed-up), surfaced before
-    // the generic absent note so the specific pattern wins.
-    let consistencyNote = '';
-    if (r.showedUpPct >= 70 && r.tradedPct >= 50) consistencyNote = t('modal.consistency_note_active');
-    else if (r.showedUpPct >= 60 && r.tradedPct < r.showedUpPct - 25) consistencyNote = t('modal.consistency_note_selective');
-    else if (r.tradedPct >= r.showedUpPct + 25 && r.tradedPct >= 40) consistencyNote = t('trades.consistency_note_no_prep');
-    else if (r.showedUpPct < 40) consistencyNote = t('modal.consistency_note_absent');
-    else if (r.showedUpPct >= 40 && r.tradedPct >= 40) consistencyNote = t('modal.consistency_note_balanced');
-    else if (r.showedUp > 0 || r.traded > 0) consistencyNote = t('modal.consistency_note_neutral');
+    const view = _consistencyView === 'alltime' ? a : r;
     const fmtD = d => d.toLocaleDateString(tLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
+    const rangeText = _consistencyView === 'alltime'
+      ? `${fmtD(earliest)} – ${fmtD(new Date())} · ${a.weekdaysTotal} ${t('trades.weekdays')}`
+      : `${t('trades.consistency_last30')} · ${r.weekdaysTotal} ${t('trades.weekdays')}`;
+    // Interpretive note for the selected window. The "trading more than preparing" note is
+    // surfaced before the generic absent note so the specific pattern wins.
+    let note = '';
+    if (view.showedUpPct >= 70 && view.tradedPct >= 50) note = t('modal.consistency_note_active');
+    else if (view.showedUpPct >= 60 && view.tradedPct < view.showedUpPct - 25) note = t('modal.consistency_note_selective');
+    else if (view.tradedPct >= view.showedUpPct + 25 && view.tradedPct >= 40) note = t('trades.consistency_note_no_prep');
+    else if (view.showedUpPct < 40) note = t('modal.consistency_note_absent');
+    else if (view.showedUpPct >= 40 && view.tradedPct >= 40) note = t('modal.consistency_note_balanced');
+    else if (view.showedUp > 0 || view.traded > 0) note = t('modal.consistency_note_neutral');
     container.innerHTML = `
       <div class="month-insight-block">
-        <div class="consistency-range">${t('trades.consistency_last30')} · ${r.weekdaysTotal} ${t('trades.weekdays')}</div>
+        <div class="consistency-toggle">
+          <button type="button" data-cview="recent" class="${_consistencyView === 'recent' ? 'active' : ''}">${t('trades.consistency_last30')}</button>
+          <button type="button" data-cview="alltime" class="${_consistencyView === 'alltime' ? 'active' : ''}">${t('trades.consistency_alltime')}</button>
+        </div>
+        <div class="consistency-range">${rangeText}</div>
         <div class="consistency-row">
           <div class="consistency-line">
             <span class="consistency-label">${t('modal.consistency_showed_up')}</span>
-            <span class="consistency-vals"><span class="consistency-big">${r.showedUp}</span> <span class="consistency-of">/ ${r.weekdaysTotal}</span></span>
-            <span class="consistency-pct">${r.showedUpPct}%</span>
+            <span class="consistency-vals"><span class="consistency-big">${view.showedUp}</span> <span class="consistency-of">/ ${view.weekdaysTotal}</span></span>
+            <span class="consistency-pct">${view.showedUpPct}%</span>
           </div>
           <div class="consistency-line">
             <span class="consistency-label">${t('modal.consistency_traded')}</span>
-            <span class="consistency-vals"><span class="consistency-big">${r.traded}</span> <span class="consistency-of">/ ${r.weekdaysTotal}</span></span>
-            <span class="consistency-pct">${r.tradedPct}%</span>
+            <span class="consistency-vals"><span class="consistency-big">${view.traded}</span> <span class="consistency-of">/ ${view.weekdaysTotal}</span></span>
+            <span class="consistency-pct">${view.tradedPct}%</span>
           </div>
         </div>
-        ${consistencyNote ? `<div class="consistency-note">${consistencyNote}</div>` : ''}
-        <div class="consistency-alltime">${t('trades.consistency_alltime')}: ${t('modal.consistency_showed_up')} ${a.showedUpPct}% · ${t('modal.consistency_traded')} ${a.tradedPct}% <span class="consistency-of">(${fmtD(earliest)} – ${fmtD(new Date())}, ${a.weekdaysTotal} ${t('trades.weekdays')})</span></div>
+        ${note ? `<div class="consistency-note">${note}</div>` : ''}
       </div>`;
+    container.querySelectorAll('.consistency-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        _consistencyView = btn.getAttribute('data-cview');
+        renderLifetimeConsistency(allTrades);
+      });
+    });
   }
 
   // Track expand state per category (collapsed by default — shows just top 10).
