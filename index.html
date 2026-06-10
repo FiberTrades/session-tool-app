@@ -3206,6 +3206,20 @@
 </div>
 
 <!-- Potential R popup: prompted after R + pips are entered on a Win trade -->
+<div class="modal-bg" id="new-session-modal-bg">
+  <div class="modal" style="max-width:440px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" data-i18n="newsession.title">Start a new session?</div>
+      </div>
+    </div>
+    <p style="margin:14px 0 0;color:var(--text-mid);font-size:13px;line-height:1.6;" data-i18n="newsession.body">A new day has started. Clear the previous bias and review and start fresh? Your saved Series of 10 trades will not be affected.</p>
+    <div style="margin-top:22px;display:flex;justify-content:flex-end;gap:10px;">
+      <button type="button" class="btn" id="new-session-keep" style="background:transparent;" data-i18n="newsession.keep">Keep previous</button>
+      <button type="button" class="btn" id="new-session-confirm" data-i18n="newsession.confirm">Start new session</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="charts-required-modal-bg">
   <div class="modal" style="max-width:420px;">
     <div class="modal-header">
@@ -3304,6 +3318,10 @@
     en: {
       // ----- Navigation tabs -----
       'tab.bias': 'Session Bias',
+      'newsession.title': 'Start a new session?',
+      'newsession.body': 'A new day has started. Clear the previous bias and review and start fresh? Your saved Series of 10 trades will not be affected.',
+      'newsession.confirm': 'Start new session',
+      'newsession.keep': 'Keep previous',
       'savedbias.mode': 'Mode',
       'savedbias.structure': 'Structure',
       'savedbias.location': 'Location',
@@ -4302,6 +4320,10 @@
     es: {
       // ----- Navigation tabs -----
       'tab.bias': 'Sesgo de Sesión',
+      'newsession.title': '¿Empezar una nueva sesión?',
+      'newsession.body': 'Ha comenzado un nuevo día. ¿Borrar el sesgo y la revisión anteriores y empezar de cero? Tus operaciones guardadas en la Serie de 10 no se verán afectadas.',
+      'newsession.confirm': 'Empezar nueva sesión',
+      'newsession.keep': 'Mantener anterior',
       'savedbias.mode': 'Modo',
       'savedbias.structure': 'Estructura',
       'savedbias.location': 'Ubicación',
@@ -6080,14 +6102,27 @@
     saveData();
   }
 
-  (function autoResetForNewDay() {
+  // New-day handling: rather than silently wiping yesterday's bias/review, detect a new day
+  // and — only if there's carried-over content — ask the user whether to start fresh. The
+  // actual reset happens on confirm (see startNewSession + the prompt wiring below).
+  let _pendingNewDaySession = false;
+  function hasPriorSessionContent() {
+    const b = data.bias || {};
+    const biasHasContent = !!(b.mode || b.structure || b.location || b.direction ||
+      (b.notes && b.notes.trim()) || (Array.isArray(b.tvLinks) && b.tvLinks.some(l => l && l.url)));
+    const r = data.review || {};
+    const reviewHasContent = Array.isArray(r.trades) && r.trades.length > 0;
+    return biasHasContent || reviewHasContent;
+  }
+  (function detectNewDaySession() {
     const todayKey = today.toDateString();
-    if ((data.lastSessionDate || null) !== todayKey) {
-      data.bias = newBiasBlank();
-      data.review = newReviewBlank();
-      data.lastSessionDate = todayKey;
+    if ((data.lastSessionDate || null) === todayKey) return; // already handled today
+    if (!hasPriorSessionContent()) {
+      data.lastSessionDate = todayKey; // nothing to keep — roll over silently, no prompt
       saveData();
+      return;
     }
+    _pendingNewDaySession = true; // ask the user once init + render + i18n are ready
   })();
 
   function genId() { return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
@@ -9398,6 +9433,63 @@
     syncReviewSectionsToActiveTrade();
     renderReviewPreview();
   });
+
+  // ===== New-day session reset (prompted, not automatic) =====
+  // Clears the previous bias + review and resets both forms to a fresh state for today.
+  // This is the union of the manual bias-reset and review-reset handlers.
+  function startNewSession() {
+    // --- Bias ---
+    data.bias = newBiasBlank();
+    data.bias.sessionDate = todayDateStr();
+    document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
+    if (typeof renderBiasTvLinks === 'function') renderBiasTvLinks();
+    const _bn = document.getElementById('bias-notes'); if (_bn) _bn.value = '';
+    const _bp = document.getElementById('bias-date'); if (_bp) _bp.value = data.bias.sessionDate;
+    if (typeof renderBiasPreview === 'function') renderBiasPreview();
+    // --- Review ---
+    data.review = newReviewBlank();
+    data.review.sessionDate = todayDateStr();
+    if (typeof syncTradedFromTrades === 'function') syncTradedFromTrades();
+    document.querySelectorAll('[data-review] .option').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('[data-review-multi] .option').forEach(b => b.classList.remove('selected'));
+    document.querySelectorAll('.tag').forEach(b => b.classList.remove('selected'));
+    const _rr = document.getElementById('review-reflection'); if (_rr) _rr.value = '';
+    _activeReviewTradeIdx = 0;
+    const _sp = document.getElementById('session-date');
+    if (_sp) { _sp.value = data.review.sessionDate; if (typeof updateSessionDateStatus === 'function') updateSessionDateStatus(); }
+    if (typeof renderTrades === 'function') renderTrades();
+    if (typeof syncReviewSectionsToActiveTrade === 'function') syncReviewSectionsToActiveTrade();
+    if (typeof renderReviewPreview === 'function') renderReviewPreview();
+    // --- Shared ---
+    data.lastSessionDate = today.toDateString();
+    if (typeof renderSavedBias === 'function') renderSavedBias();
+    if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
+    if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
+    saveData();
+  }
+  function showNewDaySessionPrompt() {
+    if (!_pendingNewDaySession) return;
+    const bg = document.getElementById('new-session-modal-bg');
+    if (bg) bg.classList.add('show');
+  }
+  (function wireNewSessionModal() {
+    const bg = document.getElementById('new-session-modal-bg');
+    if (!bg) return;
+    const close = () => bg.classList.remove('show');
+    const confirmBtn = document.getElementById('new-session-confirm');
+    const keepBtn = document.getElementById('new-session-keep');
+    if (confirmBtn) confirmBtn.addEventListener('click', () => {
+      close(); _pendingNewDaySession = false; startNewSession();
+    });
+    // Keep previous = non-destructive. Roll the date over so we don't ask again today.
+    const keep = () => {
+      close(); _pendingNewDaySession = false;
+      data.lastSessionDate = today.toDateString();
+      saveData();
+    };
+    if (keepBtn) keepBtn.addEventListener('click', keep);
+    bg.addEventListener('click', (e) => { if (e.target === bg) keep(); });
+  })();
   // Donut-pie renderer. Builds an SVG donut (2 slices) inside the given svg element + writes a
   // legend with count + percentage for each slice into the given legend element. If both values
   // are zero, shows an empty-state placeholder instead.
@@ -21965,6 +22057,8 @@
   // Initial load: restore saved language (or default to English) and apply translations
   // to all data-i18n elements on first paint.
   setLanguage(data.settings.lang || 'en');
+  // New day with carried-over content? Ask whether to start fresh (after i18n is applied).
+  if (typeof showNewDaySessionPrompt === 'function') try { showNewDaySessionPrompt(); } catch (e) {}
   if (typeof refreshRuleBanners === 'function') try { refreshRuleBanners(); } catch(e) {}
   // Apply currency symbol to static HTML labels (the dynamic renderers use curSym() directly)
   applyCurrencySymbol();
