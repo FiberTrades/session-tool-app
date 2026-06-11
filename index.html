@@ -1788,7 +1788,7 @@
   /* Weekly-rule reminder — styled as a dark, on-brand card (matches the session banner):
      elevated background, hairline border, green left accent, readable light text, and a
      green action button. A dimmed/blurred backdrop sits behind it to pull focus. */
-  .toast.toast-rule { background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-left: 4px solid var(--good); padding: 22px 24px 22px 28px; gap: 26px; max-width: 440px; box-shadow: 0 24px 64px rgba(0,0,0,0.7); }
+  .toast.toast-rule { background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-left: 4px solid var(--good); padding: 22px 24px 22px 28px; gap: 26px; max-width: min(720px, 92vw); box-shadow: 0 24px 64px rgba(0,0,0,0.7); }
   .toast.toast-rule .toast-msg { font-size: 14px; line-height: 1.55; letter-spacing: 0.04em; text-transform: none; color: var(--text); }
   .toast.toast-rule .toast-action-btn { background: var(--good); border: 1px solid var(--good); color: var(--bg); flex-shrink: 0; align-self: center; }
   .toast.toast-rule .toast-action-btn:hover { background: transparent; color: var(--good); border-color: var(--good); }
@@ -3018,6 +3018,9 @@
       </div>
       <div id="settings-session-hint" class="settings-parsed-hint"></div>
       <p class="settings-hint" data-i18n="settings.session_window_hint">Controls news heads-up timing, session-aware greetings, and rule reminders.</p>
+      <div class="settings-data-actions">
+        <button type="button" id="session-voice-test" class="settings-btn" data-i18n="settings.session_voice_test">▶ Test session voice</button>
+      </div>
     </div>
     <!-- RISK RULES section: trader-defined commitments that the app checks on
          every greeting. Three rules: max loss per day, max risk per trade,
@@ -3549,6 +3552,7 @@
       'settings.section_preferences': 'Preferences',
       'settings.section_voice': 'Voice',
       'settings.voice_label': 'Session voice',
+      'settings.session_voice_test': '▶ Test session voice',
       'settings.voice_hint': 'Your device speaks a short note when the session opens and closes. Pick the voice, tune how it sounds, and write your own messages. Voices come from your device, so the list differs from one device to another.',
       'settings.voice_enabled_label': 'Speak session alerts',
       'settings.voice_select_label': 'Voice',
@@ -4575,6 +4579,7 @@
       'settings.section_preferences': 'Preferencias',
       'settings.section_voice': 'Voz',
       'settings.voice_label': 'Voz de sesión',
+      'settings.session_voice_test': '▶ Probar voz de sesión',
       'settings.voice_hint': 'Tu dispositivo dice un breve aviso al abrir y cerrar la sesión. Elige la voz, ajusta cómo suena y escribe tus propios mensajes. Las voces provienen de tu dispositivo, así que la lista varía de un dispositivo a otro.',
       'settings.voice_enabled_label': 'Avisos de sesión por voz',
       'settings.voice_select_label': 'Voz',
@@ -5841,23 +5846,39 @@
 
   function speakSessionAlert(kind) {
     // Fixed English voice alert. Prefers "Microsoft David - English (United States)",
+    // then any en-US voice, then any English voice.
     // falling back to any en-US voice, then any English voice. Rate/pitch tuned low for
-    // a calm, flat, terminal-style delivery.
+    // a calm, flat, terminal-style delivery. Browser speech needs a prior user interaction
+    // to be audible, and the voice list can load asynchronously — so if it's empty we wait
+    // once for it before speaking.
     try {
       if (!('speechSynthesis' in window)) return;
-      const text = kind === 'start' ? 'Your session is live.' : 'Your session is over.';
-      const u = new SpeechSynthesisUtterance(text);
-      const voices = window.speechSynthesis.getVoices() || [];
-      const chosen =
-        voices.find(v => /Microsoft David/i.test(v.name)) ||
-        voices.find(v => v.lang === 'en-US') ||
-        voices.find(v => /^en/i.test(v.lang));
-      if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
-      else u.lang = 'en-US';
-      u.rate = 0.6;
-      u.pitch = 0.6;
-      window.speechSynthesis.cancel();
-      window.speechSynthesis.speak(u);
+      const synth = window.speechSynthesis;
+      const text = kind === 'start' ? 'Session live.' : 'Session over.';
+      function doSpeak() {
+        try {
+          const voices = synth.getVoices() || [];
+          const u = new SpeechSynthesisUtterance(text);
+          const chosen =
+            voices.find(v => /Microsoft David/i.test(v.name)) ||
+            voices.find(v => v.lang === 'en-US') ||
+            voices.find(v => /^en/i.test(v.lang));
+          if (chosen) { u.voice = chosen; u.lang = chosen.lang; }
+          else u.lang = 'en-US';
+          u.rate = 0.5;
+          u.pitch = 0.6;
+          synth.cancel();
+          synth.speak(u);
+        } catch (e) {}
+      }
+      if ((synth.getVoices() || []).length === 0) {
+        let done = false;
+        const run = () => { if (done) return; done = true; doSpeak(); };
+        try { synth.addEventListener('voiceschanged', run, { once: true }); } catch (e) {}
+        setTimeout(run, 300); // fallback in case the event never fires
+      } else {
+        doSpeak();
+      }
     } catch (e) {}
   }
 
@@ -23274,6 +23295,8 @@
     const startInp = document.getElementById('settings-session-start');
     const endInp = document.getElementById('settings-session-end');
     const sessHint = document.getElementById('settings-session-hint');
+    const voiceTestBtn = document.getElementById('session-voice-test');
+    if (voiceTestBtn) voiceTestBtn.addEventListener('click', () => { try { if (typeof speakSessionAlert === 'function') speakSessionAlert('start'); } catch (e) {} });
     function fmtTimeForLabel(hhmm) {
       // Convert HH:MM (24h) into a compact human label like "8AM" or "13:30".
       // Used for the stored sessionName so display strings stay readable in the
