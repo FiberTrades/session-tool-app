@@ -5793,7 +5793,7 @@
   function playChime(kind) {
     const ctx = getAudioCtx();
     if (!ctx) return;
-    if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
+    const go = () => {
     const freqs = kind === 'start' ? [600, 800] : [800, 600];
     const now = ctx.currentTime;
     freqs.forEach((freq, i) => {
@@ -5812,6 +5812,9 @@
       osc.start(startAt);
       osc.stop(stopAt + 0.05);
     });
+    };
+    if (ctx.state === 'suspended') { ctx.resume().then(go).catch(go); }
+    else go();
   }
 
   // Show the session-alert variant of the toast (larger, longer-lasting, color-coded).
@@ -5912,15 +5915,22 @@
     try {
       const ctx = getAudioCtx();
       if (!ctx) return;
-      if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
       const k = (kind === 'start') ? 'start' : 'end';
       const play = (buf) => { const s = ctx.createBufferSource(); s.buffer = buf; s.connect(ctx.destination); s.start(); };
-      if (_voiceBuffers[k]) { play(_voiceBuffers[k]); return; }
-      const b64 = (VOICE_CLIPS[k] || '').split(',')[1];
-      if (!b64) return;
-      const bin = atob(b64); const bytes = new Uint8Array(bin.length);
-      for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      ctx.decodeAudioData(bytes.buffer, (buf) => { _voiceBuffers[k] = buf; play(buf); }, () => {});
+      const go = () => {
+        try {
+          if (_voiceBuffers[k]) { play(_voiceBuffers[k]); return; }
+          const b64 = (VOICE_CLIPS[k] || '').split(',')[1];
+          if (!b64) return;
+          const bin = atob(b64); const bytes = new Uint8Array(bin.length);
+          for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+          ctx.decodeAudioData(bytes.buffer, (buf) => { _voiceBuffers[k] = buf; play(buf); }, () => {});
+        } catch (e) {}
+      };
+      // Chrome auto-suspends the context after idle; wait for it to actually resume
+      // before playing, or the sound is dropped.
+      if (ctx.state === 'suspended') { ctx.resume().then(go).catch(go); }
+      else go();
     } catch (e) {}
   }
 
