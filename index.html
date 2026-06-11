@@ -1676,6 +1676,14 @@
   .modal-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 24px; padding-bottom: 16px; border-bottom: 1px solid var(--border); }
   .modal-title { font-family: 'Fraunces', serif; font-size: 26px; }
   .modal-net { font-family: 'Fraunces', serif; font-size: 26px; }
+  /* Combined first-run onboarding window — sectioned single form. */
+  .onboard-section { padding: 16px 0; border-top: 1px solid var(--border); }
+  .onboard-section:first-child { border-top: none; padding-top: 4px; }
+  .onboard-section-title { font-family: 'Fraunces', serif; font-size: 16px; color: var(--text); margin-bottom: 4px; display: flex; align-items: baseline; gap: 9px; }
+  .onboard-req, .onboard-opt { font-family: 'DM Mono', monospace; font-size: 8px; letter-spacing: 0.18em; text-transform: uppercase; padding: 2px 6px; border-radius: 3px; line-height: 1; }
+  .onboard-req { color: var(--bg); background: var(--text); }
+  .onboard-opt { color: var(--text-dim); border: 1px solid var(--border-2); }
+  .onboard-section-hint { color: var(--text-mid); font-size: 11px; line-height: 1.55; margin: 0 0 11px; }
   .modal-net.good { color: var(--good); }
   .modal-net.bad  { color: var(--bad); }
   /* Small uppercase "NET" prefix in front of the corner P&L pill — disambiguates
@@ -1789,7 +1797,7 @@
      elevated background, hairline border, green left accent, readable light text, and a
      green action button. A dimmed/blurred backdrop sits behind it to pull focus. */
   .toast.toast-rule { background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-left: 4px solid var(--good); padding: 24px 28px 24px 30px; gap: 26px; max-width: min(860px, 94vw); box-shadow: 0 24px 64px rgba(0,0,0,0.7); }
-  .toast.toast-rule .toast-msg { flex: 0 1 auto; min-width: 0; font-family: 'DM Mono', monospace; font-size: 14px; line-height: 1.6; letter-spacing: 0.01em; text-transform: none; color: var(--text); }
+  .toast.toast-rule .toast-msg { flex: 0 1 auto; min-width: 0; font-family: 'DM Mono', monospace; font-size: 12px; line-height: 1.7; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
   .toast.toast-rule .toast-action-btn { background: var(--good); border: 1px solid var(--good); color: var(--bg); flex-shrink: 0; align-self: center; }
   .toast.toast-rule .toast-action-btn:hover { background: transparent; color: var(--good); border-color: var(--good); }
   .toast.toast-rule .toast-btns { display: flex; gap: 10px; flex-shrink: 0; align-self: center; }
@@ -2921,6 +2929,85 @@
 <div class="toast" id="toast">Copied</div>
 
 <!-- Name capture modal — first appears on app load; user must enter a name -->
+<!-- ===================================================================
+     Combined first-run onboarding window — replaces the old 4-step modal
+     chain (name -> balance -> session -> risk) with a single scrollable
+     form, one section each. Shown once via maybePromptForOnboarding() when
+     setup is incomplete; pre-fills anything already set. One "Get started"
+     writes all four areas and sets every onboarding flag. The individual
+     modals below remain in the markup but are now dormant.
+     ==================================================================== -->
+<div class="modal-bg" id="onboarding-modal-bg">
+  <div class="modal" style="max-width:540px;max-height:88vh;display:flex;flex-direction:column;">
+    <div class="modal-header" style="margin-bottom:14px;">
+      <div class="modal-title" data-i18n="onboard.title">Welcome — let's set up</div>
+    </div>
+    <p style="color:var(--text-mid);font-size:12px;line-height:1.6;margin:0 0 4px;" data-i18n="onboard.intro">A few quick details to tailor the tool to you. Only your name is required — everything else you can change any time in Settings.</p>
+    <div style="overflow-y:auto;flex:1 1 auto;margin:0 -4px;padding:4px 4px 2px;">
+
+      <!-- Section 1 — Name (required) -->
+      <div class="onboard-section">
+        <div class="onboard-section-title"><span data-i18n="onboard.name_title">Your name</span><span class="onboard-req" data-i18n="onboard.required">required</span></div>
+        <p class="onboard-section-hint" data-i18n="onboard.name_hint">Used in greetings, weekly reviews, and copied posts.</p>
+        <input type="text" id="onboard-name" class="settings-input" style="width:100%;" maxlength="40" data-i18n-placeholder="settings.name_modal_ph" placeholder="Your name or handle…" />
+      </div>
+
+      <!-- Section 2 — Starting balance (optional) -->
+      <div class="onboard-section">
+        <div class="onboard-section-title"><span data-i18n="onboard.balance_title">Starting balance</span><span class="onboard-opt" data-i18n="onboard.optional">optional</span></div>
+        <p class="onboard-section-hint" data-i18n="onboard.balance_hint">Baseline for Account Balance and P&amp;L on the Statistics tab. Leave blank to skip.</p>
+        <input type="number" step="any" id="onboard-balance" class="settings-input" style="width:100%;" placeholder="10000" />
+      </div>
+
+      <!-- Section 3 — Session (pre-filled) -->
+      <div class="onboard-section">
+        <div class="onboard-section-title"><span data-i18n="onboard.session_title">Trading session</span></div>
+        <p class="onboard-section-hint" data-i18n="onboard.session_hint">Drives news heads-up timing, session-aware greetings, and rule reminders.</p>
+        <input type="text" id="onboard-session" class="settings-input" style="width:100%;" placeholder="e.g. London 8-10AM" maxlength="40" />
+        <div id="onboard-session-hint" style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.05em;color:var(--text-dim);margin-top:8px;min-height:14px;"></div>
+      </div>
+
+      <!-- Section 4 — Risk rules (optional) -->
+      <div class="onboard-section">
+        <div class="onboard-section-title"><span data-i18n="onboard.risk_title">Risk rules</span><span class="onboard-opt" data-i18n="onboard.optional">optional</span></div>
+        <p class="onboard-section-hint" data-i18n="onboard.risk_hint">Limits you commit to — the app tracks whether you follow them. Leave any blank to skip.</p>
+
+        <div class="settings-risk-label-row">
+          <label class="settings-label" data-i18n="settings.risk_max_loss_label">Max loss per day</label>
+          <div class="settings-risk-mode-toggle" data-rule="maxLoss">
+            <button type="button" class="settings-risk-mode-btn active" data-mode="pct">%</button>
+            <button type="button" class="settings-risk-mode-btn" data-mode="amount" data-currency-symbol="{C}">£</button>
+          </div>
+        </div>
+        <div class="settings-risk-input-row">
+          <input type="number" id="onboard-max-loss" class="settings-input settings-input-compact" step="0.1" min="0" placeholder="1.0" />
+          <span class="settings-risk-suffix" id="onboard-max-loss-suffix" data-i18n="settings.risk_pct_suffix">% of balance</span>
+        </div>
+
+        <div class="settings-risk-label-row" style="margin-top:14px;">
+          <label class="settings-label" data-i18n="settings.risk_max_trade_label">Max risk per trade</label>
+          <div class="settings-risk-mode-toggle" data-rule="maxRisk">
+            <button type="button" class="settings-risk-mode-btn active" data-mode="pct">%</button>
+            <button type="button" class="settings-risk-mode-btn" data-mode="amount" data-currency-symbol="{C}">£</button>
+          </div>
+        </div>
+        <div class="settings-risk-input-row">
+          <input type="number" id="onboard-max-trade" class="settings-input settings-input-compact" step="0.1" min="0" placeholder="0.5" />
+          <span class="settings-risk-suffix" id="onboard-max-trade-suffix" data-i18n="settings.risk_pct_suffix">% of balance</span>
+        </div>
+
+        <label class="settings-label" style="margin-top:14px;" data-i18n="settings.risk_max_trades_label">Max trades per session</label>
+        <input type="number" id="onboard-max-trades" class="settings-input settings-input-compact" step="1" min="0" placeholder="5" />
+      </div>
+
+    </div>
+    <div id="onboard-error" style="color:var(--bad);font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.05em;min-height:13px;margin-top:8px;"></div>
+    <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;flex:0 0 auto;">
+      <button type="button" id="onboard-save" style="background:var(--text);color:var(--bg);border:none;padding:9px 22px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;" data-i18n="onboard.save">Get started</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-bg" id="name-modal-bg">
   <div class="modal" style="max-width:480px;">
     <div class="modal-header">
@@ -3429,6 +3516,21 @@
       'btn.trade_copier': 'Trade Copier',
       'btn.cancel': 'Cancel',
       'btn.close': '×',
+      'onboard.title': "Welcome — let's set up",
+      'onboard.intro': "A few quick details to tailor the tool to you. Only your name is required — everything else you can change any time in Settings.",
+      'onboard.name_title': 'Your name',
+      'onboard.name_hint': 'Used in greetings, weekly reviews, and copied posts.',
+      'onboard.balance_title': 'Starting balance',
+      'onboard.balance_hint': 'Baseline for Account Balance and P&L on the Statistics tab. Leave blank to skip.',
+      'onboard.session_title': 'Trading session',
+      'onboard.session_hint': 'Drives news heads-up timing, session-aware greetings, and rule reminders.',
+      'onboard.risk_title': 'Risk rules',
+      'onboard.risk_hint': 'Limits you commit to — the app tracks whether you follow them. Leave any blank to skip.',
+      'onboard.required': 'required',
+      'onboard.optional': 'optional',
+      'onboard.save': 'Get started',
+      'onboard.err_name': 'Please enter a name to continue.',
+      'onboard.err_session': 'Enter a session the app can read, e.g. London 8-10AM.',
       'btn.import_data': 'Import Data',
       'btn.backup_settings': 'Backup Settings',
       'btn.choose_file': 'Choose File',
@@ -4458,6 +4560,21 @@
       'btn.trade_copier': 'Copiar Operaciones',
       'btn.cancel': 'Cancelar',
       'btn.close': '×',
+      'onboard.title': 'Bienvenido — vamos a configurar',
+      'onboard.intro': 'Unos datos rápidos para adaptar la herramienta a ti. Solo tu nombre es obligatorio — todo lo demás lo puedes cambiar cuando quieras en Ajustes.',
+      'onboard.name_title': 'Tu nombre',
+      'onboard.name_hint': 'Se usa en saludos, repasos semanales y publicaciones copiadas.',
+      'onboard.balance_title': 'Balance inicial',
+      'onboard.balance_hint': 'Base para el Balance de Cuenta y P&L en la pestaña de Estadísticas. Déjalo en blanco para omitir.',
+      'onboard.session_title': 'Sesión de trading',
+      'onboard.session_hint': 'Controla los avisos de noticias, los saludos según la sesión y los recordatorios de reglas.',
+      'onboard.risk_title': 'Reglas de riesgo',
+      'onboard.risk_hint': 'Límites con los que te comprometes — la app controla si los cumples. Deja en blanco para omitir.',
+      'onboard.required': 'obligatorio',
+      'onboard.optional': 'opcional',
+      'onboard.save': 'Empezar',
+      'onboard.err_name': 'Introduce un nombre para continuar.',
+      'onboard.err_session': 'Introduce una sesión que la app pueda leer, p. ej. London 8-10AM.',
       'btn.import_data': 'Importar Datos',
       'btn.backup_settings': 'Configuración de Copia',
       'btn.choose_file': 'Elegir Archivo',
@@ -16665,6 +16782,206 @@
   document.getElementById('risk-onboard-skip').addEventListener('click', _dismissRiskOnboard);
   // backdrop click intentionally does NOT close risk-onboarding — dismiss via the Skip button only
 
+  // ===================================================================
+  // Combined onboarding window — single first-run form that replaces the
+  // old name -> balance -> session -> risk chain. Shows once when setup is
+  // incomplete; pre-fills whatever's already set so a partially-onboarded
+  // user just finishes the gaps. One Save writes all four areas + flags.
+  // ===================================================================
+  function onboardingComplete() {
+    const nameSet = !!getName();
+    const sb = data.settings && data.settings.startingBalance;
+    const balanceDone = (sb !== null && sb !== undefined && sb !== '' && Number(sb) > 0) || data._balanceSkipped;
+    const sessionDone = !!data._sessionPrompted;
+    let riskDone = !!data._riskRulesPrompted;
+    if (!riskDone) {
+      // Replicate the old existing-user guards: anyone with trades or
+      // pre-existing rules is past the onboarding moment — mark done so we
+      // never re-onboard a returning install.
+      const hasTrades = (Array.isArray(data.currentSeries) && data.currentSeries.length > 0)
+        || (Array.isArray(data.history) && data.history.some(h => Array.isArray(h.trades) && h.trades.length > 0));
+      const eg = (data.settings && data.settings.riskRules) || {};
+      const hasGlobalRules = eg.maxLossPct > 0 || eg.maxLossAmount > 0 || eg.maxRiskPct > 0 || eg.maxRiskAmount > 0 || eg.maxTrades > 0;
+      const hasPerAcc = (Array.isArray(data.accounts) ? data.accounts : []).some(a => {
+        const r = a.riskRules || {};
+        return r.maxLossPct > 0 || r.maxLossAmount > 0 || r.maxRiskPct > 0 || r.maxRiskAmount > 0 || r.maxTrades > 0;
+      });
+      if (hasTrades || hasGlobalRules || hasPerAcc) { riskDone = true; data._riskRulesPrompted = true; saveData(); }
+    }
+    return nameSet && balanceDone && sessionDone && riskDone;
+  }
+  function updateOnboardSessionHint() {
+    const inp = document.getElementById('onboard-session');
+    const hint = document.getElementById('onboard-session-hint');
+    if (!inp || !hint) return;
+    const v = inp.value.trim();
+    if (!v) { hint.textContent = ''; hint.style.color = 'var(--text-dim)'; return; }
+    const parsed = (typeof parseSessionTimes === 'function') ? parseSessionTimes(v) : null;
+    if (parsed) {
+      hint.textContent = t('modal.session_hint_detected').replace('{S}', parsed.start).replace('{E}', parsed.end);
+      hint.style.color = 'var(--good)';
+    } else {
+      hint.textContent = t('modal.session_hint_unparseable');
+      hint.style.color = 'var(--bad)';
+    }
+  }
+  function maybePromptForOnboarding() {
+    if (onboardingComplete()) return;
+    const modal = document.getElementById('onboarding-modal-bg');
+    if (!modal) return;
+    // Pre-fill from whatever's already set.
+    const nameInp = document.getElementById('onboard-name');
+    if (nameInp) nameInp.value = getName() || '';
+    const balInp = document.getElementById('onboard-balance');
+    if (balInp) {
+      const sb = data.settings && data.settings.startingBalance;
+      balInp.value = (sb && Number(sb) > 0) ? sb : '';
+    }
+    const sessInp = document.getElementById('onboard-session');
+    if (sessInp) sessInp.value = (data.settings && data.settings.sessionName) || 'London 8-10AM';
+    // Existing risk values (active account preferred, then global).
+    const rr = (() => {
+      if (Array.isArray(data.accounts) && data.accounts.length) {
+        const a = data.accounts.find(x => x.id === data.activeAccountId && x.status === 'active')
+          || data.accounts.find(x => x.status === 'active') || data.accounts[0];
+        if (a && a.riskRules) return a.riskRules;
+      }
+      return (data.settings && data.settings.riskRules) || {};
+    })();
+    const amtSuffix = () => (t('settings.risk_amt_suffix') || '{C} amount').replace(/\{C\}/g, (typeof curSym === 'function' ? curSym() : '£'));
+    const setRiskField = (rule, inpId, sufId, pctKey, amtKey, modeKey, pctPh, amtPh) => {
+      const toggle = modal.querySelector(`.settings-risk-mode-toggle[data-rule="${rule}"]`);
+      const inp = document.getElementById(inpId);
+      const sufEl = document.getElementById(sufId);
+      if (!inp || !toggle) return;
+      const mode = (rr[modeKey] === 'amount') ? 'amount' : 'pct';
+      toggle.querySelectorAll('.settings-risk-mode-btn').forEach(b => {
+        b.classList.toggle('active', (b.dataset.mode === 'amount') === (mode === 'amount'));
+      });
+      inp.placeholder = (mode === 'amount') ? amtPh : pctPh;
+      const val = (mode === 'amount') ? rr[amtKey] : rr[pctKey];
+      inp.value = (val && Number(val) > 0) ? val : '';
+      if (sufEl) sufEl.textContent = (mode === 'amount') ? amtSuffix() : t('settings.risk_pct_suffix');
+    };
+    setRiskField('maxLoss', 'onboard-max-loss', 'onboard-max-loss-suffix', 'maxLossPct', 'maxLossAmount', 'maxLossMode', '1.0', '100');
+    setRiskField('maxRisk', 'onboard-max-trade', 'onboard-max-trade-suffix', 'maxRiskPct', 'maxRiskAmount', 'maxRiskMode', '0.5', '50');
+    const tradesInp = document.getElementById('onboard-max-trades');
+    if (tradesInp) tradesInp.value = (rr.maxTrades && Number(rr.maxTrades) > 0) ? rr.maxTrades : '';
+
+    // Wire toggles, session hint + Enter handling once.
+    if (!modal._onboardWired) {
+      modal._onboardWired = true;
+      const wireToggle = (rule, inpId, sufId, pctPh, amtPh) => {
+        const toggle = modal.querySelector(`.settings-risk-mode-toggle[data-rule="${rule}"]`);
+        const inp = document.getElementById(inpId);
+        const sufEl = document.getElementById(sufId);
+        if (!toggle || !inp) return;
+        toggle.querySelectorAll('.settings-risk-mode-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const mode = btn.dataset.mode === 'amount' ? 'amount' : 'pct';
+            toggle.querySelectorAll('.settings-risk-mode-btn').forEach(b => b.classList.toggle('active', b === btn));
+            inp.value = '';
+            inp.placeholder = (mode === 'amount') ? amtPh : pctPh;
+            if (sufEl) sufEl.textContent = (mode === 'amount') ? amtSuffix() : t('settings.risk_pct_suffix');
+          });
+        });
+      };
+      wireToggle('maxLoss', 'onboard-max-loss', 'onboard-max-loss-suffix', '1.0', '100');
+      wireToggle('maxRisk', 'onboard-max-trade', 'onboard-max-trade-suffix', '0.5', '50');
+      if (sessInp) sessInp.addEventListener('input', updateOnboardSessionHint);
+      if (nameInp) nameInp.addEventListener('keydown', e => {
+        if (e.key === 'Enter') { e.preventDefault(); const b = document.getElementById('onboard-balance'); if (b) b.focus(); }
+      });
+    }
+    updateOnboardSessionHint();
+    const errEl = document.getElementById('onboard-error');
+    if (errEl) errEl.textContent = '';
+    modal.classList.add('show');
+    setTimeout(() => { if (nameInp) nameInp.focus(); }, 100);
+  }
+  document.getElementById('onboard-save').addEventListener('click', () => {
+    const modal = document.getElementById('onboarding-modal-bg');
+    const errEl = document.getElementById('onboard-error');
+    const setErr = (msg) => { if (errEl) errEl.textContent = msg || ''; };
+
+    // 1) Name — required.
+    const nameV = document.getElementById('onboard-name').value.trim();
+    if (!nameV) { setErr(t('onboard.err_name')); document.getElementById('onboard-name').focus(); return; }
+
+    // 2) Session — required + must parse.
+    const sessV = document.getElementById('onboard-session').value.trim();
+    const parsed = (sessV && typeof parseSessionTimes === 'function') ? parseSessionTimes(sessV) : null;
+    if (!sessV || !parsed) { setErr(t('onboard.err_session')); updateOnboardSessionHint(); document.getElementById('onboard-session').focus(); return; }
+    setErr('');
+
+    // Write name.
+    data.userName = nameV;
+
+    // 3) Balance — optional. Blank/invalid => record skip.
+    const balRaw = document.getElementById('onboard-balance').value.trim();
+    const balV = parseFloat(balRaw);
+    if (balRaw && !isNaN(balV) && balV > 0) {
+      data.settings.startingBalance = balV;
+      const acc = (typeof getActiveAccount === 'function') ? getActiveAccount() : null;
+      if (acc) acc.startingBalance = balV;
+      if (typeof syncEffectiveStartingBalance === 'function') syncEffectiveStartingBalance();
+      const settingInput = document.getElementById('setting-balance');
+      if (settingInput) settingInput.value = balV;
+    } else {
+      data._balanceSkipped = true;
+    }
+
+    // Write session.
+    data.settings.sessionName = sessV;
+    data.settings.windowStart = parsed.start;
+    data.settings.windowEnd = parsed.end;
+    data._sessionPrompted = true;
+
+    // 4) Risk rules — optional. Write to active account (settings fallback).
+    let target = null;
+    if (Array.isArray(data.accounts) && data.accounts.length > 0) {
+      target = data.accounts.find(a => a.id === data.activeAccountId && a.status === 'active')
+        || data.accounts.find(a => a.status === 'active') || data.accounts[0];
+      if (target && !target.riskRules) target.riskRules = {};
+    }
+    const rr = target ? target.riskRules : (() => {
+      if (!data.settings) data.settings = {};
+      if (!data.settings.riskRules) data.settings.riskRules = {};
+      return data.settings.riskRules;
+    })();
+    const writeRuleByMode = (rule, inpId, pctKey, amtKey, modeKey) => {
+      const toggle = modal.querySelector(`.settings-risk-mode-toggle[data-rule="${rule}"]`);
+      const inp = document.getElementById(inpId);
+      if (!toggle || !inp) return;
+      const activeBtn = toggle.querySelector('.settings-risk-mode-btn.active');
+      const mode = (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
+      rr[modeKey] = mode;
+      const raw = inp.value.trim();
+      const n = Number(raw);
+      if (raw !== '' && !isNaN(n) && n > 0) rr[(mode === 'amount') ? amtKey : pctKey] = n;
+    };
+    writeRuleByMode('maxLoss', 'onboard-max-loss', 'maxLossPct', 'maxLossAmount', 'maxLossMode');
+    writeRuleByMode('maxRisk', 'onboard-max-trade', 'maxRiskPct', 'maxRiskAmount', 'maxRiskMode');
+    const tradesInp = document.getElementById('onboard-max-trades');
+    if (tradesInp) {
+      const raw = tradesInp.value.trim();
+      const n = Number(raw);
+      if (raw !== '' && !isNaN(n) && n > 0) rr.maxTrades = n;
+    }
+    data._riskRulesPrompted = true;
+
+    saveData();
+    modal.classList.remove('show');
+    // Refresh dependents.
+    try {
+      const metaEl = document.getElementById('meta-session');
+      if (metaEl) metaEl.textContent = sessV;
+      if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
+      if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
+      if (typeof renderStats === 'function') renderStats();
+    } catch (e) { /* non-fatal */ }
+  });
+
   // Time-of-day opener — chosen by the user's current local hour
   // Pool of opener phrases per time-of-day slot. One is picked date-deterministically so the
   // opener stays stable through the day but varies across days.
@@ -23030,11 +23347,11 @@
   // Wire up triggers on Review save / Discord copy buttons.
   const _reviewCopyBtn = document.getElementById('review-copy');
   if (_reviewCopyBtn) {
-    _reviewCopyBtn.addEventListener('click', () => { maybePromptForName(); maybeOfferWeeklyReview(); });
+    _reviewCopyBtn.addEventListener('click', () => { maybePromptForOnboarding(); maybeOfferWeeklyReview(); });
   }
   const _saveSeriesBtn = document.getElementById('review-save-stats');
   if (_saveSeriesBtn) {
-    _saveSeriesBtn.addEventListener('click', () => { maybePromptForName(); setTimeout(maybeOfferWeeklyReview, 1500); });
+    _saveSeriesBtn.addEventListener('click', () => { maybePromptForOnboarding(); setTimeout(maybeOfferWeeklyReview, 1500); });
   }
 
 
@@ -24073,7 +24390,7 @@
     applySavedBiasMinimizedState();
   })();
 
-  setTimeout(maybePromptForName, 800);
+  setTimeout(maybePromptForOnboarding, 800);
 </script>
 </body>
 </html>
