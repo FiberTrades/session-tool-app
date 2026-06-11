@@ -1785,13 +1785,15 @@
   .toast.with-action .toast-msg { font-weight: 500; }
   .toast-action-btn { background: transparent; color: var(--bg); border: 1px solid rgba(0,0,0,0.35); padding: 9px 18px; font-family: 'DM Mono', monospace; font-size: 10px; font-weight: 600; letter-spacing: 0.28em; text-transform: uppercase; cursor: pointer; transition: all 180ms; }
   .toast-action-btn:hover { background: var(--bg); color: var(--text); border-color: var(--bg); }
-  /* Weekly-rule reminder — a louder snackbar variant so the rule of the week stands out
-     from ordinary undo toasts: thick green edge, green outline ring, larger readable text,
-     and a green action button. */
-  .toast.toast-rule { border-left: 6px solid var(--good); padding: 18px 20px 18px 26px; gap: 22px; box-shadow: 0 14px 48px rgba(0,0,0,0.55), 0 0 0 1px var(--good); }
-  .toast.toast-rule .toast-msg { font-size: 14px; letter-spacing: 0.08em; text-transform: none; }
-  .toast.toast-rule .toast-action-btn { background: var(--good); border-color: var(--good); color: var(--bg); }
-  .toast.toast-rule .toast-action-btn:hover { background: var(--bg); color: var(--good); border-color: var(--good); }
+  /* Weekly-rule reminder — styled as a dark, on-brand card (matches the session banner):
+     elevated background, hairline border, green left accent, readable light text, and a
+     green action button. A dimmed/blurred backdrop sits behind it to pull focus. */
+  .toast.toast-rule { background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-left: 4px solid var(--good); padding: 22px 24px 22px 28px; gap: 26px; max-width: 440px; box-shadow: 0 24px 64px rgba(0,0,0,0.7); }
+  .toast.toast-rule .toast-msg { font-size: 14px; line-height: 1.55; letter-spacing: 0.04em; text-transform: none; color: var(--text); }
+  .toast.toast-rule .toast-action-btn { background: var(--good); border: 1px solid var(--good); color: var(--bg); flex-shrink: 0; align-self: center; }
+  .toast.toast-rule .toast-action-btn:hover { background: transparent; color: var(--good); border-color: var(--good); }
+  #rule-backdrop { position: fixed; inset: 0; background: rgba(8,8,8,0.66); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity 240ms ease; z-index: 199; }
+  #rule-backdrop.show { opacity: 1; pointer-events: auto; }
   /* MT5 import modal */
   #mt5-import-btn:hover { border-color: var(--text-mid); color: var(--text); background: var(--bg-elev); }
   #mt5-pick-btn:hover { background: var(--text); color: var(--bg); }
@@ -5766,10 +5768,30 @@
     }
     return _audioCtx;
   }
+
+  // Browsers create AudioContexts suspended and block audio until the user interacts with
+  // the page. Resume the context on the first gesture so the session chime + rule sound are
+  // actually audible when they later fire.
+  (function unlockAudioOnFirstGesture() {
+    let unlocked = false;
+    function unlock() {
+      if (unlocked) return;
+      unlocked = true;
+      try { const ctx = getAudioCtx(); if (ctx && ctx.state === 'suspended') ctx.resume(); } catch (e) {}
+      window.removeEventListener('pointerdown', unlock);
+      window.removeEventListener('keydown', unlock);
+      window.removeEventListener('touchstart', unlock);
+    }
+    window.addEventListener('pointerdown', unlock);
+    window.addEventListener('keydown', unlock);
+    window.addEventListener('touchstart', unlock);
+  })();
+
   // Play a two-tone chime. Ascending (low → high) for start, descending (high → low) for end.
   function playChime(kind) {
     const ctx = getAudioCtx();
     if (!ctx) return;
+    if (ctx.state === 'suspended') { try { ctx.resume(); } catch (e) {} }
     const freqs = kind === 'start' ? [600, 800] : [800, 600];
     const now = ctx.currentTime;
     freqs.forEach((freq, i) => {
@@ -10095,12 +10117,21 @@
     toast.innerHTML = `<span class="toast-msg">${message}</span><button type="button" class="toast-action-btn" id="toast-undo-btn">${actionLabel || t('toast.undo_label')}</button>`;
     toast.classList.add('with-action', 'show');
     if (variant) toast.classList.add('toast-' + variant);
-    // The weekly-rule reminders (variant 'rule') play a notification sound and PERSIST
-    // until the user clicks the action button — no auto-hide timer, no click-anywhere.
+    // The weekly-rule reminders (variant 'rule') play a notification sound, dim/blur the app
+    // behind a backdrop, and PERSIST until the user clicks the action button.
     const persist = (variant === 'rule');
-    if (persist && typeof playRuleChime === 'function') playRuleChime();
+    let backdrop = document.getElementById('rule-backdrop');
+    if (persist) {
+      if (!backdrop) { backdrop = document.createElement('div'); backdrop.id = 'rule-backdrop'; document.body.appendChild(backdrop); }
+      requestAnimationFrame(() => backdrop.classList.add('show'));
+      if (typeof playRuleChime === 'function') playRuleChime();
+    } else if (backdrop) {
+      backdrop.classList.remove('show');
+    }
     function hide() {
       if (_undoToastTimer) { clearTimeout(_undoToastTimer); _undoToastTimer = null; }
+      const bd = document.getElementById('rule-backdrop');
+      if (bd) bd.classList.remove('show');
       toast.classList.remove('show');
       // Brief delay before clearing markup so the slide-out animation finishes
       setTimeout(() => { toast.classList.remove('with-action', 'toast-rule'); toast.innerHTML = ''; }, 400);
