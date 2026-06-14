@@ -425,17 +425,12 @@
      toggled from the calendar Ticker pill. Sticky by default; the --static
      modifier lets it scroll away with the page. Sits above .container so it
      spans the full viewport width. */
-  .ticker-bar { width: 100%; position: relative; background: #000; border-bottom: 1px solid var(--border); }
+  .ticker-bar { width: 100%; background: #000; border-bottom: 1px solid var(--border); overflow: hidden; }
   .ticker-bar--sticky { position: sticky; top: 0; z-index: 90; }
-  .ticker-widget-host { min-height: 46px; overflow: hidden; }
-  .ticker-bar--expanded .ticker-widget-host { height: 420px; min-height: 0; }
-  .ticker-toggle { position: absolute; left: 50%; bottom: -15px; transform: translateX(-50%); width: 48px; height: 16px; display: flex; align-items: center; justify-content: center; padding: 0; background: #000; border: 1px solid var(--border); border-top: none; border-radius: 0 0 7px 7px; color: var(--text-dim); cursor: pointer; z-index: 91; transition: color 160ms; }
-  .ticker-toggle:hover { color: var(--text-mid); }
-  .ticker-toggle svg { width: 13px; height: 13px; transition: transform 220ms; }
-  .ticker-bar--expanded .ticker-toggle svg { transform: rotate(180deg); }
+  .ticker-widget-host { min-height: 46px; }
   /* ---- Ticker settings panel ---- */
   .ticker-settings { max-width: 400px; font-family: 'DM Mono', monospace; }
-  .ticker-settings .ticker-set-title { font-family: 'Fraunces', serif; font-size: 18px; color: var(--text); margin-bottom: 20px; }
+  .ticker-settings .ticker-set-title { font-family: 'Fraunces', serif; font-size: 18px; color: var(--text); margin-bottom: 0; }
   .ticker-set-section { margin-bottom: 22px; }
   .ticker-set-label { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
   .ticker-set-actions { display: flex; justify-content: flex-end; }
@@ -2122,12 +2117,15 @@
 <!-- Full-width market ticker bar — TradingView Ticker Tape embed, injected by
      renderTickerWidget(). Sits above .container so it spans the viewport. Hidden
      until the user turns it on from the calendar Ticker pill. -->
-<div id="ticker-bar" class="ticker-bar" hidden><div id="ticker-widget-host" class="ticker-widget-host"></div><button id="ticker-toggle" class="ticker-toggle" type="button" aria-label="Expand to list view"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg></button></div>
+<div id="ticker-bar" class="ticker-bar" hidden><div id="ticker-widget-host" class="ticker-widget-host"></div></div>
 <!-- Ticker settings panel — behaviour (pinned vs scrolls-away) + symbol groups
      + custom symbols. Opened by the gear on the Ticker pill. -->
 <div class="modal-bg" id="ticker-settings-bg">
   <div class="modal ticker-settings">
-    <div class="ticker-set-title" data-i18n="ticker.settings_title">Ticker settings</div>
+    <div class="modal-header">
+      <div class="ticker-set-title" data-i18n="ticker.settings_title">Ticker settings</div>
+      <button type="button" class="modal-close" id="ticker-set-close" data-i18n="btn.close" aria-label="Close">×</button>
+    </div>
     <div class="ticker-set-section">
       <label class="tk-switch">
         <span class="tk-switch-label" data-i18n="ticker.show">Show ticker bar</span>
@@ -4158,8 +4156,6 @@
       'ticker.behaviour': 'Behaviour',
       'ticker.pinned': 'Pinned to top',
       'ticker.scrolls': 'Scrolls away',
-      'ticker.expand': 'Expand to list view',
-      'ticker.collapse': 'Collapse to ticker',
       'ticker.symbols': 'Symbols',
       'ticker.grp_forex': 'Forex (EUR/USD, GBP/USD, USD/JPY)',
       'ticker.grp_indices': 'Indices & rates (S&P 500, DXY, US 10Y)',
@@ -5246,8 +5242,6 @@
       'ticker.behaviour': 'Comportamiento',
       'ticker.pinned': 'Fijado arriba',
       'ticker.scrolls': 'Se desplaza',
-      'ticker.expand': 'Ampliar a vista de lista',
-      'ticker.collapse': 'Contraer a la cinta',
       'ticker.symbols': 'Símbolos',
       'ticker.grp_forex': 'Forex (EUR/USD, GBP/USD, USD/JPY)',
       'ticker.grp_indices': 'Índices y tipos (S&P 500, DXY, EE.UU. 10A)',
@@ -6886,7 +6880,6 @@
     // Market ticker bar (off by default; pinned/sticky by default; forex-first groups).
     if (d.settings.tickerEnabled === undefined) d.settings.tickerEnabled = false;
     if (d.settings.tickerSticky === undefined)  d.settings.tickerSticky  = true;
-    if (d.settings.tickerExpanded === undefined) d.settings.tickerExpanded = false;
     // Per-category model: each category has an on/off flag and its own custom symbols.
     // Defaults forex-first (forex/indices/commodities on; crypto/stocks off).
     if (d.settings.tickerCats === undefined) {
@@ -22166,6 +22159,8 @@
       }
       const tkDone = document.getElementById('ticker-set-done');
       if (tkDone) tkDone.onclick = () => tkBg.classList.remove('show');
+      const tkClose = document.getElementById('ticker-set-close');
+      if (tkClose) tkClose.onclick = () => tkBg.classList.remove('show');
       tkBg.onclick = (ev) => { if (ev.target === tkBg) tkBg.classList.remove('show'); };
     }
     // Apply the persisted ticker state on load (off by default).
@@ -22468,67 +22463,31 @@
     return out.length ? out : TICKER_GROUPS.forex.slice();
   }
 
-  // Same enabled symbols as the tape, but grouped by category for the list view.
-  function tickerSymbolGroups() {
-    const cats = (data.settings && data.settings.tickerCats) || {};
-    const groups = [];
-    TICKER_CAT_ORDER.forEach(k => {
-      const c = cats[k];
-      if (!(c && c.on)) return;
-      const removed = c.removed || [];
-      const syms = [];
-      (TICKER_GROUPS[k] || []).forEach(s => { if (!removed.includes(s.proName)) syms.push({ name: s.proName, displayName: s.description }); });
-      (c.custom || []).forEach(s => { const v = String(s).trim(); if (v) syms.push({ name: v, displayName: v.split(':').pop() }); });
-      if (syms.length) groups.push({ name: tickerCatName(k), symbols: syms });
-    });
-    if (!groups.length) groups.push({ name: tickerCatName('forex'), symbols: TICKER_GROUPS.forex.map(s => ({ name: s.proName, displayName: s.description })) });
-    return groups;
-  }
-
   function renderTickerWidget() {
     const host = document.getElementById('ticker-widget-host');
     if (!host) return;
     host.innerHTML = '';
     const bar = document.getElementById('ticker-bar');
-    const expanded = !!(data.settings && data.settings.tickerExpanded);
-    const locale = (window.__lang === 'es' ? 'es' : 'en');
     const container = document.createElement('div');
     container.className = 'tradingview-widget-container';
-    container.style.height = '100%';
     const widgetDiv = document.createElement('div');
     widgetDiv.className = 'tradingview-widget-container__widget';
-    if (expanded) widgetDiv.style.height = '100%';
     container.appendChild(widgetDiv);
     const script = document.createElement('script');
     script.type = 'text/javascript';
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js';
     script.async = true;
     // If the embed can't load (offline / blocked), hide the whole bar so there's
     // no empty strip left behind.
     script.onerror = () => { if (bar) bar.hidden = true; };
-    if (expanded) {
-      // Vertical, grouped list view.
-      script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-market-quotes.js';
-      script.text = JSON.stringify({
-        width: '100%',
-        height: '100%',
-        symbolsGroups: tickerSymbolGroups(),
-        showSymbolLogo: true,
-        isTransparent: false,
-        colorTheme: 'dark',
-        locale: locale
-      });
-    } else {
-      // Horizontal scrolling tape.
-      script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js';
-      script.text = JSON.stringify({
-        symbols: tickerSymbolList(),
-        showSymbolLogo: true,
-        isTransparent: false,
-        displayMode: 'adaptive',
-        colorTheme: 'dark',
-        locale: locale
-      });
-    }
+    script.text = JSON.stringify({
+      symbols: tickerSymbolList(),
+      showSymbolLogo: true,
+      isTransparent: false,
+      displayMode: 'adaptive',
+      colorTheme: 'dark',
+      locale: (window.__lang === 'es' ? 'es' : 'en')
+    });
     container.appendChild(script);
     host.appendChild(container);
   }
@@ -22540,22 +22499,8 @@
     if (!bar) return;
     const on = !!(data.settings && data.settings.tickerEnabled);
     const sticky = !(data.settings && data.settings.tickerSticky === false);
-    const expanded = !!(data.settings && data.settings.tickerExpanded);
     bar.classList.toggle('ticker-bar--sticky', sticky);
-    bar.classList.toggle('ticker-bar--expanded', expanded);
     if (btn) btn.classList.toggle('active', on);
-    const toggle = document.getElementById('ticker-toggle');
-    if (toggle) {
-      if (!toggle._wired) {
-        toggle._wired = true;
-        toggle.addEventListener('click', () => {
-          data.settings.tickerExpanded = !(data.settings && data.settings.tickerExpanded);
-          try { saveData(); } catch (e) {}
-          applyTickerBarState();
-        });
-      }
-      toggle.setAttribute('aria-label', expanded ? t('ticker.collapse') : t('ticker.expand'));
-    }
     if (on) { bar.hidden = false; renderTickerWidget(); }
     else { bar.hidden = true; const host = document.getElementById('ticker-widget-host'); if (host) host.innerHTML = ''; }
   }
