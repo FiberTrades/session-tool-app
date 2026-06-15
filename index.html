@@ -6566,9 +6566,15 @@
           data.settings[field] = v;
         }
       }
+      // Editing the session window or name re-arms the live banner: clear today's
+      // dismiss flag so the (possibly re-timed) session shows its banner again.
+      if (field === 'window' || field === 'sessionName') {
+        data._sessionLiveDismissed = null;
+      }
       saveData();
       el.dataset.editing = '';
       renderMetaHeader();
+      if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner();
       // Re-render anything that depends on these settings
       if (typeof renderStats === 'function') renderStats();
       if (document.getElementById('page-trades').classList.contains('active') && typeof renderTradesStats === 'function') renderTradesStats();
@@ -15087,7 +15093,31 @@
     saveData();
     refreshRuleBanners();
   }
+  // If the current week has no rule yet (e.g. the user did their weekend review but forgot
+  // to write a new one), carry forward the most recent previous week's rule so it keeps
+  // showing into the new week until they change it. The carried rule starts ungraded.
+  function ensureWeeklyRuleCarryOver() {
+    try {
+      if (typeof data === 'undefined' || !data || !data.weeklyRules) return;
+      if (typeof getCalendarWeekKey !== 'function') return;
+      const now = new Date();
+      const curKey = getCalendarWeekKey(now);
+      const cur = data.weeklyRules[curKey];
+      if (cur && cur.rule) return; // this week already has its own rule
+      // Walk back up to 12 weeks to find the most recent week that had a rule.
+      for (let w = 1; w <= 12; w++) {
+        const d = new Date(now); d.setDate(d.getDate() - 7 * w);
+        const prev = data.weeklyRules[getCalendarWeekKey(d)];
+        if (prev && prev.rule) {
+          data.weeklyRules[curKey] = { rule: prev.rule, followed: null, gradedAt: null };
+          if (typeof saveData === 'function') saveData();
+          return;
+        }
+      }
+    } catch (e) { /* non-fatal */ }
+  }
   function refreshRuleBanners() {
+    ensureWeeklyRuleCarryOver();
     const today = new Date();
     const dow = today.getDay(); // 0=Sun, 1=Mon, ..., 6=Sat
     let displayKey, context;
@@ -16933,6 +16963,7 @@
     data.settings.windowStart = parsed.start;
     data.settings.windowEnd   = parsed.end;
     data._sessionPrompted = true;
+    data._sessionLiveDismissed = null;
     saveData();
     document.getElementById('session-modal-bg').classList.remove('show');
     // Refresh anything that depends on session timing
@@ -17371,6 +17402,17 @@
       'operación en vivo. Marca el pensamiento mientras es el pensamiento, no la excusa.',
       'dentro del mercado. Regístrala ahora; la retrospectiva es peor testigo.',
       'operación corriendo. Apunta el setup y el plan antes de que las velas lo reescriban.',
+    ],
+    REVIEW_IN_PROGRESS_LIVE: [
+      'hay una operación en vivo. Gestiónala según tu plan — el diario espera a que cierre la sesión.',
+      'posición abierta. Mira el gráfico, no las notas — registra el resto cuando termine la ventana.',
+      'estás dentro. Confía en el plan que fijaste; el análisis llega después de la sesión.',
+      'operación activa. Regístrala y deja que se desarrolle — la reflexión se abre al cerrar la ventana.',
+      'posición viva. Mantén tus niveles; habrá tiempo de anotar cuando termine.',
+      'una está corriendo. Atento a la salida — la revisión completa se desbloquea tras la ventana.',
+      'en el mercado. Mantenlo limpio, registra el cierre cuando llegue — las notas pueden esperar.',
+      'operación en marcha. Disciplina ahora, diario después — el formulario se abre tras la sesión.',
+      'ya entraste. Déjala respirar según el plan; captura los detalles cuando acabe la sesión.',
     ],
     REVIEW_IDLE_WEEKEND: [
       'fin de semana. El mercado cerrado, el trabajo de verdad no. Planifica, repasa, afila.',
@@ -18114,6 +18156,21 @@
     'live trade. Mark the thinking while it\'s the thinking, not the excuse.',
     'in the market. Log it now; hindsight makes a worse witness.',
     'trade\'s running. Jot the setup and the plan before the candles rewrite it.',
+  ];
+  // LIVE variant of REVIEW_IN_PROGRESS — used while the session window is OPEN, when the
+  // journaling/reflection fields are collapsed and the user can only quick-log. These lines
+  // never tell the user to "write the setup" now (there's nowhere to) — they focus on
+  // managing the live trade and defer the journaling to after the session closes.
+  const REVIEW_IN_PROGRESS_LIVE = [
+    'a trade\'s live. Manage it by your plan — the journaling waits till the session\'s done.',
+    'position\'s running. Eyes on the chart, not the notes — log the rest when the window closes.',
+    'you\'re in. Trust the plan you set; the write-up comes after the session.',
+    'trade\'s on. Tap it in, let it play out — reflection opens once the window ends.',
+    'live position. Stay with your levels; there\'s time to journal when it\'s over.',
+    'one\'s working. Mind the exit — the full review unlocks after the window.',
+    'in the market. Keep it clean, log the close when it comes — notes can wait.',
+    'trade running. Discipline now, journaling later — the form opens after the session.',
+    'you\'ve clicked in. Let it breathe by the plan; capture the details once the session wraps.',
   ];
   // Weekend variant of REVIEW_IDLE — used Saturday/Sunday when the market is closed and
   // "no clicks yet" type framing is nonsense. Voice: planning, reflecting, recharging — not
@@ -23043,8 +23100,14 @@
   // Tail for the Review page when a trade is placed for today but not yet resolved.
   function pickReviewInProgressTail() {
     const seed = todayKey() + ':rev-inprog:' + _greetingNonce;
-    const pool = localizedPool(REVIEW_IN_PROGRESS, 'REVIEW_IN_PROGRESS');
-    const idx = pickWithAntiRepeat(pool, 'REVIEW_IN_PROGRESS', seed);
+    // While the session is live the journaling fields are collapsed, so use the live pool
+    // (manage the trade, journal later). After the window closes, the reflection fields are
+    // back, so the regular pool ("write the setup now") applies.
+    const live = (typeof isSessionLive === 'function') && isSessionLive();
+    const poolSrc = live ? REVIEW_IN_PROGRESS_LIVE : REVIEW_IN_PROGRESS;
+    const poolKey = live ? 'REVIEW_IN_PROGRESS_LIVE' : 'REVIEW_IN_PROGRESS';
+    const pool = localizedPool(poolSrc, poolKey);
+    const idx = pickWithAntiRepeat(pool, poolKey, seed + (live ? ':live' : ''));
     return pool[idx];
   }
 
