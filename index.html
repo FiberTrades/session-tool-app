@@ -2337,11 +2337,9 @@
     <div class="bias-greeting" data-greeting-mirror data-greeting-context="review"></div>
     <div class="session-live-banner hidden" id="session-live-banner">
       <div class="session-live-head">
-        <span class="session-live-dot"></span>
-        <span class="session-live-label" data-i18n="banner.as_it_happens">As it happens</span>
         <button type="button" class="session-live-dismiss" id="session-live-dismiss" data-i18n-aria-label="banner.dismiss_aria" aria-label="Dismiss until tomorrow" data-i18n-title="tip.dismiss_today">×</button>
       </div>
-      <p class="session-live-body" data-i18n-html="banner.body_html">Stay on this tab — your <strong>morning bias sits below</strong>, keeping you anchored. And when you take a trade, <strong>log it the moment you take it</strong> — while the chart's still in front of you. Fresh observation beats yesterday's reconstruction, every time.</p>
+      <p class="session-live-body" data-i18n-html="banner.body_html">Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. If you take a trade, just tap the <strong>LONG or SHORT</strong> buttons to log them in the moment; the full write-up comes once the session is over.</p>
     </div>
     <div class="saved-bias hidden" id="saved-bias-card">
       <div class="saved-bias-label-row">
@@ -3719,7 +3717,7 @@
       'banner.session_live': 'Session live',
       'banner.as_it_happens': 'As it happens',
       'banner.dismiss_aria': 'Dismiss until tomorrow',
-      'banner.body_html': "Stay on this tab — your <strong>morning bias sits below</strong>, keeping you anchored. And when you take a trade, <strong>log it the moment you take it</strong> — while the chart's still in front of you. Fresh observation beats yesterday's reconstruction, every time.",
+      'banner.body_html': "Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. If you take a trade, just tap the <strong>LONG or SHORT</strong> buttons to log them in the moment; the full write-up comes once the session is over.",
       // ----- Trade Log column headers -----
       'tlog.col.num': '#',
       'tlog.multi_hint': "Click <strong>#</strong> to review each trade individually. The highlighted # is the trade you're currently reviewing.",
@@ -4807,7 +4805,7 @@
       'banner.session_live': 'Sesión en vivo',
       'banner.as_it_happens': 'En el momento',
       'banner.dismiss_aria': 'Descartar hasta mañana',
-      'banner.body_html': "Quédate en esta pestaña — tu <strong>sesgo de la mañana queda abajo</strong>, sirviéndote de ancla. Y cuando entres en una operación, <strong>regístrala en el momento</strong> — con el gráfico aún delante. Observar en caliente siempre supera a reconstruir después.",
+      'banner.body_html': "Quédate en esta pestaña mientras tu sesión esté en vivo — tu <strong>sesgo de la mañana queda justo abajo</strong> para servirte de ancla. Si entras en una operación, solo toca los botones <strong>LARGO o CORTO</strong> para registrarla en el momento; el análisis completo llega cuando termine la sesión.",
       // ----- Trade Log column headers -----
       'tlog.col.num': 'Nº',
       'tlog.col.result': 'Resultado',
@@ -6128,6 +6126,27 @@
 
   // Show/hide the session-live coaching banner on the Review tab.
   // Hidden when: not in session window, OR user dismissed it today.
+  // The "session live" banner auto-hides 15s after it first appears on the Session Live
+  // tab. We reuse the per-day dismiss flag so it stays hidden afterwards (and editing the
+  // session window re-arms it, just like a manual dismiss).
+  let _bannerShown = false;
+  let _bannerAutoHideTimer = null;
+  function _clearBannerAutoHide() {
+    if (_bannerAutoHideTimer) { clearTimeout(_bannerAutoHideTimer); _bannerAutoHideTimer = null; }
+  }
+  function _scheduleBannerAutoHide(todayKey) {
+    _clearBannerAutoHide();
+    _bannerAutoHideTimer = setTimeout(() => {
+      try {
+        if (data) { data._sessionLiveDismissed = todayKey; if (typeof saveData === 'function') saveData(); }
+        const b = document.getElementById('session-live-banner');
+        if (b) b.classList.add('hidden');
+      } catch (e) {}
+      _bannerShown = false;
+      _bannerAutoHideTimer = null;
+    }, 30000);
+  }
+
   function updateSessionLiveBanner() {
     const banner = document.getElementById('session-live-banner');
     const pill = document.getElementById('session-live-pill');
@@ -6150,10 +6169,17 @@
     }
     // The full advisory banner sits on the Review tab and respects the per-day dismiss.
     if (!banner) return;
-    if (!live) { banner.classList.add('hidden'); return; }
+    if (!live) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; return; }
     const todayKey = new Date().toISOString().slice(0, 10);
-    if (data && data._sessionLiveDismissed === todayKey) { banner.classList.add('hidden'); return; }
+    if (data && data._sessionLiveDismissed === todayKey) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; return; }
     banner.classList.remove('hidden');
+    // Start the 15s auto-hide only once the banner is actually visible on the Session Live
+    // tab (so it doesn't silently time out while the user is on another tab).
+    const onReviewTab = activePage && activePage.dataset.page === 'review';
+    if (onReviewTab && !_bannerShown) {
+      _bannerShown = true;
+      _scheduleBannerAutoHide(todayKey);
+    }
   }
 
   // Audio context lazily created on first alert (browser autoplay rules require user gesture first;
