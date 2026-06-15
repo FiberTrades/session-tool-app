@@ -521,9 +521,6 @@
   .bloomberg-floater-pin.active { color: var(--text); }
   .bloomberg-floater-pin.active svg { transform: rotate(45deg); }
   .bloomberg-floater-pin svg { transition: transform 200ms; }
-  .bloomberg-floater-mute .bb-icon-muted { display: none; }
-  .bloomberg-floater-mute.muted .bb-icon-unmuted { display: none; }
-  .bloomberg-floater-mute.muted .bb-icon-muted { display: block; }
   /* Right-side cluster wrapping Bloomberg + Filters so the parent's
      justify-content: space-between treats them as one block and keeps
      the range pills (Today/Tomorrow/Week) on the left edge. */
@@ -3611,10 +3608,6 @@
   <div class="bloomberg-floater-header" id="bloomberg-floater-header">
     <span class="bloomberg-floater-title">BLOOMBERG TV</span>
     <div class="bloomberg-floater-actions">
-      <button type="button" class="bloomberg-floater-btn bloomberg-floater-mute" id="bloomberg-floater-mute" data-i18n-aria-label="bb.mute" data-i18n-title="bb.mute" aria-label="Mute / unmute" title="Mute / unmute">
-        <svg class="bb-icon-unmuted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14"/></svg>
-        <svg class="bb-icon-muted" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M11 5L6 9H2v6h4l5 4V5z"/><line x1="23" y1="9" x2="17" y2="15"/><line x1="17" y1="9" x2="23" y2="15"/></svg>
-      </button>
       <button type="button" class="bloomberg-floater-btn bloomberg-floater-pin" id="bloomberg-floater-pin" data-i18n-aria-label="bb.pin" data-i18n-title="bb.pin" aria-label="Pin to screen" title="Pin to screen">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17v5"/><path d="M9 10.76V4h6v6.76l4 5.24H5l4-5.24z"/></svg>
       </button>
@@ -4209,7 +4202,6 @@
       'ticker.cat_stocks': 'Stocks',
       'econ.bloomberg_blocked': 'Allow pop-ups for this site to open Bloomberg TV.',
       'bb.pin': 'Pin to screen',
-      'bb.mute': 'Mute / unmute',
       'bb.unpin': 'Unpin (scrolls with page)',
       'bb.popout': 'Open in a separate window',
       'bb.close': 'Close',
@@ -5301,7 +5293,6 @@
       'ticker.cat_stocks': 'Acciones',
       'econ.bloomberg_blocked': 'Permite ventanas emergentes para este sitio para abrir Bloomberg TV.',
       'bb.pin': 'Fijar en pantalla',
-      'bb.mute': 'Silenciar / activar sonido',
       'bb.unpin': 'Desfijar (se desplaza con la página)',
       'bb.popout': 'Abrir en ventana aparte',
       'bb.close': 'Cerrar',
@@ -22147,7 +22138,6 @@
     const bbFloaterPopout   = document.getElementById('bloomberg-floater-popout');
     const bbCloseBtn        = document.getElementById('bloomberg-floater-close');
     const bbFloaterPin      = document.getElementById('bloomberg-floater-pin');
-    const bbMuteBtn         = document.getElementById('bloomberg-floater-mute');
     // _bbPinned tracks the POSITIONING mode (not the button's label):
     //   false → position: fixed    → floater stays on screen while you scroll
     //   true  → position: absolute  → floater is parked on the page and scrolls away
@@ -22166,11 +22156,7 @@
     // or the manual fallback above; resolveBloombergLiveId() refreshes it when a key is set.
     let _bbLiveId = ((data.settings && data.settings.bloombergLiveId) || BLOOMBERG_LIVE_VIDEO_ID);
     function bbBuildUrl() {
-      // Mute reflects the user's saved preference (default: unmuted). Browser autoplay policy
-      // only permits UNMUTED autoplay when the page has enough user engagement; otherwise an
-      // unmuted stream may show a play button rather than auto-starting. Muted always autoplays.
-      const _mute = (data.settings && data.settings.bloombergMuted) ? 1 : 0;
-      return `https://www.youtube.com/embed/${_bbLiveId}?autoplay=1&mute=${_mute}&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
+      return `https://www.youtube.com/embed/${_bbLiveId}?autoplay=1&mute=1&rel=0&iv_load_policy=3&playsinline=1&modestbranding=1`;
     }
     // Self-healing lookup: asks the YouTube Data API for Bloomberg Television's current live
     // broadcast and switches to it (and caches it). Throttled to once every 6h because a
@@ -22254,8 +22240,6 @@
         _bbPinned = true;
         if (bbFloaterPin) { bbFloaterPin.classList.remove('active'); bbFloaterPin.title = t('bb.pin'); bbFloaterPin.setAttribute('aria-label', t('bb.pin')); }
       }
-      // Reflect the saved mute preference on the speaker button.
-      if (typeof updateBbMuteBtn === 'function') updateBbMuteBtn();
       // If the floater was dragged off-screen previously (e.g. the browser was
       // un-maximize / responsive shrink), the inline left/top from a previous
       // drag may now place the floater outside the visible area. Clamp to
@@ -22476,21 +22460,6 @@
         bbFloaterPin.title = t('bb.pin');
         if (data.settings) { data.settings.bloombergPinned = false; saveData(); }
       }
-    };
-
-    // Mute toggle: persists the user's choice and re-applies it to the live stream.
-    // The mute state is baked into the embed URL, so applying it means reloading the iframe;
-    // because the choice is remembered, that reload only happens when the user flips it.
-    function updateBbMuteBtn() {
-      if (!bbMuteBtn) return;
-      bbMuteBtn.classList.toggle('muted', !!(data.settings && data.settings.bloombergMuted));
-    }
-    if (bbMuteBtn) bbMuteBtn.onclick = () => {
-      if (!data.settings) data.settings = {};
-      data.settings.bloombergMuted = !data.settings.bloombergMuted;
-      saveData();
-      updateBbMuteBtn();
-      if (bbFloater && !bbFloater.hidden) bbFloaterIframe.src = bbBuildUrl();
     };
 
     // Drag implementation for the floater header. We track mousedown/mousemove/
