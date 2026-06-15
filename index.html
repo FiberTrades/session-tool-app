@@ -461,7 +461,8 @@
   .tk-cat-name { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
   .tk-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
   .tk-chips:empty { display: none; }
-  .tk-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border-2); color: var(--text-mid); font-size: 10px; letter-spacing: 0.03em; padding: 4px 8px; border-radius: 3px; }
+  .tk-chip { display: inline-flex; align-items: center; gap: 6px; background: var(--bg); border: 1px solid var(--border-2); color: var(--text-mid); font-size: 10px; letter-spacing: 0.03em; padding: 4px 8px; border-radius: 3px; cursor: grab; touch-action: none; user-select: none; -webkit-user-select: none; }
+  .tk-chip.tk-dragging { opacity: 0.55; cursor: grabbing; border-color: var(--good); }
   .tk-chip--custom { border-color: var(--text-dim); color: var(--text); }
   .tk-chip-x { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
   .tk-chip-x:hover { color: var(--bad); }
@@ -469,6 +470,7 @@
   .tk-chip-add { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
   .tk-chip-add:hover { color: var(--good); }
   .tk-add { display: flex; gap: 6px; margin-top: 11px; }
+  .tk-hint { margin: 0 0 14px; font-family: 'DM Mono', monospace; font-size: 10.5px; line-height: 1.6; color: var(--text-dim); }
   .tk-add-input { flex: 1; min-width: 0; background: var(--bg); border: 1px solid var(--border-2); color: var(--text); font-family: 'DM Mono', monospace; font-size: 11px; padding: 6px 9px; border-radius: 3px; }
   .tk-add-input:focus { outline: none; border-color: var(--text-mid); }
   .tk-add-btn { background: transparent; border: 1px solid var(--border-2); color: var(--text-mid); width: 32px; border-radius: 3px; cursor: pointer; font-size: 15px; line-height: 1; transition: all 150ms; }
@@ -2145,6 +2147,7 @@
     </div>
     <div class="ticker-set-section">
       <div class="ticker-set-label" data-i18n="ticker.symbols">Symbols</div>
+      <p class="tk-hint" data-i18n="ticker.symbols_hint">Use a TradingView symbol like NASDAQ:AAPL, FX:EURUSD or BINANCE:BTCUSDT — a company name on its own (e.g. "Apple") won't be found. Drag a symbol to reorder it.</p>
       <div class="tk-cats" id="tk-cats"></div>
     </div>
     <div class="ticker-set-actions">
@@ -4166,6 +4169,7 @@
       'ticker.custom_hint': 'Comma-separated TradingView symbols, e.g. FX:EURUSD or NASDAQ:AAPL.',
       'ticker.done': 'Done',
       'ticker.add_ph': 'Add symbol, e.g. FX:AUDUSD',
+      'ticker.symbols_hint': 'Use a TradingView symbol like NASDAQ:AAPL, FX:EURUSD or BINANCE:BTCUSDT — a company name on its own (e.g. "Apple") won\'t be found. Drag a symbol to reorder it.',
       'ticker.cat_forex': 'Forex',
       'ticker.cat_indices': 'Indices & rates',
       'ticker.cat_commodities': 'Commodities',
@@ -5253,6 +5257,7 @@
       'ticker.custom_hint': 'Símbolos de TradingView separados por comas, p. ej. FX:EURUSD o NASDAQ:AAPL.',
       'ticker.done': 'Hecho',
       'ticker.add_ph': 'Añadir símbolo, p. ej. FX:AUDUSD',
+      'ticker.symbols_hint': 'Usa un símbolo de TradingView como NASDAQ:AAPL, FX:EURUSD o BINANCE:BTCUSDT — el nombre de una empresa por sí solo (p. ej. "Apple") no se encontrará. Arrastra un símbolo para reordenarlo.',
       'ticker.cat_forex': 'Forex',
       'ticker.cat_indices': 'Índices y tipos',
       'ticker.cat_commodities': 'Materias primas',
@@ -22551,15 +22556,31 @@
   const TICKER_CAT_ORDER = ['forex', 'indices', 'commodities', 'crypto', 'stocks'];
   function tickerCatName(k) { return t('ticker.cat_' + k); }
 
+  // A category's visible symbols (presets minus removed, plus customs), sorted by the
+  // user's custom drag order (data.settings.tickerCats[k].order — array of proName tokens).
+  // Anything not in the order list keeps its default position at the end.
+  function orderedCatItems(k) {
+    const cats = (data.settings && data.settings.tickerCats) || {};
+    const c = cats[k] || {};
+    const removed = c.removed || [];
+    const items = [];
+    (TICKER_GROUPS[k] || []).forEach(s => { if (!removed.includes(s.proName)) items.push({ description: s.description, proName: s.proName, custom: false }); });
+    (c.custom || []).forEach((s, i) => { const v = String(s).trim(); if (v) items.push({ description: v.split(':').pop(), proName: v, custom: true, idx: i }); });
+    const order = c.order || [];
+    items.sort((a, b) => {
+      const ia = order.indexOf(a.proName), ib = order.indexOf(b.proName);
+      return (ia === -1 ? 1e9 : ia) - (ib === -1 ? 1e9 : ib);
+    });
+    return items;
+  }
+
   function tickerSymbolList() {
     const cats = (data.settings && data.settings.tickerCats) || {};
     let syms = [];
     TICKER_CAT_ORDER.forEach(k => {
       const c = cats[k];
       if (c && c.on) {
-        const removed = c.removed || [];
-        (TICKER_GROUPS[k] || []).forEach(s => { if (!removed.includes(s.proName)) syms.push(s); });
-        (c.custom || []).forEach(s => { const v = String(s).trim(); if (v) syms.push({ description: v.split(':').pop(), proName: v }); });
+        orderedCatItems(k).forEach(s => syms.push({ description: s.description, proName: s.proName }));
       }
     });
     const seen = {}; const out = [];
@@ -22621,17 +22642,62 @@
     let html = '';
     TICKER_CAT_ORDER.forEach(k => {
       const c = cats[k] || { on: false, custom: [], removed: [] };
-      const removed = c.removed || [];
-      const presets = (TICKER_GROUPS[k] || []).filter(s => !removed.includes(s.proName)).map(s => `<span class="tk-chip">${esc(s.description)}<button type="button" class="tk-chip-x" data-cat="${k}" data-pro="${esc(s.proName)}" aria-label="Remove ${esc(s.description)}">×</button></span>`).join('');
-      const customs = (c.custom || []).map((s, i) => `<span class="tk-chip tk-chip--custom">${esc(s)}<button type="button" class="tk-chip-x" data-cat="${k}" data-i="${i}" aria-label="Remove ${esc(s)}">×</button></span>`).join('');
-      const removedChips = (TICKER_GROUPS[k] || []).filter(s => removed.includes(s.proName)).map(s => `<span class="tk-chip tk-chip--off">${esc(s.description)}<button type="button" class="tk-chip-add" data-cat="${k}" data-pro="${esc(s.proName)}" aria-label="Add ${esc(s.description)}">+</button></span>`).join('');
+      const chips = orderedCatItems(k).map(s => {
+        const xBtn = s.custom
+          ? `<button type="button" class="tk-chip-x" data-cat="${k}" data-i="${s.idx}" aria-label="Remove ${esc(s.description)}">×</button>`
+          : `<button type="button" class="tk-chip-x" data-cat="${k}" data-pro="${esc(s.proName)}" aria-label="Remove ${esc(s.description)}">×</button>`;
+        return `<span class="tk-chip${s.custom ? ' tk-chip--custom' : ''}" data-cat="${k}" data-pro="${esc(s.proName)}">${esc(s.description)}${xBtn}</span>`;
+      }).join('');
       html += `<div class="tk-cat" data-cat="${k}">
         <label class="tk-cat-head"><input type="checkbox" class="tk-cat-on" data-cat="${k}"${c.on ? ' checked' : ''}><span class="tk-cat-name">${esc(tickerCatName(k))}</span></label>
-        <div class="tk-chips">${presets}${customs}${removedChips}</div>
+        <div class="tk-chips" data-cat="${k}">${chips}</div>
         <div class="tk-add"><input type="text" class="tk-add-input" data-cat="${k}" placeholder="${esc(t('ticker.add_ph'))}"><button type="button" class="tk-add-btn" data-cat="${k}" aria-label="Add">+</button></div>
       </div>`;
     });
     wrap.innerHTML = html;
+    setupTickerDrag();
+  }
+
+  // Pointer-based drag to reorder chips within a category (works with mouse + touch).
+  function setupTickerDrag() {
+    const wrap = document.getElementById('tk-cats');
+    if (!wrap || wrap._dragWired) return;
+    wrap._dragWired = true;
+    let drag = null;
+    wrap.addEventListener('pointerdown', e => {
+      const chip = e.target.closest('.tk-chip');
+      if (!chip || e.target.closest('button')) return; // let the × work
+      const container = chip.parentElement;
+      drag = { el: chip, container, cat: chip.getAttribute('data-cat'), id: e.pointerId, moved: false };
+      try { chip.setPointerCapture(e.pointerId); } catch (_) {}
+      chip.classList.add('tk-dragging');
+    });
+    wrap.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag.moved = true;
+      const sibs = [...drag.container.querySelectorAll('.tk-chip')].filter(c => c !== drag.el);
+      let placed = false;
+      for (const sib of sibs) {
+        const r = sib.getBoundingClientRect();
+        if (e.clientY < r.bottom && e.clientX < r.left + r.width / 2) {
+          drag.container.insertBefore(drag.el, sib); placed = true; break;
+        }
+      }
+      if (!placed) drag.container.appendChild(drag.el);
+    });
+    const finish = e => {
+      if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
+      drag.el.classList.remove('tk-dragging');
+      try { drag.el.releasePointerCapture(drag.id); } catch (_) {}
+      if (drag.moved) {
+        const order = [...drag.container.querySelectorAll('.tk-chip')].map(c => c.getAttribute('data-pro')).filter(Boolean);
+        const c = data.settings.tickerCats && data.settings.tickerCats[drag.cat];
+        if (c) { c.order = order; saveData(); if (data.settings.tickerEnabled) renderTickerWidget(); }
+      }
+      drag = null;
+    };
+    wrap.addEventListener('pointerup', finish);
+    wrap.addEventListener('pointercancel', finish);
   }
 
   function tickerAddCustom(cat, val) {
@@ -22658,8 +22724,8 @@
     if (c && c.custom) { c.custom.splice(idx, 1); saveData(); renderTickerSettings(); if (data.settings.tickerEnabled) renderTickerWidget(); }
   }
 
-  // Removing a default symbol just hides it (kept in `removed` so it can be restored
-  // from the dimmed chip, or by re-typing the symbol).
+  // Removing a default symbol hides it from the ticker and the settings list. It's kept in
+  // `removed` so the same default can be brought back by re-typing its symbol in the add box.
   function tickerRemovePreset(cat, pro) {
     const c = data.settings.tickerCats && data.settings.tickerCats[cat];
     if (!c) return;
