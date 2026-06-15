@@ -103,7 +103,7 @@
   .copies-input:focus { border-color: var(--text-dim); }
   .container { max-width: 1080px; margin: 0 auto; padding: 80px 32px 120px; }
   .header { margin-bottom: 56px; position: relative; }
-  .brand { font-size: 10px; letter-spacing: 0.4em; color: inherit; text-transform: uppercase; margin-bottom: 0; }
+  .brand { font-size: 10px; letter-spacing: 0.15em; color: inherit; text-transform: uppercase; margin-bottom: 0; }
   .brand-row { display: flex; margin-bottom: 56px; }
   /* Settings entry point — the wordmark "SETTINGS" + gear icon as one clickable
      button at the top-left of the header. Opens the global Settings modal (account
@@ -471,6 +471,12 @@
   .tk-chip:hover .tk-grip { color: var(--cat-accent, var(--text-mid)); }
   .tk-chip.tk-dragging { opacity: 0.95; box-shadow: 0 12px 28px rgba(0,0,0,0.6); transition: none; }
   .tk-chip-ph { display: inline-flex; box-sizing: border-box; flex: 0 0 auto; border: 1px dashed var(--border-2); border-radius: 4px; background: rgba(255,255,255,0.03); }
+  .tk-cat-head-row { display: flex; align-items: center; gap: 8px; }
+  .tk-cat-head-row .tk-cat-head { flex: 1 1 auto; }
+  .tk-cat-grip { display: inline-flex; align-items: center; color: var(--text-dim); cursor: grab; touch-action: none; font-size: 13px; line-height: 1; letter-spacing: -2px; flex: 0 0 auto; padding: 2px 1px; }
+  .tk-cat-grip:hover { color: var(--cat-accent, var(--text-mid)); }
+  .tk-cat-ph { box-sizing: border-box; border: 1px dashed var(--border-2); border-radius: 5px; background: rgba(255,255,255,0.03); }
+  .tk-cat.tk-cat-dragging { opacity: 0.97; box-shadow: 0 16px 40px rgba(0,0,0,0.55); transition: none; background: var(--bg-elev); }
   .tk-chip-label { line-height: 1; }
   .tk-chip-x { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1; padding: 0 1px; transition: color 150ms; }
   .tk-chip-x:hover { color: var(--bad); }
@@ -6970,6 +6976,25 @@
       // Carry over any old uncategorised custom symbols into Stocks so they aren't lost.
       const oc = d.settings.tickerCustom || [];
       if (oc.length) d.settings.tickerCats.stocks.custom = oc.slice();
+    }
+    // Ticker watchlist v2: ship a full curated default set (forex / indices / commodities /
+    // crypto / stocks) as built-in presets with proper TradingView codes. Earlier installs
+    // had several of these as ad-hoc custom symbols typed as plain words ("Nasdaq", "DJI",
+    // "Silver", "BRENT", bare stock tickers, "SpaceX") plus a removed US-10Y — which would
+    // now collide with the presets and render duplicate chips. Reset the symbol lists once
+    // so the presets take over cleanly. Category on/off choices are preserved; after this
+    // runs the flag stops it re-firing, so later pins/toggles/custom symbols all persist.
+    if (!d.settings._tickerWatchlistV2) {
+      const prev = d.settings.tickerCats || {};
+      const keepOn = (k) => (prev[k] && typeof prev[k].on === 'boolean') ? prev[k].on : true;
+      d.settings.tickerCats = {
+        forex:       { on: keepOn('forex'),       custom: [], removed: [] },
+        indices:     { on: keepOn('indices'),     custom: [], removed: [] },
+        commodities: { on: keepOn('commodities'), custom: [], removed: [] },
+        crypto:      { on: keepOn('crypto'),       custom: [], removed: [] },
+        stocks:      { on: keepOn('stocks'),       custom: [], removed: [] }
+      };
+      d.settings._tickerWatchlistV2 = true;
     }
     if (d.settings.windowEnd === undefined) d.settings.windowEnd = '10:00';
     if (d.settings.sessionDayCutoff === undefined) d.settings.sessionDayCutoff = '22:00';
@@ -22690,12 +22715,21 @@
   // (offline / file://) the bar hides itself rather than leaving an empty gap.
   const TICKER_GROUPS = {
     forex:       [ { description: 'EUR/USD', proName: 'FX:EURUSD' }, { description: 'GBP/USD', proName: 'FX:GBPUSD' }, { description: 'USD/JPY', proName: 'FX:USDJPY' } ],
-    indices:     [ { description: 'S&P 500', proName: 'FOREXCOM:SPXUSD' }, { description: 'Dollar Index', proName: 'CAPITALCOM:DXY' }, { description: 'US 10Y', proName: 'OANDA:USB10YUSD' } ],
-    commodities: [ { description: 'Gold', proName: 'TVC:GOLD' }, { description: 'Oil (WTI)', proName: 'TVC:USOIL' } ],
+    indices:     [ { description: 'S&P 500', proName: 'FOREXCOM:SPXUSD' }, { description: 'Dollar Index', proName: 'CAPITALCOM:DXY' }, { description: 'Nasdaq', proName: 'FOREXCOM:NSXUSD' }, { description: 'DJI', proName: 'FOREXCOM:DJI' } ],
+    commodities: [ { description: 'Gold', proName: 'TVC:GOLD' }, { description: 'Oil (WTI)', proName: 'TVC:USOIL' }, { description: 'Silver', proName: 'TVC:SILVER' }, { description: 'BRENT', proName: 'TVC:UKOIL' } ],
     crypto:      [ { description: 'Bitcoin', proName: 'BINANCE:BTCUSDT' }, { description: 'Ethereum', proName: 'BINANCE:ETHUSDT' } ],
-    stocks:      [ { description: 'Apple', proName: 'NASDAQ:AAPL' }, { description: 'Tesla', proName: 'NASDAQ:TSLA' }, { description: 'Nvidia', proName: 'NASDAQ:NVDA' } ]
+    stocks:      [ { description: 'MSFT', proName: 'NASDAQ:MSFT' }, { description: 'AMZN', proName: 'NASDAQ:AMZN' }, { description: 'Apple', proName: 'NASDAQ:AAPL' }, { description: 'Tesla', proName: 'NASDAQ:TSLA' }, { description: 'Nvidia', proName: 'NASDAQ:NVDA' }, { description: 'SpaceX', proName: 'SpaceX' }, { description: 'AMD', proName: 'NASDAQ:AMD' }, { description: 'TER', proName: 'NASDAQ:TER' }, { description: 'GOOGL', proName: 'NASDAQ:GOOGL' }, { description: 'AVGO', proName: 'NASDAQ:AVGO' }, { description: 'META', proName: 'NASDAQ:META' }, { description: 'JPM', proName: 'NYSE:JPM' }, { description: 'BRK.B', proName: 'NYSE:BRK.B' }, { description: 'VOO', proName: 'AMEX:VOO' } ]
   };
   const TICKER_CAT_ORDER = ['forex', 'indices', 'commodities', 'crypto', 'stocks'];
+  // The category display order is user-draggable and persisted in settings. Falls back to the
+  // built-in order and self-heals: drops any unknown keys and appends any categories missing
+  // from the saved order, so adding a new category later can't break an existing install.
+  function tickerCatList() {
+    const saved = (data.settings && Array.isArray(data.settings.tickerCatOrder)) ? data.settings.tickerCatOrder : [];
+    const out = saved.filter(k => TICKER_CAT_ORDER.includes(k));
+    TICKER_CAT_ORDER.forEach(k => { if (!out.includes(k)) out.push(k); });
+    return out;
+  }
   function tickerCatName(k) { return t('ticker.cat_' + k); }
 
   // A category's visible symbols (presets minus removed, plus customs), sorted by the
@@ -22719,7 +22753,7 @@
   function tickerSymbolList() {
     const cats = (data.settings && data.settings.tickerCats) || {};
     let syms = [];
-    TICKER_CAT_ORDER.forEach(k => {
+    tickerCatList().forEach(k => {
       const c = cats[k];
       if (c && c.on) {
         orderedCatItems(k).forEach(s => syms.push({ description: s.description, proName: s.proName }));
@@ -22743,7 +22777,10 @@
     container.appendChild(widgetDiv);
     const script = document.createElement('script');
     script.type = 'text/javascript';
-    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js';
+    // Cache-bust the embed URL so each rebuild runs a fresh loader instance. Without this the
+    // TradingView ticker-tape embed often keeps showing the previous symbol set when re-injected
+    // (e.g. after toggling a category off), because the cached loader doesn't re-render.
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-ticker-tape.js?cb=' + Date.now();
     script.async = true;
     // If the embed can't load (offline / blocked), hide the whole bar so there's
     // no empty strip left behind.
@@ -22782,7 +22819,7 @@
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const cats = (data.settings && data.settings.tickerCats) || {};
     let html = '';
-    TICKER_CAT_ORDER.forEach(k => {
+    tickerCatList().forEach(k => {
       const c = cats[k] || { on: false, custom: [], removed: [] };
       const chips = orderedCatItems(k).map(s => {
         const xBtn = s.custom
@@ -22791,7 +22828,10 @@
         return `<span class="tk-chip" data-cat="${k}" data-pro="${esc(s.proName)}"><span class="tk-grip" aria-hidden="true">⠿</span><span class="tk-chip-label">${esc(s.description)}</span>${xBtn}</span>`;
       }).join('');
       html += `<div class="tk-cat" data-cat="${k}">
-        <label class="tk-cat-head"><input type="checkbox" class="tk-cat-on" data-cat="${k}"${c.on ? ' checked' : ''}><span class="tk-cat-dot" aria-hidden="true"></span><span class="tk-cat-name">${esc(tickerCatName(k))}</span></label>
+        <div class="tk-cat-head-row">
+          <span class="tk-cat-grip" aria-hidden="true">⠿</span>
+          <label class="tk-cat-head"><input type="checkbox" class="tk-cat-on" data-cat="${k}"${c.on ? ' checked' : ''}><span class="tk-cat-dot" aria-hidden="true"></span><span class="tk-cat-name">${esc(tickerCatName(k))}</span></label>
+        </div>
         <div class="tk-chips" data-cat="${k}">${chips}</div>
         <button type="button" class="tk-add-trigger" data-cat="${k}"><span aria-hidden="true">+</span>${esc(t('ticker.add_sym'))}</button>
         <div class="tk-add"><input type="text" class="tk-add-input" data-cat="${k}" placeholder="${esc(t('ticker.add_ph'))}"><button type="button" class="tk-add-btn" data-cat="${k}" aria-label="Add">+</button></div>
@@ -22799,6 +22839,7 @@
     });
     wrap.innerHTML = html;
     setupTickerDrag();
+    setupTickerCatDrag();
   }
 
   // Pointer-based drag to reorder chips within a category (mouse + touch). Drag starts
@@ -22813,17 +22854,32 @@
     // Where should the gap go? Returns the real chip the placeholder should sit BEFORE
     // (null = end). The dragged chip floats on <body> and the placeholder is .tk-chip-ph,
     // so a plain .tk-chip query already excludes both — we just step over the gap itself.
+    // Settled (untransformed) box of a chip. getBoundingClientRect() includes the in-flight
+    // FLIP transform, so while chips animate — especially when one is flying between two
+    // wrapped rows (a big translate) — the measured position is mid-flight and the drop
+    // target oscillates every frame (the "glitchy 2-row" bug). Subtracting the live transform
+    // gives the chip's final post-reflow slot, so the target stays stable during animation.
+    function chipBox(el) {
+      const r = el.getBoundingClientRect();
+      let tx = 0, ty = 0;
+      const tf = getComputedStyle(el).transform;
+      if (tf && tf !== 'none') {
+        try { const m = new DOMMatrixReadOnly(tf); tx = m.m41; ty = m.m42; } catch (_) {}
+      }
+      return { left: r.left - tx, top: r.top - ty, width: r.width, height: r.height,
+               cx: r.left + r.width / 2 - tx, cy: r.top + r.height / 2 - ty };
+    }
+
     function insertRef(container, x, y) {
-      let best = null, bestD = Infinity;
+      let best = null, bestD = Infinity, bestBox = null;
       container.querySelectorAll('.tk-chip').forEach(sib => {
-        const r = sib.getBoundingClientRect();
-        const dx = x - (r.left + r.width / 2), dy = y - (r.top + r.height / 2);
+        const b = chipBox(sib);
+        const dx = x - b.cx, dy = y - b.cy;
         const d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; best = sib; }
+        if (d < bestD) { bestD = d; best = sib; bestBox = b; }
       });
       if (!best) return null;
-      const r = best.getBoundingClientRect();
-      let ref = (x < r.left + r.width / 2) ? best : best.nextElementSibling;
+      let ref = (x < bestBox.left + bestBox.width / 2) ? best : best.nextElementSibling;
       if (ref === drag.ph) ref = drag.ph.nextElementSibling;
       return ref;
     }
@@ -22913,6 +22969,124 @@
         const order = [...drag.container.querySelectorAll('.tk-chip')].map(c => c.getAttribute('data-pro')).filter(Boolean);
         const c = data.settings.tickerCats && data.settings.tickerCats[drag.cat];
         if (c) { c.order = order; saveData(); if (data.settings.tickerEnabled) renderTickerWidget(); }
+      }
+      drag = null;
+    };
+    wrap.addEventListener('pointerup', finish);
+    wrap.addEventListener('pointercancel', finish);
+  }
+
+  // Drag to reorder the category cards themselves (move Commodities above Forex, etc.).
+  // Same float + placeholder + FLIP approach as the chip drag, but vertical. The drag starts
+  // from the header grip (.tk-cat-grip) so it never clashes with the per-chip grip, and the
+  // resulting order is saved to data.settings.tickerCatOrder (and reflected in the ticker bar).
+  function setupTickerCatDrag() {
+    const wrap = document.getElementById('tk-cats');
+    if (!wrap || wrap._catDragWired) return;
+    wrap._catDragWired = true;
+    let drag = null;
+
+    // Settled top/middle of a card, with any in-flight FLIP transform removed (same reason as
+    // the chip version): keeps the drop target stable while cards are animating.
+    function cardBox(el) {
+      const r = el.getBoundingClientRect();
+      let ty = 0;
+      const tf = getComputedStyle(el).transform;
+      if (tf && tf !== 'none') { try { ty = new DOMMatrixReadOnly(tf).m42; } catch (_) {} }
+      return { top: r.top - ty, mid: r.top + r.height / 2 - ty };
+    }
+
+    function insertRef(y) {
+      let best = null, bestD = Infinity, bestMid = 0;
+      wrap.querySelectorAll('.tk-cat').forEach(c => {
+        const b = cardBox(c);
+        const d = Math.abs(y - b.mid);
+        if (d < bestD) { bestD = d; best = c; bestMid = b.mid; }
+      });
+      if (!best) return null;
+      let ref = (y < bestMid) ? best : best.nextElementSibling;
+      if (ref === drag.ph) ref = drag.ph.nextElementSibling;
+      return ref;
+    }
+
+    function flip(prev) {
+      wrap.querySelectorAll('.tk-cat').forEach(c => {
+        const b = prev.get(c); if (!b) return;
+        const a = c.getBoundingClientRect();
+        const dy = b.top - a.top;
+        if (!dy) return;
+        c.style.transition = 'none';
+        c.style.transform = 'translateY(' + dy + 'px)';
+        void c.offsetWidth;
+        c.style.transition = 'transform 160ms cubic-bezier(0.2,0.8,0.2,1)';
+        c.style.transform = '';
+      });
+    }
+
+    wrap.addEventListener('pointerdown', e => {
+      const grip = e.target.closest('.tk-cat-grip');
+      if (!grip) return; // only the category header grip starts a category drag
+      const card = grip.closest('.tk-cat');
+      if (!card) return;
+      drag = { card: card, id: e.pointerId, startY: e.clientY, active: false, ph: null };
+      try { wrap.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    });
+
+    wrap.addEventListener('pointermove', e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      if (!drag.active) {
+        if (Math.abs(e.clientY - drag.startY) < 5) return;
+        drag.active = true;
+        const card = drag.card, r = card.getBoundingClientRect(), next = card.nextElementSibling;
+        drag.offX = e.clientX - r.left;
+        drag.offY = e.clientY - r.top;
+        const ph = document.createElement('div');
+        ph.className = 'tk-cat-ph';
+        ph.style.height = r.height + 'px';
+        card.style.boxSizing = 'border-box';
+        card.style.width = r.width + 'px';
+        card.style.position = 'fixed';
+        card.style.left = r.left + 'px';
+        card.style.top = r.top + 'px';
+        card.style.margin = '0';
+        card.style.zIndex = '3000';
+        card.style.pointerEvents = 'none';
+        card.classList.add('tk-cat-dragging');
+        document.body.appendChild(card);
+        if (next) wrap.insertBefore(ph, next); else wrap.appendChild(ph);
+        drag.ph = ph;
+        document.body.style.cursor = 'grabbing';
+        document.body.style.userSelect = 'none';
+      }
+      drag.card.style.left = (e.clientX - drag.offX) + 'px';
+      drag.card.style.top = (e.clientY - drag.offY) + 'px';
+      const ref = insertRef(e.clientY);
+      const placed = ref ? (drag.ph.nextElementSibling === ref) : (wrap.lastElementChild === drag.ph);
+      if (!placed) {
+        const prev = new Map();
+        wrap.querySelectorAll('.tk-cat').forEach(c => prev.set(c, c.getBoundingClientRect()));
+        if (ref) wrap.insertBefore(drag.ph, ref); else wrap.appendChild(drag.ph);
+        flip(prev);
+      }
+    });
+
+    const finish = e => {
+      if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
+      try { wrap.releasePointerCapture(drag.id); } catch (_) {}
+      if (drag.active && drag.ph) {
+        const card = drag.card, ph = drag.ph;
+        ph.parentElement.insertBefore(card, ph);
+        ph.remove();
+        card.classList.remove('tk-cat-dragging');
+        card.removeAttribute('style');
+        wrap.querySelectorAll('.tk-cat').forEach(c => { c.style.transition = ''; c.style.transform = ''; });
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+        const order = [...wrap.querySelectorAll('.tk-cat')].map(c => c.getAttribute('data-cat')).filter(Boolean);
+        data.settings.tickerCatOrder = order;
+        saveData();
+        if (data.settings.tickerEnabled) renderTickerWidget();
       }
       drag = null;
     };
