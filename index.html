@@ -22278,20 +22278,37 @@
       // Restore the saved pin choice (default: unpinned / parked — scrolls with the page).
       // Pinned = position:fixed top-right (stays on screen as you scroll); unpinned = clear
       // the inline position so the CSS default (position:absolute top-right) takes over.
-      if (data.settings && data.settings.bloombergPinned) {
+      const _bbWantPinned = !!(data.settings && data.settings.bloombergPinned);
+      const _bbSavedPos = (data.settings && data.settings.bloombergPos
+                           && data.settings.bloombergPos.pinned === _bbWantPinned)
+                          ? data.settings.bloombergPos : null;
+      if (_bbWantPinned) {
         bbFloater.style.position = 'fixed';
-        bbFloater.style.top = '60px';
-        bbFloater.style.left = 'auto';
-        bbFloater.style.right = '44px';
         _bbPinned = false;
         if (bbFloaterPin) { bbFloaterPin.classList.add('active'); bbFloaterPin.title = t('bb.unpin'); bbFloaterPin.setAttribute('aria-label', t('bb.unpin')); }
+        if (_bbSavedPos) {
+          bbFloater.style.left  = _bbSavedPos.left + 'px';
+          bbFloater.style.top   = _bbSavedPos.top + 'px';
+          bbFloater.style.right = 'auto';
+        } else {
+          bbFloater.style.top = '60px';
+          bbFloater.style.left = 'auto';
+          bbFloater.style.right = '44px';
+        }
       } else {
-        bbFloater.style.position = '';
-        bbFloater.style.top = '';
-        bbFloater.style.left = '';
-        bbFloater.style.right = '';
         _bbPinned = true;
         if (bbFloaterPin) { bbFloaterPin.classList.remove('active'); bbFloaterPin.title = t('bb.pin'); bbFloaterPin.setAttribute('aria-label', t('bb.pin')); }
+        if (_bbSavedPos) {
+          bbFloater.style.position = 'absolute';
+          bbFloater.style.left  = _bbSavedPos.left + 'px';
+          bbFloater.style.top   = _bbSavedPos.top + 'px';
+          bbFloater.style.right = 'auto';
+        } else {
+          bbFloater.style.position = '';
+          bbFloater.style.top = '';
+          bbFloater.style.left = '';
+          bbFloater.style.right = '';
+        }
       }
       // If the floater was dragged off-screen previously (e.g. the browser was
       // un-maximize / responsive shrink), the inline left/top from a previous
@@ -22317,6 +22334,22 @@
       bbFloater.style.top      = '';
       bbFloater.style.left     = '';
       bbFloater.style.right    = '';
+    }
+    // Remember the floater's current on-screen spot so reopening restores it exactly (like
+    // size already is). Stores left/top in the active mode's coordinate space plus which mode
+    // it was set in (pinned = fixed/viewport coords, unpinned = absolute/page coords). If the
+    // floater is right-anchored (default slot, no explicit left/top) we forget the saved spot
+    // so the default is used.
+    function bbSavePos() {
+      if (!data.settings || !bbFloater) return;
+      const left = parseFloat(bbFloater.style.left);
+      const top  = parseFloat(bbFloater.style.top);
+      if (Number.isFinite(left) && Number.isFinite(top) && bbFloater.style.right === 'auto') {
+        data.settings.bloombergPos = { left: Math.round(left), top: Math.round(top), pinned: !_bbPinned };
+      } else {
+        delete data.settings.bloombergPos;
+      }
+      saveData();
     }
     function bbPopOut() {
       // If popup already exists, just focus it and ditch the floater.
@@ -22499,6 +22532,7 @@
         bbFloaterPin.classList.add('active');
         bbFloaterPin.title = t('bb.unpin');
         if (data.settings) { data.settings.bloombergPinned = true; saveData(); }
+        bbSavePos();
       } else {
         // On-screen (fixed) → Parked (absolute): user is UNPINNING (let it scroll with the page)
         const rect = bbFloater.getBoundingClientRect();
@@ -22512,6 +22546,7 @@
         bbFloaterPin.classList.remove('active');
         bbFloaterPin.title = t('bb.pin');
         if (data.settings) { data.settings.bloombergPinned = false; saveData(); }
+        bbSavePos();
       }
     };
 
@@ -22571,6 +22606,7 @@
         dragging = false;
         bbFloaterShield.hidden = true;
         document.body.style.userSelect = '';
+        bbSavePos();
       });
     }
 
