@@ -111,7 +111,7 @@
      visible from any tab. Monochrome line-drawn SVG matching the icons elsewhere. */
   .settings-gear { display: inline-flex; align-items: center; gap: 10px; background: transparent; border: none; padding: 0; cursor: pointer; color: var(--text-dim); opacity: 0.7; transition: opacity 150ms, color 150ms; }
   .settings-gear:hover { opacity: 1; color: var(--text); }
-  .settings-gear svg { width: 16px; height: 16px; display: block; }
+  .settings-gear svg { width: 22px; height: 22px; display: block; }
   /* Scope picker — sits to the LEFT of the settings gear in the top-right.
      A pill-shaped button + dropdown listing all accounts (active first,
      archived after a divider, then a Lifetime option). The active account
@@ -2174,7 +2174,6 @@
     <div class="brand-row">
       <button type="button" class="settings-gear" id="settings-gear">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-        <span class="brand" data-i18n="settings.title">Settings</span>
       </button>
     </div>
     <!-- Account-scope picker — flips which account's trades drive every stat
@@ -22761,8 +22760,9 @@
     });
     const seen = {}; const out = [];
     syms.forEach(s => { if (!seen[s.proName]) { seen[s.proName] = 1; out.push(s); } });
-    // Never render an empty config — fall back to forex so the bar isn't blank.
-    return out.length ? out : TICKER_GROUPS.forex.slice();
+    // When nothing is enabled, return an empty list — renderTickerWidget hides the bar
+    // entirely rather than falling back to a default set the user has switched off.
+    return out;
   }
 
   function renderTickerWidget() {
@@ -22770,6 +22770,11 @@
     if (!host) return;
     host.innerHTML = '';
     const bar = document.getElementById('ticker-bar');
+    const syms = tickerSymbolList();
+    // No categories enabled → nothing to show. Hide the whole bar (no empty strip, no
+    // fallback symbols) and stop.
+    if (!syms.length) { if (bar) bar.hidden = true; return; }
+    if (bar) bar.hidden = false;
     const container = document.createElement('div');
     container.className = 'tradingview-widget-container';
     const widgetDiv = document.createElement('div');
@@ -22786,7 +22791,7 @@
     // no empty strip left behind.
     script.onerror = () => { if (bar) bar.hidden = true; };
     script.text = JSON.stringify({
-      symbols: tickerSymbolList(),
+      symbols: syms,
       showSymbolLogo: true,
       isTransparent: false,
       displayMode: 'adaptive',
@@ -22871,14 +22876,23 @@
     }
 
     function insertRef(container, x, y) {
-      let best = null, bestD = Infinity, bestBox = null;
-      container.querySelectorAll('.tk-chip').forEach(sib => {
-        const b = chipBox(sib);
+      // Treat real chips AND the placeholder as candidate slots, each measured at its settled
+      // (untransformed) position. Pick the slot whose centre is nearest the pointer. If that's
+      // the placeholder's own slot, leave it where it is. This half-slot dead zone is what
+      // stops the drop target flip-flopping when variable-width chips rewrap between two rows
+      // (the residual 2-row glitch that survived the transform fix): once the gap is under the
+      // cursor it stays put until the cursor clearly crosses onto a different chip.
+      let best = null, bestD = Infinity, bestBox = null, bestIsPh = false;
+      const consider = (el, isPh) => {
+        const b = chipBox(el);
         const dx = x - b.cx, dy = y - b.cy;
         const d = dx * dx + dy * dy;
-        if (d < bestD) { bestD = d; best = sib; bestBox = b; }
-      });
-      if (!best) return null;
+        if (d < bestD) { bestD = d; best = el; bestBox = b; bestIsPh = isPh; }
+      };
+      container.querySelectorAll('.tk-chip').forEach(el => consider(el, false));
+      if (drag.ph) consider(drag.ph, true);
+      // Nearest slot is the placeholder itself → already in the right spot, don't move.
+      if (!best || bestIsPh) return drag.ph ? drag.ph.nextElementSibling : null;
       let ref = (x < bestBox.left + bestBox.width / 2) ? best : best.nextElementSibling;
       if (ref === drag.ph) ref = drag.ph.nextElementSibling;
       return ref;
