@@ -1008,6 +1008,8 @@
   .session-live-pill { margin: 0 0 24px; padding: 0; background: transparent; border: none; display: flex; align-items: center; gap: 12px; font-family: 'DM Mono', monospace; font-size: 12px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--text-mid); }
   .session-live-pill.hidden { display: none; }
   .session-live-pill-label { letter-spacing: 0.28em; color: var(--good); }
+  .session-live-end { margin-left: auto; background: transparent; border: 1px solid var(--border-2); color: var(--text-dim); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; padding: 5px 12px; border-radius: 4px; cursor: pointer; transition: color 150ms, border-color 150ms; }
+  .session-live-end:hover { color: var(--text); border-color: var(--text-dim); }
 
   .session-live-banner { position: relative; margin-top: 16px; padding: 24px 30px; background: var(--bg-elev); border: 1px solid var(--border-2); border-left: 4px solid var(--good); }
 
@@ -2210,6 +2212,7 @@
   <div class="session-live-pill hidden" id="session-live-pill">
     <span class="session-live-dot"></span>
     <span class="session-live-pill-label" data-i18n="banner.session_live">Session live</span>
+    <button type="button" class="session-live-end" id="session-live-end" data-i18n="banner.finish_session">Finish session</button>
   </div>
 
   <div class="page active" id="page-bias">
@@ -3743,6 +3746,8 @@
       'footer.session_closed': 'Session closed — Rest & Reflect',
       // ----- Session-live banner (Review tab) -----
       'banner.session_live': 'Session live',
+      'banner.finish_session': 'Finish session',
+      'banner.finish_confirm': 'Finish the session early? This ends the live session for today.',
       'banner.as_it_happens': 'As it happens',
       'banner.dismiss_aria': 'Dismiss until tomorrow',
       'banner.body_html': "Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. If you take a trade, just tap the <strong>LONG or SHORT</strong> buttons to log them in the moment; the full write-up comes once the session is over.",
@@ -4835,6 +4840,8 @@
       'footer.session_closed': 'Sesión cerrada — Descansa y Reflexiona',
       // ----- Session-live banner (Review tab) -----
       'banner.session_live': 'Sesión en vivo',
+      'banner.finish_session': 'Finalizar sesión',
+      'banner.finish_confirm': '¿Finalizar la sesión antes de tiempo? Esto termina la sesión en vivo de hoy.',
       'banner.as_it_happens': 'En el momento',
       'banner.dismiss_aria': 'Descartar hasta mañana',
       'banner.body_html': "Quédate en esta pestaña mientras tu sesión esté en vivo — tu <strong>sesgo de la mañana queda justo abajo</strong> para servirte de ancla. Si entras en una operación, solo toca los botones <strong>LARGO o CORTO</strong> para registrarla en el momento; el análisis completo llega cuando termine la sesión.",
@@ -6139,6 +6146,10 @@
   // Is the current local time within the configured session window?
   function isSessionLive() {
     if (!data || !data.settings) return false;
+    // Manually finished early today → treat the session as over for the rest of the day
+    // (hides the live pill/banner and un-collapses the Review tab). Date-keyed, so it clears
+    // itself tomorrow without any extra reset.
+    if (data._sessionEndedEarly === new Date().toISOString().slice(0, 10)) return false;
     // Weekend = FX closed → the session is never "live" on Sat/Sun, regardless
     // of the clock. This single check also hides the pill, drops the live banner,
     // and reverts the tab/header label to "Session Review" on weekends.
@@ -6632,6 +6643,7 @@
       // dismiss flag so the (possibly re-timed) session shows its banner again.
       if (field === 'window' || field === 'sessionName') {
         data._sessionLiveDismissed = null;
+        data._sessionEndedEarly = null;
       }
       saveData();
       el.dataset.editing = '';
@@ -24339,6 +24351,19 @@
       dismiss.addEventListener('click', () => {
         const todayKey = new Date().toISOString().slice(0, 10);
         data._sessionLiveDismissed = todayKey;
+        saveData();
+        updateSessionLiveBanner();
+      });
+    }
+    // "Finish session" ends the live session early for today: sets a date-keyed flag so
+    // isSessionLive() returns false, which hides the pill/banner and reveals the Review tab's
+    // post-session reflection sections. Confirmed first since there's no one-tap undo (editing
+    // the session window, or simply the next day, brings the live session back).
+    const endBtn = document.getElementById('session-live-end');
+    if (endBtn) {
+      endBtn.addEventListener('click', () => {
+        if (!confirm(t('banner.finish_confirm') || 'Finish the session early? This ends the live session for today.')) return;
+        data._sessionEndedEarly = new Date().toISOString().slice(0, 10);
         saveData();
         updateSessionLiveBanner();
       });
