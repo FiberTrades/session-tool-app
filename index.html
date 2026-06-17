@@ -6071,6 +6071,12 @@
     }
   }
 
+  // Track the minute + day seen on the previous tick so we can edge-detect the session
+  // boundary being crossed (instead of an exact HH:MM match, which background-tab timer
+  // throttling routinely skips). Both start null so opening mid-session — or the first tick
+  // of a new day — never replays a stale alert.
+  let _lastTickMins = null;
+  let _lastTickDay = null;
   // Session boundary alerts: fire once per day when local time reaches windowStart and windowEnd.
   // Uses date-keyed flags so the alert only fires once even with reloads / multi-tab.
   function checkSessionBoundaryAlerts(now, hhmm) {
@@ -6084,12 +6090,27 @@
       const ws = data.settings.windowStart || '08:00';
       const we = data.settings.windowEnd   || '10:00';
       const todayKey = now.toISOString().slice(0, 10);
-      if (hhmm === ws && data._lastSessionStartAlert !== todayKey) {
+      // Edge-detect the boundary CROSSING since the previous tick rather than requiring the
+      // clock to land exactly on the start/end minute. A background tab throttles this 1s
+      // timer to ~once a minute, so an exact "HH:MM === start" check frequently misses the
+      // minute entirely (alert never fires) or fires a minute late. Firing as soon as we
+      // observe the boundary has been passed makes it fire on the first tick at/after it and
+      // never skip. Reset on a new day so an overnight/weekend gap can't look like a crossing.
+      const [wsH, wsM] = ws.split(':').map(Number);
+      const [weH, weM] = we.split(':').map(Number);
+      const startMins = wsH * 60 + wsM;
+      const endMins   = weH * 60 + weM;
+      const nowMins   = now.getHours() * 60 + now.getMinutes();
+      if (_lastTickDay !== todayKey) { _lastTickMins = null; _lastTickDay = todayKey; }
+      const prevMins = _lastTickMins;
+      _lastTickMins  = nowMins;
+      const crossed = (b) => prevMins !== null && prevMins < b && nowMins >= b;
+      if (crossed(startMins) && data._lastSessionStartAlert !== todayKey) {
         data._lastSessionStartAlert = todayKey;
         saveData();
         fireSessionAlert('start');
       }
-      if (hhmm === we && data._lastSessionEndAlert !== todayKey) {
+      if (crossed(endMins) && data._lastSessionEndAlert !== todayKey) {
         data._lastSessionEndAlert = todayKey;
         saveData();
         fireSessionAlert('end');
@@ -6448,6 +6469,10 @@
   // Now that `data` exists, kick off the live clock + boundary-alert ticker
   renderMetaTime();
   setInterval(renderMetaTime, 1000);
+  // When the tab/app returns to the foreground, run the clock + boundary check immediately so a
+  // session open/close that fell due while the tab was backgrounded (and its timer throttled)
+  // fires the moment the user comes back, instead of waiting for the next throttled tick.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) renderMetaTime(); });
   let equityMode = 'balance';
 
   // Parse an embedded time range out of a Session-name string.
