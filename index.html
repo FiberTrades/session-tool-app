@@ -8768,6 +8768,45 @@
     renderBiasPreview();
   }
   // Shared: actually copy the bias to Discord and move the user through to the session.
+  // === FIBER TRADES Discord channels ===
+  // Each "Copy for Discord" button copies its post AND opens the matching channel, so it's a
+  // quick copy → paste → send. (Discord can't be auto-posted as you without self-botting, so the
+  // paste step is what keeps the post coming from your own account.)
+  // Desktop: launch the installed Discord app via its discord:// protocol (Windows/Mac desktop
+  // client only — not Linux/web). Mobile: discord:// isn't supported there, so use the https
+  // channel link, which deep-links into the Discord mobile app. The open is triggered inside the
+  // click gesture so it isn't popup-blocked, and the clipboard is written in the same gesture so
+  // it's ready on arrival. IDs are this server's channels — they'd move to per-user settings when
+  // the app goes multi-user.
+  const DISCORD_GUILD = '1504944307277136025';
+  const DISCORD_CHANNELS = {
+    bias:   '1505993399138914334',
+    review: '1506025361316511814',
+    weekly: '1504961771381985393',
+    series: '1505032180621905960',
+  };
+  function jumpToDiscord(which) {
+    const ch = DISCORD_CHANNELS[which];
+    if (!ch) return;
+    const path = 'channels/' + DISCORD_GUILD + '/' + ch;
+    const ua = navigator.userAgent || '';
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua) || (navigator.maxTouchPoints > 1 && /Macintosh/.test(ua));
+    try {
+      if (isMobile) {
+        // discord:// is unsupported on mobile; the https link opens the Discord mobile app.
+        window.open('https://discord.com/' + path, '_blank', 'noopener');
+      } else {
+        // Desktop: hand off to the installed Discord app via its URL scheme (no blank tab).
+        const a = document.createElement('a');
+        a.href = 'discord://-/' + path;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        a.click();
+        setTimeout(() => { try { a.remove(); } catch (e) {} }, 1000);
+      }
+    } catch (e) {}
+  }
+
   async function doBiasCopyAndProceed(btn) {
     const msg = await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated());
     await copyToClipboard(msg);
@@ -8792,6 +8831,7 @@
       if (bg) bg.classList.add('show');
       return;
     }
+    jumpToDiscord('bias');
     await doBiasCopyAndProceed(btn);
   });
   // Charts reminder popup: "Dismiss" copies anyway and proceeds; "Go back" / click-outside cancels.
@@ -8804,6 +8844,7 @@
     if (backBtn) backBtn.addEventListener('click', close);
     if (dismissBtn) dismissBtn.addEventListener('click', async () => {
       close();
+      jumpToDiscord('bias');
       await doBiasCopyAndProceed(document.getElementById('bias-copy'));
     });
     // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
@@ -10185,6 +10226,7 @@
   // the user's explicit Save button is where the backup modal still fires for new users.
   document.getElementById('review-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
+    jumpToDiscord('review');
     const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
     await copyToClipboard(msg);
     const hasTrades = (data.review.trades || []).length > 0;
@@ -10714,6 +10756,7 @@
     }
     lines.push('```');
     copyToClipboard(lines.join('\n'));
+    jumpToDiscord('series');
   });
   // ===== Snapshot helpers for snackbar-style undo =====
   // Each destructive action captures a snapshot of the data BEFORE mutating,
@@ -16624,6 +16667,7 @@
         () => showToast(t('toast.weekly_review_copied')),
         () => showToast(t('toast.copy_failed'), { persist: true })
       );
+      jumpToDiscord('weekly');
     });
   }
 
