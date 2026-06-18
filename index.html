@@ -42,6 +42,8 @@
     --radius-chip:  6px;
     --shadow-card:  0 2px 4px rgba(0,0,0,0.5), 0 14px 30px rgba(0,0,0,0.4);
     --shadow-float: 0 8px 20px rgba(0,0,0,0.5), 0 24px 48px rgba(0,0,0,0.45);
+    --accent:     #8b7cf6;
+    --accent-dim: rgba(139,124,246,0.55);
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   html, body { height: 100%; background: var(--bg); color-scheme: dark; }
@@ -637,9 +639,6 @@
   .econ-event-title { color: var(--text); font-size: 12px; }
   .page { display: none; }
   .page.active { display: block; }
-  /* --- Motion + focus polish (v108) --- */
-  @keyframes pageIn { from { opacity: 0; } to { opacity: 1; } }
-  .page.active { animation: pageIn 0.3s ease; }
   .btn:active, .tab:active, .option:active { transform: scale(0.97); }
   @keyframes equityDraw { to { stroke-dashoffset: 0; } }
   .equity-line-anim { stroke-dasharray: 1; stroke-dashoffset: 1; animation: equityDraw 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
@@ -653,6 +652,22 @@
   .equity-tooltip .et-date { font-size: 9px; color: var(--text-dim); letter-spacing: 0.06em; }
   .pie-svg .pie-slice { transition: stroke-width 0.18s ease; cursor: pointer; }
   .pie-svg .pie-slice:hover { stroke-width: 18; }
+  /* ============ Vanguard pass (v112) ============ */
+  .grain { position: fixed; inset: 0; z-index: 100; pointer-events: none; opacity: 0.05; mix-blend-mode: soft-light; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.82' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E"); }
+  .hero-stat { position: relative; text-align: center; margin: 40px 0 4px; padding: 26px 0 18px; isolation: isolate; }
+  .hero-stat::before { content: ''; position: absolute; left: 50%; top: 46%; width: 480px; max-width: 86%; height: 260px; transform: translate(-50%, -50%); background: radial-gradient(ellipse at center, var(--accent-dim), transparent 68%); opacity: 0.20; filter: blur(36px); z-index: -1; pointer-events: none; }
+  .hero-stat-label { font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.34em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 14px; }
+  .hero-stat-num { font-family: 'Fraunces', serif; font-variation-settings: 'opsz' 144, 'wght' 400; font-feature-settings: 'tnum' 1; font-size: clamp(54px, 12vw, 100px); line-height: 0.92; letter-spacing: -0.02em; color: var(--text); }
+  .hero-stat-delta { margin-top: 12px; font-family: 'DM Mono', monospace; font-size: 14px; letter-spacing: 0.04em; min-height: 18px; }
+  .hero-stat-delta.good { color: var(--good); }
+  .hero-stat-delta.bad { color: var(--bad); }
+  .hero-spark { display: block; width: min(380px, 72%); height: 40px; margin: 16px auto 0; }
+  .tab.active { border-color: var(--accent); }
+  .tab:focus-visible, .btn:focus-visible, .option:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline-color: var(--accent); }
+  .btn, .tab, .option, .settings-btn { transition-timing-function: cubic-bezier(0.34, 1.4, 0.64, 1); }
+  .reveal-armed { opacity: 0; transform: translateY(16px); }
+  .reveal-in { opacity: 1; transform: none; transition: opacity 0.5s ease, transform 0.65s cubic-bezier(0.22, 1, 0.36, 1); }
+  ::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.32s; animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1); }
   section { margin-top: 56px; }
   section.hidden { display: none; }
   /* Generic .hidden — any element with this class is removed from layout.
@@ -2165,6 +2180,7 @@
 </style>
 </head>
 <body>
+<div class="grain" aria-hidden="true"></div>
 <!-- Full-width market ticker bar — TradingView Ticker Tape embed, injected by
      renderTickerWidget(). Sits above .container so it spans the viewport. Hidden
      until the user turns it on from the calendar Ticker pill. -->
@@ -2647,6 +2663,12 @@
   </div>
 
   <div class="page" id="page-stats">
+    <div class="hero-stat">
+      <div class="hero-stat-label" data-i18n="kpi.account_balance">Account Balance</div>
+      <div class="hero-stat-num" id="hero-balance">£0</div>
+      <div class="hero-stat-delta" id="hero-delta"></div>
+      <svg class="hero-spark" id="hero-spark" viewBox="0 0 380 40" preserveAspectRatio="none" aria-hidden="true"></svg>
+    </div>
     <!-- Contextual encouragement / math-based feedback about the current series. -->
     <div id="current-series-message" style="margin-top:32px;margin-bottom:24px;font-family:'Fraunces',serif;font-size:20px;color:var(--text);line-height:1.4;letter-spacing:-0.01em;display:none;"></div>
 
@@ -8572,7 +8594,7 @@
   function animateStatNumbers(root) {
     if (!root) return;
     try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
-    root.querySelectorAll('.stat-value').forEach(el => {
+    root.querySelectorAll('.stat-value, .hero-stat-num').forEach(el => {
       if (el.classList.contains('dual')) {
         el.querySelectorAll('.dual-primary, .dual-secondary').forEach(_animateStatEl);
       } else {
@@ -8610,6 +8632,7 @@
   document.querySelectorAll('.tab').forEach(btn => {
     btn.addEventListener('click', () => {
       const target = btn.dataset.page;
+      const _apply = () => {
       document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
       document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
       btn.classList.add('active');
@@ -8620,8 +8643,18 @@
       refreshPageCaption(target);
       // Refresh every surface so cross-tab changes are always reflected.
       refreshAllSurfaces();
-      // Count the big KPI numbers up when their page is opened.
-      requestAnimationFrame(() => { try { animateStatNumbers(document.getElementById('page-' + target)); } catch (e) {} });
+      };
+      // Count the big KPI numbers up once the page (and any View Transition) has settled.
+      const _runCount = () => requestAnimationFrame(() => { try { animateStatNumbers(document.getElementById('page-' + target)); } catch (e) {} });
+      let _reduce = false;
+      try { _reduce = matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) {}
+      let _vt = null;
+      if (document.startViewTransition && !_reduce) {
+        _vt = document.startViewTransition(_apply);
+      } else {
+        _apply();
+      }
+      if (_vt && _vt.finished) { _vt.finished.then(_runCount, _runCount); } else { _runCount(); }
       // Render the economic calendar panel when the bias tab becomes visible.
       // Cheap on repeat visits — fetchEconomicCalendar() uses a per-day localStorage
       // cache, so only the first call of each day hits the network.
@@ -8629,12 +8662,38 @@
         try { fetchEconomicCalendar(); } catch (e) { /* never block tab switch */ }
       }
       window.scrollTo({ top: 0, behavior: 'smooth' });
+      requestAnimationFrame(() => { try { initScrollReveal(document.getElementById('page-' + target)); } catch (e) {} });
     });
   });
 
   // Save today's bias to biasHistory once all 4 fields (mode, structure, location, direction)
   // are completed. Subsequent edits update the same day's entry. Called from the bias option
   // handlers — runs after each selection but only commits when the full set is present.
+  function initScrollReveal(scope) {
+    if (!('IntersectionObserver' in window)) return;
+    try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+    const _root = scope || document;
+    const _sel = '.hero-stat, .stats-summary, .wl-summary, .pie-grid, .holdtime-grid, .chart-card, .year-glance, .tag-leaderboard';
+    const _vh = window.innerHeight || 800;
+    const _els = [];
+    _root.querySelectorAll(_sel).forEach(el => {
+      const r = el.getBoundingClientRect();
+      if (r.top > _vh * 0.9) { el.classList.add('reveal-armed'); _els.push(el); }
+    });
+    if (!_els.length) return;
+    const _io = new IntersectionObserver((entries) => {
+      entries.forEach(en => {
+        if (en.isIntersecting) {
+          en.target.classList.remove('reveal-armed');
+          en.target.classList.add('reveal-in');
+          _io.unobserve(en.target);
+        }
+      });
+    }, { rootMargin: '0px 0px -8% 0px', threshold: 0.04 });
+    _els.forEach(el => _io.observe(el));
+    setTimeout(() => { _els.forEach(el => { if (el.classList.contains('reveal-armed')) { el.classList.remove('reveal-armed'); el.classList.add('reveal-in'); } }); }, 1600);
+  }
+  requestAnimationFrame(() => { try { initScrollReveal(); } catch (e) {} });
   function recordBiasIfComplete() {
     const b = data.bias;
     if (!b.mode || !b.structure || !b.location || !b.direction) return; // not yet complete
@@ -11303,6 +11362,22 @@
     renderCombinedAnalysis(all);
 
     drawEquityChart(all);
+    try {
+      const _hb = document.getElementById('hero-balance');
+      if (_hb) {
+        const _bal = (document.getElementById('kpi-balance') || {}).textContent;
+        if (_bal) _hb.textContent = _bal;
+        const _hd = document.getElementById('hero-delta');
+        const _pnlEl = document.getElementById('kpi-pnl');
+        if (_hd && _pnlEl) {
+          const _pv = _pnlEl.textContent || '';
+          _hd.textContent = _pv;
+          const _neg = !!_pv && (_pv.charCodeAt(0) === 8722 || _pv.charAt(0) === '-');
+          _hd.className = 'hero-stat-delta ' + (_neg ? 'bad' : 'good');
+        }
+        if (typeof drawHeroSpark === 'function') drawHeroSpark();
+      }
+    } catch (e) {}
   }
 
   // Lifetime "showed up vs traded" — the same idea as the monthly consistency block,
@@ -11493,6 +11568,27 @@
   // Net P&L is mathematically identical (just offset by starting balance) and Cumulative R tracks
   // the same story in different units for a fixed-risk trader, so they were redundant.
 
+  function drawHeroSpark() {
+    const svg = document.getElementById('hero-spark');
+    if (!svg) return;
+    const vals = window.__eqValues;
+    if (!vals || vals.length < 2) { svg.innerHTML = ''; return; }
+    const W = 380, H = 40, P = 3;
+    let mn = Infinity, mx = -Infinity;
+    for (const v of vals) { if (v < mn) mn = v; if (v > mx) mx = v; }
+    const rng = (mx - mn) || 1;
+    const xf = i => P + (i / (vals.length - 1)) * (W - 2 * P);
+    const yf = v => P + (1 - (v - mn) / rng) * (H - 2 * P);
+    let d = '';
+    for (let i = 0; i < vals.length; i++) { d += (i === 0 ? 'M' : 'L') + xf(i).toFixed(1) + ' ' + yf(vals[i]).toFixed(1) + ' '; }
+    const up = vals[vals.length - 1] >= vals[0];
+    const hex = up ? '#5fcb8d' : '#e85d5d';
+    const area = d + 'L' + xf(vals.length - 1).toFixed(1) + ' ' + H + ' L' + xf(0).toFixed(1) + ' ' + H + ' Z';
+    svg.innerHTML = '<defs><linearGradient id="hs-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="' + hex + '" stop-opacity="0.22"/><stop offset="100%" stop-color="' + hex + '" stop-opacity="0"/></linearGradient></defs>' +
+      '<path d="' + area + '" fill="url(#hs-grad)" stroke="none"/>' +
+      '<path class="equity-line-anim" pathLength="1" d="' + d + '" fill="none" stroke="' + hex + '" stroke-width="2"/>';
+  }
+
   function drawEquityChart(trades) {
     const wrap = document.getElementById('equity-chart-wrap');
     if (trades.length === 0) { wrap.innerHTML = '<div class="chart-empty">Log trades to see your equity curve.</div>'; return; }
@@ -11613,6 +11709,7 @@
       <text x="${PAD.left}" y="${H - 6}" font-size="11" fill="#ffffff" font-family="DM Mono, monospace">${t('lbl.trade')} 1</text>
       <text x="${W - PAD.right}" y="${H - 6}" font-size="11" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
     // --- Hover interaction: store latest geometry; wire listeners once ---
+    try { window.__eqValues = values.slice(); } catch (e) {}
     chart._eq = { values, isR, x, y, PAD, W };
     if (!chart._eqWired) {
       chart._eqWired = true;
