@@ -28,12 +28,12 @@
     --text:      #ffffff;
     --text-mid:  #c0c0c0;
     --text-dim:  #888888;
-    --good:      #4ade80;
-    --good-bg:   rgba(74,222,128,0.15);
-    --good-bg2:  rgba(74,222,128,0.08);
-    --bad:       #ef4444;
-    --bad-bg:    rgba(239,68,68,0.15);
-    --bad-bg2:   rgba(239,68,68,0.08);
+    --good:      #5fcb8d;
+    --good-bg:   rgba(95,203,141,0.15);
+    --good-bg2:  rgba(95,203,141,0.08);
+    --bad:       #e85d5d;
+    --bad-bg:    rgba(232,93,93,0.15);
+    --bad-bg2:   rgba(232,93,93,0.08);
     --info:      #60a5fa;
     --info-bg:   rgba(96,165,250,0.15);
     --neutral:   #c0c0c0;
@@ -637,6 +637,22 @@
   .econ-event-title { color: var(--text); font-size: 12px; }
   .page { display: none; }
   .page.active { display: block; }
+  /* --- Motion + focus polish (v108) --- */
+  @keyframes pageIn { from { opacity: 0; } to { opacity: 1; } }
+  .page.active { animation: pageIn 0.3s ease; }
+  .btn:active, .tab:active, .option:active { transform: scale(0.97); }
+  @keyframes equityDraw { to { stroke-dashoffset: 0; } }
+  .equity-line-anim { stroke-dasharray: 1; stroke-dashoffset: 1; animation: equityDraw 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards; }
+  .tab:focus-visible, .btn:focus-visible, .option:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible { outline: 2px solid var(--text-mid); outline-offset: 2px; }
+  /* equity hover tooltip + pie-slice hover (v109) */
+  #equity-chart-wrap { position: relative; }
+  .equity-tooltip { position: absolute; pointer-events: none; z-index: 5; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); box-shadow: var(--shadow-float); padding: 7px 10px; font-family: 'DM Mono', monospace; color: var(--text); white-space: nowrap; text-align: center; line-height: 1.5; opacity: 0; transform: translate(-50%, -100%); transition: opacity 0.12s ease; }
+  .equity-tooltip.show { opacity: 1; }
+  .equity-tooltip .et-val { font-size: 13px; font-weight: 500; }
+  .equity-tooltip .et-delta { font-size: 10px; }
+  .equity-tooltip .et-date { font-size: 9px; color: var(--text-dim); letter-spacing: 0.06em; }
+  .pie-svg .pie-slice { transition: stroke-width 0.18s ease; cursor: pointer; }
+  .pie-svg .pie-slice:hover { stroke-width: 18; }
   section { margin-top: 56px; }
   section.hidden { display: none; }
   /* Generic .hidden — any element with this class is removed from layout.
@@ -1097,8 +1113,8 @@
   .quick-log-label { font-size: 15px; font-weight: 500; letter-spacing: 0.22em; text-transform: uppercase; }
   .quick-log-btn.long  { color: var(--good); }
   .quick-log-btn.short { color: var(--bad); }
-  .quick-log-btn.long:hover  { border-color: var(--good); background: rgba(74,222,128,0.08); }
-  .quick-log-btn.short:hover { border-color: var(--bad);  background: rgba(239,68,68,0.08); }
+  .quick-log-btn.long:hover  { border-color: var(--good); background: rgba(95,203,141,0.08); }
+  .quick-log-btn.short:hover { border-color: var(--bad);  background: rgba(232,93,93,0.08); }
   .quick-log-btn.long:hover  .quick-log-arrow { transform: translateY(-3px); }
   .quick-log-btn.short:hover .quick-log-arrow { transform: translateY(3px); }
   .quick-log-btn:active { transform: scale(0.97); }
@@ -8513,6 +8529,57 @@
     if (abs >= 1000) return `${sign}${curSym()}${(abs/1000).toFixed(1)}k`;
     return `${sign}${curSym()}${Math.round(abs)}`;
   }
+  // --- Animated count-up for KPI stat numbers (v109) ---
+  function _parseStatNum(str) {
+    const s = (str || '').trim();
+    const m = s.match(/^([^\d+-]*)([+-]?)(\d[\d,]*)(?:\.(\d+))?(.*)$/);
+    if (!m) return null;
+    const intRaw = m[3] || '0';
+    const dec = m[4] || '';
+    const value = parseFloat((m[2] === '-' ? '-' : '') + intRaw.replace(/,/g, '') + (dec ? '.' + dec : ''));
+    if (!isFinite(value)) return null;
+    return { prefix: m[1] || '', sign: m[2] || '', hasComma: intRaw.indexOf(',') >= 0, decimals: dec.length, suffix: m[5] || '', value };
+  }
+  function _fmtStatNum(v, meta) {
+    const neg = v < 0;
+    const abs = Math.abs(v);
+    let s = meta.decimals > 0 ? abs.toFixed(meta.decimals) : String(Math.round(abs));
+    const parts = s.split('.');
+    if (meta.hasComma) parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+    s = parts[1] ? parts[0] + '.' + parts[1] : parts[0];
+    const sign = neg ? '-' : (meta.sign === '+' ? '+' : '');
+    return meta.prefix + sign + s + meta.suffix;
+  }
+  function _animateStatEl(el) {
+    if (!el || el.children.length) return;
+    const finalStr = el.textContent;
+    const meta = _parseStatNum(finalStr);
+    if (!meta) return;
+    if (el._statAnim) cancelAnimationFrame(el._statAnim);
+    const end = meta.value;
+    const minStep = meta.decimals > 0 ? Math.pow(10, -meta.decimals) : 1;
+    if (Math.abs(end) < minStep) { el.textContent = finalStr; return; }
+    const dur = 650, t0 = performance.now();
+    const ease = t => 1 - Math.pow(1 - t, 3);
+    const tick = now => {
+      let p = (now - t0) / dur; if (p > 1) p = 1;
+      if (p >= 1) { el.textContent = finalStr; el._statAnim = null; return; }
+      el.textContent = _fmtStatNum(end * ease(p), meta);
+      el._statAnim = requestAnimationFrame(tick);
+    };
+    el._statAnim = requestAnimationFrame(tick);
+  }
+  function animateStatNumbers(root) {
+    if (!root) return;
+    try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+    root.querySelectorAll('.stat-value').forEach(el => {
+      if (el.classList.contains('dual')) {
+        el.querySelectorAll('.dual-primary, .dual-secondary').forEach(_animateStatEl);
+      } else {
+        _animateStatEl(el);
+      }
+    });
+  }
   function tradingViewImageUrl(url) {
     if (!url) return null;
     const m = url.match(/tradingview\.com\/x\/([a-zA-Z0-9]+)/);
@@ -8553,6 +8620,8 @@
       refreshPageCaption(target);
       // Refresh every surface so cross-tab changes are always reflected.
       refreshAllSurfaces();
+      // Count the big KPI numbers up when their page is opened.
+      requestAnimationFrame(() => { try { animateStatNumbers(document.getElementById('page-' + target)); } catch (e) {} });
       // Render the economic calendar panel when the bias tab becomes visible.
       // Cheap on repeat visits — fetchEconomicCalendar() uses a per-day localStorage
       // cache, so only the first call of each day hits the network.
@@ -10355,7 +10424,7 @@
       const fraction = val / total;
       const dashLen = fraction * circ;
       const gap = (val === total) ? 0 : 1.5;
-      paths.push(`<circle cx="60" cy="60" r="${r}" fill="none" stroke="${sl.color}" stroke-width="14" stroke-dasharray="${Math.max(0, dashLen - gap)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)" />`);
+      paths.push(`<circle class="pie-slice" cx="60" cy="60" r="${r}" fill="none" stroke="${sl.color}" stroke-width="14" stroke-dasharray="${Math.max(0, dashLen - gap)} ${circ}" stroke-dashoffset="${-offset}" transform="rotate(-90 60 60)" />`);
       offset += dashLen;
     });
     // Centre labels: stack each slice's label + count inside the donut hole. Each row gets a small
@@ -11511,10 +11580,10 @@
     }
     const finalV = values[values.length - 1];
     const upFromBaseline = finalV >= offset;
-    const lineColor = upFromBaseline ? '#4ade80' : '#ef4444';
+    const lineColor = upFromBaseline ? '#5fcb8d' : '#e85d5d';
     const gradStops = upFromBaseline
-      ? '<stop offset="0%" stop-color="#4ade80" stop-opacity="0.28"/><stop offset="100%" stop-color="#4ade80" stop-opacity="0"/>'
-      : '<stop offset="0%" stop-color="#ef4444" stop-opacity="0.28"/><stop offset="100%" stop-color="#ef4444" stop-opacity="0"/>';
+      ? '<stop offset="0%" stop-color="#5fcb8d" stop-opacity="0.28"/><stop offset="100%" stop-color="#5fcb8d" stop-opacity="0"/>'
+      : '<stop offset="0%" stop-color="#e85d5d" stop-opacity="0.28"/><stop offset="100%" stop-color="#e85d5d" stop-opacity="0"/>';
     const step = niceTickStep(range);
     const ticks = [];
     let t0 = Math.ceil(minV / step) * step;
@@ -11522,7 +11591,7 @@
     let grid = '', yLabels = '';
     ticks.forEach(tv => {
       const ty = y(tv);
-      grid += `<line x1="${PAD.left}" x2="${W - PAD.right}" y1="${ty}" y2="${ty}" stroke="#1c1c1c" stroke-width="1"/>`;
+      grid += `<line x1="${PAD.left}" x2="${W - PAD.right}" y1="${ty}" y2="${ty}" stroke="#1c1c1c" stroke-opacity="0.7" stroke-width="1"/>`;
       const label = isR ? (tv >= 0 ? '+' : '') + tv.toFixed(1) + 'R' : fmtMoneyShort(tv);
       // Brighter axis labels (white instead of dim grey) so the scale reads cleanly
       // against the dark chart background. Bumped from 9px → 11px for legibility.
@@ -11532,13 +11601,65 @@
     chart.setAttribute('width', W);
     chart.setAttribute('height', H);
     chart.innerHTML = `<defs><linearGradient id="equity-area-grad" x1="0" y1="0" x2="0" y2="1">${gradStops}</linearGradient></defs>${grid}
-      <line x1="${PAD.left}" x2="${W - PAD.right}" y1="${baselineY}" y2="${baselineY}" stroke="${equityMode === 'balance' ? '#ef4444' : '#2a2a2a'}" stroke-width="1" stroke-dasharray="${equityMode === 'balance' ? '0' : '2,2'}"/>
+      <line x1="${PAD.left}" x2="${W - PAD.right}" y1="${baselineY}" y2="${baselineY}" stroke="${equityMode === 'balance' ? '#e85d5d' : '#2a2a2a'}" stroke-width="1" stroke-dasharray="${equityMode === 'balance' ? '0' : '2,2'}"/>
       <path d="${areaPath}" fill="url(#equity-area-grad)" stroke="none"/>
-      ${ddPath ? `<path d="${ddPath}" fill="rgba(239,68,68,0.16)" stroke="none"/>` : ''}
-      <path d="${path}" fill="none" stroke="${lineColor}" stroke-width="2"/>
+      ${ddPath ? `<path d="${ddPath}" fill="rgba(232,93,93,0.16)" stroke="none"/>` : ''}
+      <path class="equity-line-anim" pathLength="1" d="${path}" fill="none" stroke="${lineColor}" stroke-width="2"/>
+      <circle cx="${lastX}" cy="${y(finalV)}" r="5.5" fill="none" stroke="${lineColor}" stroke-opacity="0.25" stroke-width="1.5"/>
+      <circle cx="${lastX}" cy="${y(finalV)}" r="3" fill="${lineColor}"/>
+      <line class="equity-hover-guide" x1="0" x2="0" y1="${PAD.top}" y2="${H - PAD.bottom}" stroke="var(--text-dim)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
+      <circle class="equity-hover-dot" r="4" fill="${lineColor}" stroke="var(--bg)" stroke-width="2" style="display:none"/>
       ${yLabels}
       <text x="${PAD.left}" y="${H - 6}" font-size="11" fill="#ffffff" font-family="DM Mono, monospace">${t('lbl.trade')} 1</text>
       <text x="${W - PAD.right}" y="${H - 6}" font-size="11" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
+    // --- Hover interaction: store latest geometry; wire listeners once ---
+    chart._eq = { values, isR, x, y, PAD, W };
+    if (!chart._eqWired) {
+      chart._eqWired = true;
+      const tip = document.createElement('div');
+      tip.className = 'equity-tooltip';
+      wrap.appendChild(tip);
+      const onMove = (ev) => {
+        const g = chart._eq; if (!g || g.values.length < 2) return;
+        const rect = chart.getBoundingClientRect();
+        const sc = g.W / (rect.width || g.W);
+        const mx = (ev.clientX - rect.left) * sc;
+        const n = g.values.length;
+        const stepX = (g.W - g.PAD.left - g.PAD.right) / (n - 1);
+        let i = Math.round((mx - g.PAD.left) / stepX);
+        if (i < 0) i = 0;
+        if (i > n - 1) i = n - 1;
+        const px = g.x(i), py = g.y(g.values[i]);
+        const guide = chart.querySelector('.equity-hover-guide');
+        const dot = chart.querySelector('.equity-hover-dot');
+        if (guide) { guide.setAttribute('x1', px); guide.setAttribute('x2', px); guide.style.display = ''; }
+        if (dot) { dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.style.display = ''; }
+        const val = g.values[i];
+        const valStr = g.isR ? ((val >= 0 ? '+' : '') + val.toFixed(2) + 'R') : fmtMoney(val, { noSign: true });
+        let html = `<div class="et-val">${valStr}</div>`;
+        if (i > 0) {
+          const d = g.values[i] - g.values[i - 1];
+          const dStr = g.isR ? ((d >= 0 ? '+' : '') + d.toFixed(2) + 'R') : ((d >= 0 ? '+' : '−') + fmtMoney(Math.abs(d), { noSign: true }));
+          const cls = d >= 0 ? 'good' : 'bad';
+          html += `<div class="et-delta" style="color:var(--${cls})">${dStr}</div>`;
+        } else {
+          html += `<div class="et-date">Start</div>`;
+        }
+        tip.innerHTML = html;
+        tip.style.left = px + 'px';
+        tip.style.top = (py - 12) + 'px';
+        tip.classList.add('show');
+      };
+      const onLeave = () => {
+        const guide = chart.querySelector('.equity-hover-guide');
+        const dot = chart.querySelector('.equity-hover-dot');
+        if (guide) guide.style.display = 'none';
+        if (dot) dot.style.display = 'none';
+        tip.classList.remove('show');
+      };
+      chart.addEventListener('mousemove', onMove);
+      chart.addEventListener('mouseleave', onLeave);
+    }
   }
 
   function niceTickStep(range) {
