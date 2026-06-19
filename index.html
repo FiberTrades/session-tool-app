@@ -957,7 +957,7 @@
   .import-mt5-btn { background: transparent; border: 1px solid var(--text-mid); color: var(--text); padding: 8px 16px; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: all 200ms; }
   .import-mt5-btn:hover { background: var(--text); color: var(--bg); }
   .trades-wrap { margin-left: 60px; }
-  .trade-row, .trade-row-headers { display: grid; border-radius: var(--radius-chip); overflow: hidden; grid-template-columns: 28px minmax(62px, 0.55fr) 70px 78px minmax(118px, 1.4fr) 76px 60px 60px 114px 62px minmax(86px, 1fr) minmax(86px, 1fr) 24px; gap: 1px; background: var(--border); border: 1px solid var(--border-2); margin-bottom: 6px; width: 100%; }
+  .trade-row, .trade-row-headers { display: grid; border-radius: var(--radius-chip); overflow: hidden; grid-template-columns: 28px minmax(62px, 0.55fr) 80px 78px minmax(110px, 1.3fr) 76px 60px 60px 114px 62px minmax(86px, 1fr) minmax(86px, 1fr) 24px; gap: 1px; background: var(--border); border: 1px solid var(--border-2); margin-bottom: 6px; width: 100%; }
   /* Spanish header labels are longer than English in some columns and
      shorter in others. Result→Resultado (longer) and Type→Tipo (shorter),
      so the column widths rebalance for ES users. Scoped above the mobile
@@ -966,7 +966,7 @@
      @media block. */
   @media (min-width: 701px) {
     html[lang="es"] .trade-row, html[lang="es"] .trade-row-headers {
-      grid-template-columns: 28px minmax(86px, 0.85fr) 70px 78px minmax(85px, 0.95fr) 76px 60px 60px 114px 62px minmax(86px, 1fr) minmax(86px, 1fr) 24px;
+      grid-template-columns: 28px minmax(86px, 0.85fr) 80px 78px minmax(80px, 0.9fr) 76px 60px 60px 114px 62px minmax(86px, 1fr) minmax(86px, 1fr) 24px;
     }
   }
   .trade-row-headers { margin-bottom: 4px; }
@@ -3887,7 +3887,7 @@
       'toast.copied': 'Copied to clipboard',
       'toast.saved': 'Saved',
       'toast.no_trades_save': 'No valid trades to save',
-      'toast.saved_backup_unreachable': 'Session saved. The external backup file could not be reached — pick a backup option below.',
+      'toast.saved_backup_unreachable': 'Session saved locally. Your linked backup file could not be reached — re-link it in Settings.',
       'toast.observed_saved_backup_written': 'Observed-only session saved + backup written',
       'toast.observed_saved_backup_downloaded': 'Observed-only session saved + backup downloaded',
       'toast.trades_saved_backup_written': '{n} {word} {saved} + backup written',
@@ -4068,6 +4068,7 @@
       'empty.no_potential_wins': 'No winning trades with Potential R or Potential Pips logged yet. Log when you mark a win and patterns appear here.',
       // ----- Confirm dialogs -----
       'confirm.delete_trade': 'Are you sure you want to delete this trade?',
+      'confirm.delete_trade_title': 'Delete trade?',
       // ----- Bias / Review option labels -----
       'opt.yes': 'Yes',
       'opt.no_observed': 'No — Observed Only',
@@ -4986,7 +4987,7 @@
       'toast.copied': 'Copiado al portapapeles',
       'toast.saved': 'Guardado',
       'toast.no_trades_save': 'No hay operaciones válidas para guardar',
-      'toast.saved_backup_unreachable': 'Sesión guardada. No se pudo acceder al archivo de copia externo — elige una opción de copia abajo.',
+      'toast.saved_backup_unreachable': 'Sesión guardada localmente. No se pudo acceder al archivo de copia vinculado — vuelve a vincularlo en Ajustes.',
       'toast.observed_saved_backup_written': 'Sesión solo observada guardada + copia escrita',
       'toast.observed_saved_backup_downloaded': 'Sesión solo observada guardada + copia descargada',
       'toast.trades_saved_backup_written': '{n} {word} {saved} + copia de seguridad escrita',
@@ -5166,6 +5167,7 @@
       'empty.no_potential_wins': 'Aún no hay operaciones ganadoras con R Potencial o Pips Potenciales registrados. Apúntalos cuando marques una ganadora y los patrones aparecerán aquí.',
       // ----- Confirm dialogs -----
       'confirm.delete_trade': '¿Seguro que quieres eliminar esta operación?',
+      'confirm.delete_trade_title': '¿Eliminar operación?',
       // ----- Bias / Review option labels -----
       'opt.yes': 'Sí',
       'opt.no_observed': 'No — Sólo Observada',
@@ -6923,6 +6925,24 @@
     }
   }
 
+  // Ensure read-write permission on the linked backup file is granted. The File System
+  // Access API needs a fresh user-activation to PROMPT for permission; that activation is
+  // gone by the time the save flow finishes its async work (translating the Discord post,
+  // writing the clipboard, etc.), which is what made the backup write fail silently. Calling
+  // this at the very start of a save click - while the gesture is still fresh - grants
+  // permission up front so the later write just succeeds. No prompt if already granted.
+  async function ensureBackupPermission() {
+    if (!data.settings.linkedFileBackup) return false;
+    try {
+      const handle = await idbGet('backupFile');
+      if (!handle) return false;
+      const opts = { mode: 'readwrite' };
+      let perm = await handle.queryPermission(opts);
+      if (perm !== 'granted') perm = await handle.requestPermission(opts);
+      return perm === 'granted';
+    } catch (e) { return false; }
+  }
+
   async function unlinkBackupFile() {
     try { await idbDel('backupFile'); } catch (e) {}
     data.settings.linkedFileBackup = false;
@@ -8549,7 +8569,7 @@
     if (t.result === 'Lose') return -1 * risk;
     return 0;
   }
-  function tradeCosts(t) { return parseFloat(t.costs) || 0; }
+  function tradeCosts(t) { return Math.abs(parseFloat(t.costs) || 0); }
   // Copy-count multiplier. Lets the user log a single trade once (with its full review)
   // and tell the app it was actually executed in N parallel accounts. Every aggregate
   // stat scales by this — P&L, costs, win/loss/BE counts, total R, total pips, etc.
@@ -8782,8 +8802,13 @@
       notes: b.notes || '',
       tvLinks: Array.isArray(b.tvLinks) ? b.tvLinks.map(l => ({ url: l.url || '', notes: l.notes || '' })) : []
     };
-    if (existing >= 0) data.biasHistory[existing] = entry;
-    else data.biasHistory.push(entry);
+    if (existing >= 0) {
+      // Preserve the Discord-copy timestamp across bias edits so re-saving doesn't wipe it.
+      if (data.biasHistory[existing].copiedAt) entry.copiedAt = data.biasHistory[existing].copiedAt;
+      data.biasHistory[existing] = entry;
+    } else {
+      data.biasHistory.push(entry);
+    }
     saveData();
   }
 
@@ -9368,6 +9393,7 @@
       row.querySelector('.risk-input').value = t.risk || '';
       row.querySelector('.sl-input').value = t.sl || '';
       row.querySelector('.costs-input').value = t.costs || '';
+      { const _ce = row.querySelector('.costs-input'); _ce.style.color = (parseFloat(_ce.value) < 0) ? 'var(--bad)' : ''; }
       // Initialise gross + net inputs with displayed values
       const grossEl = row.querySelector('.gross-input');
       const netEl   = row.querySelector('.net-input');
@@ -9483,7 +9509,7 @@
         if (data.review.trades[idx].result === 'Lose') syncPipsCell();
         lightUpdate();
       });
-      row.querySelector('.costs-input').addEventListener('input', e => { data.review.trades[idx].costs = e.target.value.trim(); lightUpdate(); });
+      row.querySelector('.costs-input').addEventListener('input', e => { data.review.trades[idx].costs = e.target.value.trim(); e.target.style.color = (parseFloat(e.target.value) < 0) ? 'var(--bad)' : ''; lightUpdate(); });
       grossEl.addEventListener('input', e => {
         const v = e.target.value.trim();
         data.review.trades[idx].actualGross = (v && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
@@ -9493,7 +9519,7 @@
         const v = e.target.value.trim();
         if (v && !isNaN(parseFloat(v))) {
           const costs = parseFloat(data.review.trades[idx].costs) || 0;
-          data.review.trades[idx].actualGross = parseFloat(v) + costs;
+          data.review.trades[idx].actualGross = parseFloat(v) + Math.abs(costs);
         } else {
           data.review.trades[idx].actualGross = null;
         }
@@ -10341,7 +10367,7 @@
       if (data.settings.linkedFileBackup) {
         const ok = await writeLinkedBackup();
         if (ok) showToast(t('toast.observed_saved_backup_written'));
-        else { showToast(t('toast.saved_backup_unreachable'), { persist: true }); if (!skipBackupModal) openBackupModal(0, true); }
+        else { showToast(t('toast.saved_backup_unreachable')); }
       } else if (data.settings.autoBackup) {
         downloadBackup();
         showToast(t('toast.observed_saved_backup_downloaded'));
@@ -10413,8 +10439,7 @@
       if (ok) {
         showToast(t('toast.trades_saved_backup_written').replace('{n}', valid.length).replace('{word}', valid.length === 1 ? t('backup.trade_singular') : t('backup.trade_plural')).replace('{saved}', valid.length === 1 ? t('toast.saved_word_sing') : t('toast.saved_word_plural')));
       } else {
-        showToast(t('toast.saved_backup_unreachable'), { persist: true });
-        if (!skipBackupModal) openBackupModal(valid.length, true);
+        showToast(t('toast.saved_backup_unreachable'));
       }
     } else if (data.settings.autoBackup) {
       downloadBackup();
@@ -10431,6 +10456,10 @@
   document.getElementById('review-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     jumpToDiscord('review');
+    // Grant linked-backup file permission now, while the click's user-activation is still
+    // fresh - the translation/clipboard awaits below consume it, which is what made the
+    // later backup write fail with "could not be reached".
+    if (data.settings.linkedFileBackup) { try { await ensureBackupPermission(); } catch (e) {} }
     const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
     await copyToClipboard(msg);
     const hasTrades = (data.review.trades || []).length > 0;
@@ -10450,7 +10479,13 @@
     const close = () => bg.classList.remove('show');
     const confirmBtn = document.getElementById('save-series-warn-confirm');
     const cancelBtn = document.getElementById('save-series-warn-cancel');
-    if (confirmBtn) confirmBtn.addEventListener('click', async () => { close(); await performReviewSave(); });
+    if (confirmBtn) confirmBtn.addEventListener('click', async () => {
+      // Grant backup-file permission within this fresh click gesture before the save's
+      // async work, so the linked-file write succeeds.
+      if (data.settings.linkedFileBackup) { try { await ensureBackupPermission(); } catch (e) {} }
+      close();
+      await performReviewSave();
+    });
     if (cancelBtn) cancelBtn.addEventListener('click', close);
     // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
   })();
@@ -11515,7 +11550,7 @@
     }
     // Showed-up / traded weekday-sets for a [start, end] window.
     //  - traded: weekdays with >=1 saved trade dated in-window.
-    //  - showed up: weekdays with a bias COPIED to Discord (b.copiedAt) in-window.
+    //  - showed up: weekdays with a posted bias in-window (copied to Discord, or a completed 4-field bias).
     function computeWindow(startDate, endDate) {
       let weekdaysTotal = 0;
       for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
@@ -11531,7 +11566,10 @@
       });
       const showedUpSet = new Set();
       biasHist.forEach(b => {
-        if (!b || !b.dateKey || !b.copiedAt) return;
+        if (!b || !b.dateKey) return;
+        // Counts if copied to Discord OR a completed bias (all 4 fields) - see the weekly
+        // consistency block; keeps the two "showed up" views consistent.
+        if (!b.copiedAt && !(b.mode && b.structure && b.location && b.direction)) return;
         const d = new Date(b.dateKey + 'T12:00:00');
         if (isNaN(d.getTime()) || d < startDate || d > endDate) return;
         const day = d.getDay();
@@ -15000,13 +15038,14 @@
       else if (editingResult === 'Lose') gross = -1 * risk;
       else gross = 0;
     }
-    const net = gross - costs;
+    const net = gross - Math.abs(costs);
     // Update Net input value only if user isn't currently typing in it
     if (document.activeElement !== netEl) {
       netEl.value = (editingResult || profitRaw !== '') ? net.toFixed(2) : '';
     }
     grossEl.style.color = gross > 0 ? 'var(--good)' : gross < 0 ? 'var(--bad)' : 'var(--text-mid)';
     netEl.style.color   = net   > 0 ? 'var(--good)' : net   < 0 ? 'var(--bad)' : 'var(--text-mid)';
+    { const _ce = document.getElementById('edit-costs'); if (_ce) _ce.style.color = (parseFloat(_ce.value) < 0) ? 'var(--bad)' : ''; }
   }
 
   // R and Pips are always editable. Same meaning across results: R = setup's RR ratio,
@@ -15067,8 +15106,8 @@
     const costs = parseFloat(document.getElementById('edit-costs').value) || 0;
     const grossEl = document.getElementById('edit-profit');
     if (netRaw !== '' && !isNaN(netVal)) {
-      if (document.activeElement !== grossEl) grossEl.value = (netVal + costs).toFixed(2);
-      grossEl.style.color = (netVal + costs) > 0 ? 'var(--good)' : (netVal + costs) < 0 ? 'var(--bad)' : 'var(--text-mid)';
+      if (document.activeElement !== grossEl) grossEl.value = (netVal + Math.abs(costs)).toFixed(2);
+      grossEl.style.color = (netVal + Math.abs(costs)) > 0 ? 'var(--good)' : (netVal + Math.abs(costs)) < 0 ? 'var(--bad)' : 'var(--text-mid)';
       e.target.style.color = netVal > 0 ? 'var(--good)' : netVal < 0 ? 'var(--bad)' : 'var(--text-mid)';
     } else {
       if (document.activeElement !== grossEl) grossEl.value = '';
@@ -15164,10 +15203,38 @@
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
   });
 
-  document.getElementById('edit-trade-delete').addEventListener('click', () => {
+  // Styled confirm dialog reusing the settings confirm modal markup, so confirmations
+  // match the app's dark aesthetic instead of the OS-default confirm(). Returns a Promise.
+  window.appConfirm = function (o) {
+    o = o || {};
+    return new Promise(resolve => {
+      const bg = document.getElementById('settings-confirm-modal-bg');
+      const titleEl = document.getElementById('settings-confirm-title');
+      const bodyEl = document.getElementById('settings-confirm-body');
+      const okBtn = document.getElementById('settings-confirm-ok');
+      const cancelBtn = document.getElementById('settings-confirm-cancel');
+      if (!bg || !okBtn || !cancelBtn) { resolve(window.confirm(o.body || '')); return; }
+      if (titleEl) titleEl.textContent = o.title || 'Confirm';
+      if (bodyEl) bodyEl.textContent = o.body || '';
+      bg.classList.add('show');
+      const done = (val) => {
+        bg.classList.remove('show');
+        okBtn.removeEventListener('click', onOk);
+        cancelBtn.removeEventListener('click', onCancel);
+        resolve(val);
+      };
+      const onOk = () => done(true);
+      const onCancel = () => done(false);
+      okBtn.addEventListener('click', onOk);
+      cancelBtn.addEventListener('click', onCancel);
+    });
+  };
+
+  document.getElementById('edit-trade-delete').addEventListener('click', async () => {
     if (!editingTradeId) return;
-    // First safety net: explicit confirmation popup
-    if (!confirm(t('confirm.delete_trade'))) return;
+    // First safety net: styled confirmation dialog (matches the app aesthetic)
+    const _ok = await window.appConfirm({ title: t('confirm.delete_trade_title'), body: t('confirm.delete_trade') });
+    if (!_ok) return;
     // Capture snapshot BEFORE mutating so the undo toast can restore it
     const snap = _snapshotData();
     deleteTradeById(editingTradeId);
@@ -16048,7 +16115,11 @@
     const biasHist = Array.isArray(data.biasHistory) ? data.biasHistory : [];
     biasHist.forEach(b => {
       if (!b || !b.dateKey) return;
-      if (!b.copiedAt) return; // not yet copied to Discord — doesn't count
+      // "Showed up" = a bias posted that day: counts if it was copied to Discord
+      // (copiedAt) OR it's a completed bias (all 4 fields). Matches the documented
+      // "posted a bias" meaning, so a full bias logged a day or two later still counts
+      // as a session instead of silently dropping out of the count.
+      if (!b.copiedAt && !(b.mode && b.structure && b.location && b.direction)) return;
       const d = new Date(b.dateKey + 'T12:00:00');
       if (d < periodStart || d > periodEnd) return;
       const day = d.getDay();
