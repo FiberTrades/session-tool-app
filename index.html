@@ -1263,7 +1263,14 @@
   .stat-value.dd { color: var(--bad); }
   .stat-value.dd.zero { color: var(--good); }
   .stat-cell { background: var(--bg); padding: 26px 18px; text-align: center; position: relative; }
-  .stats-summary-3col .stat-cell { padding-top: 12px; padding-bottom: 12px; }
+  .stats-summary-vertical .stat-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 14px; padding-bottom: 14px; }
+  .stats-summary.stats-summary-vertical { grid-template-columns: 1fr; grid-auto-rows: 1fr; }
+  .stats-summary.stats-summary-vertical > :first-child { border-radius: var(--radius-card) var(--radius-card) 0 0; }
+  .stats-summary.stats-summary-vertical > :last-child { border-radius: 0 0 var(--radius-card) var(--radius-card); }
+  .series-top-row { display: flex; gap: 16px; align-items: stretch; margin-top: 28px; }
+  .series-top-row > .stats-summary { margin-top: 0; flex: 0 0 300px; }
+  .series-top-row > .chart-card { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+  @media (max-width: 760px) { .series-top-row { flex-direction: column; } .series-top-row > .stats-summary { flex: 0 0 auto; } }
   .stat-cell:has(.stat-tooltip), .wl-cell:has(.stat-tooltip), .pie-cell:has(.stat-tooltip), .holdtime-cell:has(.stat-tooltip) { cursor: help; }
   /* Note: this hover rule MUST preserve translateX(-50%) so the tooltip stays horizontally centered.
      A previous version had just translateY(0) which dropped centering and pushed the tooltip off-screen. */
@@ -2703,7 +2710,8 @@
     <!-- Contextual encouragement / math-based feedback about the current series. -->
     <div id="current-series-message" style="margin-top:32px;margin-bottom:24px;font-family:'Fraunces',serif;font-size:20px;color:var(--text);line-height:1.4;letter-spacing:-0.01em;display:none;"></div>
 
-    <div class="stats-summary stats-summary-3col">
+    <div class="series-top-row">
+    <div class="stats-summary stats-summary-vertical">
       <div class="stat-cell" id="stat-pnl-cell">
         <div class="stat-tooltip" data-i18n="tip.pnl_series">Net P&L = profit after costs. Gross P&L = profit before costs. Click the toggle to swap. Shared with the Statistics tab.</div>
         <div class="stat-label">
@@ -2727,6 +2735,7 @@
         </div>
       </div>
       <div id="equity-curve-svg-wrap"><svg id="equity-curve-chart"></svg></div>
+    </div>
     </div>
 
     <div class="current-series">
@@ -11790,13 +11799,27 @@
     }
     const finalV = values[values.length - 1];
     const upFromBaseline = finalV >= offset;
-    const lineColor = upFromBaseline ? '#5fcb8d' : '#e85d5d';
-    const gradStops = upFromBaseline
-      ? '<stop offset="0%" stop-color="#5fcb8d" stop-opacity="0.28"/><stop offset="100%" stop-color="#5fcb8d" stop-opacity="0"/>'
-      : '<stop offset="0%" stop-color="#e85d5d" stop-opacity="0.28"/><stop offset="100%" stop-color="#e85d5d" stop-opacity="0"/>';
+    const GREEN = '#5fcb8d', RED = '#e85d5d';
+    const lineColor = upFromBaseline ? GREEN : RED;
     const step = niceTickStep(range);
-    const gradId = 'equity-area-grad-' + chartId;
-    const ddGradId = 'drawdown-grad-' + chartId;
+    const areaGradId = 'eq-area-' + chartId;
+    const lineGradId = 'eq-line-' + chartId;
+    // Colour split exactly at the baseline (0 in R-mode, starting balance in balance-
+    // mode): green above, red below — applied to BOTH the fill and the line stroke,
+    // so the curve is green while in profit and red while underwater, segment by
+    // segment (instead of one colour chosen from the final value). Same gradient for
+    // both colours, so red mirrors green.
+    let _bf = innerH ? (baselineY - PAD.top) / innerH : 1;
+    _bf = Math.max(0, Math.min(1, _bf));
+    const _bfPct = (_bf * 100).toFixed(2) + '%';
+    const areaStops = '<stop offset="0%" stop-color="' + GREEN + '" stop-opacity="0.28"/>'
+                    + '<stop offset="' + _bfPct + '" stop-color="' + GREEN + '" stop-opacity="0"/>'
+                    + '<stop offset="' + _bfPct + '" stop-color="' + RED + '" stop-opacity="0"/>'
+                    + '<stop offset="100%" stop-color="' + RED + '" stop-opacity="0.28"/>';
+    const lineStops = '<stop offset="0%" stop-color="' + GREEN + '"/>'
+                    + '<stop offset="' + _bfPct + '" stop-color="' + GREEN + '"/>'
+                    + '<stop offset="' + _bfPct + '" stop-color="' + RED + '"/>'
+                    + '<stop offset="100%" stop-color="' + RED + '"/>';
     const ticks = [];
     let t0 = Math.ceil(minV / step) * step;
     while (t0 <= maxV) { ticks.push(t0); t0 += step; }
@@ -11812,11 +11835,10 @@
     chart.setAttribute('viewBox', `0 0 ${W} ${H}`);
     chart.setAttribute('width', W);
     chart.setAttribute('height', H);
-    chart.innerHTML = `<defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">${gradStops}</linearGradient><linearGradient id="${ddGradId}" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#e85d5d" stop-opacity="0.30"/><stop offset="100%" stop-color="#e85d5d" stop-opacity="0.05"/></linearGradient></defs>${grid}
+    chart.innerHTML = `<defs><linearGradient id="${areaGradId}" gradientUnits="userSpaceOnUse" x1="0" y1="${PAD.top}" x2="0" y2="${H - PAD.bottom}">${areaStops}</linearGradient><linearGradient id="${lineGradId}" gradientUnits="userSpaceOnUse" x1="0" y1="${PAD.top}" x2="0" y2="${H - PAD.bottom}">${lineStops}</linearGradient></defs>${grid}
       <line x1="${PAD.left}" x2="${W - PAD.right}" y1="${baselineY}" y2="${baselineY}" stroke="${mode === 'balance' ? '#e85d5d' : '#2a2a2a'}" stroke-width="1" stroke-dasharray="${mode === 'balance' ? '0' : '2,2'}"/>
-      <path d="${areaPath}" fill="url(#${gradId})" stroke="none"/>
-      ${ddPath ? `<path d="${ddPath}" fill="url(#${ddGradId})" stroke="none"/>` : ''}
-      <path class="equity-line-anim" pathLength="1" d="${path}" fill="none" stroke="${lineColor}" stroke-width="2"/>
+      <path d="${areaPath}" fill="url(#${areaGradId})" stroke="none"/>
+      <path class="equity-line-anim" pathLength="1" d="${path}" fill="none" stroke="url(#${lineGradId})" stroke-width="2"/>
       <circle cx="${lastX}" cy="${y(finalV)}" r="5.5" fill="none" stroke="${lineColor}" stroke-opacity="0.25" stroke-width="1.5"/>
       <circle cx="${lastX}" cy="${y(finalV)}" r="3" fill="${lineColor}"/>
       <line class="equity-hover-guide" x1="0" x2="0" y1="${PAD.top}" y2="${H - PAD.bottom}" stroke="var(--text-dim)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
