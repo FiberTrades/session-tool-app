@@ -1263,13 +1263,13 @@
   .stat-value.dd { color: var(--bad); }
   .stat-value.dd.zero { color: var(--good); }
   .stat-cell { background: var(--bg); padding: 26px 18px; text-align: center; position: relative; }
-  .stats-summary-vertical .stat-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 14px; padding-bottom: 14px; }
+  .stats-summary-vertical .stat-cell { display: flex; flex-direction: column; align-items: center; justify-content: center; padding-top: 10px; padding-bottom: 10px; }
   .stats-summary.stats-summary-vertical { grid-template-columns: 1fr; grid-auto-rows: 1fr; }
   .stats-summary.stats-summary-vertical > :first-child { border-radius: var(--radius-card) var(--radius-card) 0 0; }
   .stats-summary.stats-summary-vertical > :last-child { border-radius: 0 0 var(--radius-card) var(--radius-card); }
   .series-top-row { display: flex; gap: 16px; align-items: stretch; margin-top: 28px; }
   .series-top-row > .stats-summary { margin-top: 0; flex: 0 0 300px; }
-  .series-top-row > .chart-card { margin-top: 0; flex: 1 1 auto; min-width: 0; }
+  .series-top-row > .chart-card { margin-top: 0; flex: 1 1 auto; min-width: 0; padding: 16px; }
   @media (max-width: 760px) { .series-top-row { flex-direction: column; } .series-top-row > .stats-summary { flex: 0 0 auto; } }
   .stat-cell:has(.stat-tooltip), .wl-cell:has(.stat-tooltip), .pie-cell:has(.stat-tooltip), .holdtime-cell:has(.stat-tooltip) { cursor: help; }
   /* Note: this hover rule MUST preserve translateX(-50%) so the tooltip stays horizontally centered.
@@ -10814,12 +10814,12 @@
         `${t('lbl.w')}: ${s.w}  ·  ${t('lbl.l')}: ${s.l}  ·  ${t('lbl.be')}: ${s.be}  ·  ${t('lbl.net')}: ${s.netR >= 0 ? '+' : ''}${s.netR.toFixed(2)}R`;
     }
 
-    try { drawEquityChart(cs, { wrapId: 'equity-curve-svg-wrap', chartId: 'equity-curve-chart', mode: 'r' }); } catch(e) {}
+    try { drawEquityChart(cs, { wrapId: 'equity-curve-svg-wrap', chartId: 'equity-curve-chart', mode: 'r', splitColor: true, height: 180 }); } catch(e) {}
     try {
       const _subR = document.getElementById('equity-curve-sub-r');
       if (_subR) {
         const _nr = (cs || []).reduce((a, tt) => a + tradeRforMath(tt), 0);
-        _subR.textContent = (cs && cs.length) ? (' · ' + (_nr >= 0 ? '+' : '') + _nr.toFixed(1) + 'R') : '';
+        _subR.textContent = (cs && cs.length) ? (' · ' + (_nr >= 0 ? '+' : '') + _nr.toFixed(2) + 'R') : '';
         _subR.className = 'chart-card-subtitle-pct' + ((cs && cs.length) ? (_nr >= 0 ? ' good' : ' bad') : '');
       }
     } catch(e) {}
@@ -11771,7 +11771,7 @@
     }
     const rect = chart.getBoundingClientRect();
     const W = rect.width || 760;
-    const H = 240;
+    const H = opts.height || 240;
     const PAD = { top: 16, right: 20, bottom: 28, left: 56 };
     const innerW = W - PAD.left - PAD.right;
     const innerH = H - PAD.top - PAD.bottom;
@@ -11802,24 +11802,47 @@
     const GREEN = '#5fcb8d', RED = '#e85d5d';
     const lineColor = upFromBaseline ? GREEN : RED;
     const step = niceTickStep(range);
+    const splitColor = !!opts.splitColor;
     const areaGradId = 'eq-area-' + chartId;
     const lineGradId = 'eq-line-' + chartId;
-    // Colour split exactly at the baseline (0 in R-mode, starting balance in balance-
-    // mode): green above, red below — applied to BOTH the fill and the line stroke,
-    // so the curve is green while in profit and red while underwater, segment by
-    // segment (instead of one colour chosen from the final value). Same gradient for
-    // both colours, so red mirrors green.
+    const ddGradId = 'eq-dd-' + chartId;
+    // Two colour modes:
+    //  - splitColor (Series chart): green above the baseline, red below it, split exactly
+    //    at the baseline for BOTH the fill and the line, so the curve shows profit vs
+    //    underwater segment by segment.
+    //  - default (Statistics chart): a single area colour chosen from the final value,
+    //    PLUS the red drawdown band (the area below the running-peak envelope). The red
+    //    band uses the same 0.28->0 fade as the green so the two gradients match.
     let _bf = innerH ? (baselineY - PAD.top) / innerH : 1;
     _bf = Math.max(0, Math.min(1, _bf));
     const _bfPct = (_bf * 100).toFixed(2) + '%';
-    const areaStops = '<stop offset="0%" stop-color="' + GREEN + '" stop-opacity="0.28"/>'
-                    + '<stop offset="' + _bfPct + '" stop-color="' + GREEN + '" stop-opacity="0"/>'
-                    + '<stop offset="' + _bfPct + '" stop-color="' + RED + '" stop-opacity="0"/>'
-                    + '<stop offset="100%" stop-color="' + RED + '" stop-opacity="0.28"/>';
+    const areaStops = splitColor
+      ? ('<stop offset="0%" stop-color="' + GREEN + '" stop-opacity="0.28"/>'
+       + '<stop offset="' + _bfPct + '" stop-color="' + GREEN + '" stop-opacity="0"/>'
+       + '<stop offset="' + _bfPct + '" stop-color="' + RED + '" stop-opacity="0"/>'
+       + '<stop offset="100%" stop-color="' + RED + '" stop-opacity="0.28"/>')
+      : ('<stop offset="0%" stop-color="' + lineColor + '" stop-opacity="0.28"/>'
+       + '<stop offset="100%" stop-color="' + lineColor + '" stop-opacity="0"/>');
     const lineStops = '<stop offset="0%" stop-color="' + GREEN + '"/>'
                     + '<stop offset="' + _bfPct + '" stop-color="' + GREEN + '"/>'
                     + '<stop offset="' + _bfPct + '" stop-color="' + RED + '"/>'
                     + '<stop offset="100%" stop-color="' + RED + '"/>';
+    const ddStops = '<stop offset="0%" stop-color="' + RED + '" stop-opacity="0.28"/>'
+                  + '<stop offset="100%" stop-color="' + RED + '" stop-opacity="0"/>';
+    let defsInner, areaFill, lineStroke, ddRender;
+    if (splitColor) {
+      defsInner = '<linearGradient id="' + areaGradId + '" gradientUnits="userSpaceOnUse" x1="0" y1="' + PAD.top + '" x2="0" y2="' + (H - PAD.bottom) + '">' + areaStops + '</linearGradient>'
+                + '<linearGradient id="' + lineGradId + '" gradientUnits="userSpaceOnUse" x1="0" y1="' + PAD.top + '" x2="0" y2="' + (H - PAD.bottom) + '">' + lineStops + '</linearGradient>';
+      areaFill = 'url(#' + areaGradId + ')';
+      lineStroke = 'url(#' + lineGradId + ')';
+      ddRender = '';
+    } else {
+      defsInner = '<linearGradient id="' + areaGradId + '" x1="0" y1="0" x2="0" y2="1">' + areaStops + '</linearGradient>'
+                + '<linearGradient id="' + ddGradId + '" x1="0" y1="0" x2="0" y2="1">' + ddStops + '</linearGradient>';
+      areaFill = 'url(#' + areaGradId + ')';
+      lineStroke = lineColor;
+      ddRender = ddPath ? '<path d="' + ddPath + '" fill="url(#' + ddGradId + ')" stroke="none"/>' : '';
+    }
     const ticks = [];
     let t0 = Math.ceil(minV / step) * step;
     while (t0 <= maxV) { ticks.push(t0); t0 += step; }
@@ -11835,10 +11858,11 @@
     chart.setAttribute('viewBox', `0 0 ${W} ${H}`);
     chart.setAttribute('width', W);
     chart.setAttribute('height', H);
-    chart.innerHTML = `<defs><linearGradient id="${areaGradId}" gradientUnits="userSpaceOnUse" x1="0" y1="${PAD.top}" x2="0" y2="${H - PAD.bottom}">${areaStops}</linearGradient><linearGradient id="${lineGradId}" gradientUnits="userSpaceOnUse" x1="0" y1="${PAD.top}" x2="0" y2="${H - PAD.bottom}">${lineStops}</linearGradient></defs>${grid}
+    chart.innerHTML = `<defs>${defsInner}</defs>${grid}
       <line x1="${PAD.left}" x2="${W - PAD.right}" y1="${baselineY}" y2="${baselineY}" stroke="${mode === 'balance' ? '#e85d5d' : '#2a2a2a'}" stroke-width="1" stroke-dasharray="${mode === 'balance' ? '0' : '2,2'}"/>
-      <path d="${areaPath}" fill="url(#${areaGradId})" stroke="none"/>
-      <path class="equity-line-anim" pathLength="1" d="${path}" fill="none" stroke="url(#${lineGradId})" stroke-width="2"/>
+      <path d="${areaPath}" fill="${areaFill}" stroke="none"/>
+      ${ddRender}
+      <path class="equity-line-anim" pathLength="1" d="${path}" fill="none" stroke="${lineStroke}" stroke-width="2"/>
       <circle cx="${lastX}" cy="${y(finalV)}" r="5.5" fill="none" stroke="${lineColor}" stroke-opacity="0.25" stroke-width="1.5"/>
       <circle cx="${lastX}" cy="${y(finalV)}" r="3" fill="${lineColor}"/>
       <line class="equity-hover-guide" x1="0" x2="0" y1="${PAD.top}" y2="${H - PAD.bottom}" stroke="var(--text-dim)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
