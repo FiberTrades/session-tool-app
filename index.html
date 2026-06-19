@@ -6888,6 +6888,14 @@
     });
   }
 
+  // Keep the linked-file handle in memory so a save can call requestPermission() with NO
+  // IndexedDB read in front of it. idbGet resolves on a fresh event-loop task, which drops
+  // the click's user-activation before requestPermission runs - so the permission prompt
+  // never fires and the write fails. Caching the handle lets requestPermission be the first
+  // awaited call after the click, keeping the activation valid. Populated on load + on link.
+  let _backupHandle = null;
+  if (FS_API_SUPPORTED) { idbGet('backupFile').then(h => { _backupHandle = h || null; }).catch(() => {}); }
+
   async function linkBackupFile() {
     if (!FS_API_SUPPORTED) return { ok: false, reason: 'unsupported' };
     try {
@@ -6896,6 +6904,7 @@
         types: [{ description: 'Session Tool Backup', accept: { 'application/json': ['.json'] } }],
       });
       await idbSet('backupFile', handle);
+      _backupHandle = handle;
       data.settings.linkedFileBackup = true;
       data.settings.linkedFileName = handle.name;
       data.settings.autoBackup = false; // mutually exclusive with auto-download
@@ -6910,7 +6919,7 @@
 
   async function writeLinkedBackup() {
     try {
-      const handle = await idbGet('backupFile');
+      const handle = _backupHandle || await idbGet('backupFile');
       if (!handle) return false;
       const opts = { mode: 'readwrite' };
       let perm = await handle.queryPermission(opts);
@@ -6933,17 +6942,19 @@
   // permission up front so the later write just succeeds. No prompt if already granted.
   async function ensureBackupPermission() {
     if (!data.settings.linkedFileBackup) return false;
+    const handle = _backupHandle;
+    if (!handle) return false;
     try {
-      const handle = await idbGet('backupFile');
-      if (!handle) return false;
-      const opts = { mode: 'readwrite' };
-      let perm = await handle.queryPermission(opts);
-      if (perm !== 'granted') perm = await handle.requestPermission(opts);
+      // requestPermission is the first awaited call after the click, so the user-activation
+      // is still valid and the prompt can fire. Returns 'granted' instantly (no prompt) if
+      // permission is already held this session.
+      const perm = await handle.requestPermission({ mode: 'readwrite' });
       return perm === 'granted';
     } catch (e) { return false; }
   }
 
   async function unlinkBackupFile() {
+    _backupHandle = null;
     try { await idbDel('backupFile'); } catch (e) {}
     data.settings.linkedFileBackup = false;
     data.settings.linkedFileName = '';
