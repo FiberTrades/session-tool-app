@@ -6568,6 +6568,14 @@
   }
 
   let data = loadData();
+  // ===== Cloud-sync bridge (used by the cloud auth + sync module before </body>) =====
+  window.STCloud = {
+    getData: function () { return data; },
+    migrate: function (obj) { return migrate(obj); },
+    save: function () { return saveData(); },
+    STORAGE_KEY: STORAGE_KEY
+    // .onSave is attached by the cloud module; saveData() calls it on every write.
+  };
   let calendarMonth = today.getMonth();
   let calendarYear = today.getFullYear();
   let yearGlanceYear = today.getFullYear();
@@ -8544,6 +8552,7 @@
   function saveData() {
     syncTopLevelToActiveAccount();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    if (window.STCloud && window.STCloud.onSave) window.STCloud.onSave();
   }
 
   function getAllLifetimeTrades() {
@@ -26262,6 +26271,198 @@
       navigator.serviceWorker.register('./sw.js').catch(function () {});
     });
   }
+</script>
+<!-- ============================================================
+     Session Tool — cloud auth + sync
+     ============================================================ -->
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+(function () {
+  'use strict';
+
+  /* ---- config (publishable key — safe to ship in client code) ---- */
+  var SUPABASE_URL = 'https://figozyxoyobixadhqewr.supabase.co';
+  var SUPABASE_KEY = 'sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv';
+
+  if (!window.supabase || !window.STCloud) {
+    console.warn('[ST cloud] supabase-js or STCloud bridge missing — sync disabled.');
+    return;
+  }
+  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  var ST = window.STCloud;
+
+  /* ---- state ---- */
+  var currentUser = null;
+  var pushTimer = null;
+
+  /* ---- this module's own EN/ES strings ---- */
+  var STR = {
+    en: { account:'Account', signin:'Sign in', signedInAs:'Signed in as', email:'Email',
+          password:'Password', login:'Log in', signup:'Create account', signout:'Sign out',
+          close:'Close', need6:'Password must be at least 6 characters.', syncing:'Syncing…',
+          synced:'Synced', syncErr:'Sync error — will retry', cloudHint:'Log in to sync your journal across devices.',
+          checkEmail:'Account created. Check your email to confirm, then log in.' },
+    es: { account:'Cuenta', signin:'Iniciar sesión', signedInAs:'Sesión iniciada como', email:'Correo',
+          password:'Contraseña', login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión',
+          close:'Cerrar', need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…',
+          synced:'Sincronizado', syncErr:'Error de sincronización — se reintentará',
+          cloudHint:'Inicia sesión para sincronizar tu diario entre dispositivos.',
+          checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.' }
+  };
+  function lang() { return document.documentElement.lang === 'es' ? 'es' : 'en'; }
+  function tt(k) { return (STR[lang()] && STR[lang()][k]) || STR.en[k] || k; }
+
+  /* ---- styles (uses your CSS vars with safe fallbacks) ---- */
+  var css = document.createElement('style');
+  css.textContent =
+    '.stc-fab{position:fixed;top:12px;right:12px;z-index:9998;cursor:pointer;background:var(--bg-1,rgba(18,18,22,.92));color:var(--text,#e8e8e8);border:1px solid var(--border-2,#2a2a2e);border-radius:999px;padding:7px 14px;font:inherit;font-size:12px;letter-spacing:.04em;}' +
+    '.stc-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:10000;}' +
+    '.stc-bg.open{display:flex;}' +
+    '.stc-modal{background:var(--bg-1,var(--bg,#0d0d0f));color:var(--text,#e8e8e8);border:1px solid var(--border-2,#2a2a2e);border-radius:12px;padding:22px;width:min(360px,92vw);font:inherit;box-shadow:0 20px 60px rgba(0,0,0,.5);}' +
+    '.stc-modal h3{margin:0 0 12px;font-size:15px;letter-spacing:.04em;}' +
+    '.stc-modal label{display:block;font-size:11px;text-transform:uppercase;letter-spacing:.12em;color:var(--text-dim,#9a9aa0);margin:10px 0 4px;}' +
+    '.stc-modal input{width:100%;box-sizing:border-box;background:var(--bg,#0a0a0a);color:var(--text,#e8e8e8);border:1px solid var(--border-2,#2a2a2e);border-radius:8px;padding:9px 11px;font:inherit;font-size:14px;}' +
+    '.stc-row{display:flex;gap:8px;margin-top:16px;}' +
+    '.stc-row button{flex:1;cursor:pointer;border-radius:8px;padding:10px;font:inherit;font-size:13px;border:1px solid var(--border-2,#2a2a2e);}' +
+    '.stc-primary{background:var(--text,#e8e8e8);color:var(--bg,#0a0a0a);border:none!important;font-weight:600;}' +
+    '.stc-ghost{background:transparent;color:var(--text,#e8e8e8);}' +
+    '.stc-msg{margin-top:12px;font-size:12px;color:var(--text-dim,#9a9aa0);min-height:16px;}' +
+    '.stc-msg.err{color:#ff6b6b;}' +
+    '.stc-status{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim,#9a9aa0);margin-top:8px;}';
+  document.head.appendChild(css);
+
+  /* ---- floating Sign-in button (placeholder position — easy to move) ---- */
+  var fab = document.createElement('button');
+  fab.type = 'button'; fab.className = 'stc-fab'; fab.id = 'stc-fab';
+  document.body.appendChild(fab);
+
+  /* ---- modal ---- */
+  var bg = document.createElement('div'); bg.className = 'stc-bg';
+  bg.innerHTML =
+    '<div class="stc-modal" role="dialog" aria-modal="true">' +
+      '<h3 id="stc-title"></h3>' +
+      '<div id="stc-out">' +
+        '<p style="margin:0 0 4px;font-size:12px;color:var(--text-dim,#9a9aa0)" id="stc-hint"></p>' +
+        '<label id="stc-le"></label><input id="stc-email" type="email" autocomplete="email">' +
+        '<label id="stc-lp"></label><input id="stc-pass" type="password" autocomplete="current-password">' +
+        '<div class="stc-row"><button class="stc-primary" id="stc-login"></button><button class="stc-ghost" id="stc-signup"></button></div>' +
+        '<div class="stc-msg" id="stc-msg"></div>' +
+      '</div>' +
+      '<div id="stc-in" style="display:none;">' +
+        '<p style="margin:0;font-size:13px;"><span id="stc-as"></span> <strong id="stc-emailshow"></strong></p>' +
+        '<div class="stc-status" id="stc-status"></div>' +
+        '<div class="stc-row"><button class="stc-ghost" id="stc-signout"></button></div>' +
+      '</div>' +
+      '<div class="stc-row"><button class="stc-ghost" id="stc-close"></button></div>' +
+    '</div>';
+  document.body.appendChild(bg);
+  var $ = function (id) { return bg.querySelector('#' + id); };
+
+  function paint() {
+    fab.textContent = currentUser ? currentUser.email : tt('signin');
+    $('stc-title').textContent = currentUser ? tt('account') : tt('signin');
+    $('stc-hint').textContent = tt('cloudHint');
+    $('stc-le').textContent = tt('email'); $('stc-lp').textContent = tt('password');
+    $('stc-login').textContent = tt('login'); $('stc-signup').textContent = tt('signup');
+    $('stc-signout').textContent = tt('signout'); $('stc-close').textContent = tt('close');
+    $('stc-as').textContent = tt('signedInAs');
+    if (currentUser) $('stc-emailshow').textContent = currentUser.email;
+  }
+  function open() {
+    $('stc-out').style.display = currentUser ? 'none' : 'block';
+    $('stc-in').style.display = currentUser ? 'block' : 'none';
+    msg(''); paint(); bg.classList.add('open');
+  }
+  function close() { bg.classList.remove('open'); }
+  function msg(t, err) { $('stc-msg').textContent = t || ''; $('stc-msg').className = 'stc-msg' + (err ? ' err' : ''); }
+  function status(t) { $('stc-status').textContent = t || ''; }
+
+  fab.addEventListener('click', open);
+  $('stc-close').addEventListener('click', close);
+  bg.addEventListener('click', function (e) { if (e.target === bg) close(); });
+
+  /* ---- auth actions ---- */
+  $('stc-login').addEventListener('click', function () {
+    var email = $('stc-email').value.trim(), pass = $('stc-pass').value;
+    if (pass.length < 6) return msg(tt('need6'), true);
+    msg(tt('syncing'));
+    sb.auth.signInWithPassword({ email: email, password: pass }).then(function (r) {
+      if (r.error) msg(r.error.message, true); else { msg(''); close(); }
+    });
+  });
+  $('stc-signup').addEventListener('click', function () {
+    var email = $('stc-email').value.trim(), pass = $('stc-pass').value;
+    if (pass.length < 6) return msg(tt('need6'), true);
+    msg(tt('syncing'));
+    sb.auth.signUp({ email: email, password: pass }).then(function (r) {
+      if (r.error) return msg(r.error.message, true);
+      if (r.data && r.data.session) { msg(''); close(); }   // confirm-email OFF -> instant session
+      else msg(tt('checkEmail'));
+    });
+  });
+  $('stc-signout').addEventListener('click', function () { sb.auth.signOut().then(close); });
+
+  /* ---- sync engine ---- */
+  function eq(a, b) { try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; } }
+
+  function debouncePush() {
+    if (!currentUser) return;
+    clearTimeout(pushTimer);
+    status(tt('syncing'));
+    pushTimer = setTimeout(cloudPush, 1500);
+  }
+  ST.onSave = debouncePush;   // every saveData() schedules a push
+
+  function cloudPush() {
+    if (!currentUser) return;
+    sb.from('journals').upsert({
+      user_id: currentUser.id, data: ST.getData(), updated_at: new Date().toISOString()
+    }).then(function (r) { status(r.error ? tt('syncErr') : tt('synced')); });
+  }
+
+  /* On login: pull cloud row.
+     - cloud empty  -> push this device's data up (first sync for the account)
+     - cloud has data & differs -> cloud wins: back up local, write cloud, reload
+     - already equal -> nothing (this is what stops the pull/reload loop) */
+  function reconcile() {
+    if (!currentUser) return;
+    status(tt('syncing'));
+    sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
+      if (r.error) { status(tt('syncErr')); return; }
+      var raw = r.data && r.data.data;
+      var cloudHasData = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
+      var local = ST.getData();
+      if (cloudHasData) {
+        var cloud = ST.migrate(raw);
+        var justPulled = sessionStorage.getItem('st_just_pulled');
+        if (eq(cloud, local) || justPulled) { sessionStorage.removeItem('st_just_pulled'); status(tt('synced')); return; }
+        sessionStorage.setItem('st_just_pulled', '1');
+        try { localStorage.setItem(ST.STORAGE_KEY + '__preCloudBackup', JSON.stringify(local)); } catch (e) {}
+        try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } catch (e) {}
+        sb.from('journals').upsert({ user_id: currentUser.id, data: cloud, updated_at: new Date().toISOString() })
+          .then(function () { location.reload(); });
+      } else {
+        cloudPush();
+      }
+    });
+  }
+
+  sb.auth.onAuthStateChange(function (event, session) {
+    currentUser = session ? session.user : null;
+    paint();
+    if (currentUser) { status(''); reconcile(); }
+    else { clearTimeout(pushTimer); status(''); }
+  });
+  sb.auth.getSession().then(function (r) {
+    currentUser = r.data && r.data.session ? r.data.session.user : null;
+    paint();
+    if (currentUser) reconcile();
+  });
+
+  /* keep this UI's language matched to your app's toggle */
+  new MutationObserver(paint).observe(document.documentElement, { attributes: true, attributeFilter: ['lang'] });
+  paint();
+})();
 </script>
 </body>
 </html>
