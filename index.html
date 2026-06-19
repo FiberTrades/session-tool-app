@@ -26544,16 +26544,22 @@
       var raw = r.data && r.data.data;
       var cloudHasData = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
       var local = ST.getData();
-      if (cloudHasData) {
-        var cloud = ST.migrate(raw);
-        var justPulled = sessionStorage.getItem('st_just_pulled');
-        if (eq(cloud, local) || justPulled) { sessionStorage.removeItem('st_just_pulled'); accStatus(tt('synced')); return; }
-        sessionStorage.setItem('st_just_pulled', '1');
-        try { localStorage.setItem(ST.STORAGE_KEY + '__preCloudBackup', JSON.stringify(local)); } catch (e) {}
-        try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } catch (e) {}
-        sb.from('journals').upsert({ user_id: currentUser.id, data: cloud, updated_at: new Date().toISOString() })
-          .then(function () { location.reload(); });
+      // First-ever sync for this account: cloud is empty -> seed it from local. Never wipes anything.
+      if (!cloudHasData) { cloudPush(); return; }
+      var cloud = ST.migrate(raw);
+      if (eq(cloud, local)) { accStatus(tt('synced')); return; }
+      // Loss-proof reconcile: keep whichever copy holds MORE data, back up the other (timestamped,
+      // so an existing backup is never overwritten). A smaller cloud copy can no longer clobber a fuller local one.
+      var localStr = JSON.stringify(local), cloudStr = JSON.stringify(cloud);
+      if (cloudStr.length > localStr.length) {
+        // Cloud is richer -> adopt it locally, but stash local first.
+        try { localStorage.setItem(ST.STORAGE_KEY + '__backup_' + Date.now(), localStr); } catch (e) {}
+        try { localStorage.setItem(ST.STORAGE_KEY, cloudStr); } catch (e) {}
+        accStatus(tt('synced'));
+        location.reload();
       } else {
+        // Local is richer (or same size but different) -> keep local, push it up, stash the cloud copy.
+        try { localStorage.setItem(ST.STORAGE_KEY + '__cloudbackup_' + Date.now(), cloudStr); } catch (e) {}
         cloudPush();
       }
     });
