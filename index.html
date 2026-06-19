@@ -111,7 +111,14 @@
   .container { max-width: 1080px; margin: 0 auto; padding: 80px 32px 120px; }
   .header { margin-bottom: 56px; position: relative; }
   .brand { font-size: 10px; letter-spacing: 0.15em; color: inherit; text-transform: uppercase; margin-bottom: 0; }
-  .brand-row { display: flex; margin-bottom: 56px; }
+  .brand-row { display: flex; align-items: center; gap: 14px; margin-bottom: 56px; }
+  .plan-badge { font-family:'DM Mono',monospace; font-size:10px; letter-spacing:0.14em; text-transform:uppercase; line-height:1; padding:6px 11px; border-radius:999px; border:1px solid var(--border-2); background:var(--bg-elev); color:var(--text-dim); cursor:pointer; white-space:nowrap; transition:opacity 150ms,border-color 150ms,color 150ms; }
+  .plan-badge:hover { opacity:0.85; }
+  .plan-badge .pb-dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:7px; vertical-align:middle; background:currentColor; }
+  .plan-badge.pb-premium { color:var(--good); border-color:rgba(95,203,141,0.45); background:var(--good-bg2); }
+  .plan-badge.pb-trial { color:var(--info); border-color:rgba(96,165,250,0.45); background:var(--info-bg); }
+  .plan-badge.pb-free { color:var(--text-dim); border-color:var(--border-2); background:var(--bg-elev); }
+  .plan-badge.pb-free:hover { color:var(--text-mid); border-color:var(--text-dim); }
   /* Settings entry point — the wordmark "SETTINGS" + gear icon as one clickable
      button at the top-left of the header. Opens the global Settings modal (account
      management, user name, session window, currency/language, data, etc.). Stays
@@ -2265,6 +2272,7 @@
       <button type="button" class="settings-gear" id="settings-gear">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="4" y1="6" x2="20" y2="6"/><line x1="4" y1="12" x2="20" y2="12"/><line x1="4" y1="18" x2="20" y2="18"/></svg>
       </button>
+      <button type="button" class="plan-badge" id="plan-badge" style="display:none;" aria-label="Account plan"></button>
     </div>
     <!-- Account-scope picker — flips which account's trades drive every stat
          surface. Sits in the top-right of the header. Hidden when the user has
@@ -26296,15 +26304,16 @@
   var recoveryMode = false;
   var forcing = false; try { forcing = !!sessionStorage.getItem('st_forcePush'); } catch (e) {}
   var CHECKOUT_URL = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/44325cf8-e0d0-46f6-9af7-fee73bf4adf2';
-  var profilePaid = null, profilePlan = null;
+  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null;
+  var TRIAL_DAYS = 14;
 
   var STR = {
     en: { account:'Sign out', signedInAs:'Signed in as', email:'Email', password:'Password',
-          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Safety backups', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', upgradeBtn:'Upgrade to Premium — £12/mo', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
+          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Safety backups', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', planTrial:'{n}-day free trial remaining', badgePremium:'Premium', badgeTrial:'Trial · {n}d', badgeFree:'Free', pwKicker:'Trial ended', pwMsg:'Your 14-day free trial has ended. Subscribe to keep using Session Tool — your data is saved and will be waiting when you upgrade.', pwHave:'I\u2019ve already subscribed — refresh', upgradeBtn:'Upgrade to Premium — £12/mo', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
           need6:'Password must be at least 6 characters.', syncing:'Syncing…', synced:'Synced',
           syncErr:'Sync error — will retry', checkEmail:'Account created. Check your email to confirm, then log in.' },
     es: { account:'Cerrar sesión', signedInAs:'Sesión iniciada como', email:'Correo', password:'Contraseña',
-          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Copias de seguridad', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', upgradeBtn:'Hazte Premium — £12/mes', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
+          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Copias de seguridad', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', planTrial:'Prueba gratuita: quedan {n} días', badgePremium:'Premium', badgeTrial:'Prueba · {n}d', badgeFree:'Gratis', pwKicker:'Prueba finalizada', pwMsg:'Tu prueba gratuita de 14 días ha terminado. Suscríbete para seguir usando Session Tool — tus datos están guardados y estarán aquí cuando mejores tu plan.', pwHave:'Ya me suscribí — actualizar', upgradeBtn:'Hazte Premium — £12/mes', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
           need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…', synced:'Sincronizado',
           syncErr:'Error de sincronización — se reintentará', checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.' }
   };
@@ -26389,6 +26398,53 @@
     '</div>';
   document.body.appendChild(gate);
   function gel(id) { return gate.querySelector('#' + id); }
+
+  /* ============ PAYWALL (trial expired + not subscribed) ============ */
+  var paywall = document.createElement('div');
+  paywall.className = 'stc-gate';
+  paywall.innerHTML =
+    '<div class="stc-shell">' +
+      '<div class="stc-wordmark">Session Tool</div>' +
+      '<div class="stc-authcard">' +
+        '<div class="stc-kicker" id="stc-pw-kicker"></div>' +
+        '<p class="stc-msg" id="stc-pw-msg" style="margin-bottom:18px;line-height:1.6;"></p>' +
+        '<div class="stc-row"><button class="stc-primary" id="stc-pw-upgrade"></button></div>' +
+        '<button class="stc-forgot" id="stc-pw-refresh"></button>' +
+        '<button class="stc-forgot" id="stc-pw-signout" style="margin-top:6px;"></button>' +
+      '</div>' +
+    '</div>';
+  document.body.appendChild(paywall);
+  function pwel(id) { return paywall.querySelector('#' + id); }
+  function paintPaywall() {
+    pwel('stc-pw-kicker').textContent = tt('pwKicker');
+    pwel('stc-pw-msg').textContent = tt('pwMsg');
+    pwel('stc-pw-upgrade').textContent = tt('upgradeBtn');
+    pwel('stc-pw-refresh').textContent = tt('pwHave');
+    pwel('stc-pw-signout').textContent = tt('signout');
+  }
+  function showPaywall() { paintPaywall(); paywall.classList.add('open'); }
+  function hidePaywall() { paywall.classList.remove('open'); }
+  pwel('stc-pw-upgrade').addEventListener('click', function () {
+    if (!currentUser) return;
+    var u = CHECKOUT_URL + '?checkout[email]=' + encodeURIComponent(currentUser.email || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser.id);
+    window.open(u, '_blank');
+  });
+  pwel('stc-pw-refresh').addEventListener('click', function () { fetchProfile(); });
+  pwel('stc-pw-signout').addEventListener('click', function () { sb.auth.signOut(); });
+
+  // Trial is over once we're past signup + TRIAL_DAYS and the user hasn't paid.
+  // Fail OPEN whenever we don't yet know the signup date, so nobody is wrongly locked.
+  function trialExpired() {
+    if (profilePaid) return false;
+    if (!profileCreated) return false;
+    var c = new Date(profileCreated).getTime();
+    if (!c) return false;
+    return Date.now() >= c + TRIAL_DAYS * 86400000;
+  }
+  function enforceAccess() {
+    if (currentUser && !recoveryMode && trialExpired()) showPaywall();
+    else hidePaywall();
+  }
 
   function paintGate() {
     gel('stc-g-kicker').textContent = tt('kicker');
@@ -26607,15 +26663,65 @@
     });
   }
 
+  // Work out the account state for display: 'premium' | 'trial' | 'free' (+ days left on trial).
+  function computeAccountState() {
+    // Two states only: Premium (paid) or Trial counting down from signup.
+    if (profilePaid) return { state: 'premium', days: 0 };
+    var dayMs = 86400000, days = 0;
+    if (profileCreated) {
+      var created = new Date(profileCreated).getTime();
+      if (created) days = Math.max(0, Math.ceil((created + TRIAL_DAYS * dayMs - Date.now()) / dayMs));
+    }
+    return { state: 'trial', days: days };
+  }
+
+  var badgeWired = false;
+  function wireBadge() {
+    if (badgeWired) return;
+    var badge = document.getElementById('plan-badge'); if (!badge) return;
+    badge.addEventListener('click', function () {
+      if (!currentUser || profilePaid) return;            // premium users have nothing to upgrade
+      var u = CHECKOUT_URL + '?checkout[email]=' + encodeURIComponent(currentUser.email || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser.id);
+      window.open(u, '_blank');
+    });
+    badgeWired = true;
+  }
+
+  function renderPlanBadge() {
+    var badge = document.getElementById('plan-badge'); if (!badge) return;
+    wireBadge();
+    // Stay hidden until we actually know the account state (avoids a "Free" flash on load).
+    if (!currentUser || (profilePaid === null && !profileCreated)) { badge.style.display = 'none'; return; }
+    var s = computeAccountState();
+    var label = (s.state === 'premium') ? tt('badgePremium') : tt('badgeTrial').replace('{n}', s.days);
+    badge.className = 'plan-badge pb-' + s.state;
+    badge.innerHTML = '<span class="pb-dot"></span>' + label;
+    badge.style.display = '';
+  }
+
   function renderPlan() {
     var lbl = document.getElementById('stc-a-lplan'); if (lbl) lbl.textContent = tt('planTitle');
-    var st = document.getElementById('stc-a-planstatus'); if (st) st.textContent = profilePaid ? tt('planPremium') : tt('planFree');
+    var s = computeAccountState();
+    var st = document.getElementById('stc-a-planstatus');
+    if (st) {
+      if (s.state === 'premium') st.textContent = tt('planPremium');
+      else st.textContent = tt('planTrial').replace('{n}', s.days);
+    }
     var btn = document.getElementById('stc-a-upgrade'); if (btn) { btn.style.display = profilePaid ? 'none' : ''; btn.textContent = tt('upgradeBtn'); }
+    renderPlanBadge();
+    enforceAccess();
   }
+
   function fetchProfile() {
-    if (!currentUser) return;
-    sb.from('profiles').select('is_paid, plan').eq('id', currentUser.id).maybeSingle().then(function (r) {
-      if (r && r.data) { profilePaid = !!r.data.is_paid; profilePlan = r.data.plan || null; }
+    if (!currentUser) { renderPlanBadge(); return; }
+    sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle().then(function (r) {
+      if (r && r.data) {
+        profilePaid = !!r.data.is_paid;
+        profilePlan = r.data.plan || null;
+        profileStatus = r.data.status || null;
+        profilePeriodEnd = r.data.current_period_end || null;
+        profileCreated = r.data.created_at || null;
+      }
       renderPlan();
     });
   }
@@ -26675,7 +26781,7 @@
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); accStatus(''); reconcile(); fetchProfile(); }
-    else { clearTimeout(pushTimer); accStatus(''); showGate(); }
+    else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; hidePaywall(); renderPlanBadge(); showGate(); }
   });
 
   if (window.location.hash.indexOf('type=recovery') !== -1) { recoveryMode = true; }
@@ -26689,14 +26795,17 @@
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); reconcile(); fetchProfile(); }
-    else { showGate(); }
+    else { hidePaywall(); showGate(); }
   });
 
   setTimeout(function () { try { if (tradeCount(ST.getData()) > 0) takeSnapshot('load'); } catch (e) {} }, 4000);
 
   window.addEventListener('focus', function () { if (currentUser) fetchProfile(); });
 
-  new MutationObserver(function () { paintGate(); paintAccount(); }).observe(
+  // Re-evaluate the countdown / lockout periodically for long-open sessions.
+  setInterval(function () { if (currentUser) renderPlan(); }, 3600000);
+
+  new MutationObserver(function () { paintGate(); paintAccount(); paintPaywall(); }).observe(
     document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 
   paintGate(); paintAccount();
