@@ -26295,14 +26295,16 @@
   var pushTimer = null;
   var recoveryMode = false;
   var forcing = false; try { forcing = !!sessionStorage.getItem('st_forcePush'); } catch (e) {}
+  var CHECKOUT_URL = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/44325cf8-e0d0-46f6-9af7-fee73bf4adf2';
+  var profilePaid = null, profilePlan = null;
 
   var STR = {
     en: { account:'Sign out', signedInAs:'Signed in as', email:'Email', password:'Password',
-          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Safety backups', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
+          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Safety backups', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', upgradeBtn:'Upgrade to Premium — £12/mo', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
           need6:'Password must be at least 6 characters.', syncing:'Syncing…', synced:'Synced',
           syncErr:'Sync error — will retry', checkEmail:'Account created. Check your email to confirm, then log in.' },
     es: { account:'Cerrar sesión', signedInAs:'Sesión iniciada como', email:'Correo', password:'Contraseña',
-          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Copias de seguridad', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
+          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Copias de seguridad', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', upgradeBtn:'Hazte Premium — £12/mes', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
           need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…', synced:'Sincronizado',
           syncErr:'Error de sincronización — se reintentará', checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.' }
   };
@@ -26490,6 +26492,11 @@
         '<div class="settings-data-actions" style="margin-top:10px;">' +
           '<button class="settings-btn" id="stc-a-signout"></button>' +
         '</div>' +
+        '<div id="stc-a-plan" style="margin-top:16px;">' +
+          '<label class="settings-label" id="stc-a-lplan"></label>' +
+          '<p class="settings-hint" id="stc-a-planstatus" style="margin-top:6px;margin-bottom:10px;"></p>' +
+          '<button class="settings-btn settings-btn-primary" id="stc-a-upgrade"></button>' +
+        '</div>' +
         '<div id="stc-a-backups" style="margin-top:22px;border-top:1px solid var(--border-2,#2a2a2a);padding-top:16px;">' +
           '<label class="settings-label" id="stc-a-lbk"></label>' +
           '<p class="settings-hint" id="stc-a-bkhint" style="margin-top:6px;margin-bottom:10px;"></p>' +
@@ -26504,6 +26511,7 @@
         s.style.display = (s.dataset.section === 'account') ? '' : 'none';
       });
       paintAccount();
+      fetchProfile();
     });
 
     document.getElementById('stc-a-login').addEventListener('click', function () {
@@ -26513,6 +26521,12 @@
       doAuth('signup', document.getElementById('stc-a-email').value.trim(), document.getElementById('stc-a-pass').value, accMsg, paintAccount);
     });
     document.getElementById('stc-a-signout').addEventListener('click', function () { sb.auth.signOut(); });
+    var _up = document.getElementById('stc-a-upgrade');
+    if (_up) _up.addEventListener('click', function () {
+      if (!currentUser) return;
+      var u = CHECKOUT_URL + '?checkout[email]=' + encodeURIComponent(currentUser.email || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser.id);
+      window.open(u, '_blank');
+    });
   }
 
   function accMsg(t, err) { var el = document.getElementById('stc-a-msg'); if (!el) return; el.textContent = t || ''; el.style.color = err ? 'var(--bad,#e85d5d)' : ''; }
@@ -26529,6 +26543,7 @@
     set('stc-a-lacc', tt('account')); set('stc-a-as', tt('signedInAs')); set('stc-a-signout', tt('signout'));
     if (currentUser) set('stc-a-email-show', currentUser.email);
     if (currentUser) renderBackups();
+    if (currentUser) renderPlan();
   }
 
   /* ============ rolling safety snapshots ============ */
@@ -26592,6 +26607,19 @@
     });
   }
 
+  function renderPlan() {
+    var lbl = document.getElementById('stc-a-lplan'); if (lbl) lbl.textContent = tt('planTitle');
+    var st = document.getElementById('stc-a-planstatus'); if (st) st.textContent = profilePaid ? tt('planPremium') : tt('planFree');
+    var btn = document.getElementById('stc-a-upgrade'); if (btn) { btn.style.display = profilePaid ? 'none' : ''; btn.textContent = tt('upgradeBtn'); }
+  }
+  function fetchProfile() {
+    if (!currentUser) return;
+    sb.from('profiles').select('is_paid, plan').eq('id', currentUser.id).maybeSingle().then(function (r) {
+      if (r && r.data) { profilePaid = !!r.data.is_paid; profilePlan = r.data.plan || null; }
+      renderPlan();
+    });
+  }
+
   /* ============ sync engine ============ */
   function eq(a, b) { try { return JSON.stringify(a) === JSON.stringify(b); } catch (e) { return false; } }
 
@@ -26646,7 +26674,7 @@
     currentUser = session ? session.user : null;
     paintAccount();
     if (recoveryMode) { showReset(); return; }
-    if (currentUser) { hideGate(); accStatus(''); reconcile(); }
+    if (currentUser) { hideGate(); accStatus(''); reconcile(); fetchProfile(); }
     else { clearTimeout(pushTimer); accStatus(''); showGate(); }
   });
 
@@ -26660,11 +26688,13 @@
     currentUser = r.data && r.data.session ? r.data.session.user : null;
     paintAccount();
     if (recoveryMode) { showReset(); return; }
-    if (currentUser) { hideGate(); reconcile(); }
+    if (currentUser) { hideGate(); reconcile(); fetchProfile(); }
     else { showGate(); }
   });
 
   setTimeout(function () { try { if (tradeCount(ST.getData()) > 0) takeSnapshot('load'); } catch (e) {} }, 4000);
+
+  window.addEventListener('focus', function () { if (currentUser) fetchProfile(); });
 
   new MutationObserver(function () { paintGate(); paintAccount(); }).observe(
     document.documentElement, { attributes: true, attributeFilter: ['lang'] });
