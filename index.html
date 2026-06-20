@@ -3243,9 +3243,6 @@
       <div id="backup-auto-banner" class="backup-status on-info" style="display:none;">
         <span data-i18n-html="backup.auto_on_timestamped_html"><strong style="color:var(--info);">Auto-backup is on.</strong> A new timestamped file downloads silently on every save. <a href="#" id="backup-disable-auto" style="color:var(--bad);text-decoration:underline;">Turn off</a></span>
       </div>
-      <div id="backup-linked-banner" class="backup-status on-good" style="display:none;">
-        <span data-i18n-html="backup.auto_on_linked_html"><strong style="color:var(--good);">Auto-backup is on.</strong> Linked to <span id="backup-linked-name" style="color:var(--text);font-family:'DM Mono',monospace;"></span> — silently overwritten on every save. <a href="#" id="backup-unlink" style="color:var(--bad);text-decoration:underline;">Turn off</a></span>
-      </div>
       <!-- Safety backups (local rollback snapshots) — collapsible, lives here in the Backup settings modal -->
       <div id="stc-a-backups" class="backup-sec">
         <button type="button" class="stc-bk-toggle" id="stc-a-bktoggle" aria-expanded="false">
@@ -6900,123 +6897,6 @@
     }
   }
 
-  // ----------------------------------------------------------------------------
-  // File System Access API + IndexedDB helpers for "linked backup file" feature
-  // The user picks a file once via a system dialog; the handle is stored in
-  // IndexedDB across sessions. Every save silently overwrites that file.
-  // Chromium-only (Chrome, Edge, Brave, Opera, Arc). Hidden in unsupported browsers.
-  // ----------------------------------------------------------------------------
-  const FS_API_SUPPORTED = typeof window.showSaveFilePicker === 'function';
-
-  function idbOpen() {
-    return new Promise((resolve, reject) => {
-      const req = indexedDB.open('sessionTool', 1);
-      req.onupgradeneeded = e => e.target.result.createObjectStore('handles');
-      req.onsuccess = e => resolve(e.target.result);
-      req.onerror = e => reject(e.target.error);
-    });
-  }
-  async function idbSet(key, val) {
-    const db = await idbOpen();
-    return new Promise((res, rej) => {
-      const tx = db.transaction('handles', 'readwrite');
-      tx.objectStore('handles').put(val, key);
-      tx.oncomplete = () => res();
-      tx.onerror = () => rej(tx.error);
-    });
-  }
-  async function idbGet(key) {
-    const db = await idbOpen();
-    return new Promise((res, rej) => {
-      const tx = db.transaction('handles', 'readonly');
-      const r = tx.objectStore('handles').get(key);
-      r.onsuccess = () => res(r.result);
-      r.onerror = () => rej(r.error);
-    });
-  }
-  async function idbDel(key) {
-    const db = await idbOpen();
-    return new Promise((res, rej) => {
-      const tx = db.transaction('handles', 'readwrite');
-      tx.objectStore('handles').delete(key);
-      tx.oncomplete = () => res();
-      tx.onerror = () => rej(tx.error);
-    });
-  }
-
-  // Keep the linked-file handle in memory so a save can call requestPermission() with NO
-  // IndexedDB read in front of it. idbGet resolves on a fresh event-loop task, which drops
-  // the click's user-activation before requestPermission runs - so the permission prompt
-  // never fires and the write fails. Caching the handle lets requestPermission be the first
-  // awaited call after the click, keeping the activation valid. Populated on load + on link.
-  let _backupHandle = null;
-  if (FS_API_SUPPORTED) { idbGet('backupFile').then(h => { _backupHandle = h || null; }).catch(() => {}); }
-
-  async function linkBackupFile() {
-    if (!FS_API_SUPPORTED) return { ok: false, reason: 'unsupported' };
-    try {
-      const handle = await window.showSaveFilePicker({
-        suggestedName: 'session-tool-backup.json',
-        types: [{ description: 'Session Tool Backup', accept: { 'application/json': ['.json'] } }],
-      });
-      await idbSet('backupFile', handle);
-      _backupHandle = handle;
-      data.settings.linkedFileBackup = true;
-      data.settings.linkedFileName = handle.name;
-      data.settings.autoBackup = false; // mutually exclusive with auto-download
-      saveData();
-      const wrote = await writeLinkedBackup();
-      return { ok: wrote, name: handle.name };
-    } catch (e) {
-      // User cancelled the picker, or browser refused
-      return { ok: false, reason: 'cancelled' };
-    }
-  }
-
-  async function writeLinkedBackup() {
-    try {
-      const handle = _backupHandle || await idbGet('backupFile');
-      if (!handle) return false;
-      const opts = { mode: 'readwrite' };
-      let perm = await handle.queryPermission(opts);
-      if (perm !== 'granted') perm = await handle.requestPermission(opts);
-      if (perm !== 'granted') return false;
-      const writable = await handle.createWritable();
-      await writable.write(JSON.stringify(data, null, 2));
-      await writable.close();
-      return true;
-    } catch (e) {
-      return false;
-    }
-  }
-
-  // Ensure read-write permission on the linked backup file is granted. The File System
-  // Access API needs a fresh user-activation to PROMPT for permission; that activation is
-  // gone by the time the save flow finishes its async work (translating the Discord post,
-  // writing the clipboard, etc.), which is what made the backup write fail silently. Calling
-  // this at the very start of a save click - while the gesture is still fresh - grants
-  // permission up front so the later write just succeeds. No prompt if already granted.
-  async function ensureBackupPermission() {
-    if (!data.settings.linkedFileBackup) return false;
-    const handle = _backupHandle;
-    if (!handle) return false;
-    try {
-      // requestPermission is the first awaited call after the click, so the user-activation
-      // is still valid and the prompt can fire. Returns 'granted' instantly (no prompt) if
-      // permission is already held this session.
-      const perm = await handle.requestPermission({ mode: 'readwrite' });
-      return perm === 'granted';
-    } catch (e) { return false; }
-  }
-
-  async function unlinkBackupFile() {
-    _backupHandle = null;
-    try { await idbDel('backupFile'); } catch (e) {}
-    data.settings.linkedFileBackup = false;
-    data.settings.linkedFileName = '';
-    saveData();
-  }
-
   // New-day handling: rather than silently wiping yesterday's bias/review, detect a new day
   // and — only if there's carried-over content — ask the user whether to start fresh. The
   // actual reset happens on confirm (see startNewSession + the prompt wiring below).
@@ -7197,6 +7077,11 @@
   function migrate(d) {
     if (!d.defaults) d.defaults = { risk: '', costs: '' };
     if (!d.settings) d.settings = { beThreshold: 10 };
+    // The linked-file (OneDrive) backup was removed — it could silently stop writing with
+    // no warning. Server-side version history is the safety net now. Force the old setting
+    // off so no stale "backup linked" state lingers in the UI.
+    d.settings.linkedFileBackup = false;
+    d.settings.linkedFileName = '';
     if (d.settings.beThreshold === undefined) d.settings.beThreshold = 10;
     // Default UI language — 'en' or 'es'. Stored so the toggle persists across sessions.
     if (d.settings.lang !== 'en' && d.settings.lang !== 'es') d.settings.lang = 'en';
@@ -10439,11 +10324,7 @@
       saveData();
       const statsTab = document.querySelector('.tab[data-page="stats"]');
       if (statsTab) statsTab.click();
-      if (data.settings.linkedFileBackup) {
-        const ok = await writeLinkedBackup();
-        if (ok) showToast(t('toast.observed_saved_backup_written'));
-        else { showToast(t('toast.saved_backup_unreachable')); }
-      } else if (data.settings.autoBackup) {
+      if (data.settings.autoBackup) {
         downloadBackup();
         showToast(t('toast.observed_saved_backup_downloaded'));
       } else if (!skipBackupModal) {
@@ -10521,14 +10402,7 @@
     renderTrades();
     const statsTab = document.querySelector('.tab[data-page="stats"]');
     if (statsTab) statsTab.click();
-    if (data.settings.linkedFileBackup) {
-      const ok = await writeLinkedBackup();
-      if (ok) {
-        showToast(t('toast.trades_saved_backup_written').replace('{n}', valid.length).replace('{word}', valid.length === 1 ? t('backup.trade_singular') : t('backup.trade_plural')).replace('{saved}', valid.length === 1 ? t('toast.saved_word_sing') : t('toast.saved_word_plural')));
-      } else {
-        showToast(t('toast.saved_backup_unreachable'));
-      }
-    } else if (data.settings.autoBackup) {
+    if (data.settings.autoBackup) {
       downloadBackup();
       showToast(t('toast.trades_saved_backup_downloaded').replace('{n}', valid.length).replace('{word}', valid.length === 1 ? t('backup.trade_singular') : t('backup.trade_plural')).replace('{saved}', valid.length === 1 ? t('toast.saved_word_sing') : t('toast.saved_word_plural')));
     } else if (!skipBackupModal) {
@@ -10543,10 +10417,6 @@
   document.getElementById('review-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     jumpToDiscord('review');
-    // Grant linked-backup file permission now, while the click's user-activation is still
-    // fresh - the translation/clipboard awaits below consume it, which is what made the
-    // later backup write fail with "could not be reached".
-    if (data.settings.linkedFileBackup) { try { await ensureBackupPermission(); } catch (e) {} }
     const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
     await copyToClipboard(msg);
     const hasTrades = (data.review.trades || []).length > 0;
@@ -10567,9 +10437,6 @@
     const confirmBtn = document.getElementById('save-series-warn-confirm');
     const cancelBtn = document.getElementById('save-series-warn-cancel');
     if (confirmBtn) confirmBtn.addEventListener('click', async () => {
-      // Grant backup-file permission within this fresh click gesture before the save's
-      // async work, so the linked-file write succeeds.
-      if (data.settings.linkedFileBackup) { try { await ensureBackupPermission(); } catch (e) {} }
       close();
       // "Save anyway": the user explicitly accepted possible duplicates, so force a fresh save.
       await performReviewSave({ forceNew: true });
@@ -15657,7 +15524,7 @@
   function updateBackupSettingsLabel() {
     const link = document.getElementById('data-backup-settings');
     if (!link) return;
-    if (data.settings.linkedFileBackup || data.settings.autoBackup) {
+    if (data.settings.autoBackup) {
       link.textContent = t('btn.backup_settings_on');
       link.style.color = 'var(--good)';
     } else {
@@ -15685,12 +15552,9 @@
       subEl.textContent = t('backup.sub_settings');
     }
     const isAuto    = !!data.settings.autoBackup;
-    const isLinked  = !!data.settings.linkedFileBackup;
     document.getElementById('backup-auto-banner').style.display = isAuto ? 'block' : 'none';
-    document.getElementById('backup-linked-banner').style.display = isLinked ? 'block' : 'none';
-    // Hide the "Auto-backup" button if either mode is already active
-    document.getElementById('backup-enable-auto').style.display = (isAuto || isLinked) ? 'none' : 'block';
-    if (isLinked) document.getElementById('backup-linked-name').textContent = data.settings.linkedFileName || 'backup file';
+    // Hide the "Auto-backup" button if auto-backup is already active.
+    document.getElementById('backup-enable-auto').style.display = isAuto ? 'none' : 'block';
     document.getElementById('backup-modal-bg').classList.add('show');
   }
   function closeBackupModal() {
@@ -15705,34 +15569,15 @@
     showToast(t('toast.backup_downloaded'));
     closeBackupModal();
   });
-  // Smart auto-backup button: tries linked-file (Chrome/Edge), falls back to auto-download (Safari/Firefox)
+  // Auto-backup downloads a fresh backup file on each save. (The old linked-file mode was
+  // removed — it could silently stop writing. Server-side version history is the real net.)
   document.getElementById('backup-enable-auto').addEventListener('click', async () => {
-    if (FS_API_SUPPORTED) {
-      const result = await linkBackupFile();
-      if (result.ok) {
-        showToast(t('toast.autobackup_linked').replace('{name}', result.name));
-        updateBackupSettingsLabel();
-        closeBackupModal();
-      } else if (result.reason === 'cancelled') {
-        // Picker cancelled — modal stays open, user can try again or pick Skip
-      } else {
-        // Unexpected — fall back to auto-download
-        data.settings.autoBackup = true;
-        saveData();
-        downloadBackup();
-        showToast(t('toast.autobackup_enabled_download'));
-        updateBackupSettingsLabel();
-        closeBackupModal();
-      }
-    } else {
-      // Browser doesn't support file picker — use auto-download
-      data.settings.autoBackup = true;
-      saveData();
-      downloadBackup();
-      showToast(t('toast.autobackup_enabled'));
-      updateBackupSettingsLabel();
-      closeBackupModal();
-    }
+    data.settings.autoBackup = true;
+    saveData();
+    downloadBackup();
+    showToast(t('toast.autobackup_enabled'));
+    updateBackupSettingsLabel();
+    closeBackupModal();
   });
   // Use event delegation for the "Turn off" links inside the auto-backup banners.
   // Those banners use data-i18n-html, so their innerHTML (including these anchors)
@@ -15748,16 +15593,6 @@
       updateBackupSettingsLabel();
       closeBackupModal();
       return;
-    }
-    const unlinkLink = e.target.closest('#backup-unlink');
-    if (unlinkLink) {
-      e.preventDefault();
-      (async () => {
-        await unlinkBackupFile();
-        showToast(t('toast.autobackup_off'));
-        updateBackupSettingsLabel();
-        closeBackupModal();
-      })();
     }
   });
   // Footer "Backup Settings" link — opens modal in management mode
@@ -15775,6 +15610,10 @@
         const imported = JSON.parse(ev.target.result);
         data = migrate(imported);
         saveData();
+        // A manual import is a deliberate restore: force it to win to the cloud, bypassing
+        // the destructive-write guard. The previous cloud copy is auto-archived server-side
+        // (journal_versions trigger) first, so this can never permanently lose anything.
+        try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {}
         location.reload();
       } catch { showToast(t('toast.invalid_file'), { persist: true }); }
     };
