@@ -935,6 +935,8 @@
   /* "+ Custom" button uses dashed border to differentiate from real tags */
   .tag-add { background: transparent; border: 1px dashed var(--border-2); border-radius: var(--radius-ctrl); padding: 9px 14px; cursor: pointer; transition: all 200ms ease; font-size: 10px; letter-spacing: 0.04em; color: var(--text-dim); font-family: 'DM Mono', monospace; }
   .tag-add:hover { border-color: var(--text-mid); color: var(--text); }
+  .tag-done { background: var(--text); border: 1px solid var(--text); border-radius: var(--radius-ctrl); padding: 9px 16px; cursor: pointer; transition: opacity 200ms ease; font-size: 10px; letter-spacing: 0.04em; color: var(--bg); font-family: 'DM Mono', monospace; }
+  .tag-done:hover { opacity: 0.85; }
   /* Inline input for adding a new custom tag */
   .tag-input-wrap { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--text-mid); padding: 4px 8px; }
   .tag-input-wrap input { background: transparent; border: none; outline: none; color: var(--text); font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.04em; padding: 4px 4px; width: 140px; }
@@ -2690,7 +2692,6 @@
     <section id="section-tags">
       <div class="section-header"><span class="section-num">07</span><span class="section-title" data-i18n="review.s8.title">Concept Tags</span></div>
       <p class="section-hint" data-i18n="hint.select_all_that_applied_to_your_reads_today">Select all that applied to your reads today.</p>
-      <button type="button" class="tag-edit-toggle" data-target="concept-tags" data-i18n="tags.edit">Edit</button>
       <div class="tags" id="concept-tags">
         <button class="tag" data-value="Range Phase" data-i18n="tag.range_phase">Range Phase</button>
         <button class="tag" data-value="Trend Phase" data-i18n="tag.trend_phase">Trend Phase</button>
@@ -2736,7 +2737,6 @@
     <section id="section-mindset">
       <div class="section-header"><span class="section-num">08</span><span class="section-title" data-i18n="review.s9.title">Mindset Tags</span></div>
       <p class="section-hint" data-i18n="hint.mental_state">Mental state — be honest, this is how you grow.</p>
-      <button type="button" class="tag-edit-toggle" data-target="mindset-tags" data-i18n="tags.edit">Edit</button>
       <div class="tags" id="mindset-tags">
         <button class="tag" data-value="Flawless Execution" data-i18n="tag.flawless_execution">Flawless Execution</button>
         <button class="tag" data-value="Perfect Patience" data-i18n="tag.perfect_patience">Perfect Patience</button>
@@ -9258,7 +9258,15 @@
     syncSelectedTags(containerId, stateKey);
     // Event delegation — handles clicks on tags, the "+" button, and "×" remove icons.
     container.addEventListener('click', e => {
-      // Edit mode: clicking any tag REMOVES it (works on mobile, no hover needed).
+      // Exit manage mode.
+      if (e.target.closest('.tag-done')) {
+        e.stopPropagation();
+        container.classList.remove('tags-editing');
+        renderCustomTags(containerId, stateKey);
+        syncSelectedTags(containerId, stateKey);
+        return;
+      }
+      // Manage mode: clicking a tag removes (×) or restores (+) it.
       if (container.classList.contains('tags-editing')) {
         const chip = e.target.closest('.tag');
         if (chip && container.contains(chip)) {
@@ -9311,7 +9319,10 @@
       const addBtn = e.target.closest('.tag-add');
       if (addBtn) {
         e.stopPropagation();
-        openCustomTagInput(containerId, stateKey);
+        container.classList.add('tags-editing');
+        renderCustomTags(containerId, stateKey);
+        syncSelectedTags(containerId, stateKey);
+        var _inp = container.querySelector('.tag-input-wrap input'); if (_inp) _inp.focus();
         return;
       }
       const tagEl = e.target.closest('.tag');
@@ -9328,16 +9339,6 @@
         saveData();
       }
     });
-    // "Edit" toggle for this group — reveals × on every tag so they can be removed.
-    const toggle = document.querySelector('.tag-edit-toggle[data-target="' + containerId + '"]');
-    if (toggle && !toggle._wired) {
-      toggle._wired = true;
-      toggle.addEventListener('click', () => {
-        const editing = container.classList.toggle('tags-editing');
-        toggle.textContent = editing ? t('tags.done') : t('tags.edit');
-        toggle.classList.toggle('active', editing);
-      });
-    }
   }
   // Reconcile selected styling with the ACTIVE TRADE's tag array.
   function syncSelectedTags(containerId, stateKey) {
@@ -9348,11 +9349,10 @@
       else btn.classList.remove('selected');
     });
   }
-  // Append custom tag buttons and the "+ Custom" button to the group.
+  // Render custom tags + either the "+ Custom" button (normal) or the add-input + Done (manage mode).
   function renderCustomTags(containerId, stateKey) {
     const container = document.getElementById(containerId);
-    // Strip any existing custom tags + add button so re-renders don't duplicate.
-    container.querySelectorAll('.tag.custom, .tag-add, .tag-input-wrap').forEach(el => el.remove());
+    container.querySelectorAll('.tag.custom, .tag-add, .tag-done, .tag-input-wrap').forEach(el => el.remove());
     (data.customTags[stateKey] || []).forEach(label => {
       const btn = document.createElement('button');
       btn.type = 'button';
@@ -9361,17 +9361,61 @@
       btn.textContent = label;
       container.appendChild(btn);
     });
-    const addBtn = document.createElement('button');
-    addBtn.type = 'button';
-    addBtn.className = 'tag-add';
-    addBtn.textContent = t('tag.add_custom');
-    container.appendChild(addBtn);
-    // Hide built-in (preset) tags the user has removed via Edit mode (kept on past trades).
+    // Hidden (removed) preset tags: invisible normally, restorable in manage mode.
     const hidden = (data.customTags.hidden && data.customTags.hidden[stateKey]) || [];
     container.querySelectorAll('.tag:not(.custom)').forEach(b => {
       b.classList.toggle('tag-hidden', hidden.includes(b.dataset.value));
       b.style.display = '';
     });
+    if (container.classList.contains('tags-editing')) {
+      // Manage mode: persistent input to add a tag + a Done button to finish.
+      const wrap = document.createElement('span');
+      wrap.className = 'tag-input-wrap';
+      wrap.innerHTML = '<input type="text" maxlength="30" placeholder="' + t('tag.name_placeholder') + '" />';
+      container.appendChild(wrap);
+      const input = wrap.querySelector('input');
+      input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); addCustomTagValue(containerId, stateKey, input.value); }
+        else if (e.key === 'Escape') { container.classList.remove('tags-editing'); renderCustomTags(containerId, stateKey); syncSelectedTags(containerId, stateKey); }
+      });
+      const done = document.createElement('button');
+      done.type = 'button';
+      done.className = 'tag-done';
+      done.textContent = t('tags.done');
+      container.appendChild(done);
+    } else {
+      const addBtn = document.createElement('button');
+      addBtn.type = 'button';
+      addBtn.className = 'tag-add';
+      addBtn.textContent = t('tag.add_custom');
+      container.appendChild(addBtn);
+    }
+  }
+  // Add a custom tag (or unhide a matching preset) and select it on the active trade.
+  function addCustomTagValue(containerId, stateKey, raw) {
+    const val = (raw || '').trim();
+    if (!val) return;
+    const container = document.getElementById(containerId);
+    const lower = val.toLowerCase();
+    const existingNames = [
+      ...Array.from(container.querySelectorAll('.tag:not(.custom)')).map(el => el.dataset.value),
+      ...(data.customTags[stateKey] || [])
+    ];
+    const dup = existingNames.find(n => n.toLowerCase() === lower);
+    const finalName = dup || val;
+    if (!dup) data.customTags[stateKey].push(finalName);
+    // If the name matches a hidden preset, bring it back.
+    if (data.customTags.hidden && Array.isArray(data.customTags.hidden[stateKey])) {
+      const hi = data.customTags.hidden[stateKey].indexOf(finalName);
+      if (hi >= 0) data.customTags.hidden[stateKey].splice(hi, 1);
+    }
+    const tr = getActiveReviewTrade();
+    if (tr) { if (!Array.isArray(tr[stateKey])) tr[stateKey] = []; if (!tr[stateKey].includes(finalName)) tr[stateKey].push(finalName); }
+    saveData();
+    renderCustomTags(containerId, stateKey);
+    syncSelectedTags(containerId, stateKey);
+    renderReviewPreview();
+    const inp = container.querySelector('.tag-input-wrap input'); if (inp) inp.focus();
   }
   // Show an inline input next to the "+ Custom" button to capture a new tag name.
   function openCustomTagInput(containerId, stateKey) {
