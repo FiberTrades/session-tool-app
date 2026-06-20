@@ -26367,11 +26367,11 @@
     en: { account:'Sign out', signedInAs:'Signed in as', email:'Email', password:'Password',
           login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Rollback history', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', planTrial:'{n}-day free trial remaining', badgePremium:'Premium', badgeTrial:'Trial · {n}d', badgeFree:'Free', pwKicker:'Trial ended', pwMsg:'Your 14-day free trial has ended. Subscribe to keep using Session Tool — your data is saved and will be waiting when you upgrade.', pwHave:'I\u2019ve already subscribed — refresh', upgradeBtn:'Upgrade to Premium — £12/mo', manageBtn:'Manage subscription', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
           need6:'Password must be at least 6 characters.', syncing:'Syncing…', synced:'Synced',
-          syncErr:'Sync error — will retry', checkEmail:'Account created. Check your email to confirm, then log in.' },
+          syncErr:'Sync error — will retry', checkEmail:'Account created. Check your email to confirm, then log in.', syncDeleteConfirm:'You\u2019re about to remove {n} trades that are still saved in the cloud. This can\u2019t be undone. Delete them?' },
     es: { account:'Cerrar sesión', signedInAs:'Sesión iniciada como', email:'Correo', password:'Contraseña',
           login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Historial de cambios', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', planTrial:'Prueba gratuita: quedan {n} días', badgePremium:'Premium', badgeTrial:'Prueba · {n}d', badgeFree:'Gratis', pwKicker:'Prueba finalizada', pwMsg:'Tu prueba gratuita de 14 días ha terminado. Suscríbete para seguir usando Session Tool — tus datos están guardados y estarán aquí cuando mejores tu plan.', pwHave:'Ya me suscribí — actualizar', upgradeBtn:'Hazte Premium — £12/mes', manageBtn:'Gestionar suscripción', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
           need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…', synced:'Sincronizado',
-          syncErr:'Error de sincronización — se reintentará', checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.' }
+          syncErr:'Error de sincronización — se reintentará', checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.', syncDeleteConfirm:'Estás a punto de eliminar {n} operaciones que siguen guardadas en la nube. Esto no se puede deshacer. ¿Eliminarlas?' }
   };
   function lang() { return document.documentElement.lang === 'es' ? 'es' : 'en'; }
   function tt(k) { return (STR[lang()] && STR[lang()][k]) || STR.en[k] || k; }
@@ -26664,6 +26664,23 @@
     } catch (e) {} return n;
   }
   function seriesCount(d) { try { return (d.history || []).length; } catch (e) { return 0; } }
+  function contentScore(d) {
+    // Measures REAL journal content — trades, completed series, and the bias/review logs
+    // the trader actually builds up. Deliberately IGNORES volatile, non-journal fields
+    // (above all _calendarCache, which alone is ~30k chars). This is the ONLY metric the
+    // sync engine may use to judge which copy "has more". String length must never be used:
+    // the calendar cache would dominate it and let a 1-trade copy outweigh a 20-trade one.
+    if (!d || typeof d !== 'object') return 0;
+    var n = 0;
+    try {
+      n += tradeCount(d);
+      n += seriesCount(d);
+      n += Array.isArray(d.biasHistory) ? d.biasHistory.length : 0;
+      n += Array.isArray(d.weeklyReviews) ? d.weeklyReviews.length : 0;
+      n += Array.isArray(d.monthlyReviews) ? d.monthlyReviews.length : 0;
+    } catch (e) {}
+    return n;
+  }
   function snapKeys() { return Object.keys(localStorage).filter(function (k) { return k.indexOf(SNAP_PREFIX) === 0; }).sort(); }
   function pruneSnapshots() { var ks = snapKeys(); while (ks.length > MAX_SNAPS) { try { localStorage.removeItem(ks.shift()); } catch (e) {} } }
   function takeSnapshot(reason, dataObj) {
@@ -26796,18 +26813,58 @@
   }
   ST.onSave = function () { maybeSnapshotOnSave(); debouncePush(); };
 
-  function cloudPush() {
-    if (!currentUser) return;
-    var d = ST.getData();
-    // SAFETY GUARD: never upload an EMPTY journal to the cloud. A fresh/empty origin
-    // (new domain, browser, or device) writes default empty state on load, which would
-    // otherwise race ahead of reconcile() and overwrite a full cloud copy with nothing.
-    // An empty origin must PULL from the cloud, never push emptiness over it. Only a
-    // deliberate forced restore (st_forcePush) may push regardless.
-    if (!forcing && tradeCount(d) === 0) { accStatus(tt('synced')); return; }
+  var peakLocalScore = null;   // high-water mark of THIS session's local journal content
+  function doCloudUpsert(d) {
     sb.from('journals').upsert({
       user_id: currentUser.id, data: d, updated_at: new Date().toISOString()
     }).then(function (r) { accStatus(r.error ? tt('syncErr') : tt('synced')); });
+  }
+
+  function cloudPush() {
+    if (!currentUser) return;
+    var d = ST.getData();
+    // A deliberate restore (Rollback history) must win unconditionally.
+    if (forcing) { doCloudUpsert(d); return; }
+    var lScore = contentScore(d);
+    // Never upload an empty journal over the cloud.
+    if (lScore === 0) { accStatus(tt('synced')); return; }
+    // Track the most journal content this session's LOCAL copy has held, and measure any
+    // shrink against THAT high-water mark — never against the cloud. This is what tells a
+    // deliberate deletion apart from a degraded load: a device that simply loads small
+    // never looks like a deletion (peak stays small), so it never triggers a confirm; only
+    // an actual reduction the trader made this session does.
+    var prevPeak = (peakLocalScore == null) ? lScore : peakLocalScore;
+    var droppedThisSession = prevPeak - lScore;
+    peakLocalScore = Math.max(prevPeak, lScore);
+    // DESTRUCTIVE-WRITE GUARD: read what the cloud holds before overwriting it. Decided by
+    // contentScore, never length. A diff of 1 passes, so edits and single deletions sync.
+    sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
+      if (r && r.error) { accStatus(tt('syncErr')); return; }
+      var raw = r && r.data && r.data.data;
+      if (!raw || typeof raw !== 'object') { doCloudUpsert(d); return; }
+      var cloud = ST.migrate(raw);
+      var removed = contentScore(cloud) - lScore;
+      if (removed >= 2) {
+        // The upload would remove 2+ items that the cloud still holds.
+        if (droppedThisSession >= 2) {
+          // The trader actually reduced their own journal this session by this much — a
+          // deliberate bulk deletion. Confirm it explicitly, then let it sync.
+          if (window.confirm(tt('syncDeleteConfirm').replace('{n}', removed))) {
+            peakLocalScore = lScore;          // accept the new lower baseline
+            doCloudUpsert(d);
+            return;
+          }
+          // Declined — fall through and restore from the cloud copy.
+        }
+        // Not a user-initiated deletion (degraded/stale local), or the user declined:
+        // preserve the richer cloud copy and adopt it back. Never silently overwrite.
+        takeSnapshot('blocked-overwrite', cloud);
+        accStatus(tt('synced'));
+        reconcile();
+        return;
+      }
+      doCloudUpsert(d);
+    });
   }
 
   function reconcile() {
@@ -26824,17 +26881,22 @@
       if (!cloudHasData) { cloudPush(); return; }
       var cloud = ST.migrate(raw);
       if (eq(cloud, local)) { accStatus(tt('synced')); return; }
-      // Loss-proof reconcile: keep whichever copy holds MORE data; snapshot the other first so it is never lost.
-      var localStr = JSON.stringify(local), cloudStr = JSON.stringify(cloud);
-      if (cloudStr.length > localStr.length) {
+      // Loss-proof reconcile: keep whichever copy holds MORE journal content, measured by
+      // contentScore (trades/series/reviews) — NEVER by string length, since the calendar
+      // cache alone (~30k chars) would otherwise dominate and let a 1-trade copy outweigh a
+      // 20-trade one (this is exactly the bug that wiped a user's history). Always snapshot
+      // the copy we set aside so nothing is ever lost.
+      var cScore = contentScore(cloud), lScore = contentScore(local);
+      if (cScore > lScore) {
         takeSnapshot('pre-sync', local);     // snapshot local before adopting the cloud copy
-        try { localStorage.setItem(ST.STORAGE_KEY, cloudStr); } catch (e) {}
+        try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } catch (e) {}
         accStatus(tt('synced'));
         // Reload once so the UI re-renders from the adopted cloud copy — but NEVER
         // more than once per session, so a non-identical compare can't loop.
         var reloaded = false; try { reloaded = !!sessionStorage.getItem('st_synced_reload'); } catch (e) {}
         if (!reloaded) { try { sessionStorage.setItem('st_synced_reload', '1'); } catch (e) {} location.reload(); }
       } else {
+        // Local holds >= cloud content: push local up, snapshotting the cloud copy first.
         takeSnapshot('pre-sync', cloud);     // snapshot the cloud copy before overwriting it with local
         cloudPush();
       }
