@@ -26843,11 +26843,35 @@
     return n;
   }
   function snapKeys() { return Object.keys(localStorage).filter(function (k) { return k.indexOf(SNAP_PREFIX) === 0; }).sort(); }
-  function pruneSnapshots() { var ks = snapKeys(); while (ks.length > MAX_SNAPS) { try { localStorage.removeItem(ks.shift()); } catch (e) {} } }
+  function pruneSnapshots() {
+    var ks = snapKeys(); // oldest first
+    if (ks.length <= MAX_SNAPS) return;
+    // Pin the fullest snapshot (most trades) so pruning can never drop your best copy —
+    // matters most when content suddenly DROPS (the pre-loss copy stays protected).
+    var best = null, bestTrades = -1;
+    ks.forEach(function (k) {
+      try { var s = JSON.parse(localStorage.getItem(k)); var tc = (s && typeof s.trades === 'number') ? s.trades : 0; if (tc > bestTrades) { bestTrades = tc; best = k; } } catch (e) {}
+    });
+    var i = 0;
+    while (ks.length > MAX_SNAPS && i < ks.length) {
+      if (ks[i] === best) { i++; continue; }   // never remove the fullest
+      try { localStorage.removeItem(ks[i]); } catch (e) {}
+      ks.splice(i, 1);
+    }
+  }
   function takeSnapshot(reason, dataObj) {
     try {
       var d = dataObj || ST.getData(); if (!d) return;
       var snap = { ts: Date.now(), reason: reason || '', trades: tradeCount(d), series: seriesCount(d), data: d };
+      // Collapse rapid bursts: if the most recent snapshot is identical (same trades +
+      // series) and was taken within the throttle window, don't waste a slot on a duplicate.
+      var ks = snapKeys();
+      if (ks.length) {
+        try {
+          var prev = JSON.parse(localStorage.getItem(ks[ks.length - 1]));
+          if (prev && prev.trades === snap.trades && prev.series === snap.series && (snap.ts - (prev.ts || 0)) < SNAP_MIN_INTERVAL) return;
+        } catch (e) {}
+      }
       localStorage.setItem(SNAP_PREFIX + snap.ts + '_' + Math.floor(Math.random() * 1000), JSON.stringify(snap));
       pruneSnapshots(); lastSnapTs = Date.now();
     } catch (e) {}
