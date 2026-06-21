@@ -21590,6 +21590,15 @@
     url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
     url => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(url),
   ];
+  // Next-week feed proxies. The Deno worker is tried FIRST via ?week=next — it fetches
+  // ff_calendar_nextweek.xml server-side. The public proxies are unreliable for this
+  // because Forex Factory blocks their shared egress IPs, so they're fallback only.
+  // (Requires the worker to honour ?week=next — see forex-calendar-deno.ts.)
+  const NEXTWEEK_PROXIES = [
+    () => 'https://smooth-quail-95.fibertrades.deno.net/?week=next',
+    url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
+    url => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(url),
+  ];
 
   // ============================================================================
   // EVENT DESCRIPTIONS
@@ -24363,27 +24372,31 @@
       return;
     }
     _nextWeekState = { key: todayKey, events: null }; // mark in-flight to prevent refetch
-    const passthrough = CORS_PROXIES.slice(1); // skip the this-week-only Deno worker
-    for (let i = 0; i < passthrough.length; i++) {
+    const proxies = NEXTWEEK_PROXIES;
+    const failures = [];
+    for (let i = 0; i < proxies.length; i++) {
+      const proxyName = proxies[i](FF_NEXTWEEK_URL).split('?')[0];
       try {
-        const url = passthrough[i](FF_NEXTWEEK_URL);
+        const url = proxies[i](FF_NEXTWEEK_URL);
         const resp = await Promise.race([
           fetch(url, { method: 'GET' }),
           new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
         ]);
-        if (!resp.ok) continue;
+        if (!resp.ok) { failures.push(`${proxyName}: HTTP ${resp.status}`); continue; }
         const xmlText = await resp.text();
         const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-        if (doc.querySelector('parsererror')) continue;
+        if (doc.querySelector('parsererror')) { failures.push(`${proxyName}: parse error`); continue; }
         const eventEls = Array.from(doc.querySelectorAll('event'));
-        if (!eventEls.length) continue;
+        if (!eventEls.length) { failures.push(`${proxyName}: no events`); continue; }
         const nextEvents = eventEls.map(parseCalendarEvent);
         _nextWeekState.events = nextEvents;
         applyNextWeekMerge(nextEvents);
         return;
-      } catch (e) { /* try next proxy */ }
+      } catch (e) { failures.push(`${proxyName}: ${(e && e.message) || e}`); }
     }
-    // All proxies failed — clear the key so the next calendar open can retry.
+    // Every proxy failed — log why (visible in the console), and clear the key so the
+    // next calendar open retries.
+    console.warn('Next-week calendar fetch failed across all proxies:\n' + failures.join('\n'));
     if (!_nextWeekState.events) _nextWeekState.key = null;
   }
 
