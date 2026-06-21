@@ -2432,6 +2432,7 @@
             <button type="button" class="econ-range-pill" data-range="today"    data-i18n="econ.range_today">Today</button>
             <button type="button" class="econ-range-pill" data-range="tomorrow" data-i18n="econ.range_tomorrow">Tomorrow</button>
             <button type="button" class="econ-range-pill" data-range="week"     data-i18n="econ.range_week">This Week</button>
+            <button type="button" class="econ-range-pill" data-range="nextweek" data-i18n="econ.range_nextweek">Next Week</button>
           </div>
           <button type="button" class="econ-filter-toggle" id="econ-filter-toggle">
             <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
@@ -4474,12 +4475,14 @@
       'econ.today_mark': 'TODAY',
       'econ.loading_tomorrow': 'Loading tomorrow\'s events…',
       'econ.loading_week': 'Loading this week\'s events…',
+      'econ.loading_nextweek': 'Loading next week\'s events…',
       'econ.empty': 'No economic events scheduled today.',
       'econ.error': 'Calendar unavailable right now.',
       'econ.retry': 'Retry',
       'econ.range_today': 'Today',
       'econ.range_tomorrow': 'Tomorrow',
       'econ.range_week': 'This Week',
+      'econ.range_nextweek': 'Next Week',
       'econ.filters': 'Filters',
       'econ.bloomberg': 'Bloomberg TV',
       'econ.bloomberg_tip': 'Opens Bloomberg TV live in a separate window',
@@ -5600,12 +5603,14 @@
       'econ.today_mark': 'HOY',
       'econ.loading_tomorrow': 'Cargando eventos de mañana…',
       'econ.loading_week': 'Cargando eventos de esta semana…',
+      'econ.loading_nextweek': 'Cargando eventos de la próxima semana…',
       'econ.empty': 'No hay eventos económicos programados hoy.',
       'econ.error': 'Calendario no disponible ahora mismo.',
       'econ.retry': 'Reintentar',
       'econ.range_today': 'Hoy',
       'econ.range_tomorrow': 'Mañana',
       'econ.range_week': 'Esta Semana',
+      'econ.range_nextweek': 'Próxima Semana',
       'econ.filters': 'Filtros',
       'econ.bloomberg': 'Bloomberg TV',
       'econ.bloomberg_tip': 'Abre Bloomberg TV en directo en una ventana aparte',
@@ -22866,7 +22871,7 @@
   const ECON_DEFAULT_COUNTRIES = ['USD','EUR','GBP','JPY','CHF','CAD','AUD','NZD','CNY'];
   const ECON_DEFAULT_IMPACTS   = ['High','Medium'];
   const ECON_ALL_IMPACTS       = ['High','Medium','Low','Holiday'];
-  const ECON_VALID_RANGES      = ['today','tomorrow','week'];
+  const ECON_VALID_RANGES      = ['today','tomorrow','week','nextweek'];
 
   // Read the user's saved calendar filter preferences, applying defaults for
   // any missing values. Mutates+saves the canonical shape on first read so
@@ -22914,6 +22919,9 @@
     // Weekday: +5 days → next Saturday 00:00 (covers this Mon-Fri).
     // Weekend: +12 days → Saturday after next at 00:00 (covers this week Mon-Fri PLUS next week Mon-Fri).
     const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + (isWeekend ? 12 : 5));
+    // Next week = next Monday 00:00 → next Saturday 00:00 (next Mon-Fri inclusive).
+    const nextWeekStart = new Date(weekStart); nextWeekStart.setDate(weekStart.getDate() + 7);
+    const nextWeekEnd   = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekStart.getDate() + 5);
     const countriesUC = new Set(f.countries.map(c => c.toUpperCase()));
     const impactsLC   = new Set(f.impacts.map(i => i.toLowerCase()));
     return events.filter(e => {
@@ -22922,6 +22930,7 @@
       if (f.dateRange === 'today'    && calendarLocalDateKey(e.when) !== todayKey)    return false;
       if (f.dateRange === 'tomorrow' && calendarLocalDateKey(e.when) !== tomorrowKey) return false;
       if (f.dateRange === 'week'     && (e.when < weekStart || e.when >= weekEnd))    return false;
+      if (f.dateRange === 'nextweek' && (e.when < nextWeekStart || e.when >= nextWeekEnd)) return false;
       // country gate — empty country slips through (rare; feed sometimes omits)
       if (e.country && !countriesUC.has(e.country.toUpperCase())) return false;
       // impact gate
@@ -24126,6 +24135,16 @@
         dateEl.textContent = (mon.getMonth() === fri.getMonth())
           ? `${fmtShort(mon)} – ${fmtShort(fri)} ${fmtMonth(fri)}`
           : `${fmtShort(mon)} ${fmtMonth(mon)} – ${fmtShort(fri)} ${fmtMonth(fri)}`;
+      } else if (f.dateRange === 'nextweek') {
+        // Next week's Mon → Fri, mirroring the 'week' branch but shifted +7 days.
+        const now = new Date(); now.setHours(0,0,0,0);
+        const day = now.getDay();
+        const diffToMon = (day === 0) ? -6 : (1 - day);
+        const mon = new Date(now); mon.setDate(now.getDate() + diffToMon + 7);
+        const fri = new Date(mon); fri.setDate(mon.getDate() + 4);
+        dateEl.textContent = (mon.getMonth() === fri.getMonth())
+          ? `${fmtShort(mon)} – ${fmtShort(fri)} ${fmtMonth(fri)}`
+          : `${fmtShort(mon)} ${fmtMonth(mon)} – ${fmtShort(fri)} ${fmtMonth(fri)}`;
       } else {
         // 'today' or any unknown range falls through to today.
         dateEl.textContent = fmtFull(new Date());
@@ -24141,6 +24160,7 @@
       const f = (typeof getCalendarFilters === 'function') ? getCalendarFilters() : { dateRange: 'today' };
       const loadingKey = f.dateRange === 'tomorrow' ? 'econ.loading_tomorrow'
                       : f.dateRange === 'week'     ? 'econ.loading_week'
+                      : f.dateRange === 'nextweek' ? 'econ.loading_nextweek'
                       :                              'econ.loading_today';
       body.innerHTML = `<div class="econ-calendar-loading">${t(loadingKey)}</div>`;
       return;
@@ -24310,9 +24330,70 @@
 
   // Main entry point — call this when the bias tab becomes visible. Honours the
   // per-day cache to avoid hammering the proxy on every tab switch.
+  // ── Next-week feed ─────────────────────────────────────────────────────────
+  // The primary Deno proxy is hardcoded server-side to ff_calendar_thisweek.xml and
+  // ignores any URL argument — so it can't return next week's data (this is why a
+  // previous attempt to add "next week" failed). We fetch ff_calendar_nextweek.xml
+  // ONLY through the URL-passthrough proxies (allorigins / codetabs), then merge the
+  // events into the existing cache. Best-effort: any failure leaves this-week intact.
+  // Result is held in memory for the day so we hit the network at most once per open-session.
+  const FF_NEXTWEEK_URL = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
+  var _nextWeekState = { key: null, events: null };
+  function applyNextWeekMerge(nextEvents) {
+    if (!data._calendarCache || !Array.isArray(data._calendarCache.events)) return;
+    const existing = data._calendarCache.events;
+    const keyOf = e => (e.when ? new Date(e.when).toISOString() : '') + '|' + (e.country || '') + '|' + (e.title || '');
+    const seen = new Set(existing.map(keyOf));
+    let added = 0;
+    nextEvents.forEach(e => {
+      const k = keyOf(e);
+      if (!seen.has(k)) { seen.add(k); existing.push({ ...e, when: e.when ? e.when.toISOString() : null }); added++; }
+    });
+    if (added > 0) {
+      try { if (typeof save === 'function') save(); } catch (e) { /* non-fatal */ }
+      renderCalendarFromCache();
+    }
+  }
+  async function fetchNextWeekAndMerge() {
+    if (!document.getElementById('econ-calendar-body')) return;
+    const todayKey = calendarLocalDateKey();
+    // Already fetched this day's next-week data? Just re-apply the (idempotent) merge.
+    if (_nextWeekState.key === todayKey) {
+      if (_nextWeekState.events) applyNextWeekMerge(_nextWeekState.events);
+      return;
+    }
+    _nextWeekState = { key: todayKey, events: null }; // mark in-flight to prevent refetch
+    const passthrough = CORS_PROXIES.slice(1); // skip the this-week-only Deno worker
+    for (let i = 0; i < passthrough.length; i++) {
+      try {
+        const url = passthrough[i](FF_NEXTWEEK_URL);
+        const resp = await Promise.race([
+          fetch(url, { method: 'GET' }),
+          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
+        ]);
+        if (!resp.ok) continue;
+        const xmlText = await resp.text();
+        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
+        if (doc.querySelector('parsererror')) continue;
+        const eventEls = Array.from(doc.querySelectorAll('event'));
+        if (!eventEls.length) continue;
+        const nextEvents = eventEls.map(parseCalendarEvent);
+        _nextWeekState.events = nextEvents;
+        applyNextWeekMerge(nextEvents);
+        return;
+      } catch (e) { /* try next proxy */ }
+    }
+    // All proxies failed — clear the key so the next calendar open can retry.
+    if (!_nextWeekState.events) _nextWeekState.key = null;
+  }
+
   async function fetchEconomicCalendar(opts) {
     opts = opts || {};
     if (!document.getElementById('econ-calendar-body')) return; // panel not in DOM
+    // Pull next week's feed in the background and merge it (best-effort, throttled to
+    // once per day-session). Makes "Tomorrow" work across the weekend seam and feeds
+    // the "Next Week" filter.
+    try { fetchNextWeekAndMerge(); } catch (e) { /* non-fatal */ }
     const todayKey = calendarLocalDateKey();
     const cache = (data && data._calendarCache) || null;
     const hasCache = cache && cache.v >= 2 && Array.isArray(cache.events) && cache.events.length > 0;
@@ -24360,6 +24441,8 @@
       } catch (e) { /* non-fatal */ }
       // Pull actuals once events are on screen. Independent of XML success/failure.
       try { fetchAndMergeActuals(); } catch (e) { /* non-fatal */ }
+      // Cache now exists — (re)apply next week's events if they've already arrived.
+      try { fetchNextWeekAndMerge(); } catch (e) { /* non-fatal */ }
     } else {
       // Fetch failed and no cache to fall back on — panel hides gracefully.
       // Not logged: this is expected behaviour when the proxy is unreachable, not a bug.
