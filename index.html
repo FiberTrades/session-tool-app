@@ -4752,6 +4752,8 @@
       'modal.click_row_edit': 'CLICK ANY ROW TO EDIT OR DELETE',
       'modal.click_dot_edit': 'CLICK ANY TRADE DOT TO EDIT OR DELETE',
       'modal.bias_review': 'Bias & Review',
+      'modal.bias': 'Bias',
+      'modal.review': 'Review',
       'modal.reflection_label': 'Reflection:',
       'modal.close_btn': 'Close',
       'modal.done_btn': 'Done',
@@ -5880,6 +5882,8 @@
       'modal.click_row_edit': 'PULSA CUALQUIER FILA PARA EDITAR O ELIMINAR',
       'modal.click_dot_edit': 'PULSA CUALQUIER PUNTO PARA EDITAR O ELIMINAR',
       'modal.bias_review': 'Sesgo y Revisión',
+      'modal.bias': 'Sesgo',
+      'modal.review': 'Revisión',
       'modal.reflection_label': 'Reflexión:',
       'modal.close_btn': 'Cerrar',
       'modal.done_btn': 'Hecho',
@@ -15098,13 +15102,29 @@
       // per trade (potential − captured) to match the "R left on the table" meaning used
       // in aggregate Pot R displays elsewhere in the app.
       const isWin = t.result === 'Win';
-      const potRHas = isWin && typeof t.potentialR === 'number' && !isNaN(t.potentialR);
-      const potPHas = isWin && typeof t.potentialPips === 'number' && !isNaN(t.potentialPips);
-      const potRGap = potRHas ? (t.potentialR - (parseFloat(t.r) || 0)) : null;
-      const potPGap = potPHas ? (t.potentialPips - tradePipsForMath(t)) : null;
-      const potRStr = potRGap !== null ? potRGap.toFixed(2) : '—';
-      const potPStr = potPGap !== null ? potPGap.toFixed(0) + 'p' : '— p';
-      const potRowCls = isWin ? '' : 'be';
+      const isBE  = t.result === 'BE';
+      // POT R · P column:
+      //   • Win  → the potential the user logged (how far the move actually went), raw.
+      //   • BE   → the BE POT R · P the user logged (how far price extended in their
+      //            favour before stopping out at break-even), stored in bePotentialR/Pips.
+      //   • Lose → not applicable; a single neutral dash (no fillable "R · p" placeholder).
+      let potCellHtml;
+      if (isWin) {
+        const potRHas = typeof t.potentialR === 'number' && !isNaN(t.potentialR);
+        const potPHas = typeof t.potentialPips === 'number' && !isNaN(t.potentialPips);
+        const potRStr = potRHas ? t.potentialR.toFixed(2) : '—';
+        const potPStr = potPHas ? t.potentialPips.toFixed(0) + 'p' : '— p';
+        potCellHtml = `${potRStr} <span class="modal-trade-sub-inline">· ${potPStr}</span>`;
+      } else if (isBE) {
+        const bRHas = typeof t.bePotentialR === 'number' && !isNaN(t.bePotentialR);
+        const bPHas = typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips);
+        const bRStr = bRHas ? t.bePotentialR.toFixed(2) : '—';
+        const bPStr = bPHas ? t.bePotentialPips.toFixed(0) + 'p' : '— p';
+        potCellHtml = `${bRStr} <span class="modal-trade-sub-inline">· ${bPStr}</span>`;
+      } else {
+        potCellHtml = '—';
+      }
+      const potRowCls = (isWin || isBE) ? '' : 'be';
       // Copy indicator: shows "× N" next to the # when the trade was logged once but
       // executed across N parallel accounts. Subtle dim styling so it doesn't dominate.
       const nCopies = tradeCopies(t);
@@ -15116,7 +15136,7 @@
         <div class="modal-trade-cell center">${tSide(t.side) || '—'}</div>
         <div class="modal-trade-cell center"><span class="modal-tag ${tagCls}">${tResult(t.result)}</span></div>
         <div class="modal-trade-cell center">${rStr} <span class="modal-trade-sub-inline">· ${pStr}</span></div>
-        <div class="modal-trade-cell center ${potRowCls}">${potRStr} <span class="modal-trade-sub-inline">· ${potPStr}</span></div>
+        <div class="modal-trade-cell center ${potRowCls}">${potCellHtml}</div>
         <div class="modal-trade-cell center ${cls}">${fmtMoney(tn)}</div>
         <div class="modal-trade-cell center">${formatMinutes(hm)}</div>
       </div>`;
@@ -15149,7 +15169,7 @@
     });
     if (hasBiasContent || hasAnyReviewContent) {
       const dir = b.direction === 'Bullish' ? '↑' : b.direction === 'Bearish' ? '↓' : '';
-      let html = `<div class="modal-section-title">${t('modal.bias_review')}</div><div class="modal-bias-text">`;
+      let html = `<div class="modal-section-title">${t('modal.bias') || 'Bias'}</div><div class="modal-bias-text">`;
       // Bias section — session-level, drawn once from first trade with bias.
       if (hasBiasContent) {
         if (b.direction) html += `<strong style="color:var(--text);">${dir} ${tOpt(b.direction)}</strong>`;
@@ -15194,6 +15214,11 @@
         // No bias was logged for this day — show a subtle marker so it's clear the section was skipped.
         html += `${t('modal.no_bias_logged')}`;
       }
+      html += '</div>'; // close the Bias section's text block
+      // Review section — its own heading above the per-trade reflections.
+      if (hasAnyReviewContent) {
+      html += `<div class="modal-section-title" style="margin-top:28px;">${t('modal.review') || 'Review'}</div><div class="modal-bias-text">`;
+      let firstReview = true;
       // Per-trade reflections + tags + post-session charts — emit one block per trade.
       dayTrades.forEach((dt, idx) => {
         const r = dt.reviewSnap;
@@ -15205,7 +15230,9 @@
           || (Array.isArray(r.tvLinks) && r.tvLinks.some(l => l && l.url && !biasUrls.includes(l.url)))
           || (r.reflection && r.reflection.trim());
         if (!hasContent) return;
-        html += `<br><br><div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-2);"><span style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);">${t('review.reviewing_trade').replace('{N}', idx + 1)}</span></div>`;
+        const sep = firstReview ? '' : '<br><br>';
+        firstReview = false;
+        html += `${sep}<div style="margin-top:14px;padding-top:14px;border-top:1px solid var(--border-2);"><span style="font-family:'DM Mono',monospace;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);">${t('review.reviewing_trade').replace('{N}', idx + 1)}</span></div>`;
         const inlineFacts = [];
         if (r.execution) inlineFacts.push(`<span style="color:var(--text-mid);">${t('lbl.execution') || 'Execution'}:</span> ${escTxt(r.execution)}`);
         if (r.focus)     inlineFacts.push(`<span style="color:var(--text-mid);">${t('lbl.focus') || 'Focus'}:</span> ${escTxt(r.focus)}`);
@@ -15229,7 +15256,8 @@
           });
         }
       });
-      html += '</div>';
+      html += '</div>'; // close the Review section's text block
+      }
       biasSection.innerHTML = html;
     } else biasSection.innerHTML = '';
 
