@@ -276,6 +276,10 @@
   #rfx-rule-followed:hover, #rfx-rule-broken:hover { border-color: var(--text-mid) !important; }
   .settings-label { display: block; font-family: 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 8px; }
   .settings-input { width: 100%; box-sizing: border-box; background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text); padding: 10px 12px; font-family: 'DM Mono', monospace; font-size: 12px; outline: none; transition: border-color 200ms; }
+  /* Account-name field is a <textarea> (not <input>) purely to dodge Chrome's
+     password-manager autofill, which targets text inputs but never textareas.
+     These rules force it to look and behave like a single-line input. */
+  textarea.settings-account-name-ta { resize: none; overflow: hidden; white-space: nowrap; line-height: 1.4; min-height: 0; display: block; }
   .settings-input:hover, .settings-input:focus { border-color: var(--text-mid); }
   /* Compact-width variant: the modal is 780px wide, but a name input or session
      dropdown only needs ~280px to read comfortably. Stretching the input across
@@ -3677,7 +3681,7 @@
         <div class="settings-label" data-i18n="settings.add_label">Add account</div>
         <p class="settings-hint" data-i18n="settings.add_hint">Adds a parallel active account. Use this when you trade multiple accounts simultaneously (e.g. several funded accounts mirrored by a trade copier). Both accounts stay active.</p>
         <div class="settings-account-new-row">
-          <input type="text" id="settings-account-add-name" class="settings-input" maxlength="40" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" data-i18n-placeholder="settings.add_name_ph" placeholder="Account name (e.g. MFF 100K)" />
+          <textarea id="settings-account-add-name" class="settings-input settings-account-name-ta" rows="1" maxlength="40" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" data-i18n-placeholder="settings.add_name_ph" placeholder="Account name (e.g. MFF 100K)"></textarea>
           <input type="number" id="settings-account-add-balance" class="settings-input" min="0" step="any" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" data-i18n-placeholder="settings.add_balance_ph" placeholder="Starting balance" />
           <button type="button" id="settings-account-add-create" class="settings-btn" data-i18n="settings.add">Add</button>
         </div>
@@ -8694,17 +8698,20 @@
         }
         saveData();
         wrap.classList.remove('open');
-        // Re-render everything that depends on scope. The full set of
-        // renderers is wide; we trigger the most common ones individually
-        // and fall back to a page-aware redraw for the active tab.
-        try { renderScopePicker(); } catch (e) {}
-        try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
-        try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
-        try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
-        try { if (typeof renderTradeView === 'function') renderTradeView(); } catch (e) {}
+        // Re-render every scope-dependent surface by routing through the SAME
+        // refreshAllSurfaces() the tab-switch uses — not a hand-picked subset.
+        // The subset had drifted out of sync with the tab-switch path, which is
+        // why the Statistics tab didn't repaint on account switch until a manual
+        // page refresh. This guarantees parity.
+        try { refreshAllSurfaces(); } catch (e) {}
         try { if (typeof renderCalendar === 'function') renderCalendar(); } catch (e) {}
-        try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
-        try { if (typeof renderReviewPreview === 'function') renderReviewPreview(); } catch (e) {}
+        // Re-run the KPI count-up on whichever page is currently showing so the
+        // big stat numbers visibly tick over to the newly-selected account,
+        // mirroring what a tab switch does.
+        try {
+          const _activePage = document.querySelector('.page.active');
+          if (_activePage) requestAnimationFrame(() => { try { animateStatNumbers(_activePage); } catch (e) {} });
+        } catch (e) {}
       });
     });
   }
@@ -26736,6 +26743,25 @@
       });
     }
 
+    // Single-line behaviour for the add-account name field. It's a <textarea>
+    // (not <input>) specifically to dodge Chrome's password-manager autofill,
+    // which targets text inputs but leaves textareas alone. Block Enter so it
+    // can't go multi-line — Enter submits the Add instead — and sanitise any
+    // pasted newlines back to spaces.
+    const addNameTa = document.getElementById('settings-account-add-name');
+    if (addNameTa) {
+      addNameTa.addEventListener('keydown', e => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          const b = document.getElementById('settings-account-add-create');
+          if (b) b.click();
+        }
+      });
+      addNameTa.addEventListener('input', () => {
+        if (addNameTa.value.indexOf('\n') >= 0) addNameTa.value = addNameTa.value.replace(/\n/g, ' ');
+      });
+    }
+
     // --- Transition to new account
     // The single path to a second account: this auto-archives the current
     // active account, creates a new active one, and switches the view scope
@@ -27659,4 +27685,3 @@
 </script>
 </body>
 </html>
-     
