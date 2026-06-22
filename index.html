@@ -4099,7 +4099,7 @@
       'tip.missed_avg_r': 'Average would-be R per missed winner.',
       'kpi.missed_vs_taken': 'Taken · Missed',
       'tip.missed_vs_taken': 'Winners you took (current scope) vs winners you logged as missed, by count. A high missed share means opportunity is slipping past your entries.',
-      'modal.missed_wouldbe_r': 'Would-be R',
+      'modal.missed_wouldbe_r': "would've captured R",
       'sym.col.avgr': 'Avg R',
       'sym.col.net': 'Net',
       'tip.sym_breakdown': 'Performance per instrument you trade. WR = win rate. Net R = total R. Avg R = expectancy per trade. Net = money result. Sorted most to least profitable. Appears once you have traded more than one symbol.',
@@ -5255,7 +5255,7 @@
       'tip.missed_avg_r': 'R potencial media por ganadora perdida.',
       'kpi.missed_vs_taken': 'Tomadas · Perdidas',
       'tip.missed_vs_taken': 'Ganadoras que tomaste (ámbito actual) vs ganadoras que registraste como perdidas, por número. Una proporción alta de perdidas significa que la oportunidad se te escapa.',
-      'modal.missed_wouldbe_r': 'R potencial',
+      'modal.missed_wouldbe_r': 'R que habría capturado',
       'sym.col.avgr': 'R Med.',
       'sym.col.net': 'Neto',
       'tip.sym_breakdown': 'Rendimiento por instrumento que operas. RA = ratio de acierto. R Neto = R total. R Med. = expectativa por operación. Neto = resultado en dinero. Ordenado de más a menos rentable. Aparece cuando has operado más de un símbolo.',
@@ -9280,10 +9280,13 @@
       try { headerDate = new Date(b.sessionDate + 'T12:00:00').toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' }).replace(/^./, c => c.toUpperCase()); } catch {}
     }
     const lines = [`**${data.settings.pair} Bias — ${headerDate}**`, ''];
-    if (b.mode)      lines.push(`Mode        ${b.mode}`);
-    if (b.structure) lines.push(`Structure   ${b.structure}`);
-    if (b.location)  lines.push(`Location    ${b.location}`);
-    if (b.direction) lines.push(`Direction   ${dir} ${b.direction}`);
+    // Structured summary goes inside a ``` code block so Discord renders it as a
+    // boxed monospace panel, matching the Session Review summary.
+    const box = [];
+    if (b.mode)      box.push(`Mode        ${b.mode}`);
+    if (b.structure) box.push(`Structure   ${b.structure}`);
+    if (b.location)  box.push(`Location    ${b.location}`);
+    if (b.direction) box.push(`Direction   ${dir ? dir + ' ' : ''}${b.direction}`);
     // Rule for the week — include in Discord post so the rule travels with the morning bias.
     // Mirrors the rule-banner logic: weekday → this week's rule; weekend → if last week is
     // ungraded show that, else preview next week's rule (since that's what you just set).
@@ -9306,7 +9309,7 @@
           }
         }
         if (rule && rule.rule) {
-          lines.push(`Rule        ${rule.rule}`);
+          box.push(`Rule        ${rule.rule}`);
         }
       }
     } catch(e) {}
@@ -9316,14 +9319,16 @@
     // match each chart to its position in the post.
     if (links.length > 0) {
       const label = links.length === 1 ? 'Chart       ' : 'Charts      ';
-      lines.push('');
+      box.push('');
       // Standard bias = MTF + LTF, so name the summary markers by timeframe to
       // match the labelled list below; fall back to [N] numbering otherwise.
       const markers = links.length === 2
         ? `${t('bias.mtf_label') || 'MTF'}  ${t('bias.ltf_label') || 'LTF'}`
         : links.map((_, i) => `[${i + 1}]`).join(' ');
-      lines.push(`${label}${markers}`);
+      box.push(`${label}${markers}`);
     }
+    // Emit the structured summary as a single boxed code block.
+    if (box.length > 0) { lines.push('```'); lines.push(...box); lines.push('```'); }
     if (b.notes)  { lines.push(''); lines.push(b.notes); }
     if (links.length > 0) {
       lines.push('');
@@ -10313,11 +10318,13 @@
       statsBlock.push(`${A.lbl}${'Mode:'.padEnd(PAD)}${A.reset}${b.mode}`);
     }
 
-    // Bias line — direction gets colored (Bullish→green, Bearish→red).
-    if (b.direction && b.date) {
+    // Morning-bias summary — one field per line, organised like the Session Bias
+    // post (Mode above, then Structure / Location / Direction), all inside the box.
+    if (b.date) {
       const dir = b.direction === 'Bullish' ? '↑' : b.direction === 'Bearish' ? '↓' : '';
-      const dirColor = b.direction === 'Bullish' ? A.good : b.direction === 'Bearish' ? A.bad : A.be;
-      statsBlock.push(`${A.lbl}${'Bias:'.padEnd(PAD)}${A.reset}${dirColor}${dir} ${b.direction}${A.reset}  ·  ${b.structure || '—'}  ·  ${b.location || '—'}`);
+      if (b.structure) statsBlock.push(`${A.lbl}${'Structure:'.padEnd(PAD)}${A.reset}${b.structure}`);
+      if (b.location)  statsBlock.push(`${A.lbl}${'Location:'.padEnd(PAD)}${A.reset}${b.location}`);
+      if (b.direction) statsBlock.push(`${A.lbl}${'Direction:'.padEnd(PAD)}${A.reset}${dir ? dir + ' ' : ''}${b.direction}`);
     }
 
     if (r.traded === 'No' || (r.trades || []).length === 0) {
@@ -21198,9 +21205,46 @@
 
   // Stat-aware reflection picker — gathers all matching conditions, then date-seeds the pick
   // so reloads on the same day stay stable. Spanish mode uses pickStatAwareReflectionES.
+  // Aggregates "winning trades I didn't take" would-be R for the current week
+  // or month from the weekly reviews (where they're logged). 'day' has none, since
+  // missed setups are captured per week. Returns {count, totalR}. Used to make the
+  // review reflections aware of the opportunity you watched but didn't take.
+  function missedRStatsForPeriod(period) {
+    const reviews = Array.isArray(data.weeklyReviews) ? data.weeklyReviews : [];
+    if (!reviews.length || (period !== 'week' && period !== 'month')) return { count: 0, totalR: 0 };
+    const now = new Date();
+    let start, end;
+    if (period === 'week') {
+      const dow = (now.getDay() + 6) % 7; // Monday = 0
+      start = new Date(now); start.setHours(0, 0, 0, 0); start.setDate(now.getDate() - dow);
+      end = new Date(start); end.setDate(start.getDate() + 7);
+    } else {
+      start = new Date(now.getFullYear(), now.getMonth(), 1);
+      end = new Date(now.getFullYear(), now.getMonth() + 1, 1);
+    }
+    let count = 0, totalR = 0;
+    reviews.forEach(w => {
+      const ws = (w && w.weekStart) ? new Date(w.weekStart) : null;
+      if (!ws || isNaN(ws.getTime()) || ws < start || ws >= end) return;
+      const links = (w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
+      links.forEach(l => { if (l && typeof l.r === 'number' && !isNaN(l.r)) { count++; totalR += l.r; } });
+    });
+    return { count, totalR };
+  }
+
   function pickStatAwareReflection(period, s) {
     if (window.__lang === 'es') return pickStatAwareReflectionES(period, s);
     const candidates = [];
+    // Missed winners (logged in weekly reviews) — the R you watched go by.
+    if (period === 'week' || period === 'month') {
+      const _miss = missedRStatsForPeriod(period);
+      if (_miss.count > 0 && _miss.totalR > 0) {
+        if (period === 'week')
+          candidates.push(`+${_miss.totalR.toFixed(1)}R sitting in ${_miss.count} plan setup${_miss.count===1?'':'s'} you watched but didn't take this week. what kept you out — and would it stop you again tomorrow?`);
+        else
+          candidates.push(`+${_miss.totalR.toFixed(1)}R left watching across ${_miss.count} valid setup${_miss.count===1?'':'s'} you skipped this month. that's your edge, untaken — what's the pattern in the ones you let go?`);
+      }
+    }
 
     // === DAY ===
     if (period === 'day') {
@@ -21308,6 +21352,16 @@
   // Spanish version of stat-aware reflection picker — same conditions, Spanish text.
   function pickStatAwareReflectionES(period, s) {
     const candidates = [];
+    // Ganadoras que no tomé (registradas en revisiones semanales) — la R que viste pasar.
+    if (period === 'week' || period === 'month') {
+      const _miss = missedRStatsForPeriod(period);
+      if (_miss.count > 0 && _miss.totalR > 0) {
+        if (period === 'week')
+          candidates.push(`+${_miss.totalR.toFixed(1)}R en ${_miss.count} setup${_miss.count===1?'':'s'} de tu plan que viste pero no tomaste esta semana. ¿qué te frenó — y te frenaría otra vez mañana?`);
+        else
+          candidates.push(`+${_miss.totalR.toFixed(1)}R que dejaste mirando en ${_miss.count} setup${_miss.count===1?'':'s'} válido${_miss.count===1?'':'s'} que no tomaste este mes. ese es tu edge, sin tomar — ¿cuál es el patrón en los que dejas pasar?`);
+      }
+    }
     if (period === 'day') {
       if (s.totalTrades === 1 && s.wins === 1)
         candidates.push("un trade, una ganadora. Una limpia. ¿Qué hizo que la lectura de hoy valiera el clic?");
