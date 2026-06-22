@@ -27938,6 +27938,48 @@
   // Re-evaluate the countdown / lockout periodically for long-open sessions.
   setInterval(function () { if (currentUser) renderPlan(); }, 3600000);
 
+  // ── Wake-from-sleep refresh ────────────────────────────────────────────
+  // When the machine hibernates/sleeps, JS timers freeze and the page's date,
+  // session-aware greeting, and economic calendar go stale until something
+  // re-renders. We stamp an "active" timestamp every few seconds; while the
+  // machine is asleep that stamp can't advance. When the page comes back into
+  // view after a long frozen gap, we re-render the date-keyed surfaces in place
+  // — NOT a full reload — so no unsaved input is lost. A short tab-switch or
+  // screen-off (under the threshold) is ignored, and background throttling
+  // still fires the interval often enough not to trip it.
+  let __lastActiveTs = Date.now();
+  setInterval(function () { __lastActiveTs = Date.now(); }, 5000);
+  function __softResync() {
+    // Header date (locale-aware) — recompute from the current clock.
+    try {
+      var dateEl = document.getElementById('today');
+      if (dateEl && typeof tLocale === 'function') {
+        dateEl.textContent = new Date()
+          .toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' })
+          .replace(/^./, function (c) { return c.toUpperCase(); });
+      }
+    } catch (e) {}
+    try { if (typeof renderMetaTime === 'function') renderMetaTime(); } catch (e) {}
+    // Force the greeting to re-pick for the (possibly new) day / session.
+    try { _cachedTailBias = null; _cachedTailReview = null; _cachedOpener = null; _cachedReviewOpener = null; } catch (e) {}
+    try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
+    try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (e) {}
+    try { if (typeof updateSessionDateStatus === 'function') updateSessionDateStatus(); } catch (e) {}
+    try { if (typeof refreshRuleBanners === 'function') refreshRuleBanners(); } catch (e) {}
+    try { if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (e) {}
+    // Economic calendar — per-day cached, so this only hits the network if the
+    // day actually rolled over while asleep; otherwise it re-renders from cache.
+    try { if (typeof fetchEconomicCalendar === 'function') fetchEconomicCalendar(); } catch (e) {}
+  }
+  function __handleResume() {
+    var gap = Date.now() - __lastActiveTs;
+    __lastActiveTs = Date.now();
+    if (gap > 180000) { __softResync(); } // >3 min with no tick → the machine was asleep
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) __handleResume(); });
+  window.addEventListener('focus', __handleResume);
+  window.addEventListener('pageshow', function (e) { if (e && e.persisted) __handleResume(); });
+
   new MutationObserver(function () { paintGate(); paintAccount(); paintPaywall(); }).observe(
     document.documentElement, { attributes: true, attributeFilter: ['lang'] });
 
