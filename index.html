@@ -3526,7 +3526,7 @@
       <button type="button" class="settings-nav-item" data-section="services" data-i18n="settings.section_services">Subscriptions &amp; Services</button>
     </div>
     <!-- PROFILE section: user identity + general app settings (currency, language,
-         Discord translate-on-copy + DeepL key, and data import/backup). Every control
+         Discord translate-on-copy, and data import/backup). Every control
          keeps its original id so existing event handlers work unchanged. -->
     <div class="settings-section" data-section="profile">
       <label class="settings-label" data-i18n="settings.profile_name_label">Your name</label>
@@ -3562,11 +3562,7 @@
           <span class="settings-pref-name" data-i18n="settings.translate_notes_label">Translate notes to English on copy</span>
           <input type="checkbox" id="translate-notes-toggle" class="settings-cb-toggle" />
         </div>
-        <div class="settings-pref-row">
-          <span class="settings-pref-name" data-i18n="settings.deepl_key_label">DeepL API key (optional)</span>
-          <input type="text" id="deepl-api-key-input" class="settings-input settings-input-compact" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx:fx" autocomplete="off" spellcheck="false" />
-        </div>
-        <p class="settings-hint" data-i18n="settings.translate_notes_hint">When your UI is in Spanish, your free-text notes (bias, reflection, chart comments, weekly rule) get translated to English before being copied to Discord. Higher-quality translation is available by providing a free DeepL API key from deepl.com/pro-api (500k characters/month). Without a key, the fallback service (MyMemory) is used. Internet required either way; falls back silently to the original text if neither service is reachable. The DeepL key is stored locally in your browser only.</p>
+        <p class="settings-hint" data-i18n="settings.translate_notes_hint">When your UI is in Spanish, your free-text notes (bias, reflection, chart comments, weekly rule) are translated to English via Google Translate before being copied to Discord. Internet required; if the translation service is unreachable your original text is copied and a notice is shown.</p>
       </div>
 
       <label class="settings-label" style="margin-top:24px;" data-i18n="settings.data_label">Data</label>
@@ -4165,6 +4161,7 @@
       'toast.no_redo': 'Nothing to redo',
       'toast.copied': 'Copied to clipboard',
       'toast.saved': 'Saved',
+      'toast.translate_failed': 'Translation service unavailable — copied your original text. Try again shortly.',
       'toast.no_trades_save': 'No valid trades to save',
       'toast.saved_backup_unreachable': 'Session saved locally. Your linked backup file could not be reached — re-link it in Settings.',
       'toast.observed_saved_backup_written': 'Observed-only session saved + backup written',
@@ -4318,8 +4315,7 @@
       'settings.data_label': 'Data',
       'settings.discord_label': 'Discord',
       'settings.translate_notes_label': 'Translate notes to English on copy',
-      'settings.deepl_key_label': 'DeepL API key (optional)',
-      'settings.translate_notes_hint': "When your UI is in Spanish, your free-text notes (bias, reflection, chart comments, weekly rule) get translated to English before being copied to Discord. Higher-quality translation is available by providing a free DeepL API key from deepl.com/pro-api (500k characters/month). Without a key, the fallback service (MyMemory) is used. Internet required either way; falls back silently to the original text if neither service is reachable. The DeepL key is stored locally in your browser only.",
+      'settings.translate_notes_hint': "When your UI is in Spanish, your free-text notes (bias, reflection, chart comments, weekly rule) are translated to English via Google Translate before being copied to Discord. Internet required; if the translation service is unreachable your original text is copied and a notice is shown.",
       'settings.data_hint': 'Import a previously saved backup, or configure automatic backups so you never lose your trades.',
       'settings.profile_name_label': 'Your name',
       'settings.profile_name_hint': 'Used in greetings, weekly review messages, and copied Discord posts.',
@@ -5309,6 +5305,7 @@
       'toast.no_redo': 'Nada que rehacer',
       'toast.copied': 'Copiado al portapapeles',
       'toast.saved': 'Guardado',
+      'toast.translate_failed': 'Servicio de traducción no disponible — se copió tu texto original. Inténtalo de nuevo en un momento.',
       'toast.no_trades_save': 'No hay operaciones válidas para guardar',
       'toast.saved_backup_unreachable': 'Sesión guardada localmente. No se pudo acceder al archivo de copia vinculado — vuelve a vincularlo en Ajustes.',
       'toast.observed_saved_backup_written': 'Sesión solo observada guardada + copia escrita',
@@ -5461,8 +5458,7 @@
       'settings.data_label': 'Datos',
       'settings.discord_label': 'Discord',
       'settings.translate_notes_label': 'Traducir notas al inglés al copiar',
-      'settings.deepl_key_label': 'API key de DeepL (opcional)',
-      'settings.translate_notes_hint': 'Cuando la interfaz está en español, tus notas de texto libre (bias, reflexión, comentarios de gráficos, regla semanal) se traducen al inglés antes de copiarlas a Discord. Para una traducción de mayor calidad, puedes añadir una API key gratuita de DeepL en deepl.com/pro-api (500k caracteres/mes). Sin key, se usa el servicio de respaldo (MyMemory). Requiere internet; si ninguno de los dos servicios está disponible, copia el texto original sin avisar. La key de DeepL se guarda solo en tu navegador.',
+      'settings.translate_notes_hint': 'Cuando la interfaz está en español, tus notas de texto libre (bias, reflexión, comentarios de gráficos, regla semanal) se traducen al inglés con Google Translate antes de copiarlas a Discord. Requiere internet; si el servicio de traducción no está disponible, se copia tu texto original y se muestra un aviso.',
       'settings.data_hint': 'Importa una copia de seguridad guardada anteriormente, o configura copias automáticas para no perder nunca tus operaciones.',
       'settings.profile_name_label': 'Tu nombre',
       'settings.profile_name_hint': 'Se usa en los saludos, mensajes de revisión semanal y mensajes copiados de Discord.',
@@ -15777,97 +15773,85 @@
   });
 
   // ─── DISCORD COPY: optional notes translation ────────────────────────────
-  // When the user has data.settings.translateNotesOnCopy enabled AND their UI
-  // language is non-English, free-text notes (bias notes, per-link chart
-  // notes, review reflection, trade reflections) are translated to English
-  // via DeepL (preferred when an API key is configured) or MyMemory (free
-  // fallback) before assembly into the Discord post. Structural labels and
-  // predefined option values (e.g. "Bullish") are already stored in English
-  // and need no translation.
+  // When data.settings.translateNotesOnCopy is enabled AND the UI language is
+  // non-English, free-text notes (bias notes, per-link chart notes, review
+  // reflection, trade reflections) are translated to English via Google
+  // Translate (free, keyless), with MyMemory as a silent backup, before
+  // assembly into the Discord post. Structural labels and predefined option
+  // values (e.g. "Bullish") are already stored in English and need no
+  // translation.
   //
-  // DeepL: significantly better quality for prose; needs an API key from
-  //   deepl.com/pro-api (free tier: 500k chars/month). Key suffix ":fx"
-  //   indicates free tier — routed to api-free; everything else to the
-  //   pro endpoint. Failed DeepL calls fall through to MyMemory so a
-  //   broken key never breaks the copy entirely.
-  // MyMemory: free, no key, ~5000 words/day per IP. URL length limit ~500
-  //   chars, so long notes are chunked by line.
-  //
-  // The wrappers (translateBiasCopy / translateReviewCopy) follow a
-  // backup-mutate-build-restore pattern: clone the current values, swap
-  // translated versions in, call the existing buildBiasMessage /
+  // The wrappers (buildBiasMessageMaybeTranslated / buildReviewMessageMaybeTranslated)
+  // follow a backup-mutate-build-restore pattern: clone the current values,
+  // swap translated versions in, call the existing buildBiasMessage /
   // buildReviewMessage, then restore originals in a finally block so the
   // user's saved data is never mutated by the translation.
-  async function deeplTranslate(text, source, target, apiKey) {
+  // Counts chunks attempted vs. failed during the current copy so the copy
+  // handler can warn the user when translation silently fell back to the
+  // original text (service down / rate-limited) instead of leaving them to
+  // wonder why the post is still in Spanish.
+  var __trAttempted = 0;
+  var __trFailed = 0;
+  // Google's free, keyless endpoint. Generally the most reliable of the
+  // no-key options, so it's tried before MyMemory. Returns null on any
+  // failure so the dispatcher falls through to the next method.
+  async function gtxTranslateOnce(text, source, target) {
     if (!text || !text.trim()) return null;
     if (source === target) return text;
-    // Route to free vs pro endpoint based on key suffix.
-    const isFree = apiKey.trim().endsWith(':fx');
-    const endpoint = isFree
-      ? 'https://api-free.deepl.com/v2/translate'
-      : 'https://api.deepl.com/v2/translate';
-    // DeepL uses uppercase ISO codes. Default English target to EN-GB
-    // since this app's primary user base is UK-based traders; EN-US would
-    // also work and reads similarly for short notes.
-    const srcCode = (source || '').toUpperCase();
-    const tgtCode = (target && target.toLowerCase() === 'en') ? 'EN-GB' : (target || '').toUpperCase();
     try {
-      const resp = await fetch(endpoint, {
-        method: 'POST',
-        headers: {
-          'Authorization': `DeepL-Auth-Key ${apiKey.trim()}`,
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: `text=${encodeURIComponent(text)}&source_lang=${srcCode}&target_lang=${tgtCode}`,
-      });
-      if (!resp.ok) return null; // signal failure → caller falls back to MyMemory
+      const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(source)}&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(text)}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
       const json = await resp.json();
-      if (json && Array.isArray(json.translations) && json.translations[0] && json.translations[0].text) {
-        return json.translations[0].text;
+      // Response shape: [[["translated","original",...], ...], ...]
+      if (Array.isArray(json) && Array.isArray(json[0])) {
+        let out = '';
+        for (const seg of json[0]) {
+          if (Array.isArray(seg) && typeof seg[0] === 'string') out += seg[0];
+        }
+        return out ? out : null;
       }
       return null;
     } catch (e) {
       return null;
     }
   }
-  // Dispatcher: tries DeepL first when a key is configured, falls back to
-  // MyMemory on failure (or when no key is set). Both services return the
-  // original text on hard error so the copy operation never fails outright.
-  async function translateChunk(text, source, target) {
-    if (!text || !text.trim()) return text;
-    if (source === target) return text;
-    const deeplKey = data.settings && data.settings.deeplApiKey;
-    if (deeplKey && deeplKey.trim()) {
-      const result = await deeplTranslate(text, source, target, deeplKey);
-      if (result !== null) return result;
-      // DeepL returned null → fall through to MyMemory below.
-    }
-    return await mmTranslateOnce(text, source, target);
-  }
+  // MyMemory free endpoint — last-resort fallback. Returns null on failure
+  // (HTTP/network error, or an error string in the payload such as a daily
+  // rate-limit warning) so the dispatcher can record the failure rather than
+  // mistaking the original text for a successful translation.
   async function mmTranslateOnce(text, source, target) {
-    if (!text || !text.trim()) return text;
+    if (!text || !text.trim()) return null;
     if (source === target) return text;
     try {
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
       const resp = await fetch(url);
-      if (!resp.ok) return text;
+      if (!resp.ok) return null;
       const json = await resp.json();
       const translated = json && json.responseData && json.responseData.translatedText;
-      // MyMemory occasionally returns the original text wrapped in quotes,
-      // or an error message embedded in translatedText (e.g. "PLEASE SELECT
-      // TWO DISTINCT LANGUAGES"). Defensive: keep original if response
-      // looks like an error string.
-      if (!translated || typeof translated !== 'string') return text;
-      if (/^(PLEASE|INVALID|MYMEMORY WARNING)/i.test(translated)) return text;
+      if (!translated || typeof translated !== 'string') return null;
+      if (/^(PLEASE|INVALID|MYMEMORY WARNING)/i.test(translated)) return null;
       return translated;
     } catch (e) {
-      return text;
+      return null;
     }
   }
-  // Splits long text by newlines so each chunk stays under MyMemory's
-  // per-request limit. DeepL has a much higher limit (130k chars) but
-  // the same chunking flow works for both — extra calls cost nothing on
-  // DeepL's character-counted free tier. Empty lines pass through
+  // Dispatcher: Google Translate → MyMemory (silent backup). Each returns
+  // null on failure to signal the next fallback. If both fail it records the
+  // failure and returns the original text so the copy never breaks.
+  async function translateChunk(text, source, target) {
+    if (!text || !text.trim()) return text;
+    if (source === target) return text;
+    __trAttempted++;
+    const g = await gtxTranslateOnce(text, source, target);
+    if (g !== null) return g;
+    const m = await mmTranslateOnce(text, source, target);
+    if (m !== null) return m;
+    __trFailed++;
+    return text; // both methods failed — keep original so the copy still works
+  }
+  // Splits long text by newlines so each chunk stays under the translation
+  // services' per-request URL/length limits. Empty lines pass through
   // unchanged to preserve paragraph structure in the Discord post.
   async function translateNotes(text, source, target) {
     if (!text || !text.trim()) return text;
@@ -15904,6 +15888,7 @@
   // buildBiasMessage(), then restores originals. Returns the message string.
   async function buildBiasMessageMaybeTranslated() {
     if (!shouldTranslateOnCopy()) return buildBiasMessage();
+    __trAttempted = 0; __trFailed = 0;
     const lang = currentUiLang();
     const backup = {
       notes: data.bias.notes,
@@ -15931,6 +15916,9 @@
           msg = msg.replace(ruleMatch[0], ruleMatch[1] + translatedRule);
         }
       }
+      if (__trAttempted > 0 && __trFailed >= __trAttempted) {
+        try { showToast(t('toast.translate_failed'), { persist: true }); } catch (e) {}
+      }
       return msg;
     } finally {
       data.bias.notes = backup.notes;
@@ -15944,6 +15932,7 @@
   // notes, plus it embeds the morning bias.
   async function buildReviewMessageMaybeTranslated() {
     if (!shouldTranslateOnCopy()) return buildReviewMessage();
+    __trAttempted = 0; __trFailed = 0;
     const lang = currentUiLang();
     const r = data.review || {};
     const backup = {
@@ -15997,6 +15986,9 @@
         if (translatedRule && translatedRule !== ruleMatch[2]) {
           msg = msg.replace(ruleMatch[0], ruleMatch[1] + translatedRule);
         }
+      }
+      if (__trAttempted > 0 && __trFailed >= __trAttempted) {
+        try { showToast(t('toast.translate_failed'), { persist: true }); } catch (e) {}
       }
       return msg;
     } finally {
@@ -25168,27 +25160,6 @@
       saveData();
     });
   })();
-  // Wire DeepL API key input. The key is stored in localStorage along
-  // with the rest of data.settings, masked as a password input in the UI.
-  // Saved on `change` (blur or Enter) so we don't thrash storage on every
-  // keystroke. Empty value deletes the key entirely so the translateChunk
-  // dispatcher falls back to MyMemory cleanly.
-  (function wireDeeplApiKey() {
-    const inp = document.getElementById('deepl-api-key-input');
-    if (!inp) return;
-    inp.value = (data.settings && data.settings.deeplApiKey) || '';
-    inp.addEventListener('change', e => {
-      if (!data.settings) data.settings = {};
-      const v = (e.target.value || '').trim();
-      if (v) {
-        data.settings.deeplApiKey = v;
-      } else {
-        delete data.settings.deeplApiKey;
-      }
-      saveData();
-    });
-  })();
-
   // "What I trade" (Settings → Session): a list of instruments. The first entry is
   // the primary (mirrored into data.settings.pair → dashboard + Discord headers).
   // Stored as data.settings.symbols[]. Each trade records its own symbol; when 2+
@@ -26048,13 +26019,10 @@
       // every save handler agrees on which account is being edited.
       populateRiskAccountPicker();
       loadRiskRulesIntoSettingsInputs();
-      // Re-sync the Discord translate-notes toggle + DeepL key field to
-      // current setting in case they were changed via Settings/code
-      // elsewhere between opens.
+      // Re-sync the Discord translate-notes toggle to current setting in
+      // case it was changed via Settings/code elsewhere between opens.
       const _trCb = document.getElementById('translate-notes-toggle');
       if (_trCb) _trCb.checked = !!(data.settings && data.settings.translateNotesOnCopy);
-      const _dlKey = document.getElementById('deepl-api-key-input');
-      if (_dlKey) _dlKey.value = (data.settings && data.settings.deeplApiKey) || '';
       modal.classList.add('show');
     }
     // Populate the account picker dropdown with currently-active accounts.
