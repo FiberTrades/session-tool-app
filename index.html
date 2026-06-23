@@ -9391,6 +9391,42 @@
     });
   });
 
+  // Mobile swipe navigation: swipe left/right between the 5 tabs (reuses the tab click handler).
+  (function(){
+    var PAGES=['bias','review','stats','trades','tradeview'];
+    function blocksSwipe(el){
+      while(el && el!==document.body && el!==document.documentElement){
+        var tag=el.tagName;
+        if(tag==='INPUT'||tag==='TEXTAREA'||tag==='SELECT') return true;
+        if(el.isContentEditable) return true;
+        try{ var st=getComputedStyle(el); if((st.overflowX==='auto'||st.overflowX==='scroll') && el.scrollWidth>el.clientWidth+6) return true; }catch(e){}
+        el=el.parentElement;
+      }
+      return false;
+    }
+    function curIdx(){ var a=document.querySelector('.tab.active'); return a?PAGES.indexOf(a.dataset.page):-1; }
+    function navTab(dir){
+      var i=curIdx(); if(i<0) return;
+      var n=i+dir; if(n<0||n>=PAGES.length) return;            // clamp at the ends
+      var btn=document.querySelector('.tab[data-page="'+PAGES[n]+'"]');
+      if(btn) btn.click();
+    }
+    var sx=0, sy=0, st0=0, armed=false;
+    document.addEventListener('touchstart', function(e){
+      if(e.touches.length>1){ armed=false; return; }
+      var t=e.touches[0]; sx=t.clientX; sy=t.clientY; st0=Date.now();
+      armed=!blocksSwipe(e.target);
+    }, {passive:true});
+    document.addEventListener('touchend', function(e){
+      if(!armed) return; armed=false;
+      var t=e.changedTouches[0]; var dx=t.clientX-sx, dy=t.clientY-sy, dt=Date.now()-st0;
+      if(dt>700) return;                                       // too slow to be a flick
+      if(Math.abs(dx)<70) return;                              // not far enough
+      if(Math.abs(dx)<Math.abs(dy)*2) return;                  // not clearly horizontal
+      navTab(dx<0 ? 1 : -1);                                   // swipe left = next, right = prev
+    }, {passive:true});
+  })();
+
   // Save today's bias to biasHistory once all 4 fields (mode, structure, location, direction)
   // are completed. Subsequent edits update the same day's entry. Called from the bias option
   // handlers — runs after each selection but only commits when the full set is present.
@@ -29652,6 +29688,9 @@ var SHOTS = SHOTS_EN;
     if(dev){
       dev.addEventListener('mouseenter', function(){ paused=true; if(timer) clearInterval(timer); var bar=segs[i]&&segs[i].querySelector('i'); if(bar){ var w=getComputedStyle(bar).width; bar.style.transition='none'; bar.style.width=w; } });
       dev.addEventListener('mouseleave', function(){ paused=false; var bar=segs[i]&&segs[i].querySelector('i'); if(bar && !reduce){ bar.style.transition='width '+DWELL+'ms linear'; bar.style.width='100%'; } restart(); });
+      var tsx=0, tsy=0, tmoved=false;
+      dev.addEventListener('touchstart', function(e){ var t=e.changedTouches[0]; tsx=t.clientX; tsy=t.clientY; tmoved=false; }, {passive:true});
+      dev.addEventListener('touchend', function(e){ if(tmoved) return; var t=e.changedTouches[0]; var dx=t.clientX-tsx, dy=t.clientY-tsy; if(Math.abs(dx)>40 && Math.abs(dx)>Math.abs(dy)*1.4){ tmoved=true; go(dx<0 ? i+1 : i-1); } }, {passive:true});
     }
     layers[0].src=curSet()[order[0]]; layers[0].classList.add('on'); layers[1].classList.remove('on');
     applyCopy(true); paintProgress();
