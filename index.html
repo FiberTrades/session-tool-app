@@ -1971,6 +1971,9 @@
   .cal-day.empty { background: transparent; border-color: transparent; cursor: default; }
   .cal-day.has-trade { cursor: pointer; }
   .cal-day.has-trade:hover { border-color: var(--text-mid); }
+  .cal-day[data-date] { cursor: pointer; }
+  .cal-day[data-date]:hover { border-color: var(--text-mid); }
+  .cal-day-note-dot { position: absolute; top: 6px; left: 8px; width: 5px; height: 5px; border-radius: 50%; background: var(--text-dim); }
   .cal-day.win { background: var(--good-bg2); border-color: var(--good); }
   .cal-day.loss { background: var(--bad-bg2); border-color: var(--bad); }
   .cal-day.be { background: var(--info-bg); border-color: var(--info); }
@@ -3222,9 +3225,10 @@
     <div id="modal-day-greeting" style="margin-top:18px;margin-bottom:18px;line-height:1.6;"></div>
     <div class="modal-stats" id="modal-stats"></div>
     <div id="modal-mfe"></div>
-    <div class="modal-section-title"><span data-i18n="modal.trades_header">Trades</span> <span style="font-size:10px;color:var(--text-dim);letter-spacing:0.2em;text-transform:uppercase;font-family:'DM Mono',monospace;font-style:normal;font-weight:300;margin-left:12px;">— <span data-i18n="modal.click_row_edit_lower">click any row to edit or delete</span></span></div>
+    <div class="modal-section-title" id="modal-trades-title"><span data-i18n="modal.trades_header">Trades</span> <span style="font-size:10px;color:var(--text-dim);letter-spacing:0.2em;text-transform:uppercase;font-family:'DM Mono',monospace;font-style:normal;font-weight:300;margin-left:12px;">— <span data-i18n="modal.click_row_edit_lower">click any row to edit or delete</span></span></div>
     <div class="modal-trades" id="modal-trades"></div>
     <div id="modal-bias-section"></div>
+    <div id="modal-day-diary"></div>
   </div>
 </div>
 
@@ -4764,6 +4768,10 @@
       'modal.monthly_notes': 'Monthly Notes',
       'modal.monthly_notes_sub': 'Anything to carry into next month.',
       'modal.monthly_notes_placeholder': 'Themes, patterns, intentions for next month…',
+      'modal.day_notes': 'Daily Notes',
+      'modal.day_notes_sub': 'Notes, charts and anything worth keeping from this day.',
+      'modal.day_notes_placeholder': 'Write anything about today — setups watched, mistakes, how you felt…',
+      'modal.notes_only': 'Notes',
       'word.win': 'win',
       'word.wins': 'wins',
       'pot.tier_too_few': 'Not enough yet',
@@ -5922,6 +5930,10 @@
       'modal.monthly_notes': 'Notas Mensuales',
       'modal.monthly_notes_sub': 'Algo que llevarte al mes siguiente.',
       'modal.monthly_notes_placeholder': 'Temas, patrones, intenciones para el próximo mes…',
+      'modal.day_notes': 'Notas del Día',
+      'modal.day_notes_sub': 'Notas, gráficos y cualquier cosa que merezca guardar de este día.',
+      'modal.day_notes_placeholder': 'Escribe lo que quieras sobre hoy — setups observados, errores, cómo te sentiste…',
+      'modal.notes_only': 'Notas',
       'word.win': 'ganadora',
       'word.wins': 'ganadoras',
       'pot.tier_too_few': 'Aún insuficiente',
@@ -15180,6 +15192,10 @@
       }
       const isToday = key === todayKey;
       const hasTrade = dayTrades.length > 0 ? 'has-trade' : '';
+      const _noteKey = dateObj.getFullYear()+'-'+String(dateObj.getMonth()+1).padStart(2,'0')+'-'+String(dateObj.getDate()).padStart(2,'0');
+      const _dnCell = (data.dayNotes && data.dayNotes[_noteKey]) ? data.dayNotes[_noteKey] : null;
+      const _hasNote = _dnCell && ((_dnCell.notes && _dnCell.notes.trim()) || (Array.isArray(_dnCell.tvLinks) && _dnCell.tvLinks.some(l => l && l.url)));
+      const noteDot = (_hasNote && dayTrades.length === 0) ? '<div class="cal-day-note-dot" title="Notes"></div>' : '';
       const todayCls = isToday ? 'today' : '';
       const plLabel = dayTrades.length > 0 ? fmtMoneyShort(net) : '';
       // P&L label colour mirrors the day classification so BE days show neutral/blue label, not red
@@ -15188,7 +15204,7 @@
       const weekday = dateObj.getDay();
       const colNum = weekday + 1; // explicit column placement
       html += `<div class="cal-day ${cls} ${hasTrade} ${todayCls}" data-date="${key}" style="grid-row:${currentRow};grid-column:${colNum};${SZ}">
-        <div class="cal-day-num">${d}</div>
+        ${noteDot}<div class="cal-day-num">${d}</div>
         ${plLabel ? `<div class="cal-day-pl ${plCls}">${plLabel}</div>` : ''}
         ${tradeCount ? `<div class="cal-day-trades">${tradeCount}</div>` : ''}
       </div>`;
@@ -15249,7 +15265,7 @@
       }
     }
     grid.innerHTML = html;
-    grid.querySelectorAll('.cal-day.has-trade').forEach(el => {
+    grid.querySelectorAll('.cal-day[data-date]').forEach(el => {
       el.addEventListener('click', () => openDayModal(el.dataset.date));
     });
     grid.querySelectorAll('.cal-week-summary.clickable').forEach(el => {
@@ -15316,6 +15332,57 @@
     renderCalendar();
   });
 
+  function renderDayDiary(isoKey, dObj) {
+    var host = document.getElementById('modal-day-diary');
+    if (!host) return;
+    if (!data.dayNotes) data.dayNotes = {};
+    if (!data.dayNotes[isoKey]) data.dayNotes[isoKey] = { notes:'', tvLinks:[] };
+    var entry = data.dayNotes[isoKey];
+    if (!Array.isArray(entry.tvLinks)) entry.tvLinks = [];
+    if (entry.tvLinks.length === 0) entry.tvLinks.push({ url:'', notes:'' });
+    function esc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+    function cardHtml(l, j){
+      var u=esc(l.url||''), nt=esc(l.notes||'');
+      var pm=(l.url||'').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+      var img=pm?('<a href="'+u+'" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/'+pm[1]+'/" alt="Chart" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>'):'';
+      return '<div class="tv-link-card" data-idx="'+j+'">'+
+        '<div class="tv-link-row"><textarea class="tv-link-url" rows="1" wrap="off" autocomplete="off" placeholder="https://www.tradingview.com/x/...">'+u+'</textarea>'+
+        '<button type="button" class="tv-link-remove" title="'+esc(t('tip.remove_link')||'Remove')+'">\u00d7</button></div>'+
+        '<div class="tv-link-preview-wrap">'+img+'</div>'+
+        '<textarea class="tv-link-notes" placeholder="'+esc(t('ph.chart_notes')||'')+'" rows="2">'+nt+'</textarea>'+
+        '</div>';
+    }
+    host.innerHTML =
+      '<div class="reflect-block" style="margin-top:8px;">'+
+        '<div class="reflect-header">'+esc(t('modal.day_notes')||'Daily Notes')+'</div>'+
+        '<div class="reflect-subhead">'+esc(t('modal.day_notes_sub')||'Notes, charts and anything worth keeping from this day.')+'</div>'+
+        '<textarea id="day-diary-notes" class="reflect-q-textarea" style="min-height:120px;" placeholder="'+esc(t('modal.day_notes_placeholder')||'Write anything about today…')+'">'+esc(entry.notes||'')+'</textarea>'+
+        '<div id="day-diary-tv-list" class="reflect-q-tv-list" style="margin-top:12px;">'+entry.tvLinks.map(cardHtml).join('')+'</div>'+
+        '<button type="button" id="day-diary-tv-add" class="reflect-q-tv-add">'+esc(t('btn.add_link')||'+ Add link')+'</button>'+
+      '</div>';
+    var stateArr = entry.tvLinks;
+    function persist(){ data.dayNotes[isoKey] = entry; saveData(); }
+    var notesEl = document.getElementById('day-diary-notes');
+    if (notesEl) notesEl.addEventListener('input', function(e){ entry.notes = e.target.value; persist(); });
+    var list = document.getElementById('day-diary-tv-list');
+    var addBtn = document.getElementById('day-diary-tv-add');
+    function refreshPreview(card, url){ var w=card.querySelector('.tv-link-preview-wrap'); if(!w)return; var m=(url||'').match(/tradingview\.com\/x\/([^\/\?#]+)/i); w.innerHTML = m ? ('<a href="'+url.replace(/"/g,'&quot;')+'" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/'+m[1]+'/" alt="Chart" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>') : ''; }
+    function rebind(){
+      list.querySelectorAll('.tv-link-card').forEach(function(card, i){
+        var url=card.querySelector('.tv-link-url'), nt=card.querySelector('.tv-link-notes'), rm=card.querySelector('.tv-link-remove');
+        if(!url||!nt||!rm)return;
+        var nu=url.cloneNode(true); url.replaceWith(nu);
+        var nn=nt.cloneNode(true); nt.replaceWith(nn);
+        var nr=rm.cloneNode(true); rm.replaceWith(nr);
+        nu.addEventListener('input', function(e){ if(!stateArr[i])stateArr[i]={url:'',notes:''}; stateArr[i].url=e.target.value.trim(); refreshPreview(card, stateArr[i].url); persist(); });
+        nn.addEventListener('input', function(e){ if(!stateArr[i])stateArr[i]={url:'',notes:''}; stateArr[i].notes=e.target.value; persist(); });
+        nr.addEventListener('click', function(){ stateArr.splice(i,1); if(stateArr.length===0)stateArr.push({url:'',notes:''}); list.innerHTML=stateArr.map(cardHtml).join(''); rebind(); persist(); });
+      });
+    }
+    rebind();
+    if (addBtn) addBtn.addEventListener('click', function(){ stateArr.push({url:'',notes:''}); list.insertAdjacentHTML('beforeend', cardHtml({url:'',notes:''}, stateArr.length-1)); rebind(); var ins=list.querySelectorAll('.tv-link-url'); if(ins.length)ins[ins.length-1].focus(); persist(); });
+  }
+
   function openDayModal(dateKey) {
     const grouped = tradesGroupedByDate();
     // Resolve to a LOCAL-time Date regardless of key format: callers may pass
@@ -15325,7 +15392,18 @@
     const _isoM = /^(\d{4})-(\d{2})-(\d{2})$/.exec(dateKey);
     const d = _isoM ? new Date(+_isoM[1], +_isoM[2] - 1, +_isoM[3]) : new Date(dateKey);
     const dayTrades = grouped[d.toDateString()] || [];
-    if (dayTrades.length === 0) return;
+    const _dkIso = d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');
+    const _emptyDay = dayTrades.length === 0;
+    ['modal-day-greeting','modal-stats','modal-mfe','modal-trades-title','modal-trades','modal-bias-section'].forEach(function(id){ var el=document.getElementById(id); if(el) el.style.display = _emptyDay ? 'none' : ''; });
+    if (_emptyDay) {
+      var _fd = d.toLocaleDateString(tLocale(), { weekday:'long', day:'numeric', month:'long', year:'numeric' }).replace(/^./, function(c){return c.toUpperCase();});
+      document.getElementById('modal-date').textContent = _fd;
+      document.getElementById('modal-subtitle').textContent = t('modal.notes_only') || 'Notes';
+      var _ne = document.getElementById('modal-net'); _ne.innerHTML=''; _ne.className='modal-net';
+      renderDayDiary(_dkIso, d);
+      document.getElementById('day-modal-bg').classList.add('show');
+      return;
+    }
     const fullDate = d.toLocaleDateString(tLocale(), { weekday:'long', day:'numeric', month:'long', year:'numeric' }).replace(/^./, c => c.toUpperCase());
     document.getElementById('modal-date').textContent = fullDate;
     // Copy-weighted day stats: each logged setup contributes its copies count to
@@ -15624,6 +15702,8 @@
       }
       biasSection.innerHTML = html;
     } else biasSection.innerHTML = '';
+
+    renderDayDiary(_dkIso, d);
 
     document.getElementById('day-modal-bg').classList.add('show');
   }
@@ -18150,29 +18230,8 @@
 
   // Monthly reflection stays as a single textarea — its richness is the Monthly Insights section above.
   function renderMonthlyReflection(existing) {
-    const e = existing || {};
-    const notes = e.notes || '';
-    function esc(s) { return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
-    document.getElementById('review-modal-reflection').innerHTML = `
-      <div class="reflect-block">
-        <div class="reflect-header">${t('modal.monthly_notes')}</div>
-        <div class="reflect-subhead">${t('modal.monthly_notes_sub')}</div>
-        <textarea id="rfx-month-notes" class="reflect-q-textarea" style="min-height:120px;" placeholder="${t('modal.monthly_notes_placeholder')}">${esc(notes)}</textarea>
-      </div>
-    `;
-    document.getElementById('rfx-month-notes').addEventListener('input', e2 => {
-      if (!currentReview || currentReview.kind !== 'monthly') return;
-      const idx = data.monthlyReviews.findIndex(r => r.monthKey === currentReview.key);
-      const entry = {
-        monthKey: currentReview.key,
-        monthStart: currentReview.start.toISOString(),
-        monthEnd: currentReview.end.toISOString(),
-        notes: e2.target.value,
-        savedAt: new Date().toISOString()
-      };
-      if (idx >= 0) data.monthlyReviews[idx] = entry; else data.monthlyReviews.push(entry);
-      saveData();
-    });
+    var host = document.getElementById('review-modal-reflection');
+    if (host) host.innerHTML = '';
   }
 
   document.getElementById('review-modal-close').addEventListener('click', () => {
