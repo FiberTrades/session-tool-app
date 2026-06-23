@@ -2069,7 +2069,7 @@
   }
   .modal-close { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-chip); color: var(--text-mid); cursor: pointer; padding: 6px 14px; font-family: 'DM Mono', monospace; font-size: 10px; }
   .modal-close:hover { color: var(--text); border-color: var(--text-mid); }
-  .modal-stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); overflow: hidden; margin-bottom: 24px; }
+  .modal-stats { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 1px; background: var(--border); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); overflow: hidden; margin-bottom: 24px; }
   .modal-stat { background: var(--bg-elev); padding: 14px; text-align: center; min-width: 0; overflow: hidden; }
   .modal-stat .label { font-size: 9px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .modal-stat .v { font-family: 'DM Mono', monospace; font-size: 16px; letter-spacing: 0.02em; }
@@ -2106,6 +2106,7 @@
   .modal-tag.win { background: var(--good-bg); color: var(--good); }
   .modal-tag.lose { background: var(--bad-bg); color: var(--bad); }
   .modal-tag.be { background: var(--info-bg); color: var(--info); }
+  .pot-be-tag { display: inline-block; font-size: 8px; line-height: 1; letter-spacing: 0.1em; text-transform: uppercase; color: var(--info); background: var(--info-bg); border-radius: 3px; padding: 2px 4px; margin-right: 5px; vertical-align: middle; }
   .modal-section-title { font-family: 'Fraunces', serif; font-size: 16px; margin-top: 24px; margin-bottom: 14px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
   .modal-bias-text { font-size: 12px; color: var(--text-mid); line-height: 1.7; }
   .trade-view-list { margin-top: 32px; }
@@ -4287,6 +4288,7 @@
       'dmodal.costs': 'Costs',
       'dmodal.total_rp': 'Net R · Net Acc %',
       'dmodal.pot_rp': 'Pot R · Pot Acc %',
+      'dmodal.be_pot_r': 'BE Pot R · P',
       // ----- MT5 import modal -----
       'mt5.title': 'Import from MT5',
       'mt5.subtitle': 'Upload your MT5 Trade History Report (HTML format). Trades auto-fill into the Review tab.',
@@ -5450,6 +5452,7 @@
       'dmodal.costs': 'Costes',
       'dmodal.total_rp': 'R Neto · % Cta Neta',
       'dmodal.pot_rp': 'R Pot · % Cta Pot',
+      'dmodal.be_pot_r': 'BE R Pot · P',
       // ----- MT5 import modal -----
       'mt5.title': 'Importar de MT5',
       'mt5.subtitle': 'Sube tu Informe de Historial de Operaciones de MT5 (formato HTML). Las operaciones se rellenan automáticamente en la pestaña Revisión.',
@@ -15473,13 +15476,23 @@
     }
     const dayPotPctStr = dayPotPctVal === null ? '0%' : (dayPotPctVal >= 0 ? '+' : '') + dayPotPctVal.toFixed(2) + '%';
     const dayPotPctCls = dayPotPctVal === null ? '' : dayPotPctVal > 0.5 ? 'bad' : '';
+    // BE Pot R · P — how far price ran in your favour before stopping you out at break-even.
+    // Distinct from Pot R (which is wins-only); summed across this day's BE trades.
+    const dayBEs = dayTrades.filter(t => t.result === 'BE');
+    const dayBePotRTracked = dayBEs.filter(t => typeof t.bePotentialR === 'number' && !isNaN(t.bePotentialR));
+    const dayBePotR = dayBePotRTracked.reduce((s, t) => s + ((t.bePotentialR || 0) * tradeCopies(t)), 0);
+    const dayBePotPipsTracked = dayBEs.filter(t => typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips));
+    const dayBePotPips = dayBePotPipsTracked.reduce((s, t) => s + ((t.bePotentialPips || 0) * tradeCopies(t)), 0);
+    const dayBePotRStr    = dayBePotRTracked.length === 0 ? '0' : dayBePotR.toFixed(2) + 'R';
+    const dayBePotPipsStr = dayBePotPipsTracked.length === 0 ? '— p' : dayBePotPips.toFixed(0) + 'p';
 
     document.getElementById('modal-stats').innerHTML = `
       <div class="modal-stat"><div class="label">${t('dmodal.wlbe')}</div><div class="v"><span class="wlbe-w">${wins}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${losses}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${bes}</span></div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.gross_pnl')}</div><div class="v ${gross > 0 ? 'good' : gross < 0 ? 'bad' : ''}">${fmtMoney(gross)}</div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.costs')}</div><div class="v">${fmtMoney(costs, { noSign: true })}</div></div>
       <div class="modal-stat"><div class="label">${t('dmodal.total_rp')}</div><div class="v dual ${dayTotalRCls}"><span class="dual-primary">${dayTotalRStr}</span><span class="dual-secondary ${dayNetPctCls}">${dayNetPctStr}</span></div></div>
-      <div class="modal-stat"><div class="label">${t('dmodal.pot_rp')}</div><div class="v dual ${dayPotRCls}"><span class="dual-primary">${dayPotRStr}</span><span class="dual-secondary ${dayPotPctCls}">${dayPotPctStr}</span></div></div>`;
+      <div class="modal-stat"><div class="label">${t('dmodal.pot_rp')}</div><div class="v dual ${dayPotRCls}"><span class="dual-primary">${dayPotRStr}</span><span class="dual-secondary ${dayPotPctCls}">${dayPotPctStr}</span></div></div>
+      <div class="modal-stat"><div class="label">${t('dmodal.be_pot_r')}</div><div class="v dual"><span class="dual-primary">${dayBePotRStr}</span><span class="dual-secondary">${dayBePotPipsStr}</span></div></div>`;
 
     // Stat-aware reflection for this day. Consistent with weekly/monthly which only show the
     // reflection line — the separate "Day in. Let's grade it" greeting was redundant and removed.
@@ -15562,7 +15575,7 @@
         const bPHas = typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips);
         const bRStr = bRHas ? t.bePotentialR.toFixed(2) : '—';
         const bPStr = bPHas ? t.bePotentialPips.toFixed(0) + 'p' : '— p';
-        potCellHtml = `${bRStr} <span class="modal-trade-sub-inline">· ${bPStr}</span>`;
+        potCellHtml = `<span class="pot-be-tag">BE</span>${bRStr} <span class="modal-trade-sub-inline">· ${bPStr}</span>`;
       } else {
         potCellHtml = '—';
       }
@@ -17538,6 +17551,14 @@
     }
     const potPctStr = potPctVal === null ? '0%' : (potPctVal >= 0 ? '+' : '') + potPctVal.toFixed(2) + '%';
     const potPctCls = potPctVal === null ? '' : potPctVal > 0.5 ? 'bad' : '';
+    // BE Pot R · P for the period — parallel to the day modal's BE Pot R tile.
+    const _periodBEs = _periodTrades.filter(t => t.result === 'BE');
+    const _periodBePotRTracked = _periodBEs.filter(t => typeof t.bePotentialR === 'number' && !isNaN(t.bePotentialR));
+    const periodBePotR = _periodBePotRTracked.reduce((s, t) => s + ((t.bePotentialR || 0) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1)), 0);
+    const _periodBePotPipsTracked = _periodBEs.filter(t => typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips));
+    const periodBePotPips = _periodBePotPipsTracked.reduce((s, t) => s + ((t.bePotentialPips || 0) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1)), 0);
+    const periodBePotRStr    = _periodBePotRTracked.length === 0 ? '0' : periodBePotR.toFixed(2) + 'R';
+    const periodBePotPipsStr = _periodBePotPipsTracked.length === 0 ? '— p' : periodBePotPips.toFixed(0) + 'p';
 
     const monthlyExtra = (greetingNoun === 'month' && monthRange) ? renderMonthlyInsights(monthRange.start, monthRange.end) : '';
     // Weekly modal: show the consistency block (showed-up vs traded) in its own section.
@@ -17565,6 +17586,7 @@
         <div class="modal-stat"><div class="label">${t('dmodal.costs')}</div><div class="v">${costsStr}</div></div>
         <div class="modal-stat"><div class="label">${t('dmodal.total_rp')}</div><div class="v dual ${totalRCls}"><span class="dual-primary">${totalRStr}</span><span class="dual-secondary ${netPctCls}">${netPctStr}</span></div></div>
         <div class="modal-stat"><div class="label">${t('dmodal.pot_rp')}</div><div class="v dual ${potRCls}"><span class="dual-primary">${potRStr}</span><span class="dual-secondary ${potPctCls}">${potPctStr}</span></div></div>
+        <div class="modal-stat"><div class="label">${t('dmodal.be_pot_r')}</div><div class="v dual"><span class="dual-primary">${periodBePotRStr}</span><span class="dual-secondary">${periodBePotPipsStr}</span></div></div>
       </div>
       ${weeklyExtra}
       ${monthlyExtra}
@@ -18843,6 +18865,12 @@
       if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
       if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
       if (typeof renderStats === 'function') renderStats();
+    } catch (e) { /* non-fatal */ }
+    // Post-induction premium step — adapts to which landing button brought them in; skippable.
+    try {
+      if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') {
+        setTimeout(function () { window.stPremiumStep.show(); }, 350);
+      }
     } catch (e) { /* non-fatal */ }
   });
 
@@ -27733,6 +27761,52 @@
     window.__welcomePending = true;
     showWelcome();
   }
+  /* ====== POST-INDUCTION PREMIUM STEP (shown after onboarding; adapts to landing intent) ====== */
+  var premStep = document.createElement('div');
+  premStep.className = 'modal-bg';
+  premStep.id = 'st-premium-step-bg';
+  premStep.innerHTML =
+    '<div class="modal st-welcome">' +
+      '<div class="st-welcome-mark">Session Tool &middot; Premium</div>' +
+      '<h2 class="st-welcome-title" id="st-prem-title"></h2>' +
+      '<p class="st-welcome-body" id="st-prem-body"></p>' +
+      '<div class="st-welcome-trial" id="st-prem-price"></div>' +
+      '<button type="button" class="st-welcome-btn" id="st-prem-go"></button>' +
+      '<button type="button" class="stc-forgot" id="st-prem-skip" style="margin-top:12px;"></button>' +
+    '</div>';
+  document.body.appendChild(premStep);
+  function premL(en, es) { return (typeof lang === 'function' && lang() === 'es') ? es : en; }
+  function premCheckout() {
+    if (!currentUser) return;
+    var u = CHECKOUT_URL + '?checkout[email]=' + encodeURIComponent(currentUser.email || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser.id);
+    window.open(u, '_blank');
+  }
+  function closePremStep() { premStep.classList.remove('show'); }
+  premStep.querySelector('#st-prem-skip').addEventListener('click', closePremStep);
+  premStep.querySelector('#st-prem-go').addEventListener('click', function () { premCheckout(); closePremStep(); });
+  premStep.addEventListener('click', function (e) { if (e.target === premStep) closePremStep(); });
+  window.stPremiumStep = { show: function () {
+    if (profilePaid) return; // already premium — nothing to sell
+    var intent = 'soft';
+    try { if (localStorage.getItem('st_premium_intent') === '1') { intent = 'premium'; localStorage.removeItem('st_premium_intent'); } } catch (_) {}
+    var ttl = premStep.querySelector('#st-prem-title');
+    var bod = premStep.querySelector('#st-prem-body');
+    var pr  = premStep.querySelector('#st-prem-price');
+    var go  = premStep.querySelector('#st-prem-go');
+    var sk  = premStep.querySelector('#st-prem-skip');
+    if (intent === 'premium') {
+      ttl.textContent = premL("You're all set — go Premium", 'Todo listo — hazte Premium');
+      bod.textContent = premL('Your journal is ready. Unlock everything — full stats, multi-account and every feature — for \u00a312 a month, cancel anytime.', 'Tu diario est\u00e1 listo. Desbloquea todo \u2014estad\u00edsticas completas, multicuenta y cada funci\u00f3n\u2014 por 12\u00a0\u00a3 al mes, cancela cuando quieras.');
+    } else {
+      ttl.textContent = premL('Your journal is ready', 'Tu diario est\u00e1 listo');
+      bod.textContent = premL('Use it free for ' + TRIAL_DAYS + ' days. Go Premium whenever the review habit starts paying for itself.', '\u00dasalo gratis ' + TRIAL_DAYS + ' d\u00edas. Hazte Premium cuando el h\u00e1bito empiece a merecer la pena.');
+    }
+    pr.textContent = premL('\u00a312 / month \u00b7 cancel anytime', '12\u00a0\u00a3 / mes \u00b7 cancela cuando quieras');
+    go.textContent = premL('Go Premium now', 'Hazte Premium ahora');
+    sk.textContent = premL('Maybe later', 'Quiz\u00e1s m\u00e1s tarde');
+    premStep.classList.add('show');
+  } };
+
   pwel('stc-pw-signout').addEventListener('click', function () { sb.auth.signOut(); });
 
   // Trial is over once we're past signup + TRIAL_DAYS and the user hasn't paid.
@@ -28368,6 +28442,7 @@
   .nav-links{display:flex; align-items:center; gap:30px;}
   .nav-links a{font-family:var(--mono); font-size:11px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-dim); transition:color .2s;}
   .nav-links a:hover{color:var(--text);}
+  .nav-links a.btn{color:var(--text);}
   .lang{display:flex; gap:6px; margin-left:6px;}
   .lang-sq{font-family:var(--mono); font-size:10px; letter-spacing:0.08em; width:30px; height:26px; border-radius:var(--rp); border:1px solid var(--border-2); background:transparent; color:var(--text-dim); cursor:pointer; transition:border-color .2s,color .2s,background .2s; padding:0;}
   .lang-sq:hover{border-color:var(--text-mid); color:var(--text-mid);}
@@ -28909,7 +28984,7 @@
     <div class="more-grid reveal">
       <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 9h18M8 4v16"/></svg><h3 data-i18n="m1.h3">Multi-account</h3><p data-i18n="m1.p">Track every account and prop challenge side by side, archive the dead ones, scope your stats to one or all.</p></div>
       <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.5 2.5 2.5 15 0 18M12 3c-2.5 2.5-2.5 15 0 18"/></svg><h3 data-i18n="m2.h3">English &amp; Español</h3><p data-i18n="m2.p">The whole interface in two languages, with greetings and reflections written natively in each — not machine-translated.</p></div>
-      <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M5 4h11l3 3v13H5z"/><path d="M9 9h6M9 13h6M9 17h4"/></svg><h3 data-i18n="m3.h3">Discord, translated</h3><p data-i18n="m3.p">Post bias, review, weekly and series straight to Discord — and when you write in Spanish, it goes out in clean English.</p></div>
+      <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M8 3v18"/><path d="M12 8h5M12 12h5M12 16h3"/></svg><h3 data-i18n="m3.h3">Daily diary</h3><p data-i18n="m3.p">Tap any day on the calendar — traded or not — for a dated journal entry, with notes and TradingView chart snapshots that render inline.</p></div>
       <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M12 3a9 9 0 1 0 9 9"/><path d="M12 7v5l3 2"/></svg><h3 data-i18n="m4.h3">Smart greetings</h3><p data-i18n="m4.p">Open the app and the greeting already knows your numbers — your streak, the R you left behind, a rule you broke — and says something that actually lands.</p></div>
       <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="5" width="18" height="13" rx="2"/><path d="M3 9h18"/><circle cx="7.5" cy="13.5" r="1.4"/></svg><h3 data-i18n="m5.h3">Economic calendar</h3><p data-i18n="m5.p">The day's high-impact releases, filtered to the currencies you trade, so red-folder news never blindsides the session.</p></div>
       <div class="mcard"><svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><h3 data-i18n="m6.h3">Live market TV</h3><p data-i18n="m6.p">A pinnable Bloomberg TV floater and a markets ticker, so the macro tape sits right beside your journal.</p></div>
@@ -29123,7 +29198,7 @@
     'more.eyebrow':'Y los detalles discretos','more.h2':'Todo lo demás que <em>se gana su lugar</em>.',
     'm1.h3':'Multicuenta','m1.p':'Sigue cada cuenta y desafío de fondeo en paralelo, archiva las inactivas y filtra tus estadísticas por una o por todas.',
     'm2.h3':'English &amp; Español','m2.p':'Toda la interfaz en dos idiomas, con saludos y reflexiones escritos de forma nativa en cada uno — no traducidos por máquina.',
-    'm3.h3':'Discord, traducido','m3.p':'Publica sesgo, revisión, resumen semanal y series directo a Discord — y cuando escribes en español, sale en inglés claro.',
+    'm3.h3':'Bitácora diaria','m3.p':'Toca cualquier día del calendario —con o sin operaciones— para una entrada fechada, con notas y capturas de gráficos de TradingView que se muestran al instante.',
     'm4.h3':'Saludos inteligentes','m4.p':'Abres la app y el saludo ya conoce tus números — tu racha, la R que dejaste atrás, una regla que rompiste — y dice algo que de verdad cala.',
     'm5.h3':'Calendario económico','m5.p':'Los datos de alto impacto del día, filtrados a las divisas que operas, para que las noticias de carpeta roja nunca te sorprendan en la sesión.',
     'm6.h3':'TV de mercado en vivo','m6.p':'Un panel flotante de Bloomberg TV que puedes fijar y un ticker de mercados, para tener la macro justo al lado de tu diario.',
@@ -29224,7 +29299,7 @@ var SHOTS = {"bias": "data:image/webp;base64,UklGRh5cAABXRUJQVlA4IBJcAACQ4QGdASr
     els.forEach(function(e){ io.observe(e); });
   })();
 <\/script>
-<script>(function(){document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('[data-auth]'):null;if(b){e.preventDefault();e.stopImmediatePropagation();try{parent.postMessage('lp-auth','*');}catch(_){}}},true);})();<\/script>
+<script>(function(){document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('[data-auth]'):null;if(b){e.preventDefault();e.stopImmediatePropagation();var msg=(b.getAttribute('data-i18n')==='pr.prem_cta')?'lp-auth:premium':'lp-auth';try{parent.postMessage(msg,'*');}catch(_){}}},true);})();<\/script>
 </body>
 </html>
 `;
@@ -29241,7 +29316,7 @@ var SHOTS = {"bias": "data:image/webp;base64,UklGRh5cAABXRUJQVlA4IBJcAACQ4QGdASr
     var closeAdded=false;
     function addClose(g){ if(closeAdded) return; closeAdded=true; var x=document.createElement("button"); x.type="button"; x.setAttribute("aria-label","Back to home"); x.textContent="\u2715"; x.style.cssText="width:30px;height:30px;margin:0 0 40px;border-radius:50%;border:1px solid rgba(255,255,255,0.18);background:rgba(20,20,20,0.65);color:#9a9a9a;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;flex:0 0 auto;transition:color .15s,border-color .15s;"; x.onmouseenter=function(){ x.style.color="#fff"; x.style.borderColor="rgba(255,255,255,0.45)"; }; x.onmouseleave=function(){ x.style.color="#9a9a9a"; x.style.borderColor="rgba(255,255,255,0.18)"; }; x.onclick=function(){ dismissed=false; show(); }; var shell=g.querySelector(".stc-shell"), wm=g.querySelector(".stc-wordmark"); if(shell&&wm){ shell.insertBefore(x, wm); } else { x.style.position="fixed"; x.style.top="18px"; x.style.right="18px"; x.style.margin="0"; x.style.zIndex="6"; g.appendChild(x); } }
     function init(){ var tries=0; var iv=setInterval(function(){ var g=loginGate(); if(g){ clearInterval(iv); addClose(g); try{ new MutationObserver(sync).observe(g,{attributes:true,attributeFilter:["class"]}); }catch(_){} sync(); } else if(++tries>150){ clearInterval(iv); } }, 80); }
-    window.addEventListener("message", function(e){ if(e && e.data==="lp-auth"){ dismissed = true; hide(); setTimeout(function(){ try{ var gp=document.getElementById("stc-g-pass")||document.getElementById("stc-g-email"); if(gp){ gp.focus({preventScroll:true}); } }catch(_){} }, 0); } });
+    window.addEventListener("message", function(e){ if(e && (e.data==="lp-auth"||e.data==="lp-auth:premium")){ if(e.data==="lp-auth:premium"){ try{ localStorage.setItem("st_premium_intent","1"); }catch(_){} } dismissed = true; hide(); setTimeout(function(){ try{ var gp=document.getElementById("stc-g-pass")||document.getElementById("stc-g-email"); if(gp){ gp.focus({preventScroll:true}); } }catch(_){} }, 0); } });
     function mount(){ (document.body||document.documentElement).appendChild(f); init(); }
     if(document.body){ mount(); } else { document.addEventListener("DOMContentLoaded", mount); }
   } catch(err){}
