@@ -1289,6 +1289,14 @@
   .quick-log-list { display: flex; flex-wrap: wrap; gap: 8px; }
   .quick-log-logged { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; margin-top: 18px; }
   .quick-log-logged:not(:has(.quick-log-chip)) { display: none; }
+  .quick-log-result { margin-top: 16px; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+  .quick-log-result-hint { font-family: 'DM Mono', monospace; font-size: 10px; line-height: 1.6; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin: 0; }
+  .quick-log-result-btns { display: flex; gap: 10px; }
+  .ql-result { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 9px 22px; font-family: 'DM Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: border-color 200ms ease, background 200ms ease, color 200ms ease, transform 120ms ease; }
+  .ql-result:active { transform: scale(0.97); }
+  .ql-result.win:hover  { border-color: var(--good); color: var(--good); background: rgba(95,203,141,0.08); }
+  .ql-result.lose:hover { border-color: var(--bad);  color: var(--bad);  background: rgba(232,93,93,0.08); }
+  .ql-result.be:hover   { border-color: var(--text-mid); color: var(--text); background: rgba(255,255,255,0.04); }
   .quick-log-chip { display: inline-flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--border-2); border-radius: var(--radius-chip); font-family: 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; }
   .quick-log-chip.long  { color: var(--good); }
   .quick-log-chip.short { color: var(--bad); }
@@ -2788,6 +2796,14 @@
           <div class="quick-log-tally" id="quick-log-tally"></div>
           <div class="quick-log-list" id="quick-log-list"></div>
         </div>
+        <div class="quick-log-result" id="quick-log-result" style="display:none;">
+          <p class="quick-log-result-hint" data-i18n="quicklog.result_hint">How did it go?</p>
+          <div class="quick-log-result-btns">
+            <button type="button" class="ql-result win"  data-result="Win"  data-i18n="res.win">Win</button>
+            <button type="button" class="ql-result lose" data-result="Lose" data-i18n="res.lose">Lose</button>
+            <button type="button" class="ql-result be"   data-result="BE"   data-i18n="quicklog.be">Break Even</button>
+          </div>
+        </div>
         <div class="quick-log-finish" id="quick-log-finish">
           <div class="finish-divider">
             <button type="button" class="session-finish-toggle" id="session-finish-toggle" aria-expanded="false" data-i18n-aria-label="banner.finish_toggle_aria" aria-label="Show finish session"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="4,6.5 8,10.5 12,6.5"/></svg></button>
@@ -4278,6 +4294,8 @@
       'quicklog.hint': 'Log your trades live',
       'quicklog.tally': 'Logged this session:',
       'quicklog.remove': 'Remove',
+      'quicklog.result_hint': 'How did it go?',
+      'quicklog.be': 'Break Even',
       'review.s3.title': 'Execution Quality',
       'review.s4.title': 'Focus Level',
       'review.s5.title': 'How Did the Session Close?',
@@ -5462,6 +5480,8 @@
       'quicklog.hint': 'Registra tus operaciones en vivo',
       'quicklog.tally': 'Registradas esta sesión:',
       'quicklog.remove': 'Quitar',
+      'quicklog.result_hint': '¿Cómo fue?',
+      'quicklog.be': 'Equilibrio',
       'review.s3.title': 'Calidad de Ejecución',
       'review.s4.title': 'Nivel de Concentración',
       'review.s5.title': '¿Cómo cerró la sesión?',
@@ -10323,6 +10343,7 @@
     try { renderTradeAccountBreakdown(); } catch (e) {}
     if (typeof updateQuickLogTally === 'function') updateQuickLogTally();
     if (typeof updateQuickLogList === 'function') updateQuickLogList();
+    if (typeof updateQuickLogResult === 'function') updateQuickLogResult();
     try { hardenAutofill(); } catch (e) {}
   }
 
@@ -10490,10 +10511,34 @@
       el.appendChild(chip);
     });
   }
+  // Show the Win/Lose/BE chooser only while the most-recent quick-logged trade is unresolved.
+  function updateQuickLogResult() {
+    const box = document.getElementById('quick-log-result');
+    if (!box) return;
+    const trades = (data.review && data.review.trades) || [];
+    const last = trades.length ? trades[trades.length - 1] : null;
+    box.style.display = (last && !last.result) ? '' : 'none';
+  }
+  // Set the result on the latest unresolved quick-logged trade; the refresh hides the chooser.
+  function setQuickLogResult(result) {
+    const trades = (data.review && data.review.trades) || [];
+    const last = trades.length ? trades[trades.length - 1] : null;
+    if (!last || last.result) return;
+    last.result = result;
+    saveData();
+    try { refreshAllSurfaces(); } catch (e) {}
+    if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
+  }
   const _qlLong = document.getElementById('quick-log-long');
   const _qlShort = document.getElementById('quick-log-short');
   if (_qlLong) _qlLong.addEventListener('click', () => quickLogTrade('Long'));
   if (_qlShort) _qlShort.addEventListener('click', () => quickLogTrade('Short'));
+  const _qlResult = document.getElementById('quick-log-result');
+  if (_qlResult) _qlResult.addEventListener('click', (e) => {
+    const btn = e.target.closest('.ql-result');
+    if (!btn) return;
+    setQuickLogResult(btn.dataset.result);
+  });
   const _qlList = document.getElementById('quick-log-list');
   if (_qlList) _qlList.addEventListener('click', (e) => {
     const btn = e.target.closest('.quick-log-chip-remove');
