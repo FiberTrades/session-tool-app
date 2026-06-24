@@ -25778,6 +25778,14 @@
     return dt.getTime() === today.getTime();
   }
 
+  // The live (unresolved) trade's side: 'Long', 'Short', or '' if none/unset.
+  function inProgressSide() {
+    const trades = (data.review && data.review.trades) || [];
+    for (let i = trades.length - 1; i >= 0; i--) {
+      if (!trades[i].result) return trades[i].side || '';
+    }
+    return '';
+  }
   // Tail for the Review page when a trade is placed for today but not yet resolved.
   function pickReviewInProgressTail() {
     const seed = todayKey() + ':rev-inprog:' + _greetingNonce;
@@ -25785,6 +25793,40 @@
     // (manage the trade, journal later). After the window closes, the reflection fields are
     // back, so the regular pool ("write the setup now") applies.
     const live = (typeof isSessionLive === 'function') && isSessionLive();
+    // In a live trade with a known direction: coach patience + the move to break-even.
+    // Long/Buy -> break-even once price takes the previous high; Short/Sell -> previous low.
+    if (live) {
+      const _side = (typeof inProgressSide === 'function') ? inProgressSide() : '';
+      if (_side === 'Long' || _side === 'Short') {
+        const _es = (window.__lang === 'es');
+        const _LONG  = _es ? ["estás largo. Ten paciencia — mueve a punto de equilibrio en cuanto el precio supere el máximo anterior.", "largo y en vivo. Déjala trabajar — en cuanto el precio tome el máximo anterior, mueve tu stop a punto de equilibrio.", "estás en largo. Paciencia ahora; cuando ceda el máximo anterior, protégela en punto de equilibrio.", "posición larga. No la toques pronto — cuando el precio tome el máximo anterior, mueve a punto de equilibrio y déjala correr.", "compraste. Quieto hasta que el precio tome el máximo anterior, luego mueve a punto de equilibrio."] : ["you're long. Be patient — move to break-even as soon as price takes the previous high.", "long and live. Let it work — the moment price takes the previous high, slide your stop to break-even.", "you're in long. Patience now; once the previous high gives way, protect it at break-even.", "long position. Don't touch it early — when price takes the previous high, move to break-even and let it run.", "you bought. Sit tight until price takes the previous high, then trail your stop to break-even."];
+        const _SHORT = _es ? ["estás corto. Ten paciencia — mueve a punto de equilibrio en cuanto el precio rompa el mínimo anterior.", "corto y en vivo. Déjala trabajar — en cuanto el precio tome el mínimo anterior, mueve tu stop a punto de equilibrio.", "estás en corto. Paciencia ahora; cuando ceda el mínimo anterior, protégela en punto de equilibrio.", "posición corta. No la toques pronto — cuando el precio tome el mínimo anterior, mueve a punto de equilibrio y déjala correr.", "vendiste. Quieto hasta que el precio tome el mínimo anterior, luego mueve a punto de equilibrio."] : ["you're short. Be patient — move to break-even as soon as price takes the previous low.", "short and live. Let it work — the moment price takes the previous low, slide your stop to break-even.", "you're in short. Patience now; once the previous low gives way, protect it at break-even.", "short position. Don't touch it early — when price takes the previous low, move to break-even and let it run.", "you sold. Sit tight until price takes the previous low, then trail your stop to break-even."];
+        let _pool = (_side === 'Long') ? _LONG : _SHORT;
+        // Compare the live trade against the logged Session Bias (Bullish / Bearish / Unsure);
+        // when a bias is set, lead with a line commenting on the alignment (still cues break-even).
+        const _bias = (data.bias && data.bias.direction) || '';
+        if (_bias === 'Bullish' || _bias === 'Bearish' || _bias === 'Unsure') {
+          const _dir = _es ? (_side === 'Long' ? 'largo' : 'corto') : (_side === 'Long' ? 'long' : 'short');
+          const _be  = _es ? (_side === 'Long' ? 'mueve a punto de equilibrio en cuanto el precio supere el máximo anterior.' : 'mueve a punto de equilibrio en cuanto el precio rompa el mínimo anterior.')
+                           : (_side === 'Long' ? 'move to break-even once price takes the previous high.' : 'move to break-even once price takes the previous low.');
+          const _withBias = (_bias === 'Bullish' && _side === 'Long') || (_bias === 'Bearish' && _side === 'Short');
+          const _vsBias   = (_bias === 'Bullish' && _side === 'Short') || (_bias === 'Bearish' && _side === 'Long');
+          let _align;
+          if (_withBias) {
+            const _biasW = _es ? (_side === 'Long' ? 'alcista' : 'bajista') : (_side === 'Long' ? 'bullish' : 'bearish');
+            _align = _es ? [`estás ${_dir}, en línea con tu sesgo ${_biasW} — buena coherencia. Ten paciencia; ${_be}`, `${_dir} y sesgo ${_biasW}: tu operación y tu plan coinciden. Déjala trabajar — ${_be}`, `con tu sesgo ${_biasW}, este ${_dir} va según el guion. Paciencia — ${_be}`] : [`you're ${_dir}, in line with your ${_biasW} bias — good alignment. Be patient; ${_be}`, `${_dir} and ${_biasW}: your trade and your bias agree. Let it work — ${_be}`, `with your ${_biasW} bias, this ${_dir} is on-script. Patience — ${_be}`];
+          } else if (_vsBias) {
+            const _biasW = _es ? (_side === 'Long' ? 'bajista' : 'alcista') : (_side === 'Long' ? 'bearish' : 'bullish');
+            _align = _es ? [`estás ${_dir}, pero marcaste el sesgo ${_biasW}. Contra-sesgo — que el setup se lo gane, luego ${_be}`, `atención: ${_dir} contra un sesgo ${_biasW}. Si es un setup de verdad, bien — ${_be}`, `este ${_dir} va contra tu lectura ${_biasW}. Opera el gráfico, no el ego — ${_be}`] : [`you're ${_dir}, but you called the bias ${_biasW}. Counter-bias — make the setup earn it, then ${_be}`, `heads up: ${_dir} against a ${_biasW} bias. If it's a real setup, fine — ${_be}`, `this ${_dir} runs against your ${_biasW} read. Trade the chart, not the ego — ${_be}`];
+          } else {
+            _align = _es ? [`estás ${_dir}, aunque marcaste el sesgo como indeciso. Si el setup es limpio, bien — ${_be}`, `${_dir} con un sesgo indeciso. Trátalo como un quizás y ${_be}`, `marcaste el sesgo indeciso y entraste ${_dir}. Deja que el nivel decida — ${_be}`] : [`you're ${_dir}, though you marked the bias unsure. If the setup's clean, fine — ${_be}`, `${_dir} on an unsure bias. Size it like a maybe and ${_be}`, `you flagged the bias unsure, then went ${_dir}. Let the level decide — ${_be}`];
+          }
+          _pool = _align;
+        }
+        const _pk = 'REVIEW_LIVE_' + _side.toUpperCase() + (_bias ? ('_' + _bias.toUpperCase()) : '') + (_es ? '_ES' : '');
+        return _pool[pickWithAntiRepeat(_pool, _pk, seed + ':' + _side + ':' + _bias)];
+      }
+    }
     const poolSrc = live ? REVIEW_IN_PROGRESS_LIVE : REVIEW_IN_PROGRESS;
     const poolKey = live ? 'REVIEW_IN_PROGRESS_LIVE' : 'REVIEW_IN_PROGRESS';
     const pool = localizedPool(poolSrc, poolKey);
@@ -25819,7 +25861,11 @@
       //     weekday all get their own appropriate pool. This avoids lines like
       //     "still waiting on a setup" firing after the session has closed.
       const todayOutcome = getTodayOutcome();
-      if (todayOutcome) {
+      // While a trade is live and its direction is known, lead with patience + break-even coaching.
+      const _liveSide = ((typeof isSessionLive === 'function') && isSessionLive() && typeof inProgressSide === 'function') ? inProgressSide() : '';
+      if (_liveSide === 'Long' || _liveSide === 'Short') {
+        _cachedTailReview = pickReviewInProgressTail();
+      } else if (todayOutcome) {
         _cachedTailReview = pickTail(todayOutcome, true);
       } else if (hasInProgressTradeToday()) {
         _cachedTailReview = pickReviewInProgressTail();
