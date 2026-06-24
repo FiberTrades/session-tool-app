@@ -7217,11 +7217,30 @@
   let yearGlanceYear = today.getFullYear();
   // Now that `data` exists, kick off the live clock + boundary-alert ticker
   renderMetaTime();
-  setInterval(renderMetaTime, 1000);
-  // When the tab/app returns to the foreground, run the clock + boundary check immediately so a
-  // session open/close that fell due while the tab was backgrounded (and its timer throttled)
-  // fires the moment the user comes back, instead of waiting for the next throttled tick.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) renderMetaTime(); });
+  // Day-rollover / wake refresh. The app resolves "today" once at load (the session-date and
+  // bias-date pickers, the bias greeting, the session banner). After hibernating overnight or
+  // crossing midnight while left open, re-run that load-time date handling so the app shows the
+  // current day instead of yesterday's state. The picker inits only advance a stale day when no
+  // trades are in progress, so kept work is never re-dated.
+  var _stDayKey = todayDateStr();
+  function _stRefreshDay() {
+    try { initSessionDatePicker(); } catch (e) {}
+    try { initBiasDatePicker();    } catch (e) {}
+    try { saveData();              } catch (e) {}
+    try { renderMetaTime();        } catch (e) {}
+    try { refreshAllSurfaces();    } catch (e) {}
+  }
+  function _stCheckRollover() {
+    var k = todayDateStr();
+    if (k !== _stDayKey) { _stDayKey = k; _stRefreshDay(); }
+  }
+  // Per-second tick keeps the clock live and catches a midnight rollover while the app stays open.
+  setInterval(function () { renderMetaTime(); _stCheckRollover(); }, 1000);
+  // Returning to the foreground (e.g. waking from hibernation): refresh the clock immediately,
+  // and if the day changed while we were away, refresh the day's surfaces.
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) { renderMetaTime(); _stCheckRollover(); } });
+  window.addEventListener('focus', _stCheckRollover);
+  window.addEventListener('pageshow', _stCheckRollover);
   let equityMode = 'balance';
 
   // Parse an embedded time range out of a Session-name string.
