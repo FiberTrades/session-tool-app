@@ -13100,7 +13100,7 @@
       const label = isR ? (tv >= 0 ? '+' : '') + tv.toFixed(1) + 'R' : fmtMoneyShort(tv);
       // Brighter axis labels (white instead of dim grey) so the scale reads cleanly
       // against the dark chart background. Bumped from 9px → 11px for legibility.
-      yLabels += `<text x="${PAD.left - 8}" y="${ty + 4}" font-size="11" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${label}</text>`;
+      yLabels += `<text x="${PAD.left - 8}" y="${ty + 4}" font-size="14" font-weight="700" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${label}</text>`;
     });
     chart.setAttribute('viewBox', `0 0 ${W} ${H}`);
     chart.setAttribute('width', W);
@@ -13114,9 +13114,7 @@
       <circle cx="${lastX}" cy="${y(finalV)}" r="3" fill="${lineColor}"/>
       <line class="equity-hover-guide" x1="0" x2="0" y1="${PAD.top}" y2="${H - PAD.bottom}" stroke="var(--text-dim)" stroke-width="1" stroke-dasharray="3 3" style="display:none"/>
       <circle class="equity-hover-dot" r="4" fill="${lineColor}" stroke="var(--bg)" stroke-width="2" style="display:none"/>
-      ${yLabels}
-      <text x="${PAD.left}" y="${H - 6}" font-size="11" fill="#ffffff" font-family="DM Mono, monospace">${t('lbl.trade')} 1</text>
-      <text x="${W - PAD.right}" y="${H - 6}" font-size="11" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
+      ${yLabels}`;
     // --- Hover interaction: store latest geometry; wire listeners once ---
     chart._eq = { values, isR, x, y, PAD, W };
     if (!chart._eqWired) {
@@ -16813,6 +16811,36 @@
   // Google's free, keyless endpoint. Generally the most reliable of the
   // no-key options, so it's tried before MyMemory. Returns null on any
   // failure so the dispatcher falls through to the next method.
+  // clients5 'dict-chrome-ex' endpoint — the most reliably CORS-enabled Google
+  // Translate front door from a browser. Tried first; returns null on any
+  // failure so the dispatcher falls through to the older gtx + MyMemory chain.
+  async function gcxTranslateOnce(text, source, target) {
+    if (!text || !text.trim()) return null;
+    if (source === target) return text;
+    try {
+      const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${encodeURIComponent(source)}&tl=${encodeURIComponent(target)}&q=${encodeURIComponent(text)}`;
+      const resp = await fetch(url);
+      if (!resp.ok) return null;
+      const json = await resp.json();
+      // Shapes seen: ["translated"] · [["translated","source"], ...] · {sentences:[{trans}]}
+      if (Array.isArray(json)) {
+        if (typeof json[0] === 'string') return json[0] || null;
+        if (Array.isArray(json[0])) {
+          let out = '';
+          for (const seg of json) { if (Array.isArray(seg) && typeof seg[0] === 'string') out += seg[0]; }
+          return out || null;
+        }
+      }
+      if (json && Array.isArray(json.sentences)) {
+        let out = '';
+        for (const sen of json.sentences) { if (sen && typeof sen.trans === 'string') out += sen.trans; }
+        return out || null;
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
   async function gtxTranslateOnce(text, source, target) {
     if (!text || !text.trim()) return null;
     if (source === target) return text;
@@ -16861,6 +16889,8 @@
     if (!text || !text.trim()) return text;
     if (source === target) return text;
     __trAttempted++;
+    const c = await gcxTranslateOnce(text, source, target);
+    if (c !== null) return c;
     const g = await gtxTranslateOnce(text, source, target);
     if (g !== null) return g;
     const m = await mmTranslateOnce(text, source, target);
