@@ -1021,7 +1021,7 @@
   .tags { margin-left: 60px; display: flex; flex-wrap: wrap; gap: 8px; }
   .tag { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-chip); padding: 9px 16px; cursor: pointer; transition: all 200ms ease; font-size: 10px; letter-spacing: 0.04em; color: var(--text-mid); font-family: 'DM Mono', monospace; }
   .tag:hover { border-color: var(--text-mid); color: var(--text); }
-  .tag.selected { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 500; }
+  .tag.selected { background: var(--text); color: var(--bg); border-color: var(--text); }
   /* Custom user-defined tag: hover reveals a small × removal handle */
   .tag.custom { position: relative; padding-right: 26px; }
   .tag.custom .tag-remove { position: absolute; right: 6px; top: 50%; transform: translateY(-50%); width: 16px; height: 16px; line-height: 14px; text-align: center; font-size: 14px; color: var(--text-dim); opacity: 0; transition: opacity 150ms, color 150ms; cursor: pointer; border-radius: var(--radius-chip); }
@@ -10302,8 +10302,11 @@
       row.querySelector('.exit-input').value = t.exitTime || '';
       row.querySelector('.risk-input').value = t.risk || '';
       row.querySelector('.sl-input').value = t.sl || '';
-      row.querySelector('.costs-input').value = t.costs || '';
-      { const _ce = row.querySelector('.costs-input'); _ce.style.color = (parseFloat(_ce.value) < 0) ? 'var(--bad)' : ''; }
+      { const _ce = row.querySelector('.costs-input');
+        const _cn = (t.costs !== '' && t.costs != null && !isNaN(parseFloat(t.costs))) ? Math.abs(parseFloat(t.costs)) : '';
+        _ce.value = (_cn === '') ? '' : (_cn === 0 ? '0' : ('-' + _cn));
+        _ce.style.color = (_cn === '' || _cn === 0) ? '' : 'var(--bad)';
+      }
       // Initialise gross + net inputs with displayed values
       const grossEl = row.querySelector('.gross-input');
       const netEl   = row.querySelector('.net-input');
@@ -10420,7 +10423,25 @@
         if (data.review.trades[idx].result === 'Lose') syncPipsCell();
         lightUpdate();
       });
-      row.querySelector('.costs-input').addEventListener('input', e => { data.review.trades[idx].costs = e.target.value.trim(); e.target.style.color = (parseFloat(e.target.value) < 0) ? 'var(--bad)' : ''; lightUpdate(); });
+      { const _ci = row.querySelector('.costs-input');
+        // Costs are a deduction: shown as a red negative (e.g. "-5"). The STORED value stays a
+        // positive magnitude so net/gross math is unaffected; the minus is stripped while editing
+        // and re-applied on blur.
+        _ci.addEventListener('focus', () => { _ci.value = _ci.value.replace(/-/g, ''); });
+        _ci.addEventListener('input', e => {
+          const _v = e.target.value.replace(/[^0-9.]/g, '');
+          data.review.trades[idx].costs = _v;
+          e.target.style.color = (_v === '' || parseFloat(_v) === 0) ? '' : 'var(--bad)';
+          lightUpdate();
+        });
+        _ci.addEventListener('blur', () => {
+          const _raw = _ci.value.replace(/[^0-9.]/g, '');
+          const _n = parseFloat(_raw);
+          if (_raw === '' || isNaN(_n)) { data.review.trades[idx].costs = ''; _ci.value = ''; _ci.style.color = ''; }
+          else if (Math.abs(_n) === 0) { data.review.trades[idx].costs = '0'; _ci.value = '0'; _ci.style.color = ''; }
+          else { data.review.trades[idx].costs = String(Math.abs(_n)); _ci.value = '-' + Math.abs(_n); _ci.style.color = 'var(--bad)'; }
+        });
+      }
       row.querySelector('.costs-input').addEventListener('keydown', _ev => { if (_ev.key === 'Enter') { _ev.preventDefault(); _ev.target.blur(); } });
       grossEl.addEventListener('input', e => {
         const v = e.target.value.trim();
