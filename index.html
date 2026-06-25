@@ -7286,24 +7286,70 @@
   // current day instead of yesterday's state. The picker inits only advance a stale day when no
   // trades are in progress, so kept work is never re-dated.
   var _stDayKey = todayDateStr();
+  // Time-of-day bucket mirrors timeOfDayOpener's pools (morning 5-11, earlyAft 12-13,
+  // afternoon 14-17, evening 18-22, lateNight 23 + 0-4). When the bucket changes the
+  // greeting opener is stale ("Late night..." in the morning), so we refresh on it too.
+  function _stHourBucket() {
+    var h = new Date().getHours();
+    if (h >= 5  && h < 12) return 'm';
+    if (h >= 12 && h < 14) return 'ea';
+    if (h >= 14 && h < 18) return 'a';
+    if (h >= 18 && h < 23) return 'e';
+    return 'ln';
+  }
+  var _stBucketKey = _stHourBucket();
   function _stRefreshDay() {
     try { initSessionDatePicker(); } catch (e) {}
     try { initBiasDatePicker();    } catch (e) {}
     try { saveData();              } catch (e) {}
     try { renderMetaTime();        } catch (e) {}
+    try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
     try { refreshAllSurfaces();    } catch (e) {}
   }
   function _stCheckRollover() {
     var k = todayDateStr();
-    if (k !== _stDayKey) { _stDayKey = k; _stRefreshDay(); }
+    var b = _stHourBucket();
+    if (k !== _stDayKey || b !== _stBucketKey) { _stDayKey = k; _stBucketKey = b; _stRefreshDay(); }
   }
-  // Per-second tick keeps the clock live and catches a midnight rollover while the app stays open.
-  setInterval(function () { renderMetaTime(); _stCheckRollover(); }, 1000);
-  // Returning to the foreground (e.g. waking from hibernation): refresh the clock immediately,
-  // and if the day changed while we were away, refresh the day's surfaces.
-  document.addEventListener('visibilitychange', () => { if (!document.hidden) { renderMetaTime(); _stCheckRollover(); } });
-  window.addEventListener('focus', _stCheckRollover);
-  window.addEventListener('pageshow', _stCheckRollover);
+  // Wake / resume detection. After any meaningful gap (sleep, hibernation, screen lock,
+  // long background) we run a FULL refresh so nothing is left stale. Quick alt-tabs only do
+  // the cheap day/bucket rollover check, so the greeting is not re-rolled on every focus.
+  // A cold start / restart re-inits everything on load anyway.
+  var _stLastTick = Date.now();
+  var _stHiddenAt = Date.now();
+  var _ST_WAKE_GAP  = 60000; // returning after this long => treat as a wake (full refresh)
+  var _ST_SLEEP_GAP = 90000; // tick stall longer than this => process was suspended
+  function _stWake() {
+    try { renderMetaTime(); } catch (e) {}
+    _stDayKey = todayDateStr();
+    _stBucketKey = _stHourBucket();
+    _stRefreshDay();
+    _stLastTick = Date.now(); _stHiddenAt = Date.now();
+  }
+  // Per-second tick: live clock + rollover, plus a watchdog. If far more than 1s elapsed
+  // between ticks the machine was asleep/suspended, so refresh everything on resume.
+  setInterval(function () {
+    var now = Date.now(); var gap = now - _stLastTick; _stLastTick = now;
+    try { renderMetaTime(); } catch (e) {}
+    if (gap > _ST_SLEEP_GAP) { _stWake(); } else { _stCheckRollover(); }
+  }, 1000);
+  // Foreground return (waking from hibernation, unlocking, switching back). Full refresh if
+  // we were away long enough, otherwise just the cheap rollover check.
+  document.addEventListener('visibilitychange', function () {
+    if (document.hidden) { _stHiddenAt = Date.now(); return; }
+    var away = Date.now() - _stHiddenAt;
+    if (away > _ST_WAKE_GAP) { _stWake(); }
+    else { try { renderMetaTime(); } catch (e) {} _stCheckRollover(); _stLastTick = Date.now(); _stHiddenAt = Date.now(); }
+  });
+  window.addEventListener('focus', function () {
+    var away = Date.now() - _stHiddenAt;
+    if (away > _ST_WAKE_GAP) { _stWake(); }
+    else { _stCheckRollover(); _stLastTick = Date.now(); _stHiddenAt = Date.now(); }
+  });
+  // pageshow with persisted=true is a bfcache/hibernate restore => always a full refresh.
+  window.addEventListener('pageshow', function (e) {
+    if (e && e.persisted) { _stWake(); } else { _stCheckRollover(); _stLastTick = Date.now(); _stHiddenAt = Date.now(); }
+  });
   let equityMode = 'balance';
 
   // Parse an embedded time range out of a Session-name string.
