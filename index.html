@@ -705,6 +705,32 @@
      so the toggle is meaningless here. */
   .bloomberg-floater--docked .bloomberg-floater-pin { display: none; }
   .bloomberg-floater[hidden] { display: none; }
+  @media (max-width: 560px) {
+    /* Pin the docked TV and the (pinned) ticker with position:fixed instead of sticky, so the
+       mobile URL-bar reflow can’t tear down and reload their iframes — matching the floating TV
+       in desktop-site view, which never reloads. Fixed bars reserve no in-flow space, so JS sets
+       --phone-pin-pad (total bar height, as body top padding) and --phone-tv-top (TV offset below
+       the ticker). */
+    body { padding-top: var(--phone-pin-pad, 0); }
+    .ticker-bar--sticky { position: fixed; top: 0; left: 0; right: 0; width: 100%; }
+    /* Brand row pinned on top of the TV, but only while the TV is docked, so it reads
+       brand-on-top / TV-stuck-below — like before. Solid bg masks content scrolling under it. */
+    body.phone-tv-pinned .header > .brand-row {
+      position: fixed;
+      top: var(--phone-brand-top, 0);
+      left: 0; right: 0;
+      margin: 0;
+      padding: 14px 16px;
+      background: var(--bg);
+      z-index: 60;
+    }
+    .bloomberg-floater--docked {
+      position: fixed !important;
+      top: var(--phone-tv-top, 0) !important;
+      left: 16px !important; right: 16px !important;
+      margin: 0 !important;
+    }
+  }
   .bloomberg-floater-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 12px; background: var(--bg-elev); border-bottom: 1px solid var(--border-2); cursor: move; user-select: none; flex-shrink: 0; touch-action: none; }
   .bloomberg-floater-title { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--text-dim); }
   .bloomberg-floater-actions { display: flex; gap: 2px; }
@@ -25362,6 +25388,49 @@
       _bbConstrainW = window.innerWidth;
       constrainBloombergFloater();
     });
+    // --- Phone: reserve space for the position:fixed pinned TV + ticker (see CSS above). ------
+    // Fixed bars leave no in-flow space, so measure their heights, push the page down by the
+    // total, and offset the TV below the ticker. Recomputed only on real size/state changes
+    // (open, close, dock, pin, rotate) via Resize/Mutation observers — never per scroll frame.
+    (function setupPhonePin() {
+      const tickerBar = document.getElementById('ticker-bar');
+      const tvFloater = document.getElementById('bloomberg-floater');
+      const brandRow = document.querySelector('.header > .brand-row');
+      if (!tickerBar && !tvFloater) return;
+      let _ppW = window.innerWidth;
+      function updatePhonePin() {
+        const phone = Math.min(window.innerWidth, window.innerHeight) <= 560;
+        let tickerH = 0, tvH = 0, brandH = 0;
+        if (phone && tickerBar && !tickerBar.hidden && tickerBar.classList.contains('ticker-bar--sticky')) tickerH = tickerBar.offsetHeight;
+        const tvPinned = !!(phone && tvFloater && !tvFloater.hidden && tvFloater.classList.contains('bloomberg-floater--docked'));
+        // Pin the brand row only while the TV is docked, so the top reads brand-on-top / TV-below.
+        document.body.classList.toggle('phone-tv-pinned', tvPinned);
+        if (tvPinned && brandRow) brandH = brandRow.offsetHeight;
+        if (tvPinned) tvH = tvFloater.offsetHeight;
+        document.body.style.setProperty('--phone-brand-top', tickerH + 'px');
+        document.body.style.setProperty('--phone-tv-top', (tickerH + brandH) + 'px');
+        document.body.style.setProperty('--phone-pin-pad', (tickerH + brandH + tvH) + 'px');
+      }
+      if ('ResizeObserver' in window) {
+        const ro = new ResizeObserver(() => updatePhonePin());
+        if (tickerBar) ro.observe(tickerBar);
+        if (tvFloater) ro.observe(tvFloater);
+        if (brandRow) ro.observe(brandRow);
+      }
+      if ('MutationObserver' in window) {
+        const mo = new MutationObserver(() => updatePhonePin());
+        const opts = { attributes: true, attributeFilter: ['class', 'hidden', 'style'] };
+        if (tickerBar) mo.observe(tickerBar, opts);
+        if (tvFloater) mo.observe(tvFloater, opts);
+      }
+      window.addEventListener('resize', () => {
+        if (window.innerWidth === _ppW) return; // height-only (URL bar) — ignore
+        _ppW = window.innerWidth;
+        updatePhonePin();
+      });
+      updatePhonePin();
+    })();
+
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
     // The previous count suffix ("· 9/9 · High, Medium") was visual noise on a button
     // whose only job is to open the panel. Counts still visible inside the panel itself.
