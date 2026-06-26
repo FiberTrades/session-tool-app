@@ -594,7 +594,7 @@
      modifier lets it scroll away with the page. Sits above .container so it
      spans the full viewport width. */
   .ticker-bar { width: 100%; background: var(--bg); overflow: hidden; }
-  .ticker-bar--sticky { position: sticky; top: 0; z-index: 90; }
+  .ticker-bar--sticky { position: sticky; top: 0; z-index: 90; transform: translateZ(0); will-change: transform; }
   .ticker-widget-host { height: 34px; min-height: 0; overflow: hidden; transform: translateZ(0); will-change: transform; }
   .ticker-widget-host iframe { transform: translateZ(0); backface-visibility: hidden; will-change: transform; }
   /* Pull the embed up a touch so the trimmed pixels come off both edges (padding),
@@ -697,7 +697,7 @@
   .bloomberg-floater { position: absolute; top: 60px; right: 44px; width: 406px; height: 254px; background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-card); z-index: 95; display: flex; flex-direction: column; box-shadow: none; overflow: hidden; min-width: 320px; min-height: 220px; max-width: 100vw; max-height: 100vh; max-height: 100dvh; }
   /* Portrait: the TV panel is docked in-flow at the top of the content (set in JS),
      so it sits in place with everything else below it instead of floating over the page. */
-  .bloomberg-floater--docked { position: sticky !important; top: 8px !important; z-index: 50; left: auto !important; right: auto !important; width: auto !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; max-height: none !important; margin: -34px 0 28px !important; transform: none !important; box-shadow: none; }
+  .bloomberg-floater--docked { position: sticky !important; top: 8px !important; z-index: 50; left: auto !important; right: auto !important; width: auto !important; height: auto !important; min-width: 0 !important; min-height: 0 !important; max-height: none !important; margin: -34px 0 28px !important; transform: translateZ(0) !important; will-change: transform; box-shadow: none; }
   .bloomberg-floater--docked .bloomberg-floater-body { flex: none; width: 100%; aspect-ratio: 16 / 9; transform: translateZ(0); will-change: transform; }
   .bloomberg-floater--docked .bloomberg-floater-resize { display: none; }
   .bloomberg-floater--docked .bloomberg-floater-header { cursor: default; }
@@ -1531,6 +1531,17 @@
   .series-top-row > .stats-summary { margin-top: 0; flex: 0 0 300px; }
   .series-top-row > .chart-card { margin-top: 0; flex: 1 1 auto; min-width: 0; padding: 16px; }
   @media (max-width: 760px) { .series-top-row { flex-direction: column; } .series-top-row > .stats-summary { flex: 0 0 auto; } }
+  @media (max-width: 560px) {
+    /* Series of 10 summary — 3 cards side-by-side on phone (smaller inner text so they fit a third of the width). */
+    .stats-summary.stats-summary-vertical { grid-template-columns: repeat(3, 1fr); grid-auto-rows: 1fr; }
+    .stats-summary.stats-summary-vertical > :first-child { border-radius: var(--radius-card) 0 0 var(--radius-card); }
+    .stats-summary.stats-summary-vertical > :last-child { border-radius: 0 var(--radius-card) var(--radius-card) 0; }
+    .stats-summary.stats-summary-vertical .stat-cell { padding: 16px 6px; }
+    .stats-summary.stats-summary-vertical .stat-label { font-size: 8px; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .stats-summary.stats-summary-vertical .pnl-toggle { flex-wrap: wrap; justify-content: center; gap: 2px 4px; }
+    .stats-summary.stats-summary-vertical .stat-value { font-size: 16px; }
+    .stats-summary.stats-summary-vertical .stat-value.dual .dual-secondary { font-size: 11px; }
+  }
   .stat-cell:has(.stat-tooltip), .wl-cell:has(.stat-tooltip), .pie-cell:has(.stat-tooltip), .holdtime-cell:has(.stat-tooltip) { cursor: help; }
   /* Note: this hover rule MUST preserve translateX(-50%) so the tooltip stays horizontally centered.
      A previous version had just translateY(0) which dropped centering and pushed the tooltip off-screen. */
@@ -2586,7 +2597,7 @@
     .saved-bias-row .k { min-width: 88px; }
     /* Mobile: keep all 8 series columns readable and scroll the table sideways. */
     #history-list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
-    #history-list .history-row { grid-template-columns: 34px 96px 92px 78px 78px 92px 78px 96px; width: max-content; min-width: 0; }
+    #history-list .history-row { grid-template-columns: max-content max-content 92px 78px 78px 92px 78px 96px; width: max-content; min-width: 0; }
     #type-breakdown .history-row, #side-breakdown .history-row, #dow-breakdown .history-row { grid-template-columns: 100px 60px 80px 100px 1fr; }
     #type-breakdown .history-cell.label, #side-breakdown .history-cell.label, #dow-breakdown .history-cell.label { font-size: 12px; }
     #type-breakdown .history-cell.right, #side-breakdown .history-cell.right, #dow-breakdown .history-cell.right { font-size: 16px; }
@@ -24817,7 +24828,14 @@
         } catch (e) {}
       };
       bbDockApply();
-      window.addEventListener('resize', bbDockApply);
+      let _bbDockW = window.innerWidth;
+      window.addEventListener('resize', () => {
+        // Ignore mobile URL-bar show/hide (height-only): re-running layout on the docked TV
+        // every scroll frame is part of what knocks the iframe into reloading.
+        if (window.innerWidth === _bbDockW) return;
+        _bbDockW = window.innerWidth;
+        bbDockApply();
+      });
     }
     const bbFloaterPin      = document.getElementById('bloomberg-floater-pin');
     // _bbPinned tracks the POSITIONING mode (not the button's label):
@@ -25337,7 +25355,13 @@
         bbFloater.style.right = 'auto';
       }
     }
-    window.addEventListener('resize', constrainBloombergFloater);
+    let _bbConstrainW = window.innerWidth;
+    window.addEventListener('resize', () => {
+      // Width-only: skip height-only mobile URL-bar resizes to avoid per-scroll layout thrash.
+      if (window.innerWidth === _bbConstrainW) return;
+      _bbConstrainW = window.innerWidth;
+      constrainBloombergFloater();
+    });
     // Filter summary intentionally left blank — the toggle button reads just "Filters".
     // The previous count suffix ("· 9/9 · High, Medium") was visual noise on a button
     // whose only job is to open the panel. Counts still visible inside the panel itself.
