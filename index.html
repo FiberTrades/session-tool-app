@@ -29312,6 +29312,17 @@
   var currentUser = null;
 
   // === Chart image upload to Storage (chart-shots bucket) ===
+  // Can this browser encode WebP from a canvas? (All current browsers can; the
+  // check + JPEG fallback below keeps very old ones working.)
+  function __stCanWebp() {
+    try {
+      var c = document.createElement("canvas"); c.width = 1; c.height = 1;
+      return c.toDataURL("image/webp").indexOf("data:image/webp") === 0;
+    } catch (e) { return false; }
+  }
+  // Downscale to maxDim on the longest edge and re-encode. "Balanced" settings:
+  // 1600px max, WebP @ ~0.82 (charts are thin lines + text, which WebP keeps
+  // crisp at a far smaller size than JPEG). Resolves { blob, type }.
   function __stCompressImage(file, maxDim, quality) {
     return new Promise(function (resolve, reject) {
       try {
@@ -29325,7 +29336,15 @@
             var c = document.createElement("canvas"); c.width = cw; c.height = ch;
             c.getContext("2d").drawImage(img, 0, 0, cw, ch);
             URL.revokeObjectURL(u);
-            c.toBlob(function (b) { if (b) resolve(b); else reject(new Error("Could not process image")); }, "image/jpeg", quality);
+            var type = __stCanWebp() ? "image/webp" : "image/jpeg";
+            c.toBlob(function (b) {
+              if (b) { resolve({ blob: b, type: type }); return; }
+              // toBlob returned null for WebP despite the support check — fall back to JPEG.
+              c.toBlob(function (b2) {
+                if (b2) resolve({ blob: b2, type: "image/jpeg" });
+                else reject(new Error("Could not process image"));
+              }, "image/jpeg", quality);
+            }, type, quality);
           } catch (e) { URL.revokeObjectURL(u); reject(e); }
         };
         img.onerror = function () { URL.revokeObjectURL(u); reject(new Error("Could not read image")); };
@@ -29334,10 +29353,16 @@
     });
   }
   window.__stUploadChart = function (file) {
-    return __stCompressImage(file, 1600, 0.85).then(function (blob) {
+    return __stCompressImage(file, 1600, 0.82).catch(function () {
+      // Compression failed (odd format / decode error) — upload the original as-is
+      // so the user never loses their chart over a processing hiccup.
+      return { blob: file, type: (file && file.type) || "image/jpeg" };
+    }).then(function (out) {
+      var blob = out.blob, type = out.type || "image/jpeg";
+      var ext = (type === "image/webp") ? ".webp" : (type === "image/png" ? ".png" : ".jpg");
       var folder = (currentUser && currentUser.id) ? currentUser.id : "anon";
-      var path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 10) + ".jpg";
-      return sb.storage.from("chart-shots").upload(path, blob, { contentType: "image/jpeg", upsert: false }).then(function (res) {
+      var path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 10) + ext;
+      return sb.storage.from("chart-shots").upload(path, blob, { contentType: type, upsert: false }).then(function (res) {
         if (res.error) throw res.error;
         var pub = sb.storage.from("chart-shots").getPublicUrl(path);
         var url = pub && pub.data && pub.data.publicUrl;
