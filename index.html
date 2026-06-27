@@ -66,6 +66,11 @@
   /* App-feel on mobile: stop Android's pull-to-refresh + the rubber-band overscroll
      glow, and remove the blue tap-flash so taps read like a native app. */
   html, body { overscroll-behavior: none; }
+  #ptr-ind { position: fixed; top: 0; left: 50%; z-index: 4000; width: 38px; height: 38px; display: flex; align-items: center; justify-content: center; color: var(--text-mid); background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: 999px; box-shadow: 0 10px 28px -10px rgba(0,0,0,0.65); opacity: 0; transform: translate(-50%, -120%); pointer-events: none; }
+  #ptr-ind.ready { color: var(--text); border-color: var(--text-dim); }
+  #ptr-ind svg { display: block; }
+  #ptr-ind.ptr-spin svg { animation: ptr-spin 0.7s linear infinite; transform: none !important; }
+  @keyframes ptr-spin { to { transform: rotate(360deg); } }
   html { -webkit-tap-highlight-color: transparent; }
   /* Respect the notch / home-indicator / gesture bar in standalone (installed) mode.
      env() is 0 in normal browser tabs and on non-notched devices, so this is inert there. */
@@ -28897,6 +28902,72 @@
       }).catch(function () {});
     });
   }
+
+  // Pull-to-refresh for phones/tablets. Drag down from the very top of the page to
+  // reload; also nudges the service worker to pick up a fresh deploy.
+  (function () {
+    if (!('ontouchstart' in window) && (navigator.maxTouchPoints || 0) === 0) return;
+    var ind = document.createElement('div');
+    ind.id = 'ptr-ind'; ind.setAttribute('aria-hidden', 'true');
+    ind.innerHTML = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"></path><path d="M21 3v6h-6"></path></svg>';
+    function attach() { if (document.body) document.body.appendChild(ind); else document.addEventListener('DOMContentLoaded', function () { document.body.appendChild(ind); }); }
+    attach();
+    var icon = ind.querySelector('svg');
+    var startY = 0, pulling = false, dist = 0, refreshing = false;
+    var THRESH = 72, MAX = 130;
+    function scroller() { return document.scrollingElement || document.documentElement; }
+    function atTop() { return scroller().scrollTop <= 0; }
+    function overlayOpen() { return !!document.querySelector('[id$="-modal-bg"].show, .modal-bg.show, #rule-backdrop.show'); }
+    function inScrollable(el) {
+      while (el && el !== document.body && el.nodeType === 1) {
+        var oy = getComputedStyle(el).overflowY;
+        if ((oy === 'auto' || oy === 'scroll') && el.scrollHeight - el.clientHeight > 2) return true;
+        el = el.parentElement;
+      }
+      return false;
+    }
+    function reset() { ind.style.transition = 'transform 200ms, opacity 200ms'; ind.style.opacity = '0'; ind.style.transform = 'translate(-50%, -120%)'; ind.classList.remove('ready'); if (icon) icon.style.transform = ''; }
+    document.addEventListener('touchstart', function (e) {
+      if (refreshing || e.touches.length !== 1 || !atTop() || overlayOpen() || inScrollable(e.target)) { pulling = false; return; }
+      startY = e.touches[0].clientY; pulling = true; dist = 0; ind.style.transition = 'none';
+    }, { passive: true });
+    document.addEventListener('touchmove', function (e) {
+      if (!pulling) return;
+      dist = e.touches[0].clientY - startY;
+      if (dist <= 0 || !atTop()) { pulling = false; reset(); return; }
+      if (e.cancelable) e.preventDefault();
+      var pull = Math.min(MAX, dist * 0.5);
+      var pr = Math.min(1, pull / THRESH);
+      ind.style.opacity = String(pr);
+      ind.style.transform = 'translate(-50%,' + (pull + 4) + 'px)';
+      if (icon) icon.style.transform = 'rotate(' + (pr * 280) + 'deg)';
+      ind.classList.toggle('ready', pull >= THRESH);
+    }, { passive: false });
+    function end() {
+      if (!pulling) return;
+      pulling = false;
+      if (Math.min(MAX, dist * 0.5) >= THRESH) doRefresh(); else reset();
+    }
+    document.addEventListener('touchend', end);
+    document.addEventListener('touchcancel', function () { pulling = false; reset(); });
+    function doRefresh() {
+      refreshing = true;
+      ind.style.transition = 'transform 200ms, opacity 200ms';
+      ind.style.opacity = '1';
+      ind.style.transform = 'translate(-50%, 18px)';
+      if (icon) icon.style.transform = '';
+      ind.classList.remove('ready'); ind.classList.add('ptr-spin');
+      try {
+        if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) {
+          navigator.serviceWorker.getRegistration().then(function (reg) {
+            if (reg) { try { if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' }); reg.update(); } catch (e) {} }
+          }).catch(function () {});
+        }
+      } catch (e) {}
+      var reloaded = false;
+      setTimeout(function () { if (!reloaded) { reloaded = true; location.reload(); } }, 600);
+    }
+  })();
 </script>
 <!-- ============================================================
      Session Tool — cloud auth + sync (gate + Settings tab)
