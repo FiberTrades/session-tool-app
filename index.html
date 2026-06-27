@@ -3709,6 +3709,11 @@
           <input type="file" id="mt5-file-input" accept=".html,.htm,.csv" style="display:none;" />
         </div>
         <div id="mt5-pick-error" style="margin-top:16px;padding:12px 16px;background:var(--bad-bg2);border:1px solid var(--bad);color:var(--bad);font-family:'AppNum', 'DM Mono',monospace;font-size:12px;display:none;"></div>
+        <div style="margin-top:20px;padding-top:20px;border-top:1px solid var(--border-2);text-align:center;">
+          <div style="font-size:10px;color:var(--text-dim);letter-spacing:0.1em;text-transform:uppercase;margin-bottom:12px;" data-i18n="mt5.autosync_or">or sync automatically</div>
+          <button type="button" id="mt5-autosync-btn" style="background:transparent;border:1px solid var(--good);border-radius:var(--radius-ctrl);color:var(--good);padding:10px 24px;font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;cursor:pointer;" data-i18n="mt5.autosync_btn">Auto sync trades</button>
+          <div id="mt5-autosync-status" style="margin-top:12px;font-family:'AppNum', 'DM Mono',monospace;font-size:11px;color:var(--text-dim);"></div>
+        </div>
         <div style="margin-top:24px;font-size:12px;color:var(--text-dim);line-height:1.7;font-family:'Fraunces',serif;">
           <strong style="color:var(--text-mid);font-style:normal;" data-i18n="mt5.how_to_export">How to export from MT5:</strong> <span data-i18n-html="mt5.how_to_export_body">In MT5 desktop, open the Toolbox → History tab. Right-click the table → choose your timeframe (e.g. "Custom Period") → right-click again → Report → Open in Web. Save the resulting <code style="background:var(--bg-elev);padding:1px 6px;font-family:'AppNum', 'DM Mono',monospace;font-style:normal;">.html</code> file and drop it here.</span>
         </div>
@@ -4165,6 +4170,14 @@
          trade is independently editable so divergence between accounts
          (slippage, partial fills) can be recorded honestly. -->
     <div class="settings-section" data-section="accounts" style="display:none;">
+      <div id="settings-mt5-sync-panel" class="settings-account-new" style="margin-bottom:18px;">
+        <div class="settings-label" data-i18n="settings.mt5_token_label">MT5 sync token</div>
+        <p class="settings-hint" data-i18n="settings.mt5_sync_hint">Paste this token into the Minimalist Manager EA (Session Tool Sync -> token) to auto-sync your closed trades into your log. One token covers your whole account.</p>
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:8px;">
+          <code id="settings-mt5-token" style="font-family:'DM Mono',monospace;font-size:12px;color:var(--text-mid);word-break:break-all;flex:1 1 200px;background:var(--bg-elev);padding:8px 10px;border:1px solid var(--border-2);border-radius:var(--radius-ctrl);">&mdash;</code>
+          <button type="button" id="settings-mt5-token-copy" class="settings-btn" data-i18n="settings.mt5_token_copy">Copy</button>
+        </div>
+      </div>
       <div id="settings-accounts-list"><!-- Filled by renderSettingsAccountsList() --></div>
       <div class="settings-account-new">
         <div class="settings-label" data-i18n="settings.add_label">Add account</div>
@@ -4731,6 +4744,14 @@
       'mt5.drop_zone_hint': '.html exported from MT5 Terminal → History → Report → "Open in Web"',
       'mt5.filter_label': 'Filter by date',
       'mt5.most_recent': 'Most Recent',
+      'mt5.autosync_or': 'or sync automatically',
+      'mt5.autosync_btn': 'Auto sync trades',
+      'mt5.sync_pulling': 'Pulling synced trades...',
+      'mt5.sync_none': 'No new synced trades found.',
+      'mt5.sync_all_imported': 'All synced trades are already in your log.',
+      'mt5.sync_error': 'Sync error: ',
+      'mt5.sync_unavailable': 'Sync not available - please refresh.',
+      'mt5.sync_source': 'MT5 auto-sync',
       'mt5.how_to_export': 'How to export from MT5:',
       // ----- Edit trade modal -----
       'edit.title': 'Edit Trade',
@@ -5944,6 +5965,14 @@
       'mt5.drop_zone_hint': '.html exportado desde MT5 → Historial → Informe → "Abrir en Web"',
       'mt5.filter_label': 'Filtrar por fecha',
       'mt5.most_recent': 'Más Reciente',
+      'mt5.autosync_or': 'o sincroniza automáticamente',
+      'mt5.autosync_btn': 'Sincronizar operaciones',
+      'mt5.sync_pulling': 'Obteniendo operaciones sincronizadas...',
+      'mt5.sync_none': 'No se encontraron operaciones nuevas sincronizadas.',
+      'mt5.sync_all_imported': 'Todas las operaciones sincronizadas ya están en tu registro.',
+      'mt5.sync_error': 'Error de sincronización: ',
+      'mt5.sync_unavailable': 'Sincronización no disponible: actualiza la página.',
+      'mt5.sync_source': 'Sincronización MT5',
       'mt5.how_to_export': 'Cómo exportar desde MT5:',
       // ----- Edit trade modal -----
       'edit.title': 'Editar Operación',
@@ -27055,6 +27084,7 @@
     document.getElementById('mt5-modal-bg').classList.remove('show');
   }
   document.getElementById('mt5-import-btn').addEventListener('click', openMt5Modal);
+  (function () { const b = document.getElementById('mt5-autosync-btn'); if (b) b.addEventListener('click', runMt5AutoSync); })();
   document.getElementById('mt5-modal-close').addEventListener('click', closeMt5Modal);
   document.getElementById('mt5-modal-bg').addEventListener('click', e => {
     if (e.target.id === 'mt5-modal-bg') closeMt5Modal();
@@ -27347,6 +27377,76 @@
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
+  // ===== Auto-sync: pull closed trades from Supabase trades_inbox =====
+  function _syncTargetAccount() {
+    try {
+      if (Array.isArray(data.accounts) && data.accounts.length) {
+        return data.accounts.find(a => a.id === data.activeAccountId)
+            || data.accounts.find(a => a.status === 'active')
+            || data.accounts[0];
+      }
+    } catch (e) {}
+    return null;
+  }
+  function _mt5RowToTrade(row) {
+    const dirRaw = String(row.direction || '').toLowerCase();
+    const type = (dirRaw.indexOf('sell') === 0 || dirRaw.indexOf('short') === 0) ? 'sell' : 'buy';
+    const symbol = row.symbol || '';
+    const entryPrice = parseFloat(row.entry_price) || 0;
+    const closePrice = parseFloat(row.exit_price) || 0;
+    const pipMult = /JPY$/i.test(symbol) ? 100 : 10000;
+    const priceMove = (type === 'buy') ? (closePrice - entryPrice) : (entryPrice - closePrice);
+    const net = parseFloat(row.pnl) || 0;
+    const num = v => (v != null && v !== '' && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
+    const od = row.open_time ? new Date(row.open_time) : null;
+    const cd = row.close_time ? new Date(row.close_time) : null;
+    const acc = _syncTargetAccount();
+    const t = {
+      openTime: row.open_time || '', position: String(row.ticket), symbol: symbol, type: type,
+      volume: parseFloat(row.lots) || 0, entryPrice: entryPrice, slPrice: 0, tpPrice: 0,
+      closeTime: row.close_time || '', closePrice: closePrice, commission: 0, swap: 0,
+      profit: net, pips: Math.round(priceMove * pipMult * 10) / 10,
+      slPips: num(row.sl_pips), netPL: net, costs: 0,
+      result: (typeof classifyNetResult === 'function') ? classifyNetResult(net, acc) : (Math.abs(net) < 0.005 ? 'BE' : (net > 0 ? 'Win' : 'Lose')),
+      openDate: (od && !isNaN(od.getTime())) ? od : null,
+      closeDate: (cd && !isNaN(cd.getTime())) ? cd : null,
+      _isSync: true,
+      _tpR: num(row.tp_r), _tpPips: num(row.tp_pips),
+      _mfeR: num(row.mfe_r), _mfePips: num(row.mfe_pips),
+      _riskGbp: num(row.risk_gbp)
+    };
+    t.sessionDateStr = t.closeDate ? dateToIsoStr(t.closeDate) : '';
+    t.entryTimeHHMM = t.openDate ? hhmm(t.openDate) : '';
+    t.exitTimeHHMM = t.closeDate ? hhmm(t.closeDate) : '';
+    return t;
+  }
+  function _existingMt5Tickets() {
+    const set = new Set();
+    try {
+      (data.review.trades || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); });
+      (data.history || []).forEach(h => (h.trades || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }));
+    } catch (e) {}
+    return set;
+  }
+  function runMt5AutoSync() {
+    const statusEl = document.getElementById('mt5-autosync-status');
+    const setStatus = m => { if (statusEl) statusEl.textContent = m; };
+    const T = k => (typeof t === 'function') ? t(k) : '';
+    if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') { setStatus(T('mt5.sync_unavailable') || 'Sync not available - please refresh.'); return; }
+    setStatus(T('mt5.sync_pulling') || 'Pulling synced trades...');
+    Promise.resolve(window.STCloud.pullInbox()).then(res => {
+      if (res && res.error) { setStatus((T('mt5.sync_error') || 'Sync error: ') + (res.error.message || res.error)); return; }
+      const rows = (res && res.data) || [];
+      if (!rows.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
+      const have = _existingMt5Tickets();
+      const fresh = rows.filter(r => !have.has(String(r.ticket)));
+      if (!fresh.length) { setStatus(T('mt5.sync_all_imported') || 'All synced trades are already in your log.'); return; }
+      _mt5ParsedTrades = fresh.map(_mt5RowToTrade).filter(x => x.position);
+      _mt5MetaInfo = { sourceFileName: (T('mt5.sync_source') || 'MT5 auto-sync'), accountName: '', accountNumber: '' };
+      renderMt5Preview();
+    }).catch(err => { setStatus((T('mt5.sync_error') || 'Sync error: ') + (err && err.message ? err.message : err)); });
+  }
+
   // ----- Render preview step -----
   function renderMt5Preview() {
     document.getElementById('mt5-step-pick').style.display = 'none';
@@ -27557,30 +27657,67 @@
 
     // Convert each MT5 trade into a review-tab trade row.
     // Existing rows are preserved — imported trades append. User can delete blanks if needed.
+    const _consumedTickets = [];
     selectedForDate.forEach(t => {
-      // R: net P&L divided by user's intended risk. If risk not set, leave R blank for user to fill.
-      let rVal = '';
-      if (defaultRisk > 0) {
-        rVal = (t.netPL / defaultRisk).toFixed(2);
+      if (t._isSync) {
+        // Auto-synced EA trade. R-P column = TARGET (tp_r / tp_pips); POT BE R-P = MFE
+        // (mfe_r / mfe_pips); risk = EA risk_gbp; money = real net P&L (pnl is already
+        // net, so actualGross = pnl and costs = 0). Every field stays hand-editable.
+        const isBE = t.result === 'BE';
+        const row = {
+          id: genId(),
+          result: t.result,
+          r: (t._tpR != null) ? String(t._tpR) : '',
+          type: '',
+          side: t.type === 'buy' ? 'Long' : 'Short',
+          entryTime: t.entryTimeHHMM,
+          exitTime: t.exitTimeHHMM,
+          risk: (t._riskGbp != null) ? String(t._riskGbp) : (defaultRisk > 0 ? String(defaultRisk) : ''),
+          sl: t.slPips != null ? String(t.slPips) : '',
+          costs: '0.00',
+          actualGross: t.profit,
+          pips: (t._tpPips != null) ? t._tpPips : t.pips,
+          potentialR: null,
+          potentialPips: null,
+          importedFrom: 'mt5',
+          mt5Ticket: t.position
+        };
+        if (t._mfeR != null || t._mfePips != null) {
+          if (isBE) { row.bePotentialR = (t._mfeR != null) ? t._mfeR : null; row.bePotentialPips = (t._mfePips != null) ? t._mfePips : null; }
+          else { row.potentialR = (t._mfeR != null) ? t._mfeR : null; row.potentialPips = (t._mfePips != null) ? t._mfePips : null; }
+        }
+        data.review.trades.push(row);
+        _consumedTickets.push(t.position);
+      } else {
+        // R: net P&L divided by user's intended risk. If risk not set, leave R blank for user to fill.
+        let rVal = '';
+        if (defaultRisk > 0) {
+          rVal = (t.netPL / defaultRisk).toFixed(2);
+        }
+        data.review.trades.push({
+          id: genId(),
+          result: t.result,
+          r: rVal,
+          type: '',   // Subjective — user fills (Reaction / Continuation)
+          side: t.type === 'buy' ? 'Long' : 'Short',
+          entryTime: t.entryTimeHHMM,
+          exitTime: t.exitTimeHHMM,
+          risk: defaultRisk > 0 ? String(defaultRisk) : '',
+          sl: t.slPips != null ? String(t.slPips) : '',
+          costs: t.costs.toFixed(2),
+          actualGross: t.profit,   // MT5's "profit" is gross from price action
+          pips: t.pips,
+          potentialR: null,
+          potentialPips: null,
+          importedFrom: 'mt5'  // flag so the completion banner can target only these
+        });
       }
-      data.review.trades.push({
-        id: genId(),
-        result: t.result,
-        r: rVal,
-        type: '',   // Subjective — user fills (Reaction / Continuation)
-        side: t.type === 'buy' ? 'Long' : 'Short',
-        entryTime: t.entryTimeHHMM,
-        exitTime: t.exitTimeHHMM,
-        risk: defaultRisk > 0 ? String(defaultRisk) : '',
-        sl: t.slPips != null ? String(t.slPips) : '',
-        costs: t.costs.toFixed(2),
-        actualGross: t.profit,   // MT5's "profit" is gross from price action
-        pips: t.pips,
-        potentialR: null,
-        potentialPips: null,
-        importedFrom: 'mt5'  // flag so the completion banner can target only these
-      });
     });
+    // Delete consumed inbox rows so a re-sync never doubles them (best-effort; the
+    // ticket guard in _existingMt5Tickets also prevents re-import if delete fails).
+    if (_consumedTickets.length && window.STCloud && typeof window.STCloud.deleteInbox === 'function') {
+      try { Promise.resolve(window.STCloud.deleteInbox(_consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n)))).catch(() => {}); } catch (e) {}
+    }
 
     saveData();
 
@@ -28416,25 +28553,6 @@
         // Active/archived badge only when multi-account — with one account, the
         // status is implicit (it's your only account, it's active).
         const badgeHtml = isSingleAccount ? '' : `<span class="settings-account-badge ${badgeKey}">${badgeText}</span>`;
-        // MT5 auto-sync: one shared token (the user id) shown per account with a
-        // copy button, plus a per-account copier size factor (default 1x) that
-        // scales MONEY only on group fan-out (R and pips stay unchanged).
-        const _syncToken = (window.STCloud && window.STCloud.userId) ? window.STCloud.userId : '';
-        const _sizeFactor = (acc.sizeFactor != null && !isNaN(parseFloat(acc.sizeFactor))) ? parseFloat(acc.sizeFactor) : 1;
-        const _tokenDisp = _syncToken ? escapeHtml(_syncToken) : tt('settings.mt5_token_signin');
-        const syncHtml = `<div class="settings-account-sync" style="grid-column:1/-1;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);box-sizing:border-box;">
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
-              <span class="settings-account-meta-label">${tt('settings.mt5_token_label')}</span>
-              <code class="settings-account-token" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-mid);word-break:break-all;flex:1 1 180px;">${_tokenDisp}</code>
-              <button type="button" class="settings-btn settings-account-token-copy" data-token="${_syncToken}"${_syncToken ? '' : ' disabled'}>${tt('settings.mt5_token_copy')}</button>
-            </div>
-            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-              <span class="settings-account-meta-label">${tt('settings.mt5_factor_label')}</span>
-              <input type="number" class="settings-input settings-input-compact settings-account-factor" data-id="${acc.id}" step="0.01" min="0" value="${_sizeFactor}" style="max-width:90px;" />
-              <span class="settings-risk-suffix">${tt('settings.mt5_factor_suffix')}</span>
-            </div>
-            <p class="settings-hint" style="margin-top:8px;">${tt('settings.mt5_sync_hint')}</p>
-          </div>`;
         return `<div class="${rowCls.join(' ')}" data-account-id="${acc.id}">
           <div>
             <div class="settings-account-name">${escapeHtml(acc.name)} ${badgeHtml}</div>
@@ -28452,7 +28570,6 @@
             </div>
           </div>
           <div class="settings-account-actions">${actions.join('')}</div>
-          ${syncHtml}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -28493,29 +28610,23 @@
           }, t('settings.edit_starting_title'));
         });
       });
-      // MT5 token copy buttons (one shared token = the user id).
-      wrap.querySelectorAll('.settings-account-token-copy').forEach(btn => {
-        btn.addEventListener('click', () => {
-          const tk = btn.dataset.token || '';
-          if (!tk) return;
-          const done = () => { const o = btn.textContent; btn.textContent = (typeof t === 'function' ? t('settings.mt5_token_copied') : 'Copied') || 'Copied'; setTimeout(() => { btn.textContent = o; }, 1200); };
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            navigator.clipboard.writeText(tk).then(done).catch(() => { window.prompt('Copy your token:', tk); });
-          } else { window.prompt('Copy your token:', tk); }
-        });
-      });
-      // Copier size factor — per account, scales money only on group fan-out.
-      wrap.querySelectorAll('.settings-account-factor').forEach(inp => {
-        inp.addEventListener('change', () => {
-          const acc = (typeof getAccountById === 'function') ? getAccountById(inp.dataset.id) : null;
-          if (!acc) return;
-          let v = parseFloat(inp.value);
-          if (isNaN(v) || v < 0) v = 1;
-          acc.sizeFactor = v;
-          inp.value = v;
-          saveData();
-        });
-      });
+      // MT5 sync token panel (single, account-wide) — populate + wire copy.
+      try {
+        const _tokEl = document.getElementById('settings-mt5-token');
+        const _tokBtn = document.getElementById('settings-mt5-token-copy');
+        const _tok = (window.STCloud && window.STCloud.userId) ? window.STCloud.userId : '';
+        if (_tokEl) _tokEl.textContent = _tok || ((typeof t === 'function') ? t('settings.mt5_token_signin') : 'Sign in to see your token');
+        if (_tokBtn && !_tokBtn._wired) {
+          _tokBtn._wired = true;
+          _tokBtn.addEventListener('click', () => {
+            const v = (window.STCloud && window.STCloud.userId) ? window.STCloud.userId : '';
+            if (!v) return;
+            const done = () => { const o = _tokBtn.textContent; _tokBtn.textContent = ((typeof t === 'function') ? t('settings.mt5_token_copied') : 'Copied') || 'Copied'; setTimeout(() => { _tokBtn.textContent = o; }, 1200); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done).catch(() => window.prompt('Copy your token:', v));
+            else window.prompt('Copy your token:', v);
+          });
+        }
+      } catch (e) {}
     };
     function escapeHtml(s) {
       return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -29106,6 +29217,16 @@
   }
   var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
   var ST = window.STCloud;
+
+  // Minimal trades_inbox bridge for the MT5 auto-sync importer (RLS-scoped to the user).
+  window.STCloud.pullInbox = function () {
+    if (!currentUser) return Promise.resolve({ data: [], error: new Error('not signed in') });
+    return sb.from('trades_inbox').select('*').eq('token', currentUser.id).order('close_time', { ascending: true });
+  };
+  window.STCloud.deleteInbox = function (tickets) {
+    if (!currentUser || !Array.isArray(tickets) || tickets.length === 0) return Promise.resolve({ error: null });
+    return sb.from('trades_inbox').delete().eq('token', currentUser.id).in('ticket', tickets);
+  };
 
   var currentUser = null;
 
