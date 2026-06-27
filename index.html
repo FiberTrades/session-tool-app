@@ -1148,6 +1148,16 @@
   .tv-link-row .tv-link-remove:hover { color: var(--bad); }
   .tv-link-preview-wrap { margin-top: 12px; }
   .tv-link-preview-wrap:empty { display: none; }
+  .tv-link-row .tv-upload-btn { background: transparent; border: none; color: var(--text-dim); cursor: pointer; padding: 4px 8px; display: inline-flex; align-items: center; gap: 7px; flex: 0 0 auto; transition: color 200ms; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; }
+  .tv-link-row .tv-upload-btn:hover { color: var(--text); }
+  .tv-link-row .tv-upload-btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+  .tv-link-row .tv-upload-btn .tv-upload-label { display: none; }
+  .tv-link-row .tv-upload-btn.is-uploading { opacity: 0.5; pointer-events: none; }
+  @media (pointer: coarse) {
+    .tv-link-row .tv-link-url { display: none; }
+    .tv-link-row .tv-upload-btn { flex: 1 1 auto; justify-content: center; border: 1px dashed var(--border-2); border-radius: var(--radius-ctrl); padding: 11px 14px; }
+    .tv-link-row .tv-upload-btn .tv-upload-label { display: inline; }
+  }
   /* Chart image rendering hint applied across every TradingView /
      screenshot surface in the app — bias editor previews, review editor
      previews, the saved-bias card, calendar trade thumbnails, weekly
@@ -4574,6 +4584,7 @@
       'trades.s7.title': 'Tags Analysis',
       // ----- Common buttons -----
       'btn.copy_discord': 'Copy for Discord',
+      'btn.upload_chart': 'Upload chart',
       'btn.translating': 'Translating…',
       'btn.reset': 'Reset',
       'btn.save_series': 'Save to Series of 10',
@@ -5777,6 +5788,7 @@
       'trades.s7.title': 'Análisis de Etiquetas',
       // ----- Common buttons -----
       'btn.copy_discord': 'Copiar para Discord',
+      'btn.upload_chart': 'Subir gr\u00e1fico',
       'btn.translating': 'Traduciendo…',
       'btn.reset': 'Reiniciar',
       'btn.save_series': 'Guardar en Serie de 10',
@@ -9688,10 +9700,59 @@
   function tradingViewImageUrl(url) {
     if (!url) return null;
     const m = url.match(/tradingview\.com\/x\/([a-zA-Z0-9]+)/);
-    if (!m) return null;
-    const id = m[1];
-    return `https://s3.tradingview.com/snapshots/${id.charAt(0).toLowerCase()}/${id}.png`;
+    if (m) {
+      const id = m[1];
+      return `https://s3.tradingview.com/snapshots/${id.charAt(0).toLowerCase()}/${id}.png`;
+    }
+    // Any other direct http(s) URL (e.g. an uploaded chart in Supabase Storage) is used
+    // as-is so it previews in-app and embeds in Discord just like a TradingView link.
+    if (/^https?:\/\//i.test(url)) return url;
+    return null;
   }
+
+  // === Chart image upload buttons. Injects an Upload control into every snapshot row so a
+  // phone screenshot can replace a TradingView snapshot link; the uploaded image public
+  // Storage URL is dropped into the same field, so previews and Discord embeds just work. ===
+  (function setupChartUploadButtons() {
+    function lbl() { try { return (typeof t === "function" && t("btn.upload_chart")) || "Upload chart"; } catch (e) { return "Upload chart"; } }
+    function inject(row) {
+      if (!row || row.querySelector(".tv-upload-btn")) return;
+      var btn = document.createElement("button");
+      btn.type = "button"; btn.className = "tv-upload-btn";
+      btn.title = lbl(); btn.setAttribute("aria-label", lbl());
+      btn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true"><path d="M12 15V4"/><path d="M8 8l4-4 4 4"/><path d="M4 15v3a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-3"/></svg><span class="tv-upload-label" data-i18n="btn.upload_chart">' + lbl() + '</span>';
+      var rm = row.querySelector(".tv-link-remove");
+      if (rm) row.insertBefore(btn, rm); else row.appendChild(btn);
+      btn.addEventListener("click", function () {
+        var fi = document.createElement("input"); fi.type = "file"; fi.accept = "image/*";
+        fi.addEventListener("change", function () { var f = fi.files && fi.files[0]; if (f) doUpload(row, btn, f); });
+        fi.click();
+      });
+    }
+    function doUpload(row, btn, file) {
+      if (!window.__stUploadChart) { alert("Image upload is not available right now. Please refresh."); return; }
+      btn.classList.add("is-uploading");
+      Promise.resolve(window.__stUploadChart(file)).then(function (url) {
+        var input = row.querySelector(".tv-link-url");
+        if (input) {
+          input.value = url;
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+          var card = row.parentElement;
+          var wrap = card && card.querySelector(".tv-link-preview-wrap");
+          if (wrap) { var safe = url.replace(/"/g, "&quot;"); wrap.innerHTML = '<a href="' + safe + '" target="_blank" rel="noopener"><img src="' + safe + '" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>'; }
+        }
+      }).catch(function (err) { alert("Upload failed" + (err && err.message ? ": " + err.message : "") + "."); }).then(function () { btn.classList.remove("is-uploading"); });
+    }
+    function scan(node) {
+      if (!node || node.nodeType !== 1) return;
+      try { if (node.matches && node.matches(".tv-link-row")) inject(node); if (node.querySelectorAll) node.querySelectorAll(".tv-link-row").forEach(inject); } catch (e) {}
+    }
+    function start() {
+      scan(document.body);
+      try { new MutationObserver(function (muts) { for (var i = 0; i < muts.length; i++) { var an = muts[i].addedNodes; if (an) for (var j = 0; j < an.length; j++) scan(an[j]); } }).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
+    }
+    if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
+  })();
 
   // Call every render so a tab switch always shows the freshest state — even on the
   // same tab. Cheap (each render is well under 100ms) and safe (form values are saved
@@ -16297,7 +16358,8 @@
     function cardHtml(l, j){
       var u=esc(l.url||''), nt=esc(l.notes||'');
       var pm=(l.url||'').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
-      var img=pm?('<a href="'+u+'" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/'+pm[1]+'/" alt="Chart" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>'):'';
+      var __src=pm?('https://www.tradingview.com/x/'+pm[1]+'/'):((/^https?:\/\//i.test(l.url||''))?u:'');
+      var img=__src?('<a href="'+u+'" target="_blank" rel="noopener"><img src="'+__src+'" alt="Chart" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>'):'';
       return '<div class="tv-link-card" data-idx="'+j+'">'+
         '<div class="tv-link-row"><textarea class="tv-link-url" rows="1" wrap="off" autocomplete="off" placeholder="https://www.tradingview.com/x/...">'+u+'</textarea>'+
         '<button type="button" class="tv-link-remove" title="'+esc(t('tip.remove_link')||'Remove')+'">\u00d7</button></div>'+
@@ -16319,7 +16381,7 @@
     if (notesEl) notesEl.addEventListener('input', function(e){ entry.notes = e.target.value; persist(); });
     var list = document.getElementById('day-diary-tv-list');
     var addBtn = document.getElementById('day-diary-tv-add');
-    function refreshPreview(card, url){ var w=card.querySelector('.tv-link-preview-wrap'); if(!w)return; var m=(url||'').match(/tradingview\.com\/x\/([^\/\?#]+)/i); w.innerHTML = m ? ('<a href="'+url.replace(/"/g,'&quot;')+'" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/'+m[1]+'/" alt="Chart" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>') : ''; }
+    function refreshPreview(card, url){ var w=card.querySelector('.tv-link-preview-wrap'); if(!w)return; var m=(url||'').match(/tradingview\.com\/x\/([^\/\?#]+)/i); var safe=(url||'').replace(/"/g,'&quot;'); var src=m?('https://www.tradingview.com/x/'+m[1]+'/'):((/^https?:\/\//i.test(url||''))?safe:''); w.innerHTML = src ? ('<a href="'+safe+'" target="_blank" rel="noopener"><img src="'+src+'" alt="Chart" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>') : ''; }
     function rebind(){
       list.querySelectorAll('.tv-link-card').forEach(function(card, i){
         var url=card.querySelector('.tv-link-url'), nt=card.querySelector('.tv-link-notes'), rm=card.querySelector('.tv-link-remove');
@@ -18685,8 +18747,9 @@
           ? `<input type="number" step="0.1" inputmode="decimal" class="tv-link-r" placeholder="${esc(t('modal.missed_wouldbe_r') || 'Would-be R')}" value="${rVal}">`
           : '';
         const previewMatch = (linkObj.url || '').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
-        const imgHtml = previewMatch
-          ? `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/${previewMatch[1]}/" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>`
+        const __src = previewMatch ? `https://www.tradingview.com/x/${previewMatch[1]}/` : (/^https?:\/\//i.test(linkObj.url || '') ? safeUrl : '');
+        const imgHtml = __src
+          ? `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="${__src}" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>`
           : '';
         return `<div class="tv-link-card" data-idx="${i}">
           <div class="tv-link-row">
@@ -18863,7 +18926,8 @@
         const safeUrl = (l.url || '').replace(/"/g, '&quot;').replace(/</g, '&lt;');
         const safeNotes = (l.notes || '').replace(/</g, '&lt;');
         const pm = (l.url || '').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
-        const imgHtml = pm ? `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/${pm[1]}/" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>` : '';
+        const __src = pm ? `https://www.tradingview.com/x/${pm[1]}/` : (/^https?:\/\//i.test(l.url || '') ? safeUrl : '');
+        const imgHtml = __src ? `<a href="${safeUrl}" target="_blank" rel="noopener"><img src="${__src}" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>` : '';
         const rVal = (typeof l.r === 'number' && !isNaN(l.r)) ? l.r : '';
         const rHtml = withR ? `<input type="number" step="0.1" inputmode="decimal" class="tv-link-r" placeholder="${(t('modal.missed_wouldbe_r')||'Would-be R').replace(/"/g,'&quot;')}" value="${rVal}">` : '';
         return `<div class="tv-link-card" data-idx="${j}">
@@ -18881,12 +18945,9 @@
         const previewWrap = card.querySelector('.tv-link-preview-wrap');
         if (!previewWrap) return;
         const m = (url || '').match(/tradingview\.com\/x\/([^\/\?#]+)/i);
-        if (m) {
-          const safe = url.replace(/"/g, '&quot;');
-          previewWrap.innerHTML = `<a href="${safe}" target="_blank" rel="noopener"><img src="https://www.tradingview.com/x/${m[1]}/" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>`;
-        } else {
-          previewWrap.innerHTML = '';
-        }
+        const safe = (url || '').replace(/"/g, '&quot;');
+        const src = m ? `https://www.tradingview.com/x/${m[1]}/` : (/^https?:\/\//i.test(url || '') ? safe : '');
+        previewWrap.innerHTML = src ? `<a href="${safe}" target="_blank" rel="noopener"><img src="${src}" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML='';"></a>` : '';
       }
 
       function rebindCards() {
@@ -28829,6 +28890,43 @@
   var ST = window.STCloud;
 
   var currentUser = null;
+
+  // === Chart image upload to Storage (chart-shots bucket) ===
+  function __stCompressImage(file, maxDim, quality) {
+    return new Promise(function (resolve, reject) {
+      try {
+        var u = URL.createObjectURL(file);
+        var img = new Image();
+        img.onload = function () {
+          try {
+            var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+            var sc = Math.min(1, maxDim / Math.max(w, h));
+            var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
+            var c = document.createElement("canvas"); c.width = cw; c.height = ch;
+            c.getContext("2d").drawImage(img, 0, 0, cw, ch);
+            URL.revokeObjectURL(u);
+            c.toBlob(function (b) { if (b) resolve(b); else reject(new Error("Could not process image")); }, "image/jpeg", quality);
+          } catch (e) { URL.revokeObjectURL(u); reject(e); }
+        };
+        img.onerror = function () { URL.revokeObjectURL(u); reject(new Error("Could not read image")); };
+        img.src = u;
+      } catch (e) { reject(e); }
+    });
+  }
+  window.__stUploadChart = function (file) {
+    return __stCompressImage(file, 1600, 0.85).then(function (blob) {
+      var folder = (currentUser && currentUser.id) ? currentUser.id : "anon";
+      var path = folder + "/" + Date.now() + "-" + Math.random().toString(36).slice(2, 10) + ".jpg";
+      return sb.storage.from("chart-shots").upload(path, blob, { contentType: "image/jpeg", upsert: false }).then(function (res) {
+        if (res.error) throw res.error;
+        var pub = sb.storage.from("chart-shots").getPublicUrl(path);
+        var url = pub && pub.data && pub.data.publicUrl;
+        if (!url) throw new Error("No public URL");
+        return url;
+      });
+    });
+  };
+
   var pushTimer = null;
   var recoveryMode = false;
   var forcing = false; try { forcing = !!sessionStorage.getItem('st_forcePush'); } catch (e) {}
@@ -29964,7 +30062,7 @@
   .pricing-head .lede{margin-top:14px;}
   .plans{display:grid; grid-template-columns:repeat(2,1fr); gap:18px; max-width:1040px; margin:0 auto; align-items:stretch;}
   .plan{position:relative; display:flex; flex-direction:column; background:radial-gradient(125% 78% at 50% -10%, rgba(129,140,248,0.15), transparent 60%), var(--bg-elev); border:1px solid rgba(129,140,248,0.3); border-radius:var(--rc); padding:32px 28px; box-shadow:0 22px 55px -28px rgba(129,140,248,0.4);}
-  .plan.popular{border-color:rgba(167,139,250,0.55); background:radial-gradient(ellipse 130% 95% at 50% 0%, rgba(167,139,250,0.2), rgba(244,114,182,0.1) 45%, transparent 72%), var(--bg-elev); box-shadow:0 24px 62px -26px rgba(167,139,250,0.5);}
+  .plan.popular{border-color:rgba(244,114,182,0.2); background:radial-gradient(ellipse 130% 90% at 50% 0%, rgba(244,114,182,0.16), rgba(129,140,248,0.06) 45%, transparent 72%), #0b0b0e; box-shadow:0 24px 62px -26px rgba(244,114,182,0.4);}
   .ptag{position:absolute; top:-11px; left:28px; font-family:var(--mono); font-size:9.5px; letter-spacing:0.16em; text-transform:uppercase; color:var(--bg); background:var(--accent); border-radius:999px; padding:4px 10px;}
   .pname{font-family:var(--mono); font-size:11px; letter-spacing:0.18em; text-transform:uppercase; color:var(--text-dim); margin-bottom:14px;}
   .price{display:flex; align-items:baseline; gap:9px; margin-bottom:16px;}
