@@ -4141,6 +4141,19 @@
       </div>
       <p class="settings-hint" data-i18n="settings.risk_profit_target_hint">The profit target for the account, from your starting balance. The app tracks your progress toward it in your greetings.</p>
 
+      <div class="settings-risk-label-row" style="margin-top:18px;">
+        <label class="settings-label" data-i18n="settings.risk_be_threshold_label">Break-even threshold</label>
+        <div class="settings-risk-mode-toggle" data-rule="beThreshold">
+          <button type="button" class="settings-risk-mode-btn active" data-mode="pct">%</button>
+          <button type="button" class="settings-risk-mode-btn" data-mode="amount" data-currency-symbol="{C}">£</button>
+        </div>
+      </div>
+      <div class="settings-risk-input-row">
+        <input type="number" id="settings-risk-be-threshold" class="settings-input settings-input-compact" step="0.01" min="0" placeholder="0.1" />
+        <span class="settings-risk-suffix" id="settings-risk-be-threshold-suffix" data-i18n="settings.risk_pct_suffix">% of balance</span>
+      </div>
+      <p class="settings-hint" data-i18n="settings.risk_be_threshold_hint">When MT5 trades auto-import, a net result within this band of zero is logged as break-even (BE) rather than a small win or loss. Set as % of balance or a fixed amount.</p>
+
       <label class="settings-label" style="margin-top:18px;" data-i18n="settings.risk_max_trades_label">Max trades per session</label>
       <input type="number" id="settings-risk-max-trades" class="settings-input settings-input-compact" step="1" min="0" placeholder="5" />
       <p class="settings-hint" data-i18n="settings.risk_max_trades_hint">Number of trades you allow yourself per session before stopping, win or lose. Helps prevent overtrading and revenge trades.</p>
@@ -4744,6 +4757,8 @@
       'settings.risk_profit_target_hint': 'The profit you need to pass your evaluation phase, from your starting balance. The app tracks your progress toward it.',
       'settings.risk_pct_suffix': '% of balance',
       'settings.risk_amt_suffix': '{C} amount',
+      'settings.risk_be_threshold_label': 'Break-even threshold',
+      'settings.risk_be_threshold_hint': 'When MT5 trades auto-import, a net result within this band of zero is logged as break-even (BE) rather than a small win or loss. Set as % of balance or a fixed amount.',
       'settings.risk_or': 'or',
       'settings.risk_max_loss_label': 'Max daily drawdown + costs',
       'settings.risk_max_loss_hint': 'Net loss after commissions and spread. When today\'s total exceeds this, the rule trips. Pick whichever unit matches how you think about risk — % of balance or money amount.',
@@ -5947,6 +5962,8 @@
       'settings.risk_profit_target_hint': 'El beneficio que necesitas para pasar tu fase de evaluación, desde tu balance inicial. La app rastrea tu progreso hacia él.',
       'settings.risk_pct_suffix': '% del balance',
       'settings.risk_amt_suffix': 'cantidad en {C}',
+      'settings.risk_be_threshold_label': 'Umbral de break-even',
+      'settings.risk_be_threshold_hint': 'Cuando se importan operaciones de MT5, un resultado neto dentro de este margen alrededor de cero se registra como break-even (BE) en vez de una peque\u00f1a ganancia o p\u00e9rdida. Se define en % del saldo o un importe fijo.',
       'settings.risk_or': 'o',
       'settings.risk_max_loss_label': 'Drawdown diario máximo + costes',
       'settings.risk_max_loss_hint': 'Pérdida neta después de comisiones y spread. Cuando el total del día supera esto, la regla se activa. Elige la unidad que mejor refleje cómo piensas el riesgo — % del balance o cantidad en dinero.',
@@ -9598,6 +9615,32 @@
   function tradeCopies(t) {
     const n = parseInt(t && t.copies, 10);
     return (!isNaN(n) && n > 0) ? n : 1;
+  }
+  // Break-even threshold (Settings -> Risk rules). Resolves the configured band
+  // to a money amount for the given account, then classifies a net P&L as
+  // 'Win' / 'Lose' / 'BE'. Used when MT5 trades auto-import. % mode = percentage
+  // of that account's starting balance; amount mode = a flat sum.
+  function beThresholdMoneyFor(acc) {
+    const rr = (acc && acc.riskRules) || (data.settings && data.settings.riskRules) || {};
+    const mode = (rr.beThresholdMode === 'amount') ? 'amount' : 'pct';
+    if (mode === 'amount') {
+      const a = parseFloat(rr.beThresholdAmount);
+      return (!isNaN(a) && a > 0) ? a : 0;
+    }
+    const p = parseFloat(rr.beThresholdPct);
+    if (isNaN(p) || p <= 0) return 0;
+    let bal = acc && (acc.startingBalance != null ? acc.startingBalance
+                      : (acc.balance != null ? acc.balance : null));
+    if (bal == null) bal = (data.settings && data.settings.startingBalance) || 0;
+    bal = parseFloat(bal) || 0;
+    return bal > 0 ? (bal * p / 100) : 0;
+  }
+  function classifyNetResult(net, acc) {
+    const n = parseFloat(net) || 0;
+    const band = beThresholdMoneyFor(acc);
+    const eps = band > 0 ? band : 0.005;   // near-exact-zero band when no threshold set
+    if (Math.abs(n) <= eps) return 'BE';
+    return n > 0 ? 'Win' : 'Lose';
   }
   function tradeRforMath(t) {
     if (t.result === 'Win')  return parseFloat(t.r) || 0;
@@ -27870,6 +27913,9 @@
       applyToggle(document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="profitTarget"]'), ptMode);
       showActiveValue(document.getElementById('settings-risk-max-dd'), document.getElementById('settings-risk-max-dd-suffix'), ddMode, 'maxDrawdownPct', 'maxDrawdownAmount', '10', '1000');
       showActiveValue(document.getElementById('settings-risk-profit-target'), document.getElementById('settings-risk-profit-target-suffix'), ptMode, 'profitTargetPct', 'profitTargetAmount', '10', '1000');
+      const beMode = inferMode('beThresholdMode', 'beThresholdPct', 'beThresholdAmount');
+      applyToggle(document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="beThreshold"]'), beMode);
+      showActiveValue(document.getElementById('settings-risk-be-threshold'), document.getElementById('settings-risk-be-threshold-suffix'), beMode, 'beThresholdPct', 'beThresholdAmount', '0.1', '1');
       if (rMaxTradesInp) rMaxTradesInp.value = (rr.maxTrades !== undefined && rr.maxTrades !== null) ? rr.maxTrades : '';
     }
     function closeSettings() { modal.classList.remove('show'); }
@@ -28150,6 +28196,7 @@
       { rule: 'maxDrawdown', inputId: 'settings-risk-max-dd', suffixId: 'settings-risk-max-dd-suffix', modeKey: 'maxDrawdownMode', pctKey: 'maxDrawdownPct', amtKey: 'maxDrawdownAmount', pctPh: '10', amtPh: '1000' },
       { rule: 'profitTarget', inputId: 'settings-risk-profit-target', suffixId: 'settings-risk-profit-target-suffix', modeKey: 'profitTargetMode', pctKey: 'profitTargetPct', amtKey: 'profitTargetAmount', pctPh: '10', amtPh: '1000' },
       { rule: 'maxRisk', inputId: 'settings-risk-max-trade', suffixId: 'settings-risk-max-trade-suffix', modeKey: 'maxRiskMode', pctKey: 'maxRiskPct', amtKey: 'maxRiskAmount', pctPh: '0.5', amtPh: '50'  },
+      { rule: 'beThreshold', inputId: 'settings-risk-be-threshold', suffixId: 'settings-risk-be-threshold-suffix', modeKey: 'beThresholdMode', pctKey: 'beThresholdPct', amtKey: 'beThresholdAmount', pctPh: '0.1', amtPh: '1' },
     ];
     RISK_RULE_DEFS.forEach(def => {
       const inp    = document.getElementById(def.inputId);
