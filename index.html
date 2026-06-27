@@ -4757,6 +4757,13 @@
       'settings.risk_profit_target_hint': 'The profit you need to pass your evaluation phase, from your starting balance. The app tracks your progress toward it.',
       'settings.risk_pct_suffix': '% of balance',
       'settings.risk_amt_suffix': '{C} amount',
+      'settings.mt5_token_label': 'MT5 sync token',
+      'settings.mt5_token_copy': 'Copy',
+      'settings.mt5_token_copied': 'Copied',
+      'settings.mt5_token_signin': 'Sign in to see your token',
+      'settings.mt5_factor_label': 'Copier size factor',
+      'settings.mt5_factor_suffix': '\u00d7',
+      'settings.mt5_sync_hint': 'Paste this token into the Minimalist Manager EA to auto-sync your closed trades. The size factor scales this account\u2019s money figures (risk, costs, P&L) when a trade fans out to a group \u2014 set it to match your copier (e.g. balance multiplier: follower balance \u00f7 lead balance). R and pips are never scaled.',
       'settings.risk_be_threshold_label': 'Break-even threshold',
       'settings.risk_be_threshold_hint': 'When MT5 trades auto-import, a net result within this band of zero is logged as break-even (BE) rather than a small win or loss. Set as % of balance or a fixed amount.',
       'settings.risk_or': 'or',
@@ -5962,6 +5969,13 @@
       'settings.risk_profit_target_hint': 'El beneficio que necesitas para pasar tu fase de evaluación, desde tu balance inicial. La app rastrea tu progreso hacia él.',
       'settings.risk_pct_suffix': '% del balance',
       'settings.risk_amt_suffix': 'cantidad en {C}',
+      'settings.mt5_token_label': 'Token de sincronizaci\u00f3n MT5',
+      'settings.mt5_token_copy': 'Copiar',
+      'settings.mt5_token_copied': 'Copiado',
+      'settings.mt5_token_signin': 'Inicia sesi\u00f3n para ver tu token',
+      'settings.mt5_factor_label': 'Factor de tama\u00f1o del copiador',
+      'settings.mt5_factor_suffix': '\u00d7',
+      'settings.mt5_sync_hint': 'Pega este token en el EA Minimalist Manager para sincronizar autom\u00e1ticamente tus operaciones cerradas. El factor de tama\u00f1o escala las cifras de dinero de esta cuenta (riesgo, costes, P&L) cuando una operaci\u00f3n se reparte a un grupo \u2014  aj\u00fastalo a tu copiador (p.ej. multiplicador por saldo: saldo del seguidor \u00f7 saldo del l\u00edder). La R y los pips nunca se escalan.',
       'settings.risk_be_threshold_label': 'Umbral de break-even',
       'settings.risk_be_threshold_hint': 'Cuando se importan operaciones de MT5, un resultado neto dentro de este margen alrededor de cero se registra como break-even (BE) en vez de una peque\u00f1a ganancia o p\u00e9rdida. Se define en % del saldo o un importe fijo.',
       'settings.risk_or': 'o',
@@ -7546,8 +7560,10 @@
     getData: function () { return data; },
     migrate: function (obj) { return migrate(obj); },
     save: function () { return saveData(); },
-    STORAGE_KEY: STORAGE_KEY
+    STORAGE_KEY: STORAGE_KEY,
+    userId: null
     // .onSave is attached by the cloud module; saveData() calls it on every write.
+    // .userId is set by the cloud module on auth changes — it's the MT5 sync token.
   };
   let calendarMonth = today.getMonth();
   let calendarYear = today.getFullYear();
@@ -28400,6 +28416,25 @@
         // Active/archived badge only when multi-account — with one account, the
         // status is implicit (it's your only account, it's active).
         const badgeHtml = isSingleAccount ? '' : `<span class="settings-account-badge ${badgeKey}">${badgeText}</span>`;
+        // MT5 auto-sync: one shared token (the user id) shown per account with a
+        // copy button, plus a per-account copier size factor (default 1x) that
+        // scales MONEY only on group fan-out (R and pips stay unchanged).
+        const _syncToken = (window.STCloud && window.STCloud.userId) ? window.STCloud.userId : '';
+        const _sizeFactor = (acc.sizeFactor != null && !isNaN(parseFloat(acc.sizeFactor))) ? parseFloat(acc.sizeFactor) : 1;
+        const _tokenDisp = _syncToken ? escapeHtml(_syncToken) : tt('settings.mt5_token_signin');
+        const syncHtml = `<div class="settings-account-sync" style="grid-column:1/-1;margin-top:12px;padding-top:12px;border-top:1px solid var(--border);box-sizing:border-box;">
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:8px;">
+              <span class="settings-account-meta-label">${tt('settings.mt5_token_label')}</span>
+              <code class="settings-account-token" style="font-family:'DM Mono',monospace;font-size:11px;color:var(--text-mid);word-break:break-all;flex:1 1 180px;">${_tokenDisp}</code>
+              <button type="button" class="settings-btn settings-account-token-copy" data-token="${_syncToken}"${_syncToken ? '' : ' disabled'}>${tt('settings.mt5_token_copy')}</button>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+              <span class="settings-account-meta-label">${tt('settings.mt5_factor_label')}</span>
+              <input type="number" class="settings-input settings-input-compact settings-account-factor" data-id="${acc.id}" step="0.01" min="0" value="${_sizeFactor}" style="max-width:90px;" />
+              <span class="settings-risk-suffix">${tt('settings.mt5_factor_suffix')}</span>
+            </div>
+            <p class="settings-hint" style="margin-top:8px;">${tt('settings.mt5_sync_hint')}</p>
+          </div>`;
         return `<div class="${rowCls.join(' ')}" data-account-id="${acc.id}">
           <div>
             <div class="settings-account-name">${escapeHtml(acc.name)} ${badgeHtml}</div>
@@ -28417,6 +28452,7 @@
             </div>
           </div>
           <div class="settings-account-actions">${actions.join('')}</div>
+          ${syncHtml}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -28455,6 +28491,29 @@
             // Refresh Stats KPIs since the effective starting balance changed.
             try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
           }, t('settings.edit_starting_title'));
+        });
+      });
+      // MT5 token copy buttons (one shared token = the user id).
+      wrap.querySelectorAll('.settings-account-token-copy').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const tk = btn.dataset.token || '';
+          if (!tk) return;
+          const done = () => { const o = btn.textContent; btn.textContent = (typeof t === 'function' ? t('settings.mt5_token_copied') : 'Copied') || 'Copied'; setTimeout(() => { btn.textContent = o; }, 1200); };
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(tk).then(done).catch(() => { window.prompt('Copy your token:', tk); });
+          } else { window.prompt('Copy your token:', tk); }
+        });
+      });
+      // Copier size factor — per account, scales money only on group fan-out.
+      wrap.querySelectorAll('.settings-account-factor').forEach(inp => {
+        inp.addEventListener('change', () => {
+          const acc = (typeof getAccountById === 'function') ? getAccountById(inp.dataset.id) : null;
+          if (!acc) return;
+          let v = parseFloat(inp.value);
+          if (isNaN(v) || v < 0) v = 1;
+          acc.sizeFactor = v;
+          inp.value = v;
+          saveData();
         });
       });
     };
@@ -29851,6 +29910,7 @@
   sb.auth.onAuthStateChange(function (event, session) {
     if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; currentUser = session ? session.user : null; paintAccount(); showReset(); return; }
     currentUser = session ? session.user : null;
+    try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch (e) {}
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); accStatus(''); reconcile(); fetchProfile(); maybeShowWelcome(); }
@@ -29865,6 +29925,7 @@
 
   sb.auth.getSession().then(function (r) {
     currentUser = r.data && r.data.session ? r.data.session.user : null;
+    try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch (e) {}
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); reconcile(); fetchProfile(); }
