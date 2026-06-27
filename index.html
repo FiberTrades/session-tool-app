@@ -1387,13 +1387,19 @@
   #page-review.session-live-collapsed #section-tags,
   #page-review.session-live-collapsed #section-mindset,
   #page-review.session-live-collapsed #section-reflection,
-  #page-review.session-live-collapsed #section-trades,
   #page-review.session-live-collapsed #section-trade-select,
   #page-review.session-live-collapsed .preview { display: none; }
   /* Session quick-log: hidden outside the session, shown in place of the Trade Log
      table while the window is live. */
   #session-quick-log { display: none; }
   #page-review.session-live-collapsed #session-quick-log { display: block; }
+  /* Auto-sync from MT5 makes the in-session rapid trade-entry redundant. Hide the
+     Long/Short + Win/Lose/BE quick buttons; the normal Trade Log stays visible for
+     manual (non-EA) trades, and the Finish-session control is kept (it also triggers
+     the auto-sync prompt). */
+  #session-quick-log .quick-log-top,
+  #session-quick-log .quick-log-logged,
+  #session-quick-log #quick-log-result { display: none !important; }
   .quick-log-box { background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-card); padding: 18px 22px; }
   .quick-log-top { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 12px; }
   .quick-log-hint { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; line-height: 1.6; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); margin: 0; }
@@ -4752,6 +4758,8 @@
       'mt5.sync_error': 'Sync error: ',
       'mt5.sync_unavailable': 'Sync not available - please refresh.',
       'mt5.sync_source': 'MT5 auto-sync',
+      'mt5.sync_prompt': 'You have {n} synced trade(s) ready to import.',
+      'mt5.sync_prompt_action': 'Import',
       'mt5.how_to_export': 'How to export from MT5:',
       // ----- Edit trade modal -----
       'edit.title': 'Edit Trade',
@@ -5973,6 +5981,8 @@
       'mt5.sync_error': 'Error de sincronización: ',
       'mt5.sync_unavailable': 'Sincronización no disponible: actualiza la página.',
       'mt5.sync_source': 'Sincronización MT5',
+      'mt5.sync_prompt': 'Tienes {n} operación(es) sincronizada(s) lista(s) para importar.',
+      'mt5.sync_prompt_action': 'Importar',
       'mt5.how_to_export': 'Cómo exportar desde MT5:',
       // ----- Edit trade modal -----
       'edit.title': 'Editar Operación',
@@ -7357,6 +7367,7 @@
     const banner = document.getElementById('session-live-banner');
     const pill = document.getElementById('session-live-pill');
     const live = isSessionLive();
+    _maybeAutoSyncOnSessionEnd(live);
     // The persistent pill is shown on every tab whenever the session is live. NOT dismissible.
     if (pill) { live ? pill.classList.remove('hidden') : pill.classList.add('hidden'); }
     // While live, collapse the post-session reflection sections (Execution → Reflection)
@@ -27406,7 +27417,7 @@
       volume: parseFloat(row.lots) || 0, entryPrice: entryPrice, slPrice: 0, tpPrice: 0,
       closeTime: row.close_time || '', closePrice: closePrice, commission: 0, swap: 0,
       profit: net, pips: Math.round(priceMove * pipMult * 10) / 10,
-      slPips: num(row.sl_pips), netPL: net, costs: 0,
+      slPips: num(row.sl_pips), netPL: net, costs: 0, _costs: num(row.costs),
       result: (typeof classifyNetResult === 'function') ? classifyNetResult(net, acc) : (Math.abs(net) < 0.005 ? 'BE' : (net > 0 ? 'Win' : 'Lose')),
       openDate: (od && !isNaN(od.getTime())) ? od : null,
       closeDate: (cd && !isNaN(cd.getTime())) ? cd : null,
@@ -27445,6 +27456,45 @@
       _mt5MetaInfo = { sourceFileName: (T('mt5.sync_source') || 'MT5 auto-sync'), accountName: '', accountNumber: '' };
       renderMt5Preview();
     }).catch(err => { setStatus((T('mt5.sync_error') || 'Sync error: ') + (err && err.message ? err.message : err)); });
+  }
+
+  // ----- Auto-prompt: nudge (once/day) when synced trades are waiting -----
+  // Fires at session-end (window close) and on manual session finish, but only
+  // if trades_inbox actually has unimported rows. Dismissable; the Import-from-MT5
+  // button remains the always-available manual path.
+  let _autoSyncPromptInFlight = false;
+  function maybePromptAutoSync(reason) {
+    try {
+      if (_autoSyncPromptInFlight) return;
+      if (!data || !window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
+      if (typeof showUndoToast !== 'function') return;
+      const todayKey = new Date().toISOString().slice(0, 10);
+      if (data._autoSyncPromptedDate === todayKey) return;   // at most once per day
+      _autoSyncPromptInFlight = true;
+      Promise.resolve(window.STCloud.pullInbox()).then(res => {
+        _autoSyncPromptInFlight = false;
+        if (!res || res.error) return;
+        const rows = res.data || [];
+        if (!rows.length) return;
+        const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets() : new Set();
+        const fresh = rows.filter(r => !have.has(String(r.ticket)));
+        if (!fresh.length) return;
+        data._autoSyncPromptedDate = todayKey;
+        try { saveData(); } catch (e) {}
+        const n = fresh.length;
+        const msg = ((typeof t === 'function' ? t('mt5.sync_prompt') : '') || 'You have {n} synced trade(s) ready to import.').replace('{n}', n);
+        const label = (typeof t === 'function' ? t('mt5.sync_prompt_action') : '') || 'Import';
+        showUndoToast(msg, () => { try { openMt5Modal(); runMt5AutoSync(); } catch (e) {} }, 15000, label, 'rule');
+      }).catch(() => { _autoSyncPromptInFlight = false; });
+    } catch (e) { _autoSyncPromptInFlight = false; }
+  }
+  // Edge-trigger: fire once when the session flips from live -> not-live.
+  let _prevSessionLive = null;
+  function _maybeAutoSyncOnSessionEnd(live) {
+    try {
+      if (_prevSessionLive === true && live === false) maybePromptAutoSync('session-end');
+      _prevSessionLive = live;
+    } catch (e) {}
   }
 
   // ----- Render preview step -----
@@ -27674,8 +27724,8 @@
           exitTime: t.exitTimeHHMM,
           risk: (t._riskGbp != null) ? String(t._riskGbp) : (defaultRisk > 0 ? String(defaultRisk) : ''),
           sl: t.slPips != null ? String(t.slPips) : '',
-          costs: '0.00',
-          actualGross: t.profit,
+          costs: (t._costs != null) ? Math.abs(t._costs).toFixed(2) : '0.00',
+          actualGross: (t._costs != null) ? (t.profit + Math.abs(t._costs)) : t.profit,
           pips: (t._tpPips != null) ? t._tpPips : t.pips,
           potentialR: null,
           potentialPips: null,
@@ -27792,6 +27842,7 @@
           if (finishWrap) finishWrap.classList.remove('expanded');
           if (finishToggle) finishToggle.setAttribute('aria-expanded', 'false');
           updateSessionLiveBanner();
+          try { maybePromptAutoSync('manual-close'); } catch (e) {}
         } else {
           armed = true;
           finishBtn.classList.add('armed');
