@@ -1,28 +1,16 @@
-/* Session Tool — service worker.
- *
- * Strategy: NETWORK-FIRST for same-origin GET requests, with a cache fallback for
- * offline use. This means:
- *   • When you're online, the app always loads the freshest deploy (no more stale
- *     index.html stuck on your phone).
- *   • When you're offline, the app still opens from cache so you can view and log
- *     trades locally; they sync to the cloud the next time you're online.
- *
- * skipWaiting() + clients.claim() make every new deploy take over immediately
- * (no SW stuck in "waiting"), and old caches are deleted on activate so nothing
- * stale lingers. Bump CACHE on a deploy if you want to force-purge the old cache;
- * with network-first it isn't strictly required, but it's a clean habit.
- *
- * Cross-origin requests (Supabase, CDNs, TradingView, the economic calendar, fonts)
- * are intentionally NOT touched — they always go straight to the network so live
- * data is never served stale from cache.
- */
-const CACHE = 'session-tool-v1';
-const PRECACHE = ['./', './index.html'];
+// Session Tool service worker.
+// Network-first for the app page, so a new deploy shows up the next time the app
+// loads while online (no more stale cached build). Falls back to cache when offline.
+// skipWaiting + clients.claim mean a new version takes over immediately instead of
+// waiting for every tab to close.
+
+const CACHE = 'session-tool-v2';
+const CORE = ['./', './index.html'];
 
 self.addEventListener('install', (event) => {
-  self.skipWaiting();
+  self.skipWaiting(); // don't wait for old tabs to close
   event.waitUntil(
-    caches.open(CACHE).then((c) => c.addAll(PRECACHE)).catch(() => {})
+    caches.open(CACHE).then((c) => c.addAll(CORE)).catch(() => {})
   );
 });
 
@@ -34,28 +22,47 @@ self.addEventListener('activate', (event) => {
   );
 });
 
+// Lets the page (e.g. pull-to-refresh) tell a waiting worker to activate now.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
+});
+
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (req.method !== 'GET') return;
 
-  let url;
-  try { url = new URL(req.url); } catch (e) { return; }
+  const url = new URL(req.url);
+  const isPage =
+    req.mode === 'navigate' ||
+    (url.origin === location.origin && (url.pathname.endsWith('/') || url.pathname.endsWith('index.html')));
 
-  // Only handle same-origin assets; let everything else (Supabase, CDNs, etc.) pass through.
-  if (url.origin !== self.location.origin) return;
-
-  // Network-first: try the freshest copy, fall back to cache when offline.
-  event.respondWith(
-    fetch(req)
-      .then((res) => {
-        if (res && res.status === 200 && res.type === 'basic') {
+  // App page: network-first so the freshest deploy wins; cache as a fallback.
+  if (isPage) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
           const copy = res.clone();
-          caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
-        }
-        return res;
-      })
-      .catch(() =>
-        caches.match(req).then((hit) => hit || caches.match('./index.html'))
-      )
+          caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+          return res;
+        })
+        .catch(() => caches.match('./index.html').then((r) => r || caches.match('./')))
+    );
+    return;
+  }
+
+  // Everything else (icons, fonts, etc.): serve cache fast, refresh in the background.
+  event.respondWith(
+    caches.match(req).then((cached) => {
+      const net = fetch(req)
+        .then((res) => {
+          if (res && res.status === 200 && url.origin === location.origin) {
+            const copy = res.clone();
+            caches.open(CACHE).then((c) => c.put(req, copy)).catch(() => {});
+          }
+          return res;
+        })
+        .catch(() => cached);
+      return cached || net;
+    })
   );
 });
