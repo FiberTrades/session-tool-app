@@ -9732,6 +9732,8 @@
     function doUpload(row, btn, file) {
       if (!window.__stUploadChart) { alert("Image upload is not available right now. Please refresh."); return; }
       btn.classList.add("is-uploading");
+      var input0 = row.querySelector(".tv-link-url");
+      var oldUrl = input0 ? input0.value : "";
       Promise.resolve(window.__stUploadChart(file)).then(function (url) {
         var input = row.querySelector(".tv-link-url");
         if (input) {
@@ -9740,6 +9742,7 @@
           var card = row.parentElement;
           var wrap = card && card.querySelector(".tv-link-preview-wrap");
           if (wrap) { var safe = url.replace(/"/g, "&quot;"); wrap.innerHTML = '<a href="' + safe + '" target="_blank" rel="noopener"><img src="' + safe + '" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML=&#39;&#39;;"></a>'; }
+          if (oldUrl && oldUrl !== url && window.__stDeleteChart) window.__stDeleteChart(oldUrl);
         }
       }).catch(function (err) { alert("Upload failed" + (err && err.message ? ": " + err.message : "") + "."); }).then(function () { btn.classList.remove("is-uploading"); });
     }
@@ -9749,6 +9752,7 @@
     }
     function start() {
       scan(document.body);
+      document.addEventListener("click", function (e) { var rm = (e.target && e.target.closest) ? e.target.closest(".tv-link-remove") : null; if (!rm) return; var c = rm.closest(".tv-link-card"); var inp = c && c.querySelector(".tv-link-url"); if (inp && inp.value && window.__stDeleteChart) window.__stDeleteChart(inp.value); }, true);
       try { new MutationObserver(function (muts) { for (var i = 0; i < muts.length; i++) { var an = muts[i].addedNodes; if (an) for (var j = 0; j < an.length; j++) scan(an[j]); } }).observe(document.body, { childList: true, subtree: true }); } catch (e) {}
     }
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
@@ -17063,6 +17067,11 @@
     // First safety net: styled confirmation dialog (matches the app aesthetic)
     const _ok = await window.appConfirm({ title: t('confirm.delete_trade_title'), body: t('confirm.delete_trade') });
     if (!_ok) return;
+    // Capture this trade's uploaded chart URLs before deleting, so they can be purged
+    // from Storage once the undo window closes (skipped if the trade is restored).
+    const _delId = editingTradeId;
+    const _delTrade = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades().find(tt => tt.id === _delId) : null;
+    const _delUrls = (_delTrade && Array.isArray(_delTrade.tvLinks)) ? _delTrade.tvLinks.map(l => l && l.url).filter(Boolean) : [];
     // Capture snapshot BEFORE mutating so the undo toast can restore it
     const snap = _snapshotData();
     deleteTradeById(editingTradeId);
@@ -17080,6 +17089,14 @@
       showToast(t('toast.trade_restored'));
       if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     });
+    // Once the undo window passes, purge this trade's chart images from Storage,
+    // but only if the trade was not restored via Undo.
+    if (_delUrls.length && window.__stDeleteChart) {
+      setTimeout(() => {
+        const back = ((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).some(tt => tt.id === _delId);
+        if (!back) _delUrls.forEach(u => window.__stDeleteChart(u));
+      }, 12000);
+    }
   });
 
   // ─── DISCORD COPY: optional notes translation ────────────────────────────
@@ -28925,6 +28942,21 @@
         return url;
       });
     });
+  };
+
+  // Delete an uploaded chart from Storage. Only acts on our own chart-shots URLs;
+  // TradingView / external links are ignored. Best-effort (failures are swallowed).
+  window.__stDeleteChart = function (url) {
+    try {
+      if (!url || typeof url !== "string") return Promise.resolve();
+      var marker = "/storage/v1/object/public/chart-shots/";
+      var i = url.indexOf(marker);
+      if (i === -1) return Promise.resolve();
+      var path = url.slice(i + marker.length).split("?")[0];
+      try { path = decodeURIComponent(path); } catch (e) {}
+      if (!path) return Promise.resolve();
+      return sb.storage.from("chart-shots").remove([path]).then(function () {}).catch(function () {});
+    } catch (e) { return Promise.resolve(); }
   };
 
   var pushTimer = null;
