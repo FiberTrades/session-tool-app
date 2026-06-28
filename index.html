@@ -4315,6 +4315,7 @@
         <a href="https://discord.gg/SEgTzh6VC" target="_blank" rel="noopener noreferrer" class="settings-btn svc-link" id="svc-discord-cta">Join the Discord</a>
         <button type="button" class="settings-btn svc-link" id="svc-discord-connect" style="display:none;margin-top:8px;" data-i18n="services.discord_connect">Connect Discord</button>
         <div id="svc-discord-status" style="display:none;margin-top:8px;font-size:11px;color:var(--text-dim);font-family:'AppNum', 'DM Mono',monospace;"></div>
+        <button type="button" class="settings-btn svc-link" id="svc-discord-resync" style="display:none;margin-top:8px;" data-i18n="services.discord_resync">Re-sync Discord access</button>
       </div>
 
       <!-- 4. 1-to-1 membership enquiry form -->
@@ -4886,6 +4887,11 @@
       'services.discord_connected': 'Connected as @{name}',
       'services.discord_failed': 'Connection failed \u2014 try again',
       'services.discord_open': 'Open Discord',
+      'services.discord_resync': 'Re-sync Discord access',
+      'services.discord_resyncing': 'Syncing\u2026',
+      'services.discord_resynced': 'Discord access re-synced.',
+      'services.discord_resync_join': 'Join the Discord first, then re-sync.',
+      'services.discord_resync_failed': 'Sync failed \u2014 try again.',
       'services.free_badge': 'Free',
       'services.paid_badge': 'Paid service',
       'services.oneone_title': '1-to-1 Membership',
@@ -6121,6 +6127,11 @@
       'services.discord_connected': 'Conectado como @{name}',
       'services.discord_failed': 'Error de conexi\u00f3n \u2014 int\u00e9ntalo de nuevo',
       'services.discord_open': 'Abrir Discord',
+      'services.discord_resync': 'Resincronizar acceso a Discord',
+      'services.discord_resyncing': 'Sincronizando\u2026',
+      'services.discord_resynced': 'Acceso a Discord resincronizado.',
+      'services.discord_resync_join': '\u00danete al Discord primero y luego resincroniza.',
+      'services.discord_resync_failed': 'Error al sincronizar \u2014 int\u00e9ntalo de nuevo.',
       'services.free_badge': 'Gratis',
       'services.paid_badge': 'Servicio de pago',
       'services.oneone_title': 'Membresía 1 a 1',
@@ -30410,6 +30421,19 @@
         dStatus.style.display = 'none';
       }
     }
+    // Re-sync button: linked + community access. Lets a user re-apply their role
+    // if they subscribed/joined out of order.
+    var dResync = document.getElementById('svc-discord-resync');
+    if (dResync) {
+      if (hasCommunity && dLinked) {
+        dResync.style.display = '';
+        dResync.textContent = svcT('services.discord_resync');
+        dResync.onclick = function () { startDiscordResync(); };
+      } else {
+        dResync.style.display = 'none';
+        dResync.onclick = null;
+      }
+    }
     // 1-to-1 mentoring — Mentorship tier only (and comped accounts).
     var hasMentor = !!profilePaid && (profilePlan === 'mentorship' || profilePlan === 'comp');
     var oBadge = document.getElementById('svc-oneone-badge');
@@ -30492,6 +30516,30 @@
       fetchProfile(); // re-pull profile so discord_id/username are known, then the card re-renders
     }).catch(function () {
       if (st) { st._busy = false; st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_failed') : 'Connection failed'; }
+    });
+  }
+
+  function startDiscordResync() {
+    if (!currentUser) return;
+    var st = document.getElementById('svc-discord-status');
+    if (st) { st._busy = true; st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_resyncing') : 'Syncing...'; }
+    sb.functions.invoke('discord-resync', { body: {} }).then(function (res) {
+      if (st) st._busy = false;
+      var data = res && res.data;
+      if (!res || res.error || !data || !data.ok) {
+        if (st) { st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_resync_failed') : 'Sync failed'; }
+        return;
+      }
+      if (st) {
+        st.style.display = '';
+        st.textContent = data.not_in_server
+          ? ((typeof t === 'function') ? t('services.discord_resync_join') : 'Join the Discord first, then re-sync.')
+          : ((typeof t === 'function') ? t('services.discord_resynced') : 'Discord access re-synced.');
+      }
+      // restore the 'Connected as' line shortly after.
+      setTimeout(function () { try { if (st) { st._busy = false; } renderServices(); } catch (e) {} }, 4000);
+    }).catch(function () {
+      if (st) { st._busy = false; st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_resync_failed') : 'Sync failed'; }
     });
   }
 
