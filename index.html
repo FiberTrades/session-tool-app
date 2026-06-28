@@ -19934,6 +19934,7 @@
     }
     return nameSet && balanceDone && sessionDone && riskDone;
   }
+  try { window.__stOnboardingComplete = onboardingComplete; } catch (e) {}
   function updateOnboardSessionHint() {
     const inp = document.getElementById('onboard-session');
     const hint = document.getElementById('onboard-session-hint');
@@ -30398,6 +30399,25 @@
   window.renderServices = renderServices;
   window.__stPlan = function () { return { paid: !!profilePaid, loaded: (profilePaid !== null || profileCreated != null) }; };
 
+  // Carry the landing-page plan choice through sign-in. New users get the chooser at the
+  // end of induction (that flow consumes the intent); this handles users who are ALREADY
+  // onboarded (returning sign-ins) so they still land on the plan they clicked.
+  function stMaybeConsumePlanIntent() {
+    try {
+      var pi = null;
+      try { pi = localStorage.getItem('st_plan_intent'); } catch (e) {}
+      if (!pi) return;
+      if (!(window.stPlanChooser && typeof window.stPlanChooser.open === 'function')) return;
+      var onbDone = true;
+      try { onbDone = !window.__stOnboardingComplete || window.__stOnboardingComplete(); } catch (e) { onbDone = true; }
+      if (!onbDone) return; // new user - the induction flow consumes the intent itself
+      try { if (typeof stCanUpgrade === 'function' && !stCanUpgrade()) { localStorage.removeItem('st_plan_intent'); return; } } catch (e) {}
+      try { localStorage.removeItem('st_plan_intent'); } catch (e) {}
+      var iv = (pi.split(':')[1] === 'monthly') ? 'monthly' : 'yearly';
+      setTimeout(function () { try { window.stPlanChooser.open(iv); } catch (e) {} }, 400);
+    } catch (e) {}
+  }
+
 
   function fetchProfile() {
     if (!currentUser) { renderPlanBadge(); return; }
@@ -30414,10 +30434,13 @@
         try { window.STCloud.syncToken = profileSyncToken; } catch (e) {}
         try { if (window.__stPaintMt5Token) window.__stPaintMt5Token(); } catch (e) {}
       }
-      renderPlan();
+      try { renderPlan(); } catch (e) { try { console.warn('[ST] renderPlan failed; continuing to sync', e); } catch (_) {} }
       // Cloud journal sync runs for EVERY signed-in account (trial included) so nobody
       // loses their history — the paywall gates ACCESS, not sync. Trigger once plan is known.
       reconcile();
+      // If they arrived via a landing-page plan button, surface that plan now (returning
+      // sign-ins; brand-new users get it after induction instead).
+      try { stMaybeConsumePlanIntent(); } catch (e) {}
     });
   }
 
@@ -30492,20 +30515,22 @@
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
     accStatus(tt('syncing'));
     sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
-      if (r.error) { accStatus(tt('syncErr')); return; }
+      if (r.error) { try { localStorage.setItem('st_sync_dbg', JSON.stringify({ branch: 'select-error', err: String(r.error.message || r.error) })); console.log('[ST sync] select error', r.error); } catch (e) {} accStatus(tt('syncErr')); return; }
       var raw = r.data && r.data.data;
       var cloudHasData = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
       var local = ST.getData();
+      var __dbg = { rawKeys: (raw && typeof raw === 'object') ? Object.keys(raw).length : 0, cloudHasData: !!cloudHasData };
       // First-ever sync for this account: cloud is empty -> seed it from local. Never wipes anything.
-      if (!cloudHasData) { cloudPush(); return; }
+      if (!cloudHasData) { try { __dbg.branch = 'cloud-empty-push-local'; window.__stSyncDbg = __dbg; localStorage.setItem('st_sync_dbg', JSON.stringify(__dbg)); console.log('[ST sync]', __dbg); } catch (e) {} cloudPush(); return; }
       var cloud = ST.migrate(raw);
-      if (eq(cloud, local)) { accStatus(tt('synced')); return; }
+      if (eq(cloud, local)) { try { __dbg.branch = 'equal-noop'; window.__stSyncDbg = __dbg; localStorage.setItem('st_sync_dbg', JSON.stringify(__dbg)); console.log('[ST sync]', __dbg); } catch (e) {} accStatus(tt('synced')); return; }
       // Loss-proof reconcile: keep whichever copy holds MORE journal content, measured by
       // contentScore (trades/series/reviews) — NEVER by string length, since the calendar
       // cache alone (~30k chars) would otherwise dominate and let a 1-trade copy outweigh a
       // 20-trade one (this is exactly the bug that wiped a user's history). Always snapshot
       // the copy we set aside so nothing is ever lost.
       var cScore = contentScore(cloud), lScore = contentScore(local);
+      try { __dbg.cScore = cScore; __dbg.lScore = lScore; __dbg.branch = (cScore > lScore) ? 'adopt-cloud' : 'keep-local'; window.__stSyncDbg = __dbg; localStorage.setItem('st_sync_dbg', JSON.stringify(__dbg)); console.log('[ST sync]', __dbg); } catch (e) {}
       if (cScore > lScore) {
         takeSnapshot('pre-sync', local);     // snapshot local before adopting the cloud copy
         try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } catch (e) {}
