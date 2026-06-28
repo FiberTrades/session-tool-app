@@ -2295,6 +2295,7 @@
   .modal { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-float); max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; padding: 32px; }
   /* In-app plan chooser - mirrors the landing pricing cards exactly */
   .modal.st-pc-modal { max-width: min(1000px, 96vw); text-align: center; }
+  .st-pc-sub { max-width: 560px; margin: -2px auto 4px; font-size: 14px; line-height: 1.55; color: var(--text-mid); }
   .stpc-toggle { display:inline-flex; gap:4px; margin:6px auto 24px; padding:4px; border:1px solid var(--border-2); border-radius:999px; background:var(--bg-elev); }
   .stpc-toggle button { font-family:var(--mono); font-size:10.5px; letter-spacing:0.12em; text-transform:uppercase; color:var(--text-dim); background:transparent; border:0; border-radius:999px; padding:9px 16px; cursor:pointer; display:inline-flex; align-items:center; gap:8px; transition:color .2s, background .2s; }
   .stpc-toggle button:hover { color:var(--text-mid); }
@@ -4840,6 +4841,7 @@
       'settings.mt5_token_copy': 'Copy',
       'settings.mt5_token_copied': 'Copied',
       'settings.mt5_token_signin': 'Sign in to see your token',
+      'settings.mt5_token_loading': 'Loading\u2026',
       'settings.mt5_factor_label': 'Copier size factor',
       'settings.mt5_factor_suffix': '\u00d7',
       'settings.mt5_sync_hint': 'Paste this token into the Minimalist Manager EA to auto-sync your closed trades. The size factor scales this account\u2019s money figures (risk, costs, P&L) when a trade fans out to a group \u2014 set it to match your copier (e.g. balance multiplier: follower balance \u00f7 lead balance). R and pips are never scaled.',
@@ -6069,6 +6071,7 @@
       'settings.mt5_token_copy': 'Copiar',
       'settings.mt5_token_copied': 'Copiado',
       'settings.mt5_token_signin': 'Inicia sesi\u00f3n para ver tu token',
+      'settings.mt5_token_loading': 'Cargando\u2026',
       'settings.mt5_factor_label': 'Factor de tama\u00f1o del copiador',
       'settings.mt5_factor_suffix': '\u00d7',
       'settings.mt5_sync_hint': 'Pega este token en el EA Minimalist Manager para sincronizar autom\u00e1ticamente tus operaciones cerradas. El factor de tama\u00f1o escala las cifras de dinero de esta cuenta (riesgo, costes, P&L) cuando una operaci\u00f3n se reparte a un grupo \u2014  aj\u00fastalo a tu copiador (p.ej. multiplicador por saldo: saldo del seguidor \u00f7 saldo del l\u00edder). La R y los pips nunca se escalan.',
@@ -20114,7 +20117,13 @@
     } catch (e) { /* non-fatal */ }
     // Post-induction premium step — adapts to which landing button brought them in; skippable.
     try {
-      if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') {
+      var __planIntent = null;
+      try { __planIntent = localStorage.getItem('st_plan_intent'); } catch (e) {}
+      if (__planIntent && window.stPlanChooser && typeof window.stPlanChooser.open === 'function') {
+        try { localStorage.removeItem('st_plan_intent'); } catch (e) {}
+        var __iv = (__planIntent.split(':')[1] === 'monthly') ? 'monthly' : 'yearly';
+        setTimeout(function () { try { window.stPlanChooser.open(__iv); } catch (e) {} }, 350);
+      } else if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') {
         setTimeout(function () { window.stPremiumStep.show(); }, 350);
       }
     } catch (e) { /* non-fatal */ }
@@ -25440,7 +25449,7 @@
           } else if (el && el.classList.contains('tk-chip-x')) {
             const cat = el.getAttribute('data-cat');
             if (el.hasAttribute('data-pro')) tickerRemovePreset(cat, el.getAttribute('data-pro'));
-            else tickerRemoveCustom(cat, parseInt(el.getAttribute('data-i'), 10));
+            else tickerRemoveCustom(cat, el.getAttribute('data-val'));
           }
         });
         tkCats.addEventListener('keydown', (e) => {
@@ -25884,13 +25893,16 @@
     if (!wrap) return;
     const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const cats = (data.settings && data.settings.tickerCats) || {};
+    // On the trial, the default (preset) tickers can't be removed — only your own customs.
+    let tkIsTrial = false;
+    try { const __p = (typeof window.__stPlan === 'function') ? window.__stPlan() : null; tkIsTrial = !!(__p && __p.loaded && !__p.paid); } catch (e) {}
     let html = '';
     tickerCatList().forEach(k => {
       const c = cats[k] || { on: false, custom: [], removed: [] };
       const chips = orderedCatItems(k).map(s => {
         const xBtn = s.custom
-          ? `<button type="button" class="tk-chip-x" data-cat="${k}" data-i="${s.idx}" aria-label="Remove ${esc(s.description)}">×</button>`
-          : `<button type="button" class="tk-chip-x" data-cat="${k}" data-pro="${esc(s.proName)}" aria-label="Remove ${esc(s.description)}">×</button>`;
+          ? `<button type="button" class="tk-chip-x" data-cat="${k}" data-val="${esc(s.proName)}" aria-label="Remove ${esc(s.description)}">×</button>`
+          : (tkIsTrial ? '' : `<button type="button" class="tk-chip-x" data-cat="${k}" data-pro="${esc(s.proName)}" aria-label="Remove ${esc(s.description)}">×</button>`);
         return `<span class="tk-chip" data-cat="${k}" data-pro="${esc(s.proName)}"><span class="tk-grip" aria-hidden="true">⠿</span><span class="tk-chip-label">${esc(s.description)}</span>${xBtn}</span>`;
       }).join('');
       html += `<div class="tk-cat" data-cat="${k}">
@@ -26205,9 +26217,12 @@
     if (data.settings.tickerEnabled) renderTickerWidget();
   }
 
-  function tickerRemoveCustom(cat, idx) {
+  function tickerRemoveCustom(cat, val) {
     const c = data.settings.tickerCats && data.settings.tickerCats[cat];
-    if (c && c.custom) { c.custom.splice(idx, 1); saveData(); renderTickerSettings(); if (data.settings.tickerEnabled) renderTickerWidget(); }
+    if (!c || !Array.isArray(c.custom)) return;
+    const low = String(val == null ? '' : val).toLowerCase();
+    const i = c.custom.findIndex(x => String(x).toLowerCase() === low);  // remove the exact one clicked, never by shifting index
+    if (i !== -1) { c.custom.splice(i, 1); saveData(); renderTickerSettings(); if (data.settings.tickerEnabled) renderTickerWidget(); }
   }
 
   // Removing a default symbol hides it from the ticker and the settings list. It's kept in
@@ -26215,6 +26230,8 @@
   function tickerRemovePreset(cat, pro) {
     const c = data.settings.tickerCats && data.settings.tickerCats[cat];
     if (!c) return;
+    // Default tickers are locked on the trial — only paid plans can remove them.
+    try { const __p = (typeof window.__stPlan === 'function') ? window.__stPlan() : null; if (__p && __p.loaded && !__p.paid) return; } catch (e) {}
     c.removed = c.removed || [];
     if (!c.removed.some(p => p.toLowerCase() === pro.toLowerCase())) c.removed.push(pro);
     saveData(); renderTickerSettings(); if (data.settings.tickerEnabled) renderTickerWidget();
@@ -27165,22 +27182,38 @@
   let _mt5SelectedIds = new Set(); // positions selected by checkbox
   let _mt5MetaInfo = null;     // { accountName, brokerName, reportDate, sourceFileName }
 
+  // ----- MT5 sync-token display (a dedicated per-user secret, separate from the account id) -----
+  function mt5SyncToken() {
+    try { return (window.STCloud && window.STCloud.syncToken) ? window.STCloud.syncToken : ''; } catch (e) { return ''; }
+  }
+  function paintMt5Token() {
+    var el = document.getElementById('mt5-token-display');
+    if (!el) return;
+    var v = mt5SyncToken();
+    if (v) { el.textContent = v; return; }
+    var signedIn = false;
+    try { signedIn = !!(window.STCloud && window.STCloud.userId); } catch (e) {}
+    el.textContent = (typeof t === 'function')
+      ? t(signedIn ? 'settings.mt5_token_loading' : 'settings.mt5_token_signin')
+      : (signedIn ? 'Loading...' : 'Sign in to see your token');
+  }
+  try { window.__stPaintMt5Token = paintMt5Token; } catch (e) {}
+
   // ----- Open / close the modal -----
   function openMt5Modal() {
     document.getElementById('mt5-step-pick').style.display = '';
     document.getElementById('mt5-step-preview').style.display = 'none';
     document.getElementById('mt5-pick-error').style.display = 'none';
     document.getElementById('mt5-file-input').value = '';
-    // Populate the MT5 sync token (= the user id) and wire its copy button.
+    // Populate the MT5 sync token (a dedicated per-user secret, not the account id)
+    // and wire its copy button.
     try {
-      const tokEl = document.getElementById('mt5-token-display');
+      paintMt5Token();
       const tokBtn = document.getElementById('mt5-token-copy');
-      const tok = (window.STCloud && window.STCloud.userId) ? window.STCloud.userId : '';
-      if (tokEl) tokEl.textContent = tok || ((typeof t === 'function') ? t('settings.mt5_token_signin') : 'Sign in to see your token');
       if (tokBtn && !tokBtn._wired) {
         tokBtn._wired = true;
         tokBtn.addEventListener('click', () => {
-          const v = (window.STCloud && window.STCloud.userId) ? window.STCloud.userId : '';
+          const v = mt5SyncToken();
           if (!v) return;
           const done = () => { const o = tokBtn.textContent; tokBtn.textContent = ((typeof t === 'function') ? t('settings.mt5_token_copied') : 'Copied') || 'Copied'; setTimeout(() => { tokBtn.textContent = o; }, 1200); };
           if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done).catch(() => window.prompt('Copy your token:', v));
@@ -29483,7 +29516,7 @@
     if (window.stPlanChooser && typeof window.stPlanChooser.open === 'function') window.stPlanChooser.open();
     else stOpenCheckout('yearly');
   }
-  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null, profileSubId = null;
+  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null, profileSubId = null, profileSyncToken = null;
   var TRIAL_DAYS = 14;
 
   var STR = {
@@ -29703,30 +29736,15 @@
   premStep.querySelector('#st-prem-go-year').addEventListener('click', function () { premCheckout('yearly'); closePremStep(); });
   premStep.querySelector('#st-prem-go-month').addEventListener('click', function () { premCheckout('monthly'); closePremStep(); });
   premStep.addEventListener('click', function (e) { if (e.target === premStep) closePremStep(); });
+  // Every contextual upgrade prompt now renders as the landing-style plan cards. The
+  // caller's {title, body} appears above the cards; the cards themselves are the chooser.
   window.stPremiumStep = { show: function (opts) {
-    if (profilePaid) return; // already premium — nothing to sell
-    var intent = 'soft';
-    try { if (localStorage.getItem('st_premium_intent') === '1') { intent = 'premium'; localStorage.removeItem('st_premium_intent'); } } catch (_) {}
-    var ttl = premStep.querySelector('#st-prem-title');
-    var bod = premStep.querySelector('#st-prem-body');
-    var pr  = premStep.querySelector('#st-prem-price');
-    var goY = premStep.querySelector('#st-prem-go-year');
-    var goM = premStep.querySelector('#st-prem-go-month');
-    var sk  = premStep.querySelector('#st-prem-skip');
-    if (intent === 'premium') {
-      ttl.textContent = premL("You're all set — go Premium", 'Todo listo — hazte Premium');
-      bod.textContent = premL('Your journal is ready. Unlock everything — full stats, multi-account and every feature — for \u00a312 a month, cancel anytime.', 'Tu diario est\u00e1 listo. Desbloquea todo \u2014estad\u00edsticas completas, multicuenta y cada funci\u00f3n\u2014 por 12\u00a0\u00a3 al mes, cancela cuando quieras.');
-    } else {
-      ttl.textContent = premL('Your journal is ready', 'Tu diario est\u00e1 listo');
-      bod.textContent = premL('Use it free for ' + TRIAL_DAYS + ' days. Go Premium whenever the review habit starts paying for itself.', '\u00dasalo gratis ' + TRIAL_DAYS + ' d\u00edas. Hazte Premium cuando el h\u00e1bito empiece a merecer la pena.');
+    if (profilePaid) return; // already paid — nothing to sell
+    try { localStorage.removeItem('st_premium_intent'); } catch (_) {}
+    var o = opts || {};
+    if (window.stPlanChooser && typeof window.stPlanChooser.open === 'function') {
+      window.stPlanChooser.open({ title: o.title || null, body: o.body || null });
     }
-    pr.textContent = premL('\u00a312/mo billed annually, or \u00a315 month-to-month', '\u00a312/mes facturado anualmente, o \u00a315 al mes');
-    goY.textContent = premL('Yearly \u2014 \u00a3144/yr (save 20%)', 'Anual \u2014 \u00a3144/a\u00f1o (ahorra 20%)');
-    goM.textContent = premL('Monthly \u2014 \u00a315/mo', 'Mensual \u2014 \u00a315/mes');
-    sk.textContent = premL('Maybe later', 'Quiz\u00e1s m\u00e1s tarde');
-    if (opts && opts.title) ttl.textContent = opts.title;
-    if (opts && opts.body) bod.textContent = opts.body;
-    premStep.classList.add('show');
   } };
 
   /* ====== PLAN CHOOSER (3 tiers; checkout for new buyers, prorated change-plan for existing subs) ====== */
@@ -29761,6 +29779,7 @@
     '<div class="modal st-pc-modal">' +
       '<div class="st-welcome-mark">Session Tool &middot; Plans</div>' +
       '<h2 class="st-welcome-title" id="st-pc-title"></h2>' +
+      '<p class="st-pc-sub" id="st-pc-sub" style="display:none;"></p>' +
       '<div id="st-pc-toggle"></div>' +
       '<div id="st-pc-tiers" class="stpc-grid"></div>' +
       '<div id="st-pc-status" style="margin-top:14px;font-size:13px;min-height:18px;"></div>' +
@@ -29890,9 +29909,13 @@
     planChooser.querySelector('#st-pc-tiers').innerHTML = html;
   }
 
-  window.stPlanChooser = { open: function () {
+  window.stPlanChooser = { open: function (arg) {
     if (!stCanUpgrade()) return; // top tier or comped - nothing to upgrade to
-    planChooser.querySelector('#st-pc-title').textContent = premL('Choose your plan', 'Elige tu plan');
+    var opts = (arg && typeof arg === 'object') ? arg : { interval: arg };
+    if (opts.interval === 'monthly' || opts.interval === 'yearly') pcInterval = opts.interval;
+    planChooser.querySelector('#st-pc-title').textContent = opts.title || premL('Choose your plan', 'Elige tu plan');
+    var subEl = planChooser.querySelector('#st-pc-sub');
+    if (subEl) { if (opts.body) { subEl.textContent = opts.body; subEl.style.display = ''; } else { subEl.style.display = 'none'; } }
     planChooser.querySelector('#st-pc-close').textContent = premL('Maybe later', 'Quiz\u00e1s m\u00e1s tarde');
     pcStatus('', false);
     renderChooser();
@@ -30357,10 +30380,14 @@
         profileCreated = r.data.created_at || null;
         profilePortal = r.data.portal_url || null;
         profileSubId = r.data.ls_subscription_id || null;
+        profileSyncToken = r.data.sync_token || null;
+        try { window.STCloud.syncToken = profileSyncToken; } catch (e) {}
+        try { if (window.__stPaintMt5Token) window.__stPaintMt5Token(); } catch (e) {}
       }
       renderPlan();
-      // Cloud journal sync is Premium-only; trigger it only once the plan is known.
-      if (profilePaid) { reconcile(); } else { accStatus(tt('localOnly')); }
+      // Cloud journal sync runs for EVERY signed-in account (trial included) so nobody
+      // loses their history — the paywall gates ACCESS, not sync. Trigger once plan is known.
+      reconcile();
     });
   }
 
@@ -30369,7 +30396,6 @@
 
   function debouncePush() {
     if (!currentUser) return;
-    if (!profilePaid) { accStatus(tt('localOnly')); return; } // trial: local only, no cloud journal
     clearTimeout(pushTimer);
     accStatus(tt('syncing'));
     pushTimer = setTimeout(cloudPush, 1500);
@@ -30385,7 +30411,6 @@
 
   function cloudPush() {
     if (!currentUser) return;
-    if (!profilePaid) { accStatus(tt('localOnly')); return; } // trial: local only, no cloud journal
     var d = ST.getData();
     // A deliberate restore (Rollback history) must win unconditionally.
     if (forcing) { doCloudUpsert(d); return; }
@@ -30433,7 +30458,6 @@
 
   function reconcile() {
     if (!currentUser) return;
-    if (!profilePaid) { accStatus(tt('localOnly')); return; } // trial: local only, no cloud journal
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
     accStatus(tt('syncing'));
@@ -30471,10 +30495,36 @@
   /* ============ auth state + gate decision (hard gate) ============ */
   function tokenGuess() { try { return !!localStorage.getItem('sb-' + PROJECT_REF + '-auth-token'); } catch (e) { return false; } }
 
+  // Ties this browser's LOCAL journal to the account that created it. If a different
+  // account signs in, the local data (and its snapshots) belong to someone else, so we
+  // clear them and start fresh — preventing one account from inheriting another's trades
+  // and ensuring a brand-new account gets the first-run induction. The owner's own cloud
+  // copy (if paid) is pulled back by reconcile after the reload.
+  function enforceDataOwner(uid) {
+    if (!uid) return false;
+    var owner = null;
+    try { owner = localStorage.getItem('st_data_owner'); } catch (e) {}
+    if (owner && owner !== uid) {
+      try { localStorage.removeItem(ST.STORAGE_KEY); } catch (e) {}
+      try {
+        var rm = [];
+        for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(SNAP_PREFIX) === 0) rm.push(k); }
+        rm.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
+      } catch (e) {}
+      try { localStorage.setItem('st_data_owner', uid); } catch (e) {}
+      try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
+      location.reload();
+      return true;
+    }
+    try { localStorage.setItem('st_data_owner', uid); } catch (e) {}
+    return false;
+  }
+
   sb.auth.onAuthStateChange(function (event, session) {
     if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; currentUser = session ? session.user : null; paintAccount(); showReset(); return; }
     currentUser = session ? session.user : null;
-    try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch (e) {}
+    try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
+    if (currentUser && enforceDataOwner(currentUser.id)) return; // foreign local data -> cleared, reloading
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); }
@@ -30489,7 +30539,8 @@
 
   sb.auth.getSession().then(function (r) {
     currentUser = r.data && r.data.session ? r.data.session.user : null;
-    try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch (e) {}
+    try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
+    if (currentUser && enforceDataOwner(currentUser.id)) return; // foreign local data -> cleared, reloading
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); fetchProfile(); }
@@ -31793,7 +31844,7 @@
     els.forEach(function(e){ io.observe(e); });
   })();
 <\/script>
-<script>(function(){document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('[data-auth]'):null;if(b){e.preventDefault();e.stopImmediatePropagation();var msg=(b.getAttribute('data-i18n')==='pr.prem_cta')?'lp-auth:premium':'lp-auth';try{parent.postMessage(msg,'*');}catch(_){}}},true);})();<\/script>
+<script>(function(){document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e.target.closest('[data-auth]'):null;if(b){e.preventDefault();e.stopImmediatePropagation();var k=b.getAttribute('data-i18n');var tier=(k==='pr.app_cta')?'premium':(k==='pr.bun_cta')?'bundle':(k==='pr.men_cta')?'mentorship':null;var msg='lp-auth';if(tier){var seg=document.querySelector('.bill-seg.on');var iv=(seg&&seg.getAttribute('data-bill')==='monthly')?'monthly':'yearly';if(tier==='mentorship')iv='monthly';msg='lp-auth:plan:'+tier+':'+iv;}try{parent.postMessage(msg,'*');}catch(_){}}},true);})();<\/script>
 </body>
 </html>
 `;
@@ -31810,7 +31861,7 @@
     var closeAdded=false;
     function addClose(g){ if(closeAdded) return; closeAdded=true; var x=document.createElement("button"); x.type="button"; x.setAttribute("aria-label","Back to home"); x.textContent="\u2715"; x.style.cssText="width:30px;height:30px;margin:0 0 40px;border-radius:50%;border:1px solid rgba(255,255,255,0.18);background:rgba(20,20,20,0.65);color:#9a9a9a;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;flex:0 0 auto;transition:color .15s,border-color .15s;"; x.onmouseenter=function(){ x.style.color="#fff"; x.style.borderColor="rgba(255,255,255,0.45)"; }; x.onmouseleave=function(){ x.style.color="#9a9a9a"; x.style.borderColor="rgba(255,255,255,0.18)"; }; x.onclick=function(){ dismissed=false; show(); }; var shell=g.querySelector(".stc-shell"), wm=g.querySelector(".stc-wordmark"); if(shell&&wm){ shell.insertBefore(x, wm); } else { x.style.position="fixed"; x.style.top="18px"; x.style.right="18px"; x.style.margin="0"; x.style.zIndex="6"; g.appendChild(x); } }
     function init(){ var tries=0; var iv=setInterval(function(){ var g=loginGate(); if(g){ clearInterval(iv); addClose(g); try{ new MutationObserver(sync).observe(g,{attributes:true,attributeFilter:["class"]}); }catch(_){} sync(); } else if(++tries>150){ clearInterval(iv); } }, 80); }
-    window.addEventListener("message", function(e){ if(e && typeof e.data==="string" && e.data.indexOf("lp-applang:")===0){ try{ if(typeof window.__setAppLang==="function"){ window.__setAppLang(e.data.slice(11)); } }catch(_){} return; } if(e && (e.data==="lp-auth"||e.data==="lp-auth:premium")){ if(e.data==="lp-auth:premium"){ try{ localStorage.setItem("st_premium_intent","1"); }catch(_){} } dismissed = true; hide(); setTimeout(function(){ try{ if(window.matchMedia && !window.matchMedia("(pointer:fine)").matches) return; var gp=document.getElementById("stc-g-pass")||document.getElementById("stc-g-email"); if(gp){ gp.focus({preventScroll:true}); } }catch(_){} }, 0); } });
+    window.addEventListener("message", function(e){ if(e && typeof e.data==="string" && e.data.indexOf("lp-applang:")===0){ try{ if(typeof window.__setAppLang==="function"){ window.__setAppLang(e.data.slice(11)); } }catch(_){} return; } if(e && typeof e.data==="string" && (e.data==="lp-auth"||e.data==="lp-auth:premium"||e.data.indexOf("lp-auth:plan:")===0)){ if(e.data==="lp-auth:premium"){ try{ localStorage.setItem("st_premium_intent","1"); }catch(_){} } else if(e.data.indexOf("lp-auth:plan:")===0){ try{ localStorage.setItem("st_plan_intent", e.data.slice(13)); }catch(_){} } dismissed = true; hide(); setTimeout(function(){ try{ if(window.matchMedia && !window.matchMedia("(pointer:fine)").matches) return; var gp=document.getElementById("stc-g-pass")||document.getElementById("stc-g-email"); if(gp){ gp.focus({preventScroll:true}); } }catch(_){} }, 0); } });
     function mount(){ (document.body||document.documentElement).appendChild(f); init(); }
     if(document.body){ mount(); } else { document.addEventListener("DOMContentLoaded", mount); }
   } catch(err){}
