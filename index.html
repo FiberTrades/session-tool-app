@@ -7673,6 +7673,7 @@
     getData: function () { return data; },
     migrate: function (obj) { return migrate(obj); },
     save: function () { return saveData(); },
+    setData: function (obj) { try { data = migrate(obj); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
     STORAGE_KEY: STORAGE_KEY,
     userId: null
     // .onSave is attached by the cloud module; saveData() calls it on every write.
@@ -30533,19 +30534,19 @@
       try { __dbg.cScore = cScore; __dbg.lScore = lScore; __dbg.branch = (cScore > lScore) ? 'adopt-cloud' : 'keep-local'; window.__stSyncDbg = __dbg; localStorage.setItem('st_sync_dbg', JSON.stringify(__dbg)); console.log('[ST sync]', __dbg); } catch (e) {}
       if (cScore > lScore) {
         takeSnapshot('pre-sync', local);     // snapshot local before adopting the cloud copy
-        var __wrote = '';
-        try { __wrote = JSON.stringify(cloud); localStorage.setItem(ST.STORAGE_KEY, __wrote); } catch (e) {}
-        // DIAGNOSTIC: reproduce the on-load path (parse + migrate the just-written copy)
-        // so we can see whether the round-trip survives or where it breaks.
+        // Adopt the cloud copy. Update the IN-MEMORY journal as well as storage, so a stray
+        // save of the (stale, blank) in-memory copy can't clobber it in the instant before
+        // the reload -- that race is what was wiping the pulled data on a fresh device.
+        var __adopted = false;
+        try {
+          if (typeof ST.setData === 'function') { __adopted = ST.setData(cloud); }
+          else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); __adopted = true; }
+        } catch (e) {}
         try {
           var __back = localStorage.getItem(ST.STORAGE_KEY);
-          __dbg.writtenLen = __wrote.length;
-          __dbg.readBackLen = __back ? __back.length : 0;
-          var __re = ST.migrate(JSON.parse(__back));
-          __dbg.reMigrateScore = contentScore(__re);
-          __dbg.reMigrateOk = true;
-        } catch (e3) { __dbg.reMigrateOk = false; __dbg.reMigrateErr = String((e3 && e3.message) || e3); }
-        try { window.__stSyncDbg = __dbg; localStorage.setItem('st_sync_dbg', JSON.stringify(__dbg)); console.log('[ST sync adopt]', __dbg); } catch (e) {}
+          __dbg.adopted = __adopted; __dbg.readBackLen = __back ? __back.length : 0;
+          window.__stSyncDbg = __dbg; localStorage.setItem('st_sync_dbg', JSON.stringify(__dbg)); console.log('[ST sync adopt]', __dbg);
+        } catch (e) {}
         accStatus(tt('synced'));
         // Reload once so the UI re-renders from the adopted cloud copy — but NEVER
         // more than once per session, so a non-identical compare can't loop.
