@@ -1173,7 +1173,7 @@
   /* PC (mouse) only: hide the chart image upload button. On desktop, TradingView's
      web app offers "copy image link", so paste a link instead. Touch devices
      (phones / tablets) keep the upload control. */
-  @media (pointer: fine) { .tv-link-row .tv-upload-btn { display: none; } }
+  html:not(.st-paid) .tv-link-row .tv-upload-btn { display: none !important; }
   @media (pointer: coarse) {
     .tv-link-row .tv-link-url { display: none; }
     .tv-link-row .tv-upload-btn { flex: 1 1 auto; justify-content: center; border: 1px dashed var(--border-2); border-radius: var(--radius-ctrl); padding: 11px 14px; }
@@ -26134,6 +26134,7 @@
     wrap.addEventListener('pointercancel', finish);
   }
 
+  var TRIAL_TICKER_CAP = 3;
   function tickerAddCustom(cat, val) {
     val = String(val || '').trim();
     if (!val || !data.settings.tickerCats) return;
@@ -26145,6 +26146,22 @@
       // Re-adding a default that had been removed → simply restore it.
       c.removed = c.removed.filter(p => p.toLowerCase() !== preset.proName.toLowerCase());
     } else if (!c.custom.some(x => x.toLowerCase() === low)) {
+      // Trial cap: limit how many of your own (custom) tickers you can add. Unlimited is Premium.
+      try {
+        var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
+        if (__pl && __pl.loaded && !__pl.paid) {
+          var __cats = data.settings.tickerCats || {};
+          var __n = 0; for (var __k in __cats) { if (__cats[__k] && Array.isArray(__cats[__k].custom)) __n += __cats[__k].custom.length; }
+          if (__n >= TRIAL_TICKER_CAP) {
+            var __es = (window.__lang === 'es');
+            var __t = __es ? 'Tickers limitados en la prueba' : 'Limited tickers on the trial';
+            var __b = __es ? ('La prueba permite ' + TRIAL_TICKER_CAP + ' tickers propios. Hazte Premium para a\u00f1adir ilimitados.') : ('The trial lets you add ' + TRIAL_TICKER_CAP + ' of your own tickers. Go Premium to add unlimited.');
+            if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') { window.stPremiumStep.show({ title: __t, body: __b }); }
+            else { alert(__t + ' \u2014 ' + __b); }
+            return;
+          }
+        }
+      } catch (e) {}
       c.custom.push(val);
     }
     c.on = true; // turn the category on so the new symbol actually shows
@@ -27490,6 +27507,18 @@
     const statusEl = document.getElementById('mt5-autosync-status');
     const setStatus = m => { if (statusEl) statusEl.textContent = m; };
     const T = k => (typeof t === 'function') ? t(k) : '';
+    // MT5 auto-sync (cloud inbox pull) is Premium. Manual file import stays free.
+    try {
+      var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
+      if (__pl && __pl.loaded && !__pl.paid) {
+        var __es = (window.__lang === 'es');
+        setStatus(__es ? 'Auto-sync es Premium \u2014 importa manualmente o hazte Premium.' : 'Auto-sync is Premium \u2014 import manually or go Premium.');
+        var __ti = __es ? 'Auto-sync con MT5 es Premium' : 'MT5 auto-sync is Premium';
+        var __bd = __es ? 'La sincronizaci\u00f3n autom\u00e1tica desde MT5 es Premium. Puedes importar manualmente desde un archivo, o hazte Premium para sincronizar autom\u00e1ticamente.' : 'Auto-syncing trades from MT5 is a Premium feature. You can still import manually from a file, or go Premium to sync automatically.';
+        if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') { window.stPremiumStep.show({ title: __ti, body: __bd }); }
+        return;
+      }
+    } catch (e) {}
     if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') { setStatus(T('mt5.sync_unavailable') || 'Sync not available - please refresh.'); return; }
     setStatus(T('mt5.sync_pulling') || 'Pulling synced trades...');
     Promise.resolve(window.STCloud.pullInbox()).then(res => {
@@ -27514,6 +27543,8 @@
     try {
       if (_autoSyncPromptInFlight) return;
       if (!data || !window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
+      var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
+      if (__pl && __pl.loaded && !__pl.paid) return; // auto-sync nudge is Premium-only
       if (typeof showUndoToast !== 'function') return;
       const todayKey = new Date().toISOString().slice(0, 10);
       if (data._autoSyncPromptedDate === todayKey) return;   // at most once per day
@@ -29005,6 +29036,21 @@
     const addCreate = document.getElementById('settings-account-add-create');
     if (addCreate) {
       addCreate.addEventListener('click', () => {
+        // Trial users get one trading account. Adding a parallel (concurrent) account is Premium.
+        try {
+          var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
+          if (__pl && __pl.loaded && !__pl.paid) {
+            var __activeN = (Array.isArray(data.accounts) ? data.accounts : []).filter(function (a) { return a && a.status !== 'archived'; }).length;
+            if (__activeN >= 1) {
+              var __es = (window.__lang === 'es');
+              var __t = __es ? 'Una cuenta en la prueba' : 'One account on the trial';
+              var __b = __es ? 'La prueba incluye una cuenta de trading. Hazte Premium para a\u00f1adir y agrupar varias cuentas.' : 'The trial includes one trading account. Go Premium to add and group multiple accounts.';
+              if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') { window.stPremiumStep.show({ title: __t, body: __b }); }
+              else { alert(__t + ' \u2014 ' + __b); }
+              return;
+            }
+          }
+        } catch (e) {}
         const nameInp = document.getElementById('settings-account-add-name');
         const balInp = document.getElementById('settings-account-add-balance');
         const name = (nameInp.value || '').trim();
@@ -29353,6 +29399,7 @@
     });
   }
   window.__stUploadChart = function (file) {
+    if (!profilePaid) { return Promise.reject(new Error('Chart upload is a Premium feature')); }
     return __stCompressImage(file, 1600, 0.82).catch(function () {
       // Compression failed (odd format / decode error) — upload the original as-is
       // so the user never loses their chart over a processing hiccup.
@@ -29396,12 +29443,12 @@
 
   var STR = {
     en: { account:'Sign out', signedInAs:'Signed in as', email:'Email', password:'Password',
-          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', kickerLogin:'Welcome back', kickerChoose:'Log in or create an account', welcomeTitle:'Welcome to Session Tool', welcomeBody:'You\u2019re all set. This is your space to log every trade in your session, review your performance, and build consistency \u2014 quietly, away from the noise.', welcomeTrial:'You\u2019re on a free {n}-day trial. When it ends, you\u2019ll need Premium to keep using the app \u2014 but your data stays saved and will be waiting for you.', welcomeBtn:'Continue', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Rollback history', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', planTrial:'{n}-day free trial remaining', badgePremium:'Premium', badgeTrial:'Trial · {n}d', badgeFree:'Free', pwKicker:'Trial ended', pwMsg:'Your 14-day free trial has ended. Subscribe to keep using Session Tool — your data is saved and will be waiting when you upgrade.', pwHave:'I\u2019ve already subscribed — refresh', upgradeBtn:'Upgrade to Premium — £12/mo', manageBtn:'Manage subscription', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
-          need6:'Password must be at least 6 characters.', syncing:'Syncing…', synced:'Synced',
+          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', kickerLogin:'Welcome back', kickerChoose:'Log in or create an account', welcomeTitle:'Welcome to Session Tool', welcomeBody:'You\u2019re all set. This is your space to log every trade in your session, review your performance, and build consistency \u2014 quietly, away from the noise.', welcomeTrial:'You\u2019re on a free {n}-day trial. When it ends, you\u2019ll need Premium to keep using the app \u2014 but your data stays saved and will be waiting for you.', welcomeBtn:'Continue', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Rollback history', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', planTrial:'{n}-day free trial remaining', badgePremium:'Premium', badgeTrial:'Trial · {n}d', badgeFree:'Free', pwKicker:'Trial ended', pwMsg:'Your 14-day free trial has ended. Subscribe to keep using Session Tool — your data is saved and will be waiting when you upgrade.', pwHave:'I\u2019ve already subscribed — refresh', upgradeBtn:'Upgrade to Premium — £12/mo', pwKickerLapsed:'Subscription ended', pwMsgLapsed:'Your Premium subscription has ended. Renew to keep using Session Tool \u2014 your data is saved and will be waiting when you renew.', resubBtn:'Renew Premium \u2014 \u00a312/mo', manageBtn:'Manage subscription', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.',
+          need6:'Password must be at least 6 characters.', syncing:'Syncing…', synced:'Synced', localOnly:'Local only',
           syncErr:'Sync error — will retry', checkEmail:'Account created. Check your email to confirm, then log in.', syncDeleteConfirm:'You\u2019re about to remove {n} trades that are still saved in the cloud. This can\u2019t be undone. Delete them?' },
     es: { account:'Cerrar sesión', signedInAs:'Sesión iniciada como', email:'Correo', password:'Contraseña',
-          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', kickerLogin:'Bienvenido de nuevo', kickerChoose:'Inicia sesión o crea una cuenta', welcomeTitle:'Bienvenido a Session Tool', welcomeBody:'Ya está todo listo. Este es tu espacio para registrar cada operación de tu sesión, revisar tu rendimiento y ganar constancia \u2014 en silencio, lejos del ruido.', welcomeTrial:'Estás en una prueba gratuita de {n} días. Cuando termine, necesitarás Premium para seguir usando la app \u2014 pero tus datos quedan guardados y te estarán esperando.', welcomeBtn:'Continuar', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Historial de cambios', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', planTrial:'Prueba gratuita: quedan {n} días', badgePremium:'Premium', badgeTrial:'Prueba · {n}d', badgeFree:'Gratis', pwKicker:'Prueba finalizada', pwMsg:'Tu prueba gratuita de 14 días ha terminado. Suscríbete para seguir usando Session Tool — tus datos están guardados y estarán aquí cuando mejores tu plan.', pwHave:'Ya me suscribí — actualizar', upgradeBtn:'Hazte Premium — £12/mes', manageBtn:'Gestionar suscripción', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
-          need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…', synced:'Sincronizado',
+          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', kickerLogin:'Bienvenido de nuevo', kickerChoose:'Inicia sesión o crea una cuenta', welcomeTitle:'Bienvenido a Session Tool', welcomeBody:'Ya está todo listo. Este es tu espacio para registrar cada operación de tu sesión, revisar tu rendimiento y ganar constancia \u2014 en silencio, lejos del ruido.', welcomeTrial:'Estás en una prueba gratuita de {n} días. Cuando termine, necesitarás Premium para seguir usando la app \u2014 pero tus datos quedan guardados y te estarán esperando.', welcomeBtn:'Continuar', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Historial de cambios', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', planTrial:'Prueba gratuita: quedan {n} días', badgePremium:'Premium', badgeTrial:'Prueba · {n}d', badgeFree:'Gratis', pwKicker:'Prueba finalizada', pwMsg:'Tu prueba gratuita de 14 días ha terminado. Suscríbete para seguir usando Session Tool — tus datos están guardados y estarán aquí cuando mejores tu plan.', pwHave:'Ya me suscribí — actualizar', upgradeBtn:'Hazte Premium — £12/mes', pwKickerLapsed:'Suscripci\u00f3n finalizada', pwMsgLapsed:'Tu suscripci\u00f3n Premium ha terminado. Renueva para seguir usando Session Tool \u2014 tus datos est\u00e1n guardados y estar\u00e1n aqu\u00ed cuando renueves.', resubBtn:'Renovar Premium \u2014 \u00a312/mes', manageBtn:'Gestionar suscripción', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.',
+          need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…', synced:'Sincronizado', localOnly:'Solo local',
           syncErr:'Error de sincronización — se reintentará', checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.', syncDeleteConfirm:'Estás a punto de eliminar {n} operaciones que siguen guardadas en la nube. Esto no se puede deshacer. ¿Eliminarlas?' }
   };
   function lang() { return document.documentElement.lang === 'es' ? 'es' : 'en'; }
@@ -29513,10 +29560,19 @@
     '</div>';
   document.body.appendChild(paywall);
   function pwel(id) { return paywall.querySelector('#' + id); }
+  function wasSubscriber() {
+    // Distinguish a lapsed paying customer from a never-paid trial that simply ran out.
+    if (profilePlan) return true;
+    if (profilePeriodEnd) return true;
+    var s = (profileStatus || '').toLowerCase();
+    if (s && s !== 'trialing' && s !== 'trial' && s !== 'active') return true;
+    return false;
+  }
   function paintPaywall() {
-    pwel('stc-pw-kicker').textContent = tt('pwKicker');
-    pwel('stc-pw-msg').textContent = tt('pwMsg');
-    pwel('stc-pw-upgrade').textContent = tt('upgradeBtn');
+    var lapsed = wasSubscriber();
+    pwel('stc-pw-kicker').textContent = tt(lapsed ? 'pwKickerLapsed' : 'pwKicker');
+    pwel('stc-pw-msg').textContent = tt(lapsed ? 'pwMsgLapsed' : 'pwMsg');
+    pwel('stc-pw-upgrade').textContent = tt(lapsed ? 'resubBtn' : 'upgradeBtn');
     pwel('stc-pw-refresh').textContent = tt('pwHave');
     pwel('stc-pw-signout').textContent = tt('signout');
   }
@@ -29603,7 +29659,7 @@
   premStep.querySelector('#st-prem-skip').addEventListener('click', closePremStep);
   premStep.querySelector('#st-prem-go').addEventListener('click', function () { premCheckout(); closePremStep(); });
   premStep.addEventListener('click', function (e) { if (e.target === premStep) closePremStep(); });
-  window.stPremiumStep = { show: function () {
+  window.stPremiumStep = { show: function (opts) {
     if (profilePaid) return; // already premium — nothing to sell
     var intent = 'soft';
     try { if (localStorage.getItem('st_premium_intent') === '1') { intent = 'premium'; localStorage.removeItem('st_premium_intent'); } } catch (_) {}
@@ -29622,6 +29678,8 @@
     pr.textContent = premL('\u00a312 / month \u00b7 cancel anytime', '12\u00a0\u00a3 / mes \u00b7 cancela cuando quieras');
     go.textContent = premL('Go Premium now', 'Hazte Premium ahora');
     sk.textContent = premL('Maybe later', 'Quiz\u00e1s m\u00e1s tarde');
+    if (opts && opts.title) ttl.textContent = opts.title;
+    if (opts && opts.body) bod.textContent = opts.body;
     premStep.classList.add('show');
   } };
 
@@ -29980,6 +30038,7 @@
     }
     var btn = document.getElementById('stc-a-upgrade'); if (btn) { btn.style.display = profilePaid ? 'none' : ''; btn.textContent = tt('upgradeBtn'); }
     var mbtn = document.getElementById('stc-a-manage'); if (mbtn) { mbtn.style.display = (profilePaid && profilePortal) ? '' : 'none'; mbtn.textContent = tt('manageBtn'); }
+    try { document.documentElement.classList.toggle('st-paid', !!profilePaid); } catch (e) {}
     renderPlanBadge();
     enforceAccess();
     renderServices();
@@ -30013,6 +30072,7 @@
     }
   }
   window.renderServices = renderServices;
+  window.__stPlan = function () { return { paid: !!profilePaid, loaded: (profilePaid !== null || profileCreated != null) }; };
 
 
   function fetchProfile() {
@@ -30027,6 +30087,8 @@
         profilePortal = r.data.portal_url || null;
       }
       renderPlan();
+      // Cloud journal sync is Premium-only; trigger it only once the plan is known.
+      if (profilePaid) { reconcile(); } else { accStatus(tt('localOnly')); }
     });
   }
 
@@ -30035,6 +30097,7 @@
 
   function debouncePush() {
     if (!currentUser) return;
+    if (!profilePaid) { accStatus(tt('localOnly')); return; } // trial: local only, no cloud journal
     clearTimeout(pushTimer);
     accStatus(tt('syncing'));
     pushTimer = setTimeout(cloudPush, 1500);
@@ -30050,6 +30113,7 @@
 
   function cloudPush() {
     if (!currentUser) return;
+    if (!profilePaid) { accStatus(tt('localOnly')); return; } // trial: local only, no cloud journal
     var d = ST.getData();
     // A deliberate restore (Rollback history) must win unconditionally.
     if (forcing) { doCloudUpsert(d); return; }
@@ -30097,6 +30161,7 @@
 
   function reconcile() {
     if (!currentUser) return;
+    if (!profilePaid) { accStatus(tt('localOnly')); return; } // trial: local only, no cloud journal
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
     accStatus(tt('syncing'));
@@ -30140,7 +30205,7 @@
     try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch (e) {}
     paintAccount();
     if (recoveryMode) { showReset(); return; }
-    if (currentUser) { hideGate(); accStatus(''); reconcile(); fetchProfile(); maybeShowWelcome(); }
+    if (currentUser) { hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); }
     else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; hidePaywall(); renderPlanBadge(); showGate(); }
   });
 
@@ -30155,11 +30220,24 @@
     try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch (e) {}
     paintAccount();
     if (recoveryMode) { showReset(); return; }
-    if (currentUser) { hideGate(); reconcile(); fetchProfile(); }
+    if (currentUser) { hideGate(); fetchProfile(); }
     else { hidePaywall(); showGate(); }
   });
 
   setTimeout(function () { try { if (tradeCount(ST.getData()) > 0) takeSnapshot('load'); } catch (e) {} }, 4000);
+
+  // Returning to the tab (e.g. back from the Premium checkout window) re-checks the plan so an
+  // upgrade — or a lapse — takes effect without a manual refresh or a full reload. Throttled.
+  var _lastProfRefresh = 0;
+  function refreshProfileSoon() {
+    if (!currentUser) return;
+    var now = Date.now();
+    if (now - _lastProfRefresh < 4000) return;
+    _lastProfRefresh = now;
+    fetchProfile();
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshProfileSoon(); });
+  window.addEventListener('focus', refreshProfileSoon);
 
   window.addEventListener('focus', function () { if (currentUser) fetchProfile(); });
 
@@ -31075,12 +31153,12 @@
     </div>
     <div class="plans reveal">
       <div class="plan">
-        <div class="pname" data-i18n="pr.free_name">Free</div>
+        <div class="pname" data-i18n="pr.free_name">14-day trial</div>
         <div class="price"><span class="pamt" data-i18n="pr.free_amt">£0</span><span class="per" data-i18n="pr.free_per">no card needed</span></div>
         <p class="pdesc" data-i18n="pr.free_desc">Plan a bias, log your trades and review the session on the device you're on — stored right in your browser.</p>
         <ul class="plist">
           <li data-i18n="pr.fa1">All five tabs — bias, review, series, stats, calendar</li>
-          <li data-i18n="pr.fa2">Works offline, installs like an app</li>
+          <li data-i18n="pr.fa2">Local sync, installs like an app</li>
           <li data-i18n="pr.fa3">No card needed</li>
           <li data-i18n="pr.fa4">One trading account</li>
           <li data-i18n="pr.fa5">Bloomberg live TV</li>
@@ -31094,7 +31172,7 @@
         <div class="price"><span class="pamt" id="prem-amt">£12</span><span class="per" id="prem-per">/ month</span><span class="pbill" id="prem-bill" style="margin-top:0;">billed annually · £144/yr</span></div>
         <p class="pdesc" data-i18n="pr.prem_desc">Full access to the journal, stats, calendar and cloud sync across your devices.</p>
         <ul class="plist">
-          <li data-i18n="pr.pa1">Everything in Free</li>
+          <li data-i18n="pr.pa1">Everything in the trial</li>
           <li data-i18n="pr.pa2">Cloud sync across all your devices</li>
           <li data-i18n="pr.pa3">Full statistics, calendar and history</li>
           <li data-i18n="pr.pa5">MT5 auto-sync trades</li>
@@ -31186,12 +31264,12 @@
     'pr.eyebrow':'Precios',
     'pr.h2':'Gratis para empezar. <em>Desde £12 al mes</em> por todo.',
     'pr.lede':'Instálala y usa el diario hoy mismo. Pasa a Premium cuando el hábito de revisar empiece a pagarse solo.',
-    'pr.free_name':'Gratis',
+    'pr.free_name':'Prueba de 14 d\u00edas',
     'pr.free_amt':'£0',
     'pr.free_per':'sin tarjeta',
     'pr.free_desc':'Define un sesgo, registra tus operaciones y revisa la sesión en el dispositivo que tengas — guardado en tu propio navegador.',
     'pr.fa1':'Las cinco pestañas — sesgo, revisión, serie, estadísticas, calendario',
-    'pr.fa2':'Funciona sin conexión, se instala como una app',
+    'pr.fa2':'Sincronización local, se instala como una app',
     'pr.fa3':'Sin tarjeta necesaria',
     'pr.fa4':'Una cuenta de trading',
     'pr.fa5':'Bloomberg TV en directo',
@@ -31205,7 +31283,7 @@
     'pr.prem_amt':'£12',
     'pr.prem_per':'/ mes',
     'pr.prem_desc':'Acceso completo al diario, las estadísticas, el calendario y sincronización en la nube en todos tus dispositivos.',
-    'pr.pa1':'Todo lo de Gratis',
+    'pr.pa1':'Todo lo de la prueba',
     'pr.pa2':'Sincronización en la nube en todos tus dispositivos',
     'pr.pa3':'Estadísticas, calendario e historial completos',
     'pr.pa5':'Autosincronizaci\u00f3n de operaciones MT5',
