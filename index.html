@@ -25873,13 +25873,21 @@
   function __renderTickerWidgetNow() {
     const host = document.getElementById('ticker-widget-host');
     if (!host) return;
-    host.innerHTML = '';
     const bar = document.getElementById('ticker-bar');
     const syms = tickerSymbolList();
     // No categories enabled → nothing to show. Hide the whole bar (no empty strip, no
     // fallback symbols) and stop.
-    if (!syms.length) { if (bar) bar.hidden = true; return; }
+    if (!syms.length) { if (bar) bar.hidden = true; host.innerHTML = ''; host._tickerSig = ''; return; }
     if (bar) bar.hidden = false;
+    // Idempotency guard: if the live iframe already shows this exact symbol set + locale,
+    // do NOT tear it down and rebuild. Re-rendering an unchanged ticker is what made it
+    // reload (flicker) on every setLanguage / tab switch that re-ran this. Only rebuild
+    // when the signature actually changes (category toggled, language switched, etc.).
+    const locale = (window.__lang === 'es' ? 'es' : 'en');
+    const sig = JSON.stringify(syms) + '|' + locale;
+    if (host._tickerSig === sig && host.querySelector('iframe')) return;
+    host._tickerSig = sig;
+    host.innerHTML = '';
     const container = document.createElement('div');
     container.className = 'tradingview-widget-container';
     const widgetDiv = document.createElement('div');
@@ -25901,7 +25909,7 @@
       isTransparent: false,
       displayMode: 'adaptive',
       colorTheme: 'dark',
-      locale: (window.__lang === 'es' ? 'es' : 'en')
+      locale: locale
     });
     container.appendChild(script);
     host.appendChild(container);
