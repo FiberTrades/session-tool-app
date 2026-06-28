@@ -26292,6 +26292,14 @@
     try { window.__bbdbgLine && window.__bbdbgLine('> renderEconomicCalendarUI'); } catch(e) {}
     const body = document.getElementById('econ-calendar-body');
     if (!body) return;
+    // Idempotency guard: only write innerHTML when the content actually changes.
+    // On a tab switch back to bias the data is cached, so the HTML is identical;
+    // re-writing it changes the document height, which on phone (Bloomberg TV docked
+    // in the header) reloads the TV iframe. Skipping the no-op write fixes that.
+    const __setCalBody = (html) => {
+      if (body.__calSig === html) return false;
+      body.innerHTML = html; body.__calSig = html; return true;
+    };
     // Default: keep the calendar visible. The error branch below is the only place
     // that hides the whole container (graceful hide on fetch failure). All other
     // states show the panel — even 'loading' and 'empty_filtered' — so the user
@@ -26352,23 +26360,24 @@
                       : f.dateRange === 'week'     ? 'econ.loading_week'
                       : f.dateRange === 'nextweek' ? 'econ.loading_nextweek'
                       :                              'econ.loading_today';
-      body.innerHTML = `<div class="econ-calendar-loading">${t(loadingKey)}</div>`;
+      __setCalBody(`<div class="econ-calendar-loading">${t(loadingKey)}</div>`);
       return;
     }
     if (state.kind === 'error') {
       // Calm inline notice + retry button. Panel stays visible so the user knows the
       // calendar feature exists and can recover when the proxy is reachable again.
-      body.innerHTML = `<div class="econ-calendar-error">${t('econ.error')} <button class="econ-calendar-retry" id="econ-retry-btn">${t('econ.retry')}</button></div>`;
-      const btn = document.getElementById('econ-retry-btn');
-      if (btn) btn.addEventListener('click', () => fetchEconomicCalendar({ force: true }));
+      if (__setCalBody(`<div class="econ-calendar-error">${t('econ.error')} <button class="econ-calendar-retry" id="econ-retry-btn">${t('econ.retry')}</button></div>`)) {
+        const btn = document.getElementById('econ-retry-btn');
+        if (btn) btn.addEventListener('click', () => fetchEconomicCalendar({ force: true }));
+      }
       return;
     }
     if (state.kind === 'empty') {
-      body.innerHTML = `<div class="econ-calendar-empty">${t('econ.empty')}</div>`;
+      __setCalBody(`<div class="econ-calendar-empty">${t('econ.empty')}</div>`);
       return;
     }
     if (state.kind === 'empty_filtered') {
-      body.innerHTML = `<div class="econ-calendar-empty">${t('econ.empty_filtered')}</div>`;
+      __setCalBody(`<div class="econ-calendar-empty">${t('econ.empty_filtered')}</div>`);
       return;
     }
     // ok — render events. In week view, group by day with date headers.
@@ -26430,8 +26439,7 @@
         <span class="econ-col-header"><span class="ech-full">${escape(colForecast)}</span><span class="ech-short">${escape(colForecastShort)}</span></span>
         <span class="econ-col-header"><span class="ech-full">${escape(colPrevious)}</span><span class="ech-short">${escape(colPreviousShort)}</span></span>
       </div>`;
-      body.innerHTML = topHeader + indexedEvents.map(eventRow).join('');
-      wireEventRowClicks(body);
+      if (__setCalBody(topHeader + indexedEvents.map(eventRow).join(''))) wireEventRowClicks(body);
       return;
     }
     // Week view — group by day with headers (past days dim). Column labels
@@ -26439,7 +26447,7 @@
     // line of the date, not on a separate row above. Subsequent day groups
     // get a plain date-only header.
     const groups = groupEventsByDay(indexedEvents);
-    body.innerHTML = groups.map(([dayKey, events], idx) => {
+    const __calHtml = groups.map(([dayKey, events], idx) => {
       const d = new Date(dayKey + 'T12:00:00');
       const isPast = dayKey < todayKey;
       const isToday = dayKey === todayKey;
@@ -26460,7 +26468,7 @@
         ${events.map(eventRow).join('')}
       </div>`;
     }).join('');
-    wireEventRowClicks(body);
+    if (__setCalBody(__calHtml)) wireEventRowClicks(body);
   }
 
   // Wire click delegation on the calendar body. Clicking a row toggles an inline
