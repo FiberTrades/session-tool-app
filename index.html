@@ -10052,10 +10052,12 @@
       }
       if (_vt && _vt.finished) { _vt.finished.then(_runCount, _runCount); } else { _runCount(); }
       // Render the economic calendar panel when the bias tab becomes visible.
-      // Cheap on repeat visits — fetchEconomicCalendar() uses a per-day localStorage
-      // cache, so only the first call of each day hits the network.
+      // fromNav: true => render from cache only, NO background network refresh. The
+      // background actuals/upgrade fetches patch the calendar DOM ~400ms later, and on
+      // phone (Bloomberg TV docked in the header) that relayout reloads the TV iframe.
+      // Tab switches now just show the cached calendar; refreshes happen on load/timer.
       if (target === 'bias' && typeof fetchEconomicCalendar === 'function') {
-        try { fetchEconomicCalendar(); } catch (e) { /* never block tab switch */ }
+        try { fetchEconomicCalendar({ fromNav: true }); } catch (e) { /* never block tab switch */ }
       }
       // Instant (not smooth) scroll-to-top: a smooth animation repeatedly resizes the mobile
       // visual viewport as the URL bar expands, and that resize reloads embedded iframes
@@ -26605,6 +26607,10 @@
     // The user always sees data on screen unless the cache is genuinely empty.
     if (!opts.force && hasCache) {
       renderCalendarFromCache();
+      // On a plain tab switch, stop here: showing the cached calendar is enough, and
+      // skipping the background network refresh avoids the delayed DOM patch that
+      // reloads the docked Bloomberg TV on phone. Refreshes still run on load/timer.
+      if (opts.fromNav) return;
       // Background refresh when the cache is from a different day, lacks URL
       // fields, or lacks forecast/previous fields (cache predates F/P parsing).
       // Silent — failure leaves the existing cache intact, no error UI.
