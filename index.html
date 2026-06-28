@@ -29445,14 +29445,10 @@
   }
   function stOpenCheckout(interval) { if (!currentUser) return; window.open(stBuyUrl(interval), '_blank'); }
   function openUpgradeChoice() {
-    if (window.stPremiumStep && typeof window.stPremiumStep.show === 'function') {
-      window.stPremiumStep.show({
-        title: premL('Go Premium', 'Hazte Premium'),
-        body: premL('Pick a plan to unlock everything \u2014 cloud sync, full stats, multi-account and more.', 'Elige un plan para desbloquear todo \u2014 sincronizaci\u00f3n en la nube, estad\u00edsticas completas, multicuenta y m\u00e1s.')
-      });
-    } else { stOpenCheckout('yearly'); }
+    if (window.stPlanChooser && typeof window.stPlanChooser.open === 'function') window.stPlanChooser.open();
+    else stOpenCheckout('yearly');
   }
-  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null;
+  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null, profileSubId = null;
   var TRIAL_DAYS = 14;
 
   var STR = {
@@ -29697,6 +29693,136 @@
     if (opts && opts.body) bod.textContent = opts.body;
     premStep.classList.add('show');
   } };
+
+  /* ====== PLAN CHOOSER (3 tiers; checkout for new buyers, prorated change-plan for existing subs) ====== */
+  var BUNDLE_URL_M = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/b0c24b16-9534-4d23-9187-e1e568e68481';
+  var BUNDLE_URL_Y = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/48633f37-a3f6-4141-9a4f-9f802d9661d7';
+  var MENTOR_URL   = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/20d8beaf-d4c6-41c9-b2af-ae1b9622d88a';
+  var ST_PLANS = {
+    premium:    { rank: 1, monthly: { url: CHECKOUT_URL,  vid: '1813597' }, yearly: { url: CHECKOUT_URL_YEARLY, vid: '1846024' } },
+    bundle:     { rank: 2, monthly: { url: BUNDLE_URL_M,  vid: '1847235' }, yearly: { url: BUNDLE_URL_Y,        vid: '1847271' } },
+    mentorship: { rank: 3, monthly: { url: MENTOR_URL,    vid: '1847283' } }
+  };
+  function stCheckoutParams() {
+    return '?checkout[email]=' + encodeURIComponent((currentUser && currentUser.email) || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser ? currentUser.id : '');
+  }
+  function stCurrentRank() {
+    if (!profilePaid) return 0;
+    var pl = ST_PLANS[profilePlan]; return pl ? pl.rank : 1;
+  }
+
+  var planChooser = document.createElement('div');
+  planChooser.className = 'modal-bg';
+  planChooser.id = 'st-plan-chooser-bg';
+  planChooser.innerHTML =
+    '<div class="modal st-welcome" style="max-width:540px;">' +
+      '<div class="st-welcome-mark">Session Tool &middot; Plans</div>' +
+      '<h2 class="st-welcome-title" id="st-pc-title"></h2>' +
+      '<div id="st-pc-tiers" style="display:flex;flex-direction:column;gap:12px;text-align:left;margin-top:14px;"></div>' +
+      '<div id="st-pc-status" style="margin-top:12px;font-size:13px;min-height:18px;"></div>' +
+      '<button type="button" class="stc-forgot" id="st-pc-close" style="margin-top:12px;"></button>' +
+    '</div>';
+  document.body.appendChild(planChooser);
+  function closeChooser() { planChooser.classList.remove('show'); }
+  planChooser.querySelector('#st-pc-close').addEventListener('click', closeChooser);
+  planChooser.addEventListener('click', function (e) { if (e.target === planChooser) closeChooser(); });
+
+  function pcStatus(msg, isErr) {
+    var el = planChooser.querySelector('#st-pc-status');
+    el.textContent = msg || '';
+    el.style.color = isErr ? '#c0392b' : 'var(--muted, #888)';
+  }
+
+  function stChangePlan(variantId) {
+    if (!currentUser || !variantId) return;
+    pcStatus(premL('Updating your plan\u2026', 'Actualizando tu plan\u2026'), false);
+    sb.functions.invoke('change-plan', { body: { variant_id: variantId } }).then(function (res) {
+      var d = res && res.data;
+      if (d && d.ok) {
+        pcStatus(premL('Done! Your plan is updating\u2026', '\u00a1Listo! Tu plan se est\u00e1 actualizando\u2026'), false);
+        setTimeout(function () { fetchProfile(); }, 2500);
+        setTimeout(function () { closeChooser(); }, 1900);
+      } else if (d && d.error === 'no_active_subscription') {
+        pcStatus(premL('No active subscription found to change.', 'No se encontr\u00f3 suscripci\u00f3n activa que cambiar.'), true);
+      } else {
+        pcStatus(premL('Could not change plan. Please try again or contact support.', 'No se pudo cambiar el plan. Int\u00e9ntalo de nuevo o contacta con soporte.'), true);
+      }
+    }).catch(function () {
+      pcStatus(premL('Something went wrong. Please try again.', 'Algo sali\u00f3 mal. Int\u00e9ntalo de nuevo.'), true);
+    });
+  }
+
+  function stUpgradeTo(tier, interval) {
+    var t = ST_PLANS[tier]; if (!t) return;
+    var pp = t[interval] || t.monthly; if (!pp) return;
+    if (profileSubId) {
+      stChangePlan(pp.vid);                                  // existing subscriber -> prorated change
+    } else {
+      window.open(pp.url + stCheckoutParams(), '_blank');    // new buyer -> checkout (carries user_id)
+      closeChooser();
+    }
+  }
+
+  function renderChooser() {
+    var rank = stCurrentRank();
+    var L = premL;
+    function card(name, blurb, priceLine, btns) {
+      return '<div style="border:1px solid var(--border-2);border-radius:10px;padding:14px 16px;">' +
+               '<div style="font-weight:600;font-size:15px;">' + name + '</div>' +
+               '<div style="font-size:13px;color:var(--muted,#888);margin:2px 0 8px;">' + blurb + '</div>' +
+               '<div style="font-size:13px;margin-bottom:10px;">' + priceLine + '</div>' + btns +
+             '</div>';
+    }
+    function actBtn(label, tier, interval, primary) {
+      return '<button type="button" class="st-welcome-btn st-pc-act" data-tier="' + tier + '" data-interval="' + interval + '"' +
+             (primary ? '' : ' style="margin-top:8px;"') + '>' + label + '</button>';
+    }
+    var html = '';
+    if (rank < 1) {
+      html += card(L('Session Tool app', 'App Session Tool'), L('The journal + MT5 auto-sync.', 'El diario + auto-sync de MT5.'),
+        L('\u00a315/mo or \u00a3144/yr', '15\u00a0\u00a3/mes o 144\u00a0\u00a3/a\u00f1o'),
+        actBtn(L('Yearly \u2014 \u00a3144/yr', 'Anual \u2014 144\u00a0\u00a3/a\u00f1o'), 'premium', 'yearly', true) +
+        actBtn(L('Monthly \u2014 \u00a315/mo', 'Mensual \u2014 15\u00a0\u00a3/mes'), 'premium', 'monthly', false));
+    } else if (rank === 1) {
+      html += card(L('Session Tool app', 'App Session Tool'), L('Your current plan.', 'Tu plan actual.'),
+        L('Current plan', 'Plan actual'),
+        actBtn(L('Switch to annual (save 20%)', 'Cambiar a anual (ahorra 20%)'), 'premium', 'yearly', true));
+    }
+    if (rank < 2) {
+      html += card(L('Bundle', 'Pack'), L('App + FIBER TRADES Discord + EA.', 'App + Discord FIBER TRADES + EA.'),
+        L('\u00a335/mo or \u00a3336/yr', '35\u00a0\u00a3/mes o 336\u00a0\u00a3/a\u00f1o'),
+        actBtn(L('Yearly \u2014 \u00a3336/yr', 'Anual \u2014 336\u00a0\u00a3/a\u00f1o'), 'bundle', 'yearly', true) +
+        actBtn(L('Monthly \u2014 \u00a335/mo', 'Mensual \u2014 35\u00a0\u00a3/mes'), 'bundle', 'monthly', false));
+    } else if (rank === 2) {
+      html += card(L('Bundle', 'Pack'), L('Your current plan.', 'Tu plan actual.'),
+        L('Current plan', 'Plan actual'),
+        actBtn(L('Switch to annual (save 20%)', 'Cambiar a anual (ahorra 20%)'), 'bundle', 'yearly', true));
+    }
+    if (rank < 3) {
+      html += card(L('1:1 Mentoring', 'Mentor\u00eda 1:1'), L('Everything, plus direct mentoring.', 'Todo, m\u00e1s mentor\u00eda directa.'),
+        L('\u00a3299/mo', '299\u00a0\u00a3/mes'),
+        actBtn(L('Get Mentoring \u2014 \u00a3299/mo', 'Obtener Mentor\u00eda \u2014 299\u00a0\u00a3/mes'), 'mentorship', 'monthly', true));
+    } else {
+      html += card(L('1:1 Mentoring', 'Mentor\u00eda 1:1'), L('Your current plan.', 'Tu plan actual.'),
+        L('Current plan', 'Plan actual'), '');
+    }
+    planChooser.querySelector('#st-pc-tiers').innerHTML = html;
+  }
+
+  window.stPlanChooser = { open: function () {
+    if (stCurrentRank() >= 3) return; // already top tier - nothing to upgrade to
+    planChooser.querySelector('#st-pc-title').textContent = premL('Choose your plan', 'Elige tu plan');
+    planChooser.querySelector('#st-pc-close').textContent = premL('Maybe later', 'Quiz\u00e1s m\u00e1s tarde');
+    pcStatus('', false);
+    renderChooser();
+    planChooser.classList.add('show');
+  } };
+  planChooser.querySelector('#st-pc-tiers').addEventListener('click', function (e) {
+    var b = e.target && e.target.closest ? e.target.closest('.st-pc-act') : null;
+    if (!b) return;
+    stUpgradeTo(b.getAttribute('data-tier'), b.getAttribute('data-interval'));
+  });
+
 
   pwel('stc-pw-signout').addEventListener('click', function () { sb.auth.signOut(); });
 
@@ -30091,6 +30217,7 @@
         profilePeriodEnd = r.data.current_period_end || null;
         profileCreated = r.data.created_at || null;
         profilePortal = r.data.portal_url || null;
+        profileSubId = r.data.ls_subscription_id || null;
       }
       renderPlan();
       // Cloud journal sync is Premium-only; trigger it only once the plan is known.
@@ -30212,7 +30339,7 @@
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); }
-    else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; hidePaywall(); renderPlanBadge(); showGate(); }
+    else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; profileSubId = null; hidePaywall(); renderPlanBadge(); showGate(); }
   });
 
   if (window.location.hash.indexOf('type=recovery') !== -1) { recoveryMode = true; }
