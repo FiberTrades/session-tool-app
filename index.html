@@ -4313,6 +4313,8 @@
         <p class="settings-hint" data-i18n="services.discord_desc">Join the community — EUR/USD London-session traders.</p>
         <!-- EDIT: Discord invite link -->
         <a href="https://discord.gg/SEgTzh6VC" target="_blank" rel="noopener noreferrer" class="settings-btn svc-link" id="svc-discord-cta">Join the Discord</a>
+        <button type="button" class="settings-btn svc-link" id="svc-discord-connect" style="display:none;margin-top:8px;" data-i18n="services.discord_connect">Connect Discord</button>
+        <div id="svc-discord-status" style="display:none;margin-top:8px;font-size:11px;color:var(--text-dim);font-family:'AppNum', 'DM Mono',monospace;"></div>
       </div>
 
       <!-- 4. 1-to-1 membership enquiry form -->
@@ -4879,6 +4881,11 @@
       'services.discord_title': 'FIBER TRADES Discord',
       'services.discord_desc': 'Join the community — EUR/USD London-session traders.',
       'services.discord_cta': 'Join the Discord',
+      'services.discord_connect': 'Connect Discord',
+      'services.discord_connecting': 'Connecting\u2026',
+      'services.discord_connected': 'Connected as @{name}',
+      'services.discord_failed': 'Connection failed \u2014 try again',
+      'services.discord_open': 'Open Discord',
       'services.free_badge': 'Free',
       'services.paid_badge': 'Paid service',
       'services.oneone_title': '1-to-1 Membership',
@@ -6109,6 +6116,11 @@
       'services.discord_title': 'Discord de FIBER TRADES',
       'services.discord_desc': 'Únete a la comunidad — traders de EUR/USD en la sesión de Londres.',
       'services.discord_cta': 'Unirse al Discord',
+      'services.discord_connect': 'Conectar Discord',
+      'services.discord_connecting': 'Conectando\u2026',
+      'services.discord_connected': 'Conectado como @{name}',
+      'services.discord_failed': 'Error de conexi\u00f3n \u2014 int\u00e9ntalo de nuevo',
+      'services.discord_open': 'Abrir Discord',
       'services.free_badge': 'Gratis',
       'services.paid_badge': 'Servicio de pago',
       'services.oneone_title': 'Membresía 1 a 1',
@@ -29548,7 +29560,7 @@
     if (window.stPlanChooser && typeof window.stPlanChooser.open === 'function') window.stPlanChooser.open();
     else stOpenCheckout('yearly');
   }
-  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null, profileSubId = null, profileSyncToken = null;
+  var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null, profileSubId = null, profileSyncToken = null, profileDiscordId = null, profileDiscordName = null;
   var TRIAL_DAYS = 14;
 
   var STR = {
@@ -30358,13 +30370,16 @@
     var hasCommunity = !!profilePaid && (profilePlan === 'bundle' || profilePlan === 'mentorship' || profilePlan === 'comp');
     var dBadge = document.getElementById('svc-discord-badge');
     var dCta = document.getElementById('svc-discord-cta');
+    var dConnect = document.getElementById('svc-discord-connect');
+    var dStatus = document.getElementById('svc-discord-status');
+    var dLinked = !!profileDiscordId;
     if (dBadge) {
       dBadge.textContent = hasCommunity ? svcT('services.active_badge') : svcT('services.paid_badge');
       dBadge.className = 'svc-badge ' + (hasCommunity ? 'good' : 'gold');
     }
     if (dCta) {
       if (hasCommunity) {
-        dCta.textContent = svcT('services.discord_cta');
+        dCta.textContent = dLinked ? svcT('services.discord_open') : svcT('services.discord_cta');
         dCta.setAttribute('href', 'https://discord.gg/SEgTzh6VC');
         dCta.setAttribute('target', '_blank');
         dCta.onclick = null;
@@ -30373,6 +30388,26 @@
         dCta.setAttribute('href', '#');
         dCta.removeAttribute('target');
         dCta.onclick = function (e) { if (e && e.preventDefault) e.preventDefault(); openUpgradeChoice(); };
+      }
+    }
+    // Connect-Discord button: only for users WITH community access who haven't linked yet.
+    if (dConnect) {
+      if (hasCommunity && !dLinked) {
+        dConnect.style.display = '';
+        dConnect.textContent = svcT('services.discord_connect');
+        dConnect.onclick = function () { startDiscordConnect(); };
+      } else {
+        dConnect.style.display = 'none';
+        dConnect.onclick = null;
+      }
+    }
+    // Linked-status line ('Connected as @name'). Left untouched while a connect is in flight.
+    if (dStatus && !dStatus._busy) {
+      if (hasCommunity && dLinked) {
+        dStatus.style.display = '';
+        dStatus.textContent = svcT('services.discord_connected').replace('{name}', profileDiscordName || 'Discord');
+      } else {
+        dStatus.style.display = 'none';
       }
     }
     // 1-to-1 mentoring — Mentorship tier only (and comped accounts).
@@ -30420,6 +30455,46 @@
   }
 
 
+  // ===== Connect Discord (OAuth identify -> save discord_id on the profile) =====
+  var DISCORD_CLIENT_ID = '1520882997048639670';
+  var DISCORD_REDIRECT_URI = 'https://sessiontool.app/';
+  function startDiscordConnect() {
+    try {
+      var state = (Math.random().toString(36).slice(2) + Date.now().toString(36));
+      try { sessionStorage.setItem('st_discord_state', state); } catch (e) {}
+      var url = 'https://discord.com/oauth2/authorize'
+        + '?client_id=' + encodeURIComponent(DISCORD_CLIENT_ID)
+        + '&redirect_uri=' + encodeURIComponent(DISCORD_REDIRECT_URI)
+        + '&response_type=code&scope=identify'
+        + '&state=' + encodeURIComponent(state);
+      window.location.href = url;
+    } catch (e) {}
+  }
+  var _discordReturnHandled = false;
+  function handleDiscordReturn() {
+    if (_discordReturnHandled) return;
+    var code = null, state = null;
+    try { var qs = new URLSearchParams(window.location.search); code = qs.get('code'); state = qs.get('state'); } catch (e) { return; }
+    if (!code) return;
+    var expect = null; try { expect = sessionStorage.getItem('st_discord_state'); } catch (e) {}
+    if (!expect || state !== expect) return; // not our flow / CSRF mismatch -> ignore
+    _discordReturnHandled = true;
+    try { sessionStorage.removeItem('st_discord_state'); } catch (e) {}
+    // Strip the code from the URL so a refresh can't reuse it.
+    try { window.history.replaceState({}, document.title, DISCORD_REDIRECT_URI); } catch (e) {}
+    if (!currentUser) return;
+    var st = document.getElementById('svc-discord-status');
+    if (st) { st._busy = true; st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_connecting') : 'Connecting...'; }
+    sb.functions.invoke('discord-link', { body: { code: code, redirect_uri: DISCORD_REDIRECT_URI } }).then(function (res) {
+      var ok = res && !res.error && res.data && res.data.ok;
+      if (st) st._busy = false;
+      if (!ok) { if (st) { st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_failed') : 'Connection failed'; } return; }
+      fetchProfile(); // re-pull profile so discord_id/username are known, then the card re-renders
+    }).catch(function () {
+      if (st) { st._busy = false; st.style.display = ''; st.textContent = (typeof t === 'function') ? t('services.discord_failed') : 'Connection failed'; }
+    });
+  }
+
   function fetchProfile() {
     if (!currentUser) { renderPlanBadge(); return; }
     sb.from('profiles').select('*').eq('id', currentUser.id).maybeSingle().then(function (r) {
@@ -30432,6 +30507,8 @@
         profilePortal = r.data.portal_url || null;
         profileSubId = r.data.ls_subscription_id || null;
         profileSyncToken = r.data.sync_token || null;
+        profileDiscordId = r.data.discord_id || null;
+        profileDiscordName = r.data.discord_username || null;
         try { window.STCloud.syncToken = profileSyncToken; } catch (e) {}
         try { if (window.__stPaintMt5Token) window.__stPaintMt5Token(); } catch (e) {}
       }
@@ -30442,6 +30519,7 @@
       // If they arrived via a landing-page plan button, surface that plan now (returning
       // sign-ins; brand-new users get it after induction instead).
       try { stMaybeConsumePlanIntent(); } catch (e) {}
+      try { handleDiscordReturn(); } catch (e) {}
     });
   }
 
@@ -30588,7 +30666,7 @@
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); }
-    else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; profileSubId = null; hidePaywall(); renderPlanBadge(); showGate(); }
+    else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; profileSubId = null; profileDiscordId = null; profileDiscordName = null; hidePaywall(); renderPlanBadge(); showGate(); }
   });
 
   if (window.location.hash.indexOf('type=recovery') !== -1) { recoveryMode = true; }
