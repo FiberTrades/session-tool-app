@@ -1086,6 +1086,7 @@
   .tag-leaderboard.tl-scroll5 .tag-leaderboard-row.header { height: 34px; position: sticky; top: 0; z-index: 2; }
   .tag-leaderboard.tl-scroll5::-webkit-scrollbar { width: 8px; }
   .tag-leaderboard.tl-scroll5::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
+  #meta-session .meta-session-line { display: block; line-height: 1.4; }
   @media (max-width: 700px) {
     .missed-trade-table .potr-trade-row { grid-template-columns: 96px 72px minmax(90px, 1fr); }
   }
@@ -7411,62 +7412,45 @@
   // Uses date-keyed flags so the alert only fires once even with reloads / multi-tab.
   function checkSessionBoundaryAlerts(now, hhmm) {
     if (!data || !data.settings) return;
-    // Session machinery is weekday-only — FX is closed Sat/Sun, so no session
-    // open/close voice and no rule reminders fire on weekends. The live banner
-    // still refreshes below (isSessionLive() returns false on weekends, so it
-    // shows the non-live state and the pill stays hidden).
+    // Weekday-only: FX is closed Sat/Sun, so no session voice or rule reminders fire then.
     const _dow = now.getDay(); // 0=Sun, 6=Sat
     if (_dow !== 0 && _dow !== 6) {
-      const ws = data.settings.windowStart || '08:00';
-      const we = data.settings.windowEnd   || '10:00';
       const todayKey = now.toISOString().slice(0, 10);
-      // Edge-detect the boundary CROSSING since the previous tick rather than requiring the
-      // clock to land exactly on the start/end minute. A background tab throttles this 1s
-      // timer to ~once a minute, so an exact "HH:MM === start" check frequently misses the
-      // minute entirely (alert never fires) or fires a minute late. Firing as soon as we
-      // observe the boundary has been passed makes it fire on the first tick at/after it and
-      // never skip. Reset on a new day so an overnight/weekend gap can't look like a crossing.
-      const [wsH, wsM] = ws.split(':').map(Number);
-      const [weH, weM] = we.split(':').map(Number);
-      const startMins = wsH * 60 + wsM;
-      const endMins   = weH * 60 + weM;
-      const nowMins   = now.getHours() * 60 + now.getMinutes();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
       if (_lastTickDay !== todayKey) { _lastTickMins = null; _lastTickDay = todayKey; }
       const prevMins = _lastTickMins;
-      _lastTickMins  = nowMins;
+      _lastTickMins = nowMins;
       const crossed = (b) => prevMins !== null && prevMins < b && nowMins >= b;
-      if (crossed(startMins) && data._lastSessionStartAlert !== todayKey) {
-        data._lastSessionStartAlert = todayKey;
-        saveData();
-        fireSessionAlert('start');
+      // Per-session open/close voice. Each session fires once per day; edge-detected on the
+      // boundary crossing so a throttled background tab can't miss the exact minute.
+      let af = data._sessionAlertFired;
+      if (!af || af.date !== todayKey) { af = { date: todayKey, start: [], end: [] }; data._sessionAlertFired = af; }
+      const ss = getSessions();
+      for (let i = 0; i < ss.length; i++) {
+        const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
+        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); fireSessionAlert('start'); }
+        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); fireSessionAlert('end'); }
       }
-      if (crossed(endMins) && data._lastSessionEndAlert !== todayKey) {
-        data._lastSessionEndAlert = todayKey;
-        saveData();
-        fireSessionAlert('end');
+      // Rule-of-the-week reminder, cadence-aware. Fires during ANY session window.
+      let ruleFire = false;
+      for (let i = 0; i < ss.length; i++) {
+        if (shouldFireRuleReminderNow(ss[i].start, ss[i].end, hhmm, todayKey, i)) { ruleFire = true; break; }
       }
-      // Rule-of-the-week reminder, cadence-aware. Fires at the configured frequency
-      // during the session window. Silent if no rule set, or cadence is 'off'.
-      if (shouldFireRuleReminderNow(ws, we, hhmm, todayKey)) {
+      if (ruleFire) {
         data._ruleReminderFlags = data._ruleReminderFlags || {};
         data._ruleReminderFlags[todayKey + ' ' + hhmm] = true;
         saveData();
-        // If this fire coincides with the session-start moment, give the spoken session-open
-        // line a few seconds to finish first, so the rule reminder's chime doesn't talk over
-        // the voice.
-        if (hhmm === ws) {
+        // If this coincides with a session-start minute, let the spoken open line finish first.
+        if (ss.some(x => x.start === hhmm)) {
           setTimeout(() => fireMidSessionRuleReminder(), 5000);
         } else {
           fireMidSessionRuleReminder();
         }
-        // Garbage-collect old flags (keep only today's)
         Object.keys(data._ruleReminderFlags).forEach(k => {
           if (!k.startsWith(todayKey)) delete data._ruleReminderFlags[k];
         });
       }
     }
-    // Refresh the session-live coaching banner on every tick — cheap, and keeps
-    // the banner in sync as we cross the start/end boundaries.
     updateSessionLiveBanner();
   }
 
@@ -7477,11 +7461,11 @@
   //                        (e.g. 8:00-10:00 with '15' → 8:00, 8:15, 8:30, ... 9:45; 10:00 is skipped
   //                        because that's when the session-close chime fires)
   // Each (date,hhmm) pair fires at most once via the _ruleReminderFlags map.
-  function shouldFireRuleReminderNow(windowStart, windowEnd, hhmm, todayKey) {
+  function shouldFireRuleReminderNow(windowStart, windowEnd, hhmm, todayKey, idx) {
     if (!data || !data.settings) return false;
-    // Finished the session early today? Stop the rule-of-the-week reminders for the rest
+    // Finished THIS session early today? Stop its rule-of-the-week reminders for the rest
     // of the window — no more nudges until the next session.
-    if (data._sessionEndedEarly === new Date().toISOString().slice(0, 10)) return false;
+    if (typeof idx === 'number' && endedSessionsToday().indexOf(idx) !== -1) return false;
     const cadence = data.settings.ruleReminderCadence || 'start';
     if (cadence === 'off') return false;
     const flags = data._ruleReminderFlags || {};
@@ -7514,26 +7498,66 @@
     showUndoToast(msg, null, 15000, t('rule.midsession_dismiss'), 'rule');
   }
 
-  // Is the current local time within the configured session window?
-  function isSessionLive() {
-    if (!data || !data.settings) return false;
-    // Manually finished early today → treat the session as over for the rest of the day
-    // (hides the live pill/banner and un-collapses the Review tab). Date-keyed, so it clears
-    // itself tomorrow without any extra reset.
-    if (data._sessionEndedEarly === new Date().toISOString().slice(0, 10)) return false;
-    // Weekend = FX closed → the session is never "live" on Sat/Sun, regardless
-    // of the clock. This single check also hides the pill, drops the live banner,
-    // and reverts the tab/header label to "Session Review" on weekends.
-    const dow = new Date().getDay(); // 0=Sun, 6=Sat
-    if (dow === 0 || dow === 6) return false;
-    const ws = data.settings.windowStart || '08:00';
-    const we = data.settings.windowEnd   || '10:00';
-    const [wsH, wsM] = ws.split(':').map(Number);
-    const [weH, weM] = we.split(':').map(Number);
+  // --- Multi-session helpers -------------------------------------------------
+  // The user can configure up to 2 sessions (e.g. London + New York). All of the
+  // live machinery (voice, banner, pill, tab label, rule reminders) keys off these.
+  function getSessions() {
+    if (data && data.settings && Array.isArray(data.settings.sessions) && data.settings.sessions.length) {
+      return data.settings.sessions.filter(x => x && x.start && x.end);
+    }
+    if (data && data.settings) return [{ name: 'London', start: data.settings.windowStart || '08:00', end: data.settings.windowEnd || '10:00' }];
+    return [];
+  }
+  function _todayKey() { return new Date().toISOString().slice(0, 10); }
+  function _mins(hhmm) { const a = String(hhmm || '').split(':'); return (parseInt(a[0], 10) || 0) * 60 + (parseInt(a[1], 10) || 0); }
+  // Indices of sessions the user finished early today. Back-compat: an old bare-date
+  // string means session 0 was ended.
+  function endedSessionsToday() {
+    const ee = data && data._sessionEndedEarly;
+    if (!ee) return [];
+    if (typeof ee === 'string') return ee === _todayKey() ? [0] : [];
+    if (ee.date === _todayKey() && Array.isArray(ee.idxs)) return ee.idxs.slice();
+    return [];
+  }
+  function markSessionEndedEarly(idx) {
+    const tk = _todayKey();
+    let ee = data._sessionEndedEarly;
+    if (!ee || typeof ee === 'string' || ee.date !== tk) ee = { date: tk, idxs: [] };
+    if (idx >= 0 && ee.idxs.indexOf(idx) === -1) ee.idxs.push(idx);
+    data._sessionEndedEarly = ee;
+  }
+  function dismissedSessionsToday() {
+    const dd = data && data._sessionLiveDismissed;
+    if (!dd) return [];
+    if (typeof dd === 'string') return dd === _todayKey() ? [0] : [];
+    if (dd.date === _todayKey() && Array.isArray(dd.idxs)) return dd.idxs.slice();
+    return [];
+  }
+  function markSessionDismissed(idx) {
+    const tk = _todayKey();
+    let dd = data._sessionLiveDismissed;
+    if (!dd || typeof dd === 'string' || dd.date !== tk) dd = { date: tk, idxs: [] };
+    if (idx >= 0 && dd.idxs.indexOf(idx) === -1) dd.idxs.push(idx);
+    data._sessionLiveDismissed = dd;
+  }
+  // Index of the session window currently open (weekday, within window, not finished
+  // early today), or -1 if none. This is the single source of truth for "is it live".
+  function liveSessionIndex() {
+    if (!data || !data.settings) return -1;
+    const dow = new Date().getDay();
+    if (dow === 0 || dow === 6) return -1;
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
-    return nowMins >= (wsH * 60 + wsM) && nowMins < (weH * 60 + weM);
+    const ended = endedSessionsToday();
+    const ss = getSessions();
+    for (let i = 0; i < ss.length; i++) {
+      if (ended.indexOf(i) !== -1) continue;
+      if (nowMins >= _mins(ss[i].start) && nowMins < _mins(ss[i].end)) return i;
+    }
+    return -1;
   }
+  // Live if the current local time is inside ANY configured session window.
+  function isSessionLive() { return liveSessionIndex() >= 0; }
 
   // The Review tab + the big header title read "Session Live" while the session window is
   // open, and revert to "Session Review" otherwise. Centralised so the tab strip, the header
@@ -7548,15 +7572,16 @@
   // tab. We reuse the per-day dismiss flag so it stays hidden afterwards (and editing the
   // session window re-arms it, just like a manual dismiss).
   let _bannerShown = false;
+  let _bannerShownIdx = -1;
   let _bannerAutoHideTimer = null;
   function _clearBannerAutoHide() {
     if (_bannerAutoHideTimer) { clearTimeout(_bannerAutoHideTimer); _bannerAutoHideTimer = null; }
   }
-  function _scheduleBannerAutoHide(todayKey) {
+  function _scheduleBannerAutoHide(idx) {
     _clearBannerAutoHide();
     _bannerAutoHideTimer = setTimeout(() => {
       try {
-        if (data) { data._sessionLiveDismissed = todayKey; if (typeof saveData === 'function') saveData(); }
+        if (data) { markSessionDismissed(idx); if (typeof saveData === 'function') saveData(); }
         const b = document.getElementById('session-live-banner');
         if (b) b.classList.add('hidden');
       } catch (e) {}
@@ -7586,11 +7611,13 @@
       const headerMode = document.getElementById('header-mode');
       if (headerMode) headerMode.textContent = reviewModeLabel();
     }
-    // The full advisory banner sits on the Review tab and respects the per-day dismiss.
+    // The full advisory banner sits on the Review tab and respects a per-session dismiss,
+    // so dismissing one session's banner doesn't hide the next session's.
     if (!banner) return;
-    if (!live) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; return; }
+    const liveIdx = liveSessionIndex();
+    if (liveIdx < 0) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; _bannerShownIdx = -1; return; }
     const todayKey = new Date().toISOString().slice(0, 10);
-    if (data && data._sessionLiveDismissed === todayKey) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; return; }
+    if (dismissedSessionsToday().indexOf(liveIdx) !== -1) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; return; }
     banner.classList.remove('hidden');
     // Trial members don't have MT5 auto-sync — show the advert variant instead of promising
     // it. Premium/unknown keep the default auto-sync copy. Updating data-i18n-html keeps the
@@ -7605,9 +7632,10 @@
     // Start the 15s auto-hide only once the banner is actually visible on the Session Live
     // tab (so it doesn't silently time out while the user is on another tab).
     const onReviewTab = activePage && activePage.dataset.page === 'review';
-    if (onReviewTab && !_bannerShown) {
+    if (onReviewTab && (!_bannerShown || _bannerShownIdx !== liveIdx)) {
       _bannerShown = true;
-      _scheduleBannerAutoHide(todayKey);
+      _bannerShownIdx = liveIdx;
+      _scheduleBannerAutoHide(liveIdx);
     }
   }
 
@@ -7949,30 +7977,23 @@
   // legacy behaviour (bias questions allowed) is preserved.
   function isAboutToOrInSession() {
     try {
-      const parsed = parseSessionTimes(data.settings.sessionName);
-      if (!parsed) return true; // unparseable → don't gate, preserve legacy behaviour
+      const ss = (typeof getSessions === 'function') ? getSessions() : [];
+      if (!ss.length) return true; // no sessions → don't gate, preserve legacy behaviour
       const now = new Date();
       const nowMins = now.getHours() * 60 + now.getMinutes();
-      const [sh, sm] = parsed.start.split(':').map(Number);
-      const [eh, em] = parsed.end.split(':').map(Number);
-      const startMins = sh * 60 + sm;
-      const endMins   = eh * 60 + em;
       const GRACE_MIN = 30; // 30 minutes pre-session counts as "about to enter"
-      const startWithGrace = (startMins - GRACE_MIN + 24 * 60) % (24 * 60);
-      // Overnight session detection: end < start means the window wraps midnight (e.g. 23:00-04:00).
-      const isOvernight = endMins < startMins;
-      if (isOvernight) {
-        // In-window if now >= startWithGrace OR now < endMins. Effectively: outside the gap
-        // between session end and session start.
-        return nowMins >= startWithGrace || nowMins < endMins;
+      for (let i = 0; i < ss.length; i++) {
+        const startMins = _mins(ss[i].start);
+        const endMins   = _mins(ss[i].end);
+        const startWithGrace = (startMins - GRACE_MIN + 24 * 60) % (24 * 60);
+        const isOvernight = endMins < startMins; // wraps midnight (e.g. 23:00-04:00)
+        let inWin;
+        if (isOvernight) inWin = (nowMins >= startWithGrace || nowMins < endMins);
+        else if (startWithGrace > startMins) inWin = (nowMins >= startWithGrace || nowMins < endMins);
+        else inWin = (nowMins >= startWithGrace && nowMins < endMins);
+        if (inWin) return true;
       }
-      // Normal same-day session: in-window if now is between startWithGrace and endMins.
-      // (startWithGrace may have wrapped backwards across midnight — handle that.)
-      if (startWithGrace > startMins) {
-        // Grace pushed us into the previous day — covers e.g. 00:15 grace for 00:45 start.
-        return nowMins >= startWithGrace || nowMins < endMins;
-      }
-      return nowMins >= startWithGrace && nowMins < endMins;
+      return false;
     } catch (e) {
       return true; // any error → don't gate
     }
@@ -8003,12 +8024,10 @@
       // already over, use 'now' so we don't bother flagging completed events.
       let lowerBound = null;
       try {
-        const parsed = parseSessionTimes(data.settings.sessionName);
-        if (parsed) {
-          const [sh, sm] = parsed.start.split(':').map(Number);
-          lowerBound = new Date();
-          lowerBound.setHours(sh, sm, 0, 0);
-        }
+        const ss = (typeof getSessions === 'function') ? getSessions() : [];
+        let minStart = null;
+        for (let i = 0; i < ss.length; i++) { const sm = _mins(ss[i].start); if (minStart === null || sm < minStart) minStart = sm; }
+        if (minStart !== null) { lowerBound = new Date(); lowerBound.setHours(Math.floor(minStart / 60), minStart % 60, 0, 0); }
       } catch (e) { /* no session set; lowerBound stays null = whole day */ }
       const now = new Date();
       // Find today's events from the cache
@@ -8074,9 +8093,34 @@
     }
     return label;
   }
+  // Compact time like "8AM" / "13:30" for the header session label(s).
+  function fmtSessionTimeShort(hhmm) {
+    if (!hhmm) return '';
+    const a = String(hhmm).split(':'); const h = parseInt(a[0], 10); const m = parseInt(a[1], 10);
+    if (isNaN(h) || isNaN(m)) return hhmm;
+    if (m !== 0) return h + ':' + String(m).padStart(2, '0');
+    const ampm = h < 12 ? 'AM' : 'PM'; const h12 = (h % 12 === 0) ? 12 : (h % 12);
+    return h12 + ampm;
+  }
+  function sessionMetaLabel(sess) {
+    if (!sess) return '';
+    const nm = localizeSessionName(sess.name || '');
+    const times = (sess.start && sess.end) ? (fmtSessionTimeShort(sess.start) + '-' + fmtSessionTimeShort(sess.end)) : '';
+    return times ? (nm + ' ' + times) : nm;
+  }
+  // Header Session cell: one line per configured session (stacked when there are 2).
+  function renderSessionMeta() {
+    const el = document.getElementById('meta-session');
+    if (!el) return;
+    const ss = (typeof getSessions === 'function') ? getSessions() : [];
+    if (!ss.length) { el.textContent = localizeSessionName((data.settings && data.settings.sessionName) || 'London'); return; }
+    if (ss.length === 1) { el.textContent = sessionMetaLabel(ss[0]); return; }
+    const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    el.innerHTML = ss.map(x => '<span class="meta-session-line">' + esc(sessionMetaLabel(x)) + '</span>').join('');
+  }
   function renderMetaHeader() {
     document.getElementById('meta-pair').textContent = data.settings.pair || 'EUR/USD';
-    document.getElementById('meta-session').textContent = localizeSessionName(data.settings.sessionName || 'London');
+    renderSessionMeta();
   }
   renderMetaHeader();
 
@@ -19992,8 +20036,7 @@
     document.getElementById('session-modal-bg').classList.remove('show');
     // Refresh anything that depends on session timing
     try {
-      const metaEl = document.getElementById('meta-session');
-      if (metaEl) metaEl.textContent = localizeSessionName(v);
+      if (typeof renderSessionMeta === 'function') renderSessionMeta();
       if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
     } catch (e) { /* non-fatal */ }
     // Chain into the risk-rules onboarding — fourth and final step.
@@ -20358,8 +20401,7 @@
     modal.classList.remove('show');
     // Refresh dependents.
     try {
-      const metaEl = document.getElementById('meta-session');
-      if (metaEl) metaEl.textContent = localizeSessionName(sessV);
+      if (typeof renderSessionMeta === 'function') renderSessionMeta();
       if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
       if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
       if (typeof renderStats === 'function') renderStats();
@@ -28130,8 +28172,7 @@
     const dismiss = document.getElementById('session-live-dismiss');
     if (dismiss) {
       dismiss.addEventListener('click', () => {
-        const todayKey = new Date().toISOString().slice(0, 10);
-        data._sessionLiveDismissed = todayKey;
+        markSessionDismissed(liveSessionIndex());
         saveData();
         updateSessionLiveBanner();
       });
@@ -28169,7 +28210,7 @@
         if (armed) {
           if (armTimer) clearTimeout(armTimer);
           reset();
-          data._sessionEndedEarly = new Date().toISOString().slice(0, 10);
+          markSessionEndedEarly(liveSessionIndex());
           saveData();
           if (finishWrap) finishWrap.classList.remove('expanded');
           if (finishToggle) finishToggle.setAttribute('aria-expanded', 'false');
@@ -28683,12 +28724,12 @@
       // flag would otherwise suppress them after the first trigger — and break testing).
       data._lastSessionStartAlert = null;
       data._lastSessionEndAlert = null;
+      data._sessionAlertFired = null;
       // Same for the live banner: clear today's dismiss so the re-timed session shows it again.
       data._sessionLiveDismissed = null;
       saveData();
       try {
-        const metaEl = document.getElementById('meta-session');
-        if (metaEl) metaEl.textContent = localizeSessionName(combined);
+        if (typeof renderSessionMeta === 'function') renderSessionMeta();
         if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
         if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner();
       } catch (err) {}
@@ -28725,7 +28766,7 @@
       data.settings.sessions = Array.isArray(data.settings.sessions) ? data.settings.sessions : [];
       if (!data.settings.sessions[0]) data.settings.sessions[0] = { name: 'London', start: data.settings.windowStart || '08:00', end: data.settings.windowEnd || '10:00' };
       data.settings.sessions[1] = { name: name, start: s, end: e };
-      data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null;
+      data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
       try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (err) {}
     }
@@ -28741,7 +28782,7 @@
       if (s2block) s2block.style.display = 'none';
       if (addSessBtn) addSessBtn.style.display = '';
       if (Array.isArray(data.settings.sessions)) data.settings.sessions = data.settings.sessions.slice(0, 1);
-      data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null;
+      data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
       try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (err) {}
     });
