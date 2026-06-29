@@ -1252,6 +1252,10 @@
     }
   }
   .trade-row-headers { margin-bottom: 4px; }
+  /* Import-completion cue: empty required cells (TYPE, POT R/P) on MT5-imported rows pulse a
+     blue border until filled — replaces the old "click the cells" instruction text. */
+  @keyframes tlFlashBlue { 0%, 100% { box-shadow: inset 0 0 0 1px transparent; } 50% { box-shadow: inset 0 0 0 1.6px var(--accent, #60a5fa); } }
+  .trade-input.tl-needs-fill, .trade-select.tl-needs-fill { animation: tlFlashBlue 1.1s ease-in-out infinite; border-radius: 4px; }
   .trade-header-cell { background: var(--bg-elev); padding: 8px 8px; font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text); text-align: center; white-space: nowrap; }
   .trade-cell { background: var(--bg); padding: 8px 8px; display: flex; align-items: center; }
   /* Trade-row "#" cell — no longer clickable. Active-trade indication now lives in the tab strip
@@ -3045,7 +3049,6 @@
         <div id="mt5-completion-banner" style="display:none;position:relative;margin-bottom:14px;padding:12px 16px;padding-right:34px;background:var(--bg-elev);border-left:3px solid var(--info);font-family:'Fraunces',serif;font-size:12px;color:var(--text-mid);line-height:1.5;">
           <button type="button" id="mt5-completion-banner-close" aria-label="Close" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-dim);font-size:18px;line-height:1;cursor:pointer;padding:2px 6px;font-family:inherit;">&times;</button>
           <strong style="color:var(--text);font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;font-style:normal;display:block;margin-bottom:4px;" data-i18n="mt5_banner.label">Finish logging your imports</strong>
-          <span id="mt5-completion-banner-body" data-i18n-html="mt5_banner.body">Your imported trades still need <strong>POT R / PIPS</strong> for wins — add it now if you know the result, or later once price has finished extending in your favour. <strong>TYPE</strong> must be logged for any result. Click the cells in each row to fill them in.</span>
         </div>
         <div id="trade-rows"></div>
         <button class="add-trade" id="add-trade" data-i18n="btn.add_trade">+ Add Trade</button>
@@ -7792,7 +7795,6 @@
     _stDayKey = todayDateStr();
     _stBucketKey = _stHourBucket();
     _stRefreshDay();
-    try { if (typeof maybeShowPotrReminder === 'function') setTimeout(maybeShowPotrReminder, 500); } catch (e) {}
     _stLastTick = Date.now(); _stHiddenAt = Date.now();
   }
   // Per-second tick: live clock + rollover, plus a watchdog. If far more than 1s elapsed
@@ -10872,6 +10874,21 @@
       // for Lose/BE rather than auto-filling pips from SL. Cleaner: blank fields signal
       // "nothing meaningful to capture here, the result tells you everything".)
       row.querySelector('.type-select').value = t.type || '';
+      // Import-completion cue: flash the empty required cells on MT5-imported rows until filled
+      // (TYPE for any result; POT R/P for wins; BE POT R/P for BEs). Stops once the import
+      // banner is dismissed. This replaces the banner's old "click the cells" instruction.
+      try {
+        const _isNum = v => typeof v === 'number' && !isNaN(v);
+        const _flashOn = (t.importedFrom === 'mt5') && !_mt5BannerDismissed;
+        if (_flashOn) {
+          const _typeSel = row.querySelector('.type-select');
+          if (!t.type && _typeSel) _typeSel.classList.add('tl-needs-fill');
+          const _needPotr = (t.result === 'Win') ? (!_isNum(t.potentialR) && !_isNum(t.potentialPips))
+                          : (t.result === 'BE')  ? (!_isNum(t.bePotentialR) && !_isNum(t.bePotentialPips))
+                          : false;
+          if (_needPotr) { if (potrInput) potrInput.classList.add('tl-needs-fill'); if (potpipsInput) potpipsInput.classList.add('tl-needs-fill'); }
+        }
+      } catch (e) {}
       row.querySelector('.side-select').value = t.side || '';
       { const _ei = row.querySelector('.entry-input'); _ei.value = t.entryTime || ''; if (_ei.nextElementSibling) _ei.nextElementSibling.textContent = t.entryTime || ''; }
       { const _xi = row.querySelector('.exit-input'); _xi.value = t.exitTime || ''; if (_xi.nextElementSibling) _xi.nextElementSibling.textContent = t.exitTime || ''; }
@@ -10963,6 +10980,7 @@
       // Pot R / Pot pips input handlers: writes to potentialR/potentialPips
       // on Win rows, bePotentialR/bePotentialPips on BE rows.
       potrInput.addEventListener('input', e => {
+        e.target.classList.remove('tl-needs-fill');
         const v = e.target.value.trim();
         const tr = data.review.trades[idx];
         const num = (v && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
@@ -10971,6 +10989,7 @@
         lightUpdate();
       });
       potpipsInput.addEventListener('input', e => {
+        e.target.classList.remove('tl-needs-fill');
         const v = e.target.value.trim();
         const tr = data.review.trades[idx];
         const num = (v && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
@@ -10978,7 +10997,7 @@
         else                     tr.potentialPips    = num;
         lightUpdate();
       });
-      row.querySelector('.type-select').addEventListener('change', e => { data.review.trades[idx].type = e.target.value; renderReviewPreview(); saveData(); });
+      row.querySelector('.type-select').addEventListener('change', e => { e.target.classList.remove('tl-needs-fill'); data.review.trades[idx].type = e.target.value; renderReviewPreview(); saveData(); });
       row.querySelector('.side-select').addEventListener('change', e => { data.review.trades[idx].side = e.target.value; renderReviewPreview(); saveData(); });
       row.querySelector('.entry-input').addEventListener('input', e => { data.review.trades[idx].entryTime = e.target.value; if (e.target.nextElementSibling) e.target.nextElementSibling.textContent = e.target.value || ''; saveData(); });
       row.querySelector('.exit-input').addEventListener('input', e => { data.review.trades[idx].exitTime = e.target.value; if (e.target.nextElementSibling) e.target.nextElementSibling.textContent = e.target.value || ''; saveData(); });
@@ -11112,6 +11131,25 @@
   // left blank. On next open we remind the user to fill it, writing straight back to the trade
   // wherever it lives (current session, current series, or completed history).
   let _pendingPotrList = [];
+  let _potrThenAction = null;   // optional action to run after the POT R reminder is closed
+  // True if the CURRENT session has any Win/BE trade missing its POT R-P (or BE POT R-P).
+  function sessionPotrMissing() {
+    const isNum = v => typeof v === 'number' && !isNaN(v);
+    const trades = (data.review && Array.isArray(data.review.trades)) ? data.review.trades : [];
+    return trades.some(t => {
+      if (!t) return false;
+      if (t.result === 'Win') return !isNum(t.potentialR) && !isNum(t.potentialPips);
+      if (t.result === 'BE')  return !isNum(t.bePotentialR) && !isNum(t.bePotentialPips);
+      return false;
+    });
+  }
+  // Show the POT R reminder, then run `cb` once it's resolved (saved or dismissed). If there's
+  // nothing pending to show, just run `cb` immediately so the original action isn't blocked.
+  function remindPotrThen(cb) {
+    _potrThenAction = (typeof cb === 'function') ? cb : null;
+    const shown = openPendingPotrModal();
+    if (!shown) { const c = _potrThenAction; _potrThenAction = null; if (c) c(); }
+  }
   function collectPendingPotential() {
     const out = []; const map = {};
     const now = new Date();
@@ -11170,7 +11208,7 @@
     document.getElementById('pending-potr-modal-bg').classList.add('show');
     return true;
   }
-  function closePendingPotrModal() { try { data._potrReminderDismissedDay = todayDateStr(); saveData(); } catch (e) {} const bg = document.getElementById('pending-potr-modal-bg'); if (bg) bg.classList.remove('show'); }
+  function closePendingPotrModal() { try { data._potrReminderDismissedDay = todayDateStr(); saveData(); } catch (e) {} const bg = document.getElementById('pending-potr-modal-bg'); if (bg) bg.classList.remove('show'); const _c = _potrThenAction; _potrThenAction = null; if (_c) setTimeout(_c, 0); }
   function savePendingPotr() {
     document.querySelectorAll('#pending-potr-list .pp-row').forEach(row => {
       const i = parseInt(row.getAttribute('data-potr-row'), 10);
@@ -11200,7 +11238,7 @@
   { const _pl = document.getElementById('pending-potr-later'); if (_pl) _pl.addEventListener('click', closePendingPotrModal); }
   // MT5 completion banner: user-dismissible via the X. Reset to shown on a fresh import.
   let _mt5BannerDismissed = false;
-  { const _mbx = document.getElementById('mt5-completion-banner-close'); if (_mbx) _mbx.addEventListener('click', function () { _mt5BannerDismissed = true; const _mb = document.getElementById('mt5-completion-banner'); if (_mb) _mb.style.display = 'none'; }); }
+  { const _mbx = document.getElementById('mt5-completion-banner-close'); if (_mbx) _mbx.addEventListener('click', function () { _mt5BannerDismissed = true; const _mb = document.getElementById('mt5-completion-banner'); if (_mb) _mb.style.display = 'none'; try { renderTrades(); } catch (e) {} }); }
   // Refresh the MT5 completion-reminder banner. Fires when any MT5-imported trade is
   // missing manual fields (potR/potPips, type, concept tags). Disappears once everything's logged.
   function refreshTradeCompletionBanner() {
@@ -12092,20 +12130,27 @@
   // the user's explicit Save button is where the backup modal still fires for new users.
   document.getElementById('review-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
-    jumpToDiscord('review');
-    const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
-    await copyToClipboard(msg);
-    const hasTrades = (data.review.trades || []).length > 0;
-    if (hasTrades) await performReviewSave({ skipBackupModal: true });
+    const _run = async () => {
+      jumpToDiscord('review');
+      const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
+      await copyToClipboard(msg);
+      const hasTrades = (data.review.trades || []).length > 0;
+      if (hasTrades) await performReviewSave({ skipBackupModal: true });
+    };
+    if (sessionPotrMissing()) { remindPotrThen(() => { _run(); }); return; }
+    await _run();
   });
   // Save to Series of 10: full flow including the backup modal for users who haven't set a preference.
   // Because "Copy for Discord" already saves the session's trades to the series, this button can
   // create duplicates if used afterwards — so we show a confirmation warning first.
   document.getElementById('review-save-stats').addEventListener('click', async () => {
-    const bg = document.getElementById('save-series-warn-modal-bg');
-    if (bg) { bg.classList.add('show'); return; }
-    await performReviewSave(); // fallback if the modal markup is missing
-    setTimeout(maybeOfferWeeklyReview, 400);
+    const _proceed = () => {
+      const bg = document.getElementById('save-series-warn-modal-bg');
+      if (bg) { bg.classList.add('show'); return; }
+      performReviewSave().then(() => setTimeout(maybeOfferWeeklyReview, 400)); // fallback if modal markup missing
+    };
+    if (sessionPotrMissing()) { remindPotrThen(_proceed); return; }
+    _proceed();
   });
   (function wireSaveSeriesWarn() {
     const bg = document.getElementById('save-series-warn-modal-bg');
@@ -12192,19 +12237,15 @@
     const keepBtn = document.getElementById('new-session-keep');
     if (confirmBtn) confirmBtn.addEventListener('click', () => {
       close(); _pendingNewDaySession = false; startNewSession();
-      setTimeout(maybeShowPotrReminder, 350);
     });
     // Keep previous = non-destructive. Roll the date over so we don't ask again today.
     const keep = () => {
       close(); _pendingNewDaySession = false;
       data.lastSessionDate = today.toDateString();
       saveData();
-      setTimeout(maybeShowPotrReminder, 350);
     };
     if (keepBtn) keepBtn.addEventListener('click', keep);
     // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
-    // On load, once the daily new-session prompt is out of the way, surface the potential reminder.
-    setTimeout(maybeShowPotrReminder, 1400);
   })();
   // Unresolved-trade guard: 'Mark result first' just dismisses (the Win/Lose/BE chooser is already
   // showing for that trade); 'Log anyway' adds the queued new trade despite the open one.
