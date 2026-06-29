@@ -1382,12 +1382,14 @@
   .session-live-dismiss:hover { color: var(--text); }
   .session-live-body { font-family: 'Fraunces', serif; font-size: 16px; line-height: 1.75; color: var(--text-mid); margin: 0; }
   .session-live-body strong { color: var(--text); font-weight: normal; }
-  /* During the live session window, hide the post-session reflection sections
-     (02 Execution Quality → 09 Reflection) so the Review tab stays focused on the
-     Trade Log while trading. Toggled by updateSessionLiveBanner() adding
+  /* During the live session window, hide the Trade Log AND the post-session
+     reflection sections (02 Execution Quality → 09 Reflection) so the Session Live
+     view stays minimal while trading (trades auto-sync and the Trade Log reappears
+     the moment the window ends). Toggled by updateSessionLiveBanner() adding
      .session-live-collapsed to #page-review; it's removed the moment the window
      ends, so the sections reappear automatically for the post-session review.
      Higher specificity than .hidden/.review-locked, so it wins while live. */
+  #page-review.session-live-collapsed #section-trades,
   #page-review.session-live-collapsed #section-execution,
   #page-review.session-live-collapsed #section-focus,
   #page-review.session-live-collapsed #section-close,
@@ -2982,7 +2984,7 @@
     <div class="bias-greeting" data-greeting-mirror data-greeting-context="review"></div>
     <div class="session-live-banner hidden" id="session-live-banner">
       <button type="button" class="session-live-dismiss" id="session-live-dismiss" data-i18n-aria-label="banner.dismiss_aria" aria-label="Dismiss until tomorrow" data-i18n-title="tip.dismiss_today">×</button>
-      <p class="session-live-body" data-i18n-html="banner.body_html">Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. If you take a trade, just tap the <strong>LONG or SHORT</strong> buttons to log them in the moment; the full write-up comes once the session is over.</p>
+      <p class="session-live-body" data-i18n-html="banner.body_html">Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. Trade your plan; your trades <strong>sync in automatically</strong> from MT5, and the full write-up comes once the session's over.</p>
     </div>
     <div class="saved-bias hidden" id="saved-bias-card">
       <div class="saved-bias-label-row">
@@ -4754,7 +4756,8 @@
       'banner.finish_toggle_aria': 'Show finish session option',
       'banner.as_it_happens': 'As it happens',
       'banner.dismiss_aria': 'Dismiss until tomorrow',
-      'banner.body_html': "Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. If you take a trade, just tap the <strong>LONG or SHORT</strong> buttons to log them in the moment; the full write-up comes once the session is over.",
+      'banner.body_html': "Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. Trade your plan; your trades <strong>sync in automatically</strong> from MT5, and the full write-up comes once the session's over.",
+      'banner.body_html_trial': "Stay on this tab while your session's live — your <strong>morning bias sits just below</strong> to keep you anchored. Trade your plan; the full write-up comes once the session's over. <strong>Go Premium to auto-sync your trades straight from MT5</strong> — no manual logging.",
       // ----- Trade Log column headers -----
       'tlog.col.num': '#',
       'tlog.multi_hint': "Click <strong>#</strong> to review each trade individually. The highlighted # is the trade you're currently reviewing.",
@@ -5995,7 +5998,8 @@
       'banner.finish_toggle_aria': 'Mostrar opción de finalizar sesión',
       'banner.as_it_happens': 'En el momento',
       'banner.dismiss_aria': 'Descartar hasta mañana',
-      'banner.body_html': "Quédate en esta pestaña mientras tu sesión esté en vivo — tu <strong>sesgo de la mañana queda justo abajo</strong> para servirte de ancla. Si entras en una operación, solo toca los botones <strong>LARGO o CORTO</strong> para registrarla en el momento; el análisis completo llega cuando termine la sesión.",
+      'banner.body_html': "Quédate en esta pestaña mientras tu sesión esté en vivo — tu <strong>sesgo de la mañana queda justo abajo</strong> para servirte de ancla. Opera tu plan; tus operaciones <strong>se sincronizan automáticamente</strong> desde MT5, y el análisis completo llega cuando termine la sesión.",
+      'banner.body_html_trial': "Quédate en esta pestaña mientras tu sesión esté en vivo — tu <strong>sesgo de la mañana queda justo abajo</strong> para servirte de ancla. Opera tu plan; el análisis completo llega cuando termine la sesión. <strong>Hazte Premium para sincronizar tus operaciones automáticamente desde MT5</strong> — sin registro manual.",
       // ----- Trade Log column headers -----
       'tlog.col.num': 'Nº',
       'tlog.col.result': 'Resultado',
@@ -7498,6 +7502,16 @@
     const todayKey = new Date().toISOString().slice(0, 10);
     if (data && data._sessionLiveDismissed === todayKey) { banner.classList.add('hidden'); _clearBannerAutoHide(); _bannerShown = false; return; }
     banner.classList.remove('hidden');
+    // Trial members don't have MT5 auto-sync — show the advert variant instead of promising
+    // it. Premium/unknown keep the default auto-sync copy. Updating data-i18n-html keeps the
+    // right variant across language switches.
+    var __slBody = banner.querySelector('.session-live-body');
+    if (__slBody) {
+      var __slp = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
+      var __slKey = (__slp && __slp.loaded && !__slp.paid) ? 'banner.body_html_trial' : 'banner.body_html';
+      __slBody.setAttribute('data-i18n-html', __slKey);
+      try { var __slTxt = (typeof t === 'function') ? t(__slKey) : null; if (__slTxt) __slBody.innerHTML = __slTxt; } catch (e) {}
+    }
     // Start the 15s auto-hide only once the banner is actually visible on the Session Live
     // tab (so it doesn't silently time out while the user is on another tab).
     const onReviewTab = activePage && activePage.dataset.page === 'review';
@@ -20238,21 +20252,21 @@
       'ninguna operación registrada todavía. El formulario espera.',
       'una página en blanco. A veces la mejor.',
       'nada que revisar hoy aún. La paciencia es una posición.',
-      'sin clics aún. Eso también es una decisión.',
+      'nada aún. No operar también es una decisión.',
       '¿esperando el setup? Bien.',
       'un log vacío no es un fracaso. Es el filtro haciendo su trabajo.',
-      'nada registrado aún. Cuando claves, regístralo en el momento — la observación fresca le gana a la reconstrucción.',
-      'sin entradas aún. Cuando claves, anótalo antes de que el gráfico siga.',
+      'nada registrado aún. Opera tu plan — el diario se rellena solo después.',
+      'sin entradas aún. Toma solo lo que encaje en el plan; el análisis llega luego.',
       'sigues plano por hoy. Mantente afilado, mantente selectivo.',
       'sesión aún por empezar. La pantalla te avisará cuando toque.',
       'lápiz hoy, tinta luego. O nada — las dos opciones valen.',
       'nada aún. El repaso honesto se escribe solo cuando lo hay.',
       'sin operaciones que registrar. A veces esa es la victoria.',
-      'tabla limpia. Cuando claves, el formulario está listo.',
+      'tabla limpia. El repaso te espera cuando termine la sesión.',
       'nada en el libro aún. Un log limpio es más fácil de mantener limpio.',
-      '¿observando aún? Bien. El repaso viene después de clicar.',
-      'sin operaciones registradas. Cuando ocurra una, regístrala antes de leer la siguiente vela.',
-      'sesión en curso, o sesión saltada — las dos están bien. Regístralo aquí cuando importe.',
+      '¿observando aún? Bien. El repaso viene después de la sesión.',
+      'sin operaciones aún. Mantente selectivo — lo que evitas pesa tanto como lo que tomas.',
+      'sesión en curso, o sesión saltada — las dos están bien. El repaso está aquí cuando importe.',
       'nada aún. No fuerces una entrada solo para darle algo que registrar a este formulario.',
     ],
     REVIEW_IN_PROGRESS: [
@@ -20265,17 +20279,6 @@
       'operación en vivo. Marca el pensamiento mientras es el pensamiento, no la excusa.',
       'dentro del mercado. Regístrala ahora; la retrospectiva es peor testigo.',
       'operación corriendo. Apunta el setup y el plan antes de que las velas lo reescriban.',
-    ],
-    REVIEW_IN_PROGRESS_LIVE: [
-      'hay una operación en vivo. Gestiónala según tu plan — el diario espera a que cierre la sesión.',
-      'posición abierta. Mira el gráfico, no las notas — registra el resto cuando termine la ventana.',
-      'estás dentro. Confía en el plan que fijaste; el análisis llega después de la sesión.',
-      'operación activa. Regístrala y deja que se desarrolle — la reflexión se abre al cerrar la ventana.',
-      'posición viva. Mantén tus niveles; habrá tiempo de anotar cuando termine.',
-      'una está corriendo. Atento a la salida — la revisión completa se desbloquea tras la ventana.',
-      'en el mercado. Mantenlo limpio, registra el cierre cuando llegue — las notas pueden esperar.',
-      'operación en marcha. Disciplina ahora, diario después — el formulario se abre tras la sesión.',
-      'ya entraste. Déjala respirar según el plan; captura los detalles cuando acabe la sesión.',
     ],
     REVIEW_IDLE_WEEKEND: [
       'fin de semana. El mercado cerrado, el trabajo de verdad no. Planifica, repasa, afila.',
@@ -21002,21 +21005,21 @@
     'no trades logged yet. The form is here when you are.',
     'a blank page. The best kind, sometimes.',
     'nothing to review yet today. Patience is a position.',
-    'no clicks yet. That counts as a decision too.',
+    'nothing yet. Not trading is a decision too.',
     'still waiting on a setup? Fair.',
     'an empty log is not a failure. It\'s a filter doing its job.',
-    'nothing booked yet. Log the moment you click — fresh observation beats reconstruction.',
-    'no entries yet. When you do click, write it down before the chart moves on.',
+    'nothing booked yet. Trade your plan — the journal fills itself in afterwards.',
+    'no entries yet. Take only what fits the plan; the write-up comes later.',
     'still flat for the day. Stay sharp, stay selective.',
     'no session yet. The screen will let you know when it\'s time.',
     'paper today, ink later. Or not at all — both are fine.',
     'nothing yet. The honest review writes itself once there is.',
     'no trades to log. That\'s sometimes the win.',
-    'blank slate. When you click, this form is ready.',
+    'blank slate. The review\'s ready for you when the session\'s done.',
     'nothing in the book yet. A clean log is easier to keep clean.',
-    'still observing? Good. Reviewing comes after clicking.',
-    'no trades logged. When one happens, log it before reading the next bar.',
-    'session in progress, or session skipped — either is fine. Log here when it matters.',
+    'still observing? Good. The review comes after the session.',
+    'no trades yet. Stay selective — what you skip matters as much as what you take.',
+    'session in progress, or session skipped — either is fine. The review\'s here when it matters.',
     'nothing yet. Don\'t force a fill just to give this form something to do.',
   ];
   // Review-IN-PROGRESS pool — used on Session Review when a trade has been added for today's
@@ -21033,21 +21036,6 @@
     'live trade. Mark the thinking while it\'s the thinking, not the excuse.',
     'in the market. Log it now; hindsight makes a worse witness.',
     'trade\'s running. Jot the setup and the plan before the candles rewrite it.',
-  ];
-  // LIVE variant of REVIEW_IN_PROGRESS — used while the session window is OPEN, when the
-  // journaling/reflection fields are collapsed and the user can only quick-log. These lines
-  // never tell the user to "write the setup" now (there's nowhere to) — they focus on
-  // managing the live trade and defer the journaling to after the session closes.
-  const REVIEW_IN_PROGRESS_LIVE = [
-    'a trade\'s live. Manage it by your plan — the journaling waits till the session\'s done.',
-    'position\'s running. Eyes on the chart, not the notes — log the rest when the window closes.',
-    'you\'re in. Trust the plan you set; the write-up comes after the session.',
-    'trade\'s on. Tap it in, let it play out — reflection opens once the window ends.',
-    'live position. Stay with your levels; there\'s time to journal when it\'s over.',
-    'one\'s working. Mind the exit — the full review unlocks after the window.',
-    'in the market. Keep it clean, log the close when it comes — notes can wait.',
-    'trade running. Discipline now, journaling later — the form opens after the session.',
-    'you\'ve clicked in. Let it breathe by the plan; capture the details once the session wraps.',
   ];
   // Weekend variant of REVIEW_IDLE — used Saturday/Sunday when the market is closed and
   // "no clicks yet" type framing is nonsense. Voice: planning, reflecting, recharging — not
@@ -26895,112 +26883,10 @@
   // Tail for the Review page when a trade is placed for today but not yet resolved.
   function pickReviewInProgressTail() {
     const seed = todayKey() + ':rev-inprog:' + _greetingNonce;
-    // While the session is live the journaling fields are collapsed, so use the live pool
-    // (manage the trade, journal later). After the window closes, the reflection fields are
-    // back, so the regular pool ("write the setup now") applies.
-    const live = (typeof isSessionLive === 'function') && isSessionLive();
-    // In a live trade with a known direction: coach patience + the move to break-even.
-    // Long/Buy -> break-even once price takes the previous high; Short/Sell -> previous low.
-    if (live) {
-      const _side = (typeof inProgressSide === 'function') ? inProgressSide() : '';
-      if (_side === 'Long' || _side === 'Short') {
-        const _es = (window.__lang === 'es');
-        const _LONG  = _es ? ["estás largo. Ten paciencia — mueve a punto de equilibrio en cuanto el precio supere el máximo anterior.", "largo y en vivo. Déjala trabajar — en cuanto el precio tome el máximo anterior, mueve tu stop a punto de equilibrio.", "estás en largo. Paciencia ahora; cuando ceda el máximo anterior, protégela en punto de equilibrio.", "posición larga. No la toques pronto — cuando el precio tome el máximo anterior, mueve a punto de equilibrio y déjala correr.", "compraste. Quieto hasta que el precio tome el máximo anterior, luego mueve a punto de equilibrio."] : ["you're long. Be patient — move to break-even as soon as price takes the previous high.", "long and live. Let it work — the moment price takes the previous high, slide your stop to break-even.", "you're in long. Patience now; once the previous high gives way, protect it at break-even.", "long position. Don't touch it early — when price takes the previous high, move to break-even and let it run.", "you bought. Sit tight until price takes the previous high, then trail your stop to break-even."];
-        const _SHORT = _es ? ["estás corto. Ten paciencia — mueve a punto de equilibrio en cuanto el precio rompa el mínimo anterior.", "corto y en vivo. Déjala trabajar — en cuanto el precio tome el mínimo anterior, mueve tu stop a punto de equilibrio.", "estás en corto. Paciencia ahora; cuando ceda el mínimo anterior, protégela en punto de equilibrio.", "posición corta. No la toques pronto — cuando el precio tome el mínimo anterior, mueve a punto de equilibrio y déjala correr.", "vendiste. Quieto hasta que el precio tome el mínimo anterior, luego mueve a punto de equilibrio."] : ["you're short. Be patient — move to break-even as soon as price takes the previous low.", "short and live. Let it work — the moment price takes the previous low, slide your stop to break-even.", "you're in short. Patience now; once the previous low gives way, protect it at break-even.", "short position. Don't touch it early — when price takes the previous low, move to break-even and let it run.", "you sold. Sit tight until price takes the previous low, then trail your stop to break-even."];
-        let _pool = (_side === 'Long') ? _LONG : _SHORT;
-        // Compare the live trade against the logged Session Bias (Bullish / Bearish / Unsure);
-        // when a bias is set, lead with a line commenting on the alignment (still cues break-even).
-        const _htf = (data.bias && data.bias.direction) || '';
-        const _ltf = (data.bias && data.bias.direction) || '';
-        const _hasBias = ['Bullish','Bearish','Unsure'].indexOf(_htf) >= 0 || ['Bullish','Bearish','Unsure'].indexOf(_ltf) >= 0;
-        if (_hasBias) {
-          const _dir = _es ? (_side === 'Long' ? 'largo' : 'corto') : (_side === 'Long' ? 'long' : 'short');
-          const _be  = _es ? (_side === 'Long' ? 'mueve a punto de equilibrio en cuanto el precio supere el máximo anterior.' : 'mueve a punto de equilibrio en cuanto el precio rompa el mínimo anterior.')
-                           : (_side === 'Long' ? 'move to break-even once price takes the previous high.' : 'move to break-even once price takes the previous low.');
-          const _sideW = _es ? (_side === 'Long' ? 'alcista' : 'bajista') : (_side === 'Long' ? 'bullish' : 'bearish');
-          const _oppW  = _es ? (_side === 'Long' ? 'bajista' : 'alcista') : (_side === 'Long' ? 'bearish' : 'bullish');
-          const _sideDir = (_side === 'Long') ? 'Bullish' : 'Bearish';
-          const _rel = function (b) { if (b === 'Bullish' || b === 'Bearish') return (b === _sideDir) ? 'with' : 'vs'; return 'unsure'; };
-          const _h = _rel(_htf), _l = _rel(_ltf);
-          let _align, _bucket;
-          if (_h === 'vs' && _l === 'vs') {
-            _bucket = 'against_both';
-            _align = _es ? [
-              `tanto tu HTF como tu LTF son ${_oppW} y aun así te pusiste ${_dir}. Esto no es un setup, es pelear contra la tendencia — y la tendencia suele ganar. No añadas; si ya estás dentro, ${_be}`,
-              `${_dir} contra las dos temporalidades. Sé honesto: es una apuesta a contratendencia con las peores probabilidades. En cuanto se frene, ${_be}`,
-              `todas las temporalidades que marcaste dicen ${_oppW} y estás ${_dir}. Justo la operación que tus reglas existen para evitar — no promedies, ${_be}`
-            ] : [
-              `both your HTF and LTF read ${_oppW} and you went ${_dir} anyway. That is not a setup, it is a fight with the trend — and the trend usually wins. No adding; if you are in it, ${_be}`,
-              `${_dir} against both timeframes. Be honest with yourself: this is a counter-trend punt with the worst odds on the board. The moment it stalls, ${_be}`,
-              `every timeframe you marked says ${_oppW} and you are ${_dir}. This is exactly the trade your rules exist to stop — no averaging down, ${_be}`
-            ];
-          } else if (_h === 'with' && _l === 'with') {
-            _bucket = 'with_both';
-            _align = _es ? [
-              `HTF y LTF apuntan ${_sideW} y estás ${_dir} — la versión más limpia de esta operación. No la alargues de más: ${_be}`,
-              `${_dir} con las dos temporalidades a favor. Buena coherencia; ahora solo toca gestionar — ${_be}`
-            ] : [
-              `HTF and LTF both line up ${_sideW} and you are ${_dir} — the cleanest version of this trade. Do not overstay it: ${_be}`,
-              `${_dir} with both timeframes behind you. Good alignment; now the only job is management — ${_be}`
-            ];
-          } else if (_l === 'with' && _h === 'vs') {
-            _bucket = 'ltf_vs_htf';
-            _align = _es ? [
-              `estás ${_dir} con el LTF, contra el HTF ${_oppW} — un scalp a contratendencia, no un swing. Toma ganancias en el nivel y ${_be}`,
-              `el LTF apoya tu ${_dir}, el HTF no — vale para una rápida, no para un swing. Respeta la tendencia mayor y ${_be}`
-            ] : [
-              `you are ${_dir} with the LTF, against the ${_oppW} HTF — a counter-trend scalp, not a swing. Take profit into the level and ${_be}`,
-              `the LTF backs your ${_dir}, the HTF does not — fine for a quick one, not a swing. Respect the higher trend and ${_be}`
-            ];
-          } else if (_h === 'with' && _l === 'vs') {
-            _bucket = 'htf_vs_ltf';
-            _align = _es ? [
-              `estás ${_dir} por la tendencia ${_sideW} del HTF, pero el LTF aún no ha girado — vas temprano, te adelantas al pullback. Stop ajustado y ${_be}`,
-              `el HTF está a favor, el LTF aún en contra. Adelantarte solo vale si lo llevas ajustado — ${_be}`
-            ] : [
-              `you are ${_dir} for the ${_sideW} HTF trend, but the LTF has not turned yet — you are early, front-running the pullback. Keep it tight and ${_be}`,
-              `HTF agrees, LTF is still against you. Anticipating the turn only works if you keep it tight — ${_be}`
-            ];
-          } else if (_h === 'vs' || _l === 'vs') {
-            _bucket = 'lean_against';
-            _align = _es ? [
-              `una de tus temporalidades está en contra de este ${_dir} y la otra sin definir — no es terreno limpio. Que se lo gane: ${_be}`,
-              `${_dir} con una temporalidad en contra y la otra sin decidir. Hielo fino — en cuanto dude, ${_be}`
-            ] : [
-              `one of your timeframes is against this ${_dir} and the other is unclear — not clean territory. Make it earn its place: ${_be}`,
-              `${_dir} with one timeframe against you and the other undecided. Thin ice — the moment it hesitates, ${_be}`
-            ];
-          } else if (_h === 'with' || _l === 'with') {
-            _bucket = 'lean';
-            _align = _es ? [
-              `una temporalidad apoya tu ${_dir}, la otra sin definir — coherencia parcial. Apóyate en ella pero con tamaño prudente, y ${_be}`,
-              `${_dir} con una temporalidad a favor y la otra sin decidir. Aceptable, no perfecto — ${_be}`
-            ] : [
-              `one timeframe backs your ${_dir}, the other is unclear — partial alignment. Lean on it but keep size honest, and ${_be}`,
-              `${_dir} with one timeframe on side and the other undecided. Decent, not perfect — ${_be}`
-            ];
-          } else {
-            _bucket = 'unsure';
-            _align = _es ? [
-              `marcaste las dos temporalidades sin definir y estás ${_dir}. Operando sin lectura — trátalo como un quizás y ${_be}`,
-              `${_dir} sin sesgo claro en ninguna. Si el setup es limpio, bien; si no, sin dudar — ${_be}`
-            ] : [
-              `you marked both timeframes unsure and you are ${_dir}. Trading without a read — treat it as a maybe and ${_be}`,
-              `${_dir} with no clear bias either way. If the setup is clean, fine; if not, do not hesitate — ${_be}`
-            ];
-          }
-          _pool = _align;
-          const _pk = 'REVIEW_LIVE_' + _side.toUpperCase() + '_' + _bucket + (_es ? '_ES' : '');
-          return _pool[pickWithAntiRepeat(_pool, _pk, seed + ':' + _side + ':' + _bucket)];
-        }
-        const _pk = 'REVIEW_LIVE_' + _side.toUpperCase() + (_es ? '_ES' : '');
-        return _pool[pickWithAntiRepeat(_pool, _pk, seed + ':' + _side)];
-      }
-    }
-    const poolSrc = live ? REVIEW_IN_PROGRESS_LIVE : REVIEW_IN_PROGRESS;
-    const poolKey = live ? 'REVIEW_IN_PROGRESS_LIVE' : 'REVIEW_IN_PROGRESS';
-    const pool = localizedPool(poolSrc, poolKey);
-    const idx = pickWithAntiRepeat(pool, poolKey, seed + (live ? ':live' : ''));
+    // Auto-sync delivers closed trades, so an unresolved trade rarely exists while the
+    // window is live; this single in-progress pool covers the post-window case.
+    const pool = localizedPool(REVIEW_IN_PROGRESS, 'REVIEW_IN_PROGRESS');
+    const idx = pickWithAntiRepeat(pool, 'REVIEW_IN_PROGRESS', seed);
     return pool[idx];
   }
 
@@ -27013,54 +26899,32 @@
       if (!(typeof isSessionLive === 'function' && isSessionLive())) return null;
       if (typeof hasInProgressTradeToday === 'function' && hasInProgressTradeToday()) return null;
       if (typeof getTodayOutcome === 'function' && getTodayOutcome()) return null;
-      const _htf = (data.bias && data.bias.direction) || '';
-      const _ltf = (data.bias && data.bias.direction) || '';
-      const _set = function (b) { return b === 'Bullish' || b === 'Bearish' || b === 'Unsure'; };
-      if (!_set(_htf) && !_set(_ltf)) return null;
+      // Session Bias is a single directional read now (Bullish / Bearish / Unsure) — no
+      // separate HTF/LTF fields — so this coaches trading with that one bias.
+      const _dir = (data.bias && data.bias.direction) || '';
+      if (_dir !== 'Bullish' && _dir !== 'Bearish' && _dir !== 'Unsure') return null;
       const _es = (window.__lang === 'es');
-      const _dec = function (b) { return b === 'Bullish' || b === 'Bearish'; };
-      const _w = function (b) { if (b === 'Bullish') return _es ? 'alcista' : 'bullish'; if (b === 'Bearish') return _es ? 'bajista' : 'bearish'; return _es ? 'sin definir' : 'unclear'; };
       let _pool, _bucket;
-      if (_dec(_htf) && _dec(_ltf)) {
-        if (_htf === _ltf) {
-          _bucket = 'agree'; const _ww = _w(_htf);
-          _pool = _es ? [
-            `HTF y LTF leen ${_ww} — alineados. Espera tu nivel y opera con ellos, no en contra.`,
-            `las dos temporalidades apuntan ${_ww}. Lectura limpia; ahora paciencia — deja que el precio llegue a tu nivel.`
-          ] : [
-            `HTF and LTF both read ${_ww} — aligned. Wait for your level and take the trade with them, not against them.`,
-            `both timeframes line up ${_ww}. Clean read; now the patience game — let price come to your level.`
-          ];
-        } else {
-          _bucket = 'conflict'; const _hw = _w(_htf), _lw = _w(_ltf);
-          _pool = _es ? [
-            `el HTF es ${_hw}, el LTF es ${_lw} — no coinciden. Estás en un pullback; espera a que el LTF gire con el HTF antes de entrar, o estarás adivinando.`,
-            `tus temporalidades chocan: HTF ${_hw}, LTF ${_lw}. Es una transición, no una tendencia. Quieto hasta que coincidan.`
-          ] : [
-            `HTF is ${_hw}, LTF is ${_lw} — they disagree. You are in a pullback; wait for the LTF to swing back with the HTF before you commit, or you are just guessing.`,
-            `your timeframes conflict: ${_hw} HTF, ${_lw} LTF. That is a transition, not a trend. Sit on your hands until they agree.`
-          ];
-        }
-      } else if (_dec(_htf) || _dec(_ltf)) {
-        _bucket = 'partial';
-        const _which = _dec(_htf) ? (_es ? 'el HTF' : 'the HTF') : (_es ? 'el LTF' : 'the LTF');
-        const _other = _dec(_htf) ? (_es ? 'el LTF' : 'the LTF') : (_es ? 'el HTF' : 'the HTF');
-        const _dw = _dec(_htf) ? _w(_htf) : _w(_ltf);
+      if (_dir === 'Bullish' || _dir === 'Bearish') {
+        _bucket = (_dir === 'Bullish') ? 'bull' : 'bear';
+        const _w = _es ? (_dir === 'Bullish' ? 'alcista' : 'bajista') : (_dir === 'Bullish' ? 'bullish' : 'bearish');
         _pool = _es ? [
-          `${_which} es ${_dw}, ${_other} sin definir. Media foto — deja que la otra temporalidad se defina antes de cargar tamaño.`,
-          `tienes ${_which} ${_dw} y ${_other} sin decidir. Espera confirmación; no fuerces la lectura.`
+          `tu sesgo es ${_w}. Espera tu nivel y opera con él, no en contra.`,
+          `marcaste ${_w} hoy. Lectura limpia; ahora paciencia — deja que el precio llegue a tu nivel.`,
+          `sesgo ${_w} fijado. No persigas — deja que el mercado venga a tu zona, luego opera en tu dirección.`
         ] : [
-          `${_which} reads ${_dw}, ${_other} is unclear. Half a picture — let the other timeframe show its hand before you size up.`,
-          `you have ${_which} ${_dw} and ${_other} undecided. Wait for confirmation; do not force the read.`
+          `your bias is ${_w}. Wait for your level and take the trade with it, not against it.`,
+          `you marked ${_w} today. Clean read; now the patience game — let price come to your level.`,
+          `${_w} bias set. Don't chase — let the market come to your zone, then trade your direction.`
         ];
       } else {
         _bucket = 'unsure';
         _pool = _es ? [
-          `aún no hay lectura clara en ninguna temporalidad. Estar fuera es una posición — quieto hasta que una se defina.`,
-          `las dos temporalidades sin definir. No hay setup en la confusión — espera a que el mercado se muestre.`
+          `marcaste el sesgo sin definir. Estar fuera es una posición — quieto hasta que el mercado se muestre.`,
+          `sin lectura clara aún. No hay setup en la confusión — espera a que se defina.`
         ] : [
-          `no clear read on either timeframe yet. Flat is a position — sit on your hands until one of them decides.`,
-          `both timeframes unsure. There is no setup in confusion — wait for the market to show its hand.`
+          `you marked the bias unclear. Flat is a position — sit on your hands until the market shows its hand.`,
+          `no clear read yet. There's no setup in confusion — wait for it to decide.`
         ];
       }
       const _seed = todayKey() + ':bias-align:' + _greetingNonce;
@@ -27082,7 +26946,7 @@
     // one for the Review surface (today-aware, falls back to yesterday).
     // This way each surface gets the recap that fits its purpose: planning vs reflecting.
     if (!_cachedTailBias) {
-      // Live + flat + a bias set: lead with HTF/LTF alignment framing (the session plan).
+      // Live + flat + a bias set: lead with directional-bias coaching (the session plan).
       // Otherwise the usual yesterday + last-7-day planning recap (never about today).
       const _flatAlign = pickBiasAlignmentTail();
       if (_flatAlign) {
@@ -27101,7 +26965,7 @@
       //     weekday all get their own appropriate pool. This avoids lines like
       //     "still waiting on a setup" firing after the session has closed.
       const todayOutcome = getTodayOutcome();
-      // While a trade is live and its direction is known, lead with patience + break-even coaching.
+      // While a trade is live with a known direction, lead with the in-progress nudge.
       const _liveSide = ((typeof isSessionLive === 'function') && isSessionLive() && typeof inProgressSide === 'function') ? inProgressSide() : '';
       if (_liveSide === 'Long' || _liveSide === 'Short') {
         _cachedTailReview = pickReviewInProgressTail();
