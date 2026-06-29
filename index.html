@@ -10463,6 +10463,18 @@
   function reconcileBiasSlots() {
     if (!Array.isArray(data.biasSlots)) data.biasSlots = [];
     const ss = (typeof getSessions === 'function') ? getSessions() : [];
+    // Drop session couplings to symbols that no longer exist in the instruments list, so a
+    // deleted symbol's bias slot doesn't linger. getSessions() returns the live session
+    // objects, so this mutation persists. Keep each session with at least one symbol.
+    const _allSyms = (data.settings && Array.isArray(data.settings.symbols)) ? data.settings.symbols : [];
+    if (_allSyms.length) {
+      ss.forEach(s => {
+        if (!s) return;
+        if (!Array.isArray(s.symbols)) s.symbols = [];
+        const kept = s.symbols.filter(sym => _allSyms.indexOf(sym) >= 0);
+        s.symbols = kept.length ? kept : [_allSyms[0]];
+      });
+    }
     const fallbackSym = (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD';
     const desired = [];
     ss.forEach((s, si) => {
@@ -10484,6 +10496,16 @@
     if (typeof data.activeBiasSlot !== 'number' || data.activeBiasSlot < 0 || data.activeBiasSlot >= next.length) data.activeBiasSlot = 0;
     data.bias = data.biasSlots[data.activeBiasSlot];
   }
+  // Called by the Symbols editor (separate scope) after an instrument is added/removed:
+  // prune+rebuild slots, refresh the navigator, the bias form, the header and chips.
+  window.__onSymbolsChanged = function () {
+    try { reconcileBiasSlots(); } catch (e) {}
+    try { renderBiasNav(); } catch (e) {}
+    try { repaintBiasForm(); } catch (e) {}
+    try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); } catch (e) {}
+    try { if (window.renderSessionSymbolChips) { window.renderSessionSymbolChips(0, 'settings-session-symbols-1'); window.renderSessionSymbolChips(1, 'settings-session-symbols-2'); } } catch (e) {}
+    try { saveData(); } catch (e) {}
+  };
   function repaintBiasForm() {
     const b = data.bias || {};
     document.querySelectorAll('[data-bias]').forEach(group => {
@@ -27603,6 +27625,7 @@
       renderSymbolsSetting();
       if (typeof renderTrades === 'function') { try { renderTrades(); } catch (e) {} }
       if (typeof renderTradesStats === 'function') { try { renderTradesStats(); } catch (e) {} }
+      if (window.__onSymbolsChanged) { try { window.__onSymbolsChanged(); } catch (e) {} }
     }
     function addSymbol() {
       const v = (input.value || '').trim();
