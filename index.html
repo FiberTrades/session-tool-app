@@ -4165,6 +4165,24 @@
       </div>
       <div id="settings-session-hint" class="settings-parsed-hint"></div>
       <p class="settings-hint" data-i18n="settings.session_window_hint">Controls news heads-up timing, session-aware greetings, and rule reminders.</p>
+      <button type="button" id="settings-add-session-btn" class="settings-btn" data-i18n="settings.add_session" style="margin-top:6px;">+ Add session</button>
+      <div id="settings-session2-block" style="display:none;margin-top:18px;padding-top:18px;border-top:1px solid var(--border-2);">
+        <label class="settings-label" data-i18n="settings.session2_label">Session 2</label>
+        <select id="settings-session-select-2" class="settings-input settings-session-select">
+          <option value="London"   data-i18n="settings.session_london">London</option>
+          <option value="Asia"     data-i18n="settings.session_asia">Asia</option>
+          <option value="New York" data-i18n="settings.session_newyork">New York</option>
+          <option value="Sydney"   data-i18n="settings.session_sydney">Sydney</option>
+        </select>
+        <label class="settings-label" data-i18n="settings.session_times_label" style="margin-top:14px;">Times</label>
+        <div class="settings-time-row">
+          <input type="time" id="settings-session-start-2" class="settings-input settings-time-input" />
+          <span class="settings-time-sep">–</span>
+          <input type="time" id="settings-session-end-2" class="settings-input settings-time-input" />
+        </div>
+        <div id="settings-session-hint-2" class="settings-parsed-hint"></div>
+        <button type="button" id="settings-session2-remove" class="settings-btn" data-i18n="settings.remove_session" style="margin-top:10px;">Remove session</button>
+      </div>
     </div>
     <!-- RISK RULES section: trader-defined commitments that the app checks on
          every greeting. Three rules: max loss per day, max risk per trade,
@@ -5052,6 +5070,9 @@
       'settings.session_newyork': 'New York',
       'settings.session_sydney': 'Sydney',
       'settings.session_window_hint': 'Controls news heads-up timing, session-aware greetings, and rule reminders.',
+      'settings.add_session': '+ Add session',
+      'settings.session2_label': 'Session 2',
+      'settings.remove_session': 'Remove session',
       'settings.new_account_label': '+ New account',
       'settings.create': 'Create',
       'settings.active_now': 'Active now',
@@ -6304,6 +6325,9 @@
       'settings.session_newyork': 'Nueva York',
       'settings.session_sydney': 'Sídney',
       'settings.session_window_hint': 'Controla la sincronización de avisos de noticias, saludos según la sesión y recordatorios de reglas.',
+      'settings.add_session': '+ Añadir sesión',
+      'settings.session2_label': 'Sesión 2',
+      'settings.remove_session': 'Quitar sesión',
       'settings.new_account_label': '+ Nueva cuenta',
       'settings.create': 'Crear',
       'settings.active_now': 'Activa ahora',
@@ -8430,6 +8454,13 @@
       d.settings._tickerWatchlistV2 = true;
     }
     if (d.settings.windowEnd === undefined) d.settings.windowEnd = '10:00';
+    // Multi-session: the single stored session becomes sessions[0]. Existing users
+    // migrate with no data loss; sessions[1] is added only if they configure a second.
+    if (!Array.isArray(d.settings.sessions) || !d.settings.sessions.length) {
+      var _snm = (d.settings.sessionName || 'London'); var _known = ['New York','London','Asia','Sydney']; var _nm = 'London';
+      for (var _ki = 0; _ki < _known.length; _ki++) { if (_snm.toLowerCase().indexOf(_known[_ki].toLowerCase()) === 0) { _nm = _known[_ki]; break; } }
+      d.settings.sessions = [{ name: _nm, start: d.settings.windowStart || '08:00', end: d.settings.windowEnd || '10:00' }];
+    }
     if (d.settings.sessionDayCutoff === undefined) d.settings.sessionDayCutoff = '22:00';
     // Rule-of-the-week reminder cadence during session window.
     // 'off' | 'start' | '5' | '15' | '30' | '60' (minutes).
@@ -28301,6 +28332,23 @@
         endInp.value   = (data.settings && data.settings.windowEnd)   || '10:00';
         updateSessionHintLive();
       }
+      // Session 2 (optional) — populate from data.settings.sessions[1], or hide.
+      (function () {
+        const sess2 = (data.settings && Array.isArray(data.settings.sessions)) ? data.settings.sessions[1] : null;
+        const s2block = document.getElementById('settings-session2-block');
+        const addB = document.getElementById('settings-add-session-btn');
+        const sel2 = document.getElementById('settings-session-select-2');
+        const st2 = document.getElementById('settings-session-start-2');
+        const en2 = document.getElementById('settings-session-end-2');
+        if (!s2block || !sel2 || !st2 || !en2) return;
+        if (sess2) {
+          sel2.value = sess2.name || 'New York'; st2.value = sess2.start || '13:00'; en2.value = sess2.end || '16:00';
+          s2block.style.display = ''; if (addB) addB.style.display = 'none';
+        } else {
+          s2block.style.display = 'none'; if (addB) addB.style.display = '';
+        }
+        if (typeof updateSession2HintLive === 'function') updateSession2HintLive();
+      })();
       renderSettingsAccountsList();
       try { renderSettingsLinkedGroupsList(); } catch (e) {}
       // Risk rules — per-account now. The picker dropdown lets the user
@@ -28629,6 +28677,8 @@
       data.settings.sessionName = combined;
       data.settings.windowStart = s;
       data.settings.windowEnd = e;
+      data.settings.sessions = Array.isArray(data.settings.sessions) ? data.settings.sessions : [];
+      data.settings.sessions[0] = { name: name, start: s, end: e };
       // Re-arm the open/close alerts so the new window can fire again today (the once-per-day
       // flag would otherwise suppress them after the first trigger — and break testing).
       data._lastSessionStartAlert = null;
@@ -28651,6 +28701,52 @@
       inp.addEventListener('input', updateSessionHintLive);
       inp.addEventListener('change', saveSessionFromInputs);
     });
+
+    // --- Session 2 (optional). Stored in data.settings.sessions[1]; UI capped at 2.
+    const sel2 = document.getElementById('settings-session-select-2');
+    const st2  = document.getElementById('settings-session-start-2');
+    const en2  = document.getElementById('settings-session-end-2');
+    const hint2 = document.getElementById('settings-session-hint-2');
+    const s2block = document.getElementById('settings-session2-block');
+    const addSessBtn = document.getElementById('settings-add-session-btn');
+    const remSessBtn = document.getElementById('settings-session2-remove');
+    function updateSession2HintLive() {
+      if (!st2 || !en2 || !hint2) return;
+      const s = st2.value, e = en2.value;
+      if (!s || !e) { hint2.textContent = ''; return; }
+      if (s >= e) { hint2.textContent = t('settings.invalid_session'); hint2.style.color = 'var(--bad)'; }
+      else { hint2.textContent = t('settings.detected').replace('{S}', s).replace('{E}', e); hint2.style.color = 'var(--good)'; }
+    }
+    function saveSession2FromInputs() {
+      if (!sel2 || !st2 || !en2) return;
+      const name = sel2.value || 'New York';
+      const s = st2.value, e = en2.value;
+      if (!s || !e || s >= e) return; // invalid — leave as-is, hint shows the error
+      data.settings.sessions = Array.isArray(data.settings.sessions) ? data.settings.sessions : [];
+      if (!data.settings.sessions[0]) data.settings.sessions[0] = { name: 'London', start: data.settings.windowStart || '08:00', end: data.settings.windowEnd || '10:00' };
+      data.settings.sessions[1] = { name: name, start: s, end: e };
+      data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null;
+      saveData();
+      try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (err) {}
+    }
+    if (addSessBtn) addSessBtn.addEventListener('click', () => {
+      if (s2block) s2block.style.display = '';
+      addSessBtn.style.display = 'none';
+      if (sel2 && !sel2.value) sel2.value = 'New York';
+      if (st2 && !st2.value) st2.value = '13:00';
+      if (en2 && !en2.value) en2.value = '16:00';
+      updateSession2HintLive(); saveSession2FromInputs();
+    });
+    if (remSessBtn) remSessBtn.addEventListener('click', () => {
+      if (s2block) s2block.style.display = 'none';
+      if (addSessBtn) addSessBtn.style.display = '';
+      if (Array.isArray(data.settings.sessions)) data.settings.sessions = data.settings.sessions.slice(0, 1);
+      data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null;
+      saveData();
+      try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (err) {}
+    });
+    if (sel2) sel2.addEventListener('change', () => { updateSession2HintLive(); saveSession2FromInputs(); });
+    [st2, en2].forEach(inp => { if (!inp) return; inp.addEventListener('input', updateSession2HintLive); inp.addEventListener('change', saveSession2FromInputs); });
 
     // --- Risk Rules: each loss/risk rule has a single input + a £/% mode
     //     toggle. The input writes to whichever storage key matches the
