@@ -549,6 +549,12 @@
      Stays subtle so it doesn't compete with the form. Each event row is a compact
      time / currency / impact-dot / title row. */
   .econ-calendar { border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-card); background: var(--bg-elev); padding: 0; margin-bottom: 36px; position: relative; }
+  .bias-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 32px; padding: 10px 14px; border: 1px solid var(--border-2); border-radius: var(--radius-card); background: var(--bg-elev); }
+  .bias-nav-btn { background: var(--bg-elev2); border: 1px solid var(--border-2); color: var(--text-mid); width: 34px; height: 34px; border-radius: var(--radius-ctrl); font-size: 20px; line-height: 1; cursor: pointer; font-family: inherit; transition: all 120ms; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .bias-nav-btn:hover { color: var(--text); border-color: var(--text-mid); }
+  .bias-nav-label { display: flex; flex-direction: column; align-items: center; min-width: 180px; }
+  .bias-nav-label #bias-nav-symbol { font-family: 'AppNum','DM Mono',monospace; font-size: 14px; letter-spacing: 0.05em; color: var(--text); }
+  .bias-nav-sub { font-family: 'AppNum','DM Mono',monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); margin-top: 3px; }
   /* Header is now a clickable button that toggles the collapsible body */
   .econ-calendar-header { width: 100%; background: transparent; border: none; padding: 16px 18px; display: flex; align-items: center; justify-content: flex-start; gap: 10px; cursor: pointer; font-family: inherit; color: inherit; text-align: left; transition: background 150ms; position: relative; }
   .econ-calendar-header:hover { background: rgba(255,255,255,0.02); }
@@ -2947,6 +2953,11 @@
         </div>
       </div>
     </div>
+    <div id="bias-nav" class="bias-nav" style="display:none;">
+      <button type="button" id="bias-nav-prev" class="bias-nav-btn" data-i18n-title="bias.nav_prev" title="Previous bias" aria-label="Previous bias">‹</button>
+      <div class="bias-nav-label"><span id="bias-nav-symbol"></span><span class="bias-nav-sub" id="bias-nav-sub"></span></div>
+      <button type="button" id="bias-nav-next" class="bias-nav-btn" data-i18n-title="bias.nav_next" title="Next bias" aria-label="Next bias">›</button>
+    </div>
     <section>
       <div class="section-header">
         <span class="section-num">01</span>
@@ -5070,6 +5081,8 @@
       'settings.pair_hint': 'List the instruments you trade, then couple each to a session below. The symbol coupled to a session is what shows on your dashboard and atop the bias and review you copy to Discord for that session.',
       'settings.session_symbols_label': 'Symbols this session',
       'settings.session_symbols_empty': 'Add instruments above first, then couple them here.',
+      'bias.nav_prev': 'Previous bias',
+      'bias.nav_next': 'Next bias',
       'settings.whattrade_label': 'Symbols I trade',
       'settings.whattrade_add_ph': 'e.g. EUR/USD, AAPL, Gold, NAS100',
       'settings.whattrade_add': '+ Add',
@@ -6327,6 +6340,8 @@
       'settings.pair_hint': 'Lista los instrumentos que operas y luego acopla cada uno a una sesión abajo. El símbolo acoplado a una sesión es el que se muestra en tu panel y al principio del sesgo y la revisión que copias a Discord para esa sesión.',
       'settings.session_symbols_label': 'Símbolos de esta sesión',
       'settings.session_symbols_empty': 'Añade instrumentos arriba primero, luego acóplalos aquí.',
+      'bias.nav_prev': 'Sesgo anterior',
+      'bias.nav_next': 'Sesgo siguiente',
       'settings.whattrade_label': 'Símbolos que opero',
       'settings.whattrade_add_ph': 'p. ej. EUR/USD, AAPL, Oro, NAS100',
       'settings.whattrade_add': '+ Añadir',
@@ -8581,6 +8596,32 @@
         if (s && (!Array.isArray(s.symbols) || !s.symbols.length)) s.symbols = [_def];
       });
     })();
+    // Multi-bias: one bias per (session, coupled symbol). The single d.bias becomes a
+    // slot keyed by session+symbol; the legacy bias is folded into the first slot so no
+    // morning work is lost. d.bias is repointed to the active slot (a live reference), so
+    // every existing read/write of d.bias keeps operating on the selected bias.
+    (function migrateBiasSlots() {
+      if (Array.isArray(d.biasSlots) && d.biasSlots.length) {
+        if (typeof d.activeBiasSlot !== 'number' || d.activeBiasSlot < 0 || d.activeBiasSlot >= d.biasSlots.length) d.activeBiasSlot = 0;
+        d.bias = d.biasSlots[d.activeBiasSlot];
+        return;
+      }
+      function _blank(si, nm, sym) { return { mode: null, structure: null, location: null, direction: null, directionLtf: null, tvLinks: [], notes: '', date: null, sessionDate: null, copiedAt: null, sessionIdx: si, sessionName: nm, symbol: sym }; }
+      var sess = (d.settings && Array.isArray(d.settings.sessions)) ? d.settings.sessions : [];
+      var seeded = [];
+      sess.forEach(function (s, si) {
+        var syms = (s && Array.isArray(s.symbols) && s.symbols.length) ? s.symbols : [ (d.settings.symbols && d.settings.symbols[0]) || d.settings.pair || 'EUR/USD' ];
+        syms.forEach(function (sym) { seeded.push(_blank(si, (s && s.name) || 'London', sym)); });
+      });
+      if (!seeded.length) seeded.push(_blank(0, 'London', (d.settings.symbols && d.settings.symbols[0]) || 'EUR/USD'));
+      if (d.bias && (d.bias.mode || d.bias.structure || d.bias.location || d.bias.direction || d.bias.notes || (Array.isArray(d.bias.tvLinks) && d.bias.tvLinks.some(function (l) { return l && (l.url || l.notes); })))) {
+        var keep = seeded[0];
+        ['mode','structure','location','direction','directionLtf','tvLinks','notes','date','sessionDate','copiedAt'].forEach(function (k) { if (d.bias[k] !== undefined) keep[k] = d.bias[k]; });
+      }
+      d.biasSlots = seeded;
+      d.activeBiasSlot = 0;
+      d.bias = d.biasSlots[0];
+    })();
     if (d.settings.sessionDayCutoff === undefined) d.settings.sessionDayCutoff = '22:00';
     // Rule-of-the-week reminder cadence during session window.
     // 'off' | 'start' | '5' | '15' | '30' | '60' (minutes).
@@ -10386,9 +10427,12 @@
     if (!b.mode || !b.structure || !b.location || !b.direction) return; // not yet complete
     if (!Array.isArray(data.biasHistory)) data.biasHistory = [];
     const dateKey = (b.sessionDate || todayDateStr() || new Date().toISOString().slice(0, 10));
-    const existing = data.biasHistory.findIndex(e => e.dateKey === dateKey);
+    const _hSym = b.symbol || ''; const _hSess = b.sessionName || '';
+    const existing = data.biasHistory.findIndex(e => e.dateKey === dateKey && (e.symbol || '') === _hSym && (e.sessionName || '') === _hSess);
     const entry = {
       dateKey,
+      symbol: _hSym,
+      sessionName: _hSess,
       date: (b.date || new Date().toISOString()),
       mode: b.mode,
       structure: b.structure,
@@ -10408,6 +10452,75 @@
     saveData();
   }
 
+  // ===== Multi-bias slots =====
+  // One bias per (session, coupled symbol). data.biasSlots is the source of truth;
+  // data.bias is a live reference to the active slot, so every existing data.bias.*
+  // read/write operates on the selected bias. reconcileBiasSlots() rebuilds the slot
+  // list from the current session/symbol couplings, preserving any filled biases by
+  // (sessionName, symbol).
+  function biasSlotKey(name, sym) { return (name || '') + '||' + (sym || ''); }
+  function reconcileBiasSlots() {
+    if (!Array.isArray(data.biasSlots)) data.biasSlots = [];
+    const ss = (typeof getSessions === 'function') ? getSessions() : [];
+    const fallbackSym = (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD';
+    const desired = [];
+    ss.forEach((s, si) => {
+      const syms = (s && Array.isArray(s.symbols) && s.symbols.length) ? s.symbols : [fallbackSym];
+      syms.forEach(sym => desired.push({ sessionIdx: si, sessionName: s.name, symbol: sym }));
+    });
+    if (!desired.length) desired.push({ sessionIdx: 0, sessionName: (ss[0] && ss[0].name) || 'London', symbol: fallbackSym });
+    const byKey = {};
+    data.biasSlots.forEach(sl => { if (sl) byKey[biasSlotKey(sl.sessionName, sl.symbol)] = sl; });
+    const next = desired.map(d => {
+      const ex = byKey[biasSlotKey(d.sessionName, d.symbol)];
+      if (ex) { ex.sessionIdx = d.sessionIdx; ex.sessionName = d.sessionName; ex.symbol = d.symbol; return ex; }
+      const blank = newBiasBlank();
+      blank.sessionIdx = d.sessionIdx; blank.sessionName = d.sessionName; blank.symbol = d.symbol;
+      blank.sessionDate = todayDateStr();
+      return blank;
+    });
+    data.biasSlots = next;
+    if (typeof data.activeBiasSlot !== 'number' || data.activeBiasSlot < 0 || data.activeBiasSlot >= next.length) data.activeBiasSlot = 0;
+    data.bias = data.biasSlots[data.activeBiasSlot];
+  }
+  function repaintBiasForm() {
+    const b = data.bias || {};
+    document.querySelectorAll('[data-bias]').forEach(group => {
+      const key = group.dataset.bias;
+      group.querySelectorAll('.option').forEach(btn => { btn.classList.toggle('selected', b[key] === btn.dataset.value); });
+    });
+    if (typeof renderBiasTvLinks === 'function') try { renderBiasTvLinks(); } catch (e) {}
+    const bn = document.getElementById('bias-notes'); if (bn) bn.value = b.notes || '';
+    const bp = document.getElementById('bias-date'); if (bp && b.sessionDate) bp.value = b.sessionDate;
+    if (typeof renderBiasPreview === 'function') try { renderBiasPreview(); } catch (e) {}
+    if (typeof renderSavedBias === 'function') try { renderSavedBias(); } catch (e) {}
+  }
+  function renderBiasNav() {
+    const nav = document.getElementById('bias-nav'); if (!nav) return;
+    const slots = Array.isArray(data.biasSlots) ? data.biasSlots : [];
+    if (slots.length <= 1) { nav.style.display = 'none'; return; }
+    nav.style.display = '';
+    const i = (typeof data.activeBiasSlot === 'number') ? data.activeBiasSlot : 0;
+    const sl = slots[i] || slots[0];
+    const symEl = document.getElementById('bias-nav-symbol');
+    const subEl = document.getElementById('bias-nav-sub');
+    if (symEl) symEl.textContent = sl.symbol || '';
+    if (subEl) {
+      const sess = sl.sessionName ? localizeSessionName(sl.sessionName) : '';
+      subEl.textContent = (sess ? sess + ' \u00b7 ' : '') + (i + 1) + ' / ' + slots.length;
+    }
+  }
+  function switchBiasSlot(idx) {
+    const slots = Array.isArray(data.biasSlots) ? data.biasSlots : [];
+    if (!slots.length) return;
+    const n = ((idx % slots.length) + slots.length) % slots.length;
+    data.activeBiasSlot = n;
+    data.bias = slots[n];
+    saveData();
+    repaintBiasForm();
+    renderBiasNav();
+    try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); } catch (e) {}
+  }
   function bindBiasOptions() {
     document.querySelectorAll('[data-bias]').forEach(group => {
       const key = group.dataset.bias;
@@ -10523,8 +10636,11 @@
       try { headerDate = new Date(b.sessionDate + 'T12:00:00').toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' }).replace(/^./, c => c.toUpperCase()); } catch {}
     }
     const _ssB = getSessions();
-    const _slB = (_ssB.length > 1) ? (sessionShortLabel(currentOrNextSessionIndex()) + ' ') : '';
-    const lines = [`**${data.settings.pair} ${_slB}Bias — ${headerDate}**`, ''];
+    const _bSym = (b && b.symbol) || (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD';
+    const _slB = (_ssB.length > 1)
+      ? ((b && b.sessionName) ? (localizeSessionName(b.sessionName) + ' ') : (sessionShortLabel(currentOrNextSessionIndex()) + ' '))
+      : '';
+    const lines = [`**${_bSym} ${_slB}Bias — ${headerDate}**`, ''];
     // Structured summary goes inside a ``` code block so Discord renders it as a
     // boxed monospace panel, matching the Session Review summary.
     const box = [];
@@ -10651,7 +10767,7 @@
     data.bias.copiedAt = nowIso;
     if (Array.isArray(data.biasHistory)) {
       const dateKey = (data.bias.sessionDate || todayDateStr() || nowIso.slice(0, 10));
-      const entry = data.biasHistory.find(e => e.dateKey === dateKey);
+      const entry = data.biasHistory.find(e => e.dateKey === dateKey && (e.symbol || '') === (data.bias.symbol || '') && (e.sessionName || '') === (data.bias.sessionName || ''));
       if (entry) entry.copiedAt = nowIso;
     }
     saveData();
@@ -10687,8 +10803,9 @@
     // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
   })();
   document.getElementById('bias-reset').addEventListener('click', () => {
-    data.bias = newBiasBlank();
-    // Reset the bias session date back to today so the next post is dated correctly.
+    // Reset only the active bias slot in place (preserves its session/symbol identity
+    // and keeps data.bias linked to the slot).
+    Object.assign(data.bias, newBiasBlank());
     data.bias.sessionDate = todayDateStr();
     saveData();
     document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
@@ -12471,9 +12588,14 @@
   // Clears the previous bias + review and resets both forms to a fresh state for today.
   // This is the union of the manual bias-reset and review-reset handlers.
   function startNewSession() {
-    // --- Bias ---
-    data.bias = newBiasBlank();
-    data.bias.sessionDate = todayDateStr();
+    // --- Bias --- (reset every symbol-bias slot for the new day, keep identities)
+    if (Array.isArray(data.biasSlots) && data.biasSlots.length) {
+      data.biasSlots.forEach(function (sl) { Object.assign(sl, newBiasBlank()); sl.sessionDate = todayDateStr(); });
+      data.bias = data.biasSlots[(typeof data.activeBiasSlot === 'number' ? data.activeBiasSlot : 0)] || data.biasSlots[0];
+    } else {
+      Object.assign(data.bias, newBiasBlank());
+      data.bias.sessionDate = todayDateStr();
+    }
     document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
     if (typeof renderBiasTvLinks === 'function') renderBiasTvLinks();
     const _bn = document.getElementById('bias-notes'); if (_bn) _bn.value = '';
@@ -18130,6 +18252,7 @@
   });
   setInterval(saveData, 5000);
 
+  try { reconcileBiasSlots(); } catch (e) {}
   bindBiasOptions();
   bindReviewOptions();
   bindReviewMultiOptions();
@@ -18137,6 +18260,13 @@
   setupTagGroup('mindset-tags', 'mindset');
   restoreBiasValues();
   restoreReviewValues();
+  (function initBiasNav() {
+    const pv = document.getElementById('bias-nav-prev');
+    const nx = document.getElementById('bias-nav-next');
+    if (pv) pv.addEventListener('click', () => switchBiasSlot((data.activeBiasSlot || 0) - 1));
+    if (nx) nx.addEventListener('click', () => switchBiasSlot((data.activeBiasSlot || 0) + 1));
+    try { renderBiasNav(); } catch (e) {}
+  })();
   renderStats();
   // Initial render of the account-scope picker. Without this call the picker
   // markup stays at its inline display:none state until something else triggers
@@ -27260,42 +27390,55 @@
   // live, you have no trade on yet, and a bias is set, lead with HTF/LTF alignment guidance
   // (agree / conflict / partial / unsure) instead of the yesterday recap. Returns null when
   // not applicable (not live, a trade is open/resolved today, or no bias engaged).
+  // One coaching line for a single direction (no symbol prefix). keySuffix keeps the
+  // anti-repeat memory separate per symbol so two symbols don't fight over one pool slot.
+  function _biasCoachLine(dir, es, keySuffix) {
+    let _pool, _bucket;
+    if (dir === 'Bullish' || dir === 'Bearish') {
+      _bucket = (dir === 'Bullish') ? 'bull' : 'bear';
+      const _w = es ? (dir === 'Bullish' ? 'alcista' : 'bajista') : (dir === 'Bullish' ? 'bullish' : 'bearish');
+      _pool = es ? [
+        `tu sesgo es ${_w}. Espera tu nivel y opera con él, no en contra.`,
+        `marcaste ${_w} hoy. Lectura limpia; ahora paciencia — deja que el precio llegue a tu nivel.`,
+        `sesgo ${_w} fijado. No persigas — deja que el mercado venga a tu zona, luego opera en tu dirección.`
+      ] : [
+        `your bias is ${_w}. Wait for your level and take the trade with it, not against it.`,
+        `you marked ${_w} today. Clean read; now the patience game — let price come to your level.`,
+        `${_w} bias set. Don't chase — let the market come to your zone, then trade your direction.`
+      ];
+    } else {
+      _bucket = 'unsure';
+      _pool = es ? [
+        `marcaste el sesgo sin definir. Estar fuera es una posición — quieto hasta que el mercado se muestre.`,
+        `sin lectura clara aún. No hay setup en la confusión — espera a que se defina.`
+      ] : [
+        `you marked the bias unclear. Flat is a position — sit on your hands until the market shows its hand.`,
+        `no clear read yet. There's no setup in confusion — wait for it to decide.`
+      ];
+    }
+    const _seed = todayKey() + ':bias-align:' + _greetingNonce + ':' + keySuffix;
+    const _pk = 'BIAS_ALIGN_' + _bucket + '_' + keySuffix + (es ? '_ES' : '');
+    return _pool[pickWithAntiRepeat(_pool, _pk, _seed + ':' + _bucket)];
+  }
   function pickBiasAlignmentTail() {
     try {
       if (!(typeof isSessionLive === 'function' && isSessionLive())) return null;
       if (typeof hasInProgressTradeToday === 'function' && hasInProgressTradeToday()) return null;
       if (typeof getTodayOutcome === 'function' && getTodayOutcome()) return null;
-      // Session Bias is a single directional read now (Bullish / Bearish / Unsure) — no
-      // separate HTF/LTF fields — so this coaches trading with that one bias.
-      const _dir = (data.bias && data.bias.direction) || '';
-      if (_dir !== 'Bullish' && _dir !== 'Bearish' && _dir !== 'Unsure') return null;
       const _es = (window.__lang === 'es');
-      let _pool, _bucket;
-      if (_dir === 'Bullish' || _dir === 'Bearish') {
-        _bucket = (_dir === 'Bullish') ? 'bull' : 'bear';
-        const _w = _es ? (_dir === 'Bullish' ? 'alcista' : 'bajista') : (_dir === 'Bullish' ? 'bullish' : 'bearish');
-        _pool = _es ? [
-          `tu sesgo es ${_w}. Espera tu nivel y opera con él, no en contra.`,
-          `marcaste ${_w} hoy. Lectura limpia; ahora paciencia — deja que el precio llegue a tu nivel.`,
-          `sesgo ${_w} fijado. No persigas — deja que el mercado venga a tu zona, luego opera en tu dirección.`
-        ] : [
-          `your bias is ${_w}. Wait for your level and take the trade with it, not against it.`,
-          `you marked ${_w} today. Clean read; now the patience game — let price come to your level.`,
-          `${_w} bias set. Don't chase — let the market come to your zone, then trade your direction.`
-        ];
-      } else {
-        _bucket = 'unsure';
-        _pool = _es ? [
-          `marcaste el sesgo sin definir. Estar fuera es una posición — quieto hasta que el mercado se muestre.`,
-          `sin lectura clara aún. No hay setup en la confusión — espera a que se defina.`
-        ] : [
-          `you marked the bias unclear. Flat is a position — sit on your hands until the market shows its hand.`,
-          `no clear read yet. There's no setup in confusion — wait for it to decide.`
-        ];
+      const _valid = d => (d === 'Bullish' || d === 'Bearish' || d === 'Unsure');
+      // One line per symbol coupled to the LIVE session whose bias has a direction set.
+      const _liveIdx = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1;
+      const _slots = (Array.isArray(data.biasSlots) ? data.biasSlots : [])
+        .filter(sl => sl && sl.sessionIdx === _liveIdx && _valid(sl.direction));
+      if (_slots.length > 1) {
+        return _slots.map(sl => `${sl.symbol} — ${_biasCoachLine(sl.direction, _es, sl.symbol)}`).join('<br>');
       }
-      const _seed = todayKey() + ':bias-align:' + _greetingNonce;
-      const _pk = 'BIAS_ALIGN_' + _bucket + (_es ? '_ES' : '');
-      return _pool[pickWithAntiRepeat(_pool, _pk, _seed + ':' + _bucket)];
+      if (_slots.length === 1) return _biasCoachLine(_slots[0].direction, _es, _slots[0].symbol || 'x');
+      // Fallback: coach the active bias direction (single-bias setups / no slot match).
+      const _dir = (data.bias && data.bias.direction) || '';
+      if (!_valid(_dir)) return null;
+      return _biasCoachLine(_dir, _es, (data.bias && data.bias.symbol) || 'x');
     } catch (e) { return null; }
   }
   function renderBiasGreeting() {
@@ -28518,7 +28661,7 @@
             else sess.symbols.push(sym);
             saveData();
             window.renderSessionSymbolChips(sessionIdx, containerId);
-            try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); } catch (e2) {}
+            try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); } } catch (e2) {}
           });
           wrap.appendChild(chip);
         });
@@ -28897,6 +29040,7 @@
         if (typeof renderSessionMeta === 'function') renderSessionMeta();
         if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
         if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner();
+        if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); }
       } catch (err) {}
     }
     if (sessSel) {
@@ -28933,7 +29077,7 @@
       data.settings.sessions[1] = { name: name, start: s, end: e };
       data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
-      try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (err) {}
+      try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); } } catch (err) {}
     }
     if (addSessBtn) addSessBtn.addEventListener('click', () => {
       if (s2block) s2block.style.display = '';
@@ -28949,7 +29093,7 @@
       if (Array.isArray(data.settings.sessions)) data.settings.sessions = data.settings.sessions.slice(0, 1);
       data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
-      try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (err) {}
+      try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); } } catch (err) {}
     });
     if (sel2) sel2.addEventListener('change', () => { updateSession2HintLive(); saveSession2FromInputs(); });
     [st2, en2].forEach(inp => { if (!inp) return; inp.addEventListener('input', updateSession2HintLive); inp.addEventListener('change', saveSession2FromInputs); });
