@@ -7725,6 +7725,14 @@
     save: function () { return saveData(); },
     setData: function (obj) { try { data = migrate(obj); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
     STORAGE_KEY: STORAGE_KEY,
+    OLD_KEYS: OLD_KEYS,
+    clearLocal: function () {
+      // Wipe the journal from EVERY key loadData() can restore from (current + legacy), so a
+      // cleared cache can't be resurrected from an old key on the next load. This is essential
+      // for account isolation: removing only the v3 key let loadData() re-import the old copy.
+      try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+      try { OLD_KEYS.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} }); } catch (e) {}
+    },
     userId: null
     // .onSave is attached by the cloud module; saveData() calls it on every write.
     // .userId is set by the cloud module on auth changes — it's the MT5 sync token.
@@ -29435,7 +29443,7 @@
         box = document.createElement('div'); box.id = 'st-acct-diag';
         box.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:2147483647;max-width:94vw;max-height:42vh;overflow:auto;background:#0b0b0b;color:#5fcb8d;border:1px solid #5fcb8d;border-radius:6px;font:11px/1.4 monospace;padding:6px 8px;white-space:pre-wrap;';
         document.body.appendChild(box);
-        var hd = document.createElement('div'); hd.textContent = 'ACCT DIAG v4 \u2014 build OK \u00b7 tap to copy'; hd.style.cssText='color:#60a5fa;margin-bottom:4px;cursor:pointer;';
+        var hd = document.createElement('div'); hd.textContent = 'ACCT DIAG v5 \u2014 build OK \u00b7 tap to copy'; hd.style.cssText='color:#60a5fa;margin-bottom:4px;cursor:pointer;';
         hd.addEventListener('click', function(){ try { navigator.clipboard.writeText(box.innerText); } catch(e){} });
         box.appendChild(hd);
       }
@@ -30070,7 +30078,7 @@
       recoveryMode = false;
       try { history.replaceState(null, '', window.location.pathname); } catch (e) {}
       showMain();
-      setTimeout(function () { hideGate(); reconcile(); }, 700);
+      setTimeout(function () { hideGate(); reconcile(true); }, 700);
     });
   });
 
@@ -30536,7 +30544,7 @@
       try { renderPlan(); } catch (e) {}
       // Cloud journal sync runs for EVERY signed-in account (trial included) so nobody
       // loses their history — the paywall gates ACCESS, not sync. Trigger once plan is known.
-      reconcile();
+      reconcile(true);
       // If they arrived via a landing-page plan button, surface that plan now (returning
       // sign-ins; brand-new users get it after induction instead).
       try { stMaybeConsumePlanIntent(); } catch (e) {}
@@ -30570,7 +30578,7 @@
     // is the critical guard: when the tag is null (right after a wipe/sign-out) the old code would
     // upload whatever local held AND stamp the tag to the new user, permanently corrupting it and
     // defeating every downstream check. A deliberate restore (forcing) bypasses this.
-    try { var _co = localStorage.getItem('st_journal_owner'); if (!forcing && _co !== currentUser.id) { __stDiag('cloudPush DEFER owner=' + __stShort(_co) + ' cur=' + __stShort(currentUser.id)); reconcile(); return; } } catch (e) {}
+    try { var _co = localStorage.getItem('st_journal_owner'); if (!forcing && _co !== currentUser.id) { __stDiag('cloudPush DEFER owner=' + __stShort(_co) + ' cur=' + __stShort(currentUser.id)); reconcile(true); return; } } catch (e) {}
     var d = ST.getData();
     // A deliberate restore (Rollback history) must win unconditionally.
     if (forcing) { doCloudUpsert(d); return; }
@@ -30616,7 +30624,10 @@
     });
   }
 
-  function reconcile() {
+  // authoritative=true on a fresh SIGN-IN: the cloud is the source of truth for the account, and
+  // local is never trusted (it may be a previous account's cache on this browser). authoritative
+  // is falsy for mid-session focus/resume re-pulls, which use the loss-proof content merge.
+  function reconcile(authoritative) {
     if (!currentUser) return;
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
@@ -30634,25 +30645,36 @@
       if (_owner && _owner !== currentUser.id) {
         try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
         if (cloudHasData) { try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(ST.migrate(raw))); } catch (e) {} }
-        else { try { localStorage.removeItem(ST.STORAGE_KEY); } catch (e) {} }
+        else { try { ST.clearLocal(); } catch (e) {} }
         try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
         location.reload();
         return;
       }
-      // First sync for this account: only SEED an empty cloud from local if the local cache
-      // PROVABLY belongs to this same account (owner tag matches). The app is gated behind login,
-      // so a brand-new account cannot have created its own local trades yet — any pre-existing
-      // local data with a null/other owner is leftover from a previous login on this browser and
-      // must NOT be inherited. This is the actual fix for full-account data leaking into a new trial.
+      // EMPTY CLOUD for this account.
       if (!cloudHasData) {
-        if (_owner === currentUser.id && contentScore(local) > 0) {
-          try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
-          cloudPush(); return;
-        }
         try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
+        if (authoritative) {
+          // SIGN-IN: an empty cloud means this account has NO saved data. Discard any local cache
+          // unconditionally (it is a previous account's leftover on this browser, or stale) and
+          // start blank. We do NOT seed the cloud from local and do NOT trust the owner tag here,
+          // because the tag can be wrongly stamped to the new account during an in-place session
+          // switch. The account's own future edits upload via the normal save path. THIS is the
+          // definitive fix for one account's journal appearing in a newly-created account.
+          if (contentScore(local) > 0) {
+            try { clearTimeout(pushTimer); } catch (e) {}
+            try { ST.clearLocal(); } catch (e) {}
+            try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
+            location.reload();
+            return;
+          }
+          accStatus(tt('synced'));
+          return;
+        }
+        // FOCUS / RESUME (already past a clean sign-in this session): local belongs to this
+        // account, so push any unsaved edits up. If somehow it doesn't, start clean.
+        if (_owner === currentUser.id && contentScore(local) > 0) { cloudPush(); return; }
         if (contentScore(local) > 0) {
-          // Leftover / unknown-owner local -> start this account clean (never adopt or upload it).
-          try { localStorage.removeItem(ST.STORAGE_KEY); } catch (e) {}
+          try { ST.clearLocal(); } catch (e) {}
           try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
           location.reload();
           return;
@@ -30704,7 +30726,7 @@
     var owner = null;
     try { owner = localStorage.getItem('st_data_owner'); } catch (e) {}
     if (owner && owner !== uid) {
-      try { localStorage.removeItem(ST.STORAGE_KEY); } catch (e) {}
+      try { ST.clearLocal(); } catch (e) {}
       try {
         var rm = [];
         for (var i = 0; i < localStorage.length; i++) { var k = localStorage.key(i); if (k && k.indexOf(SNAP_PREFIX) === 0) rm.push(k); }
@@ -30736,7 +30758,7 @@
       if (_newId && _prevId && _newId !== _prevId) {
         __stDiag('SWITCH ' + __stShort(_prevId) + ' -> ' + __stShort(_newId) + ' : wiping local + reload');
         try { clearTimeout(pushTimer); } catch (e) {}
-        try { localStorage.removeItem(ST.STORAGE_KEY); } catch (e) {}
+        try { ST.clearLocal(); } catch (e) {}
         try { localStorage.removeItem('st_journal_owner'); } catch (e) {}
         try { localStorage.removeItem('st_data_owner'); } catch (e) {}
         try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
@@ -30759,7 +30781,7 @@
       // event (NOT every logged-out load) — otherwise loadData() re-creating a blank journal on each
       // load would make this reload forever (the landing-page flashing bug).
       if (event === 'SIGNED_OUT') {
-        try { localStorage.removeItem(ST.STORAGE_KEY); localStorage.removeItem('st_journal_owner'); } catch (e) {}
+        try { ST.clearLocal(); localStorage.removeItem('st_journal_owner'); } catch (e) {}
         try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
         location.reload();
         return;
