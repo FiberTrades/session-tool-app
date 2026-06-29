@@ -1065,6 +1065,15 @@
   .potr-summary-left { color: var(--text); }
   /* Per-trade table — full section width */
   .potr-trade-table { margin-left: 0; }
+  /* "Winning trades I didn't take" per-trade table — reuses the .potr-trade-row
+     visuals with a 3-column grid (week / would-be R / note). */
+  .missed-trade-table { margin-top: 14px; }
+  .missed-trade-table .potr-trade-row { grid-template-columns: 130px 110px minmax(140px, 1fr); cursor: default; }
+  .missed-trade-table .potr-trade-row.has-link { cursor: pointer; }
+  .missed-trade-cell-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-mid); }
+  @media (max-width: 700px) {
+    .missed-trade-table .potr-trade-row { grid-template-columns: 96px 72px minmax(90px, 1fr); }
+  }
   /* Six-column layout for all metric modes (R / Pips / %).
      The "LEFT (%)" column was previously shown in R and Pips modes as a quick
      percentage view of the gap, but it duplicated info available via the %
@@ -3402,6 +3411,7 @@
         <div class="stat-cell"><div class="stat-tooltip" data-i18n="tip.missed_avg_r">Average would-be R per missed winner.</div><div class="stat-label" data-i18n="kpi.missed_avg_r">Avg Would-be R</div><div class="stat-value" id="kpi-missed-avg">—</div></div>
         <div class="stat-cell"><div class="stat-tooltip" data-i18n="tip.missed_vs_taken">Winners you took (current scope) vs winners you logged as missed, by count. A high missed share means opportunity is slipping past your entries.</div><div class="stat-label" data-i18n="kpi.missed_vs_taken">Taken · Missed</div><div class="stat-value" id="kpi-missed-ratio">—</div></div>
       </div>
+      <div id="missed-winners-table-wrap"></div>
     </section>
 
     <section>
@@ -4717,6 +4727,9 @@
       'kpi.missed_avg_r': 'Avg Would-be R',
       'tip.missed_avg_r': 'Average would-be R per missed winner.',
       'kpi.missed_vs_taken': 'Taken · Missed',
+      'missed.col_week': 'Week',
+      'missed.col_wouldbe': 'Would-be R',
+      'missed.col_note': 'Note',
       'tip.missed_vs_taken': 'Winners you took (current scope) vs winners you logged as missed, by count. A high missed share means opportunity is slipping past your entries.',
       'modal.missed_wouldbe_r': "would've captured R",
       'sym.col.avgr': 'Avg R',
@@ -5963,6 +5976,9 @@
       'kpi.missed_avg_r': 'R Potencial Media',
       'tip.missed_avg_r': 'R potencial media por ganadora perdida.',
       'kpi.missed_vs_taken': 'Tomadas · Perdidas',
+      'missed.col_week': 'Semana',
+      'missed.col_wouldbe': 'R Potencial',
+      'missed.col_note': 'Nota',
       'tip.missed_vs_taken': 'Ganadoras que tomaste (ámbito actual) vs ganadoras que registraste como perdidas, por número. Una proporción alta de perdidas significa que la oportunidad se te escapa.',
       'modal.missed_wouldbe_r': 'R que habría capturado',
       'sym.col.avgr': 'R Med.',
@@ -13263,12 +13279,25 @@
       const missed = [];
       (data.weeklyReviews || []).forEach(w => {
         const links = (w && w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
-        links.forEach(l => { if (l && typeof l.r === 'number' && !isNaN(l.r)) missed.push(l.r); });
+        const wk = (w && w.weekStart) ? w.weekStart : null;
+        links.forEach(l => {
+          if (l && typeof l.r === 'number' && !isNaN(l.r)) {
+            missed.push({ r: l.r, notes: (l.notes || ''), url: (l.url || ''), weekStart: wk });
+          }
+        });
       });
+      // __MISSED_PREVIEW_START__ TEMPORARY sample data so the empty section can be previewed. REMOVE to restore hide-when-empty.
+      if (missed.length === 0) {
+        missed.push({ r: 3.2, notes: 'Clean London sweep — hesitated on the entry', url: '', weekStart: new Date().toISOString() });
+        missed.push({ r: 2.5, notes: 'Missed the entry, stepped away from the desk', url: '', weekStart: new Date(Date.now() - 7 * 86400000).toISOString() });
+        missed.push({ r: 1.8, notes: 'Reaction off PD high — wrong filter, skipped', url: '', weekStart: new Date(Date.now() - 14 * 86400000).toISOString() });
+      }
+      // __MISSED_PREVIEW_END__
       const count = missed.length;
-      if (count === 0) { sec.style.display = 'none'; return; }
+      const tableWrap = document.getElementById('missed-winners-table-wrap');
+      if (count === 0) { sec.style.display = 'none'; if (tableWrap) tableWrap.innerHTML = ''; return; }
       sec.style.display = '';
-      const totalR = missed.reduce((s, r) => s + r, 0);
+      const totalR = missed.reduce((s, m) => s + m.r, 0);
       const avgR = totalR / count;
       const takenWins = (typeof filterByScope === 'function' && typeof getAllLifetimeTrades === 'function')
         ? filterByScope(getAllLifetimeTrades()).filter(t => t.result === 'Win').length : 0;
@@ -13278,6 +13307,22 @@
       setTxt('kpi-missed-r', fmtR(totalR));
       setTxt('kpi-missed-avg', fmtR(avgR));
       setTxt('kpi-missed-ratio', `${takenWins} · ${count}`);
+      // Per-trade breakdown — biggest would-be R first, mirroring the Hold Winners table.
+      if (tableWrap) {
+        const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        const fmtWk = iso => { if (!iso) return '—'; const d = new Date(iso); if (isNaN(d.getTime())) return '—'; return (typeof fmtDate === 'function') ? fmtDate(d) : d.toISOString().slice(0, 10); };
+        const rowsHtml = missed.slice().sort((a, b) => b.r - a.r).map(m => {
+          const rStr = (m.r >= 0 ? '+' : '') + m.r.toFixed(2) + 'R';
+          const hasLink = !!(m.url && m.url.trim());
+          const noteTxt = m.notes ? esc(m.notes) : '—';
+          const titleAttr = m.notes ? ` title="${esc(m.notes)}"` : '';
+          return `<div class="potr-trade-row${hasLink ? ' has-link' : ''}"${hasLink ? ` data-url="${esc(m.url.trim())}"` : ''}>\n            <div class="potr-trade-cell">${fmtWk(m.weekStart)}</div>\n            <div class="potr-trade-cell good">${rStr}</div>\n            <div class="potr-trade-cell missed-trade-cell-note"${titleAttr}>${noteTxt}</div>\n          </div>`;
+        }).join('');
+        tableWrap.innerHTML = `<div class="missed-trade-table">\n          <div class="potr-trade-row headers">\n            <div class="potr-trade-cell">${t('missed.col_week')}</div>\n            <div class="potr-trade-cell">${t('missed.col_wouldbe')}</div>\n            <div class="potr-trade-cell">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml}\n        </div>`;
+        tableWrap.querySelectorAll('.potr-trade-row.has-link').forEach(row => {
+          row.addEventListener('click', () => { const u = row.getAttribute('data-url'); if (u) window.open(u, '_blank', 'noopener'); });
+        });
+      }
     })();
 
     // ----- By-symbol breakdown — only visible once 2+ distinct symbols are traded -----
