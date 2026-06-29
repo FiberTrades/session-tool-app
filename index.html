@@ -29435,7 +29435,7 @@
         box = document.createElement('div'); box.id = 'st-acct-diag';
         box.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:2147483647;max-width:94vw;max-height:42vh;overflow:auto;background:#0b0b0b;color:#5fcb8d;border:1px solid #5fcb8d;border-radius:6px;font:11px/1.4 monospace;padding:6px 8px;white-space:pre-wrap;';
         document.body.appendChild(box);
-        var hd = document.createElement('div'); hd.textContent = 'ACCT DIAG v1 \u2014 build OK \u00b7 tap to copy'; hd.style.cssText='color:#60a5fa;margin-bottom:4px;cursor:pointer;';
+        var hd = document.createElement('div'); hd.textContent = 'ACCT DIAG v2 \u2014 build OK \u00b7 tap to copy'; hd.style.cssText='color:#60a5fa;margin-bottom:4px;cursor:pointer;';
         hd.addEventListener('click', function(){ try { navigator.clipboard.writeText(box.innerText); } catch(e){} });
         box.appendChild(hd);
       }
@@ -30636,9 +30636,28 @@
         location.reload();
         return;
       }
+      // First sync for this account: only SEED an empty cloud from local if the local cache
+      // PROVABLY belongs to this same account (owner tag matches). The app is gated behind login,
+      // so a brand-new account cannot have created its own local trades yet — any pre-existing
+      // local data with a null/other owner is leftover from a previous login on this browser and
+      // must NOT be inherited. This is the actual fix for full-account data leaking into a new trial.
+      if (!cloudHasData) {
+        if (_owner === currentUser.id && contentScore(local) > 0) {
+          try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
+          cloudPush(); return;
+        }
+        try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
+        if (contentScore(local) > 0) {
+          // Leftover / unknown-owner local -> start this account clean (never adopt or upload it).
+          try { localStorage.removeItem(ST.STORAGE_KEY); } catch (e) {}
+          try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
+          location.reload();
+          return;
+        }
+        accStatus(tt('synced'));
+        return;
+      }
       try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
-      // First-ever sync for this account: cloud is empty -> seed it from local. Never wipes anything.
-      if (!cloudHasData) { cloudPush(); return; }
       var cloud = ST.migrate(raw);
       if (eq(cloud, local)) { accStatus(tt('synced')); return; }
       // Loss-proof reconcile: keep whichever copy holds MORE journal content, measured by
