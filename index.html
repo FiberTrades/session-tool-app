@@ -1071,6 +1071,15 @@
   .missed-trade-table .potr-trade-row { grid-template-columns: 130px 110px minmax(140px, 1fr); cursor: default; }
   .missed-trade-table .potr-trade-row.has-link { cursor: pointer; }
   .missed-trade-cell-note { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--text-mid); }
+  .missed-trade-table .missed-empty-row { padding: 16px 14px; background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-chip); text-align: center; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.04em; color: var(--text-dim); }
+  /* ATL-style compact trade tables (Hold Winners wins/BEs + missed winners):
+     ~5 rows visible, then scroll, with a sticky centered header. */
+  .trade-scroll-5 { max-height: 248px; overflow: auto; margin-top: 4px; }
+  .trade-scroll-5 .potr-trade-row.headers { position: sticky; top: 0; z-index: 2; background: var(--bg-elev2); }
+  .trade-scroll-5 .potr-trade-row.headers .potr-trade-cell { background: var(--bg-elev2); color: var(--text-mid); padding: 10px 10px; }
+  .trade-scroll-5 .potr-trade-row .potr-trade-cell { padding: 10px 10px; text-align: center; }
+  .trade-scroll-5::-webkit-scrollbar { width: 8px; height: 8px; }
+  .trade-scroll-5::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
   @media (max-width: 700px) {
     .missed-trade-table .potr-trade-row { grid-template-columns: 96px 72px minmax(90px, 1fr); }
   }
@@ -4730,6 +4739,8 @@
       'missed.col_week': 'Week',
       'missed.col_wouldbe': 'Would-be R',
       'missed.col_note': 'Note',
+      'missed.empty': 'No missed winners logged yet — add them in your weekly review.',
+      'missed.empty_symbols': 'No trades logged yet.',
       'kpi.missed_taken': 'Winners Taken',
       'tip.missed_taken': "Winning trades you actually took (current scope). Compare against missed winners to see how much opportunity you're converting.",
       'tip.missed_vs_taken': 'Winners you took (current scope) vs winners you logged as missed, by count. A high missed share means opportunity is slipping past your entries.',
@@ -5981,6 +5992,8 @@
       'missed.col_week': 'Semana',
       'missed.col_wouldbe': 'R Potencial',
       'missed.col_note': 'Nota',
+      'missed.empty': 'Aún no has registrado ganadoras perdidas — agrégalas en tu revisión semanal.',
+      'missed.empty_symbols': 'Aún no hay operaciones registradas.',
       'kpi.missed_taken': 'Ganadoras Tomadas',
       'tip.missed_taken': 'Operaciones ganadoras que sí tomaste (alcance actual). Compara con las ganadoras perdidas para ver cuánta oportunidad estás aprovechando.',
       'tip.missed_vs_taken': 'Ganadoras que tomaste (ámbito actual) vs ganadoras que registraste como perdidas, por número. Una proporción alta de perdidas significa que la oportunidad se te escapa.',
@@ -13290,26 +13303,18 @@
           }
         });
       });
-      // __MISSED_PREVIEW_START__ TEMPORARY sample data so the empty section can be previewed. REMOVE to restore hide-when-empty.
-      if (missed.length === 0) {
-        missed.push({ r: 3.2, notes: 'Clean London sweep — hesitated on the entry', url: '', weekStart: new Date().toISOString() });
-        missed.push({ r: 2.5, notes: 'Missed the entry, stepped away from the desk', url: '', weekStart: new Date(Date.now() - 7 * 86400000).toISOString() });
-        missed.push({ r: 1.8, notes: 'Reaction off PD high — wrong filter, skipped', url: '', weekStart: new Date(Date.now() - 14 * 86400000).toISOString() });
-      }
-      // __MISSED_PREVIEW_END__
       const count = missed.length;
       const tableWrap = document.getElementById('missed-winners-table-wrap');
-      if (count === 0) { sec.style.display = 'none'; if (tableWrap) tableWrap.innerHTML = ''; return; }
-      sec.style.display = '';
+      sec.style.display = '';  // always visible, even with nothing logged yet
       const totalR = missed.reduce((s, m) => s + m.r, 0);
-      const avgR = totalR / count;
+      const avgR = count ? totalR / count : 0;
       const takenWins = (typeof filterByScope === 'function' && typeof getAllLifetimeTrades === 'function')
         ? filterByScope(getAllLifetimeTrades()).filter(t => t.result === 'Win').length : 0;
       const fmtR = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
       const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
       setTxt('kpi-missed-count', String(count));
-      setTxt('kpi-missed-r', fmtR(totalR));
-      setTxt('kpi-missed-avg', fmtR(avgR));
+      setTxt('kpi-missed-r', count ? fmtR(totalR) : '—');
+      setTxt('kpi-missed-avg', count ? fmtR(avgR) : '—');
       setTxt('kpi-missed-taken', String(takenWins));
       // Per-trade breakdown — biggest would-be R first, mirroring the Hold Winners table.
       if (tableWrap) {
@@ -13322,7 +13327,7 @@
           const titleAttr = m.notes ? ` title="${esc(m.notes)}"` : '';
           return `<div class="potr-trade-row${hasLink ? ' has-link' : ''}"${hasLink ? ` data-url="${esc(m.url.trim())}"` : ''}>\n            <div class="potr-trade-cell">${fmtWk(m.weekStart)}</div>\n            <div class="potr-trade-cell good">${rStr}</div>\n            <div class="potr-trade-cell missed-trade-cell-note"${titleAttr}>${noteTxt}</div>\n          </div>`;
         }).join('');
-        tableWrap.innerHTML = `<div class="missed-trade-table">\n          <div class="potr-trade-row headers">\n            <div class="potr-trade-cell">${t('missed.col_week')}</div>\n            <div class="potr-trade-cell">${t('missed.col_wouldbe')}</div>\n            <div class="potr-trade-cell">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml}\n        </div>`;
+        tableWrap.innerHTML = `<div class="missed-trade-table"><div class="trade-scroll-5">\n          <div class="potr-trade-row headers">\n            <div class="potr-trade-cell">${t('missed.col_week')}</div>\n            <div class="potr-trade-cell">${t('missed.col_wouldbe')}</div>\n            <div class="potr-trade-cell">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml || ('<div class="missed-empty-row">' + t('missed.empty') + '</div>')}\n        </div></div>`;
         tableWrap.querySelectorAll('.potr-trade-row.has-link').forEach(row => {
           row.addEventListener('click', () => { const u = row.getAttribute('data-url'); if (u) window.open(u, '_blank', 'noopener'); });
         });
@@ -13340,7 +13345,6 @@
         (groups[sym] = groups[sym] || []).push(tr);
       });
       const syms = Object.keys(groups);
-      if (syms.length <= 1) { sec.style.display = 'none'; wrap.innerHTML = ''; return; }
       sec.style.display = '';
       const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       const plCls = v => v > 0 ? 'pl-good' : v < 0 ? 'pl-bad' : 'pl-be';
@@ -13359,6 +13363,7 @@
         <div class="history-cell">${t('sym.col.net')}</div>
       </div>`;
       let html = '<div class="history-list" style="margin-top:0;">' + header;
+      if (rows.length === 0) html += '<div class="history-row"><div class="history-cell" style="grid-column:1/-1;text-align:center;color:var(--text-dim);">' + t('missed.empty_symbols') + '</div></div>';
       rows.forEach(({ sym, s, netGbp }) => {
         const wr = s.wr !== null ? `${s.wr}%` : '—';
         const netR = (s.netR >= 0 ? '+' : '') + s.netR.toFixed(2) + 'R';
@@ -14626,7 +14631,7 @@
           <span class="combo-subsection-title">${titleLabelTpl.replace(/\{N\}/g, sortedWins.length)}</span>
           ${winsSortBtns}
         </summary>
-        <div class="combo-subsection-body">${hdr}${body}${winsMoreBtn}</div>
+        <div class="combo-subsection-body"><div class="trade-scroll-5">${hdr}${body}</div>${winsMoreBtn}</div>
       </details>`;
     }
 
@@ -14664,7 +14669,7 @@
           <span class="combo-subsection-title">${titleLabelTpl.replace(/\{N\}/g, sortedBes.length)}</span>
           ${besSortBtns}
         </summary>
-        <div class="combo-subsection-body">${hdr}${body}${besMoreBtn}</div>
+        <div class="combo-subsection-body"><div class="trade-scroll-5">${hdr}${body}</div>${besMoreBtn}</div>
       </details>`;
     }
 
