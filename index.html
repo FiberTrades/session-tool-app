@@ -30545,6 +30545,9 @@
 
   function cloudPush() {
     if (!currentUser) return;
+    // Account isolation: never upload a journal that belongs to a DIFFERENT account (a cache
+    // lingering after a same-browser switch). Defer to reconcile, which loads the right copy.
+    try { var _co = localStorage.getItem('st_journal_owner'); if (_co && _co !== currentUser.id) { reconcile(); return; } } catch (e) {}
     var d = ST.getData();
     // A deliberate restore (Rollback history) must win unconditionally.
     if (forcing) { doCloudUpsert(d); return; }
@@ -30681,7 +30684,18 @@
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); }
-    else { clearTimeout(pushTimer); accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; profileSubId = null; profileDiscordId = null; profileDiscordName = null; hidePaywall(); renderPlanBadge(); showGate(); }
+    else {
+      clearTimeout(pushTimer);
+      // Wipe this account's local journal cache on sign-out so the NEXT login on the same browser
+      // can never inherit it. The cloud copy is the source of truth and is restored on next sign-in.
+      // Reload to drop the IN-MEMORY copy too, otherwise it would still be visible/pushable to a
+      // newly created account (this is what was leaking full-account data into new trial accounts).
+      var _hadJournal = false; try { _hadJournal = !!localStorage.getItem(ST.STORAGE_KEY); } catch (e) {}
+      try { localStorage.removeItem(ST.STORAGE_KEY); localStorage.removeItem('st_journal_owner'); } catch (e) {}
+      try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
+      if (_hadJournal) { location.reload(); return; }
+      accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; profileSubId = null; profileDiscordId = null; profileDiscordName = null; hidePaywall(); renderPlanBadge(); showGate();
+    }
   });
 
   if (window.location.hash.indexOf('type=recovery') !== -1) { recoveryMode = true; }
