@@ -381,6 +381,11 @@
      + 110px ≈ 246px. Locking the session select to that same width creates
      visual alignment between the two stacked rows. */
   .settings-session-select { max-width: 246px; width: 246px; }
+  .settings-session-symbols { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }
+  .sess-sym-chip { background: var(--bg-elev2); border: 1px solid var(--border-2); color: var(--text-mid); border-radius: var(--radius-chip); padding: 6px 12px; font-family: 'AppNum','DM Mono',monospace; font-size: 11px; letter-spacing: 0.04em; cursor: pointer; transition: all 120ms; }
+  .sess-sym-chip:hover { border-color: var(--text-dim); color: var(--text); }
+  .sess-sym-chip.on { background: rgba(96,165,250,0.14); border-color: var(--accent); color: var(--text); }
+  .settings-session-symbols-empty { color: var(--text-dim); font-size: 11px; font-family: 'AppNum','DM Mono',monospace; }
   .settings-btn { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 8px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: all 200ms; }
   .settings-range { width: 160px; max-width: 55%; accent-color: var(--good); vertical-align: middle; cursor: pointer; }
   .settings-btn:hover { border-color: var(--text-mid); color: var(--text); }
@@ -4166,6 +4171,8 @@
       </div>
       <div id="settings-session-hint" class="settings-parsed-hint"></div>
       <p class="settings-hint" data-i18n="settings.session_window_hint">Controls news heads-up timing, session-aware greetings, and rule reminders.</p>
+      <label class="settings-label" data-i18n="settings.session_symbols_label" style="margin-top:14px;">Symbols this session</label>
+      <div id="settings-session-symbols-1" class="settings-session-symbols"></div>
       <button type="button" id="settings-add-session-btn" class="settings-btn" data-i18n="settings.add_session" style="margin-top:6px;">+ Add session</button>
       <div id="settings-session2-block" style="display:none;margin-top:18px;padding-top:18px;border-top:1px solid var(--border-2);">
         <label class="settings-label" data-i18n="settings.session2_label">Session 2</label>
@@ -4182,6 +4189,8 @@
           <input type="time" id="settings-session-end-2" class="settings-input settings-time-input" />
         </div>
         <div id="settings-session-hint-2" class="settings-parsed-hint"></div>
+        <label class="settings-label" data-i18n="settings.session_symbols_label" style="margin-top:14px;">Symbols this session</label>
+        <div id="settings-session-symbols-2" class="settings-session-symbols"></div>
         <button type="button" id="settings-session2-remove" class="settings-btn" data-i18n="settings.remove_session" style="margin-top:10px;">Remove session</button>
       </div>
     </div>
@@ -5058,7 +5067,9 @@
       'settings.session_window_label': 'Trading session',
       'settings.session_name_label': 'Session',
       'settings.pair_label': 'Pair you trade',
-      'settings.pair_hint': 'The first instrument is your primary — shown on your dashboard and atop every bias and review you copy to Discord. Add more if you trade multiple instruments.',
+      'settings.pair_hint': 'List the instruments you trade, then couple each to a session below. The symbol coupled to a session is what shows on your dashboard and atop the bias and review you copy to Discord for that session.',
+      'settings.session_symbols_label': 'Symbols this session',
+      'settings.session_symbols_empty': 'Add instruments above first, then couple them here.',
       'settings.whattrade_label': 'Symbols I trade',
       'settings.whattrade_add_ph': 'e.g. EUR/USD, AAPL, Gold, NAS100',
       'settings.whattrade_add': '+ Add',
@@ -6313,7 +6324,9 @@
       'settings.session_window_label': 'Sesión de trading',
       'settings.session_name_label': 'Sesión',
       'settings.pair_label': 'Par que operas',
-      'settings.pair_hint': 'El primer instrumento es el principal — se muestra en tu panel y al principio de cada sesgo y revisión que copias a Discord. Añade más si operas varios instrumentos.',
+      'settings.pair_hint': 'Lista los instrumentos que operas y luego acopla cada uno a una sesión abajo. El símbolo acoplado a una sesión es el que se muestra en tu panel y al principio del sesgo y la revisión que copias a Discord para esa sesión.',
+      'settings.session_symbols_label': 'Símbolos de esta sesión',
+      'settings.session_symbols_empty': 'Añade instrumentos arriba primero, luego acóplalos aquí.',
       'settings.whattrade_label': 'Símbolos que opero',
       'settings.whattrade_add_ph': 'p. ej. EUR/USD, AAPL, Oro, NAS100',
       'settings.whattrade_add': '+ Añadir',
@@ -7558,6 +7571,47 @@
   }
   // Live if the current local time is inside ANY configured session window.
   function isSessionLive() { return liveSessionIndex() >= 0; }
+  // Session 'in focus' for the header + bias label: the live one, else the next upcoming
+  // today, else (all today's done) the earliest-start session = tomorrow's first.
+  function currentOrNextSessionIndex() {
+    const ss = getSessions();
+    if (!ss.length) return -1;
+    const li = liveSessionIndex();
+    if (li >= 0) return li;
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    const ended = endedSessionsToday();
+    let bestIdx = -1, bestStart = Infinity;
+    for (let i = 0; i < ss.length; i++) {
+      if (ended.indexOf(i) !== -1) continue;
+      const sm = _mins(ss[i].start);
+      if (sm > nowMins && sm < bestStart) { bestStart = sm; bestIdx = i; }
+    }
+    if (bestIdx >= 0) return bestIdx;
+    let firstIdx = 0, firstStart = Infinity;
+    for (let i = 0; i < ss.length; i++) { const sm = _mins(ss[i].start); if (sm < firstStart) { firstStart = sm; firstIdx = i; } }
+    return firstIdx;
+  }
+  // Session 'in focus' for the review label: the live one, else the most recent session
+  // that has already started today (the one you just traded), else the next upcoming.
+  function recentOrCurrentSessionIndex() {
+    const ss = getSessions();
+    if (!ss.length) return -1;
+    const li = liveSessionIndex();
+    if (li >= 0) return li;
+    const now = new Date();
+    const nowMins = now.getHours() * 60 + now.getMinutes();
+    let bestIdx = -1, bestStart = -Infinity;
+    for (let i = 0; i < ss.length; i++) { const sm = _mins(ss[i].start); if (sm <= nowMins && sm > bestStart) { bestStart = sm; bestIdx = i; } }
+    if (bestIdx >= 0) return bestIdx;
+    return currentOrNextSessionIndex();
+  }
+  // Localized short name (no times) for a session index, for the Discord header label.
+  function sessionShortLabel(idx) {
+    const ss = getSessions();
+    if (idx < 0 || idx >= ss.length) return '';
+    return localizeSessionName(ss[idx].name || '');
+  }
 
   // The Review tab + the big header title read "Session Live" while the session window is
   // open, and revert to "Session Review" otherwise. Centralised so the tab strip, the header
@@ -7594,6 +7648,7 @@
     const banner = document.getElementById('session-live-banner');
     const pill = document.getElementById('session-live-pill');
     const live = isSessionLive();
+    if (typeof renderSessionMeta === 'function') renderSessionMeta();
     _maybeAutoSyncOnSessionEnd(live);
     // The persistent pill is shown on every tab whenever the session is live. NOT dismissible.
     if (pill) { live ? pill.classList.remove('hidden') : pill.classList.add('hidden'); }
@@ -8114,12 +8169,24 @@
     if (!el) return;
     const ss = (typeof getSessions === 'function') ? getSessions() : [];
     if (!ss.length) { el.textContent = localizeSessionName((data.settings && data.settings.sessionName) || 'London'); return; }
-    if (ss.length === 1) { el.textContent = sessionMetaLabel(ss[0]); return; }
-    const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-    el.innerHTML = ss.map(x => '<span class="meta-session-line">' + esc(sessionMetaLabel(x)) + '</span>').join('');
+    // Show only the session in focus: live now, else the next upcoming today; once all of
+    // today's are over, the next day's first. The expired session drops off the header.
+    const idx = (typeof currentOrNextSessionIndex === 'function') ? currentOrNextSessionIndex() : 0;
+    el.textContent = sessionMetaLabel(ss[idx >= 0 ? idx : 0]);
   }
   function renderMetaHeader() {
-    document.getElementById('meta-pair').textContent = data.settings.pair || 'EUR/USD';
+    (function () {
+      var txt = data.settings.pair || 'EUR/USD';
+      try {
+        var ss = (typeof getSessions === 'function') ? getSessions() : [];
+        var idx = (typeof currentOrNextSessionIndex === 'function') ? currentOrNextSessionIndex() : 0;
+        var s2 = ss[idx >= 0 ? idx : 0];
+        var syms = (s2 && Array.isArray(s2.symbols) && s2.symbols.length) ? s2.symbols
+                 : ((data.settings.symbols && data.settings.symbols.length) ? [data.settings.symbols[0]] : [txt]);
+        txt = syms.join(' \u00b7 ');
+      } catch (e) {}
+      document.getElementById('meta-pair').textContent = txt;
+    })();
     renderSessionMeta();
   }
   renderMetaHeader();
@@ -8505,6 +8572,15 @@
       for (var _ki = 0; _ki < _known.length; _ki++) { if (_snm.toLowerCase().indexOf(_known[_ki].toLowerCase()) === 0) { _nm = _known[_ki]; break; } }
       d.settings.sessions = [{ name: _nm, start: d.settings.windowStart || '08:00', end: d.settings.windowEnd || '10:00' }];
     }
+    // Couple symbols to sessions. Each session carries its own symbol list; the
+    // "primary" concept is gone. Default a session to the first instrument until the
+    // user couples specific symbols in Settings.
+    (function ensureSessionSymbols() {
+      var _def = (d.settings.symbols && d.settings.symbols[0]) || d.settings.pair || 'EUR/USD';
+      (d.settings.sessions || []).forEach(function (s) {
+        if (s && (!Array.isArray(s.symbols) || !s.symbols.length)) s.symbols = [_def];
+      });
+    })();
     if (d.settings.sessionDayCutoff === undefined) d.settings.sessionDayCutoff = '22:00';
     // Rule-of-the-week reminder cadence during session window.
     // 'off' | 'start' | '5' | '15' | '30' | '60' (minutes).
@@ -10446,7 +10522,9 @@
     if (b.sessionDate && b.sessionDate !== todayDateStr()) {
       try { headerDate = new Date(b.sessionDate + 'T12:00:00').toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' }).replace(/^./, c => c.toUpperCase()); } catch {}
     }
-    const lines = [`**${data.settings.pair} Bias — ${headerDate}**`, ''];
+    const _ssB = getSessions();
+    const _slB = (_ssB.length > 1) ? (sessionShortLabel(currentOrNextSessionIndex()) + ' ') : '';
+    const lines = [`**${data.settings.pair} ${_slB}Bias — ${headerDate}**`, ''];
     // Structured summary goes inside a ``` code block so Discord renders it as a
     // boxed monospace panel, matching the Session Review summary.
     const box = [];
@@ -10480,25 +10558,32 @@
         }
       }
     } catch(e) {}
-    const links = (b.tvLinks || []).filter(l => l && l.url);
+    const links = (b.tvLinks || []).filter(l => l && (l.url || (l.notes && l.notes.trim())));
     // Charts are emitted only in the "— Charts —" section below (outside the code block).
     // Emit the structured summary as a single boxed code block.
     if (box.length > 0) { lines.push('```'); lines.push(...box); lines.push('```'); }
     if (b.notes)  { lines.push(''); lines.push(b.notes); }
     if (links.length > 0) {
+      const urlCount = links.filter(l => l.url).length;
       lines.push('');
-      lines.push(links.length === 1 ? '— Chart —' : '— Charts —');
+      lines.push(urlCount > 1 ? '— Charts —' : (urlCount === 1 ? '— Chart —' : '— Notes —'));
       // Bias has two fixed timeframe slots (index 0 = MTF, index 1 = LTF), and
       // both are required before copying — so the normal export has exactly two
       // charts in that order. Name them by timeframe; fall back to a numbered
-      // label only in the unusual case where there aren't exactly two.
-      const twoTf = links.length === 2;
+      // label only in the unusual case where there aren't exactly two. An entry
+      // with a note but no chart still shows its note (standalone line).
+      const twoTf = urlCount === 2;
       const mtfL = t('bias.mtf_label') || 'HTF';
       const ltfL = t('bias.ltf_label') || 'LTF';
+      let cN = 0;
       links.forEach((l, i) => {
-        const lbl = twoTf ? `${i === 0 ? mtfL : ltfL} Chart` : `Chart [${i + 1}]`;
-        lines.push(`${lbl}   ${l.url}`);
-        if (l.notes) lines.push(`      "${l.notes}"`);
+        if (l.url) {
+          cN++;
+          const lbl = twoTf ? `${cN === 1 ? mtfL : ltfL} Chart` : `Chart [${cN}]`;
+          lines.push(`${lbl}   ${l.url}`);
+        }
+        if (l.notes && l.notes.trim()) lines.push(`Notes: "${l.notes}"`);
+        if (i < links.length - 1) lines.push('');
       });
     }
     return lines.join('\n');
@@ -11644,7 +11729,34 @@
     if (r.sessionDate && r.sessionDate !== todayDateStr()) {
       try { headerDate = new Date(r.sessionDate + 'T12:00:00').toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' }).replace(/^./, c => c.toUpperCase()); } catch {}
     }
-    const lines = [`**${data.settings.pair} Review — ${headerDate}**`, ''];
+    const _ssR = getSessions();
+    const _tradedSyms = [...new Set((r.trades || []).map(tt => tt && tt.symbol).filter(Boolean))];
+    const _showSym = _tradedSyms.length > 1;
+    function _sessNamesForSyms(syms) {
+      const out = [];
+      _ssR.forEach(s => {
+        const sy = Array.isArray(s.symbols) ? s.symbols : [];
+        if (syms.some(x => sy.indexOf(x) >= 0)) out.push(localizeSessionName(s.name));
+      });
+      return [...new Set(out)];
+    }
+    let _revTitle;
+    if (_tradedSyms.length === 1) {
+      const sn = _sessNamesForSyms(_tradedSyms);
+      const lbl = sn.length ? sn.join(' \u00b7 ') : (_ssR.length > 1 ? sessionShortLabel(recentOrCurrentSessionIndex()) : '');
+      _revTitle = `${_tradedSyms[0]}${lbl ? ' ' + lbl : ''} Review`;
+    } else if (_tradedSyms.length > 1) {
+      const sn = _sessNamesForSyms(_tradedSyms);
+      const lbl = sn.length ? sn.join(' \u00b7 ') : _tradedSyms.join(' \u00b7 ');
+      _revTitle = `${lbl} Review`;
+    } else {
+      const idx = recentOrCurrentSessionIndex();
+      const s = _ssR[idx >= 0 ? idx : 0] || {};
+      const sym = (Array.isArray(s.symbols) && s.symbols[0]) || (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD';
+      const lbl = (_ssR.length > 1) ? sessionShortLabel(idx) : '';
+      _revTitle = `${sym}${lbl ? ' ' + lbl : ''} Review`;
+    }
+    const lines = [`**${_revTitle} — ${headerDate}**`, ''];
     // Discord post styling — kept plain (monospace, no colours). Earlier versions
     // emitted ANSI escape codes for sign-coloured Net R / wins / losses, but the
     // user prefers a clean white-text post. The A.* palette is retained as empty
@@ -11696,11 +11808,13 @@
       // directly (see getActiveReviewTrade fallback). Emit them as one "— Session Review —" block
       // mirroring the per-trade block format, so a no-trade session can still post a full review.
       const sessionChartLinks = (r.tvLinks || []).filter(l => l && l.url);
+      const sessionNoteOnly = (r.tvLinks || []).filter(l => l && !l.url && l.notes && l.notes.trim());
       const hasAnySessionReview = r.execution || r.focus || r.close
         || (Array.isArray(r.rice) && r.rice.length)
         || (Array.isArray(r.concepts) && r.concepts.length)
         || (Array.isArray(r.mindset) && r.mindset.length)
         || sessionChartLinks.length > 0
+        || sessionNoteOnly.length > 0
         || (r.reflection && r.reflection.trim());
       if (hasAnySessionReview) {
         // Continuous chart numbering for the session-level charts.
@@ -11722,12 +11836,17 @@
         if (Array.isArray(r.mindset) && r.mindset.length > 0)   lines.push(`Mindset:    ${r.mindset.join(', ')}`);
         if (r.reflection && r.reflection.trim()) { lines.push(''); lines.push(r.reflection.trim()); }
         // Chart URLs at the bottom, one block. Each line refers to one chart, so always "Chart [N]".
-        if (sessionCharts.length > 0) {
+        if (sessionCharts.length > 0 || sessionNoteOnly.length > 0) {
           lines.push('');
-          lines.push(`— Charts —`);
-          sessionCharts.forEach(c => {
+          lines.push(sessionCharts.length > 0 ? `— Charts —` : `— Notes —`);
+          sessionCharts.forEach((c, ci) => {
             lines.push(`Chart [${c.num}]   ${c.url}`);
-            if (c.notes) lines.push(`      "${c.notes}"`);
+            if (c.notes) lines.push(`Notes: "${c.notes}"`);
+            if (ci < sessionCharts.length - 1 || sessionNoteOnly.length > 0) lines.push('');
+          });
+          sessionNoteOnly.forEach((l, ni) => {
+            lines.push(`Notes: "${l.notes}"`);
+            if (ni < sessionNoteOnly.length - 1) lines.push('');
           });
         }
       }
@@ -11829,6 +11948,12 @@
         chartIndex.push({ tradeIdx: i, num: chartIndex.length + 1, tradeNum: j + 1, url: l.url, notes: l.notes || '' });
       });
     });
+    // Trades whose chart slot has a note but no URL: keep the note so it isn't dropped.
+    const noteOnlyIndex = []; // [{ tradeIdx, notes }]
+    r.trades.forEach((t, i) => {
+      (t.tvLinks || []).filter(l => l && !l.url && l.notes && l.notes.trim())
+        .forEach(l => noteOnlyIndex.push({ tradeIdx: i, notes: l.notes }));
+    });
 
     // Per-trade review blocks
     r.trades.forEach((t, i) => {
@@ -11841,7 +11966,7 @@
         || (t.reflection && t.reflection.trim());
       if (!hasContent) return;
       lines.push('');
-      lines.push(`— Trade ${i + 1} —`);
+      lines.push(_showSym && t.symbol ? `— Trade ${i + 1} \u00b7 ${t.symbol} —` : `— Trade ${i + 1} —`);
       if (t.execution) lines.push(`Execution   ${t.execution}`);
       if (t.focus) lines.push(`Focus       ${t.focus}`);
       if (t.close) {
@@ -11865,12 +11990,17 @@
     // labelled "Trade N Chart M", so it names its own trade and chart without needing a
     // separate per-trade subheader. chartIndex is already in trade order, then chart order,
     // which also matches the order Discord stacks the previews.
-    if (chartIndex.length > 0) {
+    if (chartIndex.length > 0 || noteOnlyIndex.length > 0) {
       lines.push('');
-      lines.push(`— Charts —`);
-      chartIndex.forEach(c => {
+      lines.push(chartIndex.length > 0 ? `— Charts —` : `— Notes —`);
+      chartIndex.forEach((c, ci) => {
         lines.push(`Trade ${c.tradeIdx + 1} Chart ${c.tradeNum}   ${c.url}`);
-        if (c.notes) lines.push(`      "${c.notes}"`);
+        if (c.notes) lines.push(`Notes: "${c.notes}"`);
+        if (ci < chartIndex.length - 1 || noteOnlyIndex.length > 0) lines.push('');
+      });
+      noteOnlyIndex.forEach((c, ni) => {
+        lines.push(`Trade ${c.tradeIdx + 1} Note: "${c.notes}"`);
+        if (ni < noteOnlyIndex.length - 1) lines.push('');
       });
     }
 
@@ -19676,6 +19806,11 @@
       if (focusNext)    focusNext    = await translateNotes(focusNext, _lang, 'en');
       if (wentWell)     wentWell     = await translateNotes(wentWell, _lang, 'en');
       if (learned)      learned      = await translateNotes(learned, _lang, 'en');
+      for (let _mi = 0; _mi < missedLinksOut.length; _mi++) {
+        if (missedLinksOut[_mi] && missedLinksOut[_mi].notes && missedLinksOut[_mi].notes.trim()) {
+          missedLinksOut[_mi].notes = await translateNotes(missedLinksOut[_mi].notes, _lang, 'en');
+        }
+      }
     }
 
     // Recompute the week's best Win for the Discord post — same data the UI shows.
@@ -19717,7 +19852,9 @@
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
     if (bestTradeChart) chartIndex.push({ url: bestTradeChart, source: 'best', label: 'Best Trade' });
     // Missed setups are numbered within their own section: Trade [1], Trade [2], …
-    missedUrls.forEach((url, i) => chartIndex.push({ url, source: 'missed', label: `Trade [${i + 1}]` }));
+    missedLinksOut.filter(l => l.url && l.url.trim()).forEach((l, i) => chartIndex.push({ url: l.url, notes: l.notes || '', source: 'missed', label: `Trade [${i + 1}]` }));
+    // Missed entries with a note but no chart URL: keep the note (no chart number / preview).
+    missedLinksOut.filter(l => (!l.url || !l.url.trim()) && l.notes && l.notes.trim()).forEach(l => chartIndex.push({ url: '', notes: l.notes, source: 'missed', label: '' }));
 
     // Inline marker for the "didn't take" header — the same [1] [2]… tags used in the list below.
     const missedRefs = chartIndex.filter(c => c.source === 'missed').map((c, i) => `[${i + 1}]`).join(' ');
@@ -19782,7 +19919,11 @@
       bySource.forEach((charts, source) => {
         lines.push('');
         lines.push(`— ${sectionLabels[source] || 'Chart'} —`);
-        charts.forEach(c => lines.push(`${c.label}   ${c.url}`));
+        charts.forEach((c, ci) => {
+          if (c.url) lines.push(`${c.label}   ${c.url}`);
+          if (c.notes) lines.push(`Notes: "${c.notes}"`);
+          if (ci < charts.length - 1) lines.push('');
+        });
       });
     }
     return lines.join('\n');
@@ -27344,14 +27485,7 @@
         const left = document.createElement('div');
         const name = document.createElement('span'); name.className = 'settings-symbol-name'; name.textContent = s;
         left.appendChild(name);
-        if (i === 0) {
-          const p = document.createElement('span'); p.className = 'settings-symbol-primary'; p.textContent = t('settings.whattrade_primary'); left.appendChild(p);
-        }
         const actions = document.createElement('div'); actions.className = 'settings-symbol-actions';
-        if (i !== 0) {
-          const mk = document.createElement('button'); mk.type = 'button'; mk.className = 'settings-symbol-makeprimary'; mk.textContent = t('settings.whattrade_makeprimary');
-          mk.addEventListener('click', () => makePrimary(i)); actions.appendChild(mk);
-        }
         if (arr.length > 1) {
           const rm = document.createElement('button'); rm.type = 'button'; rm.className = 'settings-symbol-remove'; rm.setAttribute('aria-label', t('settings.whattrade_remove')); rm.textContent = '×';
           rm.addEventListener('click', () => removeSymbol(i)); actions.appendChild(rm);
@@ -27359,6 +27493,7 @@
         row.appendChild(left); row.appendChild(actions);
         listEl.appendChild(row);
       });
+      try { if (window.renderSessionSymbolChips) { window.renderSessionSymbolChips(0, 'settings-session-symbols-1'); window.renderSessionSymbolChips(1, 'settings-session-symbols-2'); } } catch (e) {}
     };
     addBtn.addEventListener('click', addSymbol);
     input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); addSymbol(); } });
@@ -28359,6 +28494,35 @@
       // two parts. The session-name part is matched against the dropdown; anything
       // that isn't one of our four known sessions falls back to "London". The
       // times portion is whatever remains (e.g. "8-10AM").
+      window.renderSessionSymbolChips = function renderSessionSymbolChips(sessionIdx, containerId) {
+        const wrap = document.getElementById(containerId);
+        if (!wrap) return;
+        const all = (data.settings && data.settings.symbols) || [];
+        const ss = (data.settings && data.settings.sessions) || [];
+        const sess = ss[sessionIdx];
+        if (!sess) { wrap.innerHTML = ''; return; }
+        if (!Array.isArray(sess.symbols)) sess.symbols = [];
+        wrap.innerHTML = '';
+        if (!all.length) {
+          const e = document.createElement('div'); e.className = 'settings-session-symbols-empty';
+          e.textContent = t('settings.session_symbols_empty'); wrap.appendChild(e); return;
+        }
+        all.forEach(function (sym) {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'sess-sym-chip' + (sess.symbols.indexOf(sym) >= 0 ? ' on' : '');
+          chip.textContent = sym;
+          chip.addEventListener('click', function () {
+            const at = sess.symbols.indexOf(sym);
+            if (at >= 0) { if (sess.symbols.length > 1) sess.symbols.splice(at, 1); }
+            else sess.symbols.push(sym);
+            saveData();
+            window.renderSessionSymbolChips(sessionIdx, containerId);
+            try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); } catch (e2) {}
+          });
+          wrap.appendChild(chip);
+        });
+      };
       const sessSel = document.getElementById('settings-session-select');
       const startInp = document.getElementById('settings-session-start');
       const endInp = document.getElementById('settings-session-end');
@@ -28390,6 +28554,7 @@
         }
         if (typeof updateSession2HintLive === 'function') updateSession2HintLive();
       })();
+      try { window.renderSessionSymbolChips(0, 'settings-session-symbols-1'); window.renderSessionSymbolChips(1, 'settings-session-symbols-2'); } catch (e) {}
       renderSettingsAccountsList();
       try { renderSettingsLinkedGroupsList(); } catch (e) {}
       // Risk rules — per-account now. The picker dropdown lets the user
