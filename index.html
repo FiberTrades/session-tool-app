@@ -26655,7 +26655,24 @@
       // on every open so that rollover is reflected within ~an hour, instead of waiting
       // for the next calendar day to bust the cache.
       const isWeekend = (() => { const d = new Date().getDay(); return d === 0 || d === 6; })();
-      if (isStale || lacksUrl || lacksForecast || lacksPrevious || isWeekend) {
+      // Content staleness: if EVERY cached event is in the past, the cache is
+      // effectively stale even though cache.date is today — this happens when the
+      // upstream feed was briefly serving last week's data at the moment we cached
+      // it. Force a refresh so the app picks up the current week instead of showing
+      // 'No events match your filters' for every date range.
+      const cacheAllPast = (() => {
+        try {
+          const startOfToday = new Date(); startOfToday.setHours(0, 0, 0, 0);
+          let maxT = 0;
+          for (const e of cache.events) {
+            if (!e.when) continue;
+            const tt = new Date(e.when).getTime();
+            if (!isNaN(tt) && tt > maxT) maxT = tt;
+          }
+          return maxT > 0 && maxT < startOfToday.getTime();
+        } catch (e) { return false; }
+      })();
+      if (isStale || lacksUrl || lacksForecast || lacksPrevious || isWeekend || cacheAllPast) {
         try { backgroundUpgradeCache(); } catch (e) { /* non-fatal */ }
       }
       // Always try to pull fresh actuals — fast (server-cached) and decorates
@@ -32112,56 +32129,6 @@
     if(document.body){ mount(); } else { document.addEventListener("DOMContentLoaded", mount); }
   } catch(err){}
 })();
-</script>
-<script>
-/* ===== TEMP calendar diagnostic — remove after use ===== */
-(function(){
-  try {
-    var box=document.createElement('div');
-    box.style.cssText='position:fixed;left:0;right:0;bottom:0;z-index:2147483647;background:#000;color:#0f0;font:11px/1.45 monospace;padding:8px 10px;max-height:55vh;overflow:auto;border-top:2px solid #0f0;white-space:pre-wrap;';
-    var hdr=document.createElement('div');
-    hdr.style.cssText='display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;';
-    var t=document.createElement('b'); t.textContent='CAL DIAG'; hdr.appendChild(t);
-    var clr=document.createElement('button'); clr.textContent='clear';
-    clr.style.cssText='background:#333;color:#fff;border:0;padding:2px 8px;font:11px monospace;cursor:pointer;';
-    clr.onclick=function(){ box.remove(); }; hdr.appendChild(clr);
-    box.appendChild(hdr);
-    var logEl=document.createElement('div'); box.appendChild(logEl);
-    function line(x){ var d=document.createElement('div'); d.textContent=x; logEl.appendChild(d); }
-    function mount(){ (document.body||document.documentElement).appendChild(box); run(); }
-    function pad(n){ return (n<10?'0':'')+n; }
-    function todayKey(){ var d=new Date(); return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate()); }
-    function run(){
-      line('today = '+todayKey());
-      try {
-        var raw=localStorage.getItem('fiberTradesData_v3');
-        var dd=raw?JSON.parse(raw):null;
-        var c=dd&&dd._calendarCache;
-        if(!c){ line('CACHE: none'); }
-        else {
-          var evs=c.events||[];
-          line('CACHE.date='+c.date+'  v='+c.v+'  events='+evs.length);
-          if(evs.length){
-            line('  first when='+String(evs[0].when||'?').slice(0,16));
-            line('  last  when='+String(evs[evs.length-1].when||'?').slice(0,16));
-          }
-        }
-      } catch(e){ line('CACHE read err: '+e.message); }
-      line('fetching worker...');
-      fetch('https://smooth-quail-95.fibertrades.deno.net',{method:'GET'})
-        .then(function(r){ line('FETCH OK  status='+r.status+'  type='+r.type); return r.text(); })
-        .then(function(txt){
-          var n=txt.split('<event>').length-1;
-          line('  body len='+txt.length+'  <event>='+n);
-          var di=txt.indexOf('<date>');
-          if(di>=0){ var de=txt.indexOf('<'+'/date>',di); line('  first <date>='+txt.slice(di+6,de)); }
-        })
-        .catch(function(e){ line('FETCH FAILED: '+e.name+' — '+e.message); line('  (Failed to fetch = CORS or network block)'); });
-    }
-    if(document.body){ mount(); } else { document.addEventListener('DOMContentLoaded', mount); }
-  } catch(e){}
-})();
-/* ===== END TEMP calendar diagnostic ===== */
 </script>
 </body>
 </html>
