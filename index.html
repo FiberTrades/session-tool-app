@@ -3046,10 +3046,6 @@
           <div class="trade-header-cell"></div>
         </div>
         <!-- Completion reminder banner: fires when MT5-imported trades still need manual fields. -->
-        <div id="mt5-completion-banner" style="display:none;position:relative;margin-bottom:14px;padding:12px 16px;padding-right:34px;background:var(--bg-elev);border-left:3px solid var(--info);font-family:'Fraunces',serif;font-size:12px;color:var(--text-mid);line-height:1.5;">
-          <button type="button" id="mt5-completion-banner-close" aria-label="Close" style="position:absolute;top:6px;right:8px;background:none;border:none;color:var(--text-dim);font-size:18px;line-height:1;cursor:pointer;padding:2px 6px;font-family:inherit;">&times;</button>
-          <strong style="color:var(--text);font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.25em;text-transform:uppercase;font-style:normal;display:block;margin-bottom:4px;" data-i18n="mt5_banner.label">Finish logging your imports</strong>
-        </div>
         <div id="trade-rows"></div>
         <button class="add-trade" id="add-trade" data-i18n="btn.add_trade">+ Add Trade</button>
         <!-- Per-account breakdown of trades in the current session. Only renders
@@ -4474,6 +4470,22 @@
     </div>
   </div>
 </div>
+<!-- Incomplete trade-log reminder: shown on Copy for Discord / Save to Series when any
+     fillable field in the current session is still empty. -->
+<div class="modal-bg" id="incomplete-log-modal-bg">
+  <div class="modal mdl-new" style="max-width:440px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" data-i18n="incompletelog.title">Finish your trade log</div>
+      </div>
+    </div>
+    <p style="margin:14px 0 0;color:var(--text-mid);font-size:13px;line-height:1.6;" data-i18n="incompletelog.body">Some fields in your trade log are still empty. Fill them in before you continue — or continue anyway.</p>
+    <div class="mdl-actions">
+      <button type="button" class="btn" id="incomplete-log-continue" data-i18n="incompletelog.continue">Continue anyway</button>
+      <button type="button" class="btn" id="incomplete-log-back" data-i18n="incompletelog.back">Go back &amp; fill in</button>
+    </div>
+  </div>
+</div>
 <div class="modal-bg" id="new-session-modal-bg">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
@@ -4624,6 +4636,10 @@
       'saveseries.warn_body': 'If you have already copied your session review to Discord, your trades are already saved to your Series of 10. Saving again will create duplicates. Do you still want to save?',
       'saveseries.warn_confirm': 'Save anyway',
       'saveseries.warn_cancel': 'Cancel',
+      'incompletelog.title': 'Finish your trade log',
+      'incompletelog.body': 'Some fields in your trade log are still empty. Fill them in before you continue — or continue anyway.',
+      'incompletelog.continue': 'Continue anyway',
+      'incompletelog.back': 'Go back & fill in',
       'savedbias.mode': 'Mode',
       'savedbias.structure': 'Structure',
       'savedbias.location': 'Location',
@@ -5866,6 +5882,10 @@
       'saveseries.warn_body': 'Si ya copiaste tu revisión de sesión a Discord, tus operaciones ya están guardadas en tu Serie de 10. Guardar de nuevo creará duplicados. ¿Aún quieres guardar?',
       'saveseries.warn_confirm': 'Guardar igualmente',
       'saveseries.warn_cancel': 'Cancelar',
+      'incompletelog.title': 'Completa tu registro de operaciones',
+      'incompletelog.body': 'Algunos campos de tu registro de operaciones siguen vacíos. Rellénalos antes de continuar — o continúa de todos modos.',
+      'incompletelog.continue': 'Continuar de todos modos',
+      'incompletelog.back': 'Volver y rellenar',
       'savedbias.mode': 'Modo',
       'savedbias.structure': 'Estructura',
       'savedbias.location': 'Ubicación',
@@ -10879,7 +10899,7 @@
       // banner is dismissed. This replaces the banner's old "click the cells" instruction.
       try {
         const _isNum = v => typeof v === 'number' && !isNaN(v);
-        const _flashOn = (t.importedFrom === 'mt5') && !_mt5BannerDismissed;
+        const _flashOn = (t.importedFrom === 'mt5');
         if (_flashOn) {
           const _typeSel = row.querySelector('.type-select');
           if (!t.type && _typeSel) _typeSel.classList.add('tl-needs-fill');
@@ -11065,7 +11085,6 @@
       });
     });
     _applyCurrency();
-    refreshTradeCompletionBanner();
     try { renderTradeAccountBreakdown(); } catch (e) {}
     if (typeof updateQuickLogTally === 'function') updateQuickLogTally();
     if (typeof updateQuickLogList === 'function') updateQuickLogList();
@@ -11150,6 +11169,40 @@
     const shown = openPendingPotrModal();
     if (!shown) { const c = _potrThenAction; _potrThenAction = null; if (c) c(); }
   }
+  // True if ANY fillable cell in the current session's trade log is empty. "Fillable" = an
+  // enabled cell the user types/picks into; the auto-calculated Gross/Net and the optional
+  // Costs cells are not counted.
+  let _logThenAction = null;
+  function sessionLogIncomplete() {
+    const rows = document.querySelectorAll('#trade-rows .trade-row');
+    if (!rows.length) return false;
+    for (let i = 0; i < rows.length; i++) {
+      const fields = rows[i].querySelectorAll('.trade-input, .trade-select');
+      for (let j = 0; j < fields.length; j++) {
+        const el = fields[j];
+        if (el.disabled) continue;
+        if (el.classList.contains('gross-input') || el.classList.contains('net-input') || el.classList.contains('costs-input')) continue;
+        if ((el.value || '').trim() === '') return true;
+      }
+    }
+    return false;
+  }
+  // Show the incomplete-log reminder; run `cb` only if the user chooses Continue anyway.
+  function remindIncompleteThen(cb) {
+    _logThenAction = (typeof cb === 'function') ? cb : null;
+    const bg = document.getElementById('incomplete-log-modal-bg');
+    if (!bg) { const c = _logThenAction; _logThenAction = null; if (c) c(); return; }
+    bg.classList.add('show');
+  }
+  (function wireIncompleteLog() {
+    const bg = document.getElementById('incomplete-log-modal-bg');
+    if (!bg) return;
+    const close = () => bg.classList.remove('show');
+    const backBtn = document.getElementById('incomplete-log-back');
+    const contBtn = document.getElementById('incomplete-log-continue');
+    if (backBtn) backBtn.addEventListener('click', () => { close(); _logThenAction = null; });
+    if (contBtn) contBtn.addEventListener('click', () => { close(); const c = _logThenAction; _logThenAction = null; if (c) setTimeout(c, 0); });
+  })();
   function collectPendingPotential() {
     const out = []; const map = {};
     const now = new Date();
@@ -11237,26 +11290,8 @@
   { const _ps = document.getElementById('pending-potr-save'); if (_ps) _ps.addEventListener('click', savePendingPotr); }
   { const _pl = document.getElementById('pending-potr-later'); if (_pl) _pl.addEventListener('click', closePendingPotrModal); }
   // MT5 completion banner: user-dismissible via the X. Reset to shown on a fresh import.
-  let _mt5BannerDismissed = false;
-  { const _mbx = document.getElementById('mt5-completion-banner-close'); if (_mbx) _mbx.addEventListener('click', function () { _mt5BannerDismissed = true; const _mb = document.getElementById('mt5-completion-banner'); if (_mb) _mb.style.display = 'none'; try { renderTrades(); } catch (e) {} }); }
   // Refresh the MT5 completion-reminder banner. Fires when any MT5-imported trade is
   // missing manual fields (potR/potPips, type, concept tags). Disappears once everything's logged.
-  function refreshTradeCompletionBanner() {
-    const banner = document.getElementById('mt5-completion-banner');
-    if (!banner) return;
-    if (_mt5BannerDismissed) { banner.style.display = 'none'; return; }
-    const trades = data.review.trades || [];
-    const importedTrades = trades.filter(t => t.importedFrom === 'mt5');
-    if (importedTrades.length === 0) { banner.style.display = 'none'; return; }
-    // A trade is "incomplete" if any of: type is empty, OR (Win result with potR not set).
-    // Concept Tags and Mindset are optional review-level fields — not flagged.
-    const anyIncomplete = importedTrades.some(t => {
-      if (!t.type) return true;
-      if (t.result === 'Win' && (t.potentialR == null || t.potentialR === '')) return true;
-      return false;
-    });
-    banner.style.display = anyIncomplete ? 'block' : 'none';
-  }
 
   // Sync data.review.traded based on whether there are any logged trades.
   // No trades → 'No' (observed only) + hide Execution. Any trade row exists → 'Yes' + show Execution.
@@ -11730,7 +11765,6 @@
     return lines.join('\n');
   }
   function renderReviewPreview() {
-    try { refreshTradeCompletionBanner(); } catch(e) {}
     const r = data.review;
     const out = document.getElementById('review-preview');
     // A review is "filled" if any trade has data, OR the session-level review block has content
@@ -12137,7 +12171,7 @@
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
     };
-    if (sessionPotrMissing()) { remindPotrThen(() => { _run(); }); return; }
+    if (sessionLogIncomplete()) { remindIncompleteThen(() => { _run(); }); return; }
     await _run();
   });
   // Save to Series of 10: full flow including the backup modal for users who haven't set a preference.
@@ -12149,7 +12183,7 @@
       if (bg) { bg.classList.add('show'); return; }
       performReviewSave().then(() => setTimeout(maybeOfferWeeklyReview, 400)); // fallback if modal markup missing
     };
-    if (sessionPotrMissing()) { remindPotrThen(_proceed); return; }
+    if (sessionLogIncomplete()) { remindIncompleteThen(_proceed); return; }
     _proceed();
   });
   (function wireSaveSeriesWarn() {
@@ -27974,7 +28008,6 @@
     });
     // Delete consumed inbox rows so a re-sync never doubles them (best-effort; the
     // ticket guard in _existingMt5Tickets also prevents re-import if delete fails).
-    if (_consumedTickets.length) { try { _mt5BannerDismissed = false; } catch (e) {} }
     if (_consumedTickets.length && window.STCloud && typeof window.STCloud.deleteInbox === 'function') {
       try { Promise.resolve(window.STCloud.deleteInbox(_consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n)))).catch(() => {}); } catch (e) {}
     }
