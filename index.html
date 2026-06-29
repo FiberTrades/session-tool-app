@@ -7726,6 +7726,7 @@
     setData: function (obj) { try { data = migrate(obj); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
     STORAGE_KEY: STORAGE_KEY,
     OLD_KEYS: OLD_KEYS,
+    defaultData: function () { return defaultData(); },
     clearLocal: function () {
       // Wipe the journal from EVERY key loadData() can restore from (current + legacy), so a
       // cleared cache can't be resurrected from an old key on the next load. This is essential
@@ -29443,7 +29444,7 @@
         box = document.createElement('div'); box.id = 'st-acct-diag';
         box.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:2147483647;max-width:94vw;max-height:42vh;overflow:auto;background:#0b0b0b;color:#5fcb8d;border:1px solid #5fcb8d;border-radius:6px;font:11px/1.4 monospace;padding:6px 8px;white-space:pre-wrap;';
         document.body.appendChild(box);
-        var hd = document.createElement('div'); hd.textContent = 'ACCT DIAG v5 \u2014 build OK \u00b7 tap to copy'; hd.style.cssText='color:#60a5fa;margin-bottom:4px;cursor:pointer;';
+        var hd = document.createElement('div'); hd.textContent = 'ACCT DIAG v6 \u2014 build OK \u00b7 tap to copy'; hd.style.cssText='color:#60a5fa;margin-bottom:4px;cursor:pointer;';
         hd.addEventListener('click', function(){ try { navigator.clipboard.writeText(box.innerText); } catch(e){} });
         box.appendChild(hd);
       }
@@ -30624,6 +30625,21 @@
     });
   }
 
+  // Hard one-shot guard: a given reload reason may fire AT MOST once per account per session,
+  // AND no more than a few isolation reloads total per session (circuit breaker) — so a wipe or
+  // adopt can never become an infinite reload loop, no matter what. Returns true to reload.
+  function __isoReloadOnce(tag) {
+    try {
+      var total = parseInt(sessionStorage.getItem('st_iso_reload_total') || '0', 10) || 0;
+      if (total >= 3) return false;
+      var k = 'st_iso_reload_' + tag;
+      if (sessionStorage.getItem(k)) return false;
+      sessionStorage.setItem(k, '1');
+      sessionStorage.setItem('st_iso_reload_total', String(total + 1));
+    } catch (e) {}
+    return true;
+  }
+
   // authoritative=true on a fresh SIGN-IN: the cloud is the source of truth for the account, and
   // local is never trusted (it may be a previous account's cache on this browser). authoritative
   // is falsy for mid-session focus/resume re-pulls, which use the loss-proof content merge.
@@ -30644,11 +30660,15 @@
       __stDiag('RECONCILE cur=' + __stShort(currentUser.id) + ' owner=' + __stShort(_owner) + ' cloudTrades=' + (cloudHasData ? __stTC(ST.migrate(raw)) : 0) + ' localTrades=' + __stTC(local) + ' mismatch=' + (!!(_owner && _owner !== currentUser.id)));
       if (_owner && _owner !== currentUser.id) {
         try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
-        if (cloudHasData) { try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(ST.migrate(raw))); } catch (e) {} }
-        else { try { ST.clearLocal(); } catch (e) {} }
-        try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
-        location.reload();
-        return;
+        if (cloudHasData) {
+          var _cm = ST.migrate(raw);
+          try { if (typeof ST.setData === 'function') { ST.setData(_cm); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(_cm)); } } catch (e) {}
+        } else {
+          try { ST.clearLocal(); } catch (e) {}
+          try { if (typeof ST.setData === 'function' && typeof ST.defaultData === 'function') ST.setData(ST.defaultData()); } catch (e) {}
+        }
+        if (__isoReloadOnce('mm_' + currentUser.id)) { location.reload(); return; }
+        accStatus(tt('synced')); return;
       }
       // EMPTY CLOUD for this account.
       if (!cloudHasData) {
@@ -30658,14 +30678,19 @@
           // unconditionally (it is a previous account's leftover on this browser, or stale) and
           // start blank. We do NOT seed the cloud from local and do NOT trust the owner tag here,
           // because the tag can be wrongly stamped to the new account during an in-place session
-          // switch. The account's own future edits upload via the normal save path. THIS is the
-          // definitive fix for one account's journal appearing in a newly-created account.
+          // switch. The account's own future edits upload via the normal save path.
           if (contentScore(local) > 0) {
             try { clearTimeout(pushTimer); } catch (e) {}
             try { ST.clearLocal(); } catch (e) {}
-            try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
-            location.reload();
-            return;
+            // Force the IN-MEMORY journal blank too, so the data is gone even if a reload is
+            // suppressed by the loop-guard — this is what makes the wipe unable to loop.
+            try { if (typeof ST.setData === 'function' && typeof ST.defaultData === 'function') ST.setData(ST.defaultData()); } catch (e) {}
+            try {
+              var _ks = []; for (var _i = 0; _i < localStorage.length; _i++) { var _k = localStorage.key(_i); _ks.push(_k + '=' + ((localStorage.getItem(_k) || '').length)); }
+              __stDiag('WIPE(authoritative) done; localTrades=' + __stTC(ST.getData()) + '; LS=[' + _ks.join(' , ') + ']');
+            } catch (e) {}
+            if (__isoReloadOnce(currentUser.id)) { location.reload(); return; }
+            accStatus(tt('synced')); return;
           }
           accStatus(tt('synced'));
           return;
@@ -30675,9 +30700,9 @@
         if (_owner === currentUser.id && contentScore(local) > 0) { cloudPush(); return; }
         if (contentScore(local) > 0) {
           try { ST.clearLocal(); } catch (e) {}
-          try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
-          location.reload();
-          return;
+          try { if (typeof ST.setData === 'function' && typeof ST.defaultData === 'function') ST.setData(ST.defaultData()); } catch (e) {}
+          if (__isoReloadOnce(currentUser.id + ':focus')) { location.reload(); return; }
+          accStatus(tt('synced')); return;
         }
         accStatus(tt('synced'));
         return;
@@ -30733,9 +30758,9 @@
         rm.forEach(function (k) { try { localStorage.removeItem(k); } catch (e) {} });
       } catch (e) {}
       try { localStorage.setItem('st_data_owner', uid); } catch (e) {}
-      try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
-      location.reload();
-      return true;
+      try { if (typeof ST.setData === 'function' && typeof ST.defaultData === 'function') ST.setData(ST.defaultData()); } catch (e) {}
+      if (__isoReloadOnce('enf_' + uid)) { location.reload(); return true; }
+      return false; // already reloaded once this session: local is cleared+blanked, let caller continue
     }
     try { localStorage.setItem('st_data_owner', uid); } catch (e) {}
     return false;
@@ -30759,11 +30784,10 @@
         __stDiag('SWITCH ' + __stShort(_prevId) + ' -> ' + __stShort(_newId) + ' : wiping local + reload');
         try { clearTimeout(pushTimer); } catch (e) {}
         try { ST.clearLocal(); } catch (e) {}
+        try { if (typeof ST.setData === 'function' && typeof ST.defaultData === 'function') ST.setData(ST.defaultData()); } catch (e) {}
         try { localStorage.removeItem('st_journal_owner'); } catch (e) {}
         try { localStorage.removeItem('st_data_owner'); } catch (e) {}
-        try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
-        location.reload();
-        return;
+        if (__isoReloadOnce('sw_' + _newId)) { location.reload(); return; }
       }
     } catch (e) {}
     if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; currentUser = session ? session.user : null; paintAccount(); showReset(); return; }
