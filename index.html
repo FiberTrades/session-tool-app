@@ -10339,17 +10339,18 @@
     let all = getAllLifetimeTrades();
     const _entryMins = (tr) => {
       const sx = (tr && tr.entryTime || '').trim();
-      const mm = sx.match(/(\d{1,2}):(\d{2})/);
+      const mm = sx.match(/(\d{1,2})[:.](\d{2})/);
       if (!mm) return -1;                       // untimed trades sort first within their day
       let h = +mm[1]; const mi = +mm[2];
       if (/pm/i.test(sx) && h < 12) h += 12;
       if (/am/i.test(sx) && h === 12) h = 0;
       return h * 60 + mi;
     };
+    const _dayKey = (tr) => { const d = new Date(tr && tr.date || 0); return isNaN(d.getTime()) ? 0 : new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime(); };
     all.sort((a, b) => {
-      const da = new Date(a.date || 0).getTime(), db = new Date(b.date || 0).getTime();
-      if (da !== db) return da - db;            // different day -> by day
-      return _entryMins(a) - _entryMins(b);     // same day -> by entry time
+      const da = _dayKey(a), db = _dayKey(b);
+      if (da !== db) return da - db;            // different calendar day -> by day
+      return _entryMins(a) - _entryMins(b);     // SAME day -> always by entry time
     });
     data.history = [];
     while (all.length >= 10) {
@@ -32069,13 +32070,14 @@
       if (!raw || typeof raw !== 'object') { doCloudUpsert(d); return; }
       var cloud = ST.migrate(raw);
       var removed = contentScore(cloud) - lScore;
+      var removedTrades = tradeCount(cloud) - tradeCount(d);   // actual trades being removed (for the message)
       if (removed >= 2) {
         // The upload would remove 2+ items that the cloud still holds.
         var _restoreCloud = function () { takeSnapshot('blocked-overwrite', cloud); accStatus(tt('synced')); reconcile(); };
         if (droppedThisSession >= 2) {
           // Deliberate bulk deletion — confirm via the styled dialog (matches the app), then
           // sync or restore from the cloud copy.
-          var _msg = tt('syncDeleteConfirm').replace('{n}', removed);
+          var _msg = tt('syncDeleteConfirm').replace('{n}', (removedTrades > 0 ? removedTrades : removed));
           var _ask = window.appConfirm ? window.appConfirm({ title: tt('syncDeleteTitle') || 'Delete trades?', body: _msg }) : Promise.resolve(window.confirm(_msg));
           _ask.then(function (ok) { if (ok) { peakLocalScore = lScore; doCloudUpsert(d); } else { _restoreCloud(); } });
           return;
