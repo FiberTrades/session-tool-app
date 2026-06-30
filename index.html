@@ -31352,21 +31352,33 @@
   }
   function loadMentorMembers(){
     var list=document.getElementById('stc-mv-list'); if(!list) return;
-    sb.from('shares').select('owner_user_id,owner_email,code').eq('mentor_id', currentUser.id).eq('revoked', false).order('claimed_at',{ascending:false}).then(function(r){
+    sb.from('shares').select('owner_user_id,owner_email').eq('mentor_id', currentUser.id).eq('revoked', false).order('claimed_at',{ascending:false}).then(function(r){
       var rows=(r&&r.data)||[];
       if(!rows.length){ list.innerHTML='<p class="settings-hint">'+tt('mvNoMembers')+'</p>'; return; }
-      var isPC = window.matchMedia && window.matchMedia('(min-width:900px)').matches;
-      list.innerHTML = rows.map(function(m){
-        var label=(m.owner_email||m.code||m.owner_user_id);
-        var safe=String(label).replace(/&/g,'&amp;').replace(/</g,'&lt;');
-        var win = isPC ? ('<button class="settings-btn mv-openwin" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpenWin')+'</button>') : '';
-        return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border-2,#2a2a2a);">'+
-          '<span style="flex:1;min-width:120px;color:var(--text);font-size:13px;">'+safe+'</span>'+
-          '<button class="settings-btn settings-btn-primary mv-open" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpen')+'</button>'+ win +
-        '</div>';
-      }).join('');
-      list.querySelectorAll('.mv-open').forEach(function(b){ b.addEventListener('click', function(){ location.href = location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')); }); });
-      list.querySelectorAll('.mv-openwin').forEach(function(b){ b.addEventListener('click', function(){ window.open(location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')), '_blank'); }); });
+      var ids=rows.map(function(m){ return m.owner_user_id; });
+      function render(nameMap){
+        var isPC = window.matchMedia && window.matchMedia('(min-width:900px)').matches;
+        var esc=function(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;'); };
+        list.innerHTML = rows.map(function(m){
+          var nm=(nameMap && nameMap[m.owner_user_id]) || '';
+          var em=m.owner_email || '';
+          var primary = esc(nm || em || ('Member ' + String(m.owner_user_id).slice(0,6)));
+          var secondary = (nm && em) ? ('<div style="color:var(--text-dim);font-size:11px;margin-top:2px;">'+esc(em)+'</div>') : '';
+          var win = isPC ? ('<button class="settings-btn mv-openwin" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpenWin')+'</button>') : '';
+          return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border-2,#2a2a2a);">'+
+            '<span style="flex:1;min-width:120px;color:var(--text);font-size:13px;"><strong>'+primary+'</strong>'+secondary+'</span>'+
+            '<button class="settings-btn settings-btn-primary mv-open" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpen')+'</button>'+ win +
+          '</div>';
+        }).join('');
+        list.querySelectorAll('.mv-open').forEach(function(b){ b.addEventListener('click', function(){ location.href = location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')); }); });
+        list.querySelectorAll('.mv-openwin').forEach(function(b){ b.addEventListener('click', function(){ window.open(location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')), '_blank'); }); });
+      }
+      // Pull each member's display name (data.userName) cheaply — just that JSON field, not the
+      // whole journal. Mentor read access is allowed by the active share.
+      sb.from('journals').select('user_id, nm:data->>userName').in('user_id', ids).then(function(nr){
+        var map={}; (((nr&&nr.data))||[]).forEach(function(row){ if(row && row.user_id) map[row.user_id]=(row.nm||'').trim(); });
+        render(map);
+      }).catch(function(){ render({}); });
     }).catch(function(){ list.innerHTML='<p class="settings-hint">'+tt('mvNoMembers')+'</p>'; });
   }
   function mentorConnect(){
