@@ -10333,9 +10333,24 @@
   }
 
   function rebuildSeriesByDate() {
-    // Flatten all trades, sort by date ascending, rebuild groups of 10
+    // Flatten all trades, sort chronologically, rebuild groups of 10. Trades carry a day-level
+    // date (noon), so within the same day we order by ENTRY TIME — otherwise two trades logged
+    // out of order (e.g. the 08:30 saved before the 08:14) would keep their save order.
     let all = getAllLifetimeTrades();
-    all.sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0));
+    const _entryMins = (tr) => {
+      const sx = (tr && tr.entryTime || '').trim();
+      const mm = sx.match(/(\d{1,2}):(\d{2})/);
+      if (!mm) return -1;                       // untimed trades sort first within their day
+      let h = +mm[1]; const mi = +mm[2];
+      if (/pm/i.test(sx) && h < 12) h += 12;
+      if (/am/i.test(sx) && h === 12) h = 0;
+      return h * 60 + mi;
+    };
+    all.sort((a, b) => {
+      const da = new Date(a.date || 0).getTime(), db = new Date(b.date || 0).getTime();
+      if (da !== db) return da - db;            // different day -> by day
+      return _entryMins(a) - _entryMins(b);     // same day -> by entry time
+    });
     data.history = [];
     while (all.length >= 10) {
       const chunk = all.slice(0, 10);
