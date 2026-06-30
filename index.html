@@ -17654,12 +17654,72 @@
     try {
       const greetEl = document.getElementById('modal-day-greeting');
       if (greetEl) {
+        // Richer signal set so the reflection can actually speak to the day's data
+        // (R left on the table, costs, biggest win/loss, hit rate, symbol/side skew)
+        // and to how this day stacks up against the trader's other logged days.
+        const _dWins = dayTrades.filter(t => t.result === 'Win');
+        const _dMfe = computeMfeStats(_dWins);
+        const _dRs = dayTrades.map(t => tradeRforMath(t)).filter(v => typeof v === 'number' && !isNaN(v));
+        const _dBestR = _dRs.length ? Math.max.apply(null, _dRs) : 0;
+        const _dWorstR = _dRs.length ? Math.min.apply(null, _dRs) : 0;
+        const _dWr = (wins + losses) > 0 ? wins / (wins + losses) : null;
+        const _dSymCounts = {};
+        dayTrades.forEach(t => { const sy = (t.symbol || '').toString().toUpperCase().trim(); if (sy) _dSymCounts[sy] = (_dSymCounts[sy] || 0) + 1; });
+        const _dSymKeys = Object.keys(_dSymCounts).sort((a, b) => _dSymCounts[b] - _dSymCounts[a]);
+        const _dTopSym = _dSymKeys[0] || '';
+        const _dLongs = dayTrades.filter(t => t.side === 'Long').length;
+        const _dShorts = dayTrades.filter(t => t.side === 'Short').length;
+        let _avgDayR = 0, _isBestDay = false, _isWorstDay = false, _loggedDays = 0;
+        let _prevSign = 0, _prevLen = 0;
+        const _daySign = dayTotalR > 1e-9 ? 1 : (dayTotalR < -1e-9 ? -1 : 0);
+        // Longest run of consecutive wins / losses within the day (trades are in time order).
+        let _maxWin = 0, _maxLoss = 0, _curWin = 0, _curLoss = 0;
+        dayTrades.forEach(t => {
+          if (t.result === 'Win') { _curWin++; _curLoss = 0; if (_curWin > _maxWin) _maxWin = _curWin; }
+          else if (t.result === 'Lose') { _curLoss++; _curWin = 0; if (_curLoss > _maxLoss) _maxLoss = _curLoss; }
+          else { _curWin = 0; _curLoss = 0; }
+        });
+        try {
+          const _byDay = {};
+          getAllLifetimeTrades().forEach(t => { const k = t.date ? new Date(t.date).toDateString() : null; if (k) _byDay[k] = (_byDay[k] || 0) + tradeRforMath(t); });
+          const _dayKeys = Object.keys(_byDay);
+          const _dayRs = _dayKeys.map(k => _byDay[k]);
+          _loggedDays = _dayRs.length;
+          if (_dayRs.length) {
+            _avgDayR = _dayRs.reduce((a, b) => a + b, 0) / _dayRs.length;
+            if (_dayRs.length > 2) {
+              _isBestDay = (dayTotalR >= Math.max.apply(null, _dayRs) - 1e-6) && dayTotalR > 0;
+              _isWorstDay = (dayTotalR <= Math.min.apply(null, _dayRs) + 1e-6) && dayTotalR < 0;
+            }
+          }
+          // Trailing run of red/green days immediately BEFORE the viewed day.
+          const _viewMs = (d && typeof d.toDateString === 'function') ? new Date(d.toDateString()).getTime() : null;
+          if (_viewMs != null) {
+            const _before = _dayKeys.map(k => ({ ms: new Date(k).getTime(), r: _byDay[k] })).filter(x => x.ms < _viewMs).sort((a, b) => a.ms - b.ms);
+            for (let i = _before.length - 1; i >= 0; i--) {
+              const sgn = _before[i].r > 1e-9 ? 1 : (_before[i].r < -1e-9 ? -1 : 0);
+              if (sgn === 0) break;
+              if (_prevSign === 0) { _prevSign = sgn; _prevLen = 1; }
+              else if (sgn === _prevSign) { _prevLen++; }
+              else break;
+            }
+          }
+        } catch (e) {}
         const dayStats = {
           totalTrades: dayTotalTrades,
           totalR: dayTotalR,
           netR: dayTotalR,
-          wins, losses, bes,
-          net,
+          wins, losses, bes, net,
+          gross, costs,
+          mfe: _dMfe,
+          bestR: _dBestR, worstR: _dWorstR,
+          wr: _dWr,
+          topSym: _dTopSym, topSymN: _dTopSym ? _dSymCounts[_dTopSym] : 0, symCount: _dSymKeys.length,
+          longs: _dLongs, shorts: _dShorts,
+          avgDayR: _avgDayR, isBestDay: _isBestDay, isWorstDay: _isWorstDay, loggedDays: _loggedDays,
+          daySign: _daySign, prevStreakSign: _prevSign, prevStreakLen: _prevLen,
+          maxWinStreak: _maxWin, maxLossStreak: _maxLoss,
+          _seedKey: (d && typeof d.toDateString === 'function') ? d.toDateString() : null,
         };
         const reflection = pickReviewReflection('day', dayStats);
         const escHtml = str => String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -23821,7 +23881,7 @@
       if (aware) return aware;
     }
     const pool = localizedPool(REVIEW_REFLECTIONS[period] || REVIEW_REFLECTIONS.day, 'REVIEW_REFLECTIONS.' + period);
-    const idx = hashStr(new Date().toDateString() + ':rev-reflect-' + period) % pool.length;
+    const idx = hashStr(((stats && stats._seedKey) || new Date().toDateString()) + ':rev-reflect-' + period) % pool.length;
     return pool[idx];
   }
 
@@ -23870,40 +23930,55 @@
 
     // === DAY ===
     if (period === 'day') {
+      const _avgR = s.totalTrades > 0 ? s.totalR / s.totalTrades : 0;
       if (s.totalTrades === 1 && s.wins === 1)
-        candidates.push("one trade, one win. What made today's read worth the click?");
+        candidates.push(`One trade, a win (+${s.bestR.toFixed(1)}R). A single sample — record the setup, but one outcome says little about edge.`);
       if (s.totalTrades === 1 && s.losses === 1)
-        candidates.push("one trade, one loss. Setup wrong, timing off, or just one of those days?");
+        candidates.push(`One trade, a loss (${s.worstR.toFixed(1)}R). One data point. Was the entry within plan, or forced?`);
       if (s.totalTrades === 1 && s.bes === 1)
-        candidates.push("one trade, BE. Cautious management — or a flinch?");
-      if (s.losses >= 3 && s.wins === 0)
-        candidates.push(`${s.losses} losses, no wins. Old chestnut — what condition kept appearing that you kept trying to fade?`);
-      if (s.bes >= 2 && s.wins === 0 && s.losses === 0)
-        candidates.push(`${s.bes} BEs and nothing decisive. Was the chart noisy, or were you?`);
-      if (s.wins >= 3 && s.losses === 0)
-        candidates.push(`${s.wins} wins and no losses. Strong. Was that a clean read, or an easy market? You should know which.`);
-      if (s.wins >= 4)
-        candidates.push(`${s.wins} winners today — excellent. Which one would you happily take again at full size?`);
-      if (s.wins >= 1 && s.losses >= 1 && s.totalR > 0 && s.totalR >= 2)
-        candidates.push(`+${s.totalR.toFixed(1)}R day with mixed results. Which win carried it? Could you find that again?`);
+        candidates.push(`One trade, closed at break-even. Did management protect a loss, or cut a runner early?`);
+      if (s.wr !== null && s.totalTrades >= 3)
+        candidates.push(`${Math.round(s.wr * 100)}% win rate over ${s.totalTrades} trades, net ${s.totalR >= 0 ? '+' : ''}${s.totalR.toFixed(1)}R. Average ${_avgR >= 0 ? '+' : ''}${_avgR.toFixed(2)}R per trade — the figure to keep positive over a sample.`);
+      if (s.totalR >= 3)
+        candidates.push(`+${s.totalR.toFixed(1)}R across ${s.totalTrades} trades. A strong day — record the market conditions so the setup is repeatable.`);
       if (s.totalR <= -2)
-        candidates.push(`${s.totalR.toFixed(1)}R red today. Before tomorrow — what has to be true to click?`);
-      if (s.totalR >= 5)
-        candidates.push(`+${s.totalR.toFixed(1)}R today. Smashing. Write the conditions down before they evaporate. They will.`);
-      if (s.totalTrades >= 5 && Math.abs(s.totalR) < 0.5)
-        candidates.push(`${s.totalTrades} trades, basically flat. A lot of motion for nothing. What was the filter doing today?`);
-      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR > 1.5)
-        candidates.push(`+${s.mfe.avgLeftR.toFixed(1)}R left on the table per winner today. Early exits — fear, fatigue, or formula?`);
-      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR < 0.5 && s.wins >= 2)
-        candidates.push(`Tight capture today — you took most of what the move offered. Write down what kept you in the trade.`);
-      if (s.wins >= 1 && s.gross > 0 && s.costs / s.gross > 0.15)
-        candidates.push(`costs took ${((s.costs / s.gross) * 100).toFixed(0)}% of gross today. Spread, slippage, over-trading — which one bit?`);
-      if (s.bes >= 1 && s.wins >= 1 && s.losses === 0)
-        candidates.push(`${s.wins} win${s.wins===1?'':'s'} and ${s.bes} BE${s.bes===1?'':'s'}. Were the BEs managed-out winners, or trades that never went anywhere?`);
-      if (s.losses >= 3 && s.wins === 0)
-        candidates.push(`${s.losses} losses, no wins. Hope you enjoyed not stepping away after the second one.`);
-      if (s.totalTrades >= 5 && Math.abs(s.totalR) < 0.5)
-        candidates.push(`${s.totalTrades} trades, basically flat. Hope you enjoyed all the clicking. Any of it earn its keep?`);
+        candidates.push(`${s.totalR.toFixed(1)}R across ${s.totalTrades} trades. Define what has to be present before the next entry, rather than trading to recover.`);
+      if (s.totalTrades >= 3 && s.totalR > 0 && s.bestR >= 0.6 * s.totalR && s.bestR >= 2)
+        candidates.push(`The best trade (+${s.bestR.toFixed(1)}R) accounts for most of the day's +${s.totalR.toFixed(1)}R. Check whether the rest of the book was flat or negative.`);
+      if (s.worstR <= -1.5)
+        candidates.push(`Largest losing trade: ${s.worstR.toFixed(1)}R. Confirm the stop matched planned risk and wasn't widened.`);
+      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR > 1)
+        candidates.push(`Average ${s.mfe.avgLeftR.toFixed(1)}R left after exit across ${s.mfe.trackedR} winner${s.mfe.trackedR === 1 ? '' : 's'}. Compare your exit rule to where price actually extended.`);
+      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR >= 0 && s.mfe.avgLeftR < 0.5 && s.wins >= 2)
+        candidates.push(`About ${s.mfe.avgLeftR.toFixed(1)}R left on average across winners — exits were close to the extension.`);
+      if (s.gross > 0 && s.costs / s.gross > 0.15)
+        candidates.push(`Costs were ${((s.costs / s.gross) * 100).toFixed(0)}% of gross today. At this trade count, spread and fees are a measurable drag on net.`);
+      if (s.topSymN >= 3 && s.topSym)
+        candidates.push(`${s.topSymN} of ${s.totalTrades} trades were ${s.topSym}. Concentrated in one instrument — review whether the others were equally valid setups.`);
+      if (s.totalTrades >= 3 && s.shorts === 0 && s.longs >= 3)
+        candidates.push(`All ${s.longs} trades were long. Confirm the higher-timeframe bias supported direction, not just the entries.`);
+      if (s.totalTrades >= 3 && s.longs === 0 && s.shorts >= 3)
+        candidates.push(`All ${s.shorts} trades were short. Confirm the higher-timeframe bias supported direction, not just the entries.`);
+      if (s.isBestDay && s.totalR > 0)
+        candidates.push(`+${s.totalR.toFixed(1)}R — the best single day across your ${s.loggedDays} logged days. Document the conditions while they're fresh.`);
+      if (s.isWorstDay && s.totalR < 0)
+        candidates.push(`${s.totalR.toFixed(1)}R — the worst single day in your log. Review size and stop placement before the next session.`);
+      if (!s.isBestDay && s.avgDayR > 0 && s.totalR >= s.avgDayR * 1.5 && s.totalTrades >= 2)
+        candidates.push(`+${s.totalR.toFixed(1)}R, against an average logged day of +${s.avgDayR.toFixed(1)}R. Above your norm — note what was different.`);
+      if (s.avgDayR > 0 && s.totalR < 0 && s.totalTrades >= 2)
+        candidates.push(`A negative day against a +${s.avgDayR.toFixed(1)}R average. Check whether process slipped or the market simply didn't offer setups.`);
+      if (s.daySign > 0 && s.prevStreakSign < 0 && s.prevStreakLen >= 2)
+        candidates.push(`First green day after ${s.prevStreakLen} red days. Note what changed — instrument, timing, or patience.`);
+      if (s.daySign < 0 && s.prevStreakSign > 0 && s.prevStreakLen >= 2)
+        candidates.push(`First red day after ${s.prevStreakLen} green days. A single down day within a positive run is normal — confirm it was a planned trade.`);
+      if (s.daySign > 0 && s.prevStreakSign > 0)
+        candidates.push(`${s.prevStreakLen + 1} green days in a row. Watch that position size isn't drifting up with the run.`);
+      if (s.daySign < 0 && s.prevStreakSign < 0)
+        candidates.push(`${s.prevStreakLen + 1} red days in a row. Consider reducing size or standing down until conditions are clearer.`);
+      if (s.maxLossStreak >= 3)
+        candidates.push(`${s.maxLossStreak} losing trades in a row at one point today. Note whether size stayed constant or increased.`);
+      if (s.maxWinStreak >= 3)
+        candidates.push(`${s.maxWinStreak} winning trades in a row today. Note the condition that was working.`);
     }
 
     // === WEEK ===
@@ -23967,7 +24042,7 @@
     }
 
     if (candidates.length === 0) return null;
-    const idx = hashStr(new Date().toDateString() + ':rev-reflect-stat-' + period) % candidates.length;
+    const idx = hashStr(((s && s._seedKey) || new Date().toDateString()) + ':rev-reflect-stat-' + period) % candidates.length;
     return candidates[idx];
   }
 
@@ -23985,40 +24060,55 @@
       }
     }
     if (period === 'day') {
+      const _avgR = s.totalTrades > 0 ? s.totalR / s.totalTrades : 0;
       if (s.totalTrades === 1 && s.wins === 1)
-        candidates.push("un trade, una ganadora. Una limpia. ¿Qué hizo que la lectura de hoy valiera el clic?");
+        candidates.push(`Un trade, una ganadora (+${s.bestR.toFixed(1)}R). Una sola muestra — anota el setup, pero un resultado dice poco sobre el edge.`);
       if (s.totalTrades === 1 && s.losses === 1)
-        candidates.push("un trade, una pérdida. ¿Setup equivocado, mal timing, o uno de esos días?");
+        candidates.push(`Un trade, una pérdida (${s.worstR.toFixed(1)}R). Un solo dato. ¿La entrada estaba dentro del plan, o fue forzada?`);
       if (s.totalTrades === 1 && s.bes === 1)
-        candidates.push("un trade, BE. ¿Gestión cautelosa — o un acobardamiento?");
-      if (s.losses >= 3 && s.wins === 0)
-        candidates.push(`${s.losses} pérdidas, ninguna ganadora. La misma vieja historia — ¿qué condición seguía apareciendo que insistías en pelear?`);
-      if (s.bes >= 2 && s.wins === 0 && s.losses === 0)
-        candidates.push(`${s.bes} BEs y nada decisivo. ¿El gráfico estaba ruidoso, o lo estabas tú?`);
-      if (s.wins >= 3 && s.losses === 0)
-        candidates.push(`${s.wins} ganadoras, sin pérdidas. Bien hecho. ¿Lectura limpia, o mercado amable? Deberías saber cuál.`);
-      if (s.wins >= 4)
-        candidates.push(`${s.wins} ganadoras hoy. La leche. ¿Cuál tomarías con gusto otra vez a media talla?`);
-      if (s.wins >= 1 && s.losses >= 1 && s.totalR > 0 && s.totalR >= 2)
-        candidates.push(`día +${s.totalR.toFixed(1)}R con resultados mixtos. ¿Qué ganadora lo cargó? ¿Podrías encontrar eso otra vez?`);
+        candidates.push(`Un trade, cerrado en break-even. ¿La gestión evitó una pérdida, o cortó una corredora antes de tiempo?`);
+      if (s.wr !== null && s.totalTrades >= 3)
+        candidates.push(`${Math.round(s.wr * 100)}% de acierto en ${s.totalTrades} trades, neto ${s.totalR >= 0 ? '+' : ''}${s.totalR.toFixed(1)}R. Promedio ${_avgR >= 0 ? '+' : ''}${_avgR.toFixed(2)}R por trade — el número a mantener positivo en una muestra.`);
+      if (s.totalR >= 3)
+        candidates.push(`+${s.totalR.toFixed(1)}R en ${s.totalTrades} trades. Un día fuerte — registra las condiciones del mercado para que el setup sea repetible.`);
       if (s.totalR <= -2)
-        candidates.push(`${s.totalR.toFixed(1)}R en rojo hoy. Antes de mañana — ¿qué tiene que ser cierto para clicar?`);
-      if (s.totalR >= 5)
-        candidates.push(`+${s.totalR.toFixed(1)}R hoy. Tremendo. Anota las condiciones antes de que se evaporen. Lo harán.`);
-      if (s.totalTrades >= 5 && Math.abs(s.totalR) < 0.5)
-        candidates.push(`${s.totalTrades} trades, básicamente plano. Mucho movimiento por nada. ¿Qué setups estabas tomando hoy?`);
-      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR > 1.5)
-        candidates.push(`+${s.mfe.avgLeftR.toFixed(1)}R dejados sobre la mesa por ganadora hoy. Salidas tempranas — ¿miedo, fatiga, o fórmula?`);
-      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR < 0.5 && s.wins >= 2)
-        candidates.push(`captura apretada hoy. Bien hecho — tomaste casi todo lo que había. Anota qué te mantuvo dentro.`);
-      if (s.wins >= 1 && s.gross > 0 && s.costs / s.gross > 0.15)
-        candidates.push(`los costes se llevaron ${((s.costs / s.gross) * 100).toFixed(0)}% del bruto hoy. ¿Spread, deslizamiento, exceso de operaciones — cuál mordió?`);
-      if (s.bes >= 1 && s.wins >= 1 && s.losses === 0)
-        candidates.push(`${s.wins} ganadora${s.wins===1?'':'s'} y ${s.bes} BE${s.bes===1?'':'s'}. ¿Las BEs fueron ganadoras gestionadas a BE, o trades que nunca arrancaron?`);
-      if (s.losses >= 3 && s.wins === 0)
-        candidates.push(`${s.losses} pérdidas, ninguna ganadora. Espero que disfrutaras no apartarte tras la segunda.`);
-      if (s.totalTrades >= 5 && Math.abs(s.totalR) < 0.5)
-        candidates.push(`${s.totalTrades} trades, básicamente plano. Espero que disfrutaras todo el clicar. ¿Mereció algo de eso la pena?`);
+        candidates.push(`${s.totalR.toFixed(1)}R en ${s.totalTrades} trades. Define qué debe estar presente antes de la próxima entrada, en lugar de operar para recuperar.`);
+      if (s.totalTrades >= 3 && s.totalR > 0 && s.bestR >= 0.6 * s.totalR && s.bestR >= 2)
+        candidates.push(`El mejor trade (+${s.bestR.toFixed(1)}R) explica la mayor parte de los +${s.totalR.toFixed(1)}R del día. Revisa si el resto del libro quedó plano o negativo.`);
+      if (s.worstR <= -1.5)
+        candidates.push(`Mayor trade perdedor: ${s.worstR.toFixed(1)}R. Confirma que el stop coincidió con el riesgo planeado y no se amplió.`);
+      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR > 1)
+        candidates.push(`Promedio de ${s.mfe.avgLeftR.toFixed(1)}R dejados tras la salida en ${s.mfe.trackedR} ganadora${s.mfe.trackedR === 1 ? '' : 's'}. Compara tu regla de salida con hasta dónde extendió el precio.`);
+      if (s.mfe && s.mfe.trackedR > 0 && s.mfe.avgLeftR >= 0 && s.mfe.avgLeftR < 0.5 && s.wins >= 2)
+        candidates.push(`Unos ${s.mfe.avgLeftR.toFixed(1)}R dejados de media en las ganadoras — las salidas estuvieron cerca de la extensión.`);
+      if (s.gross > 0 && s.costs / s.gross > 0.15)
+        candidates.push(`Los costes fueron el ${((s.costs / s.gross) * 100).toFixed(0)}% del bruto hoy. A este número de trades, spread y comisiones son un lastre medible sobre el neto.`);
+      if (s.topSymN >= 3 && s.topSym)
+        candidates.push(`${s.topSymN} de ${s.totalTrades} trades fueron ${s.topSym}. Concentrado en un instrumento — revisa si los demás eran setups igual de válidos.`);
+      if (s.totalTrades >= 3 && s.shorts === 0 && s.longs >= 3)
+        candidates.push(`Los ${s.longs} trades fueron largos. Confirma que el sesgo de temporalidad mayor apoyaba la dirección, no solo las entradas.`);
+      if (s.totalTrades >= 3 && s.longs === 0 && s.shorts >= 3)
+        candidates.push(`Los ${s.shorts} trades fueron cortos. Confirma que el sesgo de temporalidad mayor apoyaba la dirección, no solo las entradas.`);
+      if (s.isBestDay && s.totalR > 0)
+        candidates.push(`+${s.totalR.toFixed(1)}R — el mejor día de tus ${s.loggedDays} días registrados. Documenta las condiciones mientras están frescas.`);
+      if (s.isWorstDay && s.totalR < 0)
+        candidates.push(`${s.totalR.toFixed(1)}R — el peor día de tu registro. Revisa el tamaño y la colocación del stop antes de la próxima sesión.`);
+      if (!s.isBestDay && s.avgDayR > 0 && s.totalR >= s.avgDayR * 1.5 && s.totalTrades >= 2)
+        candidates.push(`+${s.totalR.toFixed(1)}R, frente a un día promedio de +${s.avgDayR.toFixed(1)}R. Por encima de tu norma — anota qué fue diferente.`);
+      if (s.avgDayR > 0 && s.totalR < 0 && s.totalTrades >= 2)
+        candidates.push(`Un día negativo frente a un promedio de +${s.avgDayR.toFixed(1)}R. Revisa si falló el proceso o el mercado simplemente no ofreció setups.`);
+      if (s.daySign > 0 && s.prevStreakSign < 0 && s.prevStreakLen >= 2)
+        candidates.push(`Primer día verde tras ${s.prevStreakLen} días en rojo. Anota qué cambió — instrumento, timing o paciencia.`);
+      if (s.daySign < 0 && s.prevStreakSign > 0 && s.prevStreakLen >= 2)
+        candidates.push(`Primer día en rojo tras ${s.prevStreakLen} días verdes. Un día a la baja dentro de una racha positiva es normal — confirma que fue un trade planeado.`);
+      if (s.daySign > 0 && s.prevStreakSign > 0)
+        candidates.push(`${s.prevStreakLen + 1} días verdes seguidos. Vigila que el tamaño de posición no suba con la racha.`);
+      if (s.daySign < 0 && s.prevStreakSign < 0)
+        candidates.push(`${s.prevStreakLen + 1} días en rojo seguidos. Considera reducir tamaño o parar hasta que las condiciones se aclaren.`);
+      if (s.maxLossStreak >= 3)
+        candidates.push(`${s.maxLossStreak} trades perdedores seguidos en un momento del día. Anota si el tamaño se mantuvo o aumentó.`);
+      if (s.maxWinStreak >= 3)
+        candidates.push(`${s.maxWinStreak} trades ganadores seguidos hoy. Anota la condición que estaba funcionando.`);
     }
     if (period === 'week') {
       if (s.totalTrades === 0)
@@ -24078,7 +24168,7 @@
     }
 
     if (candidates.length === 0) return null;
-    const idx = hashStr(new Date().toDateString() + ':rev-reflect-stat-es-' + period) % candidates.length;
+    const idx = hashStr(((s && s._seedKey) || new Date().toDateString()) + ':rev-reflect-stat-es-' + period) % candidates.length;
     return candidates[idx];
   }
 
