@@ -11465,14 +11465,18 @@
       // "nothing meaningful to capture here, the result tells you everything".)
       row.querySelector('.type-select').value = t.type || '';
       // Import-completion cue: flash the empty required cells on MT5-imported rows until filled
-      // (TYPE for any result; POT R/P for wins; BE POT R/P for BEs). Stops once the import
-      // banner is dismissed. This replaces the banner's old "click the cells" instruction.
+      // (TYPE for any result; R/P aim when blank; POT R/P for wins; BE POT R/P for BEs). Stops
+      // once the import banner is dismissed. Replaces the banner's old "click the cells" note.
       try {
         const _isNum = v => typeof v === 'number' && !isNaN(v);
+        const _hasVal = v => v != null && v !== '' && !(typeof v === 'number' && isNaN(v));
         const _flashOn = (t.importedFrom === 'mt5');
         if (_flashOn) {
           const _typeSel = row.querySelector('.type-select');
           if (!t.type && _typeSel) _typeSel.classList.add('tl-needs-fill');
+          // R · P aim — flash when blank (e.g. the order carried no TP), same as TYPE.
+          if (!_hasVal(t.r)    && rInput)    rInput.classList.add('tl-needs-fill');
+          if (!_hasVal(t.pips) && pipsInput) pipsInput.classList.add('tl-needs-fill');
           const _needPotr = (t.result === 'Win') ? (!_isNum(t.potentialR) && !_isNum(t.potentialPips))
                           : (t.result === 'BE')  ? (!_isNum(t.bePotentialR) && !_isNum(t.bePotentialPips))
                           : false;
@@ -28464,6 +28468,10 @@
       const priceMove = (t.type === 'buy' ? (t.closePrice - t.entryPrice) : (t.entryPrice - t.closePrice));
       t.pips = Math.round(priceMove * pipMult * 10) / 10;
       t.slPips = t.slPrice ? Math.round(Math.abs(t.entryPrice - t.slPrice) * pipMult * 10) / 10 : null;
+      // Aim (target) from the order's TP vs entry/SL — fills R · P with what the setup was
+      // aiming for, mirroring auto-sync. Null when the order had no TP set.
+      t.tpPips = t.tpPrice ? Math.round(Math.abs(t.entryPrice - t.tpPrice) * pipMult * 10) / 10 : null;
+      t.aimR = (t.tpPips != null && t.slPips != null && t.slPips > 0) ? Math.round((t.tpPips / t.slPips) * 100) / 100 : null;
       // Net P&L = profit + commission + swap (commission and swap are negative numbers)
       t.netPL = t.profit + t.commission + t.swap;
       t.costs = Math.abs(t.commission + t.swap);
@@ -28736,7 +28744,7 @@
             </div>
             ${dayTrades.map(t => {
               const isSel = _mt5SelectedIds.has(t.position);
-              const resCls = t.result === 'Win' ? 'win' : t.result === 'Loss' ? 'loss' : 'be';
+              const resCls = t.result === 'Win' ? 'win' : t.result === 'Lose' ? 'loss' : 'be';
               return `
                 <div class="mt5-trade-row ${isSel ? '' : 'deselected'}" data-pos="${t.position}">
                   <input type="checkbox" class="mt5-check" data-pos="${t.position}" ${isSel ? 'checked' : ''} />
@@ -28744,7 +28752,7 @@
                   <span style="text-transform:capitalize;color:var(--text-mid);">${t.type === 'buy' ? 'Long' : 'Short'}</span>
                   <span class="mt5-result ${resCls}">${t.result}</span>
                   <span class="mt5-profit ${resCls}">${t.netPL >= 0 ? '+' : ''}${t.netPL.toFixed(2)}</span>
-                  <span style="color:var(--text-mid);">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}p</span>
+                  <span class="mt5-profit ${resCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}p</span>
                   <span style="color:var(--text-dim);font-size:10px;">${t.symbol} · Vol ${t.volume}${t.slPips ? ' · SL ' + t.slPips.toFixed(1) + 'p' : ''}</span>
                 </div>
               `;
@@ -28840,17 +28848,18 @@
     const _consumedTickets = [];
     selectedForDate.forEach(t => {
       if (t._isSync) {
-        // Auto-synced EA trade. R-P column = REALIZED result (net P&L / risk, and the
-        // actual price-move pips) — matches manual trades. POT R-P = MFE (mfe_r / mfe_pips,
-        // what the trade offered). risk = EA risk_gbp; money = real net P&L (pnl is already
-        // net, so actualGross = pnl and costs = 0). The EA target (tp_r/tp_pips) is no longer
-        // forced into the R column. Every field stays hand-editable.
+        // Auto-synced EA trade. R-P column = the AIM you set on the trade (EA tp_r / tp_pips),
+        // shown for Win/Lose/BE alike — it's the setup's planned RR + pip target, not the
+        // realized outcome. POT R-P = MFE (mfe_r / mfe_pips, how far it actually ran). Money
+        // comes from real net P&L (actualGross = pnl). Every field stays hand-editable.
+        // Note: analytics count Lose as -1R and BE as 0R regardless; a Win's R-curve uses this
+        // value, so a win shows the aimed R, not necessarily the achieved R.
         const isBE = t.result === 'BE';
         const _riskR = (t._riskGbp != null && t._riskGbp > 0) ? t._riskGbp : (defaultRisk > 0 ? defaultRisk : 0);
         const row = {
           id: genId(),
           result: t.result,
-          r: (_riskR > 0 && t.netPL != null) ? (t.netPL / _riskR).toFixed(2) : '',
+          r: (t._tpR != null) ? String(t._tpR) : '',
           type: '',
           side: t.type === 'buy' ? 'Long' : 'Short',
           entryTime: t.entryTimeHHMM,
@@ -28859,7 +28868,7 @@
           sl: t.slPips != null ? String(t.slPips) : '',
           costs: (t._costs != null) ? Math.abs(t._costs).toFixed(2) : '0.00',
           actualGross: (t._costs != null) ? (t.profit + Math.abs(t._costs)) : t.profit,
-          pips: t.pips,
+          pips: (t._tpPips != null) ? t._tpPips : '',
           potentialR: null,
           potentialPips: null,
           importedFrom: 'mt5',
@@ -28872,15 +28881,14 @@
         data.review.trades.push(row);
         _consumedTickets.push(t.position);
       } else {
-        // R: net P&L divided by user's intended risk. If risk not set, leave R blank for user to fill.
-        let rVal = '';
-        if (defaultRisk > 0) {
-          rVal = (t.netPL / defaultRisk).toFixed(2);
-        }
+        // R-P column = the AIM, derived from the report's TP vs entry/SL (aimed R = TP dist /
+        // SL dist, aimed pips = TP distance). Mirrors auto-sync. Blank when the order had no TP.
+        // Money still comes from real net P&L (actualGross). Pot R-P stays blank (file reports
+        // carry no MFE). Analytics count Lose as -1R / BE as 0R; a Win's R-curve uses this value.
         data.review.trades.push({
           id: genId(),
           result: t.result,
-          r: rVal,
+          r: (t.aimR != null) ? String(t.aimR) : '',
           type: '',   // Subjective — user fills (Reaction / Continuation)
           side: t.type === 'buy' ? 'Long' : 'Short',
           entryTime: t.entryTimeHHMM,
@@ -28889,7 +28897,7 @@
           sl: t.slPips != null ? String(t.slPips) : '',
           costs: t.costs.toFixed(2),
           actualGross: t.profit,   // MT5's "profit" is gross from price action
-          pips: t.pips,
+          pips: (t.tpPips != null) ? t.tpPips : '',
           potentialR: null,
           potentialPips: null,
           importedFrom: 'mt5'  // flag so the completion banner can target only these
