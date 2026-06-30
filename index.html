@@ -31294,6 +31294,7 @@
   }
   function renderMentorShare(){
     var box=document.getElementById('stc-a-mentor'); if(!box) return;
+    if(isMentorAccount()){ box.style.display='none'; return; }   // the mentor doesn't share with themselves
     // Mentor access is a community-tier feature: Bundle PRO, Full access, 1:1 Mentoring (paid).
     var eligible = !!currentUser && !!profilePaid && (profilePlan==='bundle' || profilePlan==='comp' || profilePlan==='mentorship');
     if(!eligible){ box.style.display='none'; return; }
@@ -31304,9 +31305,12 @@
     set('stc-m-copy', tt('mentorShareCopy')); set('stc-m-active', tt('mentorShareActive'));
     var off=document.getElementById('stc-m-off'), on=document.getElementById('stc-m-on');
     mentorMsg('');
-    sb.from('shares').select('code').eq('owner_user_id', currentUser.id).eq('revoked', false).order('created_at',{ascending:false}).limit(1).maybeSingle().then(function(r){
-      var code = r && r.data && r.data.code;
-      if(code){ if(off)off.style.display='none'; if(on)on.style.display='block'; var c=document.getElementById('stc-m-code'); if(c)c.textContent=code; }
+    sb.from('shares').select('code,owner_email').eq('owner_user_id', currentUser.id).eq('revoked', false).order('created_at',{ascending:false}).limit(1).maybeSingle().then(function(r){
+      var row = r && r.data; var code = row && row.code;
+      if(code){
+        if(off)off.style.display='none'; if(on)on.style.display='block'; var c=document.getElementById('stc-m-code'); if(c)c.textContent=code;
+        if(row && !row.owner_email && currentUser.email){ try { sb.from('shares').update({ owner_email: currentUser.email }).eq('owner_user_id', currentUser.id).eq('code', code); } catch(e){} }
+      }
       else { if(off)off.style.display='block'; if(on)on.style.display='none'; }
     }).catch(function(){ if(off)off.style.display='block'; if(on)on.style.display='none'; });
   }
@@ -31402,13 +31406,29 @@
     try { document.body.classList.add('mentor-viewing'); } catch(e){}
     try { var bb=document.getElementById('bloomberg-floater'); if(bb){ var f=document.getElementById('bloomberg-floater-iframe'); if(f) f.src='about:blank'; bb.hidden=true; } } catch(e){}
     try { var tbar=document.getElementById('ticker-bar'); if(tbar) tbar.hidden=true; } catch(e){}
-    var who = email || mvId;
+    var _nm = '';
+    try { var _d = (window.STCloud && window.STCloud.getData) ? window.STCloud.getData() : null; _nm = (_d && _d.userName && _d.userName.trim()) || ''; } catch(e){}
+    var who;
+    if (_nm && email) who = _nm + ' \u00b7 ' + email;
+    else who = _nm || email || ('Member ' + String(mvId).slice(0,6));
     var bar=document.getElementById('mv-banner');
     if(!bar){ bar=document.createElement('div'); bar.id='mv-banner'; document.body.appendChild(bar); }
     bar.innerHTML = '<span class="mv-banner-txt">'+tt('mvBannerView')+' <strong>'+String(who).replace(/</g,'&lt;')+'</strong> \u00b7 '+tt('mvReadOnly')+'</span>'+
       '<button id="mv-exit" class="mv-banner-btn">'+tt('mvExit')+'</button>';
     var ex=document.getElementById('mv-exit'); if(ex) ex.addEventListener('click', function(){ location.href=location.pathname; });
     var ov=document.getElementById('mv-overlay'); if(ov) ov.remove();
+    if(!window.__mvClickGuard){
+      window.__mvClickGuard = true;
+      // Read-only: allow ONLY navigation, viewing and (Phase 4) mentor-note controls. Block
+      // EVERYTHING else — incl. div/span action controls (delete, copy, save, reset, sign out),
+      // not just <button>s — so nothing in the member's journal can be manipulated.
+      var MV_ALLOW = '#mv-banner, .tabs, .tab, .tab-step, .tab-step-arrow, .tab-step-current, .modal-close, .cal-day, .cal-nav-btn, .lang-flag, #lang-toggle, .potr-trade-row, .trade-row, .combo-show-all, .tag-leaderboard-expand, a[href], [data-mv-allow]';
+      document.addEventListener('click', function(e){
+        if(!document.body.classList.contains('mentor-viewing')) return;
+        try { if(e.target && e.target.closest && e.target.closest(MV_ALLOW)) return; } catch(_){}
+        e.preventDefault(); e.stopPropagation();
+      }, true);
+    }
   }
   function paintAccount() {
     if (accNav) accNav.textContent = tt('account');
