@@ -8150,6 +8150,15 @@
     return 'ln';
   }
   var _stBucketKey = _stHourBucket();
+  // Remembered session phase (live? / about-to-or-in?). The hour buckets above are fixed
+  // clock hours and don't line up with session windows, so a session opening mid-bucket
+  // (e.g. London 08:00 inside the 05–11 morning bucket) wouldn't refresh the greeting.
+  // We watch the actual session phase and refresh the moment it changes.
+  function _stSessionPhase() {
+    try { return ((typeof isSessionLive === 'function' && isSessionLive()) ? '1' : '0') + ((typeof isAboutToOrInSession === 'function' && isAboutToOrInSession()) ? '1' : '0'); }
+    catch (e) { return ''; }
+  }
+  var _stSessionState = _stSessionPhase();
   function _stRefreshDay() {
     try { initSessionDatePicker(); } catch (e) {}
     try { initBiasDatePicker();    } catch (e) {}
@@ -8176,6 +8185,7 @@
     _stDayKey = todayDateStr();
     _stBucketKey = _stHourBucket();
     _stRefreshDay();
+    _stSessionState = _stSessionPhase();
     _stLastTick = Date.now(); _stHiddenAt = Date.now();
   }
   // Per-second tick: live clock + rollover, plus a watchdog. If far more than 1s elapsed
@@ -8184,6 +8194,13 @@
     var now = Date.now(); var gap = now - _stLastTick; _stLastTick = now;
     try { renderMetaTime(); } catch (e) {}
     if (gap > _ST_SLEEP_GAP) { _stWake(); } else { _stCheckRollover(); }
+    var _sk = _stSessionPhase();
+    if (_sk !== _stSessionState) {
+      _stSessionState = _sk;
+      try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
+      try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (e) {}
+      try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
+    }
   }, 1000);
   // Foreground return (waking from hibernation, unlocking, switching back). Full refresh if
   // we were away long enough, otherwise just the cheap rollover check.
@@ -12855,7 +12872,7 @@
     if (typeof syncReviewSectionsToActiveTrade === 'function') syncReviewSectionsToActiveTrade();
     if (typeof renderReviewPreview === 'function') renderReviewPreview();
     // --- Shared ---
-    data.lastSessionDate = today.toDateString();
+    data.lastSessionDate = new Date().toDateString();
     if (typeof renderSavedBias === 'function') renderSavedBias();
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
@@ -12878,12 +12895,26 @@
     // Keep previous = non-destructive. Roll the date over so we don't ask again today.
     const keep = () => {
       close(); _pendingNewDaySession = false;
-      data.lastSessionDate = today.toDateString();
+      data.lastSessionDate = new Date().toDateString();
       saveData();
     };
     if (keepBtn) keepBtn.addEventListener('click', keep);
     // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
   })();
+  // The new-day check above only fires once at page load. If the machine hibernates overnight
+  // and wakes without a reload, re-evaluate the date on resume so the reset prompt still appears.
+  function recheckNewDayOnResume() {
+    try {
+      if (_pendingNewDaySession) { showNewDaySessionPrompt(); return; }
+      var nowKey = new Date().toDateString();
+      if ((data.lastSessionDate || null) === nowKey) return;
+      if (!hasPriorSessionContent()) { data.lastSessionDate = nowKey; saveData(); return; }
+      _pendingNewDaySession = true;
+      showNewDaySessionPrompt();
+    } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) recheckNewDayOnResume(); });
+  window.addEventListener('focus', recheckNewDayOnResume);
   // Unresolved-trade guard: 'Mark result first' just dismisses (the Win/Lose/BE chooser is already
   // showing for that trade); 'Log anyway' adds the queued new trade despite the open one.
   (function () {
