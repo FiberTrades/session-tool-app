@@ -742,6 +742,13 @@
      so the toggle is meaningless here. */
   .bloomberg-floater--docked .bloomberg-floater-pin { display: none; }
   .bloomberg-floater[hidden] { display: none; }
+  /* Mentor read-only view */
+  #mv-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; background: #e8cf63; color: #1a1a1a; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 7px 12px; font-family: 'AppNum','DM Mono',monospace; font-size: 12px; letter-spacing: 0.06em; }
+  #mv-banner strong { font-weight: 700; }
+  .mv-banner-btn { background: #1a1a1a; color: #e8cf63; border: none; border-radius: 6px; padding: 4px 12px; font: inherit; cursor: pointer; }
+  body.mentor-viewing { padding-top: 32px; }
+  body.mentor-viewing .econ-bloomberg-btn, body.mentor-viewing .econ-ticker-btn, body.mentor-viewing #ticker-bar, body.mentor-viewing .bloomberg-floater { display: none !important; }
+  body.mentor-viewing input, body.mentor-viewing textarea, body.mentor-viewing select { pointer-events: none !important; }
   .bloomberg-floater-header { display: flex; align-items: center; justify-content: space-between; padding: 6px 6px 6px 12px; background: var(--bg-elev); border-bottom: 1px solid var(--border-2); cursor: move; user-select: none; flex-shrink: 0; touch-action: none; }
   .bloomberg-floater-title { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.2em; color: var(--text-dim); }
   .bloomberg-floater-actions { display: flex; gap: 2px; }
@@ -4215,6 +4222,7 @@
       <button type="button" class="settings-nav-item" data-section="risk_rules" data-i18n="settings.section_risk">Risk rules</button>
       <button type="button" class="settings-nav-item" data-section="accounts" data-i18n="settings.section_accounts">Accounts</button>
       <button type="button" class="settings-nav-item" data-section="services"><span class="snav-full" data-i18n="settings.section_services">Subscriptions &amp; Services</span><span class="snav-short" data-i18n="settings.section_services_short">Subs &amp; Services</span></button>
+      <button type="button" class="settings-nav-item" data-section="mentor" id="settings-nav-mentor" style="display:none;"><span class="snav-full" data-i18n="settings.section_mentor">Mentor access</span><span class="snav-short" data-i18n="settings.section_mentor_short">Mentor</span></button>
     </div>
     <!-- PROFILE section: user identity + general app settings (currency, language,
          Discord translate-on-copy, and data import/backup). Every control
@@ -5086,8 +5094,10 @@
       'risk_onboard.skip': 'Skip for now',
       'risk_onboard.save': 'Save rules',
       'settings.section_accounts': 'Accounts',
-      'settings.section_services': 'Subscriptions & Services',
-      'settings.section_services_short': 'Subs & Services',
+      'settings.section_services': 'Subscriptions',
+      'settings.section_services_short': 'Subscriptions',
+      'settings.section_mentor': 'Mentor access',
+      'settings.section_mentor_short': 'Mentor',
       'services.premium_title': 'Your subscription',
       'services.premium_desc': 'Full access to the journal, stats, calendar and cloud sync across your devices.',
       'services.premium_cta': 'Upgrade — from £12/mo',
@@ -6390,8 +6400,10 @@
       'risk_onboard.skip': 'Omitir por ahora',
       'risk_onboard.save': 'Guardar reglas',
       'settings.section_accounts': 'Cuentas',
-      'settings.section_services': 'Suscripciones y Servicios',
-      'settings.section_services_short': 'Subs y Servicios',
+      'settings.section_services': 'Suscripciones',
+      'settings.section_services_short': 'Suscripciones',
+      'settings.section_mentor': 'Acceso del mentor',
+      'settings.section_mentor_short': 'Mentor',
       'services.premium_title': 'Tu suscripción',
       'services.premium_desc': 'Acceso completo al diario, estadísticas, calendario y sincronización en la nube entre tus dispositivos.',
       'services.premium_cta': 'Hazte Premium — desde £12/mes',
@@ -8106,6 +8118,19 @@
     // finish Friday's own session review before being sent to the weekly review.
   }
 
+  // ===== Mentor view bootstrap (read-only viewing of a member's journal) =====
+  // ?mv=<memberId> turns this page into a read-only mentor view. The flag is set BEFORE any
+  // data loads so every save / sync / account-isolation path bails out and can never touch
+  // the mentor's own localStorage or cloud row.
+  window.__MV = /[?&]mv=/.test(location.search);
+  if (window.__MV && !/[?&]r=1/.test(location.search)) {
+    try {
+      var _mvov = document.createElement('div'); _mvov.id = 'mv-overlay';
+      _mvov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:#0c0c0c;color:#8c96a8;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:13px;letter-spacing:0.1em;';
+      _mvov.textContent = 'Loading member\u2019s journal\u2026';
+      (document.body || document.documentElement).appendChild(_mvov);
+    } catch (e) {}
+  }
   let data = loadData();
   // ===== Cloud-sync bridge (used by the cloud auth + sync module before </body>) =====
   window.STCloud = {
@@ -8680,6 +8705,18 @@
       try { localStorage.setItem(STORAGE_KEY, JSON.stringify(obj)); } catch (e) {}
       return obj;
     };
+    if (window.__MV) {
+      try {
+        var _pl = JSON.parse(localStorage.getItem('st_mv_payload') || 'null');
+        var _mvId = new URLSearchParams(location.search).get('mv');
+        if (_pl && _pl.id === _mvId && /[?&]r=1/.test(location.search)) {
+          try { localStorage.removeItem('st_mv_payload'); } catch (e) {}
+          window.__MV_EMAIL = _pl.email || '';
+          return migrate(_pl.data);            // member journal — held in memory only
+        }
+      } catch (e) {}
+      return migrate(defaultData());           // phase A: hide our own data; we fetch + reload
+    }
     try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) return persist(migrate(JSON.parse(raw))); } catch (e) {}
     for (const oldKey of OLD_KEYS) {
       try { const v = localStorage.getItem(oldKey); if (v) return persist(migrate(JSON.parse(v))); } catch (e) {}
@@ -10219,6 +10256,7 @@
     if (data.settings) data.settings.startingBalance = getEffectiveStartingBalance();
   }
   function saveData() {
+    if (window.__MV) return;                  // mentor view is read-only — never persist
     syncTopLevelToActiveAccount();
     localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     if (window.STCloud && window.STCloud.onSave) window.STCloud.onSave();
@@ -29331,7 +29369,7 @@
     // main app's tab swipe. Ignored when the gesture starts on an input or a horizontally
     // scrollable element so it never fights with typing or a scrollable row.
     (function settingsSectionSwipe() {
-      const ORDER = ['profile', 'session', 'risk_rules', 'accounts', 'services'];
+      const ORDER = ['profile', 'session', 'risk_rules', 'accounts', 'services', 'mentor'];
       function curIdx() { const a = modal.querySelector('.settings-nav-item.active'); return a ? ORDER.indexOf(a.dataset.section) : -1; }
       function go(dir) { const i = curIdx(); if (i < 0) return; const nxt = i + dir; if (nxt < 0 || nxt >= ORDER.length) return; const btn = modal.querySelector('.settings-nav-item[data-section="' + ORDER[nxt] + '"]'); if (btn) btn.click(); }
       function blocked(el) { while (el && el !== modal) { const tg = el.tagName; if (tg === 'INPUT' || tg === 'TEXTAREA' || tg === 'SELECT' || el.isContentEditable) return true; try { const st = getComputedStyle(el); if ((st.overflowX === 'auto' || st.overflowX === 'scroll') && el.scrollWidth > el.clientWidth + 6) return true; } catch (e) {} el = el.parentElement; } return false; }
@@ -30611,11 +30649,11 @@
 
   var STR = {
     en: { account:'Sign out', signedInAs:'Signed in as', email:'Email', password:'Password',
-          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', kickerLogin:'Welcome back', kickerChoose:'Log in or create an account', welcomeTitle:'Welcome to Session Tool', welcomeBody:'You\u2019re all set. This is your space to log every trade in your session, review your performance, and build consistency \u2014 quietly, away from the noise.', welcomeTrial:'You\u2019re on a free {n}-day trial. When it ends, you\u2019ll need Premium to keep using the app \u2014 but your data stays saved and will be waiting for you.', welcomeBtn:'Continue', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Rollback history', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', planTrial:'{n}-day free trial remaining', badgePremium:'Premium', badgeTrial:'Trial · {n}d', badgeFree:'Free', pwKicker:'Trial ended', pwMsg:'Your 14-day free trial has ended. Subscribe to keep using Session Tool — your data is saved and will be waiting when you upgrade.', pwHave:'I\u2019ve already subscribed — refresh', upgradeBtn:'Upgrade to Premium — £12/mo', upgradePlan:'Upgrade plan', pwKickerLapsed:'Subscription ended', pwMsgLapsed:'Your Premium subscription has ended. Renew to keep using Session Tool \u2014 your data is saved and will be waiting when you renew.', resubBtn:'Renew Premium \u2014 \u00a312/mo', upgYear:'Premium \u2014 \u00a3144/yr (save 20%)', upgMonth:'Premium \u2014 \u00a315/mo', manageBtn:'Manage subscription', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.', mentorShareTitle:'Mentor access', mentorShareHint:'Share a code with your mentor so they can see your progress and leave notes on your reviews. You can stop sharing any time.', mentorShareGen:'Generate a code', mentorShareRevoke:'Stop sharing', mentorShareRevokeConfirm:'Stop sharing with your mentor? Your code stops working immediately.', mentorShareCopy:'Copy', mentorShareCopied:'Copied', mentorShareActive:'Sharing is on. Give this code to your mentor:', mentorShareErr:'Something went wrong — please try again.',
+          login:'Log in', signup:'Create account', signout:'Sign out', kicker:'Create your account', kickerLogin:'Welcome back', kickerChoose:'Log in or create an account', welcomeTitle:'Welcome to Session Tool', welcomeBody:'You\u2019re all set. This is your space to log every trade in your session, review your performance, and build consistency \u2014 quietly, away from the noise.', welcomeTrial:'You\u2019re on a free {n}-day trial. When it ends, you\u2019ll need Premium to keep using the app \u2014 but your data stays saved and will be waiting for you.', welcomeBtn:'Continue', forgot:'Forgot your password?', resetSent:'Check your email/junk for a reset link.', enterEmail:'Enter your email first.', rkicker:'Set a new password', newPass:'New password', confirmPass:'Confirm password', update:'Update password', noMatch:'Passwords do not match.', updated:'Password updated.', showPass:'Show password', hidePass:'Hide password', backupsTitle:'Rollback history', backupsHint:'Automatic local snapshots. Restore any point if something looks wrong.', noBackups:'No snapshots yet \u2014 they appear as you use the app.', tradesWord:'trades', seriesWord:'series', restoreWord:'Restore', planTitle:'Plan', planFree:'Free account', planPremium:'Premium — active', planTrial:'{n}-day free trial remaining', badgePremium:'Premium', badgeTrial:'Trial · {n}d', badgeFree:'Free', pwKicker:'Trial ended', pwMsg:'Your 14-day free trial has ended. Subscribe to keep using Session Tool — your data is saved and will be waiting when you upgrade.', pwHave:'I\u2019ve already subscribed — refresh', upgradeBtn:'Upgrade to Premium — £12/mo', upgradePlan:'Upgrade plan', pwKickerLapsed:'Subscription ended', pwMsgLapsed:'Your Premium subscription has ended. Renew to keep using Session Tool \u2014 your data is saved and will be waiting when you renew.', resubBtn:'Renew Premium \u2014 \u00a312/mo', upgYear:'Premium \u2014 \u00a3144/yr (save 20%)', upgMonth:'Premium \u2014 \u00a315/mo', manageBtn:'Manage subscription', restoreConfirm:'Restore the snapshot from {when} ({n} trades)? Your current data is snapshotted first so you can undo this.', mentorShareTitle:'Mentor access', mentorShareHint:'Share a code with your mentor so they can see your progress and leave notes on your reviews. You can stop sharing any time.', mentorShareGen:'Generate a code', mentorShareRevoke:'Stop sharing', mentorShareRevokeConfirm:'Stop sharing with your mentor? Your code stops working immediately.', mentorShareCopy:'Copy', mentorShareCopied:'Copied', mentorShareActive:'Sharing is on. Give this code to your mentor:', mentorShareErr:'Something went wrong — please try again.', mvTitle:'Viewing members', mvHint:'Enter a member’s share code to connect. Connected members appear below — open any to view their journal read-only.', mvCode:'Member share code', mvConnect:'Connect', mvConnecting:'Connecting…', mvMembers:'Your members', mvNoMembers:'No members connected yet.', mvOpen:'Open', mvOpenWin:'Open in new window', mvErrCode:'That code didn’t work — check it and try again.', mvBannerView:'Viewing', mvReadOnly:'read only', mvExit:'Exit', mvLoadErr:'Couldn’t load this member — they may have stopped sharing.',
           need6:'Password must be at least 6 characters.', syncing:'Syncing…', synced:'Synced', localOnly:'Local only',
           syncErr:'Sync error — will retry', checkEmail:'Account created. Check your email to confirm, then log in.', syncDeleteConfirm:'You\u2019re about to remove {n} trades that are still saved in the cloud. This can\u2019t be undone. Delete them?' },
     es: { account:'Cerrar sesión', signedInAs:'Sesión iniciada como', email:'Correo', password:'Contraseña',
-          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', kickerLogin:'Bienvenido de nuevo', kickerChoose:'Inicia sesión o crea una cuenta', welcomeTitle:'Bienvenido a Session Tool', welcomeBody:'Ya está todo listo. Este es tu espacio para registrar cada operación de tu sesión, revisar tu rendimiento y ganar constancia \u2014 en silencio, lejos del ruido.', welcomeTrial:'Estás en una prueba gratuita de {n} días. Cuando termine, necesitarás Premium para seguir usando la app \u2014 pero tus datos quedan guardados y te estarán esperando.', welcomeBtn:'Continuar', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Historial de cambios', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', planTrial:'Prueba gratuita: quedan {n} días', badgePremium:'Premium', badgeTrial:'Prueba · {n}d', badgeFree:'Gratis', pwKicker:'Prueba finalizada', pwMsg:'Tu prueba gratuita de 14 días ha terminado. Suscríbete para seguir usando Session Tool — tus datos están guardados y estarán aquí cuando mejores tu plan.', pwHave:'Ya me suscribí — actualizar', upgradeBtn:'Hazte Premium — £12/mes', upgradePlan:'Mejorar plan', pwKickerLapsed:'Suscripci\u00f3n finalizada', pwMsgLapsed:'Tu suscripci\u00f3n Premium ha terminado. Renueva para seguir usando Session Tool \u2014 tus datos est\u00e1n guardados y estar\u00e1n aqu\u00ed cuando renueves.', resubBtn:'Renovar Premium \u2014 \u00a312/mes', upgYear:'Premium \u2014 \u00a3144/a\u00f1o (ahorra 20%)', upgMonth:'Premium \u2014 \u00a315/mes', manageBtn:'Gestionar suscripción', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.', mentorShareTitle:'Acceso del mentor', mentorShareHint:'Comparte un código con tu mentor para que pueda ver tu progreso y dejarte notas en tus revisiones. Puedes dejar de compartir cuando quieras.', mentorShareGen:'Generar un código', mentorShareRevoke:'Dejar de compartir', mentorShareRevokeConfirm:'¿Dejar de compartir con tu mentor? Tu código dejará de funcionar de inmediato.', mentorShareCopy:'Copiar', mentorShareCopied:'Copiado', mentorShareActive:'Compartir está activo. Dale este código a tu mentor:', mentorShareErr:'Algo salió mal — inténtalo de nuevo.',
+          login:'Entrar', signup:'Crear cuenta', signout:'Cerrar sesión', kicker:'Crea tu cuenta', kickerLogin:'Bienvenido de nuevo', kickerChoose:'Inicia sesión o crea una cuenta', welcomeTitle:'Bienvenido a Session Tool', welcomeBody:'Ya está todo listo. Este es tu espacio para registrar cada operación de tu sesión, revisar tu rendimiento y ganar constancia \u2014 en silencio, lejos del ruido.', welcomeTrial:'Estás en una prueba gratuita de {n} días. Cuando termine, necesitarás Premium para seguir usando la app \u2014 pero tus datos quedan guardados y te estarán esperando.', welcomeBtn:'Continuar', forgot:'¿Olvidaste tu contraseña?', resetSent:'Revisa tu correo/spam para el enlace de recuperación.', enterEmail:'Introduce tu correo primero.', rkicker:'Establece una nueva contraseña', newPass:'Nueva contraseña', confirmPass:'Confirmar contraseña', update:'Actualizar contraseña', noMatch:'Las contraseñas no coinciden.', updated:'Contraseña actualizada.', showPass:'Mostrar contraseña', hidePass:'Ocultar contraseña', backupsTitle:'Historial de cambios', backupsHint:'Instantáneas locales automáticas. Restaura cualquier punto si algo va mal.', noBackups:'Aún no hay instantáneas \u2014 aparecen a medida que usas la app.', tradesWord:'operaciones', seriesWord:'series', restoreWord:'Restaurar', planTitle:'Plan', planFree:'Cuenta gratuita', planPremium:'Premium — activa', planTrial:'Prueba gratuita: quedan {n} días', badgePremium:'Premium', badgeTrial:'Prueba · {n}d', badgeFree:'Gratis', pwKicker:'Prueba finalizada', pwMsg:'Tu prueba gratuita de 14 días ha terminado. Suscríbete para seguir usando Session Tool — tus datos están guardados y estarán aquí cuando mejores tu plan.', pwHave:'Ya me suscribí — actualizar', upgradeBtn:'Hazte Premium — £12/mes', upgradePlan:'Mejorar plan', pwKickerLapsed:'Suscripci\u00f3n finalizada', pwMsgLapsed:'Tu suscripci\u00f3n Premium ha terminado. Renueva para seguir usando Session Tool \u2014 tus datos est\u00e1n guardados y estar\u00e1n aqu\u00ed cuando renueves.', resubBtn:'Renovar Premium \u2014 \u00a312/mes', upgYear:'Premium \u2014 \u00a3144/a\u00f1o (ahorra 20%)', upgMonth:'Premium \u2014 \u00a315/mes', manageBtn:'Gestionar suscripción', restoreConfirm:'¿Restaurar la instantánea del {when} ({n} operaciones)? Se guarda primero tu estado actual para que puedas deshacerlo.', mentorShareTitle:'Acceso del mentor', mentorShareHint:'Comparte un código con tu mentor para que pueda ver tu progreso y dejarte notas en tus revisiones. Puedes dejar de compartir cuando quieras.', mentorShareGen:'Generar un código', mentorShareRevoke:'Dejar de compartir', mentorShareRevokeConfirm:'¿Dejar de compartir con tu mentor? Tu código dejará de funcionar de inmediato.', mentorShareCopy:'Copiar', mentorShareCopied:'Copiado', mentorShareActive:'Compartir está activo. Dale este código a tu mentor:', mentorShareErr:'Algo salió mal — inténtalo de nuevo.', mvTitle:'Ver miembros', mvHint:'Introduce el código de un miembro para conectar. Los miembros conectados aparecen abajo — abre cualquiera para ver su diario en solo lectura.', mvCode:'Código del miembro', mvConnect:'Conectar', mvConnecting:'Conectando…', mvMembers:'Tus miembros', mvNoMembers:'Aún no hay miembros conectados.', mvOpen:'Abrir', mvOpenWin:'Abrir en ventana nueva', mvErrCode:'Ese código no funcionó — revísalo e inténtalo de nuevo.', mvBannerView:'Viendo', mvReadOnly:'solo lectura', mvExit:'Salir', mvLoadErr:'No se pudo cargar este miembro — puede que haya dejado de compartir.',
           need6:'La contraseña debe tener al menos 6 caracteres.', syncing:'Sincronizando…', synced:'Sincronizado', localOnly:'Solo local',
           syncErr:'Error de sincronización — se reintentará', checkEmail:'Cuenta creada. Revisa tu correo para confirmar y luego inicia sesión.', syncDeleteConfirm:'Estás a punto de eliminar {n} operaciones que siguen guardadas en la nube. Esto no se puede deshacer. ¿Eliminarlas?' }
   };
@@ -31171,7 +31209,15 @@
         '<div class="settings-data-actions" style="margin-top:10px;">' +
           '<button class="settings-btn" id="stc-a-signout"></button>' +
         '</div>' +
-        '<div id="stc-a-mentor" style="display:none;margin-top:20px;border-top:1px solid var(--border-2,#2a2a2a);padding-top:18px;">' +
+      '</div>';
+    profileSection.appendChild(sec);
+    // ----- Mentor access section: members share here; the mentor views from here -----
+    var _svcSec = document.querySelector('.settings-section[data-section="services"]');
+    if (_svcSec) {
+      var mentorSection = document.createElement('div');
+      mentorSection.className = 'settings-section'; mentorSection.setAttribute('data-section','mentor'); mentorSection.style.display='none';
+      mentorSection.innerHTML =
+        '<div id="stc-a-mentor" style="display:none;">' +
           '<label class="settings-label" id="stc-m-title"></label>' +
           '<p class="settings-hint" id="stc-m-hint" style="margin-top:6px;"></p>' +
           '<div id="stc-m-off" style="display:none;margin-top:14px;">' +
@@ -31189,8 +31235,19 @@
           '</div>' +
           '<p class="settings-hint" id="stc-m-msg" style="margin-top:8px;"></p>' +
         '</div>' +
-      '</div>';
-    profileSection.appendChild(sec);
+        '<div id="stc-mv" style="display:none;">' +
+          '<label class="settings-label" id="stc-mv-title"></label>' +
+          '<p class="settings-hint" id="stc-mv-hint" style="margin-top:6px;"></p>' +
+          '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:14px;">' +
+            '<input id="stc-mv-code" class="settings-input settings-input-compact" style="flex:1;min-width:140px;text-transform:uppercase;letter-spacing:0.12em;" autocomplete="off" />' +
+            '<button class="settings-btn settings-btn-primary" id="stc-mv-connect" style="flex:none;"></button>' +
+          '</div>' +
+          '<p class="settings-hint" id="stc-mv-msg" style="margin-top:8px;"></p>' +
+          '<label class="settings-label" id="stc-mv-mlabel" style="margin-top:18px;"></label>' +
+          '<div id="stc-mv-list" style="margin-top:10px;"></div>' +
+        '</div>';
+      _svcSec.insertAdjacentElement('afterend', mentorSection);
+    }
 
     document.getElementById('stc-a-login').addEventListener('click', function () {
       doAuth('login', document.getElementById('stc-a-email').value.trim(), document.getElementById('stc-a-pass').value, accMsg, paintAccount);
@@ -31202,6 +31259,8 @@
     var _mGen=document.getElementById('stc-m-gen'); if(_mGen) _mGen.addEventListener('click', mentorGenerate);
     var _mRev=document.getElementById('stc-m-revoke'); if(_mRev) _mRev.addEventListener('click', mentorRevoke);
     var _mCopy=document.getElementById('stc-m-copy'); if(_mCopy) _mCopy.addEventListener('click', mentorCopy);
+    var _mvConn=document.getElementById('stc-mv-connect'); if(_mvConn) _mvConn.addEventListener('click', mentorConnect);
+    var _mvCode=document.getElementById('stc-mv-code'); if(_mvCode) _mvCode.addEventListener('keydown', function(e){ if(e.key==='Enter') mentorConnect(); });
     var _up = document.getElementById('stc-a-upgrade');
     if (_up) _up.addEventListener('click', function () { openUpgradeChoice(); });
     var _mg = document.getElementById('stc-a-manage');
@@ -31253,8 +31312,8 @@
   }
   function mentorGenerate(){
     if(!currentUser) return; mentorMsg('');
-    sb.from('shares').insert({ owner_user_id: currentUser.id, code: _genShareCode() }).then(function(r){
-      if(r.error){ return sb.from('shares').insert({ owner_user_id: currentUser.id, code: _genShareCode() }).then(function(r2){ if(r2.error){ mentorMsg(tt('mentorShareErr'), true); } else { renderMentorShare(); } }); }
+    sb.from('shares').insert({ owner_user_id: currentUser.id, owner_email: (currentUser.email||''), code: _genShareCode() }).then(function(r){
+      if(r.error){ return sb.from('shares').insert({ owner_user_id: currentUser.id, owner_email: (currentUser.email||''), code: _genShareCode() }).then(function(r2){ if(r2.error){ mentorMsg(tt('mentorShareErr'), true); } else { renderMentorShare(); } }); }
       renderMentorShare();
     }).catch(function(){ mentorMsg(tt('mentorShareErr'), true); });
   }
@@ -31268,6 +31327,88 @@
     var c=document.getElementById('stc-m-code'); if(!c) return; var txt=c.textContent||'';
     var done=function(){ var b=document.getElementById('stc-m-copy'); if(b){ b.textContent=tt('mentorShareCopied'); setTimeout(function(){ b.textContent=tt('mentorShareCopy'); },1400); } };
     try { navigator.clipboard.writeText(txt).then(done, done); } catch(e){ done(); }
+  }
+  // ---- Mentor side: connect to members + list them ----
+  function isMentorAccount(){ return !!currentUser && (currentUser.email||'').toLowerCase()==='be.o2@hotmail.com'; }
+  function mvMsg(s, err){ var el=document.getElementById('stc-mv-msg'); if(!el)return; el.textContent=s||''; el.style.color=err?'var(--bad,#e85d5d)':''; }
+  function updateMentorTab(){
+    var nav=document.getElementById('settings-nav-mentor'); if(!nav) return;
+    var eligible = !!profilePaid && (profilePlan==='bundle'||profilePlan==='comp'||profilePlan==='mentorship');
+    nav.style.display = (!!currentUser && (eligible || isMentorAccount())) ? '' : 'none';
+  }
+  function renderMentorViewer(){
+    var box=document.getElementById('stc-mv'); if(!box) return;
+    if(!isMentorAccount()){ box.style.display='none'; return; }
+    box.style.display='block';
+    var set=function(id,v){var e=document.getElementById(id); if(e) e.textContent=v;};
+    set('stc-mv-title', tt('mvTitle')); set('stc-mv-hint', tt('mvHint'));
+    set('stc-mv-connect', tt('mvConnect')); set('stc-mv-mlabel', tt('mvMembers'));
+    var codeEl=document.getElementById('stc-mv-code'); if(codeEl) codeEl.placeholder=tt('mvCode');
+    loadMentorMembers();
+  }
+  function loadMentorMembers(){
+    var list=document.getElementById('stc-mv-list'); if(!list) return;
+    sb.from('shares').select('owner_user_id,owner_email,code').eq('mentor_id', currentUser.id).eq('revoked', false).order('claimed_at',{ascending:false}).then(function(r){
+      var rows=(r&&r.data)||[];
+      if(!rows.length){ list.innerHTML='<p class="settings-hint">'+tt('mvNoMembers')+'</p>'; return; }
+      var isPC = window.matchMedia && window.matchMedia('(min-width:900px)').matches;
+      list.innerHTML = rows.map(function(m){
+        var label=(m.owner_email||m.code||m.owner_user_id);
+        var safe=String(label).replace(/&/g,'&amp;').replace(/</g,'&lt;');
+        var win = isPC ? ('<button class="settings-btn mv-openwin" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpenWin')+'</button>') : '';
+        return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border-2,#2a2a2a);">'+
+          '<span style="flex:1;min-width:120px;color:var(--text);font-size:13px;">'+safe+'</span>'+
+          '<button class="settings-btn settings-btn-primary mv-open" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpen')+'</button>'+ win +
+        '</div>';
+      }).join('');
+      list.querySelectorAll('.mv-open').forEach(function(b){ b.addEventListener('click', function(){ location.href = location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')); }); });
+      list.querySelectorAll('.mv-openwin').forEach(function(b){ b.addEventListener('click', function(){ window.open(location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')), '_blank'); }); });
+    }).catch(function(){ list.innerHTML='<p class="settings-hint">'+tt('mvNoMembers')+'</p>'; });
+  }
+  function mentorConnect(){
+    var inp=document.getElementById('stc-mv-code'); if(!inp) return;
+    var code=(inp.value||'').trim().toUpperCase(); if(!code) return;
+    mvMsg(tt('mvConnecting'));
+    sb.functions.invoke('mentor-redeem', { body:{ code: code } }).then(function(res){
+      if(res.error || (res.data && res.data.error)){ mvMsg(tt('mvErrCode'), true); return; }
+      inp.value=''; mvMsg(''); loadMentorMembers();
+    }).catch(function(){ mvMsg(tt('mvErrCode'), true); });
+  }
+  // ---- Mentor read-only VIEW engine (entered via ?mv=<memberId>) ----
+  function mvFatal(msg){
+    var ov=document.getElementById('mv-overlay');
+    if(!ov){ ov=document.createElement('div'); ov.id='mv-overlay'; ov.style.cssText='position:fixed;inset:0;z-index:99999;background:#0c0c0c;color:#8c96a8;display:flex;align-items:center;justify-content:center;font-family:monospace;font-size:13px;'; document.body.appendChild(ov); }
+    ov.innerHTML = '<div style="text-align:center;max-width:300px;padding:20px;">'+(msg||tt('mvLoadErr'))+'<br><br><button class="settings-btn" id="mv-exit-x" style="margin-top:10px;">'+tt('mvExit')+'</button></div>';
+    var x=document.getElementById('mv-exit-x'); if(x) x.addEventListener('click', function(){ location.href=location.pathname; });
+  }
+  function mvBoot(){
+    if(window.__MV_BOOTED) return; window.__MV_BOOTED=true;
+    var mvId = new URLSearchParams(location.search).get('mv'); if(!mvId) return;
+    if(!currentUser){ mvFatal(tt('mvLoadErr')); return; }
+    if(/[?&]r=1/.test(location.search)){ dressMentorView(mvId, window.__MV_EMAIL||''); return; }
+    Promise.all([
+      sb.from('journals').select('data').eq('user_id', mvId).maybeSingle(),
+      sb.from('shares').select('owner_email').eq('owner_user_id', mvId).eq('mentor_id', currentUser.id).eq('revoked', false).maybeSingle()
+    ]).then(function(arr){
+      var jr=arr[0], sr=arr[1];
+      if((jr && jr.error) || !(jr && jr.data && jr.data.data)){ mvFatal(tt('mvLoadErr')); return; }
+      var email=(sr && sr.data && sr.data.owner_email) || '';
+      try { localStorage.setItem('st_mv_payload', JSON.stringify({ id:mvId, email:email, data:jr.data.data, ts:Date.now() })); }
+      catch(e){ mvFatal(tt('mvLoadErr')); return; }
+      location.replace(location.pathname + '?mv=' + encodeURIComponent(mvId) + '&r=1');
+    }).catch(function(){ mvFatal(tt('mvLoadErr')); });
+  }
+  function dressMentorView(mvId, email){
+    try { document.body.classList.add('mentor-viewing'); } catch(e){}
+    try { var bb=document.getElementById('bloomberg-floater'); if(bb){ var f=document.getElementById('bloomberg-floater-iframe'); if(f) f.src='about:blank'; bb.hidden=true; } } catch(e){}
+    try { var tbar=document.getElementById('ticker-bar'); if(tbar) tbar.hidden=true; } catch(e){}
+    var who = email || mvId;
+    var bar=document.getElementById('mv-banner');
+    if(!bar){ bar=document.createElement('div'); bar.id='mv-banner'; document.body.appendChild(bar); }
+    bar.innerHTML = '<span class="mv-banner-txt">'+tt('mvBannerView')+' <strong>'+String(who).replace(/</g,'&lt;')+'</strong> \u00b7 '+tt('mvReadOnly')+'</span>'+
+      '<button id="mv-exit" class="mv-banner-btn">'+tt('mvExit')+'</button>';
+    var ex=document.getElementById('mv-exit'); if(ex) ex.addEventListener('click', function(){ location.href=location.pathname; });
+    var ov=document.getElementById('mv-overlay'); if(ov) ov.remove();
   }
   function paintAccount() {
     if (accNav) accNav.textContent = tt('account');
@@ -31283,6 +31424,7 @@
     if (currentUser) renderBackups();
     if (currentUser) renderPlan();
     if (currentUser) renderMentorShare();
+    if (currentUser) { try { renderMentorViewer(); updateMentorTab(); } catch(e){} }
   }
 
   /* ============ rolling safety snapshots ============ */
@@ -31439,7 +31581,7 @@
     var mbtn = document.getElementById('stc-a-manage'); if (mbtn) { mbtn.style.display = (profilePaid && profilePortal) ? '' : 'none'; mbtn.textContent = tt('manageBtn'); }
     try { document.documentElement.classList.toggle('st-paid', !!profilePaid); } catch (e) {}
     renderPlanBadge();
-    try { renderMentorShare(); } catch(e){}
+    try { renderMentorShare(); renderMentorViewer(); updateMentorTab(); } catch(e){}
     enforceAccess();
     renderServices();
   }
@@ -31702,6 +31844,7 @@
   }
 
   function cloudPush() {
+    if (window.__MV) return;
     if (!currentUser) return;
     // Account isolation: only upload a journal that POSITIVELY belongs to this account. Require
     // the owner tag to MATCH the current user — defer to reconcile when it's null/different. This
@@ -31773,6 +31916,7 @@
   // local is never trusted (it may be a previous account's cache on this browser). authoritative
   // is falsy for mid-session focus/resume re-pulls, which use the loss-proof content merge.
   function reconcile(authoritative) {
+    if (window.__MV) return;
     if (!currentUser) return;
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
@@ -31871,6 +32015,7 @@
   // and ensuring a brand-new account gets the first-run induction. The owner's own cloud
   // copy (if paid) is pulled back by reconcile after the reload.
   function enforceDataOwner(uid) {
+    if (window.__MV) return false;
     if (!uid) return false;
     var owner = null;
     try { owner = localStorage.getItem('st_data_owner'); } catch (e) {}
@@ -31891,6 +32036,7 @@
   }
 
   sb.auth.onAuthStateChange(function (event, session) {
+    if (window.__MV) { currentUser = session ? session.user : null; try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch(e){} try { mvBoot(); } catch(e){} return; }
     // AUTHORITATIVE ACCOUNT-SWITCH GUARD (in-memory — cannot be corrupted by storage tags):
     // if a DIFFERENT user takes over this tab WITHOUT a page reload, the local cache still holds
     // the previous account's journal. Discard it and restart clean BEFORE anything reads it
@@ -31940,6 +32086,7 @@
   else if (!tokenGuess()) { showGate(); }
 
   sb.auth.getSession().then(function (r) {
+    if (window.__MV) { currentUser = r.data && r.data.session ? r.data.session.user : null; try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch(e){} try { mvBoot(); } catch(e){} return; }
     currentUser = r.data && r.data.session ? r.data.session.user : null;
     try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
     if (currentUser && enforceDataOwner(currentUser.id)) return; // foreign local data -> cleared, reloading
