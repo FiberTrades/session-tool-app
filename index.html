@@ -8180,6 +8180,14 @@
     } catch (e) {}
   }
   let data = loadData();
+  // Re-chunk the lifetime series by true chronological order (calendar day, then entry
+  // time) on every load. Journals saved before same-day entry-time ordering existed could
+  // have two same-day trades straddling a Series-of-10 boundary out of order (an earlier
+  // 08:14 trade starting the new series while the later 08:30 trade sat as the last trade of
+  // the previous series). performReviewSave() already re-chunks on every new save; doing it
+  // here repairs already-saved data too. Content-neutral (same trades, only regrouped), so it
+  // never trips the destructive-write guard. Persists on the next natural save.
+  try { if (typeof rebuildSeriesByDate === 'function') rebuildSeriesByDate(); } catch (e) {}
   // ===== Cloud-sync bridge (used by the cloud auth + sync module before </body>) =====
   window.STCloud = {
     getData: function () { return data; },
@@ -13332,14 +13340,6 @@
       }
       dotsWrap.appendChild(dot);
     }
-    // ===== TEMP DEBUG (series order) — remove after =====
-    try {
-      const _csdbg = cs.map((tr,i)=>`#${i} ${tr.entryTime||'--'}/${tr.result||'?'} k=${_tradeMinsKey(tr)}`).join(' | ');
-      const _dbgEl = document.createElement('div');
-      _dbgEl.style.cssText = 'font:10px/1.4 monospace;color:#e8cf63;background:rgba(212,175,55,.08);padding:5px 7px;border-radius:6px;margin-top:8px;word-break:break-all;';
-      _dbgEl.textContent = 'SER ord-dbg-14 \u00B7 ' + (_csdbg || 'empty');
-      dotsWrap.parentNode.insertBefore(_dbgEl, dotsWrap.nextSibling);
-    } catch(e) {}
     if (cs.length === 0) document.getElementById('current-tally').textContent = t('series.no_trades_yet');
     else {
       const s = calcSeriesStats(cs);
