@@ -17297,8 +17297,9 @@
       const _dnCell = (data.dayNotes && data.dayNotes[_noteKey]) ? data.dayNotes[_noteKey] : null;
       const _hasNote = _dnCell && ((_dnCell.notes && _dnCell.notes.trim()) || (Array.isArray(_dnCell.tvLinks) && _dnCell.tvLinks.some(l => l && l.url)));
       const noteDot = (_hasNote && dayTrades.length === 0) ? '<div class="cal-day-note-dot" title="Notes"></div>' : '';
-      const _mnDayUnseen = (!window.__MV && window.STMentor && window.STMentor.get('day', _noteKey) && !window.STMentor.get('day', _noteKey).seen_at);
-      const mnDayEnv = _mnDayUnseen ? ('<div class="cal-day-mn-env" title="Mentor note">'+MN_ENV_SVG+'</div>') : '';
+      const _mnDayNote = (window.STMentor && window.STMentor.get('day', _noteKey));
+      const _mnDayShow = _mnDayNote && (window.__MV || !_mnDayNote.seen_at);
+      const mnDayEnv = _mnDayShow ? ('<div class="cal-day-mn-env" title="Mentor note">'+MN_ENV_SVG+'</div>') : '';
       const todayCls = isToday ? 'today' : '';
       const plLabel = dayTrades.length > 0 ? fmtMoneyShort(net) : '';
       // P&L label colour mirrors the day classification so BE days show neutral/blue label, not red
@@ -17359,7 +17360,7 @@
         const weekKey = `${fridayDate.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
         const hasReview = (data.weeklyReviews || []).some(r => r.weekKey === weekKey);
         html += `<div class="cal-week-summary clickable" data-monday="${mondayDate.toISOString()}" data-friday="${fridayDate.toISOString()}" data-week-key="${weekKey}" title="${hasReview ? t('tip.weekly_review_view') : t('tip.weekly_review_add')}" style="grid-row:${currentRow};grid-column:8;${SZ}">
-          ${(!window.__MV && window.STMentor && window.STMentor.get('week', weekKey) && !window.STMentor.get('week', weekKey).seen_at) ? '<div class="cal-week-mn-env">'+MN_ENV_SVG+'</div>' : ''}
+          ${(window.STMentor && window.STMentor.get('week', weekKey) && (window.__MV || !window.STMentor.get('week', weekKey).seen_at)) ? '<div class="cal-week-mn-env">'+MN_ENV_SVG+'</div>' : ''}
           <div class="pl ${wCls}">${wLabel}</div>
           <div class="label">${t('cal.week_short_n').replace(/\{N\}/g, weekIdx)}</div>
           <div class="label-wk">${t('cal.week_short').charAt(0).toUpperCase()}${weekIdx}</div>
@@ -24690,7 +24691,7 @@
         shotsEl.querySelectorAll('.mn-shot-rm').forEach(function(b){ b.addEventListener('click', function(){ st.shots.splice(+b.getAttribute('data-i'),1); renderShots(); }); }); }
       box.querySelector('.mn-add-link').addEventListener('click', function(){ st.tv.push(''); renderLinks(); });
       fileInput.addEventListener('change', function(){ var f=fileInput.files&&fileInput.files[0]; if(!f)return; statusEl.textContent=t('mn.uploading')||'Uploading…'; window.STMentor.uploadShot(f, function(url){ statusEl.textContent=''; if(url){ st.shots.push(url); renderShots(); } else { statusEl.textContent=t('mn.upload_err')||'Upload failed'; } fileInput.value=''; }); });
-      box.querySelector('.mn-save').addEventListener('click', function(){ statusEl.textContent=t('mn.saving')||'Saving…'; window.STMentor.saveMember(ownerId, scope, key, { body: bodyEl.value, tv_links: st.tv.filter(Boolean), screenshots: st.shots }, function(ok){ statusEl.textContent = ok ? (t('mn.saved')||'Saved') : (t('mn.save_err')||'Save failed'); setTimeout(function(){ statusEl.textContent=''; }, 1600); }); });
+      box.querySelector('.mn-save').addEventListener('click', function(){ statusEl.textContent=t('mn.saving')||'Saving…'; window.STMentor.saveMember(ownerId, scope, key, { body: bodyEl.value, tv_links: st.tv.filter(Boolean), screenshots: st.shots }, function(ok){ statusEl.textContent = ok ? (t('mn.saved')||'Saved') : (t('mn.save_err')||'Save failed'); if(ok){ try{ window.STMentor.loadForMember(ownerId, window.__mnRepaint); }catch(e){} } setTimeout(function(){ statusEl.textContent=''; }, 1600); }); });
       window.STMentor.fetchMember(ownerId, scope, key, function(n){ if(n){ bodyEl.value=n.body||''; st.tv=(Array.isArray(n.tv_links)?n.tv_links:[]).slice(); st.shots=(Array.isArray(n.screenshots)?n.screenshots:[]).slice(); renderLinks(); renderShots(); } });
     } else {
       var n=window.STMentor.get(scope, key);
@@ -31445,13 +31446,21 @@
         if(cb)cb();
       }).catch(function(){ cache.loaded=true; if(cb)cb(); });
     }
+    function loadForMember(ownerId, cb){
+      if(!ownerId){ if(cb)cb(); return; }
+      sb.from('mentor_notes').select('scope,note_key,body,tv_links,screenshots,seen_at').eq('owner_user_id', ownerId).then(function(r){
+        cache={day:{},week:{},loaded:true};
+        (((r&&r.data))||[]).forEach(function(n){ if(n.scope==='day'||n.scope==='week') cache[n.scope][n.note_key]=n; });
+        if(cb)cb();
+      }).catch(function(){ if(cb)cb(); });
+    }
     function get(scope,key){ return (cache[scope]&&cache[scope][key])||null; }
     function hasUnseen(){ var any=false; ['day','week'].forEach(function(sc){ Object.keys(cache[sc]||{}).forEach(function(k){ if(cache[sc][k] && !cache[sc][k].seen_at) any=true; }); }); return any; }
     function markSeen(scope,key,cb){ var n=get(scope,key); if(!n || n.seen_at){ if(cb)cb(); return; } var ts=new Date().toISOString(); n.seen_at=ts; sb.from('mentor_notes').update({seen_at:ts}).eq('owner_user_id', currentUser.id).eq('scope',scope).eq('note_key',key).then(function(){ if(cb)cb(); }).catch(function(){ if(cb)cb(); }); }
     function fetchMember(ownerId,scope,key,cb){ sb.from('mentor_notes').select('body,tv_links,screenshots').eq('owner_user_id',ownerId).eq('scope',scope).eq('note_key',key).maybeSingle().then(function(r){ cb((r&&r.data)||null); }).catch(function(){ cb(null); }); }
     function saveMember(ownerId,scope,key,payload,cb){ var row={ owner_user_id:ownerId, mentor_id:(currentUser?currentUser.id:null), scope:scope, note_key:key, body:payload.body||'', tv_links:payload.tv_links||[], screenshots:payload.screenshots||[], updated_at:new Date().toISOString() }; sb.from('mentor_notes').upsert(row, { onConflict:'owner_user_id,scope,note_key' }).then(function(r){ cb(!r.error, r.error); }).catch(function(e){ cb(false,e); }); }
     function uploadShot(file,cb){ if(!window.__stUploadChart){ cb(null); return; } Promise.resolve(window.__stUploadChart(file)).then(function(url){ cb(url||null); }).catch(function(){ cb(null); }); }
-    return { loadOwn:loadOwn, get:get, hasUnseen:hasUnseen, markSeen:markSeen, fetchMember:fetchMember, saveMember:saveMember, uploadShot:uploadShot };
+    return { loadOwn:loadOwn, loadForMember:loadForMember, get:get, hasUnseen:hasUnseen, markSeen:markSeen, fetchMember:fetchMember, saveMember:saveMember, uploadShot:uploadShot };
   })();
   function mvMsg(s, err){ var el=document.getElementById('stc-mv-msg'); if(!el)return; el.textContent=s||''; el.style.color=err?'var(--bad,#e85d5d)':''; }
   function updateMentorTab(){
@@ -31548,6 +31557,7 @@
     bar.innerHTML = '<span class="mv-banner-txt">'+tt('mvBannerView')+' <strong>'+String(who).replace(/</g,'&lt;')+'</strong> \u00b7 '+tt('mvReadOnly')+'</span>'+
       '<button id="mv-exit" class="mv-banner-btn">'+tt('mvExit')+'</button>';
     var ex=document.getElementById('mv-exit'); if(ex) ex.addEventListener('click', function(){ try{ localStorage.removeItem('st_mv_payload'); }catch(e){} location.href=location.pathname; });
+    try { window.STMentor.loadForMember(mvId, window.__mnRepaint); } catch(e){}
     var ov=document.getElementById('mv-overlay'); if(ov) ov.remove();
     if(!window.__mvClickGuard){
       window.__mvClickGuard = true;
