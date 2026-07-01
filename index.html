@@ -32584,7 +32584,7 @@
     if (currentUser && enforceDataOwner(currentUser.id)) return; // foreign local data -> cleared, reloading
     paintAccount();
     if (recoveryMode) { showReset(); return; }
-    if (currentUser) { hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); try { window.STMentor.loadOwn(window.__mnRepaint); } catch(e){} try { if (typeof window.__bbRestoreIfWanted === 'function') setTimeout(window.__bbRestoreIfWanted, 300); } catch(e){} }
+    if (currentUser) { try { sessionStorage.removeItem('st_sess_recover'); sessionStorage.removeItem('st_sess_recover_t'); } catch (e) {} hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); try { window.STMentor.loadOwn(window.__mnRepaint); } catch(e){} try { if (typeof window.__bbRestoreIfWanted === 'function') setTimeout(window.__bbRestoreIfWanted, 300); } catch(e){} }
     else {
       clearTimeout(pushTimer);
       // ONLY on a real sign-out transition: wipe this account's local journal cache so the NEXT
@@ -32603,15 +32603,30 @@
           location.reload();
           return;
         }
-        // NOT user-initiated — a background token-refresh hiccup (e.g. after the device slept),
-        // not a real logout. Never wipe local data or hard-reload here. Try to quietly restore the
-        // session so the app just carries on; only fall back to the login screen if it's genuinely
-        // unrecoverable, and even then local data is left intact so a re-login restores everything.
+        // NOT user-initiated — a background hiccup (e.g. the device slept), not a real logout.
+        // Never wipe local data. First check whether the session is actually still in storage
+        // (a spurious event): if so, restore it IN PLACE — no reload, and crucially no manual
+        // token refresh (a manual refresh can rotate the refresh token underneath the library and
+        // get the session invalidated, which only causes MORE sign-outs). If the session really is
+        // gone, reload once (a fresh load re-reads storage with no network call); throttle so a
+        // truly dead session can't reload-loop, and only then fall back to the gate — data intact.
         try {
-          sb.auth.refreshSession().then(function (rr) {
-            var _sess = rr && rr.data && rr.data.session;
-            if (_sess) { currentUser = _sess.user; try { window.STCloud.userId = currentUser.id; } catch(e){} hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch(e){} }
-            else { showGate(); }
+          sb.auth.getSession().then(function (gs) {
+            var _s = gs && gs.data && gs.data.session;
+            if (_s) {
+              currentUser = _s.user;
+              try { window.STCloud.userId = currentUser.id; } catch (e) {}
+              hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch (e) {}
+              return;
+            }
+            try {
+              var _rk = 'st_sess_recover', _now = Date.now();
+              var _rc = parseInt(sessionStorage.getItem(_rk) || '0', 10) || 0;
+              var _rt = parseInt(sessionStorage.getItem(_rk + '_t') || '0', 10) || 0;
+              if (_now - _rt > 45000) _rc = 0;
+              if (_rc < 3) { sessionStorage.setItem(_rk, String(_rc + 1)); sessionStorage.setItem(_rk + '_t', String(_now)); location.reload(); return; }
+            } catch (e) {}
+            showGate();
           }).catch(function () { showGate(); });
         } catch (e) { showGate(); }
         return;
