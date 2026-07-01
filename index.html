@@ -7973,7 +7973,14 @@
     // so the Review tab stays focused on logging trades. They reappear automatically when
     // the window ends. Done before the early returns below so it always tracks `live`.
     const reviewPage = document.getElementById('page-review');
-    if (reviewPage) reviewPage.classList.toggle('session-live-collapsed', live);
+    if (reviewPage) {
+      const _wasCollapsed = reviewPage.classList.contains('session-live-collapsed');
+      reviewPage.classList.toggle('session-live-collapsed', live);
+      // On the live\u2192ended transition (early finish OR natural window end), re-render the
+      // review UI so the trade picker (#section-trade-select) + per-trade sections reappear.
+      // Un-collapsing only lifts the CSS; it doesn't clear the picker's own hidden state.
+      if (_wasCollapsed && !live) { try { if (typeof syncReviewSectionsToActiveTrade === 'function') syncReviewSectionsToActiveTrade(); } catch (e) {} }
+    }
     // Swap the Review tab label (and the big header title when Review is the active page)
     // between "Session Review" and "Session Live" to match the window state.
     const reviewTabLabel = document.querySelector('.tab[data-page="review"] [data-i18n="tab.review"]');
@@ -29124,14 +29131,16 @@
             ${dayTrades.map(t => {
               const isSel = _mt5SelectedIds.has(t.position);
               const resCls = t.result === 'Win' ? 'win' : t.result === 'Lose' ? 'loss' : 'be';
+              const plCls   = t.netPL > 0 ? 'win' : t.netPL < 0 ? 'loss' : 'be';   // colour the NUMBER by its sign
+              const pipsCls = t.pips  > 0 ? 'win' : t.pips  < 0 ? 'loss' : 'be';
               return `
                 <div class="mt5-trade-row ${isSel ? '' : 'deselected'}" data-pos="${t.position}">
                   <input type="checkbox" class="mt5-check" data-pos="${t.position}" ${isSel ? 'checked' : ''} />
                   <span>${t.entryTimeHHMM}</span>
                   <span style="text-transform:capitalize;color:var(--text-mid);">${t.type === 'buy' ? 'Long' : 'Short'}</span>
                   <span class="mt5-result ${resCls}">${t.result}</span>
-                  <span class="mt5-profit ${resCls}">${t.netPL >= 0 ? '+' : ''}${t.netPL.toFixed(2)}</span>
-                  <span class="mt5-profit ${resCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}p</span>
+                  <span class="mt5-profit ${plCls}">${t.netPL >= 0 ? '+' : ''}${t.netPL.toFixed(2)}</span>
+                  <span class="mt5-profit ${pipsCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}p</span>
                   <span style="color:var(--text-dim);font-size:10px;">${t.symbol} · Vol ${t.volume}${t.slPips ? ' · SL ' + t.slPips.toFixed(1) + 'p' : ''}</span>
                 </div>
               `;
