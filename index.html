@@ -8285,7 +8285,11 @@
   function _stCheckRollover() {
     var k = todayDateStr();
     var b = _stHourBucket();
-    if (k !== _stDayKey || b !== _stBucketKey) { _stDayKey = k; _stBucketKey = b; _stRefreshDay(); }
+    if (k !== _stDayKey || b !== _stBucketKey) {
+      var _dayChanged = (k !== _stDayKey);
+      _stDayKey = k; _stBucketKey = b; _stRefreshDay();
+      if (_dayChanged) { try { if (typeof recheckNewDayOnResume === 'function') recheckNewDayOnResume(); } catch (e) {} }
+    }
   }
   // Wake / resume detection. After any meaningful gap (sleep, hibernation, screen lock,
   // long background) we run a FULL refresh so nothing is left stale. Quick alt-tabs only do
@@ -8300,6 +8304,7 @@
     _stDayKey = todayDateStr();
     _stBucketKey = _stHourBucket();
     _stRefreshDay();
+    try { if (typeof recheckNewDayOnResume === 'function') recheckNewDayOnResume(); } catch (e) {}
     _stSessionState = _stSessionPhase();
     _stLastTick = Date.now(); _stHiddenAt = Date.now();
   }
@@ -31114,7 +31119,11 @@
     pwel('stc-pw-refresh').textContent = tt('pwHave');
     pwel('stc-pw-signout').textContent = tt('signout');
   }
-  function showPaywall() { paintPaywall(); paywall.classList.add('open'); }
+  // Catch-all: blanking the iframe src is the only thing that actually stops the stream's
+  // audio (hiding/removing the element does not). Called wherever the app transitions to a
+  // signed-out / blocked screen, so no logout path can leave Bloomberg TV audio bleeding.
+  function _stopBloomberg() { try { var _bb = document.getElementById('bloomberg-floater-iframe'); if (_bb && _bb.src && _bb.src !== 'about:blank') _bb.src = 'about:blank'; } catch (e) {} }
+  function showPaywall() { _stopBloomberg(); paintPaywall(); paywall.classList.add('open'); }
   function hidePaywall() { paywall.classList.remove('open'); }
   pwel('stc-pw-upgrade-year').addEventListener('click', function () { stOpenCheckout('yearly'); });
   pwel('stc-pw-upgrade-month').addEventListener('click', function () { stOpenCheckout('monthly'); });
@@ -31437,7 +31446,7 @@
     if (typeof syncGateLang === 'function') syncGateLang();
   }
   function gateMsg(t, err) { gel('stc-g-msg').textContent = t || ''; gel('stc-g-msg').className = 'stc-msg' + (err ? ' err' : ''); }
-  function showGate() { gate.classList.add('open'); }
+  function showGate() { _stopBloomberg(); gate.classList.add('open'); }
   function hideGate() { gate.classList.remove('open'); }
 
   function gateBtn(mode) {
