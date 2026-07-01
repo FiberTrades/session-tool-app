@@ -1977,6 +1977,10 @@
   .section-with-pie-main { flex: 1; min-width: 0; align-self: center; }
   @media (max-width: 900px) {
     .section-with-pie { flex-direction: column; }
+    /* Stacked on mobile: stretch the table side to full width (it was centered → sized to
+       its own content, which pushed the wide breakdown table off-screen instead of letting
+       its inner list scroll). Full width lets #side-breakdown / #type-breakdown scroll sideways. */
+    .section-with-pie-main { align-self: stretch; width: 100%; max-width: 100%; min-width: 0; overflow-x: auto; -webkit-overflow-scrolling: touch; }
     .section-with-pie .pie-cell-inline { flex: 0 0 auto; max-width: 380px; margin-left: auto; margin-right: auto; }
   }
   .pie-cell { background: var(--bg); padding: 26px 16px 22px; position: relative; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; }
@@ -17472,8 +17476,9 @@
       const _hasNote = _dnCell && ((_dnCell.notes && _dnCell.notes.trim()) || (Array.isArray(_dnCell.tvLinks) && _dnCell.tvLinks.some(l => l && l.url)));
       const noteDot = (_hasNote && dayTrades.length === 0) ? '<div class="cal-day-note-dot" title="Notes"></div>' : '';
       const _mnDayNote = (window.STMentor && window.STMentor.get('day', _noteKey));
-      const _mnDayShow = _mnDayNote && (window.__MV || !_mnDayNote.seen_at);
-      const mnDayEnv = _mnDayShow ? ('<div class="cal-day-mn-env'+((_mnDayNote && _mnDayNote.seen_at) ? ' seen' : '')+'" title="Mentor note">'+MN_ENV_SVG+'</div>') : '';
+      const _mnDaySeen = !!(_mnDayNote && _mnDayNote.seen_at);
+      const _mnDayShow = !!_mnDayNote;   // envelope stays: closed+pulsing until read, opened+calm after
+      const mnDayEnv = _mnDayShow ? ('<div class="cal-day-mn-env'+(_mnDaySeen ? ' seen' : '')+'" title="'+(_mnDaySeen ? 'Mentor note (opened)' : 'Mentor note')+'">'+(_mnDaySeen ? MN_ENV_OPEN_SVG : MN_ENV_SVG)+'</div>') : '';
       const todayCls = isToday ? 'today' : '';
       const plLabel = dayTrades.length > 0 ? fmtMoneyShort(net) : '';
       // P&L label colour mirrors the day classification so BE days show neutral/blue label, not red
@@ -17534,7 +17539,7 @@
         const weekKey = `${fridayDate.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
         const hasReview = (data.weeklyReviews || []).some(r => r.weekKey === weekKey);
         html += `<div class="cal-week-summary clickable" data-monday="${mondayDate.toISOString()}" data-friday="${fridayDate.toISOString()}" data-week-key="${weekKey}" title="${hasReview ? t('tip.weekly_review_view') : t('tip.weekly_review_add')}" style="grid-row:${currentRow};grid-column:8;${SZ}">
-          ${(function(){ var _wn = window.STMentor && window.STMentor.get('week', weekKey); if(!_wn || !(window.__MV || !_wn.seen_at)) return ''; return '<div class="cal-week-mn-env'+(_wn.seen_at?' seen':'')+'">'+MN_ENV_SVG+'</div>'; })()}
+          ${(function(){ var _wn = window.STMentor && window.STMentor.get('week', weekKey); if(!_wn) return ''; var _s = !!_wn.seen_at; return '<div class="cal-week-mn-env'+(_s?' seen':'')+'">'+(_s?MN_ENV_OPEN_SVG:MN_ENV_SVG)+'</div>'; })()}
           <div class="pl ${wCls}">${wLabel}</div>
           <div class="label">${t('cal.week_short_n').replace(/\{N\}/g, weekIdx)}</div>
           <div class="label-wk">${t('cal.week_short').charAt(0).toUpperCase()}${weekIdx}</div>
@@ -24931,6 +24936,8 @@
   }
   window.__mnRepaint = function(){ try{ renderCalendar(); }catch(e){} try{ bumpGreetingNonce(); }catch(e){} };
   var MN_ENV_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/></svg>';
+  // Opened-envelope variant, shown once a note has been read.
+  var MN_ENV_OPEN_SVG = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5V19a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-8.5"/><path d="M3 10.5l9 5.5 9-5.5"/><path d="M3 10.5L12 4l9 6.5"/></svg>';
   function mnEsc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
   function mnTvSrc(u){ var m=(u||'').match(/tradingview\.com\/x\/([^\/\?#]+)/i); return m?('https://www.tradingview.com/x/'+m[1]+'/'):''; }
   function mountMentorNote(scope, key, host){
@@ -26575,6 +26582,24 @@
       bbPost({ event: 'command', func: 'unMute', args: [] });
       bbPost({ event: 'command', func: 'setVolume', args: [100] });
     }
+    // Mobile blocks autoplay WITH sound, so an auto-restored TV (on load or right after a
+    // login) comes up muted even when sound is wanted — the unMute above is ignored without a
+    // user gesture. Arm a one-time listener so the very next tap unmutes it for real.
+    var _bbSoundArmed = false;
+    function _bbArmSoundOnGesture() {
+      if (!_bbWantSound || _bbSoundArmed) return;
+      _bbSoundArmed = true;
+      var h = function () {
+        _bbSoundArmed = false;
+        try { bbApplySound(); } catch (e) {}
+        document.removeEventListener('pointerdown', h, true);
+        document.removeEventListener('touchstart', h, true);
+        document.removeEventListener('click', h, true);
+      };
+      document.addEventListener('pointerdown', h, true);
+      document.addEventListener('touchstart', h, true);
+      document.addEventListener('click', h, true);
+    }
     if (bbFloaterIframe) {
       bbFloaterIframe.addEventListener('load', () => {
         // Ignore the about:blank load on close; only act on the live stream.
@@ -26661,6 +26686,7 @@
       // is the right trade-off here: it's a live broadcast (no position to
       // preserve) and the load takes 1-2 seconds.
       bbFloaterIframe.src = bbBuildUrl();
+      try { _bbArmSoundOnGesture(); } catch (e) {}
       resolveBloombergLiveId();
       bbFloater.hidden = false;
       if (bloombergBtn) bloombergBtn.classList.add("on");
@@ -31447,7 +31473,7 @@
   });
 
 
-  pwel('stc-pw-signout').addEventListener('click', function () { try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} sb.auth.signOut(); });
+  pwel('stc-pw-signout').addEventListener('click', function () { try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} window.__userInitiatedSignOut = true; try { setTimeout(function(){ window.__userInitiatedSignOut = false; }, 4000); } catch(e){} sb.auth.signOut(); });
 
   // Trial is over once we're past signup + TRIAL_DAYS and the user hasn't paid.
   // Fail OPEN whenever we don't yet know the signup date, so nobody is wrongly locked.
@@ -31640,7 +31666,7 @@
     document.getElementById('stc-a-signup').addEventListener('click', function () {
       doAuth('signup', document.getElementById('stc-a-email').value.trim(), document.getElementById('stc-a-pass').value, accMsg, paintAccount);
     });
-    document.getElementById('stc-a-signout').addEventListener('click', function () { try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} sb.auth.signOut(); });
+    document.getElementById('stc-a-signout').addEventListener('click', function () { try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} window.__userInitiatedSignOut = true; try { setTimeout(function(){ window.__userInitiatedSignOut = false; }, 4000); } catch(e){} sb.auth.signOut(); });
     var _mGen=document.getElementById('stc-m-gen'); if(_mGen) _mGen.addEventListener('click', mentorGenerate);
     var _mRev=document.getElementById('stc-m-revoke'); if(_mRev) _mRev.addEventListener('click', mentorRevoke);
     var _mCopy=document.getElementById('stc-m-copy'); if(_mCopy) _mCopy.addEventListener('click', mentorCopy);
@@ -32568,9 +32594,26 @@
       // load would make this reload forever (the landing-page flashing bug).
       if (event === 'SIGNED_OUT') {
         try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} // kill Bloomberg audio so it can't bleed into the landing page
-        try { ST.clearLocal(); localStorage.removeItem('st_journal_owner'); } catch (e) {}
-        try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
-        location.reload();
+        if (window.__userInitiatedSignOut) {
+          // REAL logout (the user pressed Sign out): wipe this account's local cache so the next
+          // login on this browser can't inherit it, then reload to a clean gate.
+          window.__userInitiatedSignOut = false;
+          try { ST.clearLocal(); localStorage.removeItem('st_journal_owner'); } catch (e) {}
+          try { sessionStorage.removeItem('st_synced_reload'); } catch (e) {}
+          location.reload();
+          return;
+        }
+        // NOT user-initiated — a background token-refresh hiccup (e.g. after the device slept),
+        // not a real logout. Never wipe local data or hard-reload here. Try to quietly restore the
+        // session so the app just carries on; only fall back to the login screen if it's genuinely
+        // unrecoverable, and even then local data is left intact so a re-login restores everything.
+        try {
+          sb.auth.refreshSession().then(function (rr) {
+            var _sess = rr && rr.data && rr.data.session;
+            if (_sess) { currentUser = _sess.user; try { window.STCloud.userId = currentUser.id; } catch(e){} hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch(e){} }
+            else { showGate(); }
+          }).catch(function () { showGate(); });
+        } catch (e) { showGate(); }
         return;
       }
       accStatus(''); profilePaid = null; profilePlan = null; profileStatus = null; profilePeriodEnd = null; profileCreated = null; profilePortal = null; profileSubId = null; profileDiscordId = null; profileDiscordName = null; hidePaywall(); renderPlanBadge(); showGate();
