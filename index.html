@@ -2836,6 +2836,11 @@
     #dow-breakdown .history-row { width: max-content; min-width: 100%; }
     #dow-breakdown .history-row > .history-cell { flex: 0 0 auto; min-width: 82px; }
     #dow-breakdown .history-row > .history-cell.label { min-width: 108px; }
+    /* By-symbol breakdown now has 7 columns too — scroll sideways on phones. */
+    #symbol-breakdown .history-list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #symbol-breakdown .history-row { width: max-content; min-width: 100%; }
+    #symbol-breakdown .history-row > .history-cell { flex: 0 0 auto; min-width: 82px; }
+    #symbol-breakdown .history-row > .history-cell.label { min-width: 108px; }
     /* wl-summary (Win / Loss / BE) stays 3-up on mobile, side by side. */
     .time-hero-grid { grid-template-columns: 1fr 1fr; }
     .time-analysis-row { grid-template-columns: 80px 50px 70px 60px; gap: 8px; padding: 10px 12px; }
@@ -13470,7 +13475,7 @@
       row.innerHTML = `
         <div class="history-cell label center">#${num}</div>
         <div class="history-cell center">${dateLabel}</div>
-        <div class="history-cell center">${st.w} <span class="hist-sep">·</span> ${st.l} <span class="hist-sep">·</span> ${st.be}</div>
+        <div class="history-cell center"><span class="wlbe-w">${st.w}</span> <span class="hist-sep">·</span> <span class="wlbe-l">${st.l}</span> <span class="hist-sep">·</span> <span class="wlbe-be">${st.be}</span></div>
         <div class="history-cell center ${cls}">${st.netR >= 0 ? '+' : ''}${st.netR.toFixed(2)}R</div>
         <div class="history-cell center ${netBalPctCls}">${netBalPctHtml}</div>
         <div class="history-cell center ${potCellCls}">${potCellHtml}</div>
@@ -14001,7 +14006,7 @@
       <div class="history-cell">${t('brk.col.trades')}</div>
       <div class="history-cell">${t('brk.col.wr')}</div>
       <div class="history-cell">${t('brk.col.wlbe')}</div>
-      <div class="history-cell right">${t('brk.col.netr')}</div>
+      <div class="history-cell">${t('brk.col.netr')}</div>
       <div class="history-cell">${t('brk.col.netpl')}</div>
       <div class="history-cell">${t('brk.col.netacc')}</div>
     </div>`;
@@ -14019,7 +14024,7 @@
         <div class="history-cell">${s.count}</div>
         <div class="history-cell">${wrCell}</div>
         <div class="history-cell">${wlbeCell}</div>
-        <div class="history-cell right ${netUnitCls(s)}">${fmtNetUnit(s)}</div>
+        <div class="history-cell ${netUnitCls(s)}">${fmtNetUnit(s)}</div>
         <div class="history-cell ${plCls}">${plStr}</div>
         <div class="history-cell ${accCls}">${accStr}</div>
       </div>`;
@@ -14135,29 +14140,33 @@
         const g = groups[sym];
         const s = sideStats(g);
         const netGbp = g.reduce((sum, tr) => sum + (tradeNetPL(tr) || 0) * tradeCopies(tr), 0);
-        return { sym, s, netGbp };
+        const netAcc = g.reduce((acc, tt) => { const sb = getTradeAccountSB(tt); if (sb <= 0) return acc; return acc + (tradeNetPL(tt) * tradeCopies(tt)) / sb * 100; }, 0);
+        return { sym, s, netGbp, netAcc };
       }).sort((a, b) => b.netGbp - a.netGbp);
       const header = `<div class="history-row headers">
         <div class="history-cell label">${t('mtbl.symbol')}</div>
         <div class="history-cell">${t('brk.col.trades')}</div>
         <div class="history-cell">${t('brk.col.wr')}</div>
+        <div class="history-cell">${t('brk.col.wlbe')}</div>
         <div class="history-cell">${t('brk.col.netr')}</div>
-        <div class="history-cell">${t('sym.col.avgr')}</div>
-        <div class="history-cell">${t('sym.col.net')}</div>
+        <div class="history-cell">${t('brk.col.netpl')}</div>
+        <div class="history-cell">${t('brk.col.netacc')}</div>
       </div>`;
       let html = '<div class="history-list" style="margin-top:0;">' + header;
       if (rows.length === 0) html += '<div class="history-row"><div class="history-cell" style="grid-column:1/-1;text-align:center;color:var(--text-dim);">' + t('missed.empty_symbols') + '</div></div>';
-      rows.forEach(({ sym, s, netGbp }) => {
+      rows.forEach(({ sym, s, netGbp, netAcc }) => {
         const wr = s.wr !== null ? `${s.wr}%` : '—';
         const netR = (s.netR >= 0 ? '+' : '') + s.netR.toFixed(2) + 'R';
-        const avgR = s.avgR === null ? '—' : (s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2);
+        const wlbeCell = `<span class="wlbe-w">${s.w}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${s.l}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${s.be}</span>`;
+        const accStr = s.count === 0 ? '—' : (netAcc >= 0 ? '+' : '') + netAcc.toFixed(2) + '%';
         html += `<div class="history-row">
           <div class="history-cell label">${esc(sym)}</div>
           <div class="history-cell">${s.count}</div>
           <div class="history-cell">${wr}</div>
+          <div class="history-cell">${wlbeCell}</div>
           <div class="history-cell ${plCls(s.netR)}">${netR}</div>
-          <div class="history-cell ${plCls(s.avgR || 0)}">${avgR}</div>
           <div class="history-cell ${plCls(netGbp)}">${fmtMoney(netGbp)}</div>
+          <div class="history-cell ${plCls(netAcc)}">${accStr}</div>
         </div>`;
       });
       html += '</div>';
@@ -15336,19 +15345,27 @@
     const winsShowAll = !!(data.settings && data.settings.comboWinsShowAll);
     const besShowAll  = !!(data.settings && data.settings.comboBesShowAll);
 
+    // Gap between potential and captured, in the ACTIVE unit. In % mode the gap is
+    // converted per trade (R gap × risk ÷ its account SB × 100) so "% left" ranks by
+    // percentage left on the table, not by raw R.
+    const _winGap = tr => {
+      if (isPips) return (parseFloat(tr.potentialPips) || 0) - (parseFloat(tr.pips) || 0);
+      const rGap = (parseFloat(tr.potentialR) || 0) - (parseFloat(tr.r) || 0);
+      return isPct ? (rGap * (parseFloat(tr.risk) || 0) / (_accSBg(tr) || 1) * 100) : rGap;
+    };
     const sortedWins = [...trackedWins].sort((a, b) => {
       if (winsSort === 'date') return new Date(b.date) - new Date(a.date);
-      const aGap = isPips ? ((parseFloat(a.potentialPips) || 0) - (parseFloat(a.pips) || 0))
-                          : ((parseFloat(a.potentialR)    || 0) - (parseFloat(a.r)    || 0));
-      const bGap = isPips ? ((parseFloat(b.potentialPips) || 0) - (parseFloat(b.pips) || 0))
-                          : ((parseFloat(b.potentialR)    || 0) - (parseFloat(b.r)    || 0));
-      return bGap - aGap;
+      return _winGap(b) - _winGap(a);
     });
+    // BE extension in the ACTIVE unit; % mode converts per trade so "Extension" ranks by %.
+    const _beVal = tr => {
+      if (isPips) return (parseFloat(tr.bePotentialPips) || 0);
+      const rVal = (parseFloat(tr.bePotentialR) || 0);
+      return isPct ? (rVal * (parseFloat(tr.risk) || 0) / (_accSBg(tr) || 1) * 100) : rVal;
+    };
     const sortedBes = [...trackedBes].sort((a, b) => {
       if (besSort === 'date') return new Date(b.date) - new Date(a.date);
-      const aVal = isPips ? (parseFloat(a.bePotentialPips) || 0) : (parseFloat(a.bePotentialR) || 0);
-      const bVal = isPips ? (parseFloat(b.bePotentialPips) || 0) : (parseFloat(b.bePotentialR) || 0);
-      return bVal - aVal;
+      return _beVal(b) - _beVal(a);
     });
 
     const tIpRow = t('tip.open_day') || 'Click to open day';
@@ -15393,8 +15410,13 @@
       </div>`;
       const winsRows = winsShowAll ? sortedWins : sortedWins.slice(0, 10);
       const body = winsRows.map(tr => {
-        const captured = isPips ? (parseFloat(tr.pips) || 0) : (parseFloat(tr.r) || 0);
-        const potential = isPips ? (parseFloat(tr.potentialPips) || 0) : (parseFloat(tr.potentialR) || 0);
+        const _sb = _accSBg(tr) || 1;
+        const captured = isPips ? (parseFloat(tr.pips) || 0)
+                       : isPct  ? ((parseFloat(tr.r) || 0) * (parseFloat(tr.risk) || 0) / _sb * 100)
+                       : (parseFloat(tr.r) || 0);
+        const potential = isPips ? (parseFloat(tr.potentialPips) || 0)
+                        : isPct  ? ((parseFloat(tr.potentialR) || 0) * (parseFloat(tr.risk) || 0) / _sb * 100)
+                        : (parseFloat(tr.potentialR) || 0);
         const left = Math.max(0, potential - captured);
         return `<div class="potr-trade-row" style="${cols}" data-date-key="${dateKeyOf(tr)}" data-tip="${tIpRow}">
           <div class="potr-trade-cell">${fmtDate(tr)}</div>
@@ -15422,13 +15444,15 @@
       const cols = 'grid-template-columns:minmax(110px,1.3fr) minmax(100px,1.1fr) minmax(100px,1.1fr) minmax(100px,1.1fr);';
       const hdr = `<div class="potr-trade-row headers" style="${cols}">
         <div class="potr-trade-cell">${t('be.col.date') || 'Date'}</div>
-        <div class="potr-trade-cell">${isPips ? (t('be.col.bepot_pips') || 'BE POT P') : (t('be.col.bepot_r') || 'BE POT R')}</div>
+        <div class="potr-trade-cell">${isPips ? (t('be.col.bepot_pips') || 'BE POT P') : isPct ? (t('be.col.bepot_pct') || 'BE POT %') : (t('be.col.bepot_r') || 'BE POT R')}</div>
         <div class="potr-trade-cell">${isPips ? (t('be.col.planned_p') || 'Planned P') : (t('be.col.planned_r') || 'Planned R')}</div>
         <div class="potr-trade-cell">${t('be.col.risk') || 'Risk'}</div>
       </div>`;
       const besRows = besShowAll ? sortedBes : sortedBes.slice(0, 10);
       const body = besRows.map(tr => {
-        const bePot  = isPips ? (parseFloat(tr.bePotentialPips) || 0) : (parseFloat(tr.bePotentialR) || 0);
+        const bePot  = isPips ? (parseFloat(tr.bePotentialPips) || 0)
+                     : isPct  ? ((parseFloat(tr.bePotentialR) || 0) * (parseFloat(tr.risk) || 0) / (_accSBg(tr) || 1) * 100)
+                     : (parseFloat(tr.bePotentialR) || 0);
         const planned = isPips
           ? ((typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + 'p' : '\u2014')
           : ((typeof tr.r    === 'number' && !isNaN(tr.r))    ? tr.r.toFixed(1) + 'R'    : '\u2014');
