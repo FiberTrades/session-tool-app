@@ -31757,10 +31757,31 @@
     var inp=document.getElementById('stc-mv-code'); if(!inp) return;
     var code=(inp.value||'').trim().toUpperCase(); if(!code) return;
     mvMsg(tt('mvConnecting'));
+    // Surface the real reason from the mentor-redeem edge function instead of a blanket
+    // failure, so a bad round-trip can be diagnosed (function missing, code not found,
+    // schema mismatch, auth). The reason is appended after a middot and logged in full.
+    var _mvShowErr = function(reason){
+      try { console.error('[mentor-redeem] failed:', reason); } catch(e){}
+      mvMsg(tt('mvErrCode') + (reason ? ' \u00b7 ' + String(reason).slice(0,140) : ''), true);
+    };
     sb.functions.invoke('mentor-redeem', { body:{ code: code } }).then(function(res){
-      if(res.error || (res.data && res.data.error)){ mvMsg(tt('mvErrCode'), true); return; }
+      var dataErr = res.data && res.data.error;
+      if(res.error || dataErr){
+        try { console.error('[mentor-redeem] raw:', res.error || res.data); } catch(e){}
+        if(dataErr){ _mvShowErr(dataErr); return; }
+        // FunctionsHttpError carries the server body in .context (a Response); read it.
+        try {
+          if(res.error && res.error.context && typeof res.error.context.text === 'function'){
+            res.error.context.text().then(function(txt){ _mvShowErr(txt || (res.error && res.error.message) || ''); })
+                                     .catch(function(){ _mvShowErr((res.error && res.error.message) || ''); });
+            return;
+          }
+        } catch(e){}
+        _mvShowErr((res.error && res.error.message) || '');
+        return;
+      }
       inp.value=''; mvMsg(''); loadMentorMembers();
-    }).catch(function(){ mvMsg(tt('mvErrCode'), true); });
+    }).catch(function(e){ _mvShowErr((e && e.message) || 'network'); });
   }
   // ---- Mentor read-only VIEW engine (entered via ?mv=<memberId>) ----
   function mvFatal(msg){
