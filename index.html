@@ -1850,6 +1850,8 @@
   #type-breakdown .history-row > .history-cell:nth-child(5),
   #side-breakdown .history-row > .history-cell:nth-child(5),
   #dow-breakdown  .history-row > .history-cell:nth-child(5) { flex: 1 1 0; }
+  #dow-breakdown  .history-row > .history-cell:nth-child(6),
+  #dow-breakdown  .history-row > .history-cell:nth-child(7) { flex: 1 1 0; }
   /* All cells in breakdown rows: flex layout, full height, vertically centered content */
   #type-breakdown .history-row .history-cell,
   #side-breakdown .history-row .history-cell,
@@ -2829,6 +2831,11 @@
     #type-breakdown .history-row, #side-breakdown .history-row, #dow-breakdown .history-row { grid-template-columns: 100px 60px 80px 100px 1fr; }
     #type-breakdown .history-cell.label, #side-breakdown .history-cell.label, #dow-breakdown .history-cell.label { font-size: 12px; }
     #type-breakdown .history-cell.right, #side-breakdown .history-cell.right, #dow-breakdown .history-cell.right { font-size: 16px; }
+    /* DOW breakdown now has 7 columns — scroll sideways on phones so all stay readable. */
+    #dow-breakdown .history-list { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    #dow-breakdown .history-row { width: max-content; min-width: 100%; }
+    #dow-breakdown .history-row > .history-cell { flex: 0 0 auto; min-width: 82px; }
+    #dow-breakdown .history-row > .history-cell.label { min-width: 108px; }
     /* wl-summary (Win / Loss / BE) stays 3-up on mobile, side by side. */
     .time-hero-grid { grid-template-columns: 1fr 1fr; }
     .time-analysis-row { grid-template-columns: 80px 50px 70px 60px; gap: 8px; padding: 10px 12px; }
@@ -5788,6 +5795,8 @@
       'brk.col.wr': 'WR',
       'brk.col.wlbe': 'W / L / BE',
       'brk.col.netr': 'Net R',
+      'brk.col.netpl': 'Net P&amp;L',
+      'brk.col.netacc': 'Net Acc %',
       'side.long': 'Long',
       'side.short': 'Short',
       'type.reaction': 'Reaction',
@@ -7107,6 +7116,8 @@
       'brk.col.wr': 'RA',
       'brk.col.wlbe': 'G / P / BE',
       'brk.col.netr': 'R Neto',
+      'brk.col.netpl': 'P&amp;L Neto',
+      'brk.col.netacc': '% Cta Neta',
       'side.long': 'Largo',
       'side.short': 'Corto',
       'type.reaction': 'Reacción',
@@ -13982,12 +13993,44 @@
       </div>`;
     };
 
+    // DOW breakdown gets two extra columns the side/type breakdowns don't: Net P&L
+    // (money) and Net Acc % (net P&L as a % of each trade's own account SB). Separate
+    // header + row builder so side/type stay 5 columns.
+    const dowHeader = `<div class="history-row headers">
+      <div class="history-cell label">&nbsp;</div>
+      <div class="history-cell">${t('brk.col.trades')}</div>
+      <div class="history-cell">${t('brk.col.wr')}</div>
+      <div class="history-cell">${t('brk.col.wlbe')}</div>
+      <div class="history-cell right">${t('brk.col.netr')}</div>
+      <div class="history-cell">${t('brk.col.netpl')}</div>
+      <div class="history-cell">${t('brk.col.netacc')}</div>
+    </div>`;
+    const rowForDow = (labelText, s, dt) => {
+      const wrCell = s.wr !== null ? `${s.wr}%` : `—`;
+      const wlbeCell = `<span class="wlbe-w">${s.w}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${s.l}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${s.be}</span>`;
+      const netPL  = dt.reduce((acc, tt) => acc + tradeNetPL(tt) * tradeCopies(tt), 0);
+      const netAcc = dt.reduce((acc, tt) => { const sb = getTradeAccountSB(tt); if (sb <= 0) return acc; return acc + (tradeNetPL(tt) * tradeCopies(tt)) / sb * 100; }, 0);
+      const plStr  = s.count === 0 ? '—' : fmtMoney(netPL);
+      const accStr = s.count === 0 ? '—' : (netAcc >= 0 ? '+' : '') + netAcc.toFixed(2) + '%';
+      const plCls  = netPL > 0 ? 'pl-good' : netPL < 0 ? 'pl-bad' : 'pl-be';
+      const accCls = netAcc > 0 ? 'pl-good' : netAcc < 0 ? 'pl-bad' : 'pl-be';
+      return `<div class="history-row">
+        <div class="history-cell label">${labelText}</div>
+        <div class="history-cell">${s.count}</div>
+        <div class="history-cell">${wrCell}</div>
+        <div class="history-cell">${wlbeCell}</div>
+        <div class="history-cell right ${netUnitCls(s)}">${fmtNetUnit(s)}</div>
+        <div class="history-cell ${plCls}">${plStr}</div>
+        <div class="history-cell ${accCls}">${accStr}</div>
+      </div>`;
+    };
+
     if (!anyDow) dowWrap.innerHTML = `<div class="empty">${t('empty.log_trades_dow')}</div>`;
     else {
-      let html = '<div class="history-list" style="margin-top:0;">' + breakdownHeader;
+      let html = '<div class="history-list" style="margin-top:0;">' + dowHeader;
       dows.forEach(d => {
         const dt = all.filter(t => t.dayOfWeek === d);
-        html += rowFor(dowNames[d], sideStats(dt));
+        html += rowForDow(dowNames[d], sideStats(dt), dt);
       });
       html += '</div>';
       dowWrap.innerHTML = html;
