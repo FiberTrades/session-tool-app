@@ -13053,6 +13053,10 @@
   // Clears the previous bias + review and resets both forms to a fresh state for today.
   // This is the union of the manual bias-reset and review-reset handlers.
   function startNewSession() {
+    // Snapshot the pre-clear content high-water mark BEFORE we blank the Trade Log below, so the
+    // sync guard sees the discard of any un-committed logged trades as an intentional this-session
+    // deletion, not a degraded load. (Un-committed Trade Log trades now count toward sync content.)
+    try { if (window.STCloud && window.STCloud.notePeak) window.STCloud.notePeak(); } catch (e) {}
     // --- Bias --- (reset every symbol-bias slot for the new day, keep identities)
     if (Array.isArray(data.biasSlots) && data.biasSlots.length) {
       data.biasSlots.forEach(function (sl) { Object.assign(sl, newBiasBlank()); sl.sessionDate = todayDateStr(); });
@@ -32031,6 +32035,26 @@
     } catch (e) {} return n;
   }
   function seriesCount(d) { try { return (d.history || []).length; } catch (e) { return 0; } }
+  // Un-committed Trade Log trades: logged in the working review log but NOT yet saved into a
+  // series/history. Counts only real logged trades (a set result), never blank slots, and never
+  // a trade already linked into currentSeries/history (that copy is already counted there — no
+  // double-count). This is what lets an un-imported Trade Log sync across devices and be guarded.
+  function reviewTradeCount(d) {
+    try {
+      var rt = (d && d.review && Array.isArray(d.review.trades)) ? d.review.trades : [];
+      if (!rt.length) return 0;
+      var committed = Object.create(null);
+      (d.currentSeries || []).forEach(function (t) { if (t && t.id) committed[t.id] = 1; });
+      (d.history || []).forEach(function (srs) { (((srs && srs.trades) || [])).forEach(function (t) { if (t && t.id) committed[t.id] = 1; }); });
+      var n = 0;
+      rt.forEach(function (t) {
+        if (!t) return;
+        if (t.seriesId && committed[t.seriesId]) return;
+        if (t.result === 'Win' || t.result === 'Lose' || t.result === 'BE') n++;
+      });
+      return n;
+    } catch (e) { return 0; }
+  }
   function contentScore(d) {
     // Measures REAL journal content — trades, completed series, and the bias/review logs
     // the trader actually builds up. Deliberately IGNORES volatile, non-journal fields
@@ -32041,6 +32065,7 @@
     var n = 0;
     try {
       n += tradeCount(d);
+      n += reviewTradeCount(d);
       n += seriesCount(d);
       n += Array.isArray(d.biasHistory) ? d.biasHistory.length : 0;
       n += Array.isArray(d.weeklyReviews) ? d.weeklyReviews.length : 0;
@@ -32428,6 +32453,11 @@
   ST.onSave = function () { maybeSnapshotOnSave(); debouncePush(); };
 
   var peakLocalScore = null;   // high-water mark of THIS session's local journal content
+  // Called right BEFORE a deliberate bulk clear of the working Trade Log (a new session), so the
+  // high-water mark reflects the PRE-clear content. That lets the destructive-write guard treat
+  // the clear as an explained this-session deletion (droppedThisSession >= removed) rather than a
+  // degraded/stale load — so a new day never fires a false 'you deleted trades' preserve.
+  ST.notePeak = function () { try { peakLocalScore = Math.max(peakLocalScore || 0, contentScore(ST.getData())); } catch (e) {} };
   function doCloudUpsert(d) {
     try { if (currentUser) localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
     sb.from('journals').upsert({
