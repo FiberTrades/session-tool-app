@@ -11450,8 +11450,17 @@
       container.appendChild(wrap);
       const input = wrap.querySelector('input');
       input.addEventListener('keydown', function (e) {
-        if (e.key === 'Enter') { e.preventDefault(); addCustomTagValue(containerId, stateKey, input.value); }
-        else if (e.key === 'Escape') { container.classList.remove('tags-editing'); renderCustomTags(containerId, stateKey); syncSelectedTags(containerId, stateKey); }
+        if (e.key === 'Enter') { e.preventDefault(); var _v = input.value; input.value = ''; addCustomTagValue(containerId, stateKey, _v); }
+        else if (e.key === 'Escape') { input.value = ''; container.classList.remove('tags-editing'); renderCustomTags(containerId, stateKey); syncSelectedTags(containerId, stateKey); }
+      });
+      // Commit on blur too, so dismissing the mobile keyboard or tapping away doesn't lose a
+      // typed tag (previously only Enter committed). Clear the value FIRST so the blur that the
+      // re-render fires when it removes this input can't re-commit the same value.
+      input.addEventListener('blur', function () {
+        var _v = (input.value || '').trim();
+        if (!_v) return;
+        input.value = '';
+        addCustomTagValue(containerId, stateKey, _v);
       });
       const done = document.createElement('button');
       done.type = 'button';
@@ -32046,6 +32055,17 @@
     } catch (e) {} return n;
   }
   function seriesCount(d) { try { return (d.history || []).length; } catch (e) { return 0; } }
+  // User-added custom tags (concepts + mindset). Counts only tags the user CREATED, so it grows
+  // when a tag is added (letting it sync across devices and be guarded) and is unaffected by
+  // hiding a preset (that goes to customTags.hidden, not these lists).
+  function customTagCount(d) {
+    try {
+      var ct = d && d.customTags; if (!ct) return 0;
+      var c = Array.isArray(ct.concepts) ? ct.concepts.length : 0;
+      var m = Array.isArray(ct.mindset)  ? ct.mindset.length  : 0;
+      return c + m;
+    } catch (e) { return 0; }
+  }
   // Un-committed Trade Log trades: logged in the working review log but NOT yet saved into a
   // series/history. Counts only real logged trades (a set result), never blank slots, and never
   // a trade already linked into currentSeries/history (that copy is already counted there — no
@@ -32077,6 +32097,7 @@
     try {
       n += tradeCount(d);
       n += reviewTradeCount(d);
+      n += customTagCount(d);
       n += seriesCount(d);
       n += Array.isArray(d.biasHistory) ? d.biasHistory.length : 0;
       n += Array.isArray(d.weeklyReviews) ? d.weeklyReviews.length : 0;
