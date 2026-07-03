@@ -8703,6 +8703,7 @@
   // and — only if there's carried-over content — ask the user whether to start fresh. The
   // actual reset happens on confirm (see startNewSession + the prompt wiring below).
   let _pendingNewDaySession = false;
+  let _prevSessionDateSrc = null;   // previous session's date, captured BEFORE a render stamps bias.sessionDate to today
   function hasPriorSessionContent() {
     const b = data.bias || {};
     const biasHasContent = !!(b.mode || b.structure || b.location || b.direction ||
@@ -8719,6 +8720,14 @@
       saveData();
       return;
     }
+    // Capture the PREVIOUS session's date now — a render later stamps bias.sessionDate to
+    // today, so read it here first. Prefer the bias date if it's still a past day; otherwise
+    // fall back to lastSessionDate (which isn't touched by renders).
+    (function () {
+      var tIso = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
+      var bd = (data.bias && data.bias.sessionDate) || null;
+      _prevSessionDateSrc = (bd && /^\d{4}-\d{2}-\d{2}/.test(bd) && bd < tIso) ? bd : (data.lastSessionDate || bd || null);
+    })();
     _pendingNewDaySession = true; // ask the user once init + render + i18n are ready
   })();
 
@@ -13136,8 +13145,8 @@
   // Human date of the session being cleared (the bias's own date, else the last active day).
   function _prevSessionDateLabel() {
     try {
-      var iso = (data.bias && data.bias.sessionDate) || null;
-      var d = iso ? new Date(iso + 'T12:00:00') : (data.lastSessionDate ? new Date(data.lastSessionDate) : null);
+      var iso = _prevSessionDateSrc || (data.bias && data.bias.sessionDate) || data.lastSessionDate || null;
+      var d = iso ? (/^\d{4}-\d{2}-\d{2}/.test(iso) ? new Date(iso + 'T12:00:00') : new Date(iso)) : null;
       if (!d || isNaN(d.getTime())) return '';
       var es = (document.documentElement.lang === 'es');
       var loc = es ? 'es-ES' : 'en-GB';
@@ -13185,11 +13194,11 @@
     const confirmBtn = document.getElementById('new-session-confirm');
     const keepBtn = document.getElementById('new-session-keep');
     if (confirmBtn) confirmBtn.addEventListener('click', () => {
-      close(); _pendingNewDaySession = false; startNewSession(); _refreshStaleForNewDay();
+      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null; startNewSession(); _refreshStaleForNewDay();
     });
     // Keep previous = non-destructive. Roll the date over so we don't ask again today.
     const keep = () => {
-      close(); _pendingNewDaySession = false;
+      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null;
       data.lastSessionDate = new Date().toDateString();
       saveData();
       _refreshStaleForNewDay();
@@ -13205,6 +13214,9 @@
       var nowKey = new Date().toDateString();
       if ((data.lastSessionDate || null) === nowKey) return;
       if (!hasPriorSessionContent()) { data.lastSessionDate = nowKey; saveData(); return; }
+      var tIso = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
+      var bd = (data.bias && data.bias.sessionDate) || null;
+      _prevSessionDateSrc = (bd && /^\d{4}-\d{2}-\d{2}/.test(bd) && bd < tIso) ? bd : (data.lastSessionDate || bd || null);
       _pendingNewDaySession = true;
       showNewDaySessionPrompt();
     } catch (e) {}
