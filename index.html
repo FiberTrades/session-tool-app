@@ -31359,7 +31359,7 @@
         '#stchat .dc-attach.open{display:flex;}' +
         '#stchat .dc-attach button{display:flex;align-items:center;gap:12px;background:transparent;border:none;color:#dbdee1;padding:9px 10px;border-radius:6px;cursor:pointer;font-size:14px;text-align:left;font-family:inherit;}' +
         '#stchat .dc-attach button:hover{background:#5865f2;color:#fff;}' +
-        '#stchat .dc-attach .ai{width:22px;text-align:center;font-size:16px;}' +
+        '#stchat .dc-attach .ai{width:22px;display:inline-flex;align-items:center;justify-content:center;font-size:16px;}' +
         '#stchat .stc-emoji{position:absolute;bottom:60px;left:14px;right:14px;background:#2b2d31;border:1px solid #232428;border-radius:10px;padding:8px;display:none;grid-template-columns:repeat(8,1fr);gap:2px;max-height:200px;overflow-y:auto;box-shadow:0 8px 24px rgba(0,0,0,.5);z-index:9;}' +
         '#stchat .stc-emoji.open{display:grid;}' +
         '#stchat .stc-emoji button{background:transparent;border:none;cursor:pointer;font-size:20px;line-height:1;padding:5px;border-radius:6px;}' +
@@ -31387,8 +31387,8 @@
         '<div class="stc-gif" id="stchat-gifp"><input class="stc-gif-search" id="stchat-gif-q" placeholder="'+esc(L('gifSearch'))+'"><div class="stc-gif-grid" id="stchat-gif-grid"></div><div class="stc-gif-foot">Powered by GIPHY</div></div>' +
         '<div class="dc-composer">' +
           '<div class="dc-attach" id="stchat-attach">' +
-            '<button data-act="photo"><span class="ai">\uD83D\uDDBC</span>'+esc(L('photo'))+'</button>' +
-            '<button data-act="file"><span class="ai">\uD83D\uDCCE</span>'+esc(L('file'))+'</button>' +
+            '<button data-act="photo"><span class="ai"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2.5"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg></span>'+esc(L('photo'))+'</button>' +
+            '<button data-act="file"><span class="ai"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6"/></svg></span>'+esc(L('file'))+'</button>' +
             '<button data-act="gif"><span class="ai" style="font-size:10px;font-weight:700;">GIF</span>'+esc(L('gif'))+'</button>' +
             '<button data-act="emoji"><span class="ai">\uD83D\uDE0A</span>'+esc(L('emoji'))+'</button>' +
           '</div>' +
@@ -31599,8 +31599,92 @@
   // ---- Profile picture (Settings > Profile). Stored as data.avatarUrl, synced via STCloud. ----
   function __stAvatarStrings(){
     return (lang()==='es')
-      ? { label:'Foto de perfil', change:'Cambiar foto', remove:'Quitar', up:'Subiendo\u2026', err:'Error al subir.' }
-      : { label:'Profile picture', change:'Change photo', remove:'Remove', up:'Uploading\u2026', err:'Upload failed.' };
+      ? { label:'Foto de perfil', change:'Cambiar foto', remove:'Quitar', up:'Subiendo\u2026', err:'Error al subir.', cropTitle:'Ajustar foto', zoom:'Zoom', save:'Guardar', cancel:'Cancelar' }
+      : { label:'Profile picture', change:'Change photo', remove:'Remove', up:'Uploading\u2026', err:'Upload failed.', cropTitle:'Adjust photo', zoom:'Zoom', save:'Save', cancel:'Cancel' };
+  }
+  function __stAvatarUpload(blob, type, ext){
+    var folder=(currentUser&&currentUser.id)?currentUser.id:'anon';
+    var path=folder+'/avatar/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+ext;
+    return sb.storage.from('chart-shots').upload(path, blob, {contentType:type, upsert:false}).then(function(res){
+      if(res.error) throw res.error;
+      var pub=sb.storage.from('chart-shots').getPublicUrl(path); var url=pub&&pub.data&&pub.data.publicUrl; if(!url) throw new Error('no url');
+      return url;
+    });
+  }
+  // Circular crop + zoom overlay. Resolves by setting the avatar; cancels silently.
+  function __stOpenCropper(file, msg){
+    var T=__stAvatarStrings();
+    var objUrl=URL.createObjectURL(file);
+    var img=new Image();
+    img.onerror=function(){ try{URL.revokeObjectURL(objUrl);}catch(e){} if(msg) msg(T.err); };
+    img.onload=function(){
+      var V=260, OUT=512;
+      var natW=img.naturalWidth||img.width, natH=img.naturalHeight||img.height;
+      var base=V/Math.min(natW,natH);
+      var st={ zoom:1, ox:0, oy:0 };
+      function cs(){ return base*st.zoom; }
+      function dims(){ var s=cs(); return { w:natW*s, h:natH*s }; }
+      (function(){ var d=dims(); st.ox=(V-d.w)/2; st.oy=(V-d.h)/2; })();
+
+      var ov=document.createElement('div');
+      ov.style.cssText='position:fixed;inset:0;z-index:13000;background:rgba(0,0,0,.72);display:flex;align-items:center;justify-content:center;padding:20px;';
+      ov.innerHTML=
+        '<div style="background:#2b2d31;border:1px solid #232428;border-radius:14px;padding:20px;width:320px;max-width:100%;box-shadow:0 16px 50px rgba(0,0,0,.6);">' +
+          '<div style="font-weight:600;font-size:15px;color:#f2f3f5;margin-bottom:14px;text-align:center;">'+T.cropTitle+'</div>' +
+          '<div style="display:flex;justify-content:center;">' +
+            '<canvas id="stc-crop-canvas" width="'+V+'" height="'+V+'" style="width:'+V+'px;height:'+V+'px;border-radius:50%;border:4px solid #ff4d97;cursor:grab;touch-action:none;background:#1e1f22;"></canvas>' +
+          '</div>' +
+          '<div style="display:flex;align-items:center;gap:10px;margin:16px 2px 4px;">' +
+            '<span style="font-size:11px;color:#949ba4;text-transform:uppercase;letter-spacing:.06em;">'+T.zoom+'</span>' +
+            '<input id="stc-crop-zoom" type="range" min="1" max="3" step="0.01" value="1" style="flex:1;accent-color:#ff4d97;">' +
+          '</div>' +
+          '<div style="display:flex;gap:10px;margin-top:14px;">' +
+            '<button id="stc-crop-cancel" class="settings-btn" style="flex:1;">'+T.cancel+'</button>' +
+            '<button id="stc-crop-save" class="settings-btn settings-btn-primary" style="flex:1;">'+T.save+'</button>' +
+          '</div>' +
+        '</div>';
+      document.body.appendChild(ov);
+
+      var canvas=document.getElementById('stc-crop-canvas');
+      var ctx=canvas.getContext('2d');
+      function clamp(){ var d=dims(); st.ox=Math.min(0,Math.max(V-d.w,st.ox)); st.oy=Math.min(0,Math.max(V-d.h,st.oy)); }
+      function draw(){ var d=dims(); clamp(); ctx.clearRect(0,0,V,V); ctx.save(); ctx.beginPath(); ctx.arc(V/2,V/2,V/2,0,Math.PI*2); ctx.closePath(); ctx.clip(); ctx.drawImage(img, st.ox, st.oy, d.w, d.h); ctx.restore(); }
+      draw();
+
+      var zoom=document.getElementById('stc-crop-zoom');
+      zoom.addEventListener('input', function(){
+        var nz=parseFloat(zoom.value)||1; var oldS=cs(); var newS=base*nz;
+        st.ox = V/2 - ((V/2 - st.ox)/oldS)*newS;
+        st.oy = V/2 - ((V/2 - st.oy)/oldS)*newS;
+        st.zoom=nz; draw();
+      });
+
+      var drag=false, lx=0, ly=0;
+      canvas.addEventListener('pointerdown', function(e){ drag=true; lx=e.clientX; ly=e.clientY; try{ canvas.setPointerCapture(e.pointerId); }catch(_){} canvas.style.cursor='grabbing'; });
+      canvas.addEventListener('pointermove', function(e){ if(!drag) return; st.ox += (e.clientX-lx); st.oy += (e.clientY-ly); lx=e.clientX; ly=e.clientY; draw(); });
+      var endDrag=function(){ drag=false; canvas.style.cursor='grab'; };
+      canvas.addEventListener('pointerup', endDrag); canvas.addEventListener('pointercancel', endDrag);
+
+      function done(){ try{ URL.revokeObjectURL(objUrl); }catch(e){} if(ov&&ov.parentNode) ov.parentNode.removeChild(ov); }
+      document.getElementById('stc-crop-cancel').addEventListener('click', done);
+      document.getElementById('stc-crop-save').addEventListener('click', function(){
+        var k=OUT/V, d=dims();
+        var oc=document.createElement('canvas'); oc.width=OUT; oc.height=OUT;
+        var octx=oc.getContext('2d');
+        octx.clearRect(0,0,OUT,OUT);
+        octx.drawImage(img, st.ox*k, st.oy*k, d.w*k, d.h*k);
+        done();
+        if(msg) msg(T.up);
+        var finish=function(blob, type, ext){
+          __stAvatarUpload(blob, type, ext).then(function(url){
+            try{ var da=window.STCloud.getData(); da.avatarUrl=url; if(window.STCloud.save) window.STCloud.save(); }catch(_){}
+            if(msg) msg(''); window.__stEnsureAvatarUI();
+          }).catch(function(){ if(msg) msg(__stAvatarStrings().err); });
+        };
+        oc.toBlob(function(b){ if(b){ finish(b,'image/webp','.webp'); return; } oc.toBlob(function(b2){ if(b2) finish(b2,'image/jpeg','.jpg'); else if(msg) msg(T.err); }, 'image/jpeg', 0.9); }, 'image/webp', 0.9);
+      });
+    };
+    img.src=objUrl;
   }
   window.__stEnsureAvatarUI = function(){
     var sec=document.querySelector('.settings-section[data-section="profile"]'); if(!sec) return;
@@ -31611,7 +31695,7 @@
       block.id='stc-avatar-block';
       block.style.cssText='display:flex;align-items:center;gap:14px;margin-bottom:18px;';
       block.innerHTML =
-        '<div id="stc-avatar-prev" style="width:64px;height:64px;border-radius:50%;flex:none;background:#5865f2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:24px;overflow:hidden;">\u00b7</div>' +
+        '<div id="stc-avatar-prev" style="width:72px;height:72px;border-radius:50%;flex:none;box-sizing:border-box;border:4px solid #ff4d97;background:#5865f2;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:600;font-size:26px;overflow:hidden;">\u00b7</div>' +
         '<div style="display:flex;flex-direction:column;gap:6px;min-width:0;">' +
           '<label class="settings-label" style="margin:0;">'+T.label+'</label>' +
           '<div style="display:flex;gap:8px;flex-wrap:wrap;">' +
@@ -31626,21 +31710,7 @@
       document.getElementById('stc-avatar-change').addEventListener('click', function(){ document.getElementById('stc-avatar-file').click(); });
       document.getElementById('stc-avatar-file').addEventListener('change', function(e){
         var f=e.target.files&&e.target.files[0]; e.target.value=''; if(!f) return;
-        msg(__stAvatarStrings().up);
-        var folder=(currentUser&&currentUser.id)?currentUser.id:'anon';
-        var doPut=function(blob,type,ext){
-          var path=folder+'/avatar/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+ext;
-          return sb.storage.from('chart-shots').upload(path, blob, {contentType:type, upsert:false}).then(function(res){
-            if(res.error) throw res.error;
-            var pub=sb.storage.from('chart-shots').getPublicUrl(path); var url=pub&&pub.data&&pub.data.publicUrl; if(!url) throw new Error('no url');
-            return url;
-          });
-        };
-        var p = (typeof __stCompressImage==='function')
-          ? __stCompressImage(f,512,0.85).then(function(o){ return doPut(o.blob,o.type,(o.type==='image/webp')?'.webp':'.jpg'); }).catch(function(){ return doPut(f, f.type||'image/jpeg', '.jpg'); })
-          : doPut(f, f.type||'image/jpeg', '.jpg');
-        p.then(function(url){ try{ var d=window.STCloud.getData(); d.avatarUrl=url; if(window.STCloud.save) window.STCloud.save(); }catch(_){}
-          msg(''); window.__stEnsureAvatarUI(); }).catch(function(){ msg(__stAvatarStrings().err); });
+        __stOpenCropper(f, msg);
       });
       document.getElementById('stc-avatar-remove').addEventListener('click', function(){
         try{ var d=window.STCloud.getData(); d.avatarUrl=''; if(window.STCloud.save) window.STCloud.save(); }catch(_){}
@@ -31650,7 +31720,7 @@
     var url=''; var nm='';
     try{ var d=window.STCloud.getData(); url=(d&&d.avatarUrl)||''; nm=(d&&d.userName&&d.userName.trim())||''; }catch(_){}
     var prev=document.getElementById('stc-avatar-prev');
-    if(prev){ if(url){ prev.innerHTML='<img src="'+url.replace(/"/g,'&quot;')+'" alt="" style="width:100%;height:100%;object-fit:cover;">'; } else { prev.textContent = nm?nm.charAt(0).toUpperCase():'\u00b7'; } }
+    if(prev){ if(url){ prev.innerHTML='<img src="'+url.replace(/"/g,'&quot;')+'" alt="" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">'; } else { prev.textContent = nm?nm.charAt(0).toUpperCase():'\u00b7'; } }
     var rm=document.getElementById('stc-avatar-remove'); if(rm) rm.style.display = url?'':'none';
   };
 
