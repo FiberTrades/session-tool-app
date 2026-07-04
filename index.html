@@ -31257,6 +31257,234 @@
   function lang() { return document.documentElement.lang === 'es' ? 'es' : 'en'; }
   function tt(k) { return (STR[lang()] && STR[lang()][k]) || STR.en[k] || k; }
 
+  /* ===== Mentor <-> Mentee 1:1 Chat (messages table, RLS-gated on shares) ===== */
+  var STChat = (function () {
+    var S = {
+      en: { title:'Messages', ph:'Write a message\u2026', send:'Send', empty:'No messages yet \u2014 say hello.',
+            msgMentor:'Message your mentor', chat:'Chat', img:'Photo', doc:'File',
+            uploading:'Uploading\u2026', sendErr:'Couldn\u2019t send. Try again.', upErr:'Upload failed.', close:'Close' },
+      es: { title:'Mensajes', ph:'Escribe un mensaje\u2026', send:'Enviar', empty:'A\u00fan no hay mensajes \u2014 saluda.',
+            msgMentor:'Mensaje a tu mentor', chat:'Chat', img:'Foto', doc:'Archivo',
+            uploading:'Subiendo\u2026', sendErr:'No se pudo enviar. Int\u00e9ntalo de nuevo.', upErr:'Error al subir.', close:'Cerrar' }
+    };
+    function L(k){ return (S[lang()] && S[lang()][k]) || S.en[k] || k; }
+    var cur = null;    // { mentorId, ownerId, title }
+    var chan = null;   // realtime channel
+    var seen = {};     // id -> true (dedupe optimistic insert vs realtime echo)
+    var built = false;
+
+    function esc(x){ return String(x==null?'':x).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+
+    function injectCss(){
+      var st = document.createElement('style');
+      st.textContent =
+        '#stchat{position:fixed;z-index:12050;right:20px;bottom:20px;width:360px;max-width:calc(100vw - 32px);height:520px;max-height:calc(100vh - 40px);display:none;flex-direction:column;background:var(--bg-elev,#141414);border:1px solid var(--border-2,#2a2a2a);border-radius:var(--radius-card,12px);box-shadow:var(--shadow-float,0 8px 30px rgba(0,0,0,.55));overflow:hidden;}' +
+        '#stchat.open{display:flex;}' +
+        '#stchat .stc-h{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--border-2,#2a2a2a);flex:none;}' +
+        '#stchat .stc-h-t{flex:1;min-width:0;font-family:"DM Mono",monospace;font-size:12px;letter-spacing:.06em;color:var(--text,#fff);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}' +
+        '#stchat .stc-x{background:transparent;border:none;color:var(--text-dim,#888);cursor:pointer;font-size:20px;line-height:1;padding:0 4px;}' +
+        '#stchat .stc-x:hover{color:var(--text,#fff);}' +
+        '#stchat .stc-body{flex:1;overflow-y:auto;padding:14px;display:flex;flex-direction:column;gap:8px;-webkit-overflow-scrolling:touch;}' +
+        '#stchat .stc-empty{margin:auto;color:var(--text-dim,#888);font-size:12px;text-align:center;}' +
+        '#stchat .stc-row{display:flex;max-width:82%;}' +
+        '#stchat .stc-row.me{align-self:flex-end;}' +
+        '#stchat .stc-row.them{align-self:flex-start;}' +
+        '#stchat .stc-b{padding:8px 11px;border-radius:12px;font-size:13px;line-height:1.45;word-break:break-word;white-space:pre-wrap;}' +
+        '#stchat .stc-row.me .stc-b{background:#e8cf63;color:#1a1a1a;border-bottom-right-radius:4px;}' +
+        '#stchat .stc-row.them .stc-b{background:var(--bg,#0f0f0f);color:var(--text,#fff);border:1px solid var(--border-2,#2a2a2a);border-bottom-left-radius:4px;}' +
+        '#stchat .stc-b img{max-width:220px;width:100%;border-radius:8px;display:block;margin-top:2px;}' +
+        '#stchat .stc-file{display:inline-flex;align-items:center;gap:8px;text-decoration:none;color:inherit;font-size:12px;padding:4px 2px;}' +
+        '#stchat .stc-file .fi{width:26px;height:26px;flex:none;border-radius:6px;background:rgba(0,0,0,.18);display:flex;align-items:center;justify-content:center;font-size:9px;font-family:"DM Mono",monospace;letter-spacing:.02em;}' +
+        '#stchat .stc-foot{border-top:1px solid var(--border-2,#2a2a2a);padding:8px;display:flex;align-items:flex-end;gap:6px;flex:none;}' +
+        '#stchat .stc-ta{flex:1;resize:none;max-height:96px;background:var(--bg,#0f0f0f);border:1px solid var(--border-2,#2a2a2a);border-radius:10px;color:var(--text,#fff);padding:8px 10px;font-family:inherit;font-size:13px;line-height:1.4;box-sizing:border-box;}' +
+        '#stchat .stc-ic{background:transparent;border:1px solid var(--border-2,#2a2a2a);color:var(--text-mid,#aaa);border-radius:8px;width:34px;height:34px;flex:none;cursor:pointer;font-size:15px;line-height:1;}' +
+        '#stchat .stc-ic:hover{color:var(--text,#fff);}' +
+        '#stchat .stc-send{background:#e8cf63;color:#1a1a1a;border:none;border-radius:8px;height:34px;padding:0 14px;flex:none;cursor:pointer;font-weight:600;font-size:12px;}' +
+        '#stchat .stc-note{font-size:11px;color:var(--text-dim,#888);padding:0 14px 6px;min-height:14px;flex:none;}' +
+        '@media (max-width:640px){#stchat{right:0;left:0;bottom:0;top:0;width:100%;max-width:100%;height:100%;max-height:100%;border-radius:0;}}';
+      document.head.appendChild(st);
+    }
+
+    function build(){
+      if (built) return; built = true;
+      injectCss();
+      var el = document.createElement('div');
+      el.id = 'stchat';
+      el.innerHTML =
+        '<div class="stc-h"><span class="stc-h-t" id="stchat-title">'+esc(L('title'))+'</span><button class="stc-x" id="stchat-x" aria-label="'+esc(L('close'))+'">\u00d7</button></div>' +
+        '<div class="stc-body" id="stchat-body"></div>' +
+        '<div class="stc-note" id="stchat-note"></div>' +
+        '<div class="stc-foot">' +
+          '<button class="stc-ic" id="stchat-img" title="'+esc(L('img'))+'">\uD83D\uDDBC</button>' +
+          '<button class="stc-ic" id="stchat-doc" title="'+esc(L('doc'))+'">\uD83D\uDCCE</button>' +
+          '<textarea class="stc-ta" id="stchat-ta" rows="1" placeholder="'+esc(L('ph'))+'"></textarea>' +
+          '<button class="stc-send" id="stchat-send">'+esc(L('send'))+'</button>' +
+        '</div>' +
+        '<input type="file" id="stchat-fimg" accept="image/*" style="display:none;">' +
+        '<input type="file" id="stchat-fdoc" accept=".pdf,.doc,.docx,.txt,.csv,.xlsx,.png,.jpg,.jpeg" style="display:none;">';
+      document.body.appendChild(el);
+
+      document.getElementById('stchat-x').addEventListener('click', close);
+      document.getElementById('stchat-send').addEventListener('click', function(){ sendText(); });
+      var ta = document.getElementById('stchat-ta');
+      ta.addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendText(); } });
+      ta.addEventListener('input', function(){ ta.style.height='auto'; ta.style.height=Math.min(96, ta.scrollHeight)+'px'; });
+      document.getElementById('stchat-img').addEventListener('click', function(){ document.getElementById('stchat-fimg').click(); });
+      document.getElementById('stchat-doc').addEventListener('click', function(){ document.getElementById('stchat-fdoc').click(); });
+      document.getElementById('stchat-fimg').addEventListener('change', function(e){ var f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) sendFile(f, 'image'); });
+      document.getElementById('stchat-fdoc').addEventListener('change', function(e){ var f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) sendFile(f, (f.type&&f.type.indexOf('image/')===0)?'image':'file'); });
+    }
+
+    function note(s){ var n=document.getElementById('stchat-note'); if(n) n.textContent=s||''; }
+
+    function fmtRow(m){
+      var mine = m.sender_id === (currentUser && currentUser.id);
+      var inner = '';
+      if (m.body) inner += esc(m.body);
+      if (m.attachment_url){
+        if (m.attachment_type === 'image'){
+          inner += '<a href="'+esc(m.attachment_url)+'" target="_blank" rel="noopener"><img src="'+esc(m.attachment_url)+'" alt=""></a>';
+        } else {
+          var nm = m.attachment_name || 'file';
+          inner += '<a class="stc-file" href="'+esc(m.attachment_url)+'" target="_blank" rel="noopener" download><span class="fi">DOC</span>'+esc(nm)+'</a>';
+        }
+      }
+      return '<div class="stc-row '+(mine?'me':'them')+'"><div class="stc-b">'+inner+'</div></div>';
+    }
+
+    function repaint(list){
+      var body=document.getElementById('stchat-body'); if(!body) return;
+      if(!list.length){ body.innerHTML='<div class="stc-empty">'+esc(L('empty'))+'</div>'; return; }
+      body.innerHTML = list.map(fmtRow).join('');
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function append(m){
+      if (seen[m.id]) return; seen[m.id]=true;
+      var body=document.getElementById('stchat-body'); if(!body) return;
+      var empt=body.querySelector('.stc-empty'); if(empt) body.innerHTML='';
+      body.insertAdjacentHTML('beforeend', fmtRow(m));
+      body.scrollTop = body.scrollHeight;
+    }
+
+    function load(){
+      if(!cur) return;
+      seen={};
+      sb.from('messages').select('*')
+        .eq('mentor_id', cur.mentorId).eq('owner_user_id', cur.ownerId)
+        .order('created_at', {ascending:true}).limit(500)
+        .then(function(r){
+          var rows=(r&&r.data)||[];
+          rows.forEach(function(m){ seen[m.id]=true; });
+          repaint(rows);
+        }).catch(function(){ repaint([]); });
+    }
+
+    function subscribe(){
+      try { if(chan) sb.removeChannel(chan); } catch(e){}
+      if(!cur) return;
+      chan = sb.channel('stchat:'+cur.mentorId+':'+cur.ownerId)
+        .on('postgres_changes',
+          { event:'INSERT', schema:'public', table:'messages', filter:'owner_user_id=eq.'+cur.ownerId },
+          function(payload){
+            var m=payload && payload.new; if(!m) return;
+            if(cur && m.mentor_id===cur.mentorId && m.owner_user_id===cur.ownerId) append(m);
+          })
+        .subscribe();
+    }
+
+    function insertMsg(row){
+      sb.from('messages').insert(row).select().maybeSingle().then(function(r){
+        if(r.error){ note(L('sendErr')); return; }
+        if(r.data) append(r.data);
+      }).catch(function(){ note(L('sendErr')); });
+    }
+
+    function sendText(){
+      var ta=document.getElementById('stchat-ta'); if(!ta||!cur||!currentUser) return;
+      var t=(ta.value||'').trim(); if(!t) return;
+      ta.value=''; ta.style.height='auto'; note('');
+      insertMsg({ mentor_id:cur.mentorId, owner_user_id:cur.ownerId, sender_id:currentUser.id, body:t });
+    }
+
+    // images -> compress to webp (reuses app compressor); files -> raw. Public chart-shots bucket.
+    function up(file, kind){
+      var folder=(currentUser&&currentUser.id)?currentUser.id:'anon';
+      function put(blob, type, ext, name){
+        var path=folder+'/chat/'+Date.now()+'-'+Math.random().toString(36).slice(2,10)+ext;
+        return sb.storage.from('chart-shots').upload(path, blob, {contentType:type, upsert:false}).then(function(res){
+          if(res.error) throw res.error;
+          var pub=sb.storage.from('chart-shots').getPublicUrl(path);
+          var url=pub&&pub.data&&pub.data.publicUrl; if(!url) throw new Error('no url');
+          return { url:url, name:name };
+        });
+      }
+      if(kind==='image' && typeof __stCompressImage==='function'){
+        return __stCompressImage(file, 1600, 0.82).then(function(o){
+          var ext=(o.type==='image/webp')?'.webp':'.jpg';
+          return put(o.blob, o.type, ext, file.name||'image');
+        }).catch(function(){
+          var ext='.'+((file.name||'img').split('.').pop()||'jpg');
+          return put(file, file.type||'application/octet-stream', ext, file.name||'image');
+        });
+      }
+      var ext2='.'+((file.name||'file').split('.').pop()||'bin');
+      return put(file, file.type||'application/octet-stream', ext2, file.name||'file');
+    }
+
+    function sendFile(file, kind){
+      if(!cur||!file||!currentUser) return;
+      note(L('uploading'));
+      up(file, kind).then(function(o){
+        note('');
+        insertMsg({ mentor_id:cur.mentorId, owner_user_id:cur.ownerId, sender_id:currentUser.id,
+                    attachment_url:o.url, attachment_type:(kind==='image'?'image':'file'), attachment_name:o.name });
+      }).catch(function(){ note(L('upErr')); });
+    }
+
+    function open(mentorId, ownerId, title){
+      if(!currentUser||!mentorId||!ownerId) return;
+      build();
+      cur={ mentorId:mentorId, ownerId:ownerId, title:title||L('title') };
+      var t=document.getElementById('stchat-title'); if(t) t.textContent=cur.title;
+      var n=document.getElementById('stchat-note'); if(n) n.textContent='';
+      document.getElementById('stchat').classList.add('open');
+      load(); subscribe();
+      setTimeout(function(){ var ta=document.getElementById('stchat-ta'); if(ta) ta.focus(); }, 60);
+    }
+
+    function close(){
+      var el=document.getElementById('stchat'); if(el) el.classList.remove('open');
+      try { if(chan) sb.removeChannel(chan); } catch(e){}
+      chan=null; cur=null;
+    }
+
+    return { open:open, close:close, L:L };
+  })();
+  window.STChat = STChat;
+
+  // Mentee entry point: show a "Message your mentor" button in the share panel once a
+  // mentor has claimed the code (mentor_id set on a live share row).
+  function stcMenteeChatBtn(box){
+    if(!currentUser || !box) return;
+    sb.from('shares').select('mentor_id').eq('owner_user_id',currentUser.id).eq('revoked',false).not('mentor_id','is',null).limit(1).maybeSingle().then(function(r){
+      var mid=r&&r.data&&r.data.mentor_id;
+      var existing=document.getElementById('stc-m-chat');
+      if(mid){
+        if(!existing){
+          existing=document.createElement('button');
+          existing.id='stc-m-chat'; existing.className='settings-btn settings-btn-primary';
+          existing.style.marginTop='12px'; existing.style.display='block';
+          existing.addEventListener('click', function(){ STChat.open(existing.getAttribute('data-mid'), currentUser.id, STChat.L('msgMentor')); });
+          box.appendChild(existing);
+        }
+        existing.setAttribute('data-mid', mid);
+        existing.textContent = STChat.L('msgMentor');
+        existing.style.display='block';
+      } else if(existing){ existing.style.display='none'; }
+    }).catch(function(){});
+  }
+
   var css = document.createElement('style');
   css.textContent =
     '.stc-gate{position:fixed;inset:0;z-index:12000;display:none;align-items:center;justify-content:center;overflow-y:auto;padding:calc(32px + env(safe-area-inset-top)) calc(24px + env(safe-area-inset-right)) calc(32px + env(safe-area-inset-bottom)) calc(24px + env(safe-area-inset-left));box-sizing:border-box;background:#0c0c0c;}' +
@@ -31901,6 +32129,7 @@
     var eligible = !!currentUser && !!profilePaid && (profilePlan==='bundle' || profilePlan==='comp' || profilePlan==='mentorship');
     if(!eligible){ box.style.display='none'; return; }
     box.style.display='block';
+    stcMenteeChatBtn(box);
     var set=function(id,v){var e=document.getElementById(id); if(e) e.textContent=v;};
     set('stc-m-title', tt('mentorShareTitle')); set('stc-m-hint', tt('mentorShareHint'));
     set('stc-m-gen', tt('mentorShareGen')); set('stc-m-revoke', tt('mentorShareRevoke'));
@@ -32001,11 +32230,12 @@
           return '<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:10px 0;border-bottom:1px solid var(--border-2,#2a2a2a);">'+
             '<span style="flex:1;min-width:120px;color:var(--text);font-size:13px;"><strong>'+primary+'</strong>'+secondary+'</span>'+
             '<button class="settings-btn settings-btn-primary mv-open" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvOpen')+'</button>'+ win +
-            '<button class="settings-btn mv-stop" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvDisconnect')+'</button>'+
+            '<button class="settings-btn mv-chat" data-id="'+m.owner_user_id+'" data-nm="'+esc(nm||em||'')+'" style="flex:none;">'+STChat.L('chat')+'</button>'+'<button class="settings-btn mv-stop" data-id="'+m.owner_user_id+'" style="flex:none;">'+tt('mvDisconnect')+'</button>'+
           '</div>';
         }).join('');
         list.querySelectorAll('.mv-open').forEach(function(b){ b.addEventListener('click', function(){ location.href = location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')); }); });
         list.querySelectorAll('.mv-openwin').forEach(function(b){ b.addEventListener('click', function(){ window.open(location.pathname + '?mv=' + encodeURIComponent(b.getAttribute('data-id')), '_blank'); }); });
+        list.querySelectorAll('.mv-chat').forEach(function(b){ b.addEventListener('click', function(){ STChat.open(currentUser.id, b.getAttribute('data-id'), (b.getAttribute('data-nm')||'') || STChat.L('chat')); }); });
         list.querySelectorAll('.mv-stop').forEach(function(b){ b.addEventListener('click', function(){ mentorDisconnect(b.getAttribute('data-id')); }); });
       }
       // Pull each member's display name (data.userName) cheaply — just that JSON field, not the
