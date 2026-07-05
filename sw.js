@@ -4,7 +4,7 @@
 // skipWaiting + clients.claim mean a new version takes over immediately instead of
 // waiting for every tab to close.
 
-const CACHE = 'session-tool-v4';
+const CACHE = 'session-tool-v5';
 const CORE = ['./', './index.html'];
 
 self.addEventListener('install', (event) => {
@@ -50,10 +50,12 @@ self.addEventListener('push', (event) => {
 // Focus an existing tab (or open one) when a notification is tapped.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || './';
+  const raw = (event.notification.data && event.notification.data.url) || './';
+  let target;
+  try { target = new URL(raw, self.registration.scope).href; } catch (e) { target = self.registration.scope; }
   event.waitUntil(
     self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
-      for (const c of clients) { if ('focus' in c) return c.focus(); }
+      for (const c of clients) { if ('focus' in c) { c.focus(); return; } }
       if (self.clients.openWindow) return self.clients.openWindow(target);
     })
   );
