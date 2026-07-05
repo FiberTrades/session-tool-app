@@ -4,7 +4,7 @@
 // skipWaiting + clients.claim mean a new version takes over immediately instead of
 // waiting for every tab to close.
 
-const CACHE = 'session-tool-v3';
+const CACHE = 'session-tool-v4';
 const CORE = ['./', './index.html'];
 
 self.addEventListener('install', (event) => {
@@ -33,11 +33,15 @@ self.addEventListener('push', (event) => {
   try { data = event.data ? event.data.json() : {}; }
   catch (e) { try { data = { body: event.data && event.data.text() }; } catch (_) {} }
   const title = data.title || 'Session Tool';
+  // Detect a call so it can vibrate and stay on screen until tapped.
+  const isCall = data.type === 'call' || /calling you/i.test(title) || /answer/i.test(data.body || '');
   const options = {
     body: data.body || '',
-    tag: data.tag || 'ft-push',
+    tag: data.tag || (isCall ? 'ft-call' : 'ft-push'),
     renotify: true,
-    data: { url: data.url || './' }
+    data: { url: data.url || './' },
+    vibrate: data.vibrate || (isCall ? [300, 150, 300, 150, 300] : [180]),
+    requireInteraction: (data.requireInteraction != null) ? data.requireInteraction : isCall
   };
   if (data.icon) options.icon = data.icon;
   event.waitUntil(self.registration.showNotification(title, options));
