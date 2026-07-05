@@ -4,7 +4,7 @@
 // skipWaiting + clients.claim mean a new version takes over immediately instead of
 // waiting for every tab to close.
 
-const CACHE = 'session-tool-v2';
+const CACHE = 'session-tool-v3';
 const CORE = ['./', './index.html'];
 
 self.addEventListener('install', (event) => {
@@ -39,7 +39,7 @@ self.addEventListener('fetch', (event) => {
   // App page: network-first so the freshest deploy wins; cache as a fallback.
   if (isPage) {
     event.respondWith(
-      fetch(req)
+      fetch(req, { cache: 'no-store' })
         .then((res) => {
           const copy = res.clone();
           caches.open(CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
