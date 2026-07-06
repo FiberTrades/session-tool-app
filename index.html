@@ -31261,7 +31261,7 @@
     console.warn('[ST cloud] supabase-js or STCloud bridge missing — sync disabled.');
     return;
   }
-  var sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+  var sb = window.__stSB || (window.__stSB = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
   var ST = window.STCloud;
 
   // Minimal trades_inbox bridge for the MT5 auto-sync importer (RLS-scoped to the user).
@@ -32017,7 +32017,8 @@
         '.dcx-main-hash{color:#80848e;font-size:22px;}' +
         '.dcx-main-title{font-weight:700;color:#f2f3f5;font-size:16px;}' +
         '.dcx-main-topic{color:#949ba4;font-size:13px;border-left:1px solid #3f4147;padding-left:10px;margin-left:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
-        '.dcx-members-toggle{margin-left:auto;background:none;border:none;color:#b5bac1;cursor:pointer;line-height:0;}' +
+        '.dcx-members-toggle{margin-left:auto;background:none;border:none;color:#b5bac1;cursor:pointer;line-height:0;transition:color .12s;}' +
+        '.dcx-members-toggle:hover{color:#f2f3f5;}' +
         '.dcx-msgs{flex:1;overflow-y:auto;overscroll-behavior:contain;padding:16px 0 8px;}' +
         '.dcx-empty{color:#949ba4;text-align:center;padding:40px 20px;font-size:14px;}' +
         '.dcx-welcome{padding:0 16px 20px;}' +
@@ -32654,7 +32655,7 @@
     function ensurePush(){ try{ if(!('serviceWorker' in navigator) || !('PushManager' in window) || !currentUser || !VAPID_PUBLIC) return; if(!(window.Notification && Notification.permission==='granted')) return; navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription().then(function(sub){ if(sub) return sub; return reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:_urlB64ToUint8(VAPID_PUBLIC) }); }); }).then(function(sub){ if(!sub) return; try{ sb.from('push_subscriptions').upsert({ user_id:currentUser.id, endpoint:sub.endpoint, subscription:sub.toJSON() }, { onConflict:'endpoint' }).then(function(r){ if(r&&r.error){ try{ console.warn('push_subscriptions upsert error:', r.error.message||r.error); }catch(_){ } } }); }catch(e){} }).catch(function(){}); }catch(e){} }
     function forcePush(cb){ cb=cb||function(){}; try{ if(!('serviceWorker' in navigator)||!('PushManager' in window)){ cb('unsupported'); return; } if(!currentUser){ cb('signin'); return; } if(!VAPID_PUBLIC){ cb('nokey'); return; } var doSub=function(){ navigator.serviceWorker.ready.then(function(reg){ return reg.pushManager.getSubscription().then(function(s){ if(s) return s; return reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:_urlB64ToUint8(VAPID_PUBLIC) }); }); }).then(function(sub){ if(!sub){ cb('nosub'); return; } sb.from('push_subscriptions').upsert({ user_id:currentUser.id, endpoint:sub.endpoint, subscription:sub.toJSON() }, { onConflict:'endpoint' }).then(function(r){ if(r&&r.error){ cb('dberr', r.error.message||String(r.error)); } else { cb('ok'); } }); }).catch(function(e){ cb('suberr', String((e&&e.message)||e)); }); }; if(window.Notification && Notification.permission==='granted'){ doSub(); } else if(window.Notification){ Notification.requestPermission().then(function(p){ if(p==='granted') doSub(); else cb('denied'); }).catch(function(){ cb('denied'); }); } else { cb('unsupported'); } }catch(e){ cb('err', String((e&&e.message)||e)); } }
     function pushMentions(body){ try{ if(!body||!currentUser) return; var lc=String(body).toLowerCase(); var ids=[]; (roster||[]).forEach(function(u){ if(u.id!==currentUser.id){ var nm=String(u.name||'').toLowerCase(); if(nm && lc.indexOf('@'+nm)>=0) ids.push(u.id); } }); if(!ids.length) return; try{ sb.functions.invoke('send-push_edge-function', { body:{ userIds:ids, title:(myName()||'Someone')+' mentioned you'+(cur?(' in #'+cur.name):''), body:String(body).replace(/https?:\/\/\S+/g,'[link]').slice(0,140) } }); }catch(e){} }catch(e){} }
-    function openCallPicker(){ var ex=document.getElementById('dcx-callpick'); if(ex){ ex.remove(); return; } var list=(roster&&roster.length?roster:[]).filter(function(u){ return u.id!==(currentUser&&currentUser.id); }); var pop=document.createElement('div'); pop.id='dcx-callpick'; pop.className='dcx-callpick'; pop.innerHTML='<div class="dcx-callpick-h">'+window._stT('Call someone','Llamar a alguien')+'</div>'+(list.length?list.map(function(u){ return '<button class="dcx-callpick-row" data-id="'+esc(u.id)+'">'+avaHtml(u.avatar,u.name,'cpa')+'<span>'+esc(stripEmoji(u.name)||'Trader')+'</span></button>'; }).join(''):'<div class="dcx-callpick-none">'+window._stT('No members to call.','No hay miembros a quienes llamar.')+'</div>'); document.body.appendChild(pop); var btn=G('dcx-callbtn'); if(btn){ var r=btn.getBoundingClientRect(); pop.style.top=(r.bottom+6)+'px'; pop.style.left=Math.max(8,Math.min(r.left-160, window.innerWidth-268))+'px'; } Array.prototype.forEach.call(pop.querySelectorAll('.dcx-callpick-row'), function(el){ el.addEventListener('click', function(){ var id=el.getAttribute('data-id'); var u=list.filter(function(x){return x.id===id;})[0]; pop.remove(); if(u) startCall(u.id, u.name, u.avatar); }); }); setTimeout(function(){ document.addEventListener('click', function _c(ev){ var pp=document.getElementById('dcx-callpick'); if(!pp){ document.removeEventListener('click',_c); return; } if(!pp.contains(ev.target)&&ev.target.id!=='dcx-callbtn'&&!(ev.target.closest&&ev.target.closest('#dcx-callbtn'))){ pp.remove(); document.removeEventListener('click',_c); } }); }, 20); }
+    function openCallPicker(){ var ex=document.getElementById('dcx-callpick'); if(ex){ ex.remove(); return; } var byId={}; (roster&&roster.length?roster:[]).forEach(function(u){ if(u&&u.id) byId[u.id]=u; }); try{ var _ps=(presence&&presence.presenceState)?presence.presenceState():{}; Object.keys(_ps).forEach(function(k){ (_ps[k]||[]).forEach(function(p){ if(p&&p.id&&!byId[p.id]) byId[p.id]={id:p.id,name:p.name,avatar:p.avatar}; }); }); }catch(e){} var list=Object.keys(byId).map(function(k){ return byId[k]; }).filter(function(u){ return u.id!==(currentUser&&currentUser.id); }); var pop=document.createElement('div'); pop.id='dcx-callpick'; pop.className='dcx-callpick'; pop.innerHTML='<div class="dcx-callpick-h">'+window._stT('Call someone','Llamar a alguien')+'</div>'+(list.length?list.map(function(u){ return '<button class="dcx-callpick-row" data-id="'+esc(u.id)+'">'+avaHtml(u.avatar,u.name,'cpa')+'<span>'+esc(stripEmoji(u.name)||'Trader')+'</span></button>'; }).join(''):'<div class="dcx-callpick-none">'+window._stT('No members to call.','No hay miembros a quienes llamar.')+'</div>'); document.body.appendChild(pop); var btn=G('dcx-callbtn'); if(btn){ var r=btn.getBoundingClientRect(); pop.style.top=(r.bottom+6)+'px'; pop.style.left=Math.max(8,Math.min(r.left-160, window.innerWidth-268))+'px'; } Array.prototype.forEach.call(pop.querySelectorAll('.dcx-callpick-row'), function(el){ el.addEventListener('click', function(){ var id=el.getAttribute('data-id'); var u=list.filter(function(x){return x.id===id;})[0]; pop.remove(); if(u) startCall(u.id, u.name, u.avatar); }); }); setTimeout(function(){ document.addEventListener('click', function _c(ev){ var pp=document.getElementById('dcx-callpick'); if(!pp){ document.removeEventListener('click',_c); return; } if(!pp.contains(ev.target)&&ev.target.id!=='dcx-callbtn'&&!(ev.target.closest&&ev.target.closest('#dcx-callbtn'))){ pp.remove(); document.removeEventListener('click',_c); } }); }, 20); }
     function open(){ build(); try{ var _bi=G('dcx-img'); if(_bi&&_bi.parentNode!==document.body) document.body.appendChild(_bi); var _bv=G('dcx-view'); if(_bv&&_bv.parentNode!==document.body) document.body.appendChild(_bv); }catch(e){} try{ if(window.STChat&&STChat.ensureStyles) STChat.ensureStyles(); }catch(e){} restoreColumns(); fit(); startPresence(); loadRoster(); loadRoles(); setupMentions(); _callSignalSetup(); try{ if(window.STDM) STDM.initGlobal(); }catch(e){} loadChannels(function(){ if(!cur){ var first=channels[0]; if(first) selectChannel(first); } }); }
     window.addEventListener('resize', function(){ var p=document.getElementById('page-community'); if(p&&p.classList.contains('active')) fit(); });
     window.addEventListener('resize', function(){ var p=document.getElementById('page-community'); if(p&&p.classList.contains('active')) fit(); });
@@ -36036,13 +36037,13 @@
 (function(){
   'use strict';
   if(!window.supabase) return;
-  var SB_URL='https://figozyxoyobixadhqewr.supabase.co';
-  var SB_KEY='sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv';
-  var sb; try{ sb=window.supabase.createClient(SB_URL, SB_KEY); }catch(e){ return; }
-  var chan=null, uid=null;
-  window.__stLiveDeleteRemote=function(){ if(!uid) return; try{ sb.from('live_trades').delete().eq('account', uid).then(function(){},function(){}); }catch(e){} };
+  var sb=null, chan=null, uid=null, _authHooked=false;
+  window.__stLiveDeleteRemote=function(){ if(!uid||!sb) return; try{ sb.from('live_trades').delete().eq('account', uid).then(function(){},function(){}); }catch(e){} };
   function apply(row){ if(row && window.__stLive) window.__stLive.upsert(row); }
   function start(){
+    sb = window.__stSB || null;
+    if(!sb){ setTimeout(start, 1500); return; }
+    if(!_authHooked){ _authHooked=true; try{ sb.auth.onAuthStateChange(function(){ start(); }); }catch(e){} }
     sb.auth.getUser().then(function(r){
       var u=r&&r.data&&r.data.user; if(!u) return;
       if(uid===u.id && chan) return;
@@ -36055,7 +36056,6 @@
       try{ sb.from('live_trades').select('*').eq('account', uid).then(function(res){ var rows=(res&&res.data)||[]; rows.forEach(apply); }, function(){}); }catch(e){}
     }).catch(function(){});
   }
-  try{ sb.auth.onAuthStateChange(function(){ start(); }); }catch(e){}
   start(); setTimeout(start, 2500);
 })();
 </script>
