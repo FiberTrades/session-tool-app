@@ -1613,6 +1613,19 @@
   .quick-log-result-btns { display: flex; gap: 10px; }
   .ql-result { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 9px 22px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: border-color 200ms ease, background 200ms ease, color 200ms ease, transform 120ms ease; }
   .ql-result:active { transform: scale(0.97); }
+  .st-live-feed { display: none; margin-bottom: 16px; text-align: center; }
+  .stlf-head { font-family: 'AppNum','DM Mono',monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 12px; }
+  .stlf-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+  .stlf-chip { display: inline-flex; align-items: stretch; border: 1px solid var(--border-2); border-radius: 9px; overflow: hidden; font-size: 13px; }
+  .stlf-side { display: flex; align-items: center; gap: 5px; padding: 6px 11px; font-weight: 600; }
+  .stlf-side.long { color: var(--good); }
+  .stlf-side.short { color: var(--bad); }
+  .stlf-res { display: flex; align-items: center; gap: 5px; padding: 6px 11px; border-left: 1px solid var(--border-2); color: var(--text-mid); }
+  .stlf-res.win { color: var(--good); background: rgba(95,203,141,0.10); }
+  .stlf-res.lose { color: var(--bad); background: rgba(232,93,93,0.10); }
+  .stlf-res.be { background: rgba(255,255,255,0.05); }
+  .stlf-dot { width: 7px; height: 7px; border-radius: 50%; background: #e0b23c; animation: stlfp 1s infinite; }
+  @keyframes stlfp { 0%,100%{opacity:1} 50%{opacity:.25} }
   .ql-result.win:hover  { border-color: var(--good); color: var(--good); background: rgba(95,203,141,0.08); }
   .ql-result.lose:hover { border-color: var(--bad);  color: var(--bad);  background: rgba(232,93,93,0.08); }
   .ql-result.be:hover   { border-color: var(--info); color: var(--info); background: rgba(96,165,250,0.08); }
@@ -8044,6 +8057,7 @@
     if (reviewPage) {
       const _wasCollapsed = reviewPage.classList.contains('session-live-collapsed');
       reviewPage.classList.toggle('session-live-collapsed', live);
+      try { if (!live && _wasCollapsed && window.__stLive) window.__stLive.clear(true); } catch (e) {}
       // On the live\u2192ended transition (early finish OR natural window end), re-render the
       // review UI so the trade picker (#section-trade-select) + per-trade sections reappear.
       // Un-collapsing only lifts the CSS; it doesn't clear the picker's own hidden state.
@@ -10560,6 +10574,53 @@
     if (Math.abs(n) <= eps) return 'BE';
     return n > 0 ? 'Win' : 'Lose';
   }
+  // ===== Live session status (private): ephemeral MT5 open/close feed from the EA =====
+  window.__stLive = (function () {
+    var rows = {};
+    function feedEl() {
+      var h = document.getElementById('session-quick-log'); if (!h) return null;
+      var el = document.getElementById('st-live-feed');
+      if (!el) { el = document.createElement('div'); el.id = 'st-live-feed'; el.className = 'st-live-feed'; h.insertBefore(el, h.firstChild); }
+      return el;
+    }
+    function resultOf(r) { if (!r.closed) return null; try { return classifyNetResult(r.pnl, getActiveAccount()); } catch (e) { return null; } }
+    function render() {
+      var el = feedEl(); if (!el) return;
+      var list = Object.keys(rows).map(function (k) { return rows[k]; }).sort(function (a, b) { return a.ticket - b.ticket; });
+      if (!list.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+      el.style.display = '';
+      var es = document.documentElement.lang === 'es';
+      var head = (es ? 'Operaciones en esta sesi\u00f3n: ' : 'Trades this session: ') + list.length;
+      var chips = list.map(function (r) {
+        var isLong = r.direction === 'long';
+        var res = resultOf(r);
+        var arrow = isLong ? '\u2191' : '\u2193';
+        var sideTxt = isLong ? (es ? 'Largo' : 'Long') : (es ? 'Corto' : 'Short');
+        var resHtml;
+        if (!res) { resHtml = '<span class="stlf-res open"><span class="stlf-dot"></span>' + (es ? 'en vivo' : 'live') + '</span>'; }
+        else if (res === 'Win') { resHtml = '<span class="stlf-res win">\u2713 ' + (es ? 'Ganada' : 'Won') + '</span>'; }
+        else if (res === 'Lose') { resHtml = '<span class="stlf-res lose">\u2715 ' + (es ? 'Perdida' : 'Lost') + '</span>'; }
+        else { resHtml = '<span class="stlf-res be">= BE</span>'; }
+        return '<span class="stlf-chip"><span class="stlf-side ' + (isLong ? 'long' : 'short') + '">' + arrow + ' ' + sideTxt + '</span>' + resHtml + '</span>';
+      }).join('');
+      el.innerHTML = '<div class="stlf-head">' + head + '</div><div class="stlf-chips">' + chips + '</div>';
+    }
+    return {
+      upsert: function (row) {
+        if (!row || row.ticket == null) return;
+        var k = String(row.ticket), ex = rows[k] || {};
+        rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false };
+        render();
+      },
+      clear: function (deleteRemote) {
+        rows = {};
+        var el = document.getElementById('st-live-feed'); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
+        if (deleteRemote && typeof window.__stLiveDeleteRemote === 'function') { try { window.__stLiveDeleteRemote(); } catch (e) {} }
+      },
+      render: render
+    };
+  })();
+
   function tradeRforMath(t) {
     if (t.result === 'Win')  return parseFloat(t.r) || 0;
     if (t.result === 'Lose') return -1;
@@ -35919,6 +35980,33 @@
     function mount(){ (document.body||document.documentElement).appendChild(f); init(); }
     if(document.body){ mount(); } else { document.addEventListener("DOMContentLoaded", mount); }
   } catch(err){}
+})();
+</script>
+<script>
+(function(){
+  'use strict';
+  if(!window.supabase) return;
+  var SB_URL='https://figozyxoyobixadhqewr.supabase.co';
+  var SB_KEY='sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv';
+  var sb; try{ sb=window.supabase.createClient(SB_URL, SB_KEY); }catch(e){ return; }
+  var chan=null, uid=null;
+  window.__stLiveDeleteRemote=function(){ if(!uid) return; try{ sb.from('live_trades').delete().eq('account', uid).then(function(){},function(){}); }catch(e){} };
+  function apply(row){ if(row && window.__stLive) window.__stLive.upsert(row); }
+  function start(){
+    sb.auth.getUser().then(function(r){
+      var u=r&&r.data&&r.data.user; if(!u) return;
+      if(uid===u.id && chan) return;
+      uid=u.id;
+      try{ if(chan) sb.removeChannel(chan); }catch(e){}
+      chan=sb.channel('live-trades:'+uid)
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); })
+        .subscribe();
+      try{ sb.from('live_trades').select('*').eq('account', uid).then(function(res){ var rows=(res&&res.data)||[]; rows.forEach(apply); }, function(){}); }catch(e){}
+    }).catch(function(){});
+  }
+  try{ sb.auth.onAuthStateChange(function(){ start(); }); }catch(e){}
+  start(); setTimeout(start, 2500);
 })();
 </script>
 </body>
