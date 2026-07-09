@@ -4,7 +4,7 @@
 // skipWaiting + clients.claim mean a new version takes over immediately instead of
 // waiting for every tab to close.
 
-const CACHE = 'session-tool-v9';
+const CACHE = 'session-tool-v10';
 const CORE = ['./', './index.html'];
 
 self.addEventListener('install', (event) => {
