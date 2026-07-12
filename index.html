@@ -36381,7 +36381,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var isAdmin = function(){ var u=me(); return !!(u && u.email && u.email.toLowerCase()===ADMIN_EMAIL); };
 
   var S = { live:null, parts:[], joined:false, ch:null, pollT:null, user:null, ppl:{}, min:false,
-            pc:null, cfSession:null, stream:null, subbed:{}, publishing:false, subscribing:false, big:false };
+            pc:null, cfSession:null, stream:null, subbed:{}, publishing:false, subscribing:false, big:false,
+            speaking:false, micStream:null, renegotiating:false };
   var SFU_URL = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
   var ICE = { iceServers:[{ urls:'stun:stun.cloudflare.com:3478' }] };
 
@@ -36473,7 +36474,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(!el('stl-bar')){
       var bar=document.createElement('div'); bar.className='stl-bar'; bar.id='stl-bar';
       bar.innerHTML='<span class="stl-dot"></span><span id="stl-bar-txt">LIVE</span><button class="stl-bar-btn" id="stl-join">JOIN</button>';
-      document.body.appendChild(bar);
+      (document.getElementById('dcx-root')||document.body).appendChild(bar);
       el('stl-join').addEventListener('click', join);
     }
     /* GO LIVE button: footer of the MEMBERS column */
@@ -36586,6 +36587,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var inRoom = !!(S.live && S.joined) && (!S.live.channel_id || curChan()===S.live.channel_id);
     if(dock) dock.className='stl-dock'+(inRoom?' show':'')+(S.min?' min':'')+(S.big?' big':'');
     if(S.joined && S.live && S.live.cf_session_id && !isAdmin() && !S.subscribing && !S.pc){ startWatch(); }
+    if(S.joined && S.live){
+      var mp=myPart();
+      if(mp && mp.role==='speaker' && !S.speaking && !isAdmin()) startSpeak();
+      if(mp && mp.role!=='speaker' && S.speaking) stopSpeak();
+      subSpeakers();
+    }
     var dt=el('stl-dock-title');
     if(dt&&S.live){
       dt.textContent=(S.live.title||'Live')+' \u00b7 '+S.parts.length+' in room';
@@ -36703,6 +36710,40 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .catch(function(){});
   }
   function goLive(){ if(isAdmin() && !S.live) openName(false); }
+  /* notify every eligible member that the session has started */
+  function pushGoLive(title, aud){
+    var c=sb(), u=me(); if(!c||!u) return;
+    var allow=_audList(aud);
+    c.rpc('st_members').then(function(r){
+      var rows=(r&&r.data)||[]; var ids=[];
+      rows.forEach(function(x){
+        var id=x.id||x.user_id||x.uid; if(!id || id===u.id) return;
+        var pl=(x.plan||'').toLowerCase();
+        var paid=(x.is_paid===true||x.is_paid==='true');
+        var tier=(pl==='comp')?'comp':((paid&&pl)?pl:'trial');
+        if(tier==='comp' || allow.indexOf(tier)>-1) ids.push(id);
+      });
+      if(!ids.length) return;
+      return c.functions.invoke('send-push_edge-function', {
+        body:{
+          userIds: ids,
+          title: '\uD83D\uDD34 ' + (myNameSafe()||'Nestor') + ' is live',
+          body: title || 'London Session',
+          url: '/#community'
+        }
+      });
+    }).then(function(){}, function(e){ try{ console.warn('go-live push failed', e); }catch(_){} });
+  }
+  function _audList(a){
+    var s=String(a||'mentorship,bundle');
+    if(s==='everyone') return ['mentorship','bundle','premium','trial'];
+    if(s==='members')  return ['mentorship','bundle'];
+    return s.split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+  }
+  function myNameSafe(){
+    try{ var u=me(); var w=u&&S.ppl[u.id]; return (w&&w.name)||'Nestor'; }catch(e){ return 'Nestor'; }
+  }
+
   function startLive(title, cid, aud){
     var c=sb(), u=me(); if(!c||!u||!isAdmin()) return;
     c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session'), channel_id: (cid||curChan()), audience: (aud||'members') }).select().single()
@@ -36711,7 +36752,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         S.live=r.data;
         return c.from('live_participants').insert({ session_id:S.live.id, user_id:u.id, role:'host' });
       })
-      .then(function(){ if(S.live){ S.joined=true; if(S.live.channel_id) gotoChan(S.live.channel_id); openStage(); startShare(); } return loadLive(); })
+      .then(function(){ if(S.live){ S.joined=true; if(S.live.channel_id) gotoChan(S.live.channel_id); openStage(); startShare(); pushGoLive(title, aud); } return loadLive(); })
       .catch(function(){ toast('Go live failed'); });
   }
   function endLive(){
@@ -36866,7 +36907,84 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
   }
 
+  /* ---------- promoted speaker: publish mic ---------- */
+  function startSpeak(){
+    if(S.speaking || !S.live || isAdmin() || !S.pc) return;
+    S.speaking=true;
+    navigator.mediaDevices.getUserMedia({ audio:true }).then(function(ms){
+      S.micStream=ms;
+      var track=ms.getAudioTracks()[0];
+      var tx=S.pc.addTransceiver(track, { direction:'sendonly' });
+      return S.pc.createOffer().then(function(o){ return S.pc.setLocalDescription(o); })
+        .then(function(){ return iceDone(S.pc); })
+        .then(function(){
+          return sfu('publish', {
+            sessionId: S.cfSession,
+            liveSessionId: S.live.id,
+            sessionDescription: { sdp:S.pc.localDescription.sdp, type:'offer' },
+            tracks: [{ location:'local', mid:String(tx.mid), trackName:'spk' }]
+          });
+        });
+    }).then(function(r){
+      if(!r || r.error) throw new Error((r&&r.error)||'speak failed');
+      if(r.sessionDescription) return S.pc.setRemoteDescription(r.sessionDescription);
+    }).then(function(){
+      var c=sb(), u=me();
+      return c.from('live_participants')
+        .update({ cf_session_id:S.cfSession, cf_audio_track:'spk' })
+        .eq('session_id',S.live.id).eq('user_id',u.id);
+    }).then(function(){ toast(_t('Your mic is live.','Tu micr\u00f3fono est\u00e1 activo.')); })
+    .catch(function(e){
+      S.speaking=false;
+      toast('Mic failed: '+(e&&e.message?e.message:e));
+      try{ if(S.micStream) S.micStream.getTracks().forEach(function(x){ x.stop(); }); }catch(_){}
+    });
+  }
+  function stopSpeak(){
+    try{ if(S.micStream) S.micStream.getTracks().forEach(function(x){ x.stop(); }); }catch(e){}
+    S.micStream=null; S.speaking=false;
+    var c=sb(), u=me();
+    if(c&&u&&S.live){
+      c.from('live_participants').update({ cf_audio_track:null })
+        .eq('session_id',S.live.id).eq('user_id',u.id).then(function(){}, function(){});
+    }
+  }
+
+  /* ---------- pull every speaker's audio into my session ---------- */
+  function subSpeakers(){
+    if(!S.pc || !S.cfSession || !S.live || S.renegotiating) return;
+    var u=me(); if(!u) return;
+    var want=S.parts.filter(function(p){
+      return p.user_id!==u.id && p.role==='speaker' && p.cf_session_id && p.cf_audio_track && !S.subbed[p.user_id];
+    });
+    if(!want.length) return;
+    S.renegotiating=true;
+    var tracks=want.map(function(p){
+      return { location:'remote', sessionId:p.cf_session_id, trackName:p.cf_audio_track };
+    });
+    sfu('subscribe', { sessionId:S.cfSession, tracks:tracks }).then(function(r){
+      if(!r || r.error) throw new Error((r&&r.error)||'sub failed');
+      want.forEach(function(p){ S.subbed[p.user_id]=true; });
+      if(!r.sessionDescription){ S.renegotiating=false; return; }
+      return S.pc.setRemoteDescription(r.sessionDescription)
+        .then(function(){ return S.pc.createAnswer(); })
+        .then(function(a){ return S.pc.setLocalDescription(a); })
+        .then(function(){ return iceDone(S.pc); })
+        .then(function(){
+          return sfu('renegotiate', {
+            sessionId:S.cfSession,
+            sessionDescription:{ sdp:S.pc.localDescription.sdp, type:'answer' }
+          });
+        }).then(function(){ S.renegotiating=false; });
+    }).catch(function(e){
+      S.renegotiating=false;
+      try{ console.warn('[sfu] speaker sub failed', e); }catch(_){}
+    });
+  }
+
   function stopMedia(){
+    try{ if(S.micStream) S.micStream.getTracks().forEach(function(x){ x.stop(); }); }catch(e){}
+    S.micStream=null; S.speaking=false; S.renegotiating=false;
     try{ if(S.stream) S.stream.getTracks().forEach(function(x){ x.stop(); }); }catch(e){}
     try{ if(S.pc) S.pc.close(); }catch(e){}
     S.pc=null; S.stream=null; S.cfSession=null; S.publishing=false; S.subscribing=false; S.subbed={};
