@@ -36216,10 +36216,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stl-dot{width:8px;height:8px;border-radius:50%;background:#f472b6;animation:stlPulse 1.4s infinite;}
 @keyframes stlPulse{0%,100%{opacity:1;}50%{opacity:.25;}}
 .stl-bar-btn{background:#f472b6;color:#0c0c0c;border:none;border-radius:6px;padding:5px 12px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.04em;}
-.stl-golive{display:none;width:100%;background:#f472b6;color:#0c0c0c;border:none;border-radius:8px;padding:10px 12px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.06em;}
+.stl-golive{display:none;width:100%;background:transparent;color:#d1d5db;border:1px solid #2f2f2f;border-radius:8px;padding:10px 7px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.06em;line-height:1.25;transition:background .15s,color .15s,border-color .15s;}
+.stl-golive:hover{background:#f472b6;color:#0c0c0c;border-color:#f472b6;}
 .stl-golive.show{display:block;}
-.stl-golive.leave{background:#1f1f1f;color:#fca5a5;border:1px solid #7f1d1d;}
-.stl-mfoot{flex:0 0 auto;padding:10px;border-top:1px solid #262626;background:#141414;}
+.stl-golive.leave{color:#fca5a5;border-color:#4a1d1d;}
+.stl-golive.leave:hover{background:#7f1d1d;color:#fff;border-color:#7f1d1d;}
+.stl-mfoot{flex:none;margin:0 10px 10px;padding:6px 8px;background:#171717;border-radius:10px;display:flex;align-items:center;}
 .stl-nm{position:fixed;inset:0;z-index:9600;background:rgba(0,0,0,.7);display:none;align-items:center;justify-content:center;}
 .stl-nm.show{display:flex;}
 .stl-nmc{background:#141414;border:1px solid #2a2a2a;border-radius:14px;padding:20px;width:min(360px,92vw);box-shadow:0 20px 60px rgba(0,0,0,.6);}
@@ -36280,6 +36282,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var S = { live:null, parts:[], joined:false, ch:null, pollT:null, user:null };
 
   function el(id){ return document.getElementById(id); }
+  function curChan(){ var a=document.querySelector('.dcx-chan.active'); return a?a.getAttribute('data-cid'):null; }
+  function gotoChan(cid){ if(!cid) return; var e=document.querySelector('.dcx-chan[data-cid="'+cid+'"]'); if(e) e.click(); }
   function toast(m){ try{ if(window.showToast) window.showToast(m); }catch(e){} }
   function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
 
@@ -36367,7 +36371,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(txt&&S.live) txt.textContent='LIVE \u00b7 '+esc(S.live.title||'Live Session')+' \u00b7 '+S.parts.length+' watching';
     }
     var dock=el('stl-dock');
-    if(dock) dock.className='stl-dock'+((S.live&&S.joined)?' show':'');
+    var inRoom = !!(S.live && S.joined) && (!S.live.channel_id || curChan()===S.live.channel_id);
+    if(dock) dock.className='stl-dock'+(inRoom?' show':'');
     var dt=el('stl-dock-title');
     if(dt&&S.live){
       dt.textContent=(S.live.title||'Live')+' \u00b7 '+S.parts.length+' in room';
@@ -36435,13 +36440,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function goLive(){ if(isAdmin() && !S.live) openName(false); }
   function startLive(title){
     var c=sb(), u=me(); if(!c||!u||!isAdmin()) return;
-    c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session') }).select().single()
+    c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session'), channel_id: curChan() }).select().single()
       .then(function(r){
         if(r.error){ toast('Could not go live: '+r.error.message); return null; }
         S.live=r.data;
         return c.from('live_participants').insert({ session_id:S.live.id, user_id:u.id, role:'host' });
       })
-      .then(function(){ if(S.live){ S.joined=true; openStage(); } return loadLive(); })
+      .then(function(){ if(S.live){ S.joined=true; if(S.live.channel_id) gotoChan(S.live.channel_id); openStage(); } return loadLive(); })
       .catch(function(){ toast('Go live failed'); });
   }
   function endLive(){
@@ -36452,6 +36457,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function join(){
     var c=sb(), u=me(); if(!c||!u||!S.live) return;
+    if(S.live.channel_id && curChan()!==S.live.channel_id) gotoChan(S.live.channel_id);
     c.from('live_participants').upsert({ session_id:S.live.id, user_id:u.id, role:(isAdmin()?'host':'listener') }, { onConflict:'session_id,user_id' })
       .then(function(r){
         if(r&&r.error){ toast(String(r.error.message||'').indexOf('policy')>-1 ? 'Live sessions are for members.' : 'Could not join'); return null; }
