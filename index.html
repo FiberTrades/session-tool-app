@@ -36216,7 +36216,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stl-dot{width:8px;height:8px;border-radius:50%;background:#f472b6;animation:stlPulse 1.4s infinite;}
 @keyframes stlPulse{0%,100%{opacity:1;}50%{opacity:.25;}}
 .stl-bar-btn{background:#f472b6;color:#0c0c0c;border:none;border-radius:6px;padding:5px 12px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.04em;}
-.stl-golive{display:none;box-sizing:border-box;width:100%;height:36px;background:transparent;color:#c9ced6;border:none;border-radius:8px;padding:0 7px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.06em;line-height:1.25;transition:color .15s;}
+.stl-golive{display:none;box-sizing:border-box;width:100%;height:36px;background:transparent;color:#c9ced6;border:none;border-radius:8px;padding:0 7px;font-family:'DM Mono',monospace;font-size:12.5px;font-weight:700;cursor:pointer;letter-spacing:.07em;line-height:1.25;transition:color .15s;}
+.stl-glyph{display:inline-block;width:9px;height:9px;background:currentColor;margin-right:8px;flex:none;}
+.stl-glyph.dot{border-radius:50%;}
+.stl-glyph.sq{border-radius:1px;}
 .stl-golive.show{display:flex;align-items:center;justify-content:center;}
 .stl-golive.leave{color:#c99;}
 .stl-mfoot{flex:none;box-sizing:border-box;min-height:48px;margin:0 10px 10px;padding:6px 8px;background:#171717;border-radius:10px;display:flex;align-items:center;cursor:pointer;transition:background .15s;}
@@ -36344,7 +36347,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         '<div class="stl-nmt" id="stl-nm-title">Name your session</div>'+
         '<div class="stl-nms">Members will see this on the LIVE banner.</div>'+
         '<input class="stl-nmi" id="stl-nm-input" maxlength="60" placeholder="London Session">'+
-        '<div id="stl-nm-chwrap" style="margin-top:10px;"><div class="stl-nms" style="margin:0 0 6px;">Broadcast in channel</div><select class="stl-nmi" id="stl-nm-chan"></select></div>'+
+        '<div id="stl-nm-chwrap" style="margin-top:10px;"><div class="stl-nms" style="margin:0 0 6px;">Broadcast in channel</div><select class="stl-nmi" id="stl-nm-chan"></select>'+
+          '<div class="stl-nms" style="margin:10px 0 6px;">Who can join</div><select class="stl-nmi" id="stl-nm-aud">'+
+            '<option value="members">All full members</option>'+
+            '<option value="mentorship">Mentoring members only</option>'+
+            '<option value="everyone">Everyone (incl. free / trial)</option>'+
+          '</select></div>'+
         '<div class="stl-nmb"><button id="stl-nm-cancel">Cancel</button><button class="go" id="stl-nm-go">Go live</button></div>'+
       '</div>';
       document.body.appendChild(nm);
@@ -36389,19 +36397,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function myPart(){ var u=me(); if(!u) return null; for(var i=0;i<S.parts.length;i++){ if(S.parts[i].user_id===u.id) return S.parts[i]; } return null; }
   function myRole(){ var p=myPart(); return p?p.role:null; }
 
+  function eligible(){
+    if(isAdmin()) return true;
+    if(!S.live) return false;
+    var a=S.live.audience||'members';
+    if(a==='everyone') return true;
+    var tier='limited';
+    try{ if(typeof window.__stPlan==='function'){ var pl=window.__stPlan(); if(pl&&pl.loaded&&pl.paid) tier=pl.plan||'limited'; } }catch(e){}
+    if(a==='mentorship') return tier==='mentorship'||tier==='comp';
+    return tier==='bundle'||tier==='mentorship'||tier==='comp';
+  }
   function render(){
     mount();
     var golive=el('stl-golive');
     if(golive){
-      var show=false, label='\u25CF GO LIVE', cls='stl-golive';
-      if(isAdmin()){ show=true; if(S.live){ label='\u25A0 END SESSION'; cls+=' leave'; } }
-      else if(S.live){ show=true; label = S.joined ? 'LEAVE SESSION' : '\u25CF JOIN LIVE'; if(S.joined) cls+=' leave'; }
-      golive.textContent=label;
+      var show=false, label='<i class="stl-glyph dot"></i>GO LIVE', cls='stl-golive';
+      if(isAdmin()){ show=true; if(S.live){ label='<i class="stl-glyph sq"></i>END SESSION'; cls+=' leave'; } }
+      else if(S.live && eligible()){
+        show=true;
+        label = S.joined ? '<i class="stl-glyph sq"></i>LEAVE SESSION' : '<i class="stl-glyph dot"></i>JOIN LIVE';
+        if(S.joined) cls+=' leave';
+      }
+      golive.innerHTML=label;
       golive.className=cls+(show?' show':'');
     }
     var bar=el('stl-bar');
     if(bar){
-      bar.className='stl-bar'+((S.live&&!S.joined)?' show':'');
+      bar.className='stl-bar'+((S.live&&!S.joined&&eligible())?' show':'');
       var txt=el('stl-bar-txt');
       if(txt&&S.live) txt.textContent='LIVE \u00b7 '+esc(S.live.title||'Live Session')+' \u00b7 '+S.parts.length+' watching';
     }
@@ -36479,10 +36501,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function submitName(){
     var i=el('stl-nm-input'); if(!i) return;
     var name=(i.value||'').trim() || 'London Session';
-    var sel=el('stl-nm-chan');
+    var sel=el('stl-nm-chan'), aud=el('stl-nm-aud');
     var cid=(!S.renaming && sel && sel.value) ? sel.value : curChan();
+    var au=(!S.renaming && aud && aud.value) ? aud.value : 'members';
     var nm=el('stl-nm'); if(nm) nm.classList.remove('show');
-    if(S.renaming){ renameLive(name); } else { startLive(name, cid); }
+    if(S.renaming){ renameLive(name); } else { startLive(name, cid, au); }
   }
   function renameLive(name){
     var c=sb(); if(!c||!S.live||!isAdmin()) return;
@@ -36491,9 +36514,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .catch(function(){});
   }
   function goLive(){ if(isAdmin() && !S.live) openName(false); }
-  function startLive(title, cid){
+  function startLive(title, cid, aud){
     var c=sb(), u=me(); if(!c||!u||!isAdmin()) return;
-    c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session'), channel_id: (cid||curChan()) }).select().single()
+    c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session'), channel_id: (cid||curChan()), audience: (aud||'members') }).select().single()
       .then(function(r){
         if(r.error){ toast('Could not go live: '+r.error.message); return null; }
         S.live=r.data;
