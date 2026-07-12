@@ -36229,7 +36229,16 @@
       spot.style.display='none';
       tip.style.left='50%'; tip.style.transform='translateX(-50%)'; tip.style.top='auto'; tip.style.bottom='40px';
     }
-    tip.style.left='50%'; tip.style.top='50%'; tip.style.bottom='auto'; tip.style.transform='translate(-50%,-50%)';
+    /* phones: park the tip at the bottom so it never sits on top of what it points at.
+       desktop keeps the fixed centre position. */
+    var _mob = (window.innerWidth||document.documentElement.clientWidth||0) <= 760;
+    if(_mob){
+      tip.style.left='50%'; tip.style.top='auto';
+      tip.style.bottom='calc(16px + env(safe-area-inset-bottom,0px))';
+      tip.style.transform='translateX(-50%)';
+    } else {
+      tip.style.left='50%'; tip.style.top='50%'; tip.style.bottom='auto'; tip.style.transform='translate(-50%,-50%)';
+    }
     tip.querySelector('.st-tour-t').textContent=s.t;
     tip.querySelector('.st-tour-b').textContent=s.b;
     tip.querySelector('.st-tour-count').textContent=(idx+1)+' / '+steps.length;
@@ -36288,8 +36297,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 <style>
 .stl-bar{position:fixed;left:50%;transform:translateX(-50%);top:0;z-index:9000;display:none;align-items:center;gap:12px;background:#1a1a1a;border:1px solid #f472b6;border-top:none;border-radius:0 0 12px 12px;padding:8px 16px;box-shadow:0 6px 24px rgba(0,0,0,.5);font-family:'DM Mono',monospace;font-size:12px;color:#fff;}
 .stl-bar.show{display:flex;}
+/* LIVE banner pinned inside the channel the chat will be archived to */
+.stl-cbanner{display:none;align-items:center;gap:10px;flex:0 0 auto;margin:10px 16px 0;padding:10px 12px;background:linear-gradient(90deg,rgba(244,114,182,.16),rgba(244,114,182,.03));border:1px solid #f472b6;border-radius:10px;font-family:'DM Mono',monospace;font-size:12px;color:#fff;}
+.stl-cbanner.show{display:flex;}
+.stl-cbanner .stl-cb-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;letter-spacing:.04em;}
+.stl-cbanner .stl-bar-btn{flex:none;}
 .stl-dot{width:8px;height:8px;border-radius:50%;background:#f472b6;animation:stlPulse 1.4s infinite;}
 @keyframes stlPulse{0%,100%{opacity:1;}50%{opacity:.25;}}
+.stl-bar-x{background:none;border:none;color:#8b8b8b;cursor:pointer;font-size:15px;line-height:1;padding:2px 0 2px 2px;flex:none;transition:color .15s;}
+.stl-bar-x:hover{color:#fff;}
 .stl-bar-btn{background:#f472b6;color:#0c0c0c;border:none;border-radius:6px;padding:5px 12px;font-family:'DM Mono',monospace;font-size:11px;font-weight:600;cursor:pointer;letter-spacing:.04em;}
 .stl-golive{display:none;box-sizing:border-box;width:100%;height:36px;background:transparent;color:#c9ced6;border:none;border-radius:8px;padding:0 7px;font-family:'DM Mono',monospace;font-size:12.5px;font-weight:700;cursor:pointer;letter-spacing:.07em;line-height:1.25;transition:color .15s;}
 /* group-call control bar: identical chrome to the 1:1 call buttons, not dependent on injectCss order */
@@ -36434,7 +36450,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stl-btn:hover{border-color:#f472b6;}
 .stl-btn.danger{border-color:#7f1d1d;color:#fca5a5;}
 .stl-btn.on{background:#f472b6;color:#0c0c0c;border-color:#f472b6;font-weight:600;}
-@media(max-width:760px){.stl-side{display:none;}.stl-golive{bottom:120px;right:14px;}}
+@media(max-width:760px){.stl-side{display:none;}.stl-golive{bottom:120px;right:14px;}
+  /* phones: the LIVE bar spans the screen instead of shrink-wrapping the text */
+  .stl-bar{left:0;right:0;transform:none;width:100%;box-sizing:border-box;gap:9px;
+           padding:8px 12px;padding-top:calc(8px + env(safe-area-inset-top,0px));
+           border-left:none;border-right:none;border-radius:0 0 12px 12px;}
+  .stl-bar #stl-bar-txt{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+  .stl-bar .stl-bar-btn{flex:none;padding:6px 14px;}
+  .stl-cbanner{margin:10px 10px 0;padding:9px 10px;gap:8px;}
+}
 </style>
 <script>
 /* ============================================================
@@ -36543,18 +36567,39 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     /* top LIVE banner (for members not yet joined) */
     if(!el('stl-bar')){
       var bar=document.createElement('div'); bar.className='stl-bar'; bar.id='stl-bar';
-      bar.innerHTML='<span class="stl-dot"></span><span id="stl-bar-txt">LIVE</span><button class="stl-bar-btn" id="stl-join">JOIN</button>';
+      bar.innerHTML='<span class="stl-dot"></span><span id="stl-bar-txt">LIVE</span>'+
+                    '<button class="stl-bar-btn" id="stl-join">'+_t('JOIN','UNIRSE')+'</button>'+
+                    '<button class="stl-bar-x" id="stl-bar-x" title="'+_t('Dismiss','Descartar')+'" aria-label="'+_t('Dismiss','Descartar')+'">\u2715</button>';
       (document.getElementById('dcx-root')||document.body).appendChild(bar);
       el('stl-join').addEventListener('click', join);
+      el('stl-bar-x').addEventListener('click', dismissBar);
     }
-    /* GO LIVE button: footer of the MEMBERS column */
+    /* GO LIVE / END SESSION button: footer of the MEMBERS column. HOST ONLY -
+       members join from the in-channel banner or the top bar, never from here. */
     var mem=document.querySelector('.dcx-members');
-    if(mem && !el('stl-mfoot')){
+    if(mem && isAdmin() && !el('stl-mfoot')){
       var foot=document.createElement('div'); foot.className='stl-mfoot'; foot.id='stl-mfoot';
       var go=document.createElement('button'); go.className='stl-golive'; go.id='stl-golive';
       go.textContent='\u25CF GO LIVE';
-      go.addEventListener('click', function(){ if(S.live && isAdmin()) endLive(); else if(!S.live) goLive(); else leave(); });
+      go.addEventListener('click', function(){ if(S.live && isAdmin()) endLive(); else if(!S.live) goLive(); });
       foot.appendChild(go); mem.appendChild(foot);
+    }
+    /* LIVE banner inside the archive channel */
+    var mainEl=document.querySelector('.dcx-main');
+    if(mainEl && !el('stl-cbanner')){
+      var cb=document.createElement('div'); cb.className='stl-cbanner'; cb.id='stl-cbanner';
+      cb.innerHTML='<span class="stl-dot"></span><span class="stl-cb-txt" id="stl-cb-txt">LIVE</span>'+
+                   '<button class="stl-bar-btn" id="stl-cb-join">'+_t('JOIN','UNIRSE')+'</button>';
+      var msgs=document.getElementById('dcx-msgs');
+      if(msgs && msgs.parentNode===mainEl) mainEl.insertBefore(cb, msgs); else mainEl.appendChild(cb);
+      el('stl-cb-join').addEventListener('click', join);
+    }
+    /* channel switches do not re-run render(), so re-check the banner on any channel click */
+    if(!window.__stlChanHook){
+      window.__stlChanHook=true;
+      document.addEventListener('click', function(e){
+        if(e.target && e.target.closest && e.target.closest('.dcx-chan')) setTimeout(syncCBanner, 60);
+      }, true);
     }
     /* name / rename modal */
     if(!el('stl-nm')){
@@ -36582,19 +36627,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       el('stl-nm-input').addEventListener('keydown', function(e){ if(e.key==='Enter') submitName(); });
     }
     /* "save the chat?" prompt shown when ending a session that has no archive channel */
-    if(!el('stl-sv')){
-      var sv=document.createElement('div'); sv.className='stl-nm'; sv.id='stl-sv';
-      sv.innerHTML='<div class="stl-nmc">'+
-        '<div class="stl-nmt">'+_t('Save the session chat?','\u00bfGuardar el chat de la sesi\u00f3n?')+'</div>'+
-        '<div class="stl-nms" id="stl-sv-sub">'+_t('Choose a channel to keep the messages in.','Elige un canal donde guardar los mensajes.')+'</div>'+
-        '<select class="stl-nmi" id="stl-sv-chan"></select>'+
-        '<div class="stl-nmb">'+
-          '<button id="stl-sv-no">'+_t('Don\u2019t save','No guardar')+'</button>'+
-          '<button class="go" id="stl-sv-yes">'+_t('Save','Guardar')+'</button>'+
-        '</div>'+
-      '</div>';
-      document.body.appendChild(sv);
-    }
+    /* no end-of-session save prompt: the archive channel is picked (and required) at go-live */
     /* video stage DOCKED above the existing chat (chat keeps emoji/gif/files/voice) */
     /* floating window - same look & behaviour as the 1:1 call window */
     if(!el('stl-call')){
@@ -36690,25 +36723,52 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(tier==='comp') return true;
     return allow.indexOf(tier)>-1;
   }
+  /* dismissing the top bar is remembered per live session id, so the next
+     go-live shows it again. The in-channel banner is never dismissed. */
+  var BARX='st_live_bar_x';
+  function barDismissed(){
+    if(!S.live) return false;
+    if(S.barX && String(S.barX)===String(S.live.id)) return true;
+    try{ if(localStorage.getItem(BARX)===String(S.live.id)){ S.barX=S.live.id; return true; } }catch(e){}
+    return false;
+  }
+  function dismissBar(){
+    if(!S.live) return;
+    S.barX=S.live.id;
+    try{ localStorage.setItem(BARX, String(S.live.id)); }catch(e){}
+    render();
+  }
+  /* the banner lives in the channel the host picked as the chat archive.
+     shown to eligible members who have not joined yet. */
+  function syncCBanner(){
+    var cb=el('stl-cbanner'); if(!cb) return;
+    var chan=S.live && S.live.archive_channel_id;
+    var on = !!(S.live && chan && !S.joined && eligible() && curChan()===String(chan));
+    cb.className='stl-cbanner'+(on?' show':'');
+    if(on){
+      var t=el('stl-cb-txt');
+      if(t) t.textContent='LIVE \u00b7 '+esc(S.live.title||'Live Session')+' \u00b7 '+S.parts.length+' '+_t('watching','viendo');
+    }
+  }
   function render(){
     mount();
     var golive=el('stl-golive');
     if(golive){
-      var show=false, label='<i class="stl-glyph dot"></i>GO LIVE', cls='stl-golive';
-      if(isAdmin()){ show=true; if(S.live){ label='<i class="stl-glyph sq"></i>END SESSION'; cls+=' leave'; } }
-      else if(S.live && eligible()){
-        show=true;
-        label = S.joined ? '<i class="stl-glyph sq"></i>LEAVE SESSION' : '<i class="stl-glyph dot"></i>JOIN LIVE';
-        if(S.joined) cls+=' leave';
-      }
+      /* host only - members never see a button here */
+      var show=isAdmin(), label='<i class="stl-glyph dot"></i>GO LIVE', cls='stl-golive';
+      if(isAdmin() && S.live){ label='<i class="stl-glyph sq"></i>END SESSION'; cls+=' leave'; }
       golive.innerHTML=label;
       golive.className=cls+(show?' show':'');
       var mf=el('stl-mfoot');
-      if(mf) mf.className='stl-mfoot'+((cls.indexOf('leave')>-1)?' danger':'');
+      if(mf){
+        mf.className='stl-mfoot'+((cls.indexOf('leave')>-1)?' danger':'');
+        mf.style.display = show ? 'flex' : 'none';
+      }
     }
+    syncCBanner();
     var bar=el('stl-bar');
     if(bar){
-      bar.className='stl-bar'+((S.live&&!S.joined&&eligible())?' show':'');
+      bar.className='stl-bar'+((S.live&&!S.joined&&eligible()&&!barDismissed())?' show':'');
       var txt=el('stl-bar-txt');
       if(txt&&S.live) txt.textContent='LIVE \u00b7 '+esc(S.live.title||'Live Session')+' \u00b7 '+S.parts.length+' watching';
     }
@@ -36930,7 +36990,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(wrap) wrap.style.display = isRename ? 'none' : 'block';
     var arch=el('stl-nm-arch');
     if(arch && !isRename){
-      var opts='<option value="">'+_t('Don\u2019t save','No guardar')+'</option>';
+      /* required: the chat is always archived, and the banner lives in this channel */
+      var opts='<option value="" disabled selected>'+_t('Choose a channel\u2026','Elige un canal\u2026')+'</option>';
       Array.prototype.forEach.call(document.querySelectorAll('.dcx-chan[data-cid]'), function(e){
         var cid=e.getAttribute('data-cid');
         var nmx=(e.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);
@@ -36956,6 +37017,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var name=(i.value||'').trim() || 'London Session';
     var aud=el('stl-nm-aud'), arch=el('stl-nm-arch');
     var acid=(!S.renaming && arch && arch.value) ? arch.value : null;
+    if(!S.renaming && !acid){
+      toast(_t('Pick a channel to save the chat to.','Elige un canal donde guardar el chat.'));
+      try{ arch.focus(); }catch(e){}
+      return;   /* modal stays open */
+    }
     var tiers=[];
     if(aud){ Array.prototype.forEach.call(aud.querySelectorAll('input:checked'), function(b){ tiers.push(b.value); }); }
     if(!tiers.length) tiers=['mentorship','bundle'];
@@ -37015,42 +37081,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .then(function(){ if(S.live){ S.joined=true; openStage(); startShare(); pushGoLive(title, aud); watchMsgs(); loadMsgs(); watchDraw(); } return loadLive(); })
       .catch(function(){ toast('Go live failed'); });
   }
-  /* ask where to save, then finish ending the session */
-  function askSave(){
-    return new Promise(function(done){
-      var sv=el('stl-sv'), sel=el('stl-sv-chan');
-      if(!sv||!sel){ done(); return; }
-      var opts='';
-      Array.prototype.forEach.call(document.querySelectorAll('.dcx-chan[data-cid]'), function(e){
-        var cid=e.getAttribute('data-cid');
-        var nmx=(e.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);
-        opts+='<option value="'+cid+'">'+esc(nmx)+'</option>';
-      });
-      sel.innerHTML=opts;
-      var sub=el('stl-sv-sub');
-      if(sub) sub.textContent=_t('This session has '+(S.msgs||[]).length+' messages. Choose a channel to keep them in.',
-                                 'Esta sesi\u00f3n tiene '+(S.msgs||[]).length+' mensajes. Elige un canal donde guardarlos.');
-      sv.classList.add('show');
-      function close(save){
-        sv.classList.remove('show');
-        el('stl-sv-yes').onclick=null; el('stl-sv-no').onclick=null;
-        if(save && sel.value && S.live){ S.live.archive_channel_id=sel.value; }
-        done();
-      }
-      el('stl-sv-yes').onclick=function(){ close(true); };
-      el('stl-sv-no').onclick=function(){ close(false); };
-    });
-  }
-
   function endLive(){
     var c=sb(); if(!c||!S.live||!isAdmin()) return;
-    var id=S.live.id;
-    /* forgot to pick a channel at the start? offer it now, before we tear down */
-    if(!S.live.archive_channel_id && (S.msgs||[]).length){
-      askSave().then(function(){ finishEnd(id); });
-      return;
-    }
-    finishEnd(id);
+    /* the archive channel was chosen at go-live, so nothing to ask here */
+    finishEnd(S.live.id);
   }
   function finishEnd(id){
     var c=sb(); if(!c||!S.live) return;
