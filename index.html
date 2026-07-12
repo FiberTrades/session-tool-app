@@ -36436,7 +36436,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var S = { live:null, parts:[], joined:false, ch:null, pollT:null, user:null, ppl:{}, min:false,
             pc:null, cfSession:null, stream:null, subbed:{}, publishing:false, subscribing:false, big:false,
             speaking:false, micStream:null, renegotiating:false, muted:false, msgs:[], mch:null,
-            chatOpen:false, unread:0, drawing:false, paused:false, col:'#ff4d97', dch:null, strokes:[] };
+            chatOpen:false, unread:0, drawing:false, paused:false, col:'#ff4d97', dch:null, strokes:[], redo:[] };
   var SFU_URL = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
   var ICE = { iceServers:[{ urls:'stun:stun.cloudflare.com:3478' }] };
 
@@ -36565,6 +36565,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       nm.addEventListener('click', function(e){ if(e.target===nm) nm.classList.remove('show'); });
       el('stl-nm-go').addEventListener('click', submitName);
       el('stl-nm-input').addEventListener('keydown', function(e){ if(e.key==='Enter') submitName(); });
+    }
+    /* "save the chat?" prompt shown when ending a session that has no archive channel */
+    if(!el('stl-sv')){
+      var sv=document.createElement('div'); sv.className='stl-nm'; sv.id='stl-sv';
+      sv.innerHTML='<div class="stl-nmc">'+
+        '<div class="stl-nmt">'+_t('Save the session chat?','\u00bfGuardar el chat de la sesi\u00f3n?')+'</div>'+
+        '<div class="stl-nms" id="stl-sv-sub">'+_t('Choose a channel to keep the messages in.','Elige un canal donde guardar los mensajes.')+'</div>'+
+        '<select class="stl-nmi" id="stl-sv-chan"></select>'+
+        '<div class="stl-nmb">'+
+          '<button id="stl-sv-no">'+_t('Don\u2019t save','No guardar')+'</button>'+
+          '<button class="go" id="stl-sv-yes">'+_t('Save','Guardar')+'</button>'+
+        '</div>'+
+      '</div>';
+      document.body.appendChild(sv);
     }
     /* video stage DOCKED above the existing chat (chat keeps emoji/gif/files/voice) */
     /* floating window - same look & behaviour as the 1:1 call window */
@@ -36977,9 +36991,45 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .then(function(){ if(S.live){ S.joined=true; openStage(); startShare(); pushGoLive(title, aud); watchMsgs(); loadMsgs(); watchDraw(); } return loadLive(); })
       .catch(function(){ toast('Go live failed'); });
   }
+  /* ask where to save, then finish ending the session */
+  function askSave(){
+    return new Promise(function(done){
+      var sv=el('stl-sv'), sel=el('stl-sv-chan');
+      if(!sv||!sel){ done(); return; }
+      var opts='';
+      Array.prototype.forEach.call(document.querySelectorAll('.dcx-chan[data-cid]'), function(e){
+        var cid=e.getAttribute('data-cid');
+        var nmx=(e.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);
+        opts+='<option value="'+cid+'">'+esc(nmx)+'</option>';
+      });
+      sel.innerHTML=opts;
+      var sub=el('stl-sv-sub');
+      if(sub) sub.textContent=_t('This session has '+(S.msgs||[]).length+' messages. Choose a channel to keep them in.',
+                                 'Esta sesi\u00f3n tiene '+(S.msgs||[]).length+' mensajes. Elige un canal donde guardarlos.');
+      sv.classList.add('show');
+      function close(save){
+        sv.classList.remove('show');
+        el('stl-sv-yes').onclick=null; el('stl-sv-no').onclick=null;
+        if(save && sel.value && S.live){ S.live.archive_channel_id=sel.value; }
+        done();
+      }
+      el('stl-sv-yes').onclick=function(){ close(true); };
+      el('stl-sv-no').onclick=function(){ close(false); };
+    });
+  }
+
   function endLive(){
     var c=sb(); if(!c||!S.live||!isAdmin()) return;
     var id=S.live.id;
+    /* forgot to pick a channel at the start? offer it now, before we tear down */
+    if(!S.live.archive_channel_id && (S.msgs||[]).length){
+      askSave().then(function(){ finishEnd(id); });
+      return;
+    }
+    finishEnd(id);
+  }
+  function finishEnd(id){
+    var c=sb(); if(!c||!S.live) return;
     /* save the chat to the chosen channel before we tear the room down */
     archiveChat()
       .catch(function(){})
@@ -37229,6 +37279,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   /* ---------------- draw on screen (broadcast, like the 1:1 calls) ---------------- */
   var _COLS=['#ff4d97','#ff3b30','#ffcc00','#34c759','#0a84ff','#ffffff','#111111'];
+  var _SVGu='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/></svg>';
+  var _SVGr='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h1"/></svg>';
+  var _SVGc='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
   function buildPalette(){
     var pal=el('stl-pal'); if(!pal) return;
     var h='';
@@ -37236,8 +37289,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       h+='<button class="ft-sw'+(i===0?' sel':'')+'" data-c="'+c+'" style="background:'+c+'"></button>';
     });
     h+='<span class="ft-pal-sep"></span>'+
-       '<button class="ft-clr ft-ico" id="stl-undo" title="'+_t('Undo','Deshacer')+'">\u21B6</button>'+
-       '<button class="ft-clr ft-ico" id="stl-clr" title="'+_t('Clear all','Borrar todo')+'">\u2715</button>';
+       '<button class="ft-clr ft-ico" id="stl-undo" title="'+_t('Undo','Deshacer')+'">'+_SVGu+'</button>'+
+       '<button class="ft-clr ft-ico" id="stl-redo" title="'+_t('Redo','Rehacer')+'">'+_SVGr+'</button>'+
+       '<button class="ft-clr ft-ico" id="stl-clr" title="'+_t('Clear all','Borrar todo')+'">'+_SVGc+'</button>';
     pal.innerHTML=h;
     Array.prototype.forEach.call(pal.querySelectorAll('.ft-sw'), function(s){
       s.addEventListener('click', function(e){
@@ -37248,14 +37302,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       });
     });
     var cb=el('stl-clr');
-    if(cb) cb.addEventListener('click', function(e){ e.stopPropagation(); clearDraw(); S.strokes=[]; dsend({ t:'clr' }); });
+    if(cb) cb.addEventListener('click', function(e){ e.stopPropagation(); clearDraw(); S.strokes=[]; S.redo=[]; dsend({ t:'clr' }); });
     var ub=el('stl-undo');
     if(ub) ub.addEventListener('click', function(e){ e.stopPropagation(); undoDraw(); });
+    var rb=el('stl-redo');
+    if(rb) rb.addEventListener('click', function(e){ e.stopPropagation(); redoDraw(); });
   }
-  /* undo removes the last stroke and repaints for everyone */
+  /* undo / redo, repainted for everyone */
   function undoDraw(){
     if(!S.strokes || !S.strokes.length) return;
-    S.strokes.pop();
+    if(!S.redo) S.redo=[];
+    S.redo.push(S.strokes.pop());
+    repaint();
+    dsend({ t:'rp', s:S.strokes });
+  }
+  function redoDraw(){
+    if(!S.redo || !S.redo.length) return;
+    S.strokes.push(S.redo.pop());
     repaint();
     dsend({ t:'rp', s:S.strokes });
   }
@@ -37278,7 +37341,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var c=cv.getContext('2d'); c.clearRect(0,0,cv.width,cv.height);
   }
   /* strokes travel as 0-1 fractions so they land correctly on any window size */
-  function paint(a){
+  /* one segment (used while the pen is moving) */
+  function seg(a){
     var cv=el('stl-draw'); if(!cv) return;
     var c=dctx(); if(!c) return;
     c.strokeStyle=a.c||'#ff4d97'; c.lineWidth=3; c.lineCap='round'; c.lineJoin='round';
@@ -37287,10 +37351,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     c.lineTo(a.x1*cv.width, a.y1*cv.height);
     c.stroke();
   }
-  function stroke(a){
-    if(!S.strokes) S.strokes=[];
-    S.strokes.push(a);
-    paint(a);
+  /* a whole stroke = one pen-down..pen-up polyline. THIS is what undo removes. */
+  function paint(st){
+    var cv=el('stl-draw'); if(!cv||!st||!st.pts||st.pts.length<2) return;
+    var c=dctx(); if(!c) return;
+    c.strokeStyle=st.c||'#ff4d97'; c.lineWidth=3; c.lineCap='round'; c.lineJoin='round';
+    c.beginPath();
+    c.moveTo(st.pts[0].x*cv.width, st.pts[0].y*cv.height);
+    for(var i=1;i<st.pts.length;i++) c.lineTo(st.pts[i].x*cv.width, st.pts[i].y*cv.height);
+    c.stroke();
   }
   function dsend(p){
     if(!S.dch) return;
@@ -37303,30 +37372,40 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .on('broadcast', { event:'d' }, function(m){
         var p=m&&m.payload; if(!p) return;
         if(p.t==='clr'){ S.strokes=[]; clearDraw(); }
-        else if(p.t==='rp'){ S.strokes=p.s||[]; repaint(); }
-        else stroke(p);
+        else if(p.t==='rp'){ S.strokes=p.s||[]; repaint(); }   /* undo/redo -> repaint */
+        else seg(p);                                           /* live segment */
       })
       .subscribe();
   }
   function drawSetup(){
     var cv=el('stl-draw'); if(!cv || cv._wired) return;
     cv._wired=true;
-    var last=null;
+    var cur=null, last=null;
     cv.addEventListener('pointerdown', function(e){
       if(!S.drawing) return;
       var r=cv.getBoundingClientRect();
       last={ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height };
+      cur={ c:(S.col||_COLS[0]), pts:[last] };   /* start a NEW stroke */
       try{ cv.setPointerCapture(e.pointerId); }catch(_){}
     });
     cv.addEventListener('pointermove', function(e){
-      if(!S.drawing || !last) return;
+      if(!S.drawing || !cur || !last) return;
       var r=cv.getBoundingClientRect();
       var p={ x:(e.clientX-r.left)/r.width, y:(e.clientY-r.top)/r.height };
-      var a={ x0:last.x, y0:last.y, x1:p.x, y1:p.y, c:S.col||_COLS[0] };
-      stroke(a); dsend(a);
+      cur.pts.push(p);
+      var a={ x0:last.x, y0:last.y, x1:p.x, y1:p.y, c:cur.c };
+      seg(a); dsend(a);                          /* draw + broadcast the live segment */
       last=p;
     });
-    function up(e){ last=null; try{ cv.releasePointerCapture(e.pointerId); }catch(_){} }
+    function up(e){
+      if(cur && cur.pts.length>1){
+        if(!S.strokes) S.strokes=[];
+        S.strokes.push(cur);                     /* the finished stroke is ONE undo step */
+        S.redo=[];
+      }
+      cur=null; last=null;
+      try{ cv.releasePointerCapture(e.pointerId); }catch(_){}
+    }
     cv.addEventListener('pointerup', up);
     cv.addEventListener('pointercancel', up);
   }
