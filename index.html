@@ -1856,6 +1856,15 @@
   .series-dot.clickable { cursor: pointer; transition: opacity 200ms, transform 200ms; }
   .series-dot.clickable:hover { opacity: 0.78; transform: scale(1.06); }
   .history-list { margin-top: 32px; }
+  /* Series History: show 10, scroll for the rest. The header row lives INSIDE
+     #history-list, so it is pinned or it would scroll away with the data. */
+  #history-list.hist-capped { max-height: var(--hist-cap, 520px); overflow-y: auto; overscroll-behavior: contain; }
+  #history-list.hist-capped .history-row.headers { position: sticky; top: 0; z-index: 2; }
+  #history-list.hist-capped::-webkit-scrollbar { width: 8px; }
+  #history-list.hist-capped::-webkit-scrollbar-thumb { background: var(--border-2, #2a2a2a); border-radius: 4px; }
+  #history-list.hist-capped::-webkit-scrollbar-track { background: transparent; }
+  .hist-more { margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em;
+               text-transform: uppercase; color: var(--text-dim); text-align: center; }
   .history-row { display: grid; border-radius: var(--radius-chip); overflow: hidden; grid-template-columns: 40px 0.9fr 1.0fr 0.7fr 0.9fr 0.7fr 0.9fr 0.7fr 0.9fr; gap: 1px; background: var(--border-2); border: 1px solid var(--border-2); margin-bottom: 6px; }
   .history-cell .hist-sep { color: var(--text-dim); margin: 0 1px; }
   /* Series History (#history-list) — one row per completed series of 10, on a
@@ -13713,6 +13722,32 @@
       `;
       histWrap.appendChild(row);
     });
+    // Show ten series, then scroll for the rest. Measured from the rendered rows rather
+    // than a hardcoded pixel height, so it stays right if the row height ever changes.
+    try {
+      const CAP = 10;
+      const rows = histWrap.querySelectorAll('.history-row:not(.headers)');
+      histWrap.classList.remove('hist-capped');
+      histWrap.style.removeProperty('--hist-cap');
+      const oldMore = histWrap.parentNode && histWrap.parentNode.querySelector('.hist-more');
+      if (oldMore) oldMore.remove();
+      if (rows.length > CAP) {
+        const head = histWrap.querySelector('.history-row.headers');
+        let h = head ? head.getBoundingClientRect().height + 8 : 0;
+        for (let i = 0; i < CAP; i++) h += rows[i].getBoundingClientRect().height;
+        if (h > 0) {
+          histWrap.style.setProperty('--hist-cap', Math.round(h) + 'px');
+          histWrap.classList.add('hist-capped');
+          const more = document.createElement('div');
+          more.className = 'hist-more';
+          more.textContent = window._stT(
+            'Scroll for ' + (rows.length - CAP) + ' more',
+            (rows.length - CAP) + ' m\u00e1s \u2014 desplaza para ver'
+          );
+          histWrap.parentNode.insertBefore(more, histWrap.nextSibling);
+        }
+      }
+    } catch (e) {}
   }
   document.getElementById('stats-export').addEventListener('click', () => {
     // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
