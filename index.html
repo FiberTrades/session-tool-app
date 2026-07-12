@@ -36400,11 +36400,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 #stl-hands{position:absolute;top:-3px;right:-3px;min-width:16px;height:16px;border-radius:9px;background:#ff4d97;color:#000;font-size:10px;font-weight:700;display:none;align-items:center;justify-content:center;padding:0 4px;}
 #stl-hands.on{display:flex;}
 #stl-peopleb{position:relative;}
-/* popped out into its own OS window: the window IS the frame */
-body.stl-pipdoc{margin:0;background:#000;overflow:hidden;}
-body.stl-pipdoc #stl-call{position:static !important;width:100% !important;height:100vh !important;max-width:none !important;transform:none !important;left:auto !important;top:auto !important;border:none !important;border-radius:0 !important;display:flex !important;}
-body.stl-pipdoc #stl-call .ft-stage{border-radius:0 !important;}
-body.stl-pipdoc #stl-rz{display:none !important;}
 #stl-attach{position:absolute;bottom:52px;left:10px;background:#111214;border:1px solid #2b2d31;border-radius:8px;padding:6px;display:none;flex-direction:column;min-width:180px;z-index:22;box-shadow:0 12px 30px rgba(0,0,0,.5);}
 #stl-attach.open{display:flex;}
 #stl-attach button{display:flex;align-items:center;gap:12px;background:transparent;border:none;color:#dbdee1;padding:9px 10px;border-radius:6px;cursor:pointer;font-size:13px;font-family:inherit;text-align:left;white-space:nowrap;}
@@ -36576,7 +36571,20 @@ body.stl-pipdoc #stl-rz{display:none !important;}
   var _rcT=null, _giveT=null;
   function hasVideo(){
     var v=el('stl-video');
-    return !!(v && v.classList.contains('on') && v.srcObject && (v.readyState>0 || v.videoWidth>0));
+    if(!v || !v.srcObject) return false;
+    var vt=[];
+    try{ vt=v.srcObject.getVideoTracks()||[]; }catch(e){ return false; }
+    for(var i=0;i<vt.length;i++){ if(vt[i].readyState==='live') return true; }
+    return false;
+  }
+  /* the <video> is the only thing that knows when pixels actually arrive - listen to it,
+     otherwise the status never clears once it has been set. */
+  function wireVideoStatus(){
+    var v=el('stl-video'); if(!v || v._stWired) return;
+    v._stWired=true;
+    ['loadeddata','playing','canplay','resize','emptied','ended','pause','stalled'].forEach(function(ev){
+      v.addEventListener(ev, function(){ refreshStatus(); });
+    });
   }
   function setStatus(kind){
     S.status=kind||'';
@@ -36812,6 +36820,7 @@ body.stl-pipdoc #stl-rz{display:none !important;}
       dragify(w, el('stl-stage'));
       resizify(w, el('stl-rz'));
       autoHide(w);
+      wireVideoStatus();
       var si=el('stl-in'), ss=el('stl-send');
       if(ss) ss.addEventListener('click', sendMsg);
       if(si) si.addEventListener('keydown', function(e){ if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); sendMsg(); } });
@@ -37172,55 +37181,14 @@ body.stl-pipdoc #stl-rz{display:none !important;}
     hand: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/></svg>',
     chat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>',
     play: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>',
-    people:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.2 2.8-5.2 6-5.2s6 2 6 5.2"/><circle cx="17.5" cy="9.2" r="2.4"/><path d="M16 14.6c2.5.2 4.6 2.1 4.6 4.8"/></svg>',
-    pop:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 3h6v6"/><path d="M10 14 21 3"/><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/></svg>'
+    people:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.2 2.8-5.2 6-5.2s6 2 6 5.2"/><circle cx="17.5" cy="9.2" r="2.4"/><path d="M16 14.6c2.5.2 4.6 2.1 4.6 4.8"/></svg>'
   };
 
   function btn(id, icon, title, cls){
     return '<button class="ft-call-btn'+(cls?' '+cls:'')+'" id="'+id+'" title="'+title+'">'+icon+'</button>';
   }
-  /* Pop the call into a real OS window. Document PiP moves the SAME DOM node, so
-     the peer connection, canvas, chat and handlers all survive the move. */
-  function canPop(){ return !!(window.documentPictureInPicture && documentPictureInPicture.requestWindow); }
-  function popOut(){
-    var win=el('stl-call'); if(!win) return;
-    if(S.pip){ try{ S.pip.close(); }catch(e){} return; }
-    if(!canPop()){
-      /* Safari / Firefox: fall back to native video PiP (video only, no controls) */
-      var v=el('stl-video');
-      if(v && v.requestPictureInPicture){ v.requestPictureInPicture().catch(function(){ toast(_t('Pop-out is not supported in this browser.','La ventana flotante no es compatible con este navegador.')); }); }
-      else toast(_t('Pop-out is not supported in this browser.','La ventana flotante no es compatible con este navegador.'));
-      return;
-    }
-    var r=win.getBoundingClientRect();
-    documentPictureInPicture.requestWindow({
-      width:  Math.max(480, Math.round(r.width)  || 720),
-      height: Math.max(360, Math.round(r.height) || 480)
-    }).then(function(pw){
-      S.pip=pw;
-      /* carry the app's stylesheets across so it looks identical */
-      Array.prototype.forEach.call(document.querySelectorAll('style,link[rel="stylesheet"]'), function(n){
-        try{ pw.document.head.appendChild(n.cloneNode(true)); }catch(e){}
-      });
-      pw.document.body.className='stl-pipdoc';
-      win.classList.remove('ft-max');
-      win.style.left=''; win.style.top=''; win.style.transform=''; win.style.width=''; win.style.height='';
-      pw.document.body.appendChild(win);   /* the node moves; media keeps playing */
-      renderCtl();
-      pw.addEventListener('pagehide', function(){
-        S.pip=null;
-        try{ document.body.appendChild(win); }catch(e){}
-        win.style.left=''; win.style.top=''; win.style.transform='';
-        render();
-      });
-    }).catch(function(e){
-      S.pip=null;
-      toast('Pop-out failed: '+((e&&e.message)||''));
-    });
-  }
   function toggleMax(){
     var w=el('stl-call'); if(!w) return;
-    if(S.pip) return;   /* the OS window is already the frame */
     w.classList.toggle('ft-max');
     if(!w.classList.contains('ft-max')){
       w.style.left=''; w.style.top=''; w.style.transform='';
@@ -37297,7 +37265,6 @@ body.stl-pipdoc #stl-rz{display:none !important;}
     var _hr=hands();
     h+='<button class="ft-call-btn'+(S.peopleOpen?' on':'')+'" id="stl-peopleb" title="'+_t('Participants','Participantes')+'">'+_ICO.people+'<span id="stl-hands"'+(_hr?' class="on"':'')+'>'+(_hr>9?'9+':(_hr||''))+'</span></button>';
     if(!S.pip) h+=btn('stl-maxb', _ICO.max, _t('Maximise','Maximizar'), maxed?'on':'');
-    h+=btn('stl-popb', _ICO.pop, S.pip?_t('Put it back','Devolver'):_t('Open in a new window','Abrir en una ventana nueva'), S.pip?'on':'');
     h+=btn('stl-endb', _ICO.hang, isAdmin()?_t('End session','Terminar sesi\u00f3n'):_t('Leave','Salir'), 'end');
     box.innerHTML=h;
     var mb=el('stl-mute'); if(mb) mb.addEventListener('click', function(e){ e.stopPropagation(); toggleMute(); });
@@ -37308,7 +37275,6 @@ body.stl-pipdoc #stl-rz{display:none !important;}
     var cb=el('stl-chatb'); if(cb) cb.addEventListener('click', function(e){ e.stopPropagation(); toggleChat(); });
     var xb=el('stl-maxb'); if(xb) xb.addEventListener('click', function(e){ e.stopPropagation(); toggleMax(); });
     var ppl=el('stl-peopleb'); if(ppl) ppl.addEventListener('click', function(e){ e.stopPropagation(); togglePeople(); });
-    var pop=el('stl-popb'); if(pop) pop.addEventListener('click', function(e){ e.stopPropagation(); popOut(); });
     var eb=el('stl-endb'); if(eb) eb.addEventListener('click', function(e){ e.stopPropagation(); if(isAdmin()) endLive(); else leave(); });
   }
 
@@ -37543,7 +37509,18 @@ body.stl-pipdoc #stl-rz{display:none !important;}
     S.pc.ontrack=function(ev){
       remote.addTrack(ev.track);
       var v=el('stl-video');
-      if(v){ v.srcObject=remote; v.className='on'; try{ v.play(); }catch(e){} }
+      if(v){
+        /* ontrack fires once per track (video, then audio) and both share ONE MediaStream.
+           Re-assigning srcObject on the 2nd track restarts the load and aborts the pending
+           play() from the 1st -> AbortError. Assign once, and only play when paused. */
+        if(v.srcObject!==remote) v.srcObject=remote;
+        v.className='on';
+        if(v.paused){
+          var pr;
+          try{ pr=v.play(); }catch(e){}
+          if(pr && pr.catch) pr.catch(function(){});   /* interrupted / autoplay-blocked is not an error here */
+        }
+      }
       clearRc(); refreshStatus();
     };
     S.pc.addTransceiver('video', { direction:'recvonly' });
