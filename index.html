@@ -754,6 +754,20 @@
   .bloomberg-floater--docked .bloomberg-floater-pin { display: none; }
   .bloomberg-floater[hidden] { display: none; }
   /* Mentor read-only view */
+  /* Only the three tabs a mentor actually reviews. NB the data-page names are not what
+     you would guess: stats = Series of 10, trades = Statistics, tradeview = Calendar Log. */
+  body.mentor-viewing #toast,
+  body.mentor-viewing .toast,
+  body.mentor-viewing #skip-nudge-banner,
+  body.mentor-viewing #new-session-modal-bg,
+  body.mentor-viewing .st-welcome,
+  body.mentor-viewing .st-tour-ov,
+  body.mentor-viewing [id$="upsell-bg"] { display: none !important; }
+  body.mentor-viewing { overflow: auto !important; }   /* a modal may have locked scroll before we hid it */
+  body.mentor-viewing .tab[data-page="bias"],
+  body.mentor-viewing .tab[data-page="review"],
+  body.mentor-viewing .tab[data-page="vault"],
+  body.mentor-viewing .tab[data-page="community"] { display: none !important; }
   #mv-banner { position: fixed; top: 0; left: 0; right: 0; z-index: 9000; background: #e8cf63; color: #1a1a1a; display: flex; align-items: center; justify-content: center; gap: 14px; padding: 7px 12px; font-family: 'AppNum','DM Mono',monospace; font-size: 12px; letter-spacing: 0.06em; }
   #mv-banner strong { font-weight: 700; }
   .mv-banner-btn { background: #1a1a1a; color: #e8cf63; border: none; border-radius: 6px; padding: 4px 12px; font: inherit; cursor: pointer; }
@@ -13226,6 +13240,7 @@
                                        : 'A new day has started. Your saved Series of 10 trades won\u2019t be affected.';
       }
     } catch (e) {}
+    try { if (document.body.classList.contains('mentor-viewing')) return; } catch (e) {}
     const bg = document.getElementById('new-session-modal-bg');
     if (bg && !document.getElementById('ft-call')) bg.classList.add('show');
   }
@@ -18916,6 +18931,8 @@
     showToast(t('toast.copied_short'));
   }
   function showToast(msg, opts) {
+    /* mentor view is read-only and click-guarded: an auto pop-up cannot be dismissed */
+    try { if (document.body.classList.contains('mentor-viewing')) return; } catch (e) {}
     // Two modes:
     //  • opts.persist → routes to the shared pop-up (dimmed backdrop + Close button, stays until
     //    dismissed). For problems / prompts that shouldn't slip past.
@@ -21114,6 +21131,8 @@
   // Sat/Sun → if not yet opened this week, shows a non-intrusive toast nudge so you remember the ritual.
   // The reflection is built to be done at the weekend; Friday's prompt is just the early reminder.
   function maybeOfferWeeklyReview() {
+    /* mentor view is read-only and click-guarded: an auto pop-up cannot be dismissed */
+    try { if (document.body.classList.contains('mentor-viewing')) return; } catch (e) {}
     if (document.getElementById('ft-call')) return;
     try { var _lt = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : null; if (_lt) { if (typeof filterByScope === 'function') _lt = filterByScope(_lt); if (!_lt || _lt.length === 0) return; } } catch (_e) {}
     const today = new Date();
@@ -34125,6 +34144,19 @@
   }
   function dressMentorView(mvId, email){
     try { document.body.classList.add('mentor-viewing'); } catch(e){}
+    /* the app boots on Session Bias, which the mentor cannot see - move to Statistics.
+       The stepper filters on computed display, so hidden tabs drop out of it by themselves,
+       but it has to be rebuilt now that the tab count changed. */
+    try {
+      var MV_TABS = { trades:1, stats:1, tradeview:1 };
+      var act = document.querySelector('.tab.active');
+      if(!act || !MV_TABS[act.getAttribute('data-page')]){
+        var first = document.querySelector('.tab[data-page="trades"]');
+        if(first) first.click();
+      }
+    } catch(e){}
+    try { if(typeof rebuildTabStepper==='function') rebuildTabStepper(); } catch(e){}
+    try { if(typeof window.rebuildTabStepper==='function') window.rebuildTabStepper(); } catch(e){}
     try { var bb=document.getElementById('bloomberg-floater'); if(bb){ var f=document.getElementById('bloomberg-floater-iframe'); if(f) f.src='about:blank'; bb.hidden=true; } } catch(e){}
     try { var tbar=document.getElementById('ticker-bar'); if(tbar) tbar.hidden=true; } catch(e){}
     var _nm = '';
@@ -36278,7 +36310,7 @@
   function busy(){ var l=document.querySelectorAll('.modal-bg, .st-welcome, .modal.show, .dcx-modal.open, .stc-gate, [id$="upsell-bg"]'); for(var i=0;i<l.length;i++){ var e=l[i]; var cs; try{ cs=getComputedStyle(e); }catch(x){ continue; } if(!cs || cs.display==='none' || cs.visibility==='hidden' || parseFloat(cs.opacity||'1')<0.05) continue; var r=e.getBoundingClientRect(); if(r.width>40 && r.height>40) return true; } return false; }
   function getUid(cb){ try{ if(window.currentUser && window.currentUser.id) return cb(window.currentUser.id); }catch(e){} try{ if(window.sb && sb.auth && sb.auth.getUser){ return sb.auth.getUser().then(function(r){ try{ cb(r&&r.data&&r.data.user?r.data.user.id:null); }catch(e){ cb(null); } }).catch(function(){ cb(null); }); } }catch(e){} cb(null); }
   function ready(){ if(ov||busy()) return false; var el=document.querySelector('.tab[data-page="bias"]'); return !!(el && el.offsetParent!==null); }
-  function decideAndStart(){ if(ov) return; if(window.__stTourWanted){ _curKey=KEY; try{ window.__stTourWanted=false; }catch(e){} start(); return; } getUid(function(uid){ if(ov) return; var k=KEY+(uid?('_'+uid):''); try{ if(localStorage.getItem(k)) return; }catch(e){} _curKey=k; start(); }); }
+  function decideAndStart(){ if(ov) return; try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){} if(window.__stTourWanted){ _curKey=KEY; try{ window.__stTourWanted=false; }catch(e){} start(); return; } getUid(function(uid){ if(ov) return; var k=KEY+(uid?('_'+uid):''); try{ if(localStorage.getItem(k)) return; }catch(e){} _curKey=k; start(); }); }
   function tryStart(n){ if(ov) return; if(ready()){ _settled++; if(_settled>=4){ decideAndStart(); return; } } else { _settled=0; } if(n>0) setTimeout(function(){ tryStart(n-1); }, 1500); }
   function boot(){ setTimeout(function(){ tryStart(120); }, 2500); }
   if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
