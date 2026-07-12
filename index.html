@@ -36379,12 +36379,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   /* call the Edge Function (it holds the Cloudflare secret + enforces tier).
      Use the supabase client's invoke() so the apikey + JWT headers are correct. */
-  /* The Edge Functions gateway does NOT accept sb_publishable_ keys - it needs the
-     legacy anon JWT (the long eyJ... key). Paste it here: */
-  var SFU_PUB  = 'sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv';
-
-  var SFU_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpZ296eXhveW9iaXhhZGhxZXdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzYzMzEsImV4cCI6MjA5NzQ1MjMzMX0.LLMSQTEgM4DxnInRlej_pQU5vSsTZdfovjnMwAvT91A';
-  var SFU_URL  = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
+  /* Cloudflare Worker holds the CF secret + enforces the tier gate.
+     (Supabase's Edge Function gateway rejects this project's API keys.)
+     >>> PASTE YOUR WORKER URL HERE <<< */
+  var SFU_URL = 'https://session-tool-sfu.nestorsanchezgomez.workers.dev';
 
   function sfu(action, payload){
     var c=sb(); if(!c) return Promise.reject(new Error('no supabase client'));
@@ -36392,44 +36390,27 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return c.auth.getSession().then(function(g){
       var s=g&&g.data&&g.data.session;
       var exp=s&&s.expires_at?(s.expires_at*1000):0;
-      if(!s || (exp && exp-Date.now()<60000)) return c.auth.refreshSession().then(function(r){ return r&&r.data&&r.data.session; }, function(){ return s; });
+      if(!s || (exp && exp-Date.now()<60000)){
+        return c.auth.refreshSession().then(function(r){ return (r&&r.data&&r.data.session)||s; }, function(){ return s; });
+      }
       return s;
     }).then(function(s){
       var tok=(s&&s.access_token)||'';
-      /* Gateway key scheme differs per project (publishable vs legacy anon).
-         Try the publishable key, fall back to the legacy anon JWT on 401.
-         The USER's token always rides in x-st-auth and is verified in the function. */
-      function attempt(key){
-        return fetch(SFU_URL, {
-          method:'POST',
-          headers:{
-            'Content-Type':'application/json',
-            'apikey': key,
-            'Authorization':'Bearer '+key,
-            'x-st-auth': tok
-          },
-          body: JSON.stringify(body)
-        }).then(function(r){
-          return r.text().then(function(txt){
-            var j=null; try{ j=JSON.parse(txt); }catch(e){}
-            return { ok:r.ok, status:r.status, txt:txt, j:j };
-          });
-        });
-      }
-      return attempt(SFU_PUB).then(function(r1){
-        if(r1.ok) return r1;
-        if(r1.status===401){
-          try{ console.warn('[sfu] publishable key rejected, retrying with legacy anon'); }catch(e){}
-          return attempt(SFU_ANON);
-        }
-        return r1;
-      }).then(function(r){
+      if(!tok) throw new Error('not signed in');
+      return fetch(SFU_URL, {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json', 'x-st-auth': tok },
+        body: JSON.stringify(body)
+      });
+    }).then(function(r){
+      return r.text().then(function(txt){
+        var j=null; try{ j=JSON.parse(txt); }catch(e){}
         if(!r.ok){
-          try{ console.error('[sfu]', action, 'HTTP', r.status, r.txt); }catch(e){}
-          throw new Error((r.j&&(r.j.error||r.j.errorDescription))||r.txt||('HTTP '+r.status));
+          try{ console.error('[sfu]', action, 'HTTP', r.status, txt); }catch(e){}
+          throw new Error((j&&j.error)||txt||('HTTP '+r.status));
         }
-        try{ console.log('[sfu]', action, 'ok', r.j); }catch(e){}
-        return r.j||{};
+        try{ console.log('[sfu]', action, 'ok', j); }catch(e){}
+        return j||{};
       });
     });
   }
