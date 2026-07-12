@@ -36526,7 +36526,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var S = { live:null, parts:[], joined:false, ch:null, pollT:null, user:null, ppl:{}, min:false,
             pc:null, cfSession:null, stream:null, subbed:{}, publishing:false, subscribing:false, big:false,
             speaking:false, micStream:null, renegotiating:false, muted:false, msgs:[], mch:null,
-            chatOpen:false, unread:0, drawing:false, paused:false, col:'#ff4d97', dch:null, strokes:[], redo:[], gifT:null, peopleOpen:false, pq:'', pip:null, status:'', hostPaused:false, reconnecting:false, mchOk:false, msgPollT:null };
+            chatOpen:false, unread:0, drawing:false, paused:false, col:'#ff4d97', dch:null, strokes:[], redo:[], gifT:null, peopleOpen:false, pq:'', pip:null, status:'', hostPaused:false, reconnecting:false, mchOk:false, msgPollT:null, subCf:null };
   var SFU_URL = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
   var ICE = { iceServers:[{ urls:'stun:stun.cloudflare.com:3478' }] };
 
@@ -36602,7 +36602,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var w=el('stl-wait'); if(!w) return;
     if(!kind){ w.style.display='none'; return; }
     var map={
-      wait:         _t('Waiting for the host\u2019s screen\u2026','Esperando la pantalla del anfitri\u00f3n\u2026'),
+      wait:         iAmHost() ? _t('Pick a screen to share\u2026','Elige una pantalla para compartir\u2026')
+                              : _t('Waiting for the host\u2019s screen\u2026','Esperando la pantalla del anfitri\u00f3n\u2026'),
       connecting:   _t('Connecting\u2026','Conectando\u2026'),
       reconnecting: _t('Reconnecting\u2026','Reconectando\u2026'),
       paused:       _t('The host paused the stream','El anfitri\u00f3n pas\u00f3 la pantalla a pausa'),
@@ -36920,6 +36921,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .then(function(r){ S.parts=(r&&r.data)||[]; })
       .then(function(){ if(!Object.keys(S.ppl).length) return loadPeople(); });
   }
+  function iAmHost(){
+    var u=me();
+    return !!(u && S.live && S.live.host_id===u.id && isAdmin());
+  }
   function myPart(){ var u=me(); if(!u) return null; for(var i=0;i<S.parts.length;i++){ if(S.parts[i].user_id===u.id) return S.parts[i]; } return null; }
   function myRole(){ var p=myPart(); return p?p.role:null; }
 
@@ -36961,6 +36966,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(on){
       var t=el('stl-cb-txt');
       if(t) t.textContent='LIVE \u00b7 '+esc(S.live.title||'Live Session')+' \u00b7 '+S.parts.length+' '+_t('watching','viendo');
+      var cj=el('stl-cb-join');
+      if(cj) cj.textContent = iAmHost() ? _t('RESUME','REANUDAR') : _t('JOIN','UNIRSE');
     }
   }
   /* GO LIVE / END SESSION: an icon in the CHANNELS footer, immediately left of the
@@ -37011,6 +37018,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       bar.className='stl-bar'+((S.live&&!S.joined&&eligible()&&!barDismissed())?' show':'');
       var txt=el('stl-bar-txt');
       if(txt&&S.live) txt.textContent='LIVE \u00b7 '+esc(S.live.title||'Live Session')+' \u00b7 '+S.parts.length+' watching';
+      var jb=el('stl-join');
+      if(jb) jb.textContent = iAmHost() ? _t('RESUME','REANUDAR') : _t('JOIN','UNIRSE');
     }
     var win=el('stl-call');
     var inRoom = !!(S.live && S.joined);
@@ -37020,7 +37029,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       win.style.display = inRoom ? 'flex' : 'none';
       if(!inRoom){ win.classList.remove('ft-max'); win.style.left=''; win.style.top=''; win.style.transform=''; }
     }
-    if(S.joined && S.live && S.live.cf_session_id && !isAdmin() && !S.subscribing && !S.pc){ startWatch(); }
+    /* the host may have republished (reload / resume) - the cf session id then changes,
+       so drop the dead subscription and pull the new one */
+    if(S.joined && S.live && S.live.cf_session_id && !isAdmin() && !S.subscribing){
+      var cf=S.live.cf_session_id;
+      if(S.pc && S.subCf && S.subCf!==cf){
+        try{ S.pc.close(); }catch(e){}
+        S.pc=null; S.cfSession=null; S.subbed={};
+        var _v=el('stl-video'); if(_v){ _v.srcObject=null; _v.className=''; }
+        S.reconnecting=true; refreshStatus();
+      }
+      if(!S.pc) startWatch();
+    }
     if(S.joined && S.live){
       var mp=myPart();
       if(mp && mp.role==='speaker' && !S.speaking && !isAdmin()) startSpeak();
@@ -37461,7 +37481,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     c.from('live_participants').upsert({ session_id:S.live.id, user_id:u.id, role:(isAdmin()?'host':'listener') }, { onConflict:'session_id,user_id' })
       .then(function(r){
         if(r&&r.error){ toast(String(r.error.message||'').indexOf('policy')>-1 ? 'Live sessions are for members.' : 'Could not join'); return null; }
-        S.joined=true; openStage(); return loadParts();
+        S.joined=true; openStage();
+        /* Reloaded mid-session? The row is still live but our stream and peer
+           connection died with the page. Re-share (this runs inside the click, so
+           getDisplayMedia still has its user gesture) and republish under a fresh
+           Cloudflare session; startShare() writes the new ids back to the row. */
+        if(iAmHost() && !S.stream && !S.publishing){ startShare(); }
+        return loadParts();
       })
       .then(function(){ render(); })
       .catch(function(){});
@@ -37560,6 +37586,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function startWatch(){
     if(S.subscribing || !S.live || !S.live.cf_session_id) return;
     S.subscribing=true;
+    S.subCf=S.live.cf_session_id;   /* remember what we subscribed to */
     setStatus(S.reconnecting?'reconnecting':'connecting');
     S.pc=newPc();
     var remote=new MediaStream();
