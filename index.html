@@ -36355,8 +36355,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 #stl-pal{display:none;}
 #stl-pal.open{display:flex;}
 /* auto-hide chrome, same as the 1:1 calls */
-#stl-call.ft-ui-hidden .ft-call-actions,#stl-call.ft-ui-hidden .ft-vlabel,#stl-call.ft-ui-hidden #stl-pal,#stl-call.ft-ui-hidden .stl-spk{opacity:0;pointer-events:none;}
 #stl-call .ft-call-actions,#stl-call .ft-vlabel,#stl-call #stl-pal,#stl-call .stl-spk{transition:opacity .28s ease;}
+#stl-call.ft-ui-hidden .ft-call-actions,#stl-call.ft-ui-hidden .ft-vlabel,#stl-call.ft-ui-hidden #stl-pal,#stl-call.ft-ui-hidden .stl-spk{opacity:0;pointer-events:none;}
+/* hovering an edge brings that half back */
+#stl-call.ft-ui-hidden.show-b .ft-call-actions{opacity:1;pointer-events:auto;}
+#stl-call.ft-ui-hidden.show-t #stl-pal,#stl-call.ft-ui-hidden.show-t .ft-vlabel,#stl-call.ft-ui-hidden.show-t .stl-spk{opacity:1;pointer-events:auto;}
 #stl-rz{position:absolute;right:0;bottom:0;width:18px;height:18px;cursor:nwse-resize;z-index:9;background:linear-gradient(135deg,transparent 50%,#4b5563 50%,#4b5563 60%,transparent 60%,transparent 70%,#4b5563 70%,#4b5563 80%,transparent 80%);}
 #stl-call.ft-max #stl-rz{display:none;}
 #stl-call.ft-max .ft-stage{height:auto;flex:1;}
@@ -36623,6 +36626,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       document.addEventListener('click', function(e){
         var em=el('stl-emo');
         if(em && em.classList.contains('open') && !e.target.closest('#stl-emo') && !e.target.closest('#stl-plus')) em.classList.remove('open');
+        /* click outside the chat popup closes it */
+        if(S.chatOpen && !e.target.closest('#stl-chat') && !e.target.closest('#stl-chatb')){
+          S.chatOpen=false;
+          var ch=el('stl-chat'); if(ch) ch.classList.remove('open');
+          if(em) em.classList.remove('open');
+          renderCtl();
+        }
       });
     }
   }
@@ -37414,23 +37424,31 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(!win || win._ah) return;
     win._ah=true;
     var tmr=null;
-    function show(){ win.classList.remove('ft-ui-hidden'); arm(); }
+    function hide(){
+      if(S.chatOpen) return;                       /* don't hide while chat is open */
+      win.classList.add('ft-ui-hidden');
+      win.classList.remove('show-t','show-b');
+    }
     function arm(){
       if(tmr) clearTimeout(tmr);
-      tmr=setTimeout(function(){
-        if(S.drawing) return;                 /* keep the palette while drawing */
-        if(el('stl-chat') && S.chatOpen) return;
-        win.classList.add('ft-ui-hidden');
-      }, 2500);
+      tmr=setTimeout(hide, 2500);
     }
     win.addEventListener('pointermove', function(e){
       var r=win.getBoundingClientRect();
-      var nearTop    = (e.clientY - r.top) < 90;
-      var nearBottom = (r.bottom - e.clientY) < 110;
-      if(nearTop || nearBottom || !win.classList.contains('ft-max')) show();
-      else arm();
+      var nearTop    = (e.clientY - r.top)   < 100;   /* palette zone */
+      var nearBottom = (r.bottom - e.clientY) < 120;  /* controls zone */
+      if(win.classList.contains('ft-ui-hidden')){
+        win.classList.toggle('show-t', nearTop);
+        win.classList.toggle('show-b', nearBottom);
+        if(!nearTop && !nearBottom) return;           /* stay hidden in the middle */
+        return;                                       /* revealed by edge only */
+      }
+      arm();   /* still visible: keep resetting the idle timer while the mouse moves */
     });
-    win.addEventListener('pointerleave', arm);
+    win.addEventListener('pointerleave', function(){
+      win.classList.remove('show-t','show-b');
+      arm();
+    });
     arm();
   }
   function toggleDraw(){
@@ -37438,7 +37456,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var cv=el('stl-draw'), pal=el('stl-pal'), w=el('stl-call');
     if(cv) cv.classList.toggle('on', S.drawing);
     if(pal) pal.classList.toggle('open', S.drawing);
-    if(w && S.drawing) w.classList.remove('ft-ui-hidden');
+    if(w && S.drawing){ w.classList.remove('ft-ui-hidden'); w.classList.remove('show-t','show-b'); }
     if(S.drawing){ dctx(); drawSetup(); }
     renderCtl();
   }
