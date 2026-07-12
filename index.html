@@ -36887,9 +36887,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         S.live=(r&&r.data&&r.data[0])||null;
         if(!S.live){
           if(was){
-            setStatus('ended');
             toast(_t('The host ended the session.','El anfitri\u00f3n termin\u00f3 la sesi\u00f3n.'));
-            stopMedia(); S.joined=false; closeStage();
+            hardClose(false);
           }
           S.parts=[]; return null;
         }
@@ -37386,16 +37385,41 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     /* the archive channel was chosen at go-live, so nothing to ask here */
     finishEnd(S.live.id);
   }
+  /* Tear the room down NOW. Every step is individually guarded: one thrown error
+     must never leave the call window stranded on screen. */
+  function hardClose(keepLive){
+    try{ stopMedia(); }catch(e){ try{ console.warn('[stlive] stopMedia failed', e); }catch(_){} }
+    S.joined=false;
+    if(!keepLive){ S.live=null; S.parts=[]; }
+    S.status=''; S.hostPaused=false; S.reconnecting=false;
+    S.chatOpen=false; S.peopleOpen=false; S.unread=0;
+    try{ closeChatPanels(); }catch(e){}
+    var pn=el('stl-people'); if(pn) pn.classList.remove('open');
+    var ch=el('stl-chat');   if(ch) ch.classList.remove('open');
+    /* hide the window directly - do not rely on render() getting that far */
+    var win=el('stl-call');
+    if(win){
+      win.style.display='none';
+      win.classList.remove('ft-max','ft-ui-hidden','show-t','show-b');
+      win.style.left=''; win.style.top=''; win.style.transform=''; win.style.width=''; win.style.height='';
+    }
+    try{ document.exitFullscreen && document.fullscreenElement && document.exitFullscreen(); }catch(e){}
+    try{ render(); }catch(e){ try{ console.warn('[stlive] render after close failed', e); }catch(_){} }
+  }
   function finishEnd(id){
-    var c=sb(); if(!c||!S.live) return;
-    /* save the chat to the chosen channel before we tear the room down */
-    archiveChat()
-      .catch(function(){})
+    var c=sb(); if(!c) return;
+    var live=S.live;                 /* capture: the UI is coming down right now */
+    hardClose(false);
+    /* archive + close the row in the background; the host is not made to wait for it */
+    Promise.resolve()
+      .then(function(){ return archiveChat(live); })
+      .catch(function(e){ try{ console.warn('[stlive] archive failed', e); }catch(_){} })
       .then(function(){
         return c.from('live_sessions').update({ is_live:false, ended_at:new Date().toISOString() }).eq('id', id);
       })
-      .then(function(){ stopMedia(); S.joined=false; closeStage(); S.live=null; S.parts=[]; render(); })
-      .catch(function(){ stopMedia(); S.joined=false; closeStage(); S.live=null; S.parts=[]; render(); });
+      .catch(function(e){ try{ console.warn('[stlive] end-session update failed', e); }catch(_){} })
+      .then(function(){ return loadLive(); })
+      .catch(function(){});
   }
   function join(){
     var c=sb(), u=me(); if(!c||!u||!S.live) return;
@@ -37409,11 +37433,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .catch(function(){});
   }
   function leave(){
-    var c=sb(), u=me();
-    stopMedia();
-    S.joined=false; closeStage();
-    if(c&&u&&S.live&&!isAdmin()){
-      c.from('live_participants').delete().eq('session_id',S.live.id).eq('user_id',u.id).then(function(){ loadLive(); }, function(){});
+    var c=sb(), u=me(), live=S.live;
+    hardClose(true);                 /* the session is still live for everyone else */
+    if(c&&u&&live&&!isAdmin()){
+      c.from('live_participants').delete().eq('session_id',live.id).eq('user_id',u.id).then(function(){ loadLive(); }, function(){ loadLive(); });
     } else { loadLive(); }
   }
   function toggleHand(){
@@ -37883,10 +37906,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
 
   /* ---------------- archive the session chat to a channel ---------------- */
-  function archiveChat(){
+  function archiveChat(liveRef){
     var c=sb(), u=me();
-    if(!c||!u||!S.live||!S.live.archive_channel_id) return Promise.resolve();
-    var live=S.live, chan=live.archive_channel_id;
+    var live=liveRef||S.live;
+    if(!c||!u||!live||!live.archive_channel_id) return Promise.resolve();
+    var chan=live.archive_channel_id;
     return c.from('live_messages').select('*')
       .eq('session_id', live.id)
       .order('created_at', { ascending:true })
