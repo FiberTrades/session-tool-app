@@ -36547,7 +36547,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         '<div class="stl-nms">Members will see this on the LIVE banner.</div>'+
         '<input class="stl-nmi" id="stl-nm-input" maxlength="60" placeholder="London Session">'+
         '<div id="stl-nm-chwrap" style="margin-top:10px;">'+
-          '<div class="stl-nms" style="margin:2px 0 6px;">Who can join</div>'+
+          '<div class="stl-nms" style="margin:2px 0 6px;">Save chat afterwards to</div>'+
+          '<select class="stl-nmi" id="stl-nm-arch"></select>'+
+          '<div class="stl-nms" style="margin:12px 0 6px;">Who can join</div>'+
           '<div class="stl-aud" id="stl-nm-aud">'+
             '<label><input type="checkbox" value="mentorship" checked> 1:1 Mentoring</label>'+
             '<label><input type="checkbox" value="bundle" checked> Bundle PRO</label>'+
@@ -36881,6 +36883,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     i.value = isRename && S.live ? (S.live.title||'') : '';
     var wrap=el('stl-nm-chwrap');
     if(wrap) wrap.style.display = isRename ? 'none' : 'block';
+    var arch=el('stl-nm-arch');
+    if(arch && !isRename){
+      var opts='<option value="">'+_t('Don\u2019t save','No guardar')+'</option>';
+      Array.prototype.forEach.call(document.querySelectorAll('.dcx-chan[data-cid]'), function(e){
+        var cid=e.getAttribute('data-cid');
+        var nmx=(e.textContent||'').replace(/\s+/g,' ').trim().slice(0,40);
+        opts+='<option value="'+cid+'">'+esc(nmx)+'</option>';
+      });
+      arch.innerHTML=opts;
+    }
     var audBox=el('stl-nm-aud');
     if(audBox && !audBox._wired){
       audBox._wired=true;
@@ -36897,13 +36909,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function submitName(){
     var i=el('stl-nm-input'); if(!i) return;
     var name=(i.value||'').trim() || 'London Session';
-    var aud=el('stl-nm-aud');
+    var aud=el('stl-nm-aud'), arch=el('stl-nm-arch');
+    var acid=(!S.renaming && arch && arch.value) ? arch.value : null;
     var tiers=[];
     if(aud){ Array.prototype.forEach.call(aud.querySelectorAll('input:checked'), function(b){ tiers.push(b.value); }); }
     if(!tiers.length) tiers=['mentorship','bundle'];
     var au=tiers.join(',');
     var nm=el('stl-nm'); if(nm) nm.classList.remove('show');
-    if(S.renaming){ renameLive(name); } else { startLive(name, null, au); }
+    if(S.renaming){ renameLive(name); } else { startLive(name, acid, au); }
   }
   function renameLive(name){
     var c=sb(); if(!c||!S.live||!isAdmin()) return;
@@ -36948,7 +36961,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function startLive(title, cid, aud){
     var c=sb(), u=me(); if(!c||!u||!isAdmin()) return;
-    c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session'), channel_id: null, audience: (aud||'mentorship,bundle') }).select().single()
+    c.from('live_sessions').insert({ host_id:u.id, is_live:true, title:(title||'London Session'), channel_id: null, archive_channel_id: (cid||null), audience: (aud||'mentorship,bundle') }).select().single()
       .then(function(r){
         if(r.error){ toast('Could not go live: '+r.error.message); return null; }
         S.live=r.data;
@@ -36959,9 +36972,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function endLive(){
     var c=sb(); if(!c||!S.live||!isAdmin()) return;
-    c.from('live_sessions').update({ is_live:false, ended_at:new Date().toISOString() }).eq('id',S.live.id)
+    var id=S.live.id;
+    /* save the chat to the chosen channel before we tear the room down */
+    archiveChat()
+      .catch(function(){})
+      .then(function(){
+        return c.from('live_sessions').update({ is_live:false, ended_at:new Date().toISOString() }).eq('id', id);
+      })
       .then(function(){ stopMedia(); S.joined=false; closeStage(); S.live=null; S.parts=[]; render(); })
-      .catch(function(){});
+      .catch(function(){ stopMedia(); S.joined=false; closeStage(); S.live=null; S.parts=[]; render(); });
   }
   function join(){
     var c=sb(), u=me(); if(!c||!u||!S.live) return;
@@ -37294,6 +37313,36 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.stream.getVideoTracks().forEach(function(v){ v.enabled=!S.paused; });
     renderCtl();
     toast(S.paused?_t('Screen paused','Pantalla pausada'):_t('Screen resumed','Pantalla reanudada'));
+  }
+
+  /* ---------------- archive the session chat to a channel ---------------- */
+  function archiveChat(){
+    var c=sb(), u=me();
+    if(!c||!u||!S.live||!S.live.archive_channel_id) return Promise.resolve();
+    var live=S.live, chan=live.archive_channel_id;
+    return c.from('live_messages').select('*')
+      .eq('session_id', live.id)
+      .order('created_at', { ascending:true })
+      .then(function(r){
+        var rows=(r&&r.data)||[];
+        if(!rows.length) return null;
+        /* a header, then every message re-posted individually under its real author */
+        return c.from('channel_messages').insert({
+          channel_id: chan,
+          sender_id: u.id,
+          body: '\uD83D\uDD34 **'+(live.title||'Live session')+'** \u2014 '+
+                _t('session chat','chat de la sesi\u00f3n')+' ('+rows.length+')'
+        }).then(function(){
+          var batch=rows.map(function(m){
+            return { channel_id: chan, sender_id: m.user_id, body: m.body, created_at: m.created_at };
+          });
+          return c.from('channel_messages').insert(batch);
+        });
+      })
+      .then(function(r){
+        if(r && r.error){ toast('Could not save the chat'); return; }
+        toast(_t('Session chat saved.','Chat de la sesi\u00f3n guardado.'));
+      }, function(){ toast('Could not save the chat'); });
   }
 
   /* ---------------- in-session chat ---------------- */
