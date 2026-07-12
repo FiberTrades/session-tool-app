@@ -36379,25 +36379,40 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   /* call the Edge Function (it holds the Cloudflare secret + enforces tier).
      Use the supabase client's invoke() so the apikey + JWT headers are correct. */
+  /* The Edge Functions gateway does NOT accept sb_publishable_ keys - it needs the
+     legacy anon JWT (the long eyJ... key). Paste it here: */
+  var SFU_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZpZ296eXhveW9iaXhhZGhxZXdyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODE4NzYzMzEsImV4cCI6MjA5NzQ1MjMzMX0.LLMSQTEgM4DxnInRlej_pQU5vSsTZdfovjnMwAvT91A';
+  var SFU_URL  = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
+
   function sfu(action, payload){
     var c=sb(); if(!c) return Promise.reject(new Error('no supabase client'));
     var body=payload||{}; body.action=action;
-    return c.functions.invoke('sfu', { body: body }).then(function(res){
-      if(res && res.error){
-        var m=res.error.message||'edge error';
-        var ctx=res.error.context;
-        if(ctx && typeof ctx.text==='function'){
-          return ctx.text().then(function(txt){
-            try{ console.error('[sfu]', action, 'HTTP', ctx.status, txt); }catch(e){}
-            var j=null; try{ j=JSON.parse(txt); }catch(e){}
-            throw new Error((j&&j.error) || txt || m);
-          });
-        }
-        try{ console.error('[sfu]', action, 'ERR', m); }catch(e){}
-        throw new Error(m);
-      }
-      try{ console.log('[sfu]', action, 'ok', res && res.data); }catch(e){}
-      return (res && res.data) || {};
+    return c.auth.getSession().then(function(g){
+      var s=g&&g.data&&g.data.session;
+      var exp=s&&s.expires_at?(s.expires_at*1000):0;
+      if(!s || (exp && exp-Date.now()<60000)) return c.auth.refreshSession().then(function(r){ return r&&r.data&&r.data.session; }, function(){ return s; });
+      return s;
+    }).then(function(s){
+      var tok=(s&&s.access_token)||'';
+      return fetch(SFU_URL, {
+        method:'POST',
+        headers:{
+          'Content-Type':'application/json',
+          'apikey': SFU_ANON || tok,
+          'Authorization':'Bearer '+tok
+        },
+        body: JSON.stringify(body)
+      }).then(function(r){
+        return r.text().then(function(txt){
+          var j=null; try{ j=JSON.parse(txt); }catch(e){}
+          if(!r.ok){
+            try{ console.error('[sfu]', action, 'HTTP', r.status, txt); }catch(e){}
+            throw new Error((j&&(j.error||j.errorDescription))||txt||('HTTP '+r.status));
+          }
+          try{ console.log('[sfu]', action, 'ok', j); }catch(e){}
+          return j||{};
+        });
+      });
     });
   }
   function newPc(){
