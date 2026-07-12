@@ -38313,5 +38313,248 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   document.addEventListener('click', function(){ setTimeout(render,150); }, true);
 })();
 </script>
+<style>
+/* ---------------- Community leaderboard (#leaderboard channel) ---------------- */
+#stb-board{display:none;flex:0 0 auto;flex-direction:column;margin:10px 16px 0;padding:14px 16px;background:#141414;border:1px solid #2a2a2a;border-radius:12px;font-family:'DM Mono',monospace;color:#fff;}
+#stb-board.show{display:flex;}
+.stb-head{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px;}
+.stb-title{font-family:'Fraunces',serif;font-size:19px;flex:1;min-width:120px;}
+.stb-tabs{display:flex;gap:4px;}
+.stb-tab{background:none;border:1px solid #2f2f2f;color:#949ba4;border-radius:7px;padding:5px 11px;font-family:'DM Mono',monospace;font-size:10px;letter-spacing:.08em;cursor:pointer;text-transform:uppercase;transition:color .15s,border-color .15s,background .15s;}
+.stb-tab:hover{color:#fff;border-color:#f472b6;}
+.stb-tab.on{background:#f472b6;border-color:#f472b6;color:#0c0c0c;font-weight:700;}
+.stb-tbl{width:100%;border-collapse:collapse;font-size:12px;}
+.stb-tbl th{font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:#6b7280;text-align:right;padding:6px 8px;border-bottom:1px solid #2a2a2a;font-weight:400;white-space:nowrap;}
+.stb-tbl th:nth-child(1),.stb-tbl th:nth-child(2){text-align:left;}
+.stb-tbl td{padding:8px;border-bottom:1px solid #1e1e1e;text-align:right;color:#d1d5db;white-space:nowrap;}
+.stb-tbl td:nth-child(1),.stb-tbl td:nth-child(2){text-align:left;}
+.stb-tbl tr.me td{background:rgba(244,114,182,.08);color:#fff;}
+.stb-rk{color:#6b7280;width:28px;}
+.stb-rk.top{color:#f472b6;font-weight:700;}
+.stb-who{display:flex;align-items:center;gap:8px;min-width:0;}
+.stb-who img,.stb-who .ph{width:22px;height:22px;border-radius:50%;flex:none;object-fit:cover;}
+.stb-who .ph{background:#3a3a3a;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;}
+.stb-who span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.stb-pts{color:#fff;font-weight:700;}
+.stb-r.good{color:#5fcb8d;} .stb-r.bad{color:#f87171;}
+.stb-bad{color:#f87171;}
+.stb-rules{color:#6b7280;font-size:10.5px;}
+.stb-you{margin-top:12px;padding:10px 12px;background:#0c0c0c;border:1px solid #2a2a2a;border-radius:9px;font-size:11.5px;color:#c9ced6;line-height:1.6;}
+.stb-you b{color:#f472b6;}
+.stb-note{margin-top:10px;font-size:10.5px;color:#6b7280;line-height:1.6;}
+.stb-empty{padding:18px;text-align:center;color:#6b7280;font-size:11.5px;}
+@media(max-width:760px){#stb-board{margin:10px 10px 0;padding:12px;} .stb-hide-sm{display:none;}}
+</style>
+<script>
+/* ============================================================
+   STBoard - community leaderboard, pinned inside #leaderboard.
+   Reads leaderboard_entries, which is rebuilt nightly by
+   st_rebuild_leaderboard(). The table is READ-ONLY at the DB
+   level, so nothing here can influence a score.
+   ============================================================ */
+(function(){
+  var sb=function(){ return window.__stSB || null; };
+  var S={ period:'month', rows:[], ppl:{}, loaded:false, chan:null };
+  function el(id){ return document.getElementById(id); }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function _t(en,es){ try{ return (typeof window._stT==='function') ? window._stT(en,es) : en; }catch(e){ return en; } }
+
+  /* is the open channel the leaderboard one? (slug, or name minus its emoji) */
+  function onBoard(){
+    var a=document.querySelector('.dcx-chan.active');
+    if(!a) return false;
+    var nm=(a.textContent||'').replace(/\s+/g,' ').trim().toLowerCase();
+    return nm.indexOf('leaderboard')>-1;
+  }
+  function me(){ try{ return (window.currentUser&&window.currentUser.id)||null; }catch(e){ return null; } }
+
+  function mount(){
+    var main=document.querySelector('.dcx-main');
+    if(!main) return null;
+    var b=el('stb-board');
+    if(b && b.parentNode===main) return b;
+    b=document.createElement('div'); b.id='stb-board';
+    b.innerHTML=
+      '<div class="stb-head">'+
+        '<span class="stb-title">'+_t('Leaderboard','Clasificaci\u00f3n')+'</span>'+
+        '<div class="stb-tabs">'+
+          '<button class="stb-tab" data-p="week">'+_t('Week','Semana')+'</button>'+
+          '<button class="stb-tab" data-p="month">'+_t('Month','Mes')+'</button>'+
+          '<button class="stb-tab" data-p="year">'+_t('Year','A\u00f1o')+'</button>'+
+        '</div>'+
+      '</div>'+
+      '<div id="stb-body"><div class="stb-empty">'+_t('Loading\u2026','Cargando\u2026')+'</div></div>'+
+      '<div id="stb-you"></div>'+
+      '<div class="stb-note">'+_t(
+        'Verified from your MT5 trades, scored in gross R (commission and spread excluded). +10 pts per 1R on your best clean series of 10 \u00b7 +2 a bias posted before 08:00 \u00b7 +2 a same-day review \u00b7 +5 a weekly review \u00b7 +5 a completed series posted \u00b7 \u201325 a broken stop \u00b7 \u201325 no stop set \u00b7 \u201310 a target pulled (price went through your TP and you took less anyway). \u201315 a trade over your own max risk \u00b7 \u201315 a day over your own loss cap \u00b7 \u201310 a day over your own trade cap. Your rules come from your Settings and are shown here for everyone \u2014 a clean series = 10 EA-managed trades, every stop set, none broken, no target abandoned, none over your risk cap. Rebuilt nightly.',
+        'Verificado con tus operaciones de MT5, en R bruto (sin comisiones ni spread). +10 pts por cada 1R de tu mejor serie limpia de 10 \u00b7 +2 por sesgo antes de las 08:00 \u00b7 +2 por revisi\u00f3n el mismo d\u00eda \u00b7 +5 por revisi\u00f3n semanal \u00b7 +5 por serie completada publicada \u00b7 \u201325 por stop roto \u00b7 \u201325 sin stop \u00b7 \u201310 por objetivo abandonado (el precio pas\u00f3 tu TP y aun as\u00ed cerraste con menos). \u201315 por operaci\u00f3n sobre tu riesgo m\u00e1ximo \u00b7 \u201315 por d\u00eda sobre tu p\u00e9rdida m\u00e1xima \u00b7 \u201310 por d\u00eda sobre tu l\u00edmite de operaciones. Tus reglas salen de tus Ajustes y se muestran aqu\u00ed para todos \u2014 serie limpia = 10 operaciones gestionadas por el EA, todas con stop, ninguno roto, ning\u00fan objetivo abandonado, ninguna sobre tu riesgo m\u00e1ximo. Se recalcula cada noche.')+'</div>';
+    var msgs=document.getElementById('dcx-msgs');
+    if(msgs && msgs.parentNode===main) main.insertBefore(b, msgs); else main.appendChild(b);
+    Array.prototype.forEach.call(b.querySelectorAll('.stb-tab'), function(t){
+      t.addEventListener('click', function(e){
+        e.stopPropagation();
+        S.period=t.getAttribute('data-p');
+        load(true);
+      });
+    });
+    return b;
+  }
+
+  function names(cb){
+    var c=sb(); if(!c){ cb(); return; }
+    if(Object.keys(S.ppl).length){ cb(); return; }
+    try{
+      c.rpc('st_members').then(function(r){
+        (( r&&r.data)||[]).forEach(function(x){
+          var id=x.id||x.user_id||x.uid; if(!id) return;
+          S.ppl[id]={ name:x.name||x.display_name||'Trader', avatar:x.avatar||x.avatar_url||'' };
+        });
+        cb();
+      }, function(){ cb(); });
+    }catch(e){ cb(); }
+  }
+  function who(id){ return S.ppl[id] || { name:'Trader', avatar:'' }; }
+  /* every rule-break the broker's own record can prove */
+  function brk(x){
+    return (x.broken_stops||0)+(x.missing_stops||0)+(x.tp_pulled||0)+
+           (x.over_risk||0)+(x.over_loss_days||0)+(x.over_trade_days||0);
+  }
+  function brkTip(x){
+    return (x.broken_stops||0)+' '+_t('broken stops','stops rotos')+' \u00b7 '+
+           (x.missing_stops||0)+' '+_t('no stop set','sin stop')+' \u00b7 '+
+           (x.tp_pulled||0)+' '+_t('targets pulled','objetivos abandonados')+' \u00b7 '+
+           (x.over_risk||0)+' '+_t('over max risk','sobre riesgo m\u00e1x')+' \u00b7 '+
+           (x.over_loss_days||0)+' '+_t('days over loss cap','d\u00edas sobre p\u00e9rdida m\u00e1x')+' \u00b7 '+
+           (x.over_trade_days||0)+' '+_t('days over trade cap','d\u00edas sobre l\u00edmite de operaciones');
+  }
+  /* Their DECLARED rules, shown on the board. These come from the member's own
+     Settings, which is a client-side blob - so we publish them. A loose rule is
+     visible to everyone, which is the only honest defence against loosening it.
+     ALWAYS as a % of balance: money would expose account size to the community. */
+  function pct(v){
+    var n=Number(v);
+    return (n>=10 ? n.toFixed(0) : n.toFixed(n<1?2:1))+'%';
+  }
+  function rules(x){
+    var p=[];
+    if(x.rule_max_risk_pct!=null) p.push(_t('risk','riesgo')+' \u2264'+pct(x.rule_max_risk_pct));
+    if(x.rule_max_loss_pct!=null) p.push(_t('day','d\u00eda')+' \u2264'+pct(x.rule_max_loss_pct));
+    if(x.rule_max_trades!=null)   p.push(_t('trades','ops')+' \u2264'+x.rule_max_trades);
+    /* multi-account members are judged on their STRICTEST rule set - the EA cannot
+       tell us which account a trade came from, so a loose second account must not
+       become an escape hatch. */
+    if((x.n_accounts||1)>1) p.push(_t('strictest of ','la m\u00e1s estricta de ')+x.n_accounts);
+    return p.length ? p.join(' \u00b7 ') : _t('no rules set','sin reglas');
+  }
+  function ava(u){
+    if(u.avatar) return '<img src="'+esc(u.avatar)+'" alt="">';
+    var i=(u.name&&u.name.trim())?esc(u.name.trim().charAt(0).toUpperCase()):'\u00b7';
+    return '<span class="ph">'+i+'</span>';
+  }
+
+  function load(force){
+    var c=sb(); if(!c) return;
+    var box=el('stb-body'); if(!box) return;
+    if(force) box.innerHTML='<div class="stb-empty">'+_t('Loading\u2026','Cargando\u2026')+'</div>';
+    c.from('leaderboard_entries').select('*')
+      .eq('period', S.period)
+      .order('ranked',{ascending:false})
+      .order('points',{ascending:false})
+      .limit(200)
+      .then(function(r){
+        if(r&&r.error){ box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; return; }
+        S.rows=(r&&r.data)||[];
+        names(paint);
+      }, function(){ box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; });
+  }
+
+  function paint(){
+    var box=el('stb-body'); if(!box) return;
+    Array.prototype.forEach.call(document.querySelectorAll('.stb-tab'), function(t){
+      t.className='stb-tab'+(t.getAttribute('data-p')===S.period?' on':'');
+    });
+    var uid=me();
+    var ranked=S.rows.filter(function(x){ return x.ranked; });
+    var top=ranked.slice(0,10);
+    if(!top.length){
+      box.innerHTML='<div class="stb-empty">'+_t('No ranked traders yet this period.','A\u00fan no hay traders clasificados en este periodo.')+'</div>';
+    } else {
+      var h='<table class="stb-tbl"><thead><tr>'+
+        '<th>#</th><th>'+_t('Trader','Trader')+'</th>'+
+        '<th>'+_t('Pts','Pts')+'</th>'+
+        '<th>'+_t('Best 10','Mejor 10')+'</th>'+
+        '<th class="stb-hide-sm">'+_t('W/BE/L','G/BE/P')+'</th>'+
+        '<th class="stb-hide-sm">'+_t('Bias','Sesgo')+'</th>'+
+        '<th class="stb-hide-sm">'+_t('Reviews','Revisiones')+'</th>'+
+        '<th class="stb-hide-sm">'+_t('Their rules','Sus reglas')+'</th>'+
+        '<th>'+_t('Breaks','Fallos')+'</th>'+
+      '</tr></thead><tbody>';
+      top.forEach(function(x){
+        var u=who(x.user_id);
+        var r=(x.best_series_r==null)?null:Number(x.best_series_r);
+        var mine=(uid&&x.user_id===uid)?' class="me"':'';
+        h+='<tr'+mine+'>'+
+          '<td class="stb-rk'+(x.rank<=3?' top':'')+'">'+(x.rank||'')+'</td>'+
+          '<td><span class="stb-who">'+ava(u)+'<span>'+esc(u.name)+'</span></span></td>'+
+          '<td class="stb-pts">'+Math.round(x.points)+'</td>'+
+          '<td class="stb-r '+((r||0)>=0?'good':'bad')+'">'+(r==null?'\u2014':(r>=0?'+':'')+r.toFixed(2)+'R')+'</td>'+
+          '<td class="stb-hide-sm">'+x.series_wins+'/'+x.series_be+'/'+x.series_losses+'</td>'+
+          '<td class="stb-hide-sm">'+x.bias_days+'</td>'+
+          '<td class="stb-hide-sm">'+x.review_days+'</td>'+
+          '<td class="stb-hide-sm stb-rules">'+esc(rules(x))+'</td>'+
+          '<td'+(brk(x)>0?' class="stb-bad"':'')+' title="'+esc(brkTip(x))+'">'+brk(x)+'</td>'+
+        '</tr>';
+      });
+      h+='</tbody></table>';
+      box.innerHTML=h;
+    }
+
+    /* the private line: only ever rendered in YOUR browser, from YOUR row */
+    var you=el('stb-you'); if(!you) return;
+    var mineRow=null;
+    for(var i=0;i<S.rows.length;i++){ if(uid && S.rows[i].user_id===uid){ mineRow=S.rows[i]; break; } }
+    if(!mineRow){
+      you.innerHTML='<div class="stb-you">'+_t(
+        'You have no activity in this period yet. Connect the Minimalist Manager EA to have your trades verified and be ranked.',
+        'A\u00fan no tienes actividad en este periodo. Conecta el EA Minimalist Manager para verificar tus operaciones y entrar en la clasificaci\u00f3n.')+'</div>';
+      return;
+    }
+    if(!mineRow.ranked){
+      you.innerHTML='<div class="stb-you">'+_t('Your rank','Tu posici\u00f3n')+': <b>'+_t('unranked','sin clasificar')+'</b> \u00b7 '+
+        _t('you need one clean series of 10 (every trade with a stop, none broken).','necesitas una serie limpia de 10 (todas con stop, ninguno roto).')+
+        ' \u00b7 '+esc(String(mineRow.trades))+' '+_t('verified trades','operaciones verificadas')+
+        (brk(mineRow)>0 ? (' \u00b7 <span class="stb-bad">'+brk(mineRow)+' '+_t('rule breaks','fallos de regla')+'</span>') : '')+
+        '</div>';
+      return;
+    }
+    var rr=Number(mineRow.best_series_r||0);
+    you.innerHTML='<div class="stb-you">'+_t('Your rank','Tu posici\u00f3n')+': <b>#'+mineRow.rank+'</b> \u00b7 '+
+      Math.round(mineRow.points)+' '+_t('pts','pts')+' \u00b7 '+
+      _t('best clean series','mejor serie limpia')+' '+(rr>=0?'+':'')+rr.toFixed(2)+'R \u00b7 '+
+      mineRow.bias_days+' '+_t('bias','sesgos')+' \u00b7 '+mineRow.review_days+' '+_t('reviews','revisiones')+
+      '</div>';
+  }
+
+  function sync(){
+    var on=onBoard();
+    var b=el('stb-board');
+    if(!on){ if(b) b.classList.remove('show'); return; }
+    b=mount(); if(!b) return;
+    b.classList.add('show');
+    if(!S.loaded){ S.loaded=true; load(true); }
+  }
+
+  function boot(){
+    document.addEventListener('click', function(e){
+      if(e.target && e.target.closest && e.target.closest('.dcx-chan')) setTimeout(sync, 80);
+    }, true);
+    setInterval(sync, 1500);
+    sync();
+  }
+  window.STBoard={ refresh:function(){ S.loaded=false; sync(); }, state:function(){ return S; } };
+  if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(boot,3000);
+  else document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot,3000); });
+})();
+</script>
 </body>
 </html>
