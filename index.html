@@ -36318,8 +36318,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stl-aud label.on{border-color:#e59ab9;color:#fff;}
 .stl-dock{display:none;flex-direction:column;background:#0a0a0a;border-bottom:1px solid #262626;flex:0 0 auto;}
 .stl-dock.show{display:flex;}
-.stl-dock-vid{position:relative;background:#000;height:min(36vh,330px);display:flex;align-items:center;justify-content:center;}
+.stl-dock-vid{position:relative;background:#000;height:min(36vh,330px);display:flex;align-items:center;justify-content:center;transition:height .18s;}
 .stl-dock.min .stl-dock-vid{display:none;}
+.stl-dock.big .stl-dock-vid{height:min(72vh,760px);}
+.stl-dock-vid:fullscreen{height:100vh;width:100vw;background:#000;}
+.stl-dock-vid:fullscreen video{width:100%;height:100%;object-fit:contain;}
+.stl-dock-vid:-webkit-full-screen{height:100vh;width:100vw;background:#000;}
+.stl-fsbtn{position:absolute;right:10px;bottom:10px;z-index:5;background:rgba(12,12,12,.72);border:1px solid #333;color:#e5e7eb;border-radius:8px;padding:6px 10px;font-family:'DM Mono',monospace;font-size:11px;cursor:pointer;opacity:0;transition:opacity .15s,background .15s;}
+.stl-dock-vid:hover .stl-fsbtn{opacity:1;}
+.stl-fsbtn:hover{background:#1f7a4d;border-color:#1f7a4d;color:#fff;}
+.stl-dock-vid:fullscreen .stl-fsbtn{opacity:1;}
 .stl-dock-vid video{width:100%;height:100%;object-fit:contain;background:#000;display:none;}
 .stl-dock-vid video.on{display:block;}
 .stl-wait{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;color:#6b7280;font-family:'DM Mono',monospace;font-size:12px;padding:16px;line-height:1.6;}
@@ -36373,7 +36381,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var isAdmin = function(){ var u=me(); return !!(u && u.email && u.email.toLowerCase()===ADMIN_EMAIL); };
 
   var S = { live:null, parts:[], joined:false, ch:null, pollT:null, user:null, ppl:{}, min:false,
-            pc:null, cfSession:null, stream:null, subbed:{}, publishing:false, subscribing:false };
+            pc:null, cfSession:null, stream:null, subbed:{}, publishing:false, subscribing:false, big:false };
   var SFU_URL = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
   var ICE = { iceServers:[{ urls:'stun:stun.cloudflare.com:3478' }] };
 
@@ -36505,14 +36513,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(main && msgs && !el('stl-dock')){
       var d=document.createElement('div'); d.className='stl-dock'; d.id='stl-dock';
       d.innerHTML=
-        '<div class="stl-dock-vid"><video id="stl-video" autoplay playsinline></video>'+
-          '<div class="stl-wait" id="stl-wait">Waiting for the host\u2019s screen\u2026</div></div>'+
+        '<div class="stl-dock-vid" id="stl-vidbox"><video id="stl-video" autoplay playsinline></video>'+
+          '<div class="stl-wait" id="stl-wait">Waiting for the host\u2019s screen\u2026</div>'+
+          '<button class="stl-fsbtn" id="stl-fs" title="Fullscreen">\u26F6 FULLSCREEN</button></div>'+
         '<div class="stl-dock-bar">'+
           '<span class="stl-chip"><span class="stl-dot"></span><span id="stl-dock-title">Live</span></span>'+
           '<span class="stl-spk" id="stl-spk"></span>'+
           '<span id="stl-dock-ctl"></span>'+
         '</div>';
       main.insertBefore(d, msgs);
+      var fsb=el('stl-fs');
+      if(fsb) fsb.addEventListener('click', function(e){ e.stopPropagation(); toggleFs(); });
     }
   }
 
@@ -36573,7 +36584,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
     var dock=el('stl-dock');
     var inRoom = !!(S.live && S.joined) && (!S.live.channel_id || curChan()===S.live.channel_id);
-    if(dock) dock.className='stl-dock'+(inRoom?' show':'')+(S.min?' min':'');
+    if(dock) dock.className='stl-dock'+(inRoom?' show':'')+(S.min?' min':'')+(S.big?' big':'');
     if(S.joined && S.live && S.live.cf_session_id && !isAdmin() && !S.subscribing && !S.pc){ startWatch(); }
     var dt=el('stl-dock-title');
     if(dt&&S.live){
@@ -36610,15 +36621,35 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(box.querySelectorAll('[data-demote]'), function(b){ b.addEventListener('click', function(){ setRole(b.getAttribute('data-demote'),'listener'); }); });
   }
 
+  function fsEl(){ return document.fullscreenElement || document.webkitFullscreenElement || null; }
+  function toggleFs(){
+    var box=el('stl-vidbox'), v=el('stl-video');
+    if(!box) return;
+    if(fsEl()){
+      if(document.exitFullscreen) document.exitFullscreen();
+      else if(document.webkitExitFullscreen) document.webkitExitFullscreen();
+      return;
+    }
+    /* iOS Safari can only fullscreen the <video> itself */
+    if(box.requestFullscreen){
+      box.requestFullscreen().catch(function(){ if(v && v.webkitEnterFullscreen) v.webkitEnterFullscreen(); });
+    } else if(box.webkitRequestFullscreen){
+      box.webkitRequestFullscreen();
+    } else if(v && v.webkitEnterFullscreen){
+      v.webkitEnterFullscreen();
+    }
+  }
   function renderCtl(){
     var box=el('stl-dock-ctl'); if(!box) return;
     var p=myPart(); var raised=!!(p&&p.hand_raised);
     var h='';
     if(!isAdmin()) h+='<button class="stl-min" id="stl-hand2" style="margin-right:6px;">'+(raised?'\u270B HAND UP':'\u270B RAISE HAND')+'</button>';
+    h+='<button class="stl-min" id="stl-bigb" style="margin-right:6px;">'+(S.big?'\u2921 SMALL':'\u2922 LARGE')+'</button>';
     h+='<button class="stl-min" id="stl-minb">'+(S.min?'\u25B2 SHOW':'\u25BC HIDE')+'</button>';
     box.innerHTML=h;
     var hb=el('stl-hand2'); if(hb) hb.addEventListener('click', toggleHand);
     var mb=el('stl-minb'); if(mb) mb.addEventListener('click', function(){ S.min=!S.min; render(); });
+    var bb=el('stl-bigb'); if(bb) bb.addEventListener('click', function(){ S.big=!S.big; S.min=false; render(); });
   }
 
   function openName(isRename){
