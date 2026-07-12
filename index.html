@@ -36252,10 +36252,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 (function(){
   var ADMIN_EMAIL = 'be.o2@hotmail.com';
   var sb = function(){ return window.__stSB || null; };
-  var me = function(){ return window.currentUser || null; };
+  var me = function(){ return S.user || window.currentUser || null; };
   var isAdmin = function(){ var u=me(); return !!(u && u.email && u.email.toLowerCase()===ADMIN_EMAIL); };
 
-  var S = { live:null, parts:[], joined:false, ch:null, pollT:null };
+  var S = { live:null, parts:[], joined:false, ch:null, pollT:null, user:null };
 
   function el(id){ return document.getElementById(id); }
   function toast(m){ try{ if(window.showToast) window.showToast(m); }catch(e){} }
@@ -36424,10 +36424,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }catch(e){}
   }
 
-  function boot(){
-    if(!sb()||!me()) { setTimeout(boot, 3000); return; }
+  function start(){
     mount(); watch(); loadLive();
     if(!S.pollT) S.pollT=setInterval(function(){ if(document.visibilityState==='visible') loadLive(); }, 30000);
+  }
+  function boot(){
+    var c=sb();
+    if(!c){ setTimeout(boot, 2000); return; }
+    if(S.user){ start(); return; }
+    try{
+      c.auth.getUser().then(function(r){
+        S.user=(r&&r.data&&r.data.user)||null;
+        if(S.user){ start(); } else { setTimeout(boot,3000); }
+      }, function(){ setTimeout(boot,3000); });
+      c.auth.onAuthStateChange(function(_e, sess){
+        S.user=(sess&&sess.user)||null;
+        if(S.user){ start(); } else { render(); }
+      });
+    }catch(e){ setTimeout(boot,3000); }
   }
 
   window.STLive = { boot:boot, refresh:loadLive, goLive:goLive, join:join, leave:leave, state:function(){ return S; } };
