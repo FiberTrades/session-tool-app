@@ -36377,17 +36377,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var SFU_URL = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/sfu';
   var ICE = { iceServers:[{ urls:'stun:stun.cloudflare.com:3478' }] };
 
-  /* call the Edge Function (it holds the Cloudflare secret + enforces tier) */
+  /* call the Edge Function (it holds the Cloudflare secret + enforces tier).
+     Use the supabase client's invoke() so the apikey + JWT headers are correct. */
   function sfu(action, payload){
-    var c=sb(); if(!c) return Promise.reject('no client');
-    return c.auth.getSession().then(function(r){
-      var tok=(r&&r.data&&r.data.session&&r.data.session.access_token)||'';
-      var body=payload||{}; body.action=action;
-      return fetch(SFU_URL, {
-        method:'POST',
-        headers:{ 'Content-Type':'application/json', 'Authorization':'Bearer '+tok },
-        body: JSON.stringify(body)
-      }).then(function(res){ return res.json().then(function(j){ try{ console.log('[sfu]', action, res.status, j); }catch(e){} return j; }); });
+    var c=sb(); if(!c) return Promise.reject(new Error('no supabase client'));
+    var body=payload||{}; body.action=action;
+    return c.functions.invoke('sfu', { body: body }).then(function(res){
+      try{ console.log('[sfu]', action, res && res.error ? 'ERR' : 'ok', res && (res.data||res.error)); }catch(e){}
+      if(res && res.error){
+        var m=res.error.message||'edge error';
+        try{ if(res.error.context && res.error.context.json) return res.error.context.json().then(function(j){ throw new Error(j.error||m); }); }catch(_){}
+        throw new Error(m);
+      }
+      return (res && res.data) || {};
     });
   }
   function newPc(){
