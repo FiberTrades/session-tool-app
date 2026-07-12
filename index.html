@@ -38353,6 +38353,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stb-r.good{color:#5fcb8d;} .stb-r.bad{color:#f87171;}
 .stb-bad{color:#f87171;}
 .stb-rules{color:#6b7280;font-size:10.5px;}
+.stb-when{color:#6b7280;}
+.stb-tbl td.stb-r b{font-size:13px;font-weight:700;}
 .stb-you{margin-top:12px;padding:10px 12px;background:#0c0c0c;border:1px solid #2a2a2a;border-radius:9px;font-size:11.5px;color:#c9ced6;line-height:1.6;}
 .stb-you b{color:#f472b6;}
 .stb-rulesbox{margin-top:14px;padding-top:12px;border-top:1px solid #2a2a2a;}
@@ -38402,9 +38404,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       '<div class="stb-head">'+
         '<span class="stb-title">'+_t('Leaderboard','Clasificaci\u00f3n')+'</span>'+
         '<div class="stb-tabs">'+
-          '<button class="stb-tab" data-p="week">'+_t('Week','Semana')+'</button>'+
-          '<button class="stb-tab" data-p="month">'+_t('Month','Mes')+'</button>'+
-          '<button class="stb-tab" data-p="year">'+_t('Year','A\u00f1o')+'</button>'+
+          '<button class="stb-tab" data-p="month">'+_t('This month','Este mes')+'</button>'+
+          '<button class="stb-tab" data-p="alltime">'+_t('Records','R\u00e9cords')+'</button>'+
         '</div>'+
       '</div>'+
       '<div id="stb-body"><div class="stb-empty">'+_t('Loading\u2026','Cargando\u2026')+'</div></div>'+
@@ -38459,6 +38460,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function who(id){ return S.ppl[id] || { name:'Trader', avatar:'' }; }
   /* gold / silver / bronze - dense_rank, so a tie shares a medal */
   function medal(r){ return r===1?'\uD83E\uDD47':(r===2?'\uD83E\uDD48':(r===3?'\uD83E\uDD49':'')); }
+  /* when the record series closed - "Mar 2026" */
+  function when(ts){
+    if(!ts) return '\u2014';
+    try{
+      var d=new Date(ts);
+      var loc=(window._stLang==='es')?'es-ES':'en-GB';
+      return d.toLocaleDateString(loc,{ month:'short', year:'numeric' });
+    }catch(e){ return '\u2014'; }
+  }
   /* every rule-break the broker's own record can prove */
   function brk(x){
     return (x.broken_stops||0)+(x.missing_stops||0)+(x.tp_pulled||0)+
@@ -38515,14 +38525,45 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function paint(){
     var box=el('stb-body'); if(!box) return;
+    /* the points key only applies to the monthly board */
+    var rb=document.querySelector('.stb-rulesbox');
+    if(rb) rb.style.display=(S.period==='alltime')?'none':'';
     Array.prototype.forEach.call(document.querySelectorAll('.stb-tab'), function(t){
       t.className='stb-tab'+(t.getAttribute('data-p')===S.period?' on':'');
     });
     var uid=me();
+    var rec=(S.period==='alltime');
     var ranked=S.rows.filter(function(x){ return x.ranked; });
     var top=ranked.slice(0,10);
     if(!top.length){
-      box.innerHTML='<div class="stb-empty">'+_t('No ranked traders yet this period.','A\u00fan no hay traders clasificados en este periodo.')+'</div>';
+      box.innerHTML='<div class="stb-empty">'+(rec
+        ? _t('No records set yet. Ten clean trades and the first one is yours.','A\u00fan no hay r\u00e9cords. Diez operaciones limpias y el primero es tuyo.')
+        : _t('No ranked traders yet this period.','A\u00fan no hay traders clasificados en este periodo.'))+'</div>';
+    } else if(rec){
+      /* RECORD BOARD - the best clean series ever posted. No points, no habits:
+         points accumulate, so an all-time points board would rank people by how
+         long they had been here. A record can be taken by anyone, any week. */
+      var h='<table class="stb-tbl"><thead><tr>'+
+        '<th>#</th><th>'+_t('Trader','Trader')+'</th>'+
+        '<th>'+_t('Best series','Mejor serie')+'</th>'+
+        '<th class="stb-hide-sm">'+_t('W/BE/L','G/BE/P')+'</th>'+
+        '<th>'+_t('Set','Fecha')+'</th>'+
+      '</tr></thead><tbody>';
+      top.forEach(function(x){
+        var u=who(x.user_id);
+        var r=(x.best_series_r==null)?null:Number(x.best_series_r);
+        var mine=(uid&&x.user_id===uid)?' class="me"':'';
+        h+='<tr'+mine+'>'+
+          '<td class="stb-rk'+(x.rank<=3?' top':'')+'">'+(x.rank||'')+'</td>'+
+          '<td><span class="stb-who">'+ava(u)+'<span>'+esc(u.name)+'</span>'+
+            (medal(x.rank)?'<i class="stb-medal">'+medal(x.rank)+'</i>':'')+'</span></td>'+
+          '<td class="stb-r '+((r||0)>=0?'good':'bad')+'"><b>'+(r==null?'\u2014':(r>=0?'+':'')+r.toFixed(2)+'R')+'</b></td>'+
+          '<td class="stb-hide-sm">'+x.series_wins+'/'+x.series_be+'/'+x.series_losses+'</td>'+
+          '<td class="stb-when">'+esc(when(x.best_series_at))+'</td>'+
+        '</tr>';
+      });
+      h+='</tbody></table>';
+      box.innerHTML=h;
     } else {
       var h='<table class="stb-tbl"><thead><tr>'+
         '<th>#</th><th>'+_t('Trader','Trader')+'</th>'+
@@ -38563,6 +38604,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       you.innerHTML='<div class="stb-you">'+_t(
         'You have no activity in this period yet. Connect the Minimalist Manager EA to have your trades verified and be ranked.',
         'A\u00fan no tienes actividad en este periodo. Conecta el EA Minimalist Manager para verificar tus operaciones y entrar en la clasificaci\u00f3n.')+'</div>';
+      return;
+    }
+    if(S.period==='alltime'){
+      if(!mineRow.ranked){
+        you.innerHTML='<div class="stb-you">'+_t(
+          'You have no clean series of 10 yet \u2014 ten EA-verified trades with every stop loss set and none enlarged, and you are on the board.',
+          'A\u00fan no tienes una serie limpia de 10 \u2014 diez operaciones verificadas por el EA, todas con stop loss y ninguno ampliado, y entras en el tabl\u00f3n.')+'</div>';
+      } else {
+        var br=Number(mineRow.best_series_r||0);
+        you.innerHTML='<div class="stb-you">'+_t('Your record','Tu r\u00e9cord')+': <b>'+(br>=0?'+':'')+br.toFixed(2)+'R</b> \u00b7 '+
+          _t('rank','puesto')+' <b>#'+mineRow.rank+'</b> \u00b7 '+esc(when(mineRow.best_series_at))+'</div>';
+      }
       return;
     }
     if(!mineRow.ranked){
