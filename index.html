@@ -38517,6 +38517,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.reconnecting=true; refreshStatus();
     try{ if(S.pc) S.pc.close(); }catch(e){}
     S.pc=null; S.cfSession=null; S.subscribing=false; S.subbed={};
+    try{ if(S.pubPc) S.pubPc.close(); }catch(e){}  /* the speak-publisher, if we had one */
+    S.pubPc=null; S.pubSession=null;
     var v=el('stl-video'); if(v){ v.srcObject=null; v.className=''; }
     startWatch();
   }
@@ -38906,6 +38908,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         try{ console.log('[stlive] host republished, re-subscribing', S.subCf, '->', cf); }catch(e){}
         try{ S.pc.close(); }catch(e){}
         S.pc=null; S.cfSession=null; S.subbed={}; S.subscribing=false;
+        try{ if(S.pubPc) S.pubPc.close(); }catch(e){}  /* the speak-publisher, if we had one */
+        S.pubPc=null; S.pubSession=null;
         var _v=el('stl-video'); if(_v){ _v.srcObject=null; _v.className=''; }
         S.reconnecting=true; refreshStatus();
       }
@@ -39518,41 +39522,75 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function startSpeak(){
     if(S.speaking || !S.live || isAdmin() || !S.pc) return;
     S.speaking=true;
+
+    // A PROMOTED LISTENER PUBLISHES ON ITS OWN CONNECTION.
+    //
+    // This used to hang the mic off S.pc - but for a listener S.pc is the SUBSCRIBER: it was
+    // built with recvonly transceivers to pull the broadcast down, and it has been ANSWERING
+    // the SFU's offers ever since. Bolting a sendonly track onto it and calling createOffer()
+    // makes the client the offerer on a connection where the SFU already is one. Chrome then
+    // tries to attach send parameters to a video m-section it only ever agreed to receive, and
+    // throws:
+    //
+    //   Failed to set remote video description send parameters for m-section with mid='2'
+    //
+    // (mid 2 being the host's third m-section - screen, mic, camera.) It never failed for the
+    // host, because the host's S.pc was born a publisher.
+    //
+    // So: a second session, a second PeerConnection, sendonly. The subscriber is left alone and
+    // keeps receiving throughout - the listener does not drop the stream to start talking.
+    var pubPc=null, pubSession=null;
+
     navigator.mediaDevices.getUserMedia({ audio:true }).then(function(ms){
       S.micStream=ms;
       var track=ms.getAudioTracks()[0];
-      var tx=S.pc.addTransceiver(track, { direction:'sendonly' });
-      return S.pc.createOffer().then(function(o){ return S.pc.setLocalDescription(o); })
-        .then(function(){ return iceDone(S.pc); })
-        .then(function(){
-          return sfu('publish', {
-            sessionId: S.cfSession,
-            liveSessionId: S.live.id,
-            sessionDescription: { sdp:S.pc.localDescription.sdp, type:'offer' },
-            tracks: [{ location:'local', mid:String(tx.mid), trackName:'spk' }]
+      return sfu('new_session', {}).then(function(r){
+        if(!r || !r.sessionId) throw new Error(r ? (r.error || 'no session') : 'no response');
+        pubSession=r.sessionId;
+        pubPc=newPc();
+        S.pubPc=pubPc; S.pubSession=pubSession;
+        var tx=pubPc.addTransceiver(track, { direction:'sendonly' });
+        return pubPc.createOffer()
+          .then(function(o){ return pubPc.setLocalDescription(o); })
+          .then(function(){ return iceDone(pubPc); })
+          .then(function(){
+            return sfu('publish', {
+              sessionId: pubSession,
+              liveSessionId: S.live.id,
+              sessionDescription: { sdp:pubPc.localDescription.sdp, type:'offer' },
+              tracks: [{ location:'local', mid:String(tx.mid), trackName:'spk' }]
+            });
           });
-        });
+      });
     }).then(function(r){
       if(!r || r.error) throw new Error((r&&r.error)||'speak failed');
-      if(r.sessionDescription) return S.pc.setRemoteDescription(r.sessionDescription);
+      if(r.sessionDescription) return pubPc.setRemoteDescription(r.sessionDescription);
     }).then(function(){
       var c=sb(), u=me();
+      // Point others at the PUBLISHER session, not the subscriber one - that is where the
+      // mic actually lives now.
       return c.from('live_participants')
-        .update({ cf_session_id:S.cfSession, cf_audio_track:'spk' })
+        .update({ cf_session_id:pubSession, cf_audio_track:'spk' })
         .eq('session_id',S.live.id).eq('user_id',u.id);
     }).then(function(){ toast(_t('Your mic is live.','Tu micr\u00f3fono est\u00e1 activo.')); })
     .catch(function(e){
       S.speaking=false;
       toast('Mic failed: '+(e&&e.message?e.message:e));
       try{ if(S.micStream) S.micStream.getTracks().forEach(function(x){ x.stop(); }); }catch(_){}
+      try{ if(pubPc) pubPc.close(); }catch(_){}
+      S.pubPc=null; S.pubSession=null;
     });
   }
   function stopSpeak(){
     try{ if(S.micStream) S.micStream.getTracks().forEach(function(x){ x.stop(); }); }catch(e){}
     S.micStream=null; S.speaking=false;
+    // Close the PUBLISHER connection - it exists only while you are speaking. The subscriber
+    // (S.pc) is untouched: you stop talking, you keep watching.
+    try{ if(S.pubPc) S.pubPc.close(); }catch(e){}
+    S.pubPc=null; S.pubSession=null;
     var c=sb(), u=me();
     if(c&&u&&S.live){
-      c.from('live_participants').update({ cf_audio_track:null })
+      c.from('live_participants').update({ cf_audio_track:null, cf_session_id:S.cfSession })
         .eq('session_id',S.live.id).eq('user_id',u.id).then(function(){}, function(){});
     }
   }
