@@ -6171,6 +6171,22 @@
       'combo.rec_b_need_more': 'Need 10+ BEs with BE POT R · P logged. You have {N}.',
       'combo.rec_b_no_room': 'No shorter TP beats current. To turn your BEs into wins you\u2019d need a TP short enough to also cap your winners \u2014 and your winners run further, so you\u2019d give up more than you\u2019d gain.',
       'combo.rec_b_recommend': 'Cap your TP at <strong class="rec-suggest">+{TP}</strong>.',
+      'combo.direction_c_name': 'Widen your initial stop',
+      'combo.direction_d_name': 'Change your BE rule',
+      'combo.rec_c_need_more': 'Need 10+ losers replayed by the EA. You have {N}.',
+      'combo.rec_c_no_room': 'A wider stop costs more than it saves. It rescues some losers, but you risk a fixed amount \u2014 so a wider stop is a smaller position, and every winner shrinks.',
+      'combo.rec_c_recommend': 'Widen your stop by <strong class="rec-suggest">+{PIPS} pips</strong>.',
+      'combo.rec_d_need_more': 'Need 10+ trades replayed by the EA. You have {N}.',
+      'combo.rec_d_no_room': 'Your current BE rule beats every alternative \u2014 moving earlier scratches winners, moving later turns scratches into losses. Leave it alone.',
+      'combo.rec_d_recommend': 'Change your BE rule: <strong class="rec-suggest">{RULE}</strong>.',
+      'combo.be_never': 'stop moving to BE at all',
+      'combo.be_at': 'move at {R}R',
+      'combo.sample_loser_one': 'tracked loser',
+      'combo.sample_loser_many': 'tracked losers',
+      'combo.sample_sim_one': 'replayed trade',
+      'combo.sample_sim_many': 'replayed trades',
+      'combo.g_be_better': 'Trades improved',
+      'combo.g_be_worse': 'Trades made worse',
       'combo.sample_win_one': 'tracked win',
       'combo.sample_win_many': 'tracked wins',
       'combo.sample_be_one': 'tracked BE',
@@ -7501,13 +7517,19 @@
       'combo.sample_win_one': 'ganadora rastreada',
       'combo.sample_win_many': 'ganadoras rastreadas',
       'combo.direction_c_name': 'Ampliar el stop inicial',
-      'combo.direction_d_name': 'Mover a BE más tarde',
+      'combo.direction_d_name': 'Cambiar tu regla de BE',
       'combo.rec_c_need_more': 'Necesitas 10+ perdedoras con datos de stop del EA. Tienes {N}.',
       'combo.rec_c_no_room': 'Un stop más amplio cuesta más de lo que salva. Rescata perdedoras, pero encoge cada ganadora: arriesgas una cantidad fija, así que un stop más amplio es una posición más pequeña.',
       'combo.rec_c_recommend': 'Amplía tu stop <strong class="rec-suggest">+{PIPS} pips</strong>.',
-      'combo.rec_d_need_more': 'Necesitas 10+ BEs con datos de stop del EA. Tienes {N}.',
-      'combo.rec_d_no_room': 'Mover a BE más tarde cuesta más de lo que salva. Los BEs que rescata no compensan los que se convierten en pérdidas completas.',
-      'combo.rec_d_recommend': 'Da a tu stop BE <strong class="rec-suggest">+{PIPS} pips</strong> de margen.',
+      'combo.rec_d_need_more': 'Necesitas 10+ operaciones reproducidas por el EA. Tienes {N}.',
+      'combo.be_never': 'no mover nunca a BE',
+      'combo.be_at': 'mover en {R}R',
+      'combo.sample_sim_one': 'operación reproducida',
+      'combo.sample_sim_many': 'operaciones reproducidas',
+      'combo.g_be_better': 'Operaciones mejoradas',
+      'combo.g_be_worse': 'Operaciones empeoradas',
+      'combo.rec_d_no_room': 'Tu regla de BE actual gana a todas las alternativas. Déjala como está.',
+      'combo.rec_d_recommend': 'Cambia tu regla de BE: <strong class="rec-suggest">{RULE}</strong>.',
       'combo.sample_loser_one': 'perdedora rastreada',
       'combo.sample_loser_many': 'perdedoras rastreadas',
       'combo.sample_be_one': 'BE rastreado',
@@ -15712,14 +15734,15 @@
     const losers = allTrades.filter(tr => tr.result === 'Lose');
     const trackedLosers = losers.filter(tr =>
       typeof tr.reqSlPips === 'number' && !isNaN(tr.reqSlPips) && typeof tr.wouldHaveWon === 'boolean');
-    const trackedBeSlack = allTrades.filter(tr =>
-      tr.result === 'BE' &&
-      typeof tr.beSlackPips === 'number' && !isNaN(tr.beSlackPips) && typeof tr.wouldHaveWon === 'boolean');
+    // D's sample is EVERY trade with a simulation, not just the breakevens. Changing when
+    // you move to BE changes what happens to winners and losers too - a loser that ran
+    // +0.6R before turning would have scratched under a 0.5R rule.
+    const trackedBeSim = allTrades.filter(tr => Array.isArray(tr.beSim) && tr.beSim.length >= 7);
 
     const tierA = tierFor(trackedWins.length);
     const tierB = tierFor(trackedBes.length);
     const tierC = tierFor(trackedLosers.length);
-    const tierD = tierFor(trackedBeSlack.length);
+    const tierD = tierFor(trackedBeSim.length);
     const tierIsStrong = tier => tier === 'building' || tier === 'strong';
     const aPassesTier  = tierIsStrong(tierA);
     const bPassesTier  = tierIsStrong(tierB);
@@ -15902,44 +15925,57 @@
     // winners: a BE that would never have reached your TP becomes a FULL LOSS instead of a
     // scratch. would_have_won knows which is which, so both sides are counted.
     // ------------------------------------------------------------------
-    function projectLaterBE(slackPips) {
-      let totalGbp = 0, gainGbp = 0, costGbp = 0, rescued = 0, ruined = 0;
+    // ------------------------------------------------------------------
+    // D - WHEN SHOULD I MOVE TO BREAKEVEN?
+    //
+    // Not "how much room does the BE stop need" - that was the wrong question, and the old
+    // version answered it while claiming otherwise. This is the real one: move at 2R instead
+    // of 1R, or never move at all?
+    //
+    // It cannot be answered from a summary number, because the answer depends on the PATH
+    // each trade took, and because changing the rule changes EVERY trade - not just the ones
+    // that ended flat. So the EA replays each trade under all seven rules and reports what it
+    // would have been worth. Here we just add them up.
+    //
+    // The ladder must match the EA's PM_BE_LADDER exactly.
+    const BE_LADDER = [null, 0.5, 1, 1.5, 2, 2.5, 3];   // null = never move to BE
+
+    function projectBeRule(idx) {
+      let totalGbp = 0;
+      const perTradeGbp = [];
       allTrades.forEach(tr => {
         const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
-        const risk   = parseFloat(tr.risk) || 0;
+        const risk   = parseFloat(tr.risk)  || 0;
+        const costs  = parseFloat(tr.costs) || 0;
         const net    = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
-        const slack  = tr.beSlackPips;
 
-        const survives = (tr.result === 'BE') && (typeof slack === 'number') && slack <= slackPips;
-        if (!survives || risk <= 0) { totalGbp += net * copies; return; }
-
-        const wasGbp = net * copies;
-        let nowGbp;
-        if (tr.wouldHaveWon === true) {
-          const tpR = (typeof tr.bePotentialR === 'number' && tr.bePotentialR > 0)
-            ? tr.bePotentialR : (parseFloat(tr.r) || 0);
-          nowGbp = (Math.abs(tpR) * risk) * copies;
-          rescued++;
-        } else {
-          // No BE stop, so it runs back to the original one. A scratch becomes a full loss.
-          nowGbp = (-1 * risk) * copies;
-          ruined++;
+        // No simulation for this trade (no EA, or it never resolved): it contributes exactly
+        // what it really did. It must not be silently dropped, or the totals would compare a
+        // scenario over 20 trades against a reality over 44.
+        if (!Array.isArray(tr.beSim) || tr.beSim.length < 7 || risk <= 0) {
+          perTradeGbp.push(net * copies);
+          totalGbp += net * copies;
+          return;
         }
-
-        const delta = nowGbp - wasGbp;
-        if (delta > 0) gainGbp += delta; else costGbp += delta;
-        totalGbp += nowGbp;
+        const r = Number(tr.beSim[idx]);
+        const gbp = (isNaN(r) ? net : (r * risk - costs)) * copies;
+        perTradeGbp.push(gbp);
+        totalGbp += gbp;
       });
-      return { totalGbp, gainGbp, costGbp, rescued, ruined };
+      return { totalGbp, perTradeGbp };
     }
 
-    let bestSlack = 0, scenarioD = { totalGbp: current.totalGbp, gainGbp: 0, costGbp: 0, rescued: 0, ruined: 0 };
-    if (trackedBeSlack.length > 0) {
-      for (let sp = 1; sp <= 10; sp++) {
-        const sc = projectLaterBE(sp);
-        if (sc.totalGbp > scenarioD.totalGbp) { scenarioD = sc; bestSlack = sp; }
+    let bestBeIdx = -1, scenarioD = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp };
+    if (trackedBeSim.length > 0) {
+      for (let k = 0; k < BE_LADDER.length; k++) {
+        const sc = projectBeRule(k);
+        if (sc.totalGbp > scenarioD.totalGbp) { scenarioD = sc; bestBeIdx = k; }
       }
     }
+    const bestBeLabel = (bestBeIdx < 0) ? ''
+      : (BE_LADDER[bestBeIdx] === null
+          ? (t('combo.be_never') || 'stop moving to BE at all')
+          : (t('combo.be_at') || 'move at {R}R').replace('{R}', String(BE_LADDER[bestBeIdx])));
 
     const aDeltaGbp = scenarioA.totalGbp - current.totalGbp;
     const bDeltaGbp = scenarioB.totalGbp - current.totalGbp;
@@ -15960,14 +15996,14 @@
     }
 
     let recDTpl;
-    if (trackedBeSlack.length < 10) {
-      recDTpl = (t('combo.rec_d_need_more') || 'Need 10+ BEs with stop-loss data from the EA. You have {N}.')
-        .replace('{N}', String(trackedBeSlack.length));
-    } else if (bestSlack === 0) {
-      recDTpl = t('combo.rec_d_no_room') || 'Moving to BE later costs more than it saves.';
+    if (trackedBeSim.length < 10) {
+      recDTpl = (t('combo.rec_d_need_more') || 'Need 10+ trades replayed by the EA. You have {N}.')
+        .replace('{N}', String(trackedBeSim.length));
+    } else if (bestBeIdx < 0) {
+      recDTpl = t('combo.rec_d_no_room') || 'Your current BE rule beats every alternative. Leave it alone.';
     } else {
-      recDTpl = (t('combo.rec_d_recommend') || 'Give your BE stop <strong class="rec-suggest">+{PIPS} pips</strong> of room.')
-        .replace('{PIPS}', String(bestSlack));
+      recDTpl = (t('combo.rec_d_recommend') || 'Change your BE rule: <strong class="rec-suggest">{RULE}</strong>.')
+        .replace('{RULE}', bestBeLabel);
     }
 
     const directionAHtml = buildDirectionBlock({
@@ -16035,18 +16071,22 @@
     const directionDHtml = buildDirectionBlock({
       letter: 'D',
       nameKey: 'combo.direction_d_name',
-      nameFallback: 'Move to BE later',
+      nameFallback: 'Change your BE rule',
       recommendation: recDTpl,
       scenario: scenarioD,
       deltaGbp: dDeltaGbp,
       tier: tierD,
-      sampleCount: trackedBeSlack.length,
-      sampleLabel: trackedBeSlack.length === 1
-        ? (t('combo.sample_be_one')  || 'tracked BE')
-        : (t('combo.sample_be_many') || 'tracked BEs'),
-      graphHtml: (tierIsStrong(tierD) && bestSlack > 0)
-        ? comboSplitGraph(scenarioD.gainGbp, scenarioD.costGbp,
-            t('combo.g_be_saved') || 'BEs paid out', t('combo.g_be_lost') || 'BEs turned to losses')
+      sampleCount: trackedBeSim.length,
+      sampleLabel: trackedBeSim.length === 1
+        ? (t('combo.sample_sim_one')  || 'replayed trade')
+        : (t('combo.sample_sim_many') || 'replayed trades'),
+      graphHtml: (tierIsStrong(tierD) && bestBeIdx >= 0)
+        ? (function () {
+            const sp = splitVsCurrent(scenarioD, current);
+            return comboSplitGraph(sp.gainGbp, sp.costGbp,
+              t('combo.g_be_better') || 'Trades improved',
+              t('combo.g_be_worse')  || 'Trades made worse');
+          })()
         : ''
     });
 
@@ -16115,12 +16155,12 @@
         n: trackedLosers.length,
         sampleLabel: trackedLosers.length === 1
           ? (t('combo.sample_loser_one') || 'tracked loser') : (t('combo.sample_loser_many') || 'tracked losers') },
-      { name: t('combo.direction_d_name') || 'Move to BE later',
-        suggest: '+' + bestSlack + ' pips of room',
+      { name: t('combo.direction_d_name') || 'Change your BE rule',
+        suggest: bestBeLabel,
         delta: dDeltaGbp, passesTier: tierIsStrong(tierD), passesDelta: dDeltaGbp > threshold,
-        n: trackedBeSlack.length,
-        sampleLabel: trackedBeSlack.length === 1
-          ? (t('combo.sample_be_one') || 'tracked BE') : (t('combo.sample_be_many') || 'tracked BEs') }
+        n: trackedBeSim.length,
+        sampleLabel: trackedBeSim.length === 1
+          ? (t('combo.sample_sim_one') || 'replayed trade') : (t('combo.sample_sim_many') || 'replayed trades') }
     ];
 
     const beats = candidates.filter(c => c.delta > 0).sort((x, y) => y.delta - x.delta);
@@ -29862,6 +29902,7 @@
         // "is my stop too tight" and "do I move to BE too early".
         if (!isNum(t.reqSlPips)   && isNum(r.req_sl_pips))   { t.reqSlPips   = r.req_sl_pips;   changed++; }
         if (!isNum(t.beSlackPips) && isNum(r.be_slack_pips)) { t.beSlackPips = r.be_slack_pips; changed++; }
+        if (!Array.isArray(t.beSim) && Array.isArray(r.be_sim)) { t.beSim = r.be_sim; changed++; }
         if (t.wouldHaveWon === undefined && typeof r.would_have_won === 'boolean') {
           t.wouldHaveWon = r.would_have_won; changed++;
         }
@@ -29944,6 +29985,7 @@
       // Post-mortem: what price did AFTER the trade, replayed by the EA from M1 bars.
       _potR: num(row.pot_r), _potPips: num(row.pot_pips),
       _reqSlPips: num(row.req_sl_pips), _beSlackPips: num(row.be_slack_pips),
+      _beSim: Array.isArray(row.be_sim) ? row.be_sim : null,
       _wouldHaveWon: (row.would_have_won === true) ? true : (row.would_have_won === false ? false : null),
       _consumedAt: row.consumed_at || null
     };
@@ -30288,6 +30330,7 @@
         // the aggregate question "is my stop too tight / do I move to BE too early".
         if (t._reqSlPips   != null) row.reqSlPips   = t._reqSlPips;
         if (t._beSlackPips != null) row.beSlackPips = t._beSlackPips;
+        if (Array.isArray(t._beSim)) row.beSim = t._beSim;
         if (t._wouldHaveWon != null) row.wouldHaveWon = t._wouldHaveWon;
         if (t._potR == null && (t._mfeR != null || t._mfePips != null)) {
           if (isBE) { row.bePotentialR = (t._mfeR != null) ? t._mfeR : null; row.bePotentialPips = (t._mfePips != null) ? t._mfePips : null; }
@@ -32082,7 +32125,7 @@
   window.STCloud.pullPostMortem = function () {
     if (!currentUser) return Promise.resolve({ data: [], error: null });
     return sb.from('trades_inbox')
-      .select('ticket, pot_r, pot_pips, req_sl_pips, be_slack_pips, would_have_won')
+      .select('ticket, pot_r, pot_pips, req_sl_pips, be_slack_pips, would_have_won, be_sim')
       .eq('token', currentUser.id)
       .not('pm_at', 'is', null);
   };
