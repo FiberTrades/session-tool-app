@@ -10898,6 +10898,34 @@
   buildTabStepper('.settings-nav', '.settings-nav-item', 'settings-nav-stepper');
   function rebuildTabStepper(){ try { var ex=document.querySelector('.tab-stepper'); if(ex) ex.remove(); buildTabStepper('.tabs','.tab','tab-stepper'); } catch(e){} }
   window.__rebuildTabStepper = rebuildTabStepper;
+
+  /* ---- return to the tab you left from ----
+     terms.html / privacy.html are separate pages, so leaving the app loses the tab.
+     Stash it on the way out (delegated, so it covers every Terms/Privacy link anywhere,
+     including the community footer), and consume it once on the way back. */
+  document.addEventListener('click', function(e){
+    var a=e.target && e.target.closest ? e.target.closest('a[href]') : null;
+    if(!a) return;
+    var h=a.getAttribute('href')||'';
+    if(!/(^|\/)(terms|privacy)\.html/.test(h)) return;
+    try{
+      var cur=document.querySelector('.page.active');
+      if(cur && cur.id.indexOf('page-')===0){
+        localStorage.setItem('st_return_tab', cur.id.slice(5));
+      }
+    }catch(_){}
+  }, true);
+
+  (function restoreReturnTab(){
+    var t=null;
+    try{ t=localStorage.getItem('st_return_tab'); localStorage.removeItem('st_return_tab'); }catch(_){ return; }
+    if(!t) return;
+    var btn=document.querySelector('.tab[data-page="'+t+'"]');
+    if(!btn) return;
+    /* click the real tab button, so every side effect (captions, refreshes, the mobile
+       stepper, the community boot) happens exactly as it would on a normal switch */
+    setTimeout(function(){ try{ btn.click(); }catch(_){} }, 0);
+  })();
   function rebuildSettingsStepper(){ try { var ex=document.querySelector('.settings-nav-stepper'); if(ex) ex.remove(); buildTabStepper('.settings-nav','.settings-nav-item','settings-nav-stepper'); } catch(e){} }
   window.__rebuildSettingsStepper = rebuildSettingsStepper;
     document.querySelectorAll('.tab').forEach(btn => {
@@ -33505,17 +33533,20 @@
     function ensureSocial(){
       var pc=document.getElementById('page-community'); if(!pc) return;
       var ft=document.querySelector('.footer'); if(!ft) return;
-      if(ft.parentNode===pc) return;                       /* already moved */
       if(!ft._origParent){                                 /* remember where it lives */
         ft._origParent=ft.parentNode;
         ft._origNext=ft.nextSibling;
       }
-      pc.appendChild(ft);
+      /* appendChild MOVES it - so this also re-sorts it below the resize grip if the
+         grip was created after the footer. Guarded, or every fit() would reflow. */
+      if(ft.parentNode!==pc || pc.lastElementChild!==ft) pc.appendChild(ft);
       ft.style.display='';
     }
     function fit(){ var r=G('dcx-root'); if(!r) return; if(chatLocked) return; var _pc=document.getElementById('page-community'); if(!(_pc&&_pc.classList.contains('active'))) return; ensureSocial();   /* the real footer, moved into this page - not a duplicate of it */ r.style.position=''; r.style.left=''; r.style.right=''; r.style.top=''; r.style.bottom=''; r.style.zIndex=''; r.style.transform=''; r.style.transition=''; r.style.display=''; var x=G('dcx-mexit'); if(window.innerWidth<=760){ document.body.classList.remove('stcomm'); var _sp=G('dcx-cspacer'); if(_sp) _sp.style.display='none'; _pc.style.display=''; _pc.style.flexDirection=''; _pc.style.overflow=''; _pc.style.height=''; r.style.flex=''; r.style.minHeight=''; bodyScrollLock(false); r.classList.add('dcx-prelock'); r.style.height=window.innerHeight+'px'; try{ var _sa=((window.navigator&&window.navigator.standalone===true)||(window.matchMedia&&(window.matchMedia('(display-mode: standalone)').matches||window.matchMedia('(display-mode: fullscreen)').matches))); if(_sa){ r.style.paddingTop=(document.documentElement.classList.contains('st-ios')?'max(env(safe-area-inset-top, 0px), 52px)':'env(safe-area-inset-top, 0px)'); r.style.paddingBottom='env(safe-area-inset-bottom, 0px)'; r.style.boxSizing='border-box'; } }catch(e){} if(x) x.style.display='none'; return; } r.classList.remove('dcx-prelock'); ensureSocial(); ensureResize(); document.body.classList.remove('stcomm'); var _sp=G('dcx-cspacer'); if(_sp) _sp.style.display='none'; bodyScrollLock(false); _pc.style.display=''; _pc.style.flexDirection=''; _pc.style.overflow=''; _pc.style.height=''; var _sf2=G('dcx-social'); if(_sf2){ _sf2.style.flex=''; _sf2.style.marginTop=''; } var _flp=G('dcx-resize'); if(_flp){ _flp.style.display='flex'; if(_sf2 && _flp.nextSibling!==_sf2) _pc.insertBefore(_flp, _sf2); } r.style.position=''; r.style.top=''; r.style.left=''; r.style.right=''; r.style.bottom=''; r.style.zIndex=''; r.style.transform=''; r.style.flex=''; r.style.minHeight=''; var tabsEl=document.querySelector('.tabs'); var tabsH=tabsEl?tabsEl.getBoundingClientRect().height:70; var savedH=0; try{ savedH=parseInt(localStorage.getItem('st_comm_h')||'0',10)||0; }catch(e){} var boxH=(savedH>=300)?savedH:Math.max(360, window.innerHeight - tabsH - 90); r.style.height=boxH+'px'; if(x) x.style.display=(window.innerWidth<=1024 && !/[?&]stview=/.test(location.search||''))?'inline-flex':'none'; var mb=G('dcx-msgs'); if(mb) mb.scrollTop=mb.scrollHeight; }
     function ensureVisit(){ if(G('dcx-visit')) return; var pc=document.getElementById('page-community'); if(!pc) return; var b=document.createElement('button'); b.id='dcx-visit'; b.className='dcx-visit'; b.type='button'; b.innerHTML='<span class="dcx-visit-ic"><svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg></span><span class="dcx-visit-tx">Scroll down to open the community</span>'; b.addEventListener('click', function(e){ e.stopPropagation(); lockChat(); }); pc.appendChild(b); }
-    function ensureResize(){ if(G('dcx-resize')) return; var pc=document.getElementById('page-community'); if(!pc) return; var h=document.createElement('div'); h.id='dcx-resize'; h.className='dcx-resize'; h.innerHTML='<div class="dcx-resize-tab" title="'+window._stT('Drag to resize','Arrastra para redimensionar')+'"><span class="dcx-resize-grip"></span></div>'; pc.appendChild(h); var gOff=0; function mv(e){ var r=G('dcx-root'); if(!r) return; var cy=(e.touches&&e.touches[0])?e.touches[0].clientY:e.clientY; var rect=r.getBoundingClientRect(); var nh=Math.max(300, (cy-gOff)-rect.top); r.style.height=nh+'px'; if(e.cancelable) e.preventDefault(); } function up(){ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); document.removeEventListener('touchmove',mv); document.removeEventListener('touchend',up); document.body.style.userSelect=''; var r=G('dcx-root'); if(r){ try{ localStorage.setItem('st_comm_h', String(r.offsetHeight)); }catch(_){} } } function dn(e){ if(window.innerWidth<=760||chatLocked) return; var r=G('dcx-root'); if(!r) return; gOff=((e.touches&&e.touches[0])?e.touches[0].clientY:e.clientY) - r.getBoundingClientRect().bottom; document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up); document.addEventListener('touchmove',mv,{passive:false}); document.addEventListener('touchend',up); document.body.style.userSelect='none'; if(e.cancelable) e.preventDefault(); } h.addEventListener('mousedown',dn); h.addEventListener('touchstart',dn,{passive:false}); }
+    function ensureResize(){ if(G('dcx-resize')) return; var pc=document.getElementById('page-community'); if(!pc) return; var h=document.createElement('div'); h.id='dcx-resize'; h.className='dcx-resize'; h.innerHTML='<div class="dcx-resize-tab" title="'+window._stT('Drag to resize','Arrastra para redimensionar')+'"><span class="dcx-resize-grip"></span></div>';
+      var _ft=pc.querySelector('.footer');
+      if(_ft) pc.insertBefore(h, _ft); else pc.appendChild(h);   /* the grip belongs under the chat, above the footer */ var gOff=0; function mv(e){ var r=G('dcx-root'); if(!r) return; var cy=(e.touches&&e.touches[0])?e.touches[0].clientY:e.clientY; var rect=r.getBoundingClientRect(); var nh=Math.max(300, (cy-gOff)-rect.top); r.style.height=nh+'px'; if(e.cancelable) e.preventDefault(); } function up(){ document.removeEventListener('mousemove',mv); document.removeEventListener('mouseup',up); document.removeEventListener('touchmove',mv); document.removeEventListener('touchend',up); document.body.style.userSelect=''; var r=G('dcx-root'); if(r){ try{ localStorage.setItem('st_comm_h', String(r.offsetHeight)); }catch(_){} } } function dn(e){ if(window.innerWidth<=760||chatLocked) return; var r=G('dcx-root'); if(!r) return; gOff=((e.touches&&e.touches[0])?e.touches[0].clientY:e.clientY) - r.getBoundingClientRect().bottom; document.addEventListener('mousemove',mv); document.addEventListener('mouseup',up); document.addEventListener('touchmove',mv,{passive:false}); document.addEventListener('touchend',up); document.body.style.userSelect='none'; if(e.cancelable) e.preventDefault(); } h.addEventListener('mousedown',dn); h.addEventListener('touchstart',dn,{passive:false}); }
     (function(){ var pc=document.getElementById('page-community'); if(!pc||pc._scLock) return; pc._scLock=true; function chk(){ if(window.innerWidth>760||chatLocked||_noRelock) return; if(!pc.classList.contains('active')) return; var r=G('dcx-root'); if(r && r.style.display!=='none' && r.getBoundingClientRect().top<=window.innerHeight*0.5) lockChat(); } pc.addEventListener('touchmove', chk, {passive:true}); window.addEventListener('scroll', chk, {passive:true}); })();
     (function(){ var pc=document.getElementById('page-community'); if(!pc) return; try{ new MutationObserver(function(){ if(pc.classList.contains('community-open')) return; if(pc.classList.contains('active')){ if(window.innerWidth<=760){ try{ window.scrollTo(0,0); }catch(e){} } fit(); } else { document.body.classList.remove('stcomm'); var _ft=document.querySelector('.footer'); if(_ft){ if(_ft._origParent && _ft.parentNode!==_ft._origParent){ _ft._origParent.insertBefore(_ft, _ft._origNext||null); } _ft.style.display=''; } chatLocked=false; var x=G('dcx-mexit'); if(x) x.style.display='none'; bodyScrollLock(false); var vb=G('dcx-visit'); if(vb) vb.style.display='none'; var _pcx=document.getElementById('page-community'); if(_pcx){ _pcx.style.display=''; _pcx.style.flexDirection=''; _pcx.style.overflow=''; _pcx.style.height=''; } var r=G('dcx-root'); if(r){ r.style.flex=''; r.style.minHeight=''; r.classList.remove('dcx-prelock'); r.style.paddingTop=''; r.style.paddingBottom=''; r.style.boxSizing=''; r.style.position=''; r.style.top=''; r.style.left=''; r.style.right=''; r.style.bottom=''; r.style.zIndex=''; r.style.height=''; r.style.display=''; r.style.transform=''; r.style.transition=''; } } }).observe(pc,{attributes:true,attributeFilter:['class']}); }catch(e){} })();
 
