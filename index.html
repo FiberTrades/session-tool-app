@@ -15456,7 +15456,23 @@
       // £ — match the app's per-trade pattern: (gross − costs) × copies.
       // Multiplying costs by copies matters when a trade is logged once
       // but executed across N accounts.
-      const netPerCopy = outcomeR * risk - costs;
+      //
+      // IF THE RULE DID NOT CHANGE THIS TRADE, USE WHAT IT ACTUALLY MADE.
+      //
+      // This used to reconstruct every trade's money from R x risk - costs, even the ones no
+      // rule had touched. But the app's real figure is tradeNetPL(), which uses actualGross:
+      // the money the broker actually paid. The two only agree if your logged R multiplies
+      // out to the exact penny, and it never quite does - a loss is not exactly -1R after
+      // slippage, a BE is not exactly 0R after commission, an R typed to 2dp is rounded.
+      // Across 44 trades that drift added up to about £72, so CURRENT read £958.97 when the
+      // journal said £886.63 - and every delta was being measured from a number that did not
+      // exist. Reconstruct ONLY the trades a rule actually changes; report the rest as they
+      // really happened.
+      const baselineR = (tr.result === 'Win') ? actualR : (tr.result === 'Lose' ? -1 : 0);
+      const unchanged = (outcomeR === baselineR);
+      const netPerCopy = unchanged
+        ? ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : (outcomeR * risk - costs))
+        : (outcomeR * risk - costs);
       const net = netPerCopy * copies;
       totalGbp += net;
       perTradeGbp.push(net);   // so a graph can show WHERE the change wins and loses
