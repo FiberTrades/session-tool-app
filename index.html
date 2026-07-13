@@ -24184,22 +24184,25 @@
     // Avg loss gross £ — projected from avgRisk (loss = -1R × risk). Falls back to 0 if no risk data.
     const avgLossGross = avgRisk;
 
-    // Solve for max affordable losses x such that:
-    //   netSoFar + (remaining-x) × avgWinGross - x × avgLossGross - remaining × avgCost >= 0
-    //   → netSoFar + remaining × avgWinGross - x × (avgWinGross + avgLossGross) - remaining × avgCost >= 0
-    //   → x <= (netSoFar + remaining × avgWinGross - remaining × avgCost) / (avgWinGross + avgLossGross)
+    // HOW MANY STRAIGHT LOSSES BEFORE THIS SERIES TURNS RED?
+    //
+    // This used to assume every non-losing trade ahead landed at your AVERAGE WIN:
+    //   x <= (netSoFar + remaining × avgWin - remaining × avgCost) / (avgWin + avgLoss)
+    // which quietly credited you with wins you have not had. On a +5R average built from a
+    // single trade it claimed you could lose 5 of the next 6 and stay green - true only if
+    // the 6th was another 5R winner. Lose 5 and win nothing and you are £99 down.
+    //
+    // A journal should not talk you into comfort. Assume NOTHING wins: how many losses at
+    // your own risk size does the profit in hand actually absorb?
+    //   netSoFar - x × (avgLoss + avgCost) >= 0
+    //   → x <= netSoFar / (avgLoss + avgCost)
     let lossesCapped = 0;
-    const haveCostsData = (avgCost > 0 || avgRisk > 0);
-    if (haveCostsData && (avgWinGross + avgLossGross) > 0) {
-      const lossesAffordableNet = Math.floor(
-        (netSoFar + remaining * avgWinGross - remaining * avgCost) /
-        (avgWinGross + avgLossGross)
-      );
-      lossesCapped = Math.max(0, Math.min(remaining, lossesAffordableNet));
+    const perLoss = avgLossGross + avgCost;      // a loss costs you the stop AND the fees
+    if (perLoss > 0) {
+      lossesCapped = Math.max(0, Math.min(remaining, Math.floor(netSoFar / perLoss)));
     } else if (avgWinR > 0) {
-      // Fallback to pure-R math when costs/risk aren't logged yet
-      const lossesAffordableR = Math.floor((totalR + remaining * avgWinR) / (1 + avgWinR));
-      lossesCapped = Math.max(0, Math.min(remaining, lossesAffordableR));
+      // No risk/cost data logged yet - fall back to R, still assuming nothing wins
+      lossesCapped = Math.max(0, Math.min(remaining, Math.floor(totalR)));
     }
 
     // --- Series complete (10 trades) ---
@@ -24244,16 +24247,21 @@
           ? `+${totalR.toFixed(2)}R con ${n}/10. Avg ganadora ${avgWinR.toFixed(2)}R. Incluso si las ${remaining} restantes fueran pérdidas, cerrarías en positivo. La serie ya está asegurada.`
           : `+${totalR.toFixed(2)}R at ${n}/10. Avg win ${avgWinR.toFixed(2)}R. Even if the remaining ${remaining} were all losses, you'd still close green. Series is locked in.`;
       } else if (totalR > 0 && lossesCapped > 0) {
+        // Every line below states the SAME honest fact: how many losses at your own risk
+        // size the profit in hand absorbs, assuming nothing else wins. No line credits you
+        // with a future winner.
+        const lossWord   = lossesCapped === 1 ? 'loss' : 'losses';
+        const lossWordEs = lossesCapped === 1 ? 'pérdida' : 'pérdidas';
         const lines = (lang === 'es') ? [
-          `+${totalR.toFixed(2)}R con ${n}/10. Avg ganadora ${avgWinR.toFixed(2)}R. Pierde ${lossesCapped} de las próximas ${remaining} y sigues cerrando verde — siempre que el resto caigan a tu media.`,
-          `${n} operaciones, ${wins}G/${losses}P/${bes}BE, +${totalR.toFixed(2)}R. Margen: ${lossesCapped} pérdidas más tolerables si tus ganadoras caen a la media. Sigue ejecutando el plan.`,
-          `+${totalR.toFixed(2)}R, avg ganadora ${avgWinR.toFixed(2)}R. Si pierdes ${lossesCapped} de las próximas ${remaining} y el resto son ganadoras al tamaño medio, sigues cerrando verde. Eso es la ventaja haciendo su trabajo.`,
-          `+${totalR.toFixed(2)}R, avg ${avgWinR.toFixed(2)}R por ganadora. ${remaining} restantes, con un colchón de ${lossesCapped} pérdidas (asume ganadoras al tamaño medio). No fuerces.`
+          `+${totalR.toFixed(2)}R con ${n}/10. Aguantas ${lossesCapped} ${lossWordEs} seguidas y sigues en verde. La ${lossesCapped + 1}ª te pone en rojo.`,
+          `${n} operaciones, ${wins}G/${losses}P/${bes}BE, +${totalR.toFixed(2)}R. Colchón: ${lossesCapped} ${lossWordEs} a tu riesgo actual, sin contar ninguna ganadora más.`,
+          `+${totalR.toFixed(2)}R con ${n}/10, ${remaining} por delante. Lo ganado cubre ${lossesCapped} ${lossWordEs} seguidas — nada más.`,
+          `+${totalR.toFixed(2)}R. A tu riesgo actual eso son ${lossesCapped} ${lossWordEs} de margen. No lo gastes forzando entradas.`
         ] : [
-          `+${totalR.toFixed(2)}R at ${n}/10. Avg win ${avgWinR.toFixed(2)}R. Lose ${lossesCapped} of the next ${remaining} and you still close green — as long as the rest land at your average.`,
-          `${n} trades in, ${wins}W/${losses}L/${bes}BE, +${totalR.toFixed(2)}R. Headroom: ${lossesCapped} more losses tolerable if your wins keep landing at average. Keep executing the plan.`,
-          `+${totalR.toFixed(2)}R, avg win ${avgWinR.toFixed(2)}R. If you lose ${lossesCapped} of the remaining ${remaining} and the rest are winners at average size, you still close green. That's edge doing the work.`,
-          `+${totalR.toFixed(2)}R, avg ${avgWinR.toFixed(2)}R per win. ${remaining} trades left, with a ${lossesCapped}-loss cushion (assumes wins land at average). Don't force.`
+          `+${totalR.toFixed(2)}R at ${n}/10. You can take ${lossesCapped} straight ${lossWord} and stay green. The ${lossesCapped + 1}${lossesCapped === 0 ? 'st' : 'th'} puts you red.`,
+          `${n} trades in, ${wins}W/${losses}L/${bes}BE, +${totalR.toFixed(2)}R. Cushion: ${lossesCapped} ${lossWord} at your current risk, counting no further wins.`,
+          `+${totalR.toFixed(2)}R at ${n}/10, ${remaining} to go. What you've banked covers ${lossesCapped} straight ${lossWord} — and nothing more.`,
+          `+${totalR.toFixed(2)}R. At your risk size that's ${lossesCapped} ${lossWord} of headroom. Don't spend it forcing entries.`
         ];
         el.textContent = lines[pickIdx];
       } else if (totalR > 0 && lossesCapped === 0) {
