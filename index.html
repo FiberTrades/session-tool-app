@@ -32892,6 +32892,7 @@
         '.ft-clr.ft-ico svg{width:16px;height:16px;}' +
         '.ft-resize{position:absolute;right:2px;bottom:2px;width:22px;height:22px;cursor:nwse-resize;z-index:8;touch-action:none;background:linear-gradient(135deg,transparent 50%,rgba(255,255,255,.5) 50%);border-bottom-right-radius:14px;}' +
         '.ft-call.ft-video .ft-resize{transition:opacity .25s ease;}' +
+        '@media (hover:none),(pointer:coarse){.ft-resize{width:44px;height:44px;right:0;bottom:0;}}' +
         '.ft-call.ft-video.ft-ui-hidden .ft-resize{opacity:0;pointer-events:none;}' +
         '.ft-local-slot{z-index:5;}' +
         '.ft-call .ft-call-actions{z-index:6;}' +
@@ -34459,7 +34460,7 @@
     function _callPos(){ var el=document.getElementById('ft-call'); if(!el||el.classList.contains('ft-max')) return; if(_callMoved){ _clampCall(el); return; } el.style.transform='none'; var w=el.offsetWidth||300, h=el.offsetHeight||200; var left=Math.round((window.innerWidth-w)/2); var top=Math.round((window.innerHeight-h)/2); left=Math.max(6,Math.min(left,window.innerWidth-w-6)); top=Math.max(6,Math.min(top,window.innerHeight-h-6)); el.style.left=left+'px'; el.style.top=top+'px'; el.style.bottom='auto'; }
     function _clampCall(el){ if(!el) return; var w=el.offsetWidth||300, h=el.offsetHeight||200; var l=parseFloat(el.style.left)||0, t=parseFloat(el.style.top)||0; l=Math.max(6,Math.min(l,window.innerWidth-w-6)); t=Math.max(6,Math.min(t,window.innerHeight-h-6)); el.style.left=l+'px'; el.style.top=t+'px'; el.style.transform='none'; el.style.bottom='auto'; }
     function _showCallUI(){ var el=document.getElementById('ft-call'); if(!el) return; el.classList.remove('ft-ui-hidden'); if(_uiTimer){ clearTimeout(_uiTimer); _uiTimer=null; } if(!el.classList.contains('ft-video')) return; _uiTimer=setTimeout(function(){ var e=document.getElementById('ft-call'); if(e && e.classList.contains('ft-video')) e.classList.add('ft-ui-hidden'); }, 3000); }
-    function _autoHideSetup(el){ if(el.__ftAH) return; el.__ftAH=true; var nearBottom=function(e){ try{ var r=el.getBoundingClientRect(); return e.clientY >= r.bottom - Math.max(110, r.height*0.2); }catch(_){ return true; } }; var nearTop=function(e){ try{ var r=el.getBoundingClientRect(); return e.clientY <= r.top + Math.max(110, r.height*0.22); }catch(_){ return false; } }; el.addEventListener('pointermove', function(e){ if(e.pointerType==='touch') return; if(nearBottom(e)||nearTop(e)) _showCallUI(); }); el.addEventListener('pointerdown', function(e){ if(e.pointerType==='touch'){ _showCallUI(); } else if(nearBottom(e) || nearTop(e) || (e.target.closest && e.target.closest('button,.ft-call-btn'))){ _showCallUI(); } }); }
+    function _autoHideSetup(el){ if(el.__ftAH) return; el.__ftAH=true; var nearBottom=function(e){ try{ var r=el.getBoundingClientRect(); return e.clientY >= r.bottom - Math.max(110, r.height*0.2); }catch(_){ return true; } }; var nearTop=function(e){ try{ var r=el.getBoundingClientRect(); return e.clientY <= r.top + Math.max(110, r.height*0.22); }catch(_){ return false; } }; el.addEventListener('pointermove', function(e){ if(e.pointerType==='touch') return; if(nearBottom(e)||nearTop(e)) _showCallUI(); }); /* TOUCH: a tap toggles the controls. */ /* The handler above bails out on touch - correctly, because a pointermove from a finger is a    DRAG, not a hover. But nothing was ever put in its place. So on a phone the UI auto-hid    after 3 seconds and the ONLY thing that could bring it back was a mouse near the edge of    the video. There is no mouse. The controls vanished and could not be recovered: no way to    end the call, no way to resize, nothing tappable. Dragging still worked, because that is a    different handler - which is exactly what it looked like from the outside. */ el.addEventListener('pointerup', function(e){ if(e.pointerType!=='touch') return; if(e.target.closest && e.target.closest('button,.ft-call-btn,input,textarea,#ft-draw.on,#stl-draw.on')) { _showCallUI(); return; } if(el.classList.contains('ft-ui-hidden')) _showCallUI(); else { if(_uiTimer){ clearTimeout(_uiTimer); _uiTimer=null; } el.classList.add('ft-ui-hidden'); }}); el.addEventListener('pointerdown', function(e){ if(e.pointerType==='touch'){ _showCallUI(); } else if(nearBottom(e) || nearTop(e) || (e.target.closest && e.target.closest('button,.ft-call-btn'))){ _showCallUI(); } }); }
     var _SVGpen='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>';
     var _SVGclr='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>';
     function _drawColor(){ if(_dColor) return _dColor; try{ _dColor=nameColor(currentUser.id); }catch(_){ } if(!_dColor) _dColor='#ff4d97'; return _dColor; }
@@ -39839,9 +39840,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
     function arm(){
       if(tmr) clearTimeout(tmr);
-      tmr=setTimeout(hide, 2500);
+      /* 2.5s is fine when a mouse can wake the chrome by drifting to an edge. On touch the only
+         way back is a deliberate tap, and 2.5s is not enough time to find a button and hit it -
+         so give a finger longer. */
+      var coarse = false;
+      try{ coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches; }catch(_){}
+      tmr=setTimeout(hide, coarse ? 6000 : 2500);
     }
     win.addEventListener('pointermove', function(e){
+      if(e.pointerType==='touch') return;   /* a finger moving is a DRAG, not a hover */
       var r=win.getBoundingClientRect();
       var nearTop    = (e.clientY - r.top)   < 100;   /* palette zone */
       var nearBottom = (r.bottom - e.clientY) < 120;  /* controls zone */
@@ -39852,6 +39859,45 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         return;                                       /* revealed by edge only */
       }
       arm();   /* still visible: keep resetting the idle timer while the mouse moves */
+    });
+
+    /* TOUCH: TAP TO TOGGLE THE CHROME.
+
+       The handler above is driven entirely by pointermove near the top or bottom edge. On a
+       phone, pointermove only fires WHILE YOUR FINGER IS DOWN - so the controls appeared as you
+       dragged and the idle timer hid them the instant you lifted. There was no tap handler and
+       no touch branch, so once hidden they could not be recovered: no way to end the call, no
+       way to resize, nothing tappable. Dragging kept working because that is a different
+       handler entirely - which is precisely what it looked like from the outside.
+
+       So: tap the video to show the chrome, tap again to dismiss it. What every video player
+       does, and the only thing that works without a pointer. */
+    var _tapX=0, _tapY=0, _tapT=0;
+    win.addEventListener('pointerdown', function(e){
+      if(e.pointerType!=='touch') return;
+      _tapX=e.clientX; _tapY=e.clientY; _tapT=Date.now();
+    });
+    win.addEventListener('pointerup', function(e){
+      if(e.pointerType!=='touch') return;
+      /* A drag is not a tap. If the finger travelled, or lingered, leave the chrome alone -
+         otherwise moving the window would toggle it every single time. */
+      var moved = Math.abs(e.clientX-_tapX) > 10 || Math.abs(e.clientY-_tapY) > 10;
+      if(moved || (Date.now()-_tapT) > 500) return;
+      /* Tapping a control is not a request to hide the controls. Keep them up and re-arm. */
+      if(e.target.closest && e.target.closest('button,input,textarea,.ft-call-btn,.stl-fsbtn,#stl-draw.on,#stl-pal')){
+        win.classList.remove('ft-ui-hidden');
+        win.classList.add('show-t','show-b');
+        arm();
+        return;
+      }
+      if(win.classList.contains('ft-ui-hidden')){
+        win.classList.remove('ft-ui-hidden');
+        win.classList.add('show-t','show-b');   /* touch has no "edge zone" - show BOTH */
+        arm();
+      } else {
+        if(tmr) clearTimeout(tmr);
+        hide();
+      }
     });
     win.addEventListener('pointerleave', function(){
       win.classList.remove('show-t','show-b');
