@@ -758,6 +758,27 @@
      so the toggle is meaningless here. */
   .bloomberg-floater--docked .bloomberg-floater-pin { display: none; }
   .bloomberg-floater[hidden] { display: none; }
+  /* In-app confirm dialog - Session Tool's own voice, not the browser's */
+  .st-ask-bg { position: fixed; inset: 0; z-index: 100000; background: rgba(0,0,0,0.72);
+               display: flex; align-items: center; justify-content: center; padding: 20px;
+               animation: stAskIn 140ms ease; }
+  @keyframes stAskIn { from { opacity: 0; } to { opacity: 1; } }
+  .st-ask { width: 100%; max-width: 400px; background: var(--bg-elev, #141414);
+            border: 1px solid var(--border-2, #2a2a2a); border-radius: 14px; padding: 24px;
+            box-shadow: 0 24px 60px rgba(0,0,0,0.6); animation: stAskUp 160ms ease; }
+  @keyframes stAskUp { from { transform: translateY(8px); opacity: 0; } to { transform: none; opacity: 1; } }
+  .st-ask-b { font-family: 'Fraunces', serif; font-size: 17px; line-height: 1.5;
+              color: var(--text, #fff); margin-bottom: 22px; }
+  .st-ask-r { display: flex; gap: 10px; justify-content: flex-end; }
+  .st-ask-r button { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px;
+                     letter-spacing: 0.14em; text-transform: uppercase; padding: 10px 16px;
+                     border-radius: 8px; cursor: pointer; transition: all 140ms ease; }
+  .st-ask-no { background: transparent; border: 1px solid var(--border-2, #2a2a2a);
+               color: var(--text-dim, #6b7280); }
+  .st-ask-no:hover { color: var(--text, #fff); border-color: var(--text-dim, #6b7280); }
+  .st-ask-ok { background: #f472b6; border: 1px solid #f472b6; color: #0c0c0c; font-weight: 700; }
+  .st-ask-ok:hover { background: #ff8ac4; border-color: #ff8ac4; }
+  .st-ask-ok:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
   /* Mentor read-only view */
   /* Only the three tabs a mentor actually reviews. NB the data-page names are not what
      you would guess: stats = Series of 10, trades = Statistics, tradeview = Calendar Log. */
@@ -33057,6 +33078,31 @@
       try{ toast(msg); return; }catch(e){}
       try{ note(msg); }catch(e){}
     }
+    /* The browser's confirm() looks like a security warning from 2004. This is the same
+       question in the app's own voice. Resolves true/false like confirm() does. */
+    function ask(msg, okLabel){
+      return new Promise(function(resolve){
+        var old=document.getElementById('st-ask'); if(old) old.remove();
+        var bg=document.createElement('div');
+        bg.id='st-ask'; bg.className='st-ask-bg';
+        bg.innerHTML='<div class="st-ask">'+
+            '<div class="st-ask-b">'+esc(msg)+'</div>'+
+            '<div class="st-ask-r">'+
+              '<button class="st-ask-no">'+window._stT('Cancel','Cancelar')+'</button>'+
+              '<button class="st-ask-ok">'+esc(okLabel||window._stT('Confirm','Confirmar'))+'</button>'+
+            '</div>'+
+          '</div>';
+        document.body.appendChild(bg);
+        function done(v){ try{ bg.remove(); }catch(e){} resolve(v); }
+        bg.querySelector('.st-ask-ok').addEventListener('click', function(){ done(true); });
+        bg.querySelector('.st-ask-no').addEventListener('click', function(){ done(false); });
+        bg.addEventListener('click', function(e){ if(e.target===bg) done(false); });   /* click-away = cancel */
+        document.addEventListener('keydown', function esc_(e){
+          if(e.key==='Escape'){ document.removeEventListener('keydown', esc_); done(false); }
+        });
+        setTimeout(function(){ try{ bg.querySelector('.st-ask-ok').focus(); }catch(e){} }, 30);
+      });
+    }
     var ADMINS = {};
     function loadAdmins(){
       if(!sb) return Promise.resolve();
@@ -33355,11 +33401,13 @@
         var nm=stripEmoji(u.name)||'Trader';
         if(!canTalk(u.id)){
           if(FR.out[u.id]){
-            note(nm+window._stT(" hasn't accepted your friend request yet.",' a\u00fan no ha aceptado tu solicitud de amistad.'));
+            _say(nm+window._stT(" hasn't accepted your friend request yet.",' a\u00fan no ha aceptado tu solicitud de amistad.'));
           } else if(FR.in_[u.id]){
-            if(confirm(nm+window._stT(' sent you a friend request. Accept it now?',' te envi\u00f3 una solicitud de amistad. \u00bfAceptarla ahora?'))) respondRequest(u.id, true);
-          } else if(confirm(nm+window._stT(" isn't your friend yet, so you can't call them. Send a friend request?",' a\u00fan no es tu amigo, as\u00ed que no puedes llamarle. \u00bfEnviar solicitud de amistad?'))){
-            sendRequest(u.id);
+            ask(nm+window._stT(' sent you a friend request. Accept it now?',' te envi\u00f3 una solicitud de amistad. \u00bfAceptarla ahora?'),
+                window._stT('Accept','Aceptar')).then(function(y){ if(y) respondRequest(u.id, true); });
+          } else {
+            ask(nm+window._stT(" isn't your friend yet, so you can't call them.",' a\u00fan no es tu amigo, as\u00ed que no puedes llamarle.'),
+                window._stT('Send friend request','Enviar solicitud')).then(function(y){ if(y) sendRequest(u.id); });
           }
           return;
         }
