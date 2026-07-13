@@ -180,6 +180,13 @@
      is done through the dedicated panel triggered from the "Trade Copier" button
      next to the MT5 import button. */
   .trade-row .trade-num { display: flex; align-items: center; justify-content: center; gap: 4px; }
+  /* Which account this trade row belongs to. A full-width line above the row, so it costs
+     no column width - the number cell is only 26px. Only rendered when a linked group
+     puts more than one account in the log at once. */
+  .trade-acct-label { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px;
+    letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim);
+    padding: 10px 2px 3px; border-top: 1px solid var(--border-2); margin-top: 6px; }
+  .trade-acct-label:first-child { border-top: none; margin-top: 0; padding-top: 2px; }
   .trade-row .trade-num-copies { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; color: var(--text-dim); letter-spacing: 0.05em; }
 
   /* Copies modal — list of trade rows with stepper controls. Each row is a
@@ -2736,6 +2743,20 @@
   #rule-backdrop { position: fixed; inset: 0; background: rgba(8,8,8,0.66); backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px); opacity: 0; pointer-events: none; transition: opacity 240ms ease; z-index: 199; }
   #rule-backdrop.show { opacity: 1; pointer-events: auto; }
   /* MT5 import modal */
+  /* Phone: the full label wraps to three lines and eats the row. Icon + "MT5" is enough. */
+  .settings-account-backfill { background: none; border: 1px dashed var(--border-2); color: var(--text-dim);
+    font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: .1em; text-transform: uppercase;
+    padding: 2px 7px; border-radius: 5px; cursor: pointer; }
+  .settings-account-backfill:hover { color: var(--text); border-color: var(--text-mid); }
+  .settings-account-mt5-edit.mt5-none { opacity: .5; text-decoration: underline dotted; }
+  .settings-account-mt5-edit.mt5-ok { color: var(--good); }
+  .settings-account-mt5-warn { color: var(--warn, #f0b429); font-size: 9px; letter-spacing: .08em;
+    text-transform: uppercase; margin-left: 5px; }
+  .mt5-lbl-short { display: none; }
+  @media (max-width: 640px) {
+    .mt5-lbl-full  { display: none; }
+    .mt5-lbl-short { display: inline; }
+  }
   #mt5-import-btn:hover { border-color: var(--text-mid); color: var(--text); background: var(--bg-elev); }
   #mt5-pick-btn:hover { background: var(--text); color: var(--bg); }
   #mt5-drop-zone.dragover { border-color: var(--good); background: var(--good-bg2); }
@@ -3280,7 +3301,7 @@
         <span class="section-title"><span data-i18n="review.s2.title">Trade Log</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n-html="tip.trade_log_html">Log every trade — result, R multiple, side, entry/exit, costs, notes. Logged trades feed your win rate, R-curve, day-of-week edge, potential-R analysis, and monthly insights. The journal becomes your edge.</span></span></span>
         <span class="bias-date-inline" style="margin-left:auto;">
           <input type="date" id="session-date" />
-          <button type="button" id="mt5-import-btn" class="bias-date-inline-btn" title="Import from MT5"><svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="12.5"/><polyline points="4.5,9 8,12.5 11.5,9"/></svg><span data-i18n="btn.import_mt5_label">Import from MT5</span></button>
+          <button type="button" id="mt5-import-btn" class="bias-date-inline-btn" title="Import from MT5"><svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="8" y1="3" x2="8" y2="12.5"/><polyline points="4.5,9 8,12.5 11.5,9"/></svg><span class="mt5-lbl-full" data-i18n="btn.import_mt5_label">Import from MT5</span><span class="mt5-lbl-short">MT5</span></button>
           <!-- Log-to picker — replaces the legacy Trade Copier button. Picks which
                account or linked-group new trade rows will be tagged to. Clicking
                the pill opens a dropdown panel showing all available targets,
@@ -9457,6 +9478,11 @@
       if (!acc.status) acc.status = 'active';
       if (!acc.createdAt) acc.createdAt = new Date().toISOString();
       if (typeof acc.startingBalance !== 'number') acc.startingBalance = 0;
+      // BASELINE: the balance the account was ALREADY at when it was added here.
+      // Without this, an account you have been trading for months shows its nominal
+      // size until you log a trade - the P&L is only counted from setup onwards.
+      // Defaults to startingBalance, so a fresh account behaves exactly as before.
+      if (typeof acc.balanceAtSetup !== 'number') acc.balanceAtSetup = acc.startingBalance;
     });
     // One-time backfill: existing users who migrated before the time-aware balance
     // fix have acc_main.createdAt set to migration-time, which (incorrectly) excludes
@@ -11748,6 +11774,21 @@
       // badge appears next to the index.
       const nCopies = (typeof t.copies === 'number' && t.copies > 0) ? t.copies : 1;
       const copyBadge = nCopies > 1 ? `<span class="trade-num-copies">×${nCopies}</span>` : '';
+      // When a linked GROUP is the log target, addTradeRow() already creates one row per
+      // account - so you can set a different risk on a 10k and a 100k. But the rows looked
+      // identical, so you could not tell WHICH was which. Name the account on each row,
+      // but only when there is genuinely more than one in play.
+      // The account name will NOT fit in the number cell - that column is 26px. Render it
+      // as its own thin line ABOVE the row instead: costs vertical space only, so no
+      // column shrinks and the table never needs to scroll sideways.
+      let _acctName = '';
+      try {
+        const _accIds = new Set((data.review.trades || []).map(x => x.accountId).filter(Boolean));
+        if (_accIds.size > 1 && t.accountId) {
+          const _a = (data.accounts || []).find(a => a.id === t.accountId);
+          if (_a) _acctName = _a.name;
+        }
+      } catch (e) {}
       const _syms = (data.settings.symbols && data.settings.symbols.length) ? data.settings.symbols : [(data.settings.pair || 'EUR/USD')];
       const _tSym = t.symbol || _syms[0];
       const _symEsc = (x) => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -11787,6 +11828,13 @@
         <div class="trade-cell"><textarea class="trade-input net-input" rows="1" placeholder="auto" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other" inputmode="decimal"></textarea></div>
         <div class="trade-cell"><button class="trade-remove" data-tip="${_tipRm}">×</button></div>
       `;
+      // the account this row belongs to - its own line, above the row
+      if (_acctName) {
+        const lab = document.createElement('div');
+        lab.className = 'trade-acct-label';
+        lab.textContent = _acctName;
+        wrap.appendChild(lab);
+      }
       wrap.appendChild(row);
       row.querySelectorAll('textarea.trade-input').forEach(_el => _el.addEventListener('keydown', _ev => { if (_ev.key === 'Enter') { _ev.preventDefault(); _ev.target.blur(); } }));
       row.querySelector('.result-select').value = t.result || '';
@@ -30640,11 +30688,19 @@
       });
       const cps = (typeof tradeCopies === 'function') ? tradeCopies : (() => 1);
       const totalNet = eligible.reduce((s, t) => s + ((tradeGross(t) - tradeCosts(t)) * cps(t)), 0);
-      const startingBalance = acc.startingBalance || 0;
-      const current = startingBalance + totalNet;
-      const pct = startingBalance > 0 ? (totalNet / startingBalance) * 100 : 0;
-      return { startingBalance, current, totalNet, pct };
+      const startingBalance = acc.startingBalance || 0;                    // the nominal size - what % rules key off
+      const baseline = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0)
+        ? acc.balanceAtSetup
+        : startingBalance;                                                 // where the account actually stood at setup
+      const current = baseline + totalNet;
+      // The % is still measured against the NOMINAL size, not the baseline: on a prop
+      // account that is what the firm measures you against.
+      const pct = startingBalance > 0 ? ((current - startingBalance) / startingBalance) * 100 : 0;
+      return { startingBalance, baseline, current, totalNet, pct };
     }
+    // Has this MT5 login ever actually delivered a trade? A typo'd number would otherwise
+    // sit there looking correct while trades quietly land nowhere (or worse, get filed by
+    // hand into the wrong account).
     window.renderSettingsAccountsList = function() {
       const wrap = document.getElementById('settings-accounts-list');
       if (!wrap || !Array.isArray(data.accounts)) return;
@@ -30700,7 +30756,7 @@
               <span class="settings-account-meta-sep">·</span>
               <span class="settings-account-meta-pair">
                 <span class="settings-account-meta-label">${tt('settings.current_label')}</span>
-                <span class="settings-account-meta-value">${fmt(s.current, { noSign: true })}</span>
+                <span class="settings-account-meta-value settings-account-base-edit" data-id="${acc.id}" data-cur="${s.baseline}" title="${window._stT('The balance this account was already at when you added it. Trades logged here are added on top.','El saldo que ya tenía esta cuenta al añadirla. Las operaciones se suman encima.')}">${fmt(s.current, { noSign: true })}</span>
                 <span class="settings-account-meta-pct ${pctCls}">${pctSign}${s.pct.toFixed(2)}%</span>
               </span>
             </div>
@@ -30746,6 +30802,29 @@
           }, t('settings.edit_starting_title'));
         });
       });
+
+      // --- Current balance: the baseline this account was ALREADY at when you added it.
+      // Editing "Current" edits that baseline; the trades you have logged still stack on top,
+      // so the number you type is what you see only until the next trade.
+      wrap.querySelectorAll('.settings-account-base-edit').forEach(span => {
+        span.addEventListener('click', () => {
+          const id = span.dataset.id;
+          const acc = getAccountById(id);
+          if (!acc) return;
+          const st = computeAccountStats(acc);
+          window.openRenameModal(String(st.current), (newVal) => {
+            const parsed = parseFloat(newVal);
+            if (isNaN(parsed) || parsed <= 0) return;
+            // They typed the CURRENT balance. Work backwards to the baseline, so the
+            // trades already logged are not counted twice.
+            acc.balanceAtSetup = parsed - st.totalNet;
+            saveData();
+            renderSettingsAccountsList();
+            try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
+          }, window._stT('Current balance', 'Saldo actual'));
+        });
+      });
+
     };
     function escapeHtml(s) {
       return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
