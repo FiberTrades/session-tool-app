@@ -16027,13 +16027,10 @@
       </details>`;
     }
 
-    const detailHtml = (winsTableHtml || besTableHtml)
-      ? `<div class="combo-detail">
-          <h4 class="combo-detail-master-heading">${t('combo.detail_master_heading') || 'Detailed breakdown'}</h4>
-          ${winsTableHtml}
-          ${besTableHtml}
-        </div>`
-      : '';
+    // Detailed breakdown removed. It listed the individual Wins and BEs behind the verdict,
+    // but the verdict is the point: a per-trade table invites you to argue with single
+    // trades, which is exactly the noise the aggregate exists to filter out.
+    const detailHtml = '';
 
     // The CURRENT row + verdict block only have purpose when at least one
     // direction can be compared against them. If both directions are gated
@@ -29532,6 +29529,77 @@
     return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
   }
 
+  // ===== Post-mortem back-fill =====
+  //
+  // A trade is imported the moment it closes. The replay that says how far it ran, or what
+  // stop it needed, resolves hours later - so its numbers have to be carried into trades
+  // that are ALREADY logged. This runs quietly on load: no prompt, no toast, nothing to
+  // re-import. A Potential R that was blank this morning is simply filled next time you look.
+  //
+  // YOUR VALUE ALWAYS WINS. It only ever fills a field that is empty. If you typed a
+  // Potential R, or corrected the one the EA gave you, this leaves it alone - a background
+  // process must never overwrite something a person decided.
+  window.__stBackfillPostMortem = function () {
+    if (!window.STCloud || typeof window.STCloud.pullPostMortem !== 'function') return;
+    Promise.resolve(window.STCloud.pullPostMortem()).then(res => {
+      const rows = (res && res.data) || [];
+      if (!rows.length) return;
+
+      const byTicket = {};
+      rows.forEach(r => { if (r && r.ticket != null) byTicket[String(r.ticket)] = r; });
+
+      const isNum = (v) => typeof v === 'number' && !isNaN(v);
+      let changed = 0;
+
+      const fill = (t) => {
+        if (!t || !t.mt5Ticket) return;
+        const r = byTicket[String(t.mt5Ticket)];
+        if (!r) return;
+
+        // Potential R - the peak from entry until price came back to your BE stop. The same
+        // measurement for a Win and a BE; only the exit differs.
+        if (t.result === 'Win') {
+          if (!isNum(t.potentialR)    && isNum(r.pot_r))    { t.potentialR    = r.pot_r;    changed++; }
+          if (!isNum(t.potentialPips) && isNum(r.pot_pips)) { t.potentialPips = r.pot_pips; changed++; }
+        } else if (t.result === 'BE') {
+          if (!isNum(t.bePotentialR)    && isNum(r.pot_r))    { t.bePotentialR    = r.pot_r;    changed++; }
+          if (!isNum(t.bePotentialPips) && isNum(r.pot_pips)) { t.bePotentialPips = r.pot_pips; changed++; }
+        }
+
+        // Diagnostics. Nothing shows these per-trade; they answer the aggregate questions
+        // "is my stop too tight" and "do I move to BE too early".
+        if (!isNum(t.reqSlPips)   && isNum(r.req_sl_pips))   { t.reqSlPips   = r.req_sl_pips;   changed++; }
+        if (!isNum(t.beSlackPips) && isNum(r.be_slack_pips)) { t.beSlackPips = r.be_slack_pips; changed++; }
+        if (t.wouldHaveWon === undefined && typeof r.would_have_won === 'boolean') {
+          t.wouldHaveWon = r.would_have_won; changed++;
+        }
+      };
+
+      (data.currentSeries || []).forEach(fill);
+      (data.history || []).forEach(sr => (sr.trades || []).forEach(fill));
+      (data.review && data.review.trades ? data.review.trades : []).forEach(fill);
+
+      if (changed) {
+        saveData();
+        try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
+        try { if (typeof renderStats  === 'function') renderStats();  } catch (e) {}
+      }
+    }).catch(() => {});
+  };
+
+  // Run the back-fill once the user is actually signed in. Quiet, unprompted, and only
+  // ever filling blanks - see __stBackfillPostMortem above.
+  (function () {
+    var tries = 0;
+    var iv = setInterval(function () {
+      tries++;
+      if (window.STCloud && window.STCloud.userId) {
+        clearInterval(iv);
+        try { window.__stBackfillPostMortem(); } catch (e) {}
+      } else if (tries > 40) { clearInterval(iv); }   // ~20s, then give up quietly
+    }, 500);
+  })();
+
   // ===== Auto-sync: pull closed trades from Supabase trades_inbox =====
   function _syncTargetAccount() {
     try {
@@ -29580,7 +29648,12 @@
       _isSync: true,
       _tpR: num(row.tp_r), _tpPips: num(row.tp_pips),
       _mfeR: num(row.mfe_r), _mfePips: num(row.mfe_pips),
-      _riskGbp: num(row.risk_gbp)
+      _riskGbp: num(row.risk_gbp),
+      // Post-mortem: what price did AFTER the trade, replayed by the EA from M1 bars.
+      _potR: num(row.pot_r), _potPips: num(row.pot_pips),
+      _reqSlPips: num(row.req_sl_pips), _beSlackPips: num(row.be_slack_pips),
+      _wouldHaveWon: (row.would_have_won === true) ? true : (row.would_have_won === false ? false : null),
+      _consumedAt: row.consumed_at || null
     };
     t.sessionDateStr = t.closeDate ? dateToIsoStr(t.closeDate) : '';
     t.entryTimeHHMM = t.openDate ? hhmm(t.openDate) : '';
@@ -29615,7 +29688,7 @@
     setStatus(T('mt5.sync_pulling') || 'Pulling synced trades...');
     Promise.resolve(window.STCloud.pullInbox()).then(res => {
       if (res && res.error) { setStatus((T('mt5.sync_error') || 'Sync error: ') + (res.error.message || res.error)); return; }
-      const rows = (res && res.data) || [];
+      const rows = ((res && res.data) || []).filter(r => !r.consumed_at);   // consumed rows stay for the replay, but are not re-offered
       if (!rows.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
       const have = _existingMt5Tickets();
       const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
@@ -29911,7 +29984,20 @@
           importedFrom: 'mt5',
           mt5Ticket: t.position
         };
-        if (t._mfeR != null || t._mfePips != null) {
+        // The replay measures the peak from entry until price comes back to your BE stop.
+        // That is the same number for a Win and a BE - the only difference is whether the
+        // stop was ever touched. So it fills BOTH, and a winner's Potential R stops being
+        // something you have to reconstruct by eye.
+        if (t._potR != null || t._potPips != null) {
+          if (isBE) { row.bePotentialR = t._potR; row.bePotentialPips = t._potPips; }
+          else if (t.result === 'Win') { row.potentialR = t._potR; row.potentialPips = t._potPips; }
+        }
+        // Carry the loser/BE diagnostics onto the trade. Nothing displays these - they feed
+        // the aggregate question "is my stop too tight / do I move to BE too early".
+        if (t._reqSlPips   != null) row.reqSlPips   = t._reqSlPips;
+        if (t._beSlackPips != null) row.beSlackPips = t._beSlackPips;
+        if (t._wouldHaveWon != null) row.wouldHaveWon = t._wouldHaveWon;
+        if (t._potR == null && (t._mfeR != null || t._mfePips != null)) {
           if (isBE) { row.bePotentialR = (t._mfeR != null) ? t._mfeR : null; row.bePotentialPips = (t._mfePips != null) ? t._mfePips : null; }
           else if (t.result !== 'Win') { row.potentialR = (t._mfeR != null) ? t._mfeR : null; row.potentialPips = (t._mfePips != null) ? t._mfePips : null; }
           // A winner's POT R·P is left blank — the EA can't know how far a closed winner could have run.
@@ -31684,9 +31770,29 @@
     if (!currentUser) return Promise.resolve({ data: [], error: new Error('not signed in') });
     return sb.from('trades_inbox').select('*').eq('token', currentUser.id).order('close_time', { ascending: true });
   };
+  // Mark rows consumed rather than deleting them.
+  //
+  // This used to DELETE. That would have quietly destroyed the whole post-mortem feature:
+  // the EA's replay resolves hours after the trade closes (it waits for the retrace to your
+  // BE stop, or your TP, or the end of the day), and it writes back against the ticket. With
+  // the row gone, every replay would land on nothing and be lost without a sound.
+  //
+  // So the row stays, flagged. The import filters consumed rows out; the migration prunes
+  // them after 30 days.
   window.STCloud.deleteInbox = function (tickets) {
     if (!currentUser || !Array.isArray(tickets) || tickets.length === 0) return Promise.resolve({ error: null });
-    return sb.from('trades_inbox').delete().eq('token', currentUser.id).in('ticket', tickets);
+    return sb.from('trades_inbox')
+      .update({ consumed_at: new Date().toISOString() })
+      .eq('token', currentUser.id).in('ticket', tickets);
+  };
+
+  // Pull the replay results for trades ALREADY in the journal.
+  window.STCloud.pullPostMortem = function () {
+    if (!currentUser) return Promise.resolve({ data: [], error: null });
+    return sb.from('trades_inbox')
+      .select('ticket, pot_r, pot_pips, req_sl_pips, be_slack_pips, would_have_won')
+      .eq('token', currentUser.id)
+      .not('pm_at', 'is', null);
   };
 
   var currentUser = null;
