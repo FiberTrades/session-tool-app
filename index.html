@@ -32048,6 +32048,8 @@
         '.dcx-search input{width:100%;height:30px;box-sizing:border-box;background:#1e1f22;border:1px solid #1e1f22;border-radius:6px;color:#f2f3f5;font-size:13px;padding:0 28px 0 9px;outline:none;transition:border-color .15s;font-family:-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,Helvetica,Arial,sans-serif;}' +
         '.dcx-search input::placeholder{color:#6d6f78;}' +
         '.dcx-search input:focus{border-color:#3a3d43;background:#1a1b1e;}' +
+        '.dcx-search.locked input{opacity:.5;cursor:pointer;}' +
+        '.dcx-search.locked .dcx-sic{opacity:.5;}' +
         '.dcx-search .dcx-sic{position:absolute;right:18px;top:calc(50% + 2px);transform:translateY(-50%);color:#6d6f78;line-height:0;pointer-events:none;}' +
         '.dcx-search .dcx-sic svg{width:15px;height:15px;}' +
         '.dcx-sfilters{display:none;position:absolute;top:40px;left:10px;width:300px;max-width:calc(100vw - 30px);background:#111214;border:1px solid #2b2d31;border-radius:8px;box-shadow:0 12px 30px rgba(0,0,0,.5);z-index:60;padding:8px;}' +
@@ -32243,6 +32245,8 @@
         '.dcx-menu .mi-pend:hover .mi-pend-l{display:none;}' +
         '.dcx-menu .mi-pend:hover .mi-pend-h{display:inline;}' +
         '.dcx-menu .mi-acc{color:#23a55a;}' +
+        '.dcx-menu .mi-lock{opacity:.5;}' +
+        '.dcx-menu .mi-lock:hover{opacity:.75;}' +
         '.dcx-callpick-row.nofriend{opacity:.55;}' +
         '.dcx-callpick-row .cp-nf{display:block;font-style:normal;font-size:10px;color:#949ba4;line-height:1.3;}' +
         '.stdm-req{padding:9px 10px;border-bottom:1px solid #232428;}' +
@@ -32750,6 +32754,7 @@
     }
 
     function runSearch(){
+      if(searchLocked()){ lockNote(); return; }
       var raw=(G('dcx-sq')||{}).value||'';
       if(!raw.trim()){ closeSearch(); return; }
       var q=parseQuery(raw);
@@ -32888,6 +32893,7 @@
     }
     function paintSuggest(){
       var f=G('dcx-sfilters'); if(!f) return;
+      if(searchLocked()){ f.classList.remove('open'); return; }
       var t=_token();
       var IC={
         user:'<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>',
@@ -32954,10 +32960,33 @@
       });
     }
 
+    /* Trial and Session Tool members SEE the bar - it is part of what they are buying -
+       but it does nothing until they upgrade. RLS already stops them reading channels
+       they have no right to, so this is a product gate, not a security one. */
+    function searchLocked(){ return _commTier()!=='full'; }
+    function paintSearchLock(){
+      var w=G('dcx-search'), i=G('dcx-sq');
+      if(!w||!i) return;
+      var lk=searchLocked();
+      w.classList.toggle('locked', lk);
+      i.readOnly=lk;                      /* readOnly, not disabled: still focusable, so the click lands */
+      i.setAttribute('title', lk ? window._stT('Search is for full members','La b\u00fasqueda es para miembros completos') : '');
+    }
+    function lockNote(){
+      _say(window._stT('Search is for full members. Upgrade to search the whole community.',
+                       'La b\u00fasqueda es para miembros completos. Mejora tu plan para buscar en toda la comunidad.'));
+    }
     function wireSearch(){
       var i=G('dcx-sq'); if(!i || i._w) return; i._w=1;
       var f=G('dcx-sfilters');
-      i.addEventListener('focus', paintSuggest);
+      paintSearchLock();
+      window.__stPaintSearchLock=paintSearchLock;   /* re-run when the plan changes */
+      i.addEventListener('mousedown', function(e){
+        if(!searchLocked()) return;
+        e.preventDefault();               /* never even take focus */
+        lockNote();
+      });
+      i.addEventListener('focus', function(){ if(searchLocked()){ i.blur(); lockNote(); return; } paintSuggest(); });
       i.addEventListener('input', function(){ SRCH.sel=0; paintSuggest(); });
       i.addEventListener('blur', function(){ setTimeout(function(){ if(f) f.classList.remove('open'); }, 140); });
       i.addEventListener('keydown', function(e){
@@ -32989,7 +33018,11 @@
             var root=document.getElementById('dcx-root');
             if(root && root.offsetParent!==null){
               var box=G('dcx-sq');
-              if(box){ e.preventDefault(); box.focus(); box.select(); }
+              if(box){
+                e.preventDefault();
+                if(searchLocked()){ lockNote(); return; }
+                box.focus(); box.select();
+              }
             }
           }
         });
@@ -33136,6 +33169,10 @@
     function isAdminId(uid){ return !!ADMINS[uid]; }
     function sendRequest(uid){
       if(!sb||!currentUser) return Promise.resolve();
+      if(_commTier()!=='full'){
+        _say(window._stT('Friend requests are for full members.','Las solicitudes de amistad son para miembros completos.'));
+        return Promise.resolve();
+      }
       return sb.from('friendships').insert({ requester_id:currentUser.id, addressee_id:uid, status:'pending' })
         .then(function(r){
           if(r&&r.error){ toast(window._stT('Could not send the request.','No se pudo enviar la solicitud.')); return; }
@@ -33197,6 +33234,11 @@
     }
 
     function openMemberPopout(row, uid, name){ var av=''; for(var i=0;i<roster.length;i++){ if(roster[i].id===uid){ av=roster[i].avatar||''; break; } } var pop=G('dcx-mpop'); if(!pop){ pop=document.createElement('div'); pop.id='dcx-mpop'; pop.className='dcx-menu'; document.body.appendChild(pop); document.addEventListener('click', function(e){ if(pop.classList.contains('open')&&!pop.contains(e.target)&&!e.target.closest('.dcx-member')) pop.classList.remove('open'); }); } var html=''; var _self=(uid===(currentUser&&currentUser.id));
+      /* Trial / Session Tool: friends, DMs and calls are a full-member feature. Show the
+         action locked rather than showing nothing - an empty menu explains nothing. */
+      if(_commTier()!=='full' && !_self){
+        html+='<button class="mi-lock"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg>'+window._stT('Add friend','A\u00f1adir amigo')+'</button>';
+      }
       /* Message/call are friends-only. Not a friend yet -> offer the request instead. */
       if(_commTier()==='full' && !_self && !canTalk(uid)){
         if(FR.in_[uid])      html+='<button class="mi-acc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'+window._stT('Accept friend request','Aceptar solicitud')+'</button>';
@@ -33206,6 +33248,10 @@
       if(_commTier()==='full' && (_self || canTalk(uid))) html+='<button class="mi-msg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H8l-4 3V6a1 1 0 0 1 1-1z"/></svg>'+window._stT('Message','Mensaje')+'</button>'; if(admin()) html+='<button class="mi-roles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>'+window._stT('Roles','Roles')+'</button>'; if(admin() && uid!==(currentUser&&currentUser.id)) html+='<button class="mi-ban"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span class="mi-ban-lbl">'+window._stT('Ban member','Banear miembro')+'</span></button>'; if(typeof allRolePillsHtml==='function'){ var _rp=allRolePillsHtml(uid); if(_rp) html='<div class="dcx-mpop-roles">'+_rp+'</div>'+html; } if(!html){ pop.classList.remove('open'); return; } pop.innerHTML=html; pop.style.position='fixed'; var r=row.getBoundingClientRect(); pop.style.left=Math.max(8,r.left-158)+'px'; pop.style.top=Math.min(r.top, window.innerHeight-110)+'px'; pop.style.right='auto'; pop.style.bottom='auto'; pop.classList.add('open'); var mb=pop.querySelector('.mi-msg'); if(mb) mb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); if(window.STDM) STDM.openThread(uid, name, av); });
       var ab=pop.querySelector('.mi-add'); if(ab) ab.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); sendRequest(uid); });
       var acb=pop.querySelector('.mi-acc'); if(acb) acb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); respondRequest(uid, true); });
+      var lb=pop.querySelector('.mi-lock'); if(lb) lb.addEventListener('click', function(e){
+        e.stopPropagation(); pop.classList.remove('open');
+        _say(window._stT('Friends, direct messages and calls are for full members.','Los amigos, mensajes directos y llamadas son para miembros completos.'));
+      });
       var pb=pop.querySelector('.mi-pend'); if(pb) pb.addEventListener('click', function(e){
         e.stopPropagation(); pop.classList.remove('open');
         var _n=stripEmoji(name)||'Trader';
@@ -33774,6 +33820,7 @@
 
   // Community tab visibility (admin for now).
   window.__applyCommunityTab = function(){
+    try{ if(window.__stPaintSearchLock) window.__stPaintSearchLock(); }catch(e){}
     try{
       var tab=document.querySelector('.tab-community'); if(!tab) return;
       // Community tab: visible to any signed-in account. Full members (comp/bundle/
