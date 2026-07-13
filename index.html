@@ -32234,7 +32234,11 @@
         '.dcx-member:hover{background:#35373c;}' +
         '.dcx-frq{position:absolute;top:-3px;right:-3px;min-width:15px;height:15px;padding:0 4px;border-radius:8px;background:#f23f43;color:#fff;font-size:9px;font-weight:700;display:flex;align-items:center;justify-content:center;line-height:1;}' +
         '#dcx-dm-btn{position:relative;}' +
-        '.dcx-menu .mi-pend{opacity:.5;cursor:default;}' +
+        '.dcx-menu .mi-pend{opacity:.62;cursor:pointer;}' +
+        '.dcx-menu .mi-pend:hover{opacity:1;color:#f23f43;}' +
+        '.dcx-menu .mi-pend .mi-pend-h{display:none;}' +
+        '.dcx-menu .mi-pend:hover .mi-pend-l{display:none;}' +
+        '.dcx-menu .mi-pend:hover .mi-pend-h{display:inline;}' +
         '.dcx-menu .mi-acc{color:#23a55a;}' +
         '.dcx-callpick-row.nofriend{opacity:.55;}' +
         '.dcx-callpick-row .cp-nf{display:block;font-style:normal;font-size:10px;color:#949ba4;line-height:1.3;}' +
@@ -33129,6 +33133,16 @@
           }catch(e){}
         }, function(){});
     }
+    function cancelRequest(uid){
+      if(!sb||!currentUser) return Promise.resolve();
+      return sb.from('friendships').delete()
+        .eq('requester_id', currentUser.id).eq('addressee_id', uid)
+        .then(function(r){
+          if(r&&r.error){ _say(window._stT('Could not unsend the request.','No se pudo retirar la solicitud.')); return; }
+          delete FR.out[uid];
+          toast(window._stT('Friend request withdrawn.','Solicitud retirada.'));
+        }, function(){});
+    }
     function respondRequest(uid, accept){
       if(!sb||!currentUser) return Promise.resolve();
       return sb.from('friendships')
@@ -33168,12 +33182,18 @@
       /* Message/call are friends-only. Not a friend yet -> offer the request instead. */
       if(_commTier()==='full' && !_self && !canTalk(uid)){
         if(FR.in_[uid])      html+='<button class="mi-acc"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>'+window._stT('Accept friend request','Aceptar solicitud')+'</button>';
-        else if(FR.out[uid]) html+='<button class="mi-pend" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>'+window._stT('Request sent','Solicitud enviada')+'</button>';
+        else if(FR.out[uid]) html+='<button class="mi-pend"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span class="mi-pend-l">'+window._stT('Request sent','Solicitud enviada')+'</span><span class="mi-pend-h">'+window._stT('Unsend request','Retirar solicitud')+'</span></button>';
         else                 html+='<button class="mi-add"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3.2"/><path d="M2 20c0-3.4 3-5.6 7-5.6"/><path d="M18 8v6M15 11h6"/></svg>'+window._stT('Add friend','A\u00f1adir amigo')+'</button>';
       }
       if(_commTier()==='full' && (_self || canTalk(uid))) html+='<button class="mi-msg"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5h16a1 1 0 0 1 1 1v9a1 1 0 0 1-1 1H8l-4 3V6a1 1 0 0 1 1-1z"/></svg>'+window._stT('Message','Mensaje')+'</button>'; if(admin()) html+='<button class="mi-roles"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg>'+window._stT('Roles','Roles')+'</button>'; if(admin() && uid!==(currentUser&&currentUser.id)) html+='<button class="mi-ban"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M5.6 5.6l12.8 12.8"/></svg><span class="mi-ban-lbl">'+window._stT('Ban member','Banear miembro')+'</span></button>'; if(typeof allRolePillsHtml==='function'){ var _rp=allRolePillsHtml(uid); if(_rp) html='<div class="dcx-mpop-roles">'+_rp+'</div>'+html; } if(!html){ pop.classList.remove('open'); return; } pop.innerHTML=html; pop.style.position='fixed'; var r=row.getBoundingClientRect(); pop.style.left=Math.max(8,r.left-158)+'px'; pop.style.top=Math.min(r.top, window.innerHeight-110)+'px'; pop.style.right='auto'; pop.style.bottom='auto'; pop.classList.add('open'); var mb=pop.querySelector('.mi-msg'); if(mb) mb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); if(window.STDM) STDM.openThread(uid, name, av); });
       var ab=pop.querySelector('.mi-add'); if(ab) ab.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); sendRequest(uid); });
-      var acb=pop.querySelector('.mi-acc'); if(acb) acb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); respondRequest(uid, true); }); var bb=pop.querySelector('.mi-ban'); if(bb){ try{ sb.rpc('st_is_user_banned',{target:uid}).then(function(r){ var _bd=!!(r&&r.data); bb.setAttribute('data-b',_bd?'1':'0'); var _l=bb.querySelector('.mi-ban-lbl'); if(_l) _l.textContent=_bd?window._stT('Unban member','Desbanear miembro'):window._stT('Ban member','Banear miembro'); },function(){}); }catch(e){} bb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); var _now=bb.getAttribute('data-b')==='1'; try{ sb.rpc('st_set_community_ban',{target:uid,banned:!_now}).then(function(r){ if(r&&r.error){ note(L('sendErr')); return; } note(!_now?window._stT('Banned from community','Baneado de la comunidad'):window._stT('Ban removed','Baneo eliminado')); },function(){ note(L('sendErr')); }); }catch(e){} }); } var rb=pop.querySelector('.mi-roles'); if(rb) rb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); openAssignRoles(uid, name); }); }
+      var acb=pop.querySelector('.mi-acc'); if(acb) acb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); respondRequest(uid, true); });
+      var pb=pop.querySelector('.mi-pend'); if(pb) pb.addEventListener('click', function(e){
+        e.stopPropagation(); pop.classList.remove('open');
+        var _n=stripEmoji(name)||'Trader';
+        ask(window._stT('Withdraw your friend request to ','\u00bfRetirar tu solicitud de amistad a ')+_n+'?',
+            window._stT('Unsend','Retirar')).then(function(y){ if(y) cancelRequest(uid); });
+      }); var bb=pop.querySelector('.mi-ban'); if(bb){ try{ sb.rpc('st_is_user_banned',{target:uid}).then(function(r){ var _bd=!!(r&&r.data); bb.setAttribute('data-b',_bd?'1':'0'); var _l=bb.querySelector('.mi-ban-lbl'); if(_l) _l.textContent=_bd?window._stT('Unban member','Desbanear miembro'):window._stT('Ban member','Banear miembro'); },function(){}); }catch(e){} bb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); var _now=bb.getAttribute('data-b')==='1'; try{ sb.rpc('st_set_community_ban',{target:uid,banned:!_now}).then(function(r){ if(r&&r.error){ note(L('sendErr')); return; } note(!_now?window._stT('Banned from community','Baneado de la comunidad'):window._stT('Ban removed','Baneo eliminado')); },function(){ note(L('sendErr')); }); }catch(e){} }); } var rb=pop.querySelector('.mi-roles'); if(rb) rb.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.remove('open'); openAssignRoles(uid, name); }); }
     function openForward(m){ if(!m) return; if(window.STDM&&STDM.ensureRoster) STDM.ensureRoster(function(){ buildForward(m); }); else buildForward(m); }
     function buildForward(m){ var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); var chanHtml=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(c.name)+'</button>'; }).join(''); var mem=(window.STDM&&STDM.partners)?STDM.partners():[]; var memHtml=mem.map(function(p){ return '<button class="dcx-fwd-item" data-dm="'+esc(p.id)+'" data-nm="'+esc(p.name).replace(/"/g,'&quot;')+'">'+avaHtml(p.avatar,p.name,'dcx-fwd-av')+'<span>'+esc(p.name)+'</span></button>'; }).join(''); if(!chanHtml&&!memHtml){ note('Nowhere to forward to.'); return; } modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3>'+(chanHtml?'<div class="dcx-fwd-sec">Channels</div><div class="dcx-fwd-list">'+chanHtml+'</div>':'')+(memHtml?'<div class="dcx-fwd-sec">Direct message</div><div class="dcx-fwd-list">'+memHtml+'</div>':'')+'<div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; Array.prototype.forEach.call(G('dcx-modal').querySelectorAll('.dcx-fwd-item'),function(b){ b.addEventListener('click', function(){ var cid=b.getAttribute('data-cid'), dm=b.getAttribute('data-dm'); if(cid){ doForward(m,cid); } else if(dm){ if(window.STDM) STDM.forwardTo(dm, b.getAttribute('data-nm'), '', m); note(lang()==='es'?'Reenviado.':'Forwarded.'); } closeModal(); }); }); }
     function openForward_OLD(m){ if(!m) return; var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); if(!opts.length){ note('No channels to forward to.'); return; } var list=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(c.name)+'</button>'; }).join(''); modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3><div class="dcx-fwd-list">'+list+'</div><div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; var bs=G('dcx-modal').querySelectorAll('.dcx-fwd-item'); Array.prototype.forEach.call(bs,function(b){ b.addEventListener('click', function(){ doForward(m,b.getAttribute('data-cid')); closeModal(); }); }); }
@@ -33448,7 +33468,7 @@
       try{ if(window.STDM && window.STDM.relang) window.STDM.relang(); }catch(e){}
     }
     return { startCall:startCall, friends:function(){ return FR; }, canTalk:canTalk,
-             respondRequest:respondRequest, loadFriends:loadFriends, roster:function(){ return roster; }, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang };
+             respondRequest:respondRequest, cancelRequest:cancelRequest, loadFriends:loadFriends, roster:function(){ return roster; }, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang };
   })();
   window.STCommunity = STCommunity;
   /* ================= Direct Messages (STDM) ================= */
