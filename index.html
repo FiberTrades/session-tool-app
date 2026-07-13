@@ -410,8 +410,8 @@
   .settings-btn-primary { background: var(--text); color: var(--bg); border-color: var(--text); }
   .settings-btn-primary:hover { background: var(--text-mid); border-color: var(--text-mid); color: var(--bg); }
   .settings-btn-ghost { background: transparent; }
-  .settings-btn-danger { background: var(--bad); border-color: var(--bad); color: var(--bg); }
-  .settings-btn-danger:hover { background: transparent; color: var(--bad); }
+  .settings-btn-danger { background: transparent; border-color: var(--bad); color: var(--bad); }
+  .settings-btn-danger:hover { background: var(--bad); color: var(--bg); }
   /* Accounts list — each row is a card with name, status, balance, P&L, actions. */
   .settings-account-row { border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 14px 16px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; transition: border-color 200ms; }
   .settings-account-row.active-account { border-color: var(--text-mid); }
@@ -453,6 +453,10 @@
      active-only starting balance — the baseline that feeds Stats. */
   .settings-account-total { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); letter-spacing: 0.05em; padding: 12px 14px; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); margin-bottom: 14px; }
   .settings-account-total strong { color: var(--text); font-weight: 500; }
+  .settings-account-total-sep { color: var(--border-2); margin: 0 6px; }
+  .settings-account-total-pct { margin-left: 4px; }
+  .settings-account-total-pct.good { color: var(--good); }
+  .settings-account-total-pct.bad { color: var(--bad); }
   .settings-account-new { margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-2); }
   .settings-account-new-row { display: grid; grid-template-columns: 1.4fr 1fr auto; gap: 10px; align-items: stretch; margin-top: 10px; }
   /* Linked groups list — each row shows the group name, the member chips, and
@@ -467,13 +471,9 @@
   .settings-group-chip { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.08em; color: var(--text-mid); background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-chip); padding: 3px 8px; }
   .settings-group-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
   .settings-btn-small { padding: 6px 10px; font-size: 9px; letter-spacing: 0.15em; }
-  /* Linked-group action buttons use a more subtle ghost-danger style — red
-     border and text on transparent background — to distinguish a "remove
-     group" action from the heavier "delete account" action which keeps the
-     original solid-red treatment. Scoped to the group actions container so
-     the account-row Delete button isn't affected. */
-  .settings-group-actions .settings-btn-danger { background: transparent; color: var(--bad); border-color: var(--bad); }
-  .settings-group-actions .settings-btn-danger:hover { background: var(--bad); color: var(--bg); }
+  /* Ghost-danger is now the DEFAULT for every destructive button (.settings-btn-danger
+     above): red outline at rest, filling in on hover. The account row used to carry a
+     solid red block, so the same action looked like two different buttons. */
   /* Inline group editor — appears in place of the row when editing or below
      the list when creating new. Name input + checkbox list of active accounts. */
   .settings-group-editor { padding: 14px; border: 1px solid var(--text-mid); background: var(--bg-elev); margin-top: 8px; }
@@ -9994,6 +9994,26 @@
     }
     return trades.slice();
   }
+  function accBaseline(a) {
+    if (!a) return 0;
+    return (typeof a.balanceAtSetup === 'number' && a.balanceAtSetup > 0)
+      ? a.balanceAtSetup
+      : (a.startingBalance || 0);
+  }
+  // The balance the scope's accounts were ALREADY at when they were added to the app.
+  // The Account Balance KPI must build on this, not on the nominal size - otherwise an
+  // account you had already been trading shows its nominal figure plus your logged P&L,
+  // which is a number that matches neither MT5 nor reality.
+  function getScopedBaseline() {
+    const r = currentScopeResolved();
+    const accs = (Array.isArray(data.accounts) ? data.accounts : []);
+    if (r.kind === 'account') return accBaseline(r.account);
+    if (r.kind === 'group') {
+      return r.accountIds.reduce((sum, id) => sum + accBaseline(accs.find(x => x.id === id)), 0);
+    }
+    // lifetime: every account's baseline, summed
+    return accs.reduce((sum, a) => sum + accBaseline(a), 0);
+  }
   function getScopedSB() {
     const r = currentScopeResolved();
     if (r.kind === 'lifetime') return getStatsLifetimeStartingBalance();
@@ -14131,7 +14151,10 @@
     const grossSum = all.reduce((s,t) => s + tradeGross(t) * tradeCopies(t), 0);
     const costsSum = all.reduce((s,t) => s + tradeCosts(t) * tradeCopies(t), 0);
     const netSum = grossSum - costsSum;
-    const balance = scopedStartingBalance + netSum;
+    // Balance builds on the BASELINE (where the account actually stood at setup).
+    // The % figures below keep using scopedStartingBalance - the nominal size - because
+    // that is what a prop firm measures you against, and what your % rules key off.
+    const balance = getScopedBaseline() + netSum;
     // Account Balance KPI — just the £ amount. The lifetime % change moved out of here
     // and into the equity chart subtitle below where it sits next to the curve it summarises.
     const balEl = document.getElementById('kpi-balance');
@@ -14864,7 +14887,7 @@
         let sum = 0;
         for (const acc of accs) {
           const c = new Date(acc.createdAt || 0).getTime();
-          if (c <= dateMs) sum += acc.startingBalance || 0;
+          if (c <= dateMs) sum += accBaseline(acc);   // where the account actually stood at setup
           else break; // sorted, so we can stop
         }
         return sum;
@@ -30735,11 +30758,15 @@
       const isSingleAccount = data.accounts.length === 1;
       const activeAccounts = data.accounts.filter(a => a.status === 'active');
       const totalActiveBal = activeAccounts.reduce((s, a) => s + (a.startingBalance || 0), 0);
+      const totalActiveCur = activeAccounts.reduce((s, a) => s + computeAccountStats(a).current, 0);
+      const totalPct = totalActiveBal > 0 ? ((totalActiveCur - totalActiveBal) / totalActiveBal) * 100 : 0;
+      const totalPctCls = totalPct > 0 ? 'good' : totalPct < 0 ? 'bad' : '';
+      const totalPctSign = totalPct > 0 ? '+' : '';
       // Multi-account summary only when relevant — with one account, the row
       // below already shows the balance, so the summary would be redundant.
       const summary = isSingleAccount
         ? ''
-        : `<div class="settings-account-total">${tt('settings.total_active_label')} <strong>${fmt(totalActiveBal, { noSign: true })}</strong> ${tt('settings.across_label')} ${activeAccounts.length} ${activeAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div>`;
+        : `<div class="settings-account-total">${tt('settings.total_active_label')} <strong>${fmt(totalActiveBal, { noSign: true })}</strong> <span class="settings-account-total-sep">·</span> ${window._stT('Combined current:', 'Saldo actual combinado:')} <strong>${fmt(totalActiveCur, { noSign: true })}</strong> <span class="settings-account-total-pct ${totalPctCls}">${totalPctSign}${totalPct.toFixed(2)}%</span> ${tt('settings.across_label')} ${activeAccounts.length} ${activeAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div>`;
       const buildRow = (acc) => {
         const s = computeAccountStats(acc);
         const isArchived = acc.status === 'archived';
