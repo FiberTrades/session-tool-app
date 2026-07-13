@@ -1601,6 +1601,13 @@
   /* Inline bias date picker — lives in the section-01 header, right-aligned, no surrounding box. */
   .section-header-spacer { flex: 1 1 auto; }
   .bias-date-inline { display: inline-flex; align-items: center; gap: 12px; }
+  /* Phone: the date input is taller than the MT5 button (its height comes from its own
+     padding, the button's from ours). Stretch them to a common height instead of guessing
+     a pixel value that would drift with the font. */
+  @media (max-width: 640px) {
+    .bias-date-inline { align-items: stretch; gap: 8px; }
+    .bias-date-inline-btn { padding-top: 0; padding-bottom: 0; margin-left: 0; }
+  }
   .bias-date-inline-eyebrow { font-size: 10px; color: var(--text-dim); letter-spacing: 0.25em; text-transform: uppercase; }
   .bias-date-inline input[type="date"] { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 5px 10px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; outline: none; transition: all 200ms; }
   .bias-date-inline input[type="date"]:hover, .bias-date-inline input[type="date"]:focus { border-color: var(--text-mid); color: var(--text); }
@@ -12189,6 +12196,11 @@
       // (Removed: trade-num click to switch active trade. The tab strip above the Execution
       // section is now the sole switcher — keeping two click paths created confusion.)
       row.querySelector('.trade-remove').addEventListener('click', () => {
+        // Snapshot the row AND where it sat, so undo puts it back in the same place
+        // rather than appending it to the end of the log.
+        const removed = data.review.trades[idx];
+        const removedIdx = idx;
+        const prevActive = _activeReviewTradeIdx;
         data.review.trades.splice(idx, 1);
         // If we deleted the active trade or one before it, reset to a safe index.
         if (_activeReviewTradeIdx >= data.review.trades.length) _activeReviewTradeIdx = Math.max(0, data.review.trades.length - 1);
@@ -12196,6 +12208,21 @@
         fullUpdate();
         syncReviewSectionsToActiveTrade();
         if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
+        if (typeof showUndoToast === 'function') {
+          showUndoToast(
+            window._stT('Trade deleted', 'Operaci\u00f3n eliminada'),
+            () => {
+              data.review.trades.splice(removedIdx, 0, removed);   // back where it was
+              _activeReviewTradeIdx = Math.min(prevActive, data.review.trades.length - 1);
+              syncTradedFromTrades();
+              fullUpdate();
+              syncReviewSectionsToActiveTrade();
+              if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
+            },
+            10000,
+            window._stT('Undo', 'Deshacer')
+          );
+        }
       });
     });
     _applyCurrency();
