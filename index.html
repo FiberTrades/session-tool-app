@@ -10060,9 +10060,36 @@
     if (account) return { kind: 'account', account };
     return { kind: null };
   }
+  // A group's members that are still ACTIVE. An archived account is not traded, so it
+  // must not receive a fanned-out trade either.
+  function activeGroupAccountIds(g) {
+    if (!g || !Array.isArray(g.accountIds)) return [];
+    const accs = (data.accounts || []);
+    return g.accountIds.filter(id => {
+      const a = accs.find(x => x.id === id);
+      return a && a.status === 'active';
+    });
+  }
+  // Groups that still do something: two or more active members. A group of one is just
+  // that account, so it is not offered as a scope or a log target.
+  // If the current scope or log target is a group that has stopped being usable (a member
+  // was archived), step off it - otherwise the app is pointing at something that fans out
+  // to one account, or to none.
+  function settleGroupTargets() {
+    const ok = new Set(usableGroups().map(g => g.id));
+    const isDeadGroup = (id) => id && (data.linkedGroups || []).some(g => g.id === id) && !ok.has(id);
+    let changed = false;
+    if (isDeadGroup(data.viewScope))        { data.viewScope = 'lifetime'; changed = true; }
+    if (isDeadGroup(data.defaultLogTarget)) { data.defaultLogTarget = null; changed = true; }
+    if (data.review && isDeadGroup(data.review.logTo)) { data.review.logTo = null; changed = true; }
+    if (changed) { try { saveData(); } catch (e) {} }
+  }
+  function usableGroups() {
+    return (data.linkedGroups || []).filter(g => activeGroupAccountIds(g).length >= 2);
+  }
   function getLogTargetAccountIds(id) {
     const t = resolveLogTarget(id);
-    if (t.kind === 'group') return t.group.accountIds.slice();
+    if (t.kind === 'group') return activeGroupAccountIds(t.group);   // never fan out into an archived account
     if (t.kind === 'account') return [t.account.id];
     return [];
   }
@@ -10105,7 +10132,7 @@
     const menu = document.getElementById('logto-picker-menu');
     if (!wrap || !btnLbl || !menu) return;
     const activeAccounts = (data.accounts || []).filter(a => a.status === 'active');
-    const groups = data.linkedGroups || [];
+    const groups = usableGroups();   // a group with fewer than 2 active members is not a group
     // Trivial case: no active accounts — hide entirely.
     if (activeAccounts.length === 0) {
       wrap.style.display = 'none';
@@ -10320,7 +10347,7 @@
     const accounts = Array.isArray(data.accounts) ? data.accounts : [];
     const active   = accounts.filter(a => a.status === 'active');
     const archived = accounts.filter(a => a.status === 'archived');
-    const groups   = Array.isArray(data.linkedGroups) ? data.linkedGroups : [];
+    const groups   = usableGroups();   // a group with <2 active members is not offered
     // Visibility rule: hide picker when there's nothing to switch between.
     // One active + no archived + no groups = no choice = no picker.
     if (active.length <= 1 && archived.length === 0 && groups.length === 0) {
@@ -10517,7 +10544,7 @@
         _scopePickerSectionsExpanded = { accounts: true, groups: false, archived: false };
         const scopeId  = currentScopeId();
         const accounts = Array.isArray(data.accounts) ? data.accounts : [];
-        const groups   = Array.isArray(data.linkedGroups) ? data.linkedGroups : [];
+        const groups   = usableGroups();   // a group with <2 active members is not offered
         if (accounts.some(a => a.status === 'active'   && a.id === scopeId)) _scopePickerSectionsExpanded.accounts = true;
         if (groups.some(g => g.id === scopeId))                               _scopePickerSectionsExpanded.groups = true;
         if (accounts.some(a => a.status === 'archived' && a.id === scopeId)) _scopePickerSectionsExpanded.archived = true;
@@ -30807,8 +30834,13 @@
               </span>
               <span class="settings-account-meta-sep">·</span>
               <span class="settings-account-meta-pair">
+                <span class="settings-account-meta-label">${window._stT('WHEN ADDED', 'AL AÑADIR')}</span>
+                <span class="settings-account-meta-value settings-account-base-edit" data-id="${acc.id}" data-cur="${s.baseline}" title="${window._stT('What MT5 said this account was worth on the day you added it here. Every trade you log is added on top of this.','Lo que MT5 marcaba en esta cuenta el día que la añadiste. Cada operación registrada se suma encima.')}">${fmt(s.baseline, { noSign: true })}</span>
+              </span>
+              <span class="settings-account-meta-sep">·</span>
+              <span class="settings-account-meta-pair">
                 <span class="settings-account-meta-label">${tt('settings.current_label')}</span>
-                <span class="settings-account-meta-value settings-account-base-edit" data-id="${acc.id}" data-cur="${s.baseline}" title="${window._stT('The balance this account was already at when you added it. Trades logged here are added on top.','El saldo que ya tenía esta cuenta al añadirla. Las operaciones se suman encima.')}">${fmt(s.current, { noSign: true })}</span>
+                <span class="settings-account-meta-value">${fmt(s.current, { noSign: true })}</span>
                 <span class="settings-account-meta-pct ${pctCls}">${pctSign}${s.pct.toFixed(2)}%</span>
               </span>
             </div>
@@ -30858,22 +30890,27 @@
       // --- Current balance: the baseline this account was ALREADY at when you added it.
       // Editing "Current" edits that baseline; the trades you have logged still stack on top,
       // so the number you type is what you see only until the next trade.
+      // WHEN ADDED: the balance this account was at on the day it was created here.
+      //
+      // This used to be an editable "Current", which back-solved the baseline from whatever
+      // you typed (baseline = typed - net so far). That only holds if EVERY trade is already
+      // logged at the moment you type it. Log a past trade afterwards and it gets counted
+      // twice - once inside the figure you typed, once as the trade. Editing the baseline
+      // directly is a historical fact that later trades cannot invalidate.
       wrap.querySelectorAll('.settings-account-base-edit').forEach(span => {
         span.addEventListener('click', () => {
           const id = span.dataset.id;
           const acc = getAccountById(id);
           if (!acc) return;
           const st = computeAccountStats(acc);
-          window.openRenameModal(String(st.current), (newVal) => {
+          window.openRenameModal(String(st.baseline), (newVal) => {
             const parsed = parseFloat(newVal);
             if (isNaN(parsed) || parsed <= 0) return;
-            // They typed the CURRENT balance. Work backwards to the baseline, so the
-            // trades already logged are not counted twice.
-            acc.balanceAtSetup = parsed - st.totalNet;
+            acc.balanceAtSetup = parsed;
             saveData();
             renderSettingsAccountsList();
             try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
-          }, window._stT('Current balance', 'Saldo actual'));
+          }, window._stT('Balance when this account was added', 'Saldo al añadir esta cuenta'));
         });
       });
 
@@ -31111,7 +31148,11 @@
           onConfirm: () => {
             const ok = archiveAccount(id);
             if (ok) {
+              settleGroupTargets();
               refreshScopeSurfaces();
+              try { if (typeof renderSettingsAccountsList === 'function') renderSettingsAccountsList(); } catch (e) {}
+              try { if (typeof renderSettingsLinkedGroupsList === 'function') renderSettingsLinkedGroupsList(); } catch (e) {}
+              try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
             } else (typeof showToast==='function'?showToast:alert)('Cannot archive the only active account. Create another account first.');
           }
         });
@@ -31119,7 +31160,11 @@
       }
       if (action === 'unarchive') {
         unarchiveAccount(id);
+        settleGroupTargets();
         refreshScopeSurfaces();
+        try { if (typeof renderSettingsAccountsList === 'function') renderSettingsAccountsList(); } catch (e) {}
+        try { if (typeof renderSettingsLinkedGroupsList === 'function') renderSettingsLinkedGroupsList(); } catch (e) {}
+        try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
         return;
       }
       if (action === 'delete') {
