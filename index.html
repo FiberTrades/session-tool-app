@@ -38539,6 +38539,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.reconnecting=true; refreshStatus();
     try{ if(S.pc) S.pc.close(); }catch(e){}
     S.pc=null; S.cfSession=null; S.subscribing=false; S.subbed={};
+    try{ var _ra=document.getElementById('stl-remote-audio'); if(_ra){ _ra.srcObject=null; _ra.remove(); } }catch(e){}
+    S.hostRemote=null;
     try{ if(S.pubPc) S.pubPc.close(); }catch(e){}  /* the speak-publisher, if we had one */
     S.pubPc=null; S.pubSession=null;
     var v=el('stl-video'); if(v){ v.srcObject=null; v.className=''; }
@@ -38930,6 +38932,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         try{ console.log('[stlive] host republished, re-subscribing', S.subCf, '->', cf); }catch(e){}
         try{ S.pc.close(); }catch(e){}
         S.pc=null; S.cfSession=null; S.subbed={}; S.subscribing=false;
+        try{ var _ra=document.getElementById('stl-remote-audio'); if(_ra){ _ra.srcObject=null; _ra.remove(); } }catch(e){}
+        S.hostRemote=null;
         try{ if(S.pubPc) S.pubPc.close(); }catch(e){}  /* the speak-publisher, if we had one */
         S.pubPc=null; S.pubSession=null;
         var _v=el('stl-video'); if(_v){ _v.srcObject=null; _v.className=''; }
@@ -38991,7 +38995,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
 
   /* ---------- participants panel: the roster that actually scales ---------- */
-  function hands(){ return (S.parts||[]).filter(function(p){ return p.hand_raised; }).length; }
+  /* Raised hands, as a count for the HOST.
+     Two things were wrong with counting them all. It included YOUR OWN hand - so raising it lit
+     a badge at you, reading exactly like "someone wants to speak" when the someone was you. And
+     it showed to every listener, none of whom can promote anybody: only the host can. A badge
+     you cannot act on is not a notification, it is noise. */
+  function hands(){
+    if(!isAdmin()) return 0;                 /* only the host can do anything about a raised hand */
+    var u=me(); var uid=u?u.id:null;
+    return (S.parts||[]).filter(function(p){
+      return p.hand_raised && p.user_id!==uid;   /* never count your own */
+    }).length;
+  }
   function togglePeople(force){
     S.peopleOpen = (force===undefined) ? !S.peopleOpen : !!force;
     var pn=el('stl-people');
@@ -39432,6 +39447,34 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(!r || !r.sessionId) throw new Error(r ? (r.error || JSON.stringify(r).slice(0,200)) : 'no response');
       S.cfSession=r.sessionId;
       S.pc=newPc();
+
+      /* THE HOST MUST BE ABLE TO HEAR THE SPEAKERS.
+
+         ontrack was only ever wired up in startWatch() - the VIEWER's path. The host never
+         calls startWatch, so the host's PeerConnection had no ontrack at all. subSpeakers()
+         negotiated the pull correctly and the audio arrived... and landed nowhere. No
+         handler, no MediaStream, no element. It was dropped on the floor.
+
+         The host has no remote media element either: stl-video is their OWN screen preview
+         and it is muted. So they get an audio sink of their own. */
+      S.hostRemote=new MediaStream();
+      S.pc.ontrack=function(ev){
+        try{
+          S.hostRemote.addTrack(ev.track);
+          var a=document.getElementById('stl-remote-audio');
+          if(!a){
+            a=document.createElement('audio');
+            a.id='stl-remote-audio';
+            a.autoplay=true;
+            a.playsInline=true;
+            a.style.display='none';
+            document.body.appendChild(a);
+          }
+          if(a.srcObject!==S.hostRemote) a.srcObject=S.hostRemote;
+          if(a.paused){ var pr=a.play(); if(pr&&pr.catch) pr.catch(function(){}); }
+        }catch(e){}
+      };
+
       var txs=[];
       S.stream.getTracks().forEach(function(tr){
         var tx=S.pc.addTransceiver(tr, { direction:'sendonly' });
