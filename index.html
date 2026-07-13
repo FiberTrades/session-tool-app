@@ -3819,13 +3819,6 @@
     <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title"><span data-i18n="trades.s_combo.title">Hold Winners longer VS close BEs sooner?</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.combo">Compares two alternative rules against your actual trades: (A) holding winners longer based on how much of the move you typically capture, and (B) using a shorter TP based on how far price extends on your BEs before reversing. Replays your history under each rule and shows which direction is more profitable AND which improves win rate. Tier badges show conviction (too few / early / building / strong) based on sample size. Detailed per-trade breakdown is collapsed below — expand to see exactly which trades drive each recommendation.</span></span></span></div>
       <div class="potr-period-row">
-        <span class="potr-metric-toggle" id="combo-metric-toggle">
-          <span class="potr-period-label" data-i18n="period.metric">Metric</span>
-          <span class="potr-metric-group">
-            <button type="button" class="potr-metric-btn active" data-metric="r">R</button>
-            <button type="button" class="potr-metric-btn" data-metric="pips" data-i18n="period.pips">Pips</button>
-          </span>
-        </span>
         <span class="potr-period-count" id="combo-period-count"></span>
       </div>
       <div id="combo-wrap"></div>
@@ -6172,7 +6165,7 @@
       'combo.rec_b_no_room': 'No shorter TP beats current. To turn your BEs into wins you\u2019d need a TP short enough to also cap your winners \u2014 and your winners run further, so you\u2019d give up more than you\u2019d gain.',
       'combo.rec_b_recommend': 'Cap your TP at <strong class="rec-suggest">+{TP}</strong>.',
       'combo.verdict_best': 'Best for profit: <strong>{NAME}</strong> ({SUGGEST}). Net <strong>{GBP}</strong> better than current.',
-      'combo.verdict_near_miss': '<strong>{NAME}</strong> would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.',
+      'combo.verdict_near_miss': '<strong>{NAME}</strong> ({SUGGEST}) would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.',
       'combo.direction_c_name': 'Widen your initial stop',
       'combo.direction_d_name': 'Change your BE rule',
       'combo.rec_c_need_more': 'Need 10+ losers replayed by the EA. You have {N}.',
@@ -7539,7 +7532,7 @@
       'combo.g_captured': 'Capturado',
       'combo.g_potential': 'Potencial',
       'combo.verdict_best': 'Lo más rentable: <strong>{NAME}</strong> ({SUGGEST}). Neto <strong>{GBP}</strong> mejor que ahora.',
-      'combo.verdict_near_miss': '<strong>{NAME}</strong> habría dado <strong>{GBP}</strong> más, pero {REASON}. Mantén el rumbo.',
+      'combo.verdict_near_miss': '<strong>{NAME}</strong> ({SUGGEST}) habría dado <strong>{GBP}</strong> más, pero {REASON}. Mantén el rumbo.',
       'combo.g_more_captured': 'Capturado de m\u00e1s',
       'combo.g_overheld': 'Aguantadas hasta cero',
       'combo.g_be_to_win': 'BEs vueltos ganadoras',
@@ -15719,6 +15712,17 @@
     const _compMetric = (metric === 'pips') ? 'r' : 'pips';
     const _comp = _sweepOptima(_compMetric);
     function _dualStretch() { return _fmtUnit(optStretch, metric) + (_comp.optStretch > 0 ? ' \u00b7 +' + _fmtUnit(_comp.optStretch, _compMetric) : ''); }
+    // The CURRENT baseline in BOTH units. There is no reason to make you toggle a pill to
+    // see a number that fits perfectly well beside its twin.
+    function _dualCurrent() {
+      const primary = fmt(current.total);
+      let other = '';
+      try {
+        const c2 = projectAllTrades(allTrades, 0, 0, _compMetric);
+        if (c2 && typeof c2.total === 'number' && !isNaN(c2.total)) other = _fmtUnit(c2.total, _compMetric);
+      } catch (e) {}
+      return other ? (primary + ' \u00b7 ' + other) : primary;
+    }
     function _dualTP()      { return _fmtUnit(optTP,      metric) + (_comp.optTP      > 0 ? ' \u00b7 +' + _fmtUnit(_comp.optTP,      _compMetric) : ''); }
 
     // Tier conviction per direction
@@ -15974,10 +15978,31 @@
         if (sc.totalGbp > scenarioD.totalGbp) { scenarioD = sc; bestBeIdx = k; }
       }
     }
+    // The pip equivalent, shown alongside - but R is the PRIMARY unit here, and deliberately.
+    //
+    // For A and B, R and pips are two ways of writing the same number. For D they are two
+    // different RULES: "move at 2R" triggers at 8 pips on a 4-pip stop and 12 on a 6-pip stop,
+    // while "move at 8 pips" triggers at the same place regardless. Your stop size varies, so
+    // those are not the same strategy - and R is the one your EA actually runs (g_beRR).
+    //
+    // So the pips figure is an approximation for readability, from your own median stop, and
+    // it is marked with a ~ rather than pretending to be exact.
+    const _medianSl = (function () {
+      const sls = allTrades.map(tr => parseFloat(tr.sl) || 0).filter(v => v > 0).sort((a, b) => a - b);
+      if (!sls.length) return 0;
+      const m = Math.floor(sls.length / 2);
+      return sls.length % 2 ? sls[m] : (sls[m - 1] + sls[m]) / 2;
+    })();
+
     const bestBeLabel = (bestBeIdx < 0) ? ''
       : (BE_LADDER[bestBeIdx] === null
           ? (t('combo.be_never') || 'stop moving to BE at all')
-          : (t('combo.be_at') || 'move at {R}R').replace('{R}', String(BE_LADDER[bestBeIdx])));
+          : (function () {
+              const rMult = BE_LADDER[bestBeIdx];
+              const base  = (t('combo.be_at') || 'move at {R}R').replace('{R}', String(rMult));
+              if (_medianSl <= 0) return base;
+              return base + ' \u00b7 \u2248' + Math.round(rMult * _medianSl) + 'p';
+            })());
 
     const aDeltaGbp = scenarioA.totalGbp - current.totalGbp;
     const bDeltaGbp = scenarioB.totalGbp - current.totalGbp;
@@ -16184,8 +16209,9 @@
       const near = beats[0];
       const reason = buildGateReason(near.passesTier, near.passesDelta, near.n, near.sampleLabel);
       profitVerdict = (t('combo.verdict_near_miss')
-          || '<strong>{NAME}</strong> would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.')
+          || '<strong>{NAME}</strong> ({SUGGEST}) would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.')
         .replace(/\{NAME\}/g, near.name)
+        .replace(/\{SUGGEST\}/g, near.suggest)
         .replace(/\{GBP\}/g, fmtGbp(near.delta))
         .replace(/\{REASON\}/g, reason);
     }
@@ -16378,9 +16404,8 @@
       ${showBaseline ? `<div class="combo-current-row">
         <span class="combo-current-label">${(t('combo.current_label') || 'CURRENT').toUpperCase()}</span>
         <span class="combo-current-stats">
-          <span class="combo-cur-total">${fmt(current.total)}</span>
+          <span class="combo-cur-total">${_dualCurrent()}</span>
           <span class="combo-cur-gbp">(${fmtGbp(current.totalGbp)})</span>
-          <span class="combo-cur-wr">${current.winRate.toFixed(0)}% ${wrLabel}</span>
         </span>
         <span class="combo-current-meta">${current.tradeCount} ${tradesWord}</span>
       </div>` : ''}
