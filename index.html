@@ -458,7 +458,12 @@
     font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.1em;
     text-transform: uppercase; margin-left: 10px; text-decoration: underline dotted; padding: 0; }
   .settings-account-match:hover { color: var(--accent, #f472b6); }
+  #mt5-match-input::-webkit-outer-spin-button,
+  #mt5-match-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  #mt5-match-input { -moz-appearance: textfield; appearance: textfield; }
   .mt5-match-note { font-size: 11.5px; line-height: 1.5; color: var(--text-dim); margin-bottom: 16px; }
+  .mt5-match-line.total.bad span, .mt5-match-line.total.bad strong { color: var(--bad); }
+  .mt5-match-warn { color: var(--bad); font-size: 11px; line-height: 1.45; margin-top: 10px; }
   .mt5-match-label { display: block; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px;
     letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 7px; }
   .mt5-match-work { margin-top: 14px; }
@@ -30970,15 +30975,20 @@
       const inp  = document.getElementById('mt5-match-input');
       const work = document.getElementById('mt5-match-work');
 
+      const saveBtn = () => document.getElementById('mt5-match-save');
       const paint = () => {
         const typed = parseFloat(inp.value);
-        if (isNaN(typed) || typed <= 0) { work.innerHTML = ''; return; }
+        const b = saveBtn();
+        if (isNaN(typed) || typed <= 0) { work.innerHTML = ''; if (b) b.disabled = true; return; }
         const start = typed - st.totalNet;
-        const tradeWord = tradeCount === 1 ? L('trade', 'operaci\u00f3n') : L('trades', 'operaciones');
+        const bad = start <= 0;   /* the account cannot have started at nothing */
+        const tradeWord = tradeCount === 1 ? L('trade', 'operación') : L('trades', 'operaciones');
         work.innerHTML = `
-          <div class="mt5-match-line"><span>${L('Broker balance', 'Saldo del br\u00f3ker')}</span><strong>${fmt(typed, { noSign: true })}</strong></div>
+          <div class="mt5-match-line"><span>${L('Broker balance', 'Saldo del bróker')}</span><strong>${fmt(typed, { noSign: true })}</strong></div>
           <div class="mt5-match-line"><span>${L('Your', 'Tus')} ${tradeCount} ${tradeWord}</span><strong>${fmt(st.totalNet)}</strong></div>
-          <div class="mt5-match-line total"><span>${L('So the account started at', 'Entonces la cuenta empez\u00f3 en')}</span><strong>${fmt(start, { noSign: true })}</strong></div>`;
+          <div class="mt5-match-line total${bad ? ' bad' : ''}"><span>${L('So the account started at', 'Entonces la cuenta empezó en')}</span><strong>${fmt(start)}</strong></div>
+          ${bad ? `<div class="mt5-match-warn">${L("That can't be right — it would mean the account started at nothing. Check the figure you typed, and that every trade in the app really was traded on this account.", 'Eso no puede ser: significaría que la cuenta empezó en nada. Revisa la cifra escrita y que todas las operaciones de la app se hicieran en esta cuenta.')}</div>` : ''}`;
+        if (b) b.disabled = bad;
       };
       inp.addEventListener('input', paint);
 
@@ -30990,7 +31000,9 @@
       document.getElementById('mt5-match-save').addEventListener('click', () => {
         const typed = parseFloat(inp.value);
         if (isNaN(typed) || typed <= 0) return;
-        acc.balanceAtSetup = typed - st.totalNet;   // the starting point, derived once
+        const start = typed - st.totalNet;
+        if (start <= 0) return;                     /* impossible; the button is disabled anyway */
+        acc.balanceAtSetup = start;                 /* the starting point, derived once */
         saveData();
         close();
         renderSettingsAccountsList();
