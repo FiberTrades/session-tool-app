@@ -8041,6 +8041,8 @@
 
   // Show a gentle snackbar nudging the user about this week's rule. Only fires if a rule exists.
   function fireMidSessionRuleReminder() {
+    // Same rule as the session voice: one window speaks, and a detached panel never does.
+    if (!_holdsVoice()) return;
     const rule = (typeof getRuleForWeek === 'function' && typeof getCalendarWeekKey === 'function')
       ? getRuleForWeek(getCalendarWeekKey(new Date()))
       : null;
@@ -8426,10 +8428,64 @@
     } catch (e) {}
   }
 
+  // ONLY ONE WINDOW SPEAKS.
+  //
+  // Every tab with the app open runs this same clock, so every tab spoke: open the community in
+  // its own window and "Session over." came out of both. Two rules settle it.
+  //
+  // 1. A DETACHED window never speaks. It is a panel, not the app - you opened it to see the
+  //    chat, not to be told about the session.
+  // 2. Among the real app windows, exactly one holds the voice. Ownership is a heartbeat in
+  //    localStorage: whoever holds it keeps refreshing it, and if that window is closed the
+  //    claim goes stale within seconds and the next window takes over. So the voice does not
+  //    vanish just because you closed the tab that happened to own it.
+  const _VOICE_KEY = 'st_voice_owner';
+  const _VOICE_ID  = String(Math.random()).slice(2) + '-' + Date.now();
+  const _VOICE_TTL = 9000;
+
+  function _isDetachedWindow() {
+    try {
+      if (document.documentElement.classList.contains('st-detached')) return true;
+      if (/[?&]stview=/.test(location.search)) return true;
+    } catch (e) {}
+    return false;
+  }
+
+  function _holdsVoice() {
+    if (_isDetachedWindow()) return false;
+    try {
+      const now = Date.now();
+      const raw = localStorage.getItem(_VOICE_KEY);
+      const o = raw ? JSON.parse(raw) : null;
+      // Free, stale, or already ours -> take it and refresh the claim.
+      if (!o || !o.id || (now - (o.t || 0)) > _VOICE_TTL || o.id === _VOICE_ID) {
+        localStorage.setItem(_VOICE_KEY, JSON.stringify({ id: _VOICE_ID, t: now }));
+        return true;
+      }
+      return false;   // another window has it and is alive
+    } catch (e) {
+      return true;    // storage unavailable: better to speak than to go silent
+    }
+  }
+
+  // Keep the claim warm while this window lives, and release it on the way out so another
+  // window picks it up immediately rather than waiting for the TTL.
+  if (!_isDetachedWindow()) {
+    setInterval(function () { try { _holdsVoice(); } catch (e) {} }, 4000);
+    window.addEventListener('pagehide', function () {
+      try {
+        const raw = localStorage.getItem(_VOICE_KEY);
+        const o = raw ? JSON.parse(raw) : null;
+        if (o && o.id === _VOICE_ID) localStorage.removeItem(_VOICE_KEY);
+      } catch (e) {}
+    });
+  }
+
   function fireSessionAlert(kind) {
     // Pure-voice alert at session open/close. No visual toast. Just the spoken note — at session
     // start the weekly-rule reminder sounds its own chime ~5s later, so a separate session
     // chime here would double up.
+    if (!_holdsVoice()) return;
     playVoiceClip(kind);
     // NOTE: the Friday weekly-review / rule-grade prompt is intentionally NOT
     // fired here at session end. It now fires only after the user saves their
