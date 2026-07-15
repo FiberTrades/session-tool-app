@@ -36436,9 +36436,10 @@
   ST.notePeak = function () { try { peakLocalScore = Math.max(peakLocalScore || 0, contentScore(ST.getData())); } catch (e) {} };
   function doCloudUpsert(d) {
     try { if (currentUser) localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
+    var _uat = new Date().toISOString();
     sb.from('journals').upsert({
-      user_id: currentUser.id, data: d, updated_at: new Date().toISOString()
-    }).then(function (r) { accStatus(r.error ? tt('syncErr') : tt('synced')); });
+      user_id: currentUser.id, data: d, updated_at: _uat
+    }).then(function (r) { if (!(r && r.error)) { try { localStorage.setItem('st_jrnl_uat', _uat); } catch (e) {} } accStatus(r.error ? tt('syncErr') : tt('synced')); });
   }
 
   function cloudPush() {
@@ -36516,9 +36517,10 @@
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
     accStatus(tt('syncing'));
-    sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
+    sb.from('journals').select('data, updated_at').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
       if (r.error) { accStatus(tt('syncErr')); return; }
       var raw = r.data && r.data.data;
+      var _rowUat = r.data && r.data.updated_at;
       var cloudHasData = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
       var local = ST.getData();
       // ACCOUNT ISOLATION (same browser, multiple logins): localStorage is a per-browser cache and
@@ -36593,8 +36595,19 @@
         // more than once per session, so a non-identical compare can't loop.
         var reloaded = false; try { reloaded = !!sessionStorage.getItem('st_synced_reload'); } catch (e) {}
         if (!reloaded) { try { sessionStorage.setItem('st_synced_reload', '1'); } catch (e) {} location.reload(); }
+      } else if (cScore === lScore && (function(){ try { if (!_rowUat) return false; var s = localStorage.getItem('st_jrnl_uat') || ''; var cu = Date.parse(_rowUat), lu = s ? Date.parse(s) : 0; return !!cu && cu > lu; } catch (e) { return false; } })()) {
+        // Equal trade content, but the cloud copy is NEWER than anything THIS device produced
+        // \u2014 i.e. a profile-only change (avatar / display name) was made on another device.
+        // Adopt it in place (no trade-loss risk \u2014 content is identical) and repaint, rather
+        // than pushing our stale copy up and clobbering it.
+        takeSnapshot('pre-sync', local);
+        try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
+        try { localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
+        accStatus(tt('synced'));
+        try { if (window.__stEnsureAvatarUI) window.__stEnsureAvatarUI(); } catch (e) {}
+        try { if (window.STCommunity && STCommunity.refreshIdentity) STCommunity.refreshIdentity(); } catch (e) {}
       } else {
-        // Local holds >= cloud content: push local up, snapshotting the cloud copy first.
+        // Local holds >= cloud content (and is not older): push local up, snapshotting cloud first.
         takeSnapshot('pre-sync', cloud);     // snapshot the cloud copy before overwriting it with local
         cloudPush();
       }
