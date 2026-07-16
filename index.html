@@ -40772,16 +40772,27 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _boot(){ window.__stTwemojiLoaded=true; try{ if(window.console&&console.info) console.info('[ST] Twemoji ready'); }catch(_){}
     try{ _sweep(document); }catch(_){}
     try{
-      var obs=new MutationObserver(function(muts){
-        for(var i=0;i<muts.length;i++){ var a=muts[i].addedNodes; if(!a) continue;
-          for(var j=0;j<a.length;j++){ var n=a[j]; if(!n||n.nodeType!==1||n.tagName==='IMG') continue;
-            if(n.closest && n.closest(CHAT_SEL)){ _tw(n); continue; }
-            if(n.matches && n.matches(CHAT_SEL)){ _tw(n); continue; }
-            if(n.querySelectorAll){ var inner=n.querySelectorAll(CHAT_SEL); if(inner.length) Array.prototype.forEach.call(inner,_tw);
-              var fts=n.querySelectorAll('.ft-text'); if(fts.length) Array.prototype.forEach.call(fts,function(t){ if(t.getAttribute('contenteditable')!=='true') _tw(t); }); }
-            if(n.matches && n.matches('.ft-text') && n.getAttribute('contenteditable')!=='true'){ _tw(n); }
-          }
+      /* Batched + deduped: a burst of DOM inserts (e.g. the community tab loading
+         hundreds of messages) is coalesced into ONE processing pass on the next
+         animation frame instead of parsing synchronously on every single mutation.
+         Nodes are marked so they are never re-processed. This removes the lag. */
+      var _twQ=[], _twSched=false, obs;
+      function _twProc(n){
+        if(!n||n.nodeType!==1||!n.isConnected||n.__stTw) return;
+        n.__stTw=1;
+        try{
+          if((n.closest && n.closest(CHAT_SEL)) || (n.matches && n.matches(CHAT_SEL))){ _tw(n); return; }
+          if(n.querySelectorAll){ var inner=n.querySelectorAll(CHAT_SEL); for(var a=0;a<inner.length;a++) _tw(inner[a]);
+            var fts=n.querySelectorAll('.ft-text'); for(var b=0;b<fts.length;b++){ if(fts[b].getAttribute('contenteditable')!=='true') _tw(fts[b]); } }
+          if(n.matches && n.matches('.ft-text') && n.getAttribute('contenteditable')!=='true'){ _tw(n); }
+        }catch(_){}
+      }
+      function _twDrain(){ _twSched=false; var arr=_twQ; _twQ=[]; for(var i=0;i<arr.length;i++) _twProc(arr[i]); }
+      obs=new MutationObserver(function(muts){
+        for(var i=0;i<muts.length;i++){ var ad=muts[i].addedNodes; if(!ad) continue;
+          for(var j=0;j<ad.length;j++){ var n=ad[j]; if(n&&n.nodeType===1&&n.tagName!=='IMG'&&!n.__stTw) _twQ.push(n); }
         }
+        if(_twQ.length && !_twSched){ _twSched=true; (window.requestAnimationFrame||function(f){ return setTimeout(f,16); })(_twDrain); }
       });
       obs.observe(document.body,{childList:true,subtree:true});
       window.__stTwemojiObs=obs;
