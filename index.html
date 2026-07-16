@@ -40752,6 +40752,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var TWJS2='https://cdnjs.cloudflare.com/ajax/libs/twemoji/14.0.2/twemoji.min.js';
   var SVGBASE='https://cdn.jsdelivr.net/gh/twitter/twemoji@14.0.2/assets/svg/';
   var CHAT_SEL='#dcx-msgs,.dcx-msgs,.stdm-msgs,#stl-chat';
+  /* fast pre-test: most chat lines have NO emoji, so skip the expensive parse for them */
+  var _EMO=/[\u2190-\u27BF\u2B00-\u2BFF\u2122\u2139\u3030\u303D\u3297\u3299\uFE0F]|[\uD83C-\uD83E][\uDC00-\uDFFF]/;
   try{
     var st=document.createElement('style');
     st.textContent='img.st-emoji{height:1.35em;width:1.35em;vertical-align:-0.22em;margin:0 .04em;object-fit:contain;display:inline-block;}'
@@ -40763,6 +40765,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _jumbo(el){ try{ var n=el.querySelectorAll?el.querySelectorAll('img.st-emoji').length:0; var txt=(el.textContent||'').replace(/\s+/g,''); if(n && n<=6 && txt===''){ el.classList.add('st-jumbo'); } else { el.classList.remove('st-jumbo'); } }catch(_){} }
   function _picker(el){ try{ return !!(el.closest && el.closest('#stl-emo,.dcx-emoji,.dcx-react-pop')); }catch(_){ return false; } }
   function _tw(el){ if(!window.twemoji||!el||el.nodeType!==1||_editable(el)||_picker(el)) return;
+    try{ if(!_EMO.test(el.textContent||'')) return; }catch(_){}
     try{ window.twemoji.parse(el,{className:'st-emoji',callback:function(icon){ return SVGBASE+icon+'.svg'; }}); }catch(_){}
     try{ var b=el.querySelectorAll?el.querySelectorAll('.dcx-text,.dcx-body,.stl-msg,.stdm-text'):[]; if(b.length){ Array.prototype.forEach.call(b,_jumbo); } else { _jumbo(el); } }catch(_){}
   }
@@ -40787,7 +40790,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if(n.matches && n.matches('.ft-text') && n.getAttribute('contenteditable')!=='true'){ _tw(n); }
         }catch(_){}
       }
-      function _twDrain(){ _twSched=false; var arr=_twQ; _twQ=[]; for(var i=0;i<arr.length;i++) _twProc(arr[i]); }
+      function _twNow(){ return (window.performance&&performance.now)?performance.now():Date.now(); }
+      function _twDrain(){ _twSched=false; var t0=_twNow(), i=0, L=_twQ.length;
+        while(i<L){ _twProc(_twQ[i]); i++; if(_twNow()-t0>8) break; }
+        _twQ=(i<L)?_twQ.slice(i):[];
+        if(_twQ.length && !_twSched){ _twSched=true; (window.requestAnimationFrame||function(f){ return setTimeout(f,16); })(_twDrain); } }
       obs=new MutationObserver(function(muts){
         for(var i=0;i<muts.length;i++){ var ad=muts[i].addedNodes; if(!ad) continue;
           for(var j=0;j<ad.length;j++){ var n=ad[j]; if(n&&n.nodeType===1&&n.tagName!=='IMG'&&!n.__stTw) _twQ.push(n); }
