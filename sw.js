@@ -15,7 +15,7 @@
  * forget, network-first means the page itself still updates on the next load.
  */
 
-const CACHE_VERSION = 'st-2026-07-16a';      // <-- bump this string on each deploy
+const CACHE_VERSION = 'st-2026-07-16b';      // <-- bump this string on each deploy
 const APP_CACHE     = CACHE_VERSION + '-app';
 const RUNTIME_CACHE = CACHE_VERSION + '-rt';
 
@@ -109,5 +109,42 @@ self.addEventListener('fetch', (event) => {
 
 // Optional: lets the page trigger an immediate update if it ever wants to.
 self.addEventListener('message', (event) => {
-  if (event.data === 'skipWaiting') self.skipWaiting();
+  if (event.data === 'skipWaiting' || (event.data && event.data.type === 'SKIP_WAITING')) self.skipWaiting();
+});
+
+
+// ---- Web Push: show a notification when a push arrives (mentions, DMs, calls) ----
+// Without this, an incoming 1:1 call push arrives but nothing is shown, so a
+// locked/backgrounded phone never rings.
+self.addEventListener('push', (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; }
+  catch (e) { try { data = { body: event.data && event.data.text() }; } catch (_) {} }
+  const title = data.title || 'Session Tool';
+  // Detect a call so it can vibrate and stay on screen until tapped.
+  const isCall = data.type === 'call' || /calling you/i.test(title) || /answer/i.test(data.body || '');
+  const options = {
+    body: data.body || '',
+    tag: data.tag || (isCall ? 'ft-call' : 'ft-push'),
+    renotify: true,
+    data: { url: data.url || './' },
+    vibrate: data.vibrate || (isCall ? [300, 150, 300, 150, 300] : [180]),
+    requireInteraction: (data.requireInteraction != null) ? data.requireInteraction : isCall
+  };
+  if (data.icon) options.icon = data.icon;
+  event.waitUntil(self.registration.showNotification(title, options));
+});
+
+// Focus an existing tab (or open one) when a notification is tapped.
+self.addEventListener('notificationclick', (event) => {
+  event.notification.close();
+  const raw = (event.notification.data && event.notification.data.url) || './';
+  let target;
+  try { target = new URL(raw, self.registration.scope).href; } catch (e) { target = self.registration.scope; }
+  event.waitUntil(
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clients) => {
+      for (const c of clients) { if ('focus' in c) { c.focus(); return; } }
+      if (self.clients.openWindow) return self.clients.openWindow(target);
+    })
+  );
 });
