@@ -32513,11 +32513,23 @@
   var pushTimer = null;
   var recoveryMode = false;
   var forcing = false; try { forcing = !!sessionStorage.getItem('st_forcePush'); } catch (e) {}
-  var CHECKOUT_URL = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/44325cf8-e0d0-46f6-9af7-fee73bf4adf2';
-  var CHECKOUT_URL_YEARLY = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/71e540b7-bd9d-4256-bfda-57d59ea0af20';
+  // ST BILLING - Stripe Managed Payments. Stripe is the merchant of record, so VAT and
+  // sales tax are handled on their side; nothing here has to know about tax at all.
+  //
+  // These are Payment Links, so opening checkout costs no server call and no secret key
+  // ever reaches the browser. client_reference_id carries the Supabase user id: it is the
+  // ONLY thing tying a payment back to an account, so a link opened without a signed-in
+  // user would be unmatchable - hence the guard in stOpenCheckout below.
+  var CHECKOUT_URL        = 'https://buy.stripe.com/REPLACE_MONTHLY_LINK';
+  var CHECKOUT_URL_YEARLY = 'https://buy.stripe.com/REPLACE_YEARLY_LINK';
   function stBuyUrl(interval) {
-    var base = (interval === 'yearly') ? CHECKOUT_URL_YEARLY : CHECKOUT_URL;
-    return base + '?checkout[email]=' + encodeURIComponent((currentUser && currentUser.email) || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser ? currentUser.id : '');
+    var base  = (interval === 'yearly') ? CHECKOUT_URL_YEARLY : CHECKOUT_URL;
+    var email = (currentUser && currentUser.email) || '';
+    var uid   = (currentUser && currentUser.id)    || '';
+    return base
+      + (base.indexOf('?') >= 0 ? '&' : '?')
+      + 'client_reference_id=' + encodeURIComponent(uid)
+      + (email ? '&prefilled_email=' + encodeURIComponent(email) : '');
   }
   function stOpenCheckout(interval) { if (!currentUser) return; window.open(stBuyUrl(interval), '_blank'); }
   function openUpgradeChoice() {
@@ -35652,16 +35664,22 @@
   } };
 
   /* ====== PLAN CHOOSER (3 tiers; checkout for new buyers, prorated change-plan for existing subs) ====== */
-  var BUNDLE_URL_M = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/b0c24b16-9534-4d23-9187-e1e568e68481';
-  var BUNDLE_URL_Y = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/48633f37-a3f6-4141-9a4f-9f802d9661d7';
-  var MENTOR_URL   = 'https://sessiontoolapp.lemonsqueezy.com/checkout/buy/20d8beaf-d4c6-41c9-b2af-ae1b9622d88a';
+  var BUNDLE_URL_M = 'https://buy.stripe.com/REPLACE_BUNDLE_MONTHLY_LINK';
+  var BUNDLE_URL_Y = 'https://buy.stripe.com/REPLACE_BUNDLE_YEARLY_LINK';
+  var MENTOR_URL   = 'https://buy.stripe.com/REPLACE_MENTORSHIP_MONTHLY_LINK';
+  // `vid` is now the Stripe PRICE id (price_...) for that tier+interval. The webhook reads
+  // the same ids to name the plan, so these two lists must agree or a paid account will
+  // come back named 'premium' regardless of what was actually bought.
   var ST_PLANS = {
-    premium:    { rank: 1, monthly: { url: CHECKOUT_URL,  vid: '1813597' }, yearly: { url: CHECKOUT_URL_YEARLY, vid: '1846024' } },
-    bundle:     { rank: 2, monthly: { url: BUNDLE_URL_M,  vid: '1847235' }, yearly: { url: BUNDLE_URL_Y,        vid: '1847271' } },
-    mentorship: { rank: 3, monthly: { url: MENTOR_URL,    vid: '1847283' } }
+    premium:    { rank: 1, monthly: { url: CHECKOUT_URL,  vid: 'price_REPLACE_PREMIUM_M' }, yearly: { url: CHECKOUT_URL_YEARLY, vid: 'price_REPLACE_PREMIUM_Y' } },
+    bundle:     { rank: 2, monthly: { url: BUNDLE_URL_M,  vid: 'price_REPLACE_BUNDLE_M'  }, yearly: { url: BUNDLE_URL_Y,        vid: 'price_REPLACE_BUNDLE_Y'  } },
+    mentorship: { rank: 3, monthly: { url: MENTOR_URL,    vid: 'price_REPLACE_MENTOR_M'  } }
   };
   function stCheckoutParams() {
-    return '?checkout[email]=' + encodeURIComponent((currentUser && currentUser.email) || '') + '&checkout[custom][user_id]=' + encodeURIComponent(currentUser ? currentUser.id : '');
+    var email = (currentUser && currentUser.email) || '';
+    var uid   = (currentUser && currentUser.id)    || '';
+    return '?client_reference_id=' + encodeURIComponent(uid)
+         + (email ? '&prefilled_email=' + encodeURIComponent(email) : '');
   }
   function stCurrentRank() {
     if (!profilePaid) return 0;
@@ -35700,10 +35718,12 @@
     el.style.color = isErr ? '#c0392b' : 'var(--muted, #888)';
   }
 
-  function stChangePlan(variantId) {
-    if (!currentUser || !variantId) return;
+  // Existing subscriber switching tier: Stripe swaps the price on the live subscription
+  // and prorates it. Done server-side because changing a subscription needs the secret key.
+  function stChangePlan(priceId) {
+    if (!currentUser || !priceId) return;
     pcStatus(premL('Updating your plan\u2026', 'Actualizando tu plan\u2026'), false);
-    sb.functions.invoke('change-plan', { body: { variant_id: variantId } }).then(function (res) {
+    sb.functions.invoke('change-plan', { body: { price_id: priceId } }).then(function (res) {
       var d = res && res.data;
       if (d && d.ok) {
         pcStatus(premL('Done! Your plan is updating\u2026', '\u00a1Listo! Tu plan se est\u00e1 actualizando\u2026'), false);
@@ -36658,7 +36678,9 @@
         profilePeriodEnd = r.data.current_period_end || null;
         profileCreated = r.data.created_at || null;
         profilePortal = r.data.portal_url || null;
-        profileSubId = r.data.ls_subscription_id || null;
+        // Stripe first; the Lemon Squeezy id stays as a fallback so accounts that never
+        // migrated still register as subscribers rather than being offered checkout again.
+        profileSubId = r.data.stripe_subscription_id || r.data.ls_subscription_id || null;
         profileSyncToken = r.data.sync_token || null;
         try { window.STCloud.syncToken = profileSyncToken; } catch (e) {}
         try { if (window.__stPaintMt5Token) window.__stPaintMt5Token(); } catch (e) {}
