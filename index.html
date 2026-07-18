@@ -16134,6 +16134,54 @@
         .replace('{PIPS}', String(bestWiden));
     }
 
+    // --- What your ACTUAL BE rule is worth ---------------------------------------
+    //
+    // The ladder above tests rules you might adopt. This measures the one you already
+    // use - and needs no definition of a swing, because it never asks WHY you moved the
+    // stop. beSim[0] is the EA's replay of "never move to BE": the exact counterfactual
+    // for the stop you really did move. The gap between that and what the trade actually
+    // did is what your own BE discipline earned or cost you.
+    //
+    // Trades where the BE stop was never tagged land on zero and drop out by themselves.
+    let beSaved = 0, beCost = 0, beSavedN = 0, beCostN = 0;
+    const beClip = [];
+    allTrades.forEach(tr => {
+      if (!Array.isArray(tr.beSim) || tr.beSim.length < 7) return;
+      const risk = parseFloat(tr.risk) || 0;
+      if (risk <= 0) return;
+      const never = Number(tr.beSim[0]);
+      if (isNaN(never)) return;
+      const costs  = parseFloat(tr.costs) || 0;
+      const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+      const actual = ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * copies;
+      const delta  = actual - ((never * risk - costs) * copies);
+      if (delta > 0.005) { beSaved += delta; beSavedN++; }
+      else if (delta < -0.005) {
+        beCost += -delta; beCostN++;
+        // How badly was the stop clipped on the trades it cost you? This is the
+        // actionable number: the room a wider BE offset would have needed.
+        const clip = parseFloat(tr.beSlackPips);
+        if (!isNaN(clip) && clip > 0) beClip.push(clip);
+      }
+    });
+    const beNet = beSaved - beCost;
+    beClip.sort((a, b) => a - b);
+    const beClipMed = beClip.length ? beClip[Math.floor(beClip.length / 2)] : 0;
+
+    let beValueLine = '';
+    if (beSavedN + beCostN > 0) {
+      const g = v => (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(v)) : ('\u00a3' + Math.abs(v).toFixed(2));
+      beValueLine = (t('combo.be_value') ||
+        'Your BE rule as you actually trade it: saved {S} on {SN}, cost {C} on {CN} \u2014 net {NET}.')
+        .replace('{S}', g(beSaved)).replace('{SN}', beSavedN + (beSavedN === 1 ? ' trade' : ' trades'))
+        .replace('{C}', g(beCost)).replace('{CN}', beCostN + (beCostN === 1 ? ' trade' : ' trades'))
+        .replace('{NET}', (beNet >= 0 ? '+' : '\u2212') + g(beNet));
+      if (beCostN > 0 && beClipMed > 0) {
+        beValueLine += ' ' + (t('combo.be_clip') ||
+          'On the ones it cost you, the stop was clipped by a median of {P} pips.')
+          .replace('{P}', beClipMed.toFixed(1));
+      }
+    }
     let recDTpl;
     if (trackedBeSim.length < 10) {
       recDTpl = (t('combo.rec_d_need_more') || 'Need 10+ trades replayed by the EA. You have {N}.')
@@ -16144,6 +16192,7 @@
       recDTpl = (t('combo.rec_d_recommend') || 'Change your BE rule: <strong class="rec-suggest">{RULE}</strong>.')
         .replace('{RULE}', bestBeLabel);
     }
+    if (beValueLine) recDTpl += ' ' + beValueLine;
 
     const directionAHtml = buildDirectionBlock({
       letter: 'A',
