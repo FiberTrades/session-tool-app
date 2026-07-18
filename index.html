@@ -30130,9 +30130,15 @@
   }
   function _existingMt5Tickets() {
     const set = new Set();
+    const add = (list) => { (list || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }); };
     try {
-      (data.review.trades || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); });
-      (data.history || []).forEach(h => (h.trades || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }));
+      // A trade travels review -> currentSeries -> history. Scanning only the first and
+      // last left a gap: once a session was finished, its imported trades sat in
+      // currentSeries, the guard could not see them, and the import dialog offered them
+      // again as if they were new.
+      add(data.review && data.review.trades);
+      add(data.currentSeries);
+      (data.history || []).forEach(h => add(h && h.trades));
     } catch (e) {}
     return set;
   }
@@ -30500,7 +30506,11 @@
     // Delete consumed inbox rows so a re-sync never doubles them (best-effort; the
     // ticket guard in _existingMt5Tickets also prevents re-import if delete fails).
     if (_consumedTickets.length && window.STCloud && typeof window.STCloud.deleteInbox === 'function') {
-      try { Promise.resolve(window.STCloud.deleteInbox(_consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n)))).catch(() => {}); } catch (e) {}
+      try {
+        Promise.resolve(window.STCloud.deleteInbox(_consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n))))
+          .then(res => { if (res && res.error) console.warn('[MT5] could not mark inbox rows consumed:', res.error.message || res.error); })
+          .catch(err => { console.warn('[MT5] could not mark inbox rows consumed:', err); });
+      } catch (e) { console.warn('[MT5] consume step failed:', e); }
     }
 
     saveData();
@@ -33487,7 +33497,7 @@
       G('dcx-burger').addEventListener('click', function(){ root.classList.toggle('side-open'); });
       var stg=G('dcx-stoggle'); if(stg) stg.addEventListener('click', function(){ root.classList.toggle('side-collapsed'); try{ localStorage.setItem('st_side_collapsed', root.classList.contains('side-collapsed')?'1':'0'); }catch(e){} });
       var mex=G('dcx-mexit'); if(mex) mex.addEventListener('click', mexitAction);
-      var _lockRoot=G('dcx-root'); if(_lockRoot) _lockRoot.addEventListener('click', function(e){ var w=window.innerWidth; if(w>1000) return; var p=document.getElementById('page-community'); if(!(p&&p.classList.contains('active'))) return; var r=G('dcx-root'); if(!r) return; var sideOpen=r.classList.contains('side-open'), memOpen=r.classList.contains('members-open'); if(sideOpen||memOpen){ var inSide=e.target.closest('.dcx-side'), inMem=e.target.closest('.dcx-members'), onBurger=e.target.closest('#dcx-burger'), onMtoggle=e.target.closest('#dcx-mtoggle'); if((sideOpen&&(inSide||onBurger))||(memOpen&&(inMem||onMtoggle))) return; e.preventDefault(); e.stopImmediatePropagation(); r.classList.remove('side-open'); r.classList.remove('members-open'); return; } }, true);
+      var _lockRoot=G('dcx-root'); if(_lockRoot) _lockRoot.addEventListener('click', function(e){ var w=window.innerWidth; if(w>1000) return; var p=document.getElementById('page-community'); if(!(p&&p.classList.contains('active'))) return; var r=G('dcx-root'); if(!r) return; var sideOpen=r.classList.contains('side-open'), memOpen=r.classList.contains('members-open'); if(sideOpen||memOpen){ var inSide=e.target.closest('.dcx-side'), inMem=e.target.closest('.dcx-members'), onBurger=e.target.closest('#dcx-burger'), onMtoggle=e.target.closest('#dcx-mtoggle'); if(e.target.closest('#dcx-modal,#dcx-view,#dcx-img,#dcx-sres,.dcx-modal,.dcx-modal-card')) return;   /* modal/overlay is above the drawer - let its own buttons handle the click */ if((sideOpen&&(inSide||onBurger))||(memOpen&&(inMem||onMtoggle))) return; e.preventDefault(); e.stopImmediatePropagation(); r.classList.remove('side-open'); r.classList.remove('members-open'); return; } }, true);
       var vX=G('dcx-view-x'); if(vX) vX.addEventListener('click', closeView); var vV=G('dcx-view'); if(vV) vV.addEventListener('click', function(e){ if(e.target===vV) closeView(); });
       var iX=G('dcx-img-x'); if(iX) iX.addEventListener('click', closeImg); var iO=G('dcx-img'); if(iO) iO.addEventListener('click', function(e){ if(e.target===iO) closeImg(); });
       (function(){ var iEl=G('dcx-img-el'), iWrap=G('dcx-img-wrap'), o=G('dcx-img'); if(!iEl||!iWrap||!o) return; var dg=false,mv=false,sx=0,sy=0,sl=0,stp=0; iEl.addEventListener('mousedown', function(e){ if(!o.classList.contains('zoomed')) return; dg=true; mv=false; sx=e.clientX; sy=e.clientY; sl=iWrap.scrollLeft; stp=iWrap.scrollTop; o.classList.add('panning'); e.preventDefault(); }); window.addEventListener('mousemove', function(e){ if(!dg) return; var dx=e.clientX-sx, dy=e.clientY-sy; if(Math.abs(dx)>3||Math.abs(dy)>3) mv=true; iWrap.scrollLeft=sl-dx; iWrap.scrollTop=stp-dy; }); window.addEventListener('mouseup', function(){ if(dg){ dg=false; o.classList.remove('panning'); } }); iEl.addEventListener('click', function(){ if(mv){ mv=false; return; } toggleImgZoom(); }); })();
@@ -33517,7 +33527,7 @@
         var cn=e.target.closest('.dcx-edit-cancel'); if(cn){ editingId=null; repaint(); return; }
         var more=e.target.closest('.dcx-more'); if(more){ e.stopPropagation(); var row=e.target.closest('.dcx-msg'); openMenu(more, row&&row.getAttribute('data-mid')); return; }
       });
-      document.addEventListener('click', function(e){ if(menu.classList.contains('open')&&!menu.contains(e.target)&&!e.target.closest('.dcx-more')) menu.classList.remove('open'); var r=G('dcx-root'); if(r){ if(r.classList.contains('side-open')&&!e.target.closest('.dcx-side')&&!e.target.closest('#dcx-burger')) r.classList.remove('side-open'); if(r.classList.contains('members-open')&&!e.target.closest('.dcx-members')&&!e.target.closest('#dcx-mtoggle')) r.classList.remove('members-open'); } if(r&&r.contains(e.target)&&!e.target.closest('.dcx-composer')&&!e.target.closest('.dcx-emoji')&&!e.target.closest('.dcx-gif')&&!e.target.closest('.dcx-attach')&&!e.target.closest('.dcx-plus')) closePanels(); });
+      document.addEventListener('click', function(e){ if(menu.classList.contains('open')&&!menu.contains(e.target)&&!e.target.closest('.dcx-more')) menu.classList.remove('open'); var r=G('dcx-root'); if(r){ var _inOv=e.target.closest('#dcx-modal,#dcx-view,#dcx-img,#dcx-sres,.dcx-modal,.dcx-modal-card'); if(!_inOv&&r.classList.contains('side-open')&&!e.target.closest('.dcx-side')&&!e.target.closest('#dcx-burger')) r.classList.remove('side-open'); if(!_inOv&&r.classList.contains('members-open')&&!e.target.closest('.dcx-members')&&!e.target.closest('#dcx-mtoggle')) r.classList.remove('members-open'); } if(r&&r.contains(e.target)&&!e.target.closest('.dcx-composer')&&!e.target.closest('.dcx-emoji')&&!e.target.closest('.dcx-gif')&&!e.target.closest('.dcx-attach')&&!e.target.closest('.dcx-plus')) closePanels(); });
     }
 
     function insEmoji(ch){ var ta=G('dcx-input'); if(!ta) return; var s=ta.selectionStart||0,e=ta.selectionEnd||0; ta.value=ta.value.slice(0,s)+ch+ta.value.slice(e); var p=s+ch.length; try{ta.selectionStart=ta.selectionEnd=p;}catch(_){} ta.focus(); }
