@@ -33737,7 +33737,34 @@
 
     function mentionsMe(body, sid){ if(!currentUser) return false; var _lc=String(body||'').toLowerCase(); if(_lc.indexOf('@everyone')>=0 && _canEveryone(sid)) return true; var n=(myName()||'').toLowerCase().trim(); if(!n) return false; return _lc.indexOf('@'+n)>=0; }
     function notifyMention(m){ try{ if(!(window.Notification && Notification.permission==='granted')) return; var ch=null; for(var i=0;i<(channels||[]).length;i++){ if(channels[i].id===m.channel_id){ ch=channels[i]; break; } } var title=(m.sender_name||'Someone')+' mentioned you'+(ch?(' in #'+ch.name):''); var opts={ body:String(m.body||'').replace(/https?:\/\/\S+/g,'[link]').slice(0,140), tag:'ft-mention', data:{ch:ch?ch.id:null} }; try{ var n=new Notification(title, opts); n.onclick=function(){ try{ window.focus(); }catch(e){} var t=document.querySelector('.tab-community'); if(t) t.click(); if(ch) setTimeout(function(){ selectChannel(ch); }, 80); try{ n.close(); }catch(e){} }; }catch(e){ if(navigator.serviceWorker&&navigator.serviceWorker.ready){ navigator.serviceWorker.ready.then(function(reg){ try{ reg.showNotification(title, opts); }catch(_){} }).catch(function(){}); } } }catch(e){} }
-    function maybeNotifPrompt(){ try{ if(!window.Notification || Notification.permission!=='default') return; var sn=0; try{ sn=parseInt(localStorage.getItem('st_notif_snooze')||'0',10)||0; }catch(e){} if(sn>Date.now()) return; if(document.getElementById('dcx-notif-prompt')) return; var el=document.createElement('div'); el.id='dcx-notif-prompt'; el.className='dcx-notif-prompt'; el.innerHTML='<div class="dcx-notif-ic"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><div class="dcx-notif-tx"><b>Turn on notifications</b><span>Get pinged when someone @mentions you.</span></div><div class="dcx-notif-ac"><button class="dcx-notif-yes">Enable</button><button class="dcx-notif-no">Not now</button></div>'; document.body.appendChild(el); el.querySelector('.dcx-notif-yes').onclick=function(){ el.remove(); try{ Notification.requestPermission().then(function(p){ if(p==='granted'){ try{ ensurePush(); }catch(e){} } }); }catch(e){} }; el.querySelector('.dcx-notif-no').onclick=function(){ el.remove(); try{ localStorage.setItem('st_notif_snooze', String(Date.now()+3*24*3600*1000)); }catch(e){} }; }catch(e){} }
+    function _stNotifSnooze(ms){ try{ localStorage.setItem('st_notif_snooze', String(Date.now()+ms)); }catch(e){} }
+    function _stNotifAsks(inc){ var n=0; try{ n=parseInt(localStorage.getItem('st_notif_asks')||'0',10)||0; }catch(e){} if(inc){ n++; try{ localStorage.setItem('st_notif_asks', String(n)); }catch(e){} } return n; }
+    function maybeNotifPrompt(){ try{
+      if(!window.Notification || Notification.permission!=='default') return;
+      /* Only ask where push can actually work. On browsers without a service worker or
+         PushManager (e.g. iOS Safari outside an installed PWA) the prompt is pure noise. */
+      if(!('serviceWorker' in navigator) || !('PushManager' in window)) return;
+      if(_stNotifAsks(false)>=3) return;                       /* asked enough times - stop for good */
+      var sn=0; try{ sn=parseInt(localStorage.getItem('st_notif_snooze')||'0',10)||0; }catch(e){}
+      if(sn>Date.now()) return;
+      if(document.getElementById('dcx-notif-prompt')) return;
+      var el=document.createElement('div'); el.id='dcx-notif-prompt'; el.className='dcx-notif-prompt';
+      el.innerHTML='<div class="dcx-notif-ic"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg></div><div class="dcx-notif-tx"><b>Turn on notifications</b><span>Get pinged when someone @mentions you.</span></div><div class="dcx-notif-ac"><button class="dcx-notif-yes">Enable</button><button class="dcx-notif-no">Not now</button></div>'; document.body.appendChild(el);
+      el.querySelector('.dcx-notif-yes').onclick=function(){ el.remove();
+        /* Snooze BEFORE asking. If the browser's own permission dialog is ignored or
+           swiped away, permission stays 'default' - and without this the prompt came
+           back on the very next visit, which is what made it feel like a daily nag. */
+        _stNotifSnooze(7*24*3600*1000);
+        try{ Notification.requestPermission().then(function(p){
+          if(p==='granted'){ try{ ensurePush(); }catch(e){} try{ localStorage.removeItem('st_notif_snooze'); localStorage.removeItem('st_notif_asks'); }catch(e){} }
+          else { _stNotifAsks(true); }
+        }); }catch(e){}
+      };
+      el.querySelector('.dcx-notif-no').onclick=function(){ el.remove(); var n=_stNotifAsks(true);
+        /* Backing off: 7 days, then 30, then never again. */
+        _stNotifSnooze(n>=3 ? 3650*24*3600*1000 : (n===2 ? 30*24*3600*1000 : 7*24*3600*1000));
+      };
+    }catch(e){} }
     function setupMentions(){ maybeNotifPrompt(); if(_mentSub) return; try{ _mentSub=sb.channel('comm-mentions').on('postgres_changes',{event:'INSERT',schema:'public',table:'channel_messages'}, function(p){ var m=p.new; if(!m||!currentUser||m.sender_id===currentUser.id) return; if(!mentionsMe(m.body, m.sender_id)) return; var viewing=(cur && cur.id===m.channel_id && document.hasFocus()); if(!viewing){ unreadMent[m.channel_id]=(unreadMent[m.channel_id]||0)+1; try{ renderSidebar(); }catch(e){} notifyMention(m); } }).subscribe(); }catch(e){} }
     /* ---------- SEARCH (Discord parity) ----------
        Filters: from: in: mentions: has: before: after: during:  plus "exact phrase".
