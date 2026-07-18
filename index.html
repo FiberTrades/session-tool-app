@@ -4192,6 +4192,7 @@
         <div id="mt5-preview-list" style="border:1px solid var(--border-2);max-height:380px;overflow-y:auto;"></div>
         <div style="margin-top:18px;display:flex;gap:12px;justify-content:flex-end;align-items:center;">
           <span id="mt5-import-warn" style="font-size:10px;color:var(--text-dim);font-family:'AppNum', 'DM Mono',monospace;margin-right:auto;"></span>
+          <button type="button" id="mt5-mark-imported" title="Remove the ticked trades from this list without adding them to your journal - use it for trades you already logged." style="background:transparent;border:1px solid var(--border-2);color:var(--text-dim);padding:10px 16px;font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.08em;cursor:pointer;">MARK AS IMPORTED</button>
           <button type="button" id="mt5-back-btn" data-i18n="btn.back" style="background:transparent;border:1px solid var(--border-2);color:var(--text-mid);padding:10px 20px;font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;">← Back</button>
           <button type="button" id="mt5-import-confirm" data-i18n="btn.import_selected" style="background:transparent;border:1px solid var(--good);color:var(--good);padding:10px 24px;font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;">Import Selected</button>
         </div>
@@ -30139,6 +30140,10 @@
       add(data.review && data.review.trades);
       add(data.currentSeries);
       (data.history || []).forEach(h => add(h && h.trades));
+      // Local ledger: every ticket ever imported on this account. The journal copy can be
+      // edited, moved or deleted, and the cloud "consumed" flag can fail to write - this
+      // list is what guarantees an already-imported trade is never offered again.
+      (data.mt5ImportedTickets || []).forEach(x => { if (x != null) set.add(String(x)); });
     } catch (e) {}
     return set;
   }
@@ -30404,6 +30409,40 @@
     document.getElementById('mt5-step-preview').style.display = 'none';
   });
 
+  // ----- Mark as imported: for trades already in the journal (or imported before the
+  // ticket was recorded). Adds them to the local ledger and flags them server-side so
+  // auto-sync stops offering them, without touching the journal. -----
+  document.getElementById('mt5-mark-imported').addEventListener('click', () => {
+    const selEl = document.getElementById('mt5-date-filter');
+    const filt = selEl ? selEl.value : '__all__';
+    const vis = (filt === '__all__') ? _mt5ParsedTrades : _mt5ParsedTrades.filter(t => t.sessionDateStr === filt);
+    const picked = vis.filter(t => _mt5SelectedIds.has(t.position));
+    const tickets = picked.map(t => t.position).filter(x => x != null).map(String);
+    if (!tickets.length) return;
+    try {
+      if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
+      tickets.forEach(s => { if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s); });
+      if (data.mt5ImportedTickets.length > 5000) data.mt5ImportedTickets = data.mt5ImportedTickets.slice(-5000);
+      saveData();
+    } catch (e) {}
+    try {
+      if (window.STCloud && typeof window.STCloud.deleteInbox === 'function') {
+        Promise.resolve(window.STCloud.deleteInbox(tickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n)))).catch(() => {});
+      }
+    } catch (e) {}
+    const gone = new Set(tickets);
+    _mt5ParsedTrades = _mt5ParsedTrades.filter(t => !gone.has(String(t.position)));
+    tickets.forEach(s => { try { _mt5SelectedIds.delete(s); } catch (e) {} });
+    if (_mt5ParsedTrades.length) { renderMt5Preview(); }
+    else {
+      const pick = document.getElementById('mt5-step-pick'), prev = document.getElementById('mt5-step-preview');
+      if (pick) pick.style.display = '';
+      if (prev) prev.style.display = 'none';
+      const st = document.getElementById('mt5-autosync-status');
+      if (st) st.textContent = 'Marked as imported - nothing left to sync.';
+    }
+  });
+
   // ----- Confirm import: push selected trades into data.review.trades -----
   document.getElementById('mt5-import-confirm').addEventListener('click', () => {
     const sel = document.getElementById('mt5-date-filter');
@@ -30507,11 +30546,25 @@
     // ticket guard in _existingMt5Tickets also prevents re-import if delete fails).
     if (_consumedTickets.length && window.STCloud && typeof window.STCloud.deleteInbox === 'function') {
       try {
-        Promise.resolve(window.STCloud.deleteInbox(_consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n))))
-          .then(res => { if (res && res.error) console.warn('[MT5] could not mark inbox rows consumed:', res.error.message || res.error); })
+        const _want = _consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n));
+        Promise.resolve(window.STCloud.deleteInbox(_want))
+          .then(res => {
+            if (res && res.error) { console.warn('[MT5] could not mark inbox rows consumed:', res.error.message || res.error); return; }
+            const got = (res && res.data) ? res.data.length : 0;
+            if (_want.length && got === 0) console.warn('[MT5] inbox rows were NOT marked consumed (0 rows updated) - check the UPDATE policy on trades_inbox. The local ledger will still stop re-imports.');
+          })
           .catch(err => { console.warn('[MT5] could not mark inbox rows consumed:', err); });
       } catch (e) { console.warn('[MT5] consume step failed:', e); }
     }
+
+    // Remember these tickets locally, whatever happens server-side.
+    try {
+      if (_consumedTickets.length) {
+        if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
+        _consumedTickets.forEach(x => { const s = String(x); if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s); });
+        if (data.mt5ImportedTickets.length > 5000) data.mt5ImportedTickets = data.mt5ImportedTickets.slice(-5000);
+      }
+    } catch (e) {}
 
     saveData();
 
@@ -32264,7 +32317,8 @@
     if (!currentUser || !Array.isArray(tickets) || tickets.length === 0) return Promise.resolve({ error: null });
     return sb.from('trades_inbox')
       .update({ consumed_at: new Date().toISOString() })
-      .eq('token', currentUser.id).in('ticket', tickets);
+      .eq('token', currentUser.id).in('ticket', tickets)
+      .select('ticket');   // returned rows = what was really updated; 0 means the write was blocked
   };
 
   // Pull the replay results for trades ALREADY in the journal.
