@@ -11053,6 +11053,32 @@
     return null;
   }
 
+  // === Open chart links as the DIRECT image, everywhere ==========================
+  // Snapshot links point at tradingview.com/x/ID/, which is a wrapper PAGE: it shows
+  // the chart scaled to fit with no way to zoom in. The raw .png gives you the
+  // browser's own click-to-zoom and drag-to-pan, which is what you need to read a
+  // setup. Done as ONE delegated listener rather than at each of the nine places that
+  // build a chart link, so anything added later is covered too. Runs in the BUBBLE
+  // phase and bails on defaultPrevented, so the community's in-app image viewer
+  // (which already opens the direct image) keeps priority over this.
+  (function openChartsAsImages() {
+    document.addEventListener('click', function (e) {
+      try {
+        if (e.defaultPrevented) return;
+        if (e.button != null && e.button !== 0) return;                 // left click only
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;   // let the user's modifiers win
+        var a = (e.target && e.target.closest) ? e.target.closest('a[href]') : null;
+        if (!a) return;
+        var m = (a.getAttribute('href') || '').match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i);
+        if (!m) return;
+        var id = m[1];
+        var direct = 'https://s3.tradingview.com/snapshots/' + id.charAt(0).toLowerCase() + '/' + id + '.png';
+        e.preventDefault();
+        window.open(direct, '_blank', 'noopener');
+      } catch (_e) {}
+    }, false);
+  })();
+
   // === Chart image upload buttons. Injects an Upload control into every snapshot row so a
   // phone screenshot can replace a TradingView snapshot link; the uploaded image public
   // Storage URL is dropped into the same field, so previews and Discord embeds just work. ===
@@ -14789,7 +14815,16 @@
         }).join('');
         tableWrap.innerHTML = `<div class="missed-trade-table"><div class="trade-scroll-5">\n          <div class="potr-trade-row headers">\n            <div class="potr-trade-cell">${t('missed.col_week')}</div>\n            <div class="potr-trade-cell">${t('missed.col_wouldbe')}</div>\n            <div class="potr-trade-cell">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml || ('<div class="missed-empty-row">' + t('missed.empty') + '</div>')}\n        </div></div>`;
         tableWrap.querySelectorAll('.potr-trade-row.has-link').forEach(row => {
-          row.addEventListener('click', () => { const u = row.getAttribute('data-url'); if (u) window.open(u, '_blank', 'noopener'); });
+          row.addEventListener('click', () => {
+          const u = row.getAttribute('data-url');
+          if (!u) return;
+          // Open the DIRECT snapshot image, not TradingView's wrapper page. A bare image
+          // gives you the browser's own click-to-zoom and drag-to-pan, which is what you
+          // want for reading a chart; the wrapper page just shows it scaled to fit.
+          let target = u;
+          try { target = tradingViewImageUrl(u) || u; } catch (e) {}
+          window.open(target, '_blank', 'noopener');
+        });
         });
       }
     })();
