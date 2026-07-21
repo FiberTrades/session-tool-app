@@ -19674,7 +19674,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-21 15:47 UTC';
+  window.ST_BUILD = '2026-07-21 18:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34057,6 +34057,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var SRCH = { open:false, term:'', rows:[], sort:'new', sel:0, sug:[] };
     var SKEYS = ['from','in','mentions','has','before','after','during'];
     var SHAS  = ['link','embed','file','image','video','sound'];
+    /* Spanish aliases for the filter keys and the has: values. English stays the
+       canonical form everywhere inside the code - these only let a Spanish member
+       type the words the dropdown already describes to them. Both keys are always
+       accepted, so a mixed "de:ella en:sala-en-vivo" query still parses. */
+    function _sfNorm(s){ return String(s||'').toLowerCase()
+      .replace(/[áàä]/g,'a').replace(/[éèë]/g,'e').replace(/[íìï]/g,'i')
+      .replace(/[óòö]/g,'o').replace(/[úùü]/g,'u'); }
+    var SKEY_ES = { de:'from', en:'in', menciona:'mentions', menciones:'mentions',
+                    tiene:'has', contiene:'has', antes:'before', despues:'after',
+                    durante:'during' };
+    var SHAS_ES = { enlace:'link', enlaces:'link', incrustado:'embed', archivo:'file',
+                    archivos:'file', imagen:'image', imagenes:'image', video:'video',
+                    sonido:'sound', audio:'sound' };
+    var SKEY_OF_ES = { from:'de', in:'en', mentions:'menciona', has:'tiene',
+                       before:'antes', after:'despues', during:'durante' };
+    var SHAS_OF_ES = { link:'enlace', embed:'incrustado', file:'archivo',
+                       image:'imagen', video:'video', sound:'sonido' };
+    var SKEY_RE = /^(from|in|mentions|has|before|after|during|de|en|menciona|menciones|tiene|contiene|antes|despu[eé]s|durante):([\s\S]*)$/i;
+    function _skey(k){ k=_sfNorm(k); return SKEY_ES[k] || k; }
+    function _shasv(v){ v=_sfNorm(v); return SHAS_ES[v] || v; }
+    /* What to WRITE into the box: Spanish members get the Spanish key, so the token
+       they see matches the description they picked it from. */
+    function _skeyUI(k){ return _esUI() ? (SKEY_OF_ES[k]||k) : k; }
+    function _shasUI(v){ return _esUI() ? (SHAS_OF_ES[v]||v) : v; }
 
     function parseQuery(raw){
       var q={ text:'', from:null, mentions:null, inCh:null, has:null, before:null, after:null };
@@ -34067,14 +34091,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var rest=[];
       str.trim().split(/\s+/).forEach(function(w){
         if(!w) return;
-        var m=/^(from|in|mentions|has|before|after|during):(.*)$/i.exec(w);
+        var m=SKEY_RE.exec(w);
         if(!m){ rest.push(w); return; }
-        var k=m[1].toLowerCase(), v=(m[2]||'').toLowerCase();
+        var k=_skey(m[1]), v=(m[2]||'').toLowerCase();
         if(!v) return;                       /* bare "from:" - still typing */
         if(k==='from')          q.from=v;
         else if(k==='mentions') q.mentions=v;
         else if(k==='in')       q.inCh=v;
-        else if(k==='has')      q.has=v;
+        else if(k==='has')      q.has=_shasv(v);
         else if(k==='before')   q.before=v;
         else if(k==='after')    q.after=v;
         else if(k==='during'){ q.after=v; q.before=_monthEnd(v); }
@@ -34269,8 +34293,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var i=G('dcx-sq'); if(!i) return { key:null, frag:'' };
       var upto=i.value.slice(0, i.selectionStart==null?i.value.length:i.selectionStart);
       var last=upto.split(/\s+/).pop()||'';
-      var m=/^(from|in|mentions|has|before|after|during):(.*)$/i.exec(last);
-      if(m) return { key:m[1].toLowerCase(), frag:(m[2]||'').toLowerCase(), raw:last };
+      var m=SKEY_RE.exec(last);
+      if(m) return { key:_skey(m[1]), frag:(m[2]||'').toLowerCase(), raw:last };
       return { key:null, frag:last.toLowerCase(), raw:last };
     }
     function _replaceToken(val){
@@ -34302,8 +34326,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return u.id!==(currentUser&&currentUser.id) &&
                  stripEmoji(u.name||'').toLowerCase().indexOf(t.frag)>-1;
         }).slice(0,8).forEach(function(u){
-          rows.push({ ins:t.key+':'+stripEmoji(u.name||'').toLowerCase(), ic:(t.key==='from'?IC.user:IC.at),
-                      t:stripEmoji(u.name||'Trader'), s:t.key+':' });
+          rows.push({ ins:_skeyUI(t.key)+':'+stripEmoji(u.name||'').toLowerCase(), ic:(t.key==='from'?IC.user:IC.at),
+                      t:stripEmoji(u.name||'Trader'), s:_skeyUI(t.key)+':' });
         });
       } else if(t.key==='in'){
         /* Offer the channel under its localised name and match on either language, but
@@ -34313,25 +34337,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return _chSlug(c).toLowerCase().indexOf(t.frag)>-1 ||
                  String(_chName(c)||'').toLowerCase().indexOf(t.frag)>-1;
         }).slice(0,8).forEach(function(c){
-          rows.push({ ins:'in:'+_chSlug(c), ic:IC.hash, t:(_chName(c)||_chSlug(c)), s:'in:' });
+          rows.push({ ins:_skeyUI('in')+':'+_chSlug(c), ic:IC.hash, t:(_chName(c)||_chSlug(c)), s:_skeyUI('in')+':' });
         });
       } else if(t.key==='has'){
-        SHAS.filter(function(x){ return x.indexOf(t.frag)>-1; }).forEach(function(x){
-          rows.push({ ins:'has:'+x, ic:IC.clip, t:x, s:'has:' });
+        /* Match on either language so typing "imagen" finds it, but offer and insert
+           the member's own language. */
+        SHAS.filter(function(x){ return x.indexOf(t.frag)>-1 || _shasUI(x).indexOf(_sfNorm(t.frag))>-1; }).forEach(function(x){
+          rows.push({ ins:_skeyUI('has')+':'+_shasUI(x), ic:IC.clip, t:_shasUI(x), s:_skeyUI('has')+':' });
         });
       } else if(t.key==='before' || t.key==='after' || t.key==='during'){
-        rows.push({ ins:t.key+':'+new Date().toISOString().slice(0,10), ic:IC.cal,
+        rows.push({ ins:_skeyUI(t.key)+':'+new Date().toISOString().slice(0,10), ic:IC.cal,
                     t:window._stT('Today','Hoy'), s:'YYYY-MM-DD' });
         var d30=new Date(Date.now()-30*864e5).toISOString().slice(0,10);
-        rows.push({ ins:t.key+':'+d30, ic:IC.cal, t:window._stT('30 days ago','Hace 30 d\u00edas'), s:'YYYY-MM-DD' });
+        rows.push({ ins:_skeyUI(t.key)+':'+d30, ic:IC.cal, t:window._stT('30 days ago','Hace 30 d\u00edas'), s:'YYYY-MM-DD' });
       } else {
+        var K=function(k){ return _skeyUI(k)+':'; };
         rows=[
-          { ins:'from:',     ic:IC.user, t:window._stT('From a specific user','De un usuario concreto'),          s:'from: <b>'+window._stT('user','usuario')+'</b>' },
-          { ins:'in:',       ic:IC.hash, t:window._stT('Sent in a specific channel','En un canal concreto'),      s:'in: <b>'+window._stT('channel','canal')+'</b>' },
-          { ins:'mentions:', ic:IC.at,   t:window._stT('Mentions a specific user','Menciona a un usuario'),       s:'mentions: <b>'+window._stT('user','usuario')+'</b>' },
-          { ins:'has:',      ic:IC.clip, t:window._stT('Includes a specific type of data','Incluye cierto contenido'), s:'has: <b>'+window._stT('link, file or image','enlace, archivo o imagen')+'</b>' },
-          { ins:'before:',   ic:IC.cal,  t:window._stT('Before a date','Antes de una fecha'),                     s:'before: <b>'+window._stT('YYYY-MM-DD','AAAA-MM-DD')+'</b>' },
-          { ins:'after:',    ic:IC.cal,  t:window._stT('After a date','Despu\u00e9s de una fecha'),               s:'after: <b>'+window._stT('YYYY-MM-DD','AAAA-MM-DD')+'</b>' }
+          { ins:K('from'),     ic:IC.user, t:window._stT('From a specific user','De un usuario concreto'),          s:K('from')+' <b>'+window._stT('user','usuario')+'</b>' },
+          { ins:K('in'),       ic:IC.hash, t:window._stT('Sent in a specific channel','En un canal concreto'),      s:K('in')+' <b>'+window._stT('channel','canal')+'</b>' },
+          { ins:K('mentions'), ic:IC.at,   t:window._stT('Mentions a specific user','Menciona a un usuario'),       s:K('mentions')+' <b>'+window._stT('user','usuario')+'</b>' },
+          { ins:K('has'),      ic:IC.clip, t:window._stT('Includes a specific type of data','Incluye cierto contenido'), s:K('has')+' <b>'+window._stT('link, file or image','enlace, archivo o imagen')+'</b>' },
+          { ins:K('before'),   ic:IC.cal,  t:window._stT('Before a date','Antes de una fecha'),                     s:K('before')+' <b>'+window._stT('YYYY-MM-DD','AAAA-MM-DD')+'</b>' },
+          { ins:K('after'),    ic:IC.cal,  t:window._stT('After a date','Despu\u00e9s de una fecha'),               s:K('after')+' <b>'+window._stT('YYYY-MM-DD','AAAA-MM-DD')+'</b>' }
         ];
       }
       SRCH.sug=rows;
@@ -34840,6 +34867,27 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         return prefix + ((out && String(out).trim()) ? out : text);
       }, function () { return line; });
     }
+    /* translateChunk() already short-circuits when source === target, but the community
+       asks for from:'auto', which never matches - so a Spanish post in a Spanish UI was
+       still sent off and came back paraphrased, quietly rewording what the author wrote.
+       Guess the language here instead. A stopword vote is enough to separate ES from EN,
+       and on a tie we return null and let the translator do its job as before - the cost
+       of a wrong "leave it alone" is far lower than the cost of mangling good text. */
+    var _TR_ES_W = /(^|\s)(el|la|los|las|un|una|unos|unas|de|del|que|y|o|en|es|son|est[aá]|est[aá]n|por|para|con|como|pero|m[aá]s|muy|s[ií]|no|se|su|sus|al|lo|le|les|yo|t[uú]|nosotros|hoy|ayer|ma[nñ]ana|entrada|salida|precio|nivel|sesi[oó]n|mercado|compra|venta|riesgo|ganancia|p[eé]rdida|gracias|hola|bien|ahora|cuando|donde|porque|tambi[eé]n|tengo|hacer|puede|ver|antes|despu[eé]s)(?=\s|$|[.,;:!?])/gi;
+    var _TR_EN_W = /(^|\s)(the|a|an|of|and|to|in|is|are|was|were|it|this|that|for|with|on|at|from|but|not|you|i|we|they|have|has|had|will|would|can|could|price|level|entry|exit|market|buy|sell|risk|profit|loss|thanks|hello|today|yesterday|tomorrow|because|when|where|also|make|see|before|after)(?=\s|$|[.,;:!?])/gi;
+    function _trDetect(t){
+      /* Links, tags and code carry no language signal and skew a short message. */
+      var s = String(t||'').replace(/https?:\/\/\S+/g,' ')
+                           .replace(/```[\s\S]*?```/g,' ')
+                           .replace(/[#@][\w-]+/g,' ');
+      if (!s.trim()) return null;
+      var es = (s.match(_TR_ES_W)||[]).length;
+      var en = (s.match(_TR_EN_W)||[]).length;
+      if (/[ñ¿¡]/i.test(s) || /[áéíóú]/i.test(s)) es += 2;   /* ES-only characters */
+      if (es > en) return 'es';
+      if (en > es) return 'en';
+      return null;                                            /* tie: don't guess */
+    }
     function _trRich(text, L, fn){
       var lines = String(text).split('\n');
       // No markers anywhere: translate in one request rather than line by line.
@@ -34865,6 +34913,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         (function (job) {
           _trBusy++;
           var L = _trLangs();
+          if (job.from) L = { to: L.to, from: job.from };
           _trRich(job.text, L, fn).then(function (out) {
             _trCache[job.key] = (out && String(out).trim()) ? out : job.text;
           }, function () {
@@ -34886,8 +34935,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (_trSeen[key]) return null;
       var src = _msgBody(m);
       if (!src) return null;
+      /* Already in the reader's language: leave the author's own words alone. Emoji,
+         numbers and bare tickers ("NQ 20450") have nothing to translate either, and
+         sending them risks the translator "helpfully" rewriting a symbol. */
+      if (_trDetect(src) === _trLangs().to || !/[A-Za-zÀ-ÿ]{2}/.test(src)) {
+        _trSeen[key] = 1; _trCache[key] = src; return src;
+      }
       _trSeen[key] = 1;
-      _trQueue.unshift({ key: key, text: src });
+      /* Hand the translator the detected source rather than 'auto' when we are sure -
+         it stops it re-guessing per line and keeps a mixed post consistent. */
+      _trQueue.unshift({ key: key, text: src, from: _trDetect(src) || 'auto' });
       if (!_trStart) _trStart = setTimeout(function () { _trStart = null; _trPump(); }, 0);
       return null;
     }
