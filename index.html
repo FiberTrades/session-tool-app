@@ -33829,9 +33829,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var wrap=lt.parentNode; var want=lt.getAttribute('data-lang');
           Array.prototype.forEach.call(wrap.querySelectorAll('.dcx-lang-tab'), function(b){ b.classList.toggle('active', b===lt); });
           var en=G('dcx-edit-input'), es=G('dcx-edit-input-es');
+          /* Measure BEFORE hiding: a display:none textarea reports zero height. The
+             box you switch to is never smaller than the one you left, so a long
+             English post does not collapse to a two-line box when you open ES to
+             translate it - you can see what you are working against. */
+          var hEn = en ? en.offsetHeight : 0;
+          var hEs = es ? es.offsetHeight : 0;
+          var keep = Math.max(hEn, hEs);
           if(en) en.style.display=(want==='en')?'':'none';
           if(es) es.style.display=(want==='es')?'':'none';
-          var shown=(want==='es')?es:en; if(shown){ shown.focus(); }
+          var shown=(want==='es')?es:en;
+          if(shown){
+            shown.style.height='auto';
+            shown.style.height=Math.max(keep, Math.min(400, shown.scrollHeight))+'px';
+            shown.focus();
+          }
           return;
         }
         var sv=e.target.closest('.dcx-edit-save'); if(sv){ saveEdit(); return; }
@@ -34413,7 +34425,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var _tr=_canTranslate();
       var _tabs=_tr ? ('<div class="dcx-edit-langs"><button type="button" class="dcx-lang-tab active" data-lang="en">EN</button>'
                       +'<button type="button" class="dcx-lang-tab" data-lang="es">ES</button></div>') : '';
-      var _esTa=_tr ? ('<textarea class="dcx-edit-ta" id="dcx-edit-input-es" spellcheck="true" style="display:none;" placeholder="Versi\u00f3n en espa\u00f1ol\u2026">'+esc(m.body_es||'')+'</textarea>') : '';
+      var _esTa=_tr ? ('<textarea class="dcx-edit-ta" id="dcx-edit-input-es" spellcheck="true" style="display:none;" oninput="this.style.height=\'auto\';this.style.height=Math.min(400,this.scrollHeight)+\'px\';" placeholder="Versi\u00f3n en espa\u00f1ol\u2026">'+esc(m.body_es||'')+'</textarea>') : '';
       return _tabs+'<textarea class="dcx-edit-ta" id="dcx-edit-input" spellcheck="true">'+esc(m.body||'')+'</textarea>'+_esTa
              +'<div class="dcx-edit-actions"><button class="dcx-edit-save">Save</button><button class="dcx-edit-cancel">Cancel</button></div>'; } return '<div class="dcx-content">'+(m.is_forward?'<div class="dcx-fwd"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5"/><path d="M20 12H9a4 4 0 0 0-4 4v2"/></svg>Forwarded</div>':'')+contentHtml(m)+(m.edited_at?'<span class="dcx-edited">(edited)</span>':'')+'</div>'; }
     function dayKey(ts){ var d=new Date(ts); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
@@ -34457,7 +34469,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function subscribe(){ try{ if(chan) sb.removeChannel(chan); }catch(e){} if(!cur) return;
       chan=sb.channel('chan:'+cur.id)
         .on('postgres_changes',{event:'INSERT',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ if(p.new) append(p.new); })
-        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ var m=p.new; if(!m) return; var i=idx(m.id); if(i>=0){ msgs[i]=m; if(editingId!==m.id) repaint(); } })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ var m=p.new; if(!m) return; var i=idx(m.id); if(i>=0){ msgs[i]=m; _trForget(m.id); if(editingId!==m.id) repaint(); } })
         .on('postgres_changes',{event:'DELETE',schema:'public',table:'channel_messages',filter:'channel_id=eq.'+cur.id},function(p){ var o=p.old; if(!o) return; var i=idx(o.id); if(i>=0){ msgs.splice(i,1); delete seen[o.id]; repaint(); } })
         .on('postgres_changes',{event:'*',schema:'public',table:'channel_reactions',filter:'channel_id=eq.'+cur.id},function(){ loadReactions(); })
         .subscribe();
@@ -34865,6 +34877,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       } catch (e) { console.log('diag failed:', e); }
     };
 
+    /* An edited message must forget its translation, otherwise the cache keeps
+       serving the text as it was before the edit and only a reload clears it.
+       Dropping it from _trSeen too lets the new text be queued for translation. */
+    function _trForget(id){
+      var k=String(id);
+      delete _trCache[k];
+      delete _trSeen[k];
+    }
+
     function toggleTranslate(){
       _trAll = !_trAll;
       try { localStorage.setItem('st_tr_all', _trAll ? '1' : '0'); } catch (e) {}
@@ -34879,7 +34900,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
          so the app falls back to the English body rather than showing a blank post. */
       var _esEl=G('dcx-edit-input-es'); var _hasEs=!!_esEl; var _esV=_hasEs?((_esEl.value||'').trim()||null):undefined;
       var _patch={body:v,edited_at:stamp}; if(_hasEs) _patch.body_es=_esV;
-      sb.from('channel_messages').update(_patch).eq('id',id).eq('sender_id',currentUser.id).then(function(r){ if(r.error){ note("Couldn't save."); return; } msgs[i].body=v; if(_hasEs) msgs[i].body_es=_esV; msgs[i].edited_at=stamp; editingId=null; repaint(); }).catch(function(){ note("Couldn't save."); }); }
+      sb.from('channel_messages').update(_patch).eq('id',id).eq('sender_id',currentUser.id).then(function(r){ if(r.error){ note("Couldn't save."); return; } msgs[i].body=v; if(_hasEs) msgs[i].body_es=_esV; msgs[i].edited_at=stamp; _trForget(id); editingId=null; repaint(); }).catch(function(){ note("Couldn't save."); }); }
     function doDelete(id){ if(!id) return; sb.from('channel_messages').delete().eq('id',id).then(function(r){ if(r.error){ note("Couldn't delete."); return; } var i=idx(id); if(i>=0){ msgs.splice(i,1); delete seen[id]; repaint(); } }).catch(function(){ note("Couldn't delete."); }); }
 
     // ---- GIF ----
