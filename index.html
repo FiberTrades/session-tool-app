@@ -19690,6 +19690,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // per-message translation. Same free Google endpoint + MyMemory fallback the
   // bias-to-community copy already uses, so no API key and nothing to pay for.
   window.stTranslateText = translateChunk;
+  /* Small bridge so the community module (a different inline script) can keep a
+     preference on the account rather than only in this browser. Anything stored
+     here rides along with the normal journal sync, so it follows the member to
+     their phone. Never write anything large or per-message through this. */
+  window.stPrefGet = function (k) {
+    try { return (data && data.settings) ? data.settings[k] : undefined; }
+    catch (e) { return undefined; }
+  };
+  window.stPrefSet = function (k, v) {
+    try {
+      if (window.__MV) return;              // mentor view is read-only
+      if (!data.settings) data.settings = {};
+      if (data.settings[k] === v) return;   // no pointless writes or syncs
+      data.settings[k] = v;
+      saveData();
+    } catch (e) {}
+  };
   // Splits long text by newlines so each chunk stays under the translation
   // services' per-request URL/length limits. Empty lines pass through
   // unchanged to preserve paragraph structure in the Discord post.
@@ -33625,7 +33642,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.dcx-menu button:hover{background:#2a2a2a;color:#fff;}' +
         '.dcx-menu .mi-edit:hover{background:#2a2a2a;color:#fff;}' +
         '.dcx-menu .mi-tr:hover{background:#2a2a2a;color:#fff;}' +
-        '.dcx-trmark{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#949ba4;margin-top:3px;}' +
         '.dcx-menu .mi-del{color:#f23f43;}' +
         '.dcx-menu .mi-del:hover{background:#f23f43;color:#fff;}' +
         '.dcx-datesep{display:flex;align-items:center;gap:12px;margin:18px 16px 10px;}' +
@@ -34414,10 +34430,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function contentHtml(m){ var s=''; var _mb=_msgBody(m);
       /* Showing a translation swaps the TEXT only - attachments, charts and every
          other part of the message render exactly as they always do. */
-      var _trTxt=_trWant(m); var _isTr=!!_trTxt;
-      if(_isTr) _mb=_trTxt;
-      if(_mb){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mb))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mb)+'</span>';
-        if(_isTr) s+='<div class="dcx-trmark">'+window._stT('Translated','Traducido')+'</div>'; } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url){ var urls=(m.body.match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
+      var _trTxt=_trWant(m); if(_trTxt) _mb=_trTxt;
+      if(_mb){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mb))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mb)+'</span>'; } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url){ var urls=(m.body.match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function _canTranslate(){ /* only worth offering where members cannot post: the static, admin-written channels */
       try{ return admin() && cur && String(cur.post_policy||'')==='admin'; }catch(e){ return false; } }
     function bodyInner(m){ if(editingId===m.id){
@@ -34753,11 +34767,57 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var _trAll   = false;   // is the switch on
     var _trCache = {};      // id -> translated text
     var _trSeen  = {};      // id -> already queued, so nothing is fetched twice
-    var _trQueue = [], _trBusy = 0, _trTimer = null;
+    var _trQueue = [], _trBusy = 0, _trTimer = null, _trStart = null;
+    /* The switch follows the member, not the browser. It lives on the account
+       (synced with the journal) so turning it on at home means it is still on when
+       they open the app on their phone. localStorage is kept as an immediate,
+       offline-safe copy and as the answer before the journal has loaded. */
     try { _trAll = localStorage.getItem('st_tr_all') === '1'; } catch (e) {}
+    function _trLoadPref(){
+      var v;
+      try { v = window.stPrefGet && window.stPrefGet('communityTranslate'); } catch (e) {}
+      if (typeof v !== 'boolean') return;      // nothing stored yet: keep the local value
+      if (v === _trAll) return;
+      _trAll = v;
+      try { localStorage.setItem('st_tr_all', v ? '1' : '0'); } catch (e) {}
+      try { repaint(); } catch (e) {}
+    }
 
     function _trLangs(){ return _esUI() ? { to:'es', from:'en' } : { to:'en', from:'es' }; }
     function _trRepaintSoon(){ clearTimeout(_trTimer); _trTimer=setTimeout(function(){ try{ repaint(); }catch(e){} }, 140); }
+
+    /* Formatting markers must never reach the translator. Sent "# Trading Plan" it
+       hands back "#Plan de trading" or drops the marker entirely, and the heading
+       stops rendering - which is exactly what happened. So each line is split into
+       its marker and its words, only the WORDS are translated, and the marker is
+       put back untouched. Headings, bullets and quotes all survive intact. */
+    var _TR_MARKER = /^([ \t]*(?:#{1,3}|[-*+]|>)[ \t]+)([\s\S]*)$/;
+    function _trLine(line, L, fn){
+      var m = line.match(_TR_MARKER);
+      var prefix = m ? m[1] : '';
+      var text   = m ? m[2] : line;
+      if (!text.trim()) return Promise.resolve(line);       // blank or marker-only
+      return Promise.resolve(fn(text, L.from, L.to)).then(function (out) {
+        return prefix + ((out && String(out).trim()) ? out : text);
+      }, function () { return line; });
+    }
+    function _trRich(text, L, fn){
+      var lines = String(text).split('\n');
+      // No markers anywhere: translate in one request rather than line by line.
+      var hasMarker = lines.some(function (l) { return _TR_MARKER.test(l); });
+      if (!hasMarker) {
+        return Promise.resolve(fn(text, L.from, L.to)).then(function (out) {
+          return (out && String(out).trim()) ? out : text;
+        }, function () { return text; });
+      }
+      // Sequential so a formatted post does not fire twenty parallel requests.
+      var out = [];
+      return lines.reduce(function (chain, line) {
+        return chain.then(function () {
+          return _trLine(line, L, fn).then(function (res) { out.push(res); });
+        });
+      }, Promise.resolve()).then(function () { return out.join('\n'); });
+    }
 
     function _trPump(){
       var fn = window.stTranslateText;
@@ -34766,7 +34826,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         (function (job) {
           _trBusy++;
           var L = _trLangs();
-          Promise.resolve(fn(job.text, L.from, L.to)).then(function (out) {
+          _trRich(job.text, L, fn).then(function (out) {
             _trCache[job.key] = (out && String(out).trim()) ? out : job.text;
           }, function () {
             _trCache[job.key] = job.text;      // failed: fall back to the original
@@ -34788,14 +34848,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var src = _msgBody(m);
       if (!src) return null;
       _trSeen[key] = 1;
-      _trQueue.push({ key: key, text: src });
-      _trPump();
+      _trQueue.unshift({ key: key, text: src });
+      if (!_trStart) _trStart = setTimeout(function () { _trStart = null; _trPump(); }, 0);
       return null;
     }
 
     function toggleTranslate(){
       _trAll = !_trAll;
       try { localStorage.setItem('st_tr_all', _trAll ? '1' : '0'); } catch (e) {}
+      try { if (window.stPrefSet) window.stPrefSet('communityTranslate', _trAll); } catch (e) {}
       if (!_trAll) { _trQueue.length = 0; }   // stop pending work; keep the cache for a re-toggle
       repaint();
     }
@@ -35144,7 +35205,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return;
         }
         startCall(u.id, u.name, u.avatar); }); }); setTimeout(function(){ document.addEventListener('click', function _c(ev){ var pp=document.getElementById('dcx-callpick'); if(!pp){ document.removeEventListener('click',_c); return; } if(!pp.contains(ev.target)&&ev.target.id!=='dcx-callbtn'&&!(ev.target.closest&&ev.target.closest('#dcx-callbtn'))){ pp.remove(); document.removeEventListener('click',_c); } }); }, 350); }
-    function open(){ build(); try{ if(!cur){ _beginLoad(); } }catch(_){} try{ var _bi=G('dcx-img'); if(_bi&&_bi.parentNode!==document.body) document.body.appendChild(_bi); var _bv=G('dcx-view'); if(_bv&&_bv.parentNode!==document.body) document.body.appendChild(_bv); }catch(e){} try{ if(window.STChat&&STChat.ensureStyles) STChat.ensureStyles(); }catch(e){} restoreColumns(); fit(); startPresence(); loadRoster(); loadRoles(); setupMentions(); _callSignalSetup(); try{ if(window.STDM) STDM.initGlobal(); }catch(e){} loadChannels(function(){ if(!cur){ var _lc=null; try{ _lc=localStorage.getItem('dcx_last_chan'); }catch(e){} var _vc=_visChans(); var first=(_lc&&_vc.filter(function(x){return x.id===_lc;})[0])||_vc[0]; if(first) selectChannel(first); else _endLoad(); } }); }
+    function open(){ build(); try{ _trLoadPref(); }catch(_){} try{ if(!cur){ _beginLoad(); } }catch(_){} try{ var _bi=G('dcx-img'); if(_bi&&_bi.parentNode!==document.body) document.body.appendChild(_bi); var _bv=G('dcx-view'); if(_bv&&_bv.parentNode!==document.body) document.body.appendChild(_bv); }catch(e){} try{ if(window.STChat&&STChat.ensureStyles) STChat.ensureStyles(); }catch(e){} restoreColumns(); fit(); startPresence(); loadRoster(); loadRoles(); setupMentions(); _callSignalSetup(); try{ if(window.STDM) STDM.initGlobal(); }catch(e){} loadChannels(function(){ if(!cur){ var _lc=null; try{ _lc=localStorage.getItem('dcx_last_chan'); }catch(e){} var _vc=_visChans(); var first=(_lc&&_vc.filter(function(x){return x.id===_lc;})[0])||_vc[0]; if(first) selectChannel(first); else _endLoad(); } }); }
     window.addEventListener('resize', function(){ var p=document.getElementById('page-community'); if(p&&p.classList.contains('active')) fit(); });
     window.addEventListener('resize', function(){ var p=document.getElementById('page-community'); if(p&&p.classList.contains('active')) fit(); });
 
