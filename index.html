@@ -19680,7 +19680,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-21 19:20 UTC';
+  window.ST_BUILD = '2026-07-21 21:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34845,6 +34845,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var _trCache = {};      // id -> translated text
     var _trSeen  = {};      // id -> already queued, so nothing is fetched twice
     var _trQueue = [], _trBusy = 0, _trTimer = null, _trStart = null;
+    /* Bumped whenever the target language changes. An in-flight request was started
+       for the OLD language, so its result must be dropped rather than written into a
+       cache that is now serving a different one. */
+    var _trGen = 0;
     /* The switch follows the member, not the browser. It lives on the account
        (synced with the journal) so turning it on at home means it is still on when
        they open the app on their phone. localStorage is kept as an immediate,
@@ -34934,9 +34938,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           _trBusy++;
           var L = _trLangs();
           if (job.from) L = { to: L.to, from: job.from };
+          var gen = _trGen;                    // the language this request was made for
           _trRich(job.text, L, fn).then(function (out) {
+            if (gen !== _trGen) return;        // language changed mid-flight: discard
             _trCache[job.key] = (out && String(out).trim()) ? out : job.text;
           }, function () {
+            if (gen !== _trGen) return;
             _trCache[job.key] = job.text;      // failed: fall back to the original
           }).then(function () {
             _trBusy--; _trRepaintSoon(); _trPump();
@@ -35446,6 +35453,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var _cp=document.getElementById('dcx-ch-topic'); if(_cp) _cp.textContent=_chTopic(cur);
         }
       }catch(e){}
+      /* THE message-body fix. _trCache is keyed by message id alone, with no note of
+         which language it was built for, and contentHtml() lets a cache hit override
+         _msgBody(). So after a switch every message repainted in the language it was
+         FIRST painted in - including static posts that already have a proper body_es -
+         and only a reload cleared it. Exactly what _trForget() does for an edited
+         message, but the target language changing invalidates the whole cache.
+         Bump the generation first so in-flight requests for the old language are
+         discarded instead of repopulating what we just cleared. */
+      try{ _trGen++; _trCache={}; _trSeen={}; _trQueue.length=0; }catch(e){}
       try{ if(typeof renderSidebar==='function') renderSidebar(); }catch(e){}
       try{ if(typeof repaint==='function') repaint(); }catch(e){}
       /* Results already on screen carry channel names and #tags too. */
