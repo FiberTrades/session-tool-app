@@ -19686,6 +19686,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     __trFailed++;
     return text; // both methods failed — keep original so the copy still works
   }
+  // Exposed so the community module (a different inline script) can offer
+  // per-message translation. Same free Google endpoint + MyMemory fallback the
+  // bias-to-community copy already uses, so no API key and nothing to pay for.
+  window.stTranslateText = translateChunk;
   // Splits long text by newlines so each chunk stays under the translation
   // services' per-request URL/length limits. Empty lines pass through
   // unchanged to preserve paragraph structure in the Discord post.
@@ -33620,6 +33624,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.dcx-menu button svg{width:16px;height:16px;flex:none;}' +
         '.dcx-menu button:hover{background:#2a2a2a;color:#fff;}' +
         '.dcx-menu .mi-edit:hover{background:#2a2a2a;color:#fff;}' +
+        '.dcx-menu .mi-tr:hover{background:#2a2a2a;color:#fff;}' +
+        '.dcx-trmark{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:#949ba4;margin-top:3px;}' +
         '.dcx-menu .mi-del{color:#f23f43;}' +
         '.dcx-menu .mi-del:hover{background:#f23f43;color:#fff;}' +
         '.dcx-datesep{display:flex;align-items:center;gap:12px;margin:18px 16px 10px;}' +
@@ -34399,7 +34405,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        by the admin in the ES tab of the editor. Members' own messages never have one,
        so ordinary chat is always shown exactly as written. */
     function _msgBody(m){ return (_esUI() && m && m.body_es) ? m.body_es : (m && m.body) || ''; }
-    function contentHtml(m){ var s=''; var _mb=_msgBody(m); if(_mb){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mb))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mb)+'</span>'; } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url){ var urls=(m.body.match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
+    function contentHtml(m){ var s=''; var _mb=_msgBody(m);
+      /* Showing a translation swaps the TEXT only - attachments, charts and every
+         other part of the message render exactly as they always do. */
+      var _tk=String(m&&m.id); var _isTr=!!(_trShown[_tk] && _trCache[_tk]);
+      if(_isTr) _mb=_trCache[_tk];
+      if(_mb){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mb))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mb)+'</span>';
+        if(_isTr) s+='<div class="dcx-trmark">'+window._stT('Translated','Traducido')+'</div>'; } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url){ var urls=(m.body.match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function _canTranslate(){ /* only worth offering where members cannot post: the static, admin-written channels */
       try{ return admin() && cur && String(cur.post_policy||'')==='admin'; }catch(e){ return false; } }
     function bodyInner(m){ if(editingId===m.id){
@@ -34707,7 +34719,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function buildForward(m){ var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); var chanHtml=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(c.name)+'</button>'; }).join(''); var mem=(window.STDM&&STDM.partners)?STDM.partners():[]; var memHtml=mem.map(function(p){ return '<button class="dcx-fwd-item" data-dm="'+esc(p.id)+'" data-nm="'+esc(p.name).replace(/"/g,'&quot;')+'">'+avaHtml(p.avatar,p.name,'dcx-fwd-av')+'<span>'+esc(p.name)+'</span></button>'; }).join(''); if(!chanHtml&&!memHtml){ note('Nowhere to forward to.'); return; } modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3>'+(chanHtml?'<div class="dcx-fwd-sec">Channels</div><div class="dcx-fwd-list">'+chanHtml+'</div>':'')+(memHtml?'<div class="dcx-fwd-sec">Direct message</div><div class="dcx-fwd-list">'+memHtml+'</div>':'')+'<div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; Array.prototype.forEach.call(G('dcx-modal').querySelectorAll('.dcx-fwd-item'),function(b){ b.addEventListener('click', function(){ var cid=b.getAttribute('data-cid'), dm=b.getAttribute('data-dm'); if(cid){ doForward(m,cid); } else if(dm){ if(window.STDM) STDM.forwardTo(dm, b.getAttribute('data-nm'), '', m); note(lang()==='es'?'Reenviado.':'Forwarded.'); } closeModal(); }); }); }
     function openForward_OLD(m){ if(!m) return; var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); if(!opts.length){ note('No channels to forward to.'); return; } var list=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(c.name)+'</button>'; }).join(''); modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3><div class="dcx-fwd-list">'+list+'</div><div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; var bs=G('dcx-modal').querySelectorAll('.dcx-fwd-item'); Array.prototype.forEach.call(bs,function(b){ b.addEventListener('click', function(){ doForward(m,b.getAttribute('data-cid')); closeModal(); }); }); }
     function doForward(m,tid){ if(!m||!tid||!currentUser) return; var row={ channel_id:tid, sender_id:currentUser.id, is_forward:true, sender_name:myName(), sender_avatar:myAvatar() }; if(m.body) row.body=m.body; if(m.attachment_url){ row.attachment_url=m.attachment_url; row.attachment_type=m.attachment_type; row.attachment_name=m.attachment_name; } sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ note("Couldn't forward."); return; } if(tid===(cur&&cur.id)&&r.data) append(r.data); else note(lang()==='es'?'Reenviado.':'Forwarded.'); }).catch(function(){ note("Couldn't forward."); }); }
-    function openMenu(btn,id){ if(!id) return; menuMsgId=id; var menu=G('dcx-menu'); var i=idx(id); var m=i>=0?msgs[i]:null; var mine=m&&m.sender_id===(currentUser&&currentUser.id); var html=''; html+='<button class="mi-react"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.2 1.5 3.5 1.5 3.5-1.5 3.5-1.5"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>'+window._stT('React','Reaccionar')+'</button>'; html+='<button class="mi-reply"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17l-5-5 5-5"/><path d="M4 12h11a4 4 0 0 1 4 4v2"/></svg>'+window._stT('Reply','Responder')+'</button>'; if(m&&(m.body||m.attachment_url)) html+='<button class="mi-fwd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5"/><path d="M20 12H9a4 4 0 0 0-4 4v2"/></svg>'+window._stT('Forward','Reenviar')+'</button>'; if(mine&&m.body) html+='<button class="mi-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'+window._stT('Edit','Editar')+'</button>'; if(mine||isMod()) html+='<button class="mi-del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'+window._stT('Delete','Eliminar')+'</button>'; menu.innerHTML=html;
+    function openMenu(btn,id){ if(!id) return; menuMsgId=id; var menu=G('dcx-menu'); var i=idx(id); var m=i>=0?msgs[i]:null; var mine=m&&m.sender_id===(currentUser&&currentUser.id); var html=''; html+='<button class="mi-react"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.2 1.5 3.5 1.5 3.5-1.5 3.5-1.5"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg>'+window._stT('React','Reaccionar')+'</button>'; html+='<button class="mi-reply"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17l-5-5 5-5"/><path d="M4 12h11a4 4 0 0 1 4 4v2"/></svg>'+window._stT('Reply','Responder')+'</button>'; if(m&&(m.body||m.attachment_url)) html+='<button class="mi-fwd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5"/><path d="M20 12H9a4 4 0 0 0-4 4v2"/></svg>'+window._stT('Forward','Reenviar')+'</button>'; if(m&&m.body) html+='<button class="mi-tr"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"/><path d="M9 4v2c0 4-2.5 7-5 8"/><path d="M7 12c1.5 2.5 4 4 6 4.5"/><path d="M13 20l4-9 4 9"/><path d="M14.5 17h5"/></svg>'
+        + (_trShown[String(id)] ? window._stT('Show original','Ver original') : window._stT('Translate','Traducir')) + '</button>';
+      if(mine&&m.body) html+='<button class="mi-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>'+window._stT('Edit','Editar')+'</button>'; if(mine||isMod()) html+='<button class="mi-del"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>'+window._stT('Delete','Eliminar')+'</button>'; menu.innerHTML=html;
+      var tr=menu.querySelector('.mi-tr'); if(tr) tr.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); toggleTranslate(menuMsgId); });
       var e=menu.querySelector('.mi-edit'); if(e) e.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); startEdit(menuMsgId); });
       var d=menu.querySelector('.mi-del'); if(d) d.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); var did=menuMsgId; if(window.STChat&&STChat.confirmDelete) STChat.confirmDelete(function(){ doDelete(did); }); else doDelete(did); });
       var rp=menu.querySelector('.mi-reply'); if(rp) rp.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); setReply(m); });
@@ -34716,6 +34731,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var rr=G('dcx-root'), br=btn.getBoundingClientRect(), cr=rr.getBoundingClientRect(); _menuRect=br;
       menu.style.right=Math.max(6,(cr.right-br.right))+'px';
       menu.classList.add('open'); menu.style.visibility='hidden'; var mh=menu.offsetHeight||200; var below=(br.bottom-cr.top+4); if(below+mh <= cr.height-6){ menu.style.top=below+'px'; menu.style.bottom='auto'; } else { menu.style.bottom=Math.max(6,(cr.bottom-br.top+4))+'px'; menu.style.top='auto'; } menu.style.visibility='';
+    }
+    /* ---- Per-message translation -------------------------------------------
+       Any member can translate any message into the language they are reading the
+       app in, and toggle back. Held in memory for this session only: the message
+       is never rewritten, so nobody else is affected and nothing is stored. Uses
+       the same free translator the bias-to-community copy already relies on. */
+    var _trShown = {};    // id -> showing the translation
+    var _trCache = {};    // id -> translated text, so toggling back is instant
+    function toggleTranslate(id){
+      var key=String(id); var i=idx(id); if(i<0) return;
+      if(_trShown[key]){ _trShown[key]=false; repaint(); return; }
+      if(_trCache[key]){ _trShown[key]=true; repaint(); return; }
+      var src=_msgBody(msgs[i]); if(!src) return;
+      var target=_esUI() ? 'es' : 'en';
+      var from=_esUI() ? 'en' : 'es';
+      _trCache[key]='\u2026';
+      _trShown[key]=true; repaint();
+      var fn=window.stTranslateText;
+      if(!fn){ _trShown[key]=false; delete _trCache[key]; repaint(); return; }
+      Promise.resolve(fn(src, from, target)).then(function(out){
+        _trCache[key]=(out&&String(out).trim()) ? out : src; repaint();
+      }, function(){ _trCache[key]=src; repaint(); });
     }
     function startEdit(id){ if(idx(id)<0) return; editingId=id; repaint(); setTimeout(function(){ var t=G('dcx-edit-input'); if(t){ t.focus(); try{t.selectionStart=t.selectionEnd=t.value.length;}catch(_){} t.style.height='auto'; t.style.height=Math.min(160,t.scrollHeight)+'px'; } },30); }
     function saveEdit(){ var id=editingId; if(!id) return; var t=G('dcx-edit-input'); if(!t) return; var v=(t.value||'').trim(); if(!v){ editingId=null; repaint(); return; } var i=idx(id); if(i<0){ editingId=null; repaint(); return; } var stamp=new Date().toISOString();
