@@ -5414,7 +5414,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'admin.reload_badge': 'Admin',
       'admin.reload_btn': 'Push refresh to everyone',
       'admin.reload_sending': 'Sending…',
-      'admin.reload_sent': 'Sent. Open apps will offer to refresh.',
+      'admin.reload_sent': 'Sent — every open app is refreshing.',
       'admin.update_ready': 'Updating to the latest version…',
       'services.active_badge': 'Active',
       'services.ea_title': 'Minimalist Manager EA',
@@ -6767,7 +6767,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'admin.reload_badge': 'Admin',
       'admin.reload_btn': 'Avisar a todos',
       'admin.reload_sending': 'Enviando…',
-      'admin.reload_sent': 'Enviado. Las apps abiertas ofrecerán actualizarse.',
+      'admin.reload_sent': 'Enviado — todas las apps abiertas se están actualizando.',
       'admin.update_ready': 'Actualizando a la última versión…',
       'services.active_badge': 'Activa',
       'services.ea_title': 'Minimalist Manager EA',
@@ -36771,6 +36771,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   var _appCtlPrompted = false;
 
   function _stSB() { try { return window.__stSB || null; } catch (e) { return null; } }
+  // tt() in this block resolves against STR, which does not hold these strings - it was
+  // printing the raw key. Keep the wording local and explicit instead.
+  function _adminT(en, es) { try { return (window.__lang === 'es') ? es : en; } catch (e) { return en; } }
   function _isAdminUser() {
     try { return !!currentUser && String(currentUser.email || '').toLowerCase() === 'be.o2@hotmail.com'; }
     catch (e) { return false; }
@@ -36787,16 +36790,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var s = _stSB(); if (!s) return;
         var st = document.getElementById('admin-reload-status');
         btn.disabled = true;
-        if (st) st.textContent = tt('admin.reload_sending') || 'Sending\u2026';
+        if (st) st.textContent = _adminT('Sending…', 'Enviando…');
         s.from('app_control')
           .update({ reload_at: new Date().toISOString(), set_by: (currentUser && currentUser.email) || null })
           .eq('id', 1)
           .then(function (r) {
             btn.disabled = false;
             if (r && r.error) { if (st) st.textContent = (r.error.message || 'Failed'); return; }
-            if (st) st.textContent = tt('admin.reload_sent') || 'Sent. Open apps will offer to refresh.';
-            // Your own tab is already on the new build, so don't prompt yourself.
-            _appCtlBaseline = null;
+            if (st) st.textContent = _adminT('Sent — every open app is refreshing.', 'Enviado — todas las apps abiertas se están actualizando.');
+            // Move our own baseline forward to what we just wrote, so the echo of this
+            // update is not seen as newer. Lets you press the button again and again
+            // without reloading your own tab in between.
+            _appCtlBaseline = Date.now();
+            _appCtlPrompted = false;
           }, function () { btn.disabled = false; if (st) st.textContent = 'Failed'; });
       });
     }
@@ -36831,6 +36837,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // A short notice is shown first purely so the reload does not read as a crash - the
   // journal is saved continuously, so nothing is lost by going now.
   function offerReload() {
+    // You pressed the button - your tab is already on the new build. Without this you
+    // get reloaded by your own broadcast, and pressing it twice in a row means reloading
+    // yourself twice for nothing.
+    if (_isAdminUser()) return;
     if (_appCtlPrompted) return;
     _appCtlPrompted = true;
     try {
@@ -36858,7 +36868,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var msg = document.createElement('div');
       msg.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:13px;font-weight:300;"
         + 'letter-spacing:0.02em;color:var(--text,#fff);line-height:1.6;';
-      msg.textContent = tt('admin.update_ready') || 'Updating to the latest version\u2026';
+      msg.textContent = _adminT('Admin update ready', 'Actualización del admin lista');
 
       // Thin accent bar that fills across the 1.2s wait - shows this is going somewhere.
       var track = document.createElement('div');
