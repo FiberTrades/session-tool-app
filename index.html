@@ -19674,7 +19674,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-21 18:30 UTC';
+  window.ST_BUILD = '2026-07-21 19:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34159,6 +34159,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         return c ? ((w.charAt(0)==='#'?'#':'')+_chSlug(c)) : w;
       }).join(' ');
     }
+    /* Static admin posts carry a Spanish body_es that _msgBody() shows to Spanish members,
+       so searching only `body` meant a member could read a Spanish sentence on screen and
+       find nothing when they searched for it. Match either column.
+
+       PostgREST parses or() as a comma-separated list, so a term containing , ( ) or "
+       has to be double-quoted with " and \ escaped - otherwise a stray comma in someone's
+       query is read as a filter separator and the request errors out instead of
+       returning rows. */
+    function _orBody(term){
+      var v='%'+String(term==null?'':term).replace(/\\/g,'\\\\').replace(/"/g,'\\"')+'%';
+      return 'body.ilike."'+v+'",body_es.ilike."'+v+'"';
+    }
     /* Result previews print the raw stored body, so localise its #tags the same way the
        chat does - otherwise a Spanish hit reads English and the highlight misses. */
     function _localiseTags(txt){
@@ -34178,7 +34190,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var q=parseQuery(raw);
       var sel=sb.from('channel_messages').select('*')
                 .order('created_at',{ascending:(SRCH.sort==='old')}).limit(80);
-      if(q.text)     sel=sel.ilike('body','%'+_slugifyQuery(q.text)+'%');
+      if(q.text)     sel=sel.or(_orBody(_slugifyQuery(q.text)));
       if(q.from){     var u=_matchUser(q.from);     if(u) sel=sel.eq('sender_id',u); }
       if(q.mentions){ var mu=_matchUser(q.mentions);
                       var mn=null;
@@ -34244,7 +34256,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         for(var i=0;i<roster.length;i++) if(roster[i].id===m.sender_id){ who=roster[i]; break; }
         var nm=stripEmoji((who&&who.name)||m.sender_name||'Trader');
         var av=(who&&who.avatar)||m.sender_avatar||'';
-        var body=_localiseTags(m.body || '') || (m.attachment_name?('\uD83D\uDCCE '+m.attachment_name):(m.attachment_url?'\uD83D\uDCCE attachment':''));
+        /* _msgBody, not m.body: a static post that matched on body_es must PREVIEW in
+           Spanish too, or the hit reads English and the search term never highlights. */
+        var body=_localiseTags(_msgBody(m)) || (m.attachment_name?('\uD83D\uDCCE '+m.attachment_name):(m.attachment_url?'\uD83D\uDCCE attachment':''));
         h+='<div class="dcx-sr" data-mid="'+esc(m.id)+'" data-ch="'+esc(m.channel_id)+'">'+
              '<div class="dcx-sr-top">'+
                (av?'<img src="'+esc(av)+'" alt="">':'<span class="ph">'+esc((nm||'T').charAt(0).toUpperCase())+'</span>')+
