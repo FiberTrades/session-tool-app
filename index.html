@@ -4565,6 +4565,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <button type="button" id="data-import" class="settings-btn" data-i18n="btn.import_data">Import Data</button>
         <button type="button" id="data-backup-settings" class="settings-btn" data-i18n="btn.backup_settings">Backup Settings</button>
       </div>
+
+      <!-- Admin only: push a refresh to every open app. Hidden unless the signed-in
+           account is the owner; renderAdminReload() decides. -->
+      <div id="svc-admin-reload" style="display:none;">
+        <label class="settings-label" style="margin-top:24px;" data-i18n="admin.reload_title">Refresh everyone’s app</label>
+        <p class="settings-hint" data-i18n="admin.reload_desc">After you deploy an update, this tells every open app to pick it up. Members see a prompt and can finish what they’re doing first — nobody is interrupted mid-trade.</p>
+        <div class="settings-data-actions">
+          <button type="button" id="admin-reload-btn" class="settings-btn" data-i18n="admin.reload_btn">Push refresh to everyone</button>
+        </div>
+        <p class="settings-hint" id="admin-reload-status" style="margin-top:8px;"></p>
+      </div>
     </div>
     <!-- SESSION section: change session label + times.
          Two inputs: a session-name dropdown (London / Asia / New York / Sydney) and
@@ -5400,6 +5411,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'services.premium_title': 'Your subscription',
       'services.premium_desc': 'Your free trial — the full journal, stats, calendar, cloud sync and four community channels.',
       'services.premium_cta': 'Upgrade — from £15/mo',
+      'admin.reload_title': 'Refresh everyone’s app',
+      'admin.reload_badge': 'Admin',
+      'admin.reload_desc': 'After you deploy an update, this tells every open app to pick it up. Members see a prompt and can finish what they’re doing first — nobody is interrupted mid-trade.',
+      'admin.reload_btn': 'Push refresh to everyone',
+      'admin.reload_sending': 'Sending…',
+      'admin.reload_sent': 'Sent. Open apps will offer to refresh.',
+      'admin.update_ready': 'A new version is ready.',
+      'admin.update_reload': 'Refresh now',
+      'admin.update_later': 'Later',
       'services.active_badge': 'Active',
       'services.ea_title': 'Minimalist Manager EA',
       'services.ea_desc': 'My MetaTrader 5 trade-management tool, on the MQL5 Market.',
@@ -6747,6 +6767,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'services.premium_title': 'Tu suscripción',
       'services.premium_desc': 'Tu prueba gratuita — el diario completo, estadísticas, calendario, sincronización en la nube y cuatro canales de la comunidad.',
       'services.premium_cta': 'Hazte Premium — desde £15/mes',
+      'admin.reload_title': 'Actualizar la app de todos',
+      'admin.reload_badge': 'Admin',
+      'admin.reload_desc': 'Tras publicar una actualización, esto avisa a todas las apps abiertas. Los miembros ven un aviso y pueden terminar lo que estén haciendo — nadie se interrumpe a mitad de una operación.',
+      'admin.reload_btn': 'Avisar a todos',
+      'admin.reload_sending': 'Enviando…',
+      'admin.reload_sent': 'Enviado. Las apps abiertas ofrecerán actualizarse.',
+      'admin.update_ready': 'Hay una versión nueva.',
+      'admin.update_reload': 'Actualizar ahora',
+      'admin.update_later': 'Más tarde',
       'services.active_badge': 'Activa',
       'services.ea_title': 'Minimalist Manager EA',
       'services.ea_desc': 'Mi herramienta de gestión de operaciones para MetaTrader 5, en el Mercado MQL5.',
@@ -30985,6 +31014,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // --- Open / close
     function openSettings() {
       // Pre-fill all inputs with current state.
+      // The admin 'refresh everyone' control lives in this Profile section, so paint it
+      // here rather than only from renderServices (a different tab of this modal).
+      try { if (typeof renderAdminReload === 'function') renderAdminReload(); } catch (e) {}
       const nameInp = document.getElementById('settings-profile-name');
       if (nameInp) nameInp.value = data.userName || '';
       try { if (window.__stEnsureAvatarUI) window.__stEnsureAvatarUI(); } catch (e) {}
@@ -36729,7 +36761,130 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (profilePlan === 'comp') return premL('Complimentary full access.', 'Acceso completo de cortes\u00eda.');
     return premL('The full journal + cloud sync, plus MT5 auto-sync.', 'El diario completo + sync en la nube y auto-sync de MT5.');
   }
+  // =========================================================================
+  // Admin: push a refresh to every open app.
+  //
+  // Deploying a new index.html does not reach anyone who already has the app
+  // open - the service worker only checks for a new version on load. This bumps
+  // a timestamp in public.app_control; every signed-in client watches that row
+  // and, when it moves past the value it started with, offers to reload.
+  //
+  // Deliberately a PROMPT and not a forced reload. People use this while they
+  // are trading; yanking the page out from under someone mid-review, mid-call or
+  // mid-typing would lose their work. The banner sits there until they accept.
+  // =========================================================================
+  var _appCtlBaseline = null;      // reload_at as it stood when this tab loaded
+  var _appCtlChan = null;
+  var _appCtlPrompted = false;
+
+  function _stSB() { try { return window.__stSB || null; } catch (e) { return null; } }
+  function _isAdminUser() {
+    try { return !!currentUser && String(currentUser.email || '').toLowerCase() === 'be.o2@hotmail.com'; }
+    catch (e) { return false; }
+  }
+
+  function renderAdminReload() {
+    var card = document.getElementById('svc-admin-reload');
+    if (!card) return;
+    card.style.display = _isAdminUser() ? '' : 'none';
+    var btn = document.getElementById('admin-reload-btn');
+    if (btn && !btn._wired) {
+      btn._wired = true;
+      btn.addEventListener('click', function () {
+        var s = _stSB(); if (!s) return;
+        var st = document.getElementById('admin-reload-status');
+        btn.disabled = true;
+        if (st) st.textContent = tt('admin.reload_sending') || 'Sending\u2026';
+        s.from('app_control')
+          .update({ reload_at: new Date().toISOString(), set_by: (currentUser && currentUser.email) || null })
+          .eq('id', 1)
+          .then(function (r) {
+            btn.disabled = false;
+            if (r && r.error) { if (st) st.textContent = (r.error.message || 'Failed'); return; }
+            if (st) st.textContent = tt('admin.reload_sent') || 'Sent. Open apps will offer to refresh.';
+            // Your own tab is already on the new build, so don't prompt yourself.
+            _appCtlBaseline = null;
+          }, function () { btn.disabled = false; if (st) st.textContent = 'Failed'; });
+      });
+    }
+  }
+
+  // Called once the user is signed in. Reads the current value as a baseline, then
+  // listens for changes. A tab that opens later reads a newer baseline and stays quiet,
+  // which is the point of storing this as a row rather than firing a broadcast.
+  function watchAppControl() {
+    var s = _stSB(); if (!s || _appCtlChan) return;
+    try {
+      s.from('app_control').select('reload_at').eq('id', 1).single().then(function (r) {
+        if (r && r.data && r.data.reload_at) _appCtlBaseline = new Date(r.data.reload_at).getTime();
+      }, function () {});
+      _appCtlChan = s.channel('app-control')
+        .on('postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'app_control' },
+            function (payload) {
+              try {
+                var at = payload && payload.new && payload.new.reload_at;
+                if (!at) return;
+                var ms = new Date(at).getTime();
+                if (_appCtlBaseline === null) { _appCtlBaseline = ms; return; }
+                if (ms > _appCtlBaseline) offerReload();
+              } catch (e) {}
+            })
+        .subscribe();
+    } catch (e) {}
+  }
+
+  function offerReload() {
+    if (_appCtlPrompted) return;
+    _appCtlPrompted = true;
+    var bar = document.createElement('div');
+    bar.id = 'st-update-bar';
+    bar.style.cssText = 'position:fixed;left:50%;transform:translateX(-50%);bottom:calc(18px + env(safe-area-inset-bottom,0px));'
+      + 'z-index:99999;display:flex;align-items:center;gap:14px;padding:12px 16px;border-radius:10px;'
+      + 'background:var(--bg-elev,#161616);border:1px solid var(--border-2,#333);box-shadow:0 8px 30px rgba(0,0,0,.5);'
+      + 'font-size:13px;color:var(--text,#eee);max-width:calc(100vw - 32px);';
+    var msg = document.createElement('span');
+    msg.textContent = tt('admin.update_ready') || 'A new version is ready.';
+    var go = document.createElement('button');
+    go.className = 'settings-btn';
+    go.style.cssText = 'padding:6px 12px;font-size:12px;white-space:nowrap;';
+    go.textContent = tt('admin.update_reload') || 'Refresh now';
+    go.addEventListener('click', function () { hardReload(); });
+    var later = document.createElement('button');
+    later.className = 'settings-btn';
+    later.style.cssText = 'padding:6px 10px;font-size:12px;opacity:.7;';
+    later.textContent = tt('admin.update_later') || 'Later';
+    later.addEventListener('click', function () { try { bar.remove(); } catch (e) {} });
+    bar.appendChild(msg); bar.appendChild(go); bar.appendChild(later);
+    document.body.appendChild(bar);
+  }
+
+  // Clear the service worker and its caches before reloading, otherwise the browser
+  // can serve the very build we are trying to replace.
+  function hardReload() {
+    var done = function () { try { location.reload(); } catch (e) {} };
+    try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+    var jobs = [];
+    try {
+      if (navigator.serviceWorker && navigator.serviceWorker.getRegistrations) {
+        jobs.push(navigator.serviceWorker.getRegistrations().then(function (rs) {
+          return Promise.all((rs || []).map(function (r) { return r.unregister(); }));
+        }).catch(function () {}));
+      }
+      if (window.caches && caches.keys) {
+        jobs.push(caches.keys().then(function (ks) {
+          return Promise.all((ks || []).map(function (k) { return caches.delete(k); }));
+        }).catch(function () {}));
+      }
+    } catch (e) {}
+    if (!jobs.length) { done(); return; }
+    Promise.all(jobs).then(done, done);
+    setTimeout(done, 2500);   // never hang on a stuck unregister
+  }
+  window.stWatchAppControl = watchAppControl;
+
   function renderServices() {
+    try { renderAdminReload(); } catch (e) {}
     var badge = document.getElementById('svc-premium-badge');
     var cta = document.getElementById('svc-premium-cta');
     var mng = document.getElementById('svc-premium-manage');
@@ -37092,6 +37247,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     currentUser = session ? session.user : null;
     try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
     if (currentUser && enforceDataOwner(currentUser.id)) return; // foreign local data -> cleared, reloading
+    // Listen for the admin's 'refresh everyone' bump. Signed-in only - the row is
+    // readable to authenticated users, and there is nothing to refresh for a visitor
+    // still sitting on the landing page.
+    if (currentUser) { try { if (window.stWatchAppControl) window.stWatchAppControl(); } catch (e) {} }
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { try { sessionStorage.removeItem('st_sess_recover'); sessionStorage.removeItem('st_sess_recover_t'); } catch (e) {} hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); try{ if(window.STCommunity){ if(STCommunity.setupCallSignal) STCommunity.setupCallSignal(); if(STCommunity.ensurePush) STCommunity.ensurePush(); } }catch(e){} try { window.STMentor.loadOwn(window.__mnRepaint); } catch(e){} try { if (typeof window.__bbRestoreIfWanted === 'function') setTimeout(window.__bbRestoreIfWanted, 300); } catch(e){} }
@@ -37157,6 +37316,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     currentUser = r.data && r.data.session ? r.data.session.user : null;
     try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
     if (currentUser && enforceDataOwner(currentUser.id)) return; // foreign local data -> cleared, reloading
+    // Listen for the admin's 'refresh everyone' bump. Signed-in only - the row is
+    // readable to authenticated users, and there is nothing to refresh for a visitor
+    // still sitting on the landing page.
+    if (currentUser) { try { if (window.stWatchAppControl) window.stWatchAppControl(); } catch (e) {} }
     paintAccount();
     if (recoveryMode) { showReset(); return; }
     if (currentUser) { hideGate(); fetchProfile(); try { window.STMentor.loadOwn(window.__mnRepaint); } catch(e){} }
