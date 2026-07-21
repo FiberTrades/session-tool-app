@@ -34107,6 +34107,45 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       return null;
     }
+    /* Exact channel lookup by any name the user could have READ on screen: the English
+       slug, the full localised name, or the localised name minus its emoji. */
+    function _chanByLabel(frag){
+      var f=String(frag||'').toLowerCase().replace(/^#/,'');
+      if(!f) return null;
+      for(var i=0;i<(channels||[]).length;i++){
+        var c=channels[i];
+        if(_chSlug(c).toLowerCase()===f) return c;
+        if(String(_chName(c)||'').toLowerCase()===f) return c;
+        if(String(_chLabel(c)||'').toLowerCase()===f) return c;
+      }
+      return null;
+    }
+    /* A Spanish member reads "#sesgo-previo" in the chat, but the message body stored in
+       the database still carries the English slug "#pre-session-bias" - only the painted
+       label is localised (see _chLabel). Searching for what you can SEE has to work, so
+       map any localised channel name in the query back to its slug before the body ilike
+       runs. English queries are untouched: a slug maps to itself. */
+    function _slugifyQuery(txt){
+      var s=String(txt||'');
+      if(!s || !(channels||[]).length) return s;
+      var whole=_chanByLabel(s);                    /* "sesgo previo" - a name with a space */
+      if(whole) return _chSlug(whole);
+      return s.split(/\s+/).map(function(w){
+        var c=_chanByLabel(w.replace(/^#/,''));
+        return c ? ((w.charAt(0)==='#'?'#':'')+_chSlug(c)) : w;
+      }).join(' ');
+    }
+    /* Result previews print the raw stored body, so localise its #tags the same way the
+       chat does - otherwise a Spanish hit reads English and the highlight misses. */
+    function _localiseTags(txt){
+      return String(txt||'').replace(/(^|\s)#([\w-]{1,40})/g, function(full,pre,nm){
+        var lc=nm.toLowerCase();
+        for(var i=0;i<(channels||[]).length;i++){
+          if(_chSlug(channels[i]).toLowerCase()===lc) return pre+'#'+_chLabel(channels[i]);
+        }
+        return full;
+      });
+    }
 
     function runSearch(){
       if(searchLocked()){ lockNote(); return; }
@@ -34115,7 +34154,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var q=parseQuery(raw);
       var sel=sb.from('channel_messages').select('*')
                 .order('created_at',{ascending:(SRCH.sort==='old')}).limit(80);
-      if(q.text)     sel=sel.ilike('body','%'+q.text+'%');
+      if(q.text)     sel=sel.ilike('body','%'+_slugifyQuery(q.text)+'%');
       if(q.from){     var u=_matchUser(q.from);     if(u) sel=sel.eq('sender_id',u); }
       if(q.mentions){ var mu=_matchUser(q.mentions);
                       var mn=null;
@@ -34181,7 +34220,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         for(var i=0;i<roster.length;i++) if(roster[i].id===m.sender_id){ who=roster[i]; break; }
         var nm=stripEmoji((who&&who.name)||m.sender_name||'Trader');
         var av=(who&&who.avatar)||m.sender_avatar||'';
-        var body=m.body || (m.attachment_name?('\uD83D\uDCCE '+m.attachment_name):(m.attachment_url?'\uD83D\uDCCE attachment':''));
+        var body=_localiseTags(m.body || '') || (m.attachment_name?('\uD83D\uDCCE '+m.attachment_name):(m.attachment_url?'\uD83D\uDCCE attachment':''));
         h+='<div class="dcx-sr" data-mid="'+esc(m.id)+'" data-ch="'+esc(m.channel_id)+'">'+
              '<div class="dcx-sr-top">'+
                (av?'<img src="'+esc(av)+'" alt="">':'<span class="ph">'+esc((nm||'T').charAt(0).toUpperCase())+'</span>')+
@@ -34267,14 +34306,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
                       t:stripEmoji(u.name||'Trader'), s:t.key+':' });
         });
       } else if(t.key==='in'){
+        /* Offer the channel under its localised name and match on either language, but
+           always INSERT the English slug - that is what _matchChan() and the stored
+           message bodies key off. */
         channels.filter(function(c){
-          var nm=String(c.name||'').toLowerCase(), sp=nm.indexOf(' ');
-          var slug=(c.slug||(sp>0?nm.slice(sp+1):nm)).toLowerCase();
-          return slug.indexOf(t.frag)>-1;
+          return _chSlug(c).toLowerCase().indexOf(t.frag)>-1 ||
+                 String(_chName(c)||'').toLowerCase().indexOf(t.frag)>-1;
         }).slice(0,8).forEach(function(c){
-          var nm=String(c.name||''), sp=nm.indexOf(' ');
-          var slug=(c.slug||(sp>0?nm.slice(sp+1):nm));
-          rows.push({ ins:'in:'+slug, ic:IC.hash, t:nm, s:'in:' });
+          rows.push({ ins:'in:'+_chSlug(c), ic:IC.hash, t:(_chName(c)||_chSlug(c)), s:'in:' });
         });
       } else if(t.key==='has'){
         SHAS.filter(function(x){ return x.indexOf(t.frag)>-1; }).forEach(function(x){
