@@ -15187,43 +15187,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         values.push(values[values.length - 1] + tradeRforMath(t));
       });
     } else {
-      // Balance mode: historically-faithful curve. Each point's balance =
-      //   (sum of starting balances of accounts that existed by that trade's date)
-      //   + cumulative net P&L up to and including that trade.
-      // This means:
-      //   - Adding a new account = local step up between the trades bracketing its
-      //     createdAt date (not a retroactive lift of the entire curve).
-      //   - Deleting an account = its contribution disappears from every historical
-      //     point (chart drops across the board by that amount).
-      //   - Archiving = no change (archived accounts still contribute to the baseline
-      //     per the lifetime-stats convention used elsewhere).
-      const accs = (data.accounts || []).slice().sort((a, b) => {
-        return new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime();
-      });
-      const baselineAt = (dateMs) => {
-        let sum = 0;
-        for (const acc of accs) {
-          const c = new Date(acc.createdAt || 0).getTime();
-          if (c <= dateMs) sum += accBaseline(acc);   // where the account actually stood at setup
-          else break; // sorted, so we can stop
-        }
-        return sum;
-      };
+      // Balance mode: performance curve over a CONSTANT capital baseline.
+      // The baseline is every in-scope account's setup balance - including accounts
+      // created later - counted from the very first point. This replaces the old
+      // "historically-faithful" behaviour where opening a new 10k account entered the
+      // curve as a vertical 10k step at its creation date: the step dwarfed every real
+      // trade around it and read as a monster win, when a deposit is not performance.
+      // With a constant baseline only P&L moves the line, and the curve agrees with
+      // the header's gain % (balance / total capital), which was already measured
+      // against the summed baseline. Archived accounts still count (lifetime-stats
+      // convention); deleting an account still removes its capital everywhere. Scoped:
+      // a single account's view uses just that account's capital, so another account
+      // being created no longer steps a curve it has nothing to do with.
+      const totalBaseline = (typeof getScopedBaseline === 'function') ? getScopedBaseline() : 0;
       // Sort chronologically (day + intraday entry/exit time) so cumulative arithmetic
-      // + baseline lookups stay correct even when the caller hands us trades in a mixed
-      // order, AND so multiple trades on the same day plot in the order they happened
+      // stays correct even when the caller hands us trades in a mixed order, AND so
+      // multiple trades on the same day plot in the order they happened
       // (date-only sorting left same-day trades in stored order — the ordering bug).
       const sortedTrades = trades.slice().sort(_tradeChronoCompare);
-      const firstTradeMs = sortedTrades.length > 0 ? new Date(sortedTrades[0].date || 0).getTime() : Date.now();
-      offset = baselineAt(firstTradeMs);
+      offset = totalBaseline;
       values = [offset];
       let cumPL = 0;
       sortedTrades.forEach(t => {
         // Each trade contributes its net P&L multiplied by its copy count — a single
         // logged setup executed in N parallel accounts moves the curve by N × its P&L.
         cumPL += tradeNetPL(t) * tradeCopies(t);
-        const baseline = baselineAt(new Date(t.date || 0).getTime());
-        values.push(baseline + cumPL);
+        values.push(totalBaseline + cumPL);
       });
       // Time-range zoom (balance chart): keep the full cumulative curve so balances stay TRUE,
       // then clip the DISPLAY to the selected window, using the balance carried into the window
@@ -19680,7 +19669,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-22 08:05 UTC';
+  window.ST_BUILD = '2026-07-22 11:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
