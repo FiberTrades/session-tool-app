@@ -19669,7 +19669,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-22 11:55 UTC';
+  window.ST_BUILD = '2026-07-22 12:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34911,7 +34911,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        Guess the language here instead. A stopword vote is enough to separate ES from EN,
        and on a tie we return null and let the translator do its job as before - the cost
        of a wrong "leave it alone" is far lower than the cost of mangling good text. */
-    var _TR_ES_W = /(^|\s)(el|la|los|las|un|una|unos|unas|de|del|que|y|o|en|es|son|est[aá]|est[aá]n|por|para|con|como|pero|m[aá]s|muy|s[ií]|no|se|su|sus|al|lo|le|les|yo|t[uú]|nosotros|hoy|ayer|ma[nñ]ana|entrada|salida|precio|nivel|sesi[oó]n|mercado|compra|venta|riesgo|ganancia|p[eé]rdida|gracias|hola|bien|ahora|cuando|donde|porque|tambi[eé]n|tengo|hacer|puede|ver|antes|despu[eé]s)(?=\s|$|[.,;:!?])/gi;
+    /* The second alternation group is common Spanish VERB FORMS and everyday words. A
+       member's short reflection ("pude mover a BE") is exactly the text that carries no
+       article/preposition stopwords at all, so without these it scores zero and cannot
+       be told apart from an English tag line. Chosen to avoid English collisions. */
+    var _TR_ES_W = /(^|\s)(el|la|los|las|un|una|unos|unas|de|del|que|y|o|en|es|son|est[aá]|est[aá]n|por|para|con|como|pero|m[aá]s|muy|s[ií]|no|se|su|sus|al|lo|le|les|yo|t[uú]|nosotros|hoy|ayer|ma[nñ]ana|entrada|salida|precio|nivel|sesi[oó]n|mercado|compra|venta|riesgo|ganancia|p[eé]rdida|gracias|hola|bien|ahora|cuando|donde|porque|tambi[eé]n|tengo|hacer|puede|ver|antes|despu[eé]s|pude|puedo|pod[ií]a|hice|hizo|fue|estaba|estuve|ten[ií]a|tuve|quer[ií]a|deb[ií]a|deber[ií]a|habr[ií]a|mover|mov[ií]|cerr[eé]|abr[ií]|sub[ií]|baj[eé]|dej[eé]|tom[eé]|entr[eé]|sal[ií]|esper[eé]|segu[ií]|respet[eé]|hasta|desde|sobre|vez|d[ií]a|semana|casi|nada|luego|mejor|peor|as[ií]|aqu[ií]|tarde|temprano|cuenta|regla|reglas|gr[aá]fico)(?=\s|$|[.,;:!?])/gi;
     /* "a" is deliberately NOT in this list: it is also one of the most common Spanish
        words (voy a, a la, a las...), and counting it as English made real Spanish posts
        score enough English hits to be skipped as "already English" - which, because the
@@ -34937,18 +34941,47 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     function _trRich(text, L, fn){
       var lines = String(text).split('\n');
-      // No markers anywhere: translate in one request rather than line by line.
-      var hasMarker = lines.some(function (l) { return _TR_MARKER.test(l); });
-      if (!hasMarker) {
+      // Single line: one request, exactly as before.
+      if (lines.length === 1) {
         return Promise.resolve(fn(text, L.from, L.to)).then(function (out) {
           return (out && String(out).trim()) ? out : text;
         }, function () { return text; });
       }
-      // Sequential so a formatted post does not fire twenty parallel requests.
+      /* Multiline: decide PER LINE. A review post is an English template with pockets of
+         the member's own language ("pude mover a BE" sitting between English tag lines).
+         Handled whole it is unfixable: stopword detection sees mostly-English, and the
+         translator fed the full text with sl=auto picks ONE source language and returns
+         everything else untouched. So: a line clearly in the reader's language stays; a
+         line clearly foreign is translated on its own (marker prefixes preserved); an
+         undecidable line is translated only when the message as a whole reads foreign,
+         otherwise left alone - which is what keeps an English template post from firing
+         a request for every tag line. Sequential, so a long post never fires twenty
+         parallel requests. */
+      var msgSc  = _trScore(text);
+      var msgDet = (msgSc.es > msgSc.en) ? 'es' : (msgSc.en > msgSc.es ? 'en' : null);
+      /* "The whole message is foreign" needs a CLEAR margin (>=3), not a bare majority.
+         A mixed post's one Spanish line tips the whole-message vote slightly Spanish,
+         and a bare-majority fallback would then send every undecidable English template
+         line to the translator labelled as Spanish - eleven wasted requests and a real
+         chance of mangling them. With the margin, a mixed post translates only its
+         clearly-foreign lines; a genuinely Spanish post (many hits, no English) still
+         clears 3 easily and gets its undecidable lines translated too. */
+      var msgForeign = (msgDet !== null && msgDet !== L.to && Math.abs(msgSc.es - msgSc.en) >= 3);
       var out = [];
       return lines.reduce(function (chain, line) {
         return chain.then(function () {
-          return _trLine(line, L, fn).then(function (res) { out.push(res); });
+          var m = line.match(_TR_MARKER);
+          var prefix = m ? m[1] : '';
+          var body   = m ? m[2] : line;
+          if (!body.trim() || !/[A-Za-zÀ-ÿ]{2}/.test(body)) { out.push(line); return; }
+          var lsc  = _trScore(body);
+          var ldet = (lsc.es > lsc.en) ? 'es' : (lsc.en > lsc.es ? 'en' : null);
+          if (ldet === L.to) { out.push(line); return; }        // clearly the reader's language
+          var from = (ldet !== null) ? ldet : (msgForeign ? msgDet : null);
+          if (from === null) { out.push(line); return; }        // undecidable inside a mixed post
+          return Promise.resolve(fn(body, from, L.to)).then(function (res) {
+            out.push(prefix + ((res && String(res).trim()) ? res : body));
+          }, function () { out.push(line); });
         });
       }, Promise.resolve()).then(function () { return out.join('\n'); });
     }
@@ -34994,30 +35027,42 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var to = _trLangs().to;
       var sc = _trScore(src);
       var det = (sc.es > sc.en) ? 'es' : (sc.en > sc.es ? 'en' : null);
+      /* A line clearly NOT the reader's language ANYWHERE in the message forces a
+         translation pass no matter what the whole-message vote says. This is the
+         mixed-post case: an English template post carrying one Spanish reflection line
+         ("pude mover a BE") scores mostly-English overall, and the old whole-message
+         skip cached it untranslated for good. */
+      var foreignLine = false;
+      if (src.indexOf('\n') >= 0) {
+        var _ls = src.split('\n');
+        for (var _li = 0; _li < _ls.length; _li++) {
+          var _lsc = _trScore(_ls[_li]);
+          var _ld = (_lsc.es > _lsc.en) ? 'es' : (_lsc.en > _lsc.es ? 'en' : null);
+          if (_ld !== null && _ld !== to) { foreignLine = true; break; }
+        }
+      }
       /* Skip ONLY when the message is CLEARLY already the reader's language (a margin of
-         at least 2 stopword hits, not a bare majority). The two mistakes are not equal:
-         wrongly translating costs one invisible request that comes back unchanged, but
-         wrongly skipping is CACHED and leaves a foreign post untranslated for good -
-         which is exactly what happened to a Spanish review post whose template scaffolding
-         scored enough English hits to edge the vote. Emoji, numbers and bare tickers
-         ("NQ 20450") still skip: nothing to translate, and sending them risks the
-         translator "helpfully" rewriting a symbol. */
-      if ((det === to && (sc.es + sc.en) > 0 && Math.abs(sc.es - sc.en) >= 2) || !/[A-Za-zÀ-ÿ]{2}/.test(src)) {
+         at least 2 stopword hits, not a bare majority) AND no line inside it reads
+         foreign. The two mistakes are not equal: wrongly translating costs one invisible
+         request that comes back unchanged, but wrongly skipping is CACHED and leaves a
+         foreign post untranslated for good. Emoji, numbers and bare tickers ("NQ 20450")
+         still skip: nothing to translate, and sending them risks the translator
+         "helpfully" rewriting a symbol. */
+      if (!foreignLine && ((det === to && (sc.es + sc.en) > 0 && Math.abs(sc.es - sc.en) >= 2) || !/[A-Za-zÀ-ÿ]{2}/.test(src))) {
         _trSeen[key] = 1; _trCache[key] = src; return src;
       }
       _trSeen[key] = 1;
       /* Hand the translator the detected source when it is confidently DIFFERENT from the
          target - it stops it re-guessing per line and keeps a mixed post consistent. Never
          pass a same-as-target guess: translateChunk() no-ops on source===target, which
-         would turn this queue entry into a silent skip. */
+         would turn this queue entry into a silent skip. (_trRich re-decides per line for
+         multiline posts, so a mixed post's English lines stay untouched either way.) */
       _trQueue.unshift({ key: key, text: src, from: (det && det !== to) ? det : 'auto' });
-      /* Only show the loading logo when we are CONFIDENT a real translation is
-         happening: a known source language that differs from the target. When
-         detection is uncertain (det === null) we still translate in the background,
-         but silently - it is nearly always a short same-language message that comes
-         back unchanged, and a spinner on every English post in an English app is
-         just noise. If it does come back changed, the pump repaints without a logo. */
-      if (det && det !== to) _trSpinBegin();
+      /* Only show the loading logo when a real translation is confidently happening:
+         the whole message reads foreign, or a specific line inside it does. Uncertain
+         messages still translate in the background, but silently - a spinner on every
+         English post in an English app is just noise. */
+      if ((det && det !== to) || foreignLine) _trSpinBegin();
       if (!_trStart) _trStart = setTimeout(function () { _trStart = null; _trPump(); }, 0);
       return null;
     }
