@@ -19669,7 +19669,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-22 11:35 UTC';
+  window.ST_BUILD = '2026-07-22 11:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34912,18 +34912,27 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        and on a tie we return null and let the translator do its job as before - the cost
        of a wrong "leave it alone" is far lower than the cost of mangling good text. */
     var _TR_ES_W = /(^|\s)(el|la|los|las|un|una|unos|unas|de|del|que|y|o|en|es|son|est[aá]|est[aá]n|por|para|con|como|pero|m[aá]s|muy|s[ií]|no|se|su|sus|al|lo|le|les|yo|t[uú]|nosotros|hoy|ayer|ma[nñ]ana|entrada|salida|precio|nivel|sesi[oó]n|mercado|compra|venta|riesgo|ganancia|p[eé]rdida|gracias|hola|bien|ahora|cuando|donde|porque|tambi[eé]n|tengo|hacer|puede|ver|antes|despu[eé]s)(?=\s|$|[.,;:!?])/gi;
-    var _TR_EN_W = /(^|\s)(the|a|an|of|and|to|in|is|are|was|were|it|this|that|for|with|on|at|from|but|not|you|i|we|they|have|has|had|will|would|can|could|price|level|entry|exit|market|buy|sell|risk|profit|loss|thanks|hello|today|yesterday|tomorrow|because|when|where|also|make|see|before|after)(?=\s|$|[.,;:!?])/gi;
-    function _trDetect(t){
+    /* "a" is deliberately NOT in this list: it is also one of the most common Spanish
+       words (voy a, a la, a las...), and counting it as English made real Spanish posts
+       score enough English hits to be skipped as "already English" - which, because the
+       skip is cached, left them untranslated for good. */
+    var _TR_EN_W = /(^|\s)(the|an|of|and|to|in|is|are|was|were|it|this|that|for|with|on|at|from|but|not|you|i|we|they|have|has|had|will|would|can|could|price|level|entry|exit|market|buy|sell|risk|profit|loss|thanks|hello|today|yesterday|tomorrow|because|when|where|also|make|see|before|after)(?=\s|$|[.,;:!?])/gi;
+    function _trScore(t){
       /* Links, tags and code carry no language signal and skew a short message. */
       var s = String(t||'').replace(/https?:\/\/\S+/g,' ')
                            .replace(/```[\s\S]*?```/g,' ')
                            .replace(/[#@][\w-]+/g,' ');
-      if (!s.trim()) return null;
+      if (!s.trim()) return { es:0, en:0 };
       var es = (s.match(_TR_ES_W)||[]).length;
       var en = (s.match(_TR_EN_W)||[]).length;
       if (/[ñ¿¡]/i.test(s) || /[áéíóú]/i.test(s)) es += 2;   /* ES-only characters */
-      if (es > en) return 'es';
-      if (en > es) return 'en';
+      return { es:es, en:en };
+    }
+    function _trDetect(t){
+      var sc = _trScore(t);
+      if (sc.es === 0 && sc.en === 0) return null;
+      if (sc.es > sc.en) return 'es';
+      if (sc.en > sc.es) return 'en';
       return null;                                            /* tie: don't guess */
     }
     function _trRich(text, L, fn){
@@ -34983,17 +34992,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var src = _msgBody(m);
       if (!src) return null;
       var to = _trLangs().to;
-      var det = _trDetect(src);
-      /* Already in the reader's language: leave the author's own words alone. Emoji,
-         numbers and bare tickers ("NQ 20450") have nothing to translate either, and
-         sending them risks the translator "helpfully" rewriting a symbol. */
-      if (det === to || !/[A-Za-zÀ-ÿ]{2}/.test(src)) {
+      var sc = _trScore(src);
+      var det = (sc.es > sc.en) ? 'es' : (sc.en > sc.es ? 'en' : null);
+      /* Skip ONLY when the message is CLEARLY already the reader's language (a margin of
+         at least 2 stopword hits, not a bare majority). The two mistakes are not equal:
+         wrongly translating costs one invisible request that comes back unchanged, but
+         wrongly skipping is CACHED and leaves a foreign post untranslated for good -
+         which is exactly what happened to a Spanish review post whose template scaffolding
+         scored enough English hits to edge the vote. Emoji, numbers and bare tickers
+         ("NQ 20450") still skip: nothing to translate, and sending them risks the
+         translator "helpfully" rewriting a symbol. */
+      if ((det === to && (sc.es + sc.en) > 0 && Math.abs(sc.es - sc.en) >= 2) || !/[A-Za-zÀ-ÿ]{2}/.test(src)) {
         _trSeen[key] = 1; _trCache[key] = src; return src;
       }
       _trSeen[key] = 1;
-      /* Hand the translator the detected source rather than 'auto' when we are sure -
-         it stops it re-guessing per line and keeps a mixed post consistent. */
-      _trQueue.unshift({ key: key, text: src, from: det || 'auto' });
+      /* Hand the translator the detected source when it is confidently DIFFERENT from the
+         target - it stops it re-guessing per line and keeps a mixed post consistent. Never
+         pass a same-as-target guess: translateChunk() no-ops on source===target, which
+         would turn this queue entry into a silent skip. */
+      _trQueue.unshift({ key: key, text: src, from: (det && det !== to) ? det : 'auto' });
       /* Only show the loading logo when we are CONFIDENT a real translation is
          happening: a known source language that differs from the target. When
          detection is uncertain (det === null) we still translate in the background,
