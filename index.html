@@ -16337,6 +16337,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (trackedBeSim.length === 0 && window.__stPmDebug) {
         const _d = window.__stPmDebug;
         let _s = 'EA link: ' + _d.inbox + ' synced · ' + _d.pm + ' replayed (' + _d.pmBeSim + ' with BE sim) · ' + _d.linked + ' matched to your log';
+        if (_d.pmDetail) _s += ' · ' + _d.pmDetail;
         if (_d.err) _s += ' · error: ' + _d.err;
         (_d.days || []).forEach(dd => { _s += ' · ' + dd.day.split('|')[0] + ': ' + dd.rows + ' EA vs ' + dd.trades + ' logged, SL ' + dd.rowSl + ' vs ' + dd.tradeSl; });
         recDTpl += ' <span style="opacity:.55;font-size:11px;">' + _s + '</span>';
@@ -19748,7 +19749,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 12:50 UTC';
+  window.ST_BUILD = '2026-07-23 13:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30489,6 +30490,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       (data.currentSeries || []).forEach(fill);
       (data.history || []).forEach(sr => (sr.trades || []).forEach(fill));
       (data.review && data.review.trades ? data.review.trades : []).forEach(fill);
+
+      // Per-replayed-ticket fate for the diagnostic trail: whether each pm row found a
+      // logged trade, and how long its BE sim is. Distinguishes "pipeline broken" from
+      // "the replayed trades are unlogged test orders" - which look identical from D.
+      try {
+        const _all2 = [];
+        (data.currentSeries || []).forEach(t => _all2.push(t));
+        (data.history || []).forEach(sr => (sr.trades || []).forEach(t => _all2.push(t)));
+        (data.review && data.review.trades ? data.review.trades : []).forEach(t => _all2.push(t));
+        dbg.pmDetail = rows.map(r => {
+          const tk = String(r.ticket);
+          const tr = _all2.find(t => t && String(t.mt5Ticket || '') === tk);
+          const sim = Array.isArray(r.be_sim) ? r.be_sim.length : 'none';
+          return '#' + tk.slice(-4) + ' sim:' + sim + (tr ? (' -> ' + (tr.result || '?') + ' ' + String(tr.date || '').slice(0, 10)) : ' -> no logged trade');
+        }).join(' · ');
+      } catch (e) {}
 
       if (changed) {
         saveData();
