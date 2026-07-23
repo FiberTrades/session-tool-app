@@ -16338,6 +16338,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const _d = window.__stPmDebug;
         let _s = 'EA link: ' + _d.inbox + ' synced · ' + _d.pm + ' replayed (' + _d.pmBeSim + ' with BE sim) · ' + _d.linked + ' matched to your log';
         if (_d.pmDetail) _s += ' · ' + _d.pmDetail;
+        if (_d.recent) _s += ' · log: ' + _d.recent;
         if (_d.err) _s += ' · error: ' + _d.err;
         (_d.days || []).forEach(dd => { _s += ' · ' + dd.day.split('|')[0] + ': ' + dd.rows + ' EA vs ' + dd.trades + ' logged, SL ' + dd.rowSl + ' vs ' + dd.tradeSl; });
         recDTpl += ' <span style="opacity:.55;font-size:11px;">' + _s + '</span>';
@@ -19749,7 +19750,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 13:05 UTC';
+  window.ST_BUILD = '2026-07-23 13:25 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30451,6 +30452,50 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
               tradeSl: g.trades.map(tt => { const v = slOf(tt); return (v > 0) ? (Math.round(v * 10) / 10) : '?'; }).join('/') });
           }
         });
+        // Correction pass: an earlier, cruder matcher version could stamp a trade with a
+        // wrong same-day ticket, which then blocks the right row forever - the replayed
+        // ticket reads "no logged trade" while its real trade wears another number, and
+        // the trade is excluded from re-pairing because it already has a ticket. If a
+        // REPLAYED row owns no trade, and exactly ONE same-day trade's fingerprint fits it
+        // within tolerance while clearly NOT fitting the row it currently points to,
+        // re-stamp that trade to the replayed row.
+        try {
+          const rowByTicket = {};
+          inboxRows.forEach(r => { rowByTicket[String(r.ticket)] = r; });
+          rows.forEach(pr => {
+            const ptk = String(pr.ticket);
+            if (allT.some(t => t && String(t.mt5Ticket || '') === ptk)) return;   // already owned
+            const full = rowByTicket[ptk]; if (!full) return;
+            const w = rowWhen(full); if (!w) return;
+            const pSl = parseFloat(full.sl_pips); if (!(pSl > 0)) return;
+            const cands = allT.filter(t => {
+              if (!t || !t.mt5Ticket || tDay(t) !== w.day) return false;          // unticketed ones had their chance above
+              const v = slOf({ t: t }); if (!(v > 0) || Math.abs(v - pSl) > 0.6) return false;
+              const cur = rowByTicket[String(t.mt5Ticket)];
+              const curSl = cur ? parseFloat(cur.sl_pips) : NaN;
+              return !(curSl > 0) || Math.abs(curSl - v) > 1.2;                   // current pairing clearly worse
+            });
+            if (cands.length !== 1) return;
+            cands[0].mt5Ticket = ptk;
+            if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
+            if (data.mt5ImportedTickets.indexOf(ptk) < 0) data.mt5ImportedTickets.push(ptk);
+            changed++; dbg.stamped++;
+          });
+        } catch (e) {}
+        // Recent-days view of the LOG side: each trade as the matcher sees it (result,
+        // ticket tail if any, derived SL fingerprint) - exposes a wrong ticket, a missing
+        // fingerprint, or a date mismatch at a glance.
+        try {
+          const _days = {};
+          inboxRows.forEach(r => { const w = rowWhen(r); if (w) _days[w.day] = 1; });
+          dbg.recent = Object.keys(_days).sort().slice(-3).map(day => {
+            const list = allT.filter(t => t && tDay(t) === day).map(t => {
+              const v = slOf({ t: t });
+              return (t.result || '?') + (t.mt5Ticket ? '#' + String(t.mt5Ticket).slice(-4) : '') + ' sl' + ((v > 0) ? (Math.round(v * 10) / 10) : '?');
+            });
+            return day.slice(5) + ':[' + (list.join(', ') || 'none') + ']';
+          }).join(' ');
+        } catch (e) {}
         dbg.linked = allT.filter(t => t && t.mt5Ticket).length;
       } catch (e) { try { dbg.err = String(e && e.message || e); } catch (_) {} }
 
