@@ -10786,9 +10786,54 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // after any account create / edit / archive / unarchive / delete.
     if (data.settings) data.settings.startingBalance = getEffectiveStartingBalance();
   }
+  // Cross-copy bias protector. Two full app instances can run at once (main window +
+  // the detached community window, or another device), and each saves the WHOLE journal
+  // from its own memory; the cloud reconcile likewise adopts one copy WHOLESALE by trade
+  // content - a measure that never counts the four bias fields. Either path can roll the
+  // morning bias back to a copy captured seconds before the last click, which is how a
+  // single field kept vanishing from the bias card while everything else survived.
+  // Every option click stamps bias.date, so per (session, symbol) slot the fresher side
+  // is knowable: overlay any slot from `other` that is TODAY-dated and strictly newer
+  // than base's. Restricting to today keeps yesterday's bias from resurrecting through
+  // the daily reset.
+  window.__stMergeFresherBias = function (base, other) {
+    try {
+      if (!base || !other || !Array.isArray(base.biasSlots) || !Array.isArray(other.biasSlots)) return;
+      var todayKey = new Date().toDateString();
+      var slotKey = function (s) { return (s.sessionName || '') + '||' + (s.symbol || ''); };
+      var byKey = {};
+      other.biasSlots.forEach(function (s) { if (s) byKey[slotKey(s)] = s; });
+      base.biasSlots.forEach(function (s, i) {
+        if (!s) return;
+        var o = byKey[slotKey(s)];
+        if (!o || !o.date) return;
+        var ot = Date.parse(o.date);
+        if (isNaN(ot) || new Date(ot).toDateString() !== todayKey) return;  // only today's edits may win
+        var bt = s.date ? Date.parse(s.date) : 0;
+        if (!isNaN(bt) && bt >= ot) return;                                 // base already as fresh
+        base.biasSlots[i] = o;                                              // adopt the fresher slot
+      });
+      if (typeof base.activeBiasSlot === 'number' && base.biasSlots[base.activeBiasSlot])
+        base.bias = base.biasSlots[base.activeBiasSlot];
+    } catch (e) {}
+  };
+  // Identifies THIS app instance, so saveData only pays the merge-check when a DIFFERENT
+  // instance (detached community window, second tab) wrote the journal since our last save.
+  const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   function saveData() {
     if (window.__MV) return;                  // mentor view is read-only — never persist
     syncTopLevelToActiveAccount();
+    try {
+      // Another instance saved since we last did: its copy may hold a bias click ours
+      // never saw. Fold any fresher today-dated bias slots in before overwriting, so a
+      // stale window saving a preference can no longer erase a field clicked elsewhere.
+      var lastTab = localStorage.getItem('st_last_write_tab');
+      if (lastTab && lastTab !== __ST_TAB_ID) {
+        var storedRaw = localStorage.getItem(STORAGE_KEY);
+        if (storedRaw) window.__stMergeFresherBias(data, JSON.parse(storedRaw));
+      }
+      localStorage.setItem('st_last_write_tab', __ST_TAB_ID);
+    } catch (e) {}
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
     } catch (e) {
@@ -11501,16 +11546,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const key = group.dataset.bias;
       group.querySelectorAll('.option').forEach(btn => {
         btn.addEventListener('click', () => {
-          // Selecting is idempotent: re-clicking the already-selected option keeps it.
-          // It used to CLEAR the field, but on these four required bias fields that only
-          // ever fired by accident - a stray re-tap, or a touch device emitting two clicks
-          // for a single tap - silently blanking a field, which then went missing from the
-          // morning-bias card and showed unselected after a reload. Switching to a different
-          // option still works; blank everything via the Reset button.
-          if (btn.classList.contains('selected')) return;
+          // Toggle behaviour (restored by user request): clicking the already-selected
+          // option deselects it; clicking a different option switches as normal. This was
+          // briefly made idempotent on the theory that stray re-taps were blanking a bias
+          // field - a field then went missing WITH the protection live, disproving that
+          // theory, so the toggle is back and the real cause is being chased elsewhere.
+          const wasSelected = btn.classList.contains('selected');
           group.querySelectorAll('.option').forEach(b => b.classList.remove('selected'));
-          btn.classList.add('selected');
-          data.bias[key] = btn.dataset.value;
+          if (wasSelected) {
+            data.bias[key] = null;
+          } else {
+            btn.classList.add('selected');
+            data.bias[key] = btn.dataset.value;
+          }
           data.bias.date = new Date().toISOString();
           recordBiasIfComplete();
           renderBiasPreview();
@@ -19673,7 +19721,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-22 13:10 UTC';
+  window.ST_BUILD = '2026-07-23 09:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -37701,6 +37749,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var cScore = contentScore(cloud), lScore = contentScore(local);
       if (cScore > lScore) {
         takeSnapshot('pre-sync', local);     // snapshot local before adopting the cloud copy
+        // Bias fields don't count toward contentScore, so adopting the cloud wholesale can
+        // roll today's bias back to a copy captured before the user's last click. Fold any
+        // fresher local bias slots into the adopted copy first.
+        try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
         // Adopt the cloud copy. Update the IN-MEMORY journal as well as storage, so a stray
         // save of the (stale, blank) in-memory copy can't clobber it in the instant before
         // the reload -- that race is what was wiping the pulled data on a fresh device.
@@ -37719,6 +37771,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // Adopt it in place (no trade-loss risk \u2014 content is identical) and repaint, rather
         // than pushing our stale copy up and clobbering it.
         takeSnapshot('pre-sync', local);
+        // Same bias protection as above: "equal content, cloud newer" is exactly the shape a
+        // stale second instance produces after saving a preference - don't let it take the
+        // morning bias back with it.
+        try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
         try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
         try { localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
         accStatus(tt('synced'));
@@ -37727,6 +37783,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       } else {
         // Local holds >= cloud content (and is not older): push local up, snapshotting cloud first.
         takeSnapshot('pre-sync', cloud);     // snapshot the cloud copy before overwriting it with local
+        // Symmetric bias protection: the cloud may carry a fresher bias click from another
+        // device/window - fold it into local (the live object) before pushing over it.
+        try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(local, cloud); } catch (e) {}
         cloudPush();
       }
     });
