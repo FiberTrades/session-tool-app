@@ -16331,6 +16331,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (trackedBeSim.length < 10) {
       recDTpl = (t('combo.rec_d_need_more') || 'Need 10+ trades replayed by the EA. You have {N}.')
         .replace('{N}', String(trackedBeSim.length));
+      // Diagnostic trail while the counter sits at ZERO: the backfill records what came
+      // down and why pairing failed, so the broken link names itself on the card instead
+      // of everyone guessing. Disappears the moment the first replayed trade lands.
+      if (trackedBeSim.length === 0 && window.__stPmDebug) {
+        const _d = window.__stPmDebug;
+        let _s = 'EA link: ' + _d.inbox + ' synced · ' + _d.pm + ' replayed (' + _d.pmBeSim + ' with BE sim) · ' + _d.linked + ' matched to your log';
+        if (_d.err) _s += ' · error: ' + _d.err;
+        (_d.days || []).forEach(dd => { _s += ' · ' + dd.day.split('|')[0] + ': ' + dd.rows + ' EA vs ' + dd.trades + ' logged, SL ' + dd.rowSl + ' vs ' + dd.tradeSl; });
+        recDTpl += ' <span style="opacity:.55;font-size:11px;">' + _s + '</span>';
+      }
     } else if (bestBeIdx < 0) {
       recDTpl = t('combo.rec_d_no_room') || 'Your current BE rule beats every alternative. Leave it alone.';
     } else {
@@ -19738,7 +19748,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 12:10 UTC';
+  window.ST_BUILD = '2026-07-23 12:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30318,6 +30328,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
       const isNum = (v) => typeof v === 'number' && !isNaN(v);
       let changed = 0;
+      // Diagnostic trail for the Edge Adjuster: every run records what came down and
+      // why each day's pairing did or didn't happen. Shown on the D card while its
+      // count is zero, so a broken link in the chain names itself instead of guessing.
+      const dbg = { at: new Date().toISOString(), inbox: 0, pm: rows.length,
+                    pmBeSim: rows.filter(r => r && Array.isArray(r.be_sim) && r.be_sim.length >= 7).length,
+                    stamped: 0, linked: 0, days: [] };
+      try { window.__stPmDebug = dbg; } catch (e) {}
 
       // ---- Ticket stamping for hand-logged trades --------------------------------
       // The replay attaches by mt5Ticket, which only MT5-IMPORTED trades carry. A
@@ -30367,51 +30384,69 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           const k = tDay(t) + '|' + (normSym(t.symbol) || defSym);
           if (groups[k]) groups[k].trades.push({ t: t, min: tMin(t) });
         });
+        dbg.inbox = inboxRows.length;
         const stampPair = (tt, r) => {
           tt.mt5Ticket = String(r.ticket);
           if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
           data.mt5ImportedTickets.push(String(r.ticket));                    // never re-offered by the import dialog
-          changed++;
+          changed++; dbg.stamped++;
         };
         Object.keys(groups).forEach(k => {
           const g = groups[k];
-          if (!g.rows.length || !g.trades.length) return;
-          if (g.rows.length === g.trades.length) {
-            // Counts agree: pair in time order (any direction conflict = whole day ambiguous).
-            g.rows.sort((a, b) => a.min - b.min);
-            g.trades.sort((a, b) => (a.min == null ? 1e9 : a.min) - (b.min == null ? 1e9 : b.min));
-            for (let i = 0; i < g.rows.length; i++) {
-              const rd = rowDir(g.rows[i].r), td = g.trades[i].t.side || '';
-              if (rd && td && rd !== td) return;
+          const before = dbg.stamped;
+          (function pairGroup() {
+            if (!g.rows.length || !g.trades.length) return;
+            if (g.rows.length === g.trades.length) {
+              // Counts agree: pair in time order (any direction conflict = whole day ambiguous).
+              g.rows.sort((a, b) => a.min - b.min);
+              g.trades.sort((a, b) => (a.min == null ? 1e9 : a.min) - (b.min == null ? 1e9 : b.min));
+              for (let i = 0; i < g.rows.length; i++) {
+                const rd = rowDir(g.rows[i].r), td = g.trades[i].t.side || '';
+                if (rd && td && rd !== td) return;
+              }
+              for (let i = 0; i < g.rows.length; i++) stampPair(g.trades[i].t, g.rows[i].r);
+              return;
             }
-            for (let i = 0; i < g.rows.length; i++) stampPair(g.trades[i].t, g.rows[i].r);
-            return;
+            // Counts differ - the normal state of any day with EA test orders, unlogged EA
+            // trades, or pre-sync history. Fall back to the SL-pips fingerprint: the stop
+            // size the member logged vs the one the EA measured (tolerance covers the spread
+            // re-measure). A trade stamps only when exactly ONE row fits it and that row
+            // fits NO other trade - anything ambiguous stays unstamped and simply waits.
+            const tol = 0.6;
+            const fits = (tt, rr) => {
+              const tSl = parseFloat(tt.t.sl), rSl = parseFloat(rr.r.sl_pips);
+              if (!(tSl > 0) || !(rSl > 0) || Math.abs(tSl - rSl) > tol) return false;
+              const rd = rowDir(rr.r), td = tt.t.side || '';
+              return !(rd && td && rd !== td);
+            };
+            g.trades.forEach(tt => {
+              if (tt.t.mt5Ticket) return;
+              const cands = g.rows.filter(rr => !rr._claimed && fits(tt, rr));
+              if (cands.length !== 1) return;
+              const rr = cands[0];
+              if (g.trades.some(x => x !== tt && !x.t.mt5Ticket && fits(x, rr))) return;  // unique both ways
+              rr._claimed = true;
+              stampPair(tt.t, rr.r);
+            });
+          })();
+          // A day that had material on both sides but paired nothing gets a trail entry
+          // with each side's SL fingerprints - the mismatch reads straight off the card.
+          if (dbg.stamped === before && g.rows.length && g.trades.length && dbg.days.length < 6) {
+            dbg.days.push({ day: k, rows: g.rows.length, trades: g.trades.length,
+              rowSl: g.rows.map(rr => (rr.r.sl_pips != null ? rr.r.sl_pips : '?')).join('/'),
+              tradeSl: g.trades.map(tt => (tt.t.sl != null && tt.t.sl !== '' ? tt.t.sl : '?')).join('/') });
           }
-          // Counts differ - the normal state of any day with EA test orders, unlogged EA
-          // trades, or pre-sync history. Fall back to the SL-pips fingerprint: the stop
-          // size the member logged vs the one the EA measured (tolerance covers the spread
-          // re-measure). A trade stamps only when exactly ONE row fits it and that row
-          // fits NO other trade - anything ambiguous stays unstamped and simply waits.
-          const tol = 0.6;
-          const fits = (tt, rr) => {
-            const tSl = parseFloat(tt.t.sl), rSl = parseFloat(rr.r.sl_pips);
-            if (!(tSl > 0) || !(rSl > 0) || Math.abs(tSl - rSl) > tol) return false;
-            const rd = rowDir(rr.r), td = tt.t.side || '';
-            return !(rd && td && rd !== td);
-          };
-          g.trades.forEach(tt => {
-            if (tt.t.mt5Ticket) return;
-            const cands = g.rows.filter(rr => !rr._claimed && fits(tt, rr));
-            if (cands.length !== 1) return;
-            const rr = cands[0];
-            if (g.trades.some(x => x !== tt && !x.t.mt5Ticket && fits(x, rr))) return;  // unique both ways
-            rr._claimed = true;
-            stampPair(tt.t, rr.r);
-          });
         });
-      } catch (e) {}
+        dbg.linked = allT.filter(t => t && t.mt5Ticket).length;
+      } catch (e) { try { dbg.err = String(e && e.message || e); } catch (_) {} }
 
-      if (!rows.length) { if (changed) saveData(); return; }
+      if (!rows.length) {
+        if (changed) saveData();
+        // Zero replay rows is the most important state for the diagnostic trail - repaint
+        // the stats page so the Edge Adjuster card can say so.
+        try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
+        return;
+      }
 
       const fill = (t) => {
         if (!t || !t.mt5Ticket) return;
@@ -30447,6 +30482,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
         try { if (typeof renderStats  === 'function') renderStats();  } catch (e) {}
       }
+      // The stats page renders before this async run completes - repaint it either way
+      // so the Edge Adjuster's diagnostic trail (and any fresh numbers) show up.
+      try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
     }).catch(() => {});
   };
 
