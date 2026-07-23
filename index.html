@@ -19748,7 +19748,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 12:35 UTC';
+  window.ST_BUILD = '2026-07-23 12:50 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30385,6 +30385,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if (groups[k]) groups[k].trades.push({ t: t, min: tMin(t) });
         });
         dbg.inbox = inboxRows.length;
+        // A trade's stop size for fingerprinting. The SL field when filled - but this
+        // member logs the POT pair instead, and pot pips / pot R IS the stop size
+        // (5.4p / 2.25R = a 2.4-pip stop), so derive it when the SL box is blank.
+        const slOf = (tt) => {
+          const s = parseFloat(tt.t.sl); if (s > 0) return s;
+          const isBE = tt.t.result === 'BE';
+          const pr = parseFloat(isBE ? tt.t.bePotentialR : tt.t.potentialR);
+          const pp = parseFloat(isBE ? tt.t.bePotentialPips : tt.t.potentialPips);
+          if (pr > 0 && pp > 0) return pp / pr;
+          return NaN;
+        };
         const stampPair = (tt, r) => {
           tt.mt5Ticket = String(r.ticket);
           if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
@@ -30414,7 +30425,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             // fits NO other trade - anything ambiguous stays unstamped and simply waits.
             const tol = 0.6;
             const fits = (tt, rr) => {
-              const tSl = parseFloat(tt.t.sl), rSl = parseFloat(rr.r.sl_pips);
+              const tSl = slOf(tt), rSl = parseFloat(rr.r.sl_pips);
               if (!(tSl > 0) || !(rSl > 0) || Math.abs(tSl - rSl) > tol) return false;
               const rd = rowDir(rr.r), td = tt.t.side || '';
               return !(rd && td && rd !== td);
@@ -30434,7 +30445,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if (dbg.stamped === before && g.rows.length && g.trades.length && dbg.days.length < 6) {
             dbg.days.push({ day: k, rows: g.rows.length, trades: g.trades.length,
               rowSl: g.rows.map(rr => (rr.r.sl_pips != null ? rr.r.sl_pips : '?')).join('/'),
-              tradeSl: g.trades.map(tt => (tt.t.sl != null && tt.t.sl !== '' ? tt.t.sl : '?')).join('/') });
+              // Show the value the matcher actually compares: the SL field, or the stop
+              // size derived from the POT pair, or '?' when neither exists.
+              tradeSl: g.trades.map(tt => { const v = slOf(tt); return (v > 0) ? (Math.round(v * 10) / 10) : '?'; }).join('/') });
           }
         });
         dbg.linked = allT.filter(t => t && t.mt5Ticket).length;
