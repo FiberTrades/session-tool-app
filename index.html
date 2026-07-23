@@ -8934,6 +8934,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const we = document.getElementById('meta-input-we').value || '10:00';
         data.settings.windowStart = ws;
         data.settings.windowEnd = we;
+        // Mirror into sessions[0] - the store the open/close alerts and live-session logic
+        // actually read. This editor used to write only the legacy fields, so the header
+        // and Settings showed the new times while the close chime kept firing on the old
+        // ones (a member updated 8-10 to 9-11 here and still got the chime at 10:00).
+        if (Array.isArray(data.settings.sessions) && data.settings.sessions[0]) {
+          data.settings.sessions[0].start = ws; data.settings.sessions[0].end = we;
+        }
       } else {
         const v = (document.getElementById(`meta-input-${field}`).value || '').trim();
         if (!v) return; // empty — keep input open
@@ -8948,15 +8955,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           data.settings[field] = v;
           data.settings.windowStart = parsed.start;
           data.settings.windowEnd   = parsed.end;
+          // Same mirror as the window editor above: alerts read sessions[0], not the
+          // legacy fields, so a rename-with-times must retime the real store too.
+          if (Array.isArray(data.settings.sessions) && data.settings.sessions[0]) {
+            data.settings.sessions[0].start = parsed.start; data.settings.sessions[0].end = parsed.end;
+          }
         } else {
           data.settings[field] = v;
         }
       }
       // Editing the session window or name re-arms the live banner: clear today's
-      // dismiss flag so the (possibly re-timed) session shows its banner again.
+      // dismiss flag so the (possibly re-timed) session shows its banner again. Also
+      // re-arm the once-per-day open/close alerts, exactly as the Settings dialog does,
+      // so the re-timed window can chime today instead of staying suppressed.
       if (field === 'window' || field === 'sessionName') {
         data._sessionLiveDismissed = null;
         data._sessionEndedEarly = null;
+        data._sessionAlertFired = null;
+        data._lastSessionStartAlert = null;
+        data._lastSessionEndAlert = null;
       }
       saveData();
       el.dataset.editing = '';
@@ -19721,7 +19738,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 11:45 UTC';
+  window.ST_BUILD = '2026-07-23 12:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -22317,6 +22334,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     data.settings.sessionName = v;
     data.settings.windowStart = parsed.start;
     data.settings.windowEnd   = parsed.end;
+    // Keep sessions[0] - the store alerts actually read - in step with the legacy fields.
+    if (Array.isArray(data.settings.sessions) && data.settings.sessions[0]) {
+      data.settings.sessions[0].start = parsed.start; data.settings.sessions[0].end = parsed.end;
+    }
     data._sessionPrompted = true;
     data._sessionLiveDismissed = null;
     saveData();
@@ -22646,6 +22667,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     data.settings.sessionName = sessV;
     data.settings.windowStart = parsed.start;
     data.settings.windowEnd = parsed.end;
+    // Keep sessions[0] - the store alerts actually read - in step with the legacy fields.
+    if (Array.isArray(data.settings.sessions) && data.settings.sessions[0]) {
+      data.settings.sessions[0].start = parsed.start; data.settings.sessions[0].end = parsed.end;
+    }
     data._sessionPrompted = true;
 
     // 4) Risk rules — optional. Write to active account (settings fallback).
@@ -31197,11 +31222,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const stored = (data.settings && data.settings.sessionName) || '';
         const split = splitSessionLabel(stored);
         sessSel.value = split.name;
-        // Pre-fill the time pickers from data.settings.windowStart / windowEnd (these are
-        // the parsed HH:MM values, which time inputs accept natively). Fall back to a
-        // sensible default if either is missing.
-        startInp.value = (data.settings && data.settings.windowStart) || '08:00';
-        endInp.value   = (data.settings && data.settings.windowEnd)   || '10:00';
+        // Pre-fill the time pickers from sessions[0] FIRST - that is the store the
+        // open/close alerts and live-session logic actually read - falling back to the
+        // legacy windowStart/windowEnd. Pre-filling from the legacy fields hid a
+        // desync: the dialog showed the times the header editor had written while the
+        // chime kept firing on sessions[0]'s old ones.
+        const s0 = (data.settings && Array.isArray(data.settings.sessions)) ? data.settings.sessions[0] : null;
+        startInp.value = (s0 && s0.start) || (data.settings && data.settings.windowStart) || '08:00';
+        endInp.value   = (s0 && s0.end)   || (data.settings && data.settings.windowEnd)   || '10:00';
         updateSessionHintLive();
       }
       // Session 2 (optional) — populate from data.settings.sessions[1], or hide.
