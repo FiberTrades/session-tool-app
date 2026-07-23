@@ -19750,7 +19750,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 13:25 UTC';
+  window.ST_BUILD = '2026-07-23 13:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30350,7 +30350,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // migration), so shift before comparing days.
       try {
         const inboxRows = ((inboxRes && inboxRes.data) || rows).filter(r => r && r.ticket != null);
-        const claimed = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets() : new Set();
         const normSym = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
         const defSym = normSym((data.settings && data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || '');
         const rowDir = r => { const d = String(r.direction || '').toLowerCase(); return (d.indexOf('sell') === 0 || d.indexOf('short') === 0) ? 'Short' : ((d.indexOf('buy') === 0 || d.indexOf('long') === 0) ? 'Long' : ''); };
@@ -30374,6 +30373,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         (data.currentSeries || []).forEach(t => allT.push(t));
         (data.history || []).forEach(sr => (sr.trades || []).forEach(t => allT.push(t)));
         (data.review && data.review.trades ? data.review.trades : []).forEach(t => allT.push(t));
+        // Only tickets a trade ACTUALLY WEARS block pairing. This used the
+        // mt5ImportedTickets ledger, whose real job is stopping the import dialog from
+        // re-offering rows - but the ledger is permanent, so a row whose stamp was later
+        // lost (trade re-created at session finalise, journal rolled back by a stale-copy
+        // sync, an imported duplicate deleted) could never pair again, even with its real
+        // trade sitting unticketed beside it. That is exactly how the user's replayed BE
+        // (row sl 2.4, trade fingerprint 2.4, same day, both unclaimed-in-truth) stayed
+        // orphaned: every 22 Jul row was ledger-claimed, the group was never created, and
+        // the failure printed no day-note because the trade had no group to join.
+        const claimed = new Set();
+        allT.forEach(t => { if (t && t.mt5Ticket) claimed.add(String(t.mt5Ticket)); });
         const groups = {};
         inboxRows.forEach(r => {
           if (claimed.has(String(r.ticket))) return;
