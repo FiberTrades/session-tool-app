@@ -19796,7 +19796,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 21:00 UTC';
+  window.ST_BUILD = '2026-07-23 21:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -23467,7 +23467,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'fuera de sesión. La operación "solo una más" es como los buenos sistemas se vuelven recuerdos.',
       'no es tu momento. Usa el hueco para estudiar, no para actuar.',
       'sesión cerrada para ti. Al gráfico le da igual — pero a tus estadísticas no.',
-      'hora equivocada. Hora correcta para repasar ayer o la sesión de esta mañana.',
+      'hora equivocada. Hora correcta para repasar ayer o {SREF}.',
       'fuera de tus horas. Las operaciones que tomas aquí son las que explicarás más tarde.',
       'no es tu ventana. El mercado está abierto para todos — tu ventaja no.',
       'fuera de horas. La disciplina es estar bien con no estar en la acción.',
@@ -23702,7 +23702,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     'off-session. The "just one more" trade is how good systems become memories.',
     'this is not your time. Use the gap to study, not to act.',
     'session\'s closed for you. The chart doesn\'t care — but your stats will.',
-    'wrong hour. Right hour for reviewing yesterday or this morning\'s session.',
+    'wrong hour. Right hour for reviewing yesterday or {SREF}.',
     'outside your hours. The trades you take here are the ones you\'ll explain away later.',
     'not your window. The market\'s open to everyone — your edge isn\'t.',
     'off-hours. The discipline is being okay with not being in the action.',
@@ -29768,6 +29768,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return _biasCoachLine(_dir, _es, (data.bias && data.bias.symbol) || 'x');
     } catch (e) { return null; }
   }
+  // Session-aware phrase for the {SREF} token in the out-of-session greeting. Reads the
+  // user's actual session window(s), so "reviewing yesterday or ___" completes correctly
+  // whenever it fires: before a session -> "planning today's session"; after a morning
+  // session -> "this morning's session"; after a later session -> "today's session".
+  function _sessionRef() {
+    var es = false; try { es = (window.__lang === 'es'); } catch (e) {}
+    try {
+      var ss = (typeof getSessions === 'function') ? getSessions() : [];
+      if (ss.length) {
+        var now = new Date(); var nowM = now.getHours() * 60 + now.getMinutes();
+        var toM = function (hhmm) { var a = String(hhmm || '').split(':'); return (parseInt(a[0], 10) || 0) * 60 + (parseInt(a[1], 10) || 0); };
+        var starts = ss.map(function (s) { return toM(s.start); });
+        var lastEnded = -1;
+        ss.forEach(function (s) { var e = toM(s.end); if (e <= nowM && e > lastEnded) lastEnded = e; });
+        var firstStart = Math.min.apply(null, starts);
+        if (lastEnded >= 0) {
+          if (lastEnded <= 12 * 60) return es ? 'la sesión de esta mañana' : 'this morning\'s session';
+          return es ? 'la sesión de hoy' : 'today\'s session';
+        }
+        if (nowM < firstStart) return es ? 'planear la sesión de hoy' : 'planning today\'s session';
+      }
+    } catch (e) {}
+    return es ? 'la sesión de hoy' : 'today\'s session';
+  }
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
     const mirrors = Array.from(document.querySelectorAll('[data-greeting-mirror]'));
@@ -29828,6 +29852,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!_cachedReviewOpener) _cachedReviewOpener = reviewOpener();
     const vocativePattern = /\b(mate|trader|night owl|owl|caffeinated|búho|colega)\b/i;
     const compose = (opener, tail) => {
+      tail = String(tail || '').replace('{SREF}', _sessionRef());   // session-aware phrase, no-op if absent
       const hasBuiltInVocative = vocativePattern.test(opener);
       if (hasBuiltInVocative) {
         return `${opener}. ${nameSpan}, ${tail}`;
@@ -33926,16 +33951,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
            thin border, matching hover highlight - so reactions on a message read as the
            same family as the shortcuts above it. Shared by channels and DMs (both use
            .dcx-react); the live-session chat has no reactions to restyle. */
-        '.dcx-react{display:inline-flex;align-items:center;gap:3px;background:#2b2d31;border:1px solid #3f4147;border-radius:8px;padding:2px 7px;font-size:17px;cursor:pointer;color:#dbdee1;line-height:1.25;}' +
-        '.dcx-react:hover{background:#3f4147;border-color:#54575f;}' +
+        /* Borderless: a soft fill box only, so a reaction reads lighter than the message
+           and doesn't compete with actual emoji glyphs. */
+        '.dcx-react{display:inline-flex;align-items:center;gap:3px;background:#2b2d31;border:1px solid transparent;border-radius:8px;padding:2px 7px;font-size:17px;cursor:pointer;color:#dbdee1;line-height:1.25;}' +
+        '.dcx-react:hover{background:#3f4147;}' +
         /* Add-reaction button that sits after the reaction chips, so anyone can pile on a
            reaction without hovering for the bar. Same box as a reaction chip, icon-only. */
-        '.dcx-react-add{display:inline-flex;align-items:center;justify-content:center;background:#2b2d31;border:1px solid #3f4147;border-radius:8px;padding:2px 6px;color:#b5bac1;cursor:pointer;line-height:0;}' +
-        '.dcx-react-add:hover{background:#3f4147;border-color:#54575f;color:#f2f3f5;}' +
+        '.dcx-react-add{display:inline-flex;align-items:center;justify-content:center;background:#2b2d31;border:1px solid transparent;border-radius:8px;padding:2px 6px;color:#b5bac1;cursor:pointer;line-height:0;}' +
+        '.dcx-react-add:hover{background:#3f4147;color:#f2f3f5;}' +
         /* The box already matches the chip height; enlarge the smiley itself so it fills
            the box like the emoji fills its chip, instead of looking dinky beside it. */
         '.dcx-react-add svg{width:21px;height:21px;display:block;}' +
-        '.dcx-react.mine{background:rgba(255,77,151,.16);border-color:#ff4d97;}' +
+        '.dcx-react.mine{background:rgba(255,77,151,.16);}' +
         '.dcx-react .rc{font-size:13px;font-weight:600;color:#b5bac1;}' +
         '.dcx-react.mine .rc{color:#ff8cbe;}' +
         '.dcx-react-pop{position:fixed;display:none;flex-wrap:wrap;gap:3px;width:312px;max-height:280px;overflow-y:auto;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:10px;padding:8px;z-index:12500;box-shadow:0 10px 30px rgba(0,0,0,.6);}' +
