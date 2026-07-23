@@ -19721,7 +19721,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-23 09:50 UTC';
+  window.ST_BUILD = '2026-07-23 10:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30282,15 +30282,72 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // process must never overwrite something a person decided.
   window.__stBackfillPostMortem = function () {
     if (!window.STCloud || typeof window.STCloud.pullPostMortem !== 'function') return;
-    Promise.resolve(window.STCloud.pullPostMortem()).then(res => {
+    const inboxP = (typeof window.STCloud.pullInbox === 'function')
+      ? Promise.resolve(window.STCloud.pullInbox()).catch(() => null)
+      : Promise.resolve(null);
+    Promise.all([inboxP, Promise.resolve(window.STCloud.pullPostMortem())]).then(([inboxRes, res]) => {
       const rows = (res && res.data) || [];
-      if (!rows.length) return;
 
       const byTicket = {};
       rows.forEach(r => { if (r && r.ticket != null) byTicket[String(r.ticket)] = r; });
 
       const isNum = (v) => typeof v === 'number' && !isNaN(v);
       let changed = 0;
+
+      // ---- Ticket stamping for hand-logged trades --------------------------------
+      // The replay attaches by mt5Ticket, which only MT5-IMPORTED trades carry. A
+      // hand-logged journal never gets one, so every replay row the EA pushed matched
+      // nothing and the Edge Adjuster's C/D sat at zero forever. Pair each unclaimed
+      // inbox row with the logged trade it clearly corresponds to: same day and symbol,
+      // paired in time order, and ONLY when that day's row count equals its unmatched
+      // trade count with no Long/Short conflict - an ambiguous day stamps nothing and
+      // simply waits (tomorrow's rows usually disambiguate it). EA close times run on
+      // broker time, ~2h ahead of the journal's convention (see the shiftTimeBy(-2)
+      // migration), so shift before comparing days.
+      try {
+        const inboxRows = ((inboxRes && inboxRes.data) || rows).filter(r => r && r.ticket != null);
+        const claimed = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets() : new Set();
+        const normSym = s => String(s || '').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+        const defSym = normSym((data.settings && data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || '');
+        const rowDir = r => { const d = String(r.direction || '').toLowerCase(); return (d.indexOf('sell') === 0 || d.indexOf('short') === 0) ? 'Short' : ((d.indexOf('buy') === 0 || d.indexOf('long') === 0) ? 'Long' : ''); };
+        const rowWhen = r => { const d = r.close_time ? new Date(r.close_time) : null; if (!d || isNaN(d.getTime())) return null; const s = new Date(d.getTime() - 2 * 3600e3); return { day: dateToIsoStr(s), min: s.getHours() * 60 + s.getMinutes() }; };
+        const tMin = t => { const m = String(t.exitTime || t.entryTime || '').match(/^(\d{1,2}):(\d{2})/); return m ? (+m[1]) * 60 + (+m[2]) : null; };
+        const tDay = t => String(t.date || '').slice(0, 10);
+        const allT = [];
+        (data.currentSeries || []).forEach(t => allT.push(t));
+        (data.history || []).forEach(sr => (sr.trades || []).forEach(t => allT.push(t)));
+        (data.review && data.review.trades ? data.review.trades : []).forEach(t => allT.push(t));
+        const groups = {};
+        inboxRows.forEach(r => {
+          if (claimed.has(String(r.ticket))) return;
+          const w = rowWhen(r); if (!w) return;
+          const k = w.day + '|' + (normSym(r.symbol) || defSym);
+          (groups[k] = groups[k] || { rows: [], trades: [] }).rows.push({ r: r, min: w.min });
+        });
+        allT.forEach(t => {
+          if (!t || t.mt5Ticket || !tDay(t)) return;
+          const k = tDay(t) + '|' + (normSym(t.symbol) || defSym);
+          if (groups[k]) groups[k].trades.push({ t: t, min: tMin(t) });
+        });
+        Object.keys(groups).forEach(k => {
+          const g = groups[k];
+          if (!g.rows.length || g.rows.length !== g.trades.length) return;   // counts must agree
+          g.rows.sort((a, b) => a.min - b.min);
+          g.trades.sort((a, b) => (a.min == null ? 1e9 : a.min) - (b.min == null ? 1e9 : b.min));
+          for (let i = 0; i < g.rows.length; i++) {                          // any conflict = whole day ambiguous
+            const rd = rowDir(g.rows[i].r), td = g.trades[i].t.side || '';
+            if (rd && td && rd !== td) return;
+          }
+          for (let i = 0; i < g.rows.length; i++) {
+            g.trades[i].t.mt5Ticket = String(g.rows[i].r.ticket);
+            if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
+            data.mt5ImportedTickets.push(String(g.rows[i].r.ticket));        // never re-offered by the import dialog
+            changed++;
+          }
+        });
+      } catch (e) {}
+
+      if (!rows.length) { if (changed) saveData(); return; }
 
       const fill = (t) => {
         if (!t || !t.mt5Ticket) return;
@@ -33494,6 +33551,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 '.dcx-cat-add,.dcx-cat-gear{opacity:1;}}' +
         '.dcx-more{background:#313338;border:1px solid #232428;border-radius:6px;color:#b5bac1;cursor:pointer;padding:3px 6px;line-height:0;}' +
         '.dcx-more:hover{color:#f2f3f5;background:#383a40;}' +
+        /* Quick-react emojis on message hover (Discord-style): same chip idiom as .dcx-more. */
+        '.dcx-qreact{background:#313338;border:1px solid #232428;border-radius:6px;cursor:pointer;padding:2px 5px;font-size:14px;line-height:1.25;transition:transform .08s;}' +
+        '.dcx-qreact:hover{background:#383a40;transform:scale(1.15);}' +
         '.dcx-note{font-size:12px;color:#949ba4;padding:0 16px 4px;min-height:14px;flex:none;}' +
         '.dcx-composer{flex:none;margin:0 16px 10px;background:#1f1f1f;border:1px solid #1f1f1f;border-radius:10px;display:flex;align-items:flex-end;gap:8px;padding:7px 10px;position:relative;transition:border-color .14s;}' +
         '.dcx-composer:focus-within{border-color:rgba(244,114,182,.38);}' +
@@ -33865,6 +33925,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       G('dcx-msgs').addEventListener('click', function(e){
         var ava=e.target.closest('.dcx-ava'); if(ava){ var arow=e.target.closest('.dcx-msg'); if(arow){ var am=msgs[idx(arow.getAttribute('data-mid'))]; if(am && am.sender_id!==(currentUser&&currentUser.id)) openMemberPopout(ava, am.sender_id, am.sender_name||'Trader'); } return; }
         var mc=e.target.closest('.dcx-mchan'); if(mc){ var cid=mc.getAttribute('data-ch'); for(var _i=0;_i<(channels||[]).length;_i++){ if(channels[_i].id===cid){ selectChannel(channels[_i]); break; } } return; }
+        var qk=e.target.closest('.dcx-qreact'); if(qk){ e.stopPropagation(); var qrow=e.target.closest('.dcx-msg'); var qmid=qrow&&qrow.getAttribute('data-mid'); if(qmid){ toggleReaction(qmid, qk.getAttribute('data-em')); try{ bumpEmoji(qk.getAttribute('data-em')); }catch(_){} } return; }
         var rk=e.target.closest('.dcx-react'); if(rk){ toggleReaction(rk.getAttribute('data-rmid'), rk.getAttribute('data-rem')); return; }
         var gref=e.target.closest('.dcx-reply-ref'); if(gref){ gotoMsg(gref.getAttribute('data-goto')); return; }
         var uf=e.target.closest('.dcx-unfurl'); if(uf){ e.preventDefault(); openInApp(uf.getAttribute('data-url')); return; }
@@ -34574,7 +34635,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function loadReactions(){ if(!cur) return; sb.from('channel_reactions').select('message_id,user_id,emoji').eq('channel_id',cur.id).then(function(r){ reactions={}; (r&&r.data||[]).forEach(function(x){ (reactions[x.message_id]=reactions[x.message_id]||[]).push({emoji:x.emoji,user_id:x.user_id}); }); repaint(); }).catch(function(){}); }
     function toggleReaction(mid, em){ if(!mid||!em||!currentUser||!cur) return; var arr=reactions[mid]||[]; var mine=arr.some(function(r){ return r.emoji===em&&r.user_id===currentUser.id; }); if(mine){ reactions[mid]=arr.filter(function(r){ return !(r.emoji===em&&r.user_id===currentUser.id); }); repaint(); sb.from('channel_reactions').delete().eq('message_id',mid).eq('user_id',currentUser.id).eq('emoji',em).then(function(){ loadReactions(); }); } else { (reactions[mid]=reactions[mid]||[]).push({emoji:em,user_id:currentUser.id}); bumpEmoji(em); repaint(); sb.from('channel_reactions').insert({ message_id:mid, channel_id:cur.id, user_id:currentUser.id, emoji:em }).then(function(){ loadReactions(); }).catch(function(){}); } }
     function openReactPicker(mid){ var pop=G('dcx-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='dcx-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var top=topEmojis(16); var h=''; if(top.length){ h+=top.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('')+'<div class="dcx-react-div"></div>'; } h+=REACT_EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); toggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; var r=_menuRect||{bottom:120,right:340}; pop.style.position='fixed'; pop.style.top=Math.min(r.bottom+6, window.innerHeight-292)+'px'; pop.style.left=Math.max(8, Math.min(r.right-312, window.innerWidth-322))+'px'; pop.classList.add('open'); }
-    function actions(m){ return '<div class="dcx-actions"><button class="dcx-more"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div>'; }
+    /* Discord-style hover bar: the hovering member's five most-used reaction emojis
+       (same st_emoji_freq list the pickers learn from), padded with defaults until they
+       have a history, then the existing options button. One click reacts, and the click
+       bumps the frequency so the five keep tracking real usage. */
+    function _quickEmojis(){
+      var out=[]; try{ out=(topEmojis(5)||[]).slice(0,5); }catch(e){}
+      var fill=['👍','🔥','😂','❤️','👀'];
+      for(var i=0;i<fill.length&&out.length<5;i++){ if(out.indexOf(fill[i])<0) out.push(fill[i]); }
+      return out;
+    }
+    function actions(m){ var q=_quickEmojis().map(function(em){ return '<button class="dcx-qreact" data-em="'+em+'">'+em+'</button>'; }).join(''); return '<div class="dcx-actions">'+q+'<button class="dcx-more"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div>'; }
     function fmtRow(m,grouped){ var name=m.sender_name||'Trader'; var rr=replyRefHtml(m); if(grouped) return '<div class="dcx-msg grouped" data-mid="'+esc(m.id)+'">'+actions(m)+'<div class="dcx-body">'+rr+bodyInner(m)+reactionsHtml(m.id)+'</div></div>'; return '<div class="dcx-msg" data-mid="'+esc(m.id)+'">'+actions(m)+avaHtml(m.sender_avatar,name,'dcx-ava')+'<div class="dcx-body">'+rr+'<div class="dcx-head"><span class="dcx-name"'+(nameColor(m.sender_id)?(' style="color:'+esc(nameColor(m.sender_id))+'"'):'')+'>'+esc(name)+(_isMentee(m.sender_id)?' \u{1F48E}':'')+'</span><span class="dcx-time">'+fmtTime(m.created_at)+'</span></div>'+bodyInner(m)+reactionsHtml(m.id)+'</div></div>'; }
     function repaint(){ var box=G('dcx-msgs'); if(!box) return;
       /* Same markup the channel-loading spinner uses, so the two waits look identical. */
@@ -35737,6 +35808,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var gq=G('stdm-gif-q'); gq.addEventListener('input', function(){ clearTimeout(_gifT); var v=gq.value.trim(); _gifT=setTimeout(function(){ gifLoad(v); },350); });
       var menu=G('stdm-menu');
       G('stdm-msgs').addEventListener('click', function(e){
+        var qk=e.target.closest('.dcx-qreact'); if(qk){ e.stopPropagation(); var qrow=e.target.closest('.dcx-msg'); var qmid=qrow&&qrow.getAttribute('data-mid'); if(qmid){ dmToggleReaction(qmid, qk.getAttribute('data-em')); try{ if(window.__stEmojiBump) window.__stEmojiBump(qk.getAttribute('data-em')); }catch(_){} } return; }
         var rk=e.target.closest('.dcx-react'); if(rk){ dmToggleReaction(rk.getAttribute('data-rmid'), rk.getAttribute('data-rem')); return; }
         var uf=e.target.closest('.dcx-unfurl'); if(uf){ e.preventDefault(); openInApp(uf.getAttribute('data-url')); return; }
         var lk=e.target.closest('.dcx-link'); if(lk&&lk.getAttribute('href')){ e.preventDefault(); openInApp(lk.getAttribute('href')); return; }
@@ -35806,7 +35878,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     function contentHtml(m){ var s=''; if(m.body) s+='<span class="dcx-text">'+linkify(m.body)+'</span>'; if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url){ var urls=(m.body.match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function bodyInner(m){ if(editingId===m.id) return '<textarea class="dcx-edit-ta" id="stdm-edit-input" spellcheck="true">'+esc(m.body||'')+'</textarea><div class="dcx-edit-actions"><button class="dcx-edit-save">Save</button><button class="dcx-edit-cancel">Cancel</button></div>'; return '<div class="dcx-content">'+dmReplyQuote(m)+contentHtml(m)+(m.edited_at?'<span class="dcx-edited">'+window._stT('(edited)','(editado)')+'</span>':'')+'</div>'+dmReactionsHtml(m.id); }
-    function actions(m){ return '<div class="dcx-actions"><button class="dcx-more"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div>'; }
+    /* Same Discord-style hover bar as the channel chat: five most-used emojis (shared
+       st_emoji_freq list, via the community module's exported tracker) + options. */
+    function _dmQuickEmojis(){
+      var out=[]; try{ out=((window.__stEmojiTop&&window.__stEmojiTop(5))||[]).slice(0,5); }catch(e){}
+      var fill=['👍','🔥','😂','❤️','👀'];
+      for(var i=0;i<fill.length&&out.length<5;i++){ if(out.indexOf(fill[i])<0) out.push(fill[i]); }
+      return out;
+    }
+    function actions(m){ var q=_dmQuickEmojis().map(function(em){ return '<button class="dcx-qreact" data-em="'+em+'">'+em+'</button>'; }).join(''); return '<div class="dcx-actions">'+q+'<button class="dcx-more"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div>'; }
     function fmtRow(m,grouped){ var name=m.sender_name||'Trader'; var nc=nameColor(m.sender_id); if(grouped) return '<div class="dcx-msg grouped" data-mid="'+esc(m.id)+'">'+actions(m)+'<div class="dcx-body">'+bodyInner(m)+'</div></div>'; return '<div class="dcx-msg" data-mid="'+esc(m.id)+'">'+actions(m)+avaHtml(m.sender_avatar,name,'dcx-ava')+'<div class="dcx-body"><div class="dcx-head"><span class="dcx-name"'+(nc?(' style="color:'+esc(nc)+'"'):'')+'>'+esc(name)+'</span><span class="dcx-time">'+fmtTime(m.created_at)+'</span></div>'+bodyInner(m)+'</div></div>'; }
     function repaint(){ var box=G('stdm-msgs'); if(!box) return; var _scab=(box.scrollHeight-box.scrollTop-box.clientHeight)<50, _scpt=box.scrollTop; if(!partner && !(ovA&&ovB)){ return; } if(!msgs.length){ box.innerHTML='<div class="stdm-welcome"><h2>'+esc(partner?partner.name:'Conversation')+'</h2><p>This is the beginning of your direct messages.</p></div>'; return; } var out='',ps=null,pt=0,pd=''; msgs.forEach(function(m){ var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) out+=STCommunity.dateSepHtml(m.created_at); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); out+=fmtRow(m,g); ps=m.sender_id; pt=t; }); box.innerHTML=out; if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; } try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){} }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
