@@ -4655,6 +4655,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <div id="settings-session-symbols-2" class="settings-session-symbols"></div>
         <button type="button" id="settings-session2-remove" class="settings-btn" data-i18n="settings.remove_session" style="margin-top:10px;">Remove session</button>
       </div>
+      <label class="settings-label" style="margin-top:22px;" data-i18n="settings.reopen_label">Session Live</label>
+      <p class="settings-hint" data-i18n="settings.reopen_hint">Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again — as often as you like (you must be inside your session Times above).</p>
+      <div class="settings-data-actions">
+        <button type="button" id="settings-reopen-session" class="settings-btn" data-i18n="settings.reopen_btn">Reopen session live</button>
+      </div>
     </div>
     <!-- RISK RULES section: trader-defined commitments that the app checks on
          every greeting. Three rules: max loss per day, max risk per trade,
@@ -5402,6 +5407,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'settings.mt5_token_copied': 'Copied', 'settings.sync_token_copied': 'Sync token copied',
       'settings.mt5_token_signin': 'Sign in to see your token',
       'settings.mt5_token_loading': 'Loading\u2026',
+      'settings.reopen_label': 'Session Live', 'settings.reopen_btn': 'Reopen session live',
+      'settings.reopen_hint': 'Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again \u2014 as often as you like (you must be inside your session Times above).',
+      'settings.reopen_done': 'Session Live reopened.', 'settings.reopen_outside': 'Reopened \u2014 but you\u2019re outside your session window. Set your session Times to include now.',
       'settings.mt5_factor_label': 'Copier size factor',
       'settings.mt5_factor_suffix': '\u00d7',
       'settings.mt5_sync_hint': 'Paste this token into the Minimalist Manager EA to auto-sync your closed trades. The size factor scales this account\u2019s money figures (risk, costs, P&L) when a trade fans out to a group \u2014 set it to match your copier (e.g. balance multiplier: follower balance \u00f7 lead balance). R and pips are never scaled.',
@@ -6757,6 +6765,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'settings.mt5_token_copied': 'Copiado', 'settings.sync_token_copied': 'Token de sincronización copiado',
       'settings.mt5_token_signin': 'Inicia sesi\u00f3n para ver tu token',
       'settings.mt5_token_loading': 'Cargando\u2026',
+      'settings.reopen_label': 'Sesi\u00f3n en vivo', 'settings.reopen_btn': 'Reabrir sesi\u00f3n en vivo',
+      'settings.reopen_hint': 'Al finalizar una sesi\u00f3n, la pantalla en vivo se oculta el resto del d\u00eda. Re\u00e1brela para volver a usar Sesi\u00f3n en Vivo \u2014 tantas veces como quieras (debes estar dentro de tus Horas de sesi\u00f3n de arriba).',
+      'settings.reopen_done': 'Sesi\u00f3n en vivo reabierta.', 'settings.reopen_outside': 'Reabierta \u2014 pero est\u00e1s fuera de tu ventana de sesi\u00f3n. Ajusta tus Horas para incluir la hora actual.',
       'settings.mt5_factor_label': 'Factor de tama\u00f1o del copiador',
       'settings.mt5_factor_suffix': '\u00d7',
       'settings.mt5_sync_hint': 'Pega este token en el EA Minimalist Manager para sincronizar autom\u00e1ticamente tus operaciones cerradas. El factor de tama\u00f1o escala las cifras de dinero de esta cuenta (riesgo, costes, P&L) cuando una operaci\u00f3n se reparte a un grupo \u2014  aj\u00fastalo a tu copiador (p.ej. multiplicador por saldo: saldo del seguidor \u00f7 saldo del l\u00edder). La R y los pips nunca se escalan.',
@@ -19803,7 +19814,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-24 14:30 UTC';
+  window.ST_BUILD = '2026-07-24 15:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31397,6 +31408,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             var done = function () { var o = _stTokBtn.textContent; _stTokBtn.textContent = ((typeof t === 'function') ? t('settings.mt5_token_copied') : 'Copied') || 'Copied'; setTimeout(function () { _stTokBtn.textContent = o; }, 1200); if (typeof showToast === 'function') showToast(((typeof t === 'function') ? t('settings.sync_token_copied') : '') || 'Sync token copied'); };
             if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done).catch(function () { window.prompt('Copy your token:', v); });
             else window.prompt('Copy your token:', v);
+          });
+        }
+      } catch (e) {}
+      // Reopen today's session live. Finishing a session flags it ended-early for the rest
+      // of the day (endedSessionsToday), which hides the live screen. Clearing that flag lets
+      // Session Live fire again as many times as wanted — provided the clock is still inside a
+      // session window (adjust Times above otherwise).
+      try {
+        var _reopenBtn = document.getElementById('settings-reopen-session');
+        if (_reopenBtn && !_reopenBtn._wired) {
+          _reopenBtn._wired = true;
+          _reopenBtn.addEventListener('click', function () {
+            try { data._sessionEndedEarly = null; } catch (e) {}
+            try { data._sessionLiveDismissed = null; } catch (e) {}
+            try { if (typeof saveData === 'function') saveData(); } catch (e) {}
+            try { if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (e) {}
+            var live = false; try { live = (typeof isSessionLive === 'function') && isSessionLive(); } catch (e) {}
+            var es = (document.documentElement.lang === 'es');
+            try { closeSettings(); } catch (e) {}
+            try { var _rt = document.querySelector('.tab[data-page="review"]'); if (_rt) _rt.click(); } catch (e) {}
+            try {
+              if (typeof showToast === 'function') {
+                var msg = (typeof t === 'function') ? t(live ? 'settings.reopen_done' : 'settings.reopen_outside') : '';
+                if (!msg || msg.indexOf('settings.reopen') === 0) msg = live ? (es ? 'Sesión en vivo reabierta.' : 'Session Live reopened.') : (es ? 'Reabierta — estás fuera de tu ventana de sesión.' : 'Reopened — but you’re outside your session window.');
+                showToast(msg);
+              }
+            } catch (e) {}
           });
         }
       } catch (e) {}
