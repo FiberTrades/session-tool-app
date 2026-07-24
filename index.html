@@ -6295,12 +6295,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // compact section replacing the older three cards. See renderCombinedAnalysis.
       'trades.s_combo.title': 'Trading Edge Adjuster',
       'combo.legend_title': 'How to read each row',
-      'combo.legend_html': '<span><b>Rule</b> — the change being tested (e.g. hold winners +2p longer).</span>'
-        + '<span><b>Projected total</b> — your whole trade history re-run under that rule, with its cash value in brackets.</span>'
-        + '<span><b>⬆ / ⬇</b> — how much more or less money than what you actually did (the Current row).</span>'
-        + '<span><b>Win rate</b> — wins ÷ (wins + losses) under the rule.</span>'
-        + '<span><b>Bars</b> — what you captured vs the move that was on offer; on “hold winners”, where the rule adds money (captured more) vs gives it back by scratching a winner to break-even (overheld to scratch).</span>'
-        + '<span><b>Badge</b> — how much to trust it, from the number of trades behind it (too few → strong).</span>',
+      'combo.legend_html': '<span><b>Projected total</b> — your net result across all trades if you followed this rule (in pips or R).</span>'
+        + '<span><b>(in brackets)</b> — that same projected result, in money.</span>'
+        + '<span><b>⬆ / ⬇</b> — the prize: how much more (or less) money the rule would have made you than you actually did.</span>'
+        + '<span><b>Win rate</b> — wins ÷ (wins + losses), break-evens excluded (same as your headline Win Rate).</span>',
       'tip.combo': 'Compares four alternative rules against your actual trades: (A) holding winners longer, (B) using a shorter TP, (C) widening your initial stop, and (D) changing when you move to breakeven. Replays your history under each rule and shows which is more profitable. C and D need the MT5 EA. It replays each trade from M1 bars to work out what price did AFTER you were out: how far a winner would have run, what stop a loser would have needed, and what each BE rule would have been worth. Only trades that close while the EA is running are replayed, so these build up over time rather than appearing on your existing history. Every option shows its GAIN and its COST, because each one has both: stretching a TP turns some winners into scratches, and a wider stop shrinks every position, since your risk is fixed. That is why a rule can rescue a pile of losers and still not be worth making. Tier badges show conviction (too few / early / building / strong) from sample size. The verdict only recommends a change if BOTH (1) the improvement exceeds 5% of your current P&L (with a £50 floor) AND (2) the option has at least “building” conviction (10+ tracked samples). Otherwise it tells you to stay the course.',
       'combo.trade_in_scope_one': 'trade in scope',
       'combo.trade_in_scope_many': 'trades in scope',
@@ -7671,12 +7669,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'combo.direction_a_name': 'Sostener ganadoras más',
       'combo.direction_b_name': 'Cerrar BEs antes',
       'combo.legend_title': 'Cómo leer cada fila',
-      'combo.legend_html': '<span><b>Regla</b> — el cambio que se está probando (p. ej. sostener ganadoras +2p más).</span>'
-        + '<span><b>Total proyectado</b> — todo tu historial recalculado con esa regla, con su valor en efectivo entre paréntesis.</span>'
-        + '<span><b>⬆ / ⬇</b> — cuánto más o menos dinero que lo que realmente hiciste (la fila Actual).</span>'
-        + '<span><b>Tasa de acierto</b> — ganadoras ÷ (ganadoras + perdedoras) con la regla.</span>'
-        + '<span><b>Barras</b> — lo que capturaste vs el movimiento disponible; en “sostener ganadoras”, dónde la regla añade dinero (capturado de más) vs lo devuelve al aguantar una ganadora hasta cero (aguantadas hasta cero).</span>'
-        + '<span><b>Insignia</b> — cuánto fiarte, según el número de operaciones detrás (muy pocas → fuerte).</span>',
+      'combo.legend_html': '<span><b>Total proyectado</b> — tu resultado neto en todas las operaciones si siguieras esta regla (en pips o R).</span>'
+        + '<span><b>(entre paréntesis)</b> — ese mismo resultado proyectado, en dinero.</span>'
+        + '<span><b>⬆ / ⬇</b> — el premio: cuánto más (o menos) dinero te habría hecho la regla frente a lo que hiciste.</span>'
+        + '<span><b>Tasa de acierto</b> — ganadoras ÷ (ganadoras + perdedoras), sin break-evens (igual que tu Tasa de Acierto principal).</span>',
       'combo.rec_a_need_more': 'Necesitas 10+ ganadoras con R · P Potencial registrado. Tienes {N}.',
       'combo.rec_a_no_room': 'Ninguna extensión supera al comportamiento actual. Tus salidas ya capturan la mayor parte del movimiento.',
       'combo.rec_a_recommend': 'Sostén cada ganadora <strong class="rec-suggest">+{STRETCH}</strong> más.',
@@ -15857,9 +15853,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       totalMetric += outcomeUnits;
 
-      if (net > 0)             winCount++;
-      else if (net < -0.0001)  loseCount++;
-      else                     beCount++;
+      // Classify by R-outcome, not net £, and copy-weight — so this matches the
+      // app's headline Win Rate exactly (wins ÷ (wins + losses), BEs excluded).
+      // A break-even nets slightly NEGATIVE after commission, so the old
+      // net>0 / net<0 test miscounted every BE as a loss, which dragged this
+      // figure far below the headline (e.g. 20% here vs a real 38% for a trader
+      // with lots of BEs). outcomeR === 0 is a BE (or a rule-scratched win) and
+      // is excluded from the win rate either way.
+      if (outcomeR > 0.0001)        winCount += copies;
+      else if (outcomeR < -0.0001)  loseCount += copies;
+      else                          beCount += copies;
     });
     const wrDenom = winCount + loseCount;
     const winRate = wrDenom > 0 ? (winCount / wrDenom) * 100 : 0;
@@ -16902,12 +16905,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         </span>
       </div>` : ''}
       ${showBaseline ? ('<div class="combo-legend"><div class="combo-legend-title">' + (t('combo.legend_title') || 'How to read each row') + '</div>' + (t('combo.legend_html') || (
-          '<span><b>Rule</b> — the change being tested (e.g. hold winners +2p longer).</span>'
-        + '<span><b>Projected total</b> — your whole trade history re-run under that rule, with its cash value in brackets.</span>'
-        + '<span><b>⬆ / ⬇</b> — how much more or less money than what you actually did (the Current row).</span>'
-        + '<span><b>Win rate</b> — wins ÷ (wins + losses) under the rule.</span>'
-        + '<span><b>Bars</b> — what you captured vs the move that was on offer; on “hold winners”, where the rule adds money (captured more) vs gives it back by scratching a winner to break-even (overheld to scratch).</span>'
-        + '<span><b>Badge</b> — how much to trust it, from the number of trades behind it (too few → strong).</span>'
+          '<span><b>Projected total</b> — your net result across all trades if you followed this rule (in pips or R).</span>'
+        + '<span><b>(in brackets)</b> — that same projected result, in money.</span>'
+        + '<span><b>⬆ / ⬇</b> — the prize: how much more (or less) money the rule would have made you than you actually did.</span>'
+        + '<span><b>Win rate</b> — wins ÷ (wins + losses), break-evens excluded (same as your headline Win Rate).</span>'
       )) + '</div>') : ''}
       ${directionAHtml}
       ${directionBHtml}
@@ -19945,7 +19946,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 18:30 UTC';
+  window.ST_BUILD = '2026-07-25 19:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
