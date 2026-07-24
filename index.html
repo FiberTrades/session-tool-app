@@ -11098,7 +11098,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       upsert: function (row) {
         if (!row || row.ticket == null) return;
         var k = String(row.ticket), ex = rows[k] || {};
-        rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false };
+        rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '' };
         render();
         try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (e) {}
       },
@@ -11107,8 +11107,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var el = document.getElementById('st-live-feed'); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
         if (deleteRemote && typeof window.__stLiveDeleteRemote === 'function') { try { window.__stLiveDeleteRemote(); } catch (e) {} }
       },
-      summary: function () {
-        var list = Object.keys(rows).map(function (k) { return rows[k]; });
+      summary: function (symFilter) {
+        // Optional symbol filter (for per-symbol / multi-bias greetings). Normalise both sides
+        // so the EA's "EURUSD" matches a bias slot's "EUR/USD".
+        var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+        var want = symFilter ? norm(symFilter) : null;
+        var list = Object.keys(rows).map(function (k) { return rows[k]; })
+          .filter(function (r) { return !want || norm(r.symbol) === want; });
         var s = { count: list.length, longs: 0, shorts: 0, wins: 0, losses: 0, bes: 0, resolved: 0 };
         list.forEach(function (r) {
           if (r.direction === 'long') s.longs++; else if (r.direction === 'short') s.shorts++;
@@ -19873,7 +19878,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 07:40 UTC';
+  window.ST_BUILD = '2026-07-25 08:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -29817,42 +29822,58 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   // Live-session greeting: number of trades taken, W/L/BE, and bias-vs-direction,
   // driven by the ephemeral live feed (the EA's open/close events). No journal coupling.
+  // Build one live-session summary sentence from a trade tally `s` and a bias object `bo`.
+  // perSymbol=true gives the compact head ("2 trades (1 won, 1 lost)") for a per-symbol line;
+  // false gives the full "you've taken \u2026 this session" head. Read tag + direction alignment +
+  // Observation nudge all read from `bo`, so each symbol reflects its OWN bias slot.
+  function _liveSummarySentence(s, bo, es, perSymbol) {
+    var parts = [];
+    var head;
+    if (perSymbol) head = es ? (s.count + ' ' + (s.count === 1 ? 'operaci\u00f3n' : 'operaciones'))
+                             : (s.count + ' ' + (s.count === 1 ? 'trade' : 'trades'));
+    else           head = es ? ('has tomado ' + s.count + ' ' + (s.count === 1 ? 'operaci\u00f3n' : 'operaciones') + ' esta sesi\u00f3n')
+                             : ('you\u2019ve taken ' + s.count + ' ' + (s.count === 1 ? 'trade' : 'trades') + ' this session');
+    if (s.wins || s.losses || s.bes) {
+      var seg = [];
+      if (s.wins)   seg.push(es ? (s.wins + ' ganada' + (s.wins > 1 ? 's' : '')) : (s.wins + ' won'));
+      if (s.losses) seg.push(es ? (s.losses + ' perdida' + (s.losses > 1 ? 's' : '')) : (s.losses + ' lost'));
+      if (s.bes)    seg.push(es ? (s.bes + ' en BE') : (s.bes + ' break-even'));
+      head += perSymbol ? (' (' + seg.join(', ') + ')') : (' \u2014 ' + seg.join(', '));
+    }
+    parts.push(head + '.');
+    try { var rt = _biasReadTag(es, bo || {}); if (rt) parts.push(rt); } catch (e) {}
+    var dir = (bo && bo.direction) || '';
+    var biasSide = dir === 'Bullish' ? 'long' : dir === 'Bearish' ? 'short' : '';
+    if (biasSide && s.count) {
+      var aligned = biasSide === 'long' ? s.longs : s.shorts;
+      var against = s.count - aligned;
+      var biasWord = es ? (biasSide === 'long' ? 'alcista' : 'bajista') : (biasSide === 'long' ? 'Long' : 'Short');
+      if (against === 0) parts.push(es ? ('Todas siguieron tu sesgo ' + biasWord + '.') : ('All in line with your ' + biasWord + ' bias.'));
+      else               parts.push(es ? (against + (against > 1 ? ' fueron' : ' fue') + ' en contra de tu sesgo ' + biasWord + '.')
+                                       : (against + ' went against your ' + biasWord + ' bias.'));
+    }
+    try { if ((bo && bo.mode) === 'Observation' && s.count) { parts.push(es ? 'Marcaste esta sesi\u00f3n como Observaci\u00f3n \u2014 aun as\u00ed entr\u00f3 una operaci\u00f3n. Sin juicios; solo nombra el porqu\u00e9, para que no se vuelva un h\u00e1bito.' : 'You marked this an Observation session \u2014 a trade still slipped in. No judgment; just name why, so it doesn\u2019t become a habit.'); } } catch (e) {}
+    return parts.join(' ');
+  }
   function _liveSessionGreetingTail() {
     try {
       if (!(window.__stLive && typeof window.__stLive.summary === 'function')) return null;
       if (!(typeof isSessionLive === 'function' && isSessionLive())) return null;
-      var s = window.__stLive.summary();
-      if (!s || !s.count) return null;
+      var sAll = window.__stLive.summary();
+      if (!sAll || !sAll.count) return null;
       var es = (document.documentElement.lang === 'es');
-      var parts = [];
-      var head = es ? ('has tomado ' + s.count + ' ' + (s.count === 1 ? 'operaci\u00f3n' : 'operaciones') + ' esta sesi\u00f3n')
-                    : ('you\u2019ve taken ' + s.count + ' ' + (s.count === 1 ? 'trade' : 'trades') + ' this session');
-      if (s.wins || s.losses || s.bes) {
-        var seg = [];
-        if (s.wins)   seg.push(es ? (s.wins + ' ganada' + (s.wins > 1 ? 's' : '')) : (s.wins + ' won'));
-        if (s.losses) seg.push(es ? (s.losses + ' perdida' + (s.losses > 1 ? 's' : '')) : (s.losses + ' lost'));
-        if (s.bes)    seg.push(es ? (s.bes + ' en BE') : (s.bes + ' break-even'));
-        head += ' \u2014 ' + seg.join(', ');
+      // Per-symbol / multi-bias: one line per live-session symbol that was actually traded, each
+      // matched to its own bias slot (its own read + direction). Single traded symbol -> that
+      // symbol's slot; nothing matched -> aggregate on the active bias.
+      var liveIdx = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1;
+      var liveSlots = (Array.isArray(data.biasSlots) ? data.biasSlots : []).filter(function (sl) { return sl && sl.sessionIdx === liveIdx && sl.symbol; });
+      var symLines = [];
+      liveSlots.forEach(function (sl) { var ss = window.__stLive.summary(sl.symbol); if (ss && ss.count) symLines.push({ sl: sl, ss: ss }); });
+      if (symLines.length > 1) {
+        return symLines.map(function (x) { return (x.sl.symbol || '') + ' \u2014 ' + _liveSummarySentence(x.ss, x.sl, es, true); }).join('<br>');
       }
-      parts.push(head + '.');
-      // Remind the read (structure + price location) alongside the trade tally, so the summary
-      // reflects the full bias and not just the direction alignment below.
-      try { var _rt = _biasReadTag(es, (data.bias || {})); if (_rt) parts.push(_rt); } catch (e) {}
-      var dir = (data.bias && data.bias.direction) || '';
-      var biasSide = dir === 'Bullish' ? 'long' : dir === 'Bearish' ? 'short' : '';
-      if (biasSide && s.count) {
-        var aligned = biasSide === 'long' ? s.longs : s.shorts;
-        var against = s.count - aligned;
-        var biasWord = es ? (biasSide === 'long' ? 'alcista' : 'bajista') : (biasSide === 'long' ? 'Long' : 'Short');
-        if (against === 0) {
-          parts.push(es ? ('Todas siguieron tu sesgo ' + biasWord + '.') : ('All in line with your ' + biasWord + ' bias.'));
-        } else {
-          parts.push(es ? (against + (against > 1 ? ' fueron' : ' fue') + ' en contra de tu sesgo ' + biasWord + '.')
-                        : (against + (against > 1 ? ' went' : ' went') + ' against your ' + biasWord + ' bias.'));
-        }
-      }
-      try { if ((data.bias && data.bias.mode) === 'Observation' && s.count) { parts.push(es ? 'Marcaste esta sesi\u00f3n como Observaci\u00f3n \u2014 aun as\u00ed entr\u00f3 una operaci\u00f3n. Sin juicios; solo nombra el porqu\u00e9, para que no se vuelva un h\u00e1bito.' : 'You marked this an Observation session \u2014 a trade still slipped in. No judgment; just name why, so it doesn\u2019t become a habit.'); } } catch(e){}
-      return parts.join(' ');
+      if (symLines.length === 1) return _liveSummarySentence(symLines[0].ss, symLines[0].sl, es, false);
+      return _liveSummarySentence(sAll, (data.bias || {}), es, false);
     } catch (e) { return null; }
   }
   function pickBiasAlignmentTail() {
