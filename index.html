@@ -19873,7 +19873,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 07:00 UTC';
+  window.ST_BUILD = '2026-07-25 07:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -29759,6 +29759,27 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // not applicable (not live, a trade is open/resolved today, or no bias engaged).
   // One coaching line for a single direction (no symbol prefix). keySuffix keeps the
   // anti-repeat memory separate per symbol so two symbols don't fight over one pool slot.
+  // Structure + price-location "read" as a short translated tag (or '' when both blank). Shared
+  // by the pre-trade coaching and the post-trade summary so both reflect the full bias.
+  function _biasReadTag(es, bo) {
+    bo = bo || (typeof data !== 'undefined' && data && data.bias) || {};
+    const VK = { 'Initiating': 'opt.initiating', 'Trending': 'opt.trending', 'Ranging': 'opt.ranging',
+      'Premium Edge': 'opt.premium_edge', 'Premium Middle': 'opt.premium_middle', '50%': 'opt.50',
+      'Discount Middle': 'opt.discount_middle', 'Discount Edge': 'opt.discount_edge', 'Breakout': 'opt.breakout' };
+    const lab = v => { const k = VK[v]; return (k && typeof t === 'function') ? t(k) : v; };
+    const sL = bo.structure ? lab(bo.structure) : '';
+    const lL = bo.location ? lab(bo.location) : '';
+    if (es) {
+      if (sL && lL) return 'Estructura: ' + sL + ', precio en ' + lL + '.';
+      if (sL) return 'Estructura: ' + sL + '.';
+      if (lL) return 'Precio en ' + lL + '.';
+    } else {
+      if (sL && lL) return sL + ' structure, price at ' + lL + '.';
+      if (sL) return sL + ' structure.';
+      if (lL) return 'Price at ' + lL + '.';
+    }
+    return '';
+  }
   function _biasCoachLine(dir, es, keySuffix, biasObj) {
     let _pool, _bucket;
     if (dir === 'Bullish' || dir === 'Bearish') {
@@ -29788,23 +29809,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const _line = _pool[pickWithAntiRepeat(_pool, _pk, _seed + ':' + _bucket)];
     // Weave in the structure + price-location read so the coaching reflects the full bias, not
     // just direction. Prepended as a short translated tag; omitted cleanly when either is blank.
-    const _bo = biasObj || (typeof data !== 'undefined' && data && data.bias) || {};
-    const _VK = { 'Initiating': 'opt.initiating', 'Trending': 'opt.trending', 'Ranging': 'opt.ranging',
-      'Premium Edge': 'opt.premium_edge', 'Premium Middle': 'opt.premium_middle', '50%': 'opt.50',
-      'Discount Middle': 'opt.discount_middle', 'Discount Edge': 'opt.discount_edge', 'Breakout': 'opt.breakout' };
-    const _lab = v => { const k = _VK[v]; return (k && typeof t === 'function') ? t(k) : v; };
-    const _sL = _bo.structure ? _lab(_bo.structure) : '';
-    const _lL = _bo.location ? _lab(_bo.location) : '';
-    let _ctx = '';
-    if (es) {
-      if (_sL && _lL) _ctx = 'Estructura: ' + _sL + ', precio en ' + _lL + '.';
-      else if (_sL) _ctx = 'Estructura: ' + _sL + '.';
-      else if (_lL) _ctx = 'Precio en ' + _lL + '.';
-    } else {
-      if (_sL && _lL) _ctx = _sL + ' structure, price at ' + _lL + '.';
-      else if (_sL) _ctx = _sL + ' structure.';
-      else if (_lL) _ctx = 'Price at ' + _lL + '.';
-    }
+    const _ctx = _biasReadTag(es, biasObj);
     // When a context clause precedes it, the direction line (which starts lowercase, e.g.
     // "you marked…") now follows a full stop — capitalise its first letter so it reads right.
     const _tail = _ctx ? (_line.charAt(0).toUpperCase() + _line.slice(1)) : _line;
@@ -29830,6 +29835,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         head += ' \u2014 ' + seg.join(', ');
       }
       parts.push(head + '.');
+      // Remind the read (structure + price location) alongside the trade tally, so the summary
+      // reflects the full bias and not just the direction alignment below.
+      try { var _rt = _biasReadTag(es, (data.bias || {})); if (_rt) parts.push(_rt); } catch (e) {}
       var dir = (data.bias && data.bias.direction) || '';
       var biasSide = dir === 'Bullish' ? 'long' : dir === 'Bearish' ? 'short' : '';
       if (biasSide && s.count) {
