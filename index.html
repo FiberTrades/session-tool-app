@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 02:00 UTC';
+  window.ST_BUILD = '2026-07-25 02:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30886,30 +30886,37 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let _autoSyncPromptedTickets = {};   // ticket -> true: already nudged this app session
   let _autoSyncToastOpen = false;      // a prompt is on screen — don't stack another
   function maybePromptAutoSync(reason) {
+    const L = m => { try { console.log('[autosync]', reason || '', m); } catch (e) {} };
     try {
-      if (_autoSyncPromptInFlight || _autoSyncToastOpen) return;
-      if (!data || !currentUser || !window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
+      if (_autoSyncPromptInFlight || _autoSyncToastOpen) { L('skip: busy/toast-open'); return; }
+      if (!data) { L('skip: no data'); return; }
+      if (!currentUser) { L('skip: no currentUser'); return; }
+      if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') { L('skip: no pullInbox'); return; }
       var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
-      if (__pl && __pl.loaded && !__pl.paid) return; // auto-sync nudge is Premium-only
-      if (typeof showUndoToast !== 'function') return;
+      L('plan=' + JSON.stringify(__pl));
+      if (__pl && __pl.loaded && !__pl.paid) { L('skip: not premium'); return; }
+      if (typeof showUndoToast !== 'function') { L('skip: no showUndoToast'); return; }
       _autoSyncPromptInFlight = true;
       Promise.resolve(window.STCloud.pullInbox()).then(res => {
         _autoSyncPromptInFlight = false;
-        if (!res || res.error) return;
+        if (!res || res.error) { L('skip: pull error ' + (res && res.error && (res.error.message || res.error))); return; }
         const rows = (res.data || []).filter(r => !r.consumed_at);   // ignore already-imported rows (match the import dialog)
-        if (!rows.length) return;
+        L('cloud rows total=' + ((res.data || []).length) + ' unconsumed=' + rows.length + ' tickets=' + rows.map(r => r.ticket).join(','));
+        if (!rows.length) { L('skip: no unconsumed rows'); return; }
         // Match the manual import: judge "already in your log" by what a logged trade actually
         // WEARS, not the imported-ledger (includeLedger=false). A trade the pairing step stranded
         // in the ledger — like the winner 153166053 — must still surface its prompt, otherwise the
         // manual button offers it while the auto-prompt silently skips it.
         const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets(false) : new Set();
         const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
-        if (!fresh.length) return;
+        L('fresh=' + fresh.length + ' tickets=' + fresh.map(r => r.ticket).join(',') + '  (worn=' + [...have].join(',') + ')');
+        if (!fresh.length) { L('skip: nothing fresh (all worn or invalid)'); return; }
         // Nudge once per unique waiting ticket (per app session), not once per day: a trade that
         // closes long AFTER the session ends still surfaces its prompt on its own, but dismissing
         // one is not re-nagged. A brand-new close brings a new ticket, so it prompts again.
         const notYet = fresh.filter(r => !_autoSyncPromptedTickets[String(r.ticket)]);
-        if (!notYet.length) return;
+        if (!notYet.length) { L('skip: all fresh already prompted this session'); return; }
+        L('SHOWING PROMPT for ' + fresh.length + ' trade(s)');
         fresh.forEach(r => { _autoSyncPromptedTickets[String(r.ticket)] = true; });
         const n = fresh.length;
         const msg = ((typeof t === 'function' ? t('mt5.sync_prompt') : '') || 'You have {n} synced trade(s) ready to import.').replace('{n}', n);
@@ -30921,6 +30928,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) { _autoSyncPromptInFlight = false; }
   }
   window.__stMaybePromptAutoSync = maybePromptAutoSync;
+  // Console test hook: window.__stAutoSyncNow() runs the prompt check immediately and logs each
+  // step to the console (prefixed [autosync]) so the exact skip reason is visible on demand,
+  // clearing the per-session dedup first so it re-prompts even if it already fired this session.
+  window.__stAutoSyncNow = function () { try { _autoSyncPromptedTickets = {}; _autoSyncToastOpen = false; _autoSyncPromptInFlight = false; } catch (e) {} maybePromptAutoSync('manual-test'); return 'running — check console for [autosync] lines'; };
   // Edge-trigger: fire once when the session flips from live -> not-live.
   let _prevSessionLive = null;
   function _maybeAutoSyncOnSessionEnd(live) {
