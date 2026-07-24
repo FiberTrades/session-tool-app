@@ -19878,7 +19878,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 11:55 UTC';
+  window.ST_BUILD = '2026-07-25 12:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34289,6 +34289,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.dcx-react-pop button:hover{background:#242424;}' +
         '.dcx-emoji-div{grid-column:1/-1;height:1px;background:#333;margin:4px 2px;}' +
         '.dcx-react-div{flex-basis:100%;height:1px;background:#333;margin:4px 2px;}' +
+        '.dcx-rtip{position:fixed;display:none;align-items:center;gap:9px;z-index:12600;background:#0a0a0a;border:1px solid #2a2a2a;border-radius:9px;padding:8px 12px;box-shadow:0 8px 26px rgba(0,0,0,.6);font-size:13px;color:#dbdee1;max-width:280px;pointer-events:none;}' +
+        '.dcx-rtip.open{display:flex;}' +
+        '.dcx-rtip .dcx-rtip-em{font-size:24px;line-height:1;flex:none;}' +
+        '.dcx-rtip .dcx-rtip-em img.st-emoji{width:24px;height:24px;vertical-align:middle;}' +
+        '.dcx-rtip .dcx-rtip-txt{line-height:1.35;}' +
         '.dcx-foot2{border-top:none;padding-top:0;}' +
         '.dcx-role-pill{display:inline-block;margin-left:6px;font-size:10px;font-weight:600;line-height:1;padding:2px 6px;border:1px solid;border-radius:10px;vertical-align:middle;}' +
         '.dcx-mpop-roles{display:flex;flex-wrap:wrap;gap:4px;padding:8px 10px;border-bottom:1px solid #333;}' +
@@ -34519,6 +34524,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if(setBtn) setBtn.addEventListener('click', function(){ openSettings(); });
       // message actions + media/edit delegation
       var menu=G('dcx-menu');
+      /* Reaction hover tooltip — who reacted with this emoji. */
+      G('dcx-msgs').addEventListener('mouseover', function(e){ var rk=e.target.closest&&e.target.closest('.dcx-react'); if(rk) showReactTip(rk); });
+      G('dcx-msgs').addEventListener('mouseout', function(e){ var rk=e.target.closest&&e.target.closest('.dcx-react'); if(!rk) return; var rel=e.relatedTarget; if(rel&&rel.closest&&rel.closest('.dcx-react')===rk) return; hideReactTip(); });
+      G('dcx-msgs').addEventListener('scroll', function(){ hideReactTip(); }, true);
       G('dcx-msgs').addEventListener('click', function(e){
         var ava=e.target.closest('.dcx-ava'); if(ava){ var arow=e.target.closest('.dcx-msg'); if(arow){ var am=msgs[idx(arow.getAttribute('data-mid'))]; if(am && am.sender_id!==(currentUser&&currentUser.id)) openMemberCard(am.sender_id, am.sender_name||'Trader'); } return; }
         var mc=e.target.closest('.dcx-mchan'); if(mc){ var cid=mc.getAttribute('data-ch'); for(var _i=0;_i<(channels||[]).length;_i++){ if(channels[_i].id===cid){ selectChannel(channels[_i]); break; } } return; }
@@ -35242,6 +35251,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try{ window.__stEmojis=REACT_EMOJIS; }catch(e){}
     function reactionsHtml(mid){ var arr=reactions[mid]; if(!arr||!arr.length) return ''; var by={},order=[]; arr.forEach(function(r){ if(!by[r.emoji]){ by[r.emoji]=[]; order.push(r.emoji); } by[r.emoji].push(r.user_id); }); var uid=currentUser&&currentUser.id; var h=''; order.forEach(function(em){ var us=by[em]; var mine=us.indexOf(uid)>=0; h+='<button class="dcx-react'+(mine?' mine':'')+'" data-rmid="'+esc(mid)+'" data-rem="'+esc(em)+'">'+em+'<span class="rc">'+us.length+'</span></button>'; }); var _add='<button class="dcx-react-add" data-radd="'+esc(mid)+'" title="'+window._stT('Add reaction','Añadir reacción')+'"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule="evenodd"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z M8.6 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M15.4 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M6.4 12.7c1.9 4.8 9.4 4.8 11.2 0-1.9 2.2-4 3.1-5.6 3.1s-3.7-.9-5.6-3.1Z"/></svg></button>'; return '<div class="dcx-reacts">'+h+_add+'</div>'; }
     function loadReactions(){ if(!cur) return; sb.from('channel_reactions').select('message_id,user_id,emoji').eq('channel_id',cur.id).then(function(r){ reactions={}; (r&&r.data||[]).forEach(function(x){ (reactions[x.message_id]=reactions[x.message_id]||[]).push({emoji:x.emoji,user_id:x.user_id}); }); repaint(); }).catch(function(){}); }
+    /* Reaction hover tooltip: who reacted with a given emoji. */
+    function _reactTipEl(){ var e=G('dcx-rtip'); if(!e){ e=document.createElement('div'); e.id='dcx-rtip'; e.className='dcx-rtip'; document.body.appendChild(e); } return e; }
+    function _reactorNames(mid, emoji){
+      return ((reactions&&reactions[mid])||[]).filter(function(x){ return x.emoji===emoji; }).map(function(x){
+        if(x.user_id===(currentUser&&currentUser.id)) return _esUI()?'Tú':'You';
+        var r=(typeof _rosterById==='function')?_rosterById(x.user_id):null;
+        return (r&&stripEmoji(r.name))||'Trader';
+      });
+    }
+    function _fmtReactors(names, es){ if(!names.length) return ''; if(names.length===1) return names[0]; var and=es?' y ':' and '; if(names.length===2) return names[0]+and+names[1]; return names.slice(0,-1).join(', ')+and+names[names.length-1]; }
+    function showReactTip(chip){
+      try{
+        var mid=chip.getAttribute('data-rmid'), em=chip.getAttribute('data-rem'); if(!mid||!em) return;
+        var names=_reactorNames(mid, em); if(!names.length) return;
+        var es=_esUI(); var who=_fmtReactors(names, es);
+        var emHtml=em; try{ if(window.__stTwemojiHTML) emHtml=window.__stTwemojiHTML(em); }catch(_){}
+        var txt=(es?'Reaccionado por ':'Reacted by ')+who;
+        var tip=_reactTipEl();
+        tip.innerHTML='<span class="dcx-rtip-em">'+emHtml+'</span><span class="dcx-rtip-txt">'+esc(txt)+'</span>';
+        tip.classList.add('open');
+        var r=chip.getBoundingClientRect(), tw=tip.offsetWidth, th=tip.offsetHeight;
+        var left=r.left+r.width/2-tw/2; if(left<8) left=8; if(left+tw>window.innerWidth-8) left=window.innerWidth-8-tw;
+        var top=r.top-th-8; if(top<8) top=r.bottom+8;   /* flip below if no room above */
+        tip.style.left=Math.round(left)+'px'; tip.style.top=Math.round(top)+'px';
+      }catch(_){}
+    }
+    function hideReactTip(){ var e=G('dcx-rtip'); if(e) e.classList.remove('open'); }
     function toggleReaction(mid, em){ if(!mid||!em||!currentUser||!cur) return; var arr=reactions[mid]||[]; var mine=arr.some(function(r){ return r.emoji===em&&r.user_id===currentUser.id; }); if(mine){ reactions[mid]=arr.filter(function(r){ return !(r.emoji===em&&r.user_id===currentUser.id); }); repaint(); sb.from('channel_reactions').delete().eq('message_id',mid).eq('user_id',currentUser.id).eq('emoji',em).then(function(){ loadReactions(); }); } else { (reactions[mid]=reactions[mid]||[]).push({emoji:em,user_id:currentUser.id}); bumpEmoji(em); repaint(); sb.from('channel_reactions').insert({ message_id:mid, channel_id:cur.id, user_id:currentUser.id, emoji:em }).then(function(){ loadReactions(); }).catch(function(){}); } }
     function openReactPicker(mid, openRight){ var pop=G('dcx-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='dcx-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var top=topEmojis(16); var h=''; if(top.length){ h+=top.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('')+'<div class="dcx-react-div"></div>'; } h+=REACT_EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); toggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; var r=_menuRect||{bottom:120,right:340}; pop.style.position='fixed'; pop.style.top=Math.min(r.bottom+6, window.innerHeight-292)+'px'; pop.style.left=(openRight?Math.max(8, Math.min((r.left!=null?r.left:(r.right-40)), window.innerWidth-322)):Math.max(8, Math.min(r.right-312, window.innerWidth-322)))+'px'; pop.classList.add('open'); pop.scrollTop=0; }
     /* Discord-style hover bar: the hovering member's five most-used reaction emojis
