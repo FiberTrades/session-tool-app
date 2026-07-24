@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-24 22:40 UTC';
+  window.ST_BUILD = '2026-07-24 23:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30860,15 +30860,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // if trades_inbox actually has unimported rows. Dismissable; the Import-from-MT5
   // button remains the always-available manual path.
   let _autoSyncPromptInFlight = false;
+  let _autoSyncPromptedTickets = {};   // ticket -> true: already nudged this app session
+  let _autoSyncToastOpen = false;      // a prompt is on screen — don't stack another
   function maybePromptAutoSync(reason) {
     try {
-      if (_autoSyncPromptInFlight) return;
-      if (!data || !window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
+      if (_autoSyncPromptInFlight || _autoSyncToastOpen) return;
+      if (!data || !currentUser || !window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
       var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
       if (__pl && __pl.loaded && !__pl.paid) return; // auto-sync nudge is Premium-only
       if (typeof showUndoToast !== 'function') return;
-      const todayKey = new Date().toISOString().slice(0, 10);
-      if (data._autoSyncPromptedDate === todayKey) return;   // at most once per day
       _autoSyncPromptInFlight = true;
       Promise.resolve(window.STCloud.pullInbox()).then(res => {
         _autoSyncPromptInFlight = false;
@@ -30878,15 +30878,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets() : new Set();
         const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
         if (!fresh.length) return;
-        data._autoSyncPromptedDate = todayKey;
-        try { saveData(); } catch (e) {}
+        // Nudge once per unique waiting ticket (per app session), not once per day: a trade that
+        // closes long AFTER the session ends still surfaces its prompt on its own, but dismissing
+        // one is not re-nagged. A brand-new close brings a new ticket, so it prompts again.
+        const notYet = fresh.filter(r => !_autoSyncPromptedTickets[String(r.ticket)]);
+        if (!notYet.length) return;
+        fresh.forEach(r => { _autoSyncPromptedTickets[String(r.ticket)] = true; });
         const n = fresh.length;
         const msg = ((typeof t === 'function' ? t('mt5.sync_prompt') : '') || 'You have {n} synced trade(s) ready to import.').replace('{n}', n);
         const label = (typeof t === 'function' ? t('mt5.sync_prompt_action') : '') || 'Import';
-        showUndoToast(msg, () => { try { openMt5Modal(); runMt5AutoSync(); } catch (e) {} }, 15000, label, 'rule');
+        _autoSyncToastOpen = true;
+        showUndoToast(msg, () => { _autoSyncToastOpen = false; try { openMt5Modal(); runMt5AutoSync(); } catch (e) {} }, 15000, label, 'rule');
+        setTimeout(function () { _autoSyncToastOpen = false; }, 15500);   // clear the latch after the toast's own lifetime
       }).catch(() => { _autoSyncPromptInFlight = false; });
     } catch (e) { _autoSyncPromptInFlight = false; }
   }
+  window.__stMaybePromptAutoSync = maybePromptAutoSync;
   // Edge-trigger: fire once when the session flips from live -> not-live.
   let _prevSessionLive = null;
   function _maybeAutoSyncOnSessionEnd(live) {
@@ -30895,6 +30902,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _prevSessionLive = live;
     } catch (e) {}
   }
+  // Poll the cloud inbox so a trade that closes AFTER the session ended (or while the app was
+  // shut) surfaces its one-tap Import prompt on its own — no need to open Session Review and
+  // hunt for the button. Cheap (one RLS-scoped read); the per-ticket guard stops any nagging.
+  // A quick first pass catches trades waiting at app open, then a slow poll catches later closes.
+  try {
+    setTimeout(function () { try { maybePromptAutoSync('startup'); } catch (e) {} }, 9000);
+    setInterval(function () { try { maybePromptAutoSync('poll'); } catch (e) {} }, 120000);
+  } catch (e) {}
 
   // ----- Render preview step -----
   function renderMt5Preview() {
