@@ -19837,18 +19837,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // Dispatcher: Google Translate → MyMemory (silent backup). Each returns
   // null on failure to signal the next fallback. If both fail it records the
   // failure and returns the original text so the copy never breaks.
+  // The free Google endpoints drop emoji at the START or END of a phrase (a Spanish line
+  // ending in an emoji came back translated but bare — same the other direction). Peel the
+  // leading + trailing emoji runs off, translate only the words, then reattach them. Because
+  // the emoji never reaches the translator, it can't be dropped and can't be duplicated.
+  const _TR_EMO_CLS = '[\\p{Extended_Pictographic}\\u{1F1E6}-\\u{1F1FF}\\u{1F3FB}-\\u{1F3FF}\\u{FE0F}\\u{200D}\\u{20E3}]';
+  const _TR_TRAIL_EMOJI = new RegExp('(?:\\s*' + _TR_EMO_CLS + ')+\\s*$', 'u');
+  const _TR_LEAD_EMOJI  = new RegExp('^\\s*(?:' + _TR_EMO_CLS + '\\s*)+', 'u');
   async function translateChunk(text, source, target) {
     if (!text || !text.trim()) return text;
     if (source === target) return text;
+    let lead = '', trail = '', core = text;
+    try {
+      const tm = core.match(_TR_TRAIL_EMOJI); if (tm) { trail = tm[0]; core = core.slice(0, core.length - trail.length); }
+      const lm = core.match(_TR_LEAD_EMOJI);  if (lm) { lead = lm[0];  core = core.slice(lead.length); }
+    } catch (e) { lead = ''; trail = ''; core = text; }
+    if (!core.trim()) return text;   // nothing but emoji/whitespace — leave it exactly as-is
     __trAttempted++;
-    const c = await gcxTranslateOnce(text, source, target);
-    if (c !== null) return c;
-    const g = await gtxTranslateOnce(text, source, target);
-    if (g !== null) return g;
-    const m = await mmTranslateOnce(text, source, target);
-    if (m !== null) return m;
+    const c = await gcxTranslateOnce(core, source, target);
+    if (c !== null) return lead + c + trail;
+    const g = await gtxTranslateOnce(core, source, target);
+    if (g !== null) return lead + g + trail;
+    const m = await mmTranslateOnce(core, source, target);
+    if (m !== null) return lead + m + trail;
     __trFailed++;
-    return text; // both methods failed — keep original so the copy still works
+    return text; // all methods failed — keep the whole original (emoji included)
   }
   // Exposed so the community module (a different inline script) can offer
   // per-message translation. Same free Google endpoint + MyMemory fallback the
@@ -19857,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-24 21:55 UTC';
+  window.ST_BUILD = '2026-07-24 22:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
