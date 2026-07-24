@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 04:30 UTC';
+  window.ST_BUILD = '2026-07-25 05:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30886,38 +30886,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let _autoSyncPromptedTickets = {};   // ticket -> true: already nudged this app session
   let _autoSyncToastOpen = false;      // a prompt is on screen — don't stack another
   function maybePromptAutoSync(reason) {
-    const L = m => { try { console.log('[autosync]', reason || '', m); } catch (e) {} };
     try {
-      if (_autoSyncPromptInFlight || _autoSyncToastOpen) { L('skip: busy/toast-open'); return; }
-      if (!data) { L('skip: no data'); return; }
+      if (_autoSyncPromptInFlight || _autoSyncToastOpen) return;
+      if (!data) return;
       // NB: do NOT guard on `currentUser` here — in this script scope that variable is not the
       // signed-in user (the cloud pull uses its own). Guarding on it silently killed every prompt.
-      if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') { L('skip: no pullInbox'); return; }
+      if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
       var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
-      L('plan=' + JSON.stringify(__pl));
-      if (__pl && __pl.loaded && !__pl.paid) { L('skip: not premium'); return; }
-      if (typeof showUndoToast !== 'function') { L('skip: no showUndoToast'); return; }
+      if (__pl && __pl.loaded && !__pl.paid) return; // auto-sync nudge is Premium-only
+      if (typeof showUndoToast !== 'function') return;
       _autoSyncPromptInFlight = true;
       Promise.resolve(window.STCloud.pullInbox()).then(res => {
         _autoSyncPromptInFlight = false;
-        if (!res || res.error) { L('skip: pull error ' + (res && res.error && (res.error.message || res.error))); return; }
+        if (!res || res.error) return;
         const rows = (res.data || []).filter(r => !r.consumed_at);   // ignore already-imported rows (match the import dialog)
-        L('cloud rows total=' + ((res.data || []).length) + ' unconsumed=' + rows.length + ' tickets=' + rows.map(r => r.ticket).join(','));
-        if (!rows.length) { L('skip: no unconsumed rows'); return; }
+        if (!rows.length) return;
         // Match the manual import: judge "already in your log" by what a logged trade actually
-        // WEARS, not the imported-ledger (includeLedger=false). A trade the pairing step stranded
-        // in the ledger — like the winner 153166053 — must still surface its prompt, otherwise the
-        // manual button offers it while the auto-prompt silently skips it.
+        // WEARS, not the imported-ledger (includeLedger=false), so a trade the pairing step
+        // stranded in the ledger still surfaces its prompt instead of being silently skipped.
         const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets(false) : new Set();
         const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
-        L('fresh=' + fresh.length + ' tickets=' + fresh.map(r => r.ticket).join(',') + '  (worn=' + [...have].join(',') + ')');
-        if (!fresh.length) { L('skip: nothing fresh (all worn or invalid)'); return; }
+        if (!fresh.length) return;
         // Nudge once per unique waiting ticket (per app session), not once per day: a trade that
         // closes long AFTER the session ends still surfaces its prompt on its own, but dismissing
         // one is not re-nagged. A brand-new close brings a new ticket, so it prompts again.
         const notYet = fresh.filter(r => !_autoSyncPromptedTickets[String(r.ticket)]);
-        if (!notYet.length) { L('skip: all fresh already prompted this session'); return; }
-        L('SHOWING PROMPT for ' + fresh.length + ' trade(s)');
+        if (!notYet.length) return;
         fresh.forEach(r => { _autoSyncPromptedTickets[String(r.ticket)] = true; });
         const n = fresh.length;
         const msg = ((typeof t === 'function' ? t('mt5.sync_prompt') : '') || 'You have {n} synced trade(s) ready to import.').replace('{n}', n);
@@ -30929,45 +30923,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) { _autoSyncPromptInFlight = false; }
   }
   window.__stMaybePromptAutoSync = maybePromptAutoSync;
-  // Console test hook: window.__stAutoSyncNow() runs the prompt check immediately and logs each
-  // step to the console (prefixed [autosync]) so the exact skip reason is visible on demand,
-  // clearing the per-session dedup first so it re-prompts even if it already fired this session.
-  window.__stAutoSyncNow = function () { try { _autoSyncPromptedTickets = {}; _autoSyncToastOpen = false; _autoSyncPromptInFlight = false; } catch (e) {} maybePromptAutoSync('manual-test'); return 'running — check console for [autosync] lines'; };
-  // Same diagnostic but shown in an alert box (no console needed). Reports whether the winner
-  // 153166053 is in the cloud and why the prompt would/wouldn't fire.
-  window.__stAutoSyncDiag = function () {
-    var show = function (text) {
-      try {
-        var d = document.getElementById('__st_diag_box') || document.createElement('div');
-        d.id = '__st_diag_box';
-        d.style.cssText = 'position:fixed;left:12px;top:12px;z-index:2147483647;background:#000;color:#0f0;font:13px/1.6 monospace;padding:16px 18px;border:2px solid #0f0;border-radius:8px;max-width:92vw;white-space:pre-wrap;box-shadow:0 8px 40px rgba(0,0,0,.8);';
-        d.textContent = text + '\n\n(tap this box to close)';
-        d.onclick = function () { d.remove(); };
-        document.body.appendChild(d);
-      } catch (e) {}
-    };
-    var out = [];
-    try {
-      out.push('build ' + (window.ST_BUILD || '?'));
-      out.push('data=' + !!(typeof data !== 'undefined' && data) + '  currentUser=' + !!(typeof currentUser !== 'undefined' && currentUser));
-      out.push('plan=' + JSON.stringify((typeof window.__stPlan === 'function') ? window.__stPlan() : null));
-      if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') { out.push('NO pullInbox'); show(out.join('\n')); return 'shown'; }
-      Promise.resolve(window.STCloud.pullInbox()).then(function (res) {
-        if (res && res.error) { out.push('pull error: ' + (res.error.message || res.error)); show(out.join('\n')); return; }
-        var allRows = (res && res.data) || [];
-        var rows = allRows.filter(function (r) { return !r.consumed_at; });
-        var have = _existingMt5Tickets(false);
-        var fresh = rows.filter(function (r) { return _mt5RowIsValid(r) && !have.has(String(r.ticket)); });
-        out.push('cloud total=' + allRows.length + '  unconsumed=' + rows.length + '  fresh=' + fresh.length);
-        out.push('fresh tickets=' + fresh.map(function (r) { return r.ticket; }).join(','));
-        var w = allRows.filter(function (r) { return String(r.ticket) === '153166053'; })[0];
-        out.push('--- 153166053 ---');
-        out.push(w ? ('in cloud=YES  consumed=' + !!w.consumed_at + '  valid=' + _mt5RowIsValid(w) + '  worn=' + have.has('153166053')) : 'in cloud=NO (not returned by pullInbox)');
-        show(out.join('\n'));
-      }).catch(function (e) { out.push('exception: ' + e); show(out.join('\n')); });
-    } catch (e) { out.push('outer exception: ' + e); show(out.join('\n')); }
-    return 'diagnostic box shown top-left of the page';
-  };
   // Edge-trigger: fire once when the session flips from live -> not-live.
   let _prevSessionLive = null;
   function _maybeAutoSyncOnSessionEnd(live) {
