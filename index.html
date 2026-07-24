@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-24 23:30 UTC';
+  window.ST_BUILD = '2026-07-25 00:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30806,7 +30806,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     t.exitTimeHHMM = t.closeDate ? hhmm(t.closeDate) : '';
     return t;
   }
-  function _existingMt5Tickets() {
+  // includeLedger=true (default): every ticket ever imported, used by the auto-PROMPT so it
+  // never nags about a trade you imported then deleted. includeLedger=false: only tickets a
+  // trade in the log ACTUALLY WEARS — used by the manual import so a ticket the pairing step
+  // marked "done" without a real entry (an orphaned/mis-paired winner) can still be pulled in.
+  function _existingMt5Tickets(includeLedger) {
+    if (includeLedger === undefined) includeLedger = true;
     const set = new Set();
     const add = (list) => { (list || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }); };
     try {
@@ -30819,8 +30824,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       (data.history || []).forEach(h => add(h && h.trades));
       // Local ledger: every ticket ever imported on this account. The journal copy can be
       // edited, moved or deleted, and the cloud "consumed" flag can fail to write - this
-      // list is what guarantees an already-imported trade is never offered again.
-      (data.mt5ImportedTickets || []).forEach(x => { if (x != null) set.add(String(x)); });
+      // list guards the auto-prompt. The manual import skips it (includeLedger=false) so a
+      // ticket stranded in the ledger — marked done but never actually logged — is recoverable.
+      if (includeLedger) (data.mt5ImportedTickets || []).forEach(x => { if (x != null) set.add(String(x)); });
     } catch (e) {}
     return set;
   }
@@ -30846,7 +30852,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (res && res.error) { setStatus((T('mt5.sync_error') || 'Sync error: ') + (res.error.message || res.error)); return; }
       const rows = ((res && res.data) || []).filter(r => !r.consumed_at);   // consumed rows stay for the replay, but are not re-offered
       if (!rows.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
-      const have = _existingMt5Tickets();
+      // Skip the ledger here: only tickets a logged trade actually wears count as "already in
+      // your log". A ticket the pairing step stranded in the ledger (marked done, never logged)
+      // must still be offered — otherwise an orphaned winner can never be imported.
+      const have = _existingMt5Tickets(false);
       const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
       if (!fresh.length) { setStatus(T('mt5.sync_all_imported') || 'All synced trades are already in your log.'); return; }
       _mt5ParsedTrades = fresh.map(_mt5RowToTrade).filter(x => x.position);
