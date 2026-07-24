@@ -4591,6 +4591,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <p class="settings-hint" id="admin-reload-status" style="margin-top:8px;"></p>
       </div>
 
+      <label class="settings-label" style="margin-top:24px;" data-i18n="settings.mt5_token_label">MT5 sync token</label>
+      <p class="settings-hint" data-i18n="mt5.token_hint">Paste into the Minimalist Manager EA to enable auto-sync. Reachable here even during a live session.</p>
+      <div style="display:flex;align-items:center;gap:8px;max-width:100%;">
+        <code id="mt5-token-display-s" style="flex:1 1 auto;min-width:0;font-family:'DM Mono',monospace;font-size:11px;color:var(--text-mid);word-break:break-all;background:var(--bg-elev);padding:6px 10px;border:1px solid var(--border-2);border-radius:var(--radius-ctrl);">&mdash;</code>
+        <button type="button" id="mt5-token-copy-s" class="settings-btn" style="flex:0 0 auto;" data-i18n="settings.mt5_token_copy">Copy</button>
+      </div>
+
       <label class="settings-label" style="margin-top:24px;" data-i18n="settings.data_label">Data</label>
       <p class="settings-hint" data-i18n="settings.data_hint">Import a previously saved backup, or configure automatic backups so you never lose your trades.</p>
       <div class="settings-data-actions">
@@ -19796,7 +19803,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-24 13:00 UTC';
+  window.ST_BUILD = '2026-07-24 14:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30010,15 +30017,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { return (window.STCloud && window.STCloud.syncToken) ? window.STCloud.syncToken : ''; } catch (e) { return ''; }
   }
   function paintMt5Token() {
-    var el = document.getElementById('mt5-token-display');
-    if (!el) return;
     var v = mt5SyncToken();
-    if (v) { el.textContent = v; return; }
     var signedIn = false;
     try { signedIn = !!(window.STCloud && window.STCloud.userId); } catch (e) {}
-    el.textContent = (typeof t === 'function')
+    var fallback = (typeof t === 'function')
       ? t(signedIn ? 'settings.mt5_token_loading' : 'settings.mt5_token_signin')
       : (signedIn ? 'Loading...' : 'Sign in to see your token');
+    // Two displays: the original inside the Calendar/Review auto-sync panel, and a copy in
+    // the Settings > Profile tab so the token is reachable during a live session too.
+    var ids = ['mt5-token-display', 'mt5-token-display-s'];
+    for (var i = 0; i < ids.length; i++) { var el = document.getElementById(ids[i]); if (el) el.textContent = v || fallback; }
   }
   try { window.__stPaintMt5Token = paintMt5Token; } catch (e) {}
 
@@ -31376,6 +31384,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const nameInp = document.getElementById('settings-profile-name');
       if (nameInp) nameInp.value = data.userName || '';
       try { if (window.__stEnsureAvatarUI) window.__stEnsureAvatarUI(); } catch (e) {}
+      // MT5 sync token in the Profile tab — reachable during a live session, unlike the
+      // Calendar/Review auto-sync panel that collapses while a session is running.
+      try {
+        if (window.__stPaintMt5Token) window.__stPaintMt5Token();
+        var _stTokBtn = document.getElementById('mt5-token-copy-s');
+        if (_stTokBtn && !_stTokBtn._wired) {
+          _stTokBtn._wired = true;
+          _stTokBtn.addEventListener('click', function () {
+            var v = ''; try { v = (window.STCloud && window.STCloud.syncToken) || ''; } catch (e) {}
+            if (!v) return;
+            var done = function () { var o = _stTokBtn.textContent; _stTokBtn.textContent = ((typeof t === 'function') ? t('settings.mt5_token_copied') : 'Copied') || 'Copied'; setTimeout(function () { _stTokBtn.textContent = o; }, 1200); if (typeof showToast === 'function') showToast(((typeof t === 'function') ? t('settings.sync_token_copied') : '') || 'Sync token copied'); };
+            if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(v).then(done).catch(function () { window.prompt('Copy your token:', v); });
+            else window.prompt('Copy your token:', v);
+          });
+        }
+      } catch (e) {}
       // Session: split the stored sessionName (e.g. "London 8-10AM") back into its
       // two parts. The session-name part is matched against the dropdown; anything
       // that isn't one of our four known sessions falls back to "London". The
