@@ -19878,7 +19878,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 08:20 UTC';
+  window.ST_BUILD = '2026-07-25 09:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -29785,6 +29785,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     return '';
   }
+  // Field-level coaching for the live greeting — the member's own playbook for each bias value.
+  function _modeCoach(mode, es) {
+    if (mode === 'Observation') return es ? 'Modo observación: solo mirar, sin entradas.' : 'Observation mode: watch only, no entries.';
+    if (mode === 'Execution')   return es ? 'Modo ejecución: listo para actuar en tu setup.' : 'Execution mode: ready to act on your setup.';
+    if (mode === 'Undecided')   return es ? 'Modo indeciso: sin compromiso aún — deja que la sesión te lo diga.' : 'Undecided mode: no commitment yet — let the session tell you.';
+    return '';
+  }
+  function _structureCoach(s, es) {
+    if (s === 'Initiating') return es ? 'Estructura de inicio: aquí está bien comprar arriba y vender abajo.' : 'Initiating structure: it’s OK to buy high and sell low here.';
+    if (s === 'Trending')   return es ? 'Estructura en tendencia: las mejores entradas son en la mitigación del 50% en un retroceso.' : 'Trending structure: best entries are at the 50% mitigation on a pullback.';
+    if (s === 'Ranging')    return es ? 'Estructura en rango: compra abajo, vende arriba.' : 'Ranging structure: buy low, sell high.';
+    return '';
+  }
+  function _locationCoach(loc, es) {
+    switch (loc) {
+      case 'Breakout':        return es ? 'Precio en rotura: no operes contra el gran movimiento — si acaso, únete en un retroceso.' : 'Price at a breakout: don’t fade the big move — if anything, join it on a pullback.';
+      case '50%':             return es ? 'Precio en 50%: quizá toca observar — no hagas nada hasta que el precio llegue a una mejor ubicación.' : 'Price at 50%: probably time to observe — do nothing until price reaches a better location.';
+      case 'Discount Edge':   return es ? 'Precio en el borde de descuento: busca una compra cuando se tome un nivel o se mitigue un POI.' : 'Price at discount edge: look for a buy once a level is taken or a POI is mitigated.';
+      case 'Premium Edge':    return es ? 'Precio en el borde premium: busca una venta cuando se tome un nivel o se mitigue un POI.' : 'Price at premium edge: look for a sell once a level is taken or a POI is mitigated.';
+      case 'Discount Middle': return es ? 'Precio en descuento medio: busca compras donde puedas dejar un stop seguro bajo un mínimo fuerte.' : 'Price at discount middle: look for buys where you can tuck a safe stop below a strong low.';
+      case 'Premium Middle':  return es ? 'Precio en premium medio: busca ventas donde puedas dejar un stop seguro sobre un máximo fuerte.' : 'Price at premium middle: look for sells where you can tuck a safe stop above a strong high.';
+    }
+    return '';
+  }
   function _biasCoachLine(dir, es, keySuffix, biasObj) {
     let _pool, _bucket;
     if (dir === 'Bullish' || dir === 'Bearish') {
@@ -29803,22 +29827,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _bucket = 'unsure';
       _pool = es ? [
         `marcaste el sesgo sin definir. Estar fuera es una posición — quieto hasta que el mercado se muestre.`,
-        `sin lectura clara aún. No hay setup en la confusión — espera a que se defina.`
+        `sin lectura clara aún. No hay setup en la confusión — espera a que se defina.`,
+        `no tienes clara la dirección — ¿qué te mantiene indeciso, y qué confirmaría el sentido para ti?`
       ] : [
         `you marked the bias unclear. Flat is a position — sit on your hands until the market shows its hand.`,
-        `no clear read yet. There's no setup in confusion — wait for it to decide.`
+        `no clear read yet. There's no setup in confusion — wait for it to decide.`,
+        `you're unsure on direction — what's keeping you unsure, and what would confirm it for you?`
       ];
     }
     const _seed = todayKey() + ':bias-align:' + _greetingNonce + ':' + keySuffix;
     const _pk = 'BIAS_ALIGN_' + _bucket + '_' + keySuffix + (es ? '_ES' : '');
     const _line = _pool[pickWithAntiRepeat(_pool, _pk, _seed + ':' + _bucket)];
-    // Weave in the structure + price-location read so the coaching reflects the full bias, not
-    // just direction. Prepended as a short translated tag; omitted cleanly when either is blank.
-    const _ctx = _biasReadTag(es, biasObj);
-    // When a context clause precedes it, the direction line (which starts lowercase, e.g.
-    // "you marked…") now follows a full stop — capitalise its first letter so it reads right.
-    const _tail = _ctx ? (_line.charAt(0).toUpperCase() + _line.slice(1)) : _line;
-    return (_ctx ? _ctx + ' ' : '') + _tail;
+    // Compose the full playbook for this session's read: mode note + structure rule + location
+    // rule + the direction line above. Each piece is skipped cleanly when its field is blank, so
+    // a bare direction still reads exactly as before.
+    const _bo = biasObj || (typeof data !== 'undefined' && data && data.bias) || {};
+    const _stack = [];
+    const _mc = _modeCoach(_bo.mode, es); if (_mc) _stack.push(_mc);
+    const _sc = _structureCoach(_bo.structure, es); if (_sc) _stack.push(_sc);
+    const _lc = _locationCoach(_bo.location, es); if (_lc) _stack.push(_lc);
+    // The direction line starts lowercase ("you marked…"); capitalise it (harmless when it's the
+    // sole line, since the outer greeting capitalises the first letter anyway).
+    _stack.push(_line.charAt(0).toUpperCase() + _line.slice(1));
+    return _stack.join(' ');
   }
   // Live-session greeting: number of trades taken, W/L/BE, and bias-vs-direction,
   // driven by the ephemeral live feed (the EA's open/close events). No journal coupling.
@@ -29849,8 +29880,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var against = s.count - aligned;
       var biasWord = es ? (biasSide === 'long' ? 'alcista' : 'bajista') : (biasSide === 'long' ? 'Long' : 'Short');
       if (against === 0) parts.push(es ? ('Todas siguieron tu sesgo ' + biasWord + '.') : ('All in line with your ' + biasWord + ' bias.'));
-      else               parts.push(es ? (against + (against > 1 ? ' fueron' : ' fue') + ' en contra de tu sesgo ' + biasWord + '.')
-                                       : (against + ' went against your ' + biasWord + ' bias.'));
+      else               parts.push(es ? (against + (against > 1 ? ' fueron' : ' fue') + ' en contra de tu sesgo ' + biasWord + ' — ¿qué te llevó al otro lado?')
+                                       : (against + ' went against your ' + biasWord + ' bias — what pulled you the other way?'));
+    } else if (dir === 'Unsure' && s.count) {
+      parts.push(es ? 'Operaste sin dirección clara — ¿qué te dio la confianza para entrar?' : 'You traded without a clear direction — what gave you the confidence to enter?');
     }
     try { if ((bo && bo.mode) === 'Observation' && s.count) { parts.push(es ? 'Marcaste esta sesi\u00f3n como Observaci\u00f3n \u2014 aun as\u00ed entr\u00f3 una operaci\u00f3n. Sin juicios; solo nombra el porqu\u00e9, para que no se vuelva un h\u00e1bito.' : 'You marked this an Observation session \u2014 a trade still slipped in. No judgment; just name why, so it doesn\u2019t become a habit.'); } } catch (e) {}
     return parts.join(' ');
