@@ -19878,7 +19878,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 11:10 UTC';
+  window.ST_BUILD = '2026-07-25 11:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -35269,10 +35269,39 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return '<div class="dcx-actions">'+q+'<span class="dcx-qdiv"></span>'+pick+midBtn+fwd+'<button class="dcx-more"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg></button></div>';
     }
     function fmtRow(m,grouped){ var name=m.sender_name||'Trader'; var rr=replyRefHtml(m); if(grouped) return '<div class="dcx-msg grouped" data-mid="'+esc(m.id)+'">'+actions(m)+'<div class="dcx-body">'+rr+bodyInner(m)+reactionsHtml(m.id)+'</div></div>'; return '<div class="dcx-msg" data-mid="'+esc(m.id)+'">'+actions(m)+avaHtml(m.sender_avatar,name,'dcx-ava')+'<div class="dcx-body">'+rr+'<div class="dcx-head"><span class="dcx-name"'+(nameColor(m.sender_id)?(' style="color:'+esc(nameColor(m.sender_id))+'"'):'')+'>'+esc(name)+(_isMentee(m.sender_id)?' \u{1F48E}':'')+'</span><span class="dcx-time">'+fmtTime(m.created_at)+'</span></div>'+bodyInner(m)+reactionsHtml(m.id)+'</div></div>'; }
+    /* Incremental reconcile: reuse unchanged message/separator DOM nodes across repaints so the
+       emoji transformer only re-processes rows that are genuinely new or changed - not the whole
+       list every time (that was the per-load cost). Each top-level child carries a data-key and a
+       __sig (its raw pre-emoji HTML). Reused nodes keep their __stTw flag, so the emoji observer
+       skips them. Returns false to ask the caller to full-rebuild instead. */
+    function _dcxReconcile(box, desired){
+      var byKey={};
+      Array.prototype.forEach.call(box.children, function(c){ var k=c.getAttribute&&c.getAttribute('data-key'); if(k) byKey[k]=c; });
+      var ordered=[];
+      for(var i=0;i<desired.length;i++){ var it=desired[i], el=byKey[it.k];
+        if(el && el.__sig===it.h){ ordered.push(el); }
+        else { var tmp=document.createElement('div'); tmp.innerHTML=it.h; var ne=tmp.firstElementChild; if(!ne) return false; ne.setAttribute('data-key', it.k); ne.__sig=it.h; ordered.push(ne); } }
+      /* Drop any child not in the new set (stale rows, old separators, welcome/loading placeholder). */
+      Array.prototype.slice.call(box.children).forEach(function(c){ if(ordered.indexOf(c)<0) box.removeChild(c); });
+      /* Move/insert each desired node into place; a node already in position costs nothing. */
+      var cur=box.firstChild;
+      for(var j=0;j<ordered.length;j++){ var e=ordered[j]; if(e===cur){ cur=cur?cur.nextSibling:null; } else { box.insertBefore(e, cur); } }
+      return true;
+    }
     function repaint(){ var box=G('dcx-msgs'); if(!box) return;
       /* Same markup the channel-loading spinner uses, so the two waits look identical. */
       if(_trSpin){ box.innerHTML='<div class="dcx-loading"><div class="dcx-load-logo"></div></div>'; return; }
-      var _scab=(box.scrollHeight-box.scrollTop-box.clientHeight)<50, _scpt=box.scrollTop; if(!msgs.length){ box.innerHTML='<div class="dcx-welcome"><h2>#'+esc(cur?_chName(cur):'')+'</h2><p>'+(_esUI()?('Este es el comienzo de #'+esc(cur?_chName(cur):'')+'. \u00a1Escribe algo!'):('This is the start of #'+esc(cur?_chName(cur):'')+'. Say something!'))+'</p></div>'; return; } var out='',ps=null,pt=0,pd='',_pl=null; msgs.forEach(function(m){ if(!_msgVisible(m)) return; var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) out+=STCommunity.dateSepHtml(m.created_at); } var lsid=m.live_session_id||null; if(lsid!==_pl){ _pl=lsid; ps=null; if(lsid) out+=liveSepHtml(m); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); out+=fmtRow(m,g); ps=m.sender_id; pt=t; }); box.innerHTML=out; if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; } try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){} }
+      var _scab=(box.scrollHeight-box.scrollTop-box.clientHeight)<50, _scpt=box.scrollTop;
+      if(!msgs.length){ box.innerHTML='<div class="dcx-welcome"><h2>#'+esc(cur?_chName(cur):'')+'</h2><p>'+(_esUI()?('Este es el comienzo de #'+esc(cur?_chName(cur):'')+'. \u00a1Escribe algo!'):('This is the start of #'+esc(cur?_chName(cur):'')+'. Say something!'))+'</p></div>'; return; }
+      var desired=[],ps=null,pt=0,pd='',_pl=null;
+      msgs.forEach(function(m){ if(!_msgVisible(m)) return; var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) desired.push({k:'d:'+dk, h:STCommunity.dateSepHtml(m.created_at)}); } var lsid=m.live_session_id||null; if(lsid!==_pl){ _pl=lsid; ps=null; if(lsid) desired.push({k:'l:'+lsid, h:liveSepHtml(m)}); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); desired.push({k:'m:'+m.id, h:fmtRow(m,g)}); ps=m.sender_id; pt=t; });
+      var _ok=false; try{ _ok=_dcxReconcile(box, desired); }catch(e){ _ok=false; }
+      /* Safety net: if the incremental result doesn't exactly match the desired order, full-rebuild
+         so the output is always correct - worst case is simply the old behaviour. */
+      if(_ok){ if(box.children.length!==desired.length){ _ok=false; } else { for(var _v=0;_v<desired.length;_v++){ if(box.children[_v].getAttribute('data-key')!==desired[_v].k){ _ok=false; break; } } } }
+      if(!_ok){ box.innerHTML=desired.map(function(it){ return it.h; }).join(''); }
+      if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; }
+      try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){} }
     function append(m){ if(seen[m.id]) return; seen[m.id]=true; msgs.push(m); repaint(); }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
     /* Spinner only appears if a load actually takes a moment (>250ms). Fast/cached
