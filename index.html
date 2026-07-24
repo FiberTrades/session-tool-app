@@ -15396,9 +15396,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
     }
     const rect = chart.getBoundingClientRect();
-    const W = rect.width || 760;
+    const containerW = rect.width || (wrap.getBoundingClientRect ? wrap.getBoundingClientRect().width : 0) || 760;
     const H = opts.height || 240;
     const PAD = { top: 16, right: 20, bottom: 28, left: 56 };
+    // Phone: in a narrow container, many trades get crushed into a few px each and the
+    // curve is unreadable. When that happens, widen the SVG beyond the container and let
+    // the wrap scroll horizontally so every trade is viewable by panning left/right.
+    // Desktop (wide container) keeps the fit-to-width curve, so nothing changes there.
+    const MIN_PT = 20;                                    // min px between trade points on phone
+    const _narrow = containerW > 0 && containerW < 560;
+    let W = containerW;
+    let scrollActive = false;
+    if (_narrow) {
+      const desiredW = PAD.left + PAD.right + Math.max(1, values.length - 1) * MIN_PT;
+      if (desiredW > containerW + 4) { W = desiredW; scrollActive = true; }
+    }
     const innerW = W - PAD.left - PAD.right;
     const innerH = H - PAD.top - PAD.bottom;
     const minV = Math.min(...values, offset);
@@ -15495,6 +15507,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <circle class="equity-hover-dot" r="4" fill="${lineColor}" stroke="var(--bg)" stroke-width="2" style="display:none"/>
       ${yLabels}
       <text x="${W - PAD.right}" y="${H - 6}" font-size="13" font-weight="700" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
+    // Phone horizontal-scroll layout (see W computation above): override the SVG's
+    // width:100% so it renders at its full intrinsic width and the wrap scrolls. On a
+    // wide/desktop container we clear these so the curve fits to width as before.
+    if (scrollActive) {
+      wrap.style.overflowX = 'auto';
+      wrap.style.overflowY = 'hidden';
+      wrap.style.webkitOverflowScrolling = 'touch';
+      chart.style.width = W + 'px';
+      chart.style.maxWidth = 'none';
+    } else {
+      wrap.style.overflowX = '';
+      wrap.style.overflowY = '';
+      chart.style.width = '';
+      chart.style.maxWidth = '';
+    }
     // --- Hover interaction: store latest geometry; wire listeners once ---
     chart._eq = { values, isR, x, y, PAD, W };
     if (!chart._eqWired) {
@@ -19900,7 +19927,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 15:40 UTC';
+  window.ST_BUILD = '2026-07-25 17:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
