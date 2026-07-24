@@ -8194,9 +8194,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // --- Multi-session helpers -------------------------------------------------
   // The user can configure up to 2 sessions (e.g. London + New York). All of the
   // live machinery (voice, banner, pill, tab label, rule reminders) keys off these.
+  // Drop any session whose window overlaps an earlier one. A duplicate/stale session (e.g. an
+  // old 8-10 lingering in the data next to a re-timed 9-11 — which can happen when a stale
+  // cloud copy folds back in) would otherwise fire its OWN open/close voice, so the user hears
+  // a "session end" at 10:00 as well as at 11:00 even though Settings shows a single 9-11 window.
+  // Non-destructive: this only filters what the alerts/live logic read, never the stored array,
+  // so a genuine second session (e.g. London + New York, which never overlap) is untouched.
+  function _dedupeSessions(arr) {
+    var toMin = t => { var p = String(t).split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); };
+    var kept = [];
+    for (var i = 0; i < arr.length; i++) {
+      var a = toMin(arr[i].start), b = toMin(arr[i].end), overlaps = false;
+      for (var j = 0; j < kept.length; j++) {
+        var ka = toMin(kept[j].start), kb = toMin(kept[j].end);
+        if (a < kb && ka < b) { overlaps = true; break; }   // windows intersect
+      }
+      if (!overlaps) kept.push(arr[i]);
+    }
+    return kept;
+  }
   function getSessions() {
     if (data && data.settings && Array.isArray(data.settings.sessions) && data.settings.sessions.length) {
-      return data.settings.sessions.filter(x => x && x.start && x.end);
+      return _dedupeSessions(data.settings.sessions.filter(x => x && x.start && x.end));
     }
     if (data && data.settings) return [{ name: 'London', start: data.settings.windowStart || '08:00', end: data.settings.windowEnd || '10:00' }];
     return [];
@@ -19838,7 +19857,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-24 20:15 UTC';
+  window.ST_BUILD = '2026-07-24 21:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
