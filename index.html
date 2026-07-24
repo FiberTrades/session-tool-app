@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 00:20 UTC';
+  window.ST_BUILD = '2026-07-25 01:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30850,14 +30850,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     setStatus(T('mt5.sync_pulling') || 'Pulling synced trades...');
     Promise.resolve(window.STCloud.pullInbox()).then(res => {
       if (res && res.error) { setStatus((T('mt5.sync_error') || 'Sync error: ') + (res.error.message || res.error)); return; }
-      const rows = ((res && res.data) || []).filter(r => !r.consumed_at);   // consumed rows stay for the replay, but are not re-offered
-      if (!rows.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
+      const all = (res && res.data) || [];
+      const rows = all.filter(r => !r.consumed_at);   // consumed rows stay for the replay, but are not re-offered
+      if (!all.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
       // Skip the ledger here: only tickets a logged trade actually wears count as "already in
       // your log". A ticket the pairing step stranded in the ledger (marked done, never logged)
       // must still be offered — otherwise an orphaned winner can never be imported.
       const have = _existingMt5Tickets(false);
+      const haveLedger = _existingMt5Tickets(true);
       const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
-      if (!fresh.length) { setStatus(T('mt5.sync_all_imported') || 'All synced trades are already in your log.'); return; }
+      if (!fresh.length) {
+        // Diagnostic: say exactly why each cloud row is excluded, so a stuck trade is explainable
+        // instead of a flat "already imported". consumed = cloud marked it done; worn = a logged
+        // trade already carries this ticket; no-data = the inbox row is missing symbol/price/pnl.
+        const why = r => { const tk = String(r.ticket == null ? '?' : r.ticket);
+          if (r.consumed_at) return tk + ':consumed';
+          if (!_mt5RowIsValid(r)) return tk + ':no-data';
+          if (have.has(tk)) return tk + ':worn-by-log';
+          if (haveLedger.has(tk)) return tk + ':ledger';
+          return tk + ':?'; };
+        setStatus((T('mt5.sync_all_imported') || 'All synced trades are already in your log.') + '  [' + all.map(why).join('  ') + ']');
+        return;
+      }
       _mt5ParsedTrades = fresh.map(_mt5RowToTrade).filter(x => x.position);
       _mt5MetaInfo = { sourceFileName: (T('mt5.sync_source') || 'MT5 auto-sync'), accountName: '', accountNumber: '' };
       renderMt5Preview();
