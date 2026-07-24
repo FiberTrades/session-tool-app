@@ -16060,11 +16060,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     const _compMetric = (metric === 'pips') ? 'r' : 'pips';
     const _comp = _sweepOptima(_compMetric);
-    // NOT one number in two units. The pip sweep and the R sweep are separate searches:
-    // "add 18 pips to every winner" and "add half an R to every winner" are different
-    // rules the moment your stops vary in size, so they optimise to different places.
-    // Joined with "or" - the middle dot is reserved for a true unit conversion.
-    function _dualStretch() { return _fmtUnit(optStretch, metric) + (_comp.optStretch > 0 ? ' or +' + _fmtUnit(_comp.optStretch, _compMetric) : ''); }
+    // ONE rule, shown in both units. Earlier this joined the pip-sweep optimum and the
+    // R-sweep optimum with "or", but those are two independent searches, so on varying
+    // (esp. tiny scalping) stops they land far apart - "+2p or +4.50R" reads like a
+    // contradiction. Instead take the single optimum in the user's active metric and
+    // CONVERT it into the other unit via their average stop size, so the pips and the R
+    // describe the same hold. _avgStop = mean stop distance in pips across logged trades
+    // (from the logged SL, else derived as pips / R for any trade that has both).
+    let _avgStop = 0, _avgStopN = 0;
+    (allTrades || []).forEach(function (tr) {
+      if (!tr) return;
+      let sl = parseFloat(tr.sl);
+      if (!(sl > 0)) { const p = parseFloat(tr.pips), rr = parseFloat(tr.r); if (p > 0 && rr > 0) sl = p / rr; }
+      if (sl > 0) { _avgStop += sl; _avgStopN++; }
+    });
+    _avgStop = _avgStopN ? (_avgStop / _avgStopN) : 0;
+    // pips <-> R using the average stop. metric='pips': R = pips / stop. metric='r': pips = R * stop.
+    function _convOther(v) {
+      if (!(_avgStop > 0)) return null;
+      return (metric === 'pips') ? (v / _avgStop) : (v * _avgStop);
+    }
+    function _dualBoth(v) {
+      const primary = _fmtUnit(v, metric);
+      if (v <= 0 || (metric !== 'pips' && metric !== 'r')) return primary;
+      const other = _convOther(v);
+      return (other != null) ? (primary + ' (≈ +' + _fmtUnit(other, _compMetric) + ')') : primary;
+    }
+    function _dualStretch() { return _dualBoth(optStretch); }
     // The CURRENT baseline in BOTH units. There is no reason to make you toggle a pill to
     // see a number that fits perfectly well beside its twin.
     function _dualCurrent() {
@@ -16076,7 +16098,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       } catch (e) {}
       return other ? (primary + ' \u00b7 ' + other) : primary;
     }
-    function _dualTP()      { return _fmtUnit(optTP,      metric) + (_comp.optTP      > 0 ? ' or +' + _fmtUnit(_comp.optTP,      _compMetric) : ''); }
+    function _dualTP()      { return _dualBoth(optTP); }
 
     // Tier conviction per direction
     // Tier conviction per direction. Bar for "act on this" is 10+ samples —
@@ -19878,7 +19900,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 14:00 UTC';
+  window.ST_BUILD = '2026-07-25 15:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
