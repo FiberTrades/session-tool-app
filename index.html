@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 02:45 UTC';
+  window.ST_BUILD = '2026-07-25 03:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30932,6 +30932,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // step to the console (prefixed [autosync]) so the exact skip reason is visible on demand,
   // clearing the per-session dedup first so it re-prompts even if it already fired this session.
   window.__stAutoSyncNow = function () { try { _autoSyncPromptedTickets = {}; _autoSyncToastOpen = false; _autoSyncPromptInFlight = false; } catch (e) {} maybePromptAutoSync('manual-test'); return 'running — check console for [autosync] lines'; };
+  // Same diagnostic but shown in an alert box (no console needed). Reports whether the winner
+  // 153166053 is in the cloud and why the prompt would/wouldn't fire.
+  window.__stAutoSyncDiag = function () {
+    var out = [];
+    try {
+      out.push('build ' + (window.ST_BUILD || '?'));
+      out.push('data=' + !!(typeof data !== 'undefined' && data) + '  currentUser=' + !!(typeof currentUser !== 'undefined' && currentUser));
+      out.push('plan=' + JSON.stringify((typeof window.__stPlan === 'function') ? window.__stPlan() : null));
+      if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') { out.push('NO pullInbox'); alert(out.join('\n')); return; }
+      Promise.resolve(window.STCloud.pullInbox()).then(function (res) {
+        if (res && res.error) { out.push('pull error: ' + (res.error.message || res.error)); alert(out.join('\n')); return; }
+        var allRows = (res && res.data) || [];
+        var rows = allRows.filter(function (r) { return !r.consumed_at; });
+        var have = _existingMt5Tickets(false);
+        var fresh = rows.filter(function (r) { return _mt5RowIsValid(r) && !have.has(String(r.ticket)); });
+        out.push('cloud total=' + allRows.length + '  unconsumed=' + rows.length + '  fresh=' + fresh.length);
+        out.push('fresh tickets=' + fresh.map(function (r) { return r.ticket; }).join(','));
+        var w = allRows.filter(function (r) { return String(r.ticket) === '153166053'; })[0];
+        out.push('--- 153166053 ---');
+        out.push(w ? ('in cloud=YES  consumed=' + !!w.consumed_at + '  valid=' + _mt5RowIsValid(w) + '  worn=' + have.has('153166053')) : 'in cloud=NO (not returned by pullInbox)');
+        alert(out.join('\n'));
+      }).catch(function (e) { out.push('exception: ' + e); alert(out.join('\n')); });
+    } catch (e) { out.push('outer exception: ' + e); alert(out.join('\n')); }
+    return 'running…';
+  };
   // Edge-trigger: fire once when the session flips from live -> not-live.
   let _prevSessionLive = null;
   function _maybeAutoSyncOnSessionEnd(live) {
