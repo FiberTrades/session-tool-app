@@ -19870,7 +19870,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 01:05 UTC';
+  window.ST_BUILD = '2026-07-25 02:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30898,7 +30898,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (!res || res.error) return;
         const rows = (res.data || []).filter(r => !r.consumed_at);   // ignore already-imported rows (match the import dialog)
         if (!rows.length) return;
-        const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets() : new Set();
+        // Match the manual import: judge "already in your log" by what a logged trade actually
+        // WEARS, not the imported-ledger (includeLedger=false). A trade the pairing step stranded
+        // in the ledger — like the winner 153166053 — must still surface its prompt, otherwise the
+        // manual button offers it while the auto-prompt silently skips it.
+        const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets(false) : new Set();
         const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
         if (!fresh.length) return;
         // Nudge once per unique waiting ticket (per app session), not once per day: a trade that
@@ -30930,8 +30934,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // hunt for the button. Cheap (one RLS-scoped read); the per-ticket guard stops any nagging.
   // A quick first pass catches trades waiting at app open, then a slow poll catches later closes.
   try {
-    setTimeout(function () { try { maybePromptAutoSync('startup'); } catch (e) {} }, 9000);
-    setInterval(function () { try { maybePromptAutoSync('poll'); } catch (e) {} }, 120000);
+    // Early staggered attempts so it fires soon after load even if auth/plan wasn't ready on the
+    // first try (maybePromptAutoSync no-ops until currentUser exists), then settle to a slow poll.
+    [4000, 12000, 30000, 60000].forEach(function (ms) { setTimeout(function () { try { maybePromptAutoSync('startup'); } catch (e) {} }, ms); });
+    setInterval(function () { try { maybePromptAutoSync('poll'); } catch (e) {} }, 90000);
   } catch (e) {}
 
   // ----- Render preview step -----
