@@ -5870,6 +5870,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'rule.graded_followed': "Followed \u2713",
       'rule.graded_broken': "Broken \u2715",
       'rule.next_week_label': "Rule for next week",
+      'commit.adherence_label': "This week's adherence",
+      'commit.adherence_detail': "You traded {KEPT} of the {TOTAL} days you committed to.",
+      'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
+      'commit.next_label': "Days I'm committing to next week",
+      'commit.next_hint': "Lock in the days you'll trade. These override your default for that week \u2014 the greetings, live tab and sounds will hold you to it.",
       'rule.next_week_hint': "One small, testable behaviour \u2014 something specific you can answer yes/no to next Friday. e.g. \u2018No entries before 8:30 AM\u2019 or \u2018SL doesn\u2019t move until +1R is locked in\u2019.",
       'rule.next_week_placeholder': "Pick one specific rule for next week\u2026",
       'rule.friday_prompt': "Friday\u2019s done. Time to grade this week\u2019s rule.",
@@ -7239,6 +7244,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'rule.graded_followed': "Cumplida \u2713",
       'rule.graded_broken': "Rota \u2715",
       'rule.next_week_label': "Regla para la pr\u00f3xima semana",
+      'commit.adherence_label': "Cumplimiento de esta semana",
+      'commit.adherence_detail': "Operaste {KEPT} de los {TOTAL} d\u00edas a los que te comprometiste.",
+      'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
+      'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
+      'commit.next_hint': "Fija los d\u00edas que operar\u00e1s. Anulan tu ajuste por defecto esa semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo.",
       'rule.next_week_hint': "Una conducta peque\u00f1a y comprobable \u2014 algo concreto a lo que puedas responder s\u00ed/no el pr\u00f3ximo viernes. ej. \u2018Nada de entradas antes de las 8:30\u2019 o \u2018El SL no se mueve hasta asegurar +1R\u2019.",
       'rule.next_week_placeholder': "Elige una regla concreta para la pr\u00f3xima semana\u2026",
       'rule.friday_prompt': "Viernes cerrado. Hora de calificar la regla de la semana.",
@@ -20022,7 +20032,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-26 02:10 UTC';
+  window.ST_BUILD = '2026-07-26 03:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -21884,6 +21894,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
         <div id="rfx-rule-section" style="margin-top:24px;padding:18px;border:1px solid var(--border-2);background:var(--bg);"></div>
 
+        <div id="rfx-commit-section" style="margin-top:24px;padding:18px;border:1px solid var(--border-2);background:var(--bg);"></div>
+
         <div class="actions actions-narrow-1" style="margin-top:18px;">
           <button type="button" class="btn" id="rfx-discord-copy" data-i18n="btn.copy_discord">Post to community</button>
         </div>
@@ -21947,6 +21959,67 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         cadenceSel.addEventListener('change', () => {
           data.settings.ruleReminderCadence = cadenceSel.value;
           saveData();
+        });
+      }
+    })();
+
+    // ── Weekly trading-day COMMITMENT ────────────────────────────────────────────────
+    // Two parts: (1) how you did against THIS week's commitment (adherence), and (2) lock
+    // in the days you're committing to trade NEXT week. Next week's commitment overrides
+    // the global Days-I-trade default, so the greetings / live tab / sounds hold you to it.
+    (function renderCommitSection() {
+      const wrap = document.getElementById('rfx-commit-section');
+      if (!wrap) return;
+      const thisWeekKey = currentReview.key;
+      const nextKey = (function () { const next = new Date(weekEnd); next.setDate(next.getDate() + 3); return getCalendarWeekKey(next); })();
+      const order = [1, 2, 3, 4, 5, 6, 0];
+      const loc = (typeof tLocale === 'function') ? tLocale() : undefined;
+      const refMon = new Date(2024, 0, 1); // a Monday
+      const dayLabel = (d) => { try { const dd = new Date(refMon); dd.setDate(refMon.getDate() + ((d + 6) % 7)); return dd.toLocaleDateString(loc, { weekday: 'short' }); } catch (e) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]; } };
+      // (1) This week's adherence, only if a commitment was set for it.
+      const committedThis = (typeof getWeekCommitment === 'function') ? getWeekCommitment(thisWeekKey) : null;
+      let adhHtml = '';
+      if (committedThis && committedThis.length) {
+        const wkEndExc = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
+        const traded = {};
+        (filterByScope((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []) || []).forEach(function (t) {
+          const td = new Date(t.date); if (td >= weekStart && td < wkEndExc) traded[td.getDay()] = true;
+        });
+        const kept = committedThis.filter(function (d) { return traded[d]; }).length;
+        const offPlan = Object.keys(traded).map(Number).filter(function (d) { return committedThis.indexOf(d) === -1; }).length;
+        const pct = committedThis.length ? Math.round(kept / committedThis.length * 100) : 0;
+        const pctCls = pct >= 80 ? 'var(--good)' : pct >= 50 ? 'var(--text)' : 'var(--bad)';
+        adhHtml = `<div style="margin-bottom:20px;">
+            <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
+            <div style="font-family:'AppNum','DM Mono',monospace;font-size:22px;color:${pctCls};">${pct}%</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5;">${t('commit.adherence_detail').replace('{KEPT}', kept).replace('{TOTAL}', committedThis.length)}${offPlan ? ' ' + t('commit.adherence_offplan').replace('{N}', offPlan) : ''}</div>
+          </div>`;
+      }
+      // (2) Next week's commitment picker. Default = existing next-week commitment, else the
+      // global Days-I-trade setting, else Mon–Fri.
+      const preset = (getWeekCommitment(nextKey))
+        || ((data.settings && Array.isArray(data.settings.tradingDays) && data.settings.tradingDays.length) ? data.settings.tradingDays.map(Number) : [1, 2, 3, 4, 5]);
+      const chips = order.map(function (d) {
+        const on = preset.indexOf(d) >= 0;
+        return `<button type="button" class="settings-day-btn${on ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
+      }).join('');
+      wrap.innerHTML = adhHtml + `<div>
+          <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.next_label')}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t('commit.next_hint')}</div>
+          <div id="rfx-commit-days" class="settings-days-row">${chips}</div>
+        </div>`;
+      const daysWrap = document.getElementById('rfx-commit-days');
+      if (daysWrap) {
+        daysWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const cur = (getWeekCommitment(nextKey)
+              || ((data.settings && Array.isArray(data.settings.tradingDays) && data.settings.tradingDays.length) ? data.settings.tradingDays.map(Number) : [1, 2, 3, 4, 5])).slice();
+            const d = Number(btn.getAttribute('data-day'));
+            const at = cur.indexOf(d);
+            if (at >= 0) cur.splice(at, 1); else cur.push(d);
+            setWeekCommitment(nextKey, cur);
+            renderCommitSection();
+          });
         });
       }
     })();
@@ -24040,7 +24113,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // stop treating the weekend as "market closed" — and, symmetrically, a chosen rest day
   // gets the reflect/plan pool instead of a session nudge. Used everywhere a greeting used
   // to hardcode `dow === 0 || dow === 6`.
+  // Per-week trading-day COMMITMENT (accountability). data.weeklyCommitments[weekKey] = [days].
+  // A commitment the user locks in during their weekly review OVERRIDES the global Days-I-trade
+  // default for that week, so the greetings / live tab / sounds hold them to what they promised.
+  function _weekKeyFor(dateLike) {
+    try { return (typeof getCalendarWeekKey === 'function') ? getCalendarWeekKey(new Date(dateLike)) : null; } catch (e) { return null; }
+  }
+  function getWeekCommitment(weekKey) {
+    try { var m = data && data.weeklyCommitments; if (m && Array.isArray(m[weekKey]) && m[weekKey].length) return m[weekKey].map(Number); } catch (e) {}
+    return null;
+  }
+  function setWeekCommitment(weekKey, days) {
+    if (!weekKey) return;
+    if (!data.weeklyCommitments) data.weeklyCommitments = {};
+    data.weeklyCommitments[weekKey] = (days || []).map(Number).filter(function (d) { return d >= 0 && d <= 6; }).sort(function (a, b) { return a - b; });
+    saveData();
+    try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
+  }
   function _tradingDaysPref() {
+    // This week's committed days win over the global default.
+    try {
+      var wk = _weekKeyFor(Date.now());
+      var commit = wk ? getWeekCommitment(wk) : null;
+      if (commit && commit.length) return commit;
+    } catch (e) {}
     try {
       var td = data && data.settings && data.settings.tradingDays;
       if (Array.isArray(td) && td.length) return td.map(Number);
