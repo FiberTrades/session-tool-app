@@ -19962,7 +19962,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 21:20 UTC';
+  window.ST_BUILD = '2026-07-25 22:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30994,10 +30994,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       add(data.review && data.review.trades);
       add(data.currentSeries);
       (data.history || []).forEach(h => add(h && h.trades));
-      // Local ledger: every ticket ever imported on this account. The journal copy can be
-      // edited, moved or deleted, and the cloud "consumed" flag can fail to write - this
-      // list guards the auto-prompt. The manual import skips it (includeLedger=false) so a
-      // ticket stranded in the ledger — marked done but never actually logged — is recoverable.
+      // User-dismissed tickets: ones the user EXPLICITLY imported or pressed "Mark as
+      // imported" on. Unlike the auto-paired ledger below, this is a deliberate "I've
+      // handled this", so it is ALWAYS honoured — it durably suppresses re-offers even
+      // when the cloud consumed flag fails to write, or a stale-instance sync rolls the
+      // journal back, or the trade loses its ticket stamp at session finalise. It never
+      // strands an orphan, because auto-pairing never writes here (only real user actions do).
+      (data.mt5UserDismissed || []).forEach(x => { if (x != null) set.add(String(x)); });
+      // Local ledger: every ticket ever imported OR auto-paired on this account. The
+      // journal copy can be edited, moved or deleted, and the cloud "consumed" flag can
+      // fail to write - this list guards the auto-prompt. The manual import skips it
+      // (includeLedger=false) so a ticket stranded in the ledger by AUTO-PAIRING — marked
+      // done but never actually logged — is still recoverable.
       if (includeLedger) (data.mt5ImportedTickets || []).forEach(x => { if (x != null) set.add(String(x)); });
     } catch (e) {}
     return set;
@@ -31321,8 +31329,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     try {
       if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
-      tickets.forEach(s => { if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s); });
+      if (!Array.isArray(data.mt5UserDismissed))   data.mt5UserDismissed   = [];
+      tickets.forEach(s => {
+        if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s);
+        if (data.mt5UserDismissed.indexOf(s)   === -1) data.mt5UserDismissed.push(s);   // explicit → durably suppressed
+      });
       if (data.mt5ImportedTickets.length > 5000) data.mt5ImportedTickets = data.mt5ImportedTickets.slice(-5000);
+      if (data.mt5UserDismissed.length   > 5000) data.mt5UserDismissed   = data.mt5UserDismissed.slice(-5000);
       saveData();
     } catch (e) {}
     try {
@@ -31457,12 +31470,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       } catch (e) { console.warn('[MT5] consume step failed:', e); }
     }
 
-    // Remember these tickets locally, whatever happens server-side.
+    // Remember these tickets locally, whatever happens server-side. Write BOTH lists:
+    // the ledger (auto-prompt guard) and the durable user-dismissed list (explicit
+    // action, always honoured by the import filter so this never re-offers again even
+    // if the journal is later rolled back or the ticket stamp is lost).
     try {
       if (_consumedTickets.length) {
         if (!Array.isArray(data.mt5ImportedTickets)) data.mt5ImportedTickets = [];
-        _consumedTickets.forEach(x => { const s = String(x); if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s); });
+        if (!Array.isArray(data.mt5UserDismissed))   data.mt5UserDismissed   = [];
+        _consumedTickets.forEach(x => { const s = String(x);
+          if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s);
+          if (data.mt5UserDismissed.indexOf(s)   === -1) data.mt5UserDismissed.push(s);
+        });
         if (data.mt5ImportedTickets.length > 5000) data.mt5ImportedTickets = data.mt5ImportedTickets.slice(-5000);
+        if (data.mt5UserDismissed.length   > 5000) data.mt5UserDismissed   = data.mt5UserDismissed.slice(-5000);
       }
     } catch (e) {}
 
