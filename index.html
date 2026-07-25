@@ -8146,9 +8146,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // Uses date-keyed flags so the alert only fires once even with reloads / multi-tab.
   function checkSessionBoundaryAlerts(now, hhmm) {
     if (!data || !data.settings) return;
-    // Weekday-only: FX is closed Sat/Sun, so no session voice or rule reminders fire then.
+    // Only on days the user commits to trading — so the open/close voice and rule reminders
+    // fire on an enabled weekend (crypto) and stay silent on a chosen rest day. Falls back to
+    // weekday-only if the trading-days helper hasn't initialised yet.
     const _dow = now.getDay(); // 0=Sun, 6=Sat
-    if (_dow !== 0 && _dow !== 6) {
+    const _tradesToday = (typeof window.__stIsTradingDay === 'function') ? window.__stIsTradingDay(_dow) : (_dow !== 0 && _dow !== 6);
+    if (_tradesToday) {
       const todayKey = now.toISOString().slice(0, 10);
       const nowMins = now.getHours() * 60 + now.getMinutes();
       if (_lastTickDay !== todayKey) { _lastTickMins = null; _lastTickDay = todayKey; }
@@ -8300,7 +8303,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function liveSessionIndex() {
     if (!data || !data.settings) return -1;
     const dow = new Date().getDay();
-    if (dow === 0 || dow === 6) return -1;
+    // Off-day → no live session. Respects the user's Days-I-trade setting, so a crypto
+    // trader who enabled the weekend gets a live session on Sat/Sun; falls back to
+    // weekday-only if the helper hasn't initialised yet.
+    const _tradesToday = (typeof window.__stIsTradingDay === 'function') ? window.__stIsTradingDay(dow) : (dow !== 0 && dow !== 6);
+    if (!_tradesToday) return -1;
     const now = new Date();
     const nowMins = now.getHours() * 60 + now.getMinutes();
     const ended = endedSessionsToday();
@@ -10873,7 +10880,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // even though you usually aren't logging trades over the weekend. (The Friday prompt stays
   // tied to finishing a session via Copy/Save.)
   setTimeout(function () {
-    try { const _wd = new Date().getDay(); if (_wd === 6 || _wd === 0) maybeOfferWeeklyReview(); } catch (e) {}
+    try { const _wd = new Date().getDay(); const _off = (typeof window.__stIsTradingDay === 'function') ? !window.__stIsTradingDay(_wd) : (_wd === 6 || _wd === 0); if (_off) maybeOfferWeeklyReview(); } catch (e) {}
   }, 1500);
 
   // Stop the browser / password manager from offering autofill on app inputs. Runs on load
@@ -20015,7 +20022,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-26 01:15 UTC';
+  window.ST_BUILD = '2026-07-26 02:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -22440,8 +22447,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const dow = today.getDay(); // 0 Sun, 5 Fri, 6 Sat
     const { weekStart, weekEnd, weekKey } = getCurrentWeekBounds(today);
 
-    // Friday — open the modal (once per week)
-    if (dow === 5) {
+    // Last trading day of the week — open the modal (once per week). Anchors to the user's
+    // Days-I-trade setting (Fri for a Mon–Fri trader, Sun for a 7-day crypto week) instead of
+    // a hardcoded Friday.
+    if (dow === ((typeof window.__stLastTradingDay === 'function') ? window.__stLastTradingDay() : 5)) {
       if (data._lastWeeklyPrompt === weekKey) return;
       data._lastWeeklyPrompt = weekKey;
       saveData();
@@ -22455,8 +22464,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return;
     }
 
-    // Saturday/Sunday — non-intrusive toast nudge if user hasn't done this week's reflection
-    if (dow === 6 || dow === 0) {
+    // Off-day — non-intrusive toast nudge if user hasn't done this week's reflection. Any day
+    // the user doesn't trade (a weekend they didn't enable, or a chosen rest day).
+    const _isOffDay = (typeof window.__stIsTradingDay === 'function') ? !window.__stIsTradingDay(dow) : (dow === 6 || dow === 0);
+    if (_isOffDay) {
       const nudgeKey = weekKey + ':weekend-nudge:' + dow;
       if (data._lastWeeklyPrompt === nudgeKey) return;
       // Only nudge if no reflection has been started for this week yet
@@ -23125,6 +23136,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'planifica la semana, escribe la regla, anota la lección. La parte aburrida es la lucrativa.',
       'el gráfico no se moverá hoy. Tu pensamiento sí debería.',
       'fin de semana. El interés compuesto funciona también con las horas de estudio. Invierte algunas.',
+      // Líneas neutrales para cualquier día libre (incluido uno entre semana), donde decir "sábado" no encajaría.
+      'día libre. Hoy no operas — así que planifica, repasa, y deja que los setups vengan a ti.',
+      'un día fuera de los gráficos por elección. Úsalo para estudiar, no para picar un clic.',
+      'hoy no operas. La disciplina está tanto en el descanso como en las repeticiones.',
+      'día de descanso. Los buenos lo protegen — recuperar es parte de la ventaja, no su ausencia.',
+      'no hay sesión en el calendario hoy. Repasa la última con ojos fríos y luego desconecta.',
+      'hoy no es un día de trading para ti. El mercado corre sin ti perfectamente — de eso se trata.',
     ],
     RECAP_POS: [
       'ayer pagó. Bien hecho. No te cases con ello.',
@@ -23898,6 +23916,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     'plan the week, write the rule, log the lesson. The boring bit is the lucrative bit.',
     'the chart won\'t move today. Your thinking should.',
     'weekend. Compound interest works on study time too. Spend some.',
+    // Rest-day-neutral lines — these read right on ANY off-day, including a mid-week rest
+    // day a crypto trader takes, where "Saturday" wording would be wrong.
+    'off-day. Not a trading day for you — so plan, review, and let the setups come to you.',
+    'a day off the charts by choice. Use it to study, not to itch for a click.',
+    'you\'re not trading today. The discipline is in the rest as much as the reps.',
+    'rest day. The good ones protect these — recovery is part of the edge, not the absence of it.',
+    'no session on the calendar today. Review last session with cold eyes, then step away.',
+    'not a trading day for you. The market runs without you just fine — that\'s the point.',
   ];
 
   // Out-of-session pools — used when current local time is outside the user's configured
@@ -24025,6 +24051,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (dow == null) { try { dow = new Date().getDay(); } catch (e) { dow = 1; } }
     return _tradingDaysPref().indexOf(Number(dow)) !== -1;
   }
+  // The last weekday (Mon…Sun order) the user commits to trading — where the weekly-review
+  // ritual now anchors instead of a hardcoded Friday. Mon–Fri → Fri; a 7-day crypto week → Sun.
+  function _lastTradingDayOfWeek() {
+    const days = _tradingDaysPref();
+    const order = [1, 2, 3, 4, 5, 6, 0];
+    for (let i = order.length - 1; i >= 0; i--) { if (days.indexOf(order[i]) !== -1) return order[i]; }
+    return 5;
+  }
+  // Exposed so the far-away session-live + session-sound gates (which live thousands of lines
+  // up) can share the same trading-days logic without duplicating it.
+  try { window.__stIsTradingDay = _isTradingDay; window.__stLastTradingDay = _lastTradingDayOfWeek; } catch (e) {}
 
   function timeOfDayOpener() {
     const now = new Date();
