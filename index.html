@@ -10952,6 +10952,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         base.bias = base.biasSlots[base.activeBiasSlot];
     } catch (e) {}
   };
+  // Append-only lists that must NEVER be rolled back by a whole-copy overwrite: the MT5
+  // imported-ledger and the user-dismissed tickets. A stale second window adopting one
+  // whole journal copy would otherwise drop a ticket the other copy just dismissed, and
+  // the trade would re-offer. These lists only ever grow, so a UNION of both copies is
+  // always the correct merge - it can lose nothing. Written into `base` (the surviving copy).
+  window.__stMergeUnionDismissed = function (base, other) {
+    try {
+      if (!base || !other) return;
+      ['mt5UserDismissed', 'mt5ImportedTickets'].forEach(function (key) {
+        var a = Array.isArray(base[key]) ? base[key] : [];
+        var b = Array.isArray(other[key]) ? other[key] : [];
+        if (!a.length && !b.length) return;
+        var seen = {}, out = [];
+        a.concat(b).forEach(function (x) { if (x == null) return; var s = String(x); if (!seen[s]) { seen[s] = 1; out.push(s); } });
+        if (out.length > 5000) out = out.slice(-5000);
+        base[key] = out;
+      });
+    } catch (e) {}
+  };
   // Identifies THIS app instance, so saveData only pays the merge-check when a DIFFERENT
   // instance (detached community window, second tab) wrote the journal since our last save.
   const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
@@ -10965,7 +10984,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var lastTab = localStorage.getItem('st_last_write_tab');
       if (lastTab && lastTab !== __ST_TAB_ID) {
         var storedRaw = localStorage.getItem(STORAGE_KEY);
-        if (storedRaw) window.__stMergeFresherBias(data, JSON.parse(storedRaw));
+        if (storedRaw) { var _otherJ = JSON.parse(storedRaw); window.__stMergeFresherBias(data, _otherJ); if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(data, _otherJ); }
       }
       localStorage.setItem('st_last_write_tab', __ST_TAB_ID);
     } catch (e) {}
@@ -19962,7 +19981,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-25 22:15 UTC';
+  window.ST_BUILD = '2026-07-25 23:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -38778,6 +38797,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // roll today's bias back to a copy captured before the user's last click. Fold any
         // fresher local bias slots into the adopted copy first.
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
+        try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(cloud, local); } catch (e) {}
         // Adopt the cloud copy. Update the IN-MEMORY journal as well as storage, so a stray
         // save of the (stale, blank) in-memory copy can't clobber it in the instant before
         // the reload -- that race is what was wiping the pulled data on a fresh device.
@@ -38803,6 +38823,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // stale second instance produces after saving a preference - don't let it take the
         // morning bias back with it.
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
+        try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(cloud, local); } catch (e) {}
         try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
         try { localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
         accStatus(tt('synced'));
@@ -38820,6 +38841,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // Symmetric bias protection: the cloud may carry a fresher bias click from another
         // device/window - fold it into local (the live object) before pushing over it.
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(local, cloud); } catch (e) {}
+        try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(local, cloud); } catch (e) {}
         cloudPush();
       }
     });
