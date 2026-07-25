@@ -20094,7 +20094,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-26 22:45 UTC';
+  window.ST_BUILD = '2026-07-26 23:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -35655,6 +35655,52 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function _chLabel(c){ var nm=String(_chName(c)||''); var sp=nm.indexOf(' '); if(sp>0 && !/[\wÀ-ɏ]/.test(nm.slice(0,sp))) nm=nm.slice(sp+1); return nm||_chSlug(c); }
     function linkify(t, allowImg){ var s=esc(t); var _cb=[]; var _imgs=[]; s=s.replace(/```[^\n]*\n?([\s\S]*?)```/g, function(_,code){ _cb.push(code); return '\u0000CB'+(_cb.length-1)+'\u0000'; }); s=_mdInline(s); if(allowImg){ s=s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, function(_i,alt,url){ var pv=previewImg(url)||url; _imgs.push('<img class="dcx-media dcx-inlineimg" src="'+pv+'" data-full="'+pv+'" alt="'+alt+'" onerror="this.style.display=\'none\'">'); return '{{IMG'+(_imgs.length-1)+'}}'; }); s=s.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_bf,_bp,_bu){ var _bpv=previewImg(_bu); if(!_bpv) return _bf; _imgs.push('<img class="dcx-media dcx-inlineimg" src="'+_bpv+'" data-full="'+_bpv+'" alt="">'); return _bp+'{{IMG'+(_imgs.length-1)+'}}'; }); } s=s.replace(/(https?:\/\/[^\s<]+)/g, function(u){ return '<a href="'+u+'" target="_blank" rel="noopener" class="dcx-link">'+u+'</a>'; }); s=s.replace(/(^|\s)#([\w-]{1,40})/g, function(full,pre,nm){ var lc=nm.toLowerCase(); for(var i=0;i<(channels||[]).length;i++){ if(_chSlug(channels[i]).toLowerCase()===lc){ return pre+'<span class="dcx-mchan" data-ch="'+esc(channels[i].id)+'">#'+esc(_chLabel(channels[i]))+'</span>'; } } return full; }); s=s.replace(/(^|\s)@([\w-]{1,40})/g, function(full,pre,nm){ var lc=nm.toLowerCase(); if(lc==='everyone'){ return pre+'<span class="dcx-muser everyone">@everyone</span>'; } for(var i=0;i<(roster||[]).length;i++){ if(String(roster[i].name||'').toLowerCase()===lc){ var mine=(currentUser&&roster[i].id===currentUser.id); return pre+'<span class="dcx-muser'+(mine?' me':'')+'">@'+esc(roster[i].name)+'</span>'; } } return full; }); s=_mdHeaders(s); s=s.replace(/\{\{IMG(\d+)\}\}/g, function(_,i){ return _imgs[+i]; }); s=s.replace(/\u0000CB(\d+)\u0000/g, function(_,i){ return '<pre class="dcx-codeblock">'+_cb[+i]+'</pre>'; }); try{ if(window.__stTwemojiHTML) s=window.__stTwemojiHTML(s); }catch(_){} return s; }
     function previewImg(url){ try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(url)) return url; var yt=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/i); if(yt) return 'https://img.youtube.com/vi/'+yt[1]+'/hqdefault.jpg'; var tv=url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i); if(tv){ var id=tv[1]; return 'https://s3.tradingview.com/snapshots/'+id.charAt(0).toLowerCase()+'/'+id+'.png'; } }catch(e){} return null; }
+    /* Reusable #channel / @member autocomplete for ANY composer textarea (channels + DMs).
+       Pass the textarea and an empty .dcx-mention popup that lives inside a position:relative
+       composer. Uses the same channel/roster lists linkify() paints from, so a tag you pick
+       here is guaranteed to render as a chip. The keydown is bound on the composer in CAPTURE
+       phase so ArrowUp/Down/Enter/Tab win over the textarea's own Enter-to-send handler. */
+    function wireMentions(ta, pop){
+      if(!ta || !pop) return;
+      var host = ta.parentNode || ta, _st=null;
+      function _close(){ if(pop) pop.classList.remove('open'); _st=null; }
+      function _render(){
+        if(!_st) return;
+        pop.innerHTML=_st.items.map(function(it,i){ return '<div class="dcx-mention-item'+(i===_st.sel?' sel':'')+'" data-i="'+i+'"><span class="mh">'+it.h+'</span><span>'+esc(it.label)+'</span></div>'; }).join('');
+        pop.classList.add('open');
+        Array.prototype.forEach.call(pop.querySelectorAll('.dcx-mention-item'), function(el){ el.addEventListener('mousedown', function(e){ e.preventDefault(); _pick(parseInt(el.getAttribute('data-i'),10)); }); });
+      }
+      function _pick(i){ if(!_st) return; var it=_st.items[i]; if(!it) return; var v=ta.value||''; var ins=it.ins+' '; ta.value=v.substring(0,_st.start)+ins+v.substring(_st.end); var cp=_st.start+ins.length; try{ ta.selectionStart=ta.selectionEnd=cp; }catch(_){} _close(); ta.focus(); try{ ta.dispatchEvent(new Event('input')); }catch(_2){} }
+      function _scan(){
+        var pos=ta.selectionStart||0; var before=(ta.value||'').substring(0,pos);
+        var m=before.match(/(^|\s)([#@])([\w-]{0,30})$/); if(!m){ _close(); return; }
+        var trig=m[2], word=m[3].toLowerCase(), items=[];
+        if(trig==='#'){
+          var _cn=function(c){ return String(_chName(c)||c.name||'').toLowerCase(); };
+          var _hit=function(c){ return _cn(c).indexOf(word)>=0 || _chSlug(c).toLowerCase().indexOf(word)>=0; };
+          items=(typeof _visChans==='function'?_visChans():(channels||[])).filter(_hit).sort(function(a,b){ var an=_cn(a),bn=_cn(b); var ai=word?an.indexOf(word):-1,bi=word?bn.indexOf(word):-1; if(ai!==bi) return ai-bi; return an.localeCompare(bn); }).map(function(c){ return {h:'#',label:String(_chLabel(c)||_chName(c)||c.name||''),ins:'#'+_chSlug(c)}; });
+        } else {
+          var src=(roster&&roster.length)?roster:[];
+          items=src.filter(function(u){ return String(u.name||'').toLowerCase().indexOf(word)>=0; }).sort(function(a,b){ var an=String(a.name||'').toLowerCase(),bn=String(b.name||'').toLowerCase(); var ai=word?an.indexOf(word):-1,bi=word?bn.indexOf(word):-1; if(ai!==bi) return ai-bi; return an.localeCompare(bn); }).map(function(u){ return {h:'@',label:String(u.name||'Trader'),ins:'@'+String(u.name||'Trader')}; });
+          if((typeof isMod==='function'?isMod():(typeof admin==='function'&&admin())) && 'everyone'.indexOf(word)===0){ items.unshift({h:'@',label:window._stT('everyone (notify all)','everyone (avisar a todos)'),ins:'@everyone'}); }
+        }
+        if(!items.length){ _close(); return; }
+        if(items.length>8) items=items.slice(0,8);
+        _st={ start: pos-(m[3].length)-1, end: pos, items: items, sel: 0 };
+        _render();
+      }
+      host.addEventListener('keydown', function(e){
+        if(e.target!==ta || !_st) return;
+        if(e.key==='ArrowDown'){ e.preventDefault(); e.stopImmediatePropagation(); _st.sel=(_st.sel+1)%_st.items.length; _render(); }
+        else if(e.key==='ArrowUp'){ e.preventDefault(); e.stopImmediatePropagation(); _st.sel=(_st.sel-1+_st.items.length)%_st.items.length; _render(); }
+        else if(e.key==='Enter'||e.key==='Tab'){ e.preventDefault(); e.stopImmediatePropagation(); _pick(_st.sel); }
+        else if(e.key==='Escape'){ e.preventDefault(); e.stopImmediatePropagation(); _close(); }
+      }, true);
+      ta.addEventListener('input', _scan);
+      ta.addEventListener('blur', function(){ setTimeout(_close, 160); });
+    }
+    /* Jump to a channel by id (used when a #channel chip is clicked from a DM overlay). */
+    function gotoChannel(id){ var c=(channels||[]).filter(function(x){ return x.id===id; })[0]; if(c){ try{ selectChannel(c); }catch(_){} return true; } return false; }
     /* Static posts in read-only channels can carry a Spanish body (body_es), written
        by the admin in the ES tab of the editor. Members' own messages never have one,
        so ordinary chat is always shown exactly as written. */
@@ -36907,7 +36953,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     return { refreshIdentity:refreshIdentity, startCall:startCall, friends:function(){ return FR; }, canTalk:canTalk,
              respondRequest:respondRequest, cancelRequest:cancelRequest, loadFriends:loadFriends, roster:function(){ return roster; },
-             paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang };
+             paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang, wireMentions:wireMentions, gotoChannel:gotoChannel };
   })();
   window.STCommunity = STCommunity;
   /* ================= Direct Messages (STDM) ================= */
@@ -36923,7 +36969,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function up(f,k){ return C().up ? C().up(f,k) : Promise.reject(new Error('no upload')); }
     function viewImg(a,b){ if(C().openImg) C().openImg(a,b); }
     function openInApp(u){ if(C().openInApp) C().openInApp(u); }
-    function linkify(t){ return C().linkify ? C().linkify(t) : esc(t); }
+    function linkify(t, allowImg){ return C().linkify ? C().linkify(t, allowImg) : esc(t); }
     function previewImg(u){ return C().previewImg ? C().previewImg(u) : null; }
     function emojis(){ return (C().EMOJIS) || []; }
     function G(id){ return document.getElementById(id); }
@@ -36997,6 +37043,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
                 '<button data-a="emoji"><span class="ai"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5s1.2 1.5 3.5 1.5 3.5-1.5 3.5-1.5"/><line x1="9" y1="9.5" x2="9.01" y2="9.5"/><line x1="15" y1="9.5" x2="15.01" y2="9.5"/></svg></span>Emoji</button>' +
               '</div>' +
               '<button class="dcx-plus" id="stdm-plus">+</button>' +
+              '<div class="dcx-mention" id="stdm-mention"></div>' +
               '<textarea class="dcx-input" id="stdm-input" rows="1" placeholder="Message" spellcheck="true"></textarea>' +
               '<button class="dcx-send" id="stdm-send"><svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M2 21l21-9L2 3v7l15 2-15 2z"/></svg></button>' +
             '</div>' +
@@ -37022,6 +37069,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       G('stdm-fdoc').addEventListener('change', function(e){ var f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) setPending(f); });
       var _dcb2=G('stdm-callbtn'); if(_dcb2) _dcb2.addEventListener('click', function(){ if(partner && window.STCommunity && STCommunity.startCall) STCommunity.startCall(partner.id, partner.name, partner.avatar); });
       var ta=G('stdm-input');
+      try{ if(C().wireMentions) C().wireMentions(ta, G('stdm-mention')); }catch(_){}
       ta.addEventListener('keydown', function(e){ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); sendText(); } });
       ta.addEventListener('input', function(){ ta.style.height='auto'; ta.style.height=Math.min(220,ta.scrollHeight)+'px'; });
       ta.addEventListener('paste', function(e){ var items=(e.clipboardData&&e.clipboardData.items)||[]; var did=false; for(var i=0;i<items.length;i++){ if(items[i].kind==='file'){ var f=items[i].getAsFile(); if(f){ did=true; setPending(f); } } } if(did) e.preventDefault(); });
@@ -37043,6 +37091,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return; }
         var radd=e.target.closest('.dcx-react-add'); if(radd){ e.stopPropagation(); openDmReactPicker(radd.getAttribute('data-radd'), radd); return; }
         var rk=e.target.closest('.dcx-react'); if(rk){ dmToggleReaction(rk.getAttribute('data-rmid'), rk.getAttribute('data-rem')); return; }
+        var mc=e.target.closest('.dcx-mchan'); if(mc&&mc.getAttribute('data-ch')){ var _cid=mc.getAttribute('data-ch'); try{ if(C().gotoChannel && C().gotoChannel(_cid)){ closeP(); var _dm=G('stdm'); if(_dm) _dm.classList.remove('open'); } }catch(_){} return; }
         var uf=e.target.closest('.dcx-unfurl'); if(uf){ e.preventDefault(); openInApp(uf.getAttribute('data-url')); return; }
         var lk=e.target.closest('.dcx-link'); if(lk&&lk.getAttribute('href')){ e.preventDefault(); openInApp(lk.getAttribute('href')); return; }
         var media=e.target.closest('.dcx-media'); if(media){ if(media.classList.contains('dcx-linkimg')&&media.getAttribute('data-link')){ if(window._isGifUrl&&window._isGifUrl(media.getAttribute('data-link'))) return;   /* GIFs: nothing to zoom into */ openInApp(media.getAttribute('data-link')); return; } if(media.getAttribute('data-full')){ if(window._isGifUrl&&window._isGifUrl(media.getAttribute('data-full'))) return;   /* GIFs: nothing to zoom into */ viewImg(media.getAttribute('data-full'), ''); return; } }
@@ -37109,7 +37158,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       Array.prototype.forEach.call(box.querySelectorAll('.stdm-conv'),function(el){ el.addEventListener('click', function(){ var pid=el.getAttribute('data-pid'); var info=roster[pid]||{}; openThread(pid, info.name||'Trader', info.avatar||''); }); });
     }
 
-    function contentHtml(m){ var s=''; if(m.body) s+='<span class="dcx-text">'+linkify(m.body)+'</span>'; if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
+    function contentHtml(m){ var s=''; var _dmAllow=true; if(m.body) s+='<span class="dcx-text">'+linkify(m.body, _dmAllow)+'</span>'; if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_dmAllow){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function bodyInner(m){ if(editingId===m.id) return '<textarea class="dcx-edit-ta" id="stdm-edit-input" spellcheck="true">'+esc(m.body||'')+'</textarea><div class="dcx-edit-actions"><button class="dcx-edit-save">Save</button><button class="dcx-edit-cancel">Cancel</button></div>'; return '<div class="dcx-content">'+dmReplyQuote(m)+contentHtml(m)+(m.edited_at?'<span class="dcx-edited">'+window._stT('(edited)','(editado)')+'</span>':'')+'</div>'+dmReactionsHtml(m.id); }
     /* Same Discord-style hover bar as the channel chat: five most-used emojis (shared
        st_emoji_freq list, via the community module's exported tracker) + options. */
