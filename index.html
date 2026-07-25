@@ -1965,7 +1965,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .stats-summary.stats-summary-vertical > :last-child { border-radius: 0 0 var(--radius-card) var(--radius-card); }
   .series-top-row { display: flex; gap: 16px; align-items: stretch; margin-top: 28px; }
   .series-top-row > .stats-summary { margin-top: 0; flex: 0 0 300px; }
-  .series-top-row > .chart-card { margin-top: 0; flex: 1 1 auto; min-width: 0; padding: 16px; }
+  .series-top-row > .chart-card { margin-top: 0; flex: 1 1 auto; min-width: 0; padding: 16px; display: flex; flex-direction: column; }
   @media (max-width: 760px) { .series-top-row { flex-direction: column; } .series-top-row > .stats-summary { flex: 0 0 auto; } }
   @media (max-width: 560px) {
     /* Series of 10 summary — 3 cards side-by-side on phone (smaller inner text so they fit a third of the width). */
@@ -2020,7 +2020,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .modal-stat .v.dual .dual-secondary.good { color: var(--good); }
   .modal-stat .v.dual .dual-secondary.bad  { color: var(--bad); }
   .current-series { margin-top: 40px; padding: 22px 28px; border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-card); background: var(--bg-elev); }
-  #equity-curve-svg-wrap { position: relative; margin-top: 10px; }
+  #equity-curve-svg-wrap { position: relative; margin-top: 10px; flex: 1 1 auto; min-height: 200px; }
   .current-series-header { display: flex; align-items: baseline; justify-content: space-between; margin-bottom: 16px; }
   .current-series-title { font-family: 'Fraunces', serif; font-size: 20px; }
   .current-series-progress { font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); }
@@ -2536,6 +2536,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .chart-toggle button { background: transparent; color: var(--text-dim); border: none; padding: 6px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: all 200ms; }
   .chart-toggle button.active { background: var(--text); color: var(--bg); }
   #drawdown-chart, #equity-chart, #equity-curve-chart { width: 100%; height: 240px; display: block; }
+  /* Series-of-10 curve fills its (flex) card height instead of a fixed 240 with blank below. */
+  #equity-curve-chart { height: 100%; }
   /* Let a finger-drag along the curve scrub through trades instead of scrolling the page. */
   #equity-chart, #equity-curve-chart { touch-action: none; }
   .chart-empty { padding: 40px 16px; text-align: center; font-family: 'Fraunces', serif; font-size: 14px; color: var(--text-dim); }
@@ -6115,7 +6117,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'kpi.profit_factor': 'Profit Factor',
       'eq.eyebrow': 'Equity Curve',
       'eq.title': 'Account balance over time',
-      'eq.captured': 'captured',
+      'eq.captured_line': 'Out of all winning trades {PCT}/100% profits captured',
       'eq.series_sub': 'This series of 10',
       'eq.range_1m': '1mo',
       'eq.range_3m': '3mo',
@@ -7501,7 +7503,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'kpi.profit_factor': 'Factor de Beneficio',
       'eq.eyebrow': 'Curva de Capital',
       'eq.title': 'Balance de cuenta a lo largo del tiempo',
-      'eq.captured': 'capturado',
+      'eq.captured_line': 'De todas las operaciones ganadoras, {PCT}/100% de beneficios capturados',
       'eq.series_sub': 'Esta serie de 10',
       'eq.range_1m': '1m',
       'eq.range_3m': '3m',
@@ -14764,13 +14766,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const capTracked = wins.filter(t => typeof t.potentialR === 'number' && !isNaN(t.potentialR));
       const capR = capTracked.reduce((s, t) => s + (parseFloat(t.r) || 0) * tradeCopies(t), 0);
       const potR = capTracked.reduce((s, t) => s + ((t.potentialR || 0) * tradeCopies(t)), 0);
+      subPctEl.textContent = '';
+      subPctEl.className = 'chart-card-subtitle-pct';
       if (capTracked.length === 0 || potR <= 0) {
-        subPctEl.textContent = '';
-        subPctEl.className = 'chart-card-subtitle-pct';
+        // No winner has a Potential R logged — fall back to the plain title.
+        subEl.textContent = t('eq.title') || 'Account balance over time';
       } else {
         const pct = Math.round(capR / potR * 100);
-        subPctEl.textContent = ` · ${pct}% ${t('eq.captured') || 'captured'}`;
-        subPctEl.className = 'chart-card-subtitle-pct' + (pct >= 70 ? ' good' : '');
+        subEl.textContent = (t('eq.captured_line') || 'Out of all winning trades {PCT}/100% profits captured').replace('{PCT}', pct);
       }
     }
     document.getElementById('kpi-costs').textContent = fmtMoney(costsSum, { noSign: true });
@@ -15514,7 +15517,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     const rect = chart.getBoundingClientRect();
     const W = rect.width || 760;
-    const H = opts.height || 240;
+    // Prefer the element's ACTUAL rendered height so a flex-filled card (the Series-of-10
+    // curve, which stretches to match its KPI column) draws full-height instead of a fixed
+    // value with blank space below. Fixed-height charts (Statistics) still measure their CSS height.
+    const H = (rect.height && rect.height > 40) ? Math.round(rect.height) : (opts.height || 240);
     const PAD = { top: 16, right: 20, bottom: 28, left: 56 };
     const innerW = W - PAD.left - PAD.right;
     const innerH = H - PAD.top - PAD.bottom;
@@ -20056,7 +20062,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-26 08:05 UTC';
+  window.ST_BUILD = '2026-07-26 08:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
