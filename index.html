@@ -18405,30 +18405,34 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const summaryEl = document.getElementById('time-analysis-summary');
     if (!summaryEl) return;
 
-    const ws = parseHHMM(data.settings.windowStart || '08:00');
-    const we = parseHHMM(data.settings.windowEnd   || '10:00');
-    // Adaptive bucket size: wider buckets at low sample sizes (less noise), narrower as data grows.
-    // Sample tradeable trades — anything with an entry time that falls in or near the window.
-    const tradesWithTime = trades.filter(t => tradeEntryMinutes(t) != null);
-    const totalCount = tradesWithTime.length;
-    const BUCKET = totalCount < 30 ? 30 : totalCount < 150 ? 15 : 5;
-    const inWindowBuckets = [];
-    for (let m = ws; m < we; m += BUCKET) {
-      inWindowBuckets.push({
+    // Bucket by ENTRY time only — never the close. A trade with no logged entry time can't be
+    // placed on the clock, so it's excluded from this view rather than misfiled by its close.
+    const timed = trades.filter(t => t.entryTime && parseHHMM(t.entryTime) != null);
+    const totalCount = timed.length;
+    // Adaptive slot width: 15 min while the sample is small (less noise), narrowing to 10 then
+    // 5 as you log more trades.
+    const BUCKET = totalCount < 30 ? 15 : totalCount < 100 ? 10 : 5;
+    if (totalCount === 0) { renderAnalysisOutput([], null, tableEl, summaryEl, 'time'); return; }
+
+    // Span the ACTUAL range of your entry times, snapped to the slot grid — so every trade lands
+    // in a real slot and there's no "outside session" catch-all. Empty slots between entries are
+    // ignored downstream (only populated slots are ranked/shown).
+    const entryMins = timed.map(t => parseHHMM(t.entryTime));
+    const lo = Math.floor(Math.min.apply(null, entryMins) / BUCKET) * BUCKET;
+    const hi = Math.ceil((Math.max.apply(null, entryMins) + 1) / BUCKET) * BUCKET;
+    const buckets = [];
+    for (let m = lo; m < hi; m += BUCKET) {
+      buckets.push({
         key: fmtHHMM(m) + ' – ' + fmtHHMM(m + BUCKET),
         start: m, end: m + BUCKET,
         trades: [], wins: 0, losses: 0, bes: 0, net: 0, totalR: 0
       });
     }
-    const outside = { key: 'Outside session', start: -1, end: -1, trades: [], wins: 0, losses: 0, bes: 0, net: 0, totalR: 0 };
 
-    trades.forEach(t => {
-      const mins = tradeEntryMinutes(t);
-      let bucket = outside;
-      if (mins != null) {
-        const b = inWindowBuckets.find(b => mins >= b.start && mins < b.end);
-        if (b) bucket = b;
-      }
+    timed.forEach(t => {
+      const mins = parseHHMM(t.entryTime);
+      const bucket = buckets.find(b => mins >= b.start && mins < b.end);
+      if (!bucket) return;
       bucket.trades.push(t);
       // Time analysis stays setup-level (no copies multiplier). This view asks
       // "when do my setups work best?" — an analytical question about edge per
@@ -18442,7 +18446,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       bucket.net += tradeNetPL(t);
     });
 
-    renderAnalysisOutput(inWindowBuckets, outside, tableEl, summaryEl, 'time');
+    renderAnalysisOutput(buckets, null, tableEl, summaryEl, 'time');
   }
 
 
@@ -20062,7 +20066,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-26 08:55 UTC';
+  window.ST_BUILD = '2026-07-26 09:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
