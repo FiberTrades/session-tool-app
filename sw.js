@@ -15,7 +15,7 @@
  * forget, network-first means the page itself still updates on the next load.
  */
 
-const CACHE_VERSION = 'st-2026-07-28zi';     // <-- bump this string on each deploy
+const CACHE_VERSION = 'st-2026-07-28zj';     // <-- bump this string on each deploy
 const APP_CACHE     = CACHE_VERSION + '-app';
 const RUNTIME_CACHE = CACHE_VERSION + '-rt';
 

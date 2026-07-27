@@ -1458,6 +1458,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .option { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 24px 14px; cursor: pointer; transition: all 200ms ease; text-align: center; font-size: 12px; letter-spacing: 0.06em; color: var(--text-mid); text-transform: uppercase; font-family: 'AppNum', 'DM Mono', monospace; }
   .option:hover { background: var(--bg-elev); color: var(--text); }
   .option.selected { background: var(--text); color: var(--bg); border-color: var(--text); font-weight: 500; }
+  /* Filled-pill treatment (matches the nav tabs) for the selection buttons on Session Bias
+     and Session Review: a subtle charcoal fill at rest so each button reads as a defined pill
+     instead of an empty outline. Selected buttons keep their high-contrast fill. */
+  #page-bias .option:not(.selected), #page-review .option:not(.selected),
+  #page-bias .tag:not(.selected), #page-review .tag:not(.selected) { background: var(--bg-elev); }
+  #page-bias .option:not(.selected):hover, #page-review .option:not(.selected):hover,
+  #page-bias .tag:not(.selected):hover, #page-review .tag:not(.selected):hover { background: var(--bg-elev2); color: var(--text); }
   .tags { margin-left: 60px; display: flex; flex-wrap: wrap; gap: 8px; }
   .tag { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-chip); padding: 9px 16px; cursor: pointer; transition: all 200ms ease; font-size: 10px; letter-spacing: 0.04em; color: var(--text-mid); font-family: 'AppNum', 'DM Mono', monospace; }
   .tag:hover { border-color: var(--text-mid); color: var(--text); }
@@ -11276,6 +11283,24 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         });
         return s;
       },
+      // Ordering-aware bias check: how many resolved losses were AGAINST the bias, and whether
+      // an ALIGNED trade was taken AFTER the most recent against-bias loss (i.e. the trader got
+      // back on their read). alignedSide = the side that matches the bias ('long' for bullish,
+      // 'short' for bearish). Ordered by ticket (~ chronological).
+      biasStatus: function (alignedSide, symFilter) {
+        var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+        var want = symFilter ? norm(symFilter) : null;
+        var list = Object.keys(rows).map(function (k) { return rows[k]; })
+          .filter(function (r) { return !want || norm(r.symbol) === want; })
+          .sort(function (a, b) { return (a.ticket || 0) - (b.ticket || 0); });
+        var againstSide = (alignedSide === 'long') ? 'short' : 'long';
+        var againstLosses = 0, lastTk = -1, alignedAfter = false;
+        list.forEach(function (r) {
+          if (r.closed && r.direction === againstSide && resultOf(r) === 'Lose') { againstLosses++; if ((r.ticket || 0) > lastTk) lastTk = (r.ticket || 0); }
+        });
+        if (againstLosses > 0) { list.forEach(function (r) { if (r.direction === alignedSide && (r.ticket || 0) > lastTk) alignedAfter = true; }); }
+        return { againstLosses: againstLosses, alignedAfter: alignedAfter };
+      },
       render: render
     };
   })();
@@ -20201,7 +20226,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-28 04:15 UTC';
+  window.ST_BUILD = '2026-07-28 04:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30428,15 +30453,24 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   // Count resolved losses on the side that is AGAINST this bias slot's direction.
   // Bullish read -> a losing SHORT is against it; Bearish read -> a losing LONG is against it.
-  function _againstBiasLosses(sl) {
+  // Against-bias losses for a slot, PLUS whether the trader has since taken a with-bias trade
+  // (in which case we stop nagging). Prefers the ordering-aware biasStatus; falls back to a
+  // plain count if it's unavailable.
+  function _againstBiasStatus(sl) {
     try {
-      if (!(window.__stLive && typeof window.__stLive.summary === 'function')) return 0;
       var dir = sl && sl.direction;
-      if (dir !== 'Bullish' && dir !== 'Bearish') return 0;
-      var ss = window.__stLive.summary(sl.symbol || undefined);
-      if (!ss) return 0;
-      return (dir === 'Bullish') ? (ss.shortLosses || 0) : (ss.longLosses || 0);
-    } catch (e) { return 0; }
+      if (dir !== 'Bullish' && dir !== 'Bearish') return { n: 0, recovered: false };
+      var alignedSide = (dir === 'Bullish') ? 'long' : 'short';
+      if (window.__stLive && typeof window.__stLive.biasStatus === 'function') {
+        var st = window.__stLive.biasStatus(alignedSide, sl.symbol || undefined);
+        return { n: (st && st.againstLosses) || 0, recovered: !!(st && st.alignedAfter) };
+      }
+      if (window.__stLive && typeof window.__stLive.summary === 'function') {
+        var ss = window.__stLive.summary(sl.symbol || undefined);
+        return { n: ss ? ((dir === 'Bullish') ? (ss.shortLosses || 0) : (ss.longLosses || 0)) : 0, recovered: false };
+      }
+      return { n: 0, recovered: false };
+    } catch (e) { return { n: 0, recovered: false }; }
   }
   function _againstBiasLossLine(dir, n, es) {
     var read = es ? (dir === 'Bullish' ? 'alcista' : 'bajista') : (dir === 'Bullish' ? 'bullish' : 'bearish');
@@ -30462,7 +30496,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         .filter(function (sl) { return sl && sl.sessionIdx === liveIdx && (sl.direction === 'Bullish' || sl.direction === 'Bearish'); });
       if (!slots.length && data.bias && (data.bias.direction === 'Bullish' || data.bias.direction === 'Bearish')) slots = [data.bias];
       var hit = null, total = 0;
-      for (var i = 0; i < slots.length; i++) { var nAg = _againstBiasLosses(slots[i]); if (nAg > 0) { total += nAg; if (!hit) hit = slots[i]; } }
+      for (var i = 0; i < slots.length; i++) { var st = _againstBiasStatus(slots[i]); if (st.n > 0 && !st.recovered) { total += st.n; if (!hit) hit = slots[i]; } }
       if (!hit) return null;
       return _againstBiasLossLine(hit.direction, total, es);
     } catch (e) { return null; }
