@@ -11269,10 +11269,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var want = symFilter ? norm(symFilter) : null;
         var list = Object.keys(rows).map(function (k) { return rows[k]; })
           .filter(function (r) { return !want || norm(r.symbol) === want; });
-        var s = { count: list.length, longs: 0, shorts: 0, wins: 0, losses: 0, bes: 0, resolved: 0 };
+        var s = { count: list.length, longs: 0, shorts: 0, wins: 0, losses: 0, bes: 0, resolved: 0, longLosses: 0, shortLosses: 0 };
         list.forEach(function (r) {
           if (r.direction === 'long') s.longs++; else if (r.direction === 'short') s.shorts++;
-          if (r.closed) { s.resolved++; var res = resultOf(r); if (res === 'Win') s.wins++; else if (res === 'Lose') s.losses++; else if (res === 'BE') s.bes++; }
+          if (r.closed) { s.resolved++; var res = resultOf(r); if (res === 'Win') s.wins++; else if (res === 'Lose') { s.losses++; if (r.direction === 'long') s.longLosses++; else if (r.direction === 'short') s.shortLosses++; } else if (res === 'BE') s.bes++; }
         });
         return s;
       },
@@ -20201,7 +20201,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-28 03:45 UTC';
+  window.ST_BUILD = '2026-07-28 04:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -30426,6 +30426,47 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return _biasCoachLine(_dir, _es, (data.bias && data.bias.symbol) || 'x', (data.bias || {}));
     } catch (e) { return null; }
   }
+  // Count resolved losses on the side that is AGAINST this bias slot's direction.
+  // Bullish read -> a losing SHORT is against it; Bearish read -> a losing LONG is against it.
+  function _againstBiasLosses(sl) {
+    try {
+      if (!(window.__stLive && typeof window.__stLive.summary === 'function')) return 0;
+      var dir = sl && sl.direction;
+      if (dir !== 'Bullish' && dir !== 'Bearish') return 0;
+      var ss = window.__stLive.summary(sl.symbol || undefined);
+      if (!ss) return 0;
+      return (dir === 'Bullish') ? (ss.shortLosses || 0) : (ss.longLosses || 0);
+    } catch (e) { return 0; }
+  }
+  function _againstBiasLossLine(dir, n, es) {
+    var read = es ? (dir === 'Bullish' ? 'alcista' : 'bajista') : (dir === 'Bullish' ? 'bullish' : 'bearish');
+    if (es) {
+      return (n > 1
+        ? ('ya llevas ' + n + ' pérdidas operando en contra de tu sesgo ' + read + '. Para — no tomes otra en contra de tu lectura; espera a que el precio llegue a tu nivel y opéralo a favor.')
+        : ('esa pérdida vino de operar en contra de tu sesgo ' + read + '. No la persigas con una segunda operación en contra de tu lectura — espera a que el precio llegue a tu nivel y opéralo a favor.'));
+    }
+    return (n > 1
+      ? ('that’s ' + n + ' losses now trading against your ' + read + ' read. Stop — don’t take another one against your bias; wait for price to come to your level and take it in your direction.')
+      : ('that loss came from trading against your ' + read + ' bias. Don’t chase it with a second trade against your read — wait for price to come to your level and take it in your direction.'));
+  }
+  // HIGHEST-priority Session Live tail: you took a trade AGAINST your bias and it lost.
+  // Fires only while live and flat (between trades) so it lands right when you'd be
+  // tempted to fire a second one against your read.
+  function pickAgainstBiasLossTail() {
+    try {
+      if (!(typeof isSessionLive === 'function' && isSessionLive())) return null;
+      if (typeof hasInProgressTradeToday === 'function' && hasInProgressTradeToday()) return null; // only when flat
+      var es = (window.__lang === 'es');
+      var liveIdx = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1;
+      var slots = (Array.isArray(data.biasSlots) ? data.biasSlots : [])
+        .filter(function (sl) { return sl && sl.sessionIdx === liveIdx && (sl.direction === 'Bullish' || sl.direction === 'Bearish'); });
+      if (!slots.length && data.bias && (data.bias.direction === 'Bullish' || data.bias.direction === 'Bearish')) slots = [data.bias];
+      var hit = null, total = 0;
+      for (var i = 0; i < slots.length; i++) { var nAg = _againstBiasLosses(slots[i]); if (nAg > 0) { total += nAg; if (!hit) hit = slots[i]; } }
+      if (!hit) return null;
+      return _againstBiasLossLine(hit.direction, total, es);
+    } catch (e) { return null; }
+  }
   // Session-aware phrase for the {SREF} token in the out-of-session greeting. Reads the
   // user's actual session window(s), so "reviewing yesterday or ___" completes correctly
   // whenever it fires: before a session -> "planning today's session"; after a morning
@@ -30478,6 +30519,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // appending to just one of them meant it showed up only some of the time.
     // pickBiasAlignmentTail() self-gates: null unless the session is live, you are flat, and
     // a direction is set - so the moment a trade is on, the in-progress nudge takes over again.
+    if (!_cachedTailReview) {
+      // Took a trade against your bias and it lost -> warn before a second one. Highest priority.
+      try { _cachedTailReview = pickAgainstBiasLossTail(); } catch (e) {}
+    }
     if (!_cachedTailReview) {
       try { _cachedTailReview = pickBiasAlignmentTail(); } catch (e) {}
     }
