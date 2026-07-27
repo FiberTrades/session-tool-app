@@ -3759,6 +3759,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </section>
 
     <div class="actions actions-narrow-1" style="margin-top:40px;">
+      <select id="stats-export-series" aria-label="Choose which series to post" style="display:none;width:100%;margin-bottom:10px;background:var(--bg-elev);color:var(--text);border:1px solid var(--border-2);border-radius:8px;padding:10px 12px;font-family:var(--mono,ui-monospace,monospace);font-size:12px;letter-spacing:.04em;cursor:pointer;"></select>
       <button class="btn" id="stats-export" data-i18n="btn.copy_discord">Post to community</button>
     </div>
   </div>
@@ -14374,6 +14375,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     document.getElementById('current-progress').textContent = cs.length + ' / 10';
     // Refresh the contextual message under the dots whenever the series renders.
     try { renderSeriesMessage(); } catch(e) {}
+    try { renderSeriesPostSelector(); } catch(e) {}
     const dotsWrap = document.getElementById('current-dots');
     dotsWrap.innerHTML = '';
     // Pre-compute translated W/L/BE labels + tooltip template — inside the loop below,
@@ -14553,6 +14555,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
     } catch (e) {}
   }
+  // Populate the "which series to post" dropdown (shown only when 2+ completed series exist).
+  function _seriesShortDate(s) {
+    var trades = (s && s.trades) || [];
+    var ds = trades.map(function (t) { return t.date; }).filter(Boolean).map(function (d) { return new Date(d); }).filter(function (d) { return !isNaN(d.getTime()); }).sort(function (a, b) { return a - b; });
+    var d = ds.length ? ds[ds.length - 1] : (s && s.date ? new Date(s.date) : null);
+    if (!d || isNaN(d.getTime())) return '';
+    try { return d.toLocaleDateString(tLocale(), { day: '2-digit', month: 'short' }); } catch (e) { return ''; }
+  }
+  function renderSeriesPostSelector() {
+    var sel = document.getElementById('stats-export-series');
+    if (!sel) return;
+    var hist = (data && data.history) || [];
+    if (hist.length <= 1) { sel.innerHTML = ''; sel.style.display = 'none'; return; }
+    var total = hist.length;
+    var prev = sel.value;
+    var pfx = (window._stT ? window._stT('Series #', 'Serie #') : 'Series #');
+    sel.innerHTML = hist.map(function (s, i) {
+      var ds = _seriesShortDate(s);
+      return '<option value="' + i + '">' + pfx + (total - i) + (ds ? ' - ' + ds : '') + '</option>';
+    }).join('');
+    sel.value = (prev !== '' && !isNaN(parseInt(prev, 10)) && parseInt(prev, 10) < total) ? prev : '0';
+    sel.style.display = '';
+  }
   document.getElementById('stats-export').addEventListener('click', () => {
     // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
     // series. data.history is ordered newest-first (via unshift on completion), so [0] is the
@@ -14564,8 +14589,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       return;
     }
-    const latestSeries = data.history[0];
-    const seriesNum = data.history.length; // most recent = highest number completed
+    // Which completed series to post: the dropdown selection (index into data.history,
+    // newest-first), defaulting to the most recent when there is no/invalid selection.
+    var _sel = document.getElementById('stats-export-series');
+    var _si = (_sel && _sel.value !== '' && !isNaN(parseInt(_sel.value, 10))) ? parseInt(_sel.value, 10) : 0;
+    if (_si < 0 || _si >= data.history.length) _si = 0;
+    const latestSeries = data.history[_si];
+    const seriesNum = data.history.length - _si; // newest-first: index 0 = highest number
     const trades = latestSeries.trades || [];
     const stats = calcSeriesStats(trades);
     // Date stamp: prefer the date RANGE from the actual trades (earliest → latest) since a
@@ -14586,7 +14616,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } else {
       seriesDateStr = `${fmtSeriesDate(validDates[0])} → ${fmtSeriesDate(validDates[validDates.length - 1])}`;
     }
-    const lines = [`**Fiber Trades — Series #${seriesNum} — ${seriesDateStr}**`];
+    const lines = [`**Series #${seriesNum} — ${seriesDateStr}**`];
     // Discord post styling — kept plain (monospace, no colours). The A.* palette
     // is retained as empty strings so the existing string interpolations keep
     // compiling; the result is plain white text in a standard ```code``` block.
@@ -20132,7 +20162,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-27 23:15 UTC';
+  window.ST_BUILD = '2026-07-27 23:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -36283,7 +36313,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }, function(){ var box=G('dcx-mc-info'); if(box) box.style.display='none'; }); }catch(e){ var box=G('dcx-mc-info'); if(box) box.style.display='none'; }
     }
     function openForward(m){ if(!m) return; if(window.STDM&&STDM.ensureRoster) STDM.ensureRoster(function(){ buildForward(m); }); else buildForward(m); }
-    function buildForward(m){ var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); var chanHtml=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(_chName(c))+'</button>'; }).join(''); var mem=(window.STDM&&STDM.partners)?STDM.partners():[]; var memHtml=mem.map(function(p){ return '<button class="dcx-fwd-item" data-dm="'+esc(p.id)+'" data-nm="'+esc(p.name).replace(/"/g,'&quot;')+'">'+avaHtml(p.avatar,p.name,'dcx-fwd-av')+'<span>'+esc(p.name)+'</span></button>'; }).join(''); if(!chanHtml&&!memHtml){ note('Nowhere to forward to.'); return; } modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3>'+(chanHtml?'<div class="dcx-fwd-sec">Channels</div><div class="dcx-fwd-list">'+chanHtml+'</div>':'')+(memHtml?'<div class="dcx-fwd-sec">Direct message</div><div class="dcx-fwd-list">'+memHtml+'</div>':'')+'<div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; Array.prototype.forEach.call(G('dcx-modal').querySelectorAll('.dcx-fwd-item'),function(b){ b.addEventListener('click', function(){ var cid=b.getAttribute('data-cid'), dm=b.getAttribute('data-dm'); if(cid){ doForward(m,cid); } else if(dm){ if(window.STDM) STDM.forwardTo(dm, b.getAttribute('data-nm'), '', m); note(lang()==='es'?'Reenviado.':'Forwarded.'); } closeModal(); }); }); }
+    function buildForward(m){ var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); var chanHtml=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(_chName(c))+'</button>'; }).join(''); var mem=(window.STDM&&STDM.partners)?STDM.partners():[]; var memHtml=mem.map(function(p){ return '<button class="dcx-fwd-item" data-dm="'+esc(p.id)+'" data-nm="'+esc(p.name).replace(/"/g,'&quot;')+'">'+avaHtml(p.avatar,p.name,'dcx-fwd-av')+'<span>'+esc(p.name)+'</span></button>'; }).join(''); if(!chanHtml&&!memHtml){ note('Nowhere to forward to.'); return; } modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3>'+(chanHtml?'<div class="dcx-fwd-sec">Channels</div><div class="dcx-fwd-list">'+chanHtml+'</div>':'')+(memHtml?'<div class="dcx-fwd-sec">Direct message</div><div class="dcx-fwd-list">'+memHtml+'</div>':'')+'<div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; Array.prototype.forEach.call(G('dcx-modal').querySelectorAll('.dcx-fwd-item'),function(b){ b.addEventListener('click', function(){ var cid=b.getAttribute('data-cid'), dm=b.getAttribute('data-dm'); if(cid){ doForward(m,cid); } else if(dm){ var _fnm=b.getAttribute('data-nm'); var _fp=(window.STDM&&STDM.forwardTo)?STDM.forwardTo(dm, _fnm, '', m):null; Promise.resolve(_fp).then(function(r){ if(r&&r.error){ note(lang()==='es'?'No se pudo enviar.':"Couldn't send."); return; } var _sm=(lang()==='es'?'Enviado a ':'Sent to ')+(_fnm||(lang()==='es'?'MD':'DMs')); if(typeof showToast==='function') showToast(_sm); else note(_sm); }).catch(function(){ note(lang()==='es'?'No se pudo enviar.':"Couldn't send."); }); } closeModal(); }); }); }
     function openForward_OLD(m){ if(!m) return; var opts=channels.filter(function(c){ return _postAllows(c.post_policy); }); if(!opts.length){ note('No channels to forward to.'); return; } var list=opts.map(function(c){ return '<button class="dcx-fwd-item" data-cid="'+esc(c.id)+'"># '+esc(_chName(c))+'</button>'; }).join(''); modal('<h3>'+(lang()==='es'?'Reenviar a':'Forward to')+'</h3><div class="dcx-fwd-list">'+list+'</div><div class="dcx-modal-actions"><button class="dcx-mc" id="dcx-mc">Cancel</button></div>'); G('dcx-mc').onclick=closeModal; var bs=G('dcx-modal').querySelectorAll('.dcx-fwd-item'); Array.prototype.forEach.call(bs,function(b){ b.addEventListener('click', function(){ doForward(m,b.getAttribute('data-cid')); closeModal(); }); }); }
     function doForward(m,tid){ if(!m||!tid||!currentUser) return; var row={ channel_id:tid, sender_id:currentUser.id, is_forward:true, sender_name:myName(), sender_avatar:myAvatar() }; if(m.body) row.body=m.body; if(m.attachment_url){ row.attachment_url=m.attachment_url; row.attachment_type=m.attachment_type; row.attachment_name=m.attachment_name; } sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ note("Couldn't forward."); return; } if(tid===(cur&&cur.id)&&r.data) append(r.data); else note(lang()==='es'?'Reenviado.':'Forwarded.'); }).catch(function(){ note("Couldn't forward."); }); }
     function openMenu(btn,id){ if(!id) return; menuMsgId=id; var menu=G('dcx-menu'); var i=idx(id); var m=i>=0?msgs[i]:null; var mine=m&&m.sender_id===(currentUser&&currentUser.id); var html=''; html+='<button class="mi-react"><svg viewBox="0 0 24 24" fill="currentColor" fill-rule="evenodd"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z M8.6 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M15.4 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M6.4 12.7c1.9 4.8 9.4 4.8 11.2 0-1.9 2.2-4 3.1-5.6 3.1s-3.7-.9-5.6-3.1Z"/></svg>'+window._stT('React','Reaccionar')+'</button>'; html+='<button class="mi-reply"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17l-5-5 5-5"/><path d="M4 12h11a4 4 0 0 1 4 4v2"/></svg>'+window._stT('Reply','Responder')+'</button>'; if(m&&(m.body||m.attachment_url)) html+='<button class="mi-fwd"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5"/><path d="M20 12H9a4 4 0 0 0-4 4v2"/></svg>'+window._stT('Forward','Reenviar')+'</button>';
@@ -37337,7 +37367,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function startEdit(id){ if(idx(id)<0) return; editingId=id; repaint(); setTimeout(function(){ var t=G('stdm-edit-input'); if(t){ t.focus(); try{t.selectionStart=t.selectionEnd=t.value.length;}catch(_){} t.style.height='auto'; t.style.height=Math.min(2400,t.scrollHeight)+'px'; } },30); }
     function saveEdit(){ var id=editingId; if(!id) return; var t=G('stdm-edit-input'); if(!t) return; var v=(t.value||'').trim(); var i=idx(id); if(!v||i<0){ editingId=null; repaint(); return; } var stamp=new Date().toISOString(); sb.from('dm_messages').update({body:v,edited_at:stamp}).eq('id',id).then(function(r){ if(r.error){ note("Couldn't save."); return; } msgs[i].body=v; msgs[i].edited_at=stamp; editingId=null; repaint(); }).catch(function(){ note("Couldn't save."); }); }
 
-    function forwardTo(pid, name, avatar, m){ if(!pid||!m||!me()) return; var row={ sender_id:me(), recipient_id:pid, sender_name:myName(), sender_avatar:myAvatar() }; if(m.body) row.body=m.body; if(m.attachment_url){ row.attachment_url=m.attachment_url; row.attachment_type=m.attachment_type; row.attachment_name=m.attachment_name; } sb.from('dm_messages').insert(row).then(function(){}); }
+    function forwardTo(pid, name, avatar, m){ if(!pid||!m||!me()) return; var row={ sender_id:me(), recipient_id:pid, sender_name:myName(), sender_avatar:myAvatar() }; if(m.body) row.body=m.body; if(m.attachment_url){ row.attachment_url=m.attachment_url; row.attachment_type=m.attachment_type; row.attachment_name=m.attachment_name; } return sb.from('dm_messages').insert(row); }
 
     function dmReplyQuote(m){ if(!m||!m.reply_to) return ''; var i=idx(m.reply_to); var q=i>=0?msgs[i]:null; if(!q) return ''; var ex=(q.body||(q.attachment_type==='image'?'[image]':(q.attachment_url?window._stT('[attachment]','[adjunto]'):'')))||''; return '<div class="dcx-replyq"><b>'+esc(q.sender_name||'Trader')+'</b> '+esc(String(ex).slice(0,120))+'</div>'; }
     function dmReactionsHtml(mid){ var arr=dmReactions[mid]; if(!arr||!arr.length) return ''; var by={},order=[]; arr.forEach(function(r){ if(!by[r.emoji]){ by[r.emoji]=[]; order.push(r.emoji); } by[r.emoji].push(r.user_id); }); var uid=me(); var h=''; order.forEach(function(em){ var us=by[em]; var mine=us.indexOf(uid)>=0; h+='<button class="dcx-react'+(mine?' mine':'')+'" data-rmid="'+esc(mid)+'" data-rem="'+esc(em)+'">'+em+'<span class="rc">'+us.length+'</span></button>'; }); var _add='<button class="dcx-react-add" data-radd="'+esc(mid)+'" title="'+window._stT('Add reaction','Añadir reacción')+'"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule="evenodd"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z M8.6 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M15.4 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M6.4 12.7c1.9 4.8 9.4 4.8 11.2 0-1.9 2.2-4 3.1-5.6 3.1s-3.7-.9-5.6-3.1Z"/></svg></button>'; return '<div class="dcx-reacts">'+h+_add+'</div>'; }
