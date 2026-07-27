@@ -3759,7 +3759,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </section>
 
     <div class="actions actions-narrow-1" style="margin-top:40px;">
-      <select id="stats-export-series" aria-label="Choose which series to post" style="display:none;width:100%;margin-bottom:10px;background:var(--bg-elev);color:var(--text);border:1px solid var(--border-2);border-radius:8px;padding:10px 12px;font-family:var(--mono,ui-monospace,monospace);font-size:12px;letter-spacing:.04em;cursor:pointer;"></select>
       <button class="btn" id="stats-export" data-i18n="btn.copy_discord">Post to community</button>
     </div>
   </div>
@@ -5082,6 +5081,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     <div class="mdl-actions">
       <button type="button" class="btn" id="charts-required-back" data-i18n="bias.charts_required_back">Go back</button>
       <button type="button" class="btn" id="charts-required-dismiss" data-i18n="bias.charts_required_dismiss">Dismiss</button>
+    </div>
+  </div>
+</div>
+<div class="modal-bg" id="series-share-modal-bg">
+  <div class="modal mdl-new" style="max-width:440px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" id="series-share-title">Share a series</div>
+        <p style="margin:6px 0 0;color:var(--text-mid);font-size:12px;line-height:1.5;" id="series-share-hint"></p>
+      </div>
+      <button type="button" class="modal-close" id="series-share-close" aria-label="Close">&times;</button>
+    </div>
+    <div style="margin-top:16px;">
+      <label style="display:block;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;" id="series-share-label">Which series</label>
+      <select id="stats-export-series" style="width:100%;background:var(--bg-elev);color:var(--text);border:1px solid var(--border-2);border-radius:8px;padding:11px 12px;font-family:var(--mono,ui-monospace,monospace);font-size:13px;letter-spacing:.02em;cursor:pointer;"></select>
+    </div>
+    <div class="mdl-actions">
+      <button type="button" class="btn" id="series-share-cancel">Cancel</button>
+      <button type="button" class="btn" id="series-share-confirm">Share</button>
     </div>
   </div>
 </div>
@@ -14375,7 +14393,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     document.getElementById('current-progress').textContent = cs.length + ' / 10';
     // Refresh the contextual message under the dots whenever the series renders.
     try { renderSeriesMessage(); } catch(e) {}
-    try { renderSeriesPostSelector(); } catch(e) {}
     const dotsWrap = document.getElementById('current-dots');
     dotsWrap.innerHTML = '';
     // Pre-compute translated W/L/BE labels + tooltip template — inside the loop below,
@@ -14555,7 +14572,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
     } catch (e) {}
   }
-  // Populate the "which series to post" dropdown (shown only when 2+ completed series exist).
+  // Populate the series-share modal dropdown with every completed series (latest first, default latest).
   function _seriesShortDate(s) {
     var trades = (s && s.trades) || [];
     var ds = trades.map(function (t) { return t.date; }).filter(Boolean).map(function (d) { return new Date(d); }).filter(function (d) { return !isNaN(d.getTime()); }).sort(function (a, b) { return a - b; });
@@ -14567,18 +14584,39 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var sel = document.getElementById('stats-export-series');
     if (!sel) return;
     var hist = (data && data.history) || [];
-    if (hist.length <= 1) { sel.innerHTML = ''; sel.style.display = 'none'; return; }
     var total = hist.length;
-    var prev = sel.value;
     var pfx = (window._stT ? window._stT('Series #', 'Serie #') : 'Series #');
     sel.innerHTML = hist.map(function (s, i) {
       var ds = _seriesShortDate(s);
       return '<option value="' + i + '">' + pfx + (total - i) + (ds ? ' - ' + ds : '') + '</option>';
     }).join('');
-    sel.value = (prev !== '' && !isNaN(parseInt(prev, 10)) && parseInt(prev, 10) < total) ? prev : '0';
-    sel.style.display = '';
+    sel.value = '0';
   }
-  document.getElementById('stats-export').addEventListener('click', () => {
+  (function wireSeriesShareModal() {
+    var bg = document.getElementById('series-share-modal-bg'); if (!bg) return;
+    function _open() {
+      if (!data.history || data.history.length === 0) { if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true }); return; }
+      try { renderSeriesPostSelector(); } catch (e) {}
+      try {
+        var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
+        var set = function (id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; };
+        set('series-share-title', T('Share a series', 'Compartir una serie'));
+        set('series-share-hint', T('Post a completed Series of 10 to the community. The latest one is selected; pick a previous series if you prefer.', 'Publica una Serie de 10 completada en la comunidad. La ultima esta seleccionada; elige una serie anterior si prefieres.'));
+        set('series-share-label', T('Which series', 'Que serie'));
+        set('series-share-cancel', T('Cancel', 'Cancelar'));
+        set('series-share-confirm', T('Share', 'Compartir'));
+      } catch (e) {}
+      bg.classList.add('show');
+    }
+    function _close() { bg.classList.remove('show'); }
+    window.__closeSeriesShareModal = _close;
+    var ob = document.getElementById('stats-export'); if (ob) ob.addEventListener('click', _open);
+    var xb = document.getElementById('series-share-close'); if (xb) xb.addEventListener('click', _close);
+    var cb = document.getElementById('series-share-cancel'); if (cb) cb.addEventListener('click', _close);
+    bg.addEventListener('click', function (e) { if (e.target === bg) _close(); });
+  })();
+  var _seriesShareConfirmBtn = document.getElementById('series-share-confirm');
+  _seriesShareConfirmBtn && _seriesShareConfirmBtn.addEventListener('click', () => {
     // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
     // series. data.history is ordered newest-first (via unshift on completion), so [0] is the
     // most recently completed. If no series has been completed yet, show a snackbar instead of
@@ -14680,6 +14718,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     lines.push('```');
     var _s10msg=lines.join('\n'); try{ window.STCommunity.postToChannel('series-of-10-trades', _s10msg).then(function(){ if(typeof showToast==='function') showToast(t('postedCommunity')); }, function(){ try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ try{ copyToClipboard(_s10msg); }catch(_){} }
     jumpToDiscord('series');
+    try { if (window.__closeSeriesShareModal) window.__closeSeriesShareModal(); } catch (e) {}
   });
   // ===== Snapshot helpers for snackbar-style undo =====
   // Each destructive action captures a snapshot of the data BEFORE mutating,
@@ -20162,7 +20201,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-27 23:45 UTC';
+  window.ST_BUILD = '2026-07-28 00:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
