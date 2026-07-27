@@ -9208,6 +9208,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // actual reset happens on confirm (see startNewSession + the prompt wiring below).
   let _pendingNewDaySession = false;
   let _prevSessionDateSrc = null;   // previous session's date, captured BEFORE a render stamps bias.sessionDate to today
+  let _newDaySnapshot = null;   // content signatures captured when the new-day prompt is armed; the reset only clears prior-day content the user has NOT touched (never today's fresh/sent bias).
+  function biasSlotHasContent(b){ b=b||{}; return !!(b.mode||b.structure||b.location||b.direction||(b.notes&&b.notes.trim())||(Array.isArray(b.tvLinks)&&b.tvLinks.some(function(l){return l&&l.url;}))); }
+  function biasSig(b){ b=b||{}; return JSON.stringify([b.mode||'',b.structure||'',b.location||'',b.direction||'',b.directionLtf||'',(b.notes||'').trim(),(Array.isArray(b.tvLinks)?b.tvLinks.map(function(l){return (l&&l.url)||'';}):[])]); }
+  function _isTodayIso(s){ try{ var t=(typeof todayDateStr==='function')?todayDateStr():new Date().toISOString().slice(0,10); return String(s||'').slice(0,10)===t; }catch(e){ return false; } }
+  function _biasSlotsArr(){ return (Array.isArray(data.biasSlots)&&data.biasSlots.length)?data.biasSlots:[data.bias||{}]; }
+  function _captureNewDaySnapshot(){ try{ return { sigs:_biasSlotsArr().map(biasSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]) }; }catch(e){ return null; } }
+  function _slotIsTodaysWork(sl, idx){ if(!sl) return false; if(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)) return true; if(_newDaySnapshot&&_newDaySnapshot.sigs&&idx!=null&&_newDaySnapshot.sigs[idx]!=null&&biasSig(sl)!==_newDaySnapshot.sigs[idx]) return true; return false; }
   function hasPriorSessionContent() {
     const b = data.bias || {};
     const biasHasContent = !!(b.mode || b.structure || b.location || b.direction ||
@@ -9233,6 +9240,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _prevSessionDateSrc = (bd && /^\d{4}-\d{2}-\d{2}/.test(bd) && bd < tIso) ? bd : (data.lastSessionDate || bd || null);
     })();
     _pendingNewDaySession = true; // ask the user once init + render + i18n are ready
+    _newDaySnapshot = _captureNewDaySnapshot();
   })();
 
   function genId() { return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
@@ -11209,6 +11217,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     return {
       upsert: function (row) {
         if (!row || row.ticket == null) return;
+        // Drop an orphaned OPEN row from a previous day: a position whose close event was missed
+        // while the app/EA was offline would otherwise linger as "active" forever. Delete it remotely
+        // too so it cannot reappear on the next load. Closed rows are always kept.
+        try {
+          if (row.closed_at == null) {
+            var _ts = row.opened_at || row.open_time || row.created_at || row.opened || row.ts || null;
+            var _tday = _ts ? String(_ts).slice(0, 10) : null;
+            var _tnow = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
+            if (_tday && /^\d{4}-\d{2}-\d{2}$/.test(_tday) && _tday < _tnow) {
+              delete rows[String(row.ticket)];
+              try { if (window.__stLiveDeleteRow) window.__stLiveDeleteRow(row.ticket); } catch (e) {}
+              render();
+              return;
+            }
+          }
+        } catch (e) {}
         var k = String(row.ticket), ex = rows[k] || {};
         rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '' };
         render();
@@ -12002,6 +12026,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
     data.bias.date = nowIso; // committing adopts today's date, so the card shows even when the form was filled the night before
+    // Sending today's bias means the new day is under way -- disarm the "new day?" reset so it can never later wipe today's work.
+    _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null; try { data.lastSessionDate = new Date().toDateString(); } catch (e) {}
     if (Array.isArray(data.biasHistory)) {
       const dateKey = (data.bias.sessionDate || todayDateStr() || nowIso.slice(0, 10));
       const entry = data.biasHistory.find(e => e.dateKey === dateKey && (e.symbol || '') === (data.bias.symbol || '') && (e.sessionName || '') === (data.bias.sessionName || ''));
@@ -13932,28 +13958,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // sync guard sees the discard of any un-committed logged trades as an intentional this-session
     // deletion, not a degraded load. (Un-committed Trade Log trades now count toward sync content.)
     try { if (window.STCloud && window.STCloud.notePeak) window.STCloud.notePeak(); } catch (e) {}
-    // --- Bias --- (reset every symbol-bias slot for the new day, keep identities)
+    // --- Bias --- (reset every symbol-bias slot for the new day, keep identities; NEVER a slot that is today's own work)
     if (Array.isArray(data.biasSlots) && data.biasSlots.length) {
-      data.biasSlots.forEach(function (sl) { Object.assign(sl, newBiasBlank()); sl.sessionDate = todayDateStr(); });
+      data.biasSlots.forEach(function (sl, i) { if (_slotIsTodaysWork(sl, i)) return; Object.assign(sl, newBiasBlank()); sl.sessionDate = todayDateStr(); });
       data.bias = data.biasSlots[(typeof data.activeBiasSlot === 'number' ? data.activeBiasSlot : 0)] || data.biasSlots[0];
     } else {
-      Object.assign(data.bias, newBiasBlank());
-      data.bias.sessionDate = todayDateStr();
+      if (!_slotIsTodaysWork(data.bias, 0)) { Object.assign(data.bias, newBiasBlank()); data.bias.sessionDate = todayDateStr(); }
     }
     document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
     if (typeof renderBiasTvLinks === 'function') renderBiasTvLinks();
     const _bn = document.getElementById('bias-notes'); if (_bn) _bn.value = '';
     const _bp = document.getElementById('bias-date'); if (_bp) _bp.value = data.bias.sessionDate;
     if (typeof renderBiasPreview === 'function') renderBiasPreview();
-    // --- Review ---
-    data.review = newReviewBlank();
-    data.review.sessionDate = todayDateStr();
-    if (typeof syncTradedFromTrades === 'function') syncTradedFromTrades();
-    document.querySelectorAll('[data-review] .option').forEach(b => b.classList.remove('selected'));
-    document.querySelectorAll('[data-review-multi] .option').forEach(b => b.classList.remove('selected'));
-    document.querySelectorAll('.tag').forEach(b => b.classList.remove('selected'));
-    const _rr = document.getElementById('review-reflection'); if (_rr) _rr.value = '';
-    _activeReviewTradeIdx = 0;
+    // --- Review --- (preserve it when it is today's own logged session; only clear a stale prior-day review)
+    var _revTodaysWork = !!(data.review && (_isTodayIso(data.review.copiedAt) || (data.review.sessionDate === todayDateStr() && Array.isArray(data.review.trades) && data.review.trades.length > 0 && _newDaySnapshot && JSON.stringify(data.review.trades || []) !== _newDaySnapshot.reviewSig)));
+    if (!_revTodaysWork) {
+      data.review = newReviewBlank();
+      data.review.sessionDate = todayDateStr();
+      if (typeof syncTradedFromTrades === 'function') syncTradedFromTrades();
+      document.querySelectorAll('[data-review] .option').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('[data-review-multi] .option').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('.tag').forEach(b => b.classList.remove('selected'));
+      const _rr = document.getElementById('review-reflection'); if (_rr) _rr.value = '';
+      _activeReviewTradeIdx = 0;
+    }
     const _sp = document.getElementById('session-date');
     if (_sp) { _sp.value = data.review.sessionDate; if (typeof updateSessionDateStatus === 'function') updateSessionDateStatus(); }
     if (typeof renderTrades === 'function') renderTrades();
@@ -13997,6 +14025,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   function showNewDaySessionPrompt() {
     if (!_pendingNewDaySession) return;
+    // Safety net: if no UNTOUCHED prior-day content remains (e.g. the user already filled or sent
+    // today's bias), roll the day over silently instead of showing a prompt that could wipe today's work.
+    try {
+      var _slots = _biasSlotsArr();
+      var _staleLeft = _slots.some(function (sl, i) { return biasSlotHasContent(sl) && !_slotIsTodaysWork(sl, i); });
+      if (!_staleLeft) { _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null; try { data.lastSessionDate = new Date().toDateString(); saveData(); } catch (e) {} return; }
+    } catch (e) {}
     try {
       var _bodyEl = document.getElementById('new-session-body');
       if (_bodyEl) {
@@ -14042,6 +14077,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var tIso = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
       var bd = (data.bias && data.bias.sessionDate) || null;
       _prevSessionDateSrc = (bd && /^\d{4}-\d{2}-\d{2}/.test(bd) && bd < tIso) ? bd : (data.lastSessionDate || bd || null);
+      if(!_newDaySnapshot) _newDaySnapshot = _captureNewDaySnapshot();
       _pendingNewDaySession = true;
       showNewDaySessionPrompt();
     } catch (e) {}
@@ -20096,7 +20132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-27 22:15 UTC';
+  window.ST_BUILD = '2026-07-27 22:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -40718,6 +40754,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   if(!window.supabase) return;
   var sb=null, chan=null, uid=null, _authHooked=false;
   window.__stLiveDeleteRemote=function(){ if(!uid||!sb) return; try{ sb.from('live_trades').delete().eq('account', uid).then(function(){},function(){}); }catch(e){} };
+  window.__stLiveDeleteRow=function(ticket){ if(!uid||!sb||ticket==null) return; try{ sb.from('live_trades').delete().eq('account', uid).eq('ticket', ticket).then(function(){},function(){}); }catch(e){} };
   function apply(row){ if(row && window.__stLive) window.__stLive.upsert(row); }
   function start(){
     sb = window.__stSB || null;
