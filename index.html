@@ -2065,6 +2065,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .series-dot.be   { background: var(--info); color: var(--bg); border-color: var(--info); }
   .series-dot.clickable { cursor: pointer; transition: opacity 200ms, transform 200ms; }
   .series-dot.clickable:hover { opacity: 0.78; transform: scale(1.06); }
+  /* Series History rows expand into the same trade pills as the Current Series. */
+  #history-list .history-row.hist-clickable { cursor: pointer; }
+  #history-list .history-row.hist-clickable:hover .history-cell,
+  #history-list .history-row.hist-open .history-cell { background: var(--bg-elev2); }
+  #history-list .series-expand { padding: 14px 14px 4px; margin: -2px 0 10px; background: var(--bg-elev2); border-radius: var(--radius-chip); }
+  #history-list .series-expand .series-dots { flex-wrap: wrap; margin-bottom: 10px; }
+  #history-list .series-expand .series-dot { flex: 1 1 40px; min-width: 34px; }
+  #history-list .series-expand-hint { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
   .history-list { margin-top: 32px; }
   /* Series History: show 10, scroll for the rest. The header row lives INSIDE
      #history-list, so it is pinned or it would scroll away with the data. */
@@ -14532,6 +14540,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <div class="history-cell center">${t('lbl.pot_acc_pct')}</div>
       <div class="history-cell center">${t('lbl.captured')}</div>
     </div>`;
+    // Labels for the expandable per-series trade pills (mirrors the Current Series dots).
+    const _lblW = t('lbl.w'), _lblL = t('lbl.l'), _lblBE = t('lbl.be');
+    const _tipDot = t('tip.trade_dot_hover');
     scopedSeries.history.forEach((s, idx) => {
       const st = calcSeriesStats(s.trades);
       const num = scopedSeries.history.length - idx;
@@ -14627,6 +14638,46 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <div class="history-cell center ${potBalPctCls}">${potBalPctHtml}</div>
         <div class="history-cell center">${pctCellHtml}</div>
       `;
+      // Click a series row to reveal its trade pills (W/L/BE, EA-verified tick). Tap a pill
+      // to open that trade with its stats + chart — the same modal the Current Series dots open.
+      row.classList.add('hist-clickable');
+      row.addEventListener('click', function () {
+        const nxt = row.nextElementSibling;
+        if (nxt && nxt.classList.contains('series-expand')) { nxt.remove(); row.classList.remove('hist-open'); return; }
+        histWrap.querySelectorAll('.series-expand').forEach(e => e.remove());
+        histWrap.querySelectorAll('.history-row.hist-open').forEach(r => r.classList.remove('hist-open'));
+        row.classList.add('hist-open');
+        const exp = document.createElement('div');
+        exp.className = 'series-expand';
+        const hint = document.createElement('div');
+        hint.className = 'series-expand-hint';
+        hint.textContent = (window._stLang === 'es') ? 'Pulsa una operación para abrirla' : 'Tap a trade to open it';
+        exp.appendChild(hint);
+        const dots = document.createElement('div');
+        dots.className = 'series-dots';
+        (s.trades || []).forEach((tr, i) => {
+          const dot = document.createElement('div');
+          dot.className = 'series-dot';
+          const dcls = tr.result === 'Win' ? 'win' : tr.result === 'Lose' ? 'lose' : 'be';
+          dot.classList.add(dcls, 'clickable');
+          dot.textContent = tr.result === 'Win' ? _lblW : tr.result === 'Lose' ? _lblL : _lblBE;
+          const dstr = tr.date ? new Date(tr.date).toLocaleDateString(tLocale(), { day: '2-digit', month: 'short' }) : '';
+          const rtxt = typeof tr.r === 'number' ? tr.r.toFixed(2) + 'R' : (tr.r || '');
+          if (_tipDot) dot.setAttribute('data-tip', _tipDot.replace('{N}', i + 1).replace('{RESULT}', tr.result).replace('{R}', rtxt).replace('{PIPS}', '').replace('{DATE}', dstr));
+          dot.addEventListener('click', function (ev) { ev.stopPropagation(); if (typeof openEditTradeModal === 'function') openEditTradeModal(tr.id); });
+          if (tr.mt5Ticket) {
+            dot.classList.add('verified');
+            const vb = document.createElement('span');
+            vb.className = 'series-dot-verified';
+            vb.title = (window._stLang === 'es') ? 'Verificada por el EA' : 'EA-verified';
+            vb.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" aria-hidden="true"><circle cx="12" cy="12" r="11" fill="#1d9bf0"/><path d="M9.3 12.4l1.9 1.9 3.6-4.2" fill="none" stroke="#fff" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+            dot.appendChild(vb);
+          }
+          dots.appendChild(dot);
+        });
+        exp.appendChild(dots);
+        row.parentNode.insertBefore(exp, row.nextSibling);
+      });
       histWrap.appendChild(row);
     });
     // Show ten series, then scroll for the rest. Measured from the rendered rows rather
@@ -20311,7 +20362,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-29 11:35 UTC';
+  window.ST_BUILD = '2026-07-29 11:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
