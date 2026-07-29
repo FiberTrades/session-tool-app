@@ -20486,7 +20486,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-29 22:15 UTC';
+  window.ST_BUILD = '2026-07-29 22:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -37406,13 +37406,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     window.addEventListener('resize', function(){ var p=document.getElementById('page-community'); if(p&&p.classList.contains('active')) fit(); });
     window.addEventListener('resize', function(){ var p=document.getElementById('page-community'); if(p&&p.classList.contains('active')) fit(); });
 
+    /* After a post to a SCORING channel (bias / review / weekly / series-of-10), recompute the
+       discipline leaderboard right away so the poster's points update within a second or two
+       instead of waiting for the nightly pg_cron rebuild. st_rebuild_leaderboard() is a full,
+       idempotent recompute — cheap for this community. Throttled (trailing) so a burst of posts
+       fires it once. Calls the st_bump_leaderboard() wrapper (advisory-locked so concurrent
+       triggers serialise instead of racing the delete+insert). Needs that wrapper created +
+       `grant execute ... to authenticated`; without it the rpc just errors out and points
+       stay on the nightly schedule — the app never breaks either way. */
+    var _SCORING_CH={'pre-session-bias':1,'post-session-review':1,'weekend-review':1,'series-of-10-trades':1};
+    var _boardBumpAt=0, _boardBumpTimer=null;
+    function _bumpBoardAfterPost(slug){
+      if(!_SCORING_CH[slug]) return;
+      var run=function(){ _boardBumpTimer=null; _boardBumpAt=Date.now();
+        try{ sb.rpc('st_bump_leaderboard').then(function(){ try{ if(window.STBoard&&STBoard.refresh) STBoard.refresh(); }catch(e){} }, function(){}); }catch(e){}
+      };
+      var since=Date.now()-_boardBumpAt;
+      if(since>=12000){ run(); }
+      else if(!_boardBumpTimer){ _boardBumpTimer=setTimeout(run, 12000-since); }
+    }
     function postToChannel(slug, body){
       slug=String(slug||'').toLowerCase(); body=String(body||'').trim();
       return new Promise(function(resolve, reject){
         if(!body){ reject(new Error('empty')); return; }
         function matchSlug(c){ var s=(c.slug||'').toLowerCase(); if(s===slug) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); return (sp>0?nm.slice(sp+1):nm).toLowerCase()===slug; }
         function withUser(uid){
-          function doInsert(ch){ if(!ch){ reject(new Error('channel not found: '+slug)); return; } var row={ channel_id:ch.id, sender_id:uid, body:body, sender_name:myName(), sender_avatar:myAvatar() }; sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ reject(r.error); } else { try{ if(cur && cur.id===ch.id && typeof append==='function') append(r.data); }catch(e){} resolve(r.data); } }, reject); }
+          function doInsert(ch){ if(!ch){ reject(new Error('channel not found: '+slug)); return; } var row={ channel_id:ch.id, sender_id:uid, body:body, sender_name:myName(), sender_avatar:myAvatar() }; sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ reject(r.error); } else { try{ if(cur && cur.id===ch.id && typeof append==='function') append(r.data); }catch(e){} try{ _bumpBoardAfterPost(slug); }catch(e){} resolve(r.data); } }, reject); }
           var ch=(channels||[]).filter(matchSlug)[0];
           if(ch){ doInsert(ch); return; }
           sb.from('channels').select('*').then(function(r){ var list=(r&&r.data)||[]; doInsert(list.filter(matchSlug)[0]); }, reject);
