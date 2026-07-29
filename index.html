@@ -19295,6 +19295,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     window.addEventListener('resize', reset);
   })();
 
+  /* Current calendar-month win rate, computed EXACTLY like the calendar month header
+     (result Win/Lose, wins/(wins+losses), BEs excluded) so the discipline leaderboard can show
+     the SAME number for the signed-in user instead of the SQL's PnL-vs-break-even-band count. */
+  window.__stMonthWR = function(){
+    try {
+      var grouped = tradesGroupedByDate();
+      var now = new Date(), y = now.getFullYear(), mo = now.getMonth();
+      var w = 0, l = 0;
+      Object.keys(grouped).forEach(function(k){
+        var dt = new Date(k);
+        if (dt.getFullYear() === y && dt.getMonth() === mo) {
+          grouped[k].forEach(function(tr){
+            if (tr.result === 'Win') w++;
+            else if (tr.result === 'Lose') l++;
+          });
+        }
+      });
+      return (w + l) > 0 ? Math.round(w / (w + l) * 100) : null;
+    } catch(e) { return null; }
+  };
   function renderCalendar() {
     const calTitleDate = new Date(calendarYear, calendarMonth, 1);
     const titleEl = document.getElementById('cal-month-title');
@@ -20489,7 +20509,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 02:35 UTC';
+  window.ST_BUILD = '2026-07-30 03:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -43834,9 +43854,22 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return p.length ? p.join(' \u00b7 ') : _t('no rules set','sin reglas');
   }
   /* Podium feature cards for the top 3 — prop-firm style, our metrics. */
+  /* The signed-in user's Win rate should match THEIR calendar's this-month figure (classified by
+     the trade's result field), not the SQL's PnL-vs-break-even-band count. So for the current user
+     on the monthly board, use the app's own month win rate; everyone else + the all-time/records
+     board keep the DB value. */
+  function _wrFor(x){
+    try {
+      if (x && S.period==='month' && typeof me==='function' && x.user_id===me() && typeof window.__stMonthWR==='function') {
+        var c = window.__stMonthWR();
+        if (c != null) return c + '%';
+      }
+    } catch(e) {}
+    return (x && x.win_rate!=null) ? (x.win_rate+'%') : '—';
+  }
   function cardHtml(x,u,rk){
     var r=(x.best_series_r==null)?null:Number(x.best_series_r);
-    var wr=(x.win_rate==null)?'—':(x.win_rate+'%');
+    var wr=_wrFor(x);
     return '<div class="stb-card stb-card-'+rk+' stb-card-click" data-uid="'+esc(x.user_id)+'" title="'+_t('Tap for full points breakdown','Toca para ver el desglose de puntos')+'">'+
       '<div class="stb-card-top">'+
         '<span class="stb-card-medal">'+(medal(rk)||'🏅')+'</span>'+
@@ -43883,7 +43916,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function cardHtmlRec(x,u,rk){
     var r=(x.best_series_r==null)?null:Number(x.best_series_r);
-    var wr=(x.win_rate==null)?'—':(x.win_rate+'%');
+    var wr=_wrFor(x);
     var w=when(x.best_series_at);
     return '<div class="stb-card stb-card-'+rk+' stb-card-click" data-uid="'+esc(x.user_id)+'" title="'+_t('Tap for full points breakdown','Toca para ver el desglose de puntos')+'">'+
       '<div class="stb-card-top">'+
@@ -43904,7 +43937,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function detailHtml(x,u){
     var r=(x.best_series_r==null)?null:Number(x.best_series_r);
     function it(k,v){ return '<div class="stb-dl-item"><span class="stb-dl-k">'+k+'</span><span class="stb-dl-v">'+v+'</span></div>'; }
-    var wr=(x.win_rate==null)?'—':(x.win_rate+'%');
+    var wr=_wrFor(x);
     return '<div class="stb-dl">'+
       '<div class="stb-dl-title">'+_t('How','Cómo')+' '+esc(u.name)+' '+_t('scored','puntuó')+'</div>'+
       '<div class="stb-dl-grid">'+
@@ -44014,7 +44047,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(mineRow.rank && mineRow.rank<=3){ you.innerHTML=''; return; }
     /* Everyone else: your standing with the same stats as a card, tap for the breakdown. */
     var rr=Number(mineRow.best_series_r||0);
-    var wrp=(mineRow.win_rate==null)?'—':(mineRow.win_rate+'%');
+    var wrp=_wrFor(mineRow);
     var _rk=mineRow.rank;
     if(!_rk){ var _srt=S.rows.slice().sort(function(a,b){ return (Number(b.points)||0)-(Number(a.points)||0); }); for(var _k=0;_k<_srt.length;_k++){ if(_srt[_k].user_id===mineRow.user_id){ _rk=_k+1; break; } } }
     var _lbl=(S.period==='alltime')?_t('Your best month','Tu mejor mes'):_t('Your rank','Tu posición');
