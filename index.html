@@ -15694,17 +15694,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     //  - traded: weekdays with >=1 saved trade dated in-window.
     //  - showed up: weekdays with a posted bias in-window (copied to Discord, or a completed 4-field bias).
     function computeWindow(startDate, endDate) {
-      let weekdaysTotal = 0;
-      for (let d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
-        const day = d.getDay();
-        if (day !== 0 && day !== 6) weekdaysTotal++;
-      }
       const tradedSet = new Set();
       allTrades.forEach(tr => {
         const d = new Date(tr.date);
         if (isNaN(d.getTime()) || d < startDate || d > endDate) return;
-        const day = d.getDay();
-        if (day !== 0 && day !== 6) tradedSet.add(d.toDateString());
+        tradedSet.add(d.toDateString());
       });
       const showedUpSet = new Set();
       biasHist.forEach(b => {
@@ -15714,10 +15708,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (!b.copiedAt && !(b.mode && b.structure && b.location && b.direction)) return;
         const d = new Date(b.dateKey + 'T12:00:00');
         if (isNaN(d.getTime()) || d < startDate || d > endDate) return;
-        const day = d.getDay();
-        if (day === 0 || day === 6) return;
         showedUpSet.add(d.toDateString());
       });
+      // Denominator = intended trading days (weekly commitment or Settings "Days I trade") ∪ the days
+      // you actually showed up or traded.
+      const weekdaysTotal = _consistencyCounted(startDate, endDate, tradedSet, showedUpSet);
       const traded = tradedSet.size, showedUp = showedUpSet.size;
       return {
         weekdaysTotal, traded, showedUp,
@@ -20573,7 +20568,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 05:35 UTC';
+  window.ST_BUILD = '2026-07-30 06:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -21501,6 +21496,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </div>`;
   }
 
+  // Which weekdays "count" for a given date: this week's weekly-review commitment if one was set
+  // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
+  // via _mondayKey, so one week's change doesn't affect the others.
+  function _consistencyPlannedDays(dayDate) {
+    try { var wk = _mondayKey(dayDate); var commit = wk ? getWeekCommitment(wk) : null; if (commit && commit.length) return commit; } catch (e) {}
+    try { var td = data && data.settings && data.settings.tradingDays; if (Array.isArray(td) && td.length) return td.map(Number); } catch (e) {}
+    return [1, 2, 3, 4, 5];
+  }
+  // Consistency denominator = the days you INTENDED to trade (planned per the rule above) PLUS any
+  // day you actually showed up (posted the session bias) or traded — so an unplanned day you turn up
+  // for joins the count, and a planned day you skip counts against you.
+  function _consistencyCounted(startDate, endDate, tradedSet, showedUpSet) {
+    var counted = new Set();
+    for (var d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
+      if (_consistencyPlannedDays(d).indexOf(d.getDay()) !== -1) counted.add(d.toDateString());
+    }
+    if (tradedSet)   tradedSet.forEach(function (k) { counted.add(k); });
+    if (showedUpSet) showedUpSet.forEach(function (k) { counted.add(k); });
+    return counted.size;
+  }
   // Reusable consistency block — used by both weekly and monthly review modals.
   // Two metrics, both computed against the same denominator (weekdays in the period):
   //   - Showed up: days a bias was completed (read from biasHistory) — trade days auto-count
@@ -21511,40 +21526,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // %s are noisy at small samples and the note doesn't add enough to earn its space).
   function renderConsistencyBlock(periodStart, periodEnd, periodTrades, opts) {
     const minimal = !!(opts && opts.minimal);
-    // Count weekdays in the period (Mon–Fri only)
-    let weekdaysInPeriod = 0;
-    for (let d = new Date(periodStart); d <= periodEnd; d.setDate(d.getDate() + 1)) {
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) weekdaysInPeriod++;
-    }
-    // Days with at least one logged trade
+    // Days with at least one logged trade (any day — a weekend session counts too).
     const tradedDaySet = new Set();
     periodTrades.forEach(t => {
       const d = new Date(t.date);
-      const day = d.getDay();
-      if (day !== 0 && day !== 6) tradedDaySet.add(d.toDateString());
+      if (!isNaN(d.getTime()) && d >= periodStart && d <= periodEnd) tradedDaySet.add(d.toDateString());
     });
-    const tradedDays = tradedDaySet.size;
-    const tradedPct = weekdaysInPeriod > 0 ? Math.round(tradedDays / weekdaysInPeriod * 100) : 0;
-    // Days where the user "showed up" in this period — strictly: completed bias
-    // AND pressed Discord copy. Trades alone don't count (could be retroactive
-    // logging from any day). Same rule as the lifetime consistency block.
+    // Days where the user "showed up" — a bias posted (copied to Discord OR a completed 4-field bias).
     const showedUpSet = new Set();
     const biasHist = Array.isArray(data.biasHistory) ? data.biasHistory : [];
     biasHist.forEach(b => {
       if (!b || !b.dateKey) return;
-      // "Showed up" = a bias posted that day: counts if it was copied to Discord
-      // (copiedAt) OR it's a completed bias (all 4 fields). Matches the documented
-      // "posted a bias" meaning, so a full bias logged a day or two later still counts
-      // as a session instead of silently dropping out of the count.
       if (!b.copiedAt && !(b.mode && b.structure && b.location && b.direction)) return;
       const d = new Date(b.dateKey + 'T12:00:00');
-      if (d < periodStart || d > periodEnd) return;
-      const day = d.getDay();
-      if (day === 0 || day === 6) return;
+      if (isNaN(d.getTime()) || d < periodStart || d > periodEnd) return;
       showedUpSet.add(d.toDateString());
     });
+    // Denominator = intended trading days (this-week commitment or Settings "Days I trade") ∪ the days
+    // you actually showed up or traded.
+    const weekdaysInPeriod = _consistencyCounted(periodStart, periodEnd, tradedDaySet, showedUpSet);
+    const tradedDays = tradedDaySet.size;
     const showedUpDays = showedUpSet.size;
+    const tradedPct   = weekdaysInPeriod > 0 ? Math.round(tradedDays / weekdaysInPeriod * 100) : 0;
     const showedUpPct = weekdaysInPeriod > 0 ? Math.round(showedUpDays / weekdaysInPeriod * 100) : 0;
     // Interpretive sub-line — only included in full (non-minimal) mode.
     let consistencyNote = '';
