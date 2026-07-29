@@ -8383,6 +8383,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     updateSessionLiveBanner();
   }
 
+  // Multi-tab safety: session open/close voice fires from this tab's IN-MEMORY sessions. If you
+  // change your session times in another tab of the same browser, this (stale) tab would keep
+  // firing the OLD times — e.g. still voicing a 10:00 close after you've moved it to 11:00. When
+  // the store changes elsewhere, pull just the session-timing fields across and re-arm today's
+  // alerts, so every open tab stays in step with your current settings.
+  try {
+    window.addEventListener('storage', function (e) {
+      if (!e || e.key !== STORAGE_KEY || !e.newValue || !data || !data.settings) return;
+      try {
+        var fs = (JSON.parse(e.newValue) || {}).settings;
+        if (!fs) return;
+        var changed = JSON.stringify(fs.sessions || null) !== JSON.stringify(data.settings.sessions || null)
+          || fs.windowStart !== data.settings.windowStart
+          || fs.windowEnd !== data.settings.windowEnd;
+        if (!changed) return;
+        data.settings.sessions = fs.sessions;
+        data.settings.windowStart = fs.windowStart;
+        data.settings.windowEnd = fs.windowEnd;
+        data.settings.sessionName = fs.sessionName;
+        data._sessionAlertFired = null; // re-arm so the corrected times fire (once) today
+        if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner();
+        if (typeof renderSessionMeta === 'function') try { renderSessionMeta(); } catch (_e) {}
+      } catch (_) {}
+    });
+  } catch (_) {}
+
   // Decide whether to fire the rule reminder at the current HH:MM tick.
   // - 'off'        → never
   // - 'start'      → exactly once when hhmm === windowStart
@@ -20453,7 +20479,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-29 20:20 UTC';
+  window.ST_BUILD = '2026-07-29 20:50 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
