@@ -20489,7 +20489,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 02:10 UTC';
+  window.ST_BUILD = '2026-07-30 02:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -36881,6 +36881,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
          clearly-foreign lines; a genuinely Spanish post (many hits, no English) still
          clears 3 easily and gets its undecidable lines translated too. */
       var msgForeign = (msgDet !== null && msgDet !== L.to && Math.abs(msgSc.es - msgSc.en) >= 3);
+      /* A post is "worth fully translating" if ANY line reads clearly foreign to the reader. This
+         catches the mixed STRUCTURED posts (bias/review/series) whose whole-message vote is muddied
+         by the member's own-language notes, which left the English labels/headers (Mode, HTF Chart,
+         Notes:, — Charts —) scored "undecidable" and therefore untranslated = the partial-translation
+         the user sees. When any foreign line exists, undecidable lines get an auto-detect pass too;
+         auto-detect leaves already-target-language text alone, so it's safe. */
+      var anyForeign = msgForeign;
+      if (!anyForeign) {
+        for (var _fi = 0; _fi < lines.length; _fi++) {
+          var _fm = lines[_fi].match(_TR_MARKER); var _fb = _fm ? _fm[2] : lines[_fi];
+          if (!_fb.trim() || !/[A-Za-zÀ-ÿ]{2}/.test(_fb)) continue;
+          var _fd = _trDetect(_fb);
+          if (_fd !== null && _fd !== L.to) { anyForeign = true; break; }
+        }
+      }
       var out = [];
       return lines.reduce(function (chain, line) {
         return chain.then(function () {
@@ -36891,8 +36906,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var lsc  = _trScore(body);
           var ldet = (lsc.es > lsc.en) ? 'es' : (lsc.en > lsc.es ? 'en' : null);
           if (ldet === L.to) { out.push(line); return; }        // clearly the reader's language
-          var from = (ldet !== null) ? ldet : (msgForeign ? msgDet : null);
-          if (from === null) { out.push(line); return; }        // undecidable inside a mixed post
+          var from = (ldet !== null) ? ldet : (msgForeign ? msgDet : (anyForeign ? 'auto' : null));
+          if (from === null) { out.push(line); return; }        // undecidable AND no foreign signal in the post -> leave it
           return Promise.resolve(fn(body, from, L.to)).then(function (res) {
             out.push(prefix + ((res && String(res).trim()) ? res : body));
           }, function () { out.push(line); });
