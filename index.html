@@ -11841,6 +11841,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function initScrollReveal(scope) {
     if (!('IntersectionObserver' in window)) return;
     try { if (matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+    // Do NOT arm the reveal-on-scroll animation during the first few seconds after a page
+    // (re)load. On reload the app restores whatever tab you were on, and every section below
+    // the fold (e.g. Wins vs Losses, Max Consecutive Streaks) would be set to opacity:0 and only
+    // fade in on scroll or after the fallback timeout — which reads as "the section takes forever
+    // to load / disappears then reappears". Inside the load window we leave everything visible so
+    // a reload is instant; the reveal still animates for deliberate tab switches later on.
+    try { if (performance.now() < 3000) return; } catch (e) {}
     const _root = scope || document;
     const _sel = '.stats-summary, .wl-summary, .pie-grid, .holdtime-grid, .chart-card, .year-glance, .tag-leaderboard';
     const _vh = window.innerHeight || 800;
@@ -20479,7 +20486,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-29 20:50 UTC';
+  window.ST_BUILD = '2026-07-29 22:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34153,7 +34160,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             var sc = Math.min(1, maxDim / Math.max(w, h));
             var cw = Math.max(1, Math.round(w * sc)), ch = Math.max(1, Math.round(h * sc));
             var c = document.createElement("canvas"); c.width = cw; c.height = ch;
-            c.getContext("2d").drawImage(img, 0, 0, cw, ch);
+            var cx = c.getContext("2d");
+            cx.drawImage(img, 0, 0, cw, ch);
+            // Windows clipboard screenshots often arrive with a bogus all-zero alpha channel.
+            // Re-encoding that as JPEG flattens the transparent pixels to BLACK, and as WebP
+            // keeps them transparent so the dark chat background shows through — both read as
+            // "a black image" to other users. Force every non-opaque pixel back to fully opaque
+            // so a pasted screenshot uploads the way it looks on screen. Opaque images (the
+            // normal case) skip the putImageData entirely, so there's no visible/perf cost.
+            try {
+              var id = cx.getImageData(0, 0, cw, ch), d = id.data, fixed = false;
+              for (var p = 3; p < d.length; p += 4) { if (d[p] !== 255) { d[p] = 255; fixed = true; } }
+              if (fixed) cx.putImageData(id, 0, 0);
+            } catch (e) { /* tainted canvas (cross-origin) — leave as-is */ }
             URL.revokeObjectURL(u);
             var type = __stCanWebp() ? "image/webp" : "image/jpeg";
             c.toBlob(function (b) {
@@ -35252,7 +35271,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.dcx-dm-btn:hover{color:#f4f3f6;}' +
         '.dcx-fwd-item:hover{background:#ff4d97;color:#fff;}' +
         '.dcx-msg.flash{background:rgba(255,77,151,.14) !important;transition:background .3s;}' +
-        '.dcx-edit-ta{width:100%;box-sizing:border-box;background:#383a40;border:1px solid #161520;border-radius:8px;color:#f4f3f6;padding:8px;font-family:inherit;font-size:14px;resize:vertical;min-height:120px;overflow-y:auto;line-height:1.5;}' +
+        '.dcx-edit-ta{width:100%;box-sizing:border-box;background:#383a40;border:1px solid #161520;border-radius:8px;color:#f4f3f6;padding:8px;font-family:inherit;font-size:14px;resize:vertical;min-height:38px;overflow-y:hidden;line-height:1.5;}' +
         '.dcx-edit-actions{display:flex;gap:10px;align-items:center;margin-top:6px;font-size:12px;}' +
         '.dcx-edit-save{color:#000;background:#f472b6;border:none;border-radius:4px;padding:5px 12px;cursor:pointer;font-family:inherit;}' +
         '.dcx-edit-cancel{color:#b7b4bf;background:transparent;border:none;cursor:pointer;font-family:inherit;}' +
@@ -36199,7 +36218,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       /* Showing a translation swaps the TEXT only - attachments, charts and every
          other part of the message render exactly as they always do. */
       var _trTxt=_trWant(m); if(_trTxt) _mb=_trTxt;
-      if(_mb){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mb))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mb, _allowImg)+'</span>'; } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_allowImg){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
+      if(_mb){ var _mbTxt=_mb;
+        if(!_allowImg){
+          /* A member's chart link is shown as a preview IMAGE by the unfurl block below. Strip the
+             bare media URL (TradingView / YouTube / direct image) out of the TEXT so its raw link
+             address doesn't sit ABOVE that image. Non-media links are left intact and stay clickable.
+             (Admin / chart-channel messages take the _allowImg path, which already inlines the image
+             in place of the URL, so they never showed a link — this makes members consistent.) */
+          _mbTxt=_mbTxt.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_f,_p,_u){ return previewImg(_u)?_p:_f; });
+        }
+        if((_mbTxt||'').trim()){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mbTxt))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mbTxt, _allowImg)+'</span>'; }
+      } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_allowImg){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function _canTranslate(){ /* only worth offering where members cannot post: the static, admin-written channels */
       try{ return admin() && cur && String(cur.post_policy||'')==='admin'; }catch(e){ return false; } }
     function bodyInner(m){ if(editingId===m.id){
@@ -36207,7 +36236,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var _tabs=_tr ? ('<div class="dcx-edit-langs"><button type="button" class="dcx-lang-tab active" data-lang="en">EN</button>'
                       +'<button type="button" class="dcx-lang-tab" data-lang="es">ES</button></div>') : '';
       var _esTa=_tr ? ('<textarea class="dcx-edit-ta" id="dcx-edit-input-es" spellcheck="true" style="display:none;" oninput="this.style.height=\'auto\';this.style.height=Math.min(2400,this.scrollHeight)+\'px\';" placeholder="Versi\u00f3n en espa\u00f1ol\u2026">'+esc(m.body_es||'')+'</textarea>') : '';
-      return _tabs+'<textarea class="dcx-edit-ta" id="dcx-edit-input" spellcheck="true">'+esc(m.body||'')+'</textarea>'+_esTa
+      return _tabs+'<textarea class="dcx-edit-ta" id="dcx-edit-input" spellcheck="true" oninput="this.style.height=\'auto\';this.style.height=Math.min(2400,this.scrollHeight)+\'px\';">'+esc(m.body||'')+'</textarea>'+_esTa
              +'<div class="dcx-edit-actions"><button class="dcx-edit-save">'+window._stT('Save','Guardar')+'</button><button class="dcx-edit-cancel">'+window._stT('Cancel','Cancelar')+'</button></div>'; } return '<div class="dcx-content">'+(m.is_forward?'<div class="dcx-fwd"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 17l5-5-5-5"/><path d="M20 12H9a4 4 0 0 0-4 4v2"/></svg>'+window._stT('Forwarded','Reenviado')+'</div>':'')+contentHtml(m)+(m.edited_at?'<span class="dcx-edited">'+window._stT('(edited)','(editado)')+'</span>':'')+'</div>'; }
     function dayKey(ts){ var d=new Date(ts); return d.getFullYear()+'-'+(d.getMonth()+1)+'-'+d.getDate(); }
     function dayLabel(ts){ var d=new Date(ts); var now=new Date(); var a=new Date(now.getFullYear(),now.getMonth(),now.getDate()); var b=new Date(d.getFullYear(),d.getMonth(),d.getDate()); var diff=Math.round((a-b)/86400000); if(diff===0) return window._stT('Today','Hoy'); if(diff===1) return window._stT('Yesterday','Ayer'); try{ return d.toLocaleDateString(undefined,{day:'numeric',month:'long',year:'numeric'}); }catch(e){ return b.toDateString(); } }
@@ -37936,7 +37965,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if(msg) msg(T.up);
         var finish=function(blob, type, ext){
           __stAvatarUpload(blob, type, ext).then(function(url){
-            try{ var da=window.STCloud.getData(); da.avatarUrl=url; if(window.STCloud.save) window.STCloud.save(); }catch(_){} try{ if(window.STCommunity && STCommunity.refreshIdentity) STCommunity.refreshIdentity(); }catch(_){}
+            try{ var da=window.STCloud.getData(); da.avatarUrl=url; if(window.STCloud.save) window.STCloud.save(); }catch(_){} try{ if(window.STCommunity && STCommunity.refreshIdentity) STCommunity.refreshIdentity(); }catch(_){} try{ if(window.STBoard && STBoard.bumpAvatar) STBoard.bumpAvatar((window.STCloud&&STCloud.userId)||(window.currentUser&&currentUser.id), url); }catch(_){}
             if(msg) msg(''); window.__stEnsureAvatarUI();
           }).catch(function(){ if(msg) msg(__stAvatarStrings().err); });
         };
@@ -37968,7 +37997,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         __stOpenCropper(f, msg);
       });
       window.__stRemoveAvatar = function(){
-        try{ var d=window.STCloud.getData(); d.avatarUrl=''; if(window.STCloud.save) window.STCloud.save(); }catch(_){} try{ if(window.STCommunity && STCommunity.refreshIdentity) STCommunity.refreshIdentity(); }catch(_){}
+        try{ var d=window.STCloud.getData(); d.avatarUrl=''; if(window.STCloud.save) window.STCloud.save(); }catch(_){} try{ if(window.STCommunity && STCommunity.refreshIdentity) STCommunity.refreshIdentity(); }catch(_){} try{ if(window.STBoard && STBoard.bumpAvatar) STBoard.bumpAvatar((window.STCloud&&STCloud.userId)||(window.currentUser&&currentUser.id), ''); }catch(_){}
         window.__stEnsureAvatarUI();
       };
       if(!document.getElementById('stc-ava-x-css')){ var xs=document.createElement('style'); xs.id='stc-ava-x-css'; xs.textContent='#stc-avatar-prev .stc-ava-plus{position:absolute;inset:0;display:none;align-items:center;justify-content:center;background:rgba(0,0,0,.45);color:#fff;font-size:26px;line-height:1;pointer-events:none;}@media (hover:hover) and (pointer:fine){#stc-avatar-prev:hover .stc-ava-plus{display:flex;}}@media (hover:none),(pointer:coarse){#stc-avatar-prev .stc-ava-plus{display:flex;}}#stc-avatar-prev .stc-ava-x{position:absolute;inset:0;display:none;align-items:center;justify-content:center;width:100%;height:100%;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;cursor:pointer;font-size:26px;line-height:1;padding:0;}@media (hover:hover) and (pointer:fine){#stc-avatar-prev:hover .stc-ava-x{display:flex;}}@media (hover:none),(pointer:coarse){#stc-avatar-prev .stc-ava-x{display:flex;}}'; document.head.appendChild(xs); }
@@ -43983,6 +44012,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        "How points work" rules) is built once at mount with _t(), so a language switch
        must destroy + re-mount it; paint() then re-renders the cards/table in the new lang. */
     relang:function(){ try{ var b=el('stb-board'); if(b) b.remove(); }catch(e){} S.paintedFor=null; try{ sync(); }catch(e){} },
+    /* Update one member's avatar in the cached people list and repaint immediately, so a
+       profile-picture change shows on the board WITHOUT a page reload. names() fetches the
+       member list once and caches it in S.ppl, so without this the board keeps the old avatar
+       (or placeholder) until the next full reload. Called from the Settings avatar save/remove. */
+    bumpAvatar:function(uid,url){ if(!uid) return; S.ppl[uid]=S.ppl[uid]||{name:'Trader',avatar:''}; S.ppl[uid].avatar=url||''; try{ if(S.paintedFor!=null && S.rows && S.rows.length) paint(); }catch(e){} },
     state:function(){ return S; }
   };
   if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(boot,150);
