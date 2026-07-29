@@ -1218,7 +1218,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .info-tip-content { display: none; position: absolute; top: 24px; left: -8px; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); box-shadow: none; padding: 12px 14px; color: var(--text-mid); font-size: 10px; line-height: 1.6; width: 340px; z-index: 100; font-family: 'AppNum', 'DM Mono', monospace; letter-spacing: 0.02em; text-transform: none; }
   .info-tip:hover .info-tip-content { display: block; }
   .row-tooltip { position: fixed; z-index: 9999; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 10px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; line-height: 1.55; color: var(--text-mid); white-space: nowrap; pointer-events: none; box-shadow: none; }
-  @media (max-width: 700px) { .info-tip-content { width: 260px; left: auto; right: -8px; } }
+  @media (max-width: 700px) {
+    /* Phone: drop the tiny "?" (hard to tap, tooltip opened off-screen). The heading itself is
+       tappable and the tip drops full-width UNDER the section header instead of overflowing. */
+    .info-tip-icon { display: none; }
+    .section-title:has(.info-tip) { cursor: pointer; }
+    .section-header { position: relative; }
+    .info-tip { position: static; margin-left: 0; }
+    .info-tip:hover .info-tip-content { display: none; }   /* kill sticky touch-hover; tap toggles it instead */
+    .info-tip.tip-open .info-tip-content { display: block; top: calc(100% + 8px); left: 0; right: 0; width: auto; max-width: calc(100vw - 24px); white-space: normal; box-sizing: border-box; }
+  }
   /* Period filter row above the simulators — small inline control. */
   /* "N trades in scope" removed from the header — the count now lives in each stats box. */
   .potr-period-row { display: none; }
@@ -2020,7 +2029,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .series-right-col > .chart-card { margin: 0; min-width: 0; padding: 16px; display: flex; flex-direction: column; flex: 1 1 0; min-height: 0; }
   .series-right-col #equity-curve-svg-wrap { flex: 1 1 0; min-height: 0; }
   .series-right-col #equity-curve-chart { height: 100%; }
-  @media (max-width: 760px) { .series-top-row { flex-direction: column; height: auto; } .series-top-row > .stats-summary { flex: 0 0 auto; } }
+  @media (max-width: 760px) {
+    .series-top-row { flex-direction: column; height: auto; }
+    .series-top-row > .stats-summary { flex: 0 0 auto; }
+    /* 4 stat boxes as a 2x2 grid so they fill the row (a 3-col grid left an empty grey cell). */
+    .series-top-row > .stats-summary.stats-summary-vertical { grid-template-columns: repeat(2, 1fr); }
+    /* Give the series equity a definite height — flex:1 1 0 collapsed it to 0 in the auto-height
+       column, so the curve was missing. */
+    .series-right-col > .chart-card { flex: 0 0 auto; }
+    .series-right-col #equity-curve-svg-wrap { flex: none; height: 220px; min-height: 220px; overflow: hidden; }
+    .series-right-col #equity-curve-chart { height: 220px; }
+  }
   /* Statistics tab: KPI boxes (2 cols x 4 rows) on the LEFT, equity graph on the RIGHT, matched heights. */
   .stats-top-row { display: flex; gap: 16px; align-items: stretch; margin-top: 24px; }
   .stats-top-row > .stats-summary { margin-top: 0; flex: 0 0 360px; grid-template-columns: repeat(2, 1fr); grid-auto-rows: 125px; }
@@ -2119,9 +2138,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #history-list .history-row.hist-clickable:hover .history-cell,
   #history-list .history-row.hist-open .history-cell { background: var(--bg-elev2); }
   #history-list .series-expand { padding: 14px 14px 4px; margin: -2px 0 10px; background: var(--bg-elev2); border-radius: var(--radius-chip); }
-  #history-list .series-expand .series-dots { flex-wrap: wrap; margin-bottom: 10px; }
-  /* Fixed size so a wrapped row with fewer trades doesn't stretch its pills huge — every trade box the same size, left-aligned. */
-  #history-list .series-expand .series-dot { flex: 0 0 40px; min-width: 40px; }
+  /* No wrap + equal flex so all 10 trade boxes sit on ONE line, the same size as the Current Series dots (they were stretching when they wrapped to a second row). */
+  #history-list .series-expand .series-dots { flex-wrap: nowrap; margin-bottom: 10px; }
+  #history-list .series-expand .series-dot { flex: 1 1 0; min-width: 0; }
   #history-list .series-expand-hint { font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 10px; }
   .history-list { margin-top: 32px; }
   /* Series History collapse — defaults closed; runtime-only (reopens closed after a reload). */
@@ -19313,6 +19332,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     document.addEventListener('focusin', reset);
     window.addEventListener('scroll', reset, true);
     window.addEventListener('resize', reset);
+    /* Phone: the "?" info-tip icon is hidden (CSS); tapping the section HEADING toggles the tip.
+       Capture-phase + stopPropagation so it opens cleanly without also firing a collapsible header;
+       a tap anywhere else closes any open tip. Desktop keeps the hover behaviour and bails here. */
+    document.addEventListener('click', function (e) {
+      try { if (matchMedia('(hover: hover) and (pointer: fine)').matches) return; } catch (_) {}
+      var title = e.target.closest ? e.target.closest('.section-title') : null;
+      var tip = title ? title.querySelector('.info-tip') : null;
+      var open = document.querySelectorAll('.info-tip.tip-open');
+      for (var i = 0; i < open.length; i++) { if (open[i] !== tip) open[i].classList.remove('tip-open'); }
+      if (tip) { e.stopPropagation(); tip.classList.toggle('tip-open'); }
+    }, true);
   })();
 
   /* Current calendar-month win rate, computed EXACTLY like the calendar month header
@@ -20529,7 +20559,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 04:00 UTC';
+  window.ST_BUILD = '2026-07-30 04:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
