@@ -1,0 +1,149 @@
+// ─────────────────────────────────────────────────────────────────────────────
+//  Supabase Edge Function: st-assistant
+//  The AI brain behind the "ST Assistant" box in the app.
+//
+//  It proxies coaching + chat requests to the Claude API. The Anthropic API key
+//  lives ONLY here, as a Supabase secret (ANTHROPIC_API_KEY) — it is never sent to
+//  the browser. Supabase verifies the caller's login (verify_jwt stays ON, the
+//  default), so only signed-in members can reach it.
+//
+//  The browser sends:
+//    { mode: "coach" | "chat",
+//      messages: [{ role: "user"|"assistant", content: string }],   // chat history (chat mode)
+//      context: { dataPack, profile, lang } }
+//  and gets back:
+//    { reply: string }
+//
+//  DEPLOY (see the chat for step-by-step):
+//   1. Supabase Dashboard → Edge Functions → create "st-assistant" → paste this file → Deploy.
+//   2. Edge Functions → Secrets → add ANTHROPIC_API_KEY = sk-ant-...
+// ─────────────────────────────────────────────────────────────────────────────
+
+const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
+// Claude Haiku: fast + cheapest, ideal for coaching/chat. Swap for a stronger model here if desired.
+const MODEL = "claude-haiku-4-5";
+
+const CORS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
+// What ST Assistant is, and how the app works — its "app knowledge base". The trader's
+// OWN numbers arrive per-request in context.dataPack; this block is the stable knowledge.
+const APP_FACTS = `You are **ST Assistant**, the built-in AI trading coach inside Session Tool (sessiontool.app) — a trading journal, session-prep, and accountability app used by a small community of discretionary traders.
+
+Your job: give honest, specific, encouraging coaching and answer questions about (a) the trader's own performance and (b) how the app works. You are a calm, sharp trading mentor — never a hype machine, never harsh. Prioritise what will actually improve their trading.
+
+## How the app is organised (tabs)
+- **Session Bias** — before the session, the trader logs their read/bias per instrument: direction (Bullish / Bearish / Unsure), market structure, price location, and notes. This is their plan.
+- **Session Review** — after the session, they log each trade (result, R, type, side, entry/exit) plus an honest self-assessment: Execution Quality (Flawless / Needs Work / Observed Only), Focus Level, and reflections.
+- **Series of 10** — trades are tracked in batches of 10 ("a series"). Shows the current series' equity curve, W/L/BE dots, and completed-series history — the trajectory over time.
+- **Statistics** — lifetime KPIs: Win Rate, Net R, Expectancy (avg R per trade), Profit Factor, by-symbol / by-weekday / by-direction breakdowns, equity curve, and R left on the table.
+- **Calendar Log** — a month calendar of daily results.
+- **Media Vault** — saved chart screenshots and resources.
+- **Community** — a Discord-style chat + a discipline leaderboard.
+
+## Key terms
+- **R** — risk multiple. A trade risking 1 unit that makes 2 units is +2R. In this app a LOSS always counts as **-1R** and a break-even as **0R**; a winner's R is what the trader logged.
+- **POT R (Potential R)** — how much more the move offered beyond what they banked ("R left on the table"). High POT R on winners = they're exiting too early.
+- **Expectancy** — average R per trade. Positive = a mathematical edge.
+- **Profit Factor** — total winning R ÷ total losing R. Above ~1.5 is a solid edge.
+- **Win Rate** — wins ÷ (wins + losses); break-evens excluded.
+- **Trading days** — the days the trader commits to trade: a default set in Settings, optionally overridden each week in the Weekly Review. "Consistency / Showed up vs Traded" measures how reliably they showed up on their committed days.
+- **Bias alignment** — trading WITH your pre-session read vs AGAINST it. Trading against your own bias and losing is a common leak the app flags.
+
+## How to do common things (answer app questions with these)
+- **Set up risk rules:** open **Settings** → set your **per-trade risk** (£ or % of balance) and, if it's a prop/funded account, your **max drawdown** and **profit target**. These drive the R and £ maths across the app.
+- **Set trading days:** Settings → choose which weekdays you trade; each week you can fine-tune in the Weekly Review.
+- **See your best weekday / symbol / session:** the **Statistics** tab has by-weekday, by-symbol and by-direction breakdowns.
+- **Leaderboard points:** earned for disciplined actions (posting your bias, completing reviews, showing up on trading days). They update shortly after a qualifying action.
+
+## Rules for you
+- When a question is about their performance, use the numbers in their data pack — quote the actual figures. **Never invent a number you weren't given**; if you don't have it, say what you'd need or point them to the tab that shows it.
+- Keep answers concise and concrete. One strong, specific insight beats a paragraph of generic advice.
+- Be a coach: notice patterns, ask the sharp question, suggest the next concrete step.
+- You are not a licensed financial adviser and don't give personalised investment/financial advice or predict markets — you coach process, discipline, and the trader's own logged data.`;
+
+Deno.serve(async (req: Request): Promise<Response> => {
+  if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
+  if (req.method !== "POST") return json({ error: "POST only" }, 405);
+
+  try {
+    if (!ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY is not set in Supabase secrets." }, 500);
+
+    const body = await req.json().catch(() => ({}));
+    const mode = body?.mode === "coach" ? "coach" : "chat";
+    const ctx = body?.context ?? {};
+
+    // Build the chat turns we send to Claude.
+    let claudeMessages: Array<{ role: string; content: string }>;
+    if (mode === "coach") {
+      claudeMessages = [{ role: "user", content: "Give me today's coaching note based on my data." }];
+    } else {
+      const raw = Array.isArray(body?.messages) ? body.messages : [];
+      claudeMessages = raw
+        .filter((m: any) => m && (m.role === "user" || m.role === "assistant") && m.content)
+        .slice(-16) // keep the last ~8 exchanges
+        .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
+      if (!claudeMessages.length || claudeMessages[0].role !== "user") {
+        claudeMessages.unshift({ role: "user", content: "Hello" });
+      }
+    }
+
+    const system = buildSystem(ctx, mode);
+
+    const r = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        "x-api-key": ANTHROPIC_API_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: mode === "coach" ? 220 : 500,
+        system,
+        messages: claudeMessages,
+      }),
+    });
+
+    const data = await r.json().catch(() => ({}));
+    if (!r.ok) return json({ error: data?.error?.message || `Claude API error ${r.status}` }, 502);
+
+    const reply = (data?.content ?? [])
+      .filter((b: any) => b?.type === "text")
+      .map((b: any) => b.text)
+      .join("")
+      .trim();
+
+    return json({ reply: reply || "…" });
+  } catch (e) {
+    return json({ error: String((e as any)?.message ?? e) }, 500);
+  }
+});
+
+function json(obj: unknown, status = 200): Response {
+  return new Response(JSON.stringify(obj), { status, headers: { ...CORS, "content-type": "application/json" } });
+}
+
+function buildSystem(ctx: any, mode: string): string {
+  let s = APP_FACTS;
+  if (ctx?.dataPack) {
+    s += `\n\n## THIS trader's current data (use these exact numbers; do not invent others)\n` +
+         JSON.stringify(ctx.dataPack).slice(0, 12000);
+  }
+  if (ctx?.profile && String(ctx.profile).trim()) {
+    s += `\n\n## What you remember about this trader (their evolving profile)\n${String(ctx.profile).slice(0, 3000)}`;
+  }
+  if (ctx?.lang === "es") s += `\n\nRespond in Spanish (español).`;
+  if (mode === "coach") {
+    s += `\n\n## Right now\nWrite a SHORT proactive coaching note: 1–3 sentences, warm and specific to their data above. ` +
+         `Lead with the single most useful observation (a pattern, a leak, a win worth reinforcing, or the next concrete step). ` +
+         `No "Hi" / "Hello" and no sign-off — just the insight.`;
+  } else {
+    s += `\n\n## Right now\nAnswer the trader's latest question. Performance questions → use their data pack. ` +
+         `App/"how do I" questions → use your app knowledge. Be concise and concrete.`;
+  }
+  return s;
+}
