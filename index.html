@@ -697,6 +697,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-asst-collapsed { padding-top: 13px; padding-bottom: 13px; }
   .st-asst-collapsed .st-asst-body > *:not(.st-asst-head) { display: none; }
   .st-asst-head { padding-right: 30px; }   /* room for the minimise button */
+  /* Attach image (+) button, pending preview, and in-chat thumbnails */
+  .st-asst-add { flex: none; width: 34px; height: 34px; border-radius: 10px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .st-asst-add:hover { color: var(--text); background: rgba(255,255,255,0.06); }
+  .st-asst-preview { margin-bottom: 8px; }
+  .st-asst-thumb { position: relative; display: inline-block; }
+  .st-asst-thumb img { max-height: 72px; max-width: 130px; border-radius: 10px; border: 1px solid var(--border-2); display: block; }
+  .st-asst-thumb-x { position: absolute; top: -7px; right: -7px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border-2); background: #000; color: #fff; font-size: 13px; line-height: 1; cursor: pointer; display: flex; align-items: center; justify-content: center; padding: 0; }
+  .st-asst-msg-img { display: block; max-width: 100%; max-height: 220px; border-radius: 10px; margin-bottom: 6px; }
   /* Economic calendar panel — sits between the greeting and the first form section.
      Visual treatment: bordered panel matching the dim-bordered "card" feel used elsewhere.
      Stays subtle so it doesn't compete with the form. Each event row is a compact
@@ -20726,7 +20734,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 17:20 UTC';
+  window.ST_BUILD = '2026-07-30 18:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31141,12 +31149,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try { var r = await window.__stSB.auth.getSession(); return (r && r.data && r.data.session) ? r.data.session.access_token : null; }
       catch (e) { return null; }
     }
-    async function call(mode, messages) {
+    async function call(mode, messages, image) {
       var tk = await token();
+      var msgs = (messages || []).map(function (m) { return { role: m.role, content: m.content }; });   // strip display-only image data
       var res = await fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
-        body: JSON.stringify({ mode: mode, messages: messages || [], context: { dataPack: dataPack(), profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
+        body: JSON.stringify({ mode: mode, messages: msgs, image: image || null, context: { dataPack: dataPack(), profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
       });
       var j = await res.json().catch(function () { return {}; });
       if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
@@ -31195,15 +31204,54 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
 
     function renderLog() {
-      var html = history.map(function (m) { return '<div class="st-asst-msg ' + (m.role === 'user' ? 'me' : 'ai') + '">' + esc(m.content) + '</div>'; }).join('');
+      var html = history.map(function (m) {
+        var img = (m.role === 'user' && m.image) ? '<img class="st-asst-msg-img" src="' + m.image + '" alt="">' : '';
+        return '<div class="st-asst-msg ' + (m.role === 'user' ? 'me' : 'ai') + '">' + img + esc(m.content) + '</div>';
+      }).join('');
       if (busy) html += '<div class="st-asst-msg ai typing">' + (es() ? 'pensando…' : 'thinking…') + '</div>';
       Array.prototype.forEach.call(document.querySelectorAll('.st-asst-log'), function (l) { l.innerHTML = html; l.scrollTop = l.scrollHeight; });
     }
     function setCoach(txt) { Array.prototype.forEach.call(document.querySelectorAll('.st-asst-coach'), function (c) { c.textContent = txt; }); }
+
+    var pendingImg = null;   // { dataUrl, media_type, data } — attached to the NEXT message only
+    function clearPending() { pendingImg = null; renderPreview(); }
+    function renderPreview() {
+      Array.prototype.forEach.call(document.querySelectorAll('.st-asst-preview'), function (p) {
+        if (pendingImg) {
+          p.style.display = 'block';
+          p.innerHTML = '<div class="st-asst-thumb"><img src="' + pendingImg.dataUrl + '" alt=""><button type="button" class="st-asst-thumb-x" aria-label="Remove">×</button></div>';
+          var x = p.querySelector('.st-asst-thumb-x'); if (x) x.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); clearPending(); });
+        } else { p.style.display = 'none'; p.innerHTML = ''; }
+      });
+    }
+    function downscale(dataUrl, cb) {
+      try {
+        var im = new Image();
+        im.onload = function () {
+          var max = 1400, w = im.width, h = im.height;
+          if (w > max || h > max) { if (w >= h) { h = Math.round(h * max / w); w = max; } else { w = Math.round(w * max / h); h = max; } }
+          var c = document.createElement('canvas'); c.width = w; c.height = h;
+          c.getContext('2d').drawImage(im, 0, 0, w, h);
+          var out = c.toDataURL('image/jpeg', 0.85);
+          cb({ dataUrl: out, media_type: 'image/jpeg', data: out.split(',')[1] });
+        };
+        im.onerror = function () { cb(null); };
+        im.src = dataUrl;
+      } catch (e) { cb(null); }
+    }
+    function attachBlob(blob) {
+      if (!blob) return;
+      var fr = new FileReader();
+      fr.onload = function () { downscale(fr.result, function (img) { if (img) { pendingImg = img; renderPreview(); } }); };
+      fr.readAsDataURL(blob);
+    }
     async function send(q) {
-      if (!q || busy) return;
-      history.push({ role: 'user', content: q }); busy = true; renderLog();
-      try { var reply = await call('chat', history); history.push({ role: 'assistant', content: reply || '…' }); }
+      if ((!q && !pendingImg) || busy) return;
+      var imgApi = pendingImg ? { media_type: pendingImg.media_type, data: pendingImg.data } : null;
+      var msg = { role: 'user', content: q || (es() ? '(imagen adjunta)' : '(image attached)') };
+      if (pendingImg) msg.image = pendingImg.dataUrl;   // display only — not re-sent to the API
+      history.push(msg); clearPending(); busy = true; renderLog();
+      try { var reply = await call('chat', history, imgApi); history.push({ role: 'assistant', content: reply || '…' }); }
       catch (e) { history.push({ role: 'assistant', content: '⚠️ ' + (es() ? 'Algo falló: ' : 'Something went wrong: ') + ((e && e.message) ? e.message : e) }); }
       busy = false; renderLog();
     }
@@ -31222,20 +31270,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var chat = document.createElement('div'); chat.className = 'st-asst-chat';
         var log = document.createElement('div'); log.className = 'st-asst-log';
         var comp = document.createElement('div'); comp.className = 'st-asst-compose';
+        var add = document.createElement('button'); add.className = 'st-asst-add'; add.type = 'button'; add.setAttribute('aria-label', es() ? 'Adjuntar imagen' : 'Attach image');
+        add.innerHTML = '<svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="M5 12h14"/></svg>';
+        var file = document.createElement('input'); file.type = 'file'; file.accept = 'image/*'; file.style.display = 'none';
         var inp = document.createElement('textarea'); inp.className = 'st-asst-in'; inp.rows = 1;
-        inp.setAttribute('placeholder', es() ? 'Pregunta sobre tu trading o la app…' : 'Ask about your trading or the app…');
+        inp.setAttribute('placeholder', es() ? 'Pregunta, o pega una imagen…' : 'Ask, or paste an image…');
         inp.setAttribute('autocomplete', 'off'); inp.setAttribute('spellcheck', 'false');
         var btn = document.createElement('button'); btn.className = 'st-asst-send'; btn.type = 'button'; btn.setAttribute('aria-label', 'Send');
         btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>';
-        comp.appendChild(inp); comp.appendChild(btn); chat.appendChild(log); chat.appendChild(comp); body.appendChild(chat);
+        var preview = document.createElement('div'); preview.className = 'st-asst-preview'; preview.style.display = 'none';
+        comp.appendChild(add); comp.appendChild(inp); comp.appendChild(btn);
+        chat.appendChild(log); chat.appendChild(preview); chat.appendChild(comp); body.appendChild(chat); body.appendChild(file);
         function autosize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 120) + 'px'; }
-        function go() { var q = inp.value.trim(); if (!q) return; inp.value = ''; autosize(); send(q); }
+        function go() { var q = inp.value.trim(); if (!q && !pendingImg) return; inp.value = ''; autosize(); send(q); }
+        add.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); file.click(); });
+        file.addEventListener('change', function () { if (file.files && file.files[0]) { attachBlob(file.files[0]); file.value = ''; } });
         btn.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); go(); });
         inp.addEventListener('input', autosize);
         // stopPropagation so no ancestor / global handler can swallow the keystroke.
         inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); go(); } });
         inp.addEventListener('keyup', function (ev) { ev.stopPropagation(); });
         inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
+        inp.addEventListener('paste', function (ev) { try { var items = (ev.clipboardData || window.clipboardData).items; if (items) { for (var i = 0; i < items.length; i++) { if (items[i].type && items[i].type.indexOf('image') === 0) { var blob = items[i].getAsFile(); if (blob) { ev.preventDefault(); attachBlob(blob); } break; } } } } catch (e) {} });
       });
       renderLog();
     }

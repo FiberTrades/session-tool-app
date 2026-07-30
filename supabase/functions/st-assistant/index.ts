@@ -77,7 +77,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const ctx = body?.context ?? {};
 
     // Build the chat turns we send to Claude.
-    let claudeMessages: Array<{ role: string; content: string }>;
+    let claudeMessages: any[];
     if (mode === "coach") {
       claudeMessages = [{ role: "user", content: "Give me today's coaching note based on my data." }];
     } else {
@@ -88,6 +88,23 @@ Deno.serve(async (req: Request): Promise<Response> => {
         .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
       if (!claudeMessages.length || claudeMessages[0].role !== "user") {
         claudeMessages.unshift({ role: "user", content: "Hello" });
+      }
+      // Attach an uploaded/pasted image to the most recent user turn (vision). Only the
+      // current turn carries the image — old images aren't re-sent, keeping cost down.
+      const img = body?.image;
+      if (img && img.data && img.media_type) {
+        for (let i = claudeMessages.length - 1; i >= 0; i--) {
+          if (claudeMessages[i].role === "user") {
+            claudeMessages[i] = {
+              role: "user",
+              content: [
+                { type: "text", text: claudeMessages[i].content || "Please look at this chart/image." },
+                { type: "image", source: { type: "base64", media_type: img.media_type, data: img.data } },
+              ],
+            };
+            break;
+          }
+        }
       }
     }
 
