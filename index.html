@@ -666,6 +666,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* The old AI orb + "ASSISTANT" label are legacy (replaced by the JS-built "Ask AI" pill). Never
      render them — this also kills the ~1s flash of the old box before the script runs on load. */
   .st-asst-av, .st-asst-name { display: none !important; }
+  /* Keep the whole box invisible until the script has finished turning it into the pill, so the
+     half-built full-width card never shows on load. JS adds .st-asst-rdy once it's ready (with a
+     safety timeout so the box always appears even if the script is slow / fails). */
+  .st-asst:not(.st-asst-rdy) { opacity: 0; pointer-events: none; }
   /* Once the AI is on, the box is wrapped: the classic greeting moves OUT to sit to the RIGHT of
      the closed pill, and the (opaque) box paints over it when opened. */
   .st-asst-wrap { position: relative; width: 100%; margin: 28px 0 32px; }
@@ -1246,6 +1250,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .ss-row.sel { background: var(--accent); color: #000; border-color: var(--accent); font-weight: 600; }
   .equity-tooltip { position: absolute; pointer-events: none; z-index: 5; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); box-shadow: none; padding: 7px 10px; font-family: 'AppNum', 'DM Mono', monospace; color: var(--text); white-space: nowrap; text-align: center; line-height: 1.5; opacity: 0; transform: translate(-50%, -100%); transition: opacity 0.12s ease; }
   .equity-tooltip.show { opacity: 1; }
+  .equity-tooltip.et-below { transform: translate(-50%, 0); }   /* sits below the point when near the chart's top */
   .equity-tooltip .et-val { font-size: 13px; font-weight: 500; }
   .equity-tooltip .et-delta { font-size: 10px; }
   .equity-tooltip .et-date { font-size: 9px; color: var(--text-dim); letter-spacing: 0.06em; }
@@ -16232,8 +16237,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           html += `<div class="et-date">Start</div>`;
         }
         tip.innerHTML = html;
+        // When the point is near the TOP of the chart, the tooltip (which sits above the point) would
+        // overflow the chart and get clipped — so flip it BELOW the point instead.
+        var flipBelow = py < 58;
+        tip.classList.toggle('et-below', flipBelow);
         tip.style.left = px + 'px';
-        tip.style.top = (py - 12) + 'px';
+        tip.style.top = (flipBelow ? (py + 14) : (py - 12)) + 'px';
         tip.classList.add('show');
       };
       const onLeave = () => {
@@ -20771,7 +20780,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-31 06:05 UTC';
+  window.ST_BUILD = '2026-07-31 06:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -29814,7 +29823,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       symbols: syms,
       showSymbolLogo: true,
       isTransparent: false,
-      displayMode: 'adaptive',
+      displayMode: 'compact',   // consistent thin single row (adaptive sometimes rendered a taller layout that got clipped/cramped)
       colorTheme: 'dark',
       locale: locale
     });
@@ -31499,6 +31508,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         ensureFold(box);
         box.classList.toggle('st-asst-collapsed', collapsedState);
         sizePill(box);
+        box.classList.add('st-asst-rdy');   // pill is built → reveal it (was hidden to avoid the card flash)
         if (box.getAttribute('data-asst-toggle')) return;
         box.setAttribute('data-asst-toggle', '1');
         var toggle = function (ev) { ev.preventDefault(); ev.stopPropagation(); toggleCollapse(); };
@@ -31510,6 +31520,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       collapsedState = !collapsedState;
       Array.prototype.forEach.call(document.querySelectorAll('.st-asst'), function (box) { box.classList.toggle('st-asst-collapsed', collapsedState); });
     }
+    // Safety net: if the pill isn't built shortly after load (greet-only tier, slow auth, script hiccup),
+    // reveal the box anyway so the greeting is never stuck hidden.
+    setTimeout(function () { try { Array.prototype.forEach.call(document.querySelectorAll('.st-asst'), function (b) { b.classList.add('st-asst-rdy'); }); } catch (e) {} }, 1800);
     // The chat UI is built once, so its baked-in strings don't follow a later language switch.
     // Re-sync the localised bits (hint + input placeholder) whenever the greeting re-renders.
     function applyLang() {
