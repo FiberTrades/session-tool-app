@@ -20718,7 +20718,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 16:10 UTC';
+  window.ST_BUILD = '2026-07-30 16:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31121,14 +31121,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var ALLOW_EMAIL = { 'be.o2@hotmail.com': 1 };
     var history = [], busy = false, coached = false, wired = false;
 
-    function allowed() {
-      try { var u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : window.currentUser;
-        if (!u) return false;
-        if (ALLOW_ID[u.id]) return true;
-        if (u.email && ALLOW_EMAIL[String(u.email).toLowerCase()]) return true;
-      } catch (e) {}
-      return false;
-    }
+    var _me = null;   // resolved Supabase user (source of truth for the gate)
+    function allowUser(u) { if (!u) return false; if (ALLOW_ID[u.id]) return true; if (u.email && ALLOW_EMAIL[String(u.email).toLowerCase()]) return true; return false; }
+    function allowed() { if (allowUser(_me)) return true; try { return allowUser((typeof currentUser !== 'undefined' && currentUser) ? currentUser : window.currentUser); } catch (e) { return false; } }
+    async function resolveMe() { try { var r = await window.__stSB.auth.getSession(); _me = (r && r.data && r.data.session) ? r.data.session.user : null; } catch (e) { _me = null; } return _me; }
     function es() { return window.__lang === 'es'; }
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
     function nr(x) { return (typeof x === 'number' && isFinite(x)) ? Math.round(x * 100) / 100 : 0; }
@@ -31240,18 +31236,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // logged in and the boxes exist, even if the greeting hook never fired for some reason.
     var _tries = 0, _iv = setInterval(function () {
       _tries++;
-      try {
-        if (allowed()) {
-          ensureUI();
-          if (document.querySelector('.st-asst-chat')) {
-            if (!wired) { wired = true; setTimeout(coach, 1200); }
-            clearInterval(_iv);
+      resolveMe().then(function () {
+        try {
+          if (allowed()) {
+            ensureUI();
+            if (document.querySelector('.st-asst-chat')) {
+              if (!wired) { wired = true; setTimeout(coach, 1200); }
+              clearInterval(_iv);
+            }
           }
-        }
-      } catch (e) {}
+        } catch (e) {}
+      });
       if (_tries > 40) clearInterval(_iv);
     }, 1500);
-    return { onGreet: onGreet, ensureUI: ensureUI, coach: coach, allowed: allowed, dataPack: dataPack };
+    return {
+      onGreet: onGreet, ensureUI: ensureUI, coach: coach, allowed: allowed, dataPack: dataPack,
+      whoami: async function () { var u = await resolveMe(); return u ? { id: u.id, email: u.email } : null; }
+    };
   })();
   window.STAI = STAI;
 
