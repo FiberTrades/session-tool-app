@@ -15,7 +15,7 @@
  * forget, network-first means the page itself still updates on the next load.
  */
 
-const CACHE_VERSION = 'st-2026-07-31z96';     // <-- bump this string on each deploy
+const CACHE_VERSION = 'st-2026-07-31z97';     // <-- bump this string on each deploy
 const APP_CACHE     = CACHE_VERSION + '-app';
 const RUNTIME_CACHE = CACHE_VERSION + '-rt';
 
@@ -57,9 +57,11 @@ self.addEventListener('fetch', (event) => {
   try { url = new URL(request.url); } catch (e) { return; }
 
   // 1) The app page itself -> NETWORK FIRST (fresh deploys win; cache is the offline fallback).
+  //    cache:'no-store' bypasses the BROWSER HTTP cache so a normal refresh always pulls the newest
+  //    index.html (otherwise GitHub Pages' ~10-min page cache serves a stale build until a hard refresh).
   if (isNavigation(request, url)) {
     event.respondWith(
-      fetch(request)
+      fetch(request, { cache: 'no-store' })
         .then((res) => {
           const copy = res.clone();
           caches.open(APP_CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
