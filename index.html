@@ -682,11 +682,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-asst-msg.me { align-self: flex-end; background: var(--accent); color: #0c0c0c; border-bottom-right-radius: 4px; }
   .st-asst-msg.ai { align-self: flex-start; background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border-2); border-bottom-left-radius: 4px; }
   .st-asst-msg.typing { opacity: 0.6; font-style: italic; }
-  .st-asst-inrow { display: flex; gap: 8px; align-items: center; }
-  .st-asst-in { flex: 1 1 auto; min-width: 0; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 999px; padding: 9px 14px; color: var(--text); font-family: 'AppNum', 'DM Mono', monospace; font-size: 13px; outline: none; }
-  .st-asst-in:focus { border-color: var(--accent); }
-  .st-asst-send { flex: none; width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--accent); color: #0c0c0c; font-size: 14px; line-height: 1; cursor: pointer; }
+  .st-asst-compose { display: flex; align-items: flex-end; gap: 8px; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 16px; padding: 8px 8px 8px 14px; transition: border-color 0.15s, box-shadow 0.15s; }
+  .st-asst-compose:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-dim); }
+  .st-asst-in { flex: 1 1 auto; min-width: 0; background: transparent; border: none; outline: none; resize: none; color: var(--text); font-family: 'AppNum', 'DM Mono', monospace; font-size: 14px; line-height: 1.5; padding: 6px 0; max-height: 120px; overflow-y: auto; }
+  .st-asst-in::placeholder { color: var(--text-dim); }
+  .st-asst-send { flex: none; width: 38px; height: 38px; border-radius: 12px; border: none; background: var(--accent); color: #0c0c0c; cursor: pointer; display: flex; align-items: center; justify-content: center; }
   .st-asst-send:hover { background: #ff8ac4; }
+  .st-asst-send:active { transform: scale(0.94); }
   /* Economic calendar panel — sits between the greeting and the first form section.
      Visual treatment: bordered panel matching the dim-bordered "card" feel used elsewhere.
      Stays subtle so it doesn't compete with the form. Each event row is a compact
@@ -20716,7 +20718,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 15:30 UTC';
+  window.ST_BUILD = '2026-07-30 16:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31215,17 +31217,40 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (greet) body.insertBefore(coachEl, greet); else body.appendChild(coachEl);
         var chat = document.createElement('div'); chat.className = 'st-asst-chat';
         var log = document.createElement('div'); log.className = 'st-asst-log';
-        var row = document.createElement('div'); row.className = 'st-asst-inrow';
-        var inp = document.createElement('input'); inp.className = 'st-asst-in'; inp.type = 'text'; inp.setAttribute('placeholder', es() ? 'Pregunta sobre tu trading o la app…' : 'Ask about your trading or the app…');
-        var btn = document.createElement('button'); btn.className = 'st-asst-send'; btn.type = 'button'; btn.setAttribute('aria-label', 'Send'); btn.textContent = '➤';
-        row.appendChild(inp); row.appendChild(btn); chat.appendChild(log); chat.appendChild(row); body.appendChild(chat);
-        function go() { var q = inp.value.trim(); if (!q) return; inp.value = ''; send(q); }
-        btn.addEventListener('click', go);
-        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+        var comp = document.createElement('div'); comp.className = 'st-asst-compose';
+        var inp = document.createElement('textarea'); inp.className = 'st-asst-in'; inp.rows = 1;
+        inp.setAttribute('placeholder', es() ? 'Pregunta sobre tu trading o la app…' : 'Ask about your trading or the app…');
+        inp.setAttribute('autocomplete', 'off'); inp.setAttribute('spellcheck', 'false');
+        var btn = document.createElement('button'); btn.className = 'st-asst-send'; btn.type = 'button'; btn.setAttribute('aria-label', 'Send');
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h13"/><path d="M13 6l6 6-6 6"/></svg>';
+        comp.appendChild(inp); comp.appendChild(btn); chat.appendChild(log); chat.appendChild(comp); body.appendChild(chat);
+        function autosize() { inp.style.height = 'auto'; inp.style.height = Math.min(inp.scrollHeight, 120) + 'px'; }
+        function go() { var q = inp.value.trim(); if (!q) return; inp.value = ''; autosize(); send(q); }
+        btn.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); go(); });
+        inp.addEventListener('input', autosize);
+        // stopPropagation so no ancestor / global handler can swallow the keystroke.
+        inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); go(); } });
+        inp.addEventListener('keyup', function (ev) { ev.stopPropagation(); });
+        inp.addEventListener('click', function (ev) { ev.stopPropagation(); });
       });
       renderLog();
     }
     function onGreet() { if (!allowed()) return; ensureUI(); if (!wired) { wired = true; setTimeout(coach, 1400); } }
+    // Safety net: poll for up to a minute after load so the UI comes up once the user is
+    // logged in and the boxes exist, even if the greeting hook never fired for some reason.
+    var _tries = 0, _iv = setInterval(function () {
+      _tries++;
+      try {
+        if (allowed()) {
+          ensureUI();
+          if (document.querySelector('.st-asst-chat')) {
+            if (!wired) { wired = true; setTimeout(coach, 1200); }
+            clearInterval(_iv);
+          }
+        }
+      } catch (e) {}
+      if (_tries > 40) clearInterval(_iv);
+    }, 1500);
     return { onGreet: onGreet, ensureUI: ensureUI, coach: coach, allowed: allowed, dataPack: dataPack };
   })();
   window.STAI = STAI;
