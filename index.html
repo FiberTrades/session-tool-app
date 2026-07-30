@@ -14257,6 +14257,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (typeof renderReviewPreview === 'function') renderReviewPreview();
     // --- Shared ---
     data.lastSessionDate = new Date().toDateString();
+    // Mark this as an INTENTIONAL new-day clear so the sync engine makes it win over any
+    // richer pre-clear copy still in the cloud / a second instance (see _clearStamp). Without
+    // this, a reconcile that races the upload (or a phone still on yesterday) restores it all.
+    try { data._newDayCleared = { day: new Date().toDateString(), at: Date.now() }; } catch (e) {}
     if (typeof renderSavedBias === 'function') renderSavedBias();
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
@@ -20583,7 +20587,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 07:55 UTC';
+  window.ST_BUILD = '2026-07-30 08:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -39248,6 +39252,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) {}
     return n;
   }
+  // "Delete previous day" (new-day reset) INTENTIONALLY removes yesterday's bias slots and any
+  // un-committed review draft. That lowers contentScore, so a richer PRE-clear copy still in the
+  // cloud (upload hasn't landed yet) or held by a second instance/phone would otherwise win the
+  // reconcile and bring yesterday's data straight back. The clear stamps the journal with the day
+  // + time; the freshest stamp FOR TODAY is authoritative, regardless of content score. Tomorrow
+  // the stamp is ignored (day mismatch), so it self-expires and never sticks.
+  function _clearStamp(d) {
+    try { var c = d && d._newDayCleared; if (!c || c.day !== new Date().toDateString()) return 0; return (+c.at) || 1; } catch (e) { return 0; }
+  }
   function snapKeys() { return Object.keys(localStorage).filter(function (k) { return k.indexOf(SNAP_PREFIX) === 0; }).sort(); }
   function pruneSnapshots() {
     var ks = snapKeys(); // oldest first
@@ -39732,6 +39745,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var raw = r && r.data && r.data.data;
       if (!raw || typeof raw !== 'object') { doCloudUpsert(d); return; }
       var cloud = ST.migrate(raw);
+      // An intentional "delete previous day" clear must win over a pre-clear cloud even though it
+      // scores lower (it discarded yesterday's un-committed review draft). Upload it unconditionally.
+      if (_clearStamp(d) > _clearStamp(cloud)) { peakLocalScore = lScore; doCloudUpsert(d); return; }
       var removed = contentScore(cloud) - lScore;
       var removedTrades = tradeCount(cloud) - tradeCount(d);   // actual trades being removed (for the message)
       if (removed >= 2) {
@@ -39835,6 +39851,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
       var cloud = ST.migrate(raw);
       if (eq(cloud, local)) { accStatus(tt('synced')); return; }
+      // INTENTIONAL NEW-DAY CLEAR wins over content score, in BOTH directions, so "delete previous
+      // day" can't be undone by a richer pre-clear copy racing the upload or held by a second
+      // instance/phone. The freshest today-stamp is authoritative. (No __stMergeFresherBias here:
+      // folding the other copy's yesterday bias back in is exactly the resurrection we're stopping.)
+      var _lClear = _clearStamp(local), _cClear = _clearStamp(cloud);
+      if (_cClear !== _lClear) {
+        if (_cClear > _lClear) {
+          // The cloud carries a newer clear (e.g. cleared on another device): adopt it, reload once.
+          takeSnapshot('pre-sync', local);
+          try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
+          try { if (_rowUat) localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
+          accStatus(tt('synced'));
+          var _rlC = false; try { _rlC = !!sessionStorage.getItem('st_synced_reload'); } catch (e) {}
+          if (!_rlC) { try { sessionStorage.setItem('st_synced_reload', '1'); } catch (e) {} location.reload(); }
+          else { try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {} }
+        } else {
+          // OUR clear is newer: push it up over the pre-clear cloud (snapshot the cloud first).
+          takeSnapshot('pre-sync', cloud);
+          cloudPush();
+        }
+        return;
+      }
       // Loss-proof reconcile: keep whichever copy holds MORE journal content, measured by
       // contentScore (trades/series/reviews) — NEVER by string length, since the calendar
       // cache alone (~30k chars) would otherwise dominate and let a 1-trade copy outweigh a
