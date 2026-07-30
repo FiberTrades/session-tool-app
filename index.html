@@ -8416,8 +8416,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const ss = getSessions();
       for (let i = 0; i < ss.length; i++) {
         const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
-        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); fireSessionAlert('start'); }
-        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); fireSessionAlert('end'); }
+        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); if (_claimSessionAlert('start', sMins)) fireSessionAlert('start'); }
+        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); if (_claimSessionAlert('end', eMins)) fireSessionAlert('end'); }
       }
       // Rule-of-the-week reminder, cadence-aware. Fires during ANY session window.
       let ruleFire = false;
@@ -8545,6 +8545,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   function _todayKey() { return new Date().toISOString().slice(0, 10); }
   function _mins(hhmm) { const a = String(hhmm || '').split(':'); return (parseInt(a[0], 10) || 0) * 60 + (parseInt(a[1], 10) || 0); }
+  // Echo guard: the spoken session open/close alert must fire ONCE, even when several windows of
+  // the SAME browser (main tab + the detached community window) each run the alert loop, or when
+  // two sessions share an end minute. localStorage is shared across a browser's tabs, so the first
+  // window to reach a given alert claims it for ~2 min and the others stay silent. (A separate
+  // physical device — e.g. a phone — has its own localStorage and can't be gated this way.)
+  function _claimSessionAlert(kind, mins) {
+    try {
+      const k = 'st_sessfire_' + kind + '_' + mins + '_' + _todayKey();
+      const now = Date.now(), prev = parseInt(localStorage.getItem(k) || '0', 10) || 0;
+      if (prev && (now - prev) < 120000) return false;   // another window already voiced this exact alert
+      localStorage.setItem(k, String(now));
+      return true;
+    } catch (e) { return true; }
+  }
   // Indices of sessions the user finished early today. Back-compat: an old bare-date
   // string means session 0 was ended.
   function endedSessionsToday() {
@@ -11261,6 +11275,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         base.bias = base.biasSlots[base.activeBiasSlot];
     } catch (e) {}
   };
+  // Session-window protection, same shape as the bias guard above. The journal syncs as ONE
+  // object, so a STALE instance (a phone or the detached community window still holding the OLD
+  // session times) can whole-copy-overwrite the times you just changed — e.g. move your holiday
+  // 11:00 close back to an old 10:00, which then VOICES at the wrong hour. Session edits stamp
+  // settings._sessUat; here we adopt the whole session config from whichever copy edited it more
+  // recently, so the freshest change always wins regardless of content score. No timestamp on
+  // either side (never edited since this shipped) → do nothing, exactly as before.
+  window.__stMergeFresherSessions = function (base, other) {
+    try {
+      if (!base || !other || !base.settings || !other.settings) return;
+      var bt = +(base.settings._sessUat) || 0, ot = +(other.settings._sessUat) || 0;
+      if (ot > bt) {
+        if (Array.isArray(other.settings.sessions)) base.settings.sessions = other.settings.sessions.map(function (x) { return x; });
+        if (other.settings.windowStart !== undefined) base.settings.windowStart = other.settings.windowStart;
+        if (other.settings.windowEnd   !== undefined) base.settings.windowEnd   = other.settings.windowEnd;
+        if (other.settings.sessionName !== undefined) base.settings.sessionName = other.settings.sessionName;
+        base.settings._sessUat = ot;
+      }
+    } catch (e) {}
+  };
   // Append-only lists that must NEVER be rolled back by a whole-copy overwrite: the MT5
   // imported-ledger and the user-dismissed tickets. A stale second window adopting one
   // whole journal copy would otherwise drop a ticket the other copy just dismissed, and
@@ -11293,7 +11327,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var lastTab = localStorage.getItem('st_last_write_tab');
       if (lastTab && lastTab !== __ST_TAB_ID) {
         var storedRaw = localStorage.getItem(STORAGE_KEY);
-        if (storedRaw) { var _otherJ = JSON.parse(storedRaw); window.__stMergeFresherBias(data, _otherJ); if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(data, _otherJ); }
+        if (storedRaw) { var _otherJ = JSON.parse(storedRaw); window.__stMergeFresherBias(data, _otherJ); if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(data, _otherJ); if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(data, _otherJ); }
       }
       localStorage.setItem('st_last_write_tab', __ST_TAB_ID);
     } catch (e) {}
@@ -20650,7 +20684,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 10:15 UTC';
+  window.ST_BUILD = '2026-07-30 11:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -33143,6 +33177,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       data.settings.windowEnd = e;
       data.settings.sessions = Array.isArray(data.settings.sessions) ? data.settings.sessions : [];
       data.settings.sessions[0] = { name: name, start: s, end: e };
+      data.settings._sessUat = Date.now();  // stamp so this edit wins over any stale copy in sync (see __stMergeFresherSessions)
       // Re-arm the open/close alerts so the new window can fire again today (the once-per-day
       // flag would otherwise suppress them after the first trigger — and break testing).
       data._lastSessionStartAlert = null;
@@ -33190,6 +33225,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       data.settings.sessions = Array.isArray(data.settings.sessions) ? data.settings.sessions : [];
       if (!data.settings.sessions[0]) data.settings.sessions[0] = { name: 'London', start: data.settings.windowStart || '08:00', end: data.settings.windowEnd || '10:00' };
       data.settings.sessions[1] = { name: name, start: s, end: e };
+      data.settings._sessUat = Date.now();  // stamp so this edit wins over any stale copy in sync (see __stMergeFresherSessions)
       data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
       try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); } } catch (err) {}
@@ -33206,6 +33242,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (s2block) s2block.style.display = 'none';
       if (addSessBtn) addSessBtn.style.display = '';
       if (Array.isArray(data.settings.sessions)) data.settings.sessions = data.settings.sessions.slice(0, 1);
+      data.settings._sessUat = Date.now();  // stamp so removing Session 2 wins over any stale copy in sync (see __stMergeFresherSessions)
       data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
       try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); } } catch (err) {}
@@ -39948,6 +39985,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // roll today's bias back to a copy captured before the user's last click. Fold any
         // fresher local bias slots into the adopted copy first.
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
+        try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(cloud, local); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(cloud, local); } catch (e) {}
         // Adopt the cloud copy. Update the IN-MEMORY journal as well as storage, so a stray
         // save of the (stale, blank) in-memory copy can't clobber it in the instant before
@@ -39974,6 +40012,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // stale second instance produces after saving a preference - don't let it take the
         // morning bias back with it.
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
+        try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(cloud, local); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(cloud, local); } catch (e) {}
         try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
         try { localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
@@ -39992,6 +40031,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // Symmetric bias protection: the cloud may carry a fresher bias click from another
         // device/window - fold it into local (the live object) before pushing over it.
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(local, cloud); } catch (e) {}
+        try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(local, cloud); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(local, cloud); } catch (e) {}
         cloudPush();
       }
