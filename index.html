@@ -671,6 +671,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-asst-badge { font-size: 8.5px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--accent); border: 1px solid var(--accent-dim); border-radius: 999px; padding: 1px 6px; }
   .st-asst .bias-greeting { margin: 0; padding: 0; border: none; font-size: 17px; line-height: 1.55; }
   @media (max-width: 700px) { .st-asst { padding: 14px; gap: 10px; margin: 20px 0 24px; } .st-asst-av { width: 34px; height: 34px; } .st-asst-av svg { width: 18px; height: 18px; } .st-asst .bias-greeting { font-size: 15px; } }
+  /* ST Assistant — interactive chat + the AI-on state (rollout-gated). */
+  .st-ai-on .st-asst { display: flex !important; }        /* keep the box even when the rule-greeting is empty */
+  .st-ai-on .st-asst .bias-greeting { display: none; }    /* AI coaching replaces the rule-based line */
+  .st-asst-coach { font-family: 'Fraunces', serif; font-size: 17px; line-height: 1.55; color: var(--text); }
+  .st-asst-chat { margin-top: 12px; }
+  .st-asst-log { display: flex; flex-direction: column; gap: 8px; max-height: 260px; overflow-y: auto; margin-bottom: 10px; }
+  .st-asst-log:empty { display: none; margin: 0; }
+  .st-asst-msg { font-size: 14px; line-height: 1.5; padding: 8px 12px; border-radius: 12px; max-width: 90%; white-space: pre-wrap; word-wrap: break-word; }
+  .st-asst-msg.me { align-self: flex-end; background: var(--accent); color: #0c0c0c; border-bottom-right-radius: 4px; }
+  .st-asst-msg.ai { align-self: flex-start; background: var(--bg-elev2); color: var(--text); border: 1px solid var(--border-2); border-bottom-left-radius: 4px; }
+  .st-asst-msg.typing { opacity: 0.6; font-style: italic; }
+  .st-asst-inrow { display: flex; gap: 8px; align-items: center; }
+  .st-asst-in { flex: 1 1 auto; min-width: 0; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 999px; padding: 9px 14px; color: var(--text); font-family: 'AppNum', 'DM Mono', monospace; font-size: 13px; outline: none; }
+  .st-asst-in:focus { border-color: var(--accent); }
+  .st-asst-send { flex: none; width: 36px; height: 36px; border-radius: 50%; border: none; background: var(--accent); color: #0c0c0c; font-size: 14px; line-height: 1; cursor: pointer; }
+  .st-asst-send:hover { background: #ff8ac4; }
   /* Economic calendar panel — sits between the greeting and the first form section.
      Visual treatment: bordered panel matching the dim-bordered "card" feel used elsewhere.
      Stays subtle so it doesn't compete with the form. Each event row is a compact
@@ -20700,7 +20716,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 14:55 UTC';
+  window.ST_BUILD = '2026-07-30 15:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31089,7 +31105,130 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // Name changes are done via the Settings modal (Profile section) to
       // keep the editing surface in one place.
     });
+    try { if (window.STAI && window.STAI.onGreet) window.STAI.onGreet(); } catch (e) {}
   }
+
+  /* ═══ ST Assistant (AI) — client ══════════════════════════════════════════════
+     Talks to the Supabase edge function `st-assistant` (which proxies Claude and holds
+     the API key server-side). Injects proactive coaching + a chat into the .st-asst
+     boxes. Gated to a rollout allowlist so it can be tested before wider release. */
+  var STAI = (function () {
+    var ENDPOINT = 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/st-assistant';
+    var APIKEY   = 'sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv';
+    var ALLOW_ID = { '94f5945f-d819-4abb-bb87-95646906302f': 1 };   // Nestor / be.o2 (rollout)
+    var ALLOW_EMAIL = { 'be.o2@hotmail.com': 1 };
+    var history = [], busy = false, coached = false, wired = false;
+
+    function allowed() {
+      try { var u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : window.currentUser;
+        if (!u) return false;
+        if (ALLOW_ID[u.id]) return true;
+        if (u.email && ALLOW_EMAIL[String(u.email).toLowerCase()]) return true;
+      } catch (e) {}
+      return false;
+    }
+    function es() { return window.__lang === 'es'; }
+    function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
+    function nr(x) { return (typeof x === 'number' && isFinite(x)) ? Math.round(x * 100) / 100 : 0; }
+
+    async function token() {
+      try { var r = await window.__stSB.auth.getSession(); return (r && r.data && r.data.session) ? r.data.session.access_token : null; }
+      catch (e) { return null; }
+    }
+    async function call(mode, messages) {
+      var tk = await token();
+      var res = await fetch(ENDPOINT, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
+        body: JSON.stringify({ mode: mode, messages: messages || [], context: { dataPack: dataPack(), profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
+      });
+      var j = await res.json().catch(function () { return {}; });
+      if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
+      return (j && j.reply) || '';
+    }
+
+    function dataPack() {
+      try {
+        var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
+        var wins = 0, losses = 0, bes = 0, netR = 0, winR = 0, lossR = 0, netMoney = 0;
+        var bySym = {}, byDow = {}, DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        all.forEach(function (tr) {
+          var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+          var r  = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
+          var pl = ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * cp;
+          if (tr.result === 'Win') { wins++; winR += r; } else if (tr.result === 'Lose') { losses++; lossR += r; } else if (tr.result === 'BE') { bes++; }
+          netR += r; netMoney += pl;
+          var sym = tr.symbol || '?'; if (!bySym[sym]) bySym[sym] = { n: 0, r: 0, money: 0 }; bySym[sym].n++; bySym[sym].r += r; bySym[sym].money += pl;
+          if (tr.date) { var d = new Date(tr.date); if (!isNaN(d.getTime())) { var k = DOW[d.getDay()]; if (!byDow[k]) byDow[k] = { n: 0, r: 0, money: 0 }; byDow[k].n++; byDow[k].r += r; byDow[k].money += pl; } }
+        });
+        Object.keys(bySym).forEach(function (k) { bySym[k].r = nr(bySym[k].r); bySym[k].money = nr(bySym[k].money); });
+        Object.keys(byDow).forEach(function (k) { byDow[k].r = nr(byDow[k].r); byDow[k].money = nr(byDow[k].money); });
+        var decided = wins + losses, s = (typeof data !== 'undefined' && data.settings) || {};
+        return {
+          trader: (typeof data !== 'undefined' && data.userName) || null,
+          currency: s.currency || 'GBP',
+          startingBalance: nr(s.startingBalance),
+          lifetime: {
+            trades: all.length, wins: wins, losses: losses, breakEven: bes,
+            winRatePct: decided ? Math.round(wins / decided * 1000) / 10 : null,
+            netR: nr(netR), netMoney: nr(netMoney),
+            expectancyR: all.length ? nr(netR / all.length) : null,
+            avgWinR: wins ? nr(winR / wins) : null,
+            avgLossR: losses ? nr(lossR / losses) : null,
+            profitFactor: lossR ? nr(winR / Math.abs(lossR)) : null
+          },
+          byWeekday: byDow, bySymbol: bySym,
+          currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
+          settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null },
+          today: {
+            biasDirections: (typeof data !== 'undefined' && Array.isArray(data.biasSlots)) ? data.biasSlots.filter(function (b) { return b && b.direction; }).map(function (b) { return (b.symbol || '') + ':' + b.direction; }) : ((typeof data !== 'undefined' && data.bias && data.bias.direction) ? [data.bias.direction] : []),
+            reviewTradesLogged: (typeof data !== 'undefined' && data.review && Array.isArray(data.review.trades)) ? data.review.trades.length : 0
+          }
+        };
+      } catch (e) { return { error: 'datapack unavailable' }; }
+    }
+
+    function renderLog() {
+      var html = history.map(function (m) { return '<div class="st-asst-msg ' + (m.role === 'user' ? 'me' : 'ai') + '">' + esc(m.content) + '</div>'; }).join('');
+      if (busy) html += '<div class="st-asst-msg ai typing">' + (es() ? 'pensando…' : 'thinking…') + '</div>';
+      Array.prototype.forEach.call(document.querySelectorAll('.st-asst-log'), function (l) { l.innerHTML = html; l.scrollTop = l.scrollHeight; });
+    }
+    function setCoach(txt) { Array.prototype.forEach.call(document.querySelectorAll('.st-asst-coach'), function (c) { c.textContent = txt; }); }
+    async function send(q) {
+      if (!q || busy) return;
+      history.push({ role: 'user', content: q }); busy = true; renderLog();
+      try { var reply = await call('chat', history); history.push({ role: 'assistant', content: reply || '…' }); }
+      catch (e) { history.push({ role: 'assistant', content: '⚠️ ' + (es() ? 'Algo falló: ' : 'Something went wrong: ') + ((e && e.message) ? e.message : e) }); }
+      busy = false; renderLog();
+    }
+    async function coach() {
+      if (coached) return; coached = true;
+      try { var reply = await call('coach', []); if (reply) setCoach(reply); } catch (e) { /* leave the rule-based greeting */ }
+    }
+    function ensureUI() {
+      if (!allowed()) return;
+      try { document.body.classList.add('st-ai-on'); } catch (e) {}
+      Array.prototype.forEach.call(document.querySelectorAll('.st-asst'), function (box) {
+        var body = box.querySelector('.st-asst-body'); if (!body || body.querySelector('.st-asst-chat')) return;
+        var greet = body.querySelector('.bias-greeting');
+        var coachEl = document.createElement('div'); coachEl.className = 'st-asst-coach'; coachEl.textContent = (es() ? 'Analizando tu trading…' : 'Looking over your trading…');
+        if (greet) body.insertBefore(coachEl, greet); else body.appendChild(coachEl);
+        var chat = document.createElement('div'); chat.className = 'st-asst-chat';
+        var log = document.createElement('div'); log.className = 'st-asst-log';
+        var row = document.createElement('div'); row.className = 'st-asst-inrow';
+        var inp = document.createElement('input'); inp.className = 'st-asst-in'; inp.type = 'text'; inp.setAttribute('placeholder', es() ? 'Pregunta sobre tu trading o la app…' : 'Ask about your trading or the app…');
+        var btn = document.createElement('button'); btn.className = 'st-asst-send'; btn.type = 'button'; btn.setAttribute('aria-label', 'Send'); btn.textContent = '➤';
+        row.appendChild(inp); row.appendChild(btn); chat.appendChild(log); chat.appendChild(row); body.appendChild(chat);
+        function go() { var q = inp.value.trim(); if (!q) return; inp.value = ''; send(q); }
+        btn.addEventListener('click', go);
+        inp.addEventListener('keydown', function (e) { if (e.key === 'Enter') { e.preventDefault(); go(); } });
+      });
+      renderLog();
+    }
+    function onGreet() { if (!allowed()) return; ensureUI(); if (!wired) { wired = true; setTimeout(coach, 1400); } }
+    return { onGreet: onGreet, ensureUI: ensureUI, coach: coach, allowed: allowed, dataPack: dataPack };
+  })();
+  window.STAI = STAI;
 
   function openInlineNameEdit(e) {
     // Use the clicked .greet-name (works regardless of which greeting copy was clicked —
