@@ -20558,6 +20558,46 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   const _TR_EMO_CLS = '[\\p{Extended_Pictographic}\\u{1F1E6}-\\u{1F1FF}\\u{1F3FB}-\\u{1F3FF}\\u{FE0F}\\u{200D}\\u{20E3}]';
   const _TR_TRAIL_EMOJI = new RegExp('(?:\\s*' + _TR_EMO_CLS + ')+\\s*$', 'u');
   const _TR_LEAD_EMOJI  = new RegExp('^\\s*(?:' + _TR_EMO_CLS + '\\s*)+', 'u');
+  // ── Trader-talk glossary ────────────────────────────────────────────────
+  // The community translator is plain Google Translate, so it can't "learn" jargon.
+  // Two mechanisms make trader-speak survive machine translation:
+  //  1) PROTECT — tokens that must pass through UNTOUCHED (timeframes like "1m",
+  //     which the engine turns into "1 metro"; loan-words like "scalping" → "cuero
+  //     cabelludo"/skin, "swing" → "columpio"/playground; acronyms/tickers like SL,
+  //     HTF, XAUUSD) are swapped for an inert sentinel before translating, then
+  //     restored afterwards. The sentinel ZXQ<n>QXZ is verified to pass through every
+  //     endpoint unchanged, in both directions and next to punctuation.
+  //  2) POST-FIX — repair a few words the engine still gets wrong in context.
+  // To teach it a NEW term: add a regex to _TR_PROTECT (keep verbatim) or a
+  // replacement to _trPostFix (fix a mistranslation). Nothing else to touch.
+  const _TR_PROTECT = [
+    /\b\d{1,4}(?:m|h|d|w)\b/gi,     // timeframes: 1m 5m 15m 30m 1h 4h 1d 1w  (NOT "metros"/"horas")
+    /\b[MHDW]\d{1,3}\b/g,          // MetaTrader-style: M1 M5 M15 H1 H4 D1 W1
+    /\b(?:scalp|scalps|scalping|scalped|swing|swinging|swung)\b/gi,   // loan-words the engine mangles
+    /\bR:?R\b/gi,                  // R:R / RR (risk-reward)
+    // Acronyms & instrument tickers, matched as typed (uppercase) so ordinary words are untouched.
+    /\b(?:SL|TP|BE|POT|HTF|LTF|MTF|TF|FVG|OB|OTE|BOS|CHOCH|ATR|EMA|SMA|RSI|VWAP|ADR|DCA|ATH|ATL|DXY|NAS100|US30|US100|SPX500|GER40|UK100|XAUUSD|XAGUSD|BTCUSD|ETHUSD)\b/g
+  ];
+  function _trProtect(text) {
+    const store = [];
+    let out = String(text);
+    for (const re of _TR_PROTECT) out = out.replace(re, m => { const i = store.length; store.push(m); return 'ZXQ' + i + 'QXZ'; });
+    return { out: out, store: store };
+  }
+  function _trUnprotect(text, store) {
+    return String(text).replace(/ZXQ(\d+)QXZ/gi, (whole, i) => (store[+i] != null ? store[+i] : whole));
+  }
+  // Repairs for mistranslations that survive to the OUTPUT (target-specific). Safety net for
+  // any jargon not caught by _TR_PROTECT above.
+  function _trPostFix(text, target) {
+    let s = String(text);
+    if (target === 'es') {
+      s = s.replace(/\bollas?\b/gi, 'Pot');              // "Pot" (Potential) → not "olla" (cooking pot)
+      s = s.replace(/\b(\d{1,4})\s*metros?\b/gi, '$1m'); // any timeframe that still slipped to "metros"
+      s = s.replace(/cuero cabelludo/gi, 'scalping');    // "scalp" → not the skin
+    }
+    return s;
+  }
   async function translateChunk(text, source, target) {
     if (!text || !text.trim()) return text;
     if (source === target) return text;
@@ -20568,14 +20608,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) { lead = ''; trail = ''; core = text; }
     if (!core.trim()) return text;   // nothing but emoji/whitespace — leave it exactly as-is
     __trAttempted++;
-    // Trading glossary: machine translation renders "Pot" (short for Potential) as "Olla" (a
-    // cooking pot) in Spanish. Restore it on any translated segment so POT R / POT P stay meaningful.
-    const _fix = s => (s && target === 'es') ? String(s).replace(/\bollas?\b/gi, 'Pot') : s;
-    const c = await gcxTranslateOnce(core, source, target);
+    // Protect trader shorthand so the engine passes it through verbatim, then restore + repair
+    // (see the glossary above). _fix runs both steps on whatever a translator returns.
+    const _pr = _trProtect(core);
+    const _fix = s => (s == null) ? s : _trPostFix(_trUnprotect(s, _pr.store), target);
+    const c = await gcxTranslateOnce(_pr.out, source, target);
     if (c !== null) return lead + _fix(c) + trail;
-    const g = await gtxTranslateOnce(core, source, target);
+    const g = await gtxTranslateOnce(_pr.out, source, target);
     if (g !== null) return lead + _fix(g) + trail;
-    const m = await mmTranslateOnce(core, source, target);
+    const m = await mmTranslateOnce(_pr.out, source, target);
     if (m !== null) return lead + _fix(m) + trail;
     __trFailed++;
     return text; // all methods failed — keep the whole original (emoji included)
@@ -20587,7 +20628,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 08:35 UTC';
+  window.ST_BUILD = '2026-07-30 09:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
