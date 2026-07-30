@@ -20749,7 +20749,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-30 21:30 UTC';
+  window.ST_BUILD = '2026-07-30 21:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31164,13 +31164,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try { var r = await window.__stSB.auth.getSession(); return (r && r.data && r.data.session) ? r.data.session.access_token : null; }
       catch (e) { return null; }
     }
-    async function call(mode, messages, image) {
+    async function call(mode, messages, image, imageUrl) {
       var tk = await token();
       var msgs = (messages || []).map(function (m) { return { role: m.role, content: m.content }; });   // strip display-only image data
       var res = await fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
-        body: JSON.stringify({ mode: mode, messages: msgs, image: image || null, context: { dataPack: dataPack(), profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
+        body: JSON.stringify({ mode: mode, messages: msgs, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dataPack(), profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
       });
       var j = await res.json().catch(function () { return {}; });
       if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
@@ -31260,13 +31260,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       fr.onload = function () { downscale(fr.result, function (img) { if (img) { pendingImg = img; renderPreview(); } }); };
       fr.readAsDataURL(blob);
     }
+    // Recognise a pasted chart link → a direct image URL Claude can see.
+    //  • TradingView short link  tradingview.com/x/<id>/  → its snapshot PNG on s3
+    //  • any already-direct image URL (.png/.jpg/.webp/.gif)
+    function tvImage(text) {
+      if (!text) return null;
+      var m = text.match(/tradingview\.com\/x\/([A-Za-z0-9_-]+)/i);
+      if (m && m[1]) return 'https://s3.tradingview.com/snapshots/' + m[1].charAt(0).toLowerCase() + '/' + m[1] + '.png';
+      var d = text.match(/https?:\/\/[^\s]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s]*)?/i);
+      return d ? d[0] : null;
+    }
     async function send(q) {
       if ((!q && !pendingImg) || busy) return;
       var imgApi = pendingImg ? { media_type: pendingImg.media_type, data: pendingImg.data } : null;
+      var imgUrl = (!pendingImg && q) ? tvImage(q) : null;   // a pasted TradingView / image link
       var msg = { role: 'user', content: q || (es() ? '(imagen adjunta)' : '(image attached)') };
-      if (pendingImg) msg.image = pendingImg.dataUrl;   // display only — not re-sent to the API
+      if (pendingImg) msg.image = pendingImg.dataUrl;        // display only — not re-sent to the API
+      else if (imgUrl) msg.image = imgUrl;                   // show the chart thumbnail in the log
       history.push(msg); clearPending(); busy = true; renderLog();
-      try { var reply = await call('chat', history, imgApi); history.push({ role: 'assistant', content: reply || '…' }); }
+      try { var reply = await call('chat', history, imgApi, imgUrl); history.push({ role: 'assistant', content: reply || '…' }); }
       catch (e) { history.push({ role: 'assistant', content: '⚠️ ' + (es() ? 'Algo falló: ' : 'Something went wrong: ') + ((e && e.message) ? e.message : e) }); }
       busy = false; renderLog();
     }

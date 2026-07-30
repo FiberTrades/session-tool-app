@@ -92,6 +92,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       // Attach an uploaded/pasted image to the most recent user turn (vision). Only the
       // current turn carries the image — old images aren't re-sent, keeping cost down.
       const img = body?.image;
+      const imageUrl = body?.imageUrl;
       if (img && img.data && img.media_type) {
         for (let i = claudeMessages.length - 1; i >= 0; i--) {
           if (claudeMessages[i].role === "user") {
@@ -100,6 +101,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
               content: [
                 { type: "text", text: claudeMessages[i].content || "Please look at this chart/image." },
                 { type: "image", source: { type: "base64", media_type: img.media_type, data: img.data } },
+              ],
+            };
+            break;
+          }
+        }
+      } else if (typeof imageUrl === "string" && /^https?:\/\//i.test(imageUrl)) {
+        // A pasted chart link (e.g. a TradingView snapshot). Claude fetches the URL itself.
+        for (let i = claudeMessages.length - 1; i >= 0; i--) {
+          if (claudeMessages[i].role === "user") {
+            claudeMessages[i] = {
+              role: "user",
+              content: [
+                { type: "text", text: claudeMessages[i].content || "Please look at this chart." },
+                { type: "image", source: { type: "url", url: imageUrl } },
               ],
             };
             break;
