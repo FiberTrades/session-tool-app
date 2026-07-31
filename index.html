@@ -20908,7 +20908,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 00:20 UTC';
+  window.ST_BUILD = '2026-08-01 00:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31460,26 +31460,45 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try { var r = await window.__stSB.auth.getSession(); return (r && r.data && r.data.session) ? r.data.session.access_token : null; }
       catch (e) { return null; }
     }
-    var AI_SMART_PER_DAY = 20;   // per-user daily budget of BIG-model (Sonnet) questions; beyond it we auto-downgrade to the cheap model (still answers). Tune this one number: 10 = frugal, 30 = lavish.
+    var AI_SMART_PER_DAY = 20;   // per-user daily cap on strong-model questions (backstop). Tune: 10 = frugal, 30 = lavish.
+    // Decide whether a question actually NEEDS the strong (expensive) model. Default is the cheap model;
+    // we only escalate on clear signals of analysis/reasoning. Simple lookups, how-to and navigation
+    // ("what's my win rate", "where is settings", "how do I add a trade") stay cheap.
+    function _needsSmart(text, hasImage) {
+      if (hasImage) return true;   // chart/image reading is worth the strong model
+      var q = String(text || '').toLowerCase().trim();
+      if (!q) return false;
+      var words = q.split(/\s+/).filter(Boolean).length;
+      // Clear analysis / coaching / reasoning intent → strong model.
+      var heavy = /\b(analys|analyz|why|reason|pattern|leak|weakness|improve|improving|mistake|wrong|root cause|deep|compare|comparison|trend|correlat|strateg|should i|biggest|worst|break ?down|coach|critique|assess|evaluate|explain|walk me|psycholog|tilt|revenge|overtrad|discipline|\bedge\b|expectanc|review my|go through|what.?s holding|help me understand|opinion|think about)\b/;
+      if (heavy.test(q)) return true;
+      if (words >= 22) return true;                         // long, likely multi-step
+      if ((q.match(/\?/g) || []).length >= 2) return true;  // several questions at once
+      return false;                                          // otherwise cheap
+    }
     async function call(mode, messages, image, imageUrl) {
       var tk = await token();
       var msgs = (messages || []).map(function (m) { return { role: m.role, content: m.content }; });   // strip display-only image data
       var dp = dataPack();
       var smart = false;
       if (mode === 'chat') {
-        // Real user question: fold in community + leaderboard standing (full members only), and spend a
-        // daily smart-model credit — the first AI_SMART_PER_DAY questions run on the strong model, the
-        // rest auto-downgrade to the cheap one. Never a hard block, never a runaway bill. Greetings
-        // ('greet') and coach notes use the cheap model and don't count.
+        // Real user question: fold in community + leaderboard standing (full members only).
         try { if (canChat()) { var comm = await _communityForAI(); if (comm && comm.length) dp.community = comm; var stand = await _standingForAI(); if (stand) dp.leaderboard = stand; } } catch (e) {}
+        // Route by difficulty: only escalate to the strong model when the question needs it, and even
+        // then only within a per-user daily budget (over budget → auto-downgrade to the cheap model).
+        // Simple questions never touch the budget and always run cheap.
         try {
-          var _day = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
-          var _b = (typeof data !== 'undefined' && data._aiSmartDay) || null;
-          if (!_b || _b.day !== _day) _b = { day: _day, n: 0 };
-          _b.n++;
-          if (typeof data !== 'undefined') { data._aiSmartDay = _b; try { if (typeof saveData === 'function') saveData(); } catch (e) {} }
-          smart = _b.n <= AI_SMART_PER_DAY;
-        } catch (e) { smart = true; }
+          var _lastU = '';
+          for (var _mi = msgs.length - 1; _mi >= 0; _mi--) { if (msgs[_mi] && msgs[_mi].role === 'user') { _lastU = msgs[_mi].content || ''; break; } }
+          if (_needsSmart(_lastU, !!(image || imageUrl))) {
+            var _day = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
+            var _b = (typeof data !== 'undefined' && data._aiSmartDay) || null;
+            if (!_b || _b.day !== _day) _b = { day: _day, n: 0 };
+            _b.n++;
+            if (typeof data !== 'undefined') { data._aiSmartDay = _b; try { if (typeof saveData === 'function') saveData(); } catch (e) {} }
+            smart = _b.n <= AI_SMART_PER_DAY;
+          }
+        } catch (e) {}
       }
       var res = await fetch(ENDPOINT, {
         method: 'POST',
