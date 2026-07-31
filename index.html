@@ -20905,7 +20905,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-31 22:45 UTC';
+  window.ST_BUILD = '2026-07-31 23:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31411,6 +31411,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function esc(s) { return String(s == null ? '' : s).replace(/[&<>]/g, function (c) { return c === '&' ? '&amp;' : c === '<' ? '&lt;' : '&gt;'; }); }
     function nr(x) { return (typeof x === 'number' && isFinite(x)) ? Math.round(x * 100) / 100 : 0; }
 
+    // Recent community chat, folded into the AI's context so it can answer questions about the
+    // room ("what did people say about X", "summarise this week's chat"). Public channel messages
+    // only — NOT private 1:1 DMs. Cached ~60s so a burst of AI calls does one Supabase read.
+    // Gated to canChat() callers (full members) at the call site. Members' messages ARE sent to
+    // the AI provider by this — that is the owner's explicit intent for this community.
+    var _commCache = { at: 0, msgs: null };
+    async function _communityForAI() {
+      try {
+        if (_commCache.msgs && (Date.now() - _commCache.at) < 60000) return _commCache.msgs;
+        var sb = window.__stSB; if (!sb) return null;
+        var r = await sb.from('channel_messages')
+          .select('created_at,sender_name,body,channel_id')
+          .order('created_at', { ascending: false }).limit(250);
+        var rows = (r && r.data) || [];
+        var msgs = rows.reverse().map(function (m) {
+          return { t: m.created_at, from: m.sender_name || '?', body: String(m.body || '').slice(0, 500) };
+        });
+        _commCache = { at: Date.now(), msgs: msgs };
+        return msgs;
+      } catch (e) { return null; }
+    }
+
     async function token() {
       try { var r = await window.__stSB.auth.getSession(); return (r && r.data && r.data.session) ? r.data.session.access_token : null; }
       catch (e) { return null; }
@@ -31418,10 +31440,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     async function call(mode, messages, image, imageUrl) {
       var tk = await token();
       var msgs = (messages || []).map(function (m) { return { role: m.role, content: m.content }; });   // strip display-only image data
+      var dp = dataPack();
+      // Fold recent community chat in for full members (the AI can then answer room questions too).
+      try { if (canChat()) { var comm = await _communityForAI(); if (comm && comm.length) dp.community = comm; } } catch (e) {}
       var res = await fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
-        body: JSON.stringify({ mode: mode, messages: msgs, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dataPack(), profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
+        body: JSON.stringify({ mode: mode, messages: msgs, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
       });
       var j = await res.json().catch(function () { return {}; });
       if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
@@ -31445,6 +31470,42 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         Object.keys(bySym).forEach(function (k) { bySym[k].r = nr(bySym[k].r); bySym[k].money = nr(bySym[k].money); });
         Object.keys(byDow).forEach(function (k) { byDow[k].r = nr(byDow[k].r); byDow[k].money = nr(byDow[k].money); });
         var decided = wins + losses, s = (typeof data !== 'undefined' && data.settings) || {};
+        // Full trade list (newest first) + all-time records, so the AI can answer questions about
+        // INDIVIDUAL trades ("best trade this month", "worst Tuesday", coach a specific setup) and
+        // read the per-trade diary (execution / focus / reflection / tags). The list is capped for
+        // payload size, but best/worst are computed across EVERY trade so they're known beyond the cap.
+        var _byDate = all.slice().sort(function (a, b) { return (new Date(b.date || 0)) - (new Date(a.date || 0)); });
+        var bestR = null, worstR = null, bestGbp = null, trades = [];
+        _byDate.forEach(function (tr, i) {
+          var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+          var r  = nr(((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp);
+          var pl = nr(((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * cp);
+          var lite = { date: tr.date || null, sym: tr.symbol || null, side: tr.side || null, result: tr.result || null, r: r, gbp: pl };
+          if (bestR   == null || r  > bestR.r)     bestR   = lite;
+          if (worstR  == null || r  < worstR.r)    worstR  = lite;
+          if (bestGbp == null || pl > bestGbp.gbp) bestGbp = lite;
+          if (i < 250) {
+            var o = { date: tr.date || null, sym: tr.symbol || null, side: tr.side || null, result: tr.result || null, r: r, gbp: pl };
+            if (tr.potentialR != null && tr.potentialR !== '') o.potR = nr(parseFloat(tr.potentialR));
+            if (tr.pips != null && tr.pips !== '') o.pips = tr.pips;
+            if (tr.type) o.type = tr.type;
+            if (tr.entryTime) o.in = tr.entryTime;
+            if (tr.exitTime) o.out = tr.exitTime;
+            if (cp > 1) o.copies = cp;
+            if (tr.execution) o.exec = tr.execution;
+            if (tr.focus) o.focus = tr.focus;
+            if (Array.isArray(tr.concepts) && tr.concepts.length) o.tags = tr.concepts;
+            if (Array.isArray(tr.mindset) && tr.mindset.length) o.mind = tr.mindset;
+            if (tr.reflection && String(tr.reflection).trim()) o.note = String(tr.reflection).trim().slice(0, 280);
+            trades.push(o);
+          }
+        });
+        // Today's plan + review in full — the live diary entry.
+        var _slots = (typeof data !== 'undefined' && Array.isArray(data.biasSlots) && data.biasSlots.length) ? data.biasSlots : ((typeof data !== 'undefined' && data.bias) ? [data.bias] : []);
+        var todayBias = _slots.filter(function (b) { return b && (b.direction || b.structure || b.location || (b.notes && b.notes.trim())); }).map(function (b) {
+          return { sym: b.symbol || null, direction: b.direction || null, structure: b.structure || null, location: b.location || null, notes: (b.notes ? String(b.notes).trim().slice(0, 400) : null) };
+        });
+        var _rv = (typeof data !== 'undefined' && data.review) || {};
         return {
           trader: (typeof data !== 'undefined' && data.userName) || null,
           currency: s.currency || 'GBP',
@@ -31458,13 +31519,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             avgLossR: losses ? nr(lossR / losses) : null,
             profitFactor: lossR ? nr(winR / Math.abs(lossR)) : null
           },
+          records: { bestByR: bestR, worstByR: worstR, bestByMoney: bestGbp },
           byWeekday: byDow, bySymbol: bySym,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null },
           today: {
-            biasDirections: (typeof data !== 'undefined' && Array.isArray(data.biasSlots)) ? data.biasSlots.filter(function (b) { return b && b.direction; }).map(function (b) { return (b.symbol || '') + ':' + b.direction; }) : ((typeof data !== 'undefined' && data.bias && data.bias.direction) ? [data.bias.direction] : []),
-            reviewTradesLogged: (typeof data !== 'undefined' && data.review && Array.isArray(data.review.trades)) ? data.review.trades.length : 0
-          }
+            bias: todayBias,
+            reviewReflection: (_rv.reflection ? String(_rv.reflection).trim().slice(0, 500) : null),
+            reviewTradesLogged: Array.isArray(_rv.trades) ? _rv.trades.length : 0
+          },
+          tradesShown: trades.length, tradesTotal: all.length,
+          trades: trades
         };
       } catch (e) { return { error: 'datapack unavailable' }; }
     }

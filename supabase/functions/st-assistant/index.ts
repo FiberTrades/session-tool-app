@@ -162,8 +162,9 @@ function json(obj: unknown, status = 200): Response {
 function buildSystem(ctx: any, mode: string): string {
   let s = APP_FACTS;
   if (ctx?.dataPack) {
-    s += `\n\n## THIS trader's current data (use these exact numbers; do not invent others)\n` +
-         JSON.stringify(ctx.dataPack).slice(0, 12000);
+    s += `\n\n## THIS trader's full data — journal + diary + community (use it directly; quote real figures and cite real trades/messages; never invent)\n` +
+         `It contains: lifetime stats; all-time \`records\` (bestByR / worstByR / bestByMoney); by-weekday & by-symbol breakdowns; today's \`bias\` plan and review; and \`trades\` — up to 250 of the most recent INDIVIDUAL trades, each with date, symbol, side, result, R, money (gbp), POT R, and the per-trade diary (exec / focus / tags / mind / note). For a question about a specific trade, day, month, or setup, read \`trades\` (each has a \`date\`) and compute the answer — e.g. "best trade this month" = the highest-R (or highest-gbp) trade whose date is in the current month. If it also carries \`community\`, that is recent community chat (\`from\` = who, \`body\` = message) — use it to answer questions about the room. Money figures are the trader's own and private; never repeat another member's figures back into the community.\n` +
+         JSON.stringify(ctx.dataPack).slice(0, 200000);
   }
   if (ctx?.profile && String(ctx.profile).trim()) {
     s += `\n\n## What you remember about this trader (their evolving profile)\n${String(ctx.profile).slice(0, 3000)}`;
