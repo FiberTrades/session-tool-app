@@ -9202,8 +9202,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let calendarMonth = today.getMonth();
   let calendarYear = today.getFullYear();
   let yearGlanceYear = today.getFullYear();
-  // Now that `data` exists, kick off the live clock + boundary-alert ticker
-  renderMetaTime();
+  // Now that `data` exists, kick off the live clock + boundary-alert ticker.
+  // Guarded: this fires checkSessionBoundaryAlerts on the very first tick, and a throw here
+  // (e.g. a rule reminder at load) must NEVER halt the rest of init — the per-second tick will
+  // pick the clock back up on the next second regardless.
+  try { renderMetaTime(); } catch (e) { try { console.warn('[ST] initial renderMetaTime failed:', e); } catch (_) {} }
   // Day-rollover / wake refresh. The app resolves "today" once at load (the session-date and
   // bias-date pickers, the bias greeting, the session banner). After hibernating overnight or
   // crossing midnight while left open, re-run that load-time date handling so the app shows the
@@ -15288,7 +15291,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
   // Snackbar-style undo toast. Stays up for `duration` ms (default 10s) and
   // shows an inline UNDO button. Clicking it calls undoFn and dismisses.
-  let _undoToastTimer = null;
+  // NOTE: `var` (hoisted), not `let` — showUndoToast is hoisted and can be called during init
+  // (a mid-session rule reminder fires from the very first renderMetaTime()), which is BEFORE
+  // this line runs. With `let` that was a temporal-dead-zone ReferenceError that crashed and
+  // HALTED the rest of init (breaking the ticker, cloud sync, and session-time guards declared
+  // further down). `var` initialises to undefined instead, so the early call is harmless.
+  var _undoToastTimer = null;
   function showUndoToast(message, undoFn, duration = 10000, actionLabel, variant) {
     const toast = document.getElementById('toast');
     if (!toast) return;
@@ -20894,7 +20902,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-31 21:05 UTC';
+  window.ST_BUILD = '2026-07-31 21:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
