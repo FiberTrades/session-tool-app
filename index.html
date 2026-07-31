@@ -20908,7 +20908,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 00:35 UTC';
+  window.ST_BUILD = '2026-08-01 01:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31476,6 +31476,84 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if ((q.match(/\?/g) || []).length >= 2) return true;  // several questions at once
       return false;                                          // otherwise cheap
     }
+
+    // ---- Tool-use: the AI can CALL these to reach data beyond what's in the payload (full lifetime
+    // history, diary text search, a specific old series, community search). Executed here against the
+    // freshest local data, so it's complete AND cheap (only what's asked for travels to the model). ----
+    function _liteTrade(tr) {
+      var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+      var o = {
+        date: tr.date || null, sym: tr.symbol || null, side: tr.side || null, result: tr.result || null,
+        r: nr(((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp),
+        gbp: nr(((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * cp)
+      };
+      if (tr.potentialR != null && tr.potentialR !== '') o.potR = nr(parseFloat(tr.potentialR));
+      if (tr.type) o.type = tr.type;
+      if (tr.entryTime) o.in = tr.entryTime;
+      if (tr.exitTime) o.out = tr.exitTime;
+      if (Array.isArray(tr.concepts) && tr.concepts.length) o.tags = tr.concepts;
+      if (tr.reflection && String(tr.reflection).trim()) o.note = String(tr.reflection).trim().slice(0, 240);
+      return o;
+    }
+    async function _runTool(name, input) {
+      try {
+        input = input || {};
+        var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+        var lifetime = function () { return (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []; };
+        if (name === 'query_trades') {
+          var res = lifetime().filter(function (tr) {
+            if (input.symbol && norm(tr.symbol) !== norm(input.symbol)) return false;
+            if (input.result && tr.result !== input.result) return false;
+            if (input.side && String(tr.side || '').toLowerCase() !== String(input.side).toLowerCase()) return false;
+            var d = tr.date ? String(tr.date).slice(0, 10) : null;
+            if (input.dateFrom && (!d || d < input.dateFrom)) return false;
+            if (input.dateTo && (!d || d > input.dateTo)) return false;
+            var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+            var r = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
+            if (input.minR != null && r < input.minR) return false;
+            if (input.maxR != null && r > input.maxR) return false;
+            return true;
+          });
+          var sortBy = input.sortBy || 'date', order = (input.order === 'asc') ? 1 : -1;
+          var val = function (tr) {
+            var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+            if (sortBy === 'r') return ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
+            if (sortBy === 'gbp') return ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * cp;
+            return tr.date ? new Date(tr.date).getTime() : 0;
+          };
+          res.sort(function (a, b) { return (val(a) - val(b)) * order; });
+          var lim = Math.min(Math.max(parseInt(input.limit, 10) || 20, 1), 100);
+          return { matched: res.length, trades: res.slice(0, lim).map(_liteTrade) };
+        }
+        if (name === 'search_diary') {
+          var q = String(input.query || '').toLowerCase(); if (!q) return { error: 'query required' };
+          var hit = lifetime().filter(function (tr) {
+            var hay = [tr.reflection || '', (tr.concepts || []).join(' '), (tr.mindset || []).join(' '), tr.type || ''].join(' ').toLowerCase();
+            return hay.indexOf(q) >= 0;
+          });
+          var lim2 = Math.min(Math.max(parseInt(input.limit, 10) || 20, 1), 60);
+          return { matched: hit.length, trades: hit.slice(0, lim2).map(_liteTrade) };
+        }
+        if (name === 'get_series') {
+          var w = String(input.which || '').toLowerCase();
+          if (w === 'current') { var cs = (typeof data !== 'undefined' && data.currentSeries) || []; return { which: 'current', logged: cs.length, trades: cs.map(_liteTrade) }; }
+          var idx = parseInt(w, 10); var hist = (typeof data !== 'undefined' && data.history) || [];
+          if (!isNaN(idx) && idx >= 1 && idx <= hist.length) { var s = hist[idx - 1]; return { which: idx, date: s.date, trades: (s.trades || []).map(_liteTrade) }; }
+          return { error: 'no such series', completedSeries: hist.length };
+        }
+        if (name === 'search_community') {
+          if (!canChat()) return { error: 'not available' };
+          var sb = window.__stSB; if (!sb) return { error: 'unavailable' };
+          var qq = String(input.query || '').replace(/[%_]/g, ''); if (!qq) return { error: 'query required' };
+          var lim3 = Math.min(Math.max(parseInt(input.limit, 10) || 25, 1), 60);
+          var r3 = await sb.from('channel_messages').select('created_at,sender_name,body').ilike('body', '%' + qq + '%').order('created_at', { ascending: false }).limit(lim3);
+          var rows = (r3 && r3.data) || [];
+          return { matched: rows.length, messages: rows.map(function (m) { return { t: m.created_at, from: m.sender_name || '?', body: String(m.body || '').slice(0, 400) }; }) };
+        }
+        return { error: 'unknown tool: ' + name };
+      } catch (e) { return { error: String(e && e.message || e) }; }
+    }
+
     async function call(mode, messages, image, imageUrl) {
       var tk = await token();
       var msgs = (messages || []).map(function (m) { return { role: m.role, content: m.content }; });   // strip display-only image data
@@ -31500,14 +31578,34 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           }
         } catch (e) {}
       }
-      var res = await fetch(ENDPOINT, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
-        body: JSON.stringify({ mode: mode, smart: smart, messages: msgs, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
-      });
-      var j = await res.json().catch(function () { return {}; });
-      if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
-      return (j && j.reply) || '';
+      // Tool loop: the edge may ask us to run a tool (query_trades / search_diary / get_series /
+      // search_community). We execute it locally, hand the result back, and let the model continue —
+      // up to a few hops. Fully backward-compatible: an edge that returns {reply} just ends the loop.
+      var _base = { mode: mode, smart: smart, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } };
+      var convo = msgs.slice();
+      for (var _hop = 0; _hop < 5; _hop++) {
+        var res = await fetch(ENDPOINT, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
+          body: JSON.stringify(Object.assign({}, _base, { messages: convo }))
+        });
+        var j = await res.json().catch(function () { return {}; });
+        if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
+        if (j && j.done === false && Array.isArray(j.toolUse) && j.toolUse.length && j.assistant) {
+          convo.push({ role: 'assistant', content: j.assistant });
+          var toolResults = [];
+          for (var _k = 0; _k < j.toolUse.length; _k++) {
+            var _tu = j.toolUse[_k];
+            var _out = await _runTool(_tu.name, _tu.input);
+            toolResults.push({ type: 'tool_result', tool_use_id: _tu.id, content: JSON.stringify(_out).slice(0, 24000) });
+          }
+          convo.push({ role: 'user', content: toolResults });
+          _base.image = null; _base.imageUrl = null;   // the image rides only on the first hop
+          continue;
+        }
+        return (j && j.reply) || '';
+      }
+      return '…';
     }
 
     function dataPack() {

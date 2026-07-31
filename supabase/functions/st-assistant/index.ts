@@ -32,6 +32,47 @@ const CORS = {
   "Access-Control-Allow-Methods": "POST, OPTIONS",
 };
 
+// Tools the model can call to reach data BEYOND the payload. They are executed on the CLIENT (against
+// the user's freshest local data); this edge just relays the request back and forth. Only offered on
+// chat turns. The model is told to prefer the ready-made summaries and only reach for these for the
+// long tail (full lifetime history, text search, a specific old series, deeper community search).
+const TOOLS = [
+  {
+    name: "query_trades",
+    description: "Search/filter the trader's FULL lifetime trade history (beyond the ~250 recent trades already in the data). Use for 'best/worst trade ever', a specific past month or date range, all trades on a symbol or side, biggest winners/losers, etc.",
+    input_schema: {
+      type: "object",
+      properties: {
+        symbol: { type: "string", description: "e.g. EUR/USD. Omit for all symbols." },
+        result: { type: "string", enum: ["Win", "Lose", "BE"] },
+        side: { type: "string", enum: ["Long", "Short"] },
+        dateFrom: { type: "string", description: "YYYY-MM-DD inclusive" },
+        dateTo: { type: "string", description: "YYYY-MM-DD inclusive" },
+        minR: { type: "number" },
+        maxR: { type: "number" },
+        sortBy: { type: "string", enum: ["date", "r", "gbp"], description: "default date" },
+        order: { type: "string", enum: ["asc", "desc"], description: "default desc" },
+        limit: { type: "integer", description: "default 20, max 100" },
+      },
+    },
+  },
+  {
+    name: "search_diary",
+    description: "Full-text search the trader's per-trade notes/reflections/tags for a term (e.g. 'revenge', 'fomo', 'news', 'tired'). Returns matching trades with their notes.",
+    input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+  },
+  {
+    name: "get_series",
+    description: "Get one Series of 10: 'current' (in-progress) or a number (1 = most recent completed, 2 = the one before, …). Returns its trades.",
+    input_schema: { type: "object", properties: { which: { type: "string", description: "'current' or a number like '1'" } }, required: ["which"] },
+  },
+  {
+    name: "search_community",
+    description: "Keyword-search the community chat history (public channels) beyond the recent messages already provided. Full members only.",
+    input_schema: { type: "object", properties: { query: { type: "string" }, limit: { type: "integer" } }, required: ["query"] },
+  },
+];
+
 // What ST Assistant is, and how the app works — its "app knowledge base". The trader's
 // OWN numbers arrive per-request in context.dataPack; this block is the stable knowledge.
 const APP_FACTS = `You are **ST Assistant**, the built-in AI trading coach inside Session Tool (sessiontool.app) — a trading journal, session-prep, and accountability app used by a small community of discretionary traders.
@@ -95,12 +136,17 @@ Deno.serve(async (req: Request): Promise<Response> => {
     } else {
       const raw = Array.isArray(body?.messages) ? body.messages : [];
       claudeMessages = raw
-        .filter((m: any) => m && (m.role === "user" || m.role === "assistant") && m.content)
-        .slice(-16) // keep the last ~8 exchanges
-        .map((m: any) => ({ role: m.role, content: String(m.content).slice(0, 4000) }));
-      if (!claudeMessages.length || claudeMessages[0].role !== "user") {
-        claudeMessages.unshift({ role: "user", content: "Hello" });
+        .filter((m: any) => m && (m.role === "user" || m.role === "assistant") && m.content != null)
+        .slice(-30)
+        // Keep plain text as a truncated string; pass STRUCTURED content (tool_use / tool_result
+        // blocks from the tool loop) through untouched so multi-hop tool calls work.
+        .map((m: any) => ({ role: m.role, content: (typeof m.content === "string") ? m.content.slice(0, 6000) : m.content }));
+      // The API requires the first turn to be a real user message — never an assistant turn or a
+      // bare tool_result (which would orphan). Drop any such leading turns.
+      while (claudeMessages.length && !(claudeMessages[0].role === "user" && typeof claudeMessages[0].content === "string")) {
+        claudeMessages.shift();
       }
+      if (!claudeMessages.length) claudeMessages.push({ role: "user", content: "Hello" });
       // Attach an uploaded/pasted image to the most recent user turn (vision). Only the
       // current turn carries the image — old images aren't re-sent, keeping cost down.
       const img = body?.image;
@@ -149,11 +195,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
         max_tokens: mode === "coach" ? 220 : (smart ? 700 : 500),
         system,
         messages: claudeMessages,
+        tools: mode === "chat" ? TOOLS : undefined,
       }),
     });
 
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return json({ error: data?.error?.message || `Claude API error ${r.status}` }, 502);
+
+    // The model wants data it doesn't have → ask the client to run the tool(s) and come back.
+    if (data?.stop_reason === "tool_use") {
+      const toolUse = (data.content ?? [])
+        .filter((b: any) => b?.type === "tool_use")
+        .map((b: any) => ({ id: b.id, name: b.name, input: b.input }));
+      return json({ done: false, assistant: data.content, toolUse });
+    }
 
     const reply = (data?.content ?? [])
       .filter((b: any) => b?.type === "text")
@@ -185,6 +240,7 @@ function buildSystem(ctx: any, mode: string): any[] {
       text: `## THIS trader's full data — journal + diary + community (use it directly; quote real figures and cite real trades/messages; never invent)\n` +
         `Ready-made summaries (use these first, don't recompute): lifetime stats; \`records\` (all-time bestByR / worstByR / bestByMoney); \`thisWeek\` and \`thisMonth\` (trades / wins / losses / netR / netMoney / best trade of the period); \`streak\` (current run of wins or losses); \`byDirection\` (long vs short); \`byWeekday\`; \`bySymbol\`; \`settings.riskRules\` + \`profitTarget\` (for prop drawdown/target maths); today's \`bias\` plan and review; and \`leaderboard\` (their monthly discipline rank, points, and points_breakdown).\n` +
         `\`trades\` = up to 250 of the most recent INDIVIDUAL trades, each with date, symbol, side, result, R, money (gbp), POT R, and the per-trade diary (exec / focus / tags / mind / note). For anything about a specific trade/day/setup, read \`trades\` (each has a \`date\`). Prefer the ready-made period summaries for "this week/month". If it carries \`community\`, that's recent community chat (\`from\` = who, \`body\` = message). Money figures are the trader's own and private; never repeat another member's figures back into the community.\n` +
+        `TOOLS: for data BEYOND the above — the full lifetime history (older than the recent 250), a specific past month/symbol, best/worst trade EVER, a diary text search ("revenge", "fomo"), a specific old Series of 10, or a deeper community search — CALL a tool: query_trades, search_diary, get_series, search_community. Don't guess or say you can't see it; if it's not in the ready-made data, fetch it with a tool, then answer. Prefer the provided summaries when they already cover the question.\n` +
         JSON.stringify(ctx.dataPack).slice(0, 200000),
     });
   }
