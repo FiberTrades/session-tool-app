@@ -11428,6 +11428,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         base.bias = base.biasSlots[base.activeBiasSlot];
     } catch (e) {}
   };
+  // Session REVIEW counterpart to __stMergeFresherBias, used on the new-day CLEAR paths. A device
+  // still holding yesterday can fire the "clear previous session" and, via the clear-stamp, adopt
+  // that cleared copy onto another device that had already logged TODAY's review. Guard against it:
+  // only a TODAY-dated review that actually has trades may win, and only when `base` doesn't already
+  // hold an equal-or-richer today review. Yesterday's review is never resurrected (today-only), and a
+  // genuine same-device clear still sticks (its own cleared review has 0 trades, so nothing to fold).
+  window.__stMergeFresherReview = function (base, other) {
+    try {
+      if (!base || !other) return;
+      var todayKey = new Date().toDateString();
+      var isToday = function (r) { try { return !!(r && r.sessionDate && new Date(r.sessionDate + 'T12:00:00').toDateString() === todayKey); } catch (e) { return false; } };
+      var o = other.review, b = base.review;
+      var oT = (o && Array.isArray(o.trades)) ? o.trades.length : 0;
+      if (!isToday(o) || oT === 0) return;             // only today's review with real trades may win
+      var bT = (b && Array.isArray(b.trades)) ? b.trades.length : 0;
+      if (isToday(b) && bT >= oT) return;              // base already holds an equal/richer today review
+      base.review = o;                                 // adopt the fresher today review
+    } catch (e) {}
+  };
   // Session-window protection, same shape as the bias guard above. The journal syncs as ONE
   // object, so a STALE instance (a phone or the detached community window still holding the OLD
   // session times) can whole-copy-overwrite the times you just changed — e.g. move your holiday
@@ -20847,7 +20866,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-31 18:25 UTC';
+  window.ST_BUILD = '2026-07-31 18:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -40495,8 +40514,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!raw || typeof raw !== 'object') { doCloudUpsert(d); return; }
       var cloud = ST.migrate(raw);
       // An intentional "delete previous day" clear must win over a pre-clear cloud even though it
-      // scores lower (it discarded yesterday's un-committed review draft). Upload it unconditionally.
-      if (_clearStamp(d) > _clearStamp(cloud)) { peakLocalScore = lScore; doCloudUpsert(d); return; }
+      // scores lower (it discarded yesterday's un-committed review draft). Upload it unconditionally —
+      // but NEVER at the cost of TODAY's own work the OTHER copy already holds. Fold any today-dated
+      // bias/review from the cloud into our copy first (both merges are today-only, so this can never
+      // resurrect the yesterday session the clear was meant to remove). This is the fix for the
+      // cross-device wipe: a phone still on yesterday firing the clear used to adopt-away a PC's fresh
+      // morning bias; now that bias/review rides along.
+      if (_clearStamp(d) > _clearStamp(cloud)) {
+        try { if (window.__stMergeFresherBias)   window.__stMergeFresherBias(d, cloud); } catch (e) {}
+        try { if (window.__stMergeFresherReview) window.__stMergeFresherReview(d, cloud); } catch (e) {}
+        peakLocalScore = contentScore(d); doCloudUpsert(d); return;
+      }
       var removed = contentScore(cloud) - lScore;
       var removedTrades = tradeCount(cloud) - tradeCount(d);   // actual trades being removed (for the message)
       if (removed >= 2) {
@@ -40602,13 +40630,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (eq(cloud, local)) { accStatus(tt('synced')); return; }
       // INTENTIONAL NEW-DAY CLEAR wins over content score, in BOTH directions, so "delete previous
       // day" can't be undone by a richer pre-clear copy racing the upload or held by a second
-      // instance/phone. The freshest today-stamp is authoritative. (No __stMergeFresherBias here:
-      // folding the other copy's yesterday bias back in is exactly the resurrection we're stopping.)
+      // instance/phone. The freshest today-stamp is authoritative. We DO fold the other copy's TODAY
+      // work in first (__stMergeFresherBias/Review are today-only) — that never resurrects the
+      // yesterday session the clear removed, but it stops a stale device's clear from adopting-away
+      // this device's fresh morning bias / today's logged review.
       var _lClear = _clearStamp(local), _cClear = _clearStamp(cloud);
       if (_cClear !== _lClear) {
         if (_cClear > _lClear) {
-          // The cloud carries a newer clear (e.g. cleared on another device): adopt it, reload once.
+          // The cloud carries a newer clear (e.g. cleared on another device): adopt it, reload once —
+          // but keep any of THIS device's today-dated bias/review by folding it into the cleared copy.
           takeSnapshot('pre-sync', local);
+          try { if (window.__stMergeFresherBias)   window.__stMergeFresherBias(cloud, local); } catch (e) {}
+          try { if (window.__stMergeFresherReview) window.__stMergeFresherReview(cloud, local); } catch (e) {}
           try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
           try { if (_rowUat) localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
           accStatus(tt('synced'));
