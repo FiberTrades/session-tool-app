@@ -41,7 +41,7 @@ Your job: give honest, specific, encouraging coaching and answer questions about
 - **Series of 10** — trades are tracked in batches of 10 ("a series"). Shows the current series' equity curve, W/L/BE dots, and completed-series history — the trajectory over time.
 - **Statistics** — lifetime KPIs: Win Rate, Net R, Expectancy (avg R per trade), Profit Factor, by-symbol / by-weekday / by-direction breakdowns, equity curve, and R left on the table.
 - **Calendar Log** — a month calendar of daily results.
-- **Media Vault** — saved chart screenshots and resources.
+- **Media Vault** — a member video library: The Method walkthroughs, weekly-review recordings and live-session replays.
 - **Community** — a Discord-style chat + a discipline leaderboard.
 
 ## Key terms
