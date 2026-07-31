@@ -11654,20 +11654,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     return {
       upsert: function (row) {
         if (!row || row.ticket == null) return;
-        // Drop an orphaned OPEN row from a previous day: a position whose close event was missed
-        // while the app/EA was offline would otherwise linger as "active" forever. Delete it remotely
-        // too so it cannot reappear on the next load. Closed rows are always kept.
+        // Drop an orphaned row from a PREVIOUS day so it can't masquerade as part of TODAY's session.
+        // An OPEN row whose close event was missed (app/EA offline at close) would otherwise linger as
+        // "active" forever; a CLOSED row from an earlier day/test would keep showing its Won/Lost result
+        // under "Trades this session". Decide the row's day from its CLOSE time when closed (so a trade
+        // that opened yesterday but closed today still counts as today), else its OPEN time. Delete it
+        // remotely too so it cannot reappear on the next load.
         try {
-          if (row.closed_at == null) {
-            var _ts = row.opened_at || row.open_time || row.created_at || row.opened || row.ts || null;
-            var _tday = _ts ? String(_ts).slice(0, 10) : null;
-            var _tnow = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
-            if (_tday && /^\d{4}-\d{2}-\d{2}$/.test(_tday) && _tday < _tnow) {
-              delete rows[String(row.ticket)];
-              try { if (window.__stLiveDeleteRow) window.__stLiveDeleteRow(row.ticket); } catch (e) {}
-              render();
-              return;
-            }
+          var _tnow = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
+          var _dayTs = (row.closed_at != null)
+            ? (row.closed_at || row.close_time || null)
+            : (row.opened_at || row.open_time || row.created_at || row.opened || row.ts || null);
+          var _tday = _dayTs ? String(_dayTs).slice(0, 10) : null;
+          if (_tday && /^\d{4}-\d{2}-\d{2}$/.test(_tday) && _tday < _tnow) {
+            delete rows[String(row.ticket)];
+            try { if (window.__stLiveDeleteRow) window.__stLiveDeleteRow(row.ticket); } catch (e) {}
+            render();
+            return;
           }
         } catch (e) {}
         var k = String(row.ticket), ex = rows[k] || {};
@@ -20866,7 +20869,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-31 18:45 UTC';
+  window.ST_BUILD = '2026-07-31 19:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
