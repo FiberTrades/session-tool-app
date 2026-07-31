@@ -216,7 +216,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .join("")
       .trim();
 
-    return json({ reply: reply || "…" });
+    return json({ reply: reply || "…", model });
   } catch (e) {
     return json({ error: String((e as any)?.message ?? e) }, 500);
   }
