@@ -20,8 +20,11 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") ?? "";
-// Claude Haiku: fast + cheapest, ideal for coaching/chat. Swap for a stronger model here if desired.
-const MODEL = "claude-haiku-4-5";
+// Two tiers. The STRONG model answers real user questions (the client spends a per-user daily budget,
+// then flips `smart` off); the LIGHT model handles greetings, coach notes, and over-budget questions.
+// Quality where it matters, without breaking the bank. Swap either string to taste (e.g. claude-opus-4-8).
+const MODEL_SMART = "claude-sonnet-5";
+const MODEL_LIGHT = "claude-haiku-4-5";
 
 const CORS = {
   "Access-Control-Allow-Origin": "*",
@@ -79,7 +82,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (!ANTHROPIC_API_KEY) return json({ error: "ANTHROPIC_API_KEY is not set in Supabase secrets." }, 500);
 
     const body = await req.json().catch(() => ({}));
-    const mode = body?.mode === "coach" ? "coach" : "chat";
+    const rawMode = body?.mode;                            // 'coach' | 'chat' | 'greet'
+    const mode = rawMode === "coach" ? "coach" : "chat";   // how to build the turns ('greet' builds like chat)
+    const smart = body?.smart === true && rawMode === "chat"; // client says this question is within the daily budget
+    const model = smart ? MODEL_SMART : MODEL_LIGHT;
     const ctx = body?.context ?? {};
 
     // Build the chat turns we send to Claude.
@@ -139,8 +145,8 @@ Deno.serve(async (req: Request): Promise<Response> => {
         "anthropic-version": "2023-06-01",
       },
       body: JSON.stringify({
-        model: MODEL,
-        max_tokens: mode === "coach" ? 220 : 500,
+        model,
+        max_tokens: mode === "coach" ? 220 : (smart ? 700 : 500),
         system,
         messages: claudeMessages,
       }),
@@ -165,24 +171,37 @@ function json(obj: unknown, status = 200): Response {
   return new Response(JSON.stringify(obj), { status, headers: { ...CORS, "content-type": "application/json" } });
 }
 
-function buildSystem(ctx: any, mode: string): string {
-  let s = APP_FACTS;
+// System prompt as CACHEABLE content blocks (prompt caching = big cost/latency saving):
+//   block 1 = APP_FACTS  → identical for everyone, cached across all users
+//   block 2 = the trader's data → identical across a user's session, cached until they log a trade
+//   block 3 = profile + language + "right now" instruction → small + volatile, not cached
+function buildSystem(ctx: any, mode: string): any[] {
+  const blocks: any[] = [{ type: "text", text: APP_FACTS, cache_control: { type: "ephemeral" } }];
+
   if (ctx?.dataPack) {
-    s += `\n\n## THIS trader's full data — journal + diary + community (use it directly; quote real figures and cite real trades/messages; never invent)\n` +
-         `It contains: lifetime stats; all-time \`records\` (bestByR / worstByR / bestByMoney); by-weekday & by-symbol breakdowns; today's \`bias\` plan and review; and \`trades\` — up to 250 of the most recent INDIVIDUAL trades, each with date, symbol, side, result, R, money (gbp), POT R, and the per-trade diary (exec / focus / tags / mind / note). For a question about a specific trade, day, month, or setup, read \`trades\` (each has a \`date\`) and compute the answer — e.g. "best trade this month" = the highest-R (or highest-gbp) trade whose date is in the current month. If it also carries \`community\`, that is recent community chat (\`from\` = who, \`body\` = message) — use it to answer questions about the room. Money figures are the trader's own and private; never repeat another member's figures back into the community.\n` +
-         JSON.stringify(ctx.dataPack).slice(0, 200000);
+    blocks.push({
+      type: "text",
+      cache_control: { type: "ephemeral" },
+      text: `## THIS trader's full data — journal + diary + community (use it directly; quote real figures and cite real trades/messages; never invent)\n` +
+        `Ready-made summaries (use these first, don't recompute): lifetime stats; \`records\` (all-time bestByR / worstByR / bestByMoney); \`thisWeek\` and \`thisMonth\` (trades / wins / losses / netR / netMoney / best trade of the period); \`streak\` (current run of wins or losses); \`byDirection\` (long vs short); \`byWeekday\`; \`bySymbol\`; \`settings.riskRules\` + \`profitTarget\` (for prop drawdown/target maths); today's \`bias\` plan and review; and \`leaderboard\` (their monthly discipline rank, points, and points_breakdown).\n` +
+        `\`trades\` = up to 250 of the most recent INDIVIDUAL trades, each with date, symbol, side, result, R, money (gbp), POT R, and the per-trade diary (exec / focus / tags / mind / note). For anything about a specific trade/day/setup, read \`trades\` (each has a \`date\`). Prefer the ready-made period summaries for "this week/month". If it carries \`community\`, that's recent community chat (\`from\` = who, \`body\` = message). Money figures are the trader's own and private; never repeat another member's figures back into the community.\n` +
+        JSON.stringify(ctx.dataPack).slice(0, 200000),
+    });
   }
+
+  let tail = "";
   if (ctx?.profile && String(ctx.profile).trim()) {
-    s += `\n\n## What you remember about this trader (their evolving profile)\n${String(ctx.profile).slice(0, 3000)}`;
+    tail += `\n\n## What you remember about this trader (their evolving profile)\n${String(ctx.profile).slice(0, 3000)}`;
   }
-  if (ctx?.lang === "es") s += `\n\nRespond in Spanish (español).`;
+  if (ctx?.lang === "es") tail += `\n\nRespond in Spanish (español).`;
   if (mode === "coach") {
-    s += `\n\n## Right now\nWrite a SHORT proactive coaching note: 1–3 sentences, warm and specific to their data above. ` +
-         `Lead with the single most useful observation (a pattern, a leak, a win worth reinforcing, or the next concrete step). ` +
-         `No "Hi" / "Hello" and no sign-off — just the insight.`;
+    tail += `\n\n## Right now\nWrite a SHORT proactive coaching note: 1–3 sentences, warm and specific to their data above. ` +
+            `Lead with the single most useful observation (a pattern, a leak, a win worth reinforcing, or the next concrete step). ` +
+            `No "Hi" / "Hello" and no sign-off — just the insight.`;
   } else {
-    s += `\n\n## Right now\nAnswer the trader's latest question. Performance questions → use their data pack. ` +
-         `App/"how do I" questions → use your app knowledge. Be concise and concrete.`;
+    tail += `\n\n## Right now\nAnswer the trader's latest question. Performance questions → use their data pack (prefer the ready-made summaries). ` +
+            `App/"how do I" questions → use your app knowledge. Be concise and concrete.`;
   }
-  return s;
+  if (tail) blocks.push({ type: "text", text: tail });
+  return blocks;
 }

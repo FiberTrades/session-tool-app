@@ -20908,7 +20908,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-07-31 23:55 UTC';
+  window.ST_BUILD = '2026-08-01 00:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31436,20 +31436,55 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       } catch (e) { return null; }
     }
 
+    // The user's own discipline-leaderboard standing (monthly board): rank, points, and the
+    // per-category breakdown — so the AI can coach accountability ("you're #3, your weekly-review
+    // points are dragging you down"). Cached ~60s.
+    var _standCache = { at: 0, row: undefined };
+    async function _standingForAI() {
+      try {
+        if (_standCache.row !== undefined && (Date.now() - _standCache.at) < 60000) return _standCache.row;
+        var sb = window.__stSB; if (!sb) return null;
+        var meRes = await sb.auth.getSession();
+        var uid = meRes && meRes.data && meRes.data.session && meRes.data.session.user && meRes.data.session.user.id;
+        if (!uid) return null;
+        var r = await sb.from('leaderboard_entries')
+          .select('period,rank,points,points_breakdown,bias_days,review_days,weekly_reviews,trades,win_rate')
+          .eq('user_id', uid).eq('period', 'month').maybeSingle();
+        var row = (r && r.data) || null;
+        _standCache = { at: Date.now(), row: row };
+        return row;
+      } catch (e) { return null; }
+    }
+
     async function token() {
       try { var r = await window.__stSB.auth.getSession(); return (r && r.data && r.data.session) ? r.data.session.access_token : null; }
       catch (e) { return null; }
     }
+    var AI_SMART_PER_DAY = 20;   // per-user daily budget of BIG-model (Sonnet) questions; beyond it we auto-downgrade to the cheap model (still answers). Tune this one number: 10 = frugal, 30 = lavish.
     async function call(mode, messages, image, imageUrl) {
       var tk = await token();
       var msgs = (messages || []).map(function (m) { return { role: m.role, content: m.content }; });   // strip display-only image data
       var dp = dataPack();
-      // Fold recent community chat in for full members (the AI can then answer room questions too).
-      try { if (canChat()) { var comm = await _communityForAI(); if (comm && comm.length) dp.community = comm; } } catch (e) {}
+      var smart = false;
+      if (mode === 'chat') {
+        // Real user question: fold in community + leaderboard standing (full members only), and spend a
+        // daily smart-model credit — the first AI_SMART_PER_DAY questions run on the strong model, the
+        // rest auto-downgrade to the cheap one. Never a hard block, never a runaway bill. Greetings
+        // ('greet') and coach notes use the cheap model and don't count.
+        try { if (canChat()) { var comm = await _communityForAI(); if (comm && comm.length) dp.community = comm; var stand = await _standingForAI(); if (stand) dp.leaderboard = stand; } } catch (e) {}
+        try {
+          var _day = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
+          var _b = (typeof data !== 'undefined' && data._aiSmartDay) || null;
+          if (!_b || _b.day !== _day) _b = { day: _day, n: 0 };
+          _b.n++;
+          if (typeof data !== 'undefined') { data._aiSmartDay = _b; try { if (typeof saveData === 'function') saveData(); } catch (e) {} }
+          smart = _b.n <= AI_SMART_PER_DAY;
+        } catch (e) { smart = true; }
+      }
       var res = await fetch(ENDPOINT, {
         method: 'POST',
         headers: { 'content-type': 'application/json', 'apikey': APIKEY, 'Authorization': 'Bearer ' + (tk || APIKEY) },
-        body: JSON.stringify({ mode: mode, messages: msgs, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
+        body: JSON.stringify({ mode: mode, smart: smart, messages: msgs, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en' } })
       });
       var j = await res.json().catch(function () { return {}; });
       if (!res.ok) throw new Error(j && j.error ? j.error : ('HTTP ' + res.status));
@@ -31509,6 +31544,40 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return { sym: b.symbol || null, direction: b.direction || null, structure: b.structure || null, location: b.location || null, notes: (b.notes ? String(b.notes).trim().slice(0, 400) : null) };
         });
         var _rv = (typeof data !== 'undefined' && data.review) || {};
+        // Pre-computed period summaries + current streak + by-direction, so the model answers
+        // "this month / this week / on a streak?" from ready numbers instead of date-filtering
+        // raw JSON (cheaper + far less error-prone, especially for a smaller model).
+        var _now = new Date();
+        var _mS = new Date(_now.getFullYear(), _now.getMonth(), 1);
+        var _wS = new Date(_now); _wS.setDate(_now.getDate() - ((_now.getDay() + 6) % 7)); _wS.setHours(0, 0, 0, 0);
+        function _agg(pred) {
+          var a = { trades: 0, wins: 0, losses: 0, bes: 0, netR: 0, netMoney: 0, best: null };
+          all.forEach(function (tr) {
+            var d = tr.date ? new Date(tr.date) : null; if (!d || isNaN(d.getTime()) || !pred(d)) return;
+            var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+            var r  = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
+            var pl = ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * cp;
+            a.trades++; if (tr.result === 'Win') a.wins++; else if (tr.result === 'Lose') a.losses++; else if (tr.result === 'BE') a.bes++;
+            a.netR += r; a.netMoney += pl;
+            if (a.best == null || r > a.best.r) a.best = { date: tr.date || null, sym: tr.symbol || null, r: nr(r), gbp: nr(pl), result: tr.result };
+          });
+          a.netR = nr(a.netR); a.netMoney = nr(a.netMoney); return a;
+        }
+        var thisMonth = _agg(function (d) { return d >= _mS; });
+        var thisWeek  = _agg(function (d) { return d >= _wS; });
+        var byDir = { long: { n: 0, wins: 0, losses: 0, netR: 0 }, short: { n: 0, wins: 0, losses: 0, netR: 0 } };
+        all.forEach(function (tr) {
+          var sl = String(tr.side || '').toLowerCase();
+          var side = (sl.indexOf('long') === 0 || sl.indexOf('buy') === 0) ? 'long' : ((sl.indexOf('short') === 0 || sl.indexOf('sell') === 0) ? 'short' : null);
+          if (!side) return;
+          var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+          var r  = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
+          byDir[side].n++; if (tr.result === 'Win') byDir[side].wins++; else if (tr.result === 'Lose') byDir[side].losses++; byDir[side].netR += r;
+        });
+        byDir.long.netR = nr(byDir.long.netR); byDir.short.netR = nr(byDir.short.netR);
+        var _stT = null, _stC = 0;
+        for (var _si = 0; _si < _byDate.length; _si++) { var _rr = _byDate[_si].result; if (_rr === 'BE') continue; if (_rr !== 'Win' && _rr !== 'Lose') continue; if (_stT === null) { _stT = _rr; _stC = 1; } else if (_rr === _stT) _stC++; else break; }
+        var streak = _stT ? { type: _stT, count: _stC } : null;
         return {
           trader: (typeof data !== 'undefined' && data.userName) || null,
           currency: s.currency || 'GBP',
@@ -31523,9 +31592,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             profitFactor: lossR ? nr(winR / Math.abs(lossR)) : null
           },
           records: { bestByR: bestR, worstByR: worstR, bestByMoney: bestGbp },
+          thisWeek: thisWeek, thisMonth: thisMonth, byDirection: byDir, streak: streak,
           byWeekday: byDow, bySymbol: bySym,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
-          settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null },
+          settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: s.riskRules || null, profitTarget: (s.riskRules && (s.riskRules.profitTarget || s.riskRules.profitTargetAmount)) || null },
           today: {
             bias: todayBias,
             reviewReflection: (_rv.reflection ? String(_rv.reflection).trim().slice(0, 500) : null),
@@ -31770,7 +31840,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var prompt = (lang === 'es'
           ? ('Reescribe esta frase de saludo para que suene escrita personalmente para mí y algo más afilada. QUÉDATE estrictamente en el tema de ESTA línea (sobre ' + tp.es + '); reformula lo que ya dice y NO metas datos ni ideas de otras pestañas (p. ej. mi mejor día de la semana, mi winrate de por vida) salvo que la propia línea los mencione. NO inventes ni insinúes hora, urgencia ni estado de la sesión (p. ej. "la sesión empieza pronto", "ahora mismo", "ya casi") a menos que la línea ya lo diga. Mantén el MISMO significado y cualquier número concreto, UNA sola línea corta, tono de coach cercano, sin "Hola" ni despedida. Devuelve SOLO la línea reescrita, sin comillas. Línea: ')
           : ('Rewrite this in-app greeting line so it feels written personally for me and a little sharper. Stay STRICTLY on the topic of THIS line (about ' + tp.en + '); rephrase what it already says and DO NOT bring in stats or insights from other tabs (e.g. my best weekday, my lifetime win rate) unless the line itself already mentions them. Do NOT invent or imply any timing, urgency, or session state (e.g. "session starts soon", "right now", "about to begin") unless the line already says it. Keep the SAME core meaning and any specific numbers, ONE short line, warm coach tone, no "Hi"/"Hello", no sign-off. Return ONLY the rewritten line, no quotes. Line: ')) + '"' + seed + '"';
-        call('chat', [{ role: 'user', content: prompt }]).then(function (reply) {
+        call('greet', [{ role: 'user', content: prompt }]).then(function (reply) {
           _greetInflight[key] = 0;
           reply = String(reply || '').replace(/^["'\s]+|["'\s]+$/g, '');
           if (!reply) return;
