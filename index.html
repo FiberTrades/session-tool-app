@@ -5267,8 +5267,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     <div class="settings-section" data-section="aimeter" style="display:none;">
       <p class="settings-hint">Admin only — AI usage per member. Simple questions run on cheap Haiku; smart ones on Sonnet. Click a trader for their day / week / month breakdown.</p>
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:12px;">
-        <label class="settings-label" for="aimeter-budget" style="margin:0;">Credit loaded (£)</label>
-        <input type="number" id="aimeter-budget" step="1" min="0" placeholder="e.g. 100" style="background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-ctrl);color:var(--text);padding:8px 12px;font-family:'AppNum','DM Mono',monospace;font-size:13px;width:120px;outline:none;">
+        <label class="settings-label" for="aimeter-budget" style="margin:0;">Credit (£)</label>
+        <input type="number" id="aimeter-budget" step="0.01" min="0" placeholder="balance from claude.com" title="Paste your remaining balance from claude.com; the meter counts down from here." style="background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-ctrl);color:var(--text);padding:8px 12px;font-family:'AppNum','DM Mono',monospace;font-size:13px;width:130px;outline:none;">
         <span id="aimeter-left" style="font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text-dim);"></span>
         <button type="button" id="aimeter-refresh" class="settings-btn" style="margin-left:auto;">Refresh</button>
       </div>
@@ -21021,7 +21021,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 21:55 UTC';
+  window.ST_BUILD = '2026-08-01 22:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45705,9 +45705,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var tableEl=el('aimeter-table'); if(!tableEl) return;
     var sb=window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">Not signed in.</div>'; return; }
     var bIn=el('aimeter-budget');
-    if(bIn && document.activeElement!==bIn){ var bv=_budget(); bIn.value = bv>0 ? bv : ''; }
-    // Pull the latest loaded-credit from auth metadata (syncs across devices), then refresh the field + £-left.
-    _loadBudget(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_budget(); _b.value = v>0 ? v : ''; } paintLeft(); });
+    if(bIn && document.activeElement!==bIn){ var bv=_credit(); bIn.value = bv>0 ? bv : ''; }
+    // Pull the latest credit balance from auth metadata (syncs across devices), then refresh the field + £-left.
+    _loadCredit(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_credit(); _b.value = v>0 ? v : ''; } paintLeft(); });
     if(_busy) return; _busy=true;
     tableEl.innerHTML='<div class="empty">Loading…</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     sb.rpc('st_ai_usage_summary').then(function(r){
@@ -45734,30 +45734,37 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
   }
   function grandGbp(){ var t=0; for(var u in _byUser) t+=_byUser[u].gbp; return t; }
-  // Loaded credit lives in the admin's Supabase AUTH METADATA (user_metadata.aiBudgetGbp), which
-  // syncs across every device on its own — read fresh via getUser(). localStorage is an instant
-  // local cache + offline fallback. _budgetVal holds the resolved value for the sync _budget() reads.
-  var _budgetVal = (function(){ try { var l=parseFloat(localStorage.getItem('st_ai_budget_gbp')); return isNaN(l)?0:l; } catch(e){ return 0; } })();
-  function _budget(){ return _budgetVal||0; }
-  function _saveBudget(v, ok){
-    _budgetVal = ok ? v : 0;
-    try { if(ok) localStorage.setItem('st_ai_budget_gbp', String(v)); else localStorage.removeItem('st_ai_budget_gbp'); } catch(e){}
-    try { var sb=window.__stSB; if(sb && sb.auth && sb.auth.updateUser) sb.auth.updateUser({ data: { aiBudgetGbp: ok ? v : null } }); } catch(e){}   // syncs to every device
+  // The admin's remaining Anthropic credit BALANCE (copied from claude.com) lives in Supabase AUTH
+  // METADATA (aiCredit) so it syncs across devices; localStorage is an instant local cache.
+  // aiCreditBase = the meter's tracked total spend at the moment you set the balance, so
+  // "left" = balance − (tracked spend since then). Re-enter the balance any time to re-sync to claude.com.
+  var _creditVal = (function(){ try { var l=parseFloat(localStorage.getItem('st_ai_credit')); return isNaN(l)?0:l; } catch(e){ return 0; } })();
+  var _baseVal   = (function(){ try { var b=parseFloat(localStorage.getItem('st_ai_credit_base')); return isNaN(b)?0:b; } catch(e){ return 0; } })();
+  function _credit(){ return _creditVal||0; }
+  function _saveCredit(v, ok){
+    _creditVal = ok ? v : 0;
+    _baseVal   = ok ? grandGbp() : 0;   // snapshot tracked spend NOW → "left" counts down from the balance you entered
+    try { if(ok){ localStorage.setItem('st_ai_credit', String(_creditVal)); localStorage.setItem('st_ai_credit_base', String(_baseVal)); } else { localStorage.removeItem('st_ai_credit'); localStorage.removeItem('st_ai_credit_base'); } } catch(e){}
+    try { var sb=window.__stSB; if(sb && sb.auth && sb.auth.updateUser) sb.auth.updateUser({ data: { aiCredit: ok ? v : null, aiCreditBase: ok ? _baseVal : null } }); } catch(e){}
   }
-  function _loadBudget(cb){
+  function _loadCredit(cb){
     var done=function(){ try { cb && cb(); } catch(e){} };
     try {
       var sb=window.__stSB;
       if(sb && sb.auth && sb.auth.getUser){
         sb.auth.getUser().then(function(r){
           try {
-            var u=r && r.data && r.data.user, mv=(u && u.user_metadata)?parseFloat(u.user_metadata.aiBudgetGbp):NaN;
-            if(!isNaN(mv)){ _budgetVal=mv; try{ localStorage.setItem('st_ai_budget_gbp', String(mv)); }catch(e){} }
-            else {
-              // Metadata empty — migrate a legacy value (localStorage, or the earlier journal attempt) UP so other devices get it.
-              var lv=parseFloat(localStorage.getItem('st_ai_budget_gbp'));
-              if(isNaN(lv)){ try { lv=(window.data&&data.settings)?parseFloat(data.settings.aiBudgetGbp):NaN; } catch(e){} }
-              if(!isNaN(lv) && lv>0){ _budgetVal=lv; try { if(sb.auth.updateUser) sb.auth.updateUser({ data:{ aiBudgetGbp: lv } }); } catch(e){} }
+            var u=r && r.data && r.data.user, md=(u && u.user_metadata) || {};
+            var cv=parseFloat(md.aiCredit), bv=parseFloat(md.aiCreditBase);
+            if(!isNaN(cv)){
+              _creditVal=cv; _baseVal=isNaN(bv)?0:bv;
+              try{ localStorage.setItem('st_ai_credit', String(_creditVal)); localStorage.setItem('st_ai_credit_base', String(_baseVal)); }catch(e){}
+            } else {
+              // Migrate a legacy "loaded" figure up (metadata aiBudgetGbp / localStorage) → balance, base 0.
+              var lv=parseFloat(md.aiBudgetGbp);
+              if(isNaN(lv)) lv=parseFloat(localStorage.getItem('st_ai_credit'));
+              if(isNaN(lv)) lv=parseFloat(localStorage.getItem('st_ai_budget_gbp'));
+              if(!isNaN(lv) && lv>0){ _creditVal=lv; _baseVal=0; try { if(sb.auth.updateUser) sb.auth.updateUser({ data:{ aiCredit: lv, aiCreditBase: 0 } }); } catch(e){} try{ localStorage.setItem('st_ai_credit', String(lv)); localStorage.setItem('st_ai_credit_base','0'); }catch(e){} }
             }
           } catch(e){}
           done();
@@ -45770,9 +45777,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function paintLeft(){
     var leftEl=el('aimeter-left'); if(!leftEl) return;
-    var budget=_budget(), spent=grandGbp();
-    if(budget>0){ var rem=budget-spent, tok=(spent>0)?'':''; leftEl.innerHTML='spent '+fmtGbp(spent)+' · <span style="color:'+(rem>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(rem)+' left</span>'; }
-    else { leftEl.textContent='spent '+fmtGbp(spent); }
+    var credit=_credit(), spentSince=Math.max(0, grandGbp()-_baseVal);
+    if(credit>0){ var left=credit-spentSince; leftEl.innerHTML=fmtGbp(spentSince)+' used · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' left</span>'; }
+    else { leftEl.textContent='spent '+fmtGbp(grandGbp()); }
   }
 
   function paintTable(){
@@ -45827,7 +45834,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var bIn=el('aimeter-budget');
     if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('input', function(){
       var v=parseFloat(bIn.value), ok=!(isNaN(v)||v<0);
-      _saveBudget(v, ok);   // auth metadata (cross-device) + localStorage
+      _saveCredit(v, ok);   // auth metadata (cross-device) + localStorage; snapshots the spend baseline
       paintLeft();
     }); }
     var sIn=el('aimeter-search'); if(sIn && !sIn.__wired){ sIn.__wired=1; sIn.addEventListener('input', function(){ paintTable(); }); }
