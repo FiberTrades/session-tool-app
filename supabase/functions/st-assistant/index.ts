@@ -89,7 +89,7 @@ Your job: give honest, specific, encouraging coaching and answer questions about
 - **Community** — a Discord-style chat + a discipline leaderboard.
 
 ## Key terms
-- **R** — risk multiple. A trade risking 1 unit that makes 2 units is +2R. In this app a LOSS always counts as **-1R** and a break-even as **0R**; a winner's R is what the trader logged.
+- **R** — risk multiple. A trade risking 1 unit that makes 2 units is +2R. In this app R is REALIZED and NET OF COSTS: a clean stop is about **-1R** (worse if it ran past the stop, and its commission/spread is included), a **break-even** carries its small cost drag (slightly negative), and a **winner's** R is its result net of its own costs. So figures are honest, cost-inclusive R — not a flat -1/0.
 - **POT R (Potential R)** — how much more the move offered beyond what they banked ("R left on the table"). High POT R on winners = they're exiting too early.
 - **Expectancy** — average R per trade. Positive = a mathematical edge.
 - **Profit Factor** — total winning R ÷ total losing R. Above ~1.5 is a solid edge.
