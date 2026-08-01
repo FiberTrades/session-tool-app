@@ -21,10 +21,11 @@ create index if not exists ai_usage_created_idx on public.ai_usage(created_at);
 -- key (bypasses RLS), and the admin reads ONLY through the gated RPC below.
 alter table public.ai_usage enable row level security;
 
--- Admin-only aggregate (per user + model). Non-admins get an empty result set.
+-- Admin-only aggregate (per user + day + model). The day lets the tab break a user
+-- down by day / week / month. Non-admins get an empty result set.
 create or replace function public.st_ai_usage_summary()
 returns table(
-  user_id uuid, model text, calls bigint,
+  user_id uuid, day date, model text, calls bigint,
   input_tokens bigint, output_tokens bigint,
   cache_creation_tokens bigint, cache_read_tokens bigint
 )
@@ -32,12 +33,14 @@ language sql
 security definer
 set search_path = public
 as $$
-  select user_id, model, count(*)::bigint,
+  select user_id,
+         (created_at at time zone 'Europe/London')::date as day,
+         model, count(*)::bigint,
          sum(input_tokens)::bigint,          sum(output_tokens)::bigint,
          sum(cache_creation_tokens)::bigint, sum(cache_read_tokens)::bigint
   from public.ai_usage
   where lower(coalesce(auth.jwt() ->> 'email', '')) = 'be.o2@hotmail.com'   -- ← your admin email
-  group by user_id, model;
+  group by user_id, day, model;
 $$;
 
 revoke all     on function public.st_ai_usage_summary() from public;
