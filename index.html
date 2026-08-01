@@ -21021,7 +21021,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 21:30 UTC';
+  window.ST_BUILD = '2026-08-01 21:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45705,10 +45705,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var tableEl=el('aimeter-table'); if(!tableEl) return;
     var sb=window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">Not signed in.</div>'; return; }
     var bIn=el('aimeter-budget');
-    if(bIn && document.activeElement!==bIn){ var bv=_budget(); bIn.value = bv>0 ? bv : '';
-      // Migrate a localStorage-only budget (set by an older build) into the synced journal so it reaches other devices.
-      try { if(bv>0 && window.data){ var cur=data.settings?data.settings.aiBudgetGbp:null; if(cur==null||cur===''){ if(!data.settings) data.settings={}; data.settings.aiBudgetGbp=bv; if(typeof saveData==='function') saveData(); } } } catch(e){}
-    }
+    if(bIn && document.activeElement!==bIn){ var bv=_budget(); bIn.value = bv>0 ? bv : ''; }
+    // Pull the latest loaded-credit from auth metadata (syncs across devices), then refresh the field + £-left.
+    _loadBudget(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_budget(); _b.value = v>0 ? v : ''; } paintLeft(); });
     if(_busy) return; _busy=true;
     tableEl.innerHTML='<div class="empty">Loading…</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     sb.rpc('st_ai_usage_summary').then(function(r){
@@ -45735,13 +45734,38 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
   }
   function grandGbp(){ var t=0; for(var u in _byUser) t+=_byUser[u].gbp; return t; }
-  // Loaded credit: primary home is the SYNCED journal (data.settings.aiBudgetGbp) so it shows on
-  // every device you log into (PC ↔ phone). localStorage is a same-device fallback that also
-  // survives a cloud-pull that momentarily blanks the journal field.
-  function _budget(){
-    try { var v=(window.data&&data.settings)?parseFloat(data.settings.aiBudgetGbp):NaN; if(!isNaN(v)) return v; } catch(e){}
-    try { var l=parseFloat(localStorage.getItem('st_ai_budget_gbp')); if(!isNaN(l)) return l; } catch(e){}
-    return 0;
+  // Loaded credit lives in the admin's Supabase AUTH METADATA (user_metadata.aiBudgetGbp), which
+  // syncs across every device on its own — read fresh via getUser(). localStorage is an instant
+  // local cache + offline fallback. _budgetVal holds the resolved value for the sync _budget() reads.
+  var _budgetVal = (function(){ try { var l=parseFloat(localStorage.getItem('st_ai_budget_gbp')); return isNaN(l)?0:l; } catch(e){ return 0; } })();
+  function _budget(){ return _budgetVal||0; }
+  function _saveBudget(v, ok){
+    _budgetVal = ok ? v : 0;
+    try { if(ok) localStorage.setItem('st_ai_budget_gbp', String(v)); else localStorage.removeItem('st_ai_budget_gbp'); } catch(e){}
+    try { var sb=window.__stSB; if(sb && sb.auth && sb.auth.updateUser) sb.auth.updateUser({ data: { aiBudgetGbp: ok ? v : null } }); } catch(e){}   // syncs to every device
+  }
+  function _loadBudget(cb){
+    var done=function(){ try { cb && cb(); } catch(e){} };
+    try {
+      var sb=window.__stSB;
+      if(sb && sb.auth && sb.auth.getUser){
+        sb.auth.getUser().then(function(r){
+          try {
+            var u=r && r.data && r.data.user, mv=(u && u.user_metadata)?parseFloat(u.user_metadata.aiBudgetGbp):NaN;
+            if(!isNaN(mv)){ _budgetVal=mv; try{ localStorage.setItem('st_ai_budget_gbp', String(mv)); }catch(e){} }
+            else {
+              // Metadata empty — migrate a legacy value (localStorage, or the earlier journal attempt) UP so other devices get it.
+              var lv=parseFloat(localStorage.getItem('st_ai_budget_gbp'));
+              if(isNaN(lv)){ try { lv=(window.data&&data.settings)?parseFloat(data.settings.aiBudgetGbp):NaN; } catch(e){} }
+              if(!isNaN(lv) && lv>0){ _budgetVal=lv; try { if(sb.auth.updateUser) sb.auth.updateUser({ data:{ aiBudgetGbp: lv } }); } catch(e){} }
+            }
+          } catch(e){}
+          done();
+        }, function(){ done(); });
+        return;
+      }
+    } catch(e){}
+    done();
   }
 
   function paintLeft(){
@@ -45803,8 +45827,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var bIn=el('aimeter-budget');
     if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('input', function(){
       var v=parseFloat(bIn.value), ok=!(isNaN(v)||v<0);
-      try { if(window.data){ if(!data.settings) data.settings={}; data.settings.aiBudgetGbp = ok ? v : ''; if(typeof saveData==='function') saveData(); } } catch(e){}   // synced across devices
-      try { if(ok) localStorage.setItem('st_ai_budget_gbp', String(v)); else localStorage.removeItem('st_ai_budget_gbp'); } catch(e){}   // same-device fallback
+      _saveBudget(v, ok);   // auth metadata (cross-device) + localStorage
       paintLeft();
     }); }
     var sIn=el('aimeter-search'); if(sIn && !sIn.__wired){ sIn.__wired=1; sIn.addEventListener('input', function(){ paintTable(); }); }
