@@ -20939,7 +20939,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 13:05 UTC';
+  window.ST_BUILD = '2026-08-01 13:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -32090,12 +32090,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // its essence and numbers.
     //
     // COST CONTROL — a plain reload must NOT pay for a fresh Claude call. The generated line is cached
-    // both in memory AND in localStorage, keyed by surface|lang (NOT the seed text — the rule-based
-    // seed re-rolls its pool phrasing on every load via pickWithAntiRepeat, which would defeat the
-    // cache). It regenerates ONLY on a real change: a new day, the trade-set nonce bumping (a logged /
-    // edited trade = an in-app event), or a language switch. Reloads reuse the same-day line for free.
-    var _greetCache = {}, _greetInflight = {}, _greetCacheGen = {};
-    var GREET_LS = 'st_ai_greet_v2';
+    // both in memory AND in localStorage, keyed by surface|lang. Validity is (day + a DATA SIGNATURE
+    // = the numbers in the seed). This is deliberately NOT gated on _greetingNonce: the nonce is bumped
+    // by cloud-sync and the day-refresh on EVERY load, which used to skip the cache and re-call Claude on
+    // every reload. The signature instead ignores which random phrasing pickWithAntiRepeat chose and only
+    // changes when the underlying numbers do (a logged/edited trade) — so reloads reuse the same-day line
+    // for FREE, and a real data change (or a new day / language switch) regenerates.
+    var _greetCache = {}, _greetInflight = {}, _greetCacheSig = {};
+    var GREET_LS = 'st_ai_greet_v3';
     function _greetStore() { try { return JSON.parse(localStorage.getItem(GREET_LS) || '{}') || {}; } catch (e) { return {}; } }
     function _greetStoreSave(o) { try { localStorage.setItem(GREET_LS, JSON.stringify(o)); } catch (e) {} }
     function enhanceGreeting(el, surface) {
@@ -32107,15 +32109,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var lang = es() ? 'es' : 'en';
         var key = (surface || 'bias') + '|' + lang;
         var today = (typeof todayKey === 'function') ? todayKey() : '';
-        var gen = (typeof _greetingNonce !== 'undefined') ? _greetingNonce : 0;
+        var sig = (seed.match(/\d+/g) || []).join('.');   // data signature — the numbers only, so a phrasing re-roll or a reload doesn't count as a change
+        var vkey = today + '|' + sig;
         var _put = (typeof window.__stSetGreetHTML === 'function') ? window.__stSetGreetHTML : function (e2, h) { e2.innerHTML = h; };
-        // 1) Session cache — reuse unless the nonce changed (a trade event) since we cached it.
-        if (_greetCache[key] && _greetCacheGen[key] === gen) { el.__aiPending = false; _put(el, _greetCache[key] + mentorHTML); return; }
-        // 2) localStorage cache — on a fresh load with no session event yet (gen === 0), reuse the
-        //    same-day line so a reload costs ZERO tokens. A day rollover or a nonce bump skips this.
-        if (gen === 0) {
+        // 1) Session cache — reuse unless the day or the data numbers changed.
+        if (_greetCache[key] && _greetCacheSig[key] === vkey) { el.__aiPending = false; _put(el, _greetCache[key] + mentorHTML); return; }
+        // 2) localStorage cache — reuse the same-day, same-data line so reloads (and the post-sync
+        //    re-render that bumps the greeting nonce) cost ZERO tokens.
+        {
           var _hit = _greetStore()[key];
-          if (_hit && _hit.day === today && _hit.text) { _greetCache[key] = _hit.text; _greetCacheGen[key] = 0; el.__aiPending = false; _put(el, _hit.text + mentorHTML); return; }
+          if (_hit && _hit.day === today && _hit.sig === sig && _hit.text) { _greetCache[key] = _hit.text; _greetCacheSig[key] = vkey; el.__aiPending = false; _put(el, _hit.text + mentorHTML); return; }
         }
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
@@ -32138,8 +32141,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var out = esc(reply);
           var nm = (typeof data !== 'undefined' && data.userName) ? String(data.userName).trim() : '';
           if (nm) out = out.split(esc(nm)).join('<span class="greet-name">' + esc(nm) + '</span>');
-          _greetCache[key] = out; _greetCacheGen[key] = gen;
-          try { var _s = _greetStore(); _s[key] = { day: today, text: out }; _greetStoreSave(_s); } catch (e) {}   // persist for same-day reloads (no re-call)
+          _greetCache[key] = out; _greetCacheSig[key] = vkey;
+          try { var _s = _greetStore(); _s[key] = { day: today, sig: sig, text: out }; _greetStoreSave(_s); } catch (e) {}   // persist for same-day, same-data reloads (no re-call)
           var still = (el.__greetSeed != null) ? String(el.__greetSeed).trim() : (el.textContent || '').trim();
           if (still === seed || el.__greetSeed == null) _put(el, out + mentorHTML);   // don't clobber a newer seed; _put types it in (or arms the observer)
         }).catch(function () { _greetInflight[key] = 0; el.__aiPending = false; if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} });
@@ -45082,6 +45085,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stb-tbl td{padding:9px 8px;border-bottom:1px solid var(--border);text-align:center;color:var(--text-mid);white-space:nowrap;}
 .stb-tbl td:nth-child(1),.stb-tbl td:nth-child(2){text-align:left;}
 .stb-tbl tbody tr:last-child td{border-bottom:none;}
+.stb-tbl tbody tr.stb-row-click{cursor:pointer;transition:background .12s ease;}
+.stb-tbl tbody tr.stb-row-click:hover td{background:rgba(244,114,182,.06);color:var(--text);}
 .stb-tbl tr.me td{background:rgba(244,114,182,.08);color:var(--text);}
 .stb-rk{color:var(--text-dim);width:26px;}
 .stb-rk.top{color:var(--accent);font-weight:700;}
@@ -45417,8 +45422,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         rest.forEach(function(x){
           var u=who(x.user_id);
           var r=(x.best_series_r==null)?null:Number(x.best_series_r);
-          var mine=(uid&&x.user_id===uid)?' class="me"':'';
-          h+='<tr'+mine+'><td class="stb-rk">'+(x.rank||'')+'</td><td><span class="stb-who">'+ava(u)+'<span>'+esc(u.name)+'</span></span></td><td class="stb-pts">'+Math.round(x.points)+'</td><td class="stb-hide-sm stb-r '+((r||0)>=0?'good':'bad')+'">'+(r==null?'—':(r>=0?'+':'')+r.toFixed(2)+'R')+'</td><td class="stb-when">'+esc(when(x.best_series_at))+'</td></tr>';
+          var mine=(uid&&x.user_id===uid)?' me':'';
+          h+='<tr class="stb-row-click'+mine+'" data-uid="'+esc(x.user_id)+'" title="'+_t('Tap for full points breakdown','Toca para ver el desglose de puntos')+'"><td class="stb-rk">'+(x.rank||'')+'</td><td><span class="stb-who">'+ava(u)+'<span>'+esc(u.name)+'</span></span></td><td class="stb-pts">'+Math.round(x.points)+'</td><td class="stb-hide-sm stb-r '+((r||0)>=0?'good':'bad')+'">'+(r==null?'—':(r>=0?'+':'')+r.toFixed(2)+'R')+'</td><td class="stb-when">'+esc(when(x.best_series_at))+'</td></tr>';
         });
         h+='</tbody></table>';
       }
@@ -45428,20 +45433,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var h='';
       if(podium.length){ h+='<div class="stb-cards">'; podium.forEach(function(x,i){ h+=cardHtml(x,who(x.user_id),i+1); }); h+='</div>'; }
       if(rest.length){
-        h+='<table class="stb-tbl"><thead><tr><th>#</th><th>'+_t('Trader','Trader')+'</th><th>'+_t('Current Pts','Pts actuales')+'</th><th>'+_t('Net R','R neta')+'</th><th class="stb-hide-sm stb-help" title="'+_t('Each trader’s declared limits — max risk per trade · max daily loss · max trades per session (all as % of balance).','Límites declarados de cada trader — riesgo máx. por operación · pérdida diaria máx. · operaciones máx. por sesión (todo como % del saldo).')+'">'+_t('Their rules','Sus reglas')+'</th></tr></thead><tbody>';
+        h+='<table class="stb-tbl"><thead><tr><th>#</th><th>'+_t('Trader','Trader')+'</th><th>'+_t('Points','Puntos')+'</th><th>'+_t('Net R','R neta')+'</th><th class="stb-hide-sm">'+_t('Win rate','Acierto')+'</th><th>'+_t('Trades','Ops')+'</th></tr></thead><tbody>';
         rest.forEach(function(x,i){
           var u=who(x.user_id);
           var r=(x.best_series_r==null)?null:Number(x.best_series_r);
           var _rk=(x.rank||(i+4));
-          var mine=(uid&&x.user_id===uid)?' class="me"':'';
-          h+='<tr'+mine+'><td class="stb-rk">'+_rk+'</td><td><span class="stb-who">'+ava(u)+'<span>'+esc(u.name)+'</span></span></td><td class="stb-pts">'+Math.round(x.points)+'</td><td class="stb-r '+((r||0)>=0?'good':'bad')+'">'+(r==null?'—':(r>=0?'+':'')+r.toFixed(2)+'R')+'</td><td class="stb-hide-sm stb-rules">'+esc(rules(x))+'</td></tr>';
+          var mine=(uid&&x.user_id===uid)?' me':'';
+          h+='<tr class="stb-row-click'+mine+'" data-uid="'+esc(x.user_id)+'" title="'+_t('Tap for full points breakdown','Toca para ver el desglose de puntos')+'"><td class="stb-rk">'+_rk+'</td><td><span class="stb-who">'+ava(u)+'<span>'+esc(u.name)+'</span></span></td><td class="stb-pts">'+Math.round(x.points)+'</td><td class="stb-r '+((r||0)>=0?'good':'bad')+'">'+(r==null?'—':(r>=0?'+':'')+r.toFixed(2)+'R')+'</td><td class="stb-hide-sm">'+_wrFor(x)+'</td><td>'+(x.trades||0)+'</td></tr>';
         });
         h+='</tbody></table>';
       }
       box.innerHTML=h;
     }
-    /* Tap a podium card -> full per-category points breakdown popup. */
-    Array.prototype.forEach.call(box.querySelectorAll('.stb-card-click'), function(cd){
+    /* Tap a podium card OR a list row -> full per-category points breakdown popup. */
+    Array.prototype.forEach.call(box.querySelectorAll('.stb-card-click, .stb-row-click'), function(cd){
       cd.addEventListener('click', function(){ var _u=cd.getAttribute('data-uid'); var row=null; for(var i=0;i<S.rows.length;i++){ if(S.rows[i].user_id===_u){ row=S.rows[i]; break; } } if(row) openBreakdown(row, who(_u)); });
     });
 
