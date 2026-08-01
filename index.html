@@ -19243,9 +19243,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // mechanically across accounts; they don't add independent data points
       // for assessing time-of-day edge, and the reliability threshold
       // (MIN_TRADES_PER_BUCKET) would silently break if copies inflated counts.
-      if (t.result === 'Win')  { bucket.wins++; bucket.totalR += (parseFloat(t.r) || 0); }
-      else if (t.result === 'Lose') { bucket.losses++; bucket.totalR -= 1; }
+      if (t.result === 'Win')  { bucket.wins++; }
+      else if (t.result === 'Lose') { bucket.losses++; }
       else if (t.result === 'BE')   { bucket.bes++; }
+      bucket.totalR += (typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0;   // real R (loss = actual size, BE = cost drag)
       bucket.net += tradeNetPL(t);
     });
 
@@ -20969,7 +20970,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 15:25 UTC';
+  window.ST_BUILD = '2026-08-01 15:50 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -21846,11 +21847,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function autoTradeCard(tr, label, iconCls, icon) {
     if (!tr) return '';
     const escFn = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
-    function rOf(t) {
-      if (t.result === 'Win')  return parseFloat(t.r) || 0;
-      if (t.result === 'Lose') return -1;
-      return 0;
-    }
+    function rOf(t) { return (typeof tradeRforMath === 'function') ? tradeRforMath(t) : (t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0); }   // real R: loss = actual size, BE = cost drag
     const r = rOf(tr);
     const rStr = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
     const rCls = r > 0 ? 'good' : r < 0 ? 'bad' : '';
@@ -21992,12 +21989,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const isPipsView = false;
     const unitLetter = 'R';
 
-    // R-per-trade helper (Win→r, Lose→-1, BE→0).
-    function tradeR(t) {
-      if (t.result === 'Win')  return parseFloat(t.r) || 0;
-      if (t.result === 'Lose') return -1;
-      return 0;
-    }
+    // R-per-trade helper — real R (a loss counts its actual cost-inclusive size, a BE its cost drag).
+    function tradeR(t) { return (typeof tradeRforMath === 'function') ? tradeRforMath(t) : (t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0); }
     // Pips-per-trade helper. Uses each trade's logged pips (signed). BEs and untracked → 0.
     function tradePips(t) {
       const p = parseFloat(t.pips);
@@ -22721,11 +22714,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return td >= weekStart && td < wkEndExc;
     });
     const weekWins   = weekTradesAll.filter(t => t.result === 'Win');
-    function tradeRLocal(t) {
-      if (t.result === 'Win')  return parseFloat(t.r) || 0;
-      if (t.result === 'Lose') return -1;
-      return 0;
-    }
+    function tradeRLocal(t) { return (typeof tradeRforMath === 'function') ? tradeRforMath(t) : (t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0); }   // real R
     const bestWinTrade   = weekWins.length   > 0 ? weekWins.slice().sort((a, b) => tradeRLocal(b) - tradeRLocal(a))[0]   : null;
 
     // Escape HTML in values that get injected back into the DOM
@@ -23293,7 +23282,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const td = new Date(t.date);
       return td >= weekStart && td < wkEnd;
     });
-    function tRD(t) { return t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0; }
+    function tRD(t) { return (typeof tradeRforMath === 'function') ? tradeRforMath(t) : (t.result === 'Win' ? (parseFloat(t.r) || 0) : t.result === 'Lose' ? -1 : 0); }   // real R
     const weekWinsD = weekTradesD.filter(t => t.result === 'Win');
     const dBestWin = weekWinsD.length > 0 ? weekWinsD.slice().sort((a, b) => tRD(b) - tRD(a))[0] : null;
     function tradeOneLiner(t) {
@@ -25918,11 +25907,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const now = new Date();
     const sevenAgo = new Date(now); sevenAgo.setDate(sevenAgo.getDate() - 7);
     const last7 = sorted.filter(t => new Date(t.date) >= sevenAgo);
-    const last7TotalR = last7.reduce((s, t) => {
-      if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
-      if (t.result === 'Lose') return s - 1;
-      return s;
-    }, 0);
+    const last7TotalR = last7.reduce((s, t) => s + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R
 
     // Last 30 days
     const thirtyAgo = new Date(now); thirtyAgo.setDate(thirtyAgo.getDate() - 30);
@@ -25997,19 +25982,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const last3L = last3.filter(t => t.result === 'Lose').length;
 
     // Avg R over last 10
-    const recent10TotalR = recent10.reduce((s, t) => {
-      if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
-      if (t.result === 'Lose') return s - 1;
-      return s;
-    }, 0);
+    const recent10TotalR = recent10.reduce((s, t) => s + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R
     const avgRLast10 = recent10.length > 0 ? recent10TotalR / recent10.length : null;
 
     // Best / worst single trade in last 30
-    const last30R = last30.map(t => {
-      if (t.result === 'Win')  return parseFloat(t.r) || 0;
-      if (t.result === 'Lose') return -1;
-      return 0;
-    });
+    const last30R = last30.map(t => (typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0);   // real R (loss = actual size, BE = cost drag)
     const biggestLossR = last30R.length > 0 ? Math.min(...last30R) : 0;
 
     // Profit factor over last 30
@@ -26044,11 +26021,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const w = trades.filter(t => t.result === 'Win').length;
       const l = trades.filter(t => t.result === 'Lose').length;
       const be = trades.filter(t => t.result === 'BE').length;
-      const totalR = trades.reduce((s, t) => {
-        if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
-        if (t.result === 'Lose') return s - 1;
-        return s;
-      }, 0);
+      const totalR = trades.reduce((s, t) => s + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R
       // Dominant side (if any)
       const longs = trades.filter(t => t.side === 'Long').length;
       const shorts = trades.filter(t => t.side === 'Short').length;
@@ -26315,11 +26288,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const wins   = cs.filter(t => t.result === 'Win').length;
     const losses = cs.filter(t => t.result === 'Lose').length;
     const bes    = cs.filter(t => t.result === 'BE').length;
-    const totalR = cs.reduce((sum, t) => {
-      if (t.result === 'Win')  return sum + (parseFloat(t.r) || 0);
-      if (t.result === 'Lose') return sum - 1;
-      return sum;
-    }, 0);
+    const totalR = cs.reduce((sum, t) => sum + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R
     const winRs = cs.filter(t => t.result === 'Win').map(t => parseFloat(t.r) || 0).filter(r => r > 0);
     const avgWinR = winRs.length > 0 ? winRs.reduce((a, b) => a + b, 0) / winRs.length : 0;
     const remaining = 10 - n;
@@ -27045,11 +27014,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (wins > 0 && losses === 0) return 'positive';
     if (losses > 0 && wins === 0) return 'negative';
     if (wins === 0 && losses === 0 && bes > 0) return 'be';
-    const totalR = all.reduce((s, t) => {
-      if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
-      if (t.result === 'Lose') return s - 1;
-      return s;
-    }, 0);
+    const totalR = all.reduce((s, t) => s + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R (mixed-day tone tiebreaker)
     if (totalR >= 0.5) return 'positive';
     if (totalR <= -0.5) return 'negative';
     return 'be';
@@ -27086,11 +27051,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (losses > 0 && wins === 0) return 'negative';   // any losses, no wins → negative
       if (wins === 0 && losses === 0 && bes > 0) return 'be'; // pure BE day
       // Mixed day (both wins and losses present) — use total R, not net £, as a fairer tiebreaker
-      const totalR = day.trades.reduce((s, t) => {
-        if (t.result === 'Win')  return s + (parseFloat(t.r) || 0);
-        if (t.result === 'Lose') return s - 1;
-        return s;
-      }, 0);
+      const totalR = day.trades.reduce((s, t) => s + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R (mixed-day tone tiebreaker)
       if (totalR >= 0.5) return 'positive';
       if (totalR <= -0.5) return 'negative';
       return 'be'; // close to even — BE-flavoured tone
