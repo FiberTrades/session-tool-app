@@ -14823,9 +14823,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const losses = trades.filter(t => t.result === 'Lose').length;
       const decisive = wins + losses;
       const wr = decisive > 0 ? Math.round(wins/decisive * 100) : null;
-      let grossWin = 0, grossLoss = 0;
-      trades.forEach(t => { if (t.result === 'Win') grossWin += (parseFloat(t.r) || 0); if (t.result === 'Lose') grossLoss += 1; });
-      const totalR = grossWin - grossLoss;
+      // Net R uses the SAME real-R basis as the equity curve + W/L/BE tally (tradeRforMath): a loss
+      // counts its ACTUAL cost-inclusive size (a clean stop = −1R, a stop that ran past = worse), a
+      // break-even counts its cost drag (−costs ÷ risk), and a win counts its logged R. The old code
+      // used a flat −1R per loss and 0 for BEs, which made THIS card (e.g. −2.00R) disagree with the
+      // equity curve (−2.93R). Profit factor is now winning-R ÷ losing-R, matching its tooltip.
+      let grossWin = 0, grossLoss = 0, totalR = 0;
+      trades.forEach(t => {
+        const r = (typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0;
+        totalR += r;
+        if (r > 0) grossWin += r; else grossLoss += -r;
+      });
       const pf = grossLoss > 0 ? grossWin/grossLoss : (grossWin > 0 ? Infinity : null);
       const avgWin = wins > 0 ? grossWin/wins : null;
       const exp = trades.length > 0 ? totalR/trades.length : null;
@@ -14991,9 +14999,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try {
       const _subR = document.getElementById('equity-curve-sub-r');
       if (_subR) {
-        const _nr = (cs || []).reduce((a, tt) => a + tradeRforMath(tt), 0);
-        _subR.textContent = (cs && cs.length) ? (' · ' + (_nr >= 0 ? '+' : '') + _nr.toFixed(2) + 'R') : '';
-        _subR.className = 'chart-card-subtitle-pct' + ((cs && cs.length) ? (_nr >= 0 ? ' good' : ' bad') : '');
+        // The R figure now lives on the left "Net R" card; this subtitle shows the series' NET P&L in £
+        // (gross − costs), the same net figure as the P&L card. The chart's Y-axis stays in R.
+        const _np = (cs || []).reduce((a, tt) => a + ((typeof tradeGross === 'function' ? tradeGross(tt) : 0) - (typeof tradeCosts === 'function' ? tradeCosts(tt) : 0)), 0);
+        _subR.textContent = (cs && cs.length) ? (' · ' + fmtMoney(_np)) : '';
+        _subR.className = 'chart-card-subtitle-pct' + ((cs && cs.length) ? (_np >= 0 ? ' good' : ' bad') : '');
       }
     } catch(e) {}
     const histWrap = document.getElementById('history-list');
@@ -20959,7 +20969,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 15:05 UTC';
+  window.ST_BUILD = '2026-08-01 15:25 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
