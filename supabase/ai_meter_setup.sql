@@ -9,11 +9,13 @@ create table if not exists public.ai_usage (
   user_id               uuid not null,
   created_at            timestamptz not null default now(),
   model                 text,
+  mode                  text,            -- 'greet' | 'coach' | 'chat' — lets the meter break out greeting spend
   input_tokens          int not null default 0,
   output_tokens         int not null default 0,
   cache_creation_tokens int not null default 0,
   cache_read_tokens     int not null default 0
 );
+alter table public.ai_usage add column if not exists mode text;   -- for tables created before this column existed
 create index if not exists ai_usage_user_idx    on public.ai_usage(user_id);
 create index if not exists ai_usage_created_idx on public.ai_usage(created_at);
 
@@ -27,7 +29,7 @@ alter table public.ai_usage enable row level security;
 drop function if exists public.st_ai_usage_summary();
 create or replace function public.st_ai_usage_summary()
 returns table(
-  user_id uuid, day date, model text, calls bigint,
+  user_id uuid, day date, model text, mode text, calls bigint,
   input_tokens bigint, output_tokens bigint,
   cache_creation_tokens bigint, cache_read_tokens bigint
 )
@@ -37,12 +39,12 @@ set search_path = public
 as $$
   select user_id,
          (created_at at time zone 'Europe/London')::date as day,
-         model, count(*)::bigint,
+         model, mode, count(*)::bigint,
          sum(input_tokens)::bigint,          sum(output_tokens)::bigint,
          sum(cache_creation_tokens)::bigint, sum(cache_read_tokens)::bigint
   from public.ai_usage
   where lower(coalesce(auth.jwt() ->> 'email', '')) = 'be.o2@hotmail.com'   -- ← your admin email
-  group by user_id, day, model;
+  group by user_id, day, model, mode;
 $$;
 
 revoke all     on function public.st_ai_usage_summary() from public;

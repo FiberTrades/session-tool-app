@@ -128,7 +128,7 @@ function userIdFromReq(req: Request): string | null {
     return payload?.sub || null;
   } catch { return null; }
 }
-async function recordUsage(userId: string | null, model: string, usage: any): Promise<void> {
+async function recordUsage(userId: string | null, model: string, usage: any, mode?: string): Promise<void> {
   try {
     if (!userId || !usage) return;
     const url = Deno.env.get("SUPABASE_URL");
@@ -140,6 +140,7 @@ async function recordUsage(userId: string | null, model: string, usage: any): Pr
       body: JSON.stringify({
         user_id: userId,
         model,
+        mode: (mode === "greet" || mode === "coach" || mode === "chat") ? mode : "chat",   // greet = AI greetings; lets the meter break them out
         input_tokens: usage.input_tokens ?? 0,
         output_tokens: usage.output_tokens ?? 0,
         cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
@@ -237,7 +238,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (!r.ok) return json({ error: data?.error?.message || `Claude API error ${r.status}` }, 502);
 
     // Log this call's token usage for the admin AI-meter (best-effort; never blocks the reply).
-    await recordUsage(userIdFromReq(req), model, (data as any)?.usage);
+    await recordUsage(userIdFromReq(req), model, (data as any)?.usage, rawMode);
 
     // The model wants data it doesn't have → ask the client to run the tool(s) and come back.
     if (data?.stop_reason === "tool_use") {
