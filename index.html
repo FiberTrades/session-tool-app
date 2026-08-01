@@ -20939,7 +20939,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 12:15 UTC';
+  window.ST_BUILD = '2026-08-01 12:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -32018,8 +32018,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       Array.prototype.forEach.call(document.querySelectorAll('.st-asst-clear'), function (c) { c.textContent = clr; });
     }
     // AI-written greeting: rewrite the tab's seed line into a more personal, insightful one — keeping
-    // its essence and numbers. Cached by (surface,lang,seed) so data changes re-run it but repeats don't.
-    var _greetCache = {}, _greetInflight = {};
+    // its essence and numbers.
+    //
+    // COST CONTROL — a plain reload must NOT pay for a fresh Claude call. The generated line is cached
+    // both in memory AND in localStorage, keyed by surface|lang (NOT the seed text — the rule-based
+    // seed re-rolls its pool phrasing on every load via pickWithAntiRepeat, which would defeat the
+    // cache). It regenerates ONLY on a real change: a new day, the trade-set nonce bumping (a logged /
+    // edited trade = an in-app event), or a language switch. Reloads reuse the same-day line for free.
+    var _greetCache = {}, _greetInflight = {}, _greetCacheGen = {};
+    var GREET_LS = 'st_ai_greet_v2';
+    function _greetStore() { try { return JSON.parse(localStorage.getItem(GREET_LS) || '{}') || {}; } catch (e) { return {}; } }
+    function _greetStoreSave(o) { try { localStorage.setItem(GREET_LS, JSON.stringify(o)); } catch (e) {} }
     function enhanceGreeting(el, surface) {
       try {
         if (!el || !canGreet()) return;
@@ -32027,8 +32036,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         seed = seed.trim(); if (!seed) return;
         var mentor = el.querySelector('.mentor-greet-msg'); var mentorHTML = mentor ? (' ' + mentor.outerHTML) : '';
         var lang = es() ? 'es' : 'en';
-        var key = (surface || 'bias') + '|' + lang + '|' + seed;
-        if (_greetCache[key]) { el.innerHTML = _greetCache[key] + mentorHTML; return; }
+        var key = (surface || 'bias') + '|' + lang;
+        var today = (typeof todayKey === 'function') ? todayKey() : '';
+        var gen = (typeof _greetingNonce !== 'undefined') ? _greetingNonce : 0;
+        // 1) Session cache — reuse unless the nonce changed (a trade event) since we cached it.
+        if (_greetCache[key] && _greetCacheGen[key] === gen) { el.innerHTML = _greetCache[key] + mentorHTML; return; }
+        // 2) localStorage cache — on a fresh load with no session event yet (gen === 0), reuse the
+        //    same-day line so a reload costs ZERO tokens. A day rollover or a nonce bump skips this.
+        if (gen === 0) {
+          var _hit = _greetStore()[key];
+          if (_hit && _hit.day === today && _hit.text) { _greetCache[key] = _hit.text; _greetCacheGen[key] = 0; el.innerHTML = _hit.text + mentorHTML; return; }
+        }
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
         var topics = {
@@ -32049,7 +32067,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var out = esc(reply);
           var nm = (typeof data !== 'undefined' && data.userName) ? String(data.userName).trim() : '';
           if (nm) out = out.split(esc(nm)).join('<span class="greet-name">' + esc(nm) + '</span>');
-          _greetCache[key] = out;
+          _greetCache[key] = out; _greetCacheGen[key] = gen;
+          try { var _s = _greetStore(); _s[key] = { day: today, text: out }; _greetStoreSave(_s); } catch (e) {}   // persist for same-day reloads (no re-call)
           var still = (el.__greetSeed != null) ? String(el.__greetSeed).trim() : (el.textContent || '').trim();
           if (still === seed || el.__greetSeed == null) el.innerHTML = out + mentorHTML;   // don't clobber a newer seed
         }).catch(function () { _greetInflight[key] = 0; });
