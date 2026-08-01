@@ -21021,7 +21021,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 22:55 UTC';
+  window.ST_BUILD = '2026-08-01 23:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45710,13 +45710,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _loadCredit(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_credit(); _b.value = v>0 ? v : ''; } paintLeft(); });
     if(_busy) return; _busy=true;
     tableEl.innerHTML='<div class="empty">Loading…</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
-    sb.rpc('st_ai_usage_summary').then(function(r){
-      if(r && r.error){ _busy=false; tableEl.innerHTML='<div class="empty">Not set up yet — create the <code>ai_usage</code> table + <code>st_ai_usage_summary()</code> and add the recorder to the st-assistant edge function (see chat).<br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
-      var rows=(r && r.data) || [];
-      sb.rpc('st_members').then(function(m){
-        _names={}; ((m&&m.data)||[]).forEach(function(x){ var id=x.id||x.user_id; if(id) _names[id]=x.name||x.display_name||'Trader'; });
-        aggregate(rows); paintLeft(); paintTable(); _busy=false;
-      }, function(){ _names={}; aggregate(rows); paintLeft(); paintTable(); _busy=false; });
+    // Fire the usage query and the member-names query IN PARALLEL (they don't depend on each other) so
+    // the tab loads in one round-trip instead of two.
+    Promise.all([ sb.rpc('st_ai_usage_summary'), sb.rpc('st_members') ]).then(function(res){
+      var r=res[0]||{}, m=res[1]||{};
+      if(r.error){ _busy=false; tableEl.innerHTML='<div class="empty">Not set up yet — create the <code>ai_usage</code> table + <code>st_ai_usage_summary()</code> and add the recorder to the st-assistant edge function (see chat).<br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
+      _names={}; ((m&&m.data)||[]).forEach(function(x){ var id=x.id||x.user_id; if(id) _names[id]=x.name||x.display_name||'Trader'; });
+      aggregate((r.data)||[]); paintLeft(); paintTable(); _busy=false;
     }, function(){ _busy=false; tableEl.innerHTML='<div class="empty">Usage unavailable.</div>'; });
   }
 
@@ -45789,9 +45789,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var users=Object.keys(_byUser).sort(function(a,b){ return _byUser[b].gbp-_byUser[a].gbp; });
     if(q) users=users.filter(function(u){ return (_names[u]||'').toLowerCase().indexOf(q)>=0; });
     if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?'No trader matches “'+esc(q)+'”.':'No AI usage recorded yet.')+'</div>'; return; }
-    var h='<table class="stb-tbl aimeter-tbl"><thead><tr><th>Trader</th><th>Sonnet</th><th>Haiku</th><th title="Tokens spent on this member’s AI greetings (part of the total)">Greet tok</th><th class="stb-hide-sm">Tokens</th><th>£ spent</th></tr></thead><tbody>';
+    var h='<table class="stb-tbl aimeter-tbl"><thead><tr><th>Trader</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm" title="Tokens spent on this member’s AI greetings (part of the total)">Greet tokens</th><th class="stb-hide-sm">Tokens</th><th>£ spent</th></tr></thead><tbody>';
     users.forEach(function(u){ var b=_byUser[u], nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr;
-      h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="Click for day / week / month breakdown"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td>'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(tok)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
+      h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="Click for day / week / month breakdown"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(tok)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
     });
     h+='</tbody></table>'; tableEl.innerHTML=h;
     Array.prototype.forEach.call(tableEl.querySelectorAll('.aimeter-row'), function(tr){ tr.addEventListener('click', function(){ showDetail(tr.getAttribute('data-uid')); }); });
