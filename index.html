@@ -357,6 +357,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .aimeter-tile .v.bad { color: var(--bad); }
   .aimeter-tbl tbody tr.aimeter-row { cursor: pointer; transition: background 0.12s ease; }
   .aimeter-tbl tbody tr.aimeter-row:hover td { background: rgba(244,114,182,0.06); color: var(--text); }
+  /* Even, aligned columns: fixed-width numeric columns (override stb-tbl's col-2 left-align), trader flexes. */
+  .stb-tbl.aimeter-tbl th:not(:first-child), .stb-tbl.aimeter-tbl td:not(:first-child) { text-align: center; width: 72px; }
+  .stb-tbl.aimeter-tbl th:first-child, .stb-tbl.aimeter-tbl td:first-child { text-align: left; }
+  .aimeter-range { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 14px 0 4px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; color: var(--text-dim); }
+  .aimeter-range input[type="date"] { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text); padding: 6px 9px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; outline: none; }
+  .aimeter-range-total { color: var(--text-mid); }
+  .aimeter-range-total b { color: var(--bad); }
   .aimeter-detail-card { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border-2); }
   .aimeter-detail-head { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
   .aimeter-detail-name { font-family: 'Fraunces', serif; font-size: 17px; color: var(--text); }
@@ -21013,7 +21020,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 19:45 UTC';
+  window.ST_BUILD = '2026-08-01 20:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45689,7 +45696,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var tableEl=el('aimeter-table'); if(!tableEl) return;
     var sb=window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">Not signed in.</div>'; return; }
     var bIn=el('aimeter-budget');
-    if(bIn && document.activeElement!==bIn){ var bv=(window.data&&data.settings)?data.settings.aiBudgetGbp:null; bIn.value=(bv!=null&&bv!=='')?bv:''; }
+    if(bIn && document.activeElement!==bIn){ var bv=_budget(); bIn.value = bv>0 ? bv : ''; }
     if(_busy) return; _busy=true;
     tableEl.innerHTML='<div class="empty">Loading…</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     sb.rpc('st_ai_usage_summary').then(function(r){
@@ -45716,10 +45723,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
   }
   function grandGbp(){ var t=0; for(var u in _byUser) t+=_byUser[u].gbp; return t; }
+  // Loaded credit lives in localStorage (a per-device admin figure) so it survives reloads and
+  // isn't clobbered by journal cloud-sync.
+  function _budget(){ try { var v=parseFloat(localStorage.getItem('st_ai_budget_gbp')); return isNaN(v)?0:v; } catch(e){ return 0; } }
 
   function paintLeft(){
     var leftEl=el('aimeter-left'); if(!leftEl) return;
-    var budget=parseFloat((window.data&&data.settings)?data.settings.aiBudgetGbp:0)||0, spent=grandGbp();
+    var budget=_budget(), spent=grandGbp();
     if(budget>0){ var rem=budget-spent, tok=(spent>0)?'':''; leftEl.innerHTML='spent '+fmtGbp(spent)+' · <span style="color:'+(rem>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(rem)+' left</span>'; }
     else { leftEl.textContent='spent '+fmtGbp(spent); }
   }
@@ -45739,31 +45749,42 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent='Sonnet/Haiku columns = number of questions on each model. £ estimated at Sonnet $'+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+' per 1M tokens (cache read ×0.1, write ×1.25), USD→GBP '+USD_GBP+'.';
   }
 
+  function _wireBack(det){ var back=det.querySelector('.aimeter-back'); if(back) back.addEventListener('click', function(){ det.innerHTML=''; }); }
   function showDetail(uid){
     var det=el('aimeter-detail'), b=_byUser[uid]; if(!det||!b) return;
     var nm=_names[uid]||('…'+String(uid).slice(-6));
     var now=new Date(), todayStr=_localDate(now);
     var ws=new Date(now); ws.setDate(ws.getDate()-((ws.getDay()+6)%7)); var weekStartStr=_localDate(ws);
     var monStr=todayStr.slice(0,7);
-    var today=0, week=0, month=0, allDays=[];
-    Object.keys(b.days).forEach(function(d){ var g=b.days[d].gbp; allDays.push([d,b.days[d]]); if(d===todayStr) today+=g; if(d>=weekStartStr) week+=g; if(d.slice(0,7)===monStr) month+=g; });
-    allDays.sort(function(a,c){ return a[0]<c[0]?1:-1; });
+    var dayKeys=Object.keys(b.days).sort();   // ascending YYYY-MM-DD (lexicographic = chronological)
+    var today=0, week=0, month=0;
+    dayKeys.forEach(function(d){ var g=b.days[d].gbp; if(d===todayStr) today+=g; if(d>=weekStartStr) week+=g; if(d.slice(0,7)===monStr) month+=g; });
     var h='<div class="aimeter-detail-card"><div class="aimeter-detail-head"><button type="button" class="aimeter-back">← Back</button><span class="aimeter-detail-name">'+esc(nm)+'</span></div>';
-    if(allDays.length){
-      h+='<div class="aimeter-totals"><div class="aimeter-tile"><div class="k">Today</div><div class="v bad">'+fmtGbp(today)+'</div></div><div class="aimeter-tile"><div class="k">This week</div><div class="v bad">'+fmtGbp(week)+'</div></div><div class="aimeter-tile"><div class="k">This month</div><div class="v bad">'+fmtGbp(month)+'</div></div></div>';
-      h+='<table class="stb-tbl" style="margin-top:6px;"><thead><tr><th>Day</th><th>Calls</th><th>£</th></tr></thead><tbody>';
-      allDays.slice(0,31).forEach(function(p){ h+='<tr><td>'+esc(p[0])+'</td><td class="stb-pts">'+p[1].calls+'</td><td class="stb-r bad">'+fmtGbp(p[1].gbp)+'</td></tr>'; });
-      h+='</tbody></table>';
-    } else { h+='<p class="settings-hint">No dated usage yet — re-run the updated <code>st_ai_usage_summary()</code> (it now returns a day column) to see the daily breakdown.</p>'; }
-    h+='</div>';
+    if(!dayKeys.length){ h+='<p class="settings-hint">No dated usage yet — re-run the updated <code>st_ai_usage_summary()</code> (it now returns a day column) to see the breakdown.</p></div>'; det.innerHTML=h; _wireBack(det); return; }
+    var earliest=dayKeys[0];
+    h+='<div class="aimeter-totals"><div class="aimeter-tile"><div class="k">Today</div><div class="v bad">'+fmtGbp(today)+'</div></div><div class="aimeter-tile"><div class="k">This week</div><div class="v bad">'+fmtGbp(week)+'</div></div><div class="aimeter-tile"><div class="k">This month</div><div class="v bad">'+fmtGbp(month)+'</div></div></div>';
+    h+='<div class="aimeter-range"><span>From</span><input type="date" id="aimeter-from" value="'+earliest+'" max="'+todayStr+'"><span>to</span><input type="date" id="aimeter-to" value="'+todayStr+'" max="'+todayStr+'"><span id="aimeter-range-total" class="aimeter-range-total"></span></div>';
+    h+='<div id="aimeter-range-list"></div></div>';
     det.innerHTML=h;
-    var back=det.querySelector('.aimeter-back'); if(back) back.addEventListener('click', function(){ det.innerHTML=''; });
+    _wireBack(det);
+    function renderRange(){
+      var from=(el('aimeter-from')||{}).value||earliest, to=(el('aimeter-to')||{}).value||todayStr;
+      var lo=from, hi=to; if(lo>hi){ var tmp=lo; lo=hi; hi=tmp; }
+      var rows=[], tot=0, calls=0;
+      dayKeys.slice().reverse().forEach(function(d){ if(d>=lo && d<=hi){ var dd=b.days[d]; tot+=dd.gbp; calls+=dd.calls; rows.push('<tr><td>'+esc(d)+'</td><td class="stb-pts">'+dd.calls+'</td><td class="stb-r bad">'+fmtGbp(dd.gbp)+'</td></tr>'); } });
+      var rt=el('aimeter-range-total'); if(rt) rt.innerHTML='· <b>'+fmtGbp(tot)+'</b> over '+calls+' call'+(calls===1?'':'s');
+      var list=el('aimeter-range-list'); if(list) list.innerHTML = rows.length ? ('<table class="stb-tbl aimeter-tbl" style="margin-top:8px;"><thead><tr><th>Day</th><th>Calls</th><th>£</th></tr></thead><tbody>'+rows.join('')+'</tbody></table>') : '<div class="empty">No usage in this range.</div>';
+    }
+    var fEl=el('aimeter-from'), tEl=el('aimeter-to');
+    if(fEl) fEl.addEventListener('change', renderRange);
+    if(tEl) tEl.addEventListener('change', renderRange);
+    renderRange();
     try { det.scrollIntoView({behavior:'smooth', block:'nearest'}); } catch(e){}
   }
 
   function wire(){
     var bIn=el('aimeter-budget');
-    if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('change', function(){ try { if(window.data){ if(!data.settings) data.settings={}; var v=parseFloat(bIn.value); data.settings.aiBudgetGbp=(isNaN(v)||v<0)?'':v; if(typeof saveData==='function') saveData(); } } catch(e){} paintLeft(); }); }
+    if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('input', function(){ try { var v=parseFloat(bIn.value); if(isNaN(v)||v<0) localStorage.removeItem('st_ai_budget_gbp'); else localStorage.setItem('st_ai_budget_gbp', String(v)); } catch(e){} paintLeft(); }); }
     var sIn=el('aimeter-search'); if(sIn && !sIn.__wired){ sIn.__wired=1; sIn.addEventListener('input', function(){ paintTable(); }); }
     var rf=el('aimeter-refresh'); if(rf && !rf.__wired){ rf.__wired=1; rf.addEventListener('click', function(){ render(); }); }
     var nav=el('settings-nav-aimeter'); if(nav && !nav.__wired){ nav.__wired=1; nav.addEventListener('click', function(){ setTimeout(render, 30); }); }
