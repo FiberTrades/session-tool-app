@@ -20939,7 +20939,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 13:35 UTC';
+  window.ST_BUILD = '2026-08-01 14:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31331,15 +31331,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // shown (and again if the line changes). An IntersectionObserver fires exactly
   // when a greeting becomes visible — including display:none tab toggles — so the
   // effect plays on whatever tab you land on, not just once at load.
+  function _twShow(el) { try { el.style.visibility = ''; if (el.__twSafety) { clearTimeout(el.__twSafety); el.__twSafety = null; } } catch (e) {} }
   function _doTypeGreeting(el) {
     if (!el) return;
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
-    if (el.__twTypedHTML === src) return;   // already typed this exact line — don't replay on redundant re-renders/revisits
+    if (el.__twTypedHTML === src) { _twShow(el); return; }   // already typed this exact line — just make sure it's visible; don't replay
     el.__twTypedHTML = src;
     el.innerHTML = src;   // reset to the clean source line before wrapping
     var txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
-    if (!txt) return;
-    try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}   // honour reduced-motion: just show it
+    if (!txt) { _twShow(el); return; }
+    try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { _twShow(el); return; } } catch (e) {}   // honour reduced-motion: just show it
     if (el.__twTimer) { clearTimeout(el.__twTimer); el.__twTimer = null; }
     var chars = [];
     (function walk(node) {
@@ -31358,8 +31359,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         }
       }
     })(el);
-    if (!chars.length) return;
+    if (!chars.length) { _twShow(el); return; }
     for (var j = 0; j < chars.length; j++) { if (chars[j].style) chars[j].style.visibility = 'hidden'; }
+    // NOW make the element itself visible — every char is individually hidden, so nothing shows yet.
+    // (It was hidden by _armTypewriter at set-time, which is what stops the full-text flash on tab switch.)
+    _twShow(el);
     var idx = 0, total = chars.length, per = Math.max(9, Math.min(26, Math.round(900 / total)));   // ~0.9s total whatever the length
     (function step() {
       if (idx >= total) { el.__twTimer = null; return; }
@@ -31367,6 +31371,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       idx++;
       el.__twTimer = setTimeout(step, per);
     })();
+  }
+  // Hide a greeting the INSTANT its content is set, so on a tab switch the full line is never painted
+  // before the observer gets a chance to type it. _doTypeGreeting reveals it (char-by-char). A safety
+  // timer un-hides after 1.5s in case the observer never fires, so a greeting can never stick hidden.
+  function _armTypewriter(el) {
+    if (!el || typeof IntersectionObserver === 'undefined') return;   // no observer to reveal it → never hide
+    var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
+    if (el.__twTypedHTML === src) return;   // already typed this line → leave it visible
+    try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
+    try {
+      el.style.visibility = 'hidden';
+      if (el.__twSafety) clearTimeout(el.__twSafety);
+      el.__twSafety = setTimeout(function () { if (el.style.visibility === 'hidden') el.style.visibility = ''; el.__twSafety = null; }, 1500);
+    } catch (e) {}
   }
   var _greetTypeIO = null;
   function _ensureGreetTypeIO() {
@@ -31376,7 +31394,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var el = en.target;
         if (en.isIntersecting && en.intersectionRatio > 0) {
           el.__twVisible = true;
-          if (!el.__aiPending) _doTypeGreeting(el);   // an AI rewrite is pending → wait for it, don't type the throwaway seed
+          if (!el.__aiPending) _doTypeGreeting(el);   // an AI rewrite is pending → wait for it…
+          else _twShow(el);                            // …but don't leave a blank box: show the seed placeholder meanwhile
         } else { el.__twVisible = false; }
       });
     }, { threshold: 0.01 });
@@ -31385,14 +31404,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function _observeGreetType(el) { try { var io = _ensureGreetTypeIO(); if (io && el && !el.__twObserved) { el.__twObserved = true; io.observe(el); } } catch (e) {} }
   // Set a greeting's HTML AND (re)arm the typewriter. __twHTML is the clean source the animation
   // resets to; an already-visible change (e.g. the async AI line landing) types immediately, otherwise
-  // the observer types it when its tab is shown.
+  // the greeting is hidden (armed) and the observer types it when its tab is shown.
   function _setGreetHTML(el, html) {
     if (!el) return;
     el.innerHTML = html; el.__twHTML = html;
     _observeGreetType(el);
+    _armTypewriter(el);   // hide until typed (no-op if reduced-motion / already-typed / no observer)
     if (el.__twVisible && !el.__aiPending) _doTypeGreeting(el);
   }
-  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; } catch (e) {}
+  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; } catch (e) {}
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
     const mirrors = Array.from(document.querySelectorAll('[data-greeting-mirror]'));
@@ -31493,6 +31513,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try { if(!window.__MV && window.STMentor && window.STMentor.hasUnseen()){ el.innerHTML += ' <span class="mentor-greet-msg">' + (t('mentor.msg_waiting')||'You have a message from your mentor in your Calendar Log.') + '</span>'; } } catch(e){}
       el.__twHTML = el.innerHTML;   // clean source (seed + optional mentor note) for the typewriter
       _observeGreetType(el);        // arm the typewriter — it plays when this tab is visible (AI tiers replace __twHTML below)
+      _armTypewriter(el);           // hide NOW so the full line is never flashed before it types (AI tiers re-arm below)
       // AI (eligible tiers) rewrites the seed above into a more personal line, keeping its essence.
       try { if (window.STAI && window.STAI.enhanceGreeting) window.STAI.enhanceGreeting(el, ctx || 'bias'); } catch(e){}
       // Name in the greeting is display-only — clicking it does nothing.
