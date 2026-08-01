@@ -23,6 +23,8 @@ alter table public.ai_usage enable row level security;
 
 -- Admin-only aggregate (per user + day + model). The day lets the tab break a user
 -- down by day / week / month. Non-admins get an empty result set.
+-- DROP first: Postgres won't let create-or-replace change a function's return columns.
+drop function if exists public.st_ai_usage_summary();
 create or replace function public.st_ai_usage_summary()
 returns table(
   user_id uuid, day date, model text, calls bigint,
