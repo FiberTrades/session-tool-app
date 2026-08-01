@@ -21021,7 +21021,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 20:25 UTC';
+  window.ST_BUILD = '2026-08-01 20:50 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34248,6 +34248,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // main app's tab swipe. Ignored when the gesture starts on an input or a horizontally
     // scrollable element so it never fights with typing or a scrollable row.
     (function settingsSectionSwipe() {
+      return;   // Swipe-to-change-section disabled per request — use the stepper arrows / tab picker instead.
       const ORDER = ['profile', 'session', 'risk_rules', 'accounts', 'services', 'mentor', 'aimeter'];
       function curIdx() { const a = modal.querySelector('.settings-nav-item.active'); return a ? ORDER.indexOf(a.dataset.section) : -1; }
       // Step to the next VISIBLE section in that direction — skipping tabs hidden for this user
@@ -45697,7 +45698,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var tableEl=el('aimeter-table'); if(!tableEl) return;
     var sb=window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">Not signed in.</div>'; return; }
     var bIn=el('aimeter-budget');
-    if(bIn && document.activeElement!==bIn){ var bv=_budget(); bIn.value = bv>0 ? bv : ''; }
+    if(bIn && document.activeElement!==bIn){ var bv=_budget(); bIn.value = bv>0 ? bv : '';
+      // Migrate a localStorage-only budget (set by an older build) into the synced journal so it reaches other devices.
+      try { if(bv>0 && window.data){ var cur=data.settings?data.settings.aiBudgetGbp:null; if(cur==null||cur===''){ if(!data.settings) data.settings={}; data.settings.aiBudgetGbp=bv; if(typeof saveData==='function') saveData(); } } } catch(e){}
+    }
     if(_busy) return; _busy=true;
     tableEl.innerHTML='<div class="empty">Loading…</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     sb.rpc('st_ai_usage_summary').then(function(r){
@@ -45724,9 +45728,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
   }
   function grandGbp(){ var t=0; for(var u in _byUser) t+=_byUser[u].gbp; return t; }
-  // Loaded credit lives in localStorage (a per-device admin figure) so it survives reloads and
-  // isn't clobbered by journal cloud-sync.
-  function _budget(){ try { var v=parseFloat(localStorage.getItem('st_ai_budget_gbp')); return isNaN(v)?0:v; } catch(e){ return 0; } }
+  // Loaded credit: primary home is the SYNCED journal (data.settings.aiBudgetGbp) so it shows on
+  // every device you log into (PC ↔ phone). localStorage is a same-device fallback that also
+  // survives a cloud-pull that momentarily blanks the journal field.
+  function _budget(){
+    try { var v=(window.data&&data.settings)?parseFloat(data.settings.aiBudgetGbp):NaN; if(!isNaN(v)) return v; } catch(e){}
+    try { var l=parseFloat(localStorage.getItem('st_ai_budget_gbp')); if(!isNaN(l)) return l; } catch(e){}
+    return 0;
+  }
 
   function paintLeft(){
     var leftEl=el('aimeter-left'); if(!leftEl) return;
@@ -45785,7 +45794,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function wire(){
     var bIn=el('aimeter-budget');
-    if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('input', function(){ try { var v=parseFloat(bIn.value); if(isNaN(v)||v<0) localStorage.removeItem('st_ai_budget_gbp'); else localStorage.setItem('st_ai_budget_gbp', String(v)); } catch(e){} paintLeft(); }); }
+    if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('input', function(){
+      var v=parseFloat(bIn.value), ok=!(isNaN(v)||v<0);
+      try { if(window.data){ if(!data.settings) data.settings={}; data.settings.aiBudgetGbp = ok ? v : ''; if(typeof saveData==='function') saveData(); } } catch(e){}   // synced across devices
+      try { if(ok) localStorage.setItem('st_ai_budget_gbp', String(v)); else localStorage.removeItem('st_ai_budget_gbp'); } catch(e){}   // same-device fallback
+      paintLeft();
+    }); }
     var sIn=el('aimeter-search'); if(sIn && !sIn.__wired){ sIn.__wired=1; sIn.addEventListener('input', function(){ paintTable(); }); }
     var rf=el('aimeter-refresh'); if(rf && !rf.__wired){ rf.__wired=1; rf.addEventListener('click', function(){ render(); }); }
     var nav=el('settings-nav-aimeter'); if(nav && !nav.__wired){ nav.__wired=1; nav.addEventListener('click', function(){ setTimeout(render, 30); }); }
