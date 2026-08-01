@@ -11798,23 +11798,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   })();
 
   function tradeRforMath(t) {
-    if (t.result === 'Win')  return parseFloat(t.r) || 0;
-    if (t.result === 'Lose') {
-      // Realized loss size in R = actual gross result ÷ £ risked. tradeGross returns the real
-      // imported result (actualGross) when present, else -1×risk (a clean stop), so a textbook
-      // stop stays exactly -1R and a loss that ran past the stop counts as worse than -1R.
-      // Falls back to -1R when there's no £ risk to divide by.
-      const risk = parseFloat(t.risk) || 0;
-      if (risk > 0) { const rr = tradeGross(t) / risk; if (isFinite(rr) && rr < 0) return rr; }
-      return -1;
+    const res = t.result;
+    if (res !== 'Win' && res !== 'Lose' && res !== 'BE') return 0;
+    const risk = parseFloat(t.risk) || 0;
+    // Realized R = NET money (price result − this trade's OWN commission/spread) ÷ £ risked, netted
+    // UNIFORMLY for wins, losses AND break-evens — the same basis the discipline leaderboard uses.
+    // tradeNetPL = tradeGross − tradeCosts, where tradeGross is the real imported result (actualGross)
+    // when present, else reconstructed from the logged R (win: r×risk, loss: −risk clean stop, BE: 0).
+    // → a win is its logged R minus its cost drag; a clean stop with commission is a touch worse than
+    //   −1R; a loss that ran past the stop is worse still; a BE is just −costs÷risk.
+    if (risk > 0 && typeof tradeNetPL === 'function') {
+      const rr = tradeNetPL(t) / risk;
+      if (isFinite(rr)) {
+        if (res === 'Lose') return rr < 0 ? rr : -1;   // a loss must stay negative even if the data is odd
+        return rr;
+      }
     }
-    if (t.result === 'BE') {
-      // A break-even still costs the spread/commission — count it as the cost drag in R
-      // (−costs ÷ risk), not a flat 0. No risk logged (can't divide) → 0.
-      const risk = parseFloat(t.risk) || 0;
-      const costs = (typeof tradeCosts === 'function') ? tradeCosts(t) : Math.abs(parseFloat(t.costs) || 0);
-      return (risk > 0 && costs > 0) ? (-costs / risk) : 0;
-    }
+    // No £ risk to divide by → nominal fallback (win: logged R, loss: −1, BE: 0).
+    if (res === 'Win')  return parseFloat(t.r) || 0;
+    if (res === 'Lose') return -1;
     return 0;
   }
   // Pips equivalent of tradeRforMath. Wins use captured pips; losses derive from per-trade SL; BE = 0.
@@ -20970,7 +20972,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 15:50 UTC';
+  window.ST_BUILD = '2026-08-01 16:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
