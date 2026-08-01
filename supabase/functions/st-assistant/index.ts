@@ -115,6 +115,40 @@ Your job: give honest, specific, encouraging coaching and answer questions about
 - Be a coach: notice patterns, ask the sharp question, suggest the next concrete step.
 - You are not a licensed financial adviser and don't give personalised investment/financial advice or predict markets — you coach process, discipline, and the trader's own logged data.`;
 
+// ── AI-METER usage logging ───────────────────────────────────────────────────
+// One row per Claude API call into public.ai_usage, so the admin can see per-user
+// tokens + £. user_id comes from the (already Supabase-verified) JWT; the insert
+// uses the service role key (auto-injected in edge functions) so RLS is bypassed.
+// Never let a logging failure break the actual reply.
+function userIdFromReq(req: Request): string | null {
+  try {
+    const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
+    const part = jwt.split(".")[1]; if (!part) return null;
+    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.sub || null;
+  } catch { return null; }
+}
+async function recordUsage(userId: string | null, model: string, usage: any): Promise<void> {
+  try {
+    if (!userId || !usage) return;
+    const url = Deno.env.get("SUPABASE_URL");
+    const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
+    if (!url || !key) return;
+    await fetch(`${url}/rest/v1/ai_usage`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "apikey": key, "authorization": `Bearer ${key}`, "prefer": "return=minimal" },
+      body: JSON.stringify({
+        user_id: userId,
+        model,
+        input_tokens: usage.input_tokens ?? 0,
+        output_tokens: usage.output_tokens ?? 0,
+        cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
+        cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+      }),
+    });
+  } catch { /* logging must never break the response */ }
+}
+
 Deno.serve(async (req: Request): Promise<Response> => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
   if (req.method !== "POST") return json({ error: "POST only" }, 405);
@@ -201,6 +235,9 @@ Deno.serve(async (req: Request): Promise<Response> => {
 
     const data = await r.json().catch(() => ({}));
     if (!r.ok) return json({ error: data?.error?.message || `Claude API error ${r.status}` }, 502);
+
+    // Log this call's token usage for the admin AI-meter (best-effort; never blocks the reply).
+    await recordUsage(userIdFromReq(req), model, (data as any)?.usage);
 
     // The model wants data it doesn't have → ask the client to run the tool(s) and come back.
     if (data?.stop_reason === "tool_use") {

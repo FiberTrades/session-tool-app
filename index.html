@@ -348,6 +348,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-nav-item:hover { color: var(--text-mid); }
   .settings-nav-item.active { color: var(--text); border-bottom-color: var(--text); }
   .settings-section { padding: 0 4px 8px; }
+  /* AI Meter (admin) — usage total tiles */
+  .aimeter-totals { display: flex; flex-wrap: wrap; gap: 12px; margin: 18px 0; }
+  .aimeter-tile { flex: 1 1 128px; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-card); padding: 14px 16px; }
+  .aimeter-tile .k { font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+  .aimeter-tile .v { font-family: 'AppNum', 'DM Mono', monospace; font-size: 20px; margin-top: 6px; color: var(--text); }
+  .aimeter-tile .v.good { color: var(--good); }
+  .aimeter-tile .v.bad { color: var(--bad); }
   /* Subscriptions & Services cards */
   .svc-card { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-card); padding: 16px 18px; margin-bottom: 14px; }
   .svc-card-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
@@ -5241,6 +5248,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
          relays it to a private Discord channel (webhook URL is a Supabase
          secret, never in this file). To change a link, edit the href below.
     ===================================================================== -->
+    <!-- ADMIN-ONLY: AI usage meter. Reads ai_usage (recorded by the st-assistant edge fn) and prices it. -->
+    <div class="settings-section" data-section="aimeter" style="display:none;">
+      <p class="settings-hint">Admin only — AI usage across all members: tokens and an estimated £ cost. Simple questions run on cheap Haiku; smart questions on Sonnet.</p>
+      <label class="settings-label" for="aimeter-budget" style="margin-top:14px;">API credit loaded (£)</label>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:6px;">
+        <input type="number" id="aimeter-budget" step="1" min="0" placeholder="e.g. 100" style="background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-ctrl);color:var(--text);padding:8px 12px;font-family:'AppNum','DM Mono',monospace;font-size:13px;width:140px;outline:none;">
+        <button type="button" id="aimeter-refresh" class="settings-btn">Refresh</button>
+      </div>
+      <p class="settings-hint" style="margin-top:6px;">How much credit you've loaded onto your Anthropic account. The meter subtracts estimated spend to show what's left.</p>
+      <div id="aimeter-totals" class="aimeter-totals"></div>
+      <div id="aimeter-table"></div>
+      <p class="settings-hint" id="aimeter-note" style="margin-top:14px;"></p>
+    </div>
+
     <div class="settings-section" data-section="services" style="display:none;">
 
       <!-- 1. Session Tool Premium (state set by renderServices) -->
@@ -20983,7 +21004,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 17:12 UTC';
+  window.ST_BUILD = '2026-08-01 17:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -40526,7 +40547,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (currentUser) renderBackups();
     if (currentUser) renderPlan();
     if (currentUser) renderMentorShare();
-    if (currentUser) { try { renderMentorViewer(); updateMentorTab(); } catch(e){} }
+    if (currentUser) { try { renderMentorViewer(); updateMentorTab(); } catch(e){} try { if(window.STAIMeter) window.STAIMeter.updateTab(); } catch(e){} }
   }
 
   /* ============ rolling safety snapshots ============ */
@@ -40726,6 +40747,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { document.documentElement.classList.toggle('st-paid', !!profilePaid); } catch (e) {}
     renderPlanBadge();
     try { renderMentorShare(); renderMentorViewer(); updateMentorTab(); } catch(e){}
+    try { if(window.STAIMeter) window.STAIMeter.updateTab(); } catch(e){}
     enforceAccess();
     renderServices();
   }
@@ -45601,6 +45623,101 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   };
   if(document.readyState==='complete'||document.readyState==='interactive') setTimeout(boot,150);
   else document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot,150); });
+})();
+
+/* ═══ AI Meter (admin-only Settings tab) ═════════════════════════════════════
+   Per-user AI usage — tokens + estimated £ — read from the `ai_usage` table that
+   the st-assistant edge function writes one row per Claude call. Prices tokens
+   client-side (rates below) and subtracts from a budget the admin enters. The
+   admin's own usage shows as a row like everyone else's. Setup (run once): create
+   the ai_usage table + st_ai_usage_summary() RPC, and add the recorder to the edge
+   fn — see the chat for the exact SQL / edge diff. */
+(function(){
+  function el(id){ return document.getElementById(id); }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function isAdmin(){ try { return !!(window.currentUser && String(window.currentUser.email||'').toLowerCase()==='be.o2@hotmail.com'); } catch(e){ return false; } }
+  function fmtGbp(v){ if(v==null||isNaN(v)) return '—'; var s=v<0?'−':''; return s+'£'+Math.abs(v).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}); }
+  function fmtTok(v){ v=+v||0; if(v>=1e6) return (v/1e6).toFixed(2)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'k'; return String(Math.round(v)); }
+
+  // ── Pricing — USD per 1M tokens (edit to match your Anthropic rates). Cached input:
+  //    read = 0.1× the input rate, write = 1.25×. USD→GBP FX below. ────────────────────
+  var PRICE = { 'claude-sonnet-5': { in:3, out:15 }, 'claude-haiku-4-5': { in:1, out:5 }, 'default': { in:3, out:15 } };
+  var CACHE = { read: 0.1, write: 1.25 };
+  var USD_GBP = 0.79;
+  function costGbp(model, inT, outT, cwT, crT){
+    var p = PRICE[model] || PRICE['default'];
+    var usd = (inT*p.in + crT*p.in*CACHE.read + cwT*p.in*CACHE.write + outT*p.out) / 1e6;
+    return usd * USD_GBP;
+  }
+
+  function updateTab(){
+    var nav = el('settings-nav-aimeter'); if(!nav) return;
+    nav.style.display = isAdmin() ? '' : 'none';
+    try { if(window.__rebuildSettingsStepper) window.__rebuildSettingsStepper(); } catch(e){}
+  }
+
+  var _busy = false;
+  function render(){
+    if(_busy) return; if(!isAdmin()) return;
+    var tableEl = el('aimeter-table'), totalsEl = el('aimeter-totals'), noteEl = el('aimeter-note');
+    if(!tableEl || !totalsEl) return;
+    var sb = window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">Not signed in.</div>'; return; }
+    var bIn = el('aimeter-budget');
+    if(bIn && document.activeElement!==bIn){ var bv=(window.data&&data.settings)?data.settings.aiBudgetGbp:null; bIn.value=(bv!=null&&bv!=='')?bv:''; }
+    _busy = true; tableEl.innerHTML='<div class="empty">Loading…</div>';
+    sb.rpc('st_ai_usage_summary').then(function(r){
+      if(r && r.error){ _busy=false; totalsEl.innerHTML=''; tableEl.innerHTML='<div class="empty">Not set up yet — create the <code>ai_usage</code> table + <code>st_ai_usage_summary()</code> and add the recorder to the st-assistant edge function (see chat). <br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
+      var rows = (r && r.data) || [];
+      sb.rpc('st_members').then(function(m){
+        var names={}; ((m&&m.data)||[]).forEach(function(x){ var id=x.id||x.user_id; if(id) names[id]=x.name||x.display_name||'Trader'; });
+        paint(rows, names, totalsEl, tableEl, noteEl);
+      }, function(){ paint(rows, {}, totalsEl, tableEl, noteEl); });
+    }, function(){ _busy=false; totalsEl.innerHTML=''; tableEl.innerHTML='<div class="empty">Usage unavailable.</div>'; });
+  }
+
+  function paint(rows, names, totalsEl, tableEl, noteEl){
+    _busy = false;
+    var byUser={}, G={inT:0,outT:0,cw:0,cr:0,gbp:0,calls:0};
+    rows.forEach(function(row){
+      var u=row.user_id; if(!u) return; if(!byUser[u]) byUser[u]={inT:0,outT:0,cw:0,cr:0,gbp:0,calls:0};
+      var inT=+row.input_tokens||0, outT=+row.output_tokens||0, cw=+row.cache_creation_tokens||0, cr=+row.cache_read_tokens||0, calls=+row.calls||0;
+      var g=costGbp(row.model,inT,outT,cw,cr), b=byUser[u];
+      b.inT+=inT; b.outT+=outT; b.cw+=cw; b.cr+=cr; b.gbp+=g; b.calls+=calls;
+      G.inT+=inT; G.outT+=outT; G.cw+=cw; G.cr+=cr; G.gbp+=g; G.calls+=calls;
+    });
+    var totalTokens = G.inT+G.outT+G.cw+G.cr;
+    var budget = parseFloat((window.data&&data.settings)?data.settings.aiBudgetGbp:0)||0;
+    var remaining = budget>0 ? (budget-G.gbp) : null;
+    var tokLeft = (remaining!=null && totalTokens>0 && G.gbp>0) ? Math.max(0, Math.round(remaining/(G.gbp/totalTokens))) : null;
+    var tiles='';
+    tiles+='<div class="aimeter-tile"><div class="k">Total tokens</div><div class="v">'+fmtTok(totalTokens)+'</div></div>';
+    tiles+='<div class="aimeter-tile"><div class="k">Spent (est.)</div><div class="v bad">'+fmtGbp(G.gbp)+'</div></div>';
+    if(remaining!=null){
+      tiles+='<div class="aimeter-tile"><div class="k">£ left</div><div class="v '+(remaining>=0?'good':'bad')+'">'+fmtGbp(remaining)+'</div></div>';
+      tiles+='<div class="aimeter-tile"><div class="k">Tokens left (est.)</div><div class="v">'+(tokLeft!=null?fmtTok(tokLeft):'—')+'</div></div>';
+    }
+    totalsEl.innerHTML=tiles;
+    var users=Object.keys(byUser).sort(function(a,b){ return byUser[b].gbp-byUser[a].gbp; });
+    if(!users.length){ tableEl.innerHTML='<div class="empty">No AI usage recorded yet.</div>'; }
+    else {
+      var h='<table class="stb-tbl"><thead><tr><th>Trader</th><th>Calls</th><th>In</th><th>Out</th><th class="stb-hide-sm">Cache</th><th>£ spent</th></tr></thead><tbody>';
+      users.forEach(function(u){ var b=byUser[u], nm=names[u]||('…'+String(u).slice(-6));
+        h+='<tr><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+b.calls+'</td><td>'+fmtTok(b.inT)+'</td><td>'+fmtTok(b.outT)+'</td><td class="stb-hide-sm">'+fmtTok(b.cw+b.cr)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
+      });
+      h+='</tbody></table>'; tableEl.innerHTML=h;
+    }
+    if(noteEl) noteEl.textContent='Estimated at Sonnet $'+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+' per 1M tokens (cache read ×0.1, write ×1.25), USD→GBP '+USD_GBP+'. Edit the rates in code if yours differ.';
+  }
+
+  function wire(){
+    var bIn=el('aimeter-budget');
+    if(bIn && !bIn.__wired){ bIn.__wired=1; bIn.addEventListener('change', function(){ try { if(window.data){ if(!data.settings) data.settings={}; var v=parseFloat(bIn.value); data.settings.aiBudgetGbp=(isNaN(v)||v<0)?'':v; if(typeof saveData==='function') saveData(); } } catch(e){} render(); }); }
+    var rf=el('aimeter-refresh'); if(rf && !rf.__wired){ rf.__wired=1; rf.addEventListener('click', function(){ render(); }); }
+    var nav=el('settings-nav-aimeter'); if(nav && !nav.__wired){ nav.__wired=1; nav.addEventListener('click', function(){ setTimeout(render, 30); }); }
+  }
+  function init(){ wire(); updateTab(); }
+  if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
+  window.STAIMeter = { updateTab: updateTab, render: render };
 })();
 </script>
 <script>
