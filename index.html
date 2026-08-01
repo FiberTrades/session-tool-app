@@ -20939,7 +20939,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-01 12:35 UTC';
+  window.ST_BUILD = '2026-08-01 13:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31326,6 +31326,73 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       : (S ? 'Aléjate — ¿qué te dice la forma del mes, no el día suelto?' : 'Zoom out — what does the month’s shape tell you, not the single day?');
     return shape + ', ' + nm + '. ' + tail;
   }
+  // ── Typewriter reveal ───────────────────────────────────────────────────────
+  // Every tab's greeting types itself out left→right the first time that tab is
+  // shown (and again if the line changes). An IntersectionObserver fires exactly
+  // when a greeting becomes visible — including display:none tab toggles — so the
+  // effect plays on whatever tab you land on, not just once at load.
+  function _doTypeGreeting(el) {
+    if (!el) return;
+    var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
+    if (el.__twTypedHTML === src) return;   // already typed this exact line — don't replay on redundant re-renders/revisits
+    el.__twTypedHTML = src;
+    el.innerHTML = src;   // reset to the clean source line before wrapping
+    var txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!txt) return;
+    try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}   // honour reduced-motion: just show it
+    if (el.__twTimer) { clearTimeout(el.__twTimer); el.__twTimer = null; }
+    var chars = [];
+    (function walk(node) {
+      var kids = Array.prototype.slice.call(node.childNodes);
+      for (var k = 0; k < kids.length; k++) {
+        var n = kids[k];
+        if (n.nodeType === 3) {   // text node → one hidden span per character (keeps layout/wrapping fixed)
+          var s = n.nodeValue; if (!s) continue;
+          var frag = document.createDocumentFragment();
+          var arr = (typeof Array.from === 'function') ? Array.from(s) : s.split('');   // code-point safe (won't split an em-dash/emoji)
+          for (var i = 0; i < arr.length; i++) { var sp = document.createElement('span'); sp.className = 'tw-c'; sp.textContent = arr[i]; frag.appendChild(sp); chars.push(sp); }
+          node.replaceChild(frag, n);
+        } else if (n.nodeType === 1) {
+          if (n.classList && n.classList.contains('mentor-greet-msg')) { chars.push(n); continue; }   // reveal the mentor note whole, at the very end
+          walk(n);   // descend into .greet-name etc. so their styling is preserved
+        }
+      }
+    })(el);
+    if (!chars.length) return;
+    for (var j = 0; j < chars.length; j++) { if (chars[j].style) chars[j].style.visibility = 'hidden'; }
+    var idx = 0, total = chars.length, per = Math.max(9, Math.min(26, Math.round(900 / total)));   // ~0.9s total whatever the length
+    (function step() {
+      if (idx >= total) { el.__twTimer = null; return; }
+      if (chars[idx].style) chars[idx].style.visibility = '';
+      idx++;
+      el.__twTimer = setTimeout(step, per);
+    })();
+  }
+  var _greetTypeIO = null;
+  function _ensureGreetTypeIO() {
+    if (_greetTypeIO || typeof IntersectionObserver === 'undefined') return _greetTypeIO;
+    _greetTypeIO = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        var el = en.target;
+        if (en.isIntersecting && en.intersectionRatio > 0) {
+          el.__twVisible = true;
+          if (!el.__aiPending) _doTypeGreeting(el);   // an AI rewrite is pending → wait for it, don't type the throwaway seed
+        } else { el.__twVisible = false; }
+      });
+    }, { threshold: 0.01 });
+    return _greetTypeIO;
+  }
+  function _observeGreetType(el) { try { var io = _ensureGreetTypeIO(); if (io && el && !el.__twObserved) { el.__twObserved = true; io.observe(el); } } catch (e) {} }
+  // Set a greeting's HTML AND (re)arm the typewriter. __twHTML is the clean source the animation
+  // resets to; an already-visible change (e.g. the async AI line landing) types immediately, otherwise
+  // the observer types it when its tab is shown.
+  function _setGreetHTML(el, html) {
+    if (!el) return;
+    el.innerHTML = html; el.__twHTML = html;
+    _observeGreetType(el);
+    if (el.__twVisible && !el.__aiPending) _doTypeGreeting(el);
+  }
+  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; } catch (e) {}
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
     const mirrors = Array.from(document.querySelectorAll('[data-greeting-mirror]'));
@@ -31424,6 +31491,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
       try { if(!window.__MV && window.STMentor && window.STMentor.hasUnseen()){ el.innerHTML += ' <span class="mentor-greet-msg">' + (t('mentor.msg_waiting')||'You have a message from your mentor in your Calendar Log.') + '</span>'; } } catch(e){}
+      el.__twHTML = el.innerHTML;   // clean source (seed + optional mentor note) for the typewriter
+      _observeGreetType(el);        // arm the typewriter — it plays when this tab is visible (AI tiers replace __twHTML below)
       // AI (eligible tiers) rewrites the seed above into a more personal line, keeping its essence.
       try { if (window.STAI && window.STAI.enhanceGreeting) window.STAI.enhanceGreeting(el, ctx || 'bias'); } catch(e){}
       // Name in the greeting is display-only — clicking it does nothing.
@@ -32039,16 +32108,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var key = (surface || 'bias') + '|' + lang;
         var today = (typeof todayKey === 'function') ? todayKey() : '';
         var gen = (typeof _greetingNonce !== 'undefined') ? _greetingNonce : 0;
+        var _put = (typeof window.__stSetGreetHTML === 'function') ? window.__stSetGreetHTML : function (e2, h) { e2.innerHTML = h; };
         // 1) Session cache — reuse unless the nonce changed (a trade event) since we cached it.
-        if (_greetCache[key] && _greetCacheGen[key] === gen) { el.innerHTML = _greetCache[key] + mentorHTML; return; }
+        if (_greetCache[key] && _greetCacheGen[key] === gen) { el.__aiPending = false; _put(el, _greetCache[key] + mentorHTML); return; }
         // 2) localStorage cache — on a fresh load with no session event yet (gen === 0), reuse the
         //    same-day line so a reload costs ZERO tokens. A day rollover or a nonce bump skips this.
         if (gen === 0) {
           var _hit = _greetStore()[key];
-          if (_hit && _hit.day === today && _hit.text) { _greetCache[key] = _hit.text; _greetCacheGen[key] = 0; el.innerHTML = _hit.text + mentorHTML; return; }
+          if (_hit && _hit.day === today && _hit.text) { _greetCache[key] = _hit.text; _greetCacheGen[key] = 0; el.__aiPending = false; _put(el, _hit.text + mentorHTML); return; }
         }
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
+        el.__aiPending = true;   // AI line is coming — the typewriter waits for it instead of typing the throwaway seed
         var topics = {
           bias:     { en: "my directional read / trading plan",     es: 'mi lectura direccional / plan de trading' },
           review:   { en: "reflecting on today's session",          es: 'reflexionar sobre la sesión de hoy' },
@@ -32061,17 +32132,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           ? ('Reescribe esta frase de saludo para que suene escrita personalmente para mí y algo más afilada. QUÉDATE estrictamente en el tema de ESTA línea (sobre ' + tp.es + '); reformula lo que ya dice y NO metas datos ni ideas de otras pestañas (p. ej. mi mejor día de la semana, mi winrate de por vida) salvo que la propia línea los mencione. NO inventes ni insinúes hora, urgencia ni estado de la sesión (p. ej. "la sesión empieza pronto", "ahora mismo", "ya casi") a menos que la línea ya lo diga. Mantén el MISMO significado y cualquier número concreto, UNA sola línea corta, tono de coach cercano, sin "Hola" ni despedida. Devuelve SOLO la línea reescrita, sin comillas. Línea: ')
           : ('Rewrite this in-app greeting line so it feels written personally for me and a little sharper. Stay STRICTLY on the topic of THIS line (about ' + tp.en + '); rephrase what it already says and DO NOT bring in stats or insights from other tabs (e.g. my best weekday, my lifetime win rate) unless the line itself already mentions them. Do NOT invent or imply any timing, urgency, or session state (e.g. "session starts soon", "right now", "about to begin") unless the line already says it. Keep the SAME core meaning and any specific numbers, ONE short line, warm coach tone, no "Hi"/"Hello", no sign-off. Return ONLY the rewritten line, no quotes. Line: ')) + '"' + seed + '"';
         call('greet', [{ role: 'user', content: prompt }]).then(function (reply) {
-          _greetInflight[key] = 0;
+          _greetInflight[key] = 0; el.__aiPending = false;
           reply = String(reply || '').replace(/^["'\s]+|["'\s]+$/g, '');
-          if (!reply) return;
+          if (!reply) { if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} return; }   // empty → type the seed we already have
           var out = esc(reply);
           var nm = (typeof data !== 'undefined' && data.userName) ? String(data.userName).trim() : '';
           if (nm) out = out.split(esc(nm)).join('<span class="greet-name">' + esc(nm) + '</span>');
           _greetCache[key] = out; _greetCacheGen[key] = gen;
           try { var _s = _greetStore(); _s[key] = { day: today, text: out }; _greetStoreSave(_s); } catch (e) {}   // persist for same-day reloads (no re-call)
           var still = (el.__greetSeed != null) ? String(el.__greetSeed).trim() : (el.textContent || '').trim();
-          if (still === seed || el.__greetSeed == null) el.innerHTML = out + mentorHTML;   // don't clobber a newer seed
-        }).catch(function () { _greetInflight[key] = 0; });
+          if (still === seed || el.__greetSeed == null) _put(el, out + mentorHTML);   // don't clobber a newer seed; _put types it in (or arms the observer)
+        }).catch(function () { _greetInflight[key] = 0; el.__aiPending = false; if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} });
       } catch (e) {}
     }
     function enhanceAll() {
