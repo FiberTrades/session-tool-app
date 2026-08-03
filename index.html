@@ -21061,7 +21061,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-03 20:15 UTC';
+  window.ST_BUILD = '2026-08-03 20:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -32255,6 +32255,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var GREET_LS = 'st_ai_greet_v3';
     function _greetStore() { try { return JSON.parse(localStorage.getItem(GREET_LS) || '{}') || {}; } catch (e) { return {}; } }
     function _greetStoreSave(o) { try { localStorage.setItem(GREET_LS, JSON.stringify(o)); } catch (e) {} }
+    // Cross-device layer: the same day's greetings are also cached in the SYNCED journal
+    // (data._greetSync), so a second device that pulls the journal reuses them instead of
+    // paying to regenerate. Keyed like the localStorage cache: surface|lang → {day,sig,text}.
+    function _greetSyncGet(k) { try { return (typeof data !== 'undefined' && data && data._greetSync) ? data._greetSync[k] : null; } catch (e) { return null; } }
+    function _greetSyncSet(k, entry) {
+      try {
+        if (typeof data === 'undefined' || !data) return;
+        if (!data._greetSync || typeof data._greetSync !== 'object') data._greetSync = {};
+        // Prune other days so it never grows unbounded — only today's handful of entries survive.
+        Object.keys(data._greetSync).forEach(function (kk) { var e = data._greetSync[kk]; if (!e || e.day !== entry.day) delete data._greetSync[kk]; });
+        data._greetSync[k] = entry;
+        if (typeof saveData === 'function') saveData();   // debounced cloud push
+      } catch (e) {}
+    }
     function enhanceGreeting(el, surface) {
       try {
         if (!el || !canGreet()) return;
@@ -32279,6 +32293,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var _hit = _greetStore()[key];
           if (_hit && _hit.day === today && _hit.sig === sig && _hit.text) { _greetCache[key] = _hit.text; _greetCacheSig[key] = vkey; el.__aiPending = false; _put(el, _hit.text + mentorHTML); return; }
         }
+        // 3) Cross-device cache — reuse a greeting another device already generated today
+        //    (synced via the journal); mirror it into localStorage so later reloads are instant.
+        {
+          var _sh = _greetSyncGet(key);
+          if (_sh && _sh.day === today && _sh.sig === sig && _sh.text) {
+            _greetCache[key] = _sh.text; _greetCacheSig[key] = vkey;
+            try { var _s2 = _greetStore(); _s2[key] = { day: today, sig: sig, text: _sh.text }; _greetStoreSave(_s2); } catch (e) {}
+            el.__aiPending = false; _put(el, _sh.text + mentorHTML); return;
+          }
+        }
+        // No cache hit yet. Don't pay to generate until the journal has been pulled from the cloud
+        // at least once this load — otherwise a second device regenerates the same greeting moments
+        // before the pull would have delivered it. The post-sync re-render re-runs this with the
+        // synced cache in place; a timeout flips the flag so offline users still get greetings.
+        if (!window.__stGreetSyncReady) { el.__aiPending = true; return; }   // hold the line invisible (not the seed) until the pull lands
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
         el.__aiPending = true;   // AI line is coming — the typewriter waits for it instead of typing the throwaway seed
@@ -32302,6 +32331,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if (nm) out = out.split(esc(nm)).join('<span class="greet-name">' + esc(nm) + '</span>');
           _greetCache[key] = out; _greetCacheSig[key] = vkey;
           try { var _s = _greetStore(); _s[key] = { day: today, sig: sig, text: out }; _greetStoreSave(_s); } catch (e) {}   // persist for same-day, same-data reloads (no re-call)
+          try { _greetSyncSet(key, { day: today, sig: sig, text: out }); } catch (e) {}   // and into the synced journal so OTHER devices reuse it (no re-call)
           var still = (el.__greetSeed != null) ? String(el.__greetSeed).trim() : (el.textContent || '').trim();
           if (still === seed || el.__greetSeed == null) _put(el, out + mentorHTML);   // don't clobber a newer seed; _put types it in (or arms the observer)
         }).catch(function () { _greetInflight[key] = 0; el.__aiPending = false; if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} });
@@ -32314,6 +32344,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       Array.prototype.forEach.call(document.querySelectorAll('.bias-greeting[data-greeting-mirror]'), function (el) { list.push([el, (el.dataset && el.dataset.greetingContext) || 'review']); });
       list.forEach(function (p) { enhanceGreeting(p[0], p[1]); });
     }
+    // Fallback so greetings aren't blocked forever if the cloud pull never lands (offline, or a
+    // reconcile path that doesn't set the flag): after a short grace, allow generation and
+    // re-run so the gate re-evaluates. reconcile() sets __stGreetSyncReady on a successful pull.
+    try { setTimeout(function () { if (!window.__stGreetSyncReady) { window.__stGreetSyncReady = true; try { enhanceAll(); } catch (e) {} } }, 8000); } catch (e) {}
     function onGreet() { try { if (canChat()) ensureUI(); } catch (e) {} try { mountControls(); } catch (e) {} try { applyLang(); } catch (e) {} }
     // Safety net: poll for up to a minute after load so the UI comes up once the user is
     // logged in and the boxes exist, even if the greeting hook never fired for some reason.
@@ -41250,6 +41284,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     accStatus(tt('syncing'));
     sb.from('journals').select('data, updated_at').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
       if (r.error) { accStatus(tt('syncErr')); return; }
+      // The cloud copy has been pulled — greetings may now generate (and will reuse any
+      // greeting a prior device cached in data._greetSync). Re-render after this tick so the
+      // just-applied synced cache is picked up. See STAI's __stGreetSyncReady gate.
+      try {
+        var _wasReady = window.__stGreetSyncReady; window.__stGreetSyncReady = true;
+        if (!_wasReady) setTimeout(function () { try { if (window.STAI && window.STAI.enhanceGreeting) { var b = document.getElementById('bias-greeting'); if (b) window.STAI.enhanceGreeting(b, 'bias'); } if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {} }, 0);
+      } catch (e) {}
       var raw = r.data && r.data.data;
       var _rowUat = r.data && r.data.updated_at;
       var cloudHasData = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
