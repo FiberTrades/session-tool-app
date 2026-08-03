@@ -3081,8 +3081,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      the English ones and overflowed the tab row, clipping the last tab (AI METER) — worse when
      the browser is zoomed (the modal can't reach its max width). Give the Spanish modal more
      room AND tighten the tab row a touch so all 7 tabs fit on one line at any zoom. */
-  html[lang="es"] #settings-modal-bg .modal { max-width: min(1200px, 96vw); }
-  html[lang="es"] .settings-nav-item { padding: 12px 9px; letter-spacing: 0.07em; }
+  html[lang="es"] #settings-modal-bg .modal { max-width: min(1120px, 96vw); }
+  /* Spread the tabs edge-to-edge to fill the row (like English does with its shorter labels),
+     and tighten slightly so all 7 still fit on one line at any zoom. */
+  html[lang="es"] .settings-nav { width: 100%; justify-content: space-between; }
+  html[lang="es"] .settings-nav-item { padding: 12px 8px; letter-spacing: 0.06em; }
   .modal { background: var(--bg); border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-float); max-width: 800px; width: 100%; max-height: 90vh; overflow-y: auto; overscroll-behavior: contain; padding: 32px; }
   /* In-app plan chooser - mirrors the landing pricing cards exactly */
   .modal.st-pc-modal { max-width: min(1000px, 96vw); text-align: center; }
@@ -8535,6 +8538,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Discipline Leaderboard chrome (title/tabs/rules) is built once at mount via _t(), so
     // rebuild it in the new language or it keeps whatever language it first mounted in.
     if (window.STBoard && typeof window.STBoard.relang === 'function') try { window.STBoard.relang(); } catch(e) {}
+    if (window.STAIMeter && typeof window.STAIMeter.relang === 'function') try { window.STAIMeter.relang(); } catch(e) {}
     // Footer Terms/Privacy — point to the Spanish pages (and label) when Spanish is selected.
     try {
       var _tl = document.getElementById('ft-terms-link'), _pl = document.getElementById('ft-privacy-link');
@@ -21041,7 +21045,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-03 18:35 UTC';
+  window.ST_BUILD = '2026-08-03 19:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45702,6 +45706,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 (function(){
   function el(id){ return document.getElementById(id); }
   function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function _t(en,es){ try { return (typeof window._stT==='function') ? window._stT(en,es) : en; } catch(e){ return en; } }
   function isAdmin(){ try { return !!(window.currentUser && String(window.currentUser.email||'').toLowerCase()==='be.o2@hotmail.com'); } catch(e){ return false; } }
   function fmtGbp(v){ if(v==null||isNaN(v)) return '—'; var s=v<0?'−':''; return s+'£'+Math.abs(v).toLocaleString('en-GB',{minimumFractionDigits:2,maximumFractionDigits:2}); }
   function fmtTok(v){ v=+v||0; if(v>=1e6) return (v/1e6).toFixed(2)+'M'; if(v>=1e3) return (v/1e3).toFixed(1)+'k'; return String(Math.round(v)); }
@@ -45719,8 +45724,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function updateTab(){
     var nav = el('settings-nav-aimeter'); if(!nav) return;
+    nav.textContent = _t('AI Meter','AI Metro');
     nav.style.display = isAdmin() ? '' : 'none';
     try { if(window.__rebuildSettingsStepper) window.__rebuildSettingsStepper(); } catch(e){}
+  }
+  // Translate the static panel chrome (description, credit label, buttons, search).
+  function _applyStatic(){
+    var sec=document.querySelector('#settings-modal-bg .settings-section[data-section="aimeter"]'); if(!sec) return;
+    var desc=sec.querySelector('.settings-hint'); if(desc) desc.textContent=_t('Admin only — AI usage per member. Simple questions run on cheap Haiku; smart ones on Sonnet. Click a trader for their day / week / month breakdown.','Solo admin — uso de IA por miembro. Las preguntas simples usan Haiku (barato); las difíciles, Sonnet. Toca un trader para ver su desglose por día / semana / mes.');
+    var lbl=sec.querySelector('label[for="aimeter-budget"]'); if(lbl) lbl.textContent=_t('Credit (£)','Crédito (£)');
+    var bud=el('aimeter-budget'); if(bud) bud.title=_t('Paste your remaining balance from claude.com; the meter counts down from here.','Pega tu saldo restante de claude.com; el medidor va descontando desde ahí.');
+    var rf=el('aimeter-refresh'); if(rf) rf.textContent=_t('Refresh','Actualizar');
+    var s=el('aimeter-search'); if(s) s.placeholder=_t('Search a trader…','Buscar un trader…');
+  }
+  // Re-render everything in the current language (called on a language switch).
+  function relang(){
+    try { updateTab(); } catch(e){}
+    try { _applyStatic(); } catch(e){}
+    try { if(isAdmin() && Object.keys(_byUser).length){ paintLeft(); paintTable(); var det=el('aimeter-detail'); if(det) det.innerHTML=''; } } catch(e){}
   }
 
   function modelKind(m){ m=String(m||'').toLowerCase(); if(m.indexOf('sonnet')>=0) return 'sonnet'; if(m.indexOf('haiku')>=0) return 'haiku'; if(m.indexOf('opus')>=0) return 'opus'; return 'other'; }
@@ -45729,22 +45750,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var _busy=false, _byUser={}, _names={};
   function render(){
     if(!isAdmin()) return;
+    _applyStatic();
     var tableEl=el('aimeter-table'); if(!tableEl) return;
-    var sb=window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">Not signed in.</div>'; return; }
+    var sb=window.__stSB; if(!sb){ tableEl.innerHTML='<div class="empty">'+_t('Not signed in.','No has iniciado sesión.')+'</div>'; return; }
     var bIn=el('aimeter-budget');
     if(bIn && document.activeElement!==bIn){ var bv=_credit(); bIn.value = bv>0 ? bv : ''; }
     // Pull the latest credit balance from auth metadata (syncs across devices), then refresh the field + £-left.
     _loadCredit(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_credit(); _b.value = v>0 ? v : ''; } paintLeft(); });
     if(_busy) return; _busy=true;
-    tableEl.innerHTML='<div class="empty">Loading…</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
+    tableEl.innerHTML='<div class="empty">'+_t('Loading…','Cargando…')+'</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     // Fire the usage query and the member-names query IN PARALLEL (they don't depend on each other) so
     // the tab loads in one round-trip instead of two.
     Promise.all([ sb.rpc('st_ai_usage_summary'), sb.rpc('st_members') ]).then(function(res){
       var r=res[0]||{}, m=res[1]||{};
-      if(r.error){ _busy=false; tableEl.innerHTML='<div class="empty">Not set up yet — create the <code>ai_usage</code> table + <code>st_ai_usage_summary()</code> and add the recorder to the st-assistant edge function (see chat).<br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
+      if(r.error){ _busy=false; tableEl.innerHTML='<div class="empty">'+_t('Not set up yet — create the ','Aún no configurado — crea la tabla ')+'<code>ai_usage</code>'+_t(' table + ',' + ')+'<code>st_ai_usage_summary()</code>'+_t(' and add the recorder to the st-assistant edge function (see chat).',' y añade el registrador a la edge function st-assistant (ver chat).')+'<br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
       _names={}; ((m&&m.data)||[]).forEach(function(x){ var id=x.id||x.user_id; if(id) _names[id]=x.name||x.display_name||'Trader'; });
       aggregate((r.data)||[]); paintLeft(); paintTable(); _busy=false;
-    }, function(){ _busy=false; tableEl.innerHTML='<div class="empty">Usage unavailable.</div>'; });
+    }, function(){ _busy=false; tableEl.innerHTML='<div class="empty">'+_t('Usage unavailable.','Uso no disponible.')+'</div>'; });
   }
 
   function aggregate(rows){
@@ -45808,8 +45830,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function paintLeft(){
     var leftEl=el('aimeter-left'); if(!leftEl) return;
     var credit=_credit(), spentSince=Math.max(0, grandGbp()-_baseVal);
-    if(credit>0){ var left=credit-spentSince; leftEl.innerHTML=fmtGbp(spentSince)+' used · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' left</span>'; }
-    else { leftEl.textContent='spent '+fmtGbp(grandGbp()); }
+    if(credit>0){ var left=credit-spentSince; leftEl.innerHTML=fmtGbp(spentSince)+' '+_t('used','gastado')+' · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' '+_t('left','restante')+'</span>'; }
+    else { leftEl.textContent=_t('spent ','gastado ')+fmtGbp(grandGbp()); }
   }
 
   function paintTable(){
@@ -45817,14 +45839,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var q=((el('aimeter-search')||{}).value||'').trim().toLowerCase();
     var users=Object.keys(_byUser).sort(function(a,b){ return _byUser[b].gbp-_byUser[a].gbp; });
     if(q) users=users.filter(function(u){ return (_names[u]||'').toLowerCase().indexOf(q)>=0; });
-    if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?'No trader matches “'+esc(q)+'”.':'No AI usage recorded yet.')+'</div>'; return; }
-    var h='<table class="stb-tbl aimeter-tbl"><thead><tr><th>Trader</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm" title="Tokens spent on this member’s AI greetings">Greet tokens</th><th class="stb-hide-sm" title="Tokens spent on this member’s chat questions">Chat tokens</th><th>£ spent</th></tr></thead><tbody>';
+    if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?_t('No trader matches “','Ningún trader coincide con “')+esc(q)+'”.':_t('No AI usage recorded yet.','Aún no hay uso de IA registrado.'))+'</div>'; return; }
+    var h='<table class="stb-tbl aimeter-tbl"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s AI greetings','Tokens gastados en los saludos de IA de este miembro')+'">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s chat questions','Tokens gastados en las preguntas de chat de este miembro')+'">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('£ spent','£ gastado')+'</th></tr></thead><tbody>';
     users.forEach(function(u){ var b=_byUser[u], nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr, chatTok=Math.max(0, tok-(b.greetTok||0));
-      h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="Click for day / week / month breakdown"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
+      h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="'+_t('Click for day / week / month breakdown','Toca para ver el desglose por día / semana / mes')+'"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
     });
     h+='</tbody></table>'; tableEl.innerHTML=h;
     Array.prototype.forEach.call(tableEl.querySelectorAll('.aimeter-row'), function(tr){ tr.addEventListener('click', function(){ showDetail(tr.getAttribute('data-uid')); }); });
-    var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent='Sonnet/Haiku columns = number of questions on each model. £ estimated at Sonnet $'+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+' per 1M tokens (cache read ×0.1, write ×1.25), USD→GBP '+USD_GBP+'.';
+    var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent=_t('Sonnet/Haiku columns = number of questions on each model. £ estimated at Sonnet $','Columnas Sonnet/Haiku = número de preguntas en cada modelo. £ estimado a Sonnet $')+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+_t(' per 1M tokens (cache read ×0.1, write ×1.25), USD→GBP ',' por 1M de tokens (lectura de caché ×0,1, escritura ×1,25), USD→GBP ')+USD_GBP+'.';
   }
 
   function _wireBack(det){ var back=det.querySelector('.aimeter-back'); if(back) back.addEventListener('click', function(){ det.innerHTML=''; }); }
@@ -45833,19 +45855,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var nm=_names[uid]||('…'+String(uid).slice(-6));
     var todayStr=_localDate(new Date());
     var dayKeys=Object.keys(b.days).sort();   // ascending YYYY-MM-DD (lexicographic = chronological)
-    var h='<div class="aimeter-detail-card"><div class="aimeter-detail-head"><button type="button" class="aimeter-back">← Back</button><span class="aimeter-detail-name">'+esc(nm)+'</span></div>';
-    if(!dayKeys.length){ h+='<p class="settings-hint">No dated usage yet — re-run the updated <code>st_ai_usage_summary()</code> (it now returns a day column) to see the breakdown.</p></div>'; det.innerHTML=h; _wireBack(det); return; }
+    var h='<div class="aimeter-detail-card"><div class="aimeter-detail-head"><button type="button" class="aimeter-back">← '+_t('Back','Atrás')+'</button><span class="aimeter-detail-name">'+esc(nm)+'</span></div>';
+    if(!dayKeys.length){ h+='<p class="settings-hint">'+_t('No dated usage yet — re-run the updated ','Aún no hay uso con fecha — vuelve a ejecutar el ')+'<code>st_ai_usage_summary()</code>'+_t(' (it now returns a day column) to see the breakdown.',' actualizado (ahora devuelve una columna de día) para ver el desglose.')+'</p></div>'; det.innerHTML=h; _wireBack(det); return; }
     var earliest=dayKeys[0];
     h+='<div class="atl-group aimeter-drange open" data-atl-group="time">'+
          '<button type="button" class="atl-group-head" id="aimeter-range-head" aria-expanded="true">'+
-           '<span class="atl-group-label">Date Range</span>'+
-           '<span class="atl-group-val" id="aimeter-range-val">All dates</span>'+
+           '<span class="atl-group-label">'+_t('Date Range','Rango de fechas')+'</span>'+
+           '<span class="atl-group-val" id="aimeter-range-val">'+_t('All dates','Todas las fechas')+'</span>'+
            '<span class="atl-group-chev" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></span>'+
          '</button>'+
          '<div class="atl-group-body atl-time-body">'+
-           '<label class="atl-date-field"><span>From</span><input type="date" id="aimeter-from" class="atl-date-input" max="'+todayStr+'" value="'+todayStr+'"></label>'+
-           '<label class="atl-date-field"><span>To</span><input type="date" id="aimeter-to" class="atl-date-input" max="'+todayStr+'" value="'+todayStr+'"></label>'+
-           '<button type="button" class="atl-pill" id="aimeter-range-clear">Clear</button>'+
+           '<label class="atl-date-field"><span>'+_t('From','Desde')+'</span><input type="date" id="aimeter-from" class="atl-date-input" max="'+todayStr+'" value="'+todayStr+'"></label>'+
+           '<label class="atl-date-field"><span>'+_t('To','Hasta')+'</span><input type="date" id="aimeter-to" class="atl-date-input" max="'+todayStr+'" value="'+todayStr+'"></label>'+
+           '<button type="button" class="atl-pill" id="aimeter-range-clear">'+_t('Clear','Borrar')+'</button>'+
          '</div>'+
        '</div>';
     h+='<div id="aimeter-range-list"></div></div>';
@@ -45857,11 +45879,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var sonnet=0, haiku=0, opus=0, tok=0, greetTok=0, gbp=0, calls=0;
       dayKeys.forEach(function(d){ if(d>=lo && d<=hi){ var dd=b.days[d]; sonnet+=dd.sonnet||0; haiku+=dd.haiku||0; opus+=dd.opus||0; tok+=dd.tok||0; greetTok+=dd.greetTok||0; gbp+=dd.gbp||0; calls+=dd.calls||0; } });
       var chatTok=Math.max(0, tok-greetTok);
-      var valEl=el('aimeter-range-val'); if(valEl) valEl.textContent = (from||to) ? ((from||'…')+' → '+(to||'…')) : 'All dates';
+      var valEl=el('aimeter-range-val'); if(valEl) valEl.textContent = (from||to) ? ((from||'…')+' → '+(to||'…')) : _t('All dates','Todas las fechas');
       var list=el('aimeter-range-list'); if(!list) return;
-      if(!calls){ list.innerHTML='<div class="empty">No usage in this range.</div>'; return; }
+      if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
       // Same columns as the main table, for the selected range.
-      list.innerHTML='<table class="stb-tbl aimeter-stat" style="margin-top:14px;"><thead><tr><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">Greet tokens</th><th class="stb-hide-sm">Chat tokens</th><th>£ spent</th></tr></thead><tbody><tr><td>'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+      list.innerHTML='<table class="stb-tbl aimeter-stat" style="margin-top:14px;"><thead><tr><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('£ spent','£ gastado')+'</th></tr></thead><tbody><tr><td>'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
     }
     var fEl=el('aimeter-from'), tEl=el('aimeter-to');
     if(fEl) fEl.addEventListener('change', renderRange);
@@ -45885,7 +45907,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function init(){ wire(); updateTab(); }
   if(document.readyState!=='loading') init(); else document.addEventListener('DOMContentLoaded', init);
-  window.STAIMeter = { updateTab: updateTab, render: render };
+  window.STAIMeter = { updateTab: updateTab, render: render, relang: relang };
 })();
 </script>
 <script>
