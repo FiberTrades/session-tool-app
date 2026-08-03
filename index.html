@@ -9397,6 +9397,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   window.addEventListener('pageshow', function (e) {
     if (e && e.persisted) { _stWake(); } else { _stCheckRollover(); _stLastTick = Date.now(); _stHiddenAt = Date.now(); }
   });
+  // Foreground hibernation blind spot: when the whole machine hibernates with THIS tab
+  // already visible and focused, none of visibilitychange/focus/pageshow fire on resume —
+  // only the 1s watchdog above could catch it, and if that tick is throttled/misses, the
+  // day never rolls and you post a bias stamped with yesterday. Backstop: on the FIRST user
+  // interaction after a long gap, if _stLastTick is stale the watchdog didn't run => the
+  // machine was asleep, so do a full wake (which re-runs initBiasDatePicker and advances the
+  // date). Piggybacks on _stLastTick, so when the watchdog is healthy this never fires.
+  (function () {
+    function _stInteractCatchup() { if (Date.now() - _stLastTick > _ST_WAKE_GAP) { _stWake(); } }
+    ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (ev) {
+      try { window.addEventListener(ev, _stInteractCatchup, { passive: true, capture: true }); } catch (e) {}
+    });
+  })();
+  // Page Lifecycle: some browsers freeze a hibernated/backgrounded tab and fire 'resume'
+  // (not visibilitychange) when it thaws. Treat it as a wake.
+  try { document.addEventListener('resume', function () { _stWake(); }); } catch (e) {}
   let equityMode = 'balance';
   let equityRange = 'all';   // equity-curve time window: all | 1y | 6m | 3m | 1m
 
@@ -21019,7 +21035,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-03 17:20 UTC';
+  window.ST_BUILD = '2026-08-03 18:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
