@@ -5973,6 +5973,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'scope.lifetime_label': 'All accounts',
       'scope.archived_header': 'Archived',
       'scope.accounts_header': 'Accounts',
+      'account.main_default': 'Main',
+      'account.unnamed': 'Account',
       'scope.groups_header': 'Groups',
       'settings.transition_label': 'Move to a new account',
       'settings.transition_hint': 'Use this when you start a new phase of your trading career — e.g. moving from a challenge account to a funded one. Your current account will be archived (its trade history stays intact and viewable via the account picker). New trades from now on will be logged against the new account.',
@@ -7365,6 +7367,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'scope.lifetime_label': 'Todas las cuentas',
       'scope.archived_header': 'Archivadas',
       'scope.accounts_header': 'Cuentas',
+      'account.main_default': 'Principal',
+      'account.unnamed': 'Cuenta',
       'scope.groups_header': 'Grupos',
       'settings.transition_label': 'Pasar a una nueva cuenta',
       'settings.transition_hint': 'Úsalo cuando empieces una nueva fase de tu trayectoria como trader — por ejemplo, pasando de una cuenta de evaluación a una financiada. Tu cuenta actual se archivará (su historial de operaciones se conserva intacto y se puede ver desde el selector de cuenta). Las nuevas operaciones se registrarán en la nueva cuenta a partir de ese momento.',
@@ -11125,7 +11129,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     let label = '—';
     if (currentId) {
       const r = resolveLogTarget(currentId);
-      if (r.kind === 'account') label = r.account.name;
+      if (r.kind === 'account') label = accDisplayName(r.account);
       else if (r.kind === 'group') label = r.group.name;
     }
     btnLbl.textContent = label;
@@ -11136,7 +11140,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     parts.push(`<div class="logto-picker-section-header">${accountsHdr}</div>`);
     activeAccounts.forEach(acc => {
       const cls = 'logto-picker-item' + (currentId === acc.id ? ' active' : '');
-      parts.push(`<button type="button" class="${cls}" data-logto-id="${acc.id}">${escHtmlGlobal(acc.name)}</button>`);
+      parts.push(`<button type="button" class="${cls}" data-logto-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}</button>`);
     });
     if (groups.length > 0) {
       const groupsHdr = (typeof t === 'function') ? t('scope.groups_header') : 'Groups';
@@ -11237,7 +11241,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       let accName = untagLbl;
       if (accId !== '__untagged__') {
         const account = (data.accounts || []).find(a => a.id === accId);
-        if (account) accName = account.name;
+        if (account) accName = accDisplayName(account);
       }
       const nums = groups.get(accId);
       return `${tradeWord} ${formatNumbers(nums)} ${onWord} <span class="trade-account-breakdown-account">${escHtmlGlobal(accName)}</span>`;
@@ -11307,6 +11311,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // want to see them at a glance), Groups and Archived collapsed (less frequent
   // navigation; the user can expand on demand).
   let _scopePickerSectionsExpanded = { accounts: true, groups: false, archived: false };
+  // Display name for an account. The auto-created legacy default is stored as 'Main'
+  // (English) — show it localised (Spanish: 'Principal'). A user-renamed acc_main, or any
+  // other account (even one a user named 'Main'), keeps its own name verbatim.
+  function accDisplayName(acc){
+    try {
+      if (!acc) return '';
+      if (acc.id === 'acc_main' && (acc.name === 'Main' || !acc.name)) return (typeof t === 'function') ? t('account.main_default') : 'Main';
+      return acc.name || ((typeof t === 'function') ? t('account.unnamed') : 'Account');
+    } catch (e) { return (acc && acc.name) || ''; }
+  }
+  window.__stAccName = accDisplayName;
+
   function renderScopePicker() {
     const wrap   = document.getElementById('scope-picker');
     const btnLbl = document.getElementById('scope-picker-label');
@@ -11332,7 +11348,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } else {
       const acc = accounts.find(a => a.id === scopeId);
       if (acc) {
-        activeLabel = acc.name;
+        activeLabel = accDisplayName(acc);
       } else {
         const grp = groups.find(g => g.id === scopeId);
         activeLabel = grp ? grp.name : '—';
@@ -11369,7 +11385,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (expanded.accounts) {
         active.forEach(acc => {
           const cls = 'scope-picker-item' + (scopeId === acc.id ? ' active' : '');
-          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(acc.name)}</button>`);
+          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}</button>`);
         });
       }
     }
@@ -11398,7 +11414,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (expanded.archived) {
         archived.forEach(acc => {
           const cls = 'scope-picker-item archived' + (scopeId === acc.id ? ' active' : '');
-          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(acc.name)}</button>`);
+          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}</button>`);
         });
       }
     }
@@ -13046,7 +13062,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const _accIds = new Set((data.review.trades || []).map(x => x.accountId).filter(Boolean));
         if (_accIds.size > 1 && t.accountId) {
           const _a = (data.accounts || []).find(a => a.id === t.accountId);
-          if (_a) _acctName = _a.name;
+          if (_a) _acctName = accDisplayName(_a);
         }
       } catch (e) {}
       const _syms = (data.settings.symbols && data.settings.symbols.length) ? data.settings.symbols : [(data.settings.pair || 'EUR/USD')];
@@ -21045,7 +21061,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-03 19:35 UTC';
+  window.ST_BUILD = '2026-08-03 20:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -34188,7 +34204,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       active.forEach(a => {
         const opt = document.createElement('option');
         opt.value = a.id;
-        opt.textContent = a.name || 'Account';
+        opt.textContent = accDisplayName(a);
         sel.appendChild(opt);
       });
       // Default to the currently-active account so the picker opens on the
@@ -34831,7 +34847,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const badgeHtml = isSingleAccount ? '' : `<span class="settings-account-badge ${badgeKey}">${badgeText}</span>`;
         return `<div class="${rowCls.join(' ')}" data-account-id="${acc.id}">
           <div>
-            <div class="settings-account-name">${escapeHtml(acc.name)} ${badgeHtml}</div>
+            <div class="settings-account-name">${escapeHtml(accDisplayName(acc))} ${badgeHtml}</div>
             <div class="settings-account-meta">
               <div class="settings-account-meta-balances">
               <span class="settings-account-meta-pair">
@@ -35057,7 +35073,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const checked = selected.includes(acc.id) ? 'checked' : '';
         return `<label class="settings-group-checkbox">
           <input type="checkbox" data-acc-id="${acc.id}" ${checked} />
-          <span>${escapeHtml(acc.name)}</span>
+          <span>${escapeHtml(accDisplayName(acc))}</span>
         </label>`;
       }).join('');
       return `<div class="settings-group-editor">
@@ -35249,7 +35265,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const tradeCount = allTrades.filter(t => t && t.accountId === id).length;
         // Body wording: when the account has trades, mention the count so
         // the user knows exactly what's at stake before they confirm.
-        let bodyText = t('settings.delete_body').replace('{N}', acc.name);
+        let bodyText = t('settings.delete_body').replace('{N}', accDisplayName(acc));
         if (tradeCount > 0) {
           bodyText = bodyText.replace('all its trades',
             tradeCount === 1 ? '1 trade' : `${tradeCount} trades`);
