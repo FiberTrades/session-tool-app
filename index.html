@@ -6329,6 +6329,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'rule.next_week_label': "Rule for next week",
       'commit.adherence_label': "This week's adherence",
       'commit.adherence_detail': "You traded {KEPT} of the {TOTAL} days you committed to.",
+      'commit.adherence_missed': "Missed: {DAYS}.",
       'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
       'commit.next_label': "Days I'm committing to next week",
       'commit.next_hint': "Lock in the days you'll trade. These override your default for that week \u2014 the greetings, live tab and sounds will hold you to it.",
@@ -7723,6 +7724,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'rule.next_week_label': "Regla para la pr\u00f3xima semana",
       'commit.adherence_label': "Cumplimiento de esta semana",
       'commit.adherence_detail': "Operaste {KEPT} de los {TOTAL} d\u00edas a los que te comprometiste.",
+      'commit.adherence_missed': "Faltaste: {DAYS}.",
       'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
       'commit.next_hint': "Fija los d\u00edas que operar\u00e1s. Anulan tu ajuste por defecto esa semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo.",
@@ -21061,7 +21063,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-03 21:20 UTC';
+  window.ST_BUILD = '2026-08-03 21:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -23022,11 +23024,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         _kept = committedThis.filter(function (d) { return traded[d]; }).length;
         _off = Object.keys(traded).map(Number).filter(function (d) { return committedThis.indexOf(d) === -1; }).length;
         _pct = committedThis.length ? Math.round(_kept / committedThis.length * 100) : 0;
+        // Committed days you didn't show up for (no trade AND no bias), in Mon→Sun order.
+        const _missed = order.filter(function (d) { return committedThis.indexOf(d) !== -1 && !traded[d]; }).map(dayLabel);
         const pctCls = _pct >= 80 ? 'var(--good)' : _pct >= 50 ? 'var(--text)' : 'var(--bad)';
         adhHtml = `<div style="margin-bottom:20px;">
             <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
             <div style="font-family:'AppNum','DM Mono',monospace;font-size:22px;color:${pctCls};">${_pct}%</div>
-            <div style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5;">${t('commit.adherence_detail').replace('{KEPT}', _kept).replace('{TOTAL}', committedThis.length)}${_off ? ' ' + t('commit.adherence_offplan').replace('{N}', _off) : ''}</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5;">${t('commit.adherence_detail').replace('{KEPT}', _kept).replace('{TOTAL}', committedThis.length)}${_missed.length ? ' ' + t('commit.adherence_missed').replace('{DAYS}', _missed.join(', ')) : ''}${_off ? ' ' + t('commit.adherence_offplan').replace('{N}', _off) : ''}</div>
           </div>`;
       }
       // No cloud write here: the nightly leaderboard job reads weeklyCommitments straight from
@@ -38683,15 +38687,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   var _lbTop = {};
   function loadLbTop(){
     try{
-      var _ms=(function(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-01'; })();
+      var d=new Date();
+      var _ms = d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-01';
+      var _pd = new Date(d.getFullYear(), d.getMonth()-1, 1);   // first of last month
+      var _prev = _pd.getFullYear()+'-'+('0'+(_pd.getMonth()+1)).slice(-2)+'-01';
+      function _apply(rows){
+        var m={};
+        (rows||[]).forEach(function(x){ if(x&&x.user_id&&x.rank>=1&&x.rank<=3) m[x.user_id]=x.rank; });
+        _lbTop=m;
+        try{ renderMembers(presence?presence.presenceState():{}); }catch(e){}
+      }
       sb.from('leaderboard_entries').select('user_id,rank')
         .eq('period','month').eq('period_start',_ms)
         .order('rank',{ascending:true}).limit(3)
         .then(function(r){
-          var m={};
-          ((r&&r.data)||[]).forEach(function(x){ if(x&&x.user_id&&x.rank>=1&&x.rank<=3) m[x.user_id]=x.rank; });
-          _lbTop=m;
-          try{ renderMembers(presence?presence.presenceState():{}); }catch(e){}
+          var rows=(r&&r.data)||[];
+          // New month with no ranked activity yet → keep LAST month's medals (the reigning
+          // top-3 stay crowned) until the new month's board fills. Once anyone has activity
+          // this month, the current-month rows above take over.
+          if(rows.length){ _apply(rows); return; }
+          sb.from('leaderboard_entries').select('user_id,rank')
+            .eq('period','month').eq('period_start',_prev)
+            .order('rank',{ascending:true}).limit(3)
+            .then(function(r2){ _apply((r2&&r2.data)||[]); }, function(){ _apply([]); });
         }, function(){});
     }catch(e){}
   }
