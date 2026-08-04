@@ -14898,22 +14898,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function _wireSeriesHistToggle() {
     const sec = document.getElementById('series-history-section');
     if (!sec) return;
-    sec.classList.toggle('collapsed', _seriesHistCollapsed);
+    // READ the collapse state the generic .section-num toggle owns — do NOT force it back, or a
+    // re-render (renderStats) would slam Series History shut right after the user opened it.
+    _seriesHistCollapsed = sec.classList.contains('collapsed');
     const hdr = sec.querySelector('.hist-sec-toggle');
     if (hdr) hdr.setAttribute('aria-expanded', String(!_seriesHistCollapsed));
     // NB: the click handler is a capture-phase document delegation below, NOT hdr.onclick — a
     // directly-assigned .onclick silently never fired in mentor read-only view, so the mentor
     // couldn't open a member's Series History. Delegation works regardless of view/render timing.
   }
+  // Clicking anywhere on the Series History header toggles it. DEFER to the .section-num's own
+  // collapse handler (the canonical toggle that flips the +/- glyph and persists) so the header
+  // and the glyph never disagree. A click landing ON the glyph is handled by its own listener —
+  // skip it here or we'd double-toggle (which read as "the + won't open").
   document.addEventListener('click', function (e) {
     try {
       var hdr = e.target && e.target.closest && e.target.closest('#series-history-section .hist-sec-toggle');
       if (!hdr) return;
-      var sec = document.getElementById('series-history-section'); if (!sec) return;
-      _seriesHistCollapsed = sec.classList.toggle('collapsed');
-      hdr.setAttribute('aria-expanded', String(!_seriesHistCollapsed));
-      // Recompute the 10-row cap now that the list is visible (it measures row heights).
-      if (!_seriesHistCollapsed) { try { renderStats(); } catch (e2) {} }
+      if (e.target.closest('.section-num')) return;
+      var num = hdr.querySelector('.section-num'); if (num) num.click();
     } catch (e3) {}
   }, true);
   function renderStats() {
@@ -21082,7 +21085,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 13:10 UTC';
+  window.ST_BUILD = '2026-08-04 14:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -23046,8 +23049,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         _kept = committedThis.filter(function (d) { return traded[d]; }).length;
         _off = Object.keys(traded).map(Number).filter(function (d) { return committedThis.indexOf(d) === -1; }).length;
         _pct = committedThis.length ? Math.round(_kept / committedThis.length * 100) : 0;
-        // Committed days you didn't show up for (no trade AND no bias), in Mon→Sun order.
-        const _missed = order.filter(function (d) { return committedThis.indexOf(d) !== -1 && !traded[d]; }).map(dayLabel);
+        // Committed days you didn't show up for (no trade AND no bias) AND that have already PASSED —
+        // a committed day still in the future this week isn't "missed" yet. Mon→Sun order.
+        const _todayStart = new Date(); _todayStart.setHours(0, 0, 0, 0);
+        const _missed = order.filter(function (d) {
+          if (committedThis.indexOf(d) === -1 || traded[d]) return false;
+          const dd = new Date(weekStart); dd.setDate(weekStart.getDate() + ((d + 6) % 7)); dd.setHours(0, 0, 0, 0);
+          return dd < _todayStart;
+        }).map(dayLabel);
         const pctCls = _pct >= 80 ? 'var(--good)' : _pct >= 50 ? 'var(--text)' : 'var(--bad)';
         adhHtml = `<div style="margin-bottom:20px;">
             <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
@@ -33963,8 +33972,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         section.appendChild(foldEl);
       }
 
-      // Restore previously-saved collapsed state on load
-      if (data.settings.collapsedSections[key]) {
+      // Restore previously-saved collapsed state on load. Also honour a section that already
+      // carries .collapsed in markup (Series History ships collapsed) so its glyph starts as '+'.
+      if (data.settings.collapsedSections[key] || section.classList.contains('collapsed')) {
         section.classList.add('collapsed');
         num.textContent = '+';
         num.title = t('tip.expand_section');
@@ -40701,7 +40711,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // are still blocked by the default-deny rule. Only .modal-close gets you out.
       // Block-list wins over the allow-list: these action controls live inside otherwise-
       // allowed containers (weekly review, statistics) but must stay disabled for the mentor.
-      var MV_BLOCK = '#rfx-discord-copy, #rfx-rule-followed, #rfx-rule-broken, #stats-export, #review-copy, #bias-copy';
+      var MV_BLOCK = '#rfx-discord-copy, #rfx-rule-followed, #rfx-rule-broken, #stats-export, #review-copy, #bias-copy, #rfx-commit-days';
       document.addEventListener('click', function(e){
         if(!document.body.classList.contains('mentor-viewing')) return;
         try {
