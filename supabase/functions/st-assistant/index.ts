@@ -216,7 +216,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
       }
     }
 
-    const system = buildSystem(ctx, mode);
+    const system = buildSystem(ctx, mode, rawMode);
 
     const r = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
@@ -227,10 +227,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
       },
       body: JSON.stringify({
         model,
-        max_tokens: mode === "coach" ? 220 : (smart ? 700 : 500),
+        // Greetings are one short line — cap them tight. Coach notes ~220, budgeted chat 700, else 500.
+        max_tokens: rawMode === "greet" ? 120 : (mode === "coach" ? 220 : (smart ? 700 : 500)),
         system,
         messages: claudeMessages,
-        tools: mode === "chat" ? TOOLS : undefined,
+        // Tools only on a REAL chat question. Greetings fold into "chat" for turn-building but must never
+        // carry the tool schema (it's uncached → billed fresh every greeting, and a greeting can't use a tool).
+        tools: rawMode === "chat" ? TOOLS : undefined,
       }),
     });
 
@@ -268,10 +271,13 @@ function json(obj: unknown, status = 200): Response {
 //   block 1 = APP_FACTS  → identical for everyone, cached across all users
 //   block 2 = the trader's data → identical across a user's session, cached until they log a trade
 //   block 3 = profile + language + "right now" instruction → small + volatile, not cached
-function buildSystem(ctx: any, mode: string): any[] {
+function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
   const blocks: any[] = [{ type: "text", text: APP_FACTS, cache_control: { type: "ephemeral" } }];
 
-  if (ctx?.dataPack) {
+  // TOKEN LEAK GUARD: greetings never need the trader's full data pack (they just rephrase a seed line
+  // that already carries its numbers). Skip it here even if an OLD cached client still sends one — this
+  // protects every user the moment this function is redeployed, without waiting for their page to reload.
+  if (ctx?.dataPack && rawMode !== "greet") {
     blocks.push({
       type: "text",
       cache_control: { type: "ephemeral" },
