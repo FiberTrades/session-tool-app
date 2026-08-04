@@ -21065,7 +21065,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 10:05 UTC';
+  window.ST_BUILD = '2026-08-04 10:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -31653,8 +31653,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Tier gating. canChat = ask questions + send images (top tiers/admin/rollout). canGreet = see the
     // AI-written greetings only (free-trial + ST Journal + above). Free/expired: neither → plain greeting.
     function _isAdminU() { try { return !!(typeof currentUser !== 'undefined' && currentUser) && String(currentUser.email || '').toLowerCase() === 'be.o2@hotmail.com'; } catch (e) { return false; } }
-    function _plan() { try { return (typeof profilePlan !== 'undefined') ? profilePlan : null; } catch (e) { return null; } }
-    function _acctState() { try { return (typeof computeAccountState === 'function') ? computeAccountState() : null; } catch (e) { return null; } }
+    // profilePlan / computeAccountState live in a SEPARATE <script> block, so they're not in
+    // this module's scope — read the window-exposed bridges the app publishes. Without this,
+    // _plan() was always null and canChat/canGreet only ever passed via the allow-list, so
+    // comp / bundle / mentorship / premium / trial users never got the AI (only allow-listed).
+    function _plan() { try { if (typeof profilePlan !== 'undefined') return profilePlan; if (typeof window.__stGetPlan === 'function') return window.__stGetPlan(); return null; } catch (e) { return null; } }
+    function _acctState() { try { if (typeof computeAccountState === 'function') return computeAccountState(); if (typeof window.__stAcctState === 'function') return window.__stAcctState(); return null; } catch (e) { return null; } }
     function canChat() {
       if (allowed()) return true;
       if (_isAdminU()) return true;
@@ -40832,6 +40836,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     return { state: 'trial', days: days };
   }
+  // Bridges for the STAI module, which lives in a SEPARATE <script> block and can't see these
+  // directly. Without them, the AI gate (canChat/canGreet) only worked for allow-listed users;
+  // comp / bundle / mentorship / premium / trial accounts got no AI. See STAI _plan()/_acctState().
+  try { window.__stGetPlan = function () { return profilePlan; }; } catch (e) {}
+  try { window.__stAcctState = computeAccountState; } catch (e) {}
 
   var badgeWired = false;
   function wireBadge() {
