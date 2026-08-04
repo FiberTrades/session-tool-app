@@ -12298,22 +12298,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var _target = _st ? Math.max(0, +_st.y||0) : 0;
 
     // ---- the fade mask (only created when there's a deep position to restore) ----
+    // It carries a spinner that only fades IN if the mask is still up ~280ms later, so a quick reload
+    // shows nothing but a fast fade, while a slower one reads as "loading" rather than a broken screen.
     var _mask=null, _revealed=false, _stopLoop=null;
     function makeMask(){
       if(_mask || _target<=4) return;                                 // no deep scroll → nothing to hide
       try{
         var bg = getComputedStyle(document.body).backgroundColor;
         if(!bg || bg==='rgba(0, 0, 0, 0)' || bg==='transparent') bg = getComputedStyle(document.documentElement).backgroundColor || '#000';
+        if(!document.getElementById('st-view-mask-style')){
+          var stl=document.createElement('style'); stl.id='st-view-mask-style';
+          stl.textContent='@keyframes stvmspin{to{transform:rotate(360deg)}}#st-view-mask .stvm-sp{width:26px;height:26px;border-radius:50%;border:2.5px solid rgba(255,255,255,0.16);border-top-color:rgba(255,255,255,0.66);animation:stvmspin .7s linear infinite;opacity:0;transition:opacity 220ms ease 280ms}#st-view-mask.stvm-show .stvm-sp{opacity:1}';
+          (document.head||document.documentElement).appendChild(stl);
+        }
         _mask=document.createElement('div');
         _mask.id='st-view-mask';
-        _mask.style.cssText='position:fixed;inset:0;z-index:2147483646;background:'+bg+';opacity:1;pointer-events:auto;transition:opacity 260ms ease;';
+        _mask.style.cssText='position:fixed;inset:0;z-index:2147483646;background:'+bg+';opacity:1;pointer-events:auto;transition:opacity 180ms ease;display:flex;align-items:center;justify-content:center;';
+        _mask.innerHTML='<div class="stvm-sp"></div>';
         (document.body||document.documentElement).appendChild(_mask);
+        requestAnimationFrame(function(){ if(_mask) _mask.classList.add('stvm-show'); });   // arm the delayed spinner
       }catch(e){}
     }
     function reveal(){
       if(_revealed) return; _revealed=true; _restoring=false;
       if(_stopLoop){ try{ _stopLoop(); }catch(e){} }
-      if(_mask){ try{ _mask.style.opacity='0'; setTimeout(function(){ if(_mask&&_mask.parentNode) _mask.parentNode.removeChild(_mask); _mask=null; }, 320); }catch(e){} }
+      if(_mask){ try{ _mask.style.opacity='0'; setTimeout(function(){ if(_mask&&_mask.parentNode) _mask.parentNode.removeChild(_mask); _mask=null; }, 200); }catch(e){} }
     }
 
     // Re-assert the saved scroll until the page has grown tall enough to hold it, then reveal. Never
@@ -12335,7 +12344,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         window.scrollTo(0, Math.min(target,maxY));
         var here=window.scrollY||window.pageYOffset||0;
         if(Math.abs(here-target)<=2 && maxY>=target-2){ reveal(); return; }  // positioned exactly → reveal (stops loop)
-        if((ts-start)>1500){ reveal(); return; }                              // gave it long enough → reveal wherever we got
+        if((ts-start)>1000){ reveal(); return; }                              // gave it long enough → reveal wherever we got
         requestAnimationFrame(step);
       }
       requestAnimationFrame(step);
@@ -12358,9 +12367,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     // Mask goes up as early as possible (this IIFE runs before first paint on reload), then we restore.
     makeMask();
-    setTimeout(reveal, 2500);                                          // hard safety: never leave the mask stuck
-    if(document.readyState==='complete') setTimeout(restore, 60);
-    else window.addEventListener('load', function(){ setTimeout(restore, 60); });
+    setTimeout(reveal, 1200);                                          // hard safety: never leave the mask stuck
+    // Start ASAP — DON'T wait for window.load (that waits on the Bloomberg TV iframe / ticker, which can
+    // take seconds). The scroll height we need is ready at DOM-ready; the rAF loop handles late growth.
+    if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ setTimeout(restore, 0); });
+    else setTimeout(restore, 0);
   })();
 
   // Mobile swipe navigation: swipe left/right between the 5 tabs (reuses the tab click handler).
@@ -21187,7 +21198,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 20:15 UTC';
+  window.ST_BUILD = '2026-08-04 20:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
