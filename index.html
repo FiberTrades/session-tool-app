@@ -11851,6 +11851,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var el = document.getElementById('st-live-feed'); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
         if (deleteRemote && typeof window.__stLiveDeleteRemote === 'function') { try { window.__stLiveDeleteRemote(); } catch (e) {} }
       },
+      // Is this ticket currently shown as an OPEN (active) trade in the live feed?
+      isOpen: function (ticket) { try { var r = rows[String(ticket)]; return !!(r && !r.closed); } catch (e) { return false; } },
       summary: function (symFilter) {
         // Optional symbol filter (for per-symbol / multi-bias greetings). Normalise both sides
         // so the EA's "EURUSD" matches a bias slot's "EUR/USD".
@@ -21065,7 +21067,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 10:45 UTC';
+  window.ST_BUILD = '2026-08-04 11:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -33395,6 +33397,47 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     setInterval(function () { try { maybePromptAutoSync('poll'); } catch (e) {} }, 90000);
   } catch (e) {}
 
+  // ── Mid-session live close watcher ──────────────────────────────────────────────
+  // The import PROMPT above is deliberately suppressed while a session is live. But the user
+  // still wants to SEE a trade flip active -> Won/Lost the moment it closes, without refreshing.
+  // So while a session is live, poll the inbox and, for any trade that's currently shown as
+  // OPEN in the live feed, flip its chip to the result + fire a brief non-blocking toast.
+  // We do NOT import here (that stays held until session end / the sync prompt).
+  var _liveClosedSeen = {};
+  function _liveCloseWatch() {
+    try {
+      if (typeof isSessionLive !== 'function' || !isSessionLive()) return;
+      if (!window.__stLive || typeof window.__stLive.isOpen !== 'function') return;
+      if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
+      Promise.resolve(window.STCloud.pullInbox()).then(function (res) {
+        if (!res || res.error) return;
+        (res.data || []).forEach(function (r) {
+          if (!r || r.ticket == null || !r.close_time) return;   // only rows the EA has closed
+          var tk = String(r.ticket);
+          if (_liveClosedSeen[tk]) return;                       // handled once this app session
+          if (!window.__stLive.isOpen(r.ticket)) return;         // only trades still shown ACTIVE in the feed
+          _liveClosedSeen[tk] = true;
+          var dir = /^(sell|short)/.test(String(r.direction || '').toLowerCase()) ? 'short' : 'long';
+          // Flip the chip to its result (upsert with a close time marks it closed).
+          try { window.__stLive.upsert({ ticket: r.ticket, direction: dir, pnl: r.pnl, closed_at: r.close_time, symbol: r.symbol }); } catch (e) {}
+          // Brief, non-blocking notice — no import modal.
+          try {
+            var net = parseFloat(r.pnl) || 0;
+            var acc = (typeof getActiveAccount === 'function') ? getActiveAccount() : null;
+            var out = (typeof classifyNetResult === 'function') ? classifyNetResult(net, acc) : (Math.abs(net) < 0.005 ? 'BE' : (net > 0 ? 'Win' : 'Lose'));
+            var es = document.documentElement.lang === 'es';
+            var word = out === 'Win' ? (es ? 'Ganada' : 'Won') : out === 'Lose' ? (es ? 'Perdida' : 'Lost') : 'BE';
+            var sym = r.symbol || (es ? 'Operación' : 'Trade');
+            if (typeof showToast === 'function') showToast(sym + (es ? ' cerrada — ' : ' closed — ') + word);
+          } catch (e) {}
+        });
+      }).catch(function () {});
+    } catch (e) {}
+  }
+  window.__stLiveCloseWatch = _liveCloseWatch;
+  // Poll on a shortish cadence — only actually hits the network while a session is live.
+  setInterval(function () { try { _liveCloseWatch(); } catch (e) {} }, 20000);
+
   // ----- Render preview step -----
   function renderMt5Preview() {
     document.getElementById('mt5-step-pick').style.display = 'none';
@@ -42939,8 +42982,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       uid=u.id;
       try{ if(chan) sb.removeChannel(chan); }catch(e){}
       chan=sb.channel('live-trades:'+uid)
-        .on('postgres_changes',{event:'INSERT',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); })
-        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); })
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
+        // A position row being removed usually means it closed — check the inbox right away so the
+        // live chip flips to its result (active -> Won/Lost) without waiting for the 20s poll.
+        .on('postgres_changes',{event:'DELETE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
         .subscribe();
       try{ sb.from('live_trades').select('*').eq('account', uid).then(function(res){ var rows=(res&&res.data)||[]; rows.forEach(apply); }, function(){}); }catch(e){}
     }).catch(function(){});
