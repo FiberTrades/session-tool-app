@@ -5286,6 +5286,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <button type="button" id="aimeter-refresh" class="settings-btn" style="margin-left:auto;">Refresh</button>
       </div>
       <input type="text" id="aimeter-search" placeholder="Search a trader…" style="width:300px;max-width:100%;box-sizing:border-box;margin-top:12px;background:var(--bg);border:1px solid var(--border-2);border-radius:var(--radius-ctrl);color:var(--text);padding:9px 12px;font-family:'AppNum','DM Mono',monospace;font-size:13px;outline:none;">
+      <div id="aimeter-allrange" style="margin-top:12px;"></div>
       <div id="aimeter-table" style="margin-top:10px;"></div>
       <div id="aimeter-detail"></div>
       <p class="settings-hint" id="aimeter-note" style="margin-top:14px;"></p>
@@ -21085,7 +21086,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 15:20 UTC';
+  window.ST_BUILD = '2026-08-04 16:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45921,7 +45922,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var bIn=el('aimeter-budget');
     if(bIn && document.activeElement!==bIn){ var bv=_credit(); bIn.value = bv>0 ? bv : ''; }
     // Pull the latest credit balance from auth metadata (syncs across devices), then refresh the field + £-left.
-    _loadCredit(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_credit(); _b.value = v>0 ? v : ''; } paintLeft(); });
+    _loadCredit(function(){ var _b=el('aimeter-budget'); if(_b && document.activeElement!==_b){ var v=_credit(); _b.value = v>0 ? v : ''; } paintLeft(); _loadRealCost(paintLeft); });
     if(_busy) return; _busy=true;
     tableEl.innerHTML='<div class="empty">'+_t('Loading…','Cargando…')+'</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     // Fire the usage query and the member-names query IN PARALLEL (they don't depend on each other) so
@@ -45930,7 +45931,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var r=res[0]||{}, m=res[1]||{};
       if(r.error){ _busy=false; tableEl.innerHTML='<div class="empty">'+_t('Not set up yet — create the ','Aún no configurado — crea la tabla ')+'<code>ai_usage</code>'+_t(' table + ',' + ')+'<code>st_ai_usage_summary()</code>'+_t(' and add the recorder to the st-assistant edge function (see chat).',' y añade el registrador a la edge function st-assistant (ver chat).')+'<br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
       _names={}; ((m&&m.data)||[]).forEach(function(x){ var id=x.id||x.user_id; if(id) _names[id]=x.name||x.display_name||'Trader'; });
-      aggregate((r.data)||[]); paintLeft(); paintTable(); _busy=false;
+      aggregate((r.data)||[]); paintLeft(); paintTable(); _mountCombinedRange(); _busy=false;
     }, function(){ _busy=false; tableEl.innerHTML='<div class="empty">'+_t('Usage unavailable.','Uso no disponible.')+'</div>'; });
   }
 
@@ -45950,6 +45951,44 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         var dd=b.days[day]; dd.gbp+=g; dd.calls+=calls; dd[k]+=calls; dd.tok+=rowTok; if(isGreet) dd.greetTok+=rowTok; }
     });
   }
+  // Top-level date-range picker: COMBINED spend across ALL traders for the chosen From/To.
+  function _mountCombinedRange(){
+    var host=el('aimeter-allrange'); if(!host) return;
+    var todayStr=_localDate(new Date());
+    var allDays={}; for(var u in _byUser){ for(var d in _byUser[u].days){ allDays[d]=1; } }
+    var dayKeys=Object.keys(allDays).sort();
+    if(!dayKeys.length){ host.innerHTML=''; return; }
+    var earliest=dayKeys[0];
+    host.innerHTML='<div class="atl-group aimeter-drange open" data-atl-group="time">'+
+         '<button type="button" class="atl-group-head" id="aimeter-all-head" aria-expanded="true">'+
+           '<span class="atl-group-label">'+_t('Combined · all traders','Combinado · todos')+'</span>'+
+           '<span class="atl-group-val" id="aimeter-all-val">'+_t('All dates','Todas las fechas')+'</span>'+
+           '<span class="atl-group-chev" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></span>'+
+         '</button>'+
+         '<div class="atl-group-body atl-time-body">'+
+           '<label class="atl-date-field"><span>'+_t('From','Desde')+'</span><input type="date" id="aimeter-all-from" class="atl-date-input" max="'+todayStr+'"></label>'+
+           '<label class="atl-date-field"><span>'+_t('To','Hasta')+'</span><input type="date" id="aimeter-all-to" class="atl-date-input" max="'+todayStr+'"></label>'+
+           '<button type="button" class="atl-pill" id="aimeter-all-clear">'+_t('Clear','Borrar')+'</button>'+
+         '</div>'+
+       '</div><div id="aimeter-all-list"></div>';
+    function renderCombined(){
+      var from=(el('aimeter-all-from')||{}).value||'', to=(el('aimeter-all-to')||{}).value||'';
+      var lo=from||earliest, hi=to||todayStr; if(lo>hi){ var tmp=lo; lo=hi; hi=tmp; }
+      var sonnet=0,haiku=0,opus=0,tok=0,greetTok=0,gbp=0,calls=0;
+      for(var u in _byUser){ var days=_byUser[u].days; for(var d in days){ if(d>=lo && d<=hi){ var dd=days[d]; sonnet+=dd.sonnet||0; haiku+=dd.haiku||0; opus+=dd.opus||0; tok+=dd.tok||0; greetTok+=dd.greetTok||0; gbp+=dd.gbp||0; calls+=dd.calls||0; } } }
+      var chatTok=Math.max(0, tok-greetTok);
+      var valEl=el('aimeter-all-val'); if(valEl) valEl.textContent=(from||to)?((from||'…')+' → '+(to||'…')):_t('All dates','Todas las fechas');
+      var list=el('aimeter-all-list'); if(!list) return;
+      if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
+      list.innerHTML='<table class="stb-tbl aimeter-stat" style="margin-top:14px;"><thead><tr><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td>'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+    }
+    var fEl=el('aimeter-all-from'), tEl=el('aimeter-all-to');
+    if(fEl) fEl.addEventListener('change', renderCombined);
+    if(tEl) tEl.addEventListener('change', renderCombined);
+    var headEl=el('aimeter-all-head'); if(headEl) headEl.addEventListener('click', function(){ var g=headEl.closest('.atl-group'); if(!g) return; var open=g.classList.toggle('open'); headEl.setAttribute('aria-expanded', open?'true':'false'); });
+    var clrEl=el('aimeter-all-clear'); if(clrEl) clrEl.addEventListener('click', function(){ if(fEl) fEl.value=''; if(tEl) tEl.value=''; renderCombined(); });
+    renderCombined();
+  }
   function grandGbp(){ var t=0; for(var u in _byUser) t+=_byUser[u].gbp; return t; }
   // The admin's remaining Anthropic credit BALANCE (copied from claude.com) lives in Supabase AUTH
   // METADATA (aiCredit) so it syncs across devices; localStorage is an instant local cache.
@@ -45957,12 +45996,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // "left" = balance − (tracked spend since then). Re-enter the balance any time to re-sync to claude.com.
   var _creditVal = (function(){ try { var l=parseFloat(localStorage.getItem('st_ai_credit')); return isNaN(l)?0:l; } catch(e){ return 0; } })();
   var _baseVal   = (function(){ try { var b=parseFloat(localStorage.getItem('st_ai_credit_base')); return isNaN(b)?0:b; } catch(e){ return 0; } })();
+  var _creditSetAt = (function(){ try { return localStorage.getItem('st_ai_credit_setat')||null; } catch(e){ return null; } })();
+  var _realCostUsd = null;   // Anthropic's REAL billed spend since _creditSetAt (st-ai-cost edge fn); null = fall back to the token estimate
   function _credit(){ return _creditVal||0; }
   function _saveCredit(v, ok){
     _creditVal = ok ? v : 0;
-    _baseVal   = ok ? grandGbp() : 0;   // snapshot tracked spend NOW → "left" counts down from the balance you entered
-    try { if(ok){ localStorage.setItem('st_ai_credit', String(_creditVal)); localStorage.setItem('st_ai_credit_base', String(_baseVal)); } else { localStorage.removeItem('st_ai_credit'); localStorage.removeItem('st_ai_credit_base'); } } catch(e){}
-    try { var sb=window.__stSB; if(sb && sb.auth && sb.auth.updateUser) sb.auth.updateUser({ data: { aiCredit: ok ? v : null, aiCreditBase: ok ? _baseVal : null } }); } catch(e){}
+    _baseVal   = ok ? grandGbp() : 0;   // token-estimate baseline (fallback if the edge fn is unavailable)
+    _creditSetAt = ok ? new Date().toISOString() : null;   // top-up time → real "used" is billed cost since here
+    _realCostUsd = ok ? 0 : null;       // just set → nothing spent since; the refresh below fills it in
+    try { if(ok){ localStorage.setItem('st_ai_credit', String(_creditVal)); localStorage.setItem('st_ai_credit_base', String(_baseVal)); localStorage.setItem('st_ai_credit_setat', _creditSetAt); } else { localStorage.removeItem('st_ai_credit'); localStorage.removeItem('st_ai_credit_base'); localStorage.removeItem('st_ai_credit_setat'); } } catch(e){}
+    try { var sb=window.__stSB; if(sb && sb.auth && sb.auth.updateUser) sb.auth.updateUser({ data: { aiCredit: ok ? v : null, aiCreditBase: ok ? _baseVal : null, aiCreditSetAt: ok ? _creditSetAt : null } }); } catch(e){}
+    try { _loadRealCost(paintLeft); } catch(e){}
   }
   function _loadCredit(cb){
     var done=function(){ try { cb && cb(); } catch(e){} };
@@ -45975,6 +46019,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
             var cv=parseFloat(md.aiCredit), bv=parseFloat(md.aiCreditBase);
             if(!isNaN(cv)){
               _creditVal=cv; _baseVal=isNaN(bv)?0:bv;
+              if(md.aiCreditSetAt){ _creditSetAt=md.aiCreditSetAt; try{ localStorage.setItem('st_ai_credit_setat', _creditSetAt); }catch(e){} }
               try{ localStorage.setItem('st_ai_credit', String(_creditVal)); localStorage.setItem('st_ai_credit_base', String(_baseVal)); }catch(e){}
             } else {
               // Migrate a legacy "loaded" figure up (metadata aiBudgetGbp / localStorage) → balance, base 0.
@@ -45992,11 +46037,34 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     done();
   }
 
+  // Pull Anthropic's REAL billed spend since the balance was set (exact, not a token estimate) via
+  // the admin-only st-ai-cost edge fn. Silent fallback to the estimate if the fn/admin key isn't set.
+  var _AI_COST_URL='https://figozyxoyobixadhqewr.supabase.co/functions/v1/st-ai-cost';
+  var _AI_APIKEY='sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv';
+  function _loadRealCost(cb){
+    var done=function(){ try{ cb&&cb(); }catch(e){} };
+    try {
+      var sb=window.__stSB; if(!sb||!sb.auth||!sb.auth.getSession){ done(); return; }
+      sb.auth.getSession().then(function(r){
+        var tok=r&&r.data&&r.data.session&&r.data.session.access_token;
+        if(!tok){ done(); return; }
+        fetch(_AI_COST_URL, { method:'POST', headers:{ 'content-type':'application/json', 'apikey':_AI_APIKEY, 'Authorization':'Bearer '+tok }, body: JSON.stringify({ since: _creditSetAt||null }) })
+          .then(function(res){ return res.ok ? res.json() : null; })
+          .then(function(j){ if(j && typeof j.usd==='number' && !isNaN(j.usd)){ _realCostUsd=j.usd; } done(); })
+          .catch(function(){ done(); });
+      }, function(){ done(); });
+    } catch(e){ done(); }
+  }
+
   function paintLeft(){
     var leftEl=el('aimeter-left'); if(!leftEl) return;
-    var credit=_credit(), spentSince=Math.max(0, grandGbp()-_baseVal);
-    if(credit>0){ var left=credit-spentSince; leftEl.innerHTML=fmtGbp(spentSince)+' '+_t('used','gastado')+' · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' '+_t('left','restante')+'</span>'; }
-    else { leftEl.textContent=_t('spent ','gastado ')+fmtGbp(grandGbp()); }
+    var credit=_credit();
+    if(credit>0){
+      var real=(_realCostUsd!=null);
+      var used = real ? Math.max(0,_realCostUsd) : Math.max(0, grandGbp()-_baseVal);
+      var left=credit-used;
+      leftEl.innerHTML=fmtGbp(used)+' '+_t('used','gastado')+' · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' '+_t('left','restante')+'</span>'+(real?' <span style="color:var(--text-dim)" title="'+_t('Anthropic actual billed cost','coste real facturado por Anthropic')+'">'+_t('(real)','(real)')+'</span>':'');
+    } else { leftEl.textContent=_t('spent ','gastado ')+fmtGbp(grandGbp()); }
   }
 
   function paintTable(){
