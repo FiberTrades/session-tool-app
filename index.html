@@ -21116,7 +21116,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 22:20 UTC';
+  window.ST_BUILD = '2026-08-04 22:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -41660,14 +41660,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
               hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch (e) {}
               return;
             }
-            try {
-              var _rk = 'st_sess_recover', _now = Date.now();
-              var _rc = parseInt(sessionStorage.getItem(_rk) || '0', 10) || 0;
-              var _rt = parseInt(sessionStorage.getItem(_rk + '_t') || '0', 10) || 0;
-              if (_now - _rt > 45000) _rc = 0;
-              if (_rc < 3) { sessionStorage.setItem(_rk, String(_rc + 1)); sessionStorage.setItem(_rk + '_t', String(_now)); location.reload(); return; }
-            } catch (e) {}
-            showGate();
+            // On a FAST reload the auth library can briefly report NO session before it re-hydrates it
+            // from storage — reloading on that transient null is what makes rapid reloads loop ("stuck
+            // reloading"). So re-check once after a short delay and only reload if it's STILL gone.
+            setTimeout(function () {
+              sb.auth.getSession().then(function (gs2) {
+                var _s2 = gs2 && gs2.data && gs2.data.session;
+                if (_s2) { currentUser = _s2.user; try { window.STCloud.userId = currentUser.id; } catch (e) {} hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch (e) {} return; }
+                try {
+                  var _rk = 'st_sess_recover', _now = Date.now();
+                  var _rc = parseInt(sessionStorage.getItem(_rk) || '0', 10) || 0;
+                  var _rt = parseInt(sessionStorage.getItem(_rk + '_t') || '0', 10) || 0;
+                  if (_now - _rt > 45000) _rc = 0;
+                  if (_rc < 2) { sessionStorage.setItem(_rk, String(_rc + 1)); sessionStorage.setItem(_rk + '_t', String(_now)); location.reload(); return; }
+                } catch (e) {}
+                showGate();
+              }).catch(function () { showGate(); });
+            }, 700);
           }).catch(function () { showGate(); });
         } catch (e) { showGate(); }
         return;
