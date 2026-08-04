@@ -12265,8 +12265,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     });
   });
 
-  // (Reload tab/scroll-restore feature removed — the app opens on the Bias tab at the top, as before.)
-
   // Mobile swipe navigation: swipe left/right between the 5 tabs (reuses the tab click handler).
   (function(){
     var PAGES=['bias','review','stats','trades','tradeview','vault'];
@@ -20912,20 +20910,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // wonder why the post is still in Spanish.
   var __trAttempted = 0;
   var __trFailed = 0;
-  // ── Robustness: the free translate endpoints have NO SLA. When they slow down or rate-limit under
-  // load, a plain fetch() hangs with no timeout — and the community waits on every message, so a busy
-  // channel appears to "take forever" or freeze. Two guards:
-  //  1) _trFetch aborts a request that takes too long, so it fails fast to the next fallback/original.
-  //  2) a circuit breaker: after several consecutive failures, stop hammering the endpoints for a short
-  //     cooldown and just return the original text, so the channel paints immediately.
-  var __trConsecFail = 0, __trPausedUntil = 0;
-  function _trFetch(url, ms) {
-    var ctl = null; try { ctl = new AbortController(); } catch (e) {}
-    var t = ctl ? setTimeout(function () { try { ctl.abort(); } catch (e) {} }, ms || 4000) : null;
-    var p = fetch(url, ctl ? { signal: ctl.signal } : undefined);
-    return p.then(function (r) { if (t) clearTimeout(t); return r; },
-                  function (e) { if (t) clearTimeout(t); throw e; });
-  }
   // Google's free, keyless endpoint. Generally the most reliable of the
   // no-key options, so it's tried before MyMemory. Returns null on any
   // failure so the dispatcher falls through to the next method.
@@ -20937,7 +20921,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (source === target) return text;
     try {
       const url = `https://clients5.google.com/translate_a/t?client=dict-chrome-ex&sl=${encodeURIComponent(source)}&tl=${encodeURIComponent(target)}&q=${encodeURIComponent(text)}`;
-      const resp = await _trFetch(url, 4000);
+      const resp = await fetch(url);
       if (!resp.ok) return null;
       const json = await resp.json();
       // Shapes seen: ["translated"] · [["translated","source"], ...] · {sentences:[{trans}]}
@@ -20964,7 +20948,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (source === target) return text;
     try {
       const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=${encodeURIComponent(source)}&tl=${encodeURIComponent(target)}&dt=t&q=${encodeURIComponent(text)}`;
-      const resp = await _trFetch(url, 4000);
+      const resp = await fetch(url);
       if (!resp.ok) return null;
       const json = await resp.json();
       // Response shape: [[["translated","original",...], ...], ...]
@@ -20992,7 +20976,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (source === 'auto') source = (target === 'es') ? 'en' : 'es';
     try {
       const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=${source}|${target}`;
-      const resp = await _trFetch(url, 4000);
+      const resp = await fetch(url);
       if (!resp.ok) return null;
       const json = await resp.json();
       const translated = json && json.responseData && json.responseData.translatedText;
@@ -21084,23 +21068,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const lm = core.match(_TR_LEAD_EMOJI);  if (lm) { lead = lm[0];  core = core.slice(lead.length); }
     } catch (e) { lead = ''; trail = ''; core = text; }
     if (!core.trim()) return text;   // nothing but emoji/whitespace — leave it exactly as-is
-    // Circuit breaker: if the free endpoints just failed repeatedly, don't keep hammering them for the
-    // rest of the batch — return the original so the channel paints instantly instead of hanging. Auto-
-    // recovers after the cooldown. (Date.now is fine here — this is app code, not a workflow script.)
-    if (__trPausedUntil && Date.now() < __trPausedUntil) return text;
     __trAttempted++;
     // Protect trader shorthand so the engine passes it through verbatim, then restore + repair
     // (see the glossary above). _fix runs both steps on whatever a translator returns.
     const _pr = _trProtect(core);
     const _fix = s => (s == null) ? s : _trPostFix(_trUnprotect(s, _pr.store), target);
     const c = await gcxTranslateOnce(_pr.out, source, target);
-    if (c !== null) { __trConsecFail = 0; return lead + _fix(c) + trail; }
+    if (c !== null) return lead + _fix(c) + trail;
     const g = await gtxTranslateOnce(_pr.out, source, target);
-    if (g !== null) { __trConsecFail = 0; return lead + _fix(g) + trail; }
+    if (g !== null) return lead + _fix(g) + trail;
     const m = await mmTranslateOnce(_pr.out, source, target);
-    if (m !== null) { __trConsecFail = 0; return lead + _fix(m) + trail; }
+    if (m !== null) return lead + _fix(m) + trail;
     __trFailed++;
-    if (++__trConsecFail >= 5) __trPausedUntil = Date.now() + 30000;   // 5 straight fails → pause 30s
     return text; // all methods failed — keep the whole original (emoji included)
   }
   // Exposed so the community module (a different inline script) can offer
@@ -21110,7 +21089,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-05 01:05 UTC';
+  window.ST_BUILD = '2026-08-05 01:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -41654,23 +41633,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
               hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch (e) {}
               return;
             }
-            // On a FAST reload the auth library can briefly report NO session before it re-hydrates it
-            // from storage — reloading on that transient null is what makes rapid reloads loop ("stuck
-            // reloading"). So re-check once after a short delay and only reload if it's STILL gone.
-            setTimeout(function () {
-              sb.auth.getSession().then(function (gs2) {
-                var _s2 = gs2 && gs2.data && gs2.data.session;
-                if (_s2) { currentUser = _s2.user; try { window.STCloud.userId = currentUser.id; } catch (e) {} hideGate(); paintAccount(); accStatus(''); try { fetchProfile(); } catch (e) {} return; }
-                try {
-                  var _rk = 'st_sess_recover', _now = Date.now();
-                  var _rc = parseInt(sessionStorage.getItem(_rk) || '0', 10) || 0;
-                  var _rt = parseInt(sessionStorage.getItem(_rk + '_t') || '0', 10) || 0;
-                  if (_now - _rt > 45000) _rc = 0;
-                  if (_rc < 2) { sessionStorage.setItem(_rk, String(_rc + 1)); sessionStorage.setItem(_rk + '_t', String(_now)); location.reload(); return; }
-                } catch (e) {}
-                showGate();
-              }).catch(function () { showGate(); });
-            }, 700);
+            try {
+              var _rk = 'st_sess_recover', _now = Date.now();
+              var _rc = parseInt(sessionStorage.getItem(_rk) || '0', 10) || 0;
+              var _rt = parseInt(sessionStorage.getItem(_rk + '_t') || '0', 10) || 0;
+              if (_now - _rt > 45000) _rc = 0;
+              if (_rc < 3) { sessionStorage.setItem(_rk, String(_rc + 1)); sessionStorage.setItem(_rk + '_t', String(_now)); location.reload(); return; }
+            } catch (e) {}
+            showGate();
           }).catch(function () { showGate(); });
         } catch (e) { showGate(); }
         return;
@@ -45998,7 +45968,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var earliest=dayKeys[0];
     host.innerHTML='<div class="atl-group aimeter-drange open" data-atl-group="time">'+
          '<button type="button" class="atl-group-head" id="aimeter-all-head" aria-expanded="true">'+
-           '<span class="atl-group-label">'+_t('All traders','Todos los traders')+'</span>'+
+           '<span class="atl-group-label">'+_t('Combined · all traders','Combinado · todos')+'</span>'+
            '<span class="atl-group-val" id="aimeter-all-val">'+_t('All dates','Todas las fechas')+'</span>'+
            '<span class="atl-group-chev" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></span>'+
          '</button>'+
@@ -46018,7 +45988,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var list=el('aimeter-all-list'); if(!list) return;
       if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
       // Same column layout as the per-trader table below (Trader-name-first) so the columns line up.
-      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th></th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
     }
     var fEl=el('aimeter-all-from'), tEl=el('aimeter-all-to');
     if(fEl) fEl.addEventListener('change', renderCombined);
@@ -46154,7 +46124,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var list=el('aimeter-range-list'); if(!list) return;
       if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
       // Same column layout as the per-trader table (name-first) so the columns line up.
-      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th></th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
     }
     var fEl=el('aimeter-from'), tEl=el('aimeter-to');
     if(fEl) fEl.addEventListener('change', renderRange);
