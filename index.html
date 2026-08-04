@@ -21089,7 +21089,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-05 02:05 UTC';
+  window.ST_BUILD = '2026-08-05 02:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -38524,6 +38524,36 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (sc.en > sc.es) return 'en';
       return null;                                            /* tie: don't guess */
     }
+    /* The bias/review/series posts are authored in canonical ENGLISH (fixed stat labels inside a
+       ```code block```). Those labels ("Trades:", "Net R | Net Acc %:", "Captured:", …) aren't in the
+       stopword lists, so the line scorer reads them as "undecidable" and either leaves them English
+       (an all-English series card triggers no translation) or hands them to machine translation, which
+       mangles the trading terms ("Comercios", "¿Puede R"). So localize them DETERMINISTICALLY instead —
+       exact label match, correct Spanish, no MT. English readers keep the canonical English. Pure text
+       swap: no repaint or network changes. */
+    var _STAT_ES = {
+      'Mode:': 'Modo:', 'Structure:': 'Estructura:', 'Location:': 'Ubicación:', 'Direction:': 'Dirección:',
+      'Traded:': 'Operado:', 'Trades:': 'Operaciones:', 'Wins:': 'Ganadas:', 'Losses:': 'Pérdidas:',
+      'BEs:': 'BE:', 'BE:': 'BE:', 'Net R | Net Acc %:': 'R neta | % de cuenta neta:',
+      'Pot R | Pot Acc %:': 'R pot. | % de cuenta pot.:', 'Captured:': 'Capturado:'
+    };
+    function _trStatLine(body, to){
+      if (to !== 'es') return null;                           // posts are canonical English → only ES readers need this
+      var m = String(body).match(/^([^:]*:)(\s{2,})([\s\S]*)$/);   // "Label:<padding>value"
+      if (!m || !_STAT_ES[m[1]]) return null;                // not a known stat label → leave to the normal path
+      var es = _STAT_ES[m[1]];
+      var val = m[3]
+        .replace(/no Potential R logged/g, 'sin R potencial registrada')
+        .replace(/Observed Only/g, 'Solo observación')
+        .replace(/\bExecution\b/g, 'Ejecución').replace(/\bObservation\b/g, 'Observación')
+        .replace(/\bBullish\b/g, 'Alcista').replace(/\bBearish\b/g, 'Bajista').replace(/\bUnsure\b/g, 'Indeciso')
+        .replace(/\bleft\b/g, 'restante');
+      return es + ' '.repeat(Math.max(2, 22 - es.length)) + val;
+    }
+    function _trStatBlock(text, to){
+      if (to !== 'es' || String(text).indexOf(':') < 0) return text;
+      return String(text).split('\n').map(function (ln) { var s = _trStatLine(ln, to); return s === null ? ln : s; }).join('\n');
+    }
     function _trRich(text, L, fn){
       var lines = String(text).split('\n');
       // Single line: one request, exactly as before.
@@ -38574,6 +38604,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           var prefix = m ? m[1] : '';
           var body   = m ? m[2] : line;
           if (!body.trim() || !/[A-Za-zÀ-ÿ]{2}/.test(body)) { out.push(line); return; }
+          var _stat = _trStatLine(body, L.to);                  // known stat-card label → localize deterministically, skip MT
+          if (_stat !== null) { out.push(prefix + _stat); return; }
           var lsc  = _trScore(body);
           var ldet = (lsc.es > lsc.en) ? 'es' : (lsc.en > lsc.es ? 'en' : null);
           if (ldet === L.to) { out.push(line); return; }        // clearly the reader's language
@@ -38649,7 +38681,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
          still skip: nothing to translate, and sending them risks the translator
          "helpfully" rewriting a symbol. */
       if (!foreignLine && ((det === to && (sc.es + sc.en) > 0 && Math.abs(sc.es - sc.en) >= 2) || !/[A-Za-zÀ-ÿ]{2}/.test(src))) {
-        _trSeen[key] = 1; _trCache[key] = src; return src;
+        // Even a message we DON'T machine-translate (already the reader's language, or all numbers)
+        // may still carry canonical-English stat labels — localize those deterministically.
+        var _locSkip = _trStatBlock(src, to);
+        _trSeen[key] = 1; _trCache[key] = _locSkip; return _locSkip;
       }
       _trSeen[key] = 1;
       /* Hand the translator the detected source when it is confidently DIFFERENT from the
