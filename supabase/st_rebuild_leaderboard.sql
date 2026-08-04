@@ -9,6 +9,13 @@
 -- current, in-progress week is exempt until the new week commences — see the
 -- WHERE clause in `weeks_pledged` below. Posting a review early still rewards
 -- (+20); only the penalty is deferred.
+--
+-- 2026-08-04 fix (COST DOUBLE-COUNT): trades_verified.pnl is stored NET of costs
+-- (gross = pnl + costs). The `t` CTE was doing `pnl - costs`, subtracting costs a
+-- SECOND time — inflating every loss / deflating every win by the trade's costs.
+-- This produced e.g. a phantom max-daily-drawdown breach (a −£126.65 day read as
+-- −£145.93 vs a £140 limit). All net figures now use `pnl` as-is. Also corrects
+-- Net R, win/BE classification, and broken-stop / TP-pulled detection.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
@@ -180,23 +187,26 @@ begin
         lt.user_id,
         lt.direction                              as direction,
         lt.close_time,
+        -- IMPORTANT: trades_verified.pnl is ALREADY NET of costs (gross = pnl + costs). Do NOT
+        -- subtract costs again — an earlier version did (`pnl - costs`), double-counting costs and
+        -- inflating every loss (which e.g. caused a phantom max-daily-drawdown breach). Use pnl as-is.
         lt.pnl::numeric                           as pnl_net,
         coalesce(lt.costs::numeric, 0)            as costs,
-        (lt.pnl::numeric - coalesce(lt.costs::numeric,0))  as pnl_gross,
+        lt.pnl::numeric                           as pnl_gross,   -- = net (kept the name to avoid renaming downstream refs)
         lt.risk_gbp::numeric                      as risk,
         lt.sl_pips::numeric                       as sl_pips,
         coalesce(lt.tp_r::numeric, 0)             as tp_r,
         coalesce(lt.mfe_r::numeric, 0)            as mfe_r,
         (lt.sl_pips is not null and nullif(lt.risk_gbp::numeric,0) is not null) as stamped,
         case when nullif(lt.risk_gbp::numeric,0) is not null
-             then (lt.pnl::numeric - coalesce(lt.costs::numeric,0)) / lt.risk_gbp::numeric
+             then (lt.pnl::numeric) / lt.risk_gbp::numeric
         end                                                    as r,
         (lt.sl_pips is not null and coalesce(lt.sl_pips::numeric,0) <= 0)      as no_stop,
         (
-          (lt.pnl::numeric - coalesce(lt.costs::numeric,0)) < 0
+          (lt.pnl::numeric) < 0
           and nullif(lt.risk_gbp::numeric,0) is not null
           and coalesce(lt.sl_pips::numeric,0) > 0
-          and abs(lt.pnl::numeric - coalesce(lt.costs::numeric,0))
+          and abs(lt.pnl::numeric)
               > lt.risk_gbp::numeric
                 + greatest(
                     lt.risk_gbp::numeric * 0.05,
@@ -207,7 +217,7 @@ begin
           coalesce(lt.tp_r::numeric,0) > 0
           and coalesce(lt.mfe_r::numeric,0) >= lt.tp_r::numeric * 1.02
           and nullif(lt.risk_gbp::numeric,0) is not null
-          and ((lt.pnl::numeric - coalesce(lt.costs::numeric,0)) / lt.risk_gbp::numeric)
+          and ((lt.pnl::numeric) / lt.risk_gbp::numeric)
               < lt.tp_r::numeric * 0.95
         )                                                      as tp_pulled,
         coalesce(l.be_band, 0.005)                             as be_band,
