@@ -21091,7 +21091,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 23:40 UTC';
+  window.ST_BUILD = '2026-08-05 00:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -38432,7 +38432,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        so it gets the same logo. Same 100ms grace as _beginLoad(): a cached or instant
        batch never flashes it, a slow one shows it early. Without this the chat sat in
        the old language with no sign anything was happening. */
-    var _trSpin = false, _trSpinT = null, _trSpinTok = 0;
+    var _trSpin = false, _trSpinT = null, _trSpinTok = 0, _trSpinCap = null;
     function _trSpinBegin(){
       if (_trSpin || _trSpinT) return;
       var tok = ++_trSpinTok;
@@ -38442,10 +38442,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (!_trQueue.length && !_trBusy) return;      // finished inside the grace period
         _trSpin = true;
         try { repaint(); } catch (e) {}
+        // HARD CAP: never hold the loading logo (which blocks the WHOLE channel from painting) for more
+        // than a couple of seconds waiting on the translation network. A busy channel used to sit on the
+        // logo for ~30s. After the cap we drop the logo and paint the messages as they are; any still-
+        // pending translations keep swapping in as each one lands (_trPump repaints on every result).
+        clearTimeout(_trSpinCap);
+        _trSpinCap = setTimeout(function () {
+          if (_trSpin && tok === _trSpinTok) { _trSpin = false; try { repaint(); } catch (e) {} }
+        }, 2500);
       }, 100);
     }
     function _trSpinEnd(){
-      _trSpinTok++; clearTimeout(_trSpinT); _trSpinT = null;
+      _trSpinTok++; clearTimeout(_trSpinT); _trSpinT = null; clearTimeout(_trSpinCap); _trSpinCap = null;
       if (!_trSpin) return;
       _trSpin = false;
       try { repaint(); } catch (e) {}
