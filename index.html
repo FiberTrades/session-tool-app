@@ -12265,6 +12265,77 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     });
   });
 
+  // ── Remember where you were: restore the active tab + scroll position on reload ──
+  // On reload the app defaults to the Bias tab at the top. We save the tab you're on and how
+  // far you'd scrolled as you use the app, then put you back there on the next load. localStorage
+  // (survives a full app close), with a freshness guard so a very old position isn't forced on you.
+  (function(){
+    var KEY='st_view_state_v1', MAXAGE=24*60*60*1000, _restoring=false, _restored=false;
+    try { if('scrollRestoration' in history) history.scrollRestoration='manual'; } catch(e){}  // we control scroll, not the browser
+    function inMentor(){ return !!window.__MV; }                       // never hijack the read-only mentor view
+    function activePage(){ var a=document.querySelector('.tab.active'); return a?a.getAttribute('data-page'):null; }
+    function save(){
+      if(_restoring||inMentor()) return;
+      try{ localStorage.setItem(KEY, JSON.stringify({ page:activePage(), y:window.scrollY||window.pageYOffset||0, t:Date.now() })); }catch(e){}
+    }
+    // Throttle scroll saves so we're not writing every frame.
+    var _sv=null;
+    window.addEventListener('scroll', function(){ if(_restoring||_sv) return; _sv=setTimeout(function(){ _sv=null; save(); }, 300); }, {passive:true});
+    // Cover every way the page can go away (mobile Safari/PWA often skip beforeunload).
+    window.addEventListener('beforeunload', save);
+    window.addEventListener('pagehide', save);
+    document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='hidden') save(); });
+    // Record the tab the moment one is chosen (after the click handler above has run).
+    document.querySelectorAll('.tab').forEach(function(b){ b.addEventListener('click', function(){ setTimeout(save,0); }); });
+
+    // Re-assert the saved scroll until the page has grown tall enough to hold it (async data/images
+    // render in after load), the target is reached, or the user starts scrolling / a deadline passes.
+    function restoreScroll(target){
+      if(target<=2){ _restoring=false; return; }
+      var done=false;
+      function stop(){ if(done) return; done=true; _restoring=false;
+        window.removeEventListener('wheel',onUser); window.removeEventListener('touchstart',onUser); window.removeEventListener('keydown',onUser); }
+      function onUser(){ stop(); }                                     // never fight a user who scrolls
+      window.addEventListener('wheel',onUser,{passive:true});
+      window.addEventListener('touchstart',onUser,{passive:true});
+      window.addEventListener('keydown',onUser);
+      var start=null;
+      function step(ts){
+        if(done) return;
+        if(start===null) start=ts;
+        var maxY=Math.max(0,(document.documentElement.scrollHeight||0)-window.innerHeight);
+        window.scrollTo(0, Math.min(target,maxY));
+        var here=window.scrollY||window.pageYOffset||0;
+        if((Math.abs(here-target)<=2 && maxY>=target-2) || (ts-start)>4000){ stop(); return; }
+        requestAnimationFrame(step);
+      }
+      requestAnimationFrame(step);
+    }
+
+    function restore(){
+      if(_restored||inMentor()) return; _restored=true;
+      var raw; try{ raw=localStorage.getItem(KEY); }catch(e){ return; }
+      if(!raw) return;
+      var st; try{ st=JSON.parse(raw); }catch(e){ return; }
+      if(!st || (st.t && (Date.now()-st.t)>MAXAGE)) return;            // nothing saved, or too old → start fresh
+      _restoring=true;
+      // Only switch tabs if nothing else has already navigated away from the default (Bias) — so we
+      // don't stomp on a new-day prompt or a deep link. Clicking renders the page (and scrolls to top,
+      // which restoreScroll then corrects).
+      try{
+        if(st.page && st.page!=='bias' && activePage()==='bias'){
+          var tab=document.querySelector('.tab[data-page="'+st.page+'"]');
+          if(tab && tab.offsetParent!==null) tab.click();
+        }
+      }catch(e){}
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){ restoreScroll(Math.max(0,+st.y||0)); }); });
+    }
+
+    // Run once the app has painted (it defaults to Bias@top, so we correct from there).
+    if(document.readyState==='complete') setTimeout(restore, 400);
+    else window.addEventListener('load', function(){ setTimeout(restore, 400); });
+  })();
+
   // Mobile swipe navigation: swipe left/right between the 5 tabs (reuses the tab click handler).
   (function(){
     var PAGES=['bias','review','stats','trades','tradeview','vault'];
@@ -21089,7 +21160,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 19:10 UTC';
+  window.ST_BUILD = '2026-08-04 19:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
@@ -45968,7 +46039,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var earliest=dayKeys[0];
     host.innerHTML='<div class="atl-group aimeter-drange open" data-atl-group="time">'+
          '<button type="button" class="atl-group-head" id="aimeter-all-head" aria-expanded="true">'+
-           '<span class="atl-group-label">'+_t('Combined · all traders','Combinado · todos')+'</span>'+
+           '<span class="atl-group-label">'+_t('All traders','Todos los traders')+'</span>'+
            '<span class="atl-group-val" id="aimeter-all-val">'+_t('All dates','Todas las fechas')+'</span>'+
            '<span class="atl-group-chev" aria-hidden="true"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4 4 4-4"/></svg></span>'+
          '</button>'+
@@ -45988,7 +46059,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var list=el('aimeter-all-list'); if(!list) return;
       if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
       // Same column layout as the per-trader table below (Trader-name-first) so the columns line up.
-      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th></th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
     }
     var fEl=el('aimeter-all-from'), tEl=el('aimeter-all-to');
     if(fEl) fEl.addEventListener('change', renderCombined);
@@ -46124,7 +46195,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var list=el('aimeter-range-list'); if(!list) return;
       if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
       // Same column layout as the per-trader table (name-first) so the columns line up.
-      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th></th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
     }
     var fEl=el('aimeter-from'), tEl=el('aimeter-to');
     if(fEl) fEl.addEventListener('change', renderRange);
