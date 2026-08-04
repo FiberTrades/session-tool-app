@@ -12308,7 +12308,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function saved(){ try{ var s=JSON.parse(localStorage.getItem(KEY)||'null'); if(s && (!s.t || Date.now()-s.t<=MAXAGE)) return s; }catch(e){} return null; }
     function save(){
       if(_restoring||inMentor()) return;
-      try{ localStorage.setItem(KEY, JSON.stringify({ page:activePage(), y:window.scrollY||window.pageYOffset||0, t:Date.now() })); }catch(e){}
+      try{ localStorage.setItem(KEY, JSON.stringify({ page:activePage(), y:window.scrollY||window.pageYOffset||0, h:document.documentElement.scrollHeight||0, t:Date.now() })); }catch(e){}
     }
     // Throttle scroll saves so we're not writing every frame.
     var _sv=null;
@@ -12325,37 +12325,53 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var _target = _st ? Math.max(0, +_st.y||0) : 0;
     var _de = document.documentElement;
     var _masked = _de.classList.contains('stvr');                     // the <head> pre-paint mask is up (see index <head>)
-    var _revealed=false, _stopLoop=null;
+    var _revealed=false;
 
     // Fade the <head> mask away. It was painted BEFORE the body rendered (pure CSS on <html>), so the
-    // top never flashes; here we just cross-fade to the restored view.
+    // top never flashes; here we just cross-fade to the already-positioned view.
     function reveal(){
       if(_revealed) return; _revealed=true; _restoring=false;
-      if(_stopLoop){ try{ _stopLoop(); }catch(e){} }
       if(_masked){ try{ _de.classList.add('stvr-in'); setTimeout(function(){ _de.classList.remove('stvr','stvr-show','stvr-in'); }, 240); }catch(e){} }
     }
 
-    // Re-assert the saved scroll until the page can hold it OR has stopped growing (content finished),
-    // then reveal. Never fights a user who scrolls; reveal always stops the loop (no post-reveal jump).
-    function restoreScroll(target){
+    // The key to "fast AND no top-flash": RESERVE the old page height with a hidden spacer so the page is
+    // instantly tall enough to hold your saved spot. We scroll there behind the mask and reveal within a
+    // couple of frames (no waiting for the slow tab to finish) — then shrink the spacer as the real content
+    // renders in, keeping the total height constant so the view never jumps.
+    function positionAndReveal(target, savedTotal){
       if(target<=2){ reveal(); return; }
-      var done=false, start=null, lastH=-1, stable=0;
+      var spacer=null;
+      try{
+        if(savedTotal>window.innerHeight){
+          spacer=document.createElement('div'); spacer.id='stvr-spacer'; spacer.setAttribute('aria-hidden','true');
+          spacer.style.cssText='width:1px;height:0;margin:0;padding:0;border:0;visibility:hidden;pointer-events:none;';
+          document.body.appendChild(spacer);
+        }
+      }catch(e){}
+      function naturalH(){ return (document.documentElement.scrollHeight||0) - (spacer?spacer.offsetHeight:0); }
+      function fitSpacer(){ if(!spacer) return 0; var need=Math.max(0, savedTotal-naturalH()); spacer.style.height=need+'px'; return need; }
+      function killSpacer(){ if(spacer){ try{ spacer.remove(); }catch(e){} spacer=null; } }
+
+      var done=false, start=null;
       function cleanup(){ window.removeEventListener('wheel',onUser); window.removeEventListener('touchstart',onUser); window.removeEventListener('keydown',onUser); }
-      _stopLoop=function(){ done=true; cleanup(); };
-      function onUser(){ done=true; cleanup(); reveal(); }
+      function onUser(){ _revealed || reveal(); }                     // user took over — stop forcing scroll (spacer keeps view stable)
       window.addEventListener('wheel',onUser,{passive:true});
       window.addEventListener('touchstart',onUser,{passive:true});
       window.addEventListener('keydown',onUser);
       function step(ts){
         if(done) return;
         if(start===null) start=ts;
-        var h=document.documentElement.scrollHeight||0, maxY=Math.max(0,h-window.innerHeight);
-        window.scrollTo(0, Math.min(target,maxY));
-        var here=window.scrollY||window.pageYOffset||0;
-        if(Math.abs(here-target)<=2 && maxY>=target-2){ reveal(); return; }   // reached the exact spot → reveal
-        if(h===lastH){ if(++stable>=5){ reveal(); return; } } else { stable=0; lastH=h; }  // page stopped growing → reveal
-        if((ts-start)>1500){ reveal(); return; }                              // hard cap
-        requestAnimationFrame(step);
+        var need = fitSpacer();
+        if(!_revealed){
+          var maxY=Math.max(0,(document.documentElement.scrollHeight||0)-window.innerHeight);
+          window.scrollTo(0, Math.min(target,maxY));
+          var here=window.scrollY||window.pageYOffset||0;
+          if(Math.abs(here-target)<=2 || (ts-start)>1500) reveal();   // at the spot (usually frame ~2) → unmask
+        }
+        // Keep shrinking the spacer until real content has caught up, then stop.
+        if(!spacer){ if(_revealed){ done=true; cleanup(); } }
+        else if(need<=0 || (ts-start)>6000){ killSpacer(); done=true; cleanup(); }
+        if(!done) requestAnimationFrame(step);
       }
       requestAnimationFrame(step);
     }
@@ -12372,12 +12388,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if(tab && tab.offsetParent!==null) tab.click();
         }
       }catch(e){}
-      requestAnimationFrame(function(){ requestAnimationFrame(function(){ restoreScroll(_target); }); });
+      requestAnimationFrame(function(){ requestAnimationFrame(function(){ positionAndReveal(_target, +(_st.h)||0); }); });
     }
 
     // Start ASAP — the scroll height we need is ready at DOM-ready; DON'T wait for window.load (that
     // blocks on the Bloomberg TV iframe / ticker for seconds). Safety reveal so the mask can't get stuck.
-    setTimeout(reveal, 1800);
+    setTimeout(reveal, 1600);
     if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', restore);
     else restore();
   })();
@@ -21206,7 +21222,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-04 21:20 UTC';
+  window.ST_BUILD = '2026-08-04 21:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   /* Small bridge so the community module (a different inline script) can keep a
      preference on the account rather than only in this browser. Anything stored
