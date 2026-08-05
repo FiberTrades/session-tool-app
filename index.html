@@ -21089,7 +21089,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-05 02:50 UTC';
+  window.ST_BUILD = '2026-08-05 03:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -33438,6 +33438,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // So while a session is live, poll the inbox and, for any trade that's currently shown as
   // OPEN in the live feed, flip its chip to the result + fire a brief non-blocking toast.
   // We do NOT import here (that stays held until session end / the sync prompt).
+  // A trade-close notice that (a) shows on EVERY tab — a very high z-index so it's never buried under the
+  // community layout (normal toasts sit at z-index 200, far below the community, so they're invisible
+  // there), and (b) does NOT auto-dismiss: it stays until the user taps it to close. Multiple closes
+  // stack so none are missed.
+  function _liveCloseNotice(msg) {
+    try { if (document.body.classList.contains('mentor-viewing')) return; } catch (e) {}
+    try {
+      var host = document.getElementById('st-live-note-host');
+      if (!host) {
+        host = document.createElement('div');
+        host.id = 'st-live-note-host';
+        host.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483001;display:flex;flex-direction:column;gap:8px;align-items:center;max-width:94vw;pointer-events:none;';
+        document.body.appendChild(host);
+      }
+      var item = document.createElement('div');
+      item.setAttribute('role', 'status');
+      item.style.cssText = "pointer-events:auto;cursor:pointer;background:var(--text,#fff);color:var(--bg,#000);padding:12px 16px 12px 20px;border-radius:10px;font-family:'AppNum','DM Mono',monospace;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;box-shadow:0 12px 36px rgba(0,0,0,0.5);display:flex;align-items:center;gap:14px;opacity:0;transform:translateY(-10px);transition:opacity 200ms ease,transform 200ms ease;max-width:94vw;";
+      var txt = document.createElement('span'); txt.textContent = msg; txt.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+      var x = document.createElement('span'); x.textContent = '×'; x.setAttribute('aria-label', 'Close'); x.style.cssText = 'font-size:17px;line-height:1;opacity:0.5;flex:none;';
+      item.appendChild(txt); item.appendChild(x);
+      function close() { item.style.opacity = '0'; item.style.transform = 'translateY(-10px)'; setTimeout(function () { try { item.remove(); } catch (e) {} }, 220); }
+      item.addEventListener('click', close);
+      host.appendChild(item);
+      requestAnimationFrame(function () { item.style.opacity = '1'; item.style.transform = 'translateY(0)'; });
+      // NO auto-dismiss timer — persists until the user taps it (per request).
+    } catch (e) {}
+  }
   var _liveClosedSeen = {};
   function _liveCloseWatch() {
     try {
@@ -33463,7 +33490,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             var es = document.documentElement.lang === 'es';
             var word = out === 'Win' ? (es ? 'Ganada' : 'Won') : out === 'Lose' ? (es ? 'Perdida' : 'Lost') : 'BE';
             var sym = r.symbol || (es ? 'Operación' : 'Trade');
-            if (typeof showToast === 'function') showToast(sym + (es ? ' cerrada — ' : ' closed — ') + word);
+            _liveCloseNotice(sym + (es ? ' cerrada — ' : ' closed — ') + word);
           } catch (e) {}
         });
       }).catch(function () {});
