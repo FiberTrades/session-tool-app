@@ -365,6 +365,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Even, aligned columns: fixed-width numeric columns (override stb-tbl's col-2 left-align), trader flexes. */
   .stb-tbl.aimeter-tbl th:not(:first-child), .stb-tbl.aimeter-tbl td:not(:first-child) { text-align: center; width: 72px; }
   .stb-tbl.aimeter-tbl th:first-child, .stb-tbl.aimeter-tbl td:first-child { text-align: left; }
+  /* "All traders" summary row: a DASHED underline separates it from the individual members below. */
+  .stb-tbl.aimeter-tbl tr.aimeter-allrow td { border-bottom: 1px dashed var(--border-2); }
   .aimeter-drange { max-width: 340px; margin: 16px 0 6px; }   /* reuses the All-Trades .atl-group date-range look */
   /* Range stats: evenly-spaced columns. table-layout:fixed + auto widths splits the row equally
      among the VISIBLE columns (so it stays even when Greet/Chat tokens hide on small screens). */
@@ -21089,7 +21091,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-05 05:40 UTC';
+  window.ST_BUILD = '2026-08-05 06:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -45990,7 +45992,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function modelKind(m){ m=String(m||'').toLowerCase(); if(m.indexOf('sonnet')>=0) return 'sonnet'; if(m.indexOf('haiku')>=0) return 'haiku'; if(m.indexOf('opus')>=0) return 'opus'; return 'other'; }
   function _localDate(dt){ var y=dt.getFullYear(), m=('0'+(dt.getMonth()+1)).slice(-2), d=('0'+dt.getDate()).slice(-2); return y+'-'+m+'-'+d; }
 
-  var _busy=false, _byUser={}, _names={};
+  var _busy=false, _byUser={}, _names={}, _allRange={from:'',to:''};   // _allRange = the "All traders" summary-row date scope
   function render(){
     if(!isAdmin()) return;
     _applyStatic();
@@ -46028,14 +46030,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         var dd=b.days[day]; dd.gbp+=g; dd.calls+=calls; dd[k]+=calls; dd.tok+=rowTok; if(isGreet) dd.greetTok+=rowTok; }
     });
   }
-  // Top-level date-range picker: COMBINED spend across ALL traders for the chosen From/To.
+  // COMBINED spend across ALL traders, for the chosen From/To — summed by _combinedTotals() and shown
+  // as the "All traders" row at the TOP of the main table (paintTable). This picker just drives it.
+  function _combinedTotals(){
+    var todayStr=_localDate(new Date());
+    var allDays={}; for(var u in _byUser){ for(var d in _byUser[u].days){ allDays[d]=1; } }
+    var dayKeys=Object.keys(allDays).sort();
+    var earliest=dayKeys.length?dayKeys[0]:'';
+    var from=_allRange.from||'', to=_allRange.to||'';
+    var lo=from||earliest, hi=to||todayStr; if(lo>hi){ var tmp=lo; lo=hi; hi=tmp; }
+    var sonnet=0,haiku=0,opus=0,tok=0,greetTok=0,gbp=0,calls=0;
+    for(var u2 in _byUser){ var days=_byUser[u2].days; for(var d2 in days){ if(d2>=lo && d2<=hi){ var dd=days[d2]; sonnet+=dd.sonnet||0; haiku+=dd.haiku||0; opus+=dd.opus||0; tok+=dd.tok||0; greetTok+=dd.greetTok||0; gbp+=dd.gbp||0; calls+=dd.calls||0; } } }
+    return { sonnet:sonnet, haiku:haiku, opus:opus, tok:tok, greetTok:greetTok, gbp:gbp, calls:calls };
+  }
   function _mountCombinedRange(){
     var host=el('aimeter-allrange'); if(!host) return;
     var todayStr=_localDate(new Date());
     var allDays={}; for(var u in _byUser){ for(var d in _byUser[u].days){ allDays[d]=1; } }
     var dayKeys=Object.keys(allDays).sort();
     if(!dayKeys.length){ host.innerHTML=''; return; }
-    var earliest=dayKeys[0];
     host.innerHTML='<div class="atl-group aimeter-drange" data-atl-group="time">'+
          '<button type="button" class="atl-group-head" id="aimeter-all-head" aria-expanded="false">'+
            '<span class="atl-group-label">'+_t('All traders','Todos los traders')+'</span>'+
@@ -46047,25 +46060,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
            '<label class="atl-date-field"><span>'+_t('To','Hasta')+'</span><input type="date" id="aimeter-all-to" class="atl-date-input" max="'+todayStr+'" value="'+todayStr+'"></label>'+
            '<button type="button" class="atl-pill" id="aimeter-all-clear">'+_t('Clear','Borrar')+'</button>'+
          '</div>'+
-       '</div><div id="aimeter-all-list"></div>';
-    function renderCombined(){
+       '</div>';
+    function apply(){
       var from=(el('aimeter-all-from')||{}).value||'', to=(el('aimeter-all-to')||{}).value||'';
-      var lo=from||earliest, hi=to||todayStr; if(lo>hi){ var tmp=lo; lo=hi; hi=tmp; }
-      var sonnet=0,haiku=0,opus=0,tok=0,greetTok=0,gbp=0,calls=0;
-      for(var u in _byUser){ var days=_byUser[u].days; for(var d in days){ if(d>=lo && d<=hi){ var dd=days[d]; sonnet+=dd.sonnet||0; haiku+=dd.haiku||0; opus+=dd.opus||0; tok+=dd.tok||0; greetTok+=dd.greetTok||0; gbp+=dd.gbp||0; calls+=dd.calls||0; } } }
-      var chatTok=Math.max(0, tok-greetTok);
+      _allRange.from=from; _allRange.to=to;
       var valEl=el('aimeter-all-val'); if(valEl) valEl.textContent=(from||to)?((from||'…')+' → '+(to||'…')):_t('All dates','Todas las fechas');
-      var list=el('aimeter-all-list'); if(!list) return;
-      if(!calls){ list.innerHTML='<div class="empty">'+_t('No usage in this range.','Sin uso en este rango.')+'</div>'; return; }
-      // Same column layout as the per-trader table below (Trader-name-first) so the columns line up.
-      list.innerHTML='<table class="stb-tbl aimeter-tbl" style="margin-top:14px;"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody><tr><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(sonnet+opus)+'</td><td>'+haiku+'</td><td class="stb-hide-sm">'+fmtTok(greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(gbp)+'</td></tr></tbody></table>';
+      try { paintTable(); } catch(e){}   // re-render the main table so the "All traders" row reflects the new range
     }
     var fEl=el('aimeter-all-from'), tEl=el('aimeter-all-to');
-    if(fEl) fEl.addEventListener('change', renderCombined);
-    if(tEl) tEl.addEventListener('change', renderCombined);
+    if(fEl) fEl.addEventListener('change', apply);
+    if(tEl) tEl.addEventListener('change', apply);
     var headEl=el('aimeter-all-head'); if(headEl) headEl.addEventListener('click', function(){ var g=headEl.closest('.atl-group'); if(!g) return; var open=g.classList.toggle('open'); headEl.setAttribute('aria-expanded', open?'true':'false'); });
-    var clrEl=el('aimeter-all-clear'); if(clrEl) clrEl.addEventListener('click', function(){ if(fEl) fEl.value=''; if(tEl) tEl.value=''; renderCombined(); });
-    renderCombined();
+    var clrEl=el('aimeter-all-clear'); if(clrEl) clrEl.addEventListener('click', function(){ if(fEl) fEl.value=''; if(tEl) tEl.value=''; apply(); });
+    apply();
   }
   function grandGbp(){ var t=0; for(var u in _byUser) t+=_byUser[u].gbp; return t; }
   // The admin's remaining Anthropic credit BALANCE (copied from claude.com) lives in Supabase AUTH
@@ -46152,6 +46159,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(q) users=users.filter(function(u){ return (_names[u]||'').toLowerCase().indexOf(q)>=0; });
     if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?_t('No trader matches “','Ningún trader coincide con “')+esc(q)+'”.':_t('No AI usage recorded yet.','Aún no hay uso de IA registrado.'))+'</div>'; return; }
     var h='<table class="stb-tbl aimeter-tbl"><thead><tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s AI greetings','Tokens gastados en los saludos de IA de este miembro')+'">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s chat questions','Tokens gastados en las preguntas de chat de este miembro')+'">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr></thead><tbody>';
+    // "All traders" summary row at the TOP, sharing the same header/columns; a dashed border below it
+    // (.aimeter-allrow) separates it from the individual members. Reflects the All-traders date picker.
+    var _ct=_combinedTotals(); var _ctChat=Math.max(0, _ct.tok-_ct.greetTok);
+    h+='<tr class="aimeter-allrow"><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(_ct.sonnet+_ct.opus)+'</td><td>'+_ct.haiku+'</td><td class="stb-hide-sm">'+fmtTok(_ct.greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(_ctChat)+'</td><td class="stb-r bad">'+fmtGbp(_ct.gbp)+'</td></tr>';
     users.forEach(function(u){ var b=_byUser[u], nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr, chatTok=Math.max(0, tok-(b.greetTok||0));
       h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="'+_t('Click for day / week / month breakdown','Toca para ver el desglose por día / semana / mes')+'"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
     });
