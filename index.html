@@ -21106,7 +21106,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-05 09:40 UTC';
+  window.ST_BUILD = '2026-08-05 10:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32319,9 +32319,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // changes when the underlying numbers do (a logged/edited trade) — so reloads reuse the same-day line
     // for FREE, and a real data change (or a new day / language switch) regenerates.
     var _greetCache = {}, _greetInflight = {}, _greetCacheSig = {};
-    var GREET_LS = 'st_ai_greet_v3';
+    var GREET_LS = 'st_ai_greet_v4';   // v4: flush any cached "I don't have your line…" meta-replies
     function _greetStore() { try { return JSON.parse(localStorage.getItem(GREET_LS) || '{}') || {}; } catch (e) { return {}; } }
     function _greetStoreSave(o) { try { localStorage.setItem(GREET_LS, JSON.stringify(o)); } catch (e) {} }
+    // A greeting must be a REWRITTEN line — never a model meta/clarification ("I don't have your line,
+    // paste it…"). Reject those on cache-read AND after generation so they can't show or persist.
+    function _greetIsBad(t){ return /(paste|i don'?t have|i do not have|the exact line|provide the|which line|i need to pause|couldn'?t find|can'?t find|rewrite it for you|no tengo|pega la|cu[aá]l l[ií]nea)/i.test(String(t||'')); }
     // Cross-device layer: the same day's greetings are also cached in the SYNCED journal
     // (data._greetSync), so a second device that pulls the journal reuses them instead of
     // paying to regenerate. Keyed like the localStorage cache: surface|lang → {day,sig,text}.
@@ -32340,31 +32343,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try {
         if (!el || !canGreet()) return;
         var seed = (el.__greetSeed != null) ? String(el.__greetSeed) : (el.textContent || '');
-        seed = seed.trim(); if (!seed) return;
+        seed = seed.trim(); if (!seed || !/[A-Za-zÀ-ÿ]/.test(seed)) return;   // need a REAL line (letters), else the AI is asked to rewrite nothing
         var mentor = el.querySelector('.mentor-greet-msg'); var mentorHTML = mentor ? (' ' + mentor.outerHTML) : '';
         var lang = es() ? 'es' : 'en';
         var key = (surface || 'bias') + '|' + lang;
         var today = (typeof todayKey === 'function') ? todayKey() : '';
-        // Signature = ONLY the numbers in the seed (NOT the time of day). So a reload at ANY time reuses
-        // the already-generated greeting for ZERO tokens; it regenerates only on a NEW DAY or a real DATA
-        // change (a logged/edited trade changes the numbers). Time-of-day was previously in the signature,
-        // which made every slot rollover (5×/day) re-charge for the same greetings on the next reload.
-        var sig = (seed.match(/\d+/g) || []).join('.');
+        // Time-of-day is in the signature ONLY when the greeting actually MENTIONS a time of day (its
+        // rule-based opener, e.g. "Good morning" / "Late night"). Those regenerate when the slot rolls
+        // over so they stay correct (no "morning" at 11pm). A greeting that does NOT mention time of day
+        // gets a data-only signature → it caches all day and reloads cost ZERO tokens.
+        var _mentionsTime = /(morning|afternoon|evening|tonight|\bnight\b|midday|\bnoon\b|midnight|dawn|dusk|late[- ]?night|ma[ñn]ana|\btarde|\bnoche|madrugada|mediod[íi]a|buenos d[íi]as)/i.test(seed);
+        var _slot = _mentionsTime ? ((typeof _timeSlot === 'function') ? _timeSlot() : (typeof window.__stTimeSlot === 'function' ? window.__stTimeSlot() : '')) : '';
+        var sig = _slot + '|' + (seed.match(/\d+/g) || []).join('.');
         var vkey = today + '|' + sig;
         var _put = (typeof window.__stSetGreetHTML === 'function') ? window.__stSetGreetHTML : function (e2, h) { e2.innerHTML = h; };
-        // 1) Session cache — reuse unless the day or the data numbers changed.
-        if (_greetCache[key] && _greetCacheSig[key] === vkey) { el.__aiPending = false; _put(el, _greetCache[key] + mentorHTML); return; }
+        // 1) Session cache — reuse unless the day or the data numbers changed (and never reuse a bad line).
+        if (_greetCache[key] && _greetCacheSig[key] === vkey && !_greetIsBad(_greetCache[key])) { el.__aiPending = false; _put(el, _greetCache[key] + mentorHTML); return; }
         // 2) localStorage cache — reuse the same-day, same-data line so reloads (and the post-sync
         //    re-render that bumps the greeting nonce) cost ZERO tokens.
         {
           var _hit = _greetStore()[key];
-          if (_hit && _hit.day === today && _hit.sig === sig && _hit.text) { _greetCache[key] = _hit.text; _greetCacheSig[key] = vkey; el.__aiPending = false; _put(el, _hit.text + mentorHTML); return; }
+          if (_hit && _hit.day === today && _hit.sig === sig && _hit.text && !_greetIsBad(_hit.text)) { _greetCache[key] = _hit.text; _greetCacheSig[key] = vkey; el.__aiPending = false; _put(el, _hit.text + mentorHTML); return; }
         }
         // 3) Cross-device cache — reuse a greeting another device already generated today
         //    (synced via the journal); mirror it into localStorage so later reloads are instant.
         {
           var _sh = _greetSyncGet(key);
-          if (_sh && _sh.day === today && _sh.sig === sig && _sh.text) {
+          if (_sh && _sh.day === today && _sh.sig === sig && _sh.text && !_greetIsBad(_sh.text)) {
             _greetCache[key] = _sh.text; _greetCacheSig[key] = vkey;
             try { var _s2 = _greetStore(); _s2[key] = { day: today, sig: sig, text: _sh.text }; _greetStoreSave(_s2); } catch (e) {}
             el.__aiPending = false; _put(el, _sh.text + mentorHTML); return;
@@ -32392,7 +32397,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         call('greet', [{ role: 'user', content: prompt }]).then(function (reply) {
           _greetInflight[key] = 0; el.__aiPending = false;
           reply = String(reply || '').replace(/^["'\s]+|["'\s]+$/g, '');
-          if (!reply) { if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} return; }   // empty → type the seed we already have
+          // Empty, OR a meta/clarification ("I don't have your line, paste it…") → don't cache or show it;
+          // fall back to the rule-based seed we already have.
+          if (!reply || _greetIsBad(reply)) { if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} return; }
           var out = esc(reply);
           var nm = (typeof data !== 'undefined' && data.userName) ? String(data.userName).trim() : '';
           if (nm) out = out.split(esc(nm)).join('<span class="greet-name">' + esc(nm) + '</span>');
