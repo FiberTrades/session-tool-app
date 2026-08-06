@@ -21106,7 +21106,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-06 11:30 UTC';
+  window.ST_BUILD = '2026-08-06 12:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -30008,6 +30008,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
   }
 
+  // Released "Actual" values are fetched separately (fetchAndMergeActuals) and get merged
+  // into _calendarCache.events. But that cache is rebuilt from actual-less XML whenever a
+  // background refresh runs (backgroundUpgradeCache) or a sync overwrites it — which silently
+  // wipes the merged actuals, so a later re-render (Today/Tomorrow/This Week) showed blanks
+  // until the next reload. Fix: keep the last-fetched actuals in a session-stable lookup and
+  // RE-APPLY them at every render, independent of what happened to cache.events.
+  var _stActualsLookup = null;     // Map<`${easternDateKey}|${country}|${title}`, actual>
+  var _stActualsEtFmt  = null;
+  function _overlayActuals(events) {
+    if (!_stActualsLookup || !_stActualsLookup.size || !Array.isArray(events)) return;
+    if (!_stActualsEtFmt) _stActualsEtFmt = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
+    events.forEach(function (e) {
+      if (!e || !e.when || !e.country || !e.title) return;
+      var dt = (typeof e.when === 'string') ? new Date(e.when) : e.when;
+      if (isNaN(dt.getTime())) return;
+      var val = _stActualsLookup.get(_stActualsEtFmt.format(dt) + '|' + e.country + '|' + e.title);
+      if (val) e.actual = val;
+    });
+  }
+
   // Render the calendar body from cached events using the current filter state.
   // Called on filter changes; doesn't refetch the network feed.
   function renderCalendarFromCache() {
@@ -30027,6 +30047,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return;
     }
     const events = cache.events.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
+    _overlayActuals(events);   // re-apply released actuals every render (survives cache rebuilds / tab switches)
     const filtered = applyCalendarFilters(events);
     renderEconomicCalendarUI(filtered.length === 0 ? { kind: 'empty_filtered' } : { kind: 'ok', events: filtered });
   }
@@ -30989,6 +31010,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!a || !a.dateKey || !a.country || !a.title || !a.actual) return;
       lookup.set(`${a.dateKey}|${a.country}|${a.title}`, a.actual);
     });
+    _stActualsLookup = lookup;   // keep for render-time re-application (survives cache rebuilds)
     // Eastern-time date formatter — reused per event below.
     const etFmt = new Intl.DateTimeFormat('en-CA', {
       year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York'
