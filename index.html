@@ -21106,7 +21106,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-05 10:15 UTC';
+  window.ST_BUILD = '2026-08-06 11:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -46015,6 +46015,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _localDate(dt){ var y=dt.getFullYear(), m=('0'+(dt.getMonth()+1)).slice(-2), d=('0'+dt.getDate()).slice(-2); return y+'-'+m+'-'+d; }
 
   var _busy=false, _byUser={}, _names={}, _allRange={from:'',to:''};   // _allRange = the "All traders" summary-row date scope
+  var ECA_UID='00000000-0000-0000-0000-000000000eca';   // system user_id for economic-calendar-actuals fetches (mode 'ecafetch') — its own column, not a member
   function render(){
     if(!isAdmin()) return;
     _applyStatic();
@@ -46040,16 +46041,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _byUser={};
     rows.forEach(function(row){
       var u=row.user_id; if(!u) return;
-      if(!_byUser[u]) _byUser[u]={ sonnet:0, haiku:0, opus:0, other:0, inT:0, outT:0, cw:0, cr:0, gbp:0, calls:0, greetTok:0, greetGbp:0, days:{} };
+      if(!_byUser[u]) _byUser[u]={ sonnet:0, haiku:0, opus:0, other:0, inT:0, outT:0, cw:0, cr:0, gbp:0, calls:0, greetTok:0, greetGbp:0, ecaTok:0, ecaGbp:0, days:{} };
       var b=_byUser[u], k=modelKind(row.model);
       var inT=+row.input_tokens||0, outT=+row.output_tokens||0, cw=+row.cache_creation_tokens||0, cr=+row.cache_read_tokens||0, calls=+row.calls||0;
       var g=costGbp(row.model,inT,outT,cw,cr);
       b[k]+=calls; b.calls+=calls; b.inT+=inT; b.outT+=outT; b.cw+=cw; b.cr+=cr; b.gbp+=g;
-      var rowTok=(inT+outT+cw+cr), isGreet=(String(row.mode||'')==='greet');
+      var rowTok=(inT+outT+cw+cr), isGreet=(String(row.mode||'')==='greet'), isEca=(String(row.mode||'')==='ecafetch');
       if(isGreet){ b.greetTok += rowTok; b.greetGbp += g; }   // greeting calls (already in the totals; broken out here)
+      if(isEca){ b.ecaTok += rowTok; b.ecaGbp += g; }         // economic-calendar-actuals fetches (own column)
       var day=row.day?String(row.day):null;
-      if(day){ if(!b.days[day]) b.days[day]={ gbp:0, calls:0, sonnet:0, haiku:0, opus:0, other:0, tok:0, greetTok:0 };
-        var dd=b.days[day]; dd.gbp+=g; dd.calls+=calls; dd[k]+=calls; dd.tok+=rowTok; if(isGreet) dd.greetTok+=rowTok; }
+      if(day){ if(!b.days[day]) b.days[day]={ gbp:0, calls:0, sonnet:0, haiku:0, opus:0, other:0, tok:0, greetTok:0, ecaTok:0 };
+        var dd=b.days[day]; dd.gbp+=g; dd.calls+=calls; dd[k]+=calls; dd.tok+=rowTok; if(isGreet) dd.greetTok+=rowTok; if(isEca) dd.ecaTok+=rowTok; }
     });
   }
   // COMBINED spend across ALL traders, for the chosen From/To — summed by _combinedTotals() and shown
@@ -46061,9 +46063,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var earliest=dayKeys.length?dayKeys[0]:'';
     var from=_allRange.from||'', to=_allRange.to||'';
     var lo=from||earliest, hi=to||todayStr; if(lo>hi){ var tmp=lo; lo=hi; hi=tmp; }
-    var sonnet=0,haiku=0,opus=0,tok=0,greetTok=0,gbp=0,calls=0;
-    for(var u2 in _byUser){ var days=_byUser[u2].days; for(var d2 in days){ if(d2>=lo && d2<=hi){ var dd=days[d2]; sonnet+=dd.sonnet||0; haiku+=dd.haiku||0; opus+=dd.opus||0; tok+=dd.tok||0; greetTok+=dd.greetTok||0; gbp+=dd.gbp||0; calls+=dd.calls||0; } } }
-    return { sonnet:sonnet, haiku:haiku, opus:opus, tok:tok, greetTok:greetTok, gbp:gbp, calls:calls };
+    var sonnet=0,haiku=0,opus=0,tok=0,greetTok=0,ecaTok=0,gbp=0,calls=0;
+    for(var u2 in _byUser){ var days=_byUser[u2].days; for(var d2 in days){ if(d2>=lo && d2<=hi){ var dd=days[d2]; sonnet+=dd.sonnet||0; haiku+=dd.haiku||0; opus+=dd.opus||0; tok+=dd.tok||0; greetTok+=dd.greetTok||0; ecaTok+=dd.ecaTok||0; gbp+=dd.gbp||0; calls+=dd.calls||0; } } }
+    return { sonnet:sonnet, haiku:haiku, opus:opus, tok:tok, greetTok:greetTok, ecaTok:ecaTok, gbp:gbp, calls:calls };
   }
   function _mountCombinedRange(){
     var host=el('aimeter-allrange'); if(!host) return;
@@ -46177,20 +46179,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function paintTable(){
     var tableEl=el('aimeter-table'); if(!tableEl) return;
     var q=((el('aimeter-search')||{}).value||'').trim().toLowerCase();
-    var users=Object.keys(_byUser).sort(function(a,b){ return _byUser[b].gbp-_byUser[a].gbp; });
+    var users=Object.keys(_byUser).filter(function(u){ return u!==ECA_UID; }).sort(function(a,b){ return _byUser[b].gbp-_byUser[a].gbp; });
     if(q) users=users.filter(function(u){ return (_names[u]||'').toLowerCase().indexOf(q)>=0; });
     if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?_t('No trader matches “','Ningún trader coincide con “')+esc(q)+'”.':_t('No AI usage recorded yet.','Aún no hay uso de IA registrado.'))+'</div>'; return; }
     // Header + "All traders" summary + dashed separator all live in <thead>; the thead is sticky inside a
     // bounded scroll box (.aimeter-scroll), so with many members the header and the All-traders total stay
     // pinned while only the member rows scroll. One table = header/body columns always line up.
-    var _ct=_combinedTotals(); var _ctChat=Math.max(0, _ct.tok-_ct.greetTok);
+    var _ct=_combinedTotals(); var _ctChat=Math.max(0, _ct.tok-_ct.greetTok-(_ct.ecaTok||0));
     var h='<div class="aimeter-scroll"><table class="stb-tbl aimeter-tbl"><thead>'+
-      '<tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s AI greetings','Tokens gastados en los saludos de IA de este miembro')+'">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s chat questions','Tokens gastados en las preguntas de chat de este miembro')+'">'+_t('Chat tokens','Tokens chat')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr>'+
-      '<tr class="aimeter-allrow"><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(_ct.sonnet+_ct.opus)+'</td><td>'+_ct.haiku+'</td><td class="stb-hide-sm">'+fmtTok(_ct.greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(_ctChat)+'</td><td class="stb-r bad">'+fmtGbp(_ct.gbp)+'</td></tr>'+
-      '<tr class="aimeter-sep"><td colspan="6"></td></tr>'+
+      '<tr><th>'+_t('Trader','Trader')+'</th><th>Sonnet</th><th>Haiku</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s AI greetings','Tokens gastados en los saludos de IA de este miembro')+'">'+_t('Greet tokens','Tokens saludo')+'</th><th class="stb-hide-sm" title="'+_t('Tokens spent on this member’s chat questions','Tokens gastados en las preguntas de chat de este miembro')+'">'+_t('Chat tokens','Tokens chat')+'</th><th class="stb-hide-sm" title="'+_t('Tokens spent by the economic-calendar actuals fetcher (system, not a member)','Tokens del buscador de datos reales del calendario económico (sistema, no un miembro)')+'">'+_t('ECA fetch','ECA fetch')+'</th><th>'+_t('$ spent','$ gastado')+'</th></tr>'+
+      '<tr class="aimeter-allrow"><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(_ct.sonnet+_ct.opus)+'</td><td>'+_ct.haiku+'</td><td class="stb-hide-sm">'+fmtTok(_ct.greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(_ctChat)+'</td><td class="stb-hide-sm">'+fmtTok(_ct.ecaTok||0)+'</td><td class="stb-r bad">'+fmtGbp(_ct.gbp)+'</td></tr>'+
+      '<tr class="aimeter-sep"><td colspan="7"></td></tr>'+
       '</thead><tbody>';
-    users.forEach(function(u){ var b=_byUser[u], nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr, chatTok=Math.max(0, tok-(b.greetTok||0));
-      h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="'+_t('Click for day / week / month breakdown','Toca para ver el desglose por día / semana / mes')+'"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
+    users.forEach(function(u){ var b=_byUser[u], nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr, chatTok=Math.max(0, tok-(b.greetTok||0)-(b.ecaTok||0));
+      h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="'+_t('Click for day / week / month breakdown','Toca para ver el desglose por día / semana / mes')+'"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-hide-sm">'+fmtTok(b.ecaTok||0)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
     });
     h+='</tbody></table></div>'; tableEl.innerHTML=h;
     Array.prototype.forEach.call(tableEl.querySelectorAll('.aimeter-row'), function(tr){ tr.addEventListener('click', function(){ showDetail(tr.getAttribute('data-uid')); }); });
