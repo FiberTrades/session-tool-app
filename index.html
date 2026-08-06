@@ -11858,6 +11858,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         } catch (e) {}
         var k = String(row.ticket), ex = rows[k] || {};
         rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '' };
+        // Remember any ticket that was shown OPEN in the feed. A realtime close event flips the
+        // chip closed (here) BEFORE the close-watcher runs, so its "is it still open?" guard would
+        // otherwise swallow the close pop-up. This lets the watcher fire for a trade that WAS open.
+        try { if (!rows[k].closed) { (window.__stLiveEverOpen = window.__stLiveEverOpen || {})[k] = true; } } catch (e) {}
         render();
         // Only refresh the greeting when the SUMMARY it reads actually changes — a trade opened,
         // closed, flipped side, or its result changed. An OPEN trade's live P&L ticks every second
@@ -21106,7 +21110,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-06 13:00 UTC';
+  window.ST_BUILD = '2026-08-06 13:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -33523,7 +33527,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if (!r || r.ticket == null || !r.close_time) return;   // only rows the EA has closed
           var tk = String(r.ticket);
           if (_liveClosedSeen[tk]) return;                       // handled once this app session
-          if (!window.__stLive.isOpen(r.ticket)) return;         // only trades still shown ACTIVE in the feed
+          if (!window.__stLive.isOpen(r.ticket) && !((window.__stLiveEverOpen || {})[tk])) return;   // fire for trades shown active NOW or earlier this session (a realtime close flips the chip closed before this runs)
           _liveClosedSeen[tk] = true;
           var dir = /^(sell|short)/.test(String(r.direction || '').toLowerCase()) ? 'short' : 'long';
           // Flip the chip to its result (upsert with a close time marks it closed).
