@@ -31019,7 +31019,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const actualsUrl = baseUrl.replace(/\?.*$/, '').replace(/\/$/, '') + '/actuals';
     let json;
     try {
-      const resp = await fetch(actualsUrl, { method: 'GET' });
+      // no-store: the worker refreshes actuals at 11:00/16:00/21:00 London, and
+      // /actuals is browser-cached for a few minutes — bypass that so an auto-poll
+      // always sees the worker's latest copy rather than a stale cached one.
+      const resp = await fetch(actualsUrl, { method: 'GET', cache: 'no-store' });
       if (!resp.ok) return;
       json = await resp.json();
     } catch (e) { return; }
@@ -31052,6 +31055,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       renderCalendarFromCache();
     }
   }
+
+  // Keep actuals fresh WITHOUT a manual reload. The worker refetches released
+  // figures at 11:00/16:00/21:00 London; an app left open would otherwise show the
+  // old numbers until reload. Poll the cheap read-only /actuals on a timer, and
+  // also the moment the tab regains focus (the common case: user comes back after
+  // a fetch time). fetchAndMergeActuals only re-renders when a value actually
+  // changed, so idle polls are invisible and free of visual churn.
+  (function installActualsAutoRefresh() {
+    if (window.__stActualsPollInstalled) return;
+    window.__stActualsPollInstalled = true;
+    const POLL_MS = 5 * 60 * 1000;   // every 5 min
+    function poll() {
+      try {
+        if (document.visibilityState === 'hidden') return;      // don't poll a backgrounded tab
+        if (typeof data === 'undefined' || !data || !data._calendarCache) return;   // nothing to decorate yet
+        fetchAndMergeActuals();
+      } catch (e) { /* non-fatal */ }
+    }
+    setInterval(poll, POLL_MS);
+    document.addEventListener('visibilitychange', function () {
+      if (document.visibilityState === 'visible') poll();
+    });
+  })();
 
   // Single-proxy attempt — used internally by tryFetch.
   // Returns { ok: true, events } on success, { ok: false, error } on failure.
