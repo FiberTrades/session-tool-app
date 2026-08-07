@@ -1,0 +1,261 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trade Replay — prototype</title>
+<script src="https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js"></script>
+<style>
+  :root{
+    --bg:#0B0A0D; --bg-elev:#131217; --bg-elev2:#1B1A21; --border:#2A2833; --border-2:#332F3C;
+    --text:#F4F3F6; --text-mid:#c0c0c0; --text-dim:#888; --accent:#f472b6;
+    --good:#4ECD8B; --bad:#E56767; --info:#60a5fa; --radius:12px;
+    --mono:'DM Mono',ui-monospace,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);font-family:var(--mono);
+    display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}
+  .replay{width:min(980px,100%);background:var(--bg-elev);border:1px solid var(--border-2);
+    border-radius:var(--radius);overflow:hidden;box-shadow:0 24px 64px rgba(0,0,0,.6)}
+  /* header */
+  .rp-head{display:flex;align-items:center;gap:16px;padding:14px 18px;border-bottom:1px solid var(--border-2);flex-wrap:wrap}
+  .rp-sym{font-size:15px;font-weight:600;letter-spacing:.12em;text-transform:uppercase}
+  .rp-side{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.1em;
+    text-transform:uppercase;padding:4px 10px;border-radius:6px}
+  .rp-side.long{color:var(--good);background:rgba(78,205,139,.15)}
+  .rp-side.short{color:var(--bad);background:rgba(229,103,103,.15)}
+  .rp-date{font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim)}
+  .rp-spacer{flex:1}
+  .rp-result{text-align:right;line-height:1.25}
+  .rp-r{font-size:18px;font-weight:600}
+  .rp-r.win{color:var(--good)} .rp-r.lose{color:var(--bad)} .rp-r.be{color:var(--info)}
+  .rp-pnl{font-size:11px;color:var(--text-dim);letter-spacing:.06em}
+  /* chart */
+  .rp-chart-wrap{position:relative}
+  #chart{height:440px;width:100%}
+  .rp-liveR{position:absolute;top:12px;left:14px;z-index:5;font-size:12px;letter-spacing:.08em;
+    background:rgba(19,18,23,.82);border:1px solid var(--border-2);border-radius:8px;padding:7px 11px;pointer-events:none}
+  .rp-liveR b{font-size:15px}
+  .lr-win{color:var(--good)} .lr-lose{color:var(--bad)} .lr-flat{color:var(--text-mid)}
+  /* legend row */
+  .rp-legend{display:flex;gap:16px;flex-wrap:wrap;padding:9px 18px;border-top:1px solid var(--border-2);
+    border-bottom:1px solid var(--border-2);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim)}
+  .rp-legend span{display:inline-flex;align-items:center;gap:6px}
+  .dot{width:9px;height:2px;border-radius:2px;display:inline-block}
+  /* controls */
+  .rp-controls{display:flex;align-items:center;gap:10px;padding:14px 18px;flex-wrap:wrap}
+  .rp-btn{display:inline-flex;align-items:center;justify-content:center;gap:6px;background:transparent;
+    border:1px solid var(--border-2);color:var(--text-mid);border-radius:8px;height:38px;min-width:38px;padding:0 12px;
+    font-family:var(--mono);font-size:13px;cursor:pointer;transition:border-color .15s,color .15s,background .15s}
+  .rp-btn:hover{border-color:var(--text-dim);color:var(--text)}
+  .rp-btn.primary{background:var(--accent);border-color:var(--accent);color:#1a0a12;font-weight:600;min-width:96px}
+  .rp-btn.primary:hover{filter:brightness(1.06)}
+  .rp-speeds{display:inline-flex;border:1px solid var(--border-2);border-radius:8px;overflow:hidden}
+  .rp-speed{background:transparent;border:0;border-left:1px solid var(--border-2);color:var(--text-dim);
+    height:38px;padding:0 12px;font-family:var(--mono);font-size:12px;cursor:pointer}
+  .rp-speed:first-child{border-left:0}
+  .rp-speed.active{background:var(--bg-elev2);color:var(--accent)}
+  .rp-scrub{flex:1;min-width:160px;display:flex;align-items:center;gap:10px}
+  .rp-scrub input{flex:1;accent-color:var(--accent);height:4px}
+  .rp-clock{font-size:12px;color:var(--text-mid);letter-spacing:.06em;min-width:64px;text-align:right}
+  .rp-note{padding:0 18px 16px;font-size:11px;color:var(--text-dim);line-height:1.6}
+  .rp-note b{color:var(--text-mid);font-weight:500}
+  .ph{padding:80px 20px;text-align:center;color:var(--text-dim);font-size:13px}
+</style>
+</head>
+<body>
+  <div class="replay">
+    <div class="rp-head">
+      <span class="rp-sym" id="h-sym">EURUSD</span>
+      <span class="rp-side long" id="h-side">↑ Long</span>
+      <span class="rp-date" id="h-date">Wed 05 Aug 2026 · 15:12</span>
+      <span class="rp-spacer"></span>
+      <div class="rp-result">
+        <div class="rp-r win" id="h-r">+2.00R</div>
+        <div class="rp-pnl" id="h-pnl">+£600 · 60.0 pips</div>
+      </div>
+    </div>
+    <div class="rp-chart-wrap">
+      <div class="rp-liveR" id="liveR">—</div>
+      <div id="chart"><div class="ph" id="ph">Loading TradingView chart…</div></div>
+    </div>
+    <div class="rp-legend">
+      <span><i class="dot" style="background:var(--accent)"></i> Entry</span>
+      <span><i class="dot" style="background:var(--bad)"></i> Stop loss</span>
+      <span><i class="dot" style="background:var(--good)"></i> Take profit</span>
+      <span><i class="dot" style="background:var(--text-mid)"></i> Exit</span>
+    </div>
+    <div class="rp-controls">
+      <button class="rp-btn" id="btn-restart" title="Restart">⏮</button>
+      <button class="rp-btn" id="btn-step-back" title="Step back">◀</button>
+      <button class="rp-btn primary" id="btn-play">▶ Play</button>
+      <button class="rp-btn" id="btn-step-fwd" title="Step forward">▶</button>
+      <div class="rp-speeds" id="speeds">
+        <button class="rp-speed active" data-mult="1">1×</button>
+        <button class="rp-speed" data-mult="10">10×</button>
+        <button class="rp-speed" data-mult="30">30×</button>
+      </div>
+      <div class="rp-scrub">
+        <input type="range" id="scrub" min="0" max="100" value="0" step="1">
+        <span class="rp-clock" id="clock">--:--</span>
+      </div>
+    </div>
+    <div class="rp-note">
+      <b>Prototype</b> — sample EURUSD trade on 1-minute candles. In the app these candles come from your MT5 broker feed and
+      the markers are your real fills. Watch the drawdown toward your stop before it ran to target — the exact moment your
+      hands got sweaty. Tagging-while-watching (FOMO / revenge / early exit) will attach to this replay in the Daily Review.
+    </div>
+  </div>
+
+<script>
+(function(){
+  var LWC = window.LightweightCharts;
+  var phEl = document.getElementById('ph');
+  if(!LWC){ phEl.textContent = 'Chart library failed to load (needs network for the CDN in this prototype).'; return; }
+
+  // ---- Sample trade + candles ------------------------------------------------
+  // Deterministic PRNG so the sample looks identical every load.
+  function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;var t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};}
+  var rnd = mulberry32(20260805);
+
+  var TOTAL = 200;                 // 1-min candles
+  var START_TS = Math.floor(new Date('2026-08-05T13:52:00Z').getTime()/1000); // chart time (UTC seconds)
+  var ENTRY_I = 80, EXIT_I = 150;  // candle indices of the fill events
+  var REPLAY_START = 45;           // where the replay begins (pre-trade context)
+  var PIP = 0.0001;
+  var ENTRY = 1.08500, SL = 1.08200, TP = 1.09100;   // long: 30-pip risk, 60-pip target = 2R
+  var RISK_GBP = 300;              // £10/pip * 30 pips
+
+  // Build a close-price path anchored to the plan so the candles actually sit on
+  // the entry / SL / TP levels and tell the story: approach entry, dip toward the
+  // stop (the scary near-miss), then rally to target and exit there.
+  //   [candle index, price] anchors — linearly interpolated, then lightly noised.
+  var ANCHORS = [
+    [0,        1.08430],
+    [REPLAY_START, 1.08455],
+    [ENTRY_I,  ENTRY],            // 80  → entry 1.08500
+    [ENTRY_I+22, SL + 5*PIP],    // 102 → 1.08250, a near-miss on the 1.08200 stop
+    [EXIT_I,   TP],              // 150 → take-profit 1.09100 (exit = +2R)
+    [TOTAL-1,  TP - 6*PIP]       // drift down a touch after the exit
+  ];
+  function anchoredPrice(i){
+    for(var a=0;a<ANCHORS.length-1;a++){
+      var x0=ANCHORS[a][0], x1=ANCHORS[a+1][0];
+      if(i>=x0 && i<=x1){ var f=(i-x0)/(x1-x0); return ANCHORS[a][1] + f*(ANCHORS[a+1][1]-ANCHORS[a][1]); }
+    }
+    return ANCHORS[ANCHORS.length-1][1];
+  }
+  var closes = [];
+  for(var i=0;i<TOTAL;i++){
+    var base = anchoredPrice(i);
+    var p = base + (rnd()-0.5)*1.4*PIP;
+    if(i>ENTRY_I && i<ENTRY_I+24) p = Math.max(p, SL + 2*PIP);   // never actually tags the stop
+    closes.push(p);
+  }
+  var bars = [];
+  for(var j=0;j<TOTAL;j++){
+    var o = j===0 ? 1.08410 : closes[j-1];
+    var c = closes[j];
+    var hi = Math.max(o,c) + rnd()*1.3*PIP;
+    var lo = Math.min(o,c) - rnd()*1.3*PIP;
+    bars.push({ time: START_TS + j*60, open:+o.toFixed(5), high:+hi.toFixed(5), low:+lo.toFixed(5), close:+c.toFixed(5) });
+  }
+
+  // ---- Chart -----------------------------------------------------------------
+  phEl.remove();
+  var chart = LWC.createChart(document.getElementById('chart'), {
+    layout:{ background:{ color:'#131217' }, textColor:'#c0c0c0', fontFamily:"'DM Mono',monospace" },
+    grid:{ vertLines:{ color:'rgba(255,255,255,0.04)' }, horzLines:{ color:'rgba(255,255,255,0.04)' } },
+    rightPriceScale:{ borderColor:'#332F3C' },
+    timeScale:{ borderColor:'#332F3C', timeVisible:true, secondsVisible:false },
+    crosshair:{ mode:0 },
+    autoSize:true
+  });
+  var series = chart.addCandlestickSeries({
+    upColor:'#4ECD8B', downColor:'#E56767', borderVisible:false,
+    wickUpColor:'#4ECD8B', wickDownColor:'#E56767'
+  });
+
+  // Static price lines for the plan (entry / SL / TP).
+  series.createPriceLine({ price:ENTRY, color:'#f472b6', lineWidth:1, lineStyle:2, title:'Entry 1.08500' });
+  series.createPriceLine({ price:SL,    color:'#E56767', lineWidth:1, lineStyle:2, title:'SL 1.08200' });
+  series.createPriceLine({ price:TP,    color:'#4ECD8B', lineWidth:1, lineStyle:2, title:'TP 1.09100' });
+
+  // ---- Playback state --------------------------------------------------------
+  var cursor = REPLAY_START;       // number of candles revealed
+  var playing = false, mult = 1, timer = null;
+  var BASE_MS = 650;               // 1× = ~0.65s per candle
+
+  var scrub = document.getElementById('scrub');
+  scrub.max = String(TOTAL-1);
+
+  function markers(){
+    var m = [];
+    if(cursor-1 >= ENTRY_I) m.push({ time: bars[ENTRY_I].time, position:'belowBar', color:'#f472b6', shape:'arrowUp', text:'ENTRY' });
+    if(cursor-1 >= EXIT_I)  m.push({ time: bars[EXIT_I].time,  position:'aboveBar', color:'#c0c0c0', shape:'arrowDown', text:'EXIT' });
+    return m;
+  }
+  function liveR(){
+    var el = document.getElementById('liveR');
+    var idx = Math.min(cursor-1, TOTAL-1);
+    if(idx < ENTRY_I){ el.textContent = 'Waiting for entry…'; el.className='rp-liveR lr-flat'; return; }
+    var priceIdx = Math.min(idx, EXIT_I);           // freeze at exit
+    var px = bars[priceIdx].close;
+    var r = (px - ENTRY)/(ENTRY - SL);
+    var pips = (px - ENTRY)/PIP;
+    var gbp = r*RISK_GBP;
+    var cls = r>0.02?'lr-win':(r<-0.02?'lr-lose':'lr-flat');
+    var sign = r>=0?'+':'';
+    var tag = idx>=EXIT_I ? ' · closed' : '';
+    el.className = 'rp-liveR '+cls;
+    el.innerHTML = 'Open P&amp;L  <b>'+sign+r.toFixed(2)+'R</b>  ·  '+sign+Math.round(gbp)+'£  ·  '+sign+pips.toFixed(1)+'p'+tag;
+  }
+  function clockLabel(){
+    var t = bars[Math.min(cursor-1,TOTAL-1)].time*1000;
+    var d = new Date(t);
+    var hh = String(d.getUTCHours()).padStart(2,'0'), mm = String(d.getUTCMinutes()).padStart(2,'0');
+    document.getElementById('clock').textContent = hh+':'+mm;
+  }
+  function render(){
+    series.setData(bars.slice(0, cursor));
+    series.setMarkers(markers());
+    scrub.value = String(cursor-1);
+    liveR(); clockLabel();
+  }
+  function fit(){ chart.timeScale().fitContent(); }
+
+  function tick(){
+    if(cursor >= TOTAL){ pause(); return; }
+    cursor++;
+    render();
+  }
+  function play(){
+    if(cursor>=TOTAL) cursor=REPLAY_START;   // restart if at end
+    playing = true; document.getElementById('btn-play').innerHTML='⏸ Pause';
+    clearInterval(timer);
+    timer = setInterval(tick, Math.max(24, BASE_MS/mult));
+  }
+  function pause(){
+    playing=false; document.getElementById('btn-play').innerHTML='▶ Play'; clearInterval(timer);
+  }
+  function toggle(){ playing?pause():play(); }
+
+  document.getElementById('btn-play').onclick = toggle;
+  document.getElementById('btn-restart').onclick = function(){ pause(); cursor=REPLAY_START; render(); fit(); };
+  document.getElementById('btn-step-fwd').onclick = function(){ pause(); if(cursor<TOTAL){cursor++; render();} };
+  document.getElementById('btn-step-back').onclick = function(){ pause(); if(cursor>1){cursor--; render();} };
+  document.querySelectorAll('.rp-speed').forEach(function(b){
+    b.onclick = function(){
+      document.querySelectorAll('.rp-speed').forEach(function(x){x.classList.remove('active');});
+      b.classList.add('active'); mult = +b.dataset.mult;
+      if(playing) play();   // restart interval at new speed
+    };
+  });
+  scrub.oninput = function(){ pause(); cursor = (+scrub.value)+1; render(); };
+
+  render(); fit();
+  window.addEventListener('resize', fit);
+})();
+</script>
+</body>
+</html>
