@@ -1,6 +1,35 @@
 // =============================================================================
-// FOREX CALENDAR PROXY - Deno Deploy (v15 - gap-driven retry loop)
+// FOREX CALENDAR PROXY - Deno Deploy (v17 - Sonnet as extreme last resort only)
 // =============================================================================
+// WHAT CHANGED FROM v16:
+//   v16 escalated to Sonnet whenever ANYTHING was still missing after Haiku -
+//   too eager (a number Haiku simply hasn't indexed yet would trigger it). v17
+//   makes Sonnet a genuine last resort with PERSISTED per-event miss-counters:
+//   Sonnet is used ONLY for an event that (a) was released >= 3h ago (so the data
+//   definitely exists), (b) Haiku has already failed in >= 3 separate fetches, and
+//   (c) Sonnet hasn't itself already tried twice. Everything else stays pure
+//   Haiku. In normal operation Sonnet never runs; it only fires for a genuinely
+//   stuck print (e.g. an obscure CHF CPI), and even then a bounded number of
+//   times. The counters are stored week-scoped alongside the actuals cache.
+//
+// ---- (v16) data-only "wanted" set ------------------------------------------
+// WHAT CHANGED FROM v15:
+//   1. DATA-ONLY WANTED SET. The gap loop was chasing events that have NO actual
+//      to find - speeches ("President Trump Speaks"), meetings ("OPEC-JMMC
+//      Meetings"), holidays - so "missing" never reached 0 and every scheduled
+//      fetch wasted a Claude call retrying them forever. v16 only treats an event
+//      as wanted if the FF feed gives it a numeric <forecast> OR <previous> - the
+//      reliable signal that it's a DATA RELEASE (speeches/meetings/holidays carry
+//      neither). The loop now converges to genuinely-missing releases only.
+//   2. TIERED MODEL. Cheap Haiku does the bulk (up to 2 rounds); Sonnet is used
+//      ONLY to mop up the handful of releases Haiku still can't fetch (e.g. an
+//      obscure CHF CPI print). Because Sonnet sees only those few events, the
+//      pricier model stays cheap - and when the cache is already complete NEITHER
+//      model is called at all. (Anthropic's web_search uses its own backend, so
+//      "search Google" isn't selectable - the Sonnet mop-up is the reliable way
+//      to close what Haiku's search misses.)
+//
+// ---- (v15) gap-driven retry loop -------------------------------------------
 // WHAT CHANGED FROM v14:
 //   Each individual Haiku call still only surfaces ~6 events per run, so a single
 //   fetch could leave released events without an actual. v15 closes the gap
@@ -52,7 +81,8 @@ const FF_XML_URL      = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
 const FF_XML_NEXT_URL = "https://nfs.faireconomy.media/ff_calendar_nextweek.xml";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
-const ECA_MODEL = "claude-haiku-4-5";   // set to "claude-sonnet-5" for higher recall (costs more per fetch)
+const ECA_MODEL = "claude-haiku-4-5";           // primary (cheap) - does the bulk of the fetching
+const ECA_MODEL_FALLBACK = "claude-sonnet-5";   // mop-up ONLY for events Haiku couldn't fetch (targeted, so still cheap)
 
 const SUPABASE_URL = "https://figozyxoyobixadhqewr.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -135,7 +165,7 @@ async function getSharedActuals(): Promise<{ value: any; updatedAt: number } | n
 // FF XML PARSING
 // =============================================================================
 const ET_FMT = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/New_York" });
-interface FFEvent { currency: string; title: string; dateKey: string; whenMs: number; impact: string; }
+interface FFEvent { currency: string; title: string; dateKey: string; whenMs: number; impact: string; hasNumeric: boolean; }
 
 function xmlTag(block: string, name: string): string {
   const m = block.match(new RegExp("<" + name + ">([\\s\\S]*?)</" + name + ">", "i"));
@@ -167,7 +197,10 @@ function parseFFEvents(xml: string): FFEvent[] {
     if (!title || !currency || !dateStr) continue;
     const whenMs = ffWhenMs(dateStr, timeStr);
     if (whenMs == null) continue;
-    out.push({ currency, title, dateKey: ET_FMT.format(new Date(whenMs)), whenMs, impact });
+    // A DATA RELEASE carries a numeric forecast or previous; speeches, meetings
+    // and holidays carry neither, so they have no "actual" to chase.
+    const hasNumeric = /\d/.test(xmlTag(b, "forecast")) || /\d/.test(xmlTag(b, "previous"));
+    out.push({ currency, title, dateKey: ET_FMT.format(new Date(whenMs)), whenMs, impact, hasNumeric });
   }
   return out;
 }
@@ -203,9 +236,9 @@ function weekRange(): { from: string; to: string } {
 // parsed array, or null on error. Per-round debug is pushed to debug.rounds and the
 // latest round is mirrored to debug.claude for the /status page.
 // deno-lint-ignore no-explicit-any
-async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: number): Promise<any[] | null> {
+async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: number, model: string): Promise<any[] | null> {
   // deno-lint-ignore no-explicit-any
-  const rd: any = { round, asked: targets.length, model: ECA_MODEL };
+  const rd: any = { round, asked: targets.length, model };
   (debug.rounds = debug.rounds || []).push(rd);
   debug.claude = rd;   // latest round, for /status back-compat
   if (!ANTHROPIC_API_KEY) { rd.error = "ANTHROPIC_API_KEY not set"; return null; }
@@ -234,7 +267,7 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
     `Echo the EVENT text, CURRENCY and DATE exactly as given so they can be matched.`;
 
   const reqBody = {
-    model: ECA_MODEL,
+    model,
     max_tokens: 4000,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
     messages: [{ role: "user", content: prompt }],
@@ -251,7 +284,7 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
     if (!resp.ok) { rd.error = data?.error?.message || `HTTP ${resp.status}`; return null; }
   } catch (e) { rd.error = msg(e); return null; }
 
-  try { await recordEcaUsage(data?.usage); } catch { /* */ }
+  try { await recordEcaUsage(data?.usage, model); } catch { /* */ }
 
   const text = (data?.content ?? []).filter((b: any) => b?.type === "text").map((b: any) => b.text || "").join("\n").trim();
   rd.usage = data?.usage || null;
@@ -270,13 +303,13 @@ function extractJsonArray(text: string): any[] | null {
   try { const v = JSON.parse(t); return Array.isArray(v) ? v : null; } catch { return null; }
 }
 // deno-lint-ignore no-explicit-any
-async function recordEcaUsage(usage: any): Promise<void> {
+async function recordEcaUsage(usage: any, model: string): Promise<void> {
   if (!usage || !SUPABASE_SERVICE_ROLE_KEY) return;
   await fetch(`${SUPABASE_URL}/rest/v1/ai_usage`, {
     method: "POST",
     headers: { ...SB_HEADERS, "prefer": "return=minimal" },
     body: JSON.stringify({
-      user_id: ECA_SYSTEM_UID, model: ECA_MODEL, mode: "ecafetch",
+      user_id: ECA_SYSTEM_UID, model, mode: "ecafetch",
       input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0,
       cache_creation_tokens: usage.cache_creation_input_tokens ?? 0, cache_read_tokens: usage.cache_read_input_tokens ?? 0,
       web_search_requests: usage.server_tool_use?.web_search_requests ?? 0,   // billed separately from tokens (~$0.01 each)
@@ -356,41 +389,81 @@ async function refreshActuals(): Promise<boolean> {
 
       const ffEvents = parseFFEvents(xml);
 
-      // Seed the merged set from this week's existing cache (week-scoped so it
-      // resets cleanly on a new week). Keyed by date|currency|title; newer wins.
+      // Seed the merged set + the miss-counters from this week's existing cache
+      // (week-scoped so both reset cleanly on a new week). Keyed by date|ccy|title.
       const wk = currentWeekKey();
       const prevRec = await sbGet("actuals");
-      const prevSameWeek: ActualEntry[] = (prevRec?.value?.weekKey === wk && Array.isArray(prevRec.value.actuals)) ? prevRec.value.actuals : [];
+      const sameWeek = prevRec?.value?.weekKey === wk;
+      const prevSameWeek: ActualEntry[] = (sameWeek && Array.isArray(prevRec.value.actuals)) ? prevRec.value.actuals : [];
       const byKey = new Map<string, ActualEntry>();
       for (const e of prevSameWeek) byKey.set(`${e.dateKey}|${e.country}|${e.title}`, e);
+      // misses[key] = { h, s } : how many FETCHES Haiku / Sonnet have failed this event.
+      // deno-lint-ignore no-explicit-any
+      const misses: Record<string, { h: number; s: number }> = (sameWeek && prevRec.value.misses && typeof prevRec.value.misses === "object") ? { ...prevRec.value.misses } : {};
 
       // What the app can show an actual for = High/Medium impact, and only events
       // whose scheduled time has already passed (so the actual exists to be found).
       const nowMs = Date.now();
       const ffKey = (e: FFEvent) => `${e.dateKey}|${e.currency}|${e.title}`;
-      const wantedReleased = ffEvents.filter((e) => /high|medium/i.test(e.impact) && e.whenMs <= nowMs);
+      const wantedReleased = ffEvents.filter((e) => /high|medium/i.test(e.impact) && e.hasNumeric && e.whenMs <= nowMs);
       debug.wantedReleased = wantedReleased.length;
 
-      // GAP-DRIVEN RETRY LOOP: ask Claude, merge, recompute what's still missing,
-      // and re-ask for ONLY the missing events. Stop when nothing's missing, a
-      // round finds nothing new, or MAX_ROUNDS is hit. No Claude call at all if
-      // the cache is already complete.
-      const MAX_ROUNDS = 3;
-      for (let round = 0; round < MAX_ROUNDS; round++) {
+      const mergeIn = (entries: ActualEntry[]): number => {
+        let n = 0;
+        for (const e of entries) { const k = `${e.dateKey}|${e.country}|${e.title}`; if (!byKey.has(k)) n++; byKey.set(k, e); }
+        if (debug.rounds && debug.rounds.length) debug.rounds[debug.rounds.length - 1].newFound = n;
+        return n;
+      };
+      let roundIdx = 0;
+
+      // PHASE 1 - Haiku does ALL normal work: up to 2 gap-driven rounds, asking
+      // only for the still-missing events each round, stopping early if a round
+      // finds nothing new. Zero calls if the cache is already complete.
+      for (let r = 0; r < 2; r++) {
         const missing = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
         if (!missing.length) break;
-        const claude = await fetchActualsViaClaude(missing, debug, round);
-        if (claude === null) break;   // hard error this round - stop
-        const entries = matchActuals(ffEvents, claude, debug);
-        let newCount = 0;
-        for (const e of entries) { const k = `${e.dateKey}|${e.country}|${e.title}`; if (!byKey.has(k)) newCount++; byKey.set(k, e); }
-        if (debug.rounds && debug.rounds.length) debug.rounds[debug.rounds.length - 1].newFound = newCount;
-        if (newCount === 0) break;    // model is tapped out for now - don't burn rounds
+        const claude = await fetchActualsViaClaude(missing, debug, roundIdx++, ECA_MODEL);
+        if (claude === null) break;
+        if (mergeIn(matchActuals(ffEvents, claude, debug)) === 0) break;
+      }
+
+      // Update the persisted miss-counters: clear found events, and for events
+      // Haiku STILL hasn't got this fetch, bump their Haiku-fail count by one.
+      for (const e of wantedReleased) {
+        const k = ffKey(e);
+        if (byKey.has(k)) { delete misses[k]; }
+        else { misses[k] = misses[k] || { h: 0, s: 0 }; misses[k].h += 1; }
+      }
+
+      // PHASE 2 - Sonnet: EXTREME LAST RESORT only. An event qualifies only if it
+      //   (a) has been released long enough that the data definitely exists,
+      //   (b) Haiku has already failed it in several separate fetches, and
+      //   (c) Sonnet hasn't itself already given up on it.
+      // So freshly-released numbers Haiku just hasn't indexed yet never hit Sonnet;
+      // only genuinely stuck prints do, and each is retried a bounded number of times.
+      const SONNET_MIN_RELEASED_AGE_MS = 3 * 60 * 60 * 1000;   // released >= 3h ago
+      const SONNET_AFTER_HAIKU_FAILS   = 3;                    // Haiku missed it in >= 3 fetches
+      const SONNET_MAX_TRIES           = 2;                    // then give Sonnet at most 2 attempts
+      const sonnetTargets = wantedReleased.filter((e) => {
+        const k = ffKey(e);
+        if (byKey.has(k)) return false;
+        const m = misses[k] || { h: 0, s: 0 };
+        return (nowMs - e.whenMs) >= SONNET_MIN_RELEASED_AGE_MS && m.h >= SONNET_AFTER_HAIKU_FAILS && m.s < SONNET_MAX_TRIES;
+      });
+      debug.sonnetEligible = sonnetTargets.length;
+      if (sonnetTargets.length) {
+        const claude = await fetchActualsViaClaude(sonnetTargets, debug, roundIdx++, ECA_MODEL_FALLBACK);
+        if (claude !== null) mergeIn(matchActuals(ffEvents, claude, debug));
+        for (const e of sonnetTargets) {
+          const k = ffKey(e);
+          if (byKey.has(k)) delete misses[k];
+          else { misses[k] = misses[k] || { h: 0, s: 0 }; misses[k].s += 1; }
+        }
       }
 
       const merged = Array.from(byKey.values());
       const missingAfter = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
-      const payload = { actuals: merged, weekKey: wk, fetchedAt: Date.now() };
+      const payload = { actuals: merged, weekKey: wk, misses, fetchedAt: Date.now() };
       const ok = await sbSet("actuals", payload);
       memActuals = { value: payload, updatedAt: Date.now(), readAt: Date.now() };
       debug.mergedTotal = merged.length;
@@ -468,12 +541,12 @@ async function serveStatus(): Promise<Response> {
   const dbg = await sbGet("actuals:debug");
   // deno-lint-ignore no-explicit-any
   let lastAttempt: any = null;
-  try { const d = dbg?.value || lastDebug; lastAttempt = d ? { at: d.at ? new Date(d.at).toISOString() : null, result: d.result, stored: d.stored, wantedReleased: d.wantedReleased, mergedTotal: d.mergedTotal, missingAfter: d.missingAfter, missingList: d.missingList, rounds: d.rounds, claude: d.claude, ffCount: d.ffCount, unmatchedClaude: d.unmatchedClaude } : null; } catch { /* */ }
+  try { const d = dbg?.value || lastDebug; lastAttempt = d ? { at: d.at ? new Date(d.at).toISOString() : null, result: d.result, stored: d.stored, wantedReleased: d.wantedReleased, mergedTotal: d.mergedTotal, missingAfter: d.missingAfter, missingList: d.missingList, sonnetEligible: d.sonnetEligible, rounds: d.rounds, claude: d.claude, ffCount: d.ffCount, unmatchedClaude: d.unmatchedClaude } : null; } catch { /* */ }
   const ws = windowState();
   const status = {
     anthropicKeySet: !!ANTHROPIC_API_KEY,
     supabaseKeySet: !!SUPABASE_SERVICE_ROLE_KEY,
-    ecaModel: ECA_MODEL,
+    ecaModel: ECA_MODEL, ecaModelFallback: ECA_MODEL_FALLBACK,
     fetchTimes: FETCH_HOURS.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ") + ` ${REFRESH_TZ}` + (REFRESH_WEEKDAYS_ONLY ? " (weekdays)" : ""),
     localHour: ws.hour, localWeekday: ws.weekday,
     actualsCount: rec?.value?.actuals?.length ?? 0,
