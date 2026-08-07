@@ -2,14 +2,20 @@
 // FOREX CALENDAR PROXY - Deno Deploy (v16 - data-only "wanted" set)
 // =============================================================================
 // WHAT CHANGED FROM v15:
-//   The gap loop was chasing events that have NO actual to find - speeches
-//   ("President Trump Speaks"), meetings ("OPEC-JMMC Meetings"), holidays - so
-//   "missing" never reached 0 and every scheduled fetch wasted a Claude call
-//   retrying them forever. v16 only treats an event as wanted if the FF feed
-//   gives it a numeric <forecast> OR <previous> - the reliable signal that it's a
-//   DATA RELEASE (speeches/meetings/holidays carry neither). Now the loop
-//   converges to genuinely-missing releases only, and goes fully silent (zero
-//   Claude calls) once those are found.
+//   1. DATA-ONLY WANTED SET. The gap loop was chasing events that have NO actual
+//      to find - speeches ("President Trump Speaks"), meetings ("OPEC-JMMC
+//      Meetings"), holidays - so "missing" never reached 0 and every scheduled
+//      fetch wasted a Claude call retrying them forever. v16 only treats an event
+//      as wanted if the FF feed gives it a numeric <forecast> OR <previous> - the
+//      reliable signal that it's a DATA RELEASE (speeches/meetings/holidays carry
+//      neither). The loop now converges to genuinely-missing releases only.
+//   2. TIERED MODEL. Cheap Haiku does the bulk (up to 2 rounds); Sonnet is used
+//      ONLY to mop up the handful of releases Haiku still can't fetch (e.g. an
+//      obscure CHF CPI print). Because Sonnet sees only those few events, the
+//      pricier model stays cheap - and when the cache is already complete NEITHER
+//      model is called at all. (Anthropic's web_search uses its own backend, so
+//      "search Google" isn't selectable - the Sonnet mop-up is the reliable way
+//      to close what Haiku's search misses.)
 //
 // ---- (v15) gap-driven retry loop -------------------------------------------
 // WHAT CHANGED FROM v14:
@@ -63,7 +69,8 @@ const FF_XML_URL      = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml"
 const FF_XML_NEXT_URL = "https://nfs.faireconomy.media/ff_calendar_nextweek.xml";
 
 const ANTHROPIC_API_KEY = Deno.env.get("ANTHROPIC_API_KEY") || "";
-const ECA_MODEL = "claude-haiku-4-5";   // set to "claude-sonnet-5" for higher recall (costs more per fetch)
+const ECA_MODEL = "claude-haiku-4-5";           // primary (cheap) - does the bulk of the fetching
+const ECA_MODEL_FALLBACK = "claude-sonnet-5";   // mop-up ONLY for events Haiku couldn't fetch (targeted, so still cheap)
 
 const SUPABASE_URL = "https://figozyxoyobixadhqewr.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -217,9 +224,9 @@ function weekRange(): { from: string; to: string } {
 // parsed array, or null on error. Per-round debug is pushed to debug.rounds and the
 // latest round is mirrored to debug.claude for the /status page.
 // deno-lint-ignore no-explicit-any
-async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: number): Promise<any[] | null> {
+async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: number, model: string): Promise<any[] | null> {
   // deno-lint-ignore no-explicit-any
-  const rd: any = { round, asked: targets.length, model: ECA_MODEL };
+  const rd: any = { round, asked: targets.length, model };
   (debug.rounds = debug.rounds || []).push(rd);
   debug.claude = rd;   // latest round, for /status back-compat
   if (!ANTHROPIC_API_KEY) { rd.error = "ANTHROPIC_API_KEY not set"; return null; }
@@ -248,7 +255,7 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
     `Echo the EVENT text, CURRENCY and DATE exactly as given so they can be matched.`;
 
   const reqBody = {
-    model: ECA_MODEL,
+    model,
     max_tokens: 4000,
     tools: [{ type: "web_search_20250305", name: "web_search", max_uses: maxSearches }],
     messages: [{ role: "user", content: prompt }],
@@ -265,7 +272,7 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
     if (!resp.ok) { rd.error = data?.error?.message || `HTTP ${resp.status}`; return null; }
   } catch (e) { rd.error = msg(e); return null; }
 
-  try { await recordEcaUsage(data?.usage); } catch { /* */ }
+  try { await recordEcaUsage(data?.usage, model); } catch { /* */ }
 
   const text = (data?.content ?? []).filter((b: any) => b?.type === "text").map((b: any) => b.text || "").join("\n").trim();
   rd.usage = data?.usage || null;
@@ -284,13 +291,13 @@ function extractJsonArray(text: string): any[] | null {
   try { const v = JSON.parse(t); return Array.isArray(v) ? v : null; } catch { return null; }
 }
 // deno-lint-ignore no-explicit-any
-async function recordEcaUsage(usage: any): Promise<void> {
+async function recordEcaUsage(usage: any, model: string): Promise<void> {
   if (!usage || !SUPABASE_SERVICE_ROLE_KEY) return;
   await fetch(`${SUPABASE_URL}/rest/v1/ai_usage`, {
     method: "POST",
     headers: { ...SB_HEADERS, "prefer": "return=minimal" },
     body: JSON.stringify({
-      user_id: ECA_SYSTEM_UID, model: ECA_MODEL, mode: "ecafetch",
+      user_id: ECA_SYSTEM_UID, model, mode: "ecafetch",
       input_tokens: usage.input_tokens ?? 0, output_tokens: usage.output_tokens ?? 0,
       cache_creation_tokens: usage.cache_creation_input_tokens ?? 0, cache_read_tokens: usage.cache_read_input_tokens ?? 0,
       web_search_requests: usage.server_tool_use?.web_search_requests ?? 0,   // billed separately from tokens (~$0.01 each)
@@ -385,21 +392,35 @@ async function refreshActuals(): Promise<boolean> {
       const wantedReleased = ffEvents.filter((e) => /high|medium/i.test(e.impact) && e.hasNumeric && e.whenMs <= nowMs);
       debug.wantedReleased = wantedReleased.length;
 
-      // GAP-DRIVEN RETRY LOOP: ask Claude, merge, recompute what's still missing,
-      // and re-ask for ONLY the missing events. Stop when nothing's missing, a
-      // round finds nothing new, or MAX_ROUNDS is hit. No Claude call at all if
-      // the cache is already complete.
-      const MAX_ROUNDS = 3;
-      for (let round = 0; round < MAX_ROUNDS; round++) {
+      // TIERED GAP-DRIVEN LOOP. Each round asks for ONLY the still-missing events
+      // (a sharper list each time), merges, then recomputes the gap.
+      //   Phase 1 - Haiku (cheap) does the bulk, up to 2 rounds, stopping early
+      //             if a round finds nothing new (tapped out for now).
+      //   Phase 2 - Sonnet mops up ONLY what Haiku left behind. Because it sees
+      //             just those few events, the pricier model stays cheap.
+      // If the cache is already complete, NEITHER phase makes a call.
+      const mergeIn = (entries: ActualEntry[]): number => {
+        let n = 0;
+        for (const e of entries) { const k = `${e.dateKey}|${e.country}|${e.title}`; if (!byKey.has(k)) n++; byKey.set(k, e); }
+        if (debug.rounds && debug.rounds.length) debug.rounds[debug.rounds.length - 1].newFound = n;
+        return n;
+      };
+      let roundIdx = 0;
+      // Phase 1 - Haiku
+      for (let r = 0; r < 2; r++) {
         const missing = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
         if (!missing.length) break;
-        const claude = await fetchActualsViaClaude(missing, debug, round);
-        if (claude === null) break;   // hard error this round - stop
-        const entries = matchActuals(ffEvents, claude, debug);
-        let newCount = 0;
-        for (const e of entries) { const k = `${e.dateKey}|${e.country}|${e.title}`; if (!byKey.has(k)) newCount++; byKey.set(k, e); }
-        if (debug.rounds && debug.rounds.length) debug.rounds[debug.rounds.length - 1].newFound = newCount;
-        if (newCount === 0) break;    // model is tapped out for now - don't burn rounds
+        const claude = await fetchActualsViaClaude(missing, debug, roundIdx++, ECA_MODEL);
+        if (claude === null) break;
+        if (mergeIn(matchActuals(ffEvents, claude, debug)) === 0) break;   // Haiku tapped out - hand to Sonnet
+      }
+      // Phase 2 - Sonnet mop-up, only for what's still missing
+      {
+        const missing = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
+        if (missing.length) {
+          const claude = await fetchActualsViaClaude(missing, debug, roundIdx++, ECA_MODEL_FALLBACK);
+          if (claude !== null) mergeIn(matchActuals(ffEvents, claude, debug));
+        }
       }
 
       const merged = Array.from(byKey.values());
@@ -487,7 +508,7 @@ async function serveStatus(): Promise<Response> {
   const status = {
     anthropicKeySet: !!ANTHROPIC_API_KEY,
     supabaseKeySet: !!SUPABASE_SERVICE_ROLE_KEY,
-    ecaModel: ECA_MODEL,
+    ecaModel: ECA_MODEL, ecaModelFallback: ECA_MODEL_FALLBACK,
     fetchTimes: FETCH_HOURS.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ") + ` ${REFRESH_TZ}` + (REFRESH_WEEKDAYS_ONLY ? " (weekdays)" : ""),
     localHour: ws.hour, localWeekday: ws.weekday,
     actualsCount: rec?.value?.actuals?.length ?? 0,
