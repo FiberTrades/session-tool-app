@@ -33,7 +33,7 @@
   .seg button{background:transparent;border:0;border-left:1px solid var(--border-2);color:var(--text-dim);height:32px;padding:0 11px;font-family:var(--mono);font-size:12px;cursor:pointer;transition:color .15s,background .15s}
   .seg button:first-child{border-left:0}
   .seg button:hover{color:var(--text-mid)}
-  .seg button.active{background:var(--bg-elev2);color:var(--accent)}
+  .seg button.active{background:rgba(244,114,182,0.16);color:var(--accent);font-weight:600}
   .tb-spacer{flex:1}
   .tb-toggle{display:inline-flex;align-items:center;gap:7px;font-size:11px;color:var(--text-mid);cursor:pointer;letter-spacing:.04em}
   .tb-toggle input{accent-color:var(--accent);width:14px;height:14px}
@@ -41,7 +41,9 @@
   .tb-clear:hover{color:var(--bad);border-color:var(--bad)}
   .rp-chart-wrap{position:relative}
   #chart{height:460px;width:100%}
-  .rp-overlay{position:absolute;top:0;left:0;z-index:3}
+  .rp-overlay{position:absolute;top:0;left:0;z-index:3;pointer-events:none}
+  .tb-clear:disabled{opacity:.35;cursor:default}
+  .tb-clear:disabled:hover{color:var(--text-dim);border-color:var(--border-2)}
   .rp-liveR{position:absolute;top:12px;left:14px;z-index:5;font-size:12px;letter-spacing:.08em;background:rgba(19,18,23,.82);border:1px solid var(--border-2);border-radius:8px;padding:7px 11px;pointer-events:none}
   .rp-liveR b{font-size:15px}
   .lr-win{color:var(--good)} .lr-lose{color:var(--bad)} .lr-flat{color:var(--text-mid)}
@@ -78,14 +80,14 @@
       </div>
       <span class="tb-lbl" style="margin-left:6px">Draw</span>
       <div class="seg" id="tools">
-        <button data-tool="none" class="active" title="Cursor">⌖</button>
         <button data-tool="hline" title="Horizontal line">─</button>
         <button data-tool="trend" title="Trend line">╱</button>
         <button data-tool="rect" title="Rectangle">▭</button>
         <button data-tool="fib" title="Fib retracement">Fib</button>
         <button data-tool="range" title="Price range / measure">⇅</button>
       </div>
-      <button class="tb-clear" id="clear">Clear</button>
+      <button class="tb-clear" id="undo" title="Undo (Ctrl+Z)">↶</button>
+      <button class="tb-clear" id="redo" title="Redo (Ctrl+Y)">↷</button>
       <span class="tb-spacer"></span>
       <label class="tb-toggle"><input type="checkbox" id="pos-toggle" checked> Position tool</label>
     </div>
@@ -161,7 +163,9 @@
     grid:{vertLines:{color:'rgba(255,255,255,0.05)'},horzLines:{color:'rgba(255,255,255,0.05)'}},
     rightPriceScale:{borderColor:'#332F3C',ticksVisible:true,entireTextOnly:true,scaleMargins:{top:0.12,bottom:0.12}},
     timeScale:{borderColor:'#332F3C',timeVisible:true,secondsVisible:false,rightOffset:4,barSpacing:8},
-    crosshair:{mode:1,vertLine:{color:'rgba(244,114,182,0.35)',labelBackgroundColor:'#2a2833'},horzLine:{color:'rgba(244,114,182,0.35)',labelBackgroundColor:'#2a2833'}},
+    crosshair:{mode:0,
+      vertLine:{color:'rgba(244,114,182,0.5)',width:1,style:3,labelBackgroundColor:'#2a2833'},
+      horzLine:{color:'rgba(244,114,182,0.5)',width:1,style:3,labelBackgroundColor:'#2a2833'}},
     autoSize:true
   });
   var series=chart.addCandlestickSeries({upColor:'#4ECD8B',downColor:'#E56767',borderVisible:false,wickUpColor:'#4ECD8B',wickDownColor:'#E56767',
@@ -229,7 +233,7 @@
       FIB.forEach(function(lv){ var price=d.a.price+(d.b.price-d.a.price)*lv, y=yOf(price); if(y==null)return;
         if(lastY!=null){ ctx.fillStyle=(FIB.indexOf(lv)%2?'rgba(244,114,182,0.05)':'rgba(244,114,182,0.09)');ctx.fillRect(xL,Math.min(lastY,y),xR-xL,Math.abs(y-lastY)); } lastY=y;
         ctx.strokeStyle='rgba(244,114,182,0.55)';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(xL,y);ctx.lineTo(xR,y);ctx.stroke();
-        ctx.fillStyle='#f472b6';ctx.textBaseline='middle';ctx.fillText(lv.toFixed(3)+'  '+price.toFixed(5), Math.min(xR+6,w-78), y); }); } }
+        ctx.fillStyle='#f472b6';ctx.textBaseline='middle';ctx.fillText(lv.toFixed(3), Math.min(xR+6,w-30), y); }); } }
     else if(d.type==='range'){ var a4=pt(d.a),b4=pt(d.b); if(a4&&b4){ var up=d.b.price>=d.a.price, col=up?'78,205,139':'229,103,103';
       var x0b=Math.min(a4.x,b4.x),x1b=Math.max(a4.x,b4.x),y0b=Math.min(a4.y,b4.y),y1b=Math.max(a4.y,b4.y);
       ctx.fillStyle='rgba('+col+',0.12)';ctx.fillRect(x0b,y0b,x1b-x0b,y1b-y0b);ctx.strokeStyle='rgba('+col+',0.7)';ctx.lineWidth=1;ctx.strokeRect(x0b+.5,y0b+.5,x1b-x0b-1,y1b-y0b-1);
@@ -239,8 +243,12 @@
       ctx.fillStyle='rgba('+col+',0.95)';ctx.fillRect(cx-tw/2-6,cy-9,tw+12,18);
       ctx.fillStyle='#0B0A0D';ctx.textBaseline='middle';ctx.textAlign='center';ctx.fillText(label,cx,cy);ctx.textAlign='left'; } }
     ctx.restore(); }
+  function drawHandles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1;
+    function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); }
+    if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else { var a=pt(d.a),b=pt(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function drawViewport(){ var s=sizeOverlay(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
-    if(showPos) drawPosition(ctx,w); drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(pending) drawOne(ctx,pending,w,true); }
+    if(showPos) drawPosition(ctx,w); drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(pending) drawOne(ctx,pending,w,true);
+    var sel=drag?drawings[drag.i]:(hover?drawings[hover.i]:null); if(sel) drawHandles(ctx,sel,w); }
 
   // ---- Render / playback ----------------------------------------------------
   function setView(){ chart.timeScale().setVisibleLogicalRange({from:Math.max(0,cursor-VISIBLE),to:cursor+4}); }
@@ -259,23 +267,69 @@
   document.getElementById('pos-toggle').onchange=function(e){ showPos=e.target.checked; drawViewport(); };
   scrub.oninput=function(){ pause(); cursor=(+scrub.value)+1; render(true); };
 
-  // ---- Drawing tools --------------------------------------------------------
-  function setTool(t){ activeTool=t; pending=null;
-    document.querySelectorAll('#tools button').forEach(function(x){x.classList.toggle('active',x.dataset.tool===t);});
-    var drawing = t!=='none'; overlay.style.pointerEvents=drawing?'auto':'none'; overlay.style.cursor=drawing?'crosshair':'default'; drawViewport(); }
+  // ---- Undo / redo (snapshots of the drawings array) ------------------------
+  function clone(x){ return JSON.parse(JSON.stringify(x)); }
+  var history=[[]], hpos=0, drag=null, hover=null;
+  function commit(){ history=history.slice(0,hpos+1); history.push(clone(drawings)); hpos=history.length-1; updUR(); }
+  function updUR(){ document.getElementById('undo').disabled=hpos<=0; document.getElementById('redo').disabled=hpos>=history.length-1; }
+  document.getElementById('undo').onclick=function(){ if(hpos>0){ hpos--; drawings=clone(history[hpos]); drawViewport(); updUR(); } };
+  document.getElementById('redo').onclick=function(){ if(hpos<history.length-1){ hpos++; drawings=clone(history[hpos]); drawViewport(); updUR(); } };
+
+  // ---- Tool arming (click an active tool again to turn it off) ---------------
+  function setTool(t){ activeTool=(activeTool===t?'none':t); pending=null;
+    document.querySelectorAll('#tools button').forEach(function(x){x.classList.toggle('active',x.dataset.tool===activeTool);});
+    chartEl.style.cursor=activeTool==='none'?'default':'crosshair'; drawViewport(); }
   document.querySelectorAll('#tools button').forEach(function(b){ b.onclick=function(){ setTool(b.dataset.tool); }; });
-  document.getElementById('clear').onclick=function(){ drawings=[]; pending=null; drawViewport(); };
-  overlay.addEventListener('mousedown',function(e){ if(activeTool==='none')return; var p=pxToPoint(e); if(!p)return;
-    if(activeTool==='hline'){ drawings.push({type:'hline',price:p.price}); setTool('none'); }
-    else if(!pending){ pending={type:activeTool,a:p,b:p}; }
-    else { pending.b=p; drawings.push(pending); pending=null; setTool('none'); }
-    drawViewport(); });
-  overlay.addEventListener('mousemove',function(e){ if(!pending)return; var p=pxToPoint(e); if(p){pending.b=p; drawViewport();} });
-  document.addEventListener('keydown',function(e){ if(e.key==='Escape'){ pending=null; setTool('none'); } });
+
+  // ---- Hit testing (pixel space) --------------------------------------------
+  function evXY(e){ var r=chartEl.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+  function d2seg(px,py,x1,y1,x2,y2){ var dx=x2-x1,dy=y2-y1; if(dx===0&&dy===0)return Math.hypot(px-x1,py-y1); var t=((px-x1)*dx+(py-y1)*dy)/(dx*dx+dy*dy); t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
+  function hitTest(px,py){ for(var i=drawings.length-1;i>=0;i--){ var d=drawings[i];
+    if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; }
+    var a=pt(d.a),b=pt(d.b); if(!a||!b) continue;
+    if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'};
+    if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'};
+    if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; }
+    else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y);
+      if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; }
+    else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } }
+  } return null; }
+
+  // ---- Placement + drag/resize. Handled in the CAPTURE phase on the chart so
+  //      we can pre-empt the chart's own pan when a tool is active or an object
+  //      is grabbed; otherwise the event flows through and the chart pans/zooms
+  //      and shows its native crosshair as usual. Overlay stays pointer-events:none.
+  chartEl.addEventListener('mousedown',function(e){ var p=pxToPoint(e), xy=evXY(e); if(!p) return;
+    if(activeTool!=='none'){ e.stopPropagation(); e.preventDefault();
+      if(activeTool==='hline'){ drawings.push({type:'hline',price:p.price}); commit(); setTool('none'); }
+      else if(!pending){ pending={type:activeTool,a:p,b:p}; }
+      else { pending.b=p; drawings.push(pending); pending=null; commit(); setTool('none'); }
+      drawViewport(); return; }
+    var h=hitTest(xy.x,xy.y);
+    if(h){ e.stopPropagation(); e.preventDefault(); drag={i:h.i,part:h.part,start:p,orig:clone(drawings[h.i])}; }
+  },true);
+  window.addEventListener('mousemove',function(e){
+    if(pending){ var pp=pxToPoint(e); if(pp){pending.b=pp; drawViewport();} return; }
+    if(drag){ var p=pxToPoint(e); if(!p)return; var d=drawings[drag.i];
+      if(drag.part==='line') d.price=p.price;
+      else if(drag.part==='a') d.a={idx:p.idx,price:p.price};
+      else if(drag.part==='b') d.b={idx:p.idx,price:p.price};
+      else { var dI=p.idx-drag.start.idx, dP=p.price-drag.start.price;
+        d.a={idx:drag.orig.a.idx+dI,price:drag.orig.a.price+dP}; d.b={idx:drag.orig.b.idx+dI,price:drag.orig.b.price+dP}; }
+      drawViewport(); return; }
+    if(activeTool==='none'){ var xy=evXY(e); if(xy.x>=0&&xy.y>=0&&xy.x<=chartEl.clientWidth&&xy.y<=chartEl.clientHeight){ var nh=hitTest(xy.x,xy.y);
+      if((nh&&(!hover||hover.i!==nh.i))||(!nh&&hover)){ hover=nh; drawViewport(); } chartEl.style.cursor=nh?'move':'crosshair'; } }
+  });
+  window.addEventListener('mouseup',function(){ if(drag){ commit(); drag=null; } });
+  document.addEventListener('keydown',function(e){
+    if(e.key==='Escape'){ pending=null; drag=null; setTool('none'); }
+    else if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==='z'&&!e.shiftKey){ e.preventDefault(); document.getElementById('undo').click(); }
+    else if((e.ctrlKey||e.metaKey)&&(e.key.toLowerCase()==='y'||(e.shiftKey&&e.key.toLowerCase()==='z'))){ e.preventDefault(); document.getElementById('redo').click(); }
+  });
 
   chart.timeScale().subscribeVisibleLogicalRangeChange(drawViewport);
   window.addEventListener('resize',drawViewport);
-  rebuildTf(1); render(true);
+  updUR(); rebuildTf(1); render(true);
 })();
 </script>
 </body>
