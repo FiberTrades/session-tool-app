@@ -198,8 +198,10 @@ https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-candles
   ~10 quick POSTs per trade. Brief one-time work, not during the trade.
 - History depth per TF is capped by what your broker keeps — the EA sends whatever `CopyRates`
   returns.
-- **Scope:** this exports candles for trades synced **from now on**. Trades already synced
-  before this update are marked pushed, so they won't auto-queue — replaying *older* trades
-  needs a one-time backfill (a `CE_Catchup()` that scans `InpSyncDays` of history and queues
-  each closed position). Say the word and I'll add it — I left it out of Stage 1 to keep the
-  first, untested change as small and safe as possible.
+- **Backfill included:** `CE_Catchup()` runs once on start (guarded by the global
+  `MTM_ce_catchup_v1`) and queues every closed position in the last `InpSyncDays`, so your
+  *existing* recent trades get candles too — not just new ones. To re-run it (e.g. after
+  widening `InpSyncDays`), delete that global variable (F3 in MT5) and restart the EA.
+- **Every member needs the updated EA + the whitelisted URL** to get replay for their own
+  trades. Candles are keyed by `(symbol, tf, t)` and shared, so once anyone exports a
+  symbol's window, others replaying the same window reuse it.
