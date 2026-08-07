@@ -33505,26 +33505,57 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // community layout (normal toasts sit at z-index 200, far below the community, so they're invisible
   // there), and (b) does NOT auto-dismiss: it stays until the user taps it to close. Multiple closes
   // stack so none are missed.
-  function _liveCloseNotice(msg) {
+  // opts: { symbol, closedWord, result, kind }  — kind is 'Win' | 'Lose' | 'BE'.
+  // Styled to match the live-feed result chips (.stlf-res) and sit in the SCREEN CENTRE:
+  // a dark app card (bg-elev + border) with a result-coloured left accent and pill.
+  function _liveCloseNotice(opts) {
     try { if (document.body.classList.contains('mentor-viewing')) return; } catch (e) {}
     try {
+      opts = opts || {};
       var host = document.getElementById('st-live-note-host');
       if (!host) {
         host = document.createElement('div');
         host.id = 'st-live-note-host';
-        host.style.cssText = 'position:fixed;top:16px;left:50%;transform:translateX(-50%);z-index:2147483001;display:flex;flex-direction:column;gap:8px;align-items:center;max-width:94vw;pointer-events:none;';
+        host.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2147483001;display:flex;flex-direction:column;gap:10px;align-items:center;max-width:94vw;pointer-events:none;';
         document.body.appendChild(host);
       }
+      // Result-based accent, mirroring the live-feed chips: Won → good/green, Lost → bad/red, BE → info/blue.
+      var k = opts.kind === 'Win' ? 'win' : opts.kind === 'Lose' ? 'lose' : 'be';
+      var accent = k === 'win' ? 'var(--good,#4ECD8B)' : k === 'lose' ? 'var(--bad,#E56767)' : 'var(--info,#60a5fa)';
+      var pillBg = k === 'win' ? 'rgba(78,205,139,0.16)' : k === 'lose' ? 'rgba(229,103,103,0.16)' : 'rgba(96,165,250,0.16)';
+      var icon = k === 'win' ? '✓' : k === 'lose' ? '✕' : '=';
+
       var item = document.createElement('div');
       item.setAttribute('role', 'status');
-      item.style.cssText = "pointer-events:auto;cursor:pointer;background:var(--text,#fff);color:var(--bg,#000);padding:12px 16px 12px 20px;border-radius:10px;font-family:'AppNum','DM Mono',monospace;font-size:11px;letter-spacing:0.12em;text-transform:uppercase;box-shadow:0 12px 36px rgba(0,0,0,0.5);display:flex;align-items:center;gap:14px;opacity:0;transform:translateY(-10px);transition:opacity 200ms ease,transform 200ms ease;max-width:94vw;";
-      var txt = document.createElement('span'); txt.textContent = msg; txt.style.cssText = 'white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-      var x = document.createElement('span'); x.textContent = '×'; x.setAttribute('aria-label', 'Close'); x.style.cssText = 'font-size:17px;line-height:1;opacity:0.5;flex:none;';
-      item.appendChild(txt); item.appendChild(x);
-      function close() { item.style.opacity = '0'; item.style.transform = 'translateY(-10px)'; setTimeout(function () { try { item.remove(); } catch (e) {} }, 220); }
+      item.style.cssText = "pointer-events:auto;cursor:pointer;background:var(--bg-elev,#131217);border:1px solid var(--border-2,#332F3C);border-left:4px solid " + accent + ";border-radius:var(--radius-card,12px);box-shadow:0 24px 64px rgba(0,0,0,0.7);display:flex;align-items:center;gap:16px;padding:16px 18px 16px 20px;max-width:94vw;opacity:0;transform:scale(0.96);transition:opacity 200ms ease,transform 200ms ease;";
+
+      var left = document.createElement('span');
+      left.style.cssText = 'display:inline-flex;align-items:baseline;gap:9px;min-width:0;';
+      var symEl = document.createElement('span');
+      symEl.textContent = opts.symbol || '';
+      symEl.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:14px;letter-spacing:0.1em;text-transform:uppercase;color:var(--text,#F4F3F6);font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+      var closedEl = document.createElement('span');
+      closedEl.textContent = opts.closedWord || '';
+      closedEl.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:10px;letter-spacing:0.14em;text-transform:uppercase;color:var(--text-dim,#888);white-space:nowrap;";
+      left.appendChild(symEl); if (opts.closedWord) left.appendChild(closedEl);
+
+      var pill = document.createElement('span');
+      pill.style.cssText = "display:inline-flex;align-items:center;gap:6px;font-family:'AppNum','DM Mono',monospace;font-size:13px;letter-spacing:0.08em;text-transform:uppercase;font-weight:600;padding:6px 12px;border-radius:8px;color:" + accent + ";background:" + pillBg + ";white-space:nowrap;flex:none;";
+      var ic = document.createElement('span');
+      ic.textContent = icon;
+      ic.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;font-weight:700;line-height:1;font-size:' + (k === 'be' ? '18px' : '14px') + ';';
+      var wordEl = document.createElement('span'); wordEl.textContent = opts.result || '';
+      pill.appendChild(ic); pill.appendChild(wordEl);
+
+      var x = document.createElement('span');
+      x.textContent = '×'; x.setAttribute('aria-label', 'Close');
+      x.style.cssText = 'font-size:18px;line-height:1;color:var(--text-dim,#888);flex:none;margin-left:2px;';
+
+      item.appendChild(left); item.appendChild(pill); item.appendChild(x);
+      function close() { item.style.opacity = '0'; item.style.transform = 'scale(0.96)'; setTimeout(function () { try { item.remove(); } catch (e) {} }, 220); }
       item.addEventListener('click', close);
       host.appendChild(item);
-      requestAnimationFrame(function () { item.style.opacity = '1'; item.style.transform = 'translateY(0)'; });
+      requestAnimationFrame(function () { item.style.opacity = '1'; item.style.transform = 'scale(1)'; });
       // NO auto-dismiss timer — persists until the user taps it (per request).
     } catch (e) {}
   }
@@ -33553,7 +33584,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             var es = document.documentElement.lang === 'es';
             var word = out === 'Win' ? (es ? 'Ganada' : 'Won') : out === 'Lose' ? (es ? 'Perdida' : 'Lost') : 'BE';
             var sym = r.symbol || (es ? 'Operación' : 'Trade');
-            _liveCloseNotice(sym + (es ? ' cerrada — ' : ' closed — ') + word);
+            _liveCloseNotice({ symbol: sym, closedWord: (es ? 'cerrada' : 'closed'), result: word, kind: out });
           } catch (e) {}
         });
       }).catch(function () {});
