@@ -46052,6 +46052,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   //    Console credit balance (which is USD) — no GBP conversion. ───────────────────────
   var PRICE = { 'claude-sonnet-5': { in:3, out:15 }, 'claude-haiku-4-5': { in:1, out:5 }, 'default': { in:3, out:15 } };
   var CACHE = { read: 0.1, write: 1.25 };
+  var WEB_SEARCH_USD = 0.01;   // Anthropic server-side web search: $10 per 1,000 searches. Billed on top of tokens — the ECA fetcher uses ~5/run, so without this the estimate under-counts and drifts below claude.com.
   var USD_GBP = 1;   // no conversion — everything shown in USD ($) so it lines up with claude.com
   function costGbp(model, inT, outT, cwT, crT){
     var p = PRICE[model] || PRICE['default'];
@@ -46111,17 +46112,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _byUser={};
     rows.forEach(function(row){
       var u=row.user_id; if(!u) return;
-      if(!_byUser[u]) _byUser[u]={ sonnet:0, haiku:0, opus:0, other:0, inT:0, outT:0, cw:0, cr:0, gbp:0, calls:0, greetTok:0, greetGbp:0, ecaTok:0, ecaGbp:0, days:{} };
+      if(!_byUser[u]) _byUser[u]={ sonnet:0, haiku:0, opus:0, other:0, inT:0, outT:0, cw:0, cr:0, gbp:0, calls:0, greetTok:0, greetGbp:0, ecaTok:0, ecaGbp:0, ws:0, days:{} };
       var b=_byUser[u], k=modelKind(row.model);
       var inT=+row.input_tokens||0, outT=+row.output_tokens||0, cw=+row.cache_creation_tokens||0, cr=+row.cache_read_tokens||0, calls=+row.calls||0;
-      var g=costGbp(row.model,inT,outT,cw,cr);
-      b[k]+=calls; b.calls+=calls; b.inT+=inT; b.outT+=outT; b.cw+=cw; b.cr+=cr; b.gbp+=g;
+      var ws=+row.web_search_requests||0;                     // server-side web searches on this call (billed separately from tokens)
+      var g=costGbp(row.model,inT,outT,cw,cr) + ws*WEB_SEARCH_USD;
+      b[k]+=calls; b.calls+=calls; b.inT+=inT; b.outT+=outT; b.cw+=cw; b.cr+=cr; b.gbp+=g; b.ws+=ws;
       var rowTok=(inT+outT+cw+cr), isGreet=(String(row.mode||'')==='greet'), isEca=(String(row.mode||'')==='ecafetch');
       if(isGreet){ b.greetTok += rowTok; b.greetGbp += g; }   // greeting calls (already in the totals; broken out here)
       if(isEca){ b.ecaTok += rowTok; b.ecaGbp += g; }         // economic-calendar-actuals fetches (own column)
       var day=row.day?String(row.day):null;
-      if(day){ if(!b.days[day]) b.days[day]={ gbp:0, calls:0, sonnet:0, haiku:0, opus:0, other:0, tok:0, greetTok:0, ecaTok:0 };
-        var dd=b.days[day]; dd.gbp+=g; dd.calls+=calls; dd[k]+=calls; dd.tok+=rowTok; if(isGreet) dd.greetTok+=rowTok; if(isEca) dd.ecaTok+=rowTok; }
+      if(day){ if(!b.days[day]) b.days[day]={ gbp:0, calls:0, sonnet:0, haiku:0, opus:0, other:0, tok:0, greetTok:0, ecaTok:0, ws:0 };
+        var dd=b.days[day]; dd.gbp+=g; dd.calls+=calls; dd[k]+=calls; dd.tok+=rowTok; dd.ws+=ws; if(isGreet) dd.greetTok+=rowTok; if(isEca) dd.ecaTok+=rowTok; }
     });
   }
   // COMBINED spend across ALL traders, for the chosen From/To — summed by _combinedTotals() and shown
@@ -46266,7 +46268,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
     h+='</tbody></table></div>'; tableEl.innerHTML=h;
     Array.prototype.forEach.call(tableEl.querySelectorAll('.aimeter-row'), function(tr){ tr.addEventListener('click', function(){ showDetail(tr.getAttribute('data-uid')); }); });
-    var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent=_t('Sonnet/Haiku columns = number of questions on each model. $ estimated at Sonnet $','Columnas Sonnet/Haiku = número de preguntas en cada modelo. $ estimado a Sonnet $')+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+_t(' per 1M tokens (cache read ×0.1, write ×1.25), in USD to match claude.com.',' por 1M de tokens (lectura de caché ×0,1, escritura ×1,25), en USD para coincidir con claude.com.');
+    var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent=_t('Sonnet/Haiku columns = number of questions on each model. $ estimated at Sonnet $','Columnas Sonnet/Haiku = número de preguntas en cada modelo. $ estimado a Sonnet $')+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+_t(' per 1M tokens (cache read ×0.1, write ×1.25) + $0.01/web search, in USD to match claude.com.',' por 1M de tokens (lectura de caché ×0,1, escritura ×1,25) + $0,01/búsqueda web, en USD para coincidir con claude.com.');
   }
 
   function _wireBack(det){ var back=det.querySelector('.aimeter-back'); if(back) back.addEventListener('click', function(){ det.innerHTML=''; }); }

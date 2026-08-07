@@ -145,6 +145,7 @@ async function recordUsage(userId: string | null, model: string, usage: any, mod
         output_tokens: usage.output_tokens ?? 0,
         cache_creation_tokens: usage.cache_creation_input_tokens ?? 0,
         cache_read_tokens: usage.cache_read_input_tokens ?? 0,
+        web_search_requests: usage.server_tool_use?.web_search_requests ?? 0,   // billed separately from tokens (~$0.01 each); 0 unless the call used web search
       }),
     });
   } catch { /* logging must never break the response */ }
