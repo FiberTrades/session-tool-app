@@ -46607,7 +46607,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
     S={ symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
-        cursor:0, playing:false, mult:1, timer:null, showPos:true, eBI:0, xBI:0, rSI:0 };
+        cursor:0, playing:false, mult:1, timer:null, showPos:true, eBI:0, xBI:0, rSI:0, userView:false };
     await build();
   }
 
@@ -46625,7 +46625,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.eBI=bidx(S.bars,S.entryTs); S.xBI=Math.max(S.eBI,bidx(S.bars,S.exitTs));
     var look=({1:60,5:48,15:32,60:24,240:16,1440:10})[tf]||40;
     S.rSI=Math.max(0,S.eBI-look);
-    S.cursor=S.rSI; S.drawings=[]; S.pending=null; S.sel=null; S.history=[[]]; S.hpos=0;
+    S.cursor=S.rSI; S.drawings=[]; S.pending=null; S.sel=null; S.history=[[]]; S.hpos=0; S.userView=false;
     el('strp-scrub').max=String(S.bars.length-1);
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
     render(true); updUR(); updDel();
@@ -46649,7 +46649,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     series.createPriceLine({price:S.entry,color:'#f472b6',lineWidth:1,lineStyle:2,title:'Entry'});
     if(S.SL) series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:2,title:'SL'});
     if(S.TP) series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:2,title:'TP'});
-    chart.timeScale().subscribeVisibleLogicalRangeChange(draw);
+    chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     el('strp-tb').style.display=''; el('strp-ct').style.display=''; el('strp-live').style.display='';
     await setTf(1);
   }
@@ -46685,8 +46685,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ctx.restore(); }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h); if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w); }
-  function setView(){ chart.timeScale().setVisibleLogicalRange({from:Math.max(0,S.cursor-102),to:S.cursor+12}); }
-  function render(full){ if(full) series.setData(S.bars.slice(0,S.cursor)); else series.update(S.bars[S.cursor-1]); series.setMarkers(markers()); setView(); el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
+  var _suppressView=false;
+  function setView(){ _suppressView=true; chart.timeScale().setVisibleLogicalRange({from:Math.max(0,S.cursor-102),to:S.cursor+12}); }
+  function onRange(){ if(_suppressView){ _suppressView=false; } else if(S){ S.userView=true; } draw(); }   // user zoom/pan -> stop auto-following
+  function render(full){ if(full) series.setData(S.bars.slice(0,S.cursor)); else series.update(S.bars[S.cursor-1]); series.setMarkers(markers()); if(!S.userView) setView(); el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
 
   function tick(){ if(S.cursor>=S.bars.length){ pause(); return; } S.cursor++; render(false); }
   function play(){ if(!S) return; if(S.cursor>=S.bars.length) S.cursor=S.rSI; S.playing=true; el('strp-play').innerHTML='&#9208; Pause'; clearInterval(S.timer); S.timer=setInterval(tick,Math.max(24,650/S.mult)); }
@@ -46705,7 +46707,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   el('strp-close').onclick=closeModal;
   el('strp-modal-bg').addEventListener('click',function(e){ if(e.target===el('strp-modal-bg')) closeModal(); });
   el('strp-play').onclick=function(){ if(!S)return; S.playing?pause():play(); };
-  el('strp-restart').onclick=function(){ if(!S)return; pause(); S.cursor=S.rSI; render(true); };
+  el('strp-restart').onclick=function(){ if(!S)return; pause(); S.userView=false; S.cursor=S.rSI; render(true); };
   el('strp-fwd').onclick=function(){ if(!S)return; pause(); if(S.cursor<S.bars.length){S.cursor++;render(true);} };
   el('strp-back').onclick=function(){ if(!S)return; pause(); if(S.cursor>1){S.cursor--;render(true);} };
   Array.prototype.forEach.call(document.querySelectorAll('#strp-spd button'),function(b){ b.onclick=function(){ if(!S)return; Array.prototype.forEach.call(document.querySelectorAll('#strp-spd button'),function(x){x.classList.remove('on');}); b.classList.add('on'); S.mult=+b.dataset.mult; if(S.playing) play(); }; });
