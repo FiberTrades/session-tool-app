@@ -302,8 +302,8 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
             `Lead with the single most useful observation (a pattern, a leak, a win worth reinforcing, or the next concrete step). ` +
             `No "Hi" / "Hello" and no sign-off — just the insight.`;
   } else {
-    tail += `\n\n## Right now\nAnswer the trader's latest question. Performance questions → use their data pack (prefer the ready-made summaries). ` +
-            `App/"how do I" questions → use your app knowledge. Be concise and concrete.`;
+    tail += `\n\n## Right now\nAnswer the trader's latest request. Performance questions → use their data pack (prefer the ready-made summaries). ` +
+            `App/"how do I" questions → use your app knowledge. ANY other reasonable, harmless request (rephrasing or personalising a line/greeting/note, drafting a short message, quick wording help) → just do it, briefly — do NOT refuse it as "creative content", "off-topic", or "not what I'm here for". Be concise and concrete.`;
   }
   if (tail) blocks.push({ type: "text", text: tail });
   return blocks;
