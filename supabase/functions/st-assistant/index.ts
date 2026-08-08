@@ -296,7 +296,11 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
   if (ctx?.profile && String(ctx.profile).trim()) {
     tail += `\n\n## What you remember about this trader (their evolving profile)\n${String(ctx.profile).slice(0, 3000)}`;
   }
-  if (ctx?.greeting && String(ctx.greeting).trim()) {
+  // Guard like the dataPack block above: never inject the on-screen greeting on a GREET-mode call — the greet
+  // branch already carries its own per-surface seed in the user message, so injecting the (bias) line would
+  // give two conflicting rewrite targets. Only chat "reword my greeting" (rawMode !== "greet") needs it. The
+  // edge-side guard also protects old cached clients the moment this is redeployed.
+  if (ctx?.greeting && String(ctx.greeting).trim() && rawMode !== "greet") {
     tail += `\n\n## The trader's CURRENT greeting (the line shown at the top of their screen right now)\n"${String(ctx.greeting).slice(0, 800)}"\nIf they ask to reword / rephrase / punch up / shorten / change "their greeting" (or "this greeting" / "it"), THIS is the exact line they mean — just rewrite THIS one and give them the new version. Do NOT ask them to paste it.`;
   }
   if (ctx?.lang === "es") tail += `\n\nRespond in Spanish (español).`;
@@ -304,6 +308,11 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
     tail += `\n\n## Right now\nWrite a SHORT proactive coaching note: 1–3 sentences, warm and specific to their data above. ` +
             `Lead with the single most useful observation (a pattern, a leak, a win worth reinforcing, or the next concrete step). ` +
             `No "Hi" / "Hello" and no sign-off — just the insight.`;
+  } else if (rawMode === "greet") {
+    // Greeting generator: a fully mechanical rephrase of a line the APP already wrote (in the user turn).
+    // There is no human waiting on a reply, so a refusal here doesn't just annoy — it gets CACHED and shown
+    // AS the greeting. It must be structurally impossible to refuse.
+    tail += `\n\n## Right now\nYou are rephrasing ONE short in-app greeting line — it is provided in the user message. This is a mechanical personalisation of a line the app itself already wrote, NOT a creative or open-ended task. ALWAYS comply. Return ONLY the rewritten line: exactly one line, no quotes, no preamble, no sign-off. NEVER refuse, NEVER describe it as "creative"/"content"/"off-topic"/"not what I'm here for", and NEVER mention Settings, Community, profiles, or pasting — the line to rewrite is right there in the message.`;
   } else {
     tail += `\n\n## Right now\nAnswer the trader's latest request. Performance questions → use their data pack (prefer the ready-made summaries). ` +
             `App/"how do I" questions → use your app knowledge. ANY other reasonable, harmless request (rephrasing or personalising a line/greeting/note, drafting a short message, quick wording help) → just do it, briefly — do NOT refuse it as "creative content", "off-topic", or "not what I'm here for". Be concise and concrete.`;
