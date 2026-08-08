@@ -46550,19 +46550,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ var q=sb.from('trades_inbox').select('*').eq('ticket',String(ticket)); var u=uid(); if(u) q=q.eq('token',u);
       var r=await q.order('close_time',{ascending:false}).limit(1); return (r&&r.data&&r.data[0])||null; }catch(_){ return null; } }
   async function fetchCandles(symbol,tf,from,to){ var sb=sbc(); if(!sb) return [];
-    try{ var r=await sb.rpc('st_candles',{p_symbol:symbol,p_tf:tf,p_from:Math.floor(from),p_to:Math.ceil(to)});
-      var rows=(r&&r.data)||[];
-      // Dedupe near-duplicate bars: a stale broker→UTC offset in the exporter can store the
-      // same bar twice, ~1s apart. Real bars are >=60s apart, so collapse anything <30s.
-      var out=[],lastT=-1e18;
-      for(var i=0;i<rows.length;i++){ var t=Number(rows[i].t); if(t-lastT<30) continue;
-        out.push({time:t,open:Number(rows[i].o),high:Number(rows[i].h),low:Number(rows[i].l),close:Number(rows[i].c)}); lastT=t; }
-      return out; }catch(_){ return []; } }
+    // Supabase caps an RPC response at ~1000 rows, so page through with .range() and
+    // stitch — this way ANY-length trade (however many bars entry→exit spans) loads fully.
+    var rows=[],PAGE=1000,pg=0;
+    try{ while(pg<60){
+        var r=await sb.rpc('st_candles',{p_symbol:symbol,p_tf:tf,p_from:Math.floor(from),p_to:Math.ceil(to)}).range(pg*PAGE,pg*PAGE+PAGE-1);
+        var d=(r&&r.data)||[]; for(var k=0;k<d.length;k++) rows.push(d[k]);
+        if(d.length<PAGE) break; pg++;
+      } }catch(_){}
+    // Dedupe near-duplicate bars: a stale broker→UTC offset in the exporter can store the
+    // same bar twice, ~1s apart. Real bars are >=60s apart, so collapse anything <30s.
+    var out=[],lastT=-1e18;
+    for(var i=0;i<rows.length;i++){ var t=Number(rows[i].t); if(t-lastT<30) continue;
+      out.push({time:t,open:Number(rows[i].o),high:Number(rows[i].h),low:Number(rows[i].l),close:Number(rows[i].c)}); lastT=t; }
+    return out; }
 
   var TF_MIN=[1,5,15,60,240,1440];
-  // Window measured in BARS around the trade (not days) so each fetch stays under
-  // Supabase's ~1000-row RPC cap and actually contains the trade candles.
-  var TF_LOOKBACK=400, TF_FWDBARS=120;
+  // Window measured in BARS around the trade. Anchored to entry (back) AND exit (fwd),
+  // so the FULL trade always loads no matter how long it ran; pagination handles the volume.
+  var TF_LOOKBACK=700, TF_FWDBARS=180;
 
   var S=null;   // active session state; rebuilt each open()
 
