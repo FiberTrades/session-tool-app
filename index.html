@@ -20580,6 +20580,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     editingResult = t.result;
     // Trade Replay: show the ▶ Replay button only for MT5-synced trades (they have candles).
     (function(){ var _rb=document.getElementById('edit-trade-replay'); if(!_rb) return;
+      _rb.textContent = (document.documentElement.lang==='es') ? '▶ Repetición' : '▶ Trade Replay';
       _rb.style.display = t.mt5Ticket ? 'inline-flex' : 'none';
       _rb.onclick=function(){ try{ document.getElementById('edit-trade-modal-bg').classList.remove('show'); if(window.__stReplay) window.__stReplay.open(t); }catch(e){} }; })();
 
@@ -46530,7 +46531,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <button class="strp-ico" id="strp-redo" title="Redo"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3.5 13.5,7 10,10.5"/><path d="M13.5 7H6a3.5 3.5 0 0 0 0 7H8.5"/></svg></button>
       <button class="strp-ico" id="strp-del" title="Delete selected"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><path d="M6.3 4.5V3h3.4v1.5"/><path d="M4.7 4.5l.6 8.7a1 1 0 0 0 1 .93h3.4a1 1 0 0 0 1-.93l.6-8.7"/></svg></button>
       <span class="strp-sp"></span>
-      <label class="strp-tgl"><input type="checkbox" id="strp-pos" checked> Position tool</label>
+      <label class="strp-tgl"><input type="checkbox" id="strp-pos" checked> <span id="strp-poslbl">Position tool</span></label>
     </div>
     <div class="strp-cw" id="strp-cw">
       <div class="strp-live" id="strp-live" style="display:none">—</div>
@@ -46574,6 +46575,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var s=String(v).replace(' ','T'); if(!/[zZ]|[+\-]\d\d:?\d\d$/.test(s)) s+='Z'; d=new Date(s); return isNaN(d.getTime())?0:Math.floor(d.getTime()/1000); }
   function sbc(){ return window.__stSB||null; }
   function uid(){ try{ return (window.currentUser&&window.currentUser.id)||null; }catch(_){ return null; } }
+  function L(en,es){ try{ return document.documentElement.lang==='es'?es:en; }catch(_){ return en; } }
+  function localize(){ var es=document.documentElement.lang==='es';
+    var lbls=document.querySelectorAll('#strp-tb .strp-lbl'); if(lbls[1]) lbls[1].textContent=es?'Dibujar':'Draw';
+    var pl=el('strp-poslbl'); if(pl) pl.textContent=es?'Herramienta de posición':'Position tool';
+    var sh=document.querySelector('#strp-spdmenu .strp-spdh'); if(sh) sh.textContent=es?'Velocidad':'Replay speed';
+    var fast={'100':'10','143':'7','200':'5','333':'3','1000':'1'};
+    Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(b){ var sp=b.querySelector('span'); if(!sp)return; var ms=b.dataset.ms; sp.textContent=fast[ms]?(fast[ms]+(es?' / seg':' / sec')):('1 / '+(parseInt(ms,10)/1000)+'s'); });
+    if(!S||!S.playing) el('strp-play').innerHTML='&#9654; '+(es?'Reproducir':'Play');
+    var T=function(id,en,esT){ var e=el(id); if(e) e.title=es?esT:en; };
+    T('strp-fs','Fullscreen','Pantalla completa'); T('strp-close','Close','Cerrar'); T('strp-restart','Restart','Reiniciar'); T('strp-back','Step back','Atrás'); T('strp-fwd','Step forward','Adelante'); T('strp-spdcur','Replay speed','Velocidad'); T('strp-undo','Undo','Deshacer'); T('strp-redo','Redo','Rehacer'); T('strp-del','Delete selected','Borrar selección');
+    var tt={hline:es?'Línea horizontal':'Horizontal',trend:es?'Línea de tendencia':'Trend',rect:es?'Rectángulo':'Rectangle',fib:'Fib',range:es?'Medir':'Measure'};
+    Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(b){ if(tt[b.dataset.tool]) b.title=tt[b.dataset.tool]; });
+  }
 
   async function fetchInbox(ticket){ var sb=sbc(); if(!sb) return null;
     try{ var q=sb.from('trades_inbox').select('*').eq('ticket',String(ticket)); var u=uid(); if(u) q=q.eq('token',u);
@@ -46601,27 +46615,27 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   var S=null;   // active session state; rebuilt each open()
 
-  function closeModal(){ try{ pause(); }catch(_){}   // stop the play timer BEFORE tearing down (else it ticks against a dead chart)
+  function closeModal(){ try{ stopLoop(); }catch(_){} try{ pause(); }catch(_){}   // stop the render loop + play timer BEFORE tearing down
     try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){} S=null; el('strp-modal-bg').classList.remove('show'); }
 
   async function open(trade){
-    var mb=el('strp-modal-bg'); mb.classList.add('show');
+    var mb=el('strp-modal-bg'); mb.classList.add('show'); localize();
     el('strp-tb').style.display='none'; el('strp-ct').style.display='none'; el('strp-live').style.display='none';
-    el('strp-chart').innerHTML='<div class="strp-state" id="strp-state">Loading trade…</div>';
+    el('strp-chart').innerHTML='<div class="strp-state" id="strp-state">'+L('Loading trade…','Cargando operación…')+'</div>';
     el('strp-sym').textContent='—'; el('strp-side').textContent='—'; el('strp-date').textContent=''; el('strp-hr').textContent='—'; el('strp-hp').textContent='';
     try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){}
     S=null;
 
     var ticket=trade&&(trade.mt5Ticket||trade.position);
-    if(!ticket){ el('strp-chart').innerHTML='<div class="strp-state">This trade isn\'t MT5-synced, so there\'s no market data to replay.</div>'; return; }
+    if(!ticket){ el('strp-chart').innerHTML='<div class="strp-state">'+L('This trade isn\'t MT5-synced, so there\'s no market data to replay.','Esta operación no está sincronizada con MT5, no hay datos de mercado para reproducir.')+'</div>'; return; }
     var row=await fetchInbox(ticket);
-    if(!row){ el('strp-chart').innerHTML='<div class="strp-state">No synced candle data found for this trade yet.</div>'; return; }
+    if(!row){ el('strp-chart').innerHTML='<div class="strp-state">'+L('No synced candle data found for this trade yet.','Aún no hay datos de velas sincronizados para esta operación.')+'</div>'; return; }
 
     var symbol=String(row.symbol||'');
     var dir=/^(sell|short)/i.test(String(row.direction||''))?-1:1;
     var entry=parseFloat(row.entry_price)||0, exit=parseFloat(row.exit_price)||0;
     var entryTs=parseTs(row.open_time), exitTs=parseTs(row.close_time);
-    if(!symbol||!entry||!entryTs){ el('strp-chart').innerHTML='<div class="strp-state">This trade is missing entry price/time — can\'t replay.</div>'; return; }
+    if(!symbol||!entry||!entryTs){ el('strp-chart').innerHTML='<div class="strp-state">'+L('This trade is missing entry price/time — can\'t replay.','A esta operación le falta el precio/hora de entrada — no se puede reproducir.')+'</div>'; return; }
     var pip=pipOf(entry);
     var slPips=parseFloat(row.sl_pips)||0;
     var tpPips=parseFloat(row.tp_pips)|| ((parseFloat(row.tp_r)&&slPips)?parseFloat(row.tp_r)*slPips:0);
@@ -46633,13 +46647,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
     // header
     el('strp-sym').textContent=symbol;
-    var sideEl=el('strp-side'); sideEl.className='strp-side '+(dir>0?'long':'short'); sideEl.textContent=(dir>0?'↑ Long':'↓ Short');
+    var sideEl=el('strp-side'); sideEl.className='strp-side '+(dir>0?'long':'short'); sideEl.textContent=(dir>0?L('↑ Long','↑ Largo'):L('↓ Short','↓ Corto'));
     el('strp-date').textContent=new Date(entryTs*1000).toISOString().replace('T',' · ').slice(0,19)+' UTC';
     var hr=el('strp-hr'); hr.className='strp-r '+(netR>0.02?'win':(netR<-0.02?'lose':'be'));
     hr.textContent=(netR>=0?'+':'')+netR.toFixed(2)+'R';
     var pnl=parseFloat(row.pnl); var pnlTxt=isNaN(pnl)?'':((((typeof fmtMoney==='function')?fmtMoney(pnl):((pnl>=0?'+':'')+'£'+Math.round(pnl))))+' · '); el('strp-hp').textContent=pnlTxt+((exit-entry)/pip*dir>=0?'+':'')+((exit-entry)/pip*dir).toFixed(1)+'p';
 
-    try{ await ensureLWC(); }catch(_){ el('strp-chart').innerHTML='<div class="strp-state">Chart library failed to load (needs internet).</div>'; return; }
+    try{ await ensureLWC(); }catch(_){ el('strp-chart').innerHTML='<div class="strp-state">'+L('Chart library failed to load (needs internet).','No se pudo cargar la librería del gráfico (necesita internet).')+'</div>'; return; }
 
     S={ symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
@@ -46661,7 +46675,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var bars=await loadTf(tf);
     if(!S||S._tok!==tok) return;   // a newer tf switch (or a close) superseded this one
     S.tf=tf; S.bars=bars;
-    if(!S.bars.length){ el('strp-chart').innerHTML='<div class="strp-state">No candles stored for this timeframe.</div>'; return; }
+    if(!S.bars.length){ el('strp-chart').innerHTML='<div class="strp-state">'+L('No candles stored for this timeframe.','No hay velas guardadas para esta temporalidad.')+'</div>'; return; }
     S.eBI=bidx(S.bars,S.entryTs); S.xBI=Math.max(S.eBI,bidx(S.bars,S.exitTs));
     var look=({1:60,5:48,15:32,60:24,240:16,1440:10})[tf]||40;
     S.rSI=Math.max(0,S.eBI-look);                 // Restart point: a lead-in before entry, to replay the approach
@@ -46692,6 +46706,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(S.TP) series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:2,title:'TP'});
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     el('strp-tb').style.display=''; el('strp-ct').style.display=''; el('strp-live').style.display='';
+    startLoop();
     await setTf(1);
   }
   function _prec(){ var s=String(S.entry); return (s.indexOf('.')>=0)?Math.min(8,s.length-s.indexOf('.')-1):2; }
@@ -46703,11 +46718,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function liveR(){ var e=el('strp-live'), idx=Math.min(S.cursor-1,S.bars.length-1);
     var slTxt=S.slPips? ' · SL '+S.slPips.toFixed(1)+'p':'';
     var tpTxt=S.tpPips? ' · TP '+S.tpPips.toFixed(1)+'p':'';
-    if(idx<S.eBI){ e.textContent='Waiting for entry…'+slTxt+tpTxt; e.className='strp-live'; return; }
+    if(idx<S.eBI){ e.textContent=L('Waiting for entry…','Esperando entrada…')+slTxt+tpTxt; e.className='strp-live'; return; }
     var px=idx>=S.xBI?S.exit:S.bars[idx].close, r=S.dir*(px-S.entry)/S.riskDist, pips=S.dir*(px-S.entry)/S.pip, gbp=r*S.riskGbp;
     e.className='strp-live '+(r>0.02?'win':(r<-0.02?'lose':'')); var s=r>=0?'+':'';
     var money=S.riskGbp?(((typeof fmtMoney==='function')?fmtMoney(gbp):((gbp>=0?'+':'')+'£'+Math.round(gbp)))+' · '):'';
-    e.innerHTML='P&amp;L <b>'+s+r.toFixed(2)+'R</b> · '+money+s+pips.toFixed(1)+'p'+(idx>=S.xBI?' · closed':'')+slTxt+tpTxt; }
+    e.innerHTML='P&amp;L <b>'+s+r.toFixed(2)+'R</b> · '+money+s+pips.toFixed(1)+'p'+(idx>=S.xBI?L(' · closed',' · cerrada'):'')+slTxt+tpTxt; }
   function clock(){ var d=new Date(S.bars[Math.min(S.cursor-1,S.bars.length-1)].time*1000); el('strp-clock').textContent=String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0'); }
 
   function xOf(i){ return chart.timeScale().logicalToCoordinate(i); }
@@ -46715,7 +46730,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function P(p){ var x=xOf(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
   function evXY(e){ var r=chartEl.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
   function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; return {idx:Math.max(0,Math.min(S.cursor-1,Math.round(lg))),price:pr}; }
-  function sizeO(){ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; overlay.style.width=w+'px'; overlay.style.height=h+'px'; overlay.width=Math.round(w*dpr); overlay.height=Math.round(h*dpr); var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
+  function sizeO(){ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
     var xE=xOf(S.eBI); if(xE==null) xE=0; var ex=S.cursor-1>=S.xBI,xR=ex?xOf(S.xBI):w-2; if(xR==null) xR=w-2; xE=Math.max(0,Math.min(w,xE)); xR=Math.max(0,Math.min(w,xR)); if(xR<xE){var t=xE;xE=xR;xR=t;} var bw=xR-xE;
     if(yT!=null){ ctx.fillStyle='rgba(78,205,139,0.13)'; ctx.fillRect(xE,Math.min(yE,yT),bw,Math.abs(yE-yT)); ctx.strokeStyle='rgba(78,205,139,0.5)'; ctx.lineWidth=1; ctx.strokeRect(xE+.5,Math.min(yE,yT)+.5,bw-1,Math.abs(yE-yT)-1); }
@@ -46729,9 +46744,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if(d.type==='range'){ var a4=P(d.a),b4=P(d.b); if(a4&&b4){ var up=d.b.price>=d.a.price,col=up?'78,205,139':'229,103,103'; var x0=Math.min(a4.x,b4.x),x1=Math.max(a4.x,b4.x),y0=Math.min(a4.y,b4.y),y1=Math.max(a4.y,b4.y); ctx.strokeStyle='rgba('+col+',0.85)'; ctx.lineWidth=1; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1); var dP=d.b.price-d.a.price,pips=dP/S.pip,db=Math.abs(d.b.idx-d.a.idx); var label=(pips>=0?'+':'')+pips.toFixed(1)+'p · '+db+' bars'; var tw=ctx.measureText(label).width,cx=(x0+x1)/2,cy=up?y0-10:y1+10; ctx.fillStyle='rgba('+col+',0.95)'; ctx.fillRect(cx-tw/2-6,cy-9,tw+12,18); ctx.fillStyle='#0B0A0D'; ctx.textBaseline='middle'; ctx.textAlign='center'; ctx.fillText(label,cx,cy); ctx.textAlign='left'; } }
     ctx.restore(); }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
-  function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h); if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w); }
-  var _raf=0;   // coalesce redraws to one per frame — a double redraw per tick made the position box pulse
-  function draw(){ if(_raf) return; _raf=requestAnimationFrame(function(){ _raf=0; _draw(); }); }
+  function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
+    // Clip to the plot area so lines never paint over the right price scale (Entry label + price ticks).
+    var psw=0; try{ psw=chart.priceScale('right').width()||0; }catch(_){}
+    var pw=Math.max(10,w-psw); ctx.save(); ctx.beginPath(); ctx.rect(0,0,pw,h); ctx.clip();
+    if(S.showPos) drawPos(ctx,pw); S.drawings.forEach(function(d){drawOne(ctx,d,pw,false);}); if(S.pending) drawOne(ctx,S.pending,pw,true); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,pw); ctx.restore(); }
+  // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
+  // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
+  var _loop=0;
+  function _frame(){ if(!S){ _loop=0; return; } _draw(); _loop=requestAnimationFrame(_frame); }
+  function startLoop(){ if(!_loop) _loop=requestAnimationFrame(_frame); }
+  function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
+  function draw(){}   // no-op: the loop above handles all redraws
   function setView(){ chart.timeScale().setVisibleLogicalRange({from:Math.max(0,S.cursor-102),to:S.cursor+12}); }
   function onRange(){ draw(); }
   // Full render (open / scrub / restart / tf): position the view. Playback tick: just append
@@ -46746,10 +46770,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
 
   function tick(){ if(!S||!S.bars.length){ clearInterval(S&&S.timer); return; } if(S.cursor>=S.bars.length){ pause(); return; } S.cursor++; render(false); }
-  function play(){ if(!S) return; if(S.cursor>=S.bars.length) S.cursor=S.rSI; S.playing=true; el('strp-play').innerHTML='&#9208; Pause'; clearInterval(S.timer);
+  function play(){ if(!S) return; if(S.cursor>=S.bars.length) S.cursor=S.rSI; S.playing=true; el('strp-play').innerHTML='&#9208; '+L('Pause','Pausa'); clearInterval(S.timer);
     try{ chart.timeScale().scrollToRealTime(); }catch(_){}   // anchor to the frontier at the current zoom
     S.timer=setInterval(tick,Math.max(24,S.ms)); }
-  function pause(){ if(!S) return; S.playing=false; el('strp-play').innerHTML='&#9654; Play'; clearInterval(S.timer); }
+  function pause(){ if(!S) return; S.playing=false; el('strp-play').innerHTML='&#9654; '+L('Play','Reproducir'); clearInterval(S.timer); }
 
   // undo/redo/tools
   function clone(x){ return JSON.parse(JSON.stringify(x)); }
@@ -46763,7 +46787,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // ---- wire controls once (elements are static) ----
   el('strp-fs').onclick=function(){ el('strp-modal-bg').classList.toggle('strp-full'); setTimeout(function(){ try{ if(S){ setView(); draw(); } }catch(_){} },90); };
   el('strp-close').onclick=closeModal;
-  el('strp-modal-bg').addEventListener('mousedown',function(e){ var card=el('strp-modal-bg').querySelector('.strp-card'); if(card&&!card.contains(e.target)) closeModal(); });
+  // Close only via the X button (no click-outside-to-close, per request). Escape also closes.
   el('strp-play').onclick=function(){ if(!S)return; S.playing?pause():play(); };
   el('strp-restart').onclick=function(){ if(!S)return; pause(); S.userView=false; S.cursor=S.rSI; render(true); };
   el('strp-fwd').onclick=function(){ if(!S)return; pause(); if(S.cursor<S.bars.length){S.cursor++;render(true);} };
