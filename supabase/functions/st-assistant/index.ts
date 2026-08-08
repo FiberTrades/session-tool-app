@@ -296,6 +296,9 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
   if (ctx?.profile && String(ctx.profile).trim()) {
     tail += `\n\n## What you remember about this trader (their evolving profile)\n${String(ctx.profile).slice(0, 3000)}`;
   }
+  if (ctx?.greeting && String(ctx.greeting).trim()) {
+    tail += `\n\n## The trader's CURRENT greeting (the line shown at the top of their screen right now)\n"${String(ctx.greeting).slice(0, 800)}"\nIf they ask to reword / rephrase / punch up / shorten / change "their greeting" (or "this greeting" / "it"), THIS is the exact line they mean — just rewrite THIS one and give them the new version. Do NOT ask them to paste it.`;
+  }
   if (ctx?.lang === "es") tail += `\n\nRespond in Spanish (español).`;
   if (mode === "coach") {
     tail += `\n\n## Right now\nWrite a SHORT proactive coaching note: 1–3 sentences, warm and specific to their data above. ` +
