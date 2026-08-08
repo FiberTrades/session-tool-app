@@ -21129,7 +21129,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-08 12:39 UTC';
+  window.ST_BUILD = '2026-08-08 12:47 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -46641,12 +46641,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var entryTs=parseTs(row.open_time), exitTs=parseTs(row.close_time);
     if(!symbol||!entry||!entryTs){ el('strp-chart').innerHTML='<div class="strp-state">'+L('This trade is missing entry price/time — can\'t replay.','A esta operación le falta el precio/hora de entrada — no se puede reproducir.')+'</div>'; return; }
     var pip=pipOf(entry);
-    var slPips=parseFloat(row.sl_pips)||0;
-    var tpPips=parseFloat(row.tp_pips)|| ((parseFloat(row.tp_r)&&slPips)?parseFloat(row.tp_r)*slPips:0);
+    var _n=function(v){ v=parseFloat(v); return isNaN(v)?0:v; };
+    // SL/TP sizes: prefer the synced inbox row, but some trades didn't sync sl_pips/tp_pips. Fall back to
+    // the requested SL and to the journal trade's own logged SL/TP/risk so the position tool + real R render.
+    var slPips=_n(row.sl_pips)||_n(row.req_sl_pips)||_n(trade&&trade.slPips)||_n(trade&&trade.reqSlPips);
+    var tpR=_n(row.tp_r)||_n(trade&&trade._tpR)||_n(trade&&trade.potentialR);
+    var tpPips=_n(row.tp_pips)||_n(trade&&trade._tpPips)||(tpR&&slPips?tpR*slPips:0);
     var SL=slPips? entry-dir*slPips*pip : 0;
     var TP=tpPips? entry+dir*tpPips*pip : 0;
     var riskDist=slPips? Math.abs(entry-SL) : Math.abs(entry-exit)||pip*10;
-    var riskGbp=parseFloat(row.risk_gbp)||0;
+    var riskGbp=_n(row.risk_gbp)||_n(trade&&trade.risk)||_n(trade&&trade._riskGbp);
     var netR=(exit? dir*(exit-entry)/riskDist : 0);
 
     // header
@@ -46679,7 +46683,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var bars=await loadTf(tf);
     if(!S||S._tok!==tok) return;   // a newer tf switch (or a close) superseded this one
     S.tf=tf; S.bars=bars;
-    if(!S.bars.length){ el('strp-chart').innerHTML='<div class="strp-state">'+L('No candles stored for this timeframe.','No hay velas guardadas para esta temporalidad.')+'</div>'; return; }
+    if(!S.bars.length){ el('strp-chart').innerHTML='<div class="strp-state">'+L('No candle data for this trade on this timeframe — older trades can be beyond the synced history.','No hay datos de velas para esta operación en esta temporalidad — las operaciones antiguas pueden quedar fuera del historial sincronizado.')+'</div>'; return; }
     S.eBI=bidx(S.bars,S.entryTs); S.xBI=Math.max(S.eBI,bidx(S.bars,S.exitTs));
     var look=({1:60,5:48,15:32,60:24,240:16,1440:10})[tf]||40;
     S.rSI=Math.max(0,S.eBI-look);                 // Restart point: a lead-in before entry, to replay the approach
