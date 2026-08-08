@@ -4353,6 +4353,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </section>
 
     <section>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.s6.title">Session Analysis</span></div>
+      <p class="section-hint" data-i18n="hint.session_analysis">How you perform per FX session, by entry time (London clock). London 08:00–16:30 and New York 13:30–21:00 genuinely overlap, so a trade in the 13:30–16:30 window counts toward both — the overlap is also shown on its own.</p>
+      <div id="session-analysis-summary"></div>
+    </section>
+
+    <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.consistency_title">Showed up vs Traded</span></div>
       <div id="lifetime-consistency-summary"></div>
     </section>
@@ -6637,6 +6643,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'tta.best_duration': 'Best duration',
       'tta.worst_duration': 'Worst duration',
       'tta.most_active_duration': 'Most active duration',
+      'tta.best_session': 'Best session',
+      'tta.worst_session': 'Worst session',
+      'tta.most_active_session': 'Most active session',
+      'tta.sess_asia': 'Asia',
+      'tta.sess_london': 'London',
+      'tta.sess_ny': 'New York',
+      'tta.sess_overlap': 'London/NY overlap',
+      'tta.sess_outside': 'Outside sessions',
+      'tta.col_session': 'Session',
+      'tta.sess_note': '↳ London/NY overlap is a subset of both sessions above, not a fourth session. Dimmed rows have fewer than 5 trades — too thin to read into yet.',
+      'trades.s6.title': 'Session Analysis',
+      'hint.session_analysis': 'How you perform per FX session, by entry time (London clock). London 08:00–16:30 and New York 13:30–21:00 genuinely overlap, so a trade in the 13:30–16:30 window counts toward both — the overlap is also shown on its own.',
       'tta.from_trades': 'from {N} trade{S}',
       'tta.need_more': 'Need {N} more trade{S} to know',
       'tta.need_more_decided': 'Need {N} more decided trade{S} in one slot',
@@ -8032,6 +8050,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'tta.best_duration': 'Mejor duración',
       'tta.worst_duration': 'Peor duración',
       'tta.most_active_duration': 'Duración más activa',
+      'tta.best_session': 'Mejor sesión',
+      'tta.worst_session': 'Peor sesión',
+      'tta.most_active_session': 'Sesión más activa',
+      'tta.sess_asia': 'Asia',
+      'tta.sess_london': 'Londres',
+      'tta.sess_ny': 'Nueva York',
+      'tta.sess_overlap': 'Solape Londres/NY',
+      'tta.sess_outside': 'Fuera de sesión',
+      'tta.col_session': 'Sesión',
+      'tta.sess_note': '↳ El solape Londres/NY es un subconjunto de ambas sesiones, no una cuarta sesión. Las filas atenuadas tienen menos de 5 operaciones — muestra demasiado pequeña para sacar conclusiones.',
+      'trades.s6.title': 'Análisis por sesión',
+      'hint.session_analysis': 'Tu rendimiento por sesión FX, según la hora de entrada (reloj de Londres). Londres 08:00–16:30 y Nueva York 13:30–21:00 se solapan de verdad, así que una operación en la franja 13:30–16:30 cuenta en ambas — el solape también se muestra por separado.',
       'tta.from_trades': 'de {N} operación{S}',
       'tta.need_more': 'Faltan {N} operación{S} más para saberlo',
       'tta.need_more_decided': 'Faltan {N} operación{S} decidida{S} más en una franja',
@@ -16150,6 +16180,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     renderTimeAnalysis(all);
 
+    renderSessionAnalysis(all);
+
     renderLifetimeConsistency(all);
 
     renderCombinedAnalysis(all);
@@ -19409,6 +19441,100 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     renderAnalysisOutput(buckets, null, tableEl, summaryEl, 'time');
   }
 
+  // ============================================================================
+  // Session Analysis: the classic FX sessions, bucketed by ENTRY time.
+  // entryTime is stored on the LONDON clock (MT5 imports are shifted off broker
+  // server time — see the one-time timezone fix in the import path), so these
+  // windows are London wall-clock and stay correct across BST/GMT without any
+  // DST arithmetic here.
+  // London (08:00–16:30) and New York (13:30–21:00) genuinely overlap, so a trade
+  // entered in 13:30–16:30 counts toward BOTH sessions — that's how the market
+  // actually works, and the overlap is additionally reported on its own line.
+  // Anything outside every window (e.g. a late-evening entry) goes to its own
+  // bucket rather than being silently dropped.
+  // ============================================================================
+  const FX_SESSIONS = [
+    { id: 'asia',   labelKey: 'tta.sess_asia',   start: 0,   end: 480  },   // 00:00 – 08:00
+    { id: 'london', labelKey: 'tta.sess_london', start: 480, end: 990  },   // 08:00 – 16:30
+    { id: 'ny',     labelKey: 'tta.sess_ny',     start: 810, end: 1260 }    // 13:30 – 21:00
+  ];
+  const FX_OVERLAP = { labelKey: 'tta.sess_overlap', start: 810, end: 990 };  // 13:30 – 16:30
+
+  function renderSessionAnalysis(trades) {
+    const summaryEl = document.getElementById('session-analysis-summary');
+    if (!summaryEl) return;
+    // Entry time only — a trade with no logged entry time can't be placed in a session.
+    const timed = (trades || []).filter(tr => tr.entryTime && parseHHMM(tr.entryTime) != null);
+
+    function mkBucket(key) {
+      return { key: key, trades: [], wins: 0, losses: 0, bes: 0, net: 0, totalR: 0 };
+    }
+    // Session analysis stays setup-level (no copies multiplier), for the same reason as
+    // time analysis: it asks "when does my edge work?", not "what did it pay across accounts".
+    function addTo(bucket, tr) {
+      bucket.trades.push(tr);
+      if (tr.result === 'Win') bucket.wins++;
+      else if (tr.result === 'Lose') bucket.losses++;
+      else if (tr.result === 'BE') bucket.bes++;
+      bucket.totalR += (typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0;
+      bucket.net += tradeNetPL(tr);
+    }
+
+    const buckets = FX_SESSIONS.map(s => mkBucket(t(s.labelKey) || s.id));
+    const overlap = mkBucket(t(FX_OVERLAP.labelKey) || 'London/NY overlap');
+    const outside = mkBucket(t('tta.sess_outside') || 'Outside sessions');
+
+    timed.forEach(tr => {
+      const mins = parseHHMM(tr.entryTime);
+      let placed = false;
+      FX_SESSIONS.forEach((s, i) => {
+        if (mins >= s.start && mins < s.end) { addTo(buckets[i], tr); placed = true; }
+      });
+      if (mins >= FX_OVERLAP.start && mins < FX_OVERLAP.end) addTo(overlap, tr);
+      if (!placed) addTo(outside, tr);
+    });
+
+    const primary = buckets.concat(outside.trades.length ? [outside] : []);
+    renderAnalysisOutput(primary, overlap, null, summaryEl, 'session');
+    if (!timed.length) return;
+
+    // The four hero cells above answer "which session is best/worst". This table answers the
+    // question a session trader actually asks next — London vs New York, side by side. Rows below
+    // the reliability threshold are dimmed rather than hidden, so a thin sample reads as thin
+    // instead of looking like a verdict.
+    const rows = primary.concat(overlap.trades.length ? [overlap] : [])
+      .filter(b => b.trades.length > 0)
+      .map(b => {
+        const decided = b.wins + b.losses;
+        const dim = b.trades.length < MIN_TRADES_PER_BUCKET ? ' dim' : '';
+        const rCls = dim ? '' : (b.totalR > 0 ? ' good' : b.totalR < 0 ? ' bad' : ' be');
+        const pCls = dim ? '' : (b.net > 0 ? ' good' : b.net < 0 ? ' bad' : ' be');
+        const isSub = (b === overlap);
+        return `<div class="time-analysis-row">
+          <div class="label">${isSub ? '↳ ' : ''}${b.key}</div>
+          <div class="num${dim}">${b.trades.length}</div>
+          <div class="num${dim}">${decided ? Math.round(b.wins / decided * 100) + '%' : '—'}</div>
+          <div class="num${rCls || dim}">${(b.totalR >= 0 ? '+' : '') + b.totalR.toFixed(2)}R</div>
+          <div class="num${dim}">${b.wins} / ${b.losses} / ${b.bes}</div>
+          <div class="num${pCls || dim}">${(b.net >= 0 ? '+' : '-') + curSym() + Math.abs(b.net).toFixed(2)}</div>
+        </div>`;
+      }).join('');
+
+    summaryEl.insertAdjacentHTML('beforeend', `
+      <div class="time-analysis-table">
+        <div class="time-analysis-row header">
+          <div class="label">${t('tta.col_session')}</div>
+          <div class="num">${t('brk.col.trades')}</div>
+          <div class="num">${t('brk.col.wr')}</div>
+          <div class="num">${t('brk.col.netr')}</div>
+          <div class="num">${t('brk.col.wlbe')}</div>
+          <div class="num">${t('brk.col.netpl')}</div>
+        </div>
+        ${rows}
+      </div>
+      <p class="section-hint">${t('tta.sess_note')}</p>`);
+  }
+
 
   // Honest rendering: best/worst only declared when the data supports it.
   // - ≥5 trades per bucket minimum (or ≥5 decided for win-rate ranking)
@@ -19475,9 +19601,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return Math.max(1, MIN_TRADES_PER_BUCKET - (closest.wins + closest.losses));
     }
 
-    const labelBest = kind === 'time' ? t('tta.best_slot')  : t('tta.best_duration');
-    const labelWorst = kind === 'time' ? t('tta.worst_slot') : t('tta.worst_duration');
-    const labelMost = kind === 'time' ? t('tta.most_active_slot') : t('tta.most_active_duration');
+    const labelBest = kind === 'time' ? t('tta.best_slot')  : kind === 'session' ? t('tta.best_session')  : t('tta.best_duration');
+    const labelWorst = kind === 'time' ? t('tta.worst_slot') : kind === 'session' ? t('tta.worst_session') : t('tta.worst_duration');
+    const labelMost = kind === 'time' ? t('tta.most_active_slot') : kind === 'session' ? t('tta.most_active_session') : t('tta.most_active_duration');
 
     function netHtml(b) {
       const netStr = (b.net >= 0 ? '+' : '-') + curSym() + Math.abs(b.net).toFixed(2);
@@ -21131,7 +21257,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-08 22:40 UTC';
+  window.ST_BUILD = '2026-08-08 23:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32058,7 +32184,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try {
         var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
         var wins = 0, losses = 0, bes = 0, netR = 0, winR = 0, lossR = 0, netMoney = 0;
-        var bySym = {}, byDow = {}, DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        var bySym = {}, byDow = {}, bySess = {}, DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         all.forEach(function (tr) {
           var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
           var r  = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
@@ -32067,9 +32193,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           netR += r; netMoney += pl;
           var sym = tr.symbol || '?'; if (!bySym[sym]) bySym[sym] = { n: 0, r: 0, money: 0 }; bySym[sym].n++; bySym[sym].r += r; bySym[sym].money += pl;
           if (tr.date) { var d = new Date(tr.date); if (!isNaN(d.getTime())) { var k = DOW[d.getDay()]; if (!byDow[k]) byDow[k] = { n: 0, r: 0, money: 0 }; byDow[k].n++; byDow[k].r += r; byDow[k].money += pl; } }
+          // Per-FX-session (London clock, same windows the Statistics tab shows). London and New York
+          // overlap 13:30–16:30, so an overlap trade counts in both — matching the on-screen table.
+          if (tr.entryTime && typeof parseHHMM === 'function' && typeof FX_SESSIONS !== 'undefined') {
+            var _mn = parseHHMM(tr.entryTime);
+            if (_mn != null) FX_SESSIONS.forEach(function (s) {
+              if (_mn >= s.start && _mn < s.end) {
+                if (!bySess[s.id]) bySess[s.id] = { n: 0, r: 0, money: 0 };
+                bySess[s.id].n++; bySess[s.id].r += r; bySess[s.id].money += pl;
+              }
+            });
+          }
         });
         Object.keys(bySym).forEach(function (k) { bySym[k].r = nr(bySym[k].r); bySym[k].money = nr(bySym[k].money); });
         Object.keys(byDow).forEach(function (k) { byDow[k].r = nr(byDow[k].r); byDow[k].money = nr(byDow[k].money); });
+        Object.keys(bySess).forEach(function (k) { bySess[k].r = nr(bySess[k].r); bySess[k].money = nr(bySess[k].money); });
         var decided = wins + losses, s = (typeof data !== 'undefined' && data.settings) || {};
         // Full trade list (newest first) + all-time records, so the AI can answer questions about
         // INDIVIDUAL trades ("best trade this month", "worst Tuesday", coach a specific setup) and
@@ -32156,7 +32294,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           },
           records: { bestByR: bestR, worstByR: worstR, bestByMoney: bestGbp },
           thisWeek: thisWeek, thisMonth: thisMonth, byDirection: byDir, streak: streak,
-          byWeekday: byDow, bySymbol: bySym,
+          byWeekday: byDow, bySymbol: bySym, bySession: bySess,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: s.riskRules || null, profitTarget: (s.riskRules && (s.riskRules.profitTarget || s.riskRules.profitTargetAmount)) || null },
           today: {
