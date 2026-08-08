@@ -21131,7 +21131,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-08 17:40 UTC';
+  window.ST_BUILD = '2026-08-08 17:48 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -46947,12 +46947,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     el('sthc-open').textContent=s?'Abrir app de correo':'Open email app';
     el('sthc-close').textContent=s?'Cerrar':'Close'; }
   function note(msg){ try{ if(typeof window.stCenterNote==='function'){ window.stCenterNote(msg); return; } }catch(_){} try{ alert(msg); }catch(_){} }
-  function openP(){
-    // Robust: copy the email + show the app's own note (native alert fallback). No dependency on the
-    // custom popup element, which can be hidden by page stacking contexts.
-    try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(EMAIL); } }catch(_){}
-    note((es()?'Correo de soporte copiado: ':'Support email copied: ')+EMAIL+(es()?' — pégalo en tu app de correo.':' — paste it into any app.'));
+  function copyEmail(){
+    // execCommand('copy') is synchronous and works inside a click gesture (the async Clipboard API was
+    // silently rejecting). Fall back to the Clipboard API, then to a prompt the user can copy manually.
+    try{ var ta=document.createElement('textarea'); ta.value=EMAIL; ta.style.cssText='position:fixed;top:0;left:0;width:1px;height:1px;opacity:0'; ta.setAttribute('readonly',''); document.body.appendChild(ta); ta.focus(); ta.select(); try{ ta.setSelectionRange(0,EMAIL.length); }catch(_){} var ok=false; try{ ok=document.execCommand('copy'); }catch(_){} document.body.removeChild(ta); if(ok) return true; }catch(_){}
+    try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(EMAIL); return true; } }catch(_){}
+    return false;
   }
+  function openP(){
+    var ok=copyEmail();
+    // Native alert/prompt always renders (unlike the app note, which can be hidden by page stacking).
+    if(ok){ try{ alert((es()?'Correo de soporte copiado:\n':'Support email copied:\n')+EMAIL+(es()?'\n\nPégalo en tu app de correo.':'\n\nPaste it into any app.')); return; }catch(_){} }
+    try{ window.prompt(es()?'Correo de soporte (cópialo):':'Support email (copy it):',EMAIL); }catch(_){ try{ alert(EMAIL); }catch(__){} }
+  }
+  window.__stContact=openP;   // callable for testing: window.__stContact()
   function closeP(){ el('sthc-bg').classList.remove('show'); }
   el('sthc-copy').onclick=function(){ var ok=function(){ note((es()?'Copiado: ':'Copied: ')+EMAIL); closeP(); };
     try{ if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(EMAIL).then(ok,function(){ try{ window.prompt(es()?'Copia el correo:':'Copy the email:',EMAIL); }catch(_){} closeP(); }); return; } }catch(_){}
