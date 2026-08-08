@@ -1117,6 +1117,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      displayed (read-only), and mentor view never persists. The account/scope picker is
      button-based, so it's already unaffected by the blanket select disable above. */
   body.mentor-viewing #stats-symbol-select { pointer-events: auto !important; }
+  /* Trade Replay is fully interactive for the mentor (scrub slider, position-tool toggle, drawing). */
+  body.mentor-viewing #strp-modal-bg input { pointer-events: auto !important; }
   .mentor-greet-msg { color: #e8cf63; }
   .cal-day-mn-env, .cal-week-mn-env { position: absolute; top: 4px; left: 4px; width: 17px; height: 17px; color: #fff; animation: mnPulse 1.6s ease-in-out infinite; z-index: 3; }
   .cal-day-mn-env svg, .cal-week-mn-env svg { width: 100%; height: 100%; display: block; filter: drop-shadow(0 0 3px rgba(255,255,255,0.6)); }
@@ -21129,7 +21131,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-08 16:14 UTC';
+  window.ST_BUILD = '2026-08-08 16:27 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -40905,7 +40907,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       //  - .stb-bd-modal/.stb-bd-close : close the leaderboard "How X scored" breakdown popup
       //  - .dcx-img                : the chart image viewer (close, zoom, open-in-browser)
       //  - #edit-trade-chart       : the chart thumbnail inside a trade, to open its chart
-      var MV_ALLOW = '#mv-banner, .tabs, .tab, .tab-step, .tab-step-arrow, .tab-step-current, .modal-close, .cal-day, .cal-nav-btn, .cal-week-summary, .lang-flag, #lang-toggle, .potr-trade-row, .trade-row, .series-dot.clickable, .history-row, .hist-sec-toggle, #scope-picker, .scope-picker-btn, .scope-picker-menu, .scope-picker-item, .scope-picker-section-toggle, .combo-show-all, .tag-leaderboard-expand, .stb-card, .stb-row-click, .stb-you-click, .stb-bd-modal, .stb-bd-close, .dcx-img, #edit-trade-chart, #page-trades, #page-tradeview, #day-modal-bg, #review-modal-bg, .tv-link-preview, a[href*="tradingview.com"], a[href*="chart-shots"], [data-mv-allow]';
+      var MV_ALLOW = '#mv-banner, .tabs, .tab, .tab-step, .tab-step-arrow, .tab-step-current, .modal-close, .cal-day, .cal-nav-btn, .cal-week-summary, .lang-flag, #lang-toggle, .potr-trade-row, .trade-row, .series-dot.clickable, .history-row, .hist-sec-toggle, #scope-picker, .scope-picker-btn, .scope-picker-menu, .scope-picker-item, .scope-picker-section-toggle, .combo-show-all, .tag-leaderboard-expand, .stb-card, .stb-row-click, .stb-you-click, .stb-bd-modal, .stb-bd-close, .dcx-img, #edit-trade-chart, #edit-trade-replay, #strp-modal-bg, #page-trades, #page-tradeview, #day-modal-bg, #review-modal-bg, .tv-link-preview, a[href*="tradingview.com"], a[href*="chart-shots"], [data-mv-allow]';
       // The account/scope picker is safe to allow: saveData() bails on window.__MV, so switching
       // scope only changes what is RENDERED - it can never write to the member's journal.
       // A series dot opens the trade in the edit modal. The DOT is allowed, the modal body is
@@ -40920,7 +40922,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           // Clicking the dimmed backdrop closes the modal. Default-deny would otherwise
           // swallow it and leave the X as the only way out.
           // e.target === the backdrop means the click landed OUTSIDE the card, not inside it.
-          if(e.target && e.target.classList && e.target.classList.contains('modal-bg')){
+          if(e.target && e.target.classList && e.target.classList.contains('modal-bg') && e.target.id!=='strp-modal-bg'){
             e.preventDefault(); e.stopPropagation();
             e.target.classList.remove('show');
             return;
@@ -46631,6 +46633,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(b){ if(tt[b.dataset.tool]) b.title=tt[b.dataset.tool]; });
   }
 
+  // Build an inbox-shaped row from a journal trade (MT5-synced trades carry entryPrice/closePrice/openTime/
+  // closeTime). Used when trades_inbox isn't readable (mentor view — the member's rows are RLS-gated — or a
+  // consumed row). Candles come from st_candles, which is shared, so the replay still works.
+  function tradeToRow(t){ if(!t) return null;
+    var ep=parseFloat(t.entryPrice!=null?t.entryPrice:t.entry_price), xp=parseFloat(t.closePrice!=null?t.closePrice:t.exit_price);
+    var ot=t.openTime||t.open_time||t.openDate, ct=t.closeTime||t.close_time||t.closeDate;
+    if(!(ep>0)||!ot) return null;
+    return { symbol:t.symbol||'', direction:(/short|sell/i.test(String(t.side||t.type||t.direction||''))?'sell':'buy'),
+      entry_price:ep, exit_price:(xp>0?xp:0), open_time:ot, close_time:ct,
+      sl_pips:t.slPips, req_sl_pips:(t.reqSlPips||t._reqSlPips), tp_pips:t._tpPips, tp_r:t._tpR, risk_gbp:t._riskGbp,
+      pnl:(t.pnl!=null?t.pnl:t.netPL) }; }
   async function fetchInbox(ticket){ var sb=sbc(); if(!sb) return null;
     try{ var q=sb.from('trades_inbox').select('*').eq('ticket',String(ticket)); var u=uid(); if(u) q=q.eq('token',u);
       var r=await q.order('close_time',{ascending:false}).limit(1); return (r&&r.data&&r.data[0])||null; }catch(_){ return null; } }
@@ -46673,6 +46686,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var ticket=trade&&(trade.mt5Ticket||trade.position);
     if(!ticket){ el('strp-chart').innerHTML='<div class="strp-state">'+L('This trade isn\'t MT5-synced, so there\'s no market data to replay.','Esta operación no está sincronizada con MT5, no hay datos de mercado para reproducir.')+'</div>'; return; }
     var row=await fetchInbox(ticket);
+    if(!row) row=tradeToRow(trade);   // mentor view (member's inbox is RLS-gated) or a consumed inbox row: use the journal trade's own data
     if(!row){ el('strp-chart').innerHTML='<div class="strp-state">'+L('No synced candle data found for this trade yet.','Aún no hay datos de velas sincronizados para esta operación.')+'</div>'; return; }
 
     var symbol=String(row.symbol||'');
@@ -46703,7 +46717,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
     try{ await ensureLWC(); }catch(_){ el('strp-chart').innerHTML='<div class="strp-state">'+L('Chart library failed to load (needs internet).','No se pudo cargar la librería del gráfico (necesita internet).')+'</div>'; return; }
 
-    S={ symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips,
+    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
         cursor:0, playing:false, ms:1000, timer:null, showPos:true, eBI:0, xBI:0, rSI:0, userView:false };
     await build();
@@ -46728,7 +46742,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var look=({1:60,5:48,15:32,60:24,240:16,1440:10})[tf]||40;
     S.rSI=Math.max(0,S.eBI-look);                 // Restart point: a lead-in before entry, to replay the approach
     S.cursor=Math.min(S.bars.length,S.eBI+1);     // OPEN with the entry already on screen (no waiting to reach it)
-    S.drawings=[]; S.pending=null; S.sel=null; S.history=[[]]; S.hpos=0; S.userView=false;
+    S.drawings=loadDrawings(S.ticket,tf); S.pending=null; S.sel=null; S.history=[clone(S.drawings)]; S.hpos=0; S.userView=false;
     el('strp-scrub').max=String(S.bars.length-1);
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
     render(true); updUR(); updDel();
@@ -46833,7 +46847,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   // undo/redo/tools
   function clone(x){ return JSON.parse(JSON.stringify(x)); }
-  function commit(){ S.history=S.history.slice(0,S.hpos+1); S.history.push(clone(S.drawings)); S.hpos=S.history.length-1; updUR(); }
+  // Drawings persist per (trade ticket, timeframe) in localStorage — survive close + app refresh.
+  function loadDrawings(ticket,tf){ try{ var o=JSON.parse(localStorage.getItem('st_replay_draw_'+ticket)||'{}'); return Array.isArray(o[tf])?o[tf]:[]; }catch(_){ return []; } }
+  function persistDrawings(){ try{ if(!S||!S.ticket) return; var k='st_replay_draw_'+S.ticket, o={}; try{ o=JSON.parse(localStorage.getItem(k)||'{}'); }catch(_){ } o[S.tf]=S.drawings; localStorage.setItem(k, JSON.stringify(o)); }catch(_){} }
+  function commit(){ S.history=S.history.slice(0,S.hpos+1); S.history.push(clone(S.drawings)); S.hpos=S.history.length-1; updUR(); persistDrawings(); }
   function updUR(){ el('strp-undo').disabled=S.hpos<=0; el('strp-redo').disabled=S.hpos>=S.history.length-1; }
   function updDel(){ el('strp-del').disabled=(S.sel==null); }
   function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; draw(); }
@@ -46861,8 +46878,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(b){ b.onclick=function(){ if(!S)return; setTool(b.dataset.tool); }; });
   el('strp-pos').onchange=function(ev){ if(!S)return; S.showPos=ev.target.checked; draw(); };
   el('strp-scrub').oninput=function(){ if(!S)return; pause(); S.cursor=(+el('strp-scrub').value)+1; render(true); };
-  el('strp-undo').onclick=function(){ if(!S||S.hpos<=0)return; S.hpos--; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); };
-  el('strp-redo').onclick=function(){ if(!S||S.hpos>=S.history.length-1)return; S.hpos++; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); };
+  el('strp-undo').onclick=function(){ if(!S||S.hpos<=0)return; S.hpos--; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
+  el('strp-redo').onclick=function(){ if(!S||S.hpos>=S.history.length-1)return; S.hpos++; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
   el('strp-del').onclick=function(){ if(!S||S.sel==null)return; S.drawings.splice(S.sel,1); S.sel=null; commit(); draw(); updDel(); };
 
   // pointer interaction (capture on the chart element)
