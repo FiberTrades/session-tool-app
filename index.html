@@ -4356,6 +4356,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.s6.title">Session Analysis</span></div>
       <p class="section-hint" data-i18n="hint.session_analysis">How you perform per FX session, by entry time (London clock). London 08:00–16:30 and New York 13:30–21:00 genuinely overlap, so a trade in the 13:30–16:30 window counts toward both — the overlap is also shown on its own.</p>
       <div id="session-analysis-summary"></div>
+      <div id="session-breakdown"></div>
+      <p class="section-hint" data-i18n="tta.sess_note">↳ London/NY overlap is a subset of both sessions above, not a fourth session — London and New York genuinely overlap 13:30–16:30, so those trades are counted in both.</p>
     </section>
 
     <section>
@@ -6652,7 +6654,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'tta.sess_overlap': 'London/NY overlap',
       'tta.sess_outside': 'Outside sessions',
       'tta.col_session': 'Session',
-      'tta.sess_note': '↳ London/NY overlap is a subset of both sessions above, not a fourth session. Dimmed rows have fewer than 5 trades — too thin to read into yet.',
+      'tta.sess_note': '↳ London/NY overlap is a subset of both sessions above, not a fourth session — London and New York genuinely overlap 13:30–16:30, so those trades are counted in both.',
       'trades.s6.title': 'Session Analysis',
       'hint.session_analysis': 'How you perform per FX session, by entry time (London clock). London 08:00–16:30 and New York 13:30–21:00 genuinely overlap, so a trade in the 13:30–16:30 window counts toward both — the overlap is also shown on its own.',
       'tta.from_trades': 'from {N} trade{S}',
@@ -8059,7 +8061,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'tta.sess_overlap': 'Solape Londres/NY',
       'tta.sess_outside': 'Fuera de sesión',
       'tta.col_session': 'Sesión',
-      'tta.sess_note': '↳ El solape Londres/NY es un subconjunto de ambas sesiones, no una cuarta sesión. Las filas atenuadas tienen menos de 5 operaciones — muestra demasiado pequeña para sacar conclusiones.',
+      'tta.sess_note': '↳ El solape Londres/NY es un subconjunto de ambas sesiones, no una cuarta sesión — Londres y Nueva York se solapan de verdad de 13:30 a 16:30, así que esas operaciones cuentan en ambas.',
       'trades.s6.title': 'Análisis por sesión',
       'hint.session_analysis': 'Tu rendimiento por sesión FX, según la hora de entrada (reloj de Londres). Londres 08:00–16:30 y Nueva York 13:30–21:00 se solapan de verdad, así que una operación en la franja 13:30–16:30 cuenta en ambas — el solape también se muestra por separado.',
       'tta.from_trades': 'de {N} operación{S}',
@@ -16013,6 +16015,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       dowWrap.innerHTML = html;
     }
 
+    // Session breakdown — same component, columns and order as the day-of-week table above.
+    // All three sessions are always listed (an untraded session is a fact worth seeing, and
+    // rowForDow already prints "—" for an empty one). London and New York genuinely overlap
+    // 13:30–16:30, so an overlap trade is counted in BOTH and shown again on its own ↳ row;
+    // entries outside every window get their own row rather than disappearing.
+    const sessWrap = document.getElementById('session-breakdown');
+    if (sessWrap) {
+      const sessTimed = all.filter(tr => tr.entryTime && parseHHMM(tr.entryTime) != null);
+      if (!sessTimed.length) {
+        sessWrap.innerHTML = `<div class="empty">${t('tta.log_times')}</div>`;
+      } else {
+        const inWin = (tr, a, b) => { const m = parseHHMM(tr.entryTime); return m >= a && m < b; };
+        let shtml = '<div class="history-list" style="margin-top:0;">' + dowHeader;
+        FX_SESSIONS.forEach(s => {
+          const dt = sessTimed.filter(tr => inWin(tr, s.start, s.end));
+          shtml += rowForDow(t(s.labelKey), sideStats(dt), dt);
+        });
+        const ov = sessTimed.filter(tr => inWin(tr, FX_OVERLAP.start, FX_OVERLAP.end));
+        if (ov.length) shtml += rowForDow('↳ ' + t(FX_OVERLAP.labelKey), sideStats(ov), ov);
+        const outs = sessTimed.filter(tr => !FX_SESSIONS.some(s => inWin(tr, s.start, s.end)));
+        if (outs.length) shtml += rowForDow(t('tta.sess_outside'), sideStats(outs), outs);
+        shtml += '</div>';
+        sessWrap.innerHTML = shtml;
+      }
+    }
+
     const sideWrap = document.getElementById('side-breakdown');
     const longs = all.filter(t => t.side === 'Long');
     const shorts = all.filter(t => t.side === 'Short');
@@ -19495,44 +19523,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     });
 
     const primary = buckets.concat(outside.trades.length ? [outside] : []);
+    // Hero cells only. The full per-session table is rendered by renderStats into #session-breakdown,
+    // reusing the SAME component as the day-of-week breakdown so the columns (and their order) match
+    // every other breakdown table in Statistics.
     renderAnalysisOutput(primary, overlap, null, summaryEl, 'session');
-    if (!timed.length) return;
-
-    // The four hero cells above answer "which session is best/worst". This table answers the
-    // question a session trader actually asks next — London vs New York, side by side. Rows below
-    // the reliability threshold are dimmed rather than hidden, so a thin sample reads as thin
-    // instead of looking like a verdict.
-    const rows = primary.concat(overlap.trades.length ? [overlap] : [])
-      .filter(b => b.trades.length > 0)
-      .map(b => {
-        const decided = b.wins + b.losses;
-        const dim = b.trades.length < MIN_TRADES_PER_BUCKET ? ' dim' : '';
-        const rCls = dim ? '' : (b.totalR > 0 ? ' good' : b.totalR < 0 ? ' bad' : ' be');
-        const pCls = dim ? '' : (b.net > 0 ? ' good' : b.net < 0 ? ' bad' : ' be');
-        const isSub = (b === overlap);
-        return `<div class="time-analysis-row">
-          <div class="label">${isSub ? '↳ ' : ''}${b.key}</div>
-          <div class="num${dim}">${b.trades.length}</div>
-          <div class="num${dim}">${decided ? Math.round(b.wins / decided * 100) + '%' : '—'}</div>
-          <div class="num${rCls || dim}">${(b.totalR >= 0 ? '+' : '') + b.totalR.toFixed(2)}R</div>
-          <div class="num${dim}">${b.wins} / ${b.losses} / ${b.bes}</div>
-          <div class="num${pCls || dim}">${(b.net >= 0 ? '+' : '-') + curSym() + Math.abs(b.net).toFixed(2)}</div>
-        </div>`;
-      }).join('');
-
-    summaryEl.insertAdjacentHTML('beforeend', `
-      <div class="time-analysis-table">
-        <div class="time-analysis-row header">
-          <div class="label">${t('tta.col_session')}</div>
-          <div class="num">${t('brk.col.trades')}</div>
-          <div class="num">${t('brk.col.wr')}</div>
-          <div class="num">${t('brk.col.netr')}</div>
-          <div class="num">${t('brk.col.wlbe')}</div>
-          <div class="num">${t('brk.col.netpl')}</div>
-        </div>
-        ${rows}
-      </div>
-      <p class="section-hint">${t('tta.sess_note')}</p>`);
   }
 
 
@@ -21257,7 +21251,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-08 23:35 UTC';
+  window.ST_BUILD = '2026-08-08 23:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
