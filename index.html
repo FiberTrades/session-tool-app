@@ -46486,7 +46486,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-ico svg{ width:14px; height:14px; } .strp-ico:hover:not(:disabled){ color:var(--text); border-color:var(--text-dim); } .strp-ico:disabled{ opacity:.35; cursor:default; } #strp-del:hover:not(:disabled){ color:var(--bad); border-color:var(--bad); }
   .strp-tgl{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--text-mid); cursor:pointer; } .strp-tgl input{ accent-color:var(--accent); width:13px; height:13px; }
   .strp-cw{ position:relative; } #strp-chart{ height:min(58vh,480px); width:100%; } #strp-ov{ position:absolute; top:0; left:0; z-index:3; pointer-events:none; }
-  .strp-live{ position:absolute; top:10px; left:12px; z-index:5; font-size:12px; letter-spacing:.06em; background:rgba(19,18,23,.82); border:1px solid var(--border-2); border-radius:8px; padding:6px 10px; pointer-events:none; color:var(--text-mid); } .strp-live b{ font-size:14px; } .strp-live.win{color:var(--good);} .strp-live.lose{color:var(--bad);}
+  .strp-live{ position:absolute; top:10px; left:12px; z-index:5; font-size:12px; letter-spacing:.06em; background:rgba(19,18,23,.82); border:1px solid var(--border-2); border-radius:8px; padding:6px 10px; pointer-events:none; color:var(--text-mid); } .strp-live b{ font-size:inherit; font-weight:600; } .strp-live.win{color:var(--good);} .strp-live.lose{color:var(--bad);}
   .strp-ct{ display:flex; align-items:center; gap:9px; padding:12px 16px; border-top:1px solid var(--border-2); flex-wrap:wrap; }
   .strp-btn{ display:inline-flex; align-items:center; justify-content:center; gap:5px; background:transparent; border:1px solid var(--border-2); color:var(--text-mid); border-radius:8px; height:36px; min-width:36px; padding:0 11px; font-family:'AppNum','DM Mono',monospace; font-size:13px; cursor:pointer; } .strp-btn:hover{ border-color:var(--text-dim); color:var(--text); }
   .strp-btn.pri{ background:var(--accent); border-color:var(--accent); color:#1a0a12; font-weight:600; min-width:88px; }
@@ -46601,8 +46601,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   var S=null;   // active session state; rebuilt each open()
 
-  function closeModal(){ try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){}
-    var t=el('strp-timer'); S=null; el('strp-modal-bg').classList.remove('show'); }
+  function closeModal(){ try{ pause(); }catch(_){}   // stop the play timer BEFORE tearing down (else it ticks against a dead chart)
+    try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){} S=null; el('strp-modal-bg').classList.remove('show'); }
 
   async function open(trade){
     var mb=el('strp-modal-bg'); mb.classList.add('show');
@@ -46656,9 +46656,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function bidx(bars,ts){ var x=0; for(var k=0;k<bars.length;k++){ if(bars[k].time<=ts) x=k; else break; } return x; }
 
   async function setTf(tf){
-    var wasPlaying=S.playing; pause();
-    S.tf=tf; S.bars=await loadTf(tf);
-    if(!S.bars.length){ el('strp-state')&&(el('strp-chart').innerHTML='<div class="strp-state">No candles stored for this timeframe.</div>'); return; }
+    if(!S) return; var wasPlaying=S.playing; pause();
+    var tok=(S._tok=(S._tok||0)+1);
+    var bars=await loadTf(tf);
+    if(!S||S._tok!==tok) return;   // a newer tf switch (or a close) superseded this one
+    S.tf=tf; S.bars=bars;
+    if(!S.bars.length){ el('strp-chart').innerHTML='<div class="strp-state">No candles stored for this timeframe.</div>'; return; }
     S.eBI=bidx(S.bars,S.entryTs); S.xBI=Math.max(S.eBI,bidx(S.bars,S.exitTs));
     var look=({1:60,5:48,15:32,60:24,240:16,1440:10})[tf]||40;
     S.rSI=Math.max(0,S.eBI-look);                 // Restart point: a lead-in before entry, to replay the approach
@@ -46734,9 +46737,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // Full render (open / scrub / restart / tf): position the view. Playback tick: just append
   // the bar and let the chart's native shift-on-new-bar follow the frontier AT the current zoom,
   // so you stay anchored to the candles without your zoom snapping back.
-  function render(full){ if(full){ series.setData(S.bars.slice(0,S.cursor)); setView(); } else { series.update(S.bars[S.cursor-1]); } series.setMarkers(markers()); el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
+  function render(full){ if(!S||!series||!S.bars.length) return;
+    try{
+      if(full){ series.setData(S.bars.slice(0,S.cursor)); setView(); }
+      else { var b=S.bars[S.cursor-1]; if(b) series.update(b); }   // guard undefined bar
+    }catch(e){ try{ series.setData(S.bars.slice(0,Math.max(1,S.cursor))); }catch(_){} }   // update() rejects non-monotonic time -> full reset
+    try{ series.setMarkers(markers()); }catch(_){}
+    el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
 
-  function tick(){ if(S.cursor>=S.bars.length){ pause(); return; } S.cursor++; render(false); }
+  function tick(){ if(!S||!S.bars.length){ clearInterval(S&&S.timer); return; } if(S.cursor>=S.bars.length){ pause(); return; } S.cursor++; render(false); }
   function play(){ if(!S) return; if(S.cursor>=S.bars.length) S.cursor=S.rSI; S.playing=true; el('strp-play').innerHTML='&#9208; Pause'; clearInterval(S.timer);
     try{ chart.timeScale().scrollToRealTime(); }catch(_){}   // anchor to the frontier at the current zoom
     S.timer=setInterval(tick,Math.max(24,S.ms)); }
