@@ -21131,7 +21131,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-08 21:10 UTC';
+  window.ST_BUILD = '2026-08-08 22:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32003,8 +32003,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // search_community). We execute it locally, hand the result back, and let the model continue —
       // up to a few hops. Fully backward-compatible: an edge that returns {reply} just ends the loop.
       // The greeting the trader sees is generated separately and isn't in the data pack — so fold in the
-      // current on-screen greeting text, so "reword my greeting" works without them pasting it.
-      var _greet=''; try{ _greet=(window.__stGreetingText||'').trim(); if(!_greet){ var _bg=document.getElementById('bias-greeting'); if(_bg && _bg.__greetSeed) _greet=String(_bg.__greetSeed).trim(); } }catch(_){}
+      // current on-screen greeting text, so "reword my greeting" works without them pasting it. Guard with
+      // _greetIsBad: never forward a model refusal/meta line as "the greeting" (that's what caused the poison
+      // loop — a cached refusal fed back in, making the assistant refuse to reword its own refusal). Prefer
+      // the rule-based SEED, which is deterministic and can never be a refusal.
+      var _greet=''; try{
+        var _cand=(window.__stGreetingText||'').trim();
+        var _bg=document.getElementById('bias-greeting');
+        var _seed=(_bg && _bg.__greetSeed!=null) ? String(_bg.__greetSeed).trim() : '';
+        var _ok=function(s){ return s && (typeof _greetIsBad!=='function' || !_greetIsBad(s)); };
+        if(_ok(_cand)) _greet=_cand;
+        if(!_greet && _ok(_seed)) _greet=_seed;
+      }catch(_){}
       var _base = { mode: mode, smart: smart, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en', greeting: _greet } };
       var convo = msgs.slice();
       for (var _hop = 0; _hop < 5; _hop++) {
@@ -32404,12 +32414,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // changes when the underlying numbers do (a logged/edited trade) — so reloads reuse the same-day line
     // for FREE, and a real data change (or a new day / language switch) regenerates.
     var _greetCache = {}, _greetInflight = {}, _greetCacheSig = {};
-    var GREET_LS = 'st_ai_greet_v4';   // v4: flush any cached "I don't have your line…" meta-replies
+    var GREET_LS = 'st_ai_greet_v5';   // v5: flush cached refusals ("I can't rewrite that line… creative/content task")
     function _greetStore() { try { return JSON.parse(localStorage.getItem(GREET_LS) || '{}') || {}; } catch (e) { return {}; } }
     function _greetStoreSave(o) { try { localStorage.setItem(GREET_LS, JSON.stringify(o)); } catch (e) {} }
     // A greeting must be a REWRITTEN line — never a model meta/clarification ("I don't have your line,
-    // paste it…"). Reject those on cache-read AND after generation so they can't show or persist.
-    function _greetIsBad(t){ return /(paste|i don'?t have|i do not have|the exact line|provide the|which line|i need to pause|couldn'?t find|can'?t find|rewrite it for you|no tengo|pega la|cu[aá]l l[ií]nea)/i.test(String(t||'')); }
+    // paste it…") and never a REFUSAL ("I can't rewrite that line… creative/content task, check Settings…").
+    // Reject those on cache-read AND after generation so a stray model refusal can't show, persist, or sync
+    // (and can't then be fed back into "reword my greeting" as if it were the greeting). Multi-line safe.
+    function _greetIsBad(t){ t=String(t||''); return /(paste|i don'?t have|i do not have|the exact line|provide the|which line|i need to pause|couldn'?t find|can'?t find|rewrite it for you|can'?t rewrite|cannot rewrite|can'?t (help|do|assist)|not (asking me to|what i'?m here|something i can)|creative\/?\s*(or\s*)?content|content task|creative task|outside (of )?what i'?m here|what i'?m here (for|to)|i'?m here to help|personali[sz]e your|drop (the|your) request|check \*{0,2}settings|in \*{0,2}community|no tengo|pega la|cu[aá]l l[ií]nea|no puedo (reescribir|ayudar|hacer)|tarea (creativa|de contenido)|contenido creativo|fuera de lo que|para (eso|lo que) (no )?estoy|no es mi (trabajo|función)|revisa (los )?ajustes|en \*{0,2}comunidad)/i.test(t); }
     // Cross-device layer: the same day's greetings are also cached in the SYNCED journal
     // (data._greetSync), so a second device that pulls the journal reuses them instead of
     // paying to regenerate. Keyed like the localStorage cache: surface|lang → {day,sig,text}.
