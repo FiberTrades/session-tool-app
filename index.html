@@ -8893,6 +8893,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (typeof renderReviewPreview === 'function') try { renderReviewPreview(); } catch(e) {}
     if (typeof renderBiasPreview === 'function') try { renderBiasPreview(); } catch(e) {}
     if (typeof updateOverviewStrip === 'function') try { updateOverviewStrip(); } catch(e) {}
+    // The greeting formats money too (rule/prop tails via curSym), and the Settings ACCOUNTS list
+    // sits in the very same open modal as this dropdown — every balance in it was still printing
+    // the old symbol until Settings was closed and reopened. Neither is in the list above.
+    if (typeof renderBiasGreeting === 'function') try { renderBiasGreeting(); } catch(e) {}
+    if (typeof renderSettingsAccountsList === 'function') try { renderSettingsAccountsList(); } catch(e) {}
     // Re-apply currency to any freshly-rendered input placeholders
     applyCurrencySymbol();
   }
@@ -9989,6 +9994,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // Re-render anything that depends on these settings
       if (typeof renderStats === 'function') renderStats();
       if (document.getElementById('page-trades').classList.contains('active') && typeof renderTradesStats === 'function') renderTradesStats();
+      // The greeting gates on the session window, and this editor sits directly ABOVE it on the
+      // Bias tab — retime 08:00–10:00 to 09:00–11:00 and the line underneath still insisted you
+      // were outside your hours. The Settings version of this edit already refreshes it.
+      try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
     }
     el.querySelector('#meta-edit-done').addEventListener('click', e => { e.stopPropagation(); commit(); });
     // Stop input clicks from bubbling to parent (would re-trigger edit-open)
@@ -14658,7 +14667,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
   // Which timeframe the morning-bias card is showing. Runtime only — it resets to HTF on reload,
   // which is the right default since the higher-timeframe read is the anchor.
-  let _savedBiasTf = 'htf';
+  // `var`, not `let`: renderSavedBias() is called during init from earlier in the file, and a `let`
+  // put this in a temporal dead zone at that point, throwing before the card could draw. `var`
+  // hoists as undefined, which the reads below treat as HTF — the correct default anyway.
+  var _savedBiasTf = 'htf';
   function renderSavedBias() {
     const b = data.bias;
     const card = document.getElementById('saved-bias-card');
@@ -21776,7 +21788,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 09:30 UTC';
+  window.ST_BUILD = '2026-08-09 10:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -24481,6 +24493,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try {
       if (typeof renderSessionMeta === 'function') renderSessionMeta();
       if (typeof renderBiasGreeting === 'function') renderBiasGreeting();
+      // This handler deliberately clears _sessionLiveDismissed just above, which is pointless
+      // without re-evaluating the banner: onboarding at 09:00 inside an 08:00-10:00 window left
+      // Session Live hidden until a tab switch. Every other session-write path calls this.
+      if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner();
     } catch (e) { /* non-fatal */ }
     // Chain into the risk-rules onboarding — fourth and final step.
     setTimeout(maybePromptForRiskRules, 200);
@@ -27997,8 +28013,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
       if (ddAmount <= 0 && tgtAmount <= 0) continue; // no usable prop rules on this account
 
-      let stats;
-      try { stats = computeAccountStats(acc); } catch (e) { continue; }
+      // Use the published reference — the bare name isn't in this scope (see __stAccountStats).
+      let stats = null;
+      try { if (typeof window.__stAccountStats === 'function') stats = window.__stAccountStats(acc); } catch (e) { stats = null; }
+      if (!stats) continue;
       const current = stats.current;
       const net = current - sb;
       const acctName = acc.name || acc.label || 'this account';
@@ -35163,6 +35181,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             saveData();
             window.renderTradingDaysSetting();
             try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e2) {}
+            // "Showed up vs Traded" divides by the planned trading days, so toggling a day changes
+            // both percentages. Narrow call on purpose: this fires per chip tap, and setting a full
+            // week would otherwise trigger seven whole-app repaints.
+            try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e2) {}
           });
           wrap.appendChild(btn);
         });
@@ -35601,6 +35623,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       data._lastSessionStartAlert = null; data._lastSessionEndAlert = null; data._sessionLiveDismissed = null; data._sessionAlertFired = null;
       saveData();
       try { if (typeof renderMetaHeader === 'function') renderMetaHeader(); if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); if (typeof reconcileBiasSlots === 'function') { reconcileBiasSlots(); renderBiasNav(); repaintBiasForm(); } } catch (err) {}
+      // Session 2's symbol chips were emptied by openSettings() back when sessions[1] didn't exist,
+      // and nothing rebuilds them here — so a session that reconcileBiasSlots has just assigned a
+      // symbol to showed no chips at all until Settings was closed and reopened. The greeting also
+      // gates on the session window (Session 1's handler already re-renders it; this one didn't).
+      try { if (typeof window.renderSessionSymbolChips === 'function') window.renderSessionSymbolChips(1, 'settings-session-symbols-2'); } catch (err) {}
+      try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (err) {}
     }
     if (addSessBtn) addSessBtn.addEventListener('click', () => {
       if (s2block) s2block.style.display = '';
@@ -35847,6 +35875,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const pct = startingBalance > 0 ? ((current - startingBalance) / startingBalance) * 100 : 0;
       return { startingBalance, baseline, current, totalNet, pct };
     }
+    // Published because the GREETING needs it too. It lives inside this settings IIFE, so the
+    // prop-firm signal in the greeting (drawdown breach / profit target hit) was calling a name
+    // that isn't in its scope — every call threw ReferenceError straight into a `catch { continue }`,
+    // which silently skipped the account. Net effect: those two warnings never fired for anyone.
+    try { window.__stAccountStats = computeAccountStats; } catch (e) {}
     // Has this MT5 login ever actually delivered a trade? A typo'd number would otherwise
     // sit there looking correct while trades quietly land nowhere (or worse, get filed by
     // hand into the wrong account).
@@ -35961,8 +35994,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             syncEffectiveStartingBalance();
             saveData();
             renderSettingsAccountsList();
-            // Refresh Stats KPIs since the effective starting balance changed.
-            try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
+            // The starting balance is the denominator for EVERY account-% figure (Net Acc %,
+            // Pot Acc %, per-trade rows) and the base the % risk rules resolve against, so a
+            // partial refresh left the Statistics tab and the greeting's rule maths dividing by
+            // the old number. Fires once, on modal confirm — not per keystroke.
+            try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
           }, t('settings.edit_starting_title'));
         });
       });
@@ -36421,6 +36457,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
         try { if (typeof renderTradeView === 'function') renderTradeView(); } catch (e) {}
         try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
+        // Adding an account moves the effective lifetime starting balance, which is the fallback
+        // denominator for account-% on legacy trades that carry no accountId — and the base the
+        // greeting's rule maths reads. Both were missing from the list above.
+        try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
+        try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (e) {}
       });
     }
 
@@ -36475,12 +36516,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         nameInp.value = '';
         balInp.value = '';
         renderSettingsAccountsList();
-        try { renderScopePicker(); } catch (e) {}
-        try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
-        try { if (typeof renderStats === 'function') renderStats(); } catch (e) {}
-        try { if (typeof renderTradeView === 'function') renderTradeView(); } catch (e) {}
-        try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
-        try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (e) {}
+        // This transition ARCHIVES the old account, so it isn't only a repaint: renderLogToField()
+        // is what re-points data.review.logTo away from the archived account. Skipping it left the
+        // Review tab still logging into an account that no longer exists as active. The settings
+        // modal is open at this moment too, so its own renderers have to be told as well —
+        // refreshAllSurfaces() doesn't include them, and the risk-rules section would otherwise
+        // carry on editing the ARCHIVED account's rules.
+        try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
+        try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
+        try { if (typeof renderSettingsLinkedGroupsList === 'function') renderSettingsLinkedGroupsList(); } catch (e) {}
+        try { if (typeof populateRiskAccountPicker === 'function') populateRiskAccountPicker(); } catch (e) {}
+        try { if (typeof loadRiskRulesIntoSettingsInputs === 'function') loadRiskRulesIntoSettingsInputs(); } catch (e) {}
       });
     }
 
