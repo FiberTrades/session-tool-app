@@ -5209,8 +5209,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <!-- Auto-sync (and its token) is a paid feature — hidden for trial members. openSettings()
            toggles this block by plan, same gate as the Calendar auto-sync panel. -->
       <label class="settings-label" style="margin-top:24px;" data-i18n="settings.data_label">Data</label>
-      <p class="settings-hint" data-i18n="settings.data_hint">Import a previously saved backup, or configure automatic backups so you never lose your trades.</p>
+      <p class="settings-hint" data-i18n="settings.data_hint">Your trades sync to the cloud automatically. Export them as a spreadsheet, take a personal backup copy, or restore one you saved earlier.</p>
       <div class="settings-data-actions">
+        <button type="button" id="data-export-csv" class="settings-btn" data-i18n="btn.export_csv">Export CSV</button>
         <button type="button" id="data-import" class="settings-btn" data-i18n="btn.import_data">Import Data</button>
         <button type="button" id="data-backup-settings" class="settings-btn" data-i18n="btn.backup_settings">Backup Settings</button>
       </div>
@@ -5960,6 +5961,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'onboard.err_name': 'Please enter a name to continue.',
       'onboard.err_session': 'Enter a session the app can read, e.g. London 8-10AM.',
       'btn.import_data': 'Import Data',
+      'btn.export_csv': 'Export CSV',
+      'toast.csv_exported': '{N} trades exported to CSV',
       'btn.backup_settings': 'Backup Settings',
       'btn.backup_settings_on': 'Backup Settings (ON)',
       'btn.choose_file': 'Choose File',
@@ -6227,7 +6230,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'settings.language_label': 'Language',
       'settings.data_label': 'Data',
       'settings.discord_label': 'Translation',
-      'settings.data_hint': 'Import a previously saved backup, or configure automatic backups so you never lose your trades.',
+      'settings.data_hint': 'Your trades sync to the cloud automatically. Export them as a spreadsheet, take a personal backup copy, or restore one you saved earlier.',
       'settings.profile_name_label': 'Your name',
       'settings.profile_name_hint': 'Used in greetings, weekly review messages, and copied community posts.',
       'settings.session_window_label': 'Trading session',
@@ -7397,6 +7400,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'onboard.err_name': 'Introduce un nombre para continuar.',
       'onboard.err_session': 'Introduce una sesión que la app pueda leer, p. ej. London 8-10AM.',
       'btn.import_data': 'Importar Datos',
+      'btn.export_csv': 'Exportar CSV',
+      'toast.csv_exported': '{N} operaciones exportadas a CSV',
       'btn.backup_settings': 'Configuración de Copia',
       'btn.backup_settings_on': 'Configuración de Copia (ON)',
       'btn.choose_file': 'Elegir Archivo',
@@ -7663,7 +7668,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'settings.language_label': 'Idioma',
       'settings.data_label': 'Datos',
       'settings.discord_label': 'Traducción',
-      'settings.data_hint': 'Importa una copia de seguridad guardada anteriormente, o configura copias automáticas para no perder nunca tus operaciones.',
+      'settings.data_hint': 'Tus operaciones se sincronizan en la nube automáticamente. Expórtalas como hoja de cálculo, guarda una copia personal o restaura una que guardaste antes.',
       'settings.profile_name_label': 'Tu nombre',
       'settings.profile_name_hint': 'Se usa en los saludos, mensajes de revisión semanal y mensajes publicados en la comunidad.',
       'settings.session_window_label': 'Sesión de trading',
@@ -21788,7 +21793,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 10:05 UTC';
+  window.ST_BUILD = '2026-08-09 10:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -22044,6 +22049,57 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     URL.revokeObjectURL(url);
   }
 
+  // Every trade as a spreadsheet. This is a DIFFERENT job from the JSON backup: the backup exists
+  // to restore SessionTool, this exists to take your trades anywhere else — Excel, an accountant,
+  // another journal. R is the realized cost-inclusive figure the app shows, so a row here ties out
+  // with the Statistics tab rather than quietly using a cleaner number.
+  function exportTradesCsv() {
+    const all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
+    const accName = (id) => {
+      try { const a = (data.accounts || []).find(x => x.id === id); return a ? (a.name || a.label || '') : ''; } catch (e) { return ''; }
+    };
+    // Excel treats a field starting with = + - @ as a formula, so those get a leading apostrophe.
+    // A plain negative NUMBER must be exempt — "-1.50" is a value, not a formula, and prefixing it
+    // would import as text and break every sum and sort on the P&L and R columns. Quotes are
+    // doubled; every field is quoted so commas in notes are safe.
+    const cell = (v) => {
+      let s = (v === null || v === undefined) ? '' : String(v);
+      if (/^[=+\-@]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
+      return '"' + s.replace(/"/g, '""') + '"';
+    };
+    const num = (n) => (typeof n === 'number' && isFinite(n)) ? n : (parseFloat(n) || 0);
+    const headers = ['Date','Entry','Exit','Symbol','Side','Type','Setup','Result','R','Pips','POT R','POT Pips','Risk','SL','Costs','Net P&L','Copies','Account','Execution','Focus','Concepts','Mindset','Reflection'];
+    const rows = all.slice().sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)).map(t => {
+      const rs = t.reviewSnap || {};
+      return [
+        t.date ? String(t.date).slice(0, 10) : '',
+        t.entryTime || '', t.exitTime || '',
+        t.symbol || '', t.side || '', t.type || '', t.setup || '', t.result || '',
+        (typeof tradeRforMath === 'function') ? tradeRforMath(t).toFixed(2) : '',
+        num(t.pips), num(t.potentialR), num(t.potentialPips),
+        num(t.risk), num(t.sl), num(t.costs),
+        (typeof tradeNetPL === 'function') ? tradeNetPL(t).toFixed(2) : '',
+        (typeof tradeCopies === 'function') ? tradeCopies(t) : 1,
+        accName(t.accountId),
+        rs.execution || '', rs.focus || '',
+        Array.isArray(rs.concepts) ? rs.concepts.join('; ') : '',
+        Array.isArray(rs.mindset) ? rs.mindset.join('; ') : '',
+        (rs.reflection || '').replace(/\r?\n/g, ' ')
+      ].map(cell).join(',');
+    });
+    // Leading BOM so Excel reads it as UTF-8 — without it £ and Spanish accents arrive mangled.
+    const csv = '﻿' + [headers.map(cell).join(',')].concat(rows).join('\r\n');
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'session-tool-trades-' + new Date().toISOString().slice(0, 10) + '.csv';
+    a.click();
+    URL.revokeObjectURL(url);
+    try { if (typeof showToast === 'function') showToast(t('toast.csv_exported').replace('{N}', String(all.length))); } catch (e) {}
+  }
+  try { window.__stExportCsv = exportTradesCsv; } catch (e) {}
+
   function updateBackupSettingsLabel() {
     const link = document.getElementById('data-backup-settings');
     if (!link) return;
@@ -22094,6 +22150,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     openBackupModal(0, false);
   });
   document.getElementById('data-import').addEventListener('click', () => document.getElementById('data-import-input').click());
+  (function () {
+    const _csvBtn = document.getElementById('data-export-csv');
+    if (_csvBtn) _csvBtn.addEventListener('click', e => { e.preventDefault(); try { exportTradesCsv(); } catch (err) { try { showToast(String(err && err.message || err)); } catch (_) {} } });
+  })();
   (function(){ var _nb=document.getElementById('settings-notif-btn'); if(!_nb) return; _nb.addEventListener('click', function(){ var b=_nb, orig=b.textContent; b.disabled=true; b.textContent='Working\u2026'; var done=function(code,msg){ b.disabled=false; if(code==='ok'){ b.textContent='Notifications on \u2713'; setTimeout(function(){ b.textContent=orig; },2500); return; } var m={denied:'Blocked \u2014 allow in settings',signin:'Sign in first',unsupported:'Not supported here',nokey:'Not configured',dberr:'Save failed',suberr:'Subscribe failed',nosub:'Subscribe failed',err:'Something went wrong'}; b.textContent=(m[code]||'Failed'); if(msg){ try{ console.warn('notif enable:',code,msg); }catch(_){ } } setTimeout(function(){ b.textContent=orig; },3500); }; try{ if(window.STCommunity && STCommunity.forcePush){ STCommunity.forcePush(done); } else { done('unsupported'); } }catch(e){ done('err', String(e)); } }); })();
   document.getElementById('data-import-input').addEventListener('change', e => {
     const file = e.target.files[0];
