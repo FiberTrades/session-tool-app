@@ -4761,6 +4761,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <textarea id="edit-bepotpips" rows="1" data-i18n-placeholder="edit.lbl.bepotr_pips" placeholder="BE POT pips" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
       </div>
 
+      <!-- MAE / MFE. Read-only: these are facts about what price did, not something to type.
+           Shown only for MT5-synced trades, since it is measured from the stored candles. -->
+      <div class="label edit-mae-row" style="display:none;"><span data-i18n="edit.lbl.mae_row">Heat &amp; extension</span> <span style="color:var(--text-dim);font-size:10px;text-transform:none;letter-spacing:0;" data-i18n="edit.mae_hint">(how far price went against you, and in your favour, while you were in)</span></div>
+      <div class="field edit-mae-row" style="display:none;">
+        <div id="edit-mae-mfe" style="font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text-mid);line-height:1.8;">—</div>
+      </div>
+
       <div class="label" data-i18n="edit.lbl.side">Side</div>
       <div class="field"><select id="edit-side">
         <option value="">—</option>
@@ -21253,6 +21260,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _rb.style.display = t.mt5Ticket ? 'inline-flex' : 'none';
       _rb.onclick=function(){ try{ var _rt=t.id; window.__stReplayReturn=function(){ try{ openEditTradeModal(_rt); }catch(_){} }; document.getElementById('edit-trade-modal-bg').classList.remove('show'); if(window.__stReplay) window.__stReplay.open(t); }catch(e){} }; })();
 
+    // MAE / MFE. Async (it reads the stored candles), so the row shows a placeholder and fills in.
+    // NB: `t` is the TRADE in this scope, not the i18n function — hence the literal strings.
+    (function(){
+      var _rows=document.querySelectorAll('.edit-mae-row');
+      var _box=document.getElementById('edit-mae-mfe');
+      var _show=function(on){ Array.prototype.forEach.call(_rows,function(r){ r.style.display=on?'':'none'; }); };
+      if(!_box) return;
+      if(!t.mt5Ticket || !(window.__stReplay&&window.__stReplay.excursions)){ _show(false); return; }
+      _show(true);
+      var _es=(document.documentElement.lang==='es');
+      _box.textContent=_es?'Calculando…':'Calculating…';
+      var _myId=t.id;
+      window.__stReplay.excursions(t).then(function(x){
+        // The user may have closed this modal or opened a different trade while we were fetching.
+        if(editingTradeId!==_myId) return;
+        if(!x){ _box.textContent=_es?'Aún no hay velas guardadas para esta operación.':'No candles stored for this trade yet.'; return; }
+        var lines=[];
+        if(x.maeR!=null){
+          lines.push((_es?'Peor en contra: ':'Worst against you: ')+'−'+x.maeR.toFixed(2)+'R <span style="opacity:.6">('+x.maePips.toFixed(1)+'p)</span>');
+          lines.push((_es?'Mejor a favor: ':'Best in your favour: ')+'+'+x.mfeR.toFixed(2)+'R <span style="opacity:.6">('+x.mfePips.toFixed(1)+'p)</span>');
+        }else{
+          lines.push((_es?'Peor en contra: ':'Worst against you: ')+x.maePips.toFixed(1)+'p');
+          lines.push((_es?'Mejor a favor: ':'Best in your favour: ')+x.mfePips.toFixed(1)+'p');
+          lines.push('<span style="opacity:.6">'+(_es?'Sin SL registrado, no se puede mostrar en R.':'No stop logged, so this can\'t be shown in R.')+'</span>');
+        }
+        _box.innerHTML=lines.join('<br>');
+      }).catch(function(){ if(editingTradeId===_myId) _box.textContent=_es?'No se pudo calcular.':'Couldn\'t calculate.'; });
+    })();
+
     const d = t.date ? new Date(t.date) : new Date();
     const dateStr = d.toLocaleDateString(tLocale(), { weekday:'long', day:'numeric', month:'long', year:'numeric' }).replace(/^./, c => c.toUpperCase());
     document.getElementById('edit-trade-subtitle').textContent = dateStr;
@@ -21798,7 +21834,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 11:10 UTC';
+  window.ST_BUILD = '2026-08-09 12:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -47562,6 +47598,48 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       out.push({time:t,open:Number(rows[i].o),high:Number(rows[i].h),low:Number(rows[i].l),close:Number(rows[i].c)}); lastT=t; }
     return out; }
 
+  // MAE / MFE for a closed trade, from the SAME stored candles the replay draws. That means it's
+  // the TRUE excursion — the worst and best price actually reached while the position was open —
+  // rather than an estimate from the day's high/low, which is what tools without candle data do.
+  // Lives here on purpose: fetchInbox / tradeToRow / parseTs / pipOf / fetchCandles and the SL
+  // fallback chain all already exist in this module, and duplicating them elsewhere would drift.
+  // Returns null when there's nothing to measure (not MT5-synced, or no candles stored yet).
+  async function excursions(trade){
+    try{
+      var ticket=trade&&(trade.mt5Ticket||trade.position);
+      if(!ticket) return null;
+      var row=await fetchInbox(ticket); if(!row) row=tradeToRow(trade); if(!row) return null;
+      var symbol=String(row.symbol||'');
+      var dir=/^(sell|short)/i.test(String(row.direction||''))?-1:1;
+      var entry=parseFloat(row.entry_price)||0;
+      var entryTs=parseTs(row.open_time), exitTs=parseTs(row.close_time);
+      if(!symbol||!entry||!entryTs) return null;
+      if(!exitTs||exitTs<=entryTs) exitTs=entryTs+60;   // still-open or same-minute: measure one bar
+      // Pip size from the SYMBOL, not pipOf(). pipOf() counts decimals in String(price), and JS
+      // drops trailing zeros — String(1.10000) is "1.1", which yields a pip of 0.1 instead of
+      // 0.0001 on any round price. This also matches the convention the MT5 importer used to
+      // produce slPips, and since R here is pips/slPips the multiplier cancels — so R stays
+      // correct even on a symbol where neither convention nails the true pip.
+      var pip=1/(/JPY$/i.test(symbol)?100:10000);
+      var _n=function(v){ v=parseFloat(v); return isNaN(v)?0:v; };
+      // Same fallback chain the replay uses, so the R here matches the R on the replay header.
+      var slPips=_n(row.sl_pips)||_n(row.req_sl_pips)||_n(trade&&trade.sl)||_n(trade&&trade.slPips)||_n(trade&&trade.reqSlPips);
+      // 1-minute bars, entry→exit only: excursion is what happened WHILE the position was open.
+      var bars=await fetchCandles(symbol,1,entryTs,exitTs);
+      if(!bars||!bars.length) return null;
+      var hi=-Infinity, lo=Infinity;
+      for(var i=0;i<bars.length;i++){ if(bars[i].high>hi) hi=bars[i].high; if(bars[i].low<lo) lo=bars[i].low; }
+      if(!isFinite(hi)||!isFinite(lo)) return null;
+      // Favourable = best price reached in the trade's direction; adverse = worst. Clamped at 0 so
+      // a trade that never traded against you reads 0.0R rather than a negative "heat".
+      var favPx=(dir>0)?(hi-entry):(entry-lo);
+      var advPx=(dir>0)?(entry-lo):(hi-entry);
+      var out={ mfePips:Math.max(0,favPx)/pip, maePips:Math.max(0,advPx)/pip, bars:bars.length, slPips:slPips };
+      if(slPips>0){ out.mfeR=out.mfePips/slPips; out.maeR=out.maePips/slPips; }
+      return out;
+    }catch(_){ return null; }
+  }
+
   var TF_MIN=[1,5,15,60,240,1440];
   // Window measured in BARS around the trade. Anchored to entry (back) AND exit (fwd),
   // so the FULL trade always loads no matter how long it ran; pagination handles the volume.
@@ -47807,7 +47885,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // launcher — delegated, capture phase so the row's own click doesn't also fire
   document.addEventListener('click',function(e){ var b=e.target.closest?e.target.closest('.strp-play[data-replay]'):null; if(!b) return; e.stopPropagation(); e.preventDefault(); var id=b.getAttribute('data-replay'); try{ var t=(typeof findTradeById==='function')?findTradeById(id):null; if(t) open(t); }catch(_){} },true);
 
-  window.__stReplay={ open:open, close:closeModal };
+  window.__stReplay={ open:open, close:closeModal, excursions:excursions };
 })();
 </script>
 
