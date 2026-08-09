@@ -10,9 +10,13 @@
  * quietly updated in the background). Cross-origin CDN requests (e.g. the
  * Twemoji emoji set) just go to the network and are cached opportunistically.
  *
- * DEPLOY NOTE: bumping CACHE_VERSION below is good hygiene (it clears old
- * caches and makes the new worker take over + reload once). But even if you
- * forget, network-first means the page itself still updates on the next load.
+ * DEPLOY NOTE: bumping CACHE_VERSION below is OPTIONAL. Network-first means the
+ * page itself always updates on the next load whether you bump it or not; the
+ * bump only clears stale runtime-cached subresources. Bumping every deploy is
+ * not free — each new worker installs, claims the client, and used to trigger an
+ * automatic reload, which showed up as the app loading itself twice. That reload
+ * is gone (see index.html), but there is still no reason to bump unless a cached
+ * asset actually changed.
  */
 
 const CACHE_VERSION = 'st-2026-08-10n389';    // <-- bump this string on each deploy
