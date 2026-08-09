@@ -15760,17 +15760,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     renderPnlCell();
 
-    // Profit Factor + Expectancy (R-based, lifetime)
-    // Each trade's R contribution is multiplied by its copy count — a +2R trade
-    // executed in 3 accounts = 6R contribution to the lifetime totals.
-    const winRSum  = wins.reduce((s, t) => s + (parseFloat(t.r) || 0) * tradeCopies(t), 0);
-    const lossRSum = losses.reduce((s, t) => s + tradeCopies(t), 0); // each loss = 1R, × copies
+    // Profit Factor + Expectancy + Net R (lifetime) — on REALIZED, COST-INCLUSIVE R.
+    // These used to run on a GROSS basis (wins at their logged R, every loss a clean -1R, BEs
+    // free), which never subtracted commission/spread. That made the headline disagree with every
+    // breakdown table below and with the AI's data pack — the same 63 trades read +35.56R here and
+    // +21.58R in the tables, and Expectancy read ~0.56R while the AI quoted 0.34R.
+    // All three now use tradeRforMath — the app's documented definition: net money ÷ £ risked, so a
+    // stop carrying commission is a touch worse than -1R, a break-even carries its cost drag, and a
+    // win is net of its own costs. Each trade's R is still multiplied by its copy count.
+    // Profit Factor groups by the SIGN of realized R rather than by the result label, which is what
+    // gross-profit ÷ gross-loss means once costs are included: a BE's cost drag belongs on the loss
+    // side, and a "win" eaten by costs is not profit.
+    const _netRof  = t => tradeRforMath(t) * tradeCopies(t);
+    const winRSum  = all.reduce((s, t) => { const r = _netRof(t); return r > 0 ? s + r : s; }, 0);
+    const lossRSum = all.reduce((s, t) => { const r = _netRof(t); return r < 0 ? s - r : s; }, 0);
     const pfVal = lossRSum > 0 ? winRSum / lossRSum : (winRSum > 0 ? Infinity : null);
     const pfEl = document.getElementById('kpi-pf');
     if (pfVal === null) { pfEl.textContent = '—'; pfEl.className = 'stat-value'; }
     else if (pfVal === Infinity) { pfEl.textContent = '∞'; pfEl.className = 'stat-value good'; }
     else { pfEl.textContent = pfVal.toFixed(2); pfEl.className = 'stat-value' + (pfVal >= 1.5 ? ' good' : pfVal < 1 ? ' bad' : ''); }
 
+    // Σ(positive realized R) − Σ|negative realized R| — the net of every trade's cost-inclusive R,
+    // so Net R now ties out exactly with the Day of Week / Session / Symbol tables below.
     const totalR = winRSum - lossRSum;
     // Total executed trades across the lifetime — sum of copy counts, not array length.
     // Used as the denominator for any "per-trade" average so each parallel execution
@@ -21287,7 +21298,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 01:10 UTC';
+  window.ST_BUILD = '2026-08-09 01:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
