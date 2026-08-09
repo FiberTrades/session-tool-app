@@ -4193,6 +4193,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <button class="tag" data-value="Revenge Traded" data-i18n="tag.revenge_traded">Revenge Traded</button>
         <button class="tag" data-value="Rushed Decisions" data-i18n="tag.rushed_decisions">Rushed Decisions</button>
         <button class="tag" data-value="Broke Rules" data-i18n="tag.broke_rules">Broke Rules</button>
+        <button class="tag" data-value="Overtraded" data-i18n="tag.overtraded">Overtraded</button>
         <button class="tag" data-value="Over-sized" data-i18n="tag.over_sized">Over-sized</button>
         <button class="tag" data-value="Moved to BE Early" data-i18n="tag.moved_to_be_early">Moved to BE Early</button>
         <button class="tag" data-value="Enlarged SL" data-i18n="tag.enlarged_sl">Enlarged SL</button>
@@ -7150,6 +7151,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'tag.revenge_traded': 'Revenge Traded',
       'tag.rushed_decisions': 'Rushed Decisions',
       'tag.broke_rules': 'Broke Rules',
+      'tag.overtraded': 'Overtraded',
       'tag.over_sized': 'Over-sized',
       'tag.moved_to_be_early': 'Moved to BE Early',
       'tag.enlarged_sl': 'Enlarged SL',
@@ -8569,6 +8571,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'tag.revenge_traded': 'Operé por Venganza',
       'tag.rushed_decisions': 'Decisiones Apresuradas',
       'tag.broke_rules': 'Rompí las Reglas',
+      'tag.overtraded': 'Sobreoperé',
       'tag.over_sized': 'Tamaño Excesivo',
       'tag.moved_to_be_early': 'Movido a BE demasiado Pronto',
       'tag.enlarged_sl': 'SL Ensanchado',
@@ -10605,6 +10608,37 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (hid) { const j = hid.indexOf(name); if (j >= 0) hid.splice(j, 1); }   // un-hide if it was hidden as a custom tag
       });
       d._htfPresetsV1 = true;
+    }
+    // 2026-08-09 — same story for "Overtraded": typed as a custom tag, so it never translated.
+    // It's a Mindset preset now. The exact spelling used is unknown ("Over traded", "Over-traded",
+    // "Overtraded"), so match any variant, drop the custom entry, and REWRITE the value on past
+    // trades to the canonical one — otherwise history keeps a string the picker no longer knows and
+    // those tags would silently stop matching (and stay untranslated).
+    if (!d._overtradedPresetV1) {
+      const CANON = 'Overtraded';
+      const isOT = s => /^over[\s\-_]?traded$/i.test(String(s || '').trim());
+      const fixArr = arr => {
+        if (!Array.isArray(arr)) return;
+        for (let i = arr.length - 1; i >= 0; i--) {
+          if (!isOT(arr[i])) continue;
+          if (arr[i] !== CANON && arr.indexOf(CANON) >= 0) arr.splice(i, 1);   // canonical already there → don't duplicate
+          else arr[i] = CANON;
+        }
+      };
+      ['mindset', 'concepts'].forEach(k => {
+        const list = (d.customTags && Array.isArray(d.customTags[k])) ? d.customTags[k] : null;
+        if (list) for (let i = list.length - 1; i >= 0; i--) if (isOT(list[i])) list.splice(i, 1);
+        const hid = (d.customTags && d.customTags.hidden && Array.isArray(d.customTags.hidden[k])) ? d.customTags.hidden[k] : null;
+        if (hid) for (let i = hid.length - 1; i >= 0; i--) if (isOT(hid[i])) hid.splice(i, 1);
+      });
+      if (d.review) {
+        fixArr(d.review.mindset); fixArr(d.review.concepts);
+        (Array.isArray(d.review.trades) ? d.review.trades : []).forEach(tr => { fixArr(tr.mindset); fixArr(tr.concepts); });
+      }
+      [...(d.currentSeries || []), ...(d.history || []).flatMap(s => s.trades || [])].forEach(t => {
+        if (t && t.reviewSnap) { fixArr(t.reviewSnap.mindset); fixArr(t.reviewSnap.concepts); }
+      });
+      d._overtradedPresetV1 = true;
     }
     // User-defined custom tags persist across sessions, separate from built-ins.
     if (!d.customTags) d.customTags = { concepts: [], mindset: [] };
@@ -21555,7 +21589,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 05:20 UTC';
+  window.ST_BUILD = '2026-08-09 05:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
