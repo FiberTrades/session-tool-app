@@ -21693,7 +21693,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 08:10 UTC';
+  window.ST_BUILD = '2026-08-09 08:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32766,6 +32766,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: s.riskRules || null, profitTarget: (s.riskRules && (s.riskRules.profitTarget || s.riskRules.profitTargetAmount)) || null },
           today: {
+            // Whether today is one of THEIR trading days, stated outright. settings.tradingDays is
+            // only the standing preference — the week's own commitment can override it — and asking
+            // the model to work it out from a weekday name is exactly how you get "you didn't trade
+            // today, that's discipline" posted on a Sunday.
+            weekday: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()],
+            isTradingDay: (function () { try { var _d = new Date().getDay(); return (typeof window.__stIsTradingDay === 'function') ? !!window.__stIsTradingDay(_d) : (_d !== 0 && _d !== 6); } catch (_) { return null; } })(),
+            tradingDaysEffective: (function () { try { return (typeof _tradingDaysPref === 'function') ? _tradingDaysPref() : null; } catch (_) { return null; } })(),
             bias: todayBias,
             reviewReflection: (_rv.reflection ? String(_rv.reflection).trim().slice(0, 500) : null),
             reviewTradesLogged: Array.isArray(_rv.trades) ? _rv.trades.length : 0
@@ -33111,9 +33118,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           calendar: { en: 'my month on the calendar',               es: 'mi mes en el calendario' }
         };
         var tp = topics[surface] || { en: 'this line', es: 'esta línea' };
+        // Off-day awareness. On a day the trader doesn't trade, "you didn't trade" is NOT
+        // discipline — there was nothing to be disciplined about, the markets are shut. The model
+        // has to be told, because greet calls deliberately never receive the data pack.
+        var _offClause = '';
+        try {
+          var _dw = new Date().getDay();
+          var _isOff = (typeof window.__stIsTradingDay === 'function') ? !window.__stIsTradingDay(_dw) : (_dw === 0 || _dw === 6);
+          if (_isOff) {
+            _offClause = (lang === 'es')
+              ? (' CONTEXTO IMPORTANTE: hoy es ' + ['domingo','lunes','martes','miércoles','jueves','viernes','sábado'][_dw] + ' y NO es uno de mis días de trading — mis mercados están cerrados o descanso. NO presentes el no haber operado como disciplina, autocontrol, una elección ni una oportunidad perdida: sencillamente hoy no había nada que operar. Nunca escribas cosas como "no operaste y eso es la disciplina funcionando".')
+              : (' IMPORTANT CONTEXT: today is ' + ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][_dw] + ' and it is NOT one of my trading days — my markets are closed or I rest. Do NOT frame not trading as discipline, restraint, a choice, or a missed opportunity: there was simply nothing to trade. Never write things like "you didn\'t trade and that\'s the discipline working".');
+          }
+        } catch (_e) {}
         var prompt = (lang === 'es'
           ? ('Reescribe esta frase de saludo para que suene escrita personalmente para mí y algo más afilada. QUÉDATE estrictamente en el tema de ESTA línea (sobre ' + tp.es + '); reformula lo que ya dice y NO metas datos ni ideas de otras pestañas (p. ej. mi mejor día de la semana, mi winrate de por vida) salvo que la propia línea los mencione. NO inventes ni insinúes hora, urgencia ni estado de la sesión (p. ej. "la sesión empieza pronto", "ahora mismo", "ya casi") a menos que la línea ya lo diga. Mantén el MISMO significado y cualquier número concreto, UNA sola línea corta, sin "Hola" ni despedida. TONO: motivador y alentador por defecto — pero AJUSTA el tono a la línea: cuando refleje pérdidas, días en rojo, una racha perdedora o disciplina floja, sé directo y contundente y exígeme, como un mentor que dice la verdad incómoda (firme, nunca cruel ni insultante). Devuelve SOLO la línea reescrita, sin comillas. Línea:')
-          : ('Rewrite this in-app greeting line so it feels written personally for me and a little sharper. Stay STRICTLY on the topic of THIS line (about ' + tp.en + '); rephrase what it already says and DO NOT bring in stats or insights from other tabs (e.g. my best weekday, my lifetime win rate) unless the line itself already mentions them. Do NOT invent or imply any timing, urgency, or session state (e.g. "session starts soon", "right now", "about to begin") unless the line already says it. Keep the SAME core meaning and any specific numbers, ONE short line, no "Hi"/"Hello", no sign-off. TONE: motivating and encouraging by default — but MATCH the tone to the line: when it reflects losses, red days, a losing run or slipping discipline, be direct and blunt and hold me accountable, like a mentor who tells the hard truth (firm, never cruel or insulting). Return ONLY the rewritten line, no quotes. Line:')) + '"' + seed + '"';
+          : ('Rewrite this in-app greeting line so it feels written personally for me and a little sharper. Stay STRICTLY on the topic of THIS line (about ' + tp.en + '); rephrase what it already says and DO NOT bring in stats or insights from other tabs (e.g. my best weekday, my lifetime win rate) unless the line itself already mentions them. Do NOT invent or imply any timing, urgency, or session state (e.g. "session starts soon", "right now", "about to begin") unless the line already says it. Keep the SAME core meaning and any specific numbers, ONE short line, no "Hi"/"Hello", no sign-off. TONE: motivating and encouraging by default — but MATCH the tone to the line: when it reflects losses, red days, a losing run or slipping discipline, be direct and blunt and hold me accountable, like a mentor who tells the hard truth (firm, never cruel or insulting). Return ONLY the rewritten line, no quotes. Line:')) + '"' + seed + '"' + _offClause;   // off-day constraint goes last so it's the freshest instruction
         call('greet', [{ role: 'user', content: prompt }]).then(function (reply) {
           _greetInflight[key] = 0; el.__aiPending = false;
           reply = String(reply || '').replace(/^["'\s]+|["'\s]+$/g, '');
