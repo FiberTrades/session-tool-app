@@ -4487,17 +4487,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <div id="lifetime-consistency-summary"></div>
     </section>
 
-    <section id="excursion-section">
-      <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.excursion_title">Heat &amp; Extension</span></div>
-      <p class="section-hint" data-i18n="hint.excursion">How far price ran against you before a trade worked, and how far it ran in your favour before you closed. Measured from real candles, so MT5-synced trades only.</p>
-      <div id="excursion-summary"></div>
-      <p class="section-hint" id="excursion-verdict" style="margin-top:14px;"></p>
-      <div style="margin-top:12px;">
-        <button type="button" id="excursion-run" class="settings-btn" data-i18n="btn.excursion_run">Analyse trades</button>
-        <span id="excursion-progress" style="margin-left:12px;font-family:'AppNum','DM Mono',monospace;font-size:11px;color:var(--text-dim);"></span>
-      </div>
-    </section>
-
     <section id="consistency-rule-section" style="display:none;">
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.consistency_rule_title">Consistency Rule</span></div>
       <p class="section-hint" data-i18n="hint.consistency_rule">How much of your total profit came from your single best day, against the cap you set in Settings.</p>
@@ -4516,6 +4505,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <div class="potr-period-row">
         <span class="potr-period-count" id="combo-period-count"></span>
       </div>
+      <!-- Diagnostics: measured from real candles, so they answer WHY you'd pick one of the rules
+           below. Two numbers only — heat on winners (where the stop belongs) and how far losers ran
+           in your favour before dying (entries vs management). Heat on LOSERS is deliberately absent:
+           a loser is by definition a trade that reached its stop, so it is always ~1R and says nothing. -->
+      <div id="combo-diag" style="margin-bottom:16px;"></div>
       <div id="combo-wrap"></div>
     </section>
 
@@ -6137,13 +6131,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'consistency.pass': 'Passing — your best day is {P}% of total profit, inside your {L}% cap.',
       'consistency.fail': 'Breached — your best day is {P}% of total profit, over your {L}% cap. You can\'t undo a past day, so the way back is profit elsewhere: about {X} more, none of it on that day.',
       'consistency.no_profit': 'No net profit yet, so there is no share to measure.',
-      'trades.excursion_title': 'Heat & Extension',
-      'hint.excursion': 'How far price ran against you before a trade worked, and how far it ran in your favour before you closed. Measured from real candles, so MT5-synced trades only.',
       'btn.excursion_run': 'Analyse trades',
-      'exc.mae_win': 'Heat · Winners',
-      'exc.mae_lose': 'Heat · Losers',
-      'exc.mfe_win': 'Offered · Winners',
-      'exc.capture': 'You captured',
+      'exc.mae_win': 'Winners survived',
+      'exc.mfe_lose': 'Losers reached',
       'exc.progress': '{D} of {N} synced trades analysed',
       'exc.nothing_new': 'Nothing new to analyse.',
       'exc.none_synced': 'No MT5-synced trades yet — this needs real candles to measure.',
@@ -7589,13 +7579,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'consistency.pass': 'Cumples — tu mejor día es el {P}% del beneficio total, dentro de tu límite del {L}%.',
       'consistency.fail': 'Incumplido — tu mejor día es el {P}% del beneficio total, por encima de tu límite del {L}%. No puedes deshacer un día pasado, así que la salida es beneficio en otros días: unos {X} más, nada de ello en ese día.',
       'consistency.no_profit': 'Aún no hay beneficio neto, así que no hay peso que medir.',
-      'trades.excursion_title': 'Recorrido en contra y a favor',
-      'hint.excursion': 'Cuánto se movió el precio en tu contra antes de que la operación funcionara, y cuánto a favor antes de que cerraras. Se mide con velas reales, así que solo operaciones sincronizadas con MT5.',
       'btn.excursion_run': 'Analizar operaciones',
-      'exc.mae_win': 'En contra · Ganadoras',
-      'exc.mae_lose': 'En contra · Perdedoras',
-      'exc.mfe_win': 'Ofrecido · Ganadoras',
-      'exc.capture': 'Capturaste',
+      'exc.mae_win': 'Las ganadoras aguantaron',
+      'exc.mfe_lose': 'Las perdedoras llegaron a',
       'exc.progress': '{D} de {N} operaciones sincronizadas analizadas',
       'exc.nothing_new': 'No hay nada nuevo que analizar.',
       'exc.none_synced': 'Aún no hay operaciones sincronizadas con MT5 — esto necesita velas reales para medirse.',
@@ -16755,76 +16741,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     renderLifetimeConsistency(all);
 
-    // Heat & Extension — averaged MAE/MFE. Reads ONLY cached values (_maeR/_mfeR written by the
-    // Analyse button below), so this render never touches the network: an aggregate that fetched
-    // candles for every trade would fire one request per trade every time the tab painted.
-    (function renderExcursion(){
-      const box = document.getElementById('excursion-summary');
-      const verdictEl = document.getElementById('excursion-verdict');
-      const prog = document.getElementById('excursion-progress');
-      if (!box) return;
-      const synced = all.filter(x => x.mt5Ticket);
-      const done   = synced.filter(x => typeof x._maeR === 'number');
-      const wins   = done.filter(x => x.result === 'Win');
-      const losses = done.filter(x => x.result === 'Lose');
-      const avg = (arr, k) => arr.length ? arr.reduce((s, x) => s + (x[k] || 0), 0) / arr.length : null;
-      const maeW = avg(wins, '_maeR'), maeL = avg(losses, '_maeR');
-      const mfeW = avg(wins, '_mfeR'), mfeL = avg(losses, '_mfeR');
-      const capW = wins.length ? wins.reduce((s, x) => s + ((typeof tradeRforMath === 'function') ? tradeRforMath(x) : 0), 0) / wins.length : null;
-      const cell = (k, v) => `<div class="stat-cell"><div class="stat-label">${t(k)}</div><div class="stat-value">${v}</div></div>`;
-      box.innerHTML = `<div class="stats-summary stats-summary-4col">
-        ${cell('exc.mae_win',  maeW == null ? '—' : '−' + maeW.toFixed(2) + 'R')}
-        ${cell('exc.mae_lose', maeL == null ? '—' : '−' + maeL.toFixed(2) + 'R')}
-        ${cell('exc.mfe_win',  mfeW == null ? '—' : '+' + mfeW.toFixed(2) + 'R')}
-        ${cell('exc.capture',  (mfeW && capW != null && mfeW > 0) ? Math.round(capW / mfeW * 100) + '%' : '—')}
-      </div>`;
-      if (prog) prog.textContent = synced.length ? t('exc.progress').replace('{D}', String(done.length)).replace('{N}', String(synced.length)) : '';
-      if (verdictEl) {
-        const lines = [];
-        if (!synced.length) lines.push(t('exc.none_synced'));
-        else if (!done.length) lines.push(t('exc.not_run'));
-        else {
-          if (maeW != null) lines.push(t('exc.v_heat').replace('{H}', maeW.toFixed(2)).replace('{B}', Math.max(0, 1 - maeW).toFixed(2)));
-          // The same losing trade has opposite fixes depending on this number, which is exactly
-          // what nothing else in the app can tell them.
-          if (mfeL != null) lines.push(mfeL >= 0.5 ? t('exc.v_manage').replace('{F}', mfeL.toFixed(2)) : t('exc.v_entries').replace('{F}', mfeL.toFixed(2)));
-        }
-        verdictEl.textContent = lines.join(' ');
-      }
-    })();
-    // Analyse button — computes the missing excursions ONCE and caches them on each trade, so the
-    // section is instant afterwards and only newly-synced trades ever need work.
-    (function wireExcursionRun(){
-      const btn = document.getElementById('excursion-run');
-      const prog = document.getElementById('excursion-progress');
-      if (!btn || btn._wired) return;
-      btn._wired = true;
-      btn.addEventListener('click', async () => {
-        if (!(window.__stReplay && window.__stReplay.excursions)) return;
-        // Re-read the trades here rather than closing over `all`: this handler is wired once, and
-        // the account scope may well have changed since.
-        const scoped = (typeof filterByScope === 'function') ? filterByScope(getAllLifetimeTrades()) : getAllLifetimeTrades();
-        const todo = scoped.filter(x => x.mt5Ticket && typeof x._maeR !== 'number' && !x._excNone);
-        if (!todo.length) { if (prog) prog.textContent = t('exc.nothing_new'); return; }
-        btn.disabled = true;
-        for (let i = 0; i < todo.length; i++) {
-          if (prog) prog.textContent = (i + 1) + ' / ' + todo.length;
-          try {
-            const x = await window.__stReplay.excursions(todo[i]);
-            if (x && x.maeR != null) { todo[i]._maeR = x.maeR; todo[i]._mfeR = x.mfeR; }
-            else todo[i]._excNone = true;   // no candles stored — remember, so it isn't refetched every run
-          } catch (e) { todo[i]._excNone = true; }
-        }
-        try { saveData(); } catch (e) {}
-        btn.disabled = false;
-        // renderTradesStats, NOT renderStats: this section (and Session Analysis, Setups
-        // Performance and the Consistency Rule) is painted by renderTradesStats. Calling the
-        // wrong one is why the results only appeared after a manual reload. refreshAllSurfaces
-        // runs both, and this is a one-off click, so the extra work is free.
-        try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); else renderTradesStats(); } catch (e) {}
-      });
-    })();
-
     // Consistency rule — the prop-firm cap on how much of total profit may come from one day.
     // Hidden entirely until a cap is set in Settings, so it never nags a non-funded trader.
     (function renderConsistencyRule() {
@@ -17763,6 +17679,61 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         : (t('combo.trade_in_scope_many') || 'trades in scope');
       countEl.textContent = `${allTrades.length} ${label}`;
     }
+
+    // --- Diagnostics, measured from real candles ---------------------------------------------
+    // Deliberately TWO numbers, not four. Heat on winners says where the stop belongs. How far
+    // losers ran in your favour says whether a loss was an entry problem or a management problem —
+    // the same losing trade with opposite fixes, and something this tab could never answer, since
+    // it tracks BE potential but never loser potential. Heat on LOSERS is excluded on purpose: a
+    // loser is by definition a trade that reached its stop, so it is always ~1R and tells you
+    // nothing. Reads cached values only — the Analyse button fills them in once.
+    (function renderComboDiag(){
+      const box = document.getElementById('combo-diag');
+      if (!box) return;
+      function wireDiagRun(){
+        // The button is rebuilt on every render, so this is always a fresh element — no need to
+        // guard against double-binding, and no stale listener left behind.
+        const b = document.getElementById('combo-diag-run');
+        if (!b) return;
+        b.addEventListener('click', async () => {
+          if (!(window.__stReplay && window.__stReplay.excursions)) return;
+          const p = document.getElementById('combo-diag-progress');
+          // Re-read the trades on click: the scope may have changed since this was rendered, and
+          // analysing is worth doing across everything, not just the current period filter.
+          const scoped = (typeof filterByScope === 'function') ? filterByScope(getAllLifetimeTrades()) : getAllLifetimeTrades();
+          const todo = scoped.filter(x => x.mt5Ticket && typeof x._maeR !== 'number' && !x._excNone);
+          if (!todo.length) { if (p) p.textContent = t('exc.nothing_new'); return; }
+          b.disabled = true;
+          for (let i = 0; i < todo.length; i++) {
+            if (p) p.textContent = (i + 1) + ' / ' + todo.length;
+            try {
+              const x = await window.__stReplay.excursions(todo[i]);
+              if (x && x.maeR != null) { todo[i]._maeR = x.maeR; todo[i]._mfeR = x.mfeR; }
+              else todo[i]._excNone = true;   // nothing stored — remember, so it isn't refetched every run
+            } catch (e) { todo[i]._excNone = true; }
+          }
+          try { saveData(); } catch (e) {}
+          b.disabled = false;
+          // renderTradesStats paints this tab (renderStats is Series of 10); refreshAllSurfaces runs both.
+          try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); else renderTradesStats(); } catch (e) {}
+        });
+      }
+      const synced = allTrades.filter(x => x.mt5Ticket);
+      const done   = synced.filter(x => typeof x._maeR === 'number');
+      const avg = (arr, k) => arr.length ? arr.reduce((s, x) => s + (x[k] || 0), 0) / arr.length : null;
+      const maeW = avg(done.filter(x => x.result === 'Win'),  '_maeR');
+      const mfeL = avg(done.filter(x => x.result === 'Lose'), '_mfeR');
+      const btnHtml  = `<button type="button" id="combo-diag-run" class="settings-btn" style="padding:6px 12px;font-size:10px;">${t('btn.excursion_run')}</button>`;
+      const progHtml = `<span id="combo-diag-progress" style="margin-left:10px;font-family:'AppNum','DM Mono',monospace;font-size:10px;color:var(--text-dim);"></span>`;
+      if (!synced.length) { box.innerHTML = `<p class="section-hint" style="margin:0;">${t('exc.none_synced')}</p>`; return; }
+      if (!done.length)   { box.innerHTML = `<p class="section-hint" style="margin:0 0 8px;">${t('exc.not_run')}</p>${btnHtml}${progHtml}`; wireDiagRun(); return; }
+      const lines = [];
+      if (maeW != null) lines.push(`<strong style="color:var(--text);">${t('exc.mae_win')} −${maeW.toFixed(2)}R</strong> — ${t('exc.v_heat').replace('{H}', maeW.toFixed(2)).replace('{B}', Math.max(0, 1 - maeW).toFixed(2))}`);
+      if (mfeL != null) lines.push(`<strong style="color:var(--text);">${t('exc.mfe_lose')} +${mfeL.toFixed(2)}R</strong> — ${(mfeL >= 0.5 ? t('exc.v_manage') : t('exc.v_entries')).replace('{F}', mfeL.toFixed(2))}`);
+      box.innerHTML = `<div class="section-hint" style="margin:0 0 10px;line-height:1.9;">${lines.join('<br>')}</div>`
+        + `<div>${btnHtml}${progHtml}<span style="margin-left:10px;font-family:'AppNum','DM Mono',monospace;font-size:10px;color:var(--text-dim);">${t('exc.progress').replace('{D}', String(done.length)).replace('{N}', String(synced.length))}</span></div>`;
+      wireDiagRun();
+    })();
 
     // % mode requires a lifetime starting balance
     if (isPct && ltSB <= 0) {
@@ -21909,7 +21880,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 12:55 UTC';
+  window.ST_BUILD = '2026-08-09 13:25 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
