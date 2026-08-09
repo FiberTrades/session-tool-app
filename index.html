@@ -2706,6 +2706,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #setup-breakdown .history-list::-webkit-scrollbar-track { background: transparent; }
   /* Fewer than 5 trades — shown, but visibly not yet evidence. */
   #setup-breakdown .history-row.low-sample .history-cell { opacity: 0.55; }
+  /* Untagged is a data-completeness row, not a ranked setup: separated by a heavier rule and set
+     in the dim colour so it reads as "trades still to label" rather than as your worst strategy. */
+  #setup-breakdown .history-row.is-untagged { border-top: 1px solid var(--border-2); }
+  #setup-breakdown .history-row.is-untagged .history-cell.label { color: var(--text-dim); font-style: italic; }
   #setup-breakdown .history-cell.pl-good { color: var(--good); }
   #setup-breakdown .history-cell.pl-bad  { color: var(--bad); }
   #setup-breakdown .history-cell.pl-be   { color: var(--info); }
@@ -16663,9 +16667,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // One setup per trade, so rows are mutually exclusive and DO sum to the lifetime totals —
       // unlike the multi-select concepts this was first built on. Untagged trades are grouped
       // rather than dropped, so the table always accounts for every trade.
+      // Keyed by a sentinel rather than the translated label, so the untagged bucket is identified
+      // by what it IS and not by a string that changes with the language.
+      const UNTAGGED_KEY = ' untagged';
       const bySetup = {};
       all.forEach(tr => {
-        const name = (tr.setup && String(tr.setup).trim()) ? String(tr.setup).trim() : t('setup.untagged');
+        const name = (tr.setup && String(tr.setup).trim()) ? String(tr.setup).trim() : UNTAGGED_KEY;
         (bySetup[name] = bySetup[name] || []).push(tr);
       });
       const setupNames = Object.keys(bySetup);
@@ -16685,10 +16692,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // top the table and read as an edge. Setups at or above the app's reliability threshold rank
         // first; thinner samples fall below them and are dimmed — so the top of the table is always
         // the part worth trusting, and a fluke can't impersonate a system.
+        // UNTAGGED always sits last, whatever it scored. It is not a setup — it is the absence of
+        // one — so ranking it against real setups asks the table to answer a question it cannot:
+        // a −8R "Untagged" row is not a losing strategy, it is 26 trades you never labelled. It
+        // stays in the table so the rows still reconcile to your lifetime totals, but out of the
+        // ranking so it cannot occupy a position that means "this setup is your third best".
         const MIN_SETUP_TRADES = 5;
         setupNames
-          .map(name => ({ name: name, dt: bySetup[name], s: sideStats(bySetup[name]) }))
+          .map(name => ({ name: name === UNTAGGED_KEY ? t('setup.untagged') : name,
+                          untagged: name === UNTAGGED_KEY,
+                          dt: bySetup[name], s: sideStats(bySetup[name]) }))
           .sort((a, b) => {
+            if (a.untagged !== b.untagged) return a.untagged ? 1 : -1;
             const relA = a.s.count >= MIN_SETUP_TRADES, relB = b.s.count >= MIN_SETUP_TRADES;
             if (relA !== relB) return relA ? -1 : 1;
             return b.s.netR - a.s.netR;
@@ -16700,7 +16715,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             const avgStr = s.avgR === null ? '—' : (s.avgR >= 0 ? '+' : '') + s.avgR.toFixed(2) + 'R';
             const avgCls = s.avgR === null ? 'pl-be' : s.avgR > 0 ? 'pl-good' : s.avgR < 0 ? 'pl-bad' : 'pl-be';
             const plCls  = netPL > 0 ? 'pl-good' : netPL < 0 ? 'pl-bad' : 'pl-be';
-            uhtml += `<div class="history-row${s.count < MIN_SETUP_TRADES ? ' low-sample' : ''}">
+            uhtml += `<div class="history-row${s.count < MIN_SETUP_TRADES ? ' low-sample' : ''}${row.untagged ? ' is-untagged' : ''}">
               <div class="history-cell label">${escTag(row.name)}</div>
               <div class="history-cell">${s.count}</div>
               <div class="history-cell">${s.wr !== null ? s.wr + '%' : '—'}</div>
@@ -18941,7 +18956,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return `<svg class="combo-spark" viewBox="0 0 151 68" aria-hidden="true">
           <defs>
             <linearGradient id="stspkLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="#6f2b72" stop-opacity=".35"/>
+              <stop offset="0%" stop-color="#6f2b72" stop-opacity="0"/>
+              <stop offset="12%" stop-color="#8a3590" stop-opacity=".45"/>
               <stop offset="45%" stop-color="#b847b8"/>
               <stop offset="100%" stop-color="#f06bea"/>
             </linearGradient>
@@ -18954,16 +18970,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
               <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
             </filter>
           </defs>
-          <path d="M0 67.5H151" stroke="#2a202d" stroke-width=".5"/>
           <path d="M8 54 L38 38 L66 43 L93 25 L112 30 L135 17 L135 67 L8 67 Z" fill="url(#stspkFill)"/>
           <path d="M8 54 L38 38 L66 43 L93 25 L112 30 L135 17"
-                fill="none" stroke="#d94bd5" stroke-width="2.2" stroke-linecap="round"
+                fill="none" stroke="#d94bd5" stroke-width="2.2" stroke-linecap="butt"
                 stroke-linejoin="round" opacity=".28" filter="url(#stspkGlow)"/>
           <path d="M8 54 L38 38 L66 43 L93 25 L112 30 L135 17"
                 fill="none" stroke="url(#stspkLine)" stroke-width="1.15"
-                stroke-linecap="round" stroke-linejoin="round"/>
-          <circle cx="135" cy="17" r="3.1" fill="#ee68e7" opacity=".3" filter="url(#stspkGlow)"/>
-          <circle cx="135" cy="17" r="1.55" fill="#f58bea"/>
+                stroke-linecap="butt" stroke-linejoin="round"/>
+          <circle cx="135" cy="17" r="4.8" fill="#ee68e7" opacity=".3" filter="url(#stspkGlow)"/>
+          <circle cx="135" cy="17" r="2.5" fill="#f58bea"/>
         </svg>`;
     }
     // The verdict LEADS. It is the answer to the question the section asks, and it was sitting at
@@ -22183,7 +22198,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 22:15 UTC';
+  window.ST_BUILD = '2026-08-09 23:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
