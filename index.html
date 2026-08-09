@@ -2155,6 +2155,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      data.settings.savedBiasMinimized so it sticks across refreshes. */
   .saved-bias-label-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
   .saved-bias-label-row .saved-bias-label { margin-bottom: 0; }
+  /* HTF/LTF switch sits beside the eyebrow; margin-right:auto keeps it hugging the label so the
+     space-between row still pushes the minimise button to the far right. Hidden when the bias has
+     no lower-timeframe read — a switch with nothing to switch to is just a dead control. */
+  #saved-bias-tf { margin-left: 14px; margin-right: auto; }
+  #saved-bias-tf.hidden { display: none; }
   .saved-bias-toggle-btn { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-dim); font-family: 'AppNum', 'DM Mono', monospace; font-size: 16px; font-weight: 300; line-height: 1; width: 26px; height: 26px; cursor: pointer; transition: all 150ms; padding: 0; display: inline-flex; align-items: center; justify-content: center; }
   .saved-bias-toggle-btn:hover { border-color: var(--text-mid); color: var(--text); }
   /* Minimised: hide chart strip + notes, tighten the card padding. The
@@ -3970,6 +3975,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     <div class="saved-bias hidden" id="saved-bias-card">
       <div class="saved-bias-label-row">
         <div class="saved-bias-label" id="saved-bias-label">This morning's bias</div>
+        <div class="tf-toggle hidden" id="saved-bias-tf"><button type="button" class="tf-btn selected" data-tf="htf">HTF</button><button type="button" class="tf-btn" data-tf="ltf">LTF</button></div>
         <button type="button" class="saved-bias-toggle-btn" id="saved-bias-toggle-btn" aria-label="Toggle bias card size" title="Minimise / maximise">−</button>
       </div>
       <div class="saved-bias-main">
@@ -14610,6 +14616,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     return 'review.this_night_bias';
   }
 
+  // Which timeframe the morning-bias card is showing. Runtime only — it resets to HTF on reload,
+  // which is the right default since the higher-timeframe read is the anchor.
+  let _savedBiasTf = 'htf';
   function renderSavedBias() {
     const b = data.bias;
     const card = document.getElementById('saved-bias-card');
@@ -14651,24 +14660,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'Discount Middle': 'opt.discount_middle', 'Discount Edge': 'opt.discount_edge', 'Breakout': 'opt.breakout',
       'Bullish': 'opt.bullish', 'Bearish': 'opt.bearish', 'Unsure': 'opt.unsure'
     };
-    // HTF and LTF reads each get their own row. The timeframe is only spelled out when BOTH are
-    // logged — a bias with just the HTF read reads exactly as it always did.
-    const _bothTf = (hi, lo) => !!(hi && lo);
+    // Four cards as before — the HTF/LTF switch in the label row picks WHICH read they show,
+    // rather than doubling the card into seven. Mode has no per-timeframe twin, so it's constant.
+    const _tfEl = document.getElementById('saved-bias-tf');
+    const _hasLtf = !!(b.structureLtf || b.locationLtf || b.directionLtf);
+    if (!_hasLtf) _savedBiasTf = 'htf';   // nothing to switch to — don't strand the card on an empty view
+    if (_tfEl) {
+      _tfEl.classList.toggle('hidden', !_hasLtf);
+      _tfEl.querySelectorAll('.tf-btn').forEach(x => x.classList.toggle('selected', x.dataset.tf === _savedBiasTf));
+      if (!_tfEl.__bound) {
+        _tfEl.__bound = true;
+        _tfEl.querySelectorAll('.tf-btn').forEach(x => x.addEventListener('click', () => {
+          _savedBiasTf = x.dataset.tf;
+          renderSavedBias();
+        }));
+      }
+    }
+    const _pickTf = (hi, lo) => (_savedBiasTf === 'ltf') ? (lo || null) : (hi || null);
     [
-      ['savedbias.mode',      b.mode,         ''],
-      ['savedbias.structure', b.structure,    _bothTf(b.structure, b.structureLtf) ? ' (HTF)' : ''],
-      ['savedbias.structure', b.structureLtf, ' (LTF)'],
-      ['savedbias.location',  b.location,     _bothTf(b.location, b.locationLtf)  ? ' (HTF)' : ''],
-      ['savedbias.location',  b.locationLtf,  ' (LTF)'],
-      ['savedbias.direction', b.direction,    _bothTf(b.direction, b.directionLtf) ? ' (HTF)' : ''],
-      ['savedbias.direction', b.directionLtf, ' (LTF)']
-    ].forEach(([labelKey, v, tfSuffix]) => {
+      ['savedbias.mode',      b.mode],
+      ['savedbias.structure', _pickTf(b.structure, b.structureLtf)],
+      ['savedbias.location',  _pickTf(b.location,  b.locationLtf)],
+      ['savedbias.direction', _pickTf(b.direction, b.directionLtf)]
+    ].forEach(([labelKey, v]) => {
       if (v) {
         const row = document.createElement('div');
         row.className = 'saved-bias-row';
         const vKey = BIAS_VALUE_I18N[v];
         const vLabel = vKey ? t(vKey) : v;
-        row.innerHTML = `<span class="k">${t(labelKey)}${tfSuffix}</span><span class="v">${vLabel}</span>`;
+        row.innerHTML = `<span class="k">${t(labelKey)}</span><span class="v">${vLabel}</span>`;
         grid.appendChild(row);
       }
     });
@@ -21673,7 +21693,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-09 07:30 UTC';
+  window.ST_BUILD = '2026-08-09 07:50 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
