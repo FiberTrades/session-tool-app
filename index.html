@@ -21674,7 +21674,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     document.querySelectorAll('#modal-trades .modal-trade-row[data-id]').forEach(row => {
       row.addEventListener('click', () => {
         document.getElementById('day-modal-bg').classList.remove('show');
-        openEditTradeModal(row.dataset.id);
+        openEditTradeModal(row.dataset.id, _dkIso);   // remember the day, so closing returns here
       });
     });
 
@@ -21844,9 +21844,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let editingTradeId = null;
   let editingResult = null;
 
-  function openEditTradeModal(id) {
+  // Which calendar day this Edit Trade was opened FROM, so closing it can go back there
+  // instead of dumping you on the calendar. Passed explicitly rather than set by the caller,
+  // so every other entry point (trades list, trade view) clears it just by not passing one —
+  // a stale value can never leak into a modal opened from somewhere else.
+  let editTradeReturnDay = null;
+  function openEditTradeModal(id, returnDay) {
     const t = findTradeById(id);
     if (!t) return;
+    editTradeReturnDay = returnDay || null;
     editingTradeId = id;
     editingResult = t.result;
     // Trade Replay: show the ▶ Replay button only for MT5-synced trades (they have candles).
@@ -21859,7 +21865,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         ? !!window.__stReplay.ticketOf(t)
         : !!(t.mt5Ticket || t.position);
       _rb.style.display = _canReplay ? 'inline-flex' : 'none';
-      _rb.onclick=function(){ try{ var _rt=t.id; window.__stReplayReturn=function(){ try{ openEditTradeModal(_rt); }catch(_){} }; document.getElementById('edit-trade-modal-bg').classList.remove('show'); if(window.__stReplay) window.__stReplay.open(t); }catch(e){} }; })();
+      _rb.onclick=function(){ try{ var _rt=t.id, _rd=editTradeReturnDay; window.__stReplayReturn=function(){ try{ openEditTradeModal(_rt,_rd); }catch(_){} }; document.getElementById('edit-trade-modal-bg').classList.remove('show'); if(window.__stReplay) window.__stReplay.open(t); }catch(e){} }; })();
 
 
     const d = t.date ? new Date(t.date) : new Date();
@@ -22050,15 +22056,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (el) el.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ev.target.blur(); } });
   });
 
-  document.getElementById('edit-trade-close').addEventListener('click', () => {
+  // The one way out of Edit Trade. All four exits (X, backdrop, Save, Delete) ran the same two
+  // lines, and none of them knew where the modal had been opened from — so closing one that was
+  // launched from a calendar day dropped you on the calendar instead of back on that day.
+  // Reopening re-runs openDayModal, so the day's rows and totals reflect a save or delete rather
+  // than showing the stale numbers that were on screen when you left.
+  function closeEditTradeModal() {
     document.getElementById('edit-trade-modal-bg').classList.remove('show');
     editingTradeId = null;
-  });
+    const _back = editTradeReturnDay;
+    editTradeReturnDay = null;   // cleared first, so a throw below can't strand it and send the
+                                 // NEXT trade you open back to this day
+    if (_back) { try { openDayModal(_back); } catch (e) {} }
+  }
+  document.getElementById('edit-trade-close').addEventListener('click', closeEditTradeModal);
   document.getElementById('edit-trade-modal-bg').addEventListener('click', e => {
-    if (e.target.id === 'edit-trade-modal-bg') {
-      document.getElementById('edit-trade-modal-bg').classList.remove('show');
-      editingTradeId = null;
-    }
+    if (e.target.id === 'edit-trade-modal-bg') closeEditTradeModal();
   });
 
   document.getElementById('edit-trade-save').addEventListener('click', () => {
@@ -22134,8 +22147,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     rebuildSeriesByDate();
     saveData();
-    document.getElementById('edit-trade-modal-bg').classList.remove('show');
-    editingTradeId = null;
+    closeEditTradeModal();
     showToast(t('toast.trade_updated'));
     renderStats();
     if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
@@ -22185,8 +22197,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     deleteTradeById(editingTradeId);
     rebuildSeriesByDate();
     saveData();
-    document.getElementById('edit-trade-modal-bg').classList.remove('show');
-    editingTradeId = null;
+    closeEditTradeModal();
     renderStats();
     if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
     if (document.getElementById('page-tradeview').classList.contains('active')) renderTradeView();
@@ -22407,7 +22418,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 16:05 UTC';
+  window.ST_BUILD = '2026-08-10 16:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
