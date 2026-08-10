@@ -4493,8 +4493,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       </div></div>
     </section>
 
-    <div class="actions actions-narrow-1" style="margin-top:40px;">
+    <div class="actions" style="margin-top:40px;">
       <button class="btn" id="stats-export" data-i18n="btn.copy_discord">Post to community</button>
+      <button class="btn" id="stats-export-card">Download card</button>
     </div>
   </div>
 
@@ -16203,30 +16204,45 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   (function wireSeriesShareModal() {
     var bg = document.getElementById('series-share-modal-bg'); if (!bg) return;
-    function _open() {
+    // One modal, two entry points. "Post to community" and "Download card" both need the same
+    // question answered — which completed series — so they share the picker rather than each
+    // growing their own. The mode only decides the wording and which action button is offered,
+    // so neither flow can be triggered from the other's button by mistake.
+    function _open(mode) {
+      var card = (mode === 'card');
       if (!data.history || data.history.length === 0) { if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true }); return; }
       try { renderSeriesPostSelector(); } catch (e) {}
       try {
         var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
         var set = function (id, txt) { var el = document.getElementById(id); if (el) el.textContent = txt; };
-        set('series-share-title', T('Share a series', 'Compartir una serie'));
-        set('series-share-hint', T('Post a completed Series of 10 to the community. The latest one is selected; pick a previous series if you prefer.', 'Publica una Serie de 10 completada en la comunidad. La ultima esta seleccionada; elige una serie anterior si prefieres.'));
+        var show = function (id, on) { var el = document.getElementById(id); if (el) el.style.display = on ? '' : 'none'; };
+        set('series-share-title', card ? T('Download a card', 'Descargar una tarjeta') : T('Share a series', 'Compartir una serie'));
+        set('series-share-hint', card
+          ? T('Save a completed Series of 10 as an image. The latest one is selected; pick a previous series if you prefer.', 'Guarda una Serie de 10 completada como imagen. La ultima esta seleccionada; elige una serie anterior si prefieres.')
+          : T('Post a completed Series of 10 to the community. The latest one is selected; pick a previous series if you prefer.', 'Publica una Serie de 10 completada en la comunidad. La ultima esta seleccionada; elige una serie anterior si prefieres.'));
         set('series-share-label', T('Which series', 'Que serie'));
         set('series-share-cancel', T('Cancel', 'Cancelar'));
-        set('series-share-card', T('Save card', 'Guardar tarjeta'));
+        set('series-share-card', T('Download card', 'Descargar tarjeta'));
         set('series-share-confirm', T('Share', 'Compartir'));
+        show('series-share-card', card);
+        show('series-share-confirm', !card);
       } catch (e) {}
       bg.classList.add('show');
     }
     function _close() { bg.classList.remove('show'); }
     window.__closeSeriesShareModal = _close;
-    var ob = document.getElementById('stats-export'); if (ob) ob.addEventListener('click', _open);
+    var ob = document.getElementById('stats-export'); if (ob) ob.addEventListener('click', function () { _open('post'); });
+    var cardBtn = document.getElementById('stats-export-card');
+    if (cardBtn) {
+      try { cardBtn.textContent = (window._stT ? window._stT('Download card', 'Descargar tarjeta') : 'Download card'); } catch (e) {}
+      cardBtn.addEventListener('click', function () { _open('card'); });
+    }
     var xb = document.getElementById('series-share-close'); if (xb) xb.addEventListener('click', _close);
     var cb = document.getElementById('series-share-cancel'); if (cb) cb.addEventListener('click', _close);
     bg.addEventListener('click', function (e) { if (e.target === bg) _close(); });
   })();
   // ── Series of 10 — shareable card ─────────────────────────────────────────────────────────
-  // Draws the selected series as a 1200x675 PNG and downloads it. Deliberately wired to the same
+  // Draws the selected series as a 1080x1080 PNG and downloads it. Deliberately wired to the same
   // modal, the same selector and the same calcSeriesStats() as the Discord post above: the image
   // and the text post are two renderings of one set of numbers, so they can never disagree.
   //
@@ -16281,122 +16297,199 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       });
       var bestSetup = '', bestR = -Infinity;
       Object.keys(bySetup).forEach(function (k) { if (bySetup[k] > bestR) { bestR = bySetup[k]; bestSetup = k; } });
-      // Dominant symbol, so a mixed series still names the instrument it mostly was.
-      var bySym = {}, sym = '';
+      // EVERY symbol traded in the series, most-traded first — not just the dominant one. A card
+      // that says "EUR/USD" for a series that was half GBP/USD is a lie, and this one is meant to
+      // be posted in public. Past two, the rest collapse into a count so the footer stays one line.
+      var bySym = {};
       tr.forEach(function (x) { var s = x.symbol || ''; if (s) bySym[s] = (bySym[s] || 0) + 1; });
-      Object.keys(bySym).forEach(function (s) { if (!sym || bySym[s] > bySym[sym]) sym = s; });
+      var symList = Object.keys(bySym).sort(function (a, b) { return bySym[b] - bySym[a]; });
+      var sym = symList.length <= 2 ? symList.join('  ·  ')
+                                    : symList.slice(0, 2).join('  ·  ') + '  +' + (symList.length - 2);
       // Equity path: cumulative R after each trade, starting at zero.
       var cum = [0], run = 0;
       tr.slice().sort(function (a, b) { return new Date(a.date || 0) - new Date(b.date || 0); })
         .forEach(function (x) { run += tradeRforMath(x); cum.push(run); });
+      // Which sessions this series was actually TRADED in, worked out by testing each entry time
+      // against the configured windows — rather than naming getSessions()[0], which is merely the
+      // first session someone set up and says nothing about when these ten trades happened. A
+      // London-and-New-York trader gets both; a session with no trades in it is not claimed.
+      var meta = '';
+      try {
+        var ss = (typeof getSessions === 'function') ? getSessions() : [];
+        var toM = function (hhmm) { var a = String(hhmm || '').split(':'); return (parseInt(a[0], 10) || 0) * 60 + (parseInt(a[1], 10) || 0); };
+        var hit = {};
+        tr.forEach(function (x) {
+          var m = String(x.entryTime || '').match(/^(\d{1,2}):(\d{2})/);
+          if (!m) return;
+          var mins = (+m[1]) * 60 + (+m[2]);
+          ss.forEach(function (s) {
+            var a = toM(s.start), b = toM(s.end);
+            var inside = (b > a) ? (mins >= a && mins < b) : (mins >= a || mins < b);   // handles a window that wraps midnight
+            if (inside && s.name) hit[s.name] = (hit[s.name] || 0) + 1;
+          });
+        });
+        var names = Object.keys(hit).sort(function (a, b) { return hit[b] - hit[a]; });
+        meta = names.join('  ·  ');
+      } catch (e) {}
       return {
         num: sel.num, when: dateRange(sel), n: tr.length, w: st.w, l: st.l, be: st.be,
-        netR: st.netR, money: money, pct: pct, cum: cum, sym: sym,
+        netR: st.netR, money: money, pct: pct, cum: cum, sym: sym, meta: meta,
         wr: decided ? Math.round(st.w / decided * 100) : null,
         exp: tr.length ? st.netR / tr.length : 0,
         bestSetup: bestSetup
       };
     }
 
-    function draw(d) {
-      var W = 1200, H = 675, S = 2;             // S = backing scale, for a crisp PNG
+    // Square 1080, because a share image is judged as a thumbnail first and a square survives
+    // that crop on every platform. The whole layout is one hierarchy: hero, then curve, then the
+    // supporting four, then attribution — rather than five things competing at the same weight.
+    function draw(d, logo) {
+      var W = 1080, H = 1080, S = 2;
       var cv = document.createElement('canvas');
       cv.width = W * S; cv.height = H * S;
       var g = cv.getContext('2d');
       g.scale(S, S);
       g.textBaseline = 'alphabetic';
-      var PAD = 64;
+      var up = d.netR >= 0, HERO = up ? C.good : C.bad;
 
-      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+      var rr = function (x, y, w, h, r) {
+        g.beginPath();
+        g.moveTo(x + r, y); g.lineTo(x + w - r, y); g.quadraticCurveTo(x + w, y, x + w, y + r);
+        g.lineTo(x + w, y + h - r); g.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+        g.lineTo(x + r, y + h); g.quadraticCurveTo(x, y + h, x, y + h - r);
+        g.lineTo(x, y + r); g.quadraticCurveTo(x, y, x + r, y); g.closePath();
+      };
+      var ls = function (px) { try { g.letterSpacing = px + 'px'; } catch (e) {} };
 
-      // header
-      g.fillStyle = C.text; g.font = '34px ' + SERIF;
-      g.fillText('SessionTool', PAD, PAD + 26);
-      var hdr = ('Series ' + d.num + (d.when ? ' · ' + d.when : '')).toUpperCase();
-      g.font = '13px ' + MONO; g.fillStyle = C.dim;
-      g.textAlign = 'right'; g.fillText(hdr, W - PAD, PAD + 22); g.textAlign = 'left';
+      // page + card
+      g.fillStyle = '#050506'; g.fillRect(0, 0, W, H);
+      var M = 46, CX = M, CY = M, CW = W - M * 2, CH = H - M * 2;
+      g.fillStyle = C.bg; rr(CX, CY, CW, CH, 30); g.fill();
+      g.strokeStyle = '#1E1D24'; g.lineWidth = 1; rr(CX + .5, CY + .5, CW - 1, CH - 1, 30); g.stroke();
 
-      // hero
-      var sgn = d.netR >= 0 ? '+' : '−';
-      var heroTxt = sgn + Math.abs(d.netR).toFixed(2) + 'R';
-      g.font = '92px ' + MONO; g.fillStyle = d.netR >= 0 ? C.good : C.bad;
-      g.fillText(heroTxt, PAD, 232);
-      var heroW = g.measureText(heroTxt).width;
-      var sub = 'net';
-      try { sub += ' · ' + fmtMoney(d.money); } catch (e) {}
-      sub += ' · ' + (d.pct >= 0 ? '+' : '−') + Math.abs(d.pct).toFixed(2) + '% account';
-      g.font = '20px ' + MONO; g.fillStyle = C.mid;
-      g.fillText(sub, PAD + heroW + 22, 232);
+      var L = CX + 52, R = CX + CW - 52;
 
-      // equity path
-      var gx = PAD, gy = 286, gw = W - PAD * 2, gh = 104;
+      // ── wordmark + accent rule ──────────────────────────────────────────────
+      g.fillStyle = C.text; g.font = '40px ' + SERIF; ls(0);
+      g.fillText('SessionTool', L, 138);
+      g.fillStyle = HERO; g.fillRect(L, 156, 34, 3);
+
+      // ── series + dates, right ───────────────────────────────────────────────
+      g.textAlign = 'right'; ls(3);
+      g.font = '17px ' + MONO; g.fillStyle = C.text;
+      g.fillText('SERIES ' + String(d.num).padStart(2, '0'), R, 132);
+      g.font = '15px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(String(d.when || '').toUpperCase(), R, 162);
+
+      // ── verdict pill. "SERIES", not "SESSION": this card covers ten trades across
+      //    however many days they took, so calling it a session would be plainly wrong.
+      var pillTxt = (up ? 'POSITIVE' : 'NEGATIVE') + ' SERIES';
+      g.font = '14px ' + MONO; ls(2.5);
+      var ptw = g.measureText(pillTxt).width, pw = ptw + 54, ph = 42, px = R - pw, py = 190;
+      g.fillStyle = up ? 'rgba(78,205,139,0.08)' : 'rgba(229,103,103,0.08)';
+      rr(px, py, pw, ph, 9); g.fill();
+      g.strokeStyle = up ? 'rgba(78,205,139,0.34)' : 'rgba(229,103,103,0.34)';
+      rr(px + .5, py + .5, pw - 1, ph - 1, 9); g.stroke();
+      g.fillStyle = HERO; g.beginPath(); g.arc(px + 22, py + ph / 2, 4.5, 0, Math.PI * 2); g.fill();
+      g.textAlign = 'left'; g.fillText(pillTxt, px + 36, py + 27);
+      ls(0);
+
+      // ── hero ────────────────────────────────────────────────────────────────
+      var num = (up ? '+' : '−') + Math.abs(d.netR).toFixed(2);
+      g.font = '118px ' + MONO; g.fillStyle = HERO;
+      g.fillText(num, L, 366);
+      var nw = g.measureText(num).width;
+      g.font = '46px ' + MONO; g.fillText('R', L + nw + 6, 366);
+      var money = ''; try { money = fmtMoney(d.money); } catch (e) {}
+      g.font = '21px ' + MONO; g.fillStyle = C.mid;
+      g.fillText('net ' + money + '  ·  ' + (d.pct >= 0 ? '+' : '−') + Math.abs(d.pct).toFixed(2) + '% account', L, 414);
+
+      // ── equity curve, with a labelled R axis so the shape is readable, not decorative ──
+      var gx = L, gy = 470, gw = (R - L) - 74, gh = 300;
       var lo = Math.min.apply(null, d.cum), hi = Math.max.apply(null, d.cum);
-      if (hi - lo < 0.0001) { hi = lo + 1; }
+      var span = hi - lo; if (span < 0.5) { hi += 0.5; lo -= 0.5; span = hi - lo; }
+      lo -= span * 0.12; hi += span * 0.12;
       var yOf = function (v) { return gy + gh - ((v - lo) / (hi - lo)) * gh; };
-      // zero line, only when zero is inside the range — a series that never went negative
-      // should not get a baseline drawn off its own floor.
-      if (lo < 0 && hi > 0) {
-        g.strokeStyle = '#2A2833'; g.lineWidth = 1;
-        g.beginPath(); g.moveTo(gx, yOf(0)); g.lineTo(gx + gw, yOf(0)); g.stroke();
+      // Round ticks at a step that yields ~4 lines, so the labels read 0R / −2R / −4R rather
+      // than arbitrary decimals.
+      var raw = (hi - lo) / 4, pow = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
+      var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * pow; })
+                  .filter(function (s) { return s >= raw; })[0] || pow * 10;
+      g.textAlign = 'left'; g.font = '15px ' + MONO;
+      for (var v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) {
+        var y = yOf(v);
+        g.strokeStyle = 'rgba(255,255,255,0.055)'; g.lineWidth = 1;
+        g.setLineDash([5, 7]); g.beginPath(); g.moveTo(gx, y + .5); g.lineTo(gx + gw, y + .5); g.stroke();
+        g.setLineDash([]);
+        g.fillStyle = C.dim;
+        g.fillText((Math.round(v * 10) / 10) + 'R', gx + gw + 18, y + 5);
       }
-      g.strokeStyle = d.netR >= 0 ? C.good : C.bad;
-      g.lineWidth = 2.5; g.lineJoin = 'round'; g.lineCap = 'round';
-      g.beginPath();
-      d.cum.forEach(function (v, i) {
-        var x = gx + (i / Math.max(1, d.cum.length - 1)) * gw, y = yOf(v);
-        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      var pts = d.cum.map(function (v, i) {
+        return [gx + (i / Math.max(1, d.cum.length - 1)) * gw, yOf(v)];
       });
-      g.stroke();
-      g.fillStyle = d.netR >= 0 ? C.good : C.bad;
-      g.beginPath(); g.arc(gx + gw, yOf(d.cum[d.cum.length - 1]), 5, 0, Math.PI * 2); g.fill();
+      var grad = g.createLinearGradient(0, gy, 0, gy + gh);
+      grad.addColorStop(0, up ? 'rgba(78,205,139,0.28)' : 'rgba(229,103,103,0.28)');
+      grad.addColorStop(1, up ? 'rgba(78,205,139,0)' : 'rgba(229,103,103,0)');
+      g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+      pts.forEach(function (p) { g.lineTo(p[0], p[1]); });
+      g.lineTo(pts[pts.length - 1][0], gy + gh); g.lineTo(pts[0][0], gy + gh); g.closePath();
+      g.fillStyle = grad; g.fill();
+      g.strokeStyle = HERO; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round';
+      g.beginPath(); pts.forEach(function (p, i) { i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); }); g.stroke();
+      var last = pts[pts.length - 1];
+      g.fillStyle = up ? 'rgba(78,205,139,0.22)' : 'rgba(229,103,103,0.22)';
+      g.beginPath(); g.arc(last[0], last[1], 16, 0, Math.PI * 2); g.fill();
+      g.fillStyle = HERO; g.beginPath(); g.arc(last[0], last[1], 7, 0, Math.PI * 2); g.fill();
 
-      // stat grid
-      var bx = PAD, by = 436, bw = W - PAD * 2, bh = 116;
-      g.strokeStyle = C.line; g.lineWidth = 1;
-      g.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+      // ── the supporting four ─────────────────────────────────────────────────
+      var bx = L, by = 826, bw = R - L, bh = 146;
+      g.fillStyle = 'rgba(255,255,255,0.018)'; rr(bx, by, bw, bh, 14); g.fill();
+      g.strokeStyle = '#1E1D24'; g.lineWidth = 1; rr(bx + .5, by + .5, bw - 1, bh - 1, 14); g.stroke();
+      var wrEl = (d.wr === null ? '—' : d.wr + '%');
       var cells = [
-        { l: 'Win rate',   v: (d.wr === null ? '—' : d.wr + '%'), c: C.text },
-        { l: 'W / L / BE', v: d.w + ' / ' + d.l + ' / ' + d.be,        c: C.text, split: true },
-        { l: 'Expectancy', v: (d.exp >= 0 ? '+' : '−') + Math.abs(d.exp).toFixed(2) + 'R', c: d.exp >= 0 ? C.good : C.bad },
-        { l: 'Best setup', v: d.bestSetup || '—', c: C.text, small: true }
+        { l: 'WIN RATE',   v: wrEl,  c: C.text, tick: HERO },
+        { l: 'W / L / BE', v: null,  tick: C.good },
+        { l: 'EXPECTANCY', v: (d.exp >= 0 ? '+' : '−') + Math.abs(d.exp).toFixed(2) + 'R',
+          c: d.exp >= 0 ? C.good : C.bad, tick: d.exp >= 0 ? C.good : C.bad },
+        { l: 'BEST SETUP', v: d.bestSetup || '—', c: C.text, tick: '#8b8a95', small: true }
       ];
-      var cw = bw / cells.length;
+      var cw = bw / 4;
       cells.forEach(function (c, i) {
         var cx = bx + cw * i;
-        if (i) { g.beginPath(); g.moveTo(cx + 0.5, by); g.lineTo(cx + 0.5, by + bh); g.strokeStyle = C.line; g.stroke(); }
-        g.textAlign = 'center';
-        g.font = '12px ' + MONO; g.fillStyle = C.dim;
-        g.fillText(c.l.toUpperCase(), cx + cw / 2, by + 38);
-        if (c.split) {
-          // W / L / BE keeps the app's three colours instead of flattening to one.
-          var parts = [String(d.w), String(d.l), String(d.be)], cols = [C.good, C.bad, C.be];
-          g.font = '26px ' + MONO;
-          var segs = [], total = 0;
-          parts.forEach(function (p, k) { var t1 = g.measureText(p).width, t2 = g.measureText(' / ').width;
-            segs.push(t1); total += t1 + (k < 2 ? t2 : 0); });
-          var sx = cx + cw / 2 - total / 2;
-          g.textAlign = 'left';
-          parts.forEach(function (p, k) {
-            g.fillStyle = cols[k]; g.fillText(p, sx, by + 78); sx += segs[k];
-            if (k < 2) { g.fillStyle = '#4a4854'; g.fillText(' / ', sx, by + 78); sx += g.measureText(' / ').width; }
-          });
-          g.textAlign = 'center';
+        if (i) { g.strokeStyle = '#1E1D24'; g.beginPath(); g.moveTo(cx + .5, by + 26); g.lineTo(cx + .5, by + bh - 26); g.stroke(); }
+        g.fillStyle = c.tick; g.fillRect(cx + 30, by + 30, 22, 3);
+        g.textAlign = 'left'; ls(2.2);
+        g.font = '13px ' + MONO; g.fillStyle = C.dim; g.fillText(c.l, cx + 30, by + 72); ls(0);
+        if (c.v === null) {
+          g.font = '30px ' + MONO;
+          var seq = [[String(d.w), C.good], ['/', '#4a4854'], [String(d.l), C.bad], ['/', '#4a4854'], [String(d.be), C.be]];
+          var sx = cx + 30;
+          seq.forEach(function (s) { g.fillStyle = s[1]; g.fillText(s[0], sx, by + 116); sx += g.measureText(s[0]).width + 7; });
         } else {
-          g.font = (c.small ? 17 : 26) + 'px ' + MONO; g.fillStyle = c.c;
-          var v = String(c.v);
-          // A long setup name must not run into its neighbours.
-          if (c.small) { while (g.measureText(v).width > cw - 28 && v.length > 4) v = v.slice(0, -2); if (v !== String(c.v)) v += '…'; }
-          g.fillText(v, cx + cw / 2, by + (c.small ? 80 : 78));
+          g.font = (c.small ? 21 : 32) + 'px ' + MONO; g.fillStyle = c.c;
+          var t2 = String(c.v);
+          if (c.small) { while (g.measureText(t2).width > cw - 52 && t2.length > 4) t2 = t2.slice(0, -2); if (t2 !== String(c.v)) t2 += '…'; }
+          g.fillText(t2, cx + 30, by + 116);
         }
-        g.textAlign = 'left';
       });
 
-      // footer
-      g.font = '14px ' + MONO; g.fillStyle = C.dim;
-      g.fillText(d.sym || '', PAD, H - PAD + 6);
-      g.fillStyle = C.pink; g.textAlign = 'right';
-      g.fillText('sessiontool.app', W - PAD, H - PAD + 6);
-      g.textAlign = 'left';
+      // ── footer: instrument left, brand right ────────────────────────────────
+      var fy = 1012;
+      g.strokeStyle = '#1E1D24'; g.lineWidth = 1;
+      g.beginPath(); g.arc(L + 21, fy - 8, 21, 0, Math.PI * 2); g.stroke();
+      g.strokeStyle = HERO; g.lineWidth = 2; g.lineJoin = 'round';
+      g.beginPath(); g.moveTo(L + 11, fy - 3); g.lineTo(L + 18, fy - 12); g.lineTo(L + 24, fy - 6); g.lineTo(L + 31, fy - 16); g.stroke();
+      g.textAlign = 'left'; g.font = '21px ' + MONO; g.fillStyle = C.text;
+      g.fillText(d.sym || '', L + 54, fy - 12);
+      ls(2); g.font = '12px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(String(d.meta || '').toUpperCase(), L + 54, fy + 8); ls(0);
+
+      // The app's own logo, taken from the apple-touch-icon exactly as the community sidebar
+      // does, so the card can never drift from the icon on the user's home screen.
+      var lw = 34;
+      if (logo) { try { g.drawImage(logo, R - 210, fy - 30, lw, lw); } catch (e) {} }
+      g.textAlign = 'left'; g.font = '20px ' + MONO; g.fillStyle = C.pink;
+      g.fillText('sessiontool.app', R - 210 + lw + 14, fy - 7);
       return cv;
     }
 
@@ -16415,9 +16508,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       // Wait for the web fonts, or the card renders in a system face and stops looking like
       // the app. Falls through after a moment so a font that never loads cannot hang the button.
-      var go = function () {
+      var go = function (logo) {
         try {
-          var cv = draw(build(sel));
+          var cv = draw(build(sel), logo);
           cv.toBlob(function (b) {
             if (!b) { if (typeof showToast === 'function') showToast(T('Could not build the card.', 'No se pudo crear la tarjeta.')); return; }
             var url = URL.createObjectURL(b);
@@ -16425,15 +16518,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             a.href = url; a.download = 'session-tool-series-' + sel.num + '.png';
             a.click();
             setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+            try { if (window.__closeSeriesShareModal) window.__closeSeriesShareModal(); } catch (e) {}
             if (typeof showToast === 'function') showToast(T('Card saved.', 'Tarjeta guardada.'));
           }, 'image/png');
         } catch (e) {
           if (typeof showToast === 'function') showToast(T('Could not build the card.', 'No se pudo crear la tarjeta.'));
         }
       };
-      var done = false, once = function () { if (done) return; done = true; go(); };
-      try { document.fonts.ready.then(once); } catch (e) {}
-      setTimeout(once, 600);
+      // The logo is the apple-touch-icon, read the same way the community sidebar reads it, so the
+      // card always carries whatever icon the app is actually shipping. It is a data: URI already
+      // embedded in the page, so there is no network fetch and no chance of tainting the canvas —
+      // a cross-origin logo would make toBlob throw a security error and lose the whole card.
+      var done = false;
+      var once = function (logo) { if (done) return; done = true; go(logo || null); };
+      var fire = function () {
+        var src = '';
+        try { var el = document.querySelector('link[rel="apple-touch-icon"]'); src = el ? el.getAttribute('href') : ''; } catch (e) {}
+        if (!src) { once(null); return; }
+        var im = new Image();
+        im.onload = function () { once(im); };
+        im.onerror = function () { once(null); };   // draw without it rather than not at all
+        im.src = src;
+        setTimeout(function () { once(null); }, 1500);
+      };
+      try { document.fonts.ready.then(fire); } catch (e) {}
+      setTimeout(fire, 600);
     });
   })();
 
@@ -22729,7 +22838,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 02:40 UTC';
+  window.ST_BUILD = '2026-08-11 03:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
