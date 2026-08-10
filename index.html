@@ -3129,9 +3129,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .alltrades-header:hover { background: rgba(255,255,255,0.02); }
   .alltrades-panel:not(.atl-collapsed) .alltrades-header { border-bottom: 1px solid var(--border); }
   .alltrades-title { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-mid); display: inline-flex; align-items: center; gap: 9px; }
-  /* Pink pill carrying the play mark. Sized off the title's own line so it sits on the same
-     baseline as the words beside it rather than inflating the header height. */
-  .atl-replay-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 999px;
+  /* Pink badge carrying the play mark. Sized off the title's own line so it sits on the same
+     baseline as the words beside it rather than inflating the header height. Rounded rectangle
+     rather than a full pill, matching the boxed controls elsewhere in the app. */
+  .atl-replay-pill { display: inline-flex; align-items: center; gap: 5px; padding: 3px 9px 3px 7px; border-radius: 5px;
     background: var(--accent); color: #1a0a12; font-size: 10px; letter-spacing: 0.14em; line-height: 1; }
   .atl-replay-pill svg { width: 10px; height: 10px; display: block; flex: none; }
   .alltrades-count { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); margin-left: auto; }
@@ -21800,7 +21801,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Trade Replay: show the ▶ Replay button only for MT5-synced trades (they have candles).
     (function(){ var _rb=document.getElementById('edit-trade-replay'); if(!_rb) return;
       _rb.textContent = (document.documentElement.lang==='es') ? '▶ Repetición' : '▶ Trade Replay';
-      _rb.style.display = t.mt5Ticket ? 'inline-flex' : 'none';
+      // Ask the replay module itself whether this trade is replayable, rather than re-deciding here
+      // with a narrower test. mt5Ticket alone missed trades that carry `position`, which the replay
+      // has always accepted — those were replayable but never offered.
+      var _canReplay = (window.__stReplay && window.__stReplay.ticketOf)
+        ? !!window.__stReplay.ticketOf(t)
+        : !!(t.mt5Ticket || t.position);
+      _rb.style.display = _canReplay ? 'inline-flex' : 'none';
       _rb.onclick=function(){ try{ var _rt=t.id; window.__stReplayReturn=function(){ try{ openEditTradeModal(_rt); }catch(_){} }; document.getElementById('edit-trade-modal-bg').classList.remove('show'); if(window.__stReplay) window.__stReplay.open(t); }catch(e){} }; })();
 
 
@@ -22349,7 +22356,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 11:40 UTC';
+  window.ST_BUILD = '2026-08-10 12:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -48155,7 +48162,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // Returns null when there's nothing to measure (not MT5-synced, or no candles stored yet).
   async function excursions(trade){
     try{
-      var ticket=trade&&(trade.mt5Ticket||trade.position);
+      var ticket=ticketOf(trade);
       if(!ticket) return null;
       var row=await fetchInbox(ticket); if(!row) row=tradeToRow(trade); if(!row) return null;
       var symbol=String(row.symbol||'');
@@ -48209,7 +48216,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){}
     S=null;
 
-    var ticket=trade&&(trade.mt5Ticket||trade.position);
+    var ticket=ticketOf(trade);
     if(!ticket){ el('strp-chart').innerHTML='<div class="strp-state">'+L('This trade isn\'t MT5-synced, so there\'s no market data to replay.','Esta operación no está sincronizada con MT5, no hay datos de mercado para reproducir.')+'</div>'; return; }
     var row=await fetchInbox(ticket);
     if(!row) row=tradeToRow(trade);   // mentor view (member's inbox is RLS-gated) or a consumed inbox row: use the journal trade's own data
@@ -48434,7 +48441,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // launcher — delegated, capture phase so the row's own click doesn't also fire
   document.addEventListener('click',function(e){ var b=e.target.closest?e.target.closest('.strp-play[data-replay]'):null; if(!b) return; e.stopPropagation(); e.preventDefault(); var id=b.getAttribute('data-replay'); try{ var t=(typeof findTradeById==='function')?findTradeById(id):null; if(t) open(t); }catch(_){} },true);
 
-  window.__stReplay={ open:open, close:closeModal, excursions:excursions };
+  // ONE definition of "can this trade be replayed", exported so the button that offers Replay and
+  // the code that performs it can never disagree. They already had: replay resolves the ticket as
+  // mt5Ticket || position, while the Edit Trade button only tested mt5Ticket — so a trade carrying
+  // position alone was replayable but never offered, which is exactly the report of synced traders
+  // seeing no Replay button.
+  function ticketOf(trade){ return (trade && (trade.mt5Ticket || trade.position)) || null; }
+  window.__stReplay={ open:open, close:closeModal, excursions:excursions, ticketOf:ticketOf };
 })();
 </script>
 
