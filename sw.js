@@ -19,9 +19,18 @@
  * asset actually changed.
  */
 
-const CACHE_VERSION = 'st-2026-08-10n389';    // <-- bump this string on each deploy
+const CACHE_VERSION = 'st-2026-08-10n389';    // only bump when a PRECACHED shell asset changes
 const APP_CACHE     = CACHE_VERSION + '-app';
-const RUNTIME_CACHE = CACHE_VERSION + '-rt';
+// DELIBERATELY NOT VERSIONED. This used to be CACHE_VERSION + '-rt', which meant every bump
+// minted a new runtime cache and the activate handler below deleted the old one — throwing away
+// every avatar, emoji and image the community had accumulated. The next community open then had
+// to re-download all of it, so the app got slower after each deploy. On a day with twenty-one
+// bumps, it never got to keep anything.
+//
+// Nothing here needs a deploy to expire it: same-origin entries are stale-while-revalidate and
+// cross-origin ones are network-first, so both refresh themselves. A version suffix only
+// discarded warm, still-valid assets.
+const RUNTIME_CACHE = 'st-runtime';
 
 // Precache the app shell so the very first offline open works.
 self.addEventListener('install', (event) => {
@@ -34,7 +43,9 @@ self.addEventListener('install', (event) => {
   );
 });
 
-// Take control immediately and drop caches from older versions.
+// Take control immediately and drop caches from older versions. RUNTIME_CACHE is an unversioned
+// name, so it is never in the delete set and survives every deploy — only stale APP_CACHE shells
+// (and the old versioned '-rt' caches, one last time) get cleared.
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     const keys = await caches.keys();
