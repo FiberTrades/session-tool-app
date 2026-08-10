@@ -4616,7 +4616,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
          week, so early on there genuinely is nothing to compare. -->
     <section id="news-breakdown-section" style="display:none;">
       <div class="section-header"><span class="section-num">—</span><span class="section-title"><span id="news-breakdown-title">News vs quiet</span></span></div>
-      <p class="settings-hint" id="news-breakdown-hint" style="margin-top:0;"></p>
+      <p class="section-hint" id="news-breakdown-hint"></p>
       <div id="news-breakdown"></div>
     </section>
 
@@ -17249,14 +17249,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!split.news.length || !split.quiet.length) { sec.style.display = 'none'; return; }
       sec.style.display = '';
       var ttl = document.getElementById('news-breakdown-title');
-      if (ttl) ttl.textContent = T('News vs quiet', 'Noticias vs tranquilo');
+      if (ttl) ttl.textContent = T('Trading News vs Quiet', 'Operar con noticias vs tranquilo');
       var hint = document.getElementById('news-breakdown-hint');
+      // Worded for whatever you trade, not just pairs: an index or a metal is matched to the
+      // economy whose releases move it, so this reads correctly for a US30 or gold trader too.
       if (hint) hint.textContent = T(
-        'Trades entered within 30 minutes of a high-impact release for either currency in the pair, against the rest. Only trades the calendar could actually be checked against are counted — the feed reaches the current week, so this fills in as you go.',
-        'Operaciones abiertas dentro de 30 minutos de un dato de alto impacto para alguna de las divisas del par, frente al resto. Solo cuentan las operaciones que se pudieron comprobar contra el calendario — el feed llega a la semana actual, así que esto se va llenando.');
-      wrap.innerHTML = '<div class="history-list">' + breakdownHeader
-        + rowFor('⚡ ' + T('News window', 'Ventana de noticias'), sideStats(split.news))
-        + rowFor(T('Quiet', 'Tranquilo'), sideStats(split.quiet))
+        'Trades opened within 30 minutes of a high-impact release affecting what you traded, against everything else. Only trades the calendar could be checked against are counted.',
+        'Operaciones abiertas dentro de 30 minutos de un dato de alto impacto que afecta a lo que operaste, frente al resto. Solo cuentan las operaciones que se pudieron comprobar contra el calendario.');
+      // dowHeader / rowForDow, not the five-column pair: the same seven columns as Day of Week,
+      // which is the style being matched — and with five the last cell stretched into a wide
+      // empty band and the label column was too narrow to hold its own text.
+      wrap.innerHTML = '<div class="history-list" style="margin-top:0;">' + dowHeader
+        + rowForDow('⚡ ' + T('News', 'Noticias'), sideStats(split.news), split.news)
+        + rowForDow(T('Quiet', 'Tranquilo'), sideStats(split.quiet), split.quiet)
         + '</div>';
     })();
 
@@ -22936,7 +22941,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 07:45 UTC';
+  window.ST_BUILD = '2026-08-11 08:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32861,12 +32866,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) { return null; }
   }
 
-  // Currencies a symbol is exposed to: EUR/USD -> EUR, USD. Anything that cannot be split cleanly
-  // returns nothing and is skipped, rather than being matched against every release on the feed.
+  // Indices, metals and energy are not six-letter pairs, so splitting alone would skip them and
+  // this would silently be an FX-only feature. Each maps to the economy whose releases actually
+  // move it. Deliberately conservative: an instrument not listed here is skipped rather than
+  // guessed at, since a wrong currency would tag trades against releases that never touched them.
+  var NEWS_SYMBOL_CUR = {
+    US30: 'USD', US500: 'USD', US100: 'USD', SPX500: 'USD', SPX: 'USD', NAS100: 'USD', USTEC: 'USD',
+    NDX: 'USD', DJI: 'USD', DJIA: 'USD', RUSSELL2000: 'USD', US2000: 'USD',
+    GER40: 'EUR', GER30: 'EUR', DAX: 'EUR', DAX40: 'EUR', EU50: 'EUR', STOXX50: 'EUR', ESX50: 'EUR',
+    UK100: 'GBP', FTSE: 'GBP', FTSE100: 'GBP',
+    JP225: 'JPY', NIKKEI: 'JPY', JPN225: 'JPY',
+    AUS200: 'AUD', ASX200: 'AUD',
+    WTI: 'USD', USOIL: 'USD', BRENT: 'USD', UKOIL: 'USD', XTIUSD: 'USD', XBRUSD: 'USD', NGAS: 'USD'
+  };
+
+  // Currencies a symbol is exposed to: EUR/USD -> EUR, USD. XAU/USD and BTC/USD fall out of the
+  // six-letter split for free. Anything unrecognised returns nothing and is skipped, rather than
+  // being matched against every release on the feed.
   function _symCurrencies(sym) {
-    var s = String(sym || '').toUpperCase().replace(/[^A-Z]/g, '');
-    if (s.length === 6) return [s.slice(0, 3), s.slice(3)];
-    if (s.length === 3) return [s];
+    var s = String(sym || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+    if (NEWS_SYMBOL_CUR[s]) return [NEWS_SYMBOL_CUR[s]];
+    var a = s.replace(/[^A-Z]/g, '');
+    if (a.length === 6) return [a.slice(0, 3), a.slice(3)];
+    if (a.length === 3) return [a];
     return [];
   }
 
