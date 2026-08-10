@@ -22418,7 +22418,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 17:25 UTC';
+  window.ST_BUILD = '2026-08-10 18:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32912,69 +32912,203 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
     var nm = _greetNameSpan(), S = (window.__lang === 'es');
     if (!all.length) return S ? ('Aún sin operaciones, ' + nm + '. Tus estadísticas se llenan a medida que registras.') : ('No trades logged yet, ' + nm + '. Your stats fill in as you go.');
-    var w = 0, l = 0, be = 0, netR = 0, sumWinR = 0, sumLossR = 0, byDow = {},
-        DOW = S ? ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    all.forEach(function (tr) {
-      var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
-      var r = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
-      netR += r;
-      if (tr.result === 'Win') { w++; sumWinR += r; }
-      else if (tr.result === 'Lose') { l++; sumLossR += r; }
-      else if (tr.result === 'BE') be++;
-      if (tr.date) { var d = new Date(tr.date); if (!isNaN(d.getTime())) { var k = DOW[d.getDay()]; byDow[k] = byDow[k] || { r: 0, n: 0 }; byDow[k].r += r; byDow[k].n++; } }
-    });
-    var decided = w + l, wr = decided ? Math.round(w / decided * 100) : 0, exp = Math.round(netR / all.length * 100) / 100;
+    // The Statistics tab is the densest surface in the app — weekday, setup, side, type and symbol
+    // breakdowns, streaks, profit factor, costs, and the R your winners left behind. This greeting
+    // read exactly ONE of those (best weekday) and repeated it forever.
+    //
+    // So take a finding from every dimension the tab shows, score each by how much R is at stake,
+    // and lead with the biggest. Scoring in R throughout is the point: it lets a leaking setup, a
+    // spread bill and an unbanked winner be compared on one scale, so "most important" is measured
+    // rather than assumed. Nothing is offered unless its sample clears the same reliability floor
+    // the Setup table uses, so the line can never manufacture a pattern out of two trades. A leak
+    // outscores an equally sized strength — "stop doing this" is worth more than "keep doing this".
+    var MIN_GRP = 5;
+    var _cpOf = function (tr) { return (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1; };
+    var _ss = (typeof sideStats === 'function') ? sideStats : null;
+    var lt = _ss ? _ss(all) : null;
+    var n = lt ? lt.count : all.length;
+    var wr = (lt && lt.wr != null) ? lt.wr : 0;
+    var netR = lt ? lt.netR : 0;
+    var exp = Math.round((n ? netR / n : 0) * 100) / 100;
+    var DOW = S ? ['domingos', 'lunes', 'martes', 'miércoles', 'jueves', 'viernes', 'sábados']
+                : ['Sundays', 'Mondays', 'Tuesdays', 'Wednesdays', 'Thursdays', 'Fridays', 'Saturdays'];
 
-    // This surface used to be ONE sentence — count, win rate, expectancy, best weekday — so it
-    // read identically every single day and the rewrite could only ever repaint the same thought.
-    // Offer several genuinely different observations instead, and only ever offer one the data can
-    // support, so the line never asserts a weekday pattern off two trades.
-    var angles = [];
-    var bestDay = null, bestR = -Infinity, worstDay = null, worstR = Infinity;
-    Object.keys(byDow).forEach(function (k) {
-      if (byDow[k].n < 3) return;                        // 1–2 trades is not a pattern
-      if (byDow[k].r > bestR) { bestR = byDow[k].r; bestDay = k; }
-      if (byDow[k].r < worstR) { worstR = byDow[k].r; worstDay = k; }
+    // findings: { s: score in R, t: text, k: identity of the underlying trade set }
+    // k exists because the dimensions overlap: if your only short setup is "Pullback", then
+    // "your Pullback setup is +21R" and "your shorts are +21R" are the SAME trades wearing two
+    // labels, and rotating between them across days would spend the line saying one thing twice.
+    // Findings sharing a k are collapsed to the highest-scoring one when the rotation is built.
+    var F = [];
+    var addF = function (score, en, es, key) { if (score > 0 && isFinite(score)) F.push({ s: score, t: S ? es : en, k: key || (S ? es : en) }); };
+    var r1 = function (x) { return Math.round(x * 10) / 10; };
+    var sgnR = function (x) { return (x > 0 ? '+' : '') + r1(x) + 'R'; };
+
+    // ── Grouped dimensions: every breakdown table on the tab, read the same way ──────────────
+    var rowsFor = function (keyFn) {
+      if (!_ss) return [];
+      var g = {};
+      all.forEach(function (tr) { var k = keyFn(tr); if (k == null || k === '') return; (g[k] = g[k] || []).push(tr); });
+      return Object.keys(g).map(function (k) { return { k: k, s: _ss(g[k]) }; })
+                   .filter(function (r) { return r.s.count >= MIN_GRP; })
+                   .sort(function (a, b) { return a.s.netR - b.s.netR; });
+    };
+    // A trade set is identified by its size and net R, so the same trades reached through a
+    // different breakdown collapse onto one finding rather than reappearing as a fresh one.
+    var _setKey = function (st) { return 'set:' + Math.round(st.netR * 10) + ':' + st.count; };
+    var dim = function (rows, enBad, esBad, enGood, esGood) {
+      if (!rows.length) return;
+      var worst = rows[0], best = rows[rows.length - 1];
+      // Leaks are weighted above strengths of the same size. Both are true, but "this is what it
+      // is costing you" can be acted on tomorrow, where "keep doing this" cannot — and in any
+      // profitable book the largest single number is the best performer, so equal weighting would
+      // hand the line to praise almost every day.
+      if (worst.s.netR < -0.5) addF(Math.abs(worst.s.netR), enBad(worst), esBad(worst), _setKey(worst.s));
+      if (best.s.netR > 0.5 && best.k !== worst.k) addF(best.s.netR * 0.55, enGood(best), esGood(best), _setKey(best.s));
+    };
+
+    dim(rowsFor(function (t) { return (t.setup && String(t.setup).trim()) || null; }),
+      function (r) { return 'Your ' + r.k + ' setup is ' + sgnR(r.s.netR) + ' across ' + r.s.count + ' trades — that one row is where the account leaks.'; },
+      function (r) { return 'Tu setup ' + r.k + ' va ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones — ahí es donde se escapa la cuenta.'; },
+      function (r) { return 'Your ' + r.k + ' setup carries the account: ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades at ' + r.s.wr + '%.'; },
+      function (r) { return 'Tu setup ' + r.k + ' sostiene la cuenta: ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones al ' + r.s.wr + '%.'; });
+
+    var _sideEs = function (k) { return (k === 'Long') ? 'largos' : 'cortos'; };
+    dim(rowsFor(function (t) { return t.side || null; }),
+      function (r) { return 'Your ' + String(r.k).toLowerCase() + 's are ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades — one direction is doing the damage.'; },
+      function (r) { return 'Tus ' + _sideEs(r.k) + ' van ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones — una dirección está haciendo el daño.'; },
+      function (r) { return 'Your ' + String(r.k).toLowerCase() + 's do the earning: ' + sgnR(r.s.netR) + ' at ' + r.s.wr + '% over ' + r.s.count + ' trades.'; },
+      function (r) { return 'Tus ' + _sideEs(r.k) + ' son los que ganan: ' + sgnR(r.s.netR) + ' al ' + r.s.wr + '% en ' + r.s.count + ' operaciones.'; });
+
+    dim(rowsFor(function (t) { return t.type || null; }),
+      function (r) { return r.k + ' trades cost you ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' — worth asking whether that read suits you at all.'; },
+      function (r) { return 'Las operaciones de ' + r.k + ' te cuestan ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' — merece preguntarse si esa lectura te encaja.'; },
+      function (r) { return r.k + ' is your strongest read: ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades.'; },
+      function (r) { return r.k + ' es tu mejor lectura: ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones.'; });
+
+    dim(rowsFor(function (t) { return t.symbol || null; }),
+      function (r) { return r.k + ' has taken ' + sgnR(r.s.netR) + ' off you across ' + r.s.count + ' trades.'; },
+      function (r) { return r.k + ' te ha quitado ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones.'; },
+      function (r) { return r.k + ' is where your edge lives: ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades.'; },
+      function (r) { return 'En ' + r.k + ' es donde vive tu ventaja: ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones.'; });
+
+    dim(rowsFor(function (t) { if (!t.date) return null; var d = new Date(t.date); return isNaN(d.getTime()) ? null : DOW[d.getDay()]; }),
+      function (r) { return r.k + ' are ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades — look at what changes that day.'; },
+      function (r) { return 'Los ' + r.k + ' van ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones — mira qué cambia ese día.'; },
+      function (r) { return 'Your edge shows up most on ' + r.k + ': ' + sgnR(r.s.netR) + ' over ' + r.s.count + ' trades.'; },
+      function (r) { return 'Tu ventaja aparece sobre todo los ' + r.k + ': ' + sgnR(r.s.netR) + ' en ' + r.s.count + ' operaciones.'; });
+
+    // ── Costs. Shown on the tab in money, which hides how many R of edge they consume ────────
+    var totalCosts = 0, riskSum = 0, riskN = 0;
+    all.forEach(function (tr) {
+      var c = parseFloat(tr.costs); if (!isNaN(c)) totalCosts += Math.abs(c) * _cpOf(tr);
+      var rk = parseFloat(tr.risk); if (rk > 0) { riskSum += rk; riskN++; }
     });
-    if (bestDay && bestR > 0) angles.push(S ? ('Tu ventaja aparece más los ' + bestDay + '.') : ('Your edge shows up most on ' + bestDay + '.'));
-    if (worstDay && worstR < 0 && worstDay !== bestDay) angles.push(S ? ('Los ' + worstDay + ' son donde se escapa — mira qué cambia ese día.') : (worstDay + ' is where it leaks — look at what changes that day.'));
-    // Recent form against the lifetime baseline. Needs a real history behind it, and enough
-    // decided trades in the last ten that the comparison isn't noise.
-    var chron = all.filter(function (t) { return t && t.date; }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+    if (riskN && totalCosts > 0) {
+      var costR = totalCosts / (riskSum / riskN);
+      // fmtMoney signs its output, which would render a bill you PAID as "+£880.00".
+      var costMoney = String((typeof fmtMoney === 'function') ? fmtMoney(totalCosts) : Math.round(totalCosts)).replace(/^\+/, '');
+      if (costR >= 1) addF(costR,
+        'Spread and commission have eaten ' + r1(costR) + 'R of edge — ' + costMoney + ' paid to trade.',
+        'El spread y las comisiones se han comido ' + r1(costR) + 'R de ventaja — ' + costMoney + ' pagados por operar.');
+    }
+
+    // ── R left on the table by winners that ran further than you held ────────────────────────
+    var tracked = all.filter(function (t) { return t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR); });
+    if (tracked.length >= MIN_GRP) {
+      var rLeft = 0, gotR = 0, potR = 0;
+      tracked.forEach(function (t) {
+        var c = _cpOf(t), tr_ = parseFloat(t.r) || 0;
+        rLeft += ((t.potentialR || 0) - tr_) * c; gotR += tr_ * c; potR += (t.potentialR || 0) * c;
+      });
+      if (rLeft > 0.5 && potR > 0) {
+        var capPct = Math.round(gotR / potR * 100);
+        addF(rLeft,
+          'Your winners left ' + r1(rLeft) + 'R on the table — you banked ' + capPct + '% of what they offered.',
+          'Tus ganadoras dejaron ' + r1(rLeft) + 'R sobre la mesa — te llevaste el ' + capPct + '% de lo que ofrecían.');
+      }
+    }
+
+    // ── Worst losing run. Same definition as the tab's Max Loss Streak (any other result
+    //    resets it), so the greeting can never contradict the number printed beside it.
+    var chron = all.slice().sort((typeof _tradeChronoCompare === 'function') ? _tradeChronoCompare : function (a, b) { return new Date(a.date) - new Date(b.date); });
+    var maxLoss = 0, curLoss = 0;
+    chron.forEach(function (t) {
+      if (t.result === 'Lose') { curLoss++; if (curLoss > maxLoss) maxLoss = curLoss; }
+      else curLoss = 0;
+    });
+    if (maxLoss >= 4) addF(maxLoss * 0.7,
+      'You have survived ' + maxLoss + ' losses in a row — size so that run never becomes the one that ends you.',
+      'Has aguantado ' + maxLoss + ' pérdidas seguidas — dimensiona para que esa racha nunca sea la que te acabe.');
+
+    // ── Profit factor: the single number that says whether any of this is an edge ────────────
+    var posR = 0, negR = 0;
+    all.forEach(function (tr) {
+      var r = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * _cpOf(tr);
+      if (r > 0) posR += r; else negR += Math.abs(r);
+    });
+    // posR > 0 required: with no net-positive trades at all the ratio is a flat 0, which reads as
+    // a broken stat rather than a finding. The costs and setup lines already carry that book.
+    if (negR > 0 && posR > 0 && n >= 20) {
+      var pf = Math.round(posR / negR * 100) / 100;
+      if (pf < 1) addF(Math.abs(netR) * 0.5,
+        'Profit factor is ' + pf + ' — you are paying out more than you take in.',
+        'Tu factor de beneficio es ' + pf + ' — pagas más de lo que ingresas.');
+      else if (pf >= 1.5) addF(1.2,
+        'Profit factor ' + pf + ' — that is a real edge, not a good run.',
+        'Factor de beneficio ' + pf + ' — eso es una ventaja real, no una buena racha.');
+    }
+
+    // ── Recent form against the lifetime baseline ────────────────────────────────────────────
     if (chron.length >= 20) {
       var last10 = chron.slice(-10), lw = 0, ld = 0;
       last10.forEach(function (t) { if (t.result === 'Win') { lw++; ld++; } else if (t.result === 'Lose') ld++; });
       if (ld >= 5) {
-        var lwr = Math.round(lw / ld * 100);
-        if (Math.abs(lwr - wr) >= 10) angles.push(lwr > wr
-          ? (S ? ('Tus últimas 10 van al ' + lwr + '% frente a tu ' + wr + '% histórico — estás en forma.') : ('Your last 10 are running at ' + lwr + '% against your lifetime ' + wr + '% — you are in form.'))
-          : (S ? ('Tus últimas 10 van al ' + lwr + '% frente a tu ' + wr + '% histórico — algo se ha desajustado.') : ('Your last 10 are at ' + lwr + '% against your lifetime ' + wr + '% — something has slipped.')));
+        var lwr = Math.round(lw / ld * 100), gap = lwr - wr;
+        if (Math.abs(gap) >= 10) addF(Math.abs(gap) / 10,
+          'Your last 10 are at ' + lwr + '% against your lifetime ' + wr + '% — ' + (gap > 0 ? 'you are in form.' : 'something has slipped.'),
+          'Tus últimas 10 van al ' + lwr + '% frente a tu ' + wr + '% histórico — ' + (gap > 0 ? 'estás en forma.' : 'algo se ha desajustado.'));
       }
     }
-    // Payoff: the number that decides whether a sub-50% win rate is a problem or the whole point.
-    if (w >= 3 && l >= 3) {
-      var avgW = sumWinR / w, avgL = Math.abs(sumLossR / l);
+
+    // ── Payoff: what decides whether a sub-50% win rate is a problem or the whole plan ───────
+    if (lt && lt.w >= 3 && lt.l >= 3) {
+      var sumWinR = 0, sumLossR = 0;
+      all.forEach(function (tr) {
+        var r = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * _cpOf(tr);
+        if (tr.result === 'Win') sumWinR += r; else if (tr.result === 'Lose') sumLossR += r;
+      });
+      var avgL = Math.abs(sumLossR / lt.l);
       if (avgL > 0) {
-        var pr = Math.round(avgW / avgL * 100) / 100;
-        angles.push(S ? ('Ganas ' + pr + 'R por cada 1R que pierdes.') : ('You win ' + pr + 'R for every 1R you lose.'));
+        var pr = Math.round((sumWinR / lt.w) / avgL * 100) / 100;
+        addF(1.0,
+          'You win ' + pr + 'R for every 1R you lose — that is what makes a ' + wr + '% win rate work.',
+          'Ganas ' + pr + 'R por cada 1R que pierdes — eso es lo que hace funcionar un ' + wr + '% de aciertos.');
       }
     }
-    if (all.length >= 10 && be > 0) {
-      var bePct = Math.round(be / all.length * 100);
-      if (bePct >= 20) angles.push(S ? ('El ' + bePct + '% acaba en tablas — merece preguntarse si sales demasiado pronto.') : (bePct + '% of your trades scratch at breakeven — worth asking whether you step out too early.'));
+
+    // ── Breakeven share: the tab's Max BE Streak tooltip already warns about this ────────────
+    if (n >= 10 && lt && lt.be > 0) {
+      var bePct = Math.round(lt.be / n * 100);
+      if (bePct >= 20) addF(bePct / 20,
+        bePct + '% of your trades scratch at breakeven — worth asking whether you step out too early.',
+        'El ' + bePct + '% acaba en tablas — merece preguntarse si sales demasiado pronto.');
     }
-    // An off-day beats every data angle: the point today is to study, not to trade.
-    if (_isOffDayToday()) angles.unshift(S ? 'Día sin mercado — el mejor momento para estudiar esto con calma.' : 'No market today — the best time to study this with cold eyes.');
-    if (!angles.length) angles.push(S ? 'Busca el patrón detrás de los números.' : 'Look for the pattern behind the numbers.');
+
+    if (_isOffDayToday()) addF(2.0,
+      'No market today — the best time to study this with cold eyes.',
+      'Día sin mercado — el mejor momento para estudiar esto con calma.');
+    if (!F.length) addF(0.01,
+      'Look for the pattern behind the numbers.',
+      'Busca el patrón detrás de los números.');
 
     var leads = S ? [
-      all.length + ' operaciones, ' + nm + '. Winrate ' + wr + '%, esperanza ' + exp + 'R.',
-      nm + ', llevas ' + all.length + ' operaciones al ' + wr + '% con ' + exp + 'R de esperanza.',
-      'Histórico: ' + all.length + ' operaciones, ' + wr + '% de aciertos, ' + exp + 'R por operación, ' + nm + '.'
+      n + ' operaciones, ' + nm + '. Winrate ' + wr + '%, esperanza ' + exp + 'R.',
+      nm + ', llevas ' + n + ' operaciones al ' + wr + '% con ' + exp + 'R de esperanza.',
+      'Histórico: ' + n + ' operaciones, ' + wr + '% de aciertos, ' + exp + 'R por operación, ' + nm + '.'
     ] : [
-      all.length + ' trades in, ' + nm + '. Win rate ' + wr + '%, expectancy ' + exp + 'R.',
-      nm + ', you are ' + all.length + ' trades deep at ' + wr + '% with ' + exp + 'R expectancy.',
-      'Lifetime: ' + all.length + ' trades, ' + wr + '% strike rate, ' + exp + 'R a trade, ' + nm + '.'
+      n + ' trades in, ' + nm + '. Win rate ' + wr + '%, expectancy ' + exp + 'R.',
+      nm + ', you are ' + n + ' trades deep at ' + wr + '% with ' + exp + 'R expectancy.',
+      'Lifetime: ' + n + ' trades, ' + wr + '% strike rate, ' + exp + 'R a trade, ' + nm + '.'
     ];
     // Keyed on the DAY, not the greeting nonce: the pick has to stay put while you use the app, or
     // every re-render would reword the line, change the seed's digits, miss the AI cache and pay
@@ -32983,13 +33117,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // returned, so calling it twice with one seed walks the index forward.)
     //
     // Rotated on the day NUMBER rather than hashStr(date): hashStr spreads evenly in aggregate but
-    // runs the same index up to four days straight on consecutive dates, which is the "it always
-    // says the same thing" complaint. A rotation cannot repeat two days running. Different offsets
-    // so the lead and the insight don't advance in lockstep.
+    // was measured running the same index four days straight on consecutive dates, which is the
+    // "it always says the same thing" complaint.
     var _sk = (typeof todayKey === 'function') ? todayKey() : '';
     var _dayNum = (function () { try { var _d = new Date(_sk); return isNaN(_d.getTime()) ? 0 : Math.floor(_d.setHours(0, 0, 0, 0) / 86400000); } catch (e) { return 0; } })();
+    F.sort(function (a, b) { return b.s - a.s; });
+    // Lead with what matters most — but rotate within the top few, or a finding that stays top of
+    // the pile for weeks (a losing setup you haven't traded since) would pin the line in place and
+    // recreate the complaint. The rotation is over the biggest findings only, so it stays relevant.
+    // Duplicates are dropped by trade-set identity first, so the three days say three things.
+    var picked = [], _seenK = {};
+    for (var _fi = 0; _fi < F.length && picked.length < 3; _fi++) {
+      if (_seenK[F[_fi].k]) continue;
+      _seenK[F[_fi].k] = 1; picked.push(F[_fi]);
+    }
+    var insight = picked[_dayNum % picked.length].t;
     var lead = leads[_dayNum % leads.length];
-    var insight = angles[(_dayNum + 1) % angles.length];
     return lead + ' ' + insight;
   }
   function _calendarGreetingHTML() {
