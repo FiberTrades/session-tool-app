@@ -5904,6 +5904,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </div>
     <div class="mdl-actions">
       <button type="button" class="btn" id="series-share-cancel">Cancel</button>
+      <button type="button" class="btn" id="series-share-card">Save card</button>
       <button type="button" class="btn" id="series-share-confirm">Share</button>
     </div>
   </div>
@@ -16202,6 +16203,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         set('series-share-hint', T('Post a completed Series of 10 to the community. The latest one is selected; pick a previous series if you prefer.', 'Publica una Serie de 10 completada en la comunidad. La ultima esta seleccionada; elige una serie anterior si prefieres.'));
         set('series-share-label', T('Which series', 'Que serie'));
         set('series-share-cancel', T('Cancel', 'Cancelar'));
+        set('series-share-card', T('Save card', 'Guardar tarjeta'));
         set('series-share-confirm', T('Share', 'Compartir'));
       } catch (e) {}
       bg.classList.add('show');
@@ -16213,6 +16215,218 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var cb = document.getElementById('series-share-cancel'); if (cb) cb.addEventListener('click', _close);
     bg.addEventListener('click', function (e) { if (e.target === bg) _close(); });
   })();
+  // ── Series of 10 — shareable card ─────────────────────────────────────────────────────────
+  // Draws the selected series as a 1200x675 PNG and downloads it. Deliberately wired to the same
+  // modal, the same selector and the same calcSeriesStats() as the Discord post above: the image
+  // and the text post are two renderings of one set of numbers, so they can never disagree.
+  //
+  // Drawn straight onto a canvas rather than rasterising DOM. There is no html2canvas here and no
+  // CDN to pull one from, and an SVG loaded through an <img> does not get the page's web fonts,
+  // so it would silently fall back to system faces. Canvas can use them once document.fonts is
+  // ready, which is what keeps the card looking like the app.
+  (function wireSeriesCard() {
+    var btn = document.getElementById('series-share-card');
+    if (!btn) return;
+
+    var C = { bg: '#0B0A0D', line: '#332F3C', dim: '#7c7a85', mid: '#9b99a3', text: '#E8E6EA',
+              good: '#4ECD8B', bad: '#E56767', be: '#6BA8E5', pink: '#f472b6' };
+    var SERIF = '"Fraunces", Georgia, serif';
+    var MONO  = '"AppNum", "DM Mono", ui-monospace, monospace';
+
+    function seriesAt(i) {
+      var h = (data && Array.isArray(data.history)) ? data.history : [];
+      if (!h.length) return null;
+      if (!(i >= 0 && i < h.length)) i = 0;
+      return { series: h[i], num: h.length - i, trades: (h[i] && h[i].trades) || [] };
+    }
+
+    // Same range logic as the text post: a series usually spans days, and a single-day series
+    // collapses to one date rather than reading "Mon 12 Jun -> Mon 12 Jun".
+    function dateRange(sel) {
+      var ds = sel.trades.map(function (t) { return t.date; }).filter(Boolean)
+                 .map(function (d) { return new Date(d); })
+                 .filter(function (d) { return !isNaN(d.getTime()); })
+                 .sort(function (a, b) { return a - b; });
+      var f = function (d) { return d.toLocaleDateString(tLocale(), { day: '2-digit', month: 'short' }); };
+      if (!ds.length) return sel.series && sel.series.date ? f(new Date(sel.series.date)) : '';
+      if (ds.length === 1 || f(ds[0]) === f(ds[ds.length - 1])) return f(ds[0]);
+      return f(ds[0]) + ' → ' + f(ds[ds.length - 1]);
+    }
+
+    function build(sel) {
+      var tr = sel.trades, st = calcSeriesStats(tr);
+      var decided = st.w + st.l;
+      var money = 0, pct = 0;
+      tr.forEach(function (x) {
+        try { money += tradeNetPL(x); } catch (e) {}
+        try { var sb = getTradeAccountSB(x); if (sb > 0) pct += tradeNetPL(x) / sb * 100; } catch (e) {}
+      });
+      // Best setup by net R within THIS series. A 10-trade series is too small for a reliability
+      // floor to mean anything, so it is reported as what it is: the best row of this series.
+      var bySetup = {};
+      tr.forEach(function (x) {
+        var k = (x.setup && String(x.setup).trim()) || '';
+        if (!k) return;
+        bySetup[k] = (bySetup[k] || 0) + tradeRforMath(x);
+      });
+      var bestSetup = '', bestR = -Infinity;
+      Object.keys(bySetup).forEach(function (k) { if (bySetup[k] > bestR) { bestR = bySetup[k]; bestSetup = k; } });
+      // Dominant symbol, so a mixed series still names the instrument it mostly was.
+      var bySym = {}, sym = '';
+      tr.forEach(function (x) { var s = x.symbol || ''; if (s) bySym[s] = (bySym[s] || 0) + 1; });
+      Object.keys(bySym).forEach(function (s) { if (!sym || bySym[s] > bySym[sym]) sym = s; });
+      // Equity path: cumulative R after each trade, starting at zero.
+      var cum = [0], run = 0;
+      tr.slice().sort(function (a, b) { return new Date(a.date || 0) - new Date(b.date || 0); })
+        .forEach(function (x) { run += tradeRforMath(x); cum.push(run); });
+      return {
+        num: sel.num, when: dateRange(sel), n: tr.length, w: st.w, l: st.l, be: st.be,
+        netR: st.netR, money: money, pct: pct, cum: cum, sym: sym,
+        wr: decided ? Math.round(st.w / decided * 100) : null,
+        exp: tr.length ? st.netR / tr.length : 0,
+        bestSetup: bestSetup
+      };
+    }
+
+    function draw(d) {
+      var W = 1200, H = 675, S = 2;             // S = backing scale, for a crisp PNG
+      var cv = document.createElement('canvas');
+      cv.width = W * S; cv.height = H * S;
+      var g = cv.getContext('2d');
+      g.scale(S, S);
+      g.textBaseline = 'alphabetic';
+      var PAD = 64;
+
+      g.fillStyle = C.bg; g.fillRect(0, 0, W, H);
+
+      // header
+      g.fillStyle = C.text; g.font = '34px ' + SERIF;
+      g.fillText('SessionTool', PAD, PAD + 26);
+      var hdr = ('Series ' + d.num + (d.when ? ' · ' + d.when : '')).toUpperCase();
+      g.font = '13px ' + MONO; g.fillStyle = C.dim;
+      g.textAlign = 'right'; g.fillText(hdr, W - PAD, PAD + 22); g.textAlign = 'left';
+
+      // hero
+      var sgn = d.netR >= 0 ? '+' : '−';
+      var heroTxt = sgn + Math.abs(d.netR).toFixed(2) + 'R';
+      g.font = '92px ' + MONO; g.fillStyle = d.netR >= 0 ? C.good : C.bad;
+      g.fillText(heroTxt, PAD, 232);
+      var heroW = g.measureText(heroTxt).width;
+      var sub = 'net';
+      try { sub += ' · ' + fmtMoney(d.money); } catch (e) {}
+      sub += ' · ' + (d.pct >= 0 ? '+' : '−') + Math.abs(d.pct).toFixed(2) + '% account';
+      g.font = '20px ' + MONO; g.fillStyle = C.mid;
+      g.fillText(sub, PAD + heroW + 22, 232);
+
+      // equity path
+      var gx = PAD, gy = 286, gw = W - PAD * 2, gh = 104;
+      var lo = Math.min.apply(null, d.cum), hi = Math.max.apply(null, d.cum);
+      if (hi - lo < 0.0001) { hi = lo + 1; }
+      var yOf = function (v) { return gy + gh - ((v - lo) / (hi - lo)) * gh; };
+      // zero line, only when zero is inside the range — a series that never went negative
+      // should not get a baseline drawn off its own floor.
+      if (lo < 0 && hi > 0) {
+        g.strokeStyle = '#2A2833'; g.lineWidth = 1;
+        g.beginPath(); g.moveTo(gx, yOf(0)); g.lineTo(gx + gw, yOf(0)); g.stroke();
+      }
+      g.strokeStyle = d.netR >= 0 ? C.good : C.bad;
+      g.lineWidth = 2.5; g.lineJoin = 'round'; g.lineCap = 'round';
+      g.beginPath();
+      d.cum.forEach(function (v, i) {
+        var x = gx + (i / Math.max(1, d.cum.length - 1)) * gw, y = yOf(v);
+        if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
+      });
+      g.stroke();
+      g.fillStyle = d.netR >= 0 ? C.good : C.bad;
+      g.beginPath(); g.arc(gx + gw, yOf(d.cum[d.cum.length - 1]), 5, 0, Math.PI * 2); g.fill();
+
+      // stat grid
+      var bx = PAD, by = 436, bw = W - PAD * 2, bh = 116;
+      g.strokeStyle = C.line; g.lineWidth = 1;
+      g.strokeRect(bx + 0.5, by + 0.5, bw - 1, bh - 1);
+      var cells = [
+        { l: 'Win rate',   v: (d.wr === null ? '—' : d.wr + '%'), c: C.text },
+        { l: 'W / L / BE', v: d.w + ' / ' + d.l + ' / ' + d.be,        c: C.text, split: true },
+        { l: 'Expectancy', v: (d.exp >= 0 ? '+' : '−') + Math.abs(d.exp).toFixed(2) + 'R', c: d.exp >= 0 ? C.good : C.bad },
+        { l: 'Best setup', v: d.bestSetup || '—', c: C.text, small: true }
+      ];
+      var cw = bw / cells.length;
+      cells.forEach(function (c, i) {
+        var cx = bx + cw * i;
+        if (i) { g.beginPath(); g.moveTo(cx + 0.5, by); g.lineTo(cx + 0.5, by + bh); g.strokeStyle = C.line; g.stroke(); }
+        g.textAlign = 'center';
+        g.font = '12px ' + MONO; g.fillStyle = C.dim;
+        g.fillText(c.l.toUpperCase(), cx + cw / 2, by + 38);
+        if (c.split) {
+          // W / L / BE keeps the app's three colours instead of flattening to one.
+          var parts = [String(d.w), String(d.l), String(d.be)], cols = [C.good, C.bad, C.be];
+          g.font = '26px ' + MONO;
+          var segs = [], total = 0;
+          parts.forEach(function (p, k) { var t1 = g.measureText(p).width, t2 = g.measureText(' / ').width;
+            segs.push(t1); total += t1 + (k < 2 ? t2 : 0); });
+          var sx = cx + cw / 2 - total / 2;
+          g.textAlign = 'left';
+          parts.forEach(function (p, k) {
+            g.fillStyle = cols[k]; g.fillText(p, sx, by + 78); sx += segs[k];
+            if (k < 2) { g.fillStyle = '#4a4854'; g.fillText(' / ', sx, by + 78); sx += g.measureText(' / ').width; }
+          });
+          g.textAlign = 'center';
+        } else {
+          g.font = (c.small ? 17 : 26) + 'px ' + MONO; g.fillStyle = c.c;
+          var v = String(c.v);
+          // A long setup name must not run into its neighbours.
+          if (c.small) { while (g.measureText(v).width > cw - 28 && v.length > 4) v = v.slice(0, -2); if (v !== String(c.v)) v += '…'; }
+          g.fillText(v, cx + cw / 2, by + (c.small ? 80 : 78));
+        }
+        g.textAlign = 'left';
+      });
+
+      // footer
+      g.font = '14px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(d.sym || '', PAD, H - PAD + 6);
+      g.fillStyle = C.pink; g.textAlign = 'right';
+      g.fillText('sessiontool.app', W - PAD, H - PAD + 6);
+      g.textAlign = 'left';
+      return cv;
+    }
+
+    btn.addEventListener('click', function () {
+      var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
+      if (!data.history || !data.history.length) {
+        if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true });
+        return;
+      }
+      var selEl = document.getElementById('stats-export-series');
+      var i = (selEl && selEl.value !== '' && !isNaN(parseInt(selEl.value, 10))) ? parseInt(selEl.value, 10) : 0;
+      var sel = seriesAt(i);
+      if (!sel || !sel.trades.length) {
+        if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true });
+        return;
+      }
+      // Wait for the web fonts, or the card renders in a system face and stops looking like
+      // the app. Falls through after a moment so a font that never loads cannot hang the button.
+      var go = function () {
+        try {
+          var cv = draw(build(sel));
+          cv.toBlob(function (b) {
+            if (!b) { if (typeof showToast === 'function') showToast(T('Could not build the card.', 'No se pudo crear la tarjeta.')); return; }
+            var url = URL.createObjectURL(b);
+            var a = document.createElement('a');
+            a.href = url; a.download = 'session-tool-series-' + sel.num + '.png';
+            a.click();
+            setTimeout(function () { URL.revokeObjectURL(url); }, 4000);
+            if (typeof showToast === 'function') showToast(T('Card saved.', 'Tarjeta guardada.'));
+          }, 'image/png');
+        } catch (e) {
+          if (typeof showToast === 'function') showToast(T('Could not build the card.', 'No se pudo crear la tarjeta.'));
+        }
+      };
+      var done = false, once = function () { if (done) return; done = true; go(); };
+      try { document.fonts.ready.then(once); } catch (e) {}
+      setTimeout(once, 600);
+    });
+  })();
+
   var _seriesShareConfirmBtn = document.getElementById('series-share-confirm');
   _seriesShareConfirmBtn && _seriesShareConfirmBtn.addEventListener('click', () => {
     // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
@@ -22505,7 +22719,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 01:05 UTC';
+  window.ST_BUILD = '2026-08-11 02:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
