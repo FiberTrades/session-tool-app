@@ -3226,6 +3226,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .atl-row.atl-head .atl-cell { background: var(--bg-elev2); color: var(--text-mid); }
   .atl-row:not(.atl-head) { cursor: pointer; transition: background 120ms; }
   .atl-row:not(.atl-head):hover { background: var(--border-2); }
+  /* News marker. Rides inside the symbol cell rather than claiming a thirteenth column — the row
+     is already twelve wide, and a whole column would be empty on most trades. */
+  .atl-news { margin-left: 6px; font-size: 10px; opacity: 0.85; cursor: help; }
   .atl-cell { background: var(--bg); padding: 10px 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .atl-cell.left { text-align: left; }
   .atl-cell.good { color: var(--good); }
@@ -4592,6 +4595,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     <section>
       <div class="section-header"><span class="section-num">—</span><span class="section-title"><span data-i18n="trades.s1.title">Day of Week Breakdown</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.dow_breakdown">Performance by weekday — which days are your edge. WR = win rate. W/L/BE = win/loss/break-even counts. Net R = sum of R across trades on that day.</span></span></span></div>
       <div id="dow-breakdown"></div>
+    </section>
+
+    <!-- Hidden until there are checked trades on BOTH sides. A comparison with an empty column
+         invites a conclusion the data cannot support, and the feed only reaches the current
+         week, so early on there genuinely is nothing to compare. -->
+    <section id="news-breakdown-section" style="display:none;">
+      <div class="section-header"><span class="section-num">—</span><span class="section-title"><span id="news-breakdown-title">News vs quiet</span></span></div>
+      <p class="settings-hint" id="news-breakdown-hint" style="margin-top:0;"></p>
+      <div id="news-breakdown"></div>
     </section>
 
     <section id="symbol-breakdown-section" style="display:none;">
@@ -16411,7 +16423,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // ── series + dates, right ───────────────────────────────────────────────
       g.textAlign = 'right'; ls(3);
       g.font = '17px ' + MONO; g.fillStyle = C.text;
-      g.fillText('SERIES ' + String(d.num).padStart(2, '0'), R, 132);
+      g.fillText('SERIES OF 10 #' + String(d.num).padStart(2, '0'), R, 132);
       g.font = '15px ' + MONO; g.fillStyle = C.dim;
       g.fillText(String(d.when || '').toUpperCase(), R, 162);
 
@@ -16813,6 +16825,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
   function renderTradesStats() {
     syncSettingsInputs();
+    // Tag any trade the cached feed can speak for before anything below reads the tags. This runs
+    // after an import, after a save and on every tab switch, which is what keeps a trade logged
+    // today from waiting on the next calendar refresh to be judged. It only writes when a tag
+    // actually changed, so the repetition costs nothing.
+    try { if (typeof stampNewsTags === 'function') stampNewsTags(); } catch (e) {}
     // Trades scoped to the current view (active account / specific archived
     // account / lifetime). The starting-balance denominator follows the same
     // scope: a specific account uses its own SB; lifetime uses the sum.
@@ -17203,6 +17220,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // rowForDow already prints "—" for an empty one). London and New York genuinely overlap
     // 13:30–16:30, so an overlap trade is counted in BOTH and shown again on its own ↳ row;
     // entries outside every window get their own row rather than disappearing.
+    // ── News vs quiet ───────────────────────────────────────────────────────────────────────
+    // Only CHECKED trades appear. A trade the feed never covered is absent from both rows rather
+    // than being counted as quiet — that would stack every historical trade into one column and
+    // make the comparison say whatever the length of your history says.
+    (function renderNewsBreakdown() {
+      var sec = document.getElementById('news-breakdown-section');
+      var wrap = document.getElementById('news-breakdown');
+      if (!sec || !wrap) return;
+      var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
+      var split = (typeof newsSplit === 'function') ? newsSplit(all) : { news: [], quiet: [] };
+      // Both sides need something in them, or the panel is an invitation to conclude from one
+      // number. Hidden entirely rather than shown empty.
+      if (!split.news.length || !split.quiet.length) { sec.style.display = 'none'; return; }
+      sec.style.display = '';
+      var ttl = document.getElementById('news-breakdown-title');
+      if (ttl) ttl.textContent = T('News vs quiet', 'Noticias vs tranquilo');
+      var hint = document.getElementById('news-breakdown-hint');
+      if (hint) hint.textContent = T(
+        'Trades entered within 30 minutes of a high-impact release for either currency in the pair, against the rest. Only trades the calendar could actually be checked against are counted — the feed reaches the current week, so this fills in as you go.',
+        'Operaciones abiertas dentro de 30 minutos de un dato de alto impacto para alguna de las divisas del par, frente al resto. Solo cuentan las operaciones que se pudieron comprobar contra el calendario — el feed llega a la semana actual, así que esto se va llenando.');
+      wrap.innerHTML = '<div class="history-list">' + breakdownHeader
+        + rowFor('⚡ ' + T('News window', 'Ventana de noticias'), sideStats(split.news))
+        + rowFor(T('Quiet', 'Tranquilo'), sideStats(split.quiet))
+        + '</div>';
+    })();
+
     const sessWrap = document.getElementById('session-breakdown');
     if (sessWrap) {
       const sessTimed = all.filter(tr => tr.entryTime && parseHHMM(tr.entryTime) != null);
@@ -21419,7 +21462,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const potP = (typeof _potPraw === 'number' && !isNaN(_potPraw)) ? _potPraw.toFixed(0) + 'p' : '\u2014 p';
       html += '<div class="atl-row" data-id="' + tr.id + '">'
         + '<div class="atl-cell left atl-c-date">' + dateStr + copyBadge + '</div>'
-        + '<div class="atl-cell atl-c-sym">' + esc(tr.symbol || defSym) + '</div>'
+        + '<div class="atl-cell atl-c-sym">' + esc(tr.symbol || defSym)
+          + (tr.newsTag
+              ? '<span class="atl-news" title="' + esc(tr.newsTag.title + ' (' + tr.newsTag.cur + ') · '
+                  + (tr.newsTag.off < 0 ? 'entered ' + Math.abs(tr.newsTag.off) + 'm before' : 'entered ' + tr.newsTag.off + 'm after')) + '">⚡</span>'
+              : '')
+          + '</div>'
         + '<div class="atl-cell atl-c-res"><span class="atl-tag ' + tagCls + '">' + tResult(tr.result) + '</span></div>'
         + '<div class="atl-cell atl-c-rp">' + rStr + ' <span class="atl-sub">\u00b7 ' + pStr + '</span></div>'
         + '<div class="atl-cell atl-c-potrp">' + potR + ' <span class="atl-sub">\u00b7 ' + potP + '</span></div>'
@@ -22874,7 +22922,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 05:55 UTC';
+  window.ST_BUILD = '2026-08-11 07:00 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -31083,6 +31131,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (!data.settings) data.settings = {};
         data.settings.calendarPanelCollapsed = nowCollapsed;
         if (typeof save === 'function') save();
+        // The feed just landed or refreshed, so this is the moment the week's trades can
+        // actually be judged. Cheap and idempotent: it only writes when a tag changed.
+        try { stampNewsTags(); } catch (e) {}
       };
     }
     // Date range pills
@@ -32725,6 +32776,135 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!_nextWeekState.events) _nextWeekState.key = null;
   }
 
+  // ── News auto-tagging ───────────────────────────────────────────────────────────────────────
+  // A trade taken through a high-impact release is a different trade from the same setup on a
+  // quiet morning, and the journal had no way to tell them apart. Each trade is matched against
+  // the cached Forex Factory feed and stamped, which is what makes "news days vs normal days"
+  // answerable at all.
+  //
+  // The feed is thisweek.xml / nextweek.xml and has no history endpoint, so a trade can only be
+  // judged while its week is still in the cache. Older trades are left alone rather than guessed
+  // at — and, importantly, a trade that WAS checked and found clean is marked as such, because
+  // otherwise "no tag" would mean both "no news" and "never looked", and the comparison below
+  // would quietly count every historical trade as a quiet-day trade.
+  var NEWS_WINDOW_MIN = 30;
+
+  // High-impact events only, flattened to what the matcher needs. Forex Factory puts the CURRENCY
+  // code in <country> (USD, EUR, GBP), which is what makes matching against a pair possible.
+  function _newsEvents() {
+    try {
+      var c = data && data._calendarCache;
+      if (!c || !Array.isArray(c.events)) return null;
+      var out = [];
+      c.events.forEach(function (e) {
+        if (!e || !e.when) return;
+        if (String(e.impact || '').toLowerCase() !== 'high') return;
+        var ts = new Date(e.when).getTime();
+        if (isNaN(ts)) return;
+        out.push({ t: ts, cur: String(e.country || '').toUpperCase(), title: String(e.title || '') });
+      });
+      return out.length ? out : null;
+    } catch (e) { return null; }
+  }
+
+  // The stretch of time the cache can speak for. A trade outside it is UNKNOWN, never "clean" —
+  // claiming a quiet morning on the strength of a feed that never covered that day would poison
+  // the very comparison this feature exists to make.
+  //
+  // Measured in DAYS, and from EVERY cached event rather than only the high-impact ones. Taking
+  // the first-to-last high-impact timestamp instead looked reasonable and was quietly wrong: on a
+  // day whose releases run 09:30 to 13:30 it declared a 16:45 trade unknown, so the quiet bucket
+  // would have collected only trades that happened near a release without being inside one, and
+  // the whole comparison would have been drawn from the wrong population.
+  function _newsCoverage() {
+    try {
+      var c = data && data._calendarCache;
+      if (!c || !Array.isArray(c.events) || !c.events.length) return null;
+      var lo = Infinity, hi = -Infinity;
+      c.events.forEach(function (e) {
+        if (!e || !e.when) return;
+        var t = new Date(e.when).getTime();
+        if (isNaN(t)) return;
+        if (t < lo) lo = t;
+        if (t > hi) hi = t;
+      });
+      if (lo === Infinity) return null;
+      var a = new Date(lo); a.setHours(0, 0, 0, 0);
+      var b = new Date(hi); b.setHours(23, 59, 59, 999);
+      return { from: a.getTime(), to: b.getTime() };
+    } catch (e) { return null; }
+  }
+
+  // A trade stores its day and its entry clock time separately; the match needs one instant.
+  function _tradeEntryTs(tr) {
+    try {
+      if (!tr || !tr.date) return null;
+      var d = new Date(tr.date);
+      if (isNaN(d.getTime())) return null;
+      var m = String(tr.entryTime || '').match(/^(\d{1,2}):(\d{2})/);
+      if (!m) return null;
+      return new Date(d.getFullYear(), d.getMonth(), d.getDate(), +m[1], +m[2], 0, 0).getTime();
+    } catch (e) { return null; }
+  }
+
+  // Currencies a symbol is exposed to: EUR/USD -> EUR, USD. Anything that cannot be split cleanly
+  // returns nothing and is skipped, rather than being matched against every release on the feed.
+  function _symCurrencies(sym) {
+    var s = String(sym || '').toUpperCase().replace(/[^A-Z]/g, '');
+    if (s.length === 6) return [s.slice(0, 3), s.slice(3)];
+    if (s.length === 3) return [s];
+    return [];
+  }
+
+  // Stamp every trade the cache can speak for. Returns how many changed, so callers can skip a
+  // save when there is nothing to write.
+  function stampNewsTags() {
+    try {
+      var evs = _newsEvents(); if (!evs) return 0;
+      var cov = _newsCoverage(); if (!cov) return 0;
+      var pad = NEWS_WINDOW_MIN * 60000;
+      var all = [];
+      try { (data.currentSeries || []).forEach(function (x) { all.push(x); }); } catch (e) {}
+      try { (data.history || []).forEach(function (s) { (s && s.trades ? s.trades : []).forEach(function (x) { all.push(x); }); }); } catch (e) {}
+      try { ((data.review && data.review.trades) || []).forEach(function (x) { all.push(x); }); } catch (e) {}
+      var changed = 0;
+      all.forEach(function (tr) {
+        if (!tr) return;
+        var ts = _tradeEntryTs(tr);
+        if (ts === null) return;
+        if (ts < cov.from || ts > cov.to) return;   // a day the feed never covered — leave it unknown
+        var curs = _symCurrencies(tr.symbol);
+        if (!curs.length) return;
+        var best = null;
+        evs.forEach(function (e) {
+          if (curs.indexOf(e.cur) < 0) return;
+          var off = ts - e.t;                                   // signed: negative = in before the print
+          if (Math.abs(off) > pad) return;
+          if (!best || Math.abs(off) < Math.abs(best.off)) best = { off: off, e: e };
+        });
+        var was = (tr.newsTag ? tr.newsTag.title + '|' + tr.newsTag.off : '') + '|' + (tr.newsChecked ? 1 : 0);
+        if (best) tr.newsTag = { title: best.e.title, cur: best.e.cur, off: Math.round(best.off / 60000) };
+        else if (tr.newsTag) delete tr.newsTag;
+        tr.newsChecked = 1;
+        var now = (tr.newsTag ? tr.newsTag.title + '|' + tr.newsTag.off : '') + '|1';
+        if (now !== was) changed++;
+      });
+      if (changed) { try { saveData(); } catch (e) {} }
+      return changed;
+    } catch (e) { return 0; }
+  }
+  try { window.__stStampNews = stampNewsTags; } catch (e) {}
+
+  // Split CHECKED trades into the two buckets the panel compares. Unchecked trades are excluded
+  // from both — they are not evidence either way.
+  function newsSplit(trades) {
+    var news = [], quiet = [];
+    (trades || []).forEach(function (tr) {
+      if (!tr || !tr.newsChecked) return;
+      (tr.newsTag ? news : quiet).push(tr);
+    });
+    return { news: news, quiet: quiet };
+  }
   async function fetchEconomicCalendar(opts) {
     opts = opts || {};
     if (!document.getElementById('econ-calendar-body')) return; // panel not in DOM
@@ -32798,6 +32978,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           events: result.events.map(e => ({ ...e, when: e.when ? e.when.toISOString() : null }))
         };
         if (typeof save === 'function') save();
+        // The feed just landed or refreshed, so this is the moment the week's trades can
+        // actually be judged. Cheap and idempotent: it only writes when a tag changed.
+        try { stampNewsTags(); } catch (e) {}
       } catch (cacheErr) { /* non-fatal */ }
       renderCalendarFromCache();
       try {
