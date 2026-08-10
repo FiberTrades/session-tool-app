@@ -1733,25 +1733,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* "Winning trades I didn't take" per-trade table — reuses the .potr-trade-row
      visuals with a 3-column grid (week / would-be R / note). */
   .missed-trade-table { margin-top: 14px; }
-  /* The note column earns a real minimum, and the row a min-width of its own content, so the
-     table behaves both ways round: on a wide window the note track takes all the leftover space
-     (1fr) and the table still fills its container; once the window is too narrow to honour the
-     420px minimum, the row grows past the container and .trade-scroll-5's overflow:auto finally
-     has something to scroll, giving the side-to-side bar. Some min-width is essential: without it
-     the row DIV stays pinned at container width and the fixed tracks overflow invisibly - the same
-     trap the phone rule below calls out.
-     It is 660px (130+110+420) and NOT max-content, because max-content on a wrapping text column
-     resolves to the note's full UNWRAPPED width - about 1400px for a long note - which forced a
-     horizontal scrollbar permanently, even on a wide desktop with room to spare. */
-  .missed-trade-table .potr-trade-row { grid-template-columns: 130px 110px minmax(420px, 1fr); cursor: default; min-width: 660px; }
+  /* Every note on ONE line, with the table panning left/right to reach the rest of it.
+     The note track is a shared custom property rather than max-content because each ROW is its
+     own grid: a max-content track would size every row to its own note and the columns would
+     stagger down the table. sizeMissedNoteColumn() measures the widest note once after render
+     and publishes --mw-note here, so all rows (and the sticky header) share one width.
+     min-width:max-content is what actually produces the scrollbar - without it the row DIV stays
+     pinned at container width and the fixed tracks overflow invisibly, the trap the phone rule
+     below calls out. With fixed px tracks, max-content is just their sum, so it cannot balloon. */
+  .missed-trade-table .potr-trade-row { grid-template-columns: 130px 110px var(--mw-note, 420px); cursor: default; min-width: max-content; }
   .missed-trade-table .potr-trade-row.has-link { cursor: pointer; }
-  /* Notes wrap rather than ellipsise. A scrollbar cannot rescue clipped text - panning moves the
-     TABLE while the text stays cut at the same character - so the note has to be allowed to use
-     more than one line. This is the desktop half of the fix already made for phones at line ~1774. */
-  .missed-trade-cell-note { white-space: normal; overflow: visible; text-overflow: clip; word-break: break-word; color: var(--text-mid); }
-  /* Wrapped notes make rows taller, so lift the cap to keep roughly the five rows this table
-     was built to show before it starts scrolling vertically. */
-  .missed-trade-table .trade-scroll-5 { max-height: 340px; }
+  /* No wrap and no ellipsis: the column is measured to fit the longest note exactly, so there is
+     nothing left to clip, and panning reaches the end of any note. */
+  .missed-trade-cell-note { white-space: nowrap; overflow: hidden; text-overflow: clip; color: var(--text-mid); }
   /* Notes are prose, not a figure - anchor them left, with a touch more inset than the
      base 10px cell padding so the text doesn't hug the column edge. The 4-class selector
      outweighs the shared ".trade-scroll-5 .potr-trade-row .potr-trade-cell" centring rule. */
@@ -2840,6 +2834,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      only round 2 of its 4 corners. Round its own outer corners cleanly. */
   #missed-winners-section .stats-summary-4col > :first-child { border-radius: var(--radius-card) 0 0 var(--radius-card); }
   #missed-winners-section .stats-summary-4col > :last-child { border-radius: 0 var(--radius-card) var(--radius-card) 0; }
+  /* The dividers between these four cells are the 1px grid gap showing the container background,
+     which is --border (#2A2833) — dimmer than the --border-2 (#332F3C) frame drawn around them,
+     so on a single-row strip they read as absent and the cells run together. Match the frame. */
+  #missed-winners-section .stats-summary { background: var(--border-2); }
   /* At phone widths these reflow to fewer columns; let the container clip instead
      (hover tooltips don't apply on touch), which stays clean for any layout. */
   @media (max-width: 900px) {
@@ -4672,7 +4670,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </section>
 
     <section>
-      <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.s7.title">Concepts &amp; Mindset Tags</span></div>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="trades.s7.title">Concept &amp; Mindset Tags</span></div>
       <p class="section-hint" data-i18n="hint.tags_analysis">Your 10 most-used concept and mindset tags across all trades.</p>
 
       <div class="pattern-row">
@@ -6100,7 +6098,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'trades.s4.title': 'Hold Time Analysis',
       'trades.s5.title': 'Trade Time Analysis',
       'trades.s6.title': 'Should I hold winners longer?',
-      'trades.s7.title': 'Concepts & Mindset Tags',
+      'trades.s7.title': 'Concept & Mindset Tags',
       // ----- Common buttons -----
       'btn.copy_discord': 'Post to community',
       'btn.upload_chart': 'Upload chart',
@@ -16994,6 +16992,34 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return `<div class="potr-trade-row${hasLink ? ' has-link' : ''}"${hasLink ? ` data-url="${esc(m.url.trim())}"` : ''}>\n            <div class="potr-trade-cell">${fmtWk(m.weekStart)}</div>\n            <div class="potr-trade-cell good">${rStr}</div>\n            <div class="potr-trade-cell missed-trade-cell-note"${titleAttr}>${hasLink ? _zoom : ''}${noteTxt}</div>\n          </div>`;
         }).join('');
         tableWrap.innerHTML = `<div class="missed-trade-table"><div class="trade-scroll-5">\n          <div class="potr-trade-row headers">\n            <div class="potr-trade-cell">${t('missed.col_week')}</div>\n            <div class="potr-trade-cell">${t('missed.col_wouldbe')}</div>\n            <div class="potr-trade-cell">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml || ('<div class="missed-empty-row">' + t('missed.empty') + '</div>')}\n        </div></div>`;
+        // Notes are shown on ONE line and the table pans to reach the rest, so the note column has
+        // to be as wide as the LONGEST note — and every row has to use that same width, because
+        // each row is its own grid and a per-row max-content track would stagger the columns.
+        // Measure once off-screen and publish it; the rows and the sticky header inherit it.
+        (function sizeMissedNoteColumn() {
+          try {
+            var cells = tableWrap.querySelectorAll('.missed-trade-cell-note');
+            if (!cells.length) return;
+            var cs = getComputedStyle(cells[0]);
+            var probe = document.createElement('span');
+            probe.style.cssText = 'position:absolute;left:-9999px;top:0;visibility:hidden;white-space:nowrap;';
+            probe.style.fontFamily = cs.fontFamily; probe.style.fontSize = cs.fontSize;
+            probe.style.fontWeight = cs.fontWeight; probe.style.letterSpacing = cs.letterSpacing;
+            document.body.appendChild(probe);
+            var max = 0;
+            for (var i = 0; i < cells.length; i++) {
+              // innerHTML, not textContent: linked rows carry a magnifier SVG ahead of the text,
+              // and measuring the text alone would size the column ~20px short of the real content.
+              probe.innerHTML = cells[i].innerHTML || '';
+              if (probe.offsetWidth > max) max = probe.offsetWidth;
+            }
+            document.body.removeChild(probe);
+            var pad = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0);
+            // Floor of 420px so a table of short notes doesn't collapse into a cramped column;
+            // +2 absorbs sub-pixel rounding that would otherwise clip the final character.
+            tableWrap.style.setProperty('--mw-note', Math.max(420, Math.ceil(max + pad + 2)) + 'px');
+          } catch (e) {}
+        })();
         tableWrap.querySelectorAll('.potr-trade-row.has-link').forEach(row => {
           row.addEventListener('click', () => {
           const u = row.getAttribute('data-url');
@@ -22434,7 +22460,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 19:10 UTC';
+  window.ST_BUILD = '2026-08-10 20:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
