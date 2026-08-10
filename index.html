@@ -11092,6 +11092,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       });
       d._mt5TzFixed = true;
     }
+    // Repair: re-attach MT5 tickets that an older build dropped on the way into the series.
+    // performReviewSave copies review trades through a field whitelist that was missing
+    // mt5Ticket, so every auto-synced trade landed in the series unticketed and therefore
+    // unreplayable. The save is fixed, but trades already committed by an affected build stay
+    // broken, and their owners cannot be asked to run console snippets. The review trade keeps
+    // both its ticket and its seriesId link, so the ticket can simply be walked back across.
+    //
+    // Runs on EVERY load rather than behind a one-time flag: it is add-only and costs one pass
+    // over a handful of review trades, and a user still being served a cached old build would
+    // otherwise re-break themselves after the flag had been spent. Only ever fills a BLANK
+    // ticket, so it can never fight the post-mortem re-stamping pass.
+    try {
+      const _revT = (d.review && d.review.trades) || [];
+      if (_revT.length) {
+        const _committed = [...(d.currentSeries || []), ...(d.history || []).flatMap(s => s.trades || [])];
+        _revT.forEach(rt => {
+          const _tk = rt && (rt.mt5Ticket || rt.position);
+          if (!_tk || !rt.seriesId) return;
+          const _tgt = _committed.find(x => x && x.id === rt.seriesId);
+          if (_tgt && !_tgt.mt5Ticket) _tgt.mt5Ticket = _tk;
+        });
+      }
+    } catch (e) {}
     // Session windows (settings.sessions) are held as local HH:MM and compared against
     // the browser clock. The leaderboard has to judge "posted before your session" on
     // the server, which cannot know that zone unless we record it.
@@ -22384,7 +22407,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 15:20 UTC';
+  window.ST_BUILD = '2026-08-10 16:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
