@@ -22418,7 +22418,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 16:40 UTC';
+  window.ST_BUILD = '2026-08-10 17:25 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -32851,6 +32851,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) {}
     return es ? 'la sesión de hoy' : 'today\'s session';
   }
+  // Have ALL of today's sessions finished? The Bias tab is a planning surface whose copy assumes
+  // the session is still ahead of you ("lock your read in before you trade"), which reads as
+  // nonsense at 4pm when your 8–10am London session closed six hours ago.
+  //
+  // Deliberately conservative: an overnight window (end <= start, e.g. 23:00–04:00) is never
+  // called finished, because "past the end time" is meaningless for a window that wraps midnight
+  // and the cost of being wrong is telling someone their session is over while they are in it.
+  // No sessions configured → false, so behaviour is unchanged for anyone who hasn't set any.
+  function _sessionsDoneToday() {
+    try {
+      var ss = (typeof getSessions === 'function') ? getSessions() : [];
+      if (!ss.length) return false;
+      var now = new Date(), nowM = now.getHours() * 60 + now.getMinutes();
+      var toM = function (hhmm) { var a = String(hhmm || '').split(':'); return (parseInt(a[0], 10) || 0) * 60 + (parseInt(a[1], 10) || 0); };
+      for (var i = 0; i < ss.length; i++) {
+        var s = toM(ss[i].start), e = toM(ss[i].end);
+        if (e <= s) return false;      // overnight window — can't reason about it this way
+        if (nowM < e) return false;    // this one hasn't finished
+      }
+      return true;
+    } catch (e) { return false; }
+  }
   // Per-tab greeting seeds (the "essence"). The AI (for eligible tiers) rewrites these into a
   // more personal, intelligent line via STAI.enhanceGreeting; everyone else sees these as-is.
   function _greetNameSpan() {
@@ -32890,19 +32912,85 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
     var nm = _greetNameSpan(), S = (window.__lang === 'es');
     if (!all.length) return S ? ('Aún sin operaciones, ' + nm + '. Tus estadísticas se llenan a medida que registras.') : ('No trades logged yet, ' + nm + '. Your stats fill in as you go.');
-    var w = 0, l = 0, netR = 0, byDow = {}, DOW = S ? ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    var w = 0, l = 0, be = 0, netR = 0, sumWinR = 0, sumLossR = 0, byDow = {},
+        DOW = S ? ['Dom', 'Lun', 'Mar', 'Mié', 'Jue', 'Vie', 'Sáb'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     all.forEach(function (tr) {
       var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
       var r = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
-      netR += r; if (tr.result === 'Win') w++; else if (tr.result === 'Lose') l++;
-      if (tr.date) { var d = new Date(tr.date); if (!isNaN(d.getTime())) { var k = DOW[d.getDay()]; byDow[k] = byDow[k] || { r: 0 }; byDow[k].r += r; } }
+      netR += r;
+      if (tr.result === 'Win') { w++; sumWinR += r; }
+      else if (tr.result === 'Lose') { l++; sumLossR += r; }
+      else if (tr.result === 'BE') be++;
+      if (tr.date) { var d = new Date(tr.date); if (!isNaN(d.getTime())) { var k = DOW[d.getDay()]; byDow[k] = byDow[k] || { r: 0, n: 0 }; byDow[k].r += r; byDow[k].n++; } }
     });
     var decided = w + l, wr = decided ? Math.round(w / decided * 100) : 0, exp = Math.round(netR / all.length * 100) / 100;
-    var bestDay = null, bestR = -Infinity; Object.keys(byDow).forEach(function (k) { if (byDow[k].r > bestR) { bestR = byDow[k].r; bestDay = k; } });
-    var insight = _isOffDayToday()
-      ? (S ? 'Día sin mercado — el mejor momento para estudiar esto con calma.' : 'No market today — the best time to study this with cold eyes.')
-      : ((bestDay && bestR > 0) ? (S ? ('Tu ventaja aparece más los ' + bestDay + '.') : ('Your edge shows up most on ' + bestDay + '.')) : (S ? 'Busca el patrón detrás de los números.' : 'Look for the pattern behind the numbers.'));
-    return S ? (all.length + ' operaciones, ' + nm + '. Winrate ' + wr + '%, esperanza ' + exp + 'R. ' + insight) : (all.length + ' trades in, ' + nm + '. Win rate ' + wr + '%, expectancy ' + exp + 'R. ' + insight);
+
+    // This surface used to be ONE sentence — count, win rate, expectancy, best weekday — so it
+    // read identically every single day and the rewrite could only ever repaint the same thought.
+    // Offer several genuinely different observations instead, and only ever offer one the data can
+    // support, so the line never asserts a weekday pattern off two trades.
+    var angles = [];
+    var bestDay = null, bestR = -Infinity, worstDay = null, worstR = Infinity;
+    Object.keys(byDow).forEach(function (k) {
+      if (byDow[k].n < 3) return;                        // 1–2 trades is not a pattern
+      if (byDow[k].r > bestR) { bestR = byDow[k].r; bestDay = k; }
+      if (byDow[k].r < worstR) { worstR = byDow[k].r; worstDay = k; }
+    });
+    if (bestDay && bestR > 0) angles.push(S ? ('Tu ventaja aparece más los ' + bestDay + '.') : ('Your edge shows up most on ' + bestDay + '.'));
+    if (worstDay && worstR < 0 && worstDay !== bestDay) angles.push(S ? ('Los ' + worstDay + ' son donde se escapa — mira qué cambia ese día.') : (worstDay + ' is where it leaks — look at what changes that day.'));
+    // Recent form against the lifetime baseline. Needs a real history behind it, and enough
+    // decided trades in the last ten that the comparison isn't noise.
+    var chron = all.filter(function (t) { return t && t.date; }).sort(function (a, b) { return new Date(a.date) - new Date(b.date); });
+    if (chron.length >= 20) {
+      var last10 = chron.slice(-10), lw = 0, ld = 0;
+      last10.forEach(function (t) { if (t.result === 'Win') { lw++; ld++; } else if (t.result === 'Lose') ld++; });
+      if (ld >= 5) {
+        var lwr = Math.round(lw / ld * 100);
+        if (Math.abs(lwr - wr) >= 10) angles.push(lwr > wr
+          ? (S ? ('Tus últimas 10 van al ' + lwr + '% frente a tu ' + wr + '% histórico — estás en forma.') : ('Your last 10 are running at ' + lwr + '% against your lifetime ' + wr + '% — you are in form.'))
+          : (S ? ('Tus últimas 10 van al ' + lwr + '% frente a tu ' + wr + '% histórico — algo se ha desajustado.') : ('Your last 10 are at ' + lwr + '% against your lifetime ' + wr + '% — something has slipped.')));
+      }
+    }
+    // Payoff: the number that decides whether a sub-50% win rate is a problem or the whole point.
+    if (w >= 3 && l >= 3) {
+      var avgW = sumWinR / w, avgL = Math.abs(sumLossR / l);
+      if (avgL > 0) {
+        var pr = Math.round(avgW / avgL * 100) / 100;
+        angles.push(S ? ('Ganas ' + pr + 'R por cada 1R que pierdes.') : ('You win ' + pr + 'R for every 1R you lose.'));
+      }
+    }
+    if (all.length >= 10 && be > 0) {
+      var bePct = Math.round(be / all.length * 100);
+      if (bePct >= 20) angles.push(S ? ('El ' + bePct + '% acaba en tablas — merece preguntarse si sales demasiado pronto.') : (bePct + '% of your trades scratch at breakeven — worth asking whether you step out too early.'));
+    }
+    // An off-day beats every data angle: the point today is to study, not to trade.
+    if (_isOffDayToday()) angles.unshift(S ? 'Día sin mercado — el mejor momento para estudiar esto con calma.' : 'No market today — the best time to study this with cold eyes.');
+    if (!angles.length) angles.push(S ? 'Busca el patrón detrás de los números.' : 'Look for the pattern behind the numbers.');
+
+    var leads = S ? [
+      all.length + ' operaciones, ' + nm + '. Winrate ' + wr + '%, esperanza ' + exp + 'R.',
+      nm + ', llevas ' + all.length + ' operaciones al ' + wr + '% con ' + exp + 'R de esperanza.',
+      'Histórico: ' + all.length + ' operaciones, ' + wr + '% de aciertos, ' + exp + 'R por operación, ' + nm + '.'
+    ] : [
+      all.length + ' trades in, ' + nm + '. Win rate ' + wr + '%, expectancy ' + exp + 'R.',
+      nm + ', you are ' + all.length + ' trades deep at ' + wr + '% with ' + exp + 'R expectancy.',
+      'Lifetime: ' + all.length + ' trades, ' + wr + '% strike rate, ' + exp + 'R a trade, ' + nm + '.'
+    ];
+    // Keyed on the DAY, not the greeting nonce: the pick has to stay put while you use the app, or
+    // every re-render would reword the line, change the seed's digits, miss the AI cache and pay
+    // for another generation. Day-stable keeps this at one call a day and still reads differently
+    // each morning. (pickWithAntiRepeat is wrong here for the same reason — it records what it just
+    // returned, so calling it twice with one seed walks the index forward.)
+    //
+    // Rotated on the day NUMBER rather than hashStr(date): hashStr spreads evenly in aggregate but
+    // runs the same index up to four days straight on consecutive dates, which is the "it always
+    // says the same thing" complaint. A rotation cannot repeat two days running. Different offsets
+    // so the lead and the insight don't advance in lockstep.
+    var _sk = (typeof todayKey === 'function') ? todayKey() : '';
+    var _dayNum = (function () { try { var _d = new Date(_sk); return isNaN(_d.getTime()) ? 0 : Math.floor(_d.setHours(0, 0, 0, 0) / 86400000); } catch (e) { return 0; } })();
+    var lead = leads[_dayNum % leads.length];
+    var insight = angles[(_dayNum + 1) % angles.length];
+    return lead + ' ' + insight;
   }
   function _calendarGreetingHTML() {
     var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
@@ -33041,6 +33129,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const _wkPool = localizedPool(REVIEW_IDLE_WEEKEND, 'REVIEW_IDLE_WEEKEND');
         const _wkIdx = pickWithAntiRepeat(_wkPool, 'REVIEW_IDLE_WEEKEND', todayKey() + ':bias-off:' + _greetingNonce);
         _cachedTailBias = _wkPool[_wkIdx];
+      } else if (_sessionsDoneToday()) {
+        // Every session today has already closed, so there is nothing left to plan and the
+        // yesterday-recap framing below ("lock your read in before you trade") has expired —
+        // that is what produced "get your read locked in first" at 4pm on a day whose 8–10am
+        // session ended six hours earlier. Say what actually happened instead: today's recap if
+        // trades were logged, otherwise the out-of-session pool the Review surface already uses
+        // for precisely this moment of the day.
+        const _todayOutBias = getTodayOutcome();
+        if (_todayOutBias) {
+          _cachedTailBias = pickTail(_todayOutBias, true);
+        } else {
+          const _oosPool = localizedPool(OUT_OF_SESSION_NO_TRADES, 'OUT_OF_SESSION_NO_TRADES');
+          const _oosIdx = pickWithAntiRepeat(_oosPool, 'OUT_OF_SESSION_NO_TRADES', todayKey() + ':bias-oos:' + _greetingNonce);
+          _cachedTailBias = _oosPool[_oosIdx];
+        }
       } else {
         // Planning surface: yesterday + last-7-day recap, never about today.
         // The 'trade with your bias, not against it' reminder deliberately does NOT appear
@@ -33104,6 +33207,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       return `${opener}, ${nameSpan}. ${tail.charAt(0).toUpperCase()}${tail.slice(1)}`;
     };
+    // The AI cache keys a greeting on the DIGITS in its seed, so that re-picking a differently
+    // worded line from the same pool doesn't burn tokens regenerating the same thought. But most
+    // pool lines carry no digits at all: "nothing logged yet" and "BE today. You stepped aside."
+    // are digit-identical, so logging two breakevens left the signature untouched and the stale
+    // "nothing logged yet" line was served for the rest of the day.
+    //
+    // So name the SITUATION instead — stable across re-picks of the same pool, but different the
+    // moment the facts are. Cheap: it only forces a regeneration when something genuinely changed.
+    const _greetSituation = (function () {
+      try {
+        const _td = new Date(); _td.setHours(0, 0, 0, 0);
+        const _isToday = (d) => { if (!d) return false; const x = new Date(d); if (isNaN(x.getTime())) return false; x.setHours(0, 0, 0, 0); return x.getTime() === _td.getTime(); };
+        const _nSeries = ((data && data.currentSeries) || []).filter(t => t && _isToday(t.date) && t.result).length;
+        const _nReview = ((data && data.review && data.review.trades) || []).filter(t => t && t.result).length;
+        const _phase = _sessionsDoneToday() ? 'after'
+                     : ((typeof isSessionLive === 'function' && isSessionLive()) ? 'live' : 'before');
+        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on'].join('.');
+      } catch (e) { return ''; }
+    })();
     targets.forEach(el => {
       const ctx = el.dataset && el.dataset.greetingContext;
       let html;
@@ -33118,6 +33240,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
+      try { el.__greetSit = _greetSituation; } catch (e) {}   // and the situation it describes, for the AI cache signature
       try { if (el.id === 'bias-greeting') { var _st = (el.textContent || '').trim(); if (_st) window.__stGreetingText = _st; } } catch (e) {}   // seed fallback for "reword my greeting" (AI line overwrites this global when it lands)
       try { if(!window.__MV && window.STMentor && window.STMentor.hasUnseen()){ el.innerHTML += ' <span class="mentor-greet-msg">' + (t('mentor.msg_waiting')||'You have a message from your mentor in your Calendar Log.') + '</span>'; } } catch(e){}
       el.__twHTML = el.innerHTML;   // clean source (seed + optional mentor note) for the typewriter
@@ -33887,7 +34010,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // gets a data-only signature → it caches all day and reloads cost ZERO tokens.
         var _mentionsTime = /(morning|afternoon|evening|tonight|\bnight\b|midday|\bnoon\b|midnight|dawn|dusk|late[- ]?night|ma[ñn]ana|\btarde|\bnoche|madrugada|mediod[íi]a|buenos d[íi]as)/i.test(seed);
         var _slot = _mentionsTime ? ((typeof _timeSlot === 'function') ? _timeSlot() : (typeof window.__stTimeSlot === 'function' ? window.__stTimeSlot() : '')) : '';
-        var sig = _slot + '|' + (seed.match(/\d+/g) || []).join('.');
+        // Digits alone can't tell "nothing logged yet" from "BE today" — both carry none. The
+        // situation stamped by renderBiasGreeting can, and doesn't churn when the same pool is
+        // re-picked with different wording. See the note where __greetSit is built.
+        var sig = _slot + '|' + (seed.match(/\d+/g) || []).join('.') + '|' + (el.__greetSit || '');
         var vkey = today + '|' + sig;
         var _put = (typeof window.__stSetGreetHTML === 'function') ? window.__stSetGreetHTML : function (e2, h) { e2.innerHTML = h; };
         // 1) Session cache — reuse unless the day or the data numbers changed (and never reuse a bad line).
