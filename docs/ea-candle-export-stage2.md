@@ -35,22 +35,24 @@ and goes straight to pass 2 — one export, not two.
 "End of the trading day" reuses `PM_EndOfDay()`, which is 23:59:59 in **broker server
 time**. That tracks whatever offset your broker runs on, with no input to configure.
 
-## ⚠️ Before you deploy: `ingest-candles` must be idempotent
+## Re-sending is already safe — checked, no backend change needed
 
-Pass 2 re-sends bars pass 1 already sent. If the edge function inserts blindly you'll get
-duplicate rows in `st_candles` — the app's replay dedupes bars <30s apart on read, so it
-would still *look* right, but the table grows twice as fast as it should.
+Pass 2 re-sends bars pass 1 already sent, so the intake has to be idempotent. It is:
+`ingest-candles` posts to `/rest/v1/candles?on_conflict=symbol,tf,t` with
+`prefer: resolution=merge-duplicates`.
 
-Please share `ingest-candles/index.ts` and the `st_candles` definition (columns + any
-unique index). What it needs is an upsert on the bar's identity:
+Two consequences worth knowing:
 
-```sql
-insert into st_candles (…) values (…)
-on conflict (symbol, tf, t) do nothing
-```
+- **The unique index exists.** PostgREST's `on_conflict` needs a unique index on those
+  columns; without one Postgres rejects the whole request ("no unique or exclusion
+  constraint matching the ON CONFLICT specification") and the function returns
+  `db upsert failed`. Stage 1 has been storing candles successfully, so it is there.
+- **`merge-duplicates` is doing real work here, not just avoiding duplicates.** Pass 1
+  fires at close + 30 min with `to = TimeCurrent()`, so its last M1 bar is probably still
+  *forming* — an incomplete OHLC. Under `do nothing` that provisional bar would be frozen
+  wrong forever; merge overwrites it with the closed values on pass 2.
 
-Requires a unique index on `(symbol, tf, t)` — tell me if one isn't there and I'll write
-the migration.
+(Naming: the table is `public.candles`. `st_candles` is the RPC the app reads it through.)
 
 ---
 
