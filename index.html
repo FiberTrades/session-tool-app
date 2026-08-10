@@ -5230,6 +5230,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           <input type="number" id="onboard-max-dd" class="settings-input settings-input-compact" step="0.1" min="0" placeholder="10" />
           <span class="settings-risk-suffix" id="onboard-max-dd-suffix" data-i18n="settings.risk_pct_suffix">% of balance</span>
         </div>
+        <select id="onboard-dd-type" class="settings-input settings-input-compact" style="max-width:260px;margin-top:8px;" autocomplete="off">
+          <option value="static" data-i18n="settings.dd_type_static">From starting balance</option>
+          <option value="trailing" data-i18n="settings.dd_type_trailing">Trailing from account high</option>
+          <option value="trailing_lock" data-i18n="settings.dd_type_lock">Trailing, locks at starting balance</option>
+        </select>
+        <p class="settings-hint" data-i18n="settings.dd_type_hint">What the limit is measured from. Trailing follows your highest closed balance, so the floor rises as you profit and never falls back. Measured on closed trades — a firm that trails on live equity watches open positions too, so treat this as the floor after your trades are closed.</p>
 
         <div class="settings-risk-label-row" style="margin-top:14px;">
           <label class="settings-label" data-i18n="settings.risk_max_loss_label">Max loss per day</label>
@@ -6318,6 +6324,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'settings.risk_preset_yours': 'Your presets',
       'settings.risk_preset_hint': "Loads a firm's typical Phase 1 rules (daily loss, max drawdown, profit target) as a starting point — adjust to your exact account, and always verify against your firm's current rules. You can also set your own values and save them as a reusable preset.",
       'settings.risk_max_dd_label': 'Max total drawdown + costs',
+      'settings.dd_type_static': 'From starting balance',
+      'settings.dd_type_trailing': 'Trailing from account high',
+      'settings.dd_type_lock': 'Trailing, locks at starting balance',
+      'settings.dd_type_hint': 'What the limit is measured from. Trailing follows your highest closed balance, so the floor rises as you profit and never falls back. Measured on closed trades — a firm that trails on live equity watches open positions too, so treat this as the floor after your trades are closed.',
       'settings.risk_max_dd_hint': "Your account's overall loss limit, measured from your starting balance. Breaching it fails a funded challenge. (FTMO / FundedNext: 10%; The 5%ers: 5%.)",
       'settings.risk_profit_target_label': 'Profit target',
       'settings.risk_profit_target_hint': 'The profit you need to pass your evaluation phase, from your starting balance. The app tracks your progress toward it.',
@@ -7786,6 +7796,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'settings.risk_preset_yours': 'Tus preajustes',
       'settings.risk_preset_hint': 'Carga las reglas típicas de la Fase 1 de una firma (pérdida diaria, drawdown máximo, objetivo de beneficio) como punto de partida — ajústalas a tu cuenta exacta y verifica siempre con las reglas actuales de tu firma. También puedes definir tus propios valores y guardarlos como un preajuste reutilizable.',
       'settings.risk_max_dd_label': 'Drawdown total máximo + costes',
+      'settings.dd_type_static': 'Desde el saldo inicial',
+      'settings.dd_type_trailing': 'Dinámico desde el máximo de la cuenta',
+      'settings.dd_type_lock': 'Dinámico, se fija en el saldo inicial',
+      'settings.dd_type_hint': 'Desde dónde se mide el límite. El dinámico sigue tu saldo cerrado más alto, así que el suelo sube con las ganancias y nunca baja. Se calcula sobre operaciones cerradas — una firma que lo mide sobre el capital en vivo también vigila las posiciones abiertas.',
       'settings.risk_max_dd_hint': 'El límite de pérdida total de tu cuenta, medido desde tu balance inicial. Romperlo reprueba un challenge fondeado. (FTMO / FundedNext: 10%; The 5%ers: 5%.)',
       'settings.risk_profit_target_label': 'Objetivo de beneficio',
       'settings.risk_profit_target_hint': 'El beneficio que necesitas para pasar tu fase de evaluación, desde tu balance inicial. La app rastrea tu progreso hacia él.',
@@ -22944,7 +22958,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 16:10 UTC';
+  window.ST_BUILD = '2026-08-11 17:25 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -25953,6 +25967,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     setRiskField('maxRisk', 'onboard-max-trade', 'onboard-max-trade-suffix', 'maxRiskPct', 'maxRiskAmount', 'maxRiskMode', '0.5', '50');
     setRiskField('maxDrawdown', 'onboard-max-dd', 'onboard-max-dd-suffix', 'maxDrawdownPct', 'maxDrawdownAmount', 'maxDrawdownMode', '10', '1000');
     setRiskField('profitTarget', 'onboard-profit-target', 'onboard-profit-target-suffix', 'profitTargetPct', 'profitTargetAmount', 'profitTargetMode', '10', '1000');
+    // Defaults to static, which is what every existing account has been measured on - a stored
+    // rule set written before this option existed must not silently start trailing.
+    const ddTypeSel = document.getElementById('onboard-dd-type');
+    if (ddTypeSel) ddTypeSel.value = rr.ddType || 'static';
     setRiskField('beThreshold', 'onboard-be-threshold', 'onboard-be-threshold-suffix', 'beThresholdPct', 'beThresholdAmount', 'beThresholdMode', '0.1', '1');
     const tradesInp = document.getElementById('onboard-max-trades');
     if (tradesInp) tradesInp.value = (rr.maxTrades && Number(rr.maxTrades) > 0) ? rr.maxTrades : '';
@@ -26065,6 +26083,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     writeRuleByMode('maxRisk', 'onboard-max-trade', 'maxRiskPct', 'maxRiskAmount', 'maxRiskMode');
     writeRuleByMode('maxDrawdown', 'onboard-max-dd', 'maxDrawdownPct', 'maxDrawdownAmount', 'maxDrawdownMode');
     writeRuleByMode('profitTarget', 'onboard-profit-target', 'profitTargetPct', 'profitTargetAmount', 'profitTargetMode');
+    const ddTypeSelW = document.getElementById('onboard-dd-type');
+    if (ddTypeSelW) rr.ddType = ddTypeSelW.value || 'static';
     writeRuleByMode('beThreshold', 'onboard-be-threshold', 'beThresholdPct', 'beThresholdAmount', 'beThresholdMode');
     const tradesInp = document.getElementById('onboard-max-trades');
     if (tradesInp) {
@@ -29239,7 +29259,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
       // Total drawdown breach (current balance at/below the drawdown floor).
       if (ddAmount > 0) {
-        const floor = sb - ddAmount;
+        // Which reference the limit hangs from. Static keys off the starting balance and never
+        // moves. Trailing follows the account high; the floor rises with every new peak and never
+        // falls back. Trailing-lock does the same until the floor reaches the starting balance,
+        // then freezes there - the common funded-account rule, where the trail stops once the
+        // account is clear of its initial size.
+        const ddType = rules.ddType || 'static';
+        const peak = (typeof stats.peak === 'number' && stats.peak > 0) ? stats.peak : sb;
+        let floor;
+        if (ddType === 'trailing') floor = peak - ddAmount;
+        else if (ddType === 'trailing_lock') floor = Math.min(peak - ddAmount, sb);
+        else floor = sb - ddAmount;
         if (current <= floor) {
           signal = 'ddBreach';
           fields = { acct: acctName, current: money(current) };
@@ -37523,7 +37553,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // The % is still measured against the NOMINAL size, not the baseline: on a prop
       // account that is what the firm measures you against.
       const pct = startingBalance > 0 ? ((current - startingBalance) / startingBalance) * 100 : 0;
-      return { startingBalance, baseline, current, totalNet, pct };
+      // High-water mark of CLOSED balance, walked in trade order. A trailing drawdown limit
+      // follows this rather than the starting balance.
+      //
+      // Closed balance, not equity: the journal records trades once they are done, so an open
+      // position that spiked and gave it back never appears here. Firms that trail on intraday
+      // EQUITY watch that spike too, and their floor can sit higher than this one. The figure is
+      // labelled as closed-balance in the UI rather than presented as the firm’s own number,
+      // because quietly under-reporting a floor is how someone breaches while the app says fine.
+      let peak = baseline, run = baseline;
+      eligible.slice().sort(function (a, b) { return new Date(a.date) - new Date(b.date); })
+        .forEach(function (t) { run += (tradeGross(t) - tradeCosts(t)) * cps(t); if (run > peak) peak = run; });
+      return { startingBalance, baseline, current, totalNet, pct, peak };
     }
     // Published because the GREETING needs it too. It lives inside this settings IIFE, so the
     // prop-firm signal in the greeting (drawdown breach / profit target hit) was calling a name
