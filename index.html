@@ -9094,9 +9094,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // ============================================================================
 
   let today = new Date();
-  // dateStr is the header date — re-computed when language changes too (see setLanguage).
-  const dateStr = today.toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' }).replace(/^./, c => c.toUpperCase());
-  document.getElementById('today').textContent = dateStr;
+  // The header date. This line runs ONCE, at load — which was the whole bug: the clock beside it
+  // ticked every second while the date beside it never moved, so an app left open (or resumed on a
+  // new day) confidently showed yesterday. renderMetaTime now watches for the day changing and
+  // rewrites this; see _lastDayKey below. Also re-computed when the language changes (setLanguage),
+  // since it is locale-formatted.
+  function _headerDateStr() {
+    return new Date().toLocaleDateString(tLocale(), { weekday: 'short', day: '2-digit', month: 'short' })
+      .replace(/^./, c => c.toUpperCase());
+  }
+  document.getElementById('today').textContent = _headerDateStr();
 
   // Live ticking clock — updates every second, user's local time (24h format, HH:MM:SS)
   // Definition only — first call deferred until after data = loadData() runs below,
@@ -9107,6 +9114,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const mm = String(now.getMinutes()).padStart(2, '0');
     const ss = String(now.getSeconds()).padStart(2, '0');
     document.getElementById('meta-time').textContent = `${hh}:${mm}:${ss}`;
+    // DAY ROLLOVER. Checked here because this is the one thing already guaranteed to run every
+    // second whatever else the app is doing. Compared as a calendar key rather than a timestamp
+    // delta, so it is correct across DST and however long the gap was.
+    const dayKey = now.getFullYear() + '-' + now.getMonth() + '-' + now.getDate();
+    if (_lastDayKey === null) {
+      _lastDayKey = dayKey;
+    } else if (dayKey !== _lastDayKey) {
+      _lastDayKey = dayKey;
+      // Label only — deliberately NOT a full refresh. _stCheckRollover() runs immediately after
+      // this on the same tick and owns the heavy re-render; doing it here as well would run the
+      // whole thing twice on the one second of the day it matters.
+      try { document.getElementById('today').textContent = _headerDateStr(); } catch (e) {}
+    }
     if (typeof data !== 'undefined' && data && data.settings) {
       checkSessionBoundaryAlerts(now, `${hh}:${mm}`);
     }
@@ -9118,6 +9138,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // of a new day — never replays a stale alert.
   let _lastTickMins = null;
   let _lastTickDay = null;
+  // Separate from _lastTickDay on purpose: that one gates session-boundary ALERTS and is reset by
+  // that logic, whereas this one exists solely to notice the header date going out of date.
+  // Sharing it would couple two behaviours that want to be reset at different moments.
+  let _lastDayKey = null;
   // Session boundary alerts: fire once per day when local time reaches windowStart and windowEnd.
   // Uses date-keyed flags so the alert only fires once even with reloads / multi-tab.
   var _sessCfgSyncMs = 0;   // throttle for pulling the freshest session config from shared localStorage
@@ -9821,6 +9845,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   var _stSessionState = _stSessionPhase();
   function _stRefreshDay() {
     today = new Date(); // refresh the frozen load-time date so overnight hibernation can't leave it stale
+    // THE HEADER DATE. This was the whole bug, and it was not in the detection: rollover and wake
+    // were both firing correctly and refreshing everything else, but nothing in this path ever
+    // rewrote #today. That element was only written at load, on a language change, and from
+    // __softResync — so the one label the user actually reads kept yesterday's date while the
+    // clock beside it ticked on. Written here so both rollover AND wake correct it, since
+    // _stWake() comes through this function too.
+    try { document.getElementById('today').textContent = _headerDateStr(); } catch (e) {}
     try { initSessionDatePicker(); } catch (e) {}
     try { initBiasDatePicker();    } catch (e) {}
     try { saveData();              } catch (e) {}
@@ -22245,7 +22276,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 06:45 UTC';
+  window.ST_BUILD = '2026-08-10 07:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
