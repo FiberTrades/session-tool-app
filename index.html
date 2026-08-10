@@ -9159,6 +9159,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const prevMins = _lastTickMins;
       _lastTickMins = nowMins;
       const crossed = (b) => prevMins !== null && prevMins < b && nowMins >= b;
+      // ...but ONLY announce it if the boundary is still recent. The edge-detector above is
+      // deliberately unbounded so a throttled tab that misses the exact minute still catches up —
+      // and that is precisely what made the voice arrive at 08:17 for an 08:00 open. Hibernate at
+      // 07:59, wake at 08:17, and prevMins(479) < 480 <= nowMins(497) is still "crossed", so the
+      // app cheerfully announced a session that had been live for a quarter of an hour.
+      //
+      // A late announcement is not a smaller version of a correct one, it is wrong information:
+      // "session live" means it just went live. Past the grace window we still CLAIM and record
+      // the boundary — so it cannot fire later, and no other window fires it either — we just
+      // stay quiet about it.
+      const VOICE_GRACE_MINS = 3;
+      const fresh = (b) => (nowMins - b) <= VOICE_GRACE_MINS;
       // Per-session open/close voice. Each session fires once per day; edge-detected on the
       // boundary crossing so a throttled background tab can't miss the exact minute.
       let af = data._sessionAlertFired;
@@ -9178,8 +9190,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const ss = getSessions();
       for (let i = 0; i < ss.length; i++) {
         const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
-        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); if (_claimSessionAlert('start', sMins)) fireSessionAlert('start'); }
-        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); if (_claimSessionAlert('end', eMins)) fireSessionAlert('end'); }
+        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); const _c = _claimSessionAlert('start', sMins), _f = fresh(sMins); _logVoice('start', sMins, i, _c, ss, _f, nowMins); if (_c && _f) fireSessionAlert('start'); }
+        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); const _c = _claimSessionAlert('end', eMins), _f = fresh(eMins); _logVoice('end', eMins, i, _c, ss, _f, nowMins); if (_c && _f) fireSessionAlert('end'); }
       }
       // Rule-of-the-week reminder, cadence-aware. Fires during ANY session window.
       let ruleFire = false;
@@ -9312,6 +9324,46 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // two sessions share an end minute. localStorage is shared across a browser's tabs, so the first
   // window to reach a given alert claims it for ~2 min and the others stay silent. (A separate
   // physical device — e.g. a phone — has its own localStorage and can't be gated this way.)
+  // DIAGNOSTIC for the "heard it twice" reports. Every attempt to voice a boundary is recorded —
+  // including the ones the claim SUPPRESSED — with enough context to tell the possible causes
+  // apart after the fact, instead of guessing at another fix:
+  //   • two sessions whose starts differ  -> `mins` differs between the two rows
+  //   • a second window of this browser   -> two rows, same mins, the later one claimed:false
+  //   • a second DEVICE or browser profile-> only ONE row here, yet the user heard two (each
+  //                                           store has its own localStorage, so the other
+  //                                           device's fire cannot appear in this log)
+  //   • a stale tab on pre-fix code       -> one row here, and the other window logs nothing
+  // Rolling 40 entries in localStorage (not the journal, so cloud sync can never rewrite it).
+  // Read it with __stVoiceLog() in the console.
+  function _logVoice(kind, mins, idx, claimed, ss, fresh, nowMins) {
+    try {
+      const row = {
+        at: new Date().toISOString(),
+        kind: kind, mins: mins, sessionIdx: idx, claimed: !!claimed,
+        // How late the crossing was noticed, and whether that lateness silenced it.
+        lateMins: (typeof nowMins === 'number') ? (nowMins - mins) : null,
+        spoke: !!claimed && fresh !== false,
+        holdsVoice: (function () { try { return _holdsVoice(); } catch (e) { return null; } })(),
+        detached: (function () { try { return _isDetachedWindow(); } catch (e) { return null; } })(),
+        win: _VOICE_ID,
+        visible: (typeof document !== 'undefined') ? document.visibilityState : null,
+        sessions: (ss || []).map(function (s) { return s.start + '-' + s.end; }).join(',')
+      };
+      const KEY = 'st_voicelog';
+      let log = [];
+      try { log = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) { log = []; }
+      log.push(row);
+      while (log.length > 40) log.shift();
+      localStorage.setItem(KEY, JSON.stringify(log));
+      try { console.log('[ST voice]', row); } catch (e) {}
+    } catch (e) {}
+  }
+  try {
+    window.__stVoiceLog = function () {
+      try { const l = JSON.parse(localStorage.getItem('st_voicelog') || '[]'); console.table(l); return l; }
+      catch (e) { return []; }
+    };
+  } catch (e) {}
   function _claimSessionAlert(kind, mins) {
     try {
       const day = _todayKey();
@@ -22276,7 +22328,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 07:20 UTC';
+  window.ST_BUILD = '2026-08-10 08:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
