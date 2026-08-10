@@ -15282,6 +15282,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         mindset: Array.isArray(t.mindset) ? [...t.mindset] : [],
         reflection: t.reflection || ''
       };
+      // Resolved the same way the replay module resolves it, so the ticket the button tests for
+      // is the ticket the save preserves.
+      const _tk = t.mt5Ticket || t.position || null;
       const _fields = {
         symbol: t.symbol || null,
         result: t.result,
@@ -15303,6 +15306,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         costs: t.costs ? parseFloat(t.costs) : null,
         actualGross: (t.actualGross != null && !isNaN(t.actualGross)) ? parseFloat(t.actualGross) : null,
         biasSnap, reviewSnap,
+        // MT5 ticket — the link to the EA's candle and post-mortem data, and the ONE thing that
+        // decides whether Trade Replay is offered (see ticketOf). It was missing from this
+        // whitelist, so every auto-synced trade lost its ticket the moment the review was saved:
+        // the trade landed in the series unticketed and stayed unreplayable until the post-mortem
+        // re-stamping pass guessed it back from the SL fingerprint — which can only run once the
+        // EA pushes replay rows at end of day, and only when that fingerprint is unambiguous.
+        // Same-day replay was therefore impossible for everyone, which is the "synced traders
+        // see no Replay button" report.
+        //
+        // Spread rather than assigned, so it can only ever ADD a ticket, never clear one: this
+        // object is also Object.assign'd onto an already-committed trade on re-save, and a plain
+        // `mt5Ticket: … || null` would wipe a ticket the re-stamping pass had repaired.
+        ...(_tk ? { mt5Ticket: _tk } : {}),
         // Account tag — locks this trade's % calculations to the account active at save time.
         accountId: data.activeAccountId || (Array.isArray(data.accounts) && data.accounts[0] ? data.accounts[0].id : 'acc_main'),
       };
@@ -22368,7 +22384,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 12:50 UTC';
+  window.ST_BUILD = '2026-08-10 15:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
