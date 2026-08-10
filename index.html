@@ -16347,6 +16347,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Square 1080, because a share image is judged as a thumbnail first and a square survives
     // that crop on every platform. The whole layout is one hierarchy: hero, then curve, then the
     // supporting four, then attribution — rather than five things competing at the same weight.
+    // The app icon ships as a PNG on its own near-black plate, which is invisible on a home
+    // screen but reads as a pasted-on square once it sits inside the card. Knock the plate out
+    // to alpha so only the mark itself lands. Thresholded rather than keyed to one exact colour,
+    // because the plate is not pure black and its rounded corners are anti-aliased — the middle
+    // band fades instead of leaving a hard stair-stepped edge. Safe to read back: the icon is a
+    // data: URI already in the page, so the canvas is never tainted.
+    function knockout(img) {
+      try {
+        var c = document.createElement('canvas');
+        c.width = img.naturalWidth || img.width; c.height = img.naturalHeight || img.height;
+        if (!c.width || !c.height) return img;
+        var x = c.getContext('2d');
+        x.drawImage(img, 0, 0);
+        var dat = x.getImageData(0, 0, c.width, c.height), p = dat.data;
+        for (var i = 0; i < p.length; i += 4) {
+          var mx = Math.max(p[i], p[i + 1], p[i + 2]);
+          if (mx <= 42) p[i + 3] = 0;
+          else if (mx < 96) p[i + 3] = Math.round(p[i + 3] * (mx - 42) / 54);
+        }
+        x.putImageData(dat, 0, 0);
+        return c;
+      } catch (e) { return img; }   // e.g. a tainted canvas — better the plate than no logo
+    }
     function draw(d, logo) {
       var W = 1080, H = 1080, S = 2;
       var cv = document.createElement('canvas');
@@ -16373,10 +16396,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
       var L = CX + 52, R = CX + CW - 52;
 
-      // ── wordmark + accent rule ──────────────────────────────────────────────
+      // ── logo + wordmark ─────────────────────────────────────────────────────
+      // The icon leads the wordmark. Its own near-black plate is knocked out first (see
+      // knockout) so it reads as a mark on the card rather than a square pasted onto it.
+      var lw = 46, tx = L;
+      if (logo) { try { g.drawImage(logo, L, 100, lw, lw); tx = L + lw + 16; } catch (e) {} }
       g.fillStyle = C.text; g.font = '40px ' + SERIF; ls(0);
-      g.fillText('SessionTool', L, 138);
-      g.fillStyle = HERO; g.fillRect(L, 156, 34, 3);
+      g.fillText('SessionTool', tx, 137);
 
       // ── series + dates, right ───────────────────────────────────────────────
       g.textAlign = 'right'; ls(3);
@@ -16409,7 +16435,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       g.fillText('net ' + money + '  ·  ' + (d.pct >= 0 ? '+' : '−') + Math.abs(d.pct).toFixed(2) + '% account', L, 414);
 
       // ── equity curve, with a labelled R axis so the shape is readable, not decorative ──
-      var gx = L, gy = 470, gw = (R - L) - 74, gh = 300;
+      var gx = L, gy = 440, gw = (R - L) - 74, gh = 290;
       var lo = Math.min.apply(null, d.cum), hi = Math.max.apply(null, d.cum);
       var span = hi - lo; if (span < 0.5) { hi += 0.5; lo -= 0.5; span = hi - lo; }
       lo -= span * 0.12; hi += span * 0.12;
@@ -16446,39 +16472,40 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       g.fillStyle = HERO; g.beginPath(); g.arc(last[0], last[1], 7, 0, Math.PI * 2); g.fill();
 
       // ── the supporting four ─────────────────────────────────────────────────
-      var bx = L, by = 826, bw = R - L, bh = 146;
+      var bx = L, by = 768, bw = R - L, bh = 146;
       g.fillStyle = 'rgba(255,255,255,0.018)'; rr(bx, by, bw, bh, 14); g.fill();
       g.strokeStyle = '#1E1D24'; g.lineWidth = 1; rr(bx + .5, by + .5, bw - 1, bh - 1, 14); g.stroke();
       var wrEl = (d.wr === null ? '—' : d.wr + '%');
       var cells = [
-        { l: 'WIN RATE',   v: wrEl,  c: C.text, tick: HERO },
-        { l: 'W / L / BE', v: null,  tick: C.good },
+        { l: 'WIN RATE',   v: wrEl,  c: C.text },
+        { l: 'W / L / BE', v: null },
         { l: 'EXPECTANCY', v: (d.exp >= 0 ? '+' : '−') + Math.abs(d.exp).toFixed(2) + 'R',
-          c: d.exp >= 0 ? C.good : C.bad, tick: d.exp >= 0 ? C.good : C.bad },
-        { l: 'BEST SETUP', v: d.bestSetup || '—', c: C.text, tick: '#8b8a95', small: true }
+          c: d.exp >= 0 ? C.good : C.bad },
+        { l: 'BEST SETUP', v: d.bestSetup || '—', c: C.text, small: true }
       ];
       var cw = bw / 4;
       cells.forEach(function (c, i) {
         var cx = bx + cw * i;
         if (i) { g.strokeStyle = '#1E1D24'; g.beginPath(); g.moveTo(cx + .5, by + 26); g.lineTo(cx + .5, by + bh - 26); g.stroke(); }
-        g.fillStyle = c.tick; g.fillRect(cx + 30, by + 30, 22, 3);
         g.textAlign = 'left'; ls(2.2);
-        g.font = '13px ' + MONO; g.fillStyle = C.dim; g.fillText(c.l, cx + 30, by + 72); ls(0);
+        g.font = '13px ' + MONO; g.fillStyle = C.dim; g.fillText(c.l, cx + 30, by + 64); ls(0);
         if (c.v === null) {
           g.font = '30px ' + MONO;
           var seq = [[String(d.w), C.good], ['/', '#4a4854'], [String(d.l), C.bad], ['/', '#4a4854'], [String(d.be), C.be]];
           var sx = cx + 30;
-          seq.forEach(function (s) { g.fillStyle = s[1]; g.fillText(s[0], sx, by + 116); sx += g.measureText(s[0]).width + 7; });
+          seq.forEach(function (s) { g.fillStyle = s[1]; g.fillText(s[0], sx, by + 106); sx += g.measureText(s[0]).width + 7; });
         } else {
           g.font = (c.small ? 21 : 32) + 'px ' + MONO; g.fillStyle = c.c;
           var t2 = String(c.v);
           if (c.small) { while (g.measureText(t2).width > cw - 52 && t2.length > 4) t2 = t2.slice(0, -2); if (t2 !== String(c.v)) t2 += '…'; }
-          g.fillText(t2, cx + 30, by + 116);
+          g.fillText(t2, cx + 30, by + 106);
         }
       });
 
       // ── footer: instrument left, brand right ────────────────────────────────
-      var fy = 1012;
+      // Sits well clear of the card's bottom edge — the stat strip above it moved up too, so the
+      // instrument and the URL get air on both sides rather than being pinned to the border.
+      var fy = 970;
       g.strokeStyle = '#1E1D24'; g.lineWidth = 1;
       g.beginPath(); g.arc(L + 21, fy - 8, 21, 0, Math.PI * 2); g.stroke();
       g.strokeStyle = HERO; g.lineWidth = 2; g.lineJoin = 'round';
@@ -16488,12 +16515,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       ls(2); g.font = '12px ' + MONO; g.fillStyle = C.dim;
       g.fillText(String(d.meta || '').toUpperCase(), L + 54, fy + 8); ls(0);
 
-      // The app's own logo, taken from the apple-touch-icon exactly as the community sidebar
-      // does, so the card can never drift from the icon on the user's home screen.
-      var lw = 34;
-      if (logo) { try { g.drawImage(logo, R - 210, fy - 30, lw, lw); } catch (e) {} }
-      g.textAlign = 'left'; g.font = '20px ' + MONO; g.fillStyle = C.pink;
-      g.fillText('sessiontool.app', R - 210 + lw + 14, fy - 7);
+      // The logo now leads the wordmark at the top, so the brand line here is the URL alone.
+      g.textAlign = 'right'; g.font = '20px ' + MONO; g.fillStyle = C.pink;
+      g.fillText('sessiontool.app', R, fy - 4);
+      g.textAlign = 'left';
       return cv;
     }
 
@@ -16540,7 +16565,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { var el = document.querySelector('link[rel="apple-touch-icon"]'); src = el ? el.getAttribute('href') : ''; } catch (e) {}
         if (!src) { once(null); return; }
         var im = new Image();
-        im.onload = function () { once(im); };
+        im.onload = function () { once(knockout(im)); };
         im.onerror = function () { once(null); };   // draw without it rather than not at all
         im.src = src;
         setTimeout(function () { once(null); }, 1500);
@@ -22842,7 +22867,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 04:05 UTC';
+  window.ST_BUILD = '2026-08-11 04:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
