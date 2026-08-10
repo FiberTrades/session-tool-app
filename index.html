@@ -1417,6 +1417,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   section.collapsed:not(.hist-collapsible) > *:not(.section-header):not(.sec-fold) { display: none !important; }
   .sec-fold { display: grid; grid-template-rows: 1fr; opacity: 1; transition: grid-template-rows 0.45s cubic-bezier(0.4,0,0.2,1), opacity 0.35s ease; }
   .sec-fold-inner { overflow: hidden; min-height: 0; }
+  /* The clip above is what makes the grid-template-rows fold animate — but it also cut the top off
+     every stat tooltip, because those open UPWARD out of the first row of cells and straight
+     through the fold's edge. It is only needed while the fold is moving or shut, so an expanded,
+     idle section lets its children overflow again. .folding is held for the length of the
+     transition by the toggle handler; without it, expanding would paint the whole section at once
+     instead of sliding it open. */
+  section:not(.collapsed):not(.folding) .sec-fold-inner { overflow: visible; }
   section.collapsed .sec-fold { grid-template-rows: 0fr; opacity: 0; }
   section.collapsed .section-header { margin-bottom: 0; padding-bottom: 12px; border-bottom-color: var(--border-2); }
   section.collapsed .section-num.collapsible { color: var(--text-dim); }
@@ -22492,7 +22499,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-10 23:10 UTC';
+  window.ST_BUILD = '2026-08-10 23:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -35964,7 +35971,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         num.title = t('tip.collapse_section');
       }
 
+      // .sec-fold-inner only clips while the fold is actually moving (see the CSS note). Hold
+      // .folding for the length of the transition so the slide still animates, then drop it so
+      // stat tooltips can escape the section again instead of having their tops cut off.
+      const FOLD_MS = 500;   // .sec-fold transitions grid-template-rows over 0.45s
+      let foldTimer = null;
       const toggle = () => {
+        section.classList.add('folding');
+        if (foldTimer) clearTimeout(foldTimer);
+        foldTimer = setTimeout(() => { section.classList.remove('folding'); foldTimer = null; }, FOLD_MS);
         const nowCollapsed = section.classList.toggle('collapsed');
         num.textContent = nowCollapsed ? '+' : '—';
         num.title = nowCollapsed ? t('tip.expand_section') : t('tip.collapse_section');
