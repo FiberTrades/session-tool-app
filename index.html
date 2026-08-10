@@ -3243,6 +3243,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* News marker. Rides inside the symbol cell rather than claiming a thirteenth column — the row
      is already twelve wide, and a whole column would be empty on most trades. */
   .atl-news { margin-left: 6px; font-size: 10px; opacity: 0.85; cursor: help; }
+  /* Challenge progress. Two rails - one toward the target, one toward the floor - because those
+     are the only two numbers that end an evaluation, and a trader needs both distances at once. */
+  .chal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-top: 4px; }
+  .chal-card { border: 1px solid var(--border-2); border-radius: var(--radius-card); background: var(--bg); padding: 16px 18px; }
+  .chal-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 12px; }
+  .chal-lab { font-family: "AppNum","DM Mono",monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); }
+  .chal-val { font-family: "AppNum","DM Mono",monospace; font-size: 20px; }
+  .chal-rail { height: 6px; border-radius: 4px; background: var(--border-2); overflow: hidden; }
+  .chal-fill { height: 100%; border-radius: 4px; transition: width 300ms; }
+  .chal-sub { font-family: "AppNum","DM Mono",monospace; font-size: 11px; color: var(--text-mid); margin-top: 9px; }
+  .chal-verdict { margin-top: 14px; border: 1px solid var(--border-2); border-radius: var(--radius-card); padding: 13px 18px;
+                  font-family: "AppNum","DM Mono",monospace; font-size: 12px; letter-spacing: 0.04em; display: flex; align-items: center; gap: 10px; }
+  .chal-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  @media (max-width: 700px) { .chal-grid { grid-template-columns: 1fr; } }
   .atl-cell { background: var(--bg); padding: 10px 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .atl-cell.left { text-align: left; }
   .atl-cell.good { color: var(--good); }
@@ -4570,6 +4584,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         </div>
       </div>
     </div>
+
+    <!-- Only rendered for an account carrying firm rules; a personal account never sees it. -->
+    <section id="challenge-section" style="margin-top:40px;display:none;">
+      <div class="section-header"><span class="section-num">—</span><span class="section-title" id="challenge-title">Challenge progress</span></div>
+      <p class="section-hint" id="challenge-hint"></p>
+      <div id="challenge-body"></div>
+    </section>
 
     <section style="margin-top:40px;">
       <div class="section-header"><span class="section-num">—</span><span class="section-title" data-i18n="stats.s2.title">Wins vs Losses</span></div>
@@ -17248,6 +17269,111 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // rowForDow already prints "—" for an empty one). London and New York genuinely overlap
     // 13:30–16:30, so an overlap trade is counted in BOTH and shown again on its own ↳ row;
     // entries outside every window get their own row rather than disappearing.
+    // ── Challenge progress ──────────────────────────────────────────────────────────────────
+    // Two distances decide an evaluation: how far to the target, and how far to the floor. Both
+    // are shown at once, because acting on one without the other is how accounts get lost — a
+    // trader chasing the last 2% of a target needs to see they have 0.4% of room to do it in.
+    //
+    // Built only from rules the app already stores. No minimum-trading-days counter and no phase
+    // number, because nothing in the journal records them and a fabricated "Phase 1 of 2" would
+    // be decoration rather than information.
+    (function renderChallengeProgress() {
+      var sec = document.getElementById('challenge-section');
+      var body = document.getElementById('challenge-body');
+      if (!sec || !body) return;
+      var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
+      var GOOD = '#4ECD8B', BAD = '#E56767', WARN = '#E5B567', ACC = '#f472b6';
+      // The account actually in view, resolved the way the KPIs above resolve it.
+      var acc = null;
+      try {
+        var sc = (typeof currentScopeResolved === 'function') ? currentScopeResolved() : null;
+        if (sc && sc.kind === 'account' && sc.account) acc = sc.account;
+        else acc = (data.accounts || []).find(function (a) { return a.id === data.activeAccountId && a.status === 'active'; })
+                || (data.accounts || []).find(function (a) { return a.status === 'active'; }) || null;
+      } catch (e) { acc = null; }
+      var rr = (acc && acc.riskRules) || null;
+      var sb = (acc && typeof acc.startingBalance === 'number') ? acc.startingBalance : 0;
+      if (!acc || !rr || sb <= 0) { sec.style.display = 'none'; return; }
+
+      var ddMode = (rr.maxDrawdownMode === 'amount') ? 'amount' : 'pct';
+      var ddAmount = (ddMode === 'amount') ? (rr.maxDrawdownAmount || 0) : (sb * (rr.maxDrawdownPct || 0) / 100);
+      var tgMode = (rr.profitTargetMode === 'amount') ? 'amount' : 'pct';
+      var tgAmount = (tgMode === 'amount') ? (rr.profitTargetAmount || 0) : (sb * (rr.profitTargetPct || 0) / 100);
+      // Without at least one firm rule there is no evaluation to track — a personal account
+      // should never see this panel.
+      if (ddAmount <= 0 && tgAmount <= 0) { sec.style.display = 'none'; return; }
+
+      var st = null;
+      try { st = window.__stAccountStats(acc); } catch (e) { st = null; }
+      if (!st) { sec.style.display = 'none'; return; }
+      sec.style.display = '';
+
+      var ddType = rr.ddType || 'static';
+      var peak = (typeof st.peak === 'number' && st.peak > 0) ? st.peak : sb;
+      var floor = (ddType === 'trailing') ? (peak - ddAmount)
+                : (ddType === 'trailing_lock') ? Math.min(peak - ddAmount, sb)
+                : (sb - ddAmount);
+      var money = function (v) { try { return String(fmtMoney(v)).replace(/^\+/, ''); } catch (e) { return String(Math.round(v)); } };
+
+      var cards = [];
+      if (tgAmount > 0) {
+        var target = sb + tgAmount;
+        var pct = Math.max(0, Math.min(100, ((st.current - sb) / tgAmount) * 100));
+        var hit = st.current >= target;
+        cards.push({
+          lab: T('Profit target', 'Objetivo de beneficio'),
+          val: Math.round(pct) + '%',
+          fill: pct, colour: hit ? GOOD : ACC,
+          sub: hit ? T('Target reached · ', 'Objetivo alcanzado · ') + money(target)
+                   : money(Math.max(0, target - st.current)) + T(' to go · target ', ' para llegar · objetivo ') + money(target)
+        });
+      }
+      if (ddAmount > 0) {
+        var room = st.current - floor;
+        // Room as a share of the full allowance, so the rail empties as the floor is approached.
+        var roomPct = Math.max(0, Math.min(100, (room / ddAmount) * 100));
+        var gone = room <= 0;
+        cards.push({
+          lab: T('Room to the floor', 'Margen hasta el suelo'),
+          val: gone ? T('Breached', 'Superado') : money(room),
+          fill: roomPct,
+          colour: gone ? BAD : (roomPct < 25 ? BAD : (roomPct < 50 ? WARN : GOOD)),
+          sub: T('Floor ', 'Suelo ') + money(floor) + ' · ' +
+               (ddType === 'static' ? T('from starting balance', 'desde el saldo inicial')
+                : ddType === 'trailing' ? T('trailing from ', 'dinámico desde ') + money(peak)
+                : T('trailing, locked at ', 'dinámico, fijado en ') + money(sb))
+        });
+      }
+
+      var html = '<div class="chal-grid">' + cards.map(function (c) {
+        return '<div class="chal-card">'
+             + '<div class="chal-head"><span class="chal-lab">' + c.lab + '</span>'
+             + '<span class="chal-val" style="color:' + c.colour + '">' + c.val + '</span></div>'
+             + '<div class="chal-rail"><div class="chal-fill" style="width:' + c.fill.toFixed(1) + '%;background:' + c.colour + '"></div></div>'
+             + '<div class="chal-sub">' + c.sub + '</div></div>';
+      }).join('') + '</div>';
+
+      // One line for the state of the evaluation, so the answer is readable without doing the
+      // arithmetic across two cards. A breach outranks a met target: an account that hit its
+      // objective and then blew the floor has still failed.
+      var breached = ddAmount > 0 && st.current <= floor;
+      var passed = tgAmount > 0 && st.current >= (sb + tgAmount);
+      var vCol = breached ? BAD : (passed ? GOOD : ACC);
+      var vTxt = breached ? T('Breached — this account is out on its drawdown rule.', 'Superado — esta cuenta ha incumplido su regla de drawdown.')
+               : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
+               : T('In progress.', 'En curso.');
+      html += '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>';
+      body.innerHTML = html;
+
+      var ttl = document.getElementById('challenge-title');
+      if (ttl) ttl.textContent = T('Challenge progress', 'Progreso del reto');
+      var hint = document.getElementById('challenge-hint');
+      if (hint) hint.textContent = T(
+        'Measured against this account’s own rules, on closed trades. ',
+        'Medido con las reglas de esta cuenta, sobre operaciones cerradas. ')
+        + (acc.name || '') + ' · ' + money(sb);
+    })();
+
     // ── News vs quiet ───────────────────────────────────────────────────────────────────────
     // Only CHECKED trades appear. A trade the feed never covered is absent from both rows rather
     // than being counted as quiet — that would stack every historical trade into one column and
@@ -22958,7 +23084,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-11 17:25 UTC';
+  window.ST_BUILD = '2026-08-11 18:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
