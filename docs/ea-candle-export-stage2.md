@@ -56,6 +56,34 @@ Two consequences worth knowing:
 
 ---
 
+## Deploy checklist
+
+| Thing | Action |
+|-------|--------|
+| SQL editor | **nothing** — the unique index `on_conflict` needs already exists |
+| `ingest-candles` | **no redeploy** — already upserts with `merge-duplicates` |
+| App (`index.html`) | **no change** — `fetchCandles` re-queries live on every replay open |
+| `MinimalistManager.mq5` | 3 edits below, then recompile |
+
+---
+
+## Step 0 — version bump to 4.9
+
+Near the top, change the version property:
+
+```mql5
+#property version   "4.9"
+```
+
+And in `OnInit()`, replace the build-stamp line (it currently claims v4.6, which makes the
+Experts log lie about what is running — the whole point of that line):
+
+```mql5
+   Print("=== MinimalistManager v4.9 loaded (Trade Replay candles: two-pass export — replayable ~30 min after close, rest of the trading day added once the day ends) ===");
+```
+
+---
+
 ## Step 1 — replace the whole `TRADE REPLAY — candle export` block
 
 From `string CE_FILE = ...` down to the end of `CE_CatchupOnce()`. Paste this in its place:
