@@ -3447,10 +3447,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .stpc-toggle button:hover { color:var(--text-mid); }
   .stpc-toggle button.on { color:var(--text); background:var(--border-2); }
   .stpc-save { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; color:var(--bg); background:var(--accent); border-radius:999px; padding:2px 7px; }
-  /* Currency picker. Sits beside the billing toggle on one line, and wraps under it when the
-     modal is too narrow for both rather than pushing the cards off the sides. */
-  #st-pc-toggle { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center; }
-  .stpc-cur button { padding:9px 13px; letter-spacing:0.08em; }
+  /* Currency picker — the landing page's control, ported class for class: a third segment inside
+     the SAME pill as Monthly/Annual, divided off by a hairline, opening a small menu. One pill,
+     not two, so the modal and the landing page read as the same product. */
+  #st-pc-toggle { display:flex; justify-content:center; }
+  .stpc-cur-pick { position:relative; display:flex; align-items:stretch; margin-left:4px; padding-left:4px; border-left:1px solid var(--border-2); }
+  .stpc-cur-btn { justify-content:center; align-self:stretch; color:var(--text); transition:color .15s; }
+  .stpc-cur-menu { display:none; position:absolute; right:0; left:auto; top:calc(100% + 10px); min-width:96px; padding:4px; background:var(--bg-elev); border:1px solid var(--border-2); border-radius:10px; box-shadow:0 10px 30px rgba(0,0,0,.5); z-index:20; }
+  .stpc-cur-pick.open .stpc-cur-menu { display:block; }
+  .stpc-cur-opt { display:block; width:100%; text-align:left; font-family:var(--mono); font-size:11.5px; letter-spacing:0.04em; color:var(--text-mid); background:transparent; border:0; border-radius:7px; padding:7px 10px; cursor:pointer; }
+  .stpc-cur-opt:hover { color:var(--text); background:var(--border-2); }
+  .stpc-cur-opt.on { color:var(--text); }
   /* The asterisk marks a converted figure as an estimate, so it must read as a footnote mark and
      not as part of the price - small, raised, and dimmer than the number it sits on. Values copied
      from the landing page's own .fx-star (its second, winning rule) so a price looks the same in
@@ -23393,7 +23400,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 02:18 UTC';
+  window.ST_BUILD = '2026-08-13 02:52 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -43865,6 +43872,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { var a = window.__stGetCurrency ? window.__stGetCurrency() : 'GBP'; if (PC_CUR[a]) return a; } catch (e) {}
     return 'GBP';
   })();
+  // Menu state is held here rather than read off the DOM, because renderChooser rebuilds the
+  // toggle's markup wholesale — an open menu would otherwise close itself on any re-render.
+  var pcMenuOpen = false;
   // A converted figure is an estimate, so it carries the asterisk the footnote explains.
   // A GBP figure is the exact charge and takes none.
   function pcMoney(gbp) {
@@ -43946,21 +43956,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var rank = stCurrentRank();
     var L = premL;
     var annual = (pcInterval === 'yearly');
-    var tgl = '';
+    // One pill holding both controls, exactly as the landing page builds it. The billing halves
+    // only appear below rank 2 (above it Mentorship is the sole card and is monthly-only), but the
+    // currency segment always does — that card still has a price to convert.
+    var tgl = '<div class="stpc-toggle">';
     if (rank < 2) {
-      tgl = '<div class="stpc-toggle">' +
-        '<button type="button" data-int="monthly"' + (!annual ? ' class="on"' : '') + '>' + L('Monthly', 'Mensual') + '</button>' +
-        '<button type="button" data-int="yearly"' + (annual ? ' class="on"' : '') + '>' + L('Annual', 'Anual') + '<span class="stpc-save">' + L('SAVE 20%', 'AHORRA 20%') + '</span></button>' +
-      '</div>';
+      tgl += '<button type="button" data-int="monthly"' + (!annual ? ' class="on"' : '') + '>' + L('Monthly', 'Mensual') + '</button>' +
+             '<button type="button" data-int="yearly"' + (annual ? ' class="on"' : '') + '>' + L('Annual', 'Anual') + '<span class="stpc-save">' + L('SAVE 20%', 'AHORRA 20%') + '</span></button>';
     }
-    // Currency picker. Three plain segments rather than the landing page's dropdown: there is room
-    // for them here, and it saves a menu that would need its own outside-click handling inside a
-    // modal. Rendered even at rank 2 (mentorship is the only card left, but it still has a price).
-    tgl += '<div class="stpc-toggle stpc-cur" role="group" aria-label="' + L('Currency', 'Moneda') + '">' +
-      Object.keys(PC_CUR).map(function (k) {
-        return '<button type="button" data-cur="' + k + '"' + (pcCur === k ? ' class="on"' : '') +
-               ' aria-pressed="' + (pcCur === k) + '">' + PC_CUR[k].sym + ' ' + k + '</button>';
-      }).join('') + '</div>';
+    tgl += '<div class="stpc-cur-pick' + (pcMenuOpen ? ' open' : '') + '">' +
+        '<button type="button" class="stpc-cur-btn" aria-haspopup="true" aria-expanded="' + (pcMenuOpen ? 'true' : 'false') +
+          '" aria-label="' + L('Currency', 'Moneda') + '">' + (PC_CUR[pcCur] || PC_CUR.GBP).sym + '</button>' +
+        '<div class="stpc-cur-menu" role="menu">' +
+          Object.keys(PC_CUR).map(function (k) {
+            return '<button type="button" class="stpc-cur-opt' + (pcCur === k ? ' on' : '') + '" role="menuitem" data-cur="' + k + '">' +
+                   PC_CUR[k].sym + ' ' + k + '</button>';
+          }).join('') +
+        '</div>' +
+      '</div>';
+    tgl += '</div>';
     planChooser.querySelector('#st-pc-toggle').innerHTML = tgl;
 
     // The asterisk on every converted figure needs its footnote, so the two appear and disappear
@@ -44056,19 +44070,40 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!b) return;
     stUpgradeTo(b.getAttribute('data-tier'), b.getAttribute('data-interval'));
   });
+  function pcCloseCur() {
+    pcMenuOpen = false;
+    var p = planChooser.querySelector('.stpc-cur-pick');
+    if (p) { p.classList.remove('open'); var b = p.querySelector('.stpc-cur-btn'); if (b) b.setAttribute('aria-expanded', 'false'); }
+  }
   planChooser.querySelector('#st-pc-toggle').addEventListener('click', function (e) {
     if (!e.target || !e.target.closest) return;
     var b = e.target.closest('button[data-int]');
     if (b) { pcInterval = b.getAttribute('data-int'); renderChooser(); return; }
+    // Open/close toggles the class in place rather than re-rendering: rebuilding the markup to
+    // show a menu would throw away the very element the click landed on.
+    var t = e.target.closest('.stpc-cur-btn');
+    if (t) {
+      e.stopPropagation();
+      var pick = t.parentNode;
+      pcMenuOpen = pick.classList.toggle('open');
+      t.setAttribute('aria-expanded', pcMenuOpen ? 'true' : 'false');
+      return;
+    }
     var c = e.target.closest('button[data-cur]');
     if (c) {
+      e.stopPropagation();
       var k = c.getAttribute('data-cur');
       if (!PC_CUR[k]) return;
       pcCur = k;
       try { localStorage.setItem('st_pc_cur', k); } catch (err) {}   // remembered, not re-asked every visit
+      pcCloseCur();
       renderChooser();
     }
   });
+  // Dismiss on an outside click or Escape, so the menu cannot be left hanging open. Scoped to the
+  // chooser being on screen so these do no work while it is closed.
+  document.addEventListener('click', function () { if (pcMenuOpen) pcCloseCur(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && pcMenuOpen) pcCloseCur(); });
 
 
   pwel('stc-pw-signout').addEventListener('click', function () { try { var _bb=document.getElementById('bloomberg-floater-iframe'); if(_bb) _bb.src='about:blank'; } catch(e){} window.__userInitiatedSignOut = true; try { setTimeout(function(){ window.__userInitiatedSignOut = false; }, 4000); } catch(e){} sb.auth.signOut(); });
@@ -47063,7 +47098,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       { sel:'.tab[data-page="tradeview"]', pre:showTab('tradeview'), t:_t('5 \u00b7 Calendar Log','5 \u00b7 Registro de calendario'),
         b:_t('A day-by-day view of your sessions, biases and notes. It\u2019s also where you do your weekly review \u2014 post it to the community each week to reflect on how the week went.','Una vista d\u00eda a d\u00eda de tus sesiones, sesgos y notas. Aqu\u00ed tambi\u00e9n haces tu revisi\u00f3n semanal \u2014 publ\u00edcala en la comunidad cada semana para reflexionar sobre c\u00f3mo fue la semana.') },
       { sel:'.tab[data-page="community"]', pre:showTab('community'), t:_t('6 \u00b7 Community','6 \u00b7 Comunidad'),
-        b:_t('Channels, DMs and live voice/video calls with other traders \u2014 share screens and draw on charts together to break down setups in real time. Your posted biases and reviews land here automatically.','Canales, MD y llamadas de voz/v\u00eddeo en vivo con otros traders \u2014 comparte pantalla y dibuja en los gr\u00e1ficos juntos para analizar setups en tiempo real. Tus sesgos y revisiones publicados aparecen aqu\u00ed autom\u00e1ticamente.') },
+        b:_t('Channels, DMs and live voice/video calls with other traders \u2014 share screens and draw on charts together to break down setups in real time. Your posted biases and reviews land here automatically. Bundle Pro and Mentorship unlock the full community: every channel, the live session chats, the full trading plan and The ST Method.','Canales, MD y llamadas de voz/v\u00eddeo en vivo con otros traders \u2014 comparte pantalla y dibuja en los gr\u00e1ficos juntos para analizar setups en tiempo real. Tus sesgos y revisiones publicados aparecen aqu\u00ed autom\u00e1ticamente. Bundle Pro y Mentor\u00eda desbloquean la comunidad completa: todos los canales, los chats de sesi\u00f3n en vivo, el plan de trading completo y El M\u00e9todo ST.') },
       { sel:'.settings-nav-item[data-section="profile"]', pre:openSet('profile'), t:_t('Settings \u00b7 Profile','Ajustes \u00b7 Perfil'),
         b:_t('Set your display name and profile here \u2014 it\u2019s how you appear in the community.','Configura tu nombre y perfil aqu\u00ed \u2014 as\u00ed apareces en la comunidad.') },
       { sel:'.settings-nav-item[data-section="session"]', pre:openSet('session'), t:_t('Settings \u00b7 Session','Ajustes \u00b7 Sesi\u00f3n'),
@@ -47071,9 +47106,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       { sel:'.settings-nav-item[data-section="risk_rules"]', pre:openSet('risk_rules'), t:_t('Settings \u00b7 Risk rules','Ajustes \u00b7 Reglas de riesgo'),
         b:_t('Define your risk limits and rules \u2014 the guardrails that keep your trading disciplined and your statistics accurate.','Define tus l\u00edmites y reglas de riesgo \u2014 las barreras que mantienen tu trading disciplinado y tus estad\u00edsticas precisas.') },
       { sel:'.settings-nav-item[data-section="accounts"]', pre:openSet('accounts'), t:_t('Settings \u00b7 Accounts','Ajustes \u00b7 Cuentas'),
-        b:_t('Manage your trading accounts here. MT5 auto-sync unlocks with full membership.','Gestiona tus cuentas de trading aqu\u00ed. La sincronizaci\u00f3n autom\u00e1tica de MT5 se desbloquea con la membres\u00eda completa.') },
+        b:_t('Run as many accounts as you trade \u2014 personal and prop firm side by side, each with its own balance, rules and statistics. Tag a prop firm account and it gets a target, a floor and a pass/fail verdict in Challenge progress. MT5 auto-sync is included for everyone.','Lleva tantas cuentas como operes \u2014 personales y de prop firm en paralelo, cada una con su saldo, sus reglas y sus estad\u00edsticas. Marca una cuenta como prop firm y tendr\u00e1 objetivo, suelo y veredicto de aprobado/suspenso en Progreso del reto. La sincronizaci\u00f3n autom\u00e1tica de MT5 est\u00e1 incluida para todos.') },
       { sel:'.settings-nav-item[data-section="services"]', pre:openSet('services'), t:_t('Settings \u00b7 Subscriptions','Ajustes \u00b7 Suscripciones'),
-        b:_t('Manage your plan here \u2014 upgrade to unlock the community, voice/video calls, Media Vault and MT5 auto-sync.','Gestiona tu plan aqu\u00ed \u2014 mejora para desbloquear la comunidad, las llamadas de voz/v\u00eddeo, el Media Vault y la sincronizaci\u00f3n de MT5.') }, { sel:'#__st_tour_help__', pre:showTab('bias'), t:_t('Need a hand?','\u00bfNecesitas ayuda?'), b:_t('Anytime you\u2019re stuck, tap the support address at the bottom of each tab, to message the admin. If you have community access, you can also DM Nestor (Admin) directly \u2014 we\u2019re here to help.','Si te atascas, toca la direcci\u00f3n de soporte en la parte inferior de cada pesta\u00f1a para contactar al admin. Si tienes acceso a la comunidad, tambi\u00e9n puedes enviar un DM a Nestor (Admin) \u2014 estamos aqu\u00ed para ayudarte.') }, { sel:'#__st_tour_end__', pre:showTab('bias'), t:_t('You\u2019re all set','Todo listo'), b:_t('That\u2019s the whole loop. The journal only pays off if you\u2019re honest with it \u2014 so show up for your session, log the good and the bad, and review without excuses. Trade the plan, not the emotion. Good luck out there \u2014 we\u2019re glad to have you.','Ese es todo el ciclo. El diario solo funciona si eres honesto \u2014 pres\u00e9ntate en tu sesi\u00f3n, registra lo bueno y lo malo, y revisa sin excusas. Opera el plan, no la emoci\u00f3n. Mucha suerte \u2014 nos alegra tenerte aqu\u00ed.') }
+        b:_t('Manage your plan here \u2014 upgrade to unlock the full community, voice/video calls, the Media Vault and the AI Assistant.','Gestiona tu plan aqu\u00ed \u2014 mejora para desbloquear la comunidad completa, las llamadas de voz/v\u00eddeo, el Media Vault y el Asistente IA.') }, { sel:'#__st_tour_help__', pre:showTab('bias'), t:_t('Need a hand?','\u00bfNecesitas ayuda?'), b:_t('Anytime you\u2019re stuck, tap the support address at the bottom of each tab, to message the admin. If you have community access, you can also DM Nestor (Admin) directly \u2014 we\u2019re here to help.','Si te atascas, toca la direcci\u00f3n de soporte en la parte inferior de cada pesta\u00f1a para contactar al admin. Si tienes acceso a la comunidad, tambi\u00e9n puedes enviar un DM a Nestor (Admin) \u2014 estamos aqu\u00ed para ayudarte.') }, { sel:'#__st_tour_end__', pre:showTab('bias'), t:_t('You\u2019re all set','Todo listo'), b:_t('That\u2019s the whole loop. The journal only pays off if you\u2019re honest with it \u2014 so show up for your session, log the good and the bad, and review without excuses. Trade the plan, not the emotion. Good luck out there \u2014 we\u2019re glad to have you.','Ese es todo el ciclo. El diario solo funciona si eres honesto \u2014 pres\u00e9ntate en tu sesi\u00f3n, registra lo bueno y lo malo, y revisa sin excusas. Opera el plan, no la emoci\u00f3n. Mucha suerte \u2014 nos alegra tenerte aqu\u00ed.') }
     ];
   }
   function done(){ try{ localStorage.setItem(_curKey,'1'); }catch(e){} }
