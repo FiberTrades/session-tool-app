@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 09:10 UTC';
+  window.ST_BUILD = '2026-08-12 08:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34084,10 +34084,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // greeting's FIRST appearance and nothing else. Hiding, re-arming and replaying on top of a
     // settled line is what produced the glitching.
     if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && _greetOnScreen(el)) {
-      // DON'T change a line the user is reading — not even silently. Hold the better line and type
-      // it the next time they arrive on this tab (_applyDeferred, on the way out). Swapping the text
-      // under someone mid-sentence is still a glitch, just a quiet one.
-      el.__twDeferred = src; _gLog(el, 'defer-while-read'); return;
+      el.__twTypedHTML = src; el.innerHTML = src; _twShow(el); _gLog(el, 'swap-settled'); return;
     }
     _gLog(el, 'type-start');
     el.__twTypedHTML = src;
@@ -34143,8 +34140,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // A better line arrived while this one was typing (the AI rewrite usually lands about a
         // second in). Apply it now, silently — never mid-animation, which would tear out the
         // half-typed characters and restart the effect in front of the reader.
-        // Anything that arrived while this was typing is HELD, not applied: the reader has just
-        // watched the line appear and is reading it now. It types on their next visit to this tab.
+        if (el.__twPendingSwap != null) {
+          var _h = el.__twPendingSwap; el.__twPendingSwap = null;
+          el.innerHTML = _h; el.__twHTML = _h; el.__twTypedHTML = _h; _twShow(el);
+        }
         return;
       }
       el.__twTimer = setTimeout(step, 16);
@@ -34201,27 +34200,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           // for itself whether this is a first appearance (animate) or a settled line (swap).
           _gLog(el, 'io-visible');
           _doTypeGreeting(el);
-        } else {
-          el.__twVisible = false;
-          _applyDeferred(el);   // left the screen → quietly load whatever was held back
-          _gLog(el, 'io-hidden');
-        }
+        } else { el.__twVisible = false; _gLog(el, 'io-hidden'); }
       });
     }, { threshold: 0.01 });
     return _greetTypeIO;
-  }
-  // Load a line that was held back while the user was reading the old one. Called the moment the
-  // greeting leaves the screen, so the swap happens where nobody can see it and the new line is
-  // marked untyped — it then types itself when they come back to that tab.
-  function _applyDeferred(el) {
-    try {
-      if (!el || el.__twDeferred == null) return false;
-      var h = el.__twDeferred; el.__twDeferred = null;
-      if (el.__twTimer) { clearTimeout(el.__twTimer); el.__twTimer = null; }
-      el.innerHTML = h; el.__twHTML = h; el.__twTypedHTML = null;
-      _gLog(el, 'deferred-loaded');
-      return true;
-    } catch (e) { return false; }
   }
   function _observeGreetType(el) { try { var io = _ensureGreetTypeIO(); if (io && el && !el.__twObserved) { el.__twObserved = true; io.observe(el); } } catch (e) {} }
   try { window.__stGreetBootMark = _gLog; } catch (e) {}   // so the AI module can log into the same trail
@@ -34244,17 +34226,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
     } catch (e) {}
     // Never write over a line that is mid-animation. The same line means there is nothing to say;
-    // a different one is held back and typed on the next visit, like any other update.
+    // a different one is queued and applied silently the instant the animation finishes.
     if (el.__twTimer) {
-      if (html !== el.__twHTML) el.__twDeferred = html;
+      if (html !== el.__twHTML) el.__twPendingSwap = html;
       return;
-    }
-    // Never change a line the user is already reading, either. A settled greeting on the displayed
-    // tab keeps its text; the newer line is held and typed when they next land on that tab. This is
-    // what stops "the greeting typed, then changed into something else" — the AI rewrite arrives a
-    // second or two after the seed has finished, which is exactly when someone is reading it.
-    if (el.__twTypedHTML != null && el.style.visibility !== 'hidden' && _greetOnScreen(el) && html !== el.__twHTML) {
-      el.__twDeferred = html; _gLog(el, 'defer-ai-line'); return;
     }
     el.innerHTML = html; el.__twHTML = html;
     _observeGreetType(el);
@@ -34266,7 +34241,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     _gLog(el, 'set');
     if (_greetOnScreen(el)) _doTypeGreeting(el);
   }
-  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; window.__stApplyDeferred = _applyDeferred; } catch (e) {}
+  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; } catch (e) {}
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
     const mirrors = Array.from(document.querySelectorAll('[data-greeting-mirror]'));
