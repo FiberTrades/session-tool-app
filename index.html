@@ -3276,6 +3276,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Verdict + excluded-trades note sit side by side with real separation — two inline-flex pills
      touching read as one broken box. A flex row rather than a margin, so when the note wraps to its
      own line on a narrow window it gets the same gap vertically instead of a stray indent. */
+  /* One block per account under evaluation. The separator only appears BETWEEN accounts, so a
+     single-account journal looks exactly as it did before this became a list. */
+  .chal-acct + .chal-acct { margin-top: 26px; padding-top: 22px; border-top: 1px solid var(--border-2); }
+  .chal-acct-head { display: flex; align-items: baseline; justify-content: space-between; gap: 14px; margin-bottom: 12px; }
+  .chal-acct-name { font-family: "AppNum","DM Mono",monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
+  .chal-acct-sb { font-family: "AppNum","DM Mono",monospace; font-size: 11px; color: var(--text-dim); }
   .chal-verdict-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; }
   .chal-verdict-row .chal-verdict { margin-top: 0; }
   @media (max-width: 700px) { .chal-grid { grid-template-columns: 1fr; } }
@@ -5299,6 +5305,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <div class="onboard-section">
         <div class="onboard-section-title"><span data-i18n="onboard.risk_title">Risk rules</span><span class="onboard-opt" data-i18n="onboard.optional">optional</span></div>
         <p class="onboard-section-hint" data-i18n="onboard.risk_hint">Limits you commit to — the app tracks whether you follow them. Leave any blank to skip.</p>
+
+        <!-- What KIND of account this is. Challenge Progress reads this, not the presence of rules:
+             a personal account can carry a drawdown limit for self-discipline without being an
+             evaluation with a pass/fail verdict attached to it. -->
+        <label class="settings-label" style="margin-top:4px;" data-i18n="settings.acct_kind_label">Account type</label>
+        <select id="onboard-acct-kind" class="settings-input settings-input-compact" style="max-width:260px;" autocomplete="off">
+          <option value="personal" data-i18n="settings.acct_kind_personal">Personal — track my own limits</option>
+          <option value="challenge" data-i18n="settings.acct_kind_challenge">Prop firm challenge or funded account</option>
+        </select>
+        <p class="settings-hint" data-i18n="settings.acct_kind_hint">Only challenge accounts appear in Challenge progress, with a target, a floor and a pass/fail verdict. A personal account still tracks the limits you set here — it just isn’t being evaluated by anyone.</p>
 
         <div class="settings-risk-label-row">
           <label class="settings-label" data-i18n="settings.risk_max_dd_label">Max total drawdown + costs</label>
@@ -17346,37 +17362,65 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!sec || !body) return;
       var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
       var GOOD = '#4ECD8B', BAD = '#E56767', WARN = '#E5B567', ACC = '#f472b6';
-      // The account actually in view, resolved the way the KPIs above resolve it.
-      var acc = null;
+      // EVERY account the current view covers, not one.
+      //
+      // Scoped to an account, or to a group: exactly those. On the lifetime/all-accounts view this
+      // used to fall back to whichever account happened to be ACTIVE — so the KPIs above showed
+      // combined figures while the panel below described a single challenge, with nothing saying
+      // they were about different things. Someone running two evaluations at once would read the
+      // wrong floor. All of them are shown instead, each labelled with its own account.
+      var accounts = [];
       try {
         var sc = (typeof currentScopeResolved === 'function') ? currentScopeResolved() : null;
-        if (sc && sc.kind === 'account' && sc.account) acc = sc.account;
-        else acc = (data.accounts || []).find(function (a) { return a.id === data.activeAccountId && a.status === 'active'; })
-                || (data.accounts || []).find(function (a) { return a.status === 'active'; }) || null;
-      } catch (e) { acc = null; }
-      var rr = (acc && acc.riskRules) || null;
-      var sb = (acc && typeof acc.startingBalance === 'number') ? acc.startingBalance : 0;
-      if (!acc || !rr || sb <= 0) { sec.style.display = 'none'; return; }
+        if (sc && sc.kind === 'account' && sc.account) accounts = [sc.account];
+        else if (sc && sc.kind === 'group' && Array.isArray(sc.accountIds)) {
+          var ids = sc.accountIds;
+          accounts = (data.accounts || []).filter(function (a) { return a && ids.indexOf(a.id) >= 0; });
+        } else {
+          accounts = (data.accounts || []).filter(function (a) { return a && a.status === 'active'; });
+        }
+      } catch (e) { accounts = []; }
+      // Only accounts carrying a firm rule have an evaluation to track — a personal account never
+      // appears here, and never contributes an empty block to a multi-account view.
+      accounts = accounts.filter(function (a) {
+        if (!a || !a.riskRules) return false;
+        if (!(typeof a.startingBalance === 'number' && a.startingBalance > 0)) return false;
+        // A PERSONAL account is never an evaluation, however strict its own limits. Someone can hold
+        // themselves to a 5% drawdown on their own money without a prop firm passing or failing them
+        // for it, and putting a "Breached" verdict on that is both wrong and discouraging.
+        // Accounts predating this field are judged the old way — carrying a rule meant challenge —
+        // so nothing already on screen disappears on upgrade.
+        if (a.kind === 'personal') return false;
+        var r = a.riskRules;
+        var dd = (r.maxDrawdownMode === 'amount') ? (r.maxDrawdownAmount || 0) : (a.startingBalance * (r.maxDrawdownPct || 0) / 100);
+        var tg = (r.profitTargetMode === 'amount') ? (r.profitTargetAmount || 0) : (a.startingBalance * (r.profitTargetPct || 0) / 100);
+        return dd > 0 || tg > 0;
+      });
+      if (!accounts.length) { sec.style.display = 'none'; return; }
 
+      var money = function (v) { try { return String(fmtMoney(v)).replace(/^\+/, ''); } catch (e) { return String(Math.round(v)); } };
+      var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+
+      // One self-contained block per account: its own rails, its own verdict, under its own name.
+      // `tail` is appended inside the verdict row — used to sit the journal-wide excluded-trades
+      // note beside the verdict when there is only one account to sit beside.
+      function blockFor(acc, tail) {
+      var rr = acc.riskRules || {};
+      var sb = (typeof acc.startingBalance === 'number') ? acc.startingBalance : 0;
       var ddMode = (rr.maxDrawdownMode === 'amount') ? 'amount' : 'pct';
       var ddAmount = (ddMode === 'amount') ? (rr.maxDrawdownAmount || 0) : (sb * (rr.maxDrawdownPct || 0) / 100);
       var tgMode = (rr.profitTargetMode === 'amount') ? 'amount' : 'pct';
       var tgAmount = (tgMode === 'amount') ? (rr.profitTargetAmount || 0) : (sb * (rr.profitTargetPct || 0) / 100);
-      // Without at least one firm rule there is no evaluation to track — a personal account
-      // should never see this panel.
-      if (ddAmount <= 0 && tgAmount <= 0) { sec.style.display = 'none'; return; }
 
       var st = null;
       try { st = window.__stAccountStats(acc); } catch (e) { st = null; }
-      if (!st) { sec.style.display = 'none'; return; }
-      sec.style.display = '';
+      if (!st) return '';
 
       var ddType = rr.ddType || 'static';
       var peak = (typeof st.peak === 'number' && st.peak > 0) ? st.peak : sb;
       var floor = (ddType === 'trailing') ? (peak - ddAmount)
                 : (ddType === 'trailing_lock') ? Math.min(peak - ddAmount, sb)
                 : (sb - ddAmount);
-      var money = function (v) { try { return String(fmtMoney(v)).replace(/^\+/, ''); } catch (e) { return String(Math.round(v)); } };
 
       var cards = [];
       if (tgAmount > 0) {
@@ -17425,7 +17469,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var vTxt = breached ? T('Breached — this account is out on its drawdown rule.', 'Superado — esta cuenta ha incumplido su regla de drawdown.')
                : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
                : T('In progress.', 'En curso.');
-      var vRow = '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>';
+      var vRow = '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>' + (tail || '');
+      html += '<div class="chal-verdict-row">' + vRow + '</div>';
+      return '<div class="chal-acct">'
+           + '<div class="chal-acct-head"><span class="chal-acct-name">' + esc(acc.name || '') + '</span>'
+           + '<span class="chal-acct-sb">' + money(sb) + '</span></div>'
+           + html + '</div>';
+      }
+
+      // The excluded-trades note describes the JOURNAL, not one account, so it appears once. With a
+      // single account it sits beside that account's verdict; with several it gets its own line
+      // underneath, where it cannot look like it belongs to whichever block it landed next to.
+      var noteHtml = '';
 
       // Say so when the broker has sent trades this journal is not counting. Every figure above is
       // built from logged trades, so trades dismissed or marked handled make the balance, the room
@@ -17443,7 +17498,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var _exc = data._mt5Excluded;
         if (_exc && _exc.n > 0) {
           var _excMoney = money(Math.abs(_exc.sum || 0));
-          vRow += '<div class="chal-verdict chal-verdict-note" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
+          noteHtml = '<div class="chal-verdict chal-verdict-note" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
             + T(_exc.n + ' broker trade' + (_exc.n === 1 ? '' : 's') + ' not counted here (' + _excMoney + '). Restore from Import from MT5.',
                 _exc.n + (_exc.n === 1
                   ? ' operación del bróker no contada aquí (' + _excMoney + '). Restáurala desde Importar de MT5.'
@@ -17451,16 +17506,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             + '</span></div>';
         }
       } catch (e) {}
-      html += '<div class="chal-verdict-row">' + vRow + '</div>';
-      body.innerHTML = html;
+
+      var single = accounts.length === 1;
+      var blocks = accounts.map(function (a, i) {
+        return blockFor(a, (single && i === 0) ? noteHtml : '');
+      }).filter(Boolean);
+      if (!blocks.length) { sec.style.display = 'none'; return; }
+      sec.style.display = '';
+      var out = blocks.join('');
+      if (!single && noteHtml) out += '<div class="chal-verdict-row">' + noteHtml + '</div>';
+      body.innerHTML = out;
 
       var ttl = document.getElementById('challenge-title');
       if (ttl) ttl.textContent = T('Challenge progress', 'Progreso del reto');
       var hint = document.getElementById('challenge-hint');
-      if (hint) hint.textContent = T(
-        'Measured against this account’s own rules, on closed trades. ',
-        'Medido con las reglas de esta cuenta, sobre operaciones cerradas. ')
-        + (acc.name || '') + ' · ' + money(sb);
+      if (hint) hint.textContent = single
+        ? T('Measured against this account’s own rules, on closed trades.',
+            'Medido con las reglas de esta cuenta, sobre operaciones cerradas.')
+        : T('Measured against each account’s own rules, on closed trades. ' + blocks.length + ' evaluations in progress.',
+            'Medido con las reglas propias de cada cuenta, sobre operaciones cerradas. ' + blocks.length + ' evaluaciones en curso.');
     })(); } catch (_chalErr) {
       try { var _cs = document.getElementById('challenge-section'); if (_cs) _cs.style.display = 'none'; } catch (e) {}
       try { console.warn('challenge panel skipped:', _chalErr); } catch (e) {}
@@ -23210,7 +23274,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 17:20 UTC';
+  window.ST_BUILD = '2026-08-12 18:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -26223,6 +26287,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // rule set written before this option existed must not silently start trailing.
     const ddTypeSel = document.getElementById('onboard-dd-type');
     if (ddTypeSel) ddTypeSel.value = rr.ddType || 'static';
+    // Account type. Existing accounts predate this field, so infer once from what they look like:
+    // an account already carrying a drawdown or profit target was being treated as an evaluation,
+    // and must keep appearing in Challenge progress rather than vanishing on upgrade.
+    const kindSel = document.getElementById('onboard-acct-kind');
+    if (kindSel) {
+      const _accNow = (typeof getAccountById === 'function' && data.onboardEditingAccountId)
+        ? getAccountById(data.onboardEditingAccountId) : null;
+      const _looksLikeChallenge = !!(rr && ((rr.maxDrawdownPct || rr.maxDrawdownAmount || rr.profitTargetPct || rr.profitTargetAmount)));
+      kindSel.value = (_accNow && _accNow.kind) ? _accNow.kind : (_looksLikeChallenge ? 'challenge' : 'personal');
+    }
     setRiskField('beThreshold', 'onboard-be-threshold', 'onboard-be-threshold-suffix', 'beThresholdPct', 'beThresholdAmount', 'beThresholdMode', '0.1', '1');
     const tradesInp = document.getElementById('onboard-max-trades');
     if (tradesInp) tradesInp.value = (rr.maxTrades && Number(rr.maxTrades) > 0) ? rr.maxTrades : '';
@@ -26337,6 +26411,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     writeRuleByMode('profitTarget', 'onboard-profit-target', 'profitTargetPct', 'profitTargetAmount', 'profitTargetMode');
     const ddTypeSelW = document.getElementById('onboard-dd-type');
     if (ddTypeSelW) rr.ddType = ddTypeSelW.value || 'static';
+    // Account type lives on the ACCOUNT, not in its rules — it says what the account IS, not what
+    // limits it keeps. Challenge progress reads this, so a personal account can carry a drawdown
+    // for self-discipline without acquiring a pass/fail verdict it was never subject to.
+    const kindSelW = document.getElementById('onboard-acct-kind');
+    if (kindSelW && target) target.kind = (kindSelW.value === 'challenge') ? 'challenge' : 'personal';
     writeRuleByMode('beThreshold', 'onboard-be-threshold', 'beThresholdPct', 'beThresholdAmount', 'beThresholdMode');
     const tradesInp = document.getElementById('onboard-max-trades');
     if (tradesInp) {
