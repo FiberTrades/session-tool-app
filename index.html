@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 10:25 UTC';
+  window.ST_BUILD = '2026-08-12 10:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34073,23 +34073,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       });
     } catch (e) {}
   }
-  // Master switch for the typewriter. Survives reloads, because the reload is the thing being tested:
-  //   __stTypeOff()  → greetings appear instantly, fully formed, from now on (reloads too)
-  //   __stTypeOn()   → greetings type themselves (default)
-  // Both reload the page so the next boot runs under the setting you just chose.
+  // Master switch for the typewriter — see _twEnabled below for which way it defaults and why.
   // Worth knowing what it buys: the effect is the ONLY reason a greeting is ever hidden. To type a
   // line you must hide it first and have something reveal it at the right moment — which is where
   // every failure came from (a late IntersectionObserver, the 1.5s rescue net, re-renders cutting
   // the animation short, timer starvation on a busy boot). With it off, none of that machinery runs:
   // the line is set and it is on screen, full stop. It does NOT affect the AI rewrite arriving later.
-  // Persisted, because the thing worth testing IS the reload. A session-only flag could never
-  // answer "does the app boot better without the effect", which is the only question that matters.
+  // DEFAULT: OFF. Greetings appear instantly, fully formed.
+  //
+  // The effect itself was never buggy — but it is the only reason a greeting is ever hidden, and
+  // that is where every failure came from. To type a line you must hide it and trust something else
+  // to reveal it at the right moment: an IntersectionObserver that fires late on a busy boot, a
+  // 1.5s rescue net for when it doesn't, guards so ~44 boot renders don't cut the animation short,
+  // and a clock-driven reveal so a starved thread doesn't stretch 2s into ten. Every one of those
+  // is machinery in service of an effect, and each was a way for a greeting not to appear.
+  //
+  // Measured on the real app: with it off, greetings are on screen the instant the tab is, on every
+  // reload, with no path that can leave one blank. That is worth more than the animation.
+  //
+  // Still available — it survives reloads, so a boot runs under whatever was last chosen:
+  //   __stTypeOn()   → bring the typewriter back
+  //   __stTypeOff()  → instant greetings (default)
   function _twEnabled() {
     try {
-      if (window.__stTypewriter === false) return false;   // live override, this session only
-      if (window.__stTypewriter === true) return true;
-      return localStorage.getItem('st_typewriter') !== 'off';
-    } catch (e) { return true; }
+      if (window.__stTypewriter === true) return true;     // live override, this session only
+      if (window.__stTypewriter === false) return false;
+      return localStorage.getItem('st_typewriter') === 'on';
+    } catch (e) { return false; }
   }
   function _doTypeGreeting(el) {
     if (!el) return;
@@ -34272,11 +34282,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (_greetOnScreen(el)) _doTypeGreeting(el);
   }
   try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; } catch (e) {}
-  // One word each, and they reload for you — so testing "is the boot better without it" is two steps,
-  // not two steps plus remembering to re-apply a flag that a reload just threw away.
+  // One word each, and they reload for you, so a boot runs under the setting just chosen.
   try {
-    window.__stTypeOff = function () { try { localStorage.setItem('st_typewriter', 'off'); } catch (e) {} delete window.__stTypewriter; location.reload(); };
-    window.__stTypeOn  = function () { try { localStorage.removeItem('st_typewriter'); } catch (e) {} delete window.__stTypewriter; location.reload(); };
+    window.__stTypeOn  = function () { try { localStorage.setItem('st_typewriter', 'on'); } catch (e) {} delete window.__stTypewriter; location.reload(); };
+    window.__stTypeOff = function () { try { localStorage.removeItem('st_typewriter'); } catch (e) {} delete window.__stTypewriter; location.reload(); };
   } catch (e) {}
   function renderBiasGreeting() {
     const primary = document.getElementById('bias-greeting');
