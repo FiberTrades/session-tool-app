@@ -16732,9 +16732,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           seq.forEach(function (s) { g.fillStyle = s[1]; g.fillText(s[0], sx, by + 99); sx += g.measureText(s[0]).width + 7; });
         } else {
           g.font = (c.small ? 21 : 32) + 'px ' + MONO; g.fillStyle = c.c;
-          var t2 = String(c.v);
-          if (c.small) { while (g.measureText(t2).width > cw - 52 && t2.length > 4) t2 = t2.slice(0, -2); if (t2 !== String(c.v)) t2 += '…'; }
-          g.fillText(t2, cx + 30, by + 99);
+          var t2 = String(c.v), vmax = cw - 52;
+          if (c.small && g.measureText(t2).width > vmax) {
+            // A long setup name wraps rather than being cut off. Spanish names overrun a
+            // quarter-width cell routinely ("Ruptura de rango") where English ones ("Breakout")
+            // never did, and "Ruptura de r…" tells the reader nothing.
+            // The pair straddles the single-line baseline — 90 and 116 against 99 — so it fits
+            // inside the strip as it stands: the lower line's descenders clear the bottom edge
+            // by 25px, and nothing below has to move.
+            var words = t2.split(/\s+/), l1 = '', l2 = '';
+            for (var wi = 0; wi < words.length; wi++) {
+              var trial = l1 ? l1 + ' ' + words[wi] : words[wi];
+              if (!l1 || g.measureText(trial).width <= vmax) l1 = trial;
+              else { l2 = words.slice(wi).join(' '); break; }
+            }
+            // Still too wide on a line — a single unbroken word, or too many words for two
+            // lines. Clip that line and mark it, rather than letting it cross the divider.
+            var clip = function (s) {
+              var o = s;
+              while (g.measureText(s).width > vmax && s.length > 4) s = s.slice(0, -2);
+              return s === o ? s : s + '…';
+            };
+            if (l2) { g.fillText(clip(l1), cx + 30, by + 90); g.fillText(clip(l2), cx + 30, by + 116); }
+            else    { g.fillText(clip(l1), cx + 30, by + 99); }
+          } else {
+            g.fillText(t2, cx + 30, by + 99);
+          }
         }
       });
 
@@ -23418,7 +23441,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 00:22 UTC';
+  window.ST_BUILD = '2026-08-13 00:41 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
