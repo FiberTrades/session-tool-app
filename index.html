@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 07:05 UTC';
+  window.ST_BUILD = '2026-08-12 07:30 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34044,6 +34044,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // when a greeting becomes visible — including display:none tab toggles — so the
   // effect plays on whatever tab you land on, not just once at load.
   function _twShow(el) { try { el.style.visibility = ''; if (el.__twSafety) { clearTimeout(el.__twSafety); el.__twSafety = null; } } catch (e) {} }
+  // Is this greeting actually rendered right now? offsetParent alone is not enough: it is null for
+  // a position:fixed element and inside some containing blocks, which would make a VISIBLE greeting
+  // look off-tab — it would then be armed (hidden) with no safety timer and wait on an observer
+  // callback that never comes. getClientRects() is the honest test: empty only when nothing is laid
+  // out. Both together are safe in every case.
+  function _greetOnScreen(el) {
+    try { return !!el && (el.offsetParent !== null || el.getClientRects().length > 0); } catch (e) { return false; }
+  }
+  // Boot-path recorder. Greeting problems reported "after an app reload" happen before any console
+  // can be attached, so the app keeps its own short trail: window.__stGreetBoot. Capped, no I/O,
+  // no behaviour change. Read it after a reload with:
+  //   console.log(JSON.stringify(window.__stGreetBoot, null, 1))
+  function _gLog(el, ev) {
+    try {
+      var L = window.__stGreetBoot || (window.__stGreetBoot = []);
+      if (L.length > 600) return;
+      L.push({
+        ms: Math.round(performance.now()),
+        who: (el && el.dataset && el.dataset.greetingContext) || (el && el.id) || '?',
+        ev: ev,
+        onScreen: _greetOnScreen(el),
+        vis: (el && el.style && el.style.visibility) || 'shown',
+        typed: !!(el && el.__twTypedHTML != null),
+        anim: !!(el && el.__twTimer),
+        aiPending: !!(el && el.__aiPending),
+        safety: !!(el && el.__twSafety)
+      });
+    } catch (e) {}
+  }
   function _doTypeGreeting(el) {
     if (!el) return;
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
@@ -34054,9 +34083,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // sync-burst re-render) replaces its text in place, silently. The typewriter belongs to a
     // greeting's FIRST appearance and nothing else. Hiding, re-arming and replaying on top of a
     // settled line is what produced the glitching.
-    if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && el.offsetParent !== null) {
-      el.__twTypedHTML = src; el.innerHTML = src; _twShow(el); return;
+    if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && _greetOnScreen(el)) {
+      el.__twTypedHTML = src; el.innerHTML = src; _twShow(el); _gLog(el, 'swap-settled'); return;
     }
+    _gLog(el, 'type-start');
     el.__twTypedHTML = src;
     el.innerHTML = src;   // reset to the clean source line before wrapping
     var txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -34123,7 +34153,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Never hide a line the user is already reading — same rule as _doTypeGreeting. A settled
     // greeting on the displayed tab gets swapped, not blanked-and-replayed. Hiding here made the
     // greeting blink on every re-render, and refreshAllSurfaces fires on every click.
-    if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && el.offsetParent !== null) return;
+    if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && _greetOnScreen(el)) return;
     try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
     try {
       el.style.visibility = 'hidden';
@@ -34132,7 +34162,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // Off-tab it does the opposite of its job: it un-hides a greeting nobody can see, so the tab
       // you switch to paints the whole line as plain text before the observer types it. Off-tab
       // greetings stay armed with no timer; the observer types them the moment you arrive.
-      if (el.offsetParent === null) { el.__twSafety = null; return; }
+      if (!_greetOnScreen(el)) { el.__twSafety = null; _gLog(el, 'arm-offtab'); return; }
+      _gLog(el, 'arm-onscreen');
       el.__twSafety = setTimeout(function () { if (el.style.visibility === 'hidden') el.style.visibility = ''; el.__twSafety = null; }, 1500);
     } catch (e) {}
   }
@@ -34148,13 +34179,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           // flight — and __aiPending is true for the entire round-trip plus the pre-sync window, so
           // on a cold cache EVERY tab arrival took the no-animation path. _doTypeGreeting decides
           // for itself whether this is a first appearance (animate) or a settled line (swap).
+          _gLog(el, 'io-visible');
           _doTypeGreeting(el);
-        } else { el.__twVisible = false; }
+        } else { el.__twVisible = false; _gLog(el, 'io-hidden'); }
       });
     }, { threshold: 0.01 });
     return _greetTypeIO;
   }
   function _observeGreetType(el) { try { var io = _ensureGreetTypeIO(); if (io && el && !el.__twObserved) { el.__twObserved = true; io.observe(el); } } catch (e) {} }
+  try { window.__stGreetBootMark = _gLog; } catch (e) {}   // so the AI module can log into the same trail
   // Set a greeting's HTML AND (re)arm the typewriter. __twHTML is the clean source the animation
   // resets to; an already-visible change (e.g. the async AI line landing) types immediately, otherwise
   // the greeting is hidden (armed) and the observer types it when its tab is shown.
@@ -34182,11 +34215,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     el.innerHTML = html; el.__twHTML = html;
     _observeGreetType(el);
     _armTypewriter(el);   // hide until typed (no-op if reduced-motion / already-typed / settled / no observer)
-    // Gate on offsetParent, NOT __twVisible: __twVisible only exists once the observer has fired,
-    // so every write before that (the whole boot burst) skipped the reveal and left the line blank
-    // until the safety timer. And no __aiPending check: a pending AI call must never stop the line
-    // we already have from typing — that wait is what "takes forever to come out" was.
-    if (el.offsetParent !== null) _doTypeGreeting(el);
+    // Gate on whether it is RENDERED, not on __twVisible: __twVisible only exists once the observer
+    // has fired, so every write before that (the whole boot burst) skipped the reveal and left the
+    // line blank until the safety timer. And no __aiPending check: a pending AI call must never stop
+    // the line we already have from typing — that wait is what "takes forever to come out" was.
+    _gLog(el, 'set');
+    if (_greetOnScreen(el)) _doTypeGreeting(el);
   }
   try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; } catch (e) {}
   function renderBiasGreeting() {
@@ -34346,7 +34380,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // element already on screen does not re-intersect when its innerHTML is rewritten. Without
       // this, the line sat blank until the 1.5s safety timer showed it whole and untyped, and every
       // further render restarted that 1.5s. Type what we have; the AI line swaps in silently later.
-      if (el.offsetParent !== null) _doTypeGreeting(el);
+      _gLog(el, 'render');
+      if (_greetOnScreen(el)) _doTypeGreeting(el);
       // Name in the greeting is display-only — clicking it does nothing.
       // Name changes are done via the Settings modal (Profile section) to
       // keep the editing surface in one place.
@@ -35163,6 +35198,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // Don't pay to generate until the journal has been pulled from the cloud at least once this
         // load — otherwise a second device regenerates a greeting the pull was about to deliver.
         // Only ever hold the line back when there is genuinely nothing to show in its place.
+        try { if (window.__stGreetBootMark) window.__stGreetBootMark(el, _stale ? 'ai-stale-shown' : 'ai-nothing-to-show'); } catch (e) {}
         if (!window.__stGreetSyncReady) { if (!_stale) el.__aiPending = true; return; }
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
