@@ -23359,7 +23359,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 22:00 UTC';
+  window.ST_BUILD = '2026-08-12 22:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -50290,7 +50290,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       sl_pips:t.slPips, req_sl_pips:(t.reqSlPips||t._reqSlPips), tp_pips:t._tpPips, tp_r:t._tpR, risk_gbp:t._riskGbp,
       pnl:(t.pnl!=null?t.pnl:t.netPL) }; }
   async function fetchInbox(ticket){ var sb=sbc(); if(!sb) return null;
-    try{ var q=sb.from('trades_inbox').select('*').eq('ticket',String(ticket)); var u=uid(); if(u) q=q.eq('token',u);
+    // In MENTOR VIEW the rows belong to the member being viewed, not to the signed-in mentor.
+    // Filtering on uid() asked for the mentor's own inbox, which of course holds nothing for that
+    // ticket — so the replay fell through to tradeToRow(), and that needs an entry price and open
+    // time which an MT5-imported journal trade never carries (prices live only on the inbox row).
+    // The result was "No synced candle data found" on every trade a mentor opened, including ones
+    // the member can replay perfectly. Reading the member's rows also needs an RLS policy allowing
+    // a mentor with an active share to select them; without it this simply returns nothing, exactly
+    // as before, so the client is safe to ship ahead of the policy.
+    var owner=null; try{ owner=new URLSearchParams(location.search).get('mv'); }catch(_){}
+    try{ var q=sb.from('trades_inbox').select('*').eq('ticket',String(ticket)); var u=owner||uid(); if(u) q=q.eq('token',u);
       var r=await q.order('close_time',{ascending:false}).limit(1); return (r&&r.data&&r.data[0])||null; }catch(_){ return null; } }
   async function fetchCandles(symbol,tf,from,to){ var sb=sbc(); if(!sb) return [];
     // Supabase caps an RPC response at ~1000 rows, so page through with .range() and
