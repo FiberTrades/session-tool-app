@@ -3266,6 +3266,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .chal-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
   @media (max-width: 700px) { .chal-grid { grid-template-columns: 1fr; } }
   .atl-cell { background: var(--bg); padding: 10px 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* News vs Quiet row markers. Dots rather than emoji: emoji render at different sizes and baselines
+     across platforms (and get swapped for Twemoji images here), so the two rows never lined up. */
+  /* flex:none because the label cell is a flex container — without it the longer word (Quiet /
+     Tranquilo) squeezes its own dot narrower than the News one, and the two rows stop matching. */
+  .news-dot { display: inline-block; flex: 0 0 auto; width: 8px; height: 8px; border-radius: 50%; margin-right: 9px; vertical-align: middle; position: relative; top: -1px; }
+  .news-dot-news { background: #e56767; }
+  .news-dot-quiet { background: #4ECD8B; }
   .atl-cell.left { text-align: left; }
   .atl-cell.good { color: var(--good); }
   .atl-cell.bad { color: var(--bad); }
@@ -17417,8 +17424,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // which is the style being matched — and with five the last cell stretched into a wide
       // empty band and the label column was too narrow to hold its own text.
       wrap.innerHTML = '<div class="history-list" style="margin-top:0;">' + dowHeader
-        + rowForDow('⚡ ' + T('News', 'Noticias'), sideStats(split.news), split.news)
-        + rowForDow('💤 ' + T('Quiet', 'Tranquilo'), sideStats(split.quiet), split.quiet)
+        + rowForDow('<span class="news-dot news-dot-news"></span>' + T('News', 'Noticias'), sideStats(split.news), split.news)
+        + rowForDow('<span class="news-dot news-dot-quiet"></span>' + T('Quiet', 'Tranquilo'), sideStats(split.quiet), split.quiet)
         + '</div>';
     })(); } catch (_newsErr) {
       try { var _ns = document.getElementById('news-breakdown-section'); if (_ns) _ns.style.display = 'none'; } catch (e) {}
@@ -23132,7 +23139,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 11:10 UTC';
+  window.ST_BUILD = '2026-08-12 11:45 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -37952,8 +37959,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // before the account creation timestamp (browser races during onboarding),
       // still count it. 60 minutes is generous and stays inside same-day.
       const SKEW_MS = 60 * 60 * 1000;
+      // Trades are TAGGED with the account they belong to, and every other scoping path in the app
+      // (filterByScope) matches on that tag alone. This function used to match on the DATE only, so
+      // an account claimed every trade logged after it was created — including trades belonging to a
+      // different account traded in the same period. Two live accounts would each report the other's
+      // P&L as their own: wrong balance, wrong drawdown room, wrong challenge progress. It happened
+      // to look right only when accounts never overlapped in time.
+      //
+      // The date rule survives for UNTAGGED trades only. Those predate per-trade accountId (the
+      // migration backfills the active account, but a restored older journal can still carry them),
+      // and for them the creation date is the only signal there is.
       const eligible = all.filter(t => {
-        if (!t.date) return false;
+        if (!t || !t.date) return false;
+        if (t.accountId) return t.accountId === acc.id;
         return new Date(t.date).getTime() >= (createdAtMs - SKEW_MS);
       });
       const cps = (typeof tradeCopies === 'function') ? tradeCopies : (() => 1);
