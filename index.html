@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 06:15 UTC';
+  window.ST_BUILD = '2026-08-12 07:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34048,6 +34048,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!el) return;
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
     if (el.__twTypedHTML === src) { _twShow(el); return; }   // already typed this exact line — just make sure it's visible; don't replay
+    // THE RULE, in one place: a greeting already on screen is never re-typed.
+    // If this element has typed a line, is visible, is not mid-animation and is on the displayed
+    // tab, the user is READING it — so a better line (the AI rewrite landing, a re-picked seed, a
+    // sync-burst re-render) replaces its text in place, silently. The typewriter belongs to a
+    // greeting's FIRST appearance and nothing else. Hiding, re-arming and replaying on top of a
+    // settled line is what produced the glitching.
+    if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && el.offsetParent !== null) {
+      el.__twTypedHTML = src; el.innerHTML = src; _twShow(el); return;
+    }
     el.__twTypedHTML = src;
     el.innerHTML = src;   // reset to the clean source line before wrapping
     var txt = (el.textContent || '').replace(/\s+/g, ' ').trim();
@@ -34076,11 +34085,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // NOW make the element itself visible — every char is individually hidden, so nothing shows yet.
     // (It was hidden by _armTypewriter at set-time, which is what stops the full-text flash on tab switch.)
     _twShow(el);
-    var idx = 0, total = chars.length, per = Math.max(9, Math.min(26, Math.round(900 / total)));   // ~0.9s total whatever the length
+    // Old-school machine pace, and never longer than 2 seconds.
+    //
+    // per = 2000/length, clamped to 12..45ms. The clamp is what makes it feel like a machine rather
+    // than a progress bar: a short line slows to 45ms a character so it still reads as TYPING
+    // instead of blinking into existence, and a long line speeds up to 12ms so it still lands
+    // inside the 2s ceiling. Only when even 12ms would overrun does it reveal 2 characters a tick
+    // (that needs ~170+ characters), so in practice this is one character at a time.
+    // Worked examples: 104 chars -> 19ms x 104 = 1.98s; 234 -> 12ms x 2/tick = 1.40s;
+    // 40 -> 45ms x 40 = 1.80s. Nothing can exceed 2s.
+    var idx = 0, total = chars.length, DURATION = 2000;
+    var per = Math.min(45, Math.max(12, Math.round(DURATION / total)));
+    var chunk = Math.max(1, Math.ceil(total / (DURATION / per)));
     (function step() {
-      if (idx >= total) { el.__twTimer = null; return; }
-      if (chars[idx].style) chars[idx].style.visibility = '';
-      idx++;
+      if (idx >= total) {
+        el.__twTimer = null;
+        // A better line arrived while this one was typing (the AI rewrite usually lands about a
+        // second in). Apply it now, silently — never mid-animation, which would tear out the
+        // half-typed characters and restart the effect in front of the reader.
+        if (el.__twPendingSwap != null) {
+          var _h = el.__twPendingSwap; el.__twPendingSwap = null;
+          el.innerHTML = _h; el.__twHTML = _h; el.__twTypedHTML = _h; _twShow(el);
+        }
+        return;
+      }
+      for (var c = 0; c < chunk && idx < total; c++, idx++) { if (chars[idx].style) chars[idx].style.visibility = ''; }
       el.__twTimer = setTimeout(step, per);
     })();
   }
@@ -34091,10 +34120,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!el || typeof IntersectionObserver === 'undefined') return;   // no observer to reveal it → never hide
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
     if (el.__twTypedHTML === src) return;   // already typed this line → leave it visible
+    // Never hide a line the user is already reading — same rule as _doTypeGreeting. A settled
+    // greeting on the displayed tab gets swapped, not blanked-and-replayed. Hiding here made the
+    // greeting blink on every re-render, and refreshAllSurfaces fires on every click.
+    if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && el.offsetParent !== null) return;
     try { if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) return; } catch (e) {}
     try {
       el.style.visibility = 'hidden';
       if (el.__twSafety) clearTimeout(el.__twSafety);
+      // The safety net exists so a greeting can never stick hidden on the tab you are LOOKING at.
+      // Off-tab it does the opposite of its job: it un-hides a greeting nobody can see, so the tab
+      // you switch to paints the whole line as plain text before the observer types it. Off-tab
+      // greetings stay armed with no timer; the observer types them the moment you arrive.
+      if (el.offsetParent === null) { el.__twSafety = null; return; }
       el.__twSafety = setTimeout(function () { if (el.style.visibility === 'hidden') el.style.visibility = ''; el.__twSafety = null; }, 1500);
     } catch (e) {}
   }
@@ -34106,8 +34144,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var el = en.target;
         if (en.isIntersecting && en.intersectionRatio > 0) {
           el.__twVisible = true;
-          if (!el.__aiPending) _doTypeGreeting(el);   // an AI rewrite is pending → wait for it…
-          else _twShow(el);                            // …but don't leave a blank box: show the seed placeholder meanwhile
+          // ALWAYS type. The old else-branch dumped the line whole whenever an AI rewrite was in
+          // flight — and __aiPending is true for the entire round-trip plus the pre-sync window, so
+          // on a cold cache EVERY tab arrival took the no-animation path. _doTypeGreeting decides
+          // for itself whether this is a first appearance (animate) or a settled line (swap).
+          _doTypeGreeting(el);
         } else { el.__twVisible = false; }
       });
     }, { threshold: 0.01 });
@@ -34119,15 +34160,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // the greeting is hidden (armed) and the observer types it when its tab is shown.
   function _setGreetHTML(el, html) {
     if (!el) return;
-    el.innerHTML = html; el.__twHTML = html;
     // Stash the plain greeting text in a global the moment it's rendered, so the AI assistant can
     // fold it into "reword my greeting" without the trader pasting it. We DON'T read this back off the
     // DOM at send time because the assistant reuses the greeting box for its chat replies — a global is
     // the one place the chat can never clobber. (mentor note excluded — that's not part of the greeting.)
-    try { if (el.id === 'bias-greeting') { var _gc = el.cloneNode(true); var _gm = _gc.querySelector('.mentor-greet-msg'); if (_gm && _gm.parentNode) _gm.parentNode.removeChild(_gm); var _gt = (_gc.textContent || '').trim(); if (_gt) window.__stGreetingText = _gt; } } catch (e) {}
+    // Read from the incoming HTML, not the element, so it is recorded even when the write below is
+    // deferred to the end of an animation.
+    try {
+      if (el.id === 'bias-greeting') {
+        var _gc = document.createElement('div'); _gc.innerHTML = html;
+        var _gm = _gc.querySelector('.mentor-greet-msg'); if (_gm && _gm.parentNode) _gm.parentNode.removeChild(_gm);
+        var _gt = (_gc.textContent || '').trim(); if (_gt) window.__stGreetingText = _gt;
+      }
+    } catch (e) {}
+    // Never write over a line that is mid-animation. The same line means there is nothing to say;
+    // a different one is queued and applied silently the instant the animation finishes.
+    if (el.__twTimer) {
+      if (html !== el.__twHTML) el.__twPendingSwap = html;
+      return;
+    }
+    el.innerHTML = html; el.__twHTML = html;
     _observeGreetType(el);
-    _armTypewriter(el);   // hide until typed (no-op if reduced-motion / already-typed / no observer)
-    if (el.__twVisible && !el.__aiPending) _doTypeGreeting(el);
+    _armTypewriter(el);   // hide until typed (no-op if reduced-motion / already-typed / settled / no observer)
+    // Gate on offsetParent, NOT __twVisible: __twVisible only exists once the observer has fired,
+    // so every write before that (the whole boot burst) skipped the reveal and left the line blank
+    // until the safety timer. And no __aiPending check: a pending AI call must never stop the line
+    // we already have from typing — that wait is what "takes forever to come out" was.
+    if (el.offsetParent !== null) _doTypeGreeting(el);
   }
   try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; } catch (e) {}
   function renderBiasGreeting() {
@@ -34263,6 +34322,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const tail   = isReview ? _cachedTailReview  : _cachedTailBias;
         html = compose(opener, tail);
       }
+      // A re-render whose line is UNCHANGED must not interrupt an animation in progress: the
+      // innerHTML rewrite below tears out the half-typed characters and pastes the finished line,
+      // cutting the animation short. refreshAllSurfaces runs on every click and repeatedly during a
+      // sync burst, so mid-animation re-renders are the normal case, not an edge case.
+      // Compared on the RAW composed string, not __twHTML — innerHTML re-serialises markup, so the
+      // round-tripped copy never string-equals the source.
+      if (el.__twTimer && el.__twSrcRaw === html) return;
+      el.__twSrcRaw = html;
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
       try { el.__greetSit = _greetSituation; } catch (e) {}   // and the situation it describes, for the AI cache signature
@@ -34273,6 +34340,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _armTypewriter(el);           // hide NOW so the full line is never flashed before it types (AI tiers re-arm below)
       // AI (eligible tiers) rewrites the seed above into a more personal line, keeping its essence.
       try { if (window.STAI && window.STAI.enhanceGreeting) window.STAI.enhanceGreeting(el, ctx || 'bias'); } catch(e){}
+      // _armTypewriter hid this line. If enhanceGreeting did not synchronously replace it (no AI
+      // tier, cloud pull not landed, a call already in flight, or it just started one) then nothing
+      // else reveals it — the IntersectionObserver fires only on an intersection CHANGE, and an
+      // element already on screen does not re-intersect when its innerHTML is rewritten. Without
+      // this, the line sat blank until the 1.5s safety timer showed it whole and untyped, and every
+      // further render restarted that 1.5s. Type what we have; the AI line swaps in silently later.
+      if (el.offsetParent !== null) _doTypeGreeting(el);
       // Name in the greeting is display-only — clicking it does nothing.
       // Name changes are done via the Settings modal (Profile section) to
       // keep the editing surface in one place.
@@ -35063,10 +35137,36 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // at least once this load — otherwise a second device regenerates the same greeting moments
         // before the pull would have delivered it. The post-sync re-render re-runs this with the
         // synced cache in place; a timeout flips the flag so offline users still get greetings.
-        if (!window.__stGreetSyncReady) { el.__aiPending = true; return; }   // hold the line invisible (not the seed) until the pull lands
+        // 4) SAME DAY, DIFFERENT SIGNATURE — use it now, revalidate behind it.
+        //
+        // The three lookups above all demand an exact signature match, and the signature carries the
+        // time-of-day slot, the digits in the seed and the situation. So a line generated at 22:00
+        // is rejected at 02:00, and a line is rejected the moment a logged trade changes a figure —
+        // even though a good, same-day line for this surface is sitting right there. Rejecting it
+        // meant the slow path (gate, network, generate) on every single render. That is why
+        // greetings could be instant one evening and crawl the next with byte-identical code: the
+        // cache was warm AND matching, then warm but NOT matching.
+        //
+        // A slightly-stale line beats a blank box. Use it immediately; the regenerated line replaces
+        // it silently when it lands, because a settled greeting is swapped and never re-typed.
+        var _stale = null;
+        try {
+          var _sv = _greetStore()[key];
+          if (_sv && _sv.day === today && _sv.text && !_greetIsBad(_sv.text)) _stale = _sv.text;
+          if (!_stale) {
+            var _ss = _greetSyncGet(key);
+            if (_ss && _ss.day === today && _ss.text && !_greetIsBad(_ss.text)) _stale = _ss.text;
+          }
+        } catch (e) {}
+        if (_stale) { el.__aiPending = false; _put(el, _stale + mentorHTML); }
+
+        // Don't pay to generate until the journal has been pulled from the cloud at least once this
+        // load — otherwise a second device regenerates a greeting the pull was about to deliver.
+        // Only ever hold the line back when there is genuinely nothing to show in its place.
+        if (!window.__stGreetSyncReady) { if (!_stale) el.__aiPending = true; return; }
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
-        el.__aiPending = true;   // AI line is coming — the typewriter waits for it instead of typing the throwaway seed
+        if (!_stale) el.__aiPending = true;   // nothing on screen yet — the AI line is what will type
         var topics = {
           bias:     { en: "my directional read / trading plan",     es: 'mi lectura direccional / plan de trading' },
           review:   { en: "reflecting on today's session",          es: 'reflexionar sobre la sesión de hoy' },
@@ -35118,7 +35218,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Fallback so greetings aren't blocked forever if the cloud pull never lands (offline, or a
     // reconcile path that doesn't set the flag): after a short grace, allow generation and
     // re-run so the gate re-evaluates. reconcile() sets __stGreetSyncReady on a successful pull.
-    try { setTimeout(function () { if (!window.__stGreetSyncReady) { window.__stGreetSyncReady = true; try { enhanceAll(); } catch (e) {} } }, 8000); } catch (e) {}
+    // 1.2s, not 8s. This gate exists only to avoid PAYING for a greeting the cloud pull was about
+    // to deliver — a token optimisation. The greet endpoint answers in about a second, so waiting
+    // eight to save the occasional duplicate call made the gate the dominant cost by far.
+    try { setTimeout(function () { if (!window.__stGreetSyncReady) { window.__stGreetSyncReady = true; try { enhanceAll(); } catch (e) {} } }, 1200); } catch (e) {}
     function onGreet() { try { if (canChat()) ensureUI(); } catch (e) {} try { mountControls(); } catch (e) {} try { applyLang(); } catch (e) {} }
     // Safety net: poll for up to a minute after load so the UI comes up once the user is
     // logged in and the boxes exist, even if the greeting hook never fired for some reason.
