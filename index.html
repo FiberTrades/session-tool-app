@@ -23211,7 +23211,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 15:50 UTC';
+  window.ST_BUILD = '2026-08-12 16:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -36426,14 +36426,39 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       && Math.abs(l.net - net) <= tol
       && (day === null || l.day === null || Math.abs(l.day - day) <= 1));
   }
+  // The day the journal actually begins — the earliest trade in it. The EA re-scans 90 days of
+  // broker history on every start, so the inbox routinely holds trades from BEFORE the trader
+  // started journaling. Those are not missing; they were never in scope. Without this the list
+  // faithfully reported thirteen trades from 30 April to 15 May as absent from a journal that does
+  // not begin until 26 May — every one of them correct, and every one of them useless.
+  function _mt5JournalStartDay() {
+    let min = null;
+    const scan = (arr) => {
+      (arr || []).forEach(t => {
+        if (!t || !t.date) return;
+        const d = _mt5Day(t.date);
+        if (d != null && (min === null || d < min)) min = d;
+      });
+    };
+    try {
+      scan(data.review && data.review.trades);
+      scan(data.currentSeries);
+      (data.history || []).forEach(h => scan(h && h.trades));
+    } catch (e) {}
+    return min;
+  }
   // Which broker trades are genuinely missing from the journal, from a set of inbox rows.
   function _mt5ExcludedFrom(all) {
     const worn = _mt5WornTickets();
     const idx = _mt5LoggedIndex();
-    return (all || []).filter(r => _mt5RowIsValid(r)
-      && !worn.has(String(r.ticket))
-      && !_mt5RowMatchesLogged(r, idx)
-      && !_mt5RowAllowed(r));
+    const start = _mt5JournalStartDay();
+    return (all || []).filter(r => {
+      if (!_mt5RowIsValid(r)) return false;
+      // Predates the journal → out of scope, not missing. One day of slack so a trade on the very
+      // first journalled day is never dropped by a timezone boundary.
+      if (start !== null) { const d = _mt5Day(r.close_time); if (d !== null && d < start - 1) return false; }
+      return !worn.has(String(r.ticket)) && !_mt5RowMatchesLogged(r, idx) && !_mt5RowAllowed(r);
+    });
   }
   // Recompute the "not counted here" figure from a FRESH pull.
   //
