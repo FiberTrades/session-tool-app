@@ -16541,12 +16541,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var x = c.getContext('2d');
         x.drawImage(img, 0, 0);
         var dat = x.getImageData(0, 0, c.width, c.height), p = dat.data;
+        // The same pass also records the tight bounds of what survives, because the app icon
+        // carries about 9.4% internal padding on every side. Drawing the whole file into a box
+        // therefore placed the PADDING, not the mark: it sat 6.8px inside the card's left margin,
+        // out of line with the hero number and footer, and the gap to the wordmark measured 23px
+        // where the code said 16. The card crops to these bounds instead.
+        var x0 = 1e9, y0 = 1e9, x1 = -1, y1 = -1;
         for (var i = 0; i < p.length; i += 4) {
           var mx = Math.max(p[i], p[i + 1], p[i + 2]);
           if (mx <= 42) p[i + 3] = 0;
           else if (mx < 96) p[i + 3] = Math.round(p[i + 3] * (mx - 42) / 54);
+          if (p[i + 3] > 12) {
+            var pxx = (i >> 2) % c.width, pyy = (i >> 2) / c.width | 0;
+            if (pxx < x0) x0 = pxx;
+            if (pxx > x1) x1 = pxx;
+            if (pyy < y0) y0 = pyy;
+            if (pyy > y1) y1 = pyy;
+          }
         }
         x.putImageData(dat, 0, 0);
+        if (x1 >= x0 && y1 >= y0) c.__bounds = { x: x0, y: y0, w: x1 - x0 + 1, h: y1 - y0 + 1 };
         return c;
       } catch (e) { return img; }   // e.g. a tainted canvas — better the plate than no logo
     }
@@ -16579,15 +16593,34 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // ── logo + wordmark ─────────────────────────────────────────────────────
       // The icon leads the wordmark. Its own near-black plate is knocked out first (see
       // knockout) so it reads as a mark on the card rather than a square pasted onto it.
-      var lw = 72, tx = L;
-      // The box is bigger than the mark looks: the icon carries its own internal padding, so a
-      // 72px box renders roughly a 57px glyph (an 84px box drew 67; at 58 it drew 46).
-      // The Y is derived from the box size rather than fixed, so changing lw keeps the box CENTRE
-      // on the wordmark's cap centre (baseline 139 less about half a 40px cap ≈ 125) — the two
-      // read as one lockup, and resizing the mark no longer slides it up or down against the text.
-      if (logo) { try { g.drawImage(logo, L, 125 - lw / 2, lw, lw); tx = L + lw + 16; } catch (e) {} }
+      // MARK is the size of the mark itself now that knockout hands back its bounds — it is not a
+      // box the mark floats inside, so it needs no padding allowance. GAP is the space the eye
+      // actually sees between mark and wordmark, about half a cap height.
+      var MARK = 58, GAP = 14, BASE = 139;
       g.fillStyle = C.text; g.font = '40px ' + SERIF; ls(0);
-      g.fillText('SessionTool', tx, 139);
+      var wm = g.measureText('SessionTool');
+      // Cap height off a capital, not off the mixed-case string: 'SessionTool' has no descender
+      // and its ascent would read taller than the caps the mark is being aligned to.
+      var capA = g.measureText('S').actualBoundingBoxAscent || 29;
+      var tx = L;
+      if (logo) {
+        try {
+          var b = logo.__bounds;
+          var gy = (BASE - capA / 2) - MARK / 2;              // mark centred on the wordmark's cap centre
+          if (b) {
+            // Square source window around the bounds, so a mark that is not square is letterboxed
+            // rather than stretched. Today's icon is square, so this lands exactly flush at L.
+            var s = Math.max(b.w, b.h);
+            g.drawImage(logo, b.x + (b.w - s) / 2, b.y + (b.h - s) / 2, s, s, L, gy, MARK, MARK);
+          } else {
+            g.drawImage(logo, L, gy, MARK, MARK);              // untrimmed fallback (tainted canvas)
+          }
+          // Gap measured to the wordmark's INK rather than its origin, so the spacing is what the
+          // eye sees and stays right if the face is ever swapped.
+          tx = L + MARK + GAP + (wm.actualBoundingBoxLeft || 0);
+        } catch (e) {}
+      }
+      g.fillText('SessionTool', tx, BASE);
 
       // ── series + dates, right ───────────────────────────────────────────────
       g.textAlign = 'right'; ls(3);
@@ -23385,7 +23418,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 23:48 UTC';
+  window.ST_BUILD = '2026-08-13 00:22 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
