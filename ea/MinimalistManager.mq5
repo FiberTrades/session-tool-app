@@ -1777,9 +1777,15 @@ bool SyncCollectAndPush(ulong posId)
    string dir=(dirIn>0)?"buy":"sell";
    int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS); if(dg<=0) dg=g_digits;
 
+   // The broker ACCOUNT this trade belongs to. Without it the app receives an undifferentiated
+   // stream: two prop accounts syncing under one token produce trades that are indistinguishable
+   // except by symbol, time and lot size, so filing an import is guesswork - and a wrong guess
+   // silently moves the wrong account's balance, floor and challenge progress, permanently.
+   long login=AccountInfoInteger(ACCOUNT_LOGIN);
+
    string json=StringFormat(
-      "{\"token\":\"%s\",\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\",\"lots\":%s,\"entry_price\":%s,\"exit_price\":%s,\"open_time\":\"%s\",\"close_time\":\"%s\",\"pnl\":%s,\"costs\":%s",
-      g_syncTokenEff,posId,sym,dir,
+      "{\"token\":\"%s\",\"ticket\":%I64u,\"login\":%I64d,\"symbol\":\"%s\",\"direction\":\"%s\",\"lots\":%s,\"entry_price\":%s,\"exit_price\":%s,\"open_time\":\"%s\",\"close_time\":\"%s\",\"pnl\":%s,\"costs\":%s",
+      g_syncTokenEff,posId,login,sym,dir,
       DoubleToString(inVol,2),
       DoubleToString(entryPrice,dg),
       DoubleToString(exitPrice,dg),

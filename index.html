@@ -3283,6 +3283,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .chal-acct-name { font-family: "AppNum","DM Mono",monospace; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text); }
   .chal-acct-sb { font-family: "AppNum","DM Mono",monospace; font-size: 11px; color: var(--text-dim); }
   .chal-verdict-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; }
+  .chal-finish { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-dim);
+                 font-family: "AppNum","DM Mono",monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase;
+                 padding: 9px 14px; cursor: pointer; transition: color 160ms, border-color 160ms; }
+  .chal-finish:hover { color: var(--text); border-color: var(--text-mid); }
+  .chal-finish-armed { color: #E5B567; border-color: #E5B567; }
+  .chal-finish:disabled { cursor: default; opacity: 0.7; }
   .chal-verdict-row .chal-verdict { margin-top: 0; }
   @media (max-width: 700px) { .chal-grid { grid-template-columns: 1fr; } }
   .atl-cell { background: var(--bg); padding: 10px 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -17470,6 +17476,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
                : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
                : T('In progress.', 'En curso.');
       var vRow = '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>' + (tail || '');
+      // A decided evaluation can be put away. Only offered once it is genuinely finished, so it
+      // cannot be hit mid-challenge, and it archives rather than deletes: every trade stays in the
+      // journal and in lifetime stats, the account simply stops occupying this panel. Without it a
+      // passed or blown challenge sits here forever, and with several accounts you end up reading
+      // past three dead evaluations to find the live one.
+      if (breached || passed) {
+        vRow += '<button type="button" class="chal-finish" data-acc="' + esc(acc.id) + '" data-step="0">'
+              + T('Mark finished', 'Marcar terminada') + '</button>';
+      }
       html += '<div class="chal-verdict-row">' + vRow + '</div>';
       return '<div class="chal-acct">'
            + '<div class="chal-acct-head"><span class="chal-acct-name">' + esc(acc.name || '') + '</span>'
@@ -17516,6 +17531,39 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var out = blocks.join('');
       if (!single && noteHtml) out += '<div class="chal-verdict-row">' + noteHtml + '</div>';
       body.innerHTML = out;
+
+      // Two-step, in place: archiving is not undoable from here, so one stray click must not do it.
+      try {
+        body.querySelectorAll('.chal-finish').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            if (btn.dataset.step !== '1') {
+              btn.dataset.step = '1';
+              btn.textContent = T('Confirm — archive', 'Confirmar — archivar');
+              btn.classList.add('chal-finish-armed');
+              setTimeout(function () {
+                if (btn.dataset.step === '1' && btn.isConnected) {
+                  btn.dataset.step = '0';
+                  btn.textContent = T('Mark finished', 'Marcar terminada');
+                  btn.classList.remove('chal-finish-armed');
+                }
+              }, 4000);
+              return;
+            }
+            var id = btn.getAttribute('data-acc');
+            var ok = false;
+            try { ok = (typeof archiveAccount === 'function') ? archiveAccount(id) : false; } catch (e) { ok = false; }
+            if (!ok) {
+              // archiveAccount refuses to archive the only active account — say why rather than
+              // appearing to do nothing.
+              btn.textContent = T('Can’t archive your only active account', 'No puedes archivar tu única cuenta activa');
+              btn.disabled = true;
+              return;
+            }
+            try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
+            try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
+          });
+        });
+      } catch (e) {}
 
       var ttl = document.getElementById('challenge-title');
       if (ttl) ttl.textContent = T('Challenge progress', 'Progreso del reto');
@@ -23274,7 +23322,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 18:05 UTC';
+  window.ST_BUILD = '2026-08-12 19:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -26292,8 +26340,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // and must keep appearing in Challenge progress rather than vanishing on upgrade.
     const kindSel = document.getElementById('onboard-acct-kind');
     if (kindSel) {
-      const _accNow = (typeof getAccountById === 'function' && data.onboardEditingAccountId)
-        ? getAccountById(data.onboardEditingAccountId) : null;
+      const _accNow = (typeof getActiveAccount === 'function') ? getActiveAccount() : null;
       const _looksLikeChallenge = !!(rr && ((rr.maxDrawdownPct || rr.maxDrawdownAmount || rr.profitTargetPct || rr.profitTargetAmount)));
       kindSel.value = (_accNow && _accNow.kind) ? _accNow.kind : (_looksLikeChallenge ? 'challenge' : 'personal');
     }
@@ -35651,6 +35698,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let _mt5MetaInfo = null;     // { accountName, brokerName, reportDate, sourceFileName }
   let _mt5TargetAccountId = null;   // account the preview step will file these trades against
   let _mt5ExcludedRows = [];        // broker trades not in the journal and currently suppressed
+  let _mt5BatchLogins = [];         // distinct broker logins present in the parsed batch
 
   // ----- MT5 sync-token display (a dedicated per-user secret, separate from the account id) -----
   function mt5SyncToken() {
@@ -36900,8 +36948,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var _tnote = document.getElementById('mt5-target-note');
       if (_tsel) {
         var _live = (data.accounts || []).filter(function (a) { return a && a.status === 'active'; });
+        // Which broker login(s) is this batch from? Trades carry it once the EA is on a build that
+        // sends it. One login that we have filed before picks its own destination; a batch spanning
+        // two logins is not something to guess at, so it says so and imports nothing until split.
+        var _logins = {};
+        (_mt5ParsedTrades || []).forEach(function (t) { if (t && t._login) _logins[String(t._login)] = 1; });
+        _mt5BatchLogins = Object.keys(_logins);
+        var _known = (data.mt5LoginMap || {});
+        var _mapped = (_mt5BatchLogins.length === 1) ? _known[_mt5BatchLogins[0]] : null;
         var _dflt = (typeof _syncTargetAccount === 'function') ? _syncTargetAccount() : null;
-        var _dfltId = (_dflt && _dflt.id) || (_live[0] && _live[0].id) || '';
+        var _dfltId = (_mapped && _live.some(function (a) { return a.id === _mapped; }) ? _mapped : null)
+                   || (_dflt && _dflt.id) || (_live[0] && _live[0].id) || '';
         var _esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
         _tsel.innerHTML = _live.map(function (a) {
           return '<option value="' + _esc(a.id) + '">' + _esc(a.name || a.id) + '</option>';
@@ -36913,10 +36970,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if (_tnote) _tnote.textContent = '';
         };
         if (_tnote) {
-          _tnote.textContent = _live.length > 1
-            ? window._stT('Check this before importing — it cannot be corrected later.',
-                          'Compruébalo antes de importar — no se puede corregir después.')
-            : '';
+          if (_mt5BatchLogins.length > 1) {
+            _tnote.textContent = window._stT(
+              'These trades come from ' + _mt5BatchLogins.length + ' different broker accounts (' + _mt5BatchLogins.join(', ') + '). Filter by date and import one account at a time.',
+              'Estas operaciones vienen de ' + _mt5BatchLogins.length + ' cuentas de bróker distintas (' + _mt5BatchLogins.join(', ') + '). Filtra por fecha e importa una cuenta cada vez.');
+            _tnote.style.color = '#E5B567';
+          } else if (_mt5BatchLogins.length === 1) {
+            _tnote.style.color = '';
+            _tnote.textContent = window._stT(
+              'Broker account ' + _mt5BatchLogins[0] + (_mapped ? ' — filed here last time.' : ' — this choice is remembered for next time.'),
+              'Cuenta de bróker ' + _mt5BatchLogins[0] + (_mapped ? ' — se archivó aquí la última vez.' : ' — se recordará esta elección.'));
+          } else {
+            _tnote.style.color = '';
+            _tnote.textContent = _live.length > 1
+              ? window._stT('Check this before importing — it cannot be corrected later.',
+                            'Compruébalo antes de importar — no se puede corregir después.')
+              : '';
+          }
         }
       }
     } catch (e) {}
@@ -38469,6 +38539,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // they're meaningless on a single account (you can't archive your only
         // account, delete would orphan every trade you've ever logged).
         const actions = [];
+        // Account type. Lives here because this is the only place an EXISTING account can be
+        // edited — the same control in first-run onboarding can only ever describe the first one.
+        // Accounts created before this field are read the old way: carrying a drawdown or profit
+        // target meant it was being treated as an evaluation, so nothing changes until it is set.
+        const _rrK = acc.riskRules || {};
+        const _kindNow = acc.kind
+          || ((_rrK.maxDrawdownPct || _rrK.maxDrawdownAmount || _rrK.profitTargetPct || _rrK.profitTargetAmount) ? 'challenge' : 'personal');
+        actions.push(`<select class="settings-btn settings-acct-kind" data-id="${acc.id}" title="${window._stT('Only challenge accounts appear in Challenge progress, with a target, a floor and a pass/fail verdict.', 'Solo las cuentas de reto aparecen en Progreso del reto, con objetivo, suelo y veredicto.')}">
+            <option value="personal"${_kindNow === 'personal' ? ' selected' : ''}>${window._stT('Personal', 'Personal')}</option>
+            <option value="challenge"${_kindNow === 'challenge' ? ' selected' : ''}>${window._stT('Challenge', 'Reto')}</option>
+          </select>`);
         actions.push(`<button type="button" class="settings-btn" data-action="rename" data-id="${acc.id}">${tt('settings.rename')}</button>`);
         if (!isSingleAccount) {
           if (isArchived) {
@@ -38520,6 +38601,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           const action = btn.dataset.action;
           const id = btn.dataset.id;
           handleAccountAction(action, id);
+        });
+      });
+      // Account type — takes effect immediately, since the only thing reading it is a panel the
+      // trader is probably looking at while they change it.
+      wrap.querySelectorAll('select.settings-acct-kind').forEach(sel => {
+        sel.addEventListener('change', () => {
+          const a = (typeof getAccountById === 'function') ? getAccountById(sel.dataset.id) : null;
+          if (!a) return;
+          a.kind = (sel.value === 'challenge') ? 'challenge' : 'personal';
+          try { saveData(); } catch (e) {}
+          try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
         });
       });
       // Wire inline starting-balance edit: click on the value, type new amount, blur to save.
