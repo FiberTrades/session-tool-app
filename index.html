@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 09:35 UTC';
+  window.ST_BUILD = '2026-08-12 10:05 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34073,9 +34073,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       });
     } catch (e) {}
   }
+  // Master switch for the typewriter. Flip it live in the console — no reload, no deploy:
+  //   window.__stTypewriter = false   → greetings appear instantly, fully formed
+  //   window.__stTypewriter = true    → greetings type themselves (default)
+  // Worth knowing what it buys: the effect is the ONLY reason a greeting is ever hidden. To type a
+  // line you must hide it first and have something reveal it at the right moment — which is where
+  // every failure came from (a late IntersectionObserver, the 1.5s rescue net, re-renders cutting
+  // the animation short, timer starvation on a busy boot). With it off, none of that machinery runs:
+  // the line is set and it is on screen, full stop. It does NOT affect the AI rewrite arriving later.
+  function _twEnabled() { try { return window.__stTypewriter !== false; } catch (e) { return true; } }
   function _doTypeGreeting(el) {
     if (!el) return;
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
+    if (!_twEnabled()) { _gLog(el, 'show-no-typewriter'); el.__twTypedHTML = src; _twShow(el); return; }
     if (el.__twTypedHTML === src) { _gLog(el, 'show-already-typed'); _twShow(el); return; }   // already typed this exact line — just make sure it's visible; don't replay
     // THE RULE, in one place: a greeting already on screen is never re-typed.
     // If this element has typed a line, is visible, is not mid-animation and is on the displayed
@@ -34154,6 +34164,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // timer un-hides after 1.5s in case the observer never fires, so a greeting can never stick hidden.
   function _armTypewriter(el) {
     if (!el || typeof IntersectionObserver === 'undefined') return;   // no observer to reveal it → never hide
+    // Typewriter off → NOTHING is ever hidden. This is the half of the switch that matters: hiding
+    // is only ever justified by an animation that is about to reveal it, so with no animation there
+    // is no hide, no rescue timer, and no way for a greeting to be stuck blank waiting on anything.
+    if (!_twEnabled()) { _twShow(el); return; }
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
     if (el.__twTypedHTML === src) return;   // already typed this line → leave it visible
     // NEVER hide a line that is mid-animation. Every character is already individually hidden, so
