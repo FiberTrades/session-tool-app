@@ -5152,11 +5152,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <div id="mt5-excluded-wrap" style="margin-top:22px;display:none;">
           <button type="button" class="mt5-collapse-toggle" data-collapse="mt5-excluded-body" aria-expanded="false" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit;color:inherit;">
             <span class="mt5-collapse-chev" style="display:inline-block;transition:transform 180ms;font-size:10px;line-height:1;color:var(--text-dim);">&#9656;</span>
-            <strong id="mt5-excluded-title" style="color:var(--text-mid);font-style:normal;">Broker trades not in your journal</strong>
+            <strong id="mt5-excluded-title" style="font-family:'Fraunces',serif;font-size:16px;font-weight:400;color:var(--text);font-style:normal;">Broker trades not in your journal</strong>
           </button>
+          <!-- Content sits in a single .mt5-fold-inner: the collapse animates grid-template-rows
+               0fr → 1fr, which can only collapse to nothing when the direct child carries
+               overflow:hidden and min-height:0. Plain divs keep min-height:auto, the row cannot
+               shrink, and the section simply refuses to close. -->
           <div id="mt5-excluded-body" class="mt5-collapse-body">
-            <div id="mt5-excluded-hint" style="font-family:'AppNum','DM Mono',monospace;font-size:11px;color:var(--text-dim);margin:8px 0 12px;line-height:1.6;"></div>
-            <div id="mt5-excluded-list" style="border:1px solid var(--border-2);border-radius:var(--radius-ctrl);max-height:260px;overflow-y:auto;"></div>
+            <div class="mt5-fold-inner">
+              <div id="mt5-excluded-hint" style="font-family:'AppNum','DM Mono',monospace;font-size:11px;color:var(--text-dim);margin:0 0 12px;line-height:1.6;"></div>
+              <div id="mt5-excluded-list" style="border:1px solid var(--border-2);border-radius:var(--radius-ctrl);max-height:260px;overflow-y:auto;"></div>
+            </div>
           </div>
         </div>
       </div>
@@ -17426,7 +17432,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // to the floor and the target all quietly wrong — which is exactly how this account ran
       // £27.37 ahead of FTMO for five days with nothing on screen suggesting a problem. A number
       // that disagrees with your broker should explain itself rather than just be wrong.
-      try {
+      // WITHHELD until the detection is proven. This line twice asserted trades were missing on an
+      // account that reconciles with the broker to the penny — first because it matched on tickets
+      // alone (many logged trades carry no stamp), then still, because matching on instrument + net
+      // to the penny does not identify a logged trade either: a hand-logged or edited row rarely
+      // carries the broker's exact net, and one imported before the EA resolved it can differ too.
+      // A panel about money that cries wolf is worse than one that says nothing, so it says nothing
+      // until it can be right. The scan and the restore list stay — those are verifiable.
+      // window.__stMt5Missing() prints what it WOULD have claimed, for working the matching out.
+      if (false) try {
         var _exc = data._mt5Excluded;
         if (_exc && _exc.n > 0) {
           var _excMoney = money(Math.abs(_exc.sum || 0));
@@ -23197,7 +23211,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 14:40 UTC';
+  window.ST_BUILD = '2026-08-12 15:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -35643,6 +35657,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         (function (tg) {
           var body = document.getElementById(tg.getAttribute('data-collapse'));
           var chev = tg.querySelector('.mt5-collapse-chev');
+          // closeMt5Modal writes an inline display:none on these bodies, which outranks the
+          // display:grid the collapse animation depends on — so on the SECOND open the chevron
+          // toggled a class that could no longer show anything. Clear it before collapsing.
+          if (body) body.style.display = '';
           if (body) body.classList.remove('open');
           if (chev) chev.style.transform = '';
           tg.setAttribute('aria-expanded', 'false');
@@ -36425,6 +36443,34 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) {}
   }
   try { window.__stMt5ScanExcluded = _mt5ScanExcluded; } catch (e) {}
+  // Diagnostic for the withheld "not counted here" line: what would it have claimed, and why did
+  // each row fail to match a logged trade? Prints the broker row beside the nearest journal entry
+  // by value, which is what shows whether these are genuinely missing or just failing the test.
+  try {
+    window.__stMt5Missing = function () {
+      return Promise.resolve(window.STCloud.pullInbox()).then(function (res) {
+        var all = (res && res.data) || [];
+        var rows = _mt5ExcludedFrom(all);
+        var logged = [];
+        var addL = function (list) { (list || []).forEach(function (t) { if (!t) return;
+          try { logged.push({ sym: String(t.symbol || ''), net: +((typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0).toFixed(2), date: t.date, ticket: t.mt5Ticket || null }); } catch (e) {} }); };
+        addL(data.review && data.review.trades); addL(data.currentSeries);
+        (data.history || []).forEach(function (h) { addL(h && h.trades); });
+        var out = rows.map(function (r) {
+          var net = parseFloat(r.pnl) || 0;
+          var near = logged.map(function (l) { return { d: Math.abs(l.net - net), l: l }; })
+                           .sort(function (a, b) { return a.d - b.d; }).slice(0, 2)
+                           .map(function (x) { return x.l.sym + ' ' + x.l.net + ' (off by ' + x.d.toFixed(2) + ')'; });
+          return { ticket: String(r.ticket), sym: r.symbol, net: net, closed: String(r.close_time || '').slice(0, 10),
+                   consumed: !!r.consumed_at, nearestLogged: near };
+        });
+        console.log(JSON.stringify({ wouldClaim: out.length,
+          sum: +out.reduce(function (s, r) { return s + r.net; }, 0).toFixed(2),
+          loggedTrades: logged.length, rows: out }, null, 1));
+        return out.length;
+      });
+    };
+  } catch (e) {}
   // Drop any figure carried over from a previous session before it can be shown, then verify it.
   try { if (data && data._mt5Excluded) data._mt5Excluded = null; } catch (e) {}
   setTimeout(function () { try { _mt5ScanExcluded(); } catch (e) {} }, 4000);
