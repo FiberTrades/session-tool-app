@@ -17631,7 +17631,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
     })();
 
-    renderCombinedAnalysis(all);
+    // Guarded: this runs immediately BEFORE the equity curve is drawn, so a throw in it used to
+    // leave an empty <svg> and no chart at all.
+    try { renderCombinedAnalysis(all); } catch (_combErr) {
+      try { console.warn('combined analysis skipped:', _combErr); } catch (e) {}
+    }
 
     drawEquityChart(all, { splitColor: true, rangeFromMs: equityRangeFromMs() });
   }
@@ -18456,7 +18460,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const isPct  = metric === 'pct';
     const decimals = isPips ? 0 : 2;
     const unit     = isPct ? '%' : (isPips ? 'p' : 'R');
-    const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(decimals) + unit;
+    // Refuses to throw on a missing figure: a panel that cannot format one number prints a dash,
+    // it does not abort the render of every section below it (an undefined scenario total here
+    // blanked the whole Statistics tab, equity curve included).
+    const fmt = v => { const n = Number(v); return isFinite(n) ? ((n >= 0 ? '+' : '') + n.toFixed(decimals) + unit) : '—'; };
     const fmtGbp = v => {
       const sym = (typeof curSym === 'function') ? curSym() : '£';
       const sign = v >= 0 ? '+' : '\u2212';
@@ -18854,7 +18861,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     };
 
     // Formatters
-    const fmt = v => (v >= 0 ? '+' : '') + v.toFixed(decimals) + unit;
+    // Refuses to throw on a missing figure: a panel that cannot format one number prints a dash,
+    // it does not abort the render of every section below it (an undefined scenario total here
+    // blanked the whole Statistics tab, equity curve included).
+    const fmt = v => { const n = Number(v); return isFinite(n) ? ((n >= 0 ? '+' : '') + n.toFixed(decimals) + unit) : '—'; };
     const fmtGbp = v => {
       const sym = (typeof curSym === 'function') ? curSym() : '£';
       const sign = v >= 0 ? '+' : '\u2212';
@@ -18924,9 +18934,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // Show the R total alongside the primary unit, exactly like the CURRENT row, when
         // the primary unit is pips (so pips · R). scenario.totalR is the exact net R.
         const _sTotR = (typeof scenario.totalR === 'number' && !isNaN(scenario.totalR)) ? scenario.totalR : null;
+        // A scenario may legitimately have no figure in the active metric. Show what IS known
+        // rather than calling the formatter on a non-number.
+        const _sTot = (typeof scenario.total === 'number' && !isNaN(scenario.total)) ? scenario.total : null;
         const _totalDisp = (metric === 'pips' && _sTotR !== null)
-          ? (fmt(scenario.total) + ' · ' + _fmtUnit(_sTotR, 'r'))
-          : fmt(scenario.total);
+          ? ((_sTot !== null ? fmt(_sTot) + ' · ' : '') + _fmtUnit(_sTotR, 'r'))
+          : (_sTot !== null ? fmt(_sTot) : (_sTotR !== null ? _fmtUnit(_sTotR, 'r') : '—'));
         const totalCell = `<span class="cds-cell"><span class="combo-dir-total">${_totalDisp}</span></span>`;
         const gbpCell   = `<span class="cds-cell"><span class="combo-dir-gbp">${fmtGbp(scenario.totalGbp)}</span></span>`;
         const deltaCls = deltaGbp > 0 ? 'rec-suggest' : deltaGbp < 0 ? 'rec-downside' : '';
@@ -19066,14 +19079,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // The ladder must match the EA's PM_BE_LADDER exactly.
     const BE_LADDER = [null, 0.5, 1, 1.5, 2, 2.5, 3];   // null = never move to BE
 
+    // Returns the same shape the A/B/C scenario builder returns, because buildDirectionBlock prints
+    // scenario.total in the active metric. This used to return money only, so D's `total` was
+    // undefined and the block threw on undefined.toFixed() the moment its stats became visible —
+    // which needs 10+ tracked BEs and a rule that beats current. That exception aborted
+    // renderTradesStats before drawEquityChart, taking the equity curve down with it.
     function projectBeRule(idx) {
-      let totalGbp = 0;
+      let totalGbp = 0, totalR = 0, totalUnits = 0;
+      let unitsKnown = true;   // pips mode needs a stop distance on every SIMULATED trade
       const perTradeGbp = [];
       allTrades.forEach(tr => {
         const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
         const risk   = parseFloat(tr.risk)  || 0;
         const costs  = parseFloat(tr.costs) || 0;
         const net    = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
+        const sl     = parseFloat(tr.sl)    || 0;
 
         // No simulation for this trade (no EA, or it never resolved): it contributes exactly
         // what it really did. It must not be silently dropped, or the totals would compare a
@@ -19081,17 +19101,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (!Array.isArray(tr.beSim) || tr.beSim.length < 7 || risk <= 0) {
           perTradeGbp.push(net * copies);
           totalGbp += net * copies;
+          totalR   += (risk > 0) ? (net / risk) * copies : 0;
+          totalUnits += (isPips ? (parseFloat(tr.pips) || 0) : ((risk > 0) ? (net / risk) : 0)) * copies;
           return;
         }
         const r = Number(tr.beSim[idx]);
-        const gbp = (isNaN(r) ? net : (r * risk - costs)) * copies;
-        perTradeGbp.push(gbp);
-        totalGbp += gbp;
+        const netPerCopy = isNaN(r) ? net : (r * risk - costs);
+        perTradeGbp.push(netPerCopy * copies);
+        totalGbp += netPerCopy * copies;
+        const netR = netPerCopy / risk;   // NET R, so R and money describe one outcome
+        totalR += netR * copies;
+        if (!isPips)       totalUnits += netR * copies;
+        else if (isNaN(r)) totalUnits += (parseFloat(tr.pips) || 0) * copies;
+        else if (sl > 0)   totalUnits += netR * sl * copies;   // 1R IS the stop distance in pips
+        else               unitsKnown = false;
       });
-      return { totalGbp, perTradeGbp };
+      // Only report a pips total when every simulated trade carried a stop distance.
+      return { totalGbp, perTradeGbp, totalR, total: (isPips && !unitsKnown) ? null : totalUnits };
     }
 
-    let bestBeIdx = -1, scenarioD = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp };
+    // The no-change fallback IS current, so it carries current's figures verbatim.
+    let bestBeIdx = -1, scenarioD = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp,
+                                      totalR: current.totalR, total: current.total };
     if (trackedBeSim.length > 0) {
       for (let k = 0; k < BE_LADDER.length; k++) {
         const sc = projectBeRule(k);
