@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 07:55 UTC';
+  window.ST_BUILD = '2026-08-12 08:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34115,19 +34115,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // NOW make the element itself visible — every char is individually hidden, so nothing shows yet.
     // (It was hidden by _armTypewriter at set-time, which is what stops the full-text flash on tab switch.)
     _twShow(el);
-    // Old-school machine pace, and never longer than 2 seconds.
+    // Old-school machine pace, driven by the CLOCK — not by counting ticks.
     //
-    // per = 2000/length, clamped to 12..45ms. The clamp is what makes it feel like a machine rather
-    // than a progress bar: a short line slows to 45ms a character so it still reads as TYPING
-    // instead of blinking into existence, and a long line speeds up to 12ms so it still lands
-    // inside the 2s ceiling. Only when even 12ms would overrun does it reveal 2 characters a tick
-    // (that needs ~170+ characters), so in practice this is one character at a time.
-    // Worked examples: 104 chars -> 19ms x 104 = 1.98s; 234 -> 12ms x 2/tick = 1.40s;
-    // 40 -> 45ms x 40 = 1.80s. Nothing can exceed 2s.
-    var idx = 0, total = chars.length, DURATION = 2000;
-    var per = Math.min(45, Math.max(12, Math.round(DURATION / total)));
-    var chunk = Math.max(1, Math.ceil(total / (DURATION / per)));
+    // A per-character setTimeout only holds its pace on an idle thread. Boot is the opposite: ~44
+    // greeting renders, cloud sync, layout — timers scheduled for 19ms fire whenever the thread
+    // frees up, so a 2s animation stretched to however long boot took. That is the "slow, stuck,
+    // then it comes out" on reload, with no logic bug left to blame.
+    //
+    // So each tick asks the clock how far through the line we SHOULD be and reveals up to there. A
+    // starved tick catches up by revealing several characters at once instead of falling behind,
+    // and the line always finishes in DURATION regardless of what else the page is doing.
+    //
+    // DURATION scales with length so short lines still read as typing rather than blinking into
+    // existence (40 chars ≈ 1.1s), and nothing ever exceeds the 2s ceiling.
+    var idx = 0, total = chars.length;
+    var DURATION = Math.min(2000, Math.max(900, total * 17));
+    var t0 = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
     (function step() {
+      var now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+      var want = Math.min(total, Math.ceil(((now - t0) / DURATION) * total));
+      while (idx < want) { if (chars[idx].style) chars[idx].style.visibility = ''; idx++; }
       if (idx >= total) {
         el.__twTimer = null;
         // A better line arrived while this one was typing (the AI rewrite usually lands about a
@@ -34139,8 +34146,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         }
         return;
       }
-      for (var c = 0; c < chunk && idx < total; c++, idx++) { if (chars[idx].style) chars[idx].style.visibility = ''; }
-      el.__twTimer = setTimeout(step, per);
+      el.__twTimer = setTimeout(step, 16);
     })();
   }
   // Hide a greeting the INSTANT its content is set, so on a tab switch the full line is never painted
