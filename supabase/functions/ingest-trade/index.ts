@@ -51,6 +51,16 @@
 //  uses - so the client and the server expire on the same day. If you change
 //  TRIAL_DAYS here, change it in the app too or the two will disagree.
 //  ---------------------------------------------------------------
+//  BROKER ACCOUNT LOGIN
+//
+//  The EA now sends "login" (MT5 ACCOUNT_LOGIN) with every trade. Needs a column:
+//
+//     alter table trades_inbox add column if not exists login bigint;
+//
+//  Nullable on purpose - an EA older than the build that sends it posts without one,
+//  and the app treats a missing login as "unknown" rather than as a mismatch, so
+//  nothing breaks if this function is deployed before the EA is recompiled (or after).
+//  ---------------------------------------------------------------
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
@@ -178,6 +188,12 @@ Deno.serve(async (req) => {
     close_time:  body.close_time ?? null,
     pnl:         numOrNull(body.pnl),
     costs:       numOrNull(body.costs),
+    // Which BROKER account this trade came from (MT5 ACCOUNT_LOGIN). Null from any EA
+    // older than the build that sends it, which is why the column is nullable and the
+    // app treats a missing login as "unknown" rather than as a mismatch. Without it two
+    // prop accounts syncing under one token arrive as one undifferentiated stream, and
+    // filing an import is guesswork that silently moves the wrong account's balance.
+    login:       numOrNull(body.login),
     // EA-only detail (null on manual / pre-update trades):
     sl_pips:     numOrNull(body.sl_pips),
     risk_gbp:    numOrNull(body.risk_gbp),
