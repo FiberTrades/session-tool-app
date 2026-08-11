@@ -23146,7 +23146,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 03:25 UTC';
+  window.ST_BUILD = '2026-08-12 02:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34120,12 +34120,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var el = en.target;
         if (en.isIntersecting && en.intersectionRatio > 0) {
           el.__twVisible = true;
-          // ALWAYS type. The old else-branch (_twShow while an AI rewrite was pending) dumped the
-          // line whole with no animation — and __aiPending is true for the entire AI round-trip
-          // plus the whole pre-sync window, so on a cold-cache day EVERY tab arrival took that
-          // path. That was "they don't have the typewriter effect". Typing the seed is fine: the
-          // AI line replaces it when it lands, and a line that improves beats a lifeless paste.
-          _doTypeGreeting(el);
+          if (!el.__aiPending) _doTypeGreeting(el);   // an AI rewrite is pending → wait for it…
+          else _twShow(el);                            // …but don't leave a blank box: show the seed placeholder meanwhile
         } else { el.__twVisible = false; }
       });
     }, { threshold: 0.01 });
@@ -34281,14 +34277,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const tail   = isReview ? _cachedTailReview  : _cachedTailBias;
         html = compose(opener, tail);
       }
-      // A re-render whose line is UNCHANGED must not interrupt an animation in progress: the
-      // innerHTML rewrite below tears out the half-typed spans and pastes the full plain line,
-      // cutting every boot-burst animation short ("it starts typing, then the whole thing just
-      // appears"). Same source + typewriter mid-flight = nothing new to say; leave it typing.
-      // Compared on the RAW composed string (__twSrcRaw), not __twHTML — innerHTML re-serializes
-      // markup (quotes, entities), so the round-tripped copy never string-equals the source.
-      if (el.__twTimer && el.__twSrcRaw === html) return;
-      el.__twSrcRaw = html;
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
       try { el.__greetSit = _greetSituation; } catch (e) {}   // and the situation it describes, for the AI cache signature
@@ -34309,13 +34297,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // site never got it. Type the seed rather than wait for the AI: a blank box is worse than a
       // line that improves. (Idempotent: on a cache hit enhanceGreeting already typed the AI line,
       // so _doTypeGreeting short-circuits on __twTypedHTML and this costs nothing.)
-      //
-      // Gate on offsetParent, NOT __twVisible: __twVisible only exists after the observer's first
-      // callback, so every render in the boot burst skipped this reveal, restarted the 1.5s safety
-      // timer, and stranded the line blank until the burst ended — "stuck, then out all at once".
-      // offsetParent is non-null exactly when this tab is display'd, no observer required; a
-      // greeting on a hidden tab stays armed and the observer types it on arrival.
-      if (el.offsetParent !== null) _doTypeGreeting(el);
+      if (el.__twVisible) _doTypeGreeting(el);
       // Name in the greeting is display-only — clicking it does nothing.
       // Name changes are done via the Settings modal (Profile section) to
       // keep the editing surface in one place.
