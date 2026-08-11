@@ -3447,6 +3447,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .stpc-toggle button:hover { color:var(--text-mid); }
   .stpc-toggle button.on { color:var(--text); background:var(--border-2); }
   .stpc-save { font-family:var(--mono); font-size:9px; letter-spacing:0.08em; color:var(--bg); background:var(--accent); border-radius:999px; padding:2px 7px; }
+  /* Currency picker. Sits beside the billing toggle on one line, and wraps under it when the
+     modal is too narrow for both rather than pushing the cards off the sides. */
+  #st-pc-toggle { display:flex; flex-wrap:wrap; gap:10px; justify-content:center; align-items:center; }
+  .stpc-cur button { padding:9px 13px; letter-spacing:0.08em; }
+  /* The asterisk marks a converted figure as an estimate, so it must read as a footnote mark and
+     not as part of the price - small, raised, and dimmer than the number it sits on. Values copied
+     from the landing page's own .fx-star (its second, winning rule) so a price looks the same in
+     both places; a relative offset rather than vertical-align:super, which raises by a different
+     amount at this size. */
+  .stpc-fx-star { font-size:0.52em; vertical-align:baseline; position:relative; top:-0.55em; opacity:0.6; margin-left:2px; letter-spacing:0; }
+  .stpc-fx { max-width:560px; margin:16px auto 0; font-size:11.5px; line-height:1.55; color:var(--text-dim); text-align:center; }
   .stpc-grid { display:flex; flex-wrap:wrap; justify-content:center; gap:18px; align-items:stretch; }
   .stpc-card { position:relative; display:flex; flex-direction:column; text-align:left; flex:1 1 260px; max-width:320px; min-width:248px; border-radius:var(--rc); padding:30px 26px; background:radial-gradient(125% 78% at 50% -10%, rgba(129,140,248,0.15), transparent 60%), var(--bg-elev); border:1px solid rgba(129,140,248,0.3); box-shadow:0 22px 55px -28px rgba(129,140,248,0.4); }
   .stpc-card.pop { border-color:rgba(244,114,182,0.2); background:radial-gradient(ellipse 130% 90% at 50% 0%, rgba(244,114,182,0.16), rgba(129,140,248,0.06) 45%, transparent 72%), #0b0b0e; box-shadow:0 24px 62px -26px rgba(244,114,182,0.4); }
@@ -9232,6 +9243,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const code = (typeof data !== 'undefined' && data && data.settings && data.settings.currency) || 'GBP';
     return CURRENCY_SYMBOLS[code] || '£';
   }
+  // Bridge for the plan chooser, which lives in a separate <script> block and cannot see `data`.
+  // Same pattern as __stGetPlan / __stAcctState. It lets the pricing open in the currency the
+  // member already reads their P&L in, instead of always starting at GBP.
+  window.__stGetCurrency = function () {
+    try { return (typeof data !== 'undefined' && data && data.settings && data.settings.currency) || 'GBP'; }
+    catch (e) { return 'GBP'; }
+  };
   // Re-walks any element tagged data-currency-symbol with a "{C}" template, e.g.
   //   <span data-currency-symbol="Risk {C}">Risk £</span>
   function applyCurrencySymbol() {
@@ -23375,7 +23393,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 01:34 UTC';
+  window.ST_BUILD = '2026-08-13 02:18 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -43824,6 +43842,36 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
 
   var pcInterval = 'yearly';
+
+  // ── Pricing currency ──────────────────────────────────────────────────────────────────────
+  // Mirrors the landing page's picker so the two never quote differently. Prices are held ONCE
+  // in GBP and converted at render, so there is a single place to change a price and a single
+  // place to change a rate.
+  //
+  // The rates are mid-market PLUS about 3%, because Stripe converts at its own rate with a 2-4%
+  // spread. Quoting mid-market alone would put a number on screen BELOW what the customer is
+  // actually charged - the wrong way to be wrong. Erring slightly high means the charge lands at
+  // or under what was advertised.
+  //
+  // TO UPDATE: change these rates in BOTH places - here and in the landing page's own CUR table
+  // (search "TO UPDATE" there) - keeping the ~3% allowance. As of August 2026 mid-market is about
+  // 1.17 and 1.34.
+  var PC_CUR = { GBP: { sym: '£', rate: 1 }, EUR: { sym: '€', rate: 1.20 }, USD: { sym: '$', rate: 1.38 } };
+  // Opens on the currency the member already reads their P&L in - a GBP-only panel is a poor
+  // first impression for someone whose whole journal is in euros. Their pick is remembered,
+  // because it is a preference about how they read prices, not a per-visit decision.
+  var pcCur = (function () {
+    try { var s = localStorage.getItem('st_pc_cur'); if (s && PC_CUR[s]) return s; } catch (e) {}
+    try { var a = window.__stGetCurrency ? window.__stGetCurrency() : 'GBP'; if (PC_CUR[a]) return a; } catch (e) {}
+    return 'GBP';
+  })();
+  // A converted figure is an estimate, so it carries the asterisk the footnote explains.
+  // A GBP figure is the exact charge and takes none.
+  function pcMoney(gbp) {
+    var c = PC_CUR[pcCur] || PC_CUR.GBP;
+    return c.sym + Math.round(gbp * c.rate) + (pcCur === 'GBP' ? '' : '<span class="stpc-fx-star">*</span>');
+  }
+
   var planChooser = document.createElement('div');
   planChooser.className = 'modal-bg';
   planChooser.id = 'st-plan-chooser-bg';
@@ -43834,6 +43882,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       '<p class="st-pc-sub" id="st-pc-sub" style="display:none;"></p>' +
       '<div id="st-pc-toggle"></div>' +
       '<div id="st-pc-tiers" class="stpc-grid"></div>' +
+      '<p class="stpc-fx" id="st-pc-fx" style="display:none;"></p>' +
       '<div id="st-pc-status" style="margin-top:14px;font-size:13px;min-height:18px;"></div>' +
       '<button type="button" class="stc-forgot" id="st-pc-close" style="margin-top:14px;"></button>' +
     '</div>';
@@ -43904,14 +43953,34 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '<button type="button" data-int="yearly"' + (annual ? ' class="on"' : '') + '>' + L('Annual', 'Anual') + '<span class="stpc-save">' + L('SAVE 20%', 'AHORRA 20%') + '</span></button>' +
       '</div>';
     }
+    // Currency picker. Three plain segments rather than the landing page's dropdown: there is room
+    // for them here, and it saves a menu that would need its own outside-click handling inside a
+    // modal. Rendered even at rank 2 (mentorship is the only card left, but it still has a price).
+    tgl += '<div class="stpc-toggle stpc-cur" role="group" aria-label="' + L('Currency', 'Moneda') + '">' +
+      Object.keys(PC_CUR).map(function (k) {
+        return '<button type="button" data-cur="' + k + '"' + (pcCur === k ? ' class="on"' : '') +
+               ' aria-pressed="' + (pcCur === k) + '">' + PC_CUR[k].sym + ' ' + k + '</button>';
+      }).join('') + '</div>';
     planChooser.querySelector('#st-pc-toggle').innerHTML = tgl;
+
+    // The asterisk on every converted figure needs its footnote, so the two appear and disappear
+    // together — an unexplained '*' beside a price is worse than no picker at all.
+    var fxEl = planChooser.querySelector('#st-pc-fx');
+    if (fxEl) {
+      if (pcCur === 'GBP') { fxEl.style.display = 'none'; fxEl.textContent = ''; }
+      else {
+        fxEl.style.display = '';
+        fxEl.textContent = L('*Euro and dollar amounts are a guide. You pay in your own currency at checkout, converted at the rate applying then.',
+                             '*Los importes en euros y dólares son orientativos. Pagas en tu moneda al finalizar la compra, con el cambio vigente en ese momento.');
+      }
+    }
 
     var html = '';
     if (rank < 1) {
       html += pcCard({
         name: L('ST Journal', 'ST Journal'),
-        amt: annual ? '\u00a315' : '\u00a320', per: L('/ mo', '/ mes'),
-        bill: annual ? L('billed annually \u00b7 \u00a3180/yr', 'anual \u00b7 \u00a3180/a\u00f1o') : L('billed monthly', 'facturado mensual'),
+        amt: pcMoney(annual ? 15 : 20), per: L('/ mo', '/ mes'),
+        bill: annual ? L('billed annually \u00b7 {A}/yr', 'anual \u00b7 {A}/a\u00f1o').replace('{A}', pcMoney(180)) : L('billed monthly', 'facturado mensual'),
         desc: L('The full journal \u2014 bias, review, stats, calendar and cloud sync across your devices.', 'El diario completo \u2014 sesgo, revisi\u00f3n, estad\u00edsticas, calendario y sincronizaci\u00f3n en la nube en todos tus dispositivos.'),
         feats: [
           L('All five tabs \u2014 bias, review, series, stats, calendar', 'Las cinco pesta\u00f1as \u2014 sesgo, revisi\u00f3n, serie, estad\u00edsticas, calendario'),
@@ -43929,8 +43998,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       html += pcCard({
         cls: 'pop', tag: L('Most popular', 'Top'),
         name: L('Bundle Pro', 'Bundle Pro'),
-        amt: annual ? '\u00a330' : '\u00a335', per: L('/ mo', '/ mes'),
-        bill: annual ? L('billed annually \u00b7 \u00a3360/yr', 'anual \u00b7 \u00a3360/a\u00f1o') : L('billed monthly', 'facturado mensual'),
+        amt: pcMoney(annual ? 30 : 35), per: L('/ mo', '/ mes'),
+        bill: annual ? L('billed annually \u00b7 {A}/yr', 'anual \u00b7 {A}/a\u00f1o').replace('{A}', pcMoney(360)) : L('billed monthly', 'facturado mensual'),
         desc: L('The Session Tool community, our trading method and daily session prep \u2014 everything to review your trading with us.', 'La comunidad Session Tool, nuestro m\u00e9todo de trading y la preparaci\u00f3n diaria de la sesi\u00f3n \u2014 todo para revisar tu trading con nosotros.'),
         feats: [
           L('Everything in ST Journal', 'Todo en ST Journal'),
@@ -43953,7 +44022,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       html += pcCard({
         cls: 'gold', tag: L('Most complete', 'Lo m\u00e1s completo'), tagCls: 'gold',
         name: L('Mentorship', 'Mentor\u00eda'),
-        amt: '\u00a3299', per: L('/ mo', '/ mes'),
+        amt: pcMoney(299), per: L('/ mo', '/ mes'),
         bill: L('monthly \u00b7 cancel anytime', 'mensual \u00b7 cancela cuando quieras'),
         desc: L('Everything in Bundle Pro, plus direct 1:1 mentoring for serious traders who are funded or working to get funded.', 'Todo en Bundle Pro, m\u00e1s mentor\u00eda 1:1 directa para traders serios que ya tienen fondeo o trabajan para conseguirlo.'),
         feats: [
@@ -43988,10 +44057,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     stUpgradeTo(b.getAttribute('data-tier'), b.getAttribute('data-interval'));
   });
   planChooser.querySelector('#st-pc-toggle').addEventListener('click', function (e) {
-    var b = e.target && e.target.closest ? e.target.closest('button[data-int]') : null;
-    if (!b) return;
-    pcInterval = b.getAttribute('data-int');
-    renderChooser();
+    if (!e.target || !e.target.closest) return;
+    var b = e.target.closest('button[data-int]');
+    if (b) { pcInterval = b.getAttribute('data-int'); renderChooser(); return; }
+    var c = e.target.closest('button[data-cur]');
+    if (c) {
+      var k = c.getAttribute('data-cur');
+      if (!PC_CUR[k]) return;
+      pcCur = k;
+      try { localStorage.setItem('st_pc_cur', k); } catch (err) {}   // remembered, not re-asked every visit
+      renderChooser();
+    }
   });
 
 
