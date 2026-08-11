@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 10:45 UTC';
+  window.ST_BUILD = '2026-08-12 11:10 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34113,7 +34113,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // greeting's FIRST appearance and nothing else. Hiding, re-arming and replaying on top of a
     // settled line is what produced the glitching.
     if (el.__twTypedHTML != null && !el.__twTimer && el.style.visibility !== 'hidden' && _greetOnScreen(el)) {
-      el.__twTypedHTML = src; el.innerHTML = src; _twShow(el); _gLog(el, 'swap-settled'); return;
+      el.__twDeferred = src; _gLog(el, 'defer-settled'); return;   // hold it; it loads on the way out
     }
     _gLog(el, 'type-start');
     el.__twTypedHTML = src;
@@ -34240,10 +34240,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           // for itself whether this is a first appearance (animate) or a settled line (swap).
           _gLog(el, 'io-visible');
           _doTypeGreeting(el);
-        } else { el.__twVisible = false; _gLog(el, 'io-hidden'); }
+        } else {
+          el.__twVisible = false;
+          _applyDeferred(el);   // left the screen → quietly load whatever was held back
+          _gLog(el, 'io-hidden');
+        }
       });
     }, { threshold: 0.01 });
     return _greetTypeIO;
+  }
+  // Load a line that was held back while the user was looking at the old one. Called the moment the
+  // greeting leaves the screen, so the change happens where nobody can see it and the new line is
+  // simply already there when they come back to that tab.
+  function _applyDeferred(el) {
+    try {
+      if (!el || el.__twDeferred == null) return false;
+      var h = el.__twDeferred; el.__twDeferred = null;
+      if (el.__twTimer) { clearTimeout(el.__twTimer); el.__twTimer = null; }
+      el.innerHTML = h; el.__twHTML = h; el.__twSrcRaw = h; el.__twTypedHTML = null;
+      _gLog(el, 'deferred-loaded');
+      return true;
+    } catch (e) { return false; }
+  }
+  // Is this greeting currently showing a line to the user? Then its text is not to be changed.
+  function _greetIsOnDisplay(el) {
+    try { return !!el && el.__twTypedHTML != null && el.style.visibility !== 'hidden' && _greetOnScreen(el); } catch (e) { return false; }
   }
   function _observeGreetType(el) { try { var io = _ensureGreetTypeIO(); if (io && el && !el.__twObserved) { el.__twObserved = true; io.observe(el); } } catch (e) {} }
   try { window.__stGreetBootMark = _gLog; } catch (e) {}   // so the AI module can log into the same trail
@@ -34265,10 +34286,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var _gt = (_gc.textContent || '').trim(); if (_gt) window.__stGreetingText = _gt;
       }
     } catch (e) {}
-    // Never write over a line that is mid-animation. The same line means there is nothing to say;
-    // a different one is queued and applied silently the instant the animation finishes.
-    if (el.__twTimer) {
-      if (html !== el.__twHTML) el.__twPendingSwap = html;
+    // Never write over a line the user is looking at. This is the AI rewrite landing a second or
+    // three after the greeting appeared — the moment someone is most likely to be reading it. Hold
+    // it instead; _applyDeferred loads it the instant this greeting leaves the screen, so it is
+    // simply already correct on the next visit. Same for a line that is mid-animation.
+    if (el.__twTimer || _greetIsOnDisplay(el)) {
+      if (html !== el.__twHTML) { el.__twDeferred = html; _gLog(el, 'defer-set'); }
       return;
     }
     el.innerHTML = html; el.__twHTML = html;
@@ -34281,7 +34304,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     _gLog(el, 'set');
     if (_greetOnScreen(el)) _doTypeGreeting(el);
   }
-  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; } catch (e) {}
+  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; window.__stApplyDeferred = _applyDeferred; } catch (e) {}
   // One word each, and they reload for you, so a boot runs under the setting just chosen.
   try {
     window.__stTypeOn  = function () { try { localStorage.setItem('st_typewriter', 'on'); } catch (e) {} delete window.__stTypewriter; location.reload(); };
@@ -34434,6 +34457,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // lands through _setGreetHTML (which queues it for the end of the animation), so nothing is
       // lost by skipping this pass.
       if (el.__twTimer) return;
+      // Same rule for the render itself, not just the AI arrival. The seed is re-picked from its
+      // pool on every render, so a refresh while you are sitting on a tab would otherwise reword the
+      // line in front of you — the same complaint, from a different direction. Hold it for the next
+      // visit. (enhanceGreeting is skipped this pass too, which is right: its cache signature should
+      // describe the line that is actually on screen, not one the user has never seen.)
+      if (_greetIsOnDisplay(el) && html !== el.__twSrcRaw) { el.__twDeferred = html; _gLog(el, 'defer-render'); return; }
       el.__twSrcRaw = html;
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
