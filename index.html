@@ -23400,7 +23400,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 02:52 UTC';
+  window.ST_BUILD = '2026-08-13 03:41 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -40824,7 +40824,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function closePanels(ex){ ['dcx-attach','dcx-emoji','dcx-gif'].forEach(function(id){ if(id!==ex){ var e=G(id); if(e) e.classList.remove('open'); } }); }
 
     function wire(root){
-      if(_commTier()!=='full'){ try{ var _pb0=G('dcx-plus'); if(_pb0){ _pb0.style.opacity='.42'; _pb0.style.cursor='not-allowed'; } var _ti0=G('dcx-input'); if(_ti0){ _ti0.readOnly=true; _ti0.style.opacity='.55'; _ti0.style.cursor='not-allowed'; _ti0.placeholder=window._stT('Only full members can post here','Solo los miembros completos pueden publicar'); } }catch(_e){} } G('dcx-plus').addEventListener('click', function(e){ e.stopPropagation(); if(_commTier()!=='full'){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Emojis, GIFs and attachments are for full members.','Los emojis, GIFs y adjuntos son para miembros completos.')); return; } var a=G('dcx-attach'); var op=!a.classList.contains('open'); closePanels('dcx-attach'); a.classList.toggle('open', op); });
+      /* No tier lock here any more. This ran ONCE at wire time and keyed off the member's plan, so
+         it permanently disabled the input and the attach button before any channel was even
+         chosen — no per-channel setting could undo it. selectChannel already applies the channel's
+         own post_policy on every switch, which is the setting the admin actually controls. */
+      G('dcx-plus').addEventListener('click', function(e){ e.stopPropagation(); if(!_canPostHere()){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Attachments are for members who can post in this channel.','Los adjuntos son para quienes pueden publicar en este canal.')); return; } var a=G('dcx-attach'); var op=!a.classList.contains('open'); closePanels('dcx-attach'); a.classList.toggle('open', op); });
       G('dcx-attach').querySelectorAll('button').forEach(function(b){ b.addEventListener('click', function(){ var act=b.getAttribute('data-act'); closePanels(); if(act==='upload') G('dcx-fdoc').click(); else if(act==='gif'){ G('dcx-gif').classList.add('open'); gifLoad(''); } else if(act==='voice'){ if(cur&&currentUser&&window.STVoice) STVoice.start(function(file){ note('Uploading\u2026'); up(file,'voice').then(function(o){ note(''); insertMsg({ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:'audio', attachment_name:o.name }); }).catch(function(e){ note('Voice upload failed: '+((e&&(e.message||e.error||e.name))||'check storage bucket allows audio')); try{ console.error('voice upload error', e); }catch(_){ } }); }); } else { fillEmojiPicker(); G('dcx-emoji').classList.add('open'); } }); });
       G('dcx-fimg').addEventListener('change', function(e){ var f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) setPending(f); });
       G('dcx-fdoc').addEventListener('change', function(e){ var f=e.target.files&&e.target.files[0]; e.target.value=''; if(f) setPending(f); });
@@ -41005,7 +41009,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }catch(e){}
     }
     function _postList(v){
-      var s=String(v==null?'everyone':v);
+      /* An UNSET policy now means full members, not everyone. Until this change nothing below the
+         full tier could post in any channel whatever the policy said, so channels created before
+         it have a post_policy nobody ever had to think about. Defaulting those to 'everyone' would
+         have thrown every existing channel open to Free Trial the moment this shipped — the exact
+         decision the admin asked to keep. This keeps today's behaviour until a channel is opened
+         deliberately, per channel, in the gear. An explicit 'everyone' still means everyone. */
+      var s=String(v==null?'mentorship,bundle':v);
       if(s==='admin') return [];
       if(s==='everyone'||s==='') return ['mentorship','bundle','premium','trial'];
       return s.split(',').map(function(x){return x.trim();}).filter(Boolean);
@@ -41028,13 +41038,27 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var pl=_myPlan(); if(pl==='comp') return true;
       return _postList(v).indexOf(pl)>-1;
     }
+    /* Posting is per CHANNEL, and the admin sets it: channel gear -> "Who can post", ticking any
+       of Mentorship / Bundle Pro / ST Journal / Free Trial (none ticked = admins only). The
+       compose controls used to ignore that entirely and ask _commTier() instead, which is a
+       property of the MEMBER, so a channel the admin had opened to Free Trial still refused their
+       posts. Everything that writes to a channel now asks this one question. */
+    function _canPostHere(){ return _postAllows(cur && cur.post_policy); }
     function _accAllows(v){
       var pl=_myPlan();
       if(pl==='comp') return true;
       return _accList(v).indexOf(pl)>-1;
     }
     function _chanLocked(c){ if(admin()) return false; try{ if(_accAllows(c.access_policy)) return false; var slug=(c.slug||'').toLowerCase(); if(_COMM_ALLOW[slug]) return false; }catch(e){} return true; }
-    function _msgVisible(m){ if(_commTier()==='full') return true; return !!(m && currentUser && m.sender_id===currentUser.id); }
+    /* Reading is decided by the CHANNEL, not by the plan. This used to hide every message a
+       limited-tier member had not written themselves, so a trial or ST Journal member opening
+       #weekend-review saw an empty room with only their own posts in it — the community looked
+       dead to exactly the people deciding whether to pay for it.
+       Who may enter a channel at all is already enforced twice over, by _visChans (it is not
+       listed) and _chanLocked (it cannot be opened), both driven by the channel's access_policy
+       that the admin sets in the channel gear. So by the time a message reaches here, the member
+       is entitled to be in the room, and hiding the conversation from them serves nothing. */
+    function _msgVisible(m){ return true; }
     function _chanIcon(name){
       var n=String(name||''); var sp=n.indexOf(' '); var h=sp>0?n.slice(0,sp):'';
       var isEmoji=(h && !/[a-z0-9]/i.test(h) && h.length<=6);
@@ -41563,7 +41587,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var ta=G('dcx-input'); if(ta) ta.placeholder=window._stT('Message #','Mensaje en #')+_chName(c);
       var canPost=_postAllows(c.post_policy);
       var comp=document.querySelector('#page-community .dcx-composer'); if(comp) comp.style.display=canPost?'':'none';
-      note(canPost?'':(lang()==='es'?'Solo los administradores pueden escribir en este canal.':'Only admins can post in this channel.'));
+      /* Two different reasons the composer can be gone, and they used to read as one. "Only admins"
+         is true when the channel is admins-only; it is a lie when the channel simply is not open
+         to this member's plan, and it leaves them with no idea that upgrading would change it. */
+      note(canPost ? '' : (_postList(c.post_policy).length
+        ? (lang()==='es'?'Puedes leer este canal. Publicar no está disponible en tu plan.':'You can read this channel. Posting isn’t open to your plan.')
+        : (lang()==='es'?'Solo los administradores pueden escribir en este canal.':'Only admins can post in this channel.')));
       loadMsgs(); subscribe();
     }
 
@@ -41702,7 +41731,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }catch(_){}
     }
     function hideReactTip(){ var e=G('dcx-rtip'); if(e) e.classList.remove('open'); }
-    function toggleReaction(mid, em){ if(!mid||!em||!currentUser||!cur) return; var arr=reactions[mid]||[]; var mine=arr.some(function(r){ return r.emoji===em&&r.user_id===currentUser.id; }); if(mine){ reactions[mid]=arr.filter(function(r){ return !(r.emoji===em&&r.user_id===currentUser.id); }); repaint(); sb.from('channel_reactions').delete().eq('message_id',mid).eq('user_id',currentUser.id).eq('emoji',em).then(function(){ loadReactions(); }); } else { (reactions[mid]=reactions[mid]||[]).push({emoji:em,user_id:currentUser.id}); bumpEmoji(em); repaint(); sb.from('channel_reactions').insert({ message_id:mid, channel_id:cur.id, user_id:currentUser.id, emoji:em }).then(function(){ loadReactions(); }).catch(function(){}); } }
+    /* Reactions follow the same permission as posting. They had no check of their own, which was
+       harmless only because a limited member could not see anyone else's messages to react to;
+       now that the room is readable, an ungated reaction would be a way to talk in a channel the
+       admin has kept read-only. */
+    function toggleReaction(mid, em){ if(!mid||!em||!currentUser||!cur) return;
+      if(!_canPostHere()){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Reactions are for members who can post in this channel.','Las reacciones son para quienes pueden publicar en este canal.')); return; } var arr=reactions[mid]||[]; var mine=arr.some(function(r){ return r.emoji===em&&r.user_id===currentUser.id; }); if(mine){ reactions[mid]=arr.filter(function(r){ return !(r.emoji===em&&r.user_id===currentUser.id); }); repaint(); sb.from('channel_reactions').delete().eq('message_id',mid).eq('user_id',currentUser.id).eq('emoji',em).then(function(){ loadReactions(); }); } else { (reactions[mid]=reactions[mid]||[]).push({emoji:em,user_id:currentUser.id}); bumpEmoji(em); repaint(); sb.from('channel_reactions').insert({ message_id:mid, channel_id:cur.id, user_id:currentUser.id, emoji:em }).then(function(){ loadReactions(); }).catch(function(){}); } }
     function openReactPicker(mid, openRight){ var pop=G('dcx-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='dcx-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var top=topEmojis(16); var h=''; if(top.length){ h+=top.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('')+'<div class="dcx-react-div"></div>'; } h+=REACT_EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); toggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; var r=_menuRect||{bottom:120,right:340}; pop.style.position='fixed'; pop.style.top=Math.min(r.bottom+6, window.innerHeight-292)+'px'; pop.style.left=(openRight?Math.max(8, Math.min((r.left!=null?r.left:(r.right-40)), window.innerWidth-322)):Math.max(8, Math.min(r.right-312, window.innerWidth-322)))+'px'; pop.classList.add('open'); pop.scrollTop=0; }
     /* Discord-style hover bar: the hovering member's five most-used reaction emojis
        (same st_emoji_freq list the pickers learn from), padded with defaults until they
@@ -41794,7 +41828,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         .subscribe();
     }
     function insertMsg(row){ row.sender_name=myName(); row.sender_avatar=myAvatar(); sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ note("Couldn't send."); return; } if(r.data) append(r.data); }).catch(function(){ note("Couldn't send."); }); }
-    function sendText(){ if(_commTier()!=='full'){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Posting in the community is for full members \u2014 your biases and reviews still appear here automatically.','Publicar en la comunidad es para miembros completos \u2014 tus biases y revisiones aparecen aquí automáticamente.')); return; } var ta=G('dcx-input'); if(!ta||!cur||!currentUser) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; if(t) pushMentions(t); note(''); closePanels(); var rp=replyTarget; if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); }).catch(function(){ note('Upload failed.'); }); cancelReply(); return; } ta.value=''; ta.style.height='auto'; var row={ channel_id:cur.id, sender_id:currentUser.id, body:t }; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); cancelReply(); }
+    function sendText(){ if(!_canPostHere()){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Posting in this channel is not open to your plan \u2014 your biases and reviews still appear here automatically.','Publicar en este canal no está disponible en tu plan \u2014 tus biases y revisiones aparecen aquí automáticamente.')); return; } var ta=G('dcx-input'); if(!ta||!cur||!currentUser) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; if(t) pushMentions(t); note(''); closePanels(); var rp=replyTarget; if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); }).catch(function(){ note('Upload failed.'); }); cancelReply(); return; } ta.value=''; ta.style.height='auto'; var row={ channel_id:cur.id, sender_id:currentUser.id, body:t }; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); cancelReply(); }
 
     /* the live-session chat reuses this exact uploader + key, so both chats behave identically */
     try{ window.__stChatUp=function(f,k){ return up(f,k); }; window.__stGiphy=GIPHY_KEY; }catch(e){}
