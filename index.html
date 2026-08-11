@@ -3273,6 +3273,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .chal-verdict { margin-top: 14px; border: 1px solid var(--border-2); border-radius: var(--radius-card); padding: 13px 18px;
                   font-family: "AppNum","DM Mono",monospace; font-size: 12px; letter-spacing: 0.04em; display: inline-flex; max-width: 100%; align-items: center; gap: 10px; }
   .chal-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  /* Verdict + excluded-trades note sit side by side with real separation — two inline-flex pills
+     touching read as one broken box. A flex row rather than a margin, so when the note wraps to its
+     own line on a narrow window it gets the same gap vertically instead of a stray indent. */
+  .chal-verdict-row { display: flex; flex-wrap: wrap; align-items: center; gap: 14px; margin-top: 14px; }
+  .chal-verdict-row .chal-verdict { margin-top: 0; }
   @media (max-width: 700px) { .chal-grid { grid-template-columns: 1fr; } }
   .atl-cell { background: var(--bg); padding: 10px 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* News vs Quiet row markers. Dots rather than emoji: emoji render at different sizes and baselines
@@ -17414,7 +17419,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var vTxt = breached ? T('Breached — this account is out on its drawdown rule.', 'Superado — esta cuenta ha incumplido su regla de drawdown.')
                : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
                : T('In progress.', 'En curso.');
-      html += '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>';
+      var vRow = '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>';
 
       // Say so when the broker has sent trades this journal is not counting. Every figure above is
       // built from logged trades, so trades dismissed or marked handled make the balance, the room
@@ -17425,7 +17430,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var _exc = data._mt5Excluded;
         if (_exc && _exc.n > 0) {
           var _excMoney = money(Math.abs(_exc.sum || 0));
-          html += '<div class="chal-verdict" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
+          vRow += '<div class="chal-verdict chal-verdict-note" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
             + T(_exc.n + ' broker trade' + (_exc.n === 1 ? '' : 's') + ' not counted here (' + _excMoney + '). Restore from Import from MT5.',
                 _exc.n + (_exc.n === 1
                   ? ' operación del bróker no contada aquí (' + _excMoney + '). Restáurala desde Importar de MT5.'
@@ -17433,6 +17438,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             + '</span></div>';
         }
       } catch (e) {}
+      html += '<div class="chal-verdict-row">' + vRow + '</div>';
       body.innerHTML = html;
 
       var ttl = document.getElementById('challenge-title');
@@ -23191,7 +23197,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 13:45 UTC';
+  window.ST_BUILD = '2026-08-12 14:15 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -36354,6 +36360,37 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) {}
     return set;
   }
+  // Symbol + net-to-the-penny for every trade in the journal.
+  //
+  // Tickets alone CANNOT answer "is this broker trade in my log". Plenty of logged trades carry no
+  // mt5Ticket — older builds dropped the stamp when a review trade was saved to the series, and
+  // hand-logged trades never had one — so a ticket-only test reported trades as missing while they
+  // sat in the log, which is a false alarm on a panel whose whole job is to be trusted about money.
+  // A net P&L matching to the penny on the same instrument is a trade already accounted for.
+  function _mt5LoggedFingerprints() {
+    const set = new Set();
+    const sym = s => String(s == null ? '' : s).replace(/[^A-Za-z]/g, '').toUpperCase();
+    const add = (list) => {
+      (list || []).forEach(t => {
+        if (!t) return;
+        try {
+          const net = (typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0;
+          set.add(sym(t.symbol) + '|' + net.toFixed(2));
+        } catch (e) {}
+      });
+    };
+    try {
+      add(data.review && data.review.trades);
+      add(data.currentSeries);
+      (data.history || []).forEach(h => add(h && h.trades));
+    } catch (e) {}
+    return set;
+  }
+  function _mt5RowFingerprint(r) {
+    const sym = String((r && r.symbol) || '').replace(/[^A-Za-z]/g, '').toUpperCase();
+    const net = parseFloat(r && r.pnl);
+    return sym + '|' + (isFinite(net) ? net : 0).toFixed(2);
+  }
   // May this inbox row be offered? Normally "not consumed server-side" — but a ticket the trader has
   // explicitly restored overrides that. It has to: consumed_at cannot be cleared from the client
   // (trades_inbox carries a BEFORE UPDATE trigger that preserves it), so without this override a
@@ -36382,7 +36419,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // A row a logged trade already wears is fine and is not listed.
       try {
         const _worn = _mt5WornTickets();
-        _mt5ExcludedRows = all.filter(r => _mt5RowIsValid(r) && !_worn.has(String(r.ticket)) && !_mt5RowAllowed(r));
+        const _fps = _mt5LoggedFingerprints();
+        _mt5ExcludedRows = all.filter(r => _mt5RowIsValid(r)
+          && !_worn.has(String(r.ticket))              // no logged trade wears this ticket
+          && !_fps.has(_mt5RowFingerprint(r))          // …and none matches it by instrument + net
+          && !_mt5RowAllowed(r));                      // …and it is being suppressed
         renderMt5Excluded();
         // Remember the count so the Challenge panel can say its figures are short. Saved only when
         // it changes, so a sync is not a write every time.
