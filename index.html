@@ -23132,7 +23132,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 07:30 UTC';
+  window.ST_BUILD = '2026-08-12 07:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34150,6 +34150,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!el || typeof IntersectionObserver === 'undefined') return;   // no observer to reveal it → never hide
     var src = (el.__twHTML != null) ? el.__twHTML : el.innerHTML;
     if (el.__twTypedHTML === src) return;   // already typed this line → leave it visible
+    // NEVER hide a line that is mid-animation. Every character is already individually hidden, so
+    // hiding the container adds nothing — it just blanks a greeting the user is watching type, and
+    // the re-arm restarts it from zero. Boot fires ~44 renders in 1.5s, so this fired over and over
+    // and the animation never reached the end: "slow, stuck, then it comes out all at once".
+    if (el.__twTimer) return;
     // Never hide a line the user is already reading — same rule as _doTypeGreeting. A settled
     // greeting on the displayed tab gets swapped, not blanked-and-replayed. Hiding here made the
     // greeting blink on every re-render, and refreshAllSurfaces fires on every click.
@@ -34362,7 +34367,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // sync burst, so mid-animation re-renders are the normal case, not an edge case.
       // Compared on the RAW composed string, not __twHTML — innerHTML re-serialises markup, so the
       // round-tripped copy never string-equals the source.
-      if (el.__twTimer && el.__twSrcRaw === html) return;
+      // While a greeting is TYPING, leave it completely alone — do not rewrite its innerHTML, which
+      // tears out the half-typed characters and restarts the effect. The old guard also required
+      // the text to be identical, which it almost never is: the seed is re-picked from its pool on
+      // every render, so a differently-worded line for the same situation defeated the check and
+      // the animation was cut short ~44 times during boot. Renders keep coming, and the AI line
+      // lands through _setGreetHTML (which queues it for the end of the animation), so nothing is
+      // lost by skipping this pass.
+      if (el.__twTimer) return;
       el.__twSrcRaw = html;
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
