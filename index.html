@@ -5129,11 +5129,36 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           </div>
         </div>
         <div id="mt5-pick-error" style="margin-top:16px;padding:12px 16px;background:var(--bad-bg2);border:1px solid var(--bad);color:var(--bad);font-family:'AppNum', 'DM Mono',monospace;font-size:12px;display:none;"></div>
+        <!-- Trades the broker sent that are NOT in the journal: dismissed, marked as imported, or
+             flagged handled server-side. Dismissing was a one-click, one-way door - it wrote a local
+             ledger, a durable dismissed list, a consumed flag in the cloud, and a cross-device union
+             that restored all of it - so a trade excluded by accident was unreachable from every path
+             in the product while its P&L quietly went missing from the balance. This lists them and
+             puts them back. -->
+        <div id="mt5-excluded-wrap" style="margin-top:22px;display:none;">
+          <button type="button" class="mt5-collapse-toggle" data-collapse="mt5-excluded-body" aria-expanded="false" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:left;font:inherit;color:inherit;">
+            <span class="mt5-collapse-chev" style="display:inline-block;transition:transform 180ms;font-size:10px;line-height:1;color:var(--text-dim);">&#9656;</span>
+            <strong id="mt5-excluded-title" style="color:var(--text-mid);font-style:normal;">Broker trades not in your journal</strong>
+          </button>
+          <div id="mt5-excluded-body" class="mt5-collapse-body">
+            <div id="mt5-excluded-hint" style="font-family:'AppNum','DM Mono',monospace;font-size:11px;color:var(--text-dim);margin:8px 0 12px;line-height:1.6;"></div>
+            <div id="mt5-excluded-list" style="border:1px solid var(--border-2);border-radius:var(--radius-ctrl);max-height:260px;overflow-y:auto;"></div>
+          </div>
+        </div>
       </div>
 
       <!-- Step 2: preview parsed trades -->
       <div id="mt5-step-preview" style="display:none;">
         <div id="mt5-preview-meta" style="margin-bottom:20px;padding:14px 18px;background:var(--bg-elev);border:1px solid var(--border-2);font-family:'AppNum', 'DM Mono',monospace;font-size:12px;color:var(--text-mid);"></div>
+        <!-- Which account these trades are filed against. The EA sends a ticket and a symbol, never
+             an account, so this used to be decided silently by whichever account happened to be
+             active at import time - and a wrong guess is permanent and invisible. Now it is stated
+             and changeable before anything is written. -->
+        <div style="margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
+          <span style="font-size:10px;color:var(--text-dim);letter-spacing:0.25em;text-transform:uppercase;" data-i18n="mt5.import_into">Import into</span>
+          <select id="mt5-target-account" style="background:var(--bg);border:1px solid var(--border-2);color:var(--text);padding:7px 12px;font-family:'AppNum', 'DM Mono',monospace;font-size:12px;outline:none;"></select>
+          <span id="mt5-target-note" style="font-size:10px;color:var(--text-dim);font-family:'AppNum', 'DM Mono',monospace;"></span>
+        </div>
         <div style="margin-bottom:16px;display:flex;align-items:center;gap:14px;flex-wrap:wrap;">
           <span style="font-size:10px;color:var(--text-dim);letter-spacing:0.25em;text-transform:uppercase;" data-i18n="mt5.filter_by_date">Filter by date</span>
           <select id="mt5-date-filter" style="background:var(--bg);border:1px solid var(--border-2);color:var(--text);padding:7px 12px;font-family:'AppNum', 'DM Mono',monospace;font-size:12px;outline:none;"></select>
@@ -17381,6 +17406,24 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
                : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
                : T('In progress.', 'En curso.');
       html += '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>';
+
+      // Say so when the broker has sent trades this journal is not counting. Every figure above is
+      // built from logged trades, so trades dismissed or marked handled make the balance, the room
+      // to the floor and the target all quietly wrong — which is exactly how this account ran
+      // £27.37 ahead of FTMO for five days with nothing on screen suggesting a problem. A number
+      // that disagrees with your broker should explain itself rather than just be wrong.
+      try {
+        var _exc = data._mt5Excluded;
+        if (_exc && _exc.n > 0) {
+          var _excMoney = money(Math.abs(_exc.sum || 0));
+          html += '<div class="chal-verdict" style="border-color:' + WARN + '"><span class="chal-dot" style="background:' + WARN + '"></span><span>'
+            + T(_exc.n + ' broker trade' + (_exc.n === 1 ? '' : 's') + ' not counted here (' + _excMoney + '). Restore from Import from MT5.',
+                _exc.n + (_exc.n === 1
+                  ? ' operación del bróker no contada aquí (' + _excMoney + '). Restáurala desde Importar de MT5.'
+                  : ' operaciones del bróker no contadas aquí (' + _excMoney + '). Restáuralas desde Importar de MT5.'))
+            + '</span></div>';
+        }
+      } catch (e) {}
       body.innerHTML = html;
 
       var ttl = document.getElementById('challenge-title');
@@ -23139,7 +23182,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-12 11:45 UTC';
+  window.ST_BUILD = '2026-08-12 13:20 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -35522,6 +35565,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let _mt5ParsedTrades = [];   // [{ openTime, closeTime, type, volume, entryPrice, slPrice, closePrice, commission, swap, profit, ... derived ... }]
   let _mt5SelectedIds = new Set(); // positions selected by checkbox
   let _mt5MetaInfo = null;     // { accountName, brokerName, reportDate, sourceFileName }
+  let _mt5TargetAccountId = null;   // account the preview step will file these trades against
+  let _mt5ExcludedRows = [];        // broker trades not in the journal and currently suppressed
 
   // ----- MT5 sync-token display (a dedicated per-user secret, separate from the account id) -----
   function mt5SyncToken() {
@@ -36276,8 +36321,38 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // (includeLedger=false) so a ticket stranded in the ledger by AUTO-PAIRING — marked
       // done but never actually logged — is still recoverable.
       if (includeLedger) (data.mt5ImportedTickets || []).forEach(x => { if (x != null) set.add(String(x)); });
+      // Explicitly restored by the trader: these override every block above. A dismissal used to be
+      // a one-way door — it wrote this local ledger, the durable dismissed list, a consumed flag in
+      // the cloud, and a cross-device union that put all of it back — so a trade excluded by mistake
+      // could not be reached from anywhere in the product, while its P&L silently went missing from
+      // the balance. Restoring lifts the ticket out of the blocked set, and _mt5RowAllowed() below
+      // lets it past the server's consumed flag too, which is what makes recovery possible without
+      // a database change (the consumed_at column has a trigger that preserves it).
+      (data.mt5ForceOffer || []).forEach(x => { if (x != null) set.delete(String(x)); });
     } catch (e) {}
     return set;
+  }
+  // Tickets a trade in the journal ACTUALLY wears — no ledgers, no dismissals. This is the honest
+  // answer to "is this broker trade in my log", which the excluded list needs and the blocked-set
+  // above deliberately conflates with "handled".
+  function _mt5WornTickets() {
+    const set = new Set();
+    const add = (list) => { (list || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }); };
+    try {
+      add(data.review && data.review.trades);
+      add(data.currentSeries);
+      (data.history || []).forEach(h => add(h && h.trades));
+    } catch (e) {}
+    return set;
+  }
+  // May this inbox row be offered? Normally "not consumed server-side" — but a ticket the trader has
+  // explicitly restored overrides that. It has to: consumed_at cannot be cleared from the client
+  // (trades_inbox carries a BEFORE UPDATE trigger that preserves it), so without this override a
+  // restore would need database access, which is exactly the hole this is closing.
+  function _mt5RowAllowed(r) {
+    if (!r) return false;
+    if (!r.consumed_at) return true;
+    try { return (data.mt5ForceOffer || []).some(x => String(x) === String(r.ticket)); } catch (e) { return false; }
   }
   function runMt5AutoSync() {
     const statusEl = document.getElementById('mt5-autosync-status');
@@ -36293,7 +36368,24 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     Promise.resolve(window.STCloud.pullInbox()).then(res => {
       if (res && res.error) { setStatus((T('mt5.sync_error') || 'Sync error: ') + (res.error.message || res.error)); return; }
       const all = (res && res.data) || [];
-      const rows = all.filter(r => !r.consumed_at);   // consumed rows stay for the replay, but are not re-offered
+      const rows = all.filter(r => _mt5RowAllowed(r));   // consumed rows stay for the replay, but are not re-offered
+      // Everything the broker sent that is genuinely NOT in the journal and is being suppressed.
+      // A row a logged trade already wears is fine and is not listed.
+      try {
+        const _worn = _mt5WornTickets();
+        _mt5ExcludedRows = all.filter(r => _mt5RowIsValid(r) && !_worn.has(String(r.ticket)) && !_mt5RowAllowed(r));
+        renderMt5Excluded();
+        // Remember the count so the Challenge panel can say its figures are short. Saved only when
+        // it changes, so a sync is not a write every time.
+        const _excN = _mt5ExcludedRows.length;
+        const _excSum = _mt5ExcludedRows.reduce((s, r) => s + (parseFloat(r.pnl) || 0), 0);
+        const _prev = data._mt5Excluded || {};
+        if (_prev.n !== _excN || Math.abs((_prev.sum || 0) - _excSum) > 0.005) {
+          data._mt5Excluded = { n: _excN, sum: _excSum };
+          try { saveData(); } catch (e) {}
+          try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
+        }
+      } catch (e) {}
       if (!all.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
       // Skip the ledger here: only tickets a logged trade actually wears count as "already in
       // your log". A ticket the pairing step stranded in the ledger (marked done, never logged)
@@ -36492,6 +36584,67 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // Poll on a shortish cadence — only actually hits the network while a session is live.
   setInterval(function () { try { _liveCloseWatch(); } catch (e) {} }, 20000);
 
+  // ----- Broker trades not in the journal: list them, and put them back -----
+  function renderMt5Excluded() {
+    const wrap = document.getElementById('mt5-excluded-wrap');
+    const list = document.getElementById('mt5-excluded-list');
+    const hint = document.getElementById('mt5-excluded-hint');
+    const title = document.getElementById('mt5-excluded-title');
+    if (!wrap || !list) return;
+    const rows = (_mt5ExcludedRows || []).slice().sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
+    if (!rows.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
+    wrap.style.display = '';
+    const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+    const _one = rows.length === 1;
+    if (title) title.textContent = window._stT(
+      rows.length + ' broker trade' + (_one ? '' : 's') + ' not in your journal',
+      rows.length + (_one ? ' operación del bróker que no está en tu diario'
+                          : ' operaciones del bróker que no están en tu diario'));
+    if (hint) hint.textContent = window._stT(
+      'These were dismissed or marked as handled, so nothing offers them any more — and their P&L is missing from your balance. Restore one to put it back in the import list.',
+      'Se descartaron o se marcaron como gestionadas, así que ya nada las ofrece — y su P&L falta en tu saldo. Restaura una para devolverla a la lista de importación.');
+    list.innerHTML = rows.map(r => {
+      const net = parseFloat(r.pnl);
+      const netStr = isFinite(net) ? ((net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) : '—';
+      const cls = !isFinite(net) ? '' : (net > 0 ? 'pl-good' : net < 0 ? 'pl-bad' : 'pl-be');
+      const when = r.close_time ? String(r.close_time).slice(0, 16).replace('T', ' ') : '—';
+      return '<div class="mt5-exc-row" style="display:flex;align-items:center;gap:14px;padding:9px 12px;border-bottom:1px solid var(--border-2);font-family:\'AppNum\',\'DM Mono\',monospace;font-size:11px;">'
+        + '<span style="color:var(--text-dim);flex:0 0 108px;">' + esc(when) + '</span>'
+        + '<span style="color:var(--text);flex:0 0 84px;">' + esc(r.symbol || '—') + '</span>'
+        + '<span style="color:var(--text-mid);flex:0 0 54px;">' + esc(r.direction || '') + '</span>'
+        + '<span class="' + cls + '" style="flex:0 0 82px;">' + netStr + '</span>'
+        + '<span style="color:var(--text-dim);flex:1 1 auto;min-width:0;">#' + esc(r.ticket) + '</span>'
+        + '<button type="button" class="mt5-exc-restore" data-ticket="' + esc(r.ticket) + '" style="flex:0 0 auto;background:transparent;border:1px solid var(--good);color:var(--good);padding:5px 12px;font-family:inherit;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-ctrl);">'
+        + window._stT('Restore', 'Restaurar') + '</button>'
+        + '</div>';
+    }).join('');
+    list.querySelectorAll('.mt5-exc-restore').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tk = String(btn.dataset.ticket || '');
+        if (!tk) return;
+        // Lift every local lock at once, THROUGH setData so the in-memory journal, localStorage and
+        // the cloud copy all move together. Clearing them separately is what made this unrecoverable
+        // by hand: the tab's in-memory copy would simply push the dismissal straight back.
+        try {
+          const d = window.STCloud.getData ? window.STCloud.getData() : JSON.parse(localStorage.getItem(window.STCloud.STORAGE_KEY));
+          d.mt5UserDismissed   = (d.mt5UserDismissed   || []).filter(x => String(x) !== tk);
+          d.mt5ImportedTickets = (d.mt5ImportedTickets || []).filter(x => String(x) !== tk);
+          d.mt5ForceOffer      = (d.mt5ForceOffer      || []).filter(x => String(x) !== tk).concat([tk]);
+          if (d.mt5ForceOffer.length > 500) d.mt5ForceOffer = d.mt5ForceOffer.slice(-500);
+          window.STCloud.setData(d);
+          if (typeof saveData === 'function') saveData();   // push the cleared locks to the cloud
+        } catch (e) {}
+        btn.textContent = window._stT('Restored', 'Restaurada');
+        btn.disabled = true;
+        btn.style.opacity = '0.55';
+        btn.style.borderColor = 'var(--border-2)';
+        btn.style.color = 'var(--text-dim)';
+        // Re-run the scan so it appears in the import list straight away.
+        try { runMt5AutoSync(); } catch (e) {}
+      });
+    });
+  }
+
   // ----- Render preview step -----
   function renderMt5Preview() {
     document.getElementById('mt5-step-pick').style.display = 'none';
@@ -36505,6 +36658,36 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (meta.accountNumber) metaParts.push(window._stT('Account ','Cuenta ') + meta.accountNumber);
     metaParts.push(_mt5ParsedTrades.length + window._stT(' trade',' operaci\u00f3n') + (_mt5ParsedTrades.length === 1 ? '' : window._stT('s','es')));
     document.getElementById('mt5-preview-meta').textContent = metaParts.join(' · ');
+
+    // Destination account. Defaults to the one the import would have silently used anyway, so the
+    // behaviour is unchanged unless the trader actively picks a different one — but it is now
+    // visible BEFORE anything is written, which is the whole point: a trade filed against the wrong
+    // account is permanent, invisible, and quietly corrupts that account's balance and drawdown.
+    try {
+      var _tsel = document.getElementById('mt5-target-account');
+      var _tnote = document.getElementById('mt5-target-note');
+      if (_tsel) {
+        var _live = (data.accounts || []).filter(function (a) { return a && a.status === 'active'; });
+        var _dflt = (typeof _syncTargetAccount === 'function') ? _syncTargetAccount() : null;
+        var _dfltId = (_dflt && _dflt.id) || (_live[0] && _live[0].id) || '';
+        var _esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+        _tsel.innerHTML = _live.map(function (a) {
+          return '<option value="' + _esc(a.id) + '">' + _esc(a.name || a.id) + '</option>';
+        }).join('');
+        if (_dfltId) _tsel.value = _dfltId;
+        _mt5TargetAccountId = _tsel.value || _dfltId || null;
+        _tsel.onchange = function () {
+          _mt5TargetAccountId = _tsel.value || null;
+          if (_tnote) _tnote.textContent = '';
+        };
+        if (_tnote) {
+          _tnote.textContent = _live.length > 1
+            ? window._stT('Check this before importing — it cannot be corrected later.',
+                          'Compruébalo antes de importar — no se puede corregir después.')
+            : '';
+        }
+      }
+    } catch (e) {}
 
     // Build date filter dropdown — group trades by sessionDateStr
     const dates = [...new Set(_mt5ParsedTrades.map(t => t.sessionDateStr).filter(Boolean))].sort().reverse();
@@ -36783,7 +36966,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           potentialR: null,
           potentialPips: null,
           importedFrom: 'mt5',
-          mt5Ticket: t.position
+          mt5Ticket: t.position,
+          // Tag explicitly from the destination picker. Left blank, ensureTradeAccounts() would
+          // stamp whatever account is active at the next render — a silent guess that decides which
+          // account's balance and drawdown these trades move, with no way to tell it got it wrong.
+          accountId: _mt5TargetAccountId || undefined
         };
         // The replay measures the peak from entry until price comes back to your BE stop.
         // That is the same number for a Win and a BE - the only difference is whether the
@@ -36830,7 +37017,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           pips: (t.tpPips != null) ? t.tpPips : '',
           potentialR: null,
           potentialPips: null,
-          importedFrom: 'mt5'  // flag so the completion banner can target only these
+          importedFrom: 'mt5',  // flag so the completion banner can target only these
+          accountId: _mt5TargetAccountId || undefined   // explicit destination, same reason as above
         });
       }
     });
