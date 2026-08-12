@@ -12,8 +12,19 @@
 //   1. Create an Anthropic Admin API key (sk-ant-admin01-…) at
 //      platform.claude.com → Settings → Admin keys (org admin role required).
 //   2. Supabase → Edge Functions → Secrets: add  ANTHROPIC_ADMIN_KEY = sk-ant-admin01-…
-//   3. Deploy this function. Keep verify_jwt ON (Supabase validates the caller's
-//      session token; we then trust its email claim for the admin gate).
+//   3. Deploy this function with verify_jwt OFF:
+//        supabase functions deploy st-ai-cost --no-verify-jwt
+//      (or Dashboard → Edge Functions → st-ai-cost → Details → uncheck "Verify JWT")
+//
+//      WHY OFF, when this is admin-only: with verify_jwt ON the platform rejects the
+//      CORS PREFLIGHT. A preflight is an OPTIONS request and the browser sends it with
+//      NO Authorization header, so the gateway answers 401 before this function runs,
+//      the preflight fails, and the browser blocks the real POST — which is exactly the
+//      "does not have HTTP ok status" error this was failing with in the console.
+//
+//      Turning it off does NOT weaken the gate, because the token is now verified HERE
+//      (see verifiedEmail). It must be, since an unverified JWT is just base64: without
+//      checking the signature anyone could mint one claiming the admin's email.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const ADMIN_EMAIL = "be.o2@hotmail.com";
@@ -28,15 +39,25 @@ function json(body: unknown, status = 200): Response {
   return new Response(JSON.stringify(body), { status, headers: { ...CORS, "content-type": "application/json" } });
 }
 
-// Read the email claim from the (Supabase-verified) session JWT. verify_jwt=ON
-// guarantees the signature is valid, so this claim is trustworthy for the gate.
-function emailFromJwt(req: Request): string | null {
+// Verify the caller's session token and return its email, or null.
+//
+// This asks Supabase Auth to validate the token rather than decoding it here: a JWT is
+// only base64, so reading the email out of it proves nothing on its own. /auth/v1/user
+// returns the user ONLY for a token with a valid signature that has not expired, which is
+// what makes the admin check below meaningful now that the platform no longer does it.
+async function verifiedEmail(req: Request): Promise<string | null> {
   try {
     const tok = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-    const seg = tok.split(".")[1];
-    if (!seg) return null;
-    const payload = JSON.parse(atob(seg.replace(/-/g, "+").replace(/_/g, "/")));
-    const e = String(payload.email || "").toLowerCase();
+    if (!tok) return null;
+    const base = Deno.env.get("SUPABASE_URL");
+    const anon = Deno.env.get("SUPABASE_ANON_KEY");
+    if (!base || !anon) return null;
+    const r = await fetch(`${base}/auth/v1/user`, {
+      headers: { Authorization: `Bearer ${tok}`, apikey: anon },
+    });
+    if (!r.ok) return null;                       // invalid, expired, or revoked
+    const u = await r.json();
+    const e = String((u && u.email) || "").toLowerCase();
     return e || null;
   } catch { return null; }
 }
@@ -45,7 +66,7 @@ Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
 
   try {
-    const email = emailFromJwt(req);
+    const email = await verifiedEmail(req);
     if (email !== ADMIN_EMAIL) return json({ error: "forbidden" }, 403);
 
     const adminKey = Deno.env.get("ANTHROPIC_ADMIN_KEY");

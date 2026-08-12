@@ -9488,8 +9488,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const _voiceMute = (function () { try { return _isDetachedWindow(); } catch (e) { return false; } })();
       for (let i = 0; i < ss.length && !_voiceMute; i++) {
         const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
-        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); const _c = _claimSessionAlert('start', sMins), _f = fresh(sMins); _logVoice('start', sMins, i, _c, ss, _f, nowMins); if (_c && _f) fireSessionAlert('start'); }
-        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); const _c = _claimSessionAlert('end', eMins), _f = fresh(eMins); _logVoice('end', eMins, i, _c, ss, _f, nowMins); if (_c && _f) fireSessionAlert('end'); }
+        if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); const _c = _claimSessionAlert('start', sMins), _f = fresh(sMins); _logVoice('start', sMins, i, _c, ss, _f, nowMins); if (_c && _f) _fireSessionAlertShared('start', sMins); }
+        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); const _c = _claimSessionAlert('end', eMins), _f = fresh(eMins); _logVoice('end', eMins, i, _c, ss, _f, nowMins); if (_c && _f) _fireSessionAlertShared('end', eMins); }
       }
       // Rule-of-the-week reminder, cadence-aware. Fires during ANY session window.
       let ruleFire = false;
@@ -9662,6 +9662,43 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       catch (e) { return []; }
     };
   } catch (e) {}
+  /* ── Cross-surface claim ──────────────────────────────────────────────────────────────────
+     _claimSessionAlert below gates this BROWSER, via localStorage. It cannot gate a second
+     browser, a second Chrome profile, or a phone: each has its own localStorage, so each one
+     claims the boundary happily and speaks. That is what the voice log kept showing — the user
+     hearing two while this profile recorded one, or none at all.
+     The claim therefore has to live somewhere every surface can see, and the only such place is
+     the database. A row keyed (user, day, kind, minute) with that as its PRIMARY KEY means the
+     first surface to insert wins and every other one gets a duplicate-key error and stays quiet.
+     Deliberately NOT silent on failure: a network error or a missing table returns 'unavailable'
+     and the alert still speaks. Missing a session end because Supabase was slow is a worse bug
+     than hearing it twice, and it is the failure mode that would be hardest to notice. */
+  async function _claimSessionAlertCloud(kind, mins) {
+    try {
+      const sb = window.__stSB;
+      if (!sb || !sb.from) return 'unavailable';
+      let u = null;
+      try { u = (typeof uid === 'function') ? uid() : null; } catch (e) { u = null; }
+      if (!u) return 'unavailable';                       // signed out: nothing to key the claim to
+      const r = await sb.from('session_voice_claims')
+        .insert({ user_id: u, day: _todayKey(), kind: kind, mins: mins });
+      if (!r || !r.error) return 'won';
+      const code = String((r.error && r.error.code) || '');
+      // 23505 = unique_violation: another surface got here first.
+      if (code === '23505' || /duplicate key/i.test(String(r.error.message || ''))) return 'lost';
+      return 'unavailable';
+    } catch (e) { return 'unavailable'; }
+  }
+  // Speak only if this surface won the shared claim. Logged either way, so the voice log now
+  // answers "which surface spoke" instead of only "did THIS one".
+  async function _fireSessionAlertShared(kind, mins) {
+    let res = 'unavailable';
+    try { res = await _claimSessionAlertCloud(kind, mins); } catch (e) {}
+    try { console.log('[ST voice] cloud claim', kind, mins, res); } catch (e) {}
+    try { localStorage.setItem('st_voiceclaim_last', kind + ':' + mins + ':' + res + ':' + new Date().toISOString()); } catch (e) {}
+    if (res === 'lost') return;                            // another surface already said it
+    try { fireSessionAlert(kind); } catch (e) {}
+  }
   function _claimSessionAlert(kind, mins) {
     try {
       const day = _todayKey();
@@ -23499,7 +23536,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 09:41 UTC';
+  window.ST_BUILD = '2026-08-13 10:18 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
