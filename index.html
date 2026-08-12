@@ -45475,7 +45475,60 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     accStatus(tt('syncing'));
     pushTimer = setTimeout(cloudPush, 1500);
   }
-  ST.onSave = function () { maybeSnapshotOnSave(); debouncePush(); };
+
+  // IDLE-PUSH GUARD — this is what the app's Supabase egress bill was made of.
+  //
+  // A 5s heartbeat (setInterval(saveData, 5000)) calls onSave() forever, whether or not a
+  // single byte changed, and the debounce below it is 1.5s — SHORTER than the interval that
+  // feeds it, so nothing ever coalesced: every tick got its own cloudPush. And cloudPush
+  // opens by downloading the ENTIRE journal blob (the destructive-write guard has to see
+  // what the cloud holds before overwriting it). So an idle tab — even a backgrounded one —
+  // re-downloaded the whole journal up to 12x a minute, all day, doing nothing with it.
+  // That produced a perfectly flat ~300MB/day that tracked tabs being open, not usage.
+  //
+  // Fix: remember what we last SUCCESSFULLY uploaded and skip the whole round trip while the
+  // journal is byte-identical to it. A real edit still syncs on the same 1.5s debounce.
+  // Deliberately a strictly-earlier bail-out: once the data HAS changed, every guard in
+  // cloudPush/reconcile below runs exactly as before, untouched.
+  var lastPushedStr = null;
+  var pushDiag = { ticks: 0, skipped: 0, pushed: 0, reads: 0, since: Date.now() };
+  // Verification handle: __stPushDiag() on an idle tab should show ticks climbing while
+  // pushed/reads stay put. __stPushDiag(true) turns on a console log of WHICH top-level
+  // journal keys changed, for hunting anything that mutates on every tick.
+  try {
+    window.__stPushDiag = function (verbose) {
+      if (typeof verbose === 'boolean') pushDiag.verbose = verbose;
+      var m = Math.max(1, (Date.now() - pushDiag.since) / 60000);
+      return { ticks: pushDiag.ticks, skipped: pushDiag.skipped, pushed: pushDiag.pushed,
+               reads: pushDiag.reads, minutes: Math.round(m * 10) / 10,
+               readsPerHour: Math.round(pushDiag.reads / m * 60), verbose: !!pushDiag.verbose };
+    };
+  } catch (e) {}
+  function _journalStr() { try { return JSON.stringify(ST.getData()); } catch (e) { return null; } }
+  function _changedKeys(aStr, bStr) {
+    try {
+      var a = JSON.parse(aStr), b = JSON.parse(bStr), keys = {}, out = [], k;
+      for (k in a) keys[k] = 1; for (k in b) keys[k] = 1;
+      for (k in keys) { if (JSON.stringify(a[k]) !== JSON.stringify(b[k])) out.push(k); }
+      return out;
+    } catch (e) { return []; }
+  }
+  ST.onSave = function () {
+    pushDiag.ticks++;
+    maybeSnapshotOnSave();
+    // Skip only when we have a CONFIRMED upload to compare against (null = nothing has been
+    // successfully pushed yet this session, so a failed or blocked push still retries on the
+    // next tick exactly as it always did). A deliberate restore is never suppressed.
+    var cur = _journalStr();
+    if (!forcing && lastPushedStr !== null && cur !== null && cur === lastPushedStr) {
+      pushDiag.skipped++;
+      return;
+    }
+    if (pushDiag.verbose && lastPushedStr !== null && cur !== null) {
+      try { console.log('[stpush] changed:', _changedKeys(lastPushedStr, cur).join(', ') || '(none)'); } catch (e) {}
+    }
+    debouncePush();
+  };
 
   var peakLocalScore = null;   // high-water mark of THIS session's local journal content
   // Called right BEFORE a deliberate bulk clear of the working Trade Log (a new session), so the
@@ -45486,9 +45539,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function doCloudUpsert(d) {
     try { if (currentUser) localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
     var _uat = new Date().toISOString();
+    // Snapshot what we are sending NOW, not in the callback: `d` is the live journal object,
+    // so an edit made while the request is in flight would otherwise be recorded as uploaded
+    // when it wasn't. Captured here, a mid-flight edit simply differs and pushes next tick.
+    var _sent = null; try { _sent = JSON.stringify(d); } catch (e) {}
+    pushDiag.pushed++;
     sb.from('journals').upsert({
       user_id: currentUser.id, data: d, updated_at: _uat
-    }).then(function (r) { if (!(r && r.error)) { try { localStorage.setItem('st_jrnl_uat', _uat); } catch (e) {} } accStatus(r.error ? tt('syncErr') : tt('synced')); });
+    }).then(function (r) {
+      if (!(r && r.error)) {
+        try { localStorage.setItem('st_jrnl_uat', _uat); } catch (e) {}
+        lastPushedStr = _sent;   // ONLY a confirmed upload is allowed to suppress future pushes
+      }
+      accStatus(r.error ? tt('syncErr') : tt('synced'));
+    });
   }
 
   function cloudPush() {
@@ -45522,6 +45586,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     peakLocalScore = Math.max(prevPeak, lScore);
     // DESTRUCTIVE-WRITE GUARD: read what the cloud holds before overwriting it. Decided by
     // contentScore, never length. A diff of 1 passes, so edits and single deletions sync.
+    pushDiag.reads++;
     sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
       if (r && r.error) { accStatus(tt('syncErr')); return; }
       var raw = r && r.data && r.data.data;
@@ -45584,6 +45649,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
     accStatus(tt('syncing'));
+    pushDiag.reads++;
     sb.from('journals').select('data, updated_at').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
       if (r.error) { accStatus(tt('syncErr')); return; }
       // The cloud copy has been pulled — greetings may now generate (and will reuse any
