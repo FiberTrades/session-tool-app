@@ -23536,7 +23536,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 11:12 UTC';
+  window.ST_BUILD = '2026-08-13 11:58 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -50206,7 +50206,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // ── Pricing — USD per 1M tokens (edit to match your Anthropic rates). Cached input:
   //    read = 0.1× the input rate, write = 1.25×. Reported in USD to match your Anthropic
   //    Console credit balance (which is USD) — no GBP conversion. ───────────────────────
-  var PRICE = { 'claude-sonnet-5': { in:3, out:15 }, 'claude-haiku-4-5': { in:1, out:5 }, 'default': { in:3, out:15 } };
+  /* USD per million tokens, from Anthropic's pricing page (checked 13 Aug 2026).
+     Sonnet 5 was carrying $3/$15 here — the increase that had been scheduled for 1 Sep 2026 and
+     was then cancelled, leaving the $2/$10 launch price as the standard one. Every Sonnet figure
+     in this table was therefore 50% high. Haiku 4.5 at $1/$5 was already right, as are the cache
+     multipliers used below: read x0.1 and write x1.25 match $0.20/$2.50 for Sonnet and
+     $0.10/$1.25 for Haiku exactly.
+     'default' covers a model id this table has not seen; Sonnet is the safer assumption than
+     Haiku, since guessing low understates the bill. */
+  var PRICE = { 'claude-sonnet-5': { in:2, out:10 }, 'claude-haiku-4-5': { in:1, out:5 }, 'default': { in:2, out:10 } };
   var CACHE = { read: 0.1, write: 1.25 };
   var WEB_SEARCH_USD = 0.01;   // Anthropic server-side web search: $10 per 1,000 searches. Billed on top of tokens — the ECA fetcher uses ~5/run, so without this the estimate under-counts and drifts below claude.com.
   var USD_GBP = 1;   // no conversion — everything shown in USD ($) so it lines up with claude.com
@@ -50337,6 +50345,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var _creditVal = (function(){ try { var l=parseFloat(localStorage.getItem('st_ai_credit')); return isNaN(l)?0:l; } catch(e){ return 0; } })();
   var _baseVal   = (function(){ try { var b=parseFloat(localStorage.getItem('st_ai_credit_base')); return isNaN(b)?0:b; } catch(e){ return 0; } })();
   var _creditSetAt = (function(){ try { return localStorage.getItem('st_ai_credit_setat')||null; } catch(e){ return null; } })();
+  var _realCostOff = false;  // endpoint failed this session -> stop retrying it on every render
   var _realCostUsd = null;   // Anthropic's REAL billed spend since _creditSetAt (st-ai-cost edge fn); null = fall back to the token estimate
   function _credit(){ return _creditVal||0; }
   function _saveCredit(v, ok){
@@ -50385,13 +50394,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var done=function(){ try{ cb&&cb(); }catch(e){} };
     try {
       var sb=window.__stSB; if(!sb||!sb.auth||!sb.auth.getSession){ done(); return; }
+      // Give up for the rest of the session once the endpoint has failed. It is called on every
+      // render, so a permanent failure — no Admin API key available, function not deployed — was
+      // firing three failed POSTs each time and filling the console with 500s that look like a
+      // live fault. One attempt is enough to learn it is unavailable; REFRESH re-arms it.
+      if(_realCostOff){ done(); return; }
       sb.auth.getSession().then(function(r){
         var tok=r&&r.data&&r.data.session&&r.data.session.access_token;
         if(!tok){ done(); return; }
         fetch(_AI_COST_URL, { method:'POST', headers:{ 'content-type':'application/json', 'apikey':_AI_APIKEY, 'Authorization':'Bearer '+tok }, body: JSON.stringify({ since: _creditSetAt||null }) })
-          .then(function(res){ return res.ok ? res.json() : null; })
-          .then(function(j){ if(j && typeof j.usd==='number' && !isNaN(j.usd)){ _realCostUsd=j.usd; } done(); })
-          .catch(function(){ done(); });
+          .then(function(res){ if(!res.ok){ _realCostOff=true; } return res.ok ? res.json() : null; })
+          .then(function(j){ if(j && typeof j.usd==='number' && !isNaN(j.usd)){ _realCostUsd=j.usd; _realCostOff=false; } done(); })
+          .catch(function(){ _realCostOff=true; done(); });
       }, function(){ done(); });
     } catch(e){ done(); }
   }
@@ -50403,7 +50417,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var real=(_realCostUsd!=null);
       var used = real ? Math.max(0,_realCostUsd) : Math.max(0, grandGbp()-_baseVal);
       var left=credit-used;
-      leftEl.innerHTML=fmtGbp(used)+' '+_t('used','gastado')+' · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' '+_t('left','restante')+'</span>'+(real?' <span style="color:var(--text-dim)" title="'+_t('Anthropic actual billed cost','coste real facturado por Anthropic')+'">'+_t('(real)','(real)')+'</span>':'');
+      // Say which of the two it is. Without an Admin API key the real figure is unavailable and
+      // this is a token-count estimate, which drifts — it cannot see usage of the same org key
+      // outside this app, and cache hit rates move it. Labelling it stops a number that is only
+      // approximately right from being read as the balance.
+      leftEl.innerHTML=fmtGbp(used)+' '+(real?_t('used','gastado'):_t('used (est.)','gastado (aprox.)'))+' · <span style="color:'+(left>=0?'var(--good)':'var(--bad)')+'">'+fmtGbp(left)+' '+_t('left','restante')+'</span>'+(real?' <span style="color:var(--text-dim)" title="'+_t('Anthropic actual billed cost','coste real facturado por Anthropic')+'">'+_t('(real)','(real)')+'</span>':'');
     } else { leftEl.textContent=_t('spent ','gastado ')+fmtGbp(grandGbp()); }
   }
 
