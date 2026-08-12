@@ -23536,7 +23536,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 10:18 UTC';
+  window.ST_BUILD = '2026-08-13 11:12 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -50407,10 +50407,38 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     } else { leftEl.textContent=_t('spent ','gastado ')+fmtGbp(grandGbp()); }
   }
 
+  /* The date range the "All traders" picker is on. Extracted so the member rows below can be
+     scoped to the SAME window — they used each member's all-time totals while the All-traders row
+     above them was already range-filtered, so with the picker on a single day the "total" read
+     smaller than an individual member. Same table, two different periods, and nothing on screen
+     saying so. */
+  function _rangeBounds(){
+    var todayStr=_localDate(new Date());
+    var allDays={}; for(var u in _byUser){ for(var d in _byUser[u].days){ allDays[d]=1; } }
+    var dayKeys=Object.keys(allDays).sort();
+    var earliest=dayKeys.length?dayKeys[0]:'';
+    var lo=(_allRange.from||'')||earliest, hi=(_allRange.to||'')||todayStr;
+    if(lo>hi){ var t2=lo; lo=hi; hi=t2; }
+    return { lo:lo, hi:hi };
+  }
+  /* One member's totals over that window. Returns the same field names the row already reads, so
+     the row markup is untouched: the per-day buckets store one combined `tok`, which maps onto
+     inT with the other three token parts zeroed (the row sums inT+outT+cw+cr). */
+  function _userRangeTotals(u){
+    var r=_rangeBounds(), days=(_byUser[u]||{}).days||{};
+    var o={ inT:0,outT:0,cw:0,cr:0,sonnet:0,haiku:0,opus:0,greetTok:0,ecaTok:0,gbp:0,calls:0 };
+    for(var d in days){ if(d>=r.lo && d<=r.hi){ var dd=days[d];
+      o.inT+=dd.tok||0; o.sonnet+=dd.sonnet||0; o.haiku+=dd.haiku||0; o.opus+=dd.opus||0;
+      o.greetTok+=dd.greetTok||0; o.ecaTok+=dd.ecaTok||0; o.gbp+=dd.gbp||0; o.calls+=dd.calls||0; } }
+    return o;
+  }
   function paintTable(){
     var tableEl=el('aimeter-table'); if(!tableEl) return;
     var q=((el('aimeter-search')||{}).value||'').trim().toLowerCase();
-    var users=Object.keys(_byUser).filter(function(u){ return u!==ECA_UID; }).sort(function(a,b){ return _byUser[b].gbp-_byUser[a].gbp; });
+    // Sorted on the SAME window the rows now show, or the biggest spender of the range could
+    // appear below someone who merely spent more in some earlier month.
+    var _rt={}; var _rtOf=function(u){ return (_rt[u]||(_rt[u]=_userRangeTotals(u))); };
+    var users=Object.keys(_byUser).filter(function(u){ return u!==ECA_UID; }).sort(function(a,b){ return _rtOf(b).gbp-_rtOf(a).gbp; });
     if(q) users=users.filter(function(u){ return (_names[u]||'').toLowerCase().indexOf(q)>=0; });
     if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?_t('No trader matches “','Ningún trader coincide con “')+esc(q)+'”.':_t('No AI usage recorded yet.','Aún no hay uso de IA registrado.'))+'</div>'; return; }
     // Header + "All traders" summary + dashed separator all live in <thead>; the thead is sticky inside a
@@ -50422,7 +50450,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       '<tr class="aimeter-allrow"><td><span class="stb-who"><span>'+_t('All traders','Todos los traders')+'</span></span></td><td class="stb-pts">'+(_ct.sonnet+_ct.opus)+'</td><td>'+_ct.haiku+'</td><td class="stb-hide-sm">'+fmtTok(_ct.greetTok)+'</td><td class="stb-hide-sm">'+fmtTok(_ctChat)+'</td><td class="stb-hide-sm">'+fmtTok(_ct.ecaTok||0)+'</td><td class="stb-r bad">'+fmtGbp(_ct.gbp)+'</td></tr>'+
       '<tr class="aimeter-sep"><td colspan="7"></td></tr>'+
       '</thead><tbody>';
-    users.forEach(function(u){ var b=_byUser[u], nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr, chatTok=Math.max(0, tok-(b.greetTok||0)-(b.ecaTok||0));
+    users.forEach(function(u){ var b=_userRangeTotals(u), nm=_names[u]||('…'+String(u).slice(-6)), tok=b.inT+b.outT+b.cw+b.cr, chatTok=Math.max(0, tok-(b.greetTok||0)-(b.ecaTok||0));
       h+='<tr class="aimeter-row" data-uid="'+esc(u)+'" title="'+_t('Click for day / week / month breakdown','Toca para ver el desglose por día / semana / mes')+'"><td><span class="stb-who"><span>'+esc(nm)+'</span></span></td><td class="stb-pts">'+(b.sonnet+(b.opus||0))+'</td><td>'+b.haiku+'</td><td class="stb-hide-sm">'+fmtTok(b.greetTok||0)+'</td><td class="stb-hide-sm">'+fmtTok(chatTok)+'</td><td class="stb-hide-sm">'+fmtTok(b.ecaTok||0)+'</td><td class="stb-r bad">'+fmtGbp(b.gbp)+'</td></tr>';
     });
     h+='</tbody></table></div>'; tableEl.innerHTML=h;
