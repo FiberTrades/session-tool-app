@@ -45491,7 +45491,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // Deliberately a strictly-earlier bail-out: once the data HAS changed, every guard in
   // cloudPush/reconcile below runs exactly as before, untouched.
   var lastPushedStr = null;
-  var pushDiag = { ticks: 0, skipped: 0, pushed: 0, reads: 0, since: Date.now() };
+  // The updated_at THIS tab stamped on its own last confirmed upload. __cloudResume asks the
+  // cloud for just that column and skips the full pull while it still matches — see the stamp
+  // check there. Tab-local on purpose, so a second tab on the same browser can't skip a merge.
+  var lastPushedUat = null;
+  ST.lastPushedUat = function () { return lastPushedUat; };
+  var pushDiag = { ticks: 0, skipped: 0, pushed: 0, reads: 0, stampReads: 0, stampHits: 0, since: Date.now() };
   // Verification handle: __stPushDiag() on an idle tab should show ticks climbing while
   // pushed/reads stay put. __stPushDiag(true) turns on a console log of WHICH top-level
   // journal keys changed, for hunting anything that mutates on every tick.
@@ -45500,7 +45505,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (typeof verbose === 'boolean') pushDiag.verbose = verbose;
       var m = Math.max(1, (Date.now() - pushDiag.since) / 60000);
       return { ticks: pushDiag.ticks, skipped: pushDiag.skipped, pushed: pushDiag.pushed,
-               reads: pushDiag.reads, minutes: Math.round(m * 10) / 10,
+               reads: pushDiag.reads, stampReads: pushDiag.stampReads, stampHits: pushDiag.stampHits,
+               minutes: Math.round(m * 10) / 10,
                readsPerHour: Math.round(pushDiag.reads / m * 60), verbose: !!pushDiag.verbose };
     };
   } catch (e) {}
@@ -45550,6 +45556,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!(r && r.error)) {
         try { localStorage.setItem('st_jrnl_uat', _uat); } catch (e) {}
         lastPushedStr = _sent;   // ONLY a confirmed upload is allowed to suppress future pushes
+        lastPushedUat = _uat;    // ...and to let __cloudResume skip the full pull on focus
       }
       accStatus(r.error ? tt('syncErr') : tt('synced'));
     });
@@ -46011,6 +46018,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (!currentUser) return;
     if ((Date.now() - __lastCloudPull) < 30000) return;
     __lastCloudPull = Date.now();
+    // CHEAP STAMP CHECK before the expensive pull. reconcile() opens by downloading the
+    // ENTIRE journal blob just to discover whether anything changed, and this fires on every
+    // focus/visibilitychange — a trader alt-tabbing between the app and MT5 all session hits
+    // it every 30s. So ask for the timestamp COLUMN ONLY first: if the cloud row is still
+    // exactly the one THIS tab uploaded (lastPushedUat, stamped on our own confirmed upsert)
+    // and the journal still belongs to this account, then no other device has touched it and
+    // there is nothing to pull.
+    //
+    // Deliberately compares this TAB's own stamp, not the shared st_jrnl_uat in localStorage:
+    // with two tabs open on one browser, the tab that did NOT do the last upload holds an
+    // older stamp, so it still falls through to the full reconcile and merges as before.
+    // Anything else — no stamp yet, different owner, different stamp, or a failed check —
+    // falls through to the full loss-proof reconcile, unchanged.
+    var _own = null; try { _own = localStorage.getItem('st_journal_owner'); } catch (e) {}
+    var _mine = (typeof ST.lastPushedUat === 'function') ? ST.lastPushedUat() : null;
+    if (_mine && _own === currentUser.id) {
+      pushDiag.stampReads++;
+      sb.from('journals').select('updated_at').eq('user_id', currentUser.id).maybeSingle()
+        .then(function (h) {
+          if (h && !h.error && h.data && h.data.updated_at === _mine) { pushDiag.stampHits++; return; }
+          try { reconcile(); } catch (e) {}
+        }, function () { try { reconcile(); } catch (e) {} });
+      return;
+    }
     try { if (typeof reconcile === 'function') reconcile(); } catch (e) {}
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) __cloudResume(); });
