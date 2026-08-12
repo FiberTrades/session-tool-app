@@ -13675,7 +13675,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
   async function doBiasCopyAndProceed(btn) {
     const msg = await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated());
-    try{ await window.STCommunity.postToChannel('pre-session-bias', msg); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
+    // Posted in both languages: the boxed summary is built from options the app already
+    // translates, so the reader gets "En rango" rather than a translator's "Alcance".
+    // The clipboard fallback keeps the poster's own language, which is what they can read.
+    const _biasEn = window.__stBuildInLang('en', buildBiasMessage);
+    const _biasEs = window.__stBuildInLang('es', buildBiasMessage);
+    try{ await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
     data.bias.date = nowIso; // committing adopts today's date, so the card shows even when the form was filled the night before
@@ -15630,7 +15635,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const _run = async () => {
       jumpToDiscord('review');
       const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
-      try{ await window.STCommunity.postToChannel('post-session-review', msg); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
+      const _revEn = window.__stBuildInLang('en', buildReviewMessage);   // both languages: see the bias post
+      const _revEs = window.__stBuildInLang('es', buildReviewMessage);
+      try{ await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
     };
@@ -23456,7 +23463,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 07:08 UTC';
+  window.ST_BUILD = '2026-08-13 07:35 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -23517,6 +23524,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function shouldTranslateOnCopy() {
     return false;
   }
+  /* Build one of the app's structured posts in a specific language. t() reads window.__lang, so
+     flipping it around a synchronous build is enough - nothing repaints and nothing else can
+     observe the flipped value in between. Used to post the bias/review/series card in BOTH
+     languages at once, so a reader gets the app's own wording rather than a machine translation
+     of the poster's. Restores in a finally, so a throw mid-build cannot strand the whole UI in
+     the wrong language. */
+  window.__stBuildInLang = function (lang, fn) {
+    const prev = window.__lang;
+    try { window.__lang = lang; return fn(); }
+    finally { window.__lang = prev; }
+  };
   function currentUiLang() {
     return (typeof window !== 'undefined' && window.__lang) ? window.__lang : 'en';
   }
@@ -43092,13 +43110,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if(since>=12000){ run(); }
       else if(!_boardBumpTimer){ _boardBumpTimer=setTimeout(run, 12000-since); }
     }
-    function postToChannel(slug, body){
+    /* bodyEs is optional and only for the app's OWN structured posts (bias, review, series,
+       weekend review). Those are assembled from a fixed vocabulary the app already translates,
+       so posting both languages lets _msgBody serve a Spanish reader the app's own wording -
+       "En rango", "Indecisa" - instead of the community translator's guess at the English,
+       which came back as "Alcance" and "No estoy seguro". Free text inside the post is still
+       machine-translated as before; only the terms the app owns stop being guessed at. */
+    function postToChannel(slug, body, bodyEs){
       slug=String(slug||'').toLowerCase(); body=String(body||'').trim();
+      bodyEs=(bodyEs==null?'':String(bodyEs).trim());
       return new Promise(function(resolve, reject){
         if(!body){ reject(new Error('empty')); return; }
         function matchSlug(c){ var s=(c.slug||'').toLowerCase(); if(s===slug) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); return (sp>0?nm.slice(sp+1):nm).toLowerCase()===slug; }
         function withUser(uid){
-          function doInsert(ch){ if(!ch){ reject(new Error('channel not found: '+slug)); return; } var row={ channel_id:ch.id, sender_id:uid, body:body, sender_name:myName(), sender_avatar:myAvatar() }; sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ reject(r.error); } else { try{ if(cur && cur.id===ch.id && typeof append==='function') append(r.data); }catch(e){} try{ _bumpBoardAfterPost(slug); }catch(e){} resolve(r.data); } }, reject); }
+          function doInsert(ch){ if(!ch){ reject(new Error('channel not found: '+slug)); return; } var row={ channel_id:ch.id, sender_id:uid, body:body, sender_name:myName(), sender_avatar:myAvatar() }; if(bodyEs && bodyEs!==body) row.body_es=bodyEs; sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ reject(r.error); } else { try{ if(cur && cur.id===ch.id && typeof append==='function') append(r.data); }catch(e){} try{ _bumpBoardAfterPost(slug); }catch(e){} resolve(r.data); } }, reject); }
           var ch=(channels||[]).filter(matchSlug)[0];
           if(ch){ doInsert(ch); return; }
           sb.from('channels').select('*').then(function(r){ var list=(r&&r.data)||[]; doInsert(list.filter(matchSlug)[0]); }, reject);
