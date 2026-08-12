@@ -13678,8 +13678,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Posted in both languages: the boxed summary is built from options the app already
     // translates, so the reader gets "En rango" rather than a translator's "Alcance".
     // The clipboard fallback keeps the poster's own language, which is what they can read.
-    const _biasEn = window.__stBuildInLang('en', buildBiasMessage);
-    const _biasEs = window.__stBuildInLang('es', buildBiasMessage);
+    const [_biasEn, _biasEs] = await window.__stLocaliseRuleLine(
+      window.__stBuildInLang('en', buildBiasMessage),
+      window.__stBuildInLang('es', buildBiasMessage));
     try{ await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
@@ -15635,8 +15636,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const _run = async () => {
       jumpToDiscord('review');
       const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
-      const _revEn = window.__stBuildInLang('en', buildReviewMessage);   // both languages: see the bias post
-      const _revEs = window.__stBuildInLang('es', buildReviewMessage);
+      // Both languages, then the free-text rule line localised: see the bias post.
+      const [_revEn, _revEs] = await window.__stLocaliseRuleLine(
+        window.__stBuildInLang('en', buildReviewMessage),
+        window.__stBuildInLang('es', buildReviewMessage));
       try{ await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
@@ -23463,7 +23466,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Build stamp. Printed on every load so it is obvious at a glance whether the
      browser is running the file you just deployed or a cached one. Check with
      ST_BUILD in the console. */
-  window.ST_BUILD = '2026-08-13 07:35 UTC';
+  window.ST_BUILD = '2026-08-13 07:58 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -23534,6 +23537,39 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const prev = window.__lang;
     try { window.__lang = lang; return fn(); }
     finally { window.__lang = prev; }
+  };
+  /* The one line in the boxed summary the app cannot translate from its own dictionary: the
+     weekly rule is free text the member typed, so an English rule sat in the Spanish card
+     reading "Turn my Losers into Break Evens". Everything around it is a fixed vocabulary; this
+     is a sentence, so it goes through the same translator the notes use.
+     Rewrites only the rule line of each already-built body, matching on the padded label, so a
+     translator failure or an odd rule can never damage the rest of the card - each swap is
+     independent and anything missing leaves that body exactly as it was. */
+  window.__stLocaliseRuleLine = async function (msgEn, msgEs) {
+    const out = [msgEn, msgEs];
+    try {
+      const tr = window.stTranslateText;
+      if (typeof tr !== 'function') return out;
+      const pad = s => (String(s || '') + '            ').slice(0, 12);   // same padding buildBiasMessage uses
+      const lblEn = pad(window.__stBuildInLang('en', () => t('savedbias.rule')));
+      const lblEs = pad(window.__stBuildInLang('es', () => t('savedbias.rule')));
+      const grab = (msg, lbl) => {
+        const lines = String(msg || '').split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].indexOf(lbl) === 0) return { i, lines, text: lines[i].slice(lbl.length) };
+        }
+        return null;
+      };
+      const hitEn = grab(msgEn, lblEn), hitEs = grab(msgEs, lblEs);
+      const raw = hitEn && hitEn.text;
+      if (!raw || !raw.trim()) return out;                      // no rule set this week
+      // 'auto' source: the member may have typed the rule in either language, and assuming the
+      // wrong one mangles a rule that was already correct.
+      const [en, es] = await Promise.all([tr(raw, 'auto', 'en'), tr(raw, 'auto', 'es')]);
+      if (en && en.trim()) { hitEn.lines[hitEn.i] = lblEn + en.trim(); out[0] = hitEn.lines.join('\n'); }
+      if (hitEs && es && es.trim()) { hitEs.lines[hitEs.i] = lblEs + es.trim(); out[1] = hitEs.lines.join('\n'); }
+    } catch (e) { /* leave both bodies as built */ }
+    return out;
   };
   function currentUiLang() {
     return (typeof window !== 'undefined' && window.__lang) ? window.__lang : 'en';
