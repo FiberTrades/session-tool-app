@@ -43750,8 +43750,56 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      is not where it belongs. */
   (function(){ try{
     if(!/[?&]stview=(network|dm)/.test(location.search)) return;
-    var s=document.createElement('style'); s.id='st-detached-css'; s.textContent='.header,.tabs{display:none!important;}.page{display:none!important;}#page-community{display:block!important;position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:1;background:#000000;}#page-community #dcx-root{height:100vh!important;max-height:100vh!important;border:none!important;border-radius:0!important;}#dcx-detach-btn,#stdm-pop{display:none!important;}#bloomberg-floater{display:none!important;}#ticker-bar{display:none!important;}'; document.head.appendChild(s);
+    var s=document.createElement('style'); s.id='st-detached-css'; s.textContent='.header,.tabs{display:none!important;}.page{display:none!important;}#page-community{display:block!important;position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:1;background:#000000;}#page-community #dcx-root{height:100%!important;max-height:100%!important;border:none!important;border-radius:0!important;}#dcx-detach-btn,#stdm-pop{display:none!important;}#bloomberg-floater{display:none!important;}#ticker-bar{display:none!important;}'; document.head.appendChild(s);
     document.documentElement.classList.add('st-detached');
+
+    /* ---- Per-window zoom ----
+       Chrome stores browser zoom PER ORIGIN, so Ctrl +/- in this window also re-zooms the main
+       app window — both are sessiontool.app. No script can read or set the browser's own zoom
+       level, so this window gets its OWN instead: a CSS zoom on the root, remembered under a key
+       the app window never reads. Zooming the chat now leaves the app alone.
+       Ctrl+wheel is reliably cancelable and is the gesture that always works. Ctrl +/- and Ctrl+0
+       are wired up too, but browsers differ on whether the page is allowed to keep those — if the
+       browser claims them, its own zoom still applies to both windows, which is why the wheel is
+       the one to reach for.
+       NB the stylesheet above gives #dcx-root height:100% rather than 100vh: vh units ignore CSS
+       zoom, so at 120% a 100vh chat would be laid out a fifth taller than the window. */
+    var ZK='st_detached_zoom', ZMIN=0.5, ZMAX=2, ZSTEP=0.05, _zBadgeT=null;
+    function zRead(){ var v=NaN; try{ v=parseFloat(localStorage.getItem(ZK)); }catch(e){} return (isFinite(v)&&v>=ZMIN&&v<=ZMAX)?v:1; }
+    function zBadge(v){
+      var b=document.getElementById('st-zoom-badge');
+      if(!b){
+        b=document.createElement('div'); b.id='st-zoom-badge';
+        b.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;'
+          +'background:rgba(0,0,0,.85);border:1px solid #2a2a2a;color:#eee;border-radius:8px;'
+          +'padding:6px 12px;font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;'
+          +'pointer-events:none;opacity:0;transition:opacity 140ms;';
+        document.body.appendChild(b);
+      }
+      b.textContent=Math.round(v*100)+'%';
+      b.style.opacity='1';
+      clearTimeout(_zBadgeT); _zBadgeT=setTimeout(function(){ b.style.opacity='0'; }, 900);
+    }
+    function zSet(v, show){
+      v=Math.max(ZMIN, Math.min(ZMAX, Math.round(v/ZSTEP)*ZSTEP));
+      try{ localStorage.setItem(ZK, String(v)); }catch(e){}
+      try{ document.documentElement.style.zoom=String(v); }catch(e){}
+      if(show) zBadge(v);
+    }
+    zSet(zRead(), false);
+    window.addEventListener('wheel', function(e){
+      if(!e.ctrlKey) return;
+      e.preventDefault();                                   /* stops the browser's own ctrl+wheel zoom */
+      zSet(zRead() + (e.deltaY < 0 ? ZSTEP : -ZSTEP), true);
+    }, { passive:false });
+    window.addEventListener('keydown', function(e){
+      if(!(e.ctrlKey || e.metaKey) || e.altKey) return;
+      var k=e.key;
+      if(k==='+'||k==='='){ e.preventDefault(); zSet(zRead()+ZSTEP, true); }
+      else if(k==='-'||k==='_'){ e.preventDefault(); zSet(zRead()-ZSTEP, true); }
+      else if(k==='0'){ e.preventDefault(); zSet(1, true); }
+    });
+
     var tries=0, opened=false, iv=setInterval(function(){ tries++; var pc=document.getElementById('page-community'); if(pc && window.STCommunity && !opened){ opened=true; try{ Array.prototype.forEach.call(document.querySelectorAll('.page'),function(p){ p.classList.remove('active'); }); }catch(e){} pc.classList.add('active'); try{ STCommunity.open(); }catch(e){} try{ if(/stview=dm/.test(location.search) && window.STDM) setTimeout(function(){ STDM.open(); }, 400); }catch(e){} clearInterval(iv); } if(tries>60) clearInterval(iv); }, 250);
   }catch(e){} })();
 
