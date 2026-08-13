@@ -42707,10 +42707,39 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!_VAL_RE) return s;
       return String(s).replace(_VAL_RE, function (_all, pre, w) { return pre + (m[w] || w); });
     }
+    /* The composer writes four of its labels WITHOUT a colon, in the same fixed-width shape:
+       "Execution   Flawless", "Phase       Range · Initiation". The colon pattern never saw them,
+       so they went to machine translation — which reads the label and the value as one phrase and
+       returned "Rango de fase" ("phase range") for a market phase. Worse, those lines carry no
+       stopwords in either language, so the detector rates them undecidable: they translate only
+       when OTHER lines in the post read foreign, and a short post leaves them in English outright.
+       Deterministic here means always Spanish, correct terms, and no request at all.
+       NB "Notes:" and "Note:" are deliberately absent from every dictionary here — their value is
+       the member's own prose, which must keep going to the translator. */
+    var _NOCOLON_ES = { 'Execution': 'Ejecución', 'Focus': 'Enfoque', 'Close': 'Cierre', 'Phase': 'Fase' };
+    function _trPlainLine(body){
+      var s = String(body);
+      var n = s.match(/^(Execution|Focus|Close|Phase)(\s{2,})([\s\S]*)$/);
+      if (n && _NOCOLON_ES[n[1]]) {
+        var lab = _NOCOLON_ES[n[1]];
+        return lab + ' '.repeat(Math.max(2, 12 - lab.length)) + _localiseVals(n[3]);
+      }
+      /* Chart and trade headers. "Trade" is the word MT gets wrong most often here — it comes back
+         as "Comercio" (commerce) rather than "Operación", on every post that has trades. */
+      var c = s.match(/^Chart (\[\d+\])(\s{2,})([\s\S]*)$/);
+      if (c) return 'Gráfico ' + c[1] + c[2] + c[3];
+      var tc = s.match(/^Trade (\d+) Chart (\d+)(\s{2,})([\s\S]*)$/);
+      if (tc) return 'Operación ' + tc[1] + ' Gráfico ' + tc[2] + tc[3] + tc[4];
+      /* Two forms: "— Trade 1 —" and "— Trade 1 · EURUSD —". Swap only the word, so the symbol
+         and the separators survive untouched whichever form it is. */
+      var sep = s.match(/^(—\s*)Trade (\d+)(.*—\s*)$/);
+      if (sep) return sep[1] + 'Operación ' + sep[2] + sep[3];
+      return null;
+    }
     function _trStatLine(body, to){
       if (to !== 'es') return null;                           // posts are canonical English → only ES readers need this
       var m = String(body).match(/^([^:]*:)(\s{2,})([\s\S]*)$/);   // "Label:<padding>value"
-      if (!m) return null;
+      if (!m) return _trPlainLine(body);                      // no colon → try the colon-less composer labels
       var es = _statLabel(m[1]);
       if (!es) return null;                                   // not a known stat label → leave to the normal path
       var val = _localiseVals(m[3])
