@@ -42655,19 +42655,72 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'Mode:': 'Modo:', 'Structure:': 'Estructura:', 'Location:': 'Ubicación:', 'Direction:': 'Dirección:',
       'Traded:': 'Operado:', 'Trades:': 'Operaciones:', 'Wins:': 'Ganadas:', 'Losses:': 'Pérdidas:',
       'BEs:': 'BE:', 'BE:': 'BE:', 'Net R | Net Acc %:': 'R neta | % de cuenta neta:',
-      'Pot R | Pot Acc %:': 'R pot. | % de cuenta pot.:', 'Captured:': 'Capturado:'
+      'Pot R | Pot Acc %:': 'R pot. | % de cuenta pot.:', 'Captured:': 'Capturado:',
+      /* The per-trade tag lines carry the same "Label:<padding>value" shape, so they belong on this
+         deterministic path too. Left to machine translation they came back as "Rango de fase" for a
+         market phase and "Comercio de continuación" for a setup name. */
+      'Setup:': 'Configuración:', 'Concepts:': 'Conceptos:', 'Mindset:': 'Mentalidad:'
     };
+    /* A label already in the reader's language still needs its VALUE localized: a member whose app
+       is Spanish authors "Capturado:" but the composer emits some values as raw English, so the
+       line arrives half-translated and the English half never gets fixed. Accepting the Spanish
+       label as its own key lets the value pass run on those lines too. */
+    var _STAT_ANY = null;
+    function _statLabel(l){
+      if (!_STAT_ANY) { _STAT_ANY = {}; for (var k in _STAT_ES) { _STAT_ANY[k] = _STAT_ES[k]; _STAT_ANY[_STAT_ES[k]] = _STAT_ES[k]; } }
+      return _STAT_ANY[l] || null;
+    }
+    /* Preset option and tag VALUES are stored as canonical English ("Ranging", "Premium Middle",
+       "Flawless Execution") and posted raw, so they reach a Spanish reader untouched. Machine
+       translation is not the answer — it mangles them, and a line like "Mindset: Flawless Execution,
+       Followed Plan, No FOMO, Focused" is skipped by the detector anyway, because the "No" in
+       "No FOMO" is a Spanish stopword and outscores an English side with no stopwords at all.
+       Every one of these values sits on a picker button carrying data-value AND data-i18n, and
+       those buttons render in the reader's language — so the DOM is the dictionary. Built once per
+       language, nothing to hand-maintain as tags are added, and a custom tag (no i18n key, label
+       identical to its value) is skipped rather than mistranslated. */
+    var _VAL_MAP = null, _VAL_RE = null, _VAL_LANG = null;
+    function _valMap(){
+      var lang = '';
+      try { lang = document.documentElement.getAttribute('lang') || ''; } catch (e) {}
+      if (_VAL_MAP && _VAL_LANG === lang) return _VAL_MAP;
+      var m = {};
+      try {
+        Array.prototype.forEach.call(document.querySelectorAll('[data-value][data-i18n]'), function (el) {
+          var v = el.getAttribute('data-value'), lab = (el.textContent || '').trim();
+          if (v && lab && lab !== v) m[v] = lab;
+        });
+      } catch (e) {}
+      var keys = Object.keys(m).sort(function (a, b) { return b.length - a.length; });   /* longest first, so "Premium Middle" wins over "Premium" */
+      /* Boundaries matter: the set includes "Low", "Range", "Full" and "Calm", which would
+         otherwise match inside Follow, Ranging, Fully, Calmly. Written as a consumed leading
+         boundary plus a lookAHEAD rather than a lookbehind, which older Safari does not support.
+         Values are not \w-only ("50%", "FVG / Imbalance"), so \b cannot be used either. */
+      _VAL_RE = keys.length
+        ? new RegExp('(^|[^A-Za-z0-9])(' + keys.map(function (k) { return k.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); }).join('|') + ')(?![A-Za-z0-9])', 'g')
+        : null;
+      _VAL_MAP = m; _VAL_LANG = lang;
+      return m;
+    }
+    function _localiseVals(s){
+      var m = _valMap();
+      if (!_VAL_RE) return s;
+      return String(s).replace(_VAL_RE, function (_all, pre, w) { return pre + (m[w] || w); });
+    }
     function _trStatLine(body, to){
       if (to !== 'es') return null;                           // posts are canonical English → only ES readers need this
       var m = String(body).match(/^([^:]*:)(\s{2,})([\s\S]*)$/);   // "Label:<padding>value"
-      if (!m || !_STAT_ES[m[1]]) return null;                // not a known stat label → leave to the normal path
-      var es = _STAT_ES[m[1]];
-      var val = m[3]
+      if (!m) return null;
+      var es = _statLabel(m[1]);
+      if (!es) return null;                                   // not a known stat label → leave to the normal path
+      var val = _localiseVals(m[3])
         .replace(/no Potential R logged/g, 'sin R potencial registrada')
         .replace(/Observed Only/g, 'Solo observación')
         .replace(/\bExecution\b/g, 'Ejecución').replace(/\bObservation\b/g, 'Observación')
         .replace(/\bBullish\b/g, 'Alcista').replace(/\bBearish\b/g, 'Bajista').replace(/\bUnsure\b/g, 'Indeciso')
-        .replace(/\bleft\b/g, 'restante');
+        .replace(/\bleft\b/g, 'restante')
+        .replace(/^Yes\b/, 'Sí').replace(/^No\b/, 'No')
+        .replace(/\b(\d+)\s+trades?\b/g, function (_, n) { return n + (n === '1' ? ' operación' : ' operaciones'); });
       return es + ' '.repeat(Math.max(2, 22 - es.length)) + val;
     }
     function _trStatBlock(text, to){
