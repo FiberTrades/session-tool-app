@@ -43764,40 +43764,59 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        the one to reach for.
        NB the stylesheet above gives #dcx-root height:100% rather than 100vh: vh units ignore CSS
        zoom, so at 120% a 100vh chat would be laid out a fifth taller than the window. */
-    var ZK='st_detached_zoom', ZMIN=0.5, ZMAX=2, ZSTEP=0.05, _zBadgeT=null;
+    var ZK='st_detached_zoom', ZMIN=0.5, ZMAX=2, ZSTEP=0.05;
     function zRead(){ var v=NaN; try{ v=parseFloat(localStorage.getItem(ZK)); }catch(e){} return (isFinite(v)&&v>=ZMIN&&v<=ZMAX)?v:1; }
-    function zBadge(v){
-      var b=document.getElementById('st-zoom-badge');
-      if(!b){
-        b=document.createElement('div'); b.id='st-zoom-badge';
-        b.style.cssText='position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:2147483647;'
-          +'background:rgba(0,0,0,.85);border:1px solid #2a2a2a;color:#eee;border-radius:8px;'
-          +'padding:6px 12px;font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;'
-          +'pointer-events:none;opacity:0;transition:opacity 140ms;';
-        document.body.appendChild(b);
-      }
-      b.textContent=Math.round(v*100)+'%';
-      b.style.opacity='1';
-      clearTimeout(_zBadgeT); _zBadgeT=setTimeout(function(){ b.style.opacity='0'; }, 900);
-    }
-    function zSet(v, show){
+    function zSet(v){
       v=Math.max(ZMIN, Math.min(ZMAX, Math.round(v/ZSTEP)*ZSTEP));
       try{ localStorage.setItem(ZK, String(v)); }catch(e){}
       try{ document.documentElement.style.zoom=String(v); }catch(e){}
-      if(show) zBadge(v);
+      var lab=document.getElementById('st-zoom-val'); if(lab) lab.textContent=Math.round(v*100)+'%';
     }
-    zSet(zRead(), false);
+    /* A real control in the channel header, because a gesture nobody can see is a feature nobody
+       finds: there is nothing in this window to suggest it zooms independently of the app. The
+       percentage doubles as the readout and as the reset — clicking it returns to 100%. */
+    function zMountCtl(){
+      try{
+        if(document.getElementById('st-zoom-ctl')) return true;
+        var head=document.querySelector('.dcx-main-head'); if(!head) return false;
+        var mk=function(txt, pad, onClick){
+          var b=document.createElement('button'); b.type='button'; b.textContent=txt;
+          b.style.cssText='background:none;border:none;color:#b7b4bf;cursor:pointer;flex:none;'
+            +'font:12px/1 ui-monospace,SFMono-Regular,Menlo,monospace;padding:5px '+pad+';border-radius:6px;';
+          b.onmouseenter=function(){ b.style.color='#fff'; };
+          b.onmouseleave=function(){ b.style.color='#b7b4bf'; };
+          b.onclick=onClick; return b;
+        };
+        var wrap=document.createElement('div'); wrap.id='st-zoom-ctl';
+        wrap.style.cssText='display:flex;align-items:center;gap:1px;margin-left:auto;margin-right:12px;flex:none;'
+          +'border:1px solid #332f3c;border-radius:8px;padding:1px;background:rgba(255,255,255,.03);';
+        wrap.title=(typeof window._stT==='function')
+          ? window._stT('Zoom this window only — Ctrl+scroll works too. Click the number to reset.',
+                        'Zoom solo de esta ventana — también Ctrl+rueda. Toca el número para restablecer.')
+          : 'Zoom this window only';
+        var val=mk('100%','5px', function(){ zSet(1); }); val.id='st-zoom-val';
+        wrap.appendChild(mk('−','8px', function(){ zSet(zRead()-ZSTEP); }));
+        wrap.appendChild(val);
+        wrap.appendChild(mk('+','8px', function(){ zSet(zRead()+ZSTEP); }));
+        var anchor=document.getElementById('dcx-callbtn');
+        if(anchor && anchor.parentNode===head) head.insertBefore(wrap, anchor); else head.appendChild(wrap);
+        zSet(zRead());        /* paints the label now that it exists */
+        return true;
+      }catch(e){ return false; }
+    }
+    zSet(zRead());
+    var zTries=0, zIv=setInterval(function(){ if(zMountCtl() || ++zTries>160) clearInterval(zIv); }, 250);
     window.addEventListener('wheel', function(e){
       if(!e.ctrlKey) return;
       e.preventDefault();                                   /* stops the browser's own ctrl+wheel zoom */
-      zSet(zRead() + (e.deltaY < 0 ? ZSTEP : -ZSTEP), true);
+      zSet(zRead() + (e.deltaY < 0 ? ZSTEP : -ZSTEP));
     }, { passive:false });
     window.addEventListener('keydown', function(e){
       if(!(e.ctrlKey || e.metaKey) || e.altKey) return;
       var k=e.key;
-      if(k==='+'||k==='='){ e.preventDefault(); zSet(zRead()+ZSTEP, true); }
-      else if(k==='-'||k==='_'){ e.preventDefault(); zSet(zRead()-ZSTEP, true); }
-      else if(k==='0'){ e.preventDefault(); zSet(1, true); }
+      if(k==='+'||k==='='){ e.preventDefault(); zSet(zRead()+ZSTEP); }
+      else if(k==='-'||k==='_'){ e.preventDefault(); zSet(zRead()-ZSTEP); }
+      else if(k==='0'){ e.preventDefault(); zSet(1); }
     });
 
     var tries=0, opened=false, iv=setInterval(function(){ tries++; var pc=document.getElementById('page-community'); if(pc && window.STCommunity && !opened){ opened=true; try{ Array.prototype.forEach.call(document.querySelectorAll('.page'),function(p){ p.classList.remove('active'); }); }catch(e){} pc.classList.add('active'); try{ STCommunity.open(); }catch(e){} try{ if(/stview=dm/.test(location.search) && window.STDM) setTimeout(function(){ STDM.open(); }, 400); }catch(e){} clearInterval(iv); } if(tries>60) clearInterval(iv); }, 250);
