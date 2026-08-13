@@ -412,9 +412,26 @@ begin
         and (m.created_at at time zone s.tz)::date >= v_start
         and (m.created_at at time zone s.tz)::date <  v_end
     ),
+    -- The set of days the per-day rules are scored over.
+    --
+    -- 2026-08-13: this used to be bias_ok_dates ALONE, which quietly gated every downstream
+    -- rule on having posted a pre-session bias. A day you traded without posting a bias was
+    -- absent from this set, so cd_adh never examined it: breaking max risk, max trades or max
+    -- daily drawdown that day cost nothing, keeping them earned nothing, and a review posted
+    -- or missed that day scored nothing either. The effect was backwards for a discipline
+    -- board — the trader who skipped the bias also escaped the risk rules for that day.
+    --
+    -- Now: bias days, trading days, and review days. The risk-rule filters in cd_adh already
+    -- require dy.d is not null (a real trading day) AND the limit to be configured, so
+    -- widening this set cannot award or deduct anything on a day with no trades.
+    -- bias_kept is unaffected: it counts rows where bok.d is not null, which is still exactly
+    -- the days carrying an on-time bias.
     cd_period as (
-      select distinct user_id, d
-      from bias_ok_dates
+      select distinct user_id, d from bias_ok_dates
+      union
+      select distinct user_id, d from days
+      union
+      select distinct user_id, d from review_ok_dates
     ),
     cd_adh as (
       select
