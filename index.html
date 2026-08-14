@@ -19713,6 +19713,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // undefined and the block threw on undefined.toFixed() the moment its stats became visible —
     // which needs 10+ tracked BEs and a rule that beats current. That exception aborted
     // renderTradesStats before drawEquityChart, taking the equity curve down with it.
+    // What a trade REALLY scored in the active metric, built exactly the way projectAllTrades
+    // builds the baseline: a win is its logged pips, a loss is -sl, a BE is zero.
+    //
+    // The metric row is a PRICE measurement, so it is GROSS - a commission is money, not
+    // distance, and does not belong in a pip count. Money and R stay net; only this row is
+    // gross. Both sides of the comparison have to agree on that or the difference between
+    // them is partly just the two conventions disagreeing.
+    //
+    // Reading tr.pips raw here is what broke direction D. Every trade in a fixed-target
+    // journal logs the SAME tr.pips (the target, e.g. 20), because that is the plan rather
+    // than the outcome. Adding it unsigned credited every unsimulated loser +20 instead of
+    // -sl and every BE +20 instead of 0, which on a journal where most trades predate the EA
+    // put roughly +20 x (losers + BEs) of pure fiction into the scenario total.
+    function actualUnits(tr, sl) {
+      if (tr.result === 'Win')  return isPips ? (parseFloat(tr.pips) || 0) : (parseFloat(tr.r) || 0);
+      if (tr.result === 'Lose') return isPips ? -sl : -1;
+      return 0;   // BE, and anything not yet resolved
+    }
+
     function projectBeRule(idx) {
       let totalGbp = 0, totalR = 0, totalUnits = 0;
       let unitsKnown = true;   // pips mode needs a stop distance on every SIMULATED trade
@@ -19731,7 +19750,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           perTradeGbp.push(net * copies);
           totalGbp += net * copies;
           totalR   += (risk > 0) ? (net / risk) * copies : 0;
-          totalUnits += (isPips ? (parseFloat(tr.pips) || 0) : ((risk > 0) ? (net / risk) : 0)) * copies;
+          totalUnits += actualUnits(tr, sl) * copies;
           return;
         }
         const r = Number(tr.beSim[idx]);
@@ -19740,14 +19759,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         totalGbp += netPerCopy * copies;
         const netR = netPerCopy / risk;   // NET R, so R and money describe one outcome
         totalR += netR * copies;
-        if (!isPips)       totalUnits += netR * copies;
-        else if (isNaN(r)) totalUnits += (parseFloat(tr.pips) || 0) * copies;
-        // Derived from the simulated R at this trade's own stop distance, so this total and
-        // totalR describe one outcome. NOTE: the baseline (current.total) is a sum of LOGGED
-        // pips, so the two are not on the same footing and the difference between them is not
-        // trustworthy - see __stPipsBasis() in the console. Do not "fix" this by adding the R
-        // delta to the logged pips: that was tried, and it makes the gap larger, not smaller.
-        else if (sl > 0)   totalUnits += netR * sl * copies;
+        // The metric row takes the GROSS simulated R (beSim's r), not netR: see actualUnits.
+        // -1R replays as -sl pips, which is exactly what the baseline scores a loss.
+        if (isNaN(r))      totalUnits += actualUnits(tr, sl) * copies;
+        else if (!isPips)  totalUnits += r * copies;
+        else if (sl > 0)   totalUnits += r * sl * copies;
         else               unitsKnown = false;
       });
       // Only report a pips total when every simulated trade carried a stop distance.
@@ -19786,7 +19802,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           perTradeGbp.push(net * copies);
           totalGbp += net * copies;
           totalR   += (risk > 0) ? (net / risk) * copies : 0;
-          totalUnits += (isPips ? (parseFloat(tr.pips) || 0) : ((risk > 0) ? (net / risk) : 0)) * copies;
+          totalUnits += actualUnits(tr, sl) * copies;
           return;
         }
         const r = Number(tr.beOffR[idx]);
@@ -19795,9 +19811,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         totalGbp += netPerCopy * copies;
         const netR = netPerCopy / risk;
         totalR += netR * copies;
-        if (!isPips)       totalUnits += netR * copies;
-        else if (isNaN(r)) totalUnits += (parseFloat(tr.pips) || 0) * copies;
-        else if (sl > 0)   totalUnits += netR * sl * copies;   // same basis as D; same caveat
+        if (isNaN(r))      totalUnits += actualUnits(tr, sl) * copies;   // same basis as D
+        else if (!isPips)  totalUnits += r * copies;
+        else if (sl > 0)   totalUnits += r * sl * copies;
         else               unitsKnown = false;
         if (Array.isArray(tr.beOffMissed) && Number(tr.beOffMissed[idx]) === 1) missed += copies;
       });
@@ -23723,7 +23739,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      new file is being served, which sent one debugging session chasing a cache
      problem that did not exist. If the stamp does not match the deploy you just
      pushed, the stamp is the thing that is wrong. */
-  window.ST_BUILD = '2026-08-14 14:47 UTC';
+  window.ST_BUILD = '2026-08-14 14:55 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -45897,6 +45913,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var n = 0, withPips = 0, withSl = 0, withBoth = 0, blankPips = 0;
       var sumLogged = 0, sumDerived = 0, sumAbsLogged = 0, sumAbsDerived = 0, sumR = 0;
       var ratios = [], worst = [];
+      // The SIGNED total - what the Edge Adjuster's baseline actually shows. Win = logged
+      // pips, loss = -sl, BE = 0. Compare it against the "current" chip on the card: they
+      // must match. If they do, any scenario total far away from it is the scenario's fault.
+      var wins = 0, losses = 0, bes = 0, noSim = 0;
+      var signedPips = 0, winPips = 0, lossPips = 0;
       all.forEach(function (tr) {
         if (!tr) return;
         n++;
@@ -45904,6 +45925,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var hasP = !isNaN(p) && String(tr.pips).trim() !== '';
         if (hasP) withPips++; else blankPips++;
         if (sl > 0) withSl++;
+        if (!Array.isArray(tr.beSim) || tr.beSim.length < 7 || !((parseFloat(tr.risk) || 0) > 0)) noSim++;
+        if (tr.result === 'Win')       { wins++;   winPips  += (hasP ? p : 0); signedPips += (hasP ? p : 0); }
+        else if (tr.result === 'Lose') { losses++; lossPips += -(sl > 0 ? sl : 0); signedPips -= (sl > 0 ? sl : 0); }
+        else if (tr.result === 'BE')   { bes++; }
         if (hasP) { sumLogged += p; sumAbsLogged += Math.abs(p); }
         if (!isNaN(r) && sl > 0) { sumDerived += r * sl; sumAbsDerived += Math.abs(r * sl); sumR += r; }
         if (hasP && !isNaN(r) && sl > 0 && Math.abs(p) > 0.0001) {
@@ -45920,6 +45945,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       console.table(worst.slice(0, 12));
       return {
         trades: n, withLoggedPips: withPips, blankPips: blankPips, withSl: withSl, withBoth: withBoth,
+        wins: wins, losses: losses, bes: bes,
+        tradesWithoutEaReplay: noSim,
+        // These three are the baseline the card shows. signedPips should equal the "current"
+        // pips chip. The gap between signedPips and sumLoggedPips is the size of the mistake
+        // that unsigned tr.pips was making.
+        signedPips: Math.round(signedPips * 10) / 10,
+        fromWins: Math.round(winPips * 10) / 10,
+        fromLosses: Math.round(lossPips * 10) / 10,
         sumLoggedPips: Math.round(sumLogged * 10) / 10,
         sumDerivedPips: Math.round(sumDerived * 10) / 10,
         sumAbsLoggedPips: Math.round(sumAbsLogged * 10) / 10,
