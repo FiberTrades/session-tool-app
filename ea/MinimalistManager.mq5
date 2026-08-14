@@ -2303,10 +2303,119 @@ string PM_SimBE(string sym,int dir,double entry,double slPrice,double tpPrice,do
    return out;
   }
 
+//----------------------------------------------------------------------------
+//  BE-OFFSET SIMULATION
+//
+//  A different question from the ladder above. That one varies WHEN the stop moves and
+//  always moves it to breakeven. This one keeps the move exactly where it really happened
+//  - your own discretionary beT, when price took the previous high or low - and varies
+//  WHERE the stop goes: entry, or some distance the far side of it.
+//
+//  Moving to entry means a retest scratches you and you still pay the costs. Moving to
+//  +0.5R banks a small win instead. The cost of that is the trades it takes you out of
+//  that would have gone on to pay. This measures exactly that cost.
+//
+//  Two rules make the answer honest, both from the trader:
+//
+//  1. SPREAD. A stop is filled by the broker, not by the mid. A long exits on the BID, so
+//     the bar low is already the right number. A SHORT exits on the ASK, which sits a
+//     spread above the plotted bid - so a short's stop can be taken by a bar whose high
+//     never reached it. MqlRates carries the real spread for that minute, so we use it
+//     rather than assuming. Miss the stop by 0.2 with 0.3 of spread and you were filled.
+//
+//  2. THE TP MUST BE REACHABLE. Being stopped at +0.5R only COSTS you if the trade would
+//     really have paid. If price would have run past your ORIGINAL stop before reaching
+//     the target, you were never going to hold it that far - you would have been stopped
+//     for a full loss instead. Those cases are not counted. Within a bar the original stop
+//     is tested before the target, so an ambiguous minute counts against the finding.
+//
+//  Per offset the replay returns the R it would have been worth, and a flag: 1 = this
+//  offset stopped the trade and the target was then validly reached. Summed over winners,
+//  that flag count IS the answer to "how many would this have cost me".
+//----------------------------------------------------------------------------
+#define PM_OFF_LEVELS 6
+double PM_OFF_LADDER[PM_OFF_LEVELS]={0.0,0.25,0.5,0.75,1.0,1.5};   // R past entry
+
+// Replay one trade under one BE-offset. Returns R; sets missed=1 when this offset
+// stopped the trade and the TP was then validly reached.
+double PM_SimOneOffset(MqlRates &r[],int n,int dir,double entry,double origSl,double tpPrice,
+                       double slDist,double pt,datetime beT,double offPx,int &missed)
+  {
+   missed=0;
+   if(slDist<=0) return 0.0;
+   double stop=origSl;
+   bool   moved=false;
+
+   for(int i=0;i<n;i++)
+     {
+      double sp=r[i].spread*pt;                       // this minute's real spread, in price
+      // Fill side: a long is closed on the bid (bars are bid), a short on the ask.
+      double advPx=(dir>0) ? r[i].low : (r[i].high+sp);
+      double favPx=(dir>0) ? r[i].high : (r[i].low+sp);
+
+      // The stop moves at the moment it really moved, and only protects from the NEXT bar.
+      if(!moved && beT>0 && r[i].time>=beT){ stop=entry+dir*offPx; moved=true; continue; }
+
+      bool stopHit=(dir>0) ? (advPx<=stop) : (advPx>=stop);
+      if(stopHit)
+        {
+         if(!moved) return -1.0;                      // original stop: a full loss
+         // Stopped at the offset. Would it have paid? Scan on: the ORIGINAL stop is tested
+         // before the target, so a bar holding both counts against the finding.
+         for(int j=i;j<n;j++)
+           {
+            double sp2=r[j].spread*pt;
+            double adv2=(dir>0) ? r[j].low : (r[j].high+sp2);
+            double fav2=(dir>0) ? r[j].high : (r[j].low+sp2);
+            bool origHit=(dir>0) ? (adv2<=origSl) : (adv2>=origSl);
+            if(origHit) break;                        // never going to hold it that far
+            bool tpLater=(tpPrice>0) && ((dir>0) ? (fav2>=tpPrice) : (fav2<=tpPrice));
+            if(tpLater){ missed=1; break; }
+           }
+         return (dir>0) ? (stop-entry)/slDist : (entry-stop)/slDist;
+        }
+
+      bool tpHit=(tpPrice>0) && ((dir>0) ? (favPx>=tpPrice) : (favPx<=tpPrice));
+      if(tpHit) return MathAbs(tpPrice-entry)/slDist;
+     }
+
+   double last=r[n-1].close;
+   return (dir>0) ? (last-entry)/slDist : (entry-last)/slDist;
+  }
+
+// Every offset, for one trade. Two JSON arrays: the R values, and the missed-TP flags.
+void PM_SimOffsets(string sym,int dir,double entry,double origSl,double tpPrice,double slPips,
+                   datetime openT,datetime closeT,datetime beT,string &outR,string &outMissed)
+  {
+   outR=""; outMissed="";
+   double pip=SymbolPipFor(sym);
+   double pt =SymbolInfoDouble(sym,SYMBOL_POINT);
+   if(pip<=0 || pt<=0 || slPips<=0 || beT<=0 || tpPrice<=0) return;   // question does not arise
+
+   datetime eod=PM_EndOfDay(closeT);
+   datetime upto=(TimeCurrent()<eod)?TimeCurrent():eod;
+   MqlRates r[];
+   int n=CopyRates(sym,PERIOD_M1,openT,upto,r);
+   if(n<=0) return;
+
+   double slDist=slPips*pip;
+   string a="[", b="[";
+   for(int k=0;k<PM_OFF_LEVELS;k++)
+     {
+      int miss=0;
+      double rr=PM_SimOneOffset(r,n,dir,entry,origSl,tpPrice,slDist,pt,beT,
+                                PM_OFF_LADDER[k]*slDist,miss);
+      a+=DoubleToString(rr,2); b+=IntegerToString(miss);
+      if(k<PM_OFF_LEVELS-1){ a+=","; b+=","; }
+     }
+   outR=a+"]"; outMissed=b+"]";
+  }
+
 // Push the replay result for a trade already sent at close. The endpoint upserts
 // on ticket, so this UPDATES that row rather than adding a second one.
 bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWin,
-             double beSlackPips,double beClearPips,double beClearR,string beSim)
+             double beSlackPips,double beClearPips,double beClearR,string beSim,
+             string beOffR,string beOffMissed)
   {
    // Every trade carries both answers. The APP decides which to show, from its own
    // Win/Lose/BE result - a decision the EA cannot make honestly, because a breakeven
@@ -2324,6 +2433,9 @@ bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWi
       json+=StringFormat(",\"be_clear_pips\":%s,\"be_clear_r\":%s",
                          DoubleToString(beClearPips,1),DoubleToString(beClearR,2));
    if(StringLen(beSim)>0) json+=",\"be_sim\":"+beSim;   // what each BE rule would have been worth
+   // What each BE OFFSET would have been worth, and which of them cost a real target.
+   if(StringLen(beOffR)>0)      json+=",\"be_off_r\":"+beOffR;
+   if(StringLen(beOffMissed)>0) json+=",\"be_off_missed\":"+beOffMissed;
    json+="}";
    return SyncPost(json);
   }
@@ -2377,7 +2489,9 @@ void PM_Sweep()
          // varied, so the simulation must start from the stop you actually set at entry.
          double origSl = entry - dir*slPip*SymbolPipFor(sSym);
          string beSim  = PM_SimBE(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT);
-         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim))
+         string beOffR="",beOffMiss="";
+         PM_SimOffsets(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT,beT,beOffR,beOffMiss);
+         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim,beOffR,beOffMiss))
            {
             // The push failed (offline?). Keep it and try again next sweep.
             ArrayResize(keep,kept+1); keep[kept]=rowCsv; kept++;
