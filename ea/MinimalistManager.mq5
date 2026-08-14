@@ -1408,7 +1408,7 @@ void BuildPanel()
    mkLabel (PP+"L_RMT",labelX,ry+6,"Risk type",COL_PANEL_LBL,8);
    mkButton(PP+"RISKMODE",box1,ry+2,BW,CH,RiskModeText(),COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
-   mkLabel (PP+"L_RM",labelX,ry+6,"Risk",COL_PANEL_LBL,8);
+   mkLabel (PP+"L_RM",labelX,ry+6,"Risk amount",COL_PANEL_LBL,8);
    mkEdit  (PP+"RISKVAL",box1,ry+2,BW,CH,Fmt(RiskValGet(),2));
    ry+=ROWH;
    mkLabel (PP+"L_MIN",labelX,ry+6,"Min SL",COL_PANEL_LBL,8);
