@@ -1340,12 +1340,17 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== RISK & STOPS =====
-   cardH=31+ROWH*3;
+   cardH=31+ROWH*4;       // four rows: risk type, risk value, min SL, max SL
    mkRect (PP+"C_RSK",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_RSK",labelX,cy+7,"RISK & STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
+   // Selector on its own line, above the value it governs - the same order the BREAK-EVEN
+   // card uses for its offset unit. The value row keeps the rightmost box, so every edit
+   // field down the panel still lines up.
+   mkLabel (PP+"L_RMT",labelX,ry+6,"Risk type",COL_PANEL_LBL,8);
+   mkButton(PP+"RISKMODE",box1,ry+2,BW,CH,RiskModeText(),COL_PANEL_BTN,COL_PANEL_BTX);
+   ry+=ROWH;
    mkLabel (PP+"L_RM",labelX,ry+6,"Risk",COL_PANEL_LBL,8);
-   mkButton(PP+"RISKMODE",box2,ry+2,BW,CH,RiskModeText(),COL_PANEL_BTN,COL_PANEL_BTX);
    mkEdit  (PP+"RISKVAL",box1,ry+2,BW,CH,Fmt(RiskValGet(),2));
    ry+=ROWH;
    mkLabel (PP+"L_MIN",labelX,ry+6,"Min SL",COL_PANEL_LBL,8);
