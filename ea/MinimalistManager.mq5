@@ -1366,12 +1366,12 @@ void BuildPanel()
    // Master switch, left of the reframe arrow. It governs the EA, the take-profit, the BE
    // line and the scale lock together - the cards no longer carry their own toggles, so this
    // is the only ON/OFF on the panel and it stays reachable while collapsed.
-   // Flat: background matches the title bar and the border is set to the same colour, so the
-   // OBJ_BUTTON bevel - light top-left, dark bottom-right - has nothing to draw against. The
-   // state reads from the word itself, green ON / red OFF, rather than from a filled pill.
+   // Same box as the three icon buttons beside it: COL_PANEL_BTN fill, 18px tall, and the
+   // border set to the fill colour so the OBJ_BUTTON bevel (light top-left, dark
+   // bottom-right) has nothing to shade. State reads from the word - green ON, red OFF.
    mkButton(PP+"MASTER",x+w-130,y+8,46,18,g_active?"ON":"OFF",
-            COL_PANEL_CARD,g_active?COL_PANEL_ACC:COL_PANEL_X);
-   ObjectSetInteger(0,PP+"MASTER",OBJPROP_BORDER_COLOR,COL_PANEL_CARD);
+            COL_PANEL_BTN,g_active?COL_PANEL_ACC:COL_PANEL_X);
+   ObjectSetInteger(0,PP+"MASTER",OBJPROP_BORDER_COLOR,COL_PANEL_BTN);
    mkIconBtn(PP+"SCREFRAME",x+w-64,y+17,ShortToString(0x27F3),COL_PANEL_ICON,12,"Segoe UI Symbol");
    ObjectSetString(0,PP+"SCREFRAME",OBJPROP_TOOLTIP,"Reframe chart now");
    mkIconBtn(PP+"TOGGLE",x+w-40,y+17,g_panelOpen?ShortToString(0x2212):"+",COL_PANEL_ICON,12,"Segoe UI Symbol");
