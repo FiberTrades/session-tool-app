@@ -20,6 +20,7 @@
 enum ENUM_RISK_MODE  { RISK_PERCENT, RISK_AMOUNT, RISK_FIXED_LOT };
 enum ENUM_ORDER_KIND { OK_MARKET, OK_LIMIT, OK_STOP };
 enum ENUM_TP_MODE    { TP_BY_RR, TP_BY_PIPS };
+enum ENUM_BEOFF_MODE { BEOFF_BY_PIPS, BEOFF_BY_RR };   // BE offset read as pips or as R
 
 //==================================================================
 //  INPUTS
@@ -50,7 +51,8 @@ input double           InpTP_Pct        = 100.0;       // % of position to close
 input group "===== Break Even ====="
 input bool             InpUseBE         = true;        // Show break-even line?
 input double           InpBE_RR         = 1.0;         // BE trigger distance (in R)
-input double           InpBE_OffsetPips = 0.5;         // SL offset past entry on BE (pips)
+input ENUM_BEOFF_MODE  InpBE_OffMode    = BEOFF_BY_PIPS; // BE offset measured in pips or R
+input double           InpBE_Offset     = 0.5;         // SL offset past entry on BE (pips or R)
 
 input group "===== Panel ====="
 input int              InpPanelX        = 8;           // Panel X (from left)
@@ -68,8 +70,8 @@ input int              InpKeyClose      = 67;          // Close all positions   
 input int              InpKeyRiskOff    = 32;          // Close 50% of each pos   (Space=32)
 input int              InpKeySwitch     = 8;           // Switch order type  (HOTKEY DISABLED in code - use panel button)
 
-input group "===== Session Tool Sync ====="
-input string InpSyncToken = "";                         // Your Session Tool sync token (account id)
+input group "===== SessionTool.app Sync ====="
+input string InpSyncToken = "";                         // Your SessionTool.app sync token (account id)
 input string InpSyncURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-trade"; // Endpoint
 input int    InpSyncDays  = 90;                         // On start, re-scan this many days of history
 input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/live-trade"; // Live status endpoint (private)
@@ -158,6 +160,7 @@ double g_riskPercent, g_riskAmount, g_fixedLot;
 double g_minSL, g_maxSL, g_beOffset, g_beRR;
 bool   g_useBE;
 ENUM_TP_MODE g_tpMode;
+ENUM_BEOFF_MODE g_beOffMode;
 bool   g_tpOn[6];
 double g_tpVal[6];
 double g_tpPct[6];
@@ -865,6 +868,21 @@ void PlaceTrade()
    BuildPanel();
   }
 
+// The BE offset in PRICE, for one position's stop distance. In pips mode the stop
+// distance is irrelevant; in R mode it is the whole point - 0.5R is 2 pips on a 4-pip
+// stop and 3 on a 6-pip one, which is a different stop on every trade.
+// Falls back to treating the number as pips when the stop distance is unknown, so a
+// missing SL can never silently place the stop AT entry.
+double BEOffsetPx(double slDistPx)
+  {
+   if(g_beOffMode==BEOFF_BY_RR)
+     {
+      if(slDistPx>0) return g_beOffset*slDistPx;
+      return g_beOffset*g_pip;
+     }
+   return g_beOffset*g_pip;
+  }
+
 void BreakEvenAll()
   {
    for(int i=PositionsTotal()-1;i>=0;i--)
@@ -877,7 +895,14 @@ void BreakEvenAll()
       double open=PositionGetDouble(POSITION_PRICE_OPEN);
       double tp=PositionGetDouble(POSITION_TP);
       int d=(type==POSITION_TYPE_BUY)?+1:-1;
-      trade.PositionModify(tk,open+d*g_beOffset*g_pip,tp);
+      // R mode needs THIS position's own stop distance, taken from the position itself.
+      // g_reqSLpips is the panel's CURRENT setting, which may have been changed since the
+      // trade was opened - sizing the offset off a stop this trade never had. The panel
+      // value is a fallback only, for a position carrying no SL at all.
+      double curSl=PositionGetDouble(POSITION_SL);
+      double slDist=(curSl>0) ? MathAbs(open-curSl)
+                              : ((g_reqSLpips>0) ? g_reqSLpips*g_pip : 0.0);
+      trade.PositionModify(tk,open+d*BEOffsetPx(slDist),tp);
      }
    g_beArmed=false; ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE);
    int cnt; double sl=PositionsSL(cnt);   // keep the draggable SL line on the new stop
@@ -1344,15 +1369,18 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== BREAK-EVEN =====
-   cardH=31+ROWH*2;
+   cardH=31+ROWH*3;       // three rows: BE line, offset value, offset unit
    mkRect (PP+"C_BE",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_BE",labelX,cy+7,"BREAK-EVEN",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_BEU",labelX,ry+6,"BE line",COL_PANEL_LBL,8);
    mkButton(PP+"BEUSE",box1,ry+2,BW,CH,g_useBE?"ON":"OFF",g_useBE?COL_PANEL_ACC:COL_PANEL_OFF,g_useBE?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry+=ROWH;
-   mkLabel (PP+"L_BEO",labelX,ry+6,"BE offset",COL_PANEL_LBL,8);
-   mkEdit  (PP+"BEOFF",box1,ry+2,BW,CH,Fmt(g_beOffset,1));
+   mkLabel (PP+"L_BEO",labelX,ry+6,(g_beOffMode==BEOFF_BY_RR)?"BE offset (R)":"BE offset (pips)",COL_PANEL_LBL,8);
+   mkEdit  (PP+"BEOFF",box1,ry+2,BW,CH,Fmt(g_beOffset,g_beOffMode==BEOFF_BY_RR?2:1));
+   ry+=ROWH;
+   mkLabel (PP+"L_BEM",labelX,ry+6,"Offset unit",COL_PANEL_LBL,8);
+   mkButton(PP+"BEOMODE",box1,ry+2,BW,CH,(g_beOffMode==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
    cy+=cardH+6;
 
    // ===== DAILY LIMIT =====
@@ -1388,7 +1416,7 @@ void BuildPanel()
    // ===== SESSION TOOL SYNC =====
    cardH=31+ROWH;
    mkRect (PP+"C_SY",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
-   mkLabel(PP+"ST_SY",labelX,cy+7,"SESSION TOOL SYNC",COL_PANEL_SECT,8);
+   mkLabel(PP+"ST_SY",labelX,cy+7,"SESSIONTOOL.APP SYNC",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_SYNC",labelX,ry+6,"Status",COL_PANEL_LBL,8);
    if(StringLen(g_syncTokenEff)>0)
@@ -1504,6 +1532,7 @@ void HandleEndEdit(string s)
    if(s==PP+"MAXSL"){ g_maxSL=ReadEdit(s); SaveState(); return; }
    if(s==PP+"BERR"){ g_beRR=ReadEdit(s); SaveState(); return; }
    if(s==PP+"BEOFF"){ g_beOffset=ReadEdit(s); SaveState(); return; }
+   if(s==PP+"BEOMODE"){ g_beOffMode=(g_beOffMode==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
    if(s==PP+"SCPAD"){ g_scalePadPips=ReadEdit(s); if(g_scaleLock){ ChartSetInteger(0,CHART_SCALEFIX,false); ApplyScaleLock(); } SaveState(); return; }
    if(s==PP+"MAXTRD"){ RefreshDayCount(); if(g_tradesToday>=1){ Warn("Max trades is locked after your first trade today - unlocks next day."); BuildPanel(); return; } g_maxTradesDay=(int)ReadEdit(s); if(g_maxTradesDay<0) g_maxTradesDay=0; RefreshDayCount(); SaveState(); BuildPanel(); return; }
    for(int i=0;i<6;i++)
@@ -1550,6 +1579,7 @@ void SaveState()
    GlobalVariableSet(StateKey("minSL"),     g_minSL);
    GlobalVariableSet(StateKey("maxSL"),     g_maxSL);
    GlobalVariableSet(StateKey("tpMode"),    (double)g_tpMode);
+   GlobalVariableSet(StateKey("beOffMode"), (double)g_beOffMode);
    GlobalVariableSet(StateKey("tpOn"),      g_tpOn[0]?1:0);
    GlobalVariableSet(StateKey("tpVal"),     g_tpVal[0]);
    GlobalVariableSet(StateKey("tpPct"),     g_tpPct[0]);
@@ -1586,6 +1616,7 @@ bool LoadState()
    g_minSL      =GlobalVariableGet(StateKey("minSL"));
    g_maxSL      =GlobalVariableGet(StateKey("maxSL"));
    g_tpMode     =(ENUM_TP_MODE)(int)GlobalVariableGet(StateKey("tpMode"));
+   g_beOffMode  =(ENUM_BEOFF_MODE)(int)GlobalVariableGet(StateKey("beOffMode"));
    g_tpOn[0]    =(GlobalVariableGet(StateKey("tpOn"))>0.5);
    g_tpVal[0]   =GlobalVariableGet(StateKey("tpVal"));
    g_tpPct[0]   =GlobalVariableGet(StateKey("tpPct"));
@@ -1617,9 +1648,9 @@ bool LoadState()
 // Navigator (which reloads default inputs) doesn't lose it. Stored locally on this PC only.
 string SyncTokenLoad()
   {
-   if(!FileIsExist(SYNC_TOKEN_FILE)){ Print("Session Tool: no saved sync token file yet."); return ""; }
+   if(!FileIsExist(SYNC_TOKEN_FILE)){ Print("SessionTool.app: no saved sync token file yet."); return ""; }
    int h=FileOpen(SYNC_TOKEN_FILE, FILE_READ|FILE_TXT|FILE_ANSI);
-   if(h==INVALID_HANDLE){ PrintFormat("Session Tool: could not read saved sync token (file error %d).",GetLastError()); return ""; }
+   if(h==INVALID_HANDLE){ PrintFormat("SessionTool.app: could not read saved sync token (file error %d).",GetLastError()); return ""; }
    string s = FileIsEnding(h) ? "" : FileReadString(h);
    FileClose(h);
    StringTrimLeft(s); StringTrimRight(s);
@@ -1628,11 +1659,11 @@ string SyncTokenLoad()
 void SyncTokenSave(string tok)
   {
    int h=FileOpen(SYNC_TOKEN_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI);
-   if(h==INVALID_HANDLE){ PrintFormat("Session Tool: FAILED to save sync token (file error %d).",GetLastError()); return; }
+   if(h==INVALID_HANDLE){ PrintFormat("SessionTool.app: FAILED to save sync token (file error %d).",GetLastError()); return; }
    FileWriteString(h, tok);
    FileFlush(h);
    FileClose(h);
-   PrintFormat("Session Tool: sync token saved to file (len=%d) - it will be remembered next time.",StringLen(tok));
+   PrintFormat("SessionTool.app: sync token saved to file (len=%d) - it will be remembered next time.",StringLen(tok));
   }
 // Masked token for the panel (shows only the last 4 chars).
 string SyncTokenMasked()
@@ -1647,7 +1678,7 @@ void SyncTokenClear()
    g_syncTokenEff="";
    g_syncCatchupPending=false;
    if(FileIsExist(SYNC_TOKEN_FILE)) FileDelete(SYNC_TOKEN_FILE);
-   Print("Session Tool: sync token cleared - sync is now off until you enter a token again.");
+   Print("SessionTool.app: sync token cleared - sync is now off until you enter a token again.");
   }
 // ---- durable "already synced" record --------------------------------------
 // MT5 auto-deletes GlobalVariables not touched for ~4 weeks (and some recompiles
@@ -1726,13 +1757,13 @@ bool SyncPost(string json)
      {
       int err=GetLastError();
       if(err==4060)
-         PrintFormat("Session Tool sync: '%s' not allowed. Add it under Tools > Options > Expert Advisors > Allow WebRequest.",InpSyncURL);
+         PrintFormat("SessionTool.app sync: '%s' not allowed. Add it under Tools > Options > Expert Advisors > Allow WebRequest.",InpSyncURL);
       else
-         PrintFormat("Session Tool sync: WebRequest failed (error %d).",err);
+         PrintFormat("SessionTool.app sync: WebRequest failed (error %d).",err);
       return false;
      }
    if(code==200) return true;
-   PrintFormat("Session Tool sync: server returned HTTP %d (%s)",code,CharArrayToString(result));
+   PrintFormat("SessionTool.app sync: server returned HTTP %d (%s)",code,CharArrayToString(result));
    return false;
   }
 
@@ -2290,7 +2321,9 @@ string PM_SimBE(string sym,int dir,double entry,double slPrice,double tpPrice,do
    if(n<=0) return "";
 
    double slDist   = slPips*pip;
-   double beOffPx  = g_beOffset*pip;     // your own BE offset, not an assumed zero
+   // Your own BE offset, not an assumed zero - and read in the SAME unit the live stop
+   // uses, or the simulation would grade a rule you do not trade.
+   double beOffPx  = (g_beOffMode==BEOFF_BY_RR) ? g_beOffset*slDist : g_beOffset*pip;
 
    string out="[";
    for(int k=0;k<PM_BE_LEVELS;k++)
@@ -2848,10 +2881,10 @@ int OnInit()
    g_orderKind=InpOrderKind;
    g_riskMode =InpRiskMode;
    g_riskPercent=InpRiskPercent; g_riskAmount=InpRiskAmount; g_fixedLot=InpFixedLot;
-   g_minSL=InpMinSLpips; g_maxSL=InpMaxSLpips; g_beOffset=InpBE_OffsetPips; g_beRR=InpBE_RR; g_useBE=InpUseBE;
+   g_minSL=InpMinSLpips; g_maxSL=InpMaxSLpips; g_beOffset=InpBE_Offset; g_beRR=InpBE_RR; g_useBE=InpUseBE;
    if(g_minSL>g_maxSL){ double t=g_minSL; g_minSL=g_maxSL; g_maxSL=t;   // auto-correct if reversed
                         Print("Minimalist Manager: Min SL exceeded Max SL - values swapped."); }
-   g_tpMode=InpTPMode;
+   g_tpMode=InpTPMode; g_beOffMode=InpBE_OffMode;
    g_tpOn[0]=InpTP_On; g_tpVal[0]=InpTP_Val; g_tpPct[0]=InpTP_Pct;
    for(int i=1;i<6;i++){ g_tpOn[i]=false; g_tpVal[i]=0; g_tpPct[i]=0; }
 
@@ -2908,9 +2941,9 @@ int OnInit()
    g_syncTokenEff = InpSyncToken;
    StringTrimLeft(g_syncTokenEff); StringTrimRight(g_syncTokenEff);
    if(StringLen(g_syncTokenEff)>0) SyncTokenSave(g_syncTokenEff);
-   else { g_syncTokenEff=SyncTokenLoad(); if(StringLen(g_syncTokenEff)>0) Print("Session Tool: restored saved sync token."); }
-   if(StringLen(g_syncTokenEff)>0) PrintFormat("Session Tool: active sync token %s (sync is always on while a token is set).",SyncTokenMasked());
-   else Print("Session Tool: no sync token set - type it in the inputs once and it will be remembered.");
+   else { g_syncTokenEff=SyncTokenLoad(); if(StringLen(g_syncTokenEff)>0) Print("SessionTool.app: restored saved sync token."); }
+   if(StringLen(g_syncTokenEff)>0) PrintFormat("SessionTool.app: active sync token %s (sync is always on while a token is set).",SyncTokenMasked());
+   else Print("SessionTool.app: no sync token set - type it in the inputs once and it will be remembered.");
 
    g_syncCatchupPending = (StringLen(g_syncTokenEff)>0);
 
