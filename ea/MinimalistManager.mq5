@@ -70,8 +70,8 @@ input int              InpKeyClose      = 67;          // Close all positions   
 input int              InpKeyRiskOff    = 32;          // Close 50% of each pos   (Space=32)
 input int              InpKeySwitch     = 8;           // Switch order type  (HOTKEY DISABLED in code - use panel button)
 
-input group "===== SessionTool.app Sync ====="
-input string InpSyncToken = "";                         // Your SessionTool.app sync token (account id)
+input group "===== Session Tool Sync ====="
+input string InpSyncToken = "";                         // Your Session Tool sync token (account id)
 input string InpSyncURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-trade"; // Endpoint
 input int    InpSyncDays  = 90;                         // On start, re-scan this many days of history
 input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/live-trade"; // Live status endpoint (private)
@@ -1478,17 +1478,17 @@ void BuildPanel()
    // ===== SESSION TOOL SYNC =====
    cardH=31+ROWH;
    mkRect (PP+"C_SY",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
-   mkLabel(PP+"ST_SY",labelX,cy+7,"SESSIONTOOL.APP SYNC",COL_PANEL_SECT,8);
+   mkLabel(PP+"ST_SY",labelX,cy+7,"SESSION TOOL SYNC",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_SYNC",labelX,ry+6,"Status",COL_PANEL_LBL,8);
    if(StringLen(g_syncTokenEff)>0)
      {
-      mkLabel (PP+"V_SYNC",box2,ry+6,"ON "+SyncTokenMasked(),COL_PANEL_ACC,8);
+      mkLabel (PP+"V_SYNC",labelX+58,ry+6,"ON "+SyncTokenMasked(),COL_PANEL_ACC,8);
       mkButton(PP+"SYNCCLR",box1,ry+2,BW,CH,"clear",COL_PANEL_BTN,COL_PANEL_BTX);
      }
    else
      {
-      mkLabel (PP+"V_SYNC",box2,ry+6,"no token",COL_PANEL_WARN,8);
+      mkLabel (PP+"V_SYNC",labelX+58,ry+6,"no token",COL_PANEL_WARN,8);
       ObjectDelete(0,PP+"SYNCCLR");        // the only conditionally-created object: it must go
      }
    cy+=cardH+6;
@@ -1674,9 +1674,9 @@ bool LoadState()
 // Navigator (which reloads default inputs) doesn't lose it. Stored locally on this PC only.
 string SyncTokenLoad()
   {
-   if(!FileIsExist(SYNC_TOKEN_FILE)){ Print("SessionTool.app: no saved sync token file yet."); return ""; }
+   if(!FileIsExist(SYNC_TOKEN_FILE)){ Print("Session Tool: no saved sync token file yet."); return ""; }
    int h=FileOpen(SYNC_TOKEN_FILE, FILE_READ|FILE_TXT|FILE_ANSI);
-   if(h==INVALID_HANDLE){ PrintFormat("SessionTool.app: could not read saved sync token (file error %d).",GetLastError()); return ""; }
+   if(h==INVALID_HANDLE){ PrintFormat("Session Tool: could not read saved sync token (file error %d).",GetLastError()); return ""; }
    string s = FileIsEnding(h) ? "" : FileReadString(h);
    FileClose(h);
    StringTrimLeft(s); StringTrimRight(s);
@@ -1685,11 +1685,11 @@ string SyncTokenLoad()
 void SyncTokenSave(string tok)
   {
    int h=FileOpen(SYNC_TOKEN_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI);
-   if(h==INVALID_HANDLE){ PrintFormat("SessionTool.app: FAILED to save sync token (file error %d).",GetLastError()); return; }
+   if(h==INVALID_HANDLE){ PrintFormat("Session Tool: FAILED to save sync token (file error %d).",GetLastError()); return; }
    FileWriteString(h, tok);
    FileFlush(h);
    FileClose(h);
-   PrintFormat("SessionTool.app: sync token saved to file (len=%d) - it will be remembered next time.",StringLen(tok));
+   PrintFormat("Session Tool: sync token saved to file (len=%d) - it will be remembered next time.",StringLen(tok));
   }
 // Masked token for the panel (shows only the last 4 chars).
 string SyncTokenMasked()
@@ -1704,7 +1704,7 @@ void SyncTokenClear()
    g_syncTokenEff="";
    g_syncCatchupPending=false;
    if(FileIsExist(SYNC_TOKEN_FILE)) FileDelete(SYNC_TOKEN_FILE);
-   Print("SessionTool.app: sync token cleared - sync is now off until you enter a token again.");
+   Print("Session Tool: sync token cleared - sync is now off until you enter a token again.");
   }
 // ---- durable "already synced" record --------------------------------------
 // MT5 auto-deletes GlobalVariables not touched for ~4 weeks (and some recompiles
@@ -1783,13 +1783,13 @@ bool SyncPost(string json)
      {
       int err=GetLastError();
       if(err==4060)
-         PrintFormat("SessionTool.app sync: '%s' not allowed. Add it under Tools > Options > Expert Advisors > Allow WebRequest.",InpSyncURL);
+         PrintFormat("Session Tool sync: '%s' not allowed. Add it under Tools > Options > Expert Advisors > Allow WebRequest.",InpSyncURL);
       else
-         PrintFormat("SessionTool.app sync: WebRequest failed (error %d).",err);
+         PrintFormat("Session Tool sync: WebRequest failed (error %d).",err);
       return false;
      }
    if(code==200) return true;
-   PrintFormat("SessionTool.app sync: server returned HTTP %d (%s)",code,CharArrayToString(result));
+   PrintFormat("Session Tool sync: server returned HTTP %d (%s)",code,CharArrayToString(result));
    return false;
   }
 
@@ -2967,9 +2967,9 @@ int OnInit()
    g_syncTokenEff = InpSyncToken;
    StringTrimLeft(g_syncTokenEff); StringTrimRight(g_syncTokenEff);
    if(StringLen(g_syncTokenEff)>0) SyncTokenSave(g_syncTokenEff);
-   else { g_syncTokenEff=SyncTokenLoad(); if(StringLen(g_syncTokenEff)>0) Print("SessionTool.app: restored saved sync token."); }
-   if(StringLen(g_syncTokenEff)>0) PrintFormat("SessionTool.app: active sync token %s (sync is always on while a token is set).",SyncTokenMasked());
-   else Print("SessionTool.app: no sync token set - type it in the inputs once and it will be remembered.");
+   else { g_syncTokenEff=SyncTokenLoad(); if(StringLen(g_syncTokenEff)>0) Print("Session Tool: restored saved sync token."); }
+   if(StringLen(g_syncTokenEff)>0) PrintFormat("Session Tool: active sync token %s (sync is always on while a token is set).",SyncTokenMasked());
+   else Print("Session Tool: no sync token set - type it in the inputs once and it will be remembered.");
 
    g_syncCatchupPending = (StringLen(g_syncTokenEff)>0);
 
