@@ -1369,18 +1369,20 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== BREAK-EVEN =====
-   cardH=31+ROWH*3;       // three rows: BE line, offset value, offset unit
+   cardH=31+ROWH*3;       // three rows: offset unit, BE line, offset value
    mkRect (PP+"C_BE",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_BE",labelX,cy+7,"BREAK-EVEN",COL_PANEL_SECT,8);
    ry=cy+23;
+   // Unit first: it decides what the offset value below MEANS, so reading top-down gives
+   // the unit before the number rather than after it.
+   mkLabel (PP+"L_BEM",labelX,ry+6,"Offset unit",COL_PANEL_LBL,8);
+   mkButton(PP+"BEOMODE",box1,ry+2,BW,CH,(g_beOffMode==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+   ry+=ROWH;
    mkLabel (PP+"L_BEU",labelX,ry+6,"BE line",COL_PANEL_LBL,8);
    mkButton(PP+"BEUSE",box1,ry+2,BW,CH,g_useBE?"ON":"OFF",g_useBE?COL_PANEL_ACC:COL_PANEL_OFF,g_useBE?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry+=ROWH;
    mkLabel (PP+"L_BEO",labelX,ry+6,(g_beOffMode==BEOFF_BY_RR)?"BE offset (R)":"BE offset (pips)",COL_PANEL_LBL,8);
    mkEdit  (PP+"BEOFF",box1,ry+2,BW,CH,Fmt(g_beOffset,g_beOffMode==BEOFF_BY_RR?2:1));
-   ry+=ROWH;
-   mkLabel (PP+"L_BEM",labelX,ry+6,"Offset unit",COL_PANEL_LBL,8);
-   mkButton(PP+"BEOMODE",box1,ry+2,BW,CH,(g_beOffMode==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
    cy+=cardH+6;
 
    // ===== DAILY LIMIT =====
