@@ -19742,22 +19742,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         totalR += netR * copies;
         if (!isPips)       totalUnits += netR * copies;
         else if (isNaN(r)) totalUnits += (parseFloat(tr.pips) || 0) * copies;
-        else if (sl > 0) {
-          // Start from the LOGGED pips and apply only the CHANGE this rule makes, converted at
-          // this trade's own stop distance.
-          //
-          // It used to be netR*sl outright, which re-derived EVERY simulated trade - including
-          // the ones the rule never touched. The baseline uses logged pips throughout, and
-          // deliberately (r and pips are hand-entered and rarely a perfect ratio), so the two
-          // totals were computed on different bases and the pips delta measured the methodology
-          // as much as the rule. Money and R were unaffected, which is why it surfaced as a pips
-          // figure far larger than the money movement justified.
-          //
-          // Both sides of the difference are NET R, so costs cancel rather than being applied
-          // once per trade.
-          const actNetR = (risk > 0) ? (net / risk) : 0;
-          totalUnits += ((parseFloat(tr.pips) || 0) + (netR - actNetR) * sl) * copies;
-        }
+        // Derived from the simulated R at this trade's own stop distance, so this total and
+        // totalR describe one outcome. NOTE: the baseline (current.total) is a sum of LOGGED
+        // pips, so the two are not on the same footing and the difference between them is not
+        // trustworthy - see __stPipsBasis() in the console. Do not "fix" this by adding the R
+        // delta to the logged pips: that was tried, and it makes the gap larger, not smaller.
+        else if (sl > 0)   totalUnits += netR * sl * copies;
         else               unitsKnown = false;
       });
       // Only report a pips total when every simulated trade carried a stop distance.
@@ -19807,12 +19797,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         totalR += netR * copies;
         if (!isPips)       totalUnits += netR * copies;
         else if (isNaN(r)) totalUnits += (parseFloat(tr.pips) || 0) * copies;
-        else if (sl > 0) {
-          // Same basis as D: logged pips plus only the change this offset makes, so a trade the
-          // offset never touched contributes exactly what it really did.
-          const actNetR = (risk > 0) ? (net / risk) : 0;
-          totalUnits += ((parseFloat(tr.pips) || 0) + (netR - actNetR) * sl) * copies;
-        }
+        else if (sl > 0)   totalUnits += netR * sl * copies;   // same basis as D; same caveat
         else               unitsKnown = false;
         if (Array.isArray(tr.beOffMissed) && Number(tr.beOffMissed[idx]) === 1) missed += copies;
       });
@@ -45893,6 +45878,55 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
                reads: pushDiag.reads, stampReads: pushDiag.stampReads, stampHits: pushDiag.stampHits,
                minutes: Math.round(m * 10) / 10,
                readsPerHour: Math.round(pushDiag.reads / m * 60), verbose: !!pushDiag.verbose };
+    };
+
+    // Why the Edge Adjuster's pips figures cannot be trusted against its baseline.
+    //
+    // The baseline sums the pips you LOGGED. The scenarios derive pips as R x sl, because a
+    // simulated trade has no logged pips - it never happened. Those two agree only if your
+    // logged pips really are r x sl. This measures whether they are, so the disagreement can
+    // be attributed instead of guessed at.
+    window.__stPipsBasis = function () {
+      var all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
+      var n = 0, withPips = 0, withSl = 0, withBoth = 0, blankPips = 0;
+      var sumLogged = 0, sumDerived = 0, sumAbsLogged = 0, sumAbsDerived = 0, sumR = 0;
+      var ratios = [], worst = [];
+      all.forEach(function (tr) {
+        if (!tr) return;
+        n++;
+        var p  = parseFloat(tr.pips), sl = parseFloat(tr.sl), r = parseFloat(tr.r);
+        var hasP = !isNaN(p) && String(tr.pips).trim() !== '';
+        if (hasP) withPips++; else blankPips++;
+        if (sl > 0) withSl++;
+        if (hasP) { sumLogged += p; sumAbsLogged += Math.abs(p); }
+        if (!isNaN(r) && sl > 0) { sumDerived += r * sl; sumAbsDerived += Math.abs(r * sl); sumR += r; }
+        if (hasP && !isNaN(r) && sl > 0 && Math.abs(p) > 0.0001) {
+          withBoth++;
+          var ratio = (r * sl) / p;                    // 1.0 = logged pips agree with r x sl
+          ratios.push(ratio);
+          worst.push({ date: tr.date || tr.day || '', pips: p, r: r, sl: sl, ratio: Math.round(ratio * 100) / 100 });
+        }
+      });
+      ratios.sort(function (a, b) { return a - b; });
+      worst.sort(function (a, b) { return Math.abs(b.ratio - 1) - Math.abs(a.ratio - 1); });
+      var med = ratios.length ? ratios[Math.floor(ratios.length / 2)] : null;
+      console.log('worst offenders (r*sl vs logged pips):');
+      console.table(worst.slice(0, 12));
+      return {
+        trades: n, withLoggedPips: withPips, blankPips: blankPips, withSl: withSl, withBoth: withBoth,
+        sumLoggedPips: Math.round(sumLogged * 10) / 10,
+        sumDerivedPips: Math.round(sumDerived * 10) / 10,
+        sumAbsLoggedPips: Math.round(sumAbsLogged * 10) / 10,
+        sumAbsDerivedPips: Math.round(sumAbsDerived * 10) / 10,
+        sumR: Math.round(sumR * 100) / 100,
+        medianRatio: med == null ? null : Math.round(med * 100) / 100,
+        // 1.0 = the two bases agree. ~10 = sl logged in points, not pips.
+        // A big blankPips count explains it on its own.
+        hint: med == null ? 'no trade has pips, r and sl together'
+            : (med > 5 ? 'sl looks like points/pipettes, not pips'
+            : (blankPips > withPips ? 'most trades have no logged pips'
+            : (Math.abs(med - 1) < 0.15 ? 'bases agree - look elsewhere' : 'bases disagree, cause unclear')))
+      };
     };
   } catch (e) {}
   function _journalStr() { try { return JSON.stringify(ST.getData()); } catch (e) { return null; } }
