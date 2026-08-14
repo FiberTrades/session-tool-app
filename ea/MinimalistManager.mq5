@@ -1361,7 +1361,7 @@ void BuildPanel()
    mkLabel(PP+"ST_TP",labelX,cy+7,"TAKE PROFIT",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_TPM",labelX,ry+6,"Target by",COL_PANEL_LBL,8);
-   mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R : R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+   mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
    mkLabel (PP+"L_TP",labelX,ry+6,"Take profit",COL_PANEL_LBL,8);
    mkButton(PP+"TPON0",box2,ry+2,BW,CH,g_tpOn[0]?"ON":"OFF",g_tpOn[0]?COL_PANEL_ACC:COL_PANEL_OFF,g_tpOn[0]?COL_PANEL_ACCX:COL_PANEL_OFFX);
