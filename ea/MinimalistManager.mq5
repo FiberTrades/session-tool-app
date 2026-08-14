@@ -1487,6 +1487,9 @@ void HandleClick(string s)
    if(s==PP+"CXL"){ CancelPending(); return; }
    if(s==PP+"CLOSE"){ CloseAll(); return; }
    if(s==PP+"TPMODE"){ g_tpMode=(g_tpMode==TP_BY_RR)?TP_BY_PIPS:TP_BY_RR; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
+   // A BUTTON, so it belongs here and not in HandleEndEdit - that one fires on
+   // CHARTEVENT_OBJECT_ENDEDIT, which a button never raises.
+   if(s==PP+"BEOMODE"){ g_beOffMode=(g_beOffMode==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
    if(s==PP+"BEUSE")
      {
       g_useBE=!g_useBE;
@@ -1534,7 +1537,6 @@ void HandleEndEdit(string s)
    if(s==PP+"MAXSL"){ g_maxSL=ReadEdit(s); SaveState(); return; }
    if(s==PP+"BERR"){ g_beRR=ReadEdit(s); SaveState(); return; }
    if(s==PP+"BEOFF"){ g_beOffset=ReadEdit(s); SaveState(); return; }
-   if(s==PP+"BEOMODE"){ g_beOffMode=(g_beOffMode==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
    if(s==PP+"SCPAD"){ g_scalePadPips=ReadEdit(s); if(g_scaleLock){ ChartSetInteger(0,CHART_SCALEFIX,false); ApplyScaleLock(); } SaveState(); return; }
    if(s==PP+"MAXTRD"){ RefreshDayCount(); if(g_tradesToday>=1){ Warn("Max trades is locked after your first trade today - unlocks next day."); BuildPanel(); return; } g_maxTradesDay=(int)ReadEdit(s); if(g_maxTradesDay<0) g_maxTradesDay=0; RefreshDayCount(); SaveState(); BuildPanel(); return; }
    for(int i=0;i<6;i++)
