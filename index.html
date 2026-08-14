@@ -7458,7 +7458,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'combo.rec_c_need_more': 'Need 10+ tracked losers. You have {N}.',
       'combo.rec_c_no_room': 'A wider stop costs more than it saves. It rescues some losers, but you risk a fixed amount \u2014 so a wider stop is a smaller position, and every winner shrinks.',
       'combo.rec_c_recommend': 'Widen your stop by <strong class="rec-suggest">+{PIPS} pips</strong>.',
-      'combo.rec_d_need_more': 'Need 10+ tracked BEs. You have {N}.',
+      'combo.direction_e_name': 'Move your BE past entry',
+      'combo.rec_e_need_more': 'Need 10+ trades with a BE move replayed. You have {N}.',
+      'combo.rec_e_no_room': 'Moving your BE stop past entry costs more than it banks. Keep it at entry.',
+      'combo.rec_e_recommend': 'Move your BE stop to <strong class="rec-suggest">{RULE}</strong> instead of entry.',
+      'combo.rec_e_cost': 'Cost: {N} winner(s) it would have stopped early.',
+      'combo.sample_off_one': 'tracked BE move',
+      'combo.sample_off_many': 'tracked BE moves',
+      'combo.g_off_banked': 'Scratches banked',
+      'combo.g_off_stopped': 'Winners stopped early',      'combo.rec_d_need_more': 'Need 10+ tracked BEs. You have {N}.',
       'combo.rec_d_no_room': 'Your current BE rule beats every alternative \u2014 moving earlier scratches winners, moving later turns scratches into losses. Leave it alone.',
       'combo.rec_d_recommend': 'Change your BE rule: <strong class="rec-suggest">{RULE}</strong>.',
       'combo.be_value': 'Your BE rule as you actually trade it: saved {S} on {SN}, cost {COST} on {CN} — net {NET}.',
@@ -8945,7 +8953,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'combo.rec_c_need_more': 'Necesitas 10+ perdedoras con datos de stop del EA. Tienes {N}.',
       'combo.rec_c_no_room': 'Un stop más amplio cuesta más de lo que salva. Rescata perdedoras, pero encoge cada ganadora: arriesgas una cantidad fija, así que un stop más amplio es una posición más pequeña.',
       'combo.rec_c_recommend': 'Amplía tu stop <strong class="rec-suggest">+{PIPS} pips</strong>.',
-      'combo.rec_d_need_more': 'Necesitas 10+ BE rastreados. Tienes {N}.',
+      'combo.direction_e_name': 'Mueve tu BE más allá de la entrada',
+      'combo.rec_e_need_more': 'Necesitas 10+ operaciones con un movimiento a BE reproducido. Tienes {N}.',
+      'combo.rec_e_no_room': 'Mover el BE más allá de la entrada cuesta más de lo que asegura. Déjalo en la entrada.',
+      'combo.rec_e_recommend': 'Mueve tu stop de BE a <strong class="rec-suggest">{RULE}</strong> en vez de a la entrada.',
+      'combo.rec_e_cost': 'Coste: {N} ganadora(s) que habría cortado antes de tiempo.',
+      'combo.sample_off_one': 'movimiento a BE rastreado',
+      'combo.sample_off_many': 'movimientos a BE rastreados',
+      'combo.g_off_banked': 'BE convertidos en ganancia',
+      'combo.g_off_stopped': 'Ganadoras cortadas antes',      'combo.rec_d_need_more': 'Necesitas 10+ BE rastreados. Tienes {N}.',
       'combo.be_value': 'Tu regla de BE tal y como la operas: ahorró {S} en {SN}, costó {COST} en {CN} — neto {NET}.',
       'combo.be_value_saved_only': 'Tu regla de BE tal y como la operas: ahorró {S} en {SN} — y de momento no te ha costado nada.',
       'combo.be_value_cost_only': 'Tu regla de BE tal y como la operas: costó {COST} en {CN} — y de momento no te ha ahorrado nada.',
@@ -19453,10 +19469,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // tracked is BEs.)
     const trackedBeSim = allTrades.filter(tr => tr.result === 'BE' && Array.isArray(tr.beSim) && tr.beSim.length >= 7);
 
+    // E's tracked set: trades carrying the BE-OFFSET replay. Gated on the same shape check as
+    // D (a full ladder, not a truncated one), and on the trade actually having had a BE move -
+    // the EA only emits be_off_r when the stop really went to breakeven and a TP existed.
+    const trackedBeOff = allTrades.filter(tr => Array.isArray(tr.beOffR) && tr.beOffR.length >= 6);
+
     const tierA = tierFor(trackedWins.length);
     const tierB = tierFor(trackedBes.length);
     const tierC = tierFor(trackedLosers.length);
     const tierD = tierFor(trackedBeSim.length);
+    const tierE = tierFor(trackedBeOff.length);
     const tierIsStrong = tier => tier === 'building' || tier === 'strong';
     const aPassesTier  = tierIsStrong(tierA);
     const bPassesTier  = tierIsStrong(tierB);
@@ -19736,6 +19758,58 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (sc.totalGbp > scenarioD.totalGbp) { scenarioD = sc; bestBeIdx = k; }
       }
     }
+    // ---- E: WHERE the BE stop goes, as opposed to D's WHEN ----------------------------
+    // The EA replays each trade once per offset, from the moment the stop REALLY moved, and
+    // returns what it would have been worth (beOffR) plus a flag per offset (beOffMissed):
+    // 1 = this offset stopped the trade and the target was then reached anyway, without price
+    // first running past the original stop. That flag is the honest cost of the rule, and it
+    // is a count of trades rather than a sum of money - the number a trader argues with.
+    const BE_OFF_LADDER = [0, 0.25, 0.5, 0.75, 1.0, 1.5];   // must match the EA's PM_OFF_LADDER
+    function projectBeOffset(idx) {
+      let totalGbp = 0, totalR = 0, totalUnits = 0, missed = 0;
+      let unitsKnown = true;
+      const perTradeGbp = [];
+      allTrades.forEach(tr => {
+        const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+        const risk   = parseFloat(tr.risk)  || 0;
+        const costs  = parseFloat(tr.costs) || 0;
+        const net    = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
+        const sl     = parseFloat(tr.sl)    || 0;
+        // No offset replay for this trade: it contributes exactly what it really did, so the
+        // scenario is measured over the same trades as current and never over a subset.
+        if (!Array.isArray(tr.beOffR) || tr.beOffR.length < 6 || risk <= 0) {
+          perTradeGbp.push(net * copies);
+          totalGbp += net * copies;
+          totalR   += (risk > 0) ? (net / risk) * copies : 0;
+          totalUnits += (isPips ? (parseFloat(tr.pips) || 0) : ((risk > 0) ? (net / risk) : 0)) * copies;
+          return;
+        }
+        const r = Number(tr.beOffR[idx]);
+        const netPerCopy = isNaN(r) ? net : (r * risk - costs);
+        perTradeGbp.push(netPerCopy * copies);
+        totalGbp += netPerCopy * copies;
+        const netR = netPerCopy / risk;
+        totalR += netR * copies;
+        if (!isPips)       totalUnits += netR * copies;
+        else if (isNaN(r)) totalUnits += (parseFloat(tr.pips) || 0) * copies;
+        else if (sl > 0)   totalUnits += netR * sl * copies;
+        else               unitsKnown = false;
+        if (Array.isArray(tr.beOffMissed) && Number(tr.beOffMissed[idx]) === 1) missed += copies;
+      });
+      return { totalGbp, perTradeGbp, totalR, missed,
+               total: (isPips && !unitsKnown) ? null : totalUnits };
+    }
+    let bestOffIdx = -1, scenarioE = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp,
+                                       totalR: current.totalR, total: current.total, missed: 0 };
+    if (trackedBeOff.length > 0) {
+      // Index 0 is the offset you already trade (stop AT entry), so it is the baseline the
+      // ladder must beat - starting from `current` means a rule only wins by beating reality.
+      for (let k = 1; k < BE_OFF_LADDER.length; k++) {
+        const sc = projectBeOffset(k);
+        if (sc.totalGbp > scenarioE.totalGbp) { scenarioE = sc; bestOffIdx = k; }
+      }
+    }
+
     // The pip equivalent, shown alongside - but R is the PRIMARY unit here, and deliberately.
     //
     // For A and B, R and pips are two ways of writing the same number. For D they are two
@@ -19766,6 +19840,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const bDeltaGbp = scenarioB.totalGbp - current.totalGbp;
     const cDeltaGbp = scenarioC.totalGbp - current.totalGbp;
     const dDeltaGbp = scenarioD.totalGbp - current.totalGbp;
+    const eDeltaGbp = scenarioE.totalGbp - current.totalGbp;
 
     // C and D read the EA's replay. With no EA there is no data, and the block says exactly
     // that rather than showing an empty chart or, worse, a confident guess.
@@ -19873,6 +19948,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     if (beValueLine) recDTpl += ' ' + beValueLine;
 
+    // E's label carries both units, because "+0.5R" and "+2 pips" are the same rule only on a
+    // 4-pip stop. The pip figure is from the median stop and marked ~, exactly as D does it.
+    const bestOffLabel = (bestOffIdx < 0) ? ''
+      : ('+' + BE_OFF_LADDER[bestOffIdx].toFixed(2).replace(/\.?0+$/, '') + 'R'
+         + (_medianSl > 0 ? ' (~' + (BE_OFF_LADDER[bestOffIdx] * _medianSl).toFixed(1) + ' pips)' : '')
+         + ' past entry');
+    let recETpl;
+    if (trackedBeOff.length < 10) {
+      recETpl = (t('combo.rec_e_need_more') || 'Need 10+ trades with a BE move replayed. You have {N}.')
+        .replace('{N}', String(trackedBeOff.length));
+    } else if (bestOffIdx < 0) {
+      recETpl = t('combo.rec_e_no_room')
+        || 'Moving your BE stop past entry costs more than it banks. Keep it at entry.';
+    } else {
+      recETpl = (t('combo.rec_e_recommend')
+        || 'Move your BE stop to <strong class="rec-suggest">{RULE}</strong> instead of entry.')
+        .replace('{RULE}', bestOffLabel);
+      // The cost, as a COUNT. Every other direction can only offer a money delta; this one
+      // knows exactly how many winners the rule would have taken you out of, so it says so
+      // rather than leaving the trader to wonder what the gain was bought with.
+      if (scenarioE.missed > 0) {
+        recETpl += ' ' + (t('combo.rec_e_cost') || 'Cost: {N} winner(s) it would have stopped early.')
+          .replace('{N}', String(scenarioE.missed));
+      }
+    }
+
     const directionAHtml = buildDirectionBlock({
       letter: 'A',
       nameKey: 'combo.direction_a_name',
@@ -19953,6 +20054,28 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             return comboSplitGraph(sp.gainGbp, sp.costGbp,
               t('combo.g_be_better') || 'Trades improved',
               t('combo.g_be_worse')  || 'Trades made worse');
+          })()
+        : ''
+    });
+
+    const directionEHtml = buildDirectionBlock({
+      letter: 'E',
+      nameKey: 'combo.direction_e_name',
+      nameFallback: 'Move your BE past entry',
+      recommendation: recETpl,
+      scenario: scenarioE,
+      deltaGbp: eDeltaGbp,
+      tier: tierE,
+      sampleCount: trackedBeOff.length,
+      sampleLabel: trackedBeOff.length === 1
+        ? (t('combo.sample_off_one')  || 'tracked BE move')
+        : (t('combo.sample_off_many') || 'tracked BE moves'),
+      graphHtml: (tierIsStrong(tierE) && bestOffIdx >= 0)
+        ? (function () {
+            const sp = splitVsCurrent(scenarioE, current);
+            return comboSplitGraph(sp.gainGbp, sp.costGbp,
+              t('combo.g_off_banked')  || 'Scratches banked',
+              t('combo.g_off_stopped') || 'Winners stopped early');
           })()
         : ''
     });
@@ -20291,7 +20414,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // An earlier pass collapsed the sub-threshold ones into a single line. That was wrong twice
     // over: it hid a direction you're actively working toward, and the leftover line sat below
     // the card dividers with nothing to attach to, which just looked broken.
-    const _dirs = [directionAHtml, directionBHtml, directionCHtml, directionDHtml];
+    const _dirs = [directionAHtml, directionBHtml, directionCHtml, directionDHtml, directionEHtml];
     // Equity sparkline for the verdict card: cumulative net money over the trades in scope, in
     // date order. Real data, not decoration \u2014 it is the shape of the account the verdict is
     // talking about. Drawn as a plain SVG path so it costs nothing and needs no chart library.
