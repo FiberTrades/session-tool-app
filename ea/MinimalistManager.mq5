@@ -2074,9 +2074,13 @@ void PM_Queue(ulong posId,string sym,int dir,double entry,double slPrice,
 bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
                double slPips,datetime openT,datetime closeT,double pnl,datetime beT,
                double &potPips,double &potR,double &reqSlPips,int &wouldWin,
-               double &beSlackPips)
+               double &beSlackPips,double &beClearPips,double &beClearR)
   {
    potPips=0; potR=0; reqSlPips=0; wouldWin=0; beSlackPips=0;
+   // -9999 = "not applicable" (no TP, or the stop never moved to BE). The pusher omits the
+   // fields entirely in that case, so the column stays NULL rather than claiming zero
+   // clearance on a trade the question does not apply to.
+   beClearPips=-9999; beClearR=-9999;
 
    double pip=SymbolPipFor(sym);
    if(pip<=0) return false;
@@ -2089,6 +2093,13 @@ bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
    if(n<=0) return (TimeCurrent()>=eod);        // no bars at all: give up once the day is done
 
    double bestFav=0, worstAdv=0, beAdv=0;
+   // beAdv above is clamped at 0, so it only ever records price CROSSING entry - which is
+   // why it reads zero on every winner. beAdvSigned is the same measurement with the clamp
+   // removed: it keeps the largest advP even when every one is negative, i.e. when price
+   // stayed on the profit side throughout. Negated, that is the CLOSEST price came to entry
+   // after the BE move - the room a wider BE offset would have eaten into.
+   // Kept as a separate accumulator on purpose: be_slack_pips keeps its exact meaning.
+   double beAdvSigned=-1e9;
 
    // THE POTENTIAL WINDOW CLOSES AT YOUR BREAKEVEN STOP - where it ACTUALLY sat, which is
    // not always the entry price. The EA offsets the BE stop (g_beOffset), so it can sit a
@@ -2159,6 +2170,7 @@ bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
       if(beOpen && r[i].time>=beT)
         {
          if(advP>beAdv) beAdv=advP;
+         if(advP>beAdvSigned) beAdvSigned=advP;   // unclamped: survives an all-negative run
          bool tpHit=(dir>0) ? (r[i].high>=tpPrice) : (r[i].low<=tpPrice);
          if(tpHit) beOpen=false;
         }
@@ -2178,6 +2190,16 @@ bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
      {
       reqSlPips=worstAdv;                        // the ORIGINAL stop that would have survived it
       if(beT>0) beSlackPips=beAdv;               // the room the BE stop needed, from the move onwards
+      // How much CLEARANCE the BE stop had: the closest price came to entry after the move,
+      // measured on the profit side. Positive = never reached entry, and this many pips is
+      // the largest BE offset that would still have survived. Negative = price crossed entry
+      // (only possible when the stop itself sat beyond it). A trade whose window held no bars
+      // leaves beAdvSigned at its sentinel and stays "not applicable".
+      if(beT>0 && beAdvSigned>-1e8)
+        {
+         beClearPips=-beAdvSigned;
+         beClearR   =(slPips>0)? beClearPips/slPips : 0.0;
+        }
      }
 
    return true;
@@ -2284,7 +2306,7 @@ string PM_SimBE(string sym,int dir,double entry,double slPrice,double tpPrice,do
 // Push the replay result for a trade already sent at close. The endpoint upserts
 // on ticket, so this UPDATES that row rather than adding a second one.
 bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWin,
-             double beSlackPips,string beSim)
+             double beSlackPips,double beClearPips,double beClearR,string beSim)
   {
    // Every trade carries both answers. The APP decides which to show, from its own
    // Win/Lose/BE result - a decision the EA cannot make honestly, because a breakeven
@@ -2296,6 +2318,11 @@ bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWi
       DoubleToString(potPips,1),DoubleToString(potR,2),
       DoubleToString(reqSlPips,1),DoubleToString(beSlackPips,1),
       (wouldWin?"true":"false"));
+   // Omitted entirely when the question does not apply (no TP, or the stop never moved to
+   // BE), so the columns stay NULL instead of reading as "zero clearance".
+   if(beClearPips>-9000)
+      json+=StringFormat(",\"be_clear_pips\":%s,\"be_clear_r\":%s",
+                         DoubleToString(beClearPips,1),DoubleToString(beClearR,2));
    if(StringLen(beSim)>0) json+=",\"be_sim\":"+beSim;   // what each BE rule would have been worth
    json+="}";
    return SyncPost(json);
@@ -2342,15 +2369,15 @@ void PM_Sweep()
       string rowCsv=sPos+","+sSym+","+sDir+","+sEnt+","+sSl+","+sTp+","+sSlp+","
                    +sOpen+","+sClose+","+sPnl+","+sBet;
 
-      double potPips,potR,reqSl,beSlack; int wWin;
+      double potPips,potR,reqSl,beSlack,beClearP,beClearR2; int wWin;
       if(PM_Replay(sSym,dir,entry,slPr,tpPr,slPip,openT,closeT,pnl,beT,
-                   potPips,potR,reqSl,wWin,beSlack))
+                   potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2))
         {
          // The ORIGINAL stop, not the one we ended up on - the BE rule is the thing being
          // varied, so the simulation must start from the stop you actually set at entry.
          double origSl = entry - dir*slPip*SymbolPipFor(sSym);
          string beSim  = PM_SimBE(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT);
-         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beSim))
+         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim))
            {
             // The push failed (offline?). Keep it and try again next sweep.
             ArrayResize(keep,kept+1); keep[kept]=rowCsv; kept++;
