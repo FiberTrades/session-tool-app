@@ -1375,10 +1375,15 @@ void BuildPanel()
    mkButton(PP+"MASTER",x+w-124,y+8,46,18,g_active?"ON":"OFF",
             COL_PANEL_BTN,g_active?COL_PANEL_ACC:COL_PANEL_X);
    ObjectSetInteger(0,PP+"MASTER",OBJPROP_BORDER_COLOR,COL_PANEL_BTN);
+   ObjectSetString(0,PP+"MASTER",OBJPROP_TOOLTIP,"EA On/Off");
    mkIconBtn(PP+"SCREFRAME",x+w-64,y+17,ShortToString(0x27F3),COL_PANEL_ICON,12,"Segoe UI Symbol");
    ObjectSetString(0,PP+"SCREFRAME",OBJPROP_TOOLTIP,"Reframe chart now");
    mkIconBtn(PP+"TOGGLE",x+w-40,y+17,g_panelOpen?ShortToString(0x2212):"+",COL_PANEL_ICON,12,"Segoe UI Symbol");
+   // Follows the state, so it never offers to do what it just did.
+   ObjectSetString(0,PP+"TOGGLE",OBJPROP_TOOLTIP,g_panelOpen?"Collapse panel":"Expand panel");
    mkIconBtn(PP+"QUIT",x+w-16,y+17,ShortToString(0x00D7),COL_PANEL_X,12,"Segoe UI Symbol",COL_PANEL_XBG);
+   // Names the real consequence: this detaches the EA, it does not just close the panel.
+   ObjectSetString(0,PP+"QUIT",OBJPROP_TOOLTIP,"Remove EA from chart (settings are saved)");
 
    if(!g_panelOpen){ g_panelH=titleH; DrawHint(); ChartRedraw(); return; }
 
