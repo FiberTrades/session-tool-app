@@ -1369,7 +1369,10 @@ void BuildPanel()
    // Same box as the three icon buttons beside it: COL_PANEL_BTN fill, 18px tall, and the
    // border set to the fill colour so the OBJ_BUTTON bevel (light top-left, dark
    // bottom-right) has nothing to shade. State reads from the word - green ON, red OFF.
-   mkButton(PP+"MASTER",x+w-130,y+8,46,18,g_active?"ON":"OFF",
+   // x is the LEFT edge here, but mkIconBtn takes a CENTRE and draws +/-10 around it. So the
+   // icon boxes span w-74..w-54, w-50..w-30, w-26..w-6 - 4px apart. Ending the master at
+   // w-78 gives it the same 4px gap: w-78-46 = w-124.
+   mkButton(PP+"MASTER",x+w-124,y+8,46,18,g_active?"ON":"OFF",
             COL_PANEL_BTN,g_active?COL_PANEL_ACC:COL_PANEL_X);
    ObjectSetInteger(0,PP+"MASTER",OBJPROP_BORDER_COLOR,COL_PANEL_BTN);
    mkIconBtn(PP+"SCREFRAME",x+w-64,y+17,ShortToString(0x27F3),COL_PANEL_ICON,12,"Segoe UI Symbol");
