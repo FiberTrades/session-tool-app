@@ -1300,6 +1300,9 @@ void BuildPanel()
    int labelX=cardX+padX;
    int Rend=cardX+cardW-padX;
    int BW=90, CH=23, GAP=7, ROWH=27;
+   // Header-row toggles: shorter than a body control so they sit inside the 23px band
+   // above the first row, centred on the section title rather than overlapping it.
+   int HCH=18, HDY=3;
    int box1=Rend-BW;               // rightmost control box
    int box2=Rend-2*BW-GAP;         // left box of a two-box row
 
@@ -1325,13 +1328,11 @@ void BuildPanel()
    int cy=bTop+6, cardH, ry;
 
    // ===== ORDER =====
-   cardH=31+ROWH*3;
+   cardH=31+ROWH*2;      // Active moved onto the title row
    mkRect (PP+"C_ORD",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_ORD",labelX,cy+7,"ORDER",COL_PANEL_SECT,8);
+   mkButton(PP+"ACTIVE",box1,cy+HDY,BW,HCH,g_active?"ON":"OFF",g_active?COL_PANEL_ACC:COL_PANEL_OFF,g_active?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
-   mkLabel (PP+"L_ACT",labelX,ry+6,"Active",COL_PANEL_LBL,8);
-   mkButton(PP+"ACTIVE",box1,ry+2,BW,CH,g_active?"ON":"OFF",g_active?COL_PANEL_ACC:COL_PANEL_OFF,g_active?COL_PANEL_ACCX:COL_PANEL_OFFX);
-   ry+=ROWH;
    mkLabel (PP+"L_OK",labelX,ry+6,"Order type",COL_PANEL_LBL,8);
    mkButton(PP+"ORDKIND",box1,ry+2,BW,CH,OrderKindText(),COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
@@ -1364,19 +1365,20 @@ void BuildPanel()
    cardH=31+ROWH*2;
    mkRect (PP+"C_TP",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TP",labelX,cy+7,"TAKE PROFIT",COL_PANEL_SECT,8);
+   mkButton(PP+"TPON0",box1,cy+HDY,BW,HCH,g_tpOn[0]?"ON":"OFF",g_tpOn[0]?COL_PANEL_ACC:COL_PANEL_OFF,g_tpOn[0]?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
    mkLabel (PP+"L_TPM",labelX,ry+6,"Target by",COL_PANEL_LBL,8);
    mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
    mkLabel (PP+"L_TP",labelX,ry+6,"Take profit",COL_PANEL_LBL,8);
-   mkButton(PP+"TPON0",box2,ry+2,BW,CH,g_tpOn[0]?"ON":"OFF",g_tpOn[0]?COL_PANEL_ACC:COL_PANEL_OFF,g_tpOn[0]?COL_PANEL_ACCX:COL_PANEL_OFFX);
    mkEdit  (PP+"TPVAL0",box1,ry+2,BW,CH,Fmt(g_tpVal[0],2));
    cy+=cardH+6;
 
    // ===== BREAK-EVEN =====
-   cardH=31+ROWH*2;       // two rows: offset unit, then BE line + offset value together
+   cardH=31+ROWH*2;       // two rows: offset unit, offset value (on/off is on the title row)
    mkRect (PP+"C_BE",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_BE",labelX,cy+7,"BREAK-EVEN",COL_PANEL_SECT,8);
+   mkButton(PP+"BEUSE",box1,cy+HDY,BW,HCH,g_useBE?"ON":"OFF",g_useBE?COL_PANEL_ACC:COL_PANEL_OFF,g_useBE?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
    // Unit first: it decides what the offset value below MEANS, so reading top-down gives
    // the unit before the number. The button carries the unit, so the label below does not
@@ -1386,7 +1388,6 @@ void BuildPanel()
    ry+=ROWH;
    // On/off beside the value it switches, exactly as the Take profit row does.
    mkLabel (PP+"L_BEO",labelX,ry+6,"BE offset",COL_PANEL_LBL,8);
-   mkButton(PP+"BEUSE",box2,ry+2,BW,CH,g_useBE?"ON":"OFF",g_useBE?COL_PANEL_ACC:COL_PANEL_OFF,g_useBE?COL_PANEL_ACCX:COL_PANEL_OFFX);
    mkEdit  (PP+"BEOFF",box1,ry+2,BW,CH,Fmt(g_beOffset,g_beOffMode==BEOFF_BY_RR?2:1));
    cy+=cardH+6;
 
@@ -1414,9 +1415,9 @@ void BuildPanel()
    cardH=31+ROWH;
    mkRect (PP+"C_SC",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_SC",labelX,cy+7,"CHART SCALE",COL_PANEL_SECT,8);
+   mkButton(PP+"SCLOCK",box1,cy+HDY,BW,HCH,g_scaleLock?"ON":"OFF",g_scaleLock?COL_PANEL_ACC:COL_PANEL_OFF,g_scaleLock?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
-   mkLabel (PP+"L_SC",labelX,ry+6,"Lock scale",COL_PANEL_LBL,8);
-   mkButton(PP+"SCLOCK",box2,ry+2,BW,CH,g_scaleLock?"ON":"OFF",g_scaleLock?COL_PANEL_ACC:COL_PANEL_OFF,g_scaleLock?COL_PANEL_ACCX:COL_PANEL_OFFX);
+   mkLabel (PP+"L_SC",labelX,ry+6,"Padding",COL_PANEL_LBL,8);
    mkEdit  (PP+"SCPAD",box1,ry+2,BW,CH,Fmt(g_scalePadPips,0));
    cy+=cardH+6;
 
