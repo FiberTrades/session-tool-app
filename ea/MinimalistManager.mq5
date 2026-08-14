@@ -868,6 +868,59 @@ void PlaceTrade()
    BuildPanel();
   }
 
+// Bring the BE line into line with g_useBE on a position that is already open. Extracted
+// from the old per-card toggle so the master switch drives identical behaviour rather than
+// a second copy that can drift from it.
+void ApplyBEState()
+  {
+   double pe; int pd;
+   if(!PositionsEntry(pe,pd)) return;
+   if(g_useBE)
+     {
+      // read the position's TP so we can park BE near it (safe, away from price)
+      double ptp=0;
+      for(int i=PositionsTotal()-1;i>=0;i--)
+        {
+         ulong tk=PositionGetTicket(i);
+         if(!PositionSelectByTicket(tk)) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+         if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+         ptp=PositionGetDouble(POSITION_TP); break;
+        }
+      double bePrice;
+      if(ptp>0) bePrice=ptp-pd*5*g_pip;                 // just inside the TP
+      else
+        {
+         int cnt; double slp=PositionsSL(cnt);
+         double slDist=(slp>0)?MathAbs(pe-slp):g_minSL*g_pip;
+         bePrice=pe+pd*g_beRR*slDist;                   // no TP -> fall back to R distance
+        }
+      EnsureHLine(LN_BE,bePrice,COL_LINE_BE,STYLE_SOLID,true);
+      SetLineText(TX_BE,bePrice,"BE",COL_LINE_BE);
+      g_beTrigger=bePrice; g_beDir=pd; g_beArmed=true;
+     }
+   else { ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE); g_beArmed=false; }
+  }
+
+// Everything the panel's ON/OFF governs, driven from one switch on the title bar.
+// EA activity, the take-profit, the break-even line and the chart-scale lock move together:
+// one control, one state, nothing left half-on in a card you cannot see while collapsed.
+void MasterSet(bool on)
+  {
+   g_active=on;
+   if(!g_active){ g_execMode=false; HideExecutionLines(); HideAllVisuals(); }
+   else UpdateManageLine();
+   g_pausedByLimit=false;              // manual toggle = the user owns the ACTIVE state now
+
+   g_tpOn[0]=on;
+   g_useBE =on; ApplyBEState();
+
+   if(g_scaleLock!=on){ g_scaleLock=on; if(on) ApplyScaleLock(); else ReleaseScaleLock(); }
+
+   if(g_execMode) RedrawTargets();
+   SaveState(); BuildPanel();
+  }
+
 // The BE offset in PRICE, for one position's stop distance. In pips mode the stop
 // distance is irrelevant; in R mode it is the whole point - 0.5R is 2 pips on a 4-pip
 // stop and 3 on a 6-pip one, which is a different stop on every trade.
@@ -1310,6 +1363,11 @@ void BuildPanel()
    mkRect (PP+"TITLE",x,y,w,titleH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkRect (PP+"TLINE",x,y+titleH-1,w,1,COL_PANEL_LINE,COL_PANEL_LINE);
    mkLabel(PP+"NAME",x+12,y+11,"Minimalist Manager",COL_PANEL_NAME,9);
+   // Master switch, left of the reframe arrow. It governs the EA, the take-profit, the BE
+   // line and the scale lock together - the cards no longer carry their own toggles, so this
+   // is the only ON/OFF on the panel and it stays reachable while collapsed.
+   mkButton(PP+"MASTER",x+w-130,y+8,46,18,g_active?"ON":"OFF",
+            g_active?COL_PANEL_ACC:COL_PANEL_OFF,g_active?COL_PANEL_ACCX:COL_PANEL_OFFX);
    mkIconBtn(PP+"SCREFRAME",x+w-64,y+17,ShortToString(0x27F3),COL_PANEL_ICON,12,"Segoe UI Symbol");
    ObjectSetString(0,PP+"SCREFRAME",OBJPROP_TOOLTIP,"Reframe chart now");
    mkIconBtn(PP+"TOGGLE",x+w-40,y+17,g_panelOpen?ShortToString(0x2212):"+",COL_PANEL_ICON,12,"Segoe UI Symbol");
@@ -1328,10 +1386,9 @@ void BuildPanel()
    int cy=bTop+6, cardH, ry;
 
    // ===== ORDER =====
-   cardH=31+ROWH*2;      // Active moved onto the title row
+   cardH=31+ROWH*2;      // Order type, Execution key (on/off lives on the title bar)
    mkRect (PP+"C_ORD",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_ORD",labelX,cy+7,"ORDER",COL_PANEL_SECT,8);
-   mkButton(PP+"ACTIVE",box1,cy+HDY,BW,HCH,g_active?"ON":"OFF",g_active?COL_PANEL_ACC:COL_PANEL_OFF,g_active?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
    mkLabel (PP+"L_OK",labelX,ry+6,"Order type",COL_PANEL_LBL,8);
    mkButton(PP+"ORDKIND",box1,ry+2,BW,CH,OrderKindText(),COL_PANEL_BTN,COL_PANEL_BTX);
@@ -1365,7 +1422,6 @@ void BuildPanel()
    cardH=31+ROWH*2;
    mkRect (PP+"C_TP",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TP",labelX,cy+7,"TAKE PROFIT",COL_PANEL_SECT,8);
-   mkButton(PP+"TPON0",box1,cy+HDY,BW,HCH,g_tpOn[0]?"ON":"OFF",g_tpOn[0]?COL_PANEL_ACC:COL_PANEL_OFF,g_tpOn[0]?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
    mkLabel (PP+"L_TPM",labelX,ry+6,"Target by",COL_PANEL_LBL,8);
    mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
@@ -1375,10 +1431,9 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== BREAK-EVEN =====
-   cardH=31+ROWH*2;       // two rows: offset unit, offset value (on/off is on the title row)
+   cardH=31+ROWH*2;       // offset unit, offset value (on/off lives on the title bar)
    mkRect (PP+"C_BE",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_BE",labelX,cy+7,"BREAK-EVEN",COL_PANEL_SECT,8);
-   mkButton(PP+"BEUSE",box1,cy+HDY,BW,HCH,g_useBE?"ON":"OFF",g_useBE?COL_PANEL_ACC:COL_PANEL_OFF,g_useBE?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
    // Unit first: it decides what the offset value below MEANS, so reading top-down gives
    // the unit before the number. The button carries the unit, so the label below does not
@@ -1415,7 +1470,6 @@ void BuildPanel()
    cardH=31+ROWH;
    mkRect (PP+"C_SC",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_SC",labelX,cy+7,"CHART SCALE",COL_PANEL_SECT,8);
-   mkButton(PP+"SCLOCK",box1,cy+HDY,BW,HCH,g_scaleLock?"ON":"OFF",g_scaleLock?COL_PANEL_ACC:COL_PANEL_OFF,g_scaleLock?COL_PANEL_ACCX:COL_PANEL_OFFX);
    ry=cy+23;
    mkLabel (PP+"L_SC",labelX,ry+6,"Padding",COL_PANEL_LBL,8);
    mkEdit  (PP+"SCPAD",box1,ry+2,BW,CH,Fmt(g_scalePadPips,0));
@@ -1472,17 +1526,15 @@ void HandleClick(string s)
       ExpertRemove();              // detach the EA from the chart
       return;
      }
-   if(s==PP+"ACTIVE")
+   if(s==PP+"MASTER")
      {
+      // The daily-limit guard belongs on the way ON only, exactly as before: the limit must
+      // never be circumvented by flicking the switch, but it must never trap you either.
       if(!g_active && DayLimitReached()){ Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Stays off until your next day."); Warn("Daily trade limit reached - stays off until next day."); return; }
-      g_active=!g_active;
-      if(!g_active){ g_execMode=false; HideExecutionLines(); HideAllVisuals(); }   // hide every line; pause activity
-      else UpdateManageLine();                                // repaint live-trade lines NOW
-      g_pausedByLimit=false;                                  // manual toggle = user owns the ACTIVE state now
-      SaveState(); BuildPanel(); return;
+      MasterSet(!g_active);
+      return;
      }
    if(s==PP+"SYNCCLR"){ SyncTokenClear(); BuildPanel(); return; }
-   if(s==PP+"SCLOCK"){ g_scaleLock=!g_scaleLock; if(g_scaleLock) ApplyScaleLock(); else ReleaseScaleLock(); BuildPanel(); return; }
    if(s==PP+"SCREFRAME"){ ChartSetInteger(0,CHART_SCALEFIX,false); if(!g_scaleLock){ g_scaleLock=true; SaveState(); } ApplyScaleLock(); BuildPanel(); return; }
    if(s==PP+"ORDKIND"){ SwitchOrderKind(); return; }
    if(s==PP+"EXECKEY"){ g_awaitKey=!g_awaitKey; BuildPanel(); return; }
@@ -1496,42 +1548,6 @@ void HandleClick(string s)
    // A BUTTON, so it belongs here and not in HandleEndEdit - that one fires on
    // CHARTEVENT_OBJECT_ENDEDIT, which a button never raises.
    if(s==PP+"BEOMODE"){ g_beOffMode=(g_beOffMode==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
-   if(s==PP+"BEUSE")
-     {
-      g_useBE=!g_useBE;
-      // If toggled during a live trade, add or remove the BE line on the open position now.
-      double pe; int pd;
-      if(PositionsEntry(pe,pd))
-        {
-         if(g_useBE)
-           {
-            // read the position's TP so we can park BE near it (safe, away from price)
-            double ptp=0;
-            for(int i=PositionsTotal()-1;i>=0;i--)
-              {
-               ulong tk=PositionGetTicket(i);
-               if(!PositionSelectByTicket(tk)) continue;
-               if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-               if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
-               ptp=PositionGetDouble(POSITION_TP); break;
-              }
-            double bePrice;
-            if(ptp>0) bePrice=ptp-pd*5*g_pip;                 // just inside the TP
-            else
-              {
-               int cnt; double slp=PositionsSL(cnt);
-               double slDist=(slp>0)?MathAbs(pe-slp):g_minSL*g_pip;
-               bePrice=pe+pd*g_beRR*slDist;                   // no TP -> fall back to R distance
-              }
-            EnsureHLine(LN_BE,bePrice,COL_LINE_BE,STYLE_SOLID,true);
-            SetLineText(TX_BE,bePrice,"BE",COL_LINE_BE);
-            g_beTrigger=bePrice; g_beDir=pd; g_beArmed=true;
-           }
-         else { ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE); g_beArmed=false; }
-        }
-      if(g_execMode) RedrawTargets();
-      BuildPanel(); return;
-     }
    for(int i=0;i<6;i++)
       if(s==PP+"TPON"+IntegerToString(i)){ g_tpOn[i]=!g_tpOn[i]; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
   }
