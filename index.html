@@ -13321,6 +13321,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       refreshPageCaption(target);
       // Refresh every surface so cross-tab changes are always reflected.
       refreshAllSurfaces();
+      // This page is now .active, so its greeting element is on screen. Greetings are generated
+      // lazily (see the on-screen gate in enhanceGreeting), so this is what produces the AI line
+      // for a tab opened after load. A no-op for surfaces already cached or already generated.
+      try { window.__stEnhanceGreetings && window.__stEnhanceGreetings(); } catch (e) {}
       };
       // Count the big KPI numbers up once the page (and any View Transition) has settled.
       const _runCount = () => requestAnimationFrame(() => { try { animateStatNumbers(document.getElementById('page-' + target)); } catch (e) {} });
@@ -23745,7 +23749,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      new file is being served, which sent one debugging session chasing a cache
      problem that did not exist. If the stamp does not match the deploy you just
      pushed, the stamp is the thing that is wrong. */
-  window.ST_BUILD = '2026-08-15 15:37 UTC';
+  window.ST_BUILD = '2026-08-15 17:26 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -34969,7 +34973,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     if (_greetOnScreen(el)) _doTypeGreeting(el);
   }
-  try { window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; window.__stApplyDeferred = _applyDeferred; } catch (e) {}
+  try { window.__stGreetOnScreen = _greetOnScreen; window.__stSetGreetHTML = _setGreetHTML; window.__stTypeGreeting = _doTypeGreeting; window.__stObserveGreetType = _observeGreetType; window.__stArmTypewriter = _armTypewriter; window.__stApplyDeferred = _applyDeferred; } catch (e) {}
   // One word each, and they reload for you, so a boot runs under the setting just chosen.
   try {
     window.__stTypeOn  = function () { try { localStorage.setItem('st_typewriter', 'on'); } catch (e) {} delete window.__stTypewriter; location.reload(); };
@@ -35985,6 +35989,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // load — otherwise a second device regenerates a greeting the pull was about to deliver.
         // Only ever hold the line back when there is genuinely nothing to show in its place.
         if (!window.__stGreetSyncReady) { if (!_stale) el.__aiPending = true; return; }
+        // Nor pay for a greeting on a tab that is not open. There are FIVE greeting surfaces -
+        // bias plus the review / series / stats / calendar mirrors - and enhanceAll() used to
+        // generate all five on load, because _greetInflight is keyed per surface so each one
+        // passed the guard. ai_usage caught three firing inside the same second. The rule-based
+        // seed is already written to every element regardless of tab, and the typewriter plays it
+        // when the tab becomes visible, so deferring costs no blank line: opening the tab shows
+        // the seed and the AI rewrite lands a moment later. The tab handler re-runs enhanceAll(),
+        // and this gate sits AFTER the cache branches on purpose - a greeting already in cache is
+        // free, so hidden tabs still get theirs.
+        if (typeof window.__stGreetOnScreen === 'function' && !window.__stGreetOnScreen(el)) return;
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
         if (!_stale) el.__aiPending = true;   // nothing on screen yet — the AI line is what will type
@@ -36036,6 +36050,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       Array.prototype.forEach.call(document.querySelectorAll('.bias-greeting[data-greeting-mirror]'), function (el) { list.push([el, (el.dataset && el.dataset.greetingContext) || 'review']); });
       list.forEach(function (p) { enhanceGreeting(p[0], p[1]); });
     }
+    // Exposed so the tab handler can re-run it: greetings for surfaces that were hidden at load
+    // are generated the first time their tab is actually opened. Cheap to call repeatedly - every
+    // surface with a cached greeting returns early before any network work.
+    try { window.__stEnhanceGreetings = enhanceAll; } catch (e) {}
     // Fallback so greetings aren't blocked forever if the cloud pull never lands (offline, or a
     // reconcile path that doesn't set the flag): after a short grace, allow generation and
     // re-run so the gate re-evaluates. reconcile() sets __stGreetSyncReady on a successful pull.
