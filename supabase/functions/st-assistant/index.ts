@@ -242,7 +242,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
         // came back stop_reason "max_tokens" rather than "tool_use", missed the branch below,
         // and reached the user as a bare "…". Each hop gets its own budget, so this is sized
         // for the largest single turn, not the conversation.
-        max_tokens: rawMode === "greet" ? 120 : (mode === "coach" ? 220 : (smart ? 2000 : 1200)),
+        // 2000 was still truncating - a "biggest leak" answer that enumerates several
+        // findings ran the budget out mid-sentence. Sonnet 5 caps at 128k output, and this
+        // call is non-streaming so the practical ceiling is ~16k before HTTP timeouts bite;
+        // 4000 sits well inside both. You are only billed for what is generated, so a higher
+        // ceiling costs nothing on the short answers.
+        max_tokens: rawMode === "greet" ? 120 : (mode === "coach" ? 220 : (smart ? 4000 : 1800)),
         system,
         messages: claudeMessages,
         // Tools only on a REAL chat question. Greetings fold into "chat" for turn-building but must never
@@ -299,7 +304,13 @@ function json(obj: unknown, status = 200): Response {
 //   block 2 = the trader's data → identical across a user's session, cached until they log a trade
 //   block 3 = profile + language + "right now" instruction → small + volatile, not cached
 function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
-  const blocks: any[] = [{ type: "text", text: APP_FACTS, cache_control: { type: "ephemeral" } }];
+  // ttl "1h" rather than the 5-minute default. ai_usage showed cache_creation 30,417 with
+  // cache_read 0 on BOTH chat calls: the two were 12 minutes apart, so the 5-minute entry had
+  // already expired and every call re-wrote the whole prefix. A cache that never reads is not
+  // neutral - writes bill at 1.25x, so the 5-minute setting was a 25% surcharge for nothing.
+  // At 1h the same two calls cost 2x + 0.1x instead of 1.25x + 1.25x. Break-even is ~2 questions
+  // per hour; below that, delete cache_control entirely rather than leaving 5m in place.
+  const blocks: any[] = [{ type: "text", text: APP_FACTS, cache_control: { type: "ephemeral", ttl: "1h" } }];
 
   // TOKEN LEAK GUARD: greetings never need the trader's full data pack (they just rephrase a seed line
   // that already carries its numbers). Skip it here even if an OLD cached client still sends one — this
@@ -307,7 +318,7 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
   if (ctx?.dataPack && rawMode !== "greet") {
     blocks.push({
       type: "text",
-      cache_control: { type: "ephemeral" },
+      cache_control: { type: "ephemeral", ttl: "1h" },   // same reasoning as block 1 above
       text: `## THIS trader's full data — journal + diary + community (use it directly; quote real figures and cite real trades/messages; never invent)\n` +
         `Ready-made summaries (use these first, don't recompute): lifetime stats; \`records\` (all-time bestByR / worstByR / bestByMoney); \`thisWeek\` and \`thisMonth\` (trades / wins / losses / netR / netMoney / best trade of the period); \`streak\` (current run of wins or losses); \`byDirection\` (long vs short); \`byWeekday\`; \`bySymbol\`; \`bySession\` (performance per FX session by entry time on the London clock — asia 00:00-08:00, london 08:00-16:30, ny 13:30-21:00; London and NY genuinely overlap 13:30-16:30 so an overlap trade is counted in BOTH, and the counts intentionally don't sum to the total); \`bySetup\` (performance per SETUP — the concepts they tag on each trade, e.g. "Reaction Trade", "1st Tennis Serve", "High Sweep" — with n, r, money, w/l and avgR; a trade can carry several concepts so it counts toward each and these also don't sum to the total. Use avgR, not total r, to judge whether a setup actually pays, and say so when a setup's sample is small); \`settings.riskRules\` + \`profitTarget\` (for prop drawdown/target maths); today's \`bias\` plan and review; and \`leaderboard\` (their monthly discipline rank, points, and points_breakdown).\n` +
         `\`trades\` = up to 250 of the most recent INDIVIDUAL trades, each with date, symbol, side, result, R, money (gbp), POT R, and the per-trade diary (exec / focus / tags / mind / note). For anything about a specific trade/day/setup, read \`trades\` (each has a \`date\`). Prefer the ready-made period summaries for "this week/month". If it carries \`community\`, that's recent community chat (\`from\` = who, \`body\` = message). Money figures are the trader's own and private; never repeat another member's figures back into the community.\n` +
