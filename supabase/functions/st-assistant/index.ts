@@ -234,8 +234,15 @@ Deno.serve(async (req: Request): Promise<Response> => {
       },
       body: JSON.stringify({
         model,
-        // Greetings are one short line — cap them tight. Coach notes ~220, budgeted chat 700, else 500.
-        max_tokens: rawMode === "greet" ? 120 : (mode === "coach" ? 220 : (smart ? 700 : 500)),
+        // Greetings are one short line — cap them tight. Coach notes ~220.
+        //
+        // Chat is the one mode carrying TOOLS, and the cap has to cover a WHOLE turn: any
+        // preamble, the tool_use block, and then the real answer on the next hop. 700 was not
+        // enough. "what is my biggest leak?" burned all 700 without emitting one text block,
+        // came back stop_reason "max_tokens" rather than "tool_use", missed the branch below,
+        // and reached the user as a bare "…". Each hop gets its own budget, so this is sized
+        // for the largest single turn, not the conversation.
+        max_tokens: rawMode === "greet" ? 120 : (mode === "coach" ? 220 : (smart ? 2000 : 1200)),
         system,
         messages: claudeMessages,
         // Tools only on a REAL chat question. Greetings fold into "chat" for turn-building but must never
@@ -264,7 +271,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
       .join("")
       .trim();
 
-    return json({ reply: reply || "…", model });
+    // Truncated mid-turn with nothing to show for it. This used to fall through to "…", which
+    // reaches the user as a shrug and leaves no trace of what went wrong — the only way to find
+    // it was to notice output_tokens sitting exactly on the cap in ai_usage. Say it plainly
+    // instead: the client already surfaces `error` as a visible message.
+    if (!reply && data?.stop_reason === "max_tokens") {
+      return json({
+        error: "The answer was cut off before it produced any text (hit the token cap). Try a narrower question.",
+        stop_reason: "max_tokens",
+      }, 502);
+    }
+
+    // stop_reason rides along on every success too, so the next oddity is diagnosable from the
+    // response rather than from a token count in a separate table.
+    return json({ reply: reply || "…", model, stop_reason: data?.stop_reason ?? null });
   } catch (e) {
     return json({ error: String((e as any)?.message ?? e) }, 500);
   }
