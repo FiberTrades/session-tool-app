@@ -790,6 +790,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-asst-msg.ai { align-self: flex-start; background: var(--bg-elev2); color: #f4f4f6; border: 1px solid var(--border-2); border-bottom-left-radius: 4px; }
   .st-asst-msg.ai strong, .st-asst-msg.ai b { color: #ffffff; }
   .st-asst-msg.typing { opacity: 0.6; font-style: italic; }
+  /* Greeting placeholder while the AI rewrite is in flight. It is shown INSTEAD of the
+     rule-based seed on a cold cache, so the reader never settles into a finished-looking line
+     and then watches it get swapped out — with the typewriter off (the default) that swap is a
+     hard text replace and reads as a glitch. Never the resting state: if the rewrite fails or
+     comes back unusable, the seed is put straight back. */
+  .greet-thinking { opacity: .55; font-style: italic; animation: greetThink 1.5s ease-in-out infinite; }
+  @keyframes greetThink { 0%, 100% { opacity: .35; } 50% { opacity: .7; } }
+  @media (prefers-reduced-motion: reduce) { .greet-thinking { animation: none; opacity: .55; } }
   /* Tiny attribution line under an AI reply — shows which model answered (Haiku vs Sonnet). */
   .st-asst-msg-model { align-self: flex-start; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); opacity: 0.75; margin: 3px 0 4px 4px; }
   .st-asst-compose { display: flex; align-items: flex-end; gap: 8px; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 16px; padding: 8px 8px 8px 14px; }
@@ -23749,7 +23757,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      new file is being served, which sent one debugging session chasing a cache
      problem that did not exist. If the stamp does not match the deploy you just
      pushed, the stamp is the thing that is wrong. */
-  window.ST_BUILD = '2026-08-15 17:26 UTC';
+  window.ST_BUILD = '2026-08-15 17:40 UTC';
   try { console.log('[ST] build ' + window.ST_BUILD); } catch (e) {}
   // On reload, always start at the TOP of the page (the app defaults to Session Bias) instead of wherever
   // the browser last restored the scroll to. One safe standard line — no scroll-saving/mask/tab logic.
@@ -35940,6 +35948,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var sig = _slot + '|' + (seed.match(/\d+/g) || []).join('.') + '|' + (el.__greetSit || '');
         var vkey = today + '|' + sig;
         var _put = (typeof window.__stSetGreetHTML === 'function') ? window.__stSetGreetHTML : function (e2, h) { e2.innerHTML = h; };
+        // Put the seed back if the rewrite never lands. "Thinking…" must never be what the reader
+        // is left looking at, so every path out of the call below that does not produce a line
+        // calls this first.
+        var _unthink = function () {
+          try { if (el.__greetPreThink != null) { _put(el, el.__greetPreThink); el.__greetPreThink = null; } } catch (e) {}
+        };
         // 1) Session cache — reuse unless the day or the data numbers changed (and never reuse a bad line).
         if (_greetCache[key] && _greetCacheSig[key] === vkey && !_greetIsBad(_greetCache[key])) { el.__aiPending = false; _put(el, _greetCache[key] + mentorHTML); return; }
         // 2) localStorage cache — reuse the same-day, same-data line so reloads (and the post-sync
@@ -36001,7 +36015,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (typeof window.__stGreetOnScreen === 'function' && !window.__stGreetOnScreen(el)) return;
         if (_greetInflight[key]) return;
         _greetInflight[key] = 1;
-        if (!_stale) el.__aiPending = true;   // nothing on screen yet — the AI line is what will type
+        if (!_stale) {
+          el.__aiPending = true;
+          // Nothing cached, so an AI line IS coming and it will replace whatever sits here.
+          // Say so, rather than showing the rule-based seed as a finished line and swapping it a
+          // second later. Stash the seed's own markup first so _unthink() can restore it exactly.
+          try { if (el.__greetPreThink == null) el.__greetPreThink = (el.__twHTML != null) ? el.__twHTML : el.innerHTML; } catch (e) {}
+          _put(el, '<span class="greet-thinking">' + ((typeof es === 'function' && es()) ? 'Pensando…' : 'Thinking…') + '</span>');
+        }
         var topics = {
           bias:     { en: "my directional read / trading plan",     es: 'mi lectura direccional / plan de trading' },
           review:   { en: "reflecting on today's session",          es: 'reflexionar sobre la sesión de hoy' },
@@ -36031,7 +36052,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           reply = String(reply || '').replace(/^["'\s]+|["'\s]+$/g, '');
           // Empty, OR a meta/clarification ("I don't have your line, paste it…") → don't cache or show it;
           // fall back to the rule-based seed we already have.
-          if (!reply || _greetIsBad(reply)) { if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} return; }
+          if (!reply || _greetIsBad(reply)) { _unthink(); if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} return; }
           var out = esc(reply);
           var nm = (typeof data !== 'undefined' && data.userName) ? String(data.userName).trim() : '';
           if (nm) out = out.split(esc(nm)).join('<span class="greet-name">' + esc(nm) + '</span>');
@@ -36039,8 +36060,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           try { var _s = _greetStore(); _s[key] = { day: today, sig: sig, text: out }; _greetStoreSave(_s); } catch (e) {}   // persist for same-day, same-data reloads (no re-call)
           try { _greetSyncSet(key, { day: today, sig: sig, text: out }); } catch (e) {}   // and into the synced journal so OTHER devices reuse it (no re-call)
           var still = (el.__greetSeed != null) ? String(el.__greetSeed).trim() : (el.textContent || '').trim();
-          if (still === seed || el.__greetSeed == null) _put(el, out + mentorHTML);   // don't clobber a newer seed; _put types it in (or arms the observer)
-        }).catch(function () { _greetInflight[key] = 0; el.__aiPending = false; if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} });
+          if (still === seed || el.__greetSeed == null) { el.__greetPreThink = null; _put(el, out + mentorHTML); }   // don't clobber a newer seed; _put types it in (or arms the observer)
+          else _unthink();   // a newer seed arrived mid-flight — restore it rather than leaving "Thinking…"
+        }).catch(function () { _greetInflight[key] = 0; el.__aiPending = false; _unthink(); if (el.__twVisible) try { window.__stTypeGreeting && window.__stTypeGreeting(el); } catch (e) {} });
       } catch (e) {}
     }
     function enhanceAll() {
