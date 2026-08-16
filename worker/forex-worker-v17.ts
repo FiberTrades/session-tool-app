@@ -1,6 +1,16 @@
 // =============================================================================
 // FOREX CALENDAR PROXY - Deno Deploy (v17 - Sonnet as extreme last resort only)
 // =============================================================================
+// ---- (v17.1) runtime logging -----------------------------------------------
+//   The rich `debug` object was only ever persisted to Supabase as actuals:debug,
+//   and that row is OVERWRITTEN each refresh - so a bad 11:00 run is erased by the
+//   16:00 one and there is no history to diagnose from. v17.1 also console.logs the
+//   same milestones (cron.tick / refresh.start / refresh.scope / claude.ask /
+//   claude.res / merge / sonnet.eligible / refresh.done / *.err). Deno Deploy keeps
+//   runtime logs for days, so the per-run trail survives. All lines are prefixed
+//   "[eca]" and filterable via the logs API (?query=eca). Behaviour is otherwise
+//   unchanged - no extra calls, no extra cost.
+//
 // WHAT CHANGED FROM v16:
 //   v16 escalated to Sonnet whenever ANYTHING was still missing after Haiku -
 //   too eager (a number Haiku simply hasn't indexed yet would trigger it). v17
@@ -117,6 +127,18 @@ const XML_FETCHERS: Array<(u: string) => string> = [
   (u) => "https://api.allorigins.win/raw?url=" + encodeURIComponent(u),
   (u) => "https://api.codetabs.com/v1/proxy/?quest=" + encodeURIComponent(u),
 ];
+
+// =============================================================================
+// RUNTIME LOGGING
+// =============================================================================
+// The `debug` object below is persisted to Supabase (actuals:debug) but that row is
+// OVERWRITTEN every refresh, so only the newest attempt survives - a bad 11:00 run is
+// erased by 16:00 before anyone looks. Deno Deploy retains runtime logs for days, so
+// these lines are the per-run HISTORY. Every line is prefixed "[eca]" and tagged, so
+// the logs API can filter them: /v2/apps/<app>/logs?query=eca.
+function log(tag: string, data?: Record<string, unknown>): void {
+  try { console.log(`[eca] ${tag}` + (data ? " " + JSON.stringify(data) : "")); } catch { /* never let logging break a fetch */ }
+}
 
 // =============================================================================
 // XML CACHE - per-instance in-memory only (fine; XML is cheap + not user-shared).
@@ -241,7 +263,7 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
   const rd: any = { round, asked: targets.length, model };
   (debug.rounds = debug.rounds || []).push(rd);
   debug.claude = rd;   // latest round, for /status back-compat
-  if (!ANTHROPIC_API_KEY) { rd.error = "ANTHROPIC_API_KEY not set"; return null; }
+  if (!ANTHROPIC_API_KEY) { rd.error = "ANTHROPIC_API_KEY not set"; log("claude.err", { round, error: "ANTHROPIC_API_KEY not set" }); return null; }
   if (!targets.length) { rd.note = "nothing to ask"; return []; }
   const { from, to } = weekRange();
   const list = targets.map((e) => `${e.currency} | ${e.title} | ${e.dateKey}`).join("\n");
@@ -249,6 +271,7 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
   // usually only surfaces the day's headline print. Billed per search performed
   // (~$0.01), and the model only uses what it needs, so a generous cap is cheap.
   const maxSearches = Math.min(14, Math.max(6, Math.ceil(targets.length / 2)));
+  log("claude.ask", { round, model, asked: targets.length, maxSearches });
 
   const prompt =
     `You are filling in the ACTUAL released values on an economic calendar for the week ${from} to ${to}.\n\n` +
@@ -279,10 +302,10 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
       "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
     }, JSON.stringify(reqBody));
     const txt = await resp.text();
-    try { data = JSON.parse(txt); } catch { rd.status = resp.status; rd.raw = txt.slice(0, 300); return null; }
+    try { data = JSON.parse(txt); } catch { rd.status = resp.status; rd.raw = txt.slice(0, 300); log("claude.err", { round, model, status: resp.status, error: "non-json response", raw: txt.slice(0, 120) }); return null; }
     rd.status = resp.status;
-    if (!resp.ok) { rd.error = data?.error?.message || `HTTP ${resp.status}`; return null; }
-  } catch (e) { rd.error = msg(e); return null; }
+    if (!resp.ok) { rd.error = data?.error?.message || `HTTP ${resp.status}`; log("claude.err", { round, model, status: resp.status, error: rd.error }); return null; }
+  } catch (e) { rd.error = msg(e); log("claude.err", { round, model, error: msg(e) }); return null; }
 
   try { await recordEcaUsage(data?.usage, model); } catch { /* */ }
 
@@ -290,7 +313,14 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
   rd.usage = data?.usage || null;
   rd.textSample = text.slice(0, 200);
   const arr = extractJsonArray(text);
-  if (!arr) { rd.parse = "no-json-array"; return null; }
+  // Cost is driven by web_search_requests (~$0.01 each) as much as by tokens, so log
+  // both - this is the only per-run record of what a fetch actually cost.
+  log("claude.res", {
+    round, model, status: rd.status, parsed: arr ? arr.length : null,
+    in: data?.usage?.input_tokens ?? 0, out: data?.usage?.output_tokens ?? 0,
+    searches: data?.usage?.server_tool_use?.web_search_requests ?? 0,
+  });
+  if (!arr) { rd.parse = "no-json-array"; log("claude.err", { round, model, error: "no-json-array", textSample: text.slice(0, 120) }); return null; }
   rd.parsed = arr.length;
   return arr;
 }
@@ -380,12 +410,13 @@ async function refreshActuals(): Promise<boolean> {
   actualsInFlight = (async () => {
     // deno-lint-ignore no-explicit-any
     const debug: any = { at: Date.now(), anthropicKeySet: !!ANTHROPIC_API_KEY, xml: [] };
+    log("refresh.start", { week: currentWeekKey(), anthropicKeySet: !!ANTHROPIC_API_KEY, supabaseKeySet: !!SUPABASE_SERVICE_ROLE_KEY });
     try {
       let xml: string | null = null;
       const xc = mem.get(`xml:${currentWeekKey()}`);
       if (xc && (Date.now() - xc.cachedAt) / 1000 < STALE_TTL) { xml = xc.body; debug.xml.push("cache"); }
       if (!xml) { xml = await fetchFFXml(FF_XML_URL, debug.xml); if (xml) mem.set(`xml:${currentWeekKey()}`, { body: xml, cachedAt: Date.now() }); }
-      if (!xml) { debug.result = "no-xml"; return false; }
+      if (!xml) { debug.result = "no-xml"; log("refresh.err", { error: "no-xml", attempts: debug.xml }); return false; }
 
       const ffEvents = parseFFEvents(xml);
 
@@ -407,11 +438,13 @@ async function refreshActuals(): Promise<boolean> {
       const ffKey = (e: FFEvent) => `${e.dateKey}|${e.currency}|${e.title}`;
       const wantedReleased = ffEvents.filter((e) => /high|medium/i.test(e.impact) && e.hasNumeric && e.whenMs <= nowMs);
       debug.wantedReleased = wantedReleased.length;
+      log("refresh.scope", { ffEvents: ffEvents.length, wantedReleased: wantedReleased.length, cachedThisWeek: prevSameWeek.length, sameWeek });
 
       const mergeIn = (entries: ActualEntry[]): number => {
         let n = 0;
         for (const e of entries) { const k = `${e.dateKey}|${e.country}|${e.title}`; if (!byKey.has(k)) n++; byKey.set(k, e); }
         if (debug.rounds && debug.rounds.length) debug.rounds[debug.rounds.length - 1].newFound = n;
+        log("merge", { matched: entries.length, new: n, total: byKey.size });
         return n;
       };
       let roundIdx = 0;
@@ -451,6 +484,9 @@ async function refreshActuals(): Promise<boolean> {
         return (nowMs - e.whenMs) >= SONNET_MIN_RELEASED_AGE_MS && m.h >= SONNET_AFTER_HAIKU_FAILS && m.s < SONNET_MAX_TRIES;
       });
       debug.sonnetEligible = sonnetTargets.length;
+      // Sonnet firing at all is the signal that an event is genuinely stuck - worth a
+      // line of its own so it stands out in the log history.
+      if (sonnetTargets.length) log("sonnet.eligible", { count: sonnetTargets.length, events: sonnetTargets.slice(0, 10).map((e) => `${e.currency} ${e.title} (${e.dateKey})`) });
       if (sonnetTargets.length) {
         const claude = await fetchActualsViaClaude(sonnetTargets, debug, roundIdx++, ECA_MODEL_FALLBACK);
         if (claude !== null) mergeIn(matchActuals(ffEvents, claude, debug));
@@ -471,8 +507,14 @@ async function refreshActuals(): Promise<boolean> {
       debug.missingList = missingAfter.slice(0, 20).map((e) => `${e.currency} ${e.title} (${e.dateKey})`);
       debug.result = `${merged.length}/${wantedReleased.length} wanted, ${missingAfter.length} still missing`;
       debug.stored = ok;
+      log("refresh.done", {
+        merged: merged.length, wanted: wantedReleased.length, missing: missingAfter.length,
+        rounds: (debug.rounds || []).length, stored: ok,
+        missingList: missingAfter.slice(0, 10).map((e) => `${e.currency} ${e.title} (${e.dateKey})`),
+      });
+      if (!ok) log("refresh.err", { error: "supabase write failed (actuals not persisted)" });
       return true;
-    } catch (e) { debug.result = "error: " + msg(e); return false; }
+    } catch (e) { debug.result = "error: " + msg(e); log("refresh.err", { error: msg(e) }); return false; }
     finally { lastDebug = debug; try { await sbSet("actuals:debug", debug); } catch { /* */ } actualsInFlight = null; }
   })();
   return actualsInFlight;
@@ -489,8 +531,11 @@ function windowState(): { hour: number; weekday: string; isWeekend: boolean } {
 // so it runs exactly at 11:00 / 16:00 / 21:00 London (handles BST/GMT) on weekdays.
 Deno.cron("refresh-actuals", "0 * * * *", async () => {
   const ws = windowState();
-  if (REFRESH_WEEKDAYS_ONLY && ws.isWeekend) return;
-  if (!FETCH_HOURS.includes(ws.hour)) return;
+  // One line per tick (24/day) - cheap, and it is the only proof the cron fires at
+  // all. Without it a silently-dead schedule looks identical to "nothing to fetch".
+  const due = !(REFRESH_WEEKDAYS_ONLY && ws.isWeekend) && FETCH_HOURS.includes(ws.hour);
+  log("cron.tick", { hour: ws.hour, weekday: ws.weekday, due });
+  if (!due) return;
   await refreshActuals();
 });
 
