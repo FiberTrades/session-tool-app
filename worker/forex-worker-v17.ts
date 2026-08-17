@@ -99,7 +99,17 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "
 const ECA_SYSTEM_UID = "00000000-0000-0000-0000-000000000eca";
 
 // ---- Fetch schedule (Europe/London, weekdays) ------------------------------
-const FETCH_HOURS = [11, 16, 21];   // exactly these 3 hours -> 3 Claude calls/day
+// MORE, SMALLER RUNS - not a preference, a platform constraint. On 2026-08-17 the 16:00 run
+// asked Haiku for 4 events and was killed before the reply arrived: no usage row, no cache
+// write, not even the finally block. A web-search call runs 60-120s and the cron isolate is
+// reaped before that. Three fat runs a day meant one death lost the whole slot; seven lean
+// ones mean the gap-driven loop simply picks the stragglers up at the next hour. The cache is
+// merge-not-overwrite and asks only for what is still missing, so extra runs are nearly free
+// when there is nothing to do - a complete cache makes ZERO Claude calls.
+const FETCH_HOURS = [9, 11, 13, 15, 16, 18, 21];
+// Hard cap on how many events one run may chase. The point is to keep a single Claude call
+// comfortably inside the isolate's lifetime; the backlog drains across runs instead.
+const MAX_EVENTS_PER_RUN = 4;
 const REFRESH_TZ  = "Europe/London";
 const REFRESH_WEEKDAYS_ONLY = true;
 
@@ -325,7 +335,10 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
   // Give the model enough search budget to reach every target event - one search
   // usually only surfaces the day's headline print. Billed per search performed
   // (~$0.01), and the model only uses what it needs, so a generous cap is cheap.
-  const maxSearches = Math.min(14, Math.max(6, Math.ceil(targets.length / 2)));
+  // Was min(14, ...). A 14-search call takes well over a minute and the cron isolate does not
+  // live that long - the 16:00 run on 2026-08-17 never got a reply at all. Fewer searches per
+  // call, more calls: the gap loop re-asks for whatever is still missing on the next run.
+  const maxSearches = Math.min(6, Math.max(3, Math.ceil(targets.length / 2)));
   log("claude.ask", { round, model, asked: targets.length, maxSearches });
 
   const prompt =
@@ -353,7 +366,11 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
   // deno-lint-ignore no-explicit-any
   let data: any;
   try {
-    const resp = await fetchWithTimeout("https://api.anthropic.com/v1/messages", 120_000, {
+    // 45s, not 120s. The isolate is reaped somewhere in between, and a timeout that outlives
+    // the process is worse than useless: the run dies mid-await and the catch and finally never
+    // execute, so nothing is logged and actuals:debug still shows the last HEALTHY run. Aborting
+    // first turns a silent death into a logged claude.err, which is how this was found at all.
+    const resp = await fetchWithTimeout("https://api.anthropic.com/v1/messages", 45_000, {
       "content-type": "application/json", "x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01",
     }, JSON.stringify(reqBody));
     const txt = await resp.text();
@@ -521,8 +538,13 @@ async function refreshActuals(): Promise<boolean> {
       // only for the still-missing events each round, stopping early if a round
       // finds nothing new. Zero calls if the cache is already complete.
       for (let r = 0; r < 2; r++) {
-        const missing = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
-        if (!missing.length) break;
+        const missingAll = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
+        if (!missingAll.length) break;
+        // Oldest first, capped: a run that asks about everything outstanding is exactly the run
+        // that gets reaped. Whatever is left over is picked up an hour later, and the oldest are
+        // the ones whose numbers are most certainly published by now.
+        const missing = missingAll.slice().sort((a, b) => a.whenMs - b.whenMs).slice(0, MAX_EVENTS_PER_RUN);
+        if (missingAll.length > missing.length) log("refresh.capped", { outstanding: missingAll.length, asking: missing.length });
         const claude = await fetchActualsViaClaude(missing, debug, roundIdx++, ECA_MODEL);
         if (claude === null) break;
         if (mergeIn(matchActuals(ffEvents, claude, debug)) === 0) break;
