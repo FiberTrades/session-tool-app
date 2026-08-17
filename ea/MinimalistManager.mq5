@@ -1883,6 +1883,13 @@ bool SyncCollectAndPush(ulong posId)
                          DoubleToString(tpr,2),DoubleToString(tpp,1),
                          DoubleToString(mfp,1),DoubleToString(mfr,2));
      }
+   // Where the stop and target were MOVED to, and when: [[epoch,price],...]. Recorded live in
+   // SyncTrackMFE because MT5 discards modifications at close. Omitted entirely when nothing
+   // moved, so the columns stay NULL rather than reading as "an empty history was observed" -
+   // which matters, because a trade taken while the terminal was shut also has none.
+   string slMoves=MoveJson(sk,"sh",dg), tpMoves=MoveJson(sk,"th",dg);
+   if(StringLen(slMoves)>0) json+=",\"sl_moves\":"+slMoves;
+   if(StringLen(tpMoves)>0) json+=",\"tp_moves\":"+tpMoves;
    json+="}";
 
    if(SyncPost(json))
@@ -2893,6 +2900,48 @@ void SyncStampEntry(ulong posId)
      }
   }
 
+//----------------------------------------------------------------------------
+//  SL / TP MODIFICATION LOG
+//
+//  MT5 keeps NO history of stop or target modifications. Once a position closes, where you
+//  moved your stop to is gone - the same reason _lsl exists at all. So each change is
+//  appended here, live, as (time, price), and shipped with the trade at close. Recorded on
+//  the tick or not at all: a stop moved from a phone while the terminal is shut is missed,
+//  which is the same honest limit the MFE tracker carries.
+//
+//  Held in GlobalVariables under the position's own MMD_<id>_ prefix so it is cleaned up
+//  with the rest of that trade's stamp, and bounded - a trade trailed on every tick must
+//  not be able to fill the terminal's variable store.
+//----------------------------------------------------------------------------
+#define MM_MOVE_MAX 12
+
+void MoveLog(string sk,string tag,double px)
+  {
+   string ck=sk+tag+"n";
+   int n=GlobalVariableCheck(ck)?(int)GlobalVariableGet(ck):0;
+   if(n>=MM_MOVE_MAX) return;
+   GlobalVariableSet(sk+tag+(string)n+"t",(double)(long)TimeCurrent());
+   GlobalVariableSet(sk+tag+(string)n+"p",px);
+   GlobalVariableSet(ck,(double)(n+1));
+  }
+
+// [[epoch,price],...] for the app, or "" when nothing moved. A price of 0 is a REMOVAL
+// (stop or target cleared) and is deliberately kept - "he took the stop off" is a finding.
+string MoveJson(string sk,string tag,int dg)
+  {
+   string ck=sk+tag+"n";
+   int n=GlobalVariableCheck(ck)?(int)GlobalVariableGet(ck):0;
+   if(n<=0) return "";
+   string s="[";
+   for(int i=0;i<n;i++)
+     {
+      if(i>0) s+=",";
+      s+=StringFormat("[%I64d,%s]",(long)GlobalVariableGet(sk+tag+(string)i+"t"),
+                      DoubleToString(GlobalVariableGet(sk+tag+(string)i+"p"),dg));
+     }
+   return s+"]";
+  }
+
 // Track the furthest price moved in our favour, for every open EA position.
 // Only runs while MT5 is running (ticks) - the honest limit we flagged.
 void SyncTrackMFE()
@@ -2923,6 +2972,22 @@ void SyncTrackMFE()
       double liveSL=PositionGetDouble(POSITION_SL);
       if(liveSL>0) GlobalVariableSet(lk,liveSL);
 
+      // Log every SL/TP CHANGE, for the app's Trade Replay. Deliberately kept off _lsl: that
+      // one must stay a real price for the post-mortem, whereas a stop being REMOVED (0) is a
+      // change worth recording. Hence separate previous-value trackers. Seeding prev from the
+      // live value means the first tick of a position never logs a phantom move.
+      string mk="MMD_"+(string)posId+"_";
+      double liveTP=PositionGetDouble(POSITION_TP);
+      double ptM=SymbolInfoDouble(sym,SYMBOL_POINT); if(ptM<=0) ptM=_Point;
+      double tolM=ptM*0.5;                       // half a point: ignores float noise, catches any real move
+      string pS=mk+"pSL", pT=mk+"pTP";
+      double prevSL=GlobalVariableCheck(pS)?GlobalVariableGet(pS):liveSL;
+      double prevTP=GlobalVariableCheck(pT)?GlobalVariableGet(pT):liveTP;
+      if(MathAbs(liveSL-prevSL)>tolM) MoveLog(mk,"sh",liveSL);
+      if(MathAbs(liveTP-prevTP)>tolM) MoveLog(mk,"th",liveTP);
+      GlobalVariableSet(pS,liveSL);
+      GlobalVariableSet(pT,liveTP);
+
       // The moment the stop first reaches breakeven or better. Two questions hide inside a
       // stopped-out trade and they are NOT the same one:
       //
@@ -2948,7 +3013,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.2 loaded (post-mortem now also sends the broker's REAL spread minute by minute for the life of the trade, so Trade Replay can show what the spread was costing at any point - TradingView candles carry no knowledge of your broker's spread. v5.1 kept: BE-stop CLEARANCE in pips and R, and a ladder of BE OFFSETS replayed spread-aware) ===");
+   Print("=== MinimalistManager v5.2 loaded (for Trade Replay: the broker's REAL spread minute by minute for the life of the trade, and every SL/TP MOVE with its timestamp - MT5 discards stop modifications at close, so they are captured live or not at all. v5.1 kept: BE-stop CLEARANCE in pips and R, and a ladder of BE OFFSETS replayed spread-aware) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }

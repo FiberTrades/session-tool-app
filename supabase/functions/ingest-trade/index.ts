@@ -151,15 +151,7 @@ Deno.serve(async (req) => {
     // weekends and thin liquidity - a positional array would silently slide later readings onto
     // the wrong minute of the replay. Validated pair by pair; a malformed element drops the lot
     // rather than writing a half-usable series.
-    if (
-      Array.isArray(body.spread) &&
-      body.spread.length > 0 &&
-      body.spread.every((p: unknown) =>
-        Array.isArray(p) && p.length === 2 && p.every((x: unknown) => Number.isFinite(Number(x)))
-      )
-    ) {
-      patch.spread_series = (body.spread as unknown[][]).map((p) => [Number(p[0]), Number(p[1])]);
-    }
+    if (pairArray(body.spread)) patch.spread_series = toPairs(body.spread);
 
     const { error, count } = await admin
       .from("trades_inbox")
@@ -233,6 +225,13 @@ Deno.serve(async (req) => {
     tp_pips:     numOrNull(body.tp_pips),
     mfe_pips:    numOrNull(body.mfe_pips),
     mfe_r:       numOrNull(body.mfe_r),
+    // Where the stop and target were MOVED to, [[epoch, price], ...]. These ride the CLOSE
+    // payload rather than the post-mortem: the EA has them in hand the moment the position
+    // closes, whereas the post-mortem resolves hours later off bars that don't exist yet.
+    // Null when nothing moved - and also when the terminal was shut while it happened, which
+    // is why the app must read null as "not observed" rather than "never moved".
+    sl_moves:    pairArray(body.sl_moves) ? toPairs(body.sl_moves) : null,
+    tp_moves:    pairArray(body.tp_moves) ? toPairs(body.tp_moves) : null,
   };
 
   // 4. Insert, ignoring duplicates on (token, ticket).
@@ -284,6 +283,19 @@ function numOrNull(v: unknown): number | null {
 // single bad element rejects the whole array rather than writing NaNs into jsonb.
 function numArray(v: unknown): boolean {
   return Array.isArray(v) && v.length > 0 && v.every((x) => Number.isFinite(Number(x)));
+}
+
+// A non-empty array of [number, number] pairs — the shape used by every time-stamped series
+// the EA sends (spread readings, SL moves, TP moves). One malformed element rejects the whole
+// array: a half-parsed series would draw a plausible-looking but wrong picture in the replay,
+// which is worse than drawing nothing.
+function pairArray(v: unknown): boolean {
+  return Array.isArray(v) && v.length > 0 && v.every((p: unknown) =>
+    Array.isArray(p) && p.length === 2 && p.every((x: unknown) => Number.isFinite(Number(x)))
+  );
+}
+function toPairs(v: unknown): number[][] {
+  return (v as unknown[][]).map((p) => [Number(p[0]), Number(p[1])]);
 }
 
 function cors() {

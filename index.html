@@ -51580,10 +51580,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // build that sends it. Null for everything older: MT5 keeps no way to reconstruct it, so a
     // missing series means "not recorded", never "no spread". Parsed defensively because the
     // column is jsonb and some clients hand it back as a string.
-    var spreadRaw=(function(){ try{ var a=row.spread_series; if(typeof a==='string') a=JSON.parse(a);
-      return (Array.isArray(a)&&a.length)?a:null; }catch(_){ return null; } })();
+    var _pairs=function(v){ try{ var a=v; if(typeof a==='string') a=JSON.parse(a);
+      return (Array.isArray(a)&&a.length)?a:null; }catch(_){ return null; } };
+    var spreadRaw=_pairs(row.spread_series);
+    // Where the stop/target were MOVED to: [[epoch,price],...]. Null means NOT OBSERVED, not
+    // "never moved" — it also covers every trade taken before the EA build that records this,
+    // and any move made while the terminal was shut. So the replay must never draw "no moves"
+    // as a positive fact; it simply shows the original levels, exactly as it always did.
+    var slMovesRaw=_pairs(row.sl_moves), tpMovesRaw=_pairs(row.tp_moves);
 
-    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null,
+    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null, slMovesRaw:slMovesRaw, tpMovesRaw:tpMovesRaw, slMoves:null, tpMoves:null, tOff:0, lnSL:null, lnTP:null,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
         cursor:0, playing:false, ms:1000, timer:null, showPos:true, eBI:0, xBI:0, rSI:0, userView:false };
     await build();
@@ -51592,7 +51598,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   async function loadTf(tf){
     if(S.cache[tf]) return S.cache[tf];
     var span=tf*60;
-    var bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,S.exitTs+TF_FWDBARS*span);
+    // The EA exports candles to the END OF THE TRADE'S DAY, so ask for the whole of it rather
+    // than a fixed bar count. TF_FWDBARS=180 meant M1 stopped three hours after the exit while
+    // the rest of the day was already sitting in the table — the export looked broken when it
+    // was the request that was short. The bar-count floor stays, so a trade closing late in the
+    // day still gets a usable run-on past the exit.
+    var _eod=Math.floor(S.exitTs/86400)*86400+86400;
+    var bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod));
     S.cache[tf]=bars; return bars;
   }
   function bidx(bars,ts){ var x=0; for(var k=0;k<bars.length;k++){ if(bars[k].time<=ts) x=k; else break; } return x; }
@@ -51611,7 +51623,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.drawings=loadDrawings(S.ticket,tf); S.pending=null; S.sel=null; S.history=[clone(S.drawings)]; S.hpos=0; S.userView=false;
     el('strp-scrub').max=String(S.bars.length-1);
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
-    buildSpread();   // needs S.bars + S.eBI, so it re-keys on every timeframe change
+    buildSpread(); buildMoves();   // need S.bars + S.eBI, so they re-key on every timeframe change
     render(true); updUR(); updDel();
     if(wasPlaying) play();
   }
@@ -51631,8 +51643,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       autoSize:true });
     series=S.series=chart.addCandlestickSeries({upColor:'#4ECD8B',downColor:'#E56767',borderVisible:false,wickUpColor:'#4ECD8B',wickDownColor:'#E56767',priceLineVisible:true,lastValueVisible:true,priceLineColor:'#c0c0c0',priceFormat:{type:'price',precision:_prec(),minMove:Math.pow(10,-_prec())}});
     series.createPriceLine({price:S.entry,color:'#f472b6',lineWidth:1,lineStyle:2,title:L('Entry','Entrada')});
-    if(S.SL) series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:2,title:'SL'});
-    if(S.TP) series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:2,title:'TP'});
+    // ORIGINAL levels: SOLID, matching the position tool's own vertical edges, because they are
+    // the plan as taken — the frame the R figure is measured against. They never move, so where
+    // price finishes relative to them shows whether the plan was beaten or undercut.
+    if(S.SL) series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:0,title:'SL'});
+    if(S.TP) series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:0,title:'TP'});
+    // LIVE levels: the dotted lines, which step as the stop/target are moved during playback.
+    // Created ONLY when a move history exists, so a trade without one looks exactly as it always
+    // did rather than gaining a second line sitting invisibly on top of the first.
+    if(S.slMovesRaw && S.SL) S.lnSL=series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:2,title:'SL now'});
+    if(S.tpMovesRaw && S.TP) S.lnTP=series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:2,title:'TP now'});
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     el('strp-tb').style.display=''; el('strp-ct').style.display=''; el('strp-live').style.display='';
     startLoop();
@@ -51657,7 +51677,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var off=0, eb=S.bars[S.eBI]&&S.bars[S.eBI].time;
     if(eb){ var d=S.spreadRaw[0][0]-eb; if(Math.abs(d)>=1800) off=d; }
     var m={}; for(var i=0;i<S.spreadRaw.length;i++){ m[S.spreadRaw[i][0]-off]=S.spreadRaw[i][1]; }
-    S.spread=m;
+    S.spread=m; S.tOff=off;
+  }
+  /* SL/TP move times come off the same EA clock as the spread readings, so they inherit the
+     same offset. Derived from the spread series because ITS first entry is known to be the
+     entry bar; a move's first timestamp is wherever the trader happened to touch the stop and
+     says nothing about the clock. With no spread series the offset stays 0 — both arrive from
+     the same EA build, so in practice they travel together. */
+  function buildMoves(){
+    var shift=function(a){ if(!a) return null; var o=[];
+      for(var i=0;i<a.length;i++) o.push([a[i][0]-S.tOff,a[i][1]]);
+      o.sort(function(x,y){ return x[0]-y[0]; }); return o; };
+    S.slMoves=shift(S.slMovesRaw); S.tpMoves=shift(S.tpMovesRaw);
+  }
+  /* The level in force at bar time t: the last move at or before it, else the original. */
+  function levelAt(moves,orig,t){
+    var v=orig; if(!moves) return v;
+    for(var i=0;i<moves.length;i++){ if(moves[i][0]<=t) v=moves[i][1]; else break; }
+    return v;
   }
   /* The reading for the minute a bar OPENS on. Exact on the 1m timeframe (where a replay is
      normally watched); on 5m and above it is the first minute of the bar rather than an average,
@@ -51675,7 +51712,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function liveR(){ var e=el('strp-live'), idx=Math.min(S.cursor-1,S.bars.length-1);
     liveSpread(idx);
     // SL/TP live in their own span so portrait can push them onto a second line (see .strp-sltp CSS).
-    var slp=S.slPips?'SL '+S.slPips.toFixed(1)+'p':'', tpp=S.tpPips?'TP '+S.tpPips.toFixed(1)+'p':'';
+    // Step the live SL/TP lines to whatever was in force at this bar, and say so in the pill.
+    // The ORIGINAL distances stay on the LEFT of the arrow: R is measured against them, so they
+    // must never be re-based when the stop moves, or the same trade would score differently
+    // depending on when you looked at it (and a BE stop would divide by zero risk).
+    var _bt=(S.bars[Math.max(0,Math.min(idx,S.bars.length-1))]||{}).time||0;
+    var curSL=levelAt(S.slMoves,S.SL,_bt), curTP=levelAt(S.tpMoves,S.TP,_bt);
+    if(S.lnSL) S.lnSL.applyOptions({price:curSL||S.SL});
+    if(S.lnTP) S.lnTP.applyOptions({price:curTP||S.TP});
+    var _arrow=function(cur,orig,isSL){
+      if(!S.pip||cur==null||!orig) return '';
+      if(Math.abs(cur-orig)<S.pip*0.05) return '';                 // unmoved: no arrow at all
+      if(!cur) return ' → '+L('none','ninguno');              // level removed outright
+      var off=S.dir*(cur-S.entry)/S.pip;
+      if(isSL&&Math.abs(off)<0.05) return ' → BE';            // sitting on entry: no risk left
+      // Sign only on the stop, where crossing entry turns risk into locked-in profit. A target
+      // is always a distance in front, so "+22.0p" would just be noise.
+      return ' → '+(isSL&&off>0?'+':'')+off.toFixed(1)+'p';
+    };
+    var slp=S.slPips?'SL '+S.slPips.toFixed(1)+'p'+_arrow(curSL,S.SL,true):'', tpp=S.tpPips?'TP '+S.tpPips.toFixed(1)+'p'+_arrow(curTP,S.TP,false):'';
     var sltpInner=[slp,tpp].filter(Boolean).join(' · ');
     var sltp=sltpInner?'<span class="strp-sltp-sep"> · </span><span class="strp-sltp">'+sltpInner+'</span>':'';
     if(idx<S.eBI){ e.innerHTML=L('Waiting for entry…','Esperando entrada…')+sltp; e.className='strp-live'; return; }
