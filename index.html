@@ -43062,13 +43062,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // The role COLOUR still tints the name (see nameColor), so roles stay legible without emoji.
     // If badges are ever wanted back on chat, rebuild from memberRow — do not re-add a second
     // source that can drift from it.
-    // Badge order: crown (admin) → diamond (mentee) → role emoji → leaderboard medal, medal LAST.
-    // It used to sit third, ahead of the role emoji, which only looked right on members who happen
-    // to hold a crown or diamond — anyone else led with the medal. The other three say who someone
-    // IS and are stable; the medal is a monthly placing that moves, so it reads as a suffix to an
-    // identity rather than the first thing about them. Trailing it also means a member who loses a
-    // placing simply drops a trailing glyph instead of having their whole badge run reshuffle.
-    function memberRow(p,off){ var col=nameColor(p.id); var nm=stripEmoji(p.name)||'Trader'; var _typ=typing[p.id]&&(Date.now()-typing[p.id]<5000); return '<div class="dcx-member'+(off?' off':'')+' clickable'+'" data-uid="'+esc(p.id)+'"><span class="av">'+avaHtml(p.avatar,p.name,'')+(_typ?'<span class="dcx-typ"><i></i><i></i><i></i></span>':'<span class="dot'+(off?' off':(p.status&&p.status!=='online'?' '+p.status:''))+'"></span>')+'</span><span class="nm"'+(col?(' style="color:'+esc(col)+'"'):'')+'>'+esc(nm)+'<span class="dcx-badges">'+(p.is_admin?' \u{1F451}':'')+(_isMentee(p.id)?' \u{1F48E}':'')+_roleBadges(p.id)+_lbMedal(p.id)+'</span></span></div>'; }
+    // Badge order: crown (admin) → role emoji → leaderboard medal, medal LAST.
+    // The medal used to sit ahead of the role emoji, which only looked right on members who happen
+    // to hold a crown — anyone else led with the medal. Crown and roles say who someone IS and are
+    // stable; the medal is a monthly placing that moves, so it reads as a suffix to an identity
+    // rather than the first thing about them. Trailing it also means a member who loses a placing
+    // simply drops a trailing glyph instead of having their whole badge run reshuffle.
+    //
+    // The mentorship 💎 used to be hardcoded here off _isMentee() (a regex on the role name), which
+    // is why it appeared beside names but NEVER in the role pills on a profile card — those print
+    // the role's name verbatim, so only an emoji actually IN the name shows up (e.g. "Experienced
+    // Member 🎖"). Removed 2026-08-16: the diamond now lives in the role NAME like every other role
+    // emoji, so one source feeds both the pill and the badge. Do not re-add a hardcoded case here —
+    // it would double up with the one _roleBadges() reads out of the name.
+    function memberRow(p,off){ var col=nameColor(p.id); var nm=stripEmoji(p.name)||'Trader'; var _typ=typing[p.id]&&(Date.now()-typing[p.id]<5000); return '<div class="dcx-member'+(off?' off':'')+' clickable'+'" data-uid="'+esc(p.id)+'"><span class="av">'+avaHtml(p.avatar,p.name,'')+(_typ?'<span class="dcx-typ"><i></i><i></i><i></i></span>':'<span class="dot'+(off?' off':(p.status&&p.status!=='online'?' '+p.status:''))+'"></span>')+'</span><span class="nm"'+(col?(' style="color:'+esc(col)+'"'):'')+'>'+esc(nm)+'<span class="dcx-badges">'+(p.is_admin?' \u{1F451}':'')+_roleBadges(p.id)+_lbMedal(p.id)+'</span></span></div>'; }
     function renderMembers(state){ var list=G('dcx-members-list'); if(!list) return; var online={}; Object.keys(state||{}).forEach(function(k){ (state[k]||[]).forEach(function(p){ if(p&&p.id) online[p.id]=p; }); }); var onArr=[], offArr=[]; if(roster.length){ roster.forEach(function(m){ var op=online[m.id]; if(op && op.status!=='invisible') onArr.push({id:m.id,name:m.name||op.name,avatar:op.avatar||m.avatar,is_admin:m.is_admin,status:op.status||'online'}); else offArr.push(m); }); Object.keys(online).forEach(function(id){ var inR=false; for(var k=0;k<roster.length;k++){ if(roster[k].id===id){ inR=true; break; } } if(!inR && online[id].status!=='invisible') onArr.push(online[id]); }); } else { Object.keys(online).forEach(function(id){ if(online[id].status!=='invisible') onArr.push(online[id]); }); } function byN(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); } onArr.sort(byN); offArr.sort(byN); var adminP=null,adminOff=false; onArr=onArr.filter(function(p){ if(p&&p.is_admin&&!adminP){ adminP=p; adminOff=false; return false; } return true; }); offArr=offArr.filter(function(p){ if(p&&p.is_admin&&!adminP){ adminP=p; adminOff=true; return false; } return true; }); var head=G('dcx-members-head'); if(head) head.textContent=(lang()==='es'?'Miembros':'Members'); var es=(lang()==='es'); var html=''; if(adminP) html+=memberRow(adminP,adminOff); if(onArr.length){ html+='<div class="dcx-mem-sec">'+(es?'En l\u00ednea':'Online')+' \u2014 '+onArr.length+'</div>'+onArr.map(function(p){ return memberRow(p,false); }).join(''); } if(offArr.length){ html+='<div class="dcx-mem-sec">'+(es?'Desconectados':'Offline')+' \u2014 '+offArr.length+'</div>'+offArr.map(function(p){ return memberRow(p,true); }).join(''); } list.innerHTML=html; }
     function loadRoster(){ try{ sb.rpc('st_members').then(function(r){ if(r&&r.data) roster=r.data; renderMembers(presence?presence.presenceState():{}); }).catch(function(){}); }catch(e){}
     try{ loadLbTop(); }catch(e){}   /* medals ride along with the roster */
@@ -43114,7 +43121,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function nameColor(uid){ var r=topRoleOf(uid); return r?r.color:''; }
     function rolePillHtml(uid){ var r=topRoleOf(uid); if(!r) return ''; return '<span class="dcx-role-pill" style="color:'+esc(r.color)+';border-color:'+esc(r.color)+'">'+esc(r.name)+'</span>'; }
     function allRolePillsHtml(uid){ var ids=memberRoles[uid]||[]; var rs=ids.map(function(id){return roleById(id);}).filter(Boolean).sort(function(a,b){return (b.position||0)-(a.position||0);}); var out=''; rs.forEach(function(r){ out+='<span class="dcx-role-pill" style="color:'+esc(r.color)+';border-color:'+esc(r.color)+'">'+esc(r.name)+'</span>'; }); return out; }
-    function _isMentee(uid){ var ids=memberRoles[uid]||[]; for(var i=0;i<ids.length;i++){ var r=roleById(ids[i]); if(r && /mentee|mentorship/i.test(r.name||'')) return true;   /* role renamed Mentee -> Mentorship; match both so nobody loses access mid-migration */ } return false; }
+    /* _isMentee() removed 2026-08-16 with the hardcoded diamond it fed — it was the last caller.
+       It matched /mentee|mentorship/i against role NAMES, so a rename that dropped both words would
+       have silently killed the badge; sourcing the emoji from the name has no such trip-wire. If
+       something ever needs "is this member a mentee?" as a real check, read the role list directly
+       rather than reviving a name regex. */
     function roleSelect(sel){ return '<div class="dcx-acc-t">Extra role restriction <span style="text-transform:none;font-weight:400;color:#6b7280;">(optional - applies on top of the plans above)</span></div><select id="dcx-role"><option value="">Any role (no restriction)</option>'+roles.map(function(r){ return '<option value="'+esc(r.id)+'"'+((sel&&sel===r.id)?' selected':'')+'>Only: '+esc(r.name)+'</option>'; }).join('')+'</select>'; }
     function hexOk(c){ return /^#([0-9a-fA-F]{6})$/.test(c||''); }
     function modWhen(ts){ try{ return new Date(ts).toLocaleString(); }catch(e){ return ''; } }
