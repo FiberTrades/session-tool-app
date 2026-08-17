@@ -275,7 +275,7 @@ function parseFFEvents(xml: string): FFEvent[] {
     // Same test ffWhenMs uses to decide whether to trust the time: "All Day" and "Tentative"
     // carry no clock, and get parked at 12:00 UTC. The calendar strip needs to know that the
     // timestamp is a placeholder rather than draw a holiday at midday as if it were a release.
-    const timeStr = xmlTag(b, "time");
+    // (timeStr is already read above for ffWhenMs — do not redeclare it.)
     const timed = !!timeStr && /\d/.test(timeStr) && !/all day|tentative/i.test(timeStr);
     out.push({ currency, title, dateKey: ET_FMT.format(new Date(whenMs)), whenMs, impact, hasNumeric, forecast, previous, timed });
   }
