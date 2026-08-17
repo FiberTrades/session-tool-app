@@ -83,7 +83,12 @@
 // Endpoints:
 //   GET /                        -> FF weekly XML (forecast/previous)
 //   GET /actuals                 -> shared actuals (READ-ONLY, never scrapes)
-//   GET /actuals?fresh=1&debug=1 -> force one refresh now AND return the log (admin test)
+//   GET /actuals?fresh=1&debug=1&token=..
+//                                -> force one refresh now AND return the log (admin test).
+//                                   Requires ADMIN_TOKEN to be set AND matched; without it
+//                                   ?fresh is ignored and the cached answer is served, so no
+//                                   stranger can spend money on this account. Same for ?nocache
+//                                   on / (which forces an upstream scrape).
 //   GET /status                  -> JSON: keys, cache age, next fetch times, last attempt
 //   GET /backfill?token=..&from=YYYY-MM-DD&to=YYYY-MM-DD[&probe=1]
 //                                -> historical calendar from FMP for weeks the FF feed cannot
@@ -112,6 +117,9 @@ const ECA_SYSTEM_UID = "00000000-0000-0000-0000-000000000eca";
 // must mean "disabled", never "open". Set the variable to run a backfill, remove it after.
 const FMP_KEY = Deno.env.get("FMP_KEY") || "";
 const BACKFILL_TOKEN = Deno.env.get("BACKFILL_TOKEN") || "";
+// Guards the ?fresh / ?nocache admin hatch (see the request handler). Unset = hatch closed,
+// which is the safe default: nothing in the app uses it and the cron covers real refreshes.
+const ADMIN_TOKEN = Deno.env.get("ADMIN_TOKEN") || "";
 const FMP_URL = "https://financialmodelingprep.com/api/v3/economic_calendar";
 
 // ---- Fetch schedule (Europe/London, weekdays) ------------------------------
@@ -804,7 +812,17 @@ Deno.serve(async (request: Request) => {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: CORS_HEADERS });
   if (request.method !== "GET") return new Response("Method not allowed", { status: 405, headers: CORS_HEADERS });
   const url = new URL(request.url);
-  const forceFresh = url.searchParams.has("fresh") || url.searchParams.has("nocache");
+  /* ?fresh / ?nocache used to be honoured for ANYONE. On /actuals that starts a Claude call and
+     on / it forces an upstream scrape, so a URL anybody could guess spent real money on this
+     account. It exists only as an admin test hatch — the app has never sent either parameter,
+     and the cron covers every legitimate refresh — so gating it is invisible in normal use.
+     Fail-closed like /backfill: with no ADMIN_TOKEN set the hatch is simply shut. An
+     unauthenticated ?fresh degrades silently to the cached answer rather than erroring, so a
+     stray or scripted call gets normal data and costs nothing. */
+  const wantFresh = url.searchParams.has("fresh") || url.searchParams.has("nocache");
+  const freshAuthed = !!ADMIN_TOKEN && url.searchParams.get("token") === ADMIN_TOKEN;
+  const forceFresh = wantFresh && freshAuthed;
+  if (wantFresh && !freshAuthed) log("fresh.denied", { path: url.pathname, tokenConfigured: !!ADMIN_TOKEN });
   const wantDebug = url.searchParams.has("debug");
   if (url.pathname.startsWith("/status")) return serveStatus();
   if (url.pathname.startsWith("/backfill")) return serveBackfill(url);
@@ -850,6 +868,8 @@ async function serveStatus(): Promise<Response> {
   const status = {
     anthropicKeySet: !!ANTHROPIC_API_KEY,
     supabaseKeySet: !!SUPABASE_SERVICE_ROLE_KEY,
+    // false = nobody can trigger a paid refresh from outside; the cron is the only path in.
+    manualRefreshEnabled: !!ADMIN_TOKEN,
     ecaModel: ECA_MODEL, ecaModelFallback: ECA_MODEL_FALLBACK,
     fetchTimes: FETCH_HOURS.map((h) => `${String(h).padStart(2, "0")}:00`).join(", ") + ` ${REFRESH_TZ}` + (REFRESH_WEEKDAYS_ONLY ? " (weekdays)" : ""),
     localHour: ws.hour, localWeekday: ws.weekday,
