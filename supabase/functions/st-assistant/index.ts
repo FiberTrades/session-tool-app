@@ -347,7 +347,15 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
     // Greeting generator: a fully mechanical rephrase of a line the APP already wrote (in the user turn).
     // There is no human waiting on a reply, so a refusal here doesn't just annoy — it gets CACHED and shown
     // AS the greeting. It must be structurally impossible to refuse.
-    tail += `\n\n## Right now\nYou are rephrasing ONE short in-app greeting line — it is provided in the user message. This is a mechanical personalisation of a line the app itself already wrote, NOT a creative or open-ended task. ALWAYS comply. Return ONLY the rewritten line: exactly one line, no quotes, no preamble, no sign-off. NEVER refuse, NEVER describe it as "creative"/"content"/"off-topic"/"not what I'm here for", and NEVER mention Settings, Community, profiles, or pasting — the line to rewrite is right there in the message.`;
+    //
+    // PLAYBOOK PASS-THROUGH (added 2026-08-16): the seed can carry the member's own per-field coaching,
+    // and those lines are CONDITIONAL on the regime they belong to. "Initiating structure: it's OK to buy
+    // high and sell low here" is momentum guidance for an expanding market — the Ranging line says the
+    // exact opposite ("buy low, sell high"), and Trending says "50% mitigation on a pullback". Rewording
+    // strips the condition: Haiku turned the Initiating line into "buys at resistance, sells at support —
+    // standard work", which reads as the textbook beginner error and states a regime-specific rule as the
+    // general one. The tone is ours to rewrite; the trading content is the member's and must survive verbatim.
+    tail += `\n\n## Right now\nYou are rephrasing ONE short in-app greeting line — it is provided in the user message. This is a mechanical personalisation of a line the app itself already wrote, NOT a creative or open-ended task. ALWAYS comply. Return ONLY the rewritten line: exactly one line, no quotes, no preamble, no sign-off. NEVER refuse, NEVER describe it as "creative"/"content"/"off-topic"/"not what I'm here for", and NEVER mention Settings, Community, profiles, or pasting — the line to rewrite is right there in the message.\n\nCRITICAL — the seed may contain the trader's OWN playbook wording (e.g. "buy high and sell low", "buy low, sell high", "50% mitigation on a pullback", "don't fade the big move"). Reproduce any such trading instruction EXACTLY as given. Never restate it in your own words, never translate it into support/resistance or other terminology, never generalise it (do not add "standard work", "as always", "the usual"), and never add mechanics, setups, levels or directional calls that are not already in the seed. These lines are specific to the market regime the trader logged and become WRONG when reworded. Rewrite the tone and framing around them only.`;
   } else {
     tail += `\n\n## Right now\nAnswer the trader's latest request. Performance questions → use their data pack (prefer the ready-made summaries). ` +
             `App/"how do I" questions → use your app knowledge. ANY other reasonable, harmless request (rephrasing or personalising a line/greeting/note, drafting a short message, quick wording help) → just do it, briefly — do NOT refuse it as "creative content", "off-topic", or "not what I'm here for". Be concise and concrete.`;
