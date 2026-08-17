@@ -495,6 +495,19 @@ async function refreshActuals(): Promise<boolean> {
       debug.wantedReleased = wantedReleased.length;
       log("refresh.scope", { ffEvents: ffEvents.length, wantedReleased: wantedReleased.length, cachedThisWeek: prevSameWeek.length, sameWeek });
 
+      // Persist the calendar BEFORE the Claude phase, deliberately. The event list, its times,
+      // forecasts and impacts come straight from the XML and owe nothing to the actuals — and
+      // on 2026-08-17 the 16:00 London run was killed mid-Claude-call, taking everything after
+      // it with it (no usage row, no cache write, not even the finally block). Anything placed
+      // after that phase inherits its mortality. Actuals are the one part that can safely be
+      // late: byKey already carries whatever earlier runs found, and a later run updates the
+      // same rows in place.
+      try {
+        const n = await persistEvents(ffEvents, byKey);
+        debug.eventsStored = n;
+        log("events.stored", { n, ofFF: ffEvents.length });
+      } catch (e) { log("events.err", { error: msg(e) }); }
+
       const mergeIn = (entries: ActualEntry[]): number => {
         let n = 0;
         for (const e of entries) { const k = `${e.dateKey}|${e.country}|${e.title}`; if (!byKey.has(k)) n++; byKey.set(k, e); }
@@ -555,14 +568,6 @@ async function refreshActuals(): Promise<boolean> {
       const merged = Array.from(byKey.values());
       const missingAfter = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
 
-      // Persist the calendar itself, with whatever actuals are known RIGHT NOW. This runs on
-      // every fetch, which is the whole point: an actual that only lands at 16:00 updates the
-      // same row, so a replay opened tomorrow shows it without the trade having stored anything.
-      try {
-        const n = await persistEvents(ffEvents, byKey);
-        debug.eventsStored = n;
-        log("events.stored", { n, ofFF: ffEvents.length });
-      } catch (e) { log("events.err", { error: msg(e) }); }
       const payload = { actuals: merged, weekKey: wk, misses, fetchedAt: Date.now() };
       const ok = await sbSet("actuals", payload);
       memActuals = { value: payload, updatedAt: Date.now(), readAt: Date.now() };
