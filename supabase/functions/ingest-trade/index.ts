@@ -24,7 +24,13 @@
 //  The EA now sends a SECOND post for a trade it has already sent, carrying what
 //  price did AFTER the trade closed (replayed from M1 bars):
 //
-//    { token, ticket, pot_pips, pot_r, req_sl_pips, be_slack_pips, would_have_won }
+//    { token, ticket, pot_pips, pot_r, req_sl_pips, be_slack_pips, would_have_won,
+//      be_sim, be_clear_pips, be_clear_r, be_off_r, be_off_missed, spread }
+//
+//  `spread` is [[epoch_seconds, pips], ...] - the broker's real per-minute spread for the
+//  life of the trade, read from MqlRates. The app's Trade Replay draws TradingView candles,
+//  which carry no knowledge of the member's own broker spread, so this is the only way the
+//  replay can show what the spread was costing at a given moment.
 //
 //  Every trade carries all of them - win, loss and breakeven alike. The EA does not
 //  classify: the APP decides Win/BE/Lose from the user's own risk rules, and a breakeven
@@ -103,6 +109,9 @@ Deno.serve(async (req) => {
       body.req_sl_pips   !== undefined ||
       body.be_slack_pips !== undefined ||
       body.be_sim        !== undefined ||
+      body.be_clear_pips !== undefined ||
+      body.be_off_r      !== undefined ||
+      body.spread        !== undefined ||
       body.would_have_won !== undefined
     );
 
@@ -127,6 +136,29 @@ Deno.serve(async (req) => {
     // array of finite numbers - never trusted straight through into the column.
     if (Array.isArray(body.be_sim) && body.be_sim.every((x: unknown) => Number.isFinite(Number(x)))) {
       patch.be_sim = body.be_sim.map((x: unknown) => Number(x));
+    }
+    // BE-STOP CLEARANCE and the BE-OFFSET LADDER. The EA has sent all four of these since
+    // v5.1, and every one of them was being dropped here: the columns exist, the payload
+    // arrives, and nothing read it - so be_clear_pips, be_clear_r, be_off_r and
+    // be_off_missed were NULL on all 116 rows. Wired up 2026-08-17. Nothing about the
+    // trade's own numbers is touched; these are replay findings, same as the fields above.
+    if (body.be_clear_pips !== undefined) patch.be_clear_pips = numOrNull(body.be_clear_pips);
+    if (body.be_clear_r    !== undefined) patch.be_clear_r    = numOrNull(body.be_clear_r);
+    if (numArray(body.be_off_r))      patch.be_off_r      = (body.be_off_r as unknown[]).map(Number);
+    if (numArray(body.be_off_missed)) patch.be_off_missed = (body.be_off_missed as unknown[]).map(Number);
+    // The broker's real spread minute by minute, as [[epoch_seconds, pips], ...]. Each reading
+    // carries its OWN bar time rather than relying on position, because M1 bars are missing over
+    // weekends and thin liquidity - a positional array would silently slide later readings onto
+    // the wrong minute of the replay. Validated pair by pair; a malformed element drops the lot
+    // rather than writing a half-usable series.
+    if (
+      Array.isArray(body.spread) &&
+      body.spread.length > 0 &&
+      body.spread.every((p: unknown) =>
+        Array.isArray(p) && p.length === 2 && p.every((x: unknown) => Number.isFinite(Number(x)))
+      )
+    ) {
+      patch.spread_series = (body.spread as unknown[][]).map((p) => [Number(p[0]), Number(p[1])]);
     }
 
     const { error, count } = await admin
@@ -246,6 +278,12 @@ async function resolveSyncUser(
 function numOrNull(v: unknown): number | null {
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+// A non-empty array of finite numbers, and nothing else. Used for the ladder arrays so a
+// single bad element rejects the whole array rather than writing NaNs into jsonb.
+function numArray(v: unknown): boolean {
+  return Array.isArray(v) && v.length > 0 && v.every((x) => Number.isFinite(Number(x)));
 }
 
 function cors() {

@@ -1,0 +1,29 @@
+-- ─────────────────────────────────────────────────────────────────────────────
+--  trades_inbox.spread_series — the broker's real per-minute spread for a trade
+--  Applied to production 2026-08-17 (migration: trades_inbox_add_spread_series)
+--
+--  WHY IT EXISTS
+--  Trade Replay draws TradingView candles. Those know nothing about the member's own
+--  broker spread, so the replay could never answer the question the MT5 terminal answers
+--  live in its corner ("Spread 0.3") — what was it costing me at that moment.
+--
+--  The EA already had the answer and was throwing it away: MqlRates carries the real
+--  spread for every M1 bar, and the post-mortem replay already trusted that field to
+--  decide whether a stop would have filled. It is now also emitted for the life of the
+--  trade (PM_SpreadSeries in ea/MinimalistManager.mq5).
+--
+--  SHAPE: [[epoch_seconds, pips], ...]
+--  Paired, not positional. M1 bars are absent over weekends, holidays and thin
+--  liquidity, so a bare array of values would silently slide every later reading onto
+--  the wrong minute of the replay. Pairing each reading with its own bar time makes a
+--  gap read as a gap instead of as a lie.
+--
+--  Pips rather than points, so it matches what the terminal shows the trader — EURUSD
+--  3 points reads as 0.3 there and must read as 0.3 in the replay.
+--
+--  Nullable, permanently. Every trade taken before the EA build that sends this has no
+--  spread history and never can: MT5 keeps no way to reconstruct it after the fact.
+--  Treat NULL as "not recorded", never as "zero spread".
+-- ─────────────────────────────────────────────────────────────────────────────
+
+alter table public.trades_inbox add column if not exists spread_series jsonb;

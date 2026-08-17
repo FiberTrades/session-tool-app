@@ -2482,11 +2482,48 @@ void PM_SimOffsets(string sym,int dir,double entry,double origSl,double tpPrice,
    outR=a+"]"; outMissed=b+"]";
   }
 
+//----------------------------------------------------------------------------
+//  SPREAD SERIES  (for the app's Trade Replay)
+//
+//  MqlRates carries the broker's REAL spread for every M1 bar, in points - the same
+//  field the BE replay above already trusts to decide whether a stop would have filled.
+//  The app's replay draws TradingView candles, which know nothing about YOUR broker's
+//  spread, so without this it cannot answer "what was the spread costing me at that
+//  moment" - the question the terminal answers live in its corner readout.
+//
+//  Emitted as [[epoch,pips],...] and NOT as a bare array of values: M1 bars are absent
+//  over weekends, holidays and thin liquidity, so a positional array would silently
+//  shift every later reading onto the wrong minute. Pairing each value with its own bar
+//  time makes a gap a gap instead of a lie.
+//
+//  Pips, not points, so it matches what the terminal shows the trader (EURUSD 3 points
+//  reads as 0.3 there, and must read as 0.3 in the replay too).
+//----------------------------------------------------------------------------
+#define PM_SPREAD_MAX 1440          // one day of minutes - bounds a trade left open for weeks
+
+string PM_SpreadSeries(string sym,datetime openT,datetime closeT)
+  {
+   double pip=SymbolPipFor(sym);
+   double pt =SymbolInfoDouble(sym,SYMBOL_POINT);
+   if(pip<=0 || pt<=0) return "";
+   MqlRates r[];
+   int n=CopyRates(sym,PERIOD_M1,openT,closeT,r);
+   if(n<=0) return "";
+   if(n>PM_SPREAD_MAX) n=PM_SPREAD_MAX;
+   string s="[";
+   for(int i=0;i<n;i++)
+     {
+      if(i>0) s+=",";
+      s+=StringFormat("[%I64d,%s]",(long)r[i].time,DoubleToString(r[i].spread*pt/pip,2));
+     }
+   return s+"]";
+  }
+
 // Push the replay result for a trade already sent at close. The endpoint upserts
 // on ticket, so this UPDATES that row rather than adding a second one.
 bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWin,
              double beSlackPips,double beClearPips,double beClearR,string beSim,
-             string beOffR,string beOffMissed)
+             string beOffR,string beOffMissed,string spreadSeries)
   {
    // Every trade carries both answers. The APP decides which to show, from its own
    // Win/Lose/BE result - a decision the EA cannot make honestly, because a breakeven
@@ -2507,6 +2544,8 @@ bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWi
    // What each BE OFFSET would have been worth, and which of them cost a real target.
    if(StringLen(beOffR)>0)      json+=",\"be_off_r\":"+beOffR;
    if(StringLen(beOffMissed)>0) json+=",\"be_off_missed\":"+beOffMissed;
+   // The broker's real spread, minute by minute, for the life of the trade.
+   if(StringLen(spreadSeries)>0) json+=",\"spread\":"+spreadSeries;
    json+="}";
    return SyncPost(json);
   }
@@ -2562,7 +2601,8 @@ void PM_Sweep()
          string beSim  = PM_SimBE(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT);
          string beOffR="",beOffMiss="";
          PM_SimOffsets(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT,beT,beOffR,beOffMiss);
-         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim,beOffR,beOffMiss))
+         string spSeries = PM_SpreadSeries(sSym,openT,closeT);
+         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim,beOffR,beOffMiss,spSeries))
            {
             // The push failed (offline?). Keep it and try again next sweep.
             ArrayResize(keep,kept+1); keep[kept]=rowCsv; kept++;
