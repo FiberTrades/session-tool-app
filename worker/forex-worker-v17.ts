@@ -533,6 +533,7 @@ async function refreshActuals(): Promise<boolean> {
         return n;
       };
       let roundIdx = 0;
+      let foundThisRun = 0;
 
       // PHASE 1 - Haiku does ALL normal work: up to 2 gap-driven rounds, asking
       // only for the still-missing events each round, stopping early if a round
@@ -547,7 +548,9 @@ async function refreshActuals(): Promise<boolean> {
         if (missingAll.length > missing.length) log("refresh.capped", { outstanding: missingAll.length, asking: missing.length });
         const claude = await fetchActualsViaClaude(missing, debug, roundIdx++, ECA_MODEL);
         if (claude === null) break;
-        if (mergeIn(matchActuals(ffEvents, claude, debug)) === 0) break;
+        const newlyFound = mergeIn(matchActuals(ffEvents, claude, debug));
+        foundThisRun += newlyFound;
+        if (newlyFound === 0) break;
       }
 
       // Update the persisted miss-counters: clear found events, and for events
@@ -579,12 +582,27 @@ async function refreshActuals(): Promise<boolean> {
       if (sonnetTargets.length) log("sonnet.eligible", { count: sonnetTargets.length, events: sonnetTargets.slice(0, 10).map((e) => `${e.currency} ${e.title} (${e.dateKey})`) });
       if (sonnetTargets.length) {
         const claude = await fetchActualsViaClaude(sonnetTargets, debug, roundIdx++, ECA_MODEL_FALLBACK);
-        if (claude !== null) mergeIn(matchActuals(ffEvents, claude, debug));
+        if (claude !== null) foundThisRun += mergeIn(matchActuals(ffEvents, claude, debug));
         for (const e of sonnetTargets) {
           const k = ffKey(e);
           if (byKey.has(k)) delete misses[k];
           else { misses[k] = misses[k] || { h: 0, s: 0 }; misses[k].s += 1; }
         }
+      }
+
+      // Second pass, and only when this run actually found something. The pre-Claude write
+      // above cannot know an actual that Claude has not fetched yet, so on its own the actual
+      // column trails a whole fetch behind the cache — proven on 2026-08-17, when the 21:00
+      // run merged 4 actuals and calendar_events still read 0. This pass is deliberately last
+      // and deliberately best-effort: the calendar rows are already safe, so if the isolate
+      // dies here the only casualty is freshness, and the next run rewrites the same actuals
+      // straight from cache. That is the same one-run lag we had before, as a floor, not a
+      // ceiling.
+      if (foundThisRun > 0) {
+        try {
+          const n = await persistEvents(ffEvents, byKey);
+          log("events.actuals", { rows: n, foundThisRun });
+        } catch (e) { log("events.actuals.err", { error: msg(e) }); }
       }
 
       const merged = Array.from(byKey.values());
