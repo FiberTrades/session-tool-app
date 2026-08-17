@@ -172,6 +172,54 @@ async function sbSet(key: string, value: any): Promise<boolean> {
   } catch { return false; }
 }
 
+// =============================================================================
+// CALENDAR EVENTS — persisted for the app's Trade Replay news strip.
+// =============================================================================
+// The FF feed carries THIS week and next only, and worker_cache keeps just the matched
+// actuals — week-scoped and overwritten every fetch. So nothing survived to tell a replay
+// what news landed during a trade, even though this worker parses all of it and throws
+// most of it away. These rows are the durable record.
+//
+// Only High/Medium/Holiday are stored. Low impact is noise on a chart; holidays are exactly
+// what a trader wants flagged, even though they never carry a number to fetch.
+// deno-lint-ignore no-explicit-any
+async function sbUpsertEvents(rows: any[]): Promise<boolean> {
+  if (!SUPABASE_SERVICE_ROLE_KEY || !rows.length) return false;
+  try {
+    const r = await fetchWithTimeout(
+      `${SUPABASE_URL}/rest/v1/calendar_events?on_conflict=event_date,currency,title`, 20000,
+      { ...SB_HEADERS, Prefer: "resolution=merge-duplicates,return=minimal" },
+      JSON.stringify(rows));
+    return r.ok;
+  } catch { return false; }
+}
+
+async function persistEvents(ffEvents: FFEvent[], byKey: Map<string, ActualEntry>): Promise<number> {
+  const keep = ffEvents.filter((e) => /high|medium|holiday/i.test(e.impact));
+  if (!keep.length) return 0;
+  const base = (e: FFEvent) => ({
+    event_date: e.dateKey, at: new Date(e.whenMs).toISOString(), timed: e.timed,
+    currency: e.currency, title: e.title, impact: e.impact,
+    forecast: e.forecast || null, previous: e.previous || null,
+    updated_at: new Date().toISOString(),
+  });
+  // SPLIT BY WHETHER THE ACTUAL IS KNOWN. One batch would have to send actual:null for the
+  // unknowns, and merge-duplicates would then wipe a value fetched on an earlier run — the
+  // precise regression this table exists to prevent. Rows with no known actual omit the
+  // column entirely, so an existing value is left alone.
+  // deno-lint-ignore no-explicit-any
+  const withA: any[] = [], withoutA: any[] = [];
+  for (const e of keep) {
+    const hit = byKey.get(`${e.dateKey}|${e.currency}|${e.title}`);
+    if (hit && hit.actual) withA.push({ ...base(e), actual: hit.actual });
+    else withoutA.push(base(e));
+  }
+  let n = 0;
+  if (withoutA.length && await sbUpsertEvents(withoutA)) n += withoutA.length;
+  if (withA.length    && await sbUpsertEvents(withA))    n += withA.length;
+  return n;
+}
+
 // Short per-instance memo over the shared actuals so we don't hit Supabase on every request.
 // deno-lint-ignore no-explicit-any
 let memActuals: { value: any; updatedAt: number; readAt: number } | null = null;
@@ -187,7 +235,7 @@ async function getSharedActuals(): Promise<{ value: any; updatedAt: number } | n
 // FF XML PARSING
 // =============================================================================
 const ET_FMT = new Intl.DateTimeFormat("en-CA", { year: "numeric", month: "2-digit", day: "2-digit", timeZone: "America/New_York" });
-interface FFEvent { currency: string; title: string; dateKey: string; whenMs: number; impact: string; hasNumeric: boolean; }
+interface FFEvent { currency: string; title: string; dateKey: string; whenMs: number; impact: string; hasNumeric: boolean; forecast: string; previous: string; timed: boolean; }
 
 function xmlTag(block: string, name: string): string {
   const m = block.match(new RegExp("<" + name + ">([\\s\\S]*?)</" + name + ">", "i"));
@@ -221,8 +269,15 @@ function parseFFEvents(xml: string): FFEvent[] {
     if (whenMs == null) continue;
     // A DATA RELEASE carries a numeric forecast or previous; speeches, meetings
     // and holidays carry neither, so they have no "actual" to chase.
-    const hasNumeric = /\d/.test(xmlTag(b, "forecast")) || /\d/.test(xmlTag(b, "previous"));
-    out.push({ currency, title, dateKey: ET_FMT.format(new Date(whenMs)), whenMs, impact, hasNumeric });
+    const forecast = xmlTag(b, "forecast");
+    const previous = xmlTag(b, "previous");
+    const hasNumeric = /\d/.test(forecast) || /\d/.test(previous);
+    // Same test ffWhenMs uses to decide whether to trust the time: "All Day" and "Tentative"
+    // carry no clock, and get parked at 12:00 UTC. The calendar strip needs to know that the
+    // timestamp is a placeholder rather than draw a holiday at midday as if it were a release.
+    const timeStr = xmlTag(b, "time");
+    const timed = !!timeStr && /\d/.test(timeStr) && !/all day|tentative/i.test(timeStr);
+    out.push({ currency, title, dateKey: ET_FMT.format(new Date(whenMs)), whenMs, impact, hasNumeric, forecast, previous, timed });
   }
   return out;
 }
@@ -499,6 +554,15 @@ async function refreshActuals(): Promise<boolean> {
 
       const merged = Array.from(byKey.values());
       const missingAfter = wantedReleased.filter((e) => !byKey.has(ffKey(e)));
+
+      // Persist the calendar itself, with whatever actuals are known RIGHT NOW. This runs on
+      // every fetch, which is the whole point: an actual that only lands at 16:00 updates the
+      // same row, so a replay opened tomorrow shows it without the trade having stored anything.
+      try {
+        const n = await persistEvents(ffEvents, byKey);
+        debug.eventsStored = n;
+        log("events.stored", { n, ofFF: ffEvents.length });
+      } catch (e) { log("events.err", { error: msg(e) }); }
       const payload = { actuals: merged, weekKey: wk, misses, fetchedAt: Date.now() };
       const ok = await sbSet("actuals", payload);
       memActuals = { value: payload, updatedAt: Date.now(), readAt: Date.now() };
