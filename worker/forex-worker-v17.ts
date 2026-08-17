@@ -85,6 +85,10 @@
 //   GET /actuals                 -> shared actuals (READ-ONLY, never scrapes)
 //   GET /actuals?fresh=1&debug=1 -> force one refresh now AND return the log (admin test)
 //   GET /status                  -> JSON: keys, cache age, next fetch times, last attempt
+//   GET /backfill?token=..&from=YYYY-MM-DD&to=YYYY-MM-DD[&probe=1]
+//                                -> historical calendar from FMP for weeks the FF feed cannot
+//                                   reach. probe=1 writes NOTHING and reports the shape FMP
+//                                   returned. Inert unless BACKFILL_TOKEN is set (fails closed).
 // =============================================================================
 
 const FF_XML_URL      = "https://nfs.faireconomy.media/ff_calendar_thisweek.xml";
@@ -97,6 +101,18 @@ const ECA_MODEL_FALLBACK = "claude-sonnet-5";   // mop-up ONLY for events Haiku 
 const SUPABASE_URL = "https://figozyxoyobixadhqewr.supabase.co";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const ECA_SYSTEM_UID = "00000000-0000-0000-0000-000000000eca";
+
+// ---- Historical backfill (FMP) ---------------------------------------------
+// FF publishes this week and next only, so every week before this table existed is blank and
+// a replay of an older trade shows no news at all. FMP is the stopgap for those weeks ONLY.
+//
+// FAILS CLOSED. /backfill is inert unless BACKFILL_TOKEN is set in the Deno environment AND
+// the caller presents it. This endpoint writes to the database and spends someone else's API
+// quota, and the worker is public and otherwise unauthenticated — so "no token configured"
+// must mean "disabled", never "open". Set the variable to run a backfill, remove it after.
+const FMP_KEY = Deno.env.get("FMP_KEY") || "";
+const BACKFILL_TOKEN = Deno.env.get("BACKFILL_TOKEN") || "";
+const FMP_URL = "https://financialmodelingprep.com/api/v3/economic_calendar";
 
 // ---- Fetch schedule (Europe/London, weekdays) ------------------------------
 // MORE, SMALLER RUNS - not a preference, a platform constraint. On 2026-08-17 the 16:00 run
@@ -193,12 +209,16 @@ async function sbSet(key: string, value: any): Promise<boolean> {
 // Only High/Medium/Holiday are stored. Low impact is noise on a chart; holidays are exactly
 // what a trader wants flagged, even though they never carry a number to fetch.
 // deno-lint-ignore no-explicit-any
-async function sbUpsertEvents(rows: any[]): Promise<boolean> {
+async function sbUpsertEvents(rows: any[], overwrite = true): Promise<boolean> {
   if (!SUPABASE_SERVICE_ROLE_KEY || !rows.length) return false;
   try {
+    // overwrite=false (the historical backfill) uses ignore-duplicates so an FMP row can never
+    // replace an authoritative FF one. Where the two happen to produce the identical
+    // (event_date, currency, title), FF's is the copy the rest of the app agrees with.
+    const resolution = overwrite ? "merge-duplicates" : "ignore-duplicates";
     const r = await fetchWithTimeout(
       `${SUPABASE_URL}/rest/v1/calendar_events?on_conflict=event_date,currency,title`, 20000,
-      { ...SB_HEADERS, Prefer: "resolution=merge-duplicates,return=minimal" },
+      { ...SB_HEADERS, Prefer: `resolution=${resolution},return=minimal` },
       JSON.stringify(rows));
     return r.ok;
   } catch { return false; }
@@ -211,6 +231,7 @@ async function persistEvents(ffEvents: FFEvent[], byKey: Map<string, ActualEntry
     event_date: e.dateKey, at: new Date(e.whenMs).toISOString(), timed: e.timed,
     currency: e.currency, title: e.title, impact: e.impact,
     forecast: e.forecast || null, previous: e.previous || null,
+    source: "ff",   // authoritative; the historical backfill writes 'fmp' and never overwrites this
     updated_at: new Date().toISOString(),
   });
   // SPLIT BY WHETHER THE ACTUAL IS KNOWN. One batch would have to send actual:null for the
@@ -228,6 +249,134 @@ async function persistEvents(ffEvents: FFEvent[], byKey: Map<string, ActualEntry
   if (withoutA.length && await sbUpsertEvents(withoutA)) n += withoutA.length;
   if (withA.length    && await sbUpsertEvents(withA))    n += withA.length;
   return n;
+}
+
+// =============================================================================
+// HISTORICAL BACKFILL — FMP, for weeks that predate this table
+// =============================================================================
+// Written blind: the key is a Deno secret, so the response shape could not be inspected while
+// coding. Hence ?probe=1, which fetches and maps but writes NOTHING, reporting the raw keys FMP
+// actually returned alongside what the mapper made of them. Run the probe first, confirm the
+// mapping against real output, and only then run the write.
+//
+// The mapper accepts several spellings per field because FMP has shipped more than one shape
+// (v3 vs "stable") and the docs are behind a login. Anything it cannot resolve to a currency,
+// a title and a date is dropped and counted, so a silently-wrong mapping shows up as a big
+// `dropped` number rather than as a table full of junk.
+// deno-lint-ignore no-explicit-any
+function pick(o: any, ...names: string[]): string {
+  for (const n of names) {
+    const v = o?.[n];
+    if (v !== undefined && v !== null && String(v).trim() !== "") return String(v).trim();
+  }
+  return "";
+}
+/* FMP grades impact as words ("High") or numbers (3/2/1) depending on the shape. Only
+   High/Medium survive: the app never shows Low, and FMP carries no bank holidays at all —
+   a permanent gap in backfilled weeks that no mapping can close. */
+function fmpImpact(raw: string): string {
+  const s = raw.toLowerCase();
+  if (/high/.test(s) || s === "3") return "High";
+  if (/med/.test(s) || s === "2") return "Medium";
+  return "";
+}
+interface MappedRow { event_date: string; at: string; timed: boolean; currency: string; title: string; impact: string; forecast: string | null; previous: string | null; actual: string | null; source: string; updated_at: string; }
+// deno-lint-ignore no-explicit-any
+function mapFmpRow(r: any): MappedRow | null {
+  const currency = pick(r, "currency", "economy", "country");
+  const title    = pick(r, "event", "name", "title");
+  const rawDate  = pick(r, "date", "dateTime", "data");
+  const impact   = fmpImpact(pick(r, "impact", "importance"));
+  if (!currency || !title || !rawDate || !impact) return null;
+  // FMP timestamps are UTC but arrive as "2026-08-17 12:30:00" — no zone marker, which
+  // JS would read as LOCAL time. Pin it to UTC explicitly rather than trust the runtime.
+  const iso = /[zZ]|[+-]\d{2}:?\d{2}$/.test(rawDate) ? rawDate : rawDate.replace(" ", "T") + "Z";
+  const ms = Date.parse(iso);
+  if (isNaN(ms)) return null;
+  const d = new Date(ms);
+  const actual = pick(r, "actual");
+  const forecast = pick(r, "estimate", "forecast", "consensus");
+  const previous = pick(r, "previous");
+  return {
+    // event_date is the ET date, matching what persistEvents writes from the FF feed, so both
+    // sources agree on which day a row belongs to even though they disagree on its name.
+    event_date: ET_FMT.format(d), at: d.toISOString(), timed: true,
+    currency: currency.toUpperCase(), title, impact,
+    forecast: forecast || null, previous: previous || null, actual: actual || null,
+    source: "fmp", updated_at: new Date().toISOString(),
+  };
+}
+async function fetchFmp(from: string, to: string): Promise<{ ok: boolean; status: number; rows: unknown[]; err: string }> {
+  if (!FMP_KEY) return { ok: false, status: 0, rows: [], err: "FMP_KEY not set" };
+  try {
+    const r = await fetchWithTimeout(`${FMP_URL}?from=${from}&to=${to}&apikey=${encodeURIComponent(FMP_KEY)}`, 30_000);
+    const text = await r.text();
+    if (!r.ok) return { ok: false, status: r.status, rows: [], err: text.slice(0, 300) };
+    const j = JSON.parse(text);
+    if (!Array.isArray(j)) return { ok: false, status: r.status, rows: [], err: "not an array: " + text.slice(0, 300) };
+    return { ok: true, status: r.status, rows: j, err: "" };
+  } catch (e) { return { ok: false, status: 0, rows: [], err: msg(e) }; }
+}
+/* Monday 00:00 UTC of the week containing `d`. The live FF feed owns this week and next, and
+   those weeks must never be backfilled: FMP names the same release differently, and the key is
+   (event_date, currency, title), so the two vocabularies would not overwrite each other — they
+   would sit side by side as duplicate rows for one event. */
+function mondayOf(d: Date): number {
+  const day = d.getUTCDay();
+  return Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + (day === 0 ? -6 : 1 - day));
+}
+async function serveBackfill(url: URL): Promise<Response> {
+  const json = (o: unknown, code = 200) =>
+    new Response(JSON.stringify(o, null, 2), { status: code, headers: { ...CORS_HEADERS, "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" } });
+
+  if (!BACKFILL_TOKEN) return json({ error: "backfill disabled: BACKFILL_TOKEN is not set on this deployment" }, 404);
+  if (url.searchParams.get("token") !== BACKFILL_TOKEN) return json({ error: "unauthorised" }, 401);
+
+  const from = url.searchParams.get("from") || "", to = url.searchParams.get("to") || "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return json({ error: "need from=YYYY-MM-DD&to=YYYY-MM-DD" }, 400);
+  if (Date.parse(from) > Date.parse(to)) return json({ error: "from is after to" }, 400);
+  // FMP caps a query at three months.
+  if (Date.parse(to) - Date.parse(from) > 92 * 86400000) return json({ error: "range exceeds 92 days (FMP limit)" }, 400);
+
+  const probe = url.searchParams.get("probe") === "1";
+  const liveFrom = mondayOf(new Date());   // this week's Monday: FF owns everything from here on
+  if (!probe && Date.parse(to) >= liveFrom) {
+    return json({ error: "refusing to write weeks the live FF feed covers (this week and later) — it would duplicate rows under FMP's different event names", liveFeedOwnsFrom: new Date(liveFrom).toISOString().slice(0, 10) }, 400);
+  }
+
+  const res = await fetchFmp(from, to);
+  if (!res.ok) return json({ error: "FMP fetch failed", status: res.status, detail: res.err }, 502);
+
+  const mapped: MappedRow[] = [];
+  let dropped = 0;
+  for (const raw of res.rows) { const m = mapFmpRow(raw); if (m) mapped.push(m); else dropped++; }
+
+  if (probe) {
+    // Report the SHAPE, so the mapping can be checked against reality before anything is written.
+    const keys = new Set<string>();
+    for (const r of res.rows.slice(0, 200)) { if (r && typeof r === "object") for (const k of Object.keys(r)) keys.add(k); }
+    return json({
+      probe: true, wroteNothing: true, range: { from, to },
+      fmpStatus: res.status, rowsReturned: res.rows.length,
+      fieldNamesSeen: Array.from(keys).sort(),
+      sampleRaw: res.rows.slice(0, 3),
+      mappedKept: mapped.length, droppedAsLowOrUnmappable: dropped,
+      sampleMapped: mapped.slice(0, 3),
+      note: "High/Medium only; FMP carries no bank holidays, so backfilled weeks will never show them.",
+    });
+  }
+
+  // Never overwrite an authoritative FF row with an FMP one. The key is (event_date, currency,
+  // title) and the vocabularies differ, so a collision here is genuinely the same string from
+  // both sources — in which case FF's copy is the one the rest of the app agrees with.
+  let written = 0, batches = 0, failed = 0;
+  for (let i = 0; i < mapped.length; i += 400) {
+    const batch = mapped.slice(i, i + 400);
+    batches++;
+    if (await sbUpsertEvents(batch, false)) written += batch.length; else failed += batch.length;
+  }
+  log("backfill", { from, to, returned: res.rows.length, kept: mapped.length, dropped, written, failed });
+  return json({ range: { from, to }, rowsReturned: res.rows.length, kept: mapped.length, droppedAsLowOrUnmappable: dropped, written, failed, batches });
 }
 
 // Short per-instance memo over the shared actuals so we don't hit Supabase on every request.
@@ -658,6 +807,7 @@ Deno.serve(async (request: Request) => {
   const forceFresh = url.searchParams.has("fresh") || url.searchParams.has("nocache");
   const wantDebug = url.searchParams.has("debug");
   if (url.pathname.startsWith("/status")) return serveStatus();
+  if (url.pathname.startsWith("/backfill")) return serveBackfill(url);
   if (url.pathname.startsWith("/actuals")) return serveActuals(forceFresh, wantDebug);
   return serveXml(forceFresh, url.searchParams.get("week") === "next");
 });
