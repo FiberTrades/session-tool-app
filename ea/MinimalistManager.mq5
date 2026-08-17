@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.1"
+#property version   "5.2"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -169,7 +169,12 @@ bool g_panelOpen = true;
 double g_ui      = 1.0;   // UI scale = display DPI / 96 (keeps the panel proportional on high-DPI screens)
 bool g_active    = true;   // master visual ON/OFF (hides all chart lines when off)
 bool g_pausedByLimit = false;   // true when the daily limit auto-paused ACTIVE; auto-cleared on the new day, and a manual ACTIVE toggle clears it too
-int  PX, PY, PWID = 335;
+// PWID drives the whole panel: every control is measured back from its right edge
+// (Rend = cardX + cardW - padX), so narrowing this squeezes the LABEL column, not the
+// boxes — the 90px controls keep their size and the text beside them loses the room.
+// 335 -> 320 leaves ~93px for a label on a two-box row, which still clears the longest
+// of them. Go much below 300 and labels start colliding with their controls.
+int  PX, PY, PWID = 320;
 int  g_panelH = 24;
 int  g_maxTradesDay = 0;   // runtime daily-trade cap (from InpMaxTradesDay, editable on panel)
 bool   g_scaleLock    = false;   // chart scale lock on/off (off by default; forex-style padding)
@@ -2943,7 +2948,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.1 loaded (post-mortem now records BE-stop CLEARANCE in pips and R, and replays a ladder of BE OFFSETS spread-aware, so \"what if I moved to +0.5R instead of entry\" is answerable from data) ===");
+   Print("=== MinimalistManager v5.2 loaded (post-mortem now also sends the broker's REAL spread minute by minute for the life of the trade, so Trade Replay can show what the spread was costing at any point - TradingView candles carry no knowledge of your broker's spread. v5.1 kept: BE-stop CLEARANCE in pips and R, and a ladder of BE OFFSETS replayed spread-aware) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }

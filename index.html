@@ -51296,6 +51296,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-tgl{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--text-mid); cursor:pointer; } .strp-tgl input{ accent-color:var(--accent); width:13px; height:13px; }
   .strp-cw{ position:relative; } #strp-chart{ height:min(58vh,480px); width:100%; } #strp-ov{ position:absolute; top:0; left:0; z-index:3; pointer-events:none; }
   .strp-live{ position:absolute; top:10px; left:12px; z-index:5; font-size:12px; letter-spacing:.06em; background:rgba(19,18,23,.82); border:1px solid var(--border-2); border-radius:8px; padding:6px 10px; pointer-events:none; color:var(--text-mid); max-width:calc(100% - 84px); white-space:normal; line-height:1.45; } .strp-live b{ font-size:inherit; font-weight:600; } .strp-live.win{color:var(--good);} .strp-live.lose{color:var(--bad);}
+  /* Spread readout — bottom-right, deliberately mirroring where MT5 puts its own
+     "Candle 00:33 | Spread 0.3" corner readout, so the eye looks in the same place. */
+  .strp-spread{ position:absolute; right:12px; bottom:10px; z-index:5; font-size:11px; letter-spacing:.06em; background:rgba(19,18,23,.82); border:1px solid var(--border-2); border-radius:8px; padding:5px 9px; pointer-events:none; color:var(--text-dim); white-space:nowrap; }
+  @media (max-width:760px){ .strp-spread{ right:8px; bottom:8px; font-size:10px; padding:4px 7px; } }
   .strp-brk{ display:none; }
   @media (max-width:760px){
     #strp-fs{ display:none; }
@@ -51378,6 +51382,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     </div>
     <div class="strp-cw" id="strp-cw">
       <div class="strp-live" id="strp-live" style="display:none">—</div>
+      <div class="strp-spread" id="strp-spread" style="display:none">—</div>
       <div id="strp-chart"><div class="strp-state" id="strp-state">Loading…</div></div>
       <canvas id="strp-ov"></canvas>
       <button class="strp-cmax" id="strp-cmax" title="More chart"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2H2v4M10 2h4v4M6 14H2v-4M10 14h4v-4"/></svg></button>
@@ -51528,7 +51533,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   async function open(trade){
     var mb=el('strp-modal-bg'); var _mob=(window.innerWidth||document.documentElement.clientWidth||0)<=760; mb.classList.toggle('strp-full',_mob); try{ mb.querySelector('.strp-card').classList.remove('strp-chartmax'); }catch(_){} mb.classList.add('show'); localize();
-    el('strp-tb').style.display='none'; el('strp-ct').style.display='none'; el('strp-live').style.display='none';
+    el('strp-tb').style.display='none'; el('strp-ct').style.display='none'; el('strp-live').style.display='none'; el('strp-spread').style.display='none';
     el('strp-chart').innerHTML='<div class="strp-state" id="strp-state">'+L('Loading trade…','Cargando operación…')+'</div>';
     el('strp-sym').textContent='—'; el('strp-side').textContent='—'; el('strp-date').textContent=''; el('strp-hr').textContent='—'; el('strp-hp').textContent='';
     try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){}
@@ -51571,7 +51576,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
     try{ await ensureLWC(); }catch(_){ el('strp-chart').innerHTML='<div class="strp-state">'+L('Chart library failed to load (needs internet).','No se pudo cargar la librería del gráfico (necesita internet).')+'</div>'; return; }
 
-    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips,
+    // Broker spread, minute by minute, as [[epoch,pips],...] — only on trades synced by an EA
+    // build that sends it. Null for everything older: MT5 keeps no way to reconstruct it, so a
+    // missing series means "not recorded", never "no spread". Parsed defensively because the
+    // column is jsonb and some clients hand it back as a string.
+    var spreadRaw=(function(){ try{ var a=row.spread_series; if(typeof a==='string') a=JSON.parse(a);
+      return (Array.isArray(a)&&a.length)?a:null; }catch(_){ return null; } })();
+
+    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
         cursor:0, playing:false, ms:1000, timer:null, showPos:true, eBI:0, xBI:0, rSI:0, userView:false };
     await build();
@@ -51599,6 +51611,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.drawings=loadDrawings(S.ticket,tf); S.pending=null; S.sel=null; S.history=[clone(S.drawings)]; S.hpos=0; S.userView=false;
     el('strp-scrub').max=String(S.bars.length-1);
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
+    buildSpread();   // needs S.bars + S.eBI, so it re-keys on every timeframe change
     render(true); updUR(); updDel();
     if(wasPlaying) play();
   }
@@ -51631,7 +51644,36 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // entry = the trade's action (long=buy ↑ below, short=sell ↓ above); exit = the opposite.
     if(S.cursor-1>=S.eBI&&S.bars[S.eBI]) m.push({time:S.bars[S.eBI].time,position:lng?'belowBar':'aboveBar',color:'#f472b6',shape:lng?'arrowUp':'arrowDown'});
     if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'}); return m; }
+  /* Spread readings are keyed by the EA's own M1 bar times. Those come off the same clock as
+     open_time/close_time, which this replay already matches against candles successfully, so
+     normally they line up exactly. But a broker whose server clock is offset from the candle
+     feed would miss on EVERY key at once and the readout would sit permanently on "—" with
+     nothing to explain it. So align once, off the entry bar, and only when the gap is big
+     enough to be a timezone rather than a bar-boundary quirk (>= 30 min); a genuine 1-bar
+     difference must NOT be "corrected" or every reading lands a minute early. */
+  function buildSpread(){
+    S.spread=null;
+    if(!S||!S.spreadRaw||!S.spreadRaw.length||!S.bars.length) return;
+    var off=0, eb=S.bars[S.eBI]&&S.bars[S.eBI].time;
+    if(eb){ var d=S.spreadRaw[0][0]-eb; if(Math.abs(d)>=1800) off=d; }
+    var m={}; for(var i=0;i<S.spreadRaw.length;i++){ m[S.spreadRaw[i][0]-off]=S.spreadRaw[i][1]; }
+    S.spread=m;
+  }
+  /* The reading for the minute a bar OPENS on. Exact on the 1m timeframe (where a replay is
+     normally watched); on 5m and above it is the first minute of the bar rather than an average,
+     because "Spread 0.3" reads as a moment, not a mean, and averaging would quietly invent a
+     number nobody's terminal ever showed. */
+  function liveSpread(idx){
+    var e=el('strp-spread'); if(!e) return;
+    if(!S||!S.spread){ e.style.display='none'; return; }
+    e.style.display='';
+    var b=S.bars[Math.max(0,Math.min(idx,S.bars.length-1))];
+    var v=b?S.spread[b.time]:null;
+    // textContent, not innerHTML: this string is built from broker data and needs no markup.
+    e.textContent=L('Spread','Spread')+' '+(v==null?'—':(Math.round(v*10)/10).toFixed(1)+'p');
+  }
   function liveR(){ var e=el('strp-live'), idx=Math.min(S.cursor-1,S.bars.length-1);
+    liveSpread(idx);
     // SL/TP live in their own span so portrait can push them onto a second line (see .strp-sltp CSS).
     var slp=S.slPips?'SL '+S.slPips.toFixed(1)+'p':'', tpp=S.tpPips?'TP '+S.tpPips.toFixed(1)+'p':'';
     var sltpInner=[slp,tpp].filter(Boolean).join(' · ');
