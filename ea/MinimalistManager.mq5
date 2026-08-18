@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.3"
+#property version   "5.4"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1890,6 +1890,14 @@ bool SyncCollectAndPush(ulong posId)
    string slMoves=MoveJson(sk,"sh",dg), tpMoves=MoveJson(sk,"th",dg);
    if(StringLen(slMoves)>0) json+=",\"sl_moves\":"+slMoves;
    if(StringLen(tpMoves)>0) json+=",\"tp_moves\":"+tpMoves;
+   // The broker's spread, minute by minute over the life of the trade. Shipped AT CLOSE (v5.4):
+   // every M1 bar it needs already exists the moment the position closes, yet it used to travel
+   // only with the post-mortem, which deliberately waits for 23:59:59 server time on any trade
+   // that did not hit TP or SL - so the replay's spread readout stayed blank for up to fifteen
+   // hours for no reason. The post-mortem still sends it too; merge-on-write means the second
+   // copy simply overwrites the first with identical data.
+   string spreadNow=PM_SpreadSeries(sym,openT,closeT);
+   if(StringLen(spreadNow)>0) json+=",\"spread\":"+spreadNow;
    json+="}";
 
    if(SyncPost(json))
@@ -3018,7 +3026,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.3 loaded (SL/TP move timestamps now in UTC - v5.2 stamped them in BROKER time, so on a UTC+3 server a stop moved at 08:00 was recorded as 11:00 and the Trade Replay never showed the move. v5.2 kept: the broker's REAL spread minute by minute for the life of the trade, and every SL/TP MOVE captured live. v5.1 kept: BE-stop CLEARANCE in pips and R, and a ladder of BE OFFSETS replayed spread-aware) ===");
+   Print("=== MinimalistManager v5.4 loaded (spread series now ships AT CLOSE, so the Trade Replay spread readout appears the moment a trade syncs instead of waiting for the day-end post-mortem. v5.3 kept: SL/TP move timestamps in UTC. v5.2 kept: the broker's REAL spread minute by minute, and every SL/TP MOVE captured live. v5.1 kept: BE-stop CLEARANCE and the BE OFFSET ladder) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }

@@ -232,6 +232,13 @@ Deno.serve(async (req) => {
     // is why the app must read null as "not observed" rather than "never moved".
     sl_moves:    pairArray(body.sl_moves) ? toPairs(body.sl_moves) : null,
     tp_moves:    pairArray(body.tp_moves) ? toPairs(body.tp_moves) : null,
+    // The broker spread series now ALSO rides the close payload (EA v5.4). Every M1 bar it
+    // needs exists the moment the position closes; it used to travel only with the post-mortem,
+    // which waits for day-end on any trade that did not hit TP or SL, leaving the replay's
+    // spread readout blank for hours. The post-mortem still sends it and its merge overwrites
+    // this with identical data. Read here too, or the field is silently dropped - the same way
+    // the four BE columns were for a whole EA version.
+    spread_series: pairArray(body.spread) ? toPairs(body.spread) : null,
   };
 
   // 4. Insert, ignoring duplicates on (token, ticket).

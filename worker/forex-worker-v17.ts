@@ -502,7 +502,11 @@ async function fetchActualsViaClaude(targets: FFEvent[], debug: any, round: numb
     `You are filling in the ACTUAL released values on an economic calendar for the week ${from} to ${to}.\n\n` +
     `Here is the list of events (CURRENCY | EVENT | DATE):\n${list}\n\n` +
     `Use web search to find each event's ACTUAL (released) value. Reputable sources: MarketWatch, ` +
-    `Investing.com, Trading Economics, FXStreet, Forex Factory.\n\n` +
+    `Investing.com, Trading Economics, FXStreet, Forex Factory.\n` +
+    `If those have not yet written up a release, go to the PRIMARY source - the statistics office ` +
+    `or central bank that publishes it (e.g. ONS for UK data, ABS for Australia, Stats NZ, BLS/BEA ` +
+    `for the US, Eurostat, Statistics Canada). A figure read directly from the publishing office's ` +
+    `release page counts as confirmed.\n\n` +
     `Be EXHAUSTIVE. The list spans several days. If one search does not surface every event, run ` +
     `additional searches (e.g. one per day, or per release) until you have located the actual for ` +
     `EVERY event in the list that has been released - not only the prominent ones like Non-Farm ` +
@@ -724,9 +728,19 @@ async function refreshActuals(): Promise<boolean> {
       //   (c) Sonnet hasn't itself already given up on it.
       // So freshly-released numbers Haiku just hasn't indexed yet never hit Sonnet;
       // only genuinely stuck prints do, and each is retried a bounded number of times.
-      const SONNET_MIN_RELEASED_AGE_MS = 3 * 60 * 60 * 1000;   // released >= 3h ago
+      //
+      // 2026-08-18, UK Claimant Count: both Sonnet tries fired at 12:01 and 14:01, six and eight
+      // hours after the 06:00Z release, and both returned an honest [] - the web index simply
+      // did not carry the figure yet (a manual search at 19:00 still found only the preview and
+      // the ONS page that published it). By tomorrow it will be everywhere, and Sonnet will have
+      // nothing left to spend. The 3h gate suits US prints, which are written up within the
+      // hour; UK/AU/NZ mid-tier releases can take a day to reach the secondary sources a search
+      // surfaces. So: wait a full day before escalating (Haiku keeps asking cheaply every run in
+      // the meantime and will usually get there on its own), and give Sonnet three goes spread
+      // over that longer window rather than two spent back to back on the coldest afternoon.
+      const SONNET_MIN_RELEASED_AGE_MS = 24 * 60 * 60 * 1000;  // released >= 24h ago
       const SONNET_AFTER_HAIKU_FAILS   = 3;                    // Haiku missed it in >= 3 fetches
-      const SONNET_MAX_TRIES           = 2;                    // then give Sonnet at most 2 attempts
+      const SONNET_MAX_TRIES           = 3;                    // then give Sonnet at most 3 attempts
       const sonnetTargets = wantedReleased.filter((e) => {
         const k = ffKey(e);
         if (byKey.has(k)) return false;
