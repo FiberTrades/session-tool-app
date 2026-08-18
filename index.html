@@ -51360,8 +51360,26 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-seg button:first-child{ border-left:0; } .strp-seg button:hover{ color:var(--text-mid); } .strp-seg button.on{ background:rgba(244,114,182,.16); color:var(--accent); font-weight:600; }
   .strp-seg button svg{ width:14px; height:14px; display:block; }
   .strp-ico{ background:transparent; border:1px solid var(--border-2); color:var(--text-dim); height:30px; width:32px; border-radius:8px; display:inline-flex; align-items:center; justify-content:center; cursor:pointer; }
-  .strp-ico svg{ width:14px; height:14px; } .strp-ico:hover:not(:disabled){ color:var(--text); border-color:var(--text-dim); } .strp-ico:disabled{ opacity:.35; cursor:default; } #strp-del:hover:not(:disabled){ color:var(--bad); border-color:var(--bad); }
-  .strp-tgl{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--text-mid); cursor:pointer; } .strp-tgl input{ accent-color:var(--accent); width:13px; height:13px; }
+  .strp-ico svg{ width:14px; height:14px; } .strp-ico:disabled{ opacity:.35; cursor:default; }
+  /* Hover styling only where hovering actually exists. On a touch screen :hover LATCHES after a
+     tap and does not clear until something else is tapped — which is exactly why the news button
+     stayed lit after its panel was closed, and only dimmed when the X was pressed and took the
+     latched state with it. Nothing was wrong with the panel; the button was stuck in :hover. */
+  @media (hover:hover){
+    .strp-ico:hover:not(:disabled){ color:var(--text); border-color:var(--text-dim); }
+    #strp-del:hover:not(:disabled){ color:var(--bad); border-color:var(--bad); }
+  }
+  /* The real "this panel is open" state, which the latched hover had been standing in for by
+     accident. Class-driven, so it is correct on every device and clears exactly when the panel
+     does — however the panel was closed. */
+  .strp-ico.on{ color:var(--accent); border-color:var(--accent); }
+  /* margin-left:auto so that WHEN the toggle wraps to a second toolbar row — which is what
+     happens in phone landscape, where the bar is wide enough to escape the ≤760px layout but too
+     tight to hold everything on one line — it lands under the news button on the right instead of
+     stranded on the far left. On a wide desktop the .strp-sp spacer has already absorbed the free
+     space, so the auto margin resolves to zero and nothing moves. Overridden back to 0 in the
+     ≤760px block, where the button and toggle are deliberately kept side by side. */
+  .strp-tgl{ display:inline-flex; align-items:center; gap:6px; font-size:11px; color:var(--text-mid); cursor:pointer; margin-left:auto; } .strp-tgl input{ accent-color:var(--accent); width:13px; height:13px; }
   .strp-cw{ position:relative; } #strp-chart{ height:min(58vh,480px); width:100%; } #strp-ov{ position:absolute; top:0; left:0; z-index:3; pointer-events:none; }
   .strp-live{ position:absolute; top:10px; left:12px; z-index:5; font-size:12px; letter-spacing:.06em; background:rgba(19,18,23,.82); border:1px solid var(--border-2); border-radius:8px; padding:6px 10px; pointer-events:none; color:var(--text-mid); max-width:calc(100% - 84px); white-space:normal; line-height:1.45; } .strp-live b{ font-size:inherit; font-weight:600; } .strp-live.win{color:var(--good);} .strp-live.lose{color:var(--bad);}
   /* Spread readout — bottom-right, deliberately mirroring where MT5 puts its own
@@ -52061,13 +52079,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       byDay[day].forEach(function(e){ body.appendChild(newsRow(e)); });
     });
   }
-  function closeNews(){ var p=el('strp-news'); if(p) p.classList.remove('on'); }
+  function closeNews(){ var p=el('strp-news'); if(p) p.classList.remove('on'); _newsBtnState(false); }
+  /* Keep the button's lit state tied to the panel rather than to focus or hover, and drop focus
+     on the way out: a tapped button on mobile keeps :focus afterwards, which is the other half of
+     why it looked stuck. */
+  function _newsBtnState(on){
+    var b=el('strp-newsbtn'); if(!b) return;
+    b.classList.toggle('on', !!on);
+    if(!on){ try{ b.blur(); }catch(_){ } }
+  }
   /* One fetch feeds both the panel and the axis badges: whatever the panel just pulled becomes
      the badge source too, so reopening it is also how a replay picks up actuals the worker filled
      in since the trade was last watched. Token-guarded because the modal can be closed, or another
      trade opened, while this is in flight. */
   async function openNewsPanel(){
-    var p=el('strp-news'); p.classList.add('on');
+    var p=el('strp-news'); p.classList.add('on'); _newsBtnState(true);
     var body=el('strp-newsbody'); body.innerHTML=''; body.appendChild(_nmsg(L('Loading…','Cargando…')));
     el('strp-newsweek').textContent='';
     var tok=(S._ntok=(S._ntok||0)+1), want=S;
@@ -52117,7 +52143,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   el('strp-pos').onchange=function(ev){ if(!S)return; S.showPos=ev.target.checked; draw(); };
   el('strp-newsbtn').onclick=function(){ if(!S) return;
     var p=el('strp-news');
-    if(p.classList.contains('on')){ p.classList.remove('on'); return; }
+    // closeNews(), not a bare class removal — the button's lit state has to come off with it.
+    if(p.classList.contains('on')){ closeNews(); return; }
     openNewsPanel(); };
   el('strp-newsx').onclick=closeNews;
   el('strp-scrub').oninput=function(){ if(!S)return; pause(); S.cursor=(+el('strp-scrub').value)+1; render(true); };
