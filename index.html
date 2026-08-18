@@ -51411,20 +51411,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-newsbody{ flex:1 1 auto; overflow-y:auto; overflow-x:auto; padding-bottom:10px; }
   .strp-nmsg{ padding:18px 14px; font-size:12px; color:var(--text-dim); line-height:1.5; }
   .strp-nday{ padding:9px 14px 4px; font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); position:sticky; top:0; background:rgba(19,18,23,.975); z-index:1; }
-  .strp-nrow{ display:grid; grid-template-columns:52px 34px 1fr 62px 62px 62px; gap:8px; align-items:baseline; padding:6px 14px; font-size:12px; border-top:1px solid rgba(255,255,255,.045); min-width:520px; }
-  .strp-nrow.hol{ grid-template-columns:52px 34px 1fr; color:var(--text-dim); }
+  /* Number columns get real room on desktop: 62px each with an 8px gap read as one crammed
+     block at 1080px wide, when the title column had 600px it was not using. 92px columns with a
+     18px gap keep the three numbers clearly separate and still leave the title ~450px. The
+     ≤760px block below drops back to the compact widths where the panel scrolls sideways anyway. */
+  .strp-nrow{ display:grid; grid-template-columns:52px 40px 1fr 92px 92px 92px; gap:18px; align-items:baseline; padding:7px 18px; font-size:12px; border-top:1px solid rgba(255,255,255,.045); min-width:520px; }
+  .strp-nrow.hol{ grid-template-columns:52px 40px 1fr; color:var(--text-dim); }
   .strp-nhdr{ font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-dim); border-top:0; padding-top:2px; padding-bottom:2px; }
   .strp-ntime{ color:var(--text-dim); font-size:11px; white-space:nowrap; }
   .strp-nccy{ font-weight:600; letter-spacing:.05em; }
   .strp-ntitle{ color:var(--text-mid); display:flex; align-items:baseline; gap:7px; }
   .strp-nimp{ flex:0 0 auto; width:7px; height:7px; border-radius:50%; display:inline-block; transform:translateY(-1px); }
   .strp-nimp.high{ background:#E56767; } .strp-nimp.med{ background:#f4c05a; } .strp-nimp.hol{ background:#6b6878; }
-  .strp-nnum{ text-align:right; font-size:11px; color:var(--text-dim); white-space:nowrap; }
+  .strp-nnum{ text-align:right; font-size:12px; color:var(--text-dim); white-space:nowrap; font-variant-numeric:tabular-nums; }
   .strp-nnum.act{ color:var(--text); font-weight:600; }
   .strp-nnum.act.beat{ color:var(--good); } .strp-nnum.act.miss{ color:var(--bad); }
   .strp-nrow.now{ background:rgba(244,114,182,.09); }
   .strp-nrow.hl{ box-shadow:inset 0 0 0 1px var(--accent); }
-  @media (max-width:760px){ .strp-newsbody{ -webkit-overflow-scrolling:touch; } .strp-nrow{ font-size:11px; } }
+  @media (max-width:760px){ .strp-newsbody{ -webkit-overflow-scrolling:touch; } .strp-nrow{ font-size:11px; grid-template-columns:52px 34px 1fr 64px 64px 64px; gap:8px; padding:6px 14px; } .strp-nrow.hol{ grid-template-columns:52px 34px 1fr; } .strp-nnum{ font-size:11px; } }
   .strp-brk{ display:none; }
   @media (max-width:760px){
     #strp-fs{ display:none; }
@@ -51752,6 +51756,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // Axis badges: deliberately NOT awaited. The calendar is a garnish on the chart, so a slow or
     // failed query must never delay (or block) the replay itself; the badges simply appear a beat
     // later, and the continuous overlay loop paints them without needing a nudge.
+    // Whichever of the two arrives second — the news rows, or the first bars via setTf — has to
+    // be the one that keys the marks. This fetch usually wins the race (21 rows against a paged
+    // candle load), and buildNewsMarks against zero bars is a no-op that returns null. So it is
+    // called here AND from setTf: whichever runs with both inputs present produces the marks,
+    // and the other is a harmless early return. Not awaited: the calendar must never delay the
+    // chart.
     (function(want){ loadNews(entryTs).then(function(pack){
       if(!S||S!==want||!pack) return; S.newsRows=pack.rows; buildNewsMarks();
     }).catch(function(){}); })(S);
@@ -51869,6 +51879,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
     if(any) S.newsMarks=m;
   }
+  /* Console diagnostic: window.__stNewsDiag() answers "why is there no dot" in one call, instead
+     of guessing between a stale page, an anon query, no rows in the window, or bars not loaded. */
+  try{ window.__stNewsDiag=function(){
+    if(!S) return {open:false};
+    var marks=S.newsMarks?Object.keys(S.newsMarks).length:0;
+    return { rowsFetched:(S.newsRows||[]).length, bars:S.bars.length, tf:S.tf, cursor:S.cursor,
+      barWindow:S.bars.length?[new Date(S.bars[0].time*1000).toISOString(),new Date(S.bars[S.bars.length-1].time*1000).toISOString()]:null,
+      marksBuilt:marks, markBars:S.newsMarks?Object.keys(S.newsMarks).map(function(k){ return {bar:+k,time:new Date(S.bars[+k].time*1000).toISOString(),n:S.newsMarks[k].length,drawnYet:(+k)<=S.cursor-1}; }):[],
+      authedClient:!!(typeof sbc==='function'&&sbc()), build:'b340d89+' };
+  }; }catch(_){ }
   function _markRank(list){ // strongest impact in the bar decides the colour
     var r=0; list.forEach(function(e){ var c=_impCls(e.impact); r=Math.max(r,c==='high'?2:(c==='med'?1:0)); }); return r; }
   var NEWS_R=5.5;
