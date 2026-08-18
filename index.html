@@ -22247,9 +22247,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if (_allTradesTo)   { const _e = new Date(_allTradesTo + 'T23:59:59'); trades = trades.filter(tr => new Date(tr.date) <= _e); }
 
     const resRank = { Win: 0, Lose: 1, BE: 2 };
+    // tr.date is a DAY, so two trades taken the same day compare equal and Array.sort leaves them
+    // in whatever order they were logged — which put the 08:44 trade above the 08:52 one under
+    // "Newest". Break the tie on the entry clock: openTime when a synced trade carries a real
+    // timestamp, else the "HH:MM" entryTime string the table already prints. A trade with no
+    // time at all sorts as 00:00 — the start of its day, which is at least never wrong by more
+    // than that day. Sign follows the date sort so Oldest and Newest stay mirror images.
+    const _entryMs = (tr) => {
+      const d = new Date(tr.date || 0).getTime();
+      if (isNaN(d)) return 0;
+      const ot = tr.openTime ? new Date(tr.openTime).getTime() : NaN;
+      if (!isNaN(ot)) return ot;
+      const m = /^(\d{1,2}):(\d{2})/.exec(String(tr.entryTime || '').trim());
+      return d + (m ? ((+m[1]) * 60 + (+m[2])) * 60000 : 0);
+    };
     trades.sort((a, b) => {
       switch (_allTradesSort) {
-        case 'date_asc': return new Date(a.date || 0) - new Date(b.date || 0);
+        case 'date_asc': return (new Date(a.date || 0) - new Date(b.date || 0)) || (_entryMs(a) - _entryMs(b));
         case 'net':      return (tradeNetPL(b) * tradeCopies(b)) - (tradeNetPL(a) * tradeCopies(a));
         case 'r':        return tradeRforMath(b) - tradeRforMath(a);
         case 'hold': {
@@ -22260,7 +22274,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return hb - ha;
         }
         case 'date_desc':
-        default: return new Date(b.date || 0) - new Date(a.date || 0);
+        default: return (new Date(b.date || 0) - new Date(a.date || 0)) || (_entryMs(b) - _entryMs(a));
       }
     });
 
@@ -52022,6 +52036,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _utcDate(iso){ var d=new Date(iso); return isNaN(d.getTime())?null:d.toISOString().slice(0,10); }
   async function loadNews(ts){
     var b=_weekBounds(ts);
+    // sbc(), like every other query in this module — NOT the bare `sb`. Inside this scope `sb`
+    // resolves to a client further up the file that never received the user's session, so the
+    // request went out as anon and RLS (authenticated-only) correctly returned an empty set: no
+    // error, just zero rows, which is exactly why "no events" was all the panel ever showed.
+    var sb=sbc(); if(!sb) return null;
     try{
       var r=await sb.from('calendar_events')
         .select('event_date,at,timed,currency,title,impact,forecast,previous,actual')
