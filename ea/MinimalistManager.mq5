@@ -2920,7 +2920,12 @@ void MoveLog(string sk,string tag,double px)
    string ck=sk+tag+"n";
    int n=GlobalVariableCheck(ck)?(int)GlobalVariableGet(ck):0;
    if(n>=MM_MOVE_MAX) return;
-   GlobalVariableSet(sk+tag+(string)n+"t",(double)(long)TimeCurrent());
+   // UTC, like every other timestamp this EA ships. TimeCurrent() is BROKER time, and on a
+   // UTC+3 server it stamped a move made at 08:00 as 11:00 — hours after the trade had closed,
+   // so the replay (which looks up "the level in force at bar time t") never found a move that
+   // had happened yet and the SL pill/line stayed on the original all the way through.
+   // BrokerOff() is the same trusted offset open_time/close_time already go through.
+   GlobalVariableSet(sk+tag+(string)n+"t",(double)((long)TimeCurrent()-BrokerOff()));
    GlobalVariableSet(sk+tag+(string)n+"p",px);
    GlobalVariableSet(ck,(double)(n+1));
   }
