@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.2"
+#property version   "5.3"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3018,7 +3018,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.2 loaded (for Trade Replay: the broker's REAL spread minute by minute for the life of the trade, and every SL/TP MOVE with its timestamp - MT5 discards stop modifications at close, so they are captured live or not at all. v5.1 kept: BE-stop CLEARANCE in pips and R, and a ladder of BE OFFSETS replayed spread-aware) ===");
+   Print("=== MinimalistManager v5.3 loaded (SL/TP move timestamps now in UTC - v5.2 stamped them in BROKER time, so on a UTC+3 server a stop moved at 08:00 was recorded as 11:00 and the Trade Replay never showed the move. v5.2 kept: the broker's REAL spread minute by minute for the life of the trade, and every SL/TP MOVE captured live. v5.1 kept: BE-stop CLEARANCE in pips and R, and a ladder of BE OFFSETS replayed spread-aware) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }
