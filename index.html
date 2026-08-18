@@ -51418,7 +51418,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-nrow{ display:grid; grid-template-columns:52px 40px 1fr 92px 92px 92px; gap:18px; align-items:baseline; padding:7px 18px; font-size:12px; border-top:1px solid rgba(255,255,255,.045); min-width:520px; }
   .strp-nrow.hol{ grid-template-columns:52px 40px 1fr; color:var(--text-dim); }
   .strp-nhdr{ font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--text-dim); border-top:0; padding-top:2px; padding-bottom:2px; }
-  .strp-ntime{ color:var(--text-dim); font-size:11px; white-space:nowrap; }
+  .strp-ntime{ color:var(--text-dim); font-size:11px; white-space:nowrap; line-height:1.15; }
+  .strp-ntime-loc{ display:block; font-size:9px; letter-spacing:.04em; opacity:.6; }
+  .strp-ntime-loc::before{ content:'≈ '; }
   .strp-nccy{ font-weight:600; letter-spacing:.05em; }
   .strp-ntitle{ color:var(--text-mid); display:flex; align-items:baseline; gap:7px; }
   .strp-nimp{ flex:0 0 auto; width:7px; height:7px; border-radius:50%; display:inline-block; transform:translateY(-1px); }
@@ -51887,11 +51889,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return { rowsFetched:(S.newsRows||[]).length, bars:S.bars.length, tf:S.tf, cursor:S.cursor,
       barWindow:S.bars.length?[new Date(S.bars[0].time*1000).toISOString(),new Date(S.bars[S.bars.length-1].time*1000).toISOString()]:null,
       marksBuilt:marks, markBars:S.newsMarks?Object.keys(S.newsMarks).map(function(k){ return {bar:+k,time:new Date(S.bars[+k].time*1000).toISOString(),n:S.newsMarks[k].length,drawnYet:(+k)<=S.cursor-1}; }):[],
-      authedClient:!!(typeof sbc==='function'&&sbc()), build:'b340d89+' };
+      authedClient:!!(typeof sbc==='function'&&sbc()), build:'b340d89+',
+      // Where the badges were LAST PAINTED, in overlay pixels, plus the overlay/axis geometry —
+      // so "drawn but not visible" can be told apart from "not drawn" without a screenshot.
+      painted:(S._newsHit||[]).map(function(p){ return {x:p.x,y:p.y,bar:p.i}; }),
+      overlay:(function(){ try{ var o=el('strp-ov'), c=el('strp-chart'); return { cssW:o.style.width, cssH:o.style.height, chartClientW:c.clientWidth, chartClientH:c.clientHeight, axisH:chart.timeScale().height(), axisCentreY:_axisY(c.clientHeight), dpr:window.devicePixelRatio, cursorX:xOf(Math.min(S.cursor-1,S.bars.length-1)), visibleRange:chart.timeScale().getVisibleLogicalRange() }; }catch(e){ return String(e); } })() };
   }; }catch(_){ }
   function _markRank(list){ // strongest impact in the bar decides the colour
     var r=0; list.forEach(function(e){ var c=_impCls(e.impact); r=Math.max(r,c==='high'?2:(c==='med'?1:0)); }); return r; }
-  var NEWS_R=5.5;
+  var NEWS_R=6.5;
   /* Centre of the time-axis band — the same line the TradingView logo sits on, which is where
      these were asked to live rather than on a row of their own. */
   function _axisY(h){ var ah=28; try{ var v=chart.timeScale().height(); if(v>10&&v<90) ah=v; }catch(_){} return h-ah/2; }
@@ -51905,9 +51911,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       x=Math.round(x); if(x<NEWS_R+2||x>w-NEWS_R-2) continue;
       var list=S.newsMarks[k], col=COL[_markRank(list)];
       ctx.save();
+      // A hairline stem from the plot floor down to the badge: the badge itself sits IN the axis
+      // band, where the eye is reading labels, not scanning for shapes. The stem gives it a
+      // presence up in the plot without covering a candle, and it also survives being drawn on
+      // top of an axis label, where a bare 6px dot in a dim colour vanishes into the text.
+      ctx.strokeStyle=col; ctx.globalAlpha=0.55; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.moveTo(x+0.5,cy-NEWS_R-16); ctx.lineTo(x+0.5,cy-NEWS_R); ctx.stroke();
+      ctx.globalAlpha=1;
       ctx.beginPath(); ctx.arc(x,cy,NEWS_R,0,Math.PI*2);
       ctx.fillStyle=col; ctx.fill();
-      ctx.lineWidth=1.2; ctx.strokeStyle='#131217'; ctx.stroke();
+      ctx.lineWidth=1.5; ctx.strokeStyle='#fff'; ctx.stroke();
       if(list.length>1){ ctx.fillStyle='#131217'; ctx.font="bold 8px 'DM Mono',monospace";
         ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText(String(Math.min(9,list.length)),x,cy+0.5); }
       ctx.restore();
@@ -52073,6 +52086,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function _impCls(imp){ var s=String(imp||'').toLowerCase(); return /holiday/.test(s)?'hol':(/high/.test(s)?'high':'med'); }
   function _utcHM(iso){ var d=new Date(iso); return isNaN(d.getTime())?'—':(String(d.getUTCHours()).padStart(2,'0')+':'+String(d.getUTCMinutes()).padStart(2,'0')); }
+  /* The whole replay — clock, header, time axis — runs in UTC because the candles are keyed in
+     UTC. The economic calendar tab runs in the user's LOCAL time. So the same 06:00Z release
+     reads "07:00" on the calendar and sits at "06:00" on the replay axis, and a reader flicking
+     between the two looks for the dot an hour to the right of where it is. The panel therefore
+     shows both: the UTC time that matches the axis, and the local time that matches the calendar,
+     when they differ. */
+  function _localHM(iso){ var d=new Date(iso); if(isNaN(d.getTime())) return '—';
+    try{ return d.toLocaleTimeString((typeof tLocale==='function'?tLocale():'en-GB'),{hour:'2-digit',minute:'2-digit',hour12:false}); }
+    catch(_){ return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); } }
+  function _tzOffsetMin(){ return -new Date().getTimezoneOffset(); }
   /* Actual vs forecast arrive as free text ("3.4%", "-0.2%", "52.1K"). Tint only when BOTH sides
      parse to a real number, so a beat/miss colour never appears on a string that was not actually
      understood — a wrong colour here reads as a fact about the release. */
@@ -52093,7 +52116,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var ms=Date.parse(e.at);
     if(S&&!isNaN(ms)){ var s=ms/1000; if(s>=S.entryTs&&s<=S.exitTs) row.className+=' now'; }
     var t=document.createElement('div'); t.className='strp-ntime';
-    t.textContent=e.timed?_utcHM(e.at):L('All day','Todo el día'); row.appendChild(t);
+    if(e.timed){
+      var u=_utcHM(e.at), lc=_localHM(e.at);
+      t.textContent=u;                                   // matches the replay's axis and clock
+      if(_tzOffsetMin()!==0 && lc!==u){                  // and the calendar tab's local reading
+        var sub=document.createElement('span'); sub.className='strp-ntime-loc'; sub.textContent=lc; t.appendChild(sub); }
+    } else { t.textContent=L('All day','Todo el día'); }
+    row.appendChild(t);
     var c=document.createElement('div'); c.className='strp-nccy'; c.textContent=e.currency||''; row.appendChild(c);
     var ti=document.createElement('div'); ti.className='strp-ntitle';
     var dot=document.createElement('span'); dot.className='strp-nimp '+_impCls(e.impact); dot.title=e.impact||''; ti.appendChild(dot);
@@ -52146,7 +52175,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var pack=await loadNews(S.entryTs);
     if(!S||S!==want||S._ntok!==tok||!p.classList.contains('on')) return false;
     if(pack){ S.newsRows=pack.rows; buildNewsMarks(); }
-    el('strp-newsweek').textContent=pack?(pack.from+' → '+pack.to+' · UTC'):'';
+    // Say which clock the times are on, and name the local one when it differs — this is the
+    // panel that sits between a UTC chart and a local-time calendar.
+    el('strp-newsweek').textContent=pack?(pack.from+' → '+pack.to+' · '+L('times in UTC','horas en UTC')+(_tzOffsetMin()!==0?(' ('+L('≈ local below','≈ local debajo')+')'):'')):'';
     renderNews(pack); return true;
   }
   /* Clicking a badge opens the week and jumps to that release rather than leaving the reader to
