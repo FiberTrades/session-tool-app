@@ -6289,6 +6289,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'incompletelog.body': 'Some fields in your trade log are still empty. Fill them in before you continue — or continue anyway.',
       'incompletelog.continue': 'Continue anyway',
       'incompletelog.back': 'Go back & fill in',
+      'bias.incomplete_title': 'Finish your bias',
+      'bias.incomplete_warn': "You haven't filled in: {FIELDS}.
+
+A complete bias is Mode, Structure, Location and Bias — all four are what count towards your weekly adherence.
+
+Post it anyway?",
       'savedbias.mode': 'Mode',
       'savedbias.structure': 'Structure',
       'savedbias.location': 'Location',
@@ -7793,6 +7799,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'incompletelog.body': 'Algunos campos de tu registro de operaciones siguen vacíos. Rellénalos antes de continuar — o continúa de todos modos.',
       'incompletelog.continue': 'Continuar de todos modos',
       'incompletelog.back': 'Volver y rellenar',
+      'bias.incomplete_title': 'Completa tu sesgo',
+      'bias.incomplete_warn': "No has rellenado: {FIELDS}.
+
+Un sesgo completo son Modo, Estructura, Ubicación y Sesgo — los cuatro son los que cuentan para tu cumplimiento semanal.
+
+¿Publicarlo igualmente?",
       'savedbias.mode': 'Modo',
       'savedbias.structure': 'Estructura',
       'savedbias.location': 'Ubicación',
@@ -13561,21 +13573,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     setTimeout(() => { _els.forEach(el => { if (el.classList.contains('reveal-armed')) { el.classList.remove('reveal-armed'); el.classList.add('reveal-in'); } }); }, 1600);
   }
   requestAnimationFrame(() => { try { initScrollReveal(); } catch (e) {} });
-  /* force=true is used by the POST path: publishing a bias to the community is an unambiguous
-     "I showed up", so it must always leave a history entry, complete or not.
-
-     Structure is no longer required. It never was, anywhere else: buildBiasMessage prints each
-     field only if set, so a bias with no Structure posts perfectly happily. Requiring it here
-     meant Troy could fill Mode, Location and Bias, write a rule, attach a chart and post the lot
-     at 07:58 on Tue 18 Aug - and his journal recorded NOTHING, because one optional field was
-     blank. His adherence then read "Missed: Tue" for a day he had demonstrably worked. The bar
-     for "this is a real bias" is a direction and where you are - mode, location, direction. */
+  /* All four - Mode, Structure, Location, Bias - make a complete read, and that is the bar for
+     the day to count. force=true is the POST path: publishing to the community is an unambiguous
+     "I showed up", so it records whatever was filled rather than losing the day silently. It
+     cannot be reached with fields missing without the poster first being warned and choosing to
+     continue (see biasMissingFields / the post handler), so an incomplete record is now always a
+     deliberate act, never the silent gap that cost Troy his Tuesday on 18 Aug. */
+  /* Which of the four required reads are still blank, in the order they appear on the page, as
+     translated labels. HTF is what counts: the LTF twin is an extra, and a bias with only the LTF
+     side filled is a half-finished read, not a complete one. */
+  function biasMissingFields() {
+    const b = data.bias, out = [];
+    if (!b.mode)      out.push(t('savedbias.mode'));
+    if (!b.structure) out.push(t('savedbias.structure'));
+    if (!b.location)  out.push(t('savedbias.location'));
+    if (!b.direction) out.push(t('savedbias.bias'));
+    return out;
+  }
   function recordBiasIfComplete(force) {
     const b = data.bias;
-    const _core = b.mode && b.location && b.direction;
-    const _any  = b.mode || b.structure || b.structureLtf || b.location || b.locationLtf || b.direction || b.directionLtf || b.notes;
-    if (!force && !_core) return;   // auto-record: wait until it is a real bias
-    if (force && !_any)   return;   // on post: record ANYTHING that was filled; skip only a blank form
+    const _complete = b.mode && b.structure && b.location && b.direction;
+    const _any = b.mode || b.structure || b.structureLtf || b.location || b.locationLtf || b.direction || b.directionLtf || b.notes;
+    if (!force && !_complete) return;   // auto-record: only a complete read counts
+    if (force && !_any)       return;   // on post: record what exists; skip only a blank form
     if (!Array.isArray(data.biasHistory)) data.biasHistory = [];
     const dateKey = (b.sessionDate || todayDateStr() || new Date().toISOString().slice(0, 10));
     const _hSym = b.symbol || ''; const _hSess = b.sessionName || '';
@@ -13956,7 +13976,47 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Discord channel constants removed */
   function jumpToDiscord(which) { /* Discord detached — no-op */ }
 
+  /* WARN BEFORE POSTING an incomplete read. A blank field used to cost the poster their whole
+     day silently: the post went out, the journal recorded nothing, and adherence counted it as a
+     no-show (Troy, Tue 18 Aug). It is now said out loud, naming exactly which reads are missing,
+     and the poster chooses. Reuses the app's own "Finish your trade log" modal rather than a
+     browser confirm(), so it looks like the rest of the app and its buttons are translated. */
   async function doBiasCopyAndProceed(btn) {
+    try {
+      const _miss = biasMissingFields();
+      if (_miss.length) { const _go = await _warnIncompleteBias(_miss); if (!_go) return; }
+    } catch (e) {}
+    return doBiasCopyAndProceed._go(btn);
+  }
+  /* Self-contained: borrows the "Finish your trade log" modal's markup for its look, but wires
+     its OWN buttons via cloneNode (which strips whatever listeners are already on them) and puts
+     the original wording back on the way out. The trade-log flow that owns this modal is left
+     exactly as it was, and this path cannot be left showing bias copy or stuck open. */
+  function _warnIncompleteBias(miss) {
+    return new Promise((resolve) => {
+      const bg = document.getElementById('incomplete-log-modal-bg');
+      if (!bg) { resolve(false); return; }
+      const body  = bg.querySelector('[data-i18n="incompletelog.body"]');
+      const title = bg.querySelector('.modal-title');
+      const oldBody = body ? body.textContent : null, oldTitle = title ? title.textContent : null;
+      if (title) title.textContent = t('bias.incomplete_title');
+      if (body)  body.textContent  = t('bias.incomplete_warn').replace('{FIELDS}', miss.join(', '));
+      const swap = (id) => { const b = document.getElementById(id); if (!b) return null;
+                             const c = b.cloneNode(true); b.parentNode.replaceChild(c, b); return c; };
+      const contBtn = swap('incomplete-log-continue');
+      const backBtn = swap('incomplete-log-back');
+      const done = (go) => {
+        bg.classList.remove('show');
+        try { if (body && oldBody != null) body.textContent = oldBody;
+              if (title && oldTitle != null) title.textContent = oldTitle; } catch (e) {}
+        resolve(!!go);
+      };
+      if (contBtn) contBtn.addEventListener('click', () => done(true),  { once: true });
+      if (backBtn) backBtn.addEventListener('click', () => done(false), { once: true });
+      bg.classList.add('show');
+    });
+  }
+  doBiasCopyAndProceed._go = async function (btn) {
     const msg = await withTranslatingButton(btn, () => buildBiasMessageMaybeTranslated());
     // Posted in both languages: the boxed summary is built from options the app already
     // translates, so the reader gets "En rango" rather than a translator's "Alcance".
@@ -13989,7 +14049,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // button in Settings → Session. Posting a bias outside your hours just posts the bias.
     const reviewTab = document.querySelector('.tab[data-page="review"]');
     if (reviewTab) reviewTab.click();
-  }
+  };
   document.getElementById('bias-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     // Observation sessions are watch-only — there are no HTF/LTF charts to post, so skip the
