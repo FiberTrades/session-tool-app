@@ -409,7 +409,7 @@ void ShowExecutionLines()
    double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double mid=(ask+bid)/2.0;
    if(g_orderKind!=OK_MARKET) EnsureHLine(LN_ENTRY,mid,COL_LINE_ENTRY,STYLE_SOLID,true);
-   else ObjectDelete(0,LN_ENTRY); ObjectDelete(0,TX_ENTRY);
+   else { ObjectDelete(0,LN_ENTRY); ObjectDelete(0,TX_ENTRY); }
    // SL is NOT selectable: it follows (and is clamped to) the mouse
    g_slSetPips=g_minSL; g_slSetSide=-1;   // default: min distance, below price (buy)
    EnsureHLine(LN_SL,mid-g_minSL*g_pip,COL_LINE_SL,STYLE_SOLID,false);
