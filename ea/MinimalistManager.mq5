@@ -3365,7 +3365,12 @@ void OnTick()
    datetime curBar=iTime(_Symbol,PERIOD_M1,0);
    if(curBar!=s_pmBar){ s_pmBar=curBar; PM_Sweep(); CE_Sweep(); }
    UpdateBrokerOffset();   // a tick just arrived, so TimeCurrent() is live right now: learn the offset
-   if(!g_active){ if(g_pausedByLimit){ MonitorBE(); UpdateManageLine(); } ChartRedraw(); return; }
+   // A stale execution preview must never survive into the inactive state. Turning the EA off
+   // deletes these lines - but an EA RELOAD (timeframe/symbol switch, terminal restart) leaves
+   // the old chart objects behind, and with g_active false this early-return meant nothing ever
+   // moved or removed them again: an "SL 4.0 pips" line frozen at yesterday's price, drifting
+   // 2-6 pips from the market while its label kept claiming the setting (seen 2026-08-20).
+   if(!g_active){ if(ObjectFind(0,LN_SL)>=0 || ObjectFind(0,LN_ENTRY)>=0) HideExecutionLines(); if(g_pausedByLimit){ MonitorBE(); UpdateManageLine(); } ChartRedraw(); return; }
    MonitorBE();
    if(g_execMode) RedrawTargets();   // keep market entry / targets fresh
    UpdateManageLine();               // draggable SL / entry / BE for any live position
