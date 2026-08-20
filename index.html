@@ -524,10 +524,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      off-screen with it (2026-08-20 - DELETE hanging off the right edge). Wrapping lets the badge
      and date drop to a second line when the name is long, and lets the grid column shrink again. */
   .settings-account-name { min-width: 0; white-space: nowrap; flex-wrap: wrap; row-gap: 4px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 13px; color: var(--text); letter-spacing: 0.02em; display: flex; align-items: center; gap: 8px; }
-  /* The name itself truncates rather than widening the card - the chips beside it (badge, date)
-     stay whole, since a half-shown date is worse than a shortened name. */
+  /* The name itself truncates rather than widening the card. */
   .san-txt { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
-  .settings-account-opened { font-size: 10px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  /* Eyebrow line above the name - its own row, so it can never squeeze the name + badge onto a
+     second line the way an inline chip did. */
+  .settings-account-opened { font-size: 9px; color: var(--text-dim); letter-spacing: 0.16em; text-transform: uppercase; white-space: nowrap; margin-bottom: 5px; }
+  /* STANDARDISED CARD. Every box was laying out differently because both inner rows wrapped
+     wherever the (variable-width) button block left room: one card broke STARTING/CURRENT across
+     two lines, another kept them together, and ARCHIVE vs the wider UNARCHIVE wrapped the buttons
+     differently again. Balances now never break mid-pair, and the action column is a fixed width
+     so the buttons stack identically in every card whatever their labels say. */
+  .settings-account-meta-balances { flex-wrap: nowrap; white-space: nowrap; }
+  .settings-account-meta-pair { white-space: nowrap; }
   /* One line always. "Active now" fits in English; the Spanish "Activa ahora" is four characters
      longer and broke across two lines inside its own border. nowrap alone is not enough here —
      the badge is a flex item, so it would be squeezed to fit and clipped instead of wrapped;
@@ -563,7 +571,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     transition: color 150ms, border-color 150ms; }
   .settings-account-start-edit:hover,
   .settings-account-base-edit:hover { color: var(--text); border-bottom-color: var(--accent, #f472b6); }
-  .settings-account-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+  /* Fixed width, so the wrap point is identical in every card. Left to size itself, the block
+     was as wide as its widest label - ARCHIVE in one card, the longer UNARCHIVE in the next - and
+     each card broke its buttons in a different place. 300px fits the kind pill plus RENAME on
+     one line and drops the archive/delete pair onto the second, in all three states. */
+  .settings-account-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; width: 300px; max-width: 100%; }
+  .settings-account-actions .settings-btn { flex: 0 0 auto; }
   .settings-account-actions button { padding: 6px 10px; font-size: 9px; letter-spacing: 0.15em; }
   /* Total summary line at the top of the accounts list. Shows the combined
      active-only starting balance — the baseline that feeds Stats. */
@@ -691,7 +704,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   @media (max-width: 600px) {
     .settings-account-new-row { grid-template-columns: 1fr; }
     .settings-account-row { grid-template-columns: minmax(0, 1fr); }
-    .settings-account-actions { justify-content: flex-start; }
+    .settings-account-actions { justify-content: flex-start; width: 100%; }
     /* Phone: one vertical stack — STARTING, then CURRENT, then the "doesn’t match?" link on its own single line (unwrapped). */
     .settings-account-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
     .settings-account-meta-sep { display: none; }
@@ -39117,12 +39130,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             // Bare date, no "opened" prefix: the word cost ~60px on a line that already carries
             // the name and the status badge, and pushed the whole row onto two lines. The tooltip
             // still says what the date means for anyone unsure.
-            openedHtml = `<span class="settings-account-opened" title="${window._stT('Account opened', 'Cuenta creada')} ${_ds}">${_ds}</span>`;
+            openedHtml = `<div class="settings-account-opened">${window._stT('opened', 'creada')} ${_ds}</div>`;
           }
         } catch (e) {}
         return `<div class="${rowCls.join(' ')}" data-account-id="${acc.id}">
           <div>
-            <div class="settings-account-name"><span class="san-txt">${escapeHtml(accDisplayName(acc))}</span> ${badgeHtml}${openedHtml}</div>
+            ${openedHtml}
+            <div class="settings-account-name"><span class="san-txt">${escapeHtml(accDisplayName(acc))}</span> ${badgeHtml}</div>
             <div class="settings-account-meta">
               <div class="settings-account-meta-balances">
               <span class="settings-account-meta-pair">
@@ -52129,8 +52143,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     c.style.display='block';
     var H=c.offsetHeight||90;
     c.style.top=Math.max(6,hit.y-NEWS_R-10-H)+'px';
-    // arrow position within the card
-    c.style.setProperty('--arrow-x',Math.max(10,Math.min(W-10,hit.x-left))+'px');
+    // Arrow centre, measured from the card's BORDER box. `left` on the ::after resolves against
+    // the PADDING box, which starts after the 3px impact-coloured border-left - so passing the
+    // raw offset put the tail 3px to the right of the disc it is supposed to point at. Subtract
+    // the border. Clamped so the tail stays on the card when the card itself has been clamped to
+    // a chart edge, and it keeps pointing at the disc rather than at the card's middle.
+    var _bl=parseFloat(getComputedStyle(c).borderLeftWidth)||0;
+    c.style.setProperty('--arrow-x',Math.max(10,Math.min(W-10,hit.x-left-_bl))+'px');
   }
   /* The level in force at bar time t: the last move at or before it, else the original. */
   function levelAt(moves,orig,t){
@@ -52227,7 +52246,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
   function draw(){}   // no-op: the loop above handles all redraws
   function setView(){ chart.timeScale().setVisibleLogicalRange({from:Math.max(0,S.cursor-102),to:S.cursor+12}); }
-  function onRange(){ draw(); }
+  /* Pan/zoom slides the badges out from under a pinned card, so dismiss it here as well - the
+     card is positioned once, at pin time, and has no way to follow its disc. */
+  function onRange(){ if(S&&(S._newsPinned||S._newsHover)) _newsCardReset(); draw(); }
   // Full render (open / scrub / restart / tf): position the view. Playback tick: just append
   // the bar and let the chart's native shift-on-new-bar follow the frontier AT the current zoom,
   // so you stay anchored to the candles without your zoom snapping back.
@@ -52407,9 +52428,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
 
   // ---- wire controls once (elements are static) ----
-  el('strp-fs').onclick=function(){ el('strp-modal-bg').classList.toggle('strp-full'); setTimeout(function(){ try{ if(S){ setView(); draw(); } }catch(_){} },90); };
+  el('strp-fs').onclick=function(){ _newsCardReset(); el('strp-modal-bg').classList.toggle('strp-full'); setTimeout(function(){ try{ if(S){ setView(); draw(); } }catch(_){} },90); };
   // Landscape "more chart": hide the header + toolbar so the chart fills the screen (toggle stays over the chart).
-  el('strp-cmax').onclick=function(){ var card=el('strp-modal-bg').querySelector('.strp-card'); if(card) card.classList.toggle('strp-chartmax'); setTimeout(function(){ try{ if(S){ setView(); draw(); } }catch(_){} },90); };
+  el('strp-cmax').onclick=function(){ _newsCardReset(); var card=el('strp-modal-bg').querySelector('.strp-card'); if(card) card.classList.toggle('strp-chartmax'); setTimeout(function(){ try{ if(S){ setView(); draw(); } }catch(_){} },90); };
   el('strp-close').onclick=closeModal;
   // Close only via the X button (no click-outside-to-close, per request). Escape also closes.
   // The app has a global delegated handler that closes ANY .modal-bg on a backdrop click — swallow
@@ -52486,7 +52507,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(e.key==='Escape'){ if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
     else if((e.key==='Delete'||e.key==='Backspace')&&S.sel!=null){ e.preventDefault(); el('strp-del').click(); } });
-  window.addEventListener('resize',function(){ if(S) draw(); });
+  window.addEventListener('resize',function(){ if(S){ _newsCardReset(); draw(); } });
 
   // launcher — delegated, capture phase so the row's own click doesn't also fire
   document.addEventListener('click',function(e){ var b=e.target.closest?e.target.closest('.strp-play[data-replay]'):null; if(!b) return; e.stopPropagation(); e.preventDefault(); var id=b.getAttribute('data-replay'); try{ var t=(typeof findTradeById==='function')?findTradeById(id):null; if(t) open(t); }catch(_){} },true);
