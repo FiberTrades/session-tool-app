@@ -5360,6 +5360,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             <div class="mt5-fold-inner">
               <div id="mt5-excluded-hint" style="font-family:'AppNum','DM Mono',monospace;font-size:11px;color:var(--text-dim);margin:0 0 12px;line-height:1.6;"></div>
               <div id="mt5-excluded-list" style="border:1px solid var(--border-2);border-radius:var(--radius-ctrl);max-height:260px;overflow-y:auto;"></div>
+              <!-- Deleted trades stay reachable here for good. The in-row Undo only lasts as long as
+                   the window is open, which made "undoable" a promise that quietly expired — so this
+                   is the durable way back, and the reason nothing in this panel is ever a dead end. -->
+              <div id="mt5-deleted-wrap" style="display:none;margin-top:10px;">
+                <button type="button" id="mt5-deleted-toggle" aria-expanded="false" style="display:inline-flex;align-items:center;gap:7px;background:transparent;border:none;padding:0;margin:0;cursor:pointer;text-align:left;font-family:'AppNum','DM Mono',monospace;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);">
+                  <span id="mt5-deleted-chev" style="display:inline-block;transition:transform 180ms;font-size:9px;line-height:1;">&#9656;</span>
+                  <span id="mt5-deleted-label"></span>
+                </button>
+                <div id="mt5-deleted-list" style="display:none;margin-top:8px;border:1px solid var(--border-2);border-radius:var(--radius-ctrl);max-height:200px;overflow-y:auto;opacity:0.75;"></div>
+              </div>
             </div>
           </div>
         </div>
@@ -36380,6 +36390,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // while you can still see it. Cleared when the modal opens, which is when the deletion becomes
   // final — the ticket then simply stops being listed.
   let _mt5JustDeleted = {};
+  let _mt5IgnoredRows = [];         // broker trades deleted from that list, kept so they stay recoverable
+  let _mt5DeletedOpen = false;      // is the "deleted" disclosure expanded
 
   // ----- MT5 sync-token display (a dedicated per-user secret, separate from the account id) -----
   function mt5SyncToken() {
@@ -37365,6 +37377,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // A row a logged trade already wears is fine and is not listed.
       try {
         _mt5ExcludedRows = _mt5ExcludedFrom(all);   // same test the background scan uses
+        // Deleted rows are filtered out of the list above, so keep them here — otherwise the only
+        // record that they exist is a ticket id in storage, and "deleted" becomes unrecoverable.
+        _mt5IgnoredRows = (all || []).filter(r => _mt5RowIsValid(r) && _mt5IsIgnored(r.ticket));
         renderMt5Excluded();
         // Remember the count so the Challenge panel can say its figures are short. Saved only when
         // it changes, so a sync is not a write every time.
@@ -37591,7 +37606,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (!liveHas.has(tk) && _mt5JustDeleted[tk] && _mt5JustDeleted[tk].row) live.push(_mt5JustDeleted[tk].row);
     });
     const rows = live.sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
-    if (!rows.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
+    // Deleted trades that are not already shown greyed-in-place above.
+    const shownNow = new Set(rows.map(r => String(r.ticket)));
+    const delRows = (_mt5IgnoredRows || []).filter(r => !shownNow.has(String(r.ticket)))
+      .slice().sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
+    // Hiding the whole panel when the live list empties is what would have stranded the deleted
+    // trades: every one deleted meant the section vanished, taking the only way back with it.
+    if (!rows.length && !delRows.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
     wrap.style.display = '';
     const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const nLive = rows.filter(r => !_mt5JustDeleted[String(r.ticket)]).length;
@@ -37608,8 +37629,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           'These were dismissed or marked as handled, so nothing offers them any more — and their P&L is missing from your balance. Restore one to put it back in the import list, or delete it to stop being told about it.',
           'Se descartaron o se marcaron como gestionadas, así que ya nada las ofrece — y su P&L falta en tu saldo. Restaura una para devolverla a la lista de importación, o elimínala para dejar de verla.')
       : window._stT(
-          'Deleted from the list. Undo now if that was a mistake — once you close this window they are gone from it for good.',
-          'Eliminadas de la lista. Deshaz ahora si fue un error — al cerrar esta ventana desaparecerán de ella definitivamente.');
+          'Nothing here needs your attention. Anything you deleted is listed below and can be put back.',
+          'No hay nada pendiente aquí. Lo que hayas eliminado aparece abajo y puedes recuperarlo.');
     list.innerHTML = rows.map(r => {
       const net = parseFloat(r.pnl);
       const netStr = isFinite(net) ? ((net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) : '—';
@@ -37709,15 +37730,70 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { runMt5AutoSync(); } catch (e) {}
       });
     });
+    // ----- Deleted trades: always listed, always reversible -----
+    const dWrap = document.getElementById('mt5-deleted-wrap');
+    const dList = document.getElementById('mt5-deleted-list');
+    const dLabel = document.getElementById('mt5-deleted-label');
+    const dChev = document.getElementById('mt5-deleted-chev');
+    const dToggle = document.getElementById('mt5-deleted-toggle');
+    if (dWrap && dList && dLabel) {
+      if (!delRows.length) { dWrap.style.display = 'none'; dList.innerHTML = ''; }
+      else {
+        dWrap.style.display = '';
+        const _dOne = delRows.length === 1;
+        dLabel.textContent = window._stT(
+          delRows.length + ' deleted trade' + (_dOne ? '' : 's'),
+          delRows.length + (_dOne ? ' operación eliminada' : ' operaciones eliminadas'));
+        dList.style.display = _mt5DeletedOpen ? '' : 'none';
+        if (dChev) dChev.style.transform = _mt5DeletedOpen ? 'rotate(90deg)' : '';
+        if (dToggle) dToggle.setAttribute('aria-expanded', _mt5DeletedOpen ? 'true' : 'false');
+        dList.innerHTML = delRows.map(r => {
+          const net = parseFloat(r.pnl);
+          const netStr = isFinite(net) ? ((net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) : '—';
+          const when = r.close_time ? String(r.close_time).slice(0, 16).replace('T', ' ') : '—';
+          return '<div class="mt5-exc-row" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border-2);font-family:\'AppNum\',\'DM Mono\',monospace;font-size:11px;">'
+            + '<span style="color:var(--text-dim);flex:0 0 108px;">' + esc(when) + '</span>'
+            + '<span style="color:var(--text-mid);flex:0 0 84px;">' + esc(r.symbol || '—') + '</span>'
+            + '<span style="color:var(--text-dim);flex:0 0 54px;">' + esc(r.direction || '') + '</span>'
+            + '<span style="color:var(--text-dim);flex:0 0 82px;">' + netStr + '</span>'
+            + '<span style="color:var(--text-dim);flex:1 1 auto;min-width:0;">#' + esc(r.ticket) + '</span>'
+            + '<button type="button" class="mt5-exc-undelete" data-ticket="' + esc(r.ticket) + '" style="flex:0 0 auto;background:transparent;border:1px solid var(--border-2);color:var(--text-mid);padding:5px 12px;font-family:inherit;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-ctrl);">'
+            + window._stT('Put back', 'Recuperar') + '</button>'
+            + '</div>';
+        }).join('');
+        if (dToggle && !dToggle._wired) {
+          dToggle._wired = true;
+          dToggle.addEventListener('click', () => { _mt5DeletedOpen = !_mt5DeletedOpen; renderMt5Excluded(); });
+        }
+        // Put back = lift the deletion only. The trade returns to the list above, where Restore is
+        // what actually re-offers it for import — one clear step at a time.
+        dList.querySelectorAll('.mt5-exc-undelete').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const tk = String(btn.dataset.ticket || '');
+            if (!tk) return;
+            try {
+              const d = window.STCloud.getData ? window.STCloud.getData() : JSON.parse(localStorage.getItem(window.STCloud.STORAGE_KEY));
+              d.mt5Ignored = (d.mt5Ignored || []).filter(x => String(x) !== tk);
+              window.STCloud.setData(d);
+              if (typeof saveData === 'function') saveData();
+            } catch (e) {}
+            delete _mt5JustDeleted[tk];
+            try { runMt5AutoSync(); } catch (e) {}
+          });
+        });
+      }
+    }
   }
   // What the excluded list currently holds, and what has been silenced. Passing `fixture` replaces
   // the rows and re-renders, which is how the Restore/Delete/Undo wiring gets exercised without
   // waiting for a broker to send something unwanted.
   try {
-    window.__stMt5ExcDiag = function (fixture) {
+    window.__stMt5ExcDiag = function (fixture, deletedFixture) {
       if (Array.isArray(fixture)) _mt5ExcludedRows = fixture;
+      if (Array.isArray(deletedFixture)) _mt5IgnoredRows = deletedFixture;
       renderMt5Excluded();
       return { listed: (_mt5ExcludedRows || []).length,
+               deletedListed: (_mt5IgnoredRows || []).length,
                undoable: Object.keys(_mt5JustDeleted),
                ignored: (data.mt5Ignored || []).slice(),
                dismissed: (data.mt5UserDismissed || []).length,
