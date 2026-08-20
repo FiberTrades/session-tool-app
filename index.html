@@ -12884,7 +12884,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   window.__stMergeUnionDismissed = function (base, other) {
     try {
       if (!base || !other) return;
-      ['mt5UserDismissed', 'mt5ImportedTickets'].forEach(function (key) {
+      // mt5Ignored (deleted from the excluded list) and mt5IgnoreLifted (put back again) belong
+      // here for exactly the same reason. Neither moves contentScore — deleting a broker trade
+      // changes no trade, series or review — so two copies differing ONLY in these lists score
+      // identically, one is adopted wholesale, and the deletion silently rolls back. That is how a
+      // trade deleted twice came back as "1 broker trade not counted here".
+      ['mt5UserDismissed', 'mt5ImportedTickets', 'mt5Ignored', 'mt5IgnoreLifted'].forEach(function (key) {
         var a = Array.isArray(base[key]) ? base[key] : [];
         var b = Array.isArray(other[key]) ? other[key] : [];
         if (!a.length && !b.length) return;
@@ -37269,8 +37274,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // want it". Distinct from a dismissal, which only means "not now" and is what put most of these
   // rows here in the first place — this one is an answer, so it silences the Challenge panel's
   // "not counted here" line too, rather than leaving a warning nothing can ever clear.
+  // Both lists are union-merged across windows, so neither can be rolled back — which means a
+  // removal has to be expressed as an ADDITION to the opposite list rather than a deletion from
+  // this one. mt5IgnoreLifted wins, mirroring how mt5ForceOffer overrides mt5UserDismissed: ties
+  // resolve towards the trade being VISIBLE, because a trade reappearing in the list is something
+  // you can see and act on, while one silently vanishing is the failure this panel exists to stop.
   function _mt5IsIgnored(ticket) {
-    try { return (data.mt5Ignored || []).some(x => String(x) === String(ticket)); } catch (e) { return false; }
+    try {
+      const tk = String(ticket);
+      if ((data.mt5IgnoreLifted || []).some(x => String(x) === tk)) return false;
+      return (data.mt5Ignored || []).some(x => String(x) === tk);
+    } catch (e) { return false; }
   }
   // Which broker trades are genuinely missing from the journal, from a set of inbox rows.
   function _mt5ExcludedFrom(all) {
@@ -37696,11 +37710,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           // than guessing which entries this click added.
           _mt5JustDeleted[tk] = { row: row, prev: {
             ignored:   (d.mt5Ignored       || []).slice(),
+            lifted:    (d.mt5IgnoreLifted  || []).slice(),
             dismissed: (d.mt5UserDismissed || []).slice(),
             force:     (d.mt5ForceOffer    || []).slice()
           } };
           d.mt5Ignored       = (d.mt5Ignored       || []).filter(x => String(x) !== tk).concat([tk]);
           if (d.mt5Ignored.length > 500) d.mt5Ignored = d.mt5Ignored.slice(-500);
+          // Clear any earlier "put back", which would otherwise override this deletion.
+          d.mt5IgnoreLifted  = (d.mt5IgnoreLifted  || []).filter(x => String(x) !== tk);
           // Also block it from the import list: a row the broker sent but never marked consumed is
           // otherwise still offered, so deleting it here would leave it popping up over there.
           d.mt5UserDismissed = (d.mt5UserDismissed || []).filter(x => String(x) !== tk).concat([tk]);
@@ -37720,8 +37737,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try {
           const d = window.STCloud.getData ? window.STCloud.getData() : JSON.parse(localStorage.getItem(window.STCloud.STORAGE_KEY));
           d.mt5Ignored       = snap.prev.ignored.slice();
+          d.mt5IgnoreLifted  = snap.prev.lifted.slice();
           d.mt5UserDismissed = snap.prev.dismissed.slice();
           d.mt5ForceOffer    = snap.prev.force.slice();
+          // A same-window undo can drop the ticket from mt5Ignored outright, but the union would
+          // hand it back from another copy — so state the reversal positively as well.
+          if (snap.prev.ignored.every(x => String(x) !== tk)) {
+            d.mt5IgnoreLifted = d.mt5IgnoreLifted.filter(x => String(x) !== tk).concat([tk]);
+          }
           window.STCloud.setData(d);
           if (typeof saveData === 'function') saveData();
         } catch (e) {}
@@ -37774,6 +37797,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             try {
               const d = window.STCloud.getData ? window.STCloud.getData() : JSON.parse(localStorage.getItem(window.STCloud.STORAGE_KEY));
               d.mt5Ignored = (d.mt5Ignored || []).filter(x => String(x) !== tk);
+              // Removing it is not enough on its own: mt5Ignored is union-merged, so another copy
+              // would put the ticket straight back. The lift is the durable half of this.
+              d.mt5IgnoreLifted = (d.mt5IgnoreLifted || []).filter(x => String(x) !== tk).concat([tk]);
+              if (d.mt5IgnoreLifted.length > 500) d.mt5IgnoreLifted = d.mt5IgnoreLifted.slice(-500);
               window.STCloud.setData(d);
               if (typeof saveData === 'function') saveData();
             } catch (e) {}
@@ -37792,9 +37819,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (Array.isArray(fixture)) _mt5ExcludedRows = fixture;
       if (Array.isArray(deletedFixture)) _mt5IgnoredRows = deletedFixture;
       renderMt5Excluded();
+      // effectivelyHidden is the answer that matters: mt5Ignored minus anything put back. The two
+      // raw lists both only grow, so reading either alone will mislead.
+      const _eff = (data.mt5Ignored || []).filter(x => _mt5IsIgnored(x)).map(String);
       return { listed: (_mt5ExcludedRows || []).length,
                deletedListed: (_mt5IgnoredRows || []).length,
                undoable: Object.keys(_mt5JustDeleted),
+               effectivelyHidden: _eff,
+               lifted: (data.mt5IgnoreLifted || []).slice(),
                ignored: (data.mt5Ignored || []).slice(),
                dismissed: (data.mt5UserDismissed || []).length,
                forceOffer: (data.mt5ForceOffer || []).slice() };
@@ -46673,6 +46705,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // Second adopt in the same session skips the reload above - repaint the bias form
         // so the painted selection can never disagree with the adopted data underneath.
         else { try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {} }
+        // The "not counted here" figure is computed once, a few seconds after load. If that scan
+        // ran against the pre-adopt copy, its number is now describing a journal that no longer
+        // exists — so recompute it against what was actually adopted.
+        try { if (window.__stMt5ScanExcluded) window.__stMt5ScanExcluded(); } catch (e) {}
       } else if (cScore === lScore && (function(){ try { if (!_rowUat) return false; var s = localStorage.getItem('st_jrnl_uat') || ''; var cu = Date.parse(_rowUat), lu = s ? Date.parse(s) : 0; return !!cu && cu > lu; } catch (e) { return false; } })()) {
         // Equal trade content, but the cloud copy is NEWER than anything THIS device produced
         // \u2014 i.e. a profile-only change (avatar / display name) was made on another device.
@@ -46696,6 +46732,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // copy had it empty, and "Post to community" would post from the data, missing
         // a field the user could see selected. Repaint the form from the adopted copy.
         try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {}
+        try { if (window.__stMt5ScanExcluded) window.__stMt5ScanExcluded(); } catch (e) {}
       } else {
         // Local holds >= cloud content (and is not older): push local up, snapshotting cloud first.
         takeSnapshot('pre-sync', cloud);     // snapshot the cloud copy before overwriting it with local
@@ -46705,6 +46742,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(local, cloud); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(local, cloud); } catch (e) {}
         cloudPush();
+        // The union above can fold in deletions made on another device, so the figure computed at
+        // load may already be describing a state this branch just changed.
+        try { if (window.__stMt5ScanExcluded) window.__stMt5ScanExcluded(); } catch (e) {}
       }
     });
   }
