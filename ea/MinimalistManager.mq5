@@ -3065,6 +3065,13 @@ int OnInit()
    if(InpTP_On && InpTP_Val<=0)
      { Print("Minimalist Manager: Take-profit target must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }
 
+   // CLEAN SLATE. OnDeinit purges MTM_* objects on a clean unload, but a killed terminal skips
+   // deinit and the saved chart file resurrects the orphans on next start - a frozen "SL 4.0
+   // pips" line at a day-old price, which nothing then owned or moved (seen 2026-08-20, twice).
+   // Delete every line/label this EA has ever drawn and rebuild only what current state wants.
+   DeleteByPrefix("MTM_LINE_");
+   DeleteByPrefix("MTM_TXT_");
+
    g_orderKind=InpOrderKind;
    g_riskMode =InpRiskMode;
    g_riskPercent=InpRiskPercent; g_riskAmount=InpRiskAmount; g_fixedLot=InpFixedLot;
@@ -3370,7 +3377,13 @@ void OnTick()
    // the old chart objects behind, and with g_active false this early-return meant nothing ever
    // moved or removed them again: an "SL 4.0 pips" line frozen at yesterday's price, drifting
    // 2-6 pips from the market while its label kept claiming the setting (seen 2026-08-20).
-   if(!g_active){ if(ObjectFind(0,LN_SL)>=0 || ObjectFind(0,LN_ENTRY)>=0) HideExecutionLines(); if(g_pausedByLimit){ MonitorBE(); UpdateManageLine(); } ChartRedraw(); return; }
+   // Preview lines exist ONLY while the EA is active AND in execution mode - enforced every
+   // tick, not just on state changes. RedrawTargets is gated on both flags, so in any other
+   // state a leftover line is never redrawn: it freezes at a stale price while its label keeps
+   // claiming the configured distance (seen 2026-08-20 - "SL 4.0 pips" sitting 6 pips away).
+   if(!(g_active && g_execMode) && (ObjectFind(0,LN_SL)>=0 || ObjectFind(0,LN_ENTRY)>=0))
+      HideExecutionLines();
+   if(!g_active){ if(g_pausedByLimit){ MonitorBE(); UpdateManageLine(); } ChartRedraw(); return; }
    MonitorBE();
    if(g_execMode) RedrawTargets();   // keep market entry / targets fresh
    UpdateManageLine();               // draggable SL / entry / BE for any live position
