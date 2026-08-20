@@ -19687,8 +19687,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
     // E's tracked set: trades carrying the BE-OFFSET replay. Gated on the same shape check as
     // D (a full ladder, not a truncated one), and on the trade actually having had a BE move -
-    // the EA only emits be_off_r when the stop really went to breakeven and a TP existed.
-    const trackedBeOff = allTrades.filter(tr => Array.isArray(tr.beOffR) && tr.beOffR.length >= 6);
+    // EA v5.7 emits be_off_r on EVERY trade (each rung arms itself off the price path), so this
+    // is no longer limited to trades whose stop really went to breakeven. The length test pins
+    // it to the CURRENT ladder: a 6-element array is the old, differently-defined one, and
+    // reading it on the new indices would mislabel every figure rather than skip it.
+    const trackedBeOff = allTrades.filter(tr => Array.isArray(tr.beOffR) && tr.beOffR.length === BE_OFF_LADDER.length);
 
     const tierA = tierFor(trackedWins.length);
     const tierB = tierFor(trackedBes.length);
@@ -19996,12 +19999,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
     }
     // ---- E: WHERE the BE stop goes, as opposed to D's WHEN ----------------------------
-    // The EA replays each trade once per offset, from the moment the stop REALLY moved, and
-    // returns what it would have been worth (beOffR) plus a flag per offset (beOffMissed):
+    // The EA replays each trade once per offset - each rung arming when price reaches that
+    // level, so every trade is covered, not just ones moved to BE - and returns what it would
+    // have been worth (beOffR) plus a flag per offset (beOffMissed):
     // 1 = this offset stopped the trade and the target was then reached anyway, without price
     // first running past the original stop. That flag is the honest cost of the rule, and it
     // is a count of trades rather than a sum of money - the number a trader argues with.
-    const BE_OFF_LADDER = [0, 0.25, 0.5, 0.75, 1.0, 1.5];   // must match the EA's PM_OFF_LADDER
+    // MUST match the EA's PM_OFF_LADDER. EA v5.7 widened it from 6 rungs to 21 - every level
+    // from +0R to +1R in 0.05R steps - and changed what a rung MEANS: it now arms itself when
+    // price reaches that level, so it runs on every trade, where the old one only replayed from
+    // the moment a stop really moved. Old 6-element arrays therefore answer a different question
+    // and are NOT read as if they were the new ones (see the length gate below); the two trades
+    // carrying them simply contribute their real result.
+    const BE_OFF_LADDER = [0.00,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,
+                           0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00];
     function projectBeOffset(idx) {
       let totalGbp = 0, totalR = 0, totalUnits = 0, missed = 0;
       let unitsKnown = true;
@@ -20014,7 +20025,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const sl     = parseFloat(tr.sl)    || 0;
         // No offset replay for this trade: it contributes exactly what it really did, so the
         // scenario is measured over the same trades as current and never over a subset.
-        if (!Array.isArray(tr.beOffR) || tr.beOffR.length < 6 || risk <= 0) {
+        if (!Array.isArray(tr.beOffR) || tr.beOffR.length !== BE_OFF_LADDER.length || risk <= 0) {
           perTradeGbp.push(net * copies);
           totalGbp += net * copies;
           totalR   += (risk > 0) ? (net / risk) * copies : 0;
@@ -20039,9 +20050,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     let bestOffIdx = -1, scenarioE = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp,
                                        totalR: current.totalR, total: current.total, missed: 0 };
     if (trackedBeOff.length > 0) {
-      // Index 0 is the offset you already trade (stop AT entry), so it is the baseline the
-      // ladder must beat - starting from `current` means a rule only wins by beating reality.
-      for (let k = 1; k < BE_OFF_LADDER.length; k++) {
+      // From rung 0. Under the old ladder index 0 was "the offset you already trade" and was
+      // skipped as the baseline; since v5.7 every rung arms itself off the price path, so +0R is
+      // plain break-even - a candidate rule like any other, and a common one. The comparison is
+      // still against `current` (what actually happened), so a rung only wins by beating reality.
+      for (let k = 0; k < BE_OFF_LADDER.length; k++) {
         const sc = projectBeOffset(k);
         if (sc.totalGbp > scenarioE.totalGbp) { scenarioE = sc; bestOffIdx = k; }
       }
@@ -37052,6 +37065,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _beSim: Array.isArray(row.be_sim) ? row.be_sim : null,
       _beOffR: Array.isArray(row.be_off_r) ? row.be_off_r : null,
       _beOffMissed: Array.isArray(row.be_off_missed) ? row.be_off_missed : null,
+      // The stop-never-moved baseline for the offset ladder (EA v5.7).
+      _noBeR: num(row.no_be_r),
       _wouldHaveWon: (row.would_have_won === true) ? true : (row.would_have_won === false ? false : null),
       _consumedAt: row.consumed_at || null
     };
@@ -37923,6 +37938,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (t._beClearR    != null) row.beClearR    = t._beClearR;
         if (Array.isArray(t._beSim)) row.beSim = t._beSim;
         if (Array.isArray(t._beOffR)) row.beOffR = t._beOffR;
+        if (t._noBeR != null) row.noBeR = t._noBeR;
         if (Array.isArray(t._beOffMissed)) row.beOffMissed = t._beOffMissed;
         if (t._wouldHaveWon != null) row.wouldHaveWon = t._wouldHaveWon;
         if (t._potR == null && (t._mfeR != null || t._mfePips != null)) {
