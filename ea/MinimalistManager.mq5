@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.5"
+#property version   "5.6"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -566,6 +566,7 @@ bool SendOne(int dir,double volume,double entry,double slPrice,double tpPrice)
 //  DAILY TRADE LIMIT  (timezone-aware; resets at the user's local midnight)
 //==================================================================
 int      g_tradesToday = 0;
+string   g_lastStage   = "init";   // last OnTick stage that COMPLETED - read by the heartbeat
 datetime g_dayStartSrv = 0;
 long     g_brokerOff   = LONG_MAX;   // server-time minus UTC, in seconds. LONG_MAX = not known yet.
 
@@ -2618,6 +2619,14 @@ void PM_Sweep()
    string keep[];     // rows that have not resolved yet
    int kept=0;
    ArrayResize(keep,0);
+   // BOUND THE WORK PER SWEEP. This loop used to replay and PUSH every resolved row in one
+   // call: 4 CopyRates passes plus a blocking 5s WebRequest each. MQL5 gives an EA ONE event
+   // thread, so N backlogged trades meant N sequential 5s blocks inside a single OnTick, re-run
+   // every M1 bar - the whole EA frozen, OnTimer events dropped (they are not queued), the
+   // Candle/Spread label and the preview lines stuck at whatever the price was when it began.
+   // That is the 2026-08-20 incident. CE_Sweep already had this cap; this one never did.
+   int done=0;                 // at most ONE push per sweep, like CE_Sweep
+   bool pushDead=false;        // one failure => the endpoint is down for all of them: stop trying
 
    while(!FileIsEnding(h))
      {
@@ -2647,6 +2656,14 @@ void PM_Sweep()
       string rowCsv=sPos+","+sSym+","+sDir+","+sEnt+","+sSl+","+sTp+","+sSlp+","
                    +sOpen+","+sClose+","+sPnl+","+sBet;
 
+      // Budget spent, or the endpoint already refused this sweep: keep the row untouched and
+      // do NOT replay it (the replay is the expensive part even when no push follows).
+      if(done>=1 || pushDead)
+        {
+         ArrayResize(keep,kept+1); keep[kept]=rowCsv; kept++;
+         continue;
+        }
+
       double potPips,potR,reqSl,beSlack,beClearP,beClearR2; int wWin;
       if(PM_Replay(sSym,dir,entry,slPr,tpPr,slPip,openT,closeT,pnl,beT,
                    potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2))
@@ -2658,9 +2675,11 @@ void PM_Sweep()
          string beOffR="",beOffMiss="";
          PM_SimOffsets(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT,beT,beOffR,beOffMiss);
          string spSeries = PM_SpreadSeries(sSym,openT,closeT);
+         done++;
          if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim,beOffR,beOffMiss,spSeries))
            {
             // The push failed (offline?). Keep it and try again next sweep.
+            pushDead=true;
             ArrayResize(keep,kept+1); keep[kept]=rowCsv; kept++;
            }
         }
@@ -2699,6 +2718,7 @@ ENUM_TIMEFRAMES CE_TF_PER[6] = {PERIOD_M1,PERIOD_M5,PERIOD_M15,PERIOD_H1,PERIOD_
 long            CE_BACK[6]   = {10*86400, 10*86400, 20*86400, 90*86400, 365*86400, 1460*86400}; // secs before entry
 long            CE_FWD[6]    = { 6*3600,     86400,    86400,  3*86400,   7*86400,     14*86400}; // secs after exit
 int             CE_BATCH     = 3000;      // bars per POST
+int             CE_BUDGET_MS = 8000;      // max wall-clock one export may spend per sweep
 long            CE_READY     = 30*60;     // PASS 1: replayable this soon after close
 long            CE_DAY_M     = 120;       // PASS 2: grace past end-of-day so the last bar has closed
 
@@ -2709,7 +2729,7 @@ bool CandlePost(string json)
    char result[]; string rh;
    string headers="Content-Type: application/json\r\nAuthorization: Bearer "+SYNC_KEY+"\r\n";
    ResetLastError();
-   int code=WebRequest("POST",InpCandlesURL,headers,15000,post,result,rh);
+   int code=WebRequest("POST",InpCandlesURL,headers,5000,post,result,rh);   // 5s, not 15: this blocks the ONE event thread
    if(code==-1)
      {
       int err=GetLastError();
@@ -2753,6 +2773,13 @@ void CE_Queue(ulong posId,string sym,datetime openT,datetime closeT)
 // Returns false on any failure so the caller keeps the trade queued and retries.
 bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
   {
+   // WALL-CLOCK BUDGET. One trade's export is ~10 sequential POSTs (6 timeframes, M1 alone
+   // batching ~14k bars at 3000 a time), each a BLOCKING WebRequest. At 15s apiece that is a
+   // ~150-second freeze of the EA's single event thread inside one OnTick, with nothing logged
+   // because a successful post prints nothing. Return false once the budget is spent: the row
+   // stays queued and resumes on the next M1 bar. Server ingest is idempotent per bar
+   // timestamp, so re-sending a batch costs nothing but bandwidth.
+   uint _t0=GetTickCount();
    int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS); if(dg<=0) dg=g_digits;
    long off=BrokerOff();   // server -> UTC, QUANTIZED (stable across runs, so a bar can't be stored at t and t+1)
    datetime eod=PM_EndOfDay(closeT);
@@ -2780,6 +2807,11 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
          string js=StringFormat("{\"token\":\"%s\",\"symbol\":\"%s\",\"tf\":%d,\"bars\":[%s]}",
                                  g_syncTokenEff,sym,CE_TF_MIN[ti],bars);
          if(!CandlePost(js)) return false;
+         if(GetTickCount()-_t0>CE_BUDGET_MS)
+           {
+            Print("Replay candles: export budget spent, resuming next bar.");
+            return false;                      // keeps the row queued; picks up where it left off
+           }
         }
      }
    return true;
@@ -3062,7 +3094,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.5 loaded (BE move now VERIFIES the server accepted it and retries while price holds - one rejected request used to kill the BE silently, e.g. a new account's unaccepted terms dialog. v5.4 kept: spread series ships AT CLOSE. v5.3 kept: SL/TP move timestamps in UTC. v5.2 kept: real per-minute spread + SL/TP moves. v5.1 kept: BE clearance + offset ladder) ===");
+   Print("=== MinimalistManager v5.6 loaded (FREEZE FIX: PM_Sweep now pushes at most one post-mortem per bar and stops on the first failure - it used to replay and POST every backlogged trade in one event, blocking the EA's single thread for minutes at a time. Candle export gains a wall-clock budget and a 5s timeout. Adds a once-a-minute heartbeat so a future freeze names its own stage) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }
@@ -3248,6 +3280,18 @@ void DailyLimitTick()
 
 void OnTimer()
   {
+   // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
+   // frozen chart objects and a silent log look identical to "someone turned it off". One line a
+   // minute naming the last stage OnTick completed turns the next freeze into a one-glance
+   // diagnosis - the last heartbeat says where it stopped.
+   static datetime s_hbAt=0;
+   if(TimeCurrent()-s_hbAt>=60)
+     {
+      s_hbAt=TimeCurrent();
+      PrintFormat("MM alive | stage=%s active=%d exec=%d beArmed=%d spread=%.1f",
+                  g_lastStage, (int)g_active, (int)g_execMode, (int)g_beArmed,
+                  (g_pip>0)?(SymbolInfoDouble(_Symbol,SYMBOL_ASK)-SymbolInfoDouble(_Symbol,SYMBOL_BID))/g_pip:0.0);
+     }
    DrawInfoReadout();
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
@@ -3380,7 +3424,13 @@ void OnTick()
    // would just re-read the same candles.
    static datetime s_pmBar=0;
    datetime curBar=iTime(_Symbol,PERIOD_M1,0);
-   if(curBar!=s_pmBar){ s_pmBar=curBar; PM_Sweep(); CE_Sweep(); }
+   if(curBar!=s_pmBar)
+     {
+      s_pmBar=curBar;
+      g_lastStage="pm_sweep";  PM_Sweep();
+      g_lastStage="ce_sweep";  CE_Sweep();
+     }
+   g_lastStage="sweeps_done";
    UpdateBrokerOffset();   // a tick just arrived, so TimeCurrent() is live right now: learn the offset
    // A stale execution preview must never survive into the inactive state. Turning the EA off
    // deletes these lines - but an EA RELOAD (timeframe/symbol switch, terminal restart) leaves
@@ -3394,9 +3444,10 @@ void OnTick()
    if(!(g_active && g_execMode) && (ObjectFind(0,LN_SL)>=0 || ObjectFind(0,LN_ENTRY)>=0))
       HideExecutionLines();
    if(!g_active){ if(g_pausedByLimit){ MonitorBE(); UpdateManageLine(); } ChartRedraw(); return; }
-   MonitorBE();
+   g_lastStage="monitor_be"; MonitorBE();
    if(g_execMode) RedrawTargets();   // keep market entry / targets fresh
    UpdateManageLine();               // draggable SL / entry / BE for any live position
+   g_lastStage="idle";
 
    // Repaint only when something visibly changed - avoids the per-tick full repaint that
    // makes the SL line/label shimmer while it tracks price at a limit.
