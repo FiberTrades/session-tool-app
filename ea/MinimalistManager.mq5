@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.4"
+#property version   "5.5"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -866,7 +866,7 @@ void PlaceTrade()
       else          bePrice=fill+dir*g_beRR*slPips*g_pip; // no TP set -> fall back to R distance
       EnsureHLine(LN_BE,bePrice,COL_LINE_BE,STYLE_SOLID,true);
       SetLineText(TX_BE,bePrice,"BE",COL_LINE_BE);
-      g_beTrigger=bePrice; g_beDir=dir; g_beArmed=true;
+      g_beTrigger=bePrice; g_beDir=dir; g_beArmed=true; g_beFails=0;
      }
    else g_beDir=dir;   // remember direction in case BE is switched on mid-trade
    Print(StringFormat("Placed order. %s SLpips=%.1f Lot=%.2f",dir>0?"BUY":"SELL",slPips,total));
@@ -902,7 +902,7 @@ void ApplyBEState()
         }
       EnsureHLine(LN_BE,bePrice,COL_LINE_BE,STYLE_SOLID,true);
       SetLineText(TX_BE,bePrice,"BE",COL_LINE_BE);
-      g_beTrigger=bePrice; g_beDir=pd; g_beArmed=true;
+      g_beTrigger=bePrice; g_beDir=pd; g_beArmed=true; g_beFails=0;
      }
    else { ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE); g_beArmed=false; }
   }
@@ -941,8 +941,22 @@ double BEOffsetPx(double slDistPx)
    return g_beOffset*g_pip;
   }
 
+// BE retry state. The move used to be fire-and-forget: PositionModify's result was never read
+// and g_beArmed was cleared regardless, so ONE rejected request killed the BE for the rest of
+// the trade - silently. Proven on 2026-08-20 on a fresh prop account: the server refuses
+// modifications until its terms dialog is accepted, price touched the trigger, the one attempt
+// bounced, and the stop never moved. Transient rejections (context busy, requotes, that terms
+// gate) deserve another go; only a run of failures should give up, and loudly.
+datetime g_beLastTry = 0;
+int      g_beFails   = 0;
+#define BE_RETRY_SECS  3     // at most one attempt per 3s while price holds beyond the trigger
+#define BE_MAX_FAILS   20    // then give up with a visible warning (~1 minute of refusals)
+
 void BreakEvenAll()
   {
+   if(g_beFails>0 && (TimeCurrent()-g_beLastTry)<BE_RETRY_SECS) return;   // rate-limit retries
+   g_beLastTry=TimeCurrent();
+   bool allOk=true;
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i);
@@ -960,8 +974,20 @@ void BreakEvenAll()
       double curSl=PositionGetDouble(POSITION_SL);
       double slDist=(curSl>0) ? MathAbs(open-curSl)
                               : ((g_reqSLpips>0) ? g_reqSLpips*g_pip : 0.0);
-      trade.PositionModify(tk,open+d*BEOffsetPx(slDist),tp);
+      if(!trade.PositionModify(tk,open+d*BEOffsetPx(slDist),tp))
+        {
+         allOk=false;
+         Print(StringFormat("BE move REJECTED for #%I64u: %d %s",tk,trade.ResultRetcode(),trade.ResultRetcodeDescription()));
+        }
      }
+   if(!allOk)
+     {
+      g_beFails++;
+      if(g_beFails==1) Warn("BE move rejected by the server - retrying. On a new account, accept the broker's terms dialog.");
+      if(g_beFails<BE_MAX_FAILS) return;                 // stay ARMED: MonitorBE brings us back while price holds
+      Warn("BE move failed "+IntegerToString(BE_MAX_FAILS)+" times - giving up. Move the stop manually.");
+     }
+   g_beFails=0;
    g_beArmed=false; ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE);
    int cnt; double sl=PositionsSL(cnt);   // keep the draggable SL line on the new stop
    if(sl>0 && ObjectFind(0,LN_MSL)>=0) ObjectSetDouble(0,LN_MSL,OBJPROP_PRICE,sl);
@@ -3026,7 +3052,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.4 loaded (spread series now ships AT CLOSE, so the Trade Replay spread readout appears the moment a trade syncs instead of waiting for the day-end post-mortem. v5.3 kept: SL/TP move timestamps in UTC. v5.2 kept: the broker's REAL spread minute by minute, and every SL/TP MOVE captured live. v5.1 kept: BE-stop CLEARANCE and the BE OFFSET ladder) ===");
+   Print("=== MinimalistManager v5.5 loaded (BE move now VERIFIES the server accepted it and retries while price holds - one rejected request used to kill the BE silently, e.g. a new account's unaccepted terms dialog. v5.4 kept: spread series ships AT CLOSE. v5.3 kept: SL/TP move timestamps in UTC. v5.2 kept: real per-minute spread + SL/TP moves. v5.1 kept: BE clearance + offset ladder) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }
