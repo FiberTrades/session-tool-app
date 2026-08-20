@@ -102,7 +102,10 @@ input ENUM_DST_MODE InpDstMode      = DST_AUTO; // Timezone: Auto (from this PC/
 #define COL_EDIT_BG   C'26,26,26'
 #define COL_EDIT_TX   clrWhite
 
-#define COL_LINE_ENTRY C'190,194,200'
+#define COL_LINE_ENTRY clrSlateGray   // was C'190,194,200': invisible on a white chart, and the
+                                       // SL preview measures from this line on pending orders -
+                                       // an invisible reference made a correct 4-pip SL look
+                                       // broken (2026-08-20: "massive below, tiny above")
 #define COL_LINE_SL    clrTomato
 #define COL_LINE_TP    clrLimeGreen
 #define COL_LINE_BE    C'30,120,255'
@@ -150,6 +153,7 @@ string LN_TP   = "MTM_LINE_TP";
 string LN_MSL  = "MTM_LINE_POSSL";   // draggable SL for the LIVE position
 string LN_EFILL= "MTM_LINE_EFILL";   // fixed grey line at the actual fill price
 string TX_SL   = "MTM_TXT_SL";
+string TX_ENTRY= "MTM_TXT_ENTRY";
 string TX_EF   = "MTM_TXT_EF";
 string TX_TP   = "MTM_TXT_TP";
 string TX_BE   = "MTM_TXT_BE";
@@ -405,7 +409,7 @@ void ShowExecutionLines()
    double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double mid=(ask+bid)/2.0;
    if(g_orderKind!=OK_MARKET) EnsureHLine(LN_ENTRY,mid,COL_LINE_ENTRY,STYLE_SOLID,true);
-   else ObjectDelete(0,LN_ENTRY);
+   else ObjectDelete(0,LN_ENTRY); ObjectDelete(0,TX_ENTRY);
    // SL is NOT selectable: it follows (and is clamped to) the mouse
    g_slSetPips=g_minSL; g_slSetSide=-1;   // default: min distance, below price (buy)
    EnsureHLine(LN_SL,mid-g_minSL*g_pip,COL_LINE_SL,STYLE_SOLID,false);
@@ -417,7 +421,7 @@ void ShowExecutionLines()
 void HideExecutionLines()
   {
    DeleteByPrefix(LN_TP);
-   ObjectDelete(0,LN_ENTRY);
+   ObjectDelete(0,LN_ENTRY); ObjectDelete(0,TX_ENTRY);
    ObjectDelete(0,LN_SL);
    ObjectDelete(0,LN_BE);
    ObjectDelete(0,TX_SL); ObjectDelete(0,TX_TP); ObjectDelete(0,TX_BE);
@@ -437,7 +441,7 @@ void HideAllVisuals()
 void ClearEntryLines()
   {
    DeleteByPrefix(LN_TP);
-   ObjectDelete(0,LN_ENTRY);
+   ObjectDelete(0,LN_ENTRY); ObjectDelete(0,TX_ENTRY);
    ObjectDelete(0,LN_SL);
    ObjectDelete(0,TX_SL); ObjectDelete(0,TX_TP);
    Comment("");
@@ -485,6 +489,12 @@ void RedrawTargets()
 
    // SL label (word + live pips) at far right
    SetLineText(TX_SL,slPrice,StringFormat("SL  %.1f pips",slPips),COL_LINE_SL);
+
+   // Pending orders: name the line the SL is measured FROM. Unlabelled and near-invisible, it
+   // read as the SL misbehaving around thin air; the 4 pips were always correct - from here.
+   if(g_orderKind!=OK_MARKET && ObjectFind(0,LN_ENTRY)>=0)
+      SetLineText(TX_ENTRY,LinePrice(LN_ENTRY),"ENTRY  "+OrderKindText()+" (drag)",COL_LINE_ENTRY);
+   else ObjectDelete(0,TX_ENTRY);
   }
 
 // After a drag, convert the new line price back into stored settings.
