@@ -111,6 +111,7 @@ Deno.serve(async (req) => {
       body.be_sim        !== undefined ||
       body.be_clear_pips !== undefined ||
       body.be_off_r      !== undefined ||
+      body.no_be_r       !== undefined ||
       body.spread        !== undefined ||
       body.would_have_won !== undefined
     );
@@ -142,6 +143,9 @@ Deno.serve(async (req) => {
     // arrives, and nothing read it - so be_clear_pips, be_clear_r, be_off_r and
     // be_off_missed were NULL on all 116 rows. Wired up 2026-08-17. Nothing about the
     // trade's own numbers is touched; these are replay findings, same as the fields above.
+    // The stop-never-moved baseline for the BE-offset ladder. Read it here or it is dropped
+    // silently, exactly as be_clear_pips/be_off_r were for a whole EA version.
+    if (body.no_be_r        !== undefined) patch.no_be_r        = numOrNull(body.no_be_r);
     if (body.be_clear_pips !== undefined) patch.be_clear_pips = numOrNull(body.be_clear_pips);
     if (body.be_clear_r    !== undefined) patch.be_clear_r    = numOrNull(body.be_clear_r);
     if (numArray(body.be_off_r))      patch.be_off_r      = (body.be_off_r as unknown[]).map(Number);

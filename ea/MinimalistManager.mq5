@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.6"
+#property version   "5.7"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2461,18 +2461,33 @@ string PM_SimBE(string sym,int dir,double entry,double slPrice,double tpPrice,do
 //  offset stopped the trade and the target was then validly reached. Summed over winners,
 //  that flag count IS the answer to "how many would this have cost me".
 //----------------------------------------------------------------------------
-#define PM_OFF_LEVELS 6
-double PM_OFF_LADDER[PM_OFF_LEVELS]={0.0,0.25,0.5,0.75,1.0,1.5};   // R past entry
+// Every lock-in level from break-even to +1R in 0.05R steps. The rule each rung models is
+// "as soon as the trade is X R in profit, move the stop to entry + X R" - so the rung IS both
+// the trigger and the offset, which is what makes it self-contained and runnable on EVERY trade
+// rather than only ones where a BE move actually happened.
+//
+// Rung 0 (+0R) is the exception, because "move to entry the moment you are at entry" never
+// fires: it triggers at PM_OFF_BE_TRIG instead and moves the stop to entry exactly. That is
+// plain break-even - the thing most people mean by "I moved to BE".
+#define PM_OFF_LEVELS 21
+#define PM_OFF_BE_TRIG 0.10   // R in profit that arms the +0R (pure break-even) rung
+double PM_OFF_LADDER[PM_OFF_LEVELS]={0.00,0.05,0.10,0.15,0.20,0.25,0.30,0.35,0.40,0.45,0.50,
+                                     0.55,0.60,0.65,0.70,0.75,0.80,0.85,0.90,0.95,1.00};
 
 // Replay one trade under one BE-offset. Returns R; sets missed=1 when this offset
 // stopped the trade and the TP was then validly reached.
+// offR<0 means "never move the stop" - the do-nothing baseline every rung is judged against.
 double PM_SimOneOffset(MqlRates &r[],int n,int dir,double entry,double origSl,double tpPrice,
-                       double slDist,double pt,datetime beT,double offPx,int &missed)
+                       double slDist,double pt,double offR,int &missed)
   {
    missed=0;
    if(slDist<=0) return 0.0;
    double stop=origSl;
-   bool   moved=false;
+   bool   moved=(offR<0);                             // baseline: treat as already settled
+   // Arm at the rung itself, so this runs on EVERY trade rather than only ones where a BE move
+   // actually happened. +0R would never arm against itself, so it uses the small trigger above.
+   double trigR=(offR<0) ? 0.0 : ((offR<=0.0) ? PM_OFF_BE_TRIG : offR);
+   double offPx=(offR<0) ? 0.0 : offR*slDist;
 
    for(int i=0;i<n;i++)
      {
@@ -2481,8 +2496,10 @@ double PM_SimOneOffset(MqlRates &r[],int n,int dir,double entry,double origSl,do
       double advPx=(dir>0) ? r[i].low : (r[i].high+sp);
       double favPx=(dir>0) ? r[i].high : (r[i].low+sp);
 
-      // The stop moves at the moment it really moved, and only protects from the NEXT bar.
-      if(!moved && beT>0 && r[i].time>=beT){ stop=entry+dir*offPx; moved=true; continue; }
+      // Armed by price reaching the rung. The stop protects only from the NEXT bar, so a rung
+      // can never be stopped out by the very bar that armed it.
+      double favR=((dir>0) ? (favPx-entry) : (entry-favPx))/slDist;
+      if(!moved && offR>=0.0 && favR>=trigR){ stop=entry+dir*offPx; moved=true; continue; }
 
       bool stopHit=(dir>0) ? (advPx<=stop) : (advPx>=stop);
       if(stopHit)
@@ -2512,13 +2529,19 @@ double PM_SimOneOffset(MqlRates &r[],int n,int dir,double entry,double origSl,do
   }
 
 // Every offset, for one trade. Two JSON arrays: the R values, and the missed-TP flags.
+// outNoBe = the R this trade would have been worth with the stop NEVER moved: the do-nothing
+// baseline. Without it the ladder says which lock-in level is least bad, but not whether locking
+// in at all beats leaving the original stop alone - which is the actual question.
 void PM_SimOffsets(string sym,int dir,double entry,double origSl,double tpPrice,double slPips,
-                   datetime openT,datetime closeT,datetime beT,string &outR,string &outMissed)
+                   datetime openT,datetime closeT,string &outR,string &outMissed,string &outNoBe)
   {
-   outR=""; outMissed="";
+   outR=""; outMissed=""; outNoBe="";
    double pip=SymbolPipFor(sym);
    double pt =SymbolInfoDouble(sym,SYMBOL_POINT);
-   if(pip<=0 || pt<=0 || slPips<=0 || beT<=0 || tpPrice<=0) return;   // question does not arise
+   // beT is no longer required: every rung arms itself off the price path, so this now runs on
+   // EVERY trade - including the ones never moved to BE, where "what if I had?" is the whole
+   // question. A trade with no target still runs; only the missed-a-TP flag needs one.
+   if(pip<=0 || pt<=0 || slPips<=0) return;
 
    datetime eod=PM_EndOfDay(closeT);
    datetime upto=(TimeCurrent()<eod)?TimeCurrent():eod;
@@ -2531,12 +2554,13 @@ void PM_SimOffsets(string sym,int dir,double entry,double origSl,double tpPrice,
    for(int k=0;k<PM_OFF_LEVELS;k++)
      {
       int miss=0;
-      double rr=PM_SimOneOffset(r,n,dir,entry,origSl,tpPrice,slDist,pt,beT,
-                                PM_OFF_LADDER[k]*slDist,miss);
+      double rr=PM_SimOneOffset(r,n,dir,entry,origSl,tpPrice,slDist,pt,PM_OFF_LADDER[k],miss);
       a+=DoubleToString(rr,2); b+=IntegerToString(miss);
       if(k<PM_OFF_LEVELS-1){ a+=","; b+=","; }
      }
    outR=a+"]"; outMissed=b+"]";
+   int _m=0;
+   outNoBe=DoubleToString(PM_SimOneOffset(r,n,dir,entry,origSl,tpPrice,slDist,pt,-1.0,_m),2);
   }
 
 //----------------------------------------------------------------------------
@@ -2580,7 +2604,7 @@ string PM_SpreadSeries(string sym,datetime openT,datetime closeT)
 // on ticket, so this UPDATES that row rather than adding a second one.
 bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWin,
              double beSlackPips,double beClearPips,double beClearR,string beSim,
-             string beOffR,string beOffMissed,string spreadSeries)
+             string beOffR,string beOffMissed,string spreadSeries,string noBeR)
   {
    // Every trade carries both answers. The APP decides which to show, from its own
    // Win/Lose/BE result - a decision the EA cannot make honestly, because a breakeven
@@ -2603,6 +2627,7 @@ bool PM_Push(ulong posId,double potPips,double potR,double reqSlPips,int wouldWi
    if(StringLen(beOffMissed)>0) json+=",\"be_off_missed\":"+beOffMissed;
    // The broker's real spread, minute by minute, for the life of the trade.
    if(StringLen(spreadSeries)>0) json+=",\"spread\":"+spreadSeries;
+   if(StringLen(noBeR)>0)        json+=",\"no_be_r\":"+noBeR;
    json+="}";
    return SyncPost(json);
   }
@@ -2672,11 +2697,11 @@ void PM_Sweep()
          // varied, so the simulation must start from the stop you actually set at entry.
          double origSl = entry - dir*slPip*SymbolPipFor(sSym);
          string beSim  = PM_SimBE(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT);
-         string beOffR="",beOffMiss="";
-         PM_SimOffsets(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT,beT,beOffR,beOffMiss);
+         string beOffR="",beOffMiss="",noBeR="";
+         PM_SimOffsets(sSym,dir,entry,origSl,tpPr,slPip,openT,closeT,beOffR,beOffMiss,noBeR);
          string spSeries = PM_SpreadSeries(sSym,openT,closeT);
          done++;
-         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim,beOffR,beOffMiss,spSeries))
+         if(!PM_Push(posId,potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2,beSim,beOffR,beOffMiss,spSeries,noBeR))
            {
             // The push failed (offline?). Keep it and try again next sweep.
             pushDead=true;
@@ -3094,7 +3119,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.6 loaded (FREEZE FIX: PM_Sweep now pushes at most one post-mortem per bar and stops on the first failure - it used to replay and POST every backlogged trade in one event, blocking the EA's single thread for minutes at a time. Candle export gains a wall-clock budget and a 5s timeout. Adds a once-a-minute heartbeat so a future freeze names its own stage) ===");
+   Print("=== MinimalistManager v5.7 loaded (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }
