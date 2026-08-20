@@ -507,14 +507,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-btn-danger { background: transparent; border-color: var(--bad); color: var(--bad); }
   .settings-btn-danger:hover { background: var(--bad); color: var(--bg); }
   /* Accounts list — each row is a card with name, status, balance, P&L, actions. */
-  .settings-account-row { border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 14px 16px; margin-bottom: 10px; display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 12px; transition: border-color 200ms; }
+  /* minmax(260px, 1fr): the actions column is `auto` and greedy - five buttons would otherwise
+     squeeze the name column until the name wrapped on a 1280px screen with room to spare. The
+     floor makes the BUTTONS wrap instead (they already flex-wrap), which is the right thing to
+     give up. Below 600px the row is a single column, so the floor is dropped there and the
+     minmax(0,...) that lets it shrink applies instead. */
+  .settings-account-row { border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 14px 16px; margin-bottom: 10px; display: grid; grid-template-columns: minmax(260px, 1fr) auto; align-items: center; gap: 12px; transition: border-color 200ms; }
   .settings-account-row.active-account { border-color: var(--text-mid); }
   .settings-account-row.archived { opacity: 0.55; }
   /* The name and its badge stay on one line. nowrap goes on the CONTAINER, not on a child: the
      name is a bare text node next to the badge span, so there is nothing else to target. Stage
      suffixes made this visible — "FTMO 10K - Verification" broke after the hyphen where "Main"
      never did. min-width:0 lets the row shrink this cell rather than the buttons beside it. */
-  .settings-account-name { min-width: 0; white-space: nowrap; font-family: 'AppNum', 'DM Mono', monospace; font-size: 13px; color: var(--text); letter-spacing: 0.02em; display: flex; align-items: center; gap: 8px; }
+  /* WRAPS. This is a nowrap flex row, so every chip added to it widened the card instead of
+     folding: the "opened" date pushed the row past a phone's width and took the action buttons
+     off-screen with it (2026-08-20 - DELETE hanging off the right edge). Wrapping lets the badge
+     and date drop to a second line when the name is long, and lets the grid column shrink again. */
+  .settings-account-name { min-width: 0; white-space: nowrap; flex-wrap: wrap; row-gap: 4px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 13px; color: var(--text); letter-spacing: 0.02em; display: flex; align-items: center; gap: 8px; }
+  /* The name itself truncates rather than widening the card - the chips beside it (badge, date)
+     stay whole, since a half-shown date is worse than a shortened name. */
+  .san-txt { min-width: 0; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   .settings-account-opened { font-size: 10px; color: var(--text-dim); letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
   /* One line always. "Active now" fits in English; the Spanish "Activa ahora" is four characters
      longer and broke across two lines inside its own border. nowrap alone is not enough here —
@@ -678,7 +690,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .trade-account-breakdown-sep { margin: 0 8px; opacity: 0.5; }
   @media (max-width: 600px) {
     .settings-account-new-row { grid-template-columns: 1fr; }
-    .settings-account-row { grid-template-columns: 1fr; }
+    .settings-account-row { grid-template-columns: minmax(0, 1fr); }
     .settings-account-actions { justify-content: flex-start; }
     /* Phone: one vertical stack — STARTING, then CURRENT, then the "doesn’t match?" link on its own single line (unwrapped). */
     .settings-account-meta { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
@@ -39102,12 +39114,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           const _cd = acc.createdAt ? new Date(acc.createdAt) : null;
           if (_cd && !isNaN(_cd.getTime()) && _cd.getTime() >= Date.UTC(2020, 0, 1) && _cd.getTime() <= Date.now() + 86400000) {
             const _ds = _cd.toLocaleDateString((typeof tLocale === 'function' ? tLocale() : undefined), { day: 'numeric', month: 'short', year: 'numeric' });
-            openedHtml = `<span class="settings-account-opened" title="${window._stT('When this account was added to Session Tool', 'Cuándo se añadió esta cuenta a Session Tool')}">${window._stT('opened', 'creada')} ${_ds}</span>`;
+            // Bare date, no "opened" prefix: the word cost ~60px on a line that already carries
+            // the name and the status badge, and pushed the whole row onto two lines. The tooltip
+            // still says what the date means for anyone unsure.
+            openedHtml = `<span class="settings-account-opened" title="${window._stT('Account opened', 'Cuenta creada')} ${_ds}">${_ds}</span>`;
           }
         } catch (e) {}
         return `<div class="${rowCls.join(' ')}" data-account-id="${acc.id}">
           <div>
-            <div class="settings-account-name">${escapeHtml(accDisplayName(acc))} ${badgeHtml}${openedHtml}</div>
+            <div class="settings-account-name"><span class="san-txt">${escapeHtml(accDisplayName(acc))}</span> ${badgeHtml}${openedHtml}</div>
             <div class="settings-account-meta">
               <div class="settings-account-meta-balances">
               <span class="settings-account-meta-pair">
@@ -52067,11 +52082,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
   }
   function _impRank(e){ var c=_impCls(e.impact); return c==='high'?2:(c==='med'?1:0); }
+  /* NEAREST disc within tolerance, not the first one found - stacked releases are only
+     NEWS_STEP apart, so a generous radius must not simply return whichever happened to be drawn
+     first. Touch gets a much wider horizontal reach (a fingertip is ~44px, the disc is 16) while
+     the vertical tolerance stays inside half the stack pitch so the discs remain individually
+     selectable. */
   function newsHitAt(px,py){
-    var hits=S&&S._newsHit; if(!hits) return null;
-    for(var j=0;j<hits.length;j++){ var d=Math.abs(px-hits[j].x), dy=Math.abs(py-hits[j].y);
-      if(d<=NEWS_R+3&&dy<=NEWS_R+3) return hits[j]; }
-    return null;
+    var hits=S&&S._newsHit; if(!hits||!hits.length) return null;
+    var coarse=false; try{ coarse=window.matchMedia&&window.matchMedia('(pointer:coarse)').matches; }catch(_){ }
+    var tolX=coarse?(NEWS_R+14):(NEWS_R+3);
+    var tolY=coarse?Math.min(NEWS_STEP/2,NEWS_R+8):(NEWS_R+3);
+    var best=null,bestD=Infinity;
+    for(var j=0;j<hits.length;j++){
+      var dx=Math.abs(px-hits[j].x), dy=Math.abs(py-hits[j].y);
+      if(dx>tolX||dy>tolY) continue;
+      var d=dx*dx+dy*dy;
+      if(d<bestD){ bestD=d; best=hits[j]; }
+    }
+    return best;
   }
   /* The TradingView-style card: title, local date+time, Actual / Forecast / Previous. Shown on
      hover on a mouse, on tap on touch; a click on the disc also opens the week panel jumped to
@@ -52157,7 +52185,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function xOf(i){ return chart.timeScale().logicalToCoordinate(i); }
   function yOf(p){ return series.priceToCoordinate(p); }
   function P(p){ var x=xOf(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
-  function evXY(e){ var r=chartEl.getBoundingClientRect(); return {x:e.clientX-r.left,y:e.clientY-r.top}; }
+  /* Works for mouse AND touch: a TouchEvent has no clientX of its own, the coordinates live on
+     touches[0] (or changedTouches[0] once the finger has lifted). */
+  function evXY(e){ var r=chartEl.getBoundingClientRect();
+    var pt=e; if(e && e.touches && e.touches.length) pt=e.touches[0];
+    else if(e && e.changedTouches && e.changedTouches.length) pt=e.changedTouches[0];
+    return {x:pt.clientX-r.left,y:pt.clientY-r.top}; }
   function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; return {idx:Math.max(0,Math.min(S.cursor-1,Math.round(lg))),price:pr}; }
   function sizeO(){ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
@@ -52424,6 +52457,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       draw(); return; }
     var h=hit(xy.x,xy.y); if(h){ e.stopPropagation(); e.preventDefault(); S.sel=h.i; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i])}; draw(); } else if(S.sel!=null){ S.sel=null; updDel(); draw(); }
   },true);
+  /* TOUCH. Lightweight Charts consumes touch events on the chart and calls preventDefault, so
+     the browser never synthesizes the mousedown the badge handler above listens for: on a phone
+     the news discs were simply dead. Listen for touchstart directly, in the capture phase, and
+     only act when the tap actually lands on a disc - every other touch falls through untouched so
+     panning, zooming and the drawing tools behave exactly as before. */
+  document.addEventListener('touchstart',function(e){
+    if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')) return;
+    if(!chartEl.contains(e.target)) return;
+    var xy=evXY(e), nh=newsHitAt(xy.x,xy.y);
+    if(!nh){ if(S._newsPinned){ S._newsPinned=null; S._newsHover=null; newsCard(null); } return; }
+    e.stopPropagation(); e.preventDefault();
+    if(S._newsPinned&&S._newsPinned.i===nh.i&&S._newsPinned.j===nh.j){ S._newsPinned=null; S._newsHover=null; newsCard(null); return; }
+    S._newsPinned={i:nh.i,j:nh.j}; S._newsHover=S._newsPinned; newsCard(nh);
+  },{capture:true,passive:false});
+
   window.addEventListener('mousemove',function(e){ if(!S) return;
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
     if(S.drag){ var p=toP(e); if(!p)return; var d=S.drawings[S.drag.i]; if(S.drag.part==='line') d.price=p.price; else if(S.drag.part==='a') d.a={idx:p.idx,price:p.price}; else if(S.drag.part==='b') d.b={idx:p.idx,price:p.price}; else { var dI=p.idx-S.drag.start.idx,dP=p.price-S.drag.start.price; d.a={idx:S.drag.orig.a.idx+dI,price:S.drag.orig.a.price+dP}; d.b={idx:S.drag.orig.b.idx+dI,price:S.drag.orig.b.price+dP}; } draw(); return; }
