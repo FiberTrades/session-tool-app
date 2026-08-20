@@ -3462,12 +3462,20 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
             // cursor can jitter across the mid line, which would flip the side and make the
             // SL/label glitch - so only change side when the cursor is clearly past the
             // minimum distance from price; otherwise keep the side we already had.
+            // ONE reference for both decisions. The side flip used to compare the cursor
+            // against live MID while the distance was measured from the ENTRY LINE - two
+            // different anchors, so on a pending order whose entry had drifted from price
+            // (2026-08-20: entry 8 pips below market) the cursor's side was judged against a
+            // price the SL was not measured from, and "mouse above price" still produced an
+            // SL below it. Pending orders flip and measure around the entry line; market
+            // orders around the live price.
+            double anchor=(g_orderKind==OK_MARKET) ? mid
+                                                   : (LinePrice(LN_ENTRY)>0?LinePrice(LN_ENTRY):mid);
             int side=g_slSetSide;
-            double rawPips=MathAbs(pr-mid)/g_pip;
-            if(rawPips>=g_minSL) side=(pr<mid)?-1:+1;
+            double rawPips=MathAbs(pr-anchor)/g_pip;
+            if(rawPips>=g_minSL) side=(pr<anchor)?-1:+1;
             // measure from the price the order will actually fill at on that side
-            double ref=(g_orderKind==OK_MARKET) ? (side>0?bid:ask)
-                                                : (LinePrice(LN_ENTRY)>0?LinePrice(LN_ENTRY):mid);
+            double ref=(g_orderKind==OK_MARKET) ? (side>0?bid:ask) : anchor;
             double distPips=MathAbs(pr-ref)/g_pip;
             if(distPips<g_minSL) distPips=g_minSL;        // never closer than min
             if(distPips>g_maxSL) distPips=g_maxSL;        // never wider than max
