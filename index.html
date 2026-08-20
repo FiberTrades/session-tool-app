@@ -7605,6 +7605,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // rule: (1) £ delta > 5% of current £ with £50 floor, (2) tier is
       // building or stronger (15+ tracked samples). Otherwise these
       // near-miss templates explain why the verdict is "stay the course".
+      'combo.gate_concentration': 'it rests on a single trade — take that one away and it is worth {WO} instead',
       'combo.gate_tier':  'only {N} {SAMPLE} is too few for confidence (need 10+)',
       'combo.gate_delta': 'the gain is below the {THRESHOLD} confidence threshold (5% of current P&L)',
       'combo.gate_both':  'only {N} {SAMPLE} (need 10+) AND the gain is below the {THRESHOLD} confidence threshold (5% of current P&L)',
@@ -9101,6 +9102,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'combo.g_before_rev': 'Antes de revertir',
       'combo.either_rule': 'cualquiera de las reglas',
       // Filtrado del veredicto — ver comentario en bloque EN equivalente.
+      'combo.gate_concentration': 'depende de una sola operación — quítala y vale {WO} en su lugar',
       'combo.gate_tier':  'solo {N} {SAMPLE} es muy poco para confianza (necesitas 10+)',
       'combo.gate_delta': 'la ganancia está por debajo del umbral de confianza de {THRESHOLD} (5% del P&L actual)',
       'combo.gate_both':  'solo {N} {SAMPLE} (necesitas 10+) Y la ganancia está por debajo del umbral de confianza de {THRESHOLD} (5% del P&L actual)',
@@ -19255,6 +19257,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // actually peaked and that winner becomes a SCRATCH (see the overhold line in
   // projectAllTrades). Cap your TP shorter and every existing winner is truncated. The old
   // single-bar graphs showed only the upside, which is precisely the error the maths avoids.
+  /* SINGLE-TRADE DEPENDENCE. A scenario's headline total can rest almost entirely on one
+     outlier: on 2026-08-20 "stop moving to BE at all" showed +£387 across 34 replayed trades,
+     and removing the single best trade turned it into -£6.50R. That is a coin flip being
+     presented as advice, and the sample-size badge does not catch it - the sample was fine, the
+     CONCENTRATION was not.
+
+     Returns what the scenario would be worth with its most favourable single trade removed.
+     Same per-trade arrays splitVsCurrent uses, so it is exact rather than an estimate. */
+  function deltaWithoutBestTrade(scenario, current) {
+    const a = (scenario && scenario.perTradeGbp) || [];
+    const b = (current  && current.perTradeGbp)  || [];
+    let total = 0, best = 0;
+    for (let i = 0; i < Math.min(a.length, b.length); i++) {
+      const d = a[i] - b[i];
+      total += d;
+      if (d > best) best = d;
+    }
+    return { total, best, without: total - best };
+  }
   function splitVsCurrent(scenario, current) {
     const a = (scenario && scenario.perTradeGbp) || [];
     const b = (current  && current.perTradeGbp)  || [];
@@ -20351,7 +20372,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const bBeats       = bDeltaGbp > 0;
 
     // Helper: build a "why is this direction gated" reason fragment.
-    function buildGateReason(passesTier, passesDelta, n, sampleLabel) {
+    function buildGateReason(passesTier, passesDelta, n, sampleLabel, passesConcentration, woBest) {
+      // Concentration is reported FIRST when it fails, because it is the most damning of the
+      // three: the sample can be large and the gain can clear the threshold, and the finding
+      // still be one trade wearing a disguise.
+      if (passesConcentration === false) {
+        return (t('combo.gate_concentration') || 'it rests on a single trade - take that one away and it is worth {WO} instead')
+          .replace(/\{WO\}/g, fmtGbp(woBest == null ? 0 : woBest));
+      }
       if (!passesTier && !passesDelta) {
         return (t('combo.gate_both') || 'only {N} {SAMPLE} (need 15+) AND the gain is below the {THRESHOLD} confidence threshold (5% of current P&L)')
           .replace(/\{N\}/g, n).replace(/\{SAMPLE\}/g, sampleLabel).replace(/\{THRESHOLD\}/g, fmtGbp(threshold).replace(/^\+/, ''));
@@ -20379,32 +20407,41 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const candidates = [
       { name: t('combo.direction_a_name') || 'Hold winners longer',
         suggest: '+' + _dualBare(optStretch),
-        delta: aDeltaGbp, passesTier: aPassesTier, passesDelta: aPassesDelta,
+        scenario: scenarioA, delta: aDeltaGbp, passesTier: aPassesTier, passesDelta: aPassesDelta,
         n: trackedWins.length,
         sampleLabel: trackedWins.length === 1
           ? (t('combo.sample_win_one') || 'tracked win') : (t('combo.sample_win_many') || 'tracked wins') },
       { name: t('combo.direction_b_name') || 'Close BEs sooner',
         suggest: 'cap at +' + _dualBare(optTP),
-        delta: bDeltaGbp, passesTier: bPassesTier, passesDelta: bPassesDelta,
+        scenario: scenarioB, delta: bDeltaGbp, passesTier: bPassesTier, passesDelta: bPassesDelta,
         n: trackedBes.length,
         sampleLabel: trackedBes.length === 1
           ? (t('combo.sample_be_one') || 'tracked BE') : (t('combo.sample_be_many') || 'tracked BEs') },
       { name: t('combo.direction_c_name') || 'Widen your initial stop',
         suggest: '+' + bestWiden + ' pips',
-        delta: cDeltaGbp, passesTier: tierIsStrong(tierC), passesDelta: cDeltaGbp > threshold,
+        scenario: scenarioC, delta: cDeltaGbp, passesTier: tierIsStrong(tierC), passesDelta: cDeltaGbp > threshold,
         n: trackedLosers.length,
         sampleLabel: trackedLosers.length === 1
           ? (t('combo.sample_loser_one') || 'tracked loser') : (t('combo.sample_loser_many') || 'tracked losers') },
       { name: t('combo.direction_d_name') || 'Change your BE rule',
         suggest: bestBeLabel,
-        delta: dDeltaGbp, passesTier: tierIsStrong(tierD), passesDelta: dDeltaGbp > threshold,
+        scenario: scenarioD, delta: dDeltaGbp, passesTier: tierIsStrong(tierD), passesDelta: dDeltaGbp > threshold,
         n: trackedBeSim.length,
         sampleLabel: trackedBeSim.length === 1
           ? (t('combo.sample_sim_one') || 'tracked BE') : (t('combo.sample_sim_many') || 'tracked BEs') }
     ];
 
+    /* Third gate: does the finding survive losing its single best trade? A recommendation that
+       inverts when one trade is removed has not been earned, however large the sample or the
+       headline. Tier checks HOW MANY trades; this checks whether they all pointed the same way. */
+    candidates.forEach(c => {
+      const lo = c.scenario ? deltaWithoutBestTrade(c.scenario, current) : null;
+      c.woBest = lo ? lo.without : null;
+      c.passesConcentration = (lo == null) ? true : (lo.without > 0);
+    });
+
     const beats = candidates.filter(c => c.delta > 0).sort((x, y) => y.delta - x.delta);
-    const actionable = beats.filter(c => c.passesTier && c.passesDelta);
+    const actionable = beats.filter(c => c.passesTier && c.passesDelta && c.passesConcentration);
 
     let profitVerdict;
     if (beats.length === 0) {
@@ -20420,7 +20457,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } else {
       // Something looks promising but has not earned the right to be acted on.
       const near = beats[0];
-      const reason = buildGateReason(near.passesTier, near.passesDelta, near.n, near.sampleLabel);
+      const reason = buildGateReason(near.passesTier, near.passesDelta, near.n, near.sampleLabel,
+                                     near.passesConcentration, near.woBest);
       profitVerdict = (t('combo.verdict_near_miss')
           || '<strong>{NAME}</strong> ({SUGGEST}) would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.')
         .replace(/\{NAME\}/g, near.name)
