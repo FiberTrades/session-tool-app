@@ -36425,6 +36425,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // together: the state and the screen have to change in the same breath.
     _mt5JustDeleted = {};
     try { renderMt5Excluded(); } catch (e) {}
+    // Paint from what is already in memory above, then refresh from the broker. The panel used to
+    // stay blank until Auto sync was pressed, so "nothing here" and "nobody has asked yet" looked
+    // identical — and a reload was the only way to see the truth.
+    try { _mt5ScanExcluded(); } catch (e) {}
     document.getElementById('mt5-step-pick').style.display = '';
     document.getElementById('mt5-step-preview').style.display = 'none';
     document.getElementById('mt5-pick-error').style.display = 'none';
@@ -37312,20 +37316,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // is how it came to assert 15 missing trades worth £67.72 on an account that reconciled with the
   // broker to the penny. The cache is cleared at load and refilled from a real scan, so the panel
   // only ever says something it has actually just checked.
+  // Apply a set of inbox rows to the panel and the counter. The single place that decides what is
+  // missing and what has been deleted — it used to be written out twice, and the copies had already
+  // drifted (the background scan never populated the deleted rows), which is how a number on the
+  // Challenge panel could disagree with the list that was supposed to explain it.
+  function _mt5ApplyExcluded(all) {
+    try {
+      _mt5ExcludedRows = _mt5ExcludedFrom(all);
+      _mt5IgnoredRows = (all || []).filter(r => _mt5RowIsValid(r) && _mt5IsIgnored(r.ticket));
+      renderMt5Excluded();
+      const n = _mt5ExcludedRows.length;
+      const sum = _mt5ExcludedRows.reduce((s, r) => s + (parseFloat(r.pnl) || 0), 0);
+      const prev = data._mt5Excluded || {};
+      if (prev.n !== n || Math.abs((prev.sum || 0) - sum) > 0.005) {
+        data._mt5Excluded = { n: n, sum: sum };
+        try { saveData(); } catch (e) {}
+        try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
+      }
+    } catch (e) {}
+  }
+  // Fill the panel from a fresh pull, and nothing else. Deliberately NOT runMt5AutoSync: that one
+  // ends by jumping to the preview step whenever something is importable, which is correct for a
+  // button press and hostile on open — you would ask to see the window and land in a preview of
+  // trades you never chose to import.
   function _mt5ScanExcluded() {
     try {
       if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
       Promise.resolve(window.STCloud.pullInbox()).then(res => {
         if (!res || res.error) return;
-        const rows = _mt5ExcludedFrom((res && res.data) || []);
-        const n = rows.length;
-        const sum = rows.reduce((s, r) => s + (parseFloat(r.pnl) || 0), 0);
-        const prev = data._mt5Excluded || {};
-        if (prev.n !== n || Math.abs((prev.sum || 0) - sum) > 0.005) {
-          data._mt5Excluded = { n: n, sum: sum };
-          try { saveData(); } catch (e) {}
-          try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
-        }
+        _mt5ApplyExcluded((res && res.data) || []);
       }).catch(() => {});
     } catch (e) {}
   }
@@ -37394,23 +37413,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const rows = all.filter(r => _mt5RowAllowed(r));   // consumed rows stay for the replay, but are not re-offered
       // Everything the broker sent that is genuinely NOT in the journal and is being suppressed.
       // A row a logged trade already wears is fine and is not listed.
-      try {
-        _mt5ExcludedRows = _mt5ExcludedFrom(all);   // same test the background scan uses
-        // Deleted rows are filtered out of the list above, so keep them here — otherwise the only
-        // record that they exist is a ticket id in storage, and "deleted" becomes unrecoverable.
-        _mt5IgnoredRows = (all || []).filter(r => _mt5RowIsValid(r) && _mt5IsIgnored(r.ticket));
-        renderMt5Excluded();
-        // Remember the count so the Challenge panel can say its figures are short. Saved only when
-        // it changes, so a sync is not a write every time.
-        const _excN = _mt5ExcludedRows.length;
-        const _excSum = _mt5ExcludedRows.reduce((s, r) => s + (parseFloat(r.pnl) || 0), 0);
-        const _prev = data._mt5Excluded || {};
-        if (_prev.n !== _excN || Math.abs((_prev.sum || 0) - _excSum) > 0.005) {
-          data._mt5Excluded = { n: _excN, sum: _excSum };
-          try { saveData(); } catch (e) {}
-          try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
-        }
-      } catch (e) {}
+      // Same rule, one implementation: what is missing, what was deleted, and the figure the
+      // Challenge panel quotes all come from here.
+      _mt5ApplyExcluded(all);
       if (!all.length) { setStatus(T('mt5.sync_none') || 'No new synced trades found.'); return; }
       // Skip the ledger here: only tickets a logged trade actually wears count as "already in
       // your log". A ticket the pairing step stranded in the ledger (marked done, never logged)
