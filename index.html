@@ -13561,9 +13561,21 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     setTimeout(() => { _els.forEach(el => { if (el.classList.contains('reveal-armed')) { el.classList.remove('reveal-armed'); el.classList.add('reveal-in'); } }); }, 1600);
   }
   requestAnimationFrame(() => { try { initScrollReveal(); } catch (e) {} });
-  function recordBiasIfComplete() {
+  /* force=true is used by the POST path: publishing a bias to the community is an unambiguous
+     "I showed up", so it must always leave a history entry, complete or not.
+
+     Structure is no longer required. It never was, anywhere else: buildBiasMessage prints each
+     field only if set, so a bias with no Structure posts perfectly happily. Requiring it here
+     meant Troy could fill Mode, Location and Bias, write a rule, attach a chart and post the lot
+     at 07:58 on Tue 18 Aug - and his journal recorded NOTHING, because one optional field was
+     blank. His adherence then read "Missed: Tue" for a day he had demonstrably worked. The bar
+     for "this is a real bias" is a direction and where you are - mode, location, direction. */
+  function recordBiasIfComplete(force) {
     const b = data.bias;
-    if (!b.mode || !b.structure || !b.location || !b.direction) return; // not yet complete
+    const _core = b.mode && b.location && b.direction;
+    const _any  = b.mode || b.structure || b.structureLtf || b.location || b.locationLtf || b.direction || b.directionLtf || b.notes;
+    if (!force && !_core) return;   // auto-record: wait until it is a real bias
+    if (force && !_any)   return;   // on post: record ANYTHING that was filled; skip only a blank form
     if (!Array.isArray(data.biasHistory)) data.biasHistory = [];
     const dateKey = (b.sessionDate || todayDateStr() || new Date().toISOString().slice(0, 10));
     const _hSym = b.symbol || ''; const _hSess = b.sessionName || '';
@@ -13958,6 +13970,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     data.bias.date = nowIso; // committing adopts today's date, so the card shows even when the form was filled the night before
     // Sending today's bias means the new day is under way -- disarm the "new day?" reset so it can never later wipe today's work.
     _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null; try { data.lastSessionDate = new Date().toDateString(); } catch (e) {}
+    // Make sure the entry EXISTS before stamping it. This used to be a bare `if (entry)`, so a
+    // bias that had not satisfied recordBiasIfComplete was posted to the community and left no
+    // trace in the journal at all - the day then counted as missed. force=true records whatever
+    // was actually filled.
+    try { recordBiasIfComplete(true); } catch (e) {}
     if (Array.isArray(data.biasHistory)) {
       const dateKey = (data.bias.sessionDate || todayDateStr() || nowIso.slice(0, 10));
       const entry = data.biasHistory.find(e => e.dateKey === dateKey && (e.symbol || '') === (data.bias.symbol || '') && (e.sessionName || '') === (data.bias.sessionName || ''));
