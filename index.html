@@ -1269,6 +1269,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      even when collapsed. */
   .mt5-collapse-body > span, .mt5-collapse-body > .mt5-fold-inner { display: block; overflow: hidden; min-height: 0; padding-top: 0; transition: padding-top 0.3s cubic-bezier(0.4,0,0.2,1); }
   .mt5-collapse-body.open > span, .mt5-collapse-body.open > .mt5-fold-inner { padding-top: 8px; }
+  /* Excluded-trade rows carry five fixed columns and now two action buttons, which cannot fit a
+     phone on one line. Let the row wrap so the buttons take their own line at a tappable width,
+     rather than overflowing the modal. The row's layout is written inline, so these have to win. */
+  @media (max-width: 560px) {
+    .mt5-exc-row { flex-wrap: wrap !important; gap: 6px 8px !important; }
+    .mt5-exc-row > span { flex: 0 0 auto !important; }
+    /* The ticket takes the rest of its line, so both buttons start a fresh one and come out the
+       same width instead of one trailing the ticket and the other stranded below it. */
+    .mt5-exc-row > span:last-of-type { flex: 1 0 100% !important; }
+    .mt5-exc-row > button { flex: 1 1 40% !important; padding: 8px 10px !important; }
+  }
   .econ-filter-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .econ-filter-label { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-dim); min-width: 80px; }
   .econ-chip-group { display: flex; gap: 6px; flex-wrap: wrap; }
@@ -36364,6 +36375,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   let _mt5TargetAccountId = null;   // account the preview step will file these trades against
   let _mt5ExcludedRows = [];        // broker trades not in the journal and currently suppressed
   let _mt5BatchLogins = [];         // distinct broker logins present in the parsed batch
+  // Tickets deleted from the excluded list during THIS viewing of the modal: ticket -> { row, prev }.
+  // They keep their place in the list, greyed out with an Undo, so removing one is never a dead end
+  // while you can still see it. Cleared when the modal opens, which is when the deletion becomes
+  // final — the ticket then simply stops being listed.
+  let _mt5JustDeleted = {};
 
   // ----- MT5 sync-token display (a dedicated per-user secret, separate from the account id) -----
   function mt5SyncToken() {
@@ -36385,6 +36401,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
   // ----- Open / close the modal -----
   function openMt5Modal() {
+    // A fresh viewing: last time's deletions stop offering an Undo and just stay deleted.
+    _mt5JustDeleted = {};
     document.getElementById('mt5-step-pick').style.display = '';
     document.getElementById('mt5-step-preview').style.display = 'none';
     document.getElementById('mt5-pick-error').style.display = 'none';
@@ -37235,6 +37253,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) {}
     return min;
   }
+  // Deliberately removed from the excluded list: the trader looked at it and said "not mine / don't
+  // want it". Distinct from a dismissal, which only means "not now" and is what put most of these
+  // rows here in the first place — this one is an answer, so it silences the Challenge panel's
+  // "not counted here" line too, rather than leaving a warning nothing can ever clear.
+  function _mt5IsIgnored(ticket) {
+    try { return (data.mt5Ignored || []).some(x => String(x) === String(ticket)); } catch (e) { return false; }
+  }
   // Which broker trades are genuinely missing from the journal, from a set of inbox rows.
   function _mt5ExcludedFrom(all) {
     const worn = _mt5WornTickets();
@@ -37245,6 +37270,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // Predates the journal → out of scope, not missing. One day of slack so a trade on the very
       // first journalled day is never dropped by a timezone boundary.
       if (start !== null) { const d = _mt5Day(r.close_time); if (d !== null && d < start - 1) return false; }
+      if (_mt5IsIgnored(r.ticket)) return false;   // answered: stop listing it and stop counting it
       return !worn.has(String(r.ticket)) && !_mt5RowMatchesLogged(r, idx) && !_mt5RowAllowed(r);
     });
   }
@@ -37557,31 +37583,55 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const hint = document.getElementById('mt5-excluded-hint');
     const title = document.getElementById('mt5-excluded-title');
     if (!wrap || !list) return;
-    const rows = (_mt5ExcludedRows || []).slice().sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
+    // Rows deleted a moment ago are no longer in _mt5ExcludedRows (the filter drops them), so they
+    // are added back here purely so the Undo has something to sit on.
+    const live = (_mt5ExcludedRows || []).slice();
+    const liveHas = new Set(live.map(r => String(r.ticket)));
+    Object.keys(_mt5JustDeleted).forEach(tk => {
+      if (!liveHas.has(tk) && _mt5JustDeleted[tk] && _mt5JustDeleted[tk].row) live.push(_mt5JustDeleted[tk].row);
+    });
+    const rows = live.sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
     if (!rows.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
     wrap.style.display = '';
     const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
-    const _one = rows.length === 1;
-    if (title) title.textContent = window._stT(
-      rows.length + ' broker trade' + (_one ? '' : 's') + ' not in your journal',
-      rows.length + (_one ? ' operación del bróker que no está en tu diario'
-                          : ' operaciones del bróker que no están en tu diario'));
-    if (hint) hint.textContent = window._stT(
-      'These were dismissed or marked as handled, so nothing offers them any more — and their P&L is missing from your balance. Restore one to put it back in the import list.',
-      'Se descartaron o se marcaron como gestionadas, así que ya nada las ofrece — y su P&L falta en tu saldo. Restaura una para devolverla a la lista de importación.');
+    const nLive = rows.filter(r => !_mt5JustDeleted[String(r.ticket)]).length;
+    const _one = nLive === 1;
+    if (title) title.textContent = nLive
+      ? window._stT(
+          nLive + ' broker trade' + (_one ? '' : 's') + ' not in your journal',
+          nLive + (_one ? ' operación del bróker que no está en tu diario'
+                        : ' operaciones del bróker que no están en tu diario'))
+      : window._stT('Nothing missing from your journal',
+                    'No falta nada en tu diario');
+    if (hint) hint.textContent = nLive
+      ? window._stT(
+          'These were dismissed or marked as handled, so nothing offers them any more — and their P&L is missing from your balance. Restore one to put it back in the import list, or delete it to stop being told about it.',
+          'Se descartaron o se marcaron como gestionadas, así que ya nada las ofrece — y su P&L falta en tu saldo. Restaura una para devolverla a la lista de importación, o elimínala para dejar de verla.')
+      : window._stT(
+          'Deleted from the list. Undo now if that was a mistake — once you close this window they are gone from it for good.',
+          'Eliminadas de la lista. Deshaz ahora si fue un error — al cerrar esta ventana desaparecerán de ella definitivamente.');
     list.innerHTML = rows.map(r => {
       const net = parseFloat(r.pnl);
       const netStr = isFinite(net) ? ((net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) : '—';
       const cls = !isFinite(net) ? '' : (net > 0 ? 'pl-good' : net < 0 ? 'pl-bad' : 'pl-be');
       const when = r.close_time ? String(r.close_time).slice(0, 16).replace('T', ' ') : '—';
-      return '<div class="mt5-exc-row" style="display:flex;align-items:center;gap:14px;padding:9px 12px;border-bottom:1px solid var(--border-2);font-family:\'AppNum\',\'DM Mono\',monospace;font-size:11px;">'
-        + '<span style="color:var(--text-dim);flex:0 0 108px;">' + esc(when) + '</span>'
-        + '<span style="color:var(--text);flex:0 0 84px;">' + esc(r.symbol || '—') + '</span>'
+      const gone = !!_mt5JustDeleted[String(r.ticket)];
+      const btnBase = 'flex:0 0 auto;background:transparent;padding:5px 12px;font-family:inherit;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-ctrl);';
+      const acts = gone
+        ? '<button type="button" class="mt5-exc-undo" data-ticket="' + esc(r.ticket) + '" style="' + btnBase + 'border:1px solid var(--accent);color:var(--accent);">'
+          + window._stT('Undo', 'Deshacer') + '</button>'
+        : '<button type="button" class="mt5-exc-restore" data-ticket="' + esc(r.ticket) + '" style="' + btnBase + 'border:1px solid var(--good);color:var(--good);">'
+          + window._stT('Restore', 'Restaurar') + '</button>'
+          + '<button type="button" class="mt5-exc-delete" data-ticket="' + esc(r.ticket) + '" style="' + btnBase + 'border:1px solid var(--border-2);color:var(--text-dim);">'
+          + window._stT('Delete', 'Eliminar') + '</button>';
+      return '<div class="mt5-exc-row" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border-2);font-family:\'AppNum\',\'DM Mono\',monospace;font-size:11px;'
+        + (gone ? 'opacity:0.45;' : '') + '">'
+        + '<span style="color:var(--text-dim);flex:0 0 108px;' + (gone ? 'text-decoration:line-through;' : '') + '">' + esc(when) + '</span>'
+        + '<span style="color:var(--text);flex:0 0 84px;' + (gone ? 'text-decoration:line-through;' : '') + '">' + esc(r.symbol || '—') + '</span>'
         + '<span style="color:var(--text-mid);flex:0 0 54px;">' + esc(r.direction || '') + '</span>'
-        + '<span class="' + cls + '" style="flex:0 0 82px;">' + netStr + '</span>'
+        + '<span class="' + cls + '" style="flex:0 0 82px;' + (gone ? 'text-decoration:line-through;' : '') + '">' + netStr + '</span>'
         + '<span style="color:var(--text-dim);flex:1 1 auto;min-width:0;">#' + esc(r.ticket) + '</span>'
-        + '<button type="button" class="mt5-exc-restore" data-ticket="' + esc(r.ticket) + '" style="flex:0 0 auto;background:transparent;border:1px solid var(--good);color:var(--good);padding:5px 12px;font-family:inherit;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-ctrl);">'
-        + window._stT('Restore', 'Restaurar') + '</button>'
+        + acts
         + '</div>';
     }).join('');
     list.querySelectorAll('.mt5-exc-restore').forEach(btn => {
@@ -37609,7 +37659,71 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { runMt5AutoSync(); } catch (e) {}
       });
     });
+    // Delete: the opposite answer to Restore. "This is not mine / I don't want it" — so stop
+    // listing it AND stop the Challenge panel counting its P&L as missing. Everything is written
+    // through STCloud.setData in one go, for the same reason Restore does: the tab's in-memory
+    // journal, localStorage and the cloud copy have to move together or the next sync pushes the
+    // old state straight back over it.
+    list.querySelectorAll('.mt5-exc-delete').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tk = String(btn.dataset.ticket || '');
+        if (!tk) return;
+        const row = (_mt5ExcludedRows || []).filter(r => String(r.ticket) === tk)[0] || null;
+        try {
+          const d = window.STCloud.getData ? window.STCloud.getData() : JSON.parse(localStorage.getItem(window.STCloud.STORAGE_KEY));
+          // Snapshot the exact arrays first so Undo puts back precisely what was there, rather
+          // than guessing which entries this click added.
+          _mt5JustDeleted[tk] = { row: row, prev: {
+            ignored:   (d.mt5Ignored       || []).slice(),
+            dismissed: (d.mt5UserDismissed || []).slice(),
+            force:     (d.mt5ForceOffer    || []).slice()
+          } };
+          d.mt5Ignored       = (d.mt5Ignored       || []).filter(x => String(x) !== tk).concat([tk]);
+          if (d.mt5Ignored.length > 500) d.mt5Ignored = d.mt5Ignored.slice(-500);
+          // Also block it from the import list: a row the broker sent but never marked consumed is
+          // otherwise still offered, so deleting it here would leave it popping up over there.
+          d.mt5UserDismissed = (d.mt5UserDismissed || []).filter(x => String(x) !== tk).concat([tk]);
+          d.mt5ForceOffer    = (d.mt5ForceOffer    || []).filter(x => String(x) !== tk);
+          window.STCloud.setData(d);
+          if (typeof saveData === 'function') saveData();
+        } catch (e) {}
+        renderMt5Excluded();                       // instant: the row greys out and offers Undo
+        try { runMt5AutoSync(); } catch (e) {}     // recomputes the "not counted here" figure
+      });
+    });
+    list.querySelectorAll('.mt5-exc-undo').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const tk = String(btn.dataset.ticket || '');
+        const snap = tk ? _mt5JustDeleted[tk] : null;
+        if (!snap) return;
+        try {
+          const d = window.STCloud.getData ? window.STCloud.getData() : JSON.parse(localStorage.getItem(window.STCloud.STORAGE_KEY));
+          d.mt5Ignored       = snap.prev.ignored.slice();
+          d.mt5UserDismissed = snap.prev.dismissed.slice();
+          d.mt5ForceOffer    = snap.prev.force.slice();
+          window.STCloud.setData(d);
+          if (typeof saveData === 'function') saveData();
+        } catch (e) {}
+        delete _mt5JustDeleted[tk];
+        renderMt5Excluded();
+        try { runMt5AutoSync(); } catch (e) {}
+      });
+    });
   }
+  // What the excluded list currently holds, and what has been silenced. Passing `fixture` replaces
+  // the rows and re-renders, which is how the Restore/Delete/Undo wiring gets exercised without
+  // waiting for a broker to send something unwanted.
+  try {
+    window.__stMt5ExcDiag = function (fixture) {
+      if (Array.isArray(fixture)) _mt5ExcludedRows = fixture;
+      renderMt5Excluded();
+      return { listed: (_mt5ExcludedRows || []).length,
+               undoable: Object.keys(_mt5JustDeleted),
+               ignored: (data.mt5Ignored || []).slice(),
+               dismissed: (data.mt5UserDismissed || []).length,
+               forceOffer: (data.mt5ForceOffer || []).slice() };
+    };
+  } catch (e) {}
 
   // ----- Render preview step -----
   function renderMt5Preview() {
