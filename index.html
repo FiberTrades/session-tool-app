@@ -53174,8 +53174,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           ctx.font="11px 'DM Mono',monospace"; ctx.fillStyle=C; ctx.textAlign='center'; ctx.textBaseline='bottom';
           ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillText(String(d.text),0,-5); ctx.restore(); } }
       else { var _a=labelAt(d);
-        if(_a){ ctx.save(); ctx.font="11px 'DM Mono',monospace"; ctx.fillStyle=C; ctx.textBaseline='bottom'; ctx.textAlign='left';
-          ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillText(String(d.text),_a.x+4,_a.y-4); ctx.restore(); } } }
+        if(_a){ ctx.save(); ctx.font="11px 'DM Mono',monospace"; ctx.fillStyle=C; ctx.textBaseline='bottom'; ctx.textAlign='center';
+          /* The measure tool already writes its pips/R/bars line just above the box, so a note at
+             the same height would sit on top of it. Lifted one line clear when both are on the
+             same side; when the reading hangs below the box there is nothing to avoid. */
+          var _lift=(d.type==='range'&&d.a&&d.b&&d.b.price>=d.a.price)?20:5;
+          ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillText(String(d.text),_a.x,_a.y-_lift); ctx.restore(); } } }
     ctx.restore(); }
   /* Top-left of whatever the shape occupies, so a note never floats away from its object. */
   /* 0, 0.5 and 1 are the levels read most often and they were the ones carrying the most padding -
@@ -53183,12 +53187,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      as long as it needs to be and no longer: 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1. */
   function fibLbl(lv){ try{ var n=Number(lv); if(!isFinite(n)) return String(lv);
     return String(parseFloat(n.toFixed(4))); }catch(_){ return String(lv); } }
+  /* Top-CENTRE of whatever the shape occupies. Every note now reads the same way: centred on its
+     object and lifted just clear of it, which is how the trend line already behaved. It was the only
+     shape given that treatment, so a rectangle's note hung off its top-left corner while a line's sat
+     neatly on it - one feature looking like two. */
   function labelAt(d){ try{
-    if(d.type==='pen'){ var ps=d.pts||[]; var best=null;
-      for(var i=0;i<ps.length;i++){ var q=Pf(ps[i]); if(!q) continue; if(!best||q.y<best.y||(q.y===best.y&&q.x<best.x)) best=q; }
-      return best; }
+    if(d.type==='pen'){ var ps=d.pts||[], lx0=Infinity,lx1=-Infinity,ly0=Infinity, any=false;
+      for(var i=0;i<ps.length;i++){ var q=Pf(ps[i]); if(!q) continue; any=true;
+        if(q.x<lx0)lx0=q.x; if(q.x>lx1)lx1=q.x; if(q.y<ly0)ly0=q.y; }
+      return any?{ x:(lx0+lx1)/2, y:ly0 }:null; }
     var a=P(d.a),b=P(d.b); if(!a||!b) return null;
-    return { x:Math.min(a.x,b.x), y:Math.min(a.y,b.y) }; }catch(_){ return null; } }
+    return { x:(a.x+b.x)/2, y:Math.min(a.y,b.y) }; }catch(_){ return null; } }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else if(d.type==='pen'){ /* a freehand stroke has no two endpoints to reshape - it moves as a whole */ } else if(d.type==='rect'){ var a=P(d.a),b=P(d.b);
     if(a&&b){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y),mx=(x0+x1)/2,my=(y0+y1)/2;
       /* Four corners and a midpoint on each side, matching what the handle can actually do -
