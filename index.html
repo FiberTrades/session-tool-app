@@ -52857,6 +52857,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     /* Only over a drawing. Right-clicking bare chart just suppresses the browser menu, rather than
        opening one with nothing in it to act on. */
     if(!S||!c||!(t===c||(c.contains&&c.contains(t)))) return;
+    /* With a tool armed, right-click means "put it away" rather than "show me options for what is
+       under the cursor" - you are mid-draw, not mid-edit. */
+    if(S.activeTool!=='none'){ S.pending=null; S.penning=null; setTool('none'); hideCtx(); return; }
     var xy=evXY(e), h=hit(xy.x,xy.y);
     if(!h){ hideCtx(); return; }
     if(!(S.selMulti&&S.selMulti.length&&S.selMulti.indexOf(h.i)>=0)){ S.sel=h.i; clearMulti(); }
@@ -52926,6 +52929,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      right and the spread badge at the bottom right sit exactly as far from their corners as each
      other. They were 4 and 10, which is visible the moment both are on screen. */
   var UI_INSET=4;
+  /* The in-progress stroke is drawn from its cached PIXELS, not by mapping every point back through
+     the chart each frame. That mapping is two API calls per point per frame and the cost grows with
+     the stroke - which is what made a long line feel like it was dragging behind the mouse. Safe
+     while drawing because the chart cannot pan or zoom mid-stroke; once committed the stroke goes
+     back to bar coordinates so it stays welded to the candles. */
+  function drawPenLive(ctx,d){ try{ var q=d.px||[]; if(q.length<2) return;
+    ctx.save(); ctx.strokeStyle=dC(d); ctx.lineWidth=dW(d); ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(q[0].x,q[0].y);
+    for(var k=1;k<q.length-1;k++){ ctx.quadraticCurveTo(q[k].x,q[k].y,(q[k].x+q[k+1].x)/2,(q[k].y+q[k+1].y)/2); }
+    ctx.lineTo(q[q.length-1].x,q[q.length-1].y); ctx.stroke(); ctx.restore(); }catch(_){} }
   function placeSpread(w,h){ try{ var e=el('strp-spread'); if(!e||e.style.display==='none') return;
     var host=e.offsetParent||(chartEl&&chartEl.parentNode); if(!host||!chartEl) return;
     var hr=host.getBoundingClientRect(), cr=chartEl.getBoundingClientRect();
@@ -53007,7 +53020,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ctx.restore(); }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else if(d.type==='pen'){ /* a freehand stroke has no two endpoints to reshape - it moves as a whole */ } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
-    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawOne(ctx,S.penning,w,false); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
+    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
     if(S.snapPt){ var sq=P(S.snapPt); if(sq){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.fillStyle='rgba(244,114,182,0.9)'; ctx.lineWidth=1;
@@ -53362,6 +53375,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   // pointer interaction (capture on the chart element)
   document.addEventListener('mousedown',function(e){ if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')) return; if(!chartEl.contains(e.target)) return;
+    /* LEFT button only. mousedown fires for every button, so a right-click was placing points and
+       starting shapes as well as opening the context menu - one gesture doing two jobs, and drawing
+       was never one of them. Middle-click is excluded for the same reason. */
+    if(e.button!==0) return;
     // News badges sit ON the time axis, where coordinateToPrice returns null — so this has to be
     // tested BEFORE toP(), which bails out down there and would swallow every click on them.
     var _nxy=evXY(e), _nh=newsHitAt(_nxy.x,_nxy.y);
@@ -53383,7 +53400,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(S.activeTool==='hline'){ S.drawings.push(styleNew({type:'hline',price:p.price})); S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       /* Freehand is the one tool that is not click-click: the stroke is captured while the button
          is held, so it starts here and finishes on mouseup rather than on a second click. */
-      else if(S.activeTool==='pen'){ var pf=toPf(e)||p; S.penning=styleNew({type:'pen',pts:[pf]}); }
+      else if(S.activeTool==='pen'){ var pf=toPf(e)||p; S.penning=styleNew({type:'pen',pts:[pf]}); S.penning.px=[xy]; }
       else if(!S.pending){ S.pending=styleNew({type:S.activeTool,a:p,b:p}); }
       else { S.pending.b=p; S.drawings.push(S.pending); S.pending=null; S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       draw(); return; }
@@ -53413,10 +53430,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(S.activeTool!=='none'&&e.ctrlKey){ var sp=toP(e);
       if(sp){ S.snapPt=sp; try{ var _b=S.bars&&S.bars[sp.idx]; if(_b&&chart.setCrosshairPosition) chart.setCrosshairPosition(sp.price,_b.time,series); }catch(_){} } }
     else if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} }
-    if(S.penning){ var pp=toPf(e); if(pp){ var last=S.penning.pts[S.penning.pts.length-1];
-      /* Skip points the previous one already covers - a 60Hz drag otherwise stores thousands of
-         near-identical coordinates into the journal for a single stroke. */
-      if(!last||Math.abs(pp.idx-last.idx)>0.03||Math.abs(pp.price-last.price)>(S.pip*0.02)) S.penning.pts.push(pp); } return; }
+    /* Thinned by PIXEL distance, which is what the eye judges - the old test was in bars and price,
+       so its density depended on the zoom and it kept far more points than a smooth line needs.
+       toPf() is only called for points that survive, so a fast drag no longer runs two Lightweight
+       Charts conversions per mouse event just to throw the result away. */
+    if(S.penning){ var xy2=evXY(e), lp=S.penning.px[S.penning.px.length-1];
+      if(!lp||Math.hypot(xy2.x-lp.x,xy2.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy2); } }
+      return; }
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
     if(S.drag){ var p=toP(e); if(!p)return; var d=S.drawings[S.drag.i]; if(S.drag.part==='line') d.price=p.price; else if(S.drag.part==='a') d.a={idx:p.idx,price:p.price}; else if(S.drag.part==='b') d.b={idx:p.idx,price:p.price}; else { var dI=p.idx-S.drag.start.idx,dP=p.price-S.drag.start.price; d.a={idx:S.drag.orig.a.idx+dI,price:S.drag.orig.a.price+dP}; d.b={idx:S.drag.orig.b.idx+dI,price:S.drag.orig.b.price+dP}; } draw(); return; }
     if(S.activeTool==='none'&&chartEl){ var xy=evXY(e); if(xy.x>=0&&xy.y>=0&&xy.x<=chartEl.clientWidth&&xy.y<=chartEl.clientHeight){
@@ -53434,7 +53454,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var wNow=(overlay?overlay.clientWidth:0)||(chartEl?chartEl.clientWidth:0)||0, picked=[];
       S.drawings.forEach(function(d,i){ var bb=bboxOf(d,wNow); if(bb&&rectsHit(bb,mr)) picked.push(i); });
       S.selMulti=picked.length?picked:null; S.sel=null; updDel(); return; }
-    if(S.penning){ var st=S.penning; S.penning=null; if((st.pts||[]).length>1){ S.drawings.push(st); S.sel=S.drawings.length-1; commit(); updDel(); } setTool('none'); draw(); return; }
+    /* The pen STAYS armed after a stroke. Every other tool draws one thing and puts itself away,
+       which is right for a level or a zone but wrong for freehand - marking up a chart is several
+       strokes in a row, and re-arming between each one made that unusable. It disarms on a
+       right-click, on Escape, or by pressing the pencil again. Selection is deliberately NOT set
+       to the new stroke: that would swap the panel from the pen's own colour to the finished
+       stroke's, so the next stroke would be styled by whatever was last touched. */
+    if(S.penning){ var st=S.penning; S.penning=null;
+      try{ delete st.px; }catch(_){}   /* pixels are scratch; only bar coordinates are stored */
+      if((st.pts||[]).length>1){ S.drawings.push(st); commit(); updDel(); }
+      return; }
     if(S.drag){ commit(); S.drag=null; } });
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(e.key==='Escape'){ hideCtx(); if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
