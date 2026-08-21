@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.2"
+#property version   "6.3"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -216,10 +216,15 @@ bool   g_beArmed  = false;
 // should move the stop, and a DESTINATION saying where the stop goes when that trigger is
 // taken - measured past the entry, so 0 is break-even and 0.5 is half an R in profit. The
 // unit is shared by all four: mixing R and pips between steps makes the ladder unreadable,
-// which is the only thing a ladder is for. Defaults follow the sequence Nestor described:
-// take a level, go to entry; take the next, go to +0.5R.
+// which is the only thing a ladder is for.
+//
+// Steps are revealed one at a time rather than shown as four rows of mostly-off switches: the
+// panel starts at T1 and ADD T STOP grows the ladder. g_tsCount IS the on/off - step i is live
+// exactly when i < g_tsCount - so there is one piece of state to reason about instead of a
+// count and four flags that can disagree. Destinations keep their defaults whether or not
+// their step is currently showing, so removing and re-adding does not lose the number.
 #define TS_MAX 4
-bool   g_tsOn  [TS_MAX] = {true,true,false,false};
+int    g_tsCount = 1;
 double g_tsDest[TS_MAX] = {0.0,0.5,1.0,1.5};
 double g_tsTrig[TS_MAX];
 bool   g_tsFired[TS_MAX];
@@ -1203,6 +1208,7 @@ void PurgeTrailState()
      }
   }
 
+bool   TsActive(int i){ return (i>=0 && i<g_tsCount); }
 string TsName(int i){ return LN_TS+IntegerToString(i); }
 string TsTxt (int i){ return TX_TS+IntegerToString(i); }
 string TsLbl (int i){ return "T"+IntegerToString(i+1); }
@@ -1270,7 +1276,7 @@ void EnsureTrailLines(double entry,int dir)
    bool any=false;
    for(int i=0;i<TS_MAX;i++)
      {
-      if(!g_tsOn[i]){ ObjectDelete(0,TsName(i)); ObjectDelete(0,TsTxt(i)); continue; }
+      if(!TsActive(i)){ ObjectDelete(0,TsName(i)); ObjectDelete(0,TsTxt(i)); continue; }
       if(g_tsFired[i])
         {
          // Consumed. After a restart the greyed line no longer exists, so redraw it - a ladder
@@ -1299,7 +1305,7 @@ void MarkTrailConsumed(int applied,double rpx)
    double lvl=TrailDestPx(applied,rpx);
    for(int i=0;i<TS_MAX;i++)
      {
-      if(!g_tsOn[i] || g_tsFired[i]) continue;
+      if(!TsActive(i) || g_tsFired[i]) continue;
       if(TrailDestPx(i,rpx)<=lvl){ g_tsFired[i]=true; LockTrailLine(i); }
      }
    SaveTrailState();
@@ -1330,7 +1336,7 @@ void MonitorTrail()
       int best=-1;
       for(int i=0;i<TS_MAX;i++)
         {
-         if(!g_tsOn[i] || g_tsFired[i]) continue;
+         if(!TsActive(i) || g_tsFired[i]) continue;
          bool hit=(d>0) ? (bid>=g_tsTrig[i]) : (ask<=g_tsTrig[i]);
          if(!hit) continue;
          if(best<0 || TrailDestPx(i,rpx)>TrailDestPx(best,rpx)) best=i;
@@ -1817,25 +1823,44 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== TRAILING STOPS =====
-   cardH=31+ROWH*(1+TS_MAX);      // shared unit, then one row per step
+   cardH=31+ROWH*(2+g_tsCount);   // shared unit, one row per shown step, then the add/remove row
    mkRect (PP+"C_TS",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TS",labelX,cy+7,"TRAILING STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
-   // Unit first for the same reason as BE: it decides what the four numbers below MEAN.
+   // Unit first for the same reason as BE: it decides what the numbers below MEAN.
    mkLabel (PP+"L_TSU",labelX,ry+6,"Move to unit",COL_PANEL_LBL,8);
    mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
-   // One row per step: on/off on the left, destination on the right. The destination is where
-   // the STOP goes, measured past entry - 0 is break-even - not where the trigger sits. The
-   // trigger is the T1..T4 line you drag onto structure.
-   for(int i=0;i<TS_MAX;i++)
+   // One row per SHOWN step. The number is where the STOP goes, measured past entry - 0 is
+   // break-even - not where the trigger sits; the trigger is the T1..T4 line you drag onto
+   // structure. Rows beyond g_tsCount are not drawn at all, so the card is one row tall until
+   // you ask for more.
+   for(int i=0;i<g_tsCount;i++)
      {
       string sfx=IntegerToString(i);
-      mkLabel (PP+"L_TS"+sfx,labelX,ry+6,TsLbl(i)+" moves to",COL_PANEL_LBL,8);
-      mkButton(PP+"TSON"+sfx,box2,ry+2,BW,CH,g_tsOn[i]?"ON":"OFF",COL_PANEL_BTN,g_tsOn[i]?COL_PANEL_BTX:COL_PANEL_LBL);
-      mkEdit  (PP+"TSDEST"+sfx,box1,ry+2,BW,CH,Fmt(g_tsDest[i],g_tsUnit==BEOFF_BY_RR?2:1));
+      mkLabel(PP+"L_TS"+sfx,labelX,ry+6,TsLbl(i)+" moves to",COL_PANEL_LBL,8);
+      mkEdit (PP+"TSDEST"+sfx,box1,ry+2,BW,CH,Fmt(g_tsDest[i],g_tsUnit==BEOFF_BY_RR?2:1));
       ry+=ROWH;
      }
+   // Grow/shrink row. REMOVE names the step it drops so it cannot be misread as "remove all",
+   // and each button is simply absent at its limit rather than shown dead. REMOVE slides right
+   // when ADD is not there to hold that slot, so a lone button still lines up with the column.
+   int delX=(g_tsCount<TS_MAX)?box2:box1;
+   if(g_tsCount>1)
+      mkButton(PP+"TSDEL",delX,ry+2,BW,CH,"REMOVE "+TsLbl(g_tsCount-1),COL_PANEL_BTN,COL_PANEL_LBL);
+   if(g_tsCount<TS_MAX)
+      mkButton(PP+"TSADD",box1,ry+2,BW,CH,"ADD T STOP",COL_PANEL_BTN,COL_PANEL_BTX);
+   // BuildPanel rebuilds IN PLACE and only wipes when the panel opens or closes (see the
+   // DeleteByPrefix guard at the top), so anything it stops drawing would simply stay on screen.
+   // Remove the rows and buttons this count does not use.
+   for(int i=g_tsCount;i<TS_MAX;i++)
+     {
+      string dsfx=IntegerToString(i);
+      ObjectDelete(0,PP+"L_TS"+dsfx);
+      ObjectDelete(0,PP+"TSDEST"+dsfx);
+     }
+   if(g_tsCount<=1)      ObjectDelete(0,PP+"TSDEL");
+   if(g_tsCount>=TS_MAX) ObjectDelete(0,PP+"TSADD");
    cy+=cardH+6;
 
    // ===== DAILY LIMIT =====
@@ -1941,15 +1966,24 @@ void HandleClick(string s)
    // CHARTEVENT_OBJECT_ENDEDIT, which a button never raises.
    if(s==PP+"BEOMODE"){ g_beOffMode=(g_beOffMode==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
    if(s==PP+"TSUNIT"){ g_tsUnit=(g_tsUnit==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
-   for(int i=0;i<TS_MAX;i++)
-      if(s==PP+"TSON"+IntegerToString(i))
+   if(s==PP+"TSADD")
+     {
+      if(g_tsCount<TS_MAX) g_tsCount++;    // its line appears next tick via EnsureTrailLines
+      SaveState(); BuildPanel(); return;
+     }
+   if(s==PP+"TSDEL")
+     {
+      if(g_tsCount>1)
         {
-         g_tsOn[i]=!g_tsOn[i];
-         // Switching a step off mid-trade removes its line; on re-creates it next tick via
-         // EnsureTrailLines, so the panel and the chart cannot disagree.
-         if(!g_tsOn[i]){ ObjectDelete(0,TsName(i)); ObjectDelete(0,TsTxt(i)); }
-         SaveState(); BuildPanel(); return;
+         int gone=--g_tsCount;
+         // Drop the line now rather than waiting a tick, and clear its fired flag so re-adding
+         // the step gives a live trigger instead of a greyed one left over from this trade.
+         ObjectDelete(0,TsName(gone)); ObjectDelete(0,TsTxt(gone));
+         g_tsFired[gone]=false; g_tsTrig[gone]=0.0;
+         SaveTrailState();
         }
+      SaveState(); BuildPanel(); return;
+     }
    for(int i=0;i<6;i++)
       if(s==PP+"TPON"+IntegerToString(i)){ g_tpOn[i]=!g_tpOn[i]; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
   }
@@ -2017,11 +2051,9 @@ void SaveState()
    GlobalVariableSet(StateKey("useBE"),     g_useBE?1:0);
    GlobalVariableSet(StateKey("beOffset"),  g_beOffset);
    GlobalVariableSet(StateKey("tsUnit"),    (double)g_tsUnit);
+   GlobalVariableSet(StateKey("tsCount"),   (double)g_tsCount);
    for(int i=0;i<TS_MAX;i++)
-     {
-      GlobalVariableSet(StateKey("tsOn"+IntegerToString(i)),   g_tsOn[i]?1:0);
       GlobalVariableSet(StateKey("tsDest"+IntegerToString(i)), g_tsDest[i]);
-     }
    GlobalVariableSet(StateKey("beRR"),      g_beRR);
    GlobalVariableSet(StateKey("scaleLock"), g_scaleLock?1:0);
    GlobalVariableSet(StateKey("scalePad"),  g_scalePadPips);
@@ -2063,10 +2095,12 @@ bool LoadState()
    // Guarded individually: a state saved by an older build has none of these keys, and a
    // missing GlobalVariable reads back as 0 - which would silently switch every step off.
    if(GlobalVariableCheck(StateKey("tsUnit"))) g_tsUnit=(ENUM_BEOFF_MODE)(int)GlobalVariableGet(StateKey("tsUnit"));
+   if(GlobalVariableCheck(StateKey("tsCount"))) g_tsCount=(int)GlobalVariableGet(StateKey("tsCount"));
+   if(g_tsCount<1)      g_tsCount=1;         // a corrupt or absent count must never hide T1
+   if(g_tsCount>TS_MAX) g_tsCount=TS_MAX;
    for(int i=0;i<TS_MAX;i++)
      {
-      string kOn=StateKey("tsOn"+IntegerToString(i)), kDs=StateKey("tsDest"+IntegerToString(i));
-      if(GlobalVariableCheck(kOn)) g_tsOn[i]  =(GlobalVariableGet(kOn)>0.5);
+      string kDs=StateKey("tsDest"+IntegerToString(i));
       if(GlobalVariableCheck(kDs)) g_tsDest[i]=GlobalVariableGet(kDs);
      }
    if(GlobalVariableCheck(StateKey("scaleLock"))) g_scaleLock=(GlobalVariableGet(StateKey("scaleLock"))>0.5);
