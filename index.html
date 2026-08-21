@@ -52842,7 +52842,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      resolution has one point per candle, which is exactly why it came out as straight segments
      hinged at each one. Fractional logical indices are valid coordinates to Lightweight Charts. */
   function toPf(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,lg)),price:pr}; }
-  function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg))),price:pr}; }
+  /* Hold Ctrl to clamp onto the candle under the cursor - whichever of its high or low is nearer.
+     Only ever snaps to a REAL bar: past the last candle there is nothing to snap to, so the
+     pointer price is kept and the drawing behaves normally out there. */
+  function snapPx(pr,lg,e){ try{ if(!e||!e.ctrlKey||!S||!S.bars||!S.bars.length) return pr;
+      var bi=Math.round(lg); if(bi<0||bi>S.bars.length-1) return pr;
+      var b=S.bars[bi]; if(!b) return pr;
+      return (Math.abs(pr-b.high)<=Math.abs(pr-b.low))?b.high:b.low; }catch(_){ return pr; } }
+  function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg))),price:snapPx(pr,lg,e)}; }
   /* Right-click on the replay is a drawing surface, not an image. The browser's canvas menu offered
      Save image / Copy image / Inspect, and Inspect opens devtools over the chart - a dead end reached
      by a stray right-click mid-analysis. Suppressed on the chart only; the rest of the page keeps its
@@ -52867,6 +52874,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(yT!=null){ ctx.strokeStyle='#4ECD8B'; ctx.beginPath(); ctx.moveTo(xE,yT); ctx.lineTo(xR,yT); ctx.stroke(); }
     ctx.strokeStyle='#f472b6'; ctx.beginPath(); ctx.moveTo(xE,yE); ctx.lineTo(xR,yE); ctx.stroke();
     ctx.restore(); }
+  /* Width of the PLOT, i.e. the chart minus its price scale. Anything that should stop at the
+     axis rather than run under it measures against this, not the element width. */
+  function plotW(w){ var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} if(!(pw>4&&pw<220)) pw=56; return Math.max(20,w-pw); }
   /* Per-drawing style. Every tool used to hardcode its colour and weight, so two levels marking
      different ideas looked identical and nothing could be emphasised. d.color / d.width override
      the defaults below; drawings saved before this carry neither and render exactly as they did. */
@@ -52883,7 +52893,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function rShow(d,k){ var sh=d&&d.show; return !sh || sh[k]!==false; }
   function drawOne(ctx,d,w,pv){ ctx.save(); ctx.setLineDash(pv?[4,3]:[]); ctx.font="10px 'DM Mono',monospace";
     var C=dC(d),W=dW(d);
-    if(d.type==='hline'){ var y=yOf(d.price); if(y!=null){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); } }
+    /* Stops at the price scale and labels itself there, the same way the Entry / SL / TP lines do.
+       It used to run to the full element width, straight under the axis, and said nothing about
+       the level it marked - so reading its price meant eyeballing it against the nearest tick. */
+    if(d.type==='hline'){ var y=yOf(d.price); if(y!=null){ var pw2=plotW(w);
+        ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(pw2,y); ctx.stroke();
+        var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
+        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=15,bw2=Math.min(tw2+10,w-bx-1);
+        if(bw2>12){ ctx.fillRect(bx,y-bh/2,bw2,bh);
+          /* Dark ink on the pill: every swatch on offer is a light colour, so a fixed dark text
+             stays legible without having to compute contrast per colour. */
+          ctx.fillStyle='#0B0A0D'; ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.fillText(txt,bx+5,y); ctx.textAlign='left'; } } }
     else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
     /* Freehand. Points are stored as {idx,price} like every other tool, NOT as pixels, so the
        stroke stays welded to the candles through zoom, pan and replay stepping. */
