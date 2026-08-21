@@ -53010,12 +53010,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      compared by signature, since this runs every frame and LWC would otherwise churn objects at
      60Hz. Colour and thickness come from the drawing, so the panel still styles it. */
   function syncHLines(){ try{ if(!series) return;
-    var want=[]; (S.drawings||[]).forEach(function(d){ if(d&&d.type==='hline'&&isFinite(d.price))
-      want.push({p:d.price,c:dC(d),w:Math.max(1,Math.min(4,Math.round(dW(d))))}); });
+    var want=[]; (S.drawings||[]).forEach(function(d){ if(d&&d.type==='hline'&&isFinite(d.price)&&visibleOn(d))
+      want.push({p:d.price,c:dC(d),w:Math.max(1,Math.min(4,Math.round(dW(d)))),t:String(d.text||'')}); });
     var sig=JSON.stringify(want); if(sig===S._plSig) return; S._plSig=sig;
     (S._plines||[]).forEach(function(pl){ try{ series.removePriceLine(pl); }catch(_){} });
     S._plines=want.map(function(o){ try{ return series.createPriceLine({price:o.p,color:o.c,lineWidth:o.w,
-      lineStyle:0,axisLabelVisible:true,title:''}); }catch(_){ return null; } }).filter(Boolean); }catch(_){} }
+      lineStyle:0,axisLabelVisible:true,title:o.t}); }catch(_){ return null; } }).filter(Boolean); }catch(_){} }
   function placeSpread(w,h){ try{ var e=el('strp-spread'); if(!e||e.style.display==='none') return;
     var host=e.offsetParent||(chartEl&&chartEl.parentNode); if(!host||!chartEl) return;
     var hr=host.getBoundingClientRect(), cr=chartEl.getBoundingClientRect();
@@ -53103,10 +53103,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if(rShow(d,'bars')) parts.push(db+' bars');
         if(parts.length){ var label=parts.join(' · '); var cx=(x0+x1)/2,cy=(d.b.price>=d.a.price)?y0-10:y1+10;
           ctx.save(); ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillStyle=C; ctx.textBaseline='middle'; ctx.textAlign='center'; ctx.fillText(label,cx,cy); ctx.restore(); ctx.textAlign='left'; } } }
+    /* The object's own note. Anchored to the shape rather than to a fixed corner, so it travels
+       when the drawing is dragged. Horizontal lines carry theirs as the price line's title, which
+       puts it on the axis label itself - the same place LWC writes "Entry" and "SL". */
+    if(d.text&&d.type!=='hline'){ var _a=labelAt(d);
+      if(_a){ ctx.save(); ctx.font="11px 'DM Mono',monospace"; ctx.fillStyle=C; ctx.textBaseline='bottom'; ctx.textAlign='left';
+        ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillText(String(d.text),_a.x+4,_a.y-4); ctx.restore(); } }
     ctx.restore(); }
+  /* Top-left of whatever the shape occupies, so a note never floats away from its object. */
+  function labelAt(d){ try{
+    if(d.type==='pen'){ var ps=d.pts||[]; var best=null;
+      for(var i=0;i<ps.length;i++){ var q=P(ps[i]); if(!q) continue; if(!best||q.y<best.y||(q.y===best.y&&q.x<best.x)) best=q; }
+      return best; }
+    var a=P(d.a),b=P(d.b); if(!a||!b) return null;
+    return { x:Math.min(a.x,b.x), y:Math.min(a.y,b.y) }; }catch(_){ return null; } }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else if(d.type==='pen'){ /* a freehand stroke has no two endpoints to reshape - it moves as a whole */ } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
-    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
+    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
     if(S.snapPt){ var sq=P(S.snapPt); if(sq){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.fillStyle='rgba(244,114,182,0.9)'; ctx.lineWidth=1;
@@ -53145,8 +53158,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // undo/redo/tools
   function clone(x){ return JSON.parse(JSON.stringify(x)); }
   // Drawings persist per (trade ticket, timeframe) in localStorage — survive close + app refresh.
-  function loadDrawings(ticket,tf){ try{ var o=JSON.parse(localStorage.getItem('st_replay_draw_'+ticket)||'{}'); return Array.isArray(o[tf])?o[tf]:[]; }catch(_){ return []; } }
-  function persistDrawings(){ try{ if(!S||!S.ticket) return; var k='st_replay_draw_'+S.ticket, o={}; try{ o=JSON.parse(localStorage.getItem(k)||'{}'); }catch(_){ } o[S.tf]=S.drawings; localStorage.setItem(k, JSON.stringify(o)); }catch(_){} }
+  /* Drawings used to be siloed per timeframe: o[tf] = [...], so a level drawn on M1 did not exist
+     on M5 at all and there was no way to say "show this one on both". They are one list per trade
+     now, each carrying tfs - the timeframes it appears on - which is what makes per-object
+     visibility possible rather than just per-object storage.
+     Old data is migrated on first read and written to a new key, so an older build still finds its
+     own store intact if anything needs rolling back. */
+  function visibleOn(d){ try{ return !d||!d.tfs||!d.tfs.length||d.tfs.indexOf(S.tf)>=0; }catch(_){ return true; } }
+  function drawKey(t){ return 'st_replay_draw2_'+t; }
+  function loadDrawings(ticket,tf){ try{
+    var raw=localStorage.getItem(drawKey(ticket));
+    if(raw){ var a=JSON.parse(raw); return Array.isArray(a)?a:[]; }
+    /* Migrate: every drawing keeps the timeframe it was made on, so nothing changes where it shows
+       until the trader widens it themselves. */
+    var o={}; try{ o=JSON.parse(localStorage.getItem('st_replay_draw_'+ticket)||'{}'); }catch(_){}
+    var out=[]; Object.keys(o).forEach(function(k){ if(!Array.isArray(o[k])) return;
+      o[k].forEach(function(d){ if(!d) return; if(!d.tfs) d.tfs=[Number(k)]; out.push(d); }); });
+    if(out.length) try{ localStorage.setItem(drawKey(ticket),JSON.stringify(out)); }catch(_){}
+    return out; }catch(_){ return []; } }
+  function persistDrawings(){ try{ if(!S||!S.ticket) return; localStorage.setItem(drawKey(S.ticket),JSON.stringify(S.drawings)); }catch(_){} }
   function commit(){ S.history=S.history.slice(0,S.hpos+1); S.history.push(clone(S.drawings)); S.hpos=S.history.length-1; updUR(); persistDrawings(); }
   function updUR(){ el('strp-undo').disabled=S.hpos<=0; el('strp-redo').disabled=S.hpos>=S.history.length-1; }
   function updDel(){ el('strp-del').disabled=(S.sel==null&&!(S.selMulti&&S.selMulti.length)); renderProps(); }
@@ -53193,7 +53223,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else { if(c.a) c.a.idx+=dI; if(c.b) c.b.idx+=dI; }
     S.drawings.push(c); S.sel=S.drawings.length-1; clearMulti(); commit(); updDel();
   }catch(_){} }
-  function styleNew(o){ var ns=(S&&S.newStyle)||{}; if(ns.color) o.color=ns.color; if(ns.width) o.width=ns.width; return o; }
+  function styleNew(o){ var ns=(S&&S.newStyle)||{}; if(ns.color) o.color=ns.color; if(ns.width) o.width=ns.width;
+    /* Born visible only where it was drawn, which is how it behaved when storage was per-timeframe.
+       Widening it is a deliberate choice in the panel. */
+    try{ if(S&&S.tf) o.tfs=[S.tf]; }catch(_){}
+    return o; }
   /* The object the panel is editing: the selection if there is one, else the pending default. */
   function styleTgt(){ if(S.sel!=null&&S.drawings[S.sel]) return S.drawings[S.sel]; if(!S.newStyle) S.newStyle={}; return S.newStyle; }
   function styleType(){ if(S.sel!=null&&S.drawings[S.sel]) return S.drawings[S.sel].type; return S.activeTool; }
@@ -53236,6 +53270,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         +'background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;">'
         +'<button type="button" id="strp-fibadd" style="padding:4px 8px;cursor:pointer;background:transparent;color:var(--text-mid);'
         +'border:1px solid var(--border-2);border-radius:4px;font:inherit;">Add</button></div>'); }
+    if(S.sel!=null&&S.drawings[S.sel]){
+      var _d=S.drawings[S.sel];
+      H.push('<input id="strp-note" placeholder="'+window._stT('Note','Nota')+'" value="'+esc2(_d.text||'')+'" '
+        +'style="width:100%;box-sizing:border-box;padding:5px 7px;background:var(--bg-elev);border:1px solid var(--border-2);'
+        +'border-radius:4px;color:var(--text);font:inherit;">');
+      /* Timeframes this object shows on. Read from the toolbar rather than hardcoded, so the two
+         can never list a different set. */
+      var _tfs=[].map.call(document.querySelectorAll('#strp-tfs button'),function(b){ return {v:+b.dataset.tf,l:(b.textContent||'').trim()}; });
+      if(_tfs.length) H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">'+_tfs.map(function(tf){
+        var on=!_d.tfs||!_d.tfs.length||_d.tfs.indexOf(tf.v)>=0;
+        return '<button type="button" data-tf="'+tf.v+'" style="padding:3px 7px;cursor:pointer;background:transparent;color:'
+          +(on?'var(--text)':'var(--text-dim)')+';border:1px solid '+(on?'var(--accent)':'var(--border-2)')
+          +';border-radius:4px;font:inherit;">'+esc2(tf.l)+'</button>'; }).join('')+'</div>'); }
     /* Also in the panel, not only on right-click: a phone has no right-click, so the context menu
        cannot be the sole route to it. */
     if(S.sel!=null&&S.drawings[S.sel]) H.push('<button type="button" id="strp-clone" style="padding:5px 0;cursor:pointer;'
@@ -53253,6 +53300,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(e.querySelectorAll('[data-wid]'),function(b){ b.onclick=function(){ tgt().width=parseFloat(b.dataset.wid); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-show]'),function(b){ b.onclick=function(){ var o=tgt(); if(!o.show)o.show={}; var k=b.dataset.show; o.show[k]=!rShow(o,k); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-lvl]'),function(b){ b.onclick=function(){ var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); L.splice(parseInt(b.dataset.lvl,10),1); o.levels=L; commit(); renderProps(); draw(); }; });
+    var noteI=e.querySelector('#strp-note');
+    if(noteI) noteI.oninput=function(){ var o=styleTgt(); o.text=noteI.value; if(S.sel!=null) persistDrawings(); };
+    Array.prototype.forEach.call(e.querySelectorAll('[data-tf]'),function(b){ b.onclick=function(){
+      var o=styleTgt(); var v=+b.dataset.tf;
+      var cur=(o.tfs&&o.tfs.length)?o.tfs.slice():[S.tf];
+      var at=cur.indexOf(v); if(at>=0) cur.splice(at,1); else cur.push(v);
+      /* Never let it become invisible everywhere - an object with no timeframes cannot be found
+         again to fix, since selecting it requires seeing it. */
+      if(!cur.length) cur=[v];
+      o.tfs=cur.sort(function(x,y){return x-y;}); commit(); renderProps(); }; });
     var clB=e.querySelector('#strp-clone');
     if(clB) clB.onclick=function(){ cloneSel(); };
     var addB=e.querySelector('#strp-fibadd');
@@ -53274,7 +53331,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function rectsHit(a,b){ return !(a.x1<b.x0||a.x0>b.x1||a.y1<b.y0||a.y0>b.y1); }
   function marqNorm(m){ return {x0:Math.min(m.x0,m.x1),y0:Math.min(m.y0,m.y1),x1:Math.max(m.x0,m.x1),y1:Math.max(m.y0,m.y1)}; }
   function clearMulti(){ S.selMulti=null; }
-  function hit(px,py){ for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i]; if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } if(d.type==='pen'){ var ps=d.pts||[]; for(var k=1;k<ps.length;k++){ var q1=P(ps[k-1]),q2=P(ps[k]); if(q1&&q2&&d2seg(px,py,q1.x,q1.y,q2.x,q2.y)<7) return {i:i,part:'body'}; } continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
+  function hit(px,py){ for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i];
+    if(!visibleOn(d)) continue;   /* cannot select what is not on screen */ if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } if(d.type==='pen'){ var ps=d.pts||[]; for(var k=1;k<ps.length;k++){ var q1=P(ps[k-1]),q2=P(ps[k]); if(q1&&q2&&d2seg(px,py,q1.x,q1.y,q2.x,q2.y)<7) return {i:i,part:'body'}; } continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
 
   // ---- News: the trade's week, from calendar_events ---------------------------
   /* Re-queried on EVERY open rather than cached for the session. The worker fills the `actual`
