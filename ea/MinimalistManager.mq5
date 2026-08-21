@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.1"
+#property version   "6.2"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1148,6 +1148,61 @@ void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && DayLimitReached()
 //  both only ever move a stop FORWARD, so whichever reaches further wins and neither can undo
 //  the other.
 //==================================================================
+// The ladder is symbol-wide - one T1 line, not one per position - so its per-trade state is
+// stored that way too, stamped with the ticket it was built for. Anything restored against a
+// different ticket is discarded, otherwise a restart would drop the last trade's triggers onto
+// the next one. Keys start with an uppercase T so they cannot collide with the lower-case
+// settings keys (tpMode, tsUnit, tsOn0...) or with the "R" risk stamps.
+ulong TrailOwnerTicket()
+  {
+   ulong best=0;
+   for(int p=PositionsTotal()-1;p>=0;p--)
+     {
+      ulong tk=PositionGetTicket(p);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      if(best==0 || tk<best) best=tk;      // oldest ticket: the trade the ladder was built on
+     }
+   return best;
+  }
+
+void SaveTrailState()
+  {
+   ulong own=TrailOwnerTicket();
+   if(own==0) return;
+   GlobalVariableSet(StateKey("Towner"),(double)own);
+   for(int i=0;i<TS_MAX;i++)
+     {
+      GlobalVariableSet(StateKey("Ttrg"+IntegerToString(i)),g_tsTrig[i]);
+      GlobalVariableSet(StateKey("Tfir"+IntegerToString(i)),g_tsFired[i]?1:0);
+     }
+  }
+
+bool RestoreTrailState()
+  {
+   if(!GlobalVariableCheck(StateKey("Towner"))) return false;
+   ulong own=(ulong)GlobalVariableGet(StateKey("Towner"));
+   if(own==0 || own!=TrailOwnerTicket()) return false;      // a different trade: start fresh
+   for(int i=0;i<TS_MAX;i++)
+     {
+      string kt=StateKey("Ttrg"+IntegerToString(i)), kf=StateKey("Tfir"+IntegerToString(i));
+      if(GlobalVariableCheck(kt)) g_tsTrig[i] =GlobalVariableGet(kt);
+      if(GlobalVariableCheck(kf)) g_tsFired[i]=(GlobalVariableGet(kf)>0.5);
+     }
+   return true;
+  }
+
+void PurgeTrailState()
+  {
+   string pre=StateKey("T");
+   for(int i=GlobalVariablesTotal()-1;i>=0;i--)
+     {
+      string nm=GlobalVariableName(i);
+      if(StringFind(nm,pre)==0) GlobalVariableDel(nm);
+     }
+  }
+
 string TsName(int i){ return LN_TS+IntegerToString(i); }
 string TsTxt (int i){ return TX_TS+IntegerToString(i); }
 string TsLbl (int i){ return "T"+IntegerToString(i+1); }
@@ -1186,6 +1241,16 @@ void HideTrailLines()
 // starting position - the point is to drag each one onto real structure.
 void EnsureTrailLines(double entry,int dir)
   {
+   // New owning trade, or first sight after a restart? Take back whatever was saved against
+   // THIS ticket; if nothing matches, start the ladder clean.
+   static ulong s_owner=0;
+   ulong own=TrailOwnerTicket();
+   if(own!=s_owner)
+     {
+      s_owner=own;
+      if(!RestoreTrailState())
+         for(int k=0;k<TS_MAX;k++){ g_tsTrig[k]=0.0; g_tsFired[k]=false; }
+     }
    double rpx=0;
    for(int p=PositionsTotal()-1;p>=0;p--)
      {
@@ -1206,10 +1271,18 @@ void EnsureTrailLines(double entry,int dir)
    for(int i=0;i<TS_MAX;i++)
      {
       if(!g_tsOn[i]){ ObjectDelete(0,TsName(i)); ObjectDelete(0,TsTxt(i)); continue; }
-      if(g_tsFired[i]) continue;                       // consumed: leave the greyed line be
+      if(g_tsFired[i])
+        {
+         // Consumed. After a restart the greyed line no longer exists, so redraw it - a ladder
+         // that silently omits the steps already taken reads as though they never fired.
+         if(ObjectFind(0,TsName(i))<0 && g_tsTrig[i]>0)
+            EnsureHLine(TsName(i),g_tsTrig[i],COL_LINE_TSD,STYLE_DOT,false);
+         LockTrailLine(i);
+         continue;
+        }
       if(ObjectFind(0,TsName(i))<0)
         {
-         g_tsTrig[i]=entry+dir*(i+1)*rpx;
+         if(g_tsTrig[i]<=0) g_tsTrig[i]=entry+dir*(i+1)*rpx;   // a restored trigger wins
          EnsureHLine(TsName(i),g_tsTrig[i],COL_LINE_TS,STYLE_DOT,true);
         }
       SetLineText(TsTxt(i),LinePrice(TsName(i)),TsLbl(i),COL_LINE_TS);
@@ -1229,6 +1302,7 @@ void MarkTrailConsumed(int applied,double rpx)
       if(!g_tsOn[i] || g_tsFired[i]) continue;
       if(TrailDestPx(i,rpx)<=lvl){ g_tsFired[i]=true; LockTrailLine(i); }
      }
+   SaveTrailState();
   }
 
 void MonitorTrail()
@@ -1385,7 +1459,7 @@ void UpdateManageLine()
      }
    else
      {
-      if(!s_riskPurged){ PurgeEntryRisk(); s_riskPurged=true; }   // flat: clear the stamps once
+      if(!s_riskPurged){ PurgeEntryRisk(); PurgeTrailState(); s_riskPurged=true; }   // flat: clear both once
       HideTrailLines();          // also resets the fired flags for the next trade
       ObjectDelete(0,LN_MSL);
       ObjectDelete(0,LN_EFILL);ObjectDelete(0,TX_EF);
@@ -3976,6 +4050,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
            {
             g_tsTrig[i]=LinePrice(TsName(i));
             SetLineText(TsTxt(i),g_tsTrig[i],TsLbl(i),COL_LINE_TS);
+            SaveTrailState();
             ChartRedraw();
             return;
            }
