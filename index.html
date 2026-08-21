@@ -53011,6 +53011,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var b=Math.max(UI_INSET,Math.round((hr.bottom-cr.bottom)+(h-_axisTop(h))+UI_INSET))+'px';
     if(e.style.right!==r) e.style.right=r;
     if(e.style.bottom!==b) e.style.bottom=b; }catch(_){} }
+  /* Reads the EXACT font Lightweight Charts draws its axis prices with, by intercepting fillText
+     while the chart repaints and recording ctx.font for anything that looks like a price. Asking
+     for layout.fontSize was never the same question - that is what it was CONFIGURED with, and the
+     scale renderer does not necessarily use it verbatim. Resolves with every font string seen and
+     how many times, so the axis one is simply the most frequent. */
+  try{ window.__stAxisFont=function(){ return new Promise(function(res){
+    var proto=CanvasRenderingContext2D.prototype, orig=proto.fillText, seen={}, wid={};
+    proto.fillText=function(txt){ try{ var t=String(txt);
+      if(/^\d+[.,]\d{2,}$/.test(t)){ seen[this.font]=(seen[this.font]||0)+1;
+        if(wid[this.font]==null){ try{ wid[this.font]=Math.round(this.measureText(t).width*10)/10; }catch(_){} } } }catch(_){}
+      return orig.apply(this,arguments); };
+    /* Nudge the chart so the scale repaints while the patch is in place. */
+    try{ chart.applyOptions({}); }catch(_){}
+    try{ var ts=chart.timeScale(); ts.scrollToPosition(ts.scrollPosition(),false); }catch(_){}
+    setTimeout(function(){ proto.fillText=orig;
+      var best=null; Object.keys(seen).forEach(function(f){ if(!best||seen[f]>seen[best]) best=f; });
+      var out={ fontsSeen:seen, axisFont:best, sampleWidth:best?wid[best]:null };
+      try{ console.log('AXIS FONT:',JSON.stringify(out)); }catch(_){}
+      res(out); },350); }); }; }catch(_){}
   function plotW(w){ var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} if(!(pw>4&&pw<220)) pw=56; return Math.max(20,w-pw); }
   /* Per-drawing style. Every tool used to hardcode its colour and weight, so two levels marking
      different ideas looked identical and nothing could be emphasised. d.color / d.width override
@@ -53057,14 +53076,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
            which the pixel scan did establish reliably. */
         ctx.font="bold 10px 'DM Mono',monospace";
         var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
-        /* Fills the price scale, like LWC's own labels do. Sizing it to the text left it visibly
-           narrower than the Entry / SL pills directly above it, which is what gave two labels on
-           the same axis two different shapes. */
-        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+5,bw2=Math.max(12,w-bx);
+        /* Sized to its text and pinned to the RIGHT edge of the scale, which is how LWC's labels
+           behave. Filling the whole scale made it wider than theirs; sizing it to text at the
+           wrong font made it narrower. Both were symptoms of the font being wrong, so the width
+           is left to follow from the text once the font is right. */
+        var _pad=6, _bw=Math.min(Math.max(tw2+_pad*2,12),Math.max(12,w-pw2-1));
+        ctx.fillStyle=C; ctx.beginPath(); var bx=Math.max(pw2+1,w-_bw),bh=_fs+5,bw2=_bw;
         if(bw2>12){ ctx.fillRect(bx,y-bh/2,bw2,bh);
           /* Dark ink on the pill: every swatch on offer is a light colour, so a fixed dark text
              stays legible without having to compute contrast per colour. */
-          ctx.fillStyle='#0B0A0D'; ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.fillText(txt,bx+5,y); ctx.textAlign='left'; } } }
+          ctx.fillStyle='#0B0A0D'; ctx.textBaseline='middle'; ctx.textAlign='center'; ctx.fillText(txt,bx+bw2/2,y); ctx.textAlign='left'; } } }
     else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
     /* Freehand. Points are stored as {idx,price} like every other tool, NOT as pixels, so the
        stroke stays welded to the candles through zoom, pan and replay stepping. */
