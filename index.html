@@ -53029,7 +53029,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      the stroke - which is what made a long line feel like it was dragging behind the mouse. Safe
      while drawing because the chart cannot pan or zoom mid-stroke; once committed the stroke goes
      back to bar coordinates so it stays welded to the candles. */
-  function drawPenLive(ctx,d){ try{ var q=d.px||[]; if(q.length<2) return;
+  /* 1-2-1 binomial smoothing: each point is pulled toward the average of its neighbours, twice.
+     The sampling is faithful to the hand, and the hand shakes - so the stroke carried a fine
+     tremor that the curve rendering then traced perfectly. Filtering beats sampling more coarsely,
+     which would flatten deliberate detail along with the wobble. Endpoints are pinned, so a line
+     still starts and finishes exactly where it was put. */
+  function smoothXY(pts,kx,ky,passes){
+    if(!pts||pts.length<3) return pts;
+    var cur=pts;
+    for(var k=0;k<(passes||1);k++){
+      var nxt=cur.slice();
+      for(var i=1;i<cur.length-1;i++){
+        var o={};
+        for(var key in cur[i]) if(cur[i].hasOwnProperty(key)) o[key]=cur[i][key];
+        o[kx]=(cur[i-1][kx]+cur[i][kx]*2+cur[i+1][kx])/4;
+        o[ky]=(cur[i-1][ky]+cur[i][ky]*2+cur[i+1][ky])/4;
+        nxt[i]=o;
+      }
+      cur=nxt;
+    }
+    return cur; }
+  function drawPenLive(ctx,d){ try{ var src=(d.px||[]);
+    /* Draw through the live tip so the ink meets the crosshair. Appended after smoothing, so the
+       filter never drags the tip backwards off the pointer. */
+    var q=smoothXY(src,'x','y',2);
+    if(d.tip){ var lastP=q[q.length-1];
+      if(!lastP||Math.hypot(d.tip.x-lastP.x,d.tip.y-lastP.y)>0.5) q=q.concat([d.tip]); }
+    if(q.length<2) return;
     ctx.save(); ctx.strokeStyle=dC(d); ctx.lineWidth=dW(d); ctx.lineJoin='round'; ctx.lineCap='round';
     ctx.beginPath(); ctx.moveTo(q[0].x,q[0].y);
     for(var k=1;k<q.length-1;k++){ ctx.quadraticCurveTo(q[k].x,q[k].y,(q[k].x+q[k+1].x)/2,(q[k].y+q[k+1].y)/2); }
@@ -53648,6 +53674,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        toPf() is only called for points that survive, so a fast drag no longer runs two Lightweight
        Charts conversions per mouse event just to throw the result away. */
     if(S.penning){ var xy2=evXY(e), lp=S.penning.px[S.penning.px.length-1];
+      /* The live tip, recorded every single move with no threshold. Points are only STORED every
+         2px, so the drawn stroke ended up to 2px behind the cursor and read as the ink trailing
+         the crosshair. This is not stored - it is only where the line is drawn TO, so the
+         thinning keeps its benefit and the stroke still reaches the pointer. */
+      S.penning.tip=xy2;
       if(!lp||Math.hypot(xy2.x-lp.x,xy2.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy2); } }
       return; }
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
@@ -53683,7 +53714,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        to the new stroke: that would swap the panel from the pen's own colour to the finished
        stroke's, so the next stroke would be styled by whatever was last touched. */
     if(S.penning){ var st=S.penning; S.penning=null;
-      try{ delete st.px; }catch(_){}   /* pixels are scratch; only bar coordinates are stored */
+      try{ delete st.px; delete st.tip; }catch(_){}   /* scratch; only bar coordinates are stored */
+      /* Smoothed once here rather than on every repaint - the stored stroke is the smoothed one, so
+         it costs nothing to draw and cannot drift from what was on screen while drawing. */
+      try{ st.pts=smoothXY(st.pts,'idx','price',2); }catch(_){}
       if((st.pts||[]).length>1){ S.drawings.push(st); commit(); updDel(); }
       return; }
     if(S.drag){ commit(); S.drag=null; } });
