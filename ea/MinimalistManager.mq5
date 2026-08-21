@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.6"
+#property version   "6.7"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -218,13 +218,15 @@ bool   g_beArmed  = false;
 // unit is shared by all four: mixing R and pips between steps makes the ladder unreadable,
 // which is the only thing a ladder is for.
 //
-// Steps are revealed one at a time rather than shown as four rows of mostly-off switches: the
-// panel starts at T1 and ADD T STOP grows the ladder. g_tsCount IS the on/off - step i is live
-// exactly when i < g_tsCount - so there is one piece of state to reason about instead of a
-// count and four flags that can disagree. Destinations keep their defaults whether or not
-// their step is currently showing, so removing and re-adding does not lose the number.
+// Steps are revealed one at a time rather than shown as four rows of mostly-off switches, and
+// the ladder starts EMPTY: trailing is opt-in, so nobody inherits a stop that moves itself
+// without having asked for it. Add T1 grows it, Delete T1 empties it again.
+// g_tsCount IS the on/off - step i is live exactly when i < g_tsCount - so there is one piece
+// of state to reason about instead of a count and four flags that can disagree. Destinations
+// keep their defaults whether or not their step is showing, so removing and re-adding does not
+// lose the number.
 #define TS_MAX 4
-int    g_tsCount = 1;
+int    g_tsCount = 0;
 double g_tsDest[TS_MAX] = {0.0,0.5,1.0,1.5};
 double g_tsTrig[TS_MAX];
 bool   g_tsFired[TS_MAX];
@@ -2105,9 +2107,9 @@ bool LoadState()
    // Guarded individually: a state saved by an older build has none of these keys, and a
    // missing GlobalVariable reads back as 0 - which would silently switch every step off.
    if(GlobalVariableCheck(StateKey("tsUnit"))) g_tsUnit=(ENUM_BEOFF_MODE)(int)GlobalVariableGet(StateKey("tsUnit"));
-   // Deliberately guarded: an ABSENT key leaves the declared default of one step, while a
-   // SAVED zero is honoured - deleting the last step is how trailing is switched off, so that
-   // choice has to survive a restart.
+   // Guarded so an absent key leaves the declared default (empty) rather than reading back as
+   // a zero that happens to mean the same thing - and so a saved count survives a restart,
+   // including a saved zero from deleting the last step.
    if(GlobalVariableCheck(StateKey("tsCount"))) g_tsCount=(int)GlobalVariableGet(StateKey("tsCount"));
    if(g_tsCount<0)      g_tsCount=0;
    if(g_tsCount>TS_MAX) g_tsCount=TS_MAX;
