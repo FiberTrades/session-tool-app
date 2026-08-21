@@ -52916,7 +52916,47 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if(!best||hpx>best.heightCss) best={canvas:ci,heightCss:Math.round(hpx*10)/10,widthCss:Math.round(wpx*10)/10,dpr:dpr}; }); }
       return best; }
     try{ o.lwcEntryPill=scan([244,114,182],14); }catch(e){ o.lwcEntryPill=String(e); }
-    try{ o.lwcSlPill=scan([229,103,103],14); }catch(e){ o.lwcSlPill=String(e); }
+    /* The pill box already matches. What still differs is the GLYPHS, so measure those: inside the
+       pill, the text pixels are whatever is not the fill colour. Their vertical extent is the cap
+       height LWC actually renders, which is the number to match a font size against - asking the
+       chart for its configured size has now been wrong three times running. */
+    function glyphs(rgb,tol){ try{
+      var cvs=chartEl?chartEl.querySelectorAll('canvas'):[], best=null;
+      for(var ci=0;ci<cvs.length;ci++){ var cv=cvs[ci]; if(!cv.width||!cv.height) continue;
+        var g; try{ g=cv.getContext('2d'); }catch(_){ continue; }
+        var im; try{ im=g.getImageData(0,0,cv.width,cv.height); }catch(_){ continue; }
+        var d=im.data, dpr=(cv.width/(parseFloat(cv.style.width)||cv.width))||1;
+        /* rows that are mostly pill colour = the label band */
+        var y0=-1,y1=-1;
+        for(var y=0;y<cv.height;y++){ var run=0;
+          for(var x=0;x<cv.width;x++){ var i2=(y*cv.width+x)*4;
+            if(Math.abs(d[i2]-rgb[0])<=tol&&Math.abs(d[i2+1]-rgb[1])<=tol&&Math.abs(d[i2+2]-rgb[2])<=tol&&d[i2+3]>200) run++; }
+          if(run>8){ if(y0<0) y0=y; y1=y; } else if(y0>=0&&y-y1>2) break; }
+        if(y0<0) continue;
+        /* inside that band, anything clearly NOT the fill is ink */
+        var ty0=-1,ty1=-1,tx0=1e9,tx1=-1,dark=0,light=0;
+        for(var y2=y0;y2<=y1;y2++){ var any=false;
+          for(var x2=0;x2<cv.width;x2++){ var i3=(y2*cv.width+x2)*4; if(d[i3+3]<200) continue;
+            var isFill=Math.abs(d[i3]-rgb[0])<=tol&&Math.abs(d[i3+1]-rgb[1])<=tol&&Math.abs(d[i3+2]-rgb[2])<=tol;
+            if(isFill) continue;
+            var lum=0.299*d[i3]+0.587*d[i3+1]+0.114*d[i3+2];
+            if(lum>150) light++; else dark++;
+            any=true; if(x2<tx0)tx0=x2; if(x2>tx1)tx1=x2; }
+          if(any){ if(ty0<0) ty0=y2; ty1=y2; } }
+        if(ty0<0) continue;
+        var cand={canvas:ci,dpr:dpr,pillHeightCss:Math.round(((y1-y0+1)/dpr)*10)/10,
+          textCapHeightCss:Math.round(((ty1-ty0+1)/dpr)*10)/10,
+          textWidthCss:Math.round(((tx1-tx0+1)/dpr)*10)/10,
+          inkIsLight:light>dark, inkPixels:light+dark};
+        if(!best||cand.textCapHeightCss>best.textCapHeightCss) best=cand; }
+      return best; }catch(e){ return String(e); } }
+    try{ o.lwcEntryText=glyphs([244,114,182],14); }catch(e){ o.lwcEntryText=String(e); }
+    /* What OUR pill renders at, for a like-for-like comparison. */
+    try{ var c2=document.createElement('canvas'), g2=c2.getContext('2d');
+      g2.font=o.myPillFont+"px 'DM Mono',monospace";
+      var m=g2.measureText('1.16826');
+      o.myText={ font:o.myPillFont, widthCss:Math.round(m.width*10)/10,
+        capHeightCss:(m.actualBoundingBoxAscent!=null)?Math.round((m.actualBoundingBoxAscent+m.actualBoundingBoxDescent)*10)/10:null }; }catch(e){ o.myText=String(e); }
     return o; }; }catch(_){}
   /* Positioned from the SAME numbers the canvas draws with - plotW() for the price scale and
      _axisTop() for the time axis - rather than from a second, parallel reading of the chart. Three
@@ -52983,7 +53023,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         var _fs=12; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>6&&_lo.fontSize<24) _fs=_lo.fontSize; }catch(_){}
         ctx.font=_fs+"px 'DM Mono',monospace";
         var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
-        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+5,bw2=Math.min(tw2+10,w-bx-1);
+        /* Fills the price scale, like LWC's own labels do. Sizing it to the text left it visibly
+           narrower than the Entry / SL pills directly above it, which is what gave two labels on
+           the same axis two different shapes. */
+        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+5,bw2=Math.max(12,w-bx);
         if(bw2>12){ ctx.fillRect(bx,y-bh/2,bw2,bh);
           /* Dark ink on the pill: every swatch on offer is a light colour, so a fixed dark text
              stays legible without having to compute contrast per colour. */
