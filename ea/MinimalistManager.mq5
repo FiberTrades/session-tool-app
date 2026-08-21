@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.0"
+#property version   "6.1"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -113,6 +113,8 @@ input ENUM_DST_MODE InpDstMode      = DST_AUTO; // Timezone: Auto (from this PC/
 #define COL_LINE_SL    clrTomato
 #define COL_LINE_TP    clrLimeGreen
 #define COL_LINE_BE    C'30,120,255'
+#define COL_LINE_TS    C'160,110,220'   // trailing trigger, still live
+#define COL_LINE_TSD   C'95,95,110'     // trailing trigger already consumed
 
 // ---- Refined panel palette (v2.32 redesign) ----
 #define COL_PANEL_BG   C'11,13,16'
@@ -175,6 +177,8 @@ string TX_ENTRY= "MTM_TXT_ENTRY";
 string TX_EF   = "MTM_TXT_EF";
 string TX_TP   = "MTM_TXT_TP";
 string TX_BE   = "MTM_TXT_BE";
+string LN_TS   = "MTM_LINE_TS";     // trailing triggers, suffixed 0..TS_MAX-1
+string TX_TS   = "MTM_TXT_TS";
 
 ENUM_ORDER_KIND g_orderKind;
 ENUM_RISK_MODE  g_riskMode;
@@ -206,6 +210,21 @@ bool   g_execMode = false;
 double g_slSetPips = 0.0;   // SL distance (pips) chosen by hover - held as price drifts
 int    g_slSetSide = -1;    // -1 = SL below price (buy), +1 = above (sell)
 bool   g_beArmed  = false;
+
+// ---- TRAILING STOPS ----------------------------------------------------------------
+// Four independent steps. Each owns a draggable TRIGGER line you put on the structure that
+// should move the stop, and a DESTINATION saying where the stop goes when that trigger is
+// taken - measured past the entry, so 0 is break-even and 0.5 is half an R in profit. The
+// unit is shared by all four: mixing R and pips between steps makes the ladder unreadable,
+// which is the only thing a ladder is for. Defaults follow the sequence Nestor described:
+// take a level, go to entry; take the next, go to +0.5R.
+#define TS_MAX 4
+bool   g_tsOn  [TS_MAX] = {true,true,false,false};
+double g_tsDest[TS_MAX] = {0.0,0.5,1.0,1.5};
+double g_tsTrig[TS_MAX];
+bool   g_tsFired[TS_MAX];
+ENUM_BEOFF_MODE g_tsUnit = BEOFF_BY_RR;
+bool   g_tsArmed = false;
 double g_beTrigger= 0.0;
 int    g_beDir    = 0;
 bool   g_prevLeftDown = false;
@@ -1123,6 +1142,144 @@ void SwitchOrderKind(){ g_orderKind=(ENUM_ORDER_KIND)(((int)g_orderKind+1)%3); i
 void CycleRiskMode(){ g_riskMode=(ENUM_RISK_MODE)(((int)g_riskMode+1)%3); BuildPanel(); }
 void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && DayLimitReached()){ Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
 
+//==================================================================
+//  TRAILING STOPS
+//  Sits alongside break-even rather than replacing it: BE has its own trigger and offset, and
+//  both only ever move a stop FORWARD, so whichever reaches further wins and neither can undo
+//  the other.
+//==================================================================
+string TsName(int i){ return LN_TS+IntegerToString(i); }
+string TsTxt (int i){ return TX_TS+IntegerToString(i); }
+string TsLbl (int i){ return "T"+IntegerToString(i+1); }
+
+// Where step i sends the stop, as a distance PAST the entry. Uses the same stamped entry risk
+// as BE, so dragging the live stop by hand cannot rescale the ladder.
+double TrailDestPx(int i,double rpx)
+  { return (g_tsUnit==BEOFF_BY_RR) ? g_tsDest[i]*rpx : g_tsDest[i]*g_pip; }
+
+// Grey a consumed step out and stop it being dragged - a trigger that has already moved the
+// stop must not be re-armed by accident, while every step still ahead stays draggable.
+void LockTrailLine(int i)
+  {
+   string n=TsName(i);
+   if(ObjectFind(0,n)<0) return;
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,n,OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,COL_LINE_TSD);
+   SetLineText(TsTxt(i),LinePrice(n),TsLbl(i),COL_LINE_TSD);
+  }
+
+void HideTrailLines()
+  {
+   for(int i=0;i<TS_MAX;i++)
+     {
+      ObjectDelete(0,TsName(i));
+      ObjectDelete(0,TsTxt(i));
+      g_tsFired[i]=false;
+     }
+   g_tsArmed=false;
+  }
+
+// Idempotent: creates whatever is missing and leaves the rest alone. Called from
+// UpdateManageLine so it covers a fresh entry AND the EA being attached or restarted
+// mid-trade, where no entry path ever ran. Defaults step i to (i+1)R out, which is only a
+// starting position - the point is to drag each one onto real structure.
+void EnsureTrailLines(double entry,int dir)
+  {
+   double rpx=0;
+   for(int p=PositionsTotal()-1;p>=0;p--)
+     {
+      ulong tk=PositionGetTicket(p);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      rpx=RecallRisk(tk);
+      if(rpx<=0)
+        {
+         double cs=PositionGetDouble(POSITION_SL);
+         if(cs>0) rpx=MathAbs(PositionGetDouble(POSITION_PRICE_OPEN)-cs);
+        }
+      break;
+     }
+   if(rpx<=0) rpx=g_pip*((g_reqSLpips>0)?g_reqSLpips:10.0);
+   bool any=false;
+   for(int i=0;i<TS_MAX;i++)
+     {
+      if(!g_tsOn[i]){ ObjectDelete(0,TsName(i)); ObjectDelete(0,TsTxt(i)); continue; }
+      if(g_tsFired[i]) continue;                       // consumed: leave the greyed line be
+      if(ObjectFind(0,TsName(i))<0)
+        {
+         g_tsTrig[i]=entry+dir*(i+1)*rpx;
+         EnsureHLine(TsName(i),g_tsTrig[i],COL_LINE_TS,STYLE_DOT,true);
+        }
+      SetLineText(TsTxt(i),LinePrice(TsName(i)),TsLbl(i),COL_LINE_TS);
+      any=true;
+     }
+   g_tsArmed=any;
+  }
+
+// Everything the stop has now overtaken is finished. A gap that clears T1, T2 and T3 at once
+// applies the FURTHEST of them and retires all three, instead of leaving the earlier steps
+// armed to fire later and drag the stop back down.
+void MarkTrailConsumed(int applied,double rpx)
+  {
+   double lvl=TrailDestPx(applied,rpx);
+   for(int i=0;i<TS_MAX;i++)
+     {
+      if(!g_tsOn[i] || g_tsFired[i]) continue;
+      if(TrailDestPx(i,rpx)<=lvl){ g_tsFired[i]=true; LockTrailLine(i); }
+     }
+  }
+
+void MonitorTrail()
+  {
+   if(!g_tsArmed) return;
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   double stopsLvl=(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)*g_point;
+   for(int p=PositionsTotal()-1;p>=0;p--)
+     {
+      ulong tk=PositionGetTicket(p);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      long type=PositionGetInteger(POSITION_TYPE);
+      int  d   =(type==POSITION_TYPE_BUY)?+1:-1;
+      double open=PositionGetDouble(POSITION_PRICE_OPEN);
+      double tp  =PositionGetDouble(POSITION_TP);
+      double cur =PositionGetDouble(POSITION_SL);
+      double rpx =RecallRisk(tk);
+      if(rpx<=0) rpx=(cur>0) ? MathAbs(open-cur)
+                             : ((g_reqSLpips>0) ? g_reqSLpips*g_pip : 0.0);
+      if(rpx<=0) continue;
+      // Furthest reached step wins, so one price move makes one stop move.
+      int best=-1;
+      for(int i=0;i<TS_MAX;i++)
+        {
+         if(!g_tsOn[i] || g_tsFired[i]) continue;
+         bool hit=(d>0) ? (bid>=g_tsTrig[i]) : (ask<=g_tsTrig[i]);
+         if(!hit) continue;
+         if(best<0 || TrailDestPx(i,rpx)>TrailDestPx(best,rpx)) best=i;
+        }
+      if(best<0) continue;
+      double want=NormalizeDouble(open+d*TrailDestPx(best,rpx),_Digits);
+      // Never backwards. If the stop is already at or past this step there is nothing to send,
+      // but the step is still finished - retire it so it cannot fire again later.
+      if(cur>0 && ((d>0 && want<=cur)||(d<0 && want>=cur))){ MarkTrailConsumed(best,rpx); continue; }
+      // Never a level price has not reached: that is refused as invalid stops. Stay armed and
+      // come back when there is room, exactly as BE now does.
+      if((d>0 && want>bid-stopsLvl)||(d<0 && want<ask+stopsLvl)) continue;
+      if(trade.PositionModify(tk,want,tp))
+        {
+         MarkTrailConsumed(best,rpx);
+         if(ObjectFind(0,LN_MSL)>=0) ObjectSetDouble(0,LN_MSL,OBJPROP_PRICE,want);
+        }
+      else
+         Print(StringFormat("Trail %s REJECTED for #%I64u: %d %s",
+               TsLbl(best),tk,trade.ResultRetcode(),trade.ResultRetcodeDescription()));
+     }
+  }
+
 void MonitorBE()
   {
    if(!g_beArmed) return;
@@ -1178,6 +1335,9 @@ void RefreshLabels()
    if(ObjectFind(0,LN_EFILL)>=0) SetLineText(TX_EF,LinePrice(LN_EFILL),"Entry",EntryLineColour());
    if(ObjectFind(0,LN_BE)   >=0) SetLineText(TX_BE,LinePrice(LN_BE),"BE",COL_LINE_BE);
    if(ObjectFind(0,LN_TP+"0")>=0)SetLineText(TX_TP,LinePrice(LN_TP+"0"),"TP",COL_LINE_TP);
+   for(int i=0;i<TS_MAX;i++)
+      if(ObjectFind(0,TsName(i))>=0)
+         SetLineText(TsTxt(i),LinePrice(TsName(i)),TsLbl(i),g_tsFired[i]?COL_LINE_TSD:COL_LINE_TS);
   }
 
 // Maintain the live-position lines (SL draggable, entry fixed, BE draggable) from state.
@@ -1190,6 +1350,7 @@ void UpdateManageLine()
       s_riskPurged=false;
       CaptureEntryRisk();     // stamp the entry stop before anything can drag it
       double pe; int pd; PositionsEntry(pe,pd);
+      EnsureTrailLines(pe,pd);   // idempotent: also covers attaching mid-trade
       // draggable SL
       if(ObjectFind(0,LN_MSL)<0)
          EnsureHLine(LN_MSL,(sl>0?sl:pe),COL_LINE_SL,STYLE_SOLID,true);
@@ -1225,6 +1386,7 @@ void UpdateManageLine()
    else
      {
       if(!s_riskPurged){ PurgeEntryRisk(); s_riskPurged=true; }   // flat: clear the stamps once
+      HideTrailLines();          // also resets the fired flags for the next trade
       ObjectDelete(0,LN_MSL);
       ObjectDelete(0,LN_EFILL);ObjectDelete(0,TX_EF);
       ObjectDelete(0,LN_BE);   ObjectDelete(0,TX_BE);
@@ -1580,6 +1742,28 @@ void BuildPanel()
    mkEdit  (PP+"BEOFF",box1,ry+2,BW,CH,Fmt(g_beOffset,g_beOffMode==BEOFF_BY_RR?2:1));
    cy+=cardH+6;
 
+   // ===== TRAILING STOPS =====
+   cardH=31+ROWH*(1+TS_MAX);      // shared unit, then one row per step
+   mkRect (PP+"C_TS",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
+   mkLabel(PP+"ST_TS",labelX,cy+7,"TRAILING STOPS",COL_PANEL_SECT,8);
+   ry=cy+23;
+   // Unit first for the same reason as BE: it decides what the four numbers below MEAN.
+   mkLabel (PP+"L_TSU",labelX,ry+6,"Move to unit",COL_PANEL_LBL,8);
+   mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+   ry+=ROWH;
+   // One row per step: on/off on the left, destination on the right. The destination is where
+   // the STOP goes, measured past entry - 0 is break-even - not where the trigger sits. The
+   // trigger is the T1..T4 line you drag onto structure.
+   for(int i=0;i<TS_MAX;i++)
+     {
+      string sfx=IntegerToString(i);
+      mkLabel (PP+"L_TS"+sfx,labelX,ry+6,TsLbl(i)+" moves to",COL_PANEL_LBL,8);
+      mkButton(PP+"TSON"+sfx,box2,ry+2,BW,CH,g_tsOn[i]?"ON":"OFF",COL_PANEL_BTN,g_tsOn[i]?COL_PANEL_BTX:COL_PANEL_LBL);
+      mkEdit  (PP+"TSDEST"+sfx,box1,ry+2,BW,CH,Fmt(g_tsDest[i],g_tsUnit==BEOFF_BY_RR?2:1));
+      ry+=ROWH;
+     }
+   cy+=cardH+6;
+
    // ===== DAILY LIMIT =====
    cardH=31+ROWH*2;       // two rows: Max trades, and the reset-timezone line
    mkRect (PP+"C_DL",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
@@ -1682,6 +1866,16 @@ void HandleClick(string s)
    // A BUTTON, so it belongs here and not in HandleEndEdit - that one fires on
    // CHARTEVENT_OBJECT_ENDEDIT, which a button never raises.
    if(s==PP+"BEOMODE"){ g_beOffMode=(g_beOffMode==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
+   if(s==PP+"TSUNIT"){ g_tsUnit=(g_tsUnit==BEOFF_BY_RR)?BEOFF_BY_PIPS:BEOFF_BY_RR; SaveState(); BuildPanel(); return; }
+   for(int i=0;i<TS_MAX;i++)
+      if(s==PP+"TSON"+IntegerToString(i))
+        {
+         g_tsOn[i]=!g_tsOn[i];
+         // Switching a step off mid-trade removes its line; on re-creates it next tick via
+         // EnsureTrailLines, so the panel and the chart cannot disagree.
+         if(!g_tsOn[i]){ ObjectDelete(0,TsName(i)); ObjectDelete(0,TsTxt(i)); }
+         SaveState(); BuildPanel(); return;
+        }
    for(int i=0;i<6;i++)
       if(s==PP+"TPON"+IntegerToString(i)){ g_tpOn[i]=!g_tpOn[i]; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
   }
@@ -1693,6 +1887,8 @@ void HandleEndEdit(string s)
    if(s==PP+"MAXSL"){ g_maxSL=ReadEdit(s); SaveState(); return; }
    if(s==PP+"BERR"){ g_beRR=ReadEdit(s); SaveState(); return; }
    if(s==PP+"BEOFF"){ g_beOffset=ReadEdit(s); SaveState(); return; }
+   for(int i=0;i<TS_MAX;i++)
+      if(s==PP+"TSDEST"+IntegerToString(i)){ g_tsDest[i]=ReadEdit(s); SaveState(); return; }
    if(s==PP+"SCPAD"){ g_scalePadPips=ReadEdit(s); if(g_scaleLock){ ChartSetInteger(0,CHART_SCALEFIX,false); ApplyScaleLock(); } SaveState(); return; }
    if(s==PP+"MAXTRD"){ RefreshDayCount(); if(g_tradesToday>=1){ Warn("Max trades is locked after your first trade today - unlocks next day."); BuildPanel(); return; } g_maxTradesDay=(int)ReadEdit(s); if(g_maxTradesDay<0) g_maxTradesDay=0; RefreshDayCount(); SaveState(); BuildPanel(); return; }
    for(int i=0;i<6;i++)
@@ -1710,9 +1906,10 @@ bool OverPanel(int x,int y){ return (x>=_s(PX) && x<=_s(PX)+_s(PWID) && y>=_s(PY
 // Is the cursor near a draggable line (entry / TP / BE)? Then a press = drag, not execute.
 bool OverDraggableLine(int x,int y)
   {
-   string names[8]; int n=0;
+   string names[16]; int n=0;      // ENTRY + BE + 6 TP + TS_MAX triggers
    if(ObjectFind(0,LN_ENTRY)>=0) names[n++]=LN_ENTRY;
    if(ObjectFind(0,LN_BE)>=0)    names[n++]=LN_BE;
+   for(int i=0;i<TS_MAX;i++) if(ObjectFind(0,TsName(i))>=0) names[n++]=TsName(i);
    for(int i=0;i<6;i++){ string t=LN_TP+IntegerToString(i); if(ObjectFind(0,t)>=0) names[n++]=t; }
    for(int i=0;i<n;i++)
      {
@@ -1745,6 +1942,12 @@ void SaveState()
    GlobalVariableSet(StateKey("tpPct"),     g_tpPct[0]);
    GlobalVariableSet(StateKey("useBE"),     g_useBE?1:0);
    GlobalVariableSet(StateKey("beOffset"),  g_beOffset);
+   GlobalVariableSet(StateKey("tsUnit"),    (double)g_tsUnit);
+   for(int i=0;i<TS_MAX;i++)
+     {
+      GlobalVariableSet(StateKey("tsOn"+IntegerToString(i)),   g_tsOn[i]?1:0);
+      GlobalVariableSet(StateKey("tsDest"+IntegerToString(i)), g_tsDest[i]);
+     }
    GlobalVariableSet(StateKey("beRR"),      g_beRR);
    GlobalVariableSet(StateKey("scaleLock"), g_scaleLock?1:0);
    GlobalVariableSet(StateKey("scalePad"),  g_scalePadPips);
@@ -1783,6 +1986,15 @@ bool LoadState()
    g_useBE      =(GlobalVariableGet(StateKey("useBE"))>0.5);
    g_beOffset   =GlobalVariableGet(StateKey("beOffset"));
    g_beRR       =GlobalVariableGet(StateKey("beRR"));
+   // Guarded individually: a state saved by an older build has none of these keys, and a
+   // missing GlobalVariable reads back as 0 - which would silently switch every step off.
+   if(GlobalVariableCheck(StateKey("tsUnit"))) g_tsUnit=(ENUM_BEOFF_MODE)(int)GlobalVariableGet(StateKey("tsUnit"));
+   for(int i=0;i<TS_MAX;i++)
+     {
+      string kOn=StateKey("tsOn"+IntegerToString(i)), kDs=StateKey("tsDest"+IntegerToString(i));
+      if(GlobalVariableCheck(kOn)) g_tsOn[i]  =(GlobalVariableGet(kOn)>0.5);
+      if(GlobalVariableCheck(kDs)) g_tsDest[i]=GlobalVariableGet(kDs);
+     }
    if(GlobalVariableCheck(StateKey("scaleLock"))) g_scaleLock=(GlobalVariableGet(StateKey("scaleLock"))>0.5);
    if(GlobalVariableCheck(StateKey("scalePad")))  g_scalePadPips=GlobalVariableGet(StateKey("scalePad"));
    g_panelOpen  =(GlobalVariableGet(StateKey("panelOpen"))>0.5);
@@ -3599,8 +3811,9 @@ void OnTick()
    // claiming the configured distance (seen 2026-08-20 - "SL 4.0 pips" sitting 6 pips away).
    if(!(g_active && g_execMode) && (ObjectFind(0,LN_SL)>=0 || ObjectFind(0,LN_ENTRY)>=0))
       HideExecutionLines();
-   if(!g_active){ if(g_pausedByLimit){ MonitorBE(); UpdateManageLine(); } ChartRedraw(); return; }
+   if(!g_active){ if(g_pausedByLimit){ MonitorBE(); MonitorTrail(); UpdateManageLine(); } ChartRedraw(); return; }
    g_lastStage="monitor_be"; MonitorBE();
+   g_lastStage="monitor_trail"; MonitorTrail();
    if(g_execMode) RedrawTargets();   // keep market entry / targets fresh
    UpdateManageLine();               // draggable SL / entry / BE for any live position
    g_lastStage="idle";
@@ -3758,6 +3971,14 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
          ModifyPositionsSL(LinePrice(LN_MSL));
          return;
         }
+      for(int i=0;i<TS_MAX;i++)     // trailing trigger dragged onto structure
+         if(sparam==TsName(i))
+           {
+            g_tsTrig[i]=LinePrice(TsName(i));
+            SetLineText(TsTxt(i),g_tsTrig[i],TsLbl(i),COL_LINE_TS);
+            ChartRedraw();
+            return;
+           }
       if(sparam==LN_BE)             // BE line dragged
         {
          double bp=LinePrice(LN_BE);
