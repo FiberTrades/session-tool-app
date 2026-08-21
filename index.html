@@ -52825,6 +52825,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function xOf(i){ return chart.timeScale().logicalToCoordinate(i); }
   function yOf(p){ return series.priceToCoordinate(p); }
   function P(p){ var x=xOf(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
+  /* Sub-bar horizontal position. logicalToCoordinate deals in whole bars, so feeding it a
+     fractional index snaps to the nearest one - which is why a freehand stroke drew smoothly from
+     cached pixels and then came back as a staircase with steps exactly one bar wide once it was
+     redrawn from stored coordinates. Interpolating between the two neighbouring bars gives the
+     true position; the mapping is linear across a bar, so this is exact rather than an
+     approximation, and it degrades to the plain call at the ends of the data. */
+  function xOfF(idx){ var i0=Math.floor(idx), f=idx-i0;
+    if(f<=0.0001) return xOf(i0);
+    var a=xOf(i0), b=xOf(i0+1);
+    if(a==null||b==null) return xOf(Math.round(idx));
+    return a+(b-a)*f; }
+  function Pf(p){ var x=xOfF(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
   /* Works for mouse AND touch: a TouchEvent has no clientX of its own, the coordinates live on
      touches[0] (or changedTouches[0] once the finger has lifted). */
   function evXY(e){ var r=chartEl.getBoundingClientRect();
@@ -53077,7 +53089,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
     /* Freehand. Points are stored as {idx,price} like every other tool, NOT as pixels, so the
        stroke stays welded to the candles through zoom, pan and replay stepping. */
-    else if(d.type==='pen'){ var ps=d.pts||[]; var pts=[]; for(var pi=0;pi<ps.length;pi++){ var q=P(ps[pi]); if(q) pts.push(q); }
+    else if(d.type==='pen'){ var ps=d.pts||[]; var pts=[]; for(var pi=0;pi<ps.length;pi++){ var q=Pf(ps[pi]); if(q) pts.push(q); }
       if(pts.length>1){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
         /* Quadratics through the MIDPOINTS of consecutive samples, which is the standard way to
            smooth freehand: each captured point becomes a control point rather than a corner, so
@@ -53091,7 +53103,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         LV.forEach(function(lv,ix){ var price=d.a.price+(d.b.price-d.a.price)*lv,y=yOf(price); if(y==null)return;
           if(ly!=null){ ctx.fillStyle=hexA(C,ix%2?0.05:0.09); ctx.fillRect(xL,Math.min(ly,y),xR2-xL,Math.abs(y-ly)); }
           ly=y; ctx.strokeStyle=hexA(C,0.55); ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(xL,y); ctx.lineTo(xR2,y); ctx.stroke();
-          ctx.fillStyle=C; ctx.textBaseline='middle'; ctx.fillText(lv.toFixed(3),Math.min(xR2+6,w-30),y); }); } }
+          ctx.fillStyle=C; ctx.textBaseline='middle'; ctx.fillText(fibLbl(lv),Math.min(xR2+6,w-30),y); }); } }
     /* Measure tool. Neutral on purpose: it reports a distance, and colouring that by direction
        made it look like a verdict on the move. The label sits on the chart with no plate behind
        it - a shadow keeps it readable over candles without covering them. Each part can be turned
@@ -53111,9 +53123,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillText(String(d.text),_a.x+4,_a.y-4); ctx.restore(); } }
     ctx.restore(); }
   /* Top-left of whatever the shape occupies, so a note never floats away from its object. */
+  /* 0, 0.5 and 1 are the levels read most often and they were the ones carrying the most padding -
+     toFixed(3) rendered them as 0.000, 0.500, 1.000. Trailing zeros are dropped, so each label is
+     as long as it needs to be and no longer: 0, 0.236, 0.382, 0.5, 0.618, 0.786, 1. */
+  function fibLbl(lv){ try{ var n=Number(lv); if(!isFinite(n)) return String(lv);
+    return String(parseFloat(n.toFixed(4))); }catch(_){ return String(lv); } }
   function labelAt(d){ try{
     if(d.type==='pen'){ var ps=d.pts||[]; var best=null;
-      for(var i=0;i<ps.length;i++){ var q=P(ps[i]); if(!q) continue; if(!best||q.y<best.y||(q.y===best.y&&q.x<best.x)) best=q; }
+      for(var i=0;i<ps.length;i++){ var q=Pf(ps[i]); if(!q) continue; if(!best||q.y<best.y||(q.y===best.y&&q.x<best.x)) best=q; }
       return best; }
     var a=P(d.a),b=P(d.b); if(!a||!b) return null;
     return { x:Math.min(a.x,b.x), y:Math.min(a.y,b.y) }; }catch(_){ return null; } }
@@ -53201,7 +53218,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function showCtx(x,y){ var e=ctxEl(); if(!e) return;
     var multi=(S.selMulti&&S.selMulti.length)?S.selMulti.length:0;
     var rows=[['clone',window._stT('Clone','Duplicar')],['del',multi?window._stT('Delete '+multi,'Borrar '+multi):window._stT('Delete','Borrar')]];
-    e.innerHTML=rows.map(function(r){ return '<button type="button" data-act="'+r[0]+'" style="text-align:center;padding:6px 9px;cursor:pointer;'
+    e.innerHTML=rows.map(function(r){ return '<button type="button" data-act="'+r[0]+'" style="text-align:center;padding:6px 9px;cursor:pointer;letter-spacing:0.12em;text-transform:uppercase;'
       +'background:transparent;border:none;color:var(--text-mid);font:inherit;border-radius:4px;white-space:nowrap;">'+r[1]+'</button>'; }).join('');
     Array.prototype.forEach.call(e.querySelectorAll('[data-act]'),function(b){
       b.onmouseenter=function(){ b.style.background='var(--bg-elev)'; b.style.color='var(--text)'; };
@@ -53323,7 +53340,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function bboxOf(d,w){ try{
     if(d.type==='hline'){ var y=yOf(d.price); return (y==null)?null:{x0:0,y0:y-3,x1:plotW(w),y1:y+3}; }
     if(d.type==='pen'){ var ps=d.pts||[],x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
-      for(var i=0;i<ps.length;i++){ var q=P(ps[i]); if(!q) continue; if(q.x<x0)x0=q.x; if(q.x>x1)x1=q.x; if(q.y<y0)y0=q.y; if(q.y>y1)y1=q.y; }
+      for(var i=0;i<ps.length;i++){ var q=Pf(ps[i]); if(!q) continue; if(q.x<x0)x0=q.x; if(q.x>x1)x1=q.x; if(q.y<y0)y0=q.y; if(q.y>y1)y1=q.y; }
       return isFinite(x0)?{x0:x0,y0:y0,x1:x1,y1:y1}:null; }
     var a=P(d.a),b=P(d.b); if(!a||!b) return null;
     return {x0:Math.min(a.x,b.x),y0:Math.min(a.y,b.y),x1:Math.max(a.x,b.x),y1:Math.max(a.y,b.y)};
@@ -53332,7 +53349,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function marqNorm(m){ return {x0:Math.min(m.x0,m.x1),y0:Math.min(m.y0,m.y1),x1:Math.max(m.x0,m.x1),y1:Math.max(m.y0,m.y1)}; }
   function clearMulti(){ S.selMulti=null; }
   function hit(px,py){ for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i];
-    if(!visibleOn(d)) continue;   /* cannot select what is not on screen */ if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } if(d.type==='pen'){ var ps=d.pts||[]; for(var k=1;k<ps.length;k++){ var q1=P(ps[k-1]),q2=P(ps[k]); if(q1&&q2&&d2seg(px,py,q1.x,q1.y,q2.x,q2.y)<7) return {i:i,part:'body'}; } continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
+    if(!visibleOn(d)) continue;   /* cannot select what is not on screen */ if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } if(d.type==='pen'){ var ps=d.pts||[]; for(var k=1;k<ps.length;k++){ var q1=Pf(ps[k-1]),q2=Pf(ps[k]); if(q1&&q2&&d2seg(px,py,q1.x,q1.y,q2.x,q2.y)<7) return {i:i,part:'body'}; } continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
 
   // ---- News: the trade's week, from calendar_events ---------------------------
   /* Re-queried on EVERY open rather than cached for the session. The worker fills the `actual`
