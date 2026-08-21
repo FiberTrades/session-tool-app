@@ -53261,6 +53261,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       function pct(a,q){ if(!a.length) return null; var b=a.slice().sort(function(x,y){return x-y;});
         return Math.round(b[Math.min(b.length-1,Math.floor(b.length*q))]*100)/100; }
       var o={ rawEvents:raw.length, mouseMoves:mm.length, frames:fr.length,
+        drawMs:{p50:pct(_costD,0.5),p95:pct(_costD,0.95)},
+        syncMs:{p50:pct(_costS,0.5),p95:pct(_costS,0.95)},
+        drawings:(S&&S.drawings?S.drawings.length:0), bars:(S&&S.bars?S.bars.length:0),
+        replayOpen:!!(el('strp-modal-bg')&&el('strp-modal-bg').classList.contains('show')),
         rawDelayMs:{p50:pct(raw,0.5),p95:pct(raw,0.95)},
         mouseDelayMs:{p50:pct(mm,0.5),p95:pct(mm,0.95)},
         frameGapMs:{p50:pct(fr,0.5),p95:pct(fr,0.95)},
@@ -53276,7 +53280,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      this on the raw event, so the position painted here is the newest one available - reading often
      and drawing once is the whole trick. */
   var _lastDrawAt=0;
-  function _frame(){ if(!S){ _loop=0; return; } _draw(); _sync(); _loop=requestAnimationFrame(_frame); }
+  /* Timed, because a 58ms frame has to be explained rather than guessed at. If these two account
+     for the gap the cost is ours; if they are a millisecond and the frame is still 58, the time is
+     going somewhere else on the page entirely and no change in here can reach it. */
+  var _costD=[],_costS=[];
+  function _frame(){ if(!S){ _loop=0; return; }
+    var t0=performance.now(); _draw();
+    var t1=performance.now(); _sync();
+    var t2=performance.now();
+    if(_costD.length>240){ _costD.shift(); _costS.shift(); }
+    _costD.push(t1-t0); _costS.push(t2-t1);
+    _loop=requestAnimationFrame(_frame); }
   function startLoop(){ if(!_loop) _loop=requestAnimationFrame(_frame); }
   function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
   function draw(){}   // no-op: the loop above handles all redraws
