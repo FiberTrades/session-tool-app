@@ -339,15 +339,48 @@ begin
         and (m.created_at at time zone s.tz)::date <  v_end
       group by m.sender_id
     ),
+    -- Each trader's own completed series, numbered exactly as the app numbers them (oldest = #1),
+    -- so a community post headed "Series #6" can be matched to the series it describes.
+    journal_series as (
+      select j.user_id,
+             (s.value->>'date')::timestamptz as closed_at,
+             row_number() over (partition by j.user_id
+                                order by (s.value->>'date')::timestamptz) as series_no
+      from journals j
+      cross join lateral jsonb_array_elements(coalesce(j.data->'history','[]'::jsonb)) s
+      where jsonb_array_length(coalesce(s.value->'trades','[]'::jsonb)) = 10
+        and (s.value->>'date') ~ '^\d{4}-\d{2}-\d{2}'
+    ),
     posts as (
-      select m.sender_id as user_id,
-             count(distinct (m.created_at at time zone s.tz)::date) as n
-      from channel_messages m
-      join sess s on s.user_id = m.sender_id
-      where ch_series is not null and m.channel_id = ch_series
-        and (m.created_at at time zone s.tz)::date >= v_start
-        and (m.created_at at time zone s.tz)::date <  v_end
-      group by m.sender_id
+      select user_id, sum(n)::bigint as n
+      from (
+        -- Legacy (pre-cutover): distinct days on which anything was posted in the series channel.
+        select m.sender_id as user_id,
+               count(distinct (m.created_at at time zone s.tz)::date) as n
+        from channel_messages m
+        join sess s on s.user_id = m.sender_id
+        where ch_series is not null and m.channel_id = ch_series
+          and (m.created_at at time zone s.tz)::date >= v_start
+          and (m.created_at at time zone s.tz)::date <  least(v_end, date '2026-09-01')
+        group by m.sender_id
+        union all
+        -- From the cutover: a completed series counts as posted only when a message actually names
+        -- it, no matter when that message was written. Comparing two per-period counts meant a
+        -- trader who closed on the 30th and posted on the 2nd was penalised in one month and
+        -- unrewarded in the next, and two posts about one series could cancel a series never shown.
+        select js.user_id, count(*) as n
+        from journal_series js
+        where (js.closed_at at time zone 'Europe/London')::date >= greatest(v_start, date '2026-09-01')
+          and (js.closed_at at time zone 'Europe/London')::date <  v_end
+          and exists (
+            select 1 from channel_messages m
+            where m.sender_id = js.user_id
+              and ch_series is not null and m.channel_id = ch_series
+              and m.body ~ ('Series #' || js.series_no || '([^0-9]|$)')
+          )
+        group by js.user_id
+      ) q
+      group by user_id
     ),
     commit_pledge as (
       select
@@ -563,12 +596,9 @@ begin
       from series
       where (closed_at at time zone 'Europe/London')::date < date '2026-09-01'
       union all
-      select j.user_id, (s.value->>'date')::timestamptz
-      from journals j
-      cross join lateral jsonb_array_elements(coalesce(j.data->'history','[]'::jsonb)) s
-      where jsonb_array_length(coalesce(s.value->'trades','[]'::jsonb)) = 10
-        and (s.value->>'date') ~ '^\d{4}-\d{2}-\d{2}'
-        and ((s.value->>'date')::timestamptz at time zone 'Europe/London')::date >= date '2026-09-01'
+      select user_id, closed_at
+      from journal_series
+      where (closed_at at time zone 'Europe/London')::date >= date '2026-09-01'
     ),
     series_done as (
       select user_id, count(*) as n_completed
