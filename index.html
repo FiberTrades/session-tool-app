@@ -52550,7 +52550,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   async function build(){
     chartEl=el('strp-chart'); overlay=el('strp-ov');
     /* The chart is rebuilt here, so any previous price lines died with it. */
-    S._plines=[]; S._plSig=null;
+    S._plines=[]; S._plSig=null; S._tlOn=false; S._lnE=null; S.lnSL=null; S.lnTP=null;
     chartEl.innerHTML='';
     chart=S.chart=window.LightweightCharts.createChart(chartEl,{
       layout:{background:{color:'#131217'},textColor:'#c0c0c0',fontFamily:"'DM Mono',monospace"},
@@ -52577,9 +52577,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // other, which is what "why are there 2 SL lines" was. The original levels are not lost: the
     // position tool's shaded zones (drawPos) are still framed on the plan as taken, so where the
     // live line has walked away from the zone's edge IS the move, read directly off the chart.
-    series.createPriceLine({price:S.entry,color:'#f472b6',lineWidth:1,lineStyle:0,title:L('Entry','Entrada')});
-    if(S.SL) S.lnSL=series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:0,title:'SL'});
-    if(S.TP) S.lnTP=series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:0,title:'TP'});
+    /* Entry, SL and TP are NOT created here. They were, which put the whole plan on the axis while
+       the replay still read "Waiting for entry" - the levels of a trade that had not been taken yet,
+       sitting there as though it had. drawPos already refused to draw its zones before the entry
+       bar; the price lines simply were not asked the same question. syncTradeLines() adds them when
+       the replay reaches the entry and takes them away if it is wound back before it. */
     chart.timeScale().subscribeVisibleLogicalRangeChange(onRange);
     el('strp-tb').style.display=''; el('strp-ct').style.display=''; el('strp-live').style.display='';
     startLoop();
@@ -53063,6 +53065,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* One native price line per horizontal drawing. Rebuilt only when the set actually changes -
      compared by signature, since this runs every frame and LWC would otherwise churn objects at
      60Hz. Colour and thickness come from the drawing, so the panel still styles it. */
+  /* The trade's own levels, shown only once the trade exists. Same gate drawPos uses, so the zones
+     and the axis labels appear together instead of disagreeing about whether there is a trade. */
+  function syncTradeLines(){ try{ if(!series) return;
+    var live=(S.cursor-1>=S.eBI);
+    if(live&&!S._tlOn){
+      S._lnE=series.createPriceLine({price:S.entry,color:'#f472b6',lineWidth:1,lineStyle:0,title:L('Entry','Entrada')});
+      if(S.SL) S.lnSL=series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:0,title:'SL'});
+      if(S.TP) S.lnTP=series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:0,title:'TP'});
+      S._tlOn=true; return; }
+    if(!live&&S._tlOn){
+      [S._lnE,S.lnSL,S.lnTP].forEach(function(pl){ if(pl) try{ series.removePriceLine(pl); }catch(_){} });
+      S._lnE=null; S.lnSL=null; S.lnTP=null; S._tlOn=false; } }catch(_){} }
   function syncHLines(){ try{ if(!series) return;
     var want=[]; (S.drawings||[]).forEach(function(d){ if(d&&d.type==='hline'&&isFinite(d.price)&&visibleOn(d))
       want.push({p:d.price,c:dC(d),w:Math.max(1,Math.min(4,Math.round(dW(d)))),t:String(d.text||'')}); });
@@ -53211,7 +53225,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       ctx.beginPath(); ctx.arc(sq.x,sq.y,4,0,Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.moveTo(sq.x-9,sq.y); ctx.lineTo(sq.x+9,sq.y); ctx.moveTo(sq.x,sq.y-9); ctx.lineTo(sq.x,sq.y+9); ctx.stroke(); ctx.restore(); } }
     if(S.marq){ var mm=marqNorm(S.marq); ctx.save(); ctx.fillStyle='rgba(244,114,182,0.10)'; ctx.fillRect(mm.x0,mm.y0,mm.x1-mm.x0,mm.y1-mm.y0);
-      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); placeSpread(w,h); syncHLines(); }
+      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); placeSpread(w,h); syncTradeLines(); syncHLines(); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
