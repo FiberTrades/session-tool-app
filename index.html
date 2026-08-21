@@ -52896,15 +52896,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var fs=12; try{ var l=chart.options().layout; if(l&&l.fontSize>6&&l.fontSize<24) fs=l.fontSize; }catch(_){}
     o.myPillFont=fs; o.myPillHeight=fs+5;   /* kept in step with the drawing code above */
     /* Scan every canvas for the Entry pink and the SL red, and report the tallest run of each. */
+    /* Only the price-scale strip. Scanning the whole canvas let the candles answer instead of the
+       labels - SL red is also the down-candle colour, which is why lwcSlPill came back 346px tall.
+       The scale is the rightmost priceScaleWidth of the chart, and nothing but labels lives there. */
+    var _sw=0; try{ _sw=chart.priceScale('right').width()||0; }catch(_){} if(!(_sw>4&&_sw<220)) _sw=56;
     function scan(rgb,tol){ var best=null;
       var cvs=chartEl?chartEl.querySelectorAll('canvas'):[];
       for(var ci=0;ci<cvs.length;ci++){ var cv=cvs[ci]; if(!cv.width||!cv.height) continue;
-        var g; try{ g=cv.getContext('2d'); }catch(_){ continue; } if(!g) continue;
+        var g; try{ g=cv.getContext('2d',{willReadFrequently:true})||cv.getContext('2d'); }catch(_){ continue; } if(!g) continue;
         var im; try{ im=g.getImageData(0,0,cv.width,cv.height); }catch(_){ continue; }
         var d=im.data, dpr=(cv.width/(parseFloat(cv.style.width)||cv.width))||1;
+        var x0s=Math.max(0,Math.floor(cv.width-_sw*dpr));
         var rows={};
         for(var y=0;y<cv.height;y++){ var run=0;
-          for(var x=0;x<cv.width;x++){ var i=(y*cv.width+x)*4;
+          for(var x=x0s;x<cv.width;x++){ var i=(y*cv.width+x)*4;
             if(Math.abs(d[i]-rgb[0])<=tol&&Math.abs(d[i+1]-rgb[1])<=tol&&Math.abs(d[i+2]-rgb[2])<=tol&&d[i+3]>200) run++; }
           if(run>8) rows[y]=run; }
         var ys=Object.keys(rows).map(Number).sort(function(a,b){return a-b;});
@@ -52923,20 +52928,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     function glyphs(rgb,tol){ try{
       var cvs=chartEl?chartEl.querySelectorAll('canvas'):[], best=null;
       for(var ci=0;ci<cvs.length;ci++){ var cv=cvs[ci]; if(!cv.width||!cv.height) continue;
-        var g; try{ g=cv.getContext('2d'); }catch(_){ continue; }
+        var g; try{ g=cv.getContext('2d',{willReadFrequently:true})||cv.getContext('2d'); }catch(_){ continue; }
         var im; try{ im=g.getImageData(0,0,cv.width,cv.height); }catch(_){ continue; }
         var d=im.data, dpr=(cv.width/(parseFloat(cv.style.width)||cv.width))||1;
+        var gx0=Math.max(0,Math.floor(cv.width-_sw*dpr));
         /* rows that are mostly pill colour = the label band */
         var y0=-1,y1=-1;
         for(var y=0;y<cv.height;y++){ var run=0;
-          for(var x=0;x<cv.width;x++){ var i2=(y*cv.width+x)*4;
+          for(var x=gx0;x<cv.width;x++){ var i2=(y*cv.width+x)*4;
             if(Math.abs(d[i2]-rgb[0])<=tol&&Math.abs(d[i2+1]-rgb[1])<=tol&&Math.abs(d[i2+2]-rgb[2])<=tol&&d[i2+3]>200) run++; }
           if(run>8){ if(y0<0) y0=y; y1=y; } else if(y0>=0&&y-y1>2) break; }
         if(y0<0) continue;
         /* inside that band, anything clearly NOT the fill is ink */
         var ty0=-1,ty1=-1,tx0=1e9,tx1=-1,dark=0,light=0;
         for(var y2=y0;y2<=y1;y2++){ var any=false;
-          for(var x2=0;x2<cv.width;x2++){ var i3=(y2*cv.width+x2)*4; if(d[i3+3]<200) continue;
+          for(var x2=gx0;x2<cv.width;x2++){ var i3=(y2*cv.width+x2)*4; if(d[i3+3]<200) continue;
             var isFill=Math.abs(d[i3]-rgb[0])<=tol&&Math.abs(d[i3+1]-rgb[1])<=tol&&Math.abs(d[i3+2]-rgb[2])<=tol;
             if(isFill) continue;
             var lum=0.299*d[i3]+0.587*d[i3+1]+0.114*d[i3+2];
