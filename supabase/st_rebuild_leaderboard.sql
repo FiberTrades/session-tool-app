@@ -552,9 +552,27 @@ begin
         group by wp.user_id
       ) m on m.user_id = u.user_id
     ),
+    -- Series completion for the +5/-5 series_post term. Before the cutover this stays on the
+    -- broker-derived `series` CTE so no already-published period changes. From the cutover it reads
+    -- the trader's own journal history, because that is the series they can actually see and post:
+    -- broker rows they never journalled (pre-journal imports, dismissed tickets) were silently
+    -- shifting every boundary and manufacturing completed series nobody could post. Integrity
+    -- metrics (net R, broken stops, over-risk, drawdown) deliberately stay on the broker feed.
+    src_series as (
+      select user_id, closed_at
+      from series
+      where (closed_at at time zone 'Europe/London')::date < date '2026-09-01'
+      union all
+      select j.user_id, (s.value->>'date')::timestamptz
+      from journals j
+      cross join lateral jsonb_array_elements(coalesce(j.data->'history','[]'::jsonb)) s
+      where jsonb_array_length(coalesce(s.value->'trades','[]'::jsonb)) = 10
+        and (s.value->>'date') ~ '^\d{4}-\d{2}-\d{2}'
+        and ((s.value->>'date')::timestamptz at time zone 'Europe/London')::date >= date '2026-09-01'
+    ),
     series_done as (
       select user_id, count(*) as n_completed
-      from series
+      from src_series
       where (closed_at at time zone 'Europe/London')::date >= v_start
         and (closed_at at time zone 'Europe/London')::date <  v_end
       group by user_id
