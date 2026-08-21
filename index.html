@@ -7071,6 +7071,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_missed': "Missed: {DAYS}.",
       'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
       'commit.adherence_offplan_showed': "Showed up on {N} day(s) you'd said you'd rest, without trading.",
+      'commit.rolled_note': "You didn't set this week, so it carried over from the last week you did.",
       'commit.first_label': "Days I'm committing to this week",
       'commit.first_hint': "You haven't set a week yet, so choose this one. It locks the moment you post a bias or log a trade — after that you set your days a week ahead.",
       'commit.this_label': "Days I've committed to this week",
@@ -8580,6 +8581,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_missed': "Faltaste: {DAYS}.",
       'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
       'commit.adherence_offplan_showed': "Estuviste presente {N} d\u00eda(s) que dijiste que descansar\u00edas, sin operar.",
+      'commit.rolled_note': "No fijaste esta semana, así que se mantienen los días de la última que sí fijaste.",
       'commit.first_label': "D\u00edas que me comprometo a operar esta semana",
       'commit.first_hint': "Todav\u00eda no has fijado ninguna semana, as\u00ed que elige esta. Se bloquea en cuanto publiques un sesgo o registres una operaci\u00f3n \u2014 a partir de ah\u00ed fijar\u00e1s tus d\u00edas con una semana de antelaci\u00f3n.",
       'commit.this_label': "D\u00edas que me he comprometido a operar esta semana",
@@ -26196,7 +26198,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const refMon = new Date(2024, 0, 1); // a Monday
       const dayLabel = (d) => { try { const dd = new Date(refMon); dd.setDate(refMon.getDate() + ((d + 6) % 7)); return dd.toLocaleDateString(loc, { weekday: 'short' }); } catch (e) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]; } };
       // (1) This week's adherence, only if a commitment was set for it.
-      const committedThis = (typeof getWeekCommitment === 'function') ? getWeekCommitment(thisWeekKey) : null;
+      const committedThis = (typeof _rolledCommitment === 'function') ? _rolledCommitment(thisWeekKey) : null;
       let adhHtml = '';
       let _kept = 0, _offTraded = 0, _offShowed = 0, _pct = null;
       if (committedThis && committedThis.length) {
@@ -26284,7 +26286,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // This week's days are ALWAYS shown, and always frozen — mid-week as the plan you are being
       // held to, afterwards as the record the adherence figure above was measured against. The
       // chips are `disabled`, not merely unwired, so they cannot be reached by keyboard either.
-      const thisPreset = (getWeekCommitment(thisWeekKey)) || _defaultCommitDays();
+      const thisPreset = _rolledCommitment(thisWeekKey) || _defaultCommitDays();
       const lockedChips = order.map(function (d) {
         return `<button type="button" class="settings-day-btn${thisPreset.indexOf(d) >= 0 ? ' on' : ''}" disabled data-day="${d}" style="cursor:default;opacity:0.72;">${dayLabel(d)}</button>`;
       }).join('');
@@ -26317,7 +26319,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       } else {
         thisBlock = `<div>
           <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t(_over ? 'commit.past_label' : 'commit.this_label')}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t(_over ? 'commit.past_hint' : 'commit.this_hint')}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t(_over ? 'commit.past_hint' : 'commit.this_hint')}${_isRolledOver(thisWeekKey) ? ' ' + t('commit.rolled_note') : ''}</div>
           <div class="settings-days-row">${lockedChips}</div>
         </div>`;
       }
@@ -28525,6 +28527,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { var m = data && data.weeklyCommitments; if (m && Array.isArray(m[weekKey]) && m[weekKey].length) return m[weekKey].map(Number); } catch (e) {}
     return null;
   }
+  // The commitment in force for a week: its own if one was set, otherwise the most recent EARLIER
+  // week's, carried forward. Miss a weekly review and your days stay as they were rather than
+  // silently reverting to a Mon–Fri default you never chose — a trader who commits Tue–Thu should
+  // not find Monday live again just because they skipped one Sunday.
+  //
+  // Resolved on READ and never written. Storing it would put days in the record that nobody
+  // picked, and the whole point of the commitment is that it says what you actually chose.
+  // .second() is why the caller can still tell the two apart.
+  function _rolledCommitment(weekKey) {
+    const own = getWeekCommitment(weekKey);
+    if (own && own.length) return own;
+    try {
+      const m = (data && data.weeklyCommitments) || {};
+      const prior = Object.keys(m)
+        .filter(function (k) {
+          // Date-shaped keys only. Older journals also carry '2026-W31'-style keys, which sort
+          // above every YYYY-MM-DD and would win any comparison they were allowed into.
+          return /^\d{4}-\d{2}-\d{2}$/.test(k) && k < weekKey && Array.isArray(m[k]) && m[k].length;
+        })
+        .sort();
+      if (prior.length) return m[prior[prior.length - 1]].map(Number);
+    } catch (e) {}
+    return null;
+  }
+  function _isRolledOver(weekKey) {
+    const own = getWeekCommitment(weekKey);
+    return !(own && own.length) && !!_rolledCommitment(weekKey);
+  }
+  try { window.__stRolledCommitment = _rolledCommitment; } catch (e) {}
   function setWeekCommitment(weekKey, days) {
     if (!weekKey) return;
     if (!data.weeklyCommitments) data.weeklyCommitments = {};
@@ -28533,10 +28564,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
   }
   function _tradingDaysPref() {
-    // This week's committed days win over the global default.
+    // This week's committed days win over the global default — carried forward from the last week
+    // you did set if this one was never filled in.
     try {
       var wk = _mondayKey(Date.now());
-      var commit = wk ? getWeekCommitment(wk) : null;
+      var commit = wk ? _rolledCommitment(wk) : null;
       if (commit && commit.length) return commit;
     } catch (e) {}
     try {
