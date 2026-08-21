@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.9"
+#property version   "6.0"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1120,6 +1120,7 @@ void RefreshLabels()
    if(ObjectFind(0,LN_MSL)  >=0) SetLineText(TX_SL,LinePrice(LN_MSL),"SL",COL_LINE_SL);
    if(ObjectFind(0,LN_SL)   >=0 && g_execMode)
       SetLineText(TX_SL,LinePrice(LN_SL),StringFormat("SL  %.1f pips",g_slSetPips),COL_LINE_SL);
+   if(ObjectFind(0,LN_EFILL)>=0) SetLineText(TX_EF,LinePrice(LN_EFILL),"Entry",EntryLineColour());
    if(ObjectFind(0,LN_BE)   >=0) SetLineText(TX_BE,LinePrice(LN_BE),"BE",COL_LINE_BE);
    if(ObjectFind(0,LN_TP+"0")>=0)SetLineText(TX_TP,LinePrice(LN_TP+"0"),"TP",COL_LINE_TP);
   }
@@ -1135,8 +1136,10 @@ void UpdateManageLine()
       if(ObjectFind(0,LN_MSL)<0)
          EnsureHLine(LN_MSL,(sl>0?sl:pe),COL_LINE_SL,STYLE_SOLID,true);
       SetLineText(TX_SL,LinePrice(LN_MSL),"SL",COL_LINE_SL);
-      // fixed grey entry line (no label)
+      // fixed grey entry line, now labelled like SL/TP/BE. TX_EF was already declared and
+      // cleaned up on close; only the SetLineText call was missing, so no label ever appeared.
       if(ObjectFind(0,LN_EFILL)<0) EnsureHLine(LN_EFILL,pe,EntryLineColour(),STYLE_SOLID,false);
+      SetLineText(TX_EF,LinePrice(LN_EFILL),"Entry",EntryLineColour());
       // green TP line at the position's broker TP (draggable), if one is set
       double ptp=0;
       for(int i=PositionsTotal()-1;i>=0;i--)
