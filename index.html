@@ -52893,11 +52893,39 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      axis rather than run under it measures against this, not the element width. */
   /* What the chart reports about its own text, so the hline price pill can be matched to the axis
      labels by measurement. Run it with a replay open. */
-  try{ window.__stReplayAxisDiag=function(){ var o={}; try{ o.layout=chart.options().layout; }catch(e){ o.layout=String(e); }
+  /* Measures what Lightweight Charts ACTUALLY renders, instead of asking it what font it was
+     configured with. The Entry / SL price-line labels are solid pink and red pills on the price
+     scale canvas, so their exact box can be read back from the pixels - which is the only way to
+     match them without guessing. Run with a replay open. */
+  try{ window.__stReplayAxisDiag=function(){ var o={};
+    try{ o.layout=chart.options().layout; }catch(e){ o.layout=String(e); }
     try{ o.priceScaleWidth=chart.priceScale('right').width(); }catch(e){ o.priceScaleWidth=String(e); }
     try{ o.timeAxisHeight=chart.timeScale().height(); }catch(e){ o.timeAxisHeight=String(e); }
     var fs=11; try{ var l=chart.options().layout; if(l&&l.fontSize>6&&l.fontSize<24) fs=l.fontSize; }catch(_){}
-    o.pillFont=fs; o.pillHeight=fs+5; return o; }; }catch(_){}
+    o.myPillFont=fs; o.myPillHeight=fs+5;
+    /* Scan every canvas for the Entry pink and the SL red, and report the tallest run of each. */
+    function scan(rgb,tol){ var best=null;
+      var cvs=chartEl?chartEl.querySelectorAll('canvas'):[];
+      for(var ci=0;ci<cvs.length;ci++){ var cv=cvs[ci]; if(!cv.width||!cv.height) continue;
+        var g; try{ g=cv.getContext('2d'); }catch(_){ continue; } if(!g) continue;
+        var im; try{ im=g.getImageData(0,0,cv.width,cv.height); }catch(_){ continue; }
+        var d=im.data, dpr=(cv.width/(parseFloat(cv.style.width)||cv.width))||1;
+        var rows={};
+        for(var y=0;y<cv.height;y++){ var run=0;
+          for(var x=0;x<cv.width;x++){ var i=(y*cv.width+x)*4;
+            if(Math.abs(d[i]-rgb[0])<=tol&&Math.abs(d[i+1]-rgb[1])<=tol&&Math.abs(d[i+2]-rgb[2])<=tol&&d[i+3]>200) run++; }
+          if(run>8) rows[y]=run; }
+        var ys=Object.keys(rows).map(Number).sort(function(a,b){return a-b;});
+        if(!ys.length) continue;
+        var st=ys[0],prev=ys[0],runs=[];
+        for(var k=1;k<ys.length;k++){ if(ys[k]!==prev+1){ runs.push([st,prev]); st=ys[k]; } prev=ys[k]; }
+        runs.push([st,prev]);
+        runs.forEach(function(r){ var hpx=(r[1]-r[0]+1)/dpr, wpx=rows[r[0]]/dpr;
+          if(!best||hpx>best.heightCss) best={canvas:ci,heightCss:Math.round(hpx*10)/10,widthCss:Math.round(wpx*10)/10,dpr:dpr}; }); }
+      return best; }
+    try{ o.lwcEntryPill=scan([244,114,182],14); }catch(e){ o.lwcEntryPill=String(e); }
+    try{ o.lwcSlPill=scan([229,103,103],14); }catch(e){ o.lwcSlPill=String(e); }
+    return o; }; }catch(_){}
   function plotW(w){ var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} if(!(pw>4&&pw<220)) pw=56; return Math.max(20,w-pw); }
   /* Per-drawing style. Every tool used to hardcode its colour and weight, so two levels marking
      different ideas looked identical and nothing could be emphasised. d.color / d.width override
@@ -52928,10 +52956,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
            this pill came back LARGER than the Entry / SL labels after being smaller than them.
            __stReplayAxisDiag() reports what the chart actually says, so this is settled by
            measurement rather than by another guess if it is still out. */
-        var _fs=11; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>6&&_lo.fontSize<24) _fs=_lo.fontSize; }catch(_){}
+        /* One point under the chart's configured size, with tight padding. LWC renders its axis
+           labels smaller than layout.fontSize suggests, which is why matching that number exactly
+           still came out heavier than the Entry / SL pills beside it. __stReplayAxisDiag() now
+           reads their real box off the canvas, so this can be set from a measurement. */
+        var _fs=11; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>7&&_lo.fontSize<24) _fs=_lo.fontSize-1; }catch(_){}
         ctx.font=_fs+"px 'DM Mono',monospace";
         var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
-        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+5,bw2=Math.min(tw2+10,w-bx-1);
+        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+3,bw2=Math.min(tw2+10,w-bx-1);
         if(bw2>12){ ctx.fillRect(bx,y-bh/2,bw2,bh);
           /* Dark ink on the pill: every swatch on offer is a light colour, so a fixed dark text
              stays legible without having to compute contrast per colour. */
