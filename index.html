@@ -52784,17 +52784,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        axis - so the badge sat on top of the prices it was quoting. Both scale sizes come from
        the same sanity-checked reads the news badges use, since LWC will happily return 0 or a
        nonsense width while the chart is mid-layout. */
-    /* Anchored to the CHART's bottom-right corner, then pushed inside both scales. The badge's
-       offsetParent is .strp-cw, the wrapper - which also holds the news panel BELOW the chart, so
-       'bottom' measured from the wrapper is not the chart's bottom at all and the badge drifted
-       onto the axis whenever that panel was open. Measuring the two boxes against each other is
-       the only version that does not care what else the wrapper contains. */
-    try{ var _pw=0; try{ _pw=chart.priceScale('right').width()||0; }catch(_){} if(!(_pw>4&&_pw<220)) _pw=56;
-      var _ah=28; try{ var _v=chart.timeScale().height(); if(_v>10&&_v<90) _ah=_v; }catch(_){}
-      var _host=e.offsetParent||el('strp-cw');
-      var _hr=_host.getBoundingClientRect(), _cr=chartEl.getBoundingClientRect();
-      e.style.right=Math.max(4,Math.round((_hr.right-_cr.right)+_pw+10))+'px';
-      e.style.bottom=Math.max(4,Math.round((_hr.bottom-_cr.bottom)+_ah+10))+'px'; }catch(_){}
     var b=S.bars[Math.max(0,Math.min(idx,S.bars.length-1))];
     var v=b?S.spread[b.time]:null;
     // textContent, not innerHTML: this string is built from broker data and needs no markup.
@@ -52901,8 +52890,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ o.layout=chart.options().layout; }catch(e){ o.layout=String(e); }
     try{ o.priceScaleWidth=chart.priceScale('right').width(); }catch(e){ o.priceScaleWidth=String(e); }
     try{ o.timeAxisHeight=chart.timeScale().height(); }catch(e){ o.timeAxisHeight=String(e); }
-    var fs=11; try{ var l=chart.options().layout; if(l&&l.fontSize>6&&l.fontSize<24) fs=l.fontSize; }catch(_){}
-    o.myPillFont=fs; o.myPillHeight=fs+5;
+    var fs=12; try{ var l=chart.options().layout; if(l&&l.fontSize>6&&l.fontSize<24) fs=l.fontSize; }catch(_){}
+    o.myPillFont=fs; o.myPillHeight=fs+5;   /* kept in step with the drawing code above */
     /* Scan every canvas for the Entry pink and the SL red, and report the tallest run of each. */
     function scan(rgb,tol){ var best=null;
       var cvs=chartEl?chartEl.querySelectorAll('canvas'):[];
@@ -52926,6 +52915,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ o.lwcEntryPill=scan([244,114,182],14); }catch(e){ o.lwcEntryPill=String(e); }
     try{ o.lwcSlPill=scan([229,103,103],14); }catch(e){ o.lwcSlPill=String(e); }
     return o; }; }catch(_){}
+  /* Positioned from the SAME numbers the canvas draws with - plotW() for the price scale and
+     _axisTop() for the time axis - rather than from a second, parallel reading of the chart. Three
+     attempts at this badge all failed by deriving its geometry independently and getting a value
+     the drawings never saw: a scale width read before layout settled, or measured against the wrong
+     box. The drawings land correctly, so anything sharing their arithmetic lands correctly too.
+     Runs every frame, so a bad early reading is corrected as soon as the chart is laid out, and
+     writes only on change so it costs nothing while idle. */
+  function placeSpread(w,h){ try{ var e=el('strp-spread'); if(!e||e.style.display==='none') return;
+    var host=e.offsetParent||(chartEl&&chartEl.parentNode); if(!host||!chartEl) return;
+    var hr=host.getBoundingClientRect(), cr=chartEl.getBoundingClientRect();
+    var r=Math.max(4,Math.round((hr.right-cr.right)+(w-plotW(w))+10))+'px';
+    var b=Math.max(4,Math.round((hr.bottom-cr.bottom)+(h-_axisTop(h))+10))+'px';
+    if(e.style.right!==r) e.style.right=r;
+    if(e.style.bottom!==b) e.style.bottom=b; }catch(_){} }
   function plotW(w){ var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} if(!(pw>4&&pw<220)) pw=56; return Math.max(20,w-pw); }
   /* Per-drawing style. Every tool used to hardcode its colour and weight, so two levels marking
      different ideas looked identical and nothing could be emphasised. d.color / d.width override
@@ -52956,14 +52959,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
            this pill came back LARGER than the Entry / SL labels after being smaller than them.
            __stReplayAxisDiag() reports what the chart actually says, so this is settled by
            measurement rather than by another guess if it is still out. */
-        /* One point under the chart's configured size, with tight padding. LWC renders its axis
-           labels smaller than layout.fontSize suggests, which is why matching that number exactly
-           still came out heavier than the Entry / SL pills beside it. __stReplayAxisDiag() now
-           reads their real box off the canvas, so this can be set from a measurement. */
-        var _fs=11; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>7&&_lo.fontSize<24) _fs=_lo.fontSize-1; }catch(_){}
+        /* MEASURED, not guessed. __stReplayAxisDiag() read the real Entry label off the price-scale
+           canvas: 17 CSS px tall with layout.fontSize 12. So the box is fontSize + 5, which is what
+           this was two revisions ago - the guess that moved it to 11/14 made it smaller than LWC's,
+           having previously been larger. Whatever still reads differently is not the height. */
+        var _fs=12; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>6&&_lo.fontSize<24) _fs=_lo.fontSize; }catch(_){}
         ctx.font=_fs+"px 'DM Mono',monospace";
         var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
-        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+3,bw2=Math.min(tw2+10,w-bx-1);
+        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+5,bw2=Math.min(tw2+10,w-bx-1);
         if(bw2>12){ ctx.fillRect(bx,y-bh/2,bw2,bh);
           /* Dark ink on the pill: every swatch on offer is a light colour, so a fixed dark text
              stays legible without having to compute contrast per colour. */
@@ -53007,7 +53010,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       ctx.beginPath(); ctx.arc(sq.x,sq.y,4,0,Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.moveTo(sq.x-9,sq.y); ctx.lineTo(sq.x+9,sq.y); ctx.moveTo(sq.x,sq.y-9); ctx.lineTo(sq.x,sq.y+9); ctx.stroke(); ctx.restore(); } }
     if(S.marq){ var mm=marqNorm(S.marq); ctx.save(); ctx.fillStyle='rgba(244,114,182,0.10)'; ctx.fillRect(mm.x0,mm.y0,mm.x1-mm.x0,mm.y1-mm.y0);
-      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); }
+      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); placeSpread(w,h); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
@@ -53054,7 +53057,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      so this is not competing with anything - that space was taken and then left empty. */
   function ctxEl(){ var e=el('strp-ctx');
     if(!e){ e=document.createElement('div'); e.id='strp-ctx';
-      e.style.cssText='position:absolute;z-index:8;display:none;flex-direction:column;min-width:132px;padding:4px;'
+      /* Sized to its longest word, not to a round number. 132px left most of the menu as empty
+         space beside two short labels. */
+      e.style.cssText='position:absolute;z-index:8;display:none;flex-direction:column;min-width:96px;padding:3px;'
         +'border:1px solid var(--border-2);border-radius:var(--radius-ctrl);background:rgba(11,10,13,0.96);'
         +"font-family:'AppNum','DM Mono',monospace;font-size:11px;box-shadow:0 6px 20px rgba(0,0,0,0.45);";
       var host=chartEl&&chartEl.parentNode; if(host){ if(getComputedStyle(host).position==='static') host.style.position='relative'; host.appendChild(e); } }
@@ -53063,8 +53068,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function showCtx(x,y){ var e=ctxEl(); if(!e) return;
     var multi=(S.selMulti&&S.selMulti.length)?S.selMulti.length:0;
     var rows=[['clone',window._stT('Clone','Duplicar')],['del',multi?window._stT('Delete '+multi,'Borrar '+multi):window._stT('Delete','Borrar')]];
-    e.innerHTML=rows.map(function(r){ return '<button type="button" data-act="'+r[0]+'" style="text-align:left;padding:7px 10px;cursor:pointer;'
-      +'background:transparent;border:none;color:var(--text-mid);font:inherit;border-radius:4px;">'+r[1]+'</button>'; }).join('');
+    e.innerHTML=rows.map(function(r){ return '<button type="button" data-act="'+r[0]+'" style="text-align:left;padding:6px 9px;cursor:pointer;'
+      +'background:transparent;border:none;color:var(--text-mid);font:inherit;border-radius:4px;white-space:nowrap;">'+r[1]+'</button>'; }).join('');
     Array.prototype.forEach.call(e.querySelectorAll('[data-act]'),function(b){
       b.onmouseenter=function(){ b.style.background='var(--bg-elev)'; b.style.color='var(--text)'; };
       b.onmouseleave=function(){ b.style.background='transparent'; b.style.color='var(--text-mid)'; };
@@ -53128,6 +53133,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         +'background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;">'
         +'<button type="button" id="strp-fibadd" style="padding:4px 8px;cursor:pointer;background:transparent;color:var(--text-mid);'
         +'border:1px solid var(--border-2);border-radius:4px;font:inherit;">Add</button></div>'); }
+    /* Also in the panel, not only on right-click: a phone has no right-click, so the context menu
+       cannot be the sole route to it. */
+    if(S.sel!=null&&S.drawings[S.sel]) H.push('<button type="button" id="strp-clone" style="padding:5px 0;cursor:pointer;'
+      +'background:transparent;color:var(--text-mid);border:1px solid var(--border-2);border-radius:4px;font:inherit;'
+      +'letter-spacing:0.12em;text-transform:uppercase;">'+window._stT('Clone','Duplicar')+'</button>');
     e.innerHTML=H.join('');
     /* Sit against the LEFT edge of the price scale rather than on top of it. LWC's width API is
        not dependable here, so the value is sanity-checked and falls back to a typical scale width. */
@@ -53140,6 +53150,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(e.querySelectorAll('[data-wid]'),function(b){ b.onclick=function(){ tgt().width=parseFloat(b.dataset.wid); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-show]'),function(b){ b.onclick=function(){ var o=tgt(); if(!o.show)o.show={}; var k=b.dataset.show; o.show[k]=!rShow(o,k); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-lvl]'),function(b){ b.onclick=function(){ var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); L.splice(parseInt(b.dataset.lvl,10),1); o.levels=L; commit(); renderProps(); draw(); }; });
+    var clB=e.querySelector('#strp-clone');
+    if(clB) clB.onclick=function(){ cloneSel(); };
     var addB=e.querySelector('#strp-fibadd');
     if(addB) addB.onclick=function(){ var inp=e.querySelector('#strp-fiblv'); var v=parseFloat(inp&&inp.value); if(!isFinite(v)) return;
       var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); if(L.indexOf(v)<0) L.push(v); L.sort(function(x,y){return x-y;}); o.levels=L; commit(); renderProps(); draw(); }; }
