@@ -53234,7 +53234,41 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       ctx.beginPath(); ctx.arc(sq.x,sq.y,4,0,Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.moveTo(sq.x-9,sq.y); ctx.lineTo(sq.x+9,sq.y); ctx.moveTo(sq.x,sq.y-9); ctx.lineTo(sq.x,sq.y+9); ctx.stroke(); ctx.restore(); } }
     if(S.marq){ var mm=marqNorm(S.marq); ctx.save(); ctx.fillStyle='rgba(244,114,182,0.10)'; ctx.fillRect(mm.x0,mm.y0,mm.x1-mm.x0,mm.y1-mm.y0);
-      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); placeSpread(w,h); syncTradeLines(); syncHLines(); }
+      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); }
+  /* Everything that touches the DOM or asks Lightweight Charts a question, kept OFF the pointer
+     path. placeSpread reads two bounding rects and the price-scale width; syncHLines builds a
+     signature and may create objects. Harmless once a frame - forced layout up to a thousand times
+     a second is not, and that is what a raw pointer event stream would have made of it. The
+     crosshair only needs the canvas repainted; none of this moves while the pointer does. */
+  /* Where the latency actually is. e.timeStamp is when the browser CREATED the event, on the same
+     clock as performance.now() - so subtracting tells you how long it sat before our handler saw
+     it. That is the one number that separates the two possible culprits: if the delay is large the
+     browser is holding events back and no amount of faster drawing helps; if it is near zero our
+     code is prompt and what remains is compositing and display, which no web page can shorten.
+     Run it, then move the pointer over the chart for a few seconds. */
+  try{ window.__stPenLatency=function(ms){ ms=ms||4000; return new Promise(function(res){
+    var raw=[],mm=[],fr=[],last=0,id;
+    function onRaw(e){ try{ raw.push(performance.now()-e.timeStamp); }catch(_){} }
+    function onMm(e){ try{ mm.push(performance.now()-e.timeStamp); }catch(_){} }
+    document.addEventListener('pointerrawupdate',onRaw,true);
+    document.addEventListener('mousemove',onMm,true);
+    function tick(t){ if(last) fr.push(t-last); last=t; id=requestAnimationFrame(tick); }
+    id=requestAnimationFrame(tick);
+    setTimeout(function(){
+      document.removeEventListener('pointerrawupdate',onRaw,true);
+      document.removeEventListener('mousemove',onMm,true);
+      try{ cancelAnimationFrame(id); }catch(_){}
+      function pct(a,q){ if(!a.length) return null; var b=a.slice().sort(function(x,y){return x-y;});
+        return Math.round(b[Math.min(b.length-1,Math.floor(b.length*q))]*100)/100; }
+      var o={ rawEvents:raw.length, mouseMoves:mm.length, frames:fr.length,
+        rawDelayMs:{p50:pct(raw,0.5),p95:pct(raw,0.95)},
+        mouseDelayMs:{p50:pct(mm,0.5),p95:pct(mm,0.95)},
+        frameGapMs:{p50:pct(fr,0.5),p95:pct(fr,0.95)},
+        rawPerFrame: fr.length?Math.round(raw.length/fr.length*10)/10:null };
+      try{ console.log('PEN LATENCY:',JSON.stringify(o)); }catch(_){}
+      res(o); },ms); }); }; }catch(_){}
+  function _sync(){ try{ if(!S||!chartEl) return; var w=chartEl.clientWidth,h=chartEl.clientHeight;
+    placeSpread(w,h); syncTradeLines(); syncHLines(); }catch(_){} }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
@@ -53245,6 +53279,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _frame(){ if(!S){ _loop=0; return; }
     var now=(window.performance&&performance.now)?performance.now():Date.now();
     if(!(S.penning&&(now-_lastDrawAt)<8)) _draw();
+    _sync();
     _loop=requestAnimationFrame(_frame); }
   function startLoop(){ if(!_loop) _loop=requestAnimationFrame(_frame); }
   function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
@@ -53719,7 +53754,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(S.penning){ S.penning.tip=xy;
         var lp=S.penning.px[S.penning.px.length-1];
         if(!lp||Math.hypot(xy.x-lp.x,xy.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy); } } }
-      _draw();
+      /* A screen shows one image per refresh, so painting faster than ~250Hz buys nothing and
+         only takes CPU the compositor needs. Still well above the frame rate, so the canvas always
+         holds the newest position by the time a frame is taken. */
+      var _n=(window.performance&&performance.now)?performance.now():Date.now();
+      if(_n-_lastDrawAt>=3) _draw();
     }catch(_){} }
   if(_RAW) try{ document.addEventListener('pointerrawupdate',_ptrTrack,true); }catch(_){}
   window.addEventListener('mousemove',function(e){ if(!S) return;
