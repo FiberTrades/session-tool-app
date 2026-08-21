@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.7"
+#property version   "6.8"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1275,6 +1275,13 @@ void EnsureTrailLines(double entry,int dir)
       break;
      }
    if(rpx<=0) rpx=g_pip*((g_reqSLpips>0)?g_reqSLpips:10.0);
+   // A fresh trigger is measured from entry, or from price when price is already further along.
+   // Adding a step mid-trade is the normal case now that the ladder starts empty, and a default
+   // placed where price has already been would fire on the very next tick - moving the stop
+   // before you had the chance to drag the line onto anything.
+   double base=entry;
+   double mkt =(dir>0) ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   if((dir>0 && mkt>base)||(dir<0 && mkt<base)) base=mkt;
    bool any=false;
    for(int i=0;i<TS_MAX;i++)
      {
@@ -1290,7 +1297,7 @@ void EnsureTrailLines(double entry,int dir)
         }
       if(ObjectFind(0,TsName(i))<0)
         {
-         if(g_tsTrig[i]<=0) g_tsTrig[i]=entry+dir*(i+1)*rpx;   // a restored trigger wins
+         if(g_tsTrig[i]<=0) g_tsTrig[i]=base+dir*(i+1)*rpx;    // a restored trigger wins
          EnsureHLine(TsName(i),g_tsTrig[i],COL_LINE_TS,STYLE_DOT,true);
         }
       SetLineText(TsTxt(i),LinePrice(TsName(i)),TsLbl(i),COL_LINE_TS);
