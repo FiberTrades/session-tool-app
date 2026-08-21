@@ -3425,6 +3425,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .chal-finish:disabled { cursor: default; opacity: 0.7; }
   .chal-verdict-row .chal-verdict { margin-top: 0; }
   @media (max-width: 700px) { .chal-grid { grid-template-columns: 1fr; } }
+  /* Dividers as BORDERS, not as a 1px grid gap showing the row background through. Twelve fr-based
+     tracks land on fractional widths at most window sizes, and a 1px gap gets swallowed wherever
+     the boundary falls between device pixels - so one or two columns lose their line while the
+     rest keep theirs, which reads as a divider having been deleted. Fourth place in this file with
+     the same fault: the trade log, the Statistics KPI grid and the missed-winners strip all had it.
+     A border is drawn ON the cell, so it cannot fall between pixels. */
+  .atl-row { gap: 0; }
+  .atl-row > .atl-cell:not(:last-child) { border-right: 1px solid var(--border); }
   .atl-cell { background: var(--bg); padding: 10px 10px; text-align: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* News vs Quiet row markers. Dots rather than emoji: emoji render at different sizes and baselines
      across platforms (and get swapped for Twemoji images here), so the two rows never lined up. */
@@ -52210,6 +52218,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     .strp-head .strp-sp{ display:none; } .strp-res{ text-align:left; flex-basis:100%; }
   }
   /* Landscape "more chart" toggle: hides the header + toolbar so the chart fills the screen. */
+  /* On a phone the drawing-properties panel is pushed BELOW the chart buttons rather than tucked
+     under them. On desktop there is room beside the scale; on a narrow screen the panel is the
+     full width of that corner and lands underneath the fullscreen and more-chart controls, so the
+     swatches nearest the top were unreachable. #strp-props is positioned from script, so this only
+     needs to override its top - the script sets right, which is still correct. */
+  @media (max-width:760px){ #strp-props{ top:48px !important; z-index:6; max-width:min(210px,calc(100vw - 24px)); } }
   .strp-cmax{ display:none; position:absolute; top:8px; right:84px; z-index:7; width:32px; height:32px; align-items:center; justify-content:center; border-radius:8px; background:rgba(19,18,23,.86); border:1px solid var(--border-2); color:var(--text-mid); cursor:pointer; padding:0; }
   .strp-cmax:hover{ color:var(--text); }
   .strp-cmax svg{ width:16px; height:16px; display:block; }
@@ -53747,11 +53761,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(S.sel==null) return; S.drawings.splice(S.sel,1); S.sel=null; commit(); draw(); updDel(); };
 
   // pointer interaction (capture on the chart element)
-  document.addEventListener('mousedown',function(e){ if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')) return; if(!chartEl.contains(e.target)) return;
+  function _ptrDown(e){ if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')) return; if(!chartEl.contains(e.target)) return;
     /* LEFT button only. mousedown fires for every button, so a right-click was placing points and
        starting shapes as well as opening the context menu - one gesture doing two jobs, and drawing
        was never one of them. Middle-click is excluded for the same reason. */
-    if(e.button!==0) return;
+    if(e.button!=null&&e.button!==0) return;   /* a touch has no button */
     // News badges sit ON the time axis, where coordinateToPrice returns null — so this has to be
     // tested BEFORE toP(), which bails out down there and would swallow every click on them.
     var _nxy=evXY(e), _nh=newsHitAt(_nxy.x,_nxy.y);
@@ -53786,7 +53800,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       try{ var _dd=S.drawings[h.i];
         if(h.part==='l'||h.part==='r'){ var _aL=(_dd.a.idx<=_dd.b.idx); S.drag.pt=(((h.part==='l')===_aL)?'a':'b'); }
         else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); }
-  },true);
+  }
   /* TOUCH. Lightweight Charts consumes touch events on the chart and calls preventDefault, so
      the browser never synthesizes the mousedown the badge handler above listens for: on a phone
      the news discs were simply dead. Listen for touchstart directly, in the capture phase, and
@@ -53829,7 +53843,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
          the frame is taken, because rAF runs immediately before compositing. */
     }catch(_){} }
   if(_RAW) try{ document.addEventListener('pointerrawupdate',_ptrTrack,true); }catch(_){}
-  window.addEventListener('mousemove',function(e){ if(!S) return;
+  function _ptrMoveAll(e){ if(!S) return;
     if(!_RAW) _ptrTrack(e);
     if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
     /* Show WHERE Ctrl will put the point before the click, not after. toP() already applies the
@@ -53863,8 +53877,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var prev=S._newsHover; S._newsHover=nh?{i:nh.i,j:nh.j}:null;
       if(nh){ newsCard(nh); } else if(prev&&!S._newsPinned){ newsCard(null); }
       chartEl.style.cursor=nh?'pointer':(hit(xy.x,xy.y)?'move':'crosshair'); }
-      else if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } } });
-  window.addEventListener('mouseup',function(){ if(!S) return;
+      else if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } }  }
+  function _ptrUp(){ if(!S) return;
     if(S.marq){ var mr=marqNorm(S.marq); S.marq=null;
       /* A band smaller than a few pixels is a Ctrl-click, not a drag - treat it as clearing the
          selection rather than selecting everything it happens to touch. */
@@ -53885,7 +53899,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       try{ st.pts=smoothXY(st.pts,'idx','price',2); }catch(_){}
       if((st.pts||[]).length>1){ S.drawings.push(st); commit(); updDel(); }
       return; }
-    if(S.drag){ commit(); S.drag=null; } });
+    if(S.drag){ commit(); S.drag=null; }  }
+  /* Mouse AND touch drive the same three functions. The drawing tools were wired to mouse events
+     only, and Lightweight Charts calls preventDefault on touch, so the browser never synthesises
+     the mouse events that would otherwise stand in - on a phone the tools were simply dead. The
+     same trap that made the news badges untappable.
+     preventDefault on touchmove only while something is actually being drawn or dragged, so an
+     ordinary swipe still pans and pinches the chart. */
+  document.addEventListener('mousedown',_ptrDown,true);
+  window.addEventListener('mousemove',_ptrMoveAll);
+  window.addEventListener('mouseup',_ptrUp);
+  document.addEventListener('touchstart',function(e){
+    if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')) return;
+    if(!chartEl.contains(e.target)) return;
+    _ptrDown(e);
+  },{passive:false,capture:true});
+  document.addEventListener('touchmove',function(e){
+    if(!S) return;
+    var busy=(S.penning||S.pending||S.drag||S.marq||S.activeTool!=='none');
+    if(busy&&e.cancelable) e.preventDefault();
+    _ptrMoveAll(e);
+  },{passive:false,capture:true});
+  document.addEventListener('touchend',function(e){
+    if(!S) return;
+    var busy=(S.penning||S.pending||S.drag||S.marq);
+    if(busy&&e.cancelable) e.preventDefault();
+    _ptrUp();
+  },{passive:false,capture:true});
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(e.key==='Escape'){ hideCtx(); if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
     else if((e.key==='Delete'||e.key==='Backspace')&&(S.sel!=null||(S.selMulti&&S.selMulti.length))){ e.preventDefault(); el('strp-del').click(); } });
