@@ -53701,13 +53701,29 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S._newsPinned={i:nh.i,j:nh.j}; S._newsHover=S._newsPinned; newsCard(nh);
   },{capture:true,passive:false});
 
+  /* Crosshair position and the freehand tip, split out because they are the only two things on
+     this chart whose latency is felt directly, and they need an event the browser does not hold
+     back. mousemove is COALESCED: Chrome batches the moves and delivers them aligned to the
+     frame, so painting on the event still lands on frame boundaries - which is why the
+     crosshair stayed late even after it stopped waiting for rAF. pointerrawupdate is delivered
+     uncoalesced at the device's own rate, so on a 1000Hz mouse the line moves between frames
+     rather than with them. */
+  var _RAW=(typeof window!=='undefined'&&'onpointerrawupdate' in window);
+  function _ptrTrack(e){ if(!S) return;
+    try{
+      if(!chartEl||!el('strp-modal-bg').classList.contains('show')) return;
+      if(!chartEl.contains(e.target)){ if(S.cx){ S.cx=null; _draw(); } return; }
+      var xy=evXY(e);
+      if(S.cx&&S.cx.x===xy.x&&S.cx.y===xy.y) return;   /* raw events repeat; nothing to redraw */
+      S.cx=xy;
+      if(S.penning){ S.penning.tip=xy;
+        var lp=S.penning.px[S.penning.px.length-1];
+        if(!lp||Math.hypot(xy.x-lp.x,xy.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy); } } }
+      _draw();
+    }catch(_){} }
+  if(_RAW) try{ document.addEventListener('pointerrawupdate',_ptrTrack,true); }catch(_){}
   window.addEventListener('mousemove',function(e){ if(!S) return;
-    /* Our crosshair position, and an immediate repaint while the pointer is over the chart. This is
-       the same trick the pen uses - paint on the event rather than waiting for the frame - and it
-       has to apply here too or the two would disagree by a frame. */
-    try{ if(chartEl&&el('strp-modal-bg').classList.contains('show')){
-      if(chartEl.contains(e.target)){ S.cx=evXY(e); if(!S.penning) _draw(); }
-      else if(S.cx){ S.cx=null; _draw(); } } }catch(_){}
+    if(!_RAW) _ptrTrack(e);
     if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
     /* Show WHERE Ctrl will put the point before the click, not after. toP() already applies the
        snap, so the marker is by construction the exact coordinate that would be committed - it
@@ -53720,20 +53736,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        so its density depended on the zoom and it kept far more points than a smooth line needs.
        toPf() is only called for points that survive, so a fast drag no longer runs two Lightweight
        Charts conversions per mouse event just to throw the result away. */
-    if(S.penning){ var xy2=evXY(e), lp=S.penning.px[S.penning.px.length-1];
-      /* The live tip, recorded every single move with no threshold. Points are only STORED every
-         2px, so the drawn stroke ended up to 2px behind the cursor and read as the ink trailing
-         the crosshair. This is not stored - it is only where the line is drawn TO, so the
-         thinning keeps its benefit and the stroke still reaches the pointer. */
-      S.penning.tip=xy2;
-      /* Paint NOW, not on the next animation frame. The overlay is repainted by a rAF loop, so
-         the ink was always up to 16ms behind the pointer however cheap the drawing got - and it
-         is cheap: smoothing 1200 points measures 0.13ms against a 16.7ms budget, the layout
-         reads round to zero. The cost was never the work, it was waiting for the frame.
-         Only while a stroke is in progress; everything else stays on the loop. */
-      if(!lp||Math.hypot(xy2.x-lp.x,xy2.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy2); } }
-      try{ _draw(); }catch(_){}
-      return; }
+    /* Handled by _ptrTrack, on the raw event where available. Still returns here so a stroke in
+       progress never falls through to the drag and marquee logic below. */
+    if(S.penning){ if(!_RAW) _ptrTrack(e); return; }
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
     if(S.drag){ var p=toP(e); if(!p)return; var d=S.drawings[S.drag.i]; if(S.drag.part==='line') d.price=p.price; else if(S.drag.part==='a') d.a={idx:p.idx,price:p.price}; else if(S.drag.part==='b') d.b={idx:p.idx,price:p.price};
       /* Side handles change ONE axis. a and b are whichever two opposite corners were drawn, so
