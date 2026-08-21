@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.8"
+#property version   "6.9"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -113,7 +113,7 @@ input ENUM_DST_MODE InpDstMode      = DST_AUTO; // Timezone: Auto (from this PC/
 #define COL_LINE_SL    clrTomato
 #define COL_LINE_TP    clrLimeGreen
 #define COL_LINE_BE    C'30,120,255'
-#define COL_LINE_TS    C'160,110,220'   // trailing trigger, still live
+#define COL_LINE_TS    C'244,114,182'   // trailing trigger, still live
 #define COL_LINE_TSD   C'95,95,110'     // trailing trigger already consumed
 
 // ---- Refined panel palette (v2.32 redesign) ----
@@ -1259,7 +1259,7 @@ void EnsureTrailLines(double entry,int dir)
       if(!RestoreTrailState())
          for(int k=0;k<TS_MAX;k++){ g_tsTrig[k]=0.0; g_tsFired[k]=false; }
      }
-   double rpx=0;
+   double rpx=0, ptp=0;
    for(int p=PositionsTotal()-1;p>=0;p--)
      {
       ulong tk=PositionGetTicket(p);
@@ -1272,13 +1272,18 @@ void EnsureTrailLines(double entry,int dir)
          double cs=PositionGetDouble(POSITION_SL);
          if(cs>0) rpx=MathAbs(PositionGetDouble(POSITION_PRICE_OPEN)-cs);
         }
+      ptp=PositionGetDouble(POSITION_TP);
       break;
      }
    if(rpx<=0) rpx=g_pip*((g_reqSLpips>0)?g_reqSLpips:10.0);
-   // A fresh trigger is measured from entry, or from price when price is already further along.
-   // Adding a step mid-trade is the normal case now that the ladder starts empty, and a default
-   // placed where price has already been would fire on the very next tick - moving the stop
-   // before you had the chance to drag the line onto anything.
+   // Fresh triggers park just BEYOND the take-profit, where price cannot reach them: TP closes
+   // the trade first, so a step can never fire before you have dragged it onto the structure you
+   // actually meant. Stacked 5 pips apart so four of them stay readable and separately grabbable.
+   //
+   // With no TP set there is nothing to hide behind, so they fall back to R multiples from entry
+   // - or from the market when the market is already further along, since adding a step mid-trade
+   // is the normal case now the ladder starts empty, and a default placed where price has already
+   // been would fire on the very next tick.
    double base=entry;
    double mkt =(dir>0) ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
    if((dir>0 && mkt>base)||(dir<0 && mkt<base)) base=mkt;
@@ -1297,7 +1302,9 @@ void EnsureTrailLines(double entry,int dir)
         }
       if(ObjectFind(0,TsName(i))<0)
         {
-         if(g_tsTrig[i]<=0) g_tsTrig[i]=base+dir*(i+1)*rpx;    // a restored trigger wins
+         if(g_tsTrig[i]<=0)                                    // a restored trigger wins
+            g_tsTrig[i]=(ptp>0) ? ptp+dir*(i+1)*5.0*g_pip
+                                : base+dir*(i+1)*rpx;
          EnsureHLine(TsName(i),g_tsTrig[i],COL_LINE_TS,STYLE_DOT,true);
         }
       SetLineText(TsTxt(i),LinePrice(TsName(i)),TsLbl(i),COL_LINE_TS);
