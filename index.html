@@ -53018,6 +53018,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      how many times, so the axis one is simply the most frequent. */
   try{ window.__stAxisFont=function(){ return new Promise(function(res){
     var proto=CanvasRenderingContext2D.prototype, orig=proto.fillText, seen={}, wid={};
+    /* Also capture the label BOXES. Nestor reports ours running further right than LWC's, and the
+       only way to stop arguing about that is to record the rect LWC actually fills. */
+    var origRect=proto.fillRect, rects=[];
+    proto.fillRect=function(x,y,w2,h2){ try{
+      if(h2>8&&h2<40&&w2>20&&w2<260){ var st=String(this.fillStyle||'');
+        if(st&&st!=='#131217'&&st!=='rgb(19, 18, 23)') rects.push({fill:st,x:Math.round(x),y:Math.round(y),w:Math.round(w2),h:Math.round(h2),canvasW:(this.canvas&&this.canvas.width)||0}); } }catch(_){}
+      return origRect.apply(this,arguments); };
     proto.fillText=function(txt){ try{ var t=String(txt);
       if(/^\d+[.,]\d{2,}$/.test(t)){ seen[this.font]=(seen[this.font]||0)+1;
         if(wid[this.font]==null){ try{ wid[this.font]=Math.round(this.measureText(t).width*10)/10; }catch(_){} } } }catch(_){}
@@ -53025,9 +53032,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     /* Nudge the chart so the scale repaints while the patch is in place. */
     try{ chart.applyOptions({}); }catch(_){}
     try{ var ts=chart.timeScale(); ts.scrollToPosition(ts.scrollPosition(),false); }catch(_){}
-    setTimeout(function(){ proto.fillText=orig;
+    setTimeout(function(){ proto.fillText=orig; proto.fillRect=origRect;
       var best=null; Object.keys(seen).forEach(function(f){ if(!best||seen[f]>seen[best]) best=f; });
-      var out={ fontsSeen:seen, axisFont:best, sampleWidth:best?wid[best]:null };
+      /* Keep one example per fill colour - the same label repaints many times. */
+      var byFill={}; rects.forEach(function(r){ if(!byFill[r.fill]) byFill[r.fill]=r; });
+      var out={ fontsSeen:seen, axisFont:best, sampleWidth:best?wid[best]:null, labelRects:byFill };
       try{ console.log('AXIS FONT:',JSON.stringify(out)); }catch(_){}
       res(out); },350); }); }; }catch(_){}
   function plotW(w){ var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} if(!(pw>4&&pw<220)) pw=56; return Math.max(20,w-pw); }
