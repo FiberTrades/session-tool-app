@@ -52576,14 +52576,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if(type===1) return d.toLocaleDateString(undefined,{month:'short'});   // month
           return String(d.getFullYear()); } },
       localization:{ timeFormatter:function(t){ return _hm(typeof t==='number'?t:(t&&t.timestamp)||0); } },
-      /* LWC's crosshair LINES are hidden and drawn on our overlay instead; its axis LABELS are
-         kept, because those are the price and time readouts and rebuilding them would mean
-         matching the scale's own styling - which took six attempts for one price pill earlier
-         today. The lines repaint on the animation frame like everything LWC draws, which was
-         invisible until the pen started painting on the move event: the ink then arrived before
-         the line meant to be guiding it. A label a frame late is barely noticeable; a lagging
-         crosshair is the thing your eye is actually tracking. */
-      crosshair:{mode:0,vertLine:{visible:false,labelVisible:true,labelBackgroundColor:'#2a2833'},horzLine:{visible:false,labelVisible:true,labelBackgroundColor:'#2a2833'}},
+      /* Crosshair OFF entirely - mode 2 is Hidden. Hiding only its lines and keeping its labels
+         left the machinery running: LWC tracked the pointer to position those labels and repainted
+         its panes on every move. Measured by hiding each layer while whipping the mouse - hiding
+         our overlay changed nothing (21.8ms), hiding LWC restored the display's full rate (7.3ms).
+         So the labels I kept to avoid rebuilding two small pieces of text were costing 14ms a
+         frame. We draw both ourselves now, which is cheap because the overlay is repainting
+         anyway. */
+      crosshair:{mode:2},
       autoSize:true });
     series=S.series=chart.addCandlestickSeries({upColor:'#4ECD8B',downColor:'#E56767',borderVisible:false,wickUpColor:'#4ECD8B',wickDownColor:'#E56767',priceLineVisible:true,lastValueVisible:true,priceLineColor:'#c0c0c0',priceFormat:{type:'price',precision:_prec(),minMove:Math.pow(10,-_prec())}});
     // ONE line per level, all solid, and the SL/TP lines are the ones that MOVE. There used to
@@ -53249,7 +53249,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _draw(){ if(!S||!S.bars.length) return;
     try{ _lastDrawAt=(window.performance&&performance.now)?performance.now():Date.now(); }catch(_){} var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
     if(S.cx){ ctx.save(); ctx.strokeStyle='rgba(244,114,182,0.55)'; ctx.lineWidth=1; ctx.setLineDash([4,3]);
-      ctx.beginPath(); ctx.moveTo(S.cx.x+0.5,0); ctx.lineTo(S.cx.x+0.5,h); ctx.moveTo(0,S.cx.y+0.5); ctx.lineTo(w,S.cx.y+0.5); ctx.stroke(); ctx.restore(); }
+      ctx.beginPath(); ctx.moveTo(S.cx.x+0.5,0); ctx.lineTo(S.cx.x+0.5,h); ctx.moveTo(0,S.cx.y+0.5); ctx.lineTo(w,S.cx.y+0.5); ctx.stroke();
+      /* The two readouts LWC used to draw. Same font as the axis, taken from the chart's layout so
+         it cannot drift, and the same slate the crosshair labels used. */
+      ctx.setLineDash([]);
+      var _cf=12; try{ var _cl=chart.options().layout; if(_cl&&_cl.fontSize>6&&_cl.fontSize<24) _cf=_cl.fontSize; }catch(_){}
+      var _cff="'DM Mono',monospace"; try{ if(_cl&&_cl.fontFamily) _cff=_cl.fontFamily; }catch(_){}
+      ctx.font=_cf+'px '+_cff; ctx.textBaseline='middle';
+      try{ var _pr=series.coordinateToPrice(S.cx.y);
+        if(_pr!=null){ var _pt=Number(_pr).toFixed(_prec()), _px0=plotW(w)+1, _pbh=_cf+5;
+          ctx.fillStyle='#2a2833'; ctx.fillRect(_px0,S.cx.y-_pbh/2,Math.max(12,w-_px0),_pbh);
+          ctx.fillStyle='#ffffff'; ctx.textAlign='left'; ctx.fillText(_pt,_px0+4,S.cx.y); } }catch(_){}
+      try{ var _lg=chart.timeScale().coordinateToLogical(S.cx.x);
+        var _bi=(_lg==null)?-1:Math.round(_lg);
+        if(_bi>=0&&S.bars&&_bi<S.bars.length){ var _tt=_hm(S.bars[_bi].time*1000);
+          var _tw=ctx.measureText(_tt).width, _tbh=_cf+5, _ty=_axisTop(h)+_tbh/2+2;
+          ctx.fillStyle='#2a2833'; ctx.fillRect(S.cx.x-_tw/2-5,_ty-_tbh/2,_tw+10,_tbh);
+          ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.fillText(_tt,S.cx.x,_ty); } }catch(_){}
+      ctx.textAlign='left'; ctx.restore(); }
     if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
