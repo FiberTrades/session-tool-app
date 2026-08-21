@@ -52697,7 +52697,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      4px clear of the axis border, so it never paints over the tick labels. Extra discs stack up
      from there. (They used to be centred ON the axis line, which put half a disc over the labels
      and made the stack collide with the next one at a 13px pitch.) */
-  function _axisTop(h){ var ah=28; try{ var v=chart.timeScale().height(); if(v>10&&v<90) ah=v; }catch(_){} return h-ah; }
+  function _axisTop(h){ _dimsFresh(); return h-_taH; }
   function _axisY(h){ return _axisTop(h)-4-NEWS_R; }   // centre of the bottom disc
   /* One badge PER RELEASE, stacked upward from the axis when several share a bar (two GBP prints
      at 07:00 = two discs, one above the other), instead of one disc with a "2" in it — the count
@@ -53149,7 +53149,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var out={ fontsSeen:seen, axisFont:best, sampleWidth:best?wid[best]:null, labelRects:byFill };
       try{ console.log('AXIS FONT:',JSON.stringify(out)); }catch(_){}
       res(out); },350); }); }; }catch(_){}
-  function plotW(w){ var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} if(!(pw>4&&pw<220)) pw=56; return Math.max(20,w-pw); }
+  /* The scale dimensions, cached. Both of these ask Lightweight Charts to measure itself, and both
+     sat on the per-frame path - plotW from _draw, _axisTop from the news marks, and _sync calling
+     each again. At 137 frames a second that is hundreds of measurement requests into a chart that
+     has not changed size, and it costs 14ms a frame: an IDLE replay with nobody touching the mouse
+     measures the same 21.8ms as one being drawn on. The pointer was never the trigger.
+     A second is long enough to make it free and short enough that a scale which widens - longer
+     price labels, a timeframe change - is picked up before anyone notices. Resize drops it at
+     once, since that is when it really can change. */
+  var _psW=null,_taH=null,_dimAt=0;
+  function _dimsDrop(){ _psW=null; _taH=null; }
+  function _dimsFresh(){
+    var n=(window.performance&&performance.now)?performance.now():Date.now();
+    if(_psW!=null&&_taH!=null&&(n-_dimAt)<1000) return;
+    _dimAt=n;
+    var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){} _psW=(pw>4&&pw<220)?pw:56;
+    var th=28; try{ var t=chart.timeScale().height(); if(t>10&&t<90) th=t; }catch(_){} _taH=th; }
+  function plotW(w){ _dimsFresh(); return Math.max(20,w-_psW); }
   /* Per-drawing style. Every tool used to hardcode its colour and weight, so two levels marking
      different ideas looked identical and nothing could be emphasised. d.color / d.width override
      the defaults below; drawings saved before this carry neither and render exactly as they did. */
@@ -53876,7 +53892,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* Releasing Ctrl without moving the mouse must drop the marker, or it sits there implying a snap
      that is no longer armed. */
   window.addEventListener('keyup',function(e){ if(!S||e.key!=='Control') return; if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} } });
-  window.addEventListener('resize',function(){ _rcDrop(); if(S){ _newsCardReset(); draw(); } });
+  window.addEventListener('resize',function(){ _rcDrop(); _dimsDrop(); if(S){ _newsCardReset(); draw(); } });
 
   // launcher — delegated, capture phase so the row's own click doesn't also fire
   document.addEventListener('click',function(e){ var b=e.target.closest?e.target.closest('.strp-play[data-replay]'):null; if(!b) return; e.stopPropagation(); e.preventDefault(); var id=b.getAttribute('data-replay'); try{ var t=(typeof findTradeById==='function')?findTradeById(id):null; if(t) open(t); }catch(_){} },true);
