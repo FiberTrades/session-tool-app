@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.0"
+#property version   "7.1"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2281,6 +2281,7 @@ bool SyncCollectAndPush(ulong posId)
    if(!HistorySelectByPosition(posId)) return false;
    int n=HistoryDealsTotal();
    double inVol=0,inPV=0,outVol=0,outPV=0,pnl=0,feeRaw=0;
+   double exPrice[], exVol[]; long exTime[]; int outCnt=0;
    datetime openT=0,closeT=0;
    string sym=""; int dirIn=0; bool haveIn=false;
    for(int i=0;i<n;i++)
@@ -2308,6 +2309,12 @@ bool SyncCollectAndPush(ulong posId)
         {
          outVol+=vol; outPV+=price*vol;
          if(tt>closeT) closeT=tt;
+         // Keep each exit, not just the running totals. exitPrice below is a volume-weighted
+         // average, which for a scale-out is a price the chart never printed - fine as a summary,
+         // useless as a record of what was actually done.
+         ArrayResize(exPrice,outCnt+1); ArrayResize(exVol,outCnt+1); ArrayResize(exTime,outCnt+1);
+         exPrice[outCnt]=price; exVol[outCnt]=vol; exTime[outCnt]=(long)tt;
+         outCnt++;
         }
      }
    if(!haveIn || inVol<=0) return false;
@@ -2352,6 +2359,22 @@ bool SyncCollectAndPush(ulong posId)
    // SyncTrackMFE because MT5 discards modifications at close. Omitted entirely when nothing
    // moved, so the columns stay NULL rather than reading as "an empty history was observed" -
    // which matters, because a trade taken while the terminal was shut also has none.
+   // Every exit in fill order: [[epoch, price, volume], ...]. A position closed in one go still
+   // ships a one-entry ledger on purpose - NULL in the database then means "a build that never
+   // reported this", which must not look like "closed in one go". Unbounded: the spread series
+   // already carries up to 720 samples, so a handful of partials costs nothing.
+   if(outCnt>0)
+     {
+      string ex="[";
+      for(int k=0;k<outCnt;k++)
+        {
+         if(k>0) ex+=",";
+         ex+=StringFormat("[%I64d,%s,%s]",exTime[k],
+                          DoubleToString(exPrice[k],dg),DoubleToString(exVol[k],2));
+        }
+      ex+="]";
+      json+=",\"exits\":"+ex;
+     }
    string slMoves=MoveJson(sk,"sh",dg), tpMoves=MoveJson(sk,"th",dg);
    if(StringLen(slMoves)>0) json+=",\"sl_moves\":"+slMoves;
    if(StringLen(tpMoves)>0) json+=",\"tp_moves\":"+tpMoves;
