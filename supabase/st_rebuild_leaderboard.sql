@@ -619,6 +619,7 @@ begin
         coalesce(rv.days,0)                                 as review_days,
         coalesce(wa.weekly_done,0)                          as weekly_reviews,
         coalesce(ps.n,0)                                    as series_posts,
+        coalesce(sd.n_completed,0)                          as series_total,
         round(
             greatest(0, coalesce(pr.net_r,0))     * 10
           + coalesce(cda.bias_kept,0)             *  5
@@ -677,7 +678,7 @@ begin
       over_risk, over_loss_days, over_trade_days,
       rule_max_risk_pct, rule_max_loss_pct, rule_max_trades, rule_be_pct, n_accounts,
       sess_start, sess_end, best_series_at,
-      bias_days, review_days, weekly_reviews, series_posts, points_breakdown, updated_at
+      bias_days, review_days, weekly_reviews, series_posts, series_total, points_breakdown, updated_at
     )
     select
       v_period, v_start, s.user_id, s.points,
@@ -688,7 +689,7 @@ begin
       s.over_risk, s.over_loss_days, s.over_trade_days,
       s.rule_max_risk_pct, s.rule_max_loss_pct, s.rule_max_trades, s.rule_be_pct, s.n_accounts,
       s.sess_start, s.sess_end, s.best_series_at,
-      s.bias_days, s.review_days, s.weekly_reviews, s.series_posts, s.points_breakdown, now()
+      s.bias_days, s.review_days, s.weekly_reviews, s.series_posts, s.series_total, s.points_breakdown, now()
     from scored s;
 
   end loop;
@@ -701,7 +702,7 @@ begin
     over_risk, over_loss_days, over_trade_days,
     rule_max_risk_pct, rule_max_loss_pct, rule_max_trades, rule_be_pct, n_accounts,
     sess_start, sess_end, best_series_at,
-    bias_days, review_days, weekly_reviews, series_posts, points_breakdown, updated_at
+    bias_days, review_days, weekly_reviews, series_posts, series_total, points_breakdown, updated_at
   )
   select
     'alltime', date '1970-01-01', bm.user_id, bm.points,
@@ -712,7 +713,7 @@ begin
     bm.over_risk, bm.over_loss_days, bm.over_trade_days,
     bm.rule_max_risk_pct, bm.rule_max_loss_pct, bm.rule_max_trades, bm.rule_be_pct, bm.n_accounts,
     bm.sess_start, bm.sess_end, bm.period_start,
-    bm.bias_days, bm.review_days, bm.weekly_reviews, bm.series_posts, bm.points_breakdown, now()
+    bm.bias_days, bm.review_days, bm.weekly_reviews, bm.series_posts, bm.series_total, bm.points_breakdown, now()
   from (
     select distinct on (user_id) *
     from leaderboard_entries
