@@ -53967,7 +53967,26 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var SEL='[data-sthc-help], a[href^="mailto:help@sessiontool.app"]';
   function doScan(){ try{ Array.prototype.forEach.call(document.querySelectorAll(SEL),wireHelp); }catch(_){} }
   doScan();
-  var _hs; function onMut(){ clearTimeout(_hs); _hs=setTimeout(doScan,200); }
+  /* Only rescan when an ELEMENT that could actually be a help link is added. The observer watches
+     the whole body subtree, so it fired on every DOM change in the app - and it ignored what had
+     changed, scheduling a full-document querySelectorAll with an attribute-prefix selector every
+     time. The live clock replaces a text node once a second; the replay's spread readout replaces
+     one on every cursor change; the greeting, the session timer and the community all do the same.
+     None of them can be a mailto anchor, and all of them were paying for the scan: it showed up in
+     a profile as 22% of function-call time, second only to compositing.
+     Text nodes are skipped outright - a link is an element - and only the ADDED subtree is
+     searched rather than the whole document. */
+  var _hs;
+  function onMut(recs){
+    for(var i=0;i<recs.length;i++){
+      var add=recs[i].addedNodes; if(!add||!add.length) continue;
+      for(var j=0;j<add.length;j++){
+        var n=add[j]; if(!n||n.nodeType!==1) continue;
+        try{ if((n.matches&&n.matches(SEL))||(n.querySelector&&n.querySelector(SEL))){
+          clearTimeout(_hs); _hs=setTimeout(doScan,200); return; } }catch(_){}
+      }
+    }
+  }
   try{ new MutationObserver(onMut).observe(document.body,{childList:true,subtree:true}); }catch(_){}
   // Belt-and-braces: a delegated capture listener also catches any that slip through before a scan.
   document.addEventListener('click',function(e){ var a=(e.target&&e.target.closest)?e.target.closest(SEL):null; if(a){ e.preventDefault(); e.stopPropagation(); openP(); } },true);
