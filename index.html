@@ -52864,7 +52864,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      normal menu. Nothing here needs a right-click, so nothing is lost by taking it. */
   document.addEventListener('contextmenu',function(e){ try{ var m=el('strp-modal-bg'); if(!m||!m.classList.contains('show')) return;
     var t=e.target,c=el('strp-chart'),pr=el('strp-props');
-    if((c&&(t===c||(c.contains&&c.contains(t))))||(pr&&pr.contains&&pr.contains(t))) e.preventDefault(); }catch(_){} },true);
+    if((c&&(t===c||(c.contains&&c.contains(t))))||(pr&&pr.contains&&pr.contains(t))) e.preventDefault(); else return;
+    /* Only over a drawing. Right-clicking bare chart just suppresses the browser menu, rather than
+       opening one with nothing in it to act on. */
+    if(!S||!c||!(t===c||(c.contains&&c.contains(t)))) return;
+    var xy=evXY(e), h=hit(xy.x,xy.y);
+    if(!h){ hideCtx(); return; }
+    if(!(S.selMulti&&S.selMulti.length&&S.selMulti.indexOf(h.i)>=0)){ S.sel=h.i; clearMulti(); }
+    updDel(); showCtx(xy.x,xy.y); }catch(_){} },true);
   function sizeO(){ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
     // Right end of the box/lines: the exit candle if exited, else the current frontier candle. Both are
@@ -53011,6 +53018,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      exactly on top of the original - which would look like nothing had happened and leave two
      drawings stacked where the trader thought there was one. Shifted along the bars where the
      shape has bars to shift, and by a few pips where it does not (an hline spans everything). */
+  /* Right-click menu for a drawing. The browser's own menu is already suppressed over the chart,
+     so this is not competing with anything - that space was taken and then left empty. */
+  function ctxEl(){ var e=el('strp-ctx');
+    if(!e){ e=document.createElement('div'); e.id='strp-ctx';
+      e.style.cssText='position:absolute;z-index:8;display:none;flex-direction:column;min-width:132px;padding:4px;'
+        +'border:1px solid var(--border-2);border-radius:var(--radius-ctrl);background:rgba(11,10,13,0.96);'
+        +"font-family:'AppNum','DM Mono',monospace;font-size:11px;box-shadow:0 6px 20px rgba(0,0,0,0.45);";
+      var host=chartEl&&chartEl.parentNode; if(host){ if(getComputedStyle(host).position==='static') host.style.position='relative'; host.appendChild(e); } }
+    return e; }
+  function hideCtx(){ var e=el('strp-ctx'); if(e) e.style.display='none'; }
+  function showCtx(x,y){ var e=ctxEl(); if(!e) return;
+    var multi=(S.selMulti&&S.selMulti.length)?S.selMulti.length:0;
+    var rows=[['clone',window._stT('Clone','Duplicar')],['del',multi?window._stT('Delete '+multi,'Borrar '+multi):window._stT('Delete','Borrar')]];
+    e.innerHTML=rows.map(function(r){ return '<button type="button" data-act="'+r[0]+'" style="text-align:left;padding:7px 10px;cursor:pointer;'
+      +'background:transparent;border:none;color:var(--text-mid);font:inherit;border-radius:4px;">'+r[1]+'</button>'; }).join('');
+    Array.prototype.forEach.call(e.querySelectorAll('[data-act]'),function(b){
+      b.onmouseenter=function(){ b.style.background='var(--bg-elev)'; b.style.color='var(--text)'; };
+      b.onmouseleave=function(){ b.style.background='transparent'; b.style.color='var(--text-mid)'; };
+      b.onclick=function(){ var a=b.dataset.act; hideCtx(); if(a==='clone') cloneSel(); else if(a==='del') el('strp-del').click(); }; });
+    e.style.display='flex';
+    /* Placed against the CHART's box, then clamped inside it - the offsetParent is the wrapper, and
+       a menu opened near the right or bottom edge would otherwise hang outside the chart. */
+    try{ var host=e.offsetParent||chartEl.parentNode, hr=host.getBoundingClientRect(), cr=chartEl.getBoundingClientRect();
+      var mw=e.offsetWidth||140, mh=e.offsetHeight||70;
+      var lx=Math.min(x,cr.width-mw-4), ty=Math.min(y,cr.height-mh-4);
+      e.style.left=Math.round((cr.left-hr.left)+Math.max(0,lx))+'px';
+      e.style.top=Math.round((cr.top-hr.top)+Math.max(0,ty))+'px'; }catch(_){} }
   function cloneSel(){ try{
     if(S.sel==null||!S.drawings[S.sel]) return;
     var c=clone(S.drawings[S.sel]), dI=3;
@@ -53062,10 +53096,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         +'background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;">'
         +'<button type="button" id="strp-fibadd" style="padding:4px 8px;cursor:pointer;background:transparent;color:var(--text-mid);'
         +'border:1px solid var(--border-2);border-radius:4px;font:inherit;">Add</button></div>'); }
-    /* Only with a real selection: there is nothing to clone from a tool's pending defaults. */
-    if(S.sel!=null&&S.drawings[S.sel]) H.push('<button type="button" id="strp-clone" style="padding:5px 0;cursor:pointer;'
-      +'background:transparent;color:var(--text-mid);border:1px solid var(--border-2);border-radius:4px;font:inherit;'
-      +'letter-spacing:0.12em;text-transform:uppercase;">'+window._stT('Clone','Duplicar')+'</button>');
     e.innerHTML=H.join('');
     /* Sit against the LEFT edge of the price scale rather than on top of it. LWC's width API is
        not dependable here, so the value is sanity-checked and falls back to a typical scale width. */
@@ -53078,13 +53108,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(e.querySelectorAll('[data-wid]'),function(b){ b.onclick=function(){ tgt().width=parseFloat(b.dataset.wid); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-show]'),function(b){ b.onclick=function(){ var o=tgt(); if(!o.show)o.show={}; var k=b.dataset.show; o.show[k]=!rShow(o,k); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-lvl]'),function(b){ b.onclick=function(){ var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); L.splice(parseInt(b.dataset.lvl,10),1); o.levels=L; commit(); renderProps(); draw(); }; });
-    var clB=e.querySelector('#strp-clone');
-    if(clB) clB.onclick=function(){ cloneSel(); };
     var addB=e.querySelector('#strp-fibadd');
     if(addB) addB.onclick=function(){ var inp=e.querySelector('#strp-fiblv'); var v=parseFloat(inp&&inp.value); if(!isFinite(v)) return;
       var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); if(L.indexOf(v)<0) L.push(v); L.sort(function(x,y){return x-y;}); o.levels=L; commit(); renderProps(); draw(); }; }
   function esc2(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
-  function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; S.snapPt=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; renderProps(); draw(); }
+  function setTool(t){ hideCtx(); S.activeTool=(S.activeTool===t?'none':t); S.pending=null; S.snapPt=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; renderProps(); draw(); }
   function d2seg(px,py,x1,y1,x2,y2){ var dx=x2-x1,dy=y2-y1; if(dx===0&&dy===0)return Math.hypot(px-x1,py-y1); var t=((px-x1)*dx+(py-y1)*dy)/(dx*dx+dy*dy); t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
   /* Pixel bounds of a drawing, for rubber-band selection. An hline has no horizontal extent, so it
      is treated as spanning the plot: dragging a band across it at its level should catch it. */
@@ -53296,6 +53324,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(S._newsPinned&&S._newsPinned.i===_nh.i&&S._newsPinned.j===_nh.j){ S._newsPinned=null; newsCard(null); return; }
       S._newsPinned={i:_nh.i,j:_nh.j}; S._newsHover=S._newsPinned; newsCard(_nh); return; }
     if(S._newsPinned){ S._newsPinned=null; S._newsHover=null; newsCard(null); }
+    hideCtx();
     var p=toP(e),xy=evXY(e); if(!p) return;
     /* Ctrl means two different things depending on whether a tool is armed: while drawing it
        clamps to a candle, and with nothing armed it starts a rubber band. They never overlap,
@@ -53360,7 +53389,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(S.penning){ var st=S.penning; S.penning=null; if((st.pts||[]).length>1){ S.drawings.push(st); S.sel=S.drawings.length-1; commit(); updDel(); } setTool('none'); draw(); return; }
     if(S.drag){ commit(); S.drag=null; } });
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
-    if(e.key==='Escape'){ if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
+    if(e.key==='Escape'){ hideCtx(); if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
     else if((e.key==='Delete'||e.key==='Backspace')&&(S.sel!=null||(S.selMulti&&S.selMulti.length))){ e.preventDefault(); el('strp-del').click(); } });
   /* Releasing Ctrl without moving the mouse must drop the marker, or it sits there implying a snap
      that is no longer armed. */
