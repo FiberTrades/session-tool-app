@@ -7064,6 +7064,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_missed': "Missed: {DAYS}.",
       'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
       'commit.adherence_offplan_showed': "Showed up on {N} day(s) you'd said you'd rest, without trading.",
+      'commit.adjust_btn': "Adjust this week's days",
+      'commit.adjust_hint': "Changing a plan already under way. This overrides Settings → Days I trade for the rest of this week, and your adherence above is measured against whatever you set here.",
       'commit.next_label': "Days I'm committing to next week",
       'commit.next_hint': "Lock in the days you'll trade. These override your default for that week \u2014 the greetings, live tab and sounds will hold you to it.",
       'commit.board_note': "How well you keep this feeds your points on the community leaderboard.",
@@ -8569,6 +8571,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_missed': "Faltaste: {DAYS}.",
       'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
       'commit.adherence_offplan_showed': "Estuviste presente {N} d\u00eda(s) que dijiste que descansar\u00edas, sin operar.",
+      'commit.adjust_btn': "Ajustar los d\u00edas de esta semana",
+      'commit.adjust_hint': "Est\u00e1s cambiando un plan que ya est\u00e1 en marcha. Esto tiene prioridad sobre Ajustes \u2192 D\u00edas que opero durante el resto de la semana, y tu cumplimiento de arriba se mide con lo que fijes aqu\u00ed.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
       'commit.next_hint': "Fija los d\u00edas que operar\u00e1s. Anulan tu ajuste por defecto esa semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo.",
       'commit.board_note': "Lo bien que lo cumplas suma a tus puntos en la clasificaci\u00f3n de la comunidad.",
@@ -13648,6 +13652,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       data.biasHistory.push(entry);
     }
     saveData();
+    // Turning up on a day this week's commitment left out switches it on, so Session Live, the
+    // sounds and the greetings behave normally. Guarded to TODAY and to a complete read, so
+    // back-filling an old bias via the date picker cannot retro-activate anything.
+    try {
+      if (_complete && dateKey === todayDateStr() && typeof _activateTodayIfShownUp === 'function') {
+        _activateTodayIfShownUp('bias');
+      }
+    } catch (e) {}
   }
 
   // ===== Multi-bias slots =====
@@ -14438,6 +14450,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   function renderTrades() {
     ensureTradeAccounts();
+    // Actually trading a day is the strongest possible statement that you are trading it, so it
+    // switches the day on just as a completed bias does. Checked here rather than on "add row",
+    // because an empty row is an intention and a row with a result is a fact. _activateTodayIfShownUp
+    // is idempotent and returns immediately when the day is already on or was never yours to trade.
+    try {
+      const _tk = todayDateStr();
+      const _tradedToday = (data.review && Array.isArray(data.review.trades) ? data.review.trades : [])
+        .some(t => t && t.date && String(t.date).slice(0, 10) === _tk && (t.result || t.pnl != null));
+      if (_tradedToday && typeof _activateTodayIfShownUp === 'function') _activateTodayIfShownUp('trade');
+    } catch (e) {}
     const wrap = document.getElementById('trade-rows');
     wrap.innerHTML = '';
     // After we rebuild the rows, refresh currency placeholders so € or $ replaces the hardcoded £.
@@ -25120,7 +25142,27 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // whether you did the work.
   function _biasShowedUp(b) {
     if (!b || !b.dateKey) return false;
-    return !!(b.copiedAt || (b.mode && b.structure && b.location && b.direction));
+    if (!(b.copiedAt || (b.mode && b.structure && b.location && b.direction))) return false;
+    // A bias written on a day you never trade is not showing up — otherwise the metric can be
+    // padded from the sofa on a Sunday. Measured against Settings "Days I trade", NOT against
+    // this week's commitment: turning up on a Friday you'd said you'd rest is exactly the thing
+    // that SHOULD count, and it is only the commitment that excluded it.
+    try {
+      const d = new Date(b.dateKey + 'T12:00:00');
+      if (isNaN(d.getTime())) return false;
+      if (_settingsTradingDays().indexOf(d.getDay()) === -1) return false;
+    } catch (e) {}
+    return true;
+  }
+  // Days you trade AT ALL, from Settings. Deliberately not _tradingDaysPref(), which lets this
+  // week's commitment win — the two answer different questions, and conflating them is what made
+  // "Days I trade" look like it had been ignored.
+  function _settingsTradingDays() {
+    try {
+      const td = data && data.settings && data.settings.tradingDays;
+      if (Array.isArray(td) && td.length) return td.map(Number);
+    } catch (e) {}
+    return [1, 2, 3, 4, 5];
   }
   // Which weekdays "count" for a given date: this week's weekly-review commitment if one was set
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
@@ -26185,6 +26227,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
             <div style="font-family:'AppNum','DM Mono',monospace;font-size:22px;color:${pctCls};">${_pct}%</div>
             <div style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5;">${t('commit.adherence_detail').replace('{KEPT}', _kept).replace('{TOTAL}', committedThis.length)}${_missed.length ? ' ' + t('commit.adherence_missed').replace('{DAYS}', _missed.join(', ')) : ''}${_offTraded ? ' ' + t('commit.adherence_offplan').replace('{N}', _offTraded) : ''}${_offShowed ? ' ' + t('commit.adherence_offplan_showed').replace('{N}', _offShowed) : ''}</div>
+            <!-- The only way to amend the CURRENT week. The picker below writes next week's key,
+                 so before this there was no screen anywhere that could change a plan already
+                 running - and this week's plan silently outranks Settings "Days I trade", which
+                 is how a Friday could be enabled in Settings and still have no live session. -->
+            <button type="button" id="rfx-adjust-week" class="settings-btn" style="margin-top:12px;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;">${t('commit.adjust_btn')}</button>
+            <div id="rfx-adjust-week-body" style="display:none;margin-top:10px;">
+              <div style="font-size:12px;color:var(--text-dim);margin-bottom:8px;line-height:1.5;">${t('commit.adjust_hint')}</div>
+              <div id="rfx-thisweek-days" style="display:flex;gap:6px;flex-wrap:wrap;">${order.map(function (d) {
+                  return `<button type="button" class="settings-day-btn${committedThis.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
+                }).join('')}</div>
+            </div>
           </div>`;
       }
       // No cloud write here: the nightly leaderboard job reads weeklyCommitments straight from
@@ -26214,6 +26267,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             if (at >= 0) cur.splice(at, 1); else cur.push(d);
             setWeekCommitment(nextKey, cur);
             renderCommitSection();
+          });
+        });
+      }
+      // This week's picker: same interaction, but writes thisWeekKey. Deliberately behind a button
+      // rather than sitting open — amending a plan already under way should be a decision, not a
+      // stray click next to next week's.
+      const _adjBtn = document.getElementById('rfx-adjust-week');
+      const _adjBody = document.getElementById('rfx-adjust-week-body');
+      if (_adjBtn && _adjBody) {
+        _adjBtn.addEventListener('click', function () {
+          _adjBody.style.display = (_adjBody.style.display === 'none') ? '' : 'none';
+        });
+      }
+      const _twWrap = document.getElementById('rfx-thisweek-days');
+      if (_twWrap) {
+        _twWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
+          btn.addEventListener('click', function () {
+            const cur = (getWeekCommitment(thisWeekKey) || _settingsTradingDays()).slice();
+            const d = Number(btn.getAttribute('data-day'));
+            const at = cur.indexOf(d);
+            if (at >= 0) cur.splice(at, 1); else cur.push(d);
+            setWeekCommitment(thisWeekKey, cur);
+            // The live-session gate, the greeting and the tabs all read this — repaint them, or the
+            // day stays invisibly off exactly the way it did this morning.
+            try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
+            try { if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (e) {}
+            renderCommitSection();
+            const _b = document.getElementById('rfx-adjust-week-body');
+            if (_b) _b.style.display = '';          // keep it open across the repaint
           });
         });
       }
@@ -28408,10 +28490,44 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     } catch (e) {}
     return [1, 2, 3, 4, 5];
   }
+  // Days turned on by actually turning up: a dateKey list, NOT day-of-week and NOT folded into the
+  // commitment. Keeping it separate is the point — the commitment stays the honest record of what
+  // was planned on Monday, so the weekly review can still say you went off-plan, while the app
+  // behaves normally on a day you decided to trade after all.
+  function _dayActivated(dateKey) {
+    try { return (data.activatedDays || []).some(x => String(x) === String(dateKey)); } catch (e) { return false; }
+  }
   function _isTradingDay(dow) {
     if (dow == null) { try { dow = new Date().getDay(); } catch (e) { dow = 1; } }
+    // Only TODAY can be activated this way, so _lastTradingDayOfWeek() and the rest keep reading
+    // the plan rather than one day's change of mind.
+    try {
+      const now = new Date();
+      if (Number(dow) === now.getDay() && _dayActivated(todayDateStr())) return true;
+    } catch (e) {}
     return _tradingDaysPref().indexOf(Number(dow)) !== -1;
   }
+  // Turning up on an unplanned day switches it on — but ONLY a day you normally trade. Writing
+  // Monday's bias on a Sunday evening must not open a live session, which is why the original
+  // version of this was removed; the Settings-level test is what makes it safe to bring back.
+  function _activateTodayIfShownUp(why) {
+    try {
+      const dow = new Date().getDay();
+      if (_settingsTradingDays().indexOf(dow) === -1) return false;   // never a day you trade
+      if (_tradingDaysPref().indexOf(dow) !== -1) return false;       // already planned — nothing to do
+      const key = todayDateStr();
+      if (_dayActivated(key)) return false;                           // already on
+      if (!Array.isArray(data.activatedDays)) data.activatedDays = [];
+      data.activatedDays.push(key);
+      if (data.activatedDays.length > 400) data.activatedDays = data.activatedDays.slice(-400);
+      try { saveData(); } catch (e) {}
+      try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
+      try { if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (e) {}
+      try { if (typeof renderTabs === 'function') renderTabs(); } catch (e) {}
+      return true;
+    } catch (e) { return false; }
+  }
+  try { window.__stActivateTodayIfShownUp = _activateTodayIfShownUp; } catch (e) {}
   // The last weekday (Mon…Sun order) the user commits to trading — where the weekly-review
   // ritual now anchors instead of a hardcoded Friday. Mon–Fri → Fri; a 7-day crypto week → Sun.
   function _lastTradingDayOfWeek() {
