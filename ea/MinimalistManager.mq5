@@ -981,11 +981,53 @@ int      g_beFails   = 0;
 #define BE_RETRY_SECS  3     // at most one attempt per 3s while price holds beyond the trigger
 #define BE_MAX_FAILS   20    // then give up with a visible warning (~1 minute of refusals)
 
+//==================================================================
+//  ORIGINAL RISK PER POSITION
+//  BE sizes its offset in R, and R has to mean the risk you TOOK, not the stop as it currently
+//  stands. Reading POSITION_SL at BE time meant widening a stop by hand silently inflated the
+//  offset: a 4-pip stop dragged out to 17 turns a 0.25R offset from 1 pip into 4.3, and the EA
+//  then asks the server for a level price has never reached - rejected as invalid stops until
+//  the retry budget runs out, which looks exactly like "BE never triggered".
+//  Stamped once per ticket and held in a GlobalVariable so it survives a restart mid-trade.
+//==================================================================
+string RiskKey(ulong tk){ return StateKey("R"+IntegerToString((long)tk)); }
+double RecallRisk(ulong tk){ string k=RiskKey(tk); return GlobalVariableCheck(k)?GlobalVariableGet(k):0.0; }
+
+// Stamp every managed position that has not been stamped yet. Idempotent on purpose - it runs
+// every tick and a position keeps whatever it was stamped with the FIRST time it was seen with
+// a stop, so a later manual drag can never overwrite it.
+void CaptureEntryRisk()
+  {
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      if(RecallRisk(tk)>0) continue;                  // already stamped - never overwrite
+      double sl=PositionGetDouble(POSITION_SL);
+      if(sl<=0) continue;                             // no stop on it yet; try again next tick
+      double d=MathAbs(PositionGetDouble(POSITION_PRICE_OPEN)-sl);
+      if(d>0) GlobalVariableSet(RiskKey(tk),d);
+     }
+  }
+
+// Drop stamps once the symbol is flat, so the terminal's global list cannot grow without bound.
+void PurgeEntryRisk()
+  {
+   string pre=StateKey("R");
+   for(int i=GlobalVariablesTotal()-1;i>=0;i--)
+     {
+      string nm=GlobalVariableName(i);
+      if(StringFind(nm,pre)==0) GlobalVariableDel(nm);
+     }
+  }
+
 void BreakEvenAll()
   {
    if(g_beFails>0 && (TimeCurrent()-g_beLastTry)<BE_RETRY_SECS) return;   // rate-limit retries
    g_beLastTry=TimeCurrent();
-   bool allOk=true;
+   bool allOk=true, deferred=false;
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i);
@@ -996,14 +1038,25 @@ void BreakEvenAll()
       double open=PositionGetDouble(POSITION_PRICE_OPEN);
       double tp=PositionGetDouble(POSITION_TP);
       int d=(type==POSITION_TYPE_BUY)?+1:-1;
-      // R mode needs THIS position's own stop distance, taken from the position itself.
-      // g_reqSLpips is the panel's CURRENT setting, which may have been changed since the
-      // trade was opened - sizing the offset off a stop this trade never had. The panel
-      // value is a fallback only, for a position carrying no SL at all.
       double curSl=PositionGetDouble(POSITION_SL);
-      double slDist=(curSl>0) ? MathAbs(open-curSl)
-                              : ((g_reqSLpips>0) ? g_reqSLpips*g_pip : 0.0);
-      if(!trade.PositionModify(tk,open+d*BEOffsetPx(slDist),tp))
+      // R comes from the stop this trade was OPENED with, so moving the stop by hand before BE
+      // fires cannot shift where BE puts it. The live stop and then the panel are fallbacks only,
+      // for a position carrying no stamp (EA attached mid-trade).
+      double slDist=RecallRisk(tk);
+      if(slDist<=0) slDist=(curSl>0) ? MathAbs(open-curSl)
+                                     : ((g_reqSLpips>0) ? g_reqSLpips*g_pip : 0.0);
+      double want=NormalizeDouble(open+d*BEOffsetPx(slDist),_Digits);
+      // Already at or past the planned stop? Re-sending it comes back as "no changes" and would
+      // burn the retry budget for nothing.
+      if(curSl>0 && ((d>0 && curSl>=want-g_point*0.5)||(d<0 && curSl<=want+g_point*0.5))) continue;
+      // A level price has not reached cannot BE a stop: a buy's must sit below the bid and a
+      // sell's above the ask, both clear of the broker's stops level. Asking anyway is refused as
+      // invalid stops, so hold - MonitorBE brings us straight back when price gets there.
+      double bidNow=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+      double askNow=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+      double stopsLvl=(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)*g_point;
+      if((d>0 && want>bidNow-stopsLvl)||(d<0 && want<askNow+stopsLvl)) { deferred=true; continue; }
+      if(!trade.PositionModify(tk,want,tp))
         {
          allOk=false;
          Print(StringFormat("BE move REJECTED for #%I64u: %d %s",tk,trade.ResultRetcode(),trade.ResultRetcodeDescription()));
@@ -1016,6 +1069,8 @@ void BreakEvenAll()
       if(g_beFails<BE_MAX_FAILS) return;                 // stay ARMED: MonitorBE brings us back while price holds
       Warn("BE move failed "+IntegerToString(BE_MAX_FAILS)+" times - giving up. Move the stop manually.");
      }
+   // Waiting on price is not a failure: stay armed and keep the line up, no retry counted.
+   if(deferred) return;
    g_beFails=0;
    g_beArmed=false; ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE);
    int cnt; double sl=PositionsSL(cnt);   // keep the draggable SL line on the new stop
@@ -1129,8 +1184,11 @@ void RefreshLabels()
 void UpdateManageLine()
   {
    int cnt; double sl=PositionsSL(cnt);
+   static bool s_riskPurged=false;
    if(cnt>0)
      {
+      s_riskPurged=false;
+      CaptureEntryRisk();     // stamp the entry stop before anything can drag it
       double pe; int pd; PositionsEntry(pe,pd);
       // draggable SL
       if(ObjectFind(0,LN_MSL)<0)
@@ -1166,6 +1224,7 @@ void UpdateManageLine()
      }
    else
      {
+      if(!s_riskPurged){ PurgeEntryRisk(); s_riskPurged=true; }   // flat: clear the stamps once
       ObjectDelete(0,LN_MSL);
       ObjectDelete(0,LN_EFILL);ObjectDelete(0,TX_EF);
       ObjectDelete(0,LN_BE);   ObjectDelete(0,TX_BE);
