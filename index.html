@@ -53007,6 +53007,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function updDel(){ el('strp-del').disabled=(S.sel==null&&!(S.selMulti&&S.selMulti.length)); renderProps(); }
   /* Style carried onto the NEXT drawing. Picking a colour with a tool armed but nothing selected
      sets the default for what you are about to draw, which is how every drawing app behaves. */
+  /* Duplicate the selection, offset so the copy is visibly its own object rather than sitting
+     exactly on top of the original - which would look like nothing had happened and leave two
+     drawings stacked where the trader thought there was one. Shifted along the bars where the
+     shape has bars to shift, and by a few pips where it does not (an hline spans everything). */
+  function cloneSel(){ try{
+    if(S.sel==null||!S.drawings[S.sel]) return;
+    var c=clone(S.drawings[S.sel]), dI=3;
+    if(c.type==='hline'){ c.price=c.price+(S.pip||0)*5; }
+    else if(c.type==='pen'){ (c.pts||[]).forEach(function(q){ q.idx+=dI; }); }
+    else { if(c.a) c.a.idx+=dI; if(c.b) c.b.idx+=dI; }
+    S.drawings.push(c); S.sel=S.drawings.length-1; clearMulti(); commit(); updDel();
+  }catch(_){} }
   function styleNew(o){ var ns=(S&&S.newStyle)||{}; if(ns.color) o.color=ns.color; if(ns.width) o.width=ns.width; return o; }
   /* The object the panel is editing: the selection if there is one, else the pending default. */
   function styleTgt(){ if(S.sel!=null&&S.drawings[S.sel]) return S.drawings[S.sel]; if(!S.newStyle) S.newStyle={}; return S.newStyle; }
@@ -53050,6 +53062,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         +'background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;">'
         +'<button type="button" id="strp-fibadd" style="padding:4px 8px;cursor:pointer;background:transparent;color:var(--text-mid);'
         +'border:1px solid var(--border-2);border-radius:4px;font:inherit;">Add</button></div>'); }
+    /* Only with a real selection: there is nothing to clone from a tool's pending defaults. */
+    if(S.sel!=null&&S.drawings[S.sel]) H.push('<button type="button" id="strp-clone" style="padding:5px 0;cursor:pointer;'
+      +'background:transparent;color:var(--text-mid);border:1px solid var(--border-2);border-radius:4px;font:inherit;'
+      +'letter-spacing:0.12em;text-transform:uppercase;">'+window._stT('Clone','Duplicar')+'</button>');
     e.innerHTML=H.join('');
     /* Sit against the LEFT edge of the price scale rather than on top of it. LWC's width API is
        not dependable here, so the value is sanity-checked and falls back to a typical scale width. */
@@ -53062,6 +53078,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(e.querySelectorAll('[data-wid]'),function(b){ b.onclick=function(){ tgt().width=parseFloat(b.dataset.wid); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-show]'),function(b){ b.onclick=function(){ var o=tgt(); if(!o.show)o.show={}; var k=b.dataset.show; o.show[k]=!rShow(o,k); if(S.sel!=null) commit(); renderProps(); draw(); }; });
     Array.prototype.forEach.call(e.querySelectorAll('[data-lvl]'),function(b){ b.onclick=function(){ var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); L.splice(parseInt(b.dataset.lvl,10),1); o.levels=L; commit(); renderProps(); draw(); }; });
+    var clB=e.querySelector('#strp-clone');
+    if(clB) clB.onclick=function(){ cloneSel(); };
     var addB=e.querySelector('#strp-fibadd');
     if(addB) addB.onclick=function(){ var inp=e.querySelector('#strp-fiblv'); var v=parseFloat(inp&&inp.value); if(!isFinite(v)) return;
       var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); if(L.indexOf(v)<0) L.push(v); L.sort(function(x,y){return x-y;}); o.levels=L; commit(); renderProps(); draw(); }; }
