@@ -53272,15 +53272,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
-  /* A high-polling mouse fires several moves per frame; each one now paints, so the loop would be
-     repeating work already done. Skip a frame that a move has just drawn - the loop is still what
-     keeps everything else live when the pointer is still. */
+  /* One paint per frame, which is all a display can show. The pointer is sampled far faster than
+     this on the raw event, so the position painted here is the newest one available - reading often
+     and drawing once is the whole trick. */
   var _lastDrawAt=0;
-  function _frame(){ if(!S){ _loop=0; return; }
-    var now=(window.performance&&performance.now)?performance.now():Date.now();
-    if(!(S.penning&&(now-_lastDrawAt)<8)) _draw();
-    _sync();
-    _loop=requestAnimationFrame(_frame); }
+  function _frame(){ if(!S){ _loop=0; return; } _draw(); _sync(); _loop=requestAnimationFrame(_frame); }
   function startLoop(){ if(!_loop) _loop=requestAnimationFrame(_frame); }
   function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
   function draw(){}   // no-op: the loop above handles all redraws
@@ -53749,16 +53745,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(!chartEl||!el('strp-modal-bg').classList.contains('show')) return;
       if(!chartEl.contains(e.target)){ if(S.cx){ S.cx=null; _draw(); } return; }
       var xy=evXY(e);
-      if(S.cx&&S.cx.x===xy.x&&S.cx.y===xy.y) return;   /* raw events repeat; nothing to redraw */
+      if(S.cx&&S.cx.x===xy.x&&S.cx.y===xy.y) return;   /* raw events repeat the same position */
       S.cx=xy;
       if(S.penning){ S.penning.tip=xy;
         var lp=S.penning.px[S.penning.px.length-1];
         if(!lp||Math.hypot(xy.x-lp.x,xy.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy); } } }
-      /* A screen shows one image per refresh, so painting faster than ~250Hz buys nothing and
-         only takes CPU the compositor needs. Still well above the frame rate, so the canvas always
-         holds the newest position by the time a frame is taken. */
-      var _n=(window.performance&&performance.now)?performance.now():Date.now();
-      if(_n-_lastDrawAt>=3) _draw();
+      /* CAPTURE only - no painting here. Reading the pointer at the device's rate is the point;
+         PAINTING at that rate was my mistake. The screen shows one image per refresh, so anything
+         beyond one paint per frame is discarded before it is ever seen, and a full canvas redraw is
+         not cheap. Driving it from raw events meant up to 333 redraws a second against the ~60 a
+         mousemove gave - five times the work for output nobody can see, which is why the pen got
+         SLOWER. The frame paints what was captured; the canvas still holds the newest position when
+         the frame is taken, because rAF runs immediately before compositing. */
     }catch(_){} }
   if(_RAW) try{ document.addEventListener('pointerrawupdate',_ptrTrack,true); }catch(_){}
   window.addEventListener('mousemove',function(e){ if(!S) return;
