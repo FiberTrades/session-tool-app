@@ -52926,6 +52926,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        height LWC actually renders, which is the number to match a font size against - asking the
        chart for its configured size has now been wrong three times running. */
     function glyphs(rgb,tol){ try{
+      var bg=[19,18,23]; try{ var bc=chart.options().layout.background; var hx=String((bc&&(bc.color||bc.topColor))||'').replace('#','');
+        if(hx.length===6){ var bn=parseInt(hx,16); bg=[(bn>>16)&255,(bn>>8)&255,bn&255]; } }catch(_){}
+      o.chartBg=bg;
       var cvs=chartEl?chartEl.querySelectorAll('canvas'):[], best=null;
       for(var ci=0;ci<cvs.length;ci++){ var cv=cvs[ci]; if(!cv.width||!cv.height) continue;
         var g; try{ g=cv.getContext('2d',{willReadFrequently:true})||cv.getContext('2d'); }catch(_){ continue; }
@@ -52945,13 +52948,22 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
            to 1590 - the measurement was reporting the band, not the glyphs. */
         var ty0=-1,ty1=-1,tx0=1e9,tx1=-1,dark=0,light=0;
         function isFill(i){ return Math.abs(d[i]-rgb[0])<=tol&&Math.abs(d[i+1]-rgb[1])<=tol&&Math.abs(d[i+2]-rgb[2])<=tol&&d[i+3]>200; }
+        /* Ink is neither the fill NOR the chart background. The pill has rounded corners, so on
+           its top and bottom rows the background sits INSIDE the row's fill bounds - and a test
+           of merely "not the fill" counted those corners as text, which is why cap height kept
+           coming back as the full pill height. Also requires a real distance from the fill, so
+           antialiased pill edges are not mistaken for glyphs. */
+        function nearBg(i){ return Math.abs(d[i]-bg[0])<=18&&Math.abs(d[i+1]-bg[1])<=18&&Math.abs(d[i+2]-bg[2])<=18; }
+        function isInk(i){ if(isFill(i)||nearBg(i)) return false;
+          var dr=d[i]-rgb[0],dg=d[i+1]-rgb[1],db2=d[i+2]-rgb[2];
+          return (dr*dr+dg*dg+db2*db2)>4900; }
         for(var y2=y0;y2<=y1;y2++){
           var fx0=-1,fx1=-1;
           for(var xa=gx0;xa<cv.width;xa++){ if(isFill((y2*cv.width+xa)*4)){ if(fx0<0) fx0=xa; fx1=xa; } }
           if(fx0<0||fx1-fx0<6) continue;
           var any=false;
           for(var x2=fx0+1;x2<fx1;x2++){ var i3=(y2*cv.width+x2)*4; if(d[i3+3]<200) continue;
-            if(isFill(i3)) continue;
+            if(!isInk(i3)) continue;
             var lum=0.299*d[i3]+0.587*d[i3+1]+0.114*d[i3+2];
             if(lum>150) light++; else dark++;
             any=true; if(x2<tx0)tx0=x2; if(x2>tx1)tx1=x2; }
@@ -53034,7 +53046,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
            this was two revisions ago - the guess that moved it to 11/14 made it smaller than LWC's,
            having previously been larger. Whatever still reads differently is not the height. */
         var _fs=12; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>6&&_lo.fontSize<24) _fs=_lo.fontSize; }catch(_){}
-        ctx.font=_fs+"px 'DM Mono',monospace";
+        /* bold 10px, chosen by measuring the candidates rather than by eye. Nestor's report was
+           'bigger and less bold' than the Entry / SL labels, and against the 12px this was:
+             12px        cap 8, width 50.4   (what looked wrong)
+             bold 11px   cap 10, width 38.3  (BOLDER BUT TALLER - the obvious guess, and wrong)
+             bold 10px   cap 8,  width 34.8  (bolder, much narrower, no taller)
+           'DM Mono' ships no bold face, so the browser synthesises one by smearing - which adds
+           height as well as weight. That is why dropping to 10px is needed to stay level with
+           the current cap height while gaining the weight. The BOX stays at fontSize+5 = 17,
+           which the pixel scan did establish reliably. */
+        ctx.font="bold 10px 'DM Mono',monospace";
         var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
         /* Fills the price scale, like LWC's own labels do. Sizing it to the text left it visibly
            narrower than the Entry / SL pills directly above it, which is what gave two labels on
