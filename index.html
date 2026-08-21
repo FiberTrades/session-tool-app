@@ -7063,6 +7063,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_detail': "You traded {KEPT} of the {TOTAL} days you committed to.",
       'commit.adherence_missed': "Missed: {DAYS}.",
       'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
+      'commit.adherence_offplan_showed': "Showed up on {N} day(s) you'd said you'd rest, without trading.",
       'commit.next_label': "Days I'm committing to next week",
       'commit.next_hint': "Lock in the days you'll trade. These override your default for that week \u2014 the greetings, live tab and sounds will hold you to it.",
       'commit.board_note': "How well you keep this feeds your points on the community leaderboard.",
@@ -8567,6 +8568,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_detail': "Operaste {KEPT} de los {TOTAL} d\u00edas a los que te comprometiste.",
       'commit.adherence_missed': "Faltaste: {DAYS}.",
       'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
+      'commit.adherence_offplan_showed': "Estuviste presente {N} d\u00eda(s) que dijiste que descansar\u00edas, sin operar.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
       'commit.next_hint': "Fija los d\u00edas que operar\u00e1s. Anulan tu ajuste por defecto esa semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo.",
       'commit.board_note': "Lo bien que lo cumplas suma a tus puntos en la clasificaci\u00f3n de la comunidad.",
@@ -13888,7 +13890,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const _slB = (_ssB.length > 1)
       ? ((b && b.sessionName) ? (localizeSessionName(b.sessionName) + ' ') : (sessionShortLabel(currentOrNextSessionIndex()) + ' '))
       : '';
-    const lines = [`**${_bSym} ${_slB}Bias — ${headerDate}**`, ''];
+    // "Bias" was hardcoded, so the Spanish copy read "EUR/USD Bias — Vie, 21 ago" — a half-English
+    // title in a Spanish post. That is not just untidy: the community translator scores each line
+    // and this one scored ENGLISH off the word "Bias", so it was sent to be translated. See the
+    // header guard in _trRich for what that did to the date.
+    const lines = [`**${_bSym} ${_slB}${t('savedbias.bias')} — ${headerDate}**`, ''];
     // Structured summary goes inside a ``` code block so Discord renders it as a
     // boxed monospace panel, matching the Session Review summary.
     const box = [];
@@ -18540,7 +18546,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (!b || !b.dateKey) return;
         // Counts if copied to Discord OR a completed bias (all 4 fields) - see the weekly
         // consistency block; keeps the two "showed up" views consistent.
-        if (!b.copiedAt && !(b.mode && b.structure && b.location && b.direction)) return;
+        if (!_biasShowedUp(b)) return;
         const d = new Date(b.dateKey + 'T12:00:00');
         if (isNaN(d.getTime()) || d < startDate || d > endDate) return;
         showedUpSet.add(d.toDateString());
@@ -25106,6 +25112,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     </div>`;
   }
 
+  // ONE definition of "showed up", shared by every metric that asks the question. It was written
+  // out three times and the copies had already diverged: the weekly commitment demanded the bias be
+  // POSTED, while both consistency blocks accepted a completed one — so the same Friday could be a
+  // day you showed up and a day you didn't, depending which panel you opened. Completing all four
+  // reads is showing up; pressing send as well is a separate choice about the community, not about
+  // whether you did the work.
+  function _biasShowedUp(b) {
+    if (!b || !b.dateKey) return false;
+    return !!(b.copiedAt || (b.mode && b.structure && b.location && b.direction));
+  }
   // Which weekdays "count" for a given date: this week's weekly-review commitment if one was set
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
   // via _mondayKey, so one week's change doesn't affect the others.
@@ -25147,7 +25163,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const biasHist = Array.isArray(data.biasHistory) ? data.biasHistory : [];
     biasHist.forEach(b => {
       if (!b || !b.dateKey) return;
-      if (!b.copiedAt && !(b.mode && b.structure && b.location && b.direction)) return;
+      if (!_biasShowedUp(b)) return;
       const d = new Date(b.dateKey + 'T12:00:00');
       if (isNaN(d.getTime()) || d < periodStart || d > periodEnd) return;
       showedUpSet.add(d.toDateString());
@@ -26130,22 +26146,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // (1) This week's adherence, only if a commitment was set for it.
       const committedThis = (typeof getWeekCommitment === 'function') ? getWeekCommitment(thisWeekKey) : null;
       let adhHtml = '';
-      let _kept = 0, _off = 0, _pct = null;
+      let _kept = 0, _offTraded = 0, _offShowed = 0, _pct = null;
       if (committedThis && committedThis.length) {
         const wkEndExc = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
-        const traded = {};
+        // Kept separate now. Both keep a committed day, but off-plan they are different acts and
+        // the sentence below has to stop calling one the other: taking a trade on a day you said
+        // you'd rest broke the plan, whereas writing the bias and NOT trading is the plan working.
+        const tradedDay = {}, showedDay = {};
         (filterByScope((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []) || []).forEach(function (t) {
-          const td = new Date(t.date); if (td >= weekStart && td < wkEndExc) traded[td.getDay()] = true;
+          const td = new Date(t.date); if (td >= weekStart && td < wkEndExc) tradedDay[td.getDay()] = true;
         });
-        // Showing up keeps the day too: a bias posted/completed that day (biasHistory.copiedAt)
-        // counts even with no trade — commitment is about doing the process, not forcing a trade.
+        // Showing up keeps the day too: a bias completed or posted that day counts even with no
+        // trade — commitment is about doing the process, not forcing a trade.
         (data.biasHistory || []).forEach(function (b) {
-          if (!b || !b.copiedAt || !b.dateKey) return;
+          if (!_biasShowedUp(b)) return;
           const bd = new Date(b.dateKey + 'T12:00:00');
-          if (bd >= weekStart && bd < wkEndExc) traded[bd.getDay()] = true;
+          if (bd >= weekStart && bd < wkEndExc) showedDay[bd.getDay()] = true;
         });
+        const traded = {};
+        Object.keys(tradedDay).forEach(function (d) { traded[d] = true; });
+        Object.keys(showedDay).forEach(function (d) { traded[d] = true; });
         _kept = committedThis.filter(function (d) { return traded[d]; }).length;
-        _off = Object.keys(traded).map(Number).filter(function (d) { return committedThis.indexOf(d) === -1; }).length;
+        const _isOff = function (d) { return committedThis.indexOf(Number(d)) === -1; };
+        _offTraded = Object.keys(tradedDay).filter(_isOff).length;
+        // Showed up but did NOT trade — otherwise a day would be counted in both lines at once.
+        _offShowed = Object.keys(showedDay).filter(function (d) { return _isOff(d) && !tradedDay[d]; }).length;
         _pct = committedThis.length ? Math.round(_kept / committedThis.length * 100) : 0;
         // Committed days you didn't show up for (no trade AND no bias) AND that have already PASSED —
         // a committed day still in the future this week isn't "missed" yet. Mon→Sun order.
@@ -26159,7 +26184,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         adhHtml = `<div style="margin-bottom:20px;">
             <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
             <div style="font-family:'AppNum','DM Mono',monospace;font-size:22px;color:${pctCls};">${_pct}%</div>
-            <div style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5;">${t('commit.adherence_detail').replace('{KEPT}', _kept).replace('{TOTAL}', committedThis.length)}${_missed.length ? ' ' + t('commit.adherence_missed').replace('{DAYS}', _missed.join(', ')) : ''}${_off ? ' ' + t('commit.adherence_offplan').replace('{N}', _off) : ''}</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-top:4px;line-height:1.5;">${t('commit.adherence_detail').replace('{KEPT}', _kept).replace('{TOTAL}', committedThis.length)}${_missed.length ? ' ' + t('commit.adherence_missed').replace('{DAYS}', _missed.join(', ')) : ''}${_offTraded ? ' ' + t('commit.adherence_offplan').replace('{N}', _offTraded) : ''}${_offShowed ? ' ' + t('commit.adherence_offplan_showed').replace('{N}', _offShowed) : ''}</div>
           </div>`;
       }
       // No cloud write here: the nightly leaderboard job reads weeklyCommitments straight from
@@ -43223,6 +43248,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        its marker and its words, only the WORDS are translated, and the marker is
        put back untouched. Headings, bullets and quotes all survive intact. */
     var _TR_MARKER = /^([ \t]*(?:#{1,3}|[-*+]|>)[ \t]+)([\s\S]*)$/;
+    // A wholly-bold line carrying an em dash and a digit: the shape of an app-built post header.
+    var _TR_TITLE = /^\*\*[^*]*—[^*]*\d[^*]*\*\*$/;
     function _trLine(line, L, fn){
       var m = line.match(_TR_MARKER);
       var prefix = m ? m[1] : '';
@@ -43437,6 +43464,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           if (!body.trim() || !/[A-Za-zÀ-ÿ]{2}/.test(body)) { out.push(line); return; }
           var _stat = _trStatLine(body, L.to);                  // known stat-card label → localize deterministically, skip MT
           if (_stat !== null) { out.push(prefix + _stat); return; }
+          // App-generated title line, e.g. "**EUR/USD Sesgo — Vie, 21 ago**". The app already
+          // builds these per language (body / body_es), so machine translation can only damage
+          // them — and it did: the Spanish short month for August is "ago", the translator read
+          // that as English "ago", and the header came back dated "Hace 21 años". Bold, an em
+          // dash, and a digit in the tail is the shape of a generated header and not much else.
+          if (_TR_TITLE.test(body)) { out.push(line); return; }
           var lsc  = _trScore(body);
           var ldet = (lsc.es > lsc.en) ? 'es' : (lsc.en > lsc.es ? 'en' : null);
           if (ldet === L.to) { out.push(line); return; }        // clearly the reader's language
