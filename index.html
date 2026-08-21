@@ -52549,6 +52549,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   async function build(){
     chartEl=el('strp-chart'); overlay=el('strp-ov');
+    /* The chart is rebuilt here, so any previous price lines died with it. */
+    S._plines=[]; S._plSig=null;
     chartEl.innerHTML='';
     chart=S.chart=window.LightweightCharts.createChart(chartEl,{
       layout:{background:{color:'#131217'},textColor:'#c0c0c0',fontFamily:"'DM Mono',monospace"},
@@ -53004,6 +53006,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ctx.beginPath(); ctx.moveTo(q[0].x,q[0].y);
     for(var k=1;k<q.length-1;k++){ ctx.quadraticCurveTo(q[k].x,q[k].y,(q[k].x+q[k+1].x)/2,(q[k].y+q[k+1].y)/2); }
     ctx.lineTo(q[q.length-1].x,q[q.length-1].y); ctx.stroke(); ctx.restore(); }catch(_){} }
+  /* One native price line per horizontal drawing. Rebuilt only when the set actually changes -
+     compared by signature, since this runs every frame and LWC would otherwise churn objects at
+     60Hz. Colour and thickness come from the drawing, so the panel still styles it. */
+  function syncHLines(){ try{ if(!series) return;
+    var want=[]; (S.drawings||[]).forEach(function(d){ if(d&&d.type==='hline'&&isFinite(d.price))
+      want.push({p:d.price,c:dC(d),w:Math.max(1,Math.min(4,Math.round(dW(d))))}); });
+    var sig=JSON.stringify(want); if(sig===S._plSig) return; S._plSig=sig;
+    (S._plines||[]).forEach(function(pl){ try{ series.removePriceLine(pl); }catch(_){} });
+    S._plines=want.map(function(o){ try{ return series.createPriceLine({price:o.p,color:o.c,lineWidth:o.w,
+      lineStyle:0,axisLabelVisible:true,title:''}); }catch(_){ return null; } }).filter(Boolean); }catch(_){} }
   function placeSpread(w,h){ try{ var e=el('strp-spread'); if(!e||e.style.display==='none') return;
     var host=e.offsetParent||(chartEl&&chartEl.parentNode); if(!host||!chartEl) return;
     var hr=host.getBoundingClientRect(), cr=chartEl.getBoundingClientRect();
@@ -53056,51 +53068,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function rShow(d,k){ var sh=d&&d.show; return !sh || sh[k]!==false; }
   function drawOne(ctx,d,w,pv){ ctx.save(); ctx.setLineDash(pv?[4,3]:[]); ctx.font="10px 'DM Mono',monospace";
     var C=dC(d),W=dW(d);
-    /* Stops at the price scale and labels itself there, the same way the Entry / SL / TP lines do.
-       It used to run to the full element width, straight under the axis, and said nothing about
-       the level it marked - so reading its price meant eyeballing it against the nearest tick. */
-    if(d.type==='hline'){ var y=yOf(d.price); if(y!=null){ var pw2=plotW(w);
-        ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(pw2,y); ctx.stroke();
-        /* Match the scale's OWN label metrics rather than the 10px used for on-chart text, or this
-           pill reads as a smaller, lesser thing than the Entry / SL / TP labels stacked above it.
-           Font size comes from the chart's layout so the two cannot drift apart. */
-        /* Lightweight Charts' own axis labels are the reference. Its default layout.fontSize is 11,
-           not 12, and its label box is tighter than the padding used here first time - which is why
-           this pill came back LARGER than the Entry / SL labels after being smaller than them.
-           __stReplayAxisDiag() reports what the chart actually says, so this is settled by
-           measurement rather than by another guess if it is still out. */
-        /* MEASURED, not guessed. __stReplayAxisDiag() read the real Entry label off the price-scale
-           canvas: 17 CSS px tall with layout.fontSize 12. So the box is fontSize + 5, which is what
-           this was two revisions ago - the guess that moved it to 11/14 made it smaller than LWC's,
-           having previously been larger. Whatever still reads differently is not the height. */
-        var _fs=12; try{ var _lo=chart.options().layout; if(_lo&&_lo.fontSize>6&&_lo.fontSize<24) _fs=_lo.fontSize; }catch(_){}
-        /* MEASURED at the source. __stAxisFont() intercepted LWC's own fillText and caught it
-           drawing axis prices 56 times with:  12px "DM Mono", monospace  - plain, not bold. The
-           same run caught our label 4 times at bold 10px, which is what it looked wrong against.
-           Built from the chart's layout rather than retyped, so it is the same string by
-           construction: LWC composes its font exactly this way, fontSize + family. Every earlier
-           attempt read layout.fontSize but paired it with a hand-written family and weight - the
-           size was right from the second try, and the weight was what kept it wrong. */
-        var _ff="'DM Mono',monospace"; try{ if(_lo&&_lo.fontFamily) _ff=_lo.fontFamily; }catch(_){}
-        ctx.font=_fs+'px '+_ff;
-        var txt=Number(d.price).toFixed(_prec()), tw2=ctx.measureText(txt).width;
-        /* Starts at the LEFT edge of the price scale and fills it, which is what LWC's labels do -
-           they are flush left against the scale, not sized to their text and pushed right. I had
-           it right-pinned, so it sat inset from the edge the Entry and SL pills start at, and the
-           two never lined up however well the font matched. */
-        ctx.fillStyle=C; ctx.beginPath(); var bx=pw2+1,bh=_fs+5,bw2=Math.max(12,w-bx);
-        if(bw2>12){ ctx.fillRect(bx,y-bh/2,bw2,bh);
-          /* WHITE ink, like LWC's own labels. It was near-black, and dark type on a light fill reads
-             thinner and larger than light type on the same fill - the two never looked like the
-             same font however exactly the font matched, because the polarity was inverted.
-             LWC does not compute contrast here; Entry pink and SL red both carry white. Only a
-             nearly-white pill flips to dark, since white on white is nothing at all.
-             Left-aligned with the axis lead-in, so the digits start where Entry's digits start. */
-          var _lum=0, _hx=String(C||'').replace('#','');
-          if(_hx.length===3) _hx=_hx[0]+_hx[0]+_hx[1]+_hx[1]+_hx[2]+_hx[2];
-          try{ var _n=parseInt(_hx,16)||0; _lum=0.299*((_n>>16)&255)+0.587*((_n>>8)&255)+0.114*(_n&255); }catch(_){}
-          ctx.fillStyle=(_lum>210)?'#0B0A0D':'#ffffff';
-          ctx.textBaseline='middle'; ctx.textAlign='left'; ctx.fillText(txt,bx+4,y); } } }
+    /* Horizontal lines are drawn by Lightweight Charts itself now - see syncHLines(). Trying to
+       repaint its axis label by hand took six attempts and still differed in box width, because
+       every property is a separate thing to imitate: font, weight, ink colour, box, alignment,
+       inset. Handing the job to the same mechanism that draws Entry / SL / TP makes them equal
+       by definition rather than by measurement. */
+    if(d.type==='hline'){ /* rendered as a native price line */ }
     else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
     /* Freehand. Points are stored as {idx,price} like every other tool, NOT as pixels, so the
        stroke stays welded to the candles through zoom, pan and replay stepping. */
@@ -53140,7 +53113,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       ctx.beginPath(); ctx.arc(sq.x,sq.y,4,0,Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.moveTo(sq.x-9,sq.y); ctx.lineTo(sq.x+9,sq.y); ctx.moveTo(sq.x,sq.y-9); ctx.lineTo(sq.x,sq.y+9); ctx.stroke(); ctx.restore(); } }
     if(S.marq){ var mm=marqNorm(S.marq); ctx.save(); ctx.fillStyle='rgba(244,114,182,0.10)'; ctx.fillRect(mm.x0,mm.y0,mm.x1-mm.x0,mm.y1-mm.y0);
-      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); placeSpread(w,h); }
+      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); placeSpread(w,h); syncHLines(); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
