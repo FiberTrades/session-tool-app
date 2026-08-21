@@ -52830,6 +52830,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      are still real coordinates to Lightweight Charts (that is what the right-hand gap is), so they
      map and draw correctly. Capped a long way out purely so a wild drag cannot store a runaway
      index that the scale can never bring back on screen. */
+  /* Same mapping as toP but WITHOUT rounding idx to a whole bar. A freehand stroke sampled at bar
+     resolution has one point per candle, which is exactly why it came out as straight segments
+     hinged at each one. Fractional logical indices are valid coordinates to Lightweight Charts. */
+  function toPf(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,lg)),price:pr}; }
   function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg))),price:pr}; }
   /* Right-click on the replay is a drawing surface, not an image. The browser's canvas menu offered
      Save image / Copy image / Inspect, and Inspect opens devtools over the chart - a dead end reached
@@ -52875,9 +52879,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
     /* Freehand. Points are stored as {idx,price} like every other tool, NOT as pixels, so the
        stroke stays welded to the candles through zoom, pan and replay stepping. */
-    else if(d.type==='pen'){ var ps=d.pts||[]; if(ps.length>1){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.beginPath(); var st=false;
-        for(var pi=0;pi<ps.length;pi++){ var q=P(ps[pi]); if(!q){ st=false; continue; } if(!st){ ctx.moveTo(q.x,q.y); st=true; } else ctx.lineTo(q.x,q.y); }
-        ctx.stroke(); } }
+    else if(d.type==='pen'){ var ps=d.pts||[]; var pts=[]; for(var pi=0;pi<ps.length;pi++){ var q=P(ps[pi]); if(q) pts.push(q); }
+      if(pts.length>1){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.beginPath(); ctx.moveTo(pts[0].x,pts[0].y);
+        /* Quadratics through the MIDPOINTS of consecutive samples, which is the standard way to
+           smooth freehand: each captured point becomes a control point rather than a corner, so
+           the stroke curves through the hand's path instead of showing every sample as a kink. */
+        for(var k=1;k<pts.length-1;k++){ ctx.quadraticCurveTo(pts[k].x,pts[k].y,(pts[k].x+pts[k+1].x)/2,(pts[k].y+pts[k+1].y)/2); }
+        ctx.lineTo(pts[pts.length-1].x,pts[pts.length-1].y); ctx.stroke(); } }
     else if(d.type==='rect'){ var a2=P(d.a),b2=P(d.b); if(a2&&b2){ var x0=Math.min(a2.x,b2.x),x1=Math.max(a2.x,b2.x),y0=Math.min(a2.y,b2.y),y1=Math.max(a2.y,b2.y); ctx.fillStyle=hexA(C,0.10); ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.strokeStyle=C; ctx.lineWidth=W; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1); } }
     /* Levels are per drawing (d.levels), falling back to the shared default, so one fib can be
        trimmed to the two levels you actually trade without touching any other. */
@@ -52900,7 +52908,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ctx.restore(); }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else if(d.type==='pen'){ /* a freehand stroke has no two endpoints to reshape - it moves as a whole */ } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
-    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w); drawNews(ctx,w,h); }
+    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawOne(ctx,S.penning,w,false); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w); drawNews(ctx,w,h); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
@@ -52949,9 +52957,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       e.style.cssText='position:absolute;top:10px;right:12px;z-index:6;display:none;flex-direction:column;gap:8px;'
         +'padding:10px;border:1px solid var(--border-2);border-radius:var(--radius-ctrl);background:rgba(11,10,13,0.94);'
         +"font-family:'AppNum','DM Mono',monospace;font-size:10px;color:var(--text-dim);max-width:210px;";
-      /* Clicks inside must not reach the chart, or choosing a colour would deselect the very
-         drawing being styled and the panel would vanish under the pointer. */
-      ['mousedown','click','touchstart'].forEach(function(k){ e.addEventListener(k,function(ev){ ev.stopPropagation(); },true); });
+      /* No stopPropagation here. It was registered in the CAPTURE phase on the panel, so the event
+         was killed on its way DOWN and never reached the buttons inside - every swatch and every
+         fib control was dead. Nothing is needed anyway: the panel lives outside chartEl, and the
+         chart's own mousedown returns early unless chartEl.contains(e.target). */
       var host=chartEl&&chartEl.parentNode; if(host){ if(getComputedStyle(host).position==='static') host.style.position='relative'; host.appendChild(e); } }
     return e; }
   function renderProps(){
@@ -52982,6 +52991,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         +'<button type="button" id="strp-fibadd" style="padding:4px 8px;cursor:pointer;background:transparent;color:var(--text-mid);'
         +'border:1px solid var(--border-2);border-radius:4px;font:inherit;">Add</button></div>'); }
     e.innerHTML=H.join('');
+    /* Sit against the LEFT edge of the price scale rather than on top of it. LWC's width API is
+       not dependable here, so the value is sanity-checked and falls back to a typical scale width. */
+    var pw=0; try{ pw=chart.priceScale('right').width()||0; }catch(_){}
+    if(!(pw>4&&pw<220)) pw=56;
+    e.style.right=(pw+4)+'px'; e.style.top='4px';
     e.style.display='flex';
     var tgt=function(){ return styleTgt(); };
     Array.prototype.forEach.call(e.querySelectorAll('[data-col]'),function(b){ b.onclick=function(){ tgt().color=b.dataset.col; if(S.sel!=null) commit(); renderProps(); draw(); }; });
@@ -53193,7 +53207,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(S.activeTool==='hline'){ S.drawings.push(styleNew({type:'hline',price:p.price})); S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       /* Freehand is the one tool that is not click-click: the stroke is captured while the button
          is held, so it starts here and finishes on mouseup rather than on a second click. */
-      else if(S.activeTool==='pen'){ S.penning=styleNew({type:'pen',pts:[p]}); }
+      else if(S.activeTool==='pen'){ var pf=toPf(e)||p; S.penning=styleNew({type:'pen',pts:[pf]}); }
       else if(!S.pending){ S.pending=styleNew({type:S.activeTool,a:p,b:p}); }
       else { S.pending.b=p; S.drawings.push(S.pending); S.pending=null; S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       draw(); return; }
@@ -53215,10 +53229,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   },{capture:true,passive:false});
 
   window.addEventListener('mousemove',function(e){ if(!S) return;
-    if(S.penning){ var pp=toP(e); if(pp){ var last=S.penning.pts[S.penning.pts.length-1];
+    if(S.penning){ var pp=toPf(e); if(pp){ var last=S.penning.pts[S.penning.pts.length-1];
       /* Skip points the previous one already covers - a 60Hz drag otherwise stores thousands of
          near-identical coordinates into the journal for a single stroke. */
-      if(!last||Math.abs(pp.idx-last.idx)>0||Math.abs(pp.price-last.price)>(S.pip*0.05)) S.penning.pts.push(pp); draw(); } return; }
+      if(!last||Math.abs(pp.idx-last.idx)>0.03||Math.abs(pp.price-last.price)>(S.pip*0.02)) S.penning.pts.push(pp); } return; }
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
     if(S.drag){ var p=toP(e); if(!p)return; var d=S.drawings[S.drag.i]; if(S.drag.part==='line') d.price=p.price; else if(S.drag.part==='a') d.a={idx:p.idx,price:p.price}; else if(S.drag.part==='b') d.b={idx:p.idx,price:p.price}; else { var dI=p.idx-S.drag.start.idx,dP=p.price-S.drag.start.price; d.a={idx:S.drag.orig.a.idx+dI,price:S.drag.orig.a.price+dP}; d.b={idx:S.drag.orig.b.idx+dI,price:S.drag.orig.b.price+dP}; } draw(); return; }
     if(S.activeTool==='none'&&chartEl){ var xy=evXY(e); if(xy.x>=0&&xy.y>=0&&xy.x<=chartEl.clientWidth&&xy.y<=chartEl.clientHeight){
