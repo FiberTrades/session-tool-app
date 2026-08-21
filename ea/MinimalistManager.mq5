@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.5"
+#property version   "6.6"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1823,14 +1823,22 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== TRAILING STOPS =====
-   cardH=31+ROWH*(2+g_tsCount);   // shared unit, one row per shown step, then the add/delete row
+   // With no steps the card collapses to its title and a single Add T1 button - the unit
+   // selector governs numbers that do not exist yet, so showing it would only raise the
+   // question of whether trailing is on.
+   cardH=31+ROWH*(1+g_tsCount+((g_tsCount>0)?1:0));
    mkRect (PP+"C_TS",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TS",labelX,cy+7,"TRAILING STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
    // Unit first for the same reason as BE: it decides what the numbers below MEAN.
-   mkLabel (PP+"L_TSU",labelX,ry+6,"Move to unit",COL_PANEL_LBL,8);
-   mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
-   ry+=ROWH;
+   if(g_tsCount>0)
+     {
+      mkLabel (PP+"L_TSU",labelX,ry+6,"Move to unit",COL_PANEL_LBL,8);
+      mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+      ry+=ROWH;
+     }
+   else
+     { ObjectDelete(0,PP+"L_TSU"); ObjectDelete(0,PP+"TSUNIT"); }
    // One row per SHOWN step. The number is where the STOP goes, measured past entry - 0 is
    // break-even - not where the trigger sits; the trigger is the T1..T4 line you drag onto
    // structure. Rows beyond g_tsCount are not drawn at all, so the card is one row tall until
@@ -1848,7 +1856,7 @@ void BuildPanel()
    // something to do to a live trade - so the ladder grows and shrinks from the end.
    // Delete slides right when Add is gone at the ceiling, so a lone button still lines up.
    int delX=(g_tsCount<TS_MAX)?box2:box1;
-   if(g_tsCount>1)
+   if(g_tsCount>0)
       mkButton(PP+"TSDEL",delX,ry+2,BW,CH,"Delete "+TsLbl(g_tsCount-1),COL_PANEL_BTN,COL_PANEL_LBL);
    if(g_tsCount<TS_MAX)
       mkButton(PP+"TSADD",box1,ry+2,BW,CH,"Add "+TsLbl(g_tsCount),COL_PANEL_BTN,COL_PANEL_BTX);
@@ -1861,7 +1869,7 @@ void BuildPanel()
       ObjectDelete(0,PP+"L_TS"+dsfx);
       ObjectDelete(0,PP+"TSDEST"+dsfx);
      }
-   if(g_tsCount<=1)      ObjectDelete(0,PP+"TSDEL");
+   if(g_tsCount<=0)      ObjectDelete(0,PP+"TSDEL");
    if(g_tsCount>=TS_MAX) ObjectDelete(0,PP+"TSADD");
    cy+=cardH+6;
 
@@ -1975,7 +1983,7 @@ void HandleClick(string s)
      }
    if(s==PP+"TSDEL")
      {
-      if(g_tsCount>1)
+      if(g_tsCount>0)
         {
          int gone=--g_tsCount;
          // Drop the line now rather than waiting a tick, and clear its fired flag so re-adding
@@ -2097,8 +2105,11 @@ bool LoadState()
    // Guarded individually: a state saved by an older build has none of these keys, and a
    // missing GlobalVariable reads back as 0 - which would silently switch every step off.
    if(GlobalVariableCheck(StateKey("tsUnit"))) g_tsUnit=(ENUM_BEOFF_MODE)(int)GlobalVariableGet(StateKey("tsUnit"));
+   // Deliberately guarded: an ABSENT key leaves the declared default of one step, while a
+   // SAVED zero is honoured - deleting the last step is how trailing is switched off, so that
+   // choice has to survive a restart.
    if(GlobalVariableCheck(StateKey("tsCount"))) g_tsCount=(int)GlobalVariableGet(StateKey("tsCount"));
-   if(g_tsCount<1)      g_tsCount=1;         // a corrupt or absent count must never hide T1
+   if(g_tsCount<0)      g_tsCount=0;
    if(g_tsCount>TS_MAX) g_tsCount=TS_MAX;
    for(int i=0;i<TS_MAX;i++)
      {
