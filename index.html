@@ -25180,21 +25180,35 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // settings.tradingDays survives only as a fallback for journals written before the Settings
   // picker was removed, and only until their first commitment lands.
   function _normalTradingDays() {
-    const out = [];
+    // Weekdays are always yours. Turning up on a Wednesday is trading, whatever you committed to,
+    // and gating that on the commitment left a hole every Monday: a Friday left out of the current
+    // week was not yours until next week's picker had been touched, so turning up on it counted
+    // for nothing. Markets are open Mon–Fri; the commitment says which of them you PLANNED, not
+    // which of them exist.
+    const out = [1, 2, 3, 4, 5];
+    // The weekend is opt-in, and stays the one thing this test actually blocks: a bias written on
+    // a Sunday you have not committed to counts for nothing and opens no live session. A crypto
+    // trader earns Sat/Sun by committing to them this week or next — no history, no expiry, and
+    // visible in the two pickers that produced it.
     try {
       const wk = _mondayKey(Date.now());
       const nx = wk ? _mondayKey(new Date(Date.parse(wk + 'T12:00:00') + 7 * 24 * 3600 * 1000)) : null;
       [wk, nx].forEach(function (k) {
         const c = k ? getWeekCommitment(k) : null;
-        (c || []).forEach(function (d) { if (out.indexOf(Number(d)) === -1) out.push(Number(d)); });
+        (c || []).forEach(function (d) {
+          const n = Number(d);
+          if ((n === 0 || n === 6) && out.indexOf(n) === -1) out.push(n);
+        });
+      });
+      // Legacy journals: a weekend enabled in the old Settings picker keeps working until their
+      // first commitment lands, so nobody loses Saturdays to this change.
+      const td = data && data.settings && data.settings.tradingDays;
+      if (Array.isArray(td)) td.forEach(function (d) {
+        const n = Number(d);
+        if ((n === 0 || n === 6) && out.indexOf(n) === -1) out.push(n);
       });
     } catch (e) {}
-    if (out.length) return out.sort(function (a, b) { return a - b; });
-    try {
-      const td = data && data.settings && data.settings.tradingDays;
-      if (Array.isArray(td) && td.length) return td.map(Number);
-    } catch (e) {}
-    return [1, 2, 3, 4, 5];
+    return out.sort(function (a, b) { return a - b; });
   }
   try { window.__stNormalTradingDays = _normalTradingDays; } catch (e) {}
   // Which weekdays "count" for a given date: this week's weekly-review commitment if one was set
