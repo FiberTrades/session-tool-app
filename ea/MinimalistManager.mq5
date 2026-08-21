@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.3"
+#property version   "6.4"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1823,7 +1823,9 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== TRAILING STOPS =====
-   cardH=31+ROWH*(2+g_tsCount);   // shared unit, one row per shown step, then the add/remove row
+   // Shared unit, one row per shown step, plus the Add row - which is gone at the ceiling,
+   // so the card does not carry an empty band once all four exist.
+   cardH=31+ROWH*(1+g_tsCount+((g_tsCount<TS_MAX)?1:0));
    mkRect (PP+"C_TS",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TS",labelX,cy+7,"TRAILING STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -1835,21 +1837,22 @@ void BuildPanel()
    // break-even - not where the trigger sits; the trigger is the T1..T4 line you drag onto
    // structure. Rows beyond g_tsCount are not drawn at all, so the card is one row tall until
    // you ask for more.
+   int XW=CH;                         // square, so the X reads as a chip rather than a button
    for(int i=0;i<g_tsCount;i++)
      {
       string sfx=IntegerToString(i);
       mkLabel(PP+"L_TS"+sfx,labelX,ry+6,TsLbl(i)+" moves to",COL_PANEL_LBL,8);
+      // Only the LAST step carries the X. Dropping one from the middle would have to renumber
+      // everything above it - and a fired T3 silently becoming T2 is not something to do to a
+      // live trade - so the ladder grows and shrinks from the end.
+      if(i==g_tsCount-1 && g_tsCount>1)
+         mkButton(PP+"TSDEL",box1-GAP-XW,ry+2,XW,CH,"X",COL_PANEL_BTN,COL_PANEL_LBL);
       mkEdit (PP+"TSDEST"+sfx,box1,ry+2,BW,CH,Fmt(g_tsDest[i],g_tsUnit==BEOFF_BY_RR?2:1));
       ry+=ROWH;
      }
-   // Grow/shrink row. REMOVE names the step it drops so it cannot be misread as "remove all",
-   // and each button is simply absent at its limit rather than shown dead. REMOVE slides right
-   // when ADD is not there to hold that slot, so a lone button still lines up with the column.
-   int delX=(g_tsCount<TS_MAX)?box2:box1;
-   if(g_tsCount>1)
-      mkButton(PP+"TSDEL",delX,ry+2,BW,CH,"REMOVE "+TsLbl(g_tsCount-1),COL_PANEL_BTN,COL_PANEL_LBL);
+   // Names the step it will create, so the button says what you are about to get.
    if(g_tsCount<TS_MAX)
-      mkButton(PP+"TSADD",box1,ry+2,BW,CH,"ADD T STOP",COL_PANEL_BTN,COL_PANEL_BTX);
+      mkButton(PP+"TSADD",box1,ry+2,BW,CH,"Add "+TsLbl(g_tsCount),COL_PANEL_BTN,COL_PANEL_BTX);
    // BuildPanel rebuilds IN PLACE and only wipes when the panel opens or closes (see the
    // DeleteByPrefix guard at the top), so anything it stops drawing would simply stay on screen.
    // Remove the rows and buttons this count does not use.
