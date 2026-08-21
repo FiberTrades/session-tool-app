@@ -53202,7 +53202,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
          a handle drawn where nothing is draggable is worse than no handle. */
       sq(x0,y0); sq(x1,y0); sq(x0,y1); sq(x1,y1); sq(mx,y0); sq(mx,y1); sq(x0,my); sq(x1,my); } }
   else { var a2=P(d.a),b2=P(d.b); if(a2)sq(a2.x,a2.y); if(b2)sq(b2.x,b2.y); } ctx.restore(); }
-  function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
+  function _draw(){ if(!S||!S.bars.length) return;
+    try{ _lastDrawAt=(window.performance&&performance.now)?performance.now():Date.now(); }catch(_){} var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
     if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
@@ -53214,7 +53215,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
-  function _frame(){ if(!S){ _loop=0; return; } _draw(); _loop=requestAnimationFrame(_frame); }
+  /* A high-polling mouse fires several moves per frame; each one now paints, so the loop would be
+     repeating work already done. Skip a frame that a move has just drawn - the loop is still what
+     keeps everything else live when the pointer is still. */
+  var _lastDrawAt=0;
+  function _frame(){ if(!S){ _loop=0; return; }
+    var now=(window.performance&&performance.now)?performance.now():Date.now();
+    if(!(S.penning&&(now-_lastDrawAt)<8)) _draw();
+    _loop=requestAnimationFrame(_frame); }
   function startLoop(){ if(!_loop) _loop=requestAnimationFrame(_frame); }
   function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
   function draw(){}   // no-op: the loop above handles all redraws
@@ -53689,7 +53697,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
          the crosshair. This is not stored - it is only where the line is drawn TO, so the
          thinning keeps its benefit and the stroke still reaches the pointer. */
       S.penning.tip=xy2;
+      /* Paint NOW, not on the next animation frame. The overlay is repainted by a rAF loop, so
+         the ink was always up to 16ms behind the pointer however cheap the drawing got - and it
+         is cheap: smoothing 1200 points measures 0.13ms against a 16.7ms budget, the layout
+         reads round to zero. The cost was never the work, it was waiting for the frame.
+         Only while a stroke is in progress; everything else stays on the loop. */
       if(!lp||Math.hypot(xy2.x-lp.x,xy2.y-lp.y)>=2){ var pp=toPf(e); if(pp){ S.penning.pts.push(pp); S.penning.px.push(xy2); } }
+      try{ _draw(); }catch(_){}
       return; }
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
     if(S.drag){ var p=toP(e); if(!p)return; var d=S.drawings[S.drag.i]; if(S.drag.part==='line') d.price=p.price; else if(S.drag.part==='a') d.a={idx:p.idx,price:p.price}; else if(S.drag.part==='b') d.b={idx:p.idx,price:p.price};
