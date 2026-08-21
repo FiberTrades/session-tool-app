@@ -52251,6 +52251,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         <button data-tool="trend" title="Trend"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3" y1="13" x2="13" y2="3"/><circle cx="3" cy="13" r="1.8" fill="currentColor" stroke="none"/><circle cx="13" cy="3" r="1.8" fill="currentColor" stroke="none"/></svg></button>
         <button data-tool="rect" title="Rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="11" height="9" rx="1.2"/></svg></button>
         <button data-tool="fib" title="Fib"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="13" x2="14" y2="13"/></svg></button>
+        <button data-tool="pen" title="Draw"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 13.5l1-3 7-7 2 2-7 7z"/><path d="M9.5 4.5l2 2"/></svg></button>
         <button data-tool="range" title="Measure"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="3" x2="8" y2="13"/><polyline points="5.5,5.3 8,3 10.5,5.3"/><polyline points="5.5,10.7 8,13 10.5,10.7"/><line x1="4" y1="3" x2="12" y2="3"/><line x1="4" y1="13" x2="12" y2="13"/></svg></button>
       </div>
       <button class="strp-ico" id="strp-undo" title="Undo"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3.5 2.5,7 6,10.5"/><path d="M2.5 7H10a3.5 3.5 0 0 1 0 7H7.5"/></svg></button>
@@ -52830,6 +52831,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      map and draw correctly. Capped a long way out purely so a wild drag cannot store a runaway
      index that the scale can never bring back on screen. */
   function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg))),price:pr}; }
+  /* Right-click on the replay is a drawing surface, not an image. The browser's canvas menu offered
+     Save image / Copy image / Inspect, and Inspect opens devtools over the chart - a dead end reached
+     by a stray right-click mid-analysis. Suppressed on the chart only; the rest of the page keeps its
+     normal menu. Nothing here needs a right-click, so nothing is lost by taking it. */
+  document.addEventListener('contextmenu',function(e){ try{ var m=el('strp-modal-bg'); if(!m||!m.classList.contains('show')) return;
+    var t=e.target,c=el('strp-chart'),pr=el('strp-props');
+    if((c&&(t===c||(c.contains&&c.contains(t))))||(pr&&pr.contains&&pr.contains(t))) e.preventDefault(); }catch(_){} },true);
   function sizeO(){ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
     // Right end of the box/lines: the exit candle if exited, else the current frontier candle. Both are
@@ -52847,18 +52855,50 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(yT!=null){ ctx.strokeStyle='#4ECD8B'; ctx.beginPath(); ctx.moveTo(xE,yT); ctx.lineTo(xR,yT); ctx.stroke(); }
     ctx.strokeStyle='#f472b6'; ctx.beginPath(); ctx.moveTo(xE,yE); ctx.lineTo(xR,yE); ctx.stroke();
     ctx.restore(); }
+  /* Per-drawing style. Every tool used to hardcode its colour and weight, so two levels marking
+     different ideas looked identical and nothing could be emphasised. d.color / d.width override
+     the defaults below; drawings saved before this carry neither and render exactly as they did. */
+  var DSTY={hline:{c:'#f4c05a',w:1},trend:{c:'#60a5fa',w:1.6},rect:{c:'#60a5fa',w:1},fib:{c:'#f472b6',w:1},range:{c:'#ffffff',w:1},pen:{c:'#f472b6',w:2}};
+  var DCOLS=['#ffffff','#f472b6','#60a5fa','#4ECD8B','#f4c05a','#E56767','#c084fc','#94a3b8'];
+  var DWIDS=[1,2,3,4];
+  function dC(d){ return (d&&d.color)||((DSTY[d&&d.type]||{}).c)||'#ffffff'; }
+  function dW(d){ return (d&&d.width)||((DSTY[d&&d.type]||{}).w)||1; }
+  /* Canvas has no colour-with-alpha from a hex, and the fills need one. */
+  function hexA(hex,a){ var h=String(hex||'#fff').replace('#',''); if(h.length===3) h=h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+    var n=parseInt(h,16)||0; return 'rgba('+((n>>16)&255)+','+((n>>8)&255)+','+(n&255)+','+a+')'; }
+  /* Which parts of the measure label to show. Absent means all three, so existing measures are
+     unchanged; a stored false is honoured. */
+  function rShow(d,k){ var sh=d&&d.show; return !sh || sh[k]!==false; }
   function drawOne(ctx,d,w,pv){ ctx.save(); ctx.setLineDash(pv?[4,3]:[]); ctx.font="10px 'DM Mono',monospace";
-    if(d.type==='hline'){ var y=yOf(d.price); if(y!=null){ ctx.strokeStyle='#f4c05a'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); } }
-    else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle='#60a5fa'; ctx.lineWidth=1.6; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
-    else if(d.type==='rect'){ var a2=P(d.a),b2=P(d.b); if(a2&&b2){ var x0=Math.min(a2.x,b2.x),x1=Math.max(a2.x,b2.x),y0=Math.min(a2.y,b2.y),y1=Math.max(a2.y,b2.y); ctx.fillStyle='rgba(96,165,250,0.10)'; ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.strokeStyle='#60a5fa'; ctx.lineWidth=1; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1); } }
-    else if(d.type==='fib'){ var a3=P(d.a),b3=P(d.b); if(a3&&b3){ var xL=Math.min(a3.x,b3.x),xR2=Math.max(a3.x,b3.x),ly=null; FIB.forEach(function(lv,ix){ var price=d.a.price+(d.b.price-d.a.price)*lv,y=yOf(price); if(y==null)return; if(ly!=null){ ctx.fillStyle=(ix%2?'rgba(244,114,182,0.05)':'rgba(244,114,182,0.09)'); ctx.fillRect(xL,Math.min(ly,y),xR2-xL,Math.abs(y-ly)); } ly=y; ctx.strokeStyle='rgba(244,114,182,0.55)'; ctx.lineWidth=1; ctx.beginPath(); ctx.moveTo(xL,y); ctx.lineTo(xR2,y); ctx.stroke(); ctx.fillStyle='#f472b6'; ctx.textBaseline='middle'; ctx.fillText(lv.toFixed(3),Math.min(xR2+6,w-30),y); }); } }
-    // Measure tool. Neutral on purpose: it reports a distance, and colouring that by direction
-    // made it look like a verdict on the move. The label sits on the chart with no plate behind
-    // it - a shadow keeps it readable over candles without covering them. R is shown whenever the
-    // replayed trade has a stop, since pips only mean something once you know what you risked.
-    else if(d.type==='range'){ var a4=P(d.a),b4=P(d.b); if(a4&&b4){ var x0=Math.min(a4.x,b4.x),x1=Math.max(a4.x,b4.x),y0=Math.min(a4.y,b4.y),y1=Math.max(a4.y,b4.y); ctx.strokeStyle='rgba(255,255,255,0.85)'; ctx.lineWidth=1; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1); var dP=d.b.price-d.a.price,pips=dP/S.pip,db=Math.abs(d.b.idx-d.a.idx); var _rr=(S&&S.slPips>0)?(pips/S.slPips):null; var label=(pips>=0?'+':'')+pips.toFixed(1)+'p'+(_rr==null?'':(' · '+(_rr>=0?'+':'')+_rr.toFixed(2)+'R'))+' · '+db+' bars'; var cx=(x0+x1)/2,cy=(d.b.price>=d.a.price)?y0-10:y1+10; ctx.save(); ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillStyle='#ffffff'; ctx.textBaseline='middle'; ctx.textAlign='center'; ctx.fillText(label,cx,cy); ctx.restore(); ctx.textAlign='left'; } }
+    var C=dC(d),W=dW(d);
+    if(d.type==='hline'){ var y=yOf(d.price); if(y!=null){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(w,y); ctx.stroke(); } }
+    else if(d.type==='trend'){ var a=P(d.a),b=P(d.b); if(a&&b){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(a.x,a.y); ctx.lineTo(b.x,b.y); ctx.stroke(); } }
+    /* Freehand. Points are stored as {idx,price} like every other tool, NOT as pixels, so the
+       stroke stays welded to the candles through zoom, pan and replay stepping. */
+    else if(d.type==='pen'){ var ps=d.pts||[]; if(ps.length>1){ ctx.strokeStyle=C; ctx.lineWidth=W; ctx.lineJoin='round'; ctx.lineCap='round'; ctx.beginPath(); var st=false;
+        for(var pi=0;pi<ps.length;pi++){ var q=P(ps[pi]); if(!q){ st=false; continue; } if(!st){ ctx.moveTo(q.x,q.y); st=true; } else ctx.lineTo(q.x,q.y); }
+        ctx.stroke(); } }
+    else if(d.type==='rect'){ var a2=P(d.a),b2=P(d.b); if(a2&&b2){ var x0=Math.min(a2.x,b2.x),x1=Math.max(a2.x,b2.x),y0=Math.min(a2.y,b2.y),y1=Math.max(a2.y,b2.y); ctx.fillStyle=hexA(C,0.10); ctx.fillRect(x0,y0,x1-x0,y1-y0); ctx.strokeStyle=C; ctx.lineWidth=W; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1); } }
+    /* Levels are per drawing (d.levels), falling back to the shared default, so one fib can be
+       trimmed to the two levels you actually trade without touching any other. */
+    else if(d.type==='fib'){ var a3=P(d.a),b3=P(d.b); if(a3&&b3){ var LV=(d.levels&&d.levels.length)?d.levels:FIB; var xL=Math.min(a3.x,b3.x),xR2=Math.max(a3.x,b3.x),ly=null;
+        LV.forEach(function(lv,ix){ var price=d.a.price+(d.b.price-d.a.price)*lv,y=yOf(price); if(y==null)return;
+          if(ly!=null){ ctx.fillStyle=hexA(C,ix%2?0.05:0.09); ctx.fillRect(xL,Math.min(ly,y),xR2-xL,Math.abs(y-ly)); }
+          ly=y; ctx.strokeStyle=hexA(C,0.55); ctx.lineWidth=W; ctx.beginPath(); ctx.moveTo(xL,y); ctx.lineTo(xR2,y); ctx.stroke();
+          ctx.fillStyle=C; ctx.textBaseline='middle'; ctx.fillText(lv.toFixed(3),Math.min(xR2+6,w-30),y); }); } }
+    /* Measure tool. Neutral on purpose: it reports a distance, and colouring that by direction
+       made it look like a verdict on the move. The label sits on the chart with no plate behind
+       it - a shadow keeps it readable over candles without covering them. Each part can be turned
+       off independently; with all three off the box is drawn and the label omitted entirely. */
+    else if(d.type==='range'){ var a4=P(d.a),b4=P(d.b); if(a4&&b4){ var x0=Math.min(a4.x,b4.x),x1=Math.max(a4.x,b4.x),y0=Math.min(a4.y,b4.y),y1=Math.max(a4.y,b4.y); ctx.strokeStyle=C; ctx.lineWidth=W; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1);
+        var dP=d.b.price-d.a.price,pips=dP/S.pip,db=Math.abs(d.b.idx-d.a.idx); var _rr=(S&&S.slPips>0)?(pips/S.slPips):null; var parts=[];
+        if(rShow(d,'pips')) parts.push((pips>=0?'+':'')+pips.toFixed(1)+'p');
+        if(rShow(d,'r')&&_rr!=null) parts.push((_rr>=0?'+':'')+_rr.toFixed(2)+'R');
+        if(rShow(d,'bars')) parts.push(db+' bars');
+        if(parts.length){ var label=parts.join(' · '); var cx=(x0+x1)/2,cy=(d.b.price>=d.a.price)?y0-10:y1+10;
+          ctx.save(); ctx.shadowColor='rgba(0,0,0,0.9)'; ctx.shadowBlur=4; ctx.fillStyle=C; ctx.textBaseline='middle'; ctx.textAlign='center'; ctx.fillText(label,cx,cy); ctx.restore(); ctx.textAlign='left'; } } }
     ctx.restore(); }
-  function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
+  function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else if(d.type==='pen'){ /* a freehand stroke has no two endpoints to reshape - it moves as a whole */ } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
     if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w); drawNews(ctx,w,h); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
@@ -52896,10 +52936,65 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function persistDrawings(){ try{ if(!S||!S.ticket) return; var k='st_replay_draw_'+S.ticket, o={}; try{ o=JSON.parse(localStorage.getItem(k)||'{}'); }catch(_){ } o[S.tf]=S.drawings; localStorage.setItem(k, JSON.stringify(o)); }catch(_){} }
   function commit(){ S.history=S.history.slice(0,S.hpos+1); S.history.push(clone(S.drawings)); S.hpos=S.history.length-1; updUR(); persistDrawings(); }
   function updUR(){ el('strp-undo').disabled=S.hpos<=0; el('strp-redo').disabled=S.hpos>=S.history.length-1; }
-  function updDel(){ el('strp-del').disabled=(S.sel==null); }
-  function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; draw(); }
+  function updDel(){ el('strp-del').disabled=(S.sel==null); renderProps(); }
+  /* Style carried onto the NEXT drawing. Picking a colour with a tool armed but nothing selected
+     sets the default for what you are about to draw, which is how every drawing app behaves. */
+  function styleNew(o){ var ns=(S&&S.newStyle)||{}; if(ns.color) o.color=ns.color; if(ns.width) o.width=ns.width; return o; }
+  /* The object the panel is editing: the selection if there is one, else the pending default. */
+  function styleTgt(){ if(S.sel!=null&&S.drawings[S.sel]) return S.drawings[S.sel]; if(!S.newStyle) S.newStyle={}; return S.newStyle; }
+  function styleType(){ if(S.sel!=null&&S.drawings[S.sel]) return S.drawings[S.sel].type; return S.activeTool; }
+  function propsEl(){
+    var e=el('strp-props');
+    if(!e){ e=document.createElement('div'); e.id='strp-props';
+      e.style.cssText='position:absolute;top:10px;right:12px;z-index:6;display:none;flex-direction:column;gap:8px;'
+        +'padding:10px;border:1px solid var(--border-2);border-radius:var(--radius-ctrl);background:rgba(11,10,13,0.94);'
+        +"font-family:'AppNum','DM Mono',monospace;font-size:10px;color:var(--text-dim);max-width:210px;";
+      /* Clicks inside must not reach the chart, or choosing a colour would deselect the very
+         drawing being styled and the panel would vanish under the pointer. */
+      ['mousedown','click','touchstart'].forEach(function(k){ e.addEventListener(k,function(ev){ ev.stopPropagation(); },true); });
+      var host=chartEl&&chartEl.parentNode; if(host){ if(getComputedStyle(host).position==='static') host.style.position='relative'; host.appendChild(e); } }
+    return e; }
+  function renderProps(){
+    var e=propsEl(); if(!e) return;
+    var ty=styleType();
+    if(!ty||ty==='none'){ e.style.display='none'; return; }
+    var d=styleTgt(), cur=(d&&d.color)||((DSTY[ty]||{}).c), curW=(d&&d.width)||((DSTY[ty]||{}).w);
+    var H=[];
+    H.push('<div style="letter-spacing:0.12em;text-transform:uppercase;color:var(--text-mid);">'+esc2(ty)+'</div>');
+    H.push('<div style="display:flex;gap:5px;flex-wrap:wrap;">'+DCOLS.map(function(c){
+      return '<button type="button" data-col="'+c+'" style="width:18px;height:18px;padding:0;cursor:pointer;border-radius:4px;background:'+c
+        +';border:2px solid '+(c===cur?'#fff':'transparent')+';box-shadow:0 0 0 1px rgba(255,255,255,0.18);"></button>'; }).join('')+'</div>');
+    if(ty!=='rect'){ H.push('<div style="display:flex;gap:5px;align-items:center;">'+DWIDS.map(function(wv){
+      return '<button type="button" data-wid="'+wv+'" style="flex:1;padding:4px 0;cursor:pointer;background:transparent;color:'
+        +(wv===curW?'var(--text)':'var(--text-dim)')+';border:1px solid '+(wv===curW?'var(--accent)':'var(--border-2)')
+        +';border-radius:4px;font:inherit;">'+wv+'</button>'; }).join('')+'</div>'); }
+    if(ty==='range'){ H.push('<div style="display:flex;gap:5px;">'+[['pips','PIPS'],['r','R'],['bars','BARS']].map(function(k){
+      var on=rShow(d,k[0]);
+      return '<button type="button" data-show="'+k[0]+'" style="flex:1;padding:4px 0;cursor:pointer;background:transparent;color:'
+        +(on?'var(--text)':'var(--text-dim)')+';border:1px solid '+(on?'var(--accent)':'var(--border-2)')
+        +';border-radius:4px;font:inherit;">'+k[1]+'</button>'; }).join('')+'</div>'); }
+    if(ty==='fib'&&S.sel!=null){ var LV=(d.levels&&d.levels.length)?d.levels:FIB.slice();
+      H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">'+LV.map(function(lv,ix){
+        return '<button type="button" data-lvl="'+ix+'" title="Remove" style="padding:3px 6px;cursor:pointer;background:transparent;'
+          +'color:var(--text-mid);border:1px solid var(--border-2);border-radius:4px;font:inherit;">'+lv+' &times;</button>'; }).join('')+'</div>');
+      H.push('<div style="display:flex;gap:5px;"><input id="strp-fiblv" placeholder="0.705" style="flex:1;min-width:0;padding:4px 6px;'
+        +'background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;">'
+        +'<button type="button" id="strp-fibadd" style="padding:4px 8px;cursor:pointer;background:transparent;color:var(--text-mid);'
+        +'border:1px solid var(--border-2);border-radius:4px;font:inherit;">Add</button></div>'); }
+    e.innerHTML=H.join('');
+    e.style.display='flex';
+    var tgt=function(){ return styleTgt(); };
+    Array.prototype.forEach.call(e.querySelectorAll('[data-col]'),function(b){ b.onclick=function(){ tgt().color=b.dataset.col; if(S.sel!=null) commit(); renderProps(); draw(); }; });
+    Array.prototype.forEach.call(e.querySelectorAll('[data-wid]'),function(b){ b.onclick=function(){ tgt().width=parseFloat(b.dataset.wid); if(S.sel!=null) commit(); renderProps(); draw(); }; });
+    Array.prototype.forEach.call(e.querySelectorAll('[data-show]'),function(b){ b.onclick=function(){ var o=tgt(); if(!o.show)o.show={}; var k=b.dataset.show; o.show[k]=!rShow(o,k); if(S.sel!=null) commit(); renderProps(); draw(); }; });
+    Array.prototype.forEach.call(e.querySelectorAll('[data-lvl]'),function(b){ b.onclick=function(){ var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); L.splice(parseInt(b.dataset.lvl,10),1); o.levels=L; commit(); renderProps(); draw(); }; });
+    var addB=e.querySelector('#strp-fibadd');
+    if(addB) addB.onclick=function(){ var inp=e.querySelector('#strp-fiblv'); var v=parseFloat(inp&&inp.value); if(!isFinite(v)) return;
+      var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); if(L.indexOf(v)<0) L.push(v); L.sort(function(x,y){return x-y;}); o.levels=L; commit(); renderProps(); draw(); }; }
+  function esc2(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
+  function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; renderProps(); draw(); }
   function d2seg(px,py,x1,y1,x2,y2){ var dx=x2-x1,dy=y2-y1; if(dx===0&&dy===0)return Math.hypot(px-x1,py-y1); var t=((px-x1)*dx+(py-y1)*dy)/(dx*dx+dy*dy); t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
-  function hit(px,py){ for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i]; if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
+  function hit(px,py){ for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i]; if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } if(d.type==='pen'){ var ps=d.pts||[]; for(var k=1;k<ps.length;k++){ var q1=P(ps[k-1]),q2=P(ps[k]); if(q1&&q2&&d2seg(px,py,q1.x,q1.y,q2.x,q2.y)<7) return {i:i,part:'body'}; } continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
 
   // ---- News: the trade's week, from calendar_events ---------------------------
   /* Re-queried on EVERY open rather than cached for the session. The worker fills the `actual`
@@ -53095,8 +53190,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(S._newsPinned){ S._newsPinned=null; S._newsHover=null; newsCard(null); }
     var p=toP(e),xy=evXY(e); if(!p) return;
     if(S.activeTool!=='none'){ e.stopPropagation(); e.preventDefault();
-      if(S.activeTool==='hline'){ S.drawings.push({type:'hline',price:p.price}); S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
-      else if(!S.pending){ S.pending={type:S.activeTool,a:p,b:p}; }
+      if(S.activeTool==='hline'){ S.drawings.push(styleNew({type:'hline',price:p.price})); S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
+      /* Freehand is the one tool that is not click-click: the stroke is captured while the button
+         is held, so it starts here and finishes on mouseup rather than on a second click. */
+      else if(S.activeTool==='pen'){ S.penning=styleNew({type:'pen',pts:[p]}); }
+      else if(!S.pending){ S.pending=styleNew({type:S.activeTool,a:p,b:p}); }
       else { S.pending.b=p; S.drawings.push(S.pending); S.pending=null; S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       draw(); return; }
     var h=hit(xy.x,xy.y); if(h){ e.stopPropagation(); e.preventDefault(); S.sel=h.i; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i])}; draw(); } else if(S.sel!=null){ S.sel=null; updDel(); draw(); }
@@ -53117,6 +53215,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   },{capture:true,passive:false});
 
   window.addEventListener('mousemove',function(e){ if(!S) return;
+    if(S.penning){ var pp=toP(e); if(pp){ var last=S.penning.pts[S.penning.pts.length-1];
+      /* Skip points the previous one already covers - a 60Hz drag otherwise stores thousands of
+         near-identical coordinates into the journal for a single stroke. */
+      if(!last||Math.abs(pp.idx-last.idx)>0||Math.abs(pp.price-last.price)>(S.pip*0.05)) S.penning.pts.push(pp); draw(); } return; }
     if(S.pending){ var pp=toP(e); if(pp){S.pending.b=pp; draw();} return; }
     if(S.drag){ var p=toP(e); if(!p)return; var d=S.drawings[S.drag.i]; if(S.drag.part==='line') d.price=p.price; else if(S.drag.part==='a') d.a={idx:p.idx,price:p.price}; else if(S.drag.part==='b') d.b={idx:p.idx,price:p.price}; else { var dI=p.idx-S.drag.start.idx,dP=p.price-S.drag.start.price; d.a={idx:S.drag.orig.a.idx+dI,price:S.drag.orig.a.price+dP}; d.b={idx:S.drag.orig.b.idx+dI,price:S.drag.orig.b.price+dP}; } draw(); return; }
     if(S.activeTool==='none'&&chartEl){ var xy=evXY(e); if(xy.x>=0&&xy.y>=0&&xy.x<=chartEl.clientWidth&&xy.y<=chartEl.clientHeight){
@@ -53126,7 +53228,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(nh){ newsCard(nh); } else if(prev&&!S._newsPinned){ newsCard(null); }
       chartEl.style.cursor=nh?'pointer':(hit(xy.x,xy.y)?'move':'crosshair'); }
       else if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } } });
-  window.addEventListener('mouseup',function(){ if(S&&S.drag){ commit(); S.drag=null; } });
+  window.addEventListener('mouseup',function(){ if(!S) return;
+    if(S.penning){ var st=S.penning; S.penning=null; if((st.pts||[]).length>1){ S.drawings.push(st); S.sel=S.drawings.length-1; commit(); updDel(); } setTool('none'); draw(); return; }
+    if(S.drag){ commit(); S.drag=null; } });
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(e.key==='Escape'){ if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
     else if((e.key==='Delete'||e.key==='Backspace')&&S.sel!=null){ e.preventDefault(); el('strp-del').click(); } });
