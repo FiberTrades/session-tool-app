@@ -52936,7 +52936,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ctx.restore(); }
   function handles(ctx,d,w){ ctx.save(); ctx.fillStyle='#fff'; ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; function sq(x,y){ if(x==null||y==null)return; ctx.fillRect(x-3,y-3,6,6); ctx.strokeRect(x-3.5,y-3.5,7,7); } if(d.type==='hline'){ sq(w/2,yOf(d.price)); } else if(d.type==='pen'){ /* a freehand stroke has no two endpoints to reshape - it moves as a whole */ } else { var a=P(d.a),b=P(d.b); if(a)sq(a.x,a.y); if(b)sq(b.x,b.y); } ctx.restore(); }
   function _draw(){ if(!S||!S.bars.length) return; var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
-    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawOne(ctx,S.penning,w,false); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w); drawNews(ctx,w,h); }
+    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawOne(ctx,S.penning,w,false); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
+    if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
+      S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
+    if(S.marq){ var mm=marqNorm(S.marq); ctx.save(); ctx.fillStyle='rgba(244,114,182,0.10)'; ctx.fillRect(mm.x0,mm.y0,mm.x1-mm.x0,mm.y1-mm.y0);
+      ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
   // box track the chart 1:1 during pan/zoom (no lag, no jump) and playback never flickers.
   var _loop=0;
@@ -52972,7 +52976,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function persistDrawings(){ try{ if(!S||!S.ticket) return; var k='st_replay_draw_'+S.ticket, o={}; try{ o=JSON.parse(localStorage.getItem(k)||'{}'); }catch(_){ } o[S.tf]=S.drawings; localStorage.setItem(k, JSON.stringify(o)); }catch(_){} }
   function commit(){ S.history=S.history.slice(0,S.hpos+1); S.history.push(clone(S.drawings)); S.hpos=S.history.length-1; updUR(); persistDrawings(); }
   function updUR(){ el('strp-undo').disabled=S.hpos<=0; el('strp-redo').disabled=S.hpos>=S.history.length-1; }
-  function updDel(){ el('strp-del').disabled=(S.sel==null); renderProps(); }
+  function updDel(){ el('strp-del').disabled=(S.sel==null&&!(S.selMulti&&S.selMulti.length)); renderProps(); }
   /* Style carried onto the NEXT drawing. Picking a colour with a tool armed but nothing selected
      sets the default for what you are about to draw, which is how every drawing app behaves. */
   function styleNew(o){ var ns=(S&&S.newStyle)||{}; if(ns.color) o.color=ns.color; if(ns.width) o.width=ns.width; return o; }
@@ -53036,6 +53040,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function esc2(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
   function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; renderProps(); draw(); }
   function d2seg(px,py,x1,y1,x2,y2){ var dx=x2-x1,dy=y2-y1; if(dx===0&&dy===0)return Math.hypot(px-x1,py-y1); var t=((px-x1)*dx+(py-y1)*dy)/(dx*dx+dy*dy); t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
+  /* Pixel bounds of a drawing, for rubber-band selection. An hline has no horizontal extent, so it
+     is treated as spanning the plot: dragging a band across it at its level should catch it. */
+  function bboxOf(d,w){ try{
+    if(d.type==='hline'){ var y=yOf(d.price); return (y==null)?null:{x0:0,y0:y-3,x1:plotW(w),y1:y+3}; }
+    if(d.type==='pen'){ var ps=d.pts||[],x0=Infinity,y0=Infinity,x1=-Infinity,y1=-Infinity;
+      for(var i=0;i<ps.length;i++){ var q=P(ps[i]); if(!q) continue; if(q.x<x0)x0=q.x; if(q.x>x1)x1=q.x; if(q.y<y0)y0=q.y; if(q.y>y1)y1=q.y; }
+      return isFinite(x0)?{x0:x0,y0:y0,x1:x1,y1:y1}:null; }
+    var a=P(d.a),b=P(d.b); if(!a||!b) return null;
+    return {x0:Math.min(a.x,b.x),y0:Math.min(a.y,b.y),x1:Math.max(a.x,b.x),y1:Math.max(a.y,b.y)};
+  }catch(_){ return null; } }
+  function rectsHit(a,b){ return !(a.x1<b.x0||a.x0>b.x1||a.y1<b.y0||a.y0>b.y1); }
+  function marqNorm(m){ return {x0:Math.min(m.x0,m.x1),y0:Math.min(m.y0,m.y1),x1:Math.max(m.x0,m.x1),y1:Math.max(m.y0,m.y1)}; }
+  function clearMulti(){ S.selMulti=null; }
   function hit(px,py){ for(var i=S.drawings.length-1;i>=0;i--){ var d=S.drawings[i]; if(d.type==='hline'){ var y=yOf(d.price); if(y!=null&&Math.abs(py-y)<6) return {i:i,part:'line'}; continue; } if(d.type==='pen'){ var ps=d.pts||[]; for(var k=1;k<ps.length;k++){ var q1=P(ps[k-1]),q2=P(ps[k]); if(q1&&q2&&d2seg(px,py,q1.x,q1.y,q2.x,q2.y)<7) return {i:i,part:'body'}; } continue; } var a=P(d.a),b=P(d.b); if(!a||!b) continue; if(Math.hypot(px-a.x,py-a.y)<8) return {i:i,part:'a'}; if(Math.hypot(px-b.x,py-b.y)<8) return {i:i,part:'b'}; if(d.type==='trend'){ if(d2seg(px,py,a.x,a.y,b.x,b.y)<6) return {i:i,part:'body'}; } else if(d.type==='rect'||d.type==='range'){ var x0=Math.min(a.x,b.x),x1=Math.max(a.x,b.x),y0=Math.min(a.y,b.y),y1=Math.max(a.y,b.y); if(px>=x0&&px<=x1&&py>=y0&&py<=y1) return {i:i,part:'body'}; } else if(d.type==='fib'){ var fx0=Math.min(a.x,b.x),fx1=Math.max(a.x,b.x); if(px>=fx0-3&&px<=fx1+3){ for(var L=0;L<FIB.length;L++){ var yy=yOf(d.a.price+(d.b.price-d.a.price)*FIB[L]); if(yy!=null&&Math.abs(py-yy)<5) return {i:i,part:'body'}; } } } } return null; }
 
   // ---- News: the trade's week, from calendar_events ---------------------------
@@ -53216,7 +53233,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   el('strp-scrub').oninput=function(){ if(!S)return; pause(); S.cursor=(+el('strp-scrub').value)+1; render(true); };
   el('strp-undo').onclick=function(){ if(!S||S.hpos<=0)return; S.hpos--; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
   el('strp-redo').onclick=function(){ if(!S||S.hpos>=S.history.length-1)return; S.hpos++; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
-  el('strp-del').onclick=function(){ if(!S||S.sel==null)return; S.drawings.splice(S.sel,1); S.sel=null; commit(); draw(); updDel(); };
+  el('strp-del').onclick=function(){ if(!S) return;
+    /* Descending, so each splice cannot shift the indices of the ones not yet removed. */
+    if(S.selMulti&&S.selMulti.length){ S.selMulti.slice().sort(function(a,b){return b-a;}).forEach(function(i){ S.drawings.splice(i,1); }); clearMulti(); S.sel=null; commit(); draw(); updDel(); return; }
+    if(S.sel==null) return; S.drawings.splice(S.sel,1); S.sel=null; commit(); draw(); updDel(); };
 
   // pointer interaction (capture on the chart element)
   document.addEventListener('mousedown',function(e){ if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')) return; if(!chartEl.contains(e.target)) return;
@@ -53231,6 +53251,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       S._newsPinned={i:_nh.i,j:_nh.j}; S._newsHover=S._newsPinned; newsCard(_nh); return; }
     if(S._newsPinned){ S._newsPinned=null; S._newsHover=null; newsCard(null); }
     var p=toP(e),xy=evXY(e); if(!p) return;
+    /* Ctrl means two different things depending on whether a tool is armed: while drawing it
+       clamps to a candle, and with nothing armed it starts a rubber band. They never overlap,
+       because one needs a tool and the other needs none. */
+    if(S.activeTool==='none'&&e.ctrlKey){ e.stopPropagation(); e.preventDefault();
+      S.marq={x0:xy.x,y0:xy.y,x1:xy.x,y1:xy.y}; S.sel=null; clearMulti(); updDel(); return; }
     if(S.activeTool!=='none'){ e.stopPropagation(); e.preventDefault();
       if(S.activeTool==='hline'){ S.drawings.push(styleNew({type:'hline',price:p.price})); S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       /* Freehand is the one tool that is not click-click: the stroke is captured while the button
@@ -53239,7 +53264,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       else if(!S.pending){ S.pending=styleNew({type:S.activeTool,a:p,b:p}); }
       else { S.pending.b=p; S.drawings.push(S.pending); S.pending=null; S.sel=S.drawings.length-1; commit(); updDel(); setTool('none'); }
       draw(); return; }
-    var h=hit(xy.x,xy.y); if(h){ e.stopPropagation(); e.preventDefault(); S.sel=h.i; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i])}; draw(); } else if(S.sel!=null){ S.sel=null; updDel(); draw(); }
+    var h=hit(xy.x,xy.y); if(h){ e.stopPropagation(); e.preventDefault(); S.sel=h.i; updDel(); S.drag={i:h.i,part:h.part,start:p,orig:clone(S.drawings[h.i])}; draw(); } else if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); }
   },true);
   /* TOUCH. Lightweight Charts consumes touch events on the chart and calls preventDefault, so
      the browser never synthesizes the mousedown the badge handler above listens for: on a phone
@@ -53257,6 +53282,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   },{capture:true,passive:false});
 
   window.addEventListener('mousemove',function(e){ if(!S) return;
+    if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
     if(S.penning){ var pp=toPf(e); if(pp){ var last=S.penning.pts[S.penning.pts.length-1];
       /* Skip points the previous one already covers - a 60Hz drag otherwise stores thousands of
          near-identical coordinates into the journal for a single stroke. */
@@ -53271,11 +53297,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       chartEl.style.cursor=nh?'pointer':(hit(xy.x,xy.y)?'move':'crosshair'); }
       else if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } } });
   window.addEventListener('mouseup',function(){ if(!S) return;
+    if(S.marq){ var mr=marqNorm(S.marq); S.marq=null;
+      /* A band smaller than a few pixels is a Ctrl-click, not a drag - treat it as clearing the
+         selection rather than selecting everything it happens to touch. */
+      if(Math.abs(mr.x1-mr.x0)<4&&Math.abs(mr.y1-mr.y0)<4){ clearMulti(); updDel(); return; }
+      var wNow=(overlay?overlay.clientWidth:0)||(chartEl?chartEl.clientWidth:0)||0, picked=[];
+      S.drawings.forEach(function(d,i){ var bb=bboxOf(d,wNow); if(bb&&rectsHit(bb,mr)) picked.push(i); });
+      S.selMulti=picked.length?picked:null; S.sel=null; updDel(); return; }
     if(S.penning){ var st=S.penning; S.penning=null; if((st.pts||[]).length>1){ S.drawings.push(st); S.sel=S.drawings.length-1; commit(); updDel(); } setTool('none'); draw(); return; }
     if(S.drag){ commit(); S.drag=null; } });
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(e.key==='Escape'){ if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
-    else if((e.key==='Delete'||e.key==='Backspace')&&S.sel!=null){ e.preventDefault(); el('strp-del').click(); } });
+    else if((e.key==='Delete'||e.key==='Backspace')&&(S.sel!=null||(S.selMulti&&S.selMulti.length))){ e.preventDefault(); el('strp-del').click(); } });
   window.addEventListener('resize',function(){ if(S){ _newsCardReset(); draw(); } });
 
   // launcher — delegated, capture phase so the row's own click doesn't also fire
