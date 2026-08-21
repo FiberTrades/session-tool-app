@@ -10839,6 +10839,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function _biasSlotsArr(){ return (Array.isArray(data.biasSlots)&&data.biasSlots.length)?data.biasSlots:[data.bias||{}]; }
   function _captureNewDaySnapshot(){ try{ return { sigs:_biasSlotsArr().map(biasSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]) }; }catch(e){ return null; } }
   function _slotIsTodaysWork(sl, idx){ if(!sl) return false; if(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)) return true; if(_newDaySnapshot&&_newDaySnapshot.sigs&&idx!=null&&_newDaySnapshot.sigs[idx]!=null&&biasSig(sl)!==_newDaySnapshot.sigs[idx]) return true; return false; }
+  // Does the review hold work done TODAY? Either it was sent today, or it's stamped today
+  // and its trade rows have changed since the new day was detected. Used both by the reset
+  // itself and by the prompt's safety net, so "is there anything stale left?" and "what
+  // will the reset keep?" can never disagree.
+  function _reviewIsTodaysWork(){ try{ var r=data.review; if(!r) return false; if(_isTodayIso(r.copiedAt)) return true;
+    return !!(r.sessionDate===todayDateStr() && Array.isArray(r.trades) && r.trades.length>0 && _newDaySnapshot && JSON.stringify(r.trades||[])!==_newDaySnapshot.reviewSig); }catch(e){ return false; } }
+  function _reviewIsStale(){ try{ var r=data.review; return !!(r && Array.isArray(r.trades) && r.trades.length>0 && !_reviewIsTodaysWork()); }catch(e){ return false; } }
   function hasPriorSessionContent() {
     const b = data.bias || {};
     const biasHasContent = !!(b.mode || b.structure || b.location || b.direction ||
@@ -16150,7 +16157,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const _bp = document.getElementById('bias-date'); if (_bp) _bp.value = data.bias.sessionDate;
     if (typeof renderBiasPreview === 'function') renderBiasPreview();
     // --- Review --- (preserve it when it is today's own logged session; only clear a stale prior-day review)
-    var _revTodaysWork = !!(data.review && (_isTodayIso(data.review.copiedAt) || (data.review.sessionDate === todayDateStr() && Array.isArray(data.review.trades) && data.review.trades.length > 0 && _newDaySnapshot && JSON.stringify(data.review.trades || []) !== _newDaySnapshot.reviewSig)));
+    var _revTodaysWork = _reviewIsTodaysWork();
     if (!_revTodaysWork) {
       data.review = newReviewBlank();
       data.review.sessionDate = todayDateStr();
@@ -16208,11 +16215,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   function showNewDaySessionPrompt() {
     if (!_pendingNewDaySession) return;
-    // Safety net: if no UNTOUCHED prior-day content remains (e.g. the user already filled or sent
-    // today's bias), roll the day over silently instead of showing a prompt that could wipe today's work.
+    // Safety net: if no UNTOUCHED prior-day content remains, roll the day over silently instead of
+    // showing a prompt that could wipe today's work. This MUST test the same things that armed the
+    // prompt (bias OR review) -- a bias-only test let a posted bias cancel a prompt that yesterday's
+    // review still needed, stranding it for good since the flag is then never re-raised.
     try {
       var _slots = _biasSlotsArr();
-      var _staleLeft = _slots.some(function (sl, i) { return biasSlotHasContent(sl) && !_slotIsTodaysWork(sl, i); });
+      var _staleLeft = _slots.some(function (sl, i) { return biasSlotHasContent(sl) && !_slotIsTodaysWork(sl, i); }) || _reviewIsStale();
       if (!_staleLeft) { _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null; try { data.lastSessionDate = new Date().toDateString(); saveData(); } catch (e) {} return; }
     } catch (e) {}
     try {
