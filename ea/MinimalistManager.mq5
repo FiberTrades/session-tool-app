@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.7"
+#property version   "5.8"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -102,10 +102,14 @@ input ENUM_DST_MODE InpDstMode      = DST_AUTO; // Timezone: Auto (from this PC/
 #define COL_EDIT_BG   C'26,26,26'
 #define COL_EDIT_TX   clrWhite
 
-#define COL_LINE_ENTRY clrSlateGray   // was C'190,194,200': invisible on a white chart, and the
-                                       // SL preview measures from this line on pending orders -
-                                       // an invisible reference made a correct 4-pip SL look
-                                       // broken (2026-08-20: "massive below, tiny above")
+// The entry line is the reference the SL preview measures from on pending orders, so it has to be
+// legible or a correct 4-pip SL reads as broken. It was C'190,194,200' (light) and got swapped to
+// clrSlateGray because light-on-white is invisible - which then made it too dark on a dark chart,
+// where it actually lives. Neither constant is right for both, so pick from the chart's own
+// background instead of compromising: the light grey is back where it belongs, and a white chart
+// still gets something it can show.
+#define COL_LINE_ENTRY_DARKBG  C'190,194,200'   // light grey - the original, for a dark chart
+#define COL_LINE_ENTRY_LIGHTBG C'105,112,124'   // slate - only for a light/white chart
 #define COL_LINE_SL    clrTomato
 #define COL_LINE_TP    clrLimeGreen
 #define COL_LINE_BE    C'30,120,255'
@@ -134,6 +138,20 @@ input ENUM_DST_MODE InpDstMode      = DST_AUTO; // Timezone: Auto (from this PC/
 //  GLOBALS
 //==================================================================
 CTrade trade;
+
+// Entry-line colour chosen from the chart's own background, so the line is legible on either
+// theme without the trader setting anything. Rec. 601 luma; the midpoint split is all that is
+// needed here, since the two candidates sit at opposite ends of the range.
+color EntryLineColour()
+{
+   long bg = 0;
+   if(!ChartGetInteger(0,CHART_COLOR_BACKGROUND,0,bg)) return COL_LINE_ENTRY_DARKBG;
+   int r = (int)( bg        & 0xFF);
+   int g = (int)((bg >>  8) & 0xFF);
+   int b = (int)((bg >> 16) & 0xFF);
+   double luma = 0.299*r + 0.587*g + 0.114*b;
+   return (luma > 128.0) ? COL_LINE_ENTRY_LIGHTBG : COL_LINE_ENTRY_DARKBG;
+}
 
 // forward declarations
 double PositionsSL(int &cnt);
@@ -408,7 +426,7 @@ void ShowExecutionLines()
    double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
    double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    double mid=(ask+bid)/2.0;
-   if(g_orderKind!=OK_MARKET) EnsureHLine(LN_ENTRY,mid,COL_LINE_ENTRY,STYLE_SOLID,true);
+   if(g_orderKind!=OK_MARKET) EnsureHLine(LN_ENTRY,mid,EntryLineColour(),STYLE_SOLID,true);
    else { ObjectDelete(0,LN_ENTRY); ObjectDelete(0,TX_ENTRY); }
    // SL is NOT selectable: it follows (and is clamped to) the mouse
    g_slSetPips=g_minSL; g_slSetSide=-1;   // default: min distance, below price (buy)
@@ -493,7 +511,7 @@ void RedrawTargets()
    // Pending orders: name the line the SL is measured FROM. Unlabelled and near-invisible, it
    // read as the SL misbehaving around thin air; the 4 pips were always correct - from here.
    if(g_orderKind!=OK_MARKET && ObjectFind(0,LN_ENTRY)>=0)
-      SetLineText(TX_ENTRY,LinePrice(LN_ENTRY),"ENTRY  "+OrderKindText()+" (drag)",COL_LINE_ENTRY);
+      SetLineText(TX_ENTRY,LinePrice(LN_ENTRY),"ENTRY  "+OrderKindText()+" (drag)",EntryLineColour());
    else ObjectDelete(0,TX_ENTRY);
   }
 
@@ -865,7 +883,7 @@ void PlaceTrade()
            }
         }
    }
-   EnsureHLine(LN_EFILL,fill,COL_LINE_ENTRY,STYLE_SOLID,false);
+   EnsureHLine(LN_EFILL,fill,EntryLineColour(),STYLE_SOLID,false);
 
    // NOW create the draggable break-even line (only appears after a trade).
    // It starts up NEAR THE TP (safely away from price) - drag it down when you want it.
@@ -1118,7 +1136,7 @@ void UpdateManageLine()
          EnsureHLine(LN_MSL,(sl>0?sl:pe),COL_LINE_SL,STYLE_SOLID,true);
       SetLineText(TX_SL,LinePrice(LN_MSL),"SL",COL_LINE_SL);
       // fixed grey entry line (no label)
-      if(ObjectFind(0,LN_EFILL)<0) EnsureHLine(LN_EFILL,pe,COL_LINE_ENTRY,STYLE_SOLID,false);
+      if(ObjectFind(0,LN_EFILL)<0) EnsureHLine(LN_EFILL,pe,EntryLineColour(),STYLE_SOLID,false);
       // green TP line at the position's broker TP (draggable), if one is set
       double ptp=0;
       for(int i=PositionsTotal()-1;i>=0;i--)
