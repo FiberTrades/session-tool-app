@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "6.9"
+#property version   "7.0"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1841,8 +1841,9 @@ void BuildPanel()
    // ===== TRAILING STOPS =====
    // With no steps the card collapses to its title and a single Add T1 button - the unit
    // selector governs numbers that do not exist yet, so showing it would only raise the
-   // question of whether trailing is on.
-   cardH=31+ROWH*(1+g_tsCount+((g_tsCount>0)?1:0));
+   // question of whether trailing is on. Delete rides on the last step's own row, so the Add
+   // row disappears entirely at the ceiling rather than lingering to hold one button.
+   cardH=31+ROWH*(((g_tsCount>0)?1:0)+g_tsCount+((g_tsCount<TS_MAX)?1:0));
    mkRect (PP+"C_TS",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TS",labelX,cy+7,"TRAILING STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -1863,17 +1864,15 @@ void BuildPanel()
      {
       string sfx=IntegerToString(i);
       mkLabel(PP+"L_TS"+sfx,labelX,ry+6,TsLbl(i)+" moves to",COL_PANEL_LBL,8);
+      // Delete sits on the row it removes, which is always the LAST step: dropping one from the
+      // middle would renumber everything above it, and a fired T3 silently becoming T2 is not
+      // something to do to a live trade.
+      if(i==g_tsCount-1)
+         mkButton(PP+"TSDEL",box2,ry+2,BW,CH,"Delete "+TsLbl(i),COL_PANEL_BTN,COL_PANEL_LBL);
       mkEdit (PP+"TSDEST"+sfx,box1,ry+2,BW,CH,Fmt(g_tsDest[i],g_tsUnit==BEOFF_BY_RR?2:1));
       ry+=ROWH;
      }
-   // Both buttons name the step they act on, so neither can be misread: at two steps the row
-   // is "Delete T2" beside "Add T3". Delete always takes the LAST step - dropping one from the
-   // middle would renumber everything above it, and a fired T3 silently becoming T2 is not
-   // something to do to a live trade - so the ladder grows and shrinks from the end.
-   // Delete slides right when Add is gone at the ceiling, so a lone button still lines up.
-   int delX=(g_tsCount<TS_MAX)?box2:box1;
-   if(g_tsCount>0)
-      mkButton(PP+"TSDEL",delX,ry+2,BW,CH,"Delete "+TsLbl(g_tsCount-1),COL_PANEL_BTN,COL_PANEL_LBL);
+   // Names the step it will create, so the button says what you are about to get.
    if(g_tsCount<TS_MAX)
       mkButton(PP+"TSADD",box1,ry+2,BW,CH,"Add "+TsLbl(g_tsCount),COL_PANEL_BTN,COL_PANEL_BTX);
    // BuildPanel rebuilds IN PLACE and only wipes when the panel opens or closes (see the
