@@ -52944,6 +52944,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){drawOne(ctx,d,w,false);}); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawOne(ctx,S.penning,w,false); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
+    if(S.snapPt){ var sq=P(S.snapPt); if(sq){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.fillStyle='rgba(244,114,182,0.9)'; ctx.lineWidth=1;
+      ctx.beginPath(); ctx.arc(sq.x,sq.y,4,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(sq.x-9,sq.y); ctx.lineTo(sq.x+9,sq.y); ctx.moveTo(sq.x,sq.y-9); ctx.lineTo(sq.x,sq.y+9); ctx.stroke(); ctx.restore(); } }
     if(S.marq){ var mm=marqNorm(S.marq); ctx.save(); ctx.fillStyle='rgba(244,114,182,0.10)'; ctx.fillRect(mm.x0,mm.y0,mm.x1-mm.x0,mm.y1-mm.y0);
       ctx.strokeStyle='rgba(244,114,182,0.85)'; ctx.lineWidth=1; ctx.setLineDash([4,3]); ctx.strokeRect(mm.x0+.5,mm.y0+.5,mm.x1-mm.x0-1,mm.y1-mm.y0-1); ctx.restore(); } drawNews(ctx,w,h); }
   // Continuous overlay loop: redraw every frame while the modal is open, so the drawings + position
@@ -53043,7 +53046,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(addB) addB.onclick=function(){ var inp=e.querySelector('#strp-fiblv'); var v=parseFloat(inp&&inp.value); if(!isFinite(v)) return;
       var o=tgt(); var L=(o.levels&&o.levels.length)?o.levels.slice():FIB.slice(); if(L.indexOf(v)<0) L.push(v); L.sort(function(x,y){return x-y;}); o.levels=L; commit(); renderProps(); draw(); }; }
   function esc2(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){ return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'})[c]; }); }
-  function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; renderProps(); draw(); }
+  function setTool(t){ S.activeTool=(S.activeTool===t?'none':t); S.pending=null; S.snapPt=null; Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(x){ x.classList.toggle('on',x.dataset.tool===S.activeTool); }); chartEl.style.cursor=S.activeTool==='none'?'default':'crosshair'; renderProps(); draw(); }
   function d2seg(px,py,x1,y1,x2,y2){ var dx=x2-x1,dy=y2-y1; if(dx===0&&dy===0)return Math.hypot(px-x1,py-y1); var t=((px-x1)*dx+(py-y1)*dy)/(dx*dx+dy*dy); t=Math.max(0,Math.min(1,t)); return Math.hypot(px-(x1+t*dx),py-(y1+t*dy)); }
   /* Pixel bounds of a drawing, for rubber-band selection. An hline has no horizontal extent, so it
      is treated as spanning the plot: dragging a band across it at its level should catch it. */
@@ -53288,6 +53291,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   window.addEventListener('mousemove',function(e){ if(!S) return;
     if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
+    /* Show WHERE Ctrl will put the point before the click, not after. toP() already applies the
+       snap, so the marker is by construction the exact coordinate that would be committed - it
+       cannot promise one place and draw in another. Also nudges the chart's own crosshair when
+       the build exposes that API; the marker is drawn either way, so it never depends on it. */
+    if(S.activeTool!=='none'&&e.ctrlKey){ var sp=toP(e);
+      if(sp){ S.snapPt=sp; try{ var _b=S.bars&&S.bars[sp.idx]; if(_b&&chart.setCrosshairPosition) chart.setCrosshairPosition(sp.price,_b.time,series); }catch(_){} } }
+    else if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} }
     if(S.penning){ var pp=toPf(e); if(pp){ var last=S.penning.pts[S.penning.pts.length-1];
       /* Skip points the previous one already covers - a 60Hz drag otherwise stores thousands of
          near-identical coordinates into the journal for a single stroke. */
@@ -53314,6 +53324,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(e.key==='Escape'){ if(S.activeTool!=='none'||S.pending){ S.pending=null; setTool('none'); } else closeModal(); }
     else if((e.key==='Delete'||e.key==='Backspace')&&(S.sel!=null||(S.selMulti&&S.selMulti.length))){ e.preventDefault(); el('strp-del').click(); } });
+  /* Releasing Ctrl without moving the mouse must drop the marker, or it sits there implying a snap
+     that is no longer armed. */
+  window.addEventListener('keyup',function(e){ if(!S||e.key!=='Control') return; if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} } });
   window.addEventListener('resize',function(){ if(S){ _newsCardReset(); draw(); } });
 
   // launcher — delegated, capture phase so the row's own click doesn't also fire
