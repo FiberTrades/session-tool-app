@@ -214,7 +214,11 @@ begin
                   )
         )                                                      as broken_stop,
         (
-          coalesce(lt.tp_r::numeric,0) > 0
+          -- A scale-out is not a pulled target: half at 1R and half at a 2R TP satisfies
+          -- every clause below, and the trader did exactly what they planned. NULL means
+          -- the EA never reported a ledger, so it keeps the original behaviour.
+          coalesce(lt.exit_count,1) <= 1
+          and coalesce(lt.tp_r::numeric,0) > 0
           and coalesce(lt.mfe_r::numeric,0) >= lt.tp_r::numeric * 1.02
           and nullif(lt.risk_gbp::numeric,0) is not null
           and ((lt.pnl::numeric) / lt.risk_gbp::numeric)
