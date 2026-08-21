@@ -25155,62 +25155,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // whether you did the work.
   function _biasShowedUp(b) {
     if (!b || !b.dateKey) return false;
-    if (!(b.copiedAt || (b.mode && b.structure && b.location && b.direction))) return false;
-    // A bias written on a day you never trade is not showing up — otherwise the metric can be
-    // padded from the sofa on a Sunday. Measured against Settings "Days I trade", NOT against
-    // this week's commitment: turning up on a Friday you'd said you'd rest is exactly the thing
-    // that SHOULD count, and it is only the commitment that excluded it.
-    try {
-      const d = new Date(b.dateKey + 'T12:00:00');
-      if (isNaN(d.getTime())) return false;
-      if (_normalTradingDays().indexOf(d.getDay()) === -1) return false;
-    } catch (e) {}
-    return true;
+    return !!(b.copiedAt || (b.mode && b.structure && b.location && b.direction));
+    // No day-of-week test. There was one, to stop the metric being padded from the sofa on a
+    // Sunday — but the bias carries its own date picker, defaulting to today and changeable, and
+    // dateKey is read from THAT rather than from the clock. Preparing Monday's session on Sunday
+    // evening is dated Monday and counts on Monday. A bias that genuinely says Sunday says so
+    // because someone chose Sunday, and that is a session worked. The picker already answers the
+    // question the guard was invented for, and answers it better.
   }
-  // Days you trade AT ALL — the test that keeps a Sunday bias from counting or opening a live
-  // session. Deliberately NOT _tradingDaysPref(), which returns only the current week: the two
-  // answer different questions, and conflating them is what made "Days I trade" look ignored.
-  //
-  // Your commitments define it: this week's PLUS the one you've set for next week. The union is
-  // what makes a Friday you left out of THIS week still yours — next week's Mon–Fri says so —
-  // while a Sunday you have not committed to either week stays inert. No history window and no
-  // expiry, so nothing can silently stop being one of your days: it is on screen in the weekly
-  // review, in the two pickers that produced it.
-  //
-  // settings.tradingDays survives only as a fallback for journals written before the Settings
-  // picker was removed, and only until their first commitment lands.
-  function _normalTradingDays() {
-    // Weekdays are always yours. Turning up on a Wednesday is trading, whatever you committed to,
-    // and gating that on the commitment left a hole every Monday: a Friday left out of the current
-    // week was not yours until next week's picker had been touched, so turning up on it counted
-    // for nothing. Markets are open Mon–Fri; the commitment says which of them you PLANNED, not
-    // which of them exist.
-    const out = [1, 2, 3, 4, 5];
-    // The weekend is opt-in, and stays the one thing this test actually blocks: a bias written on
-    // a Sunday you have not committed to counts for nothing and opens no live session. A crypto
-    // trader earns Sat/Sun by committing to them this week or next — no history, no expiry, and
-    // visible in the two pickers that produced it.
+  // Default days for a commitment picker that has nothing stored yet. This is a STARTING POINT,
+  // not a rule: nothing gates on it. It was briefly load-bearing - the test deciding whether a
+  // day counted as showing up - which is why it once carried elaborate union-of-commitments
+  // logic. The bias date picker turned out to answer that question directly, so all of it went.
+  function _defaultCommitDays() {
     try {
-      const wk = _mondayKey(Date.now());
-      const nx = wk ? _mondayKey(new Date(Date.parse(wk + 'T12:00:00') + 7 * 24 * 3600 * 1000)) : null;
-      [wk, nx].forEach(function (k) {
-        const c = k ? getWeekCommitment(k) : null;
-        (c || []).forEach(function (d) {
-          const n = Number(d);
-          if ((n === 0 || n === 6) && out.indexOf(n) === -1) out.push(n);
-        });
-      });
-      // Legacy journals: a weekend enabled in the old Settings picker keeps working until their
-      // first commitment lands, so nobody loses Saturdays to this change.
-      const td = data && data.settings && data.settings.tradingDays;
-      if (Array.isArray(td)) td.forEach(function (d) {
-        const n = Number(d);
-        if ((n === 0 || n === 6) && out.indexOf(n) === -1) out.push(n);
-      });
+      const td = data && data.settings && data.settings.tradingDays;   // legacy journals only
+      if (Array.isArray(td) && td.length) return td.map(Number);
     } catch (e) {}
-    return out.sort(function (a, b) { return a - b; });
+    return [1, 2, 3, 4, 5];
   }
-  try { window.__stNormalTradingDays = _normalTradingDays; } catch (e) {}
   // Which weekdays "count" for a given date: this week's weekly-review commitment if one was set
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
   // via _mondayKey, so one week's change doesn't affect the others.
@@ -26321,7 +26284,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // This week's days are ALWAYS shown, and always frozen — mid-week as the plan you are being
       // held to, afterwards as the record the adherence figure above was measured against. The
       // chips are `disabled`, not merely unwired, so they cannot be reached by keyboard either.
-      const thisPreset = (getWeekCommitment(thisWeekKey)) || _normalTradingDays();
+      const thisPreset = (getWeekCommitment(thisWeekKey)) || _defaultCommitDays();
       const lockedChips = order.map(function (d) {
         return `<button type="button" class="settings-day-btn${thisPreset.indexOf(d) >= 0 ? ' on' : ''}" disabled data-day="${d}" style="cursor:default;opacity:0.72;">${dayLabel(d)}</button>`;
       }).join('');
@@ -26329,7 +26292,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // "change your plan" at exactly the moment the plan was supposed to be holding you to it.
       let nextBlock = '';
       if (_showNext) {
-        const preset = (getWeekCommitment(nextKey)) || _normalTradingDays();
+        const preset = (getWeekCommitment(nextKey)) || _defaultCommitDays();
         const chips = order.map(function (d) {
           return `<button type="button" class="settings-day-btn${preset.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
         }).join('');
@@ -26380,7 +26343,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (firstWrap) {
         firstWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
           btn.addEventListener('click', function () {
-            const cur = (getWeekCommitment(thisWeekKey) || _normalTradingDays()).slice();
+            const cur = (getWeekCommitment(thisWeekKey) || _defaultCommitDays()).slice();
             const d = Number(btn.getAttribute('data-day'));
             const at = cur.indexOf(d);
             if (at >= 0) cur.splice(at, 1); else cur.push(d);
@@ -28633,7 +28596,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function _activateTodayIfShownUp(why) {
     try {
       const dow = new Date().getDay();
-      if (_normalTradingDays().indexOf(dow) === -1) return false;   // never a day you trade
+      // No weekend exclusion. Callers only reach here for work dated TODAY — a bias whose date
+      // picker says today, or a trade with a result logged today — so any day that gets here is
+      // one the trader is demonstrably working. A Saturday session is a session.
       if (_tradingDaysPref().indexOf(dow) !== -1) return false;       // already planned — nothing to do
       const key = todayDateStr();
       if (_dayActivated(key)) return false;                           // already on
