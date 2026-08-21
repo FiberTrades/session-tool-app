@@ -52852,7 +52852,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* Same mapping as toP but WITHOUT rounding idx to a whole bar. A freehand stroke sampled at bar
      resolution has one point per candle, which is exactly why it came out as straight segments
      hinged at each one. Fractional logical indices are valid coordinates to Lightweight Charts. */
-  function toPf(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,lg)),price:pr}; }
+  function toPf(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y);
+    if(lg==null||pr==null) return null;
+    /* Recover the sub-bar position from the PIXEL, not from the returned logical.
+       coordinateToLogical answers in whole bars, so dropping the Math.round around it changed
+       nothing - the fraction was already gone before we saw it, and every captured point landed on
+       a candle centre. That is the zigzag: interpolating on the way out cannot restore detail that
+       was never stored. Measuring how far x sits between this bar and the next puts it back. */
+    /* Step back if the rounded logical landed to the RIGHT of the pixel - it rounds to nearest,
+       so for anything past a bar's midpoint floor() names the NEXT bar and the fraction comes out
+       negative, clamps to zero, and the point snaps to a centre again. Walk at most one bar in
+       each direction; beyond that the reading is not trustworthy anyway. */
+    var i0=Math.floor(lg);
+    var c0=xOf(i0); if(c0!=null&&c0>xy.x) i0--;
+    var a=xOf(i0), b=xOf(i0+1), idx=lg;
+    if(a!=null&&b!=null&&b>a){ var f=(xy.x-a)/(b-a); if(f>=0&&f<=1) idx=i0+f; }
+    var maxI=(S&&S.bars?S.bars.length:0)+500;
+    return {idx:Math.max(0,Math.min(maxI,idx)),price:pr}; }
   /* Hold Ctrl to clamp onto the candle under the cursor - whichever of its high or low is nearer.
      Only ever snaps to a REAL bar: past the last candle there is nothing to snap to, so the
      pointer price is kept and the drawing behaves normally out there. */
