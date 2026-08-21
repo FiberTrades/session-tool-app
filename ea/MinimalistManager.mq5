@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "5.8"
+#property version   "5.9"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2600,11 +2600,61 @@ void PM_SimOffsets(string sym,int dir,double entry,double origSl,double tpPrice,
 //----------------------------------------------------------------------------
 #define PM_SPREAD_MAX 1440          // one day of minutes - bounds a trade left open for weeks
 
+// ---- LIVE spread log -------------------------------------------------------------------------
+// MqlRates.spread is not populated for historical M1 bars by most brokers - it carries a real value
+// only on the live bar. Reading it back after the close therefore measured nothing, which is why
+// every stored series came out 0.0 with the odd stray 0.1. The spread has to be SAMPLED while the
+// trade runs, so this keeps a rolling per-minute log of the chart symbol and the close reads its
+// window out of it. 720 minutes is twelve hours - longer than any session, and two arrays of 720
+// cost nothing.
+#define SP_LOG_MAX 720
+datetime g_spT[SP_LOG_MAX];
+double   g_spV[SP_LOG_MAX];
+int      g_spN=0;
+datetime g_spLastMin=0;
+void SpreadLogSample()
+  {
+   datetime now=TimeCurrent();
+   datetime m=(datetime)((now/60)*60);
+   if(m==g_spLastMin) return;                       // one sample a minute is plenty
+   g_spLastMin=m;
+   double pip=SymbolPipFor(_Symbol);
+   double pt =SymbolInfoDouble(_Symbol,SYMBOL_POINT);
+   if(pip<=0 || pt<=0) return;
+   double sp=(double)SymbolInfoInteger(_Symbol,SYMBOL_SPREAD)*pt/pip;
+   if(g_spN<SP_LOG_MAX){ g_spT[g_spN]=m; g_spV[g_spN]=sp; g_spN++; return; }
+   for(int i=1;i<SP_LOG_MAX;i++){ g_spT[i-1]=g_spT[i]; g_spV[i-1]=g_spV[i]; }
+   g_spT[SP_LOG_MAX-1]=m; g_spV[SP_LOG_MAX-1]=sp;
+  }
+// The trade's window out of the live log. Empty when the EA was not running for it - a restart
+// mid-trade, or a trade that closed before this build - so the caller can fall back.
+string SpreadLogSeries(datetime openT,datetime closeT)
+  {
+   if(g_spN<=0) return "";
+   string s="["; int used=0;
+   for(int i=0;i<g_spN;i++)
+     {
+      if(g_spT[i]<openT-60 || g_spT[i]>closeT+60) continue;
+      if(used>0) s+=",";
+      s+=StringFormat("[%I64d,%s]",(long)g_spT[i],DoubleToString(g_spV[i],2));
+      used++;
+      if(used>=PM_SPREAD_MAX) break;
+     }
+   if(used<=0) return "";
+   return s+"]";
+  }
 string PM_SpreadSeries(string sym,datetime openT,datetime closeT)
   {
    double pip=SymbolPipFor(sym);
    double pt =SymbolInfoDouble(sym,SYMBOL_POINT);
    if(pip<=0 || pt<=0) return "";
+   // Sampled values first. The bar path below is only a fallback for a trade this EA did not sit
+   // through, and is expected to be all zeros on most brokers.
+   if(sym==_Symbol)
+     {
+      string liveS=SpreadLogSeries(openT,closeT);
+      if(StringLen(liveS)>2) return liveS;
+     }
    MqlRates r[];
    int n=CopyRates(sym,PERIOD_M1,openT,closeT,r);
    if(n<=0) return "";
@@ -3323,6 +3373,7 @@ void DailyLimitTick()
 
 void OnTimer()
   {
+   SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
    // frozen chart objects and a silent log look identical to "someone turned it off". One line a
    // minute naming the last stage OnTick completed turns the next freeze into a one-glance
