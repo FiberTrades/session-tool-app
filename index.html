@@ -7064,6 +7064,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_missed': "Missed: {DAYS}.",
       'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
       'commit.adherence_offplan_showed': "Showed up on {N} day(s) you'd said you'd rest, without trading.",
+      'commit.this_label': "Days I've committed to this week",
+      'commit.this_hint': "Set last week and fixed until this one ends — the greetings, live tab and sounds hold you to it. Trade a day that isn't here and it still counts; it just shows as off-plan.",
+      'commit.past_label': "Days I committed to trade this week",
+      'commit.past_hint': "What your adherence above was measured against.",
       'commit.next_label': "Days I'm committing to next week",
       'commit.next_hint': "Lock in the days you'll trade. These override your default for that week \u2014 the greetings, live tab and sounds will hold you to it.",
       'commit.board_note': "How well you keep this feeds your points on the community leaderboard.",
@@ -8569,6 +8573,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'commit.adherence_missed': "Faltaste: {DAYS}.",
       'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
       'commit.adherence_offplan_showed': "Estuviste presente {N} d\u00eda(s) que dijiste que descansar\u00edas, sin operar.",
+      'commit.this_label': "D\u00edas que me he comprometido a operar esta semana",
+      'commit.this_hint': "Fijados la semana pasada y bloqueados hasta que termine esta \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo. Si operas un d\u00eda que no est\u00e1 aqu\u00ed, cuenta igual; solo aparece como fuera del plan.",
+      'commit.past_label': "D\u00edas que me compromet\u00ed a operar esta semana",
+      'commit.past_hint': "Con esto se midi\u00f3 tu cumplimiento de arriba.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
       'commit.next_hint': "Fija los d\u00edas que operar\u00e1s. Anulan tu ajuste por defecto esa semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo.",
       'commit.board_note': "Lo bien que lo cumplas suma a tus puntos en la clasificaci\u00f3n de la comunidad.",
@@ -26235,18 +26243,38 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // the synced journal and verifies kept days against EA-verified trades, so nothing to push.
       // (2) Next week's commitment picker. Default = existing next-week commitment, else the
       // global Days-I-trade setting, else Mon–Fri.
-      const preset = (getWeekCommitment(nextKey))
-        || ((data.settings && Array.isArray(data.settings.tradingDays) && data.settings.tradingDays.length) ? data.settings.tradingDays.map(Number) : [1, 2, 3, 4, 5]);
-      const chips = order.map(function (d) {
-        const on = preset.indexOf(d) >= 0;
-        return `<button type="button" class="settings-day-btn${on ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
+      // Mid-week the panel is a RECORD, not a form: it shows what you committed to on Monday, with
+      // the chips inert. Only once the week has finished does it become next week's picker. Before
+      // this, the review always offered an editable set of days, which read as "change your plan"
+      // at exactly the moment the plan was supposed to be holding you to something.
+      const _over = _weekIsOver();
+      // This week's days are ALWAYS shown, and always frozen — mid-week as the plan you are being
+      // held to, afterwards as the record the adherence figure above was measured against. The
+      // chips are `disabled`, not merely unwired, so they cannot be reached by keyboard either.
+      const thisPreset = (getWeekCommitment(thisWeekKey)) || _settingsTradingDays();
+      const lockedChips = order.map(function (d) {
+        return `<button type="button" class="settings-day-btn${thisPreset.indexOf(d) >= 0 ? ' on' : ''}" disabled data-day="${d}" style="cursor:default;opacity:0.72;">${dayLabel(d)}</button>`;
       }).join('');
+      // Next week's picker appears ONLY once the week has finished. Offering it mid-week read as
+      // "change your plan" at exactly the moment the plan was supposed to be holding you to it.
+      let nextBlock = '';
+      if (_over) {
+        const preset = (getWeekCommitment(nextKey)) || _settingsTradingDays();
+        const chips = order.map(function (d) {
+          return `<button type="button" class="settings-day-btn${preset.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
+        }).join('');
+        nextBlock = `<div style="margin-top:22px;">
+            <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.next_label')}</div>
+            <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t('commit.next_hint')}</div>
+            <div id="rfx-commit-days" class="settings-days-row">${chips}</div>
+          </div>`;
+      }
       wrap.innerHTML = adhHtml + `<div>
-          <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.next_label')}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t('commit.next_hint')}</div>
-          <div id="rfx-commit-days" class="settings-days-row">${chips}</div>
-          <div style="font-size:11px;color:var(--text-dim);margin-top:10px;line-height:1.5;">${t('commit.board_note')}</div>
-        </div>`;
+          <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t(_over ? 'commit.past_label' : 'commit.this_label')}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t(_over ? 'commit.past_hint' : 'commit.this_hint')}</div>
+          <div class="settings-days-row">${lockedChips}</div>
+        </div>${nextBlock}
+        <div style="font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.5;">${t('commit.board_note')}</div>`;
       const daysWrap = document.getElementById('rfx-commit-days');
       if (daysWrap) {
         daysWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
@@ -28459,6 +28487,31 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   function _dayActivated(dateKey) {
     try { return (data.activatedDays || []).some(x => String(x) === String(dateKey)); } catch (e) { return false; }
   }
+  // Has the trading week finished? Decides whether the weekly review shows this week's plan
+  // (frozen) or next week's picker (editable). Mon-first ordering, because a Sunday trader's week
+  // ends on Sunday and a plain dow comparison would call that the earliest day of the week.
+  function _weekIsOver() {
+    try {
+      const order = [1, 2, 3, 4, 5, 6, 0];
+      const dow = new Date().getDay();
+      let lastI = order.indexOf(_lastTradingDayOfWeek());
+      // A day switched on by turning up extends the week: the review must not flip to "next week"
+      // while you are still mid-session on a day you decided to trade after all.
+      try { if (_dayActivated(todayDateStr())) lastI = Math.max(lastI, order.indexOf(dow)); } catch (e) {}
+      const nowI = order.indexOf(dow);
+      if (nowI > lastI) return true;
+      if (nowI < lastI) return false;
+      // On the final day itself the week closes when the last session window has passed.
+      const ss = (typeof getSessions === 'function') ? getSessions() : [];
+      if (!ss.length) return true;
+      const now = new Date();
+      const nowMins = now.getHours() * 60 + now.getMinutes();
+      let latest = 0;
+      for (let i = 0; i < ss.length; i++) latest = Math.max(latest, _mins(ss[i].end));
+      return nowMins >= latest;
+    } catch (e) { return false; }
+  }
+  try { window.__stWeekIsOver = _weekIsOver; } catch (e) {}
   function _isTradingDay(dow) {
     if (dow == null) { try { dow = new Date().getDay(); } catch (e) { dow = 1; } }
     // Only TODAY can be activated this way, so _lastTradingDayOfWeek() and the rest keep reading
