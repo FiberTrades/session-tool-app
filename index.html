@@ -52848,7 +52848,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function Pf(p){ var x=xOfF(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
   /* Works for mouse AND touch: a TouchEvent has no clientX of its own, the coordinates live on
      touches[0] (or changedTouches[0] once the finger has lifted). */
-  function evXY(e){ var r=chartEl.getBoundingClientRect();
+  /* The chart's box, cached for a frame. getBoundingClientRect FORCES the browser to recalculate
+     style and layout before it can answer, and evXY is on the pointer path - twice per event, since
+     toPf calls it again. At the 800-1000 events a second a gaming mouse produces that is up to two
+     thousand forced layouts a second, and none of it shows up as a long task or as JS time, which
+     is why every measurement of OUR code came back at a fraction of a millisecond while frames
+     arrived 50ms apart. The chart cannot move within a frame, so asking once per frame is not an
+     approximation - it is the same answer, obtained without stalling the pipeline. */
+  var _rcAt=0,_rcV=null;
+  function chartRect(){
+    var n=(window.performance&&performance.now)?performance.now():Date.now();
+    if(!_rcV||(n-_rcAt)>12){ _rcV=chartEl.getBoundingClientRect(); _rcAt=n; }
+    return _rcV; }
+  function _rcDrop(){ _rcV=null; }
+  function evXY(e){ var r=chartRect();
     var pt=e; if(e && e.touches && e.touches.length) pt=e.touches[0];
     else if(e && e.changedTouches && e.changedTouches.length) pt=e.changedTouches[0];
     return {x:pt.clientX-r.left,y:pt.clientY-r.top}; }
@@ -52903,7 +52916,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(!h){ hideCtx(); return; }
     if(!(S.selMulti&&S.selMulti.length&&S.selMulti.indexOf(h.i)>=0)){ S.sel=h.i; clearMulti(); }
     updDel(); showCtx(xy.x,xy.y); }catch(_){} },true);
-  function sizeO(){ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
+  /* Layout changed if the canvas had to be resized, so the cached box is stale. */
+  function sizeO(){ _rcDrop();
+ var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
     // Right end of the box/lines: the exit candle if exited, else the current frontier candle. Both are
     // real bar coordinates, which sit LEFT of the rightOffset gap where LWC overlays the price-scale
@@ -53836,7 +53851,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* Releasing Ctrl without moving the mouse must drop the marker, or it sits there implying a snap
      that is no longer armed. */
   window.addEventListener('keyup',function(e){ if(!S||e.key!=='Control') return; if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} } });
-  window.addEventListener('resize',function(){ if(S){ _newsCardReset(); draw(); } });
+  window.addEventListener('resize',function(){ _rcDrop(); if(S){ _newsCardReset(); draw(); } });
 
   // launcher — delegated, capture phase so the row's own click doesn't also fire
   document.addEventListener('click',function(e){ var b=e.target.closest?e.target.closest('.strp-play[data-replay]'):null; if(!b) return; e.stopPropagation(); e.preventDefault(); var id=b.getAttribute('data-replay'); try{ var t=(typeof findTradeById==='function')?findTradeById(id):null; if(t) open(t); }catch(_){} },true);
