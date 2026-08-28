@@ -3,6 +3,17 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<!-- School popout (?school=1). This has to run before ANY paint: the window opens on the full app,
+     which then boots, renders, and only afterwards gets covered by the course - a visible flash of
+     the wrong screen. Hiding the body up front and letting only #stsc show through means the popout
+     never displays anything but the School. visibility rather than display so layout still resolves
+     normally underneath and nothing has to be re-measured when it is released on close. -->
+<style>
+  html.st-school-only, html.st-school-only body { background:#0d0e10; }
+  html.st-school-only body { visibility:hidden; }
+  html.st-school-only body #stsc { visibility:visible; }
+</style>
+<script>try{ if(/[?&]school=1(&|$)/.test(location.search)) document.documentElement.classList.add('st-school-only'); }catch(e){}</script>
 <script>
 /* A GIF is already showing at full size and it animates - opening it in the zoom
    viewer gains nothing, so GIFs are treated as not clickable. */
@@ -44777,7 +44788,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if(next) openLesson(next);
       else G('stsc-body').innerHTML='<p>'+T('Lessons are on their way.','Las lecciones estan en camino.')+'</p>';
     }
-    function close(){ var o=G('stsc'); if(o) o.classList.remove('open'); bodyScrollLock(false); }
+    function close(){
+      var o=G('stsc'); if(o) o.classList.remove('open');
+      bodyScrollLock(false);
+      /* A popout is hidden down to the overlay. Closing there would leave an empty window, so
+         release the mask and let the app behind it appear. */
+      try{ document.documentElement.classList.remove('st-school-only'); }catch(e){}
+    }
 
     return { open:open, close:close };
   })();
@@ -44785,9 +44802,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Opened as a popout? Go straight in, and full-bleed, since that window has no other job. */
   try{
     if(/[?&]school=1(&|$)/.test(location.search)){
-      var _scGo=function(){ try{ STSCHOOL.open(); var e=document.getElementById('stsc'); if(e) e.classList.add('full'); }catch(_){} };
-      if(document.readyState==='complete') setTimeout(_scGo,300);
-      else window.addEventListener('load', function(){ setTimeout(_scGo,300); });
+      var _scGo=function(){
+        try{
+          STSCHOOL.open();
+          var e=document.getElementById('stsc');
+          if(e) e.classList.add('full');
+          var f=document.getElementById('stsc-full');
+          if(f) f.classList.add('on');
+        }catch(_){}
+      };
+      /* On DOMContentLoaded, not load: waiting for images and fonts is what left the app on
+         screen long enough to be seen. The body is hidden until #stsc exists, so opening early
+         costs nothing. */
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', _scGo);
+      else _scGo();
     }
   }catch(e){}
 
