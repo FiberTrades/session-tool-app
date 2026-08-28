@@ -45446,10 +45446,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'That second row is the one that earns its keep. A trade that risked triple and won still shows',
       'as an outsized R, so the ledger records what actually happened rather than what it felt like.',
       '',
-      ':::warn One R is a floor, not an average',
-      'If your losses regularly come in worse than `-1R`, R has stopped describing your trading. Either',
-      'the size was wrong or the stop was not respected, and every number built on top of it is now',
-      'flattering you.',
+      ':::warn One R is the floor, and costs sit just below it',
+      'Every R figure in this app is **net** of commission and spread, so a stop that did exactly its',
+      'job still prints a little worse than `-1R`. That gap is the cost of doing business, and it is',
+      'normal.',
+      '',
+      'What matters is its size. A tenth of an R is costs. Losses landing at `-1.5R` and beyond are not',
+      'costs - that is a stop that was moved, missed, or a size that was wrong, and every number built',
+      'on top of it is now flattering you.',
       ':::',
       '',
       '## Where you will meet it',
@@ -45497,10 +45501,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       'apareciendo con una R desproporcionada, así que el registro guarda lo que pasó de verdad y no',
       'lo que pareció.',
       '',
-      ':::warn Una R es un suelo, no una media',
-      'Si tus pérdidas salen con frecuencia peores que `-1R`, la R ha dejado de describir tu operativa.',
-      'O el tamaño estaba mal o no se respetó el stop, y todos los números construidos encima te están',
-      'halagando.',
+      ':::warn Una R es el suelo, y los costes quedan justo por debajo',
+      'Todas las cifras en R de esta aplicación son **netas** de comisión y spread, así que un stop que',
+      'hizo exactamente su trabajo marca igualmente algo peor que `-1R`. Esa diferencia es el coste de',
+      'operar, y es normal.',
+      '',
+      'Lo que importa es su tamaño. Una décima de R son costes. Pérdidas que aterrizan en `-1,5R` o peor',
+      'no son costes: es un stop que se movió, que no se respetó, o un tamaño equivocado, y todos los',
+      'números construidos encima te están halagando.',
       ':::',
       '',
       '## Dónde te la vas a encontrar',
@@ -47244,10 +47252,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
 
     /* 2.3 in the member's own results. Uses the app's own R helper so this can never disagree
-       with the statistics screens. */
+       with the statistics screens - which also means every figure here is NET of commission and
+       spread, because tradeNetPL subtracts them before the division. A stop that did exactly its
+       job therefore prints a little worse than -1R, so the panel reports the same worst trade
+       both ways and only calls it a sizing problem when it is one before costs. */
     function rDistPanel(){
-      var v=[];
-      allTrades().forEach(function(t){ if(t&&t.result){ var x=rOf(t); if(isFinite(x)) v.push(x); } });
+      var v=[], g=[], drag=[];
+      allTrades().forEach(function(t){
+        if(!t||!t.result) return;
+        var x=rOf(t); if(!isFinite(x)) return;
+        v.push(x);
+        var risk=parseFloat(t.risk), c=Math.abs(parseFloat(t.costs)||0);
+        if(!isNaN(risk)&&risk>0&&c>0){ g.push(x + c/risk); drag.push(c/risk); }
+        else { g.push(x); }
+      });
       if(v.length<3){
         return examplePanel(
           [[T('Trades in R','Operaciones en R'),'30'],
@@ -47261,23 +47279,40 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             'Registra algunas operaciones con <b>resultado</b> y esto pasará a ser tu propia distribución, en R.'));
       }
       var best=Math.max.apply(null,v), worst=Math.min.apply(null,v);
+      var worstGross=Math.min.apply(null,g);
       var sum=0; v.forEach(function(x){ sum+=x; });
+      var avgDrag=0; if(drag.length){ drag.forEach(function(x){ avgDrag+=x; }); avgDrag/=drag.length; }
       var rows=[
         [T('Trades in R','Operaciones en R'), String(v.length)],
         [T('Best','La mejor'), (best>0?'+':'')+best.toFixed(1)+'R'],
-        [T('Worst','La peor'), worst.toFixed(1)+'R'],
-        [T('Average','Media'), (sum/v.length>0?'+':'')+(sum/v.length).toFixed(2)+'R']
+        [T('Worst, after costs','La peor, con costes'), worst.toFixed(2)+'R']
       ];
-      var good=(worst>=-1.25);
+      if(drag.length){
+        rows.push([T('Worst, before costs','La peor, sin costes'), worstGross.toFixed(2)+'R']);
+        rows.push([T('Costs, per trade','Costes, por operación'), avgDrag.toFixed(2)+'R']);
+      }
+      rows.push([T('Average','Media'), (sum/v.length>0?'+':'')+(sum/v.length).toFixed(2)+'R']);
+
+      /* Judged on the gross figure, because costs are not a discipline problem. -1.1R gross is
+         still inside the rounding of a stop that filled slightly past its price. */
+      var clean=(worstGross>=-1.1);
+      var msg;
+      if(clean && drag.length){
+        msg=T('Your worst trade reads '+worst.toFixed(2)+'R, and '+worstGross.toFixed(2)+'R before commission and spread. The stop did its job - costs are what carried it past one R, and every R figure in this app is net of them.',
+              'Tu peor operación marca '+worst.toFixed(2)+'R, y '+worstGross.toFixed(2)+'R antes de comisión y spread. El stop hizo su trabajo: los costes son los que la llevaron más allá de una R, y todas las cifras en R de esta aplicación son netas de costes.');
+      } else if(clean){
+        msg=T('Your worst trade came in at '+worst.toFixed(2)+'R. The floor held, which is what makes the rest of these numbers worth reading.',
+              'Tu peor operación salió en '+worst.toFixed(2)+'R. El suelo aguantó, y eso es lo que hace que el resto de estos números merezcan leerse.');
+      } else if(drag.length){
+        msg=T('Your worst trade reads '+worst.toFixed(2)+'R, and still '+worstGross.toFixed(2)+'R before costs. Costs explain part of it, not that much - the stop was moved, missed, or the size was wrong.',
+              'Tu peor operación marca '+worst.toFixed(2)+'R, y sigue siendo '+worstGross.toFixed(2)+'R antes de costes. Los costes explican una parte, no tanto: el stop se movió, no se respetó, o el tamaño era incorrecto.');
+      } else {
+        msg=T('Your worst trade came in at '+worst.toFixed(2)+'R. One R is meant to be the floor, so the stop was either moved, missed, or the size was wrong. Log your costs and this panel will separate the two.',
+              'Tu peor operación salió en '+worst.toFixed(2)+'R. Una R debería ser el suelo, así que el stop se movió, no se respetó, o el tamaño era incorrecto. Registra tus costes y este panel separará las dos cosas.');
+      }
       return '<div class="stsc-panel"><div class="stsc-panel-h">'+T('Check against my data','Comprobar con mis datos')+'</div>'
         + rows.map(function(r){ return '<div class="stsc-row"><span>'+esc(r[0])+'</span><b>'+esc(r[1])+'</b></div>'; }).join('')
-        + '<div class="stsc-verdict '+(good?'good':'bad')+'">'
-        + esc(good
-            ? T('Your worst trade came in at '+worst.toFixed(1)+'R. The floor held, which is what makes the rest of these numbers worth reading.',
-                'Tu peor operación salió en '+worst.toFixed(1)+'R. El suelo aguantó, y eso es lo que hace que el resto de estos números merezcan leerse.')
-            : T('Your worst trade came in at '+worst.toFixed(1)+'R. One R is supposed to be the floor, so something was either sized wrong or left to run past its stop.',
-                'Tu peor operación salió en '+worst.toFixed(1)+'R. Una R debería ser el suelo, así que algo se dimensionó mal o se dejó correr más allá de su stop.'))
-        + '</div></div>';
+        + '<div class="stsc-verdict '+(clean?'good':'bad')+'">'+esc(msg)+'</div></div>';
     }
 
     /* 2.4 needs whole days, not trades, so this groups by date and sums R. */
@@ -48409,9 +48444,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        +'.stsc-sl::-webkit-slider-thumb{-webkit-appearance:none;width:17px;height:17px;border-radius:50%;'
        +'background:#ff2d8f;cursor:pointer;border:2px solid #0f0e13;}'
        +'.stsc-sl::-moz-range-thumb{width:17px;height:17px;border-radius:50%;background:#ff2d8f;cursor:pointer;border:2px solid #0f0e13;}'
-       +'.stsc-fig-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px;margin-top:14px;}'
+       +'.stsc-fig-grid{display:flex;flex-wrap:wrap;gap:10px;margin-top:14px;}'
        +'.stsc-fig-cell{background:rgba(255,255,255,.03);border:1px solid #221f2b;border-radius:8px;'
-       +'padding:10px 12px;display:flex;flex-direction:column;}'
+       +'padding:10px 12px;display:flex;flex-direction:column;flex:1 1 auto;min-width:104px;}'
        +'.stsc-fig-cell span{display:block;color:#8a8792;font-size:10px;letter-spacing:.08em;text-transform:uppercase;margin-bottom:5px;}'
        +'.stsc-fig-cell b{font-family:"AppNum","DM Mono",monospace;font-size:17px;color:#fff;font-weight:700;margin-top:auto;}'
        +'.stsc-fig-cell.accent b{color:#ff2d8f;}'
