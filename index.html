@@ -47910,14 +47910,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           rows+='<div class="stsc-crow"><span>'+T(SS[i][0],SS[i][1])+'</span>'
               + '<div class="stsc-track" data-row="'+i+'"></div></div>';
         }
+        /* Opens on the reader's own clock, at the hour it is for them right now, because
+           "is London open yet" is a question about their afternoon and not about UTC. */
+        var startHour=12;
+        try{ startHour=new Date().getHours(); }catch(e){}
         return '<div class="stsc-fig" data-fig="clock">'
-          +'<div class="stsc-fig-h"><span>'+T('Scrub the day','Recorre el día')+'</span><em>UTC</em></div>'
+          +'<div class="stsc-fig-h"><span>'+T('Scrub the day','Recorre el día')+'</span>'
+            +'<em data-o="tz"></em></div>'
           +'<div class="stsc-fig-b">'
-            +'<div class="stsc-fig-big" data-o="hr">13:00</div>'
+            +'<div class="stsc-fig-big" data-o="hr">12:00</div>'
             +'<div class="stsc-fig-sub" data-o="open"></div>'
-            +'<input type="range" class="stsc-sl" data-i="hr" min="0" max="23" step="1" value="13">'
+            +'<input type="range" class="stsc-sl" data-i="hr" min="0" max="23" step="1" value="'+startHour+'">'
             +'<div class="stsc-clock">'+rows+'</div>'
             +'<div class="stsc-scale"><span>00</span><span>06</span><span>12</span><span>18</span><span>24</span></div>'
+            +'<div class="stsc-togs">'
+              +'<button class="stsc-tog on" data-z="local">'+T('My time','Mi hora')+'</button>'
+              +'<button class="stsc-tog" data-z="utc">UTC</button>'
+            +'</div>'
           +'</div></div>';
       }
       return '';
@@ -48173,31 +48182,64 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
       root.querySelectorAll('.stsc-fig[data-fig="clock"]').forEach(function(f){
         var sl=f.querySelector('[data-i="hr"]');
-        // Plain UTC opening hours. Labelled UTC on the figure because a member's own clock is
-        // not knowable here, and the lesson says outright that DST shifts these by an hour.
+        /* The opening hours themselves are fixed and stated in UTC. What changes is the clock
+           they are drawn against: the offset comes from the browser, so it already includes
+           whatever daylight saving the reader is currently in. */
         var SESS=[{s:22,e:7},{s:0,e:9},{s:8,e:17},{s:13,e:22}];
         var NAMES=[['Sydney','Sídney'],['Tokyo','Tokio'],['London','Londres'],['New York','Nueva York']];
         var OVL=[13,17];                          // London and New York, the busiest stretch
+        var zone='local';
         function o(k){ return f.querySelector('[data-o="'+k+'"]'); }
-        function span(a,b,hot){ return '<i class="'+(hot?'hot':'')+'" style="left:'+(a/24*100)+'%;width:'+((b-a)/24*100)+'%"></i>'; }
-        function isOpen(x,h){ return x.s<x.e ? (h>=x.s&&h<x.e) : (h>=x.s||h<x.e); }
+        function offset(){
+          if(zone==='utc') return 0;
+          try{ return -new Date().getTimezoneOffset()/60; }catch(e){ return 0; }
+        }
+        function tzName(){
+          if(zone==='utc') return 'UTC';
+          var z=null;
+          try{ z=Intl.DateTimeFormat().resolvedOptions().timeZone; }catch(e){}
+          if(z && z.indexOf('/')>=0) return z.split('/').pop().replace(/_/g,' ');
+          if(z) return z;
+          var v=offset();
+          return 'UTC'+(v>=0?'+':'')+(Math.round(v*10)/10);
+        }
+        function wrap(v){ v=v%24; return v<0 ? v+24 : v; }
+        function span(a,b,hot){
+          /* a and b are already on the displayed clock and may run past midnight, so a band is
+             drawn as one piece or as two, whichever it needs. */
+          var out='';
+          function piece(x,y){ return '<i class="'+(hot?'hot':'')+'" style="left:'+(x/24*100)+'%;width:'+((y-x)/24*100)+'%"></i>'; }
+          if(a<=b){ out+=piece(a,b); } else { out+=piece(a,24); out+=piece(0,b); }
+          return out;
+        }
+        function shown(x){ var off=offset(); return { s:wrap(x.s+off), e:wrap(x.e+off) }; }
+        function isOpenUtc(x,u){ return x.s<x.e ? (u>=x.s&&u<x.e) : (u>=x.s||u<x.e); }
         function draw(){
           var h=parseInt(sl.value,10);
+          var u=wrap(h-offset());                 // the scrub hour, back in UTC, to test against
           o('hr').textContent=(h<10?'0':'')+h+':00';
+          o('tz').textContent=tzName();
           f.querySelectorAll('.stsc-track').forEach(function(tr,i){
-            var x=SESS[i], html='';
-            if(x.s<x.e) html+=span(x.s,x.e,false); else { html+=span(x.s,24,false); html+=span(0,x.e,false); }
-            if(i===2||i===3) html+=span(OVL[0],OVL[1],true);
+            var d=shown(SESS[i]), html=span(d.s,d.e,false);
+            if(i===2||i===3){ var ov=shown({s:OVL[0],e:OVL[1]}); html+=span(ov.s,ov.e,true); }
             html+='<u style="left:'+(h/24*100)+'%"></u>';
             tr.innerHTML=html;
           });
           var on=[];
-          SESS.forEach(function(x,i){ if(isOpen(x,h)) on.push(T(NAMES[i][0],NAMES[i][1])); });
-          var overlap=(h>=OVL[0]&&h<OVL[1]);
+          SESS.forEach(function(x,i){ if(isOpenUtc(x,u)) on.push(T(NAMES[i][0],NAMES[i][1])); });
+          var overlap=isOpenUtc({s:OVL[0],e:OVL[1]}, u);
           o('open').textContent = (on.length ? T('Open: ','Abierto: ')+on.join(', ') : T('Nothing open.','Nada abierto.'))
             + (overlap ? T('  — London and New York together, the busiest hours of the day.',
                            '  — Londres y Nueva York a la vez, las horas de más movimiento del día.') : '');
         }
+        f.querySelectorAll('.stsc-tog[data-z]').forEach(function(b){
+          b.addEventListener('click', function(){
+            f.querySelectorAll('.stsc-tog[data-z]').forEach(function(x){ x.classList.remove('on'); });
+            b.classList.add('on');
+            zone=b.getAttribute('data-z');
+            draw();
+          });
+        });
         sl.addEventListener('input', draw); draw();
       });
     }
