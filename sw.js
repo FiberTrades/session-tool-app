@@ -130,6 +130,16 @@ self.addEventListener('message', (event) => {
 });
 
 
+// Which DM conversation the page is currently showing, if any. The page keeps this in step:
+// it sets a name when a thread is opened and clears it on close, on blur and whenever the app
+// is hidden. Held in memory on purpose - if the worker is evicted this resets to null and the
+// notification is shown, which is the safe way round to fail.
+let dmViewName = null;
+self.addEventListener('message', (e) => {
+  const d = (e && e.data) || {};
+  if (d.type === 'st-dm-view') dmViewName = d.name || null;
+});
+
 // ---- Web Push: show a notification when a push arrives (mentions, DMs, calls) ----
 // Without this, an incoming 1:1 call push arrives but nothing is shown, so a
 // locked/backgrounded phone never rings.
@@ -149,7 +159,22 @@ self.addEventListener('push', (event) => {
     requireInteraction: (data.requireInteraction != null) ? data.requireInteraction : isCall
   };
   if (data.icon) options.icon = data.icon;
-  event.waitUntil(self.registration.showNotification(title, options));
+  event.waitUntil((async () => {
+    // Reading a conversation is not a moment to be told about it. Suppress only when the app
+    // is actually focused AND the message is from the person whose thread is on screen - a DM
+    // from anyone else, or one arriving while you are elsewhere in the app or away from it
+    // entirely, still notifies. Calls are never suppressed.
+    if (dmViewName && !isCall) {
+      try {
+        const cs = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+        if (cs.some((c) => c.focused)) {
+          const t = String(title || '').toLowerCase();
+          if (t.indexOf(String(dmViewName).toLowerCase()) === 0) return;
+        }
+      } catch (e) {}
+    }
+    return self.registration.showNotification(title, options);
+  })());
 });
 
 // Focus an existing tab (or open one) when a notification is tapped.

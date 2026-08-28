@@ -44370,6 +44370,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // the channel but cannot clear the rendered thread without losing your place, so open()
     // uses this to genuinely re-enter the conversation rather than leaving a dead one on screen.
     var lastPartner=null;
+    // Tell the service worker which conversation is on screen, so a push from THAT person is
+    // not raised while you are looking straight at their messages. Anyone else, or any message
+    // arriving while you are elsewhere in the app or away from it, still notifies. Cleared
+    // whenever the tab is hidden: hidden means you are not reading it.
+    function tellSW(name){
+      try{
+        if(!('serviceWorker' in navigator)) return;
+        navigator.serviceWorker.ready.then(function(reg){
+          var w=(navigator.serviceWorker.controller)||(reg&&reg.active);
+          if(w) w.postMessage({ type:'st-dm-view', name:name||null });
+        }).catch(function(){});
+      }catch(e){}
+    }
+    try{
+      document.addEventListener('visibilitychange', function(){
+        tellSW(document.hidden ? null : (partner && partner.name));
+      });
+      window.addEventListener('blur', function(){ tellSW(null); });
+      window.addEventListener('focus', function(){ tellSW(partner && partner.name); });
+    }catch(e){}
     var built=false, partner=null, msgs=[], seen={}, dmOldestTs=null, dmNoMoreOld=false, dmLoadingOld=false, dmOlderWired=false, chan=null, gchan=null, roster={}, threads=[], unread={}, menuId=null, rosterLoaded=false, editingId=null, _gifT=null, pendingFile=null, _pendUrl='', ov=false, ovA=null, ovB=null, replyTarget=null, dmReactions={};
 
     function injectCss(){
@@ -44612,7 +44632,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           return;
         }
       }catch(e){}
-      build(); ovA=null; ovB=null; G('stdm').classList.add('open','thread'); partner={id:pid,name:name||'Trader',avatar:avatar||''}; roster[pid]=roster[pid]||{name:partner.name,avatar:partner.avatar}; delete unread[pid]; try{ var _th=(threads||[]).filter(function(x){return x.partner_id===pid;})[0]; if(_th){ dmSeen[pid]=_th.last_body||''; saveDmSeen(); } }catch(_){} updateEnvelope(); editingId=null; G('stdm-title').textContent=partner.name; var _dcb=G('stdm-callbtn'); if(_dcb) _dcb.style.display='inline-flex'; var comp=G('stdm-composer'); if(comp) comp.style.display='flex'; var ta=G('stdm-input'); if(ta) ta.placeholder=window._stT('Message ','Mensaje a ')+partner.name; renderList(); loadMessages(); subscribeThread(); }
+      build(); ovA=null; ovB=null; G('stdm').classList.add('open','thread'); partner={id:pid,name:name||'Trader',avatar:avatar||''}; tellSW(partner.name); roster[pid]=roster[pid]||{name:partner.name,avatar:partner.avatar}; delete unread[pid]; try{ var _th=(threads||[]).filter(function(x){return x.partner_id===pid;})[0]; if(_th){ dmSeen[pid]=_th.last_body||''; saveDmSeen(); } }catch(_){} updateEnvelope(); editingId=null; G('stdm-title').textContent=partner.name; var _dcb=G('stdm-callbtn'); if(_dcb) _dcb.style.display='inline-flex'; var comp=G('stdm-composer'); if(comp) comp.style.display='flex'; var ta=G('stdm-input'); if(ta) ta.placeholder=window._stT('Message ','Mensaje a ')+partner.name; renderList(); loadMessages(); subscribeThread(); }
     function loadMessages(){ var A,B; if(ovA&&ovB){ A=ovA; B=ovB; } else if(partner){ A=me(); B=partner.id; } else return; seen={}; msgs=[]; dmOldestTs=null; dmNoMoreOld=false; dmLoadingOld=false; var pair='and(sender_id.eq.'+A+',recipient_id.eq.'+B+'),and(sender_id.eq.'+B+',recipient_id.eq.'+A+')'; sb.from('dm_messages').select('*').or(pair).order('created_at',{ascending:false}).limit(500).then(function(r){ var rows=(r&&r.data)||[]; if(rows.length<500) dmNoMoreOld=true; rows.reverse(); rows.forEach(function(x){seen[x.id]=true;}); msgs=rows; if(rows.length) dmOldestTs=rows[0].created_at; repaint(); loadDmReactions(); dmWireOlder(); }).catch(function(){ repaint(); }); }
     function dmLoadOlder(){ if(dmLoadingOld||dmNoMoreOld||!dmOldestTs) return; var A,B; if(ovA&&ovB){ A=ovA; B=ovB; } else if(partner){ A=me(); B=partner.id; } else return;
       var tk=(ovA&&ovB)?(ovA+'|'+ovB):(partner?partner.id:''); dmLoadingOld=true; var ts=dmOldestTs; var box=G('stdm-msgs'); var pH=box?box.scrollHeight:0, pT=box?box.scrollTop:0;
@@ -44712,7 +44732,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function initGlobal(){ build(); loadRosterOnce(); globalSub(); }
     function partners(){ var arr=[]; for(var id in roster){ if(id!==me()) arr.push({ id:id, name:roster[id].name, avatar:roster[id].avatar }); } arr.sort(function(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); }); return arr; }
     function ensureRoster(cb){ loadRosterOnce(cb); }
-    function close(){ var o=G('stdm'); if(o){ o.classList.remove('open'); o.classList.remove('thread'); } try{ if(chan) sb.removeChannel(chan); }catch(e){} chan=null; lastPartner=partner||lastPartner; partner=null; editingId=null; }
+    function close(){ var o=G('stdm'); if(o){ o.classList.remove('open'); o.classList.remove('thread'); } try{ if(chan) sb.removeChannel(chan); }catch(e){} chan=null; lastPartner=partner||lastPartner; partner=null; editingId=null; tellSW(null); }
 
     function relang(){
       try{ function _rt(id,attr,en,es){ var el=G(id); if(!el) return; if(attr==='text') el.textContent=window._stT(en,es); else el.setAttribute(attr,window._stT(en,es)); }
