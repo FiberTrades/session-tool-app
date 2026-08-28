@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.1"
+#property version   "7.2"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -815,16 +815,35 @@ void PlaceTrade()
         }
       if(fixTk>0 && realOpen>0 && g_pip>0)
         {
-         double wantSL=NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         double tol=g_pip*0.05;
+         // The TARGET is a distance you typed; the STOP is a level you picked off the chart.
+         // Only the target should follow the fill. This block used to re-anchor both, which
+         // fixed a 20-pip target filling as 19.8 but moved the stop 0.2-0.3 pips TOWARDS price
+         // on every slipped fill - putting it inside the structure it was deliberately placed
+         // beyond, where the wick that would have missed it now takes it out. A slightly wrong
+         // risk costs a fraction of an R; a stop moved into the noise costs the whole trade.
+         //
+         // The stop therefore stays exactly where it was drawn, and is pulled in ONLY when the
+         // fill was bad enough to widen it past the Max SL rail - which is the protection this
+         // block was actually written for.
+         double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         if(curSL>0 && g_maxSL>0)
+           {
+            double maxDist=g_maxSL*g_pip;
+            if(MathAbs(realOpen-curSL)>maxDist+tol)
+               wantSL=NormalizeDouble(realOpen-dir*maxDist,g_digits);
+           }
+         // R mode has to measure R from the fill to the stop that is ACTUALLY there, not the
+         // one that was asked for, or the target gets sized off a distance the trade never had.
+         double slNow=MathAbs(realOpen-wantSL);
          double wantTP=0.0;
          if(g_tpOn[0])
            {
-            double d2=(g_tpMode==TP_BY_RR) ? g_tpVal[0]*slPips*g_pip : g_tpVal[0]*g_pip;
+            double d2=(g_tpMode==TP_BY_RR) ? g_tpVal[0]*slNow : g_tpVal[0]*g_pip;
             wantTP=NormalizeDouble(realOpen+dir*d2,g_digits);
            }
          // Only talk to the broker if the fill actually moved something, and never set a
          // stop the broker will reject for sitting inside its minimum stop distance.
-         double tol=g_pip*0.05;
          bool needSL=(MathAbs(wantSL-curSL)>tol);
          bool needTP=(g_tpOn[0] && MathAbs(wantTP-curTP)>tol);
          if(needSL || needTP)
