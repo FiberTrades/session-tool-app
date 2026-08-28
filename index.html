@@ -44366,6 +44366,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function G(id){ return document.getElementById(id); }
     function me(){ return currentUser && currentUser.id; }
 
+    // Who the thread was on when the panel was last closed. close() tears down partner and
+    // the channel but cannot clear the rendered thread without losing your place, so open()
+    // uses this to genuinely re-enter the conversation rather than leaving a dead one on screen.
+    var lastPartner=null;
     var built=false, partner=null, msgs=[], seen={}, dmOldestTs=null, dmNoMoreOld=false, dmLoadingOld=false, dmOlderWired=false, chan=null, gchan=null, roster={}, threads=[], unread={}, menuId=null, rosterLoaded=false, editingId=null, _gifT=null, pendingFile=null, _pendUrl='', ov=false, ovA=null, ovB=null, replyTarget=null, dmReactions={};
 
     function injectCss(){
@@ -44375,7 +44379,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.stdm{position:fixed;inset:0;z-index:12300;background:rgba(0,0,0,.72);display:none;align-items:center;justify-content:center;padding:24px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}' +
         '.stdm.open{display:flex;}' +
         '.stdm-panel{width:860px;max-width:100%;height:82vh;max-height:680px;display:flex;background:#0d0e10;border:1px solid #2a2833;border-radius:12px;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.6);}' +
-        '.stdm-side{width:250px;flex:none;background:#0d0e10;display:flex;flex-direction:column;border-right:1px solid #2a2833;}' +
+        '.stdm-side{width:250px;flex:none;background:#0d0e10;display:flex;flex-direction:column;min-height:0;border-right:1px solid #2a2833;}' +
         '.stdm-side-head{height:48px;flex:none;display:flex;align-items:center;justify-content:space-between;padding:0 14px;color:#f4f3f6;font-weight:700;font-size:15px;border-bottom:1px solid #202020;background:#1B1A21;}' +
         '.stdm-x{background:none;border:none;color:#b7b4bf;font-size:24px;line-height:1;cursor:pointer;}' +
         '.stdm-x:hover{color:#fff;}' +
@@ -44387,7 +44391,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.stdm-fwd-list{display:flex;flex-direction:column;gap:4px;}' +
         '.stdm-fwd-row{display:flex;align-items:center;gap:10px;background:none;border:none;color:#f4f3f6;cursor:pointer;padding:7px 8px;border-radius:8px;font-size:14px;text-align:left;width:100%;}' +
         '.stdm-fwd-row:hover{background:#24222e;}' +
-        '.stdm-list{flex:1;overflow-y:auto;padding:8px;}' +
+        '.stdm-list{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:8px;}' +
         '.stdm-conv{display:flex;align-items:center;gap:10px;padding:8px;border-radius:6px;cursor:pointer;position:relative;}' +
         '.stdm-conv-x{position:absolute;right:4px;top:4px;opacity:0;border:none;background:transparent;color:#8a8792;cursor:pointer;font-size:15px;line-height:1;padding:2px 5px;border-radius:5px;transition:opacity .12s;}' +
         '.stdm-conv:hover .stdm-conv-x{opacity:1;}' +
@@ -44400,11 +44404,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         '.stdm-conv .cl{color:#8a8792;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
         '.stdm-conv .cd{width:9px;height:9px;border-radius:50%;background:#ff4d97;flex:none;}' +
         '.stdm-empty{color:#8a8792;font-size:13px;text-align:center;padding:24px 12px;}' +
-        '.stdm-main{flex:1;display:flex;flex-direction:column;min-width:0;background:#0d0e10;position:relative;}' +
+        '.stdm-main{flex:1;display:flex;flex-direction:column;min-width:0;min-height:0;background:#0d0e10;position:relative;}' +
         '.stdm-main-head{height:48px;flex:none;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid #202020;color:#f4f3f6;font-weight:700;font-size:15px;background:#1B1A21;}' +
         '.stdm-call{margin-left:auto;background:none;border:none;color:#b7b4bf;cursor:pointer;padding:6px;border-radius:8px;display:inline-flex;}.stdm-call:hover{background:#24222e;color:#4ecd8b;}.stdm-call svg{width:19px;height:19px;display:block;}' +
         '.stdm-back{display:none;background:none;border:none;color:#b7b4bf;font-size:22px;line-height:1;cursor:pointer;}' +
-        '.stdm-msgs{flex:1;overflow-y:auto;padding:14px 0 6px;}' +
+        '.stdm-msgs{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:14px 0 6px;}' +
         '.stdm-note{font-size:12px;color:#8a8792;padding:0 16px 4px;min-height:14px;flex:none;}' +
         '.stdm-welcome{padding:0 16px 16px;color:#b7b4bf;font-size:14px;}' +
         '.stdm-welcome h2{color:#f4f3f6;font-size:22px;margin:0 0 4px;}' +
@@ -44697,11 +44701,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function cancelDmReply(){ replyTarget=null; var bar=G('stdm-replybar'); if(bar){ bar.style.display='none'; bar.innerHTML=''; } }
     function dmModal(html){ var o=G('stdm')||document.body; var m=document.createElement('div'); m.className='stdm-modal'; m.innerHTML='<div class="stdm-modal-card">'+html+'</div>'; m.addEventListener('click', function(e){ if(e.target===m) m.remove(); }); o.appendChild(m); return m; }
     function openDmForward(msg){ if(!msg) return; var ppl=partners(); var rows=ppl.map(function(p){ return '<button class="stdm-fwd-row" data-id="'+esc(p.id)+'">'+avaHtml(p.avatar,p.name,'ca')+'<span>'+esc(p.name||'Trader')+'</span></button>'; }).join('')||'<div class="stdm-empty">No one to forward to.</div>'; var mo=dmModal('<h3 style="margin:0 0 10px;font-size:15px;">Forward to\u2026</h3><div class="stdm-fwd-list">'+rows+'</div>'); Array.prototype.forEach.call(mo.querySelectorAll('.stdm-fwd-row'),function(b){ b.addEventListener('click', function(){ var pid=b.getAttribute('data-id'); var pp=null; for(var i=0;i<ppl.length;i++){ if(ppl[i].id===pid){ pp=ppl[i]; break; } } forwardTo(pid, pp?pp.name:'', pp?pp.avatar:'', msg); mo.remove(); note('Forwarded.'); }); }); }
-    function open(){ build(); ov=false; ovA=null; ovB=null; var ovb=G('stdm-ov'); if(ovb){ ovb.style.display=(C().isDmMod&&C().isDmMod())?'':'none'; ovb.classList.remove('active'); } var st=G('stdm-side-title'); if(st) st.textContent=window._stT('Direct Messages','Mensajes directos'); loadRosterOnce(function(){ loadThreads(); }); globalSub(); G('stdm').classList.add('open'); G('stdm').classList.remove('thread'); }
+    function open(){ build(); ov=false; ovA=null; ovB=null; var ovb=G('stdm-ov'); if(ovb){ ovb.style.display=(C().isDmMod&&C().isDmMod())?'':'none'; ovb.classList.remove('active'); } var st=G('stdm-side-title'); if(st) st.textContent=window._stT('Direct Messages','Mensajes directos'); loadRosterOnce(function(){ loadThreads(); }); globalSub(); G('stdm').classList.add('open'); G('stdm').classList.remove('thread');
+      // On desktop .stdm-main is always visible, so a stale thread would sit there looking
+      // live - re-enter it properly. Below 720px it is display:none until .thread, so the
+      // conversation list is the right landing place and there is nothing stale to clear.
+      var wide=true; try{ wide=window.matchMedia('(min-width:721px)').matches; }catch(e){}
+      if(wide && lastPartner) openThread(lastPartner.id,lastPartner.name,lastPartner.avatar);
+      else { var _mb=G('stdm-msgs'); if(_mb) _mb.innerHTML=''; }
+    }
     function initGlobal(){ build(); loadRosterOnce(); globalSub(); }
     function partners(){ var arr=[]; for(var id in roster){ if(id!==me()) arr.push({ id:id, name:roster[id].name, avatar:roster[id].avatar }); } arr.sort(function(a,b){ return String(a.name||'').localeCompare(String(b.name||'')); }); return arr; }
     function ensureRoster(cb){ loadRosterOnce(cb); }
-    function close(){ var o=G('stdm'); if(o){ o.classList.remove('open'); o.classList.remove('thread'); } try{ if(chan) sb.removeChannel(chan); }catch(e){} chan=null; partner=null; editingId=null; }
+    function close(){ var o=G('stdm'); if(o){ o.classList.remove('open'); o.classList.remove('thread'); } try{ if(chan) sb.removeChannel(chan); }catch(e){} chan=null; lastPartner=partner||lastPartner; partner=null; editingId=null; }
 
     function relang(){
       try{ function _rt(id,attr,en,es){ var el=G(id); if(!el) return; if(attr==='text') el.textContent=window._stT(en,es); else el.setAttribute(attr,window._stT(en,es)); }
