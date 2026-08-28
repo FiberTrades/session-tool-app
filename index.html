@@ -48519,11 +48519,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       });
       box.innerHTML=h;
       box.querySelectorAll('[data-l]').forEach(function(el){
-        el.addEventListener('click', function(){ openLesson(el.getAttribute('data-l')); });
+        el.addEventListener('click', function(){ openLesson(el.getAttribute('data-l'), true); });
       });
     }
 
-    function openLesson(id){
+    /* Two different things scroll depending on where the course is mounted. Detached, the
+       pane is the scroller and resetting its scrollTop is enough. In the app the pane is static
+       and the PAGE scrolls, so scrollTop moves nothing - which is why the next lesson used to
+       open with the reader still sitting at the foot of the last one. There it has to scroll the
+       window to the top of the panel, allowing for the tabs row and the hero pinned above it. */
+    function toLessonTop(){
+      var ov=G('stsc'); if(!ov) return;
+      var body=G('stsc-body');
+      if(!ov.classList.contains('inline')){ if(body) body.scrollTop=0; return; }
+      var cs=getComputedStyle(document.documentElement);
+      var tabs=parseFloat(cs.getPropertyValue('--st-tabs-h'))||56;
+      var hero=document.querySelector('#page-vault .vault-hero');
+      var pad=(hero?hero.getBoundingClientRect().height:0)+14;
+      var y=ov.getBoundingClientRect().top+window.pageYOffset-tabs-pad;
+      try{ window.scrollTo({ top:Math.max(0,y), behavior:'smooth' }); }
+      catch(e){ window.scrollTo(0, Math.max(0,y)); }
+    }
+
+    /* `scroll` is opt-in rather than automatic. Navigating to a lesson should start you at the
+       top of it; re-rendering the one you are already reading should not move you at all, which
+       matters for the quiz retry and for a language switch mid-lesson. */
+    function openLesson(id, scroll){
       var l=find(id); if(!l||!l.body) return;
       if(!unlocked(id)) return;
       cur=id;
@@ -48586,12 +48607,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
       var mt2=G('stsc-mtitle'); if(mt2) mt2.textContent=l.id+' '+lt(l);
       var body=G('stsc-body');
-      body.innerHTML='<div class="stsc-doc">'+h+'</div>'; body.scrollTop=0;
+      body.innerHTML='<div class="stsc-doc">'+h+'</div>';
+      if(scroll) toLessonTop();
 
       wireFigs(body);
       if(l.quiz && l.quiz.length) wireQuiz(l);
       var nx=body.querySelector('[data-next]');
-      if(nx) nx.addEventListener('click', function(){ openLesson(nx.getAttribute('data-next')); });
+      if(nx) nx.addEventListener('click', function(){ openLesson(nx.getAttribute('data-next'), true); });
       renderList();
     }
 
@@ -48728,7 +48750,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var w=written(), next=null;
       for(var i=0;i<w.length;i++){ if(!passed(w[i].id)){ next=w[i].id; break; } }
       if(!next && w.length) next=w[w.length-1].id;
-      if(next) openLesson(next);
+      if(next) openLesson(next, true);
       else G('stsc-body').innerHTML='<p>'+T('Lessons are on their way.','Las lecciones estan en camino.')+'</p>';
     }
     /* Mount the course into a host element instead of opening it as an overlay. Same module,
@@ -48745,7 +48767,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var w=written(), next=null;
       for(var i=0;i<w.length;i++){ if(!passed(w[i].id)){ next=w[i].id; break; } }
       if(!next && w.length) next=w[w.length-1].id;
-      if(next) openLesson(next);
+      if(next) openLesson(next, true);
     }
     function unmount(){
       var o=G('stsc'); if(!o) return;
