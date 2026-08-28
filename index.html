@@ -44590,17 +44590,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         + verdict + '</div>';
     }
 
+    /* Consecutive lines form ONE paragraph; a blank line ends it. The first version emitted a <p>
+       per source line, and the lesson bodies are hard-wrapped at about 95 characters, so every
+       wrapped line became its own paragraph - which is what made the text look broken up and
+       stranded against the left of a wide window. */
     function md(src){
-      var out=[], list=false;
+      var out=[], list=false, para=[];
+      function flush(){ if(para.length){ out.push('<p>'+para.join(' ')+'</p>'); para=[]; } }
+      function endList(){ if(list){ out.push('</ul>'); list=false; } }
       esc(src).split('\n').forEach(function(line){
         var b=line.replace(/\*\*(.+?)\*\*/g,'<b>$1</b>');
-        if(/^# /.test(b)){ if(list){out.push('</ul>');list=false;} out.push('<h2>'+b.slice(2)+'</h2>'); return; }
-        if(/^## /.test(b)){ if(list){out.push('</ul>');list=false;} out.push('<h3>'+b.slice(3)+'</h3>'); return; }
-        if(/^- /.test(b)){ if(!list){out.push('<ul>');list=true;} out.push('<li>'+b.slice(2)+'</li>'); return; }
-        if(list){ out.push('</ul>'); list=false; }
-        if(b.trim()) out.push('<p>'+b+'</p>');
+        if(/^# /.test(b)){ flush(); endList(); out.push('<h2>'+b.slice(2)+'</h2>'); return; }
+        if(/^## /.test(b)){ flush(); endList(); out.push('<h3>'+b.slice(3)+'</h3>'); return; }
+        if(/^- /.test(b)){ flush(); if(!list){ out.push('<ul>'); list=true; } out.push('<li>'+b.slice(2)+'</li>'); return; }
+        if(!b.trim()){ flush(); endList(); return; }
+        endList(); para.push(b.trim());
       });
-      if(list) out.push('</ul>');
+      flush(); endList();
       return out.join('');
     }
 
@@ -44637,7 +44643,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        +'.stsc-les.soon:hover{background:none;color:#b7b4bf;}'
        +'.stsc-tick{width:16px;flex:none;text-align:center;font-size:12px;}'
        +'.stsc-main{flex:1;min-width:0;min-height:0;display:flex;flex-direction:column;}'
+       /* Same grip as the community sidebar: same width, same colour, same cursor. */
+       +'.stsc-grip{flex:none;width:3px;cursor:col-resize;background:rgba(255,45,143,0.45);transition:background .15s;align-self:stretch;}'
+       +'.stsc-grip:hover,.stsc-grip.drag{background:rgba(255,45,143,0.85);}'
+       +'.stsc-mhead{height:48px;flex:none;display:flex;align-items:center;justify-content:flex-end;padding:0 18px;border-bottom:1px solid #202020;}'
+       +'.stsc-zoom{display:flex;align-items:center;gap:6px;}'
+       +'.stsc-zb{background:rgba(255,255,255,.06);border:none;color:#b7b4bf;cursor:pointer;width:19px;height:19px;'
+       +'border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:700 14px/1 inherit;}'
+       +'.stsc-zb:hover{background:rgba(255,255,255,.13);color:#f4f3f6;}'
+       +'.stsc-zv{background:none;border:none;color:#b7b4bf;cursor:pointer;font:700 12px/1 inherit;min-width:38px;}'
+       +'.stsc-zv:hover{color:#f4f3f6;}'
        +'.stsc-body{flex:1;min-height:0;overflow-y:auto;overscroll-behavior:contain;padding:22px 26px 30px;color:#d9d7de;font-size:14px;line-height:1.65;}'
+       /* A column, not the whole pane. Text running the full width of a fullscreen window is
+          unreadable, and it is what made the lesson look stranded against the left edge. */
+       +'.stsc-doc{max-width:74ch;margin:0 auto;}'
        +'.stsc-body h2{color:#fff;font-size:20px;margin:0 0 14px;}'
        +'.stsc-body h3{color:#f4f3f6;font-size:15px;margin:22px 0 8px;}'
        +'.stsc-body p{margin:0 0 12px;} .stsc-body ul{margin:0 0 12px;padding-left:20px;} .stsc-body li{margin:3px 0;}'
@@ -44673,10 +44692,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             +'<button class="stsc-btn" id="stsc-x" title="'+T('Close','Cerrar')+'">'
               +'<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l8 8M12 4l-8 8"/></svg></button></span></div>'
           +'<div class="stsc-list" id="stsc-list"></div></aside>'
-        +'<div class="stsc-main"><div class="stsc-body" id="stsc-body"></div></div></div>';
+        +'<div class="stsc-grip" id="stsc-grip" title="'+T('Drag to resize','Arrastra para redimensionar')+'"></div>'
+        +'<div class="stsc-main">'
+          +'<div class="stsc-mhead"><div class="stsc-zoom" id="stsc-zoom"></div></div>'
+          +'<div class="stsc-body" id="stsc-body"></div>'
+        +'</div></div>';
       document.body.appendChild(ov);
       ov.addEventListener('click', function(e){ if(e.target===ov) close(); });
       G('stsc-x').addEventListener('click', close);
+      mountZoom(); wireGrip();
       G('stsc-full').addEventListener('click', function(){
         var on=G('stsc').classList.toggle('full');
         G('stsc-full').classList.toggle('on', on);
@@ -44731,7 +44755,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
          + '<div class="stsc-res" id="stsc-res"></div>';
       }
       var body=G('stsc-body');
-      body.innerHTML=h; body.scrollTop=0;
+      body.innerHTML='<div class="stsc-doc">'+h+'</div>'; body.scrollTop=0;
       if(l.quiz && l.quiz.length) wireQuiz(l);
       renderList();
     }
@@ -44775,6 +44799,65 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         }
         sub.disabled=true;
       });
+    }
+
+    /* Scoped to the reading pane rather than documentElement, which is what the detached
+       community window zooms. Here the app may still be behind the overlay, and zooming the whole
+       document would drag it along with the lesson. Its own storage key for the same reason:
+       reading size and chat size are separate preferences. */
+    var ZK='st_school_zoom', ZMIN=0.6, ZMAX=2.2, ZSTEP=0.1;
+    function zRead(){ var v=NaN; try{ v=parseFloat(localStorage.getItem(ZK)); }catch(e){} return (isFinite(v)&&v>=ZMIN&&v<=ZMAX)?v:1; }
+    function zApply(v){
+      var b=G('stsc-body'); if(b) b.style.zoom=String(v);
+      var lab=G('stsc-zval'); if(lab) lab.textContent=Math.round(v*100)+'%';
+    }
+    function zSet(v){
+      v=Math.max(ZMIN, Math.min(ZMAX, Math.round(v/ZSTEP)*ZSTEP));
+      try{ localStorage.setItem(ZK, String(v)); }catch(e){}
+      zApply(v);
+    }
+    function mountZoom(){
+      var box=G('stsc-zoom'); if(!box || box.__done) return; box.__done=true;
+      /* A visible control, not a gesture: nothing about this pane suggests it zooms. The
+         percentage doubles as readout and reset, exactly as the chat window does. */
+      box.innerHTML='<button class="stsc-zb" id="stsc-zout" title="'+T('Smaller','Reducir')+'">&minus;</button>'
+        +'<button class="stsc-zv" id="stsc-zval" title="'+T('Reset','Restablecer')+'">100%</button>'
+        +'<button class="stsc-zb" id="stsc-zin" title="'+T('Bigger','Aumentar')+'">+</button>';
+      G('stsc-zout').addEventListener('click', function(){ zSet(zRead()-ZSTEP); });
+      G('stsc-zin').addEventListener('click', function(){ zSet(zRead()+ZSTEP); });
+      G('stsc-zval').addEventListener('click', function(){ zSet(1); });
+      zApply(zRead());
+    }
+
+    /* Mirrors _wireSideResize in the community sidebar, down to the persisted width. */
+    function wireGrip(){
+      var grip=G('stsc-grip'), side=document.querySelector('.stsc-side');
+      if(!grip||!side||grip.__wired) return; grip.__wired=true;
+      try{ var w0=parseInt(localStorage.getItem('st_school_side_w')||'',10); if(w0>=190&&w0<=560) side.style.width=w0+'px'; }catch(e){}
+      var startX=0, startW=0, drag=false;
+      function down(e){
+        drag=true; startX=(e.touches?e.touches[0].clientX:e.clientX);
+        startW=side.getBoundingClientRect().width;
+        document.body.style.userSelect='none'; grip.classList.add('drag');
+      }
+      function move(e){
+        if(!drag) return;
+        var x=(e.touches?e.touches[0].clientX:e.clientX), w=startW+(x-startX);
+        if(w<190) w=190; if(w>560) w=560;
+        side.style.width=w+'px';
+        if(e.cancelable) e.preventDefault();
+      }
+      function up(){
+        if(!drag) return; drag=false;
+        document.body.style.userSelect=''; grip.classList.remove('drag');
+        try{ localStorage.setItem('st_school_side_w', String(Math.round(side.getBoundingClientRect().width))); }catch(e){}
+      }
+      grip.addEventListener('mousedown', down);
+      grip.addEventListener('touchstart', down, {passive:true});
+      document.addEventListener('mousemove', move);
+      document.addEventListener('touchmove', move, {passive:false});
+      document.addEventListener('mouseup', up);
+      document.addEventListener('touchend', up);
     }
 
     function open(){
