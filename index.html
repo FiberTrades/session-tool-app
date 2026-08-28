@@ -9,11 +9,26 @@
      never displays anything but the School. visibility rather than display so layout still resolves
      normally underneath and nothing has to be re-measured when it is released on close. -->
 <style>
-  html.st-school-only, html.st-school-only body { background:#0d0e10; }
-  html.st-school-only body { visibility:hidden; }
+  html.st-school-only, html.st-school-only body,
+  html.st-detached-boot, html.st-detached-boot body { background:#0d0e10; }
+  html.st-school-only body, html.st-detached-boot body { visibility:hidden; }
   html.st-school-only body #stsc { visibility:visible; }
 </style>
-<script>try{ if(/[?&]school=1(&|$)/.test(location.search)) document.documentElement.classList.add('st-school-only'); }catch(e){}</script>
+<script>try{
+  var _q=location.search;
+  /* ?school=1 - the course popout. Revealed by STSCHOOL once the overlay exists. */
+  if(/[?&]school=1(&|$)/.test(_q)) document.documentElement.classList.add('st-school-only');
+  /* ?stview= - the detached community window. It hides the app in JS near the end of the
+     script, which is long after first paint, so the full app was visibly on screen first.
+     Revealed the moment that setup applies its own layout. */
+  if(/[?&]stview=(network|dm)/.test(_q)) document.documentElement.classList.add('st-detached-boot');
+  /* Failsafe. A mask that is never lifted is a blank window, which is far worse than a flash,
+     so release both unconditionally after a beat regardless of what did or did not run. */
+  setTimeout(function(){ try{
+    document.documentElement.classList.remove('st-detached-boot');
+    document.documentElement.classList.remove('st-school-only');
+  }catch(e){} }, 4000);
+}catch(e){}</script>
 <script>
 /* A GIF is already showing at full size and it animates - opening it in the zoom
    viewer gains nothing, so GIFs are treated as not clickable. */
@@ -44616,7 +44631,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if(G('stsc')) return;
       var st=document.createElement('style');
       st.textContent=
-        '.stsc{position:fixed;inset:0;z-index:12400;background:rgba(8,8,8,.9);display:none;align-items:center;justify-content:center;padding:24px;}'
+        /* The community's stack, so the course reads as part of it rather than as part of the
+           journal, which is monospaced. Set on the overlay root; everything inherits. */
+        '.stsc{position:fixed;inset:0;z-index:12400;background:rgba(8,8,8,.9);display:none;align-items:center;justify-content:center;padding:24px;'
+       +'font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;}'
        +'.stsc.open{display:flex;}'
        +'.stsc-wrap{width:940px;max-width:100%;height:84vh;max-height:720px;display:flex;background:#0d0e10;border:1px solid #2a2833;border-radius:12px;overflow:hidden;}'
        +'.stsc-side{width:280px;flex:none;display:flex;flex-direction:column;min-height:0;border-right:1px solid #2a2833;}'
@@ -44646,7 +44664,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        /* Same grip as the community sidebar: same width, same colour, same cursor. */
        +'.stsc-grip{flex:none;width:3px;cursor:col-resize;background:rgba(255,45,143,0.45);transition:background .15s;align-self:stretch;}'
        +'.stsc-grip:hover,.stsc-grip.drag{background:rgba(255,45,143,0.85);}'
-       +'.stsc-mhead{height:48px;flex:none;display:flex;align-items:center;justify-content:flex-end;padding:0 18px;border-bottom:1px solid #202020;}'
+       +'.stsc-mhead{height:48px;flex:none;display:flex;align-items:center;justify-content:center;padding:0 18px;border-bottom:1px solid #202020;}'
        +'.stsc-zoom{display:flex;align-items:center;gap:6px;}'
        +'.stsc-zb{background:rgba(255,255,255,.06);border:none;color:#b7b4bf;cursor:pointer;width:19px;height:19px;'
        +'border-radius:50%;display:inline-flex;align-items:center;justify-content:center;font:700 14px/1 inherit;}'
@@ -44808,7 +44826,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var ZK='st_school_zoom', ZMIN=0.6, ZMAX=2.2, ZSTEP=0.1;
     function zRead(){ var v=NaN; try{ v=parseFloat(localStorage.getItem(ZK)); }catch(e){} return (isFinite(v)&&v>=ZMIN&&v<=ZMAX)?v:1; }
     function zApply(v){
+      /* Both panes: zooming only the prose left the contents list at its original size, which
+         is exactly the part someone reaching for a zoom is struggling to read. */
       var b=G('stsc-body'); if(b) b.style.zoom=String(v);
+      var l=G('stsc-list'); if(l) l.style.zoom=String(v);
       var lab=G('stsc-zval'); if(lab) lab.textContent=Math.round(v*100)+'%';
     }
     function zSet(v){
@@ -45326,6 +45347,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     if(!/[?&]stview=(network|dm)/.test(location.search)) return;
     var s=document.createElement('style'); s.id='st-detached-css'; s.textContent='.header,.tabs{display:none!important;}.page{display:none!important;}#page-community{display:block!important;position:fixed!important;inset:0!important;margin:0!important;padding:0!important;z-index:1;background:#000000;}#page-community #dcx-root{height:100%!important;max-height:100%!important;border:none!important;border-radius:0!important;}#dcx-detach-btn,#stdm-pop{display:none!important;}#bloomberg-floater{display:none!important;}#ticker-bar{display:none!important;}'; document.head.appendChild(s);
     document.documentElement.classList.add('st-detached');
+    /* Layout is now the detached one, so lift the pre-paint mask (see <head>). On
+       DOMContentLoaded when still parsing, so the community has had a chance to lay out. */
+    (function(){
+      var _rv=function(){ try{ document.documentElement.classList.remove('st-detached-boot'); }catch(e){} };
+      if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', _rv);
+      else _rv();
+    })();
 
     /* ---- Per-window zoom ----
        Chrome stores browser zoom PER ORIGIN, so Ctrl +/- in this window also re-zooms the main
