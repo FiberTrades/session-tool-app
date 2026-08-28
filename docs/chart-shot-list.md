@@ -201,22 +201,31 @@ Caption: *"This is the commitment — and it is not your entry."*
 
 ---
 
-### 15. `5-1 RICE: Correction`
+### 15. `5-1 RICE: Correction` — **this is the entry**
 **Lesson:** 5.1 RICE, the setup framework
 
-Same chart, marking the **C**: the pullback into the break area — the order block, the imbalance.
+Same chart, marking the **C**: price coming back and **mitigating** the range it broke from.
 
-Caption: *"This is the discount of the initiation move, and it is required."*
+This is the important one of the four. It has to show the *moment of mitigation* as the entry —
+not a pullback developing and being waited out. Mark the mitigated range, the entry at the
+mitigation, and the safe 2–4 pip stop above or below that range, so it is obvious that the stop
+fitting is what makes it a trade.
+
+Caption: *"That is the entry — the moment the range is mitigated and a safe stop fits above or
+below it. No safe stop, no trade."*
 
 ---
 
-### 16. `5-1 RICE: Extension`
+### 16. `5-1 RICE: Extension` — **not an entry**
 **Lesson:** 5.1 RICE, the setup framework
 
-Same chart, marking the **E**: price resuming, the entry, the stop 2–4 pips beyond the
-mitigation, and the target at the next liquidity.
+Same chart, marking the **E**: price resuming, and the target at the next liquidity.
 
-Caption: *"This is the only part of the sequence you enter on."*
+Deliberately **no entry marker here.** The point of this image is that you were already in from
+the correction, and that anyone entering once the extension is obvious has missed most of the
+twenty pips.
+
+Caption: *"You are already in — this is what the entry in the correction was positioned for."*
 
 ---
 
