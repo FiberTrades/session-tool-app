@@ -5211,6 +5211,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14.5 5 8 12l6.5 7"/></svg>
       <span data-i18n="vault.back">All of Academy</span>
     </button>
+    <!-- The course mounts in here when opened from the hub, so it reads as a page like the
+         library does rather than a dialog floating over the app. -->
+    <div id="vault-academy" class="vault-academy" style="display:none;"></div>
     <div id="vault-locked" class="vault-locked" style="display:none;">
       <div class="vault-lock-glyph"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="5" y="11" width="14" height="9" rx="1.5"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg></div>
       <div class="vault-lock-title" data-i18n="vault.locked_title">Premium members only</div>
@@ -44846,6 +44849,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        +'.stsc-sub{margin-top:16px;background:#f472b6;border:none;color:#0b0a0d;font-weight:700;border-radius:8px;padding:10px 18px;cursor:pointer;font:inherit;}'
        +'.stsc-sub[disabled]{opacity:.4;cursor:default;}'
        +'.stsc-res{margin-top:12px;font-size:13px;}'
+       /* Mounted inside the Academy page rather than floating over the app. Static instead of
+          fixed, no scrim, and the wrap keeps a definite height so the two panes still scroll
+          internally - height:auto would collapse them, since both rely on flex + min-height:0. */
+       +'.stsc.inline{position:static;inset:auto;background:none;padding:0;display:block;z-index:auto;}'
+       +'.stsc.inline .stsc-wrap{width:100%;max-width:none;height:calc(100vh - 250px);min-height:420px;max-height:none;}'
+       +'.stsc.inline .stsc-side{border-radius:0;}'
        +'@media (max-width:760px){.stsc{padding:0;}.stsc-wrap{height:100vh;max-height:none;border-radius:0;flex-direction:column;}'
        +'.stsc-side{width:100%;max-height:38vh;border-right:none;border-bottom:1px solid #2a2833;}}';
       document.head.appendChild(st);
@@ -45042,6 +45051,30 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if(next) openLesson(next);
       else G('stsc-body').innerHTML='<p>'+T('Lessons are on their way.','Las lecciones estan en camino.')+'</p>';
     }
+    /* Mount the course into a host element instead of opening it as an overlay. Same module,
+       same state - only where it lives and how it is positioned differ. */
+    function mount(host){
+      if(!host) return;
+      build(); renderList();
+      var o=G('stsc');
+      if(o && o.parentNode!==host) host.appendChild(o);
+      if(o){ o.classList.add('open','inline'); o.classList.remove('full'); }
+      /* Close and expand belong to a dialog. Inline, the page's own back link does that job and
+         the panel is already the width of the page. Popout still makes sense and stays. */
+      var x=G('stsc-x');    if(x) x.style.display='none';
+      var f=G('stsc-full'); if(f) f.style.display='none';
+      var w=written(), next=null;
+      for(var i=0;i<w.length;i++){ if(!passed(w[i].id)){ next=w[i].id; break; } }
+      if(!next && w.length) next=w[w.length-1].id;
+      if(next) openLesson(next);
+    }
+    function unmount(){
+      var o=G('stsc'); if(!o) return;
+      o.classList.remove('open','inline');
+      var x=G('stsc-x');    if(x) x.style.display='';
+      var f=G('stsc-full'); if(f) f.style.display='';
+      if(o.parentNode!==document.body) document.body.appendChild(o);
+    }
     function close(){
       var o=G('stsc'); if(o) o.classList.remove('open');
       bodyScrollLock(false);
@@ -45059,7 +45092,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       MODULES.forEach(function(m){ m.ls.forEach(function(l){ lessons++; if(l.body){ w++; if(passed(l.id)) p++; } }); });
       return { modules:MODULES.length, lessons:lessons, written:w, passed:p };
     }
-    return { open:open, close:close, relang:relang, stats:stats };
+    return { open:open, close:close, relang:relang, stats:stats, mount:mount, unmount:unmount };
   })();
   try{ window.STSCHOOL = STSCHOOL; }catch(e){}
 
@@ -45084,6 +45117,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var b=G('vault-back'); if(b) b.style.display='none';
       var lib=G('vault-library'); if(lib) lib.style.display='none';
       var lk=G('vault-locked');  if(lk)  lk.style.display='none';
+      var ac=G('vault-academy'); if(ac) ac.style.display='none';
+      try{ window.STSCHOOL && window.STSCHOOL.unmount && window.STSCHOOL.unmount(); }catch(e){}
       pills(false);
       /* Hidden rather than removed, so a member who signs in mid-session sees it appear. */
       var ac=G('vault-hub-academy'); if(ac) ac.style.display = isAdmin() ? '' : 'none';
@@ -45106,13 +45141,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var lib=G('vault-library'); if(lib) lib.style.display='';
       pills(true);
     }
+    function showAcademy(){
+      var host=G('vault-academy'); if(!host) return;
+      G('vault-hub').style.display='none';
+      var lib=G('vault-library'); if(lib) lib.style.display='none';
+      var b=G('vault-back'); if(b) b.style.display='';
+      pills(false);
+      host.style.display='';
+      try{ window.STSCHOOL.mount(host); }catch(e){}
+    }
     window.__stAcademyHub = showHub;
     document.addEventListener('click', function(e){
       var t=e.target; if(!t || !t.closest) return;
       if(t.closest('.tab-vault')){ setTimeout(showHub, 60); return; }
       if(t.closest('#vault-back')){ showHub(); return; }
       var card=t.closest('.vault-hub-card'); if(!card) return;
-      if(card.getAttribute('data-hub')==='academy'){ try{ window.STSCHOOL.open(); }catch(_){ } return; }
+      if(card.getAttribute('data-hub')==='academy'){ showAcademy(); return; }
       showLibrary();
     });
   })();
