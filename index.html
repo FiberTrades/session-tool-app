@@ -9955,6 +9955,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         holdsVoice: (function () { try { return _holdsVoice(); } catch (e) { return null; } })(),
         detached: (function () { try { return _isDetachedWindow(); } catch (e) { return null; } })(),
         win: _VOICE_ID,
+        // Which window this was. A duplicate now names its own source instead of leaving
+        // "two rows, same minute" to be interpreted.
+        url: (function () { try { return location.search || '(main)'; } catch (e) { return null; } })(),
         visible: (typeof document !== 'undefined') ? document.visibilityState : null,
         sessions: (ss || []).map(function (s) { return s.start + '-' + s.end; }).join(',')
       };
@@ -10413,10 +10416,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   const _VOICE_ID  = String(Math.random()).slice(2) + '-' + Date.now();
   const _VOICE_TTL = 9000;
 
+  /* Every window the app opens onto itself is a VIEW, not a second app.
+     The community window (?stview=), the course popout (?school=1) and a mentor reading
+     someone else's journal (?mv=) all boot the whole application - they render the full
+     thing and then cover it with the one panel they exist to show. Left unrecognised they
+     run the session machinery too, so a member with a popout open hears the session
+     announced twice, and only ?stview= was ever recognised.
+
+     The mentor view is worse than a duplicate: the data in that window belongs to somebody
+     else, so any session it announced would be the wrong person's.
+
+     stpop=1 is matched as well, so a popout added later is silent by default without anyone
+     having to remember this list exists. Prefer it over adding another parameter here. */
+  const _POPOUT_QS = /[?&](stview|school|mv|stpop)=/;
   function _isDetachedWindow() {
     try {
       if (document.documentElement.classList.contains('st-detached')) return true;
-      if (/[?&]stview=/.test(location.search)) return true;
+      if (_POPOUT_QS.test(location.search)) return true;
     } catch (e) {}
     return false;
   }
