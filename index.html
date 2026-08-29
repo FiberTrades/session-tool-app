@@ -50315,6 +50315,41 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return '';
     }
 
+
+    /* A label plate carries the width it measured at bake time, which is a guess about a font
+       that may not be the one drawing it - the app ships its own faces, and a browser that has
+       never seen them measures something else. Once the SVG is in the document the real width
+       is knowable, so every plate is resized to the text it actually contains. getBBox needs a
+       rendered node, which is why this cannot live in chartDraw. */
+    function chFitPlates(host){
+      if(!host) return;
+      var PAD=6;
+      host.querySelectorAll('g.lbl').forEach(function(g){
+        var r=g.querySelector('rect'), t=g.querySelector('text');
+        if(!r || !t) return;
+        var box; try{ box=t.getBBox(); }catch(e){ return; }
+        if(!box || !box.width) return;
+        var x=parseFloat(r.getAttribute('x'))||0;
+        var y=parseFloat(r.getAttribute('y'))||0;
+        var w=Math.round((box.width+PAD*2)*10)/10;
+        var h=Math.max(parseFloat(r.getAttribute('height'))||0, Math.round((box.height+9)*10)/10);
+        /* A plate that has grown past the right edge grows leftward instead, so widening it
+           never pushes the words under the price scale. */
+        if(x+w > CH_W-2){
+          x=Math.max(2, CH_W-w-2);
+          r.setAttribute('x', x.toFixed(1));
+          t.setAttribute('x', (x+PAD).toFixed(1));
+        }
+        r.setAttribute('width', w.toFixed(1));
+        if(h !== parseFloat(r.getAttribute('height'))){
+          /* Grown about its own middle, so the text stays centred in the box it sits in. */
+          var oh=parseFloat(r.getAttribute('height'))||h;
+          r.setAttribute('y', (y-(h-oh)/2).toFixed(1));
+          r.setAttribute('height', h.toFixed(1));
+        }
+      });
+    }
+
     function chartDraw(kind, state){
       state.tall=false;
       var id=chBakeId(kind, state), b=CHART_BAKE[id];
@@ -50849,7 +50884,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         var state={ n: sl?parseInt(sl.value,10):0, v: togs.length?togs[0].getAttribute('data-v'):null };
         function draw(){
           var r=chartDraw(kind, state);
-          f.querySelector('[data-o="svg"]').innerHTML=r.svg;
+          var host=f.querySelector('[data-o="svg"]');
+          host.innerHTML=r.svg;
+          chFitPlates(host);
+          /* The app ships its own faces and they may still be loading the first time a
+             lesson paints. A plate measured against a fallback is the wrong size once the
+             real one arrives, so it is measured again when they land. */
+          try{ if(document.fonts && document.fonts.ready)
+                 document.fonts.ready.then(function(){ chFitPlates(host); }); }catch(e){}
           f.querySelector('[data-o="cap"]').textContent=r.cap;
         }
         if(sl) sl.addEventListener('input', function(){ state.n=parseInt(sl.value,10); draw(); });
