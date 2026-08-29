@@ -1416,8 +1416,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .page { display: none; }
   .page.active { display: block; }
   /* Academy hub. Cards rather than chips: the tab now routes to two different places, and a
-     chooser has to look like a destination, not a filter. Auto-fit so one card fills the row
-     when Trading Academy is hidden, which is what every non-admin sees. */
+     chooser has to look like a destination, not a filter. */
   .vault-hub { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
     gap: 14px; margin: 0 0 26px; }
   .vault-hub-card { display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
@@ -1425,6 +1424,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     border-radius: var(--radius-card); padding: 22px 22px 20px; cursor: pointer; font: inherit;
     color: var(--text); transition: border-color 160ms, background 160ms, transform 160ms; }
   .vault-hub-card:hover { border-color: var(--accent); background: var(--bg-elev2); transform: translateY(-2px); }
+  /* A card that is on the hub to be seen rather than opened. It keeps its shape - hiding it
+     would make the library look cancelled rather than pending - but nothing about it invites
+     a click: no hover lift, no pointer, and the meta line becomes the label. */
+  .vault-hub-card.soon { cursor: default; }
+  .vault-hub-card.soon:hover { border-color: var(--border-2); background: var(--bg-elev); transform: none; }
+  .vault-hub-card.soon .vault-hub-ic, .vault-hub-card.soon .vault-hub-title { opacity: .5; }
+  .vault-hub-card.soon .vault-hub-body { opacity: .72; }
+  .vault-hub-card.soon .vault-hub-meta { display: inline-block; margin-top: 12px; padding: 3px 11px;
+    border: 1px solid var(--border-2); border-radius: 999px; color: var(--text-mid); }
   .vault-hub-ic { color: var(--accent); margin-bottom: 10px; display: inline-flex; }
   .vault-hub-ic svg { width: 30px; height: 30px; display: block; }
   .vault-hub-title { font-size: 15px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -5207,7 +5215,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         <span class="vault-hub-body" data-i18n="vault.hub_media_body">Method walkthroughs, live sessions and weekly reviews.</span>
         <span class="vault-hub-meta" id="vault-hub-media-meta"></span>
       </button>
-      <button type="button" class="vault-hub-card" data-hub="academy" id="vault-hub-academy" style="display:none;">
+      <button type="button" class="vault-hub-card" data-hub="academy" id="vault-hub-academy">
         <span class="vault-hub-ic"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 8.5 12 13l9.5-4.5z"/><path d="M6.5 10.8v4.4c0 1.6 2.5 2.8 5.5 2.8s5.5-1.2 5.5-2.8v-4.4"/><path d="M21.5 8.6v4.9"/></svg></span>
         <span class="vault-hub-title" data-i18n="vault.hub_academy">Trading Academy</span>
         <span class="vault-hub-body" data-i18n="vault.hub_academy_body">The method as a course, marked against your own trades as you log them.</span>
@@ -51872,9 +51880,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   try{ window.STSCHOOL = STSCHOOL; }catch(e){}
 
   /* Academy hub. The tab lands on the chooser; picking Media Vault swaps in the library, and
-     Trading Academy opens the course overlay. The course card is admin-only for now, checked the
-     same way _isAdminU does it - by signed-in email. Checked when the tab is opened rather than
-     once at load, because auth resolves after this script runs. */
+     Trading Academy opens the course overlay. The Academy is open to every member; the Media
+     Vault is the one still closed, and it opens only for the admin - checked the same way
+     _isAdminU does it, by signed-in email, and checked when the tab is opened rather than once
+     at load because auth resolves after this script runs. */
   (function(){
     function G(id){ return document.getElementById(id); }
     function T(en,es){ try{ return window._stT ? window._stT(en,es) : en; }catch(e){ return en; } }
@@ -51909,11 +51918,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       try{ window.STSCHOOL && window.STSCHOOL.unmount && window.STSCHOOL.unmount(); }catch(e){}
       hero('vault.eyebrow','Members area','Área de miembros');
       pills(false);
-      /* Hidden rather than removed, so a member who signs in mid-session sees it appear. */
-      var ac=G('vault-hub-academy'); if(ac) ac.style.display = isAdmin() ? '' : 'none';
+      /* The library is not open yet. Re-checked on every visit to the hub rather than once at
+         load, so signing in mid-session unlocks it without a reload. */
+      var open=isAdmin();
+      var mc=document.querySelector('.vault-hub-card[data-hub="media"]');
+      if(mc) mc.classList.toggle('soon', !open);
       var mm=G('vault-hub-media-meta');
-      if(mm){ var n=document.querySelectorAll('#vault-library .vault-card').length;
-              mm.textContent = n ? (n+' '+T('videos','vídeos')) : ''; }
+      if(mm){
+        if(!open){ mm.textContent = T('Coming soon','Muy pronto'); }
+        else { var n=document.querySelectorAll('#vault-library .vault-card').length;
+               mm.textContent = n ? (n+' '+T('videos','vídeos')) : ''; }
+      }
       var am=G('vault-hub-academy-meta');
       if(am){
         var st=null; try{ st=window.STSCHOOL && window.STSCHOOL.stats && window.STSCHOOL.stats(); }catch(e){}
@@ -51957,6 +51972,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if(t.closest('#vault-back')){ showHub(); return; }
       var card=t.closest('.vault-hub-card'); if(!card) return;
       if(card.getAttribute('data-hub')==='academy'){ showAcademy(); return; }
+      /* Styling a card as coming soon and still letting it open would be a lock in name
+         only, so the same class that dims it is the one that stops the click. */
+      if(card.classList.contains('soon')) return;
       showLibrary();
     });
   })();
