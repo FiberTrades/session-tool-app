@@ -13075,6 +13075,44 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // whole journal copy would otherwise drop a ticket the other copy just dismissed, and
   // the trade would re-offer. These lists only ever grow, so a UNION of both copies is
   // always the correct merge - it can lose nothing. Written into `base` (the surviving copy).
+  /* Academy progress, unioned rather than overwritten.
+
+     data.school was invisible to every merge in this file: saveData folded another instance's
+     bias, sessions and dismissed lists back in and then wrote the whole of `data`, so a window
+     that had not seen a lesson pass rewrote it away. contentScore does not count school either,
+     so two copies differing only in passed lessons score identically and one is adopted whole.
+     With the course popout booting the full app and saveData on a five-second interval, a
+     lesson passed in the popout could be gone before the reader finished the page.
+
+     A union is always right here because progress is monotonic: passing is permanent, so no
+     legitimate state is ever lost by keeping both sides. The earliest `at` wins so the record
+     reads as when it was first earned, and the best score is kept for the same reason. */
+  window.__stMergeSchool = function (base, other) {
+    try {
+      if (!base || !other) return;
+      var a = (base.school && base.school.done) || null;
+      var b = (other.school && other.school.done) || null;
+      var aStarted = base.school && base.school.started;
+      var bStarted = other.school && other.school.started;
+      if (!a && !b && !aStarted && !bStarted) return;
+      if (!base.school) base.school = {};
+      if (!base.school.done) base.school.done = {};
+      var out = base.school.done;
+      Object.keys(b || {}).forEach(function (id) {
+        var mine = out[id], theirs = b[id];
+        if (!theirs || !theirs.passed) return;
+        if (!mine || !mine.passed) { out[id] = theirs; return; }
+        // Both passed it: keep the earlier stamp and the better score.
+        var at = (mine.at && theirs.at) ? (mine.at < theirs.at ? mine.at : theirs.at)
+                                        : (mine.at || theirs.at);
+        var sc = Math.max(+mine.score || 0, +theirs.score || 0);
+        out[id] = { passed: true, at: at, score: sc };
+      });
+      // Started once is started for good, and the earlier stamp is the true one.
+      if (bStarted && (!aStarted || bStarted < aStarted)) base.school.started = bStarted;
+      else if (bStarted && !aStarted) base.school.started = bStarted;
+    } catch (e) {}
+  };
   window.__stMergeUnionDismissed = function (base, other) {
     try {
       if (!base || !other) return;
@@ -13107,7 +13145,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       var lastTab = localStorage.getItem('st_last_write_tab');
       if (lastTab && lastTab !== __ST_TAB_ID) {
         var storedRaw = localStorage.getItem(STORAGE_KEY);
-        if (storedRaw) { var _otherJ = JSON.parse(storedRaw); window.__stMergeFresherBias(data, _otherJ); if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(data, _otherJ); if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(data, _otherJ); }
+        if (storedRaw) { var _otherJ = JSON.parse(storedRaw); window.__stMergeFresherBias(data, _otherJ); if (window.__stMergeSchool) window.__stMergeSchool(data, _otherJ); if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(data, _otherJ); if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(data, _otherJ); }
       }
       localStorage.setItem('st_last_write_tab', __ST_TAB_ID);
     } catch (e) {}
@@ -49225,7 +49263,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        and the leaderboard can never disagree about what counts as a breach. */
     function maxRiskMoney(){
       var d=DAT(), acc=null;
-      try{ var accs=d.accounts||[]; acc=accs[d.activeAccount||0]||accs[0]||null; }catch(e){}
+      /* getActiveAccount() is the app's own resolver and matches on activeAccountId.
+         This used to read d.activeAccount, a field nothing in the file ever writes, so it
+         always collapsed to accounts[0] - and a member on their second or third account
+         was measured against the first one's risk rule. Guarded by typeof because it
+         lives in another script block. */
+      try{
+        if(typeof getActiveAccount==='function') acc=getActiveAccount();
+        if(!acc){ var accs=d.accounts||[];
+          acc=accs.filter(function(a){ return a && a.id===d.activeAccountId; })[0]||accs[0]||null; }
+      }catch(e){}
       var rr=(acc&&acc.riskRules)||(d.settings&&d.settings.riskRules)||{};
       if(rr.maxRiskMode==='amount'){ var a=parseFloat(rr.maxRiskAmount); return (!isNaN(a)&&a>0)?a:0; }
       var pct=parseFloat(rr.maxRiskPct); if(isNaN(pct)||pct<=0) return 0;
@@ -49238,7 +49285,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        per-account rules first, then the global fallback, amount or percent of balance. */
     function maxLossMoney(){
       var d=DAT(), acc=null;
-      try{ var accs=d.accounts||[]; acc=accs[d.activeAccount||0]||accs[0]||null; }catch(e){}
+      /* getActiveAccount() is the app's own resolver and matches on activeAccountId.
+         This used to read d.activeAccount, a field nothing in the file ever writes, so it
+         always collapsed to accounts[0] - and a member on their second or third account
+         was measured against the first one's risk rule. Guarded by typeof because it
+         lives in another script block. */
+      try{
+        if(typeof getActiveAccount==='function') acc=getActiveAccount();
+        if(!acc){ var accs=d.accounts||[];
+          acc=accs.filter(function(a){ return a && a.id===d.activeAccountId; })[0]||accs[0]||null; }
+      }catch(e){}
       var rr=(acc&&acc.riskRules)||(d.settings&&d.settings.riskRules)||{};
       if(rr.maxLossMode==='amount'){ var a=parseFloat(rr.maxLossAmount); return (!isNaN(a)&&a>0)?a:0; }
       var pct=parseFloat(rr.maxLossPct); if(isNaN(pct)||pct<=0) return 0;
@@ -49259,9 +49315,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return 0;
     }
 
+    /* Oldest first. data.history is stored NEWEST first - completed series are unshifted on,
+       and the app says so where it numbers them: `const seriesNum = data.history.length - _si;
+       // newest-first: index 0 = highest number`. Walking it in storage order made this list
+       run backwards through time, which every aggregate panel survived (a count, a median, an
+       average does not care) but seriesPanel did not: it chunks by position, so it labelled the
+       most recent series #1 and showed the five OLDEST under "your last five". Reversed here
+       rather than in seriesPanel so there is one order for everything downstream. */
     function allTrades(){
       var d=DAT(), out=[];
-      try{ (d.history||[]).forEach(function(s){ (s.trades||[]).forEach(function(t){ out.push(t); }); }); }catch(e){}
+      try{ (d.history||[]).slice().reverse().forEach(function(s){ (s.trades||[]).forEach(function(t){ out.push(t); }); }); }catch(e){}
       try{ (d.currentSeries||[]).forEach(function(t){ out.push(t); }); }catch(e){}
       return out;
     }
@@ -49650,11 +49713,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     /* Win rate on its own says almost nothing, so this reports it beside the sizes that decide
        whether it is enough. */
     function expectPanel(){
-      var w=[], l=[], be=0;
+      var w=[], l=[], be=0, beR=0;
       allTrades().forEach(function(t){
         if(!t||!t.result) return;
         var x=rOf(t); if(!isFinite(x)) return;
-        if(t.result==='Win') w.push(x); else if(t.result==='Lose') l.push(x); else be++;
+        if(t.result==='Win') w.push(x); else if(t.result==='Lose') l.push(x); else { be++; beR+=x; }
       });
       var n=w.length+l.length+be;
       if(n<5){
@@ -49669,8 +49732,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             'Registra algunas operaciones más con resultado y esto pasará a ser tu propia esperanza.'));
       }
       function avg(a){ var t=0; a.forEach(function(x){ t+=x; }); return a.length? t/a.length : 0; }
-      var wr=w.length/n*100, aw=avg(w), al=avg(l);
-      var exp=(w.length*aw + l.length*al)/n;
+      /* Win rate is wins over wins plus losses, break-evens excluded - the definition the
+         app documents on the Statistics tooltip and implements at wrDenom. Dividing by the
+         full count here meant a member with break-evens read one number in the lesson and a
+         higher one on their own stats page. */
+      var decided=w.length+l.length;
+      var wr=decided? (w.length/decided*100) : 0, aw=avg(w), al=avg(l);
+      /* A break-even is not free: tradeRforMath returns its cost drag as a small negative R,
+         and the app's headline expectancy deliberately keeps it. Leaving beR out of the
+         numerator while still dividing by be made this read better than the truth. */
+      var exp=n? ((w.length*aw + l.length*al + beR)/n) : 0;
       var rows=[
         [T('Trades','Operaciones'), String(n)],
         [T('Win rate','Acierto'), wr.toFixed(0)+'%'],
@@ -49737,7 +49808,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         by[d]=(by[d]||0)+rOf(t);
       });
       var ks=Object.keys(by);
-      var wins=ks.map(function(k){ return by[k]; }).filter(function(v){ return v>0; });
+      /* Every day counts toward the total, not only the winning ones. Summing the profitable
+         days alone capped the share at 100% and flattered it: +10/+6/+5/-12 reads 48% that
+         way and passes, while the app's own consistency block divides by the net (+9) and
+         reports 111%, a breach. A losing day does not stop the best day dominating the
+         profit - it is exactly what makes it dominate. */
+      var vals=ks.map(function(k){ return by[k]; });
+      var wins=vals.filter(function(v){ return v>0; });
       if(wins.length<3){
         return examplePanel(
           [[T('Profitable days','Días en positivo'),'14'],[T('Total from them','Total de esos días'),'+38.0R'],
@@ -49749,15 +49826,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             'Registra operaciones en más días y esto te mostrará tu mayor día frente a tu total.'));
       }
       var tot=0, best=0;
-      wins.forEach(function(v){ tot+=v; if(v>best) best=v; });
-      var share=best/tot*100;
+      vals.forEach(function(v){ tot+=v; });
+      wins.forEach(function(v){ if(v>best) best=v; });
+      /* Left uncapped on purpose: a share over 100% is the signal that the other days gave
+         back more than they made, which is the situation the rule exists to catch. */
+      var share=(tot>0)? (best/tot*100) : 0;
       var rows=[
-        [T('Profitable days','Días en positivo'), String(wins.length)],
-        [T('Total from them','Total de esos días'), '+'+tot.toFixed(1)+'R'],
+        [T('Profitable days','Días en positivo'), wins.length+' / '+vals.length],
+        [T('Total across all days','Total de todos los días'), (tot>0?'+':'')+tot.toFixed(1)+'R'],
         [T('Best single day','Mejor día'), '+'+best.toFixed(1)+'R'],
         [T('Best as a share','El mejor, en porcentaje'), share.toFixed(0)+'%']
       ];
-      var good=(share<=50);
+      var good=(tot>0 && share<=50);
       return '<div class="stsc-panel"><div class="stsc-panel-h">'+T('Check against my data','Comprobar con mis datos')+'</div>'
         + rows.map(function(r){ return '<div class="stsc-row"><span>'+esc(r[0])+'</span><b>'+esc(r[1])+'</b></div>'; }).join('')
         + '<div class="stsc-verdict '+(good?'good':'bad')+'">'
@@ -50618,7 +50698,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       }
       if(name==='bias') return biasFig();
       if(name==='biasvs' || name==='news' || name==='rice'
-         || name==='structure' || name==='phases' || name==='reaction' || name==='scales' || name==='liquidity'){
+         || name==='structure' || name==='phases' || name==='reaction' || name==='scales'
+         || name==='liquidity' || name==='beven'){
         return chartFig(name);
       }
       if(name==='conviction'){
@@ -50783,6 +50864,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             +'</div>'
           +'</div></div>';
       }
+      /* Nothing matched. Returning '' silently drops the figure out of the lesson, which is
+         how [[fig:beven]] went unnoticed - the prose rendered, the picture just was not
+         there. Say so instead of failing quietly. */
+      try{ console.warn('[ST school] no figure builder for [[fig:'+name+']]'); }catch(e){}
       return '';
     }
 
@@ -51770,11 +51855,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // explains the gate instead of silently doing nothing.
       if(loc.next){
         var ok=unlocked(loc.next.id);
+        /* Shared with unlockNext() below, which swaps the padlock for it the moment the quiz
+           is passed. Two copies of this path would drift. */
+        var ARROW='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+          +'stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
         h+='<button class="stsc-next'+(ok?'':' locked')+'"'+(ok?(' data-next="'+esc(loc.next.id)+'"'):'')+'>'
           +'<div><span>'+(ok?T('Next lesson','Siguiente lección'):T('Locked','Bloqueada'))+'</span>'
           +'<b>'+esc(loc.next.id+' '+lt(loc.next))+'</b></div>'
           +(ok
-            ? '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>'
+            ? ARROW
             : '<svg viewBox="0 0 24 24" fill="none">'
                 +'<path d="M7.2 10.2V7.6a4.8 4.8 0 0 1 9.6 0v2.6" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"/>'
                 +'<rect x="3.6" y="10.2" width="16.8" height="11.4" rx="2.6" fill="currentColor"/>'
@@ -51811,6 +51900,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       renderList();
     }
 
+    /* The next-lesson button is baked when the lesson opens, when the next lesson is still
+       locked - so passing the quiz used to leave a padlocked, inert button sitting directly
+       under the words "the next lesson is open". Re-rendering the lesson would fix it and
+       throw away the marked answers and the pass message with it, so the button is released
+       where it stands: class, label, icon and handler. */
+    function unlockNext(nextId, nextLabel){
+      try{
+        var body=G('stsc-body'); if(!body) return;
+        var b=body.querySelector('.stsc-next'); if(!b || b.hasAttribute('data-next')) return;
+        var ARROW='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
+          +'stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
+        b.classList.remove('locked');
+        b.setAttribute('data-next', nextId);
+        b.innerHTML='<div><span>'+T('Next lesson','Siguiente lección')+'</span>'
+                   +'<b>'+esc(nextLabel)+'</b></div>'+ARROW;
+        b.addEventListener('click', function(){ openLesson(nextId, true); });
+      }catch(e){}
+    }
+
     function wireQuiz(l){
       var picks={}, body=G('stsc-body');
       body.querySelectorAll('.stsc-a').forEach(function(b){
@@ -51844,6 +51952,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             +(all ? T('Passed. That was the last one.','Aprobado. Esa era la última.')
                   : T('Passed. The next lesson is open.','Aprobado. La siguiente lección está abierta.'))+'</span>';
           renderList();
+          /* Not on the final pass: that one is about to be replaced by the completion screen. */
+          if(!all){
+            var _ln=locate(l.id);
+            if(_ln && _ln.next) unlockNext(_ln.next.id, _ln.next.id+' '+lt(_ln.next));
+          }
           if(all){
             claimGraduate();
             setTimeout(function(){
@@ -54624,6 +54737,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (_clearStamp(d) > _clearStamp(cloud)) {
         try { if (window.__stMergeFresherBias)   window.__stMergeFresherBias(d, cloud); } catch (e) {}
         try { if (window.__stMergeFresherReview) window.__stMergeFresherReview(d, cloud); } catch (e) {}
+        // A clear must not take passed lessons with it.
+        try { if (window.__stMergeSchool) window.__stMergeSchool(d, cloud); } catch (e) {}
         peakLocalScore = contentScore(d); doCloudUpsert(d); return;
       }
       var removed = contentScore(cloud) - lScore;
@@ -54751,6 +54866,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           takeSnapshot('pre-sync', local);
           try { if (window.__stMergeFresherBias)   window.__stMergeFresherBias(cloud, local); } catch (e) {}
           try { if (window.__stMergeFresherReview) window.__stMergeFresherReview(cloud, local); } catch (e) {}
+          // A clear must not take passed lessons with it.
+          try { if (window.__stMergeSchool) window.__stMergeSchool(cloud, local); } catch (e) {}
           try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
           try { if (_rowUat) localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
           accStatus(tt('synced'));
@@ -54778,6 +54895,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
         try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(cloud, local); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(cloud, local); } catch (e) {}
+        // Passing a lesson is monotonic, so school unions rather than picking a side.
+        try { if (window.__stMergeSchool) window.__stMergeSchool(cloud, local); } catch (e) {}
         // Adopt the cloud copy. Update the IN-MEMORY journal as well as storage, so a stray
         // save of the (stale, blank) in-memory copy can't clobber it in the instant before
         // the reload -- that race is what was wiping the pulled data on a fresh device.
@@ -54809,6 +54928,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(cloud, local); } catch (e) {}
         try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(cloud, local); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(cloud, local); } catch (e) {}
+        // Passing a lesson is monotonic, so school unions rather than picking a side.
+        try { if (window.__stMergeSchool) window.__stMergeSchool(cloud, local); } catch (e) {}
         try { if (typeof ST.setData === 'function') { ST.setData(cloud); } else { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(cloud)); } } catch (e) {}
         try { localStorage.setItem('st_jrnl_uat', String(_rowUat)); } catch (e) {}
         accStatus(tt('synced'));
@@ -54829,6 +54950,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         try { if (window.__stMergeFresherBias) window.__stMergeFresherBias(local, cloud); } catch (e) {}
         try { if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(local, cloud); } catch (e) {}
         try { if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(local, cloud); } catch (e) {}
+        // Passing a lesson is monotonic, so school unions rather than picking a side.
+        try { if (window.__stMergeSchool) window.__stMergeSchool(local, cloud); } catch (e) {}
         cloudPush();
         // The union above can fold in deletions made on another device, so the figure computed at
         // load may already be describing a state this branch just changed.
