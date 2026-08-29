@@ -18147,6 +18147,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { (function renderChallengeProgress() {
       var sec = document.getElementById('challenge-section');
       var body = document.getElementById('challenge-body');
+      /* Declared here, above the account filter: the empty state below needs it, and a var
+         hoists its name without its value. */
+      var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
       if (!sec || !body) return;
       var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
       var GOOD = '#4ECD8B', BAD = '#E56767', WARN = '#E5B567', ACC = '#f472b6';
@@ -18180,14 +18183,68 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         // so nothing already on screen disappears on upgrade.
         if (a.kind === 'personal') return false;
         var r = a.riskRules;
-        var dd = (r.maxDrawdownMode === 'amount') ? (r.maxDrawdownAmount || 0) : (a.startingBalance * (r.maxDrawdownPct || 0) / 100);
-        var tg = (r.profitTargetMode === 'amount') ? (r.profitTargetAmount || 0) : (a.startingBalance * (r.profitTargetPct || 0) / 100);
-        return dd > 0 || tg > 0;
+        /* Read the same way the block reads them. Judging membership with one interpretation
+           and drawing with another is how an account could satisfy the filter and then render
+           an impossible target, or carry a real rule and be dropped for having no mode. */
+        return (r.maxDrawdownMode === 'amount' || r.maxDrawdownAmount > 0 || r.maxDrawdownPct > 0
+             || r.profitTargetMode === 'amount' || r.profitTargetAmount > 0 || r.profitTargetPct > 0);
       });
-      if (!accounts.length) { sec.style.display = 'none'; return; }
+      if (!accounts.length) {
+        /* An account carrying a firm rule but still marked Personal is deliberately excluded -
+           holding yourself to a drawdown on your own money should not earn a "Breached"
+           verdict. But hiding the whole section left no way to find that out: the rules are
+           set, the section is gone, and nothing connects the two. Say it instead. */
+        var _personalWithRules = [];
+        try {
+          _personalWithRules = (data.accounts || []).filter(function (a) {
+            var r = a && a.riskRules;
+            if (!r || a.kind !== 'personal') return false;
+            return (r.maxDrawdownAmount > 0 || r.maxDrawdownPct > 0
+                 || r.profitTargetAmount > 0 || r.profitTargetPct > 0);
+          });
+        } catch (e) { _personalWithRules = []; }
+        if (!_personalWithRules.length) { sec.style.display = 'none'; return; }
+        sec.style.display = '';
+        var _names = _personalWithRules.map(function (a) { return esc(a.name || ''); }).join(', ');
+        body.innerHTML = '<div class="empty">'
+          + T('Nothing to track yet. ', 'Nada que seguir todavía. ')
+          + (_personalWithRules.length === 1
+              ? T('<b>' + _names + '</b> carries a target and a drawdown, but it is set to <b>Personal</b>. ',
+                  '<b>' + _names + '</b> tiene objetivo y drawdown, pero está marcada como <b>Personal</b>. ')
+              : T('These accounts carry a target and a drawdown but are set to <b>Personal</b>: <b>' + _names + '</b>. ',
+                  'Estas cuentas tienen objetivo y drawdown pero están marcadas como <b>Personal</b>: <b>' + _names + '</b>. '))
+          + T('Switch it to <b>Prop firm</b> in Settings, under Accounts, and its progress appears here.',
+              'Cámbiala a <b>Prop firm</b> en Ajustes, en Cuentas, y su progreso aparecerá aquí.')
+          + '</div>';
+        return;
+      }
 
       var money = function (v) { try { return String(fmtMoney(v)).replace(/^\+/, ''); } catch (e) { return String(Math.round(v)); } };
-      var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+
+
+      /* One place that decides what a rule is worth, because this panel used to disagree with
+         the rule engine about it.
+
+         Two problems, both visible on a real account. First, the mode was only honoured when
+         it said 'amount' explicitly - an account carrying only an AMOUNT with no mode fell to
+         the percent branch, read a percent of zero, and the account was filtered out of the
+         section entirely. Second, when a value that is really an amount has been written into
+         the percent field, a percent of it is nonsense: a 70,000 account with 7000 in
+         profitTargetPct rendered a target of 4,970,000 and "4,900,000 to go".
+
+         So: honour an explicit mode, infer it the way checkAccount infers it, and treat a
+         percentage that cannot be one as the amount it plainly is. A prop firm target or
+         drawdown is single digits; nothing legitimate is over 100. */
+      function ruleValue(rr, sb, modeKey, pctKey, amtKey) {
+        var pct = parseFloat(rr[pctKey]), amt = parseFloat(rr[amtKey]);
+        if (isNaN(pct)) pct = 0;
+        if (isNaN(amt)) amt = 0;
+        var mode = (rr[modeKey] === 'amount' || rr[modeKey] === 'pct') ? rr[modeKey]
+                 : ((amt > 0 && !(pct > 0)) ? 'amount' : 'pct');
+        if (mode === 'amount') return amt;
+        if (pct > 100) return pct;      // an amount in the percent field, not a percentage
+        return sb * pct / 100;
+      }
 
       // One self-contained block per account: its own rails, its own verdict, under its own name.
       // `tail` is appended inside the verdict row — used to sit the journal-wide excluded-trades
@@ -18195,10 +18252,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       function blockFor(acc, tail) {
       var rr = acc.riskRules || {};
       var sb = (typeof acc.startingBalance === 'number') ? acc.startingBalance : 0;
-      var ddMode = (rr.maxDrawdownMode === 'amount') ? 'amount' : 'pct';
-      var ddAmount = (ddMode === 'amount') ? (rr.maxDrawdownAmount || 0) : (sb * (rr.maxDrawdownPct || 0) / 100);
-      var tgMode = (rr.profitTargetMode === 'amount') ? 'amount' : 'pct';
-      var tgAmount = (tgMode === 'amount') ? (rr.profitTargetAmount || 0) : (sb * (rr.profitTargetPct || 0) / 100);
+      var ddAmount = ruleValue(rr, sb, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount');
+      var tgAmount = ruleValue(rr, sb, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount');
 
       var st = null;
       try { st = window.__stAccountStats(acc); } catch (e) { st = null; }
