@@ -50348,6 +50348,54 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           r.setAttribute('height', h.toFixed(1));
         }
       });
+      chPartPlates(host);
+    }
+
+    /* Two plates placed clear of each other in English can touch once they are in Spanish,
+       which is the longer language nearly every time. Asking for each label to be positioned
+       twice would put the burden in the wrong place, so instead any pair that genuinely
+       overlaps is pushed apart here by the smallest amount that separates them - half each
+       where both have room, all of it on one where the other is against an edge. Labels that
+       do not collide are never touched. */
+    function chPartPlates(host){
+      var GAP=5, plates=[];
+      host.querySelectorAll('g.lbl').forEach(function(g){
+        var r=g.querySelector('rect'), t=g.querySelector('text');
+        if(!r || !t) return;
+        plates.push({ r:r, t:t, x:parseFloat(r.getAttribute('x'))||0,
+          y:parseFloat(r.getAttribute('y'))||0,
+          w:parseFloat(r.getAttribute('width'))||0,
+          h:parseFloat(r.getAttribute('height'))||0,
+          tx:parseFloat(t.getAttribute('x'))||0 });
+      });
+      function shift(p, dx){
+        if(!dx) return 0;
+        p.x+=dx; p.tx+=dx;
+        p.r.setAttribute('x', p.x.toFixed(1));
+        p.t.setAttribute('x', p.tx.toFixed(1));
+        return Math.abs(dx);
+      }
+      /* A separation can introduce a new overlap with a third plate, so this settles rather
+         than running once. Three sweeps is far more than these charts have ever needed. */
+      for(var pass=0; pass<3; pass++){
+        var moved=0;
+        for(var i=0;i<plates.length;i++){
+          for(var j=i+1;j<plates.length;j++){
+            var A=plates[i], B=plates[j];
+            if(A.y+A.h <= B.y || B.y+B.h <= A.y) continue;   /* different rows entirely */
+            var over=Math.min(A.x+A.w, B.x+B.w) - Math.max(A.x, B.x);
+            if(over < -GAP) continue;                        /* already comfortably clear */
+            var need=over+GAP;
+            var L=(A.x<=B.x)?A:B, R=(L===A)?B:A;
+            var roomL=Math.max(0, L.x-2), roomR=Math.max(0, (CH_W-2)-(R.x+R.w));
+            var mR=Math.min(need/2, roomR);
+            var mL=Math.min(need-mR, roomL);
+            mR=Math.min(need-mL, roomR);
+            moved+=shift(L, -mL)+shift(R, mR);
+          }
+        }
+        if(moved < 0.1) break;
+      }
     }
 
     function chartDraw(kind, state){
