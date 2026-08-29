@@ -9991,8 +9991,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try {
       const sb = window.__stSB;
       if (!sb || !sb.from) return 'unavailable';
+      // window.currentUser, not uid(). uid() is declared inside the replay module's IIFE
+      // near the end of the file, so from here `typeof uid` is "undefined" and this returned
+      // 'unavailable' every single time - which speaks, by design. The claims table has
+      // therefore never held a row, and every surface has always spoken. window.currentUser is
+      // published deliberately for out-of-scope readers like this one.
       let u = null;
-      try { u = (typeof uid === 'function') ? uid() : null; } catch (e) { u = null; }
+      try {
+        u = (window.currentUser && window.currentUser.id) ||
+            ((typeof uid === 'function') ? uid() : null) || null;
+      } catch (e) { u = null; }
       if (!u) return 'unavailable';                       // signed out: nothing to key the claim to
       const r = await sb.from('session_voice_claims')
         .insert({ user_id: u, day: _todayKey(), kind: kind, mins: mins });
@@ -10010,6 +10018,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { res = await _claimSessionAlertCloud(kind, mins); } catch (e) {}
     try { console.log('[ST voice] cloud claim', kind, mins, res); } catch (e) {}
     try { localStorage.setItem('st_voiceclaim_last', kind + ':' + mins + ':' + res + ':' + new Date().toISOString()); } catch (e) {}
+    // Recorded against the voice log too. 'unavailable' every day is the signature of the
+    // cross-surface claim being broken rather than merely unlucky, and it read as normal for
+    // as long as it lived only in a console line.
+    try {
+      const KEY = 'st_voicelog';
+      const log = JSON.parse(localStorage.getItem(KEY) || '[]');
+      if (log.length) { log[log.length - 1].cloudClaim = res; localStorage.setItem(KEY, JSON.stringify(log)); }
+    } catch (e) {}
     if (res === 'lost') return;                            // another surface already said it
     try { fireSessionAlert(kind); } catch (e) {}
   }
