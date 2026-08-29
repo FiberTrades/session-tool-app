@@ -52400,13 +52400,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // back to hunt the list. Rendered locked when the quiz still gates it, so the button
       // explains the gate instead of silently doing nothing.
       if(loc.next){
-        var ok=unlocked(loc.next.id);
+        /* Three states, not two. A plan-locked next lesson is neither "open" nor "locked until
+           you pass this one": it is the end of the free course, and it is the only one of the
+           three the reader cannot act on by reading. So it stays CLICKABLE - it leads to the
+           page that explains the gate - but it is labelled and iconed as a wall, not as a
+           forward step. */
+        var nplan=planLocked(loc.next.id);
+        var ok=!nplan && unlocked(loc.next.id);
         /* Shared with unlockNext() below, which swaps the padlock for it the moment the quiz
            is passed. Two copies of this path would drift. */
         var ARROW='<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" '
           +'stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M13 6l6 6-6 6"/></svg>';
-        h+='<button class="stsc-next'+(ok?'':' locked')+'"'+(ok?(' data-next="'+esc(loc.next.id)+'"'):'')+'>'
-          +'<div><span>'+(ok?T('Next lesson','Siguiente lección'):T('Locked','Bloqueada'))+'</span>'
+        h+='<button class="stsc-next'+((ok||nplan)?'':' locked')+'"'
+          +((ok||nplan)?(' data-next="'+esc(loc.next.id)+'"'):'')+'>'
+          +'<div><span>'+(ok?T('Next lesson','Siguiente lección')
+                           :(nplan?T('Continue the course','Continúa el curso')
+                                  :T('Locked','Bloqueada')))+'</span>'
           +'<b>'+esc(loc.next.id+' '+lt(loc.next))+'</b></div>'
           +(ok
             ? ARROW
@@ -52494,13 +52503,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           SAVE();
           var w2=written(), all=true;
           for(var q=0;q<w2.length;q++){ if(!passed(w2[q].id)){ all=false; break; } }
+          var _ln=locate(l.id);
+          // "The next lesson is open" is a promise, and at the end of module 2 on a free plan
+          // it is not true. Say what actually happened instead.
+          var _nplan=!!(_ln && _ln.next && planLocked(_ln.next.id));
           res.innerHTML='<span style="color:#4ECD8B;">'
             +(all ? T('Passed. That was the last one.','Aprobado. Esa era la última.')
-                  : T('Passed. The next lesson is open.','Aprobado. La siguiente lección está abierta.'))+'</span>';
+                  : (_nplan
+                      ? T('Passed. That was the last lesson on your plan.',
+                          'Aprobado. Esa era la última lección de tu plan.')
+                      : T('Passed. The next lesson is open.','Aprobado. La siguiente lección está abierta.')))
+            +'</span>';
           renderList();
-          /* Not on the final pass: that one is about to be replaced by the completion screen. */
-          if(!all){
-            var _ln=locate(l.id);
+          /* Not on the final pass: that one is about to be replaced by the completion screen.
+             Nor at the plan wall - that button was already rendered clickable and labelled for
+             what it is, and unlockNext would relabel it "Next lesson" with a forward arrow. */
+          if(!all && !_nplan){
             if(_ln && _ln.next) unlockNext(_ln.next.id, _ln.next.id+' '+lt(_ln.next));
           }
           if(all){
