@@ -40005,6 +40005,81 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     // Has this MT5 login ever actually delivered a trade? A typo'd number would otherwise
     // sit there looking correct while trades quietly land nowhere (or worse, get filed by
     // hand into the wrong account).
+    // A prop firm account with no rules is invisible: Prop Firm Progress only lists accounts
+    // that carry a target or a drawdown, and the greeting can only measure you against limits
+    // it has been given. Marking the account is the moment to say so - afterwards there is
+    // nothing on screen to explain the absence, and an empty section reads as a broken
+    // feature rather than an unfinished setup.
+    window.__stPromptPropRiskRules = function (accId) {
+      try {
+        var a = (typeof getAccountById === 'function') ? getAccountById(accId) : null;
+        if (!a) return;
+        var r = a.riskRules || {};
+        var TT = (window._stT || function (en) { return en; });
+        // Named individually rather than as "your risk rules", so the message tells you what
+        // to go and type instead of sending you to look for it.
+        var missing = [];
+        if (!(r.maxLossPct > 0 || r.maxLossAmount > 0))
+          missing.push(TT('a daily loss cap', 'una p\u00e9rdida m\u00e1xima diaria'));
+        if (!(r.maxDrawdownPct > 0 || r.maxDrawdownAmount > 0))
+          missing.push(TT('a max drawdown', 'un drawdown m\u00e1ximo'));
+        if (!(r.profitTargetPct > 0 || r.profitTargetAmount > 0))
+          missing.push(TT('a profit target', 'un objetivo de beneficio'));
+        if (!missing.length) return;               // fully configured - nothing to warn about
+        var esc = function (x) {
+          return String(x == null ? '' : x).replace(/[&<>"]/g, function (c) {
+            return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c];
+          });
+        };
+        var name = '<b>' + esc(a.name || TT('This account', 'Esta cuenta')) + '</b>';
+        // One missing rule or three, the sentence has to read properly either way. Hence the
+        // final conjunction rather than a trailing comma, and the singular/plural swap below -
+        // the items are mixed gender in Spanish, so the sentence avoids referring back to them
+        // by pronoun at all.
+        var list = (missing.length > 1)
+          ? missing.slice(0, -1).join(', ') + TT(' and ', ' y ') + missing[missing.length - 1]
+          : missing[0];
+        var those = (missing.length > 1) ? TT('those rules', 'esas reglas') : TT('that rule', 'esa regla');
+        var msg = TT(
+          name + ' is set as a prop firm account, but it does not have ' + list + ' yet. '
+          + 'Without ' + those + ' it will not appear in <b>Prop Firm Progress</b> in Statistics, '
+          + 'and your AI greeting cannot tell you how you are doing against your firm\u2019s limits.',
+          name + ' est\u00e1 marcada como cuenta de prop firm, pero todav\u00eda no tiene ' + list + '. '
+          + 'Sin ' + those + ' no aparecer\u00e1 en <b>Progreso de prop firm</b> en Estad\u00edsticas, '
+          + 'y tu saludo con IA no podr\u00e1 decirte c\u00f3mo vas respecto a los l\u00edmites de tu firma.'
+        );
+        var goThere = function () {
+          try {
+            // Settings is already open - the pill that triggers this lives in it - so this is a
+            // section switch, not a new window. Reuses the nav button's own handler rather than
+            // duplicating what it does to the section panels.
+            var m = document.getElementById('settings-modal-bg');
+            var nav = m && m.querySelector('.settings-nav-item[data-section="risk_rules"]');
+            if (nav) nav.click();
+            var sel = document.getElementById('settings-risk-account-select');
+            if (sel) {
+              // The picker is built from the account list; if this account is not in it yet,
+              // rebuild before selecting, or the assignment silently does nothing.
+              sel.value = accId;
+              if (sel.value !== accId && typeof populateRiskAccountPicker === 'function') {
+                populateRiskAccountPicker();
+                sel.value = accId;
+              }
+              sel.dispatchEvent(new Event('change'));
+            }
+            var first = document.getElementById('settings-risk-max-loss');
+            if (first) setTimeout(function () { try { first.focus(); } catch (e) {} }, 80);
+          } catch (e) {}
+        };
+        if (typeof showUndoToast === 'function') {
+          // "the rules" rather than a pronoun: the button always leads to the same panel, and
+          // a pronoun would have to agree with a list that is sometimes one masculine item.
+          showUndoToast(msg, goThere, 30000, TT('Set the rules', 'Definir las reglas'));
+        } else if (typeof showToast === 'function') {
+          showToast(msg, { persist: true });
+        }
+      } catch (e) {}
+    };
     window.renderSettingsAccountsList = function() {
       const wrap = document.getElementById('settings-accounts-list');
       if (!wrap || !Array.isArray(data.accounts)) return;
@@ -40156,14 +40231,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           // prop firm (the guard above returns early when the kind is unchanged) and only when the
           // name carries no stage yet, so re-marking an account already called "... - Challenge"
           // does not reopen a dialog asking what it plainly already says.
+          // Chained behind the stage dialog rather than fired alongside it - two pop-ups at
+          // once and the second one is the only one you read. onClose fires on cancel too, so
+          // skipping the stage does not also skip being told the account will not show up.
+          var _askRules = (kind === 'challenge')
+            ? function () { try { window.__stPromptPropRiskRules(a.id); } catch (e) {} }
+            : null;
           if (kind === 'challenge' && !(window.__stStageOf && window.__stStageOf(a.name))) {
             try {
               window.openRenameModal(a.name, (newName) => {
                 renameAccount(a.id, newName);
                 try { if (typeof window.renderSettingsAccountsList === 'function') window.renderSettingsAccountsList(); } catch (e) {}
                 try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
-              }, undefined, { stage: true });
-            } catch (e) {}
+              }, undefined, { stage: true, onClose: _askRules });
+            } catch (e) { if (_askRules) _askRules(); }
+          } else if (_askRules) {
+            _askRules();
           }
         });
       });
@@ -40749,6 +40832,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     const renameCancel = document.getElementById('settings-rename-cancel');
     const renameOk     = document.getElementById('settings-rename-ok');
     let _renameOnSave = null;
+    // Fires when the dialog goes away by ANY route - confirmed, cancelled, or never opened.
+    // A caller that wants to follow the rename with something else cannot use onSave for it:
+    // cancelling would swallow the follow-up.
+    let _renameOnClose = null;
     // ── Prop firm stage suffix ───────────────────────────────────────────────────────────────
     // The stage lives in the NAME, so these only ever read and rewrite the input's own text —
     // there is no second piece of state to fall out of step with what the user can see.
@@ -40794,22 +40881,36 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     function closeRenameModal() {
       if (!renameModal) return;
       renameModal.classList.remove('show');
+      const after = _renameOnClose;
       _renameOnSave = null;
+      _renameOnClose = null;
+      if (typeof after === 'function') { try { after(); } catch (e) {} }
     }
     function submitRenameModal() {
       if (!renameInput) return;
       const val = (renameInput.value || '').trim();
       if (!val) { renameInput.focus(); return; }
       const cb = _renameOnSave;
+      // Claimed before closing so closeRenameModal cannot run it early - the follow-up belongs
+      // AFTER the rename has been applied, or it reads the old name.
+      const after = _renameOnClose;
+      _renameOnClose = null;
       closeRenameModal();
       if (typeof cb === 'function') cb(val);
+      if (typeof after === 'function') { try { after(); } catch (e) {} }
     }
     // Public-ish: called by the row Rename action handler. Pre-fills the
     // input with the current name, selects all text so typing replaces it
     // immediately, and stores the onSave callback to fire on confirm.
     window.openRenameModal = function(initialName, onSave, title, opts) {
-      if (!renameModal || !renameInput) return;
+      // Bailing here still owes the caller its follow-up: without this a missing modal element
+      // would silently drop the prompt chained behind it.
+      if (!renameModal || !renameInput) {
+        if (opts && typeof opts.onClose === 'function') { try { opts.onClose(); } catch (e) {} }
+        return;
+      }
       _renameOnSave = onSave;
+      _renameOnClose = (opts && typeof opts.onClose === 'function') ? opts.onClose : null;
       const rt = document.getElementById('settings-rename-title');
       if (rt) rt.textContent = title || ((typeof t === 'function') ? t('settings.rename') : 'Rename');
       renameInput.value = initialName || '';
