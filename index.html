@@ -11242,6 +11242,55 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (a.isPrimary !== undefined) delete a.isPrimary; // primary concept removed
       });
     }
+    // --- Risk rules: record the unit each value was entered in.
+    //
+    // The Settings input used to save the number and not the mode, so a rule could exist with
+    // no statement of what it meant. Every reader had to infer it, and they inferred
+    // differently - the same account showed one target in Settings, another in Prop Firm
+    // Progress, and classified its trades against a third figure.
+    //
+    // So: write the unit down. Where a mode is already stored nothing is touched. Where it is
+    // missing it is inferred exactly as the readers inferred it, with one correction - a
+    // percentage that cannot be a percentage is the amount, typed while the toggle read %.
+    // Each of these rules is a percentage OF THE BALANCE, so anything over 100 is not one.
+    //
+    // Idempotent by construction: it only fills a mode that is absent, so the second pass
+    // finds nothing to do.
+    (function recordRiskRuleUnits() {
+      // pctKey, amtKey, modeKey, and the largest number that could honestly be a percent.
+      // 100 for the rest; a break-even band is a margin either side of zero, so a band of
+      // 100% of balance would mark every trade break-even and cannot be meant.
+      var RULES = [
+        ['maxLossPct', 'maxLossAmount', 'maxLossMode', 100],
+        ['maxRiskPct', 'maxRiskAmount', 'maxRiskMode', 100],
+        ['maxDrawdownPct', 'maxDrawdownAmount', 'maxDrawdownMode', 100],
+        ['profitTargetPct', 'profitTargetAmount', 'profitTargetMode', 100],
+        ['beThresholdPct', 'beThresholdAmount', 'beThresholdMode', 99.999]
+      ];
+      function fix(rr) {
+        if (!rr || typeof rr !== 'object') return;
+        RULES.forEach(function (r) {
+          var pctKey = r[0], amtKey = r[1], modeKey = r[2], maxPct = r[3];
+          if (rr[modeKey] === 'amount' || rr[modeKey] === 'pct') return;   // already stated
+          var pct = parseFloat(rr[pctKey]);
+          var amt = parseFloat(rr[amtKey]);
+          if (isNaN(pct)) pct = 0;
+          if (isNaN(amt)) amt = 0;
+          if (!(pct > 0) && !(amt > 0)) return;                            // nothing set
+          if (pct > maxPct && !(amt > 0)) {
+            rr[amtKey] = pct;                 // it was money all along
+            delete rr[pctKey];
+            rr[modeKey] = 'amount';
+            return;
+          }
+          rr[modeKey] = (amt > 0 && !(pct > 0)) ? 'amount' : 'pct';
+        });
+      }
+      try { if (d.settings) fix(d.settings.riskRules); } catch (e) {}
+      try {
+        if (Array.isArray(d.accounts)) d.accounts.forEach(function (a) { if (a) fix(a.riskRules); });
+      } catch (e) {}
+    })();
     // Trading pair shown on the dashboard and in copied Discord headers. Defaults to
     // EUR/USD but the user can change it in Settings → Session.
     if (!d.settings.pair) d.settings.pair = 'EUR/USD';
@@ -27444,10 +27493,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const inp    = document.getElementById(inpId);
       if (!toggle || !inp) return;
       const activeBtn = toggle.querySelector('.settings-risk-mode-btn.active');
-      const mode = (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
-      rr[modeKey] = mode;
+      let mode = (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
       const raw = inp.value.trim();
       const n = Number(raw);
+      // Every rule here is a percentage OF THE BALANCE, and none is over 100. A number that
+      // large is the amount, entered while the toggle happened to read %. The same correction
+      // the Settings input makes, so the two forms cannot disagree about what was meant.
+      if (mode === 'pct' && !isNaN(n) && n > 100) { mode = 'amount'; delete rr[pctKey]; }
+      rr[modeKey] = mode;
       if (raw !== '' && !isNaN(n) && n > 0) {
         rr[(mode === 'amount') ? amtKey : pctKey] = n;
       }
@@ -27688,10 +27741,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       const inp = document.getElementById(inpId);
       if (!toggle || !inp) return;
       const activeBtn = toggle.querySelector('.settings-risk-mode-btn.active');
-      const mode = (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
-      rr[modeKey] = mode;
+      let mode = (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
       const raw = inp.value.trim();
       const n = Number(raw);
+      // Every rule here is a percentage OF THE BALANCE, and none is over 100. A number that
+      // large is the amount, entered while the toggle happened to read %. The same correction
+      // the Settings input makes, so the two forms cannot disagree about what was meant.
+      if (mode === 'pct' && !isNaN(n) && n > 100) { mode = 'amount'; delete rr[pctKey]; }
+      rr[modeKey] = mode;
       if (raw !== '' && !isNaN(n) && n > 0) rr[(mode === 'amount') ? amtKey : pctKey] = n;
     };
     writeRuleByMode('maxLoss', 'onboard-max-loss', 'maxLossPct', 'maxLossAmount', 'maxLossMode');
@@ -39741,11 +39798,33 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         const activeBtn = toggle.querySelector('.settings-risk-mode-btn.active');
         return (activeBtn && activeBtn.dataset.mode === 'amount') ? 'amount' : 'pct';
       };
-      // Input change → write to whichever storage key matches active mode.
+      // Input change → write the value AND the unit it was entered in.
       inp.addEventListener('change', e => {
-        const mode = currentMode();
+        let mode = currentMode();
+        const raw = Number(String(e.target.value).trim());
+        // A percentage that cannot be one. Every rule on this panel is a percentage OF THE
+        // BALANCE - a target, a drawdown, a per-trade risk - and none of them is over 100.
+        // A number that large is the amount, typed while the toggle happened to read %, and
+        // storing it as a percent is how a 70,000 account came to show a 4,970,000 target.
+        // Corrected rather than accepted, and visibly: the toggle and the suffix both move,
+        // so the value is shown as the amount it was taken to be.
+        if (mode === 'pct' && isFinite(raw) && raw > 100) {
+          mode = 'amount';
+          toggle.querySelectorAll('.settings-risk-mode-btn').forEach(b => {
+            b.classList.toggle('active', b.dataset.mode === 'amount');
+          });
+          if (sufEl) {
+            sufEl.textContent = (t('settings.risk_amt_suffix') || '{C} amount')
+              .replace(/\{C\}/g, (typeof curSym === 'function' ? curSym() : '£'));
+          }
+          inp.placeholder = def.amtPh;
+          saveRiskRule(def.pctKey, '');          // clear the percent it is no longer in
+        }
         const key = (mode === 'amount') ? def.amtKey : def.pctKey;
         saveRiskRule(key, e.target.value);
+        // The unit travels with the value. Without this the stored rule cannot say what it
+        // means, and every reader downstream has to guess - which is the actual bug.
+        saveRiskMode(def.modeKey, mode);
       });
       // Toggle button click → switch mode, persist it, swap the input's
       // value and suffix to match the new mode. The previous mode's value
