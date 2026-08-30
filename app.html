@@ -1395,6 +1395,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     .econ-event { grid-template-columns: 56px 44px 24px minmax(110px, 1fr) 56px 56px 56px 24px; gap: 8px; min-width: 500px; }
     .econ-event-actual, .econ-event-forecast, .econ-event-previous { display: block; }
     .econ-calendar-body { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    /* The expanded panel is a sibling of the rows inside the same sideways-scrolling body, so
+       it has to be as wide as they are. Without this it stopped at the visible width while the
+       rows carried on to 500px, leaving a band of empty background down the right of the note
+       as soon as the calendar was scrolled across. */
+    .econ-event-detail { min-width: 500px; box-sizing: border-box; }
   }
   /* Per-row chevron — matches the calendar header chevron in glyph and rotation behaviour.
      Rotates 180deg when the row's `.expanded` class is present, mirroring how the calendar
@@ -33258,6 +33263,23 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
     // Single named external window — reused so repeated pop-outs don't spawn duplicates.
     let _bloombergWin = null;
+    /* Polls the popped-out window while it is open, so the in-app player can come back when it
+       closes. There is no event for another window closing that this side can subscribe to. */
+    let _bbWinWatch = null;
+    /* Only restore what the popout itself took away. If the floater was already closed when the
+       popout was opened, closing the popout should not conjure one up. */
+    let _bbRestoreOnPopoutClose = false;
+    function bbWatchPopout() {
+      if (_bbWinWatch) { clearInterval(_bbWinWatch); _bbWinWatch = null; }
+      _bbWinWatch = setInterval(function () {
+        if (_bloombergWin && !_bloombergWin.closed) return;
+        clearInterval(_bbWinWatch); _bbWinWatch = null;
+        _bloombergWin = null;
+        if (!_bbRestoreOnPopoutClose) return;
+        _bbRestoreOnPopoutClose = false;
+        try { if (bbFloater && bbFloater.hidden) bbFloaterOpen(); } catch (e) {}
+      }, 1000);
+    }
 
     function bbFloaterOpen() {
       if (!bbFloater) return;
@@ -33364,7 +33386,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // If popup already exists, just focus it and ditch the floater.
       if (_bloombergWin && !_bloombergWin.closed) {
         try { _bloombergWin.focus(); } catch (e) {}
+        if (bbFloater && !bbFloater.hidden) _bbRestoreOnPopoutClose = true;
         bbFloaterClose();
+        bbWatchPopout();
         return;
       }
       // Open empty popup, then write wrapper HTML with link-mask overlay
@@ -33401,7 +33425,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _bloombergWin.document.open();
       _bloombergWin.document.write(wrapperHtml);
       _bloombergWin.document.close();
+      /* Remember whether there was a player to come back to, then hand over to the popout -
+         one live stream at a time, or the audio doubles. */
+      _bbRestoreOnPopoutClose = !!(bbFloater && !bbFloater.hidden);
       bbFloaterClose();
+      bbWatchPopout();
     }
 
     if (bloombergBtn) {
