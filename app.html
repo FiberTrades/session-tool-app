@@ -33279,31 +33279,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     /* Polls the popped-out window while it is open, so the in-app player can come back when it
        closes. There is no event for another window closing that this side can subscribe to. */
     let _bbWinWatch = null;
-    /* Only restore what the popout itself took away. If the floater was already closed when the
-       popout was opened, closing the popout should not conjure one up. */
-    let _bbRestoreOnPopoutClose = false;
-    /* Bringing the player back is a second video surface, and it was being created at the
-       worst moment: while the browser tore down the popout's own, and animated back to this
-       tab. That is where the blocky colour flash came from - a hardware video surface being
-       destroyed mid-frame. So wait for this page to actually be on screen, then give the old
-       surface a beat to go before asking for a new one. */
-    function bbRestoreWhenSettled() {
-      var _open = function () {
-        try { if (bbFloater && bbFloater.hidden) bbFloaterOpen({ quiet: true }); } catch (e) {}
-      };
-      var _go = function () {
-        if (document.visibilityState !== 'visible') return false;
-        setTimeout(_open, 600);
-        return true;
-      };
-      if (_go()) return;
-      /* Not on screen yet - the tab switch has not finished. Wait for it rather than building
-         a video into a hidden page, which is both wasteful and the thing that flashes. */
-      var _onVis = function () {
-        if (!_go()) return;
-        document.removeEventListener('visibilitychange', _onVis);
-      };
-      document.addEventListener('visibilitychange', _onVis);
+    /* Handing the sound to the popped-out window, and taking it back, without either player
+       being created or destroyed. That churn - a hardware video surface going away while
+       another appears - is what showed as blocks of colour across the screen. */
+    var _bbMutedForPopout = false;
+    function bbHandOverToPopout() {
+      if (!bbFloater || bbFloater.hidden) return;   // nothing playing here to hand over
+      _bbMutedForPopout = true;
+      try { bbPost({ event: 'command', func: 'mute', args: [] }); } catch (e) {}
+    }
+    function bbTakeBackFromPopout() {
+      if (!_bbMutedForPopout) return;
+      _bbMutedForPopout = false;
+      /* Only if the trader had sound on to begin with - bbApplySound is the one place that
+         knows, and it does nothing when they did not. */
+      try { bbApplySound(); } catch (e) {}
+      try { _bbArmSoundOnGesture(); } catch (e) {}
     }
     function bbWatchPopout() {
       if (_bbWinWatch) { clearInterval(_bbWinWatch); _bbWinWatch = null; }
@@ -33311,9 +33302,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         if (_bloombergWin && !_bloombergWin.closed) return;
         clearInterval(_bbWinWatch); _bbWinWatch = null;
         _bloombergWin = null;
-        if (!_bbRestoreOnPopoutClose) return;
-        _bbRestoreOnPopoutClose = false;
-        bbRestoreWhenSettled();
+        bbTakeBackFromPopout();
       }, 1000);
     }
 
@@ -33428,8 +33417,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // If popup already exists, just focus it and ditch the floater.
       if (_bloombergWin && !_bloombergWin.closed) {
         try { _bloombergWin.focus(); } catch (e) {}
-        if (bbFloater && !bbFloater.hidden) _bbRestoreOnPopoutClose = true;
-        bbFloaterClose({ quiet: true });
+        bbHandOverToPopout();
         bbWatchPopout();
         return;
       }
@@ -33469,10 +33457,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       _bloombergWin.document.close();
       /* Remember whether there was a player to come back to, then hand over to the popout -
          one live stream at a time, or the audio doubles. */
-      _bbRestoreOnPopoutClose = !!(bbFloater && !bbFloater.hidden);
-      /* Quiet on the way out and quiet on the way back: the two flips of bloombergOpen cancel
-         out, and the heartbeat persists whatever it ends up as. */
-      bbFloaterClose({ quiet: true });
+      /* The in-app player STAYS. Closing it here and rebuilding it later is what produced
+         the blocky colour flash: a hardware video surface being created while the popout's own
+         was being destroyed. Muted instead, so only one of the two is audible, and nothing is
+         torn down or built at the moment the popout goes. */
+      bbHandOverToPopout();
       bbWatchPopout();
     }
 
