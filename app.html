@@ -57865,10 +57865,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
        they were reading. visibility keeps the layout, and with it the scroll position.
        pointer-events:none goes with it: a visibility:hidden overlay still sits at z-index 12100 and
        would otherwise swallow every click meant for the app underneath. */
-    function show(){ if(!dismissed && !cameToSignIn){ f.style.visibility="visible"; f.style.pointerEvents="auto"; f.setAttribute("aria-hidden","false"); try{ if(f.contentWindow){ f.contentWindow.postMessage("lp-setlang:"+((window.__lang==="es")?"es":"en"),"*"); } }catch(_){} } }
-    function hide(){ f.style.visibility="hidden"; f.style.pointerEvents="none"; f.setAttribute("aria-hidden","true"); }
+    /* A recorder, because this sequence cannot be caught by hand: by the time DevTools is open
+       and a command is typed, the state has moved on and everything reads healthy. Read it with
+       __stLpTrace() after reproducing. Costs one array push per call. */
+    var _lpTrace = [];
+    function _lp(what, extra){
+      try { _lpTrace.push({ t: Math.round(performance.now()), what: what,
+                            dismissed: dismissed, cameToSignIn: cameToSignIn,
+                            vis: f.style.visibility, extra: extra || null }); } catch (_) {}
+    }
+    try { window.__stLpTrace = function(){ return JSON.parse(JSON.stringify(_lpTrace)); }; } catch (_) {}
+    function show(){ _lp('show called'); if(!dismissed && !cameToSignIn){ _lp('show REVEALS'); f.style.visibility="visible"; f.style.pointerEvents="auto"; f.setAttribute("aria-hidden","false"); try{ if(f.contentWindow){ f.contentWindow.postMessage("lp-setlang:"+((window.__lang==="es")?"es":"en"),"*"); } }catch(_){} } }
+    function hide(){ _lp('hide'); f.style.visibility="hidden"; f.style.pointerEvents="none"; f.setAttribute("aria-hidden","true"); }
     function loginGate(){ var b = document.getElementById("stc-g-login"); return b ? b.closest(".stc-gate") : null; }
-    function sync(){ var g = loginGate(); if(!g) return; if(g.classList.contains("open")){ show(); } else { dismissed = false; hide(); } }
+    function sync(){ var g = loginGate(); if(!g) return; var _o = g.classList.contains("open"); _lp('sync', _o ? 'gate OPEN' : 'gate shut'); if(_o){ show(); } else { dismissed = false; hide(); } }
     var closeAdded=false;
     function addClose(g){ if(closeAdded) return; closeAdded=true; var x=document.createElement("button"); x.type="button"; x.setAttribute("aria-label","Back to home"); x.textContent="\u2715"; x.style.cssText="position:absolute;top:calc(18px + env(safe-area-inset-top, 0px) - 2px);left:50%;transform:translateX(-50%);z-index:2;width:30px;height:30px;margin:0;border-radius:50%;border:1px solid rgba(255,255,255,0.18);background:rgba(20,20,20,0.65);color:#9a9a9a;cursor:pointer;font-size:12px;line-height:1;display:flex;align-items:center;justify-content:center;flex:0 0 auto;transition:color .15s,border-color .15s;"; x.onmouseenter=function(){ x.style.color="#fff"; x.style.borderColor="rgba(255,255,255,0.45)"; }; x.onmouseleave=function(){ x.style.color="#9a9a9a"; x.style.borderColor="rgba(255,255,255,0.18)"; }; x.onclick=function(){ /* Pressing this IS a request for the landing, so it overrides the reason we skipped it on arrival - otherwise show() refuses and the button does nothing. */ dismissed=false; cameToSignIn=false; show(); }; /* On the GATE, not in the shell. As a flow item it sat wherever the centred card put it, a long way below the language buttons; against the gate it shares .stc-lang's top and lines up with them. .stc-gate is position:fixed, so it is the containing block. */ g.appendChild(x); }
     function init(){ var tries=0; var iv=setInterval(function(){ var g=loginGate(); if(g){ clearInterval(iv); addClose(g); try{ new MutationObserver(sync).observe(g,{attributes:true,attributeFilter:["class"]}); }catch(_){} sync(); } else if(++tries>150){ clearInterval(iv); } }, 80); }
