@@ -1,6 +1,7 @@
 /* Session Tool — service worker
  *
- * The important part: the app page (index.html) is fetched NETWORK-FIRST.
+ * The important part: both pages are fetched NETWORK-FIRST. There are two of them now - the
+ * landing at the root (index.html) and the app (app.html) - and each is cached as itself.
  * That means whenever you deploy a new index.html, the next load pulls the
  * fresh copy from the network — you are no longer stuck on an old cached page.
  * If the network is unavailable, it falls back to the last cached copy, so the
@@ -19,7 +20,9 @@
  * asset actually changed.
  */
 
-const CACHE_VERSION = 'st-2026-08-10n389';    // only bump when a PRECACHED shell asset changes
+const CACHE_VERSION = 'st-2026-08-30n390';    // only bump when a PRECACHED shell asset changes
+// Bumped because the shell itself split in two: the landing now lives at the root and the app
+// at app.html, so every cached copy of the old single-page shell has to go.
 const APP_CACHE     = CACHE_VERSION + '-app';
 // DELIBERATELY NOT VERSIONED. This used to be CACHE_VERSION + '-rt', which meant every bump
 // minted a new runtime cache and the activate handler below deleted the old one — throwing away
@@ -38,7 +41,9 @@ self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(APP_CACHE).then((cache) =>
       // allSettled so a missing path never fails the whole install
-      Promise.allSettled([cache.add('./'), cache.add('./index.html')])
+      // Two shells now: the landing at the root, and the app. Both precached so a first
+      // offline open works whichever the visitor has.
+      Promise.allSettled([cache.add('./'), cache.add('./index.html'), cache.add('./app.html')])
     ).catch(() => {})
   );
 });
@@ -61,7 +66,7 @@ function isNavigation(request, url) {
   if (request.mode === 'navigate') return true;
   if (url.origin !== self.location.origin) return false;
   const path = url.pathname.replace(/\/+$/, '');
-  return path === '' || path.endsWith('/index.html');
+  return path === '' || path.endsWith('/index.html') || path.endsWith('/app.html');
 }
 
 self.addEventListener('fetch', (event) => {
@@ -79,11 +84,17 @@ self.addEventListener('fetch', (event) => {
       fetch(request, { cache: 'no-store' })
         .then((res) => {
           const copy = res.clone();
-          caches.open(APP_CACHE).then((c) => c.put('./index.html', copy)).catch(() => {});
+          // Cached under the URL that was actually requested. Filing every navigation under
+          // './index.html' was right when that was the only page; with a landing at the root
+          // and the app at app.html it would serve one in place of the other.
+          caches.open(APP_CACHE).then((c) => c.put(request, copy)).catch(() => {});
           return res;
         })
         .catch(() =>
+          // Offline: the page that was asked for, then the app, then the root. Preferring the
+          // app over the root here is deliberate - someone offline is a member, not a visitor.
           caches.match(request)
+            .then((r) => r || caches.match('./app.html'))
             .then((r) => r || caches.match('./index.html'))
             .then((r) => r || caches.match('./'))
         )
