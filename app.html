@@ -55925,6 +55925,32 @@ try {
     if (!currentUser) return;
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
     if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
+
+    /* Before downloading the journal, ask whether it changed. lastPushedUat() is the stamp of an
+       upsert THIS device made and the server confirmed; if the cloud still carries it, the cloud
+       copy is the one we wrote and the comparison below would be a copy against itself. A row is
+       a few bytes; the journal averages 53 kB.
+       Local edits made since are not stranded - saveData() schedules cloudPush() on its own.
+       An authoritative call skips this: those exist to force a real comparison. */
+    var _own = null; try { _own = localStorage.getItem('st_journal_owner'); } catch (e) {}
+    var _mine = (typeof ST.lastPushedUat === 'function') ? ST.lastPushedUat() : null;
+    if (!authoritative && _mine && _own === currentUser.id) {
+      pushDiag.stampReads++;
+      sb.from('journals').select('updated_at').eq('user_id', currentUser.id).maybeSingle()
+        .then(function (h) {
+          if (h && !h.error && h.data && h.data.updated_at === _mine) {
+            pushDiag.stampHits++; accStatus(tt('synced')); return;   // unchanged: nothing to pull
+          }
+          reconcileFull(authoritative);
+        }, function () { reconcileFull(authoritative); });           // any doubt -> read it properly
+      return;
+    }
+    reconcileFull(authoritative);
+  }
+
+  /* The full loss-proof reconcile: pulls the cloud copy and merges it with local. Unchanged
+     except for being reached through the stamp check above. */
+  function reconcileFull(authoritative) {
     accStatus(tt('syncing'));
     pushDiag.reads++;
     sb.from('journals').select('data, updated_at').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
@@ -56332,17 +56358,8 @@ try {
     // older stamp, so it still falls through to the full reconcile and merges as before.
     // Anything else — no stamp yet, different owner, different stamp, or a failed check —
     // falls through to the full loss-proof reconcile, unchanged.
-    var _own = null; try { _own = localStorage.getItem('st_journal_owner'); } catch (e) {}
-    var _mine = (typeof ST.lastPushedUat === 'function') ? ST.lastPushedUat() : null;
-    if (_mine && _own === currentUser.id) {
-      pushDiag.stampReads++;
-      sb.from('journals').select('updated_at').eq('user_id', currentUser.id).maybeSingle()
-        .then(function (h) {
-          if (h && !h.error && h.data && h.data.updated_at === _mine) { pushDiag.stampHits++; return; }
-          try { reconcile(); } catch (e) {}
-        }, function () { try { reconcile(); } catch (e) {} });
-      return;
-    }
+    /* The stamp check used to live here, for this caller alone. reconcile() does it for every
+       caller now, so this just calls it - one check instead of two on this path. */
     try { if (typeof reconcile === 'function') reconcile(); } catch (e) {}
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) __cloudResume(); });
