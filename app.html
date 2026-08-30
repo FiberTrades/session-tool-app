@@ -33277,11 +33277,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         _bloombergWin = null;
         if (!_bbRestoreOnPopoutClose) return;
         _bbRestoreOnPopoutClose = false;
-        try { if (bbFloater && bbFloater.hidden) bbFloaterOpen(); } catch (e) {}
+        try { if (bbFloater && bbFloater.hidden) bbFloaterOpen({ quiet: true }); } catch (e) {}
       }, 1000);
     }
 
-    function bbFloaterOpen() {
+    /* `opts.quiet` skips the journal write. Only the popout round trip uses it: saveData
+       stringifies the entire journal and starts a cloud save on the main thread, which on a
+       phone is a visible stall - and closing the popout is exactly when the browser is already
+       busy handing focus back, so it read as the app locking up. */
+    function bbFloaterOpen(opts) {
+      var _quiet = !!(opts && opts.quiet);
       if (!bbFloater) return;
       // Never (re)open the stream while logged out on the login gate — the restore-on-load
       // would autoplay it muted and the first tap ('Log in') would then unblock the audio.
@@ -33299,7 +33304,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       resolveBloombergLiveId();
       bbFloater.hidden = false;
       if (bloombergBtn) bloombergBtn.classList.add("on");
-      if (data.settings) { data.settings.bloombergOpen = true; saveData(); }
+      if (data.settings) { data.settings.bloombergOpen = true; if (!_quiet) saveData(); }
       // Restore the size the user last resized the window to (persists across refreshes).
       if (data.settings && data.settings.bloombergSize) {
         bbFloater.style.width  = data.settings.bloombergSize.w + 'px';
@@ -33348,11 +33353,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       // getBoundingClientRect which needs a layout pass).
       requestAnimationFrame(constrainBloombergFloater);
     }
-    function bbFloaterClose() {
+    function bbFloaterClose(opts) {
+      var _quiet = !!(opts && opts.quiet);
       if (!bbFloater) return;
       bbFloater.hidden = true;
       if (bloombergBtn) bloombergBtn.classList.remove("on");
-      if (data.settings) { data.settings.bloombergOpen = false; saveData(); }
+      if (data.settings) { data.settings.bloombergOpen = false; if (!_quiet) saveData(); }
       // Use 'about:blank' explicitly to fully blank the iframe. Setting
       // iframe.src = '' would load the current page's URL into the iframe
       // (HTML spec resolves '' to base URL), which then breaks the next
@@ -33387,7 +33393,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       if (_bloombergWin && !_bloombergWin.closed) {
         try { _bloombergWin.focus(); } catch (e) {}
         if (bbFloater && !bbFloater.hidden) _bbRestoreOnPopoutClose = true;
-        bbFloaterClose();
+        bbFloaterClose({ quiet: true });
         bbWatchPopout();
         return;
       }
@@ -33428,7 +33434,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       /* Remember whether there was a player to come back to, then hand over to the popout -
          one live stream at a time, or the audio doubles. */
       _bbRestoreOnPopoutClose = !!(bbFloater && !bbFloater.hidden);
-      bbFloaterClose();
+      /* Quiet on the way out and quiet on the way back: the two flips of bloombergOpen cancel
+         out, and the heartbeat persists whatever it ends up as. */
+      bbFloaterClose({ quiet: true });
       bbWatchPopout();
     }
 
