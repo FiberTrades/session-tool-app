@@ -36040,10 +36040,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var ALLOW_EMAIL = { 'be.o2@hotmail.com': 1 };
     var history = [], busy = false, coached = false, wired = false, _lastModel = null;
     // Persist the conversation across reloads (text only — images aren't stored, to keep it small).
-    var CHAT_KEY = 'st_ai_chat_v1';
-    try { var _saved = JSON.parse(localStorage.getItem(CHAT_KEY) || '[]'); if (Array.isArray(_saved)) history = _saved; } catch (e) {}
-    function saveHistory() { try { localStorage.setItem(CHAT_KEY, JSON.stringify(history.map(function (m) { return { role: m.role, content: m.content, model: m.model || undefined }; }).slice(-40))); } catch (e) {} }
-    function clearHistory() { history = []; try { localStorage.removeItem(CHAT_KEY); } catch (e) {} renderLog(); }
+    // Per ACCOUNT, not per browser. Under one global key, a second account signing in on the
+    // same machine opened the AI tool and read the first account's conversation - their
+    // questions, their answers, their numbers. The user id in the key makes that impossible
+    // rather than something an account-switch handler has to remember to clean up.
+    var CHAT_KEY_BASE = 'st_ai_chat_v1';
+    try { localStorage.removeItem(CHAT_KEY_BASE); } catch (e) {}   // the leaked unscoped copy; unknowable whose, so not migrated
+    var _chatUid = null;
+    function _aiUid() {
+      try {
+        var u = (typeof currentUser !== 'undefined' && currentUser) ? currentUser : window.currentUser;
+        if (u && u.id) return String(u.id);
+      } catch (e) {}
+      return (_me && _me.id) ? String(_me.id) : '';
+    }
+    function chatKey() { var u = _aiUid(); return u ? CHAT_KEY_BASE + ':' + u : null; }
+    function loadHistory() {
+      history = [];
+      var k = chatKey(); if (!k) return;
+      try { var _s = JSON.parse(localStorage.getItem(k) || '[]'); if (Array.isArray(_s)) history = _s; } catch (e) {}
+    }
+    /* This module is built before auth resolves, so the first read has no user to key on and
+       must happen later. Re-reads on every change of user, which also covers a switch made
+       without a page reload. */
+    function syncChatUser() { var u = _aiUid(); if (u === _chatUid) return; _chatUid = u; loadHistory(); }
+    function saveHistory() { var k = chatKey(); if (!k) return; try { localStorage.setItem(k, JSON.stringify(history.map(function (m) { return { role: m.role, content: m.content, model: m.model || undefined }; }).slice(-40))); } catch (e) {} }
+    function clearHistory() { history = []; var k = chatKey(); try { if (k) localStorage.removeItem(k); } catch (e) {} renderLog(); }
 
     var _me = null;   // resolved Supabase user (source of truth for the gate)
     function allowUser(u) { if (!u) return false; if (ALLOW_ID[u.id]) return true; if (u.email && ALLOW_EMAIL[String(u.email).toLowerCase()]) return true; return false; }
@@ -36531,6 +36553,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       return 'Answered by Claude';
     }
     function renderLog() {
+      syncChatUser();   // the log must never paint a conversation belonging to another account
       var html = history.map(function (m) {
         var img = (m.role === 'user' && m.image) ? '<img class="st-asst-msg-img" src="' + m.image + '" alt="">' : '';
         var msg = '<div class="st-asst-msg ' + (m.role === 'user' ? 'me' : 'ai') + '">' + img + fmtMsg(m.content) + '</div>';
@@ -36805,8 +36828,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
             (a yesterday recap) came back as "Rough session today" six minutes into a fresh
             session. Bumped so the mislabelled line already cached for the day misses. */
     var GREET_POOL_VER = 'p4';
-    function _greetStore() { try { return JSON.parse(localStorage.getItem(GREET_LS) || '{}') || {}; } catch (e) { return {}; } }
-    function _greetStoreSave(o) { try { localStorage.setItem(GREET_LS, JSON.stringify(o)); } catch (e) {} }
+    // Same fault, and worse: a greeting is written FROM the account's own trading, so a shared
+    // key handed a new member someone else's performance as their welcome line.
+    try { localStorage.removeItem(GREET_LS); } catch (e) {}
+    function _greetKey() { var u = _aiUid(); return u ? GREET_LS + ':' + u : null; }
+    function _greetStore() { var k = _greetKey(); if (!k) return {}; try { return JSON.parse(localStorage.getItem(k) || '{}') || {}; } catch (e) { return {}; } }
+    function _greetStoreSave(o) { var k = _greetKey(); if (!k) return; try { localStorage.setItem(k, JSON.stringify(o)); } catch (e) {} }
     // A greeting must be a REWRITTEN line — never a model meta/clarification ("I don't have your line,
     // paste it…") and never a REFUSAL ("I can't rewrite that line… creative/content task, check Settings…").
     // Reject those on cache-read AND after generation so a stray model refusal can't show, persist, or sync
@@ -57720,9 +57747,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         b:_t('Your scoreboard \u2014 10 trades at a time. Reviews you post feed it automatically, or push trades here directly. Post your completed series to the community too.','Tu marcador \u2014 10 operaciones a la vez. Las revisiones que publicas la alimentan autom\u00e1ticamente, o env\u00eda operaciones directamente. Publica tu serie completa en la comunidad tambi\u00e9n.') },
       { sel:'.tab[data-page="trades"]', pre:showTab('trades'), t:_t('4 \u00b7 Statistics','4 \u00b7 Estad\u00edsticas'),
         b:_t('Your performance broken down \u2014 win rate, R-multiples and the patterns that build up over time.','Tu rendimiento desglosado \u2014 tasa de acierto, m\u00faltiplos R y los patrones que se forman con el tiempo.') },
-      { sel:'.tab[data-page="tradeview"]', pre:showTab('tradeview'), t:_t('5 \u00b7 Calendar Log','5 \u00b7 Registro de calendario'),
+      { sel:'.tab[data-page="tradeview"]', pre:showTab('tradeview'), t:_t('5 \u00b7 Calendar','5 \u00b7 Calendario'),
         b:_t('A day-by-day view of your sessions, biases and notes. It\u2019s also where you do your weekly review \u2014 post it to the community each week to reflect on how the week went.','Una vista d\u00eda a d\u00eda de tus sesiones, sesgos y notas. Aqu\u00ed tambi\u00e9n haces tu revisi\u00f3n semanal \u2014 publ\u00edcala en la comunidad cada semana para reflexionar sobre c\u00f3mo fue la semana.') },
-      { sel:'.tab[data-page="community"]', pre:showTab('community'), t:_t('6 \u00b7 Community','6 \u00b7 Comunidad'),
+      { sel:'.tab[data-page="vault"]', pre:showTab('vault'), t:_t('6 \u00b7 Academy','6 \u00b7 Academia'),
+        b:_t('New to trading? Start here. Forty lessons across eight modules, built from the ground up \u2014 the basics first, then structure, risk and execution, at your own pace. The first two modules are free on every plan; Bundle Pro and Mentorship open the rest.','\u00bfNuevo en el trading? Empieza aqu\u00ed. Cuarenta lecciones en ocho m\u00f3dulos, desde cero \u2014 primero lo b\u00e1sico, luego estructura, riesgo y ejecuci\u00f3n, a tu ritmo. Los dos primeros m\u00f3dulos son gratis en todos los planes; Bundle Pro y Mentor\u00eda abren el resto.') },
+      { sel:'.tab[data-page="community"]', pre:showTab('community'), t:_t('7 \u00b7 Community','7 \u00b7 Comunidad'),
         b:_t('Channels, DMs and live voice/video calls with other traders \u2014 share screens and draw on charts together to break down setups in real time. Your posted biases and reviews land here automatically. Bundle Pro and Mentorship unlock the full community: every channel, the live session chats, the full trading plan and The ST Method.','Canales, MD y llamadas de voz/v\u00eddeo en vivo con otros traders \u2014 comparte pantalla y dibuja en los gr\u00e1ficos juntos para analizar setups en tiempo real. Tus sesgos y revisiones publicados aparecen aqu\u00ed autom\u00e1ticamente. Bundle Pro y Mentor\u00eda desbloquean la comunidad completa: todos los canales, los chats de sesi\u00f3n en vivo, el plan de trading completo y El M\u00e9todo ST.') },
       { sel:'.settings-nav-item[data-section="profile"]', pre:openSet('profile'), t:_t('Settings \u00b7 Profile','Ajustes \u00b7 Perfil'),
         b:_t('Set your display name and profile here \u2014 it\u2019s how you appear in the community.','Configura tu nombre y perfil aqu\u00ed \u2014 as\u00ed apareces en la comunidad.') },
