@@ -33282,6 +33282,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     /* Only restore what the popout itself took away. If the floater was already closed when the
        popout was opened, closing the popout should not conjure one up. */
     let _bbRestoreOnPopoutClose = false;
+    /* Bringing the player back is a second video surface, and it was being created at the
+       worst moment: while the browser tore down the popout's own, and animated back to this
+       tab. That is where the blocky colour flash came from - a hardware video surface being
+       destroyed mid-frame. So wait for this page to actually be on screen, then give the old
+       surface a beat to go before asking for a new one. */
+    function bbRestoreWhenSettled() {
+      var _open = function () {
+        try { if (bbFloater && bbFloater.hidden) bbFloaterOpen({ quiet: true }); } catch (e) {}
+      };
+      var _go = function () {
+        if (document.visibilityState !== 'visible') return false;
+        setTimeout(_open, 600);
+        return true;
+      };
+      if (_go()) return;
+      /* Not on screen yet - the tab switch has not finished. Wait for it rather than building
+         a video into a hidden page, which is both wasteful and the thing that flashes. */
+      var _onVis = function () {
+        if (!_go()) return;
+        document.removeEventListener('visibilitychange', _onVis);
+      };
+      document.addEventListener('visibilitychange', _onVis);
+    }
     function bbWatchPopout() {
       if (_bbWinWatch) { clearInterval(_bbWinWatch); _bbWinWatch = null; }
       _bbWinWatch = setInterval(function () {
@@ -33290,7 +33313,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
         _bloombergWin = null;
         if (!_bbRestoreOnPopoutClose) return;
         _bbRestoreOnPopoutClose = false;
-        try { if (bbFloater && bbFloater.hidden) bbFloaterOpen({ quiet: true }); } catch (e) {}
+        bbRestoreWhenSettled();
       }, 1000);
     }
 
