@@ -2349,6 +2349,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
 
   .rule-banner { margin-bottom: 28px; padding: 14px 20px; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-card); box-shadow: var(--shadow-card); border-left: 3px solid var(--info); display: inline-flex; align-items: center; gap: 18px; flex-wrap: wrap; max-width: 100%; }
   .rule-banner.hidden { display: none; }
+  /* Billing trouble. Amber rather than the red used for a broken trading rule: nothing is wrong
+     with their trading, and nothing has been taken away yet. It sits under the tabs so it is on
+     every page - a failed card is not a fact about one tab. */
+  .billing-banner { display: none; align-items: center; gap: 14px; flex-wrap: wrap;
+    margin: 0 0 22px; padding: 12px 16px; border-radius: var(--radius-card);
+    border: 1px solid rgba(229,181,103,0.42); border-left: 3px solid #E5B567;
+    background: rgba(229,181,103,0.10); }
+  .billing-banner.show { display: flex; }
+  .billing-banner-ic { flex: none; color: #E5B567; line-height: 0; }
+  .billing-banner-text { flex: 1 1 260px; min-width: 0; font-family: 'Fraunces', serif;
+    font-size: 13.5px; line-height: 1.5; color: var(--text); }
+  .billing-banner-text b { color: #E5B567; font-weight: 600; }
+  .billing-banner-act { flex: none; background: transparent; border: 1px solid #E5B567;
+    color: #E5B567; border-radius: var(--radius-ctrl); padding: 7px 14px; cursor: pointer;
+    font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; transition: background 150ms, color 150ms; }
+  .billing-banner-act:hover { background: #E5B567; color: #17151d; }
+  .billing-banner-x { flex: none; background: transparent; border: 0; color: var(--text-dim);
+    font-size: 17px; line-height: 1; padding: 4px 6px; cursor: pointer; }
+  .billing-banner-x:hover { color: var(--text); }
   .rule-banner-eyebrow { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); flex-shrink: 0; }
   .rule-banner-text { flex: 0 1 auto; font-family: 'Fraunces', serif; font-size: 14px; color: var(--text); line-height: 1.45; }
   /* Inline bias date picker — lives in the section-01 header, right-aligned, no surrounding box. */
@@ -4359,6 +4379,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
       <button class="tab" data-page="tradeview"><span class="num">05</span><span class="tab-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4.5" width="18" height="17" rx="2.5"/><path d="M3 9.5h18"/><path d="M8 3v3"/><path d="M16 3v3"/></svg></span><span data-i18n="tab.tradeview">Calendar</span></button>
       <button class="tab tab-vault" data-page="vault" style="display:none"><span class="num">06</span><span class="tab-vault-ic" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 8.5 12 13l9.5-4.5z"/><path d="M6.5 10.8v4.4c0 1.6 2.5 2.8 5.5 2.8s5.5-1.2 5.5-2.8v-4.4"/><path d="M21.5 8.6v4.9"/></svg></span><span data-i18n="tab.vault">Media Vault</span></button>
       <button class="tab tab-community" data-page="community" style="display:none"><span class="num">07</span><span class="tab-vault-ic" aria-hidden="true" style="display:inline-flex;vertical-align:middle;margin-right:6px;position:relative;top:-2px;"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" style="display:block;"><path d="M21 11.5a8.5 8.5 0 0 1-12.3 7.6L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/></svg></span><span data-i18n="tab.network">Network</span></button>
+    </div>
+
+    <div class="billing-banner" id="billing-banner" role="status">
+      <span class="billing-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><rect x="2.5" y="5" width="19" height="14" rx="2.5"/><path d="M2.5 10h19M12 14v.01"/></svg></span>
+      <span class="billing-banner-text" id="billing-banner-text"></span>
+      <button type="button" class="billing-banner-act" id="billing-banner-fix"></button>
+      <button type="button" class="billing-banner-x" id="billing-banner-x" aria-label="Dismiss">&times;</button>
     </div>
 
     <div class="meta">
@@ -55019,6 +55046,50 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     try { if (window.STSCHOOL && window.STSCHOOL.relang) window.STSCHOOL.relang(); } catch(e){}
   }
 
+  /* A failed renewal used to be silent. Stripe retries for a few days and access is kept
+     throughout - deliberately - but the member was told nothing until the retries ran out and
+     they were locked out. This is the only thing in the app that reads `status` for a member who
+     still has access. */
+  var _billingBannerWired = false;
+  function renderBillingBanner() {
+    var el = document.getElementById('billing-banner');
+    if (!el) return;
+    var st = String(profileStatus || '').toLowerCase();
+    var due = (st === 'past_due');
+    /* Dismissed for this session only. Permanently dismissible would defeat the point, and not
+       dismissible at all is hostile - it steps aside for today and returns tomorrow. */
+    var hushed = false;
+    try { hushed = sessionStorage.getItem('st_billing_hush') === '1'; } catch (e) {}
+    el.classList.toggle('show', due && !hushed);
+    if (!due) { try { sessionStorage.removeItem('st_billing_hush'); } catch (e) {} }
+    if (!due || hushed) return;
+
+    var txt = document.getElementById('billing-banner-text');
+    if (txt) {
+      txt.innerHTML = window._stT(
+        '<b>Your last payment did not go through.</b> Nothing has been lost \u2014 everything still works while your bank is retried. Update your card to keep it that way.',
+        '<b>Tu \u00faltimo pago no se ha completado.</b> No has perdido nada: todo sigue funcionando mientras se reintenta el cobro. Actualiza tu tarjeta para que siga as\u00ed.');
+    }
+    var fix = document.getElementById('billing-banner-fix');
+    if (fix) fix.textContent = window._stT('Update card', 'Actualizar tarjeta');
+
+    if (_billingBannerWired) return;
+    _billingBannerWired = true;
+    if (fix) fix.addEventListener('click', function () {
+      /* The portal is where a card is actually changed. Without one - it is only written while
+         paid - fall back to the Subscriptions panel, which is where they would look anyway. */
+      if (profilePortal) { try { window.open(profilePortal, '_blank', 'noopener'); return; } catch (e) {} }
+      try {
+        var gear = document.getElementById('settings-gear'); if (gear) gear.click();
+        var nav = document.querySelector('.settings-nav-item[data-section="services"]'); if (nav) nav.click();
+      } catch (e) {}
+    });
+    var x = document.getElementById('billing-banner-x');
+    if (x) x.addEventListener('click', function () {
+      try { sessionStorage.setItem('st_billing_hush', '1'); } catch (e) {}
+      el.classList.remove('show');
+    });
+  }
   function renderPlan() {
     var lbl = document.getElementById('stc-a-lplan'); if (lbl) lbl.textContent = tt('planTitle');
     var s = computeAccountState();
@@ -55031,6 +55102,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var mbtn = document.getElementById('stc-a-manage'); if (mbtn) { mbtn.style.display = (profilePaid && profilePortal) ? '' : 'none'; mbtn.textContent = tt('manageBtn'); }
     try { document.documentElement.classList.toggle('st-paid', !!profilePaid); } catch (e) {}
     renderPlanBadge();
+    try { renderBillingBanner(); } catch(e){}
     try { renderMentorShare(); renderMentorViewer(); updateMentorTab(); } catch(e){}
     try { if(window.STAIMeter) window.STAIMeter.updateTab(); } catch(e){}
     enforceAccess();
