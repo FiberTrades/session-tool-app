@@ -136,6 +136,10 @@ async function applySubscription(sub: Stripe.Subscription, userIdHint?: string |
     plan: isPaid ? planNameFromPrice(priceId) : null,
     stripe_customer_id: customerId,
     stripe_subscription_id: sub.id,
+    // Stripe keeps the subscription active until the period ends, so nothing above changes when
+    // someone cancels - which left the app showing their plan with no sign it was ending. This
+    // is the only field that says so.
+    cancel_at_period_end: !!sub.cancel_at_period_end,
   };
 
   // Only written when we actually have one. Sending null on every event is how a date that was
