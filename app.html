@@ -10637,13 +10637,26 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   // A cold start / restart re-inits everything on load anyway.
   var _stLastTick = Date.now();
   var _stHiddenAt = Date.now();
-  var _ST_WAKE_GAP  = 60000; // returning after this long => treat as a wake (full refresh)
+  var _ST_WAKE_GAP  = 60000; // returning after this long => treat as a wake
+  /* ...but a wake only REBUILDS everything after this long, or if the day rolled while away.
+     The rebuild is for a machine that hibernated overnight and came back on a different date;
+     a minute in another tab - watching the popped-out Bloomberg, taking a call - changes
+     nothing it corrects, and doing it anyway empties the screen and redraws it. */
+  var _ST_HEAVY_GAP = 900000;
   var _ST_SLEEP_GAP = 90000; // tick stall longer than this => process was suspended
-  function _stWake() {
+  /* `away` is how long the app was in the background, when the caller knows. Callers that do
+     not know - the sleep watchdog, pageshow from bfcache, the Page Lifecycle resume, the
+     interaction catch-up - pass nothing and get the full refresh, which is what they were
+     written for. */
+  function _stWake(away) {
     try { renderMetaTime(); } catch (e) {}
-    _stDayKey = todayDateStr();
+    var _k = todayDateStr();
+    var _rolled = (_k !== _stDayKey);
+    _stDayKey = _k;
     _stBucketKey = _stHourBucket();
-    _stRefreshDay();
+    var _heavy = _rolled || typeof away !== 'number' || away > _ST_HEAVY_GAP;
+    if (_heavy) _stRefreshDay();
+    else _stCheckRollover();   // the same cheap path a sub-minute return already takes
     try { if (typeof recheckNewDayOnResume === 'function') recheckNewDayOnResume(); } catch (e) {}
     _stSessionState = _stSessionPhase();
     _stLastTick = Date.now(); _stHiddenAt = Date.now();
@@ -10667,12 +10680,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   document.addEventListener('visibilitychange', function () {
     if (document.hidden) { _stHiddenAt = Date.now(); return; }
     var away = Date.now() - _stHiddenAt;
-    if (away > _ST_WAKE_GAP) { _stWake(); }
+    if (away > _ST_WAKE_GAP) { _stWake(away); }
     else { try { renderMetaTime(); } catch (e) {} _stCheckRollover(); _stLastTick = Date.now(); _stHiddenAt = Date.now(); }
   });
   window.addEventListener('focus', function () {
     var away = Date.now() - _stHiddenAt;
-    if (away > _ST_WAKE_GAP) { _stWake(); }
+    if (away > _ST_WAKE_GAP) { _stWake(away); }
     else { _stCheckRollover(); _stLastTick = Date.now(); _stHiddenAt = Date.now(); }
   });
   // pageshow with persisted=true is a bfcache/hibernate restore => always a full refresh.
