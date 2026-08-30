@@ -54192,10 +54192,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   }
   // Whether the account has a higher tier it can move up to (drives upgrade-button
   // visibility). Trial/premium/bundle -> true; mentorship (top) and comped -> false.
+  /* Named for what it was when it only went up. It now asks the question the callers really
+     mean: is there anywhere to move? At the top tier there is - downwards - and that member is
+     the likeliest of all to want a smaller plan. A comped account still has nothing to buy. */
   function stCanUpgrade() {
     if (!currentUser) return false;
     if (profilePlan === 'comp') return false;
-    return stCurrentRank() < 3;
+    return true;
   }
 
   var pcInterval = 'yearly';
@@ -54313,11 +54316,25 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     var rank = stCurrentRank();
     var L = premL;
     var annual = (pcInterval === 'yearly');
+    /* Every tier except the one you are on. Was `rank < n`, which only ever offered a way up:
+       a Bundle Pro member saw Mentorship alone, and with plan switching off in the Stripe portal
+       had no way to reach a smaller plan at all. change-plan prorates in both directions, so
+       the only thing that stopped a downgrade was this gate. */
+    var showJournal = (rank !== 1), showBundle = (rank !== 2), showMentor = (rank !== 3);
+    var isDown = function (r) { return rank > 0 && r < rank; };
+    /* "Get Bundle Pro" on a card cheaper than the one you hold reads as an upsell; clicking it
+       and landing on a smaller plan would be a nasty surprise. */
+    var goLabel = function (r, en, es) {
+      return isDown(r) ? L('Switch to ' + en, 'Cambiar a ' + es) : L('Get ' + en, 'Obtener ' + es);
+    };
     // One pill holding both controls, exactly as the landing page builds it. The billing halves
     // only appear below rank 2 (above it Mentorship is the sole card and is monthly-only), but the
     // currency segment always does — that card still has a price to convert.
     var tgl = '<div class="stpc-toggle">';
-    if (rank < 2) {
+    /* Follows the CARDS, not the rank. It used to key off `rank < 2` because above that only
+       Mentorship showed and that is monthly-only - but a Bundle Pro member now sees ST Journal,
+       which is billed either way, so the toggle has to be there for them too. */
+    if (showJournal || showBundle) {
       tgl += '<button type="button" data-int="monthly"' + (!annual ? ' class="on"' : '') + '>' + L('Monthly', 'Mensual') + '</button>' +
              '<button type="button" data-int="yearly"' + (annual ? ' class="on"' : '') + '>' + L('Annual', 'Anual') + '<span class="stpc-save">' + L('SAVE 20%', 'AHORRA 20%') + '</span></button>';
     }
@@ -54347,7 +54364,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     }
 
     var html = '';
-    if (rank < 1) {
+    if (showJournal) {
       html += pcCard({
         name: L('ST Journal', 'ST Journal'),
         amt: pcMoney(annual ? 15 : 20), per: L('/ mo', '/ mes'),
@@ -54366,12 +54383,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           L('Trading Academy — first 2 modules, 10 lessons',
             'Academia de Trading — los 2 primeros módulos, 10 lecciones')
         ],
-        btnLabel: L('Get the journal', 'Obtener el diario'), tier: 'premium', interval: pcInterval
+        btnLabel: isDown(1) ? L('Switch to ST Journal', 'Cambiar a ST Journal')
+                            : L('Get the journal', 'Obtener el diario'),
+        tier: 'premium', interval: pcInterval
       });
     }
-    if (rank < 2) {
+    if (showBundle) {
       html += pcCard({
-        cls: 'pop', tag: L('Most popular', 'Top'),
+        /* A downgrade is not an upsell: badging the cheaper plan 'Most popular' while someone
+           is deciding whether to leave a dearer one is a sales cue in the wrong direction. */
+        cls: isDown(2) ? '' : 'pop', tag: isDown(2) ? null : L('Most popular', 'Top'),
         name: L('Bundle Pro', 'Bundle Pro'),
         amt: pcMoney(annual ? 30 : 35), per: L('/ mo', '/ mes'),
         bill: annual ? L('billed annually \u00b7 {A}/yr', 'anual \u00b7 {A}/a\u00f1o').replace('{A}', pcMoney(360)) : L('billed monthly', 'facturado mensual'),
@@ -54392,10 +54413,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
           L('Live London-session chat', 'Chat en directo de la sesi\u00f3n de Londres'),
           L('Access to an experienced community of traders', 'Acceso a una comunidad de traders con experiencia')
         ],
-        btnLabel: L('Get Bundle Pro', 'Obtener Bundle Pro'), tier: 'bundle', interval: pcInterval
+        btnLabel: goLabel(2, 'Bundle Pro', 'Bundle Pro'), tier: 'bundle', interval: pcInterval
       });
     }
-    if (rank < 3) {
+    if (showMentor) {
       html += pcCard({
         cls: 'gold', tag: L('Most complete', 'Lo m\u00e1s completo'), tagCls: 'gold',
         name: L('Mentorship', 'Mentor\u00eda'),
