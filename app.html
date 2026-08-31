@@ -25027,7 +25027,11 @@ try {
   // another journal. R is the realized cost-inclusive figure the app shows, so a row here ties out
   // with the Statistics tab rather than quietly using a cleaner number.
   function exportTradesCsv() {
-    const all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
+    // Scoped to the account picker, so selecting one account and exporting gives you that account
+    // rather than the whole journal. Lifetime scope still exports everything, and the Account
+    // column is kept either way so a scoped file still says what it contains.
+    let all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
+    if (typeof filterByScope === 'function') { try { all = filterByScope(all); } catch (e) {} }
     const accName = (id) => {
       try { const a = (data.accounts || []).find(x => x.id === id); return a ? (a.name || a.label || '') : ''; } catch (e) { return ''; }
     };
@@ -36405,6 +36409,15 @@ try {
       if (tr.exitTime) o.out = tr.exitTime;
       if (Array.isArray(tr.concepts) && tr.concepts.length) o.tags = tr.concepts;
       if (tr.reflection && String(tr.reflection).trim()) o.note = String(tr.reflection).trim().slice(0, 240);
+      // The account NAME, not its id - a name is what the trader will type when they ask about
+      // one. Only when more than one account exists: on a single-account journal it is noise on
+      // every trade and invites the model to raise a distinction the trader has never needed.
+      try {
+        if (tr.accountId && Array.isArray(data.accounts) && data.accounts.length > 1) {
+          var _a = data.accounts.find(function (x) { return x && x.id === tr.accountId; });
+          if (_a && (_a.name || _a.label)) o.acct = _a.name || _a.label;
+        }
+      } catch (e) {}
       return o;
     }
     async function _runTool(name, input) {
@@ -36413,7 +36426,21 @@ try {
         var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
         var lifetime = function () { return (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []; };
         if (name === 'query_trades') {
+          // Resolve an account NAME to its id once, rather than per trade. Substring and
+          // case-insensitive, because the trader will say "funded" for "FTMO Funded 100k".
+          var _wantAcc = null;
+          if (input.account) {
+            try {
+              var _q = String(input.account).toLowerCase().trim();
+              var _hit = (data.accounts || []).find(function (a) {
+                var n = String((a && (a.name || a.label)) || '').toLowerCase();
+                return n && (n === _q || n.indexOf(_q) >= 0);
+              });
+              _wantAcc = _hit ? _hit.id : '\u0000no-such-account';   // a filter that matches nothing
+            } catch (e) { _wantAcc = null; }
+          }
           var res = lifetime().filter(function (tr) {
+            if (_wantAcc && tr.accountId !== _wantAcc) return false;
             if (input.symbol && norm(tr.symbol) !== norm(input.symbol)) return false;
             if (input.result && tr.result !== input.result) return false;
             if (input.side && String(tr.side || '').toLowerCase() !== String(input.side).toLowerCase()) return false;
@@ -36665,6 +36692,24 @@ try {
         var streak = _stT ? { type: _stT, count: _stC } : null;
         return {
           trader: (typeof data !== 'undefined' && data.userName) || null,
+          // So the model knows which accounts it could be asked about, and what the trader is
+          // currently looking at. It still receives every account's trades by default - a question
+          // like "what is my worst weekday" is about the trader, not the account picker - but it
+          // can now narrow when a question actually names one.
+          accounts: (function () {
+            try {
+              var list = (data.accounts || []).filter(function (a) {
+                return a && (a.status || 'active') === 'active';
+              }).map(function (a) { return a.name || a.label || a.id; });
+              if (list.length < 2) return null;             // nothing to disambiguate
+              var sel = null;
+              if (data.viewScope && data.viewScope !== 'lifetime') {
+                var a = (data.accounts || []).find(function (x) { return x && x.id === data.viewScope; });
+                sel = a ? (a.name || a.label || null) : null;
+              }
+              return { all: list, selected: sel };          // selected null = viewing all accounts
+            } catch (e) { return null; }
+          })(),
           currency: s.currency || 'GBP',
           startingBalance: nr(s.startingBalance),
           lifetime: {
