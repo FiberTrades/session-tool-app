@@ -36441,19 +36441,24 @@ try {
         if (name === 'query_trades') {
           // Resolve an account NAME to its id once, rather than per trade. Substring and
           // case-insensitive, because the trader will say "funded" for "FTMO Funded 100k".
+          // EVERY account whose name matches, not just the first. Nothing stops two accounts
+          // being named the same, and .find() would have answered about one of them without
+          // saying so - the assistant would have reported half a picture with full confidence.
           var _wantAcc = null;
           if (input.account) {
             try {
               var _q = String(input.account).toLowerCase().trim();
-              var _hit = (data.accounts || []).find(function (a) {
+              _wantAcc = (data.accounts || []).filter(function (a) {
                 var n = String((a && (a.name || a.label)) || '').toLowerCase();
                 return n && (n === _q || n.indexOf(_q) >= 0);
-              });
-              _wantAcc = _hit ? _hit.id : '\u0000no-such-account';   // a filter that matches nothing
+              }).map(function (a) { return a.id; });
+              // A name that matches nothing must return NOTHING, not everything: an empty list
+              // would fall through the guard below and quietly answer about the whole journal.
+              if (!_wantAcc.length) _wantAcc = ['\u0000no-such-account'];
             } catch (e) { _wantAcc = null; }
           }
           var res = lifetime().filter(function (tr) {
-            if (_wantAcc && tr.accountId !== _wantAcc) return false;
+            if (_wantAcc && _wantAcc.indexOf(tr.accountId) < 0) return false;
             if (input.symbol && norm(tr.symbol) !== norm(input.symbol)) return false;
             if (input.result && tr.result !== input.result) return false;
             if (input.side && String(tr.side || '').toLowerCase() !== String(input.side).toLowerCase()) return false;
@@ -36720,7 +36725,19 @@ try {
                 var a = (data.accounts || []).find(function (x) { return x && x.id === data.viewScope; });
                 sel = a ? (a.name || a.label || null) : null;
               }
-              return { all: list, selected: sel };          // selected null = viewing all accounts
+              // Names can collide - nothing stops two accounts being called the same thing. Say so,
+              // because every trade from both then carries the identical acct label and there is no
+              // other signal to tell them apart. Without this the model would answer about "Funded"
+              // as though it were one account.
+              var seen = {}, dupes = [];
+              list.forEach(function (n) {
+                var k = String(n).toLowerCase();
+                if (seen[k] && dupes.indexOf(n) < 0) dupes.push(n);
+                seen[k] = 1;
+              });
+              var out = { all: list, selected: sel };       // selected null = viewing all accounts
+              if (dupes.length) out.duplicateNames = dupes;
+              return out;
             } catch (e) { return null; }
           })(),
           currency: s.currency || 'GBP',
