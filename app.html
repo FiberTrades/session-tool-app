@@ -12437,11 +12437,25 @@ try {
   // reusing its name is a normal flow, and the transition archives before it creates.
   // On window because the callers live in the settings UI, further down the file.
   window.__stNameTaken = function (name, exceptId) {
-    var n = String(name || '').trim().toLowerCase();
-    if (!n) return false;
+    var raw = String(name || '').trim();
+    if (!raw) return false;
+    var full = raw.toLowerCase();
+    // The app appends its own stage suffix, so "FTMO" and "FTMO - Challenge" are one account at
+    // two points in its life. Comparing only literal names let a second "FTMO" be created beside
+    // an existing "FTMO - Challenge", and the clash then surfaced at the stage picker - after the
+    // account existed. Compare base names instead.
+    //
+    // Not blindly, though: "FTMO - Challenge" and "FTMO - Verification" share a base and are
+    // perfectly distinguishable, so two accounts BOTH carrying a stage are left alone.
+    var stageOf = (typeof window.__stStageOf === 'function') ? window.__stStageOf : function () { return null; };
+    var strip   = (typeof window.__stStripStage === 'function') ? window.__stStripStage : function (x) { return String(x || '').trim(); };
+    var myStage = stageOf(raw), myBase = String(strip(raw)).trim().toLowerCase();
     return (data.accounts || []).some(function (a) {
-      return a && a.id !== exceptId && (a.status || 'active') === 'active'
-        && String((a.name || a.label) || '').trim().toLowerCase() === n;
+      if (!a || a.id === exceptId || (a.status || 'active') !== 'active') return false;
+      var other = String((a.name || a.label) || '').trim();
+      if (other.toLowerCase() === full) return true;                    // the same name outright
+      if (String(strip(other)).trim().toLowerCase() !== myBase) return false;
+      return !(myStage && stageOf(other));                              // both staged = allowed
     });
   };
   function createAccount(name, startingBalance, accountType) {
@@ -40857,7 +40871,7 @@ try {
           if (kind === 'challenge' && !(window.__stStageOf && window.__stStageOf(a.name))) {
             try {
               window.openRenameModal(a.name, (newName) => {
-                if (!renameAccount(a.id, newName)) { try { showToast(t('acct.name_taken')); } catch (e) {} return; }
+                if (!renameAccount(a.id, newName)) { try { showToast(t('acct.name_taken'), { duration: 7000 }); } catch (e) {} return; }
                 try { if (typeof window.renderSettingsAccountsList === 'function') window.renderSettingsAccountsList(); } catch (e) {}
                 try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
               }, undefined, { stage: true, onClose: _askRules });
@@ -41213,7 +41227,7 @@ try {
         // The stage picker is offered only for an account marked as a prop firm — a personal
         // account has no Challenge/Verification to be in.
         openRenameModal(acc.name, (newName) => {
-          if (!renameAccount(id, newName)) { try { showToast(t('acct.name_taken')); } catch (e) {} return; }
+          if (!renameAccount(id, newName)) { try { showToast(t('acct.name_taken'), { duration: 7000 }); } catch (e) {} return; }
           refreshScopeSurfaces();
         }, undefined, { stage: acc.kind === 'challenge' });
         return;
@@ -41327,7 +41341,7 @@ try {
         const balance = parseFloat(balInp.value);
         if (!name) { nameInp.focus(); return; }
         if (isNaN(balance) || balance <= 0) { balInp.focus(); return; }
-        if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken')); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
+        if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken'), { duration: 7000 }); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
         const acc = createAccount(name, balance);
         // "Balance now": for an account that has ALREADY been traded before it was added
         // here. No trades are logged against it yet, so this figure IS its starting point -
@@ -41391,7 +41405,7 @@ try {
         if (isNaN(balance) || balance <= 0) { balInp.focus(); return; }
         // Checked BEFORE the archive below. Refusing afterwards would leave the trader with their
         // previous account archived and nothing created to replace it.
-        if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken')); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
+        if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken'), { duration: 7000 }); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
         // Step 1: archive the currently active account (if any).
         const currentActive = (data.accounts || []).find(a => a.id === data.activeAccountId);
         if (currentActive) currentActive.status = 'archived';
@@ -41474,6 +41488,9 @@ try {
     // Exposed so the account rows can ask whether a name already carries a stage without keeping
     // their own copy of the parsing. Same pattern as the other window.__st* bridges in this file.
     window.__stStageOf = _stageOf;
+    // Needed by the duplicate-name check, which has to compare BASE names: the app renames
+    // "FTMO" to "FTMO - Challenge" itself, so the two are one account at different stages.
+    window.__stStripStage = _stripStage;
     // Pressed state is DERIVED from the field rather than remembered, so editing the name by hand
     // — including deleting the suffix — keeps the buttons telling the truth.
     function _paintStage() {
