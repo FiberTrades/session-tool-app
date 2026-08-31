@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.5"
+#property version   "7.6"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -854,10 +854,18 @@ void PlaceTrade()
          // The stop therefore stays exactly where it was drawn, and is pulled in ONLY when the
          // fill was bad enough to widen it past the Max SL rail - which is the protection this
          // block was actually written for.
-         // Same rule and the same Max SL ceiling as AnchorFillSLTP: the drawn level holds in
-         // both directions. These two disagreed once already - v7.2 changed one and left the
-         // other live, and that is the bug that reached a real trade - so they move together.
-         double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         // Same rule as AnchorFillSLTP: keep whichever of the drawn level and the planned
+         // distance is closer to the fill, so the risk is capped at plan. These two disagreed
+         // once already - v7.2 changed one and left the other live, and that is the bug that
+         // reached a real trade - so they move together.
+         double planned=NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         double wantSL=planned;
+         if(curSL>0)
+           {
+            double curDist=MathAbs(realOpen-curSL);
+            double plnDist=MathAbs(realOpen-planned);
+            wantSL=(curDist<plnDist-tol) ? curSL : planned;
+           }
          if(g_maxSL>0)
            {
             double maxDist=g_maxSL*g_pip;
@@ -3915,30 +3923,33 @@ void AnchorFillSLTP(ulong posId)
    //                          level is compromised by more room, and the risk you sized for is
    //                          preserved rather than quietly shrinking.
    // The target is a distance you typed, so it always follows the fill.
-   // The stop is a LEVEL picked off the chart, and the fill does not move it in either
-   // direction. The distance absorbs the slip, and so does the money.
-   //   filled against you    - the level stands, the distance grows, the trade costs
-   //                           proportionally more. Nothing is closed or resized to compensate:
-   //                           position size is fixed at the fill and stays fixed.
-   //   filled in your favour - the level stands, the distance shrinks, the trade costs
-   //                           proportionally LESS for an unchanged target. This used to widen
-   //                           the stop back to the planned distance, which threw that gain
-   //                           away: with a pip target the win is identical either way, so
-   //                           paying 300 for a 3.0 stop instead of 280 for the 2.8 the fill
-   //                           just handed over made a good fill worth nothing while a bad one
-   //                           still cost. One-way, and the wrong way.
-   // With an R target this is neutral rather than better - a 2R target off a 2.8 pip stop is
-   // 5.6 pips, so win and risk shrink together and both rules come to exactly 2.00R. Holding
-   // the level therefore costs nothing in either target mode.
-   // The Max SL rail below can still overrule it. That is the one thing allowed to move the stop
-   // towards price, because a ceiling that yields to slippage is not a ceiling.
-   double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
-   // Max SL is a hard ceiling on how far the stop may sit from the fill, slippage included.
-   // Holding the drawn level is the preference, but not past this rail: an adverse fill that
-   // would push the stop beyond it has the stop pulled back in to the limit. That does move the
-   // stop towards price, inside the level drawn, and it is the accepted price of having a ceiling
-   // at all - set Max SL equal to the stop size and every adverse fill lands inside the structure.
-   // The trim below then sizes to whatever distance survived, so the money is the plan regardless.
+   // The stop is never FURTHER from the fill than planned: keep whichever of the drawn level
+   // and the planned distance is CLOSER to the fill. That caps the RISK at the planned amount -
+   // never more, sometimes less - and pays for it with the level when the fill goes against you.
+   //   filled in your favour - the drawn level is nearer than plan, so it stands and the trade
+   //                           costs proportionally less. With a pip target the win is unchanged,
+   //                           so that is a straight gain rather than a smaller trade.
+   //   filled against you    - the drawn level is further than plan, so the planned distance wins
+   //                           and the stop lands INSIDE the level that was drawn. That is the
+   //                           deliberate cost: the risk stays exactly as planned, and the price
+   //                           is a stop sitting a little way into the structure.
+   // That last part is the behaviour reported as a bug in v7.2, chosen on purpose this time.
+   // v7.3's proportional slippage is what makes it tolerable - tolerance is 20% of the stop, so
+   // the stop can never end up more than a fifth of its own width inside the drawn level, on any
+   // instrument. Under the old fixed 30 points it could have been the whole stop width.
+   // Nothing is closed or resized either way: position size is fixed at the fill and stays fixed.
+   double planned=NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
+   double wantSL=planned;
+   if(curSL>0)
+     {
+      double curDist=MathAbs(realOpen-curSL);
+      double plnDist=MathAbs(realOpen-planned);
+      wantSL=(curDist<plnDist-tol) ? curSL : planned;   // keep the tighter of the two
+     }
+   // Max SL as a post-fill ceiling. Under the rule above this can no longer fire: the distance
+   // is capped at the REQUESTED one, and the drag and sizing clamps already hold that at or below
+   // Max SL. Kept as a safety net rather than deleted - it costs nothing and guards the stop rule
+   // changing again, which it has done more than once.
    if(g_maxSL>0)
      {
       double maxDist=g_maxSL*g_pip;
