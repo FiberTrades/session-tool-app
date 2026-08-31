@@ -12974,6 +12974,29 @@ try {
     }
     return { currentSeries: pending, history };
   }
+  // The earliest moment the current scope can honestly cover, in ms, or 0 for no floor.
+  //
+  // Anything that counts TRADES scopes itself - every trade carries an accountId and
+  // filterByScope matches on it. Anything that counts DAYS cannot: a bias post is a market read
+  // and a weekly review is global by design, so neither has an account to match on. For those the
+  // window is the only honest scoping, and this is its floor.
+  //
+  // Same createdAt-with-clock-skew rule the challenge-progress baseline uses: 60 minutes covers a
+  // browser race during onboarding while staying inside the same day.
+  function scopeStartMs() {
+    try {
+      if (typeof isLifetimeScope === 'function' && isLifetimeScope()) return 0;
+      var scope = data.viewScope;
+      var grp = (data.linkedGroups || []).find(function (g) { return g && g.id === scope; });
+      var ids = grp ? (grp.accountIds || []) : [scope];
+      var times = (data.accounts || [])
+        .filter(function (a) { return a && ids.indexOf(a.id) >= 0 && a.createdAt; })
+        .map(function (a) { return new Date(a.createdAt).getTime(); })
+        .filter(function (n) { return !isNaN(n); });
+      if (!times.length) return 0;               // no createdAt to trust - behave as before
+      return Math.min.apply(null, times) - (60 * 60 * 1000);
+    } catch (e) { return 0; }
+  }
   // -----------------------------------------------------------------------------
   // Scope picker render — populates the dropdown with active accounts first,
   // then archived (faded, italic), then a Lifetime option below a divider.
@@ -18821,9 +18844,20 @@ try {
       const sec = document.getElementById('missed-winners-section');
       if (!sec) return;
       const missed = [];
+      // Weekly reviews are global - a migration flattened the old per-account lists into one - so
+      // there is no accountId here to filter on. Scope by window instead: a review week that had
+      // already ended before this account existed cannot describe winners IT missed. Without this
+      // the card put 6 missed across every account beside 0 taken on this one, which compares
+      // nothing. Compared against the week's END so the week an account was created in survives.
+      const _missedFloor = (typeof scopeStartMs === 'function') ? scopeStartMs() : 0;
+      const _WEEK_MS = 7 * 24 * 60 * 60 * 1000;
       (data.weeklyReviews || []).forEach(w => {
         const links = (w && w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
         const wk = (w && w.weekStart) ? w.weekStart : null;
+        if (_missedFloor > 0) {
+          const _wkMs = wk ? new Date(wk).getTime() : NaN;
+          if (isNaN(_wkMs) || _wkMs + _WEEK_MS < _missedFloor) return;
+        }
         links.forEach(l => {
           if (l && typeof l.r === 'number' && !isNaN(l.r)) {
             missed.push({ r: l.r, notes: (l.notes || ''), url: (l.url || ''), weekStart: wk });
@@ -19083,6 +19117,13 @@ try {
     //  - traded: weekdays with >=1 saved trade dated in-window.
     //  - showed up: weekdays with a posted bias in-window (copied to Discord, or a completed 4-field bias).
     function computeWindow(startDate, endDate) {
+      // An account cannot have shown up before it existed. The traded half scopes itself through
+      // the accountId on each trade; the showed-up half comes from biasHistory, which is global,
+      // so clamping the window is what keeps the two halves counting the same days. Without it a
+      // day-old account read 19 of 23 shown up against 1 traded, and was called disciplined for
+      // it. Lifetime scope has no floor, so this is a no-op there.
+      const _floor = (typeof scopeStartMs === 'function') ? scopeStartMs() : 0;
+      if (_floor > 0 && startDate.getTime() < _floor) startDate = new Date(_floor);
       const tradedSet = new Set();
       allTrades.forEach(tr => {
         const d = new Date(tr.date);
