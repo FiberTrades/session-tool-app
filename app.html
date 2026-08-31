@@ -19609,30 +19609,39 @@ try {
         if (dot) { dot.setAttribute('cx', px); dot.setAttribute('cy', py); dot.style.display = ''; }
         const val = g.values[i];
         const valStr = g.isR ? ((val >= 0 ? '+' : '') + val.toFixed(2) + 'R') : fmtMoney(val, { noSign: true });
-        let html = `<div class="et-val">${valStr}</div>`;
+        // Date on the FIRST row: it says which trade this is before the numbers do, which is the
+        // order it gets read in, and it keeps the widest row at the top where the box grows away
+        // from the point instead of toward it. The opening point has no trade behind it, so "Start"
+        // takes the same row - one shape for every point rather than two.
+        const _dRaw = g.dates && g.dates[i];
+        let _dStr = '';
+        if (_dRaw) {
+          const _dt = new Date(_dRaw);
+          if (!isNaN(_dt.getTime())) {
+            _dStr = _dt.toLocaleDateString(
+              (typeof tLocale === 'function') ? tLocale() : undefined,
+              { day: 'numeric', month: 'short', year: 'numeric' });
+          }
+        }
+        const _topRow = _dStr || (i === 0 ? 'Start' : '');
+        let html = _topRow ? `<div class="et-date">${_topRow}</div>` : '';
+        html += `<div class="et-val">${valStr}</div>`;
         if (i > 0) {
           const d = g.values[i] - g.values[i - 1];
           const dStr = g.isR ? ((d >= 0 ? '+' : '') + d.toFixed(2) + 'R') : ((d >= 0 ? '+' : '−') + fmtMoney(Math.abs(d), { noSign: true }));
           const cls = d >= 0 ? 'good' : 'bad';
           html += `<div class="et-delta" style="color:var(--${cls})">${dStr}</div>`;
-        } else {
-          html += `<div class="et-date">Start</div>`;
-        }
-        // When the trade was taken. Reuses the .et-date style already defined for "Start", so a
-        // spike no longer has to be matched back to the calendar by counting along the axis.
-        const _dRaw = g.dates && g.dates[i];
-        if (_dRaw) {
-          const _dt = new Date(_dRaw);
-          if (!isNaN(_dt.getTime())) {
-            html += `<div class="et-date">${_dt.toLocaleDateString(
-              (typeof tLocale === 'function') ? tLocale() : undefined,
-              { day: 'numeric', month: 'short', year: 'numeric' })}</div>`;
-          }
         }
         tip.innerHTML = html;
-        // When the point is near the TOP of the chart, the tooltip (which sits above the point) would
-        // overflow the chart and get clipped — so flip it BELOW the point instead.
-        var flipBelow = py < 58;
+        // When the point is near the TOP of the chart, the tooltip (which sits above it) would
+        // overflow and be clipped — so flip it BELOW the point instead.
+        //
+        // MEASURED, not assumed. This was a fixed `py < 58`, which quietly encoded the height of a
+        // two-row box; adding the date row made it taller and the top started getting cut off on
+        // high points. offsetHeight is read here the same way offsetWidth is a few lines down, so
+        // the flip now happens exactly when the box would not fit, whatever it happens to contain.
+        var th = tip.offsetHeight || 0;
+        var flipBelow = (py - 12 - th) < 2;
         tip.classList.toggle('et-below', flipBelow);
         // Position by left edge (centred on the point) and CLAMP within the chart so the tooltip
         // isn't cut off at the left/right edges (e.g. the last point on the right).
