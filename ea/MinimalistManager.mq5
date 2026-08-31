@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.6"
+#property version   "7.7"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -826,10 +826,17 @@ void PlaceTrade()
          // The stop therefore stays exactly where it was drawn, and is pulled in ONLY when the
          // fill was bad enough to widen it past the Max SL rail - which is the protection this
          // block was actually written for.
-         // Same rule as AnchorFillSLTP: the stop does not move, and the rail is tested against
-         // the requested distance so slippage cannot trip it. These two disagreed once already -
+         // Same widen-only rule as AnchorFillSLTP, and the same rail tested against the
+         // requested distance so slippage cannot trip it. These two disagreed once already -
          // v7.2 changed one and left the other live - so they move together from here.
-         double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         double planned=NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         double wantSL=planned;
+         if(curSL>0)
+           {
+            double curDist=MathAbs(realOpen-curSL);
+            double plnDist=MathAbs(realOpen-planned);
+            wantSL=(plnDist>curDist+tol) ? planned : curSL;
+           }
          if(g_maxSL>0 && slPips>g_maxSL+0.01)
            {
             double maxDist=g_maxSL*g_pip;
@@ -3886,11 +3893,22 @@ void AnchorFillSLTP(ulong posId)
    //                          level is compromised by more room, and the risk you sized for is
    //                          preserved rather than quietly shrinking.
    // The target is a distance you typed, so it always follows the fill.
-   // The stop is a LEVEL picked off the chart and it does not move for anything. Filled 0.2 in
-   // your favour it sits 2.8 pips away, filled 0.2 against it sits 3.2 - the same price either
-   // way, which is the entire point of choosing it off the structure. The slip is absorbed by
-   // the distance, and therefore by the money, never by the level.
-   double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
+   // The stop may only ever move AWAY from price, never towards it.
+   //   filled against you    - restoring the planned distance would drag the stop TOWARDS price,
+   //                           inside the level it was deliberately placed beyond. Refused: the
+   //                           drawn level stands, the stop measures 3.2, and the position is
+   //                           trimmed further down so the money is still the plan.
+   //   filled in your favour - restoring it pushes the stop FURTHER from price, deeper beyond the
+   //                           structure rather than into it. Allowed: nothing about the level is
+   //                           compromised by more room, and the full planned risk is preserved.
+   double planned=NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
+   double wantSL=planned;
+   if(curSL>0)
+     {
+      double curDist=MathAbs(realOpen-curSL);
+      double plnDist=MathAbs(realOpen-planned);
+      wantSL=(plnDist>curDist+tol) ? planned : curSL;   // widen back to plan, or leave it alone
+     }
    // The Max SL rail is a DRAWING limit: the line cannot be dragged past it and the lot cannot be
    // sized past it, so a stop that reaches a fill is already inside the rail by construction.
    // Anything over the rail AFTER a fill is slippage, not a stop drawn too wide - and pulling it
@@ -3947,6 +3965,39 @@ void AnchorFillSLTP(ulong posId)
             " pips): wanted SL=",DoubleToString(wantSL,g_digits)," TP=",DoubleToString(wantTP,g_digits),
             " - the broker will not allow a stop this tight.");
 
+   // A fill against you leaves the stop at the level you drew and therefore FURTHER from price
+   // than planned. The lot was sized before the fill, from the requested distance, so the trade
+   // is now carrying more money than intended over that wider stop. The level is staying and the
+   // risk is fixed, so size is the only thing left to move - and only downwards, since a position
+   // can be reduced but never added to. Trim the excess and the plan is restored.
+   //
+   // A favourable fill needs none of this: the stop has already been widened back to the planned
+   // distance above, so the risk is correct as it stands.
+   //
+   // AFTER the modify on purpose - a partial close can disturb the ticket, and the stop must be
+   // on the position before anything touches its size.
+   double plannedDist=g_reqSLpips*g_pip;
+   double actualDist =MathAbs(realOpen-wantSL);
+   if(plannedDist>0 && actualDist>plannedDist+tol && PositionSelectByTicket(posId))
+     {
+      double vol=PositionGetDouble(POSITION_VOLUME);
+      double keep=NormalizeVolume(vol*plannedDist/actualDist);
+      double shed=NormalizeDouble(vol-keep,g_volDigits);
+      if(keep>=g_volMin && shed>=g_volMin && shed<vol)
+        {
+         bool okTrim=trade.PositionClosePartial(posId,shed);
+         Print("MTM risk trim: filled against you, stop held at ",DoubleToString(wantSL,g_digits),
+               " (",DoubleToString(actualDist/g_pip,1)," pips vs ",DoubleToString(g_reqSLpips,1),
+               " planned) - shedding ",DoubleToString(shed,g_volDigits)," of ",
+               DoubleToString(vol,g_volDigits)," lots so the risk stays as planned. trim=",
+               (okTrim?"OK":"FAILED")," ret=",(int)trade.ResultRetcode());
+        }
+      else
+         Print("MTM risk trim: wanted to shed ",DoubleToString(shed,g_volDigits),
+               " lots to hold the planned risk, but the broker minimum lot is ",
+               DoubleToString(g_volMin,g_volDigits)," - left at ",DoubleToString(vol,g_volDigits),
+               " lots, carrying ",DoubleToString(actualDist/plannedDist*100.0,0),"% of the plan.");
+     }
   }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,
