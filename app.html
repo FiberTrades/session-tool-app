@@ -30522,6 +30522,12 @@ try {
     const seriesCosts = cs.map(t => tradeCosts(t)).filter(c => c > 0);
     const seriesRisks = cs.map(t => parseFloat(t.risk) || 0).filter(r => r > 0);
 
+    // Both fallback pools read through this, so they can never disagree about whose trades they
+    // are borrowing from.
+    const _scopedLifetime = () => {
+      const all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
+      try { return (typeof filterByScope === 'function') ? filterByScope(all) : all; } catch (e) { return all; }
+    };
     // Lifetime fallback samples — used when the series has <3 cost/risk data points.
     // Reactive to current conditions takes priority once you have enough series data.
     const MIN_SAMPLES = 3;
@@ -30529,8 +30535,12 @@ try {
     if (seriesCosts.length >= MIN_SAMPLES) {
       avgCost = avgOf(seriesCosts);
     } else {
+      // Scoped: borrowing a cost average from a DIFFERENT account means a different broker's
+      // commissions, and the cushion below is money maths. If the scoped pool comes back empty the
+      // branch further down falls to an R basis, which is exact by definition and merely ignores
+      // fees - a better answer than a confidently wrong one in pounds.
       const lifetimeCosts = (typeof getAllLifetimeTrades === 'function')
-        ? getAllLifetimeTrades().map(t => tradeCosts(t)).filter(c => c > 0)
+        ? _scopedLifetime().map(t => tradeCosts(t)).filter(c => c > 0)
         : [];
       // Use whichever pool has data; prefer combined if both partial
       avgCost = seriesCosts.length > 0 || lifetimeCosts.length > 0
@@ -30541,7 +30551,7 @@ try {
       avgRisk = avgOf(seriesRisks);
     } else {
       const lifetimeRisks = (typeof getAllLifetimeTrades === 'function')
-        ? getAllLifetimeTrades().map(t => parseFloat(t.risk) || 0).filter(r => r > 0)
+        ? _scopedLifetime().map(t => parseFloat(t.risk) || 0).filter(r => r > 0)
         : [];
       avgRisk = seriesRisks.length > 0 || lifetimeRisks.length > 0
         ? avgOf([...seriesRisks, ...lifetimeRisks])
