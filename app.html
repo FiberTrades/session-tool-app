@@ -12983,6 +12983,45 @@ try {
   //
   // Same createdAt-with-clock-skew rule the challenge-progress baseline uses: 60 minutes covers a
   // browser race during onboarding while staying inside the same day.
+  /* Per-account weekly reviews.
+     Pre-migration reviews carry no accountId and stay visible everywhere - the same rule trades
+     use for untagged rows, and it avoids inventing an owner for reviews that never had one. New
+     reviews are stamped, and a stamped review shows only under its own account.
+
+     On window rather than in scope: these are called from the stats renderer, the calendar, the
+     review modal and the reflection generator, which do not obviously share one closure. */
+  window.__stRev = {
+    // Same rule new trades use to pick an account, so a review and a trade written in the same
+    // session always agree about which account they belong to.
+    acc: function () {
+      return data.activeAccountId ||
+             (Array.isArray(data.accounts) && data.accounts[0] ? data.accounts[0].id : 'acc_main');
+    },
+    inScope: function (r) {
+      if (!r) return false;
+      if (!r.accountId) return true;              // predates per-account reviews: shared by design
+      try {
+        if (typeof isLifetimeScope === 'function' && isLifetimeScope()) return true;
+        var scope = data.viewScope;
+        var grp = (data.linkedGroups || []).find(function (g) { return g && g.id === scope; });
+        if (grp) return (grp.accountIds || []).indexOf(r.accountId) >= 0;
+        return r.accountId === scope;
+      } catch (e) { return true; }                // never hide a review because scoping threw
+    },
+    // The ONE resolver every weekKey lookup goes through. weekKey alone stopped being unique the
+    // moment reviews gained an account, and persist() writes on every keystroke - so a lookup that
+    // could return another account's review would silently overwrite it while someone typed.
+    find: function (weekKey) {
+      var all = (data.weeklyReviews || []).filter(function (r) { return r && r.weekKey === weekKey; });
+      var acc = window.__stRev.acc();
+      var mine = all.filter(function (r) { return r.accountId === acc; })[0];
+      return mine || all.filter(function (r) { return !r.accountId; })[0] || null;
+    },
+    findIndex: function (weekKey) {
+      var f = window.__stRev.find(weekKey);
+      return f ? (data.weeklyReviews || []).indexOf(f) : -1;
+    }
+  };
   function scopeStartMs() {
     try {
       if (typeof isLifetimeScope === 'function' && isLifetimeScope()) return 0;
@@ -18850,8 +18889,11 @@ try {
       // the card put 6 missed across every account beside 0 taken on this one, which compares
       // nothing. Compared against the week's END so the week an account was created in survives.
       const _missedFloor = (typeof scopeStartMs === 'function') ? scopeStartMs() : 0;
+      // Reviews written from today carry an account; older ones do not and stay shared. The date
+      // floor below still applies to both, so a shared review from before this account existed
+      // does not count against it.
       const _WEEK_MS = 7 * 24 * 60 * 60 * 1000;
-      (data.weeklyReviews || []).forEach(w => {
+      (data.weeklyReviews || []).filter(w => window.__stRev.inScope(w)).forEach(w => {
         const links = (w && w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
         const wk = (w && w.weekStart) ? w.weekStart : null;
         if (_missedFloor > 0) {
@@ -23478,7 +23520,7 @@ try {
         const dayOfYear = Math.floor((fridayDate - yearStart) / (1000*60*60*24));
         const weekNum = Math.ceil((dayOfYear + yearStart.getDay() + 1) / 7);
         const weekKey = `${fridayDate.getFullYear()}-W${String(weekNum).padStart(2, '0')}`;
-        const hasReview = (data.weeklyReviews || []).some(r => r.weekKey === weekKey);
+        const hasReview = (data.weeklyReviews || []).some(r => r.weekKey === weekKey && window.__stRev.inScope(r));
         html += `<div class="cal-week-summary clickable" data-monday="${mondayDate.toISOString()}" data-friday="${fridayDate.toISOString()}" data-week-key="${weekKey}" title="${hasReview ? t('tip.weekly_review_view') : t('tip.weekly_review_add')}" style="grid-row:${currentRow};grid-column:8;${SZ}">
           ${(function(){ var _wn = window.STMentor && window.STMentor.get('week', weekKey); if(!_wn) return ''; var _s = !!_wn.seen_at; return '<div class="cal-week-mn-env'+(_s?' seen':'')+'">'+(_s?MN_ENV_OPEN_SVG:MN_ENV_SVG)+'</div>'; })()}
           <div class="pl ${wCls}">${wLabel}</div>
@@ -26512,7 +26554,7 @@ try {
     currentReview = { kind: 'weekly', start: weekStart, end: weekEnd, key: weekKey, titleText };
     const stats = computePeriodStats(weekStart, weekEnd);
     fillReviewModalBody(stats, titleText, 'week');
-    const existing = (data.weeklyReviews || []).find(r => r.weekKey === weekKey) || {};
+    const existing = window.__stRev.find(weekKey) || {};
     renderWeeklyReflection(weekStart, weekEnd, existing);
     document.getElementById('review-modal-bg').classList.add('show');
   }
@@ -26942,7 +26984,10 @@ try {
 
     function persist() {
       if (!currentReview || currentReview.kind !== 'weekly') return;
-      const idx = data.weeklyReviews.findIndex(r => r.weekKey === currentReview.key);
+      // Through the resolver, never a bare weekKey match: two accounts can hold a review for
+      // the same week, and this line runs on every keystroke.
+      const idx = window.__stRev.findIndex(currentReview.key);
+      const prevEntry = idx >= 0 ? data.weeklyReviews[idx] : null;
       // Trim out trailing empty cards before saving so the array stays clean.
       const cleanLinks = arr => arr.filter(l => (l.url && l.url.trim()) || (l.notes && l.notes.trim()) || (typeof l.r === 'number' && !isNaN(l.r)))
         .map(l => ({ url: (l.url || '').trim(), notes: (l.notes || '').trim(), r: (typeof l.r === 'number' && !isNaN(l.r)) ? l.r : null }));
@@ -26957,6 +27002,12 @@ try {
         reflectionLearned:    valOf('rfx-learned'),
         savedAt: new Date().toISOString()
       };
+      // An existing review keeps the account it had - INCLUDING none, which is what stops a
+      // pre-migration review being quietly claimed by whichever account opened it. entry is
+      // rebuilt from scratch above, so this has to be carried forward or the next keystroke
+      // drops it. Only a genuinely new review is stamped.
+      if (prevEntry) { if (prevEntry.accountId) entry.accountId = prevEntry.accountId; }
+      else entry.accountId = window.__stRev.acc();
       if (idx >= 0) data.weeklyReviews[idx] = entry; else data.weeklyReviews.push(entry);
       saveData();
     }
@@ -27209,7 +27260,7 @@ try {
       }
       return [];
     }
-    const persistedEntry = (data.weeklyReviews || []).find(r => r.weekKey === currentReview?.key);
+    const persistedEntry = currentReview ? window.__stRev.find(currentReview.key) : null;
     const missedLinksOut     = pullTvLinks(persistedEntry && persistedEntry.missedTrade);
     const missedUrls    = missedLinksOut.map(l => l.url).filter(u => u && u.trim());
     let bestTradeTxt  = valTrim('rfx-best-trade-notes');
@@ -27367,11 +27418,14 @@ try {
   function renderWeeklyReviews() {
     const wrap = document.getElementById('weekly-reviews-list');
     if (!wrap) return;
-    if (!data.weeklyReviews.length) {
+    // The list itself is scoped, which is the visible half of per-account reviews: reviews written
+    // under another account drop out, and pre-migration ones (no accountId) stay on every account.
+    const _inScope = (data.weeklyReviews || []).filter(r => window.__stRev.inScope(r));
+    if (!_inScope.length) {
       wrap.innerHTML = `<p style="color:var(--text-dim);font-family:'Fraunces',serif;font-size:12px;">No weekly reviews saved yet. One will be offered when you save on a Friday.</p>`;
       return;
     }
-    const sorted = data.weeklyReviews.slice().sort((a, b) => new Date(b.weekEnd) - new Date(a.weekEnd));
+    const sorted = _inScope.slice().sort((a, b) => new Date(b.weekEnd) - new Date(a.weekEnd));
     const fmtDate = iso => new Date(iso).toLocaleDateString(tLocale(), { day: 'numeric', month: 'short', year: 'numeric' });
     // R-only — see comment in renderMonthlyInsights for context.
     const isPipsView = false;
@@ -27451,7 +27505,7 @@ try {
       const nudgeKey = weekKey + ':weekend-nudge:' + dow;
       if (data._lastWeeklyPrompt === nudgeKey) return;
       // Only nudge if no reflection has been started for this week yet
-      const existing = (data.weeklyReviews || []).find(r => r.weekKey === weekKey);
+      const existing = window.__stRev.find(weekKey);
       const hasReflection = existing && (
         existing.reflectionFocusNext || existing.reflectionLearned ||
         existing.reflectionMissedWins || existing.reflectionWentWell || // legacy field, kept for back-compat
@@ -30785,7 +30839,8 @@ try {
   // missed setups are captured per week. Returns {count, totalR}. Used to make the
   // review reflections aware of the opportunity you watched but didn't take.
   function missedRStatsForPeriod(period) {
-    const reviews = Array.isArray(data.weeklyReviews) ? data.weeklyReviews : [];
+    const reviews = (Array.isArray(data.weeklyReviews) ? data.weeklyReviews : [])
+      .filter(r => window.__stRev.inScope(r));
     if (!reviews.length || (period !== 'week' && period !== 'month')) return { count: 0, totalR: 0 };
     const now = new Date();
     let start, end;
