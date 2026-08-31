@@ -473,7 +473,7 @@ begin
     cd_adh as (
       select
         cd.user_id,
-        count(*) filter (where bok.d is not null)  as bias_kept,
+        count(*) as cd_days, count(*) filter (where bok.d is not null)  as bias_kept,
         count(*) filter (where bok.d is null)      as bias_missed,
         count(*) filter (where dy.d is not null)   as traded_days,
         count(*) filter (where rok.d is not null)  as review_kept,
@@ -705,7 +705,12 @@ begin
           'streak',       coalesce(sb.bonus,0),
           'lim_max_trades', l.max_trades,
           'lim_risk_pct',   l.max_risk_pct,
-          'lim_loss_pct',   l.max_loss_pct
+          'lim_loss_pct',   l.max_loss_pct,
+          'bias_total',      coalesce(cda.cd_days,0),
+          'review_total',    coalesce(cda.cd_days,0),
+          'weekly_total',    coalesce(wa.weekly_done,0) + coalesce(wa.weekly_missed,0),
+          'committed_shown', coalesce(ca.commit_kept,0),
+          'committed_total', coalesce(ca.commit_kept,0) + coalesce(ca.commit_missed,0)
         )                                                   as points_breakdown
       from people p
       left join best          b  on b.user_id  = p.user_id
