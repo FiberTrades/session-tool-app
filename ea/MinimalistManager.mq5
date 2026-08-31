@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.2"
+#property version   "7.3"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3864,9 +3864,34 @@ void AnchorFillSLTP(ulong posId)
    double curSL   =PositionGetDouble(POSITION_SL);
    double curTP   =PositionGetDouble(POSITION_TP);
    if(realOpen<=0) return;
-   double wantSL=NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
-   double wantTP=(g_reqTPpips>0)?NormalizeDouble(realOpen+g_reqDir*g_reqTPpips*g_pip,g_digits):curTP;
    double tol=g_pip*0.05;
+   // The TARGET is a distance you typed; the STOP is a level you picked off the chart. Only the
+   // target follows the fill. This function used to re-anchor both, which moved the stop 0.2-0.3
+   // pips TOWARDS price on every slipped fill - a buy filled higher had its stop dragged up into
+   // the structure it was deliberately placed beyond, where the wick that would have missed it
+   // now takes it out. A slightly wrong risk costs a fraction of an R; a stop moved into the
+   // noise costs the whole trade.
+   //
+   // v7.2 applied this rule to the inline block in PlaceTrade and missed THIS function, which is
+   // the one a market fill actually calls - so the behaviour survived the fix. The two now agree.
+   double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
+   if(curSL>0 && g_maxSL>0)
+     {
+      // Pulled in ONLY when the fill was bad enough to widen the stop past the Max SL rail,
+      // which is the protection this block was written for.
+      double maxDist=g_maxSL*g_pip;
+      if(MathAbs(realOpen-curSL)>maxDist+tol)
+         wantSL=NormalizeDouble(realOpen-g_reqDir*maxDist,g_digits);
+     }
+   // R targets measure R from the stop that is ACTUALLY there, not the one requested, since the
+   // two can now differ by the slip. Pip targets are unchanged.
+   double slNow=MathAbs(realOpen-wantSL);
+   double wantTP=curTP;
+   if(g_reqTPpips>0)
+     {
+      double d2=(g_tpMode==TP_BY_RR) ? (g_tpVal[0]*slNow) : (g_reqTPpips*g_pip);
+      wantTP=NormalizeDouble(realOpen+g_reqDir*d2,g_digits);
+     }
    bool needSL=(MathAbs(wantSL-curSL)>tol);
    bool needTP=(g_reqTPpips>0 && MathAbs(wantTP-curTP)>tol);
    if(!needSL && !needTP)
@@ -3884,8 +3909,8 @@ void AnchorFillSLTP(ulong posId)
       bool okMod=trade.PositionModify(posId,wantSL,wantTP);
       Print("MTM re-anchor (on fill): open=",DoubleToString(realOpen,g_digits),
             "  SL ",DoubleToString(curSL,g_digits),"->",DoubleToString(wantSL,g_digits),
-            " (",DoubleToString(g_reqSLpips,1)," pips)  TP ",DoubleToString(curTP,g_digits),"->",DoubleToString(wantTP,g_digits),
-            " (",DoubleToString(g_reqTPpips,1)," pips)  modify=",(okMod?"OK":"FAILED")," ret=",(int)trade.ResultRetcode());
+            " (",DoubleToString(MathAbs(realOpen-wantSL)/g_pip,1)," pips)  TP ",DoubleToString(curTP,g_digits),"->",DoubleToString(wantTP,g_digits),
+            " (",DoubleToString(MathAbs(realOpen-wantTP)/g_pip,1)," pips)  modify=",(okMod?"OK":"FAILED")," ret=",(int)trade.ResultRetcode());
       // v4.4: snap the EA's on-chart SL/TP lines onto the re-anchored broker prices. The manage
       // SL line is only positioned when first created (so a drag isn't fought every tick), so the
       // fill/anchor race could leave the visual line a hair off the real stop. This one-time snap
