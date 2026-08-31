@@ -673,36 +673,39 @@ begin
         coalesce(ps.n,0)                                    as series_posts,
         coalesce(sd.n_completed,0)                          as series_total,
         round(
-            greatest(0, coalesce(pr.net_r,0))     * 10
-          + coalesce(cda.bias_kept,0)             *  5
-          - coalesce(bpn.bias_missed_traded,0)    *  5
-          + coalesce(cda.review_kept,0)           *  5
-          - coalesce(cda.review_missed,0)         *  5
+            greatest(0, coalesce(pr.net_r,0))     *  5
+          + coalesce(cda.bias_kept,0)             * 10
+          - coalesce(bpn.bias_missed_traded,0)    * 10
+          + coalesce(cda.review_kept,0)           * 10
+          - coalesce(cda.review_missed,0)         * 10
           + coalesce(wa.weekly_done,0)            * 20
           - coalesce(wa.weekly_missed,0)          * 20
-          + least(coalesce(sd.n_completed,0), coalesce(ps.n,0))        *  5
-          - greatest(0, coalesce(sd.n_completed,0) - coalesce(ps.n,0)) *  5
+          + least(coalesce(sd.n_completed,0), coalesce(ps.n,0))        * 10
+          - greatest(0, coalesce(sd.n_completed,0) - coalesce(ps.n,0)) * 10
           + coalesce(sb.bonus,0)
           + coalesce(dm.match_days,0)             * 10
-          + coalesce(cda.maxtr_kept,0)            * 10
+          + coalesce(cda.maxtr_kept,0)            *  5
           - coalesce(cda.maxtr_over,0)            * 20
-          + coalesce(cda.dd_kept,0)               * 10
+          + coalesce(cda.dd_kept,0)               *  5
           - coalesce(cda.dd_over,0)               * 20
-          + coalesce(cda.risk_kept,0)             * 10
+          + coalesce(cda.risk_kept,0)             *  5
           - coalesce(cda.risk_over,0)             * 20
         , 1)                                                as points,
         jsonb_build_object(
-          'r',            round(greatest(0, coalesce(pr.net_r,0)) * 10, 1),
-          'bias',         coalesce(cda.bias_kept,0)   * 5 - coalesce(bpn.bias_missed_traded,0) * 5,
-          'review',       coalesce(cda.review_kept,0) * 5 - coalesce(cda.review_missed,0) * 5,
+          'r',            round(greatest(0, coalesce(pr.net_r,0)) * 5, 1),
+          'bias',         coalesce(cda.bias_kept,0)   * 10 - coalesce(bpn.bias_missed_traded,0) * 10,
+          'review',       coalesce(cda.review_kept,0) * 10 - coalesce(cda.review_missed,0) * 10,
           'weekly',       coalesce(wa.weekly_done,0)  * 20 - coalesce(wa.weekly_missed,0) * 20,
-          'series_post',  least(coalesce(sd.n_completed,0), coalesce(ps.n,0)) * 5
-                          - greatest(0, coalesce(sd.n_completed,0) - coalesce(ps.n,0)) * 5,
+          'series_post',  least(coalesce(sd.n_completed,0), coalesce(ps.n,0)) * 10
+                          - greatest(0, coalesce(sd.n_completed,0) - coalesce(ps.n,0)) * 10,
           'traded_day',   coalesce(dm.match_days,0) * 10,
-          'max_trades',   coalesce(cda.maxtr_kept,0) * 10 - coalesce(cda.maxtr_over,0) * 20,
-          'drawdown',     coalesce(cda.dd_kept,0)    * 10 - coalesce(cda.dd_over,0)    * 20,
-          'max_risk',     coalesce(cda.risk_kept,0)  * 10 - coalesce(cda.risk_over,0)  * 20,
-          'streak',       coalesce(sb.bonus,0)
+          'max_trades',   coalesce(cda.maxtr_kept,0) * 5 - coalesce(cda.maxtr_over,0) * 20,
+          'drawdown',     coalesce(cda.dd_kept,0)    * 5 - coalesce(cda.dd_over,0)    * 20,
+          'max_risk',     coalesce(cda.risk_kept,0)  * 5 - coalesce(cda.risk_over,0)  * 20,
+          'streak',       coalesce(sb.bonus,0),
+          'lim_max_trades', l.max_trades,
+          'lim_risk_pct',   l.max_risk_pct,
+          'lim_loss_pct',   l.max_loss_pct
         )                                                   as points_breakdown
       from people p
       left join best          b  on b.user_id  = p.user_id

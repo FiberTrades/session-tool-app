@@ -60670,6 +60670,38 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (hasT) return nn + ' ' + unit + ' ' + _t('out of','de') + ' ' + Math.round(total);
     return nn + ' ' + unit;
   }
+  // The self-imposed limits behind the three adherence rows, in units that carry no money -
+  // a count, and percentages of the trader's own balance. Shown because those rows pay for
+  // staying INSIDE a limit the trader chose, so without the number a generous limit and a
+  // disciplined one score identically and look identical.
+  //
+  // Absent key means the entry was scored before limits were recorded: return '' so the row keeps
+  // its old behaviour instead of claiming a limit was not set. An explicit null DOES mean not set,
+  // which is worth saying - that row scores zero either way, and the subtitle explains the zero.
+  function _limPct(v){
+    var n = Number(v);
+    if (v == null || isNaN(n) || n <= 0) return '';
+    return (Math.round(n * 100) / 100) + '%';
+  }
+  function _limTrades(pb){
+    if (!('lim_max_trades' in pb)) return '';
+    var n = Number(pb.lim_max_trades);
+    if (pb.lim_max_trades == null || isNaN(n) || n <= 0) return _t('no limit set','sin límite');
+    return n + ' ' + _t('per session','por sesión');
+  }
+  function _limRisk(pb){
+    if (!('lim_risk_pct' in pb)) return '';
+    return _limPct(pb.lim_risk_pct) || _t('no limit set','sin límite');
+  }
+  function _limDrawdown(pb){
+    if (!('lim_loss_pct' in pb)) return '';
+    var p = _limPct(pb.lim_loss_pct);
+    if (!p) return _t('no limit set','sin límite');
+    // How many losing trades the limit allows in a day. Independent of account size or currency,
+    // and the figure that makes an inflated limit obvious.
+    var r = Number(pb.lim_loss_pct) / Number(pb.lim_risk_pct);
+    return (isFinite(r) && r > 0) ? (p + ' · ' + (Math.round(r * 10) / 10) + 'R') : p;
+  }
   function cardBreakdown(x,u){
     var pb=x.points_breakdown||{};
     var netR=(x.best_series_r==null)?'':((Number(x.best_series_r)>=0?'+':'')+Number(x.best_series_r).toFixed(2)+'R');
@@ -60683,9 +60715,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       // subtitle is hidden, making the line vanish for the one person who most needs to see why.
       [_t('Series posted','Series publicadas'), pb.series_post, _outOf(x.series_posts, x.series_total, 'posted','publicadas')],
       [_t('Committed days shown up','Días comprometidos cumplidos'), pb.traded_day, _outOf(x.committed_shown, x.committed_total, 'days','días')],
-      [_t('Max trades / session','Máx. operaciones'), pb.max_trades, ''],
-      [_t('Max daily drawdown','Máx. pérdida diaria'), pb.drawdown, ''],
-      [_t('Max risk per trade','Máx. riesgo'), pb.max_risk, ''],
+      // Subtitles carry the limit itself, so the points can be read against what was promised.
+      [_t('Max trades / session','Máx. operaciones'), pb.max_trades, _limTrades(pb)],
+      [_t('Max daily drawdown','Máx. pérdida diaria'), pb.drawdown, _limDrawdown(pb)],
+      [_t('Max risk per trade','Máx. riesgo'), pb.max_risk, _limRisk(pb)],
       [_t('#1 streak bonus','Bonus de racha #1'), pb.streak, '']
     ];
     var h='<div class="stb-bd-head"><span class="stb-bd-title">'+_t('How','Cómo')+' '+esc(u.name)+' '+_t('scored','puntuó')+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div><div class="stb-bd-list">';
