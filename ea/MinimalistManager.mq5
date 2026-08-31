@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.3"
+#property version   "7.4"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -826,11 +826,20 @@ void PlaceTrade()
          // The stop therefore stays exactly where it was drawn, and is pulled in ONLY when the
          // fill was bad enough to widen it past the Max SL rail - which is the protection this
          // block was actually written for.
-         double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
-         if(curSL>0 && g_maxSL>0)
+         // Same widen-only rule as AnchorFillSLTP. These two disagreed once already - v7.2
+         // changed one and left the other live - so they move together from here.
+         double planned=NormalizeDouble(realOpen-dir*slPips*g_pip,g_digits);
+         double wantSL=planned;
+         if(curSL>0)
+           {
+            double curDist=MathAbs(realOpen-curSL);
+            double plnDist=MathAbs(realOpen-planned);
+            wantSL=(plnDist>curDist+tol) ? planned : curSL;
+           }
+         if(g_maxSL>0)
            {
             double maxDist=g_maxSL*g_pip;
-            if(MathAbs(realOpen-curSL)>maxDist+tol)
+            if(MathAbs(realOpen-wantSL)>maxDist+tol)
                wantSL=NormalizeDouble(realOpen-dir*maxDist,g_digits);
            }
          // R mode has to measure R from the fill to the stop that is ACTUALLY there, not the
@@ -3874,13 +3883,29 @@ void AnchorFillSLTP(ulong posId)
    //
    // v7.2 applied this rule to the inline block in PlaceTrade and missed THIS function, which is
    // the one a market fill actually calls - so the behaviour survived the fix. The two now agree.
-   double wantSL=(curSL>0) ? curSL : NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
-   if(curSL>0 && g_maxSL>0)
+   // The stop may only ever move AWAY from price, never towards it.
+   //   filled against you   - restoring the planned distance would drag the stop TOWARDS price,
+   //                          inside the level it was deliberately placed beyond. Refused: the
+   //                          drawn stop stands and the trade risks a little more than planned.
+   //   filled in your favour - restoring it pushes the stop FURTHER from price, deeper beyond
+   //                          the structure rather than into it. Allowed: nothing about the
+   //                          level is compromised by more room, and the risk you sized for is
+   //                          preserved rather than quietly shrinking.
+   // The target is a distance you typed, so it always follows the fill.
+   double planned=NormalizeDouble(realOpen-g_reqDir*g_reqSLpips*g_pip,g_digits);
+   double wantSL=planned;
+   if(curSL>0)
      {
-      // Pulled in ONLY when the fill was bad enough to widen the stop past the Max SL rail,
+      double curDist=MathAbs(realOpen-curSL);
+      double plnDist=MathAbs(realOpen-planned);
+      wantSL=(plnDist>curDist+tol) ? planned : curSL;   // widen back to plan, or leave it alone
+     }
+   if(g_maxSL>0)
+     {
+      // Still capped: a fill bad enough to widen the stop past the Max SL rail is pulled in,
       // which is the protection this block was written for.
       double maxDist=g_maxSL*g_pip;
-      if(MathAbs(realOpen-curSL)>maxDist+tol)
+      if(MathAbs(realOpen-wantSL)>maxDist+tol)
          wantSL=NormalizeDouble(realOpen-g_reqDir*maxDist,g_digits);
      }
    // R targets measure R from the stop that is ACTUALLY there, not the one requested, since the
