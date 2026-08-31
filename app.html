@@ -6974,6 +6974,7 @@ try {
       'settings.name_modal_ph': 'Your name or handle…',
       'edit.sl_ph': 'SL (pips)',
       'settings.linked_groups_label': 'Linked groups',
+      'acct.name_taken': 'You already have an account with that name. Give this one a different name so you can tell them apart.',
       'settings.linked_groups_hint': 'Bundle accounts together so one trade entry fans out to all of them at once. Mirrors how a trade copier works. Each duplicated trade is independently editable.',
       'settings.linked_group_new': '+ New group',
       'settings.linked_group_name_placeholder': 'Group name (e.g. Funded Stack)',
@@ -8491,6 +8492,7 @@ try {
       'settings.name_modal_ph': 'Tu nombre o alias…',
       'edit.sl_ph': 'SL (pips)',
       'settings.linked_groups_label': 'Grupos enlazados',
+      'acct.name_taken': 'Ya tienes una cuenta con ese nombre. Ponle otro para poder distinguirlas.',
       'settings.linked_groups_hint': 'Agrupa cuentas para que una sola operación se replique en todas a la vez. Refleja el funcionamiento de un copiador de operaciones. Cada operación duplicada se puede editar de forma independiente.',
       'settings.linked_group_new': '+ Nuevo grupo',
       'settings.linked_group_name_placeholder': 'Nombre del grupo (p. ej. Stack Financiado)',
@@ -12429,20 +12431,42 @@ try {
       } catch (e) {}
     }
   }
+  // Is this name already in use by another ACTIVE account? Case-insensitive and trimmed, because
+  // "Funded" and "funded " are the same account to a human and to the assistant, which only ever
+  // sees the name. Archived accounts are ignored on purpose: archiving a failed challenge and
+  // reusing its name is a normal flow, and the transition archives before it creates.
+  // On window because the callers live in the settings UI, further down the file.
+  window.__stNameTaken = function (name, exceptId) {
+    var n = String(name || '').trim().toLowerCase();
+    if (!n) return false;
+    return (data.accounts || []).some(function (a) {
+      return a && a.id !== exceptId && (a.status || 'active') === 'active'
+        && String((a.name || a.label) || '').trim().toLowerCase() === n;
+    });
+  };
   function createAccount(name, startingBalance, accountType) {
     if (!Array.isArray(data.accounts)) data.accounts = [];
+    // Backstop. The UI checks first and explains; this makes it impossible for a future caller to
+    // write a duplicate silently. Returns null, so a caller that ignores the result fails on .id
+    // rather than creating an account nothing can distinguish.
+    if (window.__stNameTaken(name)) return null;
     const acc = newAccountBlank(name, startingBalance, accountType);
     data.accounts.push(acc);
     syncEffectiveStartingBalance();
     saveData();
     return acc;
   }
+  // Reports whether the rename took, so a caller can say why it did not. It used to return
+  // nothing and silently ignore an empty name, which meant a refusal looked identical to success.
   function renameAccount(id, newName) {
     const acc = getAccountById(id);
-    if (!acc) return;
+    if (!acc) return false;
     const trimmed = (newName || '').trim();
-    if (trimmed) acc.name = trimmed;
+    if (!trimmed) return false;
+    if (window.__stNameTaken(trimmed, id)) return false;   // exceptId: renaming to itself is fine
+    acc.name = trimmed;
     saveData();
+    return true;
   }
   function archiveAccount(id) {
     const acc = getAccountById(id);
@@ -40833,7 +40857,7 @@ try {
           if (kind === 'challenge' && !(window.__stStageOf && window.__stStageOf(a.name))) {
             try {
               window.openRenameModal(a.name, (newName) => {
-                renameAccount(a.id, newName);
+                if (!renameAccount(a.id, newName)) { try { showToast(t('acct.name_taken')); } catch (e) {} return; }
                 try { if (typeof window.renderSettingsAccountsList === 'function') window.renderSettingsAccountsList(); } catch (e) {}
                 try { if (typeof renderTradesStats === 'function') renderTradesStats(); } catch (e) {}
               }, undefined, { stage: true, onClose: _askRules });
@@ -41189,7 +41213,7 @@ try {
         // The stage picker is offered only for an account marked as a prop firm — a personal
         // account has no Challenge/Verification to be in.
         openRenameModal(acc.name, (newName) => {
-          renameAccount(id, newName);
+          if (!renameAccount(id, newName)) { try { showToast(t('acct.name_taken')); } catch (e) {} return; }
           refreshScopeSurfaces();
         }, undefined, { stage: acc.kind === 'challenge' });
         return;
@@ -41303,6 +41327,7 @@ try {
         const balance = parseFloat(balInp.value);
         if (!name) { nameInp.focus(); return; }
         if (isNaN(balance) || balance <= 0) { balInp.focus(); return; }
+        if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken')); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
         const acc = createAccount(name, balance);
         // "Balance now": for an account that has ALREADY been traded before it was added
         // here. No trades are logged against it yet, so this figure IS its starting point -
@@ -41364,6 +41389,9 @@ try {
         const balance = parseFloat(balInp.value);
         if (!name) { nameInp.focus(); return; }
         if (isNaN(balance) || balance <= 0) { balInp.focus(); return; }
+        // Checked BEFORE the archive below. Refusing afterwards would leave the trader with their
+        // previous account archived and nothing created to replace it.
+        if (window.__stNameTaken(name)) { try { showToast(t('acct.name_taken')); } catch (e) {} nameInp.focus(); nameInp.select(); return; }
         // Step 1: archive the currently active account (if any).
         const currentActive = (data.accounts || []).find(a => a.id === data.activeAccountId);
         if (currentActive) currentActive.status = 'archived';
