@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.3"
+#property version   "7.4"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3927,8 +3927,9 @@ void AnchorFillSLTP(ulong posId)
    // The stop may only ever move AWAY from price, never towards it.
    //   filled against you    - restoring the planned distance would drag the stop TOWARDS price,
    //                           inside the level it was deliberately placed beyond. Refused: the
-   //                           drawn level stands and the position is trimmed below instead, so
-   //                           the stop measures 3.2 and the money is still the plan.
+   //                           drawn level stands and the trade simply costs proportionally more.
+   //                           Nothing is closed or resized to compensate - position size is
+   //                           fixed at the fill and stays fixed.
    //   filled in your favour - restoring it pushes the stop FURTHER from price, deeper beyond the
    //                           structure rather than into it. Allowed: nothing about the level is
    //                           compromised by more room, and the full planned risk is preserved.
@@ -3998,38 +3999,6 @@ void AnchorFillSLTP(ulong posId)
             " pips): wanted SL=",DoubleToString(wantSL,g_digits)," TP=",DoubleToString(wantTP,g_digits),
             " - the broker will not allow a stop this tight.");
 
-   // Whatever distance survived the rules above, the money is the plan. An adverse fill that kept
-   // its level sits FURTHER from price than planned, and the lot - sized before the fill from the
-   // requested distance - is now carrying too much over it. Size is the only thing left to move,
-   // and only downwards, since a position can be reduced but never added to.
-   //
-   // Nothing to do when the distance already equals the plan: a clean fill, a favourable one that
-   // widened back, or an adverse one the Max SL rail pulled in to exactly the requested distance.
-   //
-   // AFTER the modify on purpose - a partial close can disturb the ticket, and the stop must be
-   // on the position before anything touches its size.
-   double plannedDist=g_reqSLpips*g_pip;
-   double actualDist =MathAbs(realOpen-wantSL);
-   if(plannedDist>0 && actualDist>plannedDist+tol && PositionSelectByTicket(posId))
-     {
-      double vol=PositionGetDouble(POSITION_VOLUME);
-      double keep=NormalizeVolume(vol*plannedDist/actualDist);
-      double shed=NormalizeDouble(vol-keep,g_volDigits);
-      if(keep>=g_volMin && shed>=g_volMin && shed<vol)
-        {
-         bool okTrim=trade.PositionClosePartial(posId,shed);
-         Print("MTM risk trim: stop at ",DoubleToString(wantSL,g_digits)," is ",
-               DoubleToString(actualDist/g_pip,1)," pips vs ",DoubleToString(g_reqSLpips,1),
-               " planned - shedding ",DoubleToString(shed,g_volDigits)," of ",
-               DoubleToString(vol,g_volDigits)," lots so the risk stays as planned. trim=",
-               (okTrim?"OK":"FAILED")," ret=",(int)trade.ResultRetcode());
-        }
-      else
-         Print("MTM risk trim: wanted to shed ",DoubleToString(shed,g_volDigits),
-               " lots to hold the planned risk, but the broker minimum lot is ",
-               DoubleToString(g_volMin,g_volDigits)," - left at ",DoubleToString(vol,g_volDigits),
-               " lots, carrying ",DoubleToString(actualDist/plannedDist*100.0,0),"% of the plan.");
-     }
   }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,
