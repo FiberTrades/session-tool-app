@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.9"
+#property version   "7.3"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -28,7 +28,7 @@ enum ENUM_BEOFF_MODE { BEOFF_BY_PIPS, BEOFF_BY_RR };   // BE offset read as pips
 input group "===== Trade Setup ====="
 input ENUM_ORDER_KIND  InpOrderKind     = OK_MARKET;   // Default order type
 input long             InpMagic         = 990088;      // Magic number
-input ulong            InpSlippage      = 30;          // Max slippage (points)
+input ulong            InpSlippage      = 30;          // Slippage fallback (points) - trades use % of SL
 
 input group "===== Risk ====="
 input ENUM_RISK_MODE   InpRiskMode      = RISK_AMOUNT; // Risk mode
@@ -592,13 +592,41 @@ bool ResolveForOrder(int &dir,double &entry,double &slPrice,double &slPips,strin
 //==================================================================
 //  TRADING ACTIONS
 //==================================================================
+// How much of the stop a fill is allowed to slip. Expressed against THIS trade's stop rather
+// than as a point count, because a point is a different thing on every instrument - 30 points is
+// 3 pips on 5-digit EURUSD, most of a 2-4 pip stop, and a small fraction of a normal stop on a
+// gold or index feed. The stop distance is already denominated in the instrument, so using it as
+// the yardstick needs no per-symbol configuration and bounds the real harm: with the Max SL
+// ceiling in play, an adverse fill can only push the stop this fraction of its width inside the
+// structure, on any market.
+#define SLIP_PCT_OF_SL 20.0
+
 bool SendOne(int dir,double volume,double entry,double slPrice,double tpPrice)
   {
    if(volume<=0) return false;
    string cm="MTM";
    if(g_orderKind==OK_MARKET)
+     {
+      // Floored at the live spread: a tolerance below the spread refuses fills for no benefit,
+      // and the spread is instrument-relative for free. InpSlippage is only the fallback for a
+      // stop distance we somehow do not have - never a ceiling, since capping a proportional
+      // value at a fixed point count would put the instrument dependence straight back in.
+      double slDistPx=MathAbs(entry-slPrice);
+      ulong  devPts  =InpSlippage;
+      if(slDistPx>0.0 && g_point>0.0)
+        {
+         double spreadPx=SymbolInfoDouble(_Symbol,SYMBOL_ASK)-SymbolInfoDouble(_Symbol,SYMBOL_BID);
+         if(spreadPx<0.0) spreadPx=0.0;
+         double tolPx=slDistPx*SLIP_PCT_OF_SL/100.0;
+         if(tolPx<spreadPx) tolPx=spreadPx;
+         devPts=(ulong)MathMax(1.0,MathRound(tolPx/g_point));
+        }
+      trade.SetDeviationInPoints(devPts);
+      Print("MTM slippage: SL ",DoubleToString(slDistPx/g_pip,1)," pips -> allowing ",
+            (int)devPts," points (",DoubleToString(devPts*g_point/g_pip,2)," pips) of slip.");
       return dir>0 ? trade.Buy(volume,_Symbol,0,slPrice,tpPrice,cm)
                    : trade.Sell(volume,_Symbol,0,slPrice,tpPrice,cm);
+     }
    if(g_orderKind==OK_LIMIT)
       return dir>0 ? trade.BuyLimit(volume,entry,_Symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,cm)
                    : trade.SellLimit(volume,entry,_Symbol,slPrice,tpPrice,ORDER_TIME_GTC,0,cm);
@@ -3712,6 +3740,7 @@ int OnInit()
    g_volDigits=VolumeDigits(g_volStep);
 
    trade.SetExpertMagicNumber(InpMagic);
+   // Only the starting value: SendOne recomputes this per market order from the stop distance.
    trade.SetDeviationInPoints(InpSlippage);
    trade.SetTypeFillingBySymbol(_Symbol);
 
