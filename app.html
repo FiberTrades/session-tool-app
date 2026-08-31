@@ -6903,7 +6903,8 @@ try {
       'exc.no_stop_hint': 'Trades analysed, but none of them has a logged stop — so there is no R to measure heat against. Add a stop size to your trades to unlock these figures.',
       'exc.nothing_new': 'Nothing new to analyse.',
       'exc.none_synced': 'No MT5-synced trades yet — this needs real candles to measure.',
-      'exc.not_run': 'Press Analyse to measure how far price moved during each trade.',
+      'exc.not_run': 'Measuring how far price moved during each trade\u2026',
+      'exc.working': 'Measuring trade {D} of {N}\u2026',
       'exc.r_heat': '{B} of stop to spare',
       'exc.r_manage': 'management, not entries',
       'exc.r_entries': 'entries, not management',
@@ -8419,7 +8420,8 @@ try {
       'exc.no_stop_hint': 'Operaciones analizadas, pero ninguna tiene un stop registrado, así que no hay R con el que medir el calor. Añade el tamaño del stop a tus operaciones para desbloquear estas cifras.',
       'exc.nothing_new': 'No hay nada nuevo que analizar.',
       'exc.none_synced': 'Aún no hay operaciones sincronizadas con MT5 — esto necesita velas reales para medirse.',
-      'exc.not_run': 'Pulsa Analizar para medir cuánto se movió el precio durante cada operación.',
+      'exc.not_run': 'Midiendo cuánto se movió el precio durante cada operación\u2026',
+      'exc.working': 'Midiendo la operación {D} de {N}\u2026',
       'exc.r_heat': '{B} de margen en el stop',
       'exc.r_manage': 'gestión, no entradas',
       'exc.r_entries': 'entradas, no gestión',
@@ -20077,15 +20079,21 @@ try {
     (function renderComboDiag(){
       const box = document.getElementById('combo-diag');
       if (!box) return;
-      function wireDiagRun(){
-        // The button is rebuilt on every render, so this is always a fresh element — no need to
-        // guard against double-binding, and no stale listener left behind.
-        const b = document.getElementById('combo-diag-run');
-        if (!b) return;
-        b.addEventListener('click', async () => {
+      // Runs itself. There was a button here and it saved nothing: every synced trade is
+      // measured exactly once ever - _excAt stamps it and it never re-enters the queue - so
+      // pressing it did not avoid a single candle fetch, it only decided when they happened. The
+      // panel was asking permission for work that was going to be done anyway.
+      //
+      // What the button was arguably protecting, not firing a burst of st_candles RPCs, is kept
+      // below and handled properly instead of by making a person the rate limiter.
+      async function wireDiagRun(){
+        {
+          // One pass at a time. A re-render while a pass is in flight would otherwise start a
+          // second loop over the same queue and fetch everything twice.
+          if (window.__stExcRunning) return;
           if (!(window.__stReplay && window.__stReplay.excursions)) return;
           const p = document.getElementById('combo-diag-progress');
-          // Re-read the trades on click: the scope may have changed since this was rendered, and
+          // Re-read the trades here: the scope may have changed since this was rendered, and
           // analysing is worth doing across everything, not just the current period filter.
           const scoped = (typeof filterByScope === 'function') ? filterByScope(getAllLifetimeTrades()) : getAllLifetimeTrades();
           // "Needs analysing" is decided by _excAt — a stamp meaning "a run measured this" — NOT
@@ -20093,10 +20101,10 @@ try {
           // it yields pips and no R forever; keying off R kept those trades in the queue on every
           // single run. Trades cached before _excAt existed have no stamp, so they top up once.
           const todo = scoped.filter(x => x.mt5Ticket && !x._excNone && !x._excAt);
-          if (!todo.length) { if (p) p.textContent = t('exc.nothing_new'); return; }
-          b.disabled = true;
+          if (!todo.length) return;             // nothing new: say nothing, do nothing
+          window.__stExcRunning = true;
           for (let i = 0; i < todo.length; i++) {
-            if (p) p.textContent = (i + 1) + ' / ' + todo.length;
+            if (p) p.textContent = t('exc.working').replace('{D}', String(i + 1)).replace('{N}', String(todo.length));
             try {
               const x = await window.__stReplay.excursions(todo[i]);
               if (x) {
@@ -20111,12 +20119,15 @@ try {
               // _excNone here would permanently retire a trade over one failed request, so leave
               // it unmarked and let the next run pick it up again.
             }
+            // Breathe. Nothing here is urgent, and a first sync with a long backlog should trickle
+            // rather than fire a burst of RPCs the moment the tab opens.
+            if (i + 1 < todo.length) await new Promise(function (r) { setTimeout(r, 150); });
           }
           try { saveData(); } catch (e) {}
-          b.disabled = false;
+          window.__stExcRunning = false;
           // renderTradesStats paints this tab (renderStats is Series of 10); refreshAllSurfaces runs both.
           try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); else renderTradesStats(); } catch (e) {}
-        });
+        }
       }
       const synced = allTrades.filter(x => x.mt5Ticket);
       // Two different questions, and conflating them is what froze the count:
@@ -20139,7 +20150,7 @@ try {
       const maeWp = avg(winsD, '_maePips'), mfeLp = avg(lossD, '_mfePips'), maeBEp = avg(beD, '_maePips');
       // Average logged stop, so "room left" can be quoted in pips as well as R.
       const slAvg = (function(){ const s = winsD.map(x => parseFloat(x.sl)).filter(v => v > 0); return s.length ? s.reduce((a, b) => a + b, 0) / s.length : null; })();
-      const btnHtml  = `<button type="button" id="combo-diag-run" class="settings-btn" style="padding:6px 12px;font-size:10px;">${t('btn.excursion_run')}</button>`;
+      const btnHtml  = '';   // it runs itself now; the progress line is the only affordance left
       const progHtml = `<span id="combo-diag-progress" style="margin-left:10px;font-family:'AppNum','DM Mono',monospace;font-size:10px;color:var(--text-dim);"></span>`;
       // Counted-out trades are stated so the progress line never reads as unfinished work when the
       // remainder simply cannot be measured or cannot produce an R.
@@ -20147,9 +20158,11 @@ try {
         + (noData ? ' · ' + t('exc.no_candles').replace('{X}', String(noData)) : '')
         + (noStop ? ' · ' + t('exc.no_stop').replace('{X}', String(noStop)) : '');
       if (!synced.length)   { box.innerHTML = `<p class="section-hint" style="margin:0;">${t('exc.none_synced')}</p>`; return; }
-      if (!analysed.length) { box.innerHTML = `<p class="section-hint" style="margin:0 0 8px;">${t('exc.not_run')}</p><div class="exc-foot"><span class="exc-tally">${tally}</span><span class="exc-actions">${btnHtml}${progHtml}</span></div>`; wireDiagRun(); return; }
+      // wireDiagRun() before the return: this branch IS the nothing-measured-yet state, and
+      // returning without starting the pass would leave the panel promising work it never does.
+      if (!analysed.length) { wireDiagRun(); box.innerHTML = `<p class="section-hint" style="margin:0 0 8px;">${t('exc.not_run')}</p><div class="exc-foot"><span class="exc-tally">${tally}</span><span class="exc-actions">${btnHtml}${progHtml}</span></div>`; wireDiagRun(); return; }
       // Measured, but not one trade carried a logged stop — so there is no R to state anything in.
-      if (!done.length)     { box.innerHTML = `<p class="section-hint" style="margin:0 0 8px;">${t('exc.no_stop_hint')}</p><div class="exc-foot"><span class="exc-tally">${tally}</span><span class="exc-actions">${btnHtml}${progHtml}</span></div>`; wireDiagRun(); return; }
+      if (!done.length)     { wireDiagRun(); box.innerHTML = `<p class="section-hint" style="margin:0 0 8px;">${t('exc.no_stop_hint')}</p><div class="exc-foot"><span class="exc-tally">${tally}</span><span class="exc-actions">${btnHtml}${progHtml}</span></div>`; wireDiagRun(); return; }
       // Three ALIGNED rows rather than three sentences, so the figures scan as a column instead of
       // being buried mid-prose. Deliberately NOT the full outcome × (heat, best move) matrix: two
       // of those six cells are dead. Losers' heat is ~1R by definition (a loser is a trade that
