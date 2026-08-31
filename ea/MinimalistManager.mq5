@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.4"
+#property version   "7.5"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3951,6 +3951,37 @@ void AnchorFillSLTP(ulong posId)
       Print("MTM re-anchor (on fill) BLOCKED by broker min stop distance (",DoubleToString(stopLvl/g_pip,1),
             " pips): wanted SL=",DoubleToString(wantSL,g_digits)," TP=",DoubleToString(wantTP,g_digits),
             " - the broker will not allow a stop this tight.");
+
+   // A fill against you leaves the stop at the level you drew and therefore FURTHER from price
+   // than planned. The lot was sized before the fill, from the requested distance, so the trade
+   // is now carrying more money than intended over that wider stop. The stop is staying and the
+   // risk is fixed, so size is the only thing left to move - and it can only move down, since a
+   // position can be reduced but never added to. Trim the excess and the plan is restored.
+   //
+   // A favourable fill needs none of this: the stop has already been widened back to the planned
+   // distance above, so the risk is correct as it stands.
+   double plannedDist=g_reqSLpips*g_pip;
+   double actualDist =MathAbs(realOpen-wantSL);
+   if(plannedDist>0 && actualDist>plannedDist+tol && PositionSelectByTicket(posId))
+     {
+      double vol=PositionGetDouble(POSITION_VOLUME);
+      double keep=NormalizeVolume(vol*plannedDist/actualDist);
+      double shed=NormalizeDouble(vol-keep,g_volDigits);
+      if(keep>=g_volMin && shed>=g_volMin && shed<vol)
+        {
+         bool okTrim=trade.PositionClosePartial(posId,shed);
+         Print("MTM risk trim: filled against you, stop held at ",DoubleToString(wantSL,g_digits),
+               " (",DoubleToString(actualDist/g_pip,1)," pips vs ",DoubleToString(g_reqSLpips,1),
+               " planned) - shedding ",DoubleToString(shed,g_volDigits)," of ",
+               DoubleToString(vol,g_volDigits)," lots so the risk stays as planned. trim=",
+               (okTrim?"OK":"FAILED")," ret=",(int)trade.ResultRetcode());
+        }
+      else
+         Print("MTM risk trim: wanted to shed ",DoubleToString(shed,g_volDigits),
+               " lots to hold the planned risk, but the broker minimum lot is ",
+               DoubleToString(g_volMin,g_volDigits)," - left at ",DoubleToString(vol,g_volDigits),
+               " lots, carrying ",DoubleToString(actualDist/plannedDist*100.0,0),"% of the plan.");
+     }
   }
 
 void OnTradeTransaction(const MqlTradeTransaction &trans,
