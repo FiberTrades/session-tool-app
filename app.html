@@ -25767,6 +25767,15 @@ try {
   // %s are noisy at small samples and the note doesn't add enough to earn its space).
   function renderConsistencyBlock(periodStart, periodEnd, periodTrades, opts) {
     const minimal = !!(opts && opts.minimal);
+    // periodTrades arrives scoped - every trade carries an accountId - but the showed-up half
+    // below reads data.biasHistory, which is global, because a daily bias is a market read with no
+    // account on it. Counting them against each other over a period that predates the account
+    // measures two different populations. Clamp the window forward to the scope's own start; a
+    // period that begins after the account was created is untouched, and lifetime has no floor.
+    const _cFloor = (typeof scopeStartMs === 'function') ? scopeStartMs() : 0;
+    if (_cFloor > 0 && periodStart instanceof Date && periodStart.getTime() < _cFloor) {
+      periodStart = new Date(_cFloor);
+    }
     // Days with at least one logged trade (any day — a weekend session counts too).
     const tradedDaySet = new Set();
     periodTrades.forEach(t => {
