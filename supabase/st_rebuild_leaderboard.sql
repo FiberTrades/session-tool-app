@@ -710,7 +710,11 @@ begin
           'review_total',    coalesce(cda.cd_days,0),
           'weekly_total',    coalesce(wa.weekly_done,0) + coalesce(wa.weekly_missed,0),
           'committed_shown', coalesce(ca.commit_kept,0),
-          'committed_total', coalesce(ca.commit_kept,0) + coalesce(ca.commit_missed,0)
+          'committed_total', coalesce(ca.commit_kept,0) + coalesce(ca.commit_missed,0),
+          'dir_days',        coalesce(dm.match_days,0),
+          'dir_total',       (select count(*) from bias_dir_dates bd
+                                 where bd.user_id = p.user_id and bd.dir is not null
+                                   and bd.d >= v_start and bd.d < v_end)
         )                                                   as points_breakdown
       from people p
       left join best          b  on b.user_id  = p.user_id
