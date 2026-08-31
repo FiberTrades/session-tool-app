@@ -60379,6 +60379,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stb-tabs{display:flex;gap:6px;}
 .stb-tab{background:var(--bg-elev2);border:1px solid var(--border-2);color:var(--text-mid);border-radius:var(--radius-ctrl);padding:6px 12px;font-family:'AppNum','DM Mono',monospace;font-size:10px;letter-spacing:.08em;cursor:pointer;text-transform:uppercase;transition:color .15s,border-color .15s,background .15s;}
 .stb-tab:hover{color:var(--text);border-color:var(--accent);}
+/* Fetching a different period: dim the rows that are already there rather than replacing them
+   with a one-line "Loading...". Opacity costs no layout, so the page holds still until the new
+   view swaps in. */
+.stb-busy{opacity:.5;pointer-events:none;}
+@media (prefers-reduced-motion: no-preference){ .stb-busy{transition:opacity .12s ease;} }
 .stb-tab.on{background:var(--accent);border-color:var(--accent);color:#000;font-weight:700;}
 .stb-body-wrap{display:flex;flex-direction:column;margin-top:18px;}
 #stb-board.collapsed .stb-body-wrap{display:none;}
@@ -60817,7 +60822,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function load(force){
     var c=sb(); if(!c) return;
     var box=el('stb-body'); if(!box) return;
-    if(force) box.innerHTML='<div class="stb-empty">'+_t('Loading\u2026','Cargando\u2026')+'</div>';
+    /* Blank ONLY when there is nothing to keep. On a tab switch the current rows stay put and
+       simply dim, because collapsing to a one-line "Loading..." and then expanding into a view of
+       a different shape - cards vs table, rules box shown vs hidden - is two reflows where one
+       will do. Month-to-month never showed it; switching to or from Best Month did. */
+    if(force){
+      if(!S.rows || !S.rows.length) box.innerHTML='<div class="stb-empty">'+_t('Loading\u2026','Cargando\u2026')+'</div>';
+      else box.classList.add('stb-busy');
+    }
     /* 'lastmonth' is a VIEW of the monthly board, not a period of its own - the table stores
        only 'month' rows keyed by period_start - so the tab id maps onto the same DB period with a
        different start date. Everything else branches on "is this alltime", so the new tab keeps
@@ -60832,14 +60844,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       .order('points',{ascending:false})
       .limit(200)
       .then(function(r){
-        if(r&&r.error){ box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; return; }
+        if(r&&r.error){ box.classList.remove('stb-busy'); box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; return; }
         S.rows=(r&&r.data)||[];
         names(paint);
-      }, function(){ box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; });
+      }, function(){ box.classList.remove('stb-busy'); box.innerHTML='<div class="stb-empty">'+_t('Leaderboard unavailable.','Clasificaci\u00f3n no disponible.')+'</div>'; });
   }
 
   function paint(){
     var box=el('stb-body'); if(!box) return;
+    box.classList.remove('stb-busy');
     /* the points key only applies to the monthly board — scope the lookup to THIS
        board so we never toggle the wrong element */
     var rb=(box.parentNode&&box.parentNode.querySelector('.stb-rulesbox'))||document.querySelector('.stb-rulesbox');
