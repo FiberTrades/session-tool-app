@@ -60522,6 +60522,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         '<span class="stb-title">'+_t('Discipline Leaderboard','Clasificaci\u00f3n de disciplina')+'</span>'+
         '<div class="stb-tabs">'+
           '<button class="stb-tab" data-p="month">'+_t('This Month','Este mes')+'</button>'+
+          '<button class="stb-tab" data-p="lastmonth">'+_t('Last Month','Mes pasado')+'</button>'+
           '<button class="stb-tab" data-p="alltime">'+_t('Best Months','Mejores meses')+'</button>'+
         '</div>'+
       '</div>'+
@@ -60532,17 +60533,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         '<div class="stb-rt" id="stb-rt-head"><span class="stb-rt-chev">\u25b8</span><span>'+_t('How points work','C\u00f3mo se puntu\u00faa')+'</span></div>'+
         '<div class="stb-fold"><div class="stb-fold-inner"><div class="stb-cols">'+
           '<ul>'+
-            '<li class="up"><b>+10</b><span>'+_t('per 1R captured (min 0)','por cada 1R capturada (m\u00edn. 0)')+'</span></li>'+
-            '<li class="up"><b>+5 / \u20135</b><span>'+_t('bias posted before your session opens','sesgo antes de abrir tu sesi\u00f3n')+'</span></li>'+
-            '<li class="up"><b>+5 / \u20135</b><span>'+_t('review posted after it closes','revisi\u00f3n al cerrar la sesi\u00f3n')+'</span></li>'+
+            '<li class="up"><b>+5</b><span>'+_t('per 1R captured (min 0)','por cada 1R capturada (m\u00edn. 0)')+'</span></li>'+
+            '<li class="up"><b>+10 / \u201310</b><span>'+_t('bias posted before your session opens','sesgo antes de abrir tu sesi\u00f3n')+'</span></li>'+
+            '<li class="up"><b>+10 / \u201310</b><span>'+_t('review posted after it closes','revisi\u00f3n al cerrar la sesi\u00f3n')+'</span></li>'+
             '<li class="up"><b>+20 / \u201320</b><span>'+_t('weekly review posted before the new week','revisi\u00f3n semanal publicada antes de la nueva semana')+'</span></li>'+
-            '<li class="up"><b>+5 / \u20135</b><span>'+_t('completed series of 10 posted','serie de 10 completada publicada')+'</span></li>'+
+            '<li class="up"><b>+10 / \u201310</b><span>'+_t('completed series of 10 posted','serie de 10 completada publicada')+'</span></li>'+
           '</ul>'+
           '<ul>'+
             '<li class="up"><b>+10</b><span>'+_t('traded with your bias direction','operaste con la direcci\u00f3n de tu sesgo')+'</span></li>'+
-            '<li class="up"><b>+10 / \u201320</b><span>'+_t('max trades per session','m\u00e1x. operaciones por sesi\u00f3n')+'</span></li>'+
-            '<li class="up"><b>+10 / \u201320</b><span>'+_t('max daily drawdown','m\u00e1x. p\u00e9rdida diaria')+'</span></li>'+
-            '<li class="up"><b>+10 / \u201320</b><span>'+_t('max risk per trade','m\u00e1x. riesgo por operaci\u00f3n')+'</span></li>'+
+            '<li class="up"><b>+5 / \u201320</b><span>'+_t('max trades per session','m\u00e1x. operaciones por sesi\u00f3n')+'</span></li>'+
+            '<li class="up"><b>+5 / \u201320</b><span>'+_t('max daily drawdown','m\u00e1x. p\u00e9rdida diaria')+'</span></li>'+
+            '<li class="up"><b>+5 / \u201320</b><span>'+_t('max risk per trade','m\u00e1x. riesgo por operaci\u00f3n')+'</span></li>'+
             '<li class="up"><b>+50</b><span>'+_t('#1 two months running \u2014 defend your crown','#1 dos meses seguidos \u2014 defiende tu corona')+'</span></li>'+
           '</ul>'+
         '</div></div></div>'+
@@ -60554,7 +60555,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Array.prototype.forEach.call(b.querySelectorAll('.stb-tab'), function(t){
       t.addEventListener('click', function(e){
         e.stopPropagation();
-        S.period=t.getAttribute('data-p');
+        var p=t.getAttribute('data-p');
+        // Already on this tab: do nothing. load(true) blanks the board to "Loading..." and
+        // repaints identical rows, which reads as a flicker in exchange for no new information.
+        if(p===S.period) return;
+        S.period=p;
         load(true);
       });
     });
@@ -60713,7 +60718,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function cardBreakdown(x,u){
     var pb=x.points_breakdown||{};
-    var netR=(x.best_series_r==null)?'':((Number(x.best_series_r)>=0?'+':'')+Number(x.best_series_r).toFixed(2)+'R');
+    // fmtR is the card's formatter and floors at 0R. This line used to format the raw value,
+    // so a losing month showed 0R on the card and -20.48R in the breakdown directly beside it -
+    // publishing the loss to anyone who opened it. The points are greatest(0, netR) * 5, so zero
+    // is what the row is actually worth. Null keeps yielding '' rather than fmtR's em-dash.
+    var netR=(x.best_series_r==null)?'':fmtR(x.best_series_r).txt;
     var rows=[
       [_t('Net R captured','R neta capturada'), pb.r, netR],
       [_t('Bias posted','Sesgos publicados'), pb.bias, _outOf(x.bias_days, x.bias_total, 'days','días')],
@@ -60800,16 +60809,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* First day of the CURRENT month as 'YYYY-MM-01' (local), matching how the nightly
      rebuild stamps period_start and how the community medal list scopes itself. */
   function _thisMonthStart(){ var d=new Date(); return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-01'; }
+  // setDate(1) BEFORE stepping the month: on the 31st, setMonth(-1) alone lands on the 1st or 3rd
+  // of the wrong month entirely, because the day-of-month is applied to a month that is too short.
+  function _lastMonthStart(){ var d=new Date(); d.setDate(1); d.setMonth(d.getMonth()-1);
+    return d.getFullYear()+'-'+('0'+(d.getMonth()+1)).slice(-2)+'-01'; }
 
   function load(force){
     var c=sb(); if(!c) return;
     var box=el('stb-body'); if(!box) return;
     if(force) box.innerHTML='<div class="stb-empty">'+_t('Loading\u2026','Cargando\u2026')+'</div>';
-    var q=c.from('leaderboard_entries').select('*').eq('period', S.period);
+    /* 'lastmonth' is a VIEW of the monthly board, not a period of its own - the table stores
+       only 'month' rows keyed by period_start - so the tab id maps onto the same DB period with a
+       different start date. Everything else branches on "is this alltime", so the new tab keeps
+       the rules box and the live-board layout without further changes. */
+    var _dbp=(S.period==='lastmonth')?'month':S.period;
+    var q=c.from('leaderboard_entries').select('*').eq('period', _dbp);
     /* The monthly board keeps a row per month (period_start); without this filter last
        month's higher-scoring rows linger and hog the podium. Best Months (alltime) is
        already one-row-per-user, so it stays unscoped. */
-    if(S.period==='month') q=q.eq('period_start', _thisMonthStart());
+    if(_dbp==='month') q=q.eq('period_start', (S.period==='lastmonth')?_lastMonthStart():_thisMonthStart());
     q.order('ranked',{ascending:false})
       .order('points',{ascending:false})
       .limit(200)
