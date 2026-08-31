@@ -4832,12 +4832,12 @@ try {
         <button class="tag" data-value="Prev D/W/M Sweep" data-i18n="tag.prev_d_w_m_sweep">Prev D/W/M Sweep</button>
         <button class="tag" data-value="Strong Rejection" data-i18n="tag.strong_rejection">Strong Rejection</button>
         <button class="tag" data-value="Slow Rejection" data-i18n="tag.slow_rejection">Slow Rejection</button>
-        <button class="tag" data-value="Buy High" data-i18n="tag.buy_high">Buy High</button>
-        <button class="tag" data-value="Sell Low" data-i18n="tag.sell_low">Sell Low</button>
-        <button class="tag" data-value="Buy Low" data-i18n="tag.buy_low">Buy Low</button>
-        <button class="tag" data-value="Sell High" data-i18n="tag.sell_high">Sell High</button>
-        <button class="tag" data-value="Buy 50%" data-i18n="tag.buy_50">Buy 50%</button>
-        <button class="tag" data-value="Sell 50%" data-i18n="tag.sell_50">Sell 50%</button>
+        <button class="tag" data-value="Bought High" data-i18n="tag.buy_high">Bought High</button>
+        <button class="tag" data-value="Sold Low" data-i18n="tag.sell_low">Sold Low</button>
+        <button class="tag" data-value="Bought Low" data-i18n="tag.buy_low">Bought Low</button>
+        <button class="tag" data-value="Sold High" data-i18n="tag.sell_high">Sold High</button>
+        <button class="tag" data-value="Bought 50%" data-i18n="tag.buy_50">Bought 50%</button>
+        <button class="tag" data-value="Sold 50%" data-i18n="tag.sell_50">Sold 50%</button>
         <button class="tag" data-value="LP Trade" data-i18n="tag.lp_trade">LP Trade</button>
         <button class="tag" data-value="HP Trade" data-i18n="tag.hp_trade">HP Trade</button>
         <button class="tag" data-value="HDWB Strong" data-i18n="tag.hdwb_strong">HDWB Strong</button>
@@ -7992,12 +7992,12 @@ try {
       'tag.prev_d_w_m_sweep': 'Prev D/W/M Sweep',
       'tag.strong_rejection': 'Strong Rejection',
       'tag.slow_rejection': 'Slow Rejection',
-      'tag.buy_high': 'Buy High',
-      'tag.sell_low': 'Sell Low',
-      'tag.buy_low': 'Buy Low',
-      'tag.sell_high': 'Sell High',
-      'tag.buy_50': 'Buy 50%',
-      'tag.sell_50': 'Sell 50%',
+      'tag.buy_high': 'Bought High',
+      'tag.sell_low': 'Sold Low',
+      'tag.buy_low': 'Bought Low',
+      'tag.sell_high': 'Sold High',
+      'tag.buy_50': 'Bought 50%',
+      'tag.sell_50': 'Sold 50%',
       'tag.lp_trade': 'LP Trade',
       'tag.hp_trade': 'HP Trade',
       'tag.fractal_ms': 'Fractal MS',
@@ -9500,12 +9500,12 @@ try {
       'tag.prev_d_w_m_sweep': 'Barrido D/S/M Anterior',
       'tag.strong_rejection': 'Rechazo Fuerte',
       'tag.slow_rejection': 'Rechazo Lento',
-      'tag.buy_high': 'Compra en Premium',
-      'tag.sell_low': 'Venta en Descuento',
-      'tag.buy_low': 'Compra en Descuento',
-      'tag.sell_high': 'Venta en Premium',
-      'tag.buy_50': 'Compra 50%',
-      'tag.sell_50': 'Venta 50%',
+      'tag.buy_high': 'Compré en Premium',
+      'tag.sell_low': 'Vendí en Descuento',
+      'tag.buy_low': 'Compré en Descuento',
+      'tag.sell_high': 'Vendí en Premium',
+      'tag.buy_50': 'Compré 50%',
+      'tag.sell_50': 'Vendí 50%',
       'tag.lp_trade': 'Operación Baja Prob',
       'tag.hp_trade': 'Operación Alta Prob',
       'tag.fractal_ms': 'Cambio de intención',
@@ -11639,6 +11639,38 @@ try {
     }
     if (Array.isArray(d.currentSeries)) _migrateTradeArr(d.currentSeries);
     if (Array.isArray(d.history)) d.history.forEach(s => _migrateTradeArr(s.trades));
+    // Concept tags moved to past tense (Buy High -> Bought High, and the five like it). The
+    // stored value IS what gets displayed back - the journal card, the clipboard export, the CSV,
+    // the search haystack and the tag leaderboard all print concepts.join() with no lookup to the
+    // translated label - so renaming the buttons alone would leave old trades reading in the old
+    // tense and split each tag into two rows on the leaderboard. Rewrite the data to match.
+    //
+    // Wider coverage than the Premium -> Premium Edge migration above, which only reaches
+    // review.concepts and reviewSnap: this also walks each trade's own concepts array, which that
+    // one misses for trades edited after the per-trade review split.
+    (function pastTenseConcepts() {
+      var REN = {
+        'Buy High': 'Bought High', 'Sell Low': 'Sold Low',
+        'Buy Low': 'Bought Low', 'Sell High': 'Sold High',
+        'Buy 50%': 'Bought 50%', 'Sell 50%': 'Sold 50%'
+      };
+      // Idempotent: the new names are not keys, so a second pass changes nothing.
+      function ren(arr) {
+        return Array.isArray(arr) ? arr.map(function (c) { return REN[c] || c; }) : arr;
+      }
+      function renTrades(trades) {
+        if (!Array.isArray(trades)) return;
+        trades.forEach(function (t) {
+          if (!t) return;
+          if (Array.isArray(t.concepts)) t.concepts = ren(t.concepts);
+          if (t.reviewSnap && Array.isArray(t.reviewSnap.concepts))
+            t.reviewSnap.concepts = ren(t.reviewSnap.concepts);
+        });
+      }
+      try { if (d.review) { d.review.concepts = ren(d.review.concepts); renTrades(d.review.trades); } } catch (e) {}
+      try { renTrades(d.currentSeries); } catch (e) {}
+      try { if (Array.isArray(d.history)) d.history.forEach(function (h) { if (h) renTrades(h.trades); }); } catch (e) {}
+    })();
     // Same cleanup on any biasSnap/reviewSnap inside trades — keep historical data consistent
     // but DON'T mutate snapshot rice (those are historical records, leave them as captured).
     if (!d.bias) d.bias = newBiasBlank();
