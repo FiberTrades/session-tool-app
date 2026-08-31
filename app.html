@@ -3020,8 +3020,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #setup-breakdown .history-list::-webkit-scrollbar { width: 8px; height: 8px; }
   #setup-breakdown .history-list::-webkit-scrollbar-thumb { background: var(--border-2); border-radius: 4px; }
   #setup-breakdown .history-list::-webkit-scrollbar-track { background: transparent; }
-  /* Fewer than 5 trades — shown, but visibly not yet evidence. */
-  #setup-breakdown .history-row.low-sample .history-cell { opacity: 0.55; }
+  /* Under 5 trades used to render at 0.55 opacity — "shown, but not yet evidence". Beside every
+     other table in Statistics it read as a rendering fault, and a dimmed row is easily mistaken for
+     a weak setup rather than a small sample. Full colour now, like the rest of the tab. The
+     low-sample class is still applied, so a non-dimming marker can hang off it later without
+     touching the renderer. */
   /* Untagged is a data-completeness row, not a ranked setup: separated by a heavier rule and set
      in the dim colour so it reads as "trades still to label" rather than as your worst strategy. */
   #setup-breakdown .history-row.is-untagged { border-top: 1px solid var(--border-2); }
@@ -19420,14 +19423,19 @@ try {
     const chart = document.getElementById(chartId);
     const isR = mode === 'r';
     let values;
+    let dates;          // dates[i] belongs to values[i]; dates[0] is the starting point, so null
     let offset;
     if (isR) {
       // R mode: cumulative R from 0. No baseline involved — just sum up tradeRforMath
       // in the order received (matches the chart's "Trade 1 → Trade N" X-axis labelling).
       offset = 0;
       values = [0];
+      // Dates ride alongside, from the SAME array in the SAME order. values[0] is the starting
+      // point and has no trade behind it, so its date is null.
+      dates = [null];
       trades.forEach(t => {
         values.push(values[values.length - 1] + tradeRforMath(t));
+        dates.push(t && t.date ? t.date : null);
       });
     } else {
       // Balance mode: performance curve over a CONSTANT capital baseline.
@@ -19450,12 +19458,14 @@ try {
       const sortedTrades = trades.slice().sort(_tradeChronoCompare);
       offset = totalBaseline;
       values = [offset];
+      dates = [null];                       // from sortedTrades, not trades: this branch reorders
       let cumPL = 0;
       sortedTrades.forEach(t => {
         // Each trade contributes its net P&L multiplied by its copy count — a single
         // logged setup executed in N parallel accounts moves the curve by N × its P&L.
         cumPL += tradeNetPL(t) * tradeCopies(t);
         values.push(totalBaseline + cumPL);
+        dates.push(t && t.date ? t.date : null);
       });
       // Time-range zoom (balance chart): keep the full cumulative curve so balances stay TRUE,
       // then clip the DISPLAY to the selected window, using the balance carried into the window
@@ -19467,6 +19477,9 @@ try {
         if (startI < 1) startI = 1;
         offset = values[startI - 1];
         values = [offset].concat(values.slice(startI));
+        // Sliced by the SAME startI. Miss this and every tooltip in a zoomed range is off by the
+        // number of trimmed trades - a wrong date that still looks entirely plausible.
+        dates = [null].concat(dates.slice(startI));
       }
     }
     const rect = chart.getBoundingClientRect();
@@ -19573,7 +19586,7 @@ try {
       ${yLabels}
       <text x="${W - PAD.right}" y="${H - 6}" font-size="13" font-weight="700" fill="#ffffff" text-anchor="end" font-family="DM Mono, monospace">${t('lbl.trade')} ${trades.length}</text>`;
     // --- Hover interaction: store latest geometry; wire listeners once ---
-    chart._eq = { values, isR, x, y, PAD, W };
+    chart._eq = { values, dates, isR, x, y, PAD, W };
     if (!chart._eqWired) {
       chart._eqWired = true;
       const tip = document.createElement('div');
@@ -19604,6 +19617,17 @@ try {
           html += `<div class="et-delta" style="color:var(--${cls})">${dStr}</div>`;
         } else {
           html += `<div class="et-date">Start</div>`;
+        }
+        // When the trade was taken. Reuses the .et-date style already defined for "Start", so a
+        // spike no longer has to be matched back to the calendar by counting along the axis.
+        const _dRaw = g.dates && g.dates[i];
+        if (_dRaw) {
+          const _dt = new Date(_dRaw);
+          if (!isNaN(_dt.getTime())) {
+            html += `<div class="et-date">${_dt.toLocaleDateString(
+              (typeof tLocale === 'function') ? tLocale() : undefined,
+              { day: 'numeric', month: 'short', year: 'numeric' })}</div>`;
+          }
         }
         tip.innerHTML = html;
         // When the point is near the TOP of the chart, the tooltip (which sits above the point) would
@@ -30507,6 +30531,13 @@ try {
     const totalR = cs.reduce((sum, t) => sum + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : 0), 0);   // real R
     const winRs = cs.filter(t => t.result === 'Win').map(t => parseFloat(t.r) || 0).filter(r => r > 0);
     const avgWinR = winRs.length > 0 ? winRs.reduce((a, b) => a + b, 0) / winRs.length : 0;
+    // What a loss ACTUALLY costs this trader, in R, commission included - tradeRforMath divides net
+    // money by risk, so a clean stop that also paid fees lands a little worse than -1R. Used below
+    // so the cushion is not priced on losses that pay no fees. -1 only when none have happened yet.
+    const lossRs = cs.filter(t => t.result === 'Lose')
+      .map(t => (typeof tradeRforMath === 'function') ? Math.abs(tradeRforMath(t)) : 1)
+      .filter(r => r > 0);
+    const avgLossR = lossRs.length ? (lossRs.reduce((a, b) => a + b, 0) / lossRs.length) : 1;
     const remaining = 10 - n;
 
     // --- Costs-aware NET £ math ---
@@ -30581,8 +30612,11 @@ try {
     if (perLoss > 0) {
       lossesCapped = Math.max(0, Math.min(remaining, Math.floor(netSoFar / perLoss)));
     } else if (avgWinR > 0) {
-      // No risk/cost data logged yet - fall back to R, still assuming nothing wins
-      lossesCapped = Math.max(0, Math.min(remaining, Math.floor(totalR)));
+      // No money basis for this account yet, so price the cushion in R. totalR is already net of
+      // costs; dividing by what a loss REALLY costs (avgLossR, also net of costs) keeps the fees on
+      // both sides of the sum. It used to divide by an implied 1.0, quietly assuming future losses
+      // would pay no commission, which made the cushion generous by exactly those fees.
+      lossesCapped = Math.max(0, Math.min(remaining, Math.floor(totalR / (avgLossR > 0 ? avgLossR : 1))));
     }
 
     // --- Series complete (10 trades) ---
