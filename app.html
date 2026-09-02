@@ -16780,7 +16780,19 @@ try {
     const confirmBtn = document.getElementById('new-session-confirm');
     const keepBtn = document.getElementById('new-session-keep');
     if (confirmBtn) confirmBtn.addEventListener('click', () => {
-      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null; startNewSession(); _refreshStaleForNewDay();
+      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null;
+      startNewSession();
+      // Reload rather than re-render. startNewSession() refreshes the surfaces it names, which
+      // leaves anything it does not name - and anything in a second window - showing the cleared
+      // session's data. A reload has no list to keep up to date.
+      //
+      // st_forcePush FIRST, because saveData() only SCHEDULES a cloud push (debouncePush, 1500ms)
+      // and the reload kills that timer. Without this the next load would pull the cloud copy,
+      // which still holds the uncleared session, and the clear would quietly undo itself -
+      // intermittently, depending on how fast the reload was. The flag makes local win on the way
+      // back in, the same way a manual import does.
+      try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {}
+      location.reload();
     });
     // Keep previous = non-destructive. Roll the date over so we don't ask again today.
     const keep = () => {
@@ -58278,10 +58290,21 @@ try {
 (function(){
   'use strict';
   if(!window.supabase) return;
-  var sb=null, chan=null, uid=null, _authHooked=false;
+  var sb=null, chan=null, uid=null, _authHooked=false, _retry=0;
   window.__stLiveDeleteRemote=function(){ if(!uid||!sb) return; try{ sb.from('live_trades').delete().eq('account', uid).then(function(){},function(){}); }catch(e){} };
   window.__stLiveDeleteRow=function(ticket){ if(!uid||!sb||ticket==null) return; try{ sb.from('live_trades').delete().eq('account', uid).eq('ticket', ticket).then(function(){},function(){}); }catch(e){} };
   function apply(row){ if(row && window.__stLive) window.__stLive.upsert(row); }
+  // Re-read the open positions and feed them through the same upsert the realtime events use.
+  // This exists because realtime is not a guarantee: seeding once at subscribe time and trusting
+  // the socket forever is what let two trades go missing until the app was reloaded by hand.
+  function seed(){
+    if(!uid || !sb) return;
+    try{ sb.from('live_trades').select('*').eq('account', uid).then(function(res){
+      var rows=(res&&res.data)||[]; rows.forEach(apply);
+    }, function(){}); }catch(e){}
+  }
+  window.__stLiveReseed = seed;   // so the close-watch and the focus handler can reach it
+
   function start(){
     sb = window.__stSB || null;
     if(!sb){ setTimeout(start, 1500); return; }
@@ -58297,10 +58320,35 @@ try {
         // A position row being removed usually means it closed — check the inbox right away so the
         // live chip flips to its result (active -> Won/Lost) without waiting for the 20s poll.
         .on('postgres_changes',{event:'DELETE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
-        .subscribe();
-      try{ sb.from('live_trades').select('*').eq('account', uid).then(function(res){ var rows=(res&&res.data)||[]; rows.forEach(apply); }, function(){}); }catch(e){}
+        // A status callback, because without one a channel that errors, times out or closes does
+        // so SILENTLY and is never retried - the app just stops hearing about trades and gives no
+        // sign of it. Re-seed on every successful subscribe so anything missed while the socket
+        // was down arrives now, and reschedule on failure with a backoff so an offline machine
+        // does not spin.
+        .subscribe(function(status){
+          if(status === 'SUBSCRIBED'){ _retry = 0; seed(); return; }
+          if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'){
+            try{ if(chan) sb.removeChannel(chan); }catch(e){}
+            chan = null;
+            var wait = Math.min(30000, 2000 * Math.pow(2, _retry++));
+            setTimeout(start, wait);
+          }
+        });
+      seed();
     }).catch(function(){});
   }
+
+  // Safety net for a socket that dies without saying so, which is the case a status callback
+  // cannot catch. Only while a session is actually live, and only a handful of rows for one
+  // account - this is not the journal blob that caused the egress bill.
+  setInterval(function(){
+    try{ if(typeof isSessionLive === 'function' && isSessionLive()) seed(); }catch(e){}
+  }, 60000);
+  // And when the tab is brought forward, since that is the moment someone is about to look at it.
+  try{
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) seed(); });
+    window.addEventListener('focus', function(){ seed(); });
+  }catch(e){}
   start(); setTimeout(start, 2500);
 })();
 </script>
