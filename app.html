@@ -58402,7 +58402,7 @@ try {
 </script>
 <script>
 (function(){
-  var KEY='st_tour_v1_done', _curKey=KEY, _settled=0, idx=0, steps=[], ov=null;
+  var KEY='st_tour_v1_done', _curKey=KEY, _settled=0, idx=0, steps=[], ov=null, _uidWaits=0;
   function _t(en,es){ try{ return (window._stT?window._stT(en,es):en); }catch(e){ return en; } }
   function _isOpen(id){ var e=document.getElementById(id); return !!(e && e.offsetParent!==null && getComputedStyle(e).display!=='none'); }
   function closeSettings(){ var m=document.getElementById('settings-modal-bg'); if(m){ var c=document.getElementById('settings-modal-close'); if(c) c.click(); try{ if(m.classList) m.classList.remove('show'); }catch(e){} } }
@@ -58437,7 +58437,19 @@ try {
         b:_t('Manage your plan here \u2014 upgrade to unlock the full community, voice/video calls, the Media Vault and the AI Assistant.','Gestiona tu plan aqu\u00ed \u2014 mejora para desbloquear la comunidad completa, las llamadas de voz/v\u00eddeo, el Media Vault y el Asistente IA.') }, { sel:'#__st_tour_help__', pre:showTab('bias'), t:_t('Need a hand?','\u00bfNecesitas ayuda?'), b:_t('Anytime you\u2019re stuck, tap the support address at the bottom of each tab, to message the admin. If you have community access, you can also DM Nestor (Admin) directly \u2014 we\u2019re here to help.','Si te atascas, toca la direcci\u00f3n de soporte en la parte inferior de cada pesta\u00f1a para contactar al admin. Si tienes acceso a la comunidad, tambi\u00e9n puedes enviar un DM a Nestor (Admin) \u2014 estamos aqu\u00ed para ayudarte.') }, { sel:'#__st_tour_end__', pre:showTab('bias'), t:_t('You\u2019re all set','Todo listo'), b:_t('That\u2019s the whole loop. The journal only pays off if you\u2019re honest with it \u2014 so show up for your session, log the good and the bad, and review without excuses. Trade the plan, not the emotion. Good luck out there \u2014 we\u2019re glad to have you.','Ese es todo el ciclo. El diario solo funciona si eres honesto \u2014 pres\u00e9ntate en tu sesi\u00f3n, registra lo bueno y lo malo, y revisa sin excusas. Opera el plan, no la emoci\u00f3n. Mucha suerte \u2014 nos alegra tenerte aqu\u00ed.') }
     ];
   }
-  function done(){ try{ localStorage.setItem(_curKey,'1'); }catch(e){} }
+  // Both stores. localStorage answers instantly next time on this device; the journal is what
+  // makes it stick for the ACCOUNT, so a phone that clears its storage does not start over.
+  function done(){
+    try{ localStorage.setItem(_curKey,'1'); }catch(e){}
+    try{
+      var C = window.STCloud;
+      if(C && typeof C.getData === 'function' && typeof C.save === 'function'){
+        // getData() returns the LIVE object, so mutating it IS the write; save() takes no argument
+        // and just persists `data`. Passing one would imply an API that does not exist.
+        var d = C.getData(); if(d && !d._tourDoneV1){ d._tourDoneV1 = true; C.save(); }
+      }
+    }catch(e){}
+  }
   function finish(){ done(); closeSettings(); close(); }
   function close(){ try{ document.body.classList.remove('st-tour-on'); }catch(e){} if(ov){ ov.remove(); ov=null; } try{ window.removeEventListener('resize', reflow); window.removeEventListener('scroll', reflow, true); }catch(e){} }
   function reflow(){ if(ov) render(); }
@@ -58490,12 +58502,55 @@ try {
     window.addEventListener('resize', reflow); window.addEventListener('scroll', reflow, true);
     show(0);
   }
-  window.stStartTour=function(){ try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf('st_tour_v1_done')===0) localStorage.removeItem(k); }); }catch(e){} _curKey=KEY; start(); };
+  window.stStartTour=function(){ try{ var C=window.STCloud; if(C && typeof C.getData==='function' && typeof C.save==='function'){ var d=C.getData(); if(d && d._tourDoneV1){ delete d._tourDoneV1; C.save(); } } }catch(e){}
+    try{ Object.keys(localStorage).forEach(function(k){ if(k.indexOf('st_tour_v1_done')===0) localStorage.removeItem(k); }); }catch(e){} _curKey=KEY; start(); };
   window.__stTourKick=function(){ if(!ov){ _settled=0; tryStart(120); } };
   function busy(){ var l=document.querySelectorAll('.modal-bg, .st-welcome, .modal.show, .dcx-modal.open, .stc-gate, [id$="upsell-bg"]'); for(var i=0;i<l.length;i++){ var e=l[i]; var cs; try{ cs=getComputedStyle(e); }catch(x){ continue; } if(!cs || cs.display==='none' || cs.visibility==='hidden' || parseFloat(cs.opacity||'1')<0.05) continue; var r=e.getBoundingClientRect(); if(r.width>40 && r.height>40) return true; } return false; }
-  function getUid(cb){ try{ if(window.currentUser && window.currentUser.id) return cb(window.currentUser.id); }catch(e){} try{ if(window.sb && sb.auth && sb.auth.getUser){ return sb.auth.getUser().then(function(r){ try{ cb(r&&r.data&&r.data.user?r.data.user.id:null); }catch(e){ cb(null); } }).catch(function(){ cb(null); }); } }catch(e){} cb(null); }
+  // window.sb has never existed - the client is window.__stSB - so the second branch here was
+  // dead code and the whole thing fell through to window.currentUser, which is only published once
+  // onAuthStateChange fires. On a phone that can land AFTER the tour has already decided.
+  function getUid(cb){
+    try{ if(window.currentUser && window.currentUser.id) return cb(window.currentUser.id); }catch(e){}
+    try{ if(window.STCloud && window.STCloud.userId) return cb(window.STCloud.userId); }catch(e){}
+    try{
+      var _sb = window.__stSB;
+      if(_sb && _sb.auth && _sb.auth.getUser){
+        return _sb.auth.getUser().then(function(r){
+          try{ cb(r && r.data && r.data.user ? r.data.user.id : null); }catch(e){ cb(null); }
+        }).catch(function(){ cb(null); });
+      }
+    }catch(e){}
+    cb(null);
+  }
+  // Seen on this device (either key - older builds wrote the base one) OR seen on the ACCOUNT.
+  // The journal copy is what survives a phone clearing its storage, or a PWA and a browser tab
+  // not sharing one.
+  function seenAlready(k){
+    try{ if(localStorage.getItem(k) || localStorage.getItem(KEY)) return true; }catch(e){}
+    try{
+      var d = (window.STCloud && typeof window.STCloud.getData === 'function') ? window.STCloud.getData() : null;
+      if(d && d._tourDoneV1) return true;
+    }catch(e){}
+    return false;
+  }
   function ready(){ if(ov||busy()) return false; var el=document.querySelector('.tab[data-page="bias"]'); return !!(el && el.offsetParent!==null); }
-  function decideAndStart(){ if(ov) return; try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){} var forced=!!window.__stTourWanted; try{ window.__stTourWanted=false; }catch(e){} getUid(function(uid){ if(ov) return; var k=KEY+(uid?('_'+uid):''); /* Seen if EITHER the per-user flag OR the legacy base flag is set. Older builds (and the signup path) wrote the base key 'st_tour_v1_done'; honour it so users who already dismissed the tour don't get it again every login. Always write the per-user key going forward (done() uses _curKey). */ if(!forced){ try{ if(localStorage.getItem(k) || localStorage.getItem(KEY)) return; }catch(e){} } _curKey=k; start(); }); }
+  function decideAndStart(){ if(ov) return; try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){} var forced=!!window.__stTourWanted; try{ window.__stTourWanted=false; }catch(e){} getUid(function(uid){
+    if(ov) return;
+    /* An unknown user WAITS. This used to fall through to the base key and show the tour to
+       someone who had already finished it under the per-user key - the phone bug, since auth
+       resolves late there. Not knowing who you are is a reason to wait, not to interrupt: a
+       returning user seeing the tour again is a visible bug, a new user waiting two more seconds
+       is nothing. Bounded so a genuinely signed-out session still gets it eventually. */
+    if(!uid && !forced){
+      if(_uidWaits++ < 8){ setTimeout(function(){ if(!ov) decideAndStart(); }, 1200); return; }
+    }
+    var k=KEY+(uid?('_'+uid):'');
+    /* Seen if the per-user flag, the legacy base flag, or the ACCOUNT flag in the journal is set.
+       Older builds and the signup path wrote the base key; the journal copy is what survives a
+       phone clearing its storage. done() writes the per-user key and the journal from here on. */
+    if(!forced && seenAlready(k)) return;
+    _curKey=k; start();
+  }); }
   function tryStart(n){ if(ov) return; if(ready()){ _settled++; if(_settled>=4){ decideAndStart(); return; } } else { _settled=0; } if(n>0) setTimeout(function(){ tryStart(n-1); }, 1500); }
   function boot(){ setTimeout(function(){ tryStart(120); }, 2500); }
   if(document.readyState!=='loading') boot(); else document.addEventListener('DOMContentLoaded', boot);
