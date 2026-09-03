@@ -13687,6 +13687,29 @@ try {
     bal = parseFloat(bal) || 0;
     return bal > 0 ? (bal * p / 100) : 0;
   }
+  /* ONE DAY, ONE VERDICT - shared by the calendar and the AI greeting.
+     These had drifted into two rules. The calendar classified by trade RESULTS (so a break-even
+     day whose costs left it slightly up or down still reads break-even); the greeting summed R and
+     split it >0/<0 with no BE case, which announced a BE day as "green" while the calendar drew
+     the same day blue, and let a dead-flat day fall into neither bucket.
+     Returns 'win' | 'loss' | 'be', or '' for a day with no trades. Copy-weighted throughout, so a
+     setup logged with copies=3 counts three times, exactly as the calendar's totals do.
+     On window: the greeting builder guards `typeof tradeCopies === 'function'`, so it does not
+     share a scope with the calendar renderer. */
+  window.__stClassifyDay = function (dayTrades) {
+    if (!dayTrades || !dayTrades.length) return '';
+    var wins = 0, losses = 0, net = 0;
+    dayTrades.forEach(function (t) {
+      if (!t) return;
+      var c = ((typeof tradeCopies === 'function') ? tradeCopies(t) : 1) || 1;
+      if (t.result === 'Win') wins += c; else if (t.result === 'Lose') losses += c;
+      net += ((typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0) * c;
+    });
+    if (wins > 0 && losses === 0) return 'win';
+    if (losses > 0 && wins === 0) return 'loss';
+    if (wins === 0 && losses === 0) return 'be';        // every trade that day was BE
+    return net > 0 ? 'win' : net < 0 ? 'loss' : 'be';   // mixed day - fall back to net money
+  };
   function classifyNetResult(net, acc) {
     const n = parseFloat(net) || 0;
     const band = beThresholdMoneyFor(acc);
@@ -23651,17 +23674,11 @@ try {
       // copy count. A logged setup with copies=3 contributes 3× to the day's
       // net £ and 3 to the day's trade count, tying out with the lifetime KPIs.
       const net = dayTrades.reduce((s, t) => s + tradeNetPL(t) * tradeCopies(t), 0);
-      // Classify by the trade results, not the net £ — a BE day with costs shouldn't read as a losing day
-      const wins = dayTrades.filter(t => t.result === 'Win').reduce((s, t) => s + tradeCopies(t), 0);
-      const losses = dayTrades.filter(t => t.result === 'Lose').reduce((s, t) => s + tradeCopies(t), 0);
       const dayTradeCount = dayTrades.reduce((s, t) => s + tradeCopies(t), 0);
-      let cls = '';
-      if (dayTrades.length > 0) {
-        if (wins > 0 && losses === 0) cls = 'win';
-        else if (losses > 0 && wins === 0) cls = 'loss';
-        else if (wins === 0 && losses === 0) cls = 'be'; // all trades were BE
-        else cls = net > 0 ? 'win' : net < 0 ? 'loss' : 'be'; // mixed — fall back to net £
-      }
+      // Classify by the trade results, not the net £ — a BE day with costs shouldn't read as a
+      // losing day. Lives in __stClassifyDay so the AI greeting describes a day the same way this
+      // cell colours it; they used to disagree, and the greeting called a blue day green.
+      const cls = window.__stClassifyDay(dayTrades);
       const isToday = key === todayKey;
       const hasTrade = dayTrades.length > 0 ? 'has-trade' : '';
       const _noteKey = dateObj.getFullYear()+'-'+String(dateObj.getMonth()+1).padStart(2,'0')+'-'+String(dateObj.getDate()).padStart(2,'0');
@@ -36244,15 +36261,24 @@ try {
     all.forEach(function (tr) {
       if (!tr.date) return; var d = new Date(tr.date); if (isNaN(d.getTime())) return;
       if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) {
-        mTrades++; var cp = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
-        var r = ((typeof tradeRforMath === 'function') ? tradeRforMath(tr) : 0) * cp;
-        var key = d.getDate(); days[key] = (days[key] || 0) + r;
+        // The day's TRADES, not an R total: the shared rule needs each trade's result, and its
+        // mixed-day tie-break needs net money - neither survives being reduced to a sum of R.
+        mTrades++;
+        var key = d.getDate(); (days[key] = days[key] || []).push(tr);
       }
     });
     if (!mTrades) return S ? ('Un mes en blanco hasta ahora, ' + nm + '. Que la constancia hable por ti.') : ('A blank month so far, ' + nm + '. Let consistency do the talking.');
-    var activeDays = Object.keys(days).length, green = 0, red = 0;
-    Object.keys(days).forEach(function (k) { if (days[k] > 0) green++; else if (days[k] < 0) red++; });
-    var shape = S ? (activeDays + ' ' + (activeDays === 1 ? 'día activo' : 'días activos') + ': ' + green + ' en verde, ' + red + ' en rojo') : (activeDays + ' active day' + (activeDays === 1 ? '' : 's') + ': ' + green + ' green, ' + red + ' red');
+    var activeDays = Object.keys(days).length, green = 0, red = 0, be = 0;
+    Object.keys(days).forEach(function (k) {
+      var v = window.__stClassifyDay(days[k]);
+      if (v === 'win') green++; else if (v === 'loss') red++; else if (v === 'be') be++;
+    });
+    // Only the buckets that actually happened - "1 red, 1 break-even" beats padding with "0 green".
+    var _parts = [];
+    if (green) _parts.push(green + (S ? ' en verde' : ' green'));
+    if (red)   _parts.push(red   + (S ? ' en rojo'  : ' red'));
+    if (be)    _parts.push(be    + (S ? ' en equilibrio' : ' break-even'));
+    var shape = S ? (activeDays + ' ' + (activeDays === 1 ? 'día activo' : 'días activos') + ': ' + _parts.join(', ')) : (activeDays + ' active day' + (activeDays === 1 ? '' : 's') + ': ' + _parts.join(', '));
     var tail = _isOffDayToday()
       ? (S ? 'Hoy no operas — aléjate y lee la forma del mes, no el día suelto.' : 'No trading today — zoom out and read the month’s shape, not the single day.')
       : (S ? 'Aléjate — ¿qué te dice la forma del mes, no el día suelto?' : 'Zoom out — what does the month’s shape tell you, not the single day?');
