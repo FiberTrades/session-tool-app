@@ -56204,7 +56204,8 @@ try {
   // check there. Tab-local on purpose, so a second tab on the same browser can't skip a merge.
   var lastPushedUat = null;
   ST.lastPushedUat = function () { return lastPushedUat; };
-  var pushDiag = { ticks: 0, skipped: 0, pushed: 0, reads: 0, stampReads: 0, stampHits: 0, since: Date.now() };
+  var pushDiag = { ticks: 0, skipped: 0, pushed: 0, reads: 0, stampReads: 0, stampHits: 0,
+                   guardReads: 0, guardHits: 0, since: Date.now() };   // guardHits = full downloads avoided
   // Verification handle: __stPushDiag() on an idle tab should show ticks climbing while
   // pushed/reads stay put. __stPushDiag(true) turns on a console log of WHICH top-level
   // journal keys changed, for hunting anything that mutates on every tick.
@@ -56378,45 +56379,70 @@ try {
     peakLocalScore = Math.max(prevPeak, lScore);
     // DESTRUCTIVE-WRITE GUARD: read what the cloud holds before overwriting it. Decided by
     // contentScore, never length. A diff of 1 passes, so edits and single deletions sync.
-    pushDiag.reads++;
-    sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
-      if (r && r.error) { accStatus(tt('syncErr')); return; }
-      var raw = r && r.data && r.data.data;
-      if (!raw || typeof raw !== 'object') { doCloudUpsert(d); return; }
-      var cloud = ST.migrate(raw);
-      // An intentional "delete previous day" clear must win over a pre-clear cloud even though it
-      // scores lower (it discarded yesterday's un-committed review draft). Upload it unconditionally —
-      // but NEVER at the cost of TODAY's own work the OTHER copy already holds. Fold any today-dated
-      // bias/review from the cloud into our copy first (both merges are today-only, so this can never
-      // resurrect the yesterday session the clear was meant to remove). This is the fix for the
-      // cross-device wipe: a phone still on yesterday firing the clear used to adopt-away a PC's fresh
-      // morning bias; now that bias/review rides along.
-      if (_clearStamp(d) > _clearStamp(cloud)) {
-        try { if (window.__stMergeFresherBias)   window.__stMergeFresherBias(d, cloud); } catch (e) {}
-        try { if (window.__stMergeFresherReview) window.__stMergeFresherReview(d, cloud); } catch (e) {}
-        // A clear must not take passed lessons with it.
-        try { if (window.__stMergeSchool) window.__stMergeSchool(d, cloud); } catch (e) {}
-        peakLocalScore = contentScore(d); doCloudUpsert(d); return;
-      }
-      var removed = contentScore(cloud) - lScore;
-      var removedTrades = tradeCount(cloud) - tradeCount(d);   // actual trades being removed (for the message)
-      if (removed >= 2) {
-        // The upload would remove 2+ items the cloud still holds.
-        // If the drop is fully explained by deletions the trader made THIS session (each one
-        // already confirmed per-trade), just sync — no second prompt. Otherwise the local copy
-        // is degraded (a partial/stale load), so preserve the richer cloud copy instead.
-        if (droppedThisSession >= removed) {
-          peakLocalScore = lScore;
-          doCloudUpsert(d);
+    /* Two tiers. This used to download the whole journal before EVERY save - up to 200kB - and
+       in the common case compare two numbers, find nothing being removed, and never touch the copy
+       again. The comparison needs a number, and the database now computes journals.content_score
+       itself on every write (trigger journals_set_content_score, mirroring contentScore in SQL), so
+       it describes the row as stored no matter who wrote it. A client-written score could go stale
+       behind a SQL fix or a restore, and a score reading LOW makes this guard UNDER-detect, which
+       is the failure that loses trades.
+       The full copy is still pulled whenever it is USED: a clear stamped today (the branch below
+       merges out of the cloud object) or a drop of 2+ (the blocking path snapshots it). A null
+       score, an error, or a rejection all fall through to the full read - today's behaviour. This
+       tier can only skip a download it has proven pointless; it can never approve a write the full
+       guard would block. */
+    function _guardFull() {
+      pushDiag.reads++;
+      sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
+        if (r && r.error) { accStatus(tt('syncErr')); return; }
+        var raw = r && r.data && r.data.data;
+        if (!raw || typeof raw !== 'object') { doCloudUpsert(d); return; }
+        var cloud = ST.migrate(raw);
+        // An intentional "delete previous day" clear must win over a pre-clear cloud even though it
+        // scores lower (it discarded yesterday's un-committed review draft). Upload it unconditionally —
+        // but NEVER at the cost of TODAY's own work the OTHER copy already holds. Fold any today-dated
+        // bias/review from the cloud into our copy first (both merges are today-only, so this can never
+        // resurrect the yesterday session the clear was meant to remove). This is the fix for the
+        // cross-device wipe: a phone still on yesterday firing the clear used to adopt-away a PC's fresh
+        // morning bias; now that bias/review rides along.
+        if (_clearStamp(d) > _clearStamp(cloud)) {
+          try { if (window.__stMergeFresherBias)   window.__stMergeFresherBias(d, cloud); } catch (e) {}
+          try { if (window.__stMergeFresherReview) window.__stMergeFresherReview(d, cloud); } catch (e) {}
+          // A clear must not take passed lessons with it.
+          try { if (window.__stMergeSchool) window.__stMergeSchool(d, cloud); } catch (e) {}
+          peakLocalScore = contentScore(d); doCloudUpsert(d); return;
+        }
+        var removed = contentScore(cloud) - lScore;
+        var removedTrades = tradeCount(cloud) - tradeCount(d);   // actual trades being removed (for the message)
+        if (removed >= 2) {
+          // The upload would remove 2+ items the cloud still holds.
+          // If the drop is fully explained by deletions the trader made THIS session (each one
+          // already confirmed per-trade), just sync — no second prompt. Otherwise the local copy
+          // is degraded (a partial/stale load), so preserve the richer cloud copy instead.
+          if (droppedThisSession >= removed) {
+            peakLocalScore = lScore;
+            doCloudUpsert(d);
+            return;
+          }
+          takeSnapshot('blocked-overwrite', cloud);
+          accStatus(tt('synced'));
+          reconcile();
           return;
         }
-        takeSnapshot('blocked-overwrite', cloud);
-        accStatus(tt('synced'));
-        reconcile();
-        return;
-      }
+        doCloudUpsert(d);
+      });
+    }
+    // A clear today needs the cloud object itself. Deliberately wider than the comparison below
+    // uses (`> 0`, not `> _clearStamp(cloud)`): without a local clear that branch cannot fire
+    // whatever the cloud holds, and this is not a place to be clever to save one request.
+    if (_clearStamp(d) > 0) { _guardFull(); return; }
+    pushDiag.guardReads++;
+    sb.from('journals').select('content_score').eq('user_id', currentUser.id).maybeSingle().then(function (h) {
+      var cs = (h && !h.error && h.data) ? h.data.content_score : null;
+      if (cs == null || (cs - lScore) >= 2) { _guardFull(); return; }   // unknown, or something IS going
+      pushDiag.guardHits++;
       doCloudUpsert(d);
-    });
+    }, function () { _guardFull(); });                                  // any doubt -> read it properly
   }
 
   // Hard one-shot guard: a given reload reason may fire AT MOST once per account per session,
