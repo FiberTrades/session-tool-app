@@ -318,6 +318,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Pink on hover, matching the assistant's pill. --accent IS the logo's own fill, so this is
      the mark at full strength rather than a tint invented for the hover. */
   .settings-gear:hover { opacity: 1; color: var(--accent); }
+  /* A touchscreen never fires the hover above, so on a phone this was grey permanently. The
+     press paints it instead. .pressed as well as :active because :active drops at pointerup and a
+     quick tap is released before the paint has said anything; the class survives into the beat the
+     script holds. transition: none is deliberate - the base rule fades colour over 150ms, and
+     inside a 150ms beat that fade would still be halfway when the panel covered it. */
+  .settings-gear:active,
+  .settings-gear.pressed { opacity: 1; color: var(--accent); transition: none; }
   .settings-gear:focus-visible { opacity: 1; color: var(--accent); outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
   .settings-gear svg { width: 26px; height: 26px; display: block; }
   /* Scope picker — sits to the LEFT of the settings gear in the top-right.
@@ -40146,7 +40153,32 @@ try {
       if (_rConsInp) _rConsInp.value = (rr.consistencyPct !== undefined && rr.consistencyPct !== null) ? rr.consistencyPct : '';
     }
     function closeSettings() { modal.classList.remove('show'); }
-    gear.addEventListener('click', openSettings);
+    // Settings has no entrance animation - .modal-bg is display:none -> display:flex, which cannot
+    // be transitioned - so it snaps over the whole screen the moment the click lands and there is no
+    // moment in which any feedback could be visible. Hold the open back just long enough to see the
+    // icon light up. Long enough to register, short enough not to read as lag.
+    var GEAR_BEAT = 150;
+    var _gearTouch = false, _gearClear = null;
+    function _gearUnpress() {
+      clearTimeout(_gearClear); _gearClear = null;
+      gear.classList.remove('pressed');
+    }
+    gear.addEventListener('pointerdown', function (e) {
+      // Touch only. A mouse already has hover, and delaying it would be pure lag.
+      _gearTouch = !!(e && e.pointerType === 'touch');
+      if (!_gearTouch) return;
+      gear.classList.add('pressed');
+      // A press that never becomes a click - dragged off, scrolled away - must not strand it pink.
+      clearTimeout(_gearClear);
+      _gearClear = setTimeout(_gearUnpress, 1200);
+    });
+    gear.addEventListener('click', function () {
+      // No pointerdown means a mouse, a keyboard, or one of the gear.click() calls elsewhere in the
+      // app. All of those open at once, exactly as before.
+      if (!_gearTouch) { openSettings(); return; }
+      _gearTouch = false;
+      setTimeout(function () { openSettings(); _gearUnpress(); }, GEAR_BEAT);
+    });
     closeBtn.addEventListener('click', closeSettings);
     // backdrop click intentionally does nothing — close Settings via its × button only
 
