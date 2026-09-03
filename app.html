@@ -11197,6 +11197,44 @@ try {
     _newDaySnapshot = _captureNewDaySnapshot();
   })();
 
+  // MULTI-WINDOW SAFETY for "Clear the previous session".
+  //
+  // Both windows run detectNewDaySession above, so both raise the prompt. When one of them clears,
+  // the other still holds the UNCLEARED session in memory and its 5s heartbeat writes that whole
+  // object back - restoring lastSessionDate to yesterday, and the bias and review with it. The
+  // clear is undone by a window nobody was looking at, and the prompt returns because storage says
+  // the day was never rolled. That is data resurrection, not a cosmetic repeat.
+  //
+  // Same mechanism the session-timing sync above uses: listen for the other window's write and
+  // adopt it. The trigger is deliberately narrow - the incoming copy has rolled to today and ours
+  // has not - which is the signature of a clear and nothing else.
+  try {
+    window.addEventListener('storage', function (e) {
+      if (!e || e.key !== STORAGE_KEY || !e.newValue || !data) return;
+      try {
+        var inc = JSON.parse(e.newValue) || {};
+        var todayKey = new Date().toDateString();
+        if (inc.lastSessionDate !== todayKey || data.lastSessionDate === todayKey) return;
+        // Adopt exactly what startNewSession() rewrites - not the whole journal, so anything this
+        // window legitimately holds (an open chat draft, its own view state) is left alone.
+        data.lastSessionDate = inc.lastSessionDate;
+        if (inc.bias) data.bias = inc.bias;
+        if (Array.isArray(inc.biasSlots)) data.biasSlots = inc.biasSlots;
+        if (inc.review) data.review = inc.review;
+        // Our copy of the prompt now describes a session that no longer exists.
+        _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null;
+        try { var _bg = document.getElementById('new-session-modal-bg'); if (_bg) _bg.classList.remove('show'); } catch (_e) {}
+        // Repaint through the same helpers the clear itself uses.
+        try { if (typeof renderBiasTvLinks === 'function') renderBiasTvLinks(); } catch (_e) {}
+        try { if (typeof renderBiasPreview === 'function') renderBiasPreview(); } catch (_e) {}
+        try { if (typeof renderSavedBias === 'function') renderSavedBias(); } catch (_e) {}
+        try { if (typeof renderTrades === 'function') renderTrades(); } catch (_e) {}
+        try { if (typeof renderReviewPreview === 'function') renderReviewPreview(); } catch (_e) {}
+        try { if (typeof renderBiasGreeting === 'function') renderBiasGreeting(); } catch (_e) {}
+      } catch (_) {}
+    });
+  } catch (_) {}
+
   function genId() { return 't_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 9); }
 
   function newBiasBlank() {
