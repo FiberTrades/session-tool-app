@@ -3957,7 +3957,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      on top of the rule text. Neither should move for good — each is right on its own — so while a
      close notice is on screen (body.st-live-note-open, set/cleared by _liveCloseNotice) the toast
      steps DOWN below it, and steps back up when the last notice goes. */
-  body.st-live-note-open .toast.show { top: calc(50% + 72px); }
+  /* The 72px this replaces was standing in for "half the notice + half the toast + a gap", and
+     both halves move: the host stacks a card per closed trade, and the rule card grows with the
+     rule text. At the sizes on 2026-09-03 it left ~5px - touching - and a second notice or a
+     two-line rule makes it negative.
+     Anchoring the toast's TOP below the host, instead of its centre below the host's centre, takes
+     the toast's own height out of the arithmetic: only the host needs measuring, and the notice
+     code sets --live-note-half whenever the stack changes. */
+  body.st-live-note-open .toast { top: calc(50% + var(--live-note-half, 28px) + 18px); transform: translate(-50%, 0) scale(0.92); }
+  body.st-live-note-open .toast.show { transform: translate(-50%, 0) scale(1); }
   /* Snackbar variant with inline action button (e.g. UNDO after a delete) */
   .toast.with-action { display: flex; align-items: center; gap: 18px; padding: 10px 10px 10px 26px; letter-spacing: 0.18em; font-size: 10px; }
   .toast.with-action .toast-msg { font-weight: 500; }
@@ -38840,6 +38848,15 @@ try {
         host.style.cssText = 'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:2147483001;display:flex;flex-direction:column;gap:10px;align-items:center;max-width:94vw;pointer-events:none;';
         document.body.appendChild(host);
       }
+      // Half the stack's height, which is all the CSS needs to place the toast below it. Half
+      // rather than the full height because the host is centred on the viewport, so its bottom
+      // edge sits half its height below the centre line.
+      function _liveNoteMeasure() {
+        try {
+          var h = host.childElementCount ? host.offsetHeight : 0;
+          document.body.style.setProperty('--live-note-half', (h / 2) + 'px');
+        } catch (e) {}
+      }
       // Result-based accent, mirroring the live-feed chips: Won → good/green, Lost → bad/red, BE → info/blue.
       var k = opts.kind === 'Win' ? 'win' : opts.kind === 'Lose' ? 'lose' : 'be';
       var accent = k === 'win' ? 'var(--good,#4ECD8B)' : k === 'lose' ? 'var(--bad,#E56767)' : 'var(--info,#60a5fa)';
@@ -38873,10 +38890,11 @@ try {
       x.style.cssText = 'font-size:18px;line-height:1;color:var(--text-dim,#888);flex:none;margin-left:2px;';
 
       item.appendChild(left); item.appendChild(pill); item.appendChild(x);
-      function close() { item.style.opacity = '0'; item.style.transform = 'scale(0.96)'; setTimeout(function () { try { item.remove(); } catch (e) {} try { if (!host.childElementCount) document.body.classList.remove('st-live-note-open'); } catch (e) {} }, 220); }
+      function close() { item.style.opacity = '0'; item.style.transform = 'scale(0.96)'; setTimeout(function () { try { item.remove(); } catch (e) {} try { if (!host.childElementCount) document.body.classList.remove('st-live-note-open'); _liveNoteMeasure(); } catch (e) {} }, 220); }
       item.addEventListener('click', close);
       host.appendChild(item);
       try { document.body.classList.add('st-live-note-open'); } catch (e) {}   // tells the centre toast to step aside
+      _liveNoteMeasure();   // the stack just grew
       requestAnimationFrame(function () { item.style.opacity = '1'; item.style.transform = 'scale(1)'; });
       // NO auto-dismiss timer — persists until the user taps it (per request).
     } catch (e) {}
@@ -56285,11 +56303,19 @@ try {
     var _score = 0; try { _score = contentScore(d); } catch (e) { _score = 0; }
     sb.from('journals').upsert({
       user_id: currentUser.id, data: d, updated_at: _uat, content_score: _score
-    }).then(function (r) {
+    }).select('updated_at').maybeSingle().then(function (r) {
       if (!(r && r.error)) {
-        try { localStorage.setItem('st_jrnl_uat', _uat); } catch (e) {}
+        /* Remember the stamp the DATABASE stored, never the one we sent. journals_touch_updated_at
+           is BEFORE UPDATE and overwrites updated_at with now(), so _uat is discarded server-side -
+           and the cheap "has it changed?" check in reconcile() compares strings, which meant it
+           could never match and every idle re-pull downloaded the whole journal instead of a
+           timestamp. Falls back to _uat if the read-back is empty: that simply will not match, so
+           the worst case is the full reconcile we were doing anyway.
+           .select('updated_at') and not .select() - the returned row must not carry `data` back. */
+        var _stored = (r.data && r.data.updated_at) ? String(r.data.updated_at) : _uat;
+        try { localStorage.setItem('st_jrnl_uat', _stored); } catch (e) {}
         lastPushedStr = _sent;   // ONLY a confirmed upload is allowed to suppress future pushes
-        lastPushedUat = _uat;    // ...and to let __cloudResume skip the full pull on focus
+        lastPushedUat = _stored; // ...and to let __cloudResume skip the full pull on focus
       }
       accStatus(r.error ? tt('syncErr') : tt('synced'));
     });
