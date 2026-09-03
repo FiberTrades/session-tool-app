@@ -10682,7 +10682,12 @@ try {
     // object literal the later one wins, so THAT was the live code and the earlier one had
     // never run. Callers wrap this in their own try/catch and none use the return value.
     save: function () { return saveData(); },
-    setData: function (obj) { try { data = migrate(obj); localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); return true; } catch (e) { return false; } },
+    setData: function (obj) { try { data = migrate(obj); localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      // A replacement journal may already have today's session rolled - cleared on another device.
+      // The prompt was armed from the local copy before this arrived, so put it away rather than
+      // asking the same question on a second device.
+      try { if (window.__stNewDayCloudCheck) window.__stNewDayCloudCheck(); } catch (e) {}
+      return true; } catch (e) { return false; } },
     STORAGE_KEY: STORAGE_KEY,
     OLD_KEYS: OLD_KEYS,
     defaultData: function () { return defaultData(); },
@@ -11201,6 +11206,31 @@ try {
     _newDaySnapshot = _captureNewDaySnapshot();
   })();
 
+  // Put the new-day prompt away because the day has already been rolled somewhere else - another
+  // window, or another device. Only ever called once that is known to be true.
+  function _standDownNewDay() {
+    _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null;
+    try { var _bg = document.getElementById('new-session-modal-bg'); if (_bg) _bg.classList.remove('show'); } catch (e) {}
+  }
+  // CROSS-DEVICE: the prompt is armed during init from the LOCAL copy, which on a second device is
+  // still yesterday's. The cloud journal - already rolled, because the first device cleared - lands
+  // a moment later and replaces `data`, by which point the modal is on screen. Without this the
+  // same question is asked twice on two devices, and answering it on the second re-clears a session
+  // that was already cleared.
+  //
+  // Hooked to ST.setData rather than to the reconcile paths: there are several setData(cloud) call
+  // sites and patching each is how the fourth gets missed. Guarded on the date so a blank journal -
+  // which sign-out and account-switch both push through setData - can never cancel a real prompt.
+  try {
+    window.__stNewDayCloudCheck = function () {
+      try {
+        if (!data || data.lastSessionDate !== new Date().toDateString()) return;
+        if (!_pendingNewDaySession) return;
+        _standDownNewDay();
+      } catch (e) {}
+    };
+  } catch (e) {}
+
   // MULTI-WINDOW SAFETY for "Clear the previous session".
   //
   // Both windows run detectNewDaySession above, so both raise the prompt. When one of them clears,
@@ -11226,8 +11256,7 @@ try {
         if (Array.isArray(inc.biasSlots)) data.biasSlots = inc.biasSlots;
         if (inc.review) data.review = inc.review;
         // Our copy of the prompt now describes a session that no longer exists.
-        _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null;
-        try { var _bg = document.getElementById('new-session-modal-bg'); if (_bg) _bg.classList.remove('show'); } catch (_e) {}
+        _standDownNewDay();
         // Repaint through the same helpers the clear itself uses.
         try { if (typeof renderBiasTvLinks === 'function') renderBiasTvLinks(); } catch (_e) {}
         try { if (typeof renderBiasPreview === 'function') renderBiasPreview(); } catch (_e) {}
