@@ -7169,6 +7169,10 @@ try {
       'empty.no_trades': 'No trades logged yet.',
       'empty.no_potential_wins': 'No winning trades with Potential R or Potential Pips logged yet. Log when you mark a win and patterns appear here.',
       // ----- Confirm dialogs -----
+      'confirm.clear_bias_title': 'Clear bias?',
+      'confirm.clear_bias': 'This clears every bias selection and note for this session. Your logged trades are not affected.',
+      'confirm.clear_review_title': 'Clear review?',
+      'confirm.clear_review': 'This clears the session review and its Trade Log. Trades already saved into a Series of 10 are kept, and any synced trades go back to the MT5 import list.',
       'confirm.delete_trade': 'Are you sure you want to delete this trade?',
       'confirm.delete_trade_title': 'Delete trade?',
       // ----- Bias / Review option labels -----
@@ -8689,6 +8693,10 @@ try {
       'empty.no_trades': 'Todavía no has registrado operaciones.',
       'empty.no_potential_wins': 'Aún no hay operaciones ganadoras con R Potencial o Pips Potenciales registrados. Apúntalos cuando marques una ganadora y los patrones aparecerán aquí.',
       // ----- Confirm dialogs -----
+      'confirm.clear_bias_title': '¿Borrar sesgo?',
+      'confirm.clear_bias': 'Esto borra todas las selecciones y notas del sesgo de esta sesión. Tus operaciones registradas no se ven afectadas.',
+      'confirm.clear_review_title': '¿Borrar revisión?',
+      'confirm.clear_review': 'Esto borra la revisión de la sesión y su Registro de Operaciones. Las operaciones ya guardadas en una Serie de 10 se mantienen, y las sincronizadas vuelven a la lista de importación MT5.',
       'confirm.delete_trade': '¿Seguro que quieres eliminar esta operación?',
       'confirm.delete_trade_title': '¿Eliminar operación?',
       // ----- Bias / Review option labels -----
@@ -14808,7 +14816,9 @@ try {
     });
     // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
   })();
-  document.getElementById('bias-reset').addEventListener('click', () => {
+  document.getElementById('bias-reset').addEventListener('click', async () => {
+    // Through the app's own dialog, like the trade delete - not an OS confirm box.
+    if (!await window.appConfirm({ title: t('confirm.clear_bias_title'), body: t('confirm.clear_bias') })) return;
     // Reset only the active bias slot in place (preserves its session/symbol identity
     // and keeps data.bias linked to the slot).
     Object.assign(data.bias, newBiasBlank());
@@ -16765,8 +16775,31 @@ try {
   // duplicate them, and (because the session date resets to today) often onto a different
   // day, making them impossible to clean up from a single day's calendar review.
   function resetReviewForm() {
+    // Any MT5-synced trade in the log is about to be discarded, so lift its import locks. A
+    // successful import writes the ticket into mt5UserDismissed and the import filter ALWAYS
+    // honours that, so without this the trade is deleted from the journal AND permanently barred
+    // from returning - which is exactly how two real trades were lost on 3 Sept. startNewSession()
+    // was fixed for it; this button reaches the same blanking through a different door.
+    var _relist = [];
+    try {
+      if (data.review && Array.isArray(data.review.trades)) {
+        data.review.trades.forEach(function (t) { if (t && t.mt5Ticket) _relist.push(String(t.mt5Ticket)); });
+      }
+    } catch (e) {}
     data.review = newReviewBlank();
     data.review.sessionDate = todayDateStr();
+    // Before saveData, so the lifted locks are written in the same save as the blanked review.
+    try {
+      if (_relist.length && window.__stMt5Relist && window.__stMt5Relist(_relist)) {
+        if (typeof showToast === 'function') {
+          var _n = _relist.length;
+          showToast(window._stT(
+            _n + (_n === 1 ? ' synced trade was' : ' synced trades were') + ' returned to the MT5 import list.',
+            _n + (_n === 1 ? ' operación sincronizada ha vuelto' : ' operaciones sincronizadas han vuelto') + ' a la lista de importación MT5.'
+          ), { duration: 7000 });
+        }
+      }
+    } catch (e) {}
     saveData();
     syncTradedFromTrades();
     document.querySelectorAll('[data-review] .option').forEach(b => b.classList.remove('selected'));
@@ -16780,7 +16813,11 @@ try {
     syncReviewSectionsToActiveTrade();
     renderReviewPreview();
   }
-  document.getElementById('review-reset').addEventListener('click', () => { resetReviewForm(); });
+  document.getElementById('review-reset').addEventListener('click', async () => {
+    // This one discards the Trade Log, so the dialog says so rather than "are you sure?".
+    if (!await window.appConfirm({ title: t('confirm.clear_review_title'), body: t('confirm.clear_review') })) return;
+    resetReviewForm();
+  });
 
   // ===== New-day session reset (prompted, not automatic) =====
   // Clears the previous bias + review and resets both forms to a fresh state for today.
