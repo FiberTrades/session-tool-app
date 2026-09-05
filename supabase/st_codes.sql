@@ -82,6 +82,19 @@ alter table public.st_code_redemptions enable row level security;
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
 
+-- 2026-09-05, an affiliate code dies with its owner. owner_user_id had NO foreign key and
+-- st_redeem_code never checked the owner existed, so deleting an affiliate's account without
+-- revoking first left their code recruiting indefinitely - crediting somebody who was not there,
+-- invisibly, because the card that would show it needs their login. Now ON DELETE SET NULL, and
+-- redeem refuses an affiliate code with a null owner.
+-- SET NULL rather than CASCADE deliberately: cascading would delete the codes, and deleting a
+-- code cascades its redemptions - so removing an affiliate would destroy the record of every
+-- member they introduced, including ones you may still owe them for. Nulling keeps the history
+-- and stops the code, which is the pair actually wanted.
+-- st_admin_list_codes gained an `owner` column so a dead code says '(owner removed)' instead of
+-- looking healthy. Adding an OUT column changes the return type, which CREATE OR REPLACE refuses
+-- outright - it needs a DROP first, same family as the overload trap below.
+
 -- 2026-09-05, several affiliate codes per person, and the trial length written into the code.
 -- The one-live-code index is DROPPED: it existed to stop attribution splitting across two codes,
 -- but that only matters if earnings are counted per CODE, and they are counted per OWNER. Several
