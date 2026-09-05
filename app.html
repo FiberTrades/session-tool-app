@@ -6283,6 +6283,8 @@ try {
         <!-- The programme in four numbers: who came in through a code, how many pay, what that
              is worth and what it costs. -->
         <div id="access-totals" style="margin-top:14px;"></div>
+        <!-- Real money, from the st_payments ledger - not a run rate. -->
+        <div id="access-takings" style="margin-top:14px;"></div>
       </div>
 
       <!-- 3. Discord community -->
@@ -57218,6 +57220,7 @@ try {
         (d.signups || 0) + ' invitados, ' + (d.paying || 0) + ' de pago');
       wrapT.appendChild(head);
       host.appendChild(wrapT);
+      accessTakings();
 
       function money(v) {
         var n = Number(v || 0).toFixed(2);
@@ -57239,6 +57242,92 @@ try {
       owed.textContent = _adminT(money(d.owed) + ' owed to affiliates this month, estimated.',
                                  money(d.owed) + ' debido a afiliados este mes, estimado.');
       host.appendChild(owed);
+    }, function () { host.innerHTML = ''; });
+  }
+
+  /* What was actually collected, month by month. Everything above this is a run rate - who is
+     subscribed now times list prices - which cannot answer "what did I take in March" because
+     nothing recorded March until this ledger existed. */
+  function accessTakings(from, to) {
+    var host = document.getElementById('access-takings'); if (!host) return;
+    var sb2 = _stSB(); if (!sb2) return;
+    sb2.rpc('st_admin_takings', { p_from: from || null, p_to: to || null }).then(function (r) {
+      host.innerHTML = '';
+      if (!r || r.error || !r.data) return;
+      var d = r.data;
+
+      var head = document.createElement('div');
+      head.className = 'settings-hint';
+      head.style.cssText = 'padding-top:10px;border-top:1px solid var(--border-2,#332F3C);color:var(--text);font-weight:600;';
+      head.textContent = _adminT('Takings', 'Ingresos');
+      host.appendChild(head);
+
+      /* Nothing recorded. Say so plainly rather than drawing £0.00, which would read as a fact
+         about the business instead of an absence of data. */
+      if (!d.first_paid_at) {
+        var none = document.createElement('div');
+        none.className = 'settings-hint';
+        none.textContent = _adminT(
+          'No payments recorded yet. Every Stripe payment from now on is logged here.',
+          'Aún no hay pagos registrados. A partir de ahora cada pago de Stripe se registra aquí.');
+        host.appendChild(none);
+        return;
+      }
+
+      // "Paid between", not "joined between" - a different question from the range above.
+      var rng = _dateRange(function (f, t) { accessTakings(f, t); });
+      var lab = rng.querySelector('span');
+      if (lab) lab.textContent = _adminT('Paid between', 'Pagado entre');
+      var ai = rng.querySelectorAll('input');
+      if (ai[0]) ai[0].value = from || '';
+      if (ai[1]) ai[1].value = to || '';
+      host.appendChild(rng);
+
+      function money(v) {
+        var n = Number(v || 0).toFixed(2);
+        return _adminT('£' + n, '£' + n.replace('.', ','));
+      }
+
+      var net = document.createElement('div');
+      net.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin-top:4px;";
+      net.textContent = money(d.net) + _adminT(' net from ', ' neto de ') + (d.payments || 0) +
+                        _adminT(' payments', ' pagos') +
+                        (Number(d.refunded || 0) > 0
+                          ? _adminT(', after ' + money(d.refunded) + ' refunded',
+                                    ', tras ' + money(d.refunded) + ' reembolsado')
+                          : '');
+      host.appendChild(net);
+
+      if (Number(d.referred_net || 0) > 0) {
+        var ref = document.createElement('div');
+        ref.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin-top:2px;";
+        ref.textContent = _adminT(money(d.referred_net) + ' of that from affiliate referrals.',
+                                  money(d.referred_net) + ' de eso por referidos de afiliados.');
+        host.appendChild(ref);
+      }
+
+      (d.months || []).forEach(function (m) {
+        var row = document.createElement('div');
+        row.style.cssText = "display:flex;gap:12px;font-family:'AppNum','DM Mono',monospace;" +
+                            'font-size:12px;color:var(--text-mid,#b9b7c0);margin-top:2px;';
+        var a = document.createElement('span'); a.style.minWidth = '62px'; a.textContent = m.month;
+        var b = document.createElement('span'); b.textContent = money(m.net);
+        var c = document.createElement('span');
+        c.className = 'settings-hint';
+        c.textContent = (m.count || 0) + _adminT(' payments', ' pagos');
+        row.appendChild(a); row.appendChild(b); row.appendChild(c);
+        host.appendChild(row);
+      });
+
+      /* How far back the ledger goes. Without this, an empty month is indistinguishable from a
+         month that happened before recording began. */
+      var since = document.createElement('div');
+      since.className = 'settings-hint';
+      var dt = new Date(d.first_paid_at);
+      since.textContent = _adminT('Recording since ', 'Registrando desde ') +
+        dt.toLocaleDateString(lang() === 'es' ? 'es-ES' : 'en-GB',
+                              { day: 'numeric', month: 'short', year: 'numeric' }) + '.';
+      host.appendChild(since);
     }, function () { host.innerHTML = ''; });
   }
 
