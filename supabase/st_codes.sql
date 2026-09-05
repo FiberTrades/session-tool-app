@@ -154,6 +154,27 @@ alter table public.st_code_redemptions enable row level security;
 -- than by both being maintained carefully. Affiliates earning nothing are still listed: someone
 -- with eleven signups and no conversions is exactly what you want to see.
 
+-- 2026-09-05, VIP CODES ARE GONE. Full access is granted straight onto the account by
+-- st_admin_set_access(email, days, on) instead. The VIP code existed to give access to somebody
+-- who had no account yet; the real workflow turned out to be the reverse - they sign up, take the
+-- free trial, and get upgraded after - so the code was a round trip through the person you were
+-- trying to help. Evidence rather than taste: no code of either kind had ever been redeemed, and
+-- all four accounts already on 'comp' were granted directly. The two unredeemed VIP codes were
+-- deleted, st_admin_create_code now refuses any kind but 'affiliate', and st_redeem_code refuses
+-- a non-affiliate code and no longer touches is_paid/plan at all - a referral code should never
+-- have been able to hand out paid access, and now it cannot.
+--
+-- st_admin_set_access removes access ONLY from accounts whose plan is 'comp'. A mistyped address
+-- therefore cannot strip a paying subscriber: Stripe owns that decision, not the admin panel.
+--
+-- One consequence worth knowing: codes now mean exactly one thing, which is what lets the sign-up
+-- card ask "Have a code?" without a qualifier and still be answerable.
+
+-- 2026-09-05, st_admin_affiliate_summary keeps affiliates whose codes are ALL revoked, marked
+-- ended. Revoking is what ends the relationship, and that is precisely when a final payment falls
+-- due - the members they introduced are still subscribed, so the money is real. Dropping the row
+-- would hide the number on the one day it is needed.
+
 -- Dry run. Never add an expiry job without checking who it would actually catch.
 --   select email, plan, current_period_end,
 --          case when plan='comp' and current_period_end is not null and current_period_end < now()
