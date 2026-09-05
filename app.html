@@ -6230,6 +6230,38 @@ try {
         <button type="button" id="svc-premium-manage" class="settings-btn" style="margin-top:10px;display:none;"></button>
       </div>
 
+      <!-- VIP code. Everyone sees this, because the point of a code is that it can be handed to
+           someone who ALREADY has an account. renderVipRedeem() hides it once they are on comp. -->
+      <div class="svc-card" id="svc-vip-card">
+        <div class="svc-card-head">
+          <span class="svc-card-title" data-i18n="vip.title">Have a VIP code?</span>
+        </div>
+        <p class="settings-hint" data-i18n="vip.hint">Enter it below to unlock full access.</p>
+        <div class="settings-data-actions" style="margin-top:10px;">
+          <input id="vip-code-input" class="settings-input settings-input-compact" type="text"
+                 autocomplete="off" spellcheck="false" maxlength="14"
+                 style="text-transform:uppercase;max-width:200px;">
+          <button type="button" id="vip-redeem-btn" class="settings-btn" data-i18n="vip.redeem">Redeem</button>
+        </div>
+        <p class="settings-hint" id="vip-msg" style="margin-top:8px;"></p>
+      </div>
+
+      <!-- Admin only. st_admin_* are guarded in the database on the signed JWT; this display
+           toggle only decides what to draw. -->
+      <div class="svc-card" id="svc-vip-admin" style="display:none;">
+        <div class="svc-card-head">
+          <span class="svc-card-title" data-i18n="vip.admin_title">Give someone full access</span>
+        </div>
+        <div class="settings-data-actions" style="margin-top:10px;flex-wrap:wrap;">
+          <input id="vip-gen-label" class="settings-input settings-input-compact" type="text" style="max-width:190px;">
+          <input id="vip-gen-days" class="settings-input settings-input-compact" type="number" min="1" style="max-width:110px;">
+          <button type="button" id="vip-gen-btn" class="settings-btn" data-i18n="vip.admin_generate">Generate code</button>
+        </div>
+        <p class="settings-hint" data-i18n="vip.admin_hint">Leave the days blank for access that never expires.</p>
+        <p class="settings-hint" id="vip-gen-out" style="margin-top:8px;"></p>
+        <div id="vip-admin-list" style="margin-top:14px;"></div>
+      </div>
+
       <!-- 3. Discord community -->
       <div class="svc-card">
         <div class="svc-card-head">
@@ -6958,6 +6990,12 @@ try {
       'mn.upload_err': 'Upload failed',
       'mn.from_mentor': 'Message from your mentor',
       'mentor.msg_waiting': 'You have a message from your mentor in your Calendar Log.',
+      'vip.title': 'Have a VIP code?',
+      'vip.hint': 'Enter it below to unlock full access.',
+      'vip.redeem': 'Redeem',
+      'vip.admin_title': 'Give someone full access',
+      'vip.admin_generate': 'Generate code',
+      'vip.admin_hint': 'Leave the days blank for access that never expires.',
       'services.premium_title': 'Your subscription',
       'services.premium_desc': 'Your free trial — the full journal, stats, calendar, cloud sync and four community channels.',
       'services.premium_cta': 'Upgrade — from £15/mo',
@@ -8482,6 +8520,12 @@ try {
       'mn.upload_err': 'Error al subir',
       'mn.from_mentor': 'Mensaje de tu mentor',
       'mentor.msg_waiting': 'Tienes un mensaje de tu mentor en tu Calendario.',
+      'vip.title': '¿Tienes un código VIP?',
+      'vip.hint': 'Introdúcelo aquí para desbloquear el acceso completo.',
+      'vip.redeem': 'Canjear',
+      'vip.admin_title': 'Dar acceso completo a alguien',
+      'vip.admin_generate': 'Generar código',
+      'vip.admin_hint': 'Deja los días en blanco para un acceso que no caduca.',
       'services.premium_title': 'Tu suscripción',
       'services.premium_desc': 'Tu prueba gratuita — el diario completo, estadísticas, calendario, sincronización en la nube y cuatro canales de la comunidad.',
       'services.premium_cta': 'Hazte Premium — desde £15/mes',
@@ -56764,8 +56808,127 @@ try {
   window.stRenderAdminReload = renderAdminReload;
   window.stShowUpdateNotice = offerReload;   // exposed so the notice can be previewed/tested
 
+  /* ---- VIP codes -------------------------------------------------------------------
+     Redeeming is one RPC. Everything that decides whether a code is valid, how long it grants
+     and what that does to the account lives in st_redeem_code, so this only has to ask and
+     report. The error strings are mapped from the codes it returns rather than guessed at. */
+  var VIP_ERR = {
+    invalid:          ['That code is not valid.', 'Ese código no es válido.'],
+    used_up:          ['That code has already been used.', 'Ese código ya se ha usado.'],
+    already_redeemed: ['You have already used that code.', 'Ya has usado ese código.'],
+    already_referred: ['Your account is already linked to a code.', 'Tu cuenta ya está vinculada a un código.'],
+    signed_out:       ['Sign in first, then redeem the code.', 'Inicia sesión primero y luego canjea el código.']
+  };
+  function renderVipRedeem() {
+    var card = document.getElementById('svc-vip-card');
+    if (!card) return;
+    // Nothing to redeem on full access already, and an input that cannot do anything is worse
+    // than no input at all.
+    card.style.display = (profilePlan === 'comp') ? 'none' : '';
+    var inp = document.getElementById('vip-code-input');
+    if (inp) inp.placeholder = 'ST-XXXX-XXXX';
+    var btn = document.getElementById('vip-redeem-btn');
+    if (!btn || btn._wired) return;
+    btn._wired = true;
+    btn.addEventListener('click', function () {
+      var sb2 = _stSB(); if (!sb2) return;
+      var msg = document.getElementById('vip-msg');
+      var code = String((inp && inp.value) || '').trim().toUpperCase();
+      if (!code) { if (msg) msg.textContent = _adminT('Enter a code first.', 'Introduce un código primero.'); return; }
+      btn.disabled = true;
+      if (msg) msg.textContent = _adminT('Checking…', 'Comprobando…');
+      sb2.rpc('st_redeem_code', { p_code: code }).then(function (r) {
+        btn.disabled = false;
+        if (r && r.error) { if (msg) msg.textContent = _adminT('Could not check that code. Try again.', 'No se pudo comprobar el código. Inténtalo de nuevo.'); return; }
+        var d = r && r.data;
+        if (d && d.ok) {
+          if (msg) msg.textContent = _adminT('Done — full access unlocked.', 'Listo: acceso completo desbloqueado.');
+          if (inp) inp.value = '';
+          // Re-read the profile so the badge and description update without a reload.
+          try { fetchProfile(); } catch (e) {}
+          return;
+        }
+        var pair = VIP_ERR[(d && d.error) || 'invalid'] || VIP_ERR.invalid;
+        if (msg) msg.textContent = _adminT(pair[0], pair[1]);
+      }, function () {
+        btn.disabled = false;
+        if (msg) msg.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.');
+      });
+    });
+  }
+  function renderVipAdmin() {
+    var card = document.getElementById('svc-vip-admin');
+    if (!card) return;
+    card.style.display = _isAdminUser() ? '' : 'none';
+    if (!_isAdminUser()) return;
+    var lbl = document.getElementById('vip-gen-label'), days = document.getElementById('vip-gen-days');
+    if (lbl)  lbl.placeholder  = _adminT('Who is it for?', '¿Para quién es?');
+    if (days) days.placeholder = _adminT('Days', 'Días');
+    var gen = document.getElementById('vip-gen-btn');
+    if (gen && !gen._wired) {
+      gen._wired = true;
+      gen.addEventListener('click', function () {
+        var sb2 = _stSB(); if (!sb2) return;
+        var out = document.getElementById('vip-gen-out');
+        var d = parseInt((days && days.value) || '', 10);
+        gen.disabled = true;
+        if (out) out.textContent = _adminT('Generating…', 'Generando…');
+        sb2.rpc('st_admin_create_code', {
+          p_kind: 'vip',
+          p_label: String((lbl && lbl.value) || '').trim(),
+          p_days: (isFinite(d) && d > 0) ? d : null,
+          p_max_uses: null
+        }).then(function (r) {
+          gen.disabled = false;
+          if (r && r.error) { if (out) out.textContent = _adminT('Could not create the code.', 'No se pudo crear el código.'); return; }
+          var row = r && r.data;
+          if (out) out.textContent = (row && row.code) ? row.code : '';
+          if (lbl) lbl.value = ''; if (days) days.value = '';
+          vipList();
+        }, function () { gen.disabled = false; if (out) out.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
+      });
+    }
+    vipList();
+  }
+  function vipList() {
+    var host = document.getElementById('vip-admin-list'); if (!host) return;
+    var sb2 = _stSB(); if (!sb2) return;
+    sb2.rpc('st_admin_list_codes').then(function (r) {
+      if (!r || r.error || !r.data) { host.textContent = ''; return; }
+      if (!r.data.length) { host.textContent = _adminT('No codes yet.', 'Aún no hay códigos.'); return; }
+      host.innerHTML = '';
+      r.data.forEach(function (c) {
+        var row = document.createElement('div');
+        row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--border-2,#332F3C);font-size:12px;';
+        var who = c.redeemed_by || _adminT('not used yet', 'sin usar');
+        var life = c.grant_days ? (c.grant_days + _adminT(' days', ' días')) : _adminT('no expiry', 'sin caducidad');
+        var txt = document.createElement('span');
+        txt.style.cssText = 'flex:1 1 220px;color:var(--text-mid,#b9b7c0);' + (c.revoked ? 'text-decoration:line-through;opacity:.55;' : '');
+        txt.textContent = c.code + '  ·  ' + (c.label || '—') + '  ·  ' + life + '  ·  ' + who;
+        row.appendChild(txt);
+        if (!c.revoked) {
+          var rev = document.createElement('button');
+          rev.type = 'button'; rev.className = 'settings-btn';
+          rev.textContent = _adminT('Revoke', 'Revocar');
+          rev.addEventListener('click', function () {
+            rev.disabled = true;
+            // kill_access true: revoking after redemption has to take the access back, or it
+            // does nothing at all. The database only strips accounts whose plan is 'comp', so a
+            // real paying customer holding a code cannot be caught by it.
+            sb2.rpc('st_admin_revoke_code', { p_code: c.code, p_kill_access: true })
+               .then(vipList, function () { rev.disabled = false; });
+          });
+          row.appendChild(rev);
+        }
+        host.appendChild(row);
+      });
+    }, function () {});
+  }
+
   function renderServices() {
     try { renderAdminReload(); } catch (e) {}
+    try { renderVipRedeem(); } catch (e) {}
+    try { renderVipAdmin(); } catch (e) {}
     var badge = document.getElementById('svc-premium-badge');
     var cta = document.getElementById('svc-premium-cta');
     var mng = document.getElementById('svc-premium-manage');
