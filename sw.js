@@ -20,7 +20,10 @@
  * asset actually changed.
  */
 
-const CACHE_VERSION = 'st-2026-08-30n390';    // only bump when a PRECACHED shell asset changes
+const CACHE_VERSION = 'st-2026-09-05a';    // only bump when a PRECACHED shell asset changes
+// Bumped 2026-09-05. The precache still held the 30 August shell, and since a failed page
+// fetch falls back to it, a week-old landing kept reappearing after fixes had shipped -
+// which read as a caching bug for an afternoon. Bumping re-precaches the current pages.
 // Bumped because the shell itself split in two: the landing now lives at the root and the app
 // at app.html, so every cached copy of the old single-page shell has to go.
 const APP_CACHE     = CACHE_VERSION + '-app';
