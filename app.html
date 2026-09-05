@@ -57163,23 +57163,61 @@ try {
     }, function () {});
   }
 
+  /* Two date boxes and a label. Shared so the record cards and the totals cannot drift into
+     describing their range differently - they are answering the same kind of question.
+     "Joined between" is deliberate: this filters WHEN PEOPLE CAME IN, not when money moved.
+     Nothing in the database records what was charged or when, so anything more specific would be
+     inventing history. */
+  function _dateRange(onChange) {
+    var box = document.createElement('div');
+    box.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;';
+    var lab = document.createElement('span');
+    lab.className = 'settings-hint';
+    lab.textContent = _adminT('Joined between', 'Se unieron entre');
+    var a = document.createElement('input');
+    a.type = 'date'; a.className = 'settings-input settings-input-compact';
+    a.style.maxWidth = '150px';
+    var mid = document.createElement('span');
+    mid.className = 'settings-hint';
+    mid.textContent = _adminT('and', 'y');
+    var b = document.createElement('input');
+    b.type = 'date'; b.className = 'settings-input settings-input-compact';
+    b.style.maxWidth = '150px';
+    // Blank means unbounded, so clearing both is how you get back to all time.
+    function fire() { onChange(a.value || null, b.value || null); }
+    a.addEventListener('change', fire);
+    b.addEventListener('change', fire);
+    box.appendChild(lab); box.appendChild(a); box.appendChild(mid); box.appendChild(b);
+    return box;
+  }
+
   /* The programme as a whole. Per-person rows say what you owe Troy; this says whether any of it
      is working. */
-  function accessTotals() {
+  function accessTotals(from, to) {
     var host = document.getElementById('access-totals'); if (!host) return;
     var sb2 = _stSB(); if (!sb2) return;
-    sb2.rpc('st_referral_totals').then(function (r) {
+    sb2.rpc('st_referral_totals', { p_from: from || null, p_to: to || null }).then(function (r) {
       host.innerHTML = '';
       if (!r || r.error || !r.data) return;
       var d = r.data;
 
+      var wrapT = document.createElement('div');
+      wrapT.style.cssText = 'padding-top:10px;border-top:1px solid var(--border-2,#332F3C);';
+      // Re-reads with the new range; the picker redraws with it, so the boxes keep their values.
+      var rng = _dateRange(function (f, t) { accessTotals(f, t); });
+      var ai = rng.querySelectorAll('input');
+      if (ai[0]) ai[0].value = from || '';
+      if (ai[1]) ai[1].value = to || '';
+      wrapT.appendChild(rng);
+
       var head = document.createElement('div');
       head.className = 'settings-hint';
-      head.style.cssText = 'padding-top:10px;border-top:1px solid var(--border-2,#332F3C);color:var(--text);';
+      head.style.color = 'var(--text)';
       head.textContent = _adminT(
-        (d.signups || 0) + ' joined with a code, ' + (d.paying || 0) + ' paying',
-        (d.signups || 0) + ' se unieron con un código, ' + (d.paying || 0) + ' de pago');
-      host.appendChild(head);
+        (d.signups || 0) + ' invited, ' + (d.paying || 0) + ' paying',
+        (d.signups || 0) + ' invitados, ' + (d.paying || 0) + ' de pago');
+      wrapT.appendChild(head);
+      host.appendChild(wrapT);
 
       function money(v) {
         var n = Number(v || 0).toFixed(2);
@@ -57189,7 +57227,7 @@ try {
       /* Every currently paying referred member, however long ago they joined - they are still
          your revenue after their affiliate's commission window has closed. */
       var rev = document.createElement('div');
-      rev.style.cssText = "font-family:'AppNum','DM Mono',monospace;color:var(--text);margin-top:6px;";
+      rev.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin-top:6px;";
       rev.textContent = _adminT(money(d.revenue) + ' a month from them, estimated.',
                                 money(d.revenue) + ' al mes de ellos, estimado.');
       host.appendChild(rev);
@@ -57197,16 +57235,30 @@ try {
       /* Only those still inside their 12 months, which is why this is not simply a percentage of
          the line above. */
       var owed = document.createElement('div');
-      owed.style.cssText = "font-family:'AppNum','DM Mono',monospace;color:var(--text);margin-top:2px;";
+      owed.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin-top:2px;";
       owed.textContent = _adminT(money(d.owed) + ' owed to affiliates this month, estimated.',
                                  money(d.owed) + ' debido a afiliados este mes, estimado.');
       host.appendChild(owed);
     }, function () { host.innerHTML = ''; });
   }
 
-  /* One member's record card. */
-  function _accessCard(el, m, sb2) {
+  /* One member's record card. The range refetches THIS member only - st_admin_access_list
+     takes p_user - so one person's dates never disturb anybody else's card. */
+  function _accessCard(el, m, sb2, from, to) {
     el.innerHTML = '';
+
+    var rng = _dateRange(function (f, t) {
+      sb2.rpc('st_admin_access_list', { p_from: f || null, p_to: t || null, p_user: m.user_id })
+         .then(function (rr) {
+           var row = rr && !rr.error && rr.data && rr.data[0];
+           // No row back means the range excluded everything; keep the person, zero the figures.
+           _accessCard(el, row || m, sb2, f, t);
+         }, function () {});
+    });
+    var ri = rng.querySelectorAll('input');
+    if (ri[0]) ri[0].value = from || '';
+    if (ri[1]) ri[1].value = to || '';
+    el.appendChild(rng);
 
     /* Tiers with nobody in them are absent rather than printed as "0 Bundle Pro" - the same rule
        the member's own card follows, so both sides read alike. */
@@ -57223,13 +57275,21 @@ try {
       (m.signups || 0) + ' invitados, ' + (m.paying || 0) + ' de pago' + breakdown);
     el.appendChild(stat);
 
-    /* Called an estimate because it is one: monthly list prices, so an annual subscriber is worth
-       less per month than this suggests, and refunds and tax are not modelled. */
+    /* Both figures, because they answer different questions and are not proportional: what these
+       members bring IN, and what this person is owed OUT. Estimates because they use monthly list
+       prices - an annual subscriber is worth less per month - and ignore refunds and tax. */
+    var rv = Number(m.revenue || 0).toFixed(2);
+    var got = document.createElement('div');
+    got.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin:4px 0 0;";
+    got.textContent = _adminT('£' + rv + ' a month from them, estimated.',
+                              '£' + rv.replace('.', ',') + ' al mes de ellos, estimado.');
+    el.appendChild(got);
+
     var amt = document.createElement('div');
-    amt.style.cssText = "font-family:'AppNum','DM Mono',monospace;color:var(--text);margin:4px 0 10px;";
+    amt.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin:2px 0 10px;";
     var v = Number(m.estimate || 0).toFixed(2);
-    amt.textContent = _adminT('£' + v + ' this month, estimated.',
-                              '£' + v.replace('.', ',') + ' este mes, estimado.');
+    amt.textContent = _adminT('£' + v + ' owed to them this month, estimated.',
+                              '£' + v.replace('.', ',') + ' debido a ellos este mes, estimado.');
     el.appendChild(amt);
 
     (m.codes || []).forEach(function (c) {

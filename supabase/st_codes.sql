@@ -237,3 +237,14 @@ alter table public.st_code_redemptions enable row level security;
 --
 -- List prices live in st_referral_totals; commission RATES live in st_commission_estimate, which
 -- it calls rather than reimplements. Change prices in the first, rates in the second.
+
+-- 2026-09-05, date ranges. st_admin_access_list(p_from, p_to, p_user) and
+-- st_referral_totals(p_from, p_to) filter on st_code_redemptions.redeemed_at - WHEN PEOPLE JOINED.
+-- There is no payments table in this database: nothing records what was charged or when, so a
+-- range cannot mean "money taken between these dates" and the UI says "joined between". It selects
+-- a cohort, not a ledger. Null bounds mean unbounded, so clearing both returns to all time.
+-- The end date is inclusive of its whole day ((p_to + 1)::timestamptz), because an exclusive
+-- midnight bound silently drops everyone who joined on the last day and always under-reports.
+--
+-- Both were DROPPED before being recreated with arguments. Adding parameters beside the existing
+-- zero-argument versions would have made the bare call ambiguous - the st_gen_code trap again.
