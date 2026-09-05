@@ -208,7 +208,8 @@ alter table public.st_code_redemptions enable row level security;
 -- st_admin_create_code, passes st_gen_code(p_days) and resolved correctly either way.
 --
 -- Code shape, for the record: ST-<days>-<4 chars>, e.g. ST-30-HHD4 (10 chars), ST-365-CFDW (11).
--- The gate and Settings placeholders show ST-30-XXXX to match. maxlength stays 14 so the handful
+-- The gate and Settings placeholders show ST-XX-XXXX: a literal 30 named one trial length, and
+-- a member holding ST-60-NCKH should not have to wonder whether that mattered. maxlength stays 14 so the handful
 -- of legacy 12-character codes still fit.
 
 -- 2026-09-05, profiles.trial_days was WRITE-ONLY. st_redeem_code has always set it to the code's
