@@ -82,6 +82,15 @@ alter table public.st_code_redemptions enable row level security;
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
 
+-- 2026-09-05, several affiliate codes per person, and the trial length written into the code.
+-- The one-live-code index is DROPPED: it existed to stop attribution splitting across two codes,
+-- but that only matters if earnings are counted per CODE, and they are counted per OWNER. Several
+-- codes are campaigns - 30 days for one audience, 60 for another - and st_my_code aggregates over
+-- all of them, so a member with three sees ONE figure to be paid.
+-- st_gen_code(days) puts the number in an affiliate code: ST-30-WFQC reads aloud on a video and
+-- tells the listener what they get. VIP codes keep ST-XXXX-XXXX, because they grant access rather
+-- than a trial and a number there would mislead.
+
 -- 2026-09-05, OVERLOAD TRAP, worth knowing before editing any function here. CREATE OR REPLACE
 -- FUNCTION cannot change a signature: adding p_owner_email to st_admin_create_code did not
 -- replace the four-argument version, it created a SECOND function beside it. The VIP card sends

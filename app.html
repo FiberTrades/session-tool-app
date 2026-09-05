@@ -6254,10 +6254,7 @@ try {
           <span class="svc-badge good" id="ref-count"></span>
         </div>
         <p class="settings-hint" id="ref-hint"></p>
-        <div class="settings-data-actions" style="margin-top:10px;">
-          <span id="ref-code" style="font-family:'AppNum','DM Mono',monospace;font-size:15px;letter-spacing:.08em;color:var(--text);"></span>
-          <button type="button" id="ref-copy" class="settings-btn" data-i18n="ref.copy">Copy</button>
-        </div>
+        <div id="ref-codes" style="margin-top:10px;"></div>
       </div>
 
       <!-- Admin only. st_admin_* are guarded in the database on the signed JWT; this display
@@ -56965,8 +56962,32 @@ try {
       var d = r && r.data;
       if (!d || !d.has) { card.style.display = 'none'; return; }
       card.style.display = '';
-      var codeEl = document.getElementById('ref-code');
-      if (codeEl) codeEl.textContent = d.code;
+      /* One row per live code, each with its own trial length and copy button. A member with a
+         30-day and a 60-day campaign needs to tell them apart at a glance. */
+      var host = document.getElementById('ref-codes');
+      if (host) {
+        host.innerHTML = '';
+        (d.codes || []).forEach(function (cc) {
+          var row = document.createElement('div');
+          row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:6px;';
+          var t = document.createElement('span');
+          t.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:15px;letter-spacing:.08em;color:var(--text);";
+          t.textContent = cc.code;
+          var d2 = document.createElement('span');
+          d2.className = 'settings-hint';
+          d2.textContent = (cc.days || 30) + _adminT(' days free', ' días gratis');
+          var cp = document.createElement('button');
+          cp.type = 'button'; cp.className = 'settings-btn';
+          cp.textContent = _adminT('Copy', 'Copiar');
+          cp.addEventListener('click', function () {
+            try { navigator.clipboard.writeText(cc.code); } catch (e) {}
+            cp.textContent = _adminT('Copied', 'Copiado');
+            setTimeout(function () { cp.textContent = _adminT('Copy', 'Copiar'); }, 1600);
+          });
+          row.appendChild(t); row.appendChild(d2); row.appendChild(cp);
+          host.appendChild(row);
+        });
+      }
       var cnt = document.getElementById('ref-count');
       if (cnt) cnt.textContent = (d.paying || 0) + _adminT(' paying', ' de pago');
       var hint = document.getElementById('ref-hint');
@@ -56994,20 +57015,12 @@ try {
                            'Has ganado £' + amt.replace('.', ',') + ' este mes, estimado.'))
           : '';
         hint.textContent = _adminT(
-          'Share this code. Anyone who signs up with it gets ' + (d.trial_days || 30) + ' days free and counts as yours. ' +
-            (d.signups || 0) + ' have used it, ' + (d.paying || 0) + ' paying' + breakdown + '.' + money,
-          'Comparte este código. Quien se registre con él obtiene ' + (d.trial_days || 30) + ' días gratis y cuenta como tuyo. Lo han usado ' +
+          'Share these. Anyone who signs up with one counts as yours. ' +
+            (d.signups || 0) + ' have used them, ' + (d.paying || 0) + ' paying' + breakdown + '.' + money,
+          'Compártelos. Quien se registre con uno cuenta como tuyo. Los han usado ' +
             (d.signups || 0) + ', ' + (d.paying || 0) + ' de pago' + breakdown + '.' + money);
       }
-      var cp = document.getElementById('ref-copy');
-      if (cp && !cp._wired) {
-        cp._wired = true;
-        cp.addEventListener('click', function () {
-          try { navigator.clipboard.writeText(d.code); } catch (e) {}
-          cp.textContent = _adminT('Copied', 'Copiado');
-          setTimeout(function () { cp.textContent = _adminT('Copy', 'Copiar'); }, 1600);
-        });
-      }
+
     }, function () { card.style.display = 'none'; });
   }
 
@@ -57141,6 +57154,50 @@ try {
                .then(vipList, function () { rev.disabled = false; });
           });
           row.appendChild(rev);
+          /* Make an affiliate code for the SAME person, without retyping the address. Retyping is
+             how the two records end up disagreeing: one typo and the affiliate code belongs to
+             nobody, or to somebody else. Only offered on a VIP row whose label is an email,
+             because that is the only case where the owner is actually known. */
+          if (c.kind === 'vip' && c.label && c.label.indexOf('@') > 0) {
+            var mk = document.createElement('button');
+            mk.type = 'button'; mk.className = 'settings-btn';
+            mk.textContent = _adminT('Affiliate code', 'Código de afiliado');
+            var box = document.createElement('span');
+            box.style.cssText = 'display:none;align-items:center;gap:8px;';
+            var dIn = document.createElement('input');
+            dIn.type = 'number'; dIn.min = '1'; dIn.className = 'settings-input settings-input-compact';
+            dIn.style.maxWidth = '110px';
+            dIn.placeholder = _adminT('Trial days', 'Días de prueba');
+            var go = document.createElement('button');
+            go.type = 'button'; go.className = 'settings-btn';
+            go.textContent = _adminT('Create', 'Crear');
+            box.appendChild(dIn); box.appendChild(go);
+            mk.addEventListener('click', function () {
+              // The number box only appears once asked for; every row carrying one permanently
+              // would clutter a list whose usual job is just to be read.
+              box.style.display = (box.style.display === 'none') ? 'inline-flex' : 'none';
+              if (box.style.display !== 'none') dIn.focus();
+            });
+            go.addEventListener('click', function () {
+              var n = parseInt(dIn.value || '', 10);
+              go.disabled = true;
+              sb2.rpc('st_admin_create_code', {
+                p_kind: 'affiliate', p_label: c.label,
+                p_days: (isFinite(n) && n > 0) ? n : 30,
+                p_max_uses: null, p_owner_email: c.label
+              }).then(function (rr) {
+                go.disabled = false;
+                if (rr && rr.error) {
+                  var m = String((rr.error && rr.error.message) || '');
+                  dIn.placeholder = (m.indexOf('no account') >= 0)
+                    ? _adminT('no account yet', 'aún sin cuenta') : _adminT('failed', 'falló');
+                  return;
+                }
+                vipList();
+              }, function () { go.disabled = false; });
+            });
+            row.appendChild(mk); row.appendChild(box);
+          }
         } else {
           /* Revoked codes get an X that removes them for good, so the list stays readable. The
              DATABASE refuses to delete anything not already revoked, so the two-step cannot be
