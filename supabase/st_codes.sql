@@ -221,3 +221,19 @@ alter table public.st_code_redemptions enable row level security;
 -- The app now reads it through one trialDays() helper, defaulting to 14 when it is null or 0 -
 -- treating 0 as "no limit" would have handed a free forever trial to everybody who never used a
 -- code.
+
+-- 2026-09-05, st_referral_totals(): the programme in four numbers - who joined with a code, how
+-- many pay, monthly revenue from them, and what is owed to affiliates.
+--
+-- TWO DIFFERENT WINDOWS, deliberately. Commission runs 12 months from redemption, but a referred
+-- member keeps paying after that window closes. So revenue counts every referred member currently
+-- subscribed, while owed counts only those still inside 12 months. One window for both would
+-- either understate what referrals earned or overstate what is owed - and the second is the
+-- expensive mistake. This is why owed is NOT a percentage of revenue and must never be simplified
+-- into one.
+--
+-- Comped members count for neither: they pay nothing, so they are not revenue and not a
+-- commission owed against them.
+--
+-- List prices live in st_referral_totals; commission RATES live in st_commission_estimate, which
+-- it calls rather than reimplements. Change prices in the first, rates in the second.
