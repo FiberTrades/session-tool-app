@@ -210,3 +210,13 @@ alter table public.st_code_redemptions enable row level security;
 -- Code shape, for the record: ST-<days>-<4 chars>, e.g. ST-30-HHD4 (10 chars), ST-365-CFDW (11).
 -- The gate and Settings placeholders show ST-30-XXXX to match. maxlength stays 14 so the handful
 -- of legacy 12-character codes still fit.
+
+-- 2026-09-05, profiles.trial_days was WRITE-ONLY. st_redeem_code has always set it to the code's
+-- grant_days, and the app never read it - `trial_days` appeared zero times in app.html, while both
+-- the expiry check and the countdown used a hardcoded 14. Every referred member got 14 days while
+-- this column recorded 30, from the sign-up box and from Settings alike. The affiliate was
+-- credited and the redemption succeeded, so the only symptom was a paywall arriving sixteen days
+-- early for the person an affiliate had just recruited.
+-- The app now reads it through one trialDays() helper, defaulting to 14 when it is null or 0 -
+-- treating 0 as "no limit" would have handed a free forever trial to everybody who never used a
+-- code.
