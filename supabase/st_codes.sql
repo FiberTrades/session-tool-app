@@ -200,3 +200,13 @@ alter table public.st_code_redemptions enable row level security;
 -- action that would lock you out of the panel you are looking at. Excluded through st_admin_ids()
 -- rather than a second copy of the email literal: two places already decide who is an admin, and
 -- a third would be the one that eventually disagrees.
+
+-- 2026-09-05, dropped the zero-argument st_gen_code(). It sat beside
+-- st_gen_code(integer DEFAULT NULL), which made the no-argument call AMBIGUOUS - "function
+-- public.st_gen_code() is not unique" - the same overload trap that broke code generation earlier
+-- today, waiting for whoever next wrote the obvious `select st_gen_code()`. The only caller,
+-- st_admin_create_code, passes st_gen_code(p_days) and resolved correctly either way.
+--
+-- Code shape, for the record: ST-<days>-<4 chars>, e.g. ST-30-HHD4 (10 chars), ST-365-CFDW (11).
+-- The gate and Settings placeholders show ST-30-XXXX to match. maxlength stays 14 so the handful
+-- of legacy 12-character codes still fit.
