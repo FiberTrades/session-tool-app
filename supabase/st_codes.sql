@@ -63,6 +63,7 @@ alter table public.st_code_redemptions enable row level security;
 --   st_admin_list_codes()  -> the list, with `paying` = redeemers who actually converted
 --   st_admin_revoke_code() -> revokes, and by default takes VIP access back
 --   st_expire_comps()      -> nightly at 03:17 via pg_cron
+--   st_admin_delete_code() -> removes a REVOKED code for good, redemptions cascading with it
 --
 -- Two guards worth keeping when this is edited:
 --   * revoke only strips access where plan = 'comp', so it can never disable a real paying
@@ -78,6 +79,12 @@ alter table public.st_code_redemptions enable row level security;
 -- for 12 months per referred member, paid on CONVERSION TO PAID rather than signup - the trial
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
+
+-- 2026-09-05, st_admin_delete_code: deleting is refused unless the code is already REVOKED.
+-- The two-step is enforced in the database rather than by hiding a button, because revoking is
+-- what takes a member's access away and deleting is what destroys the record of it - a live
+-- code deleted in one click would leave somebody holding access granted by a code that no
+-- longer exists. Deleting never changes a plan; revoke already settled that.
 
 -- 2026-09-05, st_admin_list_codes: the list shows the redeemer by NAME as well as email. The
 -- display name is not in profiles - it lives in journals.data->>'userName' - and it is read at
