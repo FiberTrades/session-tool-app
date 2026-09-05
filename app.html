@@ -55942,7 +55942,11 @@ try {
     try {
       var _vc = gel('stc-g-vip');
       var _vv = _vc ? String(_vc.value || '').trim().toUpperCase() : '';
-      if (_vv) localStorage.setItem('st_pending_vip', _vv);
+      /* Stamped with the address it was typed for. Without that the code outlives an abandoned
+         signup and is redeemed by whoever next signs in on this browser - crediting an affiliate
+         for a stranger and burning the code on somebody who never asked for it. */
+      if (_vv) localStorage.setItem('st_pending_vip', JSON.stringify({
+        code: _vv, email: String(gel('stc-g-email').value || '').trim().toLowerCase() }));
     } catch (e) {}
     doAuth(mode, gel('stc-g-email').value.trim(), gel('stc-g-pass').value, gateMsg, hideGate);
   }
@@ -57097,10 +57101,22 @@ try {
 
   /* Everyone who has full access, one clickable name each. The list accumulates - granting access
      to somebody new adds a row and never replaces the one before it. */
-  function accessList() {
+  function accessList(ym) {
     var host = document.getElementById('access-list'); if (!host) return;
     var sb2 = _stSB(); if (!sb2) return;
-    sb2.rpc('st_admin_access_list').then(function (r) {
+
+    /* The month the cards are about to LABEL must be the month the figures are fetched for.
+       Calling this with no bounds returned all-time money, which _accessCard then printed as
+       "taken in September" - and Mark paid wrote that all-time number as September's payout. */
+    var month = ym || host._month || _monthKey(new Date());
+    host._month = month;
+    var mb = _monthBounds(month);
+
+    /* Before the list, and outside its result handler. Totals and App takings describe the whole
+       programme and the whole app; they must not vanish because this list is empty or errored. */
+    accessTotals(mb[0], mb[1], month);
+
+    sb2.rpc('st_admin_access_list', { p_from: mb[0], p_to: mb[1] }).then(function (r) {
       if (!r || r.error || !r.data) { host.textContent = ''; return; }
       if (!r.data.length) { host.textContent = _adminT('Nobody yet.', 'Nadie todavía.'); return; }
       host.innerHTML = '';
@@ -57143,7 +57159,8 @@ try {
                                 'Esto devuelve a ' + (m.name || m.email) + ' a una cuenta normal. Sus datos no se tocan.') })) return;
             rmv.disabled = true;
             sb2.rpc('st_admin_set_access', { p_email: m.email, p_days: null, p_on: false })
-               .then(accessList, function () { rmv.disabled = false; });
+               .then(function () { accessList(host._month); },
+                     function () { rmv.disabled = false; });
           });
           head.appendChild(rmv);
         }
@@ -57171,12 +57188,23 @@ try {
           // Remembered so that acting inside the card does not close it on the reload that follows.
           host._open = open ? null : m.email;
         });
-        _accessCard(rec, m, sb2);   // defaults to the current month
+        _accessCard(rec, m, sb2, month);   // the same month the figures were fetched for
         wrap.appendChild(rec);
         host.appendChild(wrap);
       });
-      accessTotals();   // same repaint, so the totals can never lag the rows above them
-    }, function () {});
+    }, function () { host.textContent = ''; });
+  }
+
+  /* Re-read ONE member and redraw their card at the month it is already showing.
+     Revoking, deleting or creating a code used to rebuild the whole list, which snapped an open
+     card back to the current month and changed the figures under it without the reader acting. */
+  function _refreshCard(el, m, sb2, month) {
+    var mb = _monthBounds(month);
+    sb2.rpc('st_admin_access_list', { p_from: mb[0], p_to: mb[1], p_user: m.user_id })
+       .then(function (rr) {
+         var row = rr && !rr.error && rr.data && rr.data[0];
+         _accessCard(el, row || m, sb2, month);
+       }, function () {});
   }
 
   /* One month at a time, with arrows. Replaces a pair of date boxes: the question is always
@@ -57373,14 +57401,9 @@ try {
     el.innerHTML = '';
 
     var month = ym || _monthKey(new Date());
-    el.appendChild(_monthNav(month, function (f, t, y) {
-      sb2.rpc('st_admin_access_list', { p_from: f, p_to: t, p_user: m.user_id })
-         .then(function (rr) {
-           var row = rr && !rr.error && rr.data && rr.data[0];
-           // No row back means that month had no activity; keep the person, zero the figures.
-           _accessCard(el, row || m, sb2, y);
-         }, function () {});
-    }));
+    // No row back for a month means no activity in it; _refreshCard keeps the person and zeroes
+    // the figures rather than making the card disappear.
+    el.appendChild(_monthNav(month, function (f, t, y) { _refreshCard(el, m, sb2, y); }));
 
     /* Tiers with nobody in them are absent rather than printed as "0 Bundle Pro" - the same rule
        the member's own card follows, so both sides read alike. */
@@ -57503,7 +57526,8 @@ try {
           /* kill_access false: revoking a referral code stops it being used, and must not touch
              anybody's plan. The people it already brought in are paying customers. */
           sb2.rpc('st_admin_revoke_code', { p_code: c.code, p_kill_access: false })
-             .then(accessList, function () { rev.disabled = false; });
+             .then(function () { _refreshCard(el, m, sb2, month); },
+                   function () { rev.disabled = false; });
         });
         row.appendChild(rev);
       } else {
@@ -57518,7 +57542,8 @@ try {
         del.addEventListener('click', function () {
           del.disabled = true;
           sb2.rpc('st_admin_delete_code', { p_code: c.code })
-             .then(accessList, function () { del.disabled = false; });
+             .then(function () { _refreshCard(el, m, sb2, month); },
+                   function () { del.disabled = false; });
         });
         row.appendChild(del);
       }
@@ -57568,8 +57593,8 @@ try {
         }
         msg.textContent = '';
         dIn.value = '';
-        // The new code appears in the list above, inside this same record, which stays open.
-        accessList();
+        // The new code appears in this same record, which stays open on the month it was showing.
+        _refreshCard(el, m, sb2, month);
       }, function () { go.disabled = false; msg.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
     });
     el.appendChild(mk); el.appendChild(box); el.appendChild(msg);
@@ -57685,14 +57710,29 @@ try {
      Cleared BEFORE the attempt: a bad code retried on every boot forever is worse than one that
      quietly does nothing, and Settings has a proper box for it with real error messages. */
   function redeemPendingVip() {
-    var code = null;
-    try { code = localStorage.getItem('st_pending_vip'); } catch (e) {}
-    if (!code || !currentUser) return;
-    try { localStorage.removeItem('st_pending_vip'); } catch (e) {}
+    var raw = null, code = null, forEmail = null;
+    try { raw = localStorage.getItem('st_pending_vip'); } catch (e) {}
+    if (!raw || !currentUser) return;
+    try { var p = JSON.parse(raw); code = p && p.code; forEmail = p && p.email; }
+    catch (e) { code = raw; }              // a bare code stashed by an older build
+    if (!code) { try { localStorage.removeItem('st_pending_vip'); } catch (e) {} return; }
+
+    /* Only for the account it was typed against. */
+    var mine = String((currentUser && currentUser.email) || '').toLowerCase();
+    if (forEmail && mine && forEmail !== mine) {
+      try { localStorage.removeItem('st_pending_vip'); } catch (e) {}
+      return;
+    }
     try {
       sb.rpc('st_redeem_code', { p_code: code }).then(function (r) {
-        // Only re-read on success. The key is already gone, so this cannot loop.
-        if (r && !r.error && r.data && r.data.ok) { try { fetchProfile(); } catch (e) {} }
+        /* Cleared only on a DEFINITIVE answer. Removing it before the call meant one dropped
+           connection destroyed the code for good - the member never getting their longer trial,
+           the affiliate never getting the credit, and nothing recording that it happened.
+           A transport error leaves it stashed to retry on the next boot; a real reply, even a
+           refusal, clears it so it cannot loop. */
+        if (r && r.error) return;
+        try { localStorage.removeItem('st_pending_vip'); } catch (e) {}
+        if (r && r.data && r.data.ok) { try { fetchProfile(); } catch (e) {} }
       }, function () {});
     } catch (e) {}
   }

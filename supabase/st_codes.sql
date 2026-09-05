@@ -248,3 +248,37 @@ alter table public.st_code_redemptions enable row level security;
 --
 -- Both were DROPPED before being recreated with arguments. Adding parameters beside the existing
 -- zero-argument versions would have made the bare call ambiguous - the st_gen_code trap again.
+
+-- 2026-09-05, AUDIT FIXES. A 141-agent adversarial review raised 66 findings; 22 survived
+-- verification. The money-affecting ones:
+--
+-- COMMISSION WINDOW HAD NO LOWER BOUND. It read `pay.paid_at < r.redeemed_at + interval '12
+-- months'`, which every payment made BEFORE the code was redeemed also satisfies. An existing
+-- paying subscriber who later typed an affiliate code retroactively earned that affiliate
+-- commission on their whole history. Proved with a four-payment case: GBP 42.00 paid where GBP
+-- 21.00 was due. Now bounded at both ends, in all three places that compute it.
+--
+-- CURRENCIES WERE ADDED TOGETHER. amount_paid is minor units in whatever Stripe charged; summing
+-- a EUR row into a GBP total and printing a pound sign is simply a wrong number. Money figures
+-- count GBP only, and st_admin_takings returns other_currency so the exclusion is visible.
+--
+-- GRANTING COMP COULD OVERWRITE A PAYING SUBSCRIBER. The OFF path guarded on plan='comp'; the ON
+-- path had no equivalent, so a mistyped address rewrote a live Stripe customer's plan and lost
+-- their renewal date. Now refused with 'has_subscription'.
+--
+-- DELETING A CODE DESTROYED THE COMMISSION RECORD. st_code_redemptions cascaded from st_codes, so
+-- the small X on a revoked code deleted every redemption it had - the affiliate's counts and the
+-- evidence for money not yet paid. The FK is ON DELETE RESTRICT now and the function refuses with
+-- 'has_redemptions'.
+--
+-- REDEEMING COULD SHORTEN A TRIAL. trial_days was assigned, not maximised, so a code worth fewer
+-- days than the default dropped the paywall on somebody mid-trial as a reward for entering a
+-- friend's code. greatest(coalesce(trial_days,14), grant_days) now.
+--
+-- st_ensure_admin_friendship was SECURITY DEFINER, unguarded and executable by ANON - anyone could
+-- force an accepted friendship between any two accounts. Revoked from anon and authenticated; its
+-- only caller is a SECURITY DEFINER trigger owned by postgres, which is unaffected. Every
+-- st_admin_* function also lost its anon grant (each still checks st_is_admin() as well).
+--
+-- st_admin_relink_payments() repairs payments recorded before their customer was linked to a
+-- profile - see st_payments.sql.
