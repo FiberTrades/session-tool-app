@@ -82,6 +82,14 @@ alter table public.st_code_redemptions enable row level security;
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
 
+-- 2026-09-05, OVERLOAD TRAP, worth knowing before editing any function here. CREATE OR REPLACE
+-- FUNCTION cannot change a signature: adding p_owner_email to st_admin_create_code did not
+-- replace the four-argument version, it created a SECOND function beside it. The VIP card sends
+-- four named parameters, which matched BOTH, because the five-argument one defaults its last -
+-- PostgREST could not choose and every VIP code generation failed while the affiliate card,
+-- sending five, worked. Adding a parameter here means DROP the old signature explicitly.
+-- Check with: select proname, count(*) from pg_proc ... group by proname having count(*) > 1.
+
 -- 2026-09-05, st_my_code breakdown: counts split by tier, plus an ESTIMATE of the month's
 -- commission. Two things stop it overpaying. is_paid is read LIVE, so a referred member who
 -- cancels drops out the moment their subscription lapses - nothing is stored, so nothing can go
