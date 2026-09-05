@@ -57157,7 +57157,7 @@ try {
           // Remembered so that acting inside the card does not close it on the reload that follows.
           host._open = open ? null : m.email;
         });
-        _accessCard(rec, m, sb2);
+        _accessCard(rec, m, sb2);   // defaults to the current month
         wrap.appendChild(rec);
         host.appendChild(wrap);
       });
@@ -57165,53 +57165,73 @@ try {
     }, function () {});
   }
 
-  /* Two date boxes and a label. Shared so the record cards and the totals cannot drift into
-     describing their range differently - they are answering the same kind of question.
-     "Joined between" is deliberate: this filters WHEN PEOPLE CAME IN, not when money moved.
-     Nothing in the database records what was charged or when, so anything more specific would be
-     inventing history. */
-  function _dateRange(onChange) {
+  /* One month at a time, with arrows. Replaces a pair of date boxes: the question is always
+     "which month", and a stepper cannot be typed wrong.
+     Hands back the first and last day of the month, so every caller keeps taking plain from/to
+     dates and none of them needs to know about months. */
+  function _monthKey(d) {
+    return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2);
+  }
+  function _monthBounds(ym) {
+    var y = parseInt(ym.slice(0, 4), 10), m = parseInt(ym.slice(5, 7), 10);
+    // Day 0 of the NEXT month is the last day of this one, which sidesteps every leap-year and
+    // 30-vs-31 special case.
+    var last = new Date(y, m, 0).getDate();
+    return [ym + '-01', ym + '-' + ('0' + last).slice(-2)];
+  }
+  function _monthNav(ym, onChange) {
+    var thisMonth = _monthKey(new Date());
+    var cur = ym || thisMonth;
     var box = document.createElement('div');
     box.style.cssText = 'display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0;';
+
+    function arrow(txt, delta, disabled) {
+      var b = document.createElement('button');
+      b.type = 'button'; b.className = 'settings-btn';
+      b.style.cssText = 'min-width:32px;padding-left:10px;padding-right:10px;';
+      b.textContent = txt;
+      if (disabled) { b.disabled = true; b.style.opacity = '.4'; b.style.cursor = 'default'; }
+      else b.addEventListener('click', function () {
+        var y = parseInt(cur.slice(0, 4), 10), m = parseInt(cur.slice(5, 7), 10);
+        var d = new Date(y, m - 1 + delta, 1);
+        var next = _monthKey(d);
+        var bb = _monthBounds(next);
+        onChange(bb[0], bb[1], next);
+      });
+      return b;
+    }
+
     var lab = document.createElement('span');
     lab.className = 'settings-hint';
-    lab.textContent = _adminT('Joined between', 'Se unieron entre');
-    var a = document.createElement('input');
-    a.type = 'date'; a.className = 'settings-input settings-input-compact';
-    a.style.maxWidth = '150px';
-    var mid = document.createElement('span');
-    mid.className = 'settings-hint';
-    mid.textContent = _adminT('and', 'y');
-    var b = document.createElement('input');
-    b.type = 'date'; b.className = 'settings-input settings-input-compact';
-    b.style.maxWidth = '150px';
-    // Blank means unbounded, so clearing both is how you get back to all time.
-    function fire() { onChange(a.value || null, b.value || null); }
-    a.addEventListener('change', fire);
-    b.addEventListener('change', fire);
-    box.appendChild(lab); box.appendChild(a); box.appendChild(mid); box.appendChild(b);
+    lab.style.cssText = 'min-width:130px;text-align:center;color:var(--text);';
+    var shown = new Date(parseInt(cur.slice(0, 4), 10), parseInt(cur.slice(5, 7), 10) - 1, 1);
+    lab.textContent = shown.toLocaleDateString(lang() === 'es' ? 'es-ES' : 'en-GB',
+                                               { month: 'long', year: 'numeric' });
+
+    box.appendChild(arrow('\u2039', -1, false));
+    box.appendChild(lab);
+    // Nothing has happened after this month yet, and stepping into empty months reads as a
+    // collapse in trade rather than as an absence of data.
+    box.appendChild(arrow('\u203A', +1, cur >= thisMonth));
     return box;
   }
 
   /* The programme as a whole. Per-person rows say what you owe Troy; this says whether any of it
      is working. */
-  function accessTotals(from, to) {
+  function accessTotals() {
     var host = document.getElementById('access-totals'); if (!host) return;
     var sb2 = _stSB(); if (!sb2) return;
-    sb2.rpc('st_referral_totals', { p_from: from || null, p_to: to || null }).then(function (r) {
+    sb2.rpc('st_referral_totals', { p_from: null, p_to: null }).then(function (r) {
       host.innerHTML = '';
       if (!r || r.error || !r.data) return;
       var d = r.data;
 
       var wrapT = document.createElement('div');
       wrapT.style.cssText = 'padding-top:10px;border-top:1px solid var(--border-2,#332F3C);';
-      // Re-reads with the new range; the picker redraws with it, so the boxes keep their values.
-      var rng = _dateRange(function (f, t) { accessTotals(f, t); });
-      var ai = rng.querySelectorAll('input');
-      if (ai[0]) ai[0].value = from || '';
-      if (ai[1]) ai[1].value = to || '';
-      wrapT.appendChild(rng);
 
+      /* No month control here. These are all-time headcounts - how many people have ever arrived
+         through a code - and a month would turn that into a number nobody asked for. The month
+         belongs to the money, which is in Takings below. */
       var head = document.createElement('div');
       head.className = 'settings-hint';
       head.style.color = 'var(--text)';
@@ -57248,10 +57268,13 @@ try {
   /* What was actually collected, month by month. Everything above this is a run rate - who is
      subscribed now times list prices - which cannot answer "what did I take in March" because
      nothing recorded March until this ledger existed. */
-  function accessTakings(from, to) {
+  function accessTakings(from, to, ym) {
     var host = document.getElementById('access-takings'); if (!host) return;
     var sb2 = _stSB(); if (!sb2) return;
-    sb2.rpc('st_admin_takings', { p_from: from || null, p_to: to || null }).then(function (r) {
+    /* Defaults to the current month rather than all time: "what have I taken this month" is the
+       question you open this panel with. */
+    if (!from) { var _b = _monthBounds(ym || _monthKey(new Date())); from = _b[0]; to = _b[1]; ym = ym || _monthKey(new Date()); }
+    sb2.rpc('st_admin_takings', { p_from: from, p_to: to }).then(function (r) {
       host.innerHTML = '';
       if (!r || r.error || !r.data) return;
       var d = r.data;
@@ -57274,14 +57297,7 @@ try {
         return;
       }
 
-      // "Paid between", not "joined between" - a different question from the range above.
-      var rng = _dateRange(function (f, t) { accessTakings(f, t); });
-      var lab = rng.querySelector('span');
-      if (lab) lab.textContent = _adminT('Paid between', 'Pagado entre');
-      var ai = rng.querySelectorAll('input');
-      if (ai[0]) ai[0].value = from || '';
-      if (ai[1]) ai[1].value = to || '';
-      host.appendChild(rng);
+      host.appendChild(_monthNav(ym, function (f, t, y) { accessTakings(f, t, y); }));
 
       function money(v) {
         var n = Number(v || 0).toFixed(2);
@@ -57304,6 +57320,15 @@ try {
         ref.textContent = _adminT(money(d.referred_net) + ' of that from affiliate referrals.',
                                   money(d.referred_net) + ' de eso por referidos de afiliados.');
         host.appendChild(ref);
+      }
+      /* Commission on money actually collected this month - not the run-rate estimate above, which
+         is a forecast. This is the figure you pay from. */
+      if (Number(d.owed_actual || 0) > 0) {
+        var ow = document.createElement('div');
+        ow.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin-top:2px;";
+        ow.textContent = _adminT(money(d.owed_actual) + ' owed to affiliates on it.',
+                                 money(d.owed_actual) + ' debido a afiliados por ello.');
+        host.appendChild(ow);
       }
 
       (d.months || []).forEach(function (m) {
@@ -57333,21 +57358,18 @@ try {
 
   /* One member's record card. The range refetches THIS member only - st_admin_access_list
      takes p_user - so one person's dates never disturb anybody else's card. */
-  function _accessCard(el, m, sb2, from, to) {
+  function _accessCard(el, m, sb2, ym) {
     el.innerHTML = '';
 
-    var rng = _dateRange(function (f, t) {
-      sb2.rpc('st_admin_access_list', { p_from: f || null, p_to: t || null, p_user: m.user_id })
+    var month = ym || _monthKey(new Date());
+    el.appendChild(_monthNav(month, function (f, t, y) {
+      sb2.rpc('st_admin_access_list', { p_from: f, p_to: t, p_user: m.user_id })
          .then(function (rr) {
            var row = rr && !rr.error && rr.data && rr.data[0];
-           // No row back means the range excluded everything; keep the person, zero the figures.
-           _accessCard(el, row || m, sb2, f, t);
+           // No row back means that month had no activity; keep the person, zero the figures.
+           _accessCard(el, row || m, sb2, y);
          }, function () {});
-    });
-    var ri = rng.querySelectorAll('input');
-    if (ri[0]) ri[0].value = from || '';
-    if (ri[1]) ri[1].value = to || '';
-    el.appendChild(rng);
+    }));
 
     /* Tiers with nobody in them are absent rather than printed as "0 Bundle Pro" - the same rule
        the member's own card follows, so both sides read alike. */
@@ -57364,22 +57386,33 @@ try {
       (m.signups || 0) + ' invitados, ' + (m.paying || 0) + ' de pago' + breakdown);
     el.appendChild(stat);
 
-    /* Both figures, because they answer different questions and are not proportional: what these
-       members bring IN, and what this person is owed OUT. Estimates because they use monthly list
-       prices - an annual subscriber is worth less per month - and ignore refunds and tax. */
-    var rv = Number(m.revenue || 0).toFixed(2);
-    var got = document.createElement('div');
-    got.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin:4px 0 0;";
-    got.textContent = _adminT('£' + rv + ' a month from them, estimated.',
-                              '£' + rv.replace('.', ',') + ' al mes de ellos, estimado.');
-    el.appendChild(got);
+    /* Two different kinds of number, kept apart on purpose.
+       The first pair is what was ACTUALLY collected in the selected month and the commission due
+       on it - the figure you pay from. The second is the forward run rate, which is a forecast and
+       belongs to no particular month. Merging them would produce a number that is neither. */
+    var mname = new Date(parseInt(month.slice(0, 4), 10), parseInt(month.slice(5, 7), 10) - 1, 1)
+                  .toLocaleDateString(lang() === 'es' ? 'es-ES' : 'en-GB', { month: 'long' });
 
-    var amt = document.createElement('div');
-    amt.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin:2px 0 10px;";
-    var v = Number(m.estimate || 0).toFixed(2);
-    amt.textContent = _adminT('£' + v + ' owed to them this month, estimated.',
-                              '£' + v.replace('.', ',') + ' debido a ellos este mes, estimado.');
-    el.appendChild(amt);
+    function _mline(txtEn, txtEs, top) {
+      var d = document.createElement('div');
+      d.style.cssText = "font-family:'AppNum','DM Mono',monospace;font-size:12px;color:var(--text);margin:" + top + " 0 0;";
+      d.textContent = _adminT(txtEn, txtEs);
+      el.appendChild(d);
+    }
+    var tk = Number(m.taken || 0).toFixed(2);
+    var ow = Number(m.owed_actual || 0).toFixed(2);
+    _mline('£' + tk + ' taken in ' + mname + ' from them.',
+           '£' + tk.replace('.', ',') + ' cobrado en ' + mname + ' de ellos.', '4px');
+    _mline('£' + ow + ' owed to them for ' + mname + '.',
+           '£' + ow.replace('.', ',') + ' debido a ellos por ' + mname + '.', '2px');
+
+    var rv = Number(m.revenue || 0).toFixed(2);
+    var fc = document.createElement('div');
+    fc.className = 'settings-hint';
+    fc.style.margin = '6px 0 10px';
+    fc.textContent = _adminT('Currently worth £' + rv + ' a month, estimated.',
+                             'Actualmente vale £' + rv.replace('.', ',') + ' al mes, estimado.');
+    el.appendChild(fc);
 
     (m.codes || []).forEach(function (c) {
       var row = document.createElement('div');

@@ -57,3 +57,19 @@ revoke all on public.st_payments from anon, authenticated;
 -- breakdown, the share from affiliate referrals, and first_paid_at — the ledger's own coverage,
 -- because "£0.00 in March" is indistinguishable from a bad March unless the answer says when
 -- recording began.
+
+-- 2026-09-05, st_commission_rate(plan): commission on money ACTUALLY COLLECTED — 20% for
+-- mentorship, 30% for everything else, applied to the real net amount rather than a list price, so
+-- discounts, annual invoices and partial refunds all flow through instead of being approximated.
+-- An unmapped plan falls to 30%, because the only tier on a lower rate is explicitly identified;
+-- guessing 20% for an unknown price would underpay somebody, which is harder to notice and worse.
+--
+-- TWO COMMISSION FIGURES EXIST AND BOTH ARE WANTED, so they are labelled differently everywhere:
+--   st_commission_estimate  — a forward RUN RATE ("worth £X a month from here"), on the
+--                             affiliate's own card and as "Currently worth ...".
+--   st_commission_rate      — what was actually earned in a given month, from the ledger. This is
+--                             the figure to pay from.
+-- They are allowed to differ. Merging them would produce a number that is neither.
+--
+-- The 12-month rule is applied per payment against that member's own redeemed_at, not as a blanket
+-- cutoff: a payment more than a year after somebody redeemed is revenue but earns no commission.
