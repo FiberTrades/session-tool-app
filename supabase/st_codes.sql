@@ -141,6 +141,19 @@ alter table public.st_code_redemptions enable row level security;
 -- freezing the name as it was on the day the code was used. Reads as "Nestor - be.o2@hotmail.com",
 -- which also makes a mismatch against your own label visible at a glance.
 
+-- 2026-09-05, st_commission_estimate: the percentages live in ONE function and both surfaces
+-- call it - st_my_code, which the affiliate reads in their own Settings, and
+-- st_admin_affiliate_summary, which you read at month end. They were briefly about to be two
+-- copies of the same arithmetic, which is fine until the day they drift and an affiliate is
+-- looking at a different number from the one you are paying. Change a rate here and both sides
+-- move together. GBP 20 and GBP 35 at 30% -> 6.00 and 10.50; GBP 299 at 20% -> 59.80.
+
+-- 2026-09-05, st_admin_affiliate_summary: one row per affiliate - codes, signups, the tier split
+-- of who is paying, and the money. Same 12-month window and same live is_paid read as
+-- st_my_code, so the admin figure and the affiliate's own figure agree by construction rather
+-- than by both being maintained carefully. Affiliates earning nothing are still listed: someone
+-- with eleven signups and no conversions is exactly what you want to see.
+
 -- Dry run. Never add an expiry job without checking who it would actually catch.
 --   select email, plan, current_period_end,
 --          case when plan='comp' and current_period_end is not null and current_period_end < now()

@@ -6289,6 +6289,7 @@ try {
         </div>
         <p class="settings-hint" data-i18n="aff.hint">They need an account first. The days are the free trial their code gives to new members.</p>
         <p class="settings-hint" id="aff-gen-out" style="margin-top:8px;"></p>
+        <div id="aff-summary" style="margin-top:16px;"></div>
       </div>
 
       <!-- 3. Discord community -->
@@ -57063,9 +57064,86 @@ try {
           if (em) em.value = ''; if (dy) dy.value = '';
           { var w = document.getElementById('aff-gen-who'); if (w) w.textContent = ''; }
           vipList();
+          affSummary();   // a new code means a new row, or a new code count on an existing one
         }, function () { btn.disabled = false; if (out) out.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
       });
     }
+    affSummary();
+  }
+
+  /* What you owe each affiliate this month, one row each.
+     The money comes from st_commission_estimate in the database - the SAME function behind the
+     figure on the affiliate's own Settings card - so the two can never disagree. Do not reimplement
+     the percentages here. */
+  function affSummary() {
+    var host = document.getElementById('aff-summary'); if (!host) return;
+    var sb2 = _stSB(); if (!sb2) return;
+    sb2.rpc('st_admin_affiliate_summary').then(function (r) {
+      host.innerHTML = '';
+      if (!r || r.error || !r.data || !r.data.length) return;
+
+      var head = document.createElement('div');
+      head.className = 'settings-hint';
+      head.style.cssText = 'margin-bottom:8px;font-weight:600;color:var(--text);';
+      head.textContent = _adminT('This month', 'Este mes');
+      host.appendChild(head);
+
+      var total = 0;
+      r.data.forEach(function (a) {
+        total += Number(a.estimate || 0);
+
+        var row = document.createElement('div');
+        row.style.cssText = 'padding:8px 0;border-top:1px solid var(--line);';
+
+        /* Name and email together. The name is what you call them; the email is what identifies
+           them, and the two have to be side by side because a name is not unique. */
+        var who = document.createElement('div');
+        who.style.cssText = 'display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;';
+        var nm = document.createElement('span');
+        nm.style.cssText = 'color:var(--text);font-weight:600;';
+        nm.textContent = a.owner_name || '?';
+        var em2 = document.createElement('span');
+        em2.className = 'settings-hint';
+        em2.textContent = a.owner_email || '';
+        who.appendChild(nm); who.appendChild(em2);
+
+        /* Tiers with nobody in them are absent rather than printed as "0 Bundle Pro" - the same
+           rule the affiliate's own card follows, so both sides read alike. */
+        var parts = [];
+        if (a.journal)    parts.push(a.journal    + ' ST Journal');
+        if (a.bundle)     parts.push(a.bundle     + ' Bundle Pro');
+        if (a.mentorship) parts.push(a.mentorship + ' ' + _adminT('Mentorship', 'Mentoría'));
+        var breakdown = parts.length ? (' — ' + parts.join(', ')) : '';
+
+        var line = document.createElement('div');
+        line.className = 'settings-hint';
+        line.textContent = _adminT(
+          (a.codes || 0) + ' code' + ((a.codes === 1) ? '' : 's') + ', ' +
+            (a.signups || 0) + ' signed up, ' + (a.paying || 0) + ' paying' + breakdown,
+          (a.codes || 0) + ' código' + ((a.codes === 1) ? '' : 's') + ', ' +
+            (a.signups || 0) + ' registrados, ' + (a.paying || 0) + ' de pago' + breakdown);
+
+        var amt = document.createElement('div');
+        amt.style.cssText = "font-family:'AppNum','DM Mono',monospace;color:var(--text);margin-top:2px;";
+        var v = Number(a.estimate || 0).toFixed(2);
+        amt.textContent = _adminT('£' + v + ' estimated', '£' + v.replace('.', ',') + ' estimado');
+
+        row.appendChild(who); row.appendChild(line); row.appendChild(amt);
+        host.appendChild(row);
+      });
+
+      /* The figure you are actually budgeting for. Called an estimate for the same reason it is on
+         the affiliate's card: monthly list prices, so an annual subscriber is worth less per month
+         than this suggests, and refunds and tax are not modelled. */
+      var foot = document.createElement('div');
+      foot.className = 'settings-hint';
+      foot.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--text);';
+      var t = total.toFixed(2);
+      foot.textContent = _adminT(
+        '£' + t + ' estimated across ' + r.data.length + ' affiliate' + ((r.data.length === 1) ? '' : 's') + '.',
+        '£' + t.replace('.', ',') + ' estimado entre ' + r.data.length + ' afiliado' + ((r.data.length === 1) ? '' : 's') + '.');
+      host.appendChild(foot);
+    }, function () { host.innerHTML = ''; });
   }
 
   function renderVipAdmin() {
