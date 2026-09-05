@@ -64,6 +64,8 @@ alter table public.st_code_redemptions enable row level security;
 --   st_admin_revoke_code() -> revokes, and by default takes VIP access back
 --   st_expire_comps()      -> nightly at 03:17 via pg_cron
 --   st_admin_delete_code() -> removes a REVOKED code for good, redemptions cascading with it
+--   st_admin_find_member() -> name + plan for an email, admin only
+--   st_my_code()           -> the caller's OWN affiliate code and its counts, members
 --
 -- Two guards worth keeping when this is edited:
 --   * revoke only strips access where plan = 'comp', so it can never disable a real paying
@@ -79,6 +81,13 @@ alter table public.st_code_redemptions enable row level security;
 -- for 12 months per referred member, paid on CONVERSION TO PAID rather than signup - the trial
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
+
+-- 2026-09-05, affiliate ownership: st_codes.owner_user_id, plus a unique index allowing ONE
+-- live affiliate code per owner - two would split an affiliate's attribution and the first
+-- anyone would know is an argument over a short commission. st_admin_create_code refuses an
+-- affiliate code whose owner has no account, because a code its owner can never be shown is
+-- not worth minting. st_my_code returns COUNTS ONLY: an affiliate has every right to know how
+-- they are doing and none to know who the people are.
 
 -- 2026-09-05, st_admin_delete_code: deleting is refused unless the code is already REVOKED.
 -- The two-step is enforced in the database rather than by hiding a button, because revoking is

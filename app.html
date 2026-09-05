@@ -6246,6 +6246,20 @@ try {
         <p class="settings-hint" id="vip-msg" style="margin-top:8px;"></p>
       </div>
 
+      <!-- The member's own affiliate code. Hidden unless they actually have one, and it shows
+           counts only - never who used it. -->
+      <div class="svc-card" id="svc-ref-card" style="display:none;">
+        <div class="svc-card-head">
+          <span class="svc-card-title" data-i18n="ref.title">Your referral code</span>
+          <span class="svc-badge good" id="ref-count"></span>
+        </div>
+        <p class="settings-hint" id="ref-hint"></p>
+        <div class="settings-data-actions" style="margin-top:10px;">
+          <span id="ref-code" style="font-family:'AppNum','DM Mono',monospace;font-size:15px;letter-spacing:.08em;color:var(--text);"></span>
+          <button type="button" id="ref-copy" class="settings-btn" data-i18n="ref.copy">Copy</button>
+        </div>
+      </div>
+
       <!-- Admin only. st_admin_* are guarded in the database on the signed JWT; this display
            toggle only decides what to draw. -->
       <div class="svc-card" id="svc-vip-admin" style="display:none;">
@@ -6262,6 +6276,22 @@ try {
         <p class="settings-hint" data-i18n="vip.admin_hint">Leave the days blank for access that never expires.</p>
         <p class="settings-hint" id="vip-gen-out" style="margin-top:8px;"></p>
         <div id="vip-admin-list" style="margin-top:14px;"></div>
+      </div>
+
+      <!-- Admin only. Separate from the VIP card because "days" means a different thing here. -->
+      <div class="svc-card" id="svc-aff-admin" style="display:none;">
+        <div class="svc-card-head">
+          <span class="svc-card-title" data-i18n="aff.title">Affiliate codes</span>
+        </div>
+        <div class="settings-data-actions" style="margin-top:10px;flex-wrap:wrap;">
+          <input id="aff-gen-email" class="settings-input settings-input-compact" type="email"
+                 autocomplete="off" spellcheck="false" style="max-width:210px;">
+          <span id="aff-gen-who" class="settings-hint" style="align-self:center;"></span>
+          <input id="aff-gen-days" class="settings-input settings-input-compact" type="number" min="1" style="max-width:130px;">
+          <button type="button" id="aff-gen-btn" class="settings-btn" data-i18n="aff.generate">Create code</button>
+        </div>
+        <p class="settings-hint" data-i18n="aff.hint">They need an account first. The days are the free trial their code gives to new members.</p>
+        <p class="settings-hint" id="aff-gen-out" style="margin-top:8px;"></p>
       </div>
 
       <!-- 3. Discord community -->
@@ -6992,6 +7022,11 @@ try {
       'mn.upload_err': 'Upload failed',
       'mn.from_mentor': 'Message from your mentor',
       'mentor.msg_waiting': 'You have a message from your mentor in your Calendar Log.',
+      'ref.title': 'Your referral code',
+      'ref.copy': 'Copy',
+      'aff.title': 'Affiliate codes',
+      'aff.generate': 'Create code',
+      'aff.hint': 'They need an account first. The days are the free trial their code gives to new members.',
       'vip.title': 'Have a unique code?',
       'vip.hint': 'Enter it below to unlock full access.',
       'vip.redeem': 'Redeem',
@@ -8522,6 +8557,11 @@ try {
       'mn.upload_err': 'Error al subir',
       'mn.from_mentor': 'Mensaje de tu mentor',
       'mentor.msg_waiting': 'Tienes un mensaje de tu mentor en tu Calendario.',
+      'ref.title': 'Tu código de recomendación',
+      'ref.copy': 'Copiar',
+      'aff.title': 'Códigos de afiliado',
+      'aff.generate': 'Crear código',
+      'aff.hint': 'Primero necesitan una cuenta. Los días son la prueba gratuita que su código da a los nuevos miembros.',
       'vip.title': '¿Tienes un código único?',
       'vip.hint': 'Introdúcelo aquí para desbloquear el acceso completo.',
       'vip.redeem': 'Canjear',
@@ -56887,6 +56927,110 @@ try {
       });
     });
   }
+  /* Name-as-you-type, shared by both admin cards. Debounced, and every reply carries the query
+     it answered: typing an address fires several lookups, they can land out of order, and a slow
+     answer for an earlier prefix would otherwise overwrite the right answer for the full address -
+     the classic way a live lookup shows the wrong name with total confidence.
+     One copy, because a second hand-written one is the copy that eventually loses that guard. */
+  function wireMemberLookup(input, outId) {
+    if (!input || input._lookupWired) return;
+    input._lookupWired = true;
+    var timer = null, seq = 0;
+    input.addEventListener('input', function () {
+      var who = document.getElementById(outId); if (!who) return;
+      var q = String(input.value || '').trim();
+      clearTimeout(timer);
+      if (q.indexOf('@') < 0) { who.textContent = ''; return; }
+      var mine = ++seq;
+      timer = setTimeout(function () {
+        var sb3 = _stSB(); if (!sb3) return;
+        sb3.rpc('st_admin_find_member', { p_email: q }).then(function (r) {
+          if (mine !== seq) return;                       // a newer keystroke already answered
+          var d = r && r.data;
+          if (r && r.error) { who.textContent = ''; return; }
+          if (d && d.found) { who.textContent = d.name || _adminT('(no name set)', '(sin nombre)'); }
+          // Not a failure: a VIP code is usually handed over BEFORE the person signs up.
+          else { who.textContent = _adminT('no account yet', 'aún sin cuenta'); }
+        }, function () { if (mine === seq) who.textContent = ''; });
+      }, 350);
+    });
+  }
+
+  /* The member's own code. Counts only - st_my_code returns no identities, because an affiliate
+     has every right to know how they are doing and none to know who the people are. */
+  function renderRefCard() {
+    var card = document.getElementById('svc-ref-card'); if (!card) return;
+    var sb2 = _stSB(); if (!sb2) return;
+    sb2.rpc('st_my_code').then(function (r) {
+      var d = r && r.data;
+      if (!d || !d.has) { card.style.display = 'none'; return; }
+      card.style.display = '';
+      var codeEl = document.getElementById('ref-code');
+      if (codeEl) codeEl.textContent = d.code;
+      var cnt = document.getElementById('ref-count');
+      if (cnt) cnt.textContent = (d.paying || 0) + _adminT(' paying', ' de pago');
+      var hint = document.getElementById('ref-hint');
+      if (hint) {
+        hint.textContent = _adminT(
+          'Share this code. Anyone who signs up with it gets ' + (d.trial_days || 30) + ' days free, and counts as yours. ' + (d.signups || 0) + ' have used it so far.',
+          'Comparte este código. Quien se registre con él obtiene ' + (d.trial_days || 30) + ' días gratis y cuenta como tuyo. Lo han usado ' + (d.signups || 0) + ' hasta ahora.');
+      }
+      var cp = document.getElementById('ref-copy');
+      if (cp && !cp._wired) {
+        cp._wired = true;
+        cp.addEventListener('click', function () {
+          try { navigator.clipboard.writeText(d.code); } catch (e) {}
+          cp.textContent = _adminT('Copied', 'Copiado');
+          setTimeout(function () { cp.textContent = _adminT('Copy', 'Copiar'); }, 1600);
+        });
+      }
+    }, function () { card.style.display = 'none'; });
+  }
+
+  function renderAffAdmin() {
+    var card = document.getElementById('svc-aff-admin'); if (!card) return;
+    card.style.display = _isAdminUser() ? '' : 'none';
+    if (!_isAdminUser()) return;
+    var em = document.getElementById('aff-gen-email'), dy = document.getElementById('aff-gen-days');
+    if (em) em.placeholder = _adminT('Their email', 'Su correo');
+    if (dy) dy.placeholder = _adminT('Trial days', 'Días de prueba');
+    wireMemberLookup(em, 'aff-gen-who');
+    var btn = document.getElementById('aff-gen-btn');
+    if (btn && !btn._wired) {
+      btn._wired = true;
+      btn.addEventListener('click', function () {
+        var sb2 = _stSB(); if (!sb2) return;
+        var out = document.getElementById('aff-gen-out');
+        var n = parseInt((dy && dy.value) || '', 10);
+        btn.disabled = true;
+        if (out) out.textContent = _adminT('Creating…', 'Creando…');
+        sb2.rpc('st_admin_create_code', {
+          p_kind: 'affiliate',
+          p_label: String((em && em.value) || '').trim(),
+          p_days: (isFinite(n) && n > 0) ? n : 30,
+          p_max_uses: null,
+          p_owner_email: String((em && em.value) || '').trim()
+        }).then(function (r) {
+          btn.disabled = false;
+          if (r && r.error) {
+            // The database refuses an affiliate code with no owner, because a code its owner can
+            // never be shown is not worth minting.
+            var m = String((r.error && r.error.message) || '');
+            if (out) out.textContent = (m.indexOf('no account') >= 0)
+              ? _adminT('No account with that email yet - they must sign up first.', 'Aún no hay cuenta con ese correo: primero debe registrarse.')
+              : _adminT('Could not create the code.', 'No se pudo crear el código.');
+            return;
+          }
+          var row = r && r.data;
+          if (out) out.textContent = (row && row.code) ? row.code : '';
+          if (em) em.value = ''; if (dy) dy.value = '';
+          { var w = document.getElementById('aff-gen-who'); if (w) w.textContent = ''; }
+          vipList();
+        }, function () { btn.disabled = false; if (out) out.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
+      });
+    }
+  }
+
   function renderVipAdmin() {
     var card = document.getElementById('svc-vip-admin');
     if (!card) return;
@@ -56895,35 +57039,7 @@ try {
     var lbl = document.getElementById('vip-gen-label'), days = document.getElementById('vip-gen-days');
     if (lbl)  lbl.placeholder  = _adminT('Their email', 'Su correo');
     if (days) days.placeholder = _adminT('Days', 'Días');
-    /* Name-as-you-type. Debounced, and every reply carries the query it answered: typing an
-       address fires several lookups, they can land out of order, and a slow answer for an earlier
-       prefix would otherwise overwrite the right answer for the full address. */
-    if (lbl && !lbl._wired) {
-      lbl._wired = true;
-      var _whoT = null, _whoSeq = 0;
-      lbl.addEventListener('input', function () {
-        var who = document.getElementById('vip-gen-who'); if (!who) return;
-        var q = String(lbl.value || '').trim();
-        clearTimeout(_whoT);
-        if (q.indexOf('@') < 0) { who.textContent = ''; return; }
-        var mine = ++_whoSeq;
-        _whoT = setTimeout(function () {
-          var sb3 = _stSB(); if (!sb3) return;
-          sb3.rpc('st_admin_find_member', { p_email: q }).then(function (r) {
-            if (mine !== _whoSeq) return;                 // a newer keystroke has already answered
-            var d = r && r.data;
-            if (r && r.error) { who.textContent = ''; return; }
-            if (d && d.found) {
-              who.textContent = d.name || _adminT('(no name set)', '(sin nombre)');
-            } else {
-              // The common case, and it is not a failure: you usually hand a code to someone
-              // BEFORE they sign up.
-              who.textContent = _adminT('no account yet', 'aún sin cuenta');
-            }
-          }, function () { if (mine === _whoSeq) who.textContent = ''; });
-        }, 350);
-      });
-    }
+    wireMemberLookup(lbl, 'vip-gen-who');
     var gen = document.getElementById('vip-gen-btn');
     if (gen && !gen._wired) {
       gen._wired = true;
@@ -56977,7 +57093,8 @@ try {
         var life = c.grant_days ? (c.grant_days + _adminT(' days', ' días')) : _adminT('no expiry', 'sin caducidad');
         var txt = document.createElement('span');
         txt.style.cssText = 'flex:1 1 220px;color:var(--text-mid,#b9b7c0);' + (c.revoked ? 'text-decoration:line-through;opacity:.55;' : '');
-        txt.textContent = c.code + '  ·  ' + (c.label || '—') + '  ·  ' + life + '  ·  ' + who;
+        txt.textContent = c.code + '  ·  ' + (c.kind === 'affiliate' ? _adminT('affiliate', 'afiliado') : 'VIP')
+                        + '  ·  ' + (c.label || '—') + '  ·  ' + life + '  ·  ' + who;
         row.appendChild(txt);
         if (!c.revoked) {
           var rev = document.createElement('button');
@@ -57025,6 +57142,8 @@ try {
     try { renderAdminReload(); } catch (e) {}
     try { renderVipRedeem(); } catch (e) {}
     try { renderVipAdmin(); } catch (e) {}
+    try { renderAffAdmin(); } catch (e) {}
+    try { renderRefCard(); } catch (e) {}
     var badge = document.getElementById('svc-premium-badge');
     var cta = document.getElementById('svc-premium-cta');
     var mng = document.getElementById('svc-premium-manage');
