@@ -282,3 +282,24 @@ alter table public.st_code_redemptions enable row level security;
 --
 -- st_admin_relink_payments() repairs payments recorded before their customer was linked to a
 -- profile - see st_payments.sql.
+
+-- 2026-09-05, COMPLETENESS-CRITIC FIXES. The gap pass found what the eight dimensions had all
+-- taken on trust:
+--
+-- profiles.email WAS NEVER POPULATED. handle_new_user() inserted only (id), so 15 of 19 accounts
+-- had no email - and EVERY admin surface built today finds a member by that column. "Give user
+-- full access" would have answered "No account with that email yet" for most real members, and
+-- none of them could have been made an affiliate. The four that worked were the ones set by hand,
+-- which is exactly why it went unnoticed. Backfilled from auth.users, copied on signup, and kept
+-- in step by on_auth_user_email_changed when somebody changes their address.
+--
+-- st_expire_comps LEFT current_period_end SET, so an expired comp computed days_left = 0 instead
+-- of null: the row read "0 days left", as though about to lapse rather than already gone, and
+-- carried a Remove access button that could only ever answer 'not_comped'. It clears the date now,
+-- and old rows were repaired.
+--
+-- MONTH BOUNDARIES ARE UK WALL-CLOCK. The database is UTC and the month comes from a London
+-- browser, so a bare p_from::timestamptz meant 01:00 UK during BST - a renewal collected at 00:30
+-- on the 1st was reported in the previous month, in both directions. st_uk_midnight(date) resolves
+-- the bounds in Europe/London, and the month grouping in st_admin_takings does too. Verified:
+-- 2026-09-30 23:30Z now counts as October; January (GMT) is unchanged.
