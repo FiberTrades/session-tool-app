@@ -45,3 +45,12 @@ create index if not exists st_payouts_user_idx   on public.st_payouts (user_id);
 create index if not exists st_payouts_period_idx on public.st_payouts (period_month);
 alter table public.st_payouts enable row level security;
 revoke all on public.st_payouts from anon, authenticated;
+
+-- 2026-09-05, WIRED UP. Each affiliate record card carries Mark paid for the month shown. It writes
+-- the amount ON SCREEN, for the month on screen, and never recomputes at click time: paying against
+-- a figure you did not look at is how the wrong amount goes out, and recomputing between reading
+-- and pressing is precisely the window in which the two could differ.
+-- Undo is separate and confirmed. It moves no money, but it makes a paid month look unpaid, which
+-- is how somebody gets paid twice by hand later.
+-- The button only appears when something is owed; "Mark paid" against £0.00 could only ever create
+-- a misleading row.
