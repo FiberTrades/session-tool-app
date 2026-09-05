@@ -82,6 +82,16 @@ alter table public.st_code_redemptions enable row level security;
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
 
+-- 2026-09-05, st_my_code breakdown: counts split by tier, plus an ESTIMATE of the month's
+-- commission. Two things stop it overpaying. is_paid is read LIVE, so a referred member who
+-- cancels drops out the moment their subscription lapses - nothing is stored, so nothing can go
+-- stale. And a TWELVE MONTH WINDOW on redeemed_at, because commission runs 12 months per
+-- member; without it the totals would have grown forever and the first sign of trouble would
+-- have been paying somebody for a member they introduced two years ago.
+-- Prices and rates are copied from the pricing page: GBP 20 and GBP 35 at 30%, GBP 299 at 20%.
+-- The figure uses MONTHLY list prices, so an annual subscriber is worth less per month than it
+-- suggests, and refunds and tax are not modelled - the app calls it an estimate for that reason.
+
 -- 2026-09-05, affiliate ownership: st_codes.owner_user_id, plus a unique index allowing ONE
 -- live affiliate code per owner - two would split an affiliate's attribution and the first
 -- anyone would know is an argument over a short commission. st_admin_create_code refuses an
