@@ -180,3 +180,17 @@ alter table public.st_code_redemptions enable row level security;
 --          case when plan='comp' and current_period_end is not null and current_period_end < now()
 --               then 'WOULD LOSE ACCESS' else 'safe' end
 --     from public.profiles where plan = 'comp' order by email;
+
+-- 2026-09-05, ONE CARD. st_admin_access_list() returns everyone who has been given full access -
+-- name, email, what is left of it - together with their affiliate codes, who those brought in and
+-- what that is worth. Two panels reading two functions was the wrong shape: the affiliate IS the
+-- comped member, so splitting them meant holding one person in two places.
+-- st_admin_affiliate_summary and st_admin_list_codes are dropped, superseded by it.
+--
+-- The list includes anyone comped OR holding an affiliate code. The second half matters on the day
+-- it is least convenient: if somebody's access lapses while members they introduced are still
+-- paying, they must not disappear from the list you settle up from.
+--
+-- Revoking an affiliate code from a record card passes kill_access FALSE. Revoking a referral code
+-- stops it being used and must not touch anybody's plan - the people it already brought in are
+-- paying customers, and taking their access away would be a billing incident, not a tidy-up.

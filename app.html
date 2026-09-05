@@ -6273,28 +6273,13 @@ try {
           <span id="vip-gen-who" class="settings-hint" style="align-self:center;"></span>
           <input id="vip-gen-days" class="settings-input settings-input-compact" type="number" min="1" style="max-width:110px;">
           <button type="button" id="vip-gen-btn" class="settings-btn" data-i18n="vip.admin_generate">Give access</button>
-          <button type="button" id="vip-off-btn" class="settings-btn" data-i18n="vip.admin_remove">Remove access</button>
         </div>
         <p class="settings-hint" data-i18n="vip.admin_hint">They need an account first. Leave the days blank for access that never expires.</p>
         <p class="settings-hint" id="vip-gen-out" style="margin-top:8px;"></p>
-      </div>
-
-      <!-- Admin only. Every code in the app is an affiliate code now, so the list lives here. -->
-      <div class="svc-card" id="svc-aff-admin" style="display:none;">
-        <div class="svc-card-head">
-          <span class="svc-card-title" data-i18n="aff.title">Affiliate codes</span>
-        </div>
-        <div class="settings-data-actions" style="margin-top:10px;flex-wrap:wrap;">
-          <input id="aff-gen-email" class="settings-input settings-input-compact" type="email"
-                 autocomplete="off" spellcheck="false" style="max-width:210px;">
-          <span id="aff-gen-who" class="settings-hint" style="align-self:center;"></span>
-          <input id="aff-gen-days" class="settings-input settings-input-compact" type="number" min="1" style="max-width:130px;">
-          <button type="button" id="aff-gen-btn" class="settings-btn" data-i18n="aff.generate">Create code</button>
-        </div>
-        <p class="settings-hint" data-i18n="aff.hint">They need an account first. The days are the free trial their code gives to new members.</p>
-        <p class="settings-hint" id="aff-gen-out" style="margin-top:8px;"></p>
-        <div id="vip-admin-list" style="margin-top:14px;"></div>
-        <div id="aff-summary" style="margin-top:16px;"></div>
+        <!-- Everyone granted access, newest grant added rather than replacing the last. Click a
+             name to open their record: what is left of their access, their affiliate codes, and
+             what those have earned. -->
+        <div id="access-list" style="margin-top:14px;"></div>
       </div>
 
       <!-- 3. Discord community -->
@@ -7027,15 +7012,11 @@ try {
       'mentor.msg_waiting': 'You have a message from your mentor in your Calendar Log.',
       'ref.title': 'Your referral code',
       'ref.copy': 'Copy',
-      'aff.title': 'Affiliate codes',
-      'aff.generate': 'Create code',
-      'aff.hint': 'They need an account first. The days are the free trial their code gives to new members.',
       'vip.title': 'Have a code?',
       'vip.hint': 'Enter it below to claim the free trial it gives you.',
       'vip.redeem': 'Redeem',
       'vip.admin_title': 'Give someone full access',
       'vip.admin_generate': 'Give access',
-      'vip.admin_remove': 'Remove access',
       'vip.admin_hint': 'They need an account first. Leave the days blank for access that never expires.',
       'services.premium_title': 'Your subscription',
       'services.premium_desc': 'Your free trial — the full journal, stats, calendar, cloud sync and four community channels.',
@@ -8563,15 +8544,11 @@ try {
       'mentor.msg_waiting': 'Tienes un mensaje de tu mentor en tu Calendario.',
       'ref.title': 'Tu código de recomendación',
       'ref.copy': 'Copiar',
-      'aff.title': 'Códigos de afiliado',
-      'aff.generate': 'Crear código',
-      'aff.hint': 'Primero necesitan una cuenta. Los días son la prueba gratuita que su código da a los nuevos miembros.',
       'vip.title': '¿Tienes un código?',
       'vip.hint': 'Introdúcelo aquí para reclamar la prueba gratuita que te da.',
       'vip.redeem': 'Canjear',
       'vip.admin_title': 'Dar acceso completo a alguien',
       'vip.admin_generate': 'Dar acceso',
-      'vip.admin_remove': 'Quitar acceso',
       'vip.admin_hint': 'Primero necesitan una cuenta. Deja los días en blanco para un acceso que no caduca.',
       'services.premium_title': 'Tu suscripción',
       'services.premium_desc': 'Tu prueba gratuita — el diario completo, estadísticas, calendario, sincronización en la nube y cuatro canales de la comunidad.',
@@ -57034,142 +57011,6 @@ try {
     }, function () { card.style.display = 'none'; });
   }
 
-  function renderAffAdmin() {
-    var card = document.getElementById('svc-aff-admin'); if (!card) return;
-    card.style.display = _isAdminUser() ? '' : 'none';
-    if (!_isAdminUser()) return;
-    var em = document.getElementById('aff-gen-email'), dy = document.getElementById('aff-gen-days');
-    if (em) em.placeholder = _adminT('Their email', 'Su correo');
-    if (dy) dy.placeholder = _adminT('Trial days', 'Días de prueba');
-    wireMemberLookup(em, 'aff-gen-who');
-    var btn = document.getElementById('aff-gen-btn');
-    if (btn && !btn._wired) {
-      btn._wired = true;
-      btn.addEventListener('click', function () {
-        var sb2 = _stSB(); if (!sb2) return;
-        var out = document.getElementById('aff-gen-out');
-        var n = parseInt((dy && dy.value) || '', 10);
-        btn.disabled = true;
-        if (out) out.textContent = _adminT('Creating…', 'Creando…');
-        sb2.rpc('st_admin_create_code', {
-          p_kind: 'affiliate',
-          p_label: String((em && em.value) || '').trim(),
-          p_days: (isFinite(n) && n > 0) ? n : 30,
-          p_max_uses: null,
-          p_owner_email: String((em && em.value) || '').trim()
-        }).then(function (r) {
-          btn.disabled = false;
-          if (r && r.error) {
-            // The database refuses an affiliate code with no owner, because a code its owner can
-            // never be shown is not worth minting.
-            var m = String((r.error && r.error.message) || '');
-            if (out) out.textContent = (m.indexOf('no account') >= 0)
-              ? _adminT('No account with that email yet - they must sign up first.', 'Aún no hay cuenta con ese correo: primero debe registrarse.')
-              : _adminT('Could not create the code.', 'No se pudo crear el código.');
-            return;
-          }
-          var row = r && r.data;
-          if (out) out.textContent = (row && row.code) ? row.code : '';
-          if (em) em.value = ''; if (dy) dy.value = '';
-          { var w = document.getElementById('aff-gen-who'); if (w) w.textContent = ''; }
-          vipList();
-          affSummary();   // a new code means a new row, or a new code count on an existing one
-        }, function () { btn.disabled = false; if (out) out.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
-      });
-    }
-    vipList();      // the code list lives in this card now
-    affSummary();
-  }
-
-  /* What you owe each affiliate this month, one row each.
-     The money comes from st_commission_estimate in the database - the SAME function behind the
-     figure on the affiliate's own Settings card - so the two can never disagree. Do not reimplement
-     the percentages here. */
-  function affSummary() {
-    var host = document.getElementById('aff-summary'); if (!host) return;
-    var sb2 = _stSB(); if (!sb2) return;
-    sb2.rpc('st_admin_affiliate_summary').then(function (r) {
-      host.innerHTML = '';
-      if (!r || r.error || !r.data || !r.data.length) return;
-
-      var head = document.createElement('div');
-      head.className = 'settings-hint';
-      head.style.cssText = 'margin-bottom:8px;font-weight:600;color:var(--text);';
-      head.textContent = _adminT('This month', 'Este mes');
-      host.appendChild(head);
-
-      var total = 0;
-      r.data.forEach(function (a) {
-        total += Number(a.estimate || 0);
-
-        var row = document.createElement('div');
-        row.style.cssText = 'padding:8px 0;border-top:1px solid var(--line);';
-
-        /* Name and email together. The name is what you call them; the email is what identifies
-           them, and the two have to be side by side because a name is not unique. */
-        var who = document.createElement('div');
-        who.style.cssText = 'display:flex;gap:8px;align-items:baseline;flex-wrap:wrap;';
-        var nm = document.createElement('span');
-        nm.style.cssText = 'color:var(--text);font-weight:600;';
-        nm.textContent = a.owner_name || '?';
-        var em2 = document.createElement('span');
-        em2.className = 'settings-hint';
-        em2.textContent = a.owner_email || '';
-        who.appendChild(nm); who.appendChild(em2);
-        /* All their codes are revoked: they can recruit nobody new, but the people they already
-           brought are still paying, so this is a bill to settle rather than a row to ignore. */
-        if (a.ended) {
-          var dead = document.createElement('span');
-          dead.className = 'settings-hint';
-          dead.style.color = 'var(--bad,#E56767)';
-          dead.textContent = _adminT('ended — final payment due', 'finalizado — pago final pendiente');
-          who.appendChild(dead);
-        }
-
-        /* Tiers with nobody in them are absent rather than printed as "0 Bundle Pro" - the same
-           rule the affiliate's own card follows, so both sides read alike. */
-        var parts = [];
-        if (a.journal)    parts.push(a.journal    + ' ST Journal');
-        if (a.bundle)     parts.push(a.bundle     + ' Bundle Pro');
-        if (a.mentorship) parts.push(a.mentorship + ' ' + _adminT('Mentorship', 'Mentoría'));
-        var breakdown = parts.length ? (' — ' + parts.join(', ')) : '';
-
-        /* Count live and revoked codes separately. "1 code" beside an ended affiliate would
-           contradict the marker right above it. */
-        var nLive = a.codes || 0, nDead = a.dead_codes || 0;
-        var codeTxtEn = nLive + ' code' + ((nLive === 1) ? '' : 's')
-                      + (nDead ? (' (' + nDead + ' revoked)') : '');
-        var codeTxtEs = nLive + ' código' + ((nLive === 1) ? '' : 's')
-                      + (nDead ? (' (' + nDead + ' revocado' + ((nDead === 1) ? '' : 's') + ')') : '');
-        var line = document.createElement('div');
-        line.className = 'settings-hint';
-        line.textContent = _adminT(
-          codeTxtEn + ', ' + (a.signups || 0) + ' signed up, ' + (a.paying || 0) + ' paying' + breakdown,
-          codeTxtEs + ', ' + (a.signups || 0) + ' registrados, ' + (a.paying || 0) + ' de pago' + breakdown);
-
-        var amt = document.createElement('div');
-        amt.style.cssText = "font-family:'AppNum','DM Mono',monospace;color:var(--text);margin-top:2px;";
-        var v = Number(a.estimate || 0).toFixed(2);
-        amt.textContent = _adminT('£' + v + ' estimated', '£' + v.replace('.', ',') + ' estimado');
-
-        row.appendChild(who); row.appendChild(line); row.appendChild(amt);
-        host.appendChild(row);
-      });
-
-      /* The figure you are actually budgeting for. Called an estimate for the same reason it is on
-         the affiliate's card: monthly list prices, so an annual subscriber is worth less per month
-         than this suggests, and refunds and tax are not modelled. */
-      var foot = document.createElement('div');
-      foot.className = 'settings-hint';
-      foot.style.cssText = 'margin-top:10px;padding-top:8px;border-top:1px solid var(--line);color:var(--text);';
-      var t = total.toFixed(2);
-      foot.textContent = _adminT(
-        '£' + t + ' estimated across ' + r.data.length + ' affiliate' + ((r.data.length === 1) ? '' : 's') + '.',
-        '£' + t.replace('.', ',') + ' estimado entre ' + r.data.length + ' afiliado' + ((r.data.length === 1) ? '' : 's') + '.');
-      host.appendChild(foot);
-    }, function () { host.innerHTML = ''; });
-  }
-
   function renderVipAdmin() {
     var card = document.getElementById('svc-vip-admin');
     if (!card) return;
@@ -57179,200 +57020,225 @@ try {
     if (lbl)  lbl.placeholder  = _adminT('Their email', 'Su correo');
     if (days) days.placeholder = _adminT('Days', 'Días');
     wireMemberLookup(lbl, 'vip-gen-who');
+
     var gen = document.getElementById('vip-gen-btn');
-    var off = document.getElementById('vip-off-btn');
-
-    /* Both buttons, one path: same email, same reply shape, opposite direction. */
-    function _setAccess(on, btn) {
-      var sb2 = _stSB(); if (!sb2) return;
-      var out = document.getElementById('vip-gen-out');
-      var em = String((lbl && lbl.value) || '').trim();
-      if (!em) { if (out) out.textContent = _adminT('Enter their email first.', 'Introduce su correo primero.'); return; }
-      var d = parseInt((days && days.value) || '', 10);
-      btn.disabled = true;
-      if (out) out.textContent = _adminT('Working…', 'Trabajando…');
-      sb2.rpc('st_admin_set_access', {
-        p_email: em,
-        p_days: (on && isFinite(d) && d > 0) ? d : null,
-        p_on: on
-      }).then(function (r) {
-        btn.disabled = false;
-        if (r && r.error) {
-          // Admin-only panel, so show the real message rather than a shrug.
-          if (out) out.textContent = _adminT('Failed. ', 'Falló. ') + String((r.error && r.error.message) || '');
-          return;
-        }
-        var res = r && r.data;
-        if (!res || !res.ok) {
-          var e = res && res.error;
-          if (out) out.textContent =
-              (e === 'no_account')
-                ? _adminT('No account with that email yet — they must sign up first.',
-                          'Aún no hay cuenta con ese correo — primero debe registrarse.')
-            : (e === 'not_comped')
-                ? _adminT('That account is not on granted access, so there is nothing to remove.',
-                          'Esa cuenta no tiene acceso concedido, así que no hay nada que quitar.')
-            : _adminT('Failed.', 'Falló.');
-          return;
-        }
-        /* Name the person back. A confident "done" against a mistyped address is the exact
-           failure an email field invites, and only naming who it hit can catch it. */
-        var nm = res.name || res.email || em;
-        if (out) out.textContent = on
-          ? _adminT(nm + ' now has full access' + (res.days ? (' for ' + res.days + ' days.') : ', with no expiry.'),
-                    nm + ' ya tiene acceso completo' + (res.days ? (' durante ' + res.days + ' días.') : ', sin caducidad.'))
-          : _adminT(nm + ' is back to a normal account.', nm + ' vuelve a una cuenta normal.');
-        if (lbl) lbl.value = ''; if (days) days.value = '';
-        { var _w = document.getElementById('vip-gen-who'); if (_w) _w.textContent = ''; }
-      }, function () { btn.disabled = false; if (out) out.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
-    }
-
     if (gen && !gen._wired) {
       gen._wired = true;
-      gen.addEventListener('click', function () { _setAccess(true, gen); });
-    }
-    if (off && !off._wired) {
-      off._wired = true;
-      off.addEventListener('click', async function () {
+      gen.addEventListener('click', function () {
+        var sb2 = _stSB(); if (!sb2) return;
         var out = document.getElementById('vip-gen-out');
         var em = String((lbl && lbl.value) || '').trim();
         if (!em) { if (out) out.textContent = _adminT('Enter their email first.', 'Introduce su correo primero.'); return; }
-        /* Granting is easily undone; removing lands on somebody mid-session, so it asks. The
-           database refuses to strip anyone who is not on granted access, so a mistyped address
-           cannot catch a paying subscriber. */
-        if (!await window.appConfirm({
-              title: _adminT('Remove access?', '¿Quitar acceso?'),
-              body: _adminT('This puts ' + em + ' back to a normal account. Their data is untouched.',
-                            'Esto devuelve a ' + em + ' a una cuenta normal. Sus datos no se tocan.') })) return;
-        _setAccess(false, off);
+        var d = parseInt((days && days.value) || '', 10);
+        gen.disabled = true;
+        if (out) out.textContent = _adminT('Working…', 'Trabajando…');
+        sb2.rpc('st_admin_set_access', {
+          p_email: em, p_days: (isFinite(d) && d > 0) ? d : null, p_on: true
+        }).then(function (r) {
+          gen.disabled = false;
+          if (r && r.error) {
+            // Admin-only panel, so show the real message rather than a shrug.
+            if (out) out.textContent = _adminT('Failed. ', 'Falló. ') + String((r.error && r.error.message) || '');
+            return;
+          }
+          var res = r && r.data;
+          if (!res || !res.ok) {
+            if (out) out.textContent = (res && res.error === 'no_account')
+              ? _adminT('No account with that email yet — they must sign up first.',
+                        'Aún no hay cuenta con ese correo — primero debe registrarse.')
+              : _adminT('Failed.', 'Falló.');
+            return;
+          }
+          /* No success message: they appear by name in the list below, which says the same thing
+             and keeps saying it. */
+          if (out) out.textContent = '';
+          if (lbl) lbl.value = ''; if (days) days.value = '';
+          { var w = document.getElementById('vip-gen-who'); if (w) w.textContent = ''; }
+          accessList();
+        }, function () { gen.disabled = false; if (out) out.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
       });
     }
+    accessList();
   }
-  function vipList() {
-    var host = document.getElementById('vip-admin-list'); if (!host) return;
+
+  /* Everyone who has full access, one clickable name each. The list accumulates - granting access
+     to somebody new adds a row and never replaces the one before it. */
+  function accessList() {
+    var host = document.getElementById('access-list'); if (!host) return;
     var sb2 = _stSB(); if (!sb2) return;
-    sb2.rpc('st_admin_list_codes').then(function (r) {
+    sb2.rpc('st_admin_access_list').then(function (r) {
       if (!r || r.error || !r.data) { host.textContent = ''; return; }
-      /* The just-generated code is echoed above this list. Once it has been revoked or deleted,
-         leaving it sitting there reads as "still valid, here it is" - which is exactly the wrong
-         thing to have on screen next to a struck-through row. Guarded on the ST- prefix so it
-         never wipes a status message like "Generating…" or an error. */
-      try {
-        var _out = document.getElementById('aff-gen-out');
-        var _shown = _out ? String(_out.textContent || '').trim() : '';
-        if (_shown && _shown.indexOf('ST-') === 0) {
-          var _live = r.data.some(function (x) { return x.code === _shown && !x.revoked; });
-          if (!_live) _out.textContent = '';
-        }
-      } catch (e) {}
-      if (!r.data.length) { host.textContent = _adminT('No codes yet.', 'Aún no hay códigos.'); return; }
+      if (!r.data.length) { host.textContent = _adminT('Nobody yet.', 'Nadie todavía.'); return; }
       host.innerHTML = '';
-      r.data.forEach(function (c) {
-        var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:7px 0;border-top:1px solid var(--border-2,#332F3C);font-size:12px;';
-        var who = c.redeemed_by || _adminT('not used yet', 'sin usar');
-        var life = c.grant_days ? (c.grant_days + _adminT(' days', ' días')) : _adminT('no expiry', 'sin caducidad');
-        var txt = document.createElement('span');
-        txt.style.cssText = 'flex:1 1 220px;color:var(--text-mid,#b9b7c0);' + (c.revoked ? 'text-decoration:line-through;opacity:.55;' : '');
-        // Every code is an affiliate code now, so saying so on each row is noise.
-        txt.textContent = c.code + (c.owner ? ('  ·  ' + c.owner) : '')
-                        + '  ·  ' + life + '  ·  ' + who;
-        /* An affiliate code whose owner was deleted is DEAD - st_redeem_code refuses it - but it is
-           not revoked, so without colouring it here the row would read as perfectly healthy while
-           silently turning away everybody who tried it. */
-        if (c.owner === '(owner removed)') txt.style.color = 'var(--bad,#E56767)';
-        row.appendChild(txt);
-        if (!c.revoked) {
-          var rev = document.createElement('button');
-          rev.type = 'button'; rev.className = 'settings-btn';
-          rev.textContent = _adminT('Revoke', 'Revocar');
-          rev.addEventListener('click', function () {
-            rev.disabled = true;
-            // kill_access true: revoking after redemption has to take the access back, or it
-            // does nothing at all. The database only strips accounts whose plan is 'comp', so a
-            // real paying customer holding a code cannot be caught by it.
-            sb2.rpc('st_admin_revoke_code', { p_code: c.code, p_kill_access: true })
-               .then(vipList, function () { rev.disabled = false; });
-          });
-          row.appendChild(rev);
-          /* Make an affiliate code for the SAME person, without retyping the address. Retyping is
-             how the two records end up disagreeing: one typo and the affiliate code belongs to
-             nobody, or to somebody else. Only offered on a VIP row whose label is an email,
-             because that is the only case where the owner is actually known. */
-          if (c.kind === 'vip' && c.label && c.label.indexOf('@') > 0) {
-            var mk = document.createElement('button');
-            mk.type = 'button'; mk.className = 'settings-btn';
-            mk.textContent = _adminT('Affiliate code', 'Código de afiliado');
-            var box = document.createElement('span');
-            box.style.cssText = 'display:none;align-items:center;gap:8px;';
-            var dIn = document.createElement('input');
-            dIn.type = 'number'; dIn.min = '1'; dIn.className = 'settings-input settings-input-compact';
-            dIn.style.maxWidth = '130px';   // 110 clipped the "days" of the placeholder; matches the card below
-            dIn.placeholder = _adminT('Trial days', 'Días de prueba');
-            var go = document.createElement('button');
-            go.type = 'button'; go.className = 'settings-btn';
-            go.textContent = _adminT('Create', 'Crear');
-            box.appendChild(dIn); box.appendChild(go);
-            mk.addEventListener('click', function () {
-              // The number box only appears once asked for; every row carrying one permanently
-              // would clutter a list whose usual job is just to be read.
-              box.style.display = (box.style.display === 'none') ? 'inline-flex' : 'none';
-              if (box.style.display !== 'none') dIn.focus();
-            });
-            go.addEventListener('click', function () {
-              var n = parseInt(dIn.value || '', 10);
-              go.disabled = true;
-              sb2.rpc('st_admin_create_code', {
-                p_kind: 'affiliate', p_label: c.label,
-                p_days: (isFinite(n) && n > 0) ? n : 30,
-                p_max_uses: null, p_owner_email: c.label
-              }).then(function (rr) {
-                go.disabled = false;
-                if (rr && rr.error) {
-                  var m = String((rr.error && rr.error.message) || '');
-                  dIn.placeholder = (m.indexOf('no account') >= 0)
-                    ? _adminT('no account yet', 'aún sin cuenta') : _adminT('failed', 'falló');
-                  return;
-                }
-                vipList();
-              }, function () { go.disabled = false; });
-            });
-            row.appendChild(mk); row.appendChild(box);
-          }
+      r.data.forEach(function (m) {
+        var wrap = document.createElement('div');
+        wrap.style.cssText = 'border-top:1px solid var(--border-2,#332F3C);';
+
+        var nameBtn = document.createElement('button');
+        nameBtn.type = 'button';
+        nameBtn.style.cssText = 'display:flex;width:100%;gap:10px;align-items:baseline;flex-wrap:wrap;' +
+          'background:none;border:none;padding:9px 0;font:inherit;font-size:13px;' +
+          'color:var(--text);cursor:pointer;text-align:left;';
+        var nm = document.createElement('span');
+        nm.style.cssText = 'font-weight:600;';
+        nm.textContent = m.name || '?';
+        var em2 = document.createElement('span');
+        em2.className = 'settings-hint';
+        em2.textContent = m.email || '';
+        var life = document.createElement('span');
+        life.className = 'settings-hint';
+        life.style.marginLeft = 'auto';
+        if (m.forever) {
+          life.textContent = _adminT('no expiry', 'sin caducidad');
+        } else if (m.days_left != null) {
+          life.textContent = m.days_left + _adminT(' days left', ' días restantes');
         } else {
-          /* Revoked codes get an X that removes them for good, so the list stays readable. The
-             DATABASE refuses to delete anything not already revoked, so the two-step cannot be
-             skipped by anyone poking at the page - and deleting never touches a plan, because
-             revoking already settled the access. */
-          var del = document.createElement('button');
-          /* .modal-close, not .settings-btn: this is the small square X the Settings modal uses in
-             its own corner, and a full-width action button is far too much furniture for "remove
-             this dead row". The rule that absolutely positions .modal-close is scoped to .mdl-new
-             containers; the settings modal is a plain .modal-bg, so it stays in the row. */
-          del.type = 'button'; del.className = 'modal-close';
-          /* U+00D7, the same character the Settings close uses - NOT U+2715, which is a much
-             heavier glyph and read as a bigger button even at identical padding. No padding
-             override either, so the two are literally the same style. */
-          del.textContent = '×';
-          del.title = _adminT('Delete permanently', 'Eliminar definitivamente');
-          del.setAttribute('aria-label', del.title);
-          del.addEventListener('click', function () {
-            del.disabled = true;
-            sb2.rpc('st_admin_delete_code', { p_code: c.code })
-               .then(vipList, function () { del.disabled = false; });
-          });
-          row.appendChild(del);
+          /* An affiliate whose access has lapsed. They stay listed because members they introduced
+             may still be paying, so there may still be a final payment to settle. */
+          life.textContent = _adminT('access ended', 'acceso finalizado');
+          life.style.color = 'var(--bad,#E56767)';
         }
-        host.appendChild(row);
+        nameBtn.appendChild(nm); nameBtn.appendChild(em2); nameBtn.appendChild(life);
+        wrap.appendChild(nameBtn);
+
+        var rec = document.createElement('div');
+        rec.style.cssText = 'padding:2px 0 14px;display:' + ((host._open === m.email) ? 'block' : 'none') + ';';
+        nameBtn.addEventListener('click', function () {
+          var open = rec.style.display !== 'none';
+          rec.style.display = open ? 'none' : 'block';
+          // Remembered so that acting inside the card does not close it on the reload that follows.
+          host._open = open ? null : m.email;
+        });
+        _accessCard(rec, m, sb2);
+        wrap.appendChild(rec);
+        host.appendChild(wrap);
       });
     }, function () {});
+  }
+
+  /* One member's record card. */
+  function _accessCard(el, m, sb2) {
+    el.innerHTML = '';
+
+    /* Tiers with nobody in them are absent rather than printed as "0 Bundle Pro" - the same rule
+       the member's own card follows, so both sides read alike. */
+    var parts = [];
+    if (m.journal)    parts.push(m.journal    + ' ST Journal');
+    if (m.bundle)     parts.push(m.bundle     + ' Bundle Pro');
+    if (m.mentorship) parts.push(m.mentorship + ' ' + _adminT('Mentorship', 'Mentoría'));
+    var breakdown = parts.length ? (' — ' + parts.join(', ')) : '';
+
+    var stat = document.createElement('div');
+    stat.className = 'settings-hint';
+    stat.textContent = _adminT(
+      (m.signups || 0) + ' invited, ' + (m.paying || 0) + ' paying' + breakdown,
+      (m.signups || 0) + ' invitados, ' + (m.paying || 0) + ' de pago' + breakdown);
+    el.appendChild(stat);
+
+    /* Called an estimate because it is one: monthly list prices, so an annual subscriber is worth
+       less per month than this suggests, and refunds and tax are not modelled. */
+    var amt = document.createElement('div');
+    amt.style.cssText = "font-family:'AppNum','DM Mono',monospace;color:var(--text);margin:4px 0 10px;";
+    var v = Number(m.estimate || 0).toFixed(2);
+    amt.textContent = _adminT('£' + v + ' this month, estimated.',
+                              '£' + v.replace('.', ',') + ' este mes, estimado.');
+    el.appendChild(amt);
+
+    (m.codes || []).forEach(function (c) {
+      var row = document.createElement('div');
+      row.style.cssText = 'display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:5px 0;font-size:12px;';
+      var t = document.createElement('span');
+      t.style.cssText = "flex:1 1 200px;font-family:'AppNum','DM Mono',monospace;color:var(--text-mid,#b9b7c0);" +
+                        (c.revoked ? 'text-decoration:line-through;opacity:.55;' : '');
+      t.textContent = c.code + '  ·  ' + (c.days || 30) + _adminT(' days free', ' días gratis')
+                    + '  ·  ' + (c.uses || 0) + _adminT(' used', ' usos');
+      row.appendChild(t);
+
+      if (!c.revoked) {
+        var rev = document.createElement('button');
+        rev.type = 'button'; rev.className = 'settings-btn';
+        rev.textContent = _adminT('Revoke', 'Revocar');
+        rev.addEventListener('click', function () {
+          rev.disabled = true;
+          /* kill_access false: revoking a referral code stops it being used, and must not touch
+             anybody's plan. The people it already brought in are paying customers. */
+          sb2.rpc('st_admin_revoke_code', { p_code: c.code, p_kill_access: false })
+             .then(accessList, function () { rev.disabled = false; });
+        });
+        row.appendChild(rev);
+      } else {
+        /* Revoked codes get the small square X that removes them for good, so the record stays
+           readable. The DATABASE refuses to delete anything not already revoked, so the two-step
+           cannot be skipped by anyone poking at the page. */
+        var del = document.createElement('button');
+        del.type = 'button'; del.className = 'modal-close';
+        del.textContent = '×';
+        del.title = _adminT('Delete permanently', 'Eliminar definitivamente');
+        del.setAttribute('aria-label', del.title);
+        del.addEventListener('click', function () {
+          del.disabled = true;
+          sb2.rpc('st_admin_delete_code', { p_code: c.code })
+             .then(accessList, function () { del.disabled = false; });
+        });
+        row.appendChild(del);
+      }
+      el.appendChild(row);
+    });
+
+    /* Make them an affiliate code. The owner is this record, so the email is never retyped -
+       retyping is how a code ends up belonging to nobody, or to somebody else. */
+    var mk = document.createElement('button');
+    mk.type = 'button'; mk.className = 'settings-btn';
+    mk.style.marginTop = '8px';
+    mk.textContent = _adminT('Create affiliate code', 'Crear código de afiliado');
+    var box = document.createElement('span');
+    box.style.cssText = 'display:none;align-items:center;gap:8px;margin-top:8px;';
+    var dIn = document.createElement('input');
+    dIn.type = 'number'; dIn.min = '1';
+    dIn.className = 'settings-input settings-input-compact';
+    dIn.style.maxWidth = '130px';
+    dIn.placeholder = _adminT('Trial days', 'Días de prueba');
+    var go = document.createElement('button');
+    go.type = 'button'; go.className = 'settings-btn';
+    go.textContent = _adminT('Create', 'Crear');
+    var msg = document.createElement('div');
+    msg.className = 'settings-hint';
+    msg.style.marginTop = '6px';
+    box.appendChild(dIn); box.appendChild(go);
+
+    mk.addEventListener('click', function () {
+      // The number box appears only once asked for; a permanent one on every record would clutter
+      // a card whose usual job is just to be read.
+      box.style.display = (box.style.display === 'none') ? 'inline-flex' : 'none';
+      if (box.style.display !== 'none') dIn.focus();
+    });
+    go.addEventListener('click', function () {
+      var n = parseInt(dIn.value || '', 10);
+      go.disabled = true;
+      msg.textContent = _adminT('Creating…', 'Creando…');
+      sb2.rpc('st_admin_create_code', {
+        p_kind: 'affiliate', p_label: m.email,
+        p_days: (isFinite(n) && n > 0) ? n : 30,
+        p_max_uses: null, p_owner_email: m.email
+      }).then(function (rr) {
+        go.disabled = false;
+        if (rr && rr.error) {
+          msg.textContent = _adminT('Failed. ', 'Falló. ') + String((rr.error && rr.error.message) || '');
+          return;
+        }
+        msg.textContent = '';
+        dIn.value = '';
+        // The new code appears in the list above, inside this same record, which stays open.
+        accessList();
+      }, function () { go.disabled = false; msg.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
+    });
+    el.appendChild(mk); el.appendChild(box); el.appendChild(msg);
   }
 
   function renderServices() {
     try { renderAdminReload(); } catch (e) {}
     try { renderVipRedeem(); } catch (e) {}
     try { renderVipAdmin(); } catch (e) {}
-    try { renderAffAdmin(); } catch (e) {}
     try { renderRefCard(); } catch (e) {}
     var badge = document.getElementById('svc-premium-badge');
     var cta = document.getElementById('svc-premium-cta');
