@@ -194,3 +194,9 @@ alter table public.st_code_redemptions enable row level security;
 -- Revoking an affiliate code from a record card passes kill_access FALSE. Revoking a referral code
 -- stops it being used and must not touch anybody's plan - the people it already brought in are
 -- paying customers, and taking their access away would be a billing incident, not a tidy-up.
+
+-- 2026-09-05, st_admin_access_list excludes admins via st_admin_ids(). The admin does not belong
+-- in a list of people the admin has given access to, and seeing yourself there invites the one
+-- action that would lock you out of the panel you are looking at. Excluded through st_admin_ids()
+-- rather than a second copy of the email literal: two places already decide who is an admin, and
+-- a third would be the one that eventually disagrees.

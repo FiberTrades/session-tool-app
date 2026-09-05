@@ -57074,10 +57074,16 @@ try {
         var wrap = document.createElement('div');
         wrap.style.cssText = 'border-top:1px solid var(--border-2,#332F3C);';
 
+        /* A div, not a button: Remove access is a button and one cannot be nested inside
+           another. Nested, the browser reparents the markup and the click targets stop being
+           where they appear to be. */
+        var head = document.createElement('div');
+        head.style.cssText = 'display:flex;width:100%;gap:10px;align-items:baseline;flex-wrap:wrap;padding:9px 0;';
+
         var nameBtn = document.createElement('button');
         nameBtn.type = 'button';
-        nameBtn.style.cssText = 'display:flex;width:100%;gap:10px;align-items:baseline;flex-wrap:wrap;' +
-          'background:none;border:none;padding:9px 0;font:inherit;font-size:13px;' +
+        nameBtn.style.cssText = 'display:flex;flex:1 1 auto;gap:10px;align-items:baseline;flex-wrap:wrap;' +
+          'background:none;border:none;padding:0;font:inherit;font-size:13px;' +
           'color:var(--text);cursor:pointer;text-align:left;';
         var nm = document.createElement('span');
         nm.style.cssText = 'font-weight:600;';
@@ -57085,9 +57091,31 @@ try {
         var em2 = document.createElement('span');
         em2.className = 'settings-hint';
         em2.textContent = m.email || '';
+        nameBtn.appendChild(nm); nameBtn.appendChild(em2);
+        head.appendChild(nameBtn);
+
+        /* Only offered to somebody who actually has access. On a lapsed affiliate it would do
+           nothing, and a button that does nothing reads as a broken one. */
+        if (m.forever || m.days_left != null) {
+          var rmv = document.createElement('button');
+          rmv.type = 'button'; rmv.className = 'settings-btn';
+          rmv.textContent = _adminT('Remove access', 'Quitar acceso');
+          rmv.addEventListener('click', async function () {
+            /* Names the person in the question. This button sits in a list of similar rows, which
+               is exactly where an off-by-one click happens. */
+            if (!await window.appConfirm({
+                  title: _adminT('Remove access?', '¿Quitar acceso?'),
+                  body: _adminT('This puts ' + (m.name || m.email) + ' back to a normal account. Their data is untouched.',
+                                'Esto devuelve a ' + (m.name || m.email) + ' a una cuenta normal. Sus datos no se tocan.') })) return;
+            rmv.disabled = true;
+            sb2.rpc('st_admin_set_access', { p_email: m.email, p_days: null, p_on: false })
+               .then(accessList, function () { rmv.disabled = false; });
+          });
+          head.appendChild(rmv);
+        }
+
         var life = document.createElement('span');
         life.className = 'settings-hint';
-        life.style.marginLeft = 'auto';
         if (m.forever) {
           life.textContent = _adminT('no expiry', 'sin caducidad');
         } else if (m.days_left != null) {
@@ -57098,8 +57126,8 @@ try {
           life.textContent = _adminT('access ended', 'acceso finalizado');
           life.style.color = 'var(--bad,#E56767)';
         }
-        nameBtn.appendChild(nm); nameBtn.appendChild(em2); nameBtn.appendChild(life);
-        wrap.appendChild(nameBtn);
+        head.appendChild(life);
+        wrap.appendChild(head);
 
         var rec = document.createElement('div');
         rec.style.cssText = 'padding:2px 0 14px;display:' + ((host._open === m.email) ? 'block' : 'none') + ';';
