@@ -79,6 +79,12 @@ alter table public.st_code_redemptions enable row level security;
 -- takes no card, so a free signup costs an affiliate nothing to manufacture - with a 30-day
 -- clawback window for refunds.
 
+-- 2026-09-05, st_admin_list_codes: the list shows the redeemer by NAME as well as email. The
+-- display name is not in profiles - it lives in journals.data->>'userName' - and it is read at
+-- QUERY time rather than copied into st_code_redemptions, so it follows a rename instead of
+-- freezing the name as it was on the day the code was used. Reads as "Nestor - be.o2@hotmail.com",
+-- which also makes a mismatch against your own label visible at a glance.
+
 -- Dry run. Never add an expiry job without checking who it would actually catch.
 --   select email, plan, current_period_end,
 --          case when plan='comp' and current_period_end is not null and current_period_end < now()
