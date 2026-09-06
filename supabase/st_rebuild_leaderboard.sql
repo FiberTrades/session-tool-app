@@ -788,3 +788,32 @@ begin
 
 end;
 $function$;
+
+-- 2026-09-06, A REVIEWED WEEK BELONGS TO THE MONTH IT ENDS IN, not the month its Monday falls in.
+-- weekly_post_weeks filtered a reviewed week into a period by its Monday:
+--     where z.monday >= v_start and z.monday < v_end
+-- while weeks_pledged - which decides whether a review was OWED - derives its weeks from the bias
+-- days inside the period. For a week straddling a month boundary the two disagree:
+--
+--   Week Mon 31 Aug - Sun 6 Sep, biases posted 1-3 Sep, review posted Sun 6 Sep
+--     weeks_pledged (September)     -> {31 Aug}   the bias days are September days
+--     weekly_post_weeks (September) -> {}         31 Aug < 1 Sep
+--
+-- So the +20 was dropped, and from the following Monday - when the week becomes penalisable - the
+-- SAME week scored as a missed review: -20 for a review that was actually written. Worse, it was
+-- unrecoverable. st_rebuild_leaderboard derives every period_start from now(), so it only ever
+-- rebuilds the current week/month/year; August's row was frozen on 31 Aug and could never collect
+-- a review posted on 6 Sep.
+--
+-- Now filtered on (z.monday + 6), the week's Sunday. That month owns most of the week's days, it
+-- is where the pledge already lands, and it can never strand a review: the Sunday is always in the
+-- month the review was written in or later, which is still rebuildable.
+--
+-- Only the period FILTER moved. The join key stays `monday`, so weekly_post_weeks and
+-- weeks_pledged still match on the same week identity - which is what turns a pledge into "done"
+-- rather than "missed".
+--
+-- Applied by pg_get_functiondef rewrite (DB functions do not deploy from git), asserting exactly
+-- one occurrence before replacing. Verified by RUNNING it, since plpgsql bodies are not checked at
+-- CREATE time: September went from weekly_reviews 0 / weekly 0 to 3 reviews and 60 points across
+-- the three traders, each correctly showing 1 of 1 week.
