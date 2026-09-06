@@ -384,3 +384,25 @@ alter table public.st_code_redemptions enable row level security;
 -- renderSidebar iterates _visChans() rather than the raw table, which is what still hides the
 -- tiers ABOVE Bundle Pro - a mentorship-only room is not something an ST Journal member should
 -- know exists.
+
+-- 2026-09-06, A PAYING ACCOUNT CANNOT REDEEM. Asked directly: can somebody two months into Bundle
+-- Pro redeem a code they come across? They could, and both halves of what followed were wrong.
+--
+-- 1. THE DISCOUNT COULD NOT BE DELIVERED. An existing subscriber picking a plan never reaches a
+--    Payment Link - stUpgradeTo routes them to stChangePlan, a prorated change against the live
+--    subscription - and Stripe attaches a promotion code at CHECKOUT. Redemption would have
+--    reported "10% off your first 3 months" and done nothing at all.
+--
+-- 2. IT PAID COMMISSION ON REVENUE THE AFFILIATE NEVER BROUGHT. Commission runs on every payment
+--    with paid_at >= redeemed_at for twelve months, so an existing Bundle Pro member redeeming a
+--    friend's code handed that affiliate 30% of a subscription that already existed - and the
+--    friend need not have introduced them at all. That is the expensive half, and it would have
+--    surfaced as an unexplained payout rather than as a bug.
+--
+-- st_redeem_code now returns 'already_subscribed' when profiles.is_paid. comp is refused by the
+-- same test, correctly: nothing to discount, nothing to earn on. A LAPSED member is deliberately
+-- still allowed - is_paid is false, they genuinely go back through checkout, and somebody who
+-- returns because an affiliate nudged them is a real referral.
+--
+-- Verified by running both cases and rolling back: a paying account gets
+-- {"ok": false, "error": "already_subscribed"} and an unpaid one {"ok": true, "discount": 10}.
