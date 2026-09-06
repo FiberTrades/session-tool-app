@@ -356,3 +356,31 @@ alter table public.st_code_redemptions enable row level security;
 -- raises at the end returned {"ok": true, "discount": 10}, left trial_days null before and after,
 -- set referred_at, incremented uses - and rolled the lot back. plpgsql bodies are not checked at
 -- CREATE time, so the only proof a column name is right is executing the statement.
+
+-- 2026-09-06, VISIBLE BUT LOCKED, and why the client change alone did nothing. The sidebar was
+-- meant to show a limited tier every room Bundle Pro can enter, greyed out. The client work for
+-- that was done and correct - chanRow draws the lock, selectChannel refuses - and the sidebar
+-- still showed six channels, because channels_select and cat_select both filtered by
+-- st_can_access(access_policy). The rows never reached the browser. No amount of client-side
+-- filtering can render a row the database did not send.
+--
+-- Both SELECT policies now admit any signed-in member. Checked rather than assumed before
+-- relaxing them: the visible half and the readable half are enforced by SEPARATE policies that
+-- each re-derive access from the channel row, and neither consults the channels SELECT policy —
+--   channel_messages.cm_select   st_can_access(c.access_policy) AND the role check
+--   channel_messages.cm_insert   st_can_access(...) AND st_can_post(c.post_policy)
+-- so relaxing visibility can leak no message and allow no post. What becomes visible is id, slug,
+-- name, name_es, position, category and the policy columns; there are no URLs or secrets in the
+-- table and topic/topic_es are empty on all 24 rows. Banned members still see nothing:
+-- ban_block_channels_sel and ban_block_cat_sel are separate and untouched.
+--
+-- Proved by running as the authenticated role with a real trial user's JWT claims - not by
+-- reading the policy, and not with SET LOCAL on the `role` GUC, which looks like it switches
+-- roles and does not. As that trial member: channels 24/24, categories 6/6, and messages
+-- readable 0 in the-trading-plan, rice-concept, announcements, members-trading-plan, group-call
+-- and 1:1-members, against 1568 in session-chat and 102 in pre-session-bias, which their
+-- access_policy genuinely admits.
+--
+-- renderSidebar iterates _visChans() rather than the raw table, which is what still hides the
+-- tiers ABOVE Bundle Pro - a mentorship-only room is not something an ST Journal member should
+-- know exists.
