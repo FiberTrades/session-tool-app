@@ -1,0 +1,27 @@
+-- COMMUNITY MODERATION — repo mirror. Live objects are in Supabase.
+--
+-- HOW IT WORKS. Two BEFORE INSERT triggers, trg_mod_channel on channel_messages and trg_mod_dm on
+-- dm_messages, both call st_mod_check(body). A non-null reason writes a row to mod_log AND returns
+-- null, so the message is BLOCKED — never posted, not hidden-then-reviewed. mod_log is admin-only
+-- (RLS policy mod_log_admin, USING st_is_admin()) and is read in Community from openModLog().
+-- NOTE: live_messages (the live-session chat) has NO moderation trigger.
+--
+-- TWO SIGNALS, and both were too loose until 6 Sep 2026. A bare "100%" counted as a profit claim
+-- and the bare word "deposit" counted as a contact push, so
+--   "I am 100% sure I should not have moved my stop, going to deposit more on Monday"
+-- was blocked. In a forex community those are two of the most ordinary words there are. Each
+-- signal now needs wording that only appears when somebody is SELLING: bare deposit, sign up,
+-- telegram, whatsapp, risk-free, profit split and copy trading no longer count on their own — a
+-- prop firm has a profit split, a break-even trade is risk-free, "join the session" is not a
+-- solicitation.
+--
+-- \y, NOT \b. PostgreSQL POSIX regex reads \b as BACKSPACE. A pattern ending "me\b" matches
+-- nothing at all, which silently let "whatsapp me", "message me on telegram" and "deposit with me"
+-- through. Anything word-boundary here must use \y.
+--
+-- [^.!?] in the claim patterns keeps a match inside one sentence, so two unrelated clauses cannot
+-- combine across a full stop.
+--
+-- Verified 6 Sep 2026 against 11 scam and 15 ordinary messages: 11/11 caught, 15/15 passed, no
+-- false positives. Re-run that set after any edit — the failure mode here is silent in both
+-- directions.
