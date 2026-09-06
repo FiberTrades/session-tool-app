@@ -303,3 +303,21 @@ alter table public.st_code_redemptions enable row level security;
 -- on the 1st was reported in the previous month, in both directions. st_uk_midnight(date) resolves
 -- the bounds in Europe/London, and the month grouping in st_admin_takings does too. Verified:
 -- 2026-09-30 23:30Z now counts as October; January (GMT) is unchanged.
+
+-- 2026-09-06, NAMED CODES. st_gen_code(days, name) returns AUR-ST30D: three initials, the day
+-- count, D. A code that has to be said out loud or read off a screenshot is better when it looks
+-- like it belongs to somebody — and obviously wrong when pasted for the wrong person.
+--
+-- THE GENERATOR IS NO LONGER RANDOM, which broke the old "loop until unused" in
+-- st_admin_create_code: a deterministic base turns that into an infinite loop the moment an
+-- affiliate wants a second code of the same length. The base is generated once and a numeric
+-- suffix added on collision (AUR-ST30D2), bounded at 99 so it can never spin.
+--
+-- Falls back to the old random shape when there is no usable name (fewer than three letters) or no
+-- sensible day count, rather than inventing initials that belong to nobody. Accents are folded, so
+-- "Ángel" gives ANG rather than a code nobody can type. Existing ST-30-XXXX codes still redeem —
+-- lookup is by exact string and is format-agnostic.
+--
+-- st_gen_code was DROPPED before being recreated with the second argument: adding it alongside the
+-- one-argument version would have made a bare call ambiguous, the overload trap that has already
+-- bitten twice.
