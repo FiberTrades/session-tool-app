@@ -42,3 +42,34 @@
 -- live chat entirely, not just scams), a scam message returned zero rows and appeared in mod_log
 -- as source 'live' with sender_name resolved to "Nestor". Both probe rows deleted; mod_log back to
 -- 0 and live_messages back to 23.
+
+-- 2026-09-06, SPANISH. The claim + push layer was English words only, so ZERO of eight realistic
+-- Spanish scams were caught. The hard signals (t.me link, wallet address) are language-independent
+-- and always fired, but "Ganancias garantizadas, escríbeme por privado" walked straight through.
+--
+-- Worse than a plain gap, because chat translation is DISPLAY-ONLY: _trCache is an in-memory client
+-- cache, there is no stored translated column, and nothing writes a translation back. So the
+-- trigger always sees the original text — which meant a Spanish pitch was stored unchecked and then
+-- rendered into fluent English for every English reader. The feature that makes the community
+-- bilingual was delivering the scam.
+--
+-- ACCENTS ARE FOLDED with translate(t, 'áéíóúüñ', 'aeiouun') rather than by installing unaccent.
+-- Spanish is the only other language here and the mapping is seven characters, so folding inline
+-- avoids an extension dependency. It also means "escribeme" and "escríbeme" are one pattern, which
+-- matters because scammers type without accents constantly. ASCII is untouched, so every English
+-- pattern behaves exactly as before.
+--
+-- Grammar mattered more than vocabulary in two places:
+--   "duplicar MI cuenta" is an ordinary goal, "duplico TU dinero" is a pitch — only the second is
+--   a hard signal. Likewise "únete a LA sesión" is an invitation, "únete a MI grupo" is a push.
+--
+-- Promising to send back a MULTIPLE of what you receive is now a claim in both languages
+-- ("te devuelvo el triple", "give you back double"). Deliberately NOT treating "asking for crypto"
+-- as a hard signal on its own: "send me the btc chart" is a normal request here.
+--
+-- Also fixed: the legacy base58 wallet pattern ran against the LOWERCASED text, so any address
+-- containing a capital L failed — lowercased it becomes 'l', which that character class excludes.
+-- It now runs against the original text, the only way that class can work.
+--
+-- Verified 6 Sep 2026: 18 scams (Spanish accented, Spanish unaccented, English) all caught;
+-- 20 ordinary messages in both languages all passed. No misses, no false positives.
