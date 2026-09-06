@@ -42222,6 +42222,13 @@ try {
      member. Both exist in Stripe with promotion codes enabled on all four plan links.
      Mentorship is absent on purpose - see the note at the top of this change. */
   var REF_PROMO = { monthly: 'ST10MONTHLY', yearly: 'ST10ANNUAL' };
+  /* Stripe otherwise guesses the checkout language from the BROWSER, so a member reading the app
+     in Spanish could be handed an English payment page the moment they decide to pay - the one
+     screen where a wobble costs money. Read off the document rather than through lang(), so this
+     carries no dependency on which scope it is called from. */
+  function stLocaleParam() {
+    return (document.documentElement.lang === 'es') ? '&locale=es' : '&locale=en';
+  }
   function stPromoParam(tier, interval) {
     if (!profileReferred) return '';                 // not referred: full price, no code shown
     if (tier === 'mentorship') return '';            // never discounted
@@ -42236,7 +42243,8 @@ try {
       + (base.indexOf('?') >= 0 ? '&' : '?')
       + 'client_reference_id=' + encodeURIComponent(uid)
       + (email ? '&prefilled_email=' + encodeURIComponent(email) : '')
-      + stPromoParam('premium', interval);
+      + stPromoParam('premium', interval)
+      + stLocaleParam();
   }
   function stOpenCheckout(interval) { if (!currentUser) return; window.open(stBuyUrl(interval), '_blank'); }
   function openUpgradeChoice() {
@@ -55610,7 +55618,8 @@ try {
     var uid   = (currentUser && currentUser.id)    || '';
     return '?client_reference_id=' + encodeURIComponent(uid)
          + (email ? '&prefilled_email=' + encodeURIComponent(email) : '')
-         + stPromoParam(tier, interval);
+         + stPromoParam(tier, interval)
+         + stLocaleParam();
   }
   function stCurrentRank() {
     if (!profilePaid) return 0;
@@ -56983,50 +56992,11 @@ try {
                          'Tu suscripción ya está activa, así que no se puede aplicar un código de descuento. Los códigos funcionan en una suscripción nueva.'],
     signed_out:       ['Sign in first, then redeem the code.', 'Inicia sesión primero y luego canjea el código.']
   };
-  function renderVipRedeem() {
-    var card = document.getElementById('svc-vip-card');
-    if (!card) return;
-    // Nothing to redeem on full access already, and an input that cannot do anything is worse
-    // than no input at all.
-    card.style.display = (profilePlan === 'comp') ? 'none' : '';
-    var inp = document.getElementById('vip-code-input');
-    if (inp) inp.placeholder = 'ABC-ST10';
-    var btn = document.getElementById('vip-redeem-btn');
-    if (!btn || btn._wired) return;
-    btn._wired = true;
-    btn.addEventListener('click', function () {
-      var sb2 = _stSB(); if (!sb2) return;
-      var msg = document.getElementById('vip-msg');
-      var code = String((inp && inp.value) || '').trim().toUpperCase();
-      if (!code) { if (msg) msg.textContent = _adminT('Enter a code first.', 'Introduce un código primero.'); return; }
-      btn.disabled = true;
-      if (msg) msg.textContent = _adminT('Checking…', 'Comprobando…');
-      sb2.rpc('st_redeem_code', { p_code: code }).then(function (r) {
-        btn.disabled = false;
-        if (r && r.error) { if (msg) msg.textContent = _adminT('Could not check that code. Try again.', 'No se pudo comprobar el código. Inténtalo de nuevo.'); return; }
-        var d = r && r.data;
-        if (d && d.ok) {
-          /* Say what was actually earned, and when it lands. The discount is invisible until
-             checkout, so a message that only said "applied" would leave them looking for a
-             change in the app that never comes. */
-          var _pc = (d && d.discount) || 0;
-          if (msg) msg.textContent = _pc
-            ? _adminT('Done — ' + _pc + '% off your first 3 months, or your first year if you pay annually. It is applied at checkout.',
-                      'Listo: un ' + _pc + '% de descuento en tus 3 primeros meses, o en tu primer año si pagas anualmente. Se aplica al finalizar la compra.')
-            : _adminT('Done — code applied.', 'Listo: código aplicado.');
-          if (inp) inp.value = '';
-          // Re-read the profile so the badge and description update without a reload.
-          try { fetchProfile(); } catch (e) {}
-          return;
-        }
-        var pair = VIP_ERR[(d && d.error) || 'invalid'] || VIP_ERR.invalid;
-        if (msg) msg.textContent = _adminT(pair[0], pair[1]);
-      }, function () {
-        btn.disabled = false;
-        if (msg) msg.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.');
-      });
-    });
-  }
+  /* renderVipRedeem lived here. It drove the "Have a code?" card in Settings, which was removed:
+     the box belongs on the Log in and Create account cards, and Settings is reachable only when
+     signed in - where a paying member cannot be given the discount at all, because an existing
+     subscription never passes through a Stripe checkout. redeemPendingVip does the redeeming now,
+     for a code stashed at the door, and reports the outcome through stCenterNote. */
   /* Name-as-you-type, shared by both admin cards. Debounced, and every reply carries the query
      it answered: typing an address fires several lookups, they can land out of order, and a slow
      answer for an earlier prefix would otherwise overwrite the right answer for the full address -
@@ -57706,7 +57676,6 @@ try {
 
   function renderServices() {
     try { renderAdminReload(); } catch (e) {}
-    try { renderVipRedeem(); } catch (e) {}
     try { renderVipAdmin(); } catch (e) {}
     try { renderRefCard(); } catch (e) {}
     var badge = document.getElementById('svc-premium-badge');
