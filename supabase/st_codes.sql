@@ -406,3 +406,23 @@ alter table public.st_code_redemptions enable row level security;
 --
 -- Verified by running both cases and rolling back: a paying account gets
 -- {"ok": false, "error": "already_subscribed"} and an unpaid one {"ok": true, "discount": 10}.
+
+-- 2026-09-06, COLLISIONS LENGTHEN THE NAME instead of appending a number. Tradella held TRA-ST10,
+-- so Tradernsg was issued TRA-ST10-2. Unique, and dangerous: a creator reading
+-- "T-R-A-S-T-ten-dash-two" aloud has viewers type TRA-ST10, which credits the OTHER affiliate's
+-- commission - correctly as far as the system can tell, and invisibly. Three-letter prefixes
+-- collide easily across two languages (Mar-, Cri-, Ale-, Jos-, Tra-), so it was going to recur.
+--
+-- st_admin_create_code now asks for one more letter of the name on each clash. st_gen_code took a
+-- length argument to keep the accent-folding and letter-stripping in one place; when the name runs
+-- out it returns the same string as the previous attempt, and that equality is the caller's signal
+-- to stop. The bounded numeric suffix survives ONLY for names identical letter-for-letter.
+--
+-- Signature change, so st_gen_code was DROPPED before being recreated - CREATE OR REPLACE would
+-- have left an overload behind, the trap recorded three times above.
+--
+-- Verified by running it inside a transaction that raises at the end, so nothing persisted:
+--   Tradernsg, with TRA-ST10 taken -> TRAD-ST10, then TRADE-ST10, then TRADER-ST10
+--   Aurora, six in a row           -> AURO, AUROR, AURORA, then AURORA-ST10-2, -3, -4
+-- The first proves lengthening; the second proves the fallback still engages, and only once the
+-- name genuinely has nothing left to give.
