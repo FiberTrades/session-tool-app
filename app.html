@@ -6312,7 +6312,7 @@ try {
           <span class="svc-card-title" data-i18n="services.discord_title">Community</span>
           <span class="svc-badge gold" id="svc-discord-badge">Included</span>
         </div>
-        <p class="settings-hint" data-i18n="services.discord_desc">Five community channels on Free Trial and ST Journal, including the live session-chat. Bundle Pro and Mentorship unlock every channel.</p>
+        <p class="settings-hint" data-i18n="services.discord_desc">Four community channels on Free Trial and ST Journal, plus the live session-chat during your trial. Bundle Pro and Mentorship unlock every channel.</p>
         
       </div>
 
@@ -7060,7 +7060,7 @@ try {
       'services.indicator_desc': 'My TradingView indicator — Draws Premium & Discount Zones, Volume Profile, Trading Sessions…',
       'services.indicator_cta': 'View on TradingView',
       'services.discord_title': 'Community',
-      'services.discord_desc': 'Five community channels on Free Trial and ST Journal, including the live session-chat. Bundle Pro and Mentorship unlock every channel.',
+      'services.discord_desc': 'Four community channels on Free Trial and ST Journal, plus the live session-chat during your trial. Bundle Pro and Mentorship unlock every channel.',
       'services.free_badge': 'Free',
       'services.paid_badge': 'Paid service',
       'services.oneone_title': '1-to-1 Membership',
@@ -8593,7 +8593,7 @@ try {
       'services.indicator_desc': 'Mi indicador de TradingView — Dibuja Zonas Premium y Descuento, Perfil de Volumen, Sesiones de Trading…',
       'services.indicator_cta': 'Ver en TradingView',
       'services.discord_title': 'Comunidad',
-      'services.discord_desc': 'Cinco canales de la comunidad en Free Trial y ST Journal, incluido el chat-de-sesión en directo. Bundle Pro y Mentorship desbloquean todos los canales.',
+      'services.discord_desc': 'Cuatro canales de la comunidad en Free Trial y ST Journal, más el chat-de-sesión en directo durante tu prueba. Bundle Pro y Mentorship desbloquean todos los canales.',
       'services.free_badge': 'Gratis',
       'services.paid_badge': 'Servicio de pago',
       'services.oneone_title': 'Membresía 1 a 1',
@@ -43599,17 +43599,25 @@ try {
     function _catLabel(cat){ if(!cat) return ''; return (_esUI() && cat.name_es) ? cat.name_es : (cat.name||''); }
     function _catName(name){ var n=String(name||''); var sp=n.indexOf(' '); var h=sp>0?n.slice(0,sp):''; var isE=(h && !/[a-z0-9]/i.test(h) && h.length<=6); if(!isE) return esc(n); return '<span style="font-size:18px;line-height:1;vertical-align:-3px;margin-right:3px;">'+esc(h)+'</span>'+esc(n.slice(sp+1)); }
     function _commTier(){ try{ if(window.__forceTier) return window.__forceTier; if(admin()) return 'full'; var pl=(typeof window.__stPlan==='function')?window.__stPlan():null; if(!pl||!pl.loaded) return 'limited'; var p=pl.plan||''; if(pl.paid&&(p==='bundle'||p==='mentorship'||p==='comp')) return 'full'; return 'limited'; }catch(e){ return 'full'; } }
-    /* Visible to a LIMITED tier (Free Trial, ST Journal). Separate from access_policy, which
-       decides entry: a channel missing from here is never listed at all, however the database is
-       set. session-chat was added so a trial can watch a live session happen - the clearest
-       demonstration of what the community is, and free to give because it is happening anyway. */
-    var _COMM_ALLOW={'pre-session-bias':1,'post-session-review':1,'weekend-review':1,'series-of-10-trades':1,'session-chat':1};
+    /* Visible to a LIMITED tier. Separate from access_policy, which decides ENTRY: a channel
+       missing from here is never listed at all, however the database is set.
+       A value of 1 means every limited tier; a LIST means only those plans. That distinction
+       exists because "limited" lumps Free Trial together with ST Journal, and session-chat is for
+       the trial alone - the live room is one of the reasons Bundle Pro exists, so handing it to
+       the tier directly below would dilute what is being sold. */
+    var _COMM_ALLOW={'pre-session-bias':1,'post-session-review':1,'weekend-review':1,'series-of-10-trades':1,
+                     'session-chat':['trial']};
+    function _commAllowed(key){
+      var v=_COMM_ALLOW[key]; if(!v) return false;
+      if(v===1) return true;
+      try{ return v.indexOf(_myPlan())>-1; }catch(e){ return false; }
+    }
     /* The channels the app posts into itself, via postToChannel — Session Bias, Session Review,
        Series of 10 and the weekend review. That path deliberately ignores post_policy, so these
        are the only channels where it is true to tell a member their biases still post while the
        composer is closed to them. Keep in step with the postToChannel call sites. */
     var _APP_POST_CHANS={'pre-session-bias':1,'post-session-review':1,'weekend-review':1,'series-of-10-trades':1};
-    function _visChans(){ if(_commTier()==='full') return channels||[]; return (channels||[]).filter(function(c){ var slug=(c.slug||'').toLowerCase(); if(_COMM_ALLOW[slug]) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); var core=(sp>0?nm.slice(sp+1):nm).toLowerCase(); return !!_COMM_ALLOW[core]; }); }
+    function _visChans(){ if(_commTier()==='full') return channels||[]; return (channels||[]).filter(function(c){ var slug=(c.slug||'').toLowerCase(); if(_commAllowed(slug)) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); var core=(sp>0?nm.slice(sp+1):nm).toLowerCase(); return _commAllowed(core); }); }
     /* --- per-tier access: CSV of plans, e.g. 'mentorship,bundle,premium' --- */
     var _TIERS=[['mentorship','Mentorship'],['bundle','Bundle Pro'],['premium','ST Journal'],['trial','Free Trial']];
     function _accList(v){
@@ -43694,7 +43702,7 @@ try {
       if(pl==='comp') return true;
       return _accList(v).indexOf(pl)>-1;
     }
-    function _chanLocked(c){ if(admin()) return false; try{ if(_accAllows(c.access_policy)) return false; var slug=(c.slug||'').toLowerCase(); if(_COMM_ALLOW[slug]) return false; }catch(e){} return true; }
+    function _chanLocked(c){ if(admin()) return false; try{ if(_accAllows(c.access_policy)) return false; var slug=(c.slug||'').toLowerCase(); if(_commAllowed(slug)) return false; }catch(e){} return true; }
     /* Reading is decided by the CHANNEL, not by the plan. This used to hide every message a
        limited-tier member had not written themselves, so a trial or ST Journal member opening
        #weekend-review saw an empty room with only their own posts in it — the community looked
@@ -51226,7 +51234,7 @@ try {
        this course and they mean different things: `unlocked` is the sequential quiz gate ("pass
        the one before"), `planLocked` is the plan gate ("this is not on your plan"). Keeping them
        apart is what lets the reader be told which of the two is stopping them. */
-    var FREE_MODULES = 2;
+    var FREE_MODULES = 3;   /* 15 of the 40 lessons before a paid tier is needed */
     function courseFull(){
       if(reviewAll()) return true;
       try{ return !!(window.__stCourseFull && window.__stCourseFull()); }catch(e){ return false; }
@@ -55780,12 +55788,11 @@ try {
           L('MT5 auto-sync your trades', 'Autosincronizaci\u00f3n de operaciones MT5'),
           L('Unlimited tickers on the tape', 'Tickers ilimitados en la cinta'),
           L('Copy trades between accounts', 'Copia operaciones entre cuentas'),
-          L('Five community channels, including the live session-chat',
-            'Cinco canales de la comunidad, incluido el chat-de-sesión en directo'),
-          // Named as a count rather than "the first two modules", because ten lessons is a
+          L('Four community channels', 'Cuatro canales de la comunidad'),
+          // Named as a count rather than "the first three modules", because fifteen lessons is a
           // real amount of course and two modules out of eight sounds like a trailer.
-          L('Trading Academy — first 2 modules, 10 lessons',
-            'Academia de Trading — los 2 primeros módulos, 10 lecciones')
+          L('Trading Academy — first 3 modules, 15 lessons',
+            'Academia de Trading — los 3 primeros módulos, 15 lecciones')
         ],
         btnLabel: isDown(1) ? L('Switch to ST Journal', 'Cambiar a ST Journal')
                             : L('Get the journal', 'Obtener el diario'),
@@ -56635,7 +56642,7 @@ try {
   // directly. Without them, the AI gate (canChat/canGreet) only worked for allow-listed users;
   // comp / bundle / mentorship / premium / trial accounts got no AI. See STAI _plan()/_acctState().
   try { window.__stGetPlan = function () { return profilePlan; }; } catch (e) {}
-  /* Who gets the whole Trading Academy. Free Trial and ST Journal get the first two modules;
+  /* Who gets the whole Trading Academy. Free Trial and ST Journal get the first three modules;
      the rest of the course is what Bundle Pro adds. Comp is full access by definition. */
   try {
     window.__stCourseFull = function () {
@@ -59587,8 +59594,8 @@ try {
           <li data-i18n="pr.aa4">MT5 auto-sync your trades</li>
           <li data-i18n="pr.aa5">Unlimited tickers on the tape</li>
           <li data-i18n="pr.aa6">Copy trades between accounts</li>
-        <li data-i18n="pr.aa7">Five community channels, including the live session-chat</li>
-        <li data-i18n="pr.aa8">Trading Academy — first 2 modules, 10 lessons</li>
+        <li data-i18n="pr.aa7">Four community channels</li>
+        <li data-i18n="pr.aa8">Trading Academy — first 3 modules, 15 lessons</li>
         </ul>
         <a class="btn" href="#" data-auth="1" data-i18n="pr.app_cta">Get the journal</a>
       </div>
@@ -59731,9 +59738,9 @@ try {
     'pr.aa4':'Autosincronización de operaciones MT5',
     'pr.aa5':'Tickers ilimitados en la cinta',
     'pr.aa6':'Copia operaciones entre cuentas',
-    'pr.aa7':'Cinco canales de la comunidad, incluido el chat-de-sesión en directo',
+    'pr.aa7':'Cuatro canales de la comunidad',
     'pr.ba10':'La Academia de Trading completa — los 8 módulos, 40 lecciones',
-    'pr.aa8':'Academia de Trading — los 2 primeros módulos, 10 lecciones',
+    'pr.aa8':'Academia de Trading — los 3 primeros módulos, 15 lecciones',
     'pr.app_cta':'Obtener el diario',
     'pr.bun_name':'Bundle Pro',
     'pr.bun_desc':'La comunidad de Session Tool, nuestro método de trading y la preparación diaria de la sesión — todo para revisar tu trading con nosotros.',
@@ -59837,7 +59844,7 @@ try {
     'f.synced':'Autosincronizado','f.synced_n':'3 operaciones',
     'more.eyebrow':'Y los detalles discretos','more.h2':'Todo lo demás que <em>se gana su lugar</em>.',
     'm1.h3':'Multicuenta','m1.p':'Sigue cada cuenta y cada desafío de fondeo en paralelo, cada una con su saldo, sus reglas y sus estadísticas. Enfoca toda la app en una cuenta, en un grupo enlazado o en todas a la vez — y archiva las que ya han terminado sin perder ni una operación: el historial se queda donde está.',
-    'm2.h3':'Academia','m2.p':"Dos cosas en una pestaña. La Academia de Trading es un curso de cuarenta lecciones sobre el método: los dos primeros módulos están abiertos en todos los planes, Free Trial incluido; el resto viene con Bundle Pro. La Videoteca, con tutoriales, revisiones semanales y repeticiones de las sesiones en directo, llega pronto.",
+    'm2.h3':'Academia','m2.p':"Dos cosas en una pestaña. La Academia de Trading es un curso de cuarenta lecciones sobre el método: los tres primeros módulos están abiertos en todos los planes, Free Trial incluido; el resto viene con Bundle Pro. La Videoteca, con tutoriales, revisiones semanales y repeticiones de las sesiones en directo, llega pronto.",
     'm3.h3':'Comunidad','m3.p':'Una comunidad integrada en la app — canales, MD y chat de sesión en vivo, además de llamadas de voz y vídeo 1:1 con pantalla compartida y dibujo en directo, para desmenuzar un gráfico juntos mientras los dos dibujáis encima. Sin otra app, sin otro inicio de sesión y sin salir de la pestaña en la que ya estabas.',
     'm4.h3':'Asistente IA','m4.p':'Un coach de trading con IA integrado en cada pestaña — conoce tus números, responde preguntas sobre tu rendimiento y lee los gráficos que pegas, sean captura o enlace. Te saluda cada sesión con algo que de verdad cala, y no con una frase que valdría para cualquiera.',
     'm5.h3':'Calendario económico','m5.p':'Los datos de alto impacto del día, filtrados a las divisas que realmente operas, para que una noticia de carpeta roja no te pille en mitad de la sesión. El dato real, el previsto y el anterior aparecen juntos en cuanto sale — así ves si superó las expectativas, no solo que salió.',
@@ -60262,7 +60269,7 @@ try {
       { sel:'.tab[data-page="tradeview"]', pre:showTab('tradeview'), t:_t('5 \u00b7 Calendar','5 \u00b7 Calendario'),
         b:_t('A day-by-day view of your sessions, biases and notes. It\u2019s also where you do your weekly review \u2014 post it to the community each week to reflect on how the week went.','Una vista d\u00eda a d\u00eda de tus sesiones, sesgos y notas. Aqu\u00ed tambi\u00e9n haces tu revisi\u00f3n semanal \u2014 publ\u00edcala en la comunidad cada semana para reflexionar sobre c\u00f3mo fue la semana.') },
       { sel:'.tab[data-page="vault"]', pre:showTab('vault'), t:_t('6 \u00b7 Academy','6 \u00b7 Academia'),
-        b:_t('New to trading? Start here. Forty lessons across eight modules, built from the ground up \u2014 the basics first, then structure, risk and execution, at your own pace. The first two modules are free on every plan; Bundle Pro and Mentorship open the rest.','\u00bfNuevo en el trading? Empieza aqu\u00ed. Cuarenta lecciones en ocho m\u00f3dulos, desde cero \u2014 primero lo b\u00e1sico, luego estructura, riesgo y ejecuci\u00f3n, a tu ritmo. Los dos primeros m\u00f3dulos son gratis en todos los planes; Bundle Pro y Mentor\u00eda abren el resto.') },
+        b:_t('New to trading? Start here. Forty lessons across eight modules, built from the ground up \u2014 the basics first, then structure, risk and execution, at your own pace. The first three modules are free on every plan; Bundle Pro and Mentorship open the rest.','\u00bfNuevo en el trading? Empieza aqu\u00ed. Cuarenta lecciones en ocho m\u00f3dulos, desde cero \u2014 primero lo b\u00e1sico, luego estructura, riesgo y ejecuci\u00f3n, a tu ritmo. Los dos primeros m\u00f3dulos son gratis en todos los planes; Bundle Pro y Mentor\u00eda abren el resto.') },
       { sel:'.tab[data-page="community"]', pre:showTab('community'), t:_t('7 \u00b7 Community','7 \u00b7 Comunidad'),
         b:_t('Channels, DMs and live voice/video calls with other traders \u2014 share screens and draw on charts together to break down setups in real time. Your posted biases and reviews land here automatically. Bundle Pro and Mentorship unlock the full community: every channel, the live session chats, the full trading plan and The ST Method.','Canales, MD y llamadas de voz/v\u00eddeo en vivo con otros traders \u2014 comparte pantalla y dibuja en los gr\u00e1ficos juntos para analizar setups en tiempo real. Tus sesgos y revisiones publicados aparecen aqu\u00ed autom\u00e1ticamente. Bundle Pro y Mentor\u00eda desbloquean la comunidad completa: todos los canales, los chats de sesi\u00f3n en vivo, el plan de trading completo y El M\u00e9todo ST.') },
       { sel:'.settings-nav-item[data-section="profile"]', pre:openSet('profile'), t:_t('Settings \u00b7 Profile','Ajustes \u00b7 Perfil'),
