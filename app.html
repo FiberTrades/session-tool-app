@@ -6285,7 +6285,7 @@ try {
         <div class="svc-card-head">
           <span class="svc-card-title" data-i18n="vip.title">Have a code?</span>
         </div>
-        <p class="settings-hint" data-i18n="vip.hint">Enter it below to claim the free trial it gives you.</p>
+        <p class="settings-hint" data-i18n="vip.hint">Enter it below for 10% off your first 3 months — or your first year if you pay annually.</p>
         <div class="settings-data-actions" style="margin-top:10px;">
           <input id="vip-code-input" class="settings-input settings-input-compact" type="text"
                  autocomplete="off" spellcheck="false" maxlength="14"
@@ -7037,7 +7037,7 @@ try {
       'ref.title': 'Your referral code',
       'ref.copy': 'Copy',
       'vip.title': 'Have a code?',
-      'vip.hint': 'Enter it below to claim the free trial it gives you.',
+      'vip.hint': 'Enter it below for 10% off your first 3 months — or your first year if you pay annually.',
       'vip.redeem': 'Redeem',
       'vip.admin_title': 'Give user full access',
       'takings.title': 'App takings',
@@ -8570,7 +8570,7 @@ try {
       'ref.title': 'Tu código de recomendación',
       'ref.copy': 'Copiar',
       'vip.title': '¿Tienes un código?',
-      'vip.hint': 'Introdúcelo aquí para reclamar la prueba gratuita que te da.',
+      'vip.hint': 'Introdúcelo aquí para un 10% de descuento en tus 3 primeros meses, o en tu primer año si pagas anualmente.',
       'vip.redeem': 'Canjear',
       'vip.admin_title': 'Dar acceso completo al usuario',
       'takings.title': 'Ingresos de la app',
@@ -42233,6 +42233,18 @@ try {
   // user would be unmatchable - hence the guard in stOpenCheckout below.
   var CHECKOUT_URL        = 'https://buy.stripe.com/bJe4gAaJOdmfbUaa9L1wY00';
   var CHECKOUT_URL_YEARLY = 'https://buy.stripe.com/dRm00k05aaa30bs4Pr1wY01';
+  /* The Stripe promotion codes, and who they are for. Kept beside each other because they
+     only make sense as a pair: the monthly one repeats for 3 months, the annual one applies
+     once, and sending the wrong one at the wrong interval either overpays or underpays the
+     member. Both exist in Stripe with promotion codes enabled on all four plan links.
+     Mentorship is absent on purpose - see the note at the top of this change. */
+  var REF_PROMO = { monthly: 'ST10MONTHLY', yearly: 'ST10ANNUAL' };
+  function stPromoParam(tier, interval) {
+    if (!profileReferred) return '';                 // not referred: full price, no code shown
+    if (tier === 'mentorship') return '';            // never discounted
+    var c = REF_PROMO[interval === 'yearly' ? 'yearly' : 'monthly'];
+    return c ? '&prefilled_promo_code=' + encodeURIComponent(c) : '';
+  }
   function stBuyUrl(interval) {
     var base  = (interval === 'yearly') ? CHECKOUT_URL_YEARLY : CHECKOUT_URL;
     var email = (currentUser && currentUser.email) || '';
@@ -42240,7 +42252,8 @@ try {
     return base
       + (base.indexOf('?') >= 0 ? '&' : '?')
       + 'client_reference_id=' + encodeURIComponent(uid)
-      + (email ? '&prefilled_email=' + encodeURIComponent(email) : '');
+      + (email ? '&prefilled_email=' + encodeURIComponent(email) : '')
+      + stPromoParam('premium', interval);
   }
   function stOpenCheckout(interval) { if (!currentUser) return; window.open(stBuyUrl(interval), '_blank'); }
   function openUpgradeChoice() {
@@ -42250,7 +42263,8 @@ try {
   var profileCancelAtEnd = false;
   var profilePaid = null, profilePlan = null, profileStatus = null, profilePeriodEnd = null, profileCreated = null, profilePortal = null, profileSubId = null, profileSyncToken = null, profileDiscordId = null, profileDiscordName = null;
   var TRIAL_DAYS = 14;          // the default; an affiliate code can raise it per member
-  var profileTrialDays = null;  // profiles.trial_days, set when a referral code is redeemed
+  var profileTrialDays = null;  // profiles.trial_days; nothing writes it now, so trials are all 14 days
+  var profileReferred = false;  // profiles.referred_at - drives the 10% checkout discount
 
   var STR = {
     en: { account:'Sign out', signedInAs:'Signed in as', email:'Email', password:'Password',
@@ -55593,11 +55607,14 @@ try {
     bundle:     { rank: 2, monthly: { url: BUNDLE_URL_M,  vid: 'price_1TuhwmISjFOQdoXlioX2w1TR'  }, yearly: { url: BUNDLE_URL_Y,        vid: 'price_1TuhxiISjFOQdoXl79PG42T2'  } },
     mentorship: { rank: 3, monthly: { url: MENTOR_URL,    vid: 'price_1TuhzBISjFOQdoXl70A5QcoJ'  } }
   };
-  function stCheckoutParams() {
+  /* Takes the tier and interval now, because the discount depends on both: mentorship gets
+     none, and the monthly and annual coupons are different objects in Stripe. */
+  function stCheckoutParams(tier, interval) {
     var email = (currentUser && currentUser.email) || '';
     var uid   = (currentUser && currentUser.id)    || '';
     return '?client_reference_id=' + encodeURIComponent(uid)
-         + (email ? '&prefilled_email=' + encodeURIComponent(email) : '');
+         + (email ? '&prefilled_email=' + encodeURIComponent(email) : '')
+         + stPromoParam(tier, interval);
   }
   function stCurrentRank() {
     if (!profilePaid) return 0;
@@ -55724,7 +55741,7 @@ try {
     if (profileSubId && profilePaid) {
       stChangePlan(pp.vid);                                  // live subscriber -> prorated change
     } else {
-      window.open(pp.url + stCheckoutParams(), '_blank');    // new buyer -> checkout (carries user_id)
+      window.open(pp.url + stCheckoutParams(tier, interval), '_blank');  // new buyer -> checkout (carries user_id + any referral discount)
       closeChooser();
     }
   }
@@ -55982,7 +55999,7 @@ try {
     gel('stc-g-login').textContent = tt('login');
     gel('stc-g-forgot').textContent = tt('forgot');
     { var _vt = gel('stc-g-vip-toggle'); if (_vt) _vt.textContent = tt('vipHave'); }
-    { var _vi = gel('stc-g-vip'); if (_vi) _vi.placeholder = 'ABC-ST30D'; }
+    { var _vi = gel('stc-g-vip'); if (_vi) _vi.placeholder = 'ABC-ST10'; }
     gel('stc-g-rkicker').textContent = tt('rkicker');
     gel('stc-g-np').placeholder = tt('newPass');
     gel('stc-g-cp').placeholder = tt('confirmPass');
@@ -56972,7 +56989,7 @@ try {
     // than no input at all.
     card.style.display = (profilePlan === 'comp') ? 'none' : '';
     var inp = document.getElementById('vip-code-input');
-    if (inp) inp.placeholder = 'ABC-ST30D';
+    if (inp) inp.placeholder = 'ABC-ST10';
     var btn = document.getElementById('vip-redeem-btn');
     if (!btn || btn._wired) return;
     btn._wired = true;
@@ -56988,12 +57005,13 @@ try {
         if (r && r.error) { if (msg) msg.textContent = _adminT('Could not check that code. Try again.', 'No se pudo comprobar el código. Inténtalo de nuevo.'); return; }
         var d = r && r.data;
         if (d && d.ok) {
-          /* Say what actually happened. "full access unlocked" is left over from VIP codes;
-             a referral code extends the free trial and credits the affiliate. */
-          var _dd = (d && d.days) || 0;
-          if (msg) msg.textContent = _dd
-            ? _adminT('Done — your free trial is now ' + _dd + ' days from sign-up.',
-                      'Listo: tu prueba gratuita es ahora de ' + _dd + ' días desde tu registro.')
+          /* Say what was actually earned, and when it lands. The discount is invisible until
+             checkout, so a message that only said "applied" would leave them looking for a
+             change in the app that never comes. */
+          var _pc = (d && d.discount) || 0;
+          if (msg) msg.textContent = _pc
+            ? _adminT('Done — ' + _pc + '% off your first 3 months, or your first year if you pay annually. It is applied at checkout.',
+                      'Listo: un ' + _pc + '% de descuento en tus 3 primeros meses, o en tu primer año si pagas anualmente. Se aplica al finalizar la compra.')
             : _adminT('Done — code applied.', 'Listo: código aplicado.');
           if (inp) inp.value = '';
           // Re-read the profile so the badge and description update without a reload.
@@ -57046,8 +57064,8 @@ try {
       var d = r && r.data;
       if (!d || !d.has) { card.style.display = 'none'; return; }
       card.style.display = '';
-      /* One row per live code, each with its own trial length and copy button. A member with a
-         30-day and a 60-day campaign needs to tell them apart at a glance. */
+      /* One row per live code, with a copy button. Every code now carries the same benefit,
+         so the row states the discount rather than a per-code trial length. */
       var host = document.getElementById('ref-codes');
       if (host) {
         host.innerHTML = '';
@@ -57059,7 +57077,7 @@ try {
           t.textContent = cc.code;
           var d2 = document.createElement('span');
           d2.className = 'settings-hint';
-          d2.textContent = (cc.days || 30) + _adminT(' days free', ' días gratis');
+          d2.textContent = _adminT('10% off their first 3 months', '10% de descuento en sus 3 primeros meses');
           var cp = document.createElement('button');
           cp.type = 'button'; cp.className = 'settings-btn';
           cp.textContent = _adminT('Copy', 'Copiar');
@@ -57596,7 +57614,9 @@ try {
       var t = document.createElement('span');
       t.style.cssText = "flex:1 1 200px;font-family:'AppNum','DM Mono',monospace;color:var(--text-mid,#b9b7c0);" +
                         (c.revoked ? 'text-decoration:line-through;opacity:.55;' : '');
-      t.textContent = c.code + '  ·  ' + (c.days || 30) + _adminT(' days free', ' días gratis')
+      /* Every code carries the same 10% discount now, so the row states the benefit rather than
+         a per-code trial length that no longer exists. */
+      t.textContent = c.code + '  ·  ' + _adminT('10% off', '10% dto.')
                     + '  ·  ' + (c.uses || 0) + _adminT(' used', ' usos');
       row.appendChild(t);
 
@@ -57645,32 +57665,28 @@ try {
     mk.textContent = _adminT('Create affiliate code', 'Crear código de afiliado');
     var box = document.createElement('span');
     box.style.cssText = 'display:none;align-items:center;gap:8px;';
-    var dIn = document.createElement('input');
-    dIn.type = 'number'; dIn.min = '1';
-    dIn.className = 'settings-input settings-input-compact';
-    dIn.style.maxWidth = '130px';
-    dIn.placeholder = _adminT('Trial days', 'Días de prueba');
+    /* No days field any more: every affiliate code carries the same 10% discount, so there is
+       nothing left to choose. The confirm step stays, because creating a code is not undoable
+       from this card. */
     var go = document.createElement('button');
     go.type = 'button'; go.className = 'settings-btn';
     go.textContent = _adminT('Create', 'Crear');
     var msg = document.createElement('div');
     msg.className = 'settings-hint';
     msg.style.marginTop = '6px';
-    box.appendChild(dIn); box.appendChild(go);
+    box.appendChild(go);
 
     mk.addEventListener('click', function () {
       // The number box appears only once asked for; a permanent one on every record would clutter
       // a card whose usual job is just to be read.
       box.style.display = (box.style.display === 'none') ? 'inline-flex' : 'none';
-      if (box.style.display !== 'none') dIn.focus();
+      if (box.style.display !== 'none') go.focus();
     });
     go.addEventListener('click', function () {
-      var n = parseInt(dIn.value || '', 10);
       go.disabled = true;
       msg.textContent = _adminT('Creating…', 'Creando…');
       sb2.rpc('st_admin_create_code', {
         p_kind: 'affiliate', p_label: m.email,
-        p_days: (isFinite(n) && n > 0) ? n : 30,
         p_max_uses: null, p_owner_email: m.email
       }).then(function (rr) {
         go.disabled = false;
@@ -57679,7 +57695,6 @@ try {
           return;
         }
         msg.textContent = '';
-        dIn.value = '';
         // The new code appears in this same record, which stays open on the month it was showing.
         _refreshCard(el, m, sb2, month);
       }, function () { go.disabled = false; msg.textContent = _adminT('Could not reach the server.', 'No se pudo contactar con el servidor.'); });
@@ -57814,7 +57829,7 @@ try {
     try {
       sb.rpc('st_redeem_code', { p_code: code }).then(function (r) {
         /* Cleared only on a DEFINITIVE answer. Removing it before the call meant one dropped
-           connection destroyed the code for good - the member never getting their longer trial,
+           connection destroyed the code for good - the member never getting their discount,
            the affiliate never getting the credit, and nothing recording that it happened.
            A transport error leaves it stashed to retry on the next boot; a real reply, even a
            refusal, clears it so it cannot loop. */
@@ -57834,9 +57849,13 @@ try {
         profileStatus = r.data.status || null;
         profilePeriodEnd = r.data.current_period_end || null;
         profileCreated = r.data.created_at || null;
-        /* Written by st_redeem_code when a referral code is used. Read here rather than assumed:
-           it was being written and never read, so referred members silently got 14 days. */
+        /* trial_days is legacy: referral codes used to extend the trial and no longer do, so
+           this is null on every new account and trialDays() falls through to the standard 14.
+           Still read, because accounts referred under the old scheme keep the days they were
+           already given - taking them back would be a broken promise. */
         profileTrialDays = (r.data.trial_days > 0) ? r.data.trial_days : null;
+        /* Written by st_redeem_code. The whole referral benefit hangs off this one flag. */
+        profileReferred = !!r.data.referred_at;
         profilePortal = r.data.portal_url || null;
         profileCancelAtEnd = !!r.data.cancel_at_period_end;
         // Stripe first; the Lemon Squeezy id stays as a fallback so accounts that never

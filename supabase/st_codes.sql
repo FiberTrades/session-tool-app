@@ -321,3 +321,38 @@ alter table public.st_code_redemptions enable row level security;
 -- st_gen_code was DROPPED before being recreated with the second argument: adding it alongside the
 -- one-argument version would have made a bare call ambiguous, the overload trap that has already
 -- bitten twice.
+
+-- 2026-09-06, THE BENEFIT BECOMES A DISCOUNT, NOT DAYS. A referral code no longer grants trial
+-- time. It credits the affiliate and marks the member, and the reward is 10% off at checkout:
+-- three months on a monthly plan, the first year on an annual one.
+--
+-- WHY. Commission runs for twelve months from REDEMPTION, so every extra trial day was taken out
+-- of the affiliate's own earning window - the member's benefit and the affiliate's were pulling
+-- against each other. A discount has no such tension. Timing was free: two codes existed and
+-- neither had ever been redeemed, so there was nothing to migrate.
+--
+-- st_redeem_code NO LONGER TOUCHES trial_days at all. The old body only wrote it when
+-- grant_days was set, so leaving the block in place would have kept the legacy 30-day codes
+-- granting time. Removing it is the guarantee: no code can extend a trial, whatever sits in the
+-- column. grant_days is now written as null by st_admin_create_code and is vestigial on the two
+-- historical rows. profiles.trial_days is still READ by the app, because an account that was
+-- given days under the old scheme keeps them - taking them back would be a broken promise.
+--
+-- profiles.referred_at is the new flag, and the whole client-side benefit hangs off it:
+-- fetchProfile already does select('*'), so the app learns "this member was referred" with no
+-- extra round trip and no new RLS policy. st_code_redemptions remains the record of WHO referred
+-- them; referred_at only decides whether a promotion code goes on the checkout URL.
+--
+-- CODE SHAPE is AUR-ST10 - initials, then the DISCOUNT. Note the 10 is a percentage now, where
+-- the 30D it replaced was a day count; if the referral discount ever stops being 10%, st_gen_code
+-- and the Stripe promotion codes have to move together. The collision suffix gained a dash
+-- (AUR-ST10-2) so a second code cannot be misread as "ST102".
+--
+-- BOTH SIGNATURES CHANGED, so both were DROPPED before being recreated - st_gen_code(days, name)
+-- to st_gen_code(name), and st_admin_create_code lost p_days. CREATE OR REPLACE would have left
+-- the old ones behind as overloads: the trap this file has now recorded three times.
+--
+-- Verified by running it, not by reading it: a redemption inside a transaction that deliberately
+-- raises at the end returned {"ok": true, "discount": 10}, left trial_days null before and after,
+-- set referred_at, incremented uses - and rolled the lot back. plpgsql bodies are not checked at
+-- CREATE time, so the only proof a column name is right is executing the statement.
