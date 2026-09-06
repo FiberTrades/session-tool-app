@@ -57915,6 +57915,12 @@ try {
   // check there. Tab-local on purpose, so a second tab on the same browser can't skip a merge.
   var lastPushedUat = null;
   ST.lastPushedUat = function () { return lastPushedUat; };
+  /* The updated_at of the row this tab last DOWNLOADED and merged, as opposed to lastPushedUat
+     which is what it last WROTE. A read-only tab never writes, so without this it had no stamp at
+     all and re-pulled the whole journal on every focus. Deliberately separate: the two answer
+     different questions, and folding them together would make the push diagnostics lie. */
+  var lastSeenUat = null;
+  ST.lastSeenUat = function () { return lastSeenUat; };
   var pushDiag = { ticks: 0, skipped: 0, pushed: 0, reads: 0, stampReads: 0, stampHits: 0,
                    guardReads: 0, guardHits: 0, since: Date.now() };   // guardHits = full downloads avoided
   // Verification handle: __stPushDiag() on an idle tab should show ticks climbing while
@@ -58188,11 +58194,16 @@ try {
        An authoritative call skips this: those exist to force a real comparison. */
     var _own = null; try { _own = localStorage.getItem('st_journal_owner'); } catch (e) {}
     var _mine = (typeof ST.lastPushedUat === 'function') ? ST.lastPushedUat() : null;
-    if (!authoritative && _mine && _own === currentUser.id) {
+    /* Either stamp will do. What this tab WROTE and what it last READ are equally good evidence
+       that the cloud row is one we have already reconciled - and only accepting the former meant
+       a tab that never writes always took the expensive path. */
+    var _known = _mine || lastSeenUat;
+    if (!authoritative && _known && _own === currentUser.id) {
       pushDiag.stampReads++;
       sb.from('journals').select('updated_at').eq('user_id', currentUser.id).maybeSingle()
         .then(function (h) {
-          if (h && !h.error && h.data && h.data.updated_at === _mine) {
+          var _uat = h && !h.error && h.data ? h.data.updated_at : null;
+          if (_uat && (_uat === _mine || _uat === lastSeenUat)) {
             pushDiag.stampHits++; accStatus(tt('synced')); return;   // unchanged: nothing to pull
           }
           reconcileFull(authoritative);
@@ -58218,6 +58229,10 @@ try {
       } catch (e) {}
       var raw = r.data && r.data.data;
       var _rowUat = r.data && r.data.updated_at;
+      /* Stamped here, on the way out of a successful download, so the NEXT focus can ask the cheap
+         question instead of pulling this same row again. Set before any merging: the claim is only
+         "this tab has seen this exact cloud row", which is true the moment it arrives. */
+      lastSeenUat = _rowUat || null;
       var cloudHasData = raw && typeof raw === 'object' && Object.keys(raw).length > 0;
       var local = ST.getData();
       // ACCOUNT ISOLATION (same browser, multiple logins): localStorage is a per-browser cache and
@@ -58225,6 +58240,9 @@ try {
       // load this account's own cloud copy, or start blank for a brand-new account.
       var _owner = null; try { _owner = localStorage.getItem('st_journal_owner'); } catch (e) {}
       if (_owner && _owner !== currentUser.id) {
+        // Different account on this browser: the stamp we just took describes a row that is about
+        // to be replaced, so it must not be trusted on the next check.
+        lastSeenUat = null;
         try { localStorage.setItem('st_journal_owner', currentUser.id); } catch (e) {}
         if (cloudHasData) {
           var _cm = ST.migrate(raw);
