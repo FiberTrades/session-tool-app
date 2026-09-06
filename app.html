@@ -56976,6 +56976,11 @@ try {
     used_up:          ['That code has already been used.', 'Ese código ya se ha usado.'],
     already_redeemed: ['You have already used that code.', 'Ya has usado ese código.'],
     already_referred: ['Your account is already linked to a code.', 'Tu cuenta ya está vinculada a un código.'],
+    /* st_redeem_code refuses a paying account: the discount is applied at checkout and a live
+       subscription never goes through one. Named plainly rather than lumped in with "not valid",
+       because the code IS valid - it just cannot reach an existing subscription. */
+    already_subscribed: ['Your subscription is already running, so a discount code can\'t be applied to it. Codes work on a new subscription.',
+                         'Tu suscripción ya está activa, así que no se puede aplicar un código de descuento. Los códigos funcionan en una suscripción nueva.'],
     signed_out:       ['Sign in first, then redeem the code.', 'Inicia sesión primero y luego canjea el código.']
   };
   function renderVipRedeem() {
@@ -57831,7 +57836,25 @@ try {
            refusal, clears it so it cannot loop. */
         if (r && r.error) return;
         try { localStorage.removeItem('st_pending_vip'); } catch (e) {}
-        if (r && r.data && r.data.ok) { try { fetchProfile(); } catch (e) {} }
+        var d = r && r.data;
+        if (d && d.ok) { try { fetchProfile(); } catch (e) {} }
+        /* Say what happened, either way. This runs after sign-in, so the card the code was typed
+           on is long gone and reporting nothing left a working code and a refused one looking
+           exactly the same. Deferred a beat: on a fresh signup the welcome modal is arriving at
+           this moment and a note raised into that lands behind it. */
+        try {
+          var _pc = (d && d.discount) || 0;
+          var _msg = (d && d.ok)
+            ? window._stT('Code applied — ' + (_pc || 10) + '% off your first 3 months, or your first year if you pay annually. It comes off at checkout.',
+                          'Código aplicado: un ' + (_pc || 10) + '% de descuento en tus 3 primeros meses, o en tu primer año si pagas anualmente. Se descuenta al finalizar la compra.')
+            : (function () {
+                var pair = VIP_ERR[(d && d.error) || 'invalid'] || VIP_ERR.invalid;
+                return window._stT(pair[0], pair[1]);
+              })();
+          setTimeout(function () {
+            try { if (typeof window.stCenterNote === 'function') window.stCenterNote(_msg); } catch (e) {}
+          }, 1500);
+        } catch (e) {}
       }, function () {});
     } catch (e) {}
   }
