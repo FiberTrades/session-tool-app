@@ -57827,6 +57827,13 @@ try {
       }, function () {});
     } catch (e) {}
   }
+  /* The account we have already done the AUTHORITATIVE journal reconcile for. fetchProfile
+     runs on every window focus, and it used to force an authoritative reconcile each time - which
+     by definition skips the cheap stamp check and downloads the whole journal. Once per account
+     is what the "trigger once plan is known" comment actually wanted; every focus after that can
+     ask whether anything changed before pulling 53 kB to discover that nothing did.
+     Keyed on the id, not a flag, so switching account in the same tab earns its own. */
+  var _authReconciledFor = null;
   function fetchProfile() {
     if (!currentUser) { renderPlanBadge(); return; }
     try { redeemPendingVip(); } catch (e) {}
@@ -57857,7 +57864,13 @@ try {
       try { if (window.__applyCommunityTab) window.__applyCommunityTab(); } catch (e) {}
       // Cloud journal sync runs for EVERY signed-in account (trial included) so nobody
       // loses their history — the paywall gates ACCESS, not sync. Trigger once plan is known.
-      reconcile(true);
+      /* Authoritative only the FIRST time for this account: local may be a previous account's
+         cache on this browser and the stamp check is deliberately not trusted to decide that.
+         Afterwards the ordinary path stamp-checks first and still falls through to the full
+         loss-proof merge the moment the cloud row differs - a change made on another device is
+         caught exactly as before. */
+      if (_authReconciledFor !== currentUser.id) { _authReconciledFor = currentUser.id; reconcile(true); }
+      else { reconcile(); }
       // If they arrived via a landing-page plan button, surface that plan now (returning
       // sign-ins; brand-new users get it after induction instead).
       try { stMaybeConsumePlanIntent(); } catch (e) {}
