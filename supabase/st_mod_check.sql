@@ -25,3 +25,20 @@
 -- Verified 6 Sep 2026 against 11 scam and 15 ordinary messages: 11/11 caught, 15/15 passed, no
 -- false positives. Re-run that set after any edit — the failure mode here is silent in both
 -- directions.
+
+-- 2026-09-06, LIVE CHAT COVERED. trg_mod_live on live_messages calls st_mod_live(), which blocks
+-- and logs exactly as the other two do. It was the last gap and arguably the worst one: the live
+-- chat is the busiest room in the app while a session runs, and the one a stranger is most likely
+-- to walk into.
+--
+-- live_messages does not match the other two tables - the author is user_id not sender_id, there
+-- is no sender_name column, and it belongs to a session not a channel. So mod_log gained
+-- session_id, and st_mod_live resolves the display name at write time from journals.data->>
+-- 'userName', falling back to profiles.email and then the uuid. A flagged row that cannot name who
+-- wrote it is close to useless when deciding whether to act on somebody.
+--
+-- Verified end to end against the live table, then cleaned up: an ordinary message inserted
+-- normally (this is the path EVERY live message takes - a runtime error in the trigger would break
+-- live chat entirely, not just scams), a scam message returned zero rows and appeared in mod_log
+-- as source 'live' with sender_name resolved to "Nestor". Both probe rows deleted; mod_log back to
+-- 0 and live_messages back to 23.
