@@ -45808,7 +45808,33 @@ try {
         if(!body){ reject(new Error('empty')); return; }
         function matchSlug(c){ var s=(c.slug||'').toLowerCase(); if(s===slug) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); return (sp>0?nm.slice(sp+1):nm).toLowerCase()===slug; }
         function withUser(uid){
-          function doInsert(ch){ if(!ch){ reject(new Error('channel not found: '+slug)); return; } var row={ channel_id:ch.id, sender_id:uid, body:body, sender_name:myName(), sender_avatar:myAvatar() }; if(bodyEs && bodyEs!==body) row.body_es=bodyEs; sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ reject(r.error); } else { try{ if(cur && cur.id===ch.id && typeof append==='function') append(r.data); }catch(e){} try{ _bumpBoardAfterPost(slug); }catch(e){} resolve(r.data); } }, reject); }
+          /* Through st_post_review, not a plain INSERT. cm_insert enforces post_policy, so with
+             "Who can post" unticked the composer is shut - and this path was being shut with it,
+             which is not what unticking those boxes is meant to mean. The RPC is the app posting
+             a structured review on the member's behalf; the composer stays refused.
+             The row is read back by id rather than assembled here, so what the channel shows is
+             what the database actually stored. */
+          function doInsert(ch){
+            if(!ch){ reject(new Error('channel not found: '+slug)); return; }
+            sb.rpc('st_post_review', { p_slug: slug, p_body: body,
+                                       p_body_es: (bodyEs && bodyEs!==body) ? bodyEs : null,
+                                       p_name: myName(), p_avatar: myAvatar() })
+              .then(function(r){
+                if(r.error){ reject(r.error); return; }
+                var _id = r.data;
+                sb.from('channel_messages').select('*').eq('id', _id).maybeSingle().then(function(g){
+                  var _row = (g && g.data) || { id:_id, channel_id:ch.id, sender_id:uid, body:body,
+                                                sender_name:myName(), sender_avatar:myAvatar() };
+                  try{ if(cur && cur.id===ch.id && typeof append==='function') append(_row); }catch(e){}
+                  try{ _bumpBoardAfterPost(slug); }catch(e){}
+                  resolve(_row);
+                }, function(){
+                  // Stored fine, just could not be read back - never fail a post over the echo.
+                  try{ _bumpBoardAfterPost(slug); }catch(e){}
+                  resolve({ id:_id });
+                });
+              }, reject);
+          }
           var ch=(channels||[]).filter(matchSlug)[0];
           if(ch){ doInsert(ch); return; }
           sb.from('channels').select('*').then(function(r){ var list=(r&&r.data)||[]; doInsert(list.filter(matchSlug)[0]); }, reject);
