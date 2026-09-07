@@ -58171,8 +58171,19 @@ try {
     // whatever the cloud holds, and this is not a place to be clever to save one request.
     if (_clearStamp(d) > 0) { _guardFull(); return; }
     pushDiag.guardReads++;
-    sb.from('journals').select('content_score').eq('user_id', currentUser.id).maybeSingle().then(function (h) {
-      var cs = (h && !h.error && h.data) ? h.data.content_score : null;
+    sb.from('journals').select('content_score, updated_at').eq('user_id', currentUser.id).maybeSingle().then(function (h) {
+      var cs  = (h && !h.error && h.data) ? h.data.content_score : null;
+      var uat = (h && !h.error && h.data) ? h.data.updated_at    : null;
+      /* Is this cloud row simply the one THIS TAB last wrote? lastPushedUat is stamped on our own
+         confirmed upsert, so if the server still carries it nobody has written since - the cloud
+         holds nothing we do not have, and there is nothing to merge whatever the scores say.
+         Most useful after a local DELETION: our score drops below the cloud's, and without this
+         every following push re-downloaded the journal to discover a change that was ours.
+         Deliberately NOT the read path's lastSeenUat, which is set before its merge runs and has
+         no single "fully absorbed" moment to hang off - too early there costs a re-download, too
+         early here is a silent overwrite. */
+      var _mine = (typeof ST.lastPushedUat === 'function') ? ST.lastPushedUat() : null;
+      if (uat && _mine && uat === _mine) { pushDiag.guardHits++; doCloudUpsert(d); return; }
       if (cs == null || (cs - lScore) >= 2) { _guardFull(); return; }   // unknown, or something IS going
       pushDiag.guardHits++;
       doCloudUpsert(d);
