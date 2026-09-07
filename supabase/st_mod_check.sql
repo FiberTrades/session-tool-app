@@ -73,3 +73,29 @@
 --
 -- Verified 6 Sep 2026: 18 scams (Spanish accented, Spanish unaccented, English) all caught;
 -- 20 ordinary messages in both languages all passed. No misses, no false positives.
+
+-- 2026-09-07, REACTIONS FOLLOW CHANNEL ACCESS, not posting rights or paid status.
+-- Two things were stopping an emoji being easier to give than a paragraph:
+--   * st_is_member() is "is_paid or comp", written before trials had community access. A trial
+--     member can post in session-chat, report-bugs and app-suggestions but could not react in any
+--     of them - the UI offered the picker and the insert was silently refused - and cr_select had
+--     the same gate, so every message appeared to have no reactions at all.
+--   * On the four review channels the CLIENT gated reactions on post_policy, so unticking "Who can
+--     post" removed reactions too, for paying members included.
+-- cr_insert and cr_select now test st_can_access on the reaction's own channel_id. The client gate
+-- moved from _canPostHere() to _chanLocked(cur), so both sides ask the same question.
+--
+-- BANNED USERS ARE NOW BLOCKED, which they were not: channel_reactions never had the ban_block
+-- policy its sibling tables carry, and st_is_member() had been holding the door shut for some of
+-- them by accident. Widening access without this would have opened a hole rather than left one.
+--
+-- roles and member_roles moved to "any signed-in user" for SELECT. They are badge names, already
+-- public on the pricing page, and gating them meant a trial saw the roster with every badge
+-- missing. Writing them stays admin-only, which is the part that matters.
+--
+-- Verified as real accounts against the live policies, then rolled back:
+--   trial reacting on a review post          ALLOWED
+--   trial reacting in session-chat           ALLOWED
+--   trial reacting where it cannot see       REFUSED
+--   trial reading roles / member_roles       7 / 20  (was 0 / 0)
+--   comp reacting on a review post           ALLOWED
