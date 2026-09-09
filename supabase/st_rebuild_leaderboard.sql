@@ -817,3 +817,32 @@ $function$;
 -- one occurrence before replacing. Verified by RUNNING it, since plpgsql bodies are not checked at
 -- CREATE time: September went from weekly_reviews 0 / weekly 0 to 3 reviews and 60 points across
 -- the three traders, each correctly showing 1 of 1 week.
+
+-- 2026-09-09, A REVIEW COUNTS ONCE YOUR SESSION ENDED, not once the settings window did.
+-- The boundary was sess_end - 10:00 for an 08:00-10:00 trader - so finishing early and reviewing
+-- promptly scored nothing. Six reviews posted on six days counted as two:
+--     02 Sep 19:09 (counted)   03 Sep 09:40   04 Sep 10:46 (counted)
+--     07 Sep 09:22             08 Sep 09:53   09 Sep 08:51
+-- Every one of the four that missed was written within twenty minutes of the last trade closing,
+-- while the window still had an hour to run. A discipline board should reward that, not deduct
+-- for it - and it was deducting twice, once on the count and once as -20 on the month.
+--
+-- The boundary is now the trader's own last trade that day, from trades_verified. On a day with NO
+-- trades there is no session to be after, so any time counts: reviewing a day you watched and did
+-- not trade is not less honest at 09:53 than at 10:01.
+--
+-- THE FINISH-SESSION BUTTON would be truer and is what was asked for, but data._sessionEndedEarly
+-- holds only { date, idxs } - no time - is cleared whenever session settings change, and keeps no
+-- history. It can say nothing about past days and would only work from the day a client change
+-- shipped. Last trade close is already stored per trade with a timestamp and gave the same answer
+-- on every day checked. Revisit if the button ever logs a time per day.
+--
+-- BOTH USES MOVED TOGETHER. The boundary appears twice: in `review`, which produces the
+-- review_days count on the card, and in `review_ok_dates`, which feeds the per-day points.
+-- Changing one alone would have made the number and the score disagree - the first attempt
+-- asserted a single occurrence, found two, and refused to run.
+--
+-- bias_ok_dates is untouched: "before the session started" is a real on-time test and sess_start
+-- is the right boundary for it.
+--
+-- After rebuilding, September: Nestor 6/6 reviews (+60, was 2/6 and -20), Troy 5/6, Aurora 4/5.
