@@ -846,3 +846,34 @@ $function$;
 -- is the right boundary for it.
 --
 -- After rebuilding, September: Nestor 6/6 reviews (+60, was 2/6 and -20), Troy 5/6, Aurora 4/5.
+
+-- 2026-09-09, FINISH SESSION IS THE END OF THE SESSION. The client now writes
+-- data.sessionEndLog, a durable map of local date -> local HH:MM, written whenever the Finish
+-- session button is pressed, LAST press of the day winning (finish one session at 09:10 and
+-- another at 15:30 and the day ended at 15:30). It lives in the journal, so it syncs and this
+-- function can read it.
+--
+-- The boundary a review must beat is now, in order:
+--   1. the declared finish for that day, if the button was pressed
+--   2. the last trade that closed that day, if there were trades
+--   3. any time - a day with neither has no session to be after
+--
+-- Step 2 stays because sessionEndLog only exists from the day it shipped: nobody has a history of
+-- presses, and a trader who never touches the button would otherwise lose the boundary entirely.
+--
+-- _sessionEndedEarly was NOT reused: it holds { date, idxs } with no time, is cleared whenever
+-- session settings change, and keeps no history. It can say "you finished early today" and
+-- nothing else.
+--
+-- THE KEY IS THE LOCAL DATE. The client builds it from getFullYear/getMonth/getDate rather than
+-- its own _todayKey(), which is toISOString().slice(0,10) - a UTC date. Through BST the two differ
+-- either side of midnight, and a key that does not match is a lookup that silently misses. This
+-- side uses to_char((created_at at time zone s.tz)::date,'YYYY-MM-DD') to match.
+--
+-- ANCHORED ON SINGLE-LINE FRAGMENTS. pg_get_functiondef returns this body with CRLF endings, so a
+-- multi-line anchor written with \n matches nothing at all. The first attempt asserted one
+-- occurrence, found zero, and refused to run.
+--
+-- Proved by running it: with no log, September reads 6/6 and 130 pts; inject a declared finish of
+-- 23:00 on 9 Sep and the 08:51 review stops counting - 5/6, 110 pts - then roll back. The drop is
+-- the evidence the log is read and that it outranks the last-trade fallback.

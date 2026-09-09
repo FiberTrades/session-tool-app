@@ -10310,6 +10310,28 @@ try {
     if (!ee || typeof ee === 'string' || ee.date !== tk) ee = { date: tk, idxs: [] };
     if (idx >= 0 && ee.idxs.indexOf(idx) === -1) ee.idxs.push(idx);
     data._sessionEndedEarly = ee;
+    /* A durable record of WHEN the session was declared over, which _sessionEndedEarly cannot
+       give: it holds no time, and it is cleared whenever session settings change. The leaderboard
+       reads this to decide whether a session review was written after the session ended, instead
+       of inferring it from the last trade - which is right most days and wrong on a day with no
+       trades at all.
+       LOCAL date and time, deliberately not _todayKey(): that is a UTC date, while the scoring
+       groups on (created_at at time zone tz)::date. Through BST the two differ either side of
+       midnight, and a key that does not match is a lookup that silently misses.
+       The LAST press of the day wins - finish one session at 09:10 and another at 15:30 and the
+       day ended at 15:30. */
+    try {
+      const n = new Date();
+      const p2 = (v) => ('0' + v).slice(-2);
+      const dayKey = n.getFullYear() + '-' + p2(n.getMonth() + 1) + '-' + p2(n.getDate());
+      const log = (data.sessionEndLog && typeof data.sessionEndLog === 'object') ? data.sessionEndLog : {};
+      log[dayKey] = p2(n.getHours()) + ':' + p2(n.getMinutes());
+      // Bounded: the scoring never looks past the current year, and an unbounded map in a synced
+      // journal is egress nobody asked for.
+      const keys = Object.keys(log).sort();
+      while (keys.length > 400) { delete log[keys.shift()]; }
+      data.sessionEndLog = log;
+    } catch (e) {}
   }
   function dismissedSessionsToday() {
     const dd = data && data._sessionLiveDismissed;
