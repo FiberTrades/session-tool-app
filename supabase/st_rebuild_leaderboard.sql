@@ -156,6 +156,29 @@ begin
       from per_acct
       group by user_id
     ),
+    -- The risk the trader recorded in their OWN journal, for trades the EA never stamped.
+    -- risk_gbp only exists on trades the EA managed; a trade placed by hand reaches trades_verified
+    -- with risk_gbp and sl_pips NULL, so pnl/risk is undefined and period_r drops it - which let a
+    -- single hand-placed loss vanish from Net R while still counting in the trade count and the P&L.
+    -- Keyed on the broker ticket, and read from currentSeries + history only: the same two lists
+    -- getAllLifetimeTrades uses in the app, so this is exactly what the app calls a lifetime trade.
+    jrisk as (
+      select j.user_id,
+             (e.value ->> 'mt5Ticket')                    as ticket,
+             max(nullif(e.value ->> 'risk','')::numeric)  as risk_j
+      from journals j
+      cross join lateral (
+        select tt.value
+          from jsonb_array_elements(coalesce(j.data -> 'history','[]'::jsonb)) s
+          cross join lateral jsonb_array_elements(coalesce(s.value -> 'trades','[]'::jsonb)) tt
+        union all
+        select tt.value
+          from jsonb_array_elements(coalesce(j.data -> 'currentSeries','[]'::jsonb)) tt
+      ) e
+      where nullif(e.value ->> 'mt5Ticket','') is not null
+        and nullif(e.value ->> 'risk','')::numeric > 0
+      group by 1, 2
+    ),
     raw as (
       select
         lt.*,
@@ -198,8 +221,12 @@ begin
         coalesce(lt.tp_r::numeric, 0)             as tp_r,
         coalesce(lt.mfe_r::numeric, 0)            as mfe_r,
         (lt.sl_pips is not null and nullif(lt.risk_gbp::numeric,0) is not null) as stamped,
-        case when nullif(lt.risk_gbp::numeric,0) is not null
-             then (lt.pnl::numeric) / lt.risk_gbp::numeric
+        -- Journal risk is SELF-REPORTED, so it is capped at the account's own max-risk rule:
+        -- inflating the risk on a hand-placed loss would otherwise shrink it in R. least() ignores
+        -- NULLs, so no rule configured means no cap - and the case-when is what stops a trade with no
+        -- journal entry at all from silently taking the cap itself as its risk.
+        case when nullif(coalesce(lt.risk_gbp::numeric, case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end),0) is not null
+             then (lt.pnl::numeric) / nullif(coalesce(lt.risk_gbp::numeric, case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end),0)
         end                                                    as r,
         (lt.sl_pips is not null and coalesce(lt.sl_pips::numeric,0) <= 0)      as no_stop,
         (
@@ -234,6 +261,7 @@ begin
         ceil(row_number() over (partition by lt.user_id order by lt.close_time)::numeric / 10.0) as series_no
       from ded lt
       left join lim l on l.user_id = lt.user_id
+      left join jrisk jr on jr.user_id = lt.user_id and jr.ticket = lt.ticket::text
     ),
     series as (
       select
