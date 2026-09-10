@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.8"
+#property version   "7.9"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2412,7 +2412,11 @@ bool SyncCollectAndPush(ulong posId)
          // average, which for a scale-out is a price the chart never printed - fine as a summary,
          // useless as a record of what was actually done.
          ArrayResize(exPrice,outCnt+1); ArrayResize(exVol,outCnt+1); ArrayResize(exTime,outCnt+1);
-         exPrice[outCnt]=price; exVol[outCnt]=vol; exTime[outCnt]=(long)tt;
+         // UTC, like open_time, close_time and every logged stop move. This shipped raw SERVER
+         // time while its neighbours were converted, so on a UTC+3 broker the exit was stamped
+         // three hours after the close_time in the same row (14:57:12 against 11:57:16Z on
+         // ticket 166207851). MoveLog carries the same note about the same mistake.
+         exPrice[outCnt]=price; exVol[outCnt]=vol; exTime[outCnt]=(long)tt-BrokerOff();
          outCnt++;
         }
      }
@@ -2747,7 +2751,39 @@ void PM_Queue(ulong posId,string sym,int dir,double entry,double slPrice,
 // Splitting on pnl>0 would have been wrong twice over: a breakeven would fall into the
 // loser branch, and a breakeven closed with commission (pnl = -6.57) would be counted as
 // an outright loss on the strength of its fees.
-bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
+// The stop-move history, as the post-mortem needs it: SERVER time, oldest first, so a replay can
+// ask "where was the stop at this bar" instead of assuming it never moved again.
+//
+// MoveLog stores UTC - its own note explains why: TimeCurrent() is broker time and stamped an
+// 08:00 move as 11:00 on a UTC+3 server. CopyRates hands back SERVER time. So the offset goes back
+// on HERE, or every comparison below is out by the server's offset, which on this broker is three
+// hours - long enough to land in a different part of the day and answer with the wrong bar.
+//
+// Bounded by a plain 64 rather than MM_MOVE_MAX: that #define lives further down the file, and a
+// preprocessor symbol has to appear before the line that uses it. 64 is far above the real cap and
+// only exists so a corrupt count cannot spin this loop.
+int PM_LoadStopMoves(ulong posId,datetime &mt[],double &mp[])
+  {
+   string sk="MMD_"+(string)posId+"_";
+   string ck=sk+"shn";
+   int n=GlobalVariableCheck(ck)?(int)GlobalVariableGet(ck):0;
+   if(n<=0) return 0;
+   if(n>64) n=64;
+   ArrayResize(mt,n); ArrayResize(mp,n);
+   int k=0;
+   for(int i=0;i<n;i++)
+     {
+      string tkey=sk+"sh"+(string)i+"t", pkey=sk+"sh"+(string)i+"p";
+      if(!GlobalVariableCheck(tkey) || !GlobalVariableCheck(pkey)) continue;
+      mt[k]=(datetime)((long)GlobalVariableGet(tkey)+BrokerOff());   // UTC -> server
+      mp[k]=GlobalVariableGet(pkey);
+      k++;
+     }
+   ArrayResize(mt,k); ArrayResize(mp,k);
+   return k;
+  }
+
+bool PM_Replay(ulong posId,string sym,int dir,double entry,double slPrice,double tpPrice,
                double slPips,datetime openT,datetime closeT,double pnl,datetime beT,
                double &potPips,double &potR,double &reqSlPips,int &wouldWin,
                double &beSlackPips,double &beClearPips,double &beClearR)
@@ -2793,6 +2829,17 @@ bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
       bool atOrBeyondBE=(dir>0) ? (slPrice>=entry) : (slPrice<=entry);
       if(atOrBeyondBE) bePrice=slPrice;          // the real BE stop, offset included
      }
+   /* The stop as it really moved, so the window below can close on the stop that was in force
+      rather than on one the trade wore for six minutes. curSL starts at the ORIGINAL stop - what
+      was protecting the trade before any move landed. With no history at all we keep the old
+      latched-BE test: measuring against the original stop there would credit a trade that really
+      was stopped out at breakeven with everything it did afterwards, and a missing history is not
+      evidence that the stop never moved. */
+   datetime mvT[]; double mvP[];
+   int  mvN=PM_LoadStopMoves(posId,mvT,mvP), mvI=0;
+   bool haveMoves=(mvN>0);
+   double curSL=(slPips>0)? (entry - dir*slPips*pip) : bePrice;
+
    bool favOpen=true;
    bool   advOpen=(tpPrice>0);                  // no TP set        -> nothing to test against
    bool   beOpen =(tpPrice>0 && beT>0);         // stop never went to BE -> question does not arise
@@ -2818,15 +2865,30 @@ bool PM_Replay(string sym,int dir,double entry,double slPrice,double tpPrice,
          // The first bar is exempt: price sits AT entry when the trade opens, so testing it
          // would slam the window shut on every trade before it had moved anywhere.
          //
-         // ...and only from the moment the stop ACTUALLY moved to breakeven. Before beT
-         // that stop did not exist yet - the original stop was protecting the trade, and
-         // it survived, or there would have been no BE move to record. Testing the BE
-         // price from bar one closed the window on any early wobble back through entry
-         // and recorded a potential of zero on trades that went on to run for several R.
-         // Mirrors the beT gate used by the BE-slack measurement below.
-         bool beLive = (beT<=0) || (r[i].time>=beT);
-         bool beHit = (i>0) && beLive && ((dir>0) ? (r[i].low<=bePrice) : (r[i].high>=bePrice));
-         if(beHit) favOpen=false;
+         // ...and against the stop that was ACTUALLY IN FORCE at this bar, walked forward
+         // through the move history rather than latched on the first breakeven touch.
+         //
+         // beT never cleared. So a stop nudged to breakeven and moved straight back off it -
+         // ticket 166207851 wore BE for six minutes of a four-hour trade and finished at 2.9
+         // pips of real risk - went on being tested against the BE price for the rest of the
+         // replay. Price wobbled back through entry soon after, which is exactly WHY the stop
+         // was moved away, and the window shut at 3.2 pips on a trade that reached 46.
+         //
+         // A stop price of 0 is a REMOVAL, kept deliberately by MoveLog, and a stop that is not
+         // there cannot close the window - hence the curSL>0 test.
+         bool slHit;
+         if(haveMoves)
+           {
+            while(mvI<mvN && mvT[mvI]<=r[i].time){ curSL=mvP[mvI]; mvI++; }
+            slHit = (i>0) && (curSL>0) && ((dir>0) ? (r[i].low<=curSL) : (r[i].high>=curSL));
+           }
+         else
+           {
+            // No history: keep exactly what this did before, for the reason above the load.
+            bool beLive = (beT<=0) || (r[i].time>=beT);
+            slHit = (i>0) && beLive && ((dir>0) ? (r[i].low<=bePrice) : (r[i].high>=bePrice));
+           }
+         if(slHit) favOpen=false;
          else if(favP>bestFav) bestFav=favP;
         }
 
@@ -3290,7 +3352,7 @@ void PM_Sweep()
         }
 
       double potPips,potR,reqSl,beSlack,beClearP,beClearR2; int wWin;
-      if(PM_Replay(sSym,dir,entry,slPr,tpPr,slPip,openT,closeT,pnl,beT,
+      if(PM_Replay(posId,sSym,dir,entry,slPr,tpPr,slPip,openT,closeT,pnl,beT,
                    potPips,potR,reqSl,wWin,beSlack,beClearP,beClearR2))
         {
          // The ORIGINAL stop, not the one we ended up on - the BE rule is the thing being
