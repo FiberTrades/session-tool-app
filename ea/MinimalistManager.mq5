@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.7"
+#property version   "7.8"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -202,6 +202,12 @@ bool g_pausedByLimit = false;   // true when the daily limit auto-paused ACTIVE;
 // of them. Go much below 300 and labels start colliding with their controls.
 int  PX, PY, PWID = 320;
 int  g_panelH = 24;
+// Raised by EnsureHLine when it CREATES a line, cleared by BuildPanel when it acts on it.
+// Foreground objects draw in object-list order, and a newly created line lands at the end of that
+// list - on top of a panel that was built earlier. The panel has to be recreated to get back
+// above it. (OBJPROP_ZORDER does not do this: the MQL5 reference defines it as priority for
+// receiving CHARTEVENT_CLICK, nothing else.)
+bool g_panelRelayer = false;
 int  g_maxTradesDay = 0;   // runtime daily-trade cap (from InpMaxTradesDay, editable on panel)
 bool   g_scaleLock    = false;   // chart scale lock on/off (off by default; forex-style padding)
 double g_scalePadPips = 50.0;    // pips of air added above and below the visible price range
@@ -366,6 +372,10 @@ void EnsureHLine(string name,double price,color clr,int style,bool selectable)
       ObjectSetInteger(0,name,OBJPROP_SELECTABLE,selectable);
       ObjectSetInteger(0,name,OBJPROP_SELECTED,selectable);  // pre-selected => single-drag, no click first
       ObjectSetString (0,name,OBJPROP_TOOLTIP,"\n");          // suppress the default object-name tooltip
+      // A NEW line goes to the end of the object list, which is what draws it over the panel.
+      // Only here, in the creation branch - the per-tick calls below just update a line that is
+      // already in place and must not cost a panel rebuild.
+      g_panelRelayer=true;
      }
    ObjectSetDouble (0,name,OBJPROP_PRICE,price);
    ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
@@ -374,10 +384,15 @@ void EnsureHLine(string name,double price,color clr,int style,bool selectable)
    // Foreground layer: the EA's SL/TP/BE/entry lines must sit IN FRONT of MT5's own native
    // position SL/TP lines (and the candles), so keep BACK=false. Native trade-level lines are
    // drawn in the chart layer, below every graphical object, so any foreground object beats
-   // them. The settings panel is still kept ON TOP of these lines via a higher OBJPROP_ZORDER
-   // on the panel objects (see mkRect/mkLabel/mkButton/mkEdit) — NOT by pushing the lines to
-   // the background, which was what buried them under MT5's own lines. ZORDER 0 on the lines
-   // (set every call) undoes any BACK/ZORDER left over from an older build on the same chart.
+   // them. ZORDER 0 on the lines (set every call) undoes any BACK/ZORDER left over from an
+   // older build on the same chart.
+   //
+   // The panel is NOT held above these lines by its higher OBJPROP_ZORDER, whatever this comment
+   // used to claim. The MQL5 reference defines that property as the priority for receiving
+   // CHARTEVENT_CLICK and nothing more. Drawing order among foreground objects follows the object
+   // list, so a line created after the panel's last rebuild draws over it - which is why a
+   // trailing step, the one line you add FROM the panel, was the one crossing it. g_panelRelayer
+   // above is what actually keeps the panel on top.
    ObjectSetInteger(0,name,OBJPROP_BACK,false);
    ObjectSetInteger(0,name,OBJPROP_ZORDER,0);
   }
@@ -1521,7 +1536,12 @@ void UpdateManageLine()
          else if(MathAbs(LinePrice(LN_TP+"0")-ptp)>g_point) ObjectSetDouble(0,LN_TP+"0",OBJPROP_PRICE,ptp);
          SetLineText(TX_TP,LinePrice(LN_TP+"0"),"TP",COL_LINE_TP);
         }
-      else { ObjectDelete(0,LN_TP+"0"); ObjectDelete(0,TX_TP); }
+      // The same ownership rule the flat branch below already states: while exec mode is armed
+      // RedrawTargets owns the TP preview line. Deleting it here started a create/delete fight
+      // that ran EVERY TICK on an open position with no broker TP - RedrawTargets makes the line
+      // at OnTick 4078, this deleted it at 4079, repeat. Only clear it when nothing else is
+      // drawing it; in exec mode you should still see the target you are setting up.
+      else if(!g_execMode) { ObjectDelete(0,LN_TP+"0"); ObjectDelete(0,TX_TP); }
       // draggable BE line (only if armed)
       if(g_useBE && g_beArmed)
         {
@@ -1545,6 +1565,12 @@ void UpdateManageLine()
          ObjectDelete(0,LN_TP+"0"); ObjectDelete(0,TX_TP);
         }
      }
+   // Outside the if/else on purpose: this runs from OnTick and OnTimer with no BuildPanel behind
+   // it, and it is the path that creates the trailing, SL, entry-fill, TP and BE lines. Every
+   // other creator (ToggleExecMode, SwitchOrderKind, the panel handlers) already calls BuildPanel
+   // straight after, which consumes the flag there. Costs nothing on the ticks that create
+   // nothing.
+   if(g_panelRelayer) BuildPanel();
   }
 
 // Apply a dragged SL to every matching open position, then resync the line.
@@ -1601,7 +1627,10 @@ void mkRect(string n,int x,int y,int w,int h,color bg,color border)
    ObjectSetInteger(0,n,OBJPROP_BORDER_TYPE,BORDER_FLAT);
    ObjectSetInteger(0,n,OBJPROP_COLOR,border);
    ObjectSetInteger(0,n,OBJPROP_BACK,false);
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // panel sits ABOVE the SL/TP/BE/entry lines (which are ZORDER 0)
+   // Click priority, NOT draw order: MQL5 defines OBJPROP_ZORDER as the priority for receiving
+   // CHARTEVENT_CLICK, so this is what makes the panel take a click landing on it rather than the
+   // line running underneath. What keeps it drawn on top is g_panelRelayer (see EnsureHLine).
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1616,7 +1645,7 @@ void mkLabel(string n,int x,int y,string text,color clr,int fs)
    ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
    ObjectSetString (0,n,OBJPROP_FONT,"Arial");
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // panel label above the chart lines
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1632,7 +1661,7 @@ void mkIcon(string n,int cx,int cy,string glyph,color clr,int fs,string font)
    ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
    ObjectSetString (0,n,OBJPROP_FONT,font);
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // panel icon above the chart lines
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1652,7 +1681,7 @@ void mkIconBtn(string n,int cx,int cy,string glyph,color fg,int fs,string font,c
    ObjectSetInteger(0,b,OBJPROP_BORDER_TYPE,BORDER_FLAT);
    ObjectSetInteger(0,b,OBJPROP_COLOR,boxbg);
    ObjectSetInteger(0,b,OBJPROP_BACK,false);
-   ObjectSetInteger(0,b,OBJPROP_ZORDER,10);   // icon box above the chart lines
+   ObjectSetInteger(0,b,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,b,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,b,OBJPROP_HIDDEN,true);
    mkIcon(n,cx,cy,glyph,fg,fs,font);
@@ -1669,7 +1698,7 @@ void mkLabelBR(string n,int x,int y,string text,color clr,int fs)
    ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
    ObjectSetString (0,n,OBJPROP_FONT,"Consolas");
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // corner readout above the chart lines
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1685,7 +1714,7 @@ void mkLabelBL(string n,int x,int y,string text,color clr,int fs)
    ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
    ObjectSetString (0,n,OBJPROP_FONT,"Consolas");
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // corner readout above the chart lines
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1702,7 +1731,7 @@ void mkButton(string n,int x,int y,int w,int h,string text,color bg,color tx)
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,8);
    ObjectSetString (0,n,OBJPROP_FONT,"Arial");
    ObjectSetInteger(0,n,OBJPROP_STATE,false);
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // panel button above the chart lines
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1720,7 +1749,7 @@ void mkEdit(string n,int x,int y,int w,int h,string text)
    ObjectSetInteger(0,n,OBJPROP_ALIGN,ALIGN_CENTER);
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,8);
    ObjectSetInteger(0,n,OBJPROP_READONLY,false);
-   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // panel edit box above the chart lines
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1774,7 +1803,27 @@ void BuildPanel()
    // Rebuild in place instead, and only wipe when the layout genuinely changes shape.
    static bool s_built   = false;
    static bool s_wasOpen = false;
-   if(!s_built || s_wasOpen != g_panelOpen) DeleteByPrefix(PP);
+   // A chart line was created since the last rebuild, so it now sits after the panel in the object
+   // list and draws over it. Wiping is the only way back on top - ObjectCreate on a name that
+   // already exists is a no-op, so rebuilding in place leaves every panel object exactly where it
+   // was. Only on actual line CREATION, a handful of times per trade, so this does not bring back
+   // the flashing that the in-place rebuild was written to stop.
+   //
+   // Held to one every 500ms as insurance. Creation is rare by design, but a path that created and
+   // deleted the same line on alternate ticks would rebuild this panel sixty times a second - the
+   // precise failure the in-place rebuild exists to prevent. One such path existed (the TP preview
+   // fight in UpdateManageLine, fixed) and this caps any other. Open/close is not rate-limited:
+   // that is a direct response to a click and has to be instant.
+   static uint s_lastRelay = 0;
+   uint  _now  = GetTickCount();
+   bool  relay = g_panelRelayer && (_now - s_lastRelay) > 500;   // uint subtraction wraps correctly
+   // Only a relayer that FIRES is spent. One the floor turns down stays raised so the next
+   // UpdateManageLine tries again - otherwise adding T1 and T2 inside half a second loses the
+   // second one's rebuild entirely, and that step draws over the panel until something unrelated
+   // triggers a wipe. Holding the flag costs an in-place rebuild per tick for the rest of the
+   // window, which is the cheap path this panel already takes on every keystroke.
+   if(relay) { s_lastRelay = _now; g_panelRelayer = false; }
+   if(!s_built || s_wasOpen != g_panelOpen || relay) DeleteByPrefix(PP);
    s_built   = true;
    s_wasOpen = g_panelOpen;
    int x=PX, y=PY, w=PWID;
