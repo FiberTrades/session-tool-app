@@ -2267,6 +2267,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      stray speck at the top on mobile WebKit/Blink. An outline with a negative offset gives the
      same pink inset ring, cleanly, with zero layout impact. */
   .trade-input.tl-needs-fill, .trade-select.tl-needs-fill { outline: 1.6px solid transparent; outline-offset: -1.6px; border-radius: 4px; animation: tlFlashBlue 1.1s ease-in-out infinite; }
+  /* A Potential R typed below the R actually captured. Steady red, no flash: tl-needs-fill's
+     pulse means "this is still empty", and this cell is not empty - it holds a number that
+     cannot be true. */
+  .trade-input.potr-bad { outline: 1.6px solid var(--bad); outline-offset: -1.6px; border-radius: 4px; }
   .trade-header-cell { background: var(--bg-elev2); padding: 8px 8px; font-size: 8px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text); text-align: center; white-space: nowrap; }
   .trade-cell { background: var(--bg); padding: 8px 8px; display: flex; align-items: center; }
   /* Column dividers drawn as BORDERS, not as a 1px grid gap showing the row background through.
@@ -6565,6 +6569,7 @@ try {
         </div>
       </div>
     </div>
+    <div id="potr-modal-err" style="display:none;margin-top:12px;font-size:11px;line-height:1.5;color:var(--bad);"></div>
     <div class="mdl-actions">
       <button type="button" id="potr-modal-save" style="background:var(--text);color:var(--bg);border:none;padding:8px 18px;font-family:'AppNum', 'DM Mono',monospace;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;cursor:pointer;">Save</button>
     </div>
@@ -13987,6 +13992,38 @@ try {
     }
     return false;
   }
+  /* Potential R is the peak the move REACHED, so it can never sit below the R actually banked.
+     Nothing used to stop it: one 6.9R win carrying a 1.1R potential made a Series History row
+     print a -5.80R "gap" and a Captured score of 627 out of 100.
+
+     potrFloorR  - the lowest potential a trade could honestly carry. A Win floors at its own
+                   logged r, because on a Win that field IS the R captured (tradeGross rebuilds
+                   the money as r x risk) and it is the same gross-of-costs basis a potential is
+                   typed in. A BE banked nothing, so it floors at 0.
+     potrTooLow  - the one rule, shared by all three places a potential can be entered, so they
+                   cannot drift apart.
+     capturedPct - the score, held inside the 0..100 it is defined on. Clamped rather than
+                   dropped: the Pot R cell beside it still shows the negative gap, and that is
+                   what tells you which trade to correct. */
+  function potrFloorR(tr) {
+    if (!tr || tr.result !== 'Win') return 0;
+    var v = parseFloat(tr.r);
+    return (isFinite(v) && v > 0) ? v : 0;
+  }
+  function potrTooLow(tr, val) {
+    if (val == null || !isFinite(val)) return false;
+    return val < potrFloorR(tr) - 1e-9;       // epsilon: 6.9 typed against a 6.9 floor is fine
+  }
+  function potrTooLowMsg(tr) {
+    var f = potrFloorR(tr);
+    var en = 'Potential R can\u2019t be below the ' + f + 'R you captured \u2014 it\u2019s how far the move ran at its peak.';
+    var es = 'La R potencial no puede ser menor que los ' + f + 'R que capturaste \u2014 es hasta d\u00f3nde lleg\u00f3 el movimiento en su punto m\u00e1ximo.';
+    try { return (typeof window._stT === 'function') ? window._stT(en, es) : en; } catch (e) { return en; }
+  }
+  function capturedPct(capR, potR) {
+    if (!(potR > 0)) return 100;
+    return Math.max(0, Math.min(100, Math.round((capR / potR) * 100)));
+  }
   function calcSeriesStats(trades) {
     const w = trades.filter(t => t.result === 'Win').length;
     const l = trades.filter(t => t.result === 'Lose').length;
@@ -15527,8 +15564,14 @@ try {
         const v = e.target.value.trim();
         const tr = data.review.trades[idx];
         const num = (v && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
-        if (tr.result === 'BE')  tr.bePotentialR = num;
-        else                     tr.potentialR    = num;
+        /* Typed live, so this one cannot refuse a keystroke - "1" on the way to "10" is below the
+           floor for a moment and blocking it would make the field unusable. It marks the cell and
+           stores null instead, and clears itself as soon as the number reaches the R captured. */
+        const _bad = potrTooLow(tr, num);
+        e.target.classList.toggle('potr-bad', _bad);
+        e.target.title = _bad ? potrTooLowMsg(tr) : '';
+        if (tr.result === 'BE')  tr.bePotentialR = _bad ? null : num;
+        else                     tr.potentialR    = _bad ? null : num;
         lightUpdate();
       });
       potpipsInput.addEventListener('input', e => {
@@ -15651,6 +15694,9 @@ try {
       (typeof t.potentialR === 'number' && !isNaN(t.potentialR)) ? t.potentialR : '';
     document.getElementById('potpips-modal-input').value =
       (typeof t.potentialPips === 'number' && !isNaN(t.potentialPips)) ? t.potentialPips : '';
+    // Any rejection from the last time this popup was open belongs to the last trade, not this one.
+    const _pErr = document.getElementById('potr-modal-err');
+    if (_pErr) { _pErr.textContent = ''; _pErr.style.display = 'none'; }
     document.getElementById('potr-modal-bg').classList.add('show');
     setTimeout(() => document.getElementById('potr-modal-input').focus(), 50);
   }
@@ -15663,6 +15709,19 @@ try {
     if (_potrModalTradeIdx == null) { closePotentialRModal(); return; }
     const rV    = document.getElementById('potr-modal-input').value.trim();
     const pipsV = document.getElementById('potpips-modal-input').value.trim();
+    const _tr   = data.review.trades[_potrModalTradeIdx];
+    /* A potential below the R already banked is not a small error - it inverts the Pot R gap and
+       sends the Captured score past its own ceiling. Refused here rather than repaired in the
+       stats: by the time it reaches a row there is no way to tell a typo from a real number.
+       The modal stays open with the cursor back in the R box, and NOTHING is written - not the
+       pips either, because a half-saved popup is worse than an unsaved one. */
+    const _err = document.getElementById('potr-modal-err');
+    if (rV && !isNaN(parseFloat(rV)) && potrTooLow(_tr, parseFloat(rV))) {
+      if (_err) { _err.textContent = potrTooLowMsg(_tr); _err.style.display = 'block'; }
+      document.getElementById('potr-modal-input').focus();
+      return;
+    }
+    if (_err) { _err.textContent = ''; _err.style.display = 'none'; }
     if (rV && !isNaN(parseFloat(rV))) {
       data.review.trades[_potrModalTradeIdx].potentialR = parseFloat(rV);
     }
@@ -15806,6 +15865,31 @@ try {
   }
   function closePendingPotrModal() { try { data._potrReminderDismissedDay = todayDateStr(); saveData(); } catch (e) {} const bg = document.getElementById('pending-potr-modal-bg'); if (bg) bg.classList.remove('show'); const _c = _potrThenAction; _potrThenAction = null; if (_c) setTimeout(_c, 0); }
   function savePendingPotr() {
+    /* Checked in full BEFORE anything is written. This modal can be showing several trades at
+       once and each row writes to every copy of its trade, so a partial save would leave the user
+       guessing which row it refused. One bad row stops the lot, marked in place. */
+    let _bad = 0;
+    document.querySelectorAll('#pending-potr-list .pp-row').forEach(row => {
+      const i = parseInt(row.getAttribute('data-potr-row'), 10);
+      const entry = _pendingPotrList[i]; if (!entry) return;
+      const rEl = row.querySelector('.pp-r');
+      const rV  = rEl ? rEl.value.trim() : '';
+      const num = (rV && !isNaN(parseFloat(rV))) ? parseFloat(rV) : null;
+      const bad = potrTooLow(entry.trade, num);
+      if (rEl) {
+        rEl.style.borderColor = bad ? 'var(--bad)' : 'var(--border-2)';
+        rEl.title = bad ? potrTooLowMsg(entry.trade) : '';
+      }
+      if (bad) _bad++;
+    });
+    if (_bad > 0) {
+      try {
+        if (typeof showToast === 'function') showToast((typeof window._stT === 'function')
+          ? window._stT('Potential R can\u2019t be below the R you captured.', 'La R potencial no puede ser menor que la R que capturaste.')
+          : 'Potential R can\u2019t be below the R you captured.');
+      } catch (e) {}
+      return;
+    }
     document.querySelectorAll('#pending-potr-list .pp-row').forEach(row => {
       const i = parseInt(row.getAttribute('data-potr-row'), 10);
       const entry = _pendingPotrList[i]; if (!entry) return;
@@ -16264,7 +16348,7 @@ try {
       const capturedR  = tradesWithPotR.reduce((s, t) => s + ((parseFloat(t.r) || 0) * tradeCopies(t)), 0);
       const potentialR = tradesWithPotR.reduce((s, t) => s + (t.potentialR * tradeCopies(t)), 0);
       const gapR       = potentialR - capturedR;
-      const pct = potentialR > 0 ? Math.round((capturedR / potentialR) * 100) : 100;
+      const pct = capturedPct(capturedR, potentialR);
       const potStr = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
       let potRow = `${A.lbl}${t('post.potr').padEnd(PAD)}${A.reset}${A.bad}${potStr}${A.reset}`;
       // Pot % — sum of per-trade gap-%s using each trade's own account SB.
@@ -17400,7 +17484,7 @@ try {
       } else {
         const _capR = seriesRLeftTracked.reduce((sum, t) => sum + (parseFloat(t.r) || 0), 0);
         const _potR = seriesRLeftTracked.reduce((sum, t) => sum + (t.potentialR || 0), 0);
-        const _pct = _potR > 0 ? Math.round((_capR / _potR) * 100) : 100;
+        const _pct = capturedPct(_capR, _potR);
         capEl.textContent = _pct + '/100%';
         capEl.className = 'stat-value';
       }
@@ -17528,7 +17612,7 @@ try {
         const capR = winnersWithPotR.reduce((sum, t) => sum + (parseFloat(t.r) || 0), 0);
         const totalPotR = winnersWithPotR.reduce((sum, t) => sum + t.potentialR, 0);
         const gapR = totalPotR - capR;
-        const pct = totalPotR > 0 ? Math.round((capR / totalPotR) * 100) : 100;
+        const pct = capturedPct(capR, totalPotR);
         // Pot R balance % — sum of per-winner gap-%s using each winner's own SB.
         const leftBalPct = winnersWithPotR.reduce((sum, tr) => {
           const accSB = getTradeAccountSB(tr);
@@ -18202,7 +18286,7 @@ try {
       const capturedR  = tradesWithPotR.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
       const potentialR = tradesWithPotR.reduce((s, t) => s + t.potentialR, 0);
       const gapR       = potentialR - capturedR;
-      const pct = potentialR > 0 ? Math.round((capturedR / potentialR) * 100) : 100;
+      const pct = capturedPct(capturedR, potentialR);
       const potStr = (gapR >= 0 ? '+' : '') + gapR.toFixed(2) + 'R';
       let potRow = `${A.lbl}${t('post.potr').padEnd(PAD)}${A.reset}${A.bad}${potStr}${A.reset}`;
       // Pot % — sum of per-winner gap-%s using each winner's own SB.
@@ -21957,7 +22041,7 @@ try {
       // which is still useful context: "you captured 78% of the available move overall").
       const capturedSum  = trackedM.reduce((s, t) => s + (getActual(t) || 0), 0);
       const potentialSum = trackedM.reduce((s, t) => s + getPotential(t), 0);
-      const captureRate  = potentialSum === 0 ? 0 : (capturedSum / potentialSum) * 100;
+      const captureRate  = potentialSum === 0 ? 0 : Math.max(0, Math.min(100, (capturedSum / potentialSum) * 100));
       const avgCaptured  = capturedSum / trackedM.length;
       const avgPotential = potentialSum / trackedM.length;
       const avgGap       = avgPotential - avgCaptured;
@@ -27537,7 +27621,7 @@ try {
       potRCaptured  = tradesWithPotR.reduce((s, t) => s + (parseFloat(t.r) || 0) * tradeCopies(t), 0);
       potRAvailable = tradesWithPotR.reduce((s, t) => s + t.potentialR * tradeCopies(t), 0);
       potRGap       = potRAvailable - potRCaptured;
-      potPct = potRAvailable > 0 ? Math.round((potRCaptured / potRAvailable) * 100) : 100;
+      potPct = capturedPct(potRCaptured, potRAvailable);
     }
     const potGapStr = (potRGap >= 0 ? '+' : '') + potRGap.toFixed(2) + 'R';
 
@@ -30467,7 +30551,7 @@ try {
     if (trackedRWins > 0) {
       const captured  = trackedRWinsList.reduce((s, t) => s + (parseFloat(t.r) || 0), 0);
       const potential = trackedRWinsList.reduce((s, t) => s + t.potentialR, 0);
-      captureRPct = potential === 0 ? null : (captured / potential) * 100;
+      captureRPct = potential === 0 ? null : Math.max(0, Math.min(100, (captured / potential) * 100));
     }
 
     // Last 3 trades — very-recent micro-trend
