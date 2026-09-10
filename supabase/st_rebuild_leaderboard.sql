@@ -165,7 +165,8 @@ begin
     jrisk as (
       select j.user_id,
              (e.value ->> 'mt5Ticket')                    as ticket,
-             max(nullif(e.value ->> 'risk','')::numeric)  as risk_j
+             max(nullif(e.value ->> 'risk','')::numeric)  as risk_j,
+             max(nullif(e.value ->> 'sl','')::numeric)    as sl_j
       from journals j
       cross join lateral (
         select tt.value
@@ -176,7 +177,8 @@ begin
           from jsonb_array_elements(coalesce(j.data -> 'currentSeries','[]'::jsonb)) tt
       ) e
       where nullif(e.value ->> 'mt5Ticket','') is not null
-        and nullif(e.value ->> 'risk','')::numeric > 0
+        and (nullif(e.value ->> 'risk','')::numeric > 0
+             or nullif(e.value ->> 'sl','')::numeric > 0)
       group by 1, 2
     ),
     raw as (
@@ -205,6 +207,20 @@ begin
       from grp
       order by user_id, symbol, direction, setup_no, open_time, ticket
     ),
+    -- One place that decides what a trade's risk and stop ACTUALLY were, so nothing below has to
+    -- repeat the fallback. risk_u prefers the EA's stamp and falls back to the trader's own journal
+    -- figure capped at their max-risk rule; sl_u does the same for the stop distance. Both stay NULL
+    -- when neither source has a number, which is what keeps r NULL and broken_stop false on a trade
+    -- nobody recorded - the fallback adds judgement where there is evidence, never where there is none.
+    tv as (
+      select lt.*,
+             coalesce(lt.risk_gbp::numeric,
+                      case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end) as risk_u,
+             coalesce(lt.sl_pips::numeric, jr.sl_j)                                          as sl_u
+      from ded lt
+      left join lim   l  on l.user_id  = lt.user_id
+      left join jrisk jr on jr.user_id = lt.user_id and jr.ticket = lt.ticket::text
+    ),
     t as (
       select
         lt.user_id,
@@ -225,19 +241,22 @@ begin
         -- inflating the risk on a hand-placed loss would otherwise shrink it in R. least() ignores
         -- NULLs, so no rule configured means no cap - and the case-when is what stops a trade with no
         -- journal entry at all from silently taking the cap itself as its risk.
-        case when nullif(coalesce(lt.risk_gbp::numeric, case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end),0) is not null
-             then (lt.pnl::numeric) / nullif(coalesce(lt.risk_gbp::numeric, case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end),0)
+        case when nullif(lt.risk_u,0) is not null
+             then (lt.pnl::numeric) / nullif(lt.risk_u,0)
         end                                                    as r,
         (lt.sl_pips is not null and coalesce(lt.sl_pips::numeric,0) <= 0)      as no_stop,
         (
           (lt.pnl::numeric) < 0
-          and nullif(lt.risk_gbp::numeric,0) is not null
-          and coalesce(lt.sl_pips::numeric,0) > 0
+          -- The same resolved pair as r: the EA's stamp where it exists, else what the trader
+          -- recorded. A self-reported STOP can only get you flagged, never flatter you, so
+          -- unlike the risk it carries no gaming incentive and needs no cap.
+          and nullif(lt.risk_u,0) is not null
+          and coalesce(lt.sl_u,0) > 0
           and abs(lt.pnl::numeric)
-              > lt.risk_gbp::numeric
+              > lt.risk_u
                 + greatest(
-                    lt.risk_gbp::numeric * 0.05,
-                    3 * (lt.risk_gbp::numeric / lt.sl_pips::numeric)
+                    lt.risk_u * 0.05,
+                    3 * (lt.risk_u / lt.sl_u)
                   )
         )                                                      as broken_stop,
         (
@@ -259,9 +278,8 @@ begin
           and lt.risk_gbp::numeric > l.max_risk * 1.05
         )                                                      as over_risk,
         ceil(row_number() over (partition by lt.user_id order by lt.close_time)::numeric / 10.0) as series_no
-      from ded lt
+      from tv lt
       left join lim l on l.user_id = lt.user_id
-      left join jrisk jr on jr.user_id = lt.user_id and jr.ticket = lt.ticket::text
     ),
     series as (
       select
