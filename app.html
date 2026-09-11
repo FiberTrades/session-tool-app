@@ -39178,7 +39178,39 @@ try {
       // NO auto-dismiss timer — persists until the user taps it (per request).
     } catch (e) {}
   }
-  var _liveClosedSeen = {};
+  /* Which closes have already been announced. In memory alone this emptied on every page load,
+     so the same trade could announce again after a refresh - and, with the recency gate below,
+     would still be inside its window. Persisted and pruned at 24h so "announced once" means once.
+     Wrapped throughout: localStorage throws outright in some contexts (private windows, blocked
+     site data) and a notification is never worth breaking the close-watcher for. */
+  var _LIVE_SEEN_KEY = 'st_live_closed_seen';
+  var _liveClosedSeen = (function () {
+    try {
+      var raw = localStorage.getItem(_LIVE_SEEN_KEY);
+      var obj = raw ? JSON.parse(raw) : {};
+      if (!obj || typeof obj !== 'object') return {};
+      var cut = Date.now() - 86400000, out = {};
+      for (var k in obj) { if (typeof obj[k] === 'number' && obj[k] > cut) out[k] = obj[k]; }
+      return out;
+    } catch (e) { return {}; }
+  })();
+  function _liveMarkSeen(tk) {
+    _liveClosedSeen[tk] = Date.now();
+    try { localStorage.setItem(_LIVE_SEEN_KEY, JSON.stringify(_liveClosedSeen)); } catch (e) {}
+  }
+  /* "Just closed" needs a definition, and there was not one. The watcher polls every 20s, so a
+     real close is announced within a poll; 15 minutes is slack for the app being reopened a few
+     minutes into a session. isSessionLive() already gates the caller, so a close that happened
+     OUTSIDE session hours can no longer be announced at all - which is the case that misfired.
+     An undateable close_time counts as not recent: staying quiet is the safer half. */
+  var _LIVE_CLOSE_FRESH_MS = 15 * 60 * 1000;
+  function _liveCloseIsRecent(closeTime) {
+    try {
+      var t = new Date(closeTime).getTime();
+      if (!isFinite(t)) return false;
+      return (Date.now() - t) <= _LIVE_CLOSE_FRESH_MS;
+    } catch (e) { return false; }
+  }
   function _liveCloseWatch() {
     try {
       if (typeof isSessionLive !== 'function' || !isSessionLive()) return;
@@ -39189,9 +39221,10 @@ try {
         (res.data || []).forEach(function (r) {
           if (!r || r.ticket == null || !r.close_time) return;   // only rows the EA has closed
           var tk = String(r.ticket);
-          if (_liveClosedSeen[tk]) return;                       // handled once this app session
+          if (_liveClosedSeen[tk]) return;                       // announced once, across reloads
+          if (!_liveCloseIsRecent(r.close_time)) return;          // closed long ago - not news
           if (!window.__stLive.isOpen(r.ticket) && !((window.__stLiveEverOpen || {})[tk])) return;   // fire for trades shown active NOW or earlier this session (a realtime close flips the chip closed before this runs)
-          _liveClosedSeen[tk] = true;
+          _liveMarkSeen(tk);
           var dir = /^(sell|short)/.test(String(r.direction || '').toLowerCase()) ? 'short' : 'long';
           // Flip the chip to its result (upsert with a close time marks it closed).
           try { window.__stLive.upsert({ ticket: r.ticket, direction: dir, pnl: r.pnl, closed_at: r.close_time, symbol: r.symbol }); } catch (e) {}
