@@ -37,6 +37,38 @@ window._isGifUrl = function(u){ u = u || ''; return /\.gif(\?|#|$)/i.test(u) || 
    API for it - so the trick is to cover it with its own first frame and uncover it on hover. This
    wraps the markup; the CSS in each chat's stylesheet does the hovering; the listener below paints.
    Anything that is not a GIF is returned untouched, so callers can wrap unconditionally. */
+/* Holds a GIF's still frame ten seconds after it first comes into view, which is when the
+   hover-to-play behaviour begins. Kept in a closure so the observer and the timers are not loose
+   globals, and exposed as one function because the load listener below is its only caller. */
+window.__stGifHold = (function(){
+  var obs = null;
+  function arm(w){
+    if(!w || w.__stgifT) return;
+    w.__stgifT = setTimeout(function(){ try{ w.classList.add('stgif-ready'); }catch(_){} }, 10000);
+  }
+  return function(w){
+    try{
+      if(!w || w.__stgifSeen) return;
+      w.__stgifSeen = 1;
+      /* Asked the OS for less movement: hold it now. Hover still plays it - that is a choice the
+         reader makes, not something the page does at them. */
+      var reduce = false;
+      try{ reduce = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches); }catch(_){}
+      if(reduce){ w.classList.add('stgif-ready'); return; }
+      if(!window.IntersectionObserver){ arm(w); return; }   // very old browser: time from load
+      if(!obs){
+        obs = new IntersectionObserver(function(entries){
+          entries.forEach(function(en){
+            if(!en.isIntersecting) return;
+            obs.unobserve(en.target);     // seen once is all this needs to know
+            arm(en.target);
+          });
+        }, { threshold: 0.25 });
+      }
+      obs.observe(w);
+    }catch(_){ try{ w.classList.add('stgif-ready'); }catch(__){} }
+  };
+})();
 window._gifWrap = function(u, html){
   try { if(!window._isGifUrl || !window._isGifUrl(u)) return html; } catch(e){ return html; }
   return '<span class="stgif">' + html + '<canvas></canvas><span class="stgif-badge">GIF</span></span>';
@@ -60,7 +92,9 @@ document.addEventListener('load', function(e){
     if(!cv || !nw || !nh) return;
     cv.width = nw; cv.height = nh;
     cv.getContext('2d').drawImage(img, 0, 0, nw, nh);
-    w.classList.add('stgif-ready');
+    /* Painted, but NOT shown yet - the still is only revealed once the GIF has had its ten
+       seconds on screen. Until then the canvas stays display:none and the GIF plays. */
+    window.__stGifHold(w);
   }catch(_){}
 }, true);
 /* Single place that opens a chart. Converts a TradingView snapshot link to the raw
@@ -42588,9 +42622,9 @@ try {
            playing, never leave a blank rectangle over someone's message. */
         '.stgif>canvas{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:8px;display:none;}' +
         '.stgif.stgif-ready>canvas{display:block;}' +
-        '.stgif.stgif-ready:hover>canvas{display:none;}' +
+        '.stgif.stgif-ready:hover>canvas,.dc-msg:hover .stgif.stgif-ready>canvas,.dcx-msg:hover .stgif.stgif-ready>canvas{display:none;}' +
         '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
-        '.stgif.stgif-ready:hover .stgif-badge{opacity:0;}' +
+        '.stgif.stgif-ready:hover .stgif-badge,.dc-msg:hover .stgif.stgif-ready .stgif-badge,.dcx-msg:hover .stgif.stgif-ready .stgif-badge{opacity:0;}' +
         /* No hover, no hold: on a touchscreen the still frame would just be a GIF that never
            plays, so phones keep the behaviour they already have. */
         '@media (hover:none){.stgif.stgif-ready>canvas{display:none;}}' +
@@ -43286,9 +43320,9 @@ try {
            playing, never leave a blank rectangle over someone's message. */
         '.stgif>canvas{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:8px;display:none;}' +
         '.stgif.stgif-ready>canvas{display:block;}' +
-        '.stgif.stgif-ready:hover>canvas{display:none;}' +
+        '.stgif.stgif-ready:hover>canvas,.dc-msg:hover .stgif.stgif-ready>canvas,.dcx-msg:hover .stgif.stgif-ready>canvas{display:none;}' +
         '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
-        '.stgif.stgif-ready:hover .stgif-badge{opacity:0;}' +
+        '.stgif.stgif-ready:hover .stgif-badge,.dc-msg:hover .stgif.stgif-ready .stgif-badge,.dcx-msg:hover .stgif.stgif-ready .stgif-badge{opacity:0;}' +
         /* No hover, no hold: on a touchscreen the still frame would just be a GIF that never
            plays, so phones keep the behaviour they already have. */
         '@media (hover:none){.stgif.stgif-ready>canvas{display:none;}}' +
