@@ -33,6 +33,36 @@
 /* A GIF is already showing at full size and it animates - opening it in the zoom
    viewer gains nothing, so GIFs are treated as not clickable. */
 window._isGifUrl = function(u){ u = u || ''; return /\.gif(\?|#|$)/i.test(u) || /(^|\/\/)([^\/]*\.)?giphy\.com\//i.test(u); };
+/* GIFs hold a still frame and play on hover. An <img> running a GIF cannot be paused - there is no
+   API for it - so the trick is to cover it with its own first frame and uncover it on hover. This
+   wraps the markup; the CSS in each chat's stylesheet does the hovering; the listener below paints.
+   Anything that is not a GIF is returned untouched, so callers can wrap unconditionally. */
+window._gifWrap = function(u, html){
+  try { if(!window._isGifUrl || !window._isGifUrl(u)) return html; } catch(e){ return html; }
+  return '<span class="stgif">' + html + '<canvas></canvas><span class="stgif-badge">GIF</span></span>';
+};
+/* ONE listener for every GIF the app will ever render. `load` does not bubble, but it is visible to
+   a capture-phase listener on document - which is why this needs no MutationObserver on the message
+   list, and why it covers all three chat surfaces (channels, DMs, the detached DM window) at once.
+   A cached image still fires load: assigning src always resolves asynchronously.
+   The canvas is hidden until `stgif-ready` says a frame is genuinely on it, so any failure here
+   leaves the GIF playing the way it always did rather than dropping a blank box over a message.
+   drawImage on a cross-origin image taints the canvas, which only matters to getImageData and
+   toDataURL - neither is called - so storage URLs need no CORS header. */
+document.addEventListener('load', function(e){
+  try{
+    var img = e.target;
+    if(!img || img.tagName !== 'IMG') return;
+    var w = img.parentNode;
+    if(!w || !w.classList || !w.classList.contains('stgif')) return;
+    var cv = w.querySelector('canvas');
+    var nw = img.naturalWidth, nh = img.naturalHeight;
+    if(!cv || !nw || !nh) return;
+    cv.width = nw; cv.height = nh;
+    cv.getContext('2d').drawImage(img, 0, 0, nw, nh);
+    w.classList.add('stgif-ready');
+  }catch(_){}
+}, true);
 /* Single place that opens a chart. Converts a TradingView snapshot link to the raw
    .png (the /x/ page cannot be zoomed) and shows it in the app's own viewer, which
    has click-to-zoom and grab-to-drag. Falls back to a new tab if the viewer is not
@@ -42552,6 +42582,18 @@ try {
         '#stchat .dc-content{color:#f4f3f6;font-size:14px;line-height:1.4;word-break:break-word;}' +
         '#stchat .dc-text{white-space:pre-wrap;}' +
         '#stchat .dc-media{max-width:360px;max-height:400px;width:auto;height:auto;border-radius:8px;display:block;margin-top:4px;cursor:pointer;}' +
+        '.stgif{position:relative;display:inline-block;margin-top:4px;line-height:0;}' +
+        '.stgif>img{margin-top:0!important;display:block;}' +
+        /* Hidden until a frame is actually painted on it - a failed draw must leave the GIF
+           playing, never leave a blank rectangle over someone's message. */
+        '.stgif>canvas{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:8px;display:none;}' +
+        '.stgif.stgif-ready>canvas{display:block;}' +
+        '.stgif.stgif-ready:hover>canvas{display:none;}' +
+        '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
+        '.stgif.stgif-ready:hover .stgif-badge{opacity:0;}' +
+        /* No hover, no hold: on a touchscreen the still frame would just be a GIF that never
+           plays, so phones keep the behaviour they already have. */
+        '@media (hover:none){.stgif.stgif-ready>canvas{display:none;}}' +
         '#stchat .dc-file{display:inline-flex;align-items:center;gap:10px;text-decoration:none;color:#60a5fa;font-size:14px;margin-top:4px;background:#1b1a21;border:1px solid #161520;border-radius:8px;padding:10px 13px;cursor:pointer;}' +
         '#stchat .dc-file-i{width:30px;height:30px;flex:none;border-radius:6px;background:#f472b6;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}' +
         '#stchat .dc-note{font-size:12px;color:#8a8792;padding:0 16px 4px;min-height:14px;flex:none;}' +
@@ -42702,7 +42744,7 @@ try {
       var inner='';
       if(m.body) inner+='<span class="dc-text">'+esc(m.body)+'</span>';
       if(m.attachment_url){
-        if(m.attachment_type==='image'){ inner+='<img class="dc-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; }
+        if(m.attachment_type==='image'){ inner+=window._gifWrap(m.attachment_url,'<img class="dc-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'); }
         else { inner+='<span class="dc-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dc-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; }
       }
       return inner;
@@ -43238,6 +43280,18 @@ try {
         '.dcx-unfurl-site{color:#8a8792;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}' +
         '.dcx-edited{font-size:10px;color:#8a8792;margin-left:6px;}' +
         '.dcx-media{max-width:360px;max-height:400px;width:auto;height:auto;border-radius:8px;display:block;margin-top:4px;cursor:pointer;}' +
+        '.stgif{position:relative;display:inline-block;margin-top:4px;line-height:0;}' +
+        '.stgif>img{margin-top:0!important;display:block;}' +
+        /* Hidden until a frame is actually painted on it - a failed draw must leave the GIF
+           playing, never leave a blank rectangle over someone's message. */
+        '.stgif>canvas{position:absolute;left:0;top:0;width:100%;height:100%;border-radius:8px;display:none;}' +
+        '.stgif.stgif-ready>canvas{display:block;}' +
+        '.stgif.stgif-ready:hover>canvas{display:none;}' +
+        '.stgif-badge{position:absolute;left:6px;bottom:6px;background:rgba(0,0,0,.72);color:#fff;font-family:monospace;font-size:9px;letter-spacing:.12em;padding:2px 5px;border-radius:4px;pointer-events:none;transition:opacity .12s;}' +
+        '.stgif.stgif-ready:hover .stgif-badge{opacity:0;}' +
+        /* No hover, no hold: on a touchscreen the still frame would just be a GIF that never
+           plays, so phones keep the behaviour they already have. */
+        '@media (hover:none){.stgif.stgif-ready>canvas{display:none;}}' +
         '.dcx-file{display:inline-flex;align-items:center;gap:10px;color:#60a5fa;font-size:14px;margin-top:4px;background:#1b1a21;border:1px solid #161520;border-radius:8px;padding:10px 13px;cursor:pointer;}' +
         '.dcx-file-i{width:30px;height:30px;flex:none;border-radius:6px;background:#f472b6;color:#fff;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;}' +
         /* Discord-style: ONE pill contains every control; the buttons themselves are flat
@@ -44631,7 +44685,7 @@ try {
           _mbTxt=_mbTxt.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_f,_p,_u){ return previewImg(_u)?_p:_f; });
         }
         if((_mbTxt||'').trim()){ var _jz=(window.__stEmojiOnly&&window.__stEmojiOnly(_mbTxt))?' st-jumbo':''; s+='<span class="dcx-text'+_jz+'">'+linkify(_mbTxt, _allowImg)+'</span>'; }
-      } if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_allowImg){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
+      } if(m.attachment_url){ if(m.attachment_type==='image') s+=window._gifWrap(m.attachment_url,'<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'); else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'" data-name="'+esc(m.attachment_name||'file')+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_allowImg){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+=window._gifWrap(pv,'<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'); } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function _canTranslate(){ /* only worth offering where members cannot post: the static, admin-written channels */
       try{ return admin() && cur && String(cur.post_policy||'')==='admin'; }catch(e){ return false; } }
     function bodyInner(m){ if(editingId===m.id){
@@ -55070,7 +55124,7 @@ try {
       Array.prototype.forEach.call(box.querySelectorAll('.stdm-conv-x'),function(x){ x.addEventListener('click', function(ev){ ev.stopPropagation(); var pid=x.getAttribute('data-del'); function go(){ _hideThread(pid); if(partner&&partner.id===pid){ partner=null; try{ G('stdm').classList.remove('thread'); }catch(e){} } renderList(); } if(window.STChat&&STChat.confirmDelete) STChat.confirmDelete(go); else if(window.confirm(_t('Delete this conversation from your list?','¿Eliminar esta conversación de tu lista?'))) go(); }); });
     }
 
-    function contentHtml(m){ var s=''; var _dmAllow=true; if(m.body) s+='<span class="dcx-text">'+linkify(m.body, _dmAllow)+'</span>'; if(m.attachment_url){ if(m.attachment_type==='image') s+='<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'; else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_dmAllow){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+='<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'; } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
+    function contentHtml(m){ var s=''; var _dmAllow=true; if(m.body) s+='<span class="dcx-text">'+linkify(m.body, _dmAllow)+'</span>'; if(m.attachment_url){ if(m.attachment_type==='image') s+=window._gifWrap(m.attachment_url,'<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'); else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_dmAllow){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+=window._gifWrap(pv,'<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'); } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
     function bodyInner(m){ if(editingId===m.id) return '<textarea class="dcx-edit-ta" id="stdm-edit-input" spellcheck="true">'+esc(m.body||'')+'</textarea><div class="dcx-edit-actions"><button class="dcx-edit-save">Save</button><button class="dcx-edit-cancel">Cancel</button></div>'; return '<div class="dcx-content">'+dmReplyQuote(m)+contentHtml(m)+(m.edited_at?'<span class="dcx-edited">'+window._stT('(edited)','(editado)')+'</span>':'')+'</div>'+dmReactionsHtml(m.id); }
     /* Same Discord-style hover bar as the channel chat: five most-used emojis (shared
        st_emoji_freq list, via the community module's exported tracker) + options. */
