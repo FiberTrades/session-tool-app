@@ -80,13 +80,107 @@ window._gifWrap = function(u, html){
    phone has no skimming - every touch is deliberate - and the row already owns taps for replies and
    menus. Not capturing and not stopping propagation: the lightbox handlers already ignore GIFs, so
    there is nothing here to take a tap away from. */
+window.__stGifPlay = (function(){
+  var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+  var durs = {};   // url -> ms, or 0 for "asked and could not tell"
+
+  /* A GIF's loop length is the sum of its frame delays, and the only place those exist is the file
+     itself: each frame is preceded by a Graphic Control Extension carrying a delay in hundredths
+     of a second. Walk the blocks and add them up.
+     0 and 1 are clamped to 10 because that is what browsers do with them - a GIF authored "as fast
+     as possible" would otherwise measure as near-instant and the replay would end before you saw
+     it. */
+  function parseMs(buf){
+    try{
+      var d = new DataView(buf), len = d.byteLength, p = 6;          // past "GIF89a"
+      if(len < 14) return 0;
+      var flags = d.getUint8(p + 4); p += 7;                          // logical screen descriptor
+      if(flags & 0x80) p += 3 * Math.pow(2, (flags & 7) + 1);         // global colour table
+      var total = 0, guard = 0;
+      while(p < len && guard++ < 100000){
+        var b = d.getUint8(p++);
+        if(b === 0x3B) break;                                         // trailer
+        if(b === 0x21){                                               // extension
+          var label = d.getUint8(p++);
+          if(label === 0xF9){                                         // graphic control
+            var size = d.getUint8(p++);                               // always 4
+            var delay = d.getUint16(p + 1, true);                     // after the flags byte
+            total += (delay <= 1 ? 10 : delay) * 10;
+            p += size;
+          }
+          while(p < len){ var sub = d.getUint8(p++); if(!sub) break; p += sub; }
+        } else if(b === 0x2C){                                        // image descriptor
+          p += 8;
+          var lf = d.getUint8(p++);
+          if(lf & 0x80) p += 3 * Math.pow(2, (lf & 7) + 1);           // local colour table
+          p++;                                                        // LZW minimum code size
+          while(p < len){ var s2 = d.getUint8(p++); if(!s2) break; p += s2; }
+        } else break;                                                 // not something we know
+      }
+      return total;
+    }catch(_){ return 0; }
+  }
+
+  /* Cached per URL: a channel full of the same reaction GIF parses it once. The fetch is a cache
+     hit for an image already on screen, and a CORS refusal simply records 0 - "asked, cannot
+     tell" - so it is never asked again. */
+  function durationOf(url){
+    if(durs[url] != null) return Promise.resolve(durs[url]);
+    return fetch(url, { cache: 'force-cache' })
+      .then(function(r){ return r.arrayBuffer(); })
+      .then(function(b){ durs[url] = parseMs(b); return durs[url]; })
+      .catch(function(){ durs[url] = 0; return 0; });
+  }
+
+  /* Reveal for exactly one loop, then hold again. */
+  function runOnce(w){
+    var img = w.querySelector('img'); if(!img) return;
+    var url = img.getAttribute('data-gifsrc') || img.src;
+    durationOf(url).then(function(ms){
+      if(!ms){ w.classList.add('stgif-play'); return; }   // unmeasurable: behave like the toggle
+      w.classList.add('stgif-play');
+      if(w.__stgifP) clearTimeout(w.__stgifP);
+      w.__stgifP = setTimeout(function(){
+        try{ w.classList.remove('stgif-play'); w.__stgifP = 0; }catch(_){}
+      }, ms);
+    });
+  }
+
+  return {
+    /* Back to frame one. Re-assigning the same src does nothing, so the image has to actually be
+       replaced - hence the 1x1 and the frame's wait before restoring. The still frame is covering
+       all of this, so the swap is invisible. */
+    replay: function(w){
+      var img = w.querySelector('img'); if(!img) return;
+      if(!img.getAttribute('data-gifsrc')) img.setAttribute('data-gifsrc', img.src);
+      var url = img.getAttribute('data-gifsrc');
+      if(w.__stgifP){ clearTimeout(w.__stgifP); w.__stgifP = 0; }
+      w.classList.remove('stgif-play');
+      w.__stgifRestart = 1;                        // the load listener finishes the job
+      img.src = BLANK;
+      /* A TASK BOUNDARY, not a paint. This was requestAnimationFrame, which never runs while
+         the document is not being rendered - measured: after 500ms the only load was the 1x1 and
+         src was still the 1x1, so the GIF was gone for good behind its own still frame. The swap
+         only ever needed the two assignments in separate tasks, and a timer fires whether or not
+         anything is being drawn. */
+      setTimeout(function(){ img.src = url; }, 0);
+    },
+    onReloaded: runOnce
+  };
+})();
+/* Tap to play it once, from the beginning - the phone's substitute for hover. Only where hover
+   genuinely cannot do the job: on a touchscreen laptop `(hover: hover)` matches, hover already
+   works, and a tap would just fight it.
+   Bound to the GIF rather than the message row (which IS the hover target on desktop) because a
+   phone has no skimming - every touch is deliberate - and the row already owns taps for replies and
+   menus. Not capturing and not stopping propagation: the lightbox handlers already ignore GIFs. */
 document.addEventListener('click', function(e){
   try{
     if(window.matchMedia && window.matchMedia('(hover: hover)').matches) return;
     var t = e.target;
     var w = (t && t.closest) ? t.closest('.stgif') : null;
     if(!w || !w.classList.contains('stgif-ready')) return;   // still playing its ten seconds
-    w.classList.toggle('stgif-play');
+    window.__stGifPlay.replay(w);
   }catch(_){}
 });
 /* ONE listener for every GIF the app will ever render. `load` does not bubble, but it is visible to
@@ -108,6 +202,16 @@ document.addEventListener('load', function(e){
     if(!cv || !nw || !nh) return;
     cv.width = nw; cv.height = nh;
     cv.getContext('2d').drawImage(img, 0, 0, nw, nh);
+    /* A replay lands here too, because restarting the GIF reloads the image - and it arrives at
+       frame one, which is exactly the frame the still should hold. Play it through once instead of
+       re-arming the ten-second hold, which has already happened for this element. */
+    /* Blanking the src to force a restart fires a load of its OWN, and that one used to finish
+       the replay: the play window started against a transparent pixel, so the loop could elapse
+       before the GIF was even back. The flag cannot tell the two loads apart - the URL can. */
+    if(w.__stgifRestart && img.src === img.getAttribute('data-gifsrc')){
+      w.__stgifRestart = 0; window.__stGifPlay.onReloaded(w); return;
+    }
+    if(w.__stgifRestart) return;   // the 1x1 landing: ignore it, the real one is on its way
     /* Painted, but NOT shown yet - the still is only revealed once the GIF has had its ten
        seconds on screen. Until then the canvas stays display:none and the GIF plays. */
     window.__stGifHold(w);
