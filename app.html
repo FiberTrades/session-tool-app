@@ -54677,14 +54677,27 @@ try {
     }
 
     function wireQuiz(l){
-      var picks={}, body=G('stsc-body');
+      var picks={}, body=G('stsc-body'), settled={};   // settled[qi]: got it right, locked green
+      function opts(qi){ return body.querySelectorAll('.stsc-a[data-q="'+qi+'"]'); }
+      /* Clears ONE question's marks and its own section pointer. Per-question on purpose: changing
+         a red must not disturb the greens beside it, and a hint has to be removable by the question
+         it belongs to or the next attempt stacks another underneath. */
+      function clearMark(qi){
+        opts(qi).forEach(function(o){ o.classList.remove('right','wrong'); });
+        body.querySelectorAll('.stsc-hint[data-q="'+qi+'"]').forEach(function(h){
+          if(h.parentNode) h.parentNode.removeChild(h);
+        });
+      }
       body.querySelectorAll('.stsc-a').forEach(function(b){
         b.addEventListener('click', function(){
-          if(b.classList.contains('right')||b.classList.contains('wrong')) return;
           var qi=b.getAttribute('data-q');
+          if(settled[qi]) return;              // already right: leave it alone, it is answered
+          clearMark(qi);                       // a new choice retires the last attempt's verdict
           picks[qi]=parseInt(b.getAttribute('data-a'),10);
-          body.querySelectorAll('.stsc-a[data-q="'+qi+'"]').forEach(function(o){ o.classList.remove('picked'); });
+          opts(qi).forEach(function(o){ o.classList.remove('picked'); });
           b.classList.add('picked');
+          /* Re-arms submit - which is how "change it and send again" works now that nothing
+             resets on a timer. */
           var sub=G('stsc-sub'); if(sub) sub.disabled = Object.keys(picks).length < l.quiz.length;
         });
       });
@@ -54692,7 +54705,8 @@ try {
       sub.addEventListener('click', function(){
         var right=0;
         l.quiz.forEach(function(q,qi){
-          body.querySelectorAll('.stsc-a[data-q="'+qi+'"]').forEach(function(o){
+          clearMark(qi);   // this attempt's verdict replaces the last one's, never joins it
+          opts(qi).forEach(function(o){
             var ai=parseInt(o.getAttribute('data-a'),10);
             /* ONLY the option the reader chose is ever marked. Marking the correct one on a FAIL
                handed over the answer key, and with the retry reopening 2.6s later the second
@@ -54701,7 +54715,7 @@ try {
                all-green moment survives. A question they got wrong now stays an open question. */
             if(picks[qi]===ai) o.classList.add(ai===q.c ? 'right' : 'wrong');
           });
-          if(picks[qi]===q.c){ right++; return; }
+          if(picks[qi]===q.c){ right++; settled[qi]=true; return; }
           /* Wrong: point at the SECTION, never at the answer. Only on a wrong one - a pointer
              under a correct answer is noise, and pointing at every question would hand over a map
              of the lesson keyed to its questions, which is halfway back to an answer key.
@@ -54713,6 +54727,7 @@ try {
           if(!_first || !_first.parentNode) return;
           var _hint = document.createElement('div');
           _hint.className = 'stsc-hint';
+          _hint.setAttribute('data-q', qi);   // so this question can remove its own pointer later
           _hint.textContent = T('Re-read: ','Vuelve a leer: ') + '\u201c' + _sec + '\u201d';
           _first.parentNode.appendChild(_hint);
         });
@@ -54747,14 +54762,16 @@ try {
             }, 1400);
           }
         } else {
+          /* Says what is true now. The old copy promised a reset - "read it again and retry" -
+             and the reset was openLesson() 2.6s later, which rebuilt the body and took the marks
+             and the section pointers with it. Scroll up to read the section it named and by the
+             time you got there nothing was left to say which question it belonged to. */
           res.innerHTML='<span style="color:#E56767;">'
-            +T(right+' of '+l.quiz.length+' right. The ones you got wrong are marked - read it again and retry.',
-               right+' de '+l.quiz.length+' correctas. Las que has fallado están marcadas: vuelve a leerlo e inténtalo otra vez.')
+            +T(right+' of '+l.quiz.length+' right. The ones in red are still open \u2014 change them and submit again.',
+               right+' de '+l.quiz.length+' correctas. Las marcadas en rojo siguen abiertas: cámbialas y vuelve a enviar.')
             +'</span>';
-          /* Re-open the quiz so a wrong pass can be retried without leaving the lesson. */
-          /* Only if the reader is still on this lesson. Unconditional, this silently
-             yanked them back from whatever they clicked in the sidebar in the meantime. */
-          setTimeout(function(){ if(cur===l.id) openLesson(l.id); }, 2600);
+          /* Deliberately NOTHING here. The marks, the reds and the "Re-read" pointers stay until
+             the reader changes an answer, which is the only thing that should clear them. */
         }
         sub.disabled=true;
       });
