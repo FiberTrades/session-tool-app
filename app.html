@@ -81,8 +81,8 @@ window._gifWrap = function(u, html){
    menus. Not capturing and not stopping propagation: the lightbox handlers already ignore GIFs, so
    there is nothing here to take a tap away from. */
 window.__stGifPlay = (function(){
-  var BLANK = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
   var durs = {};   // url -> ms, or 0 for "asked and could not tell"
+  var seq = 0;     // makes each replay's fragment unique
 
   /* A GIF's loop length is the sum of its frame delays, and the only place those exist is the file
      itself: each frame is preceded by a Graphic Control Extension carrying a delay in hundredths
@@ -147,9 +147,17 @@ window.__stGifPlay = (function(){
   }
 
   return {
-    /* Back to frame one. Re-assigning the same src does nothing, so the image has to actually be
-       replaced - hence the 1x1 and the frame's wait before restoring. The still frame is covering
-       all of this, so the swap is invisible. */
+    /* Back to frame one WITHOUT ever blanking the element. Re-assigning the identical src does
+       nothing, so the string has to change - but it does not have to point somewhere else. Bumping
+       the fragment gives the browser a new src for the same resource: it reloads and re-decodes,
+       which is what restarts the animation, and the fragment never reaches the server so it comes
+       from cache.
+       This used to swap in a 1x1 transparent GIF and back. While that 1x1 was the element's image
+       the <img> WAS a 1x1 - laid out as one - and the wrapper is sized by the image with the canvas
+       at 100% of the wrapper, so the still frame collapsed to a dot and popped back. That flash was
+       the glitch. Nothing collapses now because the GIF never leaves the element.
+       data-gifsrc keeps the CLEAN url, so the duration fetch and its memo stay on one cache entry
+       instead of one per fragment. */
     replay: function(w){
       var img = w.querySelector('img'); if(!img) return;
       if(!img.getAttribute('data-gifsrc')) img.setAttribute('data-gifsrc', img.src);
@@ -157,13 +165,7 @@ window.__stGifPlay = (function(){
       if(w.__stgifP){ clearTimeout(w.__stgifP); w.__stgifP = 0; }
       w.classList.remove('stgif-play');
       w.__stgifRestart = 1;                        // the load listener finishes the job
-      img.src = BLANK;
-      /* A TASK BOUNDARY, not a paint. This was requestAnimationFrame, which never runs while
-         the document is not being rendered - measured: after 500ms the only load was the 1x1 and
-         src was still the 1x1, so the GIF was gone for good behind its own still frame. The swap
-         only ever needed the two assignments in separate tasks, and a timer fires whether or not
-         anything is being drawn. */
-      setTimeout(function(){ img.src = url; }, 0);
+      img.src = url.split('#')[0] + '#stgif' + (++seq);
     },
     onReloaded: runOnce
   };
@@ -200,13 +202,6 @@ document.addEventListener('load', function(e){
     var cv = w.querySelector('canvas');
     var nw = img.naturalWidth, nh = img.naturalHeight;
     if(!cv || !nw || !nh) return;
-    /* THE 1x1 MUST NOT REACH THE CANVAS. Restarting the GIF points src at a transparent pixel
-       and back, and that pixel fires a load like any other image. Painting it wiped the still
-       frame - so when the play timer ended and the canvas was revealed again it had nothing on it,
-       the GIF underneath showed through, and the tap looked like it never stopped anything. The
-       flag cannot tell the two loads apart; the URL can, and this has to be asked BEFORE the
-       paint, not after it. */
-    if(w.__stgifRestart && img.src !== img.getAttribute('data-gifsrc')) return;
     cv.width = nw; cv.height = nh;
     cv.getContext('2d').drawImage(img, 0, 0, nw, nh);
     /* The real GIF, back at frame one - which is the frame the still should hold. Play it through
