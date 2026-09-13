@@ -5339,18 +5339,18 @@ try {
     </section>
 
     <section id="missed-winners-section" style="display:none;">
-      <div class="section-header"><span class="section-num">—</span><span class="section-title"><span data-i18n="trades.missed.title">Winning trades I didn't take</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.missed_breakdown">Winning setups you logged in the weekly review (with their would-be R) but didn't take — what your watch-list discipline is leaving on the table, shown next to the winners you did take.</span></span></span></div>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title"><span id="missed-title">Setups inside my session I didn't take</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" id="missed-tip">Setups inside your session that met your rules and you didn't take, logged in the weekly review - every outcome, so the total is what staying out cost you or saved you.</span></span></span></div>
       <div class="stats-summary stats-summary-4col">
-        <div class="stat-cell"><div class="stat-tooltip" data-i18n="tip.missed_count">Number of winning trades you logged as missed (with a would-be R) across all weekly reviews.</div><div class="stat-label" data-i18n="kpi.missed_count">Missed Winners</div><div class="stat-value" id="kpi-missed-count" style="color:var(--bad);">0</div></div>
-        <div class="stat-cell"><div class="stat-tooltip" data-i18n="tip.missed_taken">Winning trades you actually took (current scope). Compare against missed winners to see how much opportunity you're converting.</div><div class="stat-label" data-i18n="kpi.missed_taken">Winners Taken</div><div class="stat-value" id="kpi-missed-taken" style="color:var(--good);">—</div></div>
-        <div class="stat-cell"><div class="stat-tooltip" data-i18n="tip.missed_total_r">Sum of would-be R across every missed winner you logged — the R left on the table by not taking them.</div><div class="stat-label" data-i18n="kpi.missed_total_r">Would-be R Missed</div><div class="stat-value" id="kpi-missed-r">—</div></div>
-        <div class="stat-cell"><div class="stat-tooltip" data-i18n="tip.missed_avg_r">Average would-be R per missed winner.</div><div class="stat-label" data-i18n="kpi.missed_avg_r">Avg Would-be R</div><div class="stat-value" id="kpi-missed-avg">—</div></div>
+        <div class="stat-cell"><div class="stat-tooltip" id="tip-missed-count">Setups inside your session you logged as not taken, across your weekly reviews.</div><div class="stat-label" id="lab-missed-count">Setups logged</div><div class="stat-value" id="kpi-missed-count">0</div></div>
+        <div class="stat-cell"><div class="stat-tooltip" id="tip-missed-taken">Trades you actually took (current scope), for scale against the setups you didn't.</div><div class="stat-label" id="lab-missed-taken">Trades taken</div><div class="stat-value" id="kpi-missed-taken">—</div></div>
+        <div class="stat-cell"><div class="stat-tooltip" id="tip-missed-r">Net would-be R across every setup you logged: winners minus losers. Positive means staying out cost you; negative means it saved you.</div><div class="stat-label" id="lab-missed-r">Net would-be R</div><div class="stat-value" id="kpi-missed-r">—</div></div>
+        <div class="stat-cell"><div class="stat-tooltip" id="tip-missed-avg">Average would-be R per logged setup with an R, losers included.</div><div class="stat-label" id="lab-missed-avg">Avg would-be R</div><div class="stat-value" id="kpi-missed-avg">—</div></div>
       </div>
       <div id="missed-winners-table-wrap"></div>
     </section>
 
     <section id="oos-section" style="display:none;">
-      <div class="section-header"><span class="section-num">—</span><span class="section-title" id="oos-title">Setups outside my session</span></div>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title" id="oos-title">Setups I didn't take — breakdown</span></div>
       <div id="oos-stats-wrap"></div>
     </section>
 
@@ -19508,13 +19508,9 @@ try {
       const missed = [];
       // Weekly reviews are global - a migration flattened the old per-account lists into one - so
       // there is no accountId here to filter on. Scope by window instead: a review week that had
-      // already ended before this account existed cannot describe winners IT missed. Without this
-      // the card put 6 missed across every account beside 0 taken on this one, which compares
-      // nothing. Compared against the week's END so the week an account was created in survives.
+      // already ended before this account existed cannot describe setups IT missed. Compared
+      // against the week's END so the week an account was created in survives.
       const _missedFloor = (typeof scopeStartMs === 'function') ? scopeStartMs() : 0;
-      // Reviews written from today carry an account; older ones do not and stay shared. The date
-      // floor below still applies to both, so a shared review from before this account existed
-      // does not count against it.
       const _WEEK_MS = 7 * 24 * 60 * 60 * 1000;
       (data.weeklyReviews || []).filter(w => window.__stRev.inScope(w)).forEach(w => {
         const links = (w && w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
@@ -19523,25 +19519,40 @@ try {
           const _wkMs = wk ? new Date(wk).getTime() : NaN;
           if (isNaN(_wkMs) || _wkMs + _WEEK_MS < _missedFloor) return;
         }
-        links.forEach(l => {
-          if (l && typeof l.r === 'number' && !isNaN(l.r)) {
-            missed.push({ r: l.r, notes: (l.notes || ''), url: (l.url || ''), weekStart: wk });
-          }
+        // Every outcome now, R signed from the result. Legacy winners read as Wins.
+        (window.__stOos ? window.__stOos.normalizeList(links, 'inside') : []).forEach(x => {
+          if (!x.result && x.r == null) return;   // nothing to score
+          missed.push({ x, r: window.__stOos.signedR(x), notes: x.notes || '', url: x.url || '', weekStart: wk });
         });
       });
       const count = missed.length;
       const tableWrap = document.getElementById('missed-winners-table-wrap');
       sec.style.display = '';  // always visible, even with nothing logged yet
-      const totalR = missed.reduce((s, m) => s + m.r, 0);
-      const avgR = count ? totalR / count : 0;
-      const takenWins = (typeof filterByScope === 'function' && typeof getAllLifetimeTrades === 'function')
-        ? filterByScope(getAllLifetimeTrades()).filter(t => t.result === 'Win').length : 0;
+      const scored = missed.filter(m => m.r != null);
+      const totalR = scored.reduce((s, m) => s + m.r, 0);
+      const avgR = scored.length ? totalR / scored.length : 0;
+      const takenCount = (typeof filterByScope === 'function' && typeof getAllLifetimeTrades === 'function')
+        ? filterByScope(getAllLifetimeTrades()).filter(tr => tr.result === 'Win' || tr.result === 'Lose' || tr.result === 'BE').length : 0;
       const fmtR = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
       const setTxt = (id, val) => { const el = document.getElementById(id); if (el) el.textContent = val; };
+      const _T = (en, es) => { try { return (typeof window._stT === 'function') ? window._stT(en, es) : en; } catch (e) { return en; } };
+      // Labels set here rather than by data-i18n: the pools still describe the winners-only card.
+      setTxt('missed-title', _T("Setups inside my session I didn't take", 'Setups dentro de mi sesión que no tomé'));
+      setTxt('missed-tip', _T("Setups inside your session that met your rules and you didn't take, logged in the weekly review - every outcome, so the total is what staying out cost you or saved you.",
+                              'Setups dentro de tu sesión que cumplían tus reglas y no tomaste, registrados en la revisión semanal - todos los resultados, así el total es lo que quedarte fuera te costó o te ahorró.'));
+      setTxt('lab-missed-count', _T('Setups logged', 'Setups registrados'));
+      setTxt('tip-missed-count', _T("Setups inside your session you logged as not taken, across your weekly reviews.", 'Setups dentro de tu sesión que registraste como no tomados, en tus revisiones semanales.'));
+      setTxt('lab-missed-taken', _T('Trades taken', 'Operaciones tomadas'));
+      setTxt('tip-missed-taken', _T("Trades you actually took (current scope), for scale against the setups you didn't.", 'Operaciones que sí tomaste (alcance actual), como escala frente a los setups que no tomaste.'));
+      setTxt('lab-missed-r', _T('Net would-be R', 'R potencial neto'));
+      setTxt('tip-missed-r', _T('Net would-be R across every setup you logged: winners minus losers. Positive means staying out cost you; negative means it saved you.', 'R potencial neto de todos los setups registrados: ganadoras menos perdedoras. Positivo: quedarte fuera te costó; negativo: te ahorró.'));
+      setTxt('lab-missed-avg', _T('Avg would-be R', 'R potencial medio'));
+      setTxt('tip-missed-avg', _T('Average would-be R per logged setup with an R, losers included.', 'R potencial medio por setup registrado con R, perdedoras incluidas.'));
+      const _tone = (id, v) => { const el = document.getElementById(id); if (el) el.style.color = (v == null || v === 0) ? '' : (v > 0 ? 'var(--good)' : 'var(--bad)'); };
       setTxt('kpi-missed-count', String(count));
-      setTxt('kpi-missed-r', count ? fmtR(totalR) : '—');
-      setTxt('kpi-missed-avg', count ? fmtR(avgR) : '—');
-      setTxt('kpi-missed-taken', String(takenWins));
+      setTxt('kpi-missed-r', scored.length ? fmtR(totalR) : '—');   _tone('kpi-missed-r', scored.length ? totalR : null);
+      setTxt('kpi-missed-avg', scored.length ? fmtR(avgR) : '—');   _tone('kpi-missed-avg', scored.length ? avgR : null);
+      setTxt('kpi-missed-taken', String(takenCount));
       // Per-trade breakdown — biggest would-be R first, mirroring the Hold Winners table.
       if (tableWrap) {
         const esc = x => String(x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -19549,21 +19560,24 @@ try {
         // A magnifying-glass before a note signals "click to open the chart" — shown only on
         // rows that actually carry a chart link.
         const _zoom = '<svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.55;margin-right:7px;vertical-align:-2px;flex:none;"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>';
-        const rowsHtml = missed.slice().sort((a, b) => {
-          const da = a.weekStart ? new Date(a.weekStart).getTime() : 0;
-          const db = b.weekStart ? new Date(b.weekStart).getTime() : 0;
-          return (db - da) || (b.r - a.r);   // newest week first; bigger would-be R breaks ties
-        }).map(m => {
-          const rStr = (m.r >= 0 ? '+' : '') + m.r.toFixed(2) + 'R';
+        const fmtDay = ds => { const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(ds || ''); if (!m) return ''; const d = new Date(+m[1], +m[2] - 1, +m[3]); return isNaN(d.getTime()) ? '' : ((typeof fmtDate === 'function') ? fmtDate(d) : ds); };
+        const _dayMs = m => { const mm = /^(\d{4})-(\d{2})-(\d{2})$/.exec(m.x.date || ''); if (mm) return new Date(+mm[1], +mm[2] - 1, +mm[3]).getTime(); return m.weekStart ? new Date(m.weekStart).getTime() : 0; };
+        const _res  = { Win: _T('Win', 'Ganada'), Lose: _T('Loss', 'Perdida'), BE: 'BE' };
+        const _side = { Long: _T('Long', 'Largo'), Short: _T('Short', 'Corto') };
+        const _type = { Reaction: _T('Reaction', 'Reacción'), Continuation: _T('Continuation', 'Continuación') };
+        const rowsHtml = missed.slice().sort((a, b) => (_dayMs(b) - _dayMs(a)) || ((b.r || 0) - (a.r || 0))).map(m => {
+          // Signed now: a skipped loser shows red, a break-even shows plain.
+          const rStr = m.r == null ? '—' : (m.r >= 0 ? '+' : '') + m.r.toFixed(2) + 'R';
+          const rCls = m.r == null ? '' : (m.r > 0 ? ' pl-good' : (m.r < 0 ? ' pl-bad' : ''));
           const hasLink = !!(m.url && m.url.trim());
-          const noteTxt = m.notes ? esc(m.notes) : '—';
-          const titleAttr = m.notes ? ` title="${esc(m.notes)}"` : '';
-          return `<div class="history-row${hasLink ? ' has-link' : ''}"${hasLink ? ` data-url="${esc(m.url.trim())}"` : ''}>\n            <div class="history-cell week">${fmtWk(m.weekStart)}</div>\n            <div class="history-cell wbr pl-good">${rStr}</div>\n            <div class="history-cell note"${titleAttr}>${hasLink ? _zoom : ''}${noteTxt}</div>\n          </div>`;
+          const tags = [_res[m.x.result], _side[m.x.side], _type[m.x.type], m.x.entry ? (m.x.exit ? m.x.entry + '–' + m.x.exit : m.x.entry) : ''].filter(Boolean).join(' · ');
+          const noteRaw = [tags, m.notes].filter(Boolean).join(' — ');
+          const noteTxt = noteRaw ? esc(noteRaw) : '—';
+          const titleAttr = noteRaw ? ` title="${esc(noteRaw)}"` : '';
+          return `<div class="history-row${hasLink ? ' has-link' : ''}"${hasLink ? ` data-url="${esc(m.url.trim())}"` : ''}>\n            <div class="history-cell week">${fmtDay(m.x.date) || fmtWk(m.weekStart)}</div>\n            <div class="history-cell wbr${rCls}">${rStr}</div>\n            <div class="history-cell note"${titleAttr}>${hasLink ? _zoom : ''}${noteTxt}</div>\n          </div>`;
         }).join('');
-        // Built as a .history-list, the same construction as the Setups Performance table, rather
-        // than the .potr-trade-row chip grid this used to use — that rendered every row as its own
-        // rounded block separated by gaps, which is the blocky look being replaced.
-        tableWrap.innerHTML = `<div class="history-list">\n          <div class="history-row headers">\n            <div class="history-cell week">${t('missed.col_week')}</div>\n            <div class="history-cell wbr">${t('missed.col_wouldbe')}</div>\n            <div class="history-cell note">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml || ('<div class="missed-empty-row">' + t('missed.empty') + '</div>')}\n        </div>`;
+        // Built as a .history-list, the same construction as the Setups Performance table.
+        tableWrap.innerHTML = `<div class="history-list">\n          <div class="history-row headers">\n            <div class="history-cell week">${esc(_T('Date', 'Fecha'))}</div>\n            <div class="history-cell wbr">${t('missed.col_wouldbe')}</div>\n            <div class="history-cell note">${t('missed.col_note')}</div>\n          </div>\n          ${rowsHtml || ('<div class="missed-empty-row">' + esc(_T("Nothing logged yet - add the setups inside your session you didn't take in your weekly review.", 'Aún no hay nada - añade en tu revisión semanal los setups dentro de tu sesión que no tomaste.')) + '</div>')}\n        </div>`;
         // Notes are shown on ONE line and the table pans to reach the rest, so the note column has
         // to be as wide as the LONGEST note, and every row has to use that same width or the
         // columns stagger. Measure once off-screen and publish it; the rows and the sticky header
@@ -23564,22 +23578,31 @@ try {
       var h = ''; try{ h = String((data.settings && data.settings.sessionName) || 'London').toLowerCase(); }catch(e){}
       return /new york/.test(h) ? 'ny' : (/asia/.test(h) ? 'asia' : 'london');
     }
-    /* The session a London-clock time falls in. In the London/New York overlap it returns the one
-       that is NOT your own, because an out-of-session setup is the thing being recorded. */
-    function suggest(v){
+    /* The session a London-clock time falls in. In the London/New York overlap the OUTSIDE card
+       returns the one that is not your own (that is what it records) and the INSIDE card returns
+       your own. */
+    function suggest(v, mode){
       var t = mins(v); if(t == null) return '';
       var list;
       try{ list = FX_SESSIONS; }catch(e){ list = [{id:'asia',start:0,end:480},{id:'london',start:480,end:990},{id:'ny',start:810,end:1260}]; }
       var hits = list.filter(function(x){ return t >= x.start && t < x.end; }).map(function(x){ return x.id; });
       if(!hits.length) return '';
       var home = homeId();
+      if(mode === 'inside') return (hits.indexOf(home) >= 0) ? home : hits[0];
       for(var i = 0; i < hits.length; i++) if(hits[i] !== home) return hits[i];
       return hits[0];
     }
     function num(v){ var n = parseFloat(v); return isFinite(n) ? n : null; }
-    function normalize(o){
+    function normalize(o, mode){
       o = o || {};
       var r = num(o.r);
+      /* A LEGACY inside entry - {url, notes, r} from "Winning trades I didn't take" - has no result
+         key at all. It was an in-session winner by definition, so it reads as one, in your own
+         session. clean() always writes the key, so a new entry with no result picked is never
+         mistaken for this. */
+      if(mode === 'inside' && o && !('result' in o) && r != null){
+        o = Object.assign({}, o, { result: r < 0 ? 'Lose' : (r === 0 ? 'BE' : 'Win'), session: o.session || homeId() });
+      }
       return {
         date:     String(o.date || ''),
         session:  (o.session === 'asia' || o.session === 'london' || o.session === 'ny') ? o.session : '',
@@ -23594,9 +23617,11 @@ try {
         url:      String(o.url || '')
       };
     }
-    function normalizeList(a){ return Array.isArray(a) ? a.map(normalize) : []; }
-    function blank(x){ return !x.date && !x.session && !x.side && !x.type && !x.entry && !x.exit && !x.closedBy && !x.result && x.r == null && !x.notes.trim() && !x.url.trim(); }
-    function clean(a){ return (a || []).map(normalize).filter(function(x){ return !blank(x); }); }
+    function normalizeList(a, mode){ return Array.isArray(a) ? a.map(function(o){ return normalize(o, mode); }) : []; }
+    /* Date and session are PREFILLED when a card is added, so they do not make an entry: pressing
+       Add and walking away must not save a phantom setup for the breakdown to count. */
+    function blank(x){ return !x.side && !x.type && !x.entry && !x.exit && !x.closedBy && !x.result && x.r == null && !x.notes.trim() && !x.url.trim(); }
+    function clean(a){ return (a || []).map(function(o){ return normalize(o); }).filter(function(x){ return !blank(x); }); }
     /* What the setup would have made. A loss with no R typed is -1R, which is what a stop is. */
     function signedR(x){
       if(x.result === 'BE') return 0;
@@ -23630,9 +23655,16 @@ try {
         '.oos-card{border:1px solid var(--border-2);border-radius:10px;padding:12px;margin:0 0 10px;display:flex;flex-direction:column;gap:9px;}' +
         '.oos-row{display:flex;flex-wrap:wrap;align-items:center;gap:8px;}' +
         '.oos-k{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim);min-width:76px;}' +
+        /* Entry / Exit sit against their own time pickers, not in the row-label column. */
+        '.oos-k.oos-k-tight{min-width:0;margin-left:8px;}' +
+        '.oos-card .tv-link-row{padding:4px 0;}' +
+        '.oos-card textarea.tv-link-url{min-height:0;width:auto;border:none;background:transparent;padding:4px 0;}' +
+        '.oos-card .tv-link-preview-wrap{margin-top:4px;}' +
+        '.oos-card .tv-link-preview{width:100%;max-width:100%;aspect-ratio:12/5;height:auto;object-fit:cover;border:1px solid var(--border-2);border-radius:var(--radius-ctrl);display:block;}' +
+        '.oos-ctl{display:flex;flex-wrap:wrap;align-items:center;gap:10px 22px;margin:2px 0 4px;}' +
+        '.oos-ctl-g{display:flex;align-items:center;gap:8px;flex-wrap:wrap;}' +
         '.oos-card input,.oos-card textarea{background:var(--bg);border:1px solid var(--border-2);color:var(--text);border-radius:6px;padding:6px 8px;font:inherit;font-size:12px;}' +
         '.oos-card textarea{width:100%;min-height:44px;resize:vertical;box-sizing:border-box;}' +
-        '.oos-card input[data-f=url]{width:100%;box-sizing:border-box;}' +
         '.oos-card input[data-f=r]{width:72px;}' +
         '.oos-segs{display:flex;flex-wrap:wrap;gap:4px;}' +
         '.oos-seg{background:transparent;border:1px solid var(--border-2);color:var(--text-mid);border-radius:6px;padding:4px 9px;font:inherit;font-size:11px;cursor:pointer;}' +
@@ -23666,8 +23698,8 @@ try {
         + '<div class="oos-row">'
         +   '<span class="oos-k">' + esc(T('Date','Fecha')) + '</span><input type="date" data-f="date" value="' + esc(x.date) + '">'
         +   '<span class="oos-dow">' + esc(weekday(x.date)) + '</span>'
-        +   '<span class="oos-k">' + esc(T('Entry','Entrada')) + '</span><input type="time" data-f="entry" value="' + esc(x.entry) + '">'
-        +   '<span class="oos-k">' + esc(T('Exit','Salida')) + '</span><input type="time" data-f="exit" value="' + esc(x.exit) + '">'
+        +   '<span class="oos-k oos-k-tight">' + esc(T('Entry','Entrada')) + '</span><input type="time" data-f="entry" value="' + esc(x.entry) + '">'
+        +   '<span class="oos-k oos-k-tight">' + esc(T('Exit','Salida')) + '</span><input type="time" data-f="exit" value="' + esc(x.exit) + '">'
         +   '<button type="button" class="oos-del" title="' + esc(T('Remove','Quitar')) + '" aria-label="' + esc(T('Remove','Quitar')) + '">×</button>'
         + '</div>'
         + '<div class="oos-row"><span class="oos-k">' + esc(T('Session','Sesión')) + '</span>'
@@ -23682,9 +23714,19 @@ try {
         +   segs('result', x.result, [['Win', T('Win','Ganada')], ['Lose', T('Loss','Perdida')], ['BE', 'BE']])
         +   '<input type="number" step="0.1" min="0" inputmode="decimal" data-f="r" placeholder="R" value="' + (x.r == null ? '' : esc(x.r)) + '">'
         + '</div>'
-        + '<input type="text" data-f="url" autocomplete="off" placeholder="' + esc(T('Chart link (optional)','Enlace del gráfico (opcional)')) + '" value="' + esc(x.url) + '">'
+        /* The same row/preview classes the chart cards use, so the app's chart UPLOAD button injects
+           itself here and its preview lands in this card - nothing about uploading is duplicated. */
+        + '<div class="oos-chart"><div class="tv-link-row"><textarea class="tv-link-url" data-f="url" rows="1" wrap="soft" autocomplete="off" placeholder="' + esc(T('Chart link (optional)','Enlace del gráfico (opcional)')) + '">' + esc(x.url) + '</textarea></div>'
+        +   '<div class="tv-link-preview-wrap">' + previewHtml(x.url) + '</div></div>'
         + '<textarea data-f="notes" rows="2" placeholder="' + esc(T('Why it met your rules, and what you would have done','Por qué cumplía tus reglas y qué habrías hecho')) + '">' + esc(x.notes) + '</textarea>'
         + '</div>';
+    }
+    function previewHtml(url){
+      url = String(url || '').trim();
+      var m = url.match(/tradingview\.com\/x\/([^\/\?#]+)/i);
+      var src = m ? ('https://www.tradingview.com/x/' + m[1] + '/') : (/^https?:\/\//i.test(url) ? url : '');
+      if(!src) return '';
+      return '<a href="' + esc(url) + '" target="_blank" rel="noopener"><img src="' + esc(src) + '" alt="Chart preview" class="tv-link-preview" onerror="this.parentElement.outerHTML=\'\';"></a>';
     }
     function paint(cardEl, field, v){
       Array.prototype.forEach.call(cardEl.querySelectorAll('.oos-seg[data-f="' + field + '"]'), function(b){
@@ -23694,7 +23736,7 @@ try {
 
     /* Wires the review card. `state` is the modal's live array and `persist` its saver - the same
        pair the chart-link cards use, so this saves on every change exactly as they do. */
-    function wire(listId, addId, state, persist, weekStart){
+    function wire(listId, addId, state, persist, weekStart, mode){
       var list = document.getElementById(listId), add = document.getElementById(addId);
       if(!list || !add) return;
       ensureCss();
@@ -23712,10 +23754,10 @@ try {
           /* Move the session with the time ONLY if the session is empty or still holds what the
              previous time suggested. A session picked by hand is never overwritten by a later
              edit to the time - that would silently undo a choice. */
-          var was = suggest(x.entry);
+          var was = suggest(x.entry, mode);
           x.entry = el.value;
           if(!x.session || x.session === was){
-            var now = suggest(x.entry);
+            var now = suggest(x.entry, mode);
             if(now && now !== x.session){ x.session = now; paint(c, 'session', now); }
           }
         }
@@ -23723,13 +23765,23 @@ try {
           x.date = el.value;
           var dw = c.querySelector('.oos-dow'); if(dw) dw.textContent = weekday(x.date);
         }
+        else if(f === 'url'){
+          /* Typed, pasted, or set by the upload button (which fires this same input event). */
+          x.url = el.value.trim();
+          var pw = c.querySelector('.tv-link-preview-wrap'); if(pw) pw.innerHTML = previewHtml(x.url);
+        }
         else x[f] = el.value;
         save();
       });
       list.addEventListener('click', function(ev){
         var t = ev.target, c = t && t.closest ? t.closest('.oos-card') : null; if(!c) return;
         var i = +c.getAttribute('data-i'), x = state[i]; if(!x) return;
-        if(t.closest('.oos-del')){ state.splice(i, 1); redraw(); save(); return; }
+        if(t.closest('.oos-del')){
+          /* An uploaded chart goes with its card, as it does on the chart-link cards (a no-op for
+             anything that is not in the app's own chart storage). */
+          try{ if(x.url && window.__stDeleteChart) window.__stDeleteChart(x.url); }catch(e){}
+          state.splice(i, 1); redraw(); save(); return;
+        }
         var sb = t.closest('.oos-seg'); if(!sb) return;
         var f = sb.getAttribute('data-f'), v = sb.getAttribute('data-v');
         x[f] = v; paint(c, f, v);
@@ -23742,7 +23794,9 @@ try {
         save();
       });
       add.addEventListener('click', function(){
-        state.push(normalize({ date: localDay(weekStart) }));
+        var fresh = normalize({ date: localDay(weekStart), result: '' });
+        if(mode === 'inside') fresh.session = homeId();    // inside means your own session, until changed
+        state.push(fresh);
         redraw();
         var last = list.querySelector('.oos-card:last-child input[data-f="entry"]');
         if(last){ try{ last.focus(); }catch(e){} }
@@ -23757,43 +23811,121 @@ try {
       b.hold += d; b.holdN++;
     }
 
-    /* The Statistics card. Scoped exactly like "Winning trades I didn't take": in-scope reviews, and
-       no week that had already ended before this account existed. */
-    function renderStats(){
-      var sec = document.getElementById('oos-section'), wrap = document.getElementById('oos-stats-wrap');
-      if(!sec || !wrap) return;
-      ensureCss();
-      var ttl = document.getElementById('oos-title');
-      if(ttl) ttl.textContent = T('Setups outside my session', 'Setups fuera de mi sesión');
+    /* ---------------------------------------------------------------- Statistics breakdown
+       Both cards in one table: grouped by session, day, direction, type or how it closed, with
+       Inside / Outside / Both and a Result filter. Scoped exactly like the Statistics winners
+       section always was - in-scope reviews, and no week that had ended before this account
+       existed. The view choice is a per-viewer convenience, so it lives in localStorage. */
+    var VIEW_KEY = 'st_oos_view';
+    function dowIdx(ds){
+      var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(ds || '')); if(!m) return null;
+      var d = new Date(+m[1], +m[2] - 1, +m[3]); return isNaN(d.getTime()) ? null : d.getDay();
+    }
+    function dowName(i){
+      var d = new Date(2026, 0, 4 + i);   // 4 Jan 2026 is a Sunday, so +i is weekday i
+      try{ return d.toLocaleDateString(document.documentElement.lang === 'es' ? 'es-ES' : 'en-GB', { weekday: 'long' }); }catch(e){ return String(i); }
+    }
+    var GROUPS = {
+      session:  { en:'Session', es:'Sesión', key:function(x){ return x.session || null; },
+                  rows:function(){ return SESS.map(function(z){ return [z.id, T(z.en, z.es)]; }); },
+                  missing:['without a session', 'sin sesión'] },
+      dow:      { en:'Day', es:'Día', key:function(x){ var i = dowIdx(x.date); return (i == null) ? null : String(i); },
+                  rows:function(){ return [1,2,3,4,5,6,0].map(function(i){ return [String(i), dowName(i)]; }); },
+                  optional:{ '6':1, '0':1 }, missing:['without a date', 'sin fecha'] },
+      side:     { en:'Direction', es:'Dirección', key:function(x){ return x.side || null; },
+                  rows:function(){ return [['Long', T('Long','Largo')], ['Short', T('Short','Corto')]]; },
+                  missing:['without a direction', 'sin dirección'] },
+      type:     { en:'Type', es:'Tipo', key:function(x){ return x.type || null; },
+                  rows:function(){ return [['Reaction', T('Reaction','Reacción')], ['Continuation', T('Continuation','Continuación')]]; },
+                  missing:['without a type', 'sin tipo'] },
+      closedBy: { en:'How it closed', es:'Cómo cerró', key:function(x){ return x.closedBy || null; },
+                  rows:function(){ return [['tp', T('TP hit','TP alcanzado')], ['sl', T('SL hit','SL alcanzado')], ['manual', T('Closed manually','Cierre manual')]]; },
+                  missing:['without how it closed', 'sin cómo cerró'] }
+    };
+    function loadView(){
+      var v = { g: 'session', w: 'both', res: 'all' };
+      try{
+        var z = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null');
+        if(z && typeof z === 'object'){
+          if(GROUPS[z.g]) v.g = z.g;
+          if(z.w === 'both' || z.w === 'in' || z.w === 'out') v.w = z.w;
+          if(z.res === 'all' || z.res === 'Win' || z.res === 'Lose' || z.res === 'BE') v.res = z.res;
+        }
+      }catch(e){}
+      return v;
+    }
+    function saveView(v){ try{ localStorage.setItem(VIEW_KEY, JSON.stringify(v)); }catch(e){} }
+
+    function collect(){
       var floor = 0; try{ floor = (typeof scopeStartMs === 'function') ? scopeStartMs() : 0; }catch(e){}
       var WEEK = 7 * 864e5, rows = [];
       (data.weeklyReviews || []).forEach(function(w){
         try{ if(window.__stRev && !window.__stRev.inScope(w)) return; }catch(e){}
         if(floor > 0){ var wk = (w && w.weekStart) ? new Date(w.weekStart).getTime() : NaN; if(isNaN(wk) || wk + WEEK < floor) return; }
-        normalizeList(w && w.outOfSession).forEach(function(x){ rows.push(x); });
+        var ins = (w && w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
+        normalizeList(ins, 'inside').forEach(function(x){ if(!blank(x)){ x.where = 'in'; rows.push(x); } });
+        normalizeList(w && w.outOfSession).forEach(function(x){ if(!blank(x)){ x.where = 'out'; rows.push(x); } });
       });
+      return rows;
+    }
+
+    function renderStats(){
+      var sec = document.getElementById('oos-section'), wrap = document.getElementById('oos-stats-wrap');
+      if(!sec || !wrap) return;
+      ensureCss();
+      var ttl = document.getElementById('oos-title');
+      if(ttl) ttl.textContent = T('Setups I didn\u2019t take \u2014 breakdown', 'Setups que no tomé \u2014 desglose');
       sec.style.display = '';
-      if(!rows.length){
+      if(!wrap.__oosCtl){
+        wrap.__oosCtl = 1;
+        wrap.addEventListener('click', function(ev){
+          var b = ev.target && ev.target.closest ? ev.target.closest('.oos-seg[data-view]') : null; if(!b) return;
+          var v = loadView(); v[b.getAttribute('data-view')] = b.getAttribute('data-v');
+          saveView(v); renderStats();
+        });
+      }
+      var all = collect();
+      if(!all.length){
         wrap.innerHTML = '<div class="empty">' + esc(T(
-          'Nothing logged yet. In a weekly review, add setups that met your rules outside your session - losers and break-evens as well as winners - and they build up here.',
-          'Aún no hay nada. En una revisión semanal, añade los setups que cumplían tus reglas fuera de tu sesión - perdedoras y BE además de ganadoras - y se acumulan aquí.')) + '</div>';
+          'Nothing logged yet. In a weekly review, add the setups that met your rules and you didn\u2019t take - inside your session and outside it, losers and break-evens as well as winners - and they build up here.',
+          'Aún no hay nada. En una revisión semanal, añade los setups que cumplían tus reglas y no tomaste - dentro y fuera de tu sesión, perdedoras y BE además de ganadoras - y se acumulan aquí.')) + '</div>';
         return;
       }
-      var B = { asia: bucket(), london: bucket(), ny: bucket() }, noSession = 0;
-      rows.forEach(function(x){
-        var b = B[x.session]; if(!b){ noSession++; return; }
+      var v = loadView(), G = GROUPS[v.g];
+      function ctl(k, name, cur, opts){
+        return '<div class="oos-ctl-g"><span class="oos-k oos-k-tight" style="margin-left:0">' + esc(name) + '</span><div class="oos-segs">'
+          + opts.map(function(o){
+              var on = (cur === o[0]);
+              return '<button type="button" class="oos-seg' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-view="' + k + '" data-v="' + o[0] + '">' + esc(o[1]) + '</button>';
+            }).join('') + '</div></div>';
+      }
+      var controls = '<div class="oos-ctl">'
+        + ctl('g', T('Group by','Agrupar por'), v.g, Object.keys(GROUPS).map(function(k){ return [k, T(GROUPS[k].en, GROUPS[k].es)]; }))
+        + ctl('w', T('Show','Mostrar'), v.w, [['both', T('Both','Ambos')], ['in', T('Inside','Dentro')], ['out', T('Outside','Fuera')]])
+        + ctl('res', T('Result','Resultado'), v.res, [['all', T('All','Todos')], ['Win', T('Win','Ganada')], ['Lose', T('Loss','Perdida')], ['BE', 'BE']])
+        + '</div>';
+
+      var pool = all.filter(function(x){ return v.w === 'both' || x.where === v.w; });
+      var noResult = pool.filter(function(x){ return !x.result; }).length;
+      pool = pool.filter(function(x){ return x.result && (v.res === 'all' || x.result === v.res); });
+
+      var B = {}, missing = 0, order = G.rows();
+      order.forEach(function(o){ B[o[0]] = bucket(); });
+      pool.forEach(function(x){
+        var k = G.key(x), b = (k == null) ? null : B[k]; if(!b){ missing++; return; }
         b.n++;
         if(x.result === 'Win') b.w++; else if(x.result === 'Lose') b.l++; else if(x.result === 'BE') b.be++;
         var r = signedR(x); if(r != null){ b.sumR += r; b.rN++; }
         addHold(b, x.entry, x.exit);
       });
       /* Your taken trades, in R BEFORE costs. A hindsight setup has no spread, slippage or
-         hesitation, so comparing it with trades net of costs would flatter every session you did
-         not trade - the bias this card exists to avoid. */
+         hesitation, so comparing it with trades net of costs would flatter every setup you did not
+         take - the bias this table exists to avoid. The Result filter applies to it too. */
       var ref = bucket();
       try{
         filterByScope(getAllLifetimeTrades()).forEach(function(tr){
           if(tr.result !== 'Win' && tr.result !== 'Lose' && tr.result !== 'BE') return;
+          if(v.res !== 'all' && tr.result !== v.res) return;
           ref.n++;
           if(tr.result === 'Win') ref.w++; else if(tr.result === 'Lose') ref.l++; else ref.be++;
           var risk = parseFloat(tr.risk) || 0;
@@ -23802,50 +23934,66 @@ try {
         });
       }catch(e){}
 
+      function signed(v2){ return (v2 >= 0 ? '+' : '') + v2.toFixed(2) + 'R'; }
       function rowHtml(label, b, isRef){
         var wr = (b.w + b.l) ? (100 * b.w / (b.w + b.l)) : null;   // breakevens excluded, as everywhere else
         var ex = b.rN ? (b.sumR / b.rN) : null;
         var early = !isRef && b.n > 0 && b.n < EARLY;
-        var exCls = (ex == null) ? 'oos-dim' : (early ? 'oos-dim' : (ex > 0 ? 'oos-good' : (ex < 0 ? 'oos-bad' : '')));
+        var cls = function(val){ return (val == null || early) ? 'oos-dim' : (val > 0 ? 'oos-good' : (val < 0 ? 'oos-bad' : '')); };
         return '<tr' + (isRef ? ' class="oos-ref"' : '') + '>'
           + '<td>' + esc(label) + (early ? '<span class="oos-early">' + esc(T('early','pronto')) + '</span>' : '') + '</td>'
           + '<td>' + b.n + '</td>'
           + '<td>' + (b.n ? (b.w + ' · ' + b.l + ' · ' + b.be) : '—') + '</td>'
           + '<td>' + (wr == null ? '—' : wr.toFixed(0) + '%') + '</td>'
-          + '<td class="' + exCls + '">' + (ex == null ? '—' : ((ex >= 0 ? '+' : '') + ex.toFixed(2) + 'R')) + '</td>'
+          + '<td class="' + cls(ex) + '">' + (ex == null ? '—' : signed(ex)) + '</td>'
+          + '<td class="' + (isRef ? 'oos-dim' : cls(b.rN ? b.sumR : null)) + '">' + (isRef || !b.rN ? '—' : signed(b.sumR)) + '</td>'
           + '<td>' + (b.holdN ? fmtHold(b.hold / b.holdN) : '—') + '</td>'
           + '</tr>';
       }
       var home = homeId();
       var body = rowHtml(T('Your taken trades (before costs)', 'Tus operaciones tomadas (antes de costes)'), ref, true);
-      SESS.forEach(function(z){
-        var lab = T(z.en, z.es);
-        if(z.id === home) lab += ' ' + T('(outside your window)', '(fuera de tu ventana)');
-        body += rowHtml(lab, B[z.id], false);
+      order.forEach(function(o){
+        var b = B[o[0]];
+        if(G.optional && G.optional[o[0]] && !b.n) return;   // weekends only when something is logged on one
+        var lab = o[1];
+        if(v.g === 'session' && o[0] === home){
+          lab += ' ' + (v.w === 'out' ? T('(outside your window)', '(fuera de tu ventana)') : T('(your session)', '(tu sesión)'));
+        }
+        body += rowHtml(lab, b, false);
       });
-      wrap.innerHTML =
-        '<div class="oos-tblwrap"><table class="oos-tbl"><thead><tr>'
-        + '<th>' + esc(T('Session','Sesión')) + '</th>'
+      var notes = [];
+      if(missing) notes.push(T(missing + ' ' + G.missing[0] + ' not counted.', missing + ' ' + G.missing[1] + ' no se cuentan.'));
+      if(noResult) notes.push(T(noResult + ' without a result not counted.', noResult + ' sin resultado no se cuentan.'));
+      wrap.innerHTML = controls
+        + '<div class="oos-tblwrap"><table class="oos-tbl"><thead><tr>'
+        + '<th>' + esc(T(G.en, G.es)) + '</th>'
         + '<th>' + esc(T('Setups','Setups')) + '</th>'
         + '<th>' + esc(T('W · L · BE','G · P · BE')) + '</th>'
         + '<th>' + esc(T('Win rate','Tasa de acierto')) + '</th>'
         + '<th>' + esc(T('Expectancy','Esperanza')) + '</th>'
+        + '<th>' + esc(T('Net R','R neto')) + '</th>'
         + '<th>' + esc(T('Avg hold','Duración media')) + '</th>'
         + '</tr></thead><tbody>' + body + '</tbody></table></div>'
         + '<div class="oos-foot">' + esc(T(
-            'Logged setups are hindsight: no spread, no slippage and no hesitation, so your taken trades are shown before costs to sit on the same basis. Win rate leaves out break-evens. Sessions marked early have fewer than ' + EARLY + ' setups - read them as a start, not an answer.',
-            'Los setups registrados son a posteriori: sin spread, sin deslizamiento y sin dudas, así que tus operaciones tomadas se muestran antes de costes para compararlas en la misma base. La tasa de acierto excluye los BE. Las sesiones marcadas como pronto tienen menos de ' + EARLY + ' setups: tómalas como un comienzo, no como una respuesta.'))
-        + (noSession ? ' ' + esc(T(noSession + ' without a session are not counted.', noSession + ' sin sesión no se cuentan.')) : '')
+            'Logged setups are hindsight: no spread, no slippage and no hesitation, so your taken trades are shown before costs to sit on the same basis. Win rate leaves out break-evens. Rows marked early have fewer than ' + EARLY + ' setups - read them as a start, not an answer.',
+            'Los setups registrados son a posteriori: sin spread, sin deslizamiento y sin dudas, así que tus operaciones tomadas se muestran antes de costes para compararlas en la misma base. La tasa de acierto excluye los BE. Las filas marcadas como pronto tienen menos de ' + EARLY + ' setups: tómalas como un comienzo, no como una respuesta.'))
+        + (notes.length ? ' ' + esc(notes.join(' ')) : '')
         + '</div>';
     }
 
     return {
       normalizeList: normalizeList, clean: clean, wire: wire, renderStats: renderStats,
       suggest: suggest, signedR: signedR,
-      label:    function(){ return esc(T('Setups outside my session', 'Setups fuera de mi sesión')); },
-      hint:     function(){ return esc(T(
-        'Setups that met your strategy’s rules outside your trading window. Log the losers and break-evens too, not only the winners - a list of winners can only ever say you should have traded more.',
-        'Setups que cumplían las reglas de tu estrategia fuera de tu ventana de trading. Registra también las perdedoras y los BE, no solo las ganadoras: una lista solo de ganadoras siempre dirá que deberías haber operado más.')); },
+      label:    function(mode){ return (mode === 'inside')
+        ? esc(T('Setups inside my session I didn\u2019t take', 'Setups dentro de mi sesión que no tomé'))
+        : esc(T('Setups outside my session I didn\u2019t take', 'Setups fuera de mi sesión que no tomé')); },
+      hint:     function(mode){ return (mode === 'inside')
+        ? esc(T(
+          'Setups that met your strategy’s rules inside your trading window, that you didn’t take. Log every outcome, not only the winners - the net is what staying out actually cost you, or saved you.',
+          'Setups que cumplían las reglas de tu estrategia dentro de tu ventana de trading y que no tomaste. Registra todos los resultados, no solo las ganadoras: el neto es lo que quedarte fuera te costó de verdad, o te ahorró.'))
+        : esc(T(
+          'Setups that met your strategy’s rules outside your trading window. Log the losers and break-evens too, not only the winners - a list of winners can only ever say you should have traded more.',
+          'Setups que cumplían las reglas de tu estrategia fuera de tu ventana de trading. Registra también las perdedoras y los BE, no solo las ganadoras: una lista solo de ganadoras siempre dirá que deberías haber operado más.')); },
       addLabel: function(){ return esc(T('+ Add setup', '+ Añadir setup')); }
     };
   })();
@@ -27695,15 +27843,15 @@ try {
         </div>` : ''}
 
         <div class="reflect-question">
-          <div class="reflect-q-label">${t('modal.missed_wins_label')}</div>
-          <div class="reflect-q-hint">${esc(t('modal.missed_wins_hint'))}</div>
-          <div id="rfx-missed-list" class="reflect-q-tv-list">${renderTvLinksList(missedTradeLinks, true)}</div>
-          <button type="button" id="rfx-missed-add" class="reflect-q-tv-add">${esc(t('btn.add_link') || '+ Add link')}</button>
+          <div class="reflect-q-label">${window.__stOos ? window.__stOos.label('inside') : ''}</div>
+          <div class="reflect-q-hint">${window.__stOos ? window.__stOos.hint('inside') : ''}</div>
+          <div id="rfx-missed-list"></div>
+          <button type="button" id="rfx-missed-add" class="reflect-q-tv-add">${window.__stOos ? window.__stOos.addLabel() : ''}</button>
         </div>
 
         <div class="reflect-question">
-          <div class="reflect-q-label">${window.__stOos ? window.__stOos.label() : ''}</div>
-          <div class="reflect-q-hint">${window.__stOos ? window.__stOos.hint() : ''}</div>
+          <div class="reflect-q-label">${window.__stOos ? window.__stOos.label('outside') : ''}</div>
+          <div class="reflect-q-hint">${window.__stOos ? window.__stOos.hint('outside') : ''}</div>
           <div id="rfx-oos-list"></div>
           <button type="button" id="rfx-oos-add" class="reflect-q-tv-add">${window.__stOos ? window.__stOos.addLabel() : ''}</button>
         </div>
@@ -27982,7 +28130,9 @@ try {
     // (whose `idx` references positions in these arrays). Persisted on every change.
     /* Declared BEFORE persist() so it is initialised by the time any keystroke calls it. */
     let oosState        = oosEntries.slice();
-    let missedState     = missedTradeLinks.length > 0 ? missedTradeLinks.map(l => ({ url: l.url || '', notes: l.notes || '', r: (typeof l.r === 'number' && !isNaN(l.r)) ? l.r : null })) : [{ url: '', notes: '', r: null }];
+    /* Same record as the outside card now. Legacy {url, notes, r} winners read as Wins in your own
+       session (see __stOos normalize). */
+    let missedState     = window.__stOos ? window.__stOos.normalizeList(missedTradeLinks, 'inside') : [];
 
     function persist() {
       if (!currentReview || currentReview.kind !== 'weekly') return;
@@ -27998,7 +28148,9 @@ try {
         weekStart: currentReview.start.toISOString(),
         weekEnd: currentReview.end.toISOString(),
         bestTrade:   { notes: valOf('rfx-best-trade-notes') },
-        missedTrade: { tvLinks: cleanLinks(missedState) },
+        /* __stOos.clean, NOT cleanLinks: cleanLinks keeps only url/notes/r and would strip every
+           other field of an inside setup on the next keystroke. */
+        missedTrade: { tvLinks: window.__stOos ? window.__stOos.clean(missedState) : cleanLinks(missedState) },
         /* MUST be listed here. This object is rebuilt from scratch on every keystroke, so a field
            left out of it is silently dropped the next time anything else in the review changes. */
         outOfSession: window.__stOos ? window.__stOos.clean(oosState) : [],
@@ -28110,8 +28262,8 @@ try {
         persist();
       });
     }
-    wireTvLinksList('rfx-missed-list',     'rfx-missed-add',     missedState, true);
-    if (window.__stOos) window.__stOos.wire('rfx-oos-list', 'rfx-oos-add', oosState, persist, currentReview && currentReview.start);
+    if (window.__stOos) window.__stOos.wire('rfx-missed-list', 'rfx-missed-add', missedState, persist, currentReview && currentReview.start, 'inside');
+    if (window.__stOos) window.__stOos.wire('rfx-oos-list', 'rfx-oos-add', oosState, persist, currentReview && currentReview.start, 'outside');
     try { var _wk=getCurrentWeekBounds(weekEnd).weekKey; var _wh=document.getElementById('review-modal-reflection'); if(_wh) mountMentorNote('week', _wk, _wh); } catch(e){}
 
     // Best/worst trade notes only exist when wins/losses occurred — attach if present.
@@ -28254,6 +28406,12 @@ try {
     function pullTvLinks(section) {
       if (!section) return [];
       if (Array.isArray(section.tvLinks)) {
+        /* Inside setups carry a result now: keep every field, plus the R signed from the result. */
+        if (window.__stOos) {
+          return window.__stOos.normalizeList(section.tvLinks, 'inside')
+            .filter(x => (x.url && x.url.trim()) || x.result || x.r != null || (x.notes && x.notes.trim()))
+            .map(x => Object.assign(x, { url: x.url.trim(), sr: window.__stOos.signedR(x) }));
+        }
         return section.tvLinks
           .filter(l => l && (l.url || (typeof l.r === 'number' && !isNaN(l.r))))
           .map(l => ({ url: l.url || '', notes: l.notes || '', r: (typeof l.r === 'number' && !isNaN(l.r)) ? l.r : null }));
@@ -28332,12 +28490,12 @@ try {
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
     if (bestTradeChart) chartIndex.push({ url: bestTradeChart, source: 'best', label: 'Best Trade' });
     // Missed setups are numbered within their own section: Trade [1], Trade [2], …
-    missedLinksOut.filter(l => l.url && l.url.trim()).forEach((l, i) => chartIndex.push({ url: l.url, notes: l.notes || '', source: 'missed', label: `Trade [${i + 1}]` }));
+    missedLinksOut.filter(l => l.url && l.url.trim()).forEach((l, i) => chartIndex.push({ url: l.url, notes: l.notes || '', source: 'missed', label: `Setup [${i + 1}]` }));
     // Missed entries with a note but no chart URL: keep the note (no chart number / preview).
     missedLinksOut.filter(l => (!l.url || !l.url.trim()) && l.notes && l.notes.trim()).forEach(l => chartIndex.push({ url: '', notes: l.notes, source: 'missed', label: '' }));
 
     // Inline marker for the "didn't take" header — the same [1] [2]… tags used in the list below.
-    const missedRefs = chartIndex.filter(c => c.source === 'missed').map((c, i) => `[${i + 1}]`).join(' ');
+    const missedRefs = chartIndex.filter(c => c.source === 'missed' && c.url).map((c, i) => `[${i + 1}]`).join(' ');
 
     if (dBestWin) {
       lines.push('');
@@ -28345,24 +28503,31 @@ try {
       lines.push(tradeOneLiner(dBestWin));
       if (bestTradeTxt) lines.push(bestTradeTxt);
     }
-    if (missedUrls.length > 0 || missedWins || missedLinksOut.some(l => typeof l.r === 'number' && !isNaN(l.r))) {
+    const _missedScored = missedLinksOut.filter(l => l.result || (typeof l.r === 'number' && !isNaN(l.r)));
+    if (missedUrls.length > 0 || missedWins || _missedScored.length > 0) {
       lines.push('');
       const ref = missedUrls.length > 0 ? `   ${missedRefs}` : '';
-      lines.push(`**Winning trades I didn't take**${ref}`);
-      // Per-entry would-be R; chart refs [n] match the charts grouped at the bottom.
-      const missedWithR = missedLinksOut.filter(l => typeof l.r === 'number' && !isNaN(l.r));
-      if (missedWithR.length > 0) {
-        let chartN = 0;
+      lines.push(`**Setups inside my session I didn't take**${ref}`);
+      // Every outcome, R signed from the result; chart refs [n] match the charts grouped at the bottom.
+      if (_missedScored.length > 0) {
+        const _closed = { tp: 'TP hit', sl: 'SL hit', manual: 'closed manually' };
+        let chartN = 0, netR = 0, netN = 0;
         missedLinksOut.forEach(l => {
           const hasChart = !!(l.url && l.url.trim());
           if (hasChart) chartN++;
-          if (typeof l.r === 'number' && !isNaN(l.r)) {
-            const tag = hasChart ? `Trade [${chartN}]` : 'Trade';
-            lines.push(`${tag}   ${l.r >= 0 ? '+' : ''}${l.r.toFixed(2)}R would-be`);
-          }
+          if (!(l.result || (typeof l.r === 'number' && !isNaN(l.r)))) return;
+          const tag = hasChart ? `Setup [${chartN}]` : 'Setup';
+          const sr = (typeof l.sr === 'number') ? l.sr : ((typeof l.r === 'number' && !isNaN(l.r)) ? l.r : null);
+          const bits = [];
+          if (l.result) bits.push(l.result === 'Lose' ? 'Loss' : l.result);
+          if (l.side) bits.push(l.side);
+          if (l.type) bits.push(l.type);
+          if (l.entry) bits.push(l.exit ? `${l.entry}–${l.exit}` : l.entry);
+          if (l.closedBy && _closed[l.closedBy]) bits.push(_closed[l.closedBy]);
+          if (sr != null) { netR += sr; netN++; }
+          lines.push(`${tag}   ${[bits.join(' · '), sr != null ? `${sr >= 0 ? '+' : ''}${sr.toFixed(2)}R would-be` : ''].filter(Boolean).join('   ')}`);
         });
-        const totalMissedR = missedWithR.reduce((s, l) => s + l.r, 0);
-        lines.push(`Total would-be R missed:   ${totalMissedR >= 0 ? '+' : ''}${totalMissedR.toFixed(2)}R`);
+        if (netN > 0) lines.push(`Net would-be R:   ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`);
       }
       if (missedWins) lines.push(missedWins);
     }
@@ -28388,7 +28553,7 @@ try {
       lines.push('');
       const sectionLabels = {
         best:   "Best trade of the week",
-        missed: "Winning trade I didn't take"
+        missed: "Setups inside my session I didn't take"
       };
       // Group by source, preserving the order in chartIndex (already best → missed by construction)
       const bySource = new Map();
@@ -28517,7 +28682,8 @@ try {
         existing.reflectionMissedWins || existing.reflectionWentWell || // legacy field, kept for back-compat
         (existing.bestTrade  && existing.bestTrade.notes) ||
         (existing.worstTrade && existing.worstTrade.notes) ||
-        (existing.missedTrade && (existing.missedTrade.url || (Array.isArray(existing.missedTrade.tvLinks) && existing.missedTrade.tvLinks.some(l => l && l.url)))) ||
+        (existing.missedTrade && (existing.missedTrade.url || (Array.isArray(existing.missedTrade.tvLinks) && existing.missedTrade.tvLinks.some(l => l && (l.url || l.result || typeof l.r === 'number'))))) ||
+        (Array.isArray(existing.outOfSession) && existing.outOfSession.length > 0) ||
         existing.notes
       );
       if (hasReflection) return;
@@ -31847,7 +32013,11 @@ try {
       const ws = (w && w.weekStart) ? new Date(w.weekStart) : null;
       if (!ws || isNaN(ws.getTime()) || ws < start || ws >= end) return;
       const links = (w.missedTrade && Array.isArray(w.missedTrade.tvLinks)) ? w.missedTrade.tvLinks : [];
-      links.forEach(l => { if (l && typeof l.r === 'number' && !isNaN(l.r)) { count++; totalR += l.r; } });
+      // Every outcome, R signed from the result - a skipped loser counts against the total.
+      (window.__stOos ? window.__stOos.normalizeList(links, 'inside') : []).forEach(x => {
+        const r = window.__stOos.signedR(x);
+        if (r != null) { count++; totalR += r; }
+      });
     });
     return { count, totalR };
   }
@@ -31860,9 +32030,14 @@ try {
       const _miss = missedRStatsForPeriod(period);
       if (_miss.count > 0 && _miss.totalR > 0) {
         if (period === 'week')
-          candidates.push(`+${_miss.totalR.toFixed(1)}R sitting in ${_miss.count} plan setup${_miss.count===1?'':'s'} you watched but didn't take this week. what kept you out — and would it stop you again tomorrow?`);
+          candidates.push(`+${_miss.totalR.toFixed(1)}R net sitting in ${_miss.count} plan setup${_miss.count===1?'':'s'} you watched but didn't take this week. what kept you out — and would it stop you again tomorrow?`);
         else
-          candidates.push(`+${_miss.totalR.toFixed(1)}R left watching across ${_miss.count} valid setup${_miss.count===1?'':'s'} you skipped this month. that's your edge, untaken — what's the pattern in the ones you let go?`);
+          candidates.push(`+${_miss.totalR.toFixed(1)}R net left watching across ${_miss.count} valid setup${_miss.count===1?'':'s'} you skipped this month. that's your edge, untaken — what's the pattern in the ones you let go?`);
+      } else if (_miss.count > 0 && _miss.totalR < 0) {
+        if (period === 'week')
+          candidates.push(`the ${_miss.count} plan setup${_miss.count===1?'':'s'} you didn't take this week would have netted ${_miss.totalR.toFixed(1)}R. staying out paid — was it a read, or hesitation that happened to work?`);
+        else
+          candidates.push(`the ${_miss.count} valid setup${_miss.count===1?'':'s'} you skipped this month would have netted ${_miss.totalR.toFixed(1)}R. before calling it discipline, check what those ones had in common.`);
       }
     }
 
@@ -31992,9 +32167,14 @@ try {
       const _miss = missedRStatsForPeriod(period);
       if (_miss.count > 0 && _miss.totalR > 0) {
         if (period === 'week')
-          candidates.push(`+${_miss.totalR.toFixed(1)}R en ${_miss.count} setup${_miss.count===1?'':'s'} de tu plan que viste pero no tomaste esta semana. ¿qué te frenó — y te frenaría otra vez mañana?`);
+          candidates.push(`+${_miss.totalR.toFixed(1)}R netos en ${_miss.count} setup${_miss.count===1?'':'s'} de tu plan que viste pero no tomaste esta semana. ¿qué te frenó — y te frenaría otra vez mañana?`);
         else
-          candidates.push(`+${_miss.totalR.toFixed(1)}R que dejaste mirando en ${_miss.count} setup${_miss.count===1?'':'s'} válido${_miss.count===1?'':'s'} que no tomaste este mes. ese es tu edge, sin tomar — ¿cuál es el patrón en los que dejas pasar?`);
+          candidates.push(`+${_miss.totalR.toFixed(1)}R netos que dejaste mirando en ${_miss.count} setup${_miss.count===1?'':'s'} válido${_miss.count===1?'':'s'} que no tomaste este mes. ese es tu edge, sin tomar — ¿cuál es el patrón en los que dejas pasar?`);
+      } else if (_miss.count > 0 && _miss.totalR < 0) {
+        if (period === 'week')
+          candidates.push(`los ${_miss.count} setup${_miss.count===1?'':'s'} de tu plan que no tomaste esta semana habrían dado ${_miss.totalR.toFixed(1)}R. quedarte fuera salió bien — ¿fue lectura, o dudas que salieron bien?`);
+        else
+          candidates.push(`los ${_miss.count} setup${_miss.count===1?'':'s'} válido${_miss.count===1?'':'s'} que no tomaste este mes habrían dado ${_miss.totalR.toFixed(1)}R. antes de llamarlo disciplina, mira qué tenían en común.`);
       }
     }
     if (period === 'day') {
