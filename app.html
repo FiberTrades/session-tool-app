@@ -1541,6 +1541,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .econ-chip.active { background: var(--text-dim); color: var(--bg); border-color: var(--text-dim); }
   /* Day group headers — only used in week view */
   .econ-day-group { margin-top: 14px; }
+  .econ-day-quiet { padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 12px; color: var(--text-dim); }
   .econ-day-group:first-child { margin-top: 0; }
   /* Standalone column-header row — used only in single-day views (Today /
      Tomorrow) where there's no internal date line to attach labels to.
@@ -35511,7 +35512,7 @@ try {
     const events = cache.events.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
     _overlayActuals(events);   // re-apply released actuals every render (survives cache rebuilds / tab switches)
     const filtered = applyCalendarFilters(events);
-    renderEconomicCalendarUI(filtered.length === 0 ? { kind: 'empty_filtered' } : { kind: 'ok', events: filtered });
+    renderEconomicCalendarUI(filtered.length === 0 ? { kind: 'empty_filtered', all: events } : { kind: 'ok', events: filtered });
   }
 
   // Renders the event list into #econ-calendar-body. `state` is one of:
@@ -36142,6 +36143,28 @@ try {
       return;
     }
     if (state.kind === 'empty_filtered') {
+      /* Today / Tomorrow: if the feed covers that day's week, the day is simply quiet - show its
+         date and say so. If it does not (Sunday asking about Monday before the feed rolls over),
+         keep the generic message: we cannot claim a day is quiet when we have no data for it. */
+      const f0 = (typeof getCalendarFilters === 'function') ? getCalendarFilters() : { dateRange: 'today' };
+      if ((f0.dateRange === 'today' || f0.dateRange === 'tomorrow') && Array.isArray(state.all)) {
+        const target = new Date(); if (f0.dateRange === 'tomorrow') target.setDate(target.getDate() + 1);
+        const monKey = (d0) => { const d = new Date(d0); d.setHours(12, 0, 0, 0); const wd = d.getDay(); d.setDate(d.getDate() + (wd === 0 ? -6 : 1 - wd)); return calendarLocalDateKey(d); };
+        const tMon = monKey(target);
+        const weekend = (target.getDay() === 0 || target.getDay() === 6);
+        if (weekend || state.all.some(e => e.when && monKey(e.when) === tMon)) {
+          const lang = tLocale ? tLocale() : 'en-GB';
+          const label = target.toLocaleDateString(lang, { weekday: 'short', day: '2-digit', month: 'short' }).toUpperCase()
+            + (f0.dateRange === 'today' ? ' · ' + t('econ.today_mark') : '');
+          const T0 = (en, es) => (typeof window._stT === 'function') ? window._stT(en, es) : en;
+          const quiet = weekend
+            ? T0('Weekend - markets are closed, so no news is scheduled.', 'Fin de semana - los mercados están cerrados, no hay noticias programadas.')
+            : T0('No medium or high impact news - nothing scheduled that should move the market.', 'Sin noticias de impacto medio o alto - nada programado que debería mover el mercado.');
+          const esc0 = x => String(x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+          __setCalBody(`<div class="econ-day-group" style="margin-top:0"><div class="econ-day-header">${esc0(label)}</div><div class="econ-day-quiet">${esc0(quiet)}</div></div>`);
+          return;
+        }
+      }
       __setCalBody(`<div class="econ-calendar-empty">${t('econ.empty_filtered')}</div>`);
       return;
     }
@@ -36212,6 +36235,30 @@ try {
     // line of the date, not on a separate row above. Subsequent day groups
     // get a plain date-only header.
     const groups = groupEventsByDay(indexedEvents);
+    /* Every weekday of each week that has events, including days with none - a missing Monday
+       reads as a broken feed. Weeks with no events at all are left out (see the patch note:
+       on a weekend that means the feed does not cover them, not that they are quiet). */
+    (function fillQuietWeekdays() {
+      const have = new Set(groups.map(g => g[0]));
+      const weeks = new Set();
+      groups.forEach(([k]) => {
+        const d = new Date(k + 'T12:00:00'), wd = d.getDay();
+        const mon = new Date(d); mon.setDate(d.getDate() + (wd === 0 ? -6 : 1 - wd));
+        weeks.add(calendarLocalDateKey(mon));
+      });
+      weeks.forEach(monKey => {
+        const mon = new Date(monKey + 'T12:00:00');
+        for (let i = 0; i < 5; i++) {
+          const d = new Date(mon); d.setDate(mon.getDate() + i);
+          const k = calendarLocalDateKey(d);
+          if (!have.has(k)) { groups.push([k, []]); have.add(k); }
+        }
+      });
+      groups.sort((a, b) => a[0].localeCompare(b[0]));
+    })();
+    const __quiet = (typeof window._stT === 'function')
+      ? window._stT('No medium or high impact news - nothing scheduled that should move the market.', 'Sin noticias de impacto medio o alto - nada programado que debería mover el mercado.')
+      : 'No medium or high impact news - nothing scheduled that should move the market.';
     const __calHtml = groups.map(([dayKey, events], idx) => {
       const d = new Date(dayKey + 'T12:00:00');
       const isPast = dayKey < todayKey;
@@ -36230,7 +36277,7 @@ try {
         : `${label}${todayMark}`;
       return `<div class="econ-day-group">
         <div class="econ-day-header${isPast ? ' past' : ''}${isFirst ? ' with-cols' : ''}">${headerInner}</div>
-        ${events.map(eventRow).join('')}
+        ${events.length ? events.map(eventRow).join('') : `<div class="econ-day-quiet">${escape(__quiet)}</div>`}
       </div>`;
     }).join('');
     if (__setCalBody(__calHtml)) wireEventRowClicks(body);
