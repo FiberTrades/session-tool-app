@@ -42,14 +42,39 @@ window._isGifUrl = function(u){ u = u || ''; return /\.gif(\?|#|$)/i.test(u) || 
    globals, and exposed as one function because the load listener below is its only caller. */
 window.__stGifHold = (function(){
   var obs = null;
+  /* Remembered across reloads: which GIFs have already had their ten seconds. Keyed by message id +
+     url, so the same GIF in a new message still plays; newest 500 kept. */
+  var KEY = 'st_gif_seen', MAX = 500;
+  function keyOf(w){
+    try{
+      var img = w.querySelector('img');
+      var u = img ? String(img.getAttribute('data-gifsrc') || img.getAttribute('src') || '').split('#')[0] : '';
+      if(!u) return '';
+      var row = w.closest ? w.closest('[data-mid]') : null;
+      return (row ? row.getAttribute('data-mid') + '|' : '') + u;
+    }catch(_){ return ''; }
+  }
+  function readSeen(){ try{ var o = JSON.parse(localStorage.getItem(KEY) || '{}'); return (o && typeof o === 'object') ? o : {}; }catch(_){ return {}; } }
+  function wasSeen(w){ var k = keyOf(w); return !!(k && readSeen()[k]); }
+  function markSeen(w){
+    try{
+      var k = keyOf(w); if(!k) return;
+      var o = readSeen(); o[k] = Date.now();
+      var ks = Object.keys(o);
+      if(ks.length > MAX){ ks.sort(function(a, b){ return o[a] - o[b]; }).slice(0, ks.length - MAX).forEach(function(x){ delete o[x]; }); }
+      localStorage.setItem(KEY, JSON.stringify(o));
+    }catch(_){}
+  }
   function arm(w){
     if(!w || w.__stgifT) return;
-    w.__stgifT = setTimeout(function(){ try{ w.classList.add('stgif-ready'); }catch(_){} }, 10000);
+    w.__stgifT = setTimeout(function(){ try{ w.classList.add('stgif-ready'); markSeen(w); }catch(_){} }, 10000);
   }
   return function(w){
     try{
       if(!w || w.__stgifSeen) return;
       w.__stgifSeen = 1;
+      /* Already had its ten seconds - on this device, before a reload: straight to the still. */
+      if(wasSeen(w)){ w.classList.add('stgif-ready'); return; }
       /* Asked the OS for less movement: hold it now. Hover still plays it - that is a choice the
          reader makes, not something the page does at them. */
       var reduce = false;
