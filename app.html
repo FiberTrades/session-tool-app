@@ -23537,6 +23537,8 @@ try {
         '.oos-early{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-left:6px;}' +
         '.oos-foot{font-size:11px;line-height:1.55;color:var(--text-dim);margin-top:10px;}' +
         '.oos-kpis{margin-top:12px;}' +
+        '.oos-items{overflow-y:auto;overscroll-behavior:contain;}' +
+        '.oos-items::-webkit-scrollbar{width:8px;}.oos-items::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:4px;}.oos-items::-webkit-scrollbar-track{background:transparent;}' +
         '.oos-tbl tr.oos-ref td{border-top:1px solid var(--border-2);font-size:11px;}' +
         '.oos-tbl tr[hidden],.oos-item-body[hidden]{display:none;}' +
         '.oos-tbl tr.oos-grp{cursor:pointer;}' +
@@ -23837,12 +23839,34 @@ try {
         im.src = im.getAttribute('data-src'); im.removeAttribute('data-src');
       });
     }
+    /* Each opened list shows FIVE setups and scrolls for the rest. Measured, not a fixed pixel
+       height, so fonts and zoom cannot land it mid-row. It grows to hold the tallest OPEN setup
+       (row + chart + note), so opening one never leaves its chart cut off inside the box. */
+    var CAP = 5;
+    function capItems(root){
+      Array.prototype.forEach.call(root.querySelectorAll('.oos-items'), function(box){
+        if(box.closest('[hidden]')) return;
+        var rows = box.querySelectorAll('.oos-item');
+        if(rows.length <= CAP){ box.style.maxHeight = ''; return; }
+        var top = box.getBoundingClientRect().top;
+        var need = rows[CAP].getBoundingClientRect().top - top + box.scrollTop;   // up to the 6th row
+        Array.prototype.forEach.call(box.querySelectorAll('.oos-item.open'), function(it){
+          var bd = it.nextElementSibling;
+          var h = it.getBoundingClientRect().height + ((bd && bd.classList.contains('oos-item-body')) ? bd.getBoundingClientRect().height : 0);
+          if(h > need) need = h;
+        });
+        box.style.maxHeight = Math.ceil(need) + 'px';
+      });
+    }
     function toggle(wrap, head, body, store, key){
       if(!body) return;
       var open = body.hidden;
       body.hidden = !open; store[key] = open;
       head.classList.toggle('open', open); head.setAttribute('aria-expanded', String(open));
       if(open) loadVisible(body);
+      capItems(wrap);
+      var box = (open && head.classList.contains('oos-item')) ? head.closest('.oos-items') : null;
+      if(box){ box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top; }
     }
 
     function renderStats(){
@@ -23869,6 +23893,8 @@ try {
           var g = t.closest('tr.oos-grp');
           if(g){ var gk = g.getAttribute('data-g'); toggle(wrap, g, wrap.querySelector('tr.oos-detail[data-g="' + gk + '"]'), openG, loadView().g + ':' + gk); }
         });
+        /* A chart that finishes loading makes its setup taller - re-measure so it still fits. */
+        wrap.addEventListener('load', function(ev){ if(ev.target && ev.target.tagName === 'IMG') capItems(wrap); }, true);
         wrap.addEventListener('keydown', function(ev){
           if(ev.key !== 'Enter' && ev.key !== ' ') return;
           var el = ev.target; if(!el || !el.matches || !el.matches('tr.oos-grp, .oos-item[role=button]')) return;
@@ -23957,7 +23983,7 @@ try {
         var drill = !isRef && b.n > 0, open = drill && !!openG[v.g + ':' + key];
         var html = '<tr' + (isRef ? ' class="oos-ref"' : (drill ? ' class="oos-grp' + (open ? ' open' : '') + '" data-g="' + esc(key) + '" tabindex="0" role="button" aria-expanded="' + open + '"' : '')) + '>'
           + '<td>' + (drill ? '<span class="oos-chev" aria-hidden="true"></span>' : (isRef ? '' : '<span class="oos-chev-pad"></span>')) + esc(label)
-          +   (early ? '<span class="oos-early">' + esc(T('early','pronto')) + '</span>' : '') + '</td>'
+          +   (early ? '<span class="oos-early" title="' + esc(T('Fewer than ' + EARLY + ' setups - too few to judge yet', 'Menos de ' + EARLY + ' setups - muy pocos para sacar conclusiones')) + '">' + esc(T('small sample','muestra pequeña')) + '</span>' : '') + '</td>'
           + '<td>' + b.n + '</td>'
           + '<td>' + (b.n ? (b.w + ' · ' + b.l + ' · ' + b.be) : '—') + '</td>'
           + '<td>' + (wr == null ? '—' : wr.toFixed(0) + '%') + '</td>'
@@ -23968,7 +23994,7 @@ try {
           + '</tr>';
         if(drill){
           html += '<tr class="oos-detail" data-g="' + esc(key) + '"' + (open ? '' : ' hidden') + '><td class="oos-dcell" colspan="' + COLS + '">'
-            + itemsHtml(b.items) + '</td></tr>';
+            + '<div class="oos-items">' + itemsHtml(b.items) + '</div></td></tr>';
         }
         return html;
       }
@@ -24002,11 +24028,12 @@ try {
         + '<th>' + esc(T('Avg hold','Duración media')) + '</th>'
         + '</tr></thead><tbody>' + body + '</tbody></table></div>'
         + '<div class="oos-foot">' + esc(T(
-            'Logged setups are hindsight: no spread, no slippage and no hesitation, so the comparison row of trades you took is shown before costs to sit on the same basis. Win rate leaves out break-evens. Rows marked early have fewer than ' + EARLY + ' setups - read them as a start, not an answer. Click a row to see its setups.',
-            'Los setups registrados son a posteriori: sin spread, sin deslizamiento y sin dudas, así que la fila de comparación con tus operaciones tomadas se muestra antes de costes, en la misma base. La tasa de acierto excluye los BE. Las filas marcadas como pronto tienen menos de ' + EARLY + ' setups: tómalas como un comienzo, no como una respuesta. Haz clic en una fila para ver sus setups.'))
+            'Logged setups are hindsight: no spread, no slippage and no hesitation, so the comparison row of trades you took is shown before costs to sit on the same basis. Win rate leaves out break-evens. Rows marked small sample have fewer than ' + EARLY + ' setups - read them as a start, not an answer. Click a row to see its setups.',
+            'Los setups registrados son a posteriori: sin spread, sin deslizamiento y sin dudas, así que la fila de comparación con tus operaciones tomadas se muestra antes de costes, en la misma base. La tasa de acierto excluye los BE. Las filas marcadas como muestra pequeña tienen menos de ' + EARLY + ' setups: tómalas como un comienzo, no como una respuesta. Haz clic en una fila para ver sus setups.'))
         + (notes.length ? ' ' + esc(notes.join(' ')) : '')
         + '</div>';
       loadVisible(wrap);
+      capItems(wrap);
     }
 
     return {
@@ -24022,7 +24049,42 @@ try {
         : esc(T(
           'Setups that met your strategy’s rules outside your trading window. Log the losers and break-evens too, not only the winners - a list of winners can only ever say you should have traded more.',
           'Setups que cumplían las reglas de tu estrategia fuera de tu ventana de trading. Registra también las perdedoras y los BE, no solo las ganadoras: una lista solo de ganadoras siempre dirá que deberías haber operado más.')); },
-      addLabel: function(){ return esc(T('+ Add setup', '+ Añadir setup')); }
+      addLabel: function(){ return esc(T('+ Add setup', '+ Añadir setup')); },
+      /* For the ST Assistant's data pack: the same scoped rows the Statistics section reads. */
+      aiPack: function(){
+        try{
+          var rows = collect(); if(!rows.length) return null;
+          function sum(where){
+            var a = { n: 0, wins: 0, losses: 0, bes: 0, netR: 0, noResult: 0 };
+            rows.forEach(function(x){
+              if(x.where !== where) return;
+              if(!x.result){ a.noResult++; return; }
+              a.n++;
+              if(x.result === 'Win') a.wins++; else if(x.result === 'Lose') a.losses++; else a.bes++;
+              var r = signedR(x); if(r != null) a.netR += r;
+            });
+            a.netR = Math.round(a.netR * 100) / 100;
+            return a;
+          }
+          var list = rows.filter(function(x){ return !!x.result; })
+            .sort(function(a, b){ return sortMs(b) - sortMs(a); }).slice(0, 150)
+            .map(function(x){
+              var o = { where: x.where === 'in' ? 'inside' : 'outside', result: x.result };
+              if(x.date) o.date = x.date; else if(x.weekStart) o.weekOf = String(x.weekStart).slice(0, 10);
+              if(x.session) o.session = x.session;
+              if(x.side) o.side = x.side;
+              if(x.type) o.type = x.type;
+              if(x.entry) o.in = x.entry;
+              if(x.exit) o.out = x.exit;
+              if(x.closedBy) o.closedBy = x.closedBy;
+              var r = signedR(x); if(r != null) o.r = Math.round(r * 100) / 100;
+              if(x.notes.trim()) o.note = x.notes.trim().slice(0, 200);
+              if(x.url.trim()) o.chart = true;
+              return o;
+            });
+          return { homeSession: homeId(), inside: sum('in'), outside: sum('out'), setups: list };
+        }catch(e){ return null; }
+      }
     };
   })();
 
@@ -27871,14 +27933,14 @@ try {
         </div>` : ''}
 
         <div class="reflect-question">
-          <div class="reflect-q-label">${window.__stOos ? window.__stOos.label('inside') : ''}</div>
+          <div class="reflect-q-label reflect-q-label-hero">${window.__stOos ? window.__stOos.label('inside') : ''}</div>
           <div class="reflect-q-hint">${window.__stOos ? window.__stOos.hint('inside') : ''}</div>
           <div id="rfx-missed-list"></div>
           <button type="button" id="rfx-missed-add" class="reflect-q-tv-add">${window.__stOos ? window.__stOos.addLabel() : ''}</button>
         </div>
 
         <div class="reflect-question">
-          <div class="reflect-q-label">${window.__stOos ? window.__stOos.label('outside') : ''}</div>
+          <div class="reflect-q-label reflect-q-label-hero">${window.__stOos ? window.__stOos.label('outside') : ''}</div>
           <div class="reflect-q-hint">${window.__stOos ? window.__stOos.hint('outside') : ''}</div>
           <div id="rfx-oos-list"></div>
           <button type="button" id="rfx-oos-add" class="reflect-q-tv-add">${window.__stOos ? window.__stOos.addLabel() : ''}</button>
@@ -37941,6 +38003,8 @@ try {
           records: { bestByR: bestR, worstByR: worstR, bestByMoney: bestGbp },
           thisWeek: thisWeek, thisMonth: thisMonth, byDirection: byDir, streak: streak,
           byWeekday: byDow, bySymbol: bySym, bySession: bySess, bySetup: bySetup,
+          // Setups that met their rules but were NOT taken, logged in the weekly review.
+          setupsNotTaken: (window.__stOos && window.__stOos.aiPack) ? window.__stOos.aiPack() : null,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: (function () {
               /* The account's own rules, not data.settings.riskRules - the pre-picker global
