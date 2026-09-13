@@ -5339,7 +5339,7 @@ try {
     </section>
 
     <section id="oos-section" style="display:none;">
-      <div class="section-header"><span class="section-num">—</span><span class="section-title" id="oos-title">Setups I didn't take — breakdown</span></div>
+      <div class="section-header"><span class="section-num">—</span><span class="section-title" id="oos-title">Setups I didn't take - breakdown</span></div>
       <div id="oos-stats-wrap"></div>
     </section>
 
@@ -23443,6 +23443,25 @@ try {
       return hits[0];
     }
     function num(v){ var n = parseFloat(v); return isFinite(n) ? n : null; }
+    /* Symbols compare ignoring case and punctuation, so "eurusd" and "EUR/USD" are one symbol. */
+    function symKey(v){ return String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); }
+    var SYMS = [];   // the journal's symbols, most traded first - refreshed each time a card list is wired
+    function knownSymbols(){
+      var cnt = {}, name = {};
+      try{
+        getAllLifetimeTrades().forEach(function(tr){
+          var v = String((tr && tr.symbol) || '').trim(), k = symKey(v); if(!k) return;
+          cnt[k] = (cnt[k] || 0) + 1; if(!name[k]) name[k] = v;
+        });
+      }catch(e){}
+      return Object.keys(cnt).sort(function(a, b){ return cnt[b] - cnt[a]; }).slice(0, 6).map(function(k){ return name[k]; });
+    }
+    /* A typed symbol takes the journal's own spelling when it matches one, so it groups with it. */
+    function canonSym(v){
+      var k = symKey(v); if(!k) return '';
+      for(var i = 0; i < SYMS.length; i++) if(symKey(SYMS[i]) === k) return SYMS[i];
+      return String(v).trim().toUpperCase().slice(0, 24);
+    }
     function normalize(o, mode){
       o = o || {};
       var r = num(o.r);
@@ -23464,12 +23483,14 @@ try {
         result:   (o.result === 'Win' || o.result === 'Lose' || o.result === 'BE') ? o.result : '',
         r:        (r == null) ? null : Math.abs(r),     // a MAGNITUDE - the sign comes from the result
         notes:    String(o.notes || ''),
-        url:      String(o.url || '')
+        url:      String(o.url || ''),
+        symbol:   String(o.symbol || '').trim().slice(0, 24)
       };
     }
     function normalizeList(a, mode){ return Array.isArray(a) ? a.map(function(o){ return normalize(o, mode); }) : []; }
     /* Date and session are PREFILLED when a card is added, so they do not make an entry: pressing
        Add and walking away must not save a phantom setup for the breakdown to count. */
+    /* Symbol is prefilled on Add too, so it is ignored here along with date and session. */
     function blank(x){ return !x.side && !x.type && !x.entry && !x.exit && !x.closedBy && !x.result && x.r == null && !x.notes.trim() && !x.url.trim(); }
     function clean(a){ return (a || []).map(function(o){ return normalize(o); }).filter(function(x){ return !blank(x); }); }
     /* What the setup would have made. A loss with no R typed is -1R, which is what a stop is. */
@@ -23516,6 +23537,7 @@ try {
         '.oos-card input,.oos-card textarea{background:var(--bg);border:1px solid var(--border-2);color:var(--text);border-radius:6px;padding:6px 8px;font:inherit;font-size:12px;}' +
         '.oos-card textarea{width:100%;min-height:44px;resize:vertical;box-sizing:border-box;}' +
         '.oos-card input[data-f=r]{width:72px;}' +
+        '.oos-card input[data-f=symbol]{width:110px;text-transform:uppercase;}' +
         '.oos-segs{display:flex;flex-wrap:wrap;gap:4px;}' +
         '.oos-seg{background:transparent;border:1px solid var(--border-2);color:var(--text-mid);border-radius:6px;padding:4px 9px;font:inherit;font-size:11px;cursor:pointer;}' +
         '.oos-seg.on{border-color:#ff2d8f;color:#fff;background:rgba(255,45,143,.12);}' +
@@ -23570,7 +23592,7 @@ try {
 
     function segs(field, cur, opts){
       return '<div class="oos-segs">' + opts.map(function(o){
-        return '<button type="button" class="oos-seg' + (cur === o[0] ? ' on' : '') + '" data-f="' + field + '" data-v="' + o[0] + '">' + esc(o[1]) + '</button>';
+        return '<button type="button" class="oos-seg' + (cur === o[0] ? ' on' : '') + '" data-f="' + field + '" data-v="' + esc(o[0]) + '">' + esc(o[1]) + '</button>';
       }).join('') + '</div>';
     }
     function card(x, i){
@@ -23582,6 +23604,10 @@ try {
         +   '<span class="oos-k oos-k-tight">' + esc(T('Exit','Salida')) + '</span><input type="time" data-f="exit" value="' + esc(x.exit) + '">'
         +   '<button type="button" class="oos-del" title="' + esc(T('Remove','Quitar')) + '" aria-label="' + esc(T('Remove','Quitar')) + '">×</button>'
         + '</div>'
+        + '<div class="oos-row"><span class="oos-k">' + esc(T('Symbol','Símbolo')) + '</span>'
+        +   segs('symbol', x.symbol, SYMS.map(function(v){ return [v, v]; }))
+        +   '<input type="text" data-f="symbol" autocomplete="off" spellcheck="false" placeholder="' + esc(SYMS.length ? T('Other','Otro') : T('e.g. EUR/USD','p. ej. EUR/USD')) + '" value="'
+        +     esc((x.symbol && SYMS.indexOf(x.symbol) < 0) ? x.symbol : '') + '"></div>'
         + '<div class="oos-row"><span class="oos-k">' + esc(T('Session','Sesión')) + '</span>'
         +   segs('session', x.session, SESS.map(function(z){ return [z.id, T(z.en, z.es)]; })) + '</div>'
         + '<div class="oos-row"><span class="oos-k">' + esc(T('Direction','Dirección')) + '</span>'
@@ -23617,6 +23643,7 @@ try {
     /* Wires the review card. `state` is the modal's live array and `persist` its saver - the same
        pair the chart-link cards use, so this saves on every change exactly as they do. */
     function wire(listId, addId, state, persist, weekStart, mode){
+      SYMS = knownSymbols();
       var list = document.getElementById(listId), add = document.getElementById(addId);
       if(!list || !add) return;
       ensureCss();
@@ -23650,6 +23677,10 @@ try {
           x.url = el.value.trim();
           var pw = c.querySelector('.tv-link-preview-wrap'); if(pw) pw.innerHTML = previewHtml(x.url);
         }
+        else if(f === 'symbol'){
+          x.symbol = canonSym(el.value);
+          paint(c, 'symbol', x.symbol);        // typing a known one lights its button
+        }
         else x[f] = el.value;
         save();
       });
@@ -23665,6 +23696,7 @@ try {
         var sb = t.closest('.oos-seg'); if(!sb) return;
         var f = sb.getAttribute('data-f'), v = sb.getAttribute('data-v');
         x[f] = v; paint(c, f, v);
+        if(f === 'symbol'){ var si = c.querySelector('input[data-f="symbol"]'); if(si) si.value = ''; }
         /* How it closed usually says how it ended. Only fills an EMPTY result, so a manual close
            that finished as a small loss is never relabelled by a later click. */
         if(f === 'closedBy' && !x.result){
@@ -23676,7 +23708,8 @@ try {
       });
       add.addEventListener('click', function(){
         var fresh = normalize({ date: localDay(weekStart), result: '' });
-        if(mode === 'inside') fresh.session = homeId();    // inside means your own session, until changed
+        if(mode === 'inside') fresh.session = homeId();
+        if(SYMS.length) fresh.symbol = SYMS[0];             // most-traded symbol, until changed    // inside means your own session, until changed
         state.push(fresh);
         redraw();
         /* Scrolled into view, NOT focused: focusing a time input makes the browser select its hour
@@ -23727,6 +23760,14 @@ try {
       session:  { en:'Session', es:'Sesión', key:function(x){ return x.session || null; },
                   rows:function(){ return SESS.map(function(z){ return [z.id, T(z.en, z.es)]; }); },
                   missing:['without a session', 'sin sesión'] },
+      /* Rows are the symbols actually logged in what is selected, most first. */
+      symbol:   { en:'Symbol', es:'Símbolo', key:function(x){ return symKey(x.symbol) || null; },
+                  rows:function(pool){
+                    var cnt = {}, name = {};
+                    (pool || []).forEach(function(x){ var k = symKey(x.symbol); if(!k) return; cnt[k] = (cnt[k] || 0) + 1; if(!name[k]) name[k] = x.symbol; });
+                    return Object.keys(cnt).sort(function(a, b){ return (cnt[b] - cnt[a]) || (a < b ? -1 : 1); }).map(function(k){ return [k, name[k]]; });
+                  },
+                  missing:['without a symbol', 'sin símbolo'] },
       dow:      { en:'Day', es:'Día', key:function(x){ var i = dowIdx(x.date); return (i == null) ? null : String(i); },
                   rows:function(){ return [1,2,3,4,5,6,0].map(function(i){ return [String(i), dowName(i)]; }); },
                   optional:{ '6':1, '0':1 }, missing:['without a date', 'sin fecha'] },
@@ -23805,6 +23846,7 @@ try {
         var rCls = (r == null) ? 'oos-dim' : (r > 0 ? 'oos-good' : (r < 0 ? 'oos-bad' : ''));
         var times = (x.entry || x.exit) ? ((x.entry || '—') + '–' + (x.exit || '—')) : '—';
         var tags = [
+          x.symbol || '',
           x.result === 'Win' ? T('Win','Ganada') : (x.result === 'Lose' ? T('Loss','Perdida') : (x.result === 'BE' ? 'BE' : '')),
           x.side === 'Long' ? T('Long','Largo') : (x.side === 'Short' ? T('Short','Corto') : ''),
           x.type === 'Reaction' ? T('Reaction','Reacción') : (x.type === 'Continuation' ? T('Continuation','Continuación') : ''),
@@ -23875,7 +23917,7 @@ try {
       if(!sec || !wrap) return;
       ensureCss();
       var ttl = document.getElementById('oos-title');
-      if(ttl) ttl.textContent = T('Setups I didn’t take — breakdown', 'Setups que no tomé — desglose');
+      if(ttl) ttl.textContent = T('Setups I didn’t take - breakdown', 'Setups que no tomé - desglose');
       sec.style.display = '';
       if(!wrap.__oosCtl){
         wrap.__oosCtl = 1;
@@ -23927,7 +23969,7 @@ try {
       var noResult = pool.filter(function(x){ return !x.result; }).length;
       pool = pool.filter(function(x){ return x.result && (v.res === 'all' || x.result === v.res); });
 
-      var B = {}, missing = 0, order = G.rows();
+      var B = {}, missing = 0, order = G.rows(pool);
       order.forEach(function(o){ B[o[0]] = bucket(); });
       pool.forEach(function(x){
         var k = G.key(x), b = (k == null) ? null : B[k]; if(!b){ missing++; return; }
@@ -24072,6 +24114,7 @@ try {
               var o = { where: x.where === 'in' ? 'inside' : 'outside', result: x.result };
               if(x.date) o.date = x.date; else if(x.weekStart) o.weekOf = String(x.weekStart).slice(0, 10);
               if(x.session) o.session = x.session;
+              if(x.symbol) o.symbol = x.symbol;
               if(x.side) o.side = x.side;
               if(x.type) o.type = x.type;
               if(x.entry) o.in = x.entry;
@@ -28609,6 +28652,7 @@ try {
           const tag = hasChart ? `Setup [${chartN}]` : 'Setup';
           const sr = (typeof l.sr === 'number') ? l.sr : ((typeof l.r === 'number' && !isNaN(l.r)) ? l.r : null);
           const bits = [];
+          if (l.symbol) bits.push(l.symbol);
           if (l.result) bits.push(l.result === 'Lose' ? 'Loss' : l.result);
           if (l.side) bits.push(l.side);
           if (l.type) bits.push(l.type);
