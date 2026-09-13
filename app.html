@@ -23558,6 +23558,10 @@ try {
         '.oos-early{font-size:9px;letter-spacing:.1em;text-transform:uppercase;color:var(--text-dim);margin-left:6px;}' +
         '.oos-foot{font-size:11px;line-height:1.55;color:var(--text-dim);margin-top:10px;}' +
         '.oos-kpis{margin-top:12px;}' +
+        '.oos-ord{display:inline-block;min-width:15px;height:15px;line-height:15px;border-radius:8px;background:#ff2d8f;color:#fff;font-size:9px;text-align:center;margin-right:6px;vertical-align:1px;}' +
+        '.oos-ghint{font-size:10px;color:var(--text-dim);margin-left:2px;}' +
+        '.oos-tbl tr.oos-sub td{background:var(--bg);}' +
+        '.oos-tbl tr.oos-sub td:first-child{color:var(--text-mid);}' +
         '.oos-items{overflow-y:auto;overscroll-behavior:contain;}' +
         '.oos-items::-webkit-scrollbar{width:8px;}.oos-items::-webkit-scrollbar-thumb{background:var(--border-2);border-radius:4px;}.oos-items::-webkit-scrollbar-track{background:transparent;}' +
         '.oos-tbl tr.oos-ref td{border-top:1px solid var(--border-2);font-size:11px;}' +
@@ -23782,11 +23786,15 @@ try {
                   missing:['without how it closed', 'sin cómo cerró'] }
     };
     function loadView(){
-      var v = { g: 'session', w: 'both', res: 'all' };
+      var v = { gs: ['session'], w: 'both', res: 'all' };
       try{
         var z = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null');
         if(z && typeof z === 'object'){
-          if(GROUPS[z.g]) v.g = z.g;
+          /* gs = the grouping levels, in order. Older saves hold a single `g`. */
+          var raw = Array.isArray(z.gs) ? z.gs : (z.g ? [z.g] : []);
+          var gs = [];
+          raw.forEach(function(k){ if(GROUPS[k] && gs.indexOf(k) < 0 && gs.length < 3) gs.push(k); });
+          if(gs.length) v.gs = gs;
           if(z.w === 'both' || z.w === 'in' || z.w === 'out') v.w = z.w;
           if(z.res === 'all' || z.res === 'Win' || z.res === 'Lose' || z.res === 'BE') v.res = z.res;
         }
@@ -23912,6 +23920,9 @@ try {
       if(box){ box.scrollTop += head.getBoundingClientRect().top - box.getBoundingClientRect().top; }
     }
 
+    /* The row for setups missing a level's value, named for what is missing. */
+    var NONE = { session: ['No session', 'Sin sesión'], symbol: ['No symbol', 'Sin símbolo'], dow: ['No date', 'Sin fecha'],
+                 side: ['No direction', 'Sin dirección'], type: ['No type', 'Sin tipo'], closedBy: ['Not recorded', 'Sin registrar'] };
     function renderStats(){
       var sec = document.getElementById('oos-section'), wrap = document.getElementById('oos-stats-wrap');
       if(!sec || !wrap) return;
@@ -23924,7 +23935,17 @@ try {
         wrap.addEventListener('click', function(ev){
           var t = ev.target; if(!t || !t.closest) return;
           var b = t.closest('.oos-seg[data-view]');
-          if(b){ var v0 = loadView(); v0[b.getAttribute('data-view')] = b.getAttribute('data-v'); saveView(v0); renderStats(); return; }
+          if(b){
+            var v0 = loadView(), view = b.getAttribute('data-view'), val = b.getAttribute('data-v');
+            if(view === 'g'){
+              /* Stacking: a new dimension becomes the next level (a 4th replaces the 3rd); a
+                 selected one is removed, unless it is the only level left. */
+              var i = v0.gs.indexOf(val);
+              if(i >= 0){ if(v0.gs.length > 1) v0.gs.splice(i, 1); }
+              else { if(v0.gs.length >= 3) v0.gs.pop(); v0.gs.push(val); }
+            } else v0[view] = val;
+            saveView(v0); renderStats(); return;
+          }
           var ch = t.closest('.oos-i-chart');
           if(ch){
             var u = ch.getAttribute('data-url');
@@ -23933,14 +23954,19 @@ try {
           }
           var it = t.closest('.oos-item[role=button]');
           if(it){ var ik = it.getAttribute('data-i'); toggle(wrap, it, wrap.querySelector('.oos-item-body[data-i="' + ik + '"]'), openI, ik); return; }
-          var g = t.closest('tr.oos-grp');
-          if(g){ var gk = g.getAttribute('data-g'); toggle(wrap, g, wrap.querySelector('tr.oos-detail[data-g="' + gk + '"]'), openG, loadView().g + ':' + gk); }
+          var g = t.closest('tr.oos-grp[role=button]');
+          if(g){
+            var p = g.getAttribute('data-g'), open = !openG[p];
+            openG[p] = open;
+            g.classList.toggle('open', open); g.setAttribute('aria-expanded', String(open));
+            applyTree(wrap); loadVisible(wrap); capItems(wrap);
+          }
         });
         /* A chart that finishes loading makes its setup taller - re-measure so it still fits. */
         wrap.addEventListener('load', function(ev){ if(ev.target && ev.target.tagName === 'IMG') capItems(wrap); }, true);
         wrap.addEventListener('keydown', function(ev){
           if(ev.key !== 'Enter' && ev.key !== ' ') return;
-          var el = ev.target; if(!el || !el.matches || !el.matches('tr.oos-grp, .oos-item[role=button]')) return;
+          var el = ev.target; if(!el || !el.matches || !el.matches('tr.oos-grp[role=button], .oos-item[role=button]')) return;
           ev.preventDefault(); el.click();
         });
       }
@@ -23951,7 +23977,7 @@ try {
           'Aún no hay nada. En una revisión semanal, añade los setups que cumplían tus reglas y no tomaste - dentro y fuera de tu sesión, perdedoras y BE además de ganadoras - y se acumulan aquí.')) + '</div>';
         return;
       }
-      var v = loadView(), G = GROUPS[v.g];
+      var v = loadView();
       function ctl(k, name, cur, opts){
         return '<div class="oos-ctl-g"><span class="oos-k oos-k-tight" style="margin-left:0">' + esc(name) + '</span><div class="oos-segs">'
           + opts.map(function(o){
@@ -23959,8 +23985,15 @@ try {
               return '<button type="button" class="oos-seg' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-view="' + k + '" data-v="' + o[0] + '">' + esc(o[1]) + '</button>';
             }).join('') + '</div></div>';
       }
-      var controls = '<div class="oos-ctl">'
-        + ctl('g', T('Group by','Agrupar por'), v.g, Object.keys(GROUPS).map(function(k){ return [k, T(GROUPS[k].en, GROUPS[k].es)]; }))
+      var groupCtl = '<div class="oos-ctl-g"><span class="oos-k oos-k-tight" style="margin-left:0">' + esc(T('Group by','Agrupar por')) + '</span><div class="oos-segs">'
+        + Object.keys(GROUPS).map(function(k){
+            var i = v.gs.indexOf(k), on = i >= 0;
+            return '<button type="button" class="oos-seg' + (on ? ' on' : '') + '" aria-pressed="' + on + '" data-view="g" data-v="' + k + '">'
+              + (on && v.gs.length > 1 ? '<span class="oos-ord">' + (i + 1) + '</span>' : '')
+              + esc(T(GROUPS[k].en, GROUPS[k].es)) + '</button>';
+          }).join('')
+        + '</div><span class="oos-ghint">' + esc(T('up to 3, in the order you click', 'hasta 3, en el orden en que los pulses')) + '</span></div>';
+      var controls = '<div class="oos-ctl">' + groupCtl
         + ctl('w', T('Show','Mostrar'), v.w, [['both', T('Both','Ambos')], ['in', T('Inside','Dentro')], ['out', T('Outside','Fuera')]])
         + ctl('res', T('Result','Resultado'), v.res, [['all', T('All','Todos')], ['Win', T('Win','Ganada')], ['Lose', T('Loss','Perdida')], ['BE', 'BE']])
         + '</div>';
@@ -23969,16 +24002,17 @@ try {
       var noResult = pool.filter(function(x){ return !x.result; }).length;
       pool = pool.filter(function(x){ return x.result && (v.res === 'all' || x.result === v.res); });
 
-      var B = {}, missing = 0, order = G.rows(pool);
-      order.forEach(function(o){ B[o[0]] = bucket(); });
-      pool.forEach(function(x){
-        var k = G.key(x), b = (k == null) ? null : B[k]; if(!b){ missing++; return; }
-        b.n++; b.items.push(x);
-        if(x.result === 'Win') b.w++; else if(x.result === 'Lose') b.l++; else if(x.result === 'BE') b.be++;
-        var r = signedR(x); if(r != null){ b.sumR += r; b.rN++; }
-        addHold(b, x.entry, x.exit);
-        addTimes(b, x.entry, x.exit);
-      });
+      function statsOf(items){
+        var b = bucket();
+        items.forEach(function(x){
+          b.n++; b.items.push(x);
+          if(x.result === 'Win') b.w++; else if(x.result === 'Lose') b.l++; else if(x.result === 'BE') b.be++;
+          var r = signedR(x); if(r != null){ b.sumR += r; b.rN++; }
+          addHold(b, x.entry, x.exit);
+          addTimes(b, x.entry, x.exit);
+        });
+        return b;
+      }
       /* Your taken trades, in R BEFORE costs. A hindsight setup has no spread, slippage or
          hesitation, so comparing it with trades net of costs would flatter every setup you did not
          take - the bias this table exists to avoid. The Result filter applies to it too. */
@@ -23996,8 +24030,7 @@ try {
         });
       }catch(e){}
 
-      /* KPIs for exactly what Show + Result select, whatever the grouping - setups a group cannot
-         place (no date, say) still count here. */
+      /* KPIs for exactly what Show + Result select, whatever the grouping. */
       var scored = pool.map(signedR).filter(function(r){ return r != null; });
       var kW = pool.filter(function(x){ return x.result === 'Win'; }).length, kL = pool.filter(function(x){ return x.result === 'Lose'; }).length;
       var net = scored.reduce(function(a, r){ return a + r; }, 0);
@@ -24017,50 +24050,64 @@ try {
               T('Avg would-be R', 'R potencial medio'), scored.length ? signedStr(net / scored.length) : '—', scored.length ? tone(net) : '')
         + '</div>';
 
-      var COLS = 8;
-      function rowHtml(label, b, isRef, key){
+      var COLS = 8, home = homeId();
+      var cls = function(val){ return (val == null) ? 'oos-dim' : (val > 0 ? 'oos-good' : (val < 0 ? 'oos-bad' : '')); };
+      function cells(b, isRef){
         var wr = (b.w + b.l) ? (100 * b.w / (b.w + b.l)) : null;   // breakevens excluded, as everywhere else
         var ex = b.rN ? (b.sumR / b.rN) : null;
-        var cls = function(val){ return (val == null) ? 'oos-dim' : (val > 0 ? 'oos-good' : (val < 0 ? 'oos-bad' : '')); };
-        var drill = !isRef && b.n > 0, open = drill && !!openG[v.g + ':' + key];
-        var html = '<tr' + (isRef ? ' class="oos-ref"' : (drill ? ' class="oos-grp' + (open ? ' open' : '') + '" data-g="' + esc(key) + '" tabindex="0" role="button" aria-expanded="' + open + '"' : '')) + '>'
-          + '<td>' + (drill ? '<span class="oos-chev" aria-hidden="true"></span>' : (isRef ? '' : '<span class="oos-chev-pad"></span>')) + esc(label)
- + '</td>'
-          + '<td>' + b.n + '</td>'
+        return '<td>' + b.n + '</td>'
           + '<td>' + (b.n ? (b.w + ' · ' + b.l + ' · ' + b.be) : '—') + '</td>'
           + '<td>' + (wr == null ? '—' : wr.toFixed(0) + '%') + '</td>'
           + '<td class="' + cls(ex) + '">' + (ex == null ? '—' : signedStr(ex)) + '</td>'
           + '<td class="' + (isRef ? 'oos-dim' : cls(b.rN ? b.sumR : null)) + '">' + (isRef || !b.rN ? '—' : signedStr(b.sumR)) + '</td>'
           + '<td>' + avgTimes(b) + '</td>'
-          + '<td>' + (b.holdN ? fmtHold(b.hold / b.holdN) : '—') + '</td>'
-          + '</tr>';
-        if(drill){
-          html += '<tr class="oos-detail" data-g="' + esc(key) + '"' + (open ? '' : ' hidden') + '><td class="oos-dcell" colspan="' + COLS + '">'
-            + '<div class="oos-items">' + itemsHtml(b.items) + '</div></td></tr>';
-        }
+          + '<td>' + (b.holdN ? fmtHold(b.hold / b.holdN) : '—') + '</td>';
+      }
+      /* One level of the tree. `anc` is every ancestor row's path: a row shows only while all of
+         them are open (applyTree). The last level opens into the setups themselves. */
+      function build(items, level, anc, path){
+        var dim = v.gs[level], G = GROUPS[dim], last = (level === v.gs.length - 1);
+        var rows = G.rows(items), byKey = {}, none = [];
+        rows.forEach(function(r){ byKey[r[0]] = []; });
+        items.forEach(function(x){ var k = G.key(x); if(k != null && byKey[k]) byKey[k].push(x); else none.push(x); });
+        var list = rows.map(function(r){ return [r[0], r[1], byKey[r[0]]]; });
+        if(none.length) list.push(['_none', T(NONE[dim][0], NONE[dim][1]), none]);   // kept, so totals add up down the tree
+        var html = '';
+        list.forEach(function(r){
+          var its = r[2];
+          if(!its.length && (level > 0 || (G.optional && G.optional[r[0]]))) return;   // sub-levels: only what exists
+          var p = (path ? path + '|' : '') + dim + '=' + r[0];
+          var lab = r[1];
+          if(dim === 'session' && r[0] === home){
+            lab += ' ' + (v.w === 'out' ? T('(outside your window)', '(fuera de tu ventana)') : T('(your session)', '(tu sesión)'));
+          }
+          var b = statsOf(its), drill = b.n > 0, open = drill && !!openG[p];
+          html += '<tr class="oos-grp' + (level ? ' oos-sub' : '') + (open ? ' open' : '') + '" data-g="' + esc(p) + '"'
+            + (anc.length ? ' data-anc="' + esc(anc.join(' ')) + '"' : '')
+            + (drill ? ' tabindex="0" role="button" aria-expanded="' + open + '"' : '') + '>'
+            + '<td style="padding-left:' + (12 + level * 22) + 'px">' + (drill ? '<span class="oos-chev" aria-hidden="true"></span>' : '<span class="oos-chev-pad"></span>') + esc(lab) + '</td>'
+            + cells(b, false) + '</tr>';
+          if(!drill) return;
+          var anc2 = anc.concat([p]);
+          if(last){
+            html += '<tr class="oos-detail" data-g="' + esc(p) + '" data-anc="' + esc(anc2.join(' ')) + '"><td class="oos-dcell" colspan="' + COLS + '">'
+              + '<div class="oos-items">' + itemsHtml(b.items) + '</div></td></tr>';
+          } else {
+            html += build(its, level + 1, anc2, p);
+          }
+        });
         return html;
       }
-      var home = homeId();
-      var body = '';
-      order.forEach(function(o){
-        var b = B[o[0]];
-        if(G.optional && G.optional[o[0]] && !b.n) return;   // weekends only when something is logged on one
-        var lab = o[1];
-        if(v.g === 'session' && o[0] === home){
-          lab += ' ' + (v.w === 'out' ? T('(outside your window)', '(fuera de tu ventana)') : T('(your session)', '(tu sesión)'));
-        }
-        body += rowHtml(lab, b, false, o[0]);
-      });
+      var body = build(pool, 0, [], '');
       /* LAST, under a divider, and named for what it is - at the top it read as part of the setups,
          so "Outside" looked like trades had been taken outside the session. */
-      body += rowHtml(T('Compare: trades you took in your ' + sessLabel(home) + ' session (before costs)',
-                        'Comparar: operaciones que tomaste en tu sesión de ' + sessLabel(home) + ' (antes de costes)'), ref, true, '');
+      body += '<tr class="oos-ref"><td>' + esc(T('Compare: trades you took in your ' + sessLabel(home) + ' session (before costs)',
+                        'Comparar: operaciones que tomaste en tu sesión de ' + sessLabel(home) + ' (antes de costes)')) + '</td>' + cells(ref, true) + '</tr>';
       var notes = [];
-      if(missing) notes.push(T(missing + ' ' + G.missing[0] + ' not counted in the rows.', missing + ' ' + G.missing[1] + ' no se cuentan en las filas.'));
       if(noResult) notes.push(T(noResult + ' without a result not counted - pick one in their weekly review to include them.', noResult + ' sin resultado no se cuentan - elige uno en su revisión semanal para incluirlos.'));
       wrap.innerHTML = controls + kpis
         + '<div class="oos-tblwrap"><table class="oos-tbl"><thead><tr>'
-        + '<th>' + esc(T(G.en, G.es)) + '</th>'
+        + '<th>' + esc(v.gs.map(function(k){ return T(GROUPS[k].en, GROUPS[k].es); }).join(' › ')) + '</th>'
         + '<th>' + esc(T('Setups','Setups')) + '</th>'
         + '<th>' + esc(T('W · L · BE','G · P · BE')) + '</th>'
         + '<th>' + esc(T('Win rate','Tasa de acierto')) + '</th>'
@@ -24070,12 +24117,20 @@ try {
         + '<th>' + esc(T('Avg hold','Duración media')) + '</th>'
         + '</tr></thead><tbody>' + body + '</tbody></table></div>'
         + '<div class="oos-foot">' + esc(T(
-            'Logged setups are hindsight: no spread, no slippage and no hesitation, so the comparison row of trades you took is shown before costs to sit on the same basis. Win rate leaves out break-evens. Click a row to see its setups.',
-            'Los setups registrados son a posteriori: sin spread, sin deslizamiento y sin dudas, así que la fila de comparación con tus operaciones tomadas se muestra antes de costes, en la misma base. La tasa de acierto excluye los BE. Haz clic en una fila para ver sus setups.'))
+            'Logged setups are hindsight: no spread, no slippage and no hesitation, so the comparison row of trades you took is shown before costs to sit on the same basis. Win rate leaves out break-evens. Click a row to open it.',
+            'Los setups registrados son a posteriori: sin spread, sin deslizamiento y sin dudas, así que la fila de comparación con tus operaciones tomadas se muestra antes de costes, en la misma base. La tasa de acierto excluye los BE. Haz clic en una fila para abrirla.'))
         + (notes.length ? ' ' + esc(notes.join(' ')) : '')
         + '</div>';
+      applyTree(wrap);
       loadVisible(wrap);
       capItems(wrap);
+    }
+    /* A tree row shows only while every ancestor above it is open. */
+    function applyTree(wrap){
+      Array.prototype.forEach.call(wrap.querySelectorAll('tr[data-anc]'), function(tr){
+        var anc = tr.getAttribute('data-anc').split(' ');
+        tr.hidden = !anc.every(function(k){ return !!openG[k]; });
+      });
     }
 
     return {
