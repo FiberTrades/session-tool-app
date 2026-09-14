@@ -32,6 +32,10 @@
 <script>
 /* A GIF is already showing at full size and it animates - opening it in the zoom
    viewer gains nothing, so GIFs are treated as not clickable. */
+/* The zoom applied to the whole document (the detached chat windows' - 110% + control), 1 elsewhere.
+   Rects and innerWidth/Height are in zoomed pixels but style px get multiplied by it, so a fixed
+   pop-up placed from a rect must divide its final top/left by this. */
+window.__stZ = function(){ try{ var z = parseFloat(getComputedStyle(document.documentElement).zoom); return (isFinite(z) && z > 0) ? z : 1; }catch(e){ return 1; } };
 window._isGifUrl = function(u){ u = u || ''; return /\.gif(\?|#|$)/i.test(u) || /(^|\/\/)([^\/]*\.)?giphy\.com\//i.test(u); };
 /* GIFs hold a still frame and play on hover. An <img> running a GIF cannot be paused - there is no
    API for it - so the trick is to cover it with its own first frame and uncover it on hover. This
@@ -45734,7 +45738,8 @@ try {
         var tip=_reactTipEl();
         tip.innerHTML='<span class="dcx-rtip-em">'+emHtml+'</span><span class="dcx-rtip-txt">'+esc(txt)+'</span>';
         tip.classList.add('open');
-        var r=chip.getBoundingClientRect(), tw=tip.offsetWidth, th=tip.offsetHeight;
+        var _z=window.__stZ?window.__stZ():1;   // visual px; divided back out when assigned
+        var r=chip.getBoundingClientRect(), tw=tip.offsetWidth*_z, th=tip.offsetHeight*_z;
         var left=r.left+r.width/2-tw/2; if(left<8) left=8; if(left+tw>window.innerWidth-8) left=window.innerWidth-8-tw;
         /* Above by preference, below if there is no room - then CLAMPED into the window. The
            below-position lands under the composer on the last message, which is where "Reacted
@@ -45746,7 +45751,7 @@ try {
           top=Math.min(r.top-th-8, window.innerHeight-th-8);
         }
         if(top<8) top=8;                                /* and never above the top edge */
-        tip.style.left=Math.round(left)+'px'; tip.style.top=Math.round(top)+'px';
+        tip.style.left=Math.round(left/_z)+'px'; tip.style.top=Math.round(top/_z)+'px';
       }catch(_){}
     }
     function hideReactTip(){ var e=G('dcx-rtip'); if(e) e.classList.remove('open'); }
@@ -45762,7 +45767,13 @@ try {
          survive a channel being closed to typing. The database agrees: cr_insert now tests
          st_can_access on the reaction's channel. */
       if(_chanLocked(cur)){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('This channel is for full members.','Este canal es para miembros completos.')); return; } var arr=reactions[mid]||[]; var mine=arr.some(function(r){ return r.emoji===em&&r.user_id===currentUser.id; }); if(mine){ reactions[mid]=arr.filter(function(r){ return !(r.emoji===em&&r.user_id===currentUser.id); }); repaint(); sb.from('channel_reactions').delete().eq('message_id',mid).eq('user_id',currentUser.id).eq('emoji',em).then(function(){ loadReactions(); }); } else { (reactions[mid]=reactions[mid]||[]).push({emoji:em,user_id:currentUser.id}); bumpEmoji(em); repaint(); sb.from('channel_reactions').insert({ message_id:mid, channel_id:cur.id, user_id:currentUser.id, emoji:em }).then(function(){ loadReactions(); }).catch(function(){}); } }
-    function openReactPicker(mid, openRight){ var pop=G('dcx-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='dcx-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var top=topEmojis(16); var h=''; if(top.length){ h+=top.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('')+'<div class="dcx-react-div"></div>'; } h+=REACT_EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); toggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; var r=_menuRect||{bottom:120,right:340}; pop.style.position='fixed'; pop.style.top=Math.min(r.bottom+6, window.innerHeight-292)+'px'; pop.style.left=(openRight?Math.max(8, Math.min((r.left!=null?r.left:(r.right-40)), window.innerWidth-322)):Math.max(8, Math.min(r.right-312, window.innerWidth-322)))+'px'; pop.classList.add('open'); pop.scrollTop=0; }
+    function openReactPicker(mid, openRight){ var pop=G('dcx-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='dcx-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var top=topEmojis(16); var h=''; if(top.length){ h+=top.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join('')+'<div class="dcx-react-div"></div>'; } h+=REACT_EMOJIS.map(function(e){ return '<button data-e="'+e+'">'+e+'</button>'; }).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); toggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; var r=_menuRect||{bottom:120,top:100,right:340}; pop.style.position='fixed'; pop.classList.add('open'); pop.scrollTop=0;
+      /* Visual pixels throughout, divided by the document zoom at the end (see window.__stZ). Below
+         the button by preference, ABOVE it when there is no room, then kept inside the window. */
+      var _z=window.__stZ?window.__stZ():1, _ph=(pop.offsetHeight||298)*_z, _pw=(pop.offsetWidth||330)*_z, _vh=window.innerHeight, _vw=window.innerWidth;
+      var _top=r.bottom+6*_z; if(_top+_ph>_vh-8) _top=(r.top!=null?r.top:r.bottom)-_ph-6*_z; _top=Math.max(8, Math.min(_top, _vh-_ph-8));
+      var _left=openRight?(r.left!=null?r.left:(r.right-40)):(r.right-_pw); _left=Math.max(8, Math.min(_left, _vw-_pw-8));
+      pop.style.top=Math.round(_top/_z)+'px'; pop.style.left=Math.round(_left/_z)+'px'; }
     /* Discord-style hover bar: the hovering member's five most-used reaction emojis
        (same st_emoji_freq list the pickers learn from), padded with defaults until they
        have a history, then the existing options button. One click reacts, and the click
@@ -46230,8 +46241,9 @@ try {
       var fw=menu.querySelector('.mi-fwd'); if(fw) fw.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); openForward(m); });
       var rc=menu.querySelector('.mi-react'); if(rc) rc.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); openReactPicker(menuMsgId); });
       var rr=G('dcx-root'), br=btn.getBoundingClientRect(), cr=rr.getBoundingClientRect(); _menuRect=br;
-      menu.style.right=Math.max(6,(cr.right-br.right))+'px';
-      menu.classList.add('open'); menu.style.visibility='hidden'; var mh=menu.offsetHeight||200; var below=(br.bottom-cr.top+4); if(below+mh <= cr.height-6){ menu.style.top=below+'px'; menu.style.bottom='auto'; } else { menu.style.bottom=Math.max(6,(cr.bottom-br.top+4))+'px'; menu.style.top='auto'; } menu.style.visibility='';
+      var _z=window.__stZ?window.__stZ():1;   // rects are visual px, style px are multiplied by the zoom
+      menu.style.right=Math.round(Math.max(6,(cr.right-br.right))/_z)+'px';
+      menu.classList.add('open'); menu.style.visibility='hidden'; var mh=(menu.offsetHeight||200)*_z; var below=(br.bottom-cr.top+4*_z); if(below+mh <= cr.height-6){ menu.style.top=Math.round(below/_z)+'px'; menu.style.bottom='auto'; } else { menu.style.bottom=Math.round(Math.max(6,(cr.bottom-br.top+4*_z))/_z)+'px'; menu.style.top='auto'; } menu.style.visibility='';
     }
     /* ---- Chat translation ---------------------------------------------------
        One switch for the whole conversation rather than message by message: turn
@@ -56264,7 +56276,7 @@ try {
       var e=menu.querySelector('.mi-edit'); if(e) e.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); startEdit(menuId); });
       var cp=menu.querySelector('.mi-copy'); if(cp) cp.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); var ci=idx(menuId); var cm=ci>=0?msgs[ci]:null; var txt=(cm&&cm.body)||''; if(!txt) return; Promise.resolve(typeof copyToClipboard==='function'?copyToClipboard(txt):navigator.clipboard.writeText(txt)).then(function(){ try{ if(typeof showToast==='function') showToast((typeof t==='function'?t('toast.copied'):null)||'Copied to clipboard'); }catch(_){} }).catch(function(){}); });
       var d=menu.querySelector('.mi-del'); if(d) d.addEventListener('click', function(ev){ ev.stopPropagation(); menu.classList.remove('open'); var did=menuId; function del(){ sb.from('dm_messages').delete().eq('id',did).then(function(r){ if(!r.error){ var i=idx(did); if(i>=0){ msgs.splice(i,1); delete seen[did]; repaint(); } } }); } if(window.STChat&&STChat.confirmDelete) STChat.confirmDelete(del); else del(); });
-      var br=btn.getBoundingClientRect(); menu.style.position='fixed'; menu.style.right=(window.innerWidth-br.right)+'px'; menu.style.top=(br.bottom+4)+'px'; menu.style.left='auto'; menu.style.bottom='auto'; menu.classList.add('open');
+      var br=btn.getBoundingClientRect(); var _z=window.__stZ?window.__stZ():1; menu.style.position='fixed'; menu.style.right=Math.round((window.innerWidth-br.right)/_z)+'px'; menu.style.top=Math.round((br.bottom+4*_z)/_z)+'px'; menu.style.left='auto'; menu.style.bottom='auto'; menu.classList.add('open');
     }
     function startEdit(id){ if(idx(id)<0) return; editingId=id; repaint(); setTimeout(function(){ var t=G('stdm-edit-input'); if(t){ t.focus(); try{t.selectionStart=t.selectionEnd=t.value.length;}catch(_){} t.style.height='auto'; t.style.height=Math.min(2400,t.scrollHeight)+'px'; } },30); }
     function saveEdit(){ var id=editingId; if(!id) return; var t=G('stdm-edit-input'); if(!t) return; var v=(t.value||'').trim(); var i=idx(id); if(!v||i<0){ editingId=null; repaint(); return; } var stamp=new Date().toISOString(); sb.from('dm_messages').update({body:v,edited_at:stamp}).eq('id',id).then(function(r){ if(r.error){ note("Couldn't save."); return; } msgs[i].body=v; msgs[i].edited_at=stamp; editingId=null; repaint(); }).catch(function(){ note("Couldn't save."); }); }
@@ -56295,7 +56307,8 @@ try {
         var tip=_dmReactTipEl();
         tip.innerHTML='<span class="dcx-rtip-em">'+emHtml+'</span><span class="dcx-rtip-txt">'+esc(txt)+'</span>';
         tip.classList.add('open');
-        var r=chip.getBoundingClientRect(), tw=tip.offsetWidth, th=tip.offsetHeight;
+        var _z=window.__stZ?window.__stZ():1;   // visual px; divided back out when assigned
+        var r=chip.getBoundingClientRect(), tw=tip.offsetWidth*_z, th=tip.offsetHeight*_z;
         var left=r.left+r.width/2-tw/2; if(left<8) left=8; if(left+tw>window.innerWidth-8) left=window.innerWidth-8-tw;
         /* Above by preference, below if there is no room - then CLAMPED into the window. The
            below-position lands under the composer on the last message, which is where "Reacted
@@ -56307,12 +56320,12 @@ try {
           top=Math.min(r.top-th-8, window.innerHeight-th-8);
         }
         if(top<8) top=8;                                /* and never above the top edge */
-        tip.style.left=Math.round(left)+'px'; tip.style.top=Math.round(top)+'px';
+        tip.style.left=Math.round(left/_z)+'px'; tip.style.top=Math.round(top/_z)+'px';
       }catch(_){}
     }
     function hideDmReactTip(){ var e=document.getElementById('dcx-rtip'); if(e) e.classList.remove('open'); }
     function dmToggleReaction(mid, em){ if(!mid||!em||!me()) return; var arr=dmReactions[mid]||[]; var mineR=arr.some(function(r){ return r.emoji===em&&r.user_id===me(); }); if(mineR){ dmReactions[mid]=arr.filter(function(r){ return !(r.emoji===em&&r.user_id===me()); }); repaint(); sb.from('dm_reactions').delete().eq('message_id',mid).eq('user_id',me()).eq('emoji',em).then(function(){ loadDmReactions(); }); } else { (dmReactions[mid]=dmReactions[mid]||[]).push({emoji:em,user_id:me()}); if(C().bumpEmoji) C().bumpEmoji(em); repaint(); sb.from('dm_reactions').insert({ message_id:mid, user_id:me(), emoji:em }).then(function(){ loadDmReactions(); }).catch(function(){}); } }
-    function openDmReactPicker(mid, btn){ var pop=G('stdm-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='stdm-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var ALL=(C().REACT_EMOJIS||[]); var top=(C().topEmojis?C().topEmojis(16):[]); var h=''; if(top.length){ h+=top.map(function(e){return '<button data-e="'+e+'">'+e+'</button>';}).join('')+'<div class="dcx-react-div"></div>'; } h+=ALL.map(function(e){return '<button data-e="'+e+'">'+e+'</button>';}).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); dmToggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; pop.classList.add('open'); pop.scrollTop=0; pop.style.visibility='hidden'; var ph=pop.offsetHeight||280, pw=pop.offsetWidth||312; var box=G('stdm-msgs'); var row=box?box.querySelector('.dcx-msg[data-mid="'+mid+'"]'):null; var moreBtn=(row&&row.querySelector('.dcx-more'))||btn||null; var r=(moreBtn&&moreBtn.getBoundingClientRect&&moreBtn.getBoundingClientRect().width)?moreBtn.getBoundingClientRect():((row&&row.getBoundingClientRect)?row.getBoundingClientRect():{bottom:130,top:100,right:Math.min(360,window.innerWidth-8)}); var top=r.bottom+6; if(top+ph>window.innerHeight-8) top=Math.max(8, r.top-ph-6); var left=(r.right||340)-pw; left=Math.max(8, Math.min(left, window.innerWidth-pw-8)); pop.style.position='fixed'; pop.style.top=top+'px'; pop.style.left=left+'px'; pop.style.visibility=''; }
+    function openDmReactPicker(mid, btn){ var pop=G('stdm-react-pop'); if(!pop){ pop=document.createElement('div'); pop.id='stdm-react-pop'; pop.className='dcx-react-pop'; document.body.appendChild(pop); document.addEventListener('click', function(ev){ if(pop.classList.contains('open')&&!pop.contains(ev.target)&&!ev.target.closest('.mi-react')) pop.classList.remove('open'); }); } var ALL=(C().REACT_EMOJIS||[]); var top=(C().topEmojis?C().topEmojis(16):[]); var h=''; if(top.length){ h+=top.map(function(e){return '<button data-e="'+e+'">'+e+'</button>';}).join('')+'<div class="dcx-react-div"></div>'; } h+=ALL.map(function(e){return '<button data-e="'+e+'">'+e+'</button>';}).join(''); pop.innerHTML=h; Array.prototype.forEach.call(pop.querySelectorAll('button'),function(b){ b.addEventListener('click', function(ev){ ev.stopPropagation(); dmToggleReaction(pop._mid, b.getAttribute('data-e')); pop.classList.remove('open'); }); }); pop._mid=mid; pop.classList.add('open'); pop.scrollTop=0; pop.style.visibility='hidden'; var _z=window.__stZ?window.__stZ():1; var ph=(pop.offsetHeight||280)*_z, pw=(pop.offsetWidth||312)*_z; var box=G('stdm-msgs'); var row=box?box.querySelector('.dcx-msg[data-mid="'+mid+'"]'):null; var moreBtn=(row&&row.querySelector('.dcx-more'))||btn||null; var r=(moreBtn&&moreBtn.getBoundingClientRect&&moreBtn.getBoundingClientRect().width)?moreBtn.getBoundingClientRect():((row&&row.getBoundingClientRect)?row.getBoundingClientRect():{bottom:130,top:100,right:Math.min(360,window.innerWidth-8)}); var top=r.bottom+6*_z; if(top+ph>window.innerHeight-8) top=Math.max(8, r.top-ph-6*_z); var left=(r.right||340)-pw; left=Math.max(8, Math.min(left, window.innerWidth-pw-8)); pop.style.position='fixed'; pop.style.top=Math.round(top/_z)+'px'; pop.style.left=Math.round(left/_z)+'px'; pop.style.visibility=''; }
     function setDmReply(m){ if(!m) return; var ex=(m.body||(m.attachment_type==='image'?'[image]':(m.attachment_url?window._stT('[attachment]','[adjunto]'):'')))||''; replyTarget={ id:m.id, name:m.sender_name||'Trader', excerpt:String(ex).slice(0,140) }; var bar=G('stdm-replybar'); if(bar){ bar.innerHTML='<span class="dcx-replybar-txt">Replying to <b>'+esc(replyTarget.name)+'</b></span><button class="dcx-replybar-x" id="stdm-replybar-x">\u00d7</button>'; bar.style.display='flex'; var x=G('stdm-replybar-x'); if(x) x.onclick=cancelDmReply; } var ta=G('stdm-input'); if(ta) ta.focus(); }
     function cancelDmReply(){ replyTarget=null; var bar=G('stdm-replybar'); if(bar){ bar.style.display='none'; bar.innerHTML=''; } }
     function dmModal(html){ var o=G('stdm')||document.body; var m=document.createElement('div'); m.className='stdm-modal'; m.innerHTML='<div class="stdm-modal-card">'+html+'</div>'; m.addEventListener('click', function(e){ if(e.target===m) m.remove(); }); o.appendChild(m); return m; }
