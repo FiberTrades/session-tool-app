@@ -11082,6 +11082,10 @@ try {
     try { renderMetaTime();        } catch (e) {}
     try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
     try { refreshAllSurfaces();    } catch (e) {}
+    /* The economic calendar was the one surface this never touched, so an app left open overnight
+       kept yesterday's "TODAY" until a reload. Renders from cache (a no-op when nothing changed)
+       and refetches in the background when the cache is from another day. */
+    try { if (typeof fetchEconomicCalendar === 'function') fetchEconomicCalendar(); } catch (e) {}
   }
   function _stCheckRollover() {
     var k = todayDateStr();
@@ -31220,8 +31224,8 @@ try {
       ? `One break-even trade ${_lastSessionLabel(s.yesterday.daysAgo)}. Was moving to break-even the right call, or did you close too early out of fear?`
       : null,
     // Yesterday wasn't actually yesterday — gap of a few days
-    s => (s.yesterday && s.yesterday.daysAgo >= 3 && s.yesterday.daysAgo <= 7)
-      ? `Your last trading day was ${s.yesterday.daysAgo} days ago. Did the break help you reset, or do you feel out of rhythm?`
+    s => (s.yesterday && s.yesterday.missed >= 2)
+      ? `${s.yesterday.missed} trading days you didn't show up for. Did the break help you reset, or do you feel out of rhythm?`
       : null,
     // Pure positive day, single trade
     s => (s.yesterday && s.yesterday.count === 1 && s.yesterday.w === 1)
@@ -31563,7 +31567,24 @@ try {
       const shorts = trades.filter(t => t.side === 'Short').length;
       const onlySide = (longs > 0 && shorts === 0) ? 'Long'
                      : (shorts > 0 && longs === 0) ? 'Short' : null;
-      yesterday = { daysAgo, count: trades.length, w, l, be, totalR, onlySide };
+      /* Trading days between that day and today on which the trader did NOT show up: one of
+         their own trading days, with no trades and no bias logged. A weekend is not an absence,
+         and neither is a session they sat and observed. */
+      let missed = 0;
+      try {
+        const biasDays = new Set(((data && data.biasHistory) || []).map(b => b && b.dateKey).filter(Boolean));
+        const tradeDays = new Set(Object.keys(dayBuckets).map(x => new Date(x).toDateString()));
+        for (let i = 1; i < daysAgo; i++) {
+          const dd = new Date(d); dd.setDate(d.getDate() + i);
+          const dow = dd.getDay();
+          const trading = (typeof _isTradingDay === 'function') ? _tradingDaysPref().indexOf(dow) !== -1 : (dow !== 0 && dow !== 6);
+          if (!trading) continue;
+          const key = dd.getFullYear() + '-' + String(dd.getMonth() + 1).padStart(2, '0') + '-' + String(dd.getDate()).padStart(2, '0');
+          if (biasDays.has(key) || tradeDays.has(dd.toDateString())) continue;
+          missed++;
+        }
+      } catch (e) { missed = 0; }
+      yesterday = { daysAgo, missed, count: trades.length, w, l, be, totalR, onlySide };
       break;
     }
 
@@ -31623,8 +31644,8 @@ try {
     s => (s.yesterday && s.yesterday.be >= 1 && s.yesterday.w === 0 && s.yesterday.l === 0 && s.yesterday.count === 1)
       ? `Una operación en punto de equilibrio ${_lastSessionLabelEs(s.yesterday.daysAgo)}. ¿Mover a punto de equilibrio fue lo correcto, o cerraste demasiado pronto por miedo?`
       : null,
-    s => (s.yesterday && s.yesterday.daysAgo >= 3 && s.yesterday.daysAgo <= 7)
-      ? `Tu último día de trading fue hace ${s.yesterday.daysAgo} días. ¿La pausa te ayudó a reiniciar, o te sientes fuera de ritmo?`
+    s => (s.yesterday && s.yesterday.missed >= 2)
+      ? `${s.yesterday.missed} días de trading en los que no te presentaste. ¿La pausa te ayudó a reiniciar, o te sientes fuera de ritmo?`
       : null,
     s => (s.yesterday && s.yesterday.count === 1 && s.yesterday.w === 1)
       ? `Una operación ${_lastSessionLabelEs(s.yesterday.daysAgo)}, y ganó. ¿Fue selectividad paciente, o te perdiste otros buenos setups?`
