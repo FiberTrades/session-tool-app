@@ -125,6 +125,14 @@ Your job: give honest, specific, encouraging coaching and answer questions about
 - Be a coach: notice patterns, ask the sharp question, suggest the next concrete step.
 - You are not a licensed financial adviser and don't give personalised investment/financial advice or predict markets — you coach process, discipline, and the trader's own logged data.`;
 
+// The whole system prompt for a GREETING (see buildSystem): identity, voice, the terms a seed line can
+// carry, and the hard limits. The greet branch there supplies the actual task.
+const GREET_FACTS = `You are **ST Assistant**, the built-in AI trading coach inside Session Tool (sessiontool.app) — a trading journal, session-prep and accountability app used by a small community of discretionary traders. Your voice: a calm, sharp trading mentor — never a hype machine, never harsh.
+
+Terms a line may use: **R** = risk multiple (+2R made twice what was risked; realised and net of costs). **BE** = break-even. **POT R** = how far a winning move ran at its peak. A **series** = a batch of 10 trades. **Bias** = the trader's pre-session read. **Trading days** = the days they commit to trade.
+
+Hard limits: never invent a number, a trade or an event that is not in the line you were given; never give personalised financial or investment advice; never predict markets.`;
+
 // ── AI-METER usage logging ───────────────────────────────────────────────────
 // One row per Claude API call into public.ai_usage, so the admin can see per-user
 // tokens + £. user_id comes from the (already Supabase-verified) JWT; the insert
@@ -314,7 +322,15 @@ function buildSystem(ctx: any, mode: string, rawMode?: string): any[] {
   // neutral - writes bill at 1.25x, so the 5-minute setting was a 25% surcharge for nothing.
   // At 1h the same two calls cost 2x + 0.1x instead of 1.25x + 1.25x. Break-even is ~2 questions
   // per hour; below that, delete cache_control entirely rather than leaving 5m in place.
-  const blocks: any[] = [{ type: "text", text: APP_FACTS, cache_control: { type: "ephemeral", ttl: "1h" } }];
+  // GREETINGS DO NOT GET APP_FACTS. A greeting only rephrases a line the app already wrote (its full
+  // instructions are the greet branch below), so the ~3,800-token app guide bought nothing there - and
+  // it cost more with every fact added to it: greet input went 3,060 -> 3,540 -> 3,860 tokens as the
+  // guide grew. It never cached either: Haiku 4.5 only caches prompts of 4,096+ tokens, so every
+  // greeting paid the whole guide at full price. GREET_FACTS keeps what a greeting actually uses: the
+  // voice, what the common terms mean, and the hard limits.
+  const blocks: any[] = rawMode === "greet"
+    ? [{ type: "text", text: GREET_FACTS }]
+    : [{ type: "text", text: APP_FACTS, cache_control: { type: "ephemeral", ttl: "1h" } }];
 
   // TOKEN LEAK GUARD: greetings never need the trader's full data pack (they just rephrase a seed line
   // that already carries its numbers). Skip it here even if an OLD cached client still sends one — this
