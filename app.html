@@ -36,6 +36,39 @@
    Rects and innerWidth/Height are in zoomed pixels but style px get multiplied by it, so a fixed
    pop-up placed from a rect must divide its final top/left by this. */
 window.__stZ = function(){ try{ var z = parseFloat(getComputedStyle(document.documentElement).zoom); return (isFinite(z) && z > 0) ? z : 1; }catch(e){ return 1; } };
+/* Reminder shown when a weekly review is posted with no trading days picked. Built at open time and
+   appended LAST to <body>, so it stacks above the review modal (same z-index, later in the DOM).
+   Resolves true for "Post anyway", false for "Pick days" / Esc / clicking outside. */
+window.__stAskTradingDays = function(nextWeek){
+  return new Promise(function(resolve){
+    try{
+      var T = function(en, es){ try{ return (typeof window._stT === 'function') ? window._stT(en, es) : en; }catch(e){ return en; } };
+      var esc = function(v){ return String(v).replace(/[&<>"]/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); };
+      var bg = document.createElement('div'); bg.className = 'modal-bg show'; bg.style.zIndex = '100000';
+      bg.innerHTML = '<div class="modal mdl-new" style="max-width:440px;" role="dialog" aria-modal="true">'
+        + '<div class="modal-header"><div><div class="modal-title">' + esc(nextWeek ? T("Pick next week's trading days?", '¿Elegir los días de trading de la próxima semana?') : T("Pick this week's trading days?", '¿Elegir los días de trading de esta semana?')) + '</div></div></div>'
+        + '<p style="margin:14px 0 0;color:var(--text-mid);font-size:13px;line-height:1.6;">' + esc(nextWeek
+            ? T("You haven't selected the days you'll trade next week. If you're planning to trade, don't forget to pick them - the app holds you to them. Not trading next week? Post anyway.",
+                'No has seleccionado los días que operarás la próxima semana. Si piensas operar, no olvides elegirlos - la app te hará cumplirlos. ¿No vas a operar la próxima semana? Publica igualmente.')
+            : T("You haven't selected the days you'll trade this week. If you're planning to trade, don't forget to pick them. Not trading? Post anyway.",
+                'No has seleccionado los días que operarás esta semana. Si piensas operar, no olvides elegirlos. ¿No vas a operar? Publica igualmente.')) + '</p>'
+        + '<div class="mdl-actions">'
+        +   '<button type="button" class="btn" data-a="pick">' + esc(T('Pick days', 'Elegir días')) + '</button>'
+        +   '<button type="button" class="btn" data-a="post">' + esc(T('Post anyway', 'Publicar igualmente')) + '</button>'
+        + '</div></div>';
+      var done = function(go){ try{ document.removeEventListener('keydown', onKey, true); bg.remove(); }catch(e){} resolve(!!go); };
+      var onKey = function(e){ if(e.key === 'Escape'){ e.preventDefault(); e.stopPropagation(); done(false); } };
+      bg.addEventListener('click', function(e){
+        var b = e.target.closest ? e.target.closest('[data-a]') : null;
+        if(b){ done(b.getAttribute('data-a') === 'post'); return; }
+        if(e.target === bg) done(false);
+      });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(bg);
+      try{ bg.querySelector('[data-a="pick"]').focus(); }catch(e){}
+    }catch(e){ resolve(true); }   // if the reminder cannot be shown, never block the post
+  });
+};
 window._isGifUrl = function(u){ u = u || ''; return /\.gif(\?|#|$)/i.test(u) || /(^|\/\/)([^\/]*\.)?giphy\.com\//i.test(u); };
 /* GIFs hold a still frame and play on hover. An <img> running a GIF cannot be paused - there is no
    API for it - so the trick is to cover it with its own first frame and uncover it on hover. This
@@ -28303,7 +28336,9 @@ try {
       // "change your plan" at exactly the moment the plan was supposed to be holding you to it.
       let nextBlock = '';
       if (_showNext) {
-        const preset = (getWeekCommitment(nextKey)) || _defaultCommitDays();
+        /* Only what has actually been SAVED for next week - blank until chosen. Showing the default as
+           selected made an unsaved week look committed. */
+        const preset = getWeekCommitment(nextKey) || [];
         const chips = order.map(function (d) {
           return `<button type="button" class="settings-day-btn${preset.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
         }).join('');
@@ -28318,7 +28353,8 @@ try {
       let thisBlock;
       if (_firstWeekOpen) {
         const fchips = order.map(function (d) {
-          return `<button type="button" class="settings-day-btn${thisPreset.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
+          const _saved = getWeekCommitment(thisWeekKey) || [];   // blank until chosen, like next week's
+          return `<button type="button" class="settings-day-btn${_saved.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
         }).join('');
         thisBlock = `<div>
           <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.first_label')}</div>
@@ -28338,8 +28374,7 @@ try {
       if (daysWrap) {
         daysWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
           btn.addEventListener('click', function () {
-            const cur = (getWeekCommitment(nextKey)
-              || ((data.settings && Array.isArray(data.settings.tradingDays) && data.settings.tradingDays.length) ? data.settings.tradingDays.map(Number) : [1, 2, 3, 4, 5])).slice();
+            const cur = (getWeekCommitment(nextKey) || []).slice();   // the first click starts from an empty week
             const d = Number(btn.getAttribute('data-day'));
             const at = cur.indexOf(d);
             if (at >= 0) cur.splice(at, 1); else cur.push(d);
@@ -28354,7 +28389,7 @@ try {
       if (firstWrap) {
         firstWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
           btn.addEventListener('click', function () {
-            const cur = (getWeekCommitment(thisWeekKey) || _defaultCommitDays()).slice();
+            const cur = (getWeekCommitment(thisWeekKey) || []).slice();
             const d = Number(btn.getAttribute('data-day'));
             const at = cur.indexOf(d);
             if (at >= 0) cur.splice(at, 1); else cur.push(d);
@@ -28524,6 +28559,16 @@ try {
     // Post to community — builds a markdown-friendly weekly review post and copies it to the clipboard.
     // Sections with empty text are skipped so the post reads cleanly when fields aren't filled in yet.
     document.getElementById('rfx-discord-copy').addEventListener('click', async () => {
+      /* A days picker on screen with nothing picked: remind before posting. "Pick days" stops here and
+         brings the picker into view; "Post anyway" carries on. */
+      try {
+        const _picker = document.getElementById('rfx-commit-days') || document.getElementById('rfx-firstweek-days');
+        if (_picker && !_picker.querySelector('.settings-day-btn.on')) {
+          const _nextWeek = _picker.id === 'rfx-commit-days';
+          const _go = await window.__stAskTradingDays(_nextWeek);
+          if (!_go) { try { _picker.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} return; }
+        }
+      } catch (e) {}
       __trAttempted = 0; __trFailed = 0;
       const msg = await buildWeeklyReviewDiscordMessage(weekStart, weekEnd);   // poster's language, for the clipboard fallback
       // Both languages, like the bias, review and series cards.
