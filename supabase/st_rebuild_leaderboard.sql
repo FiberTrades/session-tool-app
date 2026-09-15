@@ -440,7 +440,7 @@ begin
       from journals j
       cross join lateral jsonb_each(coalesce(j.data -> 'weeklyCommitments', '{}'::jsonb)) kv
       where jsonb_typeof(kv.value) = 'array'
-        and jsonb_array_length(kv.value) >= 3
+        and jsonb_array_length(kv.value) >= 2
         and kv.key ~ '^\d{4}-\d{2}-\d{2}$'
     ),
     commit_dates as (
