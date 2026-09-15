@@ -7686,7 +7686,7 @@ try {
       'commit.past_label': "Days I committed to trade this week",
       'commit.past_hint': "What your adherence above was measured against.",
       'commit.next_label': "Days I'm committing to next week",
-      'commit.next_hint': "Lock in the days you'll trade. These override your default for that week \u2014 the greetings, live tab and sounds will hold you to it.",
+      'commit.next_hint': "Pick the days you'll trade next week \u2014 the greetings, live tab and sounds will hold you to them. Leave them all off if you're not trading that week.",
       'commit.board_note': "How well you keep this feeds your points on the community leaderboard.",
       'commit.share_off': "Share to leaderboard",
       'commit.sharing_on': "\u2713 Sharing to leaderboard",
@@ -9216,7 +9216,7 @@ try {
       'commit.past_label': "D\u00edas que me compromet\u00ed a operar esta semana",
       'commit.past_hint': "Con esto se midi\u00f3 tu cumplimiento de arriba.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
-      'commit.next_hint': "Fija los d\u00edas que operar\u00e1s. Anulan tu ajuste por defecto esa semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlo.",
+      'commit.next_hint': "Elige los d\u00edas que operar\u00e1s la pr\u00f3xima semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlos. D\u00e9jalos todos sin marcar si no vas a operar esa semana.",
       'commit.board_note': "Lo bien que lo cumplas suma a tus puntos en la clasificaci\u00f3n de la comunidad.",
       'commit.share_off': "Compartir en la clasificaci\u00f3n",
       'commit.sharing_on': "\u2713 Compartiendo en la clasificaci\u00f3n",
@@ -27205,7 +27205,7 @@ try {
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
   // via _mondayKey, so one week's change doesn't affect the others.
   function _consistencyPlannedDays(dayDate) {
-    try { var wk = _mondayKey(dayDate); var commit = wk ? getWeekCommitment(wk) : null; if (commit && commit.length) return commit; } catch (e) {}
+    try { var wk = _mondayKey(dayDate); var commit = wk ? getWeekCommitment(wk) : null; if (commit) return commit; } catch (e) {}
     try { var td = data && data.settings && data.settings.tradingDays; if (Array.isArray(td) && td.length) return td.map(Number); } catch (e) {}
     return [1, 2, 3, 4, 5];
   }
@@ -28567,6 +28567,12 @@ try {
           const _nextWeek = _picker.id === 'rfx-commit-days';
           const _go = await window.__stAskTradingDays(_nextWeek);
           if (!_go) { try { _picker.scrollIntoView({ block: 'center', behavior: 'smooth' }); } catch (e) {} return; }
+          /* Posting with no days picked is a decision: that week is not a trading week. Saved as an
+             empty week so it does not silently fall back to the last plan. */
+          try {
+            const _wk = _nextWeek ? _mondayKey(new Date(weekStart.getTime() + 7 * 24 * 3600 * 1000)) : _mondayKey(weekStart);
+            if (_wk) setWeekCommitment(_wk, []);
+          } catch (e) {}
         }
       } catch (e) {}
       __trAttempted = 0; __trFailed = 0;
@@ -30587,7 +30593,9 @@ try {
     } catch (e) { return null; }
   }
   function getWeekCommitment(weekKey) {
-    try { var m = data && data.weeklyCommitments; if (m && Array.isArray(m[weekKey]) && m[weekKey].length) return m[weekKey].map(Number); } catch (e) {}
+    /* An EMPTY saved week is an answer - "not trading that week" - so it is returned as [], not null.
+       null means nothing was saved for that week at all. */
+    try { var m = data && data.weeklyCommitments; if (m && Array.isArray(m[weekKey])) return m[weekKey].map(Number); } catch (e) {}
     return null;
   }
   // The commitment in force for a week: its own if one was set, otherwise the most recent EARLIER
@@ -30600,7 +30608,7 @@ try {
   // .second() is why the caller can still tell the two apart.
   function _rolledCommitment(weekKey) {
     const own = getWeekCommitment(weekKey);
-    if (own && own.length) return own;
+    if (own) return own;   // including [] - a week saved with no days is a week of no trading
     try {
       const m = (data && data.weeklyCommitments) || {};
       const prior = Object.keys(m)
@@ -30616,7 +30624,7 @@ try {
   }
   function _isRolledOver(weekKey) {
     const own = getWeekCommitment(weekKey);
-    return !(own && own.length) && !!_rolledCommitment(weekKey);
+    return !own && !!_rolledCommitment(weekKey);
   }
   try { window.__stRolledCommitment = _rolledCommitment; } catch (e) {}
   function setWeekCommitment(weekKey, days) {
@@ -30632,7 +30640,7 @@ try {
     try {
       var wk = _mondayKey(Date.now());
       var commit = wk ? _rolledCommitment(wk) : null;
-      if (commit && commit.length) return commit;
+      if (commit) return commit;   // [] = not trading this week, so no trading days
     } catch (e) {}
     try {
       var td = data && data.settings && data.settings.tradingDays;
@@ -37753,7 +37761,10 @@ try {
       // should describe the line that is actually on screen, not one the user has never seen.)
       // Compared on the RAW composed string, not on innerHTML — the DOM re-serialises markup, so a
       // round-tripped copy never string-equals its source.
-      if (el.__greetSeed != null && _greetOnScreen(el) && html !== el.__greetSrcRaw) return;
+      /* ...unless the SITUATION changed (the session started or ended, a trade landed, the day
+         switched on). Freezing through that kept "today hasn't started yet, go prep" on screen into
+         a live session. Same situation, different wording -> still left alone. */
+      if (el.__greetSeed != null && _greetOnScreen(el) && html !== el.__greetSrcRaw && el.__greetSit === _greetSituation) return;
       el.__greetSrcRaw = html;
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
