@@ -2785,6 +2785,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .ql-result { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 9px 22px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; font-weight: 500; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: border-color 200ms ease, background 200ms ease, color 200ms ease, transform 120ms ease; }
   .ql-result:active { transform: scale(0.97); }
   .st-live-feed { display: none; margin-bottom: 16px; text-align: left; }
+  #st-live-feed-post .st-live-feed { margin: 0 0 28px; }
   .stlf-head { font-family: 'AppNum','DM Mono',monospace; font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-mid); margin-bottom: 12px; }
   .stlf-chips { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-start; }
   .stlf-chip { display: inline-flex; align-items: stretch; border: 1px solid var(--border-2); border-radius: 10px; overflow: hidden; min-width: 210px; font-family: 'AppNum','DM Mono',monospace; font-size: 14px; letter-spacing: 0.08em; text-transform: uppercase; }
@@ -10710,7 +10711,10 @@ try {
     if (reviewPage) {
       const _wasCollapsed = reviewPage.classList.contains('session-live-collapsed');
       reviewPage.classList.toggle('session-live-collapsed', live);
-      try { if (!live && _wasCollapsed && window.__stLive) window.__stLive.clear(true); } catch (e) {}
+      /* Keeps trades that are still running (they move above the Trade Log); clears the rest. */
+      try { if (!live && _wasCollapsed && window.__stLive) window.__stLive.endSession(); } catch (e) {}
+      /* And back into the Session Live panel when a session starts. */
+      try { if (live && !_wasCollapsed && window.__stLive) window.__stLive.render(); } catch (e) {}
       // On the live\u2192ended transition (early finish OR natural window end), re-render the
       // review UI so the trade picker (#section-trade-select) + per-trade sections reappear.
       // Un-collapsing only lifts the CSS; it doesn't clear the picker's own hidden state.
@@ -14087,20 +14091,47 @@ try {
   window.__stLive = (function () {
     var rows = {};
     var _lastGreetSig = '';   // last trade-summary signature the greeting was refreshed for (dedupes live P&L ticks)
+    /* Live session -> inside the Session Live panel. After it -> directly above the Trade Log, so a
+       trade still running at the close stays visible. One element, moved between the two. */
+    function _isLiveUi() { try { var p = document.getElementById('page-review'); return !!(p && p.classList.contains('session-live-collapsed')); } catch (e) { return false; } }
     function feedEl() {
       var h = document.getElementById('session-quick-log'); if (!h) return null;
       var el = document.getElementById('st-live-feed');
-      if (!el) { el = document.createElement('div'); el.id = 'st-live-feed'; el.className = 'st-live-feed'; h.insertBefore(el, h.firstChild); }
+      if (!el) { el = document.createElement('div'); el.id = 'st-live-feed'; el.className = 'st-live-feed'; }
+      if (_isLiveUi()) {
+        if (el.parentNode !== h) h.insertBefore(el, h.firstChild);
+      } else {
+        var post = document.getElementById('st-live-feed-post');
+        if (!post) {
+          var trades = document.getElementById('section-trades');
+          if (trades && trades.parentNode) { post = document.createElement('div'); post.id = 'st-live-feed-post'; trades.parentNode.insertBefore(post, trades); }
+        }
+        if (post && el.parentNode !== post) post.appendChild(el);
+        else if (!post && el.parentNode !== h) h.insertBefore(el, h.firstChild);
+      }
       return el;
+    }
+    function _hasOpen() { return Object.keys(rows).some(function (k) { return rows[k] && !rows[k].closed; }); }
+    /* Drop the closed rows, locally and in live_trades; keep anything still open. */
+    function _dropClosed() {
+      Object.keys(rows).forEach(function (k) {
+        if (rows[k] && rows[k].closed) {
+          delete rows[k];
+          try { if (window.__stLiveDeleteRow) window.__stLiveDeleteRow(Number(k)); } catch (e) {}
+        }
+      });
     }
     function resultOf(r) { if (!r.closed) return null; try { return classifyNetResult(r.pnl, getActiveAccount()); } catch (e) { return null; } }
     function render() {
       var el = feedEl(); if (!el) return;
       var list = Object.keys(rows).map(function (k) { return rows[k]; }).sort(function (a, b) { return a.ticket - b.ticket; });
-      if (!list.length) { el.innerHTML = ''; el.style.display = 'none'; return; }
+      // After the session the boxes are only for trades still running.
+      if (!list.length || (!_isLiveUi() && !_hasOpen())) { el.innerHTML = ''; el.style.display = 'none'; return; }
       el.style.display = 'block';
       var es = document.documentElement.lang === 'es';
-      var head = (es ? 'Operaciones en esta sesi\u00f3n: ' : 'Trades this session: ') + list.length;
+      var head = _isLiveUi()
+        ? (es ? 'Operaciones en esta sesi\u00f3n: ' : 'Trades this session: ') + list.length
+        : (es ? 'Siguen abiertas de esta sesi\u00f3n: ' : 'Still running from this session: ') + list.filter(function (r) { return !r.closed; }).length;
       var chips = list.map(function (r) {
         var isLong = r.direction === 'long';
         var res = resultOf(r);
@@ -14143,6 +14174,9 @@ try {
         // chip closed (here) BEFORE the close-watcher runs, so its "is it still open?" guard would
         // otherwise swallow the close pop-up. This lets the watcher fire for a trade that WAS open.
         try { if (!rows[k].closed) { (window.__stLiveEverOpen = window.__stLiveEverOpen || {})[k] = true; } } catch (e) {}
+        // After the session: once the last running trade has closed, clear the closed rows the way
+        // the session end used to, so they never show up under a later session today.
+        try { if (!_isLiveUi() && rows[k].closed && !_hasOpen()) _dropClosed(); } catch (e) {}
         render();
         // Only refresh the greeting when the SUMMARY it reads actually changes — a trade opened,
         // closed, flipped side, or its result changed. An OPEN trade's live P&L ticks every second
@@ -14158,6 +14192,14 @@ try {
           }
         } catch (e) {}
       },
+      /* Session window ended: clear what has closed, keep what is still running (shown above the
+         Trade Log). With nothing open this is exactly the old clear(true). */
+      endSession: function () {
+        if (!_hasOpen()) { this.clear(true); return; }
+        _dropClosed(); _lastGreetSig = '';
+        render();
+      },
+      hasOpen: _hasOpen,
       clear: function (deleteRemote) {
         rows = {}; _lastGreetSig = '';
         var el = document.getElementById('st-live-feed'); if (el) { el.innerHTML = ''; el.style.display = 'none'; }
@@ -61689,7 +61731,7 @@ try {
   // cannot catch. Only while a session is actually live, and only a handful of rows for one
   // account - this is not the journal blob that caused the egress bill.
   setInterval(function(){
-    try{ if(typeof isSessionLive === 'function' && isSessionLive()) seed(); }catch(e){}
+    try{ if((typeof isSessionLive === 'function' && isSessionLive()) || (window.__stLive && window.__stLive.hasOpen && window.__stLive.hasOpen())) seed(); }catch(e){}
   }, 60000);
   // And when the tab is brought forward, since that is the moment someone is about to look at it.
   try{
