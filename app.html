@@ -15941,9 +15941,26 @@ try {
         const removedIdx = idx;
         const prevActive = _activeReviewTradeIdx;
         data.review.trades.splice(idx, 1);
+        /* The day's review lives ON the trade while there are trades, and on data.review when there
+           are none. Deleting the last trade used to throw the answers away with it - so move them
+           onto the day (only where the day has nothing of its own), and remember what the day
+           held so Undo restores it exactly. */
+        const _REVIEW_KEYS = ['execution', 'focus', 'close', 'rice', 'tvLinks', 'concepts', 'mindset', 'reflection'];
+        const _dayBefore = {};
+        if (data.review.trades.length === 0 && removed) {
+          const _empty = (v) => v == null || v === '' || (Array.isArray(v) && (v.length === 0 || v.every(x => !x || (typeof x === 'object' && !x.url && !(x.notes && String(x.notes).trim())))));
+          _REVIEW_KEYS.forEach(k => {
+            _dayBefore[k] = data.review[k];
+            if (!_empty(removed[k]) && _empty(data.review[k])) {
+              data.review[k] = JSON.parse(JSON.stringify(removed[k]));
+            }
+          });
+        }
         // If we deleted the active trade or one before it, reset to a safe index.
         if (_activeReviewTradeIdx >= data.review.trades.length) _activeReviewTradeIdx = Math.max(0, data.review.trades.length - 1);
         syncTradedFromTrades();
+        // Cards on screen must describe the NEW target before fullUpdate flushes them back into it.
+        try { if (typeof renderReviewTvLinks === 'function') renderReviewTvLinks(); } catch (e) {}
         fullUpdate();
         syncReviewSectionsToActiveTrade();
         if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
@@ -15951,9 +15968,11 @@ try {
           showUndoToast(
             window._stT('Trade deleted', 'Operaci\u00f3n eliminada'),
             () => {
+              Object.keys(_dayBefore).forEach(k => { data.review[k] = _dayBefore[k]; });   // the day's own fields, as they were
               data.review.trades.splice(removedIdx, 0, removed);   // back where it was
               _activeReviewTradeIdx = Math.min(prevActive, data.review.trades.length - 1);
               syncTradedFromTrades();
+              try { if (typeof renderReviewTvLinks === 'function') renderReviewTvLinks(); } catch (e) {}
               fullUpdate();
               syncReviewSectionsToActiveTrade();
               if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
