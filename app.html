@@ -14829,6 +14829,13 @@ try {
     try { if (window.renderSessionSymbolChips) { window.renderSessionSymbolChips(0, 'settings-session-symbols-1'); window.renderSessionSymbolChips(1, 'settings-session-symbols-2'); } } catch (e) {}
     try { saveData(); } catch (e) {}
   };
+  /* Redraw Session Review from the CURRENT journal - used after the sync engine swaps the journal
+     in place, so the page never keeps showing (and flushing) the copy it replaced. */
+  window.__stRepaintReview = function () {
+    try { if (typeof renderTrades === 'function') renderTrades(); } catch (e) {}
+    try { if (typeof renderReviewTvLinks === 'function') renderReviewTvLinks(); } catch (e) {}
+    try { if (typeof syncReviewSectionsToActiveTrade === 'function') syncReviewSectionsToActiveTrade(); } catch (e) {}
+  };
   function repaintBiasForm() {
     const b = data.bias || {};
     document.querySelectorAll('[data-bias]').forEach(group => {
@@ -16382,6 +16389,7 @@ try {
     if (!wrap) return;
     wrap.innerHTML = '';
     const tr = getActiveReviewTrade();
+    wrap.__tvFor = tr || null;   // which object these cards belong to - the flush checks it
     if (!tr) { return; }
     if (!Array.isArray(tr.tvLinks)) tr.tvLinks = [];
     const arr = tr.tvLinks.length === 0 ? [{ url: '', notes: '' }] : tr.tvLinks;
@@ -16471,7 +16479,10 @@ try {
     try {
       var _atr = (typeof getActiveReviewTrade === 'function') ? getActiveReviewTrade() : null;
       var _cards = document.querySelectorAll('#review-tv-list .tv-link-card');
-      if (_atr && _cards.length) {
+      var _tvWrap = document.getElementById('review-tv-list');
+      /* Only cards drawn for THIS target. After a delete or a cloud adopt the cards on screen can
+         belong to a different (or replaced) object, and flushing them wiped real chart links. */
+      if (_atr && _cards.length && _tvWrap && _tvWrap.__tvFor === _atr) {
         var _arr = [];
         _cards.forEach(function (c) {
           var u = c.querySelector('.tv-link-url'), n = c.querySelector('.tv-link-notes');
@@ -59810,7 +59821,7 @@ try {
           accStatus(tt('synced'));
           var _rlC = false; try { _rlC = !!sessionStorage.getItem('st_synced_reload'); } catch (e) {}
           if (!_rlC) { try { sessionStorage.setItem('st_synced_reload', '1'); } catch (e) {} location.reload(); }
-          else { try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {} }
+          else { try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {} try { if (window.__stRepaintReview) window.__stRepaintReview(); } catch (e) {} }
         } else {
           // OUR clear is newer: push it up over the pre-clear cloud (snapshot the cloud first).
           takeSnapshot('pre-sync', cloud);
@@ -59848,7 +59859,7 @@ try {
         if (!reloaded) { try { sessionStorage.setItem('st_synced_reload', '1'); } catch (e) {} location.reload(); }
         // Second adopt in the same session skips the reload above - repaint the bias form
         // so the painted selection can never disagree with the adopted data underneath.
-        else { try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {} }
+        else { try { if (typeof repaintBiasForm === 'function') repaintBiasForm(); } catch (e) {} try { if (window.__stRepaintReview) window.__stRepaintReview(); } catch (e) {} }
         // The "not counted here" figure is computed once, a few seconds after load. If that scan
         // ran against the pre-adopt copy, its number is now describing a journal that no longer
         // exists — so recompute it against what was actually adopted.
