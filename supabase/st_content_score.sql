@@ -44,6 +44,18 @@ returns integer language sql immutable as $$
     + case when jsonb_typeof(d->'biasHistory')    ='array' then jsonb_array_length(d->'biasHistory')    else 0 end
     + case when jsonb_typeof(d->'weeklyReviews')  ='array' then jsonb_array_length(d->'weeklyReviews')  else 0 end
     + case when jsonb_typeof(d->'monthlyReviews') ='array' then jsonb_array_length(d->'monthlyReviews') else 0 end
+    -- dayReviewCount (added 2026-09-17): 1 when the review has NO trades but has its own answers
+    + case when (select jsonb_array_length(rev) from arr) = 0 and (
+          coalesce(d#>>'{review,execution}','') <> '' or coalesce(d#>>'{review,focus}','') <> ''
+       or coalesce(d#>>'{review,close}','') <> ''
+       or (jsonb_typeof(d#>'{review,reflection}') = 'string' and (d#>>'{review,reflection}') ~ '\S')
+       or (jsonb_typeof(d#>'{review,rice}')     = 'array' and jsonb_array_length(d#>'{review,rice}') > 0)
+       or (jsonb_typeof(d#>'{review,concepts}') = 'array' and jsonb_array_length(d#>'{review,concepts}') > 0)
+       or (jsonb_typeof(d#>'{review,mindset}')  = 'array' and jsonb_array_length(d#>'{review,mindset}') > 0)
+       or (jsonb_typeof(d#>'{review,tvLinks}')  = 'array' and exists (
+             select 1 from jsonb_array_elements(d#>'{review,tvLinks}') l
+             where jsonb_typeof(l) = 'object' and coalesce(l->>'url','') <> ''))
+      ) then 1 else 0 end
 $$;
 
 create or replace function public.st_set_content_score()

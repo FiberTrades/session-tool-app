@@ -12094,10 +12094,12 @@ try {
     // first trade that has no tvLinks of its own. Runs every load to catch any leakage.
     if (d.review && Array.isArray(d.review.tvLinks) && d.review.tvLinks.some(l => l && l.url)) {
       const targetTrade = (d.review.trades || []).find(tr => !Array.isArray(tr.tvLinks) || tr.tvLinks.length === 0 || tr.tvLinks.every(l => !l.url));
+      /* Only clear them once they have been MOVED. With no trade to take them they are not orphans:
+         a no-trade day keeps its own chart links here, and clearing them deleted that day's charts. */
       if (targetTrade) {
         targetTrade.tvLinks = d.review.tvLinks.map(l => ({ url: l.url || '', notes: l.notes || '' }));
+        d.review.tvLinks = []; // moved - clear the orphan so this doesn't run again
       }
-      d.review.tvLinks = []; // clear the orphan so this doesn't run again
     }
     // Migrate concepts inside historical trade snapshots too — keeps stats/analytics consistent.
     const _migrateConcepts = arr => Array.isArray(arr) ? arr.map(c =>
@@ -17069,9 +17071,15 @@ try {
     if (!picker) return;
     const today = todayDateStr();
     const hasTrades = !!(data.review && Array.isArray(data.review.trades) && data.review.trades.length > 0);
+    /* The day's own review answers count as content too: deleting a day's last trade keeps them on
+       the day, and rolling that day's date to today would re-label its review as today's. */
+    const _r = data.review || {};
+    const hasDayReview = !!(_r.execution || _r.focus || _r.close || (_r.reflection && String(_r.reflection).trim()) ||
+      (Array.isArray(_r.rice) && _r.rice.length) || (Array.isArray(_r.concepts) && _r.concepts.length) ||
+      (Array.isArray(_r.mindset) && _r.mindset.length) || (Array.isArray(_r.tvLinks) && _r.tvLinks.some(l => l && (l.url || (l.notes && String(l.notes).trim())))));
     // Default to today, and advance a stale (past-day) date on load — but only when there
-    // are no in-progress trades, so trades kept from a previous day are never re-dated.
-    if (!data.review.sessionDate || (!hasTrades && data.review.sessionDate < today)) {
+    // are no in-progress trades AND no review answers, so a previous day's work is never re-dated.
+    if (!data.review.sessionDate || (!hasTrades && !hasDayReview && data.review.sessionDate < today)) {
       data.review.sessionDate = today;
     }
     picker.value = data.review.sessionDate;
@@ -58088,6 +58096,21 @@ try {
       return n;
     } catch (e) { return 0; }
   }
+  /* A no-trade day's own review answers. Without this a day with a full review and a blank day
+     score the same, so a stale copy holding the blank one can win the sync. Mirrored in
+     st_content_score (supabase/st_content_score.sql) - keep the two identical. */
+  function dayReviewCount(d) {
+    try {
+      var r = d && d.review; if (!r) return 0;
+      if (Array.isArray(r.trades) && r.trades.length) return 0;
+      var has = !!(r.execution || r.focus || r.close ||
+        (typeof r.reflection === 'string' && r.reflection.trim()) ||
+        (Array.isArray(r.rice) && r.rice.length) || (Array.isArray(r.concepts) && r.concepts.length) ||
+        (Array.isArray(r.mindset) && r.mindset.length) ||
+        (Array.isArray(r.tvLinks) && r.tvLinks.some(function (l) { return l && l.url; })));
+      return has ? 1 : 0;
+    } catch (e) { return 0; }
+  }
   function contentScore(d) {
     // Measures REAL journal content — trades, completed series, and the bias/review logs
     // the trader actually builds up. Deliberately IGNORES volatile, non-journal fields
@@ -58099,6 +58122,7 @@ try {
     try {
       n += tradeCount(d);
       n += reviewTradeCount(d);
+      n += dayReviewCount(d);
       n += customTagCount(d);
       n += seriesCount(d);
       n += Array.isArray(d.biasHistory) ? d.biasHistory.length : 0;
