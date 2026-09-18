@@ -40043,6 +40043,43 @@ try {
         dbg.linked = allT.filter(t => t && t.mt5Ticket).length;
       } catch (e) { try { dbg.err = String(e && e.message || e); } catch (_) {} }
 
+      // ---- Real result for trades imported before the import recorded it -----------------
+      try {
+        const _inb = ((inboxRes && inboxRes.data) || []).filter(r => r && r.ticket != null);
+        const _byTk = {};
+        _inb.forEach(r => { _byTk[String(r.ticket)] = r; });
+        const _pool = [];
+        (data.currentSeries || []).forEach(t => _pool.push(t));
+        (data.history || []).forEach(sr => (sr.trades || []).forEach(t => _pool.push(t)));
+        (data.review && data.review.trades ? data.review.trades : []).forEach(t => _pool.push(t));
+        _pool.forEach(t => {
+          if (!t || !t.mt5Ticket) return;
+          const r = _byTk[String(t.mt5Ticket)];
+          if (!r) return;
+          const en = parseFloat(r.entry_price), ex = parseFloat(r.exit_price);
+          if (!(en > 0) || !(ex > 0)) return;
+          const dir = /^(sell|short)/i.test(String(r.direction || '')) ? -1 : 1;
+          const du = (r.dist_unit === 'pips' || r.dist_unit === 'points' || r.dist_unit === 'ticks') ? r.dist_unit : window.__stDU.symUnit(r.symbol);
+          const us = parseFloat(r.unit_size);
+          const mult = (us > 0) ? (1 / us) : window.__stDU.mult(r.symbol, du);
+          const real = Math.round((ex - en) * dir * mult * 10) / 10;
+          if (!isFinite(real)) return;
+          if (!isNum(t.realPips)) { t.realPips = real; changed++; }
+          // A win still showing the untouched AIM, that did not close at that aim: show what it made.
+          if (t.result === 'Win') {
+            const tp = parseFloat(r.tp_pips), sl = parseFloat(r.sl_pips);
+            if (!(tp > 0) || !(sl > 0) || !(real > 0) || Math.abs(real - tp) <= 0.5) return;
+            const aimR = String(Math.round((tp / sl) * 100) / 100);
+            const pipsNow = parseFloat(t.pips), rNow = String(t.r);
+            if (pipsNow === tp && (rNow === aimR || parseFloat(rNow) === parseFloat(aimR))) {
+              t.pips = real;
+              t.r = String(Math.round((real / sl) * 100) / 100);
+              changed++;
+            }
+          }
+        });
+      } catch (e) {}
+
       if (!rows.length) {
         if (changed) saveData();
         // Zero replay rows is the most important state for the diagnostic trail - repaint
