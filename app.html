@@ -11748,6 +11748,17 @@ try {
     // show which trade is being reviewed — no need to mark the # cell as well.)
   }
 
+  // Tickets already saved in the Series of 10 or history. Clearing the Trade Log must not put these
+  // back on the MT5 import list - the trade is not being discarded, only its working copy.
+  function _savedMt5Tickets() {
+    var set = Object.create(null);
+    try {
+      var add = function (list) { (list || []).forEach(function (t) { if (t && t.mt5Ticket != null) set[String(t.mt5Ticket)] = 1; }); };
+      add(data.currentSeries);
+      (data.history || []).forEach(function (h) { add(h && h.trades); });
+    } catch (e) {}
+    return set;
+  }
   function newReviewBlank() {
     return { traded: 'No', trades: [], execution: null, focus: null, close: null, rice: [], tvLinks: [], concepts: [], mindset: [], reflection: '' };
   }
@@ -17298,7 +17309,8 @@ try {
     var _relist = [];
     try {
       if (data.review && Array.isArray(data.review.trades)) {
-        data.review.trades.forEach(function (t) { if (t && t.mt5Ticket) _relist.push(String(t.mt5Ticket)); });
+        var _saved = _savedMt5Tickets();   // already in the Series of 10 - not being discarded
+        data.review.trades.forEach(function (t) { if (t && t.mt5Ticket && !_saved[String(t.mt5Ticket)]) _relist.push(String(t.mt5Ticket)); });
       }
     } catch (e) {}
     data.review = newReviewBlank();
@@ -17363,7 +17375,8 @@ try {
     var _relist = [];
     try {
       if (!_revTodaysWork && data.review && Array.isArray(data.review.trades)) {
-        data.review.trades.forEach(function (t) { if (t && t.mt5Ticket) _relist.push(String(t.mt5Ticket)); });
+        var _saved = _savedMt5Tickets();   // already in the Series of 10 - not being discarded
+        data.review.trades.forEach(function (t) { if (t && t.mt5Ticket && !_saved[String(t.mt5Ticket)]) _relist.push(String(t.mt5Ticket)); });
       }
     } catch (e) {}
     if (!_revTodaysWork) {
@@ -39926,6 +39939,9 @@ try {
       // lets it past the server's consumed flag too, which is what makes recovery possible without
       // a database change (the consumed_at column has a trigger that preserves it).
       (data.mt5ForceOffer || []).forEach(x => { if (x != null) set.delete(String(x)); });
+      // ...but never a ticket a trade in the journal actually wears. Restoring is for trades that
+      // are MISSING; offering one that is already logged only invites a duplicate import.
+      _mt5WornTickets().forEach(x => set.add(x));
     } catch (e) {}
     return set;
   }
