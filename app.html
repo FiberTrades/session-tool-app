@@ -11898,6 +11898,29 @@ try {
   // - Without trades: returns the session-level data.review object directly — so a no-trade
   //   session can still log Execution/Focus/Close/RICE/Tags/Charts/Reflection at the session level.
   //   (data.review already has those fields from newReviewBlank.)
+  /* A day's review answers are stored on data.review while the log is empty, and on each trade once
+     it is not. Filling the review in while a trade is still open, then importing it, used to leave the
+     answers stranded on the day behind an empty trade. Move them onto the first trade - into empty
+     fields only; anything the trade answered itself wins, and the day keeps its copy of that field. */
+  const _DAY_REVIEW_KEYS = ['execution', 'focus', 'close', 'setup', 'rice', 'tvLinks', 'concepts', 'mindset', 'reflection'];
+  function _reviewValEmpty(v) {
+    return v == null || (typeof v === 'string' && !v.trim()) ||
+      (Array.isArray(v) && (v.length === 0 || v.every(x => !x || (typeof x === 'object' && !x.url && !(x.notes && String(x.notes).trim())))));
+  }
+  function foldDayReviewIntoTrade() {
+    const r = data && data.review;
+    if (!r || !Array.isArray(r.trades) || !r.trades.length) return false;
+    const tr = r.trades[0];
+    if (!tr) return false;
+    let moved = false;
+    _DAY_REVIEW_KEYS.forEach(k => {
+      if (_reviewValEmpty(r[k]) || !_reviewValEmpty(tr[k])) return;
+      tr[k] = JSON.parse(JSON.stringify(r[k]));
+      r[k] = Array.isArray(r[k]) ? [] : (typeof r[k] === 'string' ? '' : null);
+      moved = true;
+    });
+    return moved;
+  }
   function getActiveReviewTrade() {
     const trades = data.review.trades || [];
     if (trades.length === 0) return data.review;
@@ -15726,6 +15749,17 @@ try {
   }
   function renderTrades() {
     try { window.__stDU.sync(); } catch (e) {}
+    // Day answers written before the trade existed go onto it (see foldDayReviewIntoTrade).
+    try {
+      if (foldDayReviewIntoTrade()) {
+        setTimeout(() => {
+          try { if (typeof renderReviewTvLinks === 'function') renderReviewTvLinks(); } catch (e) {}
+          try { if (typeof syncReviewSectionsToActiveTrade === 'function') syncReviewSectionsToActiveTrade(); } catch (e) {}
+          try { if (typeof renderReviewPreview === 'function') renderReviewPreview(); } catch (e) {}
+          try { saveData(); } catch (e) {}
+        }, 0);
+      }
+    } catch (e) {}
     ensureTradeAccounts();
     // Actually trading a day is the strongest possible statement that you are trading it, so it
     // switches the day on just as a completed bias does. Checked here rather than on "add row",
