@@ -25,12 +25,19 @@
 //  price did AFTER the trade closed (replayed from M1 bars):
 //
 //    { token, ticket, pot_pips, pot_r, req_sl_pips, be_slack_pips, would_have_won,
-//      be_sim, be_clear_pips, be_clear_r, be_off_r, be_off_missed, spread }
+//      be_sim, be_clear_pips, be_clear_r, be_off_r, be_off_missed, no_be_r, spread }
 //
 //  `spread` is [[epoch_seconds, pips], ...] - the broker's real per-minute spread for the
 //  life of the trade, read from MqlRates. The app's Trade Replay draws TradingView candles,
 //  which carry no knowledge of the member's own broker spread, so this is the only way the
 //  replay can show what the spread was costing at a given moment.
+//
+//  `be_off_r` / `be_off_missed` are the BE-OFFSET LADDER (EA v5.7): 21 rungs, every level
+//  from +0R to +1R in 0.05R steps. Each rung arms itself when price reaches that level and
+//  moves the stop to entry + that level, so it runs on EVERY trade - including ones never
+//  moved to break-even, which is exactly where "what if I had?" is the question. `no_be_r`
+//  is the same replay with the stop NEVER moved: the do-nothing baseline the ladder is
+//  judged against.
 //
 //  Every trade carries all of them - win, loss and breakeven alike. The EA does not
 //  classify: the APP decides Win/BE/Lose from the user's own risk rules, and a breakeven
@@ -66,6 +73,24 @@
 //  Nullable on purpose - an EA older than the build that sends it posts without one,
 //  and the app treats a missing login as "unknown" rather than as a mismatch, so
 //  nothing breaks if this function is deployed before the EA is recompiled (or after).
+//  ---------------------------------------------------------------
+//  SCALE-OUTS (EA v7.1)
+//
+//  "exits" is [[epoch_seconds, price, volume], ...] - one entry per closing deal. The EA
+//  already folds a position's deals into ONE row (volume-weighted prices, summed P&L), so a
+//  partial close has never double-counted; what was missing is any record that it happened.
+//  exit_price is therefore a volume-weighted average, which for a scale-out is a price the
+//  chart never printed: a fine summary, useless as a record of what was done.
+//
+//     alter table trades_inbox add column if not exists exits jsonb;
+//
+//  These are TRIPLES, so pairArray rejects them - it demands length === 2 and would drop the
+//  lot. Read here with tripleArray or the field is dropped silently, exactly as be_clear_pips,
+//  be_clear_r, be_off_r and be_off_missed were for a whole EA version, on all 116 rows.
+//
+//  A trade closed in one go still sends a one-entry ledger, deliberately: NULL then means "an
+//  EA that never reported this" and not "closed in one go", which is what lets every existing
+//  row keep its current meaning under coalesce(exit_count,1).
 //  ---------------------------------------------------------------
 // ============================================================
 
@@ -143,9 +168,10 @@ Deno.serve(async (req) => {
     // arrives, and nothing read it - so be_clear_pips, be_clear_r, be_off_r and
     // be_off_missed were NULL on all 116 rows. Wired up 2026-08-17. Nothing about the
     // trade's own numbers is touched; these are replay findings, same as the fields above.
-    // The stop-never-moved baseline for the BE-offset ladder. Read it here or it is dropped
-    // silently, exactly as be_clear_pips/be_off_r were for a whole EA version.
-    if (body.no_be_r        !== undefined) patch.no_be_r        = numOrNull(body.no_be_r);
+    //
+    // no_be_r (EA v5.7) is the stop-never-moved baseline for that ladder. Read it here or it
+    // is dropped silently, exactly as the four above were for a whole EA version.
+    if (body.no_be_r       !== undefined) patch.no_be_r       = numOrNull(body.no_be_r);
     if (body.be_clear_pips !== undefined) patch.be_clear_pips = numOrNull(body.be_clear_pips);
     if (body.be_clear_r    !== undefined) patch.be_clear_r    = numOrNull(body.be_clear_r);
     if (numArray(body.be_off_r))      patch.be_off_r      = (body.be_off_r as unknown[]).map(Number);
@@ -236,6 +262,15 @@ Deno.serve(async (req) => {
     // is why the app must read null as "not observed" rather than "never moved".
     sl_moves:    pairArray(body.sl_moves) ? toPairs(body.sl_moves) : null,
     tp_moves:    pairArray(body.tp_moves) ? toPairs(body.tp_moves) : null,
+    // SCALE-OUTS (EA v7.1): every exit, [[epoch, price, volume], ...]. TRIPLES, so pairArray
+    // would reject them - see the header. A one-exit trade still sends a one-entry ledger, so
+    // null here means "an EA that never reported this", not "closed in one go".
+    exits:       tripleArray(body.exits) ? toTriples(body.exits) : null,
+    // DISTANCE UNIT (EA v8.0): what every *_pips number on this row is measured in - "pips" on
+    // forex, "points" (1.00 of price) on indices/futures such as NQ, or "ticks". Null from any
+    // older EA, which only ever measured pips. Anything else is dropped rather than stored.
+    //    alter table trades_inbox add column if not exists dist_unit text;
+    dist_unit:   (["pips", "points", "ticks"].includes(String(body.dist_unit)) ? String(body.dist_unit) : null),
     // The broker spread series now ALSO rides the close payload (EA v5.4). Every M1 bar it
     // needs exists the moment the position closes; it used to travel only with the post-mortem,
     // which waits for day-end on any trade that did not hit TP or SL, leaving the replay's
@@ -307,6 +342,18 @@ function pairArray(v: unknown): boolean {
 }
 function toPairs(v: unknown): number[][] {
   return (v as unknown[][]).map((p) => [Number(p[0]), Number(p[1])]);
+}
+
+// As pairArray, but for [number, number, number] triples - the exit ledger's
+// [epoch, price, volume]. Same all-or-nothing rule: one malformed element rejects the whole
+// array rather than recording a partial exit history, which would misreport what was done.
+function tripleArray(v: unknown): boolean {
+  return Array.isArray(v) && v.length > 0 && v.every((p: unknown) =>
+    Array.isArray(p) && p.length === 3 && p.every((x: unknown) => Number.isFinite(Number(x)))
+  );
+}
+function toTriples(v: unknown): number[][] {
+  return (v as unknown[][]).map((p) => [Number(p[0]), Number(p[1]), Number(p[2])]);
 }
 
 function cors() {

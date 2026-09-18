@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "7.9"
+#property version   "8.0"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -21,6 +21,8 @@ enum ENUM_RISK_MODE  { RISK_PERCENT, RISK_AMOUNT, RISK_FIXED_LOT };
 enum ENUM_ORDER_KIND { OK_MARKET, OK_LIMIT, OK_STOP };
 enum ENUM_TP_MODE    { TP_BY_RR, TP_BY_PIPS };
 enum ENUM_BEOFF_MODE { BEOFF_BY_PIPS, BEOFF_BY_RR };   // BE offset read as pips or as R
+// What one unit of DISTANCE is. "Pips" in every other input and label means this unit.
+enum ENUM_DIST_UNIT  { DU_AUTO=0, DU_PIPS=1, DU_POINTS=2, DU_TICKS=3 };
 
 //==================================================================
 //  INPUTS
@@ -38,9 +40,12 @@ input double           InpFixedLot      = 0.10;        // Fixed lot size
 input bool             InpOverrideBal   = false;       // Override account balance?
 input double           InpCustomBalance = 0.0;         // Custom balance (if overriding)
 
-input group "===== Stop Loss (pips) ====="
-input double           InpMinSLpips     = 1.8;         // Minimum SL size (pips)
-input double           InpMaxSLpips     = 3.8;         // Maximum SL size (pips)
+input group "===== Distance Unit ====="
+input ENUM_DIST_UNIT   InpDistUnit      = DU_AUTO;     // Distance unit: Auto (pips on forex, points on indices/futures) / Pips / Points / Ticks
+
+input group "===== Stop Loss (in the distance unit) ====="
+input double           InpMinSLpips     = 1.8;         // Minimum SL size (pips / points / ticks - see Distance unit)
+input double           InpMaxSLpips     = 3.8;         // Maximum SL size (pips / points / ticks - see Distance unit)
 
 input group "===== Take Profit ====="
 input ENUM_TP_MODE     InpTPMode        = TP_BY_RR;    // TP measured by RR or pips
@@ -274,7 +279,49 @@ bool   g_anchorPending=false;   // set at order time; cleared once the on-fill r
 //==================================================================
 //  SMALL HELPERS
 //==================================================================
-double PipSize() { return (g_digits==3 || g_digits==5) ? g_point*10.0 : g_point; }
+// ---- Distance unit (v8.0) ----
+// Is this symbol forex-like? Deliberately generous: anything that answers yes keeps the EA's original
+// pip maths, so no forex or metals user sees a change. Only symbols that are clearly NOT forex
+// (indices, futures, stocks, crypto) move to points under Auto.
+bool IsCcyCode(string c)
+  {
+   string L="USD EUR GBP JPY CHF AUD NZD CAD SEK NOK DKK PLN HUF CZK TRY ZAR MXN SGD HKD CNH CNY RUB ILS THB XAU XAG XPT XPD";
+   return (StringLen(c)==3 && StringFind(L,c)>=0);
+  }
+bool SymbolIsForexLike(string sym)
+  {
+   long cm=SymbolInfoInteger(sym,SYMBOL_TRADE_CALC_MODE);
+   if(cm==SYMBOL_CALC_MODE_FOREX || cm==SYMBOL_CALC_MODE_FOREX_NO_LEVERAGE) return true;
+   int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+   if(dg==3 || dg==5) return true;
+   string u=sym; StringToUpper(u);
+   if(StringLen(u)>=6 && IsCcyCode(StringSubstr(u,0,3)) && IsCcyCode(StringSubstr(u,3,3))) return true;
+   return false;
+  }
+// The unit actually in force for a symbol: Auto resolved to Pips or Points.
+int DistUnitFor(string sym)
+  {
+   if(InpDistUnit!=DU_AUTO) return (int)InpDistUnit;
+   return SymbolIsForexLike(sym) ? DU_PIPS : DU_POINTS;
+  }
+// Price size of ONE unit on a symbol.
+double DistUnitSize(string sym)
+  {
+   int    dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+   double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
+   int    u =DistUnitFor(sym);
+   if(u==DU_POINTS) return 1.0;
+   if(u==DU_TICKS)
+     {
+      double ts=SymbolInfoDouble(sym,SYMBOL_TRADE_TICK_SIZE);
+      return (ts>0) ? ts : pt;
+     }
+   return (dg==3 || dg==5) ? pt*10.0 : pt;   // pips - the original rule
+  }
+string DistUnitKey(string sym){ int u=DistUnitFor(sym); return u==DU_POINTS?"points":(u==DU_TICKS?"ticks":"pips"); }
+string UnitLbl()  { int u=DistUnitFor(_Symbol); return u==DU_POINTS?"pts":(u==DU_TICKS?"ticks":"pips"); }
+string UnitBtn()  { int u=DistUnitFor(_Symbol); return u==DU_POINTS?"PTS":(u==DU_TICKS?"TICKS":"PIPS"); }
+double PipSize() { return DistUnitSize(_Symbol); }
 int    _s(int v){ return (int)MathRound(v*g_ui); }   // scale a design pixel by the UI factor
 int VolumeDigits(double step){ int d=0; double s=step; while(s<1.0 && d<8){s*=10.0;d++;} return d; }
 
@@ -547,7 +594,7 @@ void RedrawTargets()
    for(int i=1;i<6;i++) ObjectDelete(0,LN_TP+IntegerToString(i));
 
    // SL label (word + live pips) at far right
-   SetLineText(TX_SL,slPrice,StringFormat("SL  %.1f pips",slPips),COL_LINE_SL);
+   SetLineText(TX_SL,slPrice,StringFormat("SL  %.1f %s",slPips,UnitLbl()),COL_LINE_SL);
 
    // Pending orders: name the line the SL is measured FROM. Unlabelled and near-invisible, it
    // read as the SL misbehaving around thin air; the 4 pips were always correct - from here.
@@ -1492,7 +1539,7 @@ void RefreshLabels()
    if(!g_active) return;
    if(ObjectFind(0,LN_MSL)  >=0) SetLineText(TX_SL,LinePrice(LN_MSL),"SL",COL_LINE_SL);
    if(ObjectFind(0,LN_SL)   >=0 && g_execMode)
-      SetLineText(TX_SL,LinePrice(LN_SL),StringFormat("SL  %.1f pips",g_slSetPips),COL_LINE_SL);
+      SetLineText(TX_SL,LinePrice(LN_SL),StringFormat("SL  %.1f %s",g_slSetPips,UnitLbl()),COL_LINE_SL);
    if(ObjectFind(0,LN_EFILL)>=0) SetLineText(TX_EF,LinePrice(LN_EFILL),"Entry",EntryLineColour());
    if(ObjectFind(0,LN_BE)   >=0) SetLineText(TX_BE,LinePrice(LN_BE),"BE",COL_LINE_BE);
    if(ObjectFind(0,LN_TP+"0")>=0)SetLineText(TX_TP,LinePrice(LN_TP+"0"),"TP",COL_LINE_TP);
@@ -1902,10 +1949,10 @@ void BuildPanel()
    mkLabel (PP+"L_RM",labelX,ry+6,"Amount",COL_PANEL_LBL,8);
    mkEdit  (PP+"RISKVAL",box1,ry+2,BW,CH,Fmt(RiskValGet(),2));
    ry+=ROWH;
-   mkLabel (PP+"L_MIN",labelX,ry+6,"Min SL",COL_PANEL_LBL,8);
+   mkLabel (PP+"L_MIN",labelX,ry+6,(UnitLbl()=="pips")?"Min SL":("Min SL "+UnitLbl()),COL_PANEL_LBL,8);
    mkEdit  (PP+"MINSL",box1,ry+2,BW,CH,Fmt(g_minSL,1));
    ry+=ROWH;
-   mkLabel (PP+"L_MAX",labelX,ry+6,"Max SL",COL_PANEL_LBL,8);
+   mkLabel (PP+"L_MAX",labelX,ry+6,(UnitLbl()=="pips")?"Max SL":("Max SL "+UnitLbl()),COL_PANEL_LBL,8);
    mkEdit  (PP+"MAXSL",box1,ry+2,BW,CH,Fmt(g_maxSL,1));
    cy+=cardH+6;
 
@@ -1915,7 +1962,7 @@ void BuildPanel()
    mkLabel(PP+"ST_TP",labelX,cy+7,"TAKE PROFIT",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_TPM",labelX,ry+6,"Target by",COL_PANEL_LBL,8);
-   mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+   mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R":UnitBtn(),COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
    mkLabel (PP+"L_TP",labelX,ry+6,"Take profit",COL_PANEL_LBL,8);
    mkEdit  (PP+"TPVAL0",box1,ry+2,BW,CH,Fmt(g_tpVal[0],2));
@@ -1930,7 +1977,7 @@ void BuildPanel()
    // the unit before the number. The button carries the unit, so the label below does not
    // repeat it in brackets.
    mkLabel (PP+"L_BEM",labelX,ry+6,"Offset unit",COL_PANEL_LBL,8);
-   mkButton(PP+"BEOMODE",box1,ry+2,BW,CH,(g_beOffMode==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+   mkButton(PP+"BEOMODE",box1,ry+2,BW,CH,(g_beOffMode==BEOFF_BY_RR)?"R":UnitBtn(),COL_PANEL_BTN,COL_PANEL_BTX);
    ry+=ROWH;
    // On/off beside the value it switches, exactly as the Take profit row does.
    mkLabel (PP+"L_BEO",labelX,ry+6,"BE offset",COL_PANEL_LBL,8);
@@ -1950,7 +1997,7 @@ void BuildPanel()
    if(g_tsCount>0)
      {
       mkLabel (PP+"L_TSU",labelX,ry+6,"Move to unit",COL_PANEL_LBL,8);
-      mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":"PIPS",COL_PANEL_BTN,COL_PANEL_BTX);
+      mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":UnitBtn(),COL_PANEL_BTN,COL_PANEL_BTX);
       ry+=ROWH;
      }
    else
@@ -2445,6 +2492,11 @@ bool SyncCollectAndPush(ulong posId)
    // Append the EA-only detail if this trade was stamped at entry.
    string sk="MMD_"+(string)posId+"_";
    bool haveDetail=GlobalVariableCheck(sk+"sl");
+   // The unit every *_pips number of this trade is in (v8.0). Stamped at entry; a trade stamped by
+   // a pre-8.0 build was measured in pips; an unstamped trade (placed outside the EA) gets the unit
+   // its symbol resolves to now, so the app can still label anything it derives from the prices.
+   int du=haveDetail ? (GlobalVariableCheck(sk+"du") ? (int)GlobalVariableGet(sk+"du") : DU_PIPS) : DistUnitFor(sym);
+   json+=StringFormat(",\"dist_unit\":\"%s\"", du==DU_POINTS?"points":(du==DU_TICKS?"ticks":"pips"));
    if(haveDetail)
      {
       double slp=GlobalVariableGet(sk+"sl");
@@ -2667,10 +2719,9 @@ void SyncFlush(int maxN)
 // Pip size for an arbitrary symbol (handles 3/5-digit fractional pricing).
 double SymbolPipFor(string sym)
   {
-   int    dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
    double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
    if(pt<=0) return g_pip;
-   return (dg==3 || dg==5) ? pt*10.0 : pt;
+   return DistUnitSize(sym);   // pips, points or ticks - see InpDistUnit
   }
 
 
@@ -3645,6 +3696,7 @@ void SyncStampEntry(ulong posId)
    GlobalVariableSet(sk+"risk", g_pendRisk);
    GlobalVariableSet(sk+"tpr",  g_pendTPr);
    GlobalVariableSet(sk+"tpp",  g_pendTPp);
+   GlobalVariableSet(sk+"du",   (double)DistUnitFor(_Symbol));   // the unit sl/tpp/mfe are in
    GlobalVariableSet(sk+"mfe",  0.0);   // peak grows on each tick while open
 
    // For the post-mortem replay: the TP PRICE, and the stop price as it stands now.
