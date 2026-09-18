@@ -3296,13 +3296,32 @@ string PM_SpreadSeries(string sym,datetime openT,datetime closeT)
    if(pip<=0 || pt<=0) return "";
    // Sampled values first. The bar path below is only a fallback for a trade this EA did not sit
    // through, and is expected to be all zeros on most brokers.
-   if(sym==_Symbol)
-     {
-      string liveS=SpreadLogSeries(openT,closeT);
-      if(StringLen(liveS)>2) return liveS;
-     }
    MqlRates r[];
    int n=CopyRates(sym,PERIOD_M1,openT,closeT,r);
+   // Sampled values first - but only where the EA was actually running. A PC that slept mid-trade
+   // left a hole (18 Sep: samples stop at 10:42, the trade closed 12:16), and the live log used to
+   // win outright, hole and all. Now every minute WITHOUT a sample takes the broker's own M1 bar
+   // spread - only when that is a real reading (> 0; most brokers leave it at zero, and a fake
+   // 0.0 would be worse than the honest gap the replay shows as "-").
+   if(sym==_Symbol && g_spN>0)
+     {
+      string out="["; int used=0; int j=0;
+      for(int i=0;i<g_spN;i++)
+        {
+         if(g_spT[i]<openT-60 || g_spT[i]>closeT+60) continue;
+         // bars strictly before this sample's minute that have no sample of their own
+         while(j<n && r[j].time<g_spT[i])
+           {
+            if(r[j].spread>0 && used<PM_SPREAD_MAX){ if(used>0) out+=","; out+=StringFormat("[%I64d,%s]",(long)r[j].time,DoubleToString(r[j].spread*pt/pip,2)); used++; }
+            j++;
+           }
+         if(j<n && r[j].time==g_spT[i]) j++;   // this minute is sampled - the sample wins
+         if(used<PM_SPREAD_MAX){ if(used>0) out+=","; out+=StringFormat("[%I64d,%s]",(long)g_spT[i],DoubleToString(g_spV[i],2)); used++; }
+        }
+      for(;j<n;j++)
+         if(r[j].spread>0 && used<PM_SPREAD_MAX){ if(used>0) out+=","; out+=StringFormat("[%I64d,%s]",(long)r[j].time,DoubleToString(r[j].spread*pt/pip,2)); used++; }
+      if(used>0) return out+"]";
+     }
    if(n<=0) return "";
    if(n>PM_SPREAD_MAX) n=PM_SPREAD_MAX;
    string s="[";
