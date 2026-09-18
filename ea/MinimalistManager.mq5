@@ -40,12 +40,9 @@ input double           InpFixedLot      = 0.10;        // Fixed lot size
 input bool             InpOverrideBal   = false;       // Override account balance?
 input double           InpCustomBalance = 0.0;         // Custom balance (if overriding)
 
-input group "===== Distance Unit ====="
-input ENUM_DIST_UNIT   InpDistUnit      = DU_AUTO;     // Distance unit: Auto (pips on forex, points on indices/futures) / Pips / Points / Ticks
-
-input group "===== Stop Loss (in the distance unit) ====="
-input double           InpMinSLpips     = 1.8;         // Minimum SL size (pips / points / ticks - see Distance unit)
-input double           InpMaxSLpips     = 3.8;         // Maximum SL size (pips / points / ticks - see Distance unit)
+input group "===== Stop Loss (pips on forex, points on indices) ====="
+input double           InpMinSLpips     = 1.8;         // Minimum SL size (pips on forex, points on indices)
+input double           InpMaxSLpips     = 3.8;         // Maximum SL size (pips on forex, points on indices)
 
 input group "===== Take Profit ====="
 input ENUM_TP_MODE     InpTPMode        = TP_BY_RR;    // TP measured by RR or pips
@@ -298,10 +295,10 @@ bool SymbolIsForexLike(string sym)
    if(StringLen(u)>=6 && IsCcyCode(StringSubstr(u,0,3)) && IsCcyCode(StringSubstr(u,3,3))) return true;
    return false;
   }
-// The unit actually in force for a symbol: Auto resolved to Pips or Points.
+// The unit for a symbol - decided automatically, never a setting: pips on anything forex-like,
+// points (1.00 of price) on indices, futures, stocks and crypto.
 int DistUnitFor(string sym)
   {
-   if(InpDistUnit!=DU_AUTO) return (int)InpDistUnit;
    return SymbolIsForexLike(sym) ? DU_PIPS : DU_POINTS;
   }
 // Price size of ONE unit of a given kind on a symbol.
@@ -2725,7 +2722,7 @@ double SymbolPipFor(string sym)
   {
    double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
    if(pt<=0) return g_pip;
-   return DistUnitSize(sym);   // pips, points or ticks - see InpDistUnit
+   return DistUnitSize(sym);   // pips on forex, points on indices - see DistUnitFor
   }
 
 
