@@ -304,12 +304,11 @@ int DistUnitFor(string sym)
    if(InpDistUnit!=DU_AUTO) return (int)InpDistUnit;
    return SymbolIsForexLike(sym) ? DU_PIPS : DU_POINTS;
   }
-// Price size of ONE unit on a symbol.
-double DistUnitSize(string sym)
+// Price size of ONE unit of a given kind on a symbol.
+double UnitSizeOf(string sym,int u)
   {
    int    dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
    double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
-   int    u =DistUnitFor(sym);
    if(u==DU_POINTS) return 1.0;
    if(u==DU_TICKS)
      {
@@ -318,6 +317,8 @@ double DistUnitSize(string sym)
      }
    return (dg==3 || dg==5) ? pt*10.0 : pt;   // pips - the original rule
   }
+// Price size of ONE unit on a symbol, in the unit currently in force.
+double DistUnitSize(string sym){ return UnitSizeOf(sym,DistUnitFor(sym)); }
 string DistUnitKey(string sym){ int u=DistUnitFor(sym); return u==DU_POINTS?"points":(u==DU_TICKS?"ticks":"pips"); }
 string UnitLbl()  { int u=DistUnitFor(_Symbol); return u==DU_POINTS?"pts":(u==DU_TICKS?"ticks":"pips"); }
 string UnitBtn()  { int u=DistUnitFor(_Symbol); return u==DU_POINTS?"PTS":(u==DU_TICKS?"TICKS":"PIPS"); }
@@ -2497,6 +2498,9 @@ bool SyncCollectAndPush(ulong posId)
    // its symbol resolves to now, so the app can still label anything it derives from the prices.
    int du=haveDetail ? (GlobalVariableCheck(sk+"du") ? (int)GlobalVariableGet(sk+"du") : DU_PIPS) : DistUnitFor(sym);
    json+=StringFormat(",\"dist_unit\":\"%s\"", du==DU_POINTS?"points":(du==DU_TICKS?"ticks":"pips"));
+   // And the price size of one of those units, so the app can turn a price move into the same
+   // unit exactly - it cannot know a symbol's digits or tick size on its own.
+   json+=StringFormat(",\"unit_size\":%s", DoubleToString(UnitSizeOf(sym,du),8));
    if(haveDetail)
      {
       double slp=GlobalVariableGet(sk+"sl");

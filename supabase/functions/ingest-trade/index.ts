@@ -271,6 +271,10 @@ Deno.serve(async (req) => {
     // older EA, which only ever measured pips. Anything else is dropped rather than stored.
     //    alter table trades_inbox add column if not exists dist_unit text;
     dist_unit:   (["pips", "points", "ticks"].includes(String(body.dist_unit)) ? String(body.dist_unit) : null),
+    // The price size of ONE of those units (e.g. 0.0001 on EURUSD pips, 1 on NQ points, 0.25 on
+    // NQ ticks), so the app turns a price move into the same unit exactly.
+    //    alter table trades_inbox add column if not exists unit_size double precision;
+    unit_size:   (numOrNull(body.unit_size) != null && Number(body.unit_size) > 0) ? numOrNull(body.unit_size) : null,
     // The broker spread series now ALSO rides the close payload (EA v5.4). Every M1 bar it
     // needs exists the moment the position closes; it used to travel only with the post-mortem,
     // which waits for day-end on any trade that did not hit TP or SL, leaving the replay's
