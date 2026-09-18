@@ -40561,21 +40561,34 @@ try {
   }
   function _liveCloseWatch() {
     try {
-      if (typeof isSessionLive !== 'function' || !isSessionLive()) return;
       if (!window.__stLive || typeof window.__stLive.isOpen !== 'function') return;
+      // While the session is live - or while any box still shows a trade running, which is what a
+      // trade held past the session end looks like. Gating on the session alone left such a box
+      // saying ACTIVE for hours after the trade closed (18 Sep: closed 12:16, session ended 10:00).
+      var _live = (typeof isSessionLive === 'function' && isSessionLive());
+      var _anyOpen = (typeof window.__stLive.hasOpen === 'function' && window.__stLive.hasOpen());
+      if (!_live && !_anyOpen) return;
       if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
       Promise.resolve(window.STCloud.pullInbox()).then(function (res) {
         if (!res || res.error) return;
         (res.data || []).forEach(function (r) {
           if (!r || r.ticket == null || !r.close_time) return;   // only rows the EA has closed
           var tk = String(r.ticket);
+          var _isOpen = window.__stLive.isOpen(r.ticket);
+          if (!_isOpen && !((window.__stLiveEverOpen || {})[tk])) return;   // fire for trades shown active NOW or earlier this session (a realtime close flips the chip closed before this runs)
+          var dir = /^(sell|short)/.test(String(r.direction || '').toLowerCase()) ? 'short' : 'long';
+          /* A box still showing ACTIVE for a trade the EA has reported closed is wrong however late
+             that report came - and it comes late whenever the PC slept through the close: MT5 was
+             not running to send it, and the EA's history scan sends it on wake, hours on. So the
+             flip is NOT gated on recency; only the "just closed" notice below is. The leftover
+             live_trades row goes too, or the next reload would seed the box as active again. */
+          if (_isOpen) {
+            try { window.__stLive.upsert({ ticket: r.ticket, direction: dir, pnl: r.pnl, closed_at: r.close_time, symbol: r.symbol }); } catch (e) {}
+            try { if (window.__stLiveDeleteRow) window.__stLiveDeleteRow(r.ticket); } catch (e) {}
+          }
           if (_liveClosedSeen[tk]) return;                       // announced once, across reloads
           if (!_liveCloseIsRecent(r.close_time)) return;          // closed long ago - not news
-          if (!window.__stLive.isOpen(r.ticket) && !((window.__stLiveEverOpen || {})[tk])) return;   // fire for trades shown active NOW or earlier this session (a realtime close flips the chip closed before this runs)
           _liveMarkSeen(tk);
-          var dir = /^(sell|short)/.test(String(r.direction || '').toLowerCase()) ? 'short' : 'long';
-          // Flip the chip to its result (upsert with a close time marks it closed).
-          try { window.__stLive.upsert({ ticket: r.ticket, direction: dir, pnl: r.pnl, closed_at: r.close_time, symbol: r.symbol }); } catch (e) {}
           // Brief, non-blocking notice — no import modal.
           try {
             var net = parseFloat(r.pnl) || 0;
@@ -41275,6 +41288,9 @@ try {
     });
     // Delete consumed inbox rows so a re-sync never doubles them (best-effort; the
     // ticket guard in _existingMt5Tickets also prevents re-import if delete fails).
+    // An imported trade has closed by definition: flip its "still running" box now rather than on
+    // the next 20s close check.
+    try { if (_consumedTickets.length && window.__stLiveCloseWatch) window.__stLiveCloseWatch(); } catch (e) {}
     if (_consumedTickets.length && window.STCloud && typeof window.STCloud.deleteInbox === 'function') {
       try {
         const _want = _consumedTickets.map(x => parseInt(x, 10)).filter(n => !isNaN(n));
