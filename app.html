@@ -43429,6 +43429,32 @@ try {
     return;
   }
   var sb = window.__stSB || (window.__stSB = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY));
+  /* getUser() is a NETWORK call (GET /auth/v1/user) and a dozen modules ask it who the user is. Retry
+     loops that called it on every pass sent 60,000 of these in a day (17 Sep 2026). Memoise it: one in
+     flight at a time, a signed-in answer reused for 30 s (a failure for 5 s), dropped on any real auth
+     change so a sign-in, sign-out or updateUser() is seen straight away. */
+  (function (c) {
+    try {
+      if (!c || !c.auth || c.auth.__stMemo || typeof c.auth.getUser !== 'function') return;
+      c.auth.__stMemo = true;
+      var orig = c.auth.getUser.bind(c.auth), last = null, lastAt = 0, ttl = 0, inflight = null;
+      c.auth.getUser = function (jwt) {
+        if (jwt) return orig(jwt);                       // an explicit token is a different question
+        if (inflight) return inflight;
+        if (last && Date.now() - lastAt < ttl) return Promise.resolve(last);
+        inflight = orig().then(function (r) {
+          inflight = null; last = r; lastAt = Date.now();
+          ttl = (r && r.data && r.data.user && !r.error) ? 30000 : 5000;
+          return r;
+        }, function (e) { inflight = null; last = null; throw e; });
+        return inflight;
+      };
+      c.auth.onAuthStateChange(function (ev) {
+        if (ev === 'INITIAL_SESSION' || ev === 'TOKEN_REFRESHED') return;   // same user, same answer
+        last = null;
+      });
+    } catch (e) {}
+  })(sb);
   var ST = window.STCloud;
 
   // Minimal trades_inbox bridge for the MT5 auto-sync importer (RLS-scoped to the user).
@@ -61765,7 +61791,14 @@ try {
 (function(){
   'use strict';
   if(!window.supabase) return;
-  var sb=null, chan=null, uid=null, _authHooked=false, _retry=0;
+  var sb=null, chan=null, uid=null, _authHooked=false, _retry=0, _retryT=null, _starting=false, _waitT=null;
+  // ONE pending retry, ever. Two callbacks per failure (the error, then the CLOSED that removing the
+  // channel fires) used to schedule two - and the loops doubled until the auth server took 60k calls a day.
+  function _scheduleRetry(){
+    if(_retryT) return;
+    var wait = Math.min(30000, 2000 * Math.pow(2, _retry++));
+    _retryT = setTimeout(function(){ _retryT = null; start(); }, wait);
+  }
   window.__stLiveDeleteRemote=function(){ if(!uid||!sb) return; try{ sb.from('live_trades').delete().eq('account', uid).then(function(){},function(){}); }catch(e){} };
   window.__stLiveDeleteRow=function(ticket){ if(!uid||!sb||ticket==null) return; try{ sb.from('live_trades').delete().eq('account', uid).eq('ticket', ticket).then(function(){},function(){}); }catch(e){} };
   function apply(row){ if(row && window.__stLive) window.__stLive.upsert(row); }
@@ -61782,14 +61815,23 @@ try {
 
   function start(){
     sb = window.__stSB || null;
-    if(!sb){ setTimeout(start, 1500); return; }
-    if(!_authHooked){ _authHooked=true; try{ sb.auth.onAuthStateChange(function(){ start(); }); }catch(e){} }
+    if(!sb){ if(!_waitT) _waitT = setTimeout(function(){ _waitT = null; start(); }, 1500); return; }
+    if(!_authHooked){ _authHooked=true; try{ sb.auth.onAuthStateChange(function(_ev, sess){
+      // Same user and a channel already up: nothing to do (token refreshes, focus re-checks).
+      var id = sess && sess.user && sess.user.id;
+      if(id && id === uid && chan) return;
+      start();
+    }); }catch(e){} }
+    if(_starting) return;
+    _starting = true;
     sb.auth.getUser().then(function(r){
+      _starting = false;
       var u=r&&r.data&&r.data.user; if(!u) return;
       if(uid===u.id && chan) return;
       uid=u.id;
       try{ if(chan) sb.removeChannel(chan); }catch(e){}
-      chan=sb.channel('live-trades:'+uid)
+      var ch;
+      ch = chan = sb.channel('live-trades:'+uid)
         .on('postgres_changes',{event:'INSERT',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
         .on('postgres_changes',{event:'UPDATE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
         // A position row being removed usually means it closed — check the inbox right away so the
@@ -61801,16 +61843,18 @@ try {
         // was down arrives now, and reschedule on failure with a backoff so an offline machine
         // does not spin.
         .subscribe(function(status){
+          // Only the CURRENT channel may act. A replaced or removed channel still reports (its own
+          // CLOSED arrives after we remove it) - and used to tear down the healthy one and add a loop.
+          if(ch !== chan) return;
           if(status === 'SUBSCRIBED'){ _retry = 0; seed(); return; }
           if(status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED'){
-            try{ if(chan) sb.removeChannel(chan); }catch(e){}
             chan = null;
-            var wait = Math.min(30000, 2000 * Math.pow(2, _retry++));
-            setTimeout(start, wait);
+            try{ sb.removeChannel(ch); }catch(e){}
+            _scheduleRetry();
           }
         });
       seed();
-    }).catch(function(){});
+    }).catch(function(){ _starting = false; });
   }
 
   // Safety net for a socket that dies without saying so, which is the case a status callback
@@ -64191,10 +64235,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         S.user=(r&&r.data&&r.data.user)||null;
         if(S.user){ start(); } else { setTimeout(boot,3000); }
       }, function(){ setTimeout(boot,3000); });
-      c.auth.onAuthStateChange(function(_e, sess){
+      if(!S.authHooked){ S.authHooked=true; c.auth.onAuthStateChange(function(_e, sess){
         S.user=(sess&&sess.user)||null;
         if(S.user){ start(); } else { render(); }
-      });
+      }); }
     }catch(e){ setTimeout(boot,3000); }
   }
 
