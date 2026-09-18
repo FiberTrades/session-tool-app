@@ -5726,7 +5726,7 @@ try {
   </div>
 </div>
 
-<div class="modal-bg" id="edit-trade-modal-bg">
+<div class="modal-bg" id="edit-trade-modal-bg" data-du-own>
   <div class="modal" style="max-width:560px;">
     <div class="modal-header">
       <div>
@@ -6800,7 +6800,7 @@ try {
   <div class="modal mdl-new" style="max-width:480px;">
     <div class="modal-header">
       <div>
-        <div class="modal-title">Potential R &amp; Pips</div>
+        <div class="modal-title" id="potr-modal-title">Potential R &amp; Pips</div>
         <p style="margin:6px 0 0;color:var(--text-mid);font-size:12px;">How far did the move actually go before reversing?</p>
       </div>
       <button type="button" class="modal-close" id="potr-modal-skip" data-i18n="btn.close" aria-label="Close">×</button>
@@ -6813,7 +6813,7 @@ try {
           <input type="number" id="potr-modal-input" step="any" placeholder="e.g. 7.5" style="width:100%;background:var(--bg-elev);border:1px solid var(--border-2);color:var(--text);padding:12px 14px;font-family:'AppNum', 'DM Mono',monospace;font-size:16px;outline:none;box-sizing:border-box;" />
         </div>
         <div>
-          <label style="display:block;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;">Potential pips</label>
+          <label style="display:block;font-size:10px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:6px;" id="potpips-modal-lbl">Potential pips</label>
           <input type="number" id="potpips-modal-input" step="any" placeholder="e.g. 30" style="width:100%;background:var(--bg-elev);border:1px solid var(--border-2);color:var(--text);padding:12px 14px;font-family:'AppNum', 'DM Mono',monospace;font-size:16px;outline:none;box-sizing:border-box;" />
         </div>
       </div>
@@ -9952,10 +9952,130 @@ try {
     }
   };
 
+  // ===== Distance unit: pips (forex) / points (indices, futures - e.g. NQ) / ticks =====
+  // Every stored "pips" number (t.pips, potentialPips, sl, ...) is in its TRADE's unit. Nothing here
+  // converts between units - a pip and an NQ point are not the same kind of thing - it only decides
+  // which unit a trade or a view is in, and words it.
+  window.__stDU = (function () {
+    var CCY = /^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|SEK|NOK|DKK|PLN|HUF|CZK|TRY|ZAR|MXN|SGD|HKD|CNH|CNY|RUB|ILS|THB|XAU|XAG|XPT|XPD)$/;
+    var UNITS = { pips: 1, points: 1, ticks: 1 };
+    var W = {
+      pips:   { en: { s: 'pips',     o: 'pip',    T: 'Pips',     O: 'Pip',    U: 'PIPS',     a: 'p'  },
+                es: { s: 'pips',     o: 'pip',    T: 'Pips',     O: 'Pip',    U: 'PIPS',     a: 'p'  } },
+      points: { en: { s: 'points',   o: 'point',  T: 'Points',   O: 'Point',  U: 'PTS',      a: 'pt' },
+                es: { s: 'puntos',   o: 'punto',  T: 'Puntos',   O: 'Punto',  U: 'PTS',      a: 'pt' } },
+      ticks:  { en: { s: 'ticks',    o: 'tick',   T: 'Ticks',    O: 'Tick',   U: 'TICKS',    a: 't'  },
+                es: { s: 'ticks',    o: 'tick',   T: 'Ticks',    O: 'Tick',   U: 'TICKS',    a: 't'  } },
+      mixed:  { en: { s: 'pips/pts', o: 'pip/pt', T: 'Pips/Pts', O: 'Pip/Pt', U: 'PIPS/PTS', a: '' },
+                es: { s: 'pips/ptos',o: 'pip/pto',T: 'Pips/Ptos',O: 'Pip/Pto',U: 'PIPS/PTS', a: '' } }
+    };
+    var _force = null, _cache = null, _cacheAt = 0, _applied = 'pips';
+    function clean(sym) { return String(sym || '').toUpperCase().replace(/[^A-Z]/g, ''); }
+    function defSym() { try { return (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD'; } catch (e) { return 'EUR/USD'; } }
+    function forexLike(sym) {
+      var c = clean(sym);
+      if (!c) return true;
+      return c.length >= 6 && CCY.test(c.slice(0, 3)) && CCY.test(c.slice(3, 6));
+    }
+    function symUnit(sym) { return forexLike(sym == null || sym === '' ? defSym() : sym) ? 'pips' : 'points'; }
+    function ofTrade(t) {
+      var u = t && t.distUnit;
+      if (u && UNITS[u]) return u;
+      return symUnit(t && t.symbol);
+    }
+    function ofTrades(list) {
+      var seen = {}, n = 0, only = null;
+      (list || []).forEach(function (t) { if (!t) return; var u = ofTrade(t); if (!seen[u]) { seen[u] = 1; n++; only = u; } });
+      if (n === 0) return symUnit(defSym());
+      return n === 1 ? only : 'mixed';
+    }
+    // The unit of what the current view shows. Cached for a moment: t() consults it for every
+    // label that mentions pips, and a render asks hundreds of times.
+    function display() {
+      if (_force) return _force;
+      var now = Date.now();
+      if (_cache && now - _cacheAt < 400) return _cache;
+      var u = 'pips';
+      try {
+        var list = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
+        if (typeof filterByScope === 'function') list = filterByScope(list);
+        if (typeof filterBySymbolScope === 'function') list = filterBySymbolScope(list);
+        var rv = (data.review && Array.isArray(data.review.trades)) ? data.review.trades : [];
+        u = ofTrades(list.concat(rv));
+      } catch (e) {}
+      _cache = u; _cacheAt = now;
+      return u;
+    }
+    function lang() { return (window.__lang === 'es' || document.documentElement.lang === 'es') ? 'es' : 'en'; }
+    function lbl(u, form) { var w = (W[u] || W.pips)[lang()]; return w[form || 's']; }
+    // Swap the pip words in a string. Leaves {PIPS}-style placeholders, identifiers and
+    // hyphenated class names alone - only whole words are touched.
+    function words(str, u) {
+      if (typeof str !== 'string' || !/pip/i.test(str)) return str;
+      u = u || display();
+      if (u === 'pips') return str;
+      var w = (W[u] || W.pips)[lang()];
+      return str.replace(/(PIPS|Pips|pips|PIP|Pip|pip)/g, function (m, _g, off, all) {
+        var pr = off > 0 ? all.charAt(off - 1) : '', nx = all.charAt(off + m.length);
+        if (/[\w{\-.$]/.test(pr) || /[\w}\-(]/.test(nx)) return m;
+        if (m === 'PIPS' || m === 'PIP') return w.U;
+        if (m === 'Pips') return w.T;
+        if (m === 'Pip') return w.O;
+        if (m === 'pip') return w.o;
+        return w.s;
+      });
+    }
+    // price move -> units, when the EA did not tell us the exact unit size
+    function mult(sym, u) {
+      u = u || symUnit(sym);
+      if (u !== 'pips') return 1;
+      var c = clean(sym);
+      if (c.slice(3, 6) === 'JPY' || /^(XAU|XAG|XPT|XPD)/.test(c)) return 100;
+      return 10000;
+    }
+    // Run fn with the unit forced (a single trade's modal, a per-trade row).
+    function withUnit(u, fn) { var p = _force; _force = u; try { return fn(); } finally { _force = p; } }
+    // Re-apply translated labels that mention pips when the view's unit has changed.
+    function sync() {
+      _cacheAt = 0;
+      var u = display();
+      if (u === _applied) return;
+      _applied = u;
+      try {
+        document.querySelectorAll('[data-i18n],[data-i18n-html],[data-i18n-placeholder],[data-i18n-title]').forEach(function (el) {
+          if (el.closest && el.closest('[data-du-own]')) return;   // a modal that words itself per trade
+          var k;
+          if ((k = el.getAttribute('data-i18n')) && /pip/i.test(tRaw(k))) el.textContent = t(k);
+          if ((k = el.getAttribute('data-i18n-html')) && /pip/i.test(tRaw(k))) el.innerHTML = t(k);
+          if ((k = el.getAttribute('data-i18n-placeholder')) && /pip/i.test(tRaw(k))) el.setAttribute('placeholder', t(k));
+          if ((k = el.getAttribute('data-i18n-title')) && /pip/i.test(tRaw(k))) el.setAttribute('title', t(k));
+        });
+      } catch (e) {}
+    }
+    // Word one container's translated labels for a given unit (the edit modal, for its trade).
+    function applyIn(root, u) {
+      if (!root) return;
+      withUnit(u, function () {
+        root.querySelectorAll('[data-i18n],[data-i18n-html],[data-i18n-placeholder]').forEach(function (el) {
+          var k;
+          if ((k = el.getAttribute('data-i18n')) && /pip/i.test(tRaw(k))) el.textContent = t(k);
+          if ((k = el.getAttribute('data-i18n-html')) && /pip/i.test(tRaw(k))) el.innerHTML = t(k);
+          if ((k = el.getAttribute('data-i18n-placeholder')) && /pip/i.test(tRaw(k))) el.setAttribute('placeholder', t(k));
+        });
+      });
+    }
+    return { symUnit: symUnit, ofTrade: ofTrade, ofTrades: ofTrades, display: display, words: words,
+             lbl: lbl, mult: mult, withUnit: withUnit, sync: sync, applyIn: applyIn, forexLike: forexLike };
+  })();
+
+  // Short suffix after a number ("12p", "12pt"): for the view's unit, or for one trade's.
+  function _pU() { return window.__stDU.lbl(window.__stDU.display(), 'a'); }
+  function _pT(tr) { return window.__stDU.lbl(window.__stDU.ofTrade(tr), 'a'); }
+
   // Translate a key. Falls back to English, then to the key itself if not found.
   // Substitutes {C} with the current currency symbol so dictionary entries can be
   // currency-agnostic, e.g. 'Risk {C} · SL' becomes 'Risk £ · SL' or 'Risk $ · SL'.
-  function t(key) {
+  function tRaw(key) {
     const lang = (window.__lang) || 'en';
     const dict = LANG_STRINGS[lang] || LANG_STRINGS.en;
     let str;
@@ -9966,6 +10086,11 @@ try {
       str = str.replace(/\{C\}/g, (typeof curSym === 'function') ? curSym() : '£');
     }
     return str;
+  }
+  // ...worded for the distance unit of what is on screen: an NQ view reads "points", not "pips".
+  function t(key) {
+    const str = tRaw(key);
+    return (typeof str === 'string' && str.length > 2 && /pip/i.test(str) && window.__stDU) ? window.__stDU.words(str) : str;
   }
 
   // Locale code for date/number formatting
@@ -15594,6 +15719,7 @@ try {
     if (changed) { try { saveData(); } catch (e) {} }
   }
   function renderTrades() {
+    try { window.__stDU.sync(); } catch (e) {}
     ensureTradeAccounts();
     // Actually trading a day is the strongest possible statement that you are trading it, so it
     // switches the day on just as a completed bias does. Checked here rather than on "add row",
@@ -15618,11 +15744,13 @@ try {
     // Precompute tooltip text once — t() can't be called inside the forEach below since
     // `t` is shadowed by the trade parameter. Each row uses these strings directly.
     const _tipReview = t('tip.review_trade'),    _tipR    = t('tip.r_captured');
-    const _tipPips   = t('tip.pips_captured'),   _tipPotR = t('tip.pot_r');
-    const _tipPotP   = t('tip.pot_pips'),        _tipRisk = t('tip.risk_amount');
+    const _tipPips   = tRaw('tip.pips_captured'),   _tipPotR = t('tip.pot_r');
+    const _tipPotP   = tRaw('tip.pot_pips'),        _tipRisk = t('tip.risk_amount');
     const _tipSL     = t('tip.sl_pips'),         _tipRm   = t('tip.remove');
-    const _tipRSet   = t('tip.r_setup'),         _tipPSet = t('tip.pips_setup');
+    const _tipRSet   = t('tip.r_setup'),         _tipPSet = tRaw('tip.pips_setup');
     data.review.trades.forEach((t, idx) => {
+      // This row's distance unit: pips on forex, points on NQ and other indices.
+      const _du = window.__stDU.ofTrade(t), _duU = window.__stDU.lbl(_du, 'U'), _duW = (x) => window.__stDU.words(x, _du);
       const row = document.createElement('div');
       row.className = 'trade-row';
       // Copies (t.copies) is set via the dedicated "Trade Copier" panel near the MT5 import
@@ -15660,12 +15788,12 @@ try {
         <div class="trade-cell trade-cell-dual">
           <textarea class="trade-input trade-input-tiny r-input" rows="1" inputmode="decimal" placeholder="R" data-tip="${_tipR}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
           <span class="trade-sep">·</span>
-          <textarea class="trade-input trade-input-tiny pips-input" rows="1" inputmode="decimal" placeholder="PIPS" data-tip="${_tipPips}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
+          <textarea class="trade-input trade-input-tiny pips-input" rows="1" inputmode="decimal" placeholder="${_duU}" data-tip="${_duW(_tipPips)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
         </div>
         <div class="trade-cell trade-cell-dual">
           <textarea class="trade-input trade-input-tiny potr-input" rows="1" inputmode="decimal" placeholder="R" data-tip="${_tipPotR}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
           <span class="trade-sep">·</span>
-          <textarea class="trade-input trade-input-tiny potpips-input" rows="1" inputmode="decimal" placeholder="PIPS" data-tip="${_tipPotP}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
+          <textarea class="trade-input trade-input-tiny potpips-input" rows="1" inputmode="decimal" placeholder="${_duU}" data-tip="${_duW(_tipPotP)}" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
         </div>
         <div class="trade-cell"><select class="trade-select type-select">
           <option value="">—</option><option value="Reaction">${_typeR}</option><option value="Continuation">${_typeC}</option>
@@ -15730,8 +15858,8 @@ try {
         });
         rInput.placeholder = 'R';
         rInput.setAttribute('data-tip', _tipRSet);
-        pipsInput.placeholder = 'PIPS';
-        pipsInput.setAttribute('data-tip', _tipPSet);
+        pipsInput.placeholder = _duU;
+        pipsInput.setAttribute('data-tip', _duW(_tipPSet));
       };
       syncRPipsEnabled();
       // Pot R / Pot pips column is dual-purpose: enabled for Win (shows
@@ -15756,7 +15884,7 @@ try {
           potpipsInput.placeholder = 'BE P';
         } else {
           potrInput.placeholder    = 'R';
-          potpipsInput.placeholder = 'PIPS';
+          potpipsInput.placeholder = _duU;
         }
       };
       syncPotREnabled();
@@ -16019,7 +16147,13 @@ try {
     const t = data.review.trades[tradeIdx];
     if (!t) return;
     const rStr    = t.r != null ? t.r + 'R' : '—';
-    const pipsStr = (typeof t.pips === 'number' && !isNaN(t.pips)) ? `${t.pips} pips` : '';
+    const pipsStr = (typeof t.pips === 'number' && !isNaN(t.pips)) ? `${t.pips} ${window.__stDU.lbl(window.__stDU.ofTrade(t), 's')}` : '';
+    // This popup is about ONE trade: word it in that trade's unit (points on NQ).
+    try {
+      const _du = window.__stDU.ofTrade(t);
+      const _ti = document.getElementById('potr-modal-title'); if (_ti) _ti.textContent = window.__stDU.words('Potential R & Pips', _du);
+      const _pl = document.getElementById('potpips-modal-lbl'); if (_pl) _pl.textContent = window.__stDU.words('Potential pips', _du);
+    } catch (e) {}
     document.getElementById('potr-modal-r-display').textContent =
       pipsStr ? `${rStr} (${pipsStr})` : rStr;
     // Pre-fill if previously saved (so re-opening shows current values)
@@ -16182,7 +16316,7 @@ try {
       const resLabel = (t.result === 'BE') ? 'BE' : (es ? 'Ganadora' : 'Win');
       const label = [dlabel, sideLabel, resLabel + (rLabel ? ' ' + rLabel : '')].filter(Boolean).join('  \u00b7  ');
       const rLbl = es ? 'R potencial' : 'Potential R';
-      const pLbl = es ? 'Pips potenciales' : 'Potential pips';
+      const pLbl = window.__stDU.words(es ? 'Pips potenciales' : 'Potential pips', window.__stDU.ofTrade(t));
       const lblCss = 'display:block;font-size:9px;letter-spacing:0.2em;text-transform:uppercase;color:var(--text-dim);margin-bottom:5px;';
       const inCss = 'width:100%;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:8px;padding:8px;color:var(--text);font-family:DM Mono,monospace;font-size:13px;';
       html += '<div class="pp-row" data-potr-row="' + i + '" style="border:1px solid var(--border-2);border-radius:10px;padding:12px;">'
@@ -17176,6 +17310,7 @@ try {
       const _tk = t.mt5Ticket || t.position || null;
       const _fields = {
         symbol: t.symbol || null,
+        distUnit: t.distUnit || null,   // pips / points / ticks - what this trade's pip numbers are in
         result: t.result,
         r: t.r && !isNaN(parseFloat(t.r)) ? parseFloat(t.r) : null,
         pips: (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : null,
@@ -17684,6 +17819,7 @@ try {
     } catch (e3) {}
   }, true);
   function renderStats() {
+    try { window.__stDU.sync(); } catch (e) {}
     const all = filterByScope(getAllLifetimeTrades());
     // Series-of-10 is also scope-aware: in account scope, currentSeries +
     // history are rebuilt from that account's trades; in lifetime scope they
@@ -17855,7 +17991,7 @@ try {
         dot.textContent = t.result === 'Win' ? _lblW : t.result === 'Lose' ? _lblL : _lblBE;
         const dateStr = t.date ? new Date(t.date).toLocaleDateString(tLocale(), { day:'2-digit', month:'short' }) : '';
         const rTxt = typeof t.r === 'number' ? t.r.toFixed(2) + 'R' : (t.r || '');
-        const pipsTxt = (typeof t.pips === 'number' && !isNaN(t.pips)) ? ` · ${t.pips.toFixed(0)}p` : '';
+        const pipsTxt = (typeof t.pips === 'number' && !isNaN(t.pips)) ? ` · ${t.pips.toFixed(0)}${_pT(t)}` : '';
         dot.setAttribute('data-tip', _tipDot.replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr));
         dot.addEventListener('click', () => openEditTradeModal(t.id));
       }
@@ -20666,7 +20802,7 @@ try {
     const isPips = metric === 'pips';
     const isPct  = metric === 'pct';
     const decimals = isPips ? 0 : 2;
-    const unit     = isPct ? '%' : (isPips ? 'p' : 'R');
+    const unit     = isPct ? '%' : (isPips ? _pU() : 'R');
     // Refuses to throw on a missing figure: a panel that cannot format one number prints a dash,
     // it does not abort the render of every section below it (an undefined scenario total here
     // blanked the whole Statistics tab, equity curve included).
@@ -20736,7 +20872,7 @@ try {
     // Decimals: pips → 0 (whole pips); R and % → 2 (precise enough to show
     // 9.97R / 4.18% rather than rounding to 10.0R / 4.2%).
     const decimals = isPips ? 0 : 2;
-    const unit     = isPct ? '%' : (isPips ? 'p' : 'R');
+    const unit     = isPct ? '%' : (isPips ? _pU() : 'R');
     const ltSB     = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
 
     const allTrades = filterTradesByComboPeriod(allTradesRaw);
@@ -20850,7 +20986,7 @@ try {
       // column, which states outright that the losers row is an extension, not heat.
       const rows = [];
       const cell = (v, cls) => `<div class="history-cell${cls ? ' ' + cls : ''}">${v}</div>`;
-      const pTxt = v => (v == null || !isFinite(v)) ? '—' : v.toFixed(1) + 'p';
+      const pTxt = v => (v == null || !isFinite(v)) ? '—' : v.toFixed(1) + _pU();
       // Inline SVG, not emoji: the emoji set loads from a CDN, and these must render offline and
       // take their colour from the palette so they read as part of the table, not stickers on it.
       const ICON = {
@@ -20974,7 +21110,7 @@ try {
     }
 
     // ---- Actionable target in BOTH settable units (R and pips) --------------
-    function _fmtUnit(v, mx) { return (mx === 'pips' ? v.toFixed(0) + 'p' : v.toFixed(2) + 'R'); }
+    function _fmtUnit(v, mx) { return (mx === 'pips' ? v.toFixed(0) + _pU() : v.toFixed(2) + 'R'); }
     function _sweepOptima(mx) {
       const st2 = mx === 'pips' ? 1 : 0.1, dec2 = mx === 'pips' ? 0 : 2;
       let oS = 0, oT = 0;
@@ -21462,7 +21598,7 @@ try {
               const rMult = BE_LADDER[bestBeIdx];
               const base  = (t('combo.be_at') || 'move at {R}R').replace('{R}', String(rMult));
               if (_medianSl <= 0) return base;
-              return base + ' \u00b7 \u2248' + Math.round(rMult * _medianSl) + 'p';
+              return base + ' \u00b7 \u2248' + Math.round(rMult * _medianSl) + _pU();
             })());
 
     const aDeltaGbp = scenarioA.totalGbp - current.totalGbp;
@@ -21480,7 +21616,7 @@ try {
     } else if (bestWiden === 0) {
       recCTpl = t('combo.rec_c_no_room') || 'A wider stop costs more than it saves.';
     } else {
-      recCTpl = (t('combo.rec_c_recommend') || 'Widen your stop by <strong class="rec-suggest">+{PIPS} pips</strong>.')
+      recCTpl = (t('combo.rec_c_recommend') || window.__stDU.words('Widen your stop by <strong class="rec-suggest">+{PIPS} pips</strong>.'))
         .replace('{PIPS}', String(bestWiden));
     }
 
@@ -21549,7 +21685,7 @@ try {
       }
       if (beCostN > 0 && beClipMed > 0) {
         beValueLine += ' ' + (t('combo.be_clip') ||
-          'On the ones it cost you, the stop was clipped by a median of {P} pips.')
+          window.__stDU.words('On the ones it cost you, the stop was clipped by a median of {P} pips.'))
           .replace('{P}', beClipMed.toFixed(1));
       }
     }
@@ -21586,7 +21722,7 @@ try {
     // 4-pip stop. The pip figure is from the median stop and marked ~, exactly as D does it.
     const bestOffLabel = (bestOffIdx < 0) ? ''
       : ('+' + BE_OFF_LADDER[bestOffIdx].toFixed(2).replace(/\.?0+$/, '') + 'R'
-         + (_medianSl > 0 ? ' (~' + (BE_OFF_LADDER[bestOffIdx] * _medianSl).toFixed(1) + ' pips)' : '')
+         + (_medianSl > 0 ? ' (~' + (BE_OFF_LADDER[bestOffIdx] * _medianSl).toFixed(1) + ' ' + window.__stDU.lbl(window.__stDU.display(), 's') + ')' : '')
          + ' past entry');
     let recETpl;
     if (trackedBeOff.length < 10) {
@@ -21781,7 +21917,7 @@ try {
         sampleLabel: trackedBes.length === 1
           ? (t('combo.sample_be_one') || 'tracked BE') : (t('combo.sample_be_many') || 'tracked BEs') },
       { name: t('combo.direction_c_name') || 'Widen your initial stop',
-        suggest: '+' + bestWiden + ' pips',
+        suggest: '+' + bestWiden + ' ' + window.__stDU.lbl(window.__stDU.display(), 's'),
         scenario: scenarioC, delta: cDeltaGbp, passesTier: tierIsStrong(tierC), passesDelta: cDeltaGbp > threshold,
         n: trackedLosers.length,
         sampleLabel: trackedLosers.length === 1
@@ -21897,7 +22033,7 @@ try {
 
     // Wins sort buttons — "Left on table" label adapts to the active metric.
     const winsLeftoverLabel = isPips
-      ? (t('combo.sort_leftover_p')   || 'Pips left')
+      ? (t('combo.sort_leftover_p')   || window.__stDU.words('Pips left'))
       : isPct
         ? (t('combo.sort_leftover_pct') || '% left')
         : (t('combo.sort_leftover_r')   || 'R left');
@@ -21974,7 +22110,7 @@ try {
                      : isPct  ? ((parseFloat(tr.bePotentialR) || 0) * (parseFloat(tr.risk) || 0) / (_accSBg(tr) || 1) * 100)
                      : (parseFloat(tr.bePotentialR) || 0);
         const planned = isPips
-          ? ((typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + 'p' : '\u2014')
+          ? ((typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + _pT(tr) : '\u2014')
           : ((typeof tr.r    === 'number' && !isNaN(tr.r))    ? tr.r.toFixed(1) + 'R'    : '\u2014');
         const riskStr = (tr.risk && !isNaN(parseFloat(tr.risk)))
           ? ((typeof curSym === 'function' ? curSym() : '£') + parseFloat(tr.risk).toFixed(2))
@@ -22048,7 +22184,7 @@ try {
     const _statCell = (val, label, cls) => (val === null || val === undefined || val === '') ? ''
       : `<div class="combo-stat"><div class="combo-stat-val${cls ? ' ' + cls : ''}">${val}</div><div class="combo-stat-lbl">${label}</div></div>`;
     const _curCells = [
-      _statCell(_curPips != null ? _sgn(_curPips, 'pips') : null, t('combo.st_pips') || 'Pips'),
+      _statCell(_curPips != null ? _sgn(_curPips, 'pips') : null, t('combo.st_pips') || window.__stDU.lbl(window.__stDU.display(), 'T')),
       _statCell(_curR    != null ? _sgn(_curR, 'r')       : null, t('combo.st_r')    || 'R-multiple'),
       _statCell(fmtGbp(current.totalGbp), t('combo.st_net') || 'Net P&L'),
       // The gap to the best actionable rule — what staying as you are costs you. Red, because it
@@ -22267,8 +22403,8 @@ try {
         ? (t => typeof t.potentialR === 'number' && !isNaN(t.potentialR))
         : (t => typeof t[isPips ? 'potentialPips' : 'potentialR'] === 'number' && !isNaN(t[isPips ? 'potentialPips' : 'potentialR']));
 
-      const unit           = isPct ? '%' : (isPips ? 'p' : 'R');
-      const unitName       = isPct ? t('pot.unit_pct') : (isPips ? 'Pips' : 'R');
+      const unit           = isPct ? '%' : (isPips ? _pU() : 'R');
+      const unitName       = isPct ? t('pot.unit_pct') : (isPips ? window.__stDU.lbl(window.__stDU.display(), 'T') : 'R');
       const decimals       = isPct ? 2 : (isPips ? 0 : 1);
 
       const trackedM = wins.filter(hasPotential);
@@ -22714,7 +22850,7 @@ try {
     // surfaces speak the same language.
     const captureStr = `${captureRate.toFixed(0)}/100%`;
     const leftRStr   = recR    ? `+${sumLeftR.toFixed(2)}R` : '';
-    const leftPStr   = recPips ? `+${sumLeftP.toFixed(0)}p` : '';
+    const leftPStr   = recPips ? `+${sumLeftP.toFixed(0)}${_pU()}` : '';
     // Balance % left on the table — converts the R gap to £ via per-trade risk
     // then to a % of lifetime starting balance. Lets the reader see "how much of
     // my account did I leave?" in addition to the raw R/pips figures.
@@ -22783,9 +22919,9 @@ try {
       // account balance.
       let capStr, potStr, leftStr, leftCls;
       if (isPipsActive) {
-        capStr  = r.potP !== null || r.capP !== 0 ? (r.capP >= 0 ? '+' : '') + r.capP.toFixed(0) + 'p' : '— p';
-        potStr  = r.potP  !== null ? '+' + r.potP.toFixed(0)  + 'p' : '— p';
-        leftStr = r.leftP !== null ? '+' + r.leftP.toFixed(0) + 'p' : '— p';
+        capStr  = r.potP !== null || r.capP !== 0 ? (r.capP >= 0 ? '+' : '') + r.capP.toFixed(0) + _pU() : '— ' + _pU();
+        potStr  = r.potP  !== null ? '+' + r.potP.toFixed(0)  + _pU() : '— ' + _pU();
+        leftStr = r.leftP !== null ? '+' + r.leftP.toFixed(0) + _pU() : '— ' + _pU();
         leftCls = r.leftP != null && r.leftP > 10 ? 'bad' : '';
       } else if (isPctActive) {
         // % mode: convert each trade's R values into per-trade balance %.
@@ -22881,7 +23017,7 @@ try {
       const currentProj  = projectAllTrades(allTrades, 0, 0, activeMetric);
       const scenarioProj = projectAllTrades(allTrades, optStretchForCmp, 0, activeMetric);
       const cmpDecimals  = activeMetric === 'pips' ? 0 : (activeMetric === 'pct' ? 2 : 1);
-      const cmpUnit      = activeMetric === 'pct' ? '%' : (activeMetric === 'pips' ? 'p' : 'R');
+      const cmpUnit      = activeMetric === 'pct' ? '%' : (activeMetric === 'pips' ? _pU() : 'R');
       const scenarioLabelTpl = t('pot.scenario_label_holdlonger') || 'Hold winners +{STRETCH} longer';
       const scenarioLabel = scenarioLabelTpl.replace(/\{STRETCH\}/g, '+' + optStretchForCmp.toFixed(cmpDecimals) + cmpUnit);
       comparisonHtml = buildScenarioComparisonHtml(currentProj, scenarioProj, {
@@ -23007,8 +23143,8 @@ try {
       // fine (0.05% steps), R is the default 0.1R.
       const step = isPips ? 1 : (isPct ? 0.05 : 0.1);
       const decimals = isPips ? 0 : (isPct ? 2 : 1);
-      const unit = isPct ? '%' : (isPips ? 'p' : 'R');
-      const unitName = isPct ? (t('pot.unit_pct') || '%') : (isPips ? (t('be.unit_pips') || 'Pips') : 'R');
+      const unit = isPct ? '%' : (isPips ? _pU() : 'R');
+      const unitName = isPct ? (t('pot.unit_pct') || '%') : (isPips ? (t('be.unit_pips') || window.__stDU.lbl(window.__stDU.display(), 'T')) : 'R');
 
       const maxVal = Math.max(...tracked.map(getValue));
       let optTP = 0, optTotal = 0, optHits = 0;
@@ -23130,7 +23266,7 @@ try {
     const valOfTrade = tr => rec.getValue(tr);
     const plannedOfTrade = tr => {
       if (activeMetric === 'pips') {
-        return (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + 'p' : '\u2014';
+        return (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + _pT(tr) : '\u2014';
       }
       if (activeMetric === 'pct') {
         const ltSB = (typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0;
@@ -23213,7 +23349,7 @@ try {
     const isPips = metric === 'pips';
     const isPct  = metric === 'pct';
     const decimals = isPips ? 0 : (isPct ? 2 : 1);
-    const unit     = isPct ? '%' : (isPips ? 'p' : 'R');
+    const unit     = isPct ? '%' : (isPips ? _pU() : 'R');
 
     // Lifetime starting balance for % mode.
     const ltSB = isPct ? ((typeof getStatsLifetimeStartingBalance === 'function') ? getStatsLifetimeStartingBalance() : 0) : 0;
@@ -24693,7 +24829,7 @@ try {
       const d = new Date(tr.date);
       const dateStr = isNaN(d.getTime()) ? '\u2014' : d.toLocaleDateString(localeCode, { day: '2-digit', month: 'short', year: '2-digit' });
       const rStr = (tr.r !== undefined && tr.r !== null) ? (typeof tr.r === 'number' ? tr.r.toFixed(2) : tr.r) : '\u2014';
-      const pStr = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + 'p' : '\u2014 p';
+      const pStr = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + _pT(tr) : '\u2014 ' + _pT(tr);
       const nCopies = tradeCopies(tr);
       const copyBadge = nCopies > 1 ? ' <span class="atl-sub">\u00d7' + nCopies + '</span>' : '';
       const net = tradeNetPL(tr) * nCopies;
@@ -24705,13 +24841,13 @@ try {
       const riskV = parseFloat(tr.risk);
       const slV = parseFloat(tr.sl);
       const riskStr = (!isNaN(riskV) && riskV > 0) ? fmtMoney(riskV, { noSign: true }) : '\u2014';
-      const slStr = (!isNaN(slV) && slV > 0) ? slV.toFixed(0) + 'p' : '\u2014';
+      const slStr = (!isNaN(slV) && slV > 0) ? slV.toFixed(0) + _pT(tr) : '\u2014';
       // Pot R·P adapts to result: Wins read potentialR/Pips; BEs read bePotentialR/Pips
       // (how far price extended before reversing); Losses have no potential.
       const _potRraw = tr.result === 'BE' ? tr.bePotentialR : tr.potentialR;
       const _potPraw = tr.result === 'BE' ? tr.bePotentialPips : tr.potentialPips;
       const potR = (typeof _potRraw === 'number' && !isNaN(_potRraw)) ? _potRraw.toFixed(2) : '\u2014';
-      const potP = (typeof _potPraw === 'number' && !isNaN(_potPraw)) ? _potPraw.toFixed(0) + 'p' : '\u2014 p';
+      const potP = (typeof _potPraw === 'number' && !isNaN(_potPraw)) ? _potPraw.toFixed(0) + _pT(tr) : '\u2014 ' + _pT(tr);
       html += '<div class="atl-row" data-id="' + tr.id + '">'
         + '<div class="atl-cell left atl-c-date">' + dateStr + copyBadge + '</div>'
         + '<div class="atl-cell atl-c-sym">' + esc(tr.symbol || defSym)
@@ -25206,7 +25342,7 @@ try {
     const dayPipsTracked = dayTrades.filter(t => tradeHasTrackedPips(t)).reduce((s, t) => s + tradeCopies(t), 0);
     const dayTotalRStr = (dayTotalR >= 0 ? '+' : '') + dayTotalR.toFixed(2) + 'R';
     const dayTotalRCls = dayTotalR > 0 ? 'good' : dayTotalR < 0 ? 'bad' : '';
-    const dayTotalPipsStr = dayPipsTracked > 0 ? (dayTotalPips >= 0 ? '+' : '') + dayTotalPips.toFixed(0) + 'p' : '— p';
+    const dayTotalPipsStr = dayPipsTracked > 0 ? (dayTotalPips >= 0 ? '+' : '') + dayTotalPips.toFixed(0) + _pU() : '— ' + _pU();
     const dayTotalPipsCls = dayPipsTracked === 0 ? '' : dayTotalPips > 0 ? 'good' : dayTotalPips < 0 ? 'bad' : '';
 
     // Day-level Potential R + Pips left on table (across this day's wins only)
@@ -25252,7 +25388,7 @@ try {
     const dayBePotPipsTracked = dayBEs.filter(t => typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips));
     const dayBePotPips = dayBePotPipsTracked.reduce((s, t) => s + ((t.bePotentialPips || 0) * tradeCopies(t)), 0);
     const dayBePotRStr    = dayBePotRTracked.length === 0 ? '0' : dayBePotR.toFixed(2) + 'R';
-    const dayBePotPipsStr = dayBePotPipsTracked.length === 0 ? '— p' : dayBePotPips.toFixed(0) + 'p';
+    const dayBePotPipsStr = dayBePotPipsTracked.length === 0 ? '— ' + _pU() : dayBePotPips.toFixed(0) + _pU();
 
     document.getElementById('modal-stats').innerHTML = `
       <div class="modal-stat"><div class="label">${t('dmodal.wlbe')}</div><div class="v"><span class="wlbe-w">${wins}</span><span class="wlbe-sep">/</span><span class="wlbe-l">${losses}</span><span class="wlbe-sep">/</span><span class="wlbe-be">${bes}</span></div></div>
@@ -25380,7 +25516,7 @@ try {
       }
       // Actual: R · pips inline on one line
       const rStr = (t.r !== undefined && t.r !== null) ? (typeof t.r === 'number' ? t.r.toFixed(2) : t.r) : '—';
-      const pStr = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips.toFixed(0) + 'p' : '— p';
+      const pStr = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips.toFixed(0) + _pT(t) : '— ' + _pT(t);
       // Potential: same pattern; only Wins are meaningful, otherwise dim. Display the GAP
       // per trade (potential − captured) to match the "R left on the table" meaning used
       // in aggregate Pot R displays elsewhere in the app.
@@ -25396,13 +25532,13 @@ try {
         const potRHas = typeof t.potentialR === 'number' && !isNaN(t.potentialR);
         const potPHas = typeof t.potentialPips === 'number' && !isNaN(t.potentialPips);
         const potRStr = potRHas ? t.potentialR.toFixed(2) : '—';
-        const potPStr = potPHas ? t.potentialPips.toFixed(0) + 'p' : '— p';
+        const potPStr = potPHas ? t.potentialPips.toFixed(0) + _pT(t) : '— ' + _pT(t);
         potCellHtml = `${potRStr} <span class="modal-trade-sub-inline">· ${potPStr}</span>`;
       } else if (isBE) {
         const bRHas = typeof t.bePotentialR === 'number' && !isNaN(t.bePotentialR);
         const bPHas = typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips);
         const bRStr = bRHas ? t.bePotentialR.toFixed(2) : '—';
-        const bPStr = bPHas ? t.bePotentialPips.toFixed(0) + 'p' : '— p';
+        const bPStr = bPHas ? t.bePotentialPips.toFixed(0) + _pT(t) : '— ' + _pT(t);
         potCellHtml = `${bRStr} <span class="modal-trade-sub-inline">· ${bPStr}</span>`;
       } else {
         potCellHtml = '—';
@@ -25608,6 +25744,8 @@ try {
     editTradeReturnDay = returnDay || null;
     editingTradeId = id;
     editingResult = t.result;
+    // Word the modal in THIS trade's unit - points for an NQ trade even in a forex-heavy view.
+    try { window.__stDU.applyIn(document.getElementById('edit-trade-modal-bg'), window.__stDU.ofTrade(t)); } catch (e) {}
     // Trade Replay: show the ▶ Replay button only for MT5-synced trades (they have candles).
     (function(){ var _rb=document.getElementById('edit-trade-replay'); if(!_rb) return;
       _rb.textContent = (document.documentElement.lang==='es') ? '▶ Repetición' : '▶ Trade Replay';
@@ -26553,7 +26691,7 @@ try {
       return '"' + s.replace(/"/g, '""') + '"';
     };
     const num = (n) => (typeof n === 'number' && isFinite(n)) ? n : (parseFloat(n) || 0);
-    const headers = ['Date','Entry','Exit','Symbol','Side','Type','Setup','Result','R','Pips','POT R','POT Pips','Risk','SL','Costs','Net P&L','Copies','Account','Execution','Focus','Concepts','Mindset','Reflection'];
+    const headers = ['Date','Entry','Exit','Symbol','Side','Type','Setup','Result','R',window.__stDU.words('Pips'),'POT R',window.__stDU.words('POT Pips'),'Risk','SL','Costs','Net P&L','Copies','Account','Execution','Focus','Concepts','Mindset','Reflection'];
     const rows = all.slice().sort((a, b) => new Date(a.date || 0) - new Date(b.date || 0)).map(t => {
       const rs = t.reviewSnap || {};
       return [
@@ -27238,7 +27376,7 @@ try {
     const net = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
     const netStr = (net >= 0 ? '+' : '-') + curSym() + Math.abs(net).toFixed(2);
     const pipsHtml = (typeof tr.pips === 'number' && !isNaN(tr.pips))
-      ? ` · <span class="${rCls}">${tr.pips >= 0 ? '+' : ''}${tr.pips.toFixed(0)}p</span>`
+      ? ` · <span class="${rCls}">${tr.pips >= 0 ? '+' : ''}${tr.pips.toFixed(0)}${_pT(tr)}</span>`
       : '';
     // Net % — this trade's net P&L as a share of THIS trade's account SB.
     // Stable when accounts are added/archived (option-2 form).
@@ -27413,7 +27551,7 @@ try {
     const tradeMetric = t => isPipsView ? tradePips(t) : tradeR(t);
     // Unified formatter for any monthly-insight value.
     function fmtMetric(v) {
-      if (isPipsView) return (v >= 0 ? '+' : '') + v.toFixed(0) + 'p';
+      if (isPipsView) return (v >= 0 ? '+' : '') + v.toFixed(0) + _pU();
       return (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
     }
 
@@ -27568,7 +27706,7 @@ try {
       const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
       const wrDeltaStr = wrDelta == null ? '—' : (wrDelta >= 0 ? '+' : '') + wrDelta + 'pp';
       const prevName = prevStart.toLocaleDateString(tLocale(), { month: 'long' });
-      const totalLabel = isPipsView ? 'Total Pips' : t('lbl.total_r');
+      const totalLabel = isPipsView ? window.__stDU.words('Total Pips') : t('lbl.total_r');
       // Strip the leading '+' or '-' since the arrow already conveys direction. Keeps the
       // delta visually compact: "↑ 0.85R" instead of the redundant "↑ +0.85R".
       const stripSign = s => s.replace(/^[+-]/, '');
@@ -27716,7 +27854,7 @@ try {
       const displayAvg = displayTotal / b.trades;
       const displayTotalStr = fmtMetric(displayTotal);
       const displayAvgStr = isPipsView
-        ? (displayAvg >= 0 ? '+' : '') + displayAvg.toFixed(1) + 'p'
+        ? (displayAvg >= 0 ? '+' : '') + displayAvg.toFixed(1) + _pU()
         : (displayAvg >= 0 ? '+' : '') + displayAvg.toFixed(2) + 'R';
       if (b.trades >= PATTERN_SLOT_PAY_TRADES && avgR >= PATTERN_SLOT_PAY_AVG) {
         patterns.push({
@@ -28026,7 +28164,7 @@ try {
     const _periodBePotPipsTracked = _periodBEs.filter(t => typeof t.bePotentialPips === 'number' && !isNaN(t.bePotentialPips));
     const periodBePotPips = _periodBePotPipsTracked.reduce((s, t) => s + ((t.bePotentialPips || 0) * (typeof tradeCopies === 'function' ? tradeCopies(t) : 1)), 0);
     const periodBePotRStr    = _periodBePotRTracked.length === 0 ? '0' : periodBePotR.toFixed(2) + 'R';
-    const periodBePotPipsStr = _periodBePotPipsTracked.length === 0 ? '— p' : periodBePotPips.toFixed(0) + 'p';
+    const periodBePotPipsStr = _periodBePotPipsTracked.length === 0 ? '— ' + _pU() : periodBePotPips.toFixed(0) + _pU();
 
     const monthlyExtra = (greetingNoun === 'month' && monthRange) ? renderMonthlyInsights(monthRange.start, monthRange.end) : '';
     // Weekly modal: show the consistency block (showed-up vs traded) in its own section.
@@ -28861,7 +28999,7 @@ try {
       const rStr = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
       // Include pips when logged — they're market measurements, not money. £ deliberately omitted.
       const p = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : null;
-      const pStr = p !== null ? ` · ${p >= 0 ? '+' : ''}${p.toFixed(0)}p` : '';
+      const pStr = p !== null ? ` · ${p >= 0 ? '+' : ''}${p.toFixed(0)}${_pT(t)}` : '';
       // Net % — this trade's net P&L as a share of ITS account's SB so the
       // figure stays stable when accounts are added/archived (option-2 form).
       const accSB = getTradeAccountSB(t);
@@ -29002,9 +29140,9 @@ try {
       // Legacy reviews may not have totalPips stored — fall back to '—' if missing.
       let totalLabel, totalStr, totalCls;
       if (isPipsView) {
-        totalLabel = 'Total Pips';
+        totalLabel = window.__stDU.words('Total Pips');
         if (typeof s.totalPips === 'number' && !isNaN(s.totalPips)) {
-          totalStr = (s.totalPips >= 0 ? '+' : '') + s.totalPips.toFixed(0) + 'p';
+          totalStr = (s.totalPips >= 0 ? '+' : '') + s.totalPips.toFixed(0) + _pU();
           totalCls = s.totalPips > 0 ? 'good' : s.totalPips < 0 ? 'bad' : '';
         } else {
           totalStr = '—';
@@ -39494,7 +39632,9 @@ try {
       // Derive fields:
       // pips = direction-aware price move × 10000 (for EUR/USD style 5-decimal pairs)
       // Adjust to 100 for JPY pairs (symbol ends with JPY)
-      const pipMult = /JPY$/i.test(t.symbol) ? 100 : 10000;
+      // Pips on forex (x10000, x100 on JPY and metals); points on everything else (indices, futures).
+      t._distUnit = window.__stDU.symUnit(t.symbol);
+      const pipMult = window.__stDU.mult(t.symbol, t._distUnit);
       const priceMove = (t.type === 'buy' ? (t.closePrice - t.entryPrice) : (t.entryPrice - t.closePrice));
       t.pips = Math.round(priceMove * pipMult * 10) / 10;
       t.slPips = t.slPrice ? Math.round(Math.abs(t.entryPrice - t.slPrice) * pipMult * 10) / 10 : null;
@@ -39860,7 +40000,12 @@ try {
     const symbol = row.symbol || '';
     const entryPrice = parseFloat(row.entry_price) || 0;
     const closePrice = parseFloat(row.exit_price) || 0;
-    const pipMult = /JPY$/i.test(symbol) ? 100 : 10000;
+    // The EA (v8.0+) says which unit its numbers are in and how big one is. Older rows: pips, sized
+    // from the symbol as before (and points on a non-forex symbol, which the old maths got wrong).
+    const _du = (row.dist_unit === 'pips' || row.dist_unit === 'points' || row.dist_unit === 'ticks')
+      ? row.dist_unit : window.__stDU.symUnit(symbol);
+    const _us = parseFloat(row.unit_size);
+    const pipMult = (_us > 0) ? (1 / _us) : window.__stDU.mult(symbol, _du);
     const priceMove = (type === 'buy') ? (closePrice - entryPrice) : (entryPrice - closePrice);
     const net = parseFloat(row.pnl) || 0;
     const num = v => (v != null && v !== '' && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
@@ -39882,6 +40027,7 @@ try {
       // recompiled. Carried as a STRING: MT5 logins are large integers used only as labels
       // and map keys here, never arithmetic.
       _login: (row.login != null && String(row.login) !== '') ? String(row.login) : null,
+      _distUnit: _du,
       _tpR: num(row.tp_r), _tpPips: num(row.tp_pips),
       _mfeR: num(row.mfe_r), _mfePips: num(row.mfe_pips),
       _riskGbp: num(row.risk_gbp),
@@ -40822,8 +40968,8 @@ try {
                   <span style="text-transform:capitalize;color:var(--text-mid);">${t.type === 'buy' ? 'Long' : 'Short'}</span>
                   <span class="mt5-result ${resCls}">${t.result}</span>
                   <span class="mt5-profit ${plCls}">${t.netPL >= 0 ? '+' : ''}${t.netPL.toFixed(2)}</span>
-                  <span class="mt5-profit ${pipsCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}p</span>
-                  <span style="color:var(--text-dim);font-size:10px;">${t.symbol} · Vol ${t.volume}${t.slPips ? ' · SL ' + t.slPips.toFixed(1) + 'p' : ''}</span>
+                  <span class="mt5-profit ${pipsCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}${window.__stDU.lbl(t._distUnit || window.__stDU.symUnit(t.symbol), 'a')}</span>
+                  <span style="color:var(--text-dim);font-size:10px;">${t.symbol} · Vol ${t.volume}${t.slPips ? ' · SL ' + t.slPips.toFixed(1) + window.__stDU.lbl(t._distUnit || window.__stDU.symUnit(t.symbol), 'a') : ''}</span>
                 </div>
               `;
             }).join('')}
@@ -41010,6 +41156,7 @@ try {
           potentialPips: null,
           importedFrom: 'mt5',
           mt5Ticket: t.position,
+          distUnit: t._distUnit || undefined,   // pips / points / ticks - what every pip number here is in
           // Tag explicitly from the destination picker. Left blank, ensureTradeAccounts() would
           // stamp whatever account is active at the next render — a silent guess that decides which
           // account's balance and drawdown these trades move, with no way to tell it got it wrong.
@@ -41082,6 +41229,7 @@ try {
           potentialR: null,
           potentialPips: null,
           importedFrom: 'mt5',  // flag so the completion banner can target only these
+          distUnit: t._distUnit || undefined,   // pips on forex, points on indices/futures
           accountId: _mt5TargetAccountId || undefined   // explicit destination, same reason as above
         });
       }
@@ -52943,9 +53091,9 @@ try {
       var med=v[Math.floor(v.length/2)], tight=v.filter(function(x){ return x<5; }).length;
       var rows=[
         [T('Stops recorded','Stops registrados'), String(v.length)],
-        [T('Typical','Habitual'), med+' pips'],
-        [T('Tightest','El más ajustado'), v[0]+' pips'],
-        [T('Widest','El más amplio'), v[v.length-1]+' pips']
+        [T('Typical','Habitual'), med+' '+window.__stDU.lbl(window.__stDU.ofTrades(allTrades()),'s')],
+        [T('Tightest','El más ajustado'), v[0]+' '+window.__stDU.lbl(window.__stDU.ofTrades(allTrades()),'s')],
+        [T('Widest','El más amplio'), v[v.length-1]+' '+window.__stDU.lbl(window.__stDU.ofTrades(allTrades()),'s')]
       ];
       var bad = tight>0;
       return '<div class="stsc-panel"><div class="stsc-panel-h">'+T('Check against my data','Comprobar con mis datos')+'</div>'
@@ -65677,7 +65825,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       // 0.0001 on any round price. This also matches the convention the MT5 importer used to
       // produce slPips, and since R here is pips/slPips the multiplier cancels — so R stays
       // correct even on a symbol where neither convention nails the true pip.
-      var pip=1/(/JPY$/i.test(symbol)?100:10000);
+      // The EA (v8.0+) sends the exact size of one unit; otherwise pips on forex, points elsewhere.
+      var pip=(parseFloat(row.unit_size)>0)?parseFloat(row.unit_size):1/window.__stDU.mult(symbol,row.dist_unit||(trade&&trade.distUnit)||undefined);
       var _n=function(v){ v=parseFloat(v); return isNaN(v)?0:v; };
       // Same fallback chain the replay uses, so the R here matches the R on the replay header.
       var slPips=_n(row.sl_pips)||_n(row.req_sl_pips)||_n(trade&&trade.sl)||_n(trade&&trade.slPips)||_n(trade&&trade.reqSlPips);
@@ -65728,7 +65877,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var entry=parseFloat(row.entry_price)||0, exit=parseFloat(row.exit_price)||0;
     var entryTs=parseTs(row.open_time), exitTs=parseTs(row.close_time);
     if(!symbol||!entry||!entryTs){ el('strp-chart').innerHTML='<div class="strp-state">'+L('This trade is missing entry price/time — can\'t replay.','A esta operación le falta el precio/hora de entrada — no se puede reproducir.')+'</div>'; return; }
-    var pip=pipOf(entry);
+    // Distance unit: the EA says (v8.0+); else the journal trade; else pips on forex, points on NQ etc.
+    var _du=row.dist_unit||(trade&&trade.distUnit)||window.__stDU.symUnit(symbol);
+    if(_du!=='pips'&&_du!=='points'&&_du!=='ticks') _du='pips';
+    var pip=(parseFloat(row.unit_size)>0)?parseFloat(row.unit_size):(_du==='pips'?pipOf(entry):1);
+    var _pa=window.__stDU.lbl(_du,'a');
     var _n=function(v){ v=parseFloat(v); return isNaN(v)?0:v; };
     // SL/TP sizes: prefer the synced inbox row, but some trades didn't sync sl_pips/tp_pips. Fall back to
     // the requested SL and to the journal trade's own logged SL/TP/risk so the position tool + real R render.
@@ -65751,7 +65904,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       el('strp-date').textContent=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' · '+_hm(entryTs)+':'+p(d.getSeconds())+' '+_tzLabel(); })();
     var hr=el('strp-hr'); hr.className='strp-r '+(netR>0.02?'win':(netR<-0.02?'lose':'be'));
     hr.textContent=(netR>=0?'+':'')+netR.toFixed(2)+'R';
-    var pnl=parseFloat(row.pnl); var pnlTxt=isNaN(pnl)?'':((((typeof fmtMoney==='function')?fmtMoney(pnl):((pnl>=0?'+':'')+'£'+Math.round(pnl))))+' · '); el('strp-hp').textContent=pnlTxt+((exit-entry)/pip*dir>=0?'+':'')+((exit-entry)/pip*dir).toFixed(1)+'p';
+    var pnl=parseFloat(row.pnl); var pnlTxt=isNaN(pnl)?'':((((typeof fmtMoney==='function')?fmtMoney(pnl):((pnl>=0?'+':'')+'£'+Math.round(pnl))))+' · '); el('strp-hp').textContent=pnlTxt+((exit-entry)/pip*dir>=0?'+':'')+((exit-entry)/pip*dir).toFixed(1)+_pa;
 
     try{ await ensureLWC(); }catch(_){ el('strp-chart').innerHTML='<div class="strp-state">'+L('Chart library failed to load (needs internet).','No se pudo cargar la librería del gráfico (necesita internet).')+'</div>'; return; }
 
@@ -65768,7 +65921,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // as a positive fact; it simply shows the original levels, exactly as it always did.
     var slMovesRaw=_pairs(row.sl_moves), tpMovesRaw=_pairs(row.tp_moves);
 
-    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null, slMovesRaw:slMovesRaw, tpMovesRaw:tpMovesRaw, slMoves:null, tpMoves:null, tOff:0, lnSL:null, lnTP:null,
+    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, pa:_pa, pU:window.__stDU.lbl(_du,'U'), riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null, slMovesRaw:slMovesRaw, tpMovesRaw:tpMovesRaw, slMoves:null, tpMoves:null, tOff:0, lnSL:null, lnTP:null,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
         cursor:0, playing:false, ms:1000, timer:null, showPos:true, eBI:0, xBI:0, rSI:0, userView:false,
         newsRows:null, newsMarks:null };
@@ -66074,7 +66227,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var b=S.bars[Math.max(0,Math.min(idx,S.bars.length-1))];
     var v=b?S.spread[b.time]:null;
     // textContent, not innerHTML: this string is built from broker data and needs no markup.
-    e.textContent=L('Spread','Margen')+' '+(v==null?'—':(Math.round(v*10)/10).toFixed(1)+'p');
+    e.textContent=L('Spread','Margen')+' '+(v==null?'—':(Math.round(v*10)/10).toFixed(1)+((S&&S.pa)||'p'));
   }
   function liveR(){ var e=el('strp-live'), idx=Math.min(S.cursor-1,S.bars.length-1);
     liveSpread(idx);
@@ -66095,16 +66248,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(isSL&&Math.abs(off)<0.05) return ' → BE';            // sitting on entry: no risk left
       // Sign only on the stop, where crossing entry turns risk into locked-in profit. A target
       // is always a distance in front, so "+22.0p" would just be noise.
-      return ' → '+(isSL&&off>0?'+':'')+off.toFixed(1)+'p';
+      return ' → '+(isSL&&off>0?'+':'')+off.toFixed(1)+((S&&S.pa)||'p');
     };
-    var slp=S.slPips?'SL '+S.slPips.toFixed(1)+'p'+_arrow(curSL,S.SL,true):'', tpp=S.tpPips?'TP '+S.tpPips.toFixed(1)+'p'+_arrow(curTP,S.TP,false):'';
+    var slp=S.slPips?'SL '+S.slPips.toFixed(1)+(S.pa||'p')+_arrow(curSL,S.SL,true):'', tpp=S.tpPips?'TP '+S.tpPips.toFixed(1)+(S.pa||'p')+_arrow(curTP,S.TP,false):'';
     var sltpInner=[slp,tpp].filter(Boolean).join(' · ');
     var sltp=sltpInner?'<span class="strp-sltp-sep"> · </span><span class="strp-sltp">'+sltpInner+'</span>':'';
     if(idx<S.eBI){ e.innerHTML=L('Waiting for entry…','Esperando entrada…')+sltp; e.className='strp-live'; return; }
     var px=idx>=S.xBI?S.exit:S.bars[idx].close, r=S.dir*(px-S.entry)/S.riskDist, pips=S.dir*(px-S.entry)/S.pip, gbp=r*S.riskGbp;
     e.className='strp-live '+(r>0.02?'win':(r<-0.02?'lose':'')); var s=r>=0?'+':'';
     var money=S.riskGbp?(((typeof fmtMoney==='function')?fmtMoney(gbp):((gbp>=0?'+':'')+'£'+Math.round(gbp)))+' · '):'';
-    e.innerHTML=L('P&amp;L','P&amp;G')+' <b>'+s+r.toFixed(2)+'R</b> · '+money+s+pips.toFixed(1)+'p'+(idx>=S.xBI?L(' · closed',' · cerrada'):'')+sltp; }
+    e.innerHTML=L('P&amp;L','P&amp;G')+' <b>'+s+r.toFixed(2)+'R</b> · '+money+s+pips.toFixed(1)+(S.pa||'p')+(idx>=S.xBI?L(' · closed',' · cerrada'):'')+sltp; }
   function clock(){ el('strp-clock').textContent=_hm(S.bars[Math.min(S.cursor-1,S.bars.length-1)].time); }
 
   function xOf(i){ return chart.timeScale().logicalToCoordinate(i); }
@@ -66480,7 +66633,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        off independently; with all three off the box is drawn and the label omitted entirely. */
     else if(d.type==='range'){ var a4=P(d.a),b4=P(d.b); if(a4&&b4){ var x0=Math.min(a4.x,b4.x),x1=Math.max(a4.x,b4.x),y0=Math.min(a4.y,b4.y),y1=Math.max(a4.y,b4.y); ctx.strokeStyle=C; ctx.lineWidth=W; ctx.strokeRect(x0+.5,y0+.5,x1-x0-1,y1-y0-1);
         var dP=d.b.price-d.a.price,pips=dP/S.pip,db=Math.abs(d.b.idx-d.a.idx); var _rr=(S&&S.slPips>0)?(pips/S.slPips):null; var parts=[];
-        if(rShow(d,'pips')) parts.push((pips>=0?'+':'')+pips.toFixed(1)+'p');
+        if(rShow(d,'pips')) parts.push((pips>=0?'+':'')+pips.toFixed(1)+((S&&S.pa)||'p'));
         if(rShow(d,'r')&&_rr!=null) parts.push((_rr>=0?'+':'')+_rr.toFixed(2)+'R');
         if(rShow(d,'bars')) parts.push(db+L(' bars',' barras'));
         if(parts.length){ var label=parts.join(' · '); var cx=(x0+x1)/2,cy=(d.b.price>=d.a.price)?y0-10:y1+10;
@@ -66765,7 +66918,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       return '<button type="button" data-wid="'+wv+'" style="flex:1;padding:4px 0;cursor:pointer;background:transparent;color:'
         +(wv===curW?'var(--text)':'var(--text-dim)')+';border:1px solid '+(wv===curW?'var(--accent)':'var(--border-2)')
         +';border-radius:4px;font:inherit;">'+wv+'</button>'; }).join('')+'</div>'); }
-    if(ty==='range'){ H.push('<div style="display:flex;gap:5px;">'+[['pips','PIPS'],['r','R'],['bars',L('BARS','BARRAS')]].map(function(k){
+    if(ty==='range'){ H.push('<div style="display:flex;gap:5px;">'+[['pips',(S&&S.pU)||'PIPS'],['r','R'],['bars',L('BARS','BARRAS')]].map(function(k){
       var on=rShow(d,k[0]);
       return '<button type="button" data-show="'+k[0]+'" style="flex:1;padding:4px 0;cursor:pointer;background:transparent;color:'
         +(on?'var(--text)':'var(--text-dim)')+';border:1px solid '+(on?'var(--accent)':'var(--border-2)')
