@@ -66339,12 +66339,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        the same whole number of hours, that is a broker clock, not a trader who moved his stop
        at 11:00 on a trade that closed at 08:48. Proven on 2026-08-18: EA builds before 5.3
        stamped moves in TimeCurrent() (broker, UTC+3) and every move sat 3h after the last bar. */
-    var off=S.tOff||0;
-    if(!off){
-      var all=[].concat(S.slMovesRaw||[],S.tpMovesRaw||[]).map(function(m){ return +m[0]; }).filter(function(t){ return t>0; });
+    /* Moves that ALREADY sit inside the trade are on the right clock - leave them alone. The spread
+       offset used to be applied to them unconditionally, but the two are NOT the same clock on
+       current EA builds: the spread series is keyed by broker bar times (UTC+3) while moves are
+       stamped in true UTC. On 18 Sep that pushed a stop moved at 09:21:37 back to 06:21 - before
+       the trade opened - so the replay drew the stop as moved from the entry candle onwards. */
+    var all=[].concat(S.slMovesRaw||[],S.tpMovesRaw||[]).map(function(m){ return +m[0]; }).filter(function(t){ return t>0; });
+    var pad=120;   // 2 minutes of slack: stamps come off tick time, bars off bar time
+    var fits=function(o){
+      if(!all.length || !S.entryTs || !S.exitTs) return true;
+      var lo=Math.min.apply(null,all)-o, hi=Math.max.apply(null,all)-o;
+      return lo>=S.entryTs-pad && hi<=S.exitTs+pad;
+    };
+    var off=0;
+    if(!fits(0) && S.tOff && fits(S.tOff)) off=S.tOff;   // an older EA whose moves share the spread's broker clock
+    if(!off && !fits(0)){
       if(all.length && S.entryTs && S.exitTs){
         var lo=Math.min.apply(null,all), hi=Math.max.apply(null,all);
-        var pad=120;   // 2 minutes of slack: stamps come off tick time, bars off bar time
         if(lo>S.exitTs+pad || hi<S.entryTs-pad){
           // Whole-hour offset that best drags the series inside [entry, exit].
           var mid=(lo+hi)/2, want=(S.entryTs+S.exitTs)/2;
@@ -66519,7 +66530,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // must never be re-based when the stop moves, or the same trade would score differently
     // depending on when you looked at it (and a BE stop would divide by zero risk).
     var _bt=(S.bars[Math.max(0,Math.min(idx,S.bars.length-1))]||{}).time||0;
-    var curSL=levelAt(S.slMoves,S.SL,_bt), curTP=levelAt(S.tpMoves,S.TP,_bt);
+    // A move belongs to the bar it happened IN: the bar on screen is complete, so a stop moved at
+    // 09:21:37 shows on the 09:21 bar (the one that broke the level), not only from 09:22.
+    var _be=_bt+((S.tf||1)*60)-1;
+    var curSL=levelAt(S.slMoves,S.SL,_be), curTP=levelAt(S.tpMoves,S.TP,_be);
     if(S.lnSL) S.lnSL.applyOptions({price:curSL||S.SL});
     if(S.lnTP) S.lnTP.applyOptions({price:curTP||S.TP});
     var _arrow=function(cur,orig,isSL){
