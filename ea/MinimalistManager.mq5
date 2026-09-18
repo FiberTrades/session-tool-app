@@ -2507,7 +2507,7 @@ bool SyncCollectAndPush(ulong posId)
       double mfp=GlobalVariableCheck(sk+"mfe") ?GlobalVariableGet(sk+"mfe") :0.0;
       double mfr=(slp>0)? mfp/slp : 0.0;
       json+=StringFormat(",\"sl_pips\":%s,\"risk_gbp\":%s,\"tp_r\":%s,\"tp_pips\":%s,\"mfe_pips\":%s,\"mfe_r\":%s",
-                         DoubleToString(slp,1),DoubleToString(rsk,2),
+                         DoubleToString(slp,2),DoubleToString(rsk,2),
                          DoubleToString(tpr,2),DoubleToString(tpp,1),
                          DoubleToString(mfp,1),DoubleToString(mfr,2));
      }

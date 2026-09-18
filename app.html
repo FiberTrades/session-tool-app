@@ -41222,6 +41222,22 @@ try {
 
     // Convert each MT5 trade into a review-tab trade row.
     // Existing rows are preserved — imported trades append. User can delete blanks if needed.
+  // R - P for an imported trade. The AIM (target pips / stop) - unless it is a WIN that closed more
+  // than half a unit from that target (closed early by hand, or ran past a moved TP): then what it
+  // actually made. A target hit reads exactly as the aim; losses and BEs keep the aim (analytics score
+  // them -1R / 0R anyway).
+  function _importRP(result, realPips, aimPips, slPips, aimRFallback) {
+    const _sl = parseFloat(slPips), _real = parseFloat(realPips), _aim = parseFloat(aimPips);
+    const _haveReal = isFinite(_real) && _real > 0 && isFinite(_sl) && _sl > 0;
+    if (result === 'Win' && _haveReal && (!isFinite(_aim) || Math.abs(_real - _aim) > 0.5)) {
+      return { r: String(Math.round((_real / _sl) * 100) / 100), pips: Math.round(_real * 10) / 10 };
+    }
+    return {
+      r: (isFinite(_aim) && isFinite(_sl) && _sl > 0) ? String(Math.round((_aim / _sl) * 100) / 100)
+         : ((aimRFallback != null) ? String(aimRFallback) : ''),
+      pips: isFinite(_aim) ? _aim : ''
+    };
+  }
     const _consumedTickets = [];
     selectedForDate.forEach(t => {
       if (t._isSync) {
@@ -41239,9 +41255,7 @@ try {
           // Aimed R derived from the pips shown (TP pips ÷ SL pips) so it can never disagree with
           // the SL/pips columns or the trader's planned RR (a 20/4 setup reads a clean 5.0). Falls
           // back to the EA's own tp_r only when the pips aren't both available.
-          r: (t._tpPips != null && t.slPips != null && t.slPips > 0)
-               ? String(Math.round((t._tpPips / t.slPips) * 100) / 100)
-               : ((t._tpR != null) ? String(t._tpR) : ''),
+          r: _importRP(t.result, t.pips, t._tpPips, t.slPips, t._tpR).r,
           type: '',
           side: t.type === 'buy' ? 'Long' : 'Short',
           entryTime: t.entryTimeHHMM,
@@ -41250,7 +41264,7 @@ try {
           sl: t.slPips != null ? String(t.slPips) : '',
           costs: (t._costs != null) ? Math.abs(t._costs).toFixed(2) : '0.00',
           actualGross: (t._costs != null) ? (t.profit + Math.abs(t._costs)) : t.profit,
-          pips: (t._tpPips != null) ? t._tpPips : '',
+          pips: _importRP(t.result, t.pips, t._tpPips, t.slPips, t._tpR).pips,
           potentialR: null,
           potentialPips: null,
           importedFrom: 'mt5',
@@ -41313,9 +41327,7 @@ try {
           result: t.result,
           // Aimed R from the pips shown (TP pips ÷ SL pips) — consistent with the SL/pips columns
           // and the planned RR; falls back to the report-derived aimR only when pips are missing.
-          r: (t.tpPips != null && t.slPips != null && t.slPips > 0)
-               ? String(Math.round((t.tpPips / t.slPips) * 100) / 100)
-               : ((t.aimR != null) ? String(t.aimR) : ''),
+          r: _importRP(t.result, t.pips, t.tpPips, t.slPips, t.aimR).r,
           type: '',   // Subjective — user fills (Reaction / Continuation)
           side: t.type === 'buy' ? 'Long' : 'Short',
           entryTime: t.entryTimeHHMM,
@@ -41324,7 +41336,7 @@ try {
           sl: t.slPips != null ? String(t.slPips) : '',
           costs: t.costs.toFixed(2),
           actualGross: t.profit,   // MT5's "profit" is gross from price action
-          pips: (t.tpPips != null) ? t.tpPips : '',
+          pips: _importRP(t.result, t.pips, t.tpPips, t.slPips, t.aimR).pips,
           potentialR: null,
           potentialPips: null,
           importedFrom: 'mt5',  // flag so the completion banner can target only these
