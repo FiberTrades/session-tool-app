@@ -2948,6 +2948,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .unit-toggle-opt:hover { color: var(--text-mid); opacity: 0.9; }
   .unit-toggle-opt.active { color: var(--text); opacity: 1; cursor: default; }
   .unit-toggle-sep { color: var(--text-dim); }
+  /* Potential on a mixed forex + indices book: which unit's trades the analysis is running on. */
+  .combo-unit-lens { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; }
+  .combo-unit-lens[hidden] { display: none; }
+  .combo-unit-lens-note { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); line-height: 1.5; }
   .pnl-toggle-sep { color: var(--border-2); }
   .stat-value.dd { color: var(--bad); }
   .stat-value.dd.zero { color: var(--good); }
@@ -5489,6 +5493,7 @@ try {
       <div class="potr-period-row">
         <span class="potr-period-count" id="combo-period-count"></span>
       </div>
+      <div id="combo-unit-lens" class="combo-unit-lens" hidden></div>
       <div id="combo-wrap"></div>
       <!-- Diagnostics, measured from real candles: heat on winners (where the stop belongs) and how
            far losers ran in your favour before dying (entries vs management). They sit BELOW the
@@ -20864,9 +20869,42 @@ try {
     return allTrades;
   }
 
-  function renderCombinedAnalysis(allTradesRaw) {
+  function renderCombinedAnalysis(allTradesRaw, _lensApplied) {
     const wrap = document.getElementById('combo-wrap');
     if (!wrap) return;
+    // Pips and points cannot be added together, and every recommendation here is stated in one
+    // unit. On a book that mixes them, run the whole analysis on one unit's trades at a time.
+    if (!_lensApplied) {
+      const lensEl = document.getElementById('combo-unit-lens');
+      const DU = window.__stDU;
+      const inPeriod = filterTradesByComboPeriod(allTradesRaw);
+      const counts = {};
+      inPeriod.forEach(x => { const u = DU.ofTrade(x); counts[u] = (counts[u] || 0) + 1; });
+      const units = ['pips', 'points', 'ticks'].filter(u => counts[u]);
+      if (units.length > 1) {
+        let lens = window.__stComboLens;
+        if (!counts[lens]) lens = units.slice().sort((a, b) => counts[b] - counts[a])[0];
+        if (lensEl) {
+          const es = (window.__lang === 'es');
+          lensEl.hidden = false;
+          lensEl.innerHTML = '<span class="unit-toggle">' + units.map((u, i) =>
+              (i ? '<span class="unit-toggle-sep">|</span>' : '')
+              + '<span class="unit-toggle-opt' + (u === lens ? ' active' : '') + '" data-lens="' + u + '">'
+              + DU.lbl(u, 'T') + ' \u00b7 ' + counts[u] + '</span>').join('') + '</span>'
+            + '<span class="combo-unit-lens-note">' + (es
+                ? 'Operas forex e índices. Los pips y los puntos no se pueden sumar, así que cada grupo se analiza por separado.'
+                : 'You trade forex and indices. Pips and points can\u2019t be added together, so each set is analysed on its own.')
+            + '</span>';
+          lensEl.querySelectorAll('[data-lens]').forEach(b => b.addEventListener('click', () => {
+            window.__stComboLens = b.getAttribute('data-lens');
+            renderCombinedAnalysis(allTradesRaw);
+          }));
+        }
+        const lensTrades = allTradesRaw.filter(x => DU.ofTrade(x) === lens);
+        return DU.withUnit(lens, () => renderCombinedAnalysis(lensTrades, true));
+      }
+      if (lensEl) { lensEl.hidden = true; lensEl.innerHTML = ''; }
+    }
     const metric   = (function(){ var _m = (data.settings && data.settings.comboMetric) || 'r'; return _m === 'pct' ? 'r' : _m; })();
     const isPips   = metric === 'pips';
     const isPct    = metric === 'pct';
