@@ -2948,6 +2948,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .unit-toggle-opt:hover { color: var(--text-mid); opacity: 0.9; }
   .unit-toggle-opt.active { color: var(--text); opacity: 1; cursor: default; }
   .unit-toggle-sep { color: var(--text-dim); }
+  /* Trade Log: a loss / BE shows its real result in the R . P cell (click to edit the plan). */
+  .trade-real-rp { display: inline-flex; align-items: center; gap: 6px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; color: var(--text); cursor: pointer; border-radius: 6px; padding: 2px 4px; }
+  .trade-real-rp:hover, .trade-real-rp:focus-visible { background: var(--bg-elev); outline: none; }
+  .trade-real-rp .bad { color: var(--bad); } .trade-real-rp .good { color: var(--good); }
+  .edit-real-rp { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); line-height: 1.55; margin-top: 6px; }
+  .edit-real-rp b { color: var(--text); font-weight: 500; }
   /* Potential on a mixed forex + indices book: which unit's trades the analysis is running on. */
   .combo-unit-lens { display: flex; align-items: baseline; flex-wrap: wrap; gap: 6px 14px; margin: 0 0 14px; }
   .combo-unit-lens[hidden] { display: none; }
@@ -5774,6 +5780,7 @@ try {
         <textarea id="edit-r" rows="1" data-i18n-placeholder="ph.r" placeholder="R" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
         <textarea id="edit-pips" rows="1" data-i18n-placeholder="ph.pips" placeholder="Pips" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore data-form-type="other"></textarea>
       </div>
+      <div id="edit-real-rp" class="edit-real-rp" hidden></div>
 
       <div class="label edit-potr-row" style="display:none;"><span data-i18n="edit.lbl.potr_row">Potential R &amp; Pips</span> <span style="color:var(--text-dim);font-size:10px;text-transform:none;letter-spacing:0;" data-i18n="edit.potential_hint">(how far the move actually went)</span></div>
       <div class="field edit-potr-row" style="display:none;grid-template-columns:1fr 1fr;gap:8px;">
@@ -14432,6 +14439,36 @@ try {
     if (res === 'Lose') return -1;
     return 0;
   }
+  /* What a trade REALLY did, for display. t.r / t.pips on a loss or BE are the setup's plan (the
+     Edge Adjuster's what-ifs need it), so they are never what a loss or BE shows:
+       win       -> its logged R . pips (on an import, the realised move)
+       loss / BE -> R after costs - exactly the Statistics figure - and the pips price really moved. */
+  function tradeShownR(t) {
+    if (!t) return null;
+    if (t.result === 'Win') { const v = parseFloat(t.r); return isFinite(v) ? v : null; }
+    if (t.result !== 'Lose' && t.result !== 'BE') return null;
+    return tradeRforMath(t);
+  }
+  function tradeShownPips(t) {
+    if (!t) return null;
+    if (t.result === 'Win') { const v = parseFloat(t.pips); return isFinite(v) ? v : null; }
+    if (t.result !== 'Lose' && t.result !== 'BE') return null;
+    if (typeof t.realPips === 'number' && isFinite(t.realPips)) return t.realPips;
+    const sl = parseFloat(t.sl), risk = parseFloat(t.risk), g = parseFloat(t.actualGross);
+    if (isFinite(g) && risk > 0 && sl > 0) return Math.round((g / risk) * sl * 10) / 10;   // the real gross result, in stops
+    if (t.result === 'Lose') return sl > 0 ? -sl : null;
+    return 0;
+  }
+  function fmtShownRP(t) {
+    const r = tradeShownR(t), p = tradeShownPips(t);
+    const sg = v => (v > 0 ? '+' : v < 0 ? '\u2212' : '');
+    return {
+      r: r == null ? '\u2014' : sg(r) + Math.abs(r).toFixed(2),
+      p: p == null ? '\u2014' : sg(p) + Math.abs(p).toFixed(1) + _pT(t),
+      rv: r, pv: p
+    };
+  }
+  window.__stShownRP = fmtShownRP;
   // Pips equivalent of tradeRforMath. Wins use captured pips; losses derive from per-trade SL; BE = 0.
   function tradePipsForMath(t) {
     if (t.result === 'Win') {
@@ -15896,6 +15933,35 @@ try {
           el.readOnly = false;
           el.style.opacity = '';
         });
+        /* A loss or BE shows what really happened (R after costs, real pips). The boxes hold the setup's
+           plan - kept for the Edge Adjuster - and open when the result is clicked. */
+        try {
+          const _trNow = data.review.trades[idx];
+          const _cell = rInput.parentNode, _sep = _cell && _cell.querySelector('.trade-sep');
+          let _rs = _cell && _cell.querySelector('.trade-real-rp');
+          const _isReal = _trNow && (_trNow.result === 'Lose' || _trNow.result === 'BE');
+          if (_cell && _isReal) {
+            if (!_rs) {
+              _rs = document.createElement('span');
+              _rs.className = 'trade-real-rp';
+              _rs.tabIndex = 0;
+              _cell.appendChild(_rs);
+              const _open = () => { _rs.style.display = 'none'; rInput.style.display = ''; pipsInput.style.display = ''; if (_sep) _sep.style.display = ''; rInput.focus(); };
+              _rs.addEventListener('click', _open);
+              _rs.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); _open(); } });
+              _cell.addEventListener('focusout', () => setTimeout(() => { if (!_cell.contains(document.activeElement)) syncRPipsEnabled(); }, 0));
+            }
+            const _f = fmtShownRP(_trNow);
+            _rs.innerHTML = '<span class="' + (_f.rv < 0 ? 'bad' : _f.rv > 0 ? 'good' : '') + '">' + _f.r + '</span><span class="trade-sep">\u00b7</span>' + _f.p;
+            _rs.setAttribute('data-tip', (document.documentElement.lang === 'es')
+              ? 'Resultado real: R después de costes y los ' + window.__stDU.lbl(_du, 's') + ' que se movió el precio. Haz clic para editar el plan de la operación.'
+              : 'What really happened: R after costs, and the ' + window.__stDU.lbl(_du, 's') + ' price moved. Click to edit the setup\u2019s plan.');
+            _rs.style.display = ''; rInput.style.display = 'none'; pipsInput.style.display = 'none'; if (_sep) _sep.style.display = 'none';
+          } else if (_cell) {
+            if (_rs) _rs.style.display = 'none';
+            rInput.style.display = ''; pipsInput.style.display = ''; if (_sep) _sep.style.display = '';
+          }
+        } catch (e) {}
         rInput.placeholder = 'R';
         rInput.setAttribute('data-tip', _tipRSet);
         pipsInput.placeholder = _duU;
@@ -17351,6 +17417,7 @@ try {
       const _fields = {
         symbol: t.symbol || null,
         distUnit: t.distUnit || null,   // pips / points / ticks - what this trade's pip numbers are in
+        realPips: (typeof t.realPips === 'number' && isFinite(t.realPips)) ? t.realPips : null,   // what it really moved
         result: t.result,
         r: t.r && !isNaN(parseFloat(t.r)) ? parseFloat(t.r) : null,
         pips: (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : null,
@@ -18030,8 +18097,9 @@ try {
         dot.classList.add(cls, 'clickable');
         dot.textContent = t.result === 'Win' ? _lblW : t.result === 'Lose' ? _lblL : _lblBE;
         const dateStr = t.date ? new Date(t.date).toLocaleDateString(tLocale(), { day:'2-digit', month:'short' }) : '';
-        const rTxt = typeof t.r === 'number' ? t.r.toFixed(2) + 'R' : (t.r || '');
-        const pipsTxt = (typeof t.pips === 'number' && !isNaN(t.pips)) ? ` · ${t.pips.toFixed(0)}${_pT(t)}` : '';
+        const _sh = fmtShownRP(t);   // a loss / BE: what really happened, not the plan
+        const rTxt = _sh.rv != null ? _sh.r + 'R' : '';
+        const pipsTxt = _sh.pv != null ? ` · ${_sh.p}` : '';
         dot.setAttribute('data-tip', _tipDot.replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr));
         dot.addEventListener('click', () => openEditTradeModal(t.id));
       }
@@ -24901,8 +24969,10 @@ try {
       const tagCls = tr.result === 'Win' ? 'win' : tr.result === 'Lose' ? 'lose' : 'be';
       const d = new Date(tr.date);
       const dateStr = isNaN(d.getTime()) ? '\u2014' : d.toLocaleDateString(localeCode, { day: '2-digit', month: 'short', year: '2-digit' });
-      const rStr = (tr.r !== undefined && tr.r !== null) ? (typeof tr.r === 'number' ? tr.r.toFixed(2) : tr.r) : '\u2014';
-      const pStr = (typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + _pT(tr) : '\u2014 ' + _pT(tr);
+      // A loss / BE shows what really happened (R after costs, real pips) - never the setup's plan.
+      const _sh = fmtShownRP(tr);
+      const rStr = (tr.result === 'Win') ? ((tr.r !== undefined && tr.r !== null) ? (typeof tr.r === 'number' ? tr.r.toFixed(2) : tr.r) : '\u2014') : _sh.r;
+      const pStr = (tr.result === 'Win') ? ((typeof tr.pips === 'number' && !isNaN(tr.pips)) ? tr.pips.toFixed(0) + _pT(tr) : '\u2014 ' + _pT(tr)) : _sh.p;
       const nCopies = tradeCopies(tr);
       const copyBadge = nCopies > 1 ? ' <span class="atl-sub">\u00d7' + nCopies + '</span>' : '';
       const net = tradeNetPL(tr) * nCopies;
@@ -25588,8 +25658,9 @@ try {
         timeHtml = '—';
       }
       // Actual: R · pips inline on one line
-      const rStr = (t.r !== undefined && t.r !== null) ? (typeof t.r === 'number' ? t.r.toFixed(2) : t.r) : '—';
-      const pStr = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips.toFixed(0) + _pT(t) : '— ' + _pT(t);
+      const _sh = fmtShownRP(t);   // a loss / BE: what really happened, not the plan
+      const rStr = (t.result === 'Win') ? ((t.r !== undefined && t.r !== null) ? (typeof t.r === 'number' ? t.r.toFixed(2) : t.r) : '—') : _sh.r;
+      const pStr = (t.result === 'Win') ? ((typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips.toFixed(0) + _pT(t) : '— ' + _pT(t)) : _sh.p;
       // Potential: same pattern; only Wins are meaningful, otherwise dim. Display the GAP
       // per trade (potential − captured) to match the "R left on the table" meaning used
       // in aggregate Pot R displays elsewhere in the app.
@@ -25811,6 +25882,18 @@ try {
   // so every other entry point (trades list, trade view) clears it just by not passing one —
   // a stale value can never leak into a modal opened from somewhere else.
   let editTradeReturnDay = null;
+  // Edit window: on a loss / BE, say what really happened under the R / Pips boxes (which hold the plan).
+  function paintEditRealRP(t, result) {
+    const el = document.getElementById('edit-real-rp');
+    if (!el) return;
+    if (result !== 'Lose' && result !== 'BE') { el.hidden = true; el.innerHTML = ''; return; }
+    const f = fmtShownRP(Object.assign({}, t, { result: result }));
+    const es = document.documentElement.lang === 'es';
+    el.hidden = false;
+    el.innerHTML = es
+      ? 'Resultado real: <b>' + f.r + 'R \u00b7 ' + f.p + '</b> (R después de costes). Las casillas de arriba son el plan de la operación: R y objetivo.'
+      : 'What really happened: <b>' + f.r + 'R \u00b7 ' + f.p + '</b> (R after costs). The boxes above are the setup\u2019s plan: its R and target.';
+  }
   function openEditTradeModal(id, returnDay) {
     const t = findTradeById(id);
     if (!t) return;
@@ -25846,6 +25929,7 @@ try {
       btn.classList.toggle('active', btn.dataset.result === t.result);
     });
     document.getElementById('edit-r').value = t.r != null ? t.r : '';
+    try { paintEditRealRP(t, t.result); } catch (e) {}
     document.getElementById('edit-pips').value = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : '';
     document.getElementById('edit-potr').value = t.potentialR != null ? t.potentialR : '';
     document.getElementById('edit-potpips').value = (typeof t.potentialPips === 'number' && !isNaN(t.potentialPips)) ? t.potentialPips : '';
@@ -25973,6 +26057,7 @@ try {
     btn.addEventListener('click', () => {
       editingResult = btn.dataset.result;
       document.querySelectorAll('.edit-result-toggle button').forEach(b => b.classList.toggle('active', b === btn));
+      try { const _t = findTradeById(editingTradeId); if (_t) paintEditRealRP(_t, editingResult); } catch (e) {}
       document.querySelectorAll('.edit-potr-row').forEach(el => {
         if (editingResult === 'Win') {
           el.style.display = el.classList.contains('field') ? 'grid' : 'block';
@@ -27448,8 +27533,9 @@ try {
       : '';
     const net = (typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0;
     const netStr = (net >= 0 ? '+' : '-') + curSym() + Math.abs(net).toFixed(2);
-    const pipsHtml = (typeof tr.pips === 'number' && !isNaN(tr.pips))
-      ? ` · <span class="${rCls}">${tr.pips >= 0 ? '+' : ''}${tr.pips.toFixed(0)}${_pT(tr)}</span>`
+    const _shP = tradeShownPips(tr);   // a loss / BE: the pips it really moved, not the plan's target
+    const pipsHtml = (_shP != null && isFinite(_shP))
+      ? ` · <span class="${rCls}">${_shP >= 0 ? '+' : ''}${_shP.toFixed(0)}${_pT(tr)}</span>`
       : '';
     // Net % — this trade's net P&L as a share of THIS trade's account SB.
     // Stable when accounts are added/archived (option-2 form).
@@ -29071,8 +29157,8 @@ try {
       const r = tRD(t);
       const rStr = (r >= 0 ? '+' : '') + r.toFixed(2) + 'R';
       // Include pips when logged — they're market measurements, not money. £ deliberately omitted.
-      const p = (typeof t.pips === 'number' && !isNaN(t.pips)) ? t.pips : null;
-      const pStr = p !== null ? ` · ${p >= 0 ? '+' : ''}${p.toFixed(0)}${_pT(t)}` : '';
+      const p = tradeShownPips(t);   // a loss / BE: what it really moved, not the plan's target
+      const pStr = (p !== null && isFinite(p)) ? ` · ${p >= 0 ? '+' : ''}${p.toFixed(0)}${_pT(t)}` : '';
       // Net % — this trade's net P&L as a share of ITS account's SB so the
       // figure stays stable when accounts are added/archived (option-2 form).
       const accSB = getTradeAccountSB(t);
@@ -41270,6 +41356,7 @@ try {
           importedFrom: 'mt5',
           mt5Ticket: t.position,
           distUnit: t._distUnit || undefined,   // pips / points / ticks - what every pip number here is in
+          realPips: (typeof t.pips === 'number' && isFinite(t.pips)) ? t.pips : undefined,   // entry -> exit, signed: what it really did
           // Tag explicitly from the destination picker. Left blank, ensureTradeAccounts() would
           // stamp whatever account is active at the next render — a silent guess that decides which
           // account's balance and drawdown these trades move, with no way to tell it got it wrong.
@@ -41341,6 +41428,7 @@ try {
           potentialPips: null,
           importedFrom: 'mt5',  // flag so the completion banner can target only these
           distUnit: t._distUnit || undefined,   // pips on forex, points on indices/futures
+          realPips: (typeof t.pips === 'number' && isFinite(t.pips)) ? t.pips : undefined,   // entry -> exit, signed
           accountId: _mt5TargetAccountId || undefined   // explicit destination, same reason as above
         });
       }
