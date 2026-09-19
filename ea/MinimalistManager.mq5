@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.2"
+#property version   "8.3"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3968,7 +3968,8 @@ int OnInit()
    trade.SetTypeFillingBySymbol(_Symbol);
 
    ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,true);   // needed for hover + click execute
-   EventSetTimer(1);                                 // 1s tick for the candle countdown
+   EventSetMillisecondTimer(100);                    // 10x a second: labels follow the chart; the 1s work below is gated
+   ChartSetInteger(0,CHART_EVENT_MOUSE_WHEEL,true);  // wheel zoom re-pins the line labels
 
    // If the terminal was closed over the day boundary, the pause would otherwise sit there
    // until the first tick arrived. Settle it now.
@@ -4087,8 +4088,30 @@ void DailyLimitTick()
      }
   }
 
+// Re-pin the line labels whenever the visible chart changed - price range, scroll position or size.
+// MT5 sends CHARTEVENT_CHART_CHANGE in bursts while you drag and not at all for some scrolls, so
+// labels (placed in pixels) sat detached from their lines until the next event caught them up.
+bool LabelsFollowChart()
+  {
+   static double s_max=0,s_min=0; static long s_first=-1,s_w=0,s_h=0;
+   double mx=ChartGetDouble(0,CHART_PRICE_MAX,0), mn=ChartGetDouble(0,CHART_PRICE_MIN,0);
+   long fv=ChartGetInteger(0,CHART_FIRST_VISIBLE_BAR), w=ChartGetInteger(0,CHART_WIDTH_IN_PIXELS), h=ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
+   if(mx==s_max && mn==s_min && fv==s_first && w==s_w && h==s_h) return false;
+   s_max=mx; s_min=mn; s_first=fv; s_w=w; s_h=h;
+   RefreshLabels();
+   return true;
+  }
+
 void OnTimer()
   {
+   // Every 100ms: keep the labels on their lines (cheap - a few property reads, and only
+   // repositions when the view actually moved).
+   if(LabelsFollowChart()) ChartRedraw();
+   // Everything below is once-a-second work, exactly as before the timer went to 100ms.
+   static uint s_lastSec=0;
+   uint _nowMs=GetTickCount();
+   if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
+   s_lastSec=_nowMs;
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
    // frozen chart objects and a silent log look identical to "someone turned it off". One line a
@@ -4327,6 +4350,7 @@ void OnTick()
 
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
   {
+   if(id==CHARTEVENT_MOUSE_WHEEL){ if(LabelsFollowChart()) ChartRedraw(); return; }
    // ---- Chart panned / zoomed / scrolled: re-pin the line labels ----
    if(id==CHARTEVENT_CHART_CHANGE)
      {
@@ -4342,6 +4366,9 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    // ---- Mouse move: hover SL + left-click execute ----
    if(id==CHARTEVENT_MOUSE_MOVE)
      {
+      // Dragging the chart (or a line): labels follow every movement, not just the throttled
+      // CHART_CHANGE bursts. Cheap when nothing moved (LabelsFollowChart compares the view first).
+      if(((int)StringToInteger(sparam) & 1)!=0){ if(LabelsFollowChart()) ChartRedraw(); }
       if(!g_execMode){ g_prevLeftDown=false; return; }
       int x=(int)lparam, y=(int)dparam;
 
