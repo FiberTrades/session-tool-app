@@ -248,7 +248,9 @@ Deno.serve(async (req) => {
     // prop accounts syncing under one token arrive as one undifferentiated stream, and
     // filing an import is guesswork that silently moves the wrong account's balance.
     login:       numOrNull(body.login),
-    // EA-only detail (null on manual / pre-update trades):
+    // Stop + risk at entry. From the EA's own stamp on trades it placed; since EA v8.4 also on
+    // trades placed outside it, from the stop MT5 recorded on the opening order. Null on older
+    // EAs' manual trades, and on any trade that never had a stop.
     sl_pips:     numOrNull(body.sl_pips),
     risk_gbp:    numOrNull(body.risk_gbp),
     tp_r:        numOrNull(body.tp_r),
@@ -275,6 +277,14 @@ Deno.serve(async (req) => {
     // NQ ticks), so the app turns a price move into the same unit exactly.
     //    alter table trades_inbox add column if not exists unit_size double precision;
     unit_size:   (numOrNull(body.unit_size) != null && Number(body.unit_size) > 0) ? numOrNull(body.unit_size) : null,
+    // The WIDEST stop the trade ever had (EA v8.4) - initial stop, every live move, and the stop
+    // MT5 recorded on each exit deal - and what it would have lost there. sl_pips/risk_gbp are the
+    // stop at ENTRY; a stop dragged away afterwards only shows up here. The leaderboard's max-risk
+    // rule reads the larger of the two. Null = an older EA, or no stop was ever known.
+    //    alter table trades_inbox    add column if not exists sl_max_pips numeric, add column if not exists risk_max_gbp numeric;
+    //    alter table trades_verified add column if not exists sl_max_pips numeric, add column if not exists risk_max_gbp numeric;
+    sl_max_pips:  (Number(body.sl_max_pips)  > 0) ? numOrNull(body.sl_max_pips)  : null,
+    risk_max_gbp: (Number(body.risk_max_gbp) > 0) ? numOrNull(body.risk_max_gbp) : null,
     // The broker spread series now ALSO rides the close payload (EA v5.4). Every M1 bar it
     // needs exists the moment the position closes; it used to travel only with the post-mortem,
     // which waits for day-end on any trade that did not hit TP or SL, leaving the replay's

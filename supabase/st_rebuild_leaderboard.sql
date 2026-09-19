@@ -181,6 +181,27 @@ begin
              or nullif(e.value ->> 'sl','')::numeric > 0)
       group by 1, 2
     ),
+    -- The distance unit per symbol, for the max-risk slippage allowance - the EA's own rule
+    -- (DistUnitFor / UnitSizeOf), never a guess: the unit the EA reported (every v8.0+ trade
+    -- carries one), else pips on forex-like symbols (digit rule: 5/3-digit quotes are 10 points)
+    -- and points - 1.00 of price - on indices, futures, stocks and crypto. Sizing an index
+    -- "pip" from its digits gave NAS100 a unit of 0.01, i.e. no allowance at all.
+    pipsz as (
+      select s.symbol,
+             coalesce(ea.unit, case when s.fx then power(10::numeric, -(s.d - case when s.d in (3,5) then 1 else 0 end))
+                                    else 1.0 end)                                        as pip,
+             coalesce(ea.fx, s.fx)                                                       as is_fx
+      from (select symbol,
+                   max(greatest(scale(trim_scale(entry_price::numeric)),
+                                scale(trim_scale(exit_price::numeric)))) as d,
+                   (upper(symbol) ~ '^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|SEK|NOK|DKK|PLN|HUF|CZK|TRY|ZAR|MXN|SGD|HKD|CNH|CNY|RUB|ILS|THB|XAU|XAG|XPT|XPD){2}'
+                    or max(greatest(scale(trim_scale(entry_price::numeric)),
+                                    scale(trim_scale(exit_price::numeric)))) in (3,5)) as fx
+              from trades_verified group by symbol) s
+      left join (select symbol, max(unit_size)::numeric as unit, bool_or(dist_unit = 'pips') as fx
+                   from trades_inbox where unit_size > 0 and dist_unit is not null
+                  group by symbol) ea on ea.symbol = s.symbol
+    ),
     raw as (
       select
         lt.*,
@@ -216,10 +237,13 @@ begin
       select lt.*,
              coalesce(lt.risk_gbp::numeric,
                       case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end) as risk_u,
-             coalesce(lt.sl_pips::numeric, jr.sl_j)                                          as sl_u
+             coalesce(lt.sl_pips::numeric, jr.sl_j)                                          as sl_u,
+             ps.pip                                                                          as pip_u,
+             ps.is_fx                                                                        as fx_u
       from ded lt
       left join lim   l  on l.user_id  = lt.user_id
       left join jrisk jr on jr.user_id = lt.user_id and jr.ticket = lt.ticket::text
+      left join pipsz ps on ps.symbol = lt.symbol
     ),
     t as (
       select
@@ -274,8 +298,27 @@ begin
         l.max_risk,
         (
           l.max_risk is not null and l.max_risk > 0
-          and lt.risk_gbp is not null
-          and lt.risk_gbp::numeric > l.max_risk * 1.05
+          and (
+            -- The risk the trade CARRIED: at its entry stop (the EA stamp), or at the widest stop
+            -- it ever had (EA v8.4) - a stop dragged away after entry is a bigger risk taken.
+            greatest(coalesce(lt.risk_gbp::numeric, 0), coalesce(lt.risk_max_gbp::numeric, 0))
+              > l.max_risk * 1.05
+            -- What the broker says it actually LOST, before costs. Catches every trade the stamp
+            -- cannot: placed outside the EA, EA not running, or a stop widened while it was off.
+            -- A stop can fill past its level, so the loss may run over the limit by slippage -
+            -- allowed as 2 units of this position (the worst honest EURUSD stop-out seen was 1.2
+            -- pips late), with a percentage of the limit as a floor. A percentage alone is wrong:
+            -- on a 2-pip stop one pip of slippage is already 50% over. The 2 was measured on
+            -- forex only, so everything else gets a wider 10% floor until there are real index
+            -- stop-outs to measure.
+            or -(lt.pnl::numeric + coalesce(lt.costs::numeric, 0))
+               > l.max_risk
+                 + greatest(
+                     l.max_risk * case when coalesce(lt.fx_u, false) then 0.05 else 0.10 end,
+                     2 * lt.pip_u * (-(lt.pnl::numeric + coalesce(lt.costs::numeric, 0)))
+                       / nullif(abs(lt.exit_price::numeric - lt.entry_price::numeric), 0)
+                   )
+          )
         )                                                      as over_risk,
         ceil(row_number() over (partition by lt.user_id order by lt.close_time)::numeric / 10.0) as series_no
       from tv lt

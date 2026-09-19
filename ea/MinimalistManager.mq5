@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.3"
+#property version   "8.4"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2477,6 +2477,11 @@ bool SyncCollectAndPush(ulong posId)
    double exPrice[], exVol[]; long exTime[]; int outCnt=0;
    datetime openT=0,closeT=0;
    string sym=""; int dirIn=0; bool haveIn=false;
+   // The stop MT5 itself recorded on the deals (v8.4). An ENTRY deal carries the stop of the order
+   // that opened it; an EXIT deal carries the position's stop at the moment it closed. Neither
+   // needs the EA to have been running, which is what makes them the evidence for a trade placed
+   // outside it - and for a stop widened while the terminal was shut, if that stop closed it.
+   double inSL=0; double exSL[]; int exSLn=0;
    for(int i=0;i<n;i++)
      {
       ulong dt=HistoryDealGetTicket(i);
@@ -2495,13 +2500,15 @@ bool SyncCollectAndPush(ulong posId)
       if(de==DEAL_ENTRY_IN)
         {
          inVol+=vol; inPV+=price*vol;
-         if(!haveIn){ openT=tt; dirIn=(dtype==DEAL_TYPE_BUY)?1:-1; haveIn=true; }
+         if(!haveIn){ openT=tt; dirIn=(dtype==DEAL_TYPE_BUY)?1:-1; haveIn=true; inSL=HistoryDealGetDouble(dt,DEAL_SL); }
          else if(tt<openT) openT=tt;
         }
       else if(de==DEAL_ENTRY_OUT || de==DEAL_ENTRY_INOUT || de==DEAL_ENTRY_OUT_BY)
         {
          outVol+=vol; outPV+=price*vol;
          if(tt>closeT) closeT=tt;
+         double dsl=HistoryDealGetDouble(dt,DEAL_SL);
+         if(dsl>0){ ArrayResize(exSL,exSLn+1); exSL[exSLn]=dsl; exSLn++; }
          // Keep each exit, not just the running totals. exitPrice below is a volume-weighted
          // average, which for a scale-out is a price the chart never printed - fine as a summary,
          // useless as a record of what was actually done.
@@ -2547,6 +2554,35 @@ bool SyncCollectAndPush(ulong posId)
    // And the price size of one of those units, so the app can turn a price move into the same
    // unit exactly - it cannot know a symbol's digits or tick size on its own.
    json+=StringFormat(",\"unit_size\":%s", DoubleToString(UnitSizeOf(sym,du),8));
+   double unitSz=UnitSizeOf(sym,du);
+   // A trade placed OUTSIDE the EA has no stamp, so until v8.4 it reached the journal and the
+   // leaderboard with no stop and no risk at all - a 34-lot trade read exactly like a 1-lot one.
+   // Its real stop is known: the one on the order that opened it (DEAL_SL of the entry deal), or,
+   // for a stop added after the fill, the first one this EA saw on the live position.
+   double iniSL=(inSL>0) ? inSL : (GlobalVariableCheck(sk+"isl") ? GlobalVariableGet(sk+"isl") : 0.0);
+   if(!haveDetail && unitSz>0 && RiskAtStop(sym,dirIn,inVol,entryPrice,iniSL)>0)
+      json+=StringFormat(",\"sl_pips\":%s,\"risk_gbp\":%s",
+                         DoubleToString(MathAbs(entryPrice-iniSL)/unitSz,2),
+                         DoubleToString(RiskAtStop(sym,dirIn,inVol,entryPrice,iniSL),2));
+   // The WIDEST stop the trade ever had, from every source there is: the initial stop, each move
+   // logged live, and the stop in force at each exit. A stop dragged further away after entry
+   // raises the risk the trade actually carried, and the entry stamp can never show that - it is
+   // written once, at the fill. Omitted when no stop was ever known, so NULL means "unknown".
+   double wideD=0;
+   if(haveDetail && unitSz>0) wideD=GlobalVariableGet(sk+"sl")*unitSz;
+   wideD=MathMax(wideD,AdverseDist(dirIn,entryPrice,iniSL));
+   for(int k=0;k<exSLn;k++) wideD=MathMax(wideD,AdverseDist(dirIn,entryPrice,exSL[k]));
+   int mvN=GlobalVariableCheck(sk+"shn") ? (int)GlobalVariableGet(sk+"shn") : 0;
+   for(int k=0;k<mvN && k<64;k++)
+      if(GlobalVariableCheck(sk+"sh"+(string)k+"p"))
+         wideD=MathMax(wideD,AdverseDist(dirIn,entryPrice,GlobalVariableGet(sk+"sh"+(string)k+"p")));
+   if(wideD>0 && unitSz>0)
+     {
+      double wideRisk=RiskAtStop(sym,dirIn,inVol,entryPrice,entryPrice-dirIn*wideD);
+      if(wideRisk>0)
+         json+=StringFormat(",\"sl_max_pips\":%s,\"risk_max_gbp\":%s",
+                            DoubleToString(wideD/unitSz,2),DoubleToString(wideRisk,2));
+     }
    if(haveDetail)
      {
       double slp=GlobalVariableGet(sk+"sl");
@@ -2764,6 +2800,28 @@ void SyncFlush(int maxN)
       SyncCollectAndPush(posId);
       done++;
      }
+  }
+
+// How far a stop sits from entry on the LOSING side, in price. 0 for no stop, or for a stop at or
+// past entry on the winning side (breakeven or locked-in profit: nothing is at risk there).
+double AdverseDist(int dir,double entry,double slPx)
+  {
+   if(slPx<=0 || entry<=0) return 0.0;
+   double d=(dir>0) ? entry-slPx : slPx-entry;
+   return (d>0) ? d : 0.0;
+  }
+
+// Money lost, in the account currency, if a position of this size is stopped out at slPx.
+// OrderCalcProfit does the currency conversion the broker would; the tick-value sum is the
+// fallback for a symbol it cannot price. 0 when there is no stop on the losing side.
+double RiskAtStop(string sym,int dir,double lots,double entry,double slPx)
+  {
+   if(lots<=0 || AdverseDist(dir,entry,slPx)<=0) return 0.0;
+   double p=0.0;
+   if(OrderCalcProfit(dir>0?ORDER_TYPE_BUY:ORDER_TYPE_SELL,sym,lots,entry,slPx,p) && p<0) return -p;
+   double tv=SymbolInfoDouble(sym,SYMBOL_TRADE_TICK_VALUE), ts=SymbolInfoDouble(sym,SYMBOL_TRADE_TICK_SIZE);
+   if(tv>0 && ts>0) return AdverseDist(dir,entry,slPx)/ts*tv*lots;
+   return 0.0;
   }
 
 // Pip size for an arbitrary symbol (handles 3/5-digit fractional pricing).
@@ -3831,7 +3889,8 @@ string MoveJson(string sk,string tag,int dg)
    return s+"]";
   }
 
-// Track the furthest price moved in our favour, for every open EA position.
+// Track the furthest price moved in our favour, for every open EA position - and, since v8.4,
+// the STOP of every open position, EA-placed or not.
 // Only runs while MT5 is running (ticks) - the honest limit we flagged.
 void SyncTrackMFE()
   {
@@ -3840,32 +3899,24 @@ void SyncTrackMFE()
      {
       ulong tk=PositionGetTicket(i);
       if(!PositionSelectByTicket(tk)) continue;
-      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
       ulong  posId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
       string sk="MMD_"+(string)posId+"_mfe";
-      if(!GlobalVariableCheck(sk)) continue;        // only trades we stamped at entry
+      // Stamped by this EA at entry. Everything below the stop log is for those trades only.
+      bool ours=(PositionGetInteger(POSITION_MAGIC)==InpMagic && GlobalVariableCheck(sk));
       string sym  =PositionGetString(POSITION_SYMBOL);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       long   type =PositionGetInteger(POSITION_TYPE);
-      double pip  =SymbolPipFor(sym);
-      double fav  =(type==POSITION_TYPE_BUY) ? SymbolInfoDouble(sym,SYMBOL_BID)-entry
-                                             : entry-SymbolInfoDouble(sym,SYMBOL_ASK);
-      double favPips=(pip>0)? fav/pip : 0.0;
-      if(favPips<0) favPips=0.0;
-      double cur=GlobalVariableGet(sk);
-      if(favPips>cur) GlobalVariableSet(sk,favPips);
-
-      // ...and keep the stop level current. This is the one thing the post-mortem
-      // cannot reconstruct afterwards: MT5 discards it when the position closes.
-      string lk="MMD_"+(string)posId+"_lsl";
       double liveSL=PositionGetDouble(POSITION_SL);
-      if(liveSL>0) GlobalVariableSet(lk,liveSL);
-
-      // Log every SL/TP CHANGE, for the app's Trade Replay. Deliberately kept off _lsl: that
-      // one must stay a real price for the post-mortem, whereas a stop being REMOVED (0) is a
-      // change worth recording. Hence separate previous-value trackers. Seeding prev from the
-      // live value means the first tick of a position never logs a phantom move.
       string mk="MMD_"+(string)posId+"_";
+
+      // The first stop seen on the position: the initial stop of a trade whose order carried
+      // none (stop added after the fill). The entry deal's own DEAL_SL is preferred at close.
+      if(liveSL>0 && !GlobalVariableCheck(mk+"isl")) GlobalVariableSet(mk+"isl",liveSL);
+
+      // Log every SL/TP CHANGE, for the app's Trade Replay and, since v8.4, for the widest stop a
+      // trade ever had - on every position, because a stop dragged away from entry after the fill
+      // is exactly what an entry stamp cannot see. Seeding prev from the live value means the
+      // first tick of a position never logs a phantom move.
       double liveTP=PositionGetDouble(POSITION_TP);
       double ptM=SymbolInfoDouble(sym,SYMBOL_POINT); if(ptM<=0) ptM=_Point;
       double tolM=ptM*0.5;                       // half a point: ignores float noise, catches any real move
@@ -3876,6 +3927,22 @@ void SyncTrackMFE()
       if(MathAbs(liveTP-prevTP)>tolM) MoveLog(mk,"th",liveTP);
       GlobalVariableSet(pS,liveSL);
       GlobalVariableSet(pT,liveTP);
+
+      if(!ours) continue;
+      double pip  =SymbolPipFor(sym);
+      double fav  =(type==POSITION_TYPE_BUY) ? SymbolInfoDouble(sym,SYMBOL_BID)-entry
+                                             : entry-SymbolInfoDouble(sym,SYMBOL_ASK);
+      double favPips=(pip>0)? fav/pip : 0.0;
+      if(favPips<0) favPips=0.0;
+      double cur=GlobalVariableGet(sk);
+      if(favPips>cur) GlobalVariableSet(sk,favPips);
+
+      // ...and keep the stop level current. This is the one thing the post-mortem
+      // cannot reconstruct afterwards: MT5 discards it when the position closes. Deliberately
+      // separate from the move log above: _lsl must stay a real price for the post-mortem,
+      // whereas a stop being REMOVED (0) is a change worth recording.
+      string lk="MMD_"+(string)posId+"_lsl";
+      if(liveSL>0) GlobalVariableSet(lk,liveSL);
 
       // The moment the stop first reaches breakeven or better. Two questions hide inside a
       // stopped-out trade and they are NOT the same one:
