@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.1"
+#property version   "8.2"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -472,6 +472,55 @@ void SetLineText(string name,double price,string txt,color clr)
    ObjectSetInteger(0,name,OBJPROP_TIMEFRAMES,OBJ_ALL_PERIODS);
    ObjectSetString (0,name,OBJPROP_TEXT,txt);
    ObjectSetInteger(0,name,OBJPROP_COLOR,clr);
+   DeclutterLabels();
+  }
+
+// Line labels all sit at the same spot on the right, just above their line. Two lines at almost the
+// same price - a stop moved to break-even, right on the entry - printed "SL" and "Entry" on top of
+// each other. So after any label moves: walk them top to bottom, and slide any label that would
+// collide with one above it LEFT along its own line (its height never changes, so it still reads as
+// that line's label). When the lines separate again, every label returns to its home spot.
+void DeclutterLabels()
+  {
+   string nm[12]; int yv[12]; int wv[12]; int n=0;
+   string all[9];
+   all[0]=TX_SL; all[1]=TX_EF; all[2]=TX_ENTRY; all[3]=TX_BE; all[4]=TX_TP;
+   for(int k=0;k<TS_MAX;k++) all[5+k]=TX_TS+IntegerToString(k);
+   TextSetFont("Arial",-80);
+   for(int k=0;k<9 && n<12;k++)
+     {
+      if(ObjectFind(0,all[k])<0) continue;
+      string t=ObjectGetString(0,all[k],OBJPROP_TEXT);
+      if(StringLen(t)==0) continue;
+      uint w=0,h=0; TextGetSize(t,w,h);
+      nm[n]=all[k]; yv[n]=(int)ObjectGetInteger(0,all[k],OBJPROP_YDISTANCE); wv[n]=(int)MathRound(w*g_ui); n++;
+     }
+   // top to bottom (insertion sort - a handful of labels)
+   for(int i=1;i<n;i++)
+     {
+      int j=i; while(j>0 && yv[j-1]>yv[j])
+        {
+         string ts=nm[j]; nm[j]=nm[j-1]; nm[j-1]=ts;
+         int ty=yv[j]; yv[j]=yv[j-1]; yv[j-1]=ty;
+         int tw=wv[j]; wv[j]=wv[j-1]; wv[j-1]=tw;
+         j--;
+        }
+     }
+   int base=_s(58), gap=_s(10), rowH=_s(13);
+   int xv[12];
+   for(int i=0;i<n;i++)
+     {
+      int x=base;
+      bool moved=true;
+      for(int pass=0;pass<n && moved;pass++)   // repeat: a push can land on a label already checked
+        {
+         moved=false;
+         for(int j=0;j<i;j++)
+            if(MathAbs(yv[i]-yv[j])<rowH && x<xv[j]+wv[j]+gap && x+wv[i]+gap>xv[j]){ x=xv[j]+wv[j]+gap; moved=true; }
+        }
+      xv[i]=x;
+      if((int)ObjectGetInteger(0,nm[i],OBJPROP_XDISTANCE)!=x) ObjectSetInteger(0,nm[i],OBJPROP_XDISTANCE,x);
+     }
   }
 
 // Resolve entry & direction from current lines (no SL clamp). Returns false if invalid.
