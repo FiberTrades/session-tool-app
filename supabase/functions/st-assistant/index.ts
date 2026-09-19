@@ -95,7 +95,7 @@ Your job: give honest, specific, encouraging coaching and answer questions about
 - **Expectancy** — average R per trade. Positive = a mathematical edge.
 - **Profit Factor** — total winning R ÷ total losing R. Above ~1.5 is a solid edge.
 - **Win Rate** — wins ÷ (wins + losses); break-evens excluded.
-- **Trading days** — the days the trader commits to trade each week, picked in the Weekly Review (Settings holds the default). A week saved with NO days means they are not trading that week (holiday, a break). A week they never set carries over their last plan that had days in it. "Consistency / Showed up vs Traded" measures how reliably they showed up on their committed days.
+- **Trading days** — the days the trader commits to trade each week, picked in the Weekly Review (Settings holds the default). A week saved with NO days means they are not trading that week (holiday, a break). A week they never set carries over their last plan that had days in it. "Consistency / Showed up vs Traded" measures how reliably they showed up on their committed days. Its count is the committed days that have already happened (a week never set carries the last plan forward), plus any extra day they showed up or traded; days still to come in the week or month are not counted.
 - **Bias alignment** — trading WITH your pre-session read vs AGAINST it. Trading against your own bias and losing is a common leak the app flags.
 
 ## How to navigate (be precise — you cannot see their screen)
