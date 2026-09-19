@@ -28341,7 +28341,10 @@ try {
       weeklyExtra = `<div class="month-insights" style="margin-top:0;">
         <div class="month-insights-header">${t('modal.consistency')}</div>
         ${renderConsistencyBlock(currentReview.start, currentReview.end, weekTrades, { minimal: true })}
-        <div class="month-insight-block lbr-block" data-lbr-period="week" hidden></div>
+      </div>
+      <div class="month-insights lbr-section" hidden>
+        <div class="month-insights-header">${window._stT('Leaderboard achievements', 'Logros en el ranking')}</div>
+        <div class="month-insight-block lbr-block" data-lbr-period="week" data-lbr-notitle="1"></div>
       </div>`;
     }
     // Net P&L now lives in the corner pill; Trades count is implicit from W/L/BE row.
@@ -28368,9 +28371,10 @@ try {
         const _iso = _d.getFullYear() + '-' + String(_d.getMonth() + 1).padStart(2, '0') + '-' + String(_d.getDate()).padStart(2, '0');
         const _key = (currentReview.key || '') + _iso;
         _lb.setAttribute('data-lbr-key', _key);
-        window.__stLbMine(_lb.getAttribute('data-lbr-period'), _iso).then(html => {
+        window.__stLbMine(_lb.getAttribute('data-lbr-period'), _iso, _lb.hasAttribute('data-lbr-notitle')).then(html => {
           if (!html || _lb.getAttribute('data-lbr-key') !== _key || !_lb.isConnected) return;
           _lb.innerHTML = html; _lb.hidden = false;
+          const _sec = _lb.closest('.lbr-section'); if (_sec) _sec.hidden = false;   // the weekly section shows once it has something
         });
       }
     } catch (e) {}
@@ -64790,6 +64794,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stb-bd-close:hover{color:var(--text);background:var(--border);}
 .stb-bd-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px;padding-right:24px;padding-bottom:12px;border-bottom:1px solid var(--border-2);}
 .lbr-block .stb-bd-head{padding-right:0;margin:10px 0 6px;padding-bottom:10px;}
+.lbr-block[data-lbr-notitle] .stb-bd-head{margin-top:0;}
+.lbr-section[hidden]{display:none;}
 .lbr-block .stb-bd-title{font-size:15px;}
 .stb-bd-title{font-family:'Fraunces',serif;font-size:16px;color:var(--text);}
 .stb-bd-total{font-size:18px;font-weight:700;color:var(--accent);flex:none;}
@@ -65093,6 +65099,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var r = Number(pb.lim_loss_pct) / Number(pb.lim_risk_pct);
     return (isFinite(r) && r > 0) ? (p + ' · ' + (Math.round(r * 10) / 10) + 'R') : p;
   }
+  // How often a risk rule was kept and broken: each is scored per trading day (+5 kept, -20 broken),
+  // so the points alone could not say whether -5 meant 3 kept + 1 broken or 7 + 2. Stored in the
+  // breakdown since 19 Sep 2026; older frozen periods lack it and show just the limit.
+  function _keptSub(pb, k, o, lim){
+    if(!(k in pb)) return lim;
+    var kept=Number(pb[k])||0, over=Number(pb[o])||0, tot=kept+over;
+    if(!tot) return lim;
+    var s=_t('kept','cumplida')+' '+kept+' '+_t('of','de')+' '+tot+' '+_t(tot===1?'day':'days', tot===1?'día':'días');
+    if(over>0) s+=' · '+_t('broken','incumplida')+' '+over;
+    return lim ? (lim+' · '+s) : s;
+  }
   function cardBreakdown(x,u,headHtml){
     var pb=x.points_breakdown||{};
     // fmtR is the card's formatter and floors at 0R. This line used to format the raw value,
@@ -65117,9 +65134,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       // and match_days is a subset of those by construction, so it can never read "8 of 5".
       [_t('Traded with your bias','Operado con tu sesgo'), pb.traded_day, _outOf(pb.dir_days, pb.dir_total, 'days','días')],
       // Subtitles carry the limit itself, so the points can be read against what was promised.
-      [_t('Max trades / session','Máx. operaciones'), pb.max_trades, _limTrades(pb)],
-      [_t('Max daily drawdown','Máx. pérdida diaria'), pb.drawdown, _limDrawdown(pb)],
-      [_t('Max risk per trade','Máx. riesgo'), pb.max_risk, _limRisk(pb)],
+      [_t('Max trades / session','Máx. operaciones'), pb.max_trades, _keptSub(pb,'maxtr_kept','maxtr_over',_limTrades(pb))],
+      [_t('Max daily drawdown','Máx. pérdida diaria'), pb.drawdown, _keptSub(pb,'dd_kept','dd_over',_limDrawdown(pb))],
+      [_t('Max risk per trade','Máx. riesgo'), pb.max_risk, _keptSub(pb,'risk_kept','risk_over',_limRisk(pb))],
       [_t('#1 streak bonus','Bonus de racha #1'), pb.streak, '']
     ];
     var h=(headHtml || ('<div class="stb-bd-head"><span class="stb-bd-title">'+_t('How','Cómo')+' '+esc(u.name)+' '+_t('scored','puntuó')+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div>'))+'<div class="stb-bd-list">';
@@ -65131,14 +65148,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   /* The signed-in trader's leaderboard achievements for one week or month, as HTML - used by the
      weekly and monthly reviews. Same rows, same numbers as the board's "How X scored" popup. */
-  window.__stLbMine = function(period, startISO){
+  window.__stLbMine = function(period, startISO, noTitle){
     try{
       var c=window.__stSB, uid=window.STCloud && window.STCloud.userId;
       if(!c || !uid || window.__MV) return Promise.resolve('');
       return c.from('leaderboard_entries').select('*').eq('period', period).eq('period_start', startISO).eq('user_id', uid).maybeSingle()
         .then(function(r){
           var x=r && r.data;
-          var title='<div class="month-insight-title">'+_t('Leaderboard achievements','Logros en el ranking')+'</div>';
+          var title=noTitle ? '' : '<div class="month-insight-title">'+_t('Leaderboard achievements','Logros en el ranking')+'</div>';
           if(!x) return title+'<div class="month-insight-empty">'+(period==='week'
             ? _t('No leaderboard score for this week yet.','Aún no hay puntuación del ranking esta semana.')
             : _t('No leaderboard score for this month yet.','Aún no hay puntuación del ranking este mes.'))+'</div>';

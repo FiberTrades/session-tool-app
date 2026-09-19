@@ -747,7 +747,7 @@ begin
           'traded_day',   coalesce(dm.match_days,0) * 10,
           'max_trades',   coalesce(cda.maxtr_kept,0) * 5 - coalesce(cda.maxtr_over,0) * 20,
           'drawdown',     coalesce(cda.dd_kept,0)    * 5 - coalesce(cda.dd_over,0)    * 20,
-          'max_risk',     coalesce(cda.risk_kept,0)  * 5 - coalesce(cda.risk_over,0)  * 20,
+          'max_risk',     coalesce(cda.risk_kept,0)  * 5 - coalesce(cda.risk_over,0)  * 20, 'maxtr_kept', coalesce(cda.maxtr_kept,0), 'maxtr_over', coalesce(cda.maxtr_over,0), 'dd_kept', coalesce(cda.dd_kept,0), 'dd_over', coalesce(cda.dd_over,0), 'risk_kept', coalesce(cda.risk_kept,0), 'risk_over', coalesce(cda.risk_over,0),
           'streak',       coalesce(sb.bonus,0),
           'lim_max_trades', l.max_trades,
           'lim_risk_pct',   l.max_risk_pct,
