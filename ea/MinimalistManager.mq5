@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.4"
+#property version   "8.5"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -256,6 +256,7 @@ int    g_volDigits;
 #define SYNC_KEY "sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv"
 #define SYNC_TOKEN_FILE "SessionTool_sync_token.txt"   // remembers the token across re-attaches
 ulong  g_syncQueue[];
+ulong  g_balQueue[];     // v8.5: withdrawals waiting to be sent (deal tickets)
 string g_liveQueue[];   // ready-to-send live-status JSON (open/close), flushed in OnTimer
 int    g_liveTries[];   // parallel retry counter per queued event (v4.2: don't lose a card to one blip)
 datetime g_liveReAt=0;  // last time open positions were re-announced (v4.3: self-heal the feed after a reset)
@@ -2435,6 +2436,50 @@ bool SyncAlreadyPushed(ulong posId)
    return false;
   }
 
+//------------------------------------------------------------------
+//  WITHDRAWALS (v8.5)
+//  A prop firm pays out by taking the money out of the MT5 account, which MT5 records as a
+//  BALANCE deal with a negative amount. The app offers each one as a payout, so the account's
+//  balance there drops exactly when MT5's does. Sent once per deal: the MMB_<deal> global is
+//  set only on a 200, so a failed post is simply retried on the next scan.
+//------------------------------------------------------------------
+void BalEnqueue(ulong deal)
+  {
+   if(deal==0 || GlobalVariableCheck("MMB_"+(string)deal)) return;
+   for(int i=0;i<ArraySize(g_balQueue);i++) if(g_balQueue[i]==deal) return;
+   int n=ArraySize(g_balQueue); ArrayResize(g_balQueue,n+1); g_balQueue[n]=deal;
+  }
+
+string JsonEsc(string v)
+  {
+   StringReplace(v,"\\","\\\\");
+   StringReplace(v,"\"","\\\"");
+   StringReplace(v,"\r"," "); StringReplace(v,"\n"," ");
+   return v;
+  }
+
+void BalFlush(int maxN)
+  {
+   if(StringLen(g_syncTokenEff)==0) return;
+   int done=0;
+   while(ArraySize(g_balQueue)>0 && done<maxN)
+     {
+      ulong deal=g_balQueue[0];
+      for(int i=1;i<ArraySize(g_balQueue);i++) g_balQueue[i-1]=g_balQueue[i];
+      ArrayResize(g_balQueue,ArraySize(g_balQueue)-1);
+      done++;
+      if(!HistoryDealSelect(deal)) continue;          // gone from history: nothing to send
+      double amt=HistoryDealGetDouble(deal,DEAL_PROFIT);
+      if(amt>=0) continue;
+      string json=StringFormat(
+         "{\"token\":\"%s\",\"kind\":\"balance\",\"deal\":%I64u,\"login\":%I64d,\"amount\":%s,\"time\":\"%s\",\"comment\":\"%s\"}",
+         g_syncTokenEff,deal,AccountInfoInteger(ACCOUNT_LOGIN),DoubleToString(amt,2),
+         SyncIso((datetime)HistoryDealGetInteger(deal,DEAL_TIME)),
+         JsonEsc(HistoryDealGetString(deal,DEAL_COMMENT)));
+      if(SyncPost(json)) GlobalVariableSet("MMB_"+(string)deal,1.0);
+     }
+  }
+
 string SyncIso(datetime t)
   {
    // t is broker SERVER time. Convert to UTC so the Session Tool app can localise it
@@ -2780,6 +2825,13 @@ void SyncCatchUp()
      {
       ulong dt=HistoryDealGetTicket(i);
       if(dt==0) continue;
+      // v8.5: money taken OUT of the account - a payout, usually. Not a trade, so it never
+      // joins the position queue; it gets its own, and its own kind of post.
+      if(HistoryDealGetInteger(dt,DEAL_TYPE)==DEAL_TYPE_BALANCE)
+        {
+         if(HistoryDealGetDouble(dt,DEAL_PROFIT)<0) BalEnqueue(dt);
+         continue;
+        }
       long de=HistoryDealGetInteger(dt,DEAL_ENTRY);
       if(de!=DEAL_ENTRY_OUT && de!=DEAL_ENTRY_INOUT && de!=DEAL_ENTRY_OUT_BY) continue;
       ulong posId=(ulong)HistoryDealGetInteger(dt,DEAL_POSITION_ID);
@@ -4200,6 +4252,7 @@ void OnTimer()
    else if(TimeCurrent()-g_syncCatchAt>=180){ g_syncCatchAt=TimeCurrent(); SyncCatchUp(); }    // v4.5: ...and every 3 min as a backstop
    g_wasConnected=_connNow;
    SyncFlush(3);
+   BalFlush(2);
    if(TimeCurrent()-g_liveReAt>=20){ g_liveReAt=TimeCurrent(); LiveReannounceOpen(); }   // v4.3: keep open trades on the live feed
    LiveFlush(3);
    ChartRedraw();

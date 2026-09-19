@@ -123,6 +123,34 @@ Deno.serve(async (req) => {
   const { token, ticket, symbol } = body ?? {};
 
   // ---------------------------------------------------------------
+  // BALANCE BRANCH (EA v8.5)
+  // Money taken out of the MT5 account that is not a trade - a prop-firm payout, usually.
+  // Stored in balance_ops, never trades_inbox: everything downstream of the inbox (importer,
+  // leaderboard archive, replay) assumes a trade, and a withdrawal there would read as a loss.
+  // The app offers each one as a payout, then stamps handled_at.
+  // ---------------------------------------------------------------
+  if (body?.kind === "balance") {
+    const deal = Number(body.deal);
+    const amount = numOrNull(body.amount);
+    if (!token || !Number.isFinite(deal) || deal <= 0 || amount === null || amount === 0) {
+      return json({ error: "balance op needs a token, a deal and a non-zero amount" }, 400);
+    }
+    const uid = await resolveSyncUser(String(token));
+    if ("error" in uid) return json({ error: uid.error }, uid.status);
+    const opTime = (typeof body.time === "string" && Number.isFinite(Date.parse(body.time))) ? body.time : null;
+    const { error } = await admin.from("balance_ops").upsert({
+      token:   uid.userId,
+      deal,
+      login:   numOrNull(body.login),
+      amount,
+      op_time: opTime,
+      comment: (typeof body.comment === "string") ? body.comment.slice(0, 120) : null,
+    }, { onConflict: "token,deal", ignoreDuplicates: true });
+    if (error) return json({ error: error.message }, 500);
+    return json({ ok: true }, 200);
+  }
+
+  // ---------------------------------------------------------------
   // POST-MORTEM BRANCH
   // A follow-up for a trade already stored. Identified by carrying replay fields
   // and no symbol. Everything below this point assumes a full trade payload.
