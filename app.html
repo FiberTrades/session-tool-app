@@ -28085,9 +28085,11 @@ try {
 
     // Compose the whole block. If the month has zero trades, hide everything cleanly.
     if (monthTrades.length === 0) return '';
+    // "Patterns worth noting" gave way to the month's leaderboard achievements (filled in after render).
+    void patternsHtml;
     return `<div class="month-insights">
       <div class="month-insights-header">${t('modal.monthly_insights')}</div>
-      ${patternsHtml}
+      <div class="month-insight-block lbr-block" data-lbr-period="month" hidden></div>
       ${tradeOfMonthHtml}
       ${weekSectionHtml}
       ${consistencyHtml}
@@ -28339,6 +28341,7 @@ try {
       weeklyExtra = `<div class="month-insights" style="margin-top:0;">
         <div class="month-insights-header">${t('modal.consistency')}</div>
         ${renderConsistencyBlock(currentReview.start, currentReview.end, weekTrades, { minimal: true })}
+        <div class="month-insight-block lbr-block" data-lbr-period="week" hidden></div>
       </div>`;
     }
     // Net P&L now lives in the corner pill; Trades count is implicit from W/L/BE row.
@@ -28354,6 +28357,23 @@ try {
       ${weeklyExtra}
       ${monthlyExtra}
     `;
+    // The period's leaderboard achievements, fetched after the modal is on screen.
+    try {
+      const _lb = document.querySelector('#review-modal-body .lbr-block');
+      const _st = currentReview && currentReview.start;
+      if (_lb && _st && typeof window.__stLbMine === 'function') {
+        const _d = new Date(_st);
+        if (_lb.getAttribute('data-lbr-period') === 'month') _d.setDate(1);
+        else _d.setDate(_d.getDate() - ((_d.getDay() + 6) % 7));   // the board keys weeks by their Monday
+        const _iso = _d.getFullYear() + '-' + String(_d.getMonth() + 1).padStart(2, '0') + '-' + String(_d.getDate()).padStart(2, '0');
+        const _key = (currentReview.key || '') + _iso;
+        _lb.setAttribute('data-lbr-key', _key);
+        window.__stLbMine(_lb.getAttribute('data-lbr-period'), _iso).then(html => {
+          if (!html || _lb.getAttribute('data-lbr-key') !== _key || !_lb.isConnected) return;
+          _lb.innerHTML = html; _lb.hidden = false;
+        });
+      }
+    } catch (e) {}
   }
 
   // Holds the currently-open review: { kind: 'weekly'|'monthly', start, end, key, titleText }
@@ -64769,6 +64789,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .stb-bd-close{position:absolute;top:12px;right:14px;background:transparent;border:none;color:var(--text-dim);font-size:22px;line-height:1;cursor:pointer;padding:2px 6px;border-radius:6px;}
 .stb-bd-close:hover{color:var(--text);background:var(--border);}
 .stb-bd-head{display:flex;align-items:baseline;justify-content:space-between;gap:12px;margin-bottom:14px;padding-right:24px;padding-bottom:12px;border-bottom:1px solid var(--border-2);}
+.lbr-block .stb-bd-head{padding-right:0;margin:10px 0 6px;padding-bottom:10px;}
+.lbr-block .stb-bd-title{font-size:15px;}
 .stb-bd-title{font-family:'Fraunces',serif;font-size:16px;color:var(--text);}
 .stb-bd-total{font-size:18px;font-weight:700;color:var(--accent);flex:none;}
 .stb-bd-list{display:flex;flex-direction:column;}
@@ -65071,7 +65093,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var r = Number(pb.lim_loss_pct) / Number(pb.lim_risk_pct);
     return (isFinite(r) && r > 0) ? (p + ' · ' + (Math.round(r * 10) / 10) + 'R') : p;
   }
-  function cardBreakdown(x,u){
+  function cardBreakdown(x,u,headHtml){
     var pb=x.points_breakdown||{};
     // fmtR is the card's formatter and floors at 0R. This line used to format the raw value,
     // so a losing month showed 0R on the card and -20.48R in the breakdown directly beside it -
@@ -65100,13 +65122,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       [_t('Max risk per trade','Máx. riesgo'), pb.max_risk, _limRisk(pb)],
       [_t('#1 streak bonus','Bonus de racha #1'), pb.streak, '']
     ];
-    var h='<div class="stb-bd-head"><span class="stb-bd-title">'+_t('How','Cómo')+' '+esc(u.name)+' '+_t('scored','puntuó')+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div><div class="stb-bd-list">';
+    var h=(headHtml || ('<div class="stb-bd-head"><span class="stb-bd-title">'+_t('How','Cómo')+' '+esc(u.name)+' '+_t('scored','puntuó')+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div>'))+'<div class="stb-bd-list">';
     var any=false;
     rows.forEach(function(rw){ var p=(rw[1]==null?0:Number(rw[1])); if(p===0 && !rw[2]) return; any=true; var sign=p>=0?'+':''; var cls=p>0?'good':(p<0?'bad':'dim'); h+='<div class="stb-bd-row"><span class="stb-bd-k">'+esc(rw[0])+(rw[2]?' <em>'+esc(String(rw[2]))+'</em>':'')+'</span><span class="stb-bd-p '+cls+'">'+sign+Math.round(p)+'</span></div>'; });
     if(!any) h+='<div class="stb-bd-row"><span class="stb-bd-k">'+_t('Deploy the scoring update to see the breakdown.','Actualiza el sistema de puntos para ver el desglose.')+'</span></div>';
     h+='</div>';
     return h;
   }
+  /* The signed-in trader's leaderboard achievements for one week or month, as HTML - used by the
+     weekly and monthly reviews. Same rows, same numbers as the board's "How X scored" popup. */
+  window.__stLbMine = function(period, startISO){
+    try{
+      var c=window.__stSB, uid=window.STCloud && window.STCloud.userId;
+      if(!c || !uid || window.__MV) return Promise.resolve('');
+      return c.from('leaderboard_entries').select('*').eq('period', period).eq('period_start', startISO).eq('user_id', uid).maybeSingle()
+        .then(function(r){
+          var x=r && r.data;
+          var title='<div class="month-insight-title">'+_t('Leaderboard achievements','Logros en el ranking')+'</div>';
+          if(!x) return title+'<div class="month-insight-empty">'+(period==='week'
+            ? _t('No leaderboard score for this week yet.','Aún no hay puntuación del ranking esta semana.')
+            : _t('No leaderboard score for this month yet.','Aún no hay puntuación del ranking este mes.'))+'</div>';
+          var rk=(x.ranked && x.rank) ? ('#'+x.rank+' '+(period==='week'?_t('this week','esta semana'):_t('this month','este mes')))
+                                      : _t('Not ranked','Sin clasificar');
+          var head='<div class="stb-bd-head"><span class="stb-bd-title">'+esc(rk)+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div>';
+          return title+cardBreakdown(x,{name:''},head);
+        }, function(){ return ''; });
+    }catch(e){ return Promise.resolve(''); }
+  };
   function openBreakdown(x,u){
     var ov=el('stb-bd-modal');
     if(!ov){ ov=document.createElement('div'); ov.id='stb-bd-modal'; ov.className='stb-bd-modal'; document.body.appendChild(ov);
