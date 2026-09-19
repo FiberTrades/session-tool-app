@@ -27595,7 +27595,15 @@ try {
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
   // via _mondayKey, so one week's change doesn't affect the others.
   function _consistencyPlannedDays(dayDate) {
-    try { var wk = _mondayKey(dayDate); var commit = wk ? getWeekCommitment(wk) : null; if (commit) return commit; } catch (e) {}
+    /* A week you never set carries your last plan forward, exactly as the weekly-review picker and
+       the rest of the app read it (Nestor's call: "keep carrying last plan"). It used to drop
+       straight to Settings Mon-Fri, so a Mon/Wed/Thu/Fri trader was scored on Tuesdays too. */
+    try {
+      var wk = _mondayKey(dayDate);
+      var roll = (typeof _rolledCommitment === 'function') ? _rolledCommitment : window.__stRolledCommitment;
+      var commit = wk ? (roll ? roll(wk) : getWeekCommitment(wk)) : null;
+      if (commit) return commit;
+    } catch (e) {}
     try { var td = data && data.settings && data.settings.tradingDays; if (Array.isArray(td) && td.length) return td.map(Number); } catch (e) {}
     return [1, 2, 3, 4, 5];
   }
@@ -27604,6 +27612,10 @@ try {
   // for joins the count, and a planned day you skip counts against you.
   function _consistencyCounted(startDate, endDate, tradedSet, showedUpSet) {
     var counted = new Set();
+    // Only days that have happened: a month (or week) still in progress used to count every
+    // planned day to its end - 19 days for September on the 19th, 6 of them still to come.
+    var _today = new Date(); _today.setHours(23, 59, 59, 999);
+    if (endDate > _today) endDate = _today;
     for (var d = new Date(startDate); d <= endDate; d.setDate(d.getDate() + 1)) {
       if (_consistencyPlannedDays(d).indexOf(d.getDay()) !== -1) counted.add(d.toDateString());
     }
