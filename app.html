@@ -29237,36 +29237,35 @@ try {
     // and continuous numbering reads less ambiguously when Discord stacks the previews at the bottom.
     const chartIndex = []; // { url, source, label }
     const bestTradeChart = dBestWin && (typeof pickTradeChartUrl === 'function') ? pickTradeChartUrl(dBestWin) : null;
-    // No label: it is the only chart under "— Best trade of the week —", so "Best Trade" just repeated it.
-    if (bestTradeChart) chartIndex.push({ url: bestTradeChart, source: 'best', label: '' });
-    // Missed setups are numbered within their own section: Trade [1], Trade [2], …
-    missedLinksOut.filter(l => l.url && l.url.trim()).forEach((l, i) => chartIndex.push({ url: l.url, notes: l.notes || '', source: 'missed', label: `Setup [${i + 1}]` }));
-    // Missed entries with a note but no chart URL: keep the note (no chart number / preview).
-    missedLinksOut.filter(l => (!l.url || !l.url.trim()) && l.notes && l.notes.trim()).forEach(l => chartIndex.push({ url: '', notes: l.notes, source: 'missed', label: '' }));
-
-    // Inline marker for the "didn't take" header — the same [1] [2]… tags used in the list below.
-    const missedRefs = chartIndex.filter(c => c.source === 'missed' && c.url).map((c, i) => `[${i + 1}]`).join(' ');
+    // The best trade's chart goes straight under its own section (below), not into the charts
+    // block at the bottom: the in-app community renders each image where its link sits.
+    // Setup charts also sit in their own section now (each under its setup line), so nothing is
+    // collected for a charts block at the bottom any more.
 
     if (dBestWin) {
       lines.push('');
       lines.push(`**Best trade of the week**`);
       lines.push(tradeOneLiner(dBestWin));
       if (bestTradeTxt) lines.push(bestTradeTxt);
+      if (bestTradeChart) lines.push(bestTradeChart);   // shows as the chart image right here
     }
     const _missedScored = missedLinksOut.filter(l => l.result || (typeof l.r === 'number' && !isNaN(l.r)));
-    if (missedUrls.length > 0 || missedWins || _missedScored.length > 0) {
+    if (missedUrls.length > 0 || missedWins || _missedScored.length > 0 || missedLinksOut.some(l => l.notes && l.notes.trim())) {
       lines.push('');
-      const ref = missedUrls.length > 0 ? `   ${missedRefs}` : '';
-      lines.push(`**Setups inside my session I didn't take**${ref}`);
-      // Every outcome, R signed from the result; chart refs [n] match the charts grouped at the bottom.
-      if (_missedScored.length > 0) {
-        const _closed = { tp: 'TP hit', sl: 'SL hit', be: 'BE hit', manual: 'closed manually' };
-        let chartN = 0, netR = 0, netN = 0;
-        missedLinksOut.forEach(l => {
-          const hasChart = !!(l.url && l.url.trim());
-          if (hasChart) chartN++;
-          if (!(l.result || (typeof l.r === 'number' && !isNaN(l.r)))) return;
-          const tag = hasChart ? `Setup [${chartN}]` : 'Setup';
+      lines.push(`**Setups inside my session I didn't take**`);
+      // Each setup: its line (when it has an outcome), then its chart right below it - the in-app
+      // community shows the image where the link sits - then its notes.
+      const _closed = { tp: 'TP hit', sl: 'SL hit', be: 'BE hit', manual: 'closed manually' };
+      let chartN = 0, netR = 0, netN = 0, _setupN = 0;
+      missedLinksOut.forEach(l => {
+        const hasChart = !!(l.url && l.url.trim());
+        const scored = !!(l.result || (typeof l.r === 'number' && !isNaN(l.r)));
+        const hasNote = !!(l.notes && l.notes.trim());
+        if (!scored && !hasChart && !hasNote) return;
+        if (_setupN++ > 0) lines.push('');   // a gap between setups - their charts sit inline now
+        if (hasChart) chartN++;
+        const tag = hasChart ? `Setup [${chartN}]` : 'Setup';
+        if (scored) {
           const sr = (typeof l.sr === 'number') ? l.sr : ((typeof l.r === 'number' && !isNaN(l.r)) ? l.r : null);
           const bits = [];
           if (l.symbol) bits.push(l.symbol);
@@ -29277,9 +29276,13 @@ try {
           if (l.closedBy && _closed[l.closedBy]) bits.push(_closed[l.closedBy]);
           if (sr != null) { netR += sr; netN++; }
           lines.push(`${tag}   ${[bits.join(' · '), sr != null ? `${sr >= 0 ? '+' : ''}${sr.toFixed(2)}R would-be` : ''].filter(Boolean).join('   ')}`);
-        });
-        if (netN > 0) lines.push(`Total would-be R:   ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`);
-      }
+        } else if (hasChart) {
+          lines.push(tag);
+        }
+        if (hasChart) lines.push(l.url.trim());
+        if (hasNote) lines.push(`Notes: "${l.notes.trim()}"`);
+      });
+      if (netN > 0) { lines.push(''); lines.push(`Total would-be R:   ${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`); }
       if (missedWins) lines.push(missedWins);
     }
     if (focusNext) {
