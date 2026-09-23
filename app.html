@@ -932,6 +932,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .dcx-queued-x { background: none; border: none; padding: 0; color: var(--text-dim);
     font: inherit; text-transform: uppercase; cursor: pointer; text-decoration: underline dotted; }
   .dcx-queued-x:hover { color: var(--bad); }
+  .dcx-queued.stuck { border-color: color-mix(in srgb, var(--bad) 50%, transparent); opacity: 0.9; }
+  .dcx-queued.stuck .dcx-queued-meta > span:first-child { color: var(--bad); }
+  .dcx-queued-r { background: none; border: none; padding: 0; color: var(--accent, #f472b6);
+    font: inherit; text-transform: uppercase; cursor: pointer; text-decoration: underline dotted; }
   @media (max-width: 560px) { .dcx-queued { margin-left: 14px; max-width: 86%; } }
   .settings-account-paid { grid-column: 1 / -1; margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace;
     font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
@@ -46948,10 +46952,12 @@ try {
           var body=(it.row&&it.row.body)||'';
           var att=(it.row&&it.row.attachment_name)||'';
           var fname=(it.file&&it.file.name)||att;
-          desired.push({ k:'p:'+it.oid, h:'<div class="dcx-queued" data-key="p:'+it.oid+'">'
+          var stuck=(it.tries||0)>=3;
+          desired.push({ k:'p:'+it.oid+':'+(it.tries||0), h:'<div class="dcx-queued'+(stuck?' stuck':'')+'" data-key="p:'+it.oid+':'+(it.tries||0)+'">'
             + (body?('<div class="dcx-queued-body">'+esc(body)+'</div>'):'')
             + (fname?('<div class="dcx-queued-att">\u{1F4CE} '+esc(fname)+'</div>'):'')
-            + '<div class="dcx-queued-meta"><span>'+(_esUI()?'Esperando para enviar':'Waiting to send')+'</span>'
+            + '<div class="dcx-queued-meta"><span>'+(stuck?(_esUI()?'No se pudo enviar':'Couldn\u2019t send'):(_esUI()?'Esperando para enviar':'Waiting to send'))+'</span>'
+            + (stuck?('<button type="button" class="dcx-queued-r" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Reintentar':'Retry')+'</button>'):'')
             + '<button type="button" class="dcx-queued-x" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Cancelar':'Cancel')+'</button></div></div>' });
         });
       }catch(e){}
@@ -46966,6 +46972,11 @@ try {
       try{ Array.prototype.forEach.call(box.querySelectorAll('.dcx-queued-x'), function(b){
         if(b.__wired) return; b.__wired=true;
         b.addEventListener('click', function(){ obRemove(b.getAttribute('data-oid')); repaint(); });
+      }); }catch(e){}
+      /* Retry clears the failure count so the row goes back to "waiting" and tries again now. */
+      try{ Array.prototype.forEach.call(box.querySelectorAll('.dcx-queued-r'), function(b){
+        if(b.__wired) return; b.__wired=true;
+        b.addEventListener('click', function(){ window.STQueue.retry(b.getAttribute('data-oid')); });
       }); }catch(e){} }
     function append(m){ if(seen[m.id]) return; seen[m.id]=true; msgs.push(m); repaint(); }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
@@ -47024,10 +47035,25 @@ try {
         if (busy) return;
         if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
         var q = load(); if (!q.length) return;
-        var it = q[0], h = H[it.kind];
-        if (!h || typeof h.send !== 'function') { remove(it.oid); flush(); return; }   // nobody owns it any more
+        /* An item written by the first outbox build has no kind - it can only be a channel
+           message, because that is all that build could queue. Never infer "no handler" from
+           that and delete it: this queue exists precisely so nothing is thrown away. */
+        var it = q[0];
+        if (!it.kind) { it.kind = 'channel'; var a0 = load(); for (var i0 = 0; i0 < a0.length; i0++) if (a0[i0].oid === it.oid) { a0[i0].kind = 'channel'; break; } save(a0); }
+        var h = H[it.kind];
+        /* Not registered YET (that chat has not been opened this session) is not the same as
+           unknown. Wait for it - the next flush will find it. */
+        if (!h || typeof h.send !== 'function') return;
         busy = true;
-        var fail = function(){ busy = false; bump(it.oid); };
+        var fail = function(err){
+          busy = false; bump(it.oid);
+          /* A login that expired while the app was offline fails every insert for ever. Refresh it
+             once, quietly, so the next attempt has a live session to use. */
+          try{
+            var msg = String((err && (err.message || err.msg)) || '');
+            if (/jwt|token|expired|401|unauthor/i.test(msg) && window.__stSB && window.__stSB.auth && window.__stSB.auth.refreshSession) window.__stSB.auth.refreshSession();
+          }catch(e){}
+        };
         var done = function(row){ busy = false; remove(it.oid); try{ if (h.sent) h.sent(row, it); }catch(e){} flush(); };
         var go = function(already){
           if (already) { done(null); return; }                                          // it is already posted
@@ -47049,6 +47075,8 @@ try {
       }catch(e){}
       return {
         register: function(kind, h){ H[kind] = h; if (h && h.changed) subs.push(h.changed); flush(); },
+        /* For the UI: is anything waiting, and has any of it given up trying? */
+        state: function(){ var a = load(); return { n: a.length, stuck: a.some(function(x){ return (x.tries || 0) >= 3; }) }; },
         add: function(kind, row, file, fileKind){
           var it = { oid: 'ob_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: kind, row: row, ts: Date.now(), tries: 0, file: null };
           if (file) it.file = { name: file.name || 'attachment', type: file.type || '', kind: fileKind || 'file' };
@@ -47056,7 +47084,8 @@ try {
           if (file) putFile(it.oid, file);
           return it;
         },
-        listFor: function(kind, match){ return load().filter(function(x){ return x.kind === kind && (!match || match(x)); }); },
+        listFor: function(kind, match){ return load().filter(function(x){ return (x.kind || 'channel') === kind && (!match || match(x)); }); },
+        retry: function(oid){ var a = load(); for (var i = 0; i < a.length; i++) if (a[i].oid === oid) { a[i].tries = 0; break; } save(a); flush(); },
         remove: remove, flush: flush
       };
     })();
@@ -47097,7 +47126,11 @@ try {
         });
       },
       exists: function(it){ return obAlreadyThere(it); },
-      sent: function(row){ if(row) append(row); else note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Ed\u00edtalo e int\u00e9ntalo de nuevo.')); },
+      sent: function(row){
+        if(row) append(row); else note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Ed\u00edtalo e int\u00e9ntalo de nuevo.'));
+        /* The offline note outlived what it described: it sat there after the message had gone. */
+        try{ if(row && window.STQueue.state().n===0) note(''); }catch(e){}
+      },
       changed: function(){ try{ repaint(); }catch(e){} }
     });
     window.__stChatFlush=function(){ window.STQueue.flush(); };
@@ -57587,6 +57620,7 @@ try {
           .then(function(q){ return !!(q && !q.error && q.data && q.data.length); }, function(){ return false; });
       },
       sent: function(row, it){
+        try{ if(window.STQueue.state().n===0) note(''); }catch(e){}
         if(!row) return;
         if(partner && row.recipient_id===partner.id) append(row);
         try{ if(row.recipient_id && row.recipient_id!==me()){ sb.functions.invoke('send-push_edge-function',{ body:{ kind:'dm', userIds:[row.recipient_id], title:(myName()||'Someone')+' messaged you', body:(row.body?String(row.body).replace(/https?:\/\/\S+/g,'[link]').slice(0,140):'Sent an attachment') } }); } }catch(e){}
