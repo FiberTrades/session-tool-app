@@ -8312,6 +8312,10 @@ try {
       'combo.rec_e_need_more': 'Need 10+ trades with a BE move replayed. You have {N}.',
       'combo.rec_e_no_room': 'Moving your BE stop past entry costs more than it banks. Keep it at entry.',
       'combo.rec_e_closest': 'The closest rule, {RULE}, would have cost {COST} across {N} tracked BE moves.',
+      'combo.rec_b_closest': 'The closest, capping at +{TP}, would have cost {COST}, cutting {WINS} of your winners short.',
+      'combo.rec_c_closest': 'The closest, {PIPS} wider, would have rescued {RESCUED} but shrunk {SHRUNK}, costing {COST} net.',
+      'combo.loser_one': 'loser', 'combo.loser_many': 'losers',
+      'combo.winner_one': 'winner', 'combo.winner_many': 'winners',
       'combo.rec_e_closest_missed': 'It would also have stopped you out early on {M} that went on to reach target.',
       'combo.trade_one': 'trade',
       'combo.trade_many': 'trades',
@@ -9843,6 +9847,10 @@ try {
       'combo.rec_e_need_more': 'Necesitas 10+ operaciones con un movimiento a BE reproducido. Tienes {N}.',
       'combo.rec_e_no_room': 'Mover el BE más allá de la entrada cuesta más de lo que asegura. Déjalo en la entrada.',
       'combo.rec_e_closest': 'La regla más cercana, {RULE}, habría costado {COST} en {N} movimientos de BE registrados.',
+      'combo.rec_b_closest': 'El más cercano, limitar en +{TP}, habría costado {COST}, cortando {WINS} de tus ganadoras.',
+      'combo.rec_c_closest': 'El más cercano, {PIPS} más amplio, habría rescatado {RESCUED} pero encogido {SHRUNK}, con un coste neto de {COST}.',
+      'combo.loser_one': 'perdedora', 'combo.loser_many': 'perdedoras',
+      'combo.winner_one': 'ganadora', 'combo.winner_many': 'ganadoras',
       'combo.rec_e_closest_missed': 'Además te habría sacado antes de tiempo en {M} que luego alcanzaron el objetivo.',
       'combo.trade_one': 'operación',
       'combo.trade_many': 'operaciones',
@@ -21362,6 +21370,7 @@ try {
 
     // Direction B — sweep cap-TP values to find £-maximising rule
     let optTP    = 0;
+    let nearTpSc = null, nearTpVal = 0;
     let scenarioB = current;
     if (trackedBes.length > 0) {
       const maxBE = Math.max(0, ...trackedBes.map(tr => isPips
@@ -21376,6 +21385,9 @@ try {
           scenarioB = res;
           optTP = cR;
         }
+        /* The best cap is worth keeping even when it loses to reality: "no shorter TP beats
+           current" is a verdict, "the closest one costs £X and caps N winners" is evidence. */
+        if (!nearTpSc || res.totalGbp > nearTpSc.totalGbp) { nearTpSc = res; nearTpVal = cR; }
       }
     }
 
@@ -21631,6 +21643,7 @@ try {
       recBTpl = (t('combo.rec_b_need_more') || 'Need 10+ BEs with BE POT R \u00b7 P logged. You have {N}.').replace(/\{N\}/g, trackedBes.length);
     } else if (optTP <= 0) {
       recBTpl = t('combo.rec_b_no_room') || 'No shorter TP beats current. To turn your BEs into wins you\u2019d need a TP short enough to also cap your winners \u2014 and your winners run further, so you\u2019d give up more than you\u2019d gain.';
+      recBTpl += _recBClosest;
     } else {
       recBTpl = (t('combo.rec_b_recommend') || 'Cap your TP at <strong class="rec-suggest">+{TP}</strong>.').replace(/\{TP\}/g, _dualTP());
     }
@@ -21690,11 +21703,13 @@ try {
       return { totalGbp, gainGbp, costGbp, rescued, shrunk };
     }
 
+    let nearWiden = 0, nearWidenSc = null;
     let bestWiden = 0, scenarioC = { totalGbp: current.totalGbp, gainGbp: 0, costGbp: 0, rescued: 0, shrunk: 0 };
     if (trackedLosers.length > 0) {
       for (let w = 1; w <= 10; w++) {
         const sc = projectWiderStop(w);
         if (sc.totalGbp > scenarioC.totalGbp) { scenarioC = sc; bestWiden = w; }
+        if (!nearWidenSc || sc.totalGbp > nearWidenSc.totalGbp) { nearWidenSc = sc; nearWiden = w; }
       }
     }
 
@@ -21890,6 +21905,20 @@ try {
         .replace('{N}', String(trackedLosers.length));
     } else if (bestWiden === 0) {
       recCTpl = t('combo.rec_c_no_room') || 'A wider stop costs more than it saves.';
+      /* How close it came, in the two numbers that pull against each other: losers rescued
+         against winners shrunk. That trade-off IS the answer here, so show both sides of it. */
+      if (nearWidenSc && nearWiden > 0) {
+        const _cC = current.totalGbp - nearWidenSc.totalGbp;
+        if (_cC > 0.005) {
+          const _mC = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cC), { noSign: true }) : String(Math.round(Math.abs(_cC)));
+          const _res = Math.round(nearWidenSc.rescued || 0), _shr = Math.round(nearWidenSc.shrunk || 0);
+          recCTpl += ' ' + (t('combo.rec_c_closest') || 'The closest, {PIPS} wider, would have rescued {RESCUED} but shrunk {SHRUNK}, costing {COST} net.')
+            .replace('{PIPS}', '<strong class="rec-suggest">+' + nearWiden + ' ' + window.__stDU.lbl(window.__stDU.display(), _shr === 1 ? '' : 's') + '</strong>')
+            .replace('{RESCUED}', _res + ' ' + ((_res === 1) ? (t('combo.loser_one') || 'loser') : (t('combo.loser_many') || 'losers')))
+            .replace('{SHRUNK}', _shr + ' ' + ((_shr === 1) ? (t('combo.winner_one') || 'winner') : (t('combo.winner_many') || 'winners')))
+            .replace('{COST}', _mC);
+        }
+      }
     } else {
       recCTpl = (t('combo.rec_c_recommend') || window.__stDU.words('Widen your stop by <strong class="rec-suggest">+{PIPS} pips</strong>.'))
         .replace('{PIPS}', String(bestWiden));
