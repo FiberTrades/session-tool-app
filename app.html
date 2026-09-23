@@ -61195,6 +61195,10 @@ try {
       // greeting a prior device cached in data._greetSync). Re-render after this tick so the
       // just-applied synced cache is picked up. See STAI's __stGreetSyncReady gate.
       try {
+        /* The ACCOUNT's journal is now in hand. Anything that must not act on a blank journal -
+           the tour's "have I seen this?" among them - waits for this rather than for auth, which
+           resolves much earlier on a phone. */
+        try{ window.__stJournalPulled = true; }catch(e){}
         var _wasReady = window.__stGreetSyncReady; window.__stGreetSyncReady = true;
         if (!_wasReady) setTimeout(function () { try { if (window.STAI && window.STAI.enhanceGreeting) { var b = document.getElementById('bias-greeting'); if (b) window.STAI.enhanceGreeting(b, 'bias'); } if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {} }, 0);
       } catch (e) {}
@@ -63486,6 +63490,7 @@ try {
     }catch(e){}
     return false;
   }
+  var _pullWaits=0;
   function ready(){ if(ov||busy()) return false; var el=document.querySelector('.tab[data-page="bias"]'); return !!(el && el.offsetParent!==null); }
   function decideAndStart(){ if(ov) return; try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){} var forced=!!window.__stTourWanted; try{ window.__stTourWanted=false; }catch(e){} getUid(function(uid){
     if(ov) return;
@@ -63496,6 +63501,12 @@ try {
        is nothing. Bounded so a genuinely signed-out session still gets it eventually. */
     if(!uid && !forced){
       if(_uidWaits++ < 8){ setTimeout(function(){ if(!ov) decideAndStart(); }, 1200); return; }
+    }
+    /* Signed in, but the journal may still be on its way - and the journal is what remembers that
+       this ACCOUNT finished the tour. Deciding now reads a blank journal and replays the tour on
+       every phone sign-in. Bounded (~18s) so an offline session is not left waiting for ever. */
+    if(uid && !forced && !window.__stJournalPulled){
+      if(_pullWaits++ < 15){ setTimeout(function(){ if(!ov) decideAndStart(); }, 1200); return; }
     }
     var k=KEY+(uid?('_'+uid):'');
     /* Seen if the per-user flag, the legacy base flag, or the ACCOUNT flag in the journal is set.
