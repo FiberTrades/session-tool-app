@@ -920,17 +920,19 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     text-transform: uppercase; margin-left: 10px; text-decoration: underline dotted; padding: 0; }
   .settings-account-match:hover { color: var(--accent, #f472b6); }
   /* "Paid out ..." under an account's balances - why CURRENT sits below what the % says was made. */
-  /* A message waiting to go out: present, clearly not sent yet. */
-  .dcx-pending { margin: 6px 0 6px 52px; padding: 8px 12px; border: 1px dashed var(--border-2);
+  /* A message waiting to go out: present, clearly not sent yet. NOT .dcx-pending - that is the
+     composer's attachment bar, and sharing the name put a dashed border and 72% opacity on it. */
+  .dcx-queued { margin: 6px 0 6px 52px; padding: 8px 12px; border: 1px dashed var(--border-2);
     border-radius: 10px; opacity: 0.72; max-width: 70%; }
-  .dcx-pending-body { color: var(--text-mid); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
-  .dcx-pending-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px;
+  .dcx-queued-body { color: var(--text-mid); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .dcx-queued-att { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12.5px; }
+  .dcx-queued-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px;
     font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.12em;
     text-transform: uppercase; color: var(--text-dim); }
-  .dcx-pending-x { background: none; border: none; padding: 0; color: var(--text-dim);
+  .dcx-queued-x { background: none; border: none; padding: 0; color: var(--text-dim);
     font: inherit; text-transform: uppercase; cursor: pointer; text-decoration: underline dotted; }
-  .dcx-pending-x:hover { color: var(--bad); }
-  @media (max-width: 560px) { .dcx-pending { margin-left: 14px; max-width: 86%; } }
+  .dcx-queued-x:hover { color: var(--bad); }
+  @media (max-width: 560px) { .dcx-queued { margin-left: 14px; max-width: 86%; } }
   .settings-account-paid { grid-column: 1 / -1; margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace;
     font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
   /* Payouts section: one block per account, one dated line per payout. */
@@ -46945,10 +46947,12 @@ try {
         (window.__stOutboxFor && cur ? window.__stOutboxFor(cur.id) : []).forEach(function(it){
           var body=(it.row&&it.row.body)||'';
           var att=(it.row&&it.row.attachment_name)||'';
-          desired.push({ k:'p:'+it.oid, h:'<div class="dcx-pending" data-key="p:'+it.oid+'">'
-            + '<div class="dcx-pending-body">'+esc(body||att)+'</div>'
-            + '<div class="dcx-pending-meta"><span>'+(_esUI()?'Esperando para enviar':'Waiting to send')+'</span>'
-            + '<button type="button" class="dcx-pending-x" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Cancelar':'Cancel')+'</button></div></div>' });
+          var fname=(it.file&&it.file.name)||att;
+          desired.push({ k:'p:'+it.oid, h:'<div class="dcx-queued" data-key="p:'+it.oid+'">'
+            + (body?('<div class="dcx-queued-body">'+esc(body)+'</div>'):'')
+            + (fname?('<div class="dcx-queued-att">\u{1F4CE} '+esc(fname)+'</div>'):'')
+            + '<div class="dcx-queued-meta"><span>'+(_esUI()?'Esperando para enviar':'Waiting to send')+'</span>'
+            + '<button type="button" class="dcx-queued-x" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Cancelar':'Cancel')+'</button></div></div>' });
         });
       }catch(e){}
       var _ok=false; try{ _ok=_dcxReconcile(box, desired); }catch(e){ _ok=false; }
@@ -46959,9 +46963,9 @@ try {
       if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; }
       try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){}
       /* Cancel a queued message: it is the only way to take back something that never sent. */
-      try{ Array.prototype.forEach.call(box.querySelectorAll('.dcx-pending-x'), function(b){
+      try{ Array.prototype.forEach.call(box.querySelectorAll('.dcx-queued-x'), function(b){
         if(b.__wired) return; b.__wired=true;
-        b.addEventListener('click', function(){ obRemove(b.getAttribute('data-oid')); });
+        b.addEventListener('click', function(){ obRemove(b.getAttribute('data-oid')); repaint(); });
       }); }catch(e){} }
     function append(m){ if(seen[m.id]) return; seen[m.id]=true; msgs.push(m); repaint(); }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
@@ -46993,25 +46997,80 @@ try {
         .on('postgres_changes',{event:'*',schema:'public',table:'channel_reactions',filter:'channel_id=eq.'+cur.id},function(){ loadReactions(); })
         .subscribe();
     }
+    /* ===== THE SHARED SEND QUEUE ==========================================================
+       One queue for every kind of chat message, so a reconnect sends what you wrote in the order
+       you wrote it, whichever conversation it belonged to. Each chat registers a `send` for its own
+       kind; this owns storage, ordering and retries and knows nothing about tables.
+       Attachments: localStorage cannot hold a blob, so the bytes go to IndexedDB under the item's
+       id and the queue row keeps only the name and type. ==================================== */
+    window.STQueue = (function () {
+      var KEY = 'st_chat_outbox', MAX = 50, DBN = 'st_outbox_files', H = {}, busy = false, subs = [];
+      function load(){ try{ var a = JSON.parse(localStorage.getItem(KEY) || '[]'); return Array.isArray(a) ? a : []; }catch(e){ return []; } }
+      function save(a){ try{ localStorage.setItem(KEY, JSON.stringify(a.slice(-MAX))); }catch(e){} subs.forEach(function(f){ try{ f(); }catch(e){} }); }
+      function db(){ return new Promise(function(res, rej){ try{ var r = indexedDB.open(DBN, 1);
+        r.onupgradeneeded = function(){ try{ r.result.createObjectStore('f'); }catch(e){} };
+        r.onsuccess = function(){ res(r.result); }; r.onerror = function(){ rej(r.error); };
+      }catch(e){ rej(e); } }); }
+      function fileOp(mode, fn){ return db().then(function(d){ return new Promise(function(res, rej){
+        var tx = d.transaction('f', mode), rq = fn(tx.objectStore('f'));
+        tx.oncomplete = function(){ res(rq ? rq.result : null); }; tx.onerror = function(){ rej(tx.error); };
+      }); }); }
+      function putFile(oid, blob){ return fileOp('readwrite', function(st){ return st.put(blob, oid); }).catch(function(){}); }
+      function getFile(oid){ return fileOp('readonly', function(st){ return st.get(oid); }).catch(function(){ return null; }); }
+      function delFile(oid){ return fileOp('readwrite', function(st){ return st['delete'](oid); }).catch(function(){}); }
+      function remove(oid){ save(load().filter(function(x){ return x.oid !== oid; })); delFile(oid); }
+      function bump(oid){ var a = load(); for (var i = 0; i < a.length; i++) if (a[i].oid === oid) { a[i].tries = (a[i].tries || 0) + 1; break; } save(a); }
+      function flush(){
+        if (busy) return;
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) return;
+        var q = load(); if (!q.length) return;
+        var it = q[0], h = H[it.kind];
+        if (!h || typeof h.send !== 'function') { remove(it.oid); flush(); return; }   // nobody owns it any more
+        busy = true;
+        var fail = function(){ busy = false; bump(it.oid); };
+        var done = function(row){ busy = false; remove(it.oid); try{ if (h.sent) h.sent(row, it); }catch(e){} flush(); };
+        var go = function(already){
+          if (already) { done(null); return; }                                          // it is already posted
+          var withBlob = it.file ? getFile(it.oid) : Promise.resolve(null);
+          withBlob.then(function(blob){
+            if (it.file && !blob) { done(null); return; }                                // bytes gone: drop it rather than post an empty message
+            try{ Promise.resolve(h.send(it, blob)).then(done, fail); }catch(e){ fail(); }
+          }, fail);
+        };
+        /* Only a RETRY can duplicate: the first attempt cannot have posted anything, whereas a
+           response lost after the insert succeeded leaves a row nobody saw. */
+        if (it.tries > 0 && typeof h.exists === 'function') { try{ Promise.resolve(h.exists(it)).then(go, function(){ go(false); }); }catch(e){ go(false); } }
+        else go(false);
+      }
+      try{
+        window.addEventListener('online', function(){ setTimeout(flush, 800); });
+        document.addEventListener('visibilitychange', function(){ if (!document.hidden) flush(); });
+        setInterval(flush, 30000);
+      }catch(e){}
+      return {
+        register: function(kind, h){ H[kind] = h; if (h && h.changed) subs.push(h.changed); flush(); },
+        add: function(kind, row, file, fileKind){
+          var it = { oid: 'ob_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), kind: kind, row: row, ts: Date.now(), tries: 0, file: null };
+          if (file) it.file = { name: file.name || 'attachment', type: file.type || '', kind: fileKind || 'file' };
+          var a = load(); a.push(it); save(a);
+          if (file) putFile(it.oid, file);
+          return it;
+        },
+        listFor: function(kind, match){ return load().filter(function(x){ return x.kind === kind && (!match || match(x)); }); },
+        remove: remove, flush: flush
+      };
+    })();
     /* ===== OUTBOX =========================================================================
        A send can fail for a reason that has nothing to do with the message: no connection, a
        sleeping laptop, a blip. The composer is cleared the moment you hit send, so a failure used
        to destroy what you wrote. Failed sends are parked here instead and go out on their own.
        Kept in localStorage so a reload (or a closed lid) does not lose them. ==================== */
-    var OUTBOX_KEY='st_chat_outbox', OUTBOX_MAX=50;
-    function obLoad(){ try{ var a=JSON.parse(localStorage.getItem(OUTBOX_KEY)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
-    function obSave(a){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(a.slice(-OUTBOX_MAX))); }catch(e){} }
-    function obAdd(row){
-      var a=obLoad();
-      a.push({ oid:'ob_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), row:row, ts:Date.now(), tries:0 });
-      obSave(a); repaint();
-      return a[a.length-1];
-    }
-    function obRemove(oid){ obSave(obLoad().filter(function(x){ return x.oid!==oid; })); repaint(); }
-    window.__stOutboxFor=function(channelId){ return obLoad().filter(function(x){ return x && x.row && x.row.channel_id===channelId; }); };
-    /* Has this exact message already landed? Only asked on a RETRY: the first attempt cannot have
-       posted anything, and a network failure after the row was stored is the one way a retry could
-       duplicate it. Body + sender + this channel, within a few minutes of when it was written. */
+    function obAdd(row, file, fileKind){ return window.STQueue.add('channel', row, file, fileKind); }
+    function obRemove(oid){ window.STQueue.remove(oid); }
+    window.__stOutboxFor=function(channelId){ return window.STQueue.listFor('channel', function(x){ return x.row && x.row.channel_id===channelId; }); };
+    /* Has this exact message already landed? Body + sender + this channel, within a few minutes of
+       when it was written. An attachment has no stable body to match on, so it is not checked - a
+       duplicated photo is visible and deletable, a lost one is not. */
     function obAlreadyThere(it){
       var r=it.row;
       if(!r || !r.body || !currentUser) return Promise.resolve(false);
@@ -47020,44 +47079,34 @@ try {
         .eq('sender_id',currentUser.id).eq('body',r.body).gte('created_at',since).limit(1)
         .then(function(q){ return !!(q && !q.error && q.data && q.data.length); }, function(){ return false; });
     }
-    var _obBusy=false;
-    function obFlush(){
-      if(_obBusy || !currentUser) return;
-      if(typeof navigator!=='undefined' && navigator.onLine===false) return;
-      var q=obLoad(); if(!q.length) return;
-      _obBusy=true;
-      var it=q[0];
-      var go=function(skip){
-        if(skip){ obRemove(it.oid); _obBusy=false; obFlush(); return; }   // already posted: drop it
-        var row=it.row; row.sender_name=myName(); row.sender_avatar=myAvatar();
-        sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){
-          _obBusy=false;
-          if(r && r.error){ obBump(it.oid); return; }                     // still failing: keep it, stop here
-          obRemove(it.oid);
-          if(r && r.data){ append(r.data); }
-          else { note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Ed\u00edtalo e int\u00e9ntalo de nuevo.')); }
-          obFlush();                                                      // next one, in order
-        }, function(){ _obBusy=false; obBump(it.oid); });
-      };
-      if(it.tries>0) obAlreadyThere(it).then(go); else go(false);
-    }
-    function obBump(oid){
-      var a=obLoad();
-      for(var i=0;i<a.length;i++){ if(a[i].oid===oid){ a[i].tries=(a[i].tries||0)+1; break; } }
-      obSave(a); repaint();
-    }
-    window.__stChatFlush=obFlush;
-    try{
-      window.addEventListener('online', function(){ setTimeout(obFlush, 800); });
-      document.addEventListener('visibilitychange', function(){ if(!document.hidden) obFlush(); });
-      setInterval(obFlush, 30000);
-    }catch(e){}
+    /* How a queued CHANNEL message is sent. An attachment is uploaded first, here rather than at
+       send time, because that upload is exactly what failed when the connection went. */
+    window.STQueue.register('channel', {
+      send: function(it, blob){
+        var row = it.row;
+        var ready = blob
+          ? up(new File([blob], it.file.name, { type: it.file.type || 'application/octet-stream' }), it.file.kind)
+              .then(function(o){ row.attachment_url=o.url; row.attachment_type=(it.file.kind==='image'?'image':'file'); row.attachment_name=o.name; return row; })
+          : Promise.resolve(row);
+        return ready.then(function(r){
+          r.sender_name=myName(); r.sender_avatar=myAvatar();
+          return sb.from('channel_messages').insert(r).select().maybeSingle().then(function(resp){
+            if(resp && resp.error) throw resp.error;
+            return resp ? resp.data : null;
+          });
+        });
+      },
+      exists: function(it){ return obAlreadyThere(it); },
+      sent: function(row){ if(row) append(row); else note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Ed\u00edtalo e int\u00e9ntalo de nuevo.')); },
+      changed: function(){ try{ repaint(); }catch(e){} }
+    });
+    window.__stChatFlush=function(){ window.STQueue.flush(); };
     function insertMsg(row, restore){ row.sender_name=myName(); row.sender_avatar=myAvatar(); sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ obAdd(row); note(window._stT('No connection \u2014 it will send when you are back online.','Sin conexi\u00f3n \u2014 se enviar\u00e1 cuando vuelvas a estar en l\u00ednea.')); return; }
       /* Zero rows and no error means the moderation trigger refused it. Without this branch the
          message simply evaporated: cleared composer, no row, nothing said. */
       if(!r.data){ note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Edítalo e inténtalo de nuevo.')); if(restore){ var _ta=G('dcx-input'); if(_ta && !(_ta.value||'').trim()){ _ta.value=restore; _ta.style.height='auto'; _ta.style.height=Math.min(_ta.scrollHeight,160)+'px'; } } return; }
       append(r.data); }).catch(function(){ obAdd(row); note(window._stT('No connection \u2014 it will send when you are back online.','Sin conexi\u00f3n \u2014 se enviar\u00e1 cuando vuelvas a estar en l\u00ednea.')); }); }
-    function sendText(){ if(!_canPostHere()){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Posting in this channel is not open to your plan \u2014 your biases and reviews still appear here automatically.','Publicar en este canal no está disponible en tu plan \u2014 tus biases y revisiones aparecen aquí automáticamente.')); return; } var ta=G('dcx-input'); if(!ta||!cur||!currentUser) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; if(t) pushMentions(t); note(''); closePanels(); var rp=replyTarget; if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); }).catch(function(){ note('Upload failed.'); }); cancelReply(); return; } ta.value=''; ta.style.height='auto'; var row={ channel_id:cur.id, sender_id:currentUser.id, body:t }; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row, t); cancelReply(); }
+    function sendText(){ if(!_canPostHere()){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Posting in this channel is not open to your plan \u2014 your biases and reviews still appear here automatically.','Publicar en este canal no está disponible en tu plan \u2014 tus biases y revisiones aparecen aquí automáticamente.')); return; } var ta=G('dcx-input'); if(!ta||!cur||!currentUser) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; if(t) pushMentions(t); note(''); closePanels(); var rp=replyTarget; if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); }).catch(function(){ var qr={ channel_id:cur.id, sender_id:currentUser.id }; if(t) qr.body=t; if(rp){ qr.reply_to=rp.id; qr.reply_name=rp.name; qr.reply_excerpt=rp.excerpt; } obAdd(qr, f, kind); note(_offlineNote()); repaint(); }); cancelReply(); return; } ta.value=''; ta.style.height='auto'; var row={ channel_id:cur.id, sender_id:currentUser.id, body:t }; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row, t); cancelReply(); }
 
     /* the live-session chat reuses this exact uploader + key, so both chats behave identically */
     try{ window.__stChatUp=function(f,k){ return up(f,k); }; window.__stGiphy=GIPHY_KEY; }catch(e){}
@@ -47070,7 +47119,8 @@ try {
     function setPending(f){ if(!f) return; pendingFile=f; renderPending(); var ta=G('dcx-input'); if(ta) ta.focus(); }
     function clearPending(){ pendingFile=null; if(_pendUrl){ try{URL.revokeObjectURL(_pendUrl);}catch(e){} _pendUrl=''; } renderPending(); }
     function renderPending(){ var bar=G('dcx-pending'); if(!bar) return; if(!pendingFile){ bar.style.display='none'; bar.innerHTML=''; return; } var isImg=pendingFile.type&&pendingFile.type.indexOf('image/')===0; var thumb; if(isImg){ try{ _pendUrl=URL.createObjectURL(pendingFile); thumb='<img class="dcx-pending-thumb" alt="" src="'+_pendUrl+'">'; }catch(e){ thumb='<span class="dcx-pending-ic">IMG</span>'; } } else thumb='<span class="dcx-pending-ic">DOC</span>'; bar.innerHTML=thumb+'<span class="dcx-pending-name">'+esc(pendingFile.name||'attachment')+'</span><button class="dcx-pending-x" title="Remove">\u00d7</button>'; bar.style.display='flex'; var x=bar.querySelector('.dcx-pending-x'); if(x) x.addEventListener('click', clearPending); }
-    function sendFile(file,kind){ if(!cur||!file||!currentUser) return; note('Uploading\u2026'); up(file,kind).then(function(o){ note(''); insertMsg({ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:(kind==='image'?'image':'file'), attachment_name:o.name }); }).catch(function(){ note('Upload failed.'); }); }
+    function sendFile(file,kind){ if(!cur||!file||!currentUser) return; note('Uploading\u2026'); up(file,kind).then(function(o){ note(''); insertMsg({ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:(kind==='image'?'image':'file'), attachment_name:o.name }); }).catch(function(){ obAdd({ channel_id:cur.id, sender_id:currentUser.id }, file, kind); note(_offlineNote()); repaint(); }); }
+    function _offlineNote(){ return window._stT('No connection \u2014 it will send when you are back online.','Sin conexi\u00f3n \u2014 se enviar\u00e1 cuando vuelvas a estar en l\u00ednea.'); }
 
     // ---- message ⋯ menu (edit/delete) ----
     function replyRefHtml(m){ if(!m||!m.reply_to) return ''; var nm=m.reply_name||'message'; var ex=m.reply_excerpt||'';
@@ -57434,7 +57484,29 @@ try {
       var name=(_lw&&_lw.name)||m.sender_name||'Trader';
       var _ava=(_lw&&_lw.avatar)||m.sender_avatar;
       var nc=nameColor(m.sender_id); if(grouped) return '<div class="dcx-msg grouped" data-mid="'+esc(m.id)+'">'+actions(m)+'<div class="dcx-body">'+bodyInner(m)+'</div></div>'; return '<div class="dcx-msg" data-mid="'+esc(m.id)+'">'+actions(m)+avaHtml(_ava,name,'dcx-ava')+'<div class="dcx-body"><div class="dcx-head"><span class="dcx-name"'+(nc?(' style="color:'+esc(nc)+'"'):'')+'>'+esc(name)+'</span><span class="dcx-time">'+fmtTime(m.created_at)+'</span></div>'+bodyInner(m)+'</div></div>'; }
-    function repaint(){ var box=G('stdm-msgs'); if(!box) return; var _scab=(box.scrollHeight-box.scrollTop-box.clientHeight)<50, _scpt=box.scrollTop; if(!partner && !(ovA&&ovB)){ return; } if(!msgs.length){ box.innerHTML='<div class="stdm-welcome"><h2>'+esc(partner?partner.name:'Conversation')+'</h2><p>This is the beginning of your direct messages.</p></div>'; return; } var out='',ps=null,pt=0,pd=''; msgs.forEach(function(m){ var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) out+=STCommunity.dateSepHtml(m.created_at); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); out+=fmtRow(m,g); ps=m.sender_id; pt=t; }); box.innerHTML=out; if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; } try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){} }
+    /* Queued DMs for the thread on screen, rendered after the real ones. Same block the channel
+       chat uses, so "waiting to send" looks the same wherever you are. */
+    function _dmQueuedHtml(){
+      try{
+        if(!window.STQueue || !partner) return '';
+        return window.STQueue.listFor('dm', function(x){ return x.row && x.row.recipient_id===partner.id; }).map(function(it){
+          var body=(it.row&&it.row.body)||'', fname=(it.file&&it.file.name)||'';
+          var ES=(window.STCommunity&&window.STCommunity.esUI&&window.STCommunity.esUI())||(document.documentElement.lang==='es');
+          return '<div class="dcx-queued">'
+            + (body?('<div class="dcx-queued-body">'+esc(body)+'</div>'):'')
+            + (fname?('<div class="dcx-queued-att">\u{1F4CE} '+esc(fname)+'</div>'):'')
+            + '<div class="dcx-queued-meta"><span>'+(ES?'Esperando para enviar':'Waiting to send')+'</span>'
+            + '<button type="button" class="dcx-queued-x" data-oid="'+esc(it.oid)+'">'+(ES?'Cancelar':'Cancel')+'</button></div></div>';
+        }).join('');
+      }catch(e){ return ''; }
+    }
+    function _dmWireQueued(box){
+      try{ Array.prototype.forEach.call(box.querySelectorAll('.dcx-queued-x'), function(b){
+        if(b.__wired) return; b.__wired=true;
+        b.addEventListener('click', function(){ window.STQueue.remove(b.getAttribute('data-oid')); repaint(); });
+      }); }catch(e){}
+    }
+    function repaint(){ var box=G('stdm-msgs'); if(!box) return; var _scab=(box.scrollHeight-box.scrollTop-box.clientHeight)<50, _scpt=box.scrollTop; if(!partner && !(ovA&&ovB)){ return; } if(!msgs.length){ box.innerHTML='<div class="stdm-welcome"><h2>'+esc(partner?partner.name:'Conversation')+'</h2><p>This is the beginning of your direct messages.</p></div>'+_dmQueuedHtml(); _dmWireQueued(box); return; } var out='',ps=null,pt=0,pd=''; msgs.forEach(function(m){ var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) out+=STCommunity.dateSepHtml(m.created_at); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); out+=fmtRow(m,g); ps=m.sender_id; pt=t; }); out+=_dmQueuedHtml(); box.innerHTML=out; _dmWireQueued(box); if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; } try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){} }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
     function append(m){ if(seen[m.id]) return; seen[m.id]=true; msgs.push(m); repaint(); }
 
@@ -57487,10 +57559,45 @@ try {
     function _computeUnread(){ if(ov) return; try{ (threads||[]).forEach(function(t){ var pid=t.partner_id; if(!pid||pid===me()) return; var openNow=partner&&partner.id===pid&&G('stdm')&&G('stdm').classList.contains('thread'); var lb=t.last_body||''; if(openNow){ dmSeen[pid]=lb; } if(lb!==(dmSeen[pid]||'')) unread[pid]=true; else delete unread[pid]; }); saveDmSeen(); updateEnvelope(); }catch(e){} }
     function updateEnvelope(){ var n=0; for(var k in unread){ if(unread[k]) n++; } var dot=document.getElementById('dcx-dm-dot'); if(dot) dot.style.display=n?'':'none'; }
 
-    function insert(row, restore){ row.sender_name=myName(); row.sender_avatar=myAvatar(); sb.from('dm_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ note("Couldn't send."); return; }
+    function _dmOffline(){ return window._stT('No connection \u2014 it will send when you are back online.','Sin conexi\u00f3n \u2014 se enviar\u00e1 cuando vuelvas a estar en l\u00ednea.'); }
+    function dmQueue(row, file, kind){ if(window.STQueue){ window.STQueue.add('dm', row, file, kind); note(_dmOffline()); repaint(); } }
+    /* What sending a queued DM means. The push notification rides along exactly as it does on a
+       live send, so a message that waited still announces itself when it lands. */
+    if (window.STQueue) window.STQueue.register('dm', {
+      send: function(it, blob){
+        var row=it.row;
+        var ready = blob
+          ? up(new File([blob], it.file.name, { type: it.file.type || 'application/octet-stream' }), it.file.kind)
+              .then(function(o){ row.attachment_url=o.url; row.attachment_type=it.file.kind; row.attachment_name=o.name; return row; })
+          : Promise.resolve(row);
+        return ready.then(function(r){
+          r.sender_name=myName(); r.sender_avatar=myAvatar();
+          return sb.from('dm_messages').insert(r).select().maybeSingle().then(function(resp){
+            if(resp && resp.error) throw resp.error;
+            return resp ? resp.data : null;
+          });
+        });
+      },
+      exists: function(it){
+        var r=it.row;
+        if(!r || !r.body || !me()) return Promise.resolve(false);
+        var since=new Date(it.ts-5*60000).toISOString();
+        return sb.from('dm_messages').select('id').eq('sender_id',me()).eq('recipient_id',r.recipient_id)
+          .eq('body',r.body).gte('created_at',since).limit(1)
+          .then(function(q){ return !!(q && !q.error && q.data && q.data.length); }, function(){ return false; });
+      },
+      sent: function(row, it){
+        if(!row) return;
+        if(partner && row.recipient_id===partner.id) append(row);
+        try{ if(row.recipient_id && row.recipient_id!==me()){ sb.functions.invoke('send-push_edge-function',{ body:{ kind:'dm', userIds:[row.recipient_id], title:(myName()||'Someone')+' messaged you', body:(row.body?String(row.body).replace(/https?:\/\/\S+/g,'[link]').slice(0,140):'Sent an attachment') } }); } }catch(e){}
+        try{ loadThreads(); }catch(e){}
+      },
+      changed: function(){ try{ repaint(); }catch(e){} }
+    });
+    function insert(row, restore){ row.sender_name=myName(); row.sender_avatar=myAvatar(); sb.from('dm_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ dmQueue(row); return; }
       if(!r.data){ note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Edítalo e inténtalo de nuevo.')); if(restore){ var _ta=G('stdm-input'); if(_ta && !(_ta.value||'').trim()){ _ta.value=restore; _ta.style.height='auto'; _ta.style.height=Math.min(_ta.scrollHeight,160)+'px'; } } return; }
-      if(r.data){ append(r.data); try{ if(row.recipient_id && row.recipient_id!==me()){ sb.functions.invoke('send-push_edge-function',{ body:{ kind:'dm', userIds:[row.recipient_id], title:(myName()||'Someone')+' messaged you', body:(r.data.body?String(r.data.body).replace(/https?:\/\/\S+/g,'[link]').slice(0,140):'Sent an attachment') } }); } }catch(e){} } loadThreads(); }).catch(function(){ note("Couldn't send."); }); }
-    function sendText(){ var ta=G('stdm-input'); if(!ta||!partner||!me()) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; note(''); closeP(); var _rt=replyTarget?replyTarget.id:null; cancelDmReply(); if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ sender_id:me(), recipient_id:partner.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(_rt) row.reply_to=_rt; insert(row); }).catch(function(){ note('Upload failed.'); }); return; } ta.value=''; ta.style.height='auto'; var trow={ sender_id:me(), recipient_id:partner.id, body:t }; if(_rt) trow.reply_to=_rt; insert(trow, t); }
+      if(r.data){ append(r.data); try{ if(row.recipient_id && row.recipient_id!==me()){ sb.functions.invoke('send-push_edge-function',{ body:{ kind:'dm', userIds:[row.recipient_id], title:(myName()||'Someone')+' messaged you', body:(r.data.body?String(r.data.body).replace(/https?:\/\/\S+/g,'[link]').slice(0,140):'Sent an attachment') } }); } }catch(e){} } loadThreads(); }).catch(function(){ dmQueue(row); }); }
+    function sendText(){ var ta=G('stdm-input'); if(!ta||!partner||!me()) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; note(''); closeP(); var _rt=replyTarget?replyTarget.id:null; cancelDmReply(); if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ sender_id:me(), recipient_id:partner.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(_rt) row.reply_to=_rt; insert(row); }).catch(function(){ var qr={ sender_id:me(), recipient_id:partner.id }; if(t) qr.body=t; if(_rt) qr.reply_to=_rt; dmQueue(qr, f, kind); }); return; } ta.value=''; ta.style.height='auto'; var trow={ sender_id:me(), recipient_id:partner.id, body:t }; if(_rt) trow.reply_to=_rt; insert(trow, t); }
     function setPending(f){ if(!f) return; pendingFile=f; renderPending(); var ta=G('stdm-input'); if(ta) ta.focus(); }
     function clearPending(){ pendingFile=null; if(_pendUrl){ try{URL.revokeObjectURL(_pendUrl);}catch(e){} _pendUrl=''; } renderPending(); }
     function renderPending(){ var bar=G('stdm-pending'); if(!bar) return; if(!pendingFile){ bar.style.display='none'; bar.innerHTML=''; return; } var isImg=pendingFile.type&&pendingFile.type.indexOf('image/')===0; var thumb; if(isImg){ try{ _pendUrl=URL.createObjectURL(pendingFile); thumb='<img class="dcx-pending-thumb" alt="" src="'+_pendUrl+'">'; }catch(e){ thumb='<span class="dcx-pending-ic">IMG</span>'; } } else thumb='<span class="dcx-pending-ic">DOC</span>'; bar.innerHTML=thumb+'<span class="dcx-pending-name">'+esc(pendingFile.name||'attachment')+'</span><button class="dcx-pending-x" title="Remove">\u00d7</button>'; bar.style.display='flex'; var x=bar.querySelector('.dcx-pending-x'); if(x) x.addEventListener('click', clearPending); }
