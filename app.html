@@ -8311,6 +8311,10 @@ try {
       'combo.direction_e_name': 'Move your BE past entry',
       'combo.rec_e_need_more': 'Need 10+ trades with a BE move replayed. You have {N}.',
       'combo.rec_e_no_room': 'Moving your BE stop past entry costs more than it banks. Keep it at entry.',
+      'combo.rec_e_closest': 'The closest rule, {RULE}, would have cost {COST} across {N} tracked BE moves.',
+      'combo.rec_e_closest_missed': 'It would also have stopped you out early on {M} that went on to reach target.',
+      'combo.trade_one': 'trade',
+      'combo.trade_many': 'trades',
       'combo.rec_e_recommend': 'Move your BE stop to <strong class="rec-suggest">{RULE}</strong> instead of entry.',
       'combo.rec_e_cost': 'Cost: {N} winner(s) it would have stopped early.',
       'combo.sample_off_one': 'tracked BE move',
@@ -9838,6 +9842,10 @@ try {
       'combo.direction_e_name': 'Mueve tu BE más allá de la entrada',
       'combo.rec_e_need_more': 'Necesitas 10+ operaciones con un movimiento a BE reproducido. Tienes {N}.',
       'combo.rec_e_no_room': 'Mover el BE más allá de la entrada cuesta más de lo que asegura. Déjalo en la entrada.',
+      'combo.rec_e_closest': 'La regla más cercana, {RULE}, habría costado {COST} en {N} movimientos de BE registrados.',
+      'combo.rec_e_closest_missed': 'Además te habría sacado antes de tiempo en {M} que luego alcanzaron el objetivo.',
+      'combo.trade_one': 'operación',
+      'combo.trade_many': 'operaciones',
       'combo.rec_e_recommend': 'Mueve tu stop de BE a <strong class="rec-suggest">{RULE}</strong> en vez de a la entrada.',
       'combo.rec_e_cost': 'Coste: {N} ganadora(s) que habría cortado antes de tiempo.',
       'combo.sample_off_one': 'movimiento a BE rastreado',
@@ -21824,6 +21832,7 @@ try {
       return { totalGbp, perTradeGbp, totalR, missed,
                total: (isPips && !unitsKnown) ? null : totalUnits };
     }
+    let nearOffIdx = -1, nearOffSc = null;
     let bestOffIdx = -1, scenarioE = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp,
                                        totalR: current.totalR, total: current.total, missed: 0 };
     if (trackedBeOff.length > 0) {
@@ -21834,6 +21843,10 @@ try {
       for (let k = 0; k < BE_OFF_LADDER.length; k++) {
         const sc = projectBeOffset(k);
         if (sc.totalGbp > scenarioE.totalGbp) { scenarioE = sc; bestOffIdx = k; }
+        /* The best rung is worth keeping even when it LOSES: if nothing beats leaving the stop at
+           entry, "how close did the nearest rule come, and what did it cost?" is the only number
+           that turns a verdict into something a trader can weigh. */
+        if (!nearOffSc || sc.totalGbp > nearOffSc.totalGbp) { nearOffSc = sc; nearOffIdx = k; }
       }
     }
 
@@ -21993,6 +22006,25 @@ try {
     } else if (bestOffIdx < 0) {
       recETpl = t('combo.rec_e_no_room')
         || 'Moving your BE stop past entry costs more than it banks. Keep it at entry.';
+      /* ...and what the nearest rule would have cost, so the advice can be argued with. */
+      if (nearOffSc && nearOffIdx >= 0) {
+        const _offR  = BE_OFF_LADDER[nearOffIdx];
+        const _lbl   = '+' + _offR.toFixed(2).replace(/\.?0+$/, '') + 'R'
+                     + (_medianSl > 0 ? ' (~' + (_offR * _medianSl).toFixed(1) + ' ' + window.__stDU.lbl(window.__stDU.display(), 's') + ')' : '');
+        const _cost  = current.totalGbp - nearOffSc.totalGbp;
+        const _money = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cost), { noSign: true }) : String(Math.round(Math.abs(_cost)));
+        if (_cost > 0.005) {
+          recETpl += ' ' + (t('combo.rec_e_closest') || 'The closest rule, {RULE}, would have cost {COST} across {N} tracked BE moves.')
+            .replace('{RULE}', '<strong class="rec-suggest">' + _lbl + '</strong>')
+            .replace('{COST}', _money)
+            .replace('{N}', String(trackedBeOff.length));
+          const _missed = Math.round(nearOffSc.missed || 0);
+          if (_missed > 0) {
+            recETpl += ' ' + (t('combo.rec_e_closest_missed') || 'It would also have stopped you out early on {M} that went on to reach target.')
+              .replace('{M}', _missed + ' ' + ((_missed === 1) ? (t('combo.trade_one') || 'trade') : (t('combo.trade_many') || 'trades')));
+          }
+        }
+      }
     } else {
       recETpl = (t('combo.rec_e_recommend')
         || 'Move your BE stop to <strong class="rec-suggest">{RULE}</strong> instead of entry.')
