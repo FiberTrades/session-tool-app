@@ -27029,13 +27029,21 @@ try {
     reader.onload = ev => {
       try {
         const imported = JSON.parse(ev.target.result);
-        data = migrate(imported);
-        saveData();
-        // A manual import is a deliberate restore: force it to win to the cloud, bypassing
-        // the destructive-write guard. The previous cloud copy is auto-archived server-side
-        // (journal_versions trigger) first, so this can never permanently lose anything.
-        try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {}
-        location.reload();
+        const _next = migrate(imported);
+        // A manual import is a deliberate restore: it wins to the cloud, bypassing the
+        // destructive-write guard. So it has to say first what it would REPLACE - an old backup
+        // file looks exactly like a current one until its trades are already gone. The previous
+        // cloud copy is auto-archived server-side (journal_versions trigger) either way.
+        const _go = (typeof window.__stConfirmRestore === 'function')
+          ? window.__stConfirmRestore(_next, file.name)
+          : Promise.resolve(true);
+        _go.then(ok => {
+          if (!ok) { try { e.target.value = ''; } catch (_) {} return; }
+          data = _next;
+          saveData();
+          try { sessionStorage.setItem('st_forcePush', '1'); } catch (_) {}
+          location.reload();
+        });
       } catch { showToast(t('toast.invalid_file'), { persist: true }); }
     };
     reader.readAsText(file);
@@ -44467,6 +44475,14 @@ try {
   var pushTimer = null;
   var recoveryMode = false;
   var forcing = false; try { forcing = !!sessionStorage.getItem('st_forcePush'); } catch (e) {}
+  /* A forced push is for ONE upload - the restore that asked for it. It used to be read once here
+     and never cleared, so after any restore every later save in this tab also skipped the
+     destructive-write guard. Cleared only on a CONFIRMED upload: a failed push keeps its force and
+     retries, instead of coming back guarded and being refused for shrinking the cloud. */
+  function clearForce() {
+    forcing = false;
+    try { sessionStorage.removeItem('st_forcePush'); } catch (e) {}
+  }
   // ST BILLING - Stripe Managed Payments. Stripe is the merchant of record, so VAT and
   // sales tax are handled on their side; nothing here has to know about tax at all.
   //
@@ -59151,13 +59167,95 @@ try {
       catch (e) { return null; }
     }).filter(Boolean).sort(function (a, b) { return b.ts - a.ts; });
   }
+  /* Every trade in a journal object, keyed by id, as {id: 'YYYY-MM-DD'}. Used to say exactly
+     which trades a restore would drop - a count alone ("81 trades" vs "94") tells you something
+     is wrong but not what, and the dates are what make it recognisable. */
+  function tradeDayMap(d) {
+    var out = {};
+    try {
+      (d.history || []).forEach(function (s2) {
+        (s2 && s2.trades || []).forEach(function (t) { if (t && t.id) out[t.id] = String(t.date || '').slice(0, 10); });
+      });
+      (d.currentSeries || []).forEach(function (t) { if (t && t.id) out[t.id] = String(t.date || '').slice(0, 10); });
+    } catch (e) {}
+    return out;
+  }
+  /* What would be LOST by making `incoming` the journal: the trades the CLOUD holds and it does
+     not. Against the cloud, never against local - in the 23 Sep incident this browser's local copy
+     was stale as well, so a local comparison would have found nothing to warn about.
+     Resolves {n, from, to} (n = 0 when nothing is lost), or null when the cloud cannot be read -
+     and a null is reported as such rather than being taken for "nothing to lose". */
+  function restoreWouldLose(incoming) {
+    if (!currentUser || !incoming) return Promise.resolve({ n: 0 });
+    return sb.from('journals').select('data').eq('user_id', currentUser.id).maybeSingle()
+      .then(function (r) {
+        if (r && r.error) return null;
+        var raw = r && r.data && r.data.data;
+        if (!raw || typeof raw !== 'object') return { n: 0 };
+        var cloud = tradeDayMap(ST.migrate(raw)), mine = tradeDayMap(incoming), days = [];
+        Object.keys(cloud).forEach(function (id) { if (!(id in mine)) days.push(cloud[id]); });
+        if (!days.length) return { n: 0 };
+        days.sort();
+        return { n: days.length, from: days[0], to: days[days.length - 1] };
+      }, function () { return null; });
+  }
+  /* The confirmation. Destructive and irreversible-looking actions get a real dialog, not a
+     window.confirm: this one has to state the number, the dates and where they came from. */
+  function confirmDestructiveRestore(info, when) {
+    return new Promise(function (resolve) {
+      var L = window._stT;
+      var old = document.getElementById('st-restore-warn'); if (old) old.remove();
+      var bg = document.createElement('div');
+      bg.id = 'st-restore-warn'; bg.className = 'modal-bg show'; bg.style.zIndex = '100001';
+      var esc2 = function (v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+      var body = (info === null)
+        ? L('Your saved journal could not be checked just now, so there is no way to tell what this restore would replace. If you are not sure, cancel and try again in a moment.',
+            'No se ha podido comprobar tu diario guardado, as\u00ed que no hay forma de saber qu\u00e9 reemplazar\u00eda esta restauraci\u00f3n. Si no est\u00e1s seguro, cancela e int\u00e9ntalo en un momento.')
+        : L('This copy is missing <b>' + info.n + ' ' + (info.n === 1 ? 'trade' : 'trades') + '</b> that your account has right now'
+              + (info.from ? ', from <b>' + esc2(info.from) + '</b> to <b>' + esc2(info.to) + '</b>' : '') + '. Restoring it removes them from every device.',
+            'A esta copia le faltan <b>' + info.n + ' ' + (info.n === 1 ? 'operaci\u00f3n' : 'operaciones') + '</b> que tu cuenta tiene ahora'
+              + (info.from ? ', del <b>' + esc2(info.from) + '</b> al <b>' + esc2(info.to) + '</b>' : '') + '. Restaurarla las elimina en todos los dispositivos.');
+      bg.innerHTML = '<div class="modal mdl-new" style="max-width:440px;" role="dialog" aria-modal="true">'
+        + '<div class="modal-header"><div class="modal-title">' + L('Restore this backup?', '\u00bfRestaurar esta copia?') + '</div></div>'
+        + (when ? '<div class="mt5-match-note">' + esc2(when) + '</div>' : '')
+        + '<div class="mt5-match-warn" style="display:block;">' + body + '</div>'
+        + '<div class="po-hint">' + L('The copy being replaced is saved first, so this can be undone.',
+                                      'La copia que se reemplaza se guarda antes, as\u00ed que se puede deshacer.') + '</div>'
+        + '<div class="mdl-actions">'
+        + '<button type="button" class="settings-btn settings-btn-ghost" id="strw-no">' + L('Cancel', 'Cancelar') + '</button>'
+        + '<button type="button" class="settings-btn settings-btn-danger" id="strw-yes">' + L('Restore anyway', 'Restaurar igualmente') + '</button>'
+        + '</div></div>';
+      document.body.appendChild(bg);
+      var done = function (v) { try { bg.remove(); } catch (e) {} document.removeEventListener('keydown', onKey); resolve(v); };
+      var onKey = function (e) { if (e.key === 'Escape') done(false); };
+      document.addEventListener('keydown', onKey);
+      bg.addEventListener('click', function (e) { if (e.target === bg) done(false); });
+      document.getElementById('strw-no').addEventListener('click', function () { done(false); });
+      document.getElementById('strw-yes').addEventListener('click', function () { done(true); });
+    });
+  }
+  /* Shared by both ways into a restore (Rollback history here, Import Data in the settings
+     module). Resolves true when the restore may go ahead. */
+  window.__stConfirmRestore = function (incoming, when) {
+    return restoreWouldLose(incoming).then(function (info) {
+      if (info && info.n === 0) return true;              // nothing of the cloud's is lost
+      return confirmDestructiveRestore(info, when);       // info === null -> "could not check"
+    });
+  };
   function restoreSnapshot(key) {
     try {
       var s = JSON.parse(localStorage.getItem(key)); if (!s || !s.data) return;
-      takeSnapshot('pre-restore');                                  // snapshot current first (undo-able)
-      localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(s.data)); // swap in the chosen snapshot
-      try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {} // make it win to the cloud
-      location.reload();
+      var _dt = new Date(s.ts);
+      var _when = window._stT('This backup was taken ', 'Esta copia se guard\u00f3 el ')
+                + _dt.toLocaleDateString() + ' ' + _dt.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+                + ' \u00b7 ' + s.trades + ' ' + tt('tradesWord');
+      window.__stConfirmRestore(ST.migrate(s.data), _when).then(function (ok) {
+        if (!ok) return;
+        takeSnapshot('pre-restore');                                  // snapshot current first (undo-able)
+        localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(s.data)); // swap in the chosen snapshot
+        try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {} // make it win to the cloud
+        location.reload();
+      });
     } catch (e) {}
   }
   function renderBackups() {
@@ -60553,6 +60651,7 @@ try {
         try { localStorage.setItem('st_jrnl_uat', _stored); } catch (e) {}
         lastPushedStr = _sent;   // ONLY a confirmed upload is allowed to suppress future pushes
         lastPushedUat = _stored; // ...and to let __cloudResume skip the full pull on focus
+        clearForce();            // the restore has landed: the guard is back on for this tab
       }
       accStatus(r.error ? tt('syncErr') : tt('synced'));
     });
@@ -60688,7 +60787,8 @@ try {
     if (window.__MV) return;
     if (!currentUser) return;
     // Deliberate restore: this copy must win and propagate to the cloud, regardless of size.
-    if (forcing) { try { sessionStorage.removeItem('st_forcePush'); } catch (e) {} cloudPush(); accStatus(tt('synced')); return; }
+    // cloudPush() does the forced upload and clears the flag once the server confirms it.
+    if (forcing) { cloudPush(); accStatus(tt('synced')); return; }
 
     /* Before downloading the journal, ask whether it changed. lastPushedUat() is the stamp of an
        upsert THIS device made and the server confirmed; if the cloud still carries it, the cloud
