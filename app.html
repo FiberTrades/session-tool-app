@@ -920,10 +920,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     text-transform: uppercase; margin-left: 10px; text-decoration: underline dotted; padding: 0; }
   .settings-account-match:hover { color: var(--accent, #f472b6); }
   /* "Paid out ..." under an account's balances - why CURRENT sits below what the % says was made. */
-  /* A message waiting to go out: present, clearly not sent yet. NOT .dcx-pending - that is the
-     composer's attachment bar, and sharing the name put a dashed border and 72% opacity on it. */
-  .dcx-queued { margin: 6px 0 6px 52px; padding: 8px 12px; border: 1px dashed var(--border-2);
-    border-radius: 10px; opacity: 0.72; max-width: 70%; }
+  /* A message waiting to go out is YOUR message, dimmed - same row, same avatar and name, with
+     its state where the time would be. NOT .dcx-pending: that is the composer's attachment bar,
+     and sharing the name put a dashed border and 72% opacity on it. */
+  .dcx-msg.dcx-queued { opacity: 0.6; }
+  .dcx-msg.dcx-queued.stuck { opacity: 1; }
+  .dcx-queued-state { text-transform: uppercase; letter-spacing: 0.1em; font-size: 9px; }
+  .dcx-msg.dcx-queued.stuck .dcx-queued-state { color: var(--bad); }
   .dcx-queued-body { color: var(--text-mid); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
   .dcx-queued-att { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12.5px; }
   .dcx-queued-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px;
@@ -932,11 +935,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .dcx-queued-x { background: none; border: none; padding: 0; color: var(--text-dim);
     font: inherit; text-transform: uppercase; cursor: pointer; text-decoration: underline dotted; }
   .dcx-queued-x:hover { color: var(--bad); }
-  .dcx-queued.stuck { border-color: color-mix(in srgb, var(--bad) 50%, transparent); opacity: 0.9; }
-  .dcx-queued.stuck .dcx-queued-meta > span:first-child { color: var(--bad); }
+
   .dcx-queued-r { background: none; border: none; padding: 0; color: var(--accent, #f472b6);
     font: inherit; text-transform: uppercase; cursor: pointer; text-decoration: underline dotted; }
-  @media (max-width: 560px) { .dcx-queued { margin-left: 14px; max-width: 86%; } }
+
   .settings-account-paid { grid-column: 1 / -1; margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace;
     font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
   /* Payouts section: one block per account, one dated line per payout. */
@@ -46951,14 +46953,9 @@ try {
         (window.__stOutboxFor && cur ? window.__stOutboxFor(cur.id) : []).forEach(function(it){
           var body=(it.row&&it.row.body)||'';
           var att=(it.row&&it.row.attachment_name)||'';
-          var fname=(it.file&&it.file.name)||att;
-          var stuck=(it.tries||0)>=3;
-          desired.push({ k:'p:'+it.oid+':'+(it.tries||0), h:'<div class="dcx-queued'+(stuck?' stuck':'')+'" data-key="p:'+it.oid+':'+(it.tries||0)+'">'
-            + (body?('<div class="dcx-queued-body">'+esc(body)+'</div>'):'')
-            + (fname?('<div class="dcx-queued-att">\u{1F4CE} '+esc(fname)+'</div>'):'')
-            + '<div class="dcx-queued-meta"><span>'+(stuck?(_esUI()?'No se pudo enviar':'Couldn\u2019t send'):(_esUI()?'Esperando para enviar':'Waiting to send'))+'</span>'
-            + (stuck?('<button type="button" class="dcx-queued-r" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Reintentar':'Retry')+'</button>'):'')
-            + '<button type="button" class="dcx-queued-x" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Cancelar':'Cancel')+'</button></div></div>' });
+          void body; void att;
+          var _k='p:'+it.oid+':'+(it.tries||0);
+          desired.push({ k:_k, h:window.__stQueuedRow(it, { key:_k, esc:esc, es:_esUI(), ava:avaHtml, name:myName(), avatar:myAvatar() }) });
         });
       }catch(e){}
       var _ok=false; try{ _ok=_dcxReconcile(box, desired); }catch(e){ _ok=false; }
@@ -47094,6 +47091,28 @@ try {
        sleeping laptop, a blip. The composer is cleared the moment you hit send, so a failure used
        to destroy what you wrote. Failed sends are parked here instead and go out on their own.
        Kept in localStorage so a reload (or a closed lid) does not lose them. ==================== */
+    /* The queued row, built to match a real message row so a waiting message reads as YOURS -
+       same avatar, same name, dimmed - with its state in the timestamp's place. Shared with the
+       DM thread, which passes its own name/avatar helpers. */
+    window.__stQueuedRow = function(it, ctx){
+      var e = ctx.esc, tries = it.tries || 0, stuck = tries >= 3, es = !!ctx.es;
+      var body = (it.row && it.row.body) || '', fname = (it.file && it.file.name) || '';
+      var state = stuck ? (es ? 'No se pudo enviar' : 'Couldn\u2019t send')
+                : tries > 0 ? (es ? ('Reintentando\u2026 (' + tries + ')') : ('Trying again\u2026 (' + tries + ')'))
+                : (es ? 'Esperando para enviar' : 'Waiting to send');
+      return '<div class="dcx-msg dcx-queued' + (stuck ? ' stuck' : '') + '" data-key="' + e(ctx.key) + '">'
+        + ctx.ava(ctx.avatar, ctx.name, 'dcx-ava')
+        + '<div class="dcx-body">'
+        +   '<div class="dcx-head"><span class="dcx-name">' + e(ctx.name) + '</span>'
+        +   '<span class="dcx-time dcx-queued-state">' + state + '</span></div>'
+        +   (body ? ('<div class="dcx-queued-body">' + e(body) + '</div>') : '')
+        +   (fname ? ('<div class="dcx-queued-att">\u{1F4CE} ' + e(fname) + '</div>') : '')
+        +   '<div class="dcx-queued-meta">'
+        +     (stuck ? ('<button type="button" class="dcx-queued-r" data-oid="' + e(it.oid) + '">' + (es ? 'Reintentar' : 'Retry') + '</button>') : '')
+        +     '<button type="button" class="dcx-queued-x" data-oid="' + e(it.oid) + '">' + (es ? 'Cancelar' : 'Cancel') + '</button>'
+        +   '</div>'
+        + '</div></div>';
+    };
     function obAdd(row, file, fileKind){ return window.STQueue.add('channel', row, file, fileKind); }
     function obRemove(oid){ window.STQueue.remove(oid); }
     window.__stOutboxFor=function(channelId){ return window.STQueue.listFor('channel', function(x){ return x.row && x.row.channel_id===channelId; }); };
@@ -57522,14 +57541,9 @@ try {
     function _dmQueuedHtml(){
       try{
         if(!window.STQueue || !partner) return '';
+        var ES=(window.STCommunity&&window.STCommunity.esUI&&window.STCommunity.esUI())||(document.documentElement.lang==='es');
         return window.STQueue.listFor('dm', function(x){ return x.row && x.row.recipient_id===partner.id; }).map(function(it){
-          var body=(it.row&&it.row.body)||'', fname=(it.file&&it.file.name)||'';
-          var ES=(window.STCommunity&&window.STCommunity.esUI&&window.STCommunity.esUI())||(document.documentElement.lang==='es');
-          return '<div class="dcx-queued">'
-            + (body?('<div class="dcx-queued-body">'+esc(body)+'</div>'):'')
-            + (fname?('<div class="dcx-queued-att">\u{1F4CE} '+esc(fname)+'</div>'):'')
-            + '<div class="dcx-queued-meta"><span>'+(ES?'Esperando para enviar':'Waiting to send')+'</span>'
-            + '<button type="button" class="dcx-queued-x" data-oid="'+esc(it.oid)+'">'+(ES?'Cancelar':'Cancel')+'</button></div></div>';
+          return window.__stQueuedRow(it, { key:'p:'+it.oid, esc:esc, es:ES, ava:avaHtml, name:myName(), avatar:myAvatar() });
         }).join('');
       }catch(e){ return ''; }
     }
