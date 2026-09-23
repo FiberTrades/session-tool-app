@@ -920,6 +920,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     text-transform: uppercase; margin-left: 10px; text-decoration: underline dotted; padding: 0; }
   .settings-account-match:hover { color: var(--accent, #f472b6); }
   /* "Paid out ..." under an account's balances - why CURRENT sits below what the % says was made. */
+  /* A message waiting to go out: present, clearly not sent yet. */
+  .dcx-pending { margin: 6px 0 6px 52px; padding: 8px 12px; border: 1px dashed var(--border-2);
+    border-radius: 10px; opacity: 0.72; max-width: 70%; }
+  .dcx-pending-body { color: var(--text-mid); font-size: 14px; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .dcx-pending-meta { display: flex; align-items: center; gap: 10px; margin-top: 5px;
+    font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--text-dim); }
+  .dcx-pending-x { background: none; border: none; padding: 0; color: var(--text-dim);
+    font: inherit; text-transform: uppercase; cursor: pointer; text-decoration: underline dotted; }
+  .dcx-pending-x:hover { color: var(--bad); }
+  @media (max-width: 560px) { .dcx-pending { margin-left: 14px; max-width: 86%; } }
   .settings-account-paid { grid-column: 1 / -1; margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace;
     font-size: 9px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-dim); }
   /* Payouts section: one block per account, one dated line per payout. */
@@ -46928,13 +46939,30 @@ try {
       if(!msgs.length){ box.innerHTML='<div class="dcx-welcome"><h2>#'+esc(cur?_chName(cur):'')+'</h2><p>'+(_esUI()?('Este es el comienzo de #'+esc(cur?_chName(cur):'')+'. \u00a1Escribe algo!'):('This is the start of #'+esc(cur?_chName(cur):'')+'. Say something!'))+'</p></div>'; return; }
       var desired=[],ps=null,pt=0,pd='',_pl=null;
       msgs.forEach(function(m){ if(!_msgVisible(m)) return; var t=new Date(m.created_at).getTime()||0; var dk=(window.STCommunity&&STCommunity.dayKey)?STCommunity.dayKey(m.created_at):''; if(dk&&dk!==pd){ pd=dk; ps=null; if(STCommunity.dateSepHtml) desired.push({k:'d:'+dk, h:STCommunity.dateSepHtml(m.created_at)}); } var lsid=m.live_session_id||null; if(lsid!==_pl){ _pl=lsid; ps=null; if(lsid) desired.push({k:'l:'+lsid, h:liveSepHtml(m)}); } var g=(m.sender_id===ps)&&((t-pt)<5*60000); desired.push({k:'m:'+m.id, h:fmtRow(m,g)}); ps=m.sender_id; pt=t; });
+      /* Anything still waiting to go out sits after the real messages, in the order it was
+         written - so what you typed is on screen where you left it, not lost. */
+      try{
+        (window.__stOutboxFor && cur ? window.__stOutboxFor(cur.id) : []).forEach(function(it){
+          var body=(it.row&&it.row.body)||'';
+          var att=(it.row&&it.row.attachment_name)||'';
+          desired.push({ k:'p:'+it.oid, h:'<div class="dcx-pending" data-key="p:'+it.oid+'">'
+            + '<div class="dcx-pending-body">'+esc(body||att)+'</div>'
+            + '<div class="dcx-pending-meta"><span>'+(_esUI()?'Esperando para enviar':'Waiting to send')+'</span>'
+            + '<button type="button" class="dcx-pending-x" data-oid="'+esc(it.oid)+'">'+(_esUI()?'Cancelar':'Cancel')+'</button></div></div>' });
+        });
+      }catch(e){}
       var _ok=false; try{ _ok=_dcxReconcile(box, desired); }catch(e){ _ok=false; }
       /* Safety net: if the incremental result doesn't exactly match the desired order, full-rebuild
          so the output is always correct - worst case is simply the old behaviour. */
       if(_ok){ if(box.children.length!==desired.length){ _ok=false; } else { for(var _v=0;_v<desired.length;_v++){ if(box.children[_v].getAttribute('data-key')!==desired[_v].k){ _ok=false; break; } } } }
       if(!_ok){ box.innerHTML=desired.map(function(it){ return it.h; }).join(''); }
       if(_scab){ var _sb=function(){ box.scrollTop=box.scrollHeight; }; _sb(); requestAnimationFrame(_sb); setTimeout(_sb,120); Array.prototype.forEach.call(box.querySelectorAll('img'),function(im){ if(!im.complete){ im.addEventListener('load',_sb,{once:true}); im.addEventListener('error',_sb,{once:true}); } }); } else { box.scrollTop=_scpt; }
-      try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){} }
+      try{ if(window.STCommunity&&STCommunity.renderUnfurls) STCommunity.renderUnfurls(box); }catch(e){}
+      /* Cancel a queued message: it is the only way to take back something that never sent. */
+      try{ Array.prototype.forEach.call(box.querySelectorAll('.dcx-pending-x'), function(b){
+        if(b.__wired) return; b.__wired=true;
+        b.addEventListener('click', function(){ obRemove(b.getAttribute('data-oid')); });
+      }); }catch(e){} }
     function append(m){ if(seen[m.id]) return; seen[m.id]=true; msgs.push(m); repaint(); }
     function idx(id){ for(var i=0;i<msgs.length;i++) if(msgs[i].id===id) return i; return -1; }
     /* Spinner only appears if a load actually takes a moment (>250ms). Fast/cached
@@ -46965,11 +46993,70 @@ try {
         .on('postgres_changes',{event:'*',schema:'public',table:'channel_reactions',filter:'channel_id=eq.'+cur.id},function(){ loadReactions(); })
         .subscribe();
     }
-    function insertMsg(row, restore){ row.sender_name=myName(); row.sender_avatar=myAvatar(); sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ note("Couldn't send."); return; }
+    /* ===== OUTBOX =========================================================================
+       A send can fail for a reason that has nothing to do with the message: no connection, a
+       sleeping laptop, a blip. The composer is cleared the moment you hit send, so a failure used
+       to destroy what you wrote. Failed sends are parked here instead and go out on their own.
+       Kept in localStorage so a reload (or a closed lid) does not lose them. ==================== */
+    var OUTBOX_KEY='st_chat_outbox', OUTBOX_MAX=50;
+    function obLoad(){ try{ var a=JSON.parse(localStorage.getItem(OUTBOX_KEY)||'[]'); return Array.isArray(a)?a:[]; }catch(e){ return []; } }
+    function obSave(a){ try{ localStorage.setItem(OUTBOX_KEY, JSON.stringify(a.slice(-OUTBOX_MAX))); }catch(e){} }
+    function obAdd(row){
+      var a=obLoad();
+      a.push({ oid:'ob_'+Date.now().toString(36)+Math.random().toString(36).slice(2,6), row:row, ts:Date.now(), tries:0 });
+      obSave(a); repaint();
+      return a[a.length-1];
+    }
+    function obRemove(oid){ obSave(obLoad().filter(function(x){ return x.oid!==oid; })); repaint(); }
+    window.__stOutboxFor=function(channelId){ return obLoad().filter(function(x){ return x && x.row && x.row.channel_id===channelId; }); };
+    /* Has this exact message already landed? Only asked on a RETRY: the first attempt cannot have
+       posted anything, and a network failure after the row was stored is the one way a retry could
+       duplicate it. Body + sender + this channel, within a few minutes of when it was written. */
+    function obAlreadyThere(it){
+      var r=it.row;
+      if(!r || !r.body || !currentUser) return Promise.resolve(false);
+      var since=new Date(it.ts-5*60000).toISOString();
+      return sb.from('channel_messages').select('id').eq('channel_id',r.channel_id)
+        .eq('sender_id',currentUser.id).eq('body',r.body).gte('created_at',since).limit(1)
+        .then(function(q){ return !!(q && !q.error && q.data && q.data.length); }, function(){ return false; });
+    }
+    var _obBusy=false;
+    function obFlush(){
+      if(_obBusy || !currentUser) return;
+      if(typeof navigator!=='undefined' && navigator.onLine===false) return;
+      var q=obLoad(); if(!q.length) return;
+      _obBusy=true;
+      var it=q[0];
+      var go=function(skip){
+        if(skip){ obRemove(it.oid); _obBusy=false; obFlush(); return; }   // already posted: drop it
+        var row=it.row; row.sender_name=myName(); row.sender_avatar=myAvatar();
+        sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){
+          _obBusy=false;
+          if(r && r.error){ obBump(it.oid); return; }                     // still failing: keep it, stop here
+          obRemove(it.oid);
+          if(r && r.data){ append(r.data); }
+          else { note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Ed\u00edtalo e int\u00e9ntalo de nuevo.')); }
+          obFlush();                                                      // next one, in order
+        }, function(){ _obBusy=false; obBump(it.oid); });
+      };
+      if(it.tries>0) obAlreadyThere(it).then(go); else go(false);
+    }
+    function obBump(oid){
+      var a=obLoad();
+      for(var i=0;i<a.length;i++){ if(a[i].oid===oid){ a[i].tries=(a[i].tries||0)+1; break; } }
+      obSave(a); repaint();
+    }
+    window.__stChatFlush=obFlush;
+    try{
+      window.addEventListener('online', function(){ setTimeout(obFlush, 800); });
+      document.addEventListener('visibilitychange', function(){ if(!document.hidden) obFlush(); });
+      setInterval(obFlush, 30000);
+    }catch(e){}
+    function insertMsg(row, restore){ row.sender_name=myName(); row.sender_avatar=myAvatar(); sb.from('channel_messages').insert(row).select().maybeSingle().then(function(r){ if(r.error){ obAdd(row); note(window._stT('No connection \u2014 it will send when you are back online.','Sin conexi\u00f3n \u2014 se enviar\u00e1 cuando vuelvas a estar en l\u00ednea.')); return; }
       /* Zero rows and no error means the moderation trigger refused it. Without this branch the
          message simply evaporated: cleared composer, no row, nothing said. */
       if(!r.data){ note(window._stT('That message couldn\u2019t be posted. Edit it and try again.','Ese mensaje no se pudo publicar. Edítalo e inténtalo de nuevo.')); if(restore){ var _ta=G('dcx-input'); if(_ta && !(_ta.value||'').trim()){ _ta.value=restore; _ta.style.height='auto'; _ta.style.height=Math.min(_ta.scrollHeight,160)+'px'; } } return; }
-      append(r.data); }).catch(function(){ note("Couldn't send."); }); }
+      append(r.data); }).catch(function(){ obAdd(row); note(window._stT('No connection \u2014 it will send when you are back online.','Sin conexi\u00f3n \u2014 se enviar\u00e1 cuando vuelvas a estar en l\u00ednea.')); }); }
     function sendText(){ if(!_canPostHere()){ if(typeof window.stCenterNote==='function') window.stCenterNote(window._stT('Posting in this channel is not open to your plan \u2014 your biases and reviews still appear here automatically.','Publicar en este canal no está disponible en tu plan \u2014 tus biases y revisiones aparecen aquí automáticamente.')); return; } var ta=G('dcx-input'); if(!ta||!cur||!currentUser) return; var t=(ta.value||'').trim(); if(!t && !pendingFile) return; if(t) pushMentions(t); note(''); closePanels(); var rp=replyTarget; if(pendingFile){ var f=pendingFile, kind=(f.type&&f.type.indexOf('image/')===0)?'image':'file'; ta.value=''; ta.style.height='auto'; clearPending(); note('Uploading\u2026'); up(f,kind).then(function(o){ note(''); var row={ channel_id:cur.id, sender_id:currentUser.id, attachment_url:o.url, attachment_type:kind, attachment_name:o.name }; if(t) row.body=t; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row); }).catch(function(){ note('Upload failed.'); }); cancelReply(); return; } ta.value=''; ta.style.height='auto'; var row={ channel_id:cur.id, sender_id:currentUser.id, body:t }; if(rp){ row.reply_to=rp.id; row.reply_name=rp.name; row.reply_excerpt=rp.excerpt; } insertMsg(row, t); cancelReply(); }
 
     /* the live-session chat reuses this exact uploader + key, so both chats behave identically */
