@@ -8313,6 +8313,8 @@ try {
       'combo.rec_e_no_room': 'Moving your BE stop past entry costs more than it banks. Keep it at entry.',
       'combo.rec_e_closest': 'The closest rule, {RULE}, would have cost {COST} across {N} tracked BE moves.',
       'combo.rec_b_closest': 'The closest, capping at +{TP}, would have cost {COST}, cutting {WINS} of your winners short.',
+      'combo.g_would_gain': 'Would have gained',
+      'combo.g_would_cost': 'Would have cost',
       'combo.rec_c_closest': 'The closest, {PIPS} wider, would have rescued {RESCUED} but shrunk {SHRUNK}, costing {COST} net.',
       'combo.loser_one': 'loser', 'combo.loser_many': 'losers',
       'combo.winner_one': 'winner', 'combo.winner_many': 'winners',
@@ -9848,6 +9850,8 @@ try {
       'combo.rec_e_no_room': 'Mover el BE más allá de la entrada cuesta más de lo que asegura. Déjalo en la entrada.',
       'combo.rec_e_closest': 'La regla más cercana, {RULE}, habría costado {COST} en {N} movimientos de BE registrados.',
       'combo.rec_b_closest': 'El más cercano, limitar en +{TP}, habría costado {COST}, cortando {WINS} de tus ganadoras.',
+      'combo.g_would_gain': 'Habría ganado',
+      'combo.g_would_cost': 'Habría costado',
       'combo.rec_c_closest': 'El más cercano, {PIPS} más amplio, habría rescatado {RESCUED} pero encogido {SHRUNK}, con un coste neto de {COST}.',
       'combo.loser_one': 'perdedora', 'combo.loser_many': 'perdedoras',
       'combo.winner_one': 'ganadora', 'combo.winner_many': 'ganadoras',
@@ -21647,7 +21651,15 @@ try {
         const _cB = current.totalGbp - nearTpSc.totalGbp;
         if (_cB > 0.005) {
           const _mB = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cB), { noSign: true }) : String(Math.round(Math.abs(_cB)));
-          const _cutB = Math.max(0, (current.winCount || 0) - (nearTpSc.winCount || 0));
+          /* Winners that RAN PAST the cap - the ones it would have cut short. Comparing win
+             counts said 0, because a cap keeps a winner a winner; it just makes it smaller. */
+          let _cutB = 0;
+          allTrades.forEach(tr => {
+            if (tr.result !== 'Win') return;
+            const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
+            const got = isPips ? (parseFloat(tr.pips) || 0) : (parseFloat(tr.r) || 0);
+            if (got > nearTpVal) _cutB += copies;
+          });
           _recBClosest = ' ' + (t('combo.rec_b_closest') || 'The closest, capping at +{TP}, would have cost {COST}, cutting {WINS} of your winners short.')
             .replace('{TP}', '<strong class="rec-suggest">' + nearTpVal.toFixed(decimals).replace(/\.?0+$/, '') + (isPips ? (' ' + window.__stDU.lbl(window.__stDU.display(), 's')) : 'R') + '</strong>')
             .replace('{COST}', _mB)
@@ -21925,7 +21937,7 @@ try {
           const _mC = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cC), { noSign: true }) : String(Math.round(Math.abs(_cC)));
           const _res = Math.round(nearWidenSc.rescued || 0), _shr = Math.round(nearWidenSc.shrunk || 0);
           recCTpl += ' ' + (t('combo.rec_c_closest') || 'The closest, {PIPS} wider, would have rescued {RESCUED} but shrunk {SHRUNK}, costing {COST} net.')
-            .replace('{PIPS}', '<strong class="rec-suggest">+' + nearWiden + ' ' + window.__stDU.lbl(window.__stDU.display(), _shr === 1 ? '' : 's') + '</strong>')
+            .replace('{PIPS}', '<strong class="rec-suggest">+' + nearWiden + ' ' + window.__stDU.lbl(window.__stDU.display(), nearWiden === 1 ? 'o' : 's') + '</strong>')
             .replace('{RESCUED}', _res + ' ' + ((_res === 1) ? (t('combo.loser_one') || 'loser') : (t('combo.loser_many') || 'losers')))
             .replace('{SHRUNK}', _shr + ' ' + ((_shr === 1) ? (t('combo.winner_one') || 'winner') : (t('combo.winner_many') || 'winners')))
             .replace('{COST}', _mC);
@@ -22120,6 +22132,15 @@ try {
               t('combo.g_be_to_win') || 'BEs turned to wins',
               t('combo.g_capped')    || 'Winners capped short');
           })()
+        /* Nothing beat current: draw what the CLOSEST cap would have done instead of nothing.
+           The labels say "would have", so the picture cannot be read as a recommendation. */
+        : (bPassesTier && nearTpSc && nearTpVal > 0)
+        ? (function () {
+            const sp = splitVsCurrent(nearTpSc, current);
+            return comboSplitGraph(sp.gainGbp, sp.costGbp,
+              t('combo.g_would_gain') || 'Would have gained',
+              t('combo.g_would_cost') || 'Would have cost');
+          })()
         : ''
     });
 
@@ -22137,6 +22158,9 @@ try {
         : (t('combo.sample_loser_many') || 'tracked losers'),
       graphHtml: (tierIsStrong(tierC) && bestWiden > 0)
         ? comboSplitGraph(scenarioC.gainGbp, scenarioC.costGbp,
+            t('combo.g_rescued') || 'Losers rescued', t('combo.g_shrunk') || 'Winners shrunk')
+        : (tierIsStrong(tierC) && nearWidenSc && nearWiden > 0)
+        ? comboSplitGraph(nearWidenSc.gainGbp, nearWidenSc.costGbp,
             t('combo.g_rescued') || 'Losers rescued', t('combo.g_shrunk') || 'Winners shrunk')
         : ''
     });
@@ -22181,6 +22205,13 @@ try {
             return comboSplitGraph(sp.gainGbp, sp.costGbp,
               t('combo.g_off_banked')  || 'Scratches banked',
               t('combo.g_off_stopped') || 'Winners stopped early');
+          })()
+        : (tierIsStrong(tierE) && nearOffSc && nearOffIdx >= 0)
+        ? (function () {
+            const sp = splitVsCurrent(nearOffSc, current);
+            return comboSplitGraph(sp.gainGbp, sp.costGbp,
+              t('combo.g_off_banked')  || 'Scratches banked',
+              t('combo.g_would_cost')  || 'Would have cost');
           })()
         : ''
     });
