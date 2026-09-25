@@ -1485,6 +1485,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pn-cost-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; font-size: 12px; line-height: 1.5; color: var(--text-mid); }
   .pn-cost-row > span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
   .pn-cost-row .good { color: var(--good); } .pn-cost-row .bad { color: var(--bad); }
+  .pn-when { color: var(--text-dim); }
+  .pn-day { cursor: pointer; border-radius: var(--radius-chip); }
+  .pn-day > span:first-child { color: var(--text); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .pn-day:hover > span:first-child, .pn-day:focus-visible > span:first-child { text-decoration: underline; }
+  .pn-day:focus-visible { outline: 2px solid var(--text-mid); outline-offset: 2px; }
+  .pn-cost-row.pn-day { display: grid; grid-template-columns: 4.6em 1fr; gap: 2px 12px; }
+  .pn-day > span:last-child { text-align: left; }
   .pn-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
   .pn-chip { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); border: 1px solid var(--border-2); border-radius: var(--radius-chip); padding: 3px 8px; font-variant-numeric: tabular-nums; }
   .pn-chip b { color: #e8cf63; font-weight: 500; margin-left: 4px; }
@@ -7489,6 +7496,7 @@ try {
       'nudge.period_into': 'Trades taken into a nudge: {N} · {W} won, {L} lost',
       'nudge.period_heeded': 'Warnings you respected: {H} of {M}',
       'nudge.period_cost_title': 'What each nudge cost',
+      'nudge.period_by_day': 'By day',
       'nudge.period_trades_one': '1 trade',
       'nudge.period_trades_many': '{N} trades',
       'nudge.period_wl': '{W} won, {L} lost',
@@ -9143,6 +9151,7 @@ try {
       'nudge.period_into': 'Operaciones tomadas con aviso: {N} · {W} ganadas, {L} perdidas',
       'nudge.period_heeded': 'Avisos que respetaste: {H} de {M}',
       'nudge.period_cost_title': 'Lo que costó cada aviso',
+      'nudge.period_by_day': 'Por día',
       'nudge.period_trades_one': '1 operación',
       'nudge.period_trades_many': '{N} operaciones',
       'nudge.period_wl': '{W} ganadas, {L} perdidas',
@@ -15521,13 +15530,14 @@ try {
                  ea_risk: 'k_ea', ea_trades: 'k_ea', ea_sl: 'k_ea', news_open: 'k_news', news_hold: 'k_news', news_soon: 'k_news' };
     function periodStats(fromDay, toDay) {
       var log = (data && data.nudgeLog) || {}, list = journalTrades(), byT = ticketMap(list), seen = {};
-      var res = { total: 0, kinds: {}, byKind: {}, into: { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0 }, heeded: 0, heedable: 0 };
+      var res = { total: 0, kinds: {}, byKind: {}, days: {}, into: { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0 }, heeded: 0, heedable: 0 };
       Object.keys(log).filter(function (d) { return d >= fromDay && d <= toDay; }).forEach(function (day) {
         var d = log[day] || {};
         Object.keys(d).forEach(function (k) {
           if (k.indexOf('sample:') === 0) return;
           var rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1), g = KIND[rule] || 'k_other';
           res.total++; res.kinds[g] = (res.kinds[g] || 0) + 1;
+          var dd = res.days[day] || (res.days[day] = {}); dd[g] = (dd[g] || 0) + 1;
           var o = outcome(k, d[k], day, list, byT);
           if (o.kind === 'trade' && !seen[id]) {
             seen[id] = 1; res.into.n++; res.into.net += o.out.net; res.into.r += o.out.r;
@@ -15536,16 +15546,41 @@ try {
           if (o.kind === 'after') { res.heedable++; if (!o.n) res.heeded++; }
           // What this KIND of nudge cost: the trade it was about (each once per kind), or the trades
           // taken after a warning that was not respected.
-          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, net: 0, r: 0, _t: {} });
+          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, net: 0, r: 0, _t: {}, _d: {} });
           if (o.kind === 'trade' && !bk._t[id]) {
-            bk._t[id] = 1; bk.n++; bk.net += o.out.net; bk.r += o.out.r;
+            bk._t[id] = 1; bk._d[day] = 1; bk.n++; bk.net += o.out.net; bk.r += o.out.r;
             if (o.out.result === 'Win') bk.wins++; else if (o.out.result === 'Lose') bk.losses++;
           }
-          if (o.kind === 'after' && o.n) { bk.n += o.n; bk.net += o.net; bk.r += o.r || 0; bk.wins += o.wins || 0; bk.losses += o.losses || 0; }
+          if (o.kind === 'after' && o.n) { bk._d[day] = 1; bk.n += o.n; bk.net += o.net; bk.r += o.r || 0; bk.wins += o.wins || 0; bk.losses += o.losses || 0; }
         });
       });
       return res;
     }
+    // "Tue 22" / "mar 22" - short weekday and day of the month, in the app's language.
+    function dayLabel(dk) {
+      try {
+        var p = String(dk).split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]);
+        var s0 = d.toLocaleDateString((typeof tLocale === 'function') ? tLocale() : 'en-GB', { weekday: 'short', day: 'numeric' }).replace('.', '');
+        return s0.charAt(0).toUpperCase() + s0.slice(1);
+      } catch (e) { return dk; }
+    }
+    function openDay(dk) {
+      try {
+        var p = String(dk).split('-'), d = new Date(+p[0], +p[1] - 1, +p[2]);
+        var bg = document.getElementById('review-modal-bg'); if (bg) bg.classList.remove('show');   // not stacked on the review
+        try { currentReview = null; } catch (e) {}
+        if (typeof openDayModal === 'function') openDayModal(d.toDateString());
+      } catch (e) {}
+    }
+    try {
+      // Capture phase: the review modal stops clicks bubbling (so a click inside it never closes it).
+      document.addEventListener('click', function (e) { var el = e.target && e.target.closest && e.target.closest('.pn-day[data-day]'); if (el) openDay(el.getAttribute('data-day')); }, true);
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Enter' && e.key !== ' ') return;
+        var el = e.target && e.target.closest && e.target.closest('.pn-day[data-day]'); if (!el) return;
+        e.preventDefault(); openDay(el.getAttribute('data-day'));
+      }, true);
+    } catch (e) {}
     function everNudged() { try { var log = data && data.nudgeLog; return !!log && Object.keys(log).some(function (d) { return Object.keys(log[d] || {}).some(function (k) { return k.indexOf('sample:') !== 0; }); }); } catch (e) { return false; } }
     // noun: 'week' | 'month'. Empty for a member who has never been nudged (no EA live status).
     function periodHtml(start, end, noun) {
@@ -15569,6 +15604,17 @@ try {
            + (diff ? ' <span class="' + (diff < 0 ? 'good' : 'bad') + '">' + (diff < 0 ? '↓ ' : '↑ ') + Math.abs(diff) + '</span>' : '') + '</div>';
         h += '<div class="pn-kinds">' + Object.keys(cur.kinds).sort(function (x, y) { return cur.kinds[y] - cur.kinds[x]; })
              .map(function (g) { return '<span class="pn-chip">' + escH(t('nudge.' + g)) + '<b>' + cur.kinds[g] + '</b></span>'; }).join('') + '</div>';
+        // By day: which day each nudge happened. A day opens that day's view (times and outcomes).
+        var dayKeys = Object.keys(cur.days).sort();
+        if (dayKeys.length) {
+          h += '<div class="pn-cost-title" style="margin-top:4px;">' + escH(t('nudge.period_by_day')) + '</div>';
+          dayKeys.forEach(function (dk) {
+            var kk = cur.days[dk];
+            var txt = Object.keys(kk).map(function (g) { return t('nudge.' + g) + (kk[g] > 1 ? ' \u00d7' + kk[g] : ''); }).join(', ');
+            h += '<div class="pn-cost-row pn-day" role="button" tabindex="0" data-day="' + dk + '"><span>' + escH(dayLabel(dk)) + '</span><span>' + escH(txt) + '</span></div>';
+          });
+          h += '<div style="height:10px;"></div>';
+        }
         if (cur.into.n) {
           var cls = cur.into.net > 0 ? 'good' : cur.into.net < 0 ? 'bad' : '';
           h += '<div class="pn-line">' + escH(t('nudge.period_into').replace('{N}', String(cur.into.n)).replace('{W}', String(cur.into.wins)).replace('{L}', String(cur.into.losses)))
@@ -15582,7 +15628,8 @@ try {
             var v = x.v, c2 = v.net > 0 ? 'good' : v.net < 0 ? 'bad' : '';
             var tr = v.n === 1 ? t('nudge.period_trades_one') : t('nudge.period_trades_many').replace('{N}', String(v.n));
             var wl = t('nudge.period_wl').replace('{W}', String(v.wins)).replace('{L}', String(v.losses));
-            h += '<div class="pn-cost-row"><span>' + escH(t('nudge.' + x.g)) + '</span><span>' + escH(tr + ' \u00b7 ' + wl + ' \u00b7 ')
+            var when = Object.keys(v._d || {}).sort().map(dayLabel).join(', ');
+            h += '<div class="pn-cost-row"><span>' + escH(t('nudge.' + x.g)) + (when ? ' <span class="pn-when">\u00b7 ' + escH(when) + '</span>' : '') + '</span><span>' + escH(tr + ' \u00b7 ' + wl + ' \u00b7 ')
                + '<span class="' + c2 + '">' + escH(fmtMoney(v.net) + ' (' + signedR(v.r) + ')') + '</span></span></div>';
           });
         }
@@ -60786,7 +60833,7 @@ try {
       //  - .stb-bd-modal/.stb-bd-close : close the leaderboard "How X scored" breakdown popup
       //  - .dcx-img                : the chart image viewer (close, zoom, open-in-browser)
       //  - #edit-trade-chart       : the chart thumbnail inside a trade, to open its chart
-      var MV_ALLOW = '#mv-banner, .tabs, .tab, .tab-step, .tab-step-arrow, .tab-step-current, .modal-close, .cal-day, .cal-nav-btn, .cal-week-summary, .lang-flag, #lang-toggle, .potr-trade-row, .trade-row, .series-dot.clickable, .history-row, .hist-sec-toggle, #scope-picker, .scope-picker-btn, .scope-picker-menu, .scope-picker-item, .scope-picker-section-toggle, .combo-show-all, .tag-leaderboard-expand, .stb-card, .stb-row-click, .stb-you-click, .stb-bd-modal, .stb-bd-close, .dcx-img, #edit-trade-chart, #edit-trade-replay, #strp-modal-bg, #page-trades, #page-tradeview, #day-modal-bg, #review-modal-bg, .tv-link-preview, a[href*="tradingview.com"], a[href*="chart-shots"], [data-mv-allow]';
+      var MV_ALLOW = '#mv-banner, .tabs, .tab, .tab-step, .tab-step-arrow, .tab-step-current, .modal-close, .cal-day, .cal-nav-btn, .cal-week-summary, .pn-day, .lang-flag, #lang-toggle, .potr-trade-row, .trade-row, .series-dot.clickable, .history-row, .hist-sec-toggle, #scope-picker, .scope-picker-btn, .scope-picker-menu, .scope-picker-item, .scope-picker-section-toggle, .combo-show-all, .tag-leaderboard-expand, .stb-card, .stb-row-click, .stb-you-click, .stb-bd-modal, .stb-bd-close, .dcx-img, #edit-trade-chart, #edit-trade-replay, #strp-modal-bg, #page-trades, #page-tradeview, #day-modal-bg, #review-modal-bg, .tv-link-preview, a[href*="tradingview.com"], a[href*="chart-shots"], [data-mv-allow]';
       // The account/scope picker is safe to allow: saveData() bails on window.__MV, so switching
       // scope only changes what is RENDERED - it can never write to the member's journal.
       // A series dot opens the trade in the edit modal. The DOT is allowed, the modal body is
