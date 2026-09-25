@@ -41,3 +41,7 @@ revoke all on public.ea_settings, public.ea_settings_log from anon;
 revoke insert, update, delete, truncate on public.ea_settings, public.ea_settings_log from authenticated;
 
 alter publication supabase_realtime add table public.ea_settings, public.ea_settings_log;
+
+-- 3) When the EA last announced each open trade (25 Sep 2026, migration live_trades_seen_at). The live-trade
+--    function stamps it on every re-announce (every 20s); the app shows "EA offline" when it goes stale.
+alter table public.live_trades add column if not exists seen_at timestamptz not null default now();

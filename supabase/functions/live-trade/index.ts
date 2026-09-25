@@ -117,6 +117,9 @@ Deno.serve(async (req) => {
       direction: dir,
       pnl:       null,
       closed_at: null,
+      // Every re-announce (every 20s while the EA runs) refreshes this, so an old seen_at means the
+      // EA / PC / MT5 is off and the app says so instead of showing the trade as active.
+      seen_at:   new Date().toISOString(),
     } as Record<string, unknown>;
     const lots = numOrNull(body.lots), risk = numOrNull(body.risk);
     if (lots !== null && lots > 0) row.lots = lots;

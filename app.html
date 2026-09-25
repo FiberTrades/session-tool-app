@@ -2940,6 +2940,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .stlf-res.lose { color: var(--bad); background: rgba(232,93,93,0.16); }
   .stlf-res.be { color: var(--info); background: rgba(96,165,250,0.16); }
   .stlf-res.open { color: #e0b23c; }
+  /* The EA has not re-announced this trade lately (PC / MT5 off?): nothing can see it, so it is not "active". */
+  .stlf-res.offline { color: var(--text-dim); }
+  .stlf-res.offline .stlf-dot { background: transparent; box-shadow: inset 0 0 0 1.5px currentColor; animation: none; }
+  .stlf-note { margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-mid); max-width: 62ch; }
   .stlf-dot { width: 7px; height: 7px; border-radius: 50%; background: #e0b23c; animation: stlfp 1s infinite; }
   .stlf-ic { display: inline-flex; align-items: center; justify-content: center; min-width: 0.95em; font-size: 15px; line-height: 1; font-weight: 700; }
   .stlf-res.be .stlf-ic { font-size: 21px; transform: translateY(-2px); }
@@ -14788,6 +14792,12 @@ try {
       return el;
     }
     function _hasOpen() { return Object.keys(rows).some(function (k) { return rows[k] && !rows[k].closed; }); }
+    // The EA re-announces every open trade every 20s. Quiet for 2.5 minutes (several missed beats,
+    // room for a slow network) = it is not running: PC asleep or off, MT5 closed, or no internet.
+    var EA_QUIET_MS = 150000;
+    function _offline(r) { return !!(r && !r.closed && r.seenAt && (Date.now() - r.seenAt) > EA_QUIET_MS); }
+    // Nothing arrives when the EA goes quiet - that is the point - so look again every 15s.
+    setInterval(function () { try { if (_hasOpen()) render(); } catch (e) {} }, 15000);
     /* Drop the closed rows, locally and in live_trades; keep anything still open. */
     function _dropClosed() {
       Object.keys(rows).forEach(function (k) {
@@ -14814,13 +14824,23 @@ try {
         var arrow = isLong ? '\u2191' : '\u2193';
         var sideTxt = isLong ? (es ? 'Largo' : 'Long') : (es ? 'Corto' : 'Short');
         var resHtml;
-        if (!res) { resHtml = '<span class="stlf-res open"><span class="stlf-dot"></span>' + (es ? 'activa' : 'active') + '</span>'; }   // the trade is still running - "live" clashed with a live SESSION broadcast
+        if (!res && _offline(r)) { resHtml = '<span class="stlf-res offline"><span class="stlf-dot"></span>' + (es ? 'EA desconectado' : 'EA offline') + '</span>'; }
+        else if (!res) { resHtml = '<span class="stlf-res open"><span class="stlf-dot"></span>' + (es ? 'activa' : 'active') + '</span>'; }   // the trade is still running - "live" clashed with a live SESSION broadcast
         else if (res === 'Win') { resHtml = '<span class="stlf-res win"><span class="stlf-ic">\u2713</span>' + (es ? 'Ganada' : 'Won') + '</span>'; }
         else if (res === 'Lose') { resHtml = '<span class="stlf-res lose"><span class="stlf-ic">\u2715</span>' + (es ? 'Perdida' : 'Lost') + '</span>'; }
         else { resHtml = '<span class="stlf-res be"><span class="stlf-ic">=</span>BE</span>'; }
         return '<span class="stlf-chip"><span class="stlf-side ' + (isLong ? 'long' : 'short') + '"><span class="stlf-arrow">' + arrow + '</span>' + sideTxt + '</span>' + resHtml + '</span>';
       }).join('');
-      el.innerHTML = '<div class="stlf-head">' + head + '</div><div class="stlf-chips">' + chips + '</div>';
+      // Any trade the EA has gone quiet on: say since when, and what that means.
+      var off = list.filter(_offline), note = '';
+      if (off.length) {
+        var last = Math.max.apply(null, off.map(function (r) { return r.seenAt; }));
+        var d = new Date(last), T = ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2);
+        note = '<div class="stlf-note">' + (es
+          ? 'Tu EA no informa desde las ' + T + '. Si tu PC o MT5 están apagados, ' + (off.length > 1 ? 'puede que estas operaciones ya se hayan cerrado' : 'puede que esta operación ya se haya cerrado') + ' \u2014 se actualizará en cuanto MT5 vuelva a estar encendido.'
+          : 'Your EA hasn\u2019t reported since ' + T + '. If your PC or MT5 is off, ' + (off.length > 1 ? 'these trades may already have closed' : 'this trade may already have closed') + ' \u2014 it updates as soon as MT5 is back on.') + '</div>';
+      }
+      el.innerHTML = '<div class="stlf-head">' + head + '</div><div class="stlf-chips">' + chips + '</div>' + note;
     }
     return {
       upsert: function (row) {
@@ -14847,7 +14867,10 @@ try {
           }
         } catch (e) {}
         var k = String(row.ticket), ex = rows[k] || {};
-        rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '' };
+        // seen_at: when the EA last announced this trade (it re-sends every 20s while it runs).
+        var _seen = Date.parse(row.seen_at);
+        rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '',
+                    seenAt: isFinite(_seen) ? _seen : (ex.seenAt || Date.now()) };
         // Live behaviour nudges read the same events (re-entry after a loss, losses in a row, ...).
         try { if (window.__stNudge) window.__stNudge.observe(ex, rows[k], row); } catch (e) {}
         // Remember any ticket that was shown OPEN in the feed. A realtime close event flips the
