@@ -2795,6 +2795,49 @@ void LiveReannounceOpen()
                                g_syncTokenEff,posid,sym,dir,size));
      }
   }
+// v8.6: the EA's own settings, so Session Tool always knows your risk, stop limits, take profit,
+// break-even and daily trade cap as they are RIGHT NOW - and can say so when you loosen one mid-
+// session. A change is sent once the values have been still for 3 seconds (a number half-typed
+// into the panel never goes out), and the whole snapshot again every 5 minutes as a backstop:
+// the server only logs a CHANGE, so the repeat costs nothing. Keyed by account login + chart symbol.
+string   g_setSig="";      // settings last sent
+string   g_setPend="";     // settings seen changing, waiting to settle
+datetime g_setPendAt=0;
+datetime g_setAt=0;
+string LiveSettingsBody()
+  {
+   int du=DistUnitFor(_Symbol);
+   string unit=(du==DU_POINTS)?"points":((du==DU_TICKS)?"ticks":"pips");
+   string rm=(g_riskMode==RISK_PERCENT)?"percent":((g_riskMode==RISK_FIXED_LOT)?"lots":"amount");
+   string b=StringFormat("\"risk_mode\":\"%s\",\"risk_percent\":%s,\"risk_amount\":%s,\"fixed_lot\":%s",
+                         rm,DoubleToString(g_riskPercent,2),DoubleToString(g_riskAmount,2),DoubleToString(g_fixedLot,2));
+   b+=StringFormat(",\"sl_min\":%s,\"sl_max\":%s,\"unit\":\"%s\"",
+                   DoubleToString(g_minSL,2),DoubleToString(g_maxSL,2),unit);
+   b+=StringFormat(",\"tp_on\":%s,\"tp_mode\":\"%s\",\"tp_value\":%s,\"tp_close_pct\":%s",
+                   g_tpOn[0]?"true":"false",(g_tpMode==TP_BY_RR)?"rr":"pips",DoubleToString(g_tpVal[0],2),DoubleToString(g_tpPct[0],1));
+   b+=StringFormat(",\"be_on\":%s,\"be_trigger_r\":%s,\"be_offset\":%s,\"be_offset_mode\":\"%s\",\"max_trades_day\":%d",
+                   g_useBE?"true":"false",DoubleToString(g_beRR,2),DoubleToString(g_beOffset,2),(g_beOffMode==BEOFF_BY_RR)?"rr":"pips",g_maxTradesDay);
+   return b;
+  }
+void LiveSettingsTick()
+  {
+   if(StringLen(g_syncTokenEff)==0) return;
+   string body=LiveSettingsBody();
+   datetime now=TimeCurrent();
+   if(body!=g_setSig)
+     {
+      if(body!=g_setPend){ g_setPend=body; g_setPendAt=now; return; }   // still changing: wait
+      if(now-g_setPendAt<3) return;                                     // settled for 3s: send
+     }
+   else if(now-g_setAt<300) return;                                     // unchanged: backstop only
+   g_setSig=body; g_setPend=body; g_setAt=now;
+   // The money one trade risks right now - a % setting follows the balance. Shown by the app,
+   // never counted as a change (the server ignores it when comparing).
+   double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
+                 : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.6\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+                            g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
+  }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
 double LivePositionPnl(ulong posId)
   {
@@ -4272,6 +4315,7 @@ void OnTimer()
    SyncFlush(3);
    BalFlush(2);
    if(TimeCurrent()-g_liveReAt>=20){ g_liveReAt=TimeCurrent(); LiveReannounceOpen(); }   // v4.3: keep open trades on the live feed
+   LiveSettingsTick();   // v8.6: your EA settings -> Session Tool, when they change
    LiveFlush(3);
    ChartRedraw();
   }

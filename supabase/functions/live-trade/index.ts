@@ -15,6 +15,12 @@
 //           break-even, never nulls a value already stored.
 //    { event:"close", token, ticket, pnl }
 //        -> set pnl + closed_at on that ticket's row
+//    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6)
+//        -> the EA's own settings right now (risk, stop limits, take profit,
+//           break-even, daily trade cap): upsert ea_settings, and when a real
+//           setting changed, one ea_settings_log row naming what changed.
+//           Sent at start, on every change, and every 5 min as a backstop -
+//           the repeat logs nothing, because nothing changed.
 //
 //  BE / win / lose is decided in the APP (from your risk rules),
 //  not here — this only stores the raw money P&L.
@@ -47,10 +53,11 @@ Deno.serve(async (req) => {
 
   const { token, event, ticket } = body ?? {};
   const ticketStr = (ticket === undefined || ticket === null) ? "" : String(ticket).trim();
+  const isSettings = event === "settings";          // no ticket: it describes the EA, not a trade
   if (
     !token ||
-    (event !== "open" && event !== "close") ||
-    !ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"
+    (event !== "open" && event !== "close" && !isSettings) ||
+    (!isSettings && (!ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"))
   ) {
     return json({ error: "empty or malformed live event" }, 400);
   }
@@ -70,6 +77,36 @@ Deno.serve(async (req) => {
   }
 
   const userId = String(prof.id); // real account UUID
+
+  if (isSettings) {
+    const login = String(body.login ?? "").trim().slice(0, 32);
+    const symbol = (typeof body.symbol === "string") ? body.symbol.trim().slice(0, 32) : "";
+    const settings = (body.settings && typeof body.settings === "object" && !Array.isArray(body.settings)) ? body.settings : null;
+    if (!login || !settings) return json({ error: "empty settings" }, 400);
+    const { data: prev, error: rErr } = await admin
+      .from("ea_settings")
+      .select("settings")
+      .eq("user_id", userId).eq("login", login).eq("symbol", symbol)
+      .maybeSingle();
+    if (rErr) return json({ error: rErr.message }, 500);
+    const { error: uErr } = await admin
+      .from("ea_settings")
+      .upsert({
+        user_id: userId, login, symbol, settings,
+        ea_version: (typeof body.ea_version === "string") ? body.ea_version.slice(0, 16) : null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "user_id,login,symbol" });
+    if (uErr) return json({ error: uErr.message }, 500);
+    // The first snapshot is a baseline, not a change - there is nothing to compare it with.
+    const changed = prev ? changedKeys(prev.settings, settings) : [];
+    if (changed.length) {
+      const { error: lErr } = await admin
+        .from("ea_settings_log")
+        .insert({ user_id: userId, login, symbol, changed, before: prev!.settings, after: settings });
+      if (lErr) return json({ error: lErr.message }, 500);
+    }
+    return json({ ok: true, changed }, 200);
+  }
 
   if (event === "open") {
     const dir = (body.direction === "short" || body.direction === "sell") ? "short" : "long";
@@ -101,6 +138,20 @@ Deno.serve(async (req) => {
   if (error) return json({ error: error.message }, 500);
   return json({ ok: true }, 200);
 });
+
+// Values that move on their own - risk in money follows the balance on a % setting, the day's
+// trade count and the currency are facts about the moment - are sent for display, never counted
+// as a CHANGE to the settings.
+const VOLATILE = new Set(["risk_money", "trades_today", "currency"]);
+function changedKeys(a: any, b: any): string[] {
+  const out: string[] = [];
+  const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
+  for (const k of keys) {
+    if (VOLATILE.has(k)) continue;
+    if (JSON.stringify(a?.[k] ?? null) !== JSON.stringify(b?.[k] ?? null)) out.push(k);
+  }
+  return out.sort();
+}
 
 function numOrNull(v: unknown): number | null {
   const n = Number(v);
