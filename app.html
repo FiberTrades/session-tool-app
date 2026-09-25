@@ -6448,6 +6448,9 @@ try {
            could see Friday enabled here and still get no live session, with nothing on screen
            explaining why. Your days are now the days you commit to, set in one place — the weekly
            review — where they are also visible as a record. -->
+      <!-- Time off is a different question - WHICH DATES you are away - so it lives here as well as
+           in the weekly review: holidays get planned mid-week too. Same data, same editor. -->
+      <div id="settings-timeoff" data-timeoff-host style="margin-top:22px;"></div>
 
       <label class="settings-label" style="margin-top:22px;" data-i18n="settings.reopen_label">Session Live</label>
       <p class="settings-hint" data-i18n="settings.reopen_hint">Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again — as often as you like (you must be inside your session Times above).</p>
@@ -8018,6 +8021,18 @@ try {
       'commit.rolled_note': "You didn't pick days for this week, so it counts as a week off.",
       'commit.weekoff_unset': "A week off — you didn't pick days for it, so nothing is graded.",
       'commit.default_note': "Last week's review wasn't done, so your usual days applied.",
+      'commit.weekoff_away': "Time off — you're away this week, so nothing is graded.",
+      'commit.away_note': "Time off: {DAYS} — not counted.",
+      'timeoff.label': "Time off",
+      'timeoff.hint': "Away for a while? Add the dates. Those days aren't trading days: no greetings, alerts or live session push you to trade, and nothing is graded. Turn up anyway and that day counts as usual.",
+      'timeoff.to': "to",
+      'timeoff.add': "Add time off",
+      'timeoff.remove': "Remove",
+      'timeoff.end': "End now",
+      'timeoff.now': "now",
+      'timeoff.need_dates': "Pick the first and last day you're away.",
+      'timeoff.bad_order': "The last day can't be before the first.",
+      'timeoff.past': "Time off can only be added from today onwards.",
       'commit.weekoff_planned': "A week off — you planned no trading days, so nothing is graded.",
       'commit.weekoff_showed': "You showed up anyway on {DAYS}.",
       'commit.first_label': "Days I'm committing to this week",
@@ -9706,6 +9721,18 @@ try {
       'commit.rolled_note': "No elegiste días para esta semana, así que cuenta como semana libre.",
       'commit.weekoff_unset': "Semana libre — no elegiste días, así que no se evalúa nada.",
       'commit.default_note': "La revisión de la semana pasada no se hizo, así que se aplicaron tus días habituales.",
+      'commit.weekoff_away': "Tiempo libre — estás fuera esta semana, así que no se evalúa nada.",
+      'commit.away_note': "Tiempo libre: {DAYS} — no cuenta.",
+      'timeoff.label': "Tiempo libre",
+      'timeoff.hint': "¿Te vas unos días? Añade las fechas. Esos días no son de trading: ni saludos, ni alertas, ni la sesión en vivo te empujarán a operar, y no se evalúa nada. Si aun así te conectas, ese día cuenta como siempre.",
+      'timeoff.to': "a",
+      'timeoff.add': "Añadir tiempo libre",
+      'timeoff.remove': "Quitar",
+      'timeoff.end': "Terminar ya",
+      'timeoff.now': "ahora",
+      'timeoff.need_dates': "Elige el primer y el último día que estarás fuera.",
+      'timeoff.bad_order': "El último día no puede ser anterior al primero.",
+      'timeoff.past': "El tiempo libre solo se puede añadir a partir de hoy.",
       'commit.weekoff_planned': "Semana libre — no planeaste días de trading, así que no se evalúa nada.",
       'commit.weekoff_showed': "Aun así estuviste presente el {DAYS}.",
       'commit.first_label': "D\u00edas que me comprometo a operar esta semana",
@@ -29654,6 +29681,7 @@ try {
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
   // via _mondayKey, so one week's change doesn't affect the others.
   function _consistencyPlannedDays(dayDate) {
+    try { if (window.__stIsTimeOff && window.__stIsTimeOff(dayDate)) return []; } catch (e) {}   // away: nothing planned
     /* A week you never set (once you have started committing) is a week OFF, exactly as the
        weekly review and the rest of the app read it (Nestor, 25 Sep 2026 - an unset week means
        holiday). No planned days, so only days you actually turned up for count - it no longer
@@ -30726,7 +30754,13 @@ try {
       const refMon = new Date(2024, 0, 1); // a Monday
       const dayLabel = (d) => { try { const dd = new Date(refMon); dd.setDate(refMon.getDate() + ((d + 6) % 7)); return dd.toLocaleDateString(loc, { weekday: 'short' }); } catch (e) { return ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][d]; } };
       // (1) This week's adherence, only if a commitment was set for it.
-      const committedThis = (typeof _rolledCommitment === 'function') ? _rolledCommitment(thisWeekKey) : null;
+      let committedThis = (typeof _rolledCommitment === 'function') ? _rolledCommitment(thisWeekKey) : null;
+      // Time off: committed days that fall on dates you are away are taken out before grading.
+      let _awayDays = [];
+      if (Array.isArray(committedThis) && committedThis.length) {
+        _awayDays = committedThis.filter(function (d) { const dd = new Date(weekStart); dd.setDate(weekStart.getDate() + ((d + 6) % 7)); return _isTimeOff(dd); });
+        if (_awayDays.length) committedThis = committedThis.filter(function (d) { return _awayDays.indexOf(d) < 0; });
+      }
       let adhHtml = '';
       let _kept = 0, _offTraded = 0, _offShowed = 0, _pct = null;
       const _unset = _isUnsetWeek(thisWeekKey);
@@ -30744,7 +30778,7 @@ try {
         const _upDays = order.filter(function (d) { return _up[d]; }).map(dayLabel);
         adhHtml = `<div style="margin-bottom:20px;">
             <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
-            <div style="font-size:13px;color:var(--text);line-height:1.6;">${t(_unset ? 'commit.weekoff_unset' : 'commit.weekoff_planned')}</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.6;">${t(_awayDays.length ? 'commit.weekoff_away' : (_unset ? 'commit.weekoff_unset' : 'commit.weekoff_planned'))}</div>
             ${_upDays.length ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;line-height:1.5;">${t('commit.weekoff_showed').replace('{DAYS}', _upDays.join(', '))}</div>` : ''}
           </div>`;
       }
@@ -30793,6 +30827,7 @@ try {
         const _tradeOnly = _offDays.filter(function (d) { return tradedDay[d] && !showedDay[d]; }).map(dayLabel);
         const _rest = function (n) { return n === 1 ? window._stT('a rest day on your plan', 'un día de descanso en tu plan') : window._stT('rest days on your plan', 'días de descanso en tu plan'); };
         const _notes = (_missed.length ? ' ' + t('commit.adherence_missed').replace('{DAYS}', _missed.join(', ')) : '')
+          + (_awayDays.length ? ' ' + t('commit.away_note').replace('{DAYS}', order.filter(function (d) { return _awayDays.indexOf(d) >= 0; }).map(dayLabel).join(', ')) : '')
           + (_both.length ? ' ' + window._stT('Also showed up and traded on ', 'También estuviste presente y operaste el ') + _both.join(', ') + ' — ' + _rest(_both.length) + '.' : '')
           + (_showOnly.length ? ' ' + window._stT('Also showed up on ', 'También estuviste presente el ') + _showOnly.join(', ') + window._stT(' without trading — ', ' sin operar — ') + _rest(_showOnly.length) + '.' : '')
           + (_tradeOnly.length ? ' ' + window._stT('Also traded on ', 'También operaste el ') + _tradeOnly.join(', ') + window._stT(' without posting a bias — ', ' sin publicar sesgo — ') + _rest(_tradeOnly.length) + '.' : '');
@@ -30907,7 +30942,10 @@ try {
         </div>`;
       }
       wrap.innerHTML = adhHtml + thisBlock + `${nextBlock}
+        <div data-timeoff-host style="margin-top:22px;"></div>
         <div style="font-size:11px;color:var(--text-dim);margin-top:14px;line-height:1.5;">${t('commit.board_note')}</div>`;
+      try { renderTimeOff(wrap.querySelector('[data-timeoff-host]')); } catch (e) {}
+      window.__stRerenderCommit = renderCommitSection;
       const daysWrap = document.getElementById('rfx-commit-days');
       if (daysWrap) {
         daysWrap.querySelectorAll('.settings-day-btn').forEach(function (btn) {
@@ -33195,6 +33233,91 @@ try {
     const r = _rolledCommitment(weekKey);
     return !getWeekCommitment(weekKey) && Array.isArray(r) && !r.length;
   }
+  // ── Time off ──────────────────────────────────────────────────────────────────────────
+  // Date ranges you are away. A day inside one is not a trading day and is never graded; turning
+  // up anyway switches it back on for the day. See _isTradingDay / renderCommitSection.
+  function _timeOffRanges() {
+    try {
+      return (Array.isArray(data.timeOff) ? data.timeOff : []).filter(function (r) {
+        return r && /^\d{4}-\d{2}-\d{2}$/.test(r.from) && /^\d{4}-\d{2}-\d{2}$/.test(r.to) && r.from <= r.to;
+      });
+    } catch (e) { return []; }
+  }
+  function _dayKeyOf(d) {
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d)) return d;
+    const x = new Date(d);
+    return x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0');
+  }
+  function _isTimeOff(d) {
+    try { const k = _dayKeyOf(d); return _timeOffRanges().some(function (r) { return k >= r.from && k <= r.to; }); } catch (e) { return false; }
+  }
+  try { window.__stIsTimeOff = _isTimeOff; } catch (e) {}
+  // The editor, shared by the weekly review and Settings -> Session. From today onwards only: like the
+  // weekly commitment, the past is not rewritten. Removing a range that has already started ends it
+  // yesterday, so the days you really were away stay away.
+  function renderTimeOff(host) {
+    if (!host) return;
+    let mv = null; try { mv = new URLSearchParams(location.search).get('mv'); } catch (e) {}
+    const today = todayDateStr();
+    const loc = (typeof tLocale === 'function') ? tLocale() : undefined;
+    const fmt = function (k) { try { return new Date(k + 'T12:00:00').toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' }); } catch (e) { return k; } };
+    const esc = function (x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+    const all = _timeOffRanges();
+    const shown = all.map(function (r, i) { return { r: r, i: i }; })
+      .filter(function (x) { return x.r.to >= today; })
+      .sort(function (a, b) { return a.r.from < b.r.from ? -1 : 1; });
+    let html = '<div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">' + t('timeoff.label') + '</div>'
+      + '<div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">' + t('timeoff.hint') + '</div>';
+    if (shown.length) {
+      html += '<div style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px;">' + shown.map(function (x) {
+        const now = x.r.from <= today;
+        return '<div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-family:\'AppNum\',\'DM Mono\',monospace;font-size:12px;color:var(--text);">'
+          + '<span>' + esc(fmt(x.r.from)) + ' – ' + esc(fmt(x.r.to)) + (now ? ' <span style="color:var(--text-dim);">· ' + t('timeoff.now') + '</span>' : '') + '</span>'
+          + (mv ? '' : '<button type="button" class="settings-btn settings-btn-ghost" data-to-rm="' + x.i + '" style="padding:5px 10px;font-size:10px;">' + t(now ? 'timeoff.end' : 'timeoff.remove') + '</button>')
+          + '</div>';
+      }).join('') + '</div>';
+    }
+    if (!mv) {
+      html += '<div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">'
+        + '<input type="date" class="settings-input settings-input-compact" data-to-from min="' + today + '" value="' + today + '" style="width:auto;">'
+        + '<span style="color:var(--text-dim);font-size:12px;">' + t('timeoff.to') + '</span>'
+        + '<input type="date" class="settings-input settings-input-compact" data-to-to min="' + today + '" style="width:auto;">'
+        + '<button type="button" class="settings-btn" data-to-add>' + t('timeoff.add') + '</button>'
+        + '</div>';
+    }
+    host.innerHTML = html;
+    const rerender = function () {
+      try { saveData(); } catch (e) {}
+      try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
+      try { if (typeof updateSessionLiveBanner === 'function') updateSessionLiveBanner(); } catch (e) {}
+      document.querySelectorAll('[data-timeoff-host]').forEach(function (h) { renderTimeOff(h); });
+      try { if (typeof window.__stRerenderCommit === 'function') window.__stRerenderCommit(); } catch (e) {}
+    };
+    const fromEl = host.querySelector('[data-to-from]'), toEl = host.querySelector('[data-to-to]');
+    if (fromEl && toEl) fromEl.addEventListener('change', function () { toEl.min = fromEl.value || today; if (toEl.value && toEl.value < fromEl.value) toEl.value = fromEl.value; });
+    const add = host.querySelector('[data-to-add]');
+    if (add) add.addEventListener('click', function () {
+      const f = fromEl && fromEl.value, to = toEl && toEl.value;
+      if (!f || !to) { try { showToast(t('timeoff.need_dates')); } catch (e) {} return; }
+      if (to < today) { try { showToast(t('timeoff.past')); } catch (e) {} return; }   // the past is not rewritten
+      const from = f < today ? today : f;
+      if (to < from) { try { showToast(t('timeoff.bad_order')); } catch (e) {} return; }
+      if (!Array.isArray(data.timeOff)) data.timeOff = [];
+      data.timeOff.push({ from: from, to: to });
+      rerender();
+    });
+    host.querySelectorAll('[data-to-rm]').forEach(function (b) {
+      b.addEventListener('click', function () {
+        const i = Number(b.getAttribute('data-to-rm')), r = _timeOffRanges()[i];
+        if (!r) return;
+        const at = data.timeOff.indexOf(r);
+        if (r.from >= today) { if (at >= 0) data.timeOff.splice(at, 1); }
+        else { const y = new Date(); y.setDate(y.getDate() - 1); r.to = _dayKeyOf(y); }   // started: end it yesterday
+        rerender();
+      });
+    });
+  }
+  try { window.__stRenderTimeOff = renderTimeOff; } catch (e) {}
   // A week you never set from 28 Sep 2026 on: your usual days applied, graded as normal.
   function _isDefaultedWeek(weekKey) {
     const r = _rolledCommitment(weekKey);
@@ -33264,6 +33387,10 @@ try {
     try {
       const now = new Date();
       if (Number(dow) === now.getDay() && _dayActivated(todayDateStr())) return true;
+      // Time off: the date this weekday falls on next - today, or later this week.
+      const ahead = (Number(dow) - now.getDay() + 7) % 7, dt = new Date(now);
+      dt.setDate(now.getDate() + ahead);
+      if (_isTimeOff(dt)) return false;
     } catch (e) {}
     return _tradingDaysPref().indexOf(Number(dow)) !== -1;
   }
@@ -33276,7 +33403,7 @@ try {
       // No weekend exclusion. Callers only reach here for work dated TODAY — a bias whose date
       // picker says today, or a trade with a result logged today — so any day that gets here is
       // one the trader is demonstrably working. A Saturday session is a session.
-      if (_tradingDaysPref().indexOf(dow) !== -1) return false;       // already planned — nothing to do
+      if (_tradingDaysPref().indexOf(dow) !== -1 && !_isTimeOff(new Date())) return false;   // already planned — nothing to do
       const key = todayDateStr();
       if (_dayActivated(key)) return false;                           // already on
       if (!Array.isArray(data.activatedDays)) data.activatedDays = [];
@@ -34210,6 +34337,7 @@ try {
           const dow = dd.getDay();
           const trading = (typeof _isTradingDay === 'function') ? _tradingDaysPref().indexOf(dow) !== -1 : (dow !== 0 && dow !== 6);
           if (!trading) continue;
+          if (window.__stIsTimeOff && window.__stIsTimeOff(dd)) continue;   // away, not absent
           const key = dd.getFullYear() + '-' + String(dd.getMonth() + 1).padStart(2, '0') + '-' + String(dd.getDate()).padStart(2, '0');
           if (biasDays.has(key) || tradeDays.has(dd.toDateString())) continue;
           missed++;
@@ -40940,6 +41068,7 @@ try {
             weekday: ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'][new Date().getDay()],
             isTradingDay: (function () { try { var _d = new Date().getDay(); return (typeof window.__stIsTradingDay === 'function') ? !!window.__stIsTradingDay(_d) : (_d !== 0 && _d !== 6); } catch (_) { return null; } })(),
             tradingDaysEffective: (function () { try { return (typeof _tradingDaysPref === 'function') ? _tradingDaysPref() : null; } catch (_) { return null; } })(),
+            timeOff: (function () { try { var _to = Array.isArray(data.timeOff) ? data.timeOff : []; return _to.length ? _to.slice(-12) : null; } catch (_) { return null; } })(),
             bias: todayBias,
             reviewReflection: (_rv.reflection ? String(_rv.reflection).trim().slice(0, 500) : null),
             reviewTradesLogged: Array.isArray(_rv.trades) ? _rv.trades.length : 0
@@ -44172,6 +44301,7 @@ try {
       populateRiskAccountPicker();
       loadRiskRulesIntoSettingsInputs();
       try { if (window.__stNudgeSettingsLoad) window.__stNudgeSettingsLoad(); } catch (e) {}
+      try { if (window.__stRenderTimeOff) window.__stRenderTimeOff(document.getElementById('settings-timeoff')); } catch (e) {}
       modal.classList.add('show');
       // Always reopen scrolled to the very top — never resume the scroll position the
       // panel was left at when it was closed. Reset both scrollers (the .modal inner box
