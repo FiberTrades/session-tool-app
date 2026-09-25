@@ -30528,7 +30528,7 @@ try {
         // Closing the replay brings this review back, the way the trade editor's Replay does.
         window.__stReplayReturn = function () { try { openWeeklyReviewModal(weekStart, weekEnd); } catch (e) {} };
         document.getElementById('review-modal-bg').classList.remove('show');
-        window.__stReplay.open(first[k], { untilTs: Math.floor(endExc.getTime() / 1000) });
+        window.__stReplay.open(first[k], { fromTs: Math.floor(weekStart.getTime() / 1000), untilTs: Math.floor(endExc.getTime() / 1000) });
       });
       row.appendChild(b);
     });
@@ -69327,15 +69327,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       entry_price:ep, exit_price:(xp>0?xp:0), open_time:ot, close_time:ct,
       sl_pips:t.slPips, req_sl_pips:(t.reqSlPips||t._reqSlPips), tp_pips:t._tpPips, tp_r:t._tpR, risk_gbp:t._riskGbp,
       pnl:(t.pnl!=null?t.pnl:t.netPL) }; }
-  /* Every trade you took on this symbol and account (Nestor: see the NY trade while replaying the
-     London one - and scroll back to past days, weeks, months). Fetched once, not awaited: like the
-     news, a slow query must never hold up the chart. */
+  /* Your trades on this symbol and account in this replay's window (Nestor: see the NY trade while
+     replaying the London one): the opened trade's day, or the week for "Replay the week". Fetched once,
+     not awaited: like the news, a slow query must never hold up the chart. */
   async function loadOthers(want){ var sb=sbc(); if(!sb||!want) return;
     try{
       var owner=null; try{ owner=new URLSearchParams(location.search).get('mv'); }catch(_){}
       var u=owner||uid(); if(!u) return;
       var q=sb.from('trades_inbox').select('ticket,direction,entry_price,exit_price,open_time,close_time,sl_pips,req_sl_pips,tp_pips,tp_r,login,unit_size,dist_unit,risk_gbp,pnl,sl_moves,tp_moves')
-        .eq('token',u).eq('symbol',want.symbol);
+        .eq('token',u).eq('symbol',want.symbol)
+        .gte('open_time',new Date(want.tradesFrom*1000).toISOString()).lt('open_time',new Date(want.tradesTo*1000).toISOString());
       if(want.login) q=q.eq('login',want.login);          // copied trades on other accounts would sit on top of these
       var r=await q.order('open_time',{ascending:true}).limit(2000);
       if(S!==want) return;
@@ -69572,6 +69573,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ el('strp-marks').checked=S.showMarks; el('strp-pos').checked=true; }catch(_){}
     S.login=(row&&row.login!=null)?String(row.login):null;
     S.untilTs=(opts&&opts.untilTs>0)?opts.untilTs:0;   // "Replay the week": candles to the end of the week
+    // Which of your other trades this replay shows (Nestor): a single trade shows the trades of ITS DAY,
+    // however many; past days are what "Replay the week" is for, and that shows its week.
+    (function(){ var d=new Date(S.entryTs*1000); d.setHours(0,0,0,0); var a=Math.floor(d.getTime()/1000); d.setDate(d.getDate()+1);
+      S.tradesFrom=(opts&&opts.fromTs>0)?opts.fromTs:a; S.tradesTo=(opts&&opts.untilTs>0)?opts.untilTs:Math.floor(d.getTime()/1000); })();
     // The opened trade as a trade like any other, so focus can hand the chart to another and back.
     S.T0={ ticket:S.ticket, dir:S.dir, entry:S.entry, exit:S.exit, SL:S.SL, TP:S.TP, pip:S.pip, pa:S.pa, pU:S.pU,
            riskDist:S.riskDist, riskGbp:S.riskGbp, slPips:S.slPips, tpPips:S.tpPips, entryTs:S.entryTs, exitTs:S.exitTs,
