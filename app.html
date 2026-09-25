@@ -69151,7 +69151,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     <div class="strp-tb" id="strp-tb" style="display:none">
       <span class="strp-lbl" id="strp-tflbl">TF</span>
       <div class="strp-seg" id="strp-tfs">
-        <button data-tf="1">1m</button><button data-tf="5">5m</button><button data-tf="15">15m</button><button data-tf="60">1h</button><button data-tf="240">4h</button><button data-tf="1440">1D</button>
+        <button data-tf="1">1m</button><button data-tf="5">5m</button><button data-tf="15">15m</button><button data-tf="60">1h</button><button data-tf="240">4h</button><button data-tf="1440">1D</button><button data-tf="10080">1W</button>
       </div>
       <span class="strp-lbl" id="strp-drawlbl" style="margin-left:4px">Draw</span>
       <div class="strp-seg" id="strp-tools">
@@ -69338,7 +69338,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }catch(_){ return null; }
   }
 
-  var TF_MIN=[1,5,15,60,240,1440];
+  var TF_MIN=[1,5,15,60,240,1440,10080];
+  var TF_W1=10080;
+  /* Weekly candles from daily ones. Sunday-start weeks, like MT5's W1; the server day is read from
+     the bar time + 6h so a bar stamped at server midnight (21:00/22:00 UTC here) or at 00:00 UTC
+     both land on their own date. Days since 1970-01-01 (a Thursday) + 4 puts Sunday at 0. */
+  function toWeekly(d1){ var out=[], cur=null, key=null;
+    for(var i=0;i<d1.length;i++){ var b=d1[i], k=Math.floor((Math.floor((b.time+6*3600)/86400)+4)/7);
+      if(k!==key){ if(cur) out.push(cur); key=k; cur={time:b.time,open:b.open,high:b.high,low:b.low,close:b.close}; }
+      else { if(b.high>cur.high) cur.high=b.high; if(b.low<cur.low) cur.low=b.low; cur.close=b.close; } }
+    if(cur) out.push(cur); return out; }
   // Window measured in BARS around the trade. Anchored to entry (back) AND exit (fwd),
   // so the FULL trade always loads no matter how long it ran; pagination handles the volume.
   var TF_LOOKBACK=700, TF_FWDBARS=180;
@@ -69441,7 +69450,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // was the request that was short. The bar-count floor stays, so a trade closing late in the
     // day still gets a usable run-on past the exit.
     var _eod=Math.floor(S.exitTs/86400)*86400+86400;
-    var bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod));
+    var bars;
+    if(tf===TF_W1){
+      bars=toWeekly(await fetchCandles(S.symbol,1440,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod)));
+      if(bars.length>1) bars.shift();   // the window can start mid-week: never show a cut-off first week
+    } else bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod));
     S.cache[tf]=bars; return bars;
   }
   function bidx(bars,ts){ var x=0; for(var k=0;k<bars.length;k++){ if(bars[k].time<=ts) x=k; else break; } return x; }
@@ -69454,7 +69467,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.tf=tf; S.bars=bars;
     if(!S.bars.length){ el('strp-chart').innerHTML='<div class="strp-state">'+L('No candle data for this trade on this timeframe — older trades can be beyond the synced history.','No hay datos de velas para esta operación en esta temporalidad — las operaciones antiguas pueden quedar fuera del historial sincronizado.')+'</div>'; return; }
     S.eBI=bidx(S.bars,S.entryTs); S.xBI=Math.max(S.eBI,bidx(S.bars,S.exitTs));
-    var look=({1:60,5:48,15:32,60:24,240:16,1440:10})[tf]||40;
+    var look=({1:60,5:48,15:32,60:24,240:16,1440:10,10080:8})[tf]||40;
     S.rSI=Math.max(0,S.eBI-look);                 // Restart point: a lead-in before entry, to replay the approach
     S.cursor=Math.min(S.bars.length,S.eBI+1);     // OPEN with the entry already on screen (no waiting to reach it)
     S.drawings=loadDrawings(S.ticket,tf); S.pending=null; S.sel=null; S.history=[clone(S.drawings)]; S.hpos=0; S.userView=false;
@@ -69591,6 +69604,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function buildNewsMarks(){
     S.newsMarks=null;
     if(!S||!S.newsRows||!S.newsRows.length||!S.bars.length) return;
+    if(S.tf>=TF_W1) return;   // a week holds dozens of releases: a wall of dots with nothing to read (Nestor)
     var span=S.tf*60, first=S.bars[0].time, last=S.bars[S.bars.length-1].time+span, m={}, any=false;
     S.newsRows.forEach(function(e){
       var ms=Date.parse(e.at); if(isNaN(ms)) return;
@@ -70328,7 +70342,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S._older=true;
     var first=S.bars[0].time, sRef=S;
     try{
-      var got=await fetchOlder(S.symbol,tf,first,OLDER_N);
+      var got;
+      if(tf===TF_W1){
+        var _d=await fetchOlder(S.symbol,1440,first,OLDER_N);
+        got=toWeekly(_d);
+        if(_d.length>=OLDER_N && got.length>1) got.shift();   // the oldest week of a full batch may be cut off
+      } else got=await fetchOlder(S.symbol,tf,first,OLDER_N);
       if(S!==sRef||!S||S.tf!==tf||!S.bars.length||S.bars[0].time!==first) return;   // closed, reopened or switched meanwhile
       got=got.filter(function(b){ return b.time<first; });
       if(!got.length){ S.noOlder[tf]=true; return; }
