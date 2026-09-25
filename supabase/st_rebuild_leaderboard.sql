@@ -69,7 +69,8 @@ begin
             where nullif(e ->> 'end','') is not null),
           nullif(j.data -> 'settings' ->> 'windowEnd', ''),
           '10:00'
-        )::time as sess_end
+        )::time as sess_end,
+        j.data -> 'sessionEndLog' as end_log
       from journals j
     ),
     accts as (
@@ -284,9 +285,6 @@ begin
                   )
         )                                                      as broken_stop,
         (
-          -- A scale-out is not a pulled target: half at 1R and half at a 2R TP satisfies
-          -- every clause below, and the trader did exactly what they planned. NULL means
-          -- the EA never reported a ledger, so it keeps the original behaviour.
           coalesce(lt.exit_count,1) <= 1
           and coalesce(lt.tp_r::numeric,0) > 0
           and coalesce(lt.mfe_r::numeric,0) >= lt.tp_r::numeric * 1.02
@@ -417,7 +415,15 @@ begin
       from channel_messages m
       join sess s on s.user_id = m.sender_id
       where ch_review is not null and m.channel_id = ch_review
-        and (m.created_at at time zone s.tz)::time >= s.sess_end
+        and (m.created_at at time zone s.tz)::time >= coalesce(
+              nullif(s.end_log ->> to_char((m.created_at at time zone s.tz)::date,'YYYY-MM-DD'), '')::time,
+              (select max((t2.close_time at time zone coalesce(s.tz,'Europe/London'))::time)
+                 from trades_verified t2
+                where t2.user_id = m.sender_id
+                  and t2.close_time is not null
+                  and (t2.close_time at time zone coalesce(s.tz,'Europe/London'))::date
+                      = (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date),
+              time '00:00')   -- no trades that day: any time counts
         and (m.created_at at time zone s.tz)::date >= v_start
         and (m.created_at at time zone s.tz)::date <  v_end
       group by m.sender_id
@@ -428,6 +434,13 @@ begin
       from channel_messages m
       join sess s on s.user_id = m.sender_id
       where ch_weekly is not null and m.channel_id = ch_weekly
+          -- 2026-09-25 (Nestor): a weekly review only counts with its three questions answered.
+          -- The app writes each heading only when that answer is filled in. Reviews posted
+          -- before the rule are counted as they were, so nobody loses points retroactively.
+          and (m.created_at < timestamptz '2026-09-25 21:30:00+00'
+               or (strpos(m.body, '**Focus for next week**') > 0
+                   and strpos(m.body, '**What I learned**') > 0
+                   and strpos(m.body, '**What I did well**') > 0))
         and (m.created_at at time zone s.tz)::date >= v_start
         and (m.created_at at time zone s.tz)::date <  v_end
       group by m.sender_id
@@ -534,7 +547,15 @@ begin
       from channel_messages m
       join sess s on s.user_id = m.sender_id
       where ch_review is not null and m.channel_id = ch_review
-        and (m.created_at at time zone s.tz)::time >= s.sess_end
+        and (m.created_at at time zone s.tz)::time >= coalesce(
+              nullif(s.end_log ->> to_char((m.created_at at time zone s.tz)::date,'YYYY-MM-DD'), '')::time,
+              (select max((t2.close_time at time zone coalesce(s.tz,'Europe/London'))::time)
+                 from trades_verified t2
+                where t2.user_id = m.sender_id
+                  and t2.close_time is not null
+                  and (t2.close_time at time zone coalesce(s.tz,'Europe/London'))::date
+                      = (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date),
+              time '00:00')   -- no trades that day: any time counts
         and (m.created_at at time zone s.tz)::date >= v_start
         and (m.created_at at time zone s.tz)::date <  v_end
     ),
@@ -651,10 +672,17 @@ begin
         from channel_messages m
         left join sess s on s.user_id = m.sender_id
         where ch_weekly is not null and m.channel_id = ch_weekly
+          -- 2026-09-25 (Nestor): a weekly review only counts with its three questions answered.
+          -- The app writes each heading only when that answer is filled in. Reviews posted
+          -- before the rule are counted as they were, so nobody loses points retroactively.
+          and (m.created_at < timestamptz '2026-09-25 21:30:00+00'
+               or (strpos(m.body, '**Focus for next week**') > 0
+                   and strpos(m.body, '**What I learned**') > 0
+                   and strpos(m.body, '**What I did well**') > 0))
           and (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date >= (v_start - 7)
           and (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date <  (v_end + 7)
       ) z
-      where z.monday >= v_start and z.monday < v_end
+      where (z.monday + 6) >= v_start and (z.monday + 6) < v_end   -- by the week's END (Sunday)
     ),
     weekly_adh as (
       select u.user_id,
@@ -760,7 +788,7 @@ begin
         coalesce(rv.days,0)                                 as review_days,
         coalesce(wa.weekly_done,0)                          as weekly_reviews,
         coalesce(ps.n,0)                                    as series_posts,
-        coalesce(sd.n_completed,0)                          as series_total,
+        coalesce(sd.n_completed,0) as series_total,
         round(
             greatest(0, coalesce(pr.net_r,0))     *  5
           + coalesce(cda.bias_kept,0)             * 10

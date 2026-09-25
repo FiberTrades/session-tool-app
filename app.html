@@ -3845,6 +3845,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .reflect-q-label { font-family: 'Fraunces', serif; font-size: 14px; color: var(--text); margin-bottom: 10px; }
   /* Hero variant kept for backward compatibility — slightly larger to still pop */
   .reflect-q-label-hero { font-size: 16px; }
+  /* An answer the weekly review cannot be posted without, left empty. */
+  .reflect-q-textarea.rfx-required { border-color: #E56767; }
   .reflect-q-textarea { width: 100%; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text); padding: 10px 12px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; line-height: 1.6; outline: none; resize: vertical; min-height: 64px; box-sizing: border-box; }
   .reflect-q-textarea:focus { border-color: var(--text-mid); }
   .reflect-q-textarea::placeholder { color: var(--text-dim); }
@@ -8024,7 +8026,8 @@ try {
       'commit.past_label': "Days I committed to trade this week",
       'commit.past_hint': "What your adherence above was measured against.",
       'commit.next_label': "Days I'm committing to next week",
-      'commit.next_hint': "Pick the days you'll trade next week \u2014 the greetings, live tab and sounds will hold you to them. Leave them all off if you're not trading that week \u2014 a week with no days picked counts as a week off.",
+      'commit.next_hint': "Your usual days are already picked for next week \u2014 untick any you're taking off, or all of them for a week off. The greetings, live tab and sounds will hold you to them.",
+      'weekly.need_three': "Answer the three questions to post your weekly review: your focus for next week, what you learned and what you did well. It only counts on the leaderboard with all three.",
       'commit.board_note': "How well you keep this feeds your points on the community leaderboard.",
       'commit.share_off': "Share to leaderboard",
       'commit.sharing_on': "\u2713 Sharing to leaderboard",
@@ -9710,7 +9713,8 @@ try {
       'commit.past_label': "D\u00edas que me compromet\u00ed a operar esta semana",
       'commit.past_hint': "Con esto se midi\u00f3 tu cumplimiento de arriba.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
-      'commit.next_hint': "Elige los d\u00edas que operar\u00e1s la pr\u00f3xima semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlos. D\u00e9jalos todos sin marcar si no vas a operar esa semana \u2014 una semana sin d\u00edas elegidos cuenta como semana libre.",
+      'commit.next_hint': "Tus d\u00edas habituales ya est\u00e1n marcados para la pr\u00f3xima semana \u2014 desmarca los que vayas a tomarte libres, o todos para una semana libre. Los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlos.",
+      'weekly.need_three': "Responde las tres preguntas para publicar tu revisi\u00f3n semanal: tu enfoque para la pr\u00f3xima semana, lo que aprendiste y lo que hiciste bien. Solo cuenta en el ranking con las tres.",
       'commit.board_note': "Lo bien que lo cumplas suma a tus puntos en la clasificaci\u00f3n de la comunidad.",
       'commit.share_off': "Compartir en la clasificaci\u00f3n",
       'commit.sharing_on': "\u2713 Compartiendo en la clasificaci\u00f3n",
@@ -30860,9 +30864,17 @@ try {
       // "change your plan" at exactly the moment the plan was supposed to be holding you to it.
       let nextBlock = '';
       if (_showNext) {
-        /* Only what has actually been SAVED for next week - blank until chosen. Showing the default as
-           selected made an unsaved week look committed. */
-        const preset = getWeekCommitment(nextKey) || [];
+        /* Your usual days (Settings "Days I trade", Mon-Fri by default) are picked AND saved the moment
+           this picker appears - Nestor: "by default the weekly review should select mon to fri every week
+           and if a week i want to take off some days i will have to unselect the days myself". Saved,
+           not just shown, so what you see is what is committed; untick a day to take it off, or all of
+           them for a week off ([] - never re-filled). Not in mentor view: that journal is not ours. */
+        let preset = getWeekCommitment(nextKey);
+        if (preset == null) {
+          let _mv = null; try { _mv = new URLSearchParams(location.search).get('mv'); } catch (e) {}
+          preset = _defaultCommitDays();
+          if (!_mv) setWeekCommitment(nextKey, preset);
+        }
         const chips = order.map(function (d) {
           return `<button type="button" class="settings-day-btn${preset.indexOf(d) >= 0 ? ' on' : ''}" data-day="${d}">${dayLabel(d)}</button>`;
         }).join('');
@@ -31083,6 +31095,24 @@ try {
     // Post to community — builds a markdown-friendly weekly review post and copies it to the clipboard.
     // Sections with empty text are skipped so the post reads cleanly when fields aren't filled in yet.
     document.getElementById('rfx-discord-copy').addEventListener('click', async () => {
+      /* The three questions are the minimum for a weekly review to count on the leaderboard (Nestor).
+         Stop here and point at the empty ones rather than post something that will not score. */
+      try {
+        const _need = ['rfx-focus-next', 'rfx-learned', 'rfx-went-well']
+          .map(function (id) { return document.getElementById(id); })
+          .filter(function (el) { return el && !String(el.value || '').trim(); });
+        if (_need.length) {
+          _need.forEach(function (el) {
+            el.classList.add('rfx-required');
+            el.addEventListener('input', function _clr() {
+              if (String(el.value || '').trim()) { el.classList.remove('rfx-required'); el.removeEventListener('input', _clr); }
+            });
+          });
+          try { _need[0].scrollIntoView({ block: 'center', behavior: 'smooth' }); _need[0].focus({ preventScroll: true }); } catch (e) {}
+          showToast(t('weekly.need_three'), { duration: 8000 });
+          return;
+        }
+      } catch (e) {}
       /* A days picker on screen with nothing picked: remind before posting. "Pick days" stops here and
          brings the picker into view; "Post anyway" carries on. */
       try {
@@ -67847,7 +67877,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
             '<li class="up"><b>+5</b><span>'+_t('per 1R captured (min 0)','por cada 1R capturada (m\u00edn. 0)')+'</span></li>'+
             '<li class="up"><b>+10 / \u201310</b><span>'+_t('bias posted before your session opens','sesgo antes de abrir tu sesi\u00f3n')+'</span></li>'+
             '<li class="up"><b>+10 / \u201310</b><span>'+_t('review posted after it closes','revisi\u00f3n al cerrar la sesi\u00f3n')+'</span></li>'+
-            '<li class="up"><b>+20 / \u201320</b><span>'+_t('weekly review posted before the new week','revisi\u00f3n semanal publicada antes de la nueva semana')+'</span></li>'+
+            '<li class="up"><b>+20 / \u201320</b><span>'+_t('weekly review posted before the new week (its 3 questions answered)','revisi\u00f3n semanal publicada antes de la nueva semana (con sus 3 preguntas respondidas)')+'</span></li>'+
             '<li class="up"><b>+10 / \u201310</b><span>'+_t('completed series of 10 posted','serie de 10 completada publicada')+'</span></li>'+
           '</ul>'+
           '<ul>'+
