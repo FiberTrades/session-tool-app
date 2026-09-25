@@ -1481,6 +1481,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pn-line + .pn-line { margin-top: 6px; }
   .pn-line .good { color: var(--good); } .pn-line .bad { color: var(--bad); }
   .pn-muted { color: var(--text-dim); }
+  .pn-cost-title { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin: 12px 0 6px; }
+  .pn-cost-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; font-size: 12px; line-height: 1.5; color: var(--text-mid); }
+  .pn-cost-row > span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
+  .pn-cost-row .good { color: var(--good); } .pn-cost-row .bad { color: var(--bad); }
   .pn-kinds { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0; }
   .pn-chip { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); border: 1px solid var(--border-2); border-radius: var(--radius-chip); padding: 3px 8px; font-variant-numeric: tabular-nums; }
   .pn-chip b { color: #e8cf63; font-weight: 500; margin-left: 4px; }
@@ -7484,6 +7488,10 @@ try {
       'nudge.period_none_month': 'No nudges this month.',
       'nudge.period_into': 'Trades taken into a nudge: {N} · {W} won, {L} lost',
       'nudge.period_heeded': 'Warnings you respected: {H} of {M}',
+      'nudge.period_cost_title': 'What each nudge cost',
+      'nudge.period_trades_one': '1 trade',
+      'nudge.period_trades_many': '{N} trades',
+      'nudge.period_wl': '{W} won, {L} lost',
       'settings.nudges_news_label': 'Warn before red news',
       'settings.nudges_news_suffix': 'minutes before (0 = off)',
       'settings.reopen_hint': 'Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again \u2014 as often as you like (you must be inside your session Times above).',
@@ -9134,6 +9142,10 @@ try {
       'nudge.period_none_month': 'Ningún aviso este mes.',
       'nudge.period_into': 'Operaciones tomadas con aviso: {N} · {W} ganadas, {L} perdidas',
       'nudge.period_heeded': 'Avisos que respetaste: {H} de {M}',
+      'nudge.period_cost_title': 'Lo que costó cada aviso',
+      'nudge.period_trades_one': '1 operación',
+      'nudge.period_trades_many': '{N} operaciones',
+      'nudge.period_wl': '{W} ganadas, {L} perdidas',
       'settings.nudges_news_label': 'Avisar antes de noticias rojas',
       'settings.nudges_news_suffix': 'minutos antes (0 = desactivado)',
       'settings.reopen_hint': 'Al finalizar una sesi\u00f3n, la pantalla en vivo se oculta el resto del d\u00eda. Re\u00e1brela para volver a usar Sesi\u00f3n en Vivo \u2014 tantas veces como quieras (debes estar dentro de tus Horas de sesi\u00f3n de arriba).',
@@ -15409,8 +15421,9 @@ try {
           var m = tr.entryTime ? minsOfHm(tr.entryTime) : -1;
           return String(tr.mt5Ticket || tr.position || '') !== skip && m >= fromMins && (toMins == null || m <= toMins);
         });
-        var net = 0; later.forEach(function (tr) { net += outOf(tr).net; });
-        return { kind: 'after', n: later.length, net: net, ea: id.charAt(0) === 'L', news: id.charAt(0) === 'E' };
+        var net = 0, rr = 0, w = 0, l = 0;
+        later.forEach(function (tr) { var ox = outOf(tr); net += ox.net; rr += ox.r; if (ox.result === 'Win') w++; else if (ox.result === 'Lose') l++; });
+        return { kind: 'after', n: later.length, net: net, r: rr, wins: w, losses: l, ea: id.charAt(0) === 'L', news: id.charAt(0) === 'E' };
       }
       if (id.charAt(0) === 'L') return after(minsOfHm(e.at), '');                    // loosened the EA
       if (id.charAt(0) === 'E') {                                                      // warned before red news:
@@ -15486,7 +15499,16 @@ try {
         if (!recent.length && !ea.length) return null;
         recent.sort(function (a, b) { return (a.d + a.t).localeCompare(b.d + b.t); });
         after.netMoney = Math.round(after.netMoney * 100) / 100; after.netR = Math.round(after.netR * 100) / 100;
-        return { period: 'last 30 days', counts: counts, afterNudge: after.n ? after : null, recent: recent.slice(-12), eaChanges: ea };
+        var costByKind = {};
+        try {
+          var ps = periodStats(cutoff, localDay());
+          Object.keys(ps.byKind).forEach(function (g) {
+            var v = ps.byKind[g]; if (!v.n) return;
+            costByKind[g.replace(/^k_/, '')] = { trades: v.n, won: v.wins, lost: v.losses, netMoney: Math.round(v.net * 100) / 100, netR: Math.round(v.r * 100) / 100 };
+          });
+        } catch (e) {}
+        return { period: 'last 30 days', counts: counts, afterNudge: after.n ? after : null,
+                 costByKind: Object.keys(costByKind).length ? costByKind : null, recent: recent.slice(-12), eaChanges: ea };
       } catch (e) { return null; }
     }
     window.__stNudgeDiag = function () {
@@ -15499,7 +15521,7 @@ try {
                  ea_risk: 'k_ea', ea_trades: 'k_ea', ea_sl: 'k_ea', news_open: 'k_news', news_hold: 'k_news', news_soon: 'k_news' };
     function periodStats(fromDay, toDay) {
       var log = (data && data.nudgeLog) || {}, list = journalTrades(), byT = ticketMap(list), seen = {};
-      var res = { total: 0, kinds: {}, into: { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0 }, heeded: 0, heedable: 0 };
+      var res = { total: 0, kinds: {}, byKind: {}, into: { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0 }, heeded: 0, heedable: 0 };
       Object.keys(log).filter(function (d) { return d >= fromDay && d <= toDay; }).forEach(function (day) {
         var d = log[day] || {};
         Object.keys(d).forEach(function (k) {
@@ -15512,6 +15534,14 @@ try {
             if (o.out.result === 'Win') res.into.wins++; else if (o.out.result === 'Lose') res.into.losses++; else res.into.bes++;
           }
           if (o.kind === 'after') { res.heedable++; if (!o.n) res.heeded++; }
+          // What this KIND of nudge cost: the trade it was about (each once per kind), or the trades
+          // taken after a warning that was not respected.
+          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, net: 0, r: 0, _t: {} });
+          if (o.kind === 'trade' && !bk._t[id]) {
+            bk._t[id] = 1; bk.n++; bk.net += o.out.net; bk.r += o.out.r;
+            if (o.out.result === 'Win') bk.wins++; else if (o.out.result === 'Lose') bk.losses++;
+          }
+          if (o.kind === 'after' && o.n) { bk.n += o.n; bk.net += o.net; bk.r += o.r || 0; bk.wins += o.wins || 0; bk.losses += o.losses || 0; }
         });
       });
       return res;
@@ -15544,7 +15574,19 @@ try {
           h += '<div class="pn-line">' + escH(t('nudge.period_into').replace('{N}', String(cur.into.n)).replace('{W}', String(cur.into.wins)).replace('{L}', String(cur.into.losses)))
              + ' · <span class="' + cls + '">' + escH(fmtMoney(cur.into.net) + ' (' + signedR(cur.into.r) + ')') + '</span></div>';
         }
-        if (cur.heedable) h += '<div class="pn-line">' + escH(t('nudge.period_heeded').replace('{H}', String(cur.heeded)).replace('{M}', String(cur.heedable))) + '</div>';
+        var costRows = Object.keys(cur.byKind).map(function (g) { return { g: g, v: cur.byKind[g] }; })
+          .filter(function (x) { return x.v.n > 0; }).sort(function (a, b) { return a.v.net - b.v.net; });
+        if (costRows.length) {
+          h += '<div class="pn-cost-title">' + escH(t('nudge.period_cost_title')) + '</div>';
+          costRows.forEach(function (x) {
+            var v = x.v, c2 = v.net > 0 ? 'good' : v.net < 0 ? 'bad' : '';
+            var tr = v.n === 1 ? t('nudge.period_trades_one') : t('nudge.period_trades_many').replace('{N}', String(v.n));
+            var wl = t('nudge.period_wl').replace('{W}', String(v.wins)).replace('{L}', String(v.losses));
+            h += '<div class="pn-cost-row"><span>' + escH(t('nudge.' + x.g)) + '</span><span>' + escH(tr + ' \u00b7 ' + wl + ' \u00b7 ')
+               + '<span class="' + c2 + '">' + escH(fmtMoney(v.net) + ' (' + signedR(v.r) + ')') + '</span></span></div>';
+          });
+        }
+        if (cur.heedable) h += '<div class="pn-line" style="margin-top:10px;">' + escH(t('nudge.period_heeded').replace('{H}', String(cur.heeded)).replace('{M}', String(cur.heedable))) + '</div>';
         return h + '</div></div>';
       } catch (e) { return ''; }
     }
