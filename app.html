@@ -70072,18 +70072,39 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function startLoop(){ if(!_loop) _loop=requestAnimationFrame(_frame); }
   function stopLoop(){ if(_loop){ cancelAnimationFrame(_loop); _loop=0; } }
   function draw(){}   // no-op: the loop above handles all redraws
-  function setView(){ chart.timeScale().setVisibleLogicalRange({from:Math.max(0,S.cursor-102),to:S.cursor+12}); }
+  /* prev = the visible range before this render, prevLast = the last bar that was on screen then.
+     Given both, the zoom you chose is kept: the same number of bars across, the same gap to the right
+     of the last candle, slid along to the new frontier (a gap you had scrolled away from - panned back
+     into history - falls back to the default one). Without them - opening, a timeframe change (the
+     same number of bars means a very different span there), full screen - the default window is framed. */
+  function setView(prev, prevLast){
+    var ts=chart.timeScale(), last=S.cursor-1;
+    if(prev && typeof prevLast==='number'){ try{
+      var w=prev.to-prev.from, gap=prev.to-prevLast;
+      if(isFinite(w) && w>=10){
+        if(!(gap>=1 && gap<=w*0.6)) gap=13;
+        ts.setVisibleLogicalRange({from:last+gap-w, to:last+gap}); return;
+      }
+    }catch(_){} }
+    ts.setVisibleLogicalRange({from:Math.max(0,S.cursor-102),to:S.cursor+12});
+  }
   /* Pan/zoom slides the badges out from under a pinned card, so dismiss it here as well - the
      card is positioned once, at pin time, and has no way to follow its disc. */
   function onRange(){ if(S&&(S._newsPinned||S._newsHover)) _newsCardReset(); draw(); }
   // Full render (open / scrub / restart / tf): position the view. Playback tick: just append
   // the bar and let the chart's native shift-on-new-bar follow the frontier AT the current zoom,
   // so you stay anchored to the candles without your zoom snapping back.
-  function render(full){ if(!S||!series||!S.bars.length) return;
+  // keep = scrub / step: hold the current zoom rather than reframing (see setView).
+  function render(full, keep){ if(!S||!series||!S.bars.length) return;
     try{
-      if(full){ series.setData(S.bars.slice(0,S.cursor)); setView(); }
+      if(full){
+        // Read BEFORE setData - replacing the data moves the range.
+        var prev=null; if(keep){ try{ prev=chart.timeScale().getVisibleLogicalRange(); }catch(_){} }
+        series.setData(S.bars.slice(0,S.cursor)); setView(prev, S._last);
+      }
       else { var b=S.bars[S.cursor-1]; if(b) series.update(b); }   // guard undefined bar
     }catch(e){ try{ series.setData(S.bars.slice(0,Math.max(1,S.cursor))); }catch(_){} }   // update() rejects non-monotonic time -> full reset
+    S._last=S.cursor-1;   // the last bar now on screen, for the next render that keeps the zoom
     try{ series.setMarkers(markers()); }catch(_){}
     el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
 
@@ -70466,9 +70487,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   (function(){ var mb=el('strp-modal-bg'); function swallow(e){ if(e.target===mb) e.stopPropagation(); }
     mb.addEventListener('mousedown',swallow,true); mb.addEventListener('click',swallow,true); })();
   el('strp-play').onclick=function(){ if(!S)return; S.playing?pause():play(); };
-  el('strp-restart').onclick=function(){ if(!S)return; pause(); S.userView=false; S.cursor=S.rSI; render(true); };
-  el('strp-fwd').onclick=function(){ if(!S)return; pause(); if(S.cursor<S.bars.length){S.cursor++;render(true);} };
-  el('strp-back').onclick=function(){ if(!S)return; pause(); if(S.cursor>1){S.cursor--;render(true);} };
+  el('strp-restart').onclick=function(){ if(!S)return; pause(); S.userView=false; S.cursor=S.rSI; render(true,true); };   // keeps your zoom too
+  el('strp-fwd').onclick=function(){ if(!S)return; pause(); if(S.cursor<S.bars.length){S.cursor++;render(true,true);} };
+  el('strp-back').onclick=function(){ if(!S)return; pause(); if(S.cursor>1){S.cursor--;render(true,true);} };
   el('strp-spdcur').onclick=function(e){ e.stopPropagation(); el('strp-spd').classList.toggle('open'); };
   Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(b){ b.onclick=function(){ if(!S)return; Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(x){x.classList.remove('on');}); b.classList.add('on'); S.ms=+b.dataset.ms; el('strp-spdcur').innerHTML=b.querySelector('b').innerHTML; el('strp-spd').classList.remove('open'); if(S.playing){ clearInterval(S.timer); S.timer=setInterval(tick,Math.max(24,S.ms)); } }; });
   document.addEventListener('click',function(e){ var sp=el('strp-spd'); if(sp&&!sp.contains(e.target)) sp.classList.remove('open'); });
@@ -70481,7 +70502,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(p.classList.contains('on')){ closeNews(); return; }
     openNewsPanel(); };
   el('strp-newsx').onclick=closeNews;
-  el('strp-scrub').oninput=function(){ if(!S)return; pause(); S.cursor=(+el('strp-scrub').value)+1; render(true); };
+  el('strp-scrub').oninput=function(){ if(!S)return; pause(); S.cursor=(+el('strp-scrub').value)+1; render(true,true); };
   el('strp-undo').onclick=function(){ if(!S||S.hpos<=0)return; S.hpos--; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
   el('strp-redo').onclick=function(){ if(!S||S.hpos>=S.history.length-1)return; S.hpos++; S.drawings=clone(S.history[S.hpos]); S.sel=null; draw(); updUR(); updDel(); persistDrawings(); };
   el('strp-del').onclick=function(){ if(!S) return;
