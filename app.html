@@ -69167,7 +69167,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <button class="strp-ico" id="strp-del" title="Delete selected"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><path d="M6.3 4.5V3h3.4v1.5"/><path d="M4.7 4.5l.6 8.7a1 1 0 0 0 1 .93h3.4a1 1 0 0 0 1-.93l.6-8.7"/></svg></button>
       <span class="strp-sp"></span>
       <button class="strp-ico" id="strp-newsbtn" title="News this week"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h8v9h-8z"/><path d="M10.5 6h3v5.2a1.3 1.3 0 0 1-1.3 1.3H4"/><line x1="4.3" y1="5.8" x2="8.7" y2="5.8"/><line x1="4.3" y1="8" x2="8.7" y2="8"/><line x1="4.3" y1="10.2" x2="7" y2="10.2"/></svg></button>
-      <label class="strp-tgl"><input type="checkbox" id="strp-pos" checked> <span id="strp-poslbl">Position tool</span></label>
+      <label class="strp-tgl" title="Entry and exit arrows, and the Entry / SL / TP lines with their labels on the price scale"><input type="checkbox" id="strp-marks" checked> <span id="strp-markslbl">Trade marks</span></label>
+      <label class="strp-tgl" style="margin-left:14px;"><input type="checkbox" id="strp-pos" checked> <span id="strp-poslbl">Position tool</span></label>
       <span class="strp-brk" aria-hidden="true"></span>
     </div>
     <div class="strp-cw" id="strp-cw">
@@ -69236,6 +69237,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function localize(){ var es=document.documentElement.lang==='es';
     var lbls=document.querySelectorAll('#strp-tb .strp-lbl'); if(lbls[0]) lbls[0].textContent=es?'Franja':'TF'; if(lbls[1]) lbls[1].textContent=es?'Dibujar':'Draw';
     var pl=el('strp-poslbl'); if(pl) pl.textContent=es?'Herramienta de posición':'Position tool';
+    var ml=el('strp-markslbl'); if(ml) ml.textContent=es?'Marcas de la operación':'Trade marks';
     var sh=document.querySelector('#strp-spdmenu .strp-spdh'); if(sh) sh.textContent=es?'Velocidad':'Replay speed';
     var fast={'100':'10','143':'7','200':'5','333':'3','1000':'1'};
     Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(b){ var sp=b.querySelector('span'); if(!sp)return; var ms=b.dataset.ms; sp.textContent=fast[ms]?(fast[ms]+(es?' / seg':' / sec')):('1 / '+(parseInt(ms,10)/1000)+'s'); });
@@ -69424,8 +69426,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
     S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, pa:_pa, pU:window.__stDU.lbl(_du,'U'), riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null, slMovesRaw:slMovesRaw, tpMovesRaw:tpMovesRaw, slMoves:null, tpMoves:null, tOff:0, lnSL:null, lnTP:null,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
-        cursor:0, playing:false, ms:1000, timer:null, showPos:true, eBI:0, xBI:0, rSI:0, userView:false,
+        cursor:0, playing:false, ms:1000, timer:null, showPos:true, showMarks:_marksPref(), eBI:0, xBI:0, rSI:0, userView:false,
         newsRows:null, newsMarks:null };
+    // The checkboxes outlive a replay; make them say what this one will do.
+    try{ el('strp-marks').checked=S.showMarks; el('strp-pos').checked=true; }catch(_){}
     // Axis badges: deliberately NOT awaited. The calendar is a garnish on the chart, so a slow or
     // failed query must never delay (or block) the replay itself; the badges simply appear a beat
     // later, and the continuous overlay loop paints them without needing a nudge.
@@ -69530,7 +69534,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function _prec(){ var s=String(S.entry); return (s.indexOf('.')>=0)?Math.min(8,s.length-s.indexOf('.')-1):2; }
 
+  /* "Trade marks" (Nestor): the entry/exit arrows and the Entry/SL/TP price lines. A viewing
+     preference, so it lives in this browser; on unless switched off. */
+  function _marksPref(){ try{ return localStorage.getItem('st_replay_marks')!=='0'; }catch(_){ return true; } }
   function markers(){ var m=[], lng=S.dir>0;
+    if(!S.showMarks) return m;
     // entry = the trade's action (long=buy ↑ below, short=sell ↓ above); exit = the opposite.
     if(S.cursor-1>=S.eBI&&S.bars[S.eBI]) m.push({time:S.bars[S.eBI].time,position:lng?'belowBar':'aboveBar',color:'#f472b6',shape:lng?'arrowUp':'arrowDown'});
     if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'}); return m; }
@@ -70046,7 +70054,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* The trade's own levels, shown only once the trade exists. Same gate drawPos uses, so the zones
      and the axis labels appear together instead of disagreeing about whether there is a trade. */
   function syncTradeLines(){ try{ if(!series) return;
-    var live=(S.cursor-1>=S.eBI);
+    var live=(S.cursor-1>=S.eBI)&&S.showMarks!==false;
     if(live&&!S._tlOn){
       S._lnE=series.createPriceLine({price:S.entry,color:'#f472b6',lineWidth:1,lineStyle:0,title:L('Entry','Entrada')});
       if(S.SL) S.lnSL=series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:0,title:'SL'});
@@ -70779,6 +70787,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.onclick=function(){ if(!S)return; setTf(+b.dataset.tf); }; });
   Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(b){ b.onclick=function(){ if(!S)return; setTool(b.dataset.tool); }; });
   el('strp-pos').onchange=function(ev){ if(!S)return; S.showPos=ev.target.checked; draw(); };
+  el('strp-marks').onchange=function(ev){ if(!S)return; S.showMarks=ev.target.checked;
+    try{ localStorage.setItem('st_replay_marks',S.showMarks?'1':'0'); }catch(_){}
+    try{ series.setMarkers(markers()); }catch(_){}
+    syncTradeLines(); draw(); };
   el('strp-newsbtn').onclick=function(){ if(!S) return;
     var p=el('strp-news');
     // closeNews(), not a bare class removal — the button's lit state has to come off with it.
