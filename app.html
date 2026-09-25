@@ -8017,6 +8017,7 @@ try {
       'commit.adherence_offplan_showed': "Showed up on {N} day(s) you'd said you'd rest, without trading.",
       'commit.rolled_note': "You didn't pick days for this week, so it counts as a week off.",
       'commit.weekoff_unset': "A week off — you didn't pick days for it, so nothing is graded.",
+      'commit.default_note': "Last week's review wasn't done, so your usual days applied.",
       'commit.weekoff_planned': "A week off — you planned no trading days, so nothing is graded.",
       'commit.weekoff_showed': "You showed up anyway on {DAYS}.",
       'commit.first_label': "Days I'm committing to this week",
@@ -9704,6 +9705,7 @@ try {
       'commit.adherence_offplan_showed': "Estuviste presente {N} d\u00eda(s) que dijiste que descansar\u00edas, sin operar.",
       'commit.rolled_note': "No elegiste días para esta semana, así que cuenta como semana libre.",
       'commit.weekoff_unset': "Semana libre — no elegiste días, así que no se evalúa nada.",
+      'commit.default_note': "La revisión de la semana pasada no se hizo, así que se aplicaron tus días habituales.",
       'commit.weekoff_planned': "Semana libre — no planeaste días de trading, así que no se evalúa nada.",
       'commit.weekoff_showed': "Aun así estuviste presente el {DAYS}.",
       'commit.first_label': "D\u00edas que me comprometo a operar esta semana",
@@ -30900,7 +30902,7 @@ try {
       } else {
         thisBlock = `<div>
           <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t(_over ? 'commit.past_label' : 'commit.this_label')}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${_unset ? t('commit.rolled_note') : t(_over ? 'commit.past_hint' : 'commit.this_hint')}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${_unset ? t('commit.rolled_note') : t(_over ? 'commit.past_hint' : 'commit.this_hint') + (_isDefaultedWeek(thisWeekKey) ? ' ' + t('commit.default_note') : '')}</div>
           <div class="settings-days-row">${lockedChips}</div>
         </div>`;
       }
@@ -33177,13 +33179,26 @@ try {
       const started = Object.keys(m).some(function (k) {
         return /^\d{4}-\d{2}-\d{2}$/.test(k) && k < weekKey && Array.isArray(m[k]);
       });
-      if (started) return [];
+      if (started) {
+        // From 28 Sep 2026 a skipped weekly review means your usual days, not a week off - Nestor:
+        // "If you'd rather a skipped review still default to Mon-Fri ... yes please!". A week off is
+        // now only ever chosen, by unticking every day. Earlier unset weeks keep the week-off reading
+        // they had, so a finished week's review does not suddenly start listing missed days.
+        if (weekKey >= '2026-09-28') return _defaultCommitDays();   // inline: this runs during page load too
+        return [];
+      }
     } catch (e) {}
     return null;
   }
-  // A week you never set, after you had started setting them: a week off by default.
+  // A week you never set, between 31 Aug and 21 Sep 2026 (after you had started setting them): a week off.
   function _isUnsetWeek(weekKey) {
-    return !getWeekCommitment(weekKey) && Array.isArray(_rolledCommitment(weekKey));
+    const r = _rolledCommitment(weekKey);
+    return !getWeekCommitment(weekKey) && Array.isArray(r) && !r.length;
+  }
+  // A week you never set from 28 Sep 2026 on: your usual days applied, graded as normal.
+  function _isDefaultedWeek(weekKey) {
+    const r = _rolledCommitment(weekKey);
+    return !getWeekCommitment(weekKey) && Array.isArray(r) && r.length > 0;
   }
   try { window.__stRolledCommitment = _rolledCommitment; } catch (e) {}
   function setWeekCommitment(weekKey, days) {
