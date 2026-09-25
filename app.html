@@ -69199,6 +69199,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     #strp-cmax{ display:flex; }
   }
   .strp-ct{ display:flex; align-items:center; gap:9px; padding:12px 16px; border-top:1px solid var(--border-2); flex-wrap:wrap; }
+  /* Prev / Next trade: full words on a computer, short on a phone (where they share the slider's row). */
+  .strp-tj .strp-tj-short{ display:none; }
+  .strp-tj:disabled{ opacity:0.35; cursor:default; }
+  @media (max-width:760px){ .strp-tj .strp-tj-long{ display:none; } .strp-tj .strp-tj-short{ display:inline; } .strp-tj{ padding:0 9px; }
+    /* ...and the slider keeps a full row of its own: sharing one with the trade buttons left it ~70px long. */
+    #strp-ct .strp-scrub{ flex-basis:100%; } }
   .strp-btn{ display:inline-flex; align-items:center; justify-content:center; gap:5px; background:transparent; border:1px solid var(--border-2); color:var(--text-mid); border-radius:8px; height:36px; min-width:36px; padding:0 11px; font-family:'AppNum','DM Mono',monospace; font-size:13px; cursor:pointer; } .strp-btn:hover{ border-color:var(--text-dim); color:var(--text); }
   .strp-btn.pri{ background:var(--accent); border-color:var(--accent); color:#1a0a12; font-weight:600; min-width:88px; }
   .strp-scrub{ flex:1; min-width:140px; display:flex; align-items:center; gap:9px; } .strp-scrub input{ flex:1; accent-color:var(--accent); height:4px; } .strp-clock{ font-size:12px; color:var(--text-mid); min-width:58px; text-align:right; }
@@ -69285,6 +69291,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           <button data-ms="10000"><b>0.1&times;</b><span>1 / 10s</span></button>
         </div>
       </div>
+      <button class="strp-btn strp-tj" id="strp-prevtrade" title="Previous trade" disabled>&#8249; <span class="strp-tj-long" id="strp-prevlbl">Prev trade</span><span class="strp-tj-short" id="strp-prevlbls">Trade</span></button>
+      <button class="strp-btn strp-tj" id="strp-nexttrade" title="Next trade" disabled><span class="strp-tj-long" id="strp-nextlbl">Next trade</span><span class="strp-tj-short" id="strp-nextlbls">Trade</span> &#8250;</button>
       <div class="strp-scrub"><input type="range" id="strp-scrub" min="0" max="100" value="0"><span class="strp-clock" id="strp-clock">--:--</span></div>
     </div>
   </div>
@@ -69331,6 +69339,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var narrow=(window.innerWidth||document.documentElement.clientWidth||0)<=760;
     var pl=el('strp-poslbl'); if(pl) pl.textContent=es?(narrow?'Posición':'Herramienta de posición'):'Position tool';
     var ml=el('strp-markslbl'); if(ml) ml.textContent=es?(narrow?'Marcas':'Marcas de la operación'):'Trade marks';
+    var tj=[['strp-prevlbl','Prev trade','Op. anterior'],['strp-prevlbls','Trade','Op.'],['strp-nextlbl','Next trade','Op. siguiente'],['strp-nextlbls','Trade','Op.']];
+    tj.forEach(function(x){ var e=el(x[0]); if(e) e.textContent=es?x[2]:x[1]; });
+    var pt=el('strp-prevtrade'); if(pt) pt.title=es?'Operación anterior':'Previous trade';
+    var nt=el('strp-nexttrade'); if(nt) nt.title=es?'Operación siguiente':'Next trade';
     var sh=document.querySelector('#strp-spdmenu .strp-spdh'); if(sh) sh.textContent=es?'Velocidad':'Replay speed';
     var fast={'100':'10','143':'7','200':'5','333':'3','1000':'1'};
     Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(b){ var sp=b.querySelector('span'); if(!sp)return; var ms=b.dataset.ms; sp.textContent=fast[ms]?(fast[ms]+(es?' / seg':' / sec')):('1 / '+(parseInt(ms,10)/1000)+'s'); });
@@ -69398,6 +69410,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(o.entryTs<first||o.entryTs>=last){ o.eBI=-1; o.xBI=-1; return; }
       o.eBI=bidx(S.bars,o.entryTs); o.xBI=Math.max(o.eBI,bidx(S.bars,o.exitTs)); });
     applyFocus(focusFor());
+    updTradeJumps();
     try{ series.setMarkers(markers()); }catch(_){} }
   /* FOCUS: the trade whose entry is the latest at or before the replay's current candle - so moving
      forward past the NY entry hands everything to the NY trade, and moving back before it hands it to
@@ -69418,6 +69431,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S._lnE=null; S.lnSL=null; S.lnTP=null; S._tlOn=false;
     try{ syncTradeLines(); styleTradeLines(); }catch(_){}
     paintHeader(t); }
+  /* Prev / Next trade. Next = the first entry after the current candle. Prev = the start of the trade
+     in focus if the replay has moved on from its entry, else the trade before it. */
+  function tradeJumps(){ var cur=S.cursor-1, next=null, prev=null, f=S.focus;
+    var list=(S.trades||[]).filter(function(t){ return t.eBI>=0; });
+    list.forEach(function(t){ if(t.eBI>cur&&(!next||t.eBI<next.eBI)) next=t; });
+    if(f&&f.eBI>=0&&cur>f.eBI) prev=f;
+    else list.forEach(function(t){ var ref=(f&&f.eBI>=0)?f.eBI:cur; if(t.eBI<ref&&(!prev||t.eBI>prev.eBI)) prev=t; });
+    return {next:next, prev:prev}; }
+  function updTradeJumps(){ try{ var j=tradeJumps(); el('strp-nexttrade').disabled=!j.next; el('strp-prevtrade').disabled=!j.prev; }catch(_){} }
+  function jumpToTrade(t){ if(!S||!t) return; pause(); S.cursor=Math.min(S.bars.length,t.eBI+1); render(true,true); }
   // The header, for whichever trade is in focus - word for word what open() writes for the opened one.
   function paintHeader(t){ try{
     var sideEl=el('strp-side'); sideEl.className='strp-side '+(t.dir>0?'long':'short'); sideEl.textContent=(t.dir>0?L('↑ Long','↑ Largo'):L('↓ Short','↓ Corto'));
@@ -70616,7 +70639,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S._last=S.cursor-1;   // the last bar now on screen, for the next render that keeps the zoom
     applyFocus(focusFor());   // the latest trade reached takes over the header, P&L panel and scale labels
     try{ series.setMarkers(markers()); }catch(_){}
-    el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
+    el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); updTradeJumps(); draw(); }
 
   function tick(){ if(!S||!S.bars.length){ clearInterval(S&&S.timer); return; } if(S.cursor>=S.bars.length){ pause(); return; } S.cursor++; render(false); }
   function play(){ if(!S) return; if(S.cursor>=S.bars.length) S.cursor=S.rSI; S.playing=true; el('strp-play').innerHTML='&#9208; '+L('Pause','Pausa'); clearInterval(S.timer);
@@ -71007,6 +71030,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   (function(){ var mb=el('strp-modal-bg'); function swallow(e){ if(e.target===mb) e.stopPropagation(); }
     mb.addEventListener('mousedown',swallow,true); mb.addEventListener('click',swallow,true); })();
   el('strp-play').onclick=function(){ if(!S)return; S.playing?pause():play(); };
+  el('strp-nexttrade').onclick=function(){ if(!S) return; jumpToTrade(tradeJumps().next); };
+  el('strp-prevtrade').onclick=function(){ if(!S) return; jumpToTrade(tradeJumps().prev); };
   el('strp-restart').onclick=function(){ if(!S)return; pause(); S.userView=false; S.cursor=S.rSI; render(true,true); };   // keeps your zoom too
   el('strp-fwd').onclick=function(){ if(!S)return; pause(); if(S.cursor<S.bars.length){S.cursor++;render(true,true);} };
   el('strp-back').onclick=function(){ if(!S)return; pause(); if(S.cursor>1){S.cursor--;render(true,true);} };
