@@ -10580,7 +10580,16 @@ try {
       //
       // Skipping the whole block, not just the speaking, is the point. Claiming an alert you will
       // never speak is the bug; refusing to speak one you claimed is only its symptom.
-      const _voiceMute = (function () { try { return _isDetachedWindow(); } catch (e) { return false; } })();
+      //
+      // Nor does a window nobody is signed in to. Its journal is the DEFAULT one, whose session
+      // is London 08:00-10:00, so it announces a session that may not be yours at all, and it
+      // can never reach the shared claim: with no user, _claimSessionAlertCloud returns
+      // 'unavailable' without asking the server, which speaks by design. 24 Sep: "Session over"
+      // twice at 10:00 while the account itself claimed nothing - the second voice was a
+      // signed-out copy of the app (a local preview, own storage, audio allowed without a
+      // click). The stored token rather than currentUser alone, so a signed-in user whose
+      // profile is still loading - or whose token refresh is failing - still hears it.
+      const _voiceMute = (function () { try { return _isDetachedWindow() || !_voiceSignedIn(); } catch (e) { return false; } })();
       for (let i = 0; i < ss.length && !_voiceMute; i++) {
         const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
         if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); const _c = _claimSessionAlert('start', sMins), _f = fresh(sMins); _logVoice('start', sMins, i, _c, ss, _f, nowMins); if (_c && _f) _fireSessionAlertShared('start', sMins); }
@@ -10812,6 +10821,14 @@ try {
     } catch (e) {}
     if (res === 'lost') return;                            // another surface already said it
     try { fireSessionAlert(kind); } catch (e) {}
+  }
+  // Is anyone signed in to this window? The session voice speaks only for a person, never for
+  // the default journal a signed-out window holds. The stored Supabase session counts even
+  // before currentUser is published (and while a refresh is failing); sign-out removes it.
+  function _voiceSignedIn() {
+    try { if (window.currentUser && window.currentUser.id) return true; } catch (e) {}
+    try { return !!localStorage.getItem('sb-figozyxoyobixadhqewr-auth-token'); }
+    catch (e) { return true; }   // storage unreadable: better to speak than to go silent
   }
   function _claimSessionAlert(kind, mins) {
     try {
