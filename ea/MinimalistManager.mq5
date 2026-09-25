@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.7"
+#property version   "8.71"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2866,7 +2866,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.7\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.71\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -3756,6 +3756,7 @@ bool CandlePost(string json)
 // Queue a closed trade for candle export. stage 0 = nothing sent yet.
 void HB_AddSymbol(string sym);   // Trade Replay deep history, defined below
 bool g_ceWorked=false;           // CE_Sweep exported something this bar - deep history waits a bar
+uint g_lastTickMs=0;             // v8.71: GetTickCount() of the last tick - tells the timer the market is shut
 
 void CE_Queue(ulong posId,string sym,datetime openT,datetime closeT)
   {
@@ -4171,7 +4172,7 @@ bool HB_Top(int k)
   }
 
 // Once per M1 bar, after the per-trade export.
-void HB_Step()
+void HB_Step(int maxPosts=2)
   {
    if(StringLen(g_syncTokenEff)==0) return;
    if(g_bdst<0){ BrokerDstDetect(); if(g_bdst<0) return; }   // old bars go out with the right times, or not at all
@@ -4179,8 +4180,8 @@ void HB_Step()
    if(PositionsTotal()>0 || OrdersTotal()>0) return;         // never hold the EA up while it manages a trade
    HB_Load();
    int posts=0;
-   for(int s=0;s<g_hbSymN && posts<HB_POSTS_BAR;s++)
-      for(int ti=5;ti>=0 && posts<HB_POSTS_BAR;ti--)        // D1 first: the deepest view, and the cheapest
+   for(int s=0;s<g_hbSymN && posts<maxPosts;s++)
+      for(int ti=5;ti>=0 && posts<maxPosts;ti--)        // D1 first: the deepest view, and the cheapest
         {
          int k=HB_Idx(g_hbSym[s],ti);
          if(g_hbDone[k]==0 ? HB_Back(k) : HB_Top(k)) posts++;
@@ -4600,6 +4601,16 @@ void OnTimer()
    if(TimeCurrent()-g_liveReAt>=20){ g_liveReAt=TimeCurrent(); LiveReannounceOpen(); }   // v4.3: keep open trades on the live feed
    LiveSettingsTick();   // v8.6: your EA settings -> Session Tool, when they change
    LiveFlush(3);
+   // v8.71: deep replay history while the market is shut (weekends, holidays). No ticks means
+   // OnTick - where it normally runs, once per M1 bar - never fires, and a closed market with
+   // nothing open is the best time for it. Real time (GetTickCount), since TimeCurrent() stops.
+   static uint s_hbTimerMs=0;
+   if(GetTickCount()-g_lastTickMs>120000 && GetTickCount()-s_hbTimerMs>=60000)
+     {
+      s_hbTimerMs=GetTickCount();
+      g_ceWorked=false;              // no trade export can be running: that needs ticks too
+      HB_Step(6);
+     }
    ChartRedraw();
   }
 
@@ -4776,6 +4787,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 
 void OnTick()
   {
+   g_lastTickMs=GetTickCount();
    DrawInfoReadout();                // updates spread + countdown labels (no redraw inside)
    SyncTrackMFE();                   // grow favourable-peak for POT BE R-P (runs even when visuals off)
 
@@ -4789,7 +4801,7 @@ void OnTick()
       s_pmBar=curBar;
       g_lastStage="pm_sweep";  PM_Sweep();
       g_lastStage="ce_sweep";  CE_Sweep();
-      g_lastStage="hb_step";   HB_Step();   // v8.7: deep replay history, when nothing is open
+      g_lastStage="hb_step";   HB_Step(HB_POSTS_BAR);   // v8.7: deep replay history, when nothing is open
      }
    g_lastStage="sweeps_done";
    UpdateBrokerOffset();   // a tick just arrived, so TimeCurrent() is live right now: learn the offset
