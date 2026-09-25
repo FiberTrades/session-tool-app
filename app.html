@@ -69096,6 +69096,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var owner=null; try{ owner=new URLSearchParams(location.search).get('mv'); }catch(_){}
     try{ var q=sb.from('trades_inbox').select('*').eq('ticket',String(ticket)); var u=owner||uid(); if(u) q=q.eq('token',u);
       var r=await q.order('close_time',{ascending:false}).limit(1); return (r&&r.data&&r.data[0])||null; }catch(_){ return null; } }
+  // The n candles just BEFORE a time, oldest first - by count, so a weekend or a gap in what is
+  // stored never reads as "no more history".
+  async function fetchOlder(symbol,tf,before,n){ var sb=sbc(); if(!sb) return [];
+    try{ var r=await sb.rpc('st_candles_before',{p_symbol:symbol,p_tf:tf,p_before:Math.floor(before),p_n:n});
+      var d=(r&&r.data)||[], out=[], lastT=-1e18;
+      for(var i=0;i<d.length;i++){ var t=Number(d[i].t); if(t-lastT<30) continue;
+        out.push({time:t,open:Number(d[i].o),high:Number(d[i].h),low:Number(d[i].l),close:Number(d[i].c)}); lastT=t; }
+      return out; }catch(_){ return []; } }
   async function fetchCandles(symbol,tf,from,to){ var sb=sbc(); if(!sb) return [];
     // Supabase caps an RPC response at ~1000 rows, so page through with .range() and
     // stitch — this way ANY-length trade (however many bars entry→exit spans) loads fully.
@@ -69588,7 +69596,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function xOf(i){ return chart.timeScale().logicalToCoordinate(i); }
   function yOf(p){ return series.priceToCoordinate(p); }
-  function P(p){ var x=xOf(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
+  /* Bars prepended on this timeframe by scrolling left (loadOlder). Drawings keep the positions they
+     were saved with - counted from the first bar the replay OPENED with - so this is added on the
+     way to the screen and taken off on the way back, and a saved drawing never needs rewriting. */
+  function _preN(){ return (S&&S.pre&&S.pre[S.tf])||0; }
+  function P(p){ var x=xOf(p.idx+_preN()),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
   /* Sub-bar horizontal position. logicalToCoordinate deals in whole bars, so feeding it a
      fractional index snaps to the nearest one - which is why a freehand stroke drew smoothly from
      cached pixels and then came back as a staircase with steps exactly one bar wide once it was
@@ -69600,7 +69612,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var a=xOf(i0), b=xOf(i0+1);
     if(a==null||b==null) return xOf(Math.round(idx));
     return a+(b-a)*f; }
-  function Pf(p){ var x=xOfF(p.idx),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
+  function Pf(p){ var x=xOfF(p.idx+_preN()),y=yOf(p.price); return (x==null||y==null)?null:{x:x,y:y}; }
   /* Works for mouse AND touch: a TouchEvent has no clientX of its own, the coordinates live on
      touches[0] (or changedTouches[0] once the finger has lifted). */
   /* The chart's box, cached for a frame. getBoundingClientRect FORCES the browser to recalculate
@@ -69645,7 +69657,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var a=xOf(i0), b=xOf(i0+1), idx=lg;
     if(a!=null&&b!=null&&b>a){ var f=(xy.x-a)/(b-a); if(f>=0&&f<=1) idx=i0+f; }
     var maxI=(S&&S.bars?S.bars.length:0)+500;
-    return {idx:Math.max(0,Math.min(maxI,idx)),price:pr}; }
+    return {idx:Math.max(0,Math.min(maxI,idx))-_preN(),price:pr}; }
   /* Hold Ctrl to clamp onto the candle under the cursor - whichever of its high or low is nearer.
      Only ever snaps to a REAL bar: past the last candle there is nothing to snap to, so the
      pointer price is kept and the drawing behaves normally out there. */
@@ -69653,7 +69665,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var bi=Math.round(lg); if(bi<0||bi>S.bars.length-1) return pr;
       var b=S.bars[bi]; if(!b) return pr;
       return (Math.abs(pr-b.high)<=Math.abs(pr-b.low))?b.high:b.low; }catch(_){ return pr; } }
-  function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg))),price:snapPx(pr,lg,e)}; }
+  function toP(e){ var xy=evXY(e),lg=chart.timeScale().coordinateToLogical(xy.x),pr=series.coordinateToPrice(xy.y); if(lg==null||pr==null)return null; var maxI=(S&&S.bars?S.bars.length:0)+500; return {idx:Math.max(0,Math.min(maxI,Math.round(lg)))-_preN(),price:snapPx(pr,lg,e)}; }
   /* Right-click on the replay is a drawing surface, not an image. The browser's canvas menu offered
      Save image / Copy image / Inspect, and Inspect opens devtools over the chart - a dead end reached
      by a stray right-click mid-analysis. Suppressed on the chart only; the rest of the page keeps its
@@ -70119,7 +70131,45 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   /* Pan/zoom slides the badges out from under a pinned card, so dismiss it here as well - the
      card is positioned once, at pin time, and has no way to follow its disc. */
-  function onRange(){ if(S&&(S._newsPinned||S._newsHover)) _newsCardReset(); draw(); }
+  function onRange(){ if(S&&(S._newsPinned||S._newsHover)) _newsCardReset(); draw();
+    // Near the left edge: fetch what came before (Nestor: "the maximum amount of past candles").
+    try{ var _r=chart.timeScale().getVisibleLogicalRange(); if(S&&_r&&_r.from<40) loadOlder(); }catch(_){} }
+  /* Prepend the 1000 bars before the first one. The view stays on the same candles, the replay's own
+     positions move with the data, drawings are mapped through S.pre (see _preN), and a timeframe
+     that has nothing older stops asking. */
+  var OLDER_N=1000;
+  // Console check: after scrolling back, the entry and every drawing must still sit on the SAME
+  // candle times as before - the positions moved, the times must not.
+  try{ window.__stReplayOlderDiag=function(){ if(!S) return {open:false};
+    return { tf:S.tf, bars:S.bars.length, prepended:_preN(), noOlder:!!(S.noOlder&&S.noOlder[S.tf]),
+      firstBar:S.bars.length?new Date(S.bars[0].time*1000).toISOString():null,
+      entryBar:S.bars[S.eBI]?new Date(S.bars[S.eBI].time*1000).toISOString():null,
+      cursorBar:S.bars[S.cursor-1]?new Date(S.bars[S.cursor-1].time*1000).toISOString():null,
+      drawings:(S.drawings||[]).map(function(d){ var p=d.a||(d.pts&&d.pts[0]); if(!p) return {type:d.type};
+        var b=S.bars[Math.round(p.idx)+_preN()]; return {type:d.type,saved:p.idx,onBar:b?new Date(b.time*1000).toISOString():null}; }) }; }; }catch(_){}
+  async function loadOlder(){
+    if(!S||!series||!S.bars.length||S._older) return;
+    var tf=S.tf; S.noOlder=S.noOlder||{}; if(S.noOlder[tf]) return;
+    S._older=true;
+    var first=S.bars[0].time, sRef=S;
+    try{
+      var got=await fetchOlder(S.symbol,tf,first,OLDER_N);
+      if(S!==sRef||!S||S.tf!==tf||!S.bars.length||S.bars[0].time!==first) return;   // closed, reopened or switched meanwhile
+      got=got.filter(function(b){ return b.time<first; });
+      if(!got.length){ S.noOlder[tf]=true; return; }
+      var N=got.length, ts=chart.timeScale(), r=ts.getVisibleLogicalRange();
+      S.bars=got.concat(S.bars); S.cache[tf]=S.bars;
+      S.pre=S.pre||{}; S.pre[tf]=(S.pre[tf]||0)+N;
+      S.cursor+=N; S.eBI+=N; S.xBI+=N; S.rSI+=N; if(typeof S._last==='number') S._last+=N;
+      buildNewsMarks();                                   // keyed by bar position
+      series.setData(S.bars.slice(0,S.cursor));
+      try{ series.setMarkers(markers()); }catch(_){}
+      if(r) ts.setVisibleLogicalRange({from:r.from+N,to:r.to+N});   // the same candles stay on screen
+      el('strp-scrub').max=String(S.bars.length-1); el('strp-scrub').value=String(S.cursor-1);
+      draw();
+    }catch(_){}
+    finally{ if(sRef) sRef._older=false; }
+  }
   // Full render (open / scrub / restart / tf): position the view. Playback tick: just append
   // the bar and let the chart's native shift-on-new-bar follow the frontier AT the current zoom,
   // so you stay anchored to the candles without your zoom snapping back.
@@ -70640,7 +70690,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
        cannot promise one place and draw in another. Also nudges the chart's own crosshair when
        the build exposes that API; the marker is drawn either way, so it never depends on it. */
     if(S.activeTool!=='none'&&e.ctrlKey){ var sp=toP(e);
-      if(sp){ S.snapPt=sp; try{ var _b=S.bars&&S.bars[sp.idx]; if(_b&&chart.setCrosshairPosition) chart.setCrosshairPosition(sp.price,_b.time,series); }catch(_){} } }
+      if(sp){ S.snapPt=sp; try{ var _b=S.bars&&S.bars[sp.idx+_preN()]; if(_b&&chart.setCrosshairPosition) chart.setCrosshairPosition(sp.price,_b.time,series); }catch(_){} } }
     else if(S.snapPt){ S.snapPt=null; try{ chart.clearCrosshairPosition&&chart.clearCrosshairPosition(); }catch(_){} }
     /* Thinned by PIXEL distance, which is what the eye judges - the old test was in bars and price,
        so its density depended on the zoom and it kept far more points than a smooth line needs.

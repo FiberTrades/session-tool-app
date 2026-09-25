@@ -51,7 +51,10 @@ Deno.serve(async (req: Request): Promise<Response> => {
   const rows: Array<Record<string, number | string>> = [];
   for (const b of bars) {
     if (!Array.isArray(b) || b.length < 5) continue;
-    const t = Math.round(Number(b[0]));
+    // Every timeframe opens on a whole minute. Older EA builds sent some bars a second early,
+    // which the (symbol, tf, t) key stored as a SECOND copy of the same candle - 35k of them
+    // were deleted on 2026-09-25. Snapping to the minute makes that impossible.
+    const t = Math.round(Number(b[0]) / 60) * 60;
     const o = Number(b[1]), h = Number(b[2]), l = Number(b[3]), c = Number(b[4]);
     if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) continue;
     rows.push({ symbol, tf, t, o, h, l, c });

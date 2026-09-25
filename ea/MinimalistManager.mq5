@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.6"
+#property version   "8.7"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -78,6 +78,8 @@ input string InpSyncURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/
 input int    InpSyncDays  = 90;                         // On start, re-scan this many days of history
 input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/live-trade"; // Live status endpoint (private)
 input string InpCandlesURL= "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-candles"; // Trade Replay candle endpoint
+enum ENUM_BROKER_DST { BDST_AUTO=0, BDST_NONE=1, BDST_US=2, BDST_EU=3 };
+input ENUM_BROKER_DST InpBrokerDst = BDST_AUTO;          // Broker server clock: Auto (detect) / No DST / US DST / EU DST
 
 enum ENUM_DST_MODE { DST_AUTO=0, DST_NONE=1, DST_EU=2, DST_US=3, DST_SOUTH=4 };
 input group "===== Daily Trade Limit ====="
@@ -823,6 +825,34 @@ bool IsSouthDST(datetime utc)   // Southern hemisphere (AU/NZ approx): 1st Sun O
    datetime aprEnd  =NthSundayOfMonth(t.year,4,1,16);    // ~1st Sun Apr
    return (utc>=octStart || utc<aprEnd);
   }
+//==================================================================
+//  BROKER CLOCK -> UTC FOR ANY DATE  (v8.7)
+//  BrokerOff() is the offset NOW. A bar from last winter was stamped by a server clock an hour
+//  different, so converting it with today's offset put it an hour early - and after a clock
+//  change the same bar was stored twice, an hour apart. Most brokers run "New York close"
+//  servers (GMT+2 winter / GMT+3 summer on US dates); some use EU dates, some never change.
+//  BrokerDstDetect() (Trade Replay section) works out which from the broker's own history.
+//==================================================================
+int g_bdst = -1;   // -1 not known yet, 0 no DST, 1 US dates, 2 EU dates
+
+bool BrokerDstOn(int rule,datetime utc)
+  {
+   if(rule==1) return IsUsDST(utc);
+   if(rule==2) return IsEuDST(utc);
+   return false;
+  }
+
+// Server-minus-UTC at the moment a SERVER time happened. Today's offset while the rule is not
+// known yet - exactly what every version before 8.7 did.
+long SrvOffAt(datetime srv)
+  {
+   long now=BrokerOff();
+   if(g_bdst<=0) return now;
+   long stdOff=now-(BrokerDstOn(g_bdst,TimeGMT())?3600:0);
+   datetime utcGuess=(datetime)((long)srv-stdOff);
+   return stdOff+(BrokerDstOn(g_bdst,utcGuess)?3600:0);
+  }
+
 // Effective UTC offset for the day-reset boundary = standard offset + DST (in season).
 double EffectiveUTCOffset()
   {
@@ -2483,8 +2513,9 @@ void BalFlush(int maxN)
 string SyncIso(datetime t)
   {
    // t is broker SERVER time. Convert to UTC so the Session Tool app can localise it
-   // to the user's own timezone. Offset = how far the server is ahead of GMT right now.
-   long off=(long)(TimeCurrent()-TimeGMT());
+   // to the user's own timezone. v8.7: the offset in force AT t, not right now - a trade
+   // re-synced after a clock change was otherwise moved by an hour.
+   long off=SrvOffAt(t);
    datetime g=(datetime)((long)t-off);
    string s=TimeToString(g,TIME_DATE|TIME_SECONDS);   // "YYYY.MM.DD HH:MM:SS" (UTC)
    StringReplace(s,".","-");
@@ -2562,7 +2593,7 @@ bool SyncCollectAndPush(ulong posId)
          // time while its neighbours were converted, so on a UTC+3 broker the exit was stamped
          // three hours after the close_time in the same row (14:57:12 against 11:57:16Z on
          // ticket 166207851). MoveLog carries the same note about the same mistake.
-         exPrice[outCnt]=price; exVol[outCnt]=vol; exTime[outCnt]=(long)tt-BrokerOff();
+         exPrice[outCnt]=price; exVol[outCnt]=vol; exTime[outCnt]=(long)tt-SrvOffAt(tt);
          outCnt++;
         }
      }
@@ -2835,7 +2866,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.6\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.7\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -3693,7 +3724,9 @@ string CE_FILE_V1 = "MMReplayCandles.csv";   // legacy 4-col queue, retired on u
 
 int             CE_TF_MIN[6] = {1,5,15,60,240,1440};
 ENUM_TIMEFRAMES CE_TF_PER[6] = {PERIOD_M1,PERIOD_M5,PERIOD_M15,PERIOD_H1,PERIOD_H4,PERIOD_D1};
-long            CE_BACK[6]   = {10*86400, 10*86400, 20*86400, 90*86400, 365*86400, 1460*86400}; // secs before entry
+// v8.7: H1/H4/D1 windows shortened - the deep-history backfill below keeps those timeframes full,
+// so re-sending a year of H4 and four of D1 with every single trade was wasted time.
+long            CE_BACK[6]   = {10*86400, 10*86400, 20*86400, 30*86400,  90*86400,  365*86400}; // secs before entry
 long            CE_FWD[6]    = { 6*3600,     86400,    86400,  3*86400,   7*86400,     14*86400}; // secs after exit
 int             CE_BATCH     = 3000;      // bars per POST
 int             CE_BUDGET_MS = 8000;      // max wall-clock one export may spend per sweep
@@ -3721,9 +3754,13 @@ bool CandlePost(string json)
   }
 
 // Queue a closed trade for candle export. stage 0 = nothing sent yet.
+void HB_AddSymbol(string sym);   // Trade Replay deep history, defined below
+bool g_ceWorked=false;           // CE_Sweep exported something this bar - deep history waits a bar
+
 void CE_Queue(ulong posId,string sym,datetime openT,datetime closeT)
   {
    if(StringLen(g_syncTokenEff)==0) return;
+   HB_AddSymbol(sym);
    if(FileIsExist(CE_FILE))    // de-dupe: don't queue the same position twice
      {
       int hr=FileOpen(CE_FILE,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ|FILE_SHARE_WRITE,',');
@@ -3759,7 +3796,6 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
    // timestamp, so re-sending a batch costs nothing but bandwidth.
    uint _t0=GetTickCount();
    int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS); if(dg<=0) dg=g_digits;
-   long off=BrokerOff();   // server -> UTC, QUANTIZED (stable across runs, so a bar can't be stored at t and t+1)
    datetime eod=PM_EndOfDay(closeT);
    for(int ti=0;ti<6;ti++)
      {
@@ -3776,7 +3812,7 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
          string bars=""; int cnt=0;
          for(; i<n && cnt<CE_BATCH; i++,cnt++)
            {
-            long tu=(long)r[i].time - off;
+            long tu=(long)r[i].time - SrvOffAt(r[i].time);   // v8.7: the offset of the bar's own date
             if(cnt>0) bars+=",";
             bars+=StringFormat("[%I64d,%s,%s,%s,%s]",tu,
                      DoubleToString(r[i].open,dg),DoubleToString(r[i].high,dg),
@@ -3805,6 +3841,7 @@ void CE_Sweep()
 
    string keep[]; int kept=0; ArrayResize(keep,0);
    int done=0;
+   g_ceWorked=false;
    while(!FileIsEnding(h))
      {
       string sPos=FileReadString(h); if(StringLen(sPos)==0) break;
@@ -3842,6 +3879,7 @@ void CE_Sweep()
      }
    FileClose(h);
 
+   g_ceWorked=(done>0);
    FileDelete(CE_FILE);
    if(kept>0)
      {
@@ -3905,6 +3943,249 @@ void CE_CatchupOnce()
    if(FileIsExist(CE_FILE_V1)) FileDelete(CE_FILE_V1);
    CE_Catchup();
    GlobalVariableSet(key,1.0);
+  }
+
+//==================================================================
+//  TRADE REPLAY - DEEP HISTORY  (v8.7)
+//  For every symbol you trade, fills each timeframe back to a set depth - D1: everything the
+//  broker has - one batch at a time, and only while you have nothing open, so the EA is never
+//  held up while it manages a trade. Once a timeframe is full it is topped up hourly (not M1:
+//  three months of M1 is the storage-heavy one, so past that it stays per-trade as before).
+//  Candles are shared: each symbol is stored once for every Session Tool member.
+//==================================================================
+string HB_FILE      = "MMReplayHist.csv";   // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
+long   HB_DEPTH[6]  = {91*86400, 182*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all
+int    HB_POSTS_BAR = 2;                    // batches per M1 bar, at most (each is one blocking WebRequest)
+string g_hbSym[]; int g_hbSymN=0;
+string g_hbS[]; int g_hbT[]; long g_hbDep[]; long g_hbOld[]; long g_hbNew[]; int g_hbDone[]; long g_hbTop[]; int g_hbN=0;
+bool   g_hbLoaded=false;
+int    g_bdstTries=0;
+
+void HB_AddSymbol(string sym)
+  {
+   if(StringLen(sym)==0) return;
+   for(int i=0;i<g_hbSymN;i++) if(g_hbSym[i]==sym) return;
+   ArrayResize(g_hbSym,g_hbSymN+1); g_hbSym[g_hbSymN]=sym; g_hbSymN++;
+  }
+
+int HB_Idx(string sym,int ti)
+  {
+   for(int i=0;i<g_hbN;i++) if(g_hbS[i]==sym && g_hbT[i]==ti) return i;
+   int k=g_hbN; g_hbN++;
+   ArrayResize(g_hbS,g_hbN); ArrayResize(g_hbT,g_hbN); ArrayResize(g_hbDep,g_hbN); ArrayResize(g_hbOld,g_hbN);
+   ArrayResize(g_hbNew,g_hbN); ArrayResize(g_hbDone,g_hbN); ArrayResize(g_hbTop,g_hbN);
+   g_hbS[k]=sym; g_hbT[k]=ti; g_hbDep[k]=HB_DEPTH[ti]; g_hbOld[k]=0; g_hbNew[k]=0; g_hbDone[k]=0; g_hbTop[k]=0;
+   return k;
+  }
+
+void HB_Load()
+  {
+   if(g_hbLoaded) return;
+   g_hbLoaded=true;
+   if(!FileIsExist(HB_FILE)) return;
+   int h=FileOpen(HB_FILE,FILE_READ|FILE_CSV|FILE_ANSI|FILE_SHARE_READ,',');
+   if(h==INVALID_HANDLE) return;
+   while(!FileIsEnding(h))
+     {
+      string sym=FileReadString(h); if(StringLen(sym)==0) break;
+      int  ti  =(int)StringToInteger(FileReadString(h));
+      long dep =StringToInteger(FileReadString(h));
+      long old =StringToInteger(FileReadString(h));
+      long nw  =StringToInteger(FileReadString(h));
+      int  done=(int)StringToInteger(FileReadString(h));
+      long top =StringToInteger(FileReadString(h));
+      if(ti<0 || ti>5) continue;
+      int k=HB_Idx(sym,ti);
+      g_hbOld[k]=old; g_hbNew[k]=nw; g_hbDone[k]=done; g_hbTop[k]=top;
+      if(dep!=HB_DEPTH[ti]) g_hbDone[k]=0;   // a later build asked for more: carry on from where it stopped
+      g_hbDep[k]=HB_DEPTH[ti];
+      HB_AddSymbol(sym);
+     }
+   FileClose(h);
+  }
+
+void HB_Save()
+  {
+   int h=FileOpen(HB_FILE,FILE_WRITE|FILE_CSV|FILE_ANSI,',');
+   if(h==INVALID_HANDLE) return;
+   for(int k=0;k<g_hbN;k++)
+      FileWrite(h,g_hbS[k],(string)g_hbT[k],(string)g_hbDep[k],(string)g_hbOld[k],(string)g_hbNew[k],(string)g_hbDone[k],(string)g_hbTop[k]);
+   FileClose(h);
+  }
+
+// Every symbol traded in the last InpSyncDays, so deep history covers what you actually trade.
+void HB_ScanSymbols()
+  {
+   datetime from=(datetime)((long)TimeCurrent()-(long)InpSyncDays*86400);
+   if(!HistorySelect(from,(datetime)((long)TimeCurrent()+3600))) return;
+   int n=HistoryDealsTotal();
+   for(int i=0;i<n;i++)
+     {
+      ulong dt=HistoryDealGetTicket(i); if(dt==0) continue;
+      long ty=HistoryDealGetInteger(dt,DEAL_TYPE);
+      if(ty!=DEAL_TYPE_BUY && ty!=DEAL_TYPE_SELL) continue;   // balance / credit rows carry no symbol
+      HB_AddSymbol(HistoryDealGetString(dt,DEAL_SYMBOL));
+     }
+  }
+
+// Which daylight-saving dates the broker's server clock follows. The FX week opens at 17:00 New York
+// every Sunday, so the server time of each week's first bar gives that week's offset. For the right
+// rule, (server open - New York open - rule's offset) is the same every week - the constant is 0 for
+// forex and e.g. an hour for gold, which opens an hour later, so any symbol with a weekend works.
+void BrokerDstDetect()
+  {
+   if(g_bdst>=0) return;
+   if(InpBrokerDst==BDST_NONE){ g_bdst=0; return; }
+   if(InpBrokerDst==BDST_US)  { g_bdst=1; return; }
+   if(InpBrokerDst==BDST_EU)  { g_bdst=2; return; }
+   string gk="MTM_broker_dst";
+   if(GlobalVariableCheck(gk)){ g_bdst=(int)GlobalVariableGet(gk); return; }
+   long now=BrokerOff();
+   for(int c=-1;c<g_hbSymN;c++)
+     {
+      string sym=(c<0)?_Symbol:g_hbSym[c];
+      MqlRates r[];
+      int n=CopyRates(sym,PERIOD_H1,(datetime)((long)TimeCurrent()-730*86400),TimeCurrent(),r);
+      if(n<500) continue;                          // not loaded yet (or no history): another symbol / next bar
+      long res[][3]; int w=0, wSum=0, wWin=0;
+      for(int i=1;i<n;i++)
+        {
+         if((long)r[i].time-(long)r[i-1].time < 36*3600) continue;   // not a weekend gap
+         long srvOpen=(long)r[i].time;
+         datetime ua=(datetime)(srvOpen-now);
+         MqlDateTime d; TimeToStruct(ua,d);
+         long day0=(long)ua-(long)(d.hour*3600+d.min*60+d.sec);
+         if(d.day_of_week==1) day0-=86400;             // opened just after midnight UTC Monday: that week's Sunday
+         else if(d.day_of_week!=0) continue;           // a holiday gap, not a weekend
+         long nyOpen=day0+(IsUsDST((datetime)(day0+21*3600))?21:22)*3600;
+         ArrayResize(res,w+1);
+         for(int rule=0;rule<3;rule++)
+           {
+            long stdR=now-(BrokerDstOn(rule,TimeGMT())?3600:0);
+            res[w][rule]=(srvOpen-nyOpen)-(stdR+(BrokerDstOn(rule,(datetime)nyOpen)?3600:0));
+           }
+         if(IsUsDST((datetime)nyOpen)) wSum++; else wWin++;
+         w++;
+        }
+      if(w<12 || wSum<3 || wWin<3) continue;           // needs weeks on both sides of a clock change
+      int best=0, bestSc=-1;
+      for(int rule=0;rule<3;rule++)
+        {
+         int sc=0;
+         for(int a=0;a<w;a++)
+           {
+            int cnt=0;
+            for(int b=0;b<w;b++) if(MathAbs((double)(res[a][rule]-res[b][rule]))<=900.0) cnt++;
+            if(cnt>sc) sc=cnt;
+           }
+         if(sc>bestSc){ bestSc=sc; best=rule; }
+        }
+      if(bestSc < (int)(w*0.9)) continue;               // no rule fits cleanly on this symbol
+      g_bdst=best;
+      GlobalVariableSet(gk,(double)best);
+      string nm[3]={"does not change for daylight saving","follows US daylight-saving dates","follows EU daylight-saving dates"};
+      PrintFormat("Replay history: the broker's server clock %s (GMT%+.1f now; %d of %d weeks on %s agree).",nm[best],(double)now/3600.0,bestSc,w,sym);
+      return;
+     }
+   g_bdstTries++;
+   if(g_bdstTries>=60)   // an hour of trying: fall back to today's offset, as before 8.7
+     {
+      g_bdst=0;
+      Print("Replay history: could not tell whether the broker's clock changes for daylight saving - using today's offset for all history. Set 'Broker server clock' in the EA inputs if you know it.");
+     }
+  }
+
+string HB_TfName(int ti){ string n[6]={"M1","M5","M15","H1","H4","D1"}; return n[ti]; }
+
+void HB_Report(int k)
+  {
+   string sym=g_hbS[k]; int ti=g_hbT[k];
+   string back=(g_hbOld[k]>0)?TimeToString((datetime)g_hbOld[k],TIME_DATE):"-";
+   long want=HB_DEPTH[ti];
+   bool shortOf=(want>0 && g_hbOld[k]>0 && g_hbOld[k] > (long)TimeCurrent()-want+7*86400);
+   PrintFormat("Replay history: %s %s complete, back to %s%s.",sym,HB_TfName(ti),back,shortOf?" (nothing older on this terminal)":"");
+   if(shortOf)
+     {
+      int mb=TerminalInfoInteger(TERMINAL_MAXBARS);
+      if(Bars(sym,CE_TF_PER[ti])>=(int)(mb*0.95))
+         PrintFormat("Replay history: MT5 keeps at most %d bars per chart. For more, raise Tools > Options > Charts > Max bars in chart (or Unlimited) and restart MT5.",mb);
+     }
+  }
+
+bool HB_Post(string sym,int ti,MqlRates &r[],int from,int to)
+  {
+   int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS); if(dg<=0) dg=g_digits;
+   string bars=""; int cnt=0;
+   for(int i=from;i<to;i++)
+     {
+      long tu=(long)r[i].time-SrvOffAt(r[i].time);
+      if(cnt>0) bars+=",";
+      bars+=StringFormat("[%I64d,%s,%s,%s,%s]",tu,
+               DoubleToString(r[i].open,dg),DoubleToString(r[i].high,dg),
+               DoubleToString(r[i].low,dg), DoubleToString(r[i].close,dg));
+      cnt++;
+     }
+   if(cnt==0) return true;
+   return CandlePost(StringFormat("{\"token\":\"%s\",\"symbol\":\"%s\",\"tf\":%d,\"bars\":[%s]}",g_syncTokenEff,sym,CE_TF_MIN[ti],bars));
+  }
+
+// One batch further into the past. True if it posted.
+bool HB_Back(int k)
+  {
+   string sym=g_hbS[k]; int ti=g_hbT[k]; ENUM_TIMEFRAMES per=CE_TF_PER[ti];
+   long lim=(HB_DEPTH[ti]>0)?((long)TimeCurrent()-HB_DEPTH[ti]):0;
+   if(g_hbOld[k]>0 && g_hbOld[k]<=lim){ g_hbDone[k]=1; HB_Report(k); return false; }
+   datetime end=(g_hbOld[k]>0)?(datetime)(g_hbOld[k]-1):TimeCurrent();
+   MqlRates r[];
+   ResetLastError();
+   int n=CopyRates(sym,per,end,CE_BATCH,r);          // up to CE_BATCH bars ending at `end`, oldest first
+   bool synced=(SeriesInfoInteger(sym,per,SERIES_SYNCHRONIZED)!=0);
+   if(n<=0)
+     {
+      if(synced){ g_hbDone[k]=1; HB_Report(k); }      // nothing older exists; otherwise still downloading - next bar
+      return false;
+     }
+   int from=0; while(from<n && (long)r[from].time<lim) from++;
+   if(from<n && !HB_Post(sym,ti,r,from,n)) return false;   // markers unchanged: the same batch is retried
+   if(g_hbNew[k]==0) g_hbNew[k]=(long)r[n-1].time;
+   g_hbOld[k]=(long)r[(from<n)?from:(n-1)].time;
+   if(from>0 || (n<CE_BATCH && synced)){ g_hbDone[k]=1; HB_Report(k); }
+   return (from<n);
+  }
+
+// Keep a full timeframe current: what has formed since the last send, hourly. Not M1.
+bool HB_Top(int k)
+  {
+   int ti=g_hbT[k];
+   if(ti==0 || g_hbNew[k]==0) return false;
+   if((long)TimeCurrent()-g_hbTop[k] < 3600) return false;
+   string sym=g_hbS[k];
+   MqlRates r[];
+   int n=CopyRates(sym,CE_TF_PER[ti],(datetime)g_hbNew[k],TimeCurrent(),r);   // from the last bar sent: it may have been unfinished
+   if(n<=0){ g_hbTop[k]=(long)TimeCurrent(); return false; }
+   int to=MathMin(n,CE_BATCH);
+   if(!HB_Post(sym,ti,r,0,to)) return false;
+   g_hbNew[k]=(long)r[to-1].time;
+   if(to==n) g_hbTop[k]=(long)TimeCurrent();   // caught up; otherwise the next batch goes on the next bar
+   return true;
+  }
+
+// Once per M1 bar, after the per-trade export.
+void HB_Step()
+  {
+   if(StringLen(g_syncTokenEff)==0) return;
+   if(g_bdst<0){ BrokerDstDetect(); if(g_bdst<0) return; }   // old bars go out with the right times, or not at all
+   if(g_ceWorked) return;                                    // a closed trade's candles went this bar
+   if(PositionsTotal()>0 || OrdersTotal()>0) return;         // never hold the EA up while it manages a trade
+   HB_Load();
+   int posts=0;
+   for(int s=0;s<g_hbSymN && posts<HB_POSTS_BAR;s++)
+      for(int ti=5;ti>=0 && posts<HB_POSTS_BAR;ti--)        // D1 first: the deepest view, and the cheapest
+        {
+         int k=HB_Idx(g_hbSym[s],ti);
+         if(g_hbDone[k]==0 ? HB_Back(k) : HB_Top(k)) posts++;
+        }
+   HB_Save();
   }
 
 // Stamp the just-placed trade's detail onto its position id (read back at close).
@@ -4178,9 +4459,11 @@ int OnInit()
    // Work any post-mortems left over from a previous run. This is why the replay reads
    // BARS and not ticks: a trade that closed while the terminal was off still resolves
    // the next time the EA starts, using history that was there all along.
+   BrokerDstDetect();  // v8.7: which daylight-saving dates the server clock follows (before anything is converted)
    PM_Sweep();
    CE_CatchupOnce();   // Trade Replay: one-time backfill of recent already-synced trades
    CE_Sweep();         // Trade Replay: resume/queue candle exports
+   HB_Load(); HB_AddSymbol(_Symbol); HB_ScanSymbols();   // v8.7: deep replay history for what you trade
 
    return INIT_SUCCEEDED;
   }
@@ -4506,6 +4789,7 @@ void OnTick()
       s_pmBar=curBar;
       g_lastStage="pm_sweep";  PM_Sweep();
       g_lastStage="ce_sweep";  CE_Sweep();
+      g_lastStage="hb_step";   HB_Step();   // v8.7: deep replay history, when nothing is open
      }
    g_lastStage="sweeps_done";
    UpdateBrokerOffset();   // a tick just arrived, so TimeCurrent() is live right now: learn the offset
