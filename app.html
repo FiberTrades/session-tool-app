@@ -6889,12 +6889,15 @@ try {
          The stage words stay English in both languages: they are the terms the firms themselves
          use on their dashboards, and this text becomes part of the user's own account name, so
          translating it would leave a Spanish member with a name that no longer matches FTMO's.
-         maxlength went 40 -> 60 to leave room for " - Verification" on a full-length name. -->
+         maxlength went 40 -> 60 to leave room for " - Verification" on a full-length name.
+         Funded = both phases passed: still a prop firm account, but no longer a test - it has no
+         target, so the panels that judge an evaluation read it differently (window.__stIsFunded). -->
     <div id="settings-rename-stage" style="display:none;margin:0 0 18px;">
       <div class="settings-label" style="margin:0 0 7px;" id="settings-rename-stage-lbl">Select a stage</div>
       <span class="settings-acct-kind" role="group" aria-labelledby="settings-rename-stage-lbl">
         <button type="button" class="settings-btn sak-opt" data-stage="Challenge" aria-pressed="false">Challenge</button>
         <button type="button" class="settings-btn sak-opt" data-stage="Verification" aria-pressed="false">Verification</button>
+        <button type="button" class="settings-btn sak-opt" data-stage="Funded" aria-pressed="false">Funded</button>
       </span>
     </div>
     <div class="mdl-actions">
@@ -15241,7 +15244,7 @@ try {
         }
         // Profit target: this close is the one that crossed it.
         var tgt = moneyRule(rules, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount', sb);
-        if (tgt > 0 && pnl > 0 && cur >= sb + tgt && cur - pnl < sb + tgt)
+        if (tgt > 0 && pnl > 0 && cur >= sb + tgt && cur - pnl < sb + tgt && !(window.__stIsFunded && window.__stIsFunded(acc)))
           out.push({ rule: 'target_hit', text: t('nudge.target_hit').replace('{ACC}', acc.name || ''), say: t('nudge.target_hit_say') });
         // Consistency: today's share of total trading profit crossed 90% of the cap.
         var cap = parseFloat(rules.consistencyPct), total = (typeof stats.totalNet === 'number' ? stats.totalNet : stats.current - sb) + tn.unimported;
@@ -21020,6 +21023,7 @@ try {
       if (!sec || !body) return;
       var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
       var GOOD = '#4ECD8B', BAD = '#E56767', WARN = '#E5B567', ACC = '#f472b6';
+      var isFunded = function (a) { try { return !!(window.__stIsFunded && window.__stIsFunded(a)); } catch (e) { return false; } };
       // EVERY account the current view covers, not one.
       //
       // Scoped to an account, or to a group: exactly those. On the lifetime/all-accounts view this
@@ -21056,7 +21060,7 @@ try {
            verdict, describing nothing. */
         var sb0 = parseFloat(a.startingBalance) || 0;
         return ruleValue(r, sb0, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount') > 0
-            || ruleValue(r, sb0, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount') > 0;
+            || (!isFunded(a) && ruleValue(r, sb0, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount') > 0);
       });
       if (!accounts.length) {
         /* An account carrying a firm rule but still marked Personal is deliberately excluded -
@@ -21122,7 +21126,9 @@ try {
       var rr = acc.riskRules || {};
       var sb = (typeof acc.startingBalance === 'number') ? acc.startingBalance : 0;
       var ddAmount = ruleValue(rr, sb, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount');
-      var tgAmount = ruleValue(rr, sb, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount');
+      // Funded: both phases passed. A target left in its rules from the challenge means nothing now.
+      var funded = isFunded(acc);
+      var tgAmount = funded ? 0 : ruleValue(rr, sb, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount');
 
       var st = null;
       try { st = window.__stAccountStats(acc); } catch (e) { st = null; }
@@ -21164,11 +21170,42 @@ try {
         });
       }
 
+      // Funded: the question stops being "how far to the target" and becomes "what can I take
+      // out". Profit above the starting balance (paid payouts already lower the balance), less
+      // any payout requested and not yet paid - that money is still in MT5 but already spoken for.
+      if (funded) {
+        var P = window.__stPayouts, paidYou = 0, nPaid = 0, pending = 0;
+        try {
+          (P ? P.list(acc) : []).forEach(function (p) {
+            if (!p) return;
+            if (p.status === 'paid') { paidYou += P.received(acc, p); nPaid++; }
+            else if (p.status === 'requested') pending += (parseFloat(p.amount) || 0);
+          });
+        } catch (e) {}
+        var above = st.current - sb, avail = Math.max(0, above - pending);
+        var split = parseFloat(acc.payoutSplit), parts = [];
+        if (avail > 0 && split > 0 && split < 100)
+          parts.push(T('your ' + split + '% ', 'tu ' + split + '% ') + money(avail * split / 100));
+        if (above < 0) parts.push(money(-above) + T(' below the start', ' por debajo del inicio'));
+        if (pending > 0) parts.push(money(pending) + T(' requested', ' solicitado'));
+        parts.push(nPaid ? T('paid to you so far ', 'cobrado hasta ahora ') + money(paidYou)
+                         : T('no payouts yet', 'sin retiros todav\u00eda'));
+        var psub = parts.join(' \u00b7 ');
+        cards.push({
+          lab: T('Profit to withdraw', 'Beneficio para retirar'),
+          val: money(avail), fill: null,
+          colour: avail > 0 ? GOOD : 'var(--text)',
+          sub: psub.charAt(0).toUpperCase() + psub.slice(1)
+        });
+      }
+
       var html = '<div class="chal-grid">' + cards.map(function (c) {
         return '<div class="chal-card">'
              + '<div class="chal-head"><span class="chal-lab">' + c.lab + '</span>'
              + '<span class="chal-val" style="color:' + c.colour + '">' + c.val + '</span></div>'
-             + '<div class="chal-rail"><div class="chal-fill" style="width:' + c.fill.toFixed(1) + '%;background:' + c.colour + '"></div></div>'
+             // No rail for a figure with no end point; kept invisible so the cards stay level.
+             + (c.fill == null ? '<div class="chal-rail" style="visibility:hidden"></div>'
+                : '<div class="chal-rail"><div class="chal-fill" style="width:' + c.fill.toFixed(1) + '%;background:' + c.colour + '"></div></div>')
              + '<div class="chal-sub">' + c.sub + '</div></div>';
       }).join('') + '</div>';
 
@@ -21177,8 +21214,10 @@ try {
       // objective and then blew the floor has still failed.
       var breached = ddAmount > 0 && st.current <= floor;
       var passed = tgAmount > 0 && st.current >= (sb + tgAmount);
-      var vCol = breached ? BAD : (passed ? GOOD : ACC);
-      var vTxt = breached ? T('Breached — this account is out on its drawdown rule.', 'Superado — esta cuenta ha incumplido su regla de drawdown.')
+      var vCol = breached ? BAD : ((passed || funded) ? GOOD : ACC);
+      var vTxt = breached ? (funded ? T('Breached — this funded account is out on its drawdown rule.', 'Superado — esta cuenta fondeada ha incumplido su regla de drawdown.')
+                                    : T('Breached — this account is out on its drawdown rule.', 'Superado — esta cuenta ha incumplido su regla de drawdown.'))
+               : funded ? T('Funded — no target to reach. The floor is the line that matters now.', 'Fondeada — sin objetivo que alcanzar. El suelo es la línea que importa ahora.')
                : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
                : T('In progress.', 'En curso.');
       var vRow = '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>' + (tail || '');
@@ -21242,8 +21281,11 @@ try {
       } catch (e) {}
 
       var single = accounts.length === 1;
+      var nEval = 0, nFunded = 0;
       var blocks = accounts.map(function (a, i) {
-        return blockFor(a, (single && i === 0) ? noteHtml : '');
+        var b = blockFor(a, (single && i === 0) ? noteHtml : '');
+        if (b) { if (isFunded(a)) nFunded++; else nEval++; }
+        return b;
       }).filter(Boolean);
       if (!blocks.length) { sec.style.display = 'none'; return; }
       sec.style.display = '';
@@ -21290,8 +21332,12 @@ try {
       if (hint) hint.textContent = single
         ? T('Measured against this account’s own rules, on closed trades.',
             'Medido con las reglas de esta cuenta, sobre operaciones cerradas.')
-        : T('Measured against each account’s own rules, on closed trades. ' + blocks.length + ' evaluations in progress.',
-            'Medido con las reglas propias de cada cuenta, sobre operaciones cerradas. ' + blocks.length + ' evaluaciones en curso.');
+        : T('Measured against each account’s own rules, on closed trades. '
+              + [nEval ? nEval + (nEval === 1 ? ' evaluation in progress' : ' evaluations in progress') : '',
+                 nFunded ? nFunded + (nFunded === 1 ? ' funded account' : ' funded accounts') : ''].filter(Boolean).join(' · ') + '.',
+            'Medido con las reglas propias de cada cuenta, sobre operaciones cerradas. '
+              + [nEval ? nEval + (nEval === 1 ? ' evaluación en curso' : ' evaluaciones en curso') : '',
+                 nFunded ? nFunded + (nFunded === 1 ? ' cuenta fondeada' : ' cuentas fondeadas') : ''].filter(Boolean).join(' · ') + '.');
     })(); } catch (_chalErr) {
       try { var _cs = document.getElementById('challenge-section'); if (_cs) _cs.style.display = 'none'; } catch (e) {}
       try { console.warn('challenge panel skipped:', _chalErr); } catch (e) {}
@@ -35209,6 +35255,8 @@ try {
       else if (rules.profitTargetPct > 100) tgtAmount = rules.profitTargetPct;
       else if (rules.profitTargetPct > 0) tgtAmount = sb * rules.profitTargetPct / 100;
 
+      // Funded: the evaluation is over, so a target left in its rules is not a goal any more.
+      try { if (window.__stIsFunded && window.__stIsFunded(acc)) tgtAmount = 0; } catch (e) {}
       if (ddAmount <= 0 && tgtAmount <= 0) continue; // no usable prop rules on this account
 
       // Use the published reference — the bare name isn't in this scope (see __stAccountStats).
@@ -44822,7 +44870,7 @@ try {
           missing.push(TT('a daily loss cap', 'una p\u00e9rdida m\u00e1xima diaria'));
         if (!(r.maxDrawdownPct > 0 || r.maxDrawdownAmount > 0))
           missing.push(TT('a max drawdown', 'un drawdown m\u00e1ximo'));
-        if (!(r.profitTargetPct > 0 || r.profitTargetAmount > 0))
+        if (!(r.profitTargetPct > 0 || r.profitTargetAmount > 0) && !(window.__stIsFunded && window.__stIsFunded(a)))
           missing.push(TT('a profit target', 'un objetivo de beneficio'));
         if (!missing.length) return;               // fully configured - nothing to warn about
         var esc = function (x) {
@@ -45882,7 +45930,7 @@ try {
     // The stage lives in the NAME, so these only ever read and rewrite the input's own text —
     // there is no second piece of state to fall out of step with what the user can see.
     const renameStage  = document.getElementById('settings-rename-stage');
-    const STAGES = ['Challenge', 'Verification'];
+    const STAGES = ['Challenge', 'Verification', 'Funded'];
     // Accepts the hyphen, en dash or em dash, so a name typed by hand is recognised too.
     const STAGE_RE = new RegExp('\\s*[-\u2013\u2014]\\s*(' + STAGES.join('|') + ')\\s*$', 'i');
     function _stageOf(name) {
@@ -45898,6 +45946,13 @@ try {
     // Needed by the duplicate-name check, which has to compare BASE names: the app renames
     // "FTMO" to "FTMO - Challenge" itself, so the two are one account at different stages.
     window.__stStripStage = _stripStage;
+    // A prop firm account past its evaluation ("FTMO 70K - Funded"). It has no target to reach, so
+    // every reader that judges a challenge - Prop Firm Progress, the greeting's "target reached",
+    // the target nudge, the missing-rules prompt - skips the target on it. The drawdown floor
+    // still ends it, so the floor keeps being measured exactly as before.
+    window.__stIsFunded = function (acc) {
+      return !!acc && acc.kind !== 'personal' && _stageOf(acc.name || acc.label) === 'Funded';
+    };
     // Pressed state is DERIVED from the field rather than remembered, so editing the name by hand
     // — including deleting the suffix — keeps the buttons telling the truth.
     function _paintStage() {
