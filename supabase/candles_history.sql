@@ -33,3 +33,12 @@ as $$
 $$;
 revoke all on function public.st_candles_before(text, integer, bigint, integer) from public, anon;
 grant execute on function public.st_candles_before(text, integer, bigint, integer) to authenticated, service_role;
+
+-- 4) 2000-2006 daily bars (run later on 2026-09-25, with Nestor's OK). EA 8.7/8.71 used the 2007+
+--    US daylight-saving dates for every year; before 2007 the US ran DST from the 1st Sunday of April
+--    to the last Sunday of October, so a few weeks of each spring and autumn were stored an hour
+--    early: 138 EURUSD D1 rows, all +1h, no collisions. EA 8.72 knows the old dates.
+update public.candles c set t = c.t + 3600
+where c.tf = 1440 and to_timestamp(c.t) < timestamptz '2007-01-01'
+  and ((to_timestamp(c.t) at time zone 'America/New_York') - (to_timestamp(c.t) at time zone 'UTC')) = interval '-5 hours'
+  and extract(hour from to_timestamp(c.t) at time zone 'UTC') = 21;

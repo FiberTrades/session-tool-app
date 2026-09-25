@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.71"
+#property version   "8.72"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -814,6 +814,15 @@ bool IsEuDST(datetime utc)
 bool IsUsDST(datetime utc)
   {
    MqlDateTime t; TimeToStruct(utc,t);
+   // v8.72: before 2007 the US ran daylight saving from the 1st Sunday of April to the last Sunday
+   // of October. Deep history reaches back to 2000, and the modern dates put a few weeks of every
+   // spring and autumn from 2000-2006 an hour out (138 daily bars on EURUSD, fixed in the DB).
+   if(t.year<2007)
+     {
+      datetime s0=NthSundayOfMonth(t.year,4,1,7);    // 1st Sun Apr 07:00 UTC (02:00 EST)
+      datetime e0=LastSundayOfMonth(t.year,10,6);    // last Sun Oct 06:00 UTC (02:00 EDT)
+      return (utc>=s0 && utc<e0);
+     }
    datetime s=NthSundayOfMonth(t.year,3,2,7);   // 2nd Sun Mar 07:00 UTC
    datetime e=NthSundayOfMonth(t.year,11,1,6);  // 1st Sun Nov 06:00 UTC
    return (utc>=s && utc<e);
@@ -2866,7 +2875,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.71\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.72\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
