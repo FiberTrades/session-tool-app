@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.5"
+#property version   "8.6"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -2788,8 +2788,11 @@ void LiveReannounceOpen()
       long   ptype=PositionGetInteger(POSITION_TYPE);
       string dir  =(ptype==POSITION_TYPE_BUY)?"long":"short";
       string sym  =PositionGetString(POSITION_SYMBOL);
-      LiveEnqueue(StringFormat("{\"event\":\"open\",\"token\":\"%s\",\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\"}",
-                               g_syncTokenEff,posid,sym,dir));
+      // v8.6: size + risk at the current stop, so a manual trade's risk arrives once its stop is set.
+      string size =LiveSizeJson(sym,(ptype==POSITION_TYPE_BUY)?1:-1,PositionGetDouble(POSITION_VOLUME),
+                                PositionGetDouble(POSITION_PRICE_OPEN),PositionGetDouble(POSITION_SL),0.0);
+      LiveEnqueue(StringFormat("{\"event\":\"open\",\"token\":\"%s\",\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\"%s}",
+                               g_syncTokenEff,posid,sym,dir,size));
      }
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -2874,6 +2877,21 @@ double RiskAtStop(string sym,int dir,double lots,double entry,double slPx)
    double tv=SymbolInfoDouble(sym,SYMBOL_TRADE_TICK_VALUE), ts=SymbolInfoDouble(sym,SYMBOL_TRADE_TICK_SIZE);
    if(tv>0 && ts>0) return AdverseDist(dir,entry,slPx)/ts*tv*lots;
    return 0.0;
+  }
+
+// v8.6: size and money at risk for the live "open" event, so the app can notice risk RAISED after
+// a loss. risk = money lost at the current stop; before the stop is on the position (the EA
+// re-anchors it a moment after the fill) it is the risk the trade was sized for, when the EA placed
+// it. Omitted when neither is known. The app keeps the largest value it sees per trade, so a stop
+// later moved to break-even (risk 0, so omitted) never erases the risk the trade was taken with.
+string LiveSizeJson(string sym,int dir,double lots,double entry,double slPx,double planned)
+  {
+   string j="";
+   if(lots>0) j+=",\"lots\":"+DoubleToString(lots,2);
+   double risk=RiskAtStop(sym,dir,lots,entry,slPx);
+   if(risk<=0 && planned>0) risk=planned;
+   if(risk>0) j+=",\"risk\":"+DoubleToString(risk,2);
+   return j;
   }
 
 // Pip size for an arbitrary symbol (handles 3/5-digit fractional pricing).
@@ -4395,8 +4413,19 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       long   dtype=HistoryDealGetInteger(dealTicket,DEAL_TYPE);
       string dir  =(dtype==DEAL_TYPE_BUY)?"long":"short";
       string sym  =HistoryDealGetString(dealTicket,DEAL_SYMBOL);
-      LiveEnqueue(StringFormat("{\"event\":\"open\",\"token\":\"%s\",\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\"}",
-                               g_syncTokenEff,posId,sym,dir));
+      // v8.6: size + risk. The stop may not be on the position yet (it is re-anchored from the real
+      // fill just after), so a trade the EA placed falls back to the risk it was sized for.
+      double _lots=HistoryDealGetDouble(dealTicket,DEAL_VOLUME), _px=HistoryDealGetDouble(dealTicket,DEAL_PRICE), _sl=0.0;
+      if(PositionSelectByTicket(posId))
+        {
+         _sl=PositionGetDouble(POSITION_SL);
+         double _pv=PositionGetDouble(POSITION_VOLUME), _po=PositionGetDouble(POSITION_PRICE_OPEN);
+         if(_pv>0) _lots=_pv;
+         if(_po>0) _px=_po;
+        }
+      double _plan=(mg==InpMagic && g_pendValid) ? g_pendRisk : 0.0;
+      LiveEnqueue(StringFormat("{\"event\":\"open\",\"token\":\"%s\",\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\"%s}",
+                               g_syncTokenEff,posId,sym,dir,LiveSizeJson(sym,(dtype==DEAL_TYPE_BUY)?1:-1,_lots,_px,_sl,_plan)));
      }
 
    // ENTRY of one of our trades: stamp the detail PlaceTrade just computed.
