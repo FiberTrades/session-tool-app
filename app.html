@@ -6439,6 +6439,7 @@ try {
         <option value="chime" data-i18n="settings.nudges_sound_chime">Chime only</option>
         <option value="off" data-i18n="settings.nudges_sound_off">No sound (card only)</option>
       </select>
+      <p class="settings-hint" id="settings-nudges-noes" style="display:none;" data-i18n="settings.nudges_no_es">This device has no Spanish voice, so nudges only chime.</p>
       <label class="settings-label" style="margin-top:14px;" data-i18n="settings.nudges_reentry_label">Warn if I re-enter within</label>
       <div class="settings-risk-input-row">
         <input type="number" id="settings-nudges-reentry" class="settings-input settings-input-compact" step="1" min="1" max="120" placeholder="10" />
@@ -7396,6 +7397,7 @@ try {
       'settings.nudges_sound_voice': 'Chime and spoken line',
       'settings.nudges_sound_chime': 'Chime only',
       'settings.nudges_sound_off': 'No sound (card only)',
+      'settings.nudges_no_es': 'This device has no Spanish voice, so nudges only chime (no spoken line). You can add one in Windows: Settings \u2192 Time & language \u2192 Speech.',
       'ea.live_label': 'Your EA right now',
       'ea.updated': 'updated {T}',
       'ea.risk': 'Risk per trade',
@@ -9009,6 +9011,7 @@ try {
       'settings.nudges_sound_voice': 'Sonido y frase hablada',
       'settings.nudges_sound_chime': 'Solo sonido',
       'settings.nudges_sound_off': 'Sin sonido (solo el aviso)',
+      'settings.nudges_no_es': 'Este dispositivo no tiene una voz en español, así que los avisos solo suenan (sin frase hablada). Puedes añadir una en Windows: Configuración \u2192 Hora e idioma \u2192 Voz.',
       'ea.live_label': 'Tu EA ahora mismo',
       'ea.updated': 'actualizado {T}',
       'ea.risk': 'Riesgo por operación',
@@ -15046,7 +15049,11 @@ try {
           var vs = synth.getVoices() || [], u = new SpeechSynthesisUtterance(text);
           var v = es ? vs.find(function (x) { return /^es/i.test(x.lang); })
                      : (vs.find(function (x) { return /Microsoft David/i.test(x.name); }) || vs.find(function (x) { return x.lang === 'en-GB'; }) || vs.find(function (x) { return /^en/i.test(x.lang); }));
-          if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = es ? 'es-ES' : 'en-GB'; }
+          // Spanish with no Spanish voice on this device: the browser would read the Spanish line in
+          // its default English voice, which comes out garbled. Say nothing - the chime and the card
+          // (in Spanish) still come, and Settings explains how to add a voice.
+          if (es && !v) return;
+          if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'en-GB'; }
           u.rate = 0.95; u.pitch = 0.9;
           try { synth.resume(); } catch (e) {}
           synth.speak(u);
@@ -15138,12 +15145,23 @@ try {
       showCard([{ key: 'sample:' + Date.now(), text: line, say: t('nudge.revenge_say') }]);
       play(t('nudge.revenge_say'));             // whatever Sound is set to - that is what you will get
     }
+    // App in Spanish, the spoken line chosen, and no Spanish voice on this device: say so.
+    function noSpanishVoiceHint() {
+      try {
+        var el = document.getElementById('settings-nudges-noes'); if (!el) return;
+        var es = document.documentElement.lang === 'es';
+        var vs = ('speechSynthesis' in window) ? (window.speechSynthesis.getVoices() || []) : [];
+        var none = vs.length > 0 && !vs.some(function (x) { return /^es/i.test(x.lang); });
+        el.style.display = (es && cfg().sound === 'voice' && none) ? '' : 'none';
+      } catch (e) {}
+    }
     // Settings -> Session -> Live nudges.
     function settingsLoad() {
       var c = cfg();
       var on = document.getElementById('settings-nudges-on'), re = document.getElementById('settings-nudges-reentry'), sk = document.getElementById('settings-nudges-streak');
       var sd = document.getElementById('settings-nudges-sound');
       if (sd) sd.value = c.sound;
+      noSpanishVoiceHint();
       if (on) on.checked = c.on;
       if (re) re.value = c.reentryMins;
       if (sk) sk.value = c.streak;
@@ -15158,7 +15176,9 @@ try {
       if (on) on.addEventListener('change', function () { put('on', !!on.checked); });
       if (re) re.addEventListener('change', function () { var v = parseInt(re.value, 10); if (!(v > 0)) v = 10; v = Math.min(120, v); re.value = v; put('reentryMins', v); });
       if (sk) sk.addEventListener('change', function () { var v = parseInt(sk.value, 10); if (!(v >= 2)) v = 3; v = Math.min(10, v); sk.value = v; put('streak', v); });
-      if (sd) sd.addEventListener('change', function () { put('sound', (sd.value === 'chime' || sd.value === 'off') ? sd.value : 'voice'); });
+      if (sd) sd.addEventListener('change', function () { put('sound', (sd.value === 'chime' || sd.value === 'off') ? sd.value : 'voice'); noSpanishVoiceHint(); });
+      // The voice list can arrive after Settings opens.
+      try { if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', noSpanishVoiceHint); } catch (e) {}
       var smp = document.getElementById('settings-nudges-sample');
       if (smp) smp.addEventListener('click', sample);
     }
