@@ -69283,6 +69283,44 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       entry_price:ep, exit_price:(xp>0?xp:0), open_time:ot, close_time:ct,
       sl_pips:t.slPips, req_sl_pips:(t.reqSlPips||t._reqSlPips), tp_pips:t._tpPips, tp_r:t._tpR, risk_gbp:t._riskGbp,
       pnl:(t.pnl!=null?t.pnl:t.netPL) }; }
+  /* Your other trades on this symbol and account, a day either side of this one (Nestor: London
+     trade, then NY - see both as the replay moves on). Not awaited: like the news, a slow query must
+     never hold up the chart. */
+  async function loadOthers(want){ var sb=sbc(); if(!sb||!want) return;
+    try{
+      var owner=null; try{ owner=new URLSearchParams(location.search).get('mv'); }catch(_){}
+      var u=owner||uid(); if(!u) return;
+      var q=sb.from('trades_inbox').select('ticket,direction,entry_price,exit_price,open_time,close_time,sl_pips,req_sl_pips,tp_pips,tp_r,login,unit_size')
+        .eq('token',u).eq('symbol',want.symbol)
+        .gte('open_time',new Date((want.entryTs-86400)*1000).toISOString())
+        .lte('open_time',new Date((want.exitTs+86400)*1000).toISOString());
+      if(want.login) q=q.eq('login',want.login);          // copied trades on other accounts would sit on top of this one
+      var r=await q.order('open_time',{ascending:true}).limit(60);
+      if(S!==want) return;
+      var seen={}, out=[];
+      ((r&&r.data)||[]).forEach(function(x){ if(!x||String(x.ticket)===want.ticket||seen[x.ticket]) return;
+        var o=otherOf(x); if(o){ seen[x.ticket]=1; out.push(o); } });
+      want.others=out; keyOthers();
+    }catch(_){} }
+  // Same reading of a row as the replayed trade gets in open(): stop and target from the synced sizes,
+  // a winner's exit standing in for a target that was never recorded.
+  function otherOf(x){
+    var n=function(v){ v=parseFloat(v); return isNaN(v)?0:v; };
+    var entry=n(x.entry_price), exit=n(x.exit_price), eTs=parseTs(x.open_time), xTs=parseTs(x.close_time);
+    if(!entry||!eTs) return null;
+    var dir=/^(sell|short)/i.test(String(x.direction||''))?-1:1, pip=(n(x.unit_size)>0)?n(x.unit_size):(S.pip||pipOf(entry));
+    var sl=n(x.sl_pips)||n(x.req_sl_pips), tpR=n(x.tp_r), tp=n(x.tp_pips)||(tpR&&sl?tpR*sl:0);
+    if(!tp&&exit&&dir*(exit-entry)>0) tp=Math.abs(exit-entry)/pip;
+    var SL=sl?entry-dir*sl*pip:0, TP=tp?entry+dir*tp*pip:0, risk=sl?Math.abs(entry-SL):0;
+    return { ticket:String(x.ticket), dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, entryTs:eTs, exitTs:xTs||eTs,
+             r:(exit&&risk)?dir*(exit-entry)/risk:null, eBI:-1, xBI:-1 }; }
+  // Bar positions on the timeframe on screen; a trade outside the loaded candles is simply not drawn.
+  function keyOthers(){ if(!S||!S.others||!S.bars.length) return;
+    var first=S.bars[0].time, last=S.bars[S.bars.length-1].time+S.tf*60;
+    S.others.forEach(function(o){
+      if(o.entryTs<first||o.entryTs>=last){ o.eBI=-1; o.xBI=-1; return; }
+      o.eBI=bidx(S.bars,o.entryTs); o.xBI=Math.max(o.eBI,bidx(S.bars,o.exitTs)); });
+    try{ series.setMarkers(markers()); }catch(_){} }
   async function fetchInbox(ticket){ var sb=sbc(); if(!sb) return null;
     // In MENTOR VIEW the rows belong to the member being viewed, not to the signed-in mentor.
     // Filtering on uid() asked for the mentor's own inbox, which of course holds nothing for that
@@ -69452,6 +69490,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         newsRows:null, newsMarks:null };
     // The checkboxes outlive a replay; make them say what this one will do.
     try{ el('strp-marks').checked=S.showMarks; el('strp-pos').checked=true; }catch(_){}
+    S.login=(row&&row.login!=null)?String(row.login):null; S.others=null;
+    loadOthers(S);
     // Axis badges: deliberately NOT awaited. The calendar is a garnish on the chart, so a slow or
     // failed query must never delay (or block) the replay itself; the badges simply appear a beat
     // later, and the continuous overlay loop paints them without needing a nudge.
@@ -69500,6 +69540,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     el('strp-scrub').max=String(S.bars.length-1);
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
     buildSpread(); buildMoves(); buildNewsMarks(); _newsCardReset();   // need S.bars + S.eBI, so they re-key on every timeframe change
+    keyOthers();
     render(true); updUR(); updDel();
     if(wasPlaying) play();
   }
@@ -69565,7 +69606,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function markers(){ var m=[], lng=S.dir>0, off=(S.showMarks===false);
     // entry = the trade's action (long=buy ↑ below, short=sell ↓ above); exit = the opposite.
     if(S.cursor-1>=S.eBI&&S.bars[S.eBI]) m.push({time:S.bars[S.eBI].time,position:lng?'belowBar':'aboveBar',color:off?_NOCOL:'#f472b6',shape:lng?'arrowUp':'arrowDown'});
-    if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:off?_NOCOL:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'}); return m; }
+    if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:off?_NOCOL:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'});
+    // Your other trades, violet in and grey out, as the replay reaches them.
+    (S.others||[]).forEach(function(o){ if(o.eBI<0) return; var l2=o.dir>0;
+      if(S.cursor-1>=o.eBI&&S.bars[o.eBI]) m.push({time:S.bars[o.eBI].time,position:l2?'belowBar':'aboveBar',color:off?_NOCOL:'#a78bfa',shape:l2?'arrowUp':'arrowDown'});
+      if(o.exit&&S.cursor-1>=o.xBI&&S.bars[o.xBI]) m.push({time:S.bars[o.xBI].time,position:l2?'aboveBar':'belowBar',color:off?_NOCOL:'#8a8894',shape:l2?'arrowDown':'arrowUp'}); });
+    m.sort(function(a,b){ return a.time-b.time; });
+    return m; }
   /* Spread readings are keyed by the EA's own M1 bar times. Those come off the same clock as
      open_time/close_time, which this replay already matches against candles successfully, so
      normally they line up exactly. But a broker whose server clock is offset from the candle
@@ -69907,6 +69954,30 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* Layout changed if the canvas had to be resized, so the cached box is stale. */
   function sizeO(){ _rcDrop();
  var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
+  /* Other trades: fainter zones, dashed lines, violet entry, and the R once closed - clearly not the
+     trade this replay is about. Clipped at the frontier exactly like drawPos, so nothing runs ahead of
+     the candles. */
+  function drawOthers(ctx,w){ (S.others||[]).forEach(function(o){ try{
+    if(o.eBI<0||S.cursor-1<o.eBI||!o.SL) return;
+    var yE=yOf(o.entry),yS=yOf(o.SL),yT=o.TP?yOf(o.TP):null; if(yE==null||yS==null) return;
+    var xE=xOf(o.eBI); if(xE==null) xE=0; var ex=S.cursor-1>=o.xBI, xR=ex?xOf(o.xBI):xOf(Math.min(S.cursor-1,S.bars.length-1)); if(xR==null) xR=w-2;
+    xE=Math.max(0,Math.min(w,xE)); xR=Math.max(0,Math.min(w,xR)); if(xR<xE){ var t=xE; xE=xR; xR=t; } var bw=Math.max(1,xR-xE);
+    ctx.save();
+    if(yT!=null){ ctx.fillStyle='rgba(78,205,139,0.07)'; ctx.fillRect(xE,Math.min(yE,yT),bw,Math.abs(yE-yT)); }
+    ctx.fillStyle='rgba(229,103,103,0.07)'; ctx.fillRect(xE,Math.min(yE,yS),bw,Math.abs(yE-yS));
+    var ln=function(y){ ctx.beginPath(); ctx.moveTo(xE,y); ctx.lineTo(xE+bw,y); ctx.stroke(); };
+    ctx.lineWidth=1; ctx.setLineDash([4,3]);
+    ctx.strokeStyle='rgba(229,103,103,0.8)'; ln(yS);
+    if(yT!=null){ ctx.strokeStyle='rgba(78,205,139,0.8)'; ln(yT); }
+    ctx.strokeStyle='#a78bfa'; ln(yE);
+    if(ex&&o.r!=null){ ctx.setLineDash([]); ctx.font='11px "AppNum","DM Mono",monospace'; ctx.textBaseline='bottom';
+      // On the entry line - always by the candles, unlike a stop that can be off-screen - on a dark
+      // pill so it reads over them.
+      var _tx=(o.r>=0?'+':'')+o.r.toFixed(2)+'R', _tw=ctx.measureText(_tx).width, _ty=Math.max(16,yE-5);
+      ctx.fillStyle='rgba(19,18,23,0.88)'; ctx.fillRect(xE+2,_ty-13,_tw+8,15);
+      ctx.fillStyle=o.r>0.02?'#4ECD8B':(o.r<-0.02?'#E56767':'#9aa0a6');
+      ctx.fillText(_tx, xE+6, _ty); }
+    ctx.restore(); }catch(_){} }); }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
     // Right end of the box/lines: the exit candle if exited, else the current frontier candle. Both are
     // real bar coordinates, which sit LEFT of the rightOffset gap where LWC overlays the price-scale
@@ -70274,7 +70345,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           ctx.fillStyle='#2a2833'; ctx.fillRect(S.cx.x-_tw/2-5,_ty-_tbh/2,_tw+10,_tbh);
           ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.fillText(_tt,S.cx.x,_ty); } }catch(_){}
       ctx.textAlign='left'; ctx.restore(); }
-    if(S.showPos) drawPos(ctx,w); S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
+    if(S.showPos){ drawOthers(ctx,w); drawPos(ctx,w); } S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
     if(S.snapPt){ var sq=P(S.snapPt); if(sq){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.fillStyle='rgba(244,114,182,0.9)'; ctx.lineWidth=1;
@@ -70396,6 +70467,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       S.pre=S.pre||{}; S.pre[tf]=(S.pre[tf]||0)+N;
       S.cursor+=N; S.eBI+=N; S.xBI+=N; S.rSI+=N; if(typeof S._last==='number') S._last+=N;
       buildNewsMarks();                                   // keyed by bar position
+      keyOthers();
       series.setData(S.bars.slice(0,S.cursor));
       try{ series.setMarkers(markers()); }catch(_){}
       if(r) ts.setVisibleLogicalRange({from:r.from+N,to:r.to+N});   // the same candles stay on screen
