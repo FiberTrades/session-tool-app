@@ -10590,10 +10590,24 @@ try {
       // click). The stored token rather than currentUser alone, so a signed-in user whose
       // profile is still loading - or whose token refresh is failing - still hears it.
       const _voiceMute = (function () { try { return _isDetachedWindow() || !_voiceSignedIn(); } catch (e) { return false; } })();
+      const _endedToday = endedSessionsToday();   // sessions you finished early today (by index)
       for (let i = 0; i < ss.length && !_voiceMute; i++) {
         const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
         if (crossed(sMins) && af.start.indexOf(i) === -1) { af.start.push(i); saveData(); const _c = _claimSessionAlert('start', sMins), _f = fresh(sMins); _logVoice('start', sMins, i, _c, ss, _f, nowMins); if (_c && _f) _fireSessionAlertShared('start', sMins); }
-        if (crossed(eMins) && af.end.indexOf(i) === -1) { af.end.push(i); saveData(); const _c = _claimSessionAlert('end', eMins), _f = fresh(eMins); _logVoice('end', eMins, i, _c, ss, _f, nowMins); if (_c && _f) _fireSessionAlertShared('end', eMins); }
+        if (crossed(eMins) && af.end.indexOf(i) === -1) {
+          af.end.push(i); saveData();
+          if (_endedToday.indexOf(i) !== -1) {
+            /* You pressed Finish session already: you said it was over, and "Session over." at the
+               scheduled time would only repeat it. Claimed here AND online without speaking - the
+               one case where claiming a silent alert is the point - so another window, or a device
+               that has not synced the finish yet, stays quiet too instead of saying it for us. */
+            _claimSessionAlert('end', eMins);
+            try { _claimSessionAlertCloud('end', eMins); } catch (e) {}
+            _logVoice('end', eMins, i, false, ss, fresh(eMins), nowMins, 'finished-early');
+          } else {
+            const _c = _claimSessionAlert('end', eMins), _f = fresh(eMins); _logVoice('end', eMins, i, _c, ss, _f, nowMins); if (_c && _f) _fireSessionAlertShared('end', eMins);
+          }
+        }
       }
       // Rule-of-the-week reminder, cadence-aware. Fires during ANY session window.
       let ruleFire = false;
@@ -10737,11 +10751,13 @@ try {
   //   • a stale tab on pre-fix code       -> one row here, and the other window logs nothing
   // Rolling 40 entries in localStorage (not the journal, so cloud sync can never rewrite it).
   // Read it with __stVoiceLog() in the console.
-  function _logVoice(kind, mins, idx, claimed, ss, fresh, nowMins) {
+  function _logVoice(kind, mins, idx, claimed, ss, fresh, nowMins, note) {
     try {
       const row = {
         at: new Date().toISOString(),
         kind: kind, mins: mins, sessionIdx: idx, claimed: !!claimed,
+        // Why a boundary was deliberately left silent ('finished-early'), so it never reads as a miss.
+        note: note || null,
         // How late the crossing was noticed, and whether that lateness silenced it.
         lateMins: (typeof nowMins === 'number') ? (nowMins - mins) : null,
         spoke: !!claimed && fresh !== false,
