@@ -1469,6 +1469,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-nudge-list { list-style: none; margin: 0 0 12px; padding: 0; display: flex; flex-direction: column; gap: 8px; }
   .st-nudge-list li { font-family: 'Fraunces', Georgia, serif; font-size: 15px; line-height: 1.4; color: var(--text); text-wrap: pretty; }
   .st-nudge-list li + li { color: var(--text-mid); }
+  /* Calendar day view: the day's nudges and what happened after each (window.__stNudge.dayHtml). */
+  .dn-count { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: #e8cf63; margin-left: 6px; font-variant-numeric: tabular-nums; }
+  .dn-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .dn-item { display: flex; flex-direction: column; gap: 3px; font-size: 13px; line-height: 1.45; color: var(--text); }
+  .dn-out { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); font-variant-numeric: tabular-nums; }
+  .dn-out.good { color: var(--good); }
+  .dn-out.bad { color: var(--bad); }
   .st-nudge-at { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.04em; color: var(--text-dim); font-variant-numeric: tabular-nums; margin-right: 8px; }
   .st-nudge-ok { display: block; margin-left: auto; background: transparent; color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 7px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
   .st-nudge-ok:hover { border-color: var(--text-mid); }
@@ -7430,6 +7437,17 @@ try {
       'nudge.ea_trades_say': 'You raised your trade limit.',
       'nudge.ea_trades_off_say': 'You turned off your trade limit.',
       'nudge.ea_sl_say': 'You widened your stop limit.',
+      'nudge.day_title': 'Nudges',
+      'nudge.day_sub': 'What the app caught while you traded this day, and what happened next.',
+      'nudge.out_won': 'Won',
+      'nudge.out_lost': 'Lost',
+      'nudge.out_be': 'Break-even',
+      'nudge.out_open': 'Still open',
+      'nudge.out_none': 'Not in your journal yet',
+      'nudge.out_stopped': 'You stopped there',
+      'nudge.out_no_after': 'No trades after it',
+      'nudge.out_after_one': 'Then 1 more trade: {NET}',
+      'nudge.out_after_many': 'Then {N} more trades: {NET}',
       'settings.reopen_hint': 'Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again \u2014 as often as you like (you must be inside your session Times above).',
       'settings.reopen_done': 'Session Live reopened.', 'settings.reopen_outside': 'Reopened \u2014 but you\u2019re outside your session window. Set your session Times to include now.',
       'settings.mt5_factor_label': 'Copier size factor',
@@ -9044,6 +9062,17 @@ try {
       'nudge.ea_trades_say': 'Has subido tu límite de operaciones.',
       'nudge.ea_trades_off_say': 'Has desactivado tu límite de operaciones.',
       'nudge.ea_sl_say': 'Has ampliado tu límite de stop.',
+      'nudge.day_title': 'Avisos',
+      'nudge.day_sub': 'Lo que la app detectó mientras operabas este día y lo que pasó después.',
+      'nudge.out_won': 'Ganada',
+      'nudge.out_lost': 'Perdida',
+      'nudge.out_be': 'Break-even',
+      'nudge.out_open': 'Sigue abierta',
+      'nudge.out_none': 'Aún no está en tu diario',
+      'nudge.out_stopped': 'Paraste ahí',
+      'nudge.out_no_after': 'Ninguna operación después',
+      'nudge.out_after_one': 'Después, 1 operación más: {NET}',
+      'nudge.out_after_many': 'Después, {N} operaciones más: {NET}',
       'settings.reopen_hint': 'Al finalizar una sesi\u00f3n, la pantalla en vivo se oculta el resto del d\u00eda. Re\u00e1brela para volver a usar Sesi\u00f3n en Vivo \u2014 tantas veces como quieras (debes estar dentro de tus Horas de sesi\u00f3n de arriba).',
       'settings.reopen_done': 'Sesi\u00f3n en vivo reabierta.', 'settings.reopen_outside': 'Reabierta \u2014 pero est\u00e1s fuera de tu ventana de sesi\u00f3n. Ajusta tus Horas para incluir la hora actual.',
       'settings.mt5_factor_label': 'Factor de tama\u00f1o del copiador',
@@ -15194,12 +15223,119 @@ try {
       if (smp) smp.addEventListener('click', sample);
     }
     window.__stNudgeSettingsLoad = settingsLoad;
+
+    // ---- History: a day's nudges, what happened after each, and a summary for the AI ----
+    // A nudge is keyed rule:ticket; the ticket is the MT5 position id an imported trade carries as
+    // mt5Ticket, so every trade-linked nudge can find its trade in the journal.
+    function journalTrades() {
+      var list = [];
+      try { list = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades().slice() : []; } catch (e) {}
+      try { if (data && data.review && Array.isArray(data.review.trades)) list = list.concat(data.review.trades); } catch (e) {}
+      return list.filter(function (tr) { return tr && tr.result; });
+    }
+    function ticketMap(list) {
+      var m = {};
+      list.forEach(function (tr) { var tk = tr.mt5Ticket || tr.position; if (tk != null && tk !== '') m[String(tk)] = tr; });
+      return m;
+    }
+    function tradeDay(tr) { var d = new Date(tr && tr.date); return isNaN(d.getTime()) ? '' : localDay(d); }
+    function minsOfHm(v) { var p = String(v || '').split(':'); return (parseInt(p[0], 10) || 0) * 60 + (parseInt(p[1], 10) || 0); }
+    function outOf(tr) {
+      var c = 1; try { c = tradeCopies(tr); } catch (e) {}
+      var net = 0, r = 0;
+      try { net = tradeNetPL(tr) * c; } catch (e) {}
+      try { r = tradeRforMath(tr); } catch (e) {}
+      return { result: tr.result, net: net, r: r };
+    }
+    // What happened after a nudge: { kind: 'trade', out } for the trade it was about; { kind:
+    // 'after', n, net } for the trades that followed it that day; 'open' / 'none' otherwise.
+    function outcome(key, e, day, list, byT) {
+      var i = key.indexOf(':'), rule = key.slice(0, i), id = key.slice(i + 1);
+      var dayTrades = list.filter(function (tr) { return tradeDay(tr) === day; });
+      function after(fromMins, skip) {
+        var later = dayTrades.filter(function (tr) { return String(tr.mt5Ticket || tr.position || '') !== skip && tr.entryTime && minsOfHm(tr.entryTime) >= fromMins; });
+        var net = 0; later.forEach(function (tr) { net += outOf(tr).net; });
+        return { kind: 'after', n: later.length, net: net, ea: id.charAt(0) === 'L' };
+      }
+      if (id.charAt(0) === 'L') return after(minsOfHm(e.at), '');                    // loosened the EA
+      if (rule === 'streak') {                                                         // a run of losses
+        var me = byT[id];
+        return after(me ? minsOfHm(me.exitTime || me.entryTime) + 1 : minsOfHm(e.at), id);
+      }
+      if (byT[id]) return { kind: 'trade', out: outOf(byT[id]) };
+      try { if (window.__stLive && window.__stLive.isOpen(id)) return { kind: 'open' }; } catch (e2) {}
+      return { kind: 'none' };
+    }
+    function signedR(r) { return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(2) + 'R'; }
+    function outText(o) {
+      if (!o) return { text: '', cls: '' };
+      if (o.kind === 'trade') {
+        var w = o.out.result === 'Win' ? t('nudge.out_won') : o.out.result === 'Lose' ? t('nudge.out_lost') : t('nudge.out_be');
+        return { text: w + ' ' + fmtMoney(o.out.net) + ' (' + signedR(o.out.r) + ')', cls: o.out.net > 0 ? 'good' : o.out.net < 0 ? 'bad' : '' };
+      }
+      if (o.kind === 'after') {
+        if (!o.n) return { text: t(o.ea ? 'nudge.out_no_after' : 'nudge.out_stopped'), cls: 'good' };
+        var tx = (o.n === 1 ? t('nudge.out_after_one') : t('nudge.out_after_many').replace('{N}', String(o.n))).replace('{NET}', fmtMoney(o.net));
+        return { text: tx, cls: o.net > 0 ? 'good' : o.net < 0 ? 'bad' : '' };
+      }
+      if (o.kind === 'open') return { text: t('nudge.out_open'), cls: '' };
+      return { text: t('nudge.out_none'), cls: '' };
+    }
+    function escH(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
+    // Calendar -> a day: the nudges of that day, oldest first, each with what happened after it.
+    function dayHtml(day) {
+      try {
+        var d = data && data.nudgeLog && data.nudgeLog[day]; if (!d) return '';
+        var keys = Object.keys(d).filter(function (k) { return k.indexOf('sample:') !== 0; });
+        if (!keys.length) return '';
+        keys.sort(function (a, b) { return String(d[a].at).localeCompare(String(d[b].at)); });
+        var list = journalTrades(), byT = ticketMap(list);
+        var items = keys.map(function (k) {
+          var e = d[k], o = outText(outcome(k, e, day, list, byT));
+          return '<li class="dn-item"><div><span class="st-nudge-at">' + escH(e.at) + '</span>' + escH(e.text) + '</div>'
+               + (o.text ? '<div class="dn-out ' + o.cls + '">→ ' + escH(o.text) + '</div>' : '') + '</li>';
+        });
+        return '<div class="reflect-block" style="margin-top:8px;"><div class="reflect-header">' + escH(t('nudge.day_title'))
+             + '<span class="dn-count">' + keys.length + '</span></div><div class="reflect-subhead">' + escH(t('nudge.day_sub'))
+             + '</div><ul class="dn-list">' + items.join('') + '</ul></div>';
+      } catch (e) { return ''; }
+    }
+    // For the AI's data pack (chat questions only): 30 days, compact. afterNudge counts each trade
+    // taken despite a trade-linked nudge once.
+    function aiPack() {
+      try {
+        var log = (data && data.nudgeLog) || {}, list = journalTrades(), byT = ticketMap(list);
+        var cutoff = localDay(new Date(Date.now() - 30 * 864e5));
+        var counts = {}, recent = [], seen = {}, after = { n: 0, wins: 0, losses: 0, bes: 0, netMoney: 0, netR: 0 };
+        Object.keys(log).filter(function (day) { return day >= cutoff; }).sort().forEach(function (day) {
+          var d = log[day] || {};
+          Object.keys(d).forEach(function (k) {
+            if (k.indexOf('sample:') === 0) return;
+            var e = d[k], rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1);
+            counts[rule] = (counts[rule] || 0) + 1;
+            var o = outcome(k, e, day, list, byT);
+            recent.push({ d: day, t: e.at, rule: rule, out: outText(o).text || null });
+            if (o.kind === 'trade' && !seen[id]) {
+              seen[id] = 1; after.n++;
+              if (o.out.result === 'Win') after.wins++; else if (o.out.result === 'Lose') after.losses++; else after.bes++;
+              after.netMoney += o.out.net; after.netR += o.out.r;
+            }
+          });
+        });
+        var ea = [];
+        try { if (window.__stEA) window.__stEA.log().slice(-8).forEach(function (c) { ea.push({ when: String(c.changed_at).slice(0, 16).replace('T', ' '), what: window.__stEA.describe(c) }); }); } catch (e) {}
+        if (!recent.length && !ea.length) return null;
+        recent.sort(function (a, b) { return (a.d + a.t).localeCompare(b.d + b.t); });
+        after.netMoney = Math.round(after.netMoney * 100) / 100; after.netR = Math.round(after.netR * 100) / 100;
+        return { period: 'last 30 days', counts: counts, afterNudge: after.n ? after : null, recent: recent.slice(-12), eaChanges: ea };
+      } catch (e) { return null; }
+    }
     window.__stNudgeDiag = function () {
       return { cfg: cfg(), eligible: eligible(), day: readJ(DAY, null), fired: readJ(FIRED, null),
                ticketsSeen: Object.keys(readJ(SEEN, {})).length,
                logToday: (data && data.nudgeLog && data.nudgeLog[localDay()]) || null };
     };
-    return { observe: observe, markOld: markOld, ack: ack, sample: sample, eaChanged: eaChanged };
+    return { observe: observe, markOld: markOld, ack: ack, sample: sample, eaChanged: eaChanged, dayHtml: dayHtml, aiPack: aiPack };
   })();
 
   /* ===== The EA's settings (EA 8.6+) =====
@@ -15310,7 +15446,16 @@ try {
       render();
       try { if (window.__stNudge) window.__stNudge.eaChanged(r); } catch (e) {}
     }
-    return { apply: apply, logged: logged, render: render, fmtRisk: fmtRisk, fmtDist: fmtDist,
+    // "Risk per trade: £500.00 -> £800.00; Max trades a day: 3 -> Off" - for the AI's data pack.
+    function describe(c) {
+      var out = [];
+      GROUPS.forEach(function (g) {
+        if (!(c.changed || []).some(function (k) { return g.keys.indexOf(k) !== -1; })) return;
+        out.push(t(g.label) + ': ' + g.fmt(c.before || {}) + ' \u2192 ' + g.fmt(c.after || {}));
+      });
+      return out.join('; ');
+    }
+    return { apply: apply, logged: logged, render: render, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe,
              rows: function () { return rows; }, log: function () { return log; } };
   })();
 
@@ -26655,6 +26800,8 @@ try {
         '</div>';
     }
     host.innerHTML =
+      // The day's live nudges and what happened after each (empty when there were none).
+      ((window.__stNudge && window.__stNudge.dayHtml) ? window.__stNudge.dayHtml(isoKey) : '')+
       '<div class="reflect-block" style="margin-top:8px;">'+
         '<div class="reflect-header">'+esc(t('modal.day_notes')||'Daily Notes')+'</div>'+
         '<div class="reflect-subhead">'+esc(t('modal.day_notes_sub')||'Notes, charts and anything worth keeping from this day.')+'</div>'+
@@ -40020,6 +40167,8 @@ try {
           byWeekday: byDow, bySymbol: bySym, bySession: bySess, bySetup: bySetup,
           // Setups that met their rules but were NOT taken, logged in the weekly review.
           setupsNotTaken: (window.__stOos && window.__stOos.aiPack) ? window.__stOos.aiPack() : null,
+          // Live behaviour nudges of the last 30 days, with what happened after each (compact).
+          nudges: (window.__stNudge && window.__stNudge.aiPack) ? window.__stNudge.aiPack() : null,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: (function () {
               /* The account's own rules, not data.settings.riskRules - the pre-picker global
