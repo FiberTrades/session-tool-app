@@ -8024,6 +8024,8 @@ try {
       'commit.weekoff_away': "Time off — you're away this week, so nothing is graded.",
       'commit.away_note': "Time off: {DAYS} — not counted.",
       'timeoff.label': "Time off",
+      'week.replay': "Replay the week",
+      'week.replay_hint': "Starts at the week's first trade — press Play to watch every trade that week.",
       'timeoff.hint': "Away for a while? Add the dates. Those days aren't trading days: no greetings, alerts or live session push you to trade, and nothing is graded. Turn up anyway and that day counts as usual.",
       'timeoff.to': "to",
       'timeoff.add': "Add time off",
@@ -9724,6 +9726,8 @@ try {
       'commit.weekoff_away': "Tiempo libre — estás fuera esta semana, así que no se evalúa nada.",
       'commit.away_note': "Tiempo libre: {DAYS} — no cuenta.",
       'timeoff.label': "Tiempo libre",
+      'week.replay': "Repetir la semana",
+      'week.replay_hint': "Empieza en la primera operación de la semana — pulsa Reproducir para ver todas las operaciones de la semana.",
       'timeoff.hint': "¿Te vas unos días? Añade las fechas. Esos días no son de trading: ni saludos, ni alertas, ni la sesión en vivo te empujarán a operar, y no se evalúa nada. Si aun así te conectas, ese día cuenta como siempre.",
       'timeoff.to': "a",
       'timeoff.add': "Añadir tiempo libre",
@@ -30490,9 +30494,49 @@ try {
     currentReview = { kind: 'weekly', start: weekStart, end: weekEnd, key: weekKey, titleText };
     const stats = computePeriodStats(weekStart, weekEnd);
     fillReviewModalBody(stats, titleText, 'week');
+    try { renderWeekReplayButtons(weekStart, weekEnd); } catch (e) {}
     const existing = window.__stRev.find(weekKey) || {};
     renderWeeklyReflection(weekStart, weekEnd, existing);
     document.getElementById('review-modal-bg').classList.add('show');
+  }
+
+  /* "Replay the week" (Nestor): the week's first MT5-synced trade, with the candles loaded to the end of
+     the week - press Play and every trade that week comes up in turn, each taking over the header, P&L
+     and scale labels as the replay reaches it. One button per symbol, since a chart shows one. */
+  function renderWeekReplayButtons(weekStart, weekEnd) {
+    const body = document.getElementById('review-modal-body');
+    if (!body || !window.__stReplay || typeof window.__stReplay.open !== 'function') return;
+    const endExc = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
+    const cmp = (typeof _tradeChronoCompare === 'function') ? _tradeChronoCompare : function (a, b) { return new Date(a.date) - new Date(b.date); };
+    const trades = (filterByScope((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []) || [])
+      .filter(function (tr) { const d = new Date(tr.date); return d >= weekStart && d < endExc && window.__stReplay.ticketOf(tr); })
+      .sort(cmp);
+    if (!trades.length) return;
+    const first = {}; trades.forEach(function (tr) { const k = String(tr.symbol || '').toUpperCase(); if (!first[k]) first[k] = tr; });
+    const syms = Object.keys(first);
+    const esc = function (x) { return String(x).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:0 0 18px;';
+    syms.forEach(function (k) {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'settings-btn';
+      b.style.cssText = 'display:inline-flex;align-items:center;gap:7px;border-color:#f472b6;color:#f472b6;';
+      b.title = t('week.replay_hint');
+      b.innerHTML = '<svg viewBox="0 0 16 16" width="11" height="11" aria-hidden="true"><path d="M5.5 3.7v8.6L12.5 8z" fill="currentColor"/></svg>'
+        + esc(t('week.replay')) + (syms.length > 1 ? ' \u00b7 ' + esc(k) : '');
+      b.addEventListener('click', function () {
+        // Closing the replay brings this review back, the way the trade editor's Replay does.
+        window.__stReplayReturn = function () { try { openWeeklyReviewModal(weekStart, weekEnd); } catch (e) {} };
+        document.getElementById('review-modal-bg').classList.remove('show');
+        window.__stReplay.open(first[k], { untilTs: Math.floor(endExc.getTime() / 1000) });
+      });
+      row.appendChild(b);
+    });
+    const hint = document.createElement('span');
+    hint.style.cssText = 'font-size:11px;color:var(--text-dim);line-height:1.5;';
+    hint.textContent = t('week.replay_hint');
+    row.appendChild(hint);
+    body.insertBefore(row, body.firstChild);
   }
 
   function openMonthlyReviewModal(year, month) {
@@ -69283,44 +69327,80 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       entry_price:ep, exit_price:(xp>0?xp:0), open_time:ot, close_time:ct,
       sl_pips:t.slPips, req_sl_pips:(t.reqSlPips||t._reqSlPips), tp_pips:t._tpPips, tp_r:t._tpR, risk_gbp:t._riskGbp,
       pnl:(t.pnl!=null?t.pnl:t.netPL) }; }
-  /* Your other trades on this symbol and account, a day either side of this one (Nestor: London
-     trade, then NY - see both as the replay moves on). Not awaited: like the news, a slow query must
-     never hold up the chart. */
+  /* Every trade you took on this symbol and account (Nestor: see the NY trade while replaying the
+     London one - and scroll back to past days, weeks, months). Fetched once, not awaited: like the
+     news, a slow query must never hold up the chart. */
   async function loadOthers(want){ var sb=sbc(); if(!sb||!want) return;
     try{
       var owner=null; try{ owner=new URLSearchParams(location.search).get('mv'); }catch(_){}
       var u=owner||uid(); if(!u) return;
-      var q=sb.from('trades_inbox').select('ticket,direction,entry_price,exit_price,open_time,close_time,sl_pips,req_sl_pips,tp_pips,tp_r,login,unit_size')
-        .eq('token',u).eq('symbol',want.symbol)
-        .gte('open_time',new Date((want.entryTs-86400)*1000).toISOString())
-        .lte('open_time',new Date((want.exitTs+86400)*1000).toISOString());
-      if(want.login) q=q.eq('login',want.login);          // copied trades on other accounts would sit on top of this one
-      var r=await q.order('open_time',{ascending:true}).limit(60);
+      var q=sb.from('trades_inbox').select('ticket,direction,entry_price,exit_price,open_time,close_time,sl_pips,req_sl_pips,tp_pips,tp_r,login,unit_size,dist_unit,risk_gbp,pnl,sl_moves,tp_moves')
+        .eq('token',u).eq('symbol',want.symbol);
+      if(want.login) q=q.eq('login',want.login);          // copied trades on other accounts would sit on top of these
+      var r=await q.order('open_time',{ascending:true}).limit(2000);
       if(S!==want) return;
       var seen={}, out=[];
       ((r&&r.data)||[]).forEach(function(x){ if(!x||String(x.ticket)===want.ticket||seen[x.ticket]) return;
         var o=otherOf(x); if(o){ seen[x.ticket]=1; out.push(o); } });
-      want.others=out; keyOthers();
+      want.trades=[want.T0].concat(out); keyOthers();
     }catch(_){} }
-  // Same reading of a row as the replayed trade gets in open(): stop and target from the synced sizes,
-  // a winner's exit standing in for a target that was never recorded.
+  // A trade read exactly the way open() reads the one you opened, so it can take over the header, the
+  // P&L panel and the price-scale labels when it comes into focus.
   function otherOf(x){
     var n=function(v){ v=parseFloat(v); return isNaN(v)?0:v; };
     var entry=n(x.entry_price), exit=n(x.exit_price), eTs=parseTs(x.open_time), xTs=parseTs(x.close_time);
     if(!entry||!eTs) return null;
-    var dir=/^(sell|short)/i.test(String(x.direction||''))?-1:1, pip=(n(x.unit_size)>0)?n(x.unit_size):(S.pip||pipOf(entry));
+    var dir=/^(sell|short)/i.test(String(x.direction||''))?-1:1;
+    var du=x.dist_unit||window.__stDU.symUnit(S.symbol); if(du!=='pips'&&du!=='points'&&du!=='ticks') du='pips';
+    var pip=(n(x.unit_size)>0)?n(x.unit_size):(du==='pips'?pipOf(entry):1);
     var sl=n(x.sl_pips)||n(x.req_sl_pips), tpR=n(x.tp_r), tp=n(x.tp_pips)||(tpR&&sl?tpR*sl:0);
     if(!tp&&exit&&dir*(exit-entry)>0) tp=Math.abs(exit-entry)/pip;
-    var SL=sl?entry-dir*sl*pip:0, TP=tp?entry+dir*tp*pip:0, risk=sl?Math.abs(entry-SL):0;
-    return { ticket:String(x.ticket), dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, entryTs:eTs, exitTs:xTs||eTs,
-             r:(exit&&risk)?dir*(exit-entry)/risk:null, eBI:-1, xBI:-1 }; }
-  // Bar positions on the timeframe on screen; a trade outside the loaded candles is simply not drawn.
-  function keyOthers(){ if(!S||!S.others||!S.bars.length) return;
+    var SL=sl?entry-dir*sl*pip:0, TP=tp?entry+dir*tp*pip:0;
+    var riskDist=sl?Math.abs(entry-SL):(Math.abs(entry-exit)||pip*10);
+    var pairs=function(v){ try{ var a=v; if(typeof a==='string') a=JSON.parse(a); return (Array.isArray(a)&&a.length)?a:null; }catch(_){ return null; } };
+    return { ticket:String(x.ticket), dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip,
+             pa:window.__stDU.lbl(du,'a'), pU:window.__stDU.lbl(du,'U'), riskDist:riskDist, riskGbp:n(x.risk_gbp),
+             slPips:sl, tpPips:tp, entryTs:eTs, exitTs:xTs||eTs, slMovesRaw:pairs(x.sl_moves), tpMovesRaw:pairs(x.tp_moves),
+             pnl:(x.pnl!=null?parseFloat(x.pnl):NaN), netR:(exit?dir*(exit-entry)/riskDist:null), eBI:-1, xBI:-1 }; }
+  // Bar positions on the timeframe on screen (a trade outside the loaded candles is skipped until
+  // scrolling brings its candles in), then which trade is in focus.
+  function keyOthers(){ if(!S||!S.bars.length) return;
     var first=S.bars[0].time, last=S.bars[S.bars.length-1].time+S.tf*60;
-    S.others.forEach(function(o){
+    (S.trades||[]).forEach(function(o){
       if(o.entryTs<first||o.entryTs>=last){ o.eBI=-1; o.xBI=-1; return; }
       o.eBI=bidx(S.bars,o.entryTs); o.xBI=Math.max(o.eBI,bidx(S.bars,o.exitTs)); });
+    applyFocus(focusFor());
     try{ series.setMarkers(markers()); }catch(_){} }
+  /* FOCUS: the trade whose entry is the latest at or before the replay's current candle - so moving
+     forward past the NY entry hands everything to the NY trade, and moving back before it hands it to
+     whatever came before. Before any trade has started, the one you opened. */
+  function focusFor(){ var cur=S.cursor-1, best=null;
+    (S.trades||[]).forEach(function(t){ if(t.eBI<0||t.eBI>cur) return; if(!best||t.entryTs>best.entryTs) best=t; });
+    return best||S.T0||null; }
+  // Everything the replayed trade owns is read from S by the existing code (P&L panel, price lines,
+  // stop/target moves, the box), so focus = copy that trade's fields into S.
+  var FOCUS_KEYS=['dir','entry','exit','SL','TP','pip','pa','pU','riskDist','riskGbp','slPips','tpPips','entryTs','exitTs','slMovesRaw','tpMovesRaw'];
+  function applyFocus(t){ if(!S||!t) return;
+    var changed=(S.focus!==t); S.focus=t;
+    if(t.eBI>=0){ S.eBI=t.eBI; S.xBI=t.xBI; }
+    if(!changed) return;
+    FOCUS_KEYS.forEach(function(k){ S[k]=t[k]; });
+    try{ buildMoves(); }catch(_){}
+    try{ [S._lnE,S.lnSL,S.lnTP].forEach(function(pl){ if(pl) series.removePriceLine(pl); }); }catch(_){}
+    S._lnE=null; S.lnSL=null; S.lnTP=null; S._tlOn=false;
+    try{ syncTradeLines(); styleTradeLines(); }catch(_){}
+    paintHeader(t); }
+  // The header, for whichever trade is in focus - word for word what open() writes for the opened one.
+  function paintHeader(t){ try{
+    var sideEl=el('strp-side'); sideEl.className='strp-side '+(t.dir>0?'long':'short'); sideEl.textContent=(t.dir>0?L('↑ Long','↑ Largo'):L('↓ Short','↓ Corto'));
+    var d=new Date(t.entryTs*1000), p=function(n){ return String(n).padStart(2,'0'); };
+    el('strp-date').textContent=d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' · '+_hm(t.entryTs)+':'+p(d.getSeconds())+' '+_tzLabel();
+    var netR=t.exit?t.dir*(t.exit-t.entry)/t.riskDist:0;
+    var hr=el('strp-hr'); hr.className='strp-r '+(netR>0.02?'win':(netR<-0.02?'lose':'be')); hr.textContent=(netR>=0?'+':'')+netR.toFixed(2)+'R';
+    var pnl=t.pnl, pips=t.exit?(t.exit-t.entry)/t.pip*t.dir:0;
+    var pnlTxt=(pnl==null||isNaN(pnl))?'':((((typeof fmtMoney==='function')?fmtMoney(pnl):((pnl>=0?'+':'')+'£'+Math.round(pnl))))+' · ');
+    el('strp-hp').textContent=pnlTxt+(pips>=0?'+':'')+pips.toFixed(1)+(t.pa||'p');
+  }catch(_){} }
   async function fetchInbox(ticket){ var sb=sbc(); if(!sb) return null;
     // In MENTOR VIEW the rows belong to the member being viewed, not to the signed-in mentor.
     // Filtering on uid() asked for the mentor's own inbox, which of course holds nothing for that
@@ -69421,7 +69501,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // Return to wherever the replay was opened from (e.g. the edit-trade modal) instead of the main tab.
     try{ var _cb=window.__stReplayReturn; window.__stReplayReturn=null; if(typeof _cb==='function') _cb(); }catch(_){} }
 
-  async function open(trade){
+  async function open(trade, opts){
     var mb=el('strp-modal-bg'); var _mob=(window.innerWidth||document.documentElement.clientWidth||0)<=760; mb.classList.toggle('strp-full',_mob); try{ mb.querySelector('.strp-card').classList.remove('strp-chartmax'); }catch(_){} mb.classList.add('show'); localize();
     el('strp-tb').style.display='none'; el('strp-ct').style.display='none'; el('strp-live').style.display='none'; el('strp-spread').style.display='none'; closeNews();
     el('strp-chart').innerHTML='<div class="strp-state" id="strp-state">'+L('Loading trade…','Cargando operación…')+'</div>';
@@ -69490,7 +69570,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         newsRows:null, newsMarks:null };
     // The checkboxes outlive a replay; make them say what this one will do.
     try{ el('strp-marks').checked=S.showMarks; el('strp-pos').checked=true; }catch(_){}
-    S.login=(row&&row.login!=null)?String(row.login):null; S.others=null;
+    S.login=(row&&row.login!=null)?String(row.login):null;
+    S.untilTs=(opts&&opts.untilTs>0)?opts.untilTs:0;   // "Replay the week": candles to the end of the week
+    // The opened trade as a trade like any other, so focus can hand the chart to another and back.
+    S.T0={ ticket:S.ticket, dir:S.dir, entry:S.entry, exit:S.exit, SL:S.SL, TP:S.TP, pip:S.pip, pa:S.pa, pU:S.pU,
+           riskDist:S.riskDist, riskGbp:S.riskGbp, slPips:S.slPips, tpPips:S.tpPips, entryTs:S.entryTs, exitTs:S.exitTs,
+           slMovesRaw:S.slMovesRaw, tpMovesRaw:S.tpMovesRaw, pnl:parseFloat(row&&row.pnl), netR:netR, eBI:-1, xBI:-1, main:true };
+    S.focus=S.T0; S.trades=[S.T0];
     loadOthers(S);
     // Axis badges: deliberately NOT awaited. The calendar is a garnish on the chart, so a slow or
     // failed query must never delay (or block) the replay itself; the badges simply appear a beat
@@ -69518,9 +69604,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var _eod=Math.floor(S.exitTs/86400)*86400+86400;
     var bars;
     if(tf===TF_W1){
-      bars=toWeekly(await fetchCandles(S.symbol,1440,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod)));
+      bars=toWeekly(await fetchCandles(S.symbol,1440,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod,S.untilTs||0)));
       if(bars.length>1) bars.shift();   // the window can start mid-week: never show a cut-off first week
-    } else bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod));
+    } else bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod,S.untilTs||0));
     S.cache[tf]=bars; return bars;
   }
   function bidx(bars,ts){ var x=0; for(var k=0;k<bars.length;k++){ if(bars[k].time<=ts) x=k; else break; } return x; }
@@ -69603,15 +69689,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* Off = the same markers, fully transparent. Removing them changed the chart's vertical fit (LWC
      keeps a margin for markers above/below the bars), which read as the chart jumping (Nestor). */
   var _NOCOL='rgba(0,0,0,0)';
-  function markers(){ var m=[], lng=S.dir>0, off=(S.showMarks===false);
-    // entry = the trade's action (long=buy ↑ below, short=sell ↓ above); exit = the opposite.
-    if(S.cursor-1>=S.eBI&&S.bars[S.eBI]) m.push({time:S.bars[S.eBI].time,position:lng?'belowBar':'aboveBar',color:off?_NOCOL:'#f472b6',shape:lng?'arrowUp':'arrowDown'});
-    if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:off?_NOCOL:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'});
-    // Your other trades, violet in and grey out, as the replay reaches them.
-    (S.others||[]).forEach(function(o){ if(o.eBI<0) return; var l2=o.dir>0;
-      if(S.cursor-1>=o.eBI&&S.bars[o.eBI]) m.push({time:S.bars[o.eBI].time,position:l2?'belowBar':'aboveBar',color:off?_NOCOL:'#a78bfa',shape:l2?'arrowUp':'arrowDown'});
-      if(o.exit&&S.cursor-1>=o.xBI&&S.bars[o.xBI]) m.push({time:S.bars[o.xBI].time,position:l2?'aboveBar':'belowBar',color:off?_NOCOL:'#8a8894',shape:l2?'arrowDown':'arrowUp'}); });
-    m.sort(function(a,b){ return a.time-b.time; });
+  function markers(){ var m=[], off=(S.showMarks===false);
+    // Every trade the same way (Nestor: "not a faint version"): entry = the trade's action (long = buy
+    // arrow below, short = sell above), exit = the opposite. Only once the replay has reached them.
+    var list=(S.trades&&S.trades.length)?S.trades:[{dir:S.dir,eBI:S.eBI,xBI:S.xBI,exit:S.exit,main:true}];
+    list.forEach(function(t){ if(t.eBI<0) return; var lg=t.dir>0;
+      if(S.cursor-1>=t.eBI&&S.bars[t.eBI]) m.push({time:S.bars[t.eBI].time,position:lg?'belowBar':'aboveBar',color:off?_NOCOL:'#f472b6',shape:lg?'arrowUp':'arrowDown'});
+      if((t.exit||t.main)&&S.cursor-1>=t.xBI&&S.bars[t.xBI]) m.push({time:S.bars[t.xBI].time,position:lg?'aboveBar':'belowBar',color:off?_NOCOL:'#c0c0c0',shape:lg?'arrowDown':'arrowUp'}); });
+    m.sort(function(a,b){ return a.time-b.time; });   // Lightweight Charts wants them in time order
     return m; }
   /* Spread readings are keyed by the EA's own M1 bar times. Those come off the same clock as
      open_time/close_time, which this replay already matches against candles successfully, so
@@ -69623,7 +69708,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function buildSpread(){
     S.spread=null;
     if(!S||!S.spreadRaw||!S.spreadRaw.length||!S.bars.length) return;
-    var off=0, eb=S.bars[S.eBI]&&S.bars[S.eBI].time;
+    var _e0=S.T0?bidx(S.bars,S.T0.entryTs):S.eBI;   // the EA records the spread for the OPENED trade
+    var off=0, eb=S.bars[_e0]&&S.bars[_e0].time;
     if(eb){ var d=S.spreadRaw[0][0]-eb; if(Math.abs(d)>=1800) off=d; }
     var m={}; for(var i=0;i<S.spreadRaw.length;i++){ m[S.spreadRaw[i][0]-off]=S.spreadRaw[i][1]; }
     S.spread=m; S.tOff=off;
@@ -69954,29 +70040,26 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* Layout changed if the canvas had to be resized, so the cached box is stale. */
   function sizeO(){ _rcDrop();
  var w=chartEl.clientWidth,h=chartEl.clientHeight,dpr=window.devicePixelRatio||1; var W=Math.round(w*dpr),H=Math.round(h*dpr); if(overlay.width!==W){ overlay.width=W; overlay.style.width=w+'px'; } if(overlay.height!==H){ overlay.height=H; overlay.style.height=h+'px'; } var c=overlay.getContext('2d'); c.setTransform(dpr,0,0,dpr,0,0); return {ctx:c,w:w,h:h}; }
-  /* Other trades: fainter zones, dashed lines, violet entry, and the R once closed - clearly not the
-     trade this replay is about. Clipped at the frontier exactly like drawPos, so nothing runs ahead of
-     the candles. */
-  function drawOthers(ctx,w){ (S.others||[]).forEach(function(o){ try{
+  /* The trades not in focus, drawn exactly like the one that is (drawPos): same zones, same solid
+     lines. A closed one also shows its R on a small pill at its entry, since the header and P&L panel
+     speak for the trade in focus. Clipped at the frontier like drawPos, so nothing runs ahead. */
+  function drawOthers(ctx,w){ (S.trades||[]).forEach(function(o){ if(o===S.focus) return; try{
     if(o.eBI<0||S.cursor-1<o.eBI||!o.SL) return;
     var yE=yOf(o.entry),yS=yOf(o.SL),yT=o.TP?yOf(o.TP):null; if(yE==null||yS==null) return;
     var xE=xOf(o.eBI); if(xE==null) xE=0; var ex=S.cursor-1>=o.xBI, xR=ex?xOf(o.xBI):xOf(Math.min(S.cursor-1,S.bars.length-1)); if(xR==null) xR=w-2;
-    xE=Math.max(0,Math.min(w,xE)); xR=Math.max(0,Math.min(w,xR)); if(xR<xE){ var t=xE; xE=xR; xR=t; } var bw=Math.max(1,xR-xE);
-    ctx.save();
-    if(yT!=null){ ctx.fillStyle='rgba(78,205,139,0.07)'; ctx.fillRect(xE,Math.min(yE,yT),bw,Math.abs(yE-yT)); }
-    ctx.fillStyle='rgba(229,103,103,0.07)'; ctx.fillRect(xE,Math.min(yE,yS),bw,Math.abs(yE-yS));
-    var ln=function(y){ ctx.beginPath(); ctx.moveTo(xE,y); ctx.lineTo(xE+bw,y); ctx.stroke(); };
-    ctx.lineWidth=1; ctx.setLineDash([4,3]);
-    ctx.strokeStyle='rgba(229,103,103,0.8)'; ln(yS);
-    if(yT!=null){ ctx.strokeStyle='rgba(78,205,139,0.8)'; ln(yT); }
-    ctx.strokeStyle='#a78bfa'; ln(yE);
-    if(ex&&o.r!=null){ ctx.setLineDash([]); ctx.font='11px "AppNum","DM Mono",monospace'; ctx.textBaseline='bottom';
-      // On the entry line - always by the candles, unlike a stop that can be off-screen - on a dark
-      // pill so it reads over them.
-      var _tx=(o.r>=0?'+':'')+o.r.toFixed(2)+'R', _tw=ctx.measureText(_tx).width, _ty=Math.max(16,yE-5);
+    xE=Math.max(0,Math.min(w,xE)); xR=Math.max(0,Math.min(w,xR)); if(xR<xE){ var t=xE; xE=xR; xR=t; } var bw=xR-xE;
+    if(bw<=0) return;
+    if(yT!=null){ ctx.fillStyle='rgba(78,205,139,0.13)'; ctx.fillRect(xE,Math.min(yE,yT),bw,Math.abs(yE-yT)); ctx.strokeStyle='rgba(78,205,139,0.5)'; ctx.lineWidth=1; ctx.strokeRect(xE+.5,Math.min(yE,yT)+.5,bw-1,Math.abs(yE-yT)-1); }
+    ctx.fillStyle='rgba(229,103,103,0.13)'; ctx.fillRect(xE,Math.min(yE,yS),bw,Math.abs(yE-yS)); ctx.strokeStyle='rgba(229,103,103,0.5)'; ctx.lineWidth=1; ctx.strokeRect(xE+.5,Math.min(yE,yS)+.5,bw-1,Math.abs(yE-yS)-1);
+    ctx.save(); ctx.lineWidth=1.4; ctx.setLineDash([]);
+    var ln=function(y){ ctx.beginPath(); ctx.moveTo(xE,y); ctx.lineTo(xR,y); ctx.stroke(); };
+    ctx.strokeStyle='#E56767'; ln(yS);
+    if(yT!=null){ ctx.strokeStyle='#4ECD8B'; ln(yT); }
+    ctx.strokeStyle='#f472b6'; ln(yE);
+    if(ex&&o.netR!=null){ ctx.font='11px "AppNum","DM Mono",monospace'; ctx.textBaseline='bottom';
+      var _tx=(o.netR>=0?'+':'')+o.netR.toFixed(2)+'R', _tw=ctx.measureText(_tx).width, _ty=Math.max(16,yE-5);
       ctx.fillStyle='rgba(19,18,23,0.88)'; ctx.fillRect(xE+2,_ty-13,_tw+8,15);
-      ctx.fillStyle=o.r>0.02?'#4ECD8B':(o.r<-0.02?'#E56767':'#9aa0a6');
-      ctx.fillText(_tx, xE+6, _ty); }
+      ctx.fillStyle=o.netR>0.02?'#4ECD8B':(o.netR<-0.02?'#E56767':'#9aa0a6'); ctx.fillText(_tx, xE+6, _ty); }
     ctx.restore(); }catch(_){} }); }
   function drawPos(ctx,w){ if(S.cursor-1<S.eBI||!S.SL) return; var yE=yOf(S.entry),yS=yOf(S.SL),yT=S.TP?yOf(S.TP):null; if(yE==null||yS==null) return;
     // Right end of the box/lines: the exit candle if exited, else the current frontier candle. Both are
@@ -70490,6 +70573,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       else { var b=S.bars[S.cursor-1]; if(b) series.update(b); }   // guard undefined bar
     }catch(e){ try{ series.setData(S.bars.slice(0,Math.max(1,S.cursor))); }catch(_){} }   // update() rejects non-monotonic time -> full reset
     S._last=S.cursor-1;   // the last bar now on screen, for the next render that keeps the zoom
+    applyFocus(focusFor());   // the latest trade reached takes over the header, P&L panel and scale labels
     try{ series.setMarkers(markers()); }catch(_){}
     el('strp-scrub').value=String(S.cursor-1); liveR(); clock(); draw(); }
 
