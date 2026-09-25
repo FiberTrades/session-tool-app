@@ -69537,11 +69537,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* "Trade marks" (Nestor): the entry/exit arrows and the Entry/SL/TP price lines. A viewing
      preference, so it lives in this browser; on unless switched off. */
   function _marksPref(){ try{ return localStorage.getItem('st_replay_marks')!=='0'; }catch(_){ return true; } }
-  function markers(){ var m=[], lng=S.dir>0;
-    if(!S.showMarks) return m;
+  /* Off = the same markers, fully transparent. Removing them changed the chart's vertical fit (LWC
+     keeps a margin for markers above/below the bars), which read as the chart jumping (Nestor). */
+  var _NOCOL='rgba(0,0,0,0)';
+  function markers(){ var m=[], lng=S.dir>0, off=(S.showMarks===false);
     // entry = the trade's action (long=buy ↑ below, short=sell ↓ above); exit = the opposite.
-    if(S.cursor-1>=S.eBI&&S.bars[S.eBI]) m.push({time:S.bars[S.eBI].time,position:lng?'belowBar':'aboveBar',color:'#f472b6',shape:lng?'arrowUp':'arrowDown'});
-    if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'}); return m; }
+    if(S.cursor-1>=S.eBI&&S.bars[S.eBI]) m.push({time:S.bars[S.eBI].time,position:lng?'belowBar':'aboveBar',color:off?_NOCOL:'#f472b6',shape:lng?'arrowUp':'arrowDown'});
+    if(S.cursor-1>=S.xBI&&S.bars[S.xBI]) m.push({time:S.bars[S.xBI].time,position:lng?'aboveBar':'belowBar',color:off?_NOCOL:'#c0c0c0',shape:lng?'arrowDown':'arrowUp'}); return m; }
   /* Spread readings are keyed by the EA's own M1 bar times. Those come off the same clock as
      open_time/close_time, which this replay already matches against candles successfully, so
      normally they line up exactly. But a broker whose server clock is offset from the candle
@@ -70054,15 +70056,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* The trade's own levels, shown only once the trade exists. Same gate drawPos uses, so the zones
      and the axis labels appear together instead of disagreeing about whether there is a trade. */
   function syncTradeLines(){ try{ if(!series) return;
-    var live=(S.cursor-1>=S.eBI)&&S.showMarks!==false;
+    var live=(S.cursor-1>=S.eBI);
     if(live&&!S._tlOn){
       S._lnE=series.createPriceLine({price:S.entry,color:'#f472b6',lineWidth:1,lineStyle:0,title:L('Entry','Entrada')});
       if(S.SL) S.lnSL=series.createPriceLine({price:S.SL,color:'#E56767',lineWidth:1,lineStyle:0,title:'SL'});
       if(S.TP) S.lnTP=series.createPriceLine({price:S.TP,color:'#4ECD8B',lineWidth:1,lineStyle:0,title:'TP'});
-      S._tlOn=true; return; }
+      S._tlOn=true; styleTradeLines(); return; }
     if(!live&&S._tlOn){
       [S._lnE,S.lnSL,S.lnTP].forEach(function(pl){ if(pl) try{ series.removePriceLine(pl); }catch(_){} });
       S._lnE=null; S.lnSL=null; S.lnTP=null; S._tlOn=false; } }catch(_){} }
+  /* Trade marks off: the Entry/SL/TP lines stay, transparent. Taking them away changed the width of
+     the price scale (their labels are the widest on it), so the chart shifted sideways. */
+  function styleTradeLines(){ try{
+    var off=(S.showMarks===false);
+    [[S._lnE,'#f472b6'],[S.lnSL,'#E56767'],[S.lnTP,'#4ECD8B']].forEach(function(p){ if(!p[0]) return;
+      p[0].applyOptions(off ? {color:_NOCOL,lineVisible:false,axisLabelColor:_NOCOL,axisLabelTextColor:_NOCOL}
+                            : {color:p[1],lineVisible:true,axisLabelColor:'',axisLabelTextColor:''}); });
+    }catch(_){} }
   function syncHLines(){ try{ if(!series) return;
     var want=[]; (S.drawings||[]).forEach(function(d){ if(d&&d.type==='hline'&&isFinite(d.price)&&visibleOn(d))
       want.push({p:d.price,c:dC(d),w:Math.max(1,Math.min(4,Math.round(dW(d)))),t:String(d.text||'')}); });
@@ -70790,7 +70800,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   el('strp-marks').onchange=function(ev){ if(!S)return; S.showMarks=ev.target.checked;
     try{ localStorage.setItem('st_replay_marks',S.showMarks?'1':'0'); }catch(_){}
     try{ series.setMarkers(markers()); }catch(_){}
-    syncTradeLines(); draw(); };
+    syncTradeLines(); styleTradeLines(); draw(); };
   el('strp-newsbtn').onclick=function(){ if(!S) return;
     var p=el('strp-news');
     // closeNews(), not a bare class removal — the button's lit state has to come off with it.
