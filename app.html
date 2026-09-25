@@ -8013,7 +8013,10 @@ try {
       'commit.adherence_missed': "Missed: {DAYS}.",
       'commit.adherence_offplan': "Traded {N} day(s) you'd said you'd rest.",
       'commit.adherence_offplan_showed': "Showed up on {N} day(s) you'd said you'd rest, without trading.",
-      'commit.rolled_note': "You didn't set this week, so it carried over from the last week you did.",
+      'commit.rolled_note': "You didn't pick days for this week, so it counts as a week off.",
+      'commit.weekoff_unset': "A week off — you didn't pick days for it, so nothing is graded.",
+      'commit.weekoff_planned': "A week off — you planned no trading days, so nothing is graded.",
+      'commit.weekoff_showed': "You showed up anyway on {DAYS}.",
       'commit.first_label': "Days I'm committing to this week",
       'commit.first_hint': "You haven't set a week yet, so choose this one. It locks the moment you post a bias or log a trade — after that you set your days a week ahead.",
       'commit.this_label': "Days I've committed to this week",
@@ -8021,7 +8024,7 @@ try {
       'commit.past_label': "Days I committed to trade this week",
       'commit.past_hint': "What your adherence above was measured against.",
       'commit.next_label': "Days I'm committing to next week",
-      'commit.next_hint': "Pick the days you'll trade next week \u2014 the greetings, live tab and sounds will hold you to them. Leave them all off if you're not trading that week.",
+      'commit.next_hint': "Pick the days you'll trade next week \u2014 the greetings, live tab and sounds will hold you to them. Leave them all off if you're not trading that week \u2014 a week with no days picked counts as a week off.",
       'commit.board_note': "How well you keep this feeds your points on the community leaderboard.",
       'commit.share_off': "Share to leaderboard",
       'commit.sharing_on': "\u2713 Sharing to leaderboard",
@@ -9696,7 +9699,10 @@ try {
       'commit.adherence_missed': "Faltaste: {DAYS}.",
       'commit.adherence_offplan': "Operaste {N} d\u00eda(s) que dijiste que descansar\u00edas.",
       'commit.adherence_offplan_showed': "Estuviste presente {N} d\u00eda(s) que dijiste que descansar\u00edas, sin operar.",
-      'commit.rolled_note': "No fijaste esta semana, así que se mantienen los días de la última que sí fijaste.",
+      'commit.rolled_note': "No elegiste días para esta semana, así que cuenta como semana libre.",
+      'commit.weekoff_unset': "Semana libre — no elegiste días, así que no se evalúa nada.",
+      'commit.weekoff_planned': "Semana libre — no planeaste días de trading, así que no se evalúa nada.",
+      'commit.weekoff_showed': "Aun así estuviste presente el {DAYS}.",
       'commit.first_label': "D\u00edas que me comprometo a operar esta semana",
       'commit.first_hint': "Todav\u00eda no has fijado ninguna semana, as\u00ed que elige esta. Se bloquea en cuanto publiques un sesgo o registres una operaci\u00f3n \u2014 a partir de ah\u00ed fijar\u00e1s tus d\u00edas con una semana de antelaci\u00f3n.",
       'commit.this_label': "D\u00edas que me he comprometido a operar esta semana",
@@ -9704,7 +9710,7 @@ try {
       'commit.past_label': "D\u00edas que me compromet\u00ed a operar esta semana",
       'commit.past_hint': "Con esto se midi\u00f3 tu cumplimiento de arriba.",
       'commit.next_label': "D\u00edas que me comprometo a operar la pr\u00f3xima semana",
-      'commit.next_hint': "Elige los d\u00edas que operar\u00e1s la pr\u00f3xima semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlos. D\u00e9jalos todos sin marcar si no vas a operar esa semana.",
+      'commit.next_hint': "Elige los d\u00edas que operar\u00e1s la pr\u00f3xima semana \u2014 los saludos, la pesta\u00f1a en vivo y los sonidos te har\u00e1n cumplirlos. D\u00e9jalos todos sin marcar si no vas a operar esa semana \u2014 una semana sin d\u00edas elegidos cuenta como semana libre.",
       'commit.board_note': "Lo bien que lo cumplas suma a tus puntos en la clasificaci\u00f3n de la comunidad.",
       'commit.share_off': "Compartir en la clasificaci\u00f3n",
       'commit.sharing_on': "\u2713 Compartiendo en la clasificaci\u00f3n",
@@ -29642,9 +29648,11 @@ try {
   // (a mid-week change of plans), otherwise the Settings "Days I trade" (fallback Mon–Fri). Per-week
   // via _mondayKey, so one week's change doesn't affect the others.
   function _consistencyPlannedDays(dayDate) {
-    /* A week you never set carries your last plan forward, exactly as the weekly-review picker and
-       the rest of the app read it (Nestor's call: "keep carrying last plan"). It used to drop
-       straight to Settings Mon-Fri, so a Mon/Wed/Thu/Fri trader was scored on Tuesdays too. */
+    /* A week you never set (once you have started committing) is a week OFF, exactly as the
+       weekly review and the rest of the app read it (Nestor, 25 Sep 2026 - an unset week means
+       holiday). No planned days, so only days you actually turned up for count - it no longer
+       carries your last plan forward, and it never drops to Settings Mon-Fri either (that scored a
+       Mon/Wed/Thu/Fri trader on Tuesdays). */
     try {
       var wk = _mondayKey(dayDate);
       var roll = (typeof _rolledCommitment === 'function') ? _rolledCommitment : window.__stRolledCommitment;
@@ -30715,6 +30723,25 @@ try {
       const committedThis = (typeof _rolledCommitment === 'function') ? _rolledCommitment(thisWeekKey) : null;
       let adhHtml = '';
       let _kept = 0, _offTraded = 0, _offShowed = 0, _pct = null;
+      const _unset = _isUnsetWeek(thisWeekKey);
+      // A week off - never set, or saved with no days - is not graded: no %, no "Missed". What you
+      // did anyway is still worth a line, since turning up on a week off is exactly what it says.
+      if (Array.isArray(committedThis) && !committedThis.length) {
+        const _endExc = new Date(weekEnd.getTime() + 24 * 3600 * 1000), _up = {};
+        (filterByScope((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []) || []).forEach(function (tr) {
+          const td = new Date(tr.date); if (td >= weekStart && td < _endExc) _up[td.getDay()] = true;
+        });
+        (data.biasHistory || []).forEach(function (b) {
+          if (!_biasShowedUp(b)) return;
+          const bd = new Date(b.dateKey + 'T12:00:00'); if (bd >= weekStart && bd < _endExc) _up[bd.getDay()] = true;
+        });
+        const _upDays = order.filter(function (d) { return _up[d]; }).map(dayLabel);
+        adhHtml = `<div style="margin-bottom:20px;">
+            <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t('commit.adherence_label')}</div>
+            <div style="font-size:13px;color:var(--text);line-height:1.6;">${t(_unset ? 'commit.weekoff_unset' : 'commit.weekoff_planned')}</div>
+            ${_upDays.length ? `<div style="font-size:12px;color:var(--text-dim);margin-top:6px;line-height:1.5;">${t('commit.weekoff_showed').replace('{DAYS}', _upDays.join(', '))}</div>` : ''}
+          </div>`;
+      }
       if (committedThis && committedThis.length) {
         const wkEndExc = new Date(weekEnd.getTime() + 24 * 3600 * 1000);
         // Kept separate now. Both keep a committed day, but off-plan they are different acts and
@@ -30861,7 +30888,7 @@ try {
       } else {
         thisBlock = `<div>
           <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t(_over ? 'commit.past_label' : 'commit.this_label')}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${t(_over ? 'commit.past_hint' : 'commit.this_hint')}${_isRolledOver(thisWeekKey) ? ' ' + t('commit.rolled_note') : ''}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${_unset ? t('commit.rolled_note') : t(_over ? 'commit.past_hint' : 'commit.this_hint')}</div>
           <div class="settings-days-row">${lockedChips}</div>
         </div>`;
       }
@@ -33099,33 +33126,34 @@ try {
     try { var m = data && data.weeklyCommitments; if (m && Array.isArray(m[weekKey])) return m[weekKey].map(Number); } catch (e) {}
     return null;
   }
-  // The commitment in force for a week: its own if one was set, otherwise the most recent EARLIER
-  // week's, carried forward. Miss a weekly review and your days stay as they were rather than
-  // silently reverting to a Mon–Fri default you never chose — a trader who commits Tue–Thu should
-  // not find Monday live again just because they skipped one Sunday.
-  //
-  // Resolved on READ and never written. Storing it would put days in the record that nobody
-  // picked, and the whole point of the commitment is that it says what you actually chose.
-  // .second() is why the caller can still tell the two apart.
+  // The commitment in force for a week: its own if one was set. A week left UNSET once you have
+  // started committing is a week OFF - Nestor, 25 Sep 2026: "if a week i didnt pick trading days
+  // that means i will be on holidays or absent from work". So it resolves to [] (no trading days):
+  // nothing is assumed for the greetings, live tab, session sounds or the off-day nudge, and
+  // nothing is graded. A day you turn up anyway is switched on by _activateTodayIfShownUp and
+  // still counts as showing up.
+  // It used to carry the last week you set forward. That held him to a Tuesday he never chose,
+  // four weeks after he last picked days, and the review said "Missed: Tue".
+  // Weeks from BEFORE your first commitment are untouched (null -> Settings "Days I trade"), so
+  // older stats keep the denominator they always had.
+  // Resolved on READ and never written: storing it would put a choice in the record nobody made.
   function _rolledCommitment(weekKey) {
     const own = getWeekCommitment(weekKey);
     if (own) return own;   // including [] - a week saved with no days is a week of no trading
     try {
       const m = (data && data.weeklyCommitments) || {};
-      const prior = Object.keys(m)
-        .filter(function (k) {
-          // Date-shaped keys only. Older journals also carry '2026-W31'-style keys, which sort
-          // above every YYYY-MM-DD and would win any comparison they were allowed into.
-          return /^\d{4}-\d{2}-\d{2}$/.test(k) && k < weekKey && Array.isArray(m[k]) && m[k].length;
-        })
-        .sort();
-      if (prior.length) return m[prior[prior.length - 1]].map(Number);
+      // Date-shaped keys only. Older journals also carry '2026-W31'-style keys, which sort
+      // above every YYYY-MM-DD and would win any comparison they were allowed into.
+      const started = Object.keys(m).some(function (k) {
+        return /^\d{4}-\d{2}-\d{2}$/.test(k) && k < weekKey && Array.isArray(m[k]);
+      });
+      if (started) return [];
     } catch (e) {}
     return null;
   }
-  function _isRolledOver(weekKey) {
-    const own = getWeekCommitment(weekKey);
-    return !own && !!_rolledCommitment(weekKey);
+  // A week you never set, after you had started setting them: a week off by default.
+  function _isUnsetWeek(weekKey) {
+    return !getWeekCommitment(weekKey) && Array.isArray(_rolledCommitment(weekKey));
   }
   try { window.__stRolledCommitment = _rolledCommitment; } catch (e) {}
   function setWeekCommitment(weekKey, days) {
@@ -33136,8 +33164,8 @@ try {
     try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
   }
   function _tradingDaysPref() {
-    // This week's committed days win over the global default — carried forward from the last week
-    // you did set if this one was never filled in.
+    // This week's committed days win over the global default. A week never filled in (once you
+    // have started committing) is a week off - [] - see _rolledCommitment.
     try {
       var wk = _mondayKey(Date.now());
       var commit = wk ? _rolledCommitment(wk) : null;
