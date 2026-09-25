@@ -6468,6 +6468,11 @@ try {
         <option value="off" data-i18n="settings.nudges_sound_off">No sound (card only)</option>
       </select>
       <p class="settings-hint" id="settings-nudges-noes" style="display:none;" data-i18n="settings.nudges_no_es">This device has no Spanish voice, so nudges only chime.</p>
+      <div id="settings-nudges-voice-row">
+        <label class="settings-label" style="margin-top:14px;" data-i18n="settings.nudges_voice_label">Voice</label>
+        <select id="settings-nudges-voice" class="settings-input settings-input-compact"></select>
+        <p class="settings-hint" data-i18n="settings.nudges_voice_hint">The voices installed on this device. A device without this one uses its automatic voice.</p>
+      </div>
       <label class="settings-label" style="margin-top:14px;" data-i18n="settings.nudges_reentry_label">Warn if I re-enter within</label>
       <div class="settings-risk-input-row">
         <input type="number" id="settings-nudges-reentry" class="settings-input settings-input-compact" step="1" min="1" max="120" placeholder="10" />
@@ -7428,6 +7433,10 @@ try {
       'settings.nudges_sound_voice': 'Chime and spoken line',
       'settings.nudges_sound_chime': 'Chime only',
       'settings.nudges_sound_off': 'No sound (card only)',
+      'settings.nudges_voice_label': 'Voice',
+      'settings.nudges_voice_auto': 'Automatic',
+      'settings.nudges_voice_hint': 'The voices installed on this device. A device without this one uses its automatic voice.',
+      'settings.nudges_voice_missing': 'not on this device',
       'settings.nudges_no_es': 'This device has no Spanish voice, so nudges only chime (no spoken line). You can add one in Windows: Settings \u2192 Time & language \u2192 Speech.',
       'ea.risk': 'Risk per trade',
       'ea.trades': 'Max trades a day',
@@ -9105,6 +9114,10 @@ try {
       'settings.nudges_sound_voice': 'Sonido y frase hablada',
       'settings.nudges_sound_chime': 'Solo sonido',
       'settings.nudges_sound_off': 'Sin sonido (solo el aviso)',
+      'settings.nudges_voice_label': 'Voz',
+      'settings.nudges_voice_auto': 'Automática',
+      'settings.nudges_voice_hint': 'Las voces instaladas en este dispositivo. Un dispositivo que no la tenga usa su voz automática.',
+      'settings.nudges_voice_missing': 'no está en este dispositivo',
       'settings.nudges_no_es': 'Este dispositivo no tiene una voz en español, así que los avisos solo suenan (sin frase hablada). Puedes añadir una en Windows: Configuración \u2192 Hora e idioma \u2192 Voz.',
       'ea.risk': 'Riesgo por operación',
       'ea.trades': 'Máx. operaciones al día',
@@ -15010,7 +15023,7 @@ try {
       // sound: 'voice' = chime + spoken line (default), 'chime' = chime only, 'off' = the card alone.
       var snd = (n.sound === 'chime' || n.sound === 'off') ? n.sound : 'voice';
       var nw = parseInt(n.newsMins, 10);    // minutes before red news; 0 = off; default 15 (Nestor)
-      return { on: n.on !== false, reentryMins: (re > 0 ? re : 10), streak: (sk >= 2 ? sk : 3), sound: snd,
+      return { on: n.on !== false, reentryMins: (re > 0 ? re : 10), streak: (sk >= 2 ? sk : 3), sound: snd, voice: String(n.voice || ''),
                news: (!isNaN(nw) && nw >= 0 && nw <= 60) ? nw : 15 };
     }
     function p2(v) { return ('0' + v).slice(-2); }
@@ -15415,7 +15428,7 @@ try {
       var res = 'unavailable';
       try { res = await _claimSessionAlertCloud('nudge:' + list[0].key, 0); } catch (e) {}
       if (res === 'lost') return;
-      play(list[0].say);
+      play(list[0].text || list[0].say);      // the voice reads the card, word for word (Nestor)
     }
     // The chosen sound: chime, then the line if the voice is on.
     function play(line) {
@@ -15450,14 +15463,20 @@ try {
         var synth = window.speechSynthesis, es = document.documentElement.lang === 'es';
         var run = function () {
           var vs = synth.getVoices() || [], u = new SpeechSynthesisUtterance(text);
-          var v = es ? vs.find(function (x) { return /^es/i.test(x.lang); })
-                     : (vs.find(function (x) { return /Microsoft David/i.test(x.name); }) || vs.find(function (x) { return x.lang === 'en-GB'; }) || vs.find(function (x) { return /^en/i.test(x.lang); }));
+          var want = cfg().voice, mine = want ? vs.find(function (x) { return x.name === want; }) : null;
+          if (mine && !(es ? /^es/i : /^en/i).test(mine.lang)) mine = null;   // never an English voice on Spanish text, or back
+          var v = mine || (es ? vs.find(function (x) { return /^es/i.test(x.lang); })
+                     : (vs.find(function (x) { return /Microsoft David/i.test(x.name); }) || vs.find(function (x) { return x.lang === 'en-GB'; }) || vs.find(function (x) { return /^en/i.test(x.lang); })));
           // Spanish with no Spanish voice on this device: the browser would read the Spanish line in
           // its default English voice, which comes out garbled. Say nothing - the chime and the card
           // (in Spanish) still come, and Settings explains how to add a voice.
           if (es && !v) return;
           if (v) { u.voice = v; u.lang = v.lang; } else { u.lang = 'en-GB'; }
           u.rate = 0.95; u.pitch = 0.9;
+          // Hold a reference until it ends: Chrome can stop an utterance mid-sentence once nothing
+          // refers to it any more, and a full card is longer than the old one-line summaries.
+          window.__stNudgeUtter = u;
+          u.onend = u.onerror = function () { if (window.__stNudgeUtter === u) window.__stNudgeUtter = null; };
           try { synth.resume(); } catch (e) {}
           synth.speak(u);
         };
@@ -15552,7 +15571,32 @@ try {
       // One sample at a time: pressing the button again replaces it rather than stacking a copy.
       try { if (card) [].forEach.call(card.querySelectorAll('li[data-k^="sample:"]'), function (li) { li.parentNode.removeChild(li); }); } catch (e) {}
       showCard([{ key: 'sample:' + Date.now(), text: line, say: t('nudge.revenge_say') }]);
-      play(t('nudge.revenge_say'));             // whatever Sound is set to - that is what you will get
+      play(line);                               // the card's words, with whatever Sound is set to
+    }
+    // The Voice list: "Automatic", then this device's voices grouped by language (the app's first).
+    function fillVoices() {
+      try {
+        var sel = document.getElementById('settings-nudges-voice'); if (!sel) return;
+        var vs = ('speechSynthesis' in window) ? (window.speechSynthesis.getVoices() || []) : [];
+        var es = document.documentElement.lang === 'es', cur = cfg().voice;
+        var groups = [['English', vs.filter(function (x) { return /^en/i.test(x.lang); })], ['Español', vs.filter(function (x) { return /^es/i.test(x.lang); })]];
+        if (es) groups.reverse();
+        sel.innerHTML = '';
+        var auto = document.createElement('option'); auto.value = ''; auto.textContent = t('settings.nudges_voice_auto'); sel.appendChild(auto);
+        groups.forEach(function (gp) {
+          if (!gp[1].length) return;
+          var og = document.createElement('optgroup'); og.label = gp[0];
+          gp[1].forEach(function (x) { var o = document.createElement('option'); o.value = x.name; o.textContent = x.name.replace(/^Microsoft /, '').replace(/ Online \(Natural\)/, ' (natural)') + ' · ' + x.lang; og.appendChild(o); });
+          sel.appendChild(og);
+        });
+        // A voice chosen on another device that this one lacks: keep it selected, marked as not here.
+        if (cur && !vs.some(function (x) { return x.name === cur; })) {
+          var miss = document.createElement('option'); miss.value = cur; miss.textContent = cur + ' — ' + t('settings.nudges_voice_missing'); sel.appendChild(miss);
+        }
+        sel.value = cur;
+        var row = document.getElementById('settings-nudges-voice-row');
+        if (row) row.style.display = (cfg().sound === 'voice') ? '' : 'none';
+      } catch (e) {}
     }
     // App in Spanish, the spoken line chosen, and no Spanish voice on this device: say so.
     function noSpanishVoiceHint() {
@@ -15570,6 +15614,7 @@ try {
       var on = document.getElementById('settings-nudges-on'), re = document.getElementById('settings-nudges-reentry'), sk = document.getElementById('settings-nudges-streak');
       var sd = document.getElementById('settings-nudges-sound');
       if (sd) sd.value = c.sound;
+      fillVoices();
       var nw = document.getElementById('settings-nudges-news');
       if (nw) nw.value = c.news;
       noSpanishVoiceHint();
@@ -15587,7 +15632,13 @@ try {
       if (on) on.addEventListener('change', function () { put('on', !!on.checked); });
       if (re) re.addEventListener('change', function () { var v = parseInt(re.value, 10); if (!(v > 0)) v = 10; v = Math.min(120, v); re.value = v; put('reentryMins', v); });
       if (sk) sk.addEventListener('change', function () { var v = parseInt(sk.value, 10); if (!(v >= 2)) v = 3; v = Math.min(10, v); sk.value = v; put('streak', v); });
-      if (sd) sd.addEventListener('change', function () { put('sound', (sd.value === 'chime' || sd.value === 'off') ? sd.value : 'voice'); noSpanishVoiceHint(); });
+      if (sd) sd.addEventListener('change', function () { put('sound', (sd.value === 'chime' || sd.value === 'off') ? sd.value : 'voice'); noSpanishVoiceHint(); fillVoices(); });
+      var vsel = document.getElementById('settings-nudges-voice');
+      if (vsel) vsel.addEventListener('change', function () {
+        put('voice', vsel.value || '');
+        say(t('nudge.revenge').replace('{M}', t('nudge.min').replace('{N}', '3')));   // hear it straight away
+      });
+      try { if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', fillVoices); } catch (e) {}
       if (nw) nw.addEventListener('change', function () { var v = parseInt(nw.value, 10); if (isNaN(v) || v < 0) v = 15; v = Math.min(60, v); nw.value = v; put('newsMins', v); });
       // The voice list can arrive after Settings opens.
       try { if ('speechSynthesis' in window) window.speechSynthesis.addEventListener('voiceschanged', noSpanishVoiceHint); } catch (e) {}
