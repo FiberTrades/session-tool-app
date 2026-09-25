@@ -69308,6 +69308,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      flicking between them looked for the news dot an hour to the right of where it was. Bars stay
      keyed in UTC internally; this is display only. */
   function _hm(ts){ var d=new Date(ts*1000); return String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0'); }
+  /* A daily or weekly candle is stamped at the BROKER's midnight - 21:00/22:00 UTC the evening before on
+     a New York-close server - so a plain local date calls Friday's candle Thursday. Six hours on lands
+     every such stamp on its own trading day, read in UTC so the viewer's timezone cannot move it back. */
+  function _tradeDay(ts){ return new Date((ts+6*3600)*1000); }
+  // The crosshair's time pill, TradingView-style (Nestor): "Fri 25 Sep '26  08:29"; date only on 1D / 1W.
+  function _crossLabel(ts){ try{
+    var es=document.documentElement.lang==='es';
+    var WD=es?['dom','lun','mar','mié','jue','vie','sáb']:['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    var MO=es?['ene','feb','mar','abr','may','jun','jul','ago','sept','oct','nov','dic']:['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    if(S&&S.tf>=1440){ var u=_tradeDay(ts); return WD[u.getUTCDay()]+' '+u.getUTCDate()+' '+MO[u.getUTCMonth()]+" '"+String(u.getUTCFullYear()).slice(-2); }
+    var d=new Date(ts*1000);
+    return WD[d.getDay()]+' '+d.getDate()+' '+MO[d.getMonth()]+" '"+String(d.getFullYear()).slice(-2)+'  '+_hm(ts);
+  }catch(_){ return _hm(ts); } }
   function _tzLabel(){ try{ var m=-new Date().getTimezoneOffset(); if(m===0) return 'UTC'; var s=m<0?'-':'+', a=Math.abs(m); return 'UTC'+s+Math.floor(a/60)+(a%60?(':'+String(a%60).padStart(2,'0')):''); }catch(_){ return ''; } }
   function uid(){ try{ return (window.currentUser&&window.currentUser.id)||null; }catch(_){ return null; } }
   function L(en,es){ try{ return document.documentElement.lang==='es'?es:en; }catch(_){ return en; } }
@@ -69670,10 +69683,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       timeScale:{borderColor:'#332F3C',timeVisible:true,secondsVisible:false,rightOffset:12,barSpacing:8,
         tickMarkFormatter:function(t,type){ var ts=(typeof t==='number')?t:((t&&t.timestamp)||0);
           if(type===3||type===4){ return _hm(ts); }   // 3 = TimeWithSeconds… (hour+min), 4 = seconds
+          // 1D / 1W candles are stamped at the broker's midnight (the evening before, UTC), which put
+          // every day number on the daily axis one day early - Friday's candle read "24". Read those as
+          // their trading day (see _tradeDay); intraday ticks keep the local clock.
+          if(S&&S.tf>=1440){ var u=_tradeDay(ts);
+            if(type===2) return String(u.getUTCDate());
+            if(type===1) return u.toLocaleDateString(undefined,{month:'short',timeZone:'UTC'});
+            return String(u.getUTCFullYear()); }
           var d=new Date(ts*1000); if(type===2) return String(d.getDate());   // day of month
           if(type===1) return d.toLocaleDateString(undefined,{month:'short'});   // month
           return String(d.getFullYear()); } },
-      localization:{ timeFormatter:function(t){ return _hm(typeof t==='number'?t:(t&&t.timestamp)||0); } },
+      localization:{ timeFormatter:function(t){ return _crossLabel(typeof t==='number'?t:(t&&t.timestamp)||0); } },
       /* Crosshair OFF entirely - mode 2 is Hidden. Hiding only its lines and keeping its labels
          left the machinery running: LWC tracked the pointer to position those labels and repainted
          its panes on every move. Measured by hiding each layer while whipping the mouse - hiding
@@ -70442,10 +70462,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         /* SECONDS, not milliseconds: _hm multiplies by 1000 itself. Passing time*1000 built the date
              from ts*1000*1000, which turns one minute of bar time into 16h40m - so the label did not
              sit at a constant offset from the axis, it landed somewhere different on every bar. */
-        if(_bi>=0&&S.bars&&_bi<S.bars.length){ var _tt=_hm(S.bars[_bi].time);
+        if(_bi>=0&&S.bars&&_bi<S.bars.length){ var _tt=_crossLabel(S.bars[_bi].time);
           var _tw=ctx.measureText(_tt).width, _tbh=_cf+5, _ty=_axisTop(h)+_tbh/2+2;
-          ctx.fillStyle='#2a2833'; ctx.fillRect(S.cx.x-_tw/2-5,_ty-_tbh/2,_tw+10,_tbh);
-          ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.fillText(_tt,S.cx.x,_ty); } }catch(_){}
+          // Wider than a bare time now, so keep it inside the plot at either edge.
+          var _tx=Math.max(_tw/2+6,Math.min(plotW(w)-_tw/2-6,S.cx.x));
+          ctx.fillStyle='#2a2833'; ctx.fillRect(_tx-_tw/2-5,_ty-_tbh/2,_tw+10,_tbh);
+          ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.fillText(_tt,_tx,_ty); } }catch(_){}
       ctx.textAlign='left'; ctx.restore(); }
     if(S.showPos){ drawOthers(ctx,w); drawPos(ctx,w); } S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel) handles(ctx,sel,w);
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
