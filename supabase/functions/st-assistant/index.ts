@@ -4,8 +4,10 @@
 //
 //  It proxies coaching + chat requests to the Claude API. The Anthropic API key
 //  lives ONLY here, as a Supabase secret (ANTHROPIC_API_KEY) — it is never sent to
-//  the browser. Supabase verifies the caller's login (verify_jwt stays ON, the
-//  default), so only signed-in members can reach it.
+//  the browser. verify_jwt stays ON, but it is NOT the gate: with the new API keys the
+//  gateway accepts the public publishable key (it is in app.html) as an anonymous caller.
+//  The function checks the member itself - a real session, their plan, and the strong-
+//  model budget - before any Claude call (see memberFromReq below, 25 Sep 2026).
 //
 //  The browser sends:
 //    { mode: "coach" | "chat",
@@ -141,19 +143,77 @@ Terms a line may use: **R** = risk multiple (+2R made twice what was risked; rea
 
 Hard limits: never invent a number, a trade or an event that is not in the line you were given; never give personalised financial or investment advice; never predict markets.`;
 
+// ── WHO IS ASKING ────────────────────────────────────────────────────────────
+// verify_jwt is ON, but a bare publishable key passes it as an anonymous caller, so on 25 Sep an
+// unauthenticated request got a real Claude reply. Every call now proves a signed-in member and
+// their plan HERE. The gates mirror STAI in app.html exactly (canChat / canGreet), so nothing a
+// member sees changes - only callers the app would never have let through are turned away.
+const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
+const SB_SERVICE = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+const ADMIN_EMAIL = "be.o2@hotmail.com";
+const ALLOW_ID: Record<string, 1> = { "94f5945f-d819-4abb-bb87-95646906302f": 1 };   // = STAI ALLOW_ID in app.html
+const CHAT_PLANS = new Set(["bundle", "mentorship", "comp"]);                         // = STAI canChat()
+const TRIAL_DAYS = 14;              // keep in step with TRIAL_DAYS in app.html and ingest-trade
+const SMART_PER_DAY = 5;            // = AI_SMART_PER_DAY in app.html (questions a day on the strong model)
+const SMART_CALLS_PER_DAY = SMART_PER_DAY * 4;   // a question can take a few tool hops, each its own call
+
+type Member = { id: string; email: string; plan: string | null; paid: boolean; trial: boolean };
+// A warm instance sees the same member many times (every tool hop, every greeting on a page), so a
+// verified token is remembered for a minute - not a second auth round-trip per hop.
+const _members = new Map<string, { m: Member; at: number }>();
+
+async function memberFromReq(req: Request): Promise<Member | null> {
+  const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "").trim();
+  if (!jwt || jwt.startsWith("sb_") || !SB_URL || !SB_SERVICE) return null;   // the public key is not a sign-in
+  const hit = _members.get(jwt);
+  if (hit && Date.now() - hit.at < 60_000) return hit.m;
+  const ur = await fetch(`${SB_URL}/auth/v1/user`, { headers: { apikey: SB_SERVICE, authorization: `Bearer ${jwt}` } });
+  if (!ur.ok) return null;
+  const u = await ur.json().catch(() => null);
+  if (!u?.id) return null;
+  const pr = await fetch(`${SB_URL}/rest/v1/profiles?id=eq.${encodeURIComponent(u.id)}&select=plan,is_paid,created_at,trial_days`, {
+    headers: { apikey: SB_SERVICE, authorization: `Bearer ${SB_SERVICE}` },
+  });
+  const rows = pr.ok ? await pr.json().catch(() => []) : [];
+  const p = (Array.isArray(rows) && rows[0]) || {};
+  const days = Number(p.trial_days) > 0 ? Number(p.trial_days) : TRIAL_DAYS;
+  const created = p.created_at ? Date.parse(p.created_at) : NaN;
+  // Like the app's trialExpired(): fail OPEN when the signup date is unknown.
+  const trial = p.is_paid !== true && (!isFinite(created) || Date.now() < created + days * 86400000);
+  const m: Member = { id: String(u.id), email: String(u.email || "").toLowerCase(), plan: p.plan ?? null, paid: p.is_paid === true, trial };
+  if (_members.size > 500) _members.clear();
+  _members.set(jwt, { m, at: Date.now() });
+  return m;
+}
+function canChatM(m: Member): boolean { return m.email === ADMIN_EMAIL || !!ALLOW_ID[m.id] || CHAT_PLANS.has(String(m.plan)); }
+function canGreetM(m: Member): boolean { return canChatM(m) || m.paid || m.trial; }
+
+// Today's strong-model calls for this member, from the same ai_usage rows the AI meter reads.
+async function smartCallsToday(userId: string): Promise<number> {
+  try {
+    const since = new Date(); since.setUTCHours(0, 0, 0, 0);
+    const r = await fetch(`${SB_URL}/rest/v1/ai_usage?user_id=eq.${encodeURIComponent(userId)}&model=eq.${encodeURIComponent(MODEL_SMART)}&created_at=gte.${since.toISOString()}&select=id`, {
+      headers: { apikey: SB_SERVICE, authorization: `Bearer ${SB_SERVICE}`, prefer: "count=exact", range: "0-0" },
+    });
+    const total = Number(String(r.headers.get("content-range") || "").split("/")[1]);
+    return isFinite(total) ? total : 0;
+  } catch { return 0; }
+}
+
+const MSG = {
+  signin: { en: "Sign in to use the AI Assistant.", es: "Inicia sesión para usar el Asistente IA." },
+  upgrade: {
+    en: "The AI Assistant is part of Bundle Pro. Your AI greetings stay included on the trial — to ask questions about your numbers, your rules and your charts, upgrade from Settings → Subscriptions.",
+    es: "El Asistente IA forma parte de Bundle Pro. Tus saludos con IA siguen incluidos en la prueba — para hacer preguntas sobre tus números, tus reglas y tus gráficos, mejora tu plan desde Ajustes → Suscripciones.",
+  },
+  greet: { en: "AI greetings are part of your membership.", es: "Los saludos con IA forman parte de tu suscripción." },
+};
+
 // ── AI-METER usage logging ───────────────────────────────────────────────────
 // One row per Claude API call into public.ai_usage, so the admin can see per-user
-// tokens + £. user_id comes from the (already Supabase-verified) JWT; the insert
+// tokens + £. user_id is the member verified by memberFromReq; the insert
 // uses the service role key (auto-injected in edge functions) so RLS is bypassed.
 // Never let a logging failure break the actual reply.
-function userIdFromReq(req: Request): string | null {
-  try {
-    const jwt = (req.headers.get("authorization") || "").replace(/^Bearer\s+/i, "");
-    const part = jwt.split(".")[1]; if (!part) return null;
-    const payload = JSON.parse(atob(part.replace(/-/g, "+").replace(/_/g, "/")));
-    return payload?.sub || null;
-  } catch { return null; }
-}
 async function recordUsage(userId: string | null, model: string, usage: any, mode?: string): Promise<void> {
   try {
     if (!userId || !usage) return;
@@ -187,9 +247,20 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const body = await req.json().catch(() => ({}));
     const rawMode = body?.mode;                            // 'coach' | 'chat' | 'greet'
     const mode = rawMode === "coach" ? "coach" : "chat";   // how to build the turns ('greet' builds like chat)
-    const smart = body?.smart === true && rawMode === "chat"; // client says this question is within the daily budget
-    const model = smart ? MODEL_SMART : MODEL_LIGHT;
     const ctx = body?.context ?? {};
+    const lang: "en" | "es" = ctx?.lang === "es" ? "es" : "en";
+
+    // 1) A real signed-in member, 2) whose plan allows this kind of call. Before any Claude call.
+    const member = await memberFromReq(req);
+    if (!member) return json({ error: MSG.signin[lang] }, 401);
+    if (rawMode === "greet" ? !canGreetM(member) : !canChatM(member)) {
+      return json({ error: (rawMode === "greet" ? MSG.greet : MSG.upgrade)[lang] }, 403);
+    }
+    // 3) The strong model only within today's budget, counted here - the client's `smart` is a request,
+    //    not a permission. Over the cap the question still runs, on the light model, as the app intends.
+    let smart = body?.smart === true && rawMode === "chat";
+    if (smart && (await smartCallsToday(member.id)) >= SMART_CALLS_PER_DAY) smart = false;
+    const model = smart ? MODEL_SMART : MODEL_LIGHT;
 
     // Build the chat turns we send to Claude.
     let claudeMessages: any[];
@@ -280,7 +351,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
     if (!r.ok) return json({ error: data?.error?.message || `Claude API error ${r.status}` }, 502);
 
     // Log this call's token usage for the admin AI-meter (best-effort; never blocks the reply).
-    await recordUsage(userIdFromReq(req), model, (data as any)?.usage, rawMode);
+    await recordUsage(member.id, model, (data as any)?.usage, rawMode);
 
     // The model wants data it doesn't have → ask the client to run the tool(s) and come back.
     if (data?.stop_reason === "tool_use") {
