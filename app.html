@@ -3,65 +3,6 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<script>
-/* SPEED CHECK - temporary (Nestor, 26 Sep 2026: "do the speed measurement on phone first").
-   On the owner's account only, and only until 5 Oct 2026, this records how each launch performs on
-   the device - download, the code, first paint, the journal in hand - and, while the app is used,
-   the slowest taps and busy stretches of the main thread, into perf_samples. For anyone else it
-   records nothing and switches its observers off once sign-in has resolved. Remove after the check. */
-(function(){ try{
-  if(Date.now()>Date.parse('2026-10-05T00:00:00Z')||!window.PerformanceObserver||!window.performance) return;
-  var OWNER='ccaf6a5e-69ed-443c-8d92-bc7fdd464f49', R=Math.round, obsList=[];
-  var P=window.__stPerf={lt:[],ev:[],loaf:[],jr:null,launched:false};
-  function obs(opts,fn){ try{ var o=new PerformanceObserver(function(l){ try{ l.getEntries().forEach(fn); }catch(_){} }); o.observe(opts); obsList.push(o); }catch(_){} }
-  function tdesc(t){ try{ if(!t) return ''; if(t.id) return '#'+t.id; var c=(typeof t.className==='string'&&t.className.trim())?'.'+t.className.trim().split(/\s+/)[0]:''; return (t.tagName||'').toLowerCase()+c; }catch(_){ return ''; } }
-  obs({type:'longtask',buffered:true},function(e){ if(P.lt.length<800) P.lt.push([R(e.startTime),R(e.duration)]); });
-  obs({type:'event',buffered:true,durationThreshold:40},function(e){ if(!e.interactionId||P.ev.length>=400) return;
-    P.ev.push([R(e.startTime),R(e.duration),e.name,tdesc(e.target),R(e.processingStart-e.startTime),R(e.processingEnd-e.processingStart)]); });
-  obs({type:'long-animation-frame',buffered:true},function(e){ if(e.duration<100||P.loaf.length>=200) return; var top=null;
-    try{ (e.scripts||[]).forEach(function(x){ if(!top||x.duration>top.duration) top=x; }); }catch(_){}
-    P.loaf.push([R(e.startTime),R(e.duration),R(e.blockingDuration||0),top?[String(top.invoker||'').slice(0,90),String(top.sourceFunctionName||'').slice(0,60),top.sourceCharPosition,R(top.duration)]:null]); });
-  function isOwner(){ try{ return !!(window.currentUser&&window.currentUser.id===OWNER); }catch(_){ return false; } }
-  var tok=null;
-  function refreshTok(){ try{ var sb=window.__stSB; if(sb&&sb.auth&&isOwner()) sb.auth.getSession().then(function(r){ try{ var t=r&&r.data&&r.data.session&&r.data.session.access_token; if(t) tok=t; }catch(_){} }); }catch(_){} }
-  function post(kind,data){ try{ var sb=window.__stSB; if(!sb||!tok||!isOwner()||!sb.supabaseUrl||!sb.supabaseKey) return;
-    fetch(sb.supabaseUrl+'/rest/v1/perf_samples',{method:'POST',keepalive:true,headers:{'apikey':sb.supabaseKey,'Authorization':'Bearer '+tok,'Content-Type':'application/json','Prefer':'return=minimal'},
-      body:JSON.stringify({kind:kind,data:data})}).catch(function(){}); }catch(_){} }
-  function env(){ var c=navigator.connection||{}; return { ua:navigator.userAgent, standalone:!!((window.matchMedia&&matchMedia('(display-mode: standalone)').matches)||navigator.standalone),
-    mem:navigator.deviceMemory||null, cpu:navigator.hardwareConcurrency||null, net:c.effectiveType||null, dl:c.downlink==null?null:c.downlink, rtt:c.rtt==null?null:c.rtt,
-    vw:innerWidth, vh:innerHeight, dpr:window.devicePixelRatio||1, sw:!!(navigator.serviceWorker&&navigator.serviceWorker.controller) }; }
-  function ltSum(a){ var n=a.length,t=0,m=0; a.forEach(function(x){ t+=x[1]; if(x[1]>m) m=x[1]; }); return {n:n,total:t,max:m,top:a.slice().sort(function(x,y){ return y[1]-x[1]; }).slice(0,8)}; }
-  function topLoaf(a,k){ return a.slice().sort(function(x,y){ return y[1]-x[1]; }).slice(0,k); }
-  function launch(){ if(P.launched) return; P.launched=true;
-    if(!isOwner()){ obsList.forEach(function(o){ try{ o.disconnect(); }catch(_){} }); P.lt=P.ev=P.loaf=[]; return; }
-    try{ var n=(performance.getEntriesByType('navigation')||[])[0]||{};
-      var paint={}; (performance.getEntriesByType('paint')||[]).forEach(function(p){ paint[p.name==='first-contentful-paint'?'fcp':'fp']=R(p.startTime); });
-      var mk={}; (performance.getEntriesByType('mark')||[]).forEach(function(m){ if(/^st:/.test(m.name)) mk[m.name.slice(3)]=R(m.startTime); });
-      var sbjs=null; (performance.getEntriesByType('resource')||[]).forEach(function(r){ if(/supabase-js/.test(r.name)&&!sbjs) sbjs={start:R(r.startTime),dur:R(r.duration),bytes:r.transferSize||0}; });
-      var data={ env:env(),
-        nav:{ type:n.type||null, worker:R(n.workerStart||0), fetch:R(n.fetchStart||0), reqStart:R(n.requestStart||0), resStart:R(n.responseStart||0), resEnd:R(n.responseEnd||0),
-              domInteractive:R(n.domInteractive||0), dcl:R(n.domContentLoadedEventEnd||0), load:R(n.loadEventEnd||0), bytes:n.transferSize||0, body:n.encodedBodySize||0, delivery:n.deliveryType||null },
-        paint:paint, marks:mk, supabaseJs:sbjs, journalReady:P.jr, lt:ltSum(P.lt), loaf:topLoaf(P.loaf,6) };
-      refreshTok(); setTimeout(function(){ post('launch',data); },1500);
-    }catch(_){}
-    P.lt=[]; P.ev=[]; P.loaf=[]; P.since=performance.now(); }
-  // Launch = the journal in hand plus 4s for what renders after it (or 30s if it never arrives).
-  var t0=performance.now(), iv=setInterval(function(){ try{
-    if(P.jr==null&&window.__stJournalPulled) P.jr=R(performance.now());
-    var now=performance.now();
-    if((P.jr!=null&&now>P.jr+4000)||now-t0>30000){ clearInterval(iv); launch(); } }catch(_){ clearInterval(iv); } },100);
-  // Use: every time the app goes to the background, send what happened since the last send.
-  document.addEventListener('visibilitychange',function(){ try{
-    if(!P.launched||!isOwner()) return;
-    if(document.visibilityState==='visible'){ refreshTok(); P.since=performance.now(); return; }
-    var ev=P.ev.slice().sort(function(x,y){ return y[1]-x[1]; });
-    var data={ env:{ua:navigator.userAgent,net:(navigator.connection||{}).effectiveType||null}, secs:R((performance.now()-(P.since||0))/1000),
-      taps:P.ev.length, over100:P.ev.filter(function(x){ return x[1]>100; }).length, over200:P.ev.filter(function(x){ return x[1]>200; }).length,
-      worst:ev.slice(0,12), lt:ltSum(P.lt), loaf:topLoaf(P.loaf,6) };
-    if(data.taps||data.lt.n) post('use',data);
-    P.lt=[]; P.ev=[]; P.loaf=[]; }catch(_){} });
-}catch(_){} })();
-</script>
 <!-- School popout (?school=1). This has to run before ANY paint: the window opens on the full app,
      which then boots, renders, and only afterwards gets covered by the course - a visible flash of
      the wrong screen. Hiding the body up front and letting only #stsc show through means the popout
@@ -7155,7 +7096,6 @@ try {
   </div>
 </div>
 
-<script>try{performance.mark('st:main_start')}catch(e){}</script>
 <script>
   const STORAGE_KEY = 'fiberTradesData_v3';
   const OLD_KEYS = ['fiberTradesData_v2', 'fiberTradesData_v1'];
@@ -46470,7 +46410,6 @@ try {
 
   setTimeout(maybePromptForOnboarding, 800);
 </script>
-<script>try{performance.mark('st:main_end')}catch(e){}</script>
 <script>
   // PWA service worker: registers only over http(s) (skipped on file://), and only if
   // sw.js is present next to index.html. Adds offline caching; harmless if not deployed.
@@ -46583,9 +46522,7 @@ try {
 <!-- ============================================================
      Session Tool — cloud auth + sync (gate + Settings tab)
      ============================================================ -->
-<script>try{performance.mark('st:sbjs_start')}catch(e){}</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script>try{performance.mark('st:cloud_start')}catch(e){}</script>
 <script>
 (function () {
   'use strict';
@@ -63861,7 +63798,6 @@ try {
   paintGate(); paintAccount();
 })();
 </script>
-<script>try{performance.mark('st:cloud_end')}catch(e){}</script>
 <script>
 (function(){
   var LP_HTML = `<!DOCTYPE html>
@@ -71544,6 +71480,5 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   document.addEventListener('click',function(e){ var a=(e.target&&e.target.closest)?e.target.closest(SEL):null; if(a){ e.preventDefault(); e.stopPropagation(); openP(); } },true);
 })();
 </script>
-<script>try{performance.mark('st:scripts_end')}catch(e){}</script>
 </body>
 </html>
