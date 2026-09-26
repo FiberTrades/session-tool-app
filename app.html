@@ -2512,6 +2512,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-re-chip.is-gone button { color: var(--accent); font-size: 14px; }
   /* Mindset's answers on five lines rather than four (Nestor) - 820px gives five in English AND Spanish. */
   .pb-row[data-row="mind"] .pb-row-o { max-width: 820px; }
+  /* Edit a row: each row's Edit button is pinned top right, so they make one column whatever the
+     answers do - Mindset's five lines used to push its button to the last line. The answers keep
+     84px clear of it (Mindset's cap grows by the same, so it still wraps at five lines). */
+  .pb-row { position: relative; }
+  .pb-row-o > .pb-reopen { position: absolute; right: 0; top: 1px; margin-left: 0; }
+  .pb-row-o:has(> .pb-reopen) { padding-right: 84px; }
+  .pb-row[data-row="mind"] .pb-row-o:has(> .pb-reopen) { max-width: 904px; }
+  /* one column on phones: the button sits on the row's name line instead (that line is 30px) */
+  @media (max-width: 700px) { .pb-row-o:has(> .pb-reopen) { padding-right: 0; } }
   .pb-roweditor { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border-2); border-radius: 10px; padding: 12px; background: var(--bg-elev); }
   .pb-re-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pb-re-k { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); min-width: 72px; }
@@ -2526,6 +2535,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #pb-addrow-wrap { margin: 14px 0 0 60px; }
   .pb-addform { display: flex; flex-direction: column; gap: 8px; max-width: 540px; }
   .pb-addform label { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); display: flex; align-items: center; gap: 8px; }
+  #concept-tags { margin-top: 10px; }
   .pb-more-l { margin: 24px 0 10px 60px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); }
   /* Manage playbooks */
   .pb-card { border: 1px solid var(--border-2); border-radius: var(--radius-card); padding: 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 10px; }
@@ -5426,8 +5436,8 @@ try {
       <div class="pb-sep"></div>
       <div class="pb-rows" id="pb-rows"></div>
       <div id="pb-addrow-wrap"></div>
-      <div class="pb-more-l" data-i18n="pbrows.more">More tags</div>
-      <div class="tags" id="concept-tags"></div>
+      <!-- Loose tags, opened by the "More tags" button in the line above (pbPaintAddRow). -->
+      <div class="tags" id="concept-tags" hidden></div>
     </section>
 
     <!-- Mindset is a row of 06 Trade Details now (Nestor). Its old chips' container stays, empty and hidden,
@@ -17364,6 +17374,10 @@ try {
      ============================================================================================= */
   const PB_OWNER_UID = 'ccaf6a5e-69ed-443c-8d92-bc7fdd464f49';   // Nestor: "start the playbooks from scratch"
   function _pbL(en, es) { var l = window.__lang || document.documentElement.lang; return l === 'es' ? es : en; }
+  // Confirmations in the app's own window rather than the browser's "sessiontool.app says" box.
+  function _pbAsk(title, body, ok) {
+    return (typeof window.appConfirm === 'function') ? window.appConfirm({ title, body, ok }) : Promise.resolve(window.confirm(body));
+  }
   function _pbEsc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   const PB_ROWS = [
     // Session context (Nestor): which session, its time range, and the news in it.
@@ -17610,11 +17624,15 @@ try {
       const a = pbAnswer(tr, r), ks = r.multi ? a : (a ? [a] : []);
       if (ks.length) out.push({ label: r.en, text: ks.map(k => { const o = r.opts.find(o => o.k === k); return o ? o.en : k; }).join(', ') });
     });
-    const known = {}; pbRowsAll().concat(PB_ROWS).forEach(r => (r.opts || []).forEach(o => _pbStored(o).forEach(c => { known[c] = 1; })));
-    const prefixes = pbRowsAll().filter(r => r.kind === 'time').map(r => r.prefix);
-    const other = _pbSrc(tr).concepts.filter(c => !known[c] && !prefixes.some(p => String(c).indexOf(p) === 0));
+    const other = _pbLoose(tr);
     if (other.length) out.push({ label: _pbL('Tags', 'Etiquetas'), text: other.join(', ') });
     return out;
+  }
+  // A trade's loose tags: ticked tags that are no row's answer (More tags, and old tags).
+  function _pbLoose(tr) {
+    const known = {}; pbRowsAll().concat(PB_ROWS).forEach(r => (r.opts || []).forEach(o => _pbStored(o).forEach(c => { known[c] = 1; })));
+    const prefixes = pbRowsAll().filter(r => r.kind === 'time').map(r => r.prefix);
+    return _pbSrc(tr).concepts.filter(c => !known[c] && !prefixes.some(p => String(c).indexOf(p) === 0));
   }
   window.__stPbLines = pbLines;
   // A recipe in words, for the manage list and the shared card: [{label, text}].
@@ -17629,6 +17647,7 @@ try {
   let _pbAddRow = false;   // "+ Add your own row" form open
   function _pbTrade() { try { return getActiveReviewTrade(); } catch (e) { return null; } }
   let _pbAddTag = null;   // the row whose "+ Custom" input is open
+  let _pbMoreOpen = false;   // the More tags chips, opened from the button line
   let _pbRowEdit = false, _pbEditingRow = null, _pbReErr = '';   // "Edit a row" mode, the row open in it
   function pbRowEditorHtml(r) {
     const fixed = !!(r.field === 'type' || r.field === 'rice' || r.kind === 'time');
@@ -17738,6 +17757,7 @@ try {
   }
   function pbPaintAddRow() {
     const w = document.getElementById('pb-addrow-wrap'); if (!w) return;
+    const ct = document.getElementById('concept-tags'); if (ct) ct.hidden = !_pbMoreOpen || _pbRowEdit;
     if (!_pbAddRow) {
       if (_pbRowEdit) {
         const gone = pbRowsAll().filter(r => _pbHidden(r.id) && r.kind !== 'time');
@@ -17746,7 +17766,10 @@ try {
             + gone.map(r => '<span class="pb-re-chip">' + _pbEsc(_pbLbl(r)) + '<button type="button" data-restore="' + _pbEsc(r.id) + '">' + _pbEsc(_pbL('Restore', 'Restaurar')) + '</button></span>').join('') + '</div>' : '');
       } else {
         w.innerHTML = '<button type="button" class="tag-add" id="pb-addrow-btn">' + _pbEsc(_pbL('+ Add your own row', '+ Añadir tu propia fila')) + '</button>'
-          + '<button type="button" class="tag-add" id="pb-roweditbtn">' + _pbEsc(_pbL('Edit a row', 'Editar una fila')) + '</button>';
+          + '<button type="button" class="tag-add" id="pb-roweditbtn">' + _pbEsc(_pbL('Edit a row', 'Editar una fila')) + '</button>'
+          + (() => { let n = 0; try { n = _pbLoose(_pbTrade()).length; } catch (e) {}
+                     return '<button type="button" class="tag-add' + (_pbMoreOpen ? ' pb-order-done' : '') + '" id="pb-moretagsbtn" aria-expanded="' + _pbMoreOpen + '">'
+                       + _pbEsc(_pbL('More tags', 'Más etiquetas')) + (n ? ' · ' + n : '') + '</button>'; })();
       }
       return;
     }
@@ -17805,10 +17828,15 @@ try {
     }
     if (act === 'del') {
       const nm = _pbLbl(r);
-      if (!confirm(_pbL('Delete the row "' + nm + '"? Past trades keep their answers' + (own ? '.' : ' - you can restore it from Edit a row.'),
-                        '¿Eliminar la fila "' + nm + '"? Las operaciones anteriores conservan sus respuestas' + (own ? '.' : '; puedes restaurarla desde Editar una fila.')))) return;
-      if (own) data.pbRows = data.pbRows.filter(x => x.id !== r.id); else _pbRowEd(r.id).hidden = true;
-      _pbEditingRow = null; _pbAfter(); return;
+      _pbAsk(_pbL('Delete row', 'Eliminar fila'),
+             _pbL('Delete the row "' + nm + '"? Past trades keep their answers' + (own ? '.' : ' - you can restore it from Edit a row.'),
+                  '¿Eliminar la fila "' + nm + '"? Las operaciones anteriores conservan sus respuestas' + (own ? '.' : '; puedes restaurarla desde Editar una fila.')),
+             _pbL('Delete', 'Eliminar')).then(ok => {
+        if (!ok) return;
+        if (own) data.pbRows = data.pbRows.filter(x => x.id !== r.id); else _pbRowEd(r.id).hidden = true;
+        _pbEditingRow = null; _pbAfter();
+      });
+      return;
     }
   }
   function pbRowRename(r, raw) {
@@ -17863,8 +17891,10 @@ try {
       const del = e.target.closest('.pb-row-del');
       if (del) {
         const def = (data.pbRows || []).find(r => r.id === del.dataset.del); if (!def) return;
-        if (!confirm(_pbL('Remove the row "' + def.name + '"? Past trades keep their answers.', '¿Quitar la fila "' + def.name + '"? Las operaciones anteriores conservan sus respuestas.'))) return;
-        data.pbRows = data.pbRows.filter(r => r.id !== def.id); _pbAfter(); return;
+        _pbAsk(_pbL('Remove row', 'Quitar fila'),
+               _pbL('Remove the row "' + def.name + '"? Past trades keep their answers.', '¿Quitar la fila "' + def.name + '"? Las operaciones anteriores conservan sus respuestas.'),
+               _pbL('Remove', 'Quitar')).then(ok => { if (!ok) return; data.pbRows = data.pbRows.filter(r => r.id !== def.id); _pbAfter(); });
+        return;
       }
       const b = e.target.closest('.tag[data-k]'); if (!b) return;
       const rowEl = b.closest('.pb-row'), r = rowEl && pbRowById(rowEl.dataset.row), tr = _pbTrade();
@@ -17929,10 +17959,15 @@ try {
         else if (e.key === 'Escape') { _pbForm = null; pbPaintStatus(); }
       }
     });
+    // ticking a loose tag updates the count on the More tags button
+    const ctW = document.getElementById('concept-tags');
+    const _ctCount = () => setTimeout(() => { try { if (!_pbAddRow) pbPaintAddRow(); } catch (e) {} }, 0);
+    if (ctW) { ctW.addEventListener('click', _ctCount); ctW.addEventListener('keydown', e => { if (e.key === 'Enter') _ctCount(); }); }   // Enter adds a custom tag, ticked
     const addW = document.getElementById('pb-addrow-wrap');
     if (addW) addW.addEventListener('click', e => {
       if (e.target.closest('#pb-addrow-btn')) { _pbAddRow = true; pbPaintAddRow(); return; }
       if (e.target.closest('#pb-roweditbtn')) { _pbRowEdit = !_pbRowEdit; _pbEditingRow = null; _pbReErr = ''; pbPaint(); return; }
+      if (e.target.closest('#pb-moretagsbtn')) { _pbMoreOpen = !_pbMoreOpen; pbPaintAddRow(); return; }
       const rs = e.target.closest('[data-restore]');
       if (rs) { const ed = _pbEdits()[rs.dataset.restore]; if (ed) { delete ed.hidden; saveData(); } _pbAfter(); return; }
       const b = e.target.closest('[data-addrow]'); if (!b) return;
@@ -18144,10 +18179,14 @@ try {
     const m = b.dataset.m;
     if (m === 'rec') { _pbEditRec = (_pbEditRec === pb.id) ? null : pb.id; pbRenderManage(); }
     else if (m === 'del') {
-      if (!confirm(_pbL('Delete "' + pb.name + '"? Trades that used it keep the name as history.', '¿Eliminar "' + pb.name + '"? Las operaciones que lo usaron conservan el nombre como historial.'))) return;
-      data.playbooks = pbList().filter(p => p.id !== pb.id);
-      data.playbooks.forEach(p => { if (p.parent === pb.id) p.parent = null; });
-      saveData(); pbRenderManage();
+      _pbAsk(_pbL('Delete playbook', 'Eliminar playbook'),
+             _pbL('Delete "' + pb.name + '"? Trades that used it keep the name as history.', '¿Eliminar "' + pb.name + '"? Las operaciones que lo usaron conservan el nombre como historial.'),
+             _pbL('Delete', 'Eliminar')).then(ok => {
+        if (!ok) return;
+        data.playbooks = pbList().filter(p => p.id !== pb.id);
+        data.playbooks.forEach(p => { if (p.parent === pb.id) p.parent = null; });
+        saveData(); pbRenderManage();
+      });
     }
     else if (m === 'share') { try { if (typeof window.__stPbShare === 'function') window.__stPbShare(pb, b); } catch (e2) {} }
     else if (m === 'trades') { _pbTradesOpen[pb.id] = !_pbTradesOpen[pb.id]; pbRenderManage(); }
@@ -18162,8 +18201,12 @@ try {
     }
     else if (m === 'exrm') {
       const i = +b.dataset.i; if (!Array.isArray(pb.ex) || !pb.ex[i]) return;
-      if (!confirm(_pbL('Remove this example?', '¿Quitar este ejemplo?'))) return;
-      pb.ex.splice(i, 1); pb.updated = Date.now(); saveData(); pbRenderManage();
+      const ex = pb.ex[i];
+      _pbAsk(_pbL('Remove example', 'Quitar ejemplo'), _pbL('Remove this example from "' + pb.name + '"?', '¿Quitar este ejemplo de "' + pb.name + '"?'), _pbL('Remove', 'Quitar')).then(ok => {
+        if (!ok) return;
+        const j = Array.isArray(pb.ex) ? pb.ex.indexOf(ex) : -1; if (j < 0) return;
+        pb.ex.splice(j, 1); pb.updated = Date.now(); saveData(); pbRenderManage();
+      });
     }
     else if (m === 'replay') {
       const t = _pbTradesOf(pb.name).find(x => String(x.id) === String(b.dataset.tid));
@@ -29563,17 +29606,25 @@ try {
       if (!bg || !okBtn || !cancelBtn) { resolve(window.confirm(o.body || '')); return; }
       if (titleEl) titleEl.textContent = o.title || 'Confirm';
       if (bodyEl) bodyEl.textContent = o.body || '';
+      // o.ok names the action ("Delete", "Remove") instead of "Confirm"; put back on the way out.
+      const okText = okBtn.textContent;
+      if (o.ok) okBtn.textContent = o.ok;
       bg.classList.add('show');
       const done = (val) => {
         bg.classList.remove('show');
         okBtn.removeEventListener('click', onOk);
         cancelBtn.removeEventListener('click', onCancel);
+        document.removeEventListener('keydown', onKey, true);
+        if (o.ok) okBtn.textContent = okText;
         resolve(val);
       };
       const onOk = () => done(true);
       const onCancel = () => done(false);
+      // Escape cancels, and only this box - not the window underneath it too.
+      const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); done(false); } };
       okBtn.addEventListener('click', onOk);
       cancelBtn.addEventListener('click', onCancel);
+      document.addEventListener('keydown', onKey, true);
     });
   };
 
