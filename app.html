@@ -48463,7 +48463,8 @@ try {
     }
 
     function closeConfirm(){ var cf=document.getElementById('stchat-confirm'); if(cf) cf.classList.remove('open'); }
-    function confirmDelete(onYes){
+    function confirmDelete(onYes, txt){   /* txt: optional {title, msg, ok} - defaults say "Delete message" */
+      txt=txt||{};
       var cf=document.getElementById('stchat-confirm');
       if(!cf){
         cf=document.createElement('div'); cf.id='stchat-confirm';
@@ -48472,12 +48473,12 @@ try {
         cf.addEventListener('click', function(e){ if(e.target===cf || e.target.id==='stc-cf-cancel') closeConfirm(); });
         document.addEventListener('keydown', function(e){ if(e.key==='Escape' && cf.classList.contains('open')) closeConfirm(); });
       }
-      cf.querySelector('.cf-title').textContent=L('delTitle');
-      cf.querySelector('.cf-msg').textContent=L('delConfirm');
+      cf.querySelector('.cf-title').textContent=txt.title||L('delTitle');
+      cf.querySelector('.cf-msg').textContent=txt.msg||L('delConfirm');
       cf.querySelector('.cf-cancel').textContent=L('cancel');
       var ok=document.getElementById('stc-cf-ok');
       var fresh=ok.cloneNode(true); ok.parentNode.replaceChild(fresh, ok);
-      fresh.textContent=L('del');
+      fresh.textContent=txt.ok||L('del');
       fresh.addEventListener('click', function(){ closeConfirm(); if(onYes) onYes(); });
       cf.classList.add('open');
     }
@@ -61026,7 +61027,7 @@ try {
       if(!vis.length){ box.innerHTML='<div class="stdm-empty">No conversations yet. Message someone from the member list.</div>'; return; }
       box.innerHTML=vis.map(function(t){ var info=roster[t.partner_id]||{}; var nm=info.name||'Trader'; return '<div class="stdm-conv'+(partner&&partner.id===t.partner_id?' active':'')+'" data-pid="'+esc(t.partner_id)+'">'+avaHtml(info.avatar,nm,'ca')+'<div class="ci"><div class="cn">'+esc(nm)+'</div><div class="cl">'+esc(t.last_body||'')+'</div></div>'+(unread[t.partner_id]?'<span class="cd"></span>':'')+'<button class="stdm-conv-x" data-del="'+esc(t.partner_id)+'" title="'+_t('Delete conversation','Eliminar conversación')+'">×</button></div>'; }).join('');
       Array.prototype.forEach.call(box.querySelectorAll('.stdm-conv'),function(el){ el.addEventListener('click', function(){ var pid=el.getAttribute('data-pid'); var info=roster[pid]||{}; openThread(pid, info.name||'Trader', info.avatar||''); }); });
-      Array.prototype.forEach.call(box.querySelectorAll('.stdm-conv-x'),function(x){ x.addEventListener('click', function(ev){ ev.stopPropagation(); var pid=x.getAttribute('data-del'); function go(){ _hideThread(pid); if(partner&&partner.id===pid){ partner=null; try{ G('stdm').classList.remove('thread'); }catch(e){} } renderList(); } if(window.STChat&&STChat.confirmDelete) STChat.confirmDelete(go); else if(window.confirm(_t('Delete this conversation from your list?','¿Eliminar esta conversación de tu lista?'))) go(); }); });
+      Array.prototype.forEach.call(box.querySelectorAll('.stdm-conv-x'),function(x){ x.addEventListener('click', function(ev){ ev.stopPropagation(); var pid=x.getAttribute('data-del'); function go(){ _hideThread(pid); if(partner&&partner.id===pid){ partner=null; try{ G('stdm').classList.remove('thread'); }catch(e){} } renderList(); } if(window.STChat&&STChat.confirmDelete) STChat.confirmDelete(go, { title:_t('Delete conversation','Eliminar conversación'), msg:_t('Delete this conversation from your list?','¿Eliminar esta conversación de tu lista?') }); else if(window.confirm(_t('Delete this conversation from your list?','¿Eliminar esta conversación de tu lista?'))) go(); }); });
     }
 
     function contentHtml(m){ var s=''; var _dmAllow=true; if(m.body) s+='<span class="dcx-text">'+linkify(m.body, _dmAllow)+'</span>'; if(m.attachment_url){ if(m.attachment_type==='image') s+=window._gifWrap(m.attachment_url,'<img class="dcx-media" src="'+esc(m.attachment_url)+'" data-full="'+esc(m.attachment_url)+'" alt="">'); else if(m.attachment_type==='audio') s+='<audio class="dcx-voice" controls preload="metadata" src="'+esc(m.attachment_url)+'"></audio>'; else s+='<span class="dcx-file" data-full="'+esc(m.attachment_url)+'"><span class="dcx-file-i">DOC</span><span>'+esc(m.attachment_name||'file')+'</span></span>'; } if(m.body && !m.attachment_url && !_dmAllow){ var urls=(m.body.replace(/!\[[^\]]*\]\([^)]*\)/g,'').match(/https?:\/\/[^\s<]+/g)||[]); var done={}; for(var i=0;i<urls.length && i<2;i++){ var u=urls[i]; if(done[u]) continue; done[u]=1; var pv=previewImg(u); if(pv){ s+=window._gifWrap(pv,'<img class="dcx-media dcx-linkimg" src="'+esc(pv)+'" data-full="'+esc(pv)+'" data-link="'+esc(u)+'" alt="" onerror="this.style.display=\'none\'">'); } else { s+='<a class="dcx-unfurl" data-url="'+esc(u)+'" href="'+esc(u)+'" target="_blank" rel="noopener"></a>'; } } } return s; }
@@ -62532,11 +62533,18 @@ try {
       renderMentorShare();
     }).catch(function(){ mentorMsg(tt('mentorShareErr'), true); });
   }
+  // Asks in the app's own confirm window (Settings' one), not the browser's pop-up.
+  function _stcAsk(title, body, ok){
+    return (typeof window.appConfirm==='function') ? window.appConfirm({ title:title, body:body, ok:ok }) : Promise.resolve(window.confirm(body));
+  }
   function mentorRevoke(){
-    if(!currentUser) return; if(!window.confirm(tt('mentorShareRevokeConfirm'))) return; mentorMsg('');
-    sb.from('shares').update({ revoked:true }).eq('owner_user_id', currentUser.id).eq('revoked', false).then(function(r){
-      if(r.error){ mentorMsg(tt('mentorShareErr'), true); } else { renderMentorShare(); }
-    }).catch(function(){ mentorMsg(tt('mentorShareErr'), true); });
+    if(!currentUser) return;
+    _stcAsk(tt('mentorShareRevoke'), tt('mentorShareRevokeConfirm'), tt('mentorShareRevoke')).then(function(yes){
+      if(!yes || !currentUser) return; mentorMsg('');
+      sb.from('shares').update({ revoked:true }).eq('owner_user_id', currentUser.id).eq('revoked', false).then(function(r){
+        if(r.error){ mentorMsg(tt('mentorShareErr'), true); } else { renderMentorShare(); }
+      }).catch(function(){ mentorMsg(tt('mentorShareErr'), true); });
+    });
   }
   function mentorCopy(){
     var c=document.getElementById('stc-m-code'); if(!c) return; var txt=c.textContent||'';
@@ -62664,7 +62672,9 @@ try {
   // mentor-unlink function (service role — RLS blocks the mentor writing another user's row).
   function mentorDisconnect(ownerId){
     if(!ownerId || !currentUser) return;
-    if(!window.confirm(tt('mvDisconnectConfirm'))) return;
+    _stcAsk(tt('mvDisconnect'), tt('mvDisconnectConfirm'), tt('mvDisconnect')).then(function(yes){ if(yes && currentUser) _mentorDisconnectGo(ownerId); });
+  }
+  function _mentorDisconnectGo(ownerId){
     mvMsg(tt('mvConnecting'));
     sb.auth.getSession().then(function(sr){
       var tok = sr && sr.data && sr.data.session && sr.data.session.access_token;
