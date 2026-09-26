@@ -17534,6 +17534,10 @@ try {
     return o;
   }
   // Every row, deleted ones included - for knowing which tags belong to a row.
+  // The default row order for every member (Nestor, 26 Sep 2026: "make sure every user has all this
+  // options and in this order"). A member's own saved order (data.pbOrder) still wins.
+  const PB_DEFAULT_ORDER = ['sess', 'stime', 'news', 'phase', 'rice', 'loc', 'liq', 'brk', 'poi', 'rej', 'fms', 'type', 'ent', 'stop', 'prob', 'htf', 'mind'];
+  PB_ROWS.sort((a, b) => { const ia = PB_DEFAULT_ORDER.indexOf(a.id), ib = PB_DEFAULT_ORDER.indexOf(b.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
   function pbRowsAll() {
     const all = PB_ROWS.map(r => r.id === 'mind' ? _pbMindRow(r) : r).map(_pbApplyEdit)
       .concat(_pbCustomRowDefs(data && Array.isArray(data.pbRows) ? data.pbRows : []));
@@ -17666,6 +17670,67 @@ try {
     return out;
   }
   window.__stPbLines = pbLines;
+  // Recipe adherence over a set of trades (Weekly Review -> Playbook recipes). A trade counts when its
+  // playbook has a recipe; it FOLLOWED it when every recipe row matched, otherwise it broke it.
+  function pbRecipeSummary(trades) {
+    const rOf = t => { try { return (typeof tradeRforMath === 'function') ? (tradeRforMath(t) || 0) : 0; } catch (e) { return 0; } };
+    const cp = t => { try { return (typeof tradeCopies === 'function') ? tradeCopies(t) : 1; } catch (e) { return 1; } };
+    const acc = () => ({ n: 0, w: 0, l: 0, be: 0, r: 0 });
+    const out = { n: 0, followed: acc(), broke: acc(), off: {}, list: [] };
+    (trades || []).forEach(tr => {
+      if (!tr || !tr.setup) return;
+      const pb = pbByName(tr.setup); if (!pb) return;
+      const m = pbMatch(tr, pb); if (!m.total) return;
+      const g = m.diffs.length ? out.broke : out.followed;
+      out.n++; g.n++; g.r += rOf(tr) * cp(tr);
+      if (tr.result === 'Win') g.w++; else if (tr.result === 'Lose') g.l++; else if (tr.result === 'BE') g.be++;
+      m.diffs.forEach(d => { const k = d.row.id; (out.off[k] = out.off[k] || { label: _pbLbl(d.row), en: d.row.en, n: 0 }).n++; });
+      if (m.diffs.length) out.list.push({ tr, pb, diffs: m.diffs.map(pbDiffText) });
+    });
+    out.offList = Object.keys(out.off).map(k => out.off[k]).sort((a, b) => b.n - a.n);
+    return out;
+  }
+  const PB_RECIPE_MIN = 3;   // the R split needs at least this many recipe trades - fewer is noise
+  const _pbR = v => (v >= 0 ? '+' : '') + v.toFixed(2) + 'R';
+  window.__stPbRecipeHtml = function (trades) {
+    try {
+      const s = pbRecipeSummary(trades); if (!s.n) return '';
+      const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
+      const wl = g => _pbL(g.w + 'W · ' + g.l + 'L' + (g.be ? ' · ' + g.be + 'BE' : ''), g.w + 'G · ' + g.l + 'P' + (g.be ? ' · ' + g.be + 'BE' : ''));
+      const nTr = n => n + ' ' + (n === 1 ? _pbL('trade', 'operación') : _pbL('trades', 'operaciones'));
+      let h = '<div class="month-insights" style="margin-top:0;"><div class="month-insights-header">' + _pbEsc(_pbL('Playbook recipes', 'Recetas de playbook')) + '</div><div class="month-insight-block">'
+        + '<div class="pn-line">' + _pbEsc(_pbL('Followed the recipe on ' + s.followed.n + ' of ' + s.n + ' playbook ' + (s.n === 1 ? 'trade' : 'trades'),
+                                                 'Seguiste la receta en ' + s.followed.n + ' de ' + s.n + ' ' + (s.n === 1 ? 'operación' : 'operaciones') + ' con playbook')) + '</div>';
+      if (s.n >= PB_RECIPE_MIN) {
+        h += '<div class="pn-cost-title">' + _pbEsc(_pbL('What each made', 'Lo que dio cada una')) + '</div>';
+        [[_pbL('Followed it', 'La seguiste'), s.followed], [_pbL('Broke it', 'La rompiste'), s.broke]].forEach(x => {
+          if (!x[1].n) return;
+          h += '<div class="pn-cost-row"><span>' + _pbEsc(x[0]) + '</span><span>' + _pbEsc(nTr(x[1].n) + ' · ' + wl(x[1]) + ' · ') + '<span class="' + cls(x[1].r) + '">' + _pbEsc(_pbR(x[1].r)) + '</span></span></div>';
+        });
+      } else h += '<div class="pn-line pn-muted">' + _pbEsc(_pbL('What each made shows from ' + PB_RECIPE_MIN + ' playbook trades in a week.', 'Lo que dio cada una aparece desde ' + PB_RECIPE_MIN + ' operaciones con playbook en una semana.')) + '</div>';
+      if (s.offList.length) h += '<div class="pn-line" style="margin-top:10px;">' + _pbEsc(_pbL('Most often off: ', 'Lo que más fallaste: ')) + _pbEsc(s.offList.slice(0, 3).map(o => o.label + (o.n > 1 ? ' ×' + o.n : '')).join(', ')) + '</div>';
+      if (s.list.length) {
+        h += '<div class="pn-cost-title">' + _pbEsc(_pbL('Where it differed', 'Dónde se desvió')) + '</div>';
+        s.list.forEach(x => {
+          const d = x.tr.date ? new Date(x.tr.date) : null;
+          const ds = d && !isNaN(d.getTime()) ? d.toLocaleDateString(_pbL('en-GB', 'es-ES'), { weekday: 'short', day: 'numeric', month: 'short' }) : '';
+          h += '<div class="pn-cost-row"><span>' + _pbEsc(ds + ' · ' + x.pb.name) + '</span><span>' + _pbEsc(x.diffs.join(', ')) + '</span></div>';
+        });
+      }
+      return h + '</div></div>';
+    } catch (e) { return ''; }
+  };
+  // The same summary as lines for the weekly community post (English, like the rest of the post).
+  window.__stPbRecipePost = function (trades) {
+    try {
+      const s = pbRecipeSummary(trades); if (!s.n) return [];
+      let l1 = 'Followed the recipe on ' + s.followed.n + ' of ' + s.n + ' playbook ' + (s.n === 1 ? 'trade' : 'trades');
+      if (s.n >= PB_RECIPE_MIN) l1 += (s.followed.n ? ' · followed ' + _pbR(s.followed.r) : '') + (s.broke.n ? ' · broke ' + _pbR(s.broke.r) : '');
+      const out = ['**Playbook recipes**', l1];
+      if (s.offList.length) out.push('Most often off: ' + s.offList.slice(0, 3).map(o => o.en + (o.n > 1 ? ' ×' + o.n : '')).join(', '));
+      return out;
+    } catch (e) { return []; }
+  };
   // A recipe in words, for the manage list and the shared card: [{label, text}].
   function pbDescribe(rec, rowDefs) {
     const rows = rowDefs || pbRows(), out = [];
@@ -31804,7 +31869,7 @@ try {
     // Weekly modal: show the consistency block (showed-up vs traded) in its own section.
     // For monthly, the block is already embedded inside renderMonthlyInsights, so we only emit
     // a standalone one here for weekly to avoid duplicating it.
-    let weeklyExtra = '';
+    let weeklyExtra = '', pbRecipeHtml = '';
     if (greetingNoun === 'week' && currentReview && currentReview.start && currentReview.end) {
       const weekTrades = filterByScope((typeof getAllLifetimeTrades === 'function' ? getAllLifetimeTrades() : [])).filter(t => {
         const td = new Date(t.date);
@@ -31817,6 +31882,8 @@ try {
       </div>
 `;
       void weekTrades;   // the weekly Consistency section was folded into "This week's adherence"
+      // Playbook recipes: followed vs broke this week (the playbooks module builds it).
+      try { if (window.__stPbRecipeHtml) pbRecipeHtml = window.__stPbRecipeHtml(weekTrades); } catch (e) {}
     }
     // Net P&L now lives in the corner pill; Trades count is implicit from W/L/BE row.
     // No redundant bottom grid needed.
@@ -31830,6 +31897,7 @@ try {
       </div>
       ${weeklyExtra}
       ${(window.__stNudge && window.__stNudge.periodHtml && currentReview && currentReview.start && currentReview.end) ? window.__stNudge.periodHtml(currentReview.start, currentReview.end, greetingNoun === 'month' ? 'month' : 'week') : ''}
+      ${pbRecipeHtml}
       ${monthlyExtra}
     `;
     // The period's leaderboard achievements, fetched after the modal is on screen.
@@ -32815,6 +32883,8 @@ try {
     // Setup charts also sit in their own section now (each under its setup line), so nothing is
     // collected for a charts block at the bottom any more.
 
+    { const _pr = window.__stPbRecipePost ? window.__stPbRecipePost(weekTradesD) : [];
+      if (_pr.length) { lines.push(''); _pr.forEach(x => lines.push(x)); } }
     if (dBestWin) {
       lines.push('');
       lines.push(`**Best trade of the week**`);
