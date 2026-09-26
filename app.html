@@ -2485,7 +2485,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-rows { margin-left: 60px; display: flex; flex-direction: column; gap: 10px; }
   #pb-rows { position: relative; }
   /* 06 Playbook as the This trade card (Nestor): one line per question - its picks as rectangular tags - tap to open its options */
-  #pb-rows.pb-cardmode { gap: 0; max-width: 760px; box-sizing: border-box; border: 1px solid var(--border-2); border-radius: 14px; padding: 14px 16px 6px; background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg) 100%); }
+  #pb-rows.pb-cardmode { gap: 10px; box-sizing: border-box; border: 1px solid var(--border-2); border-radius: 14px; padding: 16px 56px 18px 18px; background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg) 100%); }   /* full width; 56px right = the bar's lane */
+  #pb-rows.pb-cardmode > .pb-cl-top { margin-bottom: 4px; }
+  .pb-vbar { position: absolute; top: 0; bottom: 0; right: 22px; width: 12px; pointer-events: none; }
+  .pb-vbar i { position: absolute; left: 0; width: 12px; box-sizing: border-box; border-radius: 6px; background: var(--bg-elev2); border: 1px solid var(--border-2); transition: background 200ms ease, border-color 200ms ease, box-shadow 200ms ease; }
+  .pb-vbar i.on { background: var(--accent); border-color: var(--accent); box-shadow: 0 0 8px rgba(244, 114, 182, 0.45); }
+  @media (max-width: 700px) { #pb-rows.pb-cardmode { padding-right: 18px; } .pb-vbar { display: none; } }
   .pb-cl-top { display: flex; justify-content: space-between; align-items: baseline; margin: 0 2px 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
   .pb-cl-top b { font-weight: 500; color: var(--accent); letter-spacing: 0.1em; }
   #pb-rows.pb-cardmode > .pb-row.pb-cl { display: block; border-top: 1px solid var(--border); }
@@ -17955,6 +17960,22 @@ try {
   }
   // (A completion bar, then a progress ring, sat right of the rows on 26 Sep - removed at Nestor's request.)
   // (The floating This trade card with flying answers, 26 Sep, became the Playbook's main view - pbPaint.)
+  // The vertical completion bar inside the card, on the right (Nestor): one segment per question, level with
+  // its row, pink once answered. Re-made with the rows; re-placed on resize and when Session Review opens.
+  let _pbBarSel = null, _pbBarT = null;
+  function pbPaintBar(box, sel) {
+    _pbBarSel = sel;
+    const old = box.querySelector(':scope > .pb-vbar'); if (old) old.remove();
+    if (!sel || _pbRowEdit || !box.offsetHeight) return;
+    const rows = [...box.querySelectorAll(':scope > .pb-row:not(.pb-row-editing)')].map(el => ({ el, r: pbRowById(el.dataset.row) })).filter(x => x.r);
+    if (!rows.length) return;
+    const bar = document.createElement('div'); bar.className = 'pb-vbar'; bar.setAttribute('aria-hidden', 'true');
+    rows.forEach(x => { const i = document.createElement('i'); if (sel(x.r).length) i.className = 'on'; i.style.top = x.el.offsetTop + 'px'; i.style.height = x.el.offsetHeight + 'px'; bar.appendChild(i); });
+    box.appendChild(bar);
+  }
+  const _pbBarRe = () => { clearTimeout(_pbBarT); _pbBarT = setTimeout(() => { try { const b = document.getElementById('pb-rows'); if (b && _pbBarSel) pbPaintBar(b, _pbBarSel); } catch (e) {} }, 150); };
+  window.addEventListener('resize', _pbBarRe);
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tab[data-page="review"]')) _pbBarRe(); });   // drawn while hidden
   function pbPaint() {
     const box = document.getElementById('pb-rows'); if (!box) return;
     const tr = _pbTrade(); if (!tr) return;
@@ -17965,7 +17986,8 @@ try {
     const qs = pbRows().filter(r => r.kind !== 'time' && r.id !== 'mind'), done = qs.filter(r => sel(r).length).length;
     box.classList.remove('pb-list', 'pb-ts', 'pb-tiles'); box.classList.add('pb-cardmode'); box.style.removeProperty('--pb-name-w');
     box.innerHTML = '<div class="pb-cl-top"><span>' + _pbEsc(_pbL('This trade', 'Esta operación')) + '</span><b>' + done + ' / ' + qs.length + '</b></div>'
-      + pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind', true);
+      + pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind');   // every option shown, picks white (Nestor)
+    pbPaintBar(box, sel);
     const mb = document.getElementById('pb-mind-rows'); if (mb) mb.innerHTML = pbRowsHtml(sel, null, true, false, r => r.id === 'mind');
     pbFillSelect(); pbPaintStatus(); pbPaintAddRow();
   }
