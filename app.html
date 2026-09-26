@@ -2483,6 +2483,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-in:focus { outline: none; border-color: var(--accent); }
   .pb-err { color: var(--bad); }
   .pb-rows { margin-left: 60px; display: flex; flex-direction: column; gap: 10px; }
+  /* the completion bar beside the Playbook rows */
+  #pb-rows { position: relative; }
+  .pb-prog { position: absolute; top: 0; bottom: 0; right: 150px; width: 26px; pointer-events: none; }
+  .pb-prog-seg { position: absolute; left: 50%; width: 10px; margin-left: -5px; box-sizing: border-box; border-radius: 5px; background: var(--bg-elev2); border: 1px solid var(--border-2); transition: background 200ms ease, border-color 200ms ease; }
+  .pb-prog-seg.on { background: var(--accent); border-color: var(--accent); }
+  .pb-prog-n { position: absolute; top: calc(100% + 14px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-mid); }
+  .pb-prog-n.all { color: var(--accent); }
+  @media (max-width: 1150px) { .pb-prog { display: none; } }   /* safety net: never room beside the answers below this */
   .pb-row { display: grid; grid-template-columns: 180px 1fr; gap: 6px 14px; align-items: start; }   /* 180: "In-session news  tick all" on one line */
   /* min-height = one line of answer chips, so a label sits level with the FIRST line of a wrapped row
      (Nestor: "move mindset name up in line with flawless execution"). */
@@ -17922,6 +17930,34 @@ try {
     }
     return null;
   }
+  // The completion bar beside the rows (Nestor): one segment per question, level with its row, pink once
+  // answered, with the count under it. Removes itself where it would crowd the answers, and in Edit a row.
+  let _pbProgSel = null, _pbProgT = null;
+  function pbPaintProgress(box, sel) {
+    const old = box.querySelector(':scope > .pb-prog'); if (old) old.remove();
+    if (!sel || _pbRowEdit || !box.offsetHeight) return;
+    const rows = [...box.querySelectorAll(':scope > .pb-row:not(.pb-row-editing)')].map(el => ({ el, r: pbRowById(el.dataset.row) })).filter(x => x.r);
+    if (!rows.length) return;
+    const bar = document.createElement('div'); bar.className = 'pb-prog'; bar.setAttribute('aria-hidden', 'true');
+    let done = 0;
+    rows.forEach(x => {
+      const on = sel(x.r).length > 0; if (on) done++;
+      const seg = document.createElement('i'); seg.className = 'pb-prog-seg' + (on ? ' on' : '');
+      seg.style.top = x.el.offsetTop + 'px'; seg.style.height = x.el.offsetHeight + 'px'; bar.appendChild(seg);
+    });
+    const n = document.createElement('span'); n.className = 'pb-prog-n' + (done === rows.length ? ' all' : '');
+    n.textContent = done === rows.length ? _pbL('All answered ✓', 'Todo respondido ✓') : done + ' / ' + rows.length;
+    bar.appendChild(n); box.appendChild(bar);
+    const left = bar.getBoundingClientRect().left;
+    if (rows.some(x => { const k = x.el.querySelectorAll('.pb-row-o > *'); const last = k[k.length - 1]; return last && last.getBoundingClientRect().right > left - 24; })) bar.remove();
+  }
+  // Re-placed whenever the rows' box changes size (window resize, zoom, a row wrapping) - one element watched.
+  const _pbProgRe = () => { clearTimeout(_pbProgT); _pbProgT = setTimeout(() => { try { const b = document.getElementById('pb-rows'); if (b && _pbProgSel) pbPaintProgress(b, _pbProgSel); } catch (e) {} }, 150); };
+  window.addEventListener('resize', _pbProgRe);
+  // ...and when Session Review opens (drawn while hidden, the rows had nothing to measure).
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tab[data-page="review"]')) _pbProgRe(); });
+  try { const _pbRowsEl = document.getElementById('pb-rows'); let _pbRowsW = 0;
+        if (_pbRowsEl && window.ResizeObserver) new ResizeObserver(en => { const w = Math.round(en[0].contentRect.width); if (w !== _pbRowsW) { _pbRowsW = w; _pbProgRe(); } }).observe(_pbRowsEl); } catch (e) {}
   function pbPaint() {
     const box = document.getElementById('pb-rows'); if (!box) return;
     const tr = _pbTrade(); if (!tr) return;
@@ -17932,6 +17968,7 @@ try {
     // styles (pb-list, pb-ts, pb-tiles) are left in the stylesheet, unused.
     box.classList.remove('pb-list', 'pb-ts', 'pb-tiles'); box.style.removeProperty('--pb-name-w');
     box.innerHTML = pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind');
+    _pbProgSel = sel; pbPaintProgress(box, sel);
     const mb = document.getElementById('pb-mind-rows'); if (mb) mb.innerHTML = pbRowsHtml(sel, null, true, false, r => r.id === 'mind');
     pbFillSelect(); pbPaintStatus(); pbPaintAddRow();
   }
