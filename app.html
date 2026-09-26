@@ -2515,6 +2515,17 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-pbcard-r b { color: var(--text-dim); font-weight: 400; }
   .st-pb-add { align-self: flex-start; background: var(--accent); color: #000; border: none; border-radius: var(--radius-chip); padding: 8px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; font-weight: 600; }
   .st-pb-add:disabled { background: var(--bg-elev2); color: var(--text-mid); cursor: default; }
+  /* "Share a playbook" in #playbooks */
+  .dcx-pbbar { margin: 0 16px 8px; display: flex; flex-direction: column; gap: 8px; }
+  .st-pbshare-btn { align-self: flex-start; background: transparent; border: 1px solid var(--accent); color: var(--accent); border-radius: 999px; padding: 7px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; cursor: pointer; }
+  .st-pbshare-btn:hover, .dcx-pbbar.open .st-pbshare-btn { background: var(--accent); color: #000; }
+  .st-pbshare-panel { border: 1px solid var(--border-2); border-radius: 10px; background: var(--bg-elev); padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; }
+  .st-pbshare-hint, .st-pbshare-empty { font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
+  .st-pbshare-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 4px 0; border-top: 1px solid var(--border); }
+  .st-pbshare-row:first-of-type { border-top: 0; }
+  .st-pbshare-row span { font-size: 13px; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .st-pbshare-row.variant span { padding-left: 14px; color: var(--text-mid); }
+  .st-pbshare-panel .pb-act { flex: none; }
   /* Statistics */
   .pb-stat-row { cursor: pointer; }
   .pb-stat-row.is-variant .history-cell.label { padding-left: 18px; color: var(--text-mid); }
@@ -17873,6 +17884,38 @@ try {
     if (res) { b.disabled = true; b.textContent = _pbL('In your playbooks ✓', 'En tus playbooks ✓');
       try { showToast(res === 'have' ? _pbL('Already in your playbooks', 'Ya está en tus playbooks') : _pbL('Added to your playbooks', 'Añadido a tus playbooks')); } catch (e2) {} }
   });
+  // "Share a playbook" in #playbooks: lists your playbooks, posts the one you pick as the card.
+  window.__stPbShareMenu = function (box) {
+    if (!box) return;
+    let h = '<button type="button" class="st-pbshare-btn" data-pbm="toggle">📒 ' + _pbEsc(_pbL('Share a playbook', 'Compartir un playbook')) + '</button>';
+    if (box.classList.contains('open')) {
+      const list = pbList();
+      h += '<div class="st-pbshare-panel">';
+      if (!list.length) {
+        h += '<div class="st-pbshare-empty">' + _pbEsc(_pbL('You have no playbooks yet. In Session Review, answer a trade\'s Trade Details and tap "Save as playbook".', 'Aún no tienes playbooks. En Session Review, responde los detalles de una operación y pulsa "Guardar como playbook".')) + '</div>'
+          + '<button type="button" class="pb-act primary" data-pbm="review" style="align-self:flex-start">' + _pbEsc(_pbL('Open Session Review', 'Abrir Session Review')) + '</button>';
+      } else {
+        h += '<div class="st-pbshare-hint">' + _pbEsc(_pbL('Pick one to post it here as a card.', 'Elige uno para publicarlo aquí como tarjeta.')) + '</div>';
+        const row = (p, v) => '<div class="st-pbshare-row' + (v ? ' variant' : '') + '"><span>' + (v ? '↳ ' : '') + _pbEsc(p.name) + '</span><button type="button" class="pb-act primary" data-pbm="share" data-id="' + _pbEsc(p.id) + '">' + _pbEsc(_pbL('Share', 'Compartir')) + '</button></div>';
+        list.filter(p => !p.parent || !pbById(p.parent)).sort(_pbByName).forEach(p => {
+          h += row(p, false);
+          list.filter(v => v.parent === p.id).sort(_pbByName).forEach(v => { h += row(v, true); });
+        });
+      }
+      h += '</div>';
+    }
+    box.innerHTML = h;
+    box.onclick = e => {
+      const b = e.target.closest('[data-pbm]'); if (!b) return;
+      const m = b.dataset.pbm;
+      if (m === 'toggle') { box.classList.toggle('open'); window.__stPbShareMenu(box); }
+      else if (m === 'review') { box.classList.remove('open'); window.__stPbShareMenu(box); const tab = document.querySelector('.tab[data-page="review"]'); if (tab) tab.click(); }
+      else if (m === 'share') {
+        const pb = pbById(b.dataset.id); if (!pb || typeof window.__stPbShare !== 'function') return;
+        Promise.resolve(window.__stPbShare(pb, b)).then(() => { box.classList.remove('open'); window.__stPbShareMenu(box); });
+      }
+    };
+  };
   window.__stPb = { rows: pbRows, answer: pbAnswer, match: pbMatch, byName: pbByName, byId: pbById, list: pbList, root: pbRoot,
                     describe: pbDescribe, customDefs: _pbCustomRowDefs, paint: pbPaint, L: _pbL, esc: _pbEsc, diffText: pbDiffText, newId: pbNewId };
 
@@ -48561,6 +48604,7 @@ try {
           '<div class="dcx-gif" id="dcx-gif"><input id="dcx-gif-q" placeholder="'+window._stT('Search GIFs','Buscar GIFs')+'"><div class="dcx-gif-grid" id="dcx-gif-grid"></div><div style="font-size:9px;text-transform:uppercase;letter-spacing:.08em;color:#8a8792;text-align:center;">Powered by GIPHY</div></div>' +
           '<div class="dcx-replybar" id="dcx-replybar" style="display:none"></div>' +
           '<div class="dcx-pending" id="dcx-pending" style="display:none;"></div>' +
+          '<div class="dcx-pbbar" id="dcx-pbbar" style="display:none;"></div>' +   /* #playbooks: Share a playbook */
           '<div class="dcx-composer">' +
             '<div class="dcx-attach" id="dcx-attach">' +
               '<button data-act="upload"><span class="ai"><svg viewBox="0 0 24 24" width="17" height="17" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a5 5 0 0 1-7.07-7.07l9.19-9.19a3.5 3.5 0 0 1 4.95 4.95L9.4 17.05a1.5 1.5 0 0 1-2.12-2.12l8.49-8.49"/></svg></span>'+window._stT('Upload a file','Subir archivo')+'</button>' +
@@ -49524,6 +49568,10 @@ try {
         ta.setAttribute('aria-disabled', canPost?'false':'true');
         _fitReadonly(ta);
       }
+      /* #playbooks gets a "Share a playbook" bar above the message box - the same card Manage
+         playbooks posts. Whatever the composer policy: the card goes through postToChannel. */
+      try{ var _pbb=G('dcx-pbbar'); if(_pbb){ var _isPb=String(_chSlug(c)).toLowerCase()==='playbooks' && typeof window.__stPbShareMenu==='function';
+        _pbb.style.display=_isPb?'':'none'; if(_isPb){ _pbb.classList.remove('open'); window.__stPbShareMenu(_pbb); } } }catch(e){}
       note('');
       loadMsgs(); subscribe();
     }
