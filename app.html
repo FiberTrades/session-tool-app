@@ -2467,21 +2467,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      and the answer the recipe expected a dashed pink outline. */
   .pb-pick { margin-left: 60px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
   .pb-select { background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 10px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; min-width: 240px; max-width: 100%; cursor: pointer; }
-  /* The playbook picker's list in the app's colours (Nestor: "why is this blue?" - Windows' own highlight on
-     the native list). Chrome / Edge's customizable select; browsers without it keep their native list. */
-  @supports (appearance: base-select) {
-    .pb-select, .pb-select::picker(select) { appearance: base-select; }
-    .pb-select { display: inline-flex; align-items: center; justify-content: space-between; gap: 12px; }
-    .pb-select:hover { border-color: var(--text-dim); }
-    .pb-select:focus-visible, .pb-select:open { outline: none; border-color: var(--accent); }
-    .pb-select::picker-icon { color: var(--text-dim); transition: rotate 150ms ease; }
-    .pb-select:open::picker-icon { rotate: 180deg; }
-    .pb-select::picker(select) { background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 4px; margin-top: 6px; box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5); max-height: 320px; overflow-y: auto; }
-    .pb-select option { padding: 9px 12px; border-radius: 6px; background: transparent; color: var(--text-mid); font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; cursor: pointer; white-space: pre; }
-    .pb-select option::checkmark { display: none; }
-    .pb-select option:hover, .pb-select option:focus-visible { background: var(--bg-elev2); color: var(--text); outline: none; }
-    .pb-select option:checked { color: var(--accent); }
-  }
+  /* The app's own dropdown list for every <select> (Nestor: "why is this blue?" - Windows paints a native
+     list's highlight blue and it can't be recoloured). Drawn by the dropdown script at the end of the page. */
+  .st-dd { position: fixed; z-index: 2147483000; box-sizing: border-box; min-width: 120px; background: var(--bg-elev); color: var(--text); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); padding: 4px; box-shadow: 0 14px 36px rgba(0, 0, 0, 0.5); overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; line-height: 1.3; }
+  .st-dd-o { padding: 9px 12px; border-radius: 6px; color: var(--text-mid); cursor: pointer; white-space: pre; overflow: hidden; text-overflow: ellipsis; }
+  .st-dd-o.act { background: var(--bg-elev2); color: var(--text); }
+  .st-dd-o.sel { color: var(--accent); }
+  .st-dd-o.dis { opacity: 0.4; cursor: default; }
+  .st-dd-g { padding: 8px 12px 4px; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
   .pb-link { background: transparent; border: none; color: var(--text-dim); font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; cursor: pointer; padding: 6px 2px; }
   .pb-link:hover { color: var(--text); }
   .pb-status { margin: 12px 0 0 60px; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-mid); line-height: 1.5; }
@@ -73200,6 +73193,114 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   try{ new MutationObserver(onMut).observe(document.body,{childList:true,subtree:true}); }catch(_){}
   // Belt-and-braces: a delegated capture listener also catches any that slip through before a scan.
   document.addEventListener('click',function(e){ var a=(e.target&&e.target.closest)?e.target.closest(SEL):null; if(a){ e.preventDefault(); e.stopPropagation(); openP(); } },true);
+})();
+</script>
+<script>
+/* App-drawn dropdown lists (Nestor, 26 Sep 2026: "make any blue dropdown in the app look the same").
+   A native <select>'s list is drawn by the OS - on Windows its highlight is blue and can't be recoloured -
+   so on a mouse / trackpad every single-choice <select> opens this list instead: dark, grey under the
+   pointer, the chosen one pink. The <select> itself is untouched (same box, value and input / change
+   events), phones keep their own pickers, and data-native-select opts a select out. */
+(function () {
+  try { if (!window.matchMedia || !matchMedia('(hover: hover) and (pointer: fine)').matches) return; } catch (e) { return; }
+  var menu = null, sel = null, items = [], act = -1, typed = '', typedT = null;
+  function usable(s) { return !!s && s.tagName === 'SELECT' && !s.multiple && !(s.size > 1) && !s.disabled && !(s.closest && s.closest('[data-native-select]')) && s.options.length > 0; }
+  function close(refocus) {
+    if (!menu) return;
+    var s = sel; menu.remove(); menu = null; sel = null; items = []; act = -1;
+    window.removeEventListener('resize', onWin); window.removeEventListener('blur', onWin); document.removeEventListener('scroll', onScroll, true);
+    if (refocus && s && s.isConnected) { try { s.focus({ preventScroll: true }); } catch (e) {} }
+  }
+  function onWin() { close(false); }
+  function onScroll(e) { if (menu && !(e.target && e.target.nodeType === 1 && menu.contains(e.target))) close(false); }
+  function setAct(i, scroll) {
+    if (items[act]) items[act].el.classList.remove('act');
+    act = i; var it = items[i];
+    if (it) { it.el.classList.add('act'); if (scroll) { try { it.el.scrollIntoView({ block: 'nearest' }); } catch (e) {} } }
+  }
+  function step(from, dir) { for (var i = from + dir; i >= 0 && i < items.length; i += dir) if (!items[i].dis) return i; return from; }
+  function pick(i) {
+    var it = items[i]; if (!it || it.dis) return;
+    var s = sel; close(true); if (!s || !s.isConnected) return;
+    if (s.selectedIndex !== it.idx) {
+      s.selectedIndex = it.idx;
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+      s.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+  }
+  function open(s) {
+    close(false); sel = s;
+    menu = document.createElement('div'); menu.className = 'st-dd'; menu.setAttribute('role', 'listbox'); menu.style.visibility = 'hidden';
+    var add = function (o) {
+      if (o.hidden) return;
+      var el = document.createElement('div'), dis = o.disabled || (o.parentNode && o.parentNode.disabled);
+      el.className = 'st-dd-o' + (o.selected ? ' sel' : '') + (dis ? ' dis' : '');
+      el.setAttribute('role', 'option'); el.setAttribute('aria-selected', o.selected ? 'true' : 'false');
+      el.textContent = o.label || o.textContent || ' '; el.dataset.i = items.length;
+      items.push({ el: el, idx: o.index, dis: !!dis, text: (o.label || o.textContent || '').trim().toLowerCase() });
+      menu.appendChild(el);
+    };
+    Array.prototype.forEach.call(s.children, function (ch) {
+      if (ch.tagName === 'OPTGROUP') {
+        var g = document.createElement('div'); g.className = 'st-dd-g'; g.textContent = ch.label || ''; menu.appendChild(g);
+        Array.prototype.forEach.call(ch.children, function (o) { if (o.tagName === 'OPTION') add(o); });
+      } else if (ch.tagName === 'OPTION') add(ch);
+    });
+    if (!items.length) { menu = null; sel = null; return; }
+    document.body.appendChild(menu);
+    var r = s.getBoundingClientRect(), vw = document.documentElement.clientWidth, vh = window.innerHeight;
+    menu.style.minWidth = Math.max(120, r.width) + 'px';
+    menu.style.maxWidth = Math.max(200, Math.min(480, vw - 16)) + 'px';
+    var below = vh - r.bottom - 12, above = r.top - 12, h = Math.min(menu.scrollHeight, 320);
+    var up = h > below && above > below, room = Math.max(120, Math.min(320, up ? above : below));
+    menu.style.maxHeight = room + 'px'; h = Math.min(h, room);
+    var w = menu.getBoundingClientRect().width;
+    menu.style.left = Math.round(Math.max(8, Math.min(r.left, vw - w - 8))) + 'px';
+    menu.style.top = Math.round(up ? r.top - 6 - h : r.bottom + 6) + 'px';
+    var cur = -1; items.forEach(function (it, i) { if (it.idx === s.selectedIndex) cur = i; });
+    setAct(cur >= 0 ? cur : step(-1, 1), true);
+    menu.style.visibility = '';
+    menu.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep focus on the select
+    menu.addEventListener('mousemove', function (e) { var o = e.target.closest && e.target.closest('.st-dd-o'); if (o && +o.dataset.i !== act && !items[+o.dataset.i].dis) setAct(+o.dataset.i, false); });
+    menu.addEventListener('click', function (e) { var o = e.target.closest && e.target.closest('.st-dd-o'); if (o) pick(+o.dataset.i); });
+    window.addEventListener('resize', onWin); window.addEventListener('blur', onWin); document.addEventListener('scroll', onScroll, true);
+  }
+  window.addEventListener('mousedown', function (e) {
+    var t = e.target;
+    if (menu && t && t.nodeType === 1 && menu.contains(t)) return;
+    if (e.button === 0 && usable(t)) {
+      e.preventDefault();                                   // no native list
+      if (menu && sel === t) { close(true); return; }
+      try { t.focus({ preventScroll: true }); } catch (x) {}
+      open(t); return;
+    }
+    close(false);
+  }, true);
+  window.addEventListener('keydown', function (e) {
+    var k = e.key;
+    if (!menu) {
+      var t = e.target;
+      if (usable(t) && (k === ' ' || k === 'Enter' || k === 'F4' || (e.altKey && (k === 'ArrowDown' || k === 'ArrowUp')))) { e.preventDefault(); e.stopPropagation(); open(t); }
+      return;
+    }
+    var done = true;
+    if (k === 'ArrowDown') setAct(step(act, 1), true);
+    else if (k === 'ArrowUp') setAct(step(act, -1), true);
+    else if (k === 'Home') setAct(step(-1, 1), true);
+    else if (k === 'End') setAct(step(items.length, -1), true);
+    else if (k === 'PageDown') { var d = act; for (var n = 0; n < 8; n++) d = step(d, 1); setAct(d, true); }
+    else if (k === 'PageUp') { var u = act; for (var m = 0; m < 8; m++) u = step(u, -1); setAct(u, true); }
+    else if (k === 'Enter' || k === ' ') pick(act);
+    else if (k === 'Escape') close(true);
+    else if (k === 'Tab') { close(false); done = false; }
+    else if (k.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      clearTimeout(typedT); typed += k.toLowerCase(); typedT = setTimeout(function () { typed = ''; }, 700);
+      var start = typed.length === 1 ? act + 1 : act, hit = -1;
+      for (var j = 0; j < items.length && hit < 0; j++) { var q = (start + j) % items.length; if (!items[q].dis && items[q].text.indexOf(typed) === 0) hit = q; }
+      if (hit >= 0) setAct(hit, true);
+    } else done = false;
+    if (done) { e.preventDefault(); e.stopImmediatePropagation(); }   // Escape here never closes the window behind
+  }, true);
 })();
 </script>
 </body>
