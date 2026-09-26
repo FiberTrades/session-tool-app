@@ -2524,6 +2524,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-mv:disabled { opacity: 0.3; cursor: default; }
   .pb-row-o:has(> .pb-row-tools) { padding-right: 150px; }
   .pb-row[data-row="mind"] .pb-row-o:has(> .pb-row-tools) { max-width: 970px; }
+  /* Answers fill their row (Nestor, 26 Sep): each grows to share the width, so every row is a full-width
+     bar; on a narrow screen they wrap and each line still fills. A long row (Mindset) is justified line
+     by line, and the filler keeps its last line at natural widths. */
+  .pb-row-o .tag { flex: 1 1 auto; }
+  .pb-rows.pb-mind-rows .pb-row { grid-template-columns: 1fr; }
+  .pb-rows.pb-mind-rows .pb-row > .pb-row-l { display: none; }
+  .pb-row-o.pb-o-many::after { content: ''; flex: 999 1 auto; }
+  .pb-row[data-row="mind"] .pb-row-o, .pb-row[data-row="mind"] .pb-row-o:has(> .pb-row-tools) { max-width: none; }
   /* one column on phones: the button sits on the row's name line instead (that line is 30px) */
   @media (max-width: 700px) { .pb-row-o:has(> .pb-row-tools) { padding-right: 0; } }
   .pb-roweditor { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border-2); border-radius: 10px; padding: 12px; background: var(--bg-elev); }
@@ -5481,12 +5489,18 @@ try {
       <div class="tags" id="concept-tags" hidden></div>
     </section>
 
-    <!-- Mindset is a row of 06 Trade Details now (Nestor). Its old chips' container stays, empty and hidden,
-         for the code that still looks it up. -->
+    <!-- Mindset, its own section again (Nestor: it has nothing to do with a playbook). The Mindset row is
+         drawn here by the playbooks module (pbPaint -> #pb-mind-rows). -->
+    <section id="section-mindset">
+      <div class="section-header"><span class="section-num">07</span><span class="section-title" data-i18n="review.s9.title">Mindset</span></div>
+      <p class="section-hint" data-i18n="hint.mental_state">Mental state — be honest, this is how you grow.</p>
+      <div class="pb-rows pb-mind-rows" id="pb-mind-rows"></div>
+    </section>
+    <!-- The old chips' container, empty and hidden, for the code that still looks it up. -->
     <div class="tags" id="mindset-tags" hidden></div>
 
     <section id="section-reflection">
-      <div class="section-header"><span class="section-num">07</span><span class="section-title" data-i18n="review.s10.title">Reflection</span></div>
+      <div class="section-header"><span class="section-num">08</span><span class="section-title" data-i18n="review.s10.title">Reflection</span></div>
       <p class="section-hint" data-i18n="review.s10.hint">What went well. What needs improvement. Don't skip this.</p>
       <textarea spellcheck="true" class="textarea" id="review-reflection" data-i18n-placeholder="ph.reflection_long" placeholder="Today I noticed... I will improve... Tomorrow I commit to..."></textarea>
     </section>
@@ -6115,6 +6129,7 @@ try {
       <select id="pb-edit-select" class="pb-select" aria-label="Playbook"></select>
       <div class="pb-status" id="pb-edit-status"></div>
       <details class="pb-edit-d" id="pb-edit-d"><summary id="pb-edit-sum">Trade Details</summary><div class="pb-rows" id="pb-edit-rows"></div></details>
+      <details class="pb-edit-d" id="pb-edit-md"><summary id="pb-edit-msum">Mindset</summary><div class="pb-rows pb-mind-rows" id="pb-edit-mind"></div></details>
     </div>
 
     <div class="actions" style="margin-top:24px;">
@@ -7331,7 +7346,7 @@ try {
       'review.s6.title': 'RICE Phase Observed',
       'review.s7.title': 'Post-Session Charts',
       'review.s8.title': 'Concept Tags',
-      'review.s9.title': 'Mindset Tags',
+      'review.s9.title': 'Mindset',
       'review.s10.title': 'Reflection',
       // ----- Series of 10 section titles -----
       'stats.s1.title': 'Series History',
@@ -9052,7 +9067,7 @@ try {
       'review.s6.title': 'Fase RICE Observada',
       'review.s7.title': 'Gráficos Post-Sesión',
       'review.s8.title': 'Etiquetas de Concepto',
-      'review.s9.title': 'Etiquetas de Mentalidad',
+      'review.s9.title': 'Mentalidad',
       'review.s10.title': 'Reflexión',
       // ----- Series of 10 section titles -----
       'stats.s1.title': 'Historial de Series',
@@ -17766,12 +17781,13 @@ try {
       + (_pbReErr ? '<span class="pb-err">' + _pbEsc(_pbReErr) + '</span>' : '') + '</div></div>';
     return h;
   }
-  function pbRowsHtml(getSel, rec, editable, forRecipe) {
+  function pbRowsHtml(getSel, rec, editable, forRecipe, pick) {   // pick: optional filter - Mindset is drawn apart
     let h = '';
     const pbDiff = {};
     const tRow = pbRowById('stime');
-    const mvIds = pbRows().filter(r => r.kind !== 'time').map(r => r.id);   // for Edit a row's up / down
+    const mvIds = pbRows().filter(r => r.kind !== 'time' && r.id !== 'mind').map(r => r.id);   // for Edit a row's up / down (Mindset has its own section)
     pbRows().forEach(r => {
+      if (pick && !pick(r)) return;
       if (r.kind === 'time') return;                     // drawn inside the Session row
       if (forRecipe && r.norecipe) return;               // mindset is not a recipe rule
       const sel = getSel(r), want = _pbWant(rec, r);
@@ -17782,7 +17798,7 @@ try {
         return;
       }
       h += '<div class="pb-row' + (differs ? ' pb-diff' : '') + '" data-row="' + _pbEsc(r.id) + '"><div class="pb-row-l">' + _pbEsc(_pbLbl(r))
-        + (r.multi ? '<span class="pb-multi">' + _pbEsc(_pbL('tick all', 'marca todas')) + '</span>' : '') + '</div><div class="pb-row-o">';
+        + (r.multi ? '<span class="pb-multi">' + _pbEsc(_pbL('tick all', 'marca todas')) + '</span>' : '') + '</div><div class="pb-row-o' + (r.opts.length > 8 ? ' pb-o-many' : '') + '">';
       r.opts.forEach(o => { const on = sel.indexOf(o.k) >= 0, w = !on && want.indexOf(o.k) >= 0;
         h += '<button type="button" class="tag' + (on ? ' selected' : '') + (w ? ' pb-want' : '') + '" data-k="' + _pbEsc(o.k) + '">' + _pbEsc(_pbLbl(o)) + '</button>'; });
       if (r.field === 'mindset') sel.filter(v => !r.opts.some(o => o.k === v)).forEach(v => {
@@ -17797,9 +17813,8 @@ try {
           + '<span>\u2013</span><input type="time" class="pb-time" data-row="stime" data-t="to" value="' + _pbEsc(ab[1] || '') + '" aria-label="' + _pbEsc(_pbL('To', 'Hasta')) + '"></span>';
       }
       if (editable && _pbRowEdit) { const mi = mvIds.indexOf(r.id);
-        h += '<span class="pb-row-tools">'
-          + '<button type="button" class="pb-mv" data-mv="up" data-mvrow="' + _pbEsc(r.id) + '"' + (mi <= 0 ? ' disabled' : '') + ' title="' + _pbEsc(_pbL('Move up', 'Subir')) + '" aria-label="' + _pbEsc(_pbL('Move up', 'Subir')) + '">↑</button>'
-          + '<button type="button" class="pb-mv" data-mv="down" data-mvrow="' + _pbEsc(r.id) + '"' + (mi < 0 || mi >= mvIds.length - 1 ? ' disabled' : '') + ' title="' + _pbEsc(_pbL('Move down', 'Bajar')) + '" aria-label="' + _pbEsc(_pbL('Move down', 'Bajar')) + '">↓</button>'
+        h += '<span class="pb-row-tools">' + (r.id === 'mind' ? '' : '<button type="button" class="pb-mv" data-mv="up" data-mvrow="' + _pbEsc(r.id) + '"' + (mi <= 0 ? ' disabled' : '') + ' title="' + _pbEsc(_pbL('Move up', 'Subir')) + '" aria-label="' + _pbEsc(_pbL('Move up', 'Subir')) + '">↑</button>'
+          + '<button type="button" class="pb-mv" data-mv="down" data-mvrow="' + _pbEsc(r.id) + '"' + (mi < 0 || mi >= mvIds.length - 1 ? ' disabled' : '') + ' title="' + _pbEsc(_pbL('Move down', 'Bajar')) + '" aria-label="' + _pbEsc(_pbL('Move down', 'Bajar')) + '">↓</button>')
           + '<button type="button" class="pb-reopen" data-edit="' + _pbEsc(r.id) + '" title="' + _pbEsc(_pbL('Edit this row', 'Editar esta fila')) + '">\u270e ' + _pbEsc(_pbL('Edit', 'Editar')) + '</button></span>'; }
       h += '</div></div>';
     });
@@ -17809,7 +17824,9 @@ try {
     const box = document.getElementById('pb-rows'); if (!box) return;
     const tr = _pbTrade(); if (!tr) return;
     const pb = tr.setup ? pbByName(tr.setup) : null;
-    box.innerHTML = pbRowsHtml(r => { const a = pbAnswer(tr, r); return r.multi ? a : (a ? [a] : []); }, pb ? pb.rec : null, true);
+    const sel = r => { const a = pbAnswer(tr, r); return r.multi ? a : (a ? [a] : []); };
+    box.innerHTML = pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind');
+    const mb = document.getElementById('pb-mind-rows'); if (mb) mb.innerHTML = pbRowsHtml(sel, null, true, false, r => r.id === 'mind');
     pbFillSelect(); pbPaintStatus(); pbPaintAddRow();
   }
   function pbFillSelect() {
@@ -17919,7 +17936,7 @@ try {
         if (own) { if (!Array.isArray(own.opts)) own.opts = []; own.opts.push({ v, l: ans }); }
         else { const ed = _pbRowEd(r.id); if (!Array.isArray(ed.extra)) ed.extra = []; ed.extra.push({ v, l: ans }); } }
       _pbAfter();
-      const ni = document.querySelector('#pb-rows .pb-row-editing [data-re="newans"]'); if (ni) ni.focus();
+      const ni = document.querySelector('#pb-rows .pb-row-editing [data-re="newans"], #pb-mind-rows .pb-row-editing [data-re="newans"]'); if (ni) ni.focus();
       return;
     }
     if (act === 'del') {
@@ -17963,7 +17980,7 @@ try {
   // Edit a row: move a row up or down. Saved as data.pbOrder - every row's id, hidden ones included, so a
   // restored row comes back where it was. Session time is drawn inside Session, so it isn't counted.
   function pbMoveRow(id, dir) {
-    const all = pbRowsAll().map(r => r.id), vis = pbRows().filter(r => r.kind !== 'time').map(r => r.id);
+    const all = pbRowsAll().map(r => r.id), vis = pbRows().filter(r => r.kind !== 'time' && r.id !== 'mind').map(r => r.id);
     const i = vis.indexOf(id), j = i + dir; if (i < 0 || j < 0 || j >= vis.length) return;
     const a = all.indexOf(id), b = all.indexOf(vis[j]); all[a] = vis[j]; all[b] = id;
     data.pbOrder = all; _pbAfter();
@@ -17993,13 +18010,15 @@ try {
   function pbInit() {
     const rows = document.getElementById('pb-rows'), sel = document.getElementById('pb-select'), st = document.getElementById('pb-status');
     if (!rows || !sel || !st) return;
-    rows.addEventListener('click', e => {
+    // The playbook rows and the Mindset row (its own section) share every handler.
+    const _pbRowsOn = (type, fn) => [rows, document.getElementById('pb-mind-rows')].forEach(bx => { if (bx) bx.addEventListener(type, fn); });
+    _pbRowsOn('click', e => {
       const addB = e.target.closest('.pb-row-add');
-      if (addB) { _pbAddTag = addB.dataset.add; pbPaint(); const inp = document.querySelector('#pb-rows .pb-tagin'); if (inp) inp.focus(); return; }
+      if (addB) { _pbAddTag = addB.dataset.add; pbPaint(); const inp = document.querySelector('#pb-rows .pb-tagin, #pb-mind-rows .pb-tagin'); if (inp) inp.focus(); return; }
       const mv = e.target.closest('.pb-mv[data-mv]');
       if (mv) { if (!mv.disabled) pbMoveRow(mv.dataset.mvrow, mv.dataset.mv === 'up' ? -1 : 1); return; }
       const eo = e.target.closest('.pb-reopen');
-      if (eo) { _pbEditingRow = eo.dataset.edit; _pbReErr = ''; pbPaint(); const ni = document.querySelector('#pb-rows .pb-row-editing [data-re="newans"]') || document.querySelector('#pb-rows .pb-row-editing [data-re="name"]'); if (ni) ni.focus(); return; }
+      if (eo) { _pbEditingRow = eo.dataset.edit; _pbReErr = ''; pbPaint(); const ni = document.querySelector('#pb-rows .pb-row-editing [data-re="newans"], #pb-mind-rows .pb-row-editing [data-re="newans"]') || document.querySelector('#pb-rows .pb-row-editing [data-re="name"], #pb-mind-rows .pb-row-editing [data-re="name"]'); if (ni) ni.focus(); return; }
       const re = e.target.closest('[data-re], [data-re-rm], [data-re-restore]');
       if (re && re.closest('.pb-row-editing')) { pbRowEditAction(re); return; }
       const del = e.target.closest('.pb-row-del');
@@ -18028,23 +18047,23 @@ try {
       const cur = pbAnswer(tr, r); if (cur.indexOf(val) < 0) { cur.push(val); pbSetAnswer(tr, r, cur); }
       _pbAfter();
     };
-    rows.addEventListener('change', e => {
+    _pbRowsOn('change', e => {
       const inp = e.target; if (!inp || inp.dataset.re !== 'name') return;
       const r = pbRowById(_pbEditingRow); if (r) pbRowRename(r, inp.value);
     });
-    rows.addEventListener('keydown', e => {
+    _pbRowsOn('keydown', e => {
       const t2 = e.target;
       if (t2 && t2.dataset && t2.closest && t2.closest('.pb-row-editing')) {
         if (e.key === 'Enter' && t2.dataset.re === 'newans') { e.preventDefault(); pbRowEditAction(t2.parentNode.querySelector('[data-re="add"]')); return; }
         if (e.key === 'Enter' && t2.dataset.re === 'name') { e.preventDefault(); t2.blur(); return; }
       }
     });
-    rows.addEventListener('keydown', e => {
+    _pbRowsOn('keydown', e => {
       const inp = e.target; if (!inp.classList || !inp.classList.contains('pb-tagin')) return;
       if (e.key === 'Enter') { e.preventDefault(); commitTag(inp); }
       else if (e.key === 'Escape') { _pbAddTag = null; pbPaint(); }
     });
-    rows.addEventListener('focusout', e => {
+    _pbRowsOn('focusout', e => {
       const inp = e.target; if (!inp.classList || !inp.classList.contains('pb-tagin') || _pbAddTag === null) return;
       if (String(inp.value || '').trim()) commitTag(inp); else { _pbAddTag = null; pbPaint(); }
     });
@@ -18521,6 +18540,9 @@ try {
     if (sm) sm.textContent = _pbL('Trade Details', 'Detalles de la operación');
     const d = document.getElementById('pb-edit-d');
     if (d) d.open = !!(_pbEd.setup || Object.keys(pbRecipeFrom(_pbEd)).length);
+    const md = document.getElementById('pb-edit-md'), ms = document.getElementById('pb-edit-msum');
+    if (ms) ms.textContent = _pbL('Mindset', 'Mentalidad');
+    if (md) md.open = _pbEd.mindset.length > 0;
     pbEditPaint();
   };
   window.__stPbEditApply = function (t) {
@@ -18536,7 +18558,9 @@ try {
     if (!_pbEd) return;
     const rows = document.getElementById('pb-edit-rows'), sel = document.getElementById('pb-edit-select'), st = document.getElementById('pb-edit-status');
     const pb = _pbEd.setup ? pbByName(_pbEd.setup) : null;
-    if (rows) rows.innerHTML = pbRowsHtml(r => { const a = pbAnswer(_pbEd, r); return r.multi ? a : (a ? [a] : []); }, pb ? pb.rec : null, false);
+    const _esel = r => { const a = pbAnswer(_pbEd, r); return r.multi ? a : (a ? [a] : []); };
+    if (rows) rows.innerHTML = pbRowsHtml(_esel, pb ? pb.rec : null, false, false, r => r.id !== 'mind');
+    const _em = document.getElementById('pb-edit-mind'); if (_em) _em.innerHTML = pbRowsHtml(_esel, null, false, false, r => r.id === 'mind');
     if (sel) {
       const list = pbList(), cur = _pbEd.setup || '', opt = (v, l) => '<option value="' + _pbEsc(v) + '">' + _pbEsc(l) + '</option>';
       let h = opt('', _pbL('— No playbook —', '— Sin playbook —'));
@@ -18556,7 +18580,8 @@ try {
   function _pbEdSyncTypeSelect() { const s2 = document.getElementById('edit-type'); if (s2 && _pbEd) s2.value = _pbEd.type || ''; }
   function pbEditWire() {
     const rows = document.getElementById('pb-edit-rows'), sel = document.getElementById('pb-edit-select'), ty = document.getElementById('edit-type'), sd = document.getElementById('edit-side');
-    if (rows) rows.addEventListener('click', e => {
+    const _edRowsOn = (type, fn) => [rows, document.getElementById('pb-edit-mind')].forEach(bx => { if (bx) bx.addEventListener(type, fn); });
+    _edRowsOn('click', e => {
       const b = e.target.closest('.tag[data-k]'); if (!b || !_pbEd) return;
       const r = pbRowById(b.closest('.pb-row').dataset.row); if (!r) return;
       const k = b.dataset.k, cur = pbAnswer(_pbEd, r);
@@ -18589,6 +18614,7 @@ try {
     try { if (_pbEd) pbEditPaint(); } catch (e) {}
     try { const bg = document.getElementById('pb-modal-bg'); if (bg && bg.classList.contains('show')) pbRenderManage(); } catch (e) {}
     try { const sm = document.getElementById('pb-edit-sum'); if (sm) sm.textContent = _pbL('Trade Details', 'Detalles de la operación'); } catch (e) {}
+    try { const ms = document.getElementById('pb-edit-msum'); if (ms) ms.textContent = _pbL('Mindset', 'Mentalidad'); } catch (e) {}
     try { const bar = document.getElementById('dcx-pbbar'); if (bar && bar.style.display !== 'none' && window.__stPbShareMenu) window.__stPbShareMenu(bar); } catch (e) {}
     try { if (typeof rvCloseHint === 'function') rvCloseHint(); } catch (e) {}
   }
