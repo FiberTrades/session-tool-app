@@ -4000,6 +4000,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     .reflect-week-grid { grid-template-columns: 1fr; }
   }
   .reflect-bw-col { display: flex; flex-direction: column; gap: 8px; }
+  .reflect-bw-pb { font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; color: var(--text); line-height: 1.5; padding: 2px 2px 0; }
+  .reflect-bw-pb-k { font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); margin-right: 10px; }
   .reflect-bw-col .auto-trade-card { margin-bottom: 0; }
   /* When the Best-trade card stands alone (no Worst sibling), give the stats real visual weight
      so the meta column balances the thumbnail. Larger text + tighter line-height feels deliberate.
@@ -8582,6 +8584,10 @@ try {
       'modal.trade_of_month': 'Trade of the month',
       'modal.best_worst_week': 'Best & Worst Week',
       'modal.only_one_week': 'Only one week of trades this month — no comparison available.',
+      'modal.best_worst_playbook': 'Best & Worst Playbook',
+      'modal.best_playbook': 'Best playbook',
+      'modal.worst_playbook': 'Worst playbook',
+      'modal.only_one_playbook': 'Only one playbook traded this month:',
       'modal.consistency': 'Consistency',
       'modal.consistency_days': '{N} of {T} trading days',
       'discord.empty_review': 'Fill in the form to preview your community post.',
@@ -10298,6 +10304,10 @@ try {
       'modal.trade_of_month': 'Operación del mes',
       'modal.best_worst_week': 'Mejor y Peor Semana',
       'modal.only_one_week': 'Solo una semana de operaciones este mes — no hay comparación disponible.',
+      'modal.best_worst_playbook': 'Mejor y Peor Playbook',
+      'modal.best_playbook': 'Mejor playbook',
+      'modal.worst_playbook': 'Peor playbook',
+      'modal.only_one_playbook': 'Solo un playbook este mes:',
       'modal.consistency': 'Constancia',
       'modal.consistency_days': '{N} de {T} días operados',
       'discord.empty_review': 'Rellena el formulario para previsualizar tu mensaje de la comunidad.',
@@ -18221,6 +18231,7 @@ try {
   // old data and start fresh from now with all users"). Nothing is deleted from anyone's journal -
   // older trades, and the old setup tags on them, are just not counted here.
   const PB_PERF_FROM = Date.UTC(2026, 8, 26);
+  window.__stPbPerfFrom = PB_PERF_FROM;   // the monthly review's Best & Worst Playbook counts from here too
   function pbRenderStats(all, H) {
     try { pbRenderManage(); } catch (e) {}   // "Your Playbooks" in Statistics
     const perf = document.getElementById('setup-breakdown');
@@ -30848,6 +30859,12 @@ try {
   // Render a small auto-trade summary card with date/side/R/£ + thumbnail.
   // Global so it can be called from both renderWeeklyReflection (per-week best trade) and
   // renderMonthlyInsights (Top 3 ranked cards). Uses only globally-available helpers.
+  // The trade's playbook line - "Playbook: Range · recipe 4/4 ✓", or "Setup: <old tag>" - or null.
+  // Same wording as the Session Review post and the Calendar day view (pbLines).
+  function tradePlaybookLine(tr) {
+    try { const pl = (tr && window.__stPbLines) ? window.__stPbLines(tr)[0] : null;
+          return (pl && (pl.label === 'Playbook' || pl.label === 'Setup')) ? pl : null; } catch (e) { return null; }
+  }
   function autoTradeCard(tr, label, iconCls, icon) {
     if (!tr) return '';
     const escFn = s => String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
@@ -31116,6 +31133,53 @@ try {
         <div class="month-insight-empty">${t('modal.only_one_week')}</div>
       </div>`;
     }
+
+    // === 1b. Best & worst playbook (Sep 2026) ===
+    // Net result per playbook over the month (a variant is its own playbook - its recipe differs),
+    // from the date Playbook Performance starts. Small samples, so each side names its trade count.
+    let pbSectionHtml = '';
+    try {
+      const PBX = window.__stPb, pbFrom = window.__stPbPerfFrom || 0;
+      const escH = v => String(v).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+      const pbBuckets = {};
+      if (PBX && typeof PBX.byName === 'function') monthTrades.forEach(t => {
+        if (!t.setup) return;
+        const pb = PBX.byName(t.setup); if (!pb) return;
+        const when = new Date(t.date).getTime(); if (!(when >= pbFrom)) return;
+        const b = pbBuckets[pb.id] || (pbBuckets[pb.id] = { name: pb.name, total: 0, trades: 0 });
+        const mult = tradeCopies(t);
+        b.total += tradeMetric(t) * mult; b.trades += mult;
+      });
+      const pbs = Object.values(pbBuckets);
+      const cls = v => v > 0 ? 'good' : v < 0 ? 'bad' : '';
+      const across = n => n === 1 ? t('modal.across_one_trade') : t('modal.across_n_trades').replace(/\{N\}/g, n);
+      if (pbs.length >= 2) {
+        const sorted = pbs.slice().sort((a, b) => b.total - a.total);
+        const best = sorted[0], worst = sorted[sorted.length - 1];
+        pbSectionHtml = `
+        <div class="month-insight-block">
+          <div class="month-insight-title">${t('modal.best_worst_playbook')}</div>
+          <div class="month-insight-row">
+            <div class="month-insight-cell">
+              <div class="month-insight-label"><span class="icon good">↑</span>${t('modal.best_playbook')}</div>
+              <div class="month-insight-value">${escH(best.name)}</div>
+              <div class="month-insight-sub ${cls(best.total)}">${fmtMetric(best.total)} ${across(best.trades)}</div>
+            </div>
+            <div class="month-insight-cell">
+              <div class="month-insight-label"><span class="icon bad">↓</span>${t('modal.worst_playbook')}</div>
+              <div class="month-insight-value">${escH(worst.name)}</div>
+              <div class="month-insight-sub ${cls(worst.total)}">${fmtMetric(worst.total)} ${across(worst.trades)}</div>
+            </div>
+          </div>
+        </div>`;
+      } else if (pbs.length === 1) {
+        const only = pbs[0];
+        pbSectionHtml = `<div class="month-insight-block">
+          <div class="month-insight-title">${t('modal.best_worst_playbook')}</div>
+          <div class="month-insight-empty">${t('modal.only_one_playbook')} ${escH(only.name)}, <span style="color:var(--${only.total > 0 ? 'good' : only.total < 0 ? 'bad' : 'text-mid'})">${fmtMetric(only.total)}</span> ${across(only.trades)}.</div>
+        </div>`;
+      }
+    } catch (e) { pbSectionHtml = ''; }
 
     // === 2. Trading days vs total days (weekdays only, Mon–Fri) ===
     // Uses the shared `renderConsistencyBlock` helper so weekly + monthly modals look
@@ -31441,6 +31505,7 @@ try {
       <div class="month-insight-block lbr-block" data-lbr-period="month" hidden></div>
       ${tradeOfMonthHtml}
       ${weekSectionHtml}
+      ${pbSectionHtml}
       ${consistencyHtml}
       ${dowHtml}
       ${comparisonHtml}
@@ -31926,6 +31991,7 @@ try {
           <div class="reflect-bw-grid">
             <div class="reflect-bw-col">
               ${autoTradeCard(bestWinTrade, '', 'good', '')}
+              ${(() => { const pl = tradePlaybookLine(bestWinTrade); return pl ? `<div class="reflect-bw-pb"><span class="reflect-bw-pb-k">${esc(pl.label)}</span>${esc(pl.text)}</div>` : ''; })()}
               <textarea spellcheck="true" id="rfx-best-trade-notes" class="reflect-q-textarea" placeholder="${t('modal.why_best')}">${esc(bestTradeNotes)}</textarea>
             </div>
           </div>
@@ -32695,6 +32761,7 @@ try {
       lines.push('');
       lines.push(`**Best trade of the week**`);
       lines.push(tradeOneLiner(dBestWin));
+      { const pl = tradePlaybookLine(dBestWin); if (pl) lines.push(pl.label + ': ' + pl.text); }
       if (bestTradeTxt) lines.push(bestTradeTxt);
       if (bestTradeChart) lines.push(bestTradeChart);   // shows as the chart image right here
     }
