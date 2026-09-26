@@ -2494,6 +2494,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-row-pick .pb-status { margin: 0; }
   .pb-sep { margin: 16px 0 14px 60px; border-top: 1px dashed var(--border-2); }
   @media (max-width: 900px) { .pb-sep { margin-left: 0; } }
+  .pb-time-in { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; }
+  .pb-time { background: var(--bg-elev); border: 1px solid var(--border-2); color: var(--text); border-radius: var(--radius-chip); padding: 0 8px; height: 30px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color-scheme: dark; }
+  .pb-time:focus { outline: none; border-color: var(--accent); }
   .pb-row-del { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 16px; line-height: 1; padding: 2px 6px; }
   .pb-row-del:hover { color: var(--bad); }
   #pb-addrow-wrap { margin: 14px 0 0 60px; }
@@ -17320,6 +17323,16 @@ try {
   function _pbL(en, es) { var l = window.__lang || document.documentElement.lang; return l === 'es' ? es : en; }
   function _pbEsc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); }
   const PB_ROWS = [
+    // Session context (Nestor): which session, its time range, and the news in it.
+    { id: 'sess', en: 'Session', es: 'Sesión', opts: [
+      { k: 'London', en: 'London', es: 'Londres', c: 'Session: London' },
+      { k: 'Asia', en: 'Asia', es: 'Asia', c: 'Session: Asia' },
+      { k: 'New York', en: 'New York', es: 'Nueva York', c: 'Session: New York' } ] },
+    { id: 'stime', en: 'Session time range', es: 'Horario de la sesión', kind: 'time', prefix: 'Session time: ', opts: [] },
+    { id: 'news', en: 'In-session news', es: 'Noticias en la sesión', multi: true, opts: [
+      { k: 'High', en: 'High', es: 'Alta', c: 'Session News: High' },
+      { k: 'Medium', en: 'Medium', es: 'Media', c: 'Session News: Medium' },
+      { k: 'Bank Holiday', en: 'Bank Holiday', es: 'Festivo', c: 'Session News: Bank Holiday' } ] },
     { id: 'type', en: 'Trade type', es: 'Tipo', field: 'type', opts: [
       { k: 'Reaction', en: 'Reaction', es: 'Reacción', c: 'Reaction Trade' },
       { k: 'Continuation', en: 'Continuation', es: 'Continuación', c: 'Continuation Trade' } ] },
@@ -17370,7 +17383,17 @@ try {
     return (list || []).map(r => ({ id: r.id, en: r.name, es: r.name, custom: true, multi: !!r.multi,
       opts: (r.opts || []).map(o => ({ k: o.v, en: o.l || o.v, es: o.l || o.v, c: o.v })) }));
   }
-  function pbRows() { return PB_ROWS.concat(_pbCustomRowDefs(data && Array.isArray(data.pbRows) ? data.pbRows : [])); }
+  function _pbTimeOpts() {
+    const out = [];
+    try { (typeof getSessions === 'function' ? getSessions() : []).forEach(x => {
+      if (!x || !x.start || !x.end) return; const k = String(x.start).slice(0, 5) + '\u2013' + String(x.end).slice(0, 5);
+      if (!out.some(o => o.k === k)) out.push({ k, en: (x.name ? x.name + ' ' : '') + k, es: (x.name ? x.name + ' ' : '') + k }); }); } catch (e) {}
+    return out;
+  }
+  function pbRows() {
+    return PB_ROWS.map(r => r.kind === 'time' ? Object.assign({}, r, { opts: _pbTimeOpts() }) : r)
+      .concat(_pbCustomRowDefs(data && Array.isArray(data.pbRows) ? data.pbRows : []));
+  }
   function pbRowById(id) { return pbRows().find(r => r.id === id) || null; }
   const _pbLbl = x => _pbL(x.en, x.es);
   const _pbPost = o => _pbL(o.pe || o.en, o.ps || o.es);
@@ -17386,6 +17409,7 @@ try {
   }
   function pbAnswer(tr, row) {
     const s = _pbSrc(tr);
+    if (row.kind === 'time') { const c = s.concepts.find(x => String(x).indexOf(row.prefix) === 0); return c ? String(c).slice(row.prefix.length) : null; }
     if (row.field === 'type') {
       if (s.type && row.opts.some(o => o.k === s.type)) return s.type;
       const o = row.opts.find(o => s.concepts.indexOf(o.c) >= 0);
@@ -17400,6 +17424,11 @@ try {
     if (!tr) return;
     const keys = row.multi ? (Array.isArray(val) ? val.slice() : []) : (val ? [val] : []);
     if (row.field === 'rice') { tr.rice = row.opts.filter(o => keys.indexOf(o.k) >= 0).map(o => o.k); return; }
+    if (row.kind === 'time') {
+      tr.concepts = (Array.isArray(tr.concepts) ? tr.concepts : []).filter(c => String(c).indexOf(row.prefix) !== 0);
+      if (keys[0]) tr.concepts.push(row.prefix + keys[0]);
+      return;
+    }
     const mine = [].concat.apply([], row.opts.map(_pbStored));
     tr.concepts = (Array.isArray(tr.concepts) ? tr.concepts : []).filter(c => mine.indexOf(c) < 0);
     const short = /^short/i.test(tr.side || '');
@@ -17452,6 +17481,10 @@ try {
         out.push({ label: 'Playbook', text: txt });
       } else out.push({ label: 'Setup', text: String(tr.setup) });
     }
+    const g0 = [], se = A('sess'), stt = A('stime'), nw = A('news') || [];
+    if (se) g0.push(T('sess', se)); if (stt) g0.push(stt);
+    if (nw.length) { const nr = pbRowById('news'); g0.push(_pbL('News: ', 'Noticias: ') + nw.map(k => { const o = nr && nr.opts.find(o => o.k === k); return o ? _pbLbl(o) : k; }).join(', ')); }
+    if (g0.length) out.push({ label: _pbL('Session', 'Sesión'), text: g0.join(' · ') });
     const g1 = [], ty = A('type'), ph = A('phase'), ri = A('rice') || [];
     if (ty) g1.push(T('type', ty)); if (ph) g1.push(T('phase', ph)); if (ri.length) g1.push('RICE: ' + ri.map(k => T('rice', k)).join(', '));
     if (g1.length) out.push({ label: _pbL('Trade type', 'Tipo'), text: g1.join(' · ') });
@@ -17467,7 +17500,8 @@ try {
       if (ks.length) out.push({ label: r.en, text: ks.map(k => { const o = r.opts.find(o => o.k === k); return o ? o.en : k; }).join(', ') });
     });
     const known = {}; pbRows().forEach(r => r.opts.forEach(o => _pbStored(o).forEach(c => { known[c] = 1; })));
-    const other = _pbSrc(tr).concepts.filter(c => !known[c]);
+    const prefixes = pbRows().filter(r => r.kind === 'time').map(r => r.prefix);
+    const other = _pbSrc(tr).concepts.filter(c => !known[c] && !prefixes.some(p => String(c).indexOf(p) === 0));
     if (other.length) out.push({ label: _pbL('Tags', 'Etiquetas'), text: other.join(', ') });
     return out;
   }
@@ -17493,6 +17527,11 @@ try {
         + (r.multi ? '<span class="pb-multi">' + _pbEsc(_pbL('tick all', 'marca todas')) + '</span>' : '') + '</div><div class="pb-row-o">';
       r.opts.forEach(o => { const on = sel.indexOf(o.k) >= 0, w = !on && want.indexOf(o.k) >= 0;
         h += '<button type="button" class="tag' + (on ? ' selected' : '') + (w ? ' pb-want' : '') + '" data-k="' + _pbEsc(o.k) + '">' + _pbEsc(_pbLbl(o)) + '</button>'; });
+      if (r.kind === 'time') {
+        const cur = String(sel[0] || ''), ab = cur.split('\u2013');
+        h += '<span class="pb-time-in"><input type="time" class="pb-time" data-t="from" value="' + _pbEsc(ab[0] || '') + '" aria-label="' + _pbEsc(_pbL('From', 'Desde')) + '">'
+          + '<span>\u2013</span><input type="time" class="pb-time" data-t="to" value="' + _pbEsc(ab[1] || '') + '" aria-label="' + _pbEsc(_pbL('To', 'Hasta')) + '"></span>';
+      }
       if (r.custom && editable) h += '<button type="button" class="pb-row-del" data-del="' + _pbEsc(r.id) + '" title="' + _pbEsc(_pbL('Remove this row', 'Quitar esta fila')) + '" aria-label="' + _pbEsc(_pbL('Remove this row', 'Quitar esta fila')) + '">×</button>';
       h += '</div></div>';
     });
@@ -17696,6 +17735,17 @@ try {
     }
     if (changed) { saveData(); try { pbPaint(); } catch (e) {} }
   }
+  document.addEventListener('change', e => {
+    const inp = e.target; if (!inp || !inp.classList || !inp.classList.contains('pb-time')) return;
+    const rowEl = inp.closest('.pb-row'), r = rowEl && pbRowById(rowEl.dataset.row); if (!r) return;
+    const f = (rowEl.querySelector('.pb-time[data-t="from"]') || {}).value || '', t2 = (rowEl.querySelector('.pb-time[data-t="to"]') || {}).value || '';
+    if ((f && !t2) || (!f && t2)) return;              // wait for the other end
+    const val = (f && t2) ? f + '\u2013' + t2 : null;
+    if (rowEl.closest('#pb-rows')) { const tr = _pbTrade(); if (tr) { pbSetAnswer(tr, r, val); _pbAfter(); } }
+    else if (rowEl.closest('#pb-edit-rows')) { if (_pbEd) { pbSetAnswer(_pbEd, r, val); pbEditPaint(); } }
+    else { const box = rowEl.closest('.pb-rows[data-rec]'), pb = box && pbById(box.dataset.rec); if (!pb) return;
+      if (!pb.rec) pb.rec = {}; if (val) pb.rec[r.id] = val; else delete pb.rec[r.id]; pb.updated = Date.now(); saveData(); pbRenderManage(); }
+  });
   // ---- Manage playbooks
   let _pbEditRec = null;   // id of the playbook whose recipe is open for editing
   function pbTradeCount(name) { const n = String(name).toLowerCase(); return _pbAllTrades().filter(t => t !== data.review && t.setup && String(t.setup).toLowerCase() === n).length; }
@@ -17845,7 +17895,9 @@ try {
     }
     let any = false;
     pbRows().forEach(r => {
-      const rowsH = r.opts.map(o => { const d = dt.filter(tr => { const a = pbAnswer(tr, r); return r.multi ? a.indexOf(o.k) >= 0 : a === o.k; }); return d.length ? row(_pbLbl(o), d, '', '') : ''; }).join('');
+      let opts = r.opts;
+      if (r.kind === 'time') { const seen = {}; opts = []; dt.forEach(tr => { const a = pbAnswer(tr, r); if (a && !seen[a]) { seen[a] = 1; const p = r.opts.find(o => o.k === a); opts.push(p || { k: a, en: a, es: a }); } }); }
+      const rowsH = opts.map(o => { const d = dt.filter(tr => { const a = pbAnswer(tr, r); return r.multi ? a.indexOf(o.k) >= 0 : a === o.k; }); return d.length ? row(_pbLbl(o), d, '', '') : ''; }).join('');
       if (!rowsH) return;
       any = true;
       h += '<div class="pb-bk-q">' + _pbEsc(_pbLbl(r)) + '</div><div class="history-list">' + head + rowsH + '</div>';
