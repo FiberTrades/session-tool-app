@@ -2485,12 +2485,18 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-rows { margin-left: 60px; display: flex; flex-direction: column; gap: 10px; }
   /* the completion bar beside the Playbook rows */
   #pb-rows { position: relative; }
-  .pb-prog { position: absolute; top: 0; bottom: 0; right: 150px; width: 26px; pointer-events: none; }
-  .pb-prog-seg { position: absolute; left: 50%; width: 10px; margin-left: -5px; box-sizing: border-box; border-radius: 5px; background: var(--bg-elev2); border: 1px solid var(--border-2); transition: background 200ms ease, border-color 200ms ease; }
-  .pb-prog-seg.on { background: var(--accent); border-color: var(--accent); }
-  .pb-prog-n { position: absolute; top: calc(100% + 14px); left: 50%; transform: translateX(-50%); white-space: nowrap; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-mid); }
-  .pb-prog-n.all { color: var(--accent); }
-  @media (max-width: 1150px) { .pb-prog { display: none; } }   /* safety net: never room beside the answers below this */
+  /* the progress ring beside the Playbook rows (sticky within a column as tall as the rows) */
+  #section-tags { position: relative; }
+  .pb-ringcol { position: absolute; right: 88px; width: 150px; pointer-events: none; }
+  .pb-ring { position: relative; width: 150px; height: 150px; will-change: transform; }   /* kept in view by _pbRingStick (CSS sticky can't: body clips overflow) */
+  .pb-ring svg { display: block; }
+  .pb-ring-t { fill: none; stroke: var(--border-2); stroke-width: 10; }
+  .pb-ring-f { fill: none; stroke: var(--accent); stroke-width: 10; stroke-linecap: round; transition: stroke-dashoffset 500ms ease, opacity 200ms ease; filter: drop-shadow(0 0 6px rgba(244, 114, 182, 0.55)); }
+  .pb-ring-c { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
+  .pb-ring-c b { font-family: 'AppNum', 'DM Mono', monospace; font-size: 26px; font-weight: 500; color: var(--text); letter-spacing: 0.02em; line-height: 1; }
+  .pb-ring-c span { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+  .pb-ringcol.all .pb-ring-c b, .pb-ringcol.all .pb-ring-c span { color: var(--accent); }
+  @media (max-width: 1150px) { .pb-ringcol { display: none !important; } }   /* never room beside the answers below this */
   .pb-row { display: grid; grid-template-columns: 180px 1fr; gap: 6px 14px; align-items: start; }   /* 180: "In-session news  tick all" on one line */
   /* min-height = one line of answer chips, so a label sits level with the FIRST line of a wrapped row
      (Nestor: "move mindset name up in line with flawless execution"). */
@@ -17930,27 +17936,43 @@ try {
     }
     return null;
   }
-  // The completion bar beside the rows (Nestor): one segment per question, level with its row, pink once
-  // answered, with the count under it. Removes itself where it would crowd the answers, and in Edit a row.
-  let _pbProgSel = null, _pbProgT = null;
+  // The progress ring beside the rows (Nestor chose it): fills clockwise as questions are answered, the count in
+  // its middle. It lives in the section (not inside the redrawn rows), so it survives repaints and animates.
+  let _pbProgSel = null, _pbProgT = null, _pbRingCol = null;
+  const PB_RING_C = 2 * Math.PI * 58;
   function pbPaintProgress(box, sel) {
-    const old = box.querySelector(':scope > .pb-prog'); if (old) old.remove();
-    if (!sel || _pbRowEdit || !box.offsetHeight) return;
-    const rows = [...box.querySelectorAll(':scope > .pb-row:not(.pb-row-editing)')].map(el => ({ el, r: pbRowById(el.dataset.row) })).filter(x => x.r);
-    if (!rows.length) return;
-    const bar = document.createElement('div'); bar.className = 'pb-prog'; bar.setAttribute('aria-hidden', 'true');
-    let done = 0;
-    rows.forEach(x => {
-      const on = sel(x.r).length > 0; if (on) done++;
-      const seg = document.createElement('i'); seg.className = 'pb-prog-seg' + (on ? ' on' : '');
-      seg.style.top = x.el.offsetTop + 'px'; seg.style.height = x.el.offsetHeight + 'px'; bar.appendChild(seg);
-    });
-    const n = document.createElement('span'); n.className = 'pb-prog-n' + (done === rows.length ? ' all' : '');
-    n.textContent = done === rows.length ? _pbL('All answered ✓', 'Todo respondido ✓') : done + ' / ' + rows.length;
-    bar.appendChild(n); box.appendChild(bar);
-    const left = bar.getBoundingClientRect().left;
-    if (rows.some(x => { const k = x.el.querySelectorAll('.pb-row-o > *'); const last = k[k.length - 1]; return last && last.getBoundingClientRect().right > left - 24; })) bar.remove();
+    const sec = box.closest('section') || box.parentNode; if (!sec) return;
+    if (!_pbRingCol) {
+      _pbRingCol = document.createElement('div'); _pbRingCol.className = 'pb-ringcol'; _pbRingCol.setAttribute('aria-hidden', 'true');
+      _pbRingCol.innerHTML = '<div class="pb-ring"><svg viewBox="0 0 150 150" width="150" height="150"><circle class="pb-ring-t" cx="75" cy="75" r="58"/>'
+        + '<circle class="pb-ring-f" cx="75" cy="75" r="58" transform="rotate(-90 75 75)" stroke-dasharray="' + PB_RING_C.toFixed(1) + '" style="stroke-dashoffset:' + PB_RING_C.toFixed(1) + '"/></svg>'
+        + '<div class="pb-ring-c"><b></b><span></span></div></div>';
+    }
+    if (_pbRingCol.parentNode !== sec) sec.appendChild(_pbRingCol);
+    const hide = () => { _pbRingCol.style.display = 'none'; };
+    if (!sel || _pbRowEdit || !box.offsetHeight) return hide();
+    const rows = [...box.querySelectorAll(':scope > .pb-row:not(.pb-row-editing)')].map(el => pbRowById(el.dataset.row)).filter(Boolean);
+    if (!rows.length) return hide();
+    const done = rows.filter(r => sel(r).length > 0).length, all = done === rows.length;
+    _pbRingCol.style.display = '';
+    _pbRingCol.style.top = box.offsetTop + 'px'; _pbRingCol.style.height = box.offsetHeight + 'px';
+    const f = _pbRingCol.querySelector('.pb-ring-f');
+    f.style.strokeDashoffset = (PB_RING_C * (1 - done / rows.length)).toFixed(1);
+    f.style.opacity = done ? '1' : '0';                                  // a zero-length round cap would still show a dot
+    _pbRingCol.classList.toggle('all', all);
+    _pbRingCol.querySelector('.pb-ring-c b').textContent = all ? '✓' : done + '/' + rows.length;
+    _pbRingCol.querySelector('.pb-ring-c span').textContent = all ? _pbL('All answered', 'Todo respondido') : _pbL('Answered', 'Respondidas');
+    const left = _pbRingCol.getBoundingClientRect().left;              // never over the answers
+    if ([...box.querySelectorAll(':scope > .pb-row')].some(el => { const k = el.querySelectorAll('.pb-row-o > *'); const last = k[k.length - 1]; return last && last.getBoundingClientRect().right > left - 24; })) return hide();
+    _pbRingStick();
   }
+  // Keeps the ring in view as the page scrolls: 96px from the top, never above the first row or below the last.
+  function _pbRingStick() {
+    try { if (!_pbRingCol || _pbRingCol.style.display === 'none' || !_pbRingCol.offsetHeight) return;
+          const ring = _pbRingCol.firstChild, r = _pbRingCol.getBoundingClientRect(), y = Math.max(0, Math.min(r.height - 150, 96 - r.top));
+          ring.style.transform = y > 0 ? 'translateY(' + Math.round(y) + 'px)' : ''; } catch (e) {}
+  }
+  window.addEventListener('scroll', _pbRingStick, { passive: true });
   // Re-placed whenever the rows' box changes size (window resize, zoom, a row wrapping) - one element watched.
   const _pbProgRe = () => { clearTimeout(_pbProgT); _pbProgT = setTimeout(() => { try { const b = document.getElementById('pb-rows'); if (b && _pbProgSel) pbPaintProgress(b, _pbProgSel); } catch (e) {} }, 150); };
   window.addEventListener('resize', _pbProgRe);
