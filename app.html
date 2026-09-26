@@ -2484,6 +2484,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-err { color: var(--bad); }
   .pb-rows { margin-left: 60px; display: flex; flex-direction: column; gap: 10px; }
   #pb-rows { position: relative; }
+  /* "This trade" card beside the Playbook rows */
+  #section-tags { position: relative; }
+  .pb-tcard { position: absolute; right: 0; width: 270px; box-sizing: border-box; z-index: 2; border: 1px solid var(--border-2); border-radius: 14px; padding: 14px 14px 12px;
+              background: linear-gradient(180deg, var(--bg-elev) 0%, var(--bg) 100%); transition: border-color 400ms ease, box-shadow 400ms ease; will-change: transform; }
+  .pb-tcard.full { border-color: var(--accent); box-shadow: 0 0 0 1px rgba(244, 114, 182, 0.35), 0 10px 30px rgba(244, 114, 182, 0.16); }
+  .pb-tcard.below { position: static; width: auto; max-width: 480px; margin: 18px 0 0 60px; }
+  @media (max-width: 900px) { .pb-tcard.below { margin-left: 0; } }
+  .pb-tc-h { display: flex; justify-content: space-between; align-items: baseline; margin: 0 0 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
+  .pb-tc-h b { font-weight: 500; color: var(--accent); letter-spacing: 0.1em; }
+  .pb-tc-line { display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 5px 0; border-top: 1px solid var(--border); }
+  .pb-tc-line:first-of-type { border-top: 0; }
+  .pb-tc-k { flex: 0 0 auto; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); max-width: 45%; }
+  .pb-tc-line.diff .pb-tc-k { color: var(--accent); }
+  .pb-tc-line.diff .pb-tc-k::before { content: ''; display: inline-block; width: 5px; height: 5px; border-radius: 50%; background: var(--accent); margin-right: 5px; vertical-align: middle; }
+  .pb-tc-v { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; min-width: 0; }
+  .pb-tc-pill { font-style: normal; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; padding: 3px 9px; border-radius: 999px; border: 1px solid var(--accent); background: rgba(244, 114, 182, 0.12); color: var(--text); white-space: nowrap; }
+  .pb-tc-pill.none { border: 1px dashed var(--border-2); background: transparent; color: var(--text-dim); }
+  .pb-tc-pill.pop { animation: pbTcPop 350ms ease; }
+  @keyframes pbTcPop { 40% { transform: scale(1.18); } }
+  .pb-tc-save { width: 100%; margin-top: 10px; }
+  .pb-fly { position: fixed; z-index: 9999; pointer-events: none; display: inline-flex; align-items: center; justify-content: center; box-sizing: border-box; padding: 0 12px; border-radius: 8px;
+            background: var(--accent); color: #0c0b10; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; box-shadow: 0 6px 18px rgba(244, 114, 182, 0.45); }
+  @media (prefers-reduced-motion: reduce) { .pb-tc-pill.pop { animation: none; } }
   .pb-row { display: grid; grid-template-columns: 180px 1fr; gap: 6px 14px; align-items: start; }   /* 180: "In-session news  tick all" on one line */
   /* min-height = one line of answer chips, so a label sits level with the FIRST line of a wrapped row
      (Nestor: "move mindset name up in line with flawless execution"). */
@@ -17924,6 +17947,80 @@ try {
     return null;
   }
   // (A completion bar, then a progress ring, sat right of the rows on 26 Sep - removed at Nestor's request.)
+  // "This trade" card (Nestor): this trade's answers collect in a card beside the rows - each pick flies
+  // across into its line - and the finished card is the trade's playbook (Save as playbook when complete).
+  // It lives in the section (not inside the redrawn rows); placed beside the rows when there's room.
+  let _pbCard = null, _pbCardT = null;
+  function pbPaintCard(box, sel, pb) {
+    const sec = box.closest('section'); if (!sec) return;
+    if (!_pbCard) {
+      _pbCard = document.createElement('div'); _pbCard.className = 'pb-tcard';
+      _pbCard.addEventListener('click', e => { if (e.target.closest('.pb-tc-save')) { const sb = document.querySelector('#pb-status [data-act="save"]'); if (sb) sb.click(); } });
+    }
+    if (_pbCard.parentNode !== sec) sec.appendChild(_pbCard);
+    const rows = [...box.querySelectorAll(':scope > .pb-row:not(.pb-row-editing)')].map(el => pbRowById(el.dataset.row)).filter(Boolean);
+    if (!sel || _pbRowEdit || !rows.length) { _pbCard.style.display = 'none'; return; }
+    const lbl = (r, k) => { const o = r.opts.find(x => x.k === k); return o ? _pbLbl(o) : k; };
+    let done = 0, h = '';
+    rows.forEach(r => {
+      const v = sel(r), want = pb ? _pbWant(pb.rec, r) : [];
+      const differs = want.length && (r.multi ? !want.every(w => v.indexOf(w) >= 0) : v[0] !== want[0]);
+      if (v.length) done++;
+      h += '<div class="pb-tc-line' + (differs ? ' diff' : '') + '" data-row="' + _pbEsc(r.id) + '"><span class="pb-tc-k">' + _pbEsc(_pbLbl(r)) + '</span><span class="pb-tc-v">'
+        + (v.length ? v.map(k => '<i class="pb-tc-pill">' + _pbEsc(lbl(r, k)) + '</i>').join('') : '<i class="pb-tc-pill none">—</i>') + '</span></div>';
+    });
+    const all = done === rows.length;
+    _pbCard.innerHTML = '<div class="pb-tc-h"><span>' + _pbEsc(_pbL('This trade', 'Esta operación')) + '</span><b>' + done + ' / ' + rows.length + '</b></div>' + h
+      + (all && !pb ? '<button type="button" class="pb-act primary pb-tc-save">' + _pbEsc(_pbL('Save as playbook', 'Guardar como playbook')) + '</button>' : '');
+    _pbCard.classList.toggle('full', all);
+    _pbCard.style.display = '';
+    _pbCardPlace(box);
+  }
+  // Beside the rows when there's room right of the widest row's answers; otherwise under the rows.
+  function _pbCardPlace(box) {
+    try {
+      if (!_pbCard || _pbCard.style.display === 'none') return;
+      box = box || document.getElementById('pb-rows'); if (!box || !box.offsetHeight) return;
+      _pbCard.classList.remove('below'); _pbCard.style.transform = ''; _pbCard.style.top = box.offsetTop + 'px';
+      const left = _pbCard.getBoundingClientRect().left;
+      const tight = window.innerWidth <= 1150 || [...box.querySelectorAll(':scope > .pb-row')].some(el => { const k = el.querySelectorAll('.pb-row-o > *'); const last = k[k.length - 1]; return last && last.getBoundingClientRect().right > left - 32; });
+      if (tight) { _pbCard.classList.add('below'); _pbCard.style.top = ''; return; }
+      _pbCardStick();
+    } catch (e) {}
+  }
+  // Keeps the card in view while scrolling the rows: 96px from the top, never above the first row or past the last.
+  function _pbCardStick() {
+    try {
+      if (!_pbCard || _pbCard.style.display === 'none' || _pbCard.classList.contains('below')) return;
+      const box = document.getElementById('pb-rows'); if (!box) return;
+      const br = box.getBoundingClientRect(), y = Math.max(0, Math.min(br.height - _pbCard.offsetHeight, 96 - br.top));
+      _pbCard.style.transform = y > 0 ? 'translateY(' + Math.round(y) + 'px)' : '';
+    } catch (e) {}
+  }
+  window.addEventListener('scroll', _pbCardStick, { passive: true });
+  const _pbCardRe = () => { clearTimeout(_pbCardT); _pbCardT = setTimeout(() => _pbCardPlace(), 150); };
+  window.addEventListener('resize', _pbCardRe);
+  document.addEventListener('click', e => { if (e.target.closest && e.target.closest('.tab[data-page="review"]')) _pbCardRe(); });   // drawn while hidden
+  // A picked answer flies from its row into its line on the card, and pops into place.
+  function _pbFly(text, src, rowId) {
+    try {
+      if (!_pbCard || _pbCard.style.display === 'none' || _pbCard.classList.contains('below')) return;
+      const line = [..._pbCard.querySelectorAll('.pb-tc-line')].find(l => l.dataset.row === rowId); if (!line) return;
+      const pills = [...line.querySelectorAll('.pb-tc-pill:not(.none)')], target = pills.find(p => p.textContent === text) || pills[pills.length - 1]; if (!target) return;
+      const pop = () => { target.classList.remove('pop'); void target.offsetWidth; target.classList.add('pop'); };
+      if (window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches) { pop(); return; }
+      const tr = target.getBoundingClientRect();
+      const f = document.createElement('div'); f.className = 'pb-fly'; f.textContent = text;
+      f.style.left = src.left + 'px'; f.style.top = src.top + 'px'; f.style.minWidth = src.width + 'px'; f.style.height = src.height + 'px';
+      document.body.appendChild(f); target.style.visibility = 'hidden';
+      const dx = tr.left + tr.width / 2 - (src.left + src.width / 2), dy = tr.top + tr.height / 2 - (src.top + src.height / 2);
+      let landed = false; const land = () => { if (landed) return; landed = true; f.remove(); target.style.visibility = ''; pop(); };
+      const an = f.animate([{ transform: 'translate(0,0) scale(1)', opacity: 1 },
+                            { transform: 'translate(' + (dx * 0.55) + 'px,' + (dy * 0.55 - 36) + 'px) scale(1.06)', opacity: 1, offset: 0.55 },
+                            { transform: 'translate(' + dx + 'px,' + dy + 'px) scale(0.75)', opacity: 0.25 }], { duration: 620, easing: 'cubic-bezier(.2,.8,.2,1)' });
+      an.onfinish = land; setTimeout(land, 900);   // lands even if the animation never runs
+    } catch (e) {}
+  }
   function pbPaint() {
     const box = document.getElementById('pb-rows'); if (!box) return;
     const tr = _pbTrade(); if (!tr) return;
@@ -17934,6 +18031,7 @@ try {
     // styles (pb-list, pb-ts, pb-tiles) are left in the stylesheet, unused.
     box.classList.remove('pb-list', 'pb-ts', 'pb-tiles'); box.style.removeProperty('--pb-name-w');
     box.innerHTML = pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind');
+    pbPaintCard(box, sel, pb);
     const mb = document.getElementById('pb-mind-rows'); if (mb) mb.innerHTML = pbRowsHtml(sel, null, true, false, r => r.id === 'mind');
     pbFillSelect(); pbPaintStatus(); pbPaintAddRow();
   }
@@ -18162,11 +18260,14 @@ try {
       const rowEl = b.closest('.pb-row'), r = rowEl && pbRowById(rowEl.dataset.row), tr = _pbTrade();
       if (!r || !tr) return;
       const k = b.dataset.k, cur = pbAnswer(tr, r);
+      // picked (not cleared) in the Playbook rows: it flies to the This trade card after the repaint
+      const flySrc = (rowEl.closest('#pb-rows') && !b.classList.contains('selected')) ? b.getBoundingClientRect() : null, flyTxt = b.textContent.trim();
       if (r.multi) pbSetAnswer(tr, r, _pbToggle(r, cur, k));
       else { const nv = cur === k ? null : k; pbSetAnswer(tr, r, nv);
         // Answered (not cleared): the checklist moves on to the next unanswered question.
         if (nv && _pbOpenRow === r.id && rowEl.closest('#pb-rows')) _pbOpenRow = _pbNextOpen(r.id, tr); }
       _pbAfter();
+      if (flySrc) _pbFly(flyTxt, flySrc, r.id);
     });
     const commitTag = inp => {
       const v = String(inp.value || '').trim().replace(/\s+/g, ' ').slice(0, 30); _pbAddTag = null;
