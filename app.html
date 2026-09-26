@@ -2525,6 +2525,13 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pb-row-o:has(> .pb-row-tools) { padding-right: 150px; }
   .pb-row[data-row="mind"] .pb-row-o:has(> .pb-row-tools) { max-width: 970px; }
   .pb-rows.pb-mind-rows .pb-row { grid-template-columns: 1fr; }
+  /* Mindset uses its section's full width (the 820px cap was for beside the Playbook's name column). */
+  .pb-rows.pb-mind-rows .pb-row[data-row="mind"] .pb-row-o { max-width: none; }
+  .pb-mtag { position: relative; display: inline-flex; }
+  .pb-mtag-x { position: absolute; top: -7px; right: -7px; width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 1px solid var(--border-2); background: var(--bg-elev2); color: var(--text-mid); font-size: 12px; line-height: 16px; text-align: center; cursor: pointer; z-index: 1; }
+  .pb-mtag-x:hover { color: var(--bad); border-color: var(--bad); }
+  .pb-mind-rows .pb-tagin { min-width: 200px; padding: 7px 10px; font-size: 11px; }
+  .pb-m-gone { flex-basis: 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 6px; }
   /* 06 Playbook as a checklist: one line per question, answer on the right, one question open at a time. */
   .pb-rows.pb-list { gap: 0; }
   .pb-list-top { display: flex; align-items: center; gap: 14px; margin: 0 0 12px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
@@ -17817,21 +17824,29 @@ try {
         return;
       }
       let oh = '', tools = '';   // this row's answers (html), and its Edit a row tools
+      const mx = r.id === 'mind' && editable && _pbMindCustom;   // Mindset custom mode: an x on every tag
       r.opts.forEach(o => { const on = sel.indexOf(o.k) >= 0, w = !on && want.indexOf(o.k) >= 0;
-        oh += '<button type="button" class="tag' + (on ? ' selected' : '') + (w ? ' pb-want' : '') + '" data-k="' + _pbEsc(o.k) + '">' + _pbEsc(_pbLbl(o)) + '</button>'; });
+        const tb = '<button type="button" class="tag' + (on ? ' selected' : '') + (w ? ' pb-want' : '') + '" data-k="' + _pbEsc(o.k) + '">' + _pbEsc(_pbLbl(o)) + '</button>';
+        oh += mx ? '<span class="pb-mtag">' + tb + '<button type="button" class="pb-mtag-x" data-mind-rm="' + _pbEsc(o.k) + '" title="' + _pbEsc(_pbL('Delete this tag', 'Eliminar esta etiqueta')) + '" aria-label="' + _pbEsc(_pbL('Delete', 'Eliminar') + ' ' + _pbLbl(o)) + '">×</button></span>' : tb; });
       if (r.field === 'mindset') sel.filter(v => !r.opts.some(o => o.k === v)).forEach(v => {
         oh += '<button type="button" class="tag selected" data-k="' + _pbEsc(v) + '">' + _pbEsc(v) + '</button>'; });
-      if (r.addable && editable) oh += (_pbAddTag === r.id)
+      if (r.addable && editable) oh += ((r.id === 'mind') ? _pbMindCustom : (_pbAddTag === r.id))
         ? '<input type="text" class="pb-in pb-tagin" data-add="' + _pbEsc(r.id) + '" maxlength="30" placeholder="' + _pbEsc(_pbL('New tag - Enter to add', 'Nueva etiqueta - Enter para añadir')) + '">'
+          + (r.id === 'mind' ? '<button type="button" class="pb-act primary pb-mind-done">' + _pbEsc(_pbL('Done', 'Listo')) + '</button>' : '')
         : '<button type="button" class="tag-add pb-row-add" data-add="' + _pbEsc(r.id) + '">' + _pbEsc(_pbL('+ Custom', '+ Personalizada')) + '</button>';
-      if (r.id === 'mind' && editable && !_pbRowEdit) oh += '<button type="button" class="tag-add pb-mind-edit">\u270e ' + _pbEsc(_pbL('Edit', 'Editar')) + '</button>';
+      if (mx) {   // built-in tags removed earlier, with + to bring each back
+        const ct = data.customTags || {}, hid = (ct.hidden && Array.isArray(ct.hidden.mindset)) ? ct.hidden.mindset : [];
+        const gone = ((PB_ROWS.find(x => x.id === 'mind') || {}).opts || []).filter(o => hid.indexOf(o.k) >= 0);
+        if (gone.length) oh += '<div class="pb-m-gone"><span class="pb-re-k">' + _pbEsc(_pbL('Removed', 'Quitadas')) + '</span>'
+          + gone.map(o => '<span class="pb-re-chip is-gone">' + _pbEsc(_pbLbl(o)) + '<button type="button" data-mind-restore="' + _pbEsc(o.k) + '" title="' + _pbEsc(_pbL('Bring it back', 'Recuperarla')) + '" aria-label="' + _pbEsc(_pbL('Bring it back', 'Recuperarla')) + '">+</button></span>').join('') + '</div>';
+      }
       if (r.id === 'sess' && tRow) {
         const cur = String(getSel(tRow)[0] || ''), ab = cur.split('\u2013'), tw = _pbWant(rec, tRow)[0], off = !!(tw && tw !== cur);
         oh += '<span class="pb-time-in' + (off ? ' pb-want' : '') + '"' + (off ? ' title="' + _pbEsc(tw) + '"' : '') + '>'
           + '<input type="time" class="pb-time" data-row="stime" data-t="from" value="' + _pbEsc(ab[0] || '') + '" aria-label="' + _pbEsc(_pbL('From', 'Desde')) + '">'
           + '<span>\u2013</span><input type="time" class="pb-time" data-row="stime" data-t="to" value="' + _pbEsc(ab[1] || '') + '" aria-label="' + _pbEsc(_pbL('To', 'Hasta')) + '"></span>';
       }
-      if (editable && _pbRowEdit) { const mi = mvIds.indexOf(r.id);
+      if (editable && _pbRowEdit && r.id !== 'mind') { const mi = mvIds.indexOf(r.id);
         tools = '<span class="pb-row-tools">' + (r.id === 'mind' ? '' : '<button type="button" class="pb-mv" data-mv="up" data-mvrow="' + _pbEsc(r.id) + '"' + (mi <= 0 ? ' disabled' : '') + ' title="' + _pbEsc(_pbL('Move up', 'Subir')) + '" aria-label="' + _pbEsc(_pbL('Move up', 'Subir')) + '">↑</button>'
           + '<button type="button" class="pb-mv" data-mv="down" data-mvrow="' + _pbEsc(r.id) + '"' + (mi < 0 || mi >= mvIds.length - 1 ? ' disabled' : '') + ' title="' + _pbEsc(_pbL('Move down', 'Bajar')) + '" aria-label="' + _pbEsc(_pbL('Move down', 'Bajar')) + '">↓</button>')
           + '<button type="button" class="pb-reopen" data-edit="' + _pbEsc(r.id) + '" title="' + _pbEsc(_pbL('Edit this row', 'Editar esta fila')) + '">\u270e ' + _pbEsc(_pbL('Edit', 'Editar')) + '</button></span>'; }
@@ -17864,6 +17879,7 @@ try {
   }
   // The checklist's open question, per trade (a trade switch starts with every line closed).
   let _pbOpenRow = null, _pbOpenFor = null;
+  let _pbMindCustom = false;   // Mindset's custom mode: a box to add tags, an x on every tag
   // The next unanswered question after `fromId`, in the rows' order - or null when none is left.
   function _pbNextOpen(fromId, tr) {
     const list = pbRows().filter(r => r.kind !== 'time' && r.id !== 'mind');
@@ -18071,7 +18087,22 @@ try {
     const _pbRowsOn = (type, fn) => [rows, document.getElementById('pb-mind-rows')].forEach(bx => { if (bx) bx.addEventListener(type, fn); });
     _pbRowsOn('click', e => {
       const addB = e.target.closest('.pb-row-add');
-      if (addB) { _pbAddTag = addB.dataset.add; pbPaint(); const inp = document.querySelector('#pb-rows .pb-tagin, #pb-mind-rows .pb-tagin'); if (inp) inp.focus(); return; }
+      if (addB) { if (addB.dataset.add === 'mind') _pbMindCustom = true; _pbAddTag = addB.dataset.add; pbPaint(); const inp = document.querySelector('#pb-rows .pb-tagin, #pb-mind-rows .pb-tagin'); if (inp) inp.focus(); return; }
+      if (e.target.closest('.pb-mind-done')) { _pbMindCustom = false; _pbAddTag = null; pbPaint(); return; }
+      const mrm = e.target.closest('[data-mind-rm]');
+      if (mrm) {
+        // A tag you made is deleted; a built-in one is removed (listed under Removed). The trade being
+        // reviewed loses the tick; past trades keep theirs.
+        const k = mrm.dataset.mindRm, base = ((PB_ROWS.find(x => x.id === 'mind') || {}).opts || []);
+        if (!data.customTags) data.customTags = {}; const ct = data.customTags;
+        if (base.some(o => o.k === k)) { if (!ct.hidden || typeof ct.hidden !== 'object') ct.hidden = {}; if (!Array.isArray(ct.hidden.mindset)) ct.hidden.mindset = []; if (ct.hidden.mindset.indexOf(k) < 0) ct.hidden.mindset.push(k); }
+        else ct.mindset = (ct.mindset || []).filter(v => v !== k);
+        const trm = _pbTrade(), rm = pbRowById('mind');
+        if (trm && rm) { const cur = pbAnswer(trm, rm); if (cur.indexOf(k) >= 0) pbSetAnswer(trm, rm, cur.filter(v => v !== k)); }
+        _pbAfter(); return;
+      }
+      const mrs = e.target.closest('[data-mind-restore]');
+      if (mrs) { const ct = data.customTags || {}; if (ct.hidden && Array.isArray(ct.hidden.mindset)) ct.hidden.mindset = ct.hidden.mindset.filter(v => v !== mrs.dataset.mindRestore); _pbAfter(); return; }
       const oh = e.target.closest('[data-open-row]');
       if (oh) { const id = oh.dataset.openRow; _pbOpenRow = (_pbOpenRow === id) ? null : id; pbPaint(); return; }
       const dn = e.target.closest('.pb-lr-done');
@@ -18125,11 +18156,15 @@ try {
     });
     _pbRowsOn('keydown', e => {
       const inp = e.target; if (!inp.classList || !inp.classList.contains('pb-tagin')) return;
-      if (e.key === 'Enter') { e.preventDefault(); commitTag(inp); }
-      else if (e.key === 'Escape') { _pbAddTag = null; pbPaint(); }
+      if (e.key === 'Enter') { e.preventDefault(); const wasMind = inp.dataset.add === 'mind'; commitTag(inp);
+        if (wasMind && _pbMindCustom) { const ni = document.querySelector('#pb-mind-rows .pb-tagin'); if (ni) ni.focus(); } }
+      else if (e.key === 'Escape') { if (inp.dataset.add === 'mind') _pbMindCustom = false; _pbAddTag = null; pbPaint(); }
     });
     _pbRowsOn('focusout', e => {
-      const inp = e.target; if (!inp.classList || !inp.classList.contains('pb-tagin') || _pbAddTag === null) return;
+      const inp = e.target; if (!inp.classList || !inp.classList.contains('pb-tagin')) return;
+      // Mindset's custom mode stays open when you leave the box (to click an x); only Done / Escape end it.
+      if (inp.dataset.add === 'mind' && _pbMindCustom) { if (String(inp.value || '').trim()) commitTag(inp); return; }
+      if (_pbAddTag === null) return;
       if (String(inp.value || '').trim()) commitTag(inp); else { _pbAddTag = null; pbPaint(); }
     });
     sel.addEventListener('change', () => {
