@@ -67958,6 +67958,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 .lbr-block[data-lbr-notitle] .stb-bd-head{margin-top:0;}
 .lbr-section[hidden]{display:none;}
 .lbr-block .stb-bd-title{font-size:15px;}
+.stb-bd-sub{display:block;margin-top:5px;font-family:'AppNum','DM Mono',monospace;font-size:11px;letter-spacing:.08em;color:var(--text-dim);}
 .stb-bd-title{font-family:'Fraunces',serif;font-size:16px;color:var(--text);}
 .stb-bd-total{font-size:18px;font-weight:700;color:var(--accent);flex:none;}
 .stb-bd-list{display:flex;flex-direction:column;}
@@ -68314,8 +68315,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{
       var c=window.__stSB, uid=window.STCloud && window.STCloud.userId;
       if(!c || !uid || window.__MV) return Promise.resolve('');
-      return c.from('leaderboard_entries').select('*').eq('period', period).eq('period_start', startISO).eq('user_id', uid).maybeSingle()
-        .then(function(r){
+      // A week also shows where it leaves you in its month - the board's "This month" tab ranks that.
+      var monthISO=null;
+      if(period==='week'){ try{ var d0=new Date(startISO+'T12:00:00Z'); d0.setUTCDate(d0.getUTCDate()+3); monthISO=d0.toISOString().slice(0,7)+'-01'; }catch(_){ monthISO=null; } }
+      var qW=c.from('leaderboard_entries').select('*').eq('period', period).eq('period_start', startISO).eq('user_id', uid).maybeSingle();
+      var qM=monthISO ? c.from('leaderboard_entries').select('rank,ranked').eq('period','month').eq('period_start',monthISO).eq('user_id',uid).maybeSingle()
+                          .then(function(r){ return r; }, function(){ return null; }) : null;
+      return Promise.all([qW, qM])
+        .then(function(rr){
+          var r=rr[0], m=rr[1] && rr[1].data;
           var x=r && r.data;
           var title=noTitle ? '' : '<div class="month-insight-title">'+_t('Leaderboard achievements','Logros en el ranking')+'</div>';
           if(!x) return title+'<div class="month-insight-empty">'+(period==='week'
@@ -68323,7 +68331,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
             : _t('No leaderboard score for this month yet.','Aún no hay puntuación del ranking este mes.'))+'</div>';
           var rk=(x.ranked && x.rank) ? ('#'+x.rank+' '+(period==='week'?_t('this week','esta semana'):_t('this month','este mes')))
                                       : _t('Not ranked','Sin clasificar');
-          var head='<div class="stb-bd-head"><span class="stb-bd-title">'+esc(rk)+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div>';
+          var sub='';
+          if(m && m.ranked && m.rank){ try{
+            var mn=new Date(monthISO+'T12:00:00Z').toLocaleString(document.documentElement.lang==='es'?'es-ES':'en-GB',{month:'long',timeZone:'UTC'});
+            sub='<span class="stb-bd-sub">'+esc('#'+m.rank+' '+_t('in','en')+' '+mn)+'</span>'; }catch(_){} }
+          var head='<div class="stb-bd-head"><span class="stb-bd-title">'+esc(rk)+sub+'</span><span class="stb-bd-total">'+Math.round(x.points)+' '+_t('pts','pts')+'</span></div>';
           return title+cardBreakdown(x,{name:''},head);
         }, function(){ return ''; });
     }catch(e){ return Promise.resolve(''); }
@@ -69122,63 +69134,80 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-nc-k{ color:var(--text-mid); } .strp-nc-v{ text-align:right; font-variant-numeric:tabular-nums; }
   .strp-nc-v.act{ color:#fff; font-weight:600; } .strp-nc-v.act.beat{ color:var(--good); } .strp-nc-v.act.miss{ color:var(--bad); }
   .strp-brk{ display:none; }
+  /* Phone-only pieces of the one-row toolbar. On a computer the two buttons do not exist and the
+     switches' wrapper steps out of the way (display:contents), so the switches sit in the toolbar
+     exactly as they always have. */
+  .strp-cpt{ display:none; } .strp-tgls{ display:contents; } .strp-tglh{ display:none; }
   @media (max-width:760px){
     #strp-fs{ display:none; }
     #strp-cmax{ display:flex; }
     .strp-live{ max-width:calc(100% - 70px); font-size:11px; }
     .strp-sltp{ display:block; margin-top:2px; } .strp-sltp-sep{ display:none; }
-    /* Compact toolbar so the Position tool fits on the TF row */
-    #strp-tb{ gap:7px; } #strp-tb .strp-seg button{ min-width:30px; padding:0 3px; font-size:11px; height:28px; } .strp-tgl{ white-space:nowrap; }
-    /* Toolbar: TF row (Position tool pinned far-right) + Draw row below it */
-    #strp-tflbl{ order:1; } #strp-tfs{ order:2; }
-    /* News button rides the TF row alongside the Position toggle. NEITHER may keep the auto
-       margin here: an auto margin absorbs all remaining space on the line before the next item
-       is considered for wrapping, so pinning the pair right claimed 99px and shoved the 98px
-       toggle onto a row of its own. Without it the pair needs 347px of the 373px bar and stays
-       together, which is what "next to Position tool" actually asked for. */
-    /* Both take an auto margin so the pair sits at the RIGHT end of the timeframe row rather
-       than butted against the timeframes. Zeroing these was a misdiagnosis: the wrap they were
-       blamed for was a genuine 1px overflow, which the 27px timeframe floor below already fixed
-       — auto margins absorb free space after line-breaking, they do not cause it. With ~13px
-       spare the two margins simply share it, which shifts the pair right without separating
-       them. If a very narrow handset does overflow, the toggle wraps with its own auto margin
-       and lands right-aligned under the news button instead of stranded on the left. */
-    #strp-tb #strp-newsbtn{ order:3; margin-left:auto; }
-    #strp-tb .strp-tgl{ order:3; }
-    /* Nestor: on a phone the news button and both switches get their OWN line, above the
-       timeframes, left-aligned. Later rules win over the pair above; kept rather than deleted so
-       the history of this row stays readable. */
-    #strp-tb #strp-newsbtn{ order:0; margin-left:-7px; }   /* icon flush with the TF label below; the 36px tap area stays */
-    #strp-tb .strp-tgl{ order:0; margin-left:12px !important; }   /* !important: Position tool carries an inline desktop gap */
-    #strp-tb .strp-brk.strp-brk0{ order:1; }
-    #strp-tflbl{ order:2; } #strp-tfs{ order:3; }
-    /* Pay for the extra button out of the TF segment rather than the icon buttons: six 30px
-       timeframes carry ~4px of slack each ("15m" measures 26px at this size) while the icons are
-       already at the low end for a touch target. Dropping the floor to 27px frees ~18px, so the
-       TF row still carries label + timeframes + news + Position toggle — the arrangement this
-       block was written to protect — with room to spare instead of the 1px it came down to. */
-    #strp-tb .strp-seg button{ min-width:27px; }
-    .strp-brk{ display:block; flex-basis:100%; width:100%; height:0; order:4; }
-    #strp-drawlbl{ order:5; margin-left:0; } #strp-tools{ order:6; }
-    #strp-undo{ order:7; } #strp-redo{ order:8; } #strp-del{ order:9; }
-    #strp-tb .strp-sp{ display:none; }
+    /* The toolbar's phone layout lives in the one-row blocks below the landscape comment. */
     /* Header: X close pinned to the top-right corner, in line with the symbol */
     .strp-head{ position:relative; padding-right:46px; }
     #strp-close{ position:absolute; top:12px; right:14px; margin:0; }
     /* Left-anchor the big R / £ / pips on phone (stays right-aligned on desktop) */
     .strp-head .strp-sp{ display:none; } .strp-res{ text-align:left; flex-basis:100%; }
   }
-  /* A phone on its side is wider than 760px, so it gets the desktop toolbar - and the switches wrapped
-     onto a line of their own at the right. Nestor: "when in landscape they could also move above the
-     TF and go on the left". Short-and-wide = a phone in landscape (a desktop window is never under
-     500px tall in practice); the news button and both switches take the top row, flush left, and the
-     timeframes and drawing tools keep sharing the row below, which landscape has the width for. */
-  @media (min-width:761px) and (max-height:500px) and (orientation:landscape){
-    #strp-tb #strp-newsbtn{ order:0; margin-left:-7px; }
-    #strp-tb .strp-tgl{ order:0; margin-left:12px !important; }
-    #strp-tb .strp-brk.strp-brk0{ display:block; flex-basis:100%; width:100%; height:0; order:1; }
-    #strp-tflbl, #strp-tfs, #strp-drawlbl, #strp-tools, #strp-undo, #strp-redo, #strp-del, #strp-tb .strp-sp{ order:2; }
+  /* ONE-ROW TOOLBAR on a phone, both ways up (Nestor: "these take up so much space on the screen of
+     my phone"). It was three rows in portrait - switches, timeframes, drawing tools - and two in
+     landscape. Now:
+       portrait   [ 1m 5m 15m 1h 4h 1D 1W ][pencil][layers][news]
+                  the pencil slides the drawing tools out as a second row, only while you want them
+       landscape  [ timeframes ][ drawing tools ][undo redo delete] ....... [layers][news]
+     and Trade marks / Position tool live in a small "Show on chart" menu under the layers button.
+     The labels ("TF", "Draw") go: the buttons say what they are. Short-and-wide = a phone on its
+     side (a desktop window is never under 500px tall in practice). */
+  @media (max-width:760px), (min-width:761px) and (max-height:500px) and (orientation:landscape){
+    #strp-tb{ position:relative; gap:6px; padding:7px 12px; }
+    #strp-tb .strp-lbl, #strp-tb .strp-brk{ display:none; }
+    #strp-tb #strp-layersbtn{ display:inline-flex; position:relative; }
+    #strp-tb .strp-seg button{ height:32px; min-width:28px; padding:0 3px; font-size:11.5px; }
+    #strp-tb .strp-ico{ height:32px; width:34px; }
+    #strp-tb .strp-ico svg{ width:15px; height:15px; }
+    #strp-tb #strp-newsbtn svg{ width:21px; height:21px; }
+    #strp-tb .strp-sp{ display:block; flex:1 1 0; min-width:0; }
+    #strp-tfs{ order:1; } #strp-tools{ order:2; } #strp-undo{ order:3; } #strp-redo{ order:4; } #strp-del{ order:5; }
+    #strp-tb .strp-sp{ order:6; } #strp-tb #strp-layersbtn{ order:7; } #strp-tb #strp-newsbtn{ order:8; margin-left:0; }
+    /* A pink dot on the layers button while something is switched off, so a hidden trade is never a mystery. */
+    #strp-layersbtn.strp-dot::after{ content:''; position:absolute; top:4px; right:4px; width:6px; height:6px; border-radius:50%; background:var(--accent); }
+    /* "Show on chart": the speed menu's panel, with the app's switch shape (Settings > ticker) in the replay's pink. */
+    #strp-tb #strp-tgls{ display:none; position:absolute; z-index:30; flex-direction:column; min-width:200px; padding:5px;
+      background:var(--bg-elev2,#1B1A21); border:1px solid var(--border-2); border-radius:10px; box-shadow:0 12px 34px rgba(0,0,0,.6); }
+    #strp-tb.strp-layersopen #strp-tgls{ display:flex; }
+    #strp-tb .strp-tglh{ display:block; font-size:9px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); padding:6px 8px 4px; }
+    #strp-tgls .strp-tgl{ margin-left:0 !important; flex-direction:row-reverse; justify-content:space-between; gap:16px; padding:9px 8px; border-radius:6px; white-space:nowrap;
+      font-family:'AppNum','DM Mono',monospace; font-size:11px; letter-spacing:.12em; text-transform:uppercase; color:var(--text); }
+    #strp-tgls .strp-tgl input{ -webkit-appearance:none; appearance:none; flex:none; width:34px; height:20px; margin:0; border-radius:10px; background:var(--border-2); position:relative; cursor:pointer; transition:background 150ms; }
+    #strp-tgls .strp-tgl input::before{ content:''; position:absolute; top:3px; left:3px; width:14px; height:14px; border-radius:50%; background:var(--text); transition:transform 150ms, background 150ms; }
+    #strp-tgls .strp-tgl input:checked{ background:var(--accent); }
+    #strp-tgls .strp-tgl input:checked::before{ transform:translateX(14px); background:#000; }
+    #strp-tgls .strp-tgl input:focus-visible{ outline:2px solid var(--accent); outline-offset:2px; }
   }
+  @media (max-width:760px) and (prefers-reduced-motion:reduce){ #strp-tgls .strp-tgl input, #strp-tgls .strp-tgl input::before{ transition:none; } }
+  /* Landscape has the width the portrait row saves: roomier timeframe and tool buttons. */
+  @media (min-width:761px) and (max-height:500px) and (orientation:landscape){ #strp-tb .strp-seg button{ min-width:36px; } }
+  /* Portrait: [15m v] ......... [pencil][layers][news]. The pill names the timeframe you are on and
+     floats the timeframe strip under itself; the pencil slides the drawing tools out as a full second
+     row (stretched to the width), only while you want them. */
+  @media (max-width:760px){
+    #strp-tb #strp-drawbtn, #strp-tb #strp-tfbtn{ display:inline-flex; }
+    #strp-tb #strp-tfbtn{ order:1; width:auto; gap:5px; padding:0 8px 0 11px; font-family:'AppNum','DM Mono',monospace; font-size:12px; font-weight:600; color:var(--text); }
+    #strp-tb #strp-tfbtn svg{ width:13px; height:13px; color:var(--text-dim); transition:transform 150ms; }
+    #strp-tb #strp-tfbtn.on svg{ transform:rotate(180deg); color:var(--accent); }
+    #strp-tb .strp-sp{ display:block; order:2; }
+    #strp-tb #strp-drawbtn{ order:3; } #strp-tb #strp-layersbtn{ order:4; } #strp-tb #strp-newsbtn{ order:5; }
+    #strp-tools{ order:6; flex:1 1 auto; } #strp-tools button{ flex:1 1 0; }
+    #strp-undo{ order:7; } #strp-redo{ order:8; } #strp-del{ order:9; }
+    #strp-tb:not(.strp-drawopen) #strp-tools, #strp-tb:not(.strp-drawopen) #strp-undo,
+    #strp-tb:not(.strp-drawopen) #strp-redo, #strp-tb:not(.strp-drawopen) #strp-del{ display:none; }
+    /* The timeframe strip, floating under the pill: the same segmented control, a size up for thumbs. */
+    #strp-tb #strp-tfs{ display:none; position:absolute; z-index:30; background:var(--bg-elev2,#1B1A21); box-shadow:0 12px 34px rgba(0,0,0,.6); border-radius:10px; }
+    #strp-tb.strp-tfopen #strp-tfs{ display:inline-flex; }
+    #strp-tb #strp-tfs button{ height:38px; min-width:41px; font-size:12.5px; }
+  }
+  @media (max-width:760px) and (prefers-reduced-motion:reduce){ #strp-tb #strp-tfbtn svg{ transition:none; } }
   /* Landscape "more chart" toggle: hides the header + toolbar so the chart fills the screen. */
   /* On a phone the drawing-properties panel is pushed BELOW the chart buttons rather than tucked
      under them. On desktop there is room beside the scale; on a narrow screen the panel is the
@@ -69243,9 +69272,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     </div>
     <div class="strp-tb" id="strp-tb" style="display:none">
       <span class="strp-lbl" id="strp-tflbl">TF</span>
+      <button class="strp-ico strp-cpt strp-tfpill" id="strp-tfbtn" type="button" title="Timeframe" aria-expanded="false" aria-controls="strp-tfs"><span id="strp-tfcur">1m</span><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><polyline points="4.5,6.3 8,9.8 11.5,6.3"/></svg></button>
       <div class="strp-seg" id="strp-tfs">
         <button data-tf="1">1m</button><button data-tf="5">5m</button><button data-tf="15">15m</button><button data-tf="60">1h</button><button data-tf="240">4h</button><button data-tf="1440">1D</button><button data-tf="10080">1W</button>
       </div>
+      <button class="strp-ico strp-cpt" id="strp-drawbtn" type="button" title="Drawing tools" aria-expanded="false" aria-controls="strp-tools"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M10.9 2.6l2.5 2.5-7.7 7.7-3.3.8.8-3.3z"/><path d="M9.5 4l2.5 2.5"/></svg></button>
       <span class="strp-lbl" id="strp-drawlbl" style="margin-left:4px">Draw</span>
       <div class="strp-seg" id="strp-tools">
         <button data-tool="hline" title="Horizontal"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="1" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg></button>
@@ -69260,8 +69291,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <button class="strp-ico" id="strp-del" title="Delete selected"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><path d="M6.3 4.5V3h3.4v1.5"/><path d="M4.7 4.5l.6 8.7a1 1 0 0 0 1 .93h3.4a1 1 0 0 0 1-.93l.6-8.7"/></svg></button>
       <span class="strp-sp"></span>
       <button class="strp-ico" id="strp-newsbtn" title="News this week"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 3.5h8v9h-8z"/><path d="M10.5 6h3v5.2a1.3 1.3 0 0 1-1.3 1.3H4"/><line x1="4.3" y1="5.8" x2="8.7" y2="5.8"/><line x1="4.3" y1="8" x2="8.7" y2="8"/><line x1="4.3" y1="10.2" x2="7" y2="10.2"/></svg></button>
-      <label class="strp-tgl" title="Entry and exit arrows, and the Entry / SL / TP lines with their labels on the price scale"><input type="checkbox" id="strp-marks" checked> <span id="strp-markslbl">Trade marks</span></label>
-      <label class="strp-tgl" style="margin-left:14px;"><input type="checkbox" id="strp-pos" checked> <span id="strp-poslbl">Position tool</span></label>
+      <button class="strp-ico strp-cpt" id="strp-layersbtn" type="button" title="Show on chart" aria-expanded="false" aria-controls="strp-tgls"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.4l5.6 3.1L8 8.6 2.4 5.5z"/><path d="M2.4 8.3L8 11.4l5.6-3.1"/><path d="M2.4 11L8 14.1l5.6-3.1"/></svg></button>
+      <div class="strp-tgls" id="strp-tgls">
+        <div class="strp-tglh" id="strp-tglh">Show on chart</div>
+        <label class="strp-tgl" title="Entry and exit arrows, and the Entry / SL / TP lines with their labels on the price scale"><input type="checkbox" id="strp-marks" checked> <span id="strp-markslbl">Trade marks</span></label>
+        <label class="strp-tgl" style="margin-left:14px;"><input type="checkbox" id="strp-pos" checked> <span id="strp-poslbl">Position tool</span></label>
+      </div>
       <span class="strp-brk" aria-hidden="true"></span>
       <span class="strp-brk strp-brk0" aria-hidden="true"></span>
     </div>
@@ -69351,11 +69386,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function L(en,es){ try{ return document.documentElement.lang==='es'?es:en; }catch(_){ return en; } }
   function localize(){ var es=document.documentElement.lang==='es';
     var lbls=document.querySelectorAll('#strp-tb .strp-lbl'); if(lbls[0]) lbls[0].textContent=es?'Franja':'TF'; if(lbls[1]) lbls[1].textContent=es?'Dibujar':'Draw';
-    // On a phone the two switches share one line with the news button; the full Spanish labels
-    // do not fit it, so the phone gets short ones.
-    var narrow=(window.innerWidth||document.documentElement.clientWidth||0)<=760;
-    var pl=el('strp-poslbl'); if(pl) pl.textContent=es?(narrow?'Posición':'Herramienta de posición'):'Position tool';
-    var ml=el('strp-markslbl'); if(ml) ml.textContent=es?(narrow?'Marcas':'Marcas de la operación'):'Trade marks';
+    // Full names everywhere: on a phone the switches sit in the "Show on chart" menu, which has the room.
+    var pl=el('strp-poslbl'); if(pl) pl.textContent=es?'Herramienta de posición':'Position tool';
+    var ml=el('strp-markslbl'); if(ml) ml.textContent=es?'Marcas de la operación':'Trade marks';
+    var th=el('strp-tglh'); if(th) th.textContent=es?'Mostrar en el gráfico':'Show on chart';
     var tjl=el('strp-tjlbl'); if(tjl) tjl.textContent=es?'Operación':'Trade';
     var pt=el('strp-prevtrade'); if(pt){ pt.title=es?'Operación anterior':'Previous trade'; pt.setAttribute('aria-label',pt.title); }
     var nt=el('strp-nexttrade'); if(nt){ nt.title=es?'Operación siguiente':'Next trade'; nt.setAttribute('aria-label',nt.title); }
@@ -69366,6 +69400,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var T=function(id,en,esT){ var e=el(id); if(e) e.title=es?esT:en; };
     T('strp-fs','Fullscreen','Pantalla completa'); T('strp-cmax','More chart','Más gráfico'); T('strp-close','Close','Cerrar'); T('strp-restart','Restart','Reiniciar'); T('strp-back','Step back','Atrás'); T('strp-fwd','Step forward','Adelante'); T('strp-spdcur','Replay speed','Velocidad'); T('strp-undo','Undo','Deshacer'); T('strp-redo','Redo','Rehacer'); T('strp-del','Delete selected','Borrar selección');
     T('strp-newsbtn','News this week','Noticias de la semana'); T('strp-newsx','Close','Cerrar');
+    T('strp-drawbtn','Drawing tools','Herramientas de dibujo'); T('strp-tfbtn','Timeframe','Temporalidad'); T('strp-layersbtn','Show on chart','Mostrar en el gráfico');
     var nt=el('strp-newstitle'); if(nt) nt.textContent=es?'Noticias de la semana':'News this week';
     var tt={hline:es?'Línea horizontal':'Horizontal',trend:es?'Línea de tendencia':'Trend',rect:es?'Rectángulo':'Rectangle',fib:'Fib',range:es?'Medir':'Measure'};
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(b){ if(tt[b.dataset.tool]) b.title=tt[b.dataset.tool]; });
@@ -69568,7 +69603,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   var S=null;   // active session state; rebuilt each open()
 
-  function closeModal(){ try{ stopLoop(); }catch(_){} try{ pause(); }catch(_){} try{ closeNews(); _newsCardReset(); }catch(_){}   // stop the render loop + play timer BEFORE tearing down
+  function closeModal(){ try{ stopLoop(); }catch(_){} try{ pause(); }catch(_){} try{ closeNews(); _newsCardReset(); }catch(_){} try{ layersOpen(false); tfOpen(false); }catch(_){}   // stop the render loop + play timer BEFORE tearing down
     try{ if(S&&S.chart){ S.chart.remove(); } }catch(_){} S=null; el('strp-modal-bg').classList.remove('show');
     // Return to wherever the replay was opened from (e.g. the edit-trade modal) instead of the main tab.
     try{ var _cb=window.__stReplayReturn; window.__stReplayReturn=null; if(typeof _cb==='function') _cb(); }catch(_){} }
@@ -69642,6 +69677,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         newsRows:null, newsMarks:null };
     // The checkboxes outlive a replay; make them say what this one will do.
     try{ el('strp-marks').checked=S.showMarks; el('strp-pos').checked=true; }catch(_){}
+    updLayersDot(); layersOpen(false); tfOpen(false); drawerOpen(_drawerPref(),false);
     S.login=(row&&row.login!=null)?String(row.login):null;
     S.untilTs=(opts&&opts.untilTs>0)?opts.untilTs:0;   // "Replay the week": candles to the end of the week
     // Which of your other trades this replay shows (Nestor): a single trade shows the trades of ITS DAY,
@@ -69701,6 +69737,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.drawings=loadDrawings(S.ticket,tf); S.pending=null; S.sel=null; S.history=[clone(S.drawings)]; S.hpos=0; S.userView=false;
     el('strp-scrub').max=String(S.bars.length-1);
     Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
+    updTfPill();
     buildSpread(); buildMoves(); buildNewsMarks(); _newsCardReset();   // need S.bars + S.eBI, so they re-key on every timeframe change
     keyOthers();
     render(true); updUR(); updDel();
@@ -70711,7 +70748,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function persistDrawings(){ try{ if(!S||!S.ticket) return; localStorage.setItem(drawKey(S.ticket),JSON.stringify(S.drawings)); }catch(_){} }
   function commit(){ S.history=S.history.slice(0,S.hpos+1); S.history.push(clone(S.drawings)); S.hpos=S.history.length-1; updUR(); persistDrawings(); }
   function updUR(){ el('strp-undo').disabled=S.hpos<=0; el('strp-redo').disabled=S.hpos>=S.history.length-1; }
-  function updDel(){ el('strp-del').disabled=(S.sel==null&&!(S.selMulti&&S.selMulti.length)); renderProps(); }
+  function updDel(){ el('strp-del').disabled=(S.sel==null&&!(S.selMulti&&S.selMulti.length)); renderProps();
+    if(!el('strp-del').disabled&&_isPortraitBar()&&!el('strp-tb').classList.contains('strp-drawopen')) drawerOpen(true,false); }
   /* Style carried onto the NEXT drawing. Picking a colour with a tool armed but nothing selected
      sets the default for what you are about to draw, which is how every drawing app behaves. */
   /* Duplicate the selection, offset so the copy is visibly its own object rather than sitting
@@ -71078,10 +71116,41 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   el('strp-spdcur').onclick=function(e){ e.stopPropagation(); el('strp-spd').classList.toggle('open'); };
   Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(b){ b.onclick=function(){ if(!S)return; Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(x){x.classList.remove('on');}); b.classList.add('on'); S.ms=+b.dataset.ms; el('strp-spdcur').innerHTML=b.querySelector('b').innerHTML; el('strp-spd').classList.remove('open'); if(S.playing){ clearInterval(S.timer); S.timer=setInterval(tick,Math.max(24,S.ms)); } }; });
   document.addEventListener('click',function(e){ var sp=el('strp-spd'); if(sp&&!sp.contains(e.target)) sp.classList.remove('open'); });
-  Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.onclick=function(){ if(!S)return; setTf(+b.dataset.tf); }; });
+  Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.onclick=function(){ if(!S)return; tfOpen(false);
+    el('strp-tfcur').textContent=(b.textContent||'').trim(); setTf(+b.dataset.tf); }; });
   Array.prototype.forEach.call(document.querySelectorAll('#strp-tools button'),function(b){ b.onclick=function(){ if(!S)return; setTool(b.dataset.tool); }; });
-  el('strp-pos').onchange=function(ev){ if(!S)return; S.showPos=ev.target.checked; draw(); };
-  el('strp-marks').onchange=function(ev){ if(!S)return; S.showMarks=ev.target.checked;
+  /* Phone toolbar. The pencil shows / hides the drawing tools (remembered in this browser); putting
+     them away also puts an armed tool away, so a tap on the chart cannot start a line you cannot see
+     the tools for. The layers button opens "Show on chart"; a tap anywhere else closes it. */
+  var _portraitMQ=window.matchMedia?window.matchMedia('(max-width:760px)'):null;
+  function _isPortraitBar(){ return !!(_portraitMQ&&_portraitMQ.matches); }
+  function drawerOpen(on,remember){ var tb=el('strp-tb'), b=el('strp-drawbtn'); if(!tb) return;
+    tb.classList.toggle('strp-drawopen',!!on);
+    if(b){ b.classList.toggle('on',!!on); b.setAttribute('aria-expanded',on?'true':'false'); }
+    if(!on&&S&&S.activeTool!=='none'&&_isPortraitBar()){ S.pending=null; S.penning=null; setTool('none'); }
+    if(remember){ try{ localStorage.setItem('st_replay_drawer',on?'1':'0'); }catch(_){} } }
+  function _drawerPref(){ try{ return localStorage.getItem('st_replay_drawer')==='1'; }catch(_){ return false; } }
+  function layersOpen(on){ var tb=el('strp-tb'), b=el('strp-layersbtn'), p=el('strp-tgls'); if(!tb||!b||!p) return;
+    if(on){ tfOpen(false); p.style.top=(b.offsetTop+b.offsetHeight+6)+'px'; p.style.right=Math.max(8,tb.clientWidth-(b.offsetLeft+b.offsetWidth))+'px'; }
+    tb.classList.toggle('strp-layersopen',!!on); b.classList.toggle('on',!!on); b.setAttribute('aria-expanded',on?'true':'false'); }
+  // The timeframe strip under the pill (portrait). Only positioned there; inline everywhere else, where
+  // top / left on a static element do nothing.
+  function tfOpen(on){ var tb=el('strp-tb'), b=el('strp-tfbtn'), p=el('strp-tfs'); if(!tb||!b||!p) return;
+    if(on){ layersOpen(false); p.style.top=(b.offsetTop+b.offsetHeight+6)+'px'; p.style.left=b.offsetLeft+'px'; }
+    tb.classList.toggle('strp-tfopen',!!on); b.classList.toggle('on',!!on); b.setAttribute('aria-expanded',on?'true':'false'); }
+  function updTfPill(){ try{ var o=document.querySelector('#strp-tfs button.on'); if(o) el('strp-tfcur').textContent=(o.textContent||'').trim(); }catch(_){} }
+  function updLayersDot(){ try{ el('strp-layersbtn').classList.toggle('strp-dot',!(el('strp-marks').checked&&el('strp-pos').checked)); }catch(_){} }
+  el('strp-drawbtn').onclick=function(){ drawerOpen(!el('strp-tb').classList.contains('strp-drawopen'),true); };
+  el('strp-layersbtn').onclick=function(e){ e.stopPropagation(); layersOpen(!el('strp-tb').classList.contains('strp-layersopen')); };
+  el('strp-tfbtn').onclick=function(e){ e.stopPropagation(); tfOpen(!el('strp-tb').classList.contains('strp-tfopen')); };
+  document.addEventListener('click',function(e){ var tb=el('strp-tb'); if(!tb) return;
+    var p=el('strp-tgls'), b=el('strp-layersbtn');
+    if(p&&b&&tb.classList.contains('strp-layersopen')&&!p.contains(e.target)&&!b.contains(e.target)) layersOpen(false);
+    var tp=el('strp-tfs'), tbn=el('strp-tfbtn');
+    if(tp&&tbn&&tb.classList.contains('strp-tfopen')&&!tp.contains(e.target)&&!tbn.contains(e.target)) tfOpen(false); });
+  window.addEventListener('resize',function(){ try{ layersOpen(false); tfOpen(false); }catch(_){} });
+  el('strp-pos').onchange=function(ev){ updLayersDot(); if(!S)return; S.showPos=ev.target.checked; draw(); };
+  el('strp-marks').onchange=function(ev){ updLayersDot(); if(!S)return; S.showMarks=ev.target.checked;
     try{ localStorage.setItem('st_replay_marks',S.showMarks?'1':'0'); }catch(_){}
     try{ series.setMarkers(markers()); }catch(_){}
     syncTradeLines(); styleTradeLines(); draw(); };
