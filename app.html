@@ -6481,7 +6481,7 @@ try {
       <div id="settings-nudges-voice-row">
         <label class="settings-label" style="margin-top:14px;" data-i18n="settings.nudges_voice_label">Voice</label>
         <select id="settings-nudges-voice" class="settings-input settings-input-compact"></select>
-        <p class="settings-hint" data-i18n="settings.nudges_voice_hint">All of Google’s voices, which come with Google Chrome. Voices in other languages read the nudges in their accent. A browser without the one you pick uses its automatic voice.</p>
+        <p class="settings-hint" data-i18n="settings.nudges_voice_hint">Google’s English and Spanish voices, which come with Google Chrome. A browser without the one you pick uses its automatic voice.</p>
         <p class="settings-hint" id="settings-nudges-nogoogle" style="display:none;" data-i18n="settings.nudges_no_google">This browser has no Google voices, so nudges use this device's own voice. Open the app in Google Chrome to hear them.</p>
       </div>
       <label class="settings-label" style="margin-top:14px;" data-i18n="settings.nudges_reentry_label">Warn if I re-enter within</label>
@@ -7449,8 +7449,7 @@ try {
       'settings.nudges_sound_off': 'No sound (card only)',
       'settings.nudges_voice_label': 'Voice',
       'settings.nudges_voice_auto': 'Automatic',
-      'settings.nudges_voice_hint': 'All of Google’s voices, which come with Google Chrome. Voices in other languages read the nudges in their accent. A browser without the one you pick uses its automatic voice.',
-      'settings.nudges_voice_other': 'Other languages (their accent)',
+      'settings.nudges_voice_hint': 'Google’s English and Spanish voices, which come with Google Chrome. A browser without the one you pick uses its automatic voice.',
       'settings.nudges_no_google': 'This browser has no Google voices, so nudges use this device\u2019s own voice. Open the app in Google Chrome to hear them.',
       'settings.nudges_voice_missing': 'not on this device',
       'settings.nudges_no_es': 'This device has no Spanish voice, so nudges only chime (no spoken line). Google Chrome has Google\u2019s Spanish voices, or you can add one in Windows: Settings \u2192 Time & language \u2192 Speech.',
@@ -9153,8 +9152,7 @@ try {
       'settings.nudges_sound_off': 'Sin sonido (solo el aviso)',
       'settings.nudges_voice_label': 'Voz',
       'settings.nudges_voice_auto': 'Automática',
-      'settings.nudges_voice_hint': 'Todas las voces de Google, que vienen con Google Chrome. Las voces de otros idiomas leen los avisos con su acento. Un navegador que no tenga la que elijas usa su voz automática.',
-      'settings.nudges_voice_other': 'Otros idiomas (con su acento)',
+      'settings.nudges_voice_hint': 'Las voces de Google en inglés y español, que vienen con Google Chrome. Un navegador que no tenga la que elijas usa su voz automática.',
       'settings.nudges_no_google': 'Este navegador no tiene voces de Google, así que los avisos usan la voz propia del dispositivo. Abre la app en Google Chrome para oírlas.',
       'settings.nudges_voice_missing': 'no está en este dispositivo',
       'settings.nudges_no_es': 'Este dispositivo no tiene una voz en español, así que los avisos solo suenan (sin frase hablada). Google Chrome trae las voces en español de Google, o puedes añadir una en Windows: Configuración \u2192 Hora e idioma \u2192 Voz.',
@@ -15539,11 +15537,13 @@ try {
     // The voice a nudge speaks in: the member's pick when it is a Google voice this device has in the
     // text's language, else Automatic, else the device's own voice.
     // An English voice never reads Spanish text, nor a Spanish one English - that comes out garbled,
-    // and Automatic covers the other language. A voice in any OTHER language was chosen for its
-    // accent, so it reads whatever language the app is in.
+    // and Automatic covers the other language. Only English and Spanish voices are offered; a pick
+    // left over from when other languages were (their accent) now falls back to Automatic.
+    function enEsVoiceName(n) { return /English|español/i.test(String(n || '')); }
     function nudgeVoice(vs, es) {
       var want = cfg().voice;
       var mine = (want && GOOGLE_VOICE.test(want)) ? (vs || []).find(function (x) { return x.name === want; }) : null;
+      if (mine && !/^(en|es)/i.test(mine.lang)) mine = null;
       if (mine && (es ? /^en/i : /^es/i).test(mine.lang)) mine = null;
       return mine || autoVoice(vs, es) || localVoice(vs, es) || null;
     }
@@ -15686,8 +15686,9 @@ try {
       showCard([{ key: 'sample:' + Date.now(), text: line, say: t('nudge.revenge_say') }]);
       play(line);                               // the card's words, with whatever Sound is set to
     }
-    // The Voice list: "Automatic", then the Google voices this browser has, grouped by language
-    // (the app's first). Only Google's - Nestor preferred them to every other voice on offer.
+    // The Voice list: "Automatic", then the Google voices this browser has in English and Spanish,
+    // the app's language first. Only Google's - Nestor preferred them to every other voice on offer -
+    // and only those two languages (Nestor: "remove the languajes that arent spanish or english").
     function fillVoices() {
       try {
         var sel = document.getElementById('settings-nudges-voice'); if (!sel) return;
@@ -15695,11 +15696,6 @@ try {
         var es = document.documentElement.lang === 'es', cur = cfg().voice;
         var groups = [['English', googleVoices(vs, false)], ['Español', googleVoices(vs, true)]];
         if (es) groups.reverse();
-        // Every other language Chrome has, alphabetically. Labelled with the language code, since
-        // "Deutsch" or "日本語" alone does not say which accent you are about to hear.
-        var others = vs.filter(function (x) { return GOOGLE_VOICE.test(x.name) && !/^(en|es)/i.test(x.lang); })
-                       .sort(function (a, b) { return voiceLabel(a).localeCompare(voiceLabel(b)); });
-        groups.push([t('settings.nudges_voice_other'), others, true]);
         sel.innerHTML = '';
         var auto = document.createElement('option'); auto.value = '';
         var av = autoVoice(vs, es);
@@ -15713,7 +15709,7 @@ try {
         });
         // A Google voice chosen in another browser that this one lacks: keep it selected, marked as
         // not here. A non-Google voice picked before this change simply reads as Automatic.
-        var isG = cur && GOOGLE_VOICE.test(cur);
+        var isG = cur && GOOGLE_VOICE.test(cur) && enEsVoiceName(cur);   // an old other-language pick reads as Automatic
         if (isG && !vs.some(function (x) { return x.name === cur; })) {
           var miss = document.createElement('option'); miss.value = cur; miss.textContent = voiceLabel({ name: cur }) + ' — ' + t('settings.nudges_voice_missing'); sel.appendChild(miss);
         }
