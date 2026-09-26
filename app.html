@@ -2508,6 +2508,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #pb-addrow-wrap .pb-order-done { border-style: solid; border-color: var(--accent); color: var(--accent); }
   .pb-reopen { margin-left: auto; background: transparent; border: 1px dashed var(--border-2); color: var(--text-mid); border-radius: var(--radius-chip); padding: 6px 10px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.08em; cursor: pointer; }
   .pb-reopen:hover { border-color: var(--accent); color: var(--text); }
+  .pb-re-chip.is-gone { opacity: 0.55; border-style: dashed; }
+  .pb-re-chip.is-gone button { color: var(--accent); font-size: 14px; }
+  /* Mindset's answers on five lines rather than four (Nestor) - 820px gives five in English AND Spanish. */
+  .pb-row[data-row="mind"] .pb-row-o { max-width: 820px; }
   .pb-roweditor { display: flex; flex-direction: column; gap: 10px; border: 1px solid var(--border-2); border-radius: 10px; padding: 12px; background: var(--bg-elev); }
   .pb-re-line { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pb-re-k { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--text-dim); min-width: 72px; }
@@ -10825,6 +10829,9 @@ try {
     try{ if(window.STSCHOOL && window.STSCHOOL.relang) window.STSCHOOL.relang(); }catch(_){}
     try{ if(window.__stReplayRelang) window.__stReplayRelang(); }catch(_){}
     try{ if(window.__stEnsureAvatarUI) window.__stEnsureAvatarUI(); }catch(_){}
+    // Playbook rows, the trade window's copy, Manage playbooks and the 04 hint are drawn from code,
+    // not data-i18n - repaint them, or they stayed in the old language until something was tapped.
+    try{ if(window.__stPb && window.__stPb.relang) window.__stPb.relang(); }catch(_){}
     // Re-apply currency symbol since translated labels may contain {C} placeholders
     if (typeof applyCurrencySymbol === 'function') applyCurrencySymbol();
     // Refresh date displays (header date is locale-sensitive)
@@ -17436,6 +17443,7 @@ try {
     const ed = _pbEdits()[r.id]; if (!ed) return r;
     const o = Object.assign({}, r);
     if (ed.name) { o.en = ed.name; o.es = ed.name; o.i18n = null; o.renamed = true; }
+    if (Array.isArray(ed.hiddenOpts) && ed.hiddenOpts.length && !r.field && r.kind !== 'time') o.opts = o.opts.filter(x => ed.hiddenOpts.indexOf(x.k) < 0);
     if (Array.isArray(ed.extra) && ed.extra.length && !r.field && r.kind !== 'time')
       o.opts = r.opts.concat(ed.extra.filter(x => !r.opts.some(y => y.k === x.v)).map(x => ({ k: x.v, en: x.l || x.v, es: x.l || x.v, c: x.v, own: true })));
     return o;
@@ -17564,7 +17572,7 @@ try {
       const a = pbAnswer(tr, r), ks = r.multi ? a : (a ? [a] : []);
       if (ks.length) out.push({ label: r.en, text: ks.map(k => { const o = r.opts.find(o => o.k === k); return o ? o.en : k; }).join(', ') });
     });
-    const known = {}; pbRowsAll().forEach(r => r.opts.forEach(o => _pbStored(o).forEach(c => { known[c] = 1; })));
+    const known = {}; pbRowsAll().concat(PB_ROWS).forEach(r => (r.opts || []).forEach(o => _pbStored(o).forEach(c => { known[c] = 1; })));
     const prefixes = pbRowsAll().filter(r => r.kind === 'time').map(r => r.prefix);
     const other = _pbSrc(tr).concepts.filter(c => !known[c] && !prefixes.some(p => String(c).indexOf(p) === 0));
     if (other.length) out.push({ label: _pbL('Tags', 'Etiquetas'), text: other.join(', ') });
@@ -17586,11 +17594,17 @@ try {
   let _pbRowEdit = false, _pbEditingRow = null, _pbReErr = '';   // "Edit a row" mode, the row open in it
   function pbRowEditorHtml(r) {
     const fixed = !!(r.field === 'type' || r.field === 'rice' || r.kind === 'time');
-    const mine = o => !!(o.own || r.custom || (r.field === 'mindset' && !o.i18n));
+    const base = (PB_ROWS.find(x => x.id === r.id) || {}).opts || [];
+    let gone = [];
+    if (!fixed && r.field === 'mindset') { const ct = data.customTags || {}, hid = (ct.hidden && Array.isArray(ct.hidden.mindset)) ? ct.hidden.mindset : []; gone = base.filter(o => hid.indexOf(o.k) >= 0); }
+    else if (!fixed && !r.custom) { const ed = _pbEdits()[r.id]; gone = (ed && Array.isArray(ed.hiddenOpts)) ? base.filter(o => ed.hiddenOpts.indexOf(o.k) >= 0) : []; }
     let h = '<div class="pb-roweditor">'
       + '<div class="pb-re-line"><span class="pb-re-k">' + _pbEsc(_pbL('Name', 'Nombre')) + '</span><input type="text" class="pb-in" data-re="name" maxlength="40" value="' + _pbEsc(_pbLbl(r)) + '"></div>'
       + '<div class="pb-re-line"><span class="pb-re-k">' + _pbEsc(_pbL('Answers', 'Respuestas')) + '</span><div class="pb-re-ans">'
-      + r.opts.map(o => '<span class="pb-re-chip">' + _pbEsc(_pbLbl(o)) + (mine(o) ? '<button type="button" data-re-rm="' + _pbEsc(o.k) + '" aria-label="' + _pbEsc(_pbL('Remove', 'Quitar')) + '">×</button>' : '') + '</span>').join('')
+      + r.opts.map(o => '<span class="pb-re-chip">' + _pbEsc(_pbLbl(o)) + (!fixed ? '<button type="button" data-re-rm="' + _pbEsc(o.k) + '" aria-label="' + _pbEsc(_pbL('Remove', 'Quitar')) + '">×</button>' : '') + '</span>').join('')
+      + '</div></div>';
+    if (gone.length) h += '<div class="pb-re-line"><span class="pb-re-k">' + _pbEsc(_pbL('Removed', 'Quitadas')) + '</span><div class="pb-re-ans">'
+      + gone.map(o => '<span class="pb-re-chip is-gone">' + _pbEsc(_pbLbl(o)) + '<button type="button" data-re-restore="' + _pbEsc(o.k) + '" title="' + _pbEsc(_pbL('Bring it back', 'Recuperarla')) + '" aria-label="' + _pbEsc(_pbL('Bring it back', 'Recuperarla')) + '">+</button></span>').join('')
       + '</div></div>';
     if (!fixed) h += '<div class="pb-re-line"><span class="pb-re-k"></span><input type="text" class="pb-in" data-re="newans" maxlength="40" placeholder="' + _pbEsc(_pbL('New answer', 'Nueva respuesta')) + '">'
       + '<button type="button" class="pb-act" data-re="add">' + _pbEsc(_pbL('Add answer', 'Añadir respuesta')) + '</button></div>';
@@ -17717,11 +17731,25 @@ try {
     const box = el.closest('.pb-row-editing'), act = el.dataset.re;
     const own = (data.pbRows || []).find(x => x.id === r.id);            // an own row
     _pbReErr = '';
+    const isBuiltIn = k => ((PB_ROWS.find(x => x.id === r.id) || {}).opts || []).some(o => o.k === k);
     if (el.dataset.reRm !== undefined) {
+      // An answer you added is deleted; a built-in one is hidden (restorable below). Trades keep theirs.
       const k = el.dataset.reRm;
       if (own) own.opts = (own.opts || []).filter(o => o.v !== k);
-      else if (r.field === 'mindset') { const ct = data.customTags || {}; ct.mindset = (ct.mindset || []).filter(v => v !== k); }
-      else { const ed = _pbRowEd(r.id); ed.extra = (ed.extra || []).filter(x => x.v !== k); }
+      else if (r.field === 'mindset') {
+        if (!data.customTags) data.customTags = {}; const ct = data.customTags;
+        if (isBuiltIn(k)) { if (!ct.hidden || typeof ct.hidden !== 'object') ct.hidden = {}; if (!Array.isArray(ct.hidden.mindset)) ct.hidden.mindset = []; if (ct.hidden.mindset.indexOf(k) < 0) ct.hidden.mindset.push(k); }
+        else ct.mindset = (ct.mindset || []).filter(v => v !== k);
+      }
+      else { const ed = _pbRowEd(r.id);
+        if (isBuiltIn(k)) { if (!Array.isArray(ed.hiddenOpts)) ed.hiddenOpts = []; if (ed.hiddenOpts.indexOf(k) < 0) ed.hiddenOpts.push(k); }
+        else ed.extra = (ed.extra || []).filter(x => x.v !== k); }
+      _pbAfter(); return;
+    }
+    if (el.dataset.reRestore !== undefined) {
+      const k = el.dataset.reRestore;
+      if (r.field === 'mindset') { const ct = data.customTags || {}; if (ct.hidden && Array.isArray(ct.hidden.mindset)) ct.hidden.mindset = ct.hidden.mindset.filter(v => v !== k); }
+      else { const ed = _pbRowEd(r.id); ed.hiddenOpts = (ed.hiddenOpts || []).filter(v => v !== k); }
       _pbAfter(); return;
     }
     if (act === 'close') { _pbEditingRow = null; pbPaint(); return; }
@@ -17792,7 +17820,7 @@ try {
       if (addB) { _pbAddTag = addB.dataset.add; pbPaint(); const inp = document.querySelector('#pb-rows .pb-tagin'); if (inp) inp.focus(); return; }
       const eo = e.target.closest('.pb-reopen');
       if (eo) { _pbEditingRow = eo.dataset.edit; _pbReErr = ''; pbPaint(); const ni = document.querySelector('#pb-rows .pb-row-editing [data-re="newans"]') || document.querySelector('#pb-rows .pb-row-editing [data-re="name"]'); if (ni) ni.focus(); return; }
-      const re = e.target.closest('[data-re], [data-re-rm]');
+      const re = e.target.closest('[data-re], [data-re-rm], [data-re-restore]');
       if (re && re.closest('.pb-row-editing')) { pbRowEditAction(re); return; }
       const del = e.target.closest('.pb-row-del');
       if (del) {
@@ -18282,7 +18310,16 @@ try {
       list.filter(v => v.parent === p.id).sort(_pbByName).forEach(v => { out.push({ name: v.name, label: '  ↳ ' + v.name }); }); });
     return out;
   }
-  window.__stPb = { options: pbOptions, rows: pbRows, answer: pbAnswer, match: pbMatch, byName: pbByName, byId: pbById, list: pbList, root: pbRoot,
+  // Language switch: everything this module draws itself.
+  function pbRelang() {
+    try { pbPaint(); } catch (e) {}
+    try { if (_pbEd) pbEditPaint(); } catch (e) {}
+    try { const bg = document.getElementById('pb-modal-bg'); if (bg && bg.classList.contains('show')) pbRenderManage(); } catch (e) {}
+    try { const sm = document.getElementById('pb-edit-sum'); if (sm) sm.textContent = _pbL('Trade Details', 'Detalles de la operación'); } catch (e) {}
+    try { const bar = document.getElementById('dcx-pbbar'); if (bar && bar.style.display !== 'none' && window.__stPbShareMenu) window.__stPbShareMenu(bar); } catch (e) {}
+    try { if (typeof rvCloseHint === 'function') rvCloseHint(); } catch (e) {}
+  }
+  window.__stPb = { relang: pbRelang, options: pbOptions, rows: pbRows, answer: pbAnswer, match: pbMatch, byName: pbByName, byId: pbById, list: pbList, root: pbRoot,
                     describe: pbDescribe, customDefs: _pbCustomRowDefs, paint: pbPaint, L: _pbL, esc: _pbEsc, diffText: pbDiffText, newId: pbNewId };
 
   // Tag groups are multi-select and store an ARRAY, except these, which hold ONE value as a
