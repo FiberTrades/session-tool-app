@@ -12107,11 +12107,43 @@ try {
       try { if (navigator.userActivation) return !!navigator.userActivation.hasBeenActive; } catch (e) {}
       return tapped;
     }
+    // Is sound actually blocked? A page that has not been clicked since it loaded can still be allowed to play:
+    // Chrome carries your earlier use of the site across a reload, and allows an installed app. The Web Audio
+    // context reports the browser's decision - 'running' when sound is allowed, 'suspended' when it is blocked -
+    // and the spoken voice follows the same rule. (28 Sep 2026: the pill showed after every reload.)
+    let _ctxWired = false;
+    function soundAllowed() {
+      if (activated()) return true;
+      try {
+        const ctx = getAudioCtx();
+        if (!ctx) return false;
+        if (!_ctxWired) {
+          _ctxWired = true;
+          try { ctx.addEventListener('statechange', function () { update(); }); } catch (e) {}
+          try { if (ctx.state === 'suspended') ctx.resume().catch(function () {}); } catch (e) {}   // starts at once if allowed
+        }
+        return ctx.state === 'running';
+      } catch (e) { return false; }
+    }
     function wanted() {
       try { if (_isDetachedWindow()) return false; } catch (e) {}
       try { if (!_voiceSignedIn()) return false; } catch (e) { return false; }
       const dow = new Date().getDay();
-      return (typeof window.__stIsTradingDay === 'function') ? !!window.__stIsTradingDay(dow) : (dow !== 0 && dow !== 6);
+      const tradingDay = (typeof window.__stIsTradingDay === 'function') ? !!window.__stIsTradingDay(dow) : (dow !== 0 && dow !== 6);
+      return tradingDay && soundSoon();
+    }
+    // Only when sound is about to matter (28 Sep 2026 - it nagged after every reload): from 15 minutes before a
+    // session starts until it ends (the session voice, and the nudges while you trade), or while a trade is open.
+    function soundSoon() {
+      try { if (window.__stLive && window.__stLive.openList && window.__stLive.openList().length) return true; } catch (e) {}
+      try {
+        const d = new Date(), now = d.getHours() * 60 + d.getMinutes();
+        return getSessions().some(function (x) {
+          const a = _mins(x.start) - 15, b = _mins(x.end);
+          if (b > a) return now >= a && now < b;
+          return now >= ((a + 1440) % 1440) || now < b;         // a session that runs past midnight
+        });
+      } catch (e) { return false; }
     }
     function build() {
       el = document.createElement('button');
@@ -12127,7 +12159,7 @@ try {
       document.body.appendChild(el);
     }
     function update() {
-      const show = wanted() && !activated();
+      const show = wanted() && !soundAllowed();
       if (show && !el) build();
       if (el) {
         el.querySelector('.ssl-off').textContent = t('sound.lock_off');
@@ -12136,14 +12168,14 @@ try {
         try { window.__stPopStack(); } catch (e) {}
       }
       // Once this page has been touched it stays allowed to make sound until it reloads - stop checking.
-      if (activated() && timer) { clearInterval(timer); timer = null; }
+      if (timer && wanted() && soundAllowed()) { clearInterval(timer); timer = null; }   // no audio context on a day it isn't needed
     }
     ['pointerdown', 'keydown', 'touchstart'].forEach(function (ev) {
       window.addEventListener(ev, function () { tapped = true; setTimeout(update, 0); }, { passive: true });
     });
-    setTimeout(update, 3000);                 // a member who clicks straight away never sees it
+    setTimeout(update, 20000);                // a member who clicks soon after loading never sees it
     timer = setInterval(update, 20000);       // sign-in finishing, or midnight into a trading day
-    window.__stSoundLock = { update: update, activated: activated };
+    window.__stSoundLock = { update: update, activated: activated, soundAllowed: soundAllowed };
   })();
 
   // Every pop-up shares the screen without covering another (27 Sep 2026). The nudge card sits at the bottom; the
