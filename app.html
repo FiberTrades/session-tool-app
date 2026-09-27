@@ -2228,6 +2228,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* The verdict now LEADS the section, so it loses the big top gap it needed as a footer and
      gains a bottom one instead. */
   .combo-verdict.combo-verdict-top { margin-top: 0; margin-bottom: 22px; }
+  .combo-verdict-rows { margin-bottom: 0; }
+  .combo-verdict-rows .cr-v { color: var(--text); font-size: 13px; }
   /* Directions that lack the sample to act on, reduced to one quiet line. */
   /* Excursion diagnostics — 5-column table. Needs its own ID block for the same reason the
      session/setup tables do: without one the generic 9-column .history-row grid applies and the
@@ -8988,6 +8990,16 @@ try {
       'combo.rec_a_conc_two': 'And two trades out of {N} are the whole of it: without them the rule is worth {WO}.',
       'combo.rec_a_conc_one': 'And one trade out of {N} is the whole of it: without it the rule is worth {WO}.',
       'combo.conc_not_rec': "So the Overall verdict doesn't recommend it.",
+      'cr.v_st_yes': 'Rule recommended',
+      'cr.v_st_no': 'No rule recommended',
+      'cr.v_best': 'Best rule',
+      'cr.v_closest': 'Closest rule',
+      'cr.v_wr_k': 'Win rate',
+      'cr.w_trades': 'trades',
+      'cr.v_none': 'No rule beats what you actually did. Keep trading as you are.',
+      'cr.v_few': 'Only {N} {WHAT} so far. It needs 10.',
+      'cr.v_keep': 'Keep trading as you are for now.',
+      'cr.v_wr': '{NAME} would lift it from {WR0}% to {WR}%.',
       'cr.idea': 'The idea',
       'cr.result': 'Result',
       'cr.why_not': 'Why not',
@@ -10802,6 +10814,16 @@ try {
       'combo.rec_a_conc_two': 'Y dos operaciones de {N} son todo: sin ellas la regla vale {WO}.',
       'combo.rec_a_conc_one': 'Y una operación de {N} es todo: sin ella la regla vale {WO}.',
       'combo.conc_not_rec': 'Por eso el veredicto general no la recomienda.',
+      'cr.v_st_yes': 'Regla recomendada',
+      'cr.v_st_no': 'Ninguna regla recomendada',
+      'cr.v_best': 'Mejor regla',
+      'cr.v_closest': 'Regla más cercana',
+      'cr.v_wr_k': 'Acierto',
+      'cr.w_trades': 'operaciones',
+      'cr.v_none': 'Ninguna regla mejora lo que hiciste. Sigue operando como hasta ahora.',
+      'cr.v_few': 'Solo {N} {WHAT} hasta ahora. Necesita 10.',
+      'cr.v_keep': 'De momento, sigue operando como hasta ahora.',
+      'cr.v_wr': '{NAME} lo subiría del {WR0}% al {WR}%.',
       'cr.idea': 'La idea',
       'cr.result': 'Resultado',
       'cr.why_not': 'Por qué no',
@@ -25307,7 +25329,7 @@ try {
     function _row(k, v) { return v ? '<div class="cr-row"><span class="cr-k">' + k + '</span><span class="cr-v">' + v + '</span></div>' : ''; }
     function _card(p) {
       const why = (p.why || []).filter(Boolean).map(x => '<span class="cr-li">' + x + '</span>').join('');
-      return _row(t('cr.idea'), p.idea) + _row(t('cr.result'), p.result)
+      return _row(p.ideaLabel || t('cr.idea'), p.idea) + _row(t('cr.result'), p.result)
         + (p.extra || []).map(e => _row(e[0], e[1])).join('')
         + _row(p.status === 'yes' ? t('cr.watch') : t('cr.why_not'), why);
     }
@@ -26124,25 +26146,25 @@ try {
       { name: t('combo.direction_a_name') || 'Hold winners longer',
         suggest: '+' + _dualBare(optStretch),
         scenario: scenarioA, delta: aDeltaU, passesTier: aPassesTier, passesDelta: aPassesDelta,
-        n: trackedWins.length,
+        n: trackedWins.length, whatKey: 'cr.w_wins',
         sampleLabel: trackedWins.length === 1
           ? (t('combo.sample_win_one') || 'tracked win') : (t('combo.sample_win_many') || 'tracked wins') },
       { name: t('combo.direction_b_name') || 'Close BEs sooner',
         suggest: 'cap at +' + _dualBare(optTP),
         scenario: scenarioB, delta: bDeltaU, passesTier: bPassesTier, passesDelta: bPassesDelta,
-        n: trackedBes.length,
+        n: trackedBes.length, whatKey: 'cr.w_bes',
         sampleLabel: trackedBes.length === 1
           ? (t('combo.sample_be_one') || 'tracked BE') : (t('combo.sample_be_many') || 'tracked BEs') },
       { name: t('combo.direction_c_name') || 'Widen your initial stop',
         suggest: '+' + bestWiden + ' ' + window.__stDU.lbl(window.__stDU.display(), 's'),
         scenario: scenarioC, delta: cDeltaU, passesTier: tierIsStrong(tierC), passesDelta: cDeltaU > threshold,
-        n: trackedLosers.length,
+        n: trackedLosers.length, whatKey: 'cr.w_losers',
         sampleLabel: trackedLosers.length === 1
           ? (t('combo.sample_loser_one') || 'tracked loser') : (t('combo.sample_loser_many') || 'tracked losers') },
       { name: t('combo.direction_d_name') || 'Change your BE rule',
         suggest: bestBeLabel,
         scenario: scenarioD, delta: dDeltaU, passesTier: tierIsStrong(tierD), passesDelta: dDeltaU > threshold,
-        n: trackedBeSim.length,
+        n: trackedBeSim.length, whatKey: 'cr.w_bes',
         sampleLabel: trackedBeSim.length === 1
           ? (t('combo.sample_sim_one') || 'tracked BE') : (t('combo.sample_sim_many') || 'tracked BEs') }
     ];
@@ -26188,7 +26210,7 @@ try {
     // Win rate verdict — same gating logic. Only highlight if the winning
     // direction also passes the tier gate (otherwise the higher win rate
     // could be noise from a tiny sample).
-    let consistencyVerdict = '';
+    let consistencyVerdict = '', _wrRow = '';
     const wrCurrent = current.winRate;
     const bestWR    = Math.max(wrCurrent, scenarioA.winRate, scenarioB.winRate);
     if (bestWR > wrCurrent + 0.5) {
@@ -26203,7 +26225,26 @@ try {
           .replace(/\{NAME\}/g, bestName)
           .replace(/\{WR\}/g,   bestWR.toFixed(0))
           .replace(/\{WR0\}/g,  wrCurrent.toFixed(0));
+        _wrRow = t('cr.v_wr').replace('{NAME}', bestName).replace('{WR}', bestWR.toFixed(0)).replace('{WR0}', wrCurrent.toFixed(0));
       }
+    }
+
+    // The Overall box in the same pattern as the cards (27 Sep 2026): status tag, then Best / Closest rule, Result,
+    // Win rate and Why not. Same decision as before - the first actionable candidate, else the closest one.
+    let _vStatus = 'no', _vRows = '';
+    const _wrExtra = _wrRow ? [[t('cr.v_wr_k'), _wrRow]] : [];
+    if (beats.length === 0) {
+      _vRows = _card({ status: 'no', result: t('cr.v_none'), extra: _wrExtra });
+    } else {
+      const _c = actionable.length ? actionable[0] : beats[0];
+      _vStatus = actionable.length ? 'yes' : 'no';
+      const _why = [];
+      if (!actionable.length) {
+        if (!_c.passesTier) _why.push(t('cr.v_few').replace('{N}', String(_c.n)).replace('{WHAT}', t(_c.whatKey || 'cr.w_trades')));
+        _why.push(_concWhy(_c.scenario), _smallWhy(_c.scenario), t('cr.v_keep'));
+      }
+      _vRows = _card({ status: _vStatus, ideaLabel: t(actionable.length ? 'cr.v_best' : 'cr.v_closest'),
+        idea: '<strong>' + _c.name + '</strong> (' + _c.suggest + ')', result: _moreRes(_c.scenario), extra: _wrExtra, why: _why });
     }
 
     // Detailed breakdown — always-visible section with TWO independent
@@ -26478,8 +26519,8 @@ try {
     const _verdictHtml = showBaseline ? `<div class="combo-verdict combo-verdict-top">
         <div class="combo-verdict-body">
           <div class="combo-verdict-label"><span class="combo-verdict-spark">&#10022;</span>${t('combo.verdict_label') || 'Overall \u00b7 all four compared'}</div>
-          <div class="combo-verdict-line">${profitVerdict}</div>
-          ${consistencyVerdict ? `<div class="combo-verdict-line combo-verdict-sub">${consistencyVerdict}</div>` : ''}
+          <div class="combo-direction-header"><span class="cr-st cr-${_vStatus}">${t(_vStatus === 'yes' ? 'cr.v_st_yes' : 'cr.v_st_no')}</span><span class="cr-based">${t('cr.based').replace('{N}', String(current.tradeCount || 0)).replace('{WHAT}', t('cr.w_trades'))}</span></div>
+          <div class="combo-direction-rec combo-verdict-rows">${_vRows}</div>
         </div>
         ${_sparkline()}
       </div>` : '';
