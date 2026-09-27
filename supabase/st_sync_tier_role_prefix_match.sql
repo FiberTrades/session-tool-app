@@ -27,6 +27,9 @@
 --  CONSTRAINT THIS INTRODUCES: 'Mentorship' must remain the first word of that
 --  role's name, and no other role may start with it.
 --
+--  27 Sep 2026: the 'Bundle Pro' role was renamed 'Journal Pro' (plan key still 'bundle') and this function was
+--  updated in the same migration (plans_journal_pro_role); the empty 'ST Journal' role was deleted.
+--
 --  Everything else was already correct — 'Admin', 'Bundle Pro', 'Free Trial' and
 --  'ST Journal' all matched exactly, and non-tier roles (e.g. 'Experienced Member🎓')
 --  are still left completely alone.
@@ -58,9 +61,9 @@ begin
     target := 'Admin';
   else
     select case
-      when p.is_paid and p.plan in ('bundle','comp') then 'Bundle Pro'
+      when p.is_paid and p.plan in ('bundle','comp') then 'Journal Pro'
       when p.is_paid and p.plan = 'mentorship'       then '#MENTORSHIP'
-      when p.is_paid and p.plan = 'premium'          then 'ST Journal'
+      when p.is_paid and p.plan = 'premium'          then 'ST Journal'   -- role deleted 27 Sep 2026 (plan retired): finds nothing, changes nothing; recreate the role to bring it back
       else 'Free Trial'
     end
     into target
@@ -88,7 +91,7 @@ begin
   -- role (custom, cosmetic, moderator) is left completely alone.
   select array_agg(id) into tier_ids
     from public.roles
-   where name in ('Free Trial','ST Journal','Bundle Pro','Admin')
+   where name in ('Free Trial','ST Journal','Journal Pro','Admin')
       or name ilike 'Mentorship%';
 
   -- NOTE: when tid is null (target role genuinely absent) `role_id <> tid` is null, so nothing is

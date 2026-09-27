@@ -37,9 +37,9 @@ const admin = createClient(
 
 // Only these prices may ever be switched to. Without this a caller could move
 // themselves onto any price id in the account, including a 0.00 one.
+// ST Journal (STRIPE_PRICE_PREMIUM_M / _Y) is not offered since 27 Sep 2026, so nobody can switch TO it. Its prices
+// stay in Stripe and in stripe-webhook's map; add the two lines back here if it ever returns.
 const ALLOWED_PRICES = [
-  Deno.env.get("STRIPE_PRICE_PREMIUM_M"),
-  Deno.env.get("STRIPE_PRICE_PREMIUM_Y"),
   Deno.env.get("STRIPE_PRICE_BUNDLE_M"),
   Deno.env.get("STRIPE_PRICE_BUNDLE_Y"),
   Deno.env.get("STRIPE_PRICE_MENTOR_M"),
