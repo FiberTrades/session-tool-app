@@ -8894,7 +8894,7 @@ try {
       'combo.rec_b_recommend': 'Cap your TP at <strong class="rec-suggest">+{TP}</strong>.',
       'combo.verdict_label': 'Overall \u00b7 all four potentials compared',
       'combo.verdict_best': 'Best for profit: <strong>{NAME}</strong> ({SUGGEST}). Net <strong>{GBP}</strong> better than current.',
-      'combo.verdict_near_miss': '<strong>{NAME}</strong> ({SUGGEST}) would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.',
+      'combo.verdict_near_miss': 'Stay the course - no rule is recommended. The closest, <strong>{NAME}</strong> ({SUGGEST}), would have been <strong>{GBP}</strong> better, but {REASON}.',
       'combo.direction_c_name': 'Widen your initial stop',
       'combo.direction_d_name': 'Change your BE rule',
       'combo.rec_c_need_more': 'Need 10+ losers with stop data from the EA. You have {N}.',
@@ -10700,7 +10700,7 @@ try {
       'combo.g_potential': 'Potencial',
       'combo.verdict_label': 'Resumen \u00b7 los cuatro potenciales comparados',
       'combo.verdict_best': 'Lo más rentable: <strong>{NAME}</strong> ({SUGGEST}). Neto <strong>{GBP}</strong> mejor que ahora.',
-      'combo.verdict_near_miss': '<strong>{NAME}</strong> ({SUGGEST}) habría dado <strong>{GBP}</strong> más, pero {REASON}. Mantén el rumbo.',
+      'combo.verdict_near_miss': 'Mantén el rumbo: no se recomienda ninguna regla. La más cercana, <strong>{NAME}</strong> ({SUGGEST}), habría sido <strong>{GBP}</strong> mejor, pero {REASON}.',
       'combo.g_more_captured': 'Capturado de m\u00e1s',
       'combo.g_overheld': 'Aguantadas hasta cero',
       'combo.g_be_to_win': 'BEs vueltos ganadoras',
@@ -24471,8 +24471,12 @@ try {
   // In the scenario's own unit (R / pips), not money: money weights each trade by its size, so a couple of trades on a
   // bigger account would pass or fail this on position size alone (Nestor, 27 Sep 2026).
   function deltaWithoutBestTrade(scenario, current) {
-    const a = (scenario && (scenario.perTradeUnits || scenario.perTradeGbp)) || [];
-    const b = (current  && (current.perTradeUnits  || current.perTradeGbp))  || [];
+    // Units only when BOTH sides carry aligned per-trade R/pips; otherwise both in money. Never one of each - that is
+    // how "-905p" (pounds minus pips) reached the verdict (fixed 27 Sep 2026).
+    const _u = scenario && current && Array.isArray(scenario.perTradeUnits) && Array.isArray(current.perTradeUnits)
+      && scenario.perTradeUnits.length === current.perTradeUnits.length;
+    const a = (_u ? scenario.perTradeUnits : (scenario && scenario.perTradeGbp)) || [];
+    const b = (_u ? current.perTradeUnits  : (current  && current.perTradeGbp))  || [];
     let total = 0, best = 0, second = 0;
     for (let i = 0; i < Math.min(a.length, b.length); i++) {
       const d = a[i] - b[i];
@@ -24487,8 +24491,11 @@ try {
     return { total, best, second, without: total - best, withoutTop2: total - best - second };
   }
   function splitVsCurrent(scenario, current) {
-    const a = (scenario && scenario.perTradeGbp) || [];
-    const b = (current  && current.perTradeGbp)  || [];
+    // Per-trade R / pips when both sides carry them (27 Sep 2026), else money - never one of each.
+    const _u = scenario && current && Array.isArray(scenario.perTradeUnits) && Array.isArray(current.perTradeUnits)
+      && scenario.perTradeUnits.length === current.perTradeUnits.length;
+    const a = (_u ? scenario.perTradeUnits : (scenario && scenario.perTradeGbp)) || [];
+    const b = (_u ? current.perTradeUnits  : (current  && current.perTradeGbp))  || [];
     let gainGbp = 0, costGbp = 0, better = 0, worse = 0;
     for (let i = 0; i < Math.min(a.length, b.length); i++) {
       const d = a[i] - b[i];
@@ -24809,6 +24816,9 @@ try {
 
     // Current outcome
     const current = projectAllTrades(allTrades, 0, 0, metric);
+    // The sum of a scenario's per-trade R / pips - what every card chooses and judges by (27 Sep 2026, not money).
+    const _uSum = sc => ((sc && sc.perTradeUnits) || []).reduce((acc, v) => acc + (Number(v) || 0), 0);
+    const _uAbs = v => fmt(Math.abs(Number(v) || 0)).replace(/^\+/, '');   // an unsigned R / pips figure for sentences
 
     // Tracked sets — used for tier badges
     const wins = allTrades.filter(tr => tr.result === 'Win');
@@ -24847,8 +24857,8 @@ try {
         const sRaw = i * step;
         const sR   = Math.round(sRaw * Math.pow(10, decimals)) / Math.pow(10, decimals);
         const res  = projectAllTrades(allTrades, sR, 0, metric);
-        aCurve[sR.toFixed(decimals)] = res.totalGbp;
-        if (res.totalGbp > scenarioA.totalGbp) {
+        aCurve[sR.toFixed(decimals)] = _uSum(res);
+        if (_uSum(res) > _uSum(scenarioA) + 1e-9) {
           scenarioA = res;
           optStretch = sR;
         }
@@ -24868,13 +24878,13 @@ try {
         const cRaw = i * step;
         const cR   = Math.round(cRaw * Math.pow(10, decimals)) / Math.pow(10, decimals);
         const res  = projectAllTrades(allTrades, 0, cR, metric);
-        if (res.totalGbp > scenarioB.totalGbp) {
+        if (_uSum(res) > _uSum(scenarioB) + 1e-9) {
           scenarioB = res;
           optTP = cR;
         }
         /* The best cap is worth keeping even when it loses to reality: "no shorter TP beats
            current" is a verdict, "the closest one costs £X and caps N winners" is evidence. */
-        if (!nearTpSc || res.totalGbp > nearTpSc.totalGbp) { nearTpSc = res; nearTpVal = cR; }
+        if (!nearTpSc || _uSum(res) > _uSum(nearTpSc)) { nearTpSc = res; nearTpVal = cR; }
       }
     }
 
@@ -24887,13 +24897,13 @@ try {
         const room = Math.max(0, ...trackedWins.map(tr => mx === 'pips'
           ? Math.max(0, (parseFloat(tr.potentialPips) || 0) - (parseFloat(tr.pips) || 0))
           : Math.max(0, (parseFloat(tr.potentialR) || 0) - (parseFloat(tr.r) || 0))));
-        let best = current.totalGbp;
-        for (let i = 1, nn = Math.floor(room / st2) + 1; i <= nn; i++) { const sv = Math.round(i * st2 * Math.pow(10, dec2)) / Math.pow(10, dec2); const res = projectAllTrades(allTrades, sv, 0, mx); if (res.totalGbp > best) { best = res.totalGbp; oS = sv; } }
+        let best = _uSum(projectAllTrades(allTrades, 0, 0, mx));
+        for (let i = 1, nn = Math.floor(room / st2) + 1; i <= nn; i++) { const sv = Math.round(i * st2 * Math.pow(10, dec2)) / Math.pow(10, dec2); const res = projectAllTrades(allTrades, sv, 0, mx); if (_uSum(res) > best + 1e-9) { best = _uSum(res); oS = sv; } }
       }
       if (trackedBes.length > 0) {
         const mBE = Math.max(0, ...trackedBes.map(tr => mx === 'pips' ? (parseFloat(tr.bePotentialPips) || 0) : (parseFloat(tr.bePotentialR) || 0)));
-        let best = current.totalGbp;
-        for (let i = 1, nn = Math.floor(mBE / st2) + 1; i <= nn; i++) { const cv = Math.round(i * st2 * Math.pow(10, dec2)) / Math.pow(10, dec2); const res = projectAllTrades(allTrades, 0, cv, mx); if (res.totalGbp > best) { best = res.totalGbp; oT = cv; } }
+        let best = _uSum(projectAllTrades(allTrades, 0, 0, mx));
+        for (let i = 1, nn = Math.floor(mBE / st2) + 1; i <= nn; i++) { const cv = Math.round(i * st2 * Math.pow(10, dec2)) / Math.pow(10, dec2); const res = projectAllTrades(allTrades, 0, cv, mx); if (_uSum(res) > best + 1e-9) { best = _uSum(res); oT = cv; } }
       }
       return { optStretch: oS, optTP: oT };
     }
@@ -25059,7 +25069,7 @@ try {
       const max = Math.max(g, c, 1);
       const gh = Math.max(4, Math.round((g / max) * 100));
       const ch = Math.max(4, Math.round((c / max) * 100));
-      const money = (v) => (typeof fmtMoney === 'function') ? fmtMoney(v, { noSign: true }) : String(Math.round(v));
+      const money = (v) => _uAbs(v);   // R / pips (27 Sep 2026)
       return '<div class="combo-graph combo-graph-split">'
         + '<div class="cg-col"><span class="cg-val cg-good">+' + money(g) + '</span>'
         + '<div class="cg-bar cg-gain" style="height:' + gh + '%"></div>'
@@ -25113,7 +25123,7 @@ try {
         const _dUnits = (metric === 'pips') ? [_dU, _dR].filter(Boolean).join(' · ') : (_dU || _dR);
         const _duHtml = _dUnits ? ('<span class="cds-du">' + _dUnits + ' · </span>') : '';
         const deltaCell = (deltaGbp !== undefined && deltaGbp !== 0)
-          ? `<span class="cds-cell cds-labelled"><span class="cds-lbl">${t('combo.cds_vs_now') || 'vs now'}</span><span class="combo-dir-delta ${deltaCls}">${deltaGbp >= 0 ? '\u2b06' : '\u2b07'} ${_duHtml}${fmtGbp(deltaGbp)}</span></span>`
+          ? `<span class="cds-cell cds-labelled"><span class="cds-lbl">${t('combo.cds_vs_now') || 'vs now'}</span><span class="combo-dir-delta ${deltaCls}">${deltaGbp >= 0 ? '\u2b06' : '\u2b07'} ${fmt(deltaGbp)}${(metric === 'pips' && _dR) ? ' \u00b7 ' + _dR : ''}</span></span>`
           : '';
         // Win rate only earns its place when the rule actually MOVES it (as a
         // before→after). "Hold winners longer" never changes the win count — it
@@ -25129,7 +25139,7 @@ try {
         const _drTr = (current && current.tradeCount) || 0;
         const _drTrLbl = _drTr === 1 ? (t('combo.n_trades_one') || 'trade') : (t('combo.n_trades_many') || 'trades');
         const tradesCell = `<span class="cds-cell"><span class="combo-dir-trades">${_drTr} ${_drTrLbl}</span></span>`;
-        statsHtml = `<div class="combo-direction-stats">${totalCell}${gbpCell}${deltaCell}${wrCell}${tradesCell}</div>`;
+        statsHtml = `<div class="combo-direction-stats">${totalCell}${deltaCell}${wrCell}${tradesCell}</div>`;   /* no money cell (27 Sep 2026) */
       }
       return `<div class="combo-direction"><div class="combo-direction-main">
         <div class="combo-direction-header">
@@ -25156,10 +25166,10 @@ try {
          far pushes a winner past where it actually peaked, which scratches it (see the overhold
          line in projectAllTrades) - so price the neighbours and say so when the optimum turns out
          to be a cliff rather than a plateau. */
-      const _aDelta = scenarioA.totalGbp - current.totalGbp;
+      const _aDelta = _uSum(scenarioA) - _uSum(current);
       const _aAt = v => {
         const k = (Math.round(v * Math.pow(10, decimals)) / Math.pow(10, decimals)).toFixed(decimals);
-        return (v > 0 && Object.prototype.hasOwnProperty.call(aCurve, k)) ? (aCurve[k] - current.totalGbp) : null;
+        return (v > 0 && Object.prototype.hasOwnProperty.call(aCurve, k)) ? (aCurve[k] - _uSum(current)) : null;
       };
       const _aNbr = [optStretch + step, optStretch - step]
         .map(v => ({ v: v, d: _aAt(v) }))
@@ -25171,7 +25181,7 @@ try {
         if (_w.d < _aDelta * 0.5) {
           recATpl += ' ' + (t('combo.rec_a_cliff') || 'That optimum is a single point, not a range: at <strong>+{NEAR}</strong> the same rule is worth {NEARGBP} - {PCT}% of the gain shown. Treat it as a ceiling, not a target.')
             .replace(/\{NEAR\}/g, _dualBare(_w.v))
-            .replace(/\{NEARGBP\}/g, fmtGbp(_w.d))
+            .replace(/\{NEARGBP\}/g, fmt(_w.d))
             .replace(/\{PCT\}/g, String(Math.max(0, Math.round(_w.d / _aDelta * 100))));
         }
       }
@@ -25201,9 +25211,9 @@ try {
     } else if (optTP <= 0) {
       /* The nearest cap, priced: a verdict the trader cannot check is one they cannot act on. */
       if (nearTpSc && nearTpVal > 0) {
-        const _cB = current.totalGbp - nearTpSc.totalGbp;
+        const _cB = _uSum(current) - _uSum(nearTpSc);
         if (_cB > 0.005) {
-          const _mB = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cB), { noSign: true }) : String(Math.round(Math.abs(_cB)));
+          const _mB = _uAbs(_cB);
           /* Winners that RAN PAST the cap - the ones it would have cut short. Comparing win
              counts said 0, because a cap keeps a winner a winner; it just makes it smaller. */
           let _cutB = 0;
@@ -25255,9 +25265,12 @@ try {
       // large its gain, and had it ever led the ranking the verdict would have printed a "take
       // that one trade away and it is worth +£0.00" figure from a check that never ran.
       // rescuedGbp is the rescue's OWN share of the gain - the green bar is not all rescue.
-      let totalGbp = 0, gainGbp = 0, costGbp = 0, rescued = 0, shrunk = 0, rescuedGbp = 0;
+      let totalGbp = 0, gainGbp = 0, costGbp = 0, rescued = 0, shrunk = 0, rescuedGbp = 0, rescuedUnits = 0;
       const perTradeGbp = [];
-      allTrades.forEach(tr => {
+      const perTradeUnits = [];   // R / pips per trade, aligned with current.perTradeUnits (27 Sep 2026)
+      const _cur = (current && current.perTradeUnits) || [];
+      allTrades.forEach((tr, _i) => {
+        const _cu = Number(_cur[_i]) || 0;   // what current scores this trade - the baseline every change starts from
         const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
         const risk   = parseFloat(tr.risk) || 0;
         const sl     = parseFloat(tr.sl)   || 0;
@@ -25266,7 +25279,7 @@ try {
         // Pushes even on the skip path: the array is index-aligned with current.perTradeGbp, and
         // projectAllTrades pushes once per trade unconditionally. One missed push shifts every
         // delta after it onto a different trade.
-        if (risk <= 0 || sl <= 0) { totalGbp += net * copies; perTradeGbp.push(net * copies); return; }
+        if (risk <= 0 || sl <= 0) { totalGbp += net * copies; perTradeGbp.push(net * copies); perTradeUnits.push(_cu); return; }
 
         const newSl  = sl + widenPips;
         const shrink = sl / newSl;
@@ -25293,11 +25306,16 @@ try {
             nowGbp = (Math.abs(tpR) * shrink * risk - costs) * copies;
             rescued++;
             rescuedGbp += nowGbp - wasGbp;   // the rescue's own share of the gain, kept separate
+            // Rescued: it reaches the target - the planned pips, or the planned R on the wider (smaller) position.
+            perTradeUnits.push(isPips ? Math.abs(parseFloat(tr.pips) || 0) : Math.abs(tpR) * shrink);
+            rescuedUnits += perTradeUnits[perTradeUnits.length - 1] - _cu;   // the rescue's own R / pips
           } else {
             nowGbp = wasGbp;                    // still a loss, still -1R: the risk is fixed
+            perTradeUnits.push(isPips ? _cu - widenPips : _cu);   // the stop is further away: more pips, the same -1R
           }
         } else {
           nowGbp = net * shrink * copies;       // same pips, smaller position
+          perTradeUnits.push(isPips ? _cu : _cu * shrink);     // same pips; in R the bigger stop makes it smaller
         }
 
         const delta = nowGbp - wasGbp;
@@ -25311,18 +25329,19 @@ try {
         totalGbp += nowGbp;
         perTradeGbp.push(nowGbp);
       });
-      return { totalGbp, gainGbp, costGbp, rescued, shrunk, rescuedGbp, perTradeGbp };
+      return { totalGbp, gainGbp, costGbp, rescued, shrunk, rescuedGbp, rescuedUnits, perTradeGbp, perTradeUnits,
+               total: perTradeUnits.reduce((acc, v) => acc + (Number(v) || 0), 0) };   // the card's "with rule" in R / pips
     }
 
     let nearWiden = 0, nearWidenSc = null;
     // Seeded with CURRENT's own per-trade array so the "nothing beat current" case still hands
     // the concentration gate a well-formed scenario: every delta is zero, which is what happened.
-    let bestWiden = 0, scenarioC = { totalGbp: current.totalGbp, gainGbp: 0, costGbp: 0, rescued: 0, shrunk: 0, rescuedGbp: 0, perTradeGbp: (current.perTradeGbp || []).slice() };
+    let bestWiden = 0, scenarioC = { totalGbp: current.totalGbp, gainGbp: 0, costGbp: 0, rescued: 0, shrunk: 0, rescuedGbp: 0, perTradeGbp: (current.perTradeGbp || []).slice(), perTradeUnits: (current.perTradeUnits || []).slice(), total: current.total };
     if (trackedLosers.length > 0) {
       for (let w = 1; w <= 10; w++) {
         const sc = projectWiderStop(w);
-        if (sc.totalGbp > scenarioC.totalGbp) { scenarioC = sc; bestWiden = w; }
-        if (!nearWidenSc || sc.totalGbp > nearWidenSc.totalGbp) { nearWidenSc = sc; nearWiden = w; }
+        if (_uSum(sc) > _uSum(scenarioC) + 1e-9) { scenarioC = sc; bestWiden = w; }   // in R / pips, not money
+        if (!nearWidenSc || _uSum(sc) > _uSum(nearWidenSc)) { nearWidenSc = sc; nearWiden = w; }
       }
     }
 
@@ -25376,7 +25395,10 @@ try {
       let totalGbp = 0, totalR = 0, totalUnits = 0;
       let unitsKnown = true;   // pips mode needs a stop distance on every SIMULATED trade
       const perTradeGbp = [];
-      allTrades.forEach(tr => {
+      const perTradeUnits = [];   // R / pips per trade, aligned with current.perTradeUnits (27 Sep 2026)
+      const _cur = (current && current.perTradeUnits) || [];
+      allTrades.forEach((tr, _i) => {
+        const _cu = Number(_cur[_i]) || 0;   // what current scores this trade
         const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
         const risk   = parseFloat(tr.risk)  || 0;
         const costs  = parseFloat(tr.costs) || 0;
@@ -25391,6 +25413,7 @@ try {
           totalGbp += net * copies;
           totalR   += (risk > 0) ? (net / risk) * copies : 0;
           totalUnits += actualUnits(tr, sl) * copies;
+          perTradeUnits.push(_cu);   // no replay: exactly what it really did
           return;
         }
         const r = Number(tr.beSim[idx]);
@@ -25425,22 +25448,24 @@ try {
         // -1R replays as -sl pips, which is exactly what the baseline scores a loss.
         // An untouched trade reports what it really scored here as well, or the R row and the
         // money row would go back to describing two different sets of trades.
+        // Per trade: untouched -> exactly current's score; changed -> the replay (R, or R x stop in pips).
+        perTradeUnits.push((isNaN(r) || unchanged) ? _cu : (isPips ? (sl > 0 ? r * sl : _cu) : r));
         if (isNaN(r) || unchanged) totalUnits += actualUnits(tr, sl) * copies;
         else if (!isPips)  totalUnits += r * copies;
         else if (sl > 0)   totalUnits += r * sl * copies;
         else               unitsKnown = false;
       });
       // Only report a pips total when every simulated trade carried a stop distance.
-      return { totalGbp, perTradeGbp, totalR, total: (isPips && !unitsKnown) ? null : totalUnits };
+      return { totalGbp, perTradeGbp, perTradeUnits, totalR, total: (isPips && !unitsKnown) ? null : totalUnits };
     }
 
     // The no-change fallback IS current, so it carries current's figures verbatim.
-    let bestBeIdx = -1, scenarioD = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp,
+    let bestBeIdx = -1, scenarioD = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp, perTradeUnits: (current.perTradeUnits || []).slice(),
                                       totalR: current.totalR, total: current.total };
     if (trackedBeSim.length > 0) {
       for (let k = 0; k < BE_LADDER.length; k++) {
         const sc = projectBeRule(k);
-        if (sc.totalGbp > scenarioD.totalGbp) { scenarioD = sc; bestBeIdx = k; }
+        if (_uSum(sc) > _uSum(scenarioD) + 1e-9) { scenarioD = sc; bestBeIdx = k; }   // in R / pips, not money
       }
     }
     // ---- E: WHERE the BE stop goes, as opposed to D's WHEN ----------------------------
@@ -25454,7 +25479,10 @@ try {
       let totalGbp = 0, totalR = 0, totalUnits = 0, missed = 0;
       let unitsKnown = true;
       const perTradeGbp = [];
-      allTrades.forEach(tr => {
+      const perTradeUnits = [];   // R / pips per trade, aligned with current.perTradeUnits (27 Sep 2026)
+      const _cur = (current && current.perTradeUnits) || [];
+      allTrades.forEach((tr, _i) => {
+        const _cu = Number(_cur[_i]) || 0;
         const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
         const risk   = parseFloat(tr.risk)  || 0;
         const costs  = parseFloat(tr.costs) || 0;
@@ -25467,6 +25495,7 @@ try {
           totalGbp += net * copies;
           totalR   += (risk > 0) ? (net / risk) * copies : 0;
           totalUnits += actualUnits(tr, sl) * copies;
+          perTradeUnits.push(_cu);
           return;
         }
         const r = Number(tr.beOffR[idx]);
@@ -25490,17 +25519,18 @@ try {
         totalR += netR * copies;
         // Follows the money branch above, not isNaN: a rung that was not this trade's exit
         // reports the trade's real score, so R and pounds keep describing one outcome.
+        perTradeUnits.push(!rungIsExit ? _cu : (isPips ? (sl > 0 ? r * sl : _cu) : r));
         if (!rungIsExit)   totalUnits += actualUnits(tr, sl) * copies;   // same basis as D
         else if (!isPips)  totalUnits += r * copies;
         else if (sl > 0)   totalUnits += r * sl * copies;
         else               unitsKnown = false;
         if (Array.isArray(tr.beOffMissed) && Number(tr.beOffMissed[idx]) === 1) missed += copies;
       });
-      return { totalGbp, perTradeGbp, totalR, missed,
+      return { totalGbp, perTradeGbp, perTradeUnits, totalR, missed,
                total: (isPips && !unitsKnown) ? null : totalUnits };
     }
     let nearOffIdx = -1, nearOffSc = null;
-    let bestOffIdx = -1, scenarioE = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp,
+    let bestOffIdx = -1, scenarioE = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp, perTradeUnits: (current.perTradeUnits || []).slice(),
                                        totalR: current.totalR, total: current.total, missed: 0 };
     if (trackedBeOff.length > 0) {
       // From rung 0. Under the old ladder index 0 was "the offset you already trade" and was
@@ -25509,11 +25539,11 @@ try {
       // still against `current` (what actually happened), so a rung only wins by beating reality.
       for (let k = 0; k < BE_OFF_LADDER.length; k++) {
         const sc = projectBeOffset(k);
-        if (sc.totalGbp > scenarioE.totalGbp) { scenarioE = sc; bestOffIdx = k; }
+        if (_uSum(sc) > _uSum(scenarioE) + 1e-9) { scenarioE = sc; bestOffIdx = k; }   // in R / pips, not money
         /* The best rung is worth keeping even when it LOSES: if nothing beats leaving the stop at
            entry, "how close did the nearest rule come, and what did it cost?" is the only number
            that turns a verdict into something a trader can weigh. */
-        if (!nearOffSc || sc.totalGbp > nearOffSc.totalGbp) { nearOffSc = sc; nearOffIdx = k; }
+        if (!nearOffSc || _uSum(sc) > _uSum(nearOffSc)) { nearOffSc = sc; nearOffIdx = k; }
       }
     }
 
@@ -25543,11 +25573,12 @@ try {
               return base + ' \u00b7 \u2248' + Math.round(rMult * _medianSl) + _pU();
             })());
 
-    const aDeltaGbp = scenarioA.totalGbp - current.totalGbp;
-    const bDeltaGbp = scenarioB.totalGbp - current.totalGbp;
-    const cDeltaGbp = scenarioC.totalGbp - current.totalGbp;
-    const dDeltaGbp = scenarioD.totalGbp - current.totalGbp;
-    const eDeltaGbp = scenarioE.totalGbp - current.totalGbp;
+    // R / pips (the toggle), not money - the names are older than the unit (27 Sep 2026).
+    const aDeltaGbp = _uSum(scenarioA) - _uSum(current);
+    const bDeltaGbp = _uSum(scenarioB) - _uSum(current);
+    const cDeltaGbp = _uSum(scenarioC) - _uSum(current);
+    const dDeltaGbp = _uSum(scenarioD) - _uSum(current);
+    const eDeltaGbp = _uSum(scenarioE) - _uSum(current);
 
     // C and D read the EA's replay. With no EA there is no data, and the block says exactly
     // that rather than showing an empty chart or, worse, a confident guess.
@@ -25563,9 +25594,9 @@ try {
          +1 pip here it is ~£1,823 of rescue and ~£117 of lighter commission on 40 break-evens,
          and a reader who cannot see that split cannot judge the trade-off at all. */
       if (nearWidenSc && nearWiden > 0) {
-        const _cC = current.totalGbp - nearWidenSc.totalGbp;
+        const _cC = _uSum(current) - _uSum(nearWidenSc);
         if (_cC > 0.005) {
-          const _mC = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cC), { noSign: true }) : String(Math.round(Math.abs(_cC)));
+          const _mC = _uAbs(_cC);
           const _res = Math.round(nearWidenSc.rescued || 0), _shr = Math.round(nearWidenSc.shrunk || 0);
           recCTpl += ' ' + (t('combo.rec_c_closest') || 'The closest, {PIPS} wider, would have rescued {RESCUED} but made {SHRUNK} worse, costing {COST} net.')
             .replace('{PIPS}', '<strong class="rec-suggest">+' + nearWiden + ' ' + window.__stDU.lbl(window.__stDU.display(), nearWiden === 1 ? 'o' : 's') + '</strong>')
@@ -25575,7 +25606,7 @@ try {
           /* Name the rescue's own value. Without it the reader sees a tall green bar and assumes
              a broad effect; it is one trade, and the gate that would have caught that only
              guards the verdict, not this sentence. */
-          const _rG = Number(nearWidenSc.rescuedGbp) || 0;
+          const _rG = Number(nearWidenSc.rescuedUnits) || 0;
           /* `rescued` reaches 3 at the wider rungs on a real book, so a hard-coded singular was
              itself a number wearing the wrong population - the defect this pass exists to remove. */
           const _rN = Math.round(nearWidenSc.rescued || 0);
@@ -25585,7 +25616,7 @@ try {
             ? t('combo.rec_c_rescue_one')
             : t('combo.rec_c_rescue_many').replace('{N}', String(_rN)));
           if (_rG > 0.005) {
-            const _mR = (typeof fmtMoney === 'function') ? fmtMoney(_rG, { noSign: true }) : String(Math.round(_rG));
+            const _mR = _uAbs(_rG);
             recCTpl += ' ' + (t('combo.rec_c_rescue_share') || '{RESCUES} — the rest of the upside below is lighter commission on the break-evens a smaller position made cheaper.')
               .replace('{RESCUES}', _rWord)
             .replace('{GBP}', _mR);
@@ -25621,8 +25652,10 @@ try {
       if (isNaN(never)) return;
       const costs  = parseFloat(tr.costs) || 0;
       const copies = (typeof tradeCopies === 'function') ? tradeCopies(tr) : 1;
-      const actual = ((typeof tradeNetPL === 'function') ? tradeNetPL(tr) : 0) * copies;
-      const delta  = actual - ((never * risk - costs) * copies);
+      // In R / pips (27 Sep 2026): a BE scores 0; never moving would have scored `never` R (x stop in pips).
+      const _slB = parseFloat(tr.sl) || 0;
+      if (isPips && _slB <= 0) return;
+      const delta  = isPips ? -(never * _slB) : -never;
       if (delta > 0.005) { beSaved += delta; beSavedN++; }
       else if (delta < -0.005) {
         beCost += -delta; beCostN++;
@@ -25648,7 +25681,7 @@ try {
       // sign ("net ++\u00a358.99") - format unsigned here and add exactly one sign where the
       // sentence calls for it. A side with zero trades gets its own wording instead of
       // the nonsense "cost \u00a30.00 on 0 trades".
-      const g = v => (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(v), { noSign: true }) : ('\u00a3' + Math.abs(v).toFixed(2));
+      const g = v => _uAbs(v);   // R / pips (27 Sep 2026)
       const sn = beSavedN + (beSavedN === 1 ? ' trade' : ' trades');
       const cn = beCostN + (beCostN === 1 ? ' trade' : ' trades');
       if (beSavedN > 0 && beCostN > 0) {
@@ -25730,8 +25763,8 @@ try {
         const _offR  = BE_OFF_LADDER[nearOffIdx];
         const _lbl   = '+' + _offR.toFixed(2).replace(/\.?0+$/, '') + 'R'
                      + (_medianSl > 0 ? ' (~' + (_offR * _medianSl).toFixed(1) + ' ' + window.__stDU.lbl(window.__stDU.display(), 's') + ')' : '');
-        const _cost  = current.totalGbp - nearOffSc.totalGbp;
-        const _money = (typeof fmtMoney === 'function') ? fmtMoney(Math.abs(_cost), { noSign: true }) : String(Math.round(Math.abs(_cost)));
+        const _cost  = _uSum(current) - _uSum(nearOffSc);
+        const _money = _uAbs(_cost);
         if (_cost > 0.005) {
           recETpl += ' ' + (t('combo.rec_e_closest') || 'The closest rule, {RULE}, would have cost {COST} across {N} trades with a replayed BE move.')
             .replace('{RULE}', '<strong class="rec-suggest">' + _lbl + '</strong>')
@@ -25828,11 +25861,11 @@ try {
          two different populations in one card. The rescue's count and its money live in the
          prose above, which is where a one-trade result belongs. */
       graphHtml: (tierIsStrong(tierC) && bestWiden > 0)
-        ? comboSplitGraph(scenarioC.gainGbp, scenarioC.costGbp,
-            t('combo.g_c_better') || 'Trades improved', t('combo.g_c_worse') || 'Trades made worse')
+        ? (function () { const _sp = splitVsCurrent(scenarioC, current); return comboSplitGraph(_sp.gainGbp, _sp.costGbp,
+            t('combo.g_c_better') || 'Trades improved', t('combo.g_c_worse') || 'Trades made worse'); })()
         : (tierIsStrong(tierC) && nearWidenSc && nearWiden > 0)
-        ? comboSplitGraph(nearWidenSc.gainGbp, nearWidenSc.costGbp,
-            t('combo.g_c_better') || 'Trades improved', t('combo.g_c_worse') || 'Trades made worse')
+        ? (function () { const _sp = splitVsCurrent(nearWidenSc, current); return comboSplitGraph(_sp.gainGbp, _sp.costGbp,
+            t('combo.g_c_better') || 'Trades improved', t('combo.g_c_worse') || 'Trades made worse'); })()
         : ''
     });
 
@@ -25903,7 +25936,7 @@ try {
     // is "stay the course" with a brief explanation of why each direction
     // didn't pass.
     /* In R / pips (the toggle), not money - 27 Sep 2026. Half an R (or 10 pips) or 5% of your current total. */
-    const _vDelta = sc => (sc && typeof sc.total === 'number' ? sc.total : 0) - (typeof current.total === 'number' ? current.total : 0);
+    const _vDelta = sc => _uSum(sc) - _uSum(current);   // per-trade R / pips, the same convention on both sides
     const aDeltaU = _vDelta(scenarioA), bDeltaU = _vDelta(scenarioB), cDeltaU = _vDelta(scenarioC), dDeltaU = _vDelta(scenarioD);
     const threshold = Math.max(metric === 'pips' ? 10 : 0.5, Math.abs(current.total || 0) * 0.05);
     const aPassesDelta = aDeltaU > threshold;
@@ -26024,7 +26057,7 @@ try {
       const reason = buildGateReason(near.passesTier, near.passesDelta, near.n, near.sampleLabel,
                                      near.passesConcentration, near.woBest, near.woTop2);
       profitVerdict = (t('combo.verdict_near_miss')
-          || '<strong>{NAME}</strong> ({SUGGEST}) would have netted <strong>{GBP}</strong> better, but {REASON}. Stay the course.')
+          || 'Stay the course - no rule is recommended. The closest, <strong>{NAME}</strong> ({SUGGEST}), would have been <strong>{GBP}</strong> better, but {REASON}.')
         .replace(/\{NAME\}/g, near.name)
         .replace(/\{SUGGEST\}/g, near.suggest)
         .replace(/\{GBP\}/g, fmt(near.delta))
