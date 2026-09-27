@@ -3243,6 +3243,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .quick-log-chip.long  { color: var(--good); }
   .quick-log-chip.short { color: var(--bad); }
   .quick-log-chip-remove { background: transparent; border: none; color: var(--text-dim); cursor: pointer; font-size: 13px; line-height: 1; padding: 0; }
+  /* Tap a chip to choose the trade "How did it go?" answers; the one being answered is outlined (27 Sep). */
+  .quick-log-chip { cursor: pointer; transition: border-color 160ms ease, background 160ms ease; -webkit-tap-highlight-color: transparent; }
+  .quick-log-chip.picked { border-color: currentColor; background: color-mix(in srgb, currentColor 9%, transparent); }
+  .quick-log-chip:focus-visible { outline: 1px solid var(--text-mid); outline-offset: 2px; }
+  .quick-log-pick-hint { margin: 2px 0 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--text-dim); text-align: center; }
+  .quick-log-pick-hint:empty { display: none; }
+  .ql-result.win.on  { border-color: var(--good); color: var(--good); background: rgba(95,203,141,0.08); }
+  .ql-result.lose.on { border-color: var(--bad);  color: var(--bad);  background: rgba(232,93,93,0.08); }
+  .ql-result.be.on   { border-color: var(--info); color: var(--info); background: rgba(96,165,250,0.08); }
   .quick-log-chip-remove:hover { color: var(--text); }
   .saved-bias-label { font-size: 10px; letter-spacing: 0.4em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 20px; }
   /* Label row holds the "This morning's bias" eyebrow alongside a
@@ -5518,6 +5527,7 @@ try {
             <button type="button" class="ql-result lose" data-result="Lose" data-i18n="res.lose">Lose</button>
             <button type="button" class="ql-result be"   data-result="BE"   data-i18n="quicklog.be">Break Even</button>
           </div>
+          <p class="quick-log-pick-hint" id="quick-log-pick-hint"></p>
         </div>
         <div class="quick-log-finish" id="quick-log-finish">
           <div class="finish-divider">
@@ -7459,6 +7469,7 @@ try {
       'review.s2.title': 'Trade Log',
       'quicklog.hint': 'Log your trades live',
       'quicklog.manual': 'Log trades by hand',
+      'quicklog.pick_hint': 'Tap a trade above to choose which one',
       'quicklog.tally': 'Logged this session:',
       'quicklog.remove': 'Remove',
       'quicklog.result_hint': 'How did it go?',
@@ -9220,6 +9231,7 @@ try {
       'review.s2.title': 'Registro de Operaciones',
       'quicklog.hint': 'Registra tus operaciones en vivo',
       'quicklog.manual': 'Registrar operaciones a mano',
+      'quicklog.pick_hint': 'Toca una operación arriba para elegir cuál',
       'quicklog.tally': 'Registradas esta sesión:',
       'quicklog.remove': 'Quitar',
       'quicklog.result_hint': '¿Cómo fue?',
@@ -20104,6 +20116,7 @@ try {
       const _bg = document.getElementById('unresolved-trade-modal-bg');
       if (_bg) { _bg.dataset.side = side; _bg.classList.add('show'); return; }
     }
+    _qlPick = null;   // a new trade: "How did it go?" goes back to the latest one without a result
     addTradeRow({ side });
   }
   // Does this member have the Minimalist Manager EA? It reported its settings, a login is mapped to an account,
@@ -20132,10 +20145,21 @@ try {
     if (L === 0 && S === 0) { el.textContent = ''; return; }
     el.textContent = t('quicklog.tally') || 'Logged this session:';
   }
+  // Which trade "How did it go?" answers: the one the member tapped, else the latest without a result.
+  let _qlPick = null;
+  function _qlTarget() {
+    const trades = (data.review && data.review.trades) || [];
+    if (_qlPick != null && trades[_qlPick]) return _qlPick;
+    _qlPick = null;
+    for (let i = trades.length - 1; i >= 0; i--) if (trades[i] && !trades[i].result) return i;
+    return -1;
+  }
+  window.__stQlPickReset = function () { _qlPick = null; try { updateQuickLogList(); updateQuickLogResult(); } catch (e) {} };
   function updateQuickLogList() {
     const el = document.getElementById('quick-log-list');
     if (!el) return;
     const trades = (data.review && data.review.trades) || [];
+    const target = _qlTarget();
     el.innerHTML = '';
     trades.forEach((tr, idx) => {
       const isLong = tr.side === 'Long';
@@ -20144,26 +20168,33 @@ try {
       const arrow = isLong ? '↑' : isShort ? '↓' : '';
       const rm = t('quicklog.remove') || 'Remove';
       const chip = document.createElement('span');
-      chip.className = 'quick-log-chip' + (isLong ? ' long' : isShort ? ' short' : '');
+      chip.className = 'quick-log-chip' + (isLong ? ' long' : isShort ? ' short' : '') + (idx === target ? ' picked' : '');
+      chip.dataset.idx = String(idx);
+      chip.setAttribute('role', 'button'); chip.tabIndex = 0;
+      if (idx === target) chip.setAttribute('aria-current', 'true');
       chip.innerHTML = `<span aria-hidden="true">${arrow}</span><span>${label}</span>` +
         `<button type="button" class="quick-log-chip-remove" data-idx="${idx}" title="${rm}" aria-label="${rm}">×</button>`;
       el.appendChild(chip);
     });
   }
-  // Show the Win/Lose/BE chooser only while the most-recent quick-logged trade is unresolved.
+  // Show the Win/Lose/BE chooser while there is a trade to answer: a tapped one, or one without a result.
   function updateQuickLogResult() {
     const box = document.getElementById('quick-log-result');
     if (!box) return;
     const trades = (data.review && data.review.trades) || [];
-    const last = trades.length ? trades[trades.length - 1] : null;
-    box.style.display = (last && !last.result) ? '' : 'none';
+    const i = _qlTarget(), tr = i >= 0 ? trades[i] : null;
+    box.style.display = tr ? '' : 'none';
+    box.querySelectorAll('.ql-result').forEach(b => b.classList.toggle('on', !!(tr && tr.result && b.dataset.result === tr.result)));
+    const hint = document.getElementById('quick-log-pick-hint');
+    if (hint) hint.textContent = (tr && trades.length > 1) ? t('quicklog.pick_hint') : '';
   }
-  // Set the result on the latest unresolved quick-logged trade; the refresh hides the chooser.
+  // Set the result on the trade being answered (the tapped one, else the latest without a result).
   function setQuickLogResult(result) {
     const trades = (data.review && data.review.trades) || [];
-    const last = trades.length ? trades[trades.length - 1] : null;
-    if (!last || last.result) return;
-    last.result = result;
+    const i = _qlTarget(), tr = i >= 0 ? trades[i] : null;
+    if (!tr) return;
+    tr.result = result;
+    _qlPick = null;   // next up: the latest trade still without a result
     saveData();
     try { refreshAllSurfaces(); } catch (e) {}
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
@@ -20190,11 +20221,23 @@ try {
     setQuickLogResult(btn.dataset.result);
   });
   const _qlList = document.getElementById('quick-log-list');
+  const _qlChoose = (chip) => {
+    const i = parseInt(chip.dataset.idx, 10);
+    if (isNaN(i)) return;
+    _qlPick = i;
+    updateQuickLogList(); updateQuickLogResult();
+  };
+  if (_qlList) _qlList.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const chip = e.target.closest('.quick-log-chip'); if (!chip || e.target.closest('.quick-log-chip-remove')) return;
+    e.preventDefault(); _qlChoose(chip);
+  });
   if (_qlList) _qlList.addEventListener('click', (e) => {
     const btn = e.target.closest('.quick-log-chip-remove');
-    if (!btn) return;
+    if (!btn) { const chip = e.target.closest('.quick-log-chip'); if (chip) _qlChoose(chip); return; }
     const idx = parseInt(btn.dataset.idx, 10);
     if (isNaN(idx) || !data.review || !Array.isArray(data.review.trades)) return;
+    _qlPick = null;
     data.review.trades.splice(idx, 1);
     if (_activeReviewTradeIdx >= data.review.trades.length) _activeReviewTradeIdx = Math.max(0, data.review.trades.length - 1);
     syncTradedFromTrades();
@@ -21331,9 +21374,11 @@ try {
     const close = () => bg.classList.remove('show');
     const markBtn = document.getElementById('unresolved-mark');
     const proceedBtn = document.getElementById('unresolved-proceed');
-    if (markBtn) markBtn.addEventListener('click', close);
+    // Both go back to answering the latest trade without a result (not one tapped earlier).
+    if (markBtn) markBtn.addEventListener('click', () => { close(); try { window.__stQlPickReset && window.__stQlPickReset(); } catch (e) {} });
     if (proceedBtn) proceedBtn.addEventListener('click', () => {
       close();
+      try { window.__stQlPickReset && window.__stQlPickReset(); } catch (e) {}
       const side = bg.dataset.side;
       if (side && typeof addTradeRow === 'function') addTradeRow({ side: side });
     });
