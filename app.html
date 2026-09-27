@@ -44309,16 +44309,24 @@ try {
         // the failure printed no day-note because the trade had no group to join.
         const claimed = new Set();
         allT.forEach(t => { if (t && t.mt5Ticket) claimed.add(String(t.mt5Ticket)); });
+        // Same ACCOUNT too (27 Sep): day + symbol + count alone could stamp one account's EA trade onto another
+        // account's hand-logged trade. One active account: nothing to tell apart. Several: a row pairs only with
+        // trades of the account its MT5 login maps to; a login not mapped yet waits rather than guess.
+        const _oneAcc = (data.accounts || []).filter(a => a && !a.archived).length <= 1;
+        const _rowAcc = r => _oneAcc ? '*' : ((data.mt5LoginMap || {})[String(r.login)] || null);
+        const _trAcc = t => _oneAcc ? '*' : (t.accountId || null);
         const groups = {};
         inboxRows.forEach(r => {
           if (claimed.has(String(r.ticket))) return;
           const w = rowWhen(r); if (!w) return;
-          const k = w.day + '|' + (normSym(r.symbol) || defSym);
+          const ra = _rowAcc(r); if (!ra) return;
+          const k = w.day + '|' + (normSym(r.symbol) || defSym) + '|' + ra;
           (groups[k] = groups[k] || { rows: [], trades: [] }).rows.push({ r: r, min: w.min });
         });
         allT.forEach(t => {
           if (!t || t.mt5Ticket || !tDay(t)) return;
-          const k = tDay(t) + '|' + (normSym(t.symbol) || defSym);
+          const ta = _trAcc(t); if (!ta) return;
+          const k = tDay(t) + '|' + (normSym(t.symbol) || defSym) + '|' + ta;
           if (groups[k]) groups[k].trades.push({ t: t, min: tMin(t) });
         });
         dbg.inbox = inboxRows.length;
