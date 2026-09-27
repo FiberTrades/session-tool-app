@@ -8332,6 +8332,7 @@ try {
       'commit.rolled_note': "You didn't pick days for this week, so it counts as a week off.",
       'commit.weekoff_unset': "A week off — you didn't pick days for it, so nothing is graded.",
       'commit.default_note': "No days were saved for this week, so your usual days applied.",
+      'commit.carried_note': "These are the days your weekly review showed for this week, carried from the last week you saved.",
       'commit.weekoff_away': "Time off — you're away this week, so nothing is graded.",
       'commit.away_note': "Time off: {DAYS} — not counted.",
       'timeoff.label': "Time off",
@@ -10093,6 +10094,7 @@ try {
       'commit.rolled_note': "No elegiste días para esta semana, así que cuenta como semana libre.",
       'commit.weekoff_unset': "Semana libre — no elegiste días, así que no se evalúa nada.",
       'commit.default_note': "No se guardaron días para esta semana, así que se aplicaron tus días habituales.",
+      'commit.carried_note': "Son los días que tu revisión semanal mostraba para esta semana, traídos de la última semana que guardaste.",
       'commit.weekoff_away': "Tiempo libre — estás fuera esta semana, así que no se evalúa nada.",
       'commit.away_note': "Tiempo libre: {DAYS} — no cuenta.",
       'timeoff.label': "Tiempo libre",
@@ -33001,7 +33003,7 @@ try {
       } else {
         thisBlock = `<div>
           <div style="font-size:10px;letter-spacing:0.25em;text-transform:uppercase;color:var(--text-dim);margin-bottom:8px;">${t(_over ? 'commit.past_label' : 'commit.this_label')}</div>
-          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${_unset ? t('commit.rolled_note') : t(_over ? 'commit.past_hint' : 'commit.this_hint') + (_isDefaultedWeek(thisWeekKey) ? ' ' + t('commit.default_note') : '')}</div>
+          <div style="font-size:12px;color:var(--text-dim);margin-bottom:10px;line-height:1.5;">${_unset ? t('commit.rolled_note') : t(_over ? 'commit.past_hint' : 'commit.this_hint') + (_isDefaultedWeek(thisWeekKey) ? ' ' + t(thisWeekKey < '2026-09-28' ? 'commit.carried_note' : 'commit.default_note') : '')}</div>
           <div class="settings-days-row">${lockedChips}</div>
         </div>`;
       }
@@ -35301,11 +35303,18 @@ try {
         return /^\d{4}-\d{2}-\d{2}$/.test(k) && k < weekKey && Array.isArray(m[k]);
       });
       if (started) {
-        // A week never set means your usual days, not a week off - Nestor, 25 Sep 2026: "If you'd rather a
-        // skipped review still default to Mon-Fri ... yes please!", and on 27 Sep for the past weeks too:
-        // "every past week is displayed like this, no days selected ... fix it". A week off is only ever
-        // chosen, by unticking every day ([] above). Display only - the leaderboard reads saved weeks alone.
-        return _defaultCommitDays();   // inline: this runs during page load too
+        // From 28 Sep 2026 the next-week picker saves your usual days as the review opens, so a week never
+        // set means your usual days (Nestor, 25 Sep: "If you'd rather a skipped review still default to
+        // Mon-Fri ... yes please!"). A week off is only ever chosen, by unticking every day ([] above).
+        if (weekKey >= '2026-09-28') return _defaultCommitDays();   // inline: this runs during page load too
+        // Before that the picker SHOWED the last week you saved, ticked, but only saved it if you tapped a
+        // day - so "committed to 4 days" (Tue-Fri, carried from 24 Aug) was never stored (Nestor, 27 Sep:
+        // "i committed to 4 days and i showed up 3"). Such a week reads as exactly what that picker showed.
+        // Display only - the leaderboard reads saved weeks alone.
+        const prev = Object.keys(m).filter(function (k) {
+          return /^\d{4}-\d{2}-\d{2}$/.test(k) && k < weekKey && Array.isArray(m[k]);
+        }).sort().pop();
+        return prev ? m[prev].slice() : _defaultCommitDays();
       }
     } catch (e) {}
     return null;
