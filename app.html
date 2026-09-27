@@ -2722,6 +2722,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* Your Playbooks: examples, trades, + New playbook */
   .pb-mine-top { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 14px; }
   .pb-mine-top .pb-in { min-width: 240px; }
+  .pb-mine-top .pb-find { min-width: 0; width: 220px; margin-left: auto; }
+  @media (max-width: 700px) { .pb-mine-top .pb-find { width: 100%; margin-left: 0; } }
   #pb-stats-manage { margin-left: 60px; max-width: 900px; }
   @media (max-width: 900px) { #pb-stats-manage { margin-left: 0; } }
   .pb-ex { display: flex; flex-direction: column; gap: 8px; }
@@ -18540,6 +18542,7 @@ try {
     if (!all.length) try { (data.currentSeries || []).forEach(t => all.push(t)); (data.history || []).forEach(s2 => (s2.trades || []).forEach(t => all.push(t))); } catch (e) {}
     return all.filter(t => t && t.setup && String(t.setup).toLowerCase() === n).sort((a, b) => new Date(b.date) - new Date(a.date));
   }
+  let _pbFind = '';   // the "Find a setup" text in Your Playbook
   function pbManageHtml() {
     const list = pbList();
     let h = '<div class="pb-mine-top">' + (_pbNewOpen
@@ -18547,7 +18550,8 @@ try {
         + '<button type="button" class="pb-act primary" data-mn="create">' + _pbEsc(_pbL('Create', 'Crear')) + '</button>'
         + '<button type="button" class="pb-act" data-mn="cancel">' + _pbEsc(_pbL('Cancel', 'Cancelar')) + '</button><span class="pb-err" data-mn="err"></span>'
       : '<button type="button" class="pb-act primary" data-mn="open">' + _pbEsc(_pbL('+ New setup', '+ Nuevo setup')) + '</button>'
-        + (list.length ? '<button type="button" class="pb-act" data-mn="share">' + _pbEsc(_pbL('Share my playbook', 'Compartir mi playbook')) + '</button>' : '')) + '</div>';
+        + (list.length ? '<button type="button" class="pb-act" data-mn="share">' + _pbEsc(_pbL('Share my playbook', 'Compartir mi playbook')) + '</button>' : '')
+        + ((list.length >= 6 || _pbFind) ? '<input type="search" class="pb-in pb-find" data-mn="find" maxlength="60" autocomplete="off" placeholder="' + _pbEsc(_pbL('Find a setup', 'Buscar un setup')) + '" value="' + _pbEsc(_pbFind) + '">' : '')) + '</div>';
     if (!list.length) return h + '<div class="pb-empty">' + _pbEsc(_pbL('No setups yet. Tap + New setup, or in Session Review answer a trade\'s rows and tap "Save as setup".', 'Aún no hay setups. Pulsa + Nuevo setup, o en Session Review responde las filas de una operación y pulsa "Guardar como setup".')) + '</div>';
     const card = (p, isVar) => {
       const trs = _pbTradesOf(p.name), n = trs.length, rec = pbDescribe(p.rec), ex = Array.isArray(p.ex) ? p.ex : [];
@@ -18596,12 +18600,26 @@ try {
         + '<button type="button" class="pb-act danger" data-m="del">' + _pbEsc(_pbL('Delete', 'Eliminar')) + '</button></div><span class="pb-err" data-f="err"></span></div>';
       return c;
     };
+    // Find a setup: a family stays together - a matching setup shows its variants, a matching variant its parent.
+    const _q = _pbFind.trim().toLowerCase(), _hit = p => !_q || String(p.name).toLowerCase().indexOf(_q) >= 0;
+    let _shown = 0;
     list.filter(p => !p.parent || !pbById(p.parent)).sort(_pbByName).forEach(p => {
-      h += card(p, false);
-      list.filter(v => v.parent === p.id).sort(_pbByName).forEach(v => { h += card(v, true); });
+      const vars = list.filter(v => v.parent === p.id).sort(_pbByName), pHit = _hit(p), vHits = vars.filter(_hit);
+      if (!pHit && !vHits.length) return;
+      h += card(p, false); _shown++;
+      (pHit ? vars : vHits).forEach(v => { h += card(v, true); _shown++; });
     });
+    if (_q && !_shown) h += '<div class="pb-empty">' + _pbEsc(_pbL('No setup matches "' + _pbFind.trim() + '".', 'Ningún setup coincide con "' + _pbFind.trim() + '".')) + '</div>';
     return h;
   }
+  // Typing in Find a setup redraws the list; the box keeps its focus and caret in the copy you typed in.
+  document.addEventListener('input', e => {
+    const el = e.target; if (!el || !el.matches || !el.matches('.pb-manage [data-mn="find"]')) return;
+    _pbFind = el.value; const pos = el.selectionStart, host = el.closest('.pb-manage');
+    pbRenderManage();
+    const again = host && host.querySelector('[data-mn="find"]');
+    if (again) { again.focus(); try { again.setSelectionRange(pos, pos); } catch (_) {} }
+  });
   // Draw the manager into every place it lives: the Manage playbooks window and Statistics.
   function pbRenderManage() {
     const html = pbManageHtml();
