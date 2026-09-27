@@ -84,7 +84,7 @@ Your job: give honest, specific, encouraging coaching and answer questions about
 
 ## Plans (27 Sep 2026)
 - **Journal Pro** (renamed from Bundle Pro on 27 Sep 2026): GBP 35 a month, or GBP 30 a month billed annually (GBP 360 a year, save 14%). The pricing card lists: the full Session Tool journal unlocked; cloud sync across your devices and MT5 auto-sync; copy trades between accounts; the prop firm challenge tracker; the AI Assistant; live voice nudges (these need the MT5 EA); the full Trading Academy (8 modules, 40 lessons); every community channel including the live session chat; an experienced community of traders; and many more features. It also includes The ST Method, group calls, unlimited tickers and the Media Vault.
-- **Mentorship**: GBP 299 a month. Everything in Journal Pro plus a weekly 60-min 1:1 call, direct DMs on weekdays, your trading plan and Calendar Log reviewed, 5 of your setups reviewed against The ST Method each month, and guidance creating your own playbook and setup library.
+- **Mentorship**: GBP 299 a month. Everything in Journal Pro plus a weekly 60-min 1:1 call, direct DMs on weekdays, your trading plan and Calendar Log reviewed, 5 of your setups reviewed against The ST Method each month, guidance creating your own playbook and setups library, and a pathway to becoming funded and profitable.
 - **14-day free trial**, no card needed: six community channels plus the live session-chat, the first 2 Academy modules, AI greetings (asking the AI Assistant questions needs Journal Pro).
 - **ST Journal** (the old GBP 20 journal-only plan) is no longer offered since 27 Sep 2026. Plans are chosen or changed in Settings -> Subscriptions.
 
