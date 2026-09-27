@@ -16,6 +16,10 @@
 -- This produced e.g. a phantom max-daily-drawdown breach (a −£126.65 day read as
 -- −£145.93 vs a £140 limit). All net figures now use `pnl` as-is. Also corrects
 -- Net R, win/BE classification, and broken-stop / TP-pulled detection.
+--
+-- 2026-09-27 change: HAND-LOGGED trades take part (see the `jtr` CTE) - journal trades with no
+-- mt5Ticket on an active account the EA is not linked to. To re-tighten: drop `union all select *
+-- from jtr` from `raw` (and the jtr CTE) and redeploy.
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
@@ -203,31 +207,118 @@ begin
                    from trades_inbox where unit_size > 0 and dist_unit is not null
                   group by symbol) ea on ea.symbol = s.symbol
     ),
+    -- 2026-09-27 (Nestor): HAND-LOGGED trades take part. A journal trade with no mt5Ticket, on an active
+    -- account the EA is not linked to (so an EA user's typed copy of an EA trade never counts twice), joins
+    -- the trade list shaped like a trades_verified row. pnl is the app's own net (actualGross, else R x risk /
+    -- -risk / 0, minus costs); its typed risk / stop ride along as risk_m / sl_m and are capped in tv like any
+    -- journal risk; its time is the trade's day + exit time on the trader's clock. Every value is pattern-
+    -- checked before a cast, so one odd journal cannot break the rebuild.
+    jtr as (
+      select m.user_id,
+             (-abs(hashtext(m.user_id::text || coalesce(m.v ->> 'id', m.v::text))))::bigint as ticket,
+             m.symbol,
+             case when m.v ->> 'side' = 'Short' then 'sell' else 'buy' end                   as direction,
+             null::numeric as lots, null::numeric as entry_price, null::numeric as exit_price,
+             ((m.d + m.t_open) at time zone m.tz)                                             as open_time,
+             ((m.d + m.t_close) at time zone m.tz)                                            as close_time,
+             coalesce(m.gross_a,
+                      case m.v ->> 'result' when 'Win' then coalesce(m.r, 0) * coalesce(m.risk, 0)
+                                            when 'Lose' then -coalesce(m.risk, 0)
+                                            else 0 end) - abs(coalesce(m.costs, 0))           as pnl,
+             abs(coalesce(m.costs, 0))                                                        as costs,
+             null::numeric as sl_pips, null::numeric as risk_gbp, null::numeric as tp_r, null::numeric as tp_pips,
+             null::numeric as mfe_pips, null::numeric as mfe_r,
+             now() as created_at, 1 as exit_count, null::numeric as sl_max_pips, null::numeric as risk_max_gbp,
+             'manual'::text as src, m.risk as risk_m, m.sl as sl_m
+      from (
+        select j.user_id, tr.v, z.tz,
+               coalesce(nullif(tr.v ->> 'symbol', ''), j.data -> 'settings' -> 'symbols' ->> 0,
+                        nullif(j.data -> 'settings' ->> 'pair', ''), '')                    as symbol,
+               ((tr.v ->> 'date')::timestamptz at time zone z.tz)::date                       as d,
+               coalesce(case when tr.v ->> 'entryTime' ~ '^([01]?[0-9]|2[0-3]):[0-5][0-9]$' then (tr.v ->> 'entryTime')::time end,
+                        case when tr.v ->> 'exitTime'  ~ '^([01]?[0-9]|2[0-3]):[0-5][0-9]$' then (tr.v ->> 'exitTime')::time end,
+                        time '12:00')                                                         as t_open,
+               coalesce(case when tr.v ->> 'exitTime'  ~ '^([01]?[0-9]|2[0-3]):[0-5][0-9]$' then (tr.v ->> 'exitTime')::time end,
+                        case when tr.v ->> 'entryTime' ~ '^([01]?[0-9]|2[0-3]):[0-5][0-9]$' then (tr.v ->> 'entryTime')::time end,
+                        time '12:00')                                                         as t_close,
+               (case when (tr.v ->> 'r') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'r')::numeric end) as r,
+               (case when (tr.v ->> 'risk') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'risk')::numeric end) as risk,
+               (case when (tr.v ->> 'sl') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'sl')::numeric end) as sl,
+               (case when (tr.v ->> 'costs') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'costs')::numeric end) as costs,
+               (case when (tr.v ->> 'actualGross') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'actualGross')::numeric end) as gross_a
+        from journals j
+        cross join lateral (
+          select case when exists (select 1 from pg_timezone_names n where n.name = nullif(j.data -> 'settings' ->> 'tz', ''))
+                      then j.data -> 'settings' ->> 'tz' else 'Europe/London' end as tz
+        ) z
+        cross join lateral (
+          select tt.value as v
+            from jsonb_array_elements(coalesce(j.data -> 'history','[]'::jsonb)) s
+            cross join lateral jsonb_array_elements(coalesce(s.value -> 'trades','[]'::jsonb)) tt
+          union all
+          select tt.value
+            from jsonb_array_elements(coalesce(j.data -> 'currentSeries','[]'::jsonb)) tt
+        ) tr
+        where jsonb_typeof(tr.v) = 'object'
+          and nullif(tr.v ->> 'mt5Ticket', '') is null
+          and tr.v ->> 'result' in ('Win', 'Lose', 'BE')
+          and tr.v ->> 'side' in ('Long', 'Short')
+          and tr.v ->> 'date' ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?(Z|[+-][0-9]{2}:?[0-9]{2})?)?$'
+          and (
+            -- on an active account the EA is not linked to (no login mapped to it, no EA trade on it)
+            (nullif(tr.v ->> 'accountId', '') is not null
+             and exists (select 1 from jsonb_array_elements(coalesce(j.data -> 'accounts','[]'::jsonb)) a
+                          where a.value ->> 'id' = tr.v ->> 'accountId'
+                            and coalesce(a.value ->> 'status', 'active') = 'active'
+                            and coalesce(a.value ->> 'archived', 'false') <> 'true')
+             and not exists (select 1 from jsonb_each_text(case when jsonb_typeof(j.data -> 'mt5LoginMap') = 'object'
+                                                                 then j.data -> 'mt5LoginMap' else '{}'::jsonb end) mp
+                              where mp.value = tr.v ->> 'accountId')
+             and not exists (select 1 from (
+                                select tt2.value as v2
+                                  from jsonb_array_elements(coalesce(j.data -> 'history','[]'::jsonb)) s2
+                                  cross join lateral jsonb_array_elements(coalesce(s2.value -> 'trades','[]'::jsonb)) tt2
+                                union all
+                                select tt2.value from jsonb_array_elements(coalesce(j.data -> 'currentSeries','[]'::jsonb)) tt2
+                              ) q
+                              where q.v2 ->> 'accountId' = tr.v ->> 'accountId' and nullif(q.v2 ->> 'mt5Ticket', '') is not null))
+            -- no account on the trade: only for a member the EA has never reported a trade for
+            or (nullif(tr.v ->> 'accountId', '') is null
+                and not exists (select 1 from trades_verified v where v.user_id = j.user_id))
+          )
+      ) m
+    ),
     raw as (
       select
         lt.*,
         lag(lt.open_time) over (
-          partition by lt.user_id, lt.symbol, lt.direction order by lt.open_time, lt.ticket
+          partition by lt.user_id, lt.symbol, lt.direction, lt.src order by lt.open_time, lt.ticket
         ) as prev_open
-      from trades_verified lt
-      where lt.close_time is not null
-        and lt.pnl is not null
+      from (
+        select tv0.*, 'ea'::text as src, null::numeric as risk_m, null::numeric as sl_m
+          from trades_verified tv0
+         where tv0.close_time is not null
+           and tv0.pnl is not null
+        union all
+        select * from jtr
+      ) lt
     ),
     grp as (
       select
         r.*,
-        sum(case when r.prev_open is null
+        sum(case when r.src = 'manual'                 -- a typed trade is always its own setup
+                   or r.prev_open is null
                    or r.open_time - r.prev_open > interval '5 seconds'
                  then 1 else 0 end)
-          over (partition by r.user_id, r.symbol, r.direction
+          over (partition by r.user_id, r.symbol, r.direction, r.src
                 order by r.open_time, r.ticket
                 rows between unbounded preceding and current row) as setup_no
       from raw r
     ),
     ded as (
-      select distinct on (user_id, symbol, direction, setup_no) *
+      select distinct on (user_id, symbol, direction, src, setup_no) *
       from grp
-      order by user_id, symbol, direction, setup_no, open_time, ticket
+      order by user_id, symbol, direction, src, setup_no, open_time, ticket
     ),
     -- One place that decides what a trade's risk and stop ACTUALLY were, so nothing below has to
     -- repeat the fallback. risk_u prefers the EA's stamp and falls back to the trader's own journal
@@ -237,8 +328,9 @@ begin
     tv as (
       select lt.*,
              coalesce(lt.risk_gbp::numeric,
-                      case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end) as risk_u,
-             coalesce(lt.sl_pips::numeric, jr.sl_j)                                          as sl_u,
+                      case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end,
+                      case when lt.risk_m > 0 then least(lt.risk_m, l.max_risk) end)            as risk_u,
+             coalesce(lt.sl_pips::numeric, jr.sl_j, case when lt.sl_m > 0 then lt.sl_m end)  as sl_u,
              ps.pip                                                                          as pip_u,
              ps.is_fx                                                                        as fx_u
       from ded lt
