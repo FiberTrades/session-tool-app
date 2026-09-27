@@ -8970,6 +8970,7 @@ try {
       'combo.rec_a_cliff': 'That optimum is a single point, not a range: at <strong>+{NEAR}</strong> the same rule is worth {NEARGBP} — {PCT}% of the gain shown. Treat it as a ceiling, not a target.',
       'combo.rec_a_conc_two': 'And two trades out of {N} are the whole of it: without them the rule is worth {WO}.',
       'combo.rec_a_conc_one': 'And one trade out of {N} is the whole of it: without it the rule is worth {WO}.',
+      'combo.conc_not_rec': "So the Overall verdict doesn't recommend it.",
       'combo.gate_concentration_two': 'it rests on two trades — take those away and it is worth {WO} instead',
       'combo.gate_tier':  'only {N} {SAMPLE} is too few for confidence (need 10+)',
       'combo.gate_delta': 'the gain is below the {THRESHOLD} confidence threshold (5% of your current total)',
@@ -10725,6 +10726,7 @@ try {
       'combo.rec_a_cliff': 'Ese óptimo es un punto, no un rango: en <strong>+{NEAR}</strong> la misma regla vale {NEARGBP} — el {PCT}% de la ganancia mostrada. Trátalo como un techo, no como un objetivo.',
       'combo.rec_a_conc_two': 'Y dos operaciones de {N} son todo: sin ellas la regla vale {WO}.',
       'combo.rec_a_conc_one': 'Y una operación de {N} es todo: sin ella la regla vale {WO}.',
+      'combo.conc_not_rec': 'Por eso el veredicto general no la recomienda.',
       'combo.gate_concentration_two': 'depende de dos operaciones — quítalas y vale {WO} en su lugar',
       'combo.gate_tier':  'solo {N} {SAMPLE} es muy poco para confianza (necesitas 10+)',
       'combo.gate_delta': 'la ganancia está por debajo del umbral de confianza de {THRESHOLD} (5% de tu total actual)',
@@ -25112,7 +25114,11 @@ try {
           ? ((_sTot !== null ? _abs(_sTot) + ' · ' : '') + _fmtUnit(_sTotR, 'r'))
           : (_sTot !== null ? _abs(_sTot) : (_sTotR !== null ? _fmtUnit(_sTotR, 'r') : '—'));
         const _ruleLbl = t('combo.cds_with_rule') || 'with rule';
-        const totalCell = `<span class="cds-cell cds-labelled"><span class="cds-lbl">${_ruleLbl}</span><span class="combo-dir-total">${_totalDisp}</span></span>`;
+        // Money beside the R - display only (27 Sep 2026); what is chosen and recommended is decided in R.
+        const _gbpTot = (typeof scenario.totalGbp === 'number' && !isNaN(scenario.totalGbp)) ? ' \u00b7 ' + fmtGbp(scenario.totalGbp) : '';
+        const _gbpDelta = (typeof scenario.totalGbp === 'number' && !isNaN(scenario.totalGbp) && typeof current.totalGbp === 'number')
+          ? ' \u00b7 ' + fmtGbp(scenario.totalGbp - current.totalGbp) : '';
+        const totalCell = `<span class="cds-cell cds-labelled"><span class="cds-lbl">${_ruleLbl}</span><span class="combo-dir-total">${_totalDisp}${_gbpTot}</span></span>`;
         const gbpCell   = `<span class="cds-cell cds-labelled"><span class="cds-lbl">${_ruleLbl}</span><span class="combo-dir-gbp">${fmtGbp(scenario.totalGbp)}</span></span>`;
         const deltaCls = deltaGbp > 0 ? 'rec-suggest' : deltaGbp < 0 ? 'rec-downside' : '';
         /* The improvement in the SAME units as the totals beside it. Without it the only unit
@@ -25125,7 +25131,7 @@ try {
         const _dUnits = (metric === 'pips') ? [_dU, _dR].filter(Boolean).join(' · ') : (_dU || _dR);
         const _duHtml = _dUnits ? ('<span class="cds-du">' + _dUnits + ' · </span>') : '';
         const deltaCell = (deltaGbp !== undefined && deltaGbp !== 0)
-          ? `<span class="cds-cell cds-labelled"><span class="cds-lbl">${t('combo.cds_vs_now') || 'vs now'}</span><span class="combo-dir-delta ${deltaCls}">${deltaGbp >= 0 ? '\u2b06' : '\u2b07'} ${fmt(deltaGbp)}${(metric === 'pips' && _dR) ? ' \u00b7 ' + _dR : ''}</span></span>`
+          ? `<span class="cds-cell cds-labelled"><span class="cds-lbl">${t('combo.cds_vs_now') || 'vs now'}</span><span class="combo-dir-delta ${deltaCls}">${deltaGbp >= 0 ? '\u2b06' : '\u2b07'} ${fmt(deltaGbp)}${(metric === 'pips' && _dR) ? ' \u00b7 ' + _dR : ''}${_gbpDelta}</span></span>`
           : '';
         // Win rate only earns its place when the rule actually MOVES it (as a
         // before→after). "Hold winners longer" never changes the win count — it
@@ -25190,20 +25196,24 @@ try {
       /* CONCENTRATION, ON THE CARD ITSELF. The verdict gates on this, but the gate is invisible to
          anyone reading block A on its own - and block A is where the £ figure that rests on those
          trades is actually printed. */
-      const _aLo = deltaWithoutBestTrade(scenarioA, current);
-      const _aConc = concentrationOf(_aLo);
-      if (_aConc) {
-        /* "is the whole of it" only when removing them really does erase the gain; otherwise the
-           honest statement is the SHARE - 98.8% from two trades is concentration even though the
-           remaining £59 is technically above zero. */
-        const _key = _aConc.erased
-          ? (_aConc.trades === 1 ? 'combo.rec_a_conc_one' : 'combo.rec_a_conc_two')
-          : (_aConc.trades === 1 ? 'combo.rec_a_conc_share_one' : 'combo.rec_a_conc_share_two');
-        recATpl += ' ' + t(_key)
-          .replace(/\{N\}/g, String(current.tradeCount || 0))
-          .replace(/\{PCT\}/g, String(Math.round(_aConc.share * 100)))
-          .replace(/\{WO\}/g, fmt(_aConc.trades === 1 ? _aLo.without : _aLo.withoutTop2));
-      }
+      recATpl += _concNote(scenarioA);
+    }
+
+    /* CONCENTRATION, ON EVERY CARD THAT NAMES A RULE (A, C, D, E). The verdict gates on it; without the same note a card
+       reads as advice the verdict has just rejected - D said "stop moving to BE at all" while the verdict said it rests on
+       two trades (27 Sep 2026). "is the whole of it" only when removing them erases the gain, else the SHARE. */
+    function _concNote(sc) {
+      const lo = deltaWithoutBestTrade(sc, current);
+      const c = concentrationOf(lo);
+      if (!c) return '';
+      const key = c.erased
+        ? (c.trades === 1 ? 'combo.rec_a_conc_one' : 'combo.rec_a_conc_two')
+        : (c.trades === 1 ? 'combo.rec_a_conc_share_one' : 'combo.rec_a_conc_share_two');
+      return ' ' + t(key)
+        .replace(/\{N\}/g, String(current.tradeCount || 0))
+        .replace(/\{PCT\}/g, String(Math.round(c.share * 100)))
+        .replace(/\{WO\}/g, fmt(c.trades === 1 ? lo.without : lo.withoutTop2))
+        + ' ' + (t('combo.conc_not_rec') || "So the Overall verdict doesn't recommend it.");
     }
 
     // Direction B recommendation text
@@ -25627,7 +25637,7 @@ try {
       }
     } else {
       recCTpl = (t('combo.rec_c_recommend') || window.__stDU.words('Widen your stop by <strong class="rec-suggest">+{PIPS} pips</strong>.'))
-        .replace('{PIPS}', String(bestWiden));
+        .replace('{PIPS}', String(bestWiden)) + _concNote(scenarioC);
     }
 
     // --- What your ACTUAL BE rule is worth ---------------------------------------
@@ -25743,7 +25753,7 @@ try {
       recDTpl = t('combo.rec_d_no_room') || 'Your current BE rule beats every alternative. Leave it alone.';
     } else {
       recDTpl = (t('combo.rec_d_recommend') || 'Change your BE rule: <strong class="rec-suggest">{RULE}</strong>.')
-        .replace('{RULE}', bestBeLabel);
+        .replace('{RULE}', bestBeLabel) + _concNote(scenarioD);
     }
     if (beValueLine) recDTpl += ' ' + beValueLine;
 
@@ -25782,7 +25792,7 @@ try {
     } else {
       recETpl = (t('combo.rec_e_recommend')
         || 'Move your BE stop to <strong class="rec-suggest">{RULE}</strong> instead of entry.')
-        .replace('{RULE}', bestOffLabel);
+        .replace('{RULE}', bestOffLabel) + _concNote(scenarioE);
       // The cost, as a COUNT. Every other direction can only offer a money delta; this one
       // knows exactly how many winners the rule would have taken you out of, so it says so
       // rather than leaving the trader to wonder what the gain was bought with.
