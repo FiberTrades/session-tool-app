@@ -3150,9 +3150,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      Long/Short + Win/Lose/BE quick buttons; the normal Trade Log stays visible for
      manual (non-EA) trades, and the Finish-session control is kept (it also triggers
      the auto-sync prompt). */
-  #session-quick-log .quick-log-top,
-  #session-quick-log .quick-log-logged,
-  #session-quick-log #quick-log-result { display: none !important; }
+  /* ...for EA users only (27 Sep): without the EA these are how a trade gets logged while the session is live. */
+  #page-review.st-has-ea #session-quick-log .quick-log-top,
+  #page-review.st-has-ea #session-quick-log .quick-log-logged,
+  #page-review.st-has-ea #session-quick-log #quick-log-result { display: none !important; }
   /* Finish-session floats cleanly: no card chrome, no chevron, button shown directly. */
   #session-quick-log .quick-log-box { background: transparent; border: none; box-shadow: none; padding: 0; }
   #session-quick-log .finish-divider { display: none !important; }
@@ -11772,6 +11773,7 @@ try {
     if (reviewPage) {
       const _wasCollapsed = reviewPage.classList.contains('session-live-collapsed');
       reviewPage.classList.toggle('session-live-collapsed', live);
+      try { reviewPage.classList.toggle('st-has-ea', !!(window.__stHasEA && window.__stHasEA())); } catch (e) {}   // quick-log only without the EA
       /* Keeps trades that are still running (they move above the Trade Log); clears the rest. */
       try { if (!live && _wasCollapsed && window.__stLive) window.__stLive.endSession(); } catch (e) {}
       /* And back into the Session Live panel when a session starts. */
@@ -15266,6 +15268,18 @@ try {
       });
     }
     function resultOf(r) { if (!r.closed) return null; try { return classifyNetResult(r.pnl, getActiveAccount()); } catch (e) { return null; } }
+    // No EA (Nestor, 27 Sep): the session's quick-logged trades (Long / Short + the result picked) stand in for the
+    // live feed in summary() / biasStatus(), so the greeting still knows the entries, results and against-bias losses.
+    function _manualRows() {
+      try {
+        if (typeof window.__stHasEA === 'function' && window.__stHasEA()) return [];
+        var defSym = (data.settings && data.settings.symbols && data.settings.symbols[0]) || (data.settings && data.settings.pair) || '';
+        return ((data.review && data.review.trades) || []).filter(function (t) { return t && (t.side === 'Long' || t.side === 'Short'); })
+          .map(function (t, i) { return { ticket: i + 1, direction: t.side === 'Long' ? 'long' : 'short', closed: !!t.result, _res: t.result || null, symbol: t.symbol || defSym }; });
+      } catch (e) { return []; }
+    }
+    function _srcRows() { var a = Object.keys(rows).map(function (k) { return rows[k]; }); return a.length ? a : _manualRows(); }
+    function _resOf(r) { return (r && r._res) || resultOf(r); }
     function render() {
       var el = feedEl(); if (!el) return;
       var list = Object.keys(rows).map(function (k) { return rows[k]; }).sort(function (a, b) { return a.ticket - b.ticket; });
@@ -15373,12 +15387,12 @@ try {
         // so the EA's "EURUSD" matches a bias slot's "EUR/USD".
         var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
         var want = symFilter ? norm(symFilter) : null;
-        var list = Object.keys(rows).map(function (k) { return rows[k]; })
+        var list = _srcRows()
           .filter(function (r) { return !want || norm(r.symbol) === want; });
         var s = { count: list.length, longs: 0, shorts: 0, wins: 0, losses: 0, bes: 0, resolved: 0, longLosses: 0, shortLosses: 0 };
         list.forEach(function (r) {
           if (r.direction === 'long') s.longs++; else if (r.direction === 'short') s.shorts++;
-          if (r.closed) { s.resolved++; var res = resultOf(r); if (res === 'Win') s.wins++; else if (res === 'Lose') { s.losses++; if (r.direction === 'long') s.longLosses++; else if (r.direction === 'short') s.shortLosses++; } else if (res === 'BE') s.bes++; }
+          if (r.closed) { s.resolved++; var res = _resOf(r); if (res === 'Win') s.wins++; else if (res === 'Lose') { s.losses++; if (r.direction === 'long') s.longLosses++; else if (r.direction === 'short') s.shortLosses++; } else if (res === 'BE') s.bes++; }
         });
         return s;
       },
@@ -15389,13 +15403,13 @@ try {
       biasStatus: function (alignedSide, symFilter) {
         var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
         var want = symFilter ? norm(symFilter) : null;
-        var list = Object.keys(rows).map(function (k) { return rows[k]; })
+        var list = _srcRows()
           .filter(function (r) { return !want || norm(r.symbol) === want; })
           .sort(function (a, b) { return (a.ticket || 0) - (b.ticket || 0); });
         var againstSide = (alignedSide === 'long') ? 'short' : 'long';
         var againstLosses = 0, lastTk = -1, alignedAfter = false;
         list.forEach(function (r) {
-          if (r.closed && r.direction === againstSide && resultOf(r) === 'Lose') { againstLosses++; if ((r.ticket || 0) > lastTk) lastTk = (r.ticket || 0); }
+          if (r.closed && r.direction === againstSide && _resOf(r) === 'Lose') { againstLosses++; if ((r.ticket || 0) > lastTk) lastTk = (r.ticket || 0); }
         });
         if (againstLosses > 0) { list.forEach(function (r) { if (r.direction === alignedSide && (r.ticket || 0) > lastTk) alignedAfter = true; }); }
         return { againstLosses: againstLosses, alignedAfter: alignedAfter };
@@ -20042,6 +20056,17 @@ try {
     }
     addTradeRow({ side });
   }
+  // Does this member have the Minimalist Manager EA? It reported its settings, a login is mapped to an account,
+  // or any trade came from it. Cached for 5s - the Session Live banner asks on every tick.
+  let _stHeaAt = 0, _stHeaV = false;
+  window.__stHasEA = function () {
+    const now = Date.now(); if (now - _stHeaAt < 5000) return _stHeaV;
+    let v = false;
+    try { if (window.__stEA && typeof window.__stEA.summary === 'function' && window.__stEA.summary().length) v = true; } catch (e) {}
+    try { if (!v && data && data.mt5LoginMap && Object.keys(data.mt5LoginMap).length) v = true; } catch (e) {}
+    try { if (!v) v = (getAllLifetimeTrades() || []).some(t => t && t.mt5Ticket); } catch (e) {}
+    _stHeaAt = now; _stHeaV = v; return v;
+  };
   function updateQuickLogTally() {
     const el = document.getElementById('quick-log-tally');
     if (!el) return;
@@ -20059,7 +20084,7 @@ try {
     trades.forEach((tr, idx) => {
       const isLong = tr.side === 'Long';
       const isShort = tr.side === 'Short';
-      const label = isLong ? t('side.long') : isShort ? t('side.short') : '—';
+      const label = (isLong ? t('side.long') : isShort ? t('side.short') : '—') + (tr.result ? ' \u00b7 ' + tResult(tr.result) : '');
       const arrow = isLong ? '↑' : isShort ? '↓' : '';
       const rm = t('quicklog.remove') || 'Remove';
       const chip = document.createElement('span');
