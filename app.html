@@ -43018,12 +43018,15 @@ try {
     return (typeof _isTradingDay === 'function') ? !_isTradingDay(d) : (d === 0 || d === 6);
   }
   // How much room the profit in hand leaves the current series (28 Sep 2026). Assume NOTHING else wins, and price every
-  // future loss at what a loss REALLY costs you, commission and slippage included (Nestor: "make sure it takes into
-  // account the commisions and costs ... its not counting the commisions of those trades that would land me in the
-  // red"): the larger of your average risk + average costs and the average NET money your losses actually lost. The
-  // profit in hand is already net of every cost paid. R basis only when there is no money data, with your real loss
-  // size in R (fees included), from this series or else your history. winsNeeded: when red, how many wins (net of
-  // their own costs) from the trades left get you back to green, every remaining trade paying its commission.
+  // future loss at the WORST it could reasonably cost, never an average (Nestor: "make sure it takes into account the
+  // commisions" -> "if a future trade pays unusually high commission, say because you trade bigger size ... this could
+  // be a problem"):
+  //   risk  = the larger of the biggest risk taken in this series (else your recent trades) and what the EA is set to
+  //           risk now (__stEA.riskFor) - sizing up shrinks the cushion at once;
+  //   fees  = your highest commission/costs as a share of risk, applied to that risk (bigger size, bigger fees);
+  //   floor = never less than the costliest loss actually taken in this series (else recently), slippage + fees in.
+  // The profit in hand is already net of every cost paid. R basis only with no money data: your worst loss in R (fees
+  // included). winsNeeded (red): wins net of their own fees; every remaining trade pays commission.
   function _seriesCushion(cs) {
     const out = { n: cs.length, remaining: Math.max(0, 10 - cs.length), totalR: 0, lossesCapped: 0, winsNeeded: null };
     try {
@@ -43037,30 +43040,43 @@ try {
       const netSoFar = cs.reduce((x, t) => x + (tradeGross(t) - tradeCosts(t)), 0);
       let pool = [];
       try { pool = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []; if (typeof filterByScope === 'function') pool = filterByScope(pool); } catch (e) {}
+      // Your recent trades (the last 20 by date) - the fallback when this series has too little to go on.
+      const recent = pool.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 20);
       const sC = cs.map(t => tradeCosts(t)).filter(c => c > 0), sR = cs.map(t => parseFloat(t.risk) || 0).filter(r => r > 0);
       const avgCost = sC.length >= 3 ? avgOf(sC) : avgOf(sC.concat(pool.map(t => tradeCosts(t)).filter(c => c > 0)));
       const avgRisk = sR.length >= 3 ? avgOf(sR) : avgOf(sR.concat(pool.map(t => parseFloat(t.risk) || 0).filter(r => r > 0)));
       const winG = cs.filter(t => t.result === 'Win').map(t => tradeGross(t));
       const avgWinGross = avgOf(winG);
+      const maxOf = l => l.length ? Math.max.apply(null, l) : 0;
       // What a loss really cost, in money, fees included (a stop that slipped costs more than the risk you set).
       const lossNet = t => Math.max(0, -(tradeGross(t) - tradeCosts(t)));
       const sL = cs.filter(t => t.result === 'Lose').map(lossNet).filter(x => x > 0);
-      const avgLossNet = sL.length ? avgOf(sL) : avgOf(pool.filter(t => t && t.result === 'Lose').map(lossNet).filter(x => x > 0));
-      // A future loss: never less than risk + costs, never less than what losses have actually cost. No risk on the
-      // trades -> the real losses alone (never the commission alone, which would call a loss nearly free).
-      const perLoss = avgRisk > 0 ? Math.max(avgRisk + avgCost, avgLossNet) : avgLossNet;
-      // R basis (no money data): your real loss size in R, fees included - this series, else your history, else 1R.
-      let lossR = avgLossR;
+      const worstLossNet = maxOf(sL.length ? sL : recent.filter(t => t && t.result === 'Lose').map(lossNet).filter(x => x > 0));
+      // Risk: the biggest taken lately (this series, topped up by recent trades when it has fewer than 3), or the EA's
+      // current setting when that is bigger - you sized up.
+      let eaRisk = 0;
+      try { eaRisk = (window.__stEA && window.__stEA.riskFor) ? (Number(window.__stEA.riskFor(data.activeAccountId || null)) || 0) : 0; } catch (e) {}
+      const riskPool = sR.length >= 3 ? sR : sR.concat(recent.map(t => parseFloat(t.risk) || 0).filter(r => r > 0));
+      const riskNow = Math.max(maxOf(riskPool), eaRisk);
+      // Fees as a share of risk: your highest, so a bigger position is priced with proportionally bigger fees.
+      const feeRates = cs.concat(sR.length >= 3 ? [] : recent).map(t => { const r = parseFloat(t.risk) || 0, c = tradeCosts(t); return (r > 0 && c > 0) ? c / r : 0; }).filter(x => x > 0);
+      const costPool = sC.length >= 3 ? sC : sC.concat(recent.map(t => tradeCosts(t)).filter(c => c > 0));
+      const feeNow = riskNow > 0 && feeRates.length ? riskNow * maxOf(feeRates) : maxOf(costPool);
+      // A future loss: the worst of (risk now + its fees) and the costliest loss actually taken. No risk on the trades ->
+      // the real losses alone (never the commission alone, which would call a loss nearly free).
+      const perLoss = riskNow > 0 ? Math.max(riskNow + feeNow, worstLossNet) : worstLossNet;
+      // R basis (no money data): your worst loss in R, fees included - this series, else recent trades, else 1R.
+      let lossR = lossRs.length ? Math.max(1, maxOf(lossRs)) : 1;
       if (!lossRs.length) {
-        const hl = pool.filter(t => t && t.result === 'Lose').map(t => (typeof tradeRforMath === 'function') ? Math.abs(tradeRforMath(t)) : 1).filter(r => r > 0);
-        lossR = hl.length ? Math.max(1, avgOf(hl)) : 1;
+        const hl = recent.filter(t => t && t.result === 'Lose').map(t => (typeof tradeRforMath === 'function') ? Math.abs(tradeRforMath(t)) : 1).filter(r => r > 0);
+        lossR = hl.length ? Math.max(1, maxOf(hl)) : 1;
       }
       let capped = 0;
       if (perLoss > 0) capped = Math.max(0, Math.min(remaining, Math.floor(netSoFar / perLoss)));
       else if (avgWinR > 0) capped = Math.max(0, Math.min(remaining, Math.floor(totalR / lossR)));
       let need = null;
       if (totalR < 0 || netSoFar < 0) {
-        const winNet = avgWinGross - avgCost;   // a win also pays its commission
+        const winNet = avgWinGross - feeNow;   // a win also pays its commission, at your current size
         if (perLoss > 0 && winNet > 0) need = Math.ceil((-netSoFar + remaining * perLoss) / (winNet + perLoss));
         else if (avgWinR > 0) need = Math.ceil(-totalR / avgWinR);
         if (need != null && need < 1) need = 1;
@@ -43073,8 +43089,8 @@ try {
   function _cushionLine(c, es) {
     const rem = c.remaining, k = c.lossesCapped;
     if (!rem) return '';
-    if (c.totalR > 0 && k >= rem) return es ? ('Aunque las ' + rem + ' que quedan fueran pérdidas, cerrarías esta serie en verde.') : ('Even if the remaining ' + rem + ' were all losses, you’d still finish this series green.');
-    if (c.totalR > 0 && k > 0) return es ? ('Podrías encadenar ' + k + (k === 1 ? ' pérdida' : ' pérdidas') + ' desde aquí y seguir en verde.') : ('You could take ' + k + ' straight loss' + (k === 1 ? '' : 'es') + ' from here and still be green.');
+    if (c.totalR > 0 && k >= rem) return es ? ('Aunque las ' + rem + ' que quedan fueran pérdidas a tu riesgo actual, comisiones incluidas, cerrarías esta serie en verde.') : ('Even if the remaining ' + rem + ' were all losses at your current risk, commissions included, you’d still finish this series green.');
+    if (c.totalR > 0 && k > 0) return es ? ('Podrías encadenar ' + k + (k === 1 ? ' pérdida' : ' pérdidas') + ' a tu riesgo actual, comisiones incluidas, y seguir en verde.') : ('You could take ' + k + ' straight loss' + (k === 1 ? '' : 'es') + ' at your current risk, commissions included, and still be green.');
     if (c.totalR > 0) return es ? 'En positivo, pero justo: la próxima pérdida podría darle la vuelta.' : 'In profit, but thin — the next loss could tip it.';
     if (c.winsNeeded != null && c.winsNeeded <= rem) return es ? (c.winsNeeded + (c.winsNeeded === 1 ? ' ganancia' : ' ganancias') + ' de las ' + rem + ' que quedan te devuelven al verde.') : (c.winsNeeded + ' win' + (c.winsNeeded === 1 ? '' : 's') + ' from the remaining ' + rem + ' get' + (c.winsNeeded === 1 ? 's' : '') + ' you back to green.');
     return '';
