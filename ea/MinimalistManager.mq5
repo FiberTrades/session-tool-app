@@ -577,8 +577,24 @@ bool GetEntryDir(int &dir,double &entry,double &slPrice,double &slDist)
   }
 
 // Bottom-left hint. Not armed: how to enter exec mode. Armed: how to place a trade.
+// A message for the trader, shown for 6 seconds in amber where the execution hint sits (bottom-left).
+// It used to go out through Comment(), which MT5 draws in the chart's top-left corner - under the panel,
+// so only its tail showed - and it stayed until execution mode next changed.
+string g_flashMsg="";
+ulong  g_flashUntil=0;
+void DrawHint();
+void Flash(string msg)
+  {
+   g_flashMsg=msg; g_flashUntil=GetTickCount64()+6000;
+   DrawHint(); ChartRedraw();
+  }
 void DrawHint()
   {
+   if(g_flashMsg!="")
+     {
+      if(GetTickCount64()<g_flashUntil){ mkLabelBL(PFX+"HINT",12,12,">> "+g_flashMsg,COL_PANEL_WARN,9); return; }
+      g_flashMsg="";
+     }
    if(!g_active){ ObjectDelete(0,PFX+"HINT"); return; }
    string msg = g_execMode
               ? "Left-click mouse to execute a trade"
@@ -964,11 +980,11 @@ bool DayLimitReached()
 void PlaceTrade()
   {
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED))
-     { Comment("\n  >> Trading not allowed - enable Algo Trading."); Warn("Trading not allowed (Algo Trading off)."); return; }
+     { Flash("Trading not allowed - enable Algo Trading."); Warn("Trading not allowed (Algo Trading off)."); return; }
    if(DayLimitReached())
-     { Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Paused until your next day."); Warn("Daily trade limit reached - paused until next day."); return; }
+     { Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Paused until your next day."); Warn("Daily trade limit reached - paused until next day."); return; }
    int dir; double entry,slPrice,slPips; string err;
-   if(!ResolveForOrder(dir,entry,slPrice,slPips,err)){ Comment("\n  >> CANNOT TRADE: "+err); Warn(err); return; }
+   if(!ResolveForOrder(dir,entry,slPrice,slPips,err)){ Flash("CANNOT TRADE: "+err); Warn(err); return; }
    double riskMoney; double total=CalcLot(slPips,riskMoney);
    if(total<=0){ Warn("Computed lot is zero - check risk settings."); return; }
 
@@ -1373,7 +1389,7 @@ void RiskOffHalf()
 // the order type before turning it on). No g_active guard here.
 void SwitchOrderKind(){ g_orderKind=(ENUM_ORDER_KIND)(((int)g_orderKind+1)%3); if(g_execMode) ShowExecutionLines(); BuildPanel(); }
 void CycleRiskMode(){ g_riskMode=(ENUM_RISK_MODE)(((int)g_riskMode+1)%3); BuildPanel(); }
-void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Comment("\n  >> This account FOLLOWS your Lead account - place trades on the Lead's chart."); Warn("Follow account: trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
+void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Flash("This account FOLLOWS your Lead account - place trades on the Lead's chart."); Warn("Follow account: trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
 
 //==================================================================
 //  TRAILING STOPS
@@ -2179,9 +2195,13 @@ void BuildPanel()
    // MT5 objects cannot be half drawn: the mk* helpers cut a card to the window and hide any row
    // that does not fully fit, and the window moves a card at a time.
    PanelLayout();
+   // Scrolled to the end, the window ends 6px under the last card instead of keeping its full height
+   // (Nestor: "a terrible empty space at the bottom of the panel" with the copier off).
+   int showH=g_contentH-g_stops[g_panelScroll];
+   if(showH>g_viewH) showH=g_viewH;
    int bTop=y+titleH;
-   mkRect(PP+"BODY",x,bTop,w,g_viewH,COL_PANEL_BG,COL_PANEL_BG);
-   g_clipOn=true; g_clipTop=bTop; g_clipBot=bTop+g_viewH; g_scrollY=g_stops[g_panelScroll];
+   mkRect(PP+"BODY",x,bTop,w,showH,COL_PANEL_BG,COL_PANEL_BG);
+   g_clipOn=true; g_clipTop=bTop; g_clipBot=bTop+showH; g_scrollY=g_stops[g_panelScroll];
 
    int cy=bTop+6, cardH, ry;
 
@@ -2372,7 +2392,7 @@ void BuildPanel()
    // window shows. The thumb's size is the share of the panel on view, its place how far down.
    if(g_scrollMax>0)
      {
-      g_trackTop=bTop+6; g_trackH=g_viewH-12;
+      g_trackTop=bTop+6; g_trackH=showH-12;
       g_thumbH=(int)MathRound((double)g_trackH*g_viewH/(double)g_contentH);
       if(g_thumbH<16) g_thumbH=16;
       if(g_thumbH>g_trackH) g_thumbH=g_trackH;
@@ -2382,7 +2402,7 @@ void BuildPanel()
      }
    else { ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM"); g_trackH=0; }
 
-   g_panelH=titleH+g_viewH;
+   g_panelH=titleH+showH;
    DrawHint();
    ChartRedraw();
   }
@@ -2409,7 +2429,7 @@ void HandleClick(string s)
      {
       // The daily-limit guard belongs on the way ON only, exactly as before: the limit must
       // never be circumvented by flicking the switch, but it must never trap you either.
-      if(!g_active && DayLimitReached()){ Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Stays off until your next day."); Warn("Daily trade limit reached - stays off until next day."); return; }
+      if(!g_active && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Stays off until your next day."); Warn("Daily trade limit reached - stays off until next day."); return; }
       MasterSet(!g_active);
       return;
      }
@@ -2419,7 +2439,7 @@ void HandleClick(string s)
    if(s==PP+"EXECKEY"){ g_awaitKey=!g_awaitKey; BuildPanel(); return; }
    if(s==PP+"RISKMODE"){ CycleRiskMode(); return; }
    if(s==PP+"EXEC"){ ToggleExecMode(); return; }
-   if(s==PP+"TRADE"){ if(g_execMode) PlaceTrade(); else Comment("\n  >> Turn EXEC MODE on first."); return; }
+   if(s==PP+"TRADE"){ if(g_execMode) PlaceTrade(); else Flash("Turn EXEC MODE on first."); return; }
    if(s==PP+"RISKOFF"){ RiskOffHalf(); return; }
    if(s==PP+"CXL"){ CancelPending(); return; }
    if(s==PP+"CLOSE"){ CloseAll(); return; }
@@ -4606,8 +4626,8 @@ void SyncTrackMFE()
 //    - one chart per account does the copying (an atomic shared lock), so two charts can't double a
 //      trade; a role only takes effect after it has been held for 3 seconds, so clicking through the
 //      Role button can't make an account a Lead or a Follow for a moment;
-//    - the FTMO total of the linked accounts is checked against FTMO's $400,000 max allocation, and
-//      no new copies are made over it.
+//    - the FTMO total of the linked accounts is checked against FTMO's max allocation ($400,000, or
+//      its own figure for the account's currency: GBP280,000 for pounds), and no new copies are made over it.
 //  Copies carry InpCopyMagic, so the Follow EA's own break-even, trailing and line tools leave them to
 //  the Lead. Needs hedging accounts, which every prop firm's MT5 is. Use ONE chart per Follow account:
 //  that chart's Risk setting sizes the copies.
@@ -4616,7 +4636,6 @@ void SyncTrackMFE()
 #define CP_MAX_AGE_SEC 300         // never copy a trade the Lead opened more than 5 minutes ago
 #define CP_GONE_MS     60000       // unconfirmed: missing from the Lead for this long before acting
 #define CP_KEEP_CLOSED 120         // seconds the Lead keeps announcing a close it confirmed
-#define CP_FTMO_CAP    400000.0    // FTMO's maximum capital allocation per trader, USD
 
 void   CopierSlowTick();
 string CpRiskText();
@@ -4657,7 +4676,11 @@ string CpFileL(string login){ return "SessionTool_copy_L_"+login+".txt"; }
 string CpFileF(string login){ return "SessionTool_copy_F_"+login+".txt"; }
 string CpClean(string v){ StringReplace(v,"|","/"); StringReplace(v,"\r"," "); StringReplace(v,"\n"," "); return v; }
 bool   CpHedging(){ return AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING; }
-string CpFmtK(double v){ return (v>=1000.0) ? IntegerToString((long)MathRound(v/1000.0))+"K" : DoubleToString(v,0); }
+string CpFmtK(double v)
+  {
+   if(v>=1000000.0) return DoubleToString(v/1000000.0,(MathAbs(v/1000000.0-MathRound(v/1000000.0))<0.05)?0:1)+"M";
+   return (v>=1000.0) ? IntegerToString((long)MathRound(v/1000.0))+"K" : DoubleToString(v,0);
+  }
 string CpDirWord(int dir){ return dir>0 ? "buy" : "sell"; }
 bool   CpIsFtmo(string company,string server){ string u=company+" "+server; StringToUpper(u); return StringFind(u,"FTMO")>=0; }
 // "FTMO 70K": the firm's first word and the balance, rounded to the thousand.
@@ -4797,6 +4820,34 @@ string CpSymbol(string lead)
    int n=ArraySize(g_symFrom); ArrayResize(g_symFrom,n+1); ArrayResize(g_symTo,n+1);
    g_symFrom[n]=lead; g_symTo[n]=res;
    return res;
+  }
+// FTMO's maximum capital allocation per trader, in the account's own currency - its FAQ (28 Sep 2026):
+// "$400,000 ... Equivalent limits apply for other base currencies: EUR320,000; GBP280,000; CAD 480,000;
+// AUD 520,000; CHF 320,000; or CZK 8,000,000". 0 for a currency it sets no figure for.
+double CpFtmoCap(string ccy)
+  {
+   if(ccy=="USD") return 400000.0;
+   if(ccy=="EUR") return 320000.0;
+   if(ccy=="GBP") return 280000.0;
+   if(ccy=="CAD") return 480000.0;
+   if(ccy=="AUD") return 520000.0;
+   if(ccy=="CHF") return 320000.0;
+   if(ccy=="CZK") return 8000000.0;
+   return 0.0;
+  }
+double CpToUSD(double v,string ccy);
+// Money from one account currency into another. Between currencies FTMO sets limits for, its own
+// equivalence ($100K = GBP70K = EUR80K - the ratio of its limits), which is how it sizes accounts;
+// otherwise live FX through the dollar. -1 when it can't be converted.
+double CpConvert(double v,string from,string to)
+  {
+   if(from==to) return v;
+   double cf=CpFtmoCap(from), ct=CpFtmoCap(to);
+   if(cf>0 && ct>0) return v*ct/cf;
+   double usd=CpToUSD(v,from); if(usd<0) return -1.0;
+   if(to=="USD") return usd;
+   double one=CpToUSD(1.0,to); if(one<=0) return -1.0;
+   return usd/one;
   }
 // Money in US dollars, from this terminal's own FX quotes. -1 when it can't be converted.
 double CpToUSD(double v,string ccy)
@@ -5406,7 +5457,7 @@ void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED)){ canNew=false; why="Algo Trading is off"; }
    else if(!g_active){ canNew=false; why=g_pausedByLimit ? "daily limit reached" : "EA is OFF"; }
    else if(DayLimitReached()){ canNew=false; why="daily limit reached"; }
-   else if(g_leadCap==1){ canNew=false; why="FTMO total over $400K"; }
+   else if(g_leadCap==1){ canNew=false; why="FTMO total over the max"; }
    else if(g_leadCount>1 && InpCopyFrom<=0){ canNew=false; why="2+ Leads - pick one in Inputs"; }
    g_cpStatus=why; g_cpStatusWarn=!canNew;
    ulong now=GetTickCount64();
@@ -5542,15 +5593,16 @@ bool CpReadFollow(string file,string &hdr[],long &lts[],int &sts[])
    FileClose(h);
    return ok && ArraySize(hdr)>=12;
   }
-// Lead card: one row per Follow account - its risk and state - then the FTMO total.
+// Lead card: one row per Follow account - its risk and state - then the FTMO total, in THIS account's
+// currency against FTMO's own limit for it (Nestor trades in pounds: "13K of $400K" read wrong).
 void CpLeadRows()
   {
    CpRowsClear();
    if(!CpHedging()){ CpRow("Account","needs a hedging account",COL_PANEL_WARN); return; }
-   string me=CpLogin();
+   string me=CpLogin(), myCcy=AccountInfoString(ACCOUNT_CURRENCY);
    bool   ftmo=CpIsFtmo(AccountInfoString(ACCOUNT_COMPANY),AccountInfoString(ACCOUNT_SERVER));
    double tot=0.0; bool totOk=true, anyFtmo=ftmo;
-   if(ftmo){ double u=CpToUSD(AccountInfoDouble(ACCOUNT_BALANCE),AccountInfoString(ACCOUNT_CURRENCY)); if(u<0) totOk=false; else tot+=u; }
+   if(ftmo) tot+=AccountInfoDouble(ACCOUNT_BALANCE);
    int rows=0;
    string fname;
    long hf=FileFindFirst("SessionTool_copy_F_*.txt",fname,FILE_COMMON);
@@ -5564,7 +5616,7 @@ void CpLeadRows()
          long age=(long)TimeGMT()-StringToInteger(hdr[7]);
          if(age>86400) continue;                                    // not run for a day: no longer listed
          double fb=StringToDouble(hdr[6]);
-         if(CpIsFtmo(hdr[3],hdr[4])){ anyFtmo=true; double u=CpToUSD(fb,hdr[5]); if(u<0) totOk=false; else tot+=u; }
+         if(CpIsFtmo(hdr[3],hdr[4])){ anyFtmo=true; double u=CpConvert(fb,hdr[5],myCcy); if(u<0) totOk=false; else tot+=u; }
          if(rows>=CP_ROWS_MAX-2) continue;
          string lbl=CpAcctLabel(hdr[3],fb);
          for(int i=0;i<ArraySize(g_cpRowL);i++)
@@ -5592,12 +5644,15 @@ void CpLeadRows()
    g_copyOverCap=false;
    if(anyFtmo)
      {
-      if(!totOk) CpRow("FTMO total","can't convert to USD",COL_PANEL_LBL);
+      double cap=CpFtmoCap(myCcy);
+      if(cap<=0) cap=CpConvert(400000.0,"USD",myCcy);
+      string cs=CurSymbol();
+      if(!totOk || cap<=0) CpRow("FTMO total","can't convert the currencies",COL_PANEL_LBL);
       else
         {
-         g_copyOverCap=(tot>CP_FTMO_CAP);
-         color tc=(tot>CP_FTMO_CAP*0.9) ? COL_PANEL_WARN : COL_PANEL_LBL;
-         CpRow("FTMO total","$"+CpFmtK(tot)+" of $400K max"+(g_copyOverCap?" - over":""),tc);
+         g_copyOverCap=(tot>cap);
+         color tc=(tot>cap*0.9) ? COL_PANEL_WARN : COL_PANEL_LBL;
+         CpRow("FTMO total",cs+CpFmtK(tot)+" of "+cs+CpFmtK(cap)+" max"+(g_copyOverCap?" - over":""),tc);
         }
      }
   }
@@ -5696,6 +5751,7 @@ int OnInit()
    // Delete every line/label this EA has ever drawn and rebuild only what current state wants.
    DeleteByPrefix("MTM_LINE_");
    DeleteByPrefix("MTM_TXT_");
+   Comment("");                      // v8.80: messages no longer use the corner; clear one an older build left
 
    g_orderKind=InpOrderKind;
    g_riskMode =InpRiskMode;
@@ -5920,6 +5976,7 @@ void OnTimer()
                   (g_pip>0)?(SymbolInfoDouble(_Symbol,SYMBOL_ASK)-SymbolInfoDouble(_Symbol,SYMBOL_BID))/g_pip:0.0);
      }
    DrawInfoReadout();
+   if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint();   // a message's 6 seconds are up
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
    if(g_syncCatchupPending){ g_syncCatchupPending=false; SyncCatchUp(); g_syncCatchAt=TimeCurrent(); }
