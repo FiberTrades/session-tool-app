@@ -2547,7 +2547,6 @@ void SaveState()
    GlobalVariableSet(StateKey("panelX"),    (double)PX);
    GlobalVariableSet(StateKey("panelY"),    (double)PY);
    GlobalVariableSet(StateKey("maxTrd"),     (double)g_maxTradesDay);
-   GlobalVariableSet(StateKey("panelScroll"),(double)g_panelScroll);   // v8.80: where the panel was scrolled to
    GlobalVariableSet(StateKey("saved"),     1);   // marker that a saved state exists
 
    // Commit to disk NOW rather than trusting a clean terminal shutdown. MT5 only
@@ -2599,7 +2598,7 @@ bool LoadState()
    PX           =(int)GlobalVariableGet(StateKey("panelX"));
    PY           =(int)GlobalVariableGet(StateKey("panelY"));
    if(GlobalVariableCheck(StateKey("maxTrd"))) g_maxTradesDay=(int)GlobalVariableGet(StateKey("maxTrd"));
-   if(GlobalVariableCheck(StateKey("panelScroll"))) g_panelScroll=(int)GlobalVariableGet(StateKey("panelScroll"));
+   g_panelScroll=0;   // v8.80: the panel always opens scrolled to the top (Nestor), never where it was left
    // rebuild the exec-key display character from the stored key code
    g_execKeyChar=CharToString((uchar)g_execKey); StringToUpper(g_execKeyChar);
    // safety: keep values sane after load
