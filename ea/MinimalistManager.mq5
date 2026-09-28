@@ -2074,7 +2074,19 @@ void PanelLayout()
       if(PanelCardH(k)>g_viewH-12)
          for(int j=0;j<PanelCardRows(k);j++) PanelStopAdd(g_cardOff[k]+23+27*j);   // row j's band starts 2px below the top
      }
+   // The last stop is exact: the last card's bottom on the window's bottom, so scrolling to the end never
+   // leaves empty space and the panel never changes height (Nestor disliked it shrinking at the end). Every
+   // stop before it is a card top, or a row inside a tall card.
+   int endAt=g_contentH-g_viewH;
    int ns=ArraySize(g_stops);
+   if(endAt>0)
+     {
+      int keep=0;
+      while(keep<ns && g_stops[keep]<endAt) keep++;
+      ArrayResize(g_stops,keep);
+      PanelStopAdd(endAt);
+      ns=keep+1;
+     }
    g_scrollMax=0;
    while(g_scrollMax<ns-1 && g_stops[g_scrollMax]+g_viewH<g_contentH) g_scrollMax++;
    if(g_panelScroll>g_scrollMax) g_panelScroll=g_scrollMax;
@@ -2209,10 +2221,7 @@ void BuildPanel()
    // MT5 objects cannot be half drawn: the mk* helpers cut a card to the window and hide any row
    // that does not fully fit, and the window moves a card at a time.
    PanelLayout();
-   // Scrolled to the end, the window ends 6px under the last card instead of keeping its full height
-   // (Nestor: "a terrible empty space at the bottom of the panel" with the copier off).
-   int showH=g_contentH-g_stops[g_panelScroll];
-   if(showH>g_viewH) showH=g_viewH;
+   int showH=g_viewH;                  // one height, scrolled or not (the last stop is exact - see PanelLayout)
    int bTop=y+titleH;
    mkRect(PP+"BODY",x,bTop,w,showH,COL_PANEL_BG,COL_PANEL_BG);
    g_clipOn=true; g_clipTop=bTop; g_clipBot=bTop+showH; g_scrollY=g_stops[g_panelScroll];
@@ -4696,7 +4705,34 @@ string CpFmtK(double v)
   }
 string CpDirWord(int dir){ return dir>0 ? "buy" : "sell"; }
 bool   CpIsFtmo(string company,string server){ string u=company+" "+server; StringToUpper(u); return StringFind(u,"FTMO")>=0; }
-// "FTMO 70K": the firm's first word and the balance, rounded to the thousand.
+// The account's SIZE - its first deposit, a prop account's starting balance - not today's balance: profit
+// and losses don't change what FTMO counts toward its limit (Nestor: "it should be 80K, the extra 1k its profit
+// from the 70k account"). Read from the whole history once per account, the earliest deposit; until the history
+// has one (still loading) the balance stands in and it looks again a minute later.
+double   g_acctSize=0.0;
+long     g_acctSizeLogin=0;
+datetime g_acctSizeTry=0;
+double CpAccountSize()
+  {
+   long lg=AccountInfoInteger(ACCOUNT_LOGIN);
+   if(g_acctSize>0 && g_acctSizeLogin==lg) return g_acctSize;
+   if(g_acctSizeLogin==lg && TimeLocal()-g_acctSizeTry<60) return AccountInfoDouble(ACCOUNT_BALANCE);
+   g_acctSizeLogin=lg; g_acctSizeTry=TimeLocal(); g_acctSize=0.0;
+   if(HistorySelect(0,TimeCurrent()+86400))
+     {
+      datetime first=0;
+      for(int i=HistoryDealsTotal()-1;i>=0;i--)
+        {
+         ulong d=HistoryDealGetTicket(i);
+         if(d==0 || HistoryDealGetInteger(d,DEAL_TYPE)!=DEAL_TYPE_BALANCE) continue;
+         double p=HistoryDealGetDouble(d,DEAL_PROFIT);
+         datetime t=(datetime)HistoryDealGetInteger(d,DEAL_TIME);
+         if(p>0 && (first==0 || t<first)){ first=t; g_acctSize=p; }
+        }
+     }
+   return (g_acctSize>0) ? g_acctSize : AccountInfoDouble(ACCOUNT_BALANCE);
+  }
+// "FTMO 70K": the firm's first word and the account size, rounded to the thousand.
 string CpAcctLabel(string company,double bal)
   {
    string c=company; StringTrimLeft(c); StringTrimRight(c);
@@ -5000,9 +5036,10 @@ void CpLeadWrite(string &lines[])
    if(h==INVALID_HANDLE) return;
    long seq=(long)GetTickCount64(); if(seq<=g_copySeq) seq=g_copySeq+1; g_copySeq=seq;
    int n=ArraySize(lines);
-   FileWriteString(h,StringFormat("H|1|%s|%s|%s|%s|%s|%I64d|%I64d|%d\r\n",login,
+   FileWriteString(h,StringFormat("H|1|%s|%s|%s|%s|%s|%I64d|%I64d|%d|%s\r\n",login,
                    CpClean(AccountInfoString(ACCOUNT_COMPANY)),CpClean(AccountInfoString(ACCOUNT_SERVER)),AccountInfoString(ACCOUNT_CURRENCY),
-                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),(long)TimeGMT(),seq,g_copyOverCap?1:0));
+                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),(long)TimeGMT(),seq,g_copyOverCap?1:0,
+                   DoubleToString(CpAccountSize(),2)));
    for(int i=0;i<n;i++) FileWriteString(h,lines[i]+"\r\n");
    FileWriteString(h,StringFormat("E|%I64d|%d\r\n",seq,n));
    FileClose(h);
@@ -5024,6 +5061,7 @@ void CopyLeadTick()
 //---------------------------------------------------------------- Follow: reading the Lead
 // A Lead file into its header fields, trades and confirmed closes. False unless the file is complete.
 // Header: [2] login [3] company [4] server [5] currency [6] balance [7] GMT written [8] sequence [9] over cap
+// [10] account size (8.81+; older files end at [9])
 bool CpReadLead(string file,string &hdr[],CpItem &items[],ulong &closed[])
   {
    ArrayResize(hdr,0); ArrayResize(items,0); ArrayResize(closed,0);
@@ -5541,7 +5579,7 @@ void CopyFollowTick()
    string hdr[]; CpItem items[]; ulong closed[];
    if(!CpReadLead(CpFileL(IntegerToString(g_copyLead)),hdr,items,closed)) return;   // mid-write or gone: next time
    long gmt=StringToInteger(hdr[7]);
-   g_leadLabel=CpAcctLabel(hdr[3],StringToDouble(hdr[6]));
+   g_leadLabel=CpAcctLabel(hdr[3],(ArraySize(hdr)>=11 && StringToDouble(hdr[10])>0) ? StringToDouble(hdr[10]) : StringToDouble(hdr[6]));
    g_leadGmt=gmt; g_leadBal=StringToDouble(hdr[6]); g_leadCap=(int)StringToInteger(hdr[9]);
    long fileAge=(long)TimeGMT()-gmt;
    if(fileAge>CP_FRESH_SEC){ g_cpStatus=""; g_cpStatusWarn=false; return; }   // Lead not running: leave every copy exactly as it is
@@ -5557,10 +5595,10 @@ void CpFollowWrite()
    int h=FileOpen(CpFileF(CpLogin()),FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
    if(h==INVALID_HANDLE) return;
    string risk=CpRiskText();
-   FileWriteString(h,StringFormat("H|1|%s|%s|%s|%s|%s|%I64d|%I64d|%s|%d|%s\r\n",CpLogin(),
+   FileWriteString(h,StringFormat("H|1|%s|%s|%s|%s|%s|%I64d|%I64d|%s|%d|%s|%s\r\n",CpLogin(),
                    CpClean(AccountInfoString(ACCOUNT_COMPANY)),CpClean(AccountInfoString(ACCOUNT_SERVER)),AccountInfoString(ACCOUNT_CURRENCY),
                    DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),(long)TimeGMT(),g_copyLead,CpClean(risk),
-                   g_cpStatusWarn?1:0,(g_cpStatus!="") ? CpClean(g_cpStatus) : "-"));
+                   g_cpStatusWarn?1:0,(g_cpStatus!="") ? CpClean(g_cpStatus) : "-",DoubleToString(CpAccountSize(),2)));
    int n=0;
    for(int i=0;i<ArraySize(g_cm);i++)
      {
@@ -5581,7 +5619,7 @@ string CpRiskText()
 
 //---------------------------------------------------------------- the TRADE COPIER card
 // Header: [2] login [3] company [4] server [5] currency [6] balance [7] GMT [8] Lead login [9] risk
-// [10] 1 = not copying new trades [11] why
+// [10] 1 = not copying new trades [11] why [12] account size (8.81+)
 bool CpReadFollow(string file,string &hdr[],long &lts[],int &sts[])
   {
    ArrayResize(hdr,0); ArrayResize(lts,0); ArrayResize(sts,0);
@@ -5615,7 +5653,7 @@ void CpLeadRows()
    string me=CpLogin(), myCcy=AccountInfoString(ACCOUNT_CURRENCY);
    bool   ftmo=CpIsFtmo(AccountInfoString(ACCOUNT_COMPANY),AccountInfoString(ACCOUNT_SERVER));
    double tot=0.0; bool totOk=true, anyFtmo=ftmo;
-   if(ftmo) tot+=AccountInfoDouble(ACCOUNT_BALANCE);
+   if(ftmo) tot+=CpAccountSize();
    int rows=0;
    string fname;
    long hf=FileFindFirst("SessionTool_copy_F_*.txt",fname,FILE_COMMON);
@@ -5628,7 +5666,7 @@ void CpLeadRows()
          if(hdr[8]!=me) continue;                                  // follows another Lead
          long age=(long)TimeGMT()-StringToInteger(hdr[7]);
          if(age>86400) continue;                                    // not run for a day: no longer listed
-         double fb=StringToDouble(hdr[6]);
+         double fb=(ArraySize(hdr)>=13 && StringToDouble(hdr[12])>0) ? StringToDouble(hdr[12]) : StringToDouble(hdr[6]);   // size, else balance
          if(CpIsFtmo(hdr[3],hdr[4])){ anyFtmo=true; double u=CpConvert(fb,hdr[5],myCcy); if(u<0) totOk=false; else tot+=u; }
          if(rows>=CP_ROWS_MAX-2) continue;
          string lbl=CpAcctLabel(hdr[3],fb);
