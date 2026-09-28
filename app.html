@@ -6064,8 +6064,11 @@ try {
     </div>
   </div>
 
-  <div class="page" id="page-community"><div class="dcx-root" id="dcx-root"></div></div>
+  <div class="page" id="page-community">
+    <div class="st-asst"><div class="st-asst-av">AI</div><div class="st-asst-body"><div class="st-asst-head"><span class="st-asst-name">Assistant</span></div><div class="bias-greeting" data-greeting-mirror data-greeting-context="community"></div></div></div>
+    <div class="dcx-root" id="dcx-root"></div></div>
   <div class="page" id="page-vault">
+    <div class="st-asst"><div class="st-asst-av">AI</div><div class="st-asst-body"><div class="st-asst-head"><span class="st-asst-name">Assistant</span></div><div class="bias-greeting" data-greeting-mirror data-greeting-context="academy"></div></div></div>
     <div class="vault-hero">
       <div class="vault-hero-left">
         <div class="vault-hero-eyebrow" data-i18n="vault.eyebrow">Members area</div>
@@ -42616,6 +42619,63 @@ try {
     var lead = leads[_dayNum % leads.length];
     return lead + ' ' + insight;
   }
+  // Academy and Community (28 Sep 2026): fixed sentences from the member's own data - Nestor: they "dont have to be
+  // very creative" - so no AI rewrite, no "Thinking…", no cost (enhanceGreeting skips both surfaces).
+  function _grEsc(x) { return String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+  function _academyGreetingHTML() {
+    var S = (window.__lang === 'es'), nm = _greetNameSpan(), w = null;
+    try { w = (window.STSCHOOL && window.STSCHOOL.where) ? window.STSCHOOL.where() : null; } catch (e) {}
+    if (w && w.reading) {
+      var r = w.reading, rt = _grEsc(r.id + ' ' + r.title);
+      return S ? ('Estás leyendo ' + rt + '. Pregúntame lo que quieras sobre ella: te respondo con esta lección.')
+               : ('You’re reading ' + rt + '. Ask me anything about it — I’ll answer from this lesson.');
+    }
+    if (w && w.next && w.nextLocked) {
+      return S ? ('Has terminado las lecciones de tu plan, ' + nm + '. El resto del curso se abre con Journal Pro. Pregúntame lo que quieras sobre lo que ya has visto.')
+               : ('You’ve finished the lessons on your plan, ' + nm + '. The rest of the course opens with Journal Pro. Ask me anything about what you’ve covered.');
+    }
+    if (w && w.next) {
+      var n = w.next, where = _grEsc((S ? 'Módulo ' : 'Module ') + n.mod + ' · ' + (S ? 'Lección ' : 'Lesson ') + n.idx + ' — ' + n.title);
+      return S ? ('Vas por el ' + where + '. ¿Algo no te encaja? Pregúntame.')
+               : ('You’re on ' + where + '. Stuck on something? Ask me about it.');
+    }
+    if (w && w.done) {
+      return S ? ('Has terminado el curso, ' + nm + '. Pregúntame lo que quieras sobre cualquier lección.')
+               : ('You’ve finished the course, ' + nm + '. Ask me anything about any lesson.');
+    }
+    return S ? ('Bienvenido a la Academia, ' + nm + '. ¿Atascado en una lección? Pregúntame.')
+             : ('Welcome to the Academy, ' + nm + '. Stuck on a lesson? Ask me about it.');
+  }
+  // Refreshes only the Academy line - the course calls it when a lesson opens and when the hub shows.
+  window.__stAcademyGreet = function () {
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('.bias-greeting[data-greeting-context="academy"]'), function (el) {
+        var h = _academyGreetingHTML(); el.__greetSrcRaw = h; el.innerHTML = h; el.__greetSeed = el.textContent;
+      });
+    } catch (e) {}
+  };
+  function _communityGreetingHTML() {
+    var S = (window.__lang === 'es'), nm = _greetNameSpan();
+    var today = (typeof todayDateStr === 'function') ? todayDateStr() : '';
+    var slots = (data && Array.isArray(data.biasSlots) && data.biasSlots.length) ? data.biasSlots : [(data && data.bias) || {}];
+    // copiedAt is a UTC timestamp: compare its LOCAL day with today (a UTC slice is yesterday after local midnight).
+    var _ld = function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
+    var posted = slots.some(function (sl) { return sl && sl.copiedAt && _ld(sl.copiedAt) === today; });
+    var dow = new Date().getDay();
+    var tradingDay = (typeof window.__stIsTradingDay === 'function') ? window.__stIsTradingDay(dow) : (dow !== 0 && dow !== 6);
+    var beforeSession = false;
+    try {
+      var ss = (typeof getSessions === 'function') ? getSessions() : [];
+      var first = ss.reduce(function (m, x) { var v = _mins(x.start); return (m == null || v < m) ? v : m; }, null);
+      var now = new Date(); beforeSession = first != null && (now.getHours() * 60 + now.getMinutes()) < first;
+    } catch (e) {}
+    if (tradingDay && posted) return S ? ('Tu sesgo de hoy ya está publicado, ' + nm + '. Pregúntame lo que quieras.')
+                                      : ('Your bias is posted for today, ' + nm + '. Ask me anything.');
+    if (tradingDay && beforeSession) return S ? ('Aún no has publicado tu sesgo de hoy, ' + nm + ': suma +10 en la clasificación si lo publicas antes de tu sesión. Pregúntame lo que quieras.')
+                                            : ('Your bias for today isn’t posted yet, ' + nm + ' — it’s worth +10 on the leaderboard before your session. Ask me anything.');
+    return S ? ('Hola, ' + nm + '. Pregúntame lo que quieras: tus números, la app o un mensaje que quieras escribir.')
+             : ('Welcome back, ' + nm + '. Ask me anything — your numbers, the app, or a post you want to write.');
+  }
   function _calendarGreetingHTML() {
     var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
     // Scoped: this line describes the account you are looking at, not every account.
@@ -42825,6 +42885,8 @@ try {
       if (ctx === 'series') html = _seriesGreetingHTML();
       else if (ctx === 'stats') html = _statsGreetingHTML();
       else if (ctx === 'calendar') html = _calendarGreetingHTML();
+      else if (ctx === 'academy') html = _academyGreetingHTML();
+      else if (ctx === 'community') html = _communityGreetingHTML();
       else {
         const isReview = (ctx === 'review');
         const opener = isReview ? _cachedReviewOpener : _cachedOpener;
@@ -42842,7 +42904,7 @@ try {
       /* ...unless the SITUATION changed (the session started or ended, a trade landed, the day
          switched on). Freezing through that kept "today hasn't started yet, go prep" on screen into
          a live session. Same situation, different wording -> still left alone. */
-      if (el.__greetSeed != null && _greetOnScreen(el) && html !== el.__greetSrcRaw && el.__greetSit === _greetSituation) return;
+      if (ctx !== 'academy' && ctx !== 'community' && el.__greetSeed != null && _greetOnScreen(el) && html !== el.__greetSrcRaw && el.__greetSit === _greetSituation) return;
       el.__greetSrcRaw = html;
       el.innerHTML = html;
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
@@ -43178,6 +43240,13 @@ try {
       // in the user message, and _greet is the bias line — injecting it would give the model two conflicting
       // targets. Only the chat "reword my greeting" flow needs context.greeting.
       var _base = { mode: mode, smart: smart, image: image || null, imageUrl: imageUrl || null, context: { dataPack: dp, profile: (typeof data !== 'undefined' && data._aiProfile) || '', lang: es() ? 'es' : 'en', greeting: (mode === 'greet') ? '' : _greet } };
+      // Asked from inside an Academy lesson: send that lesson, so the answer comes from the course itself (28 Sep 2026).
+      try {
+        if (mode === 'chat' && document.querySelector('#page-vault.active') && window.STSCHOOL && window.STSCHOOL.where) {
+          var _w = window.STSCHOOL.where();
+          if (_w && _w.reading && _w.reading.text) _base.context.lesson = { id: _w.reading.id, title: _w.reading.title, module: (_w.reading.mod + ' · ' + _w.reading.modTitle), text: _w.reading.text };
+        }
+      } catch (_e) {}
       var convo = msgs.slice();
       for (var _hop = 0; _hop < 5; _hop++) {
         var res = await fetch(ENDPOINT, {
@@ -43786,6 +43855,7 @@ try {
     }
     function enhanceGreeting(el, surface) {
       try {
+        if (surface === 'academy' || surface === 'community') return;   // fixed sentences on purpose (Nestor, 28 Sep 2026)
         if (!el || !canGreet()) return;
         var seed = (el.__greetSeed != null) ? String(el.__greetSeed) : (el.textContent || '');
         seed = seed.trim(); if (!seed || !/[A-Za-zÀ-ÿ]/.test(seed)) return;   // need a REAL line (letters), else the AI is asked to rewrite nothing
@@ -61311,6 +61381,7 @@ try {
          something. */
       try{ if(!started()) markStarted(); }catch(e){}
       cur=id;
+      try{ if(window.__stAcademyGreet) setTimeout(window.__stAcademyGreet, 0); }catch(e){}   // "You're reading 1.1 ..."
 
       var src=lbody(l);
       // The hero carries the title, so the body's own leading "# ..." would only repeat it.
@@ -61684,7 +61755,22 @@ try {
       return { modules:MODULES.length, lessons:lessons, written:w, passed:p,
                onPlan: courseFull() ? lessons : freeLessonCount() };
     }
-    return { open:open, close:close, relang:relang, stats:stats, mount:mount, unmount:unmount };
+    /* For the assistant (28 Sep 2026): the lesson open on screen right now (with its text, so a question asked from
+       inside it is answered from the course itself) and the member's next lesson, for the Academy's Ask line. A
+       lesson the plan has not opened is never handed over. */
+    function where(){
+      var o=G('stsc'), showing=!!(o && (o.classList.contains('open') || o.classList.contains('inline')));
+      var out={ reading:null, next:null, nextLocked:false, done:false };
+      function info(l){ var loc=locate(l.id); return { id:l.id, title:lt(l), mod:loc.mod?loc.mod.n:'', modTitle:loc.mod?mt(loc.mod):'', idx:loc.idx, of:loc.of }; }
+      try{
+        if(showing && cur && !planLocked(cur)){ var l=find(cur); if(l && l.body){ out.reading=info(l); out.reading.text=String(lbody(l)).slice(0, 12000); } }
+        var w=written();
+        for(var i=0;i<w.length;i++){ if(!passed(w[i].id)){ out.next=info(w[i]); out.nextLocked=planLocked(w[i].id); break; } }
+        if(!out.next && w.length) out.done=true;
+      }catch(e){}
+      return out;
+    }
+    return { open:open, close:close, relang:relang, stats:stats, mount:mount, unmount:unmount, where:where };
   })();
   try{ window.STSCHOOL = STSCHOOL; }catch(e){}
 
@@ -61719,6 +61805,7 @@ try {
     }
     function showHub(){
       view='hub';
+      try{ if(window.__stAcademyGreet) setTimeout(window.__stAcademyGreet, 0); }catch(e){}   // back to "You're on Module ..." 
       var hub=G('vault-hub'); if(!hub) return;
       hub.style.display='';
       var b=G('vault-back'); if(b) b.style.display='none';
@@ -61771,6 +61858,7 @@ try {
       pills(false);
       host.style.display='';
       try{ window.STSCHOOL.mount(host); }catch(e){}
+      try{ if(window.__stAcademyGreet) setTimeout(window.__stAcademyGreet, 0); }catch(e){}
     }
     /* Re-apply whatever is showing. renderMediaVault calls this after it repaints, which also
        happens on a language switch - it must not change where the member is. */
