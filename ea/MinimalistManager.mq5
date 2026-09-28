@@ -1389,7 +1389,7 @@ void RiskOffHalf()
 // the order type before turning it on). No g_active guard here.
 void SwitchOrderKind(){ g_orderKind=(ENUM_ORDER_KIND)(((int)g_orderKind+1)%3); if(g_execMode) ShowExecutionLines(); BuildPanel(); }
 void CycleRiskMode(){ g_riskMode=(ENUM_RISK_MODE)(((int)g_riskMode+1)%3); BuildPanel(); }
-void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Flash("This account FOLLOWS your Lead account - place trades on the Lead's chart."); Warn("Follow account: trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
+void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Warn("Follow account: execution mode stays off - trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
 
 //==================================================================
 //  TRAILING STOPS
