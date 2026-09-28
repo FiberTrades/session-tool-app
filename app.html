@@ -15347,21 +15347,20 @@ try {
     // chronological order survives a cloud sync that replaces `data` after startup.
     try { if (typeof rebuildSeriesByDate === 'function') rebuildSeriesByDate(); } catch (e) {}
     if (isLifetimeScope()) {
-      return { currentSeries: data.currentSeries || [], history: data.history || [] };
+      // A trade copied to your other accounts shows as ONE (the idea: its R, the money of every account).
+      if (!_hasIdeas()) return { currentSeries: data.currentSeries || [], history: data.history || [] };
+      return { currentSeries: _ideaMerge(data.currentSeries || []), history: (data.history || []).map(h => ({ trades: _ideaMerge(h.trades || []), date: h.date })) };
     }
-    // For account or group scope, rebuild 10-trade chunks from filtered trades
+    // For account or group scope, rebuild 10-idea chunks from filtered trades
     // sorted chronologically. filterByScope() already handles the account-vs-
-    // group branching so we don't have to do it twice.
+    // group branching so we don't have to do it twice. (One account never holds two
+    // copies of an idea, so there it is the plain 10-trade chunking.)
     const all = filterByScope(getAllLifetimeTrades());
     all.sort(_tradeChronoCompare);
+    const ck = _chunkIdeas(all);
     const history = [];
-    let pending = all.slice();
-    while (pending.length >= 10) {
-      const chunk = pending.slice(0, 10);
-      pending = pending.slice(10);
-      history.unshift({ trades: chunk, date: chunk[chunk.length - 1].date });
-    }
-    return { currentSeries: pending, history };
+    ck.chunks.forEach(chunk => { history.unshift({ trades: _ideaMerge(chunk), date: chunk[chunk.length - 1].date }); });
+    return { currentSeries: _ideaMerge(ck.pending), history };
   }
   // The earliest moment the current scope can honestly cover, in ms, or 0 for no floor.
   //
@@ -15829,6 +15828,7 @@ try {
   const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   function saveData() {
     if (window.__MV) return;                  // mentor view is read-only — never persist
+    try { _syncIdeaReviews(); } catch (e) {}  // trade copier: an idea's review is filled once, on any of its copies
     syncTopLevelToActiveAccount();
     try {
       // Another instance saved since we last did: its copy may hold a bias click ours
@@ -15855,6 +15855,136 @@ try {
   function getAllLifetimeTrades() {
     return [...data.currentSeries, ...data.history.flatMap(s => s.trades)];
   }
+
+  /* ===== Trade copier: one idea on several accounts (28 Sep 2026) =====
+     The same trade taken on several of your accounts (the EA's Trade Copier - a Lead and its Follow accounts) is ONE
+     idea. Every copy stays its own trade on its own account - Prop Firm Progress needs each account's own trades - but
+     they share an ideaId, so the review is filled once, the Series of 10 counts the idea once and the Community post
+     says "copied to 2 accounts". Copies = EA-synced trades on DIFFERENT accounts, same pair and direction, opened
+     within 15 seconds of each other (the copier lands in about a second). */
+  var IDEA_MS = 15000;
+  var IDEA_KEYS = ['execution', 'focus', 'close', 'setup', 'rice', 'concepts', 'mindset', 'tvLinks', 'reflection', 'type'];
+  function _ideaClone(v) { return (v == null) ? v : JSON.parse(JSON.stringify(v)); }
+  // A pair's core name: EURUSD.r, EURUSD+, EURUSDm, #EURUSD and EUR/USD are all EURUSD; GOLD is XAUUSD.
+  function _ideaSymCore(x) {
+    var o = String(x || '').toUpperCase().replace(/^[^A-Z0-9]+/, '').replace(/^([A-Z]{3})\/([A-Z]{3})/, '$1$2').replace(/[^A-Z0-9].*$/, '');
+    if (/^GOLD/.test(o)) return 'XAUUSD';
+    if (/^SILVER/.test(o)) return 'XAGUSD';
+    if (o.length > 6 && /^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|XAU|XAG)(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD)/.test(o)) o = o.slice(0, 6);
+    return o;
+  }
+  function _ideaAcct(t) { return t && t.mt5Login ? 'L' + t.mt5Login : (t && t.accountId ? 'A' + t.accountId : ''); }
+  function _ideaMatch(a, b) {
+    if (!a || !b || a === b || !a.openTs || !b.openTs) return false;
+    if (_ideaAcct(a) === _ideaAcct(b)) return false;                 // copies live on DIFFERENT accounts
+    if ((a.side || '') !== (b.side || '')) return false;
+    if (_ideaSymCore(a.mt5Symbol || a.symbol) !== _ideaSymCore(b.mt5Symbol || b.symbol)) return false;
+    var ta = Date.parse(a.openTs), tb = Date.parse(b.openTs);
+    return isFinite(ta) && isFinite(tb) && Math.abs(ta - tb) <= IDEA_MS;
+  }
+  // The review answers of a trade - a Trade Log row keeps them flat, a saved trade in reviewSnap.
+  function _ideaAnswers(t) {
+    var src = (t && t.reviewSnap && !Object.prototype.hasOwnProperty.call(t, 'execution')) ? Object.assign({}, t.reviewSnap, { setup: t.setup, type: t.type }) : (t || {});
+    var o = {}; IDEA_KEYS.forEach(function (k) { o[k] = _ideaClone(src[k]); }); return o;
+  }
+  function _ideaFilled(o) { return IDEA_KEYS.filter(function (k) { var v = o[k]; return Array.isArray(v) ? v.length > 0 : (v != null && v !== ''); }).length; }
+  // Newly imported rows: join an idea already here (in a review, or saved) and take the answers written for it.
+  function _linkIdeas(newRows) {
+    var pool = [];
+    try { pool = allReviewTrades(false).concat(getAllLifetimeTrades()); } catch (e) {}
+    (newRows || []).forEach(function (row) {
+      if (!row || !row.openTs) return;
+      var hit = null;
+      for (var i = 0; i < pool.length && !hit; i++) if (_ideaMatch(row, pool[i])) hit = pool[i];
+      if (!hit) return;
+      // The idea is named after its first trade, so every copy - whenever it arrives - gets the same name.
+      var first = (Date.parse(hit.openTs) || 0) <= (Date.parse(row.openTs) || 0) ? hit : row;
+      var id = hit.ideaId || String(first.mt5Ticket || first.id);
+      hit.ideaId = id; row.ideaId = id;
+      try { if (hit.seriesId) { var sv = findTradeById(hit.seriesId); if (sv) sv.ideaId = id; } } catch (e) {}
+      var a = _ideaAnswers(hit);
+      if (_ideaFilled(a)) IDEA_KEYS.forEach(function (k) { row[k] = _ideaClone(a[k]); });
+    });
+  }
+  // Fill once: in the Session Review, whichever copy of an idea you changed, the others follow. Runs on every save.
+  var _ideaSigs = {};
+  function _ideaSig(t) { return JSON.stringify(IDEA_KEYS.map(function (k) { return (t[k] == null) ? null : t[k]; })); }
+  function _syncIdeaReviews() {
+    var rows = allReviewTrades(false).filter(function (t) { return t && t.ideaId; });
+    if (rows.length < 2) return;
+    var groups = {};
+    rows.forEach(function (t) { (groups[t.ideaId] = groups[t.ideaId] || []).push(t); });
+    var act = null; try { act = getActiveReviewTrade(); } catch (e) {}
+    Object.keys(groups).forEach(function (id) {
+      var g = groups[id]; if (g.length < 2) return;
+      var sigs = g.map(_ideaSig), last = _ideaSigs[id];
+      if (sigs.every(function (x) { return x === sigs[0]; })) { _ideaSigs[id] = sigs[0]; return; }
+      var src = null;
+      if (last != null) {                                   // the copy that changed since they were last in step
+        var ch = g.filter(function (t, i) { return sigs[i] !== last; });
+        src = (act && ch.indexOf(act) >= 0) ? act : (ch[0] || null);
+      }
+      if (!src) src = (act && g.indexOf(act) >= 0) ? act : g.slice().sort(function (a, b) { return _ideaFilled(b) - _ideaFilled(a); })[0];
+      g.forEach(function (t) { if (t !== src) IDEA_KEYS.forEach(function (k) { t[k] = _ideaClone(src[k]); }); });
+      _ideaSigs[id] = _ideaSig(src);
+    });
+  }
+  // Fill once, for a saved trade edited in its window: its copies on your other accounts take the same answers.
+  function _syncSavedIdea(tr) {
+    if (!tr || !tr.ideaId) return;
+    var a = _ideaAnswers(tr);
+    getAllLifetimeTrades().forEach(function (o) {
+      if (!o || o === tr || o.ideaId !== tr.ideaId) return;
+      o.setup = _ideaClone(a.setup) || null; o.type = _ideaClone(a.type) || null;
+      o.reviewSnap = Object.assign({}, o.reviewSnap || {}, {
+        execution: a.execution || null, focus: a.focus || null, close: a.close || null,
+        rice: _ideaClone(a.rice) || [], concepts: _ideaClone(a.concepts) || [], mindset: _ideaClone(a.mindset) || [],
+        tvLinks: _ideaClone(a.tvLinks) || [], reflection: a.reflection || ''
+      });
+    });
+  }
+  // A list with each idea as ONE trade: its first trade, carrying the money of every copy (so R stays the idea's R
+  // and P&L is what all your accounts made). _ideaN = how many accounts. Trades with no copies pass through as they are.
+  function _ideaMerge(list) {
+    var out = [], at = {};
+    (list || []).forEach(function (t) {
+      var id = t && t.ideaId;
+      if (!id) { out.push(t); return; }
+      if (at[id] == null) { at[id] = out.length; out.push({ __g: [t] }); } else out[at[id]].__g.push(t);
+    });
+    return out.map(function (x) {
+      if (!x || !x.__g) return x;
+      var g = x.__g; if (g.length === 1) return g[0];
+      g = g.slice().sort(function (a, b) { return (Date.parse(a.openTs) || 0) - (Date.parse(b.openTs) || 0); });
+      var m = Object.assign({}, g[0]);
+      m.actualGross = g.reduce(function (sm, t) { return sm + tradeGross(t); }, 0);
+      m.costs = g.reduce(function (sm, t) { return sm + tradeCosts(t); }, 0);
+      var rk = g.reduce(function (sm, t) { return sm + (parseFloat(t.risk) || 0); }, 0);
+      if (rk > 0) m.risk = rk;
+      m._ideaN = g.length; m._ideaTrades = g;
+      return m;
+    });
+  }
+  // One per idea, each still the real trade (its own account's money) - for the Community post. _ideaN = accounts.
+  function _ideaFirsts(list) {
+    return _ideaMerge(list).map(function (m) { return (m && m._ideaTrades) ? Object.assign({}, m._ideaTrades[0], { _ideaN: m._ideaN }) : m; });
+  }
+  // Series of 10 chunks that count IDEAS: a copy joins the series its idea is in and never takes one of the ten.
+  // Without copies this is exactly the old 10-trade chunking.
+  function _chunkIdeas(all) {
+    var chunks = [], cur = [], n = 0, where = {};
+    all.forEach(function (t) {
+      var id = t && t.ideaId;
+      if (id && where[id]) { where[id].push(t); return; }
+      if (n === 10) { chunks.push(cur); cur = []; n = 0; }
+      cur.push(t); n++;
+      if (id) where[id] = cur;
+    });
+    if (n === 10) { chunks.push(cur); cur = []; }
+    return { chunks: chunks, pending: cur };
+  }
+  function _hasIdeas() { try { return getAllLifetimeTrades().some(function (t) { return t && t.ideaId; }); } catch (e) { return false; } }
+  window.__stIdeaMerge = _ideaMerge;
 
   function findTradeById(id) {
     let t = data.currentSeries.find(x => x.id === id);
@@ -15900,13 +16030,11 @@ try {
   function rebuildSeriesByDate() {
     let all = getAllLifetimeTrades();
     all.sort(_tradeChronoCompare);
+    // Ten IDEAS a series: a trade copied to your other accounts rides in its idea's series (28 Sep 2026).
+    const ck = _chunkIdeas(all);
     data.history = [];
-    while (all.length >= 10) {
-      const chunk = all.slice(0, 10);
-      all = all.slice(10);
-      data.history.unshift({ trades: chunk, date: chunk[chunk.length - 1].date });
-    }
-    data.currentSeries = all;
+    ck.chunks.forEach(chunk => { data.history.unshift({ trades: chunk, date: chunk[chunk.length - 1].date }); });
+    data.currentSeries = ck.pending;
   }
 
   function tradeNetPL(t) {
@@ -20356,6 +20484,8 @@ try {
           const _a = (data.accounts || []).find(a => a.id === t.accountId);
           if (_a) _acctName = accDisplayName(_a);
         }
+        // Trade copier: this row is a copy of a trade above it - its review answers are shared.
+        if (_acctName && t.ideaId && (data.review.trades || []).slice(0, idx).some(x => x && x.ideaId === t.ideaId)) _acctName += ' \u00b7 ' + window._stT('copy, answers shared', 'copia, respuestas compartidas');
       } catch (e) {}
       const _syms = (data.settings.symbols && data.settings.symbols.length) ? data.settings.symbols : [(data.settings.pair || 'EUR/USD')];
       const _tSym = t.symbol || _syms[0];
@@ -21330,8 +21460,8 @@ try {
     renderReviewPreview();
   });
 
-  function calcNetR() {
-    const trades = data.review.trades;
+  function calcNetR(list) {
+    const trades = list || data.review.trades;
     const all = trades.length > 0 && trades.every(t => t.r && !isNaN(parseFloat(t.r)) && t.result);
     if (!all) return null;
     // Each trade's R contribution is multiplied by its copies count so the Net R
@@ -21357,7 +21487,10 @@ try {
         _atr.tvLinks = _arr;
       }
     } catch (e) {}
-    const r = data.review, b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
+    // Trade copier: a trade copied to your other accounts is ONE trade in the post, its review written once
+    // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
+    const r = Object.assign({}, data.review, { trades: _ideaFirsts(data.review.trades || []) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
+    const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && tt._ideaN) || 1), 1);
     // Use the picked session date in the Discord header (defaults to today, but back-fillable).
     let headerDate = _headerDateStr();
     if (r.sessionDate && r.sessionDate !== todayDateStr()) {
@@ -21513,7 +21646,7 @@ try {
     // copies across all logged setups. A session with 2 logged setups and copies=3
     // on each reads as 6 trades total in the Discord summary.
     const totalExecs = r.trades.reduce((s, t) => s + tradeCopies(t), 0);
-    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (${totalExecs} trade${totalExecs === 1 ? '' : 's'})`);
+    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (${totalExecs} trade${totalExecs === 1 ? '' : 's'}${_cpN > 1 ? `, copied to ${_cpN} accounts` : ''})`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
     // exports.
@@ -21527,7 +21660,7 @@ try {
     // Net R + Net % on one combined line — "Net R | Net %:    +3.50R | +1.45%".
     // Net R already exists via calcNetR (copy-weighted). Net % converts net £
     // to a % of lifetime starting balance, same scale as the Weekly Discord export.
-    const netR = calcNetR();
+    const netR = calcNetR(r.trades);
     if (netR !== null) {
       const netRStr = `${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`;
       let netRow = `${A.lbl}${t('post.netr').padEnd(PAD)}${A.reset}${sgnColor(netR)}${netRStr}${A.reset}`;
@@ -21585,7 +21718,7 @@ try {
         const rpStr = rpJoin ? `   ${rpJoin}` : '';
         // Append "× N" suffix when this setup was executed in multiple accounts.
         const nCopies = tradeCopies(t);
-        const copyStr = nCopies > 1 ? `   × ${nCopies}` : '';
+        const copyStr = (t._ideaN > 1) ? `   (${t._ideaN} accounts)` : (nCopies > 1 ? `   × ${nCopies}` : '');
         statsBlock.push(`${i + 1}. ${lineColor}${arrow} ${t.result || '—'}${sideStr}${rpStr}${copyStr}${A.reset}`);
       }
     });
@@ -22074,8 +22207,15 @@ try {
         // object is also Object.assign'd onto an already-committed trade on re-save, and a plain
         // `mt5Ticket: … || null` would wipe a ticket the re-stamping pass had repaired.
         ...(_tk ? { mt5Ticket: _tk } : {}),
-        // Account tag — locks this trade's % calculations to the account active at save time.
-        accountId: data.activeAccountId || (Array.isArray(data.accounts) && data.accounts[0] ? data.accounts[0].id : 'acc_main'),
+        // Account tag - the account this trade was filed to (the MT5 import's choice, remembered per broker login,
+        // or the row's own account); the active account only for a row that has none. It used to be the ACTIVE
+        // account always, so a trade imported to your 10K landed on the 70K if that was the one open (28 Sep 2026).
+        accountId: t.accountId || data.activeAccountId || (Array.isArray(data.accounts) && data.accounts[0] ? data.accounts[0].id : 'acc_main'),
+        // Trade copier: which idea it is a copy of, and what matches copies (open time, broker login, symbol).
+        ...(t.ideaId ? { ideaId: t.ideaId } : {}),
+        ...(t.openTs ? { openTs: t.openTs } : {}),
+        ...(t.mt5Login ? { mt5Login: t.mt5Login } : {}),
+        ...(t.mt5Symbol ? { mt5Symbol: t.mt5Symbol } : {}),
       };
       // Idempotent save: if this review trade was already committed to the series, UPDATE that
       // same series trade in place (matched by the id we linked when it was first saved) rather
@@ -22945,7 +23085,7 @@ try {
   }
   // Series of 10's Share button: one record per series (its first and last trade); "unchanged" = the same trades and
   // results. A posted series also says so in the picker list.
-  function _seriesPostKey(sr) { const tr = (sr && sr.trades) || []; if (!tr.length) return ''; const f = tr[0], l = tr[tr.length - 1]; return 'series:' + (f.id || f.date || '') + '~' + (l.id || l.date || ''); }
+  function _seriesPostKey(sr) { const tr = _ideaMerge((sr && sr.trades) || []); if (!tr.length) return ''; const f = tr[0], l = tr[tr.length - 1]; return 'series:' + (f.id || f.date || '') + '~' + (l.id || l.date || ''); }
   function _seriesPostSrc(sr) { return JSON.stringify(((sr && sr.trades) || []).map(x => [x.id || '', x.date || '', x.result || '', x.r == null ? '' : x.r, x.pips == null ? '' : x.pips, x.potentialR == null ? '' : x.potentialR])); }
   function paintSeriesPostBtn() {
     const btn = document.getElementById('series-share-confirm'); if (!btn) return;
@@ -23467,7 +23607,7 @@ try {
     if (_si < 0 || _si >= data.history.length) _si = 0;
     const latestSeries = data.history[_si];
     const seriesNum = data.history.length - _si; // newest-first: index 0 = highest number
-    const trades = latestSeries.trades || [];
+    const trades = _ideaMerge(latestSeries.trades || []);   // a trade copied to your other accounts is one trade here
     const stats = calcSeriesStats(trades);
     // Date stamp: prefer the date RANGE from the actual trades (earliest → latest) since a
     // series usually spans multiple days. Falls back to the series's completion date, then to
@@ -31352,6 +31492,7 @@ try {
     t.actualGross = (profitRaw !== '' && !isNaN(profitVal) && Math.abs(profitVal - _autoGross) > 0.005) ? profitVal : null;
     const costsVal = parseFloat(document.getElementById('edit-costs').value);
     t.costs = isNaN(costsVal) ? null : costsVal;
+    try { _syncSavedIdea(t); } catch (e) {}   // trade copier: its copies on your other accounts take the same answers
 
     rebuildSeriesByDate();
     saveData();
@@ -43320,7 +43461,7 @@ try {
     return '';
   }
   function _seriesGreetingHTML() {
-    var cs = (data && Array.isArray(data.currentSeries)) ? data.currentSeries : [];
+    var cs = (data && Array.isArray(data.currentSeries)) ? _ideaMerge(data.currentSeries) : [];   // a copied idea counts once
     var n = cs.length, w = 0, l = 0, b = 0;
     cs.forEach(function (tr) { if (tr.result === 'Win') w++; else if (tr.result === 'Lose') l++; else if (tr.result === 'BE') b++; });
     var nm = _greetNameSpan(), S = (window.__lang === 'es');
@@ -45269,6 +45410,7 @@ try {
   let _mt5TargetAccountId = null;   // account the preview step will file these trades against
   let _mt5ExcludedRows = [];        // broker trades not in the journal and currently suppressed
   let _mt5BatchLogins = [];         // distinct broker logins present in the parsed batch
+  let _mt5LoginTargets = {};        // trade copier: broker login -> the account its trades are filed to
   // Tickets deleted from the excluded list during THIS viewing of the modal: ticket -> { row, prev }.
   // They keep their place in the list, greyed out with an Undo, so removing one is never a dead end
   // while you can still see it. Cleared when the modal opens, which is when the deletion becomes
@@ -46985,12 +47127,41 @@ try {
           _mt5TargetAccountId = _tsel.value || null;
           if (_tnote) _tnote.textContent = '';
         };
+        // Trade copier (28 Sep 2026): trades from several broker accounts - a Lead and its Follow accounts - are each
+        // filed to THEIR account: one choice per broker login, the one remembered for it already selected.
+        var _lt = document.getElementById('mt5-login-targets');
+        if (!_lt && _tsel.parentNode && _tsel.parentNode.parentNode) {
+          _lt = document.createElement('div'); _lt.id = 'mt5-login-targets';
+          _lt.style.cssText = 'margin-bottom:16px;display:none;flex-direction:column;gap:8px;';
+          _tsel.parentNode.parentNode.insertBefore(_lt, _tsel.parentNode.nextSibling);
+        }
+        _mt5LoginTargets = {};
+        var _allLogged = (_mt5ParsedTrades || []).every(function (t) { return t && t._login; });
+        if (_lt) {
+          if (_mt5BatchLogins.length > 1) {
+            var _opts = function (sel) { return _live.map(function (a) { return '<option value="' + _esc(a.id) + '"' + (a.id === sel ? ' selected' : '') + '>' + _esc(a.name || a.id) + '</option>'; }).join(''); };
+            var _ls = 'font-size:10px;color:var(--text-dim);font-family:' + "'AppNum','DM Mono',monospace" + ';';
+            var _ss = 'background:var(--bg);border:1px solid var(--border-2);color:var(--text);padding:7px 12px;font-family:' + "'AppNum','DM Mono',monospace" + ';font-size:12px;outline:none;';
+            _lt.innerHTML = '<span style="' + _ls + '">' + _esc(window._stT('From ' + _mt5BatchLogins.length + ' broker accounts - each goes to its own account (remembered for next time):',
+                                                                             'De ' + _mt5BatchLogins.length + ' cuentas de bróker - cada una va a su propia cuenta (se recordará):')) + '</span>'
+              + _mt5BatchLogins.map(function (lg) {
+                  var m = _known[lg], def = (m && _live.some(function (a) { return a.id === m; })) ? m : (_tsel.value || '');
+                  _mt5LoginTargets[lg] = def;
+                  return '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;"><span style="' + _ls + 'letter-spacing:0.15em;">' + _esc(window._stT('Broker account ', 'Cuenta de bróker ') + lg) + ' \u2192</span>'
+                    + '<select data-login="' + _esc(lg) + '" style="' + _ss + '">' + _opts(def) + '</select></div>';
+                }).join('');
+            _lt.querySelectorAll('select[data-login]').forEach(function (sx) {
+              sx.onchange = function () { _mt5LoginTargets[sx.getAttribute('data-login')] = sx.value || ''; };
+            });
+            _lt.style.display = 'flex';
+          } else { _lt.style.display = 'none'; _lt.innerHTML = ''; }
+        }
+        // Every trade has its broker account: the one-account picker has nothing left to decide.
+        _tsel.parentNode.style.display = (_mt5BatchLogins.length > 1 && _allLogged) ? 'none' : '';
         if (_tnote) {
           if (_mt5BatchLogins.length > 1) {
-            _tnote.textContent = window._stT(
-              'These trades come from ' + _mt5BatchLogins.length + ' different broker accounts (' + _mt5BatchLogins.join(', ') + '). Filter by date and import one account at a time.',
-              'Estas operaciones vienen de ' + _mt5BatchLogins.length + ' cuentas de bróker distintas (' + _mt5BatchLogins.join(', ') + '). Filtra por fecha e importa una cuenta cada vez.');
-            _tnote.style.color = '#E5B567';
+            _tnote.textContent = window._stT('Trades with no broker account (older EA) go here.', 'Las operaciones sin cuenta de bróker (EA antiguo) van aquí.');
+            _tnote.style.color = '';
           } else if (_mt5BatchLogins.length === 1) {
             _tnote.style.color = '';
             _tnote.textContent = window._stT(
@@ -47242,11 +47413,13 @@ try {
        10 and that no part of the UI writes - and the same trade came out BE from a file
        import and Win from the live sync, purely by which button was pressed. The band is a
        per-account rule, so it can only be applied once the account is known: here. */
+    // The account each trade goes to: its broker login's choice (trade copier, several accounts in one batch), else
+    // the one picked for the batch.
+    const _accFor = (t) => (t && t._login && _mt5LoginTargets[String(t._login)]) || _mt5TargetAccountId || undefined;
     try {
-      const _tgtAcc = (typeof getAccountById === 'function' && _mt5TargetAccountId)
-        ? getAccountById(_mt5TargetAccountId) : null;
       if (typeof classifyNetResult === 'function') {
         selected.forEach(t => {
+          const _tgtAcc = (typeof getAccountById === 'function' && _accFor(t)) ? getAccountById(_accFor(t)) : null;
           if (t && typeof t.netPL === 'number') t.result = classifyNetResult(t.netPL, _tgtAcc);
         });
       }
@@ -47300,6 +47473,7 @@ try {
     };
   }
     const _consumedTickets = [];
+    const _newSync = [];   // trade copier: rows to join with their copies once all are in
     selectedForDate.forEach(t => {
       if (t._isSync) {
         // Auto-synced EA trade. R-P column = the AIM you set on the trade (EA tp_r / tp_pips),
@@ -47337,8 +47511,13 @@ try {
           // Tag explicitly from the destination picker. Left blank, ensureTradeAccounts() would
           // stamp whatever account is active at the next render — a silent guess that decides which
           // account's balance and drawdown these trades move, with no way to tell it got it wrong.
-          accountId: _mt5TargetAccountId || undefined
+          accountId: _accFor(t),
+          // Trade copier: what matches this trade with its copies on your other accounts.
+          openTs: t.openTime || undefined,
+          mt5Login: t._login ? String(t._login) : undefined,
+          mt5Symbol: t.symbol || undefined
         };
+        _newSync.push(row);
         // The replay measures the peak from entry until price comes back to your BE stop.
         // That is the same number for a Win and a BE - the only difference is whether the
         // stop was ever touched. So it fills BOTH, and a winner's Potential R stops being
@@ -47408,10 +47587,13 @@ try {
           aimPips: t.result === 'Win' ? _importAim(t.tpPips, t.slPips, t.aimR).pips : undefined,
           distUnit: t._distUnit || undefined,   // pips on forex, points on indices/futures
           realPips: (typeof t.pips === 'number' && isFinite(t.pips)) ? t.pips : undefined,   // entry -> exit, signed
-          accountId: _mt5TargetAccountId || undefined   // explicit destination, same reason as above
+          accountId: _accFor(t)   // explicit destination, same reason as above
         });
       }
     });
+    // Trade copier: a trade here and its copies on your other accounts (in this import, a review, or saved) become
+    // one idea - and a copy takes the answers already written for it.
+    try { _linkIdeas(_newSync); } catch (e) {}
     // Delete consumed inbox rows so a re-sync never doubles them (best-effort; the
     // ticket guard in _existingMt5Tickets also prevents re-import if delete fails).
     // An imported trade has closed by definition: flip its "still running" box now rather than on
@@ -47452,10 +47634,9 @@ try {
     // given twice rather than once. Only when the batch came from exactly ONE login: a mixed batch
     // has no single right answer, which is why the preview refuses to guess at one.
     try {
-      if (_mt5BatchLogins.length === 1 && _mt5TargetAccountId) {
-        if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {};
-        data.mt5LoginMap[_mt5BatchLogins[0]] = _mt5TargetAccountId;
-      }
+      if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {};
+      if (_mt5BatchLogins.length === 1 && _mt5TargetAccountId) data.mt5LoginMap[_mt5BatchLogins[0]] = _mt5TargetAccountId;
+      else _mt5BatchLogins.forEach(lg => { if (_mt5LoginTargets[lg]) data.mt5LoginMap[lg] = _mt5LoginTargets[lg]; });   // each broker account its own
     } catch (e) {}
 
     // Open the review the trades went into (the first, when they went to more than one).
