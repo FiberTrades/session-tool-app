@@ -12508,7 +12508,10 @@ try {
     // object literal the later one wins, so THAT was the live code and the earlier one had
     // never run. Callers wrap this in their own try/catch and none use the return value.
     save: function () { return saveData(); },
-    setData: function (obj) { try { data = migrate(obj); localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    setData: function (obj) { try { data = migrate(obj);
+      // A journal saved on another day or device can carry yesterday's bias date - re-check it before it is stored.
+      try { if (window.__stFreshDates) window.__stFreshDates(); } catch (e) {}
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
       // A replacement journal may already have today's session rolled - cleared on another device.
       // The prompt was armed from the local copy before this arrived, so put it away rather than
       // asking the same question on a second device.
@@ -13085,6 +13088,7 @@ try {
         if (inc.bias) data.bias = inc.bias;
         if (Array.isArray(inc.biasSlots)) data.biasSlots = inc.biasSlots;
         if (inc.review) data.review = inc.review;
+        try { if (window.__stFreshDates) window.__stFreshDates(); } catch (_e) {}
         // Our copy of the prompt now describes a session that no longer exists.
         _standDownNewDay();
         // Repaint through the same helpers the clear itself uses.
@@ -17532,8 +17536,33 @@ try {
     renderBiasPreview();
   });
 
+  // A bias's date is today unless the member deliberately picked a past day in the date box TODAY (back-filling).
+  // The picker only advanced a leftover date on load, so an app left open overnight posted "Sun 27 Sept" on Monday
+  // (Troy, 28 Sep 2026). Checked here, where the post is built, so no path can send an old date.
+  function _biasDateFresh(b) {
+    try {
+      const today = todayDateStr();
+      if (b && (!b.sessionDate || (b.sessionDate < today && b.sessionDatePickedOn !== today))) {
+        b.sessionDate = today;
+        const p = document.getElementById('bias-date'); if (p && b === data.bias) p.value = today;
+      }
+    } catch (e) {}
+  }
+  // Every bias slot (and the review, by its own existing rule) checked against today. Runs whenever a journal arrives
+  // from the cloud or another window, and on every return to the app: a copy saved yesterday could otherwise put
+  // yesterday's date back after the new-day checks had already run (Troy, 28 Sep 2026 - two copies of the app saving
+  // over each other flipped his bias between the 27th and the 28th, and he posted from the one holding the 27th).
+  window.__stFreshDates = function () {
+    try {
+      (Array.isArray(data.biasSlots) ? data.biasSlots : []).forEach(function (sl) { _biasDateFresh(sl); });
+      _biasDateFresh(data.bias);
+      const p = document.getElementById('bias-date'); if (p && data.bias && data.bias.sessionDate) p.value = data.bias.sessionDate;
+    } catch (e) {}
+    try { initSessionDatePicker(); } catch (e) {}
+  };
   function buildBiasMessage() {
     const b = data.bias;
+    _biasDateFresh(b);
     const dir = b.direction === 'Bullish' ? '↑' : b.direction === 'Bearish' ? '↓' : '';
     // Use the bias session date in the Discord header (defaults to today, can be back-filled via picker).
     let headerDate = _headerDateStr();
@@ -17666,6 +17695,7 @@ try {
      and the poster chooses. Reuses the app's own "Finish your trade log" modal rather than a
      browser confirm(), so it looks like the rest of the app and its buttons are translated. */
   async function doBiasCopyAndProceed(btn) {
+    _biasDateFresh(data.bias);   // before the journal entry and the post read the date
     try {
       const _miss = biasMissingFields();
       if (_miss.length) { const _go = await _warnIncompleteBias(_miss); if (!_go) return; }
@@ -21146,7 +21176,7 @@ try {
     const today = todayDateStr();
     // Default to today, and advance a date left over from a previous day. Without this, a
     // sessionDate set on (say) Friday persists and ends up stamped on today's Discord post.
-    if (!data.bias.sessionDate || data.bias.sessionDate < today) data.bias.sessionDate = today;
+    if (!data.bias.sessionDate || (data.bias.sessionDate < today && data.bias.sessionDatePickedOn !== today)) data.bias.sessionDate = today;
     picker.value = data.bias.sessionDate;
     picker.max = today;
   }
@@ -21160,6 +21190,7 @@ try {
   // Bias date picker handler — mirrors the Review session-date pattern.
   document.getElementById('bias-date').addEventListener('change', e => {
     data.bias.sessionDate = e.target.value;
+    data.bias.sessionDatePickedOn = todayDateStr();   // a past day chosen on purpose - honoured until midnight
     saveData();
     renderBiasPreview();
   });
@@ -21545,6 +21576,7 @@ try {
   // The new-day check above only fires once at page load. If the machine hibernates overnight
   // and wakes without a reload, re-evaluate the date on resume so the reset prompt still appears.
   function recheckNewDayOnResume() {
+    try { if (window.__stFreshDates) window.__stFreshDates(); } catch (e) {}   // the date is right the moment you are back
     try {
       if (_pendingNewDaySession) { showNewDaySessionPrompt(); return; }
       var nowKey = new Date().toDateString();
