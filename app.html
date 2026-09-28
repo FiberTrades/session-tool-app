@@ -17875,6 +17875,7 @@ try {
             btn.classList.add('selected');
             if (tr) { tr[key] = btn.dataset.value; saveData(); }
           }
+          if (key === 'execution') { try { pbPaint(); } catch (e) {} }   // Observed Only hides / restores the trade rows
           renderReviewPreview();
         });
       });
@@ -18044,6 +18045,11 @@ try {
   // options and in this order"). A member's own saved order (data.pbOrder) still wins.
   const PB_DEFAULT_ORDER = ['sess', 'stime', 'news', 'phase', 'rice', 'loc', 'liq', 'brk', 'poi', 'rej', 'fms', 'type', 'ent', 'stop', 'prob', 'htf', 'mind'];
   PB_ROWS.sort((a, b) => { const ia = PB_DEFAULT_ORDER.indexOf(a.id), ib = PB_DEFAULT_ORDER.indexOf(b.id); return (ia < 0 ? 999 : ia) - (ib < 0 ? 999 : ib); });
+  // Observed Only (Nestor, 28 Sep 2026): no trade was placed, so the rows about the trade itself - its type, where it
+  // was entered, its stop, its probability and the HTF direction it was taken in - are left out of the card, its count,
+  // the post and the recipe match. Anything already answered stays stored and returns if Execution changes.
+  const PB_TRADE_ONLY = { type: 1, ent: 1, stop: 1, prob: 1, htf: 1 };
+  function _pbObserved(tr) { return !!(tr && tr.execution === 'Observed Only'); }
   function pbRowsAll() {
     const all = PB_ROWS.map(r => r.id === 'mind' ? _pbMindRow(r) : r).map(_pbApplyEdit)
       .concat(_pbCustomRowDefs(data && Array.isArray(data.pbRows) ? data.pbRows : []));
@@ -18124,6 +18130,7 @@ try {
     if (!pb || !pb.rec) return out;
     pbRows().forEach(r => {
       if (r.norecipe) return;
+      if (_pbObserved(tr) && PB_TRADE_ONLY[r.id]) return;   // no trade, nothing to match
       const want = _pbWant(pb.rec, r), got = pbAnswer(tr, r);
       const gotArr = r.multi ? got : (got ? [got] : []);
       if (!want.length) { if (gotArr.length) out.extra++; return; }
@@ -18142,7 +18149,7 @@ try {
   // Lines for the community post and the Calendar day view: [{label, text}] in the current language.
   function pbLines(tr) {
     const out = [];
-    const A = id => { const r = pbRowById(id); return r ? pbAnswer(tr, r) : null; };
+    const A = id => { if (_pbObserved(tr) && PB_TRADE_ONLY[id]) return null; const r = pbRowById(id); return r ? pbAnswer(tr, r) : null; };
     const T = (id, k) => { const r = pbRowById(id), o = r && r.opts.find(o => o.k === k); return o ? _pbPost(o) : k; };
     if (tr && tr.setup) {
       const pb = pbByName(tr.setup);
@@ -18352,10 +18359,11 @@ try {
     const pb = tr.setup ? pbByName(tr.setup) : null;
     const sel = r => { const a = pbAnswer(tr, r); return r.multi ? a : (a ? [a] : []); };
     // The This trade card is the Playbook's only view (Nestor, 26 Sep): every question with all its options.
-    const qs = pbRows().filter(r => r.kind !== 'time' && r.id !== 'mind'), done = qs.filter(r => sel(r).length).length;
+    const obs = _pbObserved(tr) && !_pbRowEdit, keep = r => !(obs && PB_TRADE_ONLY[r.id]);   // Observed Only: no trade rows
+    const qs = pbRows().filter(r => r.kind !== 'time' && r.id !== 'mind' && keep(r)), done = qs.filter(r => sel(r).length).length;
     box.classList.add('pb-cardmode');
     box.innerHTML = '<div class="pb-cl-top"><span>' + _pbEsc(_pbL('This trade', 'Esta operación')) + '</span><b>' + done + ' / ' + qs.length + '</b></div>'
-      + pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind');   // every option shown, picks white (Nestor)
+      + pbRowsHtml(sel, pb ? pb.rec : null, true, false, r => r.id !== 'mind' && keep(r));   // every option shown, picks white (Nestor)
     pbPaintBar(box, sel);
     const mb = document.getElementById('pb-mind-rows'); if (mb) mb.innerHTML = pbRowsHtml(sel, null, true, false, r => r.id === 'mind');
     pbFillSelect(); pbPaintStatus(); pbPaintAddRow();
