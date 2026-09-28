@@ -11596,6 +11596,7 @@ try {
       if (ruleFire) {
         data._ruleReminderFlags = data._ruleReminderFlags || {};
         data._ruleReminderFlags[todayKey + ' ' + hhmm] = true;
+        _ruleMarkFiredLocal(todayKey + ' ' + hhmm);   // survives a journal pulled from another device
         saveData();
         // If this coincides with a session-start minute, let the spoken open line finish first.
         if (ss.some(x => x.start === hhmm)) {
@@ -11644,6 +11645,18 @@ try {
   //                        (e.g. 8:00-10:00 with '15' → 8:00, 8:15, 8:30, ... 9:45; 10:00 is skipped
   //                        because that's when the session-close chime fires)
   // Each (date,hhmm) pair fires at most once via the _ruleReminderFlags map.
+  // Reminders already shown in THIS browser, kept outside the synced journal. The journal's own flags can be
+  // overwritten by a copy another device saved just before the minute: on 28 Sep 2026 at 09:30 the PC showed the
+  // reminder, the phone saved its older journal 35s later, the PC pulled it, lost the 09:30 flag and showed the
+  // same reminder again. This record never leaves the browser, so a pulled journal cannot erase it.
+  function _ruleFiredLocal() { try { return JSON.parse(localStorage.getItem('st_rule_fired') || '{}') || {}; } catch (e) { return {}; } }
+  function _ruleMarkFiredLocal(key) {
+    try {
+      var m = _ruleFiredLocal(), day = String(key).slice(0, 10); m[key] = 1;
+      Object.keys(m).forEach(function (k) { if (k.slice(0, 10) !== day) delete m[k]; });
+      localStorage.setItem('st_rule_fired', JSON.stringify(m));
+    } catch (e) {}
+  }
   function shouldFireRuleReminderNow(windowStart, windowEnd, hhmm, todayKey, idx) {
     if (!data || !data.settings) return false;
     // Finished THIS session early today? Stop its rule-of-the-week reminders for the rest
@@ -11652,7 +11665,7 @@ try {
     const cadence = data.settings.ruleReminderCadence || 'start';
     if (cadence === 'off') return false;
     const flags = data._ruleReminderFlags || {};
-    if (flags[todayKey + ' ' + hhmm]) return false;
+    if (flags[todayKey + ' ' + hhmm] || _ruleFiredLocal()[todayKey + ' ' + hhmm]) return false;
     // Helper: minutes-since-midnight from HH:MM
     const m = str => { const [h, mm] = str.split(':').map(Number); return h * 60 + mm; };
     const startMins = m(windowStart);
