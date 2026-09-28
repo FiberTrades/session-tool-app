@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.82"
+#property version   "8.83"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -199,6 +199,8 @@ int    CopierRows();
 string CopyRoleText();
 color  CopyRoleColor();
 void   CopySetRole(ENUM_COPY_ROLE r);
+int    g_cpFollowers=0;                        // Lead: follow accounts linked to it (running or not), for Session Tool
+string CpSettingsJson();                       // the copier part of the settings sent to Session Tool
 // Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
 bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
 #define PANEL_CARDS 9
@@ -3106,6 +3108,7 @@ string LiveSettingsBody()
                    g_tpOn[0]?"true":"false",(g_tpMode==TP_BY_RR)?"rr":"pips",DoubleToString(g_tpVal[0],2),DoubleToString(g_tpPct[0],1));
    b+=StringFormat(",\"be_on\":%s,\"be_trigger_r\":%s,\"be_offset\":%s,\"be_offset_mode\":\"%s\",\"max_trades_day\":%d",
                    g_useBE?"true":"false",DoubleToString(g_beRR,2),DoubleToString(g_beOffset,2),(g_beOffMode==BEOFF_BY_RR)?"rr":"pips",g_maxTradesDay);
+   b+=CpSettingsJson();   // v8.83: so Session Tool counts a Lead's trade and its copies as ONE trade
    return b;
   }
 void LiveSettingsTick()
@@ -3124,7 +3127,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.82\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.83\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -5609,6 +5612,17 @@ void CpFollowWrite()
    FileWriteString(h,StringFormat("E|%d\r\n",n));
    FileClose(h);
   }
+// v8.83: the copier's part of the EA settings Session Tool receives - the role, the Lead a Follow account
+// copies, and how many follow accounts a Lead has. The app uses it to count a Lead's trade and its copies as
+// ONE trade (the live boxes, the greeting, nudges) and to show "copied to 2 of 3". The server never logs these
+// as a settings change.
+string CpSettingsJson()
+  {
+   string role=(g_copyRole==CR_LEAD) ? "lead" : ((g_copyRole==CR_FOLLOW) ? "follow" : "off");
+   return StringFormat(",\"copy_role\":\"%s\",\"copy_lead\":\"%s\",\"copy_followers\":%d",role,
+                       (g_copyRole==CR_FOLLOW && g_copyLead>0) ? IntegerToString(g_copyLead) : "",
+                       (g_copyRole==CR_LEAD) ? g_cpFollowers : 0);
+  }
 // This account's risk per trade, as the Lead's panel shows it: "£70", "0.10 lots".
 string CpRiskText()
   {
@@ -5691,6 +5705,7 @@ void CpLeadRows()
       while(FileFindNext(hf,fname));
       FileFindClose(hf);
      }
+   g_cpFollowers=rows;
    if(rows==0) CpRow("Followers","none yet",COL_PANEL_LBL);
    g_copyOverCap=false;
    if(anyFtmo)
@@ -5782,7 +5797,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.82 loaded (trade copier: Lead / Follow between your own accounts; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.83 loaded (trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

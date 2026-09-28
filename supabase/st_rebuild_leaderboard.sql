@@ -291,8 +291,9 @@ begin
     raw as (
       select
         lt.*,
+        public.st_sym_core(lt.symbol) as sym_core,   -- EURUSD = EURUSD.r: a trade and its copies are one setup
         lag(lt.open_time) over (
-          partition by lt.user_id, lt.symbol, lt.direction, lt.src order by lt.open_time, lt.ticket
+          partition by lt.user_id, public.st_sym_core(lt.symbol), lt.direction, lt.src order by lt.open_time, lt.ticket
         ) as prev_open
       from (
         select tv0.*, 'ea'::text as src, null::numeric as risk_m, null::numeric as sl_m
@@ -310,15 +311,15 @@ begin
                    or r.prev_open is null
                    or r.open_time - r.prev_open > interval '5 seconds'
                  then 1 else 0 end)
-          over (partition by r.user_id, r.symbol, r.direction, r.src
+          over (partition by r.user_id, r.sym_core, r.direction, r.src
                 order by r.open_time, r.ticket
                 rows between unbounded preceding and current row) as setup_no
       from raw r
     ),
     ded as (
-      select distinct on (user_id, symbol, direction, src, setup_no) *
+      select distinct on (user_id, sym_core, direction, src, setup_no) *
       from grp
-      order by user_id, symbol, direction, src, setup_no, open_time, ticket
+      order by user_id, sym_core, direction, src, setup_no, open_time, ticket
     ),
     -- One place that decides what a trade's risk and stop ACTUALLY were, so nothing below has to
     -- repeat the fallback. risk_u prefers the EA's stamp and falls back to the trader's own journal

@@ -15,7 +15,7 @@
 //           break-even, never nulls a value already stored.
 //    { event:"close", token, ticket, pnl }
 //        -> set pnl + closed_at on that ticket's row
-//    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6)
+//    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6; 8.83 adds copy_*)
 //        -> the EA's own settings right now (risk, stop limits, take profit,
 //           break-even, daily trade cap): upsert ea_settings, and when a real
 //           setting changed, one ea_settings_log row naming what changed.
@@ -144,8 +144,10 @@ Deno.serve(async (req) => {
 
 // Values that move on their own - risk in money follows the balance on a % setting, the day's
 // trade count and the currency are facts about the moment - are sent for display, never counted
-// as a CHANGE to the settings.
-const VOLATILE = new Set(["risk_money", "trades_today", "currency"]);
+// as a CHANGE to the settings. So is the trade copier's state (EA 8.83: role, the Lead a Follow
+// account copies, how many follow accounts a Lead has) - it is how the app groups copies, not a
+// risk setting the member changed.
+const VOLATILE = new Set(["risk_money", "trades_today", "currency", "copy_role", "copy_lead", "copy_followers"]);
 function changedKeys(a: any, b: any): string[] {
   const out: string[] = [];
   const keys = new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})]);
