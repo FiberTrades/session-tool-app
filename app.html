@@ -42654,27 +42654,126 @@ try {
       });
     } catch (e) {}
   };
+  // The member's own posts in the four scoring channels over the last 15 days - the same messages the leaderboard
+  // scores - so the Community line can say what is still worth points. Throttled; refreshed after every scoring post.
+  var _commPosts = null, _commPostsAt = 0, _commPostsBusy = false;
+  function _commPostsRefresh(force) {
+    try {
+      if (_commPostsBusy || (!force && Date.now() - _commPostsAt < 60000)) return;
+      var sb = window.__stSB, me = window.currentUser && window.currentUser.id;
+      if (!sb || !sb.from || !me) return;
+      _commPostsBusy = true; _commPostsAt = Date.now();
+      var WANT = { 'pre-session-bias': 'bias', 'post-session-review': 'review', 'series-of-10-trades': 'series', 'weekend-review': 'weekly' };
+      Promise.resolve(sb.from('channels').select('id,slug,name')).then(function (r1) {
+        var ids = {};
+        ((r1 && r1.data) || []).forEach(function (c) {
+          var k = String((c.slug && String(c.slug).trim()) || String(c.name || '').replace(/^\S+\s+/, '')).toLowerCase();
+          if (WANT[k]) ids[c.id] = WANT[k];
+        });
+        var list = Object.keys(ids);
+        if (!list.length) { _commPostsBusy = false; return; }
+        var since = new Date(Date.now() - 15 * 864e5).toISOString();
+        return Promise.resolve(sb.from('channel_messages').select('channel_id,created_at').eq('sender_id', me).in('channel_id', list).gte('created_at', since)).then(function (r2) {
+          if (r2 && r2.error) { _commPostsBusy = false; return; }
+          var out = { bias: [], review: [], series: [], weekly: [] };
+          ((r2 && r2.data) || []).forEach(function (m) { var k = ids[m.channel_id]; if (k) out[k].push(m.created_at); });
+          _commPosts = out; _commPostsBusy = false;
+          try { if (window.__stCommunityGreet) window.__stCommunityGreet(); } catch (e) {}
+        });
+      }).catch(function () { _commPostsBusy = false; });
+    } catch (e) { _commPostsBusy = false; }
+  }
+  window.__stCommPostsRefresh = _commPostsRefresh;
+  window.__stCommunityGreet = function () {
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('.bias-greeting[data-greeting-context="community"]'), function (el) {
+        var h = _communityGreetingHTML(); el.__greetSrcRaw = h; el.innerHTML = h; el.__greetSeed = el.textContent;
+      });
+    } catch (e) {}
+  };
   function _communityGreetingHTML() {
     var S = (window.__lang === 'es'), nm = _greetNameSpan();
-    var today = (typeof todayDateStr === 'function') ? todayDateStr() : '';
+    try { _commPostsRefresh(false); } catch (e) {}   // async; re-renders this line when the posts arrive
+    var p2 = function (v) { return ('0' + v).slice(-2); };
+    var dstr = function (d) { return d.getFullYear() + '-' + p2(d.getMonth() + 1) + '-' + p2(d.getDate()); };
+    // Timestamps are UTC: compare LOCAL days (a UTC slice is yesterday after local midnight).
+    var _ld = function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : dstr(d); };
+    var monOf = function (d) { var x = new Date(d.getFullYear(), d.getMonth(), d.getDate()); x.setDate(x.getDate() - ((x.getDay() + 6) % 7)); return dstr(x); };
+    var now = new Date(), today = dstr(now), dow = now.getDay();
+    var P = _commPosts;
     var slots = (data && Array.isArray(data.biasSlots) && data.biasSlots.length) ? data.biasSlots : [(data && data.bias) || {}];
-    // copiedAt is a UTC timestamp: compare its LOCAL day with today (a UTC slice is yesterday after local midnight).
-    var _ld = function (iso) { var d = new Date(iso); return isNaN(d.getTime()) ? '' : d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2); };
-    var posted = slots.some(function (sl) { return sl && sl.copiedAt && _ld(sl.copiedAt) === today; });
-    var dow = new Date().getDay();
+    var biasPosted = slots.some(function (sl) { return sl && sl.copiedAt && _ld(sl.copiedAt) === today; }) ||
+                     !!(P && P.bias.some(function (x) { return _ld(x) === today; }));
+    var reviewPosted = !!(P && P.review.some(function (x) { return _ld(x) === today; }));
     var tradingDay = (typeof window.__stIsTradingDay === 'function') ? window.__stIsTradingDay(dow) : (dow !== 0 && dow !== 6);
-    var beforeSession = false;
+    var beforeSession = false, sessionsDone = false;
     try {
       var ss = (typeof getSessions === 'function') ? getSessions() : [];
       var first = ss.reduce(function (m, x) { var v = _mins(x.start); return (m == null || v < m) ? v : m; }, null);
-      var now = new Date(); beforeSession = first != null && (now.getHours() * 60 + now.getMinutes()) < first;
+      beforeSession = first != null && (now.getHours() * 60 + now.getMinutes()) < first;
+      sessionsDone = (typeof _sessionsDoneToday === 'function') ? !!_sessionsDoneToday() : false;
     } catch (e) {}
-    if (tradingDay && posted) return S ? ('Tu sesgo de hoy ya está publicado, ' + nm + '. Pregúntame lo que quieras.')
-                                      : ('Your bias is posted for today, ' + nm + '. Ask me anything.');
-    if (tradingDay && beforeSession) return S ? ('Aún no has publicado tu sesgo de hoy, ' + nm + ': suma +10 en la clasificación si lo publicas antes de tu sesión. Pregúntame lo que quieras.')
-                                            : ('Your bias for today isn’t posted yet, ' + nm + ' — it’s worth +10 on the leaderboard before your session. Ask me anything.');
-    return S ? ('Hola, ' + nm + '. Pregúntame lo que quieras: tus números, la app o un mensaje que quieras escribir.')
-             : ('Welcome back, ' + nm + '. Ask me anything — your numbers, the app, or a post you want to write.');
+    var tradedToday = false;
+    try {
+      var all = ((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).concat((data && data.review && data.review.trades) || []);
+      tradedToday = all.some(function (t) { return t && t.result && t.date && _ld(t.date) === today; });
+    } catch (e) {}
+    var _say = function (en, es) { return S ? es : en; };
+
+    // 1) the bias, before the session
+    if (tradingDay && beforeSession && !biasPosted)
+      return _say('Your bias for today isn’t posted yet, ' + nm + ' — it’s worth +10 on the leaderboard before your session. Ask me anything.',
+                  'Aún no has publicado tu sesgo de hoy, ' + nm + ': suma +10 en la clasificación si lo publicas antes de tu sesión. Pregúntame lo que quieras.');
+    if (P) {
+      // 2) today's session review, once the session is over
+      if ((tradedToday || biasPosted) && sessionsDone && !reviewPosted)
+        return _say('Your session review for today isn’t posted yet, ' + nm + ' — it’s worth +10 if you post it before midnight. Ask me anything.',
+                    'Aún no has publicado tu revisión de sesión de hoy, ' + nm + ': suma +10 si la publicas antes de medianoche. Pregúntame lo que quieras.');
+      // 3) a finished Series of 10 that hasn't been posted since it finished
+      try {
+        var last = (data && Array.isArray(data.history) && data.history.length) ? data.history[0] : null;
+        var lastDay = last && last.date ? _ld(last.date) : '';
+        var fresh = lastDay && (now.getTime() - new Date(last.date).getTime()) < 14 * 864e5;
+        if (fresh && !P.series.some(function (x) { return _ld(x) >= lastDay; }))
+          return _say('You’ve completed a Series of 10, ' + nm + ' — post it in #series-of-10-trades for +10. Ask me anything.',
+                      'Has completado una Serie de 10, ' + nm + ': publícala en #series-of-10-trades y suma +10. Pregúntame lo que quieras.');
+      } catch (e) {}
+      // 4) the weekend review: Friday after the session through Wednesday, for the week that ended
+      try {
+        var inWindow = (dow === 6 || dow === 0 || dow === 1 || dow === 2 || dow === 3 || (dow === 5 && sessionsDone));
+        if (inWindow) {
+          var back = new Date(now); back.setDate(back.getDate() - 3);
+          var W = monOf(back);
+          var weekActive = P.bias.some(function (x) { return monOf(new Date(x)) === W; });
+          var credited = P.weekly.some(function (x) { var d = new Date(x); d.setDate(d.getDate() - 3); return monOf(d) === W; });
+          if (weekActive && !credited) {
+            var lastWeek = (dow >= 1 && dow <= 3);
+            return lastWeek
+              ? _say('Your weekend review for last week isn’t posted yet, ' + nm + ' — it’s still worth +20 if it’s in by Wednesday. Ask me anything.',
+                     'Aún no has publicado tu revisión semanal de la semana pasada, ' + nm + ': sigue sumando +20 si la publicas antes del jueves. Pregúntame lo que quieras.')
+              : _say('Your weekend review isn’t posted yet, ' + nm + ' — it’s worth +20 on the leaderboard. Ask me anything.',
+                     'Aún no has publicado tu revisión semanal, ' + nm + ': suma +20 en la clasificación. Pregúntame lo que quieras.');
+          }
+        }
+      } catch (e) {}
+    }
+    // 5) all caught up - name what is posted
+    var done = [];
+    if (tradingDay && biasPosted) done.push(_say('your bias', 'tu sesgo'));
+    if (reviewPosted) done.push(_say('your session review', 'tu revisión de sesión'));
+    try {
+      if (P && (dow === 6 || dow === 0 || (dow === 5 && sessionsDone))) {
+        var back2 = new Date(now); back2.setDate(back2.getDate() - 3); var W2 = monOf(back2);
+        if (P.weekly.some(function (x) { var d = new Date(x); d.setDate(d.getDate() - 3); return monOf(d) === W2; })) done.push(_say('your weekend review', 'tu revisión semanal'));
+      }
+    } catch (e) {}
+    if (done.length) {
+      var list = done.length === 1 ? done[0] : (done.slice(0, -1).join(', ') + _say(' and ', ' y ') + done[done.length - 1]);
+      return _say('You’ve posted ' + list + ', ' + nm + ' — you’re all caught up. Ask me anything.',
+                  'Ya has publicado ' + list + ', ' + nm + ': lo tienes todo al día. Pregúntame lo que quieras.');
+    }
+    return _say('Welcome back, ' + nm + '. Ask me anything — your numbers, the app, or a post you want to write.',
+                'Hola, ' + nm + '. Pregúntame lo que quieras: tus números, la app o un mensaje que quieras escribir.');
   }
   function _calendarGreetingHTML() {
     var all = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : [];
@@ -53051,6 +53150,7 @@ try {
     var _boardBumpAt=0, _boardBumpTimer=null;
     function _bumpBoardAfterPost(slug){
       if(!_SCORING_CH[slug]) return;
+      try{ if(window.__stCommPostsRefresh) setTimeout(function(){ window.__stCommPostsRefresh(true); }, 1500); }catch(e){}   // the Community Ask line
       var run=function(){ _boardBumpTimer=null; _boardBumpAt=Date.now();
         try{ sb.rpc('st_bump_leaderboard').then(function(){ try{ if(window.STBoard&&STBoard.refresh) STBoard.refresh(); }catch(e){} }, function(){}); }catch(e){}
       };
@@ -61572,6 +61672,7 @@ try {
         if(right===l.quiz.length){
           prog()[l.id]={passed:true, at:new Date().toISOString(), score:right};
           SAVE();
+          try{ if(window.__stAcademyGreet) setTimeout(window.__stAcademyGreet, 0); }catch(e){}   // the Academy Ask line moves on too
           var w2=written(), all=true;
           for(var q=0;q<w2.length;q++){ if(!passed(w2[q].id)){ all=false; break; } }
           var _ln=locate(l.id);
