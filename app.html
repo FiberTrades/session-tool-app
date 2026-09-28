@@ -4743,8 +4743,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .btn.danger:hover { background: var(--bad); color: var(--bg); border-color: var(--bad); }
   /* Bias page: today's bias is posted and unchanged (28 Sep 2026). */
   #bias-copy.is-posted { color: var(--good); border-color: rgba(78, 205, 139, 0.55); background: rgba(78, 205, 139, 0.08); }
-  #bias-copy.is-posted, #bias-copy.is-posted:hover, #bias-copy.is-posted:active { color: var(--good); border-color: rgba(78, 205, 139, 0.55); background: rgba(78, 205, 139, 0.08); cursor: default; transform: none; }
-  #bias-copy .bp-tick { display: inline-block; width: 13px; height: 13px; margin: 0 8px 0 0; vertical-align: -2px; }
+  /* Listed with the page ids too: "#page-bias .btn" etc. (id weight) paint every button there white. */
+  .btn.is-posted, .btn.is-posted:hover, .btn.is-posted:active,
+  #page-bias .btn.is-posted, #page-bias .btn.is-posted:hover, #page-review .btn.is-posted, #page-review .btn.is-posted:hover,
+  #page-stats .btn.is-posted, #page-stats .btn.is-posted:hover { color: var(--good); border-color: rgba(78, 205, 139, 0.55); border-right-color: rgba(78, 205, 139, 0.55); border-bottom-color: rgba(78, 205, 139, 0.55); background: rgba(78, 205, 139, 0.08); cursor: default; transform: none; box-shadow: none; }
+  .btn .bp-tick { display: inline-block; width: 13px; height: 13px; margin: 0 8px 0 0; vertical-align: -2px; }
+  .st-posted-hint { margin: 12px auto 0; text-align: center; font-size: 10px; line-height: 1.6; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+  .ss-row.ss-posted::after { content: attr(data-posted); margin-left: 8px; color: var(--good); font-weight: 400; }
+  .mdl-actions .btn.is-posted { white-space: nowrap; padding-left: 10px; padding-right: 10px; letter-spacing: 0.14em; }
+  .ss-row.sel.ss-posted::after { color: inherit; }
   .bias-posted-hint { width: 66.667%; margin: 12px auto 0; text-align: center; font-size: 10px; line-height: 1.6; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
   @media (max-width: 760px) { .bias-posted-hint { width: 100%; } }
   /* Toast notifications — centered on the page (vertical AND horizontal)
@@ -5714,6 +5721,7 @@ try {
         <button class="btn" id="review-save-stats" data-i18n="btn.save_series">Save to Series of 10</button>
         <button class="btn" id="review-reset" data-i18n="btn.clear_review">Clear review</button>
       </div>
+      <p class="st-posted-hint" id="review-posted-hint" hidden></p>
     </div>
   </div>
 
@@ -17766,22 +17774,47 @@ try {
     if (isNaN(d) || d.toDateString() !== new Date().toDateString()) return 'new';
     return b.postedSig === biasSig(b) ? 'posted' : 'changed';
   }
-  function paintBiasPostBtn() {
-    const btn = document.getElementById('bias-copy'), hint = document.getElementById('bias-posted-hint');
+  // ---- "Posted" on the app's community post buttons (Nestor, 28 Sep 2026: the bias first, then "the session bias,
+  // review, series of 10 and weekly review too"). Posted and unchanged -> green tick + "Posted 13:05" (the date when
+  // it was not today) and pressing does nothing; changed since -> "Post update"; otherwise the usual label.
+  // Review / series / weekly keep a record per post in data.postedLog[key] = { at, id, sig }, sig being a hash of
+  // what went out; the bias keeps its own on the slot.
+  function _stPostHash(x) { x = String(x == null ? '' : x); let h = 5381; for (let i = 0; i < x.length; i++) h = ((h << 5) + h + x.charCodeAt(i)) | 0; return (h >>> 0).toString(36) + '.' + x.length; }
+  // Function declarations (hoisted), so a render that runs early in start-up can already call them.
+  function _stPostedGet(key) { const L = (typeof data !== 'undefined' && data) ? data.postedLog : null; return (key && L && typeof L === 'object' && L[key]) || null; }
+  function _stPostedSet(key, id, sigSrc) {
+    if (!key || !id) return;
+    if (!data.postedLog || typeof data.postedLog !== 'object') data.postedLog = {};
+    data.postedLog[key] = { at: new Date().toISOString(), id: String(id), sig: _stPostHash(sigSrc) };
+    const L = data.postedLog, ks = Object.keys(L);
+    if (ks.length > 80) ks.sort((p, q) => String(L[p].at).localeCompare(String(L[q].at))).slice(0, ks.length - 80).forEach(k => { delete L[k]; });
+  }
+  // 'new' | 'posted' | 'changed'; srcFn builds what would go out now, and runs only when there is a record.
+  function _stPostedState(key, srcFn) { const r = _stPostedGet(key); if (!r) return 'new'; let src; try { src = srcFn(); } catch (e) { return 'posted'; } return r.sig === _stPostHash(src) ? 'posted' : 'changed'; }
+  window.__stPosted = { get: _stPostedGet, set: _stPostedSet, state: _stPostedState };
+  // defKey: the i18n key of the usual label (null -> defLabel, for a button that is not translated by key).
+  function _stPaintPostBtn(btn, st, atIso, hint, defKey, defLabel) {
     if (!btn) return;
-    const b = data.bias || {}, st = _biasPostState(b);
     btn.classList.toggle('is-posted', st === 'posted');
     if (st === 'posted') {
-      const d = new Date(b.copiedAt), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      const d = new Date(atIso), ok = !isNaN(d), today = ok && d.toDateString() === new Date().toDateString();
+      const when = !ok ? '' : today ? String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0')
+        : d.toLocaleDateString((typeof tLocale === 'function') ? tLocale() : undefined, { day: 'numeric', month: 'short' });
       btn.removeAttribute('data-i18n');   // the label carries the time, so applyI18n must not overwrite it
       btn.innerHTML = '<svg class="bp-tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
-        + t('btn.bias_posted').replace('{TIME}', hm).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        + t('btn.bias_posted').replace('{TIME}', when).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
       if (hint) { hint.textContent = t('bias.posted_hint'); hint.hidden = false; }
     } else {
-      const k = st === 'changed' ? 'btn.bias_post_update' : 'btn.copy_discord';
-      btn.setAttribute('data-i18n', k); btn.textContent = t(k);
+      if (st === 'changed') { btn.setAttribute('data-i18n', 'btn.bias_post_update'); btn.textContent = t('btn.bias_post_update'); }
+      else if (defKey) { btn.setAttribute('data-i18n', defKey); btn.textContent = t(defKey); }
+      else { btn.removeAttribute('data-i18n'); btn.textContent = defLabel || ''; }
       if (hint) { hint.hidden = true; hint.textContent = ''; }
     }
+  }
+  window.__stPaintPostBtn = _stPaintPostBtn;
+  function paintBiasPostBtn() {
+    const b = data.bias || {};
+    _stPaintPostBtn(document.getElementById('bias-copy'), _biasPostState(b), b.copiedAt, document.getElementById('bias-posted-hint'), 'btn.copy_discord');
   }
   window.__stPaintBiasPost = paintBiasPostBtn;
   function renderBiasPreview() {
@@ -21099,7 +21132,16 @@ try {
 
     return lines.join('\n');
   }
+  // Session Review's Post button: one record per session date; "unchanged" = the English post built now is the one
+  // that went out (built only once a record exists).
+  function _reviewPostKey() { const r = data.review || {}; return 'review:' + (r.sessionDate || ((typeof todayDateStr === 'function') ? todayDateStr() : '')); }
+  function paintReviewPostBtn() {
+    const key = _reviewPostKey(), rec = _stPostedGet(key);
+    const st = rec ? _stPostedState(key, () => window.__stBuildInLang('en', buildReviewMessage)) : 'new';
+    _stPaintPostBtn(document.getElementById('review-copy'), st, rec && rec.at, document.getElementById('review-posted-hint'), 'btn.copy_discord');
+  }
   function renderReviewPreview() {
+    try { paintReviewPostBtn(); } catch (e) {}
     const r = data.review;
     const out = document.getElementById('review-preview');
     // A review is "filled" if any trade has data, OR the session-level review block has content
@@ -21557,16 +21599,21 @@ try {
   // the user's explicit Save button is where the backup modal still fires for new users.
   document.getElementById('review-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
+    if (btn.classList.contains('is-posted')) return;   // already posted and unchanged: nothing to do
     const _run = async () => {
       jumpToDiscord('review');
       const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
       // Both languages, then the free-text rule line localised: see the bias post.
+      const _revSrc = window.__stBuildInLang('en', buildReviewMessage);   // also what the Posted button compares against
       const [_revEn, _revEs] = await window.__stLocaliseRuleLine(
-        window.__stBuildInLang('en', buildReviewMessage),
+        _revSrc,
         window.__stBuildInLang('es', buildReviewMessage));
-      try{ await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
+      let _revRow = null;
+      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ _revRow = null; try{ await copyToClipboard(msg); }catch(_){} }
+      if (_revRow && _revRow.id) { _stPostedSet(_reviewPostKey(), _revRow.id, _revSrc); try { saveData(); } catch (e) {} }
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
+      try { paintReviewPostBtn(); } catch (e) {}
     };
     if (sessionLogIncomplete()) { remindIncompleteThen(() => { _run(); }); return; }
     await _run();
@@ -22371,6 +22418,26 @@ try {
     if (!d || isNaN(d.getTime())) return '';
     try { return d.toLocaleDateString(tLocale(), { day: '2-digit', month: 'short' }); } catch (e) { return ''; }
   }
+  // Series of 10's Share button: one record per series (its first and last trade); "unchanged" = the same trades and
+  // results. A posted series also says so in the picker list.
+  function _seriesPostKey(sr) { const tr = (sr && sr.trades) || []; if (!tr.length) return ''; const f = tr[0], l = tr[tr.length - 1]; return 'series:' + (f.id || f.date || '') + '~' + (l.id || l.date || ''); }
+  function _seriesPostSrc(sr) { return JSON.stringify(((sr && sr.trades) || []).map(x => [x.id || '', x.date || '', x.result || '', x.r == null ? '' : x.r, x.pips == null ? '' : x.pips, x.potentialR == null ? '' : x.potentialR])); }
+  function paintSeriesPostBtn() {
+    const btn = document.getElementById('series-share-confirm'); if (!btn) return;
+    const H = Array.isArray(data.history) ? data.history : [];
+    const sel = document.getElementById('stats-export-series');
+    let i = parseInt(sel && sel.value, 10); if (isNaN(i) || i < 0 || i >= H.length) i = 0;
+    const sr = H[i], key = _seriesPostKey(sr), rec = _stPostedGet(key);
+    const st = rec ? _stPostedState(key, () => _seriesPostSrc(sr)) : 'new';
+    _stPaintPostBtn(btn, st, rec && rec.at, null, null, (window._stT ? window._stT('Share', 'Compartir') : 'Share'));
+    const lbl = t('btn.bias_posted').replace('{TIME}', '').trim();
+    Array.prototype.forEach.call(document.querySelectorAll('#series-share-list .ss-row'), function (row) {
+      const j = parseInt(row.getAttribute('data-idx'), 10), r2 = H[j], k2 = _seriesPostKey(r2), rc = _stPostedGet(k2);
+      const on = !!(rc && _stPostedState(k2, () => _seriesPostSrc(r2)) === 'posted');
+      row.classList.toggle('ss-posted', on);
+      if (on) row.setAttribute('data-posted', '✓ ' + lbl); else row.removeAttribute('data-posted');
+    });
+  }
   function renderSeriesPostSelector() {
     var inp = document.getElementById('stats-export-series');
     var list = document.getElementById('series-share-list');
@@ -22389,6 +22456,7 @@ try {
         inp.value = b.getAttribute('data-idx');
         Array.prototype.forEach.call(list.querySelectorAll('.ss-row'), function (x) { x.classList.remove('sel'); });
         b.classList.add('sel');
+        try { paintSeriesPostBtn(); } catch (e) {}
       });
     });
   }
@@ -22417,6 +22485,7 @@ try {
         show('series-share-card', card);
         show('series-share-confirm', !card);
       } catch (e) {}
+      try { paintSeriesPostBtn(); } catch (e) {}
       bg.classList.add('show');
     }
     function _close() { bg.classList.remove('show'); }
@@ -22855,6 +22924,7 @@ try {
 
   var _seriesShareConfirmBtn = document.getElementById('series-share-confirm');
   _seriesShareConfirmBtn && _seriesShareConfirmBtn.addEventListener('click', () => {
+    if (_seriesShareConfirmBtn.classList.contains('is-posted')) return;   // this series is already posted, unchanged
     // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
     // series. data.history is ordered newest-first (via unshift on completion), so [0] is the
     // most recently completed. If no series has been completed yet, show a snackbar instead of
@@ -22963,7 +23033,8 @@ try {
     var _s10msg = _buildS10();                                   // poster's language, for the clipboard fallback
     var _s10en = window.__stBuildInLang('en', _buildS10);
     var _s10es = window.__stBuildInLang('es', _buildS10);
-    try{ window.STCommunity.postToChannel('series-of-10-trades', _s10en, _s10es).then(function(){ if(typeof showToast==='function') showToast(t('postedCommunity')); }, function(){ try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ try{ copyToClipboard(_s10msg); }catch(_){} }
+    var _s10key = _seriesPostKey(latestSeries), _s10src = _seriesPostSrc(latestSeries);
+    try{ window.STCommunity.postToChannel('series-of-10-trades', _s10en, _s10es).then(function(_row){ if(typeof showToast==='function') showToast(t('postedCommunity')); if (_row && _row.id) { _stPostedSet(_s10key, _row.id, _s10src); try { saveData(); } catch (e) {} try { paintSeriesPostBtn(); } catch (e) {} } }, function(){ try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ try{ copyToClipboard(_s10msg); }catch(_){} }
     jumpToDiscord('series');
     try { if (window.__closeSeriesShareModal) window.__closeSeriesShareModal(); } catch (e) {}
   });
@@ -33014,6 +33085,15 @@ try {
 
   // Holds the currently-open review: { kind: 'weekly'|'monthly', start, end, key, titleText }
   let currentReview = null;
+  // Weekly review's Post button: one record per week; "unchanged" = the same answers, charts and setups as posted.
+  function _weeklyEntryNow() { try { if (!currentReview || currentReview.kind !== 'weekly') return null; const i = window.__stRev.findIndex(currentReview.key); return i >= 0 ? data.weeklyReviews[i] : null; } catch (e) { return null; } }
+  function _weeklyPostSrc(e) { e = e || {}; return JSON.stringify([(e.bestTrade && e.bestTrade.notes) || '', (e.missedTrade && e.missedTrade.tvLinks) || [], e.outOfSession || [], e.reflectionFocusNext || '', e.reflectionWentWell || '', e.reflectionLearned || '']); }
+  function paintWeeklyPostBtn() {
+    const btn = document.getElementById('rfx-discord-copy'); if (!btn || !currentReview || currentReview.kind !== 'weekly') return;
+    const key = 'weekly:' + currentReview.key, rec = _stPostedGet(key);
+    const st = rec ? _stPostedState(key, () => _weeklyPostSrc(_weeklyEntryNow())) : 'new';
+    _stPaintPostBtn(btn, st, rec && rec.at, document.getElementById('rfx-posted-hint'), 'btn.copy_discord');
+  }
 
   function openWeeklyReviewModal(weekStart, weekEnd) {
     const { weekKey } = getCurrentWeekBounds(weekEnd);
@@ -33251,6 +33331,7 @@ try {
         <div class="actions actions-narrow-1" style="margin-top:18px;">
           <button type="button" class="btn" id="rfx-discord-copy" data-i18n="btn.copy_discord">${t('btn.copy_discord')}</button>
         </div>
+        <p class="st-posted-hint" id="rfx-posted-hint" hidden></p>
       </div>
     `;
     (function renderRuleSection() {
@@ -33711,7 +33792,11 @@ try {
 
     // Post to community — builds a markdown-friendly weekly review post and copies it to the clipboard.
     // Sections with empty text are skipped so the post reads cleanly when fields aren't filled in yet.
+    // Repaint the Post button as the answers change (persist runs on the same events, first).
+    (function () { const _wr = document.getElementById('review-modal-reflection'); if (_wr && !_wr.__stPostedWired) { _wr.__stPostedWired = true;
+      ['input', 'change', 'click'].forEach(function (ev) { _wr.addEventListener(ev, function () { setTimeout(function () { try { paintWeeklyPostBtn(); } catch (e) {} }, 0); }); }); } })();
     document.getElementById('rfx-discord-copy').addEventListener('click', async () => {
+      if (document.getElementById('rfx-discord-copy').classList.contains('is-posted')) return;   // already posted, unchanged
       /* The three questions are the minimum for a weekly review to count on the leaderboard (Nestor).
          Stop here and point at the empty ones rather than post something that will not score. */
       try {
@@ -33752,12 +33837,15 @@ try {
       const _wkEn = await window.__stBuildInLangAsync('en', () => buildWeeklyReviewDiscordMessage(weekStart, weekEnd));
       const _wkEs = await window.__stBuildInLangAsync('es', () => buildWeeklyReviewDiscordMessage(weekStart, weekEnd));
       const trFailed = (__trAttempted > 0 && __trFailed >= __trAttempted);
+      const _wkKey = currentReview ? 'weekly:' + currentReview.key : '', _wkSrc = _weeklyPostSrc(_weeklyEntryNow());
       window.STCommunity.postToChannel('weekend-review', _wkEn, _wkEs).then(
-        () => showToast(trFailed ? t('toast.translate_failed') : t('postedCommunity'), trFailed ? { persist: true } : undefined),
+        (_row) => { showToast(trFailed ? t('toast.translate_failed') : t('postedCommunity'), trFailed ? { persist: true } : undefined);
+          if (_row && _row.id && _wkKey) { _stPostedSet(_wkKey, _row.id, _wkSrc); try { saveData(); } catch (e) {} try { paintWeeklyPostBtn(); } catch (e) {} } },
         () => showToast(t('toast.copy_failed'), { persist: true })
       );
       jumpToDiscord('weekly');
     });
+    try { paintWeeklyPostBtn(); } catch (e) {}
   }
 
   // Builds the markdown text posted to Discord for a weekly review. Stats are recomputed live;
