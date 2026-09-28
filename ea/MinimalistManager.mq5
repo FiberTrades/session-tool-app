@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.72"
+#property version   "8.80"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -23,6 +23,8 @@ enum ENUM_TP_MODE    { TP_BY_RR, TP_BY_PIPS };
 enum ENUM_BEOFF_MODE { BEOFF_BY_PIPS, BEOFF_BY_RR };   // BE offset read as pips or as R
 // What one unit of DISTANCE is. "Pips" in every other input and label means this unit.
 enum ENUM_DIST_UNIT  { DU_AUTO=0, DU_PIPS=1, DU_POINTS=2, DU_TICKS=3 };
+// v8.80 trade copier: what this ACCOUNT does - nothing, trade (the Lead), or copy the Lead (Follow).
+enum ENUM_COPY_ROLE  { CR_OFF=0, CR_LEAD=1, CR_FOLLOW=2 };
 
 //==================================================================
 //  INPUTS
@@ -60,6 +62,7 @@ input group "===== Panel ====="
 input int              InpPanelX        = 8;           // Panel X (from left)
 input int              InpPanelY        = 22;          // Panel Y (from top)
 input bool             InpStartOpen     = true;        // Start with panel expanded?
+input int              InpPanelBodyH    = 0;           // Panel height before it scrolls, px (0 = down to Break-even)
 
 input group "===== Chart Scale ====="
 input bool             InpScaleLock     = false;       // Lock chart scale on load (adds padding, free vertical scroll)
@@ -80,6 +83,11 @@ input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/
 input string InpCandlesURL= "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-candles"; // Trade Replay candle endpoint
 enum ENUM_BROKER_DST { BDST_AUTO=0, BDST_NONE=1, BDST_US=2, BDST_EU=3 };
 input ENUM_BROKER_DST InpBrokerDst = BDST_AUTO;          // Broker server clock: Auto (detect) / No DST / US DST / EU DST
+
+input group "===== Trade Copier ====="
+input long   InpCopyMagic   = 990089;                   // Magic number a Follow account gives its copies
+input long   InpCopyFrom    = 0;                        // Follow: Lead account login to copy (0 = the one Lead on this PC)
+input string InpCopySymbols = "";                       // Follow: symbols named differently, Lead=Follow, e.g. US30=DJ30,NAS100=USTEC
 
 enum ENUM_DST_MODE { DST_AUTO=0, DST_NONE=1, DST_EU=2, DST_US=3, DST_SOUTH=4 };
 input group "===== Daily Trade Limit ====="
@@ -167,6 +175,25 @@ void   mkLabelBL(string n,int x,int y,string text,color clr,int fs);
 void   RedrawTargets();
 void   SaveState();
 bool   LoadState();
+bool   OverPanel(int x,int y);
+
+// ---- v8.80: scrolling panel + trade copier (state the panel code needs before the copier block) ----
+ENUM_COPY_ROLE g_copyRole=CR_OFF;
+#define CP_ROWS_MAX 16
+string g_cpRowL[]; string g_cpRowV[]; color g_cpRowC[];   // TRADE COPIER card rows below Role
+int    CopierRows();
+string CopyRoleText();
+color  CopyRoleColor();
+void   CopySetRole(ENUM_COPY_ROLE r);
+// Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
+bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
+#define PANEL_CARDS 9
+int    g_cardOff[PANEL_CARDS];                 // each card's top, measured from the first card
+int    g_stops[];                              // scroll positions: card tops, plus rows inside a card taller than the window
+bool   g_clipOn=false;                         // BuildPanel is drawing the scrolling body
+int    g_clipTop=0, g_clipBot=0, g_scrollY=0;
+int    g_panelScroll=0, g_scrollMax=0, g_viewH=0, g_contentH=0;
+int    g_trackTop=0, g_trackH=0, g_thumbTop=0, g_thumbH=0;
 
 string PFX     = "MTM_";
 string PP      = "MTM_P_";
@@ -1309,7 +1336,7 @@ void CancelPending()
       ulong tk=OrderGetTicket(i);
       if(!OrderSelect(tk)) continue;
       if(OrderGetString(ORDER_SYMBOL)!=_Symbol) continue;
-      if(OrderGetInteger(ORDER_MAGIC)!=InpMagic) continue;
+      if(!CpMine(OrderGetInteger(ORDER_MAGIC))) continue;
       trade.OrderDelete(tk);
      }
   }
@@ -1320,7 +1347,7 @@ void CloseAll()
       ulong tk=PositionGetTicket(i);
       if(!PositionSelectByTicket(tk)) continue;
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      if(!CpMine(PositionGetInteger(POSITION_MAGIC))) continue;
       trade.PositionClose(tk);
      }
    g_beArmed=false;
@@ -1332,7 +1359,7 @@ void RiskOffHalf()
       ulong tk=PositionGetTicket(i);
       if(!PositionSelectByTicket(tk)) continue;
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      if(!CpMine(PositionGetInteger(POSITION_MAGIC))) continue;
       double vol=PositionGetDouble(POSITION_VOLUME);
       double half=NormalizeVolume(vol/2.0);
       if(half>=g_volMin && half<vol) trade.PositionClosePartial(tk,half);
@@ -1346,7 +1373,7 @@ void RiskOffHalf()
 // the order type before turning it on). No g_active guard here.
 void SwitchOrderKind(){ g_orderKind=(ENUM_ORDER_KIND)(((int)g_orderKind+1)%3); if(g_execMode) ShowExecutionLines(); BuildPanel(); }
 void CycleRiskMode(){ g_riskMode=(ENUM_RISK_MODE)(((int)g_riskMode+1)%3); BuildPanel(); }
-void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && DayLimitReached()){ Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
+void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Comment("\n  >> This account FOLLOWS your Lead account - place trades on the Lead's chart."); Warn("Follow account: trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Comment("\n  >> Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
 
 //==================================================================
 //  TRAILING STOPS
@@ -1752,6 +1779,13 @@ bool ModifyPositionsTP(double newTP)
 //==================================================================
 void mkRect(string n,int x,int y,int w,int h,color bg,color border)
   {
+   if(g_clipOn)
+     {
+      // Scrolling body (v8.80): cut to the visible window; with nothing of it showing it is not drawn.
+      int yy=y-g_scrollY, a=(yy>g_clipTop)?yy:g_clipTop, b=(yy+h<g_clipBot)?yy+h:g_clipBot;
+      if(b<=a){ ObjectDelete(0,n); return; }
+      y=a; h=b-a;
+     }
    x=_s(x); y=_s(y); w=_s(w); h=_s(h);
    ObjectCreate(0,n,OBJ_RECTANGLE_LABEL,0,0,0);
    ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
@@ -1770,6 +1804,14 @@ void mkRect(string n,int x,int y,int w,int h,color bg,color border)
   }
 void mkLabel(string n,int x,int y,string text,color clr,int fs)
   {
+   if(g_clipOn)
+     {
+      // A row shows whole or not at all. Judged on the row's full control band (a label sits at
+      // ry+6, its box spans ry+2..ry+25), so a label never outlives the box beside it.
+      int yy=y-g_scrollY;
+      if(yy-4<g_clipTop || yy+19>g_clipBot){ ObjectDelete(0,n); return; }
+      y=yy;
+     }
    x=_s(x); y=_s(y);
    ObjectCreate(0,n,OBJ_LABEL,0,0,0);
    ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
@@ -1780,6 +1822,28 @@ void mkLabel(string n,int x,int y,string text,color clr,int fs)
    ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
    ObjectSetString (0,n,OBJPROP_FONT,"Arial");
    ObjectSetInteger(0,n,OBJPROP_ZORDER,10);   // click priority over a line underneath (see mkRect)
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+  }
+// v8.80: a label whose RIGHT edge sits at xr - values lined up with the control column.
+void mkLabelR(string n,int xr,int y,string text,color clr,int fs)
+  {
+   if(g_clipOn)
+     {
+      int yy=y-g_scrollY;
+      if(yy-4<g_clipTop || yy+19>g_clipBot){ ObjectDelete(0,n); return; }
+      y=yy;
+     }
+   xr=_s(xr); y=_s(y);
+   if(ObjectFind(0,n)<0) ObjectCreate(0,n,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,n,OBJPROP_ANCHOR,ANCHOR_RIGHT_UPPER);
+   ObjectSetInteger(0,n,OBJPROP_XDISTANCE,xr); ObjectSetInteger(0,n,OBJPROP_YDISTANCE,y);
+   ObjectSetString (0,n,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
+   ObjectSetString (0,n,OBJPROP_FONT,"Arial");
+   ObjectSetInteger(0,n,OBJPROP_ZORDER,10);
    ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
    ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
   }
@@ -1854,6 +1918,7 @@ void mkLabelBL(string n,int x,int y,string text,color clr,int fs)
   }
 void mkButton(string n,int x,int y,int w,int h,string text,color bg,color tx)
   {
+   if(g_clipOn){ int yy=y-g_scrollY; if(yy<g_clipTop || yy+h>g_clipBot){ ObjectDelete(0,n); return; } y=yy; }
    x=_s(x); y=_s(y); w=_s(w); h=_s(h);
    ObjectCreate(0,n,OBJ_BUTTON,0,0,0);
    ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
@@ -1871,6 +1936,7 @@ void mkButton(string n,int x,int y,int w,int h,string text,color bg,color tx)
   }
 void mkEdit(string n,int x,int y,int w,int h,string text)
   {
+   if(g_clipOn){ int yy=y-g_scrollY; if(yy<g_clipTop || yy+h>g_clipBot){ ObjectDelete(0,n); return; } y=yy; }
    x=_s(x); y=_s(y); w=_s(w); h=_s(h);
    ObjectCreate(0,n,OBJ_EDIT,0,0,0);
    ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
@@ -1930,6 +1996,111 @@ void ReleaseScaleLock()
    ChartSetInteger(0,CHART_AUTOSCROLL,true);
    ChartRedraw();
   }
+//==================================================================
+//  PANEL LAYOUT + SCROLLING  (v8.80)
+//  Card heights live here and nowhere else, so the scrolling window knows the whole layout before
+//  anything is drawn. Order: 0 ORDER, 1 RISK & STOPS, 2 TAKE PROFIT, 3 BREAK-EVEN, 4 TRAILING STOPS,
+//  5 DAILY LIMIT, 6 CHART SCALE, 7 TRADE COPIER, 8 SESSION TOOL SYNC.
+//==================================================================
+int PanelCardRows(int k)
+  {
+   switch(k)
+     {
+      case 0: return 2;                                                        // order type, execution key
+      case 1: return 4;                                                        // type, amount, min SL, max SL
+      case 2: return 2;                                                        // target by, take profit
+      case 3: return 2;                                                        // offset unit, BE offset
+      case 4: return ((g_tsCount>0)?1:0)+g_tsCount+((g_tsCount<TS_MAX)?1:0);   // unit, steps, Add
+      case 5: return 2;                                                        // max trades, reset line
+      case 6: return 1;                                                        // padding
+      case 7: return CopierRows();                                             // role + the copier's rows
+      case 8: return 1;                                                        // status
+     }
+   return 1;
+  }
+int PanelCardH(int k){ return 31+27*PanelCardRows(k); }
+void PanelStopAdd(int v){ int n=ArraySize(g_stops); ArrayResize(g_stops,n+1); g_stops[n]=v; }
+
+// How tall the visible window is and how far it can scroll. By default it ends after BREAK-EVEN -
+// order, risk, target and break-even are what you touch during a trade (Nestor's own screenshot) -
+// and it never runs past the bottom of the chart. It scrolls a CARD at a time, so its top edge
+// always sits on a card - or, inside a card taller than the window, on a row, so nothing is ever out
+// of reach; the last stop is the first from which everything below fits.
+void PanelLayout()
+  {
+   int off=0;
+   for(int k=0;k<PANEL_CARDS;k++){ g_cardOff[k]=off; off+=PanelCardH(k)+6; }
+   g_contentH=6+off;                                   // 6px above the first card, each card leaves 6 below
+   int want=(InpPanelBodyH>0) ? InpPanelBodyH : 6+g_cardOff[4];
+   long chH=ChartGetInteger(0,CHART_HEIGHT_IN_PIXELS);
+   int room=(int)MathFloor((double)chH/g_ui)-PY-34-8;
+   if(room>=120 && want>room) want=room;
+   if(want<120) want=120;
+   g_viewH=(want<g_contentH) ? want : g_contentH;
+   ArrayResize(g_stops,0);
+   for(int k=0;k<PANEL_CARDS;k++)
+     {
+      PanelStopAdd(g_cardOff[k]);
+      if(PanelCardH(k)>g_viewH-12)
+         for(int j=0;j<PanelCardRows(k);j++) PanelStopAdd(g_cardOff[k]+23+27*j);   // row j's band starts 2px below the top
+     }
+   int ns=ArraySize(g_stops);
+   g_scrollMax=0;
+   while(g_scrollMax<ns-1 && g_stops[g_scrollMax]+g_viewH<g_contentH) g_scrollMax++;
+   if(g_panelScroll>g_scrollMax) g_panelScroll=g_scrollMax;
+   if(g_panelScroll<0) g_panelScroll=0;
+  }
+
+void PanelScrollTo(int k)
+  {
+   if(k<0) k=0;
+   if(k>g_scrollMax) k=g_scrollMax;
+   if(k==g_panelScroll) return;
+   g_panelScroll=k;
+   BuildPanel();
+  }
+
+// The mouse and the panel. While the cursor is on the panel the chart's own mouse scrolling is off
+// (CHART_MOUSE_SCROLL), so the wheel scrolls the PANEL and the chart holds still; it comes back on the
+// moment the cursor leaves. The scroll bar: click above or below the thumb for a card up or down, or
+// drag the thumb. Returns true when the event was the scroll bar's.
+int  g_mouseScrollSet=-1;    // what CHART_MOUSE_SCROLL was last set to (-1 = not set yet)
+bool g_thumbDrag=false, g_panelBtnPrev=false;
+int  g_dragY0=0, g_dragIdx0=0;
+bool PanelMouse(int x,int y,bool down)
+  {
+   bool over=(g_panelOpen && OverPanel(x,y));
+   int  want=(over || g_thumbDrag) ? 0 : 1;
+   if(want!=g_mouseScrollSet){ ChartSetInteger(0,CHART_MOUSE_SCROLL,want==1); g_mouseScrollSet=want; }
+   bool used=false;
+   if(g_panelOpen && g_scrollMax>0 && g_trackH>0)
+     {
+      int dx=(int)MathRound(x/g_ui), dy=(int)MathRound(y/g_ui);     // back to design pixels
+      bool onTrack=(dx>=PX+PWID-12 && dx<=PX+PWID && dy>=g_trackTop && dy<=g_trackTop+g_trackH);
+      if(down && !g_panelBtnPrev && onTrack)
+        {
+         if(dy>=g_thumbTop && dy<=g_thumbTop+g_thumbH){ g_thumbDrag=true; g_dragY0=dy; g_dragIdx0=g_panelScroll; }
+         else PanelScrollTo(g_panelScroll+((dy<g_thumbTop)?-1:1));
+         used=true;
+        }
+      else if(down && g_thumbDrag)
+        {
+         double span=(double)(g_trackH-g_thumbH);
+         if(span>0 && g_stops[g_scrollMax]>0)
+           {
+            double off=g_stops[g_dragIdx0]+(dy-g_dragY0)/span*g_stops[g_scrollMax];
+            int best=0; double bd=DBL_MAX;
+            for(int k=0;k<=g_scrollMax;k++){ double d=MathAbs(g_stops[k]-off); if(d<bd){ bd=d; best=k; } }
+            PanelScrollTo(best);
+           }
+         used=true;
+        }
+     }
+   if(!down) g_thumbDrag=false;
+   g_panelBtnPrev=down;
+   return used;
+  }
+
 void BuildPanel()
   {
    // Deleting and recreating ~53 objects on every keystroke is what makes the panel flash:
@@ -2000,18 +2171,22 @@ void BuildPanel()
 
    if(!g_panelOpen){ g_panelH=titleH; DrawHint(); ChartRedraw(); return; }
 
+   // ---- Scrolling body (v8.80) ----
+   // The body is a window onto the cards: by default down to the end of BREAK-EVEN, the rest
+   // scrolled into view with the mouse wheel over the panel or the bar on its right edge. The
+   // layout comes from PanelCardH before anything is drawn, so the background is created at its
+   // final height straight away (resizing it on every rebuild is what once made the panel flicker).
+   // MT5 objects cannot be half drawn: the mk* helpers cut a card to the window and hide any row
+   // that does not fully fit, and the window moves a card at a time.
+   PanelLayout();
    int bTop=y+titleH;
-   // Measured from the cards at the end of this function, then REMEMBERED - so every rebuild
-   // after the first creates the background at the right size and never has to resize it.
-   // (Resizing on every rebuild is what made the panel flicker on each click.)
-   static int s_bodyH = 616;
-   int bodyH = s_bodyH;
-   mkRect(PP+"BODY",x,bTop,w,bodyH,COL_PANEL_BG,COL_PANEL_BG);
+   mkRect(PP+"BODY",x,bTop,w,g_viewH,COL_PANEL_BG,COL_PANEL_BG);
+   g_clipOn=true; g_clipTop=bTop; g_clipBot=bTop+g_viewH; g_scrollY=g_stops[g_panelScroll];
 
    int cy=bTop+6, cardH, ry;
 
    // ===== ORDER =====
-   cardH=31+ROWH*2;      // Order type, Execution key (on/off lives on the title bar)
+   cardH=PanelCardH(0);  // Order type, Execution key (on/off lives on the title bar)
    mkRect (PP+"C_ORD",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_ORD",labelX,cy+7,"ORDER",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2023,7 +2198,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== RISK & STOPS =====
-   cardH=31+ROWH*4;       // four rows: risk type, risk value, min SL, max SL
+   cardH=PanelCardH(1);   // four rows: risk type, risk value, min SL, max SL
    mkRect (PP+"C_RSK",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_RSK",labelX,cy+7,"RISK & STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2044,7 +2219,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== TAKE PROFIT =====
-   cardH=31+ROWH*2;
+   cardH=PanelCardH(2);
    mkRect (PP+"C_TP",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TP",labelX,cy+7,"TAKE PROFIT",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2056,7 +2231,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== BREAK-EVEN =====
-   cardH=31+ROWH*2;       // offset unit, offset value (on/off lives on the title bar)
+   cardH=PanelCardH(3);   // offset unit, offset value (on/off lives on the title bar)
    mkRect (PP+"C_BE",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_BE",labelX,cy+7,"BREAK-EVEN",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2076,7 +2251,7 @@ void BuildPanel()
    // selector governs numbers that do not exist yet, so showing it would only raise the
    // question of whether trailing is on. Delete rides on the last step's own row, so the Add
    // row disappears entirely at the ceiling rather than lingering to hold one button.
-   cardH=31+ROWH*(((g_tsCount>0)?1:0)+g_tsCount+((g_tsCount<TS_MAX)?1:0));
+   cardH=PanelCardH(4);
    mkRect (PP+"C_TS",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_TS",labelX,cy+7,"TRAILING STOPS",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2122,7 +2297,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== DAILY LIMIT =====
-   cardH=31+ROWH*2;       // two rows: Max trades, and the reset-timezone line
+   cardH=PanelCardH(5);   // two rows: Max trades, and the reset-timezone line
    mkRect (PP+"C_DL",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_DL",labelX,cy+7,"DAILY LIMIT",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2142,7 +2317,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== CHART SCALE =====
-   cardH=31+ROWH;
+   cardH=PanelCardH(6);
    mkRect (PP+"C_SC",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_SC",labelX,cy+7,"CHART SCALE",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2150,8 +2325,32 @@ void BuildPanel()
    mkEdit  (PP+"SCPAD",box1,ry+2,BW,CH,Fmt(g_scalePadPips,0));
    cy+=cardH+6;
 
+   // ===== TRADE COPIER =====
+   // v8.80. Role cycles OFF -> LEAD -> FOLLOW. The rows below it are worked out once a second by the
+   // copier (CopierSlowTick) and only drawn here: each follow account with its risk and state on a
+   // Lead; where it copies from and the last copy on a Follow.
+   cardH=PanelCardH(7);
+   mkRect (PP+"C_CP",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
+   mkLabel(PP+"ST_CP",labelX,cy+7,"TRADE COPIER",COL_PANEL_SECT,8);
+   ry=cy+23;
+   mkLabel (PP+"L_CPR",labelX,ry+6,"Role",COL_PANEL_LBL,8);
+   mkButton(PP+"CPROLE",box1,ry+2,BW,CH,CopyRoleText(),COL_PANEL_BTN,CopyRoleColor());
+   ObjectSetString(0,PP+"CPROLE",OBJPROP_TOOLTIP,"Trade copier: OFF, LEAD (you trade here) or FOLLOW (copies the Lead)");
+   ry+=ROWH;
+   {
+      int nr=ArraySize(g_cpRowL);
+      for(int i=0;i<nr;i++)
+        {
+         mkLabel (PP+"L_CP"+IntegerToString(i),labelX,ry+6,g_cpRowL[i],COL_PANEL_LBL,8);
+         mkLabelR(PP+"V_CP"+IntegerToString(i),Rend,ry+6,g_cpRowV[i],g_cpRowC[i],8);
+         ry+=ROWH;
+        }
+      for(int i=nr;i<CP_ROWS_MAX;i++){ ObjectDelete(0,PP+"L_CP"+IntegerToString(i)); ObjectDelete(0,PP+"V_CP"+IntegerToString(i)); }
+   }
+   cy+=cardH+6;
+
    // ===== SESSION TOOL SYNC =====
-   cardH=31+ROWH;
+   cardH=PanelCardH(8);
    mkRect (PP+"C_SY",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_SY",labelX,cy+7,"SESSION TOOL SYNC",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2168,17 +2367,22 @@ void BuildPanel()
      }
    cy+=cardH+6;
 
-   // The background is drawn FIRST (so the cards sit on top of it) but can only be MEASURED
-   // last. cy has walked past the final card, and each card left a 6px gap behind it, which
-   // becomes the bottom padding - matching the 6px we started with at the top.
-   bodyH = cy - bTop;                       // true content height: cards + the 6px gap each left
-   if(bodyH != s_bodyH)                     // only ever touches the object when it actually changed
+   g_clipOn=false;
+   // Scroll bar: a 3px track in the margin right of the cards, only when there is more than the
+   // window shows. The thumb's size is the share of the panel on view, its place how far down.
+   if(g_scrollMax>0)
      {
-      s_bodyH = bodyH;
-      ObjectSetInteger(0,PP+"BODY",OBJPROP_YSIZE,_s(bodyH));
+      g_trackTop=bTop+6; g_trackH=g_viewH-12;
+      g_thumbH=(int)MathRound((double)g_trackH*g_viewH/(double)g_contentH);
+      if(g_thumbH<16) g_thumbH=16;
+      if(g_thumbH>g_trackH) g_thumbH=g_trackH;
+      g_thumbTop=g_trackTop+(int)MathRound((double)(g_trackH-g_thumbH)*g_stops[g_panelScroll]/(double)g_stops[g_scrollMax]);
+      mkRect(PP+"SB_TRK",x+w-6,g_trackTop,3,g_trackH,COL_PANEL_LINE,COL_PANEL_LINE);
+      mkRect(PP+"SB_THM",x+w-6,g_thumbTop,3,g_thumbH,COL_PANEL_ICON,COL_PANEL_ICON);
      }
+   else { ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM"); g_trackH=0; }
 
-   g_panelH=titleH+bodyH;
+   g_panelH=titleH+g_viewH;
    DrawHint();
    ChartRedraw();
   }
@@ -2242,6 +2446,7 @@ void HandleClick(string s)
         }
       SaveState(); BuildPanel(); return;
      }
+   if(s==PP+"CPROLE"){ CopySetRole((ENUM_COPY_ROLE)(((int)g_copyRole+1)%3)); return; }   // v8.80 copier role
    for(int i=0;i<6;i++)
       if(s==PP+"TPON"+IntegerToString(i)){ g_tpOn[i]=!g_tpOn[i]; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
   }
@@ -2322,6 +2527,7 @@ void SaveState()
    GlobalVariableSet(StateKey("panelX"),    (double)PX);
    GlobalVariableSet(StateKey("panelY"),    (double)PY);
    GlobalVariableSet(StateKey("maxTrd"),     (double)g_maxTradesDay);
+   GlobalVariableSet(StateKey("panelScroll"),(double)g_panelScroll);   // v8.80: where the panel was scrolled to
    GlobalVariableSet(StateKey("saved"),     1);   // marker that a saved state exists
 
    // Commit to disk NOW rather than trusting a clean terminal shutdown. MT5 only
@@ -2373,6 +2579,7 @@ bool LoadState()
    PX           =(int)GlobalVariableGet(StateKey("panelX"));
    PY           =(int)GlobalVariableGet(StateKey("panelY"));
    if(GlobalVariableCheck(StateKey("maxTrd"))) g_maxTradesDay=(int)GlobalVariableGet(StateKey("maxTrd"));
+   if(GlobalVariableCheck(StateKey("panelScroll"))) g_panelScroll=(int)GlobalVariableGet(StateKey("panelScroll"));
    // rebuild the exec-key display character from the stored key code
    g_execKeyChar=CharToString((uchar)g_execKey); StringToUpper(g_execKeyChar);
    // safety: keep values sane after load
@@ -2875,7 +3082,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.72\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.80\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -4306,7 +4513,8 @@ void SyncTrackMFE()
       ulong  posId=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
       string sk="MMD_"+(string)posId+"_mfe";
       // Stamped by this EA at entry. Everything below the stop log is for those trades only.
-      bool ours=(PositionGetInteger(POSITION_MAGIC)==InpMagic && GlobalVariableCheck(sk));
+      long _mg=PositionGetInteger(POSITION_MAGIC);
+      bool ours=((_mg==InpMagic || _mg==InpCopyMagic) && GlobalVariableCheck(sk));   // v8.80: copies are stamped too
       string sym  =PositionGetString(POSITION_SYMBOL);
       double entry=PositionGetDouble(POSITION_PRICE_OPEN);
       long   type =PositionGetInteger(POSITION_TYPE);
@@ -4367,13 +4575,1109 @@ void SyncTrackMFE()
   }
 
 //==================================================================
+//  TRADE COPIER  (v8.80)
+//  One trader, several accounts, one entry (Nestor, 28 Sep 2026). Every account runs its own MT5
+//  on the same PC or VPS with this EA on a chart; Role on the panel makes one of them the LEAD and
+//  the others FOLLOW. The Lead writes what it has open to a small file in MT5's shared Common folder
+//  - at once when anything changes, and once a second regardless - and each Follow account reads it
+//  10 times a second and makes its own account match:
+//    - a new trade is copied straight away, sized by THIS account's own Risk setting over the same
+//      stop distance, so every account risks its own amount: the same R everywhere;
+//    - stops and targets are copied as a DISTANCE from each account's own fill, never as a price,
+//      so a small price difference between two firms can't change the risk. Break-even, trailing
+//      steps and dragged stops on the Lead follow the same way;
+//    - a partial close copies as the same share of the position; a close closes;
+//    - pending orders are copied as pending orders at the same levels.
+//  Safety:
+//    - never a "reverse": a copy always trades the Lead's direction (opposite trades across your own
+//      accounts is hedging, which prop firms forbid);
+//    - a trade the Lead opened over 5 minutes ago, or one price has run from by more than 20% of its
+//      stop (the same slip rule the EA's own orders use), is skipped - never chased. So is one whose
+//      stop is already at break-even. Closes are always copied;
+//    - nothing is closed on a stale or half-written Lead file, and neither side acts until its
+//      terminal has been connected for 10 seconds (a reconnect or resync can hide trades for a
+//      moment). A close is acted on when the Lead's own history confirms the whole position closed;
+//      a trade that merely vanished has to stay gone for a full minute first. A Lead that stops
+//      running leaves the copies exactly as they are, their stop and target at the broker;
+//    - a copy is only forgotten once this account's history confirms it closed, and a refused request
+//      backs off (1s, then 10s, then once a minute) instead of hammering the server;
+//    - the Follow account's ON/OFF switch, daily trade limit and Algo Trading gate new copies, and a
+//      lot below the broker's minimum that would overrisk is skipped rather than rounded up;
+//    - one chart per account does the copying (an atomic shared lock), so two charts can't double a
+//      trade; a role only takes effect after it has been held for 3 seconds, so clicking through the
+//      Role button can't make an account a Lead or a Follow for a moment;
+//    - the FTMO total of the linked accounts is checked against FTMO's $400,000 max allocation, and
+//      no new copies are made over it.
+//  Copies carry InpCopyMagic, so the Follow EA's own break-even, trailing and line tools leave them to
+//  the Lead. Needs hedging accounts, which every prop firm's MT5 is. Use ONE chart per Follow account:
+//  that chart's Risk setting sizes the copies.
+//==================================================================
+#define CP_FRESH_SEC   10          // a Lead/Follow file older than this = that EA is not running
+#define CP_MAX_AGE_SEC 300         // never copy a trade the Lead opened more than 5 minutes ago
+#define CP_GONE_MS     60000       // unconfirmed: missing from the Lead for this long before acting
+#define CP_KEEP_CLOSED 120         // seconds the Lead keeps announcing a close it confirmed
+#define CP_FTMO_CAP    400000.0    // FTMO's maximum capital allocation per trader, USD
+
+void   CopierSlowTick();
+string CpRiskText();
+
+CTrade copyTrade;
+double g_copyInst=0;               // this chart's id in the one-copier-per-account lock
+string g_cpSig="";                 // copier card texts last drawn (rebuild the panel only on a change)
+bool   g_copyOverCap=false;        // Lead: linked FTMO accounts add up past the max allocation
+ulong  g_roleAtMs=0;               // when the current role was set (it acts only once held 3 s)
+ulong  g_connSinceMs=0;            // when this terminal last (re)connected
+
+// ---- Lead ----
+ulong  g_seenId[]; ulong g_seenMs[];   // when the Lead first saw each trade (PC clock, ms)
+ulong  g_leadIds[];                    // what the Lead has open right now
+ulong  g_pcId[];  ulong g_pcMs[];      // gone from the Lead, close not yet confirmed by its history
+ulong  g_xId[];   ulong g_xMs[];       // confirmed closed, announced for CP_KEEP_CLOSED seconds
+string g_copyLeadSig=""; ulong g_copyLeadAt=0; long g_copySeq=0;
+
+// ---- Follow ----
+struct CpItem { bool pos; ulong tk; string sym; int dir; int otype; double vol; double open; double sl; double tp; double age; ulong seen; };
+struct CpMap  { long lead; ulong lt; ulong ft; double lv0; double fv0; int st; ulong tryMs; ulong waitMs; ulong goneMs; int fails; };
+// CpMap.st: 1 = copying (ft is our position or pending order), 2 = skipped, 3 = our copy closed on its
+// own (its stop/target, or by hand - never reopened), 4 = closed because the Lead closed. 2-4 are kept
+// for an hour after the Lead trade is gone, so a trade that reappears is never copied twice. 0 = dropped.
+CpMap  g_cm[];
+long   g_copyLead=0;                   // Lead login being followed
+int    g_leadCount=0;                  // live Leads found on this PC
+string g_leadLabel=""; long g_leadGmt=0; long g_leadSeq=0; int g_leadCap=0; double g_leadBal=0;
+bool   g_ownF=false;                   // this chart holds the account's copying lock
+string g_cpStatus=""; bool g_cpStatusWarn=false;   // why new trades are not being copied, if they aren't
+string g_cpLast="";   bool g_cpLastWarn=false;     // the last copy, or the last skip
+string g_symFrom[], g_symTo[];         // Lead symbol -> this account's symbol, cached
+string g_mapFrom[], g_mapTo[];         // InpCopySymbols
+
+//---------------------------------------------------------------- small helpers
+string CpLogin(){ return IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)); }
+string CpFileL(string login){ return "SessionTool_copy_L_"+login+".txt"; }
+string CpFileF(string login){ return "SessionTool_copy_F_"+login+".txt"; }
+string CpClean(string v){ StringReplace(v,"|","/"); StringReplace(v,"\r"," "); StringReplace(v,"\n"," "); return v; }
+bool   CpHedging(){ return AccountInfoInteger(ACCOUNT_MARGIN_MODE)==ACCOUNT_MARGIN_MODE_RETAIL_HEDGING; }
+string CpFmtK(double v){ return (v>=1000.0) ? IntegerToString((long)MathRound(v/1000.0))+"K" : DoubleToString(v,0); }
+string CpDirWord(int dir){ return dir>0 ? "buy" : "sell"; }
+bool   CpIsFtmo(string company,string server){ string u=company+" "+server; StringToUpper(u); return StringFind(u,"FTMO")>=0; }
+// "FTMO 70K": the firm's first word and the balance, rounded to the thousand.
+string CpAcctLabel(string company,double bal)
+  {
+   string c=company; StringTrimLeft(c); StringTrimRight(c);
+   int sp=StringFind(c," "); if(sp>0) c=StringSubstr(c,0,sp);
+   if(StringLen(c)>12) c=StringSubstr(c,0,12);
+   return c+" "+CpFmtK(bal);
+  }
+string CopyRoleText(){ return g_copyRole==CR_LEAD ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "OFF"); }
+color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole==CR_FOLLOW ? COL_TAB_ON : COL_PANEL_BTX); }
+int    CopierRows(){ return 1+ArraySize(g_cpRowL); }
+void   CpRow(string l,string v,color c)
+  {
+   int n=ArraySize(g_cpRowL); if(n>=CP_ROWS_MAX) return;
+   ArrayResize(g_cpRowL,n+1); ArrayResize(g_cpRowV,n+1); ArrayResize(g_cpRowC,n+1);
+   g_cpRowL[n]=l; g_cpRowV[n]=v; g_cpRowC[n]=c;
+  }
+void   CpRowsClear(){ ArrayResize(g_cpRowL,0); ArrayResize(g_cpRowV,0); ArrayResize(g_cpRowC,0); }
+void   CpDelAt(ulong &a[],ulong &b[],int i)
+  {
+   int n=ArraySize(a);
+   for(int k=i;k<n-1;k++){ a[k]=a[k+1]; b[k]=b[k+1]; }
+   ArrayResize(a,n-1); ArrayResize(b,n-1);
+  }
+int    CpIdx(ulong &a[],ulong v){ for(int i=0;i<ArraySize(a);i++) if(a[i]==v) return i; return -1; }
+void   CpAdd(ulong &a[],ulong &b[],ulong v){ if(CpIdx(a,v)>=0) return; int n=ArraySize(a); ArrayResize(a,n+1); ArrayResize(b,n+1); a[n]=v; b[n]=GetTickCount64(); }
+// A price on this symbol's tick grid - a level off the grid is refused, or moved by the server so it
+// never matches and would be sent again and again.
+double CpNorm(string sym,double px)
+  {
+   if(px<=0) return 0.0;
+   int    dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+   double ts=SymbolInfoDouble(sym,SYMBOL_TRADE_TICK_SIZE);
+   if(ts>0) px=MathRound(px/ts)*ts;
+   return NormalizeDouble(px,dg);
+  }
+// Acting only on a settled view: connected, and for 10 seconds (positions resync after a reconnect),
+// with the role held for 3.
+bool CpSettled()
+  {
+   ulong now=GetTickCount64();
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED)){ g_connSinceMs=0; return false; }
+   if(g_connSinceMs==0) g_connSinceMs=now;
+   return (now-g_connSinceMs>=10000 && now-g_roleAtMs>=3000);
+  }
+
+// The one-chart-per-account lock, per role. Claimed atomically (GlobalVariableSetOnCondition), so of
+// two charts starting together only one wins. The holder keeps it by refreshing a timestamp; another
+// chart may take over only once that has gone 5 seconds stale (the holder was closed or crashed).
+string CpOwnKey(string role){ return "MMC_OWN_"+CpLogin()+"_"+role; }
+bool CpOwn(string role)
+  {
+   string k=CpOwnKey(role), kt=k+"_t";
+   double now=(double)TimeLocal();
+   if(!GlobalVariableCheck(k)) GlobalVariableSet(k,0.0);
+   double cur=GlobalVariableGet(k);
+   if(cur!=g_copyInst)
+     {
+      double t=GlobalVariableCheck(kt) ? GlobalVariableGet(kt) : 0.0;
+      if(cur!=0.0 && now-t<=5.0) return false;               // another chart on this account has it
+      if(!GlobalVariableSetOnCondition(k,g_copyInst,cur)) return false;
+     }
+   GlobalVariableSet(kt,now);
+   return true;
+  }
+bool CpStillOwner(string role){ string k=CpOwnKey(role); return GlobalVariableCheck(k) && GlobalVariableGet(k)==g_copyInst; }
+void CpRelease()
+  {
+   string roles[2]={"L","F"};
+   for(int i=0;i<2;i++)
+     {
+      string k=CpOwnKey(roles[i]);
+      if(GlobalVariableCheck(k) && GlobalVariableGet(k)==g_copyInst) GlobalVariableSet(k,0.0);
+     }
+  }
+
+//---------------------------------------------------------------- symbols
+// A symbol's core name: EURUSD.r, EURUSD+, EURUSDm and #EURUSD are all EURUSD; GOLD is XAUUSD.
+string CpCore(string v)
+  {
+   string u=v; StringToUpper(u);
+   string o="";
+   for(int i=0;i<StringLen(u);i++)
+     {
+      ushort ch=StringGetCharacter(u,i);
+      bool an=((ch>='A' && ch<='Z') || (ch>='0' && ch<='9'));
+      if(!an){ if(StringLen(o)>0) break; continue; }
+      o+=ShortToString(ch);
+     }
+   if(StringFind(o,"GOLD")==0)   return "XAUUSD";
+   if(StringFind(o,"SILVER")==0) return "XAGUSD";
+   if(StringLen(o)>6 && IsCcyCode(StringSubstr(o,0,3)) && IsCcyCode(StringSubstr(o,3,3))) o=StringSubstr(o,0,6);
+   return o;
+  }
+void CpLoadSymbolMap()
+  {
+   ArrayResize(g_mapFrom,0); ArrayResize(g_mapTo,0);
+   string parts[]; int n=StringSplit(InpCopySymbols,',',parts);
+   for(int i=0;i<n;i++)
+     {
+      string kv[]; if(StringSplit(parts[i],'=',kv)!=2) continue;
+      string a=kv[0], b=kv[1];
+      StringTrimLeft(a); StringTrimRight(a); StringTrimLeft(b); StringTrimRight(b);
+      if(a=="" || b=="") continue;
+      int m=ArraySize(g_mapFrom); ArrayResize(g_mapFrom,m+1); ArrayResize(g_mapTo,m+1);
+      g_mapFrom[m]=a; g_mapTo[m]=b;
+     }
+  }
+// This account's name for a Lead symbol: your own list first, then the same name, then the same core
+// name (shortest tradable match). "" when this account has no such symbol. Cached.
+string CpSymbol(string lead)
+  {
+   for(int i=0;i<ArraySize(g_symFrom);i++) if(g_symFrom[i]==lead) return g_symTo[i];
+   string res="", ul=lead, cl=CpCore(lead);
+   StringToUpper(ul);
+   bool cst=false;
+   for(int i=0;i<ArraySize(g_mapFrom) && res=="";i++)
+     {
+      string f=g_mapFrom[i]; StringToUpper(f);
+      if((f==ul || CpCore(g_mapFrom[i])==cl) && SymbolExist(g_mapTo[i],cst)) res=g_mapTo[i];
+     }
+   if(res=="" && SymbolExist(lead,cst)) res=lead;
+   if(res=="")
+     {
+      int total=SymbolsTotal(false);
+      for(int i=0;i<total;i++)
+        {
+         string nm=SymbolName(i,false);
+         if(CpCore(nm)!=cl) continue;
+         if(SymbolInfoInteger(nm,SYMBOL_TRADE_MODE)!=SYMBOL_TRADE_MODE_FULL) continue;
+         if(res=="" || StringLen(nm)<StringLen(res)) res=nm;
+        }
+     }
+   if(res!="") SymbolSelect(res,true);
+   int n=ArraySize(g_symFrom); ArrayResize(g_symFrom,n+1); ArrayResize(g_symTo,n+1);
+   g_symFrom[n]=lead; g_symTo[n]=res;
+   return res;
+  }
+// Money in US dollars, from this terminal's own FX quotes. -1 when it can't be converted.
+double CpToUSD(double v,string ccy)
+  {
+   if(ccy=="USD") return v;
+   string a=CpSymbol(ccy+"USD");
+   if(a!=""){ double b=SymbolInfoDouble(a,SYMBOL_BID); if(b>0) return v*b; }
+   string c=CpSymbol("USD"+ccy);
+   if(c!=""){ double b=SymbolInfoDouble(c,SYMBOL_BID); if(b>0) return v/b; }
+   return -1.0;
+  }
+
+//---------------------------------------------------------------- both sides
+// Does the history confirm this trade is really finished? A position: its closing volume has reached
+// its opening volume (a PARTIAL close is not a close). A pending order: cancelled, expired or rejected
+// (a FILLED order becomes a position with the same id, and is judged as that).
+bool CpConfirmClosed(ulong id)
+  {
+   if(id==0) return false;
+   if(HistorySelectByPosition(id))
+     {
+      double vin=0.0, vout=0.0;
+      for(int i=HistoryDealsTotal()-1;i>=0;i--)
+        {
+         ulong d=HistoryDealGetTicket(i);
+         if(d==0) continue;
+         long   de=HistoryDealGetInteger(d,DEAL_ENTRY);
+         double v =HistoryDealGetDouble(d,DEAL_VOLUME);
+         if(de==DEAL_ENTRY_IN) vin+=v;
+         else if(de==DEAL_ENTRY_OUT || de==DEAL_ENTRY_OUT_BY) vout+=v;
+        }
+      if(vin>0.0 && vout>=vin-1e-8) return true;
+     }
+   if(HistoryOrderSelect(id))
+     {
+      long st=HistoryOrderGetInteger(id,ORDER_STATE);
+      if(st==ORDER_STATE_CANCELED || st==ORDER_STATE_EXPIRED || st==ORDER_STATE_REJECTED) return true;
+     }
+   return false;
+  }
+
+//---------------------------------------------------------------- Lead
+ulong CpSeen(ulong id)
+  {
+   int i=CpIdx(g_seenId,id);
+   if(i>=0) return g_seenMs[i];
+   CpAdd(g_seenId,g_seenMs,id);
+   return GetTickCount64();
+  }
+// The Lead's open trades and pending orders, one line each, plus the closes it has confirmed.
+//   P|id|symbol|dir|-1|lots|open|sl|tp|age s|first seen ms        (a position)
+//   O|ticket|symbol|dir|order type|lots|price|sl|tp|0|first seen   (a pending order)
+//   X|id                                                           (confirmed closed or cancelled)
+// sig leaves out what changes every second (age), so the file is rewritten on a real change and
+// otherwise once a second. Copies of another Lead are never published, so a chain can't loop.
+void CpLeadLines(string &lines[],string &sig)
+  {
+   ArrayResize(lines,0); sig="";
+   ulong ids[]; int nid=0;
+   long srvNow=(long)TimeTradeServer();
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetInteger(POSITION_MAGIC)==InpCopyMagic) continue;
+      ulong  id =(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      string sym=PositionGetString(POSITION_SYMBOL);
+      int    dg =(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+      int    dir=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? 1 : -1;
+      long   age=srvNow-(long)PositionGetInteger(POSITION_TIME); if(age<0) age=0;
+      string core=StringFormat("P|%I64u|%s|%d|-1|%s|%s|%s|%s",id,sym,dir,
+                  DoubleToString(PositionGetDouble(POSITION_VOLUME),2),DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),dg),
+                  DoubleToString(PositionGetDouble(POSITION_SL),dg),DoubleToString(PositionGetDouble(POSITION_TP),dg));
+      int n=ArraySize(lines); ArrayResize(lines,n+1);
+      lines[n]=core+StringFormat("|%I64d|%I64u",age,CpSeen(id));
+      sig+=core+";";
+      ArrayResize(ids,nid+1); ids[nid++]=id;
+     }
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      ulong tk=OrderGetTicket(i);
+      if(!OrderSelect(tk)) continue;
+      if(OrderGetInteger(ORDER_MAGIC)==InpCopyMagic) continue;
+      long ot=OrderGetInteger(ORDER_TYPE);
+      if(ot!=ORDER_TYPE_BUY_LIMIT && ot!=ORDER_TYPE_SELL_LIMIT && ot!=ORDER_TYPE_BUY_STOP && ot!=ORDER_TYPE_SELL_STOP) continue;
+      string sym=OrderGetString(ORDER_SYMBOL);
+      int    dg =(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
+      int    dir=(ot==ORDER_TYPE_BUY_LIMIT || ot==ORDER_TYPE_BUY_STOP) ? 1 : -1;
+      string core=StringFormat("O|%I64u|%s|%d|%d|%s|%s|%s|%s",tk,sym,dir,(int)ot,
+                  DoubleToString(OrderGetDouble(ORDER_VOLUME_CURRENT),2),DoubleToString(OrderGetDouble(ORDER_PRICE_OPEN),dg),
+                  DoubleToString(OrderGetDouble(ORDER_SL),dg),DoubleToString(OrderGetDouble(ORDER_TP),dg));
+      int n=ArraySize(lines); ArrayResize(lines,n+1);
+      lines[n]=core+StringFormat("|0|%I64u",CpSeen(tk));
+      sig+=core+";";
+      ArrayResize(ids,nid+1); ids[nid++]=tk;
+     }
+   // Gone since last time: announce a close only once the history confirms it - a trade that merely
+   // vanished for a moment (a reconnect) is never reported closed. Each is re-checked for 10 seconds.
+   for(int i=0;i<ArraySize(g_leadIds);i++)
+     {
+      bool still=false;
+      for(int j=0;j<nid;j++) if(ids[j]==g_leadIds[i]){ still=true; break; }
+      if(!still) CpAdd(g_pcId,g_pcMs,g_leadIds[i]);
+     }
+   ArrayResize(g_leadIds,nid);
+   for(int j=0;j<nid;j++) g_leadIds[j]=ids[j];
+   ulong nowMs=GetTickCount64();
+   for(int i=ArraySize(g_pcId)-1;i>=0;i--)
+     {
+      bool back=false;
+      for(int j=0;j<nid;j++) if(ids[j]==g_pcId[i]){ back=true; break; }
+      bool conf=(!back && CpConfirmClosed(g_pcId[i]));
+      if(conf) CpAdd(g_xId,g_xMs,g_pcId[i]);
+      if(back || conf || nowMs-g_pcMs[i]>10000) CpDelAt(g_pcId,g_pcMs,i);
+     }
+   for(int i=ArraySize(g_xId)-1;i>=0;i--)
+      if(nowMs-g_xMs[i]>(ulong)CP_KEEP_CLOSED*1000) CpDelAt(g_xId,g_xMs,i);
+   for(int i=0;i<ArraySize(g_xId);i++)
+     {
+      int n=ArraySize(lines); ArrayResize(lines,n+1);
+      lines[n]=StringFormat("X|%I64u",g_xId[i]);
+      sig+=lines[n]+";";
+     }
+   for(int i=ArraySize(g_seenId)-1;i>=0;i--)
+     {
+      bool here=false;
+      for(int j=0;j<nid;j++) if(ids[j]==g_seenId[i]){ here=true; break; }
+      if(!here) CpDelAt(g_seenId,g_seenMs,i);
+     }
+  }
+// Header, body, and an end line repeating the header's sequence number and the line count, so a
+// reader that catches the file mid-write can tell and simply reads it again.
+void CpLeadWrite(string &lines[])
+  {
+   string login=CpLogin();
+   int h=FileOpen(CpFileL(login),FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+   if(h==INVALID_HANDLE) return;
+   long seq=(long)GetTickCount64(); if(seq<=g_copySeq) seq=g_copySeq+1; g_copySeq=seq;
+   int n=ArraySize(lines);
+   FileWriteString(h,StringFormat("H|1|%s|%s|%s|%s|%s|%I64d|%I64d|%d\r\n",login,
+                   CpClean(AccountInfoString(ACCOUNT_COMPANY)),CpClean(AccountInfoString(ACCOUNT_SERVER)),AccountInfoString(ACCOUNT_CURRENCY),
+                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),(long)TimeGMT(),seq,g_copyOverCap?1:0));
+   for(int i=0;i<n;i++) FileWriteString(h,lines[i]+"\r\n");
+   FileWriteString(h,StringFormat("E|%I64d|%d\r\n",seq,n));
+   FileClose(h);
+  }
+// The Lead writes only from a settled, connected terminal. Disconnected or just reconnected, it stays
+// silent: its file goes stale and every Follow account simply holds still.
+void CopyLeadTick()
+  {
+   if(InpCopyMagic==InpMagic || !CpHedging() || !CpSettled()) return;
+   string lines[]; string sig;
+   CpLeadLines(lines,sig);
+   if(!CpOwn("L")) return;
+   ulong now=GetTickCount64();
+   if(sig==g_copyLeadSig && now-g_copyLeadAt<1000) return;
+   g_copyLeadSig=sig; g_copyLeadAt=now;
+   CpLeadWrite(lines);
+  }
+
+//---------------------------------------------------------------- Follow: reading the Lead
+// A Lead file into its header fields, trades and confirmed closes. False unless the file is complete.
+// Header: [2] login [3] company [4] server [5] currency [6] balance [7] GMT written [8] sequence [9] over cap
+bool CpReadLead(string file,string &hdr[],CpItem &items[],ulong &closed[])
+  {
+   ArrayResize(hdr,0); ArrayResize(items,0); ArrayResize(closed,0);
+   int h=FileOpen(file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+   if(h==INVALID_HANDLE) return false;
+   bool ok=false; int body=0; string seq="";
+   while(!FileIsEnding(h))
+     {
+      string ln=FileReadString(h);
+      if(ln=="") continue;
+      string f[]; int nf=StringSplit(ln,'|',f);
+      if(nf<1) continue;
+      if(f[0]=="H"){ if(nf>=10){ ArrayCopy(hdr,f); seq=f[8]; } continue; }
+      if(f[0]=="E"){ ok=(nf>=3 && seq!="" && f[1]==seq && (int)StringToInteger(f[2])==body); break; }
+      body++;
+      if(f[0]=="X" && nf>=2){ int n=ArraySize(closed); ArrayResize(closed,n+1); closed[n]=(ulong)StringToInteger(f[1]); continue; }
+      if((f[0]=="P" || f[0]=="O") && nf>=11)
+        {
+         int n=ArraySize(items); ArrayResize(items,n+1);
+         items[n].pos  =(f[0]=="P");
+         items[n].tk   =(ulong)StringToInteger(f[1]);
+         items[n].sym  =f[2];
+         items[n].dir  =(int)StringToInteger(f[3]);
+         items[n].otype=(int)StringToInteger(f[4]);
+         items[n].vol  =StringToDouble(f[5]);
+         items[n].open =StringToDouble(f[6]);
+         items[n].sl   =StringToDouble(f[7]);
+         items[n].tp   =StringToDouble(f[8]);
+         items[n].age  =StringToDouble(f[9]);
+         items[n].seen =(ulong)StringToInteger(f[10]);
+        }
+     }
+   FileClose(h);
+   return ok && ArraySize(hdr)>=10;
+  }
+// Which Lead to follow: the one live Lead on this PC, or the login in Inputs. With none (or two and
+// no choice made) it keeps the one it had, so that Lead's closes still reach its copies.
+void CpPickLead()
+  {
+   string fname, me=CpLogin();
+   long found=0; int nfresh=0;
+   long hf=FileFindFirst("SessionTool_copy_L_*.txt",fname,FILE_COMMON);
+   if(hf!=INVALID_HANDLE)
+     {
+      do
+        {
+         string hdr[]; CpItem it[]; ulong cl[];
+         if(!CpReadLead(fname,hdr,it,cl)) continue;
+         if(hdr[2]==me) continue;
+         if((long)TimeGMT()-StringToInteger(hdr[7])>CP_FRESH_SEC) continue;
+         long lg=StringToInteger(hdr[2]);
+         if(InpCopyFrom>0 && lg!=InpCopyFrom) continue;
+         nfresh++; found=lg;
+        }
+      while(FileFindNext(hf,fname));
+      FileFindClose(hf);
+     }
+   g_leadCount=nfresh;
+   if(nfresh==1) g_copyLead=found;
+   else if(InpCopyFrom>0) g_copyLead=InpCopyFrom;
+  }
+
+//---------------------------------------------------------------- Follow: the copies
+string CpKey(long lead,ulong lt){ return "MMC_"+IntegerToString(lead)+"_"+IntegerToString((long)lt)+"_"; }
+void CpSaveMap(int m)
+  {
+   string k=CpKey(g_cm[m].lead,g_cm[m].lt);
+   GlobalVariableSet(k+"ft",(double)g_cm[m].ft);
+   GlobalVariableSet(k+"lv",g_cm[m].lv0);
+   GlobalVariableSet(k+"fv",g_cm[m].fv0);
+   GlobalVariableSet(k+"st",(double)g_cm[m].st);
+  }
+void CpInitRuntime(int m){ g_cm[m].tryMs=0; g_cm[m].waitMs=1000; g_cm[m].goneMs=0; g_cm[m].fails=0; }
+// The copies are kept in terminal global variables, so a restart - or another chart on this account
+// taking over - carries on following them instead of opening them again.
+void CpLoadMaps()
+  {
+   ArrayResize(g_cm,0);
+   for(int i=0;i<GlobalVariablesTotal();i++)
+     {
+      string nm=GlobalVariableName(i);
+      if(StringFind(nm,"MMC_")!=0) continue;
+      string parts[];
+      if(StringSplit(nm,'_',parts)!=4 || parts[3]!="st") continue;
+      long lead=StringToInteger(parts[1]); ulong lt=(ulong)StringToInteger(parts[2]);
+      if(lead<=0 || lt==0) continue;
+      string k=CpKey(lead,lt);
+      int m=ArraySize(g_cm); ArrayResize(g_cm,m+1);
+      g_cm[m].lead=lead; g_cm[m].lt=lt;
+      g_cm[m].ft =(ulong)(GlobalVariableCheck(k+"ft") ? GlobalVariableGet(k+"ft") : 0.0);
+      g_cm[m].lv0=GlobalVariableCheck(k+"lv") ? GlobalVariableGet(k+"lv") : 0.0;
+      g_cm[m].fv0=GlobalVariableCheck(k+"fv") ? GlobalVariableGet(k+"fv") : 0.0;
+      g_cm[m].st =(int)GlobalVariableGet(nm);
+      CpInitRuntime(m);
+     }
+  }
+int CpFindMap(long lead,ulong lt)
+  {
+   for(int i=0;i<ArraySize(g_cm);i++) if(g_cm[i].st>0 && g_cm[i].lead==lead && g_cm[i].lt==lt) return i;
+   return -1;
+  }
+// Claim a Lead trade BEFORE sending anything, in the shared variables, so no other chart can copy it.
+int CpReserve(ulong lt)
+  {
+   int m=ArraySize(g_cm); ArrayResize(g_cm,m+1);
+   g_cm[m].lead=g_copyLead; g_cm[m].lt=lt; g_cm[m].ft=0; g_cm[m].lv0=0; g_cm[m].fv0=0; g_cm[m].st=1;
+   CpInitRuntime(m); g_cm[m].tryMs=GetTickCount64();
+   CpSaveMap(m); GlobalVariablesFlush();
+   return m;
+  }
+void CpSkipMap(int m,string why)
+  {
+   g_cm[m].st=2; CpSaveMap(m);
+   g_cpLast=why; g_cpLastWarn=true;
+   PrintFormat("COPIER: lead #%I64u not copied - %s",g_cm[m].lt,why);
+  }
+void CpSkip(ulong lt,string why){ int m=CpReserve(lt); CpSkipMap(m,why); }
+void CpForget(int m)
+  {
+   string k=CpKey(g_cm[m].lead,g_cm[m].lt);
+   GlobalVariableDel(k+"ft"); GlobalVariableDel(k+"lv"); GlobalVariableDel(k+"fv"); GlobalVariableDel(k+"st");
+   g_cm[m].st=0;
+  }
+void CpCompact()
+  {
+   int j=0;
+   for(int i=0;i<ArraySize(g_cm);i++){ if(g_cm[i].st==0) continue; if(j!=i) g_cm[j]=g_cm[i]; j++; }
+   ArrayResize(g_cm,j);
+  }
+// Pacing per copy: after any request, wait before the next; after refusals, wait longer - 1s, then 10s
+// from the 3rd, then a minute from the 10th - so nothing ever hammers the server (prop firms limit
+// requests). Closes keep trying at that pace; everything else too, and the card says so.
+bool CpReady(int m){ return GetTickCount64()-g_cm[m].tryMs>=g_cm[m].waitMs; }
+void CpTouch(int m){ g_cm[m].tryMs=GetTickCount64(); }
+void CpOk(int m){ g_cm[m].fails=0; g_cm[m].waitMs=1000; }
+void CpFail(int m,string what)
+  {
+   g_cm[m].fails++;
+   g_cm[m].waitMs=(g_cm[m].fails<3) ? 1000 : ((g_cm[m].fails<10) ? 10000 : 60000);
+   if(g_cm[m].fails==1 || g_cm[m].fails%10==0)
+      PrintFormat("COPIER: %s on the copy of lead #%I64u refused (%d %s) - trying again.",what,g_cm[m].lt,
+                  (int)copyTrade.ResultRetcode(),copyTrade.ResultRetcodeDescription());
+   if(g_cm[m].fails==3){ g_cpLast=what+" refused - retrying"; g_cpLastWarn=true; }
+  }
+void CpTradeFor(string sym){ copyTrade.SetTypeFillingBySymbol(sym); }
+int  CpFindItem(CpItem &items[],ulong tk){ for(int i=0;i<ArraySize(items);i++) if(items[i].tk==tk) return i; return -1; }
+bool CpFindPos(ulong id,ulong &tk,string &sym,int &dir,double &vol,double &op,double &sl,double &tp)
+  {
+   if(id==0) return false;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong t=PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if((ulong)PositionGetInteger(POSITION_IDENTIFIER)!=id) continue;
+      tk=t; sym=PositionGetString(POSITION_SYMBOL);
+      dir=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY) ? 1 : -1;
+      vol=PositionGetDouble(POSITION_VOLUME); op=PositionGetDouble(POSITION_PRICE_OPEN);
+      sl=PositionGetDouble(POSITION_SL); tp=PositionGetDouble(POSITION_TP);
+      return true;
+     }
+   return false;
+  }
+// A copy this account holds for a Lead trade, found by its comment - for a send that timed out but
+// went through anyway. Returns its position id or order ticket, 0 if there is none.
+ulong CpAdopt(ulong lt,double &vol)
+  {
+   string cm="STC "+IntegerToString((long)lt);
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong t=PositionGetTicket(i);
+      if(!PositionSelectByTicket(t)) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpCopyMagic || PositionGetString(POSITION_COMMENT)!=cm) continue;
+      vol=PositionGetDouble(POSITION_VOLUME);
+      return (ulong)PositionGetInteger(POSITION_IDENTIFIER);
+     }
+   for(int i=OrdersTotal()-1;i>=0;i--)
+     {
+      ulong t=OrderGetTicket(i);
+      if(!OrderSelect(t)) continue;
+      if(OrderGetInteger(ORDER_MAGIC)!=InpCopyMagic || OrderGetString(ORDER_COMMENT)!=cm) continue;
+      vol=OrderGetDouble(ORDER_VOLUME_CURRENT);
+      return t;
+     }
+   return 0;
+  }
+// Lots for a copy: THIS account's Risk setting over the stop distance, so each account risks its own
+// amount (Nestor: the 70K at £500, the 10K at £70). Rounded DOWN to the lot step, never above the risk:
+// if even the broker's minimum lot would risk more than 1.2x the setting, the copy is skipped. With no
+// stop to size from, the same share of the account as the Lead's trade.
+double CopyLots(string sym,int dir,double entry,double slPx,double leadLots,double leadBal,double &riskMoney)
+  {
+   riskMoney=0.0;
+   double step=SymbolInfoDouble(sym,SYMBOL_VOLUME_STEP), vmin=SymbolInfoDouble(sym,SYMBOL_VOLUME_MIN), vmax=SymbolInfoDouble(sym,SYMBOL_VOLUME_MAX);
+   if(step<=0) return 0.0;
+   double lots=0.0;
+   if(g_riskMode==RISK_FIXED_LOT) lots=g_fixedLot;
+   else if(slPx>0)
+     {
+      double want=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0 : g_riskAmount;
+      double perLot=RiskAtStop(sym,dir,1.0,entry,slPx);
+      if(perLot>0){ lots=want/perLot; riskMoney=want; }
+     }
+   if(lots<=0 && leadLots>0 && leadBal>0) lots=leadLots*CurrentBalance()/leadBal;
+   if(lots<=0) return 0.0;
+   lots=MathFloor(lots/step+1e-9)*step;
+   if(lots<vmin)
+     {
+      if(riskMoney>0 && RiskAtStop(sym,dir,vmin,entry,slPx)>riskMoney*1.2) return 0.0;
+      lots=vmin;
+     }
+   if(lots>vmax) lots=vmax;
+   return NormalizeDouble(lots,VolumeDigits(step));
+  }
+// Is the price here still fair for a Lead position? Never worse than the Lead's entry by more than 20%
+// of its stop (or the spread, if that is more) - the same slip rule the EA's own market orders use.
+bool CpFair(string fsym,const CpItem &it,double &px,string &why)
+  {
+   double ask=SymbolInfoDouble(fsym,SYMBOL_ASK), bid=SymbolInfoDouble(fsym,SYMBOL_BID);
+   if(ask<=0 || bid<=0){ why=fsym+" has no price"; return false; }
+   px=(it.dir>0) ? ask : bid;
+   if(MathAbs(px-it.open)>it.open*0.01){ why=fsym+" price differs from the Lead's"; return false; }
+   double slDist=(it.sl>0) ? MathAbs(it.open-it.sl) : 0.0;
+   double spread=ask-bid, pip=SymbolPipFor(fsym);
+   double tol=(slDist>0) ? MathMax(slDist*SLIP_PCT_OF_SL/100.0,spread) : MathMax(spread*2.0,pip);
+   double adverse=(it.dir>0) ? px-it.open : it.open-px;
+   if(adverse>tol){ why=StringFormat("%s skipped - price moved %.1f %s",fsym,(pip>0)?adverse/pip:0.0,DistUnitKey(fsym)); return false; }
+   return true;
+  }
+// The Lead has a stop, but it sits at (or past) break-even: there is no risk distance to size from or
+// to place at our fill, so the copy is skipped rather than opened without a real stop.
+bool CpStopAtBE(string fsym,const CpItem &it)
+  {
+   if(it.sl<=0) return false;
+   double loss=(it.dir>0) ? it.open-it.sl : it.sl-it.open;
+   return loss<SymbolPipFor(fsym)*0.5;
+  }
+// Session Tool detail for a copy - the same stamp the EA leaves on its own trades: stop distance and
+// money at risk (the Lead's stop, at our fill), target in pips and R, the unit. Once, at first sight.
+void CpStampCopy(ulong posId,string sym,int dir,double op,double sl,double tp,double lots)
+  {
+   string sk="MMD_"+(string)posId+"_";
+   if(GlobalVariableCheck(sk+"risk")) return;
+   double pip=SymbolPipFor(sym);
+   double slp=(sl>0 && pip>0) ? MathAbs(op-sl)/pip : 0.0;
+   double tpp=(tp>0 && pip>0) ? MathAbs(tp-op)/pip : 0.0;
+   GlobalVariableSet(sk+"sl",  slp);
+   GlobalVariableSet(sk+"risk",RiskAtStop(sym,dir,lots,op,sl));
+   GlobalVariableSet(sk+"tpr", (slp>0) ? tpp/slp : 0.0);
+   GlobalVariableSet(sk+"tpp", tpp);
+   GlobalVariableSet(sk+"du",  (double)DistUnitFor(sym));
+   GlobalVariableSet(sk+"mfe", 0.0);
+   GlobalVariableSet(sk+"tpx", tp);
+   GlobalVariableSet(sk+"lsl", sl);
+  }
+// A send that failed may still have gone through (a timeout): adopt the copy if it is there, otherwise
+// the trade is skipped.
+bool CpAdoptOrSkip(int m,ulong lt,double leadVol,string why)
+  {
+   double av=0.0;
+   ulong at=CpAdopt(lt,av);
+   if(at>0)
+     {
+      g_cm[m].ft=at; g_cm[m].lv0=leadVol; g_cm[m].fv0=av; g_cm[m].st=1; CpSaveMap(m);
+      PrintFormat("COPIER: the send for lead #%I64u reported '%s' but the copy #%I64u is there - following it.",lt,why,at);
+      return true;
+     }
+   CpSkipMap(m,why);
+   return false;
+  }
+// A Lead position copied at market. m<0: a new copy (claimed here). m>=0: the Lead's pending order
+// filled before ours, which was just cancelled - its copy is taken at market instead.
+bool CpOpenMarket(int m,const CpItem &it,string fsym)
+  {
+   if(!CpStillOwner("F")) return false;
+   if(CpStopAtBE(fsym,it)){ if(m<0) CpSkip(it.tk,fsym+" skipped - Lead stop at break-even"); else CpSkipMap(m,fsym+" skipped - Lead stop at break-even"); return false; }
+   double px=0.0; string why="";
+   if(!CpFair(fsym,it,px,why)){ if(m<0) CpSkip(it.tk,why); return false; }
+   double slDist=(it.sl>0) ? MathAbs(it.open-it.sl) : 0.0;
+   double sl=(slDist>0) ? CpNorm(fsym,px-it.dir*slDist) : 0.0;
+   double tp=(it.tp>0) ? CpNorm(fsym,px+(it.tp-it.open)) : 0.0;
+   double risk=0.0;
+   double lots=CopyLots(fsym,it.dir,px,sl,it.vol,g_leadBal,risk);
+   if(lots<=0){ string w=fsym+" skipped - lot too small for this risk"; if(m<0) CpSkip(it.tk,w); else CpSkipMap(m,w); return false; }
+   if(m<0) m=CpReserve(it.tk);
+   CpTouch(m);
+   CpTradeFor(fsym);
+   double pt=SymbolInfoDouble(fsym,SYMBOL_POINT);
+   double spread=SymbolInfoDouble(fsym,SYMBOL_ASK)-SymbolInfoDouble(fsym,SYMBOL_BID);
+   double tolPx=(slDist>0) ? MathMax(slDist*SLIP_PCT_OF_SL/100.0,spread) : MathMax(spread,SymbolPipFor(fsym));
+   if(pt>0) copyTrade.SetDeviationInPoints((ulong)MathMax(1.0,MathRound(tolPx/pt)));
+   string cm="STC "+IntegerToString((long)it.tk);
+   bool ok=(it.dir>0) ? copyTrade.Buy(lots,fsym,0,sl,tp,cm) : copyTrade.Sell(lots,fsym,0,sl,tp,cm);
+   uint rc=copyTrade.ResultRetcode();
+   if(!ok || (rc!=TRADE_RETCODE_DONE && rc!=TRADE_RETCODE_DONE_PARTIAL && rc!=TRADE_RETCODE_PLACED))
+      return CpAdoptOrSkip(m,it.tk,it.vol,fsym+" refused - "+copyTrade.ResultRetcodeDescription());
+   g_cm[m].ft=copyTrade.ResultOrder(); g_cm[m].lv0=it.vol; g_cm[m].fv0=lots; g_cm[m].st=1;
+   CpSaveMap(m);
+   long lat=(it.seen>0) ? (long)(GetTickCount64()-it.seen) : -1;
+   g_cpLast=StringFormat("%s %s %s lots",fsym,CpDirWord(it.dir),DoubleToString(lots,2))
+           +((lat>=0 && lat<60000) ? " · "+DoubleToString(lat/1000.0,1)+"s" : "");
+   g_cpLastWarn=false;
+   PrintFormat("COPIER: copied lead #%I64u -> %s %s %s lots (risk %s) as #%I64u",it.tk,fsym,CpDirWord(it.dir),
+               DoubleToString(lots,2),DoubleToString(risk,2),g_cm[m].ft);
+   return true;
+  }
+// A Lead pending order copied as a pending order at the same levels.
+void CpOpenPending(const CpItem &it,string fsym)
+  {
+   if(!CpStillOwner("F")) return;
+   if(CpStopAtBE(fsym,it)){ CpSkip(it.tk,fsym+" skipped - Lead stop at entry"); return; }
+   double price=CpNorm(fsym,it.open);
+   double sl=(it.sl>0) ? CpNorm(fsym,it.sl) : 0.0;
+   double tp=(it.tp>0) ? CpNorm(fsym,it.tp) : 0.0;
+   double risk=0.0;
+   double lots=CopyLots(fsym,it.dir,price,sl,it.vol,g_leadBal,risk);
+   if(lots<=0){ CpSkip(it.tk,fsym+" skipped - lot too small for this risk"); return; }
+   int m=CpReserve(it.tk);
+   CpTradeFor(fsym);
+   string cm="STC "+IntegerToString((long)it.tk);
+   bool ok=copyTrade.OrderOpen(fsym,(ENUM_ORDER_TYPE)it.otype,lots,0.0,price,sl,tp,ORDER_TIME_GTC,0,cm);
+   uint rc=copyTrade.ResultRetcode();
+   if(!ok || (rc!=TRADE_RETCODE_DONE && rc!=TRADE_RETCODE_PLACED))
+     { CpAdoptOrSkip(m,it.tk,it.vol,fsym+" order refused - "+copyTrade.ResultRetcodeDescription()); return; }
+   g_cm[m].ft=copyTrade.ResultOrder(); g_cm[m].lv0=it.vol; g_cm[m].fv0=lots;
+   CpSaveMap(m);
+   bool lim=(it.otype==ORDER_TYPE_BUY_LIMIT || it.otype==ORDER_TYPE_SELL_LIMIT);
+   g_cpLast=StringFormat("%s %s %s %s lots",fsym,CpDirWord(it.dir),lim?"limit":"stop",DoubleToString(lots,2));
+   g_cpLastWarn=false;
+   PrintFormat("COPIER: copied lead order #%I64u -> %s %s %s %s lots as #%I64u",it.tk,fsym,CpDirWord(it.dir),lim?"limit":"stop",
+               DoubleToString(lots,2),g_cm[m].ft);
+  }
+// Stop and target: the Lead's distance from its entry, applied to ours. True if a change went through.
+bool CpSyncStops(int m,ulong ptk,string sym,int dir,double sl,double tp,double wantSL,double wantTP)
+  {
+   double pt=SymbolInfoDouble(sym,SYMBOL_POINT); if(pt<=0) return false;
+   double tol=pt*0.6;
+   wantSL=CpNorm(sym,wantSL);
+   wantTP=CpNorm(sym,wantTP);
+   bool needSL=(MathAbs(wantSL-sl)>tol), needTP=(MathAbs(wantTP-tp)>tol);
+   if(!needSL && !needTP) return false;
+   // A level price has already passed can't be set - the server refuses it. Hold that one and try
+   // again when it can be (the Lead's own stop usually closes both first).
+   double bid=SymbolInfoDouble(sym,SYMBOL_BID), ask=SymbolInfoDouble(sym,SYMBOL_ASK);
+   double lvl=(double)SymbolInfoInteger(sym,SYMBOL_TRADE_STOPS_LEVEL)*pt;
+   if(needSL && wantSL>0 && ((dir>0 && wantSL>bid-lvl) || (dir<0 && wantSL<ask+lvl))) needSL=false;
+   if(needTP && wantTP>0 && ((dir>0 && wantTP<bid+lvl) || (dir<0 && wantTP>ask-lvl))) needTP=false;
+   if(!needSL && !needTP) return false;
+   CpTouch(m); CpTradeFor(sym);
+   if(copyTrade.PositionModify(ptk,needSL?wantSL:sl,needTP?wantTP:tp)){ CpOk(m); return true; }
+   CpFail(m,sym+" stop/target move");
+   return false;
+  }
+// A partial close on the Lead: close the same share of ours. Never adds back, never goes below the
+// broker's minimum lot.
+void CpSyncVolume(int m,ulong ptk,string sym,double vol,double leadVol)
+  {
+   double step=SymbolInfoDouble(sym,SYMBOL_VOLUME_STEP), vmin=SymbolInfoDouble(sym,SYMBOL_VOLUME_MIN);
+   if(step<=0 || g_cm[m].lv0<=0) return;
+   double target=MathRound(g_cm[m].fv0*leadVol/g_cm[m].lv0/step)*step;
+   if(target<vmin) target=vmin;
+   double cut=NormalizeDouble(vol-target,VolumeDigits(step));
+   if(cut<step-1e-9 || cut<vmin-1e-9) return;
+   CpTouch(m); CpTradeFor(sym);
+   if(copyTrade.PositionClosePartial(ptk,cut)){ CpOk(m); PrintFormat("COPIER: lead #%I64u part-closed -> closed %s lots of the copy.",g_cm[m].lt,DoubleToString(cut,2)); }
+   else CpFail(m,sym+" partial close");
+  }
+// A pending copy: keep its level, stop and target on the Lead's (the order must be selected).
+void CpSyncOrder(int m,ulong ft,string sym,const CpItem &it)
+  {
+   double pt=SymbolInfoDouble(sym,SYMBOL_POINT); if(pt<=0) return;
+   double tol=pt*0.6;
+   double p=OrderGetDouble(ORDER_PRICE_OPEN), sl=OrderGetDouble(ORDER_SL), tp=OrderGetDouble(ORDER_TP);
+   double wp=CpNorm(sym,it.open), wsl=CpNorm(sym,it.sl), wtp=CpNorm(sym,it.tp);
+   if(MathAbs(wp-p)<=tol && MathAbs(wsl-sl)<=tol && MathAbs(wtp-tp)<=tol) return;
+   CpTouch(m); CpTradeFor(sym);
+   if(copyTrade.OrderModify(ft,wp,wsl,wtp,ORDER_TIME_GTC,0)) CpOk(m);
+   else CpFail(m,sym+" order move");
+  }
+// The Lead's trade is finished: close or cancel ours. True only once this account's history confirms
+// nothing of it is left (a close that filled in part keeps being worked); if the history never says,
+// after 10 minutes of it being in neither list.
+bool CpCloseCopy(int m)
+  {
+   ulong ft=g_cm[m].ft;
+   if(ft==0) return true;
+   if(!CpReady(m)) return false;
+   ulong ptk=0; string sym=""; int dir=0; double vol=0,op=0,sl=0,tp=0;
+   if(CpFindPos(ft,ptk,sym,dir,vol,op,sl,tp))
+     {
+      CpTouch(m); CpTradeFor(sym);
+      if(copyTrade.PositionClose(ptk)){ CpOk(m); PrintFormat("COPIER: lead #%I64u closed -> closing copy #%I64u",g_cm[m].lt,ft); }
+      else CpFail(m,sym+" close");
+      return false;
+     }
+   if(OrderSelect(ft))
+     {
+      string osym=OrderGetString(ORDER_SYMBOL);
+      CpTouch(m); CpTradeFor(osym);
+      if(copyTrade.OrderDelete(ft)){ CpOk(m); PrintFormat("COPIER: lead order #%I64u gone -> cancelling copy #%I64u",g_cm[m].lt,ft); }
+      else CpFail(m,osym+" cancel");
+      return false;
+     }
+   if(CpConfirmClosed(ft)) return true;
+   return (g_cm[m].goneMs>0 && GetTickCount64()-g_cm[m].goneMs>600000);
+  }
+// One copy, while its Lead trade is still there.
+void CpFollowOne(int m,const CpItem &it)
+  {
+   if(!CpReady(m)) return;                               // just acted, or backing off after refusals
+   ulong ft=g_cm[m].ft;
+   ulong ptk=0; string sym=""; int dir=0; double vol=0,op=0,sl=0,tp=0;
+   if(CpFindPos(ft,ptk,sym,dir,vol,op,sl,tp))
+     {
+      double wantSL=(it.sl>0) ? op+(it.sl-it.open) : 0.0;
+      double wantTP=(it.tp>0) ? op+(it.tp-it.open) : 0.0;
+      CpStampCopy(ft,sym,dir,op,CpNorm(sym,wantSL),CpNorm(sym,wantTP),vol);
+      if(CpSyncStops(m,ptk,sym,dir,sl,tp,wantSL,wantTP)) return;
+      if(it.pos && g_cm[m].lv0>0 && it.vol<g_cm[m].lv0-1e-8) CpSyncVolume(m,ptk,sym,vol,it.vol);
+      return;
+     }
+   if(ft>0 && OrderSelect(ft))
+     {
+      string osym=OrderGetString(ORDER_SYMBOL);
+      if(!it.pos){ CpSyncOrder(m,ft,osym,it); return; }
+      // The Lead's order filled and ours has not: take it at market while the price is still fair,
+      // otherwise leave ours working.
+      double px=0.0; string why="";
+      if(!CpFair(osym,it,px,why)) return;
+      CpTouch(m); CpTradeFor(osym);
+      if(copyTrade.OrderDelete(ft)){ g_cm[m].ft=0; CpSaveMap(m); CpOpenMarket(m,it,osym); }
+      else CpFail(m,osym+" cancel");
+      return;
+     }
+   if(ft==0){ g_cm[m].st=2; CpSaveMap(m); return; }      // it never got going: skipped
+   // Neither open nor pending here. Only a CLOSED record in this account's history means it is gone
+   // (its own stop or target, or closed by hand) - the lists can be mid-sync after a reconnect.
+   // Once gone it is never reopened.
+   if(!CpConfirmClosed(ft)) return;
+   g_cm[m].st=3; CpSaveMap(m);
+  }
+void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
+  {
+   bool canNew=true; string why="";
+   if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED)){ canNew=false; why="Algo Trading is off"; }
+   else if(!g_active){ canNew=false; why=g_pausedByLimit ? "daily limit reached" : "EA is OFF"; }
+   else if(DayLimitReached()){ canNew=false; why="daily limit reached"; }
+   else if(g_leadCap==1){ canNew=false; why="FTMO total over $400K"; }
+   else if(g_leadCount>1 && InpCopyFrom<=0){ canNew=false; why="2+ Leads - pick one in Inputs"; }
+   g_cpStatus=why; g_cpStatusWarn=!canNew;
+   ulong now=GetTickCount64();
+
+   // First, every copy we hold: follow its Lead trade, or close it when that is finished.
+   for(int m=0;m<ArraySize(g_cm);m++)
+     {
+      if(g_cm[m].lead!=g_copyLead || g_cm[m].st<=0) continue;
+      int li=CpFindItem(items,g_cm[m].lt);
+      if(li>=0)
+        {
+         g_cm[m].goneMs=0;
+         if(g_cm[m].st==1) CpFollowOne(m,items[li]);
+         else if(g_cm[m].st==2)
+           {
+            // skipped - unless a send that looked refused went through after all
+            double av=0.0; ulong at=CpAdopt(g_cm[m].lt,av);
+            if(at>0){ g_cm[m].ft=at; g_cm[m].fv0=av; g_cm[m].lv0=items[li].vol; g_cm[m].st=1; CpSaveMap(m); }
+           }
+         continue;
+        }
+      // The Lead no longer lists it.
+      if(g_cm[m].goneMs==0) g_cm[m].goneMs=now;
+      if(g_cm[m].st==1)
+        {
+         bool isClosed=false;
+         for(int k=0;k<ArraySize(closed);k++) if(closed[k]==g_cm[m].lt){ isClosed=true; break; }
+         // At once on a close the Lead's history confirmed; otherwise only after a full minute without
+         // it in the Lead's live snapshots.
+         if(!isClosed && now-g_cm[m].goneMs<CP_GONE_MS) continue;
+         if(!CpCloseCopy(m)) continue;                   // sent, or waiting for our history to confirm
+         g_cm[m].st=4; CpSaveMap(m);
+         continue;
+        }
+      // Skipped, closed here, or finished: kept an hour, so a Lead trade that reappears is never
+      // copied twice, then dropped.
+      if(now-g_cm[m].goneMs>3600000) CpForget(m);
+     }
+   CpCompact();
+
+   // Then Lead trades not copied yet.
+   for(int i=0;i<ArraySize(items);i++)
+     {
+      if(CpFindMap(g_copyLead,items[i].tk)>=0) continue;
+      if(GlobalVariableCheck(CpKey(g_copyLead,items[i].tk)+"st")) continue;   // another chart on this account took it
+      if(!canNew) continue;                  // shown as the status; copied when it can be, while still fresh
+      string fsym=CpSymbol(items[i].sym);
+      if(fsym==""){ CpSkip(items[i].tk,items[i].sym+" skipped - not on this account"); continue; }
+      if(items[i].pos)
+        {
+         if(items[i].age+fileAge>CP_MAX_AGE_SEC){ CpSkip(items[i].tk,fsym+" skipped - opened too long ago"); continue; }
+         CpOpenMarket(-1,items[i],fsym);
+        }
+      else CpOpenPending(items[i],fsym);
+     }
+  }
+// Follows only from a settled, connected terminal (after a reconnect this account's own lists resync
+// first), and only while the Lead's file is fresh.
+void CopyFollowTick()
+  {
+   if(InpCopyMagic==InpMagic) return;
+   if(!CpHedging()){ g_cpStatus="needs a hedging account"; g_cpStatusWarn=true; return; }
+   if(!CpSettled()) return;
+   bool own=CpOwn("F");
+   if(own && !g_ownF) CpLoadMaps();          // just took over from another chart: pick up its copies
+   g_ownF=own;
+   if(!own || g_copyLead==0) return;          // the panel says why
+   string hdr[]; CpItem items[]; ulong closed[];
+   if(!CpReadLead(CpFileL(IntegerToString(g_copyLead)),hdr,items,closed)) return;   // mid-write or gone: next time
+   long gmt=StringToInteger(hdr[7]);
+   g_leadLabel=CpAcctLabel(hdr[3],StringToDouble(hdr[6]));
+   g_leadGmt=gmt; g_leadBal=StringToDouble(hdr[6]); g_leadCap=(int)StringToInteger(hdr[9]);
+   long fileAge=(long)TimeGMT()-gmt;
+   if(fileAge>CP_FRESH_SEC){ g_cpStatus=""; g_cpStatusWarn=false; return; }   // Lead not running: leave every copy exactly as it is
+   g_leadSeq=StringToInteger(hdr[8]);
+   CpReconcile(items,closed,fileAge);
+  }
+// What this Follow account tells the Lead, once a second: who it copies, its risk, why it isn't copying
+// if it isn't, and the state of each Lead trade (1 copied, 2 skipped, 3 copied and since closed here,
+// 4 closed with the Lead).
+void CpFollowWrite()
+  {
+   if(!g_ownF) return;
+   int h=FileOpen(CpFileF(CpLogin()),FILE_WRITE|FILE_TXT|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+   if(h==INVALID_HANDLE) return;
+   string risk=CpRiskText();
+   FileWriteString(h,StringFormat("H|1|%s|%s|%s|%s|%s|%I64d|%I64d|%s|%d|%s\r\n",CpLogin(),
+                   CpClean(AccountInfoString(ACCOUNT_COMPANY)),CpClean(AccountInfoString(ACCOUNT_SERVER)),AccountInfoString(ACCOUNT_CURRENCY),
+                   DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),(long)TimeGMT(),g_copyLead,CpClean(risk),
+                   g_cpStatusWarn?1:0,(g_cpStatus!="") ? CpClean(g_cpStatus) : "-"));
+   int n=0;
+   for(int i=0;i<ArraySize(g_cm);i++)
+     {
+      if(g_cm[i].lead!=g_copyLead || g_cm[i].st<=0) continue;
+      FileWriteString(h,StringFormat("M|%I64u|%d\r\n",g_cm[i].lt,g_cm[i].st));
+      n++;
+     }
+   FileWriteString(h,StringFormat("E|%d\r\n",n));
+   FileClose(h);
+  }
+// This account's risk per trade, as the Lead's panel shows it: "£70", "0.10 lots".
+string CpRiskText()
+  {
+   if(g_riskMode==RISK_FIXED_LOT) return DoubleToString(g_fixedLot,2)+" lots";
+   double m=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0 : g_riskAmount;
+   return CurSymbol()+DoubleToString(m,(MathAbs(m-MathRound(m))<0.005) ? 0 : 2);
+  }
+
+//---------------------------------------------------------------- the TRADE COPIER card
+// Header: [2] login [3] company [4] server [5] currency [6] balance [7] GMT [8] Lead login [9] risk
+// [10] 1 = not copying new trades [11] why
+bool CpReadFollow(string file,string &hdr[],long &lts[],int &sts[])
+  {
+   ArrayResize(hdr,0); ArrayResize(lts,0); ArrayResize(sts,0);
+   int h=FileOpen(file,FILE_READ|FILE_TXT|FILE_ANSI|FILE_COMMON|FILE_SHARE_READ|FILE_SHARE_WRITE);
+   if(h==INVALID_HANDLE) return false;
+   bool ok=false; int n=0;
+   while(!FileIsEnding(h))
+     {
+      string ln=FileReadString(h);
+      if(ln=="") continue;
+      string f[]; int nf=StringSplit(ln,'|',f);
+      if(nf<1) continue;
+      if(f[0]=="H"){ if(nf>=12) ArrayCopy(hdr,f); continue; }
+      if(f[0]=="M" && nf>=3)
+        {
+         int k=ArraySize(lts); ArrayResize(lts,k+1); ArrayResize(sts,k+1);
+         lts[k]=StringToInteger(f[1]); sts[k]=(int)StringToInteger(f[2]); n++;
+         continue;
+        }
+      if(f[0]=="E"){ ok=(nf>=2 && (int)StringToInteger(f[1])==n); break; }
+     }
+   FileClose(h);
+   return ok && ArraySize(hdr)>=12;
+  }
+// Lead card: one row per Follow account - its risk and state - then the FTMO total.
+void CpLeadRows()
+  {
+   CpRowsClear();
+   if(!CpHedging()){ CpRow("Account","needs a hedging account",COL_PANEL_WARN); return; }
+   string me=CpLogin();
+   bool   ftmo=CpIsFtmo(AccountInfoString(ACCOUNT_COMPANY),AccountInfoString(ACCOUNT_SERVER));
+   double tot=0.0; bool totOk=true, anyFtmo=ftmo;
+   if(ftmo){ double u=CpToUSD(AccountInfoDouble(ACCOUNT_BALANCE),AccountInfoString(ACCOUNT_CURRENCY)); if(u<0) totOk=false; else tot+=u; }
+   int rows=0;
+   string fname;
+   long hf=FileFindFirst("SessionTool_copy_F_*.txt",fname,FILE_COMMON);
+   if(hf!=INVALID_HANDLE)
+     {
+      do
+        {
+         string hdr[]; long lts[]; int sts[];
+         if(!CpReadFollow(fname,hdr,lts,sts)) continue;
+         if(hdr[8]!=me) continue;                                  // follows another Lead
+         long age=(long)TimeGMT()-StringToInteger(hdr[7]);
+         if(age>86400) continue;                                    // not run for a day: no longer listed
+         double fb=StringToDouble(hdr[6]);
+         if(CpIsFtmo(hdr[3],hdr[4])){ anyFtmo=true; double u=CpToUSD(fb,hdr[5]); if(u<0) totOk=false; else tot+=u; }
+         if(rows>=CP_ROWS_MAX-2) continue;
+         string lbl=CpAcctLabel(hdr[3],fb);
+         for(int i=0;i<ArraySize(g_cpRowL);i++)
+            if(g_cpRowL[i]==lbl){ int _L=StringLen(hdr[2]); lbl+=" ·"+StringSubstr(hdr[2],(_L>4)?_L-4:0); break; }
+         string v="risk "+hdr[9]; color c=COL_PANEL_ACC;
+         if(age>CP_FRESH_SEC){ v+=" • not running"; c=COL_PANEL_WARN; }
+         else if(hdr[10]=="1"){ v+=" • "+hdr[11]; c=COL_PANEL_WARN; }
+         else
+           {
+            int open=ArraySize(g_leadIds), copied=0, missed=0;
+            for(int i=0;i<open;i++)
+               for(int j=0;j<ArraySize(lts);j++)
+                  if((ulong)lts[j]==g_leadIds[i]){ if(sts[j]==2) missed++; else copied++; break; }
+            if(open==0)             v+=" • ready";
+            else if(missed>0)     { v+=" • missed "+IntegerToString(missed); c=COL_PANEL_WARN; }
+            else if(copied==open)   v+=" • copied";
+            else                    v+=" • copying";
+           }
+         CpRow(lbl,v,c); rows++;
+        }
+      while(FileFindNext(hf,fname));
+      FileFindClose(hf);
+     }
+   if(rows==0) CpRow("Followers","none yet",COL_PANEL_LBL);
+   g_copyOverCap=false;
+   if(anyFtmo)
+     {
+      if(!totOk) CpRow("FTMO total","can't convert to USD",COL_PANEL_LBL);
+      else
+        {
+         g_copyOverCap=(tot>CP_FTMO_CAP);
+         color tc=(tot>CP_FTMO_CAP*0.9) ? COL_PANEL_WARN : COL_PANEL_LBL;
+         CpRow("FTMO total","$"+CpFmtK(tot)+" of $400K max"+(g_copyOverCap?" - over":""),tc);
+        }
+     }
+  }
+// Follow card: where it copies from, why it isn't copying (if it isn't), and the last copy.
+void CpFollowRows()
+  {
+   CpRowsClear();
+   if(!CpHedging()){ CpRow("Account","needs a hedging account",COL_PANEL_WARN); return; }
+   if(!TerminalInfoInteger(TERMINAL_CONNECTED)){ CpRow("Copying","paused - not connected",COL_PANEL_WARN); return; }
+   if(!g_ownF){ CpRow("Copying","starting, or done by another chart",COL_PANEL_LBL); return; }
+   string from; color c=COL_PANEL_WARN;
+   if(g_copyLead==0)                                               from=(g_leadCount>1) ? "2+ Leads - pick in Inputs" : "no Lead running";
+   else if(g_leadGmt==0 || (long)TimeGMT()-g_leadGmt>CP_FRESH_SEC) from=(g_leadLabel!="" ? g_leadLabel+" • " : "")+"not running";
+   else { from=g_leadLabel+" • live"; c=COL_PANEL_ACC; }
+   CpRow("Copying from",from,c);
+   if(g_cpStatusWarn && g_cpStatus!="") CpRow("Not copying",g_cpStatus,COL_PANEL_WARN);
+   CpRow("Last copy",(g_cpLast!="") ? g_cpLast : "none yet",g_cpLastWarn ? COL_PANEL_WARN : ((g_cpLast!="") ? COL_PANEL_BTX : COL_PANEL_LBL));
+  }
+void CpPanelRefresh()
+  {
+   string sig=CopyRoleText();
+   for(int i=0;i<ArraySize(g_cpRowL);i++) sig+="|"+g_cpRowL[i]+"="+g_cpRowV[i]+"#"+IntegerToString((int)g_cpRowC[i]);
+   if(sig==g_cpSig) return;
+   g_cpSig=sig;
+   BuildPanel();
+  }
+
+//---------------------------------------------------------------- role + ticks
+// The role belongs to the ACCOUNT (a terminal global variable), so every chart on it agrees and a
+// symbol switch on the chart can't quietly turn the Lead off. It acts only once held for 3 seconds.
+void CopySetRole(ENUM_COPY_ROLE r)
+  {
+   if(r==g_copyRole) return;
+   string me=CpLogin();
+   if(g_copyRole==CR_LEAD)   FileDelete(CpFileL(me),FILE_COMMON);    // followers see no Lead at once
+   if(g_copyRole==CR_FOLLOW) FileDelete(CpFileF(me),FILE_COMMON);
+   CpRelease(); g_ownF=false;
+   g_copyRole=r; g_roleAtMs=GetTickCount64();
+   GlobalVariableSet("MMC_ROLE_"+me,(double)r); GlobalVariablesFlush();
+   g_copyLeadSig=""; g_cpLast=""; g_cpLastWarn=false; g_cpStatus=""; g_cpStatusWarn=false;
+   if(r==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); if(g_execMode) ToggleExecMode(); }
+   PrintFormat("COPIER: this account (%s) is now %s.",me,CopyRoleText());
+   CopierSlowTick();
+  }
+void CopierSlowTick()
+  {
+   if(AccountInfoInteger(ACCOUNT_LOGIN)>0)
+     {
+      string k="MMC_ROLE_"+CpLogin();
+      ENUM_COPY_ROLE want=GlobalVariableCheck(k) ? (ENUM_COPY_ROLE)(int)GlobalVariableGet(k) : CR_OFF;
+      if(want!=g_copyRole)
+        {
+         g_copyRole=want; g_roleAtMs=GetTickCount64(); g_ownF=false;
+         if(want==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); }
+        }
+     }
+   if(InpCopyMagic==InpMagic)          { CpRowsClear(); if(g_copyRole!=CR_OFF) CpRow("Copier","copy magic = EA magic",COL_PANEL_WARN); }
+   else if(g_copyRole==CR_LEAD)          CpLeadRows();
+   else if(g_copyRole==CR_FOLLOW)      { CpPickLead(); CpFollowWrite(); CpFollowRows(); }
+   else                                  CpRowsClear();
+   CpPanelRefresh();
+  }
+void CopierTick()
+  {
+   if(g_copyRole==CR_LEAD)        CopyLeadTick();
+   else if(g_copyRole==CR_FOLLOW) CopyFollowTick();
+   static ulong s_slow=0;
+   ulong now=GetTickCount64();
+   if(now-s_slow>=1000){ s_slow=now; CopierSlowTick(); }
+  }
+
+//==================================================================
 //  STANDARD EVENT HANDLERS
 //==================================================================
 int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v5.7 loaded (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
+   Print("=== MinimalistManager v8.80 loaded (trade copier: Lead / Follow between your own accounts; the panel scrolls) ===");
+   Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
      { Print("Minimalist Manager: Min/Max SL must be greater than 0."); return INIT_PARAMETERS_INCORRECT; }
@@ -4464,6 +5768,19 @@ int OnInit()
 
    g_syncCatchupPending = (StringLen(g_syncTokenEff)>0);
 
+   // v8.80 trade copier: this chart's lock id, the copy magic, and the account's role.
+   g_copyInst=(double)(ChartID()%4000000000000000)+1.0;
+   copyTrade.SetExpertMagicNumber(InpCopyMagic);
+   CpLoadSymbolMap();
+   if(InpCopyMagic==InpMagic) Print("COPIER: the copy magic number must differ from the EA's own - the copier stays off.");
+   if(AccountInfoInteger(ACCOUNT_LOGIN)>0)
+     {
+      string _rk="MMC_ROLE_"+CpLogin();
+      if(GlobalVariableCheck(_rk)) g_copyRole=(ENUM_COPY_ROLE)(int)GlobalVariableGet(_rk);
+     }
+   g_roleAtMs=GetTickCount64();
+   if(g_copyRole==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); }
+
    BuildPanel();
    if(g_scaleLock) ApplyScaleLock();   // frame the chart on load if locking is on
    // Work any post-mortems left over from a previous run. This is why the replay reads
@@ -4482,6 +5799,8 @@ void OnDeinit(const int reason)
   {
    SaveState();                      // remember all settings for next launch
    EventKillTimer();
+   CpRelease();                                      // v8.80: another chart on this account may take over copying at once
+   ChartSetInteger(0,CHART_MOUSE_SCROLL,true);       // the panel may have been holding the chart still
    ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,false);
    DeleteByPrefix(PFX);
    Comment("");
@@ -4580,6 +5899,8 @@ void OnTimer()
    // Every 100ms: keep the labels on their lines (cheap - a few property reads, and only
    // repositions when the view actually moved).
    if(LabelsFollowChart()) ChartRedraw();
+   // v8.80 trade copier: 10x a second, so a copy lands a moment after the lead's trade.
+   CopierTick();
    // Everything below is once-a-second work, exactly as before the timer went to 100ms.
    static uint s_lastSec=0;
    uint _nowMs=GetTickCount();
@@ -4730,6 +6051,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest &request,
                         const MqlTradeResult &result)
   {
+   if(g_copyRole==CR_LEAD) CopyLeadTick();   // v8.80: tell the follow accounts at once, not on the next timer
    if(g_maxTradesDay>0 && trans.type==TRADE_TRANSACTION_DEAL_ADD){ ulong _dk=trans.deal; if(_dk!=0 && HistoryDealSelect(_dk) && (long)HistoryDealGetInteger(_dk,DEAL_ENTRY)==DEAL_ENTRY_IN){ RefreshDayCount(); if(g_tradesToday>=g_maxTradesDay && g_active){ g_active=false; g_execMode=false; g_pausedByLimit=true; ClearEntryLines(); UpdateManageLine(); BuildPanel(); SaveState(); } } }
    // On-fill SL/TP re-anchor: snap the just-filled position's stop/target to the exact
    // requested pip distances from the REAL open price. Must run BEFORE the sync-token
@@ -4848,7 +6170,15 @@ void OnTick()
 
 void OnChartEvent(const int id,const long &lparam,const double &dparam,const string &sparam)
   {
-   if(id==CHARTEVENT_MOUSE_WHEEL){ if(LabelsFollowChart()) ChartRedraw(); return; }
+   if(id==CHARTEVENT_MOUSE_WHEEL)
+     {
+      // v8.80: the wheel over the panel scrolls the panel, a card per notch (the chart holds still -
+      // see PanelMouse). Anywhere else it is the chart's, and the line labels follow it.
+      int wx=(int)(short)lparam, wy=(int)(short)(lparam>>16);
+      if(g_panelOpen && g_scrollMax>0 && OverPanel(wx,wy)){ PanelScrollTo(g_panelScroll+((dparam<0)?1:-1)); return; }
+      if(LabelsFollowChart()) ChartRedraw();
+      return;
+     }
    // ---- Chart panned / zoomed / scrolled: re-pin the line labels ----
    if(id==CHARTEVENT_CHART_CHANGE)
      {
@@ -4857,6 +6187,8 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
       // axis to re-centre), re-frame. Skipped while Scale Fix is still on, so manual
       // dragging/zooming is never fought and there is no redraw loop.
       if(g_scaleLock && !(bool)ChartGetInteger(0,CHART_SCALEFIX)) ApplyScaleLock();
+      // v8.80: a resized chart can change how much of the panel fits
+      if(g_panelOpen){ int pv=g_viewH, ps=g_panelScroll; PanelLayout(); if(pv!=g_viewH || ps!=g_panelScroll) BuildPanel(); }
       ChartRedraw();
       return;
      }
@@ -4864,6 +6196,13 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    // ---- Mouse move: hover SL + left-click execute ----
    if(id==CHARTEVENT_MOUSE_MOVE)
      {
+      // v8.80: the panel's scroll bar, and the chart held still under the panel
+      {
+         bool _dn=((((int)StringToInteger(sparam))&1)!=0);
+         // Record the button as seen, or the next move off the panel with it still held would read as
+         // a fresh press and, in execution mode, place a trade.
+         if(PanelMouse((int)lparam,(int)dparam,_dn)){ g_prevLeftDown=_dn; return; }
+      }
       // Dragging the chart (or a line): labels follow every movement, not just the throttled
       // CHART_CHANGE bursts. Cheap when nothing moved (LabelsFollowChart compares the view first).
       if(((int)StringToInteger(sparam) & 1)!=0){ if(LabelsFollowChart()) ChartRedraw(); }
