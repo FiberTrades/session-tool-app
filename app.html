@@ -15347,9 +15347,9 @@ try {
     // chronological order survives a cloud sync that replaces `data` after startup.
     try { if (typeof rebuildSeriesByDate === 'function') rebuildSeriesByDate(); } catch (e) {}
     if (isLifetimeScope()) {
-      // A trade copied to your other accounts shows as ONE (the idea: its R, the money of every account).
-      if (!_hasIdeas()) return { currentSeries: data.currentSeries || [], history: data.history || [] };
-      return { currentSeries: _ideaMerge(data.currentSeries || []), history: (data.history || []).map(h => ({ trades: _ideaMerge(h.trades || []), date: h.date })) };
+      // Ten IDEAS a series (a trade copied to your other accounts takes one spot - rebuildSeriesByDate), but the
+      // trades themselves stay, so every total counts every copy (Nestor, 28 Sep 2026).
+      return { currentSeries: data.currentSeries || [], history: data.history || [] };
     }
     // For account or group scope, rebuild 10-idea chunks from filtered trades
     // sorted chronologically. filterByScope() already handles the account-vs-
@@ -15359,8 +15359,8 @@ try {
     all.sort(_tradeChronoCompare);
     const ck = _chunkIdeas(all);
     const history = [];
-    ck.chunks.forEach(chunk => { history.unshift({ trades: _ideaMerge(chunk), date: chunk[chunk.length - 1].date }); });
-    return { currentSeries: _ideaMerge(ck.pending), history };
+    ck.chunks.forEach(chunk => { history.unshift({ trades: chunk, date: chunk[chunk.length - 1].date }); });
+    return { currentSeries: ck.pending, history };
   }
   // The earliest moment the current scope can honestly cover, in ms, or 0 for no floor.
   //
@@ -21491,6 +21491,7 @@ try {
     // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
     const r = Object.assign({}, data.review, { trades: _ideaFirsts(data.review.trades || []) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
     const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && tt._ideaN) || 1), 1);
+    const _allT = data.review.trades || [];   // every copy: the numbers count them all (Nestor, 28 Sep 2026)
     // Use the picked session date in the Discord header (defaults to today, but back-fillable).
     let headerDate = _headerDateStr();
     if (r.sessionDate && r.sessionDate !== todayDateStr()) {
@@ -21645,14 +21646,17 @@ try {
     // "Traded Yes (X trades)" — X is the total number of executions, i.e. sum of
     // copies across all logged setups. A session with 2 logged setups and copies=3
     // on each reads as 6 trades total in the Discord summary.
-    const totalExecs = r.trades.reduce((s, t) => s + tradeCopies(t), 0);
-    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (${totalExecs} trade${totalExecs === 1 ? '' : 's'}${_cpN > 1 ? `, copied to ${_cpN} accounts` : ''})`);
+    const totalExecs = _allT.reduce((s, t) => s + tradeCopies(t), 0);
+    const _ideasN = r.trades.length;
+    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (` + (_cpN > 1
+      ? `${_ideasN} execution${_ideasN === 1 ? '' : 's'}, ${totalExecs} trades - copied to ${_cpN} accounts`
+      : `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`) + `)`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
     // exports.
-    const wins   = r.trades.filter(t => t.result === 'Win' ).reduce((s, t) => s + tradeCopies(t), 0);
-    const losses = r.trades.filter(t => t.result === 'Lose').reduce((s, t) => s + tradeCopies(t), 0);
-    const bes    = r.trades.filter(t => t.result === 'BE'  ).reduce((s, t) => s + tradeCopies(t), 0);
+    const wins   = _allT.filter(t => t.result === 'Win' ).reduce((s, t) => s + tradeCopies(t), 0);
+    const losses = _allT.filter(t => t.result === 'Lose').reduce((s, t) => s + tradeCopies(t), 0);
+    const bes    = _allT.filter(t => t.result === 'BE'  ).reduce((s, t) => s + tradeCopies(t), 0);
     statsBlock.push('');
     statsBlock.push(`${A.lbl}${t('post.wins').padEnd(PAD)}${A.good}${wins}${A.reset}`);
     statsBlock.push(`${A.lbl}${t('post.losses').padEnd(PAD)}${A.bad}${losses}${A.reset}`);
@@ -21660,17 +21664,17 @@ try {
     // Net R + Net % on one combined line — "Net R | Net %:    +3.50R | +1.45%".
     // Net R already exists via calcNetR (copy-weighted). Net % converts net £
     // to a % of lifetime starting balance, same scale as the Weekly Discord export.
-    const netR = calcNetR(r.trades);
+    const netR = calcNetR(_allT);
     if (netR !== null) {
       const netRStr = `${netR >= 0 ? '+' : ''}${netR.toFixed(2)}R`;
       let netRow = `${A.lbl}${t('post.netr').padEnd(PAD)}${A.reset}${sgnColor(netR)}${netRStr}${A.reset}`;
       // Net % — sum of per-trade %s using each trade's own account SB.
-      const balPct = r.trades.reduce((s, t) => {
+      const balPct = _allT.reduce((s, t) => {
         const accSB = getTradeAccountSB(t);
         if (accSB <= 0) return s;
         return s + (tradeNetPL(t) * tradeCopies(t)) / accSB * 100;
       }, 0);
-      if (r.trades.length > 0) {
+      if (_allT.length > 0) {
         const balPctStr = `${balPct >= 0 ? '+' : ''}${balPct.toFixed(2)}%`;
         netRow += ` ${A.lbl}|${A.reset} ${sgnColor(balPct)}${balPctStr}${A.reset}`;
       }
@@ -21679,7 +21683,7 @@ try {
     // Pot R + Pot % on one combined line + Captured below. Emitted only when at
     // least one winning trade has potentialR logged. Mirrors the Weekly + Series-of-10
     // Discord exports so all three posts speak the same shape.
-    const tradesWithPotR = r.trades.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
+    const tradesWithPotR = _allT.filter(t => t.result === 'Win' && typeof t.potentialR === 'number' && !isNaN(t.potentialR));
     if (tradesWithPotR.length > 0) {
       const capturedR  = tradesWithPotR.reduce((s, t) => s + ((parseFloat(t.r) || 0) * tradeCopies(t)), 0);
       const potentialR = tradesWithPotR.reduce((s, t) => s + (t.potentialR * tradeCopies(t)), 0);
@@ -22856,7 +22860,10 @@ try {
     }
 
     const cs = (scopedSeries.currentSeries || []).slice().sort(_tradeChronoCompare);
-    document.getElementById('current-progress').textContent = cs.length + ' / 10';
+    // The ten spots are IDEAS: a trade and its copies on your other accounts fill one dot (the tally below and every
+    // total still count each copy).
+    const csSpots = _ideaMerge(cs);
+    document.getElementById('current-progress').textContent = csSpots.length + ' / 10';
     // Refresh the contextual message under the dots whenever the series renders.
     try { renderSeriesMessage(); } catch(e) {}
     const dotsWrap = document.getElementById('current-dots');
@@ -22868,8 +22875,8 @@ try {
     for (let i = 0; i < 10; i++) {
       const dot = document.createElement('div');
       dot.className = 'series-dot';
-      if (cs[i]) {
-        const t = cs[i];
+      if (csSpots[i]) {
+        const t = csSpots[i];
         const cls = t.result === 'Win' ? 'win' : t.result === 'Lose' ? 'lose' : 'be';
         dot.classList.add(cls, 'clickable');
         dot.textContent = t.result === 'Win' ? _lblW : t.result === 'Lose' ? _lblL : _lblBE;
@@ -22877,7 +22884,8 @@ try {
         const _sh = fmtShownRP(t);   // a loss / BE: what really happened, not the plan
         const rTxt = _sh.rv != null ? _sh.r + 'R' : '';
         const pipsTxt = _sh.pv != null ? ` · ${_sh.p}` : '';
-        dot.setAttribute('data-tip', _tipDot.replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr));
+        dot.setAttribute('data-tip', _tipDot.replace('{N}', i + 1).replace('{RESULT}', t.result).replace('{R}', rTxt).replace('{PIPS}', pipsTxt).replace('{DATE}', dateStr)
+          + (t._ideaN > 1 ? ' \u00b7 ' + window._stT('on ' + t._ideaN + ' accounts', 'en ' + t._ideaN + ' cuentas') : ''));
         dot.addEventListener('click', () => openEditTradeModal(t.id));
       }
       dotsWrap.appendChild(dot);
@@ -23607,8 +23615,9 @@ try {
     if (_si < 0 || _si >= data.history.length) _si = 0;
     const latestSeries = data.history[_si];
     const seriesNum = data.history.length - _si; // newest-first: index 0 = highest number
-    const trades = _ideaMerge(latestSeries.trades || []);   // a trade copied to your other accounts is one trade here
+    const trades = latestSeries.trades || [];   // every copy counts in the numbers (Nestor, 28 Sep 2026)
     const stats = calcSeriesStats(trades);
+    const _s10ideas = _ideaMerge(trades).length;   // ...and takes one of the ten
     // Date stamp: prefer the date RANGE from the actual trades (earliest → latest) since a
     // series usually spans multiple days. Falls back to the series's completion date, then to
     // today, in that order. Same "single day collapses to one date" logic as the history row.
@@ -23649,7 +23658,7 @@ try {
     // with 4 spaces of breathing room before the values start. All shorter labels
     // pad to match so every value column lines up vertically.
     const PAD = 22;
-    lines.push(`${A.lbl}${t('post.trades').padEnd(PAD)}${A.reset}${trades.length}`);
+    lines.push(`${A.lbl}${t('post.trades').padEnd(PAD)}${A.reset}${_s10ideas}${_s10ideas < trades.length ? ` (${trades.length} across accounts)` : ''}`);
     lines.push(`${A.lbl}${t('post.wins').padEnd(PAD)}${A.good}${stats.w}${A.reset}`);
     lines.push(`${A.lbl}${t('post.losses').padEnd(PAD)}${A.bad}${stats.l}${A.reset}`);
     lines.push(`${A.lbl}${t('post.bes').padEnd(PAD)}${A.be}${stats.be}${A.reset}`);
@@ -43393,29 +43402,33 @@ try {
   // The profit in hand is already net of every cost paid. R basis only with no money data: your worst loss in R (fees
   // included). winsNeeded (red): wins net of their own fees; every remaining trade pays commission.
   function _seriesCushion(cs) {
-    const out = { n: cs.length, remaining: Math.max(0, 10 - cs.length), totalR: 0, lossesCapped: 0, winsNeeded: null };
+    // Trade copier: the spots left count IDEAS, and a future trade is priced the way it will land - on every account
+    // it is copied to (the idea's risk and fees together). The money and R in hand count every copy.
+    const ideas = _ideaMerge(cs);
+    const _ideaR = t => (t && t._ideaTrades) ? t._ideaTrades.reduce((x, c) => x + tradeRforMath(c), 0) : ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : (parseFloat(t.r) || 0));
+    const out = { n: ideas.length, remaining: Math.max(0, 10 - ideas.length), totalR: 0, lossesCapped: 0, winsNeeded: null };
     try {
-      const n = cs.length, remaining = out.remaining;
+      const n = ideas.length, remaining = out.remaining;
       const avgOf = l => l.length ? l.reduce((a, b) => a + b, 0) / l.length : 0;
       const totalR = cs.reduce((x, t) => x + ((typeof tradeRforMath === 'function') ? tradeRforMath(t) : (parseFloat(t.r) || 0)), 0);
-      const winRs = cs.filter(t => t.result === 'Win').map(t => parseFloat(t.r) || 0).filter(r => r > 0);
+      const winRs = ideas.filter(t => t.result === 'Win').map(t => t._ideaTrades ? _ideaR(t) : (parseFloat(t.r) || 0)).filter(r => r > 0);
       const avgWinR = avgOf(winRs);
-      const lossRs = cs.filter(t => t.result === 'Lose').map(t => (typeof tradeRforMath === 'function') ? Math.abs(tradeRforMath(t)) : 1).filter(r => r > 0);
+      const lossRs = ideas.filter(t => t.result === 'Lose').map(t => Math.abs(_ideaR(t))).filter(r => r > 0);
       const avgLossR = lossRs.length ? avgOf(lossRs) : 1;
       const netSoFar = cs.reduce((x, t) => x + (tradeGross(t) - tradeCosts(t)), 0);
       let pool = [];
       try { pool = (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []; if (typeof filterByScope === 'function') pool = filterByScope(pool); } catch (e) {}
       // Your recent trades (the last 20 by date) - the fallback when this series has too little to go on.
       const recent = pool.slice().sort((a, b) => String(b.date || '').localeCompare(String(a.date || ''))).slice(0, 20);
-      const sC = cs.map(t => tradeCosts(t)).filter(c => c > 0), sR = cs.map(t => parseFloat(t.risk) || 0).filter(r => r > 0);
+      const sC = ideas.map(t => tradeCosts(t)).filter(c => c > 0), sR = ideas.map(t => parseFloat(t.risk) || 0).filter(r => r > 0);
       const avgCost = sC.length >= 3 ? avgOf(sC) : avgOf(sC.concat(pool.map(t => tradeCosts(t)).filter(c => c > 0)));
       const avgRisk = sR.length >= 3 ? avgOf(sR) : avgOf(sR.concat(pool.map(t => parseFloat(t.risk) || 0).filter(r => r > 0)));
-      const winG = cs.filter(t => t.result === 'Win').map(t => tradeGross(t));
+      const winG = ideas.filter(t => t.result === 'Win').map(t => tradeGross(t));
       const avgWinGross = avgOf(winG);
       const maxOf = l => l.length ? Math.max.apply(null, l) : 0;
       // What a loss really cost, in money, fees included (a stop that slipped costs more than the risk you set).
       const lossNet = t => Math.max(0, -(tradeGross(t) - tradeCosts(t)));
-      const sL = cs.filter(t => t.result === 'Lose').map(lossNet).filter(x => x > 0);
+      const sL = ideas.filter(t => t.result === 'Lose').map(lossNet).filter(x => x > 0);
       const worstLossNet = maxOf(sL.length ? sL : recent.filter(t => t && t.result === 'Lose').map(lossNet).filter(x => x > 0));
       // Risk: the biggest taken lately (this series, topped up by recent trades when it has fewer than 3), or the EA's
       // current setting when that is bigger - you sized up.
@@ -43424,7 +43437,7 @@ try {
       const riskPool = sR.length >= 3 ? sR : sR.concat(recent.map(t => parseFloat(t.risk) || 0).filter(r => r > 0));
       const riskNow = Math.max(maxOf(riskPool), eaRisk);
       // Fees as a share of risk: your highest, so a bigger position is priced with proportionally bigger fees.
-      const feeRates = cs.concat(sR.length >= 3 ? [] : recent).map(t => { const r = parseFloat(t.risk) || 0, c = tradeCosts(t); return (r > 0 && c > 0) ? c / r : 0; }).filter(x => x > 0);
+      const feeRates = ideas.concat(sR.length >= 3 ? [] : recent).map(t => { const r = parseFloat(t.risk) || 0, c = tradeCosts(t); return (r > 0 && c > 0) ? c / r : 0; }).filter(x => x > 0);
       const costPool = sC.length >= 3 ? sC : sC.concat(recent.map(t => tradeCosts(t)).filter(c => c > 0));
       const feeNow = riskNow > 0 && feeRates.length ? riskNow * maxOf(feeRates) : maxOf(costPool);
       // A future loss: the worst of (risk now + its fees) and the costliest loss actually taken. No risk on the trades ->
@@ -43461,8 +43474,11 @@ try {
     return '';
   }
   function _seriesGreetingHTML() {
-    var cs = (data && Array.isArray(data.currentSeries)) ? _ideaMerge(data.currentSeries) : [];   // a copied idea counts once
-    var n = cs.length, w = 0, l = 0, b = 0;
+    var cs = (data && Array.isArray(data.currentSeries)) ? data.currentSeries : [];
+    // Trades in = IDEAS (a trade copied to your other accounts is one of the ten); wins / losses / BEs and R count
+    // every copy (Nestor, 28 Sep 2026).
+    var _sp = _ideaMerge(cs), _cpN = _sp.reduce(function (mx, x) { return Math.max(mx, (x && x._ideaN) || 1); }, 1);
+    var n = _sp.length, w = 0, l = 0, b = 0;
     cs.forEach(function (tr) { if (tr.result === 'Win') w++; else if (tr.result === 'Lose') l++; else if (tr.result === 'BE') b++; });
     var nm = _greetNameSpan(), S = (window.__lang === 'es');
     // Off-day: no session to open, so don't tee up a fresh round to log — point at review instead.
@@ -43474,13 +43490,13 @@ try {
     function cw(x, one, many, none) { return x === 0 ? none : (x + ' ' + (x === 1 ? one : many)); }
     var off = _isOffDayToday();
     if (S) {
-      var partsEs = n + ' ' + (n === 1 ? 'operación' : 'operaciones') + ' dentro, ' + cw(l, 'pérdida', 'pérdidas', 'sin pérdidas') + ', ' + cw(b, 'BE', 'BEs', 'sin BEs') + ', ' + (w === 0 ? 'sin ganancias' : cw(w, 'ganancia', 'ganancias', ''));
+      var partsEs = n + ' ' + (n === 1 ? 'operación' : 'operaciones') + ' dentro' + (_cpN > 1 ? ' (copiadas a ' + _cpN + ' cuentas)' : '') + ', ' + cw(l, 'pérdida', 'pérdidas', 'sin pérdidas') + ', ' + cw(b, 'BE', 'BEs', 'sin BEs') + ', ' + (w === 0 ? 'sin ganancias' : cw(w, 'ganancia', 'ganancias', ''));
       var _cuS = (!off && n < 10) ? _seriesCushion(cs) : null, _cuEs = _cuS ? _cushionLine(_cuS, true) : '';
       if (_cuEs) return partsEs + ', ' + _fmtR(_cuS.totalR) + '. ' + _cuEs;
       var qEs = off ? 'Hoy no operas — repasa la ronda con calma: ¿qué está funcionando y qué no?' : (w === 0 && (l + b) >= 3) ? '¿Es el mercado, o los setups que estás tomando?' : (l === 0 && w > 0) ? 'Limpio hasta ahora — sigue tomando solo las que encajan.' : 'Lectura a mitad de camino: ¿qué funciona y qué no?';
       return partsEs + '. ' + qEs;
     }
-    var parts = n + ' trade' + (n === 1 ? '' : 's') + ' in, ' + cw(l, 'loss', 'losses', 'no losses') + ', ' + cw(b, 'BE', 'BEs', 'no BEs') + ', ' + (w === 0 ? 'no wins' : cw(w, 'win', 'wins', ''));
+    var parts = n + ' trade' + (n === 1 ? '' : 's') + ' in' + (_cpN > 1 ? ' (copied to ' + _cpN + ' accounts)' : '') + ', ' + cw(l, 'loss', 'losses', 'no losses') + ', ' + cw(b, 'BE', 'BEs', 'no BEs') + ', ' + (w === 0 ? 'no wins' : cw(w, 'win', 'wins', ''));
     var _cu = (!off && n < 10) ? _seriesCushion(cs) : null, _cuEn = _cu ? _cushionLine(_cu, false) : '';
     if (_cuEn) return parts + ', ' + _fmtR(_cu.totalR) + '. ' + _cuEn;
     var q = off ? 'No trading today — review the round with cold eyes: what’s working, what isn’t?' : (w === 0 && (l + b) >= 3) ? 'Is it the market, or the setups you’re taking?' : (l === 0 && w > 0) ? 'Clean so far — keep taking only the ones that fit.' : 'Halfway read: what’s working, what isn’t?';
