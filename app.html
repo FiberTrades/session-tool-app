@@ -16977,7 +16977,20 @@ try {
     function journalTrades() {
       var list = [];
       try { list = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades().slice() : []; } catch (e) {}
-      try { list = list.concat(allReviewTrades()); } catch (e) {}
+      // A saved review trade is in the journal AND still in its review (seriesId = the saved trade's id): keep the
+      // saved one, or its money and R count twice (29 Sep 2026). Unsaved review trades join as before.
+      var ids = {}, tks = {};
+      list.forEach(function (tr) {
+        if (!tr) return; if (tr.id) ids[tr.id] = 1;
+        var tk = tr.mt5Ticket || tr.position; if (tk != null && tk !== '') tks[String(tk)] = 1;
+      });
+      try {
+        allReviewTrades().forEach(function (tr) {
+          if (!tr || (tr.seriesId && ids[tr.seriesId])) return;
+          var tk = tr.mt5Ticket || tr.position; if (tk != null && tk !== '' && tks[String(tk)]) return;
+          list.push(tr);
+        });
+      } catch (e) {}
       return list.filter(function (tr) { return tr && tr.result; });
     }
     function ticketMap(list) {
@@ -24175,7 +24188,8 @@ try {
 
     let mw=0, ml=0, mb=0, cw=0, cl=0, cb=0;
     let mwDate=null, mlDate=null, mbDate=null;
-    all.slice().sort(_tradeChronoCompare).forEach(t => {
+    // A trade and its copies (EA Trade Copier) are ONE step of a streak (Nestor, 29 Sep 2026).
+    _ideaMerge(all).sort(_tradeChronoCompare).forEach(t => {
       if (t.result === 'Win')  { cw++; cl=0; cb=0; }
       else if (t.result === 'Lose') { cl++; cw=0; cb=0; }
       else if (t.result === 'BE') { cb++; cw=0; cl=0; }
@@ -30869,8 +30883,9 @@ try {
         let _prevSign = 0, _prevLen = 0;
         const _daySign = dayTotalR > 1e-9 ? 1 : (dayTotalR < -1e-9 ? -1 : 0);
         // Longest run of consecutive wins / losses within the day (trades are in time order).
+        // A trade and its copies are one step (29 Sep 2026).
         let _maxWin = 0, _maxLoss = 0, _curWin = 0, _curLoss = 0;
-        dayTrades.forEach(t => {
+        _ideaMerge(dayTrades).forEach(t => {
           if (t.result === 'Win') { _curWin++; _curLoss = 0; if (_curWin > _maxWin) _maxWin = _curWin; }
           else if (t.result === 'Lose') { _curLoss++; _curWin = 0; if (_curLoss > _maxLoss) _maxLoss = _curLoss; }
           else { _curWin = 0; _curLoss = 0; }
@@ -43700,7 +43715,7 @@ try {
     //    resets it), so the greeting can never contradict the number printed beside it.
     var chron = all.slice().sort((typeof _tradeChronoCompare === 'function') ? _tradeChronoCompare : function (a, b) { return new Date(a.date) - new Date(b.date); });
     var maxLoss = 0, curLoss = 0;
-    chron.forEach(function (t) {
+    _ideaMerge(chron).forEach(function (t) {   // a trade and its copies are one step, as on the tab (29 Sep 2026)
       if (t.result === 'Lose') { curLoss++; if (curLoss > maxLoss) maxLoss = curLoss; }
       else curLoss = 0;
     });
