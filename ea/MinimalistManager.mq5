@@ -167,6 +167,20 @@ color EntryLineColour()
    return (luma > 128.0) ? COL_LINE_ENTRY_LIGHTBG : COL_LINE_ENTRY_DARKBG;
 }
 
+// Text drawn straight on the chart - the candle/spread readout and the execution hint: black on a light
+// chart, light grey on a dark one. It was always black, which vanished on a black chart (Nestor, 28 Sep
+// 2026: "when the background is black i cannot see the spread and the execution text"). Read on every
+// draw, so changing the chart's colours carries over at once.
+color ChartTextColour()
+{
+   long bg = 0;
+   if(!ChartGetInteger(0,CHART_COLOR_BACKGROUND,0,bg)) return clrBlack;
+   int r = (int)( bg        & 0xFF);
+   int g = (int)((bg >>  8) & 0xFF);
+   int b = (int)((bg >> 16) & 0xFF);
+   return (0.299*r + 0.587*g + 0.114*b > 128.0) ? clrBlack : C'190,194,200';
+}
+
 // forward declarations
 double PositionsSL(int &cnt);
 bool   PositionsEntry(double &entry,int &dir);
@@ -599,7 +613,7 @@ void DrawHint()
    string msg = g_execMode
               ? "Left-click mouse to execute a trade"
               : "Press "+g_execKeyChar+" to enter/exit execution mode";
-   mkLabelBL(PFX+"HINT",12,12,msg,clrBlack,9);
+   mkLabelBL(PFX+"HINT",12,12,msg,ChartTextColour(),9);
   }
 
 void ShowExecutionLines()
@@ -5881,7 +5895,7 @@ void DrawInfoReadout()
    double spr=(g_pip>0)?(ask-bid)/g_pip:0;
 
    ObjectDelete(0,nSP);   // single-line layout: second label no longer used
-   mkLabelBR(nCD,12,12,StringFormat("Candle %s | Spread %.1f",cd,spr),clrBlack,9);
+   mkLabelBR(nCD,12,12,StringFormat("Candle %s | Spread %.1f",cd,spr),ChartTextColour(),9);
   }
 
 // Runs every few seconds from OnTimer, and once from OnInit.
