@@ -7619,6 +7619,7 @@ try {
       'btn.series_saved': 'Saved {TIME}',
       'btn.series_save_update': 'Save update',
       'series.saved_hint': 'Add or change a trade to save again',
+      'series.saved_hint_session': 'Change anything to save again',
       'btn.save_changes': 'Save Changes',
       'btn.delete_trade': 'Delete Trade',
       'btn.add_trade': '+ Add Trade',
@@ -9480,6 +9481,7 @@ try {
       'btn.series_saved': 'Guardado {TIME}',
       'btn.series_save_update': 'Guardar cambios',
       'series.saved_hint': 'Añade o cambia una operación para volver a guardar',
+      'series.saved_hint_session': 'Cambia algo para volver a guardar',
       'btn.save_changes': 'Guardar Cambios',
       'btn.delete_trade': 'Eliminar Operación',
       'btn.add_trade': '+ Añadir Operación',
@@ -21431,17 +21433,24 @@ try {
   function _inSeries(id) { if (!id) return false; if ((data.currentSeries || []).some(x => x && x.id === id)) return true; return (data.history || []).some(h => ((h && h.trades) || []).some(x => x && x.id === id)); }
   var _SAVE_SIG_KEYS = ['symbol', 'distUnit', 'realPips', 'result', 'r', 'pips', 'potentialR', 'potentialPips', 'bePotentialR', 'bePotentialPips', 'type', 'setup', 'side',
     'entryTime', 'exitTime', 'risk', 'sl', 'costs', 'actualGross', 'mt5Ticket', 'position', 'execution', 'focus', 'close', 'rice', 'concepts', 'mindset', 'reflection'];
-  function _reviewSaveSrc(list) { return JSON.stringify((list || []).map(x => _SAVE_SIG_KEYS.map(k => x[k] == null ? '' : x[k]).concat([(x.tvLinks || []).map(l => [(l && l.url) || '', (l && l.notes) || ''])]))); }
+  function _sigLinks(ls) { return (ls || []).filter(l => l && ((l.url && String(l.url).trim()) || (l.notes && String(l.notes).trim()))).map(l => [(l.url || '').trim(), (l.notes || '').trim()]); }   // an empty card is not a change
+  function _reviewSaveSrc(list) { return JSON.stringify((list || []).map(x => _SAVE_SIG_KEYS.map(k => x[k] == null ? '' : x[k]).concat([_sigLinks(x.tvLinks)]))); }
   function _reviewSaveKey() { const r = data.review || {}; return 'series-save:' + (r.sessionDate || ((typeof todayDateStr === 'function') ? todayDateStr() : '')) + (_multiReview() ? ':' + reviewSlotKey(r) : ''); }
+  // A review with no trades (e.g. Observed Only) saves its own answers: same Saved state, from those answers.
+  function _reviewSessionSrc(r) { r = r || {}; return JSON.stringify([r.execution || '', r.focus || '', r.close || '', r.rice || [], r.concepts || [], r.mindset || [], String(r.reflection || '').trim(), _sigLinks(r.tvLinks)]); }
   function paintReviewSaveBtn() {
     const valid = _reviewValidTrades();
-    let st = 'new', rec = null;
+    let st = 'new', rec = null, noTrades = false;
     if (valid.length && valid.every(x => _inSeries(x.seriesId))) {
       rec = _stPostedGet(_reviewSaveKey());
       if (rec) st = rec.sig === _stPostHash(_reviewSaveSrc(valid)) ? 'posted' : 'changed';
+    } else if (data.review && !(data.review.trades || []).length && _reviewHasContent(data.review)) {
+      noTrades = true;
+      rec = _stPostedGet(_reviewSaveKey());
+      if (rec) st = rec.sig === _stPostHash(_reviewSessionSrc(data.review)) ? 'posted' : 'changed';
     }
     _stPaintPostBtn(document.getElementById('review-save-stats'), st, rec && rec.at, document.getElementById('review-saved-hint'), 'btn.save_series', null,
-      { done: 'btn.series_saved', update: 'btn.series_save_update', hint: 'series.saved_hint' });
+      { done: 'btn.series_saved', update: 'btn.series_save_update', hint: noTrades ? 'series.saved_hint_session' : 'series.saved_hint' });
   }
   function renderReviewPreview() {
     try { paintReviewPostBtn(); } catch (e) {}
@@ -21794,7 +21803,9 @@ try {
     );
     if (valid.length === 0 && !hasSessionLevelReview) { showToast(t('toast.no_trades_save'), { persist: true }); return 0; }
     if (valid.length === 0 && hasSessionLevelReview) {
+      try { _stPostedSet(_reviewSaveKey(), 'saved', _reviewSessionSrc(r)); } catch (e) {}   // the Saved button (a no-trade review)
       saveData();
+      try { paintReviewSaveBtn(); } catch (e) {}
       const statsTab = document.querySelector('.tab[data-page="stats"]');
       if (statsTab) statsTab.click();
       if (!skipBackupModal) showToast(t('toast.saved'), { duration: 5000 });   // 2 s longer than the usual 3 (Nestor, 28 Sep 2026)
@@ -21886,15 +21897,15 @@ try {
       }
     });
     rebuildSeriesByDate();
-    try { _stPostedSet(_reviewSaveKey(), 'saved', _reviewSaveSrc(_reviewValidTrades())); } catch (e) {}   // the Saved button
     saveData();
-    try { paintReviewSaveBtn(); } catch (e) {}
     // Trades just moved from review to currentSeries — bump the greeting nonce so the line
     // refreshes to reflect the latest state.
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     // Note: the review form is intentionally LEFT INTACT here. Re-saving updates the linked
     // series trades in place (see above), so the form never needs clearing to avoid duplicates.
     renderTrades();
+    // The Saved button's record - after the redraw, which can move the day's answers onto a trade.
+    try { _stPostedSet(_reviewSaveKey(), 'saved', _reviewSaveSrc(_reviewValidTrades())); saveData(); paintReviewSaveBtn(); } catch (e) {}
     const statsTab = document.querySelector('.tab[data-page="stats"]');
     if (statsTab) statsTab.click();
     // "1 trade saved" stays 5 s, 2 s longer than the usual 3 (Nestor, 28 Sep 2026: "can it last a couple of seconds longer").
