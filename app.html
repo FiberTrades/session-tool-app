@@ -4741,6 +4741,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .btn:last-child { }
   .btn:hover { background: var(--text); color: var(--bg); border-color: var(--text); }
   .btn.danger:hover { background: var(--bad); color: var(--bg); border-color: var(--bad); }
+  /* Bias page: today's bias is posted and unchanged (28 Sep 2026). */
+  #bias-copy.is-posted { color: var(--good); border-color: rgba(78, 205, 139, 0.55); background: rgba(78, 205, 139, 0.08); }
+  #bias-copy.is-posted:hover { color: var(--good); border-color: var(--good); background: rgba(78, 205, 139, 0.16); }
+  #bias-copy .bp-tick { display: inline-block; width: 13px; height: 13px; margin: 0 8px 0 0; vertical-align: -2px; }
+  .bias-posted-hint { width: 66.667%; margin: 12px auto 0; text-align: center; font-size: 10px; line-height: 1.6; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-dim); }
+  @media (max-width: 760px) { .bias-posted-hint { width: 100%; } }
   /* Toast notifications — centered on the page (vertical AND horizontal)
      so confirmations/alerts are immediately visible regardless of where
      the user is scrolled. Animates in with a small scale + fade for a
@@ -5479,6 +5485,7 @@ try {
         <button class="btn" id="bias-copy" data-i18n="btn.copy_discord">Post to community</button>
         <button class="btn" id="bias-reset" data-i18n="btn.clear_bias">Clear bias</button>
       </div>
+      <p class="bias-posted-hint" id="bias-posted-hint" hidden></p>
     </div>
 
   </div>
@@ -7580,6 +7587,9 @@ try {
       'trades.s7.title': 'Concept & Mindset Tags',
       // ----- Common buttons -----
       'btn.copy_discord': 'Post to community',
+      'btn.bias_posted': 'Posted {TIME}',
+      'btn.bias_post_update': 'Post update',
+      'bias.posted_hint': 'Tap to see it in community · change anything to post an update',
       'btn.upload_chart': 'Upload chart',
       'btn.translating': 'Translating…',
       'btn.clear_bias': 'Clear bias',
@@ -9435,6 +9445,9 @@ try {
       'trades.s7.title': 'Etiquetas de Concepto y Mentalidad',
       // ----- Common buttons -----
       'btn.copy_discord': 'Publicar en la comunidad',
+      'btn.bias_posted': 'Publicado {TIME}',
+      'btn.bias_post_update': 'Publicar actualización',
+      'bias.posted_hint': 'Toca para verlo en la comunidad · cambia algo para publicar una actualización',
       'btn.upload_chart': 'Subir gr\u00e1fico',
       'btn.translating': 'Traduciendo…',
       'btn.clear_bias': 'Borrar sesgo',
@@ -17742,7 +17755,43 @@ try {
     }
     return lines.join('\n');
   }
+  // Posted state of the Bias page's Post button (Nestor, 28 Sep 2026, after Aurora's bias went out twice). Posted today
+  // and unchanged since -> "Posted 07:53" in green, which opens the post in Community; changed since -> "Post update".
+  // Local dates on purpose (copiedAt is UTC ISO). No postedSig = posted before this existed -> the old button.
+  function _biasPostState(b) {
+    b = b || {};
+    if (!b.copiedAt || !b.postedSig) return 'new';
+    const d = new Date(b.copiedAt);
+    if (isNaN(d) || d.toDateString() !== new Date().toDateString()) return 'new';
+    return b.postedSig === biasSig(b) ? 'posted' : 'changed';
+  }
+  function paintBiasPostBtn() {
+    const btn = document.getElementById('bias-copy'), hint = document.getElementById('bias-posted-hint');
+    if (!btn) return;
+    const b = data.bias || {}, st = _biasPostState(b);
+    btn.classList.toggle('is-posted', st === 'posted');
+    if (st === 'posted') {
+      const d = new Date(b.copiedAt), hm = String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0');
+      btn.removeAttribute('data-i18n');   // the label carries the time, so applyI18n must not overwrite it
+      btn.innerHTML = '<svg class="bp-tick" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg>'
+        + t('btn.bias_posted').replace('{TIME}', hm).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+      if (hint) { hint.textContent = t('bias.posted_hint'); hint.hidden = false; }
+    } else {
+      const k = st === 'changed' ? 'btn.bias_post_update' : 'btn.copy_discord';
+      btn.setAttribute('data-i18n', k); btn.textContent = t(k);
+      if (hint) { hint.hidden = true; hint.textContent = ''; }
+    }
+  }
+  window.__stPaintBiasPost = paintBiasPostBtn;
+  // Tapping "Posted": open Community on the post itself.
+  function _biasShowPosted() {
+    const tab = document.querySelector('.tab[data-page="community"]');
+    if (!tab || tab.style.display === 'none') return;   // no Community on this account
+    tab.click();
+    try { if (window.STCommunity && STCommunity.showPost) STCommunity.showPost('pre-session-bias', data.bias && data.bias.postedId); } catch (e) {}
+  }
   function renderBiasPreview() {
+    try { paintBiasPostBtn(); } catch (e) {}
     const b = data.bias;
     const out = document.getElementById('bias-preview');
     const hasLinks = (b.tvLinks || []).some(l => l && l.url);
@@ -17821,9 +17870,12 @@ try {
     const [_biasEn, _biasEs] = await window.__stLocaliseRuleLine(
       window.__stBuildInLang('en', buildBiasMessage),
       window.__stBuildInLang('es', buildBiasMessage));
-    try{ await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ try{ await copyToClipboard(msg); }catch(_){} }
+    let _postedRow = null;
+    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); if(typeof showToast==='function') showToast(t('postedCommunity')); }catch(e){ _postedRow = null; try{ await copyToClipboard(msg); }catch(_){} }
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
+    // What went out, for the Posted button (only when it really posted; the clipboard fallback keeps the old button).
+    if (_postedRow && _postedRow.id) { data.bias.postedSig = biasSig(data.bias); data.bias.postedId = _postedRow.id; }
     data.bias.date = nowIso; // committing adopts today's date, so the card shows even when the form was filled the night before
     /* A new day detected at load has to be RESOLVED, not silently dropped. This used to clear the
        flag outright on the reasoning that posting a bias means the day is under way - but that also
@@ -17847,6 +17899,7 @@ try {
       if (entry) entry.copiedAt = nowIso;
     }
     saveData();
+    try { paintBiasPostBtn(); } catch (e) {}
     // Posting a bias deliberately does NOT mark today as a trading day. It used to call
     // __stActivateTradingToday(), which added today to the week's commitment — and because
     // Session Live = (today is a trading day) AND (now is inside a session window), posting a
@@ -17858,6 +17911,7 @@ try {
   };
   document.getElementById('bias-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
+    if (btn.classList.contains('is-posted')) { _biasShowPosted(); return; }   // already posted, unchanged: show it
     // Observation sessions are watch-only — there are no HTF/LTF charts to post, so skip the
     // "add both charts" reminder and copy straight away. This still stamps copiedAt, so the
     // "This morning's bias" card appears on Session Live exactly like any other copy.
@@ -51402,6 +51456,16 @@ try {
         if(++tries<25) setTimeout(find, 160);   /* channel still loading */
       })();
     }
+    // Open an app-post channel by slug and land on one message (the Bias page's Posted button, 28 Sep 2026).
+    // Channels may still be loading on a first open, so it waits for them.
+    function showPost(slug, mid){
+      slug=String(slug||'').toLowerCase(); var tries=0;
+      (function go(){
+        var ch=(channels||[]).filter(function(c){ var s=(c.slug||'').toLowerCase(); if(s===slug) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); return (sp>0?nm.slice(sp+1):nm).toLowerCase()===slug; })[0];
+        if(ch){ if(mid) jumpTo(ch.id, mid); else if(!(cur && cur.id===ch.id)) selectChannel(ch); return; }
+        if(++tries<40) setTimeout(go, 150);
+      })();
+    }
     function openSearch(){ var p=G('dcx-sres'); if(p){ p.classList.add('open'); SRCH.open=true; } }
     function closeSearch(){
       var p=G('dcx-sres'); if(p) p.classList.remove('open');
@@ -53437,7 +53501,7 @@ try {
     }
     return { refreshIdentity:refreshIdentity, startCall:startCall, friends:function(){ return FR; }, canTalk:canTalk,
              respondRequest:respondRequest, cancelRequest:cancelRequest, loadFriends:loadFriends, roster:function(){ return roster; },
-             paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang, wireMentions:wireMentions, gotoChannel:gotoChannel };
+             paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, showPost:showPost, relang:relang, wireMentions:wireMentions, gotoChannel:gotoChannel };
   })();
   window.STCommunity = STCommunity;
   /* ================= School (STSCHOOL) =================
