@@ -1315,6 +1315,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      time / currency / impact-dot / title row. */
   .econ-calendar { border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); overflow: hidden; box-shadow: var(--shadow-card); background: var(--bg-elev); padding: 0; margin-bottom: 36px; margin-left: 60px; position: relative; }
   .bias-nav { display: flex; align-items: center; justify-content: center; gap: 14px; width: fit-content; max-width: 100%; box-sizing: border-box; margin: 0 auto 32px; padding: 10px 14px; border: 1px solid var(--border-2); border-radius: var(--radius-card); background: var(--bg-elev); }   /* as wide as its content (Nestor, 28 Sep 2026: "its box look way to wide") */
+  #review-nav { margin-top: 28px; }   /* the Session Review's picker (28 Sep 2026): clear of the banner above */
   .bias-nav-btn { background: var(--bg-elev2); border: 1px solid var(--border-2); color: var(--text-mid); width: 34px; height: 34px; border-radius: var(--radius-ctrl); font-size: 20px; line-height: 1; cursor: pointer; font-family: inherit; transition: all 120ms; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .bias-nav-btn:hover { color: var(--text); border-color: var(--text-mid); }
   .bias-nav-label { display: flex; flex-direction: column; align-items: center; min-width: 180px; }
@@ -5504,6 +5505,12 @@ try {
     <div class="session-live-banner hidden" id="session-live-banner">
       <button type="button" class="session-live-dismiss" id="session-live-dismiss" data-i18n-aria-label="banner.dismiss_aria" aria-label="Dismiss until tomorrow" data-i18n-title="tip.dismiss_today">×</button>
       <p class="session-live-body" data-i18n-html="banner.body_html">Your <strong>morning bias sits just below</strong>, and your trades <strong>show up live as you take them</strong>. Trade your plan; everything <strong>syncs to your journal automatically</strong> from MT5, and the full write-up comes once the session's over.</p>
+    </div>
+    <!-- One Session Review per session + asset (28 Sep 2026), switched like the bias. Above the bias card, which shows this review's own bias. -->
+    <div id="review-nav" class="bias-nav" style="display:none;">
+      <button type="button" id="review-nav-prev" class="bias-nav-btn" title="Previous review" aria-label="Previous review">‹</button>
+      <div class="bias-nav-label"><span id="review-nav-symbol"></span><span class="bias-nav-sub" id="review-nav-sub"></span></div>
+      <button type="button" id="review-nav-next" class="bias-nav-btn" title="Next review" aria-label="Next review">›</button>
     </div>
     <div class="saved-bias hidden" id="saved-bias-card">
       <div class="saved-bias-label-row">
@@ -11215,7 +11222,7 @@ try {
         var list = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : [];
         if (typeof filterByScope === 'function') list = filterByScope(list);
         if (typeof filterBySymbolScope === 'function') list = filterBySymbolScope(list);
-        var rv = (data.review && Array.isArray(data.review.trades)) ? data.review.trades : [];
+        var rv = allReviewTrades();
         u = ofTrades(list.concat(rv));
       } catch (e) {}
       _cache = u; _cacheAt = now;
@@ -12086,6 +12093,7 @@ try {
   }
 
   function updateSessionLiveBanner() {
+    try { autoPickReviewSlot(); } catch (e) {}   // open the review of the session in focus (28 Sep 2026)
     const banner = document.getElementById('session-live-banner');
     const pill = document.getElementById('session-live-pill');
     const live = isSessionLive();
@@ -13099,21 +13107,22 @@ try {
   function biasSig(b){ b=b||{}; return JSON.stringify([b.mode||'',b.structure||'',b.structureLtf||'',b.location||'',b.locationLtf||'',b.direction||'',b.directionLtf||'',(b.notes||'').trim(),(Array.isArray(b.tvLinks)?b.tvLinks.map(function(l){return (l&&l.url)||'';}):[])]); }
   function _isTodayIso(s){ try{ var t=(typeof todayDateStr==='function')?todayDateStr():new Date().toISOString().slice(0,10); return String(s||'').slice(0,10)===t; }catch(e){ return false; } }
   function _biasSlotsArr(){ return (Array.isArray(data.biasSlots)&&data.biasSlots.length)?data.biasSlots:[data.bias||{}]; }
-  function _captureNewDaySnapshot(){ try{ return { sigs:_biasSlotsArr().map(biasSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]) }; }catch(e){ return null; } }
+  function _captureNewDaySnapshot(){ try{ var rs={}; _reviewSlotsArr().forEach(function(r){ if(r) rs[reviewSlotKey(r)]=JSON.stringify(r.trades||[]); }); return { sigs:_biasSlotsArr().map(biasSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]), reviewSigs: rs }; }catch(e){ return null; } }
   function _slotIsTodaysWork(sl, idx){ if(!sl) return false; if(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)) return true; if(_newDaySnapshot&&_newDaySnapshot.sigs&&idx!=null&&_newDaySnapshot.sigs[idx]!=null&&biasSig(sl)!==_newDaySnapshot.sigs[idx]) return true; return false; }
   // Does the review hold work done TODAY? Either it was sent today, or it's stamped today
   // and its trade rows have changed since the new day was detected. Used both by the reset
   // itself and by the prompt's safety net, so "is there anything stale left?" and "what
   // will the reset keep?" can never disagree.
-  function _reviewIsTodaysWork(){ try{ var r=data.review; if(!r) return false; if(_isTodayIso(r.copiedAt)) return true;
-    return !!(r.sessionDate===todayDateStr() && Array.isArray(r.trades) && r.trades.length>0 && _newDaySnapshot && JSON.stringify(r.trades||[])!==_newDaySnapshot.reviewSig); }catch(e){ return false; } }
-  function _reviewIsStale(){ try{ var r=data.review; return !!(r && Array.isArray(r.trades) && r.trades.length>0 && !_reviewIsTodaysWork()); }catch(e){ return false; } }
+  // Per review (session + symbol); r defaults to the one on screen.
+  function _reviewIsTodaysWork(r){ try{ r=r||data.review; if(!r) return false; if(_isTodayIso(r.copiedAt)) return true;
+    var snapSig = (_newDaySnapshot && _newDaySnapshot.reviewSigs && _newDaySnapshot.reviewSigs[reviewSlotKey(r)] != null) ? _newDaySnapshot.reviewSigs[reviewSlotKey(r)] : (_newDaySnapshot && _newDaySnapshot.reviewSig);
+    return !!(r.sessionDate===todayDateStr() && Array.isArray(r.trades) && r.trades.length>0 && _newDaySnapshot && JSON.stringify(r.trades||[])!==snapSig); }catch(e){ return false; } }
+  function _reviewIsStale(){ try{ return _reviewSlotsArr().some(function(r){ return !!(r && Array.isArray(r.trades) && r.trades.length>0 && !_reviewIsTodaysWork(r)); }); }catch(e){ return false; } }
   function hasPriorSessionContent() {
     const b = data.bias || {};
     const biasHasContent = !!(b.mode || b.structure || b.location || b.direction ||
       (b.notes && b.notes.trim()) || (Array.isArray(b.tvLinks) && b.tvLinks.some(l => l && l.url)));
-    const r = data.review || {};
-    const reviewHasContent = Array.isArray(r.trades) && r.trades.length > 0;
+    const reviewHasContent = _reviewSlotsArr().some(r => r && Array.isArray(r.trades) && r.trades.length > 0);
     return biasHasContent || reviewHasContent;
   }
   (function detectNewDaySession() {
@@ -13189,7 +13198,11 @@ try {
           const _ai = (typeof data.activeBiasSlot === 'number' && data.biasSlots[data.activeBiasSlot]) ? data.activeBiasSlot : 0;
           data.bias = data.biasSlots[_ai];
         } else if (inc.bias) data.bias = inc.bias;
-        if (inc.review) data.review = inc.review;
+        if (Array.isArray(inc.reviewSlots) && inc.reviewSlots.length) {   // data.review must BE its slot
+          data.reviewSlots = inc.reviewSlots;
+          if (typeof inc.activeReviewSlot === 'number') data.activeReviewSlot = inc.activeReviewSlot;
+          _relinkSlots(data);
+        } else if (inc.review) data.review = inc.review;
         try { if (window.__stFreshDates) window.__stFreshDates(); } catch (_e) {}
         // Our copy of the prompt now describes a session that no longer exists.
         _standDownNewDay();
@@ -13376,7 +13389,7 @@ try {
   function newTradeBlank() {
     return {
       result: '', r: '', type: '', side: '', entryTime: '', exitTime: '', risk: '', sl: '', costs: '',
-      symbol: primarySymbol(),
+      symbol: (data && data.review && data.review.slotSymbol) || primarySymbol(),   // the review's own asset (28 Sep 2026)
       // Per-trade review fields (moved from session-level in May 2026 — each trade gets its own).
       execution: null, focus: null, close: null,
       rice: [], concepts: [], mindset: [],
@@ -13530,6 +13543,7 @@ try {
       var prim = d.settings.symbols[0];
       function stamp(arr) { if (Array.isArray(arr)) arr.forEach(function (tr) { if (tr && !tr.symbol) tr.symbol = prim; }); }
       try { if (d.review) stamp(d.review.trades); } catch (e) {}
+      try { (Array.isArray(d.reviewSlots) ? d.reviewSlots : []).forEach(function (r) { if (r) stamp(r.trades); }); } catch (e) {}
       try { stamp(d.currentSeries); } catch (e) {}
       try { if (Array.isArray(d.history)) d.history.forEach(function (h) { if (h) stamp(h.trades); }); } catch (e) {}
     })();
@@ -13666,6 +13680,54 @@ try {
       d._sessionNameTimesBackfilled = true;
     }
     if (!d.review) d.review = newReviewBlank();
+    // Review slots (28 Sep 2026): one Session Review per (session, symbol). d.review becomes a live reference to the
+    // active slot. A journal from before is folded in: the review's answers go to the slot of its first trade (else
+    // Session 1's first symbol), each trade to the slot of its own symbol and session (entry time).
+    (function migrateReviewSlots() {
+      var sess = Array.isArray(d.settings.sessions) ? d.settings.sessions : [];
+      var fb = (d.settings.symbols && d.settings.symbols[0]) || d.settings.pair || 'EUR/USD';
+      var desired = [];
+      sess.forEach(function (x, si) { var syms = (x && Array.isArray(x.symbols) && x.symbols.length) ? x.symbols : [fb]; syms.forEach(function (sym) { desired.push({ i: si, n: (x && x.name) || 'London', sym: sym }); }); });
+      if (!desired.length) desired.push({ i: 0, n: (sess[0] && sess[0].name) || 'London', sym: fb });
+      function ident(r, x) { r.slotIdx = x.i; r.slotSession = x.n; r.slotSymbol = x.sym; return r; }
+      if (Array.isArray(d.reviewSlots) && d.reviewSlots.length) {
+        d.reviewSlots = d.reviewSlots.map(function (r, i) { return (r && typeof r === 'object') ? r : ident(newReviewBlank(), desired[Math.min(i, desired.length - 1)]); });
+        if (typeof d.activeReviewSlot !== 'number' || !d.reviewSlots[d.activeReviewSlot]) d.activeReviewSlot = 0;
+        // This app always saves d.review identical to its slot, so a difference means an older copy of the app (a
+        // phone on a cached build) edited d.review alone: that edit wins, into the slot it names.
+        try {
+          var _act = d.reviewSlots[d.activeReviewSlot], _rv = d.review;
+          if (_rv && typeof _rv === 'object' && JSON.stringify(_rv) !== JSON.stringify(_act)) {
+            var _k = ((_rv.slotSession || '') + '||' + (_rv.slotSymbol || ''));
+            var _j = (_rv.slotSession || _rv.slotSymbol) ? d.reviewSlots.findIndex(function (r) { return ((r.slotSession || '') + '||' + (r.slotSymbol || '')) === _k; }) : d.activeReviewSlot;
+            if (_j >= 0) { if (!_rv.slotSession) { _rv.slotIdx = d.reviewSlots[_j].slotIdx; _rv.slotSession = d.reviewSlots[_j].slotSession; _rv.slotSymbol = d.reviewSlots[_j].slotSymbol; } d.reviewSlots[_j] = _rv; d.activeReviewSlot = _j; }
+          }
+        } catch (e) {}
+        d.review = d.reviewSlots[d.activeReviewSlot];
+        return;
+      }
+      var R = d.review;
+      if (desired.length === 1) { ident(R, desired[0]); d.reviewSlots = [R]; d.activeReviewSlot = 0; return; }
+      var slots = desired.map(function (x) { var r = ident(newReviewBlank(), x); r.sessionDate = R.sessionDate || null; return r; });
+      function sessOf(hhmm) {
+        var m = /^\d{1,2}:\d{2}/.test(String(hhmm || '')) ? _mins(String(hhmm).slice(0, 5)) : null;
+        if (m == null) return -1;
+        for (var i = 0; i < sess.length; i++) { var x = sess[i]; if (x && m >= _mins(x.start) && m < _mins(x.end)) return i; }
+        return -1;
+      }
+      function slotFor(t) {
+        var c = slots.filter(function (r) { return t && r.slotSymbol === t.symbol; }), si = sessOf(t && t.entryTime);
+        return (si >= 0 && c.filter(function (r) { return r.slotIdx === si; })[0]) || c[0] || null;
+      }
+      var trades = Array.isArray(R.trades) ? R.trades : [];
+      var home = (trades.length && slotFor(trades[0])) || slots[0], hi = slots.indexOf(home);
+      ident(R, { i: home.slotIdx, n: home.slotSession, sym: home.slotSymbol });
+      R.trades = [];
+      slots[hi] = R;
+      trades.forEach(function (t) { (slotFor(t) || R).trades.push(t); });
+      if (trades.length) slots.forEach(function (r) { r.traded = r.trades.length ? 'Yes' : 'No'; });
+      d.reviewSlots = slots; d.activeReviewSlot = hi; d.review = R;
+    })();
     // Migrate single-select RICE (string|null) → multi-select (array). And clean R/I/C/E
     // out of the concepts array since they now live on data.review.rice instead.
     if (d.review) {
@@ -14110,6 +14172,7 @@ try {
       if (t.reviewSnap) migrateTvLinks(t.reviewSnap);
     });
     (d.review.trades || []).forEach(ensureTradeFields);
+    (Array.isArray(d.reviewSlots) ? d.reviewSlots : []).forEach(r => { if (r && r !== d.review) (r.trades || []).forEach(ensureTradeFields); });
     (d.currentSeries || []).forEach(t => { ensureTradeFields(t); if (!t.dayOfWeek && t.date) t.dayOfWeek = new Date(t.date).getDay(); });
     (d.history || []).forEach(s => { (s.trades || []).forEach(t => { ensureTradeFields(t); if (!t.dayOfWeek && t.date) t.dayOfWeek = new Date(t.date).getDay(); }); });
 
@@ -14141,7 +14204,7 @@ try {
     // otherwise re-break themselves after the flag had been spent. Only ever fills a BLANK
     // ticket, so it can never fight the post-mortem re-stamping pass.
     try {
-      const _revT = (d.review && d.review.trades) || [];
+      const _revT = [].concat(...(Array.isArray(d.reviewSlots) && d.reviewSlots.length ? d.reviewSlots : [d.review]).map(r => (r && r.trades) || []));
       if (_revT.length) {
         const _committed = [...(d.currentSeries || []), ...(d.history || []).flatMap(s => s.trades || [])];
         _revT.forEach(rt => {
@@ -14879,7 +14942,7 @@ try {
     let changed = false;
     if (isDeadGroup(data.viewScope))        { data.viewScope = 'lifetime'; changed = true; }
     if (isDeadGroup(data.defaultLogTarget)) { data.defaultLogTarget = null; changed = true; }
-    if (data.review && isDeadGroup(data.review.logTo)) { data.review.logTo = null; changed = true; }
+    _reviewSlotsArr().forEach(r => { if (r && isDeadGroup(r.logTo)) { r.logTo = null; changed = true; } });
     if (changed) { try { saveData(); } catch (e) {} }
   }
   function usableGroups() {
@@ -15480,11 +15543,27 @@ try {
       if (!base || !other) return;
       var todayKey = new Date().toDateString();
       var isToday = function (r) { try { return !!(r && r.sessionDate && new Date(r.sessionDate + 'T12:00:00').toDateString() === todayKey); } catch (e) { return false; } };
+      var cnt = function (r) { return (r && Array.isArray(r.trades)) ? r.trades.length : 0; };
+      var wins = function (o, b) { var oT = cnt(o); if (!isToday(o) || oT === 0) return false; return !(isToday(b) && cnt(b) >= oT); };
+      // Session reviews (28 Sep 2026): the same rule, slot by slot (session + symbol).
+      var bS = (Array.isArray(base.reviewSlots) && base.reviewSlots.length) ? base.reviewSlots : null;
+      var oS = (Array.isArray(other.reviewSlots) && other.reviewSlots.length) ? other.reviewSlots : null;
+      if (bS) {
+        var key = function (r) { return ((r && r.slotSession) || '') + '||' + ((r && r.slotSymbol) || ''); };
+        if (oS) {
+          var byKey = {}; oS.forEach(function (r) { if (r) byKey[key(r)] = r; });
+          bS.forEach(function (b, i) { var o = b && byKey[key(b)]; if (o && wins(o, b)) bS[i] = o; });
+        } else {
+          var ai0 = (typeof base.activeReviewSlot === 'number' && bS[base.activeReviewSlot]) ? base.activeReviewSlot : 0;
+          var ob = other.review;
+          if (ob && wins(ob, bS[ai0])) { var idn = bS[ai0]; bS[ai0] = Object.assign(ob, { slotIdx: idn.slotIdx, slotSession: idn.slotSession, slotSymbol: idn.slotSymbol }); }
+        }
+        var ai = (typeof base.activeReviewSlot === 'number' && bS[base.activeReviewSlot]) ? base.activeReviewSlot : 0;
+        base.review = bS[ai];
+        return;
+      }
       var o = other.review, b = base.review;
-      var oT = (o && Array.isArray(o.trades)) ? o.trades.length : 0;
-      if (!isToday(o) || oT === 0) return;             // only today's review with real trades may win
-      var bT = (b && Array.isArray(b.trades)) ? b.trades.length : 0;
-      if (isToday(b) && bT >= oT) return;              // base already holds an equal/richer today review
+      if (!wins(o, b)) return;
       base.review = o;                                 // adopt the fresher today review
     } catch (e) {}
   };
@@ -15774,7 +15853,7 @@ try {
       try {
         if (typeof window.__stManualLogOn === 'function' && !window.__stManualLogOn()) return [];
         var defSym = (data.settings && data.settings.symbols && data.settings.symbols[0]) || (data.settings && data.settings.pair) || '';
-        return ((data.review && data.review.trades) || []).filter(function (t) { return t && (t.side === 'Long' || t.side === 'Short'); })
+        return allReviewTrades().filter(function (t) { return t && (t.side === 'Long' || t.side === 'Short'); })
           .map(function (t, i) { return { ticket: i + 1, direction: t.side === 'Long' ? 'long' : 'short', closed: !!t.result, _res: t.result || null, symbol: t.symbol || defSym }; });
       } catch (e) { return []; }
     }
@@ -16505,7 +16584,7 @@ try {
     function journalTrades() {
       var list = [];
       try { list = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades().slice() : []; } catch (e) {}
-      try { if (data && data.review && Array.isArray(data.review.trades)) list = list.concat(data.review.trades); } catch (e) {}
+      try { list = list.concat(allReviewTrades()); } catch (e) {}
       return list.filter(function (tr) { return tr && tr.result; });
     }
     function ticketMap(list) {
@@ -17479,6 +17558,156 @@ try {
     data.biasSlots = next;
     if (typeof data.activeBiasSlot !== 'number' || data.activeBiasSlot < 0 || data.activeBiasSlot >= next.length) data.activeBiasSlot = 0;
     data.bias = data.biasSlots[data.activeBiasSlot];
+    // The Session Review has the same slots (28 Sep 2026).
+    try { reconcileReviewSlots(); renderReviewNav(); } catch (e) {}
+  }
+  // ===== Review slots (Nestor, 28 Sep 2026: "per session and per asset") =====
+  // One Session Review per (session, symbol), like the bias. data.reviewSlots is the source of truth; data.review is a
+  // live reference to the active slot. Identity: slotIdx / slotSession / slotSymbol.
+  function reviewSlotKey(r) { return ((r && r.slotSession) || '') + '||' + ((r && r.slotSymbol) || ''); }
+  function _reviewSlotsArr() { return (Array.isArray(data.reviewSlots) && data.reviewSlots.length) ? data.reviewSlots : [data.review || {}]; }
+  function _multiReview() { return Array.isArray(data.reviewSlots) && data.reviewSlots.length > 1; }
+  // Every trade in every session's review (todayOnly: the reviews dated today, or undated).
+  function allReviewTrades(todayOnly) {
+    const out = [], td = todayDateStr();
+    _reviewSlotsArr().forEach(r => {
+      if (!r || !Array.isArray(r.trades)) return;
+      if (todayOnly && r.sessionDate && r.sessionDate !== td) return;
+      r.trades.forEach(x => { if (x && out.indexOf(x) < 0) out.push(x); });
+    });
+    return out;
+  }
+  window.__stAllReviewTrades = allReviewTrades;
+  function _reviewHasContent(r) {
+    if (!r) return false;
+    return !!((Array.isArray(r.trades) && r.trades.length) || r.execution || r.focus || r.close || (r.reflection && String(r.reflection).trim())
+      || (Array.isArray(r.mindset) && r.mindset.length) || (Array.isArray(r.rice) && r.rice.length) || (Array.isArray(r.concepts) && r.concepts.length));
+  }
+  // Blank a review in place: it keeps its slot identity and stays the object data.review points at.
+  function _blankReviewInPlace(r, dateStr) {
+    Object.keys(r).forEach(k => { if (k !== 'slotIdx' && k !== 'slotSession' && k !== 'slotSymbol') delete r[k]; });
+    Object.assign(r, newReviewBlank());
+    r.sessionDate = dateStr || todayDateStr();
+    return r;
+  }
+  // data.review / data.bias must BE their active slots (after undo, an other-window adopt, a JSON round trip).
+  function _relinkSlots(d) {
+    try {
+      d = d || data;
+      if (Array.isArray(d.biasSlots) && d.biasSlots.length) {
+        if (typeof d.activeBiasSlot !== 'number' || !d.biasSlots[d.activeBiasSlot]) d.activeBiasSlot = 0;
+        d.bias = d.biasSlots[d.activeBiasSlot];
+      }
+      if (Array.isArray(d.reviewSlots) && d.reviewSlots.length) {
+        if (typeof d.activeReviewSlot !== 'number' || !d.reviewSlots[d.activeReviewSlot]) d.activeReviewSlot = 0;
+        d.review = d.reviewSlots[d.activeReviewSlot];
+      }
+    } catch (e) {}
+  }
+  window.__stRelinkSlots = _relinkSlots;
+  function reconcileReviewSlots() {
+    if (!Array.isArray(data.reviewSlots) || !data.reviewSlots.length) data.reviewSlots = data.review ? [data.review] : [];
+    const ss = (typeof getSessions === 'function') ? getSessions() : [];
+    const fallbackSym = (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD';
+    const desired = [];
+    ss.forEach((x, si) => { const syms = (x && Array.isArray(x.symbols) && x.symbols.length) ? x.symbols : [fallbackSym]; syms.forEach(sym => desired.push({ i: si, n: (x && x.name) || 'London', sym })); });
+    if (!desired.length) desired.push({ i: 0, n: (ss[0] && ss[0].name) || 'London', sym: fallbackSym });
+    const today = todayDateStr();
+    const byKey = {}, loose = [];
+    data.reviewSlots.forEach(r => { if (!r) return; if (r.slotSession || r.slotSymbol) byKey[reviewSlotKey(r)] = r; else loose.push(r); });
+    const parked = (data.reviewSlotsParked && typeof data.reviewSlotsParked === 'object') ? data.reviewSlotsParked : {};
+    Object.keys(parked).forEach(k => { const p = parked[k]; if (!p || (p.sessionDate && p.sessionDate !== today)) delete parked[k]; });
+    const next = desired.map(dd => {
+      const k = dd.n + '||' + dd.sym;
+      let ex = byKey[k];
+      if (ex) delete byKey[k];
+      else if (parked[k]) { ex = parked[k]; delete parked[k]; }
+      else if (loose.length) ex = loose.shift();   // a review from before slots existed takes the first free place
+      if (!ex) { ex = newReviewBlank(); ex.sessionDate = today; }
+      ex.slotIdx = dd.i; ex.slotSession = dd.n; ex.slotSymbol = dd.sym;
+      return ex;
+    });
+    Object.keys(byKey).forEach(k => { const r = byKey[k]; if (r && _reviewHasContent(r) && (!r.sessionDate || r.sessionDate === today)) parked[k] = r; });
+    data.reviewSlotsParked = parked;
+    const cur = data.review;
+    data.reviewSlots = next;
+    const keep = next.indexOf(cur);
+    data.activeReviewSlot = keep >= 0 ? keep : ((typeof data.activeReviewSlot === 'number' && next[data.activeReviewSlot]) ? data.activeReviewSlot : 0);
+    data.review = next[data.activeReviewSlot];
+  }
+  function renderReviewNav() {
+    const nav = document.getElementById('review-nav'); if (!nav) return;
+    const slots = Array.isArray(data.reviewSlots) ? data.reviewSlots : [];
+    if (slots.length <= 1) { nav.style.display = 'none'; return; }
+    nav.style.display = '';
+    const i = (typeof data.activeReviewSlot === 'number' && slots[data.activeReviewSlot]) ? data.activeReviewSlot : 0;
+    const r = slots[i];
+    const symEl = document.getElementById('review-nav-symbol'), subEl = document.getElementById('review-nav-sub');
+    if (symEl) symEl.textContent = r.slotSymbol || '';
+    if (subEl) { const sess = r.slotSession ? localizeSessionName(r.slotSession) : ''; subEl.textContent = (sess ? sess + ' \u00b7 ' : '') + (i + 1) + ' / ' + slots.length; }
+  }
+  function _repaintReviewPage() {
+    try { syncTradedFromTrades(); } catch (e) {}
+    try { renderTrades(); } catch (e) {}
+    try { syncReviewSectionsToActiveTrade(); } catch (e) {}
+    try { renderReviewTvLinks(); } catch (e) {}
+    try { renderReviewPreview(); } catch (e) {}
+    try { renderSavedBias(); } catch (e) {}
+    try { const p = document.getElementById('session-date'); if (p) { p.value = (data.review && data.review.sessionDate) || todayDateStr(); updateSessionDateStatus(); } } catch (e) {}
+    try { renderReviewNav(); } catch (e) {}
+  }
+  function switchReviewSlot(idx) {
+    const slots = Array.isArray(data.reviewSlots) ? data.reviewSlots : [];
+    if (!slots.length) return;
+    const n = ((idx % slots.length) + slots.length) % slots.length;
+    data.activeReviewSlot = n;
+    data.review = slots[n];
+    try { _activeReviewTradeIdx = 0; _tradeReviewLocked = (data.review.trades || []).length >= 2; } catch (e) {}
+    saveData();
+    _repaintReviewPage();
+  }
+  // Follow the session: while one is live, or the one that just ended, open its review - once per session change,
+  // so a review picked by hand stays put.
+  function autoPickReviewSlot() {
+    try {
+      if (!_multiReview()) return;
+      const si = (typeof recentOrCurrentSessionIndex === 'function') ? recentOrCurrentSessionIndex() : -1;
+      if (si < 0) return;
+      const key = todayDateStr() + ':' + si;
+      if (data._reviewAutoKey === key) return;
+      data._reviewAutoKey = key;
+      if (data.review && data.review.slotIdx === si) { saveData(); return; }
+      const slots = data.reviewSlots;
+      let j = slots.findIndex(r => r && r.slotIdx === si && Array.isArray(r.trades) && r.trades.length);
+      if (j < 0) j = slots.findIndex(r => r && r.slotIdx === si);
+      if (j >= 0) switchReviewSlot(j); else saveData();
+    } catch (e) {}
+  }
+  // The bias that belongs to the review on screen (same session + symbol); else the Bias page's.
+  function _reviewBias() {
+    try {
+      const r = data.review;
+      if (r && r.slotSession && Array.isArray(data.biasSlots)) {
+        const m = data.biasSlots.find(b => b && b.sessionName === r.slotSession && b.symbol === r.slotSymbol);
+        if (m) return m;
+      }
+    } catch (e) {}
+    return data.bias || {};
+  }
+  // Letters only, upper case; MT5's metal codes read as the names members give them (XAUUSD = gold).
+  function _symNorm(x) { const n = String(x == null ? '' : x).replace(/[^A-Za-z]/g, '').toUpperCase(); return ({ XAUUSD: 'GOLD', XAGUSD: 'SILVER' })[n] || n; }
+  // The review an imported trade belongs to: its own symbol, in the session its entry time falls in.
+  function _reviewSlotForTrade(sym, hhmm) {
+    if (!_multiReview()) return data.review;
+    const slots = data.reviewSlots, ss = (typeof getSessions === 'function') ? getSessions() : [];
+    let si = -1;
+    const m = /^\d{1,2}:\d{2}/.test(String(hhmm || '')) ? _mins(String(hhmm).slice(0, 5)) : null;
+    if (m != null) ss.forEach((x, i) => { if (si < 0 && x && m >= _mins(x.start) && m < _mins(x.end)) si = i; });
+    const ns = _symNorm(sym);
+    const c = ns ? slots.filter(r => r && _symNorm(r.slotSymbol) === ns) : [];
+    return (si >= 0 && c.find(r => r.slotIdx === si)) || c[0]
+      || (si >= 0 && data.review && data.review.slotIdx !== si && slots.find(r => r && r.slotIdx === si && r.slotSymbol === data.review.slotSymbol))
+      || data.review;
   }
   // Called by the Symbols editor (separate scope) after an instrument is added/removed:
   // prune+rebuild slots, refresh the navigator, the bias form, the header and chips.
@@ -18788,7 +19017,7 @@ try {
   // Every trade that carries a playbook name: the live form and the saved journal.
   function _pbAllTrades() {
     const out = [];
-    try { (data.review && data.review.trades || []).forEach(t => out.push(t)); if (data.review) out.push(data.review); } catch (e) {}
+    try { allReviewTrades().forEach(t => out.push(t)); _reviewSlotsArr().forEach(r => { if (r) out.push(r); }); } catch (e) {}
     try { (data.currentSeries || []).forEach(t => out.push(t)); (data.history || []).forEach(s => (s.trades || []).forEach(t => out.push(t))); } catch (e) {}
     return out.filter(Boolean);
   }
@@ -18994,7 +19223,7 @@ try {
   });
   // ---- Manage playbooks
   let _pbEditRec = null;   // id of the playbook whose recipe is open for editing
-  function pbTradeCount(name) { const n = String(name).toLowerCase(); return _pbAllTrades().filter(t => t !== data.review && t.setup && String(t.setup).toLowerCase() === n).length; }
+  function pbTradeCount(name) { const n = String(name).toLowerCase(); return _pbAllTrades().filter(t => _reviewSlotsArr().indexOf(t) < 0 && t.setup && String(t.setup).toLowerCase() === n).length; }
   function pbOpenManage() {
     const bg = document.getElementById('pb-modal-bg'); if (!bg) return;
     pbRenderManage(); bg.classList.add('show');
@@ -20875,7 +21104,7 @@ try {
         _atr.tvLinks = _arr;
       }
     } catch (e) {}
-    const r = data.review, b = data.bias;
+    const r = data.review, b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
     // Use the picked session date in the Discord header (defaults to today, but back-fillable).
     let headerDate = _headerDateStr();
     if (r.sessionDate && r.sessionDate !== todayDateStr()) {
@@ -20893,7 +21122,9 @@ try {
       return [...new Set(out)];
     }
     let _revTitle;
-    if (_tradedSyms.length === 1) {
+    if (_multiReview() && r.slotSymbol) {   // one review per session + asset: it says which (28 Sep 2026)
+      _revTitle = `${r.slotSymbol}${r.slotSession ? ' ' + localizeSessionName(r.slotSession) : ''} Review`;
+    } else if (_tradedSyms.length === 1) {
       const sn = _sessNamesForSyms(_tradedSyms);
       const lbl = sn.length ? sn.join(' \u00b7 ') : (_ssR.length > 1 ? sessionShortLabel(recentOrCurrentSessionIndex()) : '');
       _revTitle = `${_tradedSyms[0]}${lbl ? ' ' + lbl : ''} Review`;
@@ -21169,7 +21400,7 @@ try {
   }
   // Session Review's Post button: one record per session date; "unchanged" = the English post built now is the one
   // that went out (built only once a record exists).
-  function _reviewPostKey() { const r = data.review || {}; return 'review:' + (r.sessionDate || ((typeof todayDateStr === 'function') ? todayDateStr() : '')); }
+  function _reviewPostKey() { const r = data.review || {}; return 'review:' + (r.sessionDate || ((typeof todayDateStr === 'function') ? todayDateStr() : '')) + (_multiReview() ? ':' + reviewSlotKey(r) : ''); }
   function paintReviewPostBtn() {
     const key = _reviewPostKey(), rec = _stPostedGet(key);
     const st = rec ? _stPostedState(key, () => window.__stBuildInLang('en', buildReviewMessage)) : 'new';
@@ -21182,7 +21413,7 @@ try {
   var _SAVE_SIG_KEYS = ['symbol', 'distUnit', 'realPips', 'result', 'r', 'pips', 'potentialR', 'potentialPips', 'bePotentialR', 'bePotentialPips', 'type', 'setup', 'side',
     'entryTime', 'exitTime', 'risk', 'sl', 'costs', 'actualGross', 'mt5Ticket', 'position', 'execution', 'focus', 'close', 'rice', 'concepts', 'mindset', 'reflection'];
   function _reviewSaveSrc(list) { return JSON.stringify((list || []).map(x => _SAVE_SIG_KEYS.map(k => x[k] == null ? '' : x[k]).concat([(x.tvLinks || []).map(l => [(l && l.url) || '', (l && l.notes) || ''])]))); }
-  function _reviewSaveKey() { const r = data.review || {}; return 'series-save:' + (r.sessionDate || ((typeof todayDateStr === 'function') ? todayDateStr() : '')); }
+  function _reviewSaveKey() { const r = data.review || {}; return 'series-save:' + (r.sessionDate || ((typeof todayDateStr === 'function') ? todayDateStr() : '')) + (_multiReview() ? ':' + reviewSlotKey(r) : ''); }
   function paintReviewSaveBtn() {
     const valid = _reviewValidTrades();
     let st = 'new', rec = null;
@@ -21259,7 +21490,7 @@ try {
   // hoists as undefined, which the reads below treat as HTF — the correct default anyway.
   var _savedBiasTf = 'htf';
   function renderSavedBias() {
-    const b = data.bias;
+    const b = _reviewBias();   // the bias of the review on screen: same session + asset (28 Sep 2026)
     const card = document.getElementById('saved-bias-card');
     // Set the label dynamically — adapts to whichever session window the user trades.
     const labelEl = document.getElementById('saved-bias-label');
@@ -21550,7 +21781,8 @@ try {
       if (!skipBackupModal) showToast(t('toast.saved'));
       return 0;
     }
-    const biasSnap = { ...data.bias, tvLinks: (data.bias.tvLinks || []).map(l => ({ url: l.url || '', notes: l.notes || '' })) };
+    const _rb = _reviewBias();   // the bias of THIS session + asset
+    const biasSnap = { ..._rb, tvLinks: (_rb.tvLinks || []).map(l => ({ url: l.url || '', notes: l.notes || '' })) };
     const sessionDateStr = data.review.sessionDate || todayDateStr();
     const sessionDate = new Date(sessionDateStr + 'T12:00:00');
     // Log multiple trades into the series in the order they were TAKEN (earliest entry first),
@@ -21705,8 +21937,8 @@ try {
         data.review.trades.forEach(function (t) { if (t && t.mt5Ticket && !_saved[String(t.mt5Ticket)]) _relist.push(String(t.mt5Ticket)); });
       }
     } catch (e) {}
-    data.review = newReviewBlank();
-    data.review.sessionDate = todayDateStr();
+    if (Array.isArray(data.reviewSlots) && data.reviewSlots.indexOf(data.review) >= 0) _blankReviewInPlace(data.review, todayDateStr());   // keeps its session + asset
+    else { data.review = newReviewBlank(); data.review.sessionDate = todayDateStr(); }
     // Before saveData, so the lifted locks are written in the same save as the blanked review.
     try {
       if (_relist.length && window.__stMt5Relist && window.__stMt5Relist(_relist)) {
@@ -21759,21 +21991,22 @@ try {
     const _bp = document.getElementById('bias-date'); if (_bp) _bp.value = data.bias.sessionDate;
     if (typeof renderBiasPreview === 'function') renderBiasPreview();
     // --- Review --- (preserve it when it is today's own logged session; only clear a stale prior-day review)
-    var _revTodaysWork = _reviewIsTodaysWork();
+    // Every session's review (28 Sep 2026): each one that is not today's own work is cleared, in place.
+    var _revClear = _reviewSlotsArr().filter(function (r) { return r && !_reviewIsTodaysWork(r); });
+    var _revTodaysWork = _revClear.indexOf(data.review) < 0;
     // Any MT5-synced trade about to be discarded goes back on the import list. A successful import
     // writes the ticket into mt5UserDismissed, which the import filter ALWAYS honours - so without
     // this, clearing a session deletes the trade from the journal and permanently bars it from
     // returning. That is how two real trades became recoverable only by direct database work.
     var _relist = [];
     try {
-      if (!_revTodaysWork && data.review && Array.isArray(data.review.trades)) {
-        var _saved = _savedMt5Tickets();   // already in the Series of 10 - not being discarded
-        data.review.trades.forEach(function (t) { if (t && t.mt5Ticket && !_saved[String(t.mt5Ticket)]) _relist.push(String(t.mt5Ticket)); });
-      }
+      var _saved = _savedMt5Tickets();   // already in the Series of 10 - not being discarded
+      _revClear.forEach(function (r) { (Array.isArray(r.trades) ? r.trades : []).forEach(function (t) { if (t && t.mt5Ticket && !_saved[String(t.mt5Ticket)]) _relist.push(String(t.mt5Ticket)); }); });
     } catch (e) {}
+    _revClear.forEach(function (r) { if (r !== data.review) _blankReviewInPlace(r, todayDateStr()); });
     if (!_revTodaysWork) {
-      data.review = newReviewBlank();
-      data.review.sessionDate = todayDateStr();
+      if (Array.isArray(data.reviewSlots) && data.reviewSlots.indexOf(data.review) >= 0) _blankReviewInPlace(data.review, todayDateStr());
+      else { data.review = newReviewBlank(); data.review.sessionDate = todayDateStr(); }
       if (typeof syncTradedFromTrades === 'function') syncTradedFromTrades();
       document.querySelectorAll('[data-review] .option').forEach(b => b.classList.remove('selected'));
       document.querySelectorAll('[data-review-multi] .option').forEach(b => b.classList.remove('selected'));
@@ -23088,6 +23321,7 @@ try {
   function _applySnapshot(snap) {
     Object.keys(data).forEach(k => { delete data[k]; });
     Object.assign(data, snap);
+    _relinkSlots(data);   // the snapshot is a JSON copy: data.bias / data.review would be separate from their slots
     saveData();
     if (typeof renderStats === 'function') renderStats();
     if (typeof renderTradesStats === 'function' && document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
@@ -31687,6 +31921,10 @@ try {
     if (pv) pv.addEventListener('click', () => switchBiasSlot((data.activeBiasSlot || 0) - 1));
     if (nx) nx.addEventListener('click', () => switchBiasSlot((data.activeBiasSlot || 0) + 1));
     try { renderBiasNav(); } catch (e) {}
+    const rpv = document.getElementById('review-nav-prev'), rnx = document.getElementById('review-nav-next');
+    if (rpv) rpv.addEventListener('click', () => switchReviewSlot((data.activeReviewSlot || 0) - 1));
+    if (rnx) rnx.addEventListener('click', () => switchReviewSlot((data.activeReviewSlot || 0) + 1));
+    try { renderReviewNav(); } catch (e) {}
   })();
 
   // ===== Media Vault (members-only video library) =====
@@ -38069,15 +38307,16 @@ try {
     // Determine the in-progress review's session date. data.review.sessionDate is set when the
     // user is logging trades for the current session — if it's not today's, the in-progress
     // trades belong to a different day and must NOT count toward today's outcome.
-    const reviewDateStr = data.review && data.review.sessionDate;
-    const reviewIsToday = reviewDateStr ? isSameDay(reviewDateStr) : false;
+    // Every session's review dated today (28 Sep 2026: one per session + asset).
+    const _todayRevTrades = _reviewSlotsArr().filter(r => r && r.sessionDate && isSameDay(r.sessionDate)).reduce((a, r) => a.concat(r.trades || []), []);
+    const reviewIsToday = _todayRevTrades.length > 0;
     // Today's saved trades from currentSeries.
     const saved = (data.currentSeries || []).filter(t => isSameDay(t.date) && t.result);
     // In-progress trades — only if the review session is for TODAY. After performReviewSave the
     // form is NOT cleared (user can keep adding to the session), so trades may live in both
     // arrays. We dedupe by signature to count each real trade exactly once.
     const inProgress = (reviewIsToday)
-      ? ((data.review && data.review.trades) || []).filter(t => t.result)
+      ? _todayRevTrades.filter(t => t.result)
       : [];
     // Build a Set of "signatures" from saved trades. Each in-progress trade with a matching
     // signature is a duplicate of an already-saved trade and gets skipped.
@@ -38369,11 +38608,8 @@ try {
       // dedupe as getTodayOutcome, with an extra accountId filter.
       const saved = (data.currentSeries || []).filter(t =>
         isSameDay(t.date) && t.result && t.accountId === acc.id);
-      const reviewIsToday = (data.review && data.review.sessionDate)
-        ? isSameDay(data.review.sessionDate) : false;
-      const inProgress = reviewIsToday
-        ? ((data.review && data.review.trades) || []).filter(t => t.result && t.accountId === acc.id)
-        : [];
+      const inProgress = _reviewSlotsArr().filter(r => r && r.sessionDate && isSameDay(r.sessionDate))
+        .reduce((a, r) => a.concat(r.trades || []), []).filter(t => t.result && t.accountId === acc.id);
       const sig = (t) => `${t.result}|${t.entryTime || ''}|${t.r || ''}|${t.pips || ''}`;
       const savedSigs = new Set(saved.map(sig));
       const uniqueInProgress = inProgress.filter(t => !savedSigs.has(sig(t)));
@@ -42052,7 +42288,7 @@ try {
       var all = [];
       try { (data.currentSeries || []).forEach(function (x) { all.push(x); }); } catch (e) {}
       try { (data.history || []).forEach(function (s) { (s && s.trades ? s.trades : []).forEach(function (x) { all.push(x); }); }); } catch (e) {}
-      try { ((data.review && data.review.trades) || []).forEach(function (x) { all.push(x); }); } catch (e) {}
+      try { allReviewTrades().forEach(function (x) { all.push(x); }); } catch (e) {}
       var changed = 0;
       all.forEach(function (tr) {
         if (!tr) return;
@@ -43068,7 +43304,7 @@ try {
     } catch (e) {}
     var tradedToday = false;
     try {
-      var all = ((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).concat((data && data.review && data.review.trades) || []);
+      var all = ((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).concat(allReviewTrades());
       tradedToday = all.some(function (t) { return t && t.result && t.date && _ld(t.date) === today; });
     } catch (e) {}
     var _say = function (en, es) { return S ? es : en; };
@@ -43325,7 +43561,7 @@ try {
         const _td = new Date(); _td.setHours(0, 0, 0, 0);
         const _isToday = (d) => { if (!d) return false; const x = new Date(d); if (isNaN(x.getTime())) return false; x.setHours(0, 0, 0, 0); return x.getTime() === _td.getTime(); };
         const _nSeries = ((data && data.currentSeries) || []).filter(t => t && _isToday(t.date) && t.result).length;
-        const _nReview = ((data && data.review && data.review.trades) || []).filter(t => t && t.result).length;
+        const _nReview = allReviewTrades().filter(t => t && t.result).length;
         const _phase = _sessionsDoneToday() ? 'after'
                      : ((typeof isSessionLive === 'function' && isSessionLive()) ? 'live' : 'before');
         return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on'].join('.');
@@ -45146,7 +45382,7 @@ try {
         const allT = [];
         (data.currentSeries || []).forEach(t => allT.push(t));
         (data.history || []).forEach(sr => (sr.trades || []).forEach(t => allT.push(t)));
-        (data.review && data.review.trades ? data.review.trades : []).forEach(t => allT.push(t));
+        allReviewTrades().forEach(t => allT.push(t));
         // Only tickets a trade ACTUALLY WEARS block pairing. This used the
         // mt5ImportedTickets ledger, whose real job is stopping the import dialog from
         // re-offering rows - but the ledger is permanent, so a row whose stamp was later
@@ -45299,7 +45535,7 @@ try {
         const _pool = [];
         (data.currentSeries || []).forEach(t => _pool.push(t));
         (data.history || []).forEach(sr => (sr.trades || []).forEach(t => _pool.push(t)));
-        (data.review && data.review.trades ? data.review.trades : []).forEach(t => _pool.push(t));
+        allReviewTrades().forEach(t => _pool.push(t));
         _pool.forEach(t => {
           if (!t || !t.mt5Ticket) return;
           const r = _byTk[String(t.mt5Ticket)];
@@ -45376,7 +45612,7 @@ try {
 
       (data.currentSeries || []).forEach(fill);
       (data.history || []).forEach(sr => (sr.trades || []).forEach(fill));
-      (data.review && data.review.trades ? data.review.trades : []).forEach(fill);
+      allReviewTrades().forEach(fill);
 
       // Per-replayed-ticket fate for the diagnostic trail: whether each pm row found a
       // logged trade, and how long its BE sim is. Distinguishes "pipeline broken" from
@@ -45385,7 +45621,7 @@ try {
         const _all2 = [];
         (data.currentSeries || []).forEach(t => _all2.push(t));
         (data.history || []).forEach(sr => (sr.trades || []).forEach(t => _all2.push(t)));
-        (data.review && data.review.trades ? data.review.trades : []).forEach(t => _all2.push(t));
+        allReviewTrades().forEach(t => _all2.push(t));
         dbg.pmDetail = rows.map(r => {
           const tk = String(r.ticket);
           const tr = _all2.find(t => t && String(t.mt5Ticket || '') === tk);
@@ -45521,7 +45757,7 @@ try {
       // last left a gap: once a session was finished, its imported trades sat in
       // currentSeries, the guard could not see them, and the import dialog offered them
       // again as if they were new.
-      add(data.review && data.review.trades);
+      add(allReviewTrades());
       add(data.currentSeries);
       (data.history || []).forEach(h => add(h && h.trades));
       // User-dismissed tickets: ones the user EXPLICITLY imported or pressed "Mark as
@@ -45558,7 +45794,7 @@ try {
     const set = new Set();
     const add = (list) => { (list || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }); };
     try {
-      add(data.review && data.review.trades);
+      add(allReviewTrades());
       add(data.currentSeries);
       (data.history || []).forEach(h => add(h && h.trades));
     } catch (e) {}
@@ -45586,7 +45822,7 @@ try {
       });
     };
     try {
-      add(data.review && data.review.trades);
+      add(allReviewTrades());
       add(data.currentSeries);
       (data.history || []).forEach(h => add(h && h.trades));
     } catch (e) {}
@@ -45627,7 +45863,7 @@ try {
       });
     };
     try {
-      scan(data.review && data.review.trades);
+      scan(allReviewTrades());
       scan(data.currentSeries);
       (data.history || []).forEach(h => scan(h && h.trades));
     } catch (e) {}
@@ -45715,7 +45951,7 @@ try {
         var logged = [];
         var addL = function (list) { (list || []).forEach(function (t) { if (!t || !t.date) return;
           try { logged.push({ sym: _mt5Sym(t.symbol), net: +((typeof tradeNetPL === 'function') ? tradeNetPL(t) : 0).toFixed(2), date: String(t.date).slice(0, 10), day: _mt5Day(t.date) }); } catch (e) {} }); };
-        addL(data.review && data.review.trades); addL(data.currentSeries);
+        addL(allReviewTrades()); addL(data.currentSeries);
         (data.history || []).forEach(function (h) { addL(h && h.trades); });
         var out = rows.map(function (r) {
           var net = parseFloat(r.pnl) || 0;
@@ -46650,8 +46886,16 @@ try {
     // Snapshot for undo
     const snap = _snapshotData();
 
-    // Set the Review tab's session date
+    // Set the Review tab's session date - on every review a trade lands in (one per session + asset, 28 Sep 2026).
     data.review.sessionDate = targetDate;
+    const _impSlots = [];
+    const _impTo = (t, row) => {
+      const r = _reviewSlotForTrade(t && t.symbol, t && t.entryTimeHHMM) || data.review;
+      if (_multiReview() && r.slotSymbol) row.symbol = r.slotSymbol;
+      r.sessionDate = targetDate;
+      if (_impSlots.indexOf(r) < 0) _impSlots.push(r);
+      r.trades.push(row);
+    };
 
     // Default risk for R calculation (user can override per-trade later)
     const defaultRisk = parseFloat(data.defaults.risk) || 0;
@@ -46762,14 +47006,14 @@ try {
           else if (t.result !== 'Win') { row.potentialR = (t._mfeR != null) ? t._mfeR : null; row.potentialPips = (t._mfePips != null) ? t._mfePips : null; }
           // A winner's POT R·P is left blank — the EA can't know how far a closed winner could have run.
         }
-        data.review.trades.push(row);
+        _impTo(t, row);
         _consumedTickets.push(t.position);
       } else {
         // R-P column = the AIM, derived from the report's TP vs entry/SL (aimed R = TP dist /
         // SL dist, aimed pips = TP distance). Mirrors auto-sync. Blank when the order had no TP.
         // Money still comes from real net P&L (actualGross). Pot R-P stays blank (file reports
         // carry no MFE). Analytics count Lose as -1R / BE as 0R; a Win's R-curve uses this value.
-        data.review.trades.push({
+        _impTo(t, {
           id: genId(),
           result: t.result,
           // Aimed R from the pips shown (TP pips ÷ SL pips) — consistent with the SL/pips columns
@@ -46841,6 +47085,8 @@ try {
       }
     } catch (e) {}
 
+    // Open the review the trades went into (the first, when they went to more than one).
+    try { if (_impSlots.length && _impSlots.indexOf(data.review) < 0 && Array.isArray(data.reviewSlots)) { data.activeReviewSlot = data.reviewSlots.indexOf(_impSlots[0]); data.review = _impSlots[0]; _activeReviewTradeIdx = 0; renderReviewNav(); } } catch (e) {}
     saveData();
 
     syncTradedFromTrades();
@@ -64441,7 +64687,8 @@ try {
   // double-count). This is what lets an un-imported Trade Log sync across devices and be guarded.
   function reviewTradeCount(d) {
     try {
-      var rt = (d && d.review && Array.isArray(d.review.trades)) ? d.review.trades : [];
+      var rt = [];
+      _reviewsOf(d).forEach(function (r) { if (Array.isArray(r.trades)) rt = rt.concat(r.trades); });
       if (!rt.length) return 0;
       var committed = Object.create(null);
       (d.currentSeries || []).forEach(function (t) { if (t && t.id) committed[t.id] = 1; });
@@ -64458,16 +64705,25 @@ try {
   /* A no-trade day's own review answers. Without this a day with a full review and a blank day
      score the same, so a stale copy holding the blank one can win the sync. Mirrored in
      st_content_score (supabase/st_content_score.sql) - keep the two identical. */
+  // The day's reviews: every session + asset review when the journal has them, else the one review (28 Sep 2026).
+  // Mirrored in st_content_score - keep the two identical.
+  function _reviewsOf(d) {
+    if (d && Array.isArray(d.reviewSlots) && d.reviewSlots.length) return d.reviewSlots.filter(function (r) { return r && typeof r === 'object' && !Array.isArray(r); });
+    return (d && d.review && typeof d.review === 'object' && !Array.isArray(d.review)) ? [d.review] : [];
+  }
   function dayReviewCount(d) {
     try {
-      var r = d && d.review; if (!r) return 0;
-      if (Array.isArray(r.trades) && r.trades.length) return 0;
-      var has = !!(r.execution || r.focus || r.close ||
-        (typeof r.reflection === 'string' && r.reflection.trim()) ||
-        (Array.isArray(r.rice) && r.rice.length) || (Array.isArray(r.concepts) && r.concepts.length) ||
-        (Array.isArray(r.mindset) && r.mindset.length) ||
-        (Array.isArray(r.tvLinks) && r.tvLinks.some(function (l) { return l && l.url; })));
-      return has ? 1 : 0;
+      var n = 0;
+      _reviewsOf(d).forEach(function (r) {
+        if (Array.isArray(r.trades) && r.trades.length) return;
+        var has = !!(r.execution || r.focus || r.close ||
+          (typeof r.reflection === 'string' && r.reflection.trim()) ||
+          (Array.isArray(r.rice) && r.rice.length) || (Array.isArray(r.concepts) && r.concepts.length) ||
+          (Array.isArray(r.mindset) && r.mindset.length) ||
+          (Array.isArray(r.tvLinks) && r.tvLinks.some(function (l) { return l && l.url; })));
+        if (has) n++;
+      });
+      return n;
     } catch (e) { return 0; }
   }
   function contentScore(d) {

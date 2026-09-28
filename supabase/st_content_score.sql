@@ -21,10 +21,21 @@
 
 create or replace function public.st_content_score(d jsonb)
 returns integer language sql immutable as $$
-  with arr as (select
+  -- The day's reviews (2026-09-28, one Session Review per session + asset): every entry of d.reviewSlots when that
+  -- is a non-empty array, else d.review alone - exactly _reviewsOf() in app.html. With no slots the result is the
+  -- same number as before.
+  with revs as (
+      select r from jsonb_array_elements(
+        case when jsonb_typeof(d->'reviewSlots') = 'array' and jsonb_array_length(d->'reviewSlots') > 0 then d->'reviewSlots'
+             when jsonb_typeof(d->'review') = 'object' then jsonb_build_array(d->'review')
+             else '[]'::jsonb end) r
+      where jsonb_typeof(r) = 'object'),
+  arr as (select
       case when jsonb_typeof(d->'history')       = 'array' then d->'history'       else '[]'::jsonb end as hist,
       case when jsonb_typeof(d->'currentSeries') = 'array' then d->'currentSeries' else '[]'::jsonb end as cur,
-      case when jsonb_typeof(d#>'{review,trades}') = 'array' then d#>'{review,trades}' else '[]'::jsonb end as rev),
+      coalesce((select jsonb_agg(t) from revs,
+                  jsonb_array_elements(case when jsonb_typeof(revs.r->'trades') = 'array' then revs.r->'trades' else '[]'::jsonb end) t),
+               '[]'::jsonb) as rev),
   committed as (
       select tr->>'id' as id from arr, jsonb_array_elements(arr.cur) tr
       union all
@@ -44,18 +55,18 @@ returns integer language sql immutable as $$
     + case when jsonb_typeof(d->'biasHistory')    ='array' then jsonb_array_length(d->'biasHistory')    else 0 end
     + case when jsonb_typeof(d->'weeklyReviews')  ='array' then jsonb_array_length(d->'weeklyReviews')  else 0 end
     + case when jsonb_typeof(d->'monthlyReviews') ='array' then jsonb_array_length(d->'monthlyReviews') else 0 end
-    -- dayReviewCount (added 2026-09-17): 1 when the review has NO trades but has its own answers
-    + case when (select jsonb_array_length(rev) from arr) = 0 and (
-          coalesce(d#>>'{review,execution}','') <> '' or coalesce(d#>>'{review,focus}','') <> ''
-       or coalesce(d#>>'{review,close}','') <> ''
-       or (jsonb_typeof(d#>'{review,reflection}') = 'string' and (d#>>'{review,reflection}') ~ '\S')
-       or (jsonb_typeof(d#>'{review,rice}')     = 'array' and jsonb_array_length(d#>'{review,rice}') > 0)
-       or (jsonb_typeof(d#>'{review,concepts}') = 'array' and jsonb_array_length(d#>'{review,concepts}') > 0)
-       or (jsonb_typeof(d#>'{review,mindset}')  = 'array' and jsonb_array_length(d#>'{review,mindset}') > 0)
-       or (jsonb_typeof(d#>'{review,tvLinks}')  = 'array' and exists (
-             select 1 from jsonb_array_elements(d#>'{review,tvLinks}') l
-             where jsonb_typeof(l) = 'object' and coalesce(l->>'url','') <> ''))
-      ) then 1 else 0 end
+    -- dayReviewCount: 1 for each review with NO trades but its own answers (added 2026-09-17; per review 2026-09-28)
+    + (select count(*)::int from revs where
+          not (jsonb_typeof(revs.r->'trades') = 'array' and jsonb_array_length(revs.r->'trades') > 0)
+      and (coalesce(revs.r->>'execution','') <> '' or coalesce(revs.r->>'focus','') <> ''
+       or coalesce(revs.r->>'close','') <> ''
+       or (jsonb_typeof(revs.r->'reflection') = 'string' and (revs.r->>'reflection') ~ '\S')
+       or (jsonb_typeof(revs.r->'rice')     = 'array' and jsonb_array_length(revs.r->'rice') > 0)
+       or (jsonb_typeof(revs.r->'concepts') = 'array' and jsonb_array_length(revs.r->'concepts') > 0)
+       or (jsonb_typeof(revs.r->'mindset')  = 'array' and jsonb_array_length(revs.r->'mindset') > 0)
+       or (jsonb_typeof(revs.r->'tvLinks')  = 'array' and exists (
+             select 1 from jsonb_array_elements(revs.r->'tvLinks') l
+             where jsonb_typeof(l) = 'object' and coalesce(l->>'url','') <> ''))))
 $$;
 
 create or replace function public.st_set_content_score()
