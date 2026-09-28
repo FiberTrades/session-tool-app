@@ -7285,6 +7285,20 @@ try {
 </div>
 
 <!-- Potential R popup: prompted after R + pips are entered on a Win trade -->
+<div class="modal-bg" id="save-series-warn-modal-bg">
+  <div class="modal mdl-new" style="max-width:440px;">
+    <div class="modal-header">
+      <div>
+        <div class="modal-title" data-i18n="saveseries.warn_title">Save to Series of 10?</div>
+      </div>
+    </div>
+    <p style="margin:14px 0 0;color:var(--text-mid);font-size:13px;line-height:1.6;" data-i18n="saveseries.warn_body">If you have already posted your session review to the community, your trades are already saved to your Series of 10. Saving again only adds trades that are not in it yet — nothing is saved twice. Do you still want to save?</p>
+    <div class="mdl-actions">
+      <button type="button" class="btn" id="save-series-warn-cancel" data-i18n="saveseries.warn_cancel">Cancel</button>
+      <button type="button" class="btn" id="save-series-warn-confirm" data-i18n="saveseries.warn_confirm">Save anyway</button>
+    </div>
+  </div>
+</div>
 <!-- Incomplete trade-log reminder: shown on Post to community / Save to Series when any
      fillable field in the current session is still empty. -->
 <div class="modal-bg" id="incomplete-log-modal-bg">
@@ -7470,7 +7484,7 @@ try {
       'newsession.confirm': 'Yes',
       'newsession.keep': 'No',
       'saveseries.warn_title': 'Save to Series of 10?',
-      'saveseries.warn_body': 'If you have already posted your session review to the community, your trades are already saved to your Series of 10. Saving again will create duplicates. Do you still want to save?',
+      'saveseries.warn_body': 'If you have already posted your session review to the community, your trades are already saved to your Series of 10. Saving again only adds trades that are not in it yet — nothing is saved twice. Do you still want to save?',
       'saveseries.warn_confirm': 'Save anyway',
       'saveseries.warn_cancel': 'Cancel',
       'incompletelog.title': 'Finish your trade log',
@@ -9333,7 +9347,7 @@ try {
       'newsession.confirm': 'Sí',
       'newsession.keep': 'No',
       'saveseries.warn_title': '¿Guardar en Serie de 10?',
-      'saveseries.warn_body': 'Si ya publicaste tu revisión de sesión en la comunidad, tus operaciones ya están guardadas en tu Serie de 10. Guardar de nuevo creará duplicados. ¿Aún quieres guardar?',
+      'saveseries.warn_body': 'Si ya publicaste tu revisión de sesión en la comunidad, tus operaciones ya están guardadas en tu Serie de 10. Guardar de nuevo solo añade las operaciones que aún no están — nada se guarda dos veces. ¿Aún quieres guardar?',
       'saveseries.warn_confirm': 'Guardar igualmente',
       'saveseries.warn_cancel': 'Cancelar',
       'incompletelog.title': 'Completa tu registro de operaciones',
@@ -21783,7 +21797,7 @@ try {
       saveData();
       const statsTab = document.querySelector('.tab[data-page="stats"]');
       if (statsTab) statsTab.click();
-      if (!skipBackupModal) showToast(t('toast.saved'));
+      if (!skipBackupModal) showToast(t('toast.saved'), { duration: 5000 });   // 2 s longer than the usual 3 (Nestor, 28 Sep 2026)
       return 0;
     }
     const _rb = _reviewBias();   // the bias of THIS session + asset
@@ -21883,7 +21897,8 @@ try {
     renderTrades();
     const statsTab = document.querySelector('.tab[data-page="stats"]');
     if (statsTab) statsTab.click();
-    if (!skipBackupModal) showToast(valid.length + ' ' + (valid.length === 1 ? t('backup.trade_singular') : t('backup.trade_plural')) + ' ' + (valid.length === 1 ? t('toast.saved_word_sing') : t('toast.saved_word_plural')));
+    // "1 trade saved" stays 5 s, 2 s longer than the usual 3 (Nestor, 28 Sep 2026: "can it last a couple of seconds longer").
+    if (!skipBackupModal) showToast(valid.length + ' ' + (valid.length === 1 ? t('backup.trade_singular') : t('backup.trade_plural')) + ' ' + (valid.length === 1 ? t('toast.saved_word_sing') : t('toast.saved_word_plural')), { duration: 5000 });
     return valid.length;
   }
 
@@ -21913,17 +21928,36 @@ try {
     await _run();
   });
   // Save to Series of 10: full flow including the backup modal for users who haven't set a preference.
-  // Saving is idempotent - a trade already in the series is updated in place, only new trades are added - so there is
-  // no duplicate warning any more; once everything is saved the button says "Saved 13:52" and does nothing
-  // (Nestor, 28 Sep 2026: "if we want to save again the trades should be different ones").
+  // Saving is idempotent - a trade already in the series is updated in place, only new trades are added; once
+  // everything is saved the button says "Saved 13:52" and does nothing (Nestor, 28 Sep 2026: "if we want to save again
+  // the trades should be different ones"). The "Save to Series of 10?" warning still comes first, so members know
+  // posting already saved their trades (Nestor: "i want this back so users dont get confussed").
   document.getElementById('review-save-stats').addEventListener('click', async (ev) => {
     if (ev.currentTarget.classList.contains('is-posted')) return;   // every trade is saved and unchanged
     const _proceed = () => {
-      performReviewSave().then(() => setTimeout(maybeOfferWeeklyReview, 400));
+      const bg = document.getElementById('save-series-warn-modal-bg');
+      if (bg) { bg.classList.add('show'); return; }
+      performReviewSave().then(() => setTimeout(maybeOfferWeeklyReview, 400)); // fallback if modal markup missing
     };
     if (sessionLogIncomplete()) { remindIncompleteThen(_proceed); return; }
     _proceed();
   });
+  (function wireSaveSeriesWarn() {
+    const bg = document.getElementById('save-series-warn-modal-bg');
+    if (!bg) return;
+    const close = () => bg.classList.remove('show');
+    const confirmBtn = document.getElementById('save-series-warn-confirm');
+    const cancelBtn = document.getElementById('save-series-warn-cancel');
+    if (confirmBtn) confirmBtn.addEventListener('click', async () => {
+      close();
+      // A normal save: trades already in the series are updated in place, only new ones are added (never twice).
+      await performReviewSave();
+      // Friday weekly-review reminder fires AFTER the save is confirmed, not over the warning modal.
+      setTimeout(maybeOfferWeeklyReview, 400);
+    });
+    if (cancelBtn) cancelBtn.addEventListener('click', close);
+    // backdrop click intentionally does nothing — dismiss via button only (app-wide consistency)
+  })();
   // Reset the daily-review form to a fresh, empty state for the next session. Used by the
   // Reset button AND after a successful save: once a session's trades are committed to the
   // Series of 10, the review must clear so the same trades can't be re-saved - which would
