@@ -679,7 +679,8 @@ begin
         count(*) filter (where bok.d is null)      as bias_missed,
         count(*) filter (where dy.d is not null)   as traded_days,
         count(*) filter (where rok.d is not null)  as review_kept,
-        count(*) filter (where rok.d is null)      as review_missed,
+        count(*) filter (where rok.d is null
+                           and cd.d < (now() at time zone coalesce(sq.tz,'Europe/London'))::date) as review_missed,   -- 2026-09-28: today's review is not 'missed' until the day is over
         count(*) filter (where dy.d is not null and l.max_trades is not null and l.max_trades > 0
                            and dy.day_trades <= l.max_trades)                        as maxtr_kept,
         count(*) filter (where dy.d is not null and l.max_trades is not null and l.max_trades > 0
@@ -697,6 +698,7 @@ begin
       left join review_ok_dates rok on rok.user_id = cd.user_id and rok.d = cd.d
       left join days            dy  on dy.user_id  = cd.user_id and dy.d  = cd.d
       left join lim             l   on l.user_id   = cd.user_id
+      left join sess            sq  on sq.user_id  = cd.user_id
       group by cd.user_id
     ),
     bias_pen as (
@@ -916,7 +918,7 @@ begin
           'lim_risk_pct',   l.max_risk_pct,
           'lim_loss_pct',   l.max_loss_pct,
           'bias_total',      coalesce(cda.cd_days,0),
-          'review_total',    coalesce(cda.cd_days,0),
+          'review_total',    coalesce(cda.review_kept,0) + coalesce(cda.review_missed,0),
           'weekly_total',    coalesce(wa.weekly_done,0) + coalesce(wa.weekly_missed,0),
           'committed_shown', coalesce(ca.commit_kept,0),
           'committed_total', coalesce(ca.commit_kept,0) + coalesce(ca.commit_missed,0),
