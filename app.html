@@ -43017,9 +43017,13 @@ try {
     var d = new Date().getDay();
     return (typeof _isTradingDay === 'function') ? !_isTradingDay(d) : (d === 0 || d === 6);
   }
-  // How much room the profit in hand leaves the current series (28 Sep 2026). The old series message's maths: assume
-  // NOTHING else wins; a loss costs your own average risk plus costs (R basis with your real loss size when there is no
-  // money data). winsNeeded: when red, how many wins at your average win from the trades left get you back to green.
+  // How much room the profit in hand leaves the current series (28 Sep 2026). Assume NOTHING else wins, and price every
+  // future loss at what a loss REALLY costs you, commission and slippage included (Nestor: "make sure it takes into
+  // account the commisions and costs ... its not counting the commisions of those trades that would land me in the
+  // red"): the larger of your average risk + average costs and the average NET money your losses actually lost. The
+  // profit in hand is already net of every cost paid. R basis only when there is no money data, with your real loss
+  // size in R (fees included), from this series or else your history. winsNeeded: when red, how many wins (net of
+  // their own costs) from the trades left get you back to green, every remaining trade paying its commission.
   function _seriesCushion(cs) {
     const out = { n: cs.length, remaining: Math.max(0, 10 - cs.length), totalR: 0, lossesCapped: 0, winsNeeded: null };
     try {
@@ -43038,13 +43042,26 @@ try {
       const avgRisk = sR.length >= 3 ? avgOf(sR) : avgOf(sR.concat(pool.map(t => parseFloat(t.risk) || 0).filter(r => r > 0)));
       const winG = cs.filter(t => t.result === 'Win').map(t => tradeGross(t));
       const avgWinGross = avgOf(winG);
-      const perLoss = avgRisk + avgCost;
+      // What a loss really cost, in money, fees included (a stop that slipped costs more than the risk you set).
+      const lossNet = t => Math.max(0, -(tradeGross(t) - tradeCosts(t)));
+      const sL = cs.filter(t => t.result === 'Lose').map(lossNet).filter(x => x > 0);
+      const avgLossNet = sL.length ? avgOf(sL) : avgOf(pool.filter(t => t && t.result === 'Lose').map(lossNet).filter(x => x > 0));
+      // A future loss: never less than risk + costs, never less than what losses have actually cost. No risk on the
+      // trades -> the real losses alone (never the commission alone, which would call a loss nearly free).
+      const perLoss = avgRisk > 0 ? Math.max(avgRisk + avgCost, avgLossNet) : avgLossNet;
+      // R basis (no money data): your real loss size in R, fees included - this series, else your history, else 1R.
+      let lossR = avgLossR;
+      if (!lossRs.length) {
+        const hl = pool.filter(t => t && t.result === 'Lose').map(t => (typeof tradeRforMath === 'function') ? Math.abs(tradeRforMath(t)) : 1).filter(r => r > 0);
+        lossR = hl.length ? Math.max(1, avgOf(hl)) : 1;
+      }
       let capped = 0;
       if (perLoss > 0) capped = Math.max(0, Math.min(remaining, Math.floor(netSoFar / perLoss)));
-      else if (avgWinR > 0) capped = Math.max(0, Math.min(remaining, Math.floor(totalR / (avgLossR > 0 ? avgLossR : 1))));
+      else if (avgWinR > 0) capped = Math.max(0, Math.min(remaining, Math.floor(totalR / lossR)));
       let need = null;
       if (totalR < 0 || netSoFar < 0) {
-        if (avgWinGross > 0 && (avgWinGross + avgRisk) > 0) need = Math.ceil((-netSoFar + remaining * (avgRisk + avgCost)) / (avgWinGross + avgRisk));
+        const winNet = avgWinGross - avgCost;   // a win also pays its commission
+        if (perLoss > 0 && winNet > 0) need = Math.ceil((-netSoFar + remaining * perLoss) / (winNet + perLoss));
         else if (avgWinR > 0) need = Math.ceil(-totalR / avgWinR);
         if (need != null && need < 1) need = 1;
       }
