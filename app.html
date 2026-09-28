@@ -12038,6 +12038,136 @@ try {
   }
   // Live if the current local time is inside ANY configured session window.
   function isSessionLive() { return liveSessionIndex() >= 0; }
+  // ===== Clock changes (Nestor, 28 Sep 2026: "let traders know when the clocks go back/forward, what that means for
+  // the sessions openings, the gap between uk and us ... and asia"). Nothing hardcoded: the browser's own time-zone
+  // rules give every zone's offset on any date, for the member's clock and each market their sessions are named after.
+  const _CLK_MARKETS = [
+    { re: /new\s*york|^ny$|\bus\b|nyse|nasdaq|wall\s*st/i, tz: 'America/New_York', en: 'New York', es: 'Nueva York', land: ['US', 'EE. UU.'] },
+    { re: /london|\buk\b|frankfurt|europe/i, tz: 'Europe/London', en: 'London', es: 'Londres', land: ['UK', 'Reino Unido'] },
+    { re: /asia|tokyo|japan/i, tz: 'Asia/Tokyo', en: 'Asia (Tokyo)', es: 'Asia (Tokio)', land: ['Japan', 'Japón'] },
+    { re: /sydney|australia/i, tz: 'Australia/Sydney', en: 'Sydney', es: 'Sídney', land: ['Australia', 'Australia'] }
+  ];
+  const _clkFmt = {};
+  function _tzOff(tz, ms) {   // minutes east of UTC in `tz` at `ms`
+    try {
+      const f = _clkFmt[tz] || (_clkFmt[tz] = new Intl.DateTimeFormat('en-US', { timeZone: tz, hourCycle: 'h23', year: 'numeric', month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric' }));
+      const p = f.formatToParts(new Date(ms)), g = k => { const x = p.find(q => q.type === k); return x ? parseInt(x.value, 10) : 0; };
+      return Math.round((Date.UTC(g('year'), g('month') - 1, g('day'), g('hour') % 24, g('minute')) - Math.floor(ms / 60000) * 60000) / 60000);
+    } catch (e) { return null; }
+  }
+  function _userTz() { try { return (data && data.settings && data.settings.tz) || Intl.DateTimeFormat().resolvedOptions().timeZone || null; } catch (e) { return null; } }
+  function _localNoon(dayOff) { const d = new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() + dayOff); return d.getTime(); }
+  function _gapMin(mkt, me, ms) { const a = _tzOff(mkt, ms), b = _tzOff(me, ms); return (a == null || b == null) ? null : a - b; }   // market minus you
+  function _clkChanges(tz, from, to) {
+    const out = []; let prev = _tzOff(tz, _localNoon(from - 1));
+    for (let i = from; i <= to; i++) { const cur = _tzOff(tz, _localNoon(i)); if (cur != null && prev != null && cur !== prev) out.push({ day: i, ms: _localNoon(i), dir: cur > prev ? 1 : -1 }); prev = cur; }
+    return out;
+  }
+  function _usualGap(mkt, me) {   // the gap that holds most of the year
+    const c = {}; for (let w = 0; w < 52; w++) { const g = _gapMin(mkt, me, _localNoon(w * 7)); if (g != null) c[g] = (c[g] || 0) + 1; }
+    let best = null, n = -1; Object.keys(c).forEach(k => { if (c[k] > n) { n = c[k]; best = +k; } }); return best;
+  }
+  let _clkMemo = null;
+  function _clockInfo() {
+    try {
+      const me = _userTz(); if (!me) return null;
+      const ss = (typeof getSessions === 'function') ? getSessions() : [];
+      const memoKey = me + '|' + todayDateStr() + '|' + JSON.stringify(ss.map(x => [x && x.name, x && x.start, x && x.end]));
+      if (_clkMemo && _clkMemo.k === memoKey && Date.now() - _clkMemo.at < 600000) return _clkMemo.v;
+      const mk = [];
+      ss.forEach(x => { const m = _CLK_MARKETS.find(y => y.re.test(String((x && x.name) || ''))); if (m && m.tz !== me && !mk.some(z => z.m === m)) mk.push({ m: m, sess: x }); });
+      const info = { tz: me, changes: [], markets: [] };
+      [me].concat(mk.map(x => x.m.tz)).forEach(z => _clkChanges(z, -3, 7).forEach(c => info.changes.push({ tz: z, mine: z === me, day: c.day, ms: c.ms, dir: c.dir })));
+      mk.forEach(x => {
+        const now = _gapMin(x.m.tz, me, _localNoon(0)), usual = _usualGap(x.m.tz, me);
+        let next = null; for (let i = 1; i <= 70; i++) { const g = _gapMin(x.m.tz, me, _localNoon(i)); if (g !== now) { next = { day: i, ms: _localNoon(i), gap: g }; break; } }
+        // How long the gap has been what it is today (days back to the last day it was different).
+        let since = null; for (let i = 1; i <= 70; i++) { if (_gapMin(x.m.tz, me, _localNoon(-i)) !== now) { since = i - 1; break; } }
+        info.markets.push({ m: x.m, sess: x.sess, gapNow: now, usual: usual, next: next, since: since, fixed: !_clkChanges(x.m.tz, 1, 366).length });
+      });
+      _clkMemo = { k: memoKey, at: Date.now(), v: info };
+      return info;
+    } catch (e) { return null; }
+  }
+  // The notice in words (es = Spanish). mode 'nudge' only speaks for a change within 3 days or an unusual-gap day.
+  function clockNotice(es, mode) {
+    try {
+      const I = _clockInfo(); if (!I) return '';
+      const L = (en, sp) => es ? sp : en;
+      const dstr = ms => new Date(ms).toLocaleDateString(es ? 'es-ES' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'short' });
+      const hrs = m => { const h = Math.abs(m) / 60, n = Number.isInteger(h) ? String(h) : h.toFixed(1); return n + L(h === 1 ? ' hour' : ' hours', h === 1 ? ' hora' : ' horas'); };
+      const mName = m => es ? m.es : m.en;
+      const hm = mins => { mins = ((mins % 1440) + 1440) % 1440; return String(Math.floor(mins / 60)).padStart(2, '0') + ':' + String(mins % 60).padStart(2, '0'); };
+      const earlierLater = sh => sh < 0 ? L('earlier', 'antes') : L('later', 'más tarde');
+      // (1) An unusual-gap window right now that ends within 5 weeks (e.g. the UK/US weeks 4 hours apart, not 5).
+      const win = I.markets.find(x => x.gapNow != null && x.usual != null && x.gapNow !== x.usual && x.next && x.next.day <= 35 && x.next.gap === x.usual
+        && x.since != null && x.since <= 35 && (x.since + x.next.day) <= 42);   // a few weeks, never a whole season
+      if (win) {
+        const shift = win.usual - win.gapNow;   // minutes your session clock times move to keep the same market hours
+        const aheadBehind = win.gapNow > 0 ? L('ahead of you', 'por delante de ti') : L('behind you', 'por detrás de ti');
+        let txt = L('This week ' + mName(win.m) + ' is ' + hrs(win.gapNow) + ' ' + aheadBehind + ', not the usual ' + hrs(win.usual) + ': its session opens ' + hrs(shift) + ' ' + earlierLater(shift) + ' on your clock until ' + dstr(win.next.ms) + '.',
+                    'Esta semana ' + mName(win.m) + ' va ' + hrs(win.gapNow) + ' ' + aheadBehind + ', no las ' + hrs(win.usual) + ' de siempre: su sesión abre ' + hrs(shift) + ' ' + earlierLater(shift) + ' en tu reloj hasta el ' + dstr(win.next.ms) + '.');
+        if (win.sess && win.sess.start && win.sess.end) {
+          const a = hm(_mins(win.sess.start) + shift), b = hm(_mins(win.sess.end) + shift);
+          txt += L(' Your app session times do not move on their own: to keep the same ' + mName(win.m) + ' hours, set your ' + mName(win.m) + ' session to ' + a + '–' + b + ' in Settings until then.',
+                   ' Las horas de tus sesiones en la app no se mueven solas: para mantener las mismas horas de ' + mName(win.m) + ', pon tu sesión de ' + mName(win.m) + ' de ' + a + ' a ' + b + ' en Ajustes hasta entonces.');
+        }
+        return txt;
+      }
+      // (2) A clock change in the next 7 days (yours or a market's): what it does to each session on your clock.
+      const lim = mode === 'nudge' ? 3 : 7;
+      const up = I.changes.filter(c => c.day >= 0 && c.day <= lim).sort((a, b) => a.day - b.day)[0];
+      if (up) {
+        const mkt = _CLK_MARKETS.find(x => x.tz === up.tz);
+        const who = up.mine ? L('Your clocks', 'Tus relojes') : L((mkt ? mkt.land[0] : 'Market') + ' clocks', 'Los relojes de ' + (mkt ? mkt.land[1] : 'ese mercado'));
+        const verb = up.dir < 0 ? L(' go back', (up.mine ? ' se atrasan' : ' se atrasan')) : L(' go forward', ' se adelantan');
+        let txt = who + verb + L(' on ', ' el ') + dstr(up.ms) + '.';
+        const eff = [];
+        I.markets.forEach(x => {
+          const before = _gapMin(x.m.tz, I.tz, _localNoon(up.day - 1)), after = _gapMin(x.m.tz, I.tz, _localNoon(up.day));
+          if (before == null || after == null || before === after) return;
+          const sh = before - after;   // minutes the market's opening moves on your clock
+          let until = null; for (let i = up.day + 1; i <= up.day + 35; i++) { if (_gapMin(x.m.tz, I.tz, _localNoon(i)) === before) { until = _localNoon(i); break; } }
+          let e = L(mName(x.m) + ' then opens ' + hrs(sh) + ' ' + earlierLater(sh) + ' on your clock', mName(x.m) + ' abrirá entonces ' + hrs(sh) + ' ' + earlierLater(sh) + ' en tu reloj');
+          if (after === x.usual && before !== x.usual) e += L(', back to the usual ' + hrs(x.usual) + ' apart', ', de vuelta a las ' + hrs(x.usual) + ' de diferencia de siempre');
+          else if (until) e += L(' until ' + dstr(until), ' hasta el ' + dstr(until));
+          if (x.fixed) e += L(' (' + x.m.land[0] + ' never changes its clocks)', ' (' + x.m.land[1] + ' nunca cambia la hora)');
+          eff.push(e);
+        });
+        if (eff.length) txt += ' ' + eff.slice(0, 2).join(L('; ', '; ')) + '.';
+        else if (up.mine) txt += L(' Your sessions stay at the same times on your clock.', ' Tus sesiones siguen a la misma hora en tu reloj.');
+        else return '';
+        // A change that already happened (day < 0) only speaks in the greeting, and only when a session moved.
+        if (up.day < 0) return '';
+        return txt;
+      }
+      // (3) For 3 days after a change that moved a session for the whole season (Asia, when you change your clocks).
+      if (mode !== 'nudge') {
+        const past = I.changes.filter(c => c.day < 0 && c.day >= -3).sort((a, b) => b.day - a.day)[0];
+        if (past) {
+          const moved = I.markets.map(x => { const b = _gapMin(x.m.tz, I.tz, _localNoon(past.day - 1)), a = _gapMin(x.m.tz, I.tz, _localNoon(past.day)); return (b != null && a != null && a !== b) ? { x: x, sh: b - a } : null; }).filter(Boolean);
+          if (moved.length) return L('Since ' + dstr(past.ms) + ', ', 'Desde el ' + dstr(past.ms) + ', ') + moved.slice(0, 2).map(o => L(mName(o.x.m) + ' opens ' + hrs(o.sh) + ' ' + earlierLater(o.sh) + ' on your clock', mName(o.x.m) + ' abre ' + hrs(o.sh) + ' ' + earlierLater(o.sh) + ' en tu reloj')
+            + ((o.x.gapNow === o.x.usual) ? L(', back to the usual ' + hrs(o.x.usual) + ' apart', ', de vuelta a las ' + hrs(o.x.usual) + ' de diferencia de siempre') : '')
+            + (o.x.fixed ? L(' (' + o.x.m.land[0] + ' never changes its clocks)', ' (' + o.x.m.land[1] + ' nunca cambia la hora)') : '')).join('; ') + '.';
+        }
+      }
+      return '';
+    } catch (e) { return ''; }
+  }
+  window.__stClockNotice = clockNotice;
+  // For the assistant: the current gaps, the usual ones and the next changes (plus today's notice).
+  window.__stClockInfo = function () {
+    try {
+      const I = _clockInfo(); if (!I) return null;
+      const d = ms => new Date(ms).toISOString().slice(0, 10);
+      return { yourTimeZone: I.tz, notice: clockNotice(window.__lang === 'es') || null,
+        upcomingClockChanges: I.changes.filter(c => c.day >= 0).map(c => ({ zone: c.tz, yours: c.mine, date: d(c.ms), direction: c.dir < 0 ? 'back' : 'forward' })),
+        markets: I.markets.map(x => ({ market: x.m.en, marketTimeZone: x.m.tz, hoursApartNow: x.gapNow / 60, usualHoursApart: x.usual / 60, marketNeverChangesClocks: x.fixed,
+          gapChangesOn: x.next ? d(x.next.ms) : null, hoursApartAfterThat: x.next ? x.next.gap / 60 : null,
+          yourSession: x.sess ? { name: x.sess.name, start: x.sess.start, end: x.sess.end } : null })),
+        note: 'hoursApart = market clock minus the member clock (negative = the market is behind). Session times in the app are the member own clock times and do not move on their own.' };
+    } catch (e) { return null; }
+  };
   // Session 'in focus' for the header + bias label: the live one, else the next upcoming
   // today, else (all today's done) the day's last session until midnight - the first one again from 00:00.
   function currentOrNextSessionIndex() {
@@ -16196,7 +16326,25 @@ try {
         });
       } catch (e) {}
     }
-    setTimeout(function () { newsTick(); stopTick(); setInterval(function () { newsTick(); stopTick(); }, 20000); }, 8000);
+    // Clock changes (28 Sep 2026): once a day on a trading day, from 30 minutes before the first session until the
+    // last one ends, when a clock change is within 3 days or today is an unusual-gap day (e.g. UK/US 4 hours apart).
+    function clockTick() {
+      try {
+        if (!eligible() || typeof clockNotice !== 'function') return;
+        var dow = new Date().getDay();
+        var td = (typeof window.__stIsTradingDay === 'function') ? window.__stIsTradingDay(dow) : (dow !== 0 && dow !== 6);
+        if (!td) return;
+        var ss = getSessions(); if (!ss.length) return;
+        var nowM = new Date().getHours() * 60 + new Date().getMinutes();
+        var first = Math.min.apply(null, ss.map(function (x) { return _mins(x.start); })), last = Math.max.apply(null, ss.map(function (x) { return _mins(x.end); }));
+        if (nowM < first - 30 || nowM > last) return;
+        var k = 'C' + todayDateStr(); if (handled['clk' + k]) return;
+        var txt = clockNotice(window.__lang === 'es', 'nudge'); if (!txt) return;
+        handled['clk' + k] = 1;
+        raise([{ rule: 'clock', text: txt }], k);
+      } catch (e) {}
+    }
+    setTimeout(function () { newsTick(); stopTick(); clockTick(); setInterval(function () { newsTick(); stopTick(); clockTick(); }, 20000); }, 8000);
 
     // ---- The account a live trade belongs to, and its plan ----
     // Live trades carry no MT5 login: use the account the one reporting EA's login maps to (EA 8.6
@@ -16429,7 +16577,7 @@ try {
 
     // Most important first - it tops the card and is the line that is spoken: breaking the session
     // plan, then raising risk after a loss, then the re-entry, then the count, then the run.
-    var RANK = { daily_hit: 0, daily_left: 0, dd_left: 0, no_stop: 0, against_bias: 1, big_risk: 1, widen: 1, target_hit: 1, no_bias: 2, consistency: 2,
+    var RANK = { clock: 4, daily_hit: 0, daily_left: 0, dd_left: 0, no_stop: 0, against_bias: 1, big_risk: 1, widen: 1, target_hit: 1, no_bias: 2, consistency: 2,
                  finished: 0, outside: 0, news_hold: 0, news_open: 1, news_soon: 1, risk: 1, ea_risk: 1, ea_trades: 1, ea_sl: 1, reentry: 2, limit: 3, streak: 4 };
     function rankOf(x) { return (x.rule in RANK) ? RANK[x.rule] : 9; }
     function raise(found, k) {
@@ -43706,7 +43854,8 @@ try {
         const _nReview = allReviewTrades().filter(t => t && t.result).length;
         const _phase = _sessionsDoneToday() ? 'after'
                      : ((typeof isSessionLive === 'function' && isSessionLive()) ? 'live' : 'before');
-        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on'].join('.');
+        let _clkK = ''; try { const _c = (typeof clockNotice === 'function') ? clockNotice(false) : ''; _clkK = _c ? 'clk' + _c.length : ''; } catch (e) {}
+        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on', _clkK].join('.');
       } catch (e) { return ''; }
     })();
     targets.forEach(el => {
@@ -43721,7 +43870,10 @@ try {
         const isReview = (ctx === 'review');
         const opener = isReview ? _cachedReviewOpener : _cachedOpener;
         const tail   = isReview ? _cachedTailReview  : _cachedTailBias;
-        html = compose(opener, tail);
+        // A clock change this week leads the Session Bias line (Nestor, 28 Sep 2026).
+        let _clk = '';
+        try { if (!isReview && typeof clockNotice === 'function') _clk = clockNotice(window.__lang === 'es'); } catch (e) {}
+        html = compose(opener, _clk || tail);
       }
       // The seed is re-picked from its pool on every render and refreshAllSurfaces runs on every
       // click, so without this a greeting would reword itself in front of the reader every time
@@ -44285,6 +44437,8 @@ try {
           setupsNotTaken: (window.__stOos && window.__stOos.aiPack) ? window.__stOos.aiPack() : null,
           // Live behaviour nudges of the last 30 days, with what happened after each (compact).
           nudges: (window.__stNudge && window.__stNudge.aiPack) ? window.__stNudge.aiPack() : null,
+          // Clock changes: gaps to the markets the member trades, the usual gaps and the next changes (28 Sep 2026).
+          clocks: (typeof window.__stClockInfo === 'function') ? window.__stClockInfo() : null,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: (function () {
               /* The account's own rules, not data.settings.riskRules - the pre-picker global
