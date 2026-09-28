@@ -1314,7 +1314,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      Stays subtle so it doesn't compete with the form. Each event row is a compact
      time / currency / impact-dot / title row. */
   .econ-calendar { border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); overflow: hidden; box-shadow: var(--shadow-card); background: var(--bg-elev); padding: 0; margin-bottom: 36px; margin-left: 60px; position: relative; }
-  .bias-nav { display: flex; align-items: center; justify-content: center; gap: 14px; margin: 0 0 32px; padding: 10px 14px; border: 1px solid var(--border-2); border-radius: var(--radius-card); background: var(--bg-elev); }
+  .bias-nav { display: flex; align-items: center; justify-content: center; gap: 14px; width: fit-content; max-width: 100%; box-sizing: border-box; margin: 0 auto 32px; padding: 10px 14px; border: 1px solid var(--border-2); border-radius: var(--radius-card); background: var(--bg-elev); }   /* as wide as its content (Nestor, 28 Sep 2026: "its box look way to wide") */
   .bias-nav-btn { background: var(--bg-elev2); border: 1px solid var(--border-2); color: var(--text-mid); width: 34px; height: 34px; border-radius: var(--radius-ctrl); font-size: 20px; line-height: 1; cursor: pointer; font-family: inherit; transition: all 120ms; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
   .bias-nav-btn:hover { color: var(--text); border-color: var(--text-mid); }
   .bias-nav-label { display: flex; flex-direction: column; align-items: center; min-width: 180px; }
@@ -13182,8 +13182,13 @@ try {
         // Adopt exactly what startNewSession() rewrites - not the whole journal, so anything this
         // window legitimately holds (an open chat draft, its own view state) is left alone.
         data.lastSessionDate = inc.lastSessionDate;
-        if (inc.bias) data.bias = inc.bias;
-        if (Array.isArray(inc.biasSlots)) data.biasSlots = inc.biasSlots;
+        // data.bias must BE the active slot, not a second copy of it (edits would go to one, the slot list keep the other).
+        if (Array.isArray(inc.biasSlots) && inc.biasSlots.length) {
+          data.biasSlots = inc.biasSlots;
+          if (typeof inc.activeBiasSlot === 'number') data.activeBiasSlot = inc.activeBiasSlot;
+          const _ai = (typeof data.activeBiasSlot === 'number' && data.biasSlots[data.activeBiasSlot]) ? data.activeBiasSlot : 0;
+          data.bias = data.biasSlots[_ai];
+        } else if (inc.bias) data.bias = inc.bias;
         if (inc.review) data.review = inc.review;
         try { if (window.__stFreshDates) window.__stFreshDates(); } catch (_e) {}
         // Our copy of the prompt now describes a session that no longer exists.
@@ -13597,6 +13602,8 @@ try {
     (function migrateBiasSlots() {
       if (Array.isArray(d.biasSlots) && d.biasSlots.length) {
         if (typeof d.activeBiasSlot !== 'number' || d.activeBiasSlot < 0 || d.activeBiasSlot >= d.biasSlots.length) d.activeBiasSlot = 0;
+        // A slot emptied by a session change takes today's recorded bias back (every load, local or cloud).
+        d.biasSlots.forEach(function (sl) { _rehydrateBiasSlot(sl, d); });
         d.bias = d.biasSlots[d.activeBiasSlot];
         return;
       }
@@ -17406,6 +17413,23 @@ try {
   // list from the current session/symbol couplings, preserving any filled biases by
   // (sessionName, symbol).
   function biasSlotKey(name, sym) { return (name || '') + '||' + (sym || ''); }
+  // A blank slot takes back today's recorded bias for its session + symbol (biasHistory holds what was completed or
+  // posted today), Posted state included - unless the slot was cleared on purpose today.
+  function _rehydrateBiasSlot(sl, src) {
+    try {
+      src = (src && typeof src === 'object' && !Array.isArray(src)) ? src : data;   // the journal being loaded, or the live one
+      if (!sl || biasSlotHasContent(sl)) return;
+      if (sl.clearedAt && new Date(sl.clearedAt).toDateString() === new Date().toDateString()) return;
+      const today = todayDateStr();
+      const h = (Array.isArray(src.biasHistory) ? src.biasHistory : []).find(e => e && e.dateKey === today
+        && (e.sessionName || '') === (sl.sessionName || '') && (e.symbol || '') === (sl.symbol || ''));
+      if (!h) return;
+      ['mode', 'structure', 'structureLtf', 'location', 'locationLtf', 'direction', 'directionLtf', 'notes', 'date', 'copiedAt'].forEach(k => { if (h[k] != null) sl[k] = h[k]; });
+      sl.tvLinks = Array.isArray(h.tvLinks) ? h.tvLinks.map(l => ({ url: (l && l.url) || '', notes: (l && l.notes) || '' })) : [];
+      sl.sessionDate = today;
+      if (h.copiedAt) sl.postedSig = biasSig(sl);   // it went out as it is, so its button says Posted
+    } catch (e) {}
+  }
   function reconcileBiasSlots() {
     if (!Array.isArray(data.biasSlots)) data.biasSlots = [];
     const ss = (typeof getSessions === 'function') ? getSessions() : [];
@@ -17430,14 +17454,28 @@ try {
     if (!desired.length) desired.push({ sessionIdx: 0, sessionName: (ss[0] && ss[0].name) || 'London', symbol: fallbackSym });
     const byKey = {};
     data.biasSlots.forEach(sl => { if (sl) byKey[biasSlotKey(sl.sessionName, sl.symbol)] = sl; });
+    // Today's filled slots whose session / symbol went away are PARKED, not dropped, and come back with it
+    // (Nestor, 28 Sep 2026: renaming Session 1 London -> Asia -> London wiped the posted London bias).
+    const _today = todayDateStr();
+    const parked = (data.biasSlotsParked && typeof data.biasSlotsParked === 'object') ? data.biasSlotsParked : {};
+    Object.keys(parked).forEach(k => { const p = parked[k]; if (!p || p.sessionDate !== _today) delete parked[k]; });
     const next = desired.map(d => {
-      const ex = byKey[biasSlotKey(d.sessionName, d.symbol)];
+      const k = biasSlotKey(d.sessionName, d.symbol);
+      let ex = byKey[k];
+      if (ex) delete byKey[k];
+      else if (parked[k]) { ex = parked[k]; delete parked[k]; }
       if (ex) { ex.sessionIdx = d.sessionIdx; ex.sessionName = d.sessionName; ex.symbol = d.symbol; return ex; }
       const blank = newBiasBlank();
       blank.sessionIdx = d.sessionIdx; blank.sessionName = d.sessionName; blank.symbol = d.symbol;
-      blank.sessionDate = todayDateStr();
+      blank.sessionDate = _today;
       return blank;
     });
+    Object.keys(byKey).forEach(k => {
+      const sl = byKey[k];
+      if (sl && biasSlotHasContent(sl) && (sl.sessionDate === _today || _isTodayIso(sl.date) || _isTodayIso(sl.copiedAt))) parked[k] = sl;
+    });
+    data.biasSlotsParked = parked;
+    next.forEach(sl => _rehydrateBiasSlot(sl));
     data.biasSlots = next;
     if (typeof data.activeBiasSlot !== 'number' || data.activeBiasSlot < 0 || data.activeBiasSlot >= next.length) data.activeBiasSlot = 0;
     data.bias = data.biasSlots[data.activeBiasSlot];
@@ -17971,6 +18009,8 @@ try {
     // and keeps data.bias linked to the slot).
     Object.assign(data.bias, newBiasBlank());
     data.bias.sessionDate = todayDateStr();
+    data.bias.clearedAt = new Date().toISOString();   // cleared on purpose: not filled back from today's history
+    delete data.bias.postedSig; delete data.bias.postedId;
     saveData();
     document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
     renderBiasTvLinks();
