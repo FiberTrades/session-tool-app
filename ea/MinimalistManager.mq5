@@ -607,32 +607,35 @@ void Flash(string msg)
    g_flashMsg=msg; g_flashUntil=GetTickCount64()+6000;
    DrawHint(); ChartRedraw();
   }
-// v8.85 (Nestor, 30 Sep: "why is day cut off?"): MT5 cuts a chart label's text at 63 characters, so ">> Daily limit
-// reached (1 trades). Stays off until your next day." lost its last letters. A longer message is now written over up to
-// three lines, broken at a space, the later lines indented under the first line's text; the bottom line stays where the
-// hint always was.
+// v8.85 (Nestor, 30 Sep: "why is day cut off?", then "i want it in one line"): MT5 cuts a chart label's text at 63
+// characters, and ">> Daily limit reached (1 trade). Stays off until your next day." is 65. So a longer message is
+// written as pieces of up to 63 characters, broken after a space and laid side by side on ONE line - Consolas is
+// monospaced, so each piece starts exactly where the text before it ends.
 void HintLines(string lead,string text,color clr)
   {
-   string lines[]; int n=0; string rest=text, pad="";
-   for(int k=0;k<StringLen(lead);k++) pad+=" ";
-   while(StringLen(rest)>0 && n<3)
+   string full=lead+text, parts[]; int n=0;
+   while(StringLen(full)>0 && n<4)
      {
-      string part=rest; int room=63-StringLen(lead);
-      if(StringLen(rest)>room)
+      string part=full;
+      if(StringLen(full)>63)
         {
-         int cut=room; while(cut>room/3 && StringGetCharacter(rest,cut)!=' ') cut--;
-         if(cut<=room/3) cut=room;
-         part=StringSubstr(rest,0,cut);
-         rest=StringSubstr(rest,cut); StringTrimLeft(rest);
+         int cut=62; while(cut>20 && StringGetCharacter(full,cut)!=' ') cut--;
+         if(cut<=20) cut=62;
+         part=StringSubstr(full,0,cut+1); full=StringSubstr(full,cut+1);   // the space ends this piece
         }
-      else rest="";
-      ArrayResize(lines,n+1); lines[n]=((n==0) ? lead : pad)+part; n++;
+      else full="";
+      ArrayResize(parts,n+1); parts[n]=part; n++;
      }
-   for(int i=0;i<3;i++)
+   uint w10=0,h10=0;
+   TextSetFont("Consolas",-90); TextGetSize("0000000000",w10,h10);
+   double cw=w10/10.0; int x0=_s(12), before=0;
+   for(int i=0;i<4;i++)
      {
       string nm=PFX+"HINT"+((i==0) ? "" : IntegerToString(i+1));
       if(i>=n){ ObjectDelete(0,nm); continue; }
-      mkLabelBL(nm,12,12+(n-1-i)*16,lines[i],clr,9);   // the last line at the bottom, earlier ones above it
+      mkLabelBL(nm,12,12,parts[i],clr,9);
+      ObjectSetInteger(0,nm,OBJPROP_XDISTANCE,x0+(int)MathRound(before*cw));
+      before+=StringLen(parts[i]);
      }
   }
 void DrawHint()
@@ -2460,9 +2463,10 @@ void BuildPanel()
       // card re-made on a scroll covered the bar (Nestor: "the scrolling bar that has gone below the panels"). So
       // the bar is re-made last, every time, and always sits on top.
       ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM");
-      // Flush with the panel's right edge (8.85, Nestor: "move the scrollbar totally to the right of the panel").
-      mkRect(PP+"SB_TRK",x+w-3,g_trackTop,3,g_trackH,COL_PANEL_LINE,COL_PANEL_LINE);
-      mkRect(PP+"SB_THM",x+w-3,g_thumbTop,3,g_thumbH,COL_PANEL_ICON,COL_PANEL_ICON);
+      // Flush with the panel's right edge (8.85, Nestor: "move the scrollbar totally to the right of the panel"),
+      // 4 px wide ("the tiniest bit thicker" - was 3).
+      mkRect(PP+"SB_TRK",x+w-4,g_trackTop,4,g_trackH,COL_PANEL_LINE,COL_PANEL_LINE);
+      mkRect(PP+"SB_THM",x+w-4,g_thumbTop,4,g_thumbH,COL_PANEL_ICON,COL_PANEL_ICON);
      }
    else { ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM"); g_trackH=0; }
 
@@ -4778,12 +4782,22 @@ double CpAccountSize()
    return (g_acctSize>0) ? g_acctSize : AccountInfoDouble(ACCOUNT_BALANCE);
   }
 // "FTMO 70K": the firm's first word and the account size, rounded to the thousand.
-string CpAcctLabel(string company,double bal)
+// The firm's short name, for the panel title and the Lead's copier card alike (8.85, Nestor 30 Sep: the title used
+// the full company name and, too long for the bar, lost the account size to the "..."): "FTMO" for FTMO, else the
+// company's first word - skipping a leading "The" ("The Funded Trader" -> "Funded") - at most 12 letters.
+string CpShortFirm(string company)
   {
    string c=company; StringTrimLeft(c); StringTrimRight(c);
+   string u=c; StringToUpper(u);
+   if(StringFind(u,"FTMO")>=0) return "FTMO";
+   if(StringSubstr(u,0,4)=="THE " && StringLen(c)>4){ c=StringSubstr(c,4); StringTrimLeft(c); }
    int sp=StringFind(c," "); if(sp>0) c=StringSubstr(c,0,sp);
    if(StringLen(c)>12) c=StringSubstr(c,0,12);
-   return c+" "+CpFmtK(bal);
+   return c;
+  }
+string CpAcctLabel(string company,double bal)
+  {
+   return CpShortFirm(company)+" "+CpFmtK(bal);
   }
 string CopyRoleText(){ return g_copyRole==CR_LEAD ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "OFF"); }
 color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole==CR_FOLLOW ? COL_TAB_ON : COL_PANEL_BTX); }
@@ -4792,19 +4806,18 @@ color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole
 // v8.85 in the panel's title bar instead of "Minimalist Manager" (Nestor, 30 Sep: "replace the name minimalist manager in
 // the panels title with the ftmo 70k . lead"). The firm and the account's size, read from the account itself
 // ("FTMO 70K"), plus the copier role while it has one - LEAD green / FOLLOW blue, the colours of the Trade Copier's own
-// role button. So every MT5 window says which account it is. Nothing to set. Arial 8, the ON/OFF button's size; a name too
-// long for the bar is shortened with an ellipsis rather than run under the ON/OFF button.
-string AccLblName()
+// role button. So every MT5 window says which account it is. Nothing to set. Arial 8, the ON/OFF button's size. The firm
+// is its short name (CpShortFirm, as on the Lead's card); should even that not fit, the firm is shortened, never the size.
+string AccLblFirm()
   {
    string co=AccountInfoString(ACCOUNT_COMPANY), sv=AccountInfoString(ACCOUNT_SERVER);
-   string firm=CpIsFtmo(co,sv) ? "FTMO" : CpClean(co);
-   if(StringLen(firm)>22) firm=StringSubstr(firm,0,22);
-   double sz=CpAccountSize();
-   return (sz>0) ? firm+" "+CpFmtK(sz) : firm;
+   return CpIsFtmo(co,sv) ? "FTMO" : CpShortFirm(CpClean(co));
   }
+string AccLblSize(){ double sz=CpAccountSize(); return (sz>0) ? CpFmtK(sz) : ""; }
+string AccLblName(){ string z=AccLblSize(); return (z=="") ? AccLblFirm() : AccLblFirm()+" "+z; }
 void PanelTitle(int x,int y,int maxW)
   {
-   string name=AccLblName(), base=name, dot=ShortToString(0x00B7);
+   string firm=AccLblFirm(), size=AccLblSize(), name=AccLblName(), dot=ShortToString(0x00B7);
    string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
    uint   wN=0,hN=0,wD=0,hD=0,wR=0,hR=0;
    int    gap=_s(5), avail=_s(maxW);
@@ -4814,9 +4827,9 @@ void PanelTitle(int x,int y,int maxW)
      {
       TextGetSize(name,wN,hN);
       int tot=(int)wN+((role=="") ? 0 : 2*gap+(int)wD+(int)wR);
-      if(tot<=avail || StringLen(base)<=4) break;
-      base=StringSubstr(base,0,StringLen(base)-1);
-      name=base+ShortToString(0x2026);
+      if(tot<=avail || StringLen(firm)<=3) break;
+      firm=StringSubstr(firm,0,StringLen(firm)-1);                    // the firm gives way; the size always shows
+      name=firm+ShortToString(0x2026)+((size=="") ? "" : " "+size);
      }
    // y is the MIDDLE of the ON/OFF button (Nestor: "in line with the OFF button" - top-anchored it sat 3 px low):
    // anchored by its own centre, the text lines up with the button's, which MT5 also centres.
