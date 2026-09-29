@@ -20,6 +20,14 @@
 -- 2026-09-27 change: HAND-LOGGED trades take part (see the `jtr` CTE) - journal trades with no
 -- mt5Ticket on an active account the EA is not linked to. To re-tighten: drop `union all select *
 -- from jtr` from `raw` (and the jtr CTE) and redeploy.
+-- 2026-09-29 change: every trade is judged by ITS OWN account's rules (max risk, daily loss, BE band).
+-- `lim` (the strictest of the member's ACTIVE accounts) is now only the fallback for a trade whose
+-- account is unknown. Found when Nestor opened a 10K challenge next to his 70K: every 70K trade was
+-- judged against the 10K's 150 max risk / 500 daily loss and September fell from 529 to 140. It also
+-- judged old trades on ARCHIVED accounts by the current account's rules (Aurora's 160K trades against
+-- her 10K's 70). New CTEs acc_lim (every account's limits) and tacc (ticket -> account: the journal's
+-- accountId, else the EA login's mapped account); acc_days judges daily loss per account per day.
+-- Backup of the entries before: _lb_snap_0929b (RLS on, access revoked).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
@@ -161,6 +169,77 @@ begin
       from per_acct
       group by user_id
     ),
+    -- 2026-09-29 (Nestor): every trade is judged by ITS OWN account's rules. lim above is the strictest of the
+    -- member's active accounts - right with one live account, wrong with two: opening a 10K challenge next to a
+    -- 70K judged every 70K trade against the 10K's 150 max risk and 500 daily loss, and took 389 points off.
+    -- acc_lim holds every account (archived too - an old trade keeps its own account's rules); tacc says which
+    -- account a trade was on: the journal's accountId for that ticket, else the EA login's mapped account.
+    -- A trade whose account is unknown is judged by lim, exactly as before.
+    acc_lim as (
+      select distinct on (x.user_id, x.acc_id)
+        x.user_id, x.acc_id,
+        case
+          when (x.rr ->> 'maxRiskMode') = 'amount'
+            then nullif((x.rr ->> 'maxRiskAmount'), '')::numeric
+          when nullif((x.rr ->> 'maxRiskPct'), '')::numeric > 0 and x.balance > 0
+            then nullif((x.rr ->> 'maxRiskPct'), '')::numeric / 100.0 * x.balance
+          else nullif((x.rr ->> 'maxRiskAmount'), '')::numeric
+        end as max_risk,
+        case
+          when (x.rr ->> 'maxLossMode') = 'amount'
+            then nullif((x.rr ->> 'maxLossAmount'), '')::numeric
+          when nullif((x.rr ->> 'maxLossPct'), '')::numeric > 0 and x.balance > 0
+            then nullif((x.rr ->> 'maxLossPct'), '')::numeric / 100.0 * x.balance
+          else nullif((x.rr ->> 'maxLossAmount'), '')::numeric
+        end as max_loss,
+        case
+          when (x.rr ->> 'beThresholdMode') = 'amount'
+            then nullif((x.rr ->> 'beThresholdAmount'), '')::numeric
+          when nullif((x.rr ->> 'beThresholdPct'), '')::numeric > 0 and x.balance > 0
+            then nullif((x.rr ->> 'beThresholdPct'), '')::numeric / 100.0 * x.balance
+          else nullif((x.rr ->> 'beThresholdAmount'), '')::numeric
+        end as be_band
+      from (
+        select j.user_id, a.obj ->> 'id' as acc_id,
+               coalesce(
+                 nullif((a.obj ->> 'startingBalance'), '')::numeric,
+                 nullif((a.obj ->> 'balance'), '')::numeric,
+                 nullif((j.data -> 'settings' ->> 'startingBalance'), '')::numeric,
+                 0
+               ) as balance,
+               coalesce(a.obj -> 'riskRules', j.data -> 'settings' -> 'riskRules', '{}'::jsonb) as rr
+        from journals j
+        cross join lateral jsonb_array_elements(coalesce(j.data -> 'accounts', '[]'::jsonb)) a(obj)
+        where jsonb_typeof(a.obj) = 'object' and nullif(a.obj ->> 'id', '') is not null
+      ) x
+      order by x.user_id, x.acc_id
+    ),
+    tacc as (
+      select distinct on (z.user_id, z.ticket) z.user_id, z.ticket, z.acc_id
+      from (
+        select j.user_id, e.value ->> 'mt5Ticket' as ticket, e.value ->> 'accountId' as acc_id, 1 as pri
+          from journals j
+          cross join lateral (
+            select tt.value
+              from jsonb_array_elements(coalesce(j.data -> 'history','[]'::jsonb)) s
+              cross join lateral jsonb_array_elements(coalesce(s.value -> 'trades','[]'::jsonb)) tt
+            union all
+            select tt.value
+              from jsonb_array_elements(coalesce(j.data -> 'currentSeries','[]'::jsonb)) tt
+          ) e
+         where jsonb_typeof(e.value) = 'object'
+           and nullif(e.value ->> 'mt5Ticket', '') is not null
+           and nullif(e.value ->> 'accountId', '') is not null
+        union all
+        select j.user_id, i.ticket::text, mp.value, 2
+          from journals j
+          join trades_inbox i on i.token::text = j.user_id::text and i.login is not null
+          join lateral jsonb_each_text(case when jsonb_typeof(j.data -> 'mt5LoginMap') = 'object'
+                                            then j.data -> 'mt5LoginMap' else '{}'::jsonb end) mp
+            on mp.key = i.login::text
+      ) z
+      order by z.user_id, z.ticket, z.pri
+    ),
     -- The risk the trader recorded in their OWN journal, for trades the EA never stamped.
     -- risk_gbp only exists on trades the EA managed; a trade placed by hand reaches trades_verified
     -- with risk_gbp and sl_pips NULL, so pnl/risk is undefined and period_r drops it - which let a
@@ -229,7 +308,7 @@ begin
              null::numeric as sl_pips, null::numeric as risk_gbp, null::numeric as tp_r, null::numeric as tp_pips,
              null::numeric as mfe_pips, null::numeric as mfe_r,
              now() as created_at, 1 as exit_count, null::numeric as sl_max_pips, null::numeric as risk_max_gbp,
-             'manual'::text as src, m.risk as risk_m, m.sl as sl_m
+             'manual'::text as src, m.risk as risk_m, m.sl as sl_m, nullif(m.v ->> 'accountId', '') as acc_m
       from (
         select j.user_id, tr.v, z.tz,
                coalesce(nullif(tr.v ->> 'symbol', ''), j.data -> 'settings' -> 'symbols' ->> 0,
@@ -296,7 +375,7 @@ begin
           partition by lt.user_id, public.st_sym_core(lt.symbol), lt.direction, lt.src order by lt.open_time, lt.ticket
         ) as prev_open
       from (
-        select tv0.*, 'ea'::text as src, null::numeric as risk_m, null::numeric as sl_m
+        select tv0.*, 'ea'::text as src, null::numeric as risk_m, null::numeric as sl_m, null::text as acc_m
           from trades_verified tv0
          where tv0.close_time is not null
            and tv0.pnl is not null
@@ -329,8 +408,12 @@ begin
     tv as (
       select lt.*,
              coalesce(lt.risk_gbp::numeric,
-                      case when jr.risk_j is not null then least(jr.risk_j, l.max_risk) end,
-                      case when lt.risk_m > 0 then least(lt.risk_m, l.max_risk) end)            as risk_u,
+                      case when jr.risk_j is not null then least(jr.risk_j, case when al.acc_id is not null then al.max_risk else l.max_risk end) end,
+                      case when lt.risk_m > 0 then least(lt.risk_m, case when al.acc_id is not null then al.max_risk else l.max_risk end) end) as risk_u,
+             case when al.acc_id is not null then al.max_risk else l.max_risk end            as max_risk_u,
+             case when al.acc_id is not null then al.max_loss else l.max_loss end            as max_loss_u,
+             case when al.acc_id is not null then al.be_band  else l.be_band  end            as be_band_u,
+             coalesce(lt.acc_m, ta.acc_id)                                                   as acc_u,
              coalesce(lt.sl_pips::numeric, jr.sl_j, case when lt.sl_m > 0 then lt.sl_m end)  as sl_u,
              ps.pip                                                                          as pip_u,
              ps.is_fx                                                                        as fx_u
@@ -338,6 +421,8 @@ begin
       left join lim   l  on l.user_id  = lt.user_id
       left join jrisk jr on jr.user_id = lt.user_id and jr.ticket = lt.ticket::text
       left join pipsz ps on ps.symbol = lt.symbol
+      left join tacc  ta on ta.user_id = lt.user_id and ta.ticket = lt.ticket::text
+      left join acc_lim al on al.user_id = lt.user_id and al.acc_id = coalesce(lt.acc_m, ta.acc_id)
     ),
     t as (
       select
@@ -385,15 +470,17 @@ begin
           and ((lt.pnl::numeric) / lt.risk_gbp::numeric)
               < lt.tp_r::numeric * 0.95
         )                                                      as tp_pulled,
-        coalesce(l.be_band, 0.005)                             as be_band,
-        l.max_risk,
+        coalesce(lt.be_band_u, 0.005)                             as be_band,
+        lt.max_risk_u                                          as max_risk,
+        lt.max_loss_u,
+        lt.acc_u,
         (
-          l.max_risk is not null and l.max_risk > 0
+          lt.max_risk_u is not null and lt.max_risk_u > 0
           and (
             -- The risk the trade CARRIED: at its entry stop (the EA stamp), or at the widest stop
             -- it ever had (EA v8.4) - a stop dragged away after entry is a bigger risk taken.
             greatest(coalesce(lt.risk_gbp::numeric, 0), coalesce(lt.risk_max_gbp::numeric, 0))
-              > l.max_risk * 1.05
+              > lt.max_risk_u * 1.05
             -- What the broker says it actually LOST, before costs. Catches every trade the stamp
             -- cannot: placed outside the EA, EA not running, or a stop widened while it was off.
             -- A stop can fill past its level, so the loss may run over the limit by slippage -
@@ -403,9 +490,9 @@ begin
             -- forex only, so everything else gets a wider 10% floor until there are real index
             -- stop-outs to measure.
             or -(lt.pnl::numeric + coalesce(lt.costs::numeric, 0))
-               > l.max_risk
+               > lt.max_risk_u
                  + greatest(
-                     l.max_risk * case when coalesce(lt.fx_u, false) then 0.05 else 0.10 end,
+                     lt.max_risk_u * case when coalesce(lt.fx_u, false) then 0.05 else 0.10 end,
                      2 * lt.pip_u * (-(lt.pnl::numeric + coalesce(lt.costs::numeric, 0)))
                        / nullif(abs(lt.exit_price::numeric - lt.entry_price::numeric), 0)
                    )
@@ -463,25 +550,44 @@ begin
         and (close_time at time zone 'Europe/London')::date <  v_end
       group by user_id
     ),
+    acc_days as (
+      select
+        t.user_id,
+        (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date as d,
+        t.acc_u,
+        sum(t.pnl_gross)                                                 as pnl,
+        max(t.max_loss_u)                                                as max_loss_u
+      from t
+      left join sess s on s.user_id = t.user_id
+      where (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
+        and (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
+      group by 1,2,3
+    ),
     days as (
+      select dd.*, coalesce(ab.any_over_loss, false) as any_over_loss
+      from (
       select
         t.user_id,
         (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date as d,
         sum(t.pnl_gross)                                                 as day_pnl,
         count(*)                                                         as day_trades,
-        bool_or(t.over_risk)                                            as any_over_risk
+        bool_or(t.over_risk)                                            as any_over_risk,
+        bool_or(t.max_risk > 0)                                         as has_risk_rule,
+        bool_or(t.max_loss_u > 0)                                       as has_loss_rule
       from t
       left join sess s on s.user_id = t.user_id
       where (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
         and (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
       group by 1,2
+      ) dd
+      left join (select user_id, d, bool_or(max_loss_u > 0 and pnl < 0 and abs(pnl) > max_loss_u) as any_over_loss
+                   from acc_days group by 1,2) ab on ab.user_id = dd.user_id and ab.d = dd.d
     ),
     day_breaks as (
       select
         d.user_id,
         count(*) filter (
-          where l.max_loss is not null and l.max_loss > 0
-            and d.day_pnl < 0 and abs(d.day_pnl) > l.max_loss
+          where coalesce(d.has_loss_rule, false) and d.any_over_loss
         ) as over_loss_days,
         count(*) filter (
           where l.max_trades is not null and l.max_trades > 0
@@ -686,13 +792,13 @@ begin
                            and dy.day_trades <= l.max_trades)                        as maxtr_kept,
         count(*) filter (where dy.d is not null and l.max_trades is not null and l.max_trades > 0
                            and dy.day_trades >  l.max_trades)                        as maxtr_over,
-        count(*) filter (where dy.d is not null and l.max_loss is not null and l.max_loss > 0
-                           and not (dy.day_pnl < 0 and abs(dy.day_pnl) > l.max_loss)) as dd_kept,
-        count(*) filter (where dy.d is not null and l.max_loss is not null and l.max_loss > 0
-                           and dy.day_pnl < 0 and abs(dy.day_pnl) > l.max_loss)       as dd_over,
-        count(*) filter (where dy.d is not null and l.max_risk is not null and l.max_risk > 0
+        count(*) filter (where dy.d is not null and coalesce(dy.has_loss_rule, false)
+                           and not dy.any_over_loss)                                   as dd_kept,
+        count(*) filter (where dy.d is not null and coalesce(dy.has_loss_rule, false)
+                           and dy.any_over_loss)                                       as dd_over,
+        count(*) filter (where dy.d is not null and coalesce(dy.has_risk_rule, false)
                            and not coalesce(dy.any_over_risk,false))                  as risk_kept,
-        count(*) filter (where dy.d is not null and l.max_risk is not null and l.max_risk > 0
+        count(*) filter (where dy.d is not null and coalesce(dy.has_risk_rule, false)
                            and coalesce(dy.any_over_risk,false))                      as risk_over
       from cd_period cd
       left join bias_ok_dates   bok on bok.user_id = cd.user_id and bok.d = cd.d
