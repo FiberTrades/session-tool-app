@@ -13347,9 +13347,23 @@ try {
     sections.forEach(id => { const el = document.getElementById(id); if (el) el.classList.remove('hidden'); });
     const trades = (data.review.trades || []);
     const hasTrades = trades.length > 0;
+    // One review per TRADE: a copy on another account (EA Trade Copier) shares its trade's answers, so it gets no tab
+    // of its own and never makes you pick (29 Sep 2026). _rvFirst = the rows that are reviewed; _rvAcc = accounts per idea.
+    const _rvFirst = [], _rvAt = {}, _rvAcc = {};
+    trades.forEach((x, i) => {
+      const id = x && x.ideaId;
+      if (id) { _rvAcc[id] = (_rvAcc[id] || 0) + 1; if (_rvAt[id] != null) return; _rvAt[id] = i; }
+      _rvFirst.push(i);
+    });
+    // A copy picked as the active row hands the review to its trade (the answers are the same).
+    try {
+      const _act = trades[_activeReviewTradeIdx];
+      if (_act && _act.ideaId && _rvAt[_act.ideaId] != null && _rvAt[_act.ideaId] !== _activeReviewTradeIdx) _activeReviewTradeIdx = _rvAt[_act.ideaId];
+    } catch (e) {}
+    const _multi = _rvFirst.length >= 2;
     // Apply / remove the lock class on each per-trade review section. Locked = greyed out
     // + pointer-events disabled until the user picks a trade from the tab strip.
-    const shouldLock = trades.length >= 2 && _tradeReviewLocked;
+    const shouldLock = _multi && _tradeReviewLocked;
     sections.forEach(id => {
       const el = document.getElementById(id);
       if (el) el.classList.toggle('review-locked', shouldLock);
@@ -13357,11 +13371,12 @@ try {
     // Trade-select section. Visible only when ≥2 trades (with 1 trade there's nothing to switch).
     // Each tab shows a dot indicating whether that trade's review has any content yet.
     if (tabsEl && tabsSection) {
-      if (trades.length >= 2) {
+      if (_multi) {
         tabsSection.classList.remove('hidden');
         const tradeWord = t('review.trade_short') || 'Trade';
         // While locked, no tab is rendered as "active" — the user hasn't picked yet.
-        tabsEl.innerHTML = trades.map((tr, i) => {
+        tabsEl.innerHTML = _rvFirst.map(i => trades[i]).map((tr, _k) => {
+          const i = _rvFirst[_k];
           const hasContent = !!(
             tr.execution || tr.focus || tr.close || tr.setup ||
             (Array.isArray(tr.rice) && tr.rice.length) ||
@@ -13372,7 +13387,8 @@ try {
           );
           const dot = hasContent ? '●' : '○';
           const activeCls = (!_tradeReviewLocked && i === _activeReviewTradeIdx) ? ' active' : '';
-          return `<button type="button" class="trade-review-tab${activeCls}" data-trade-idx="${i}"><span class="tab-dot">${dot}</span>${tradeWord} ${i + 1}</button>`;
+          const _nAcc = (tr && tr.ideaId && _rvAcc[tr.ideaId] > 1) ? ' \u00b7 ' + window._stT(_rvAcc[tr.ideaId] + ' accounts', _rvAcc[tr.ideaId] + ' cuentas') : '';
+          return `<button type="button" class="trade-review-tab${activeCls}" data-trade-idx="${i}"><span class="tab-dot">${dot}</span>${tradeWord} ${i + 1}${_nAcc}</button>`;
         }).join('');
         tabsEl.querySelectorAll('.trade-review-tab').forEach(btn => {
           btn.addEventListener('click', () => {

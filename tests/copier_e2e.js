@@ -68,6 +68,18 @@
       [copy.execution, copy.setup, copy.concepts]);
     copy.reflection = 'written on the copy'; saveData();
     check('review: an answer written on the copy fills the Lead', lead.reflection === 'written on the copy', lead.reflection);
+    _tradeReviewLocked = true;   // what adding / importing a 2nd row sets
+    syncReviewSectionsToActiveTrade();
+    var _tsel = document.getElementById('section-trade-select'), _exec = document.getElementById('section-execution');
+    check('review: a trade and its copy are ONE review (no "Select to review", nothing locked)',
+      _tsel && _tsel.classList.contains('hidden') && _exec && !_exec.classList.contains('review-locked'),
+      [_tsel && _tsel.className, _exec && _exec.className]);
+    var _extra = Object.assign(newTradeBlank(), { id: 'X3', accountId: 'acc_70', symbol: 'EUR/USD', side: 'Short', result: 'Win', r: '2', risk: '500', sl: '4' });
+    data.review.trades.push(_extra); _tradeReviewLocked = true; syncReviewSectionsToActiveTrade();
+    var _tabs = Array.prototype.map.call(document.querySelectorAll('#trade-review-tabs .trade-review-tab'), function (b) { return b.textContent.replace(/[●○]/g, '').trim(); });
+    check('review: a copied trade + another trade -> two tabs ("Trade 1 · 2 accounts", "Trade 3")',
+      _tabs.length === 2 && /Trade 1 · 2 accounts/.test(_tabs[0]) && /Trade 3/.test(_tabs[1]) && _exec.classList.contains('review-locked'), _tabs);
+    data.review.trades.splice(data.review.trades.indexOf(_extra), 1); _tradeReviewLocked = false; syncReviewSectionsToActiveTrade();
 
     // ---------------------------------------------------------------- 4. Community review post
     var msg = plain(buildReviewMessage());
