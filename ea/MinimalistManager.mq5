@@ -2460,8 +2460,9 @@ void BuildPanel()
       // card re-made on a scroll covered the bar (Nestor: "the scrolling bar that has gone below the panels"). So
       // the bar is re-made last, every time, and always sits on top.
       ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM");
-      mkRect(PP+"SB_TRK",x+w-6,g_trackTop,3,g_trackH,COL_PANEL_LINE,COL_PANEL_LINE);
-      mkRect(PP+"SB_THM",x+w-6,g_thumbTop,3,g_thumbH,COL_PANEL_ICON,COL_PANEL_ICON);
+      // Flush with the panel's right edge (8.85, Nestor: "move the scrollbar totally to the right of the panel").
+      mkRect(PP+"SB_TRK",x+w-3,g_trackTop,3,g_trackH,COL_PANEL_LINE,COL_PANEL_LINE);
+      mkRect(PP+"SB_THM",x+w-3,g_thumbTop,3,g_thumbH,COL_PANEL_ICON,COL_PANEL_ICON);
      }
    else { ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM"); g_trackH=0; }
 
