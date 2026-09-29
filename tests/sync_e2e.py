@@ -222,11 +222,12 @@ UNIT_JS = r"""(() => {
   const base = { trades: [T('t1', { acc: '70', res: 'Lose' }), T('t2', { acc: '70', res: 'BE' }), T('t3', { acc: '70' })] };
   const other = { trades: [T('t1', { acc: '70', res: 'Lose' }), T('t4', { acc: '10', res: 'Lose' })] };
   const local = { trades: [T('t1', { acc: '70', res: 'Lose', note: 'x' }), T('t2', { acc: '70', res: 'BE' }), T('t3', { acc: '70', edited: true })] };
-  r = M(base, local, other);
+  const conf0 = [];
+  r = M(base, local, other, [], conf0);
   const ids = r.trades.map(t => t.id).join(',');
   ck('merge: a trade deleted on the other side stays deleted', ids.indexOf('t2') < 0, ids);
-  ck('merge: a trade we edited survives the other side deleting it', ids.indexOf('t3') >= 0, ids);
-  ck('merge: their new trade is kept, next to the trade it follows', ids === 't1,t4,t3', ids);
+  ck('merge: a delete wins even over a change on the other side - and that copy is reported for Backups', ids.indexOf('t3') < 0 && conf0.some(c => c.list && /t3/.test(c.path)), [ids, conf0]);
+  ck('merge: their new trade is kept, next to the trade it follows', ids === 't1,t4', ids);
   ck('merge: our edit to a shared trade is kept', r.trades[0].note === 'x', r.trades[0]);
   r = M({ t: [T('a', { x: 1, y: 1 })] }, { t: [T('a', { x: 2, y: 1 })] }, { t: [T('a', { x: 1, y: 2 })] });
   ck('merge: the same trade edited in different fields keeps both', r.t[0].x === 2 && r.t[0].y === 2, r.t[0]);
@@ -459,7 +460,7 @@ def main():
 
         # 4. Tab 2 writes a review note and a setting; tab 1 is not told. Both survive everywhere.
         act(A2, "(() => { const t = [].concat(data.review.trades).find(x => x.id === 't1'); t.reflection = 'from tab 2'; data.settings.e2eFromA2 = 'a2'; STCloud.save(); return true; })()")
-        p = wait_row(lambda p: p.get('flagA2') == 'a2' and p.get('t1note') == 'from tab 2')
+        p = wait_row(lambda p: p.get('flagA2') == 'a2' and p.get('t1note') == 'from tab 2', 30)   # a background tab can be slow
         check('tab 2: its note reaches the cloud and the fix stays', p.get('t1note') == 'from tab 2' and fixed(p), p)
         ok = wait(A, "(() => { STCloud.save(); return data.settings.e2eFromA2 === 'a2'; })()", 15)
         pa = peek(A)
@@ -492,6 +493,36 @@ def main():
         check('tab 1 after a reload: the fixed trade stays fixed', ok and fixed(pa) and pa.get('t1note') == 'from tab 2', pa)
         p = row_peek()
         check('cloud at the end: fixed, and every side\'s change kept', fixed(p) and p.get('flagB') == 'b' and p.get('flagA2') == 'a2' and p.get('flagPhone') == 'p', p)
+
+        # 7. A copy of the app from before the merge, still open in the same browser (29 Sep evening): it writes
+        #    its hours-old journal into the browser's storage under an id without the '~v2' mark.
+        STALE_JS = r"""(() => {
+          const st = JSON.parse(JSON.stringify(data));
+          const all = [].concat(st.review.trades || []); (st.reviewSlots || []).forEach(s => (s.trades || []).forEach(t => all.push(t)));
+          all.forEach(t => { if (t.id === 't2') { t.accountId = 'acc70'; t.result = 'BE'; } });
+          st.accounts.find(a => a.id === 'acc10').riskRules.beThresholdAmount = 150;
+          st.mt5LoginMap['1514778904'] = 'acc70';
+          return JSON.stringify(st);
+        })()"""
+        stale = ev(A2, STALE_JS)
+        ev(A2, "(() => { localStorage.setItem('fiberTradesData_v3', %s); localStorage.setItem('st_last_write_tab', 'oldcopy-1234'); STCloud.save(); return true; })()" % json.dumps(stale))
+        time.sleep(0.5)
+        pa2 = peek(A2)
+        check('old copy in the same browser: its save is not taken in', fixed(pa2), pa2)
+        check('old copy in the same browser: the member is told to close it', ev(A2, 'window.__stOldCopySeen === true'))
+        # 8. Everything closed with the old copy's save still in storage, then the app opened again (Nestor, 29 Sep).
+        A2.call('Page.close')
+        time.sleep(0.5)
+        A.call('Page.addScriptToEvaluateOnNewDocument', source="""(function () { try { if (sessionStorage.getItem('__e2eStale')) return; sessionStorage.setItem('__e2eStale', '1');
+          localStorage.setItem('fiberTradesData_v3', %s); localStorage.setItem('st_last_write_tab', 'oldcopy-1234'); } catch (e) {} })();""" % json.dumps(stale))
+        A.call('Page.reload', ignoreCache=True)
+        time.sleep(1.5)
+        ok = wait(A, READY_JS + " && (() => { const t = [].concat(data.review.trades).find(x => x.id === 't2'); return !!t && t.accountId === 'acc10'; })()", 30)
+        time.sleep(2)
+        pa = peek(A) if ok else {}
+        check('opened again after an old copy saved last: the cloud copy is taken, not the old one', ok and fixed(pa), pa)
+        p = row_peek()
+        check('...and the old copy never reaches the cloud', fixed(p), p)
     except SystemExit:
         pass
     finally:

@@ -13551,7 +13551,7 @@ try {
     } else {
       try { localStorage.removeItem('st_mv_payload'); } catch (e) {}   // clear any stale view payload on a normal load
     }
-    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { _stReadStoredBase(); return persist(migrate(JSON.parse(raw))); } } catch (e) {}
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { _stReadStoredBase(); _stReadLastWriter(); return persist(migrate(JSON.parse(raw))); } } catch (e) {}
     for (const oldKey of OLD_KEYS) {
       try { const v = localStorage.getItem(oldKey); if (v) return persist(migrate(JSON.parse(v))); } catch (e) {}
     }
@@ -15798,8 +15798,10 @@ try {
        local = this side now
        other = the copy the other tab or device wrote
      A value only one side changed takes that side's version. Lists of things with an id (trades,
-     accounts) merge item by item: an item deleted on one side stays deleted unless the other side
-     edited it; an item added on either side is kept. Lists of plain values (ticket numbers) merge
+     accounts) merge item by item: an item deleted on either side stays deleted - a delete is a deliberate
+     act, while a copy can change by itself (a field filled in on load), and "edited there, so keep it"
+     brought a deleted trade back (29 Sep); if the other side had changed it, that copy goes to Backups
+     (conflicts, list). An item added on either side is kept. Lists of plain values (ticket numbers) merge
      as sets. When both sides changed the same value differently, this side wins, and `conflicts`
      says where. Pure: never touches `data`, and returns parts of its inputs, so callers pass copies. */
   function _m3Plain(v) { return !!v && typeof v === 'object' && !Array.isArray(v); }
@@ -15870,14 +15872,20 @@ try {
         l.forEach(function (x) {
           var k = _m3Key(x), ox = om[k], bx = bm[k];
           if (ox) { res.push(_stMerge3(bx, x, ox, path.concat(k.slice(1)), conflicts)); return; }
-          if (bx && _m3S(bx) === _m3S(x)) return;    // deleted on the other side, untouched here
-          res.push(x);                               // added here - or edited here while deleted there: kept
+          if (bx) {                                  // deleted on the other side: a delete wins
+            if (conflicts && _m3S(bx) !== _m3S(x)) conflicts.push({ path: path.concat(k.slice(1)).join('.'), list: true });
+            return;
+          }
+          res.push(x);                               // added here
         });
         o.forEach(function (x, i) {
           var k = _m3Key(x);
           if (lm[k]) return;
           var bx = bm[k];
-          if (bx && _m3S(bx) === _m3S(x)) return;    // deleted here, untouched there
+          if (bx) {                                  // deleted here: a delete wins
+            if (conflicts && _m3S(bx) !== _m3S(x)) conflicts.push({ path: path.concat(k.slice(1)).join('.'), list: true });
+            return;
+          }
           // Added there: put it after the item it follows on that side.
           var at = 0;
           for (var j = i - 1; j >= 0 && !at; j--) {
@@ -15931,6 +15939,11 @@ try {
      the merge see edits nobody made). Used only when the SAME save wrote both: the note's tab must
      be the journal's last writer - a restore, or a tab without this code, fails that and is left
      to the ordinary rules. The cloud module picks it up from window.__stStoredBase. */
+  // Was the journal in storage last written by a copy of the app from before the merge? Then it may be
+  // hours old, and the first sync takes the cloud's copy instead of uploading it (reconcileFull).
+  function _stReadLastWriter() {
+    try { var w = localStorage.getItem('st_last_write_tab') || ''; window.__stLsFromOldCopy = !!w && !/~v2$/.test(w); } catch (e) { window.__stLsFromOldCopy = false; }
+  }
   function _stReadStoredBase() {
     window.__stStoredBase = null;
     try {
@@ -15984,6 +15997,18 @@ try {
     data = nd;
     _stForeignRedraw(old, nd);
   }
+  var __stOldCopyWarnAt = 0, __stWroteOnce = false;
+  function _stOldCopyWarn() {
+    window.__stOldCopySeen = true;
+    _stSlog('tab: an older copy of the app saved here - ignored; it needs closing or reloading');
+    if (Date.now() - __stOldCopyWarnAt < 600000) return;   // at most every 10 minutes
+    __stOldCopyWarnAt = Date.now();
+    try {
+      if (typeof showToast === 'function') showToast(_stOldT('Another Session Tool window is still on an older version and keeps saving over your changes. Close it, or reload it.',
+        'Otra ventana de Session Tool sigue en una versi\u00f3n anterior y sigue guardando encima de tus cambios. Ci\u00e9rrala o rec\u00e1rgala.'), { persist: true });
+    } catch (e) {}
+  }
+  function _stOldT(en, es) { return (document.documentElement.lang === 'es') ? es : en; }
   function _stEditing() {
     try { var a = document.activeElement; return !!a && (a.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName)); } catch (e) { return false; }
   }
@@ -16019,6 +16044,12 @@ try {
   function _stAbsorbOtherTab() {
     var lastTab = localStorage.getItem('st_last_write_tab');
     if (!lastTab || lastTab === __ST_TAB_ID) return;
+    /* Saved by a copy of the app from before the merge (no '~v2'): it writes the whole journal it loaded,
+       hours ago if left open, and taking that in brought a deleted trade, an old BE threshold and an old
+       account mapping back every few seconds (29 Sep). Not taken in - this tab's save goes over it - and
+       the member is told to close that window. */
+    // Only a warning once this tab has saved: before that, the old id is usually this very window before its reload.
+    if (!/~v2$/.test(lastTab)) { if (__stWroteOnce) _stOldCopyWarn(); return; }
     // Written while signed in as someone else (or signed out): not ours to merge - the sign-in
     // guards deal with a different account's copy.
     var lastUid = localStorage.getItem('st_last_write_uid');
@@ -16032,7 +16063,9 @@ try {
 
   // Identifies THIS app instance, so saveData only pays the merge-check when a DIFFERENT
   // instance (detached community window, second tab) wrote the journal since our last save.
-  const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+  // '~v2': this tab merges (see _stMerge3). A copy of the app from before 29 Sep 2026 writes the journal without
+  // merging and its ids have no mark - _stAbsorbOtherTab and the first load of a page use that to tell them apart.
+  const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + '~v2';
   function saveData() {
     if (window.__MV) return;                  // mentor view is read-only — never persist
     try { _syncIdeaReviews(); } catch (e) {}  // trade copier: an idea's review is filled once, on any of its copies
@@ -16040,6 +16073,7 @@ try {
     try {
       _stAbsorbOtherTab();
       localStorage.setItem('st_last_write_tab', __ST_TAB_ID);
+      __stWroteOnce = true;
     } catch (e) {}
     try {
       _stLsWriteJournal(JSON.stringify(data), false);
@@ -44533,7 +44567,12 @@ try {
         const _phase = _sessionsDoneToday() ? 'after'
                      : ((typeof isSessionLive === 'function' && isSessionLive()) ? 'live' : 'before');
         let _clkK = ''; try { const _c = (typeof clockNotice === 'function') ? clockNotice(false) : ''; _clkK = _c ? 'clk' + _c.length : ''; } catch (e) {}
-        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on', _clkK].join('.');
+        /* Which of today's rules is broken is part of the situation too. Without it a line written while
+           a rule looked broken outlived the fix: on 29 Sep a copied trade sat on the wrong account (the
+           70K's 2 trades and £713 over its £700), was moved to the 10K - nothing broken any more - and
+           "you let red run past your own limit" stayed all evening, the outcome and counts unchanged. */
+        let _rbK = ''; try { const _rs = (typeof getRuleStatus === 'function') ? getRuleStatus() : null; if (_rs) _rbK = 'r' + (_rs.dailyLossBroken ? 'L' : '') + (_rs.riskBroken ? 'R' : '') + (_rs.tradeCountBroken ? 'C' : '') + (_rs.allFollowed ? 'F' : ''); } catch (e) {}
+        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on', _clkK, _rbK].join('.');
       } catch (e) { return ''; }
     })();
     targets.forEach(el => {
@@ -65675,7 +65714,7 @@ try {
         if (!ok) return;
         takeSnapshot('pre-restore');                                  // snapshot current first (undo-able)
         localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(s.data)); // swap in the chosen snapshot
-        try { localStorage.setItem('st_last_write_tab', 'restore'); } catch (e) {} // another open tab merges this in, not over it
+        try { localStorage.setItem('st_last_write_tab', 'restore~v2'); } catch (e) {} // another open tab merges this in, not over it
         try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {} // make it win to the cloud
         location.reload();
       });
@@ -65719,7 +65758,7 @@ try {
           if (!ok) return;
           takeSnapshot('pre-restore');                                    // the copy being replaced, undo-able
           try { localStorage.setItem(ST.STORAGE_KEY, JSON.stringify(incoming)); } catch (e) {}
-          try { localStorage.setItem('st_last_write_tab', 'restore'); } catch (e) {} // another open tab merges this in, not over it
+          try { localStorage.setItem('st_last_write_tab', 'restore~v2'); } catch (e) {} // another open tab merges this in, not over it
           try { sessionStorage.setItem('st_forcePush', '1'); } catch (e) {}  // a chosen restore wins to the cloud
           location.reload();
         });
@@ -67531,6 +67570,9 @@ try {
       // The row this tab last knew, before this download replaces that knowledge.
       var _oldBase = (cloudBaseUser === currentUser.id) ? cloudBaseStr : null;
       _setCloudBase(_cloudStr, _rowUat, _reqSeq);
+      // Decided once per page, here, before any rule below can upload what an older copy left (see the adopt below).
+      var _oldLocal = !!(window.__stLsFromOldCopy && _owner === currentUser.id);
+      window.__stLsFromOldCopy = false;
       if (eq(cloud, local)) { accStatus(tt('synced')); _stSlog('pull: same as cloud'); return; }
       /* THREE-WAY MERGE when this tab knows the row its journal came from. "Whichever copy holds
          more" below cannot see edits: moving a trade to another account, a new BE threshold or an
@@ -67541,7 +67583,7 @@ try {
          Before the new-day clear rule below, which replaced one whole journal with the other: two
          devices each clearing at their own time made the later one wipe everything the earlier one
          had done since. Merged, the clear's removals and the other side's edits both stand. */
-      if (_oldBase && (!authoritative || _owner === currentUser.id) && window.__stMerge3) {
+      if (_oldBase && !_oldLocal && (!authoritative || _owner === currentUser.id) && window.__stMerge3) {
         var _conf = [];
         var _localStr = JSON.stringify(local);
         var _merged = window.__stMerge3(JSON.parse(_oldBase), JSON.parse(_localStr), JSON.parse(_cloudStr), [], _conf);
@@ -67570,7 +67612,7 @@ try {
       // yesterday session the clear removed, but it stops a stale device's clear from adopting-away
       // this device's fresh morning bias / today's logged review.
       var _lClear = _clearStamp(local), _cClear = _clearStamp(cloud);
-      if (_cClear !== _lClear) {
+      if (_cClear !== _lClear && !_oldLocal) {
         if (_cClear > _lClear) {
           _stSlog('pull: newer new-day clear in the cloud - adopting it');
           // The cloud carries a newer clear (e.g. cleared on another device): adopt it, reload once —
@@ -67600,7 +67642,11 @@ try {
       // 20-trade one (this is exactly the bug that wiped a user's history). Always snapshot
       // the copy we set aside so nothing is ever lost.
       var cScore = contentScore(cloud), lScore = contentScore(local);
-      if (cScore > lScore) {
+      /* The journal this page loaded was last written by an older copy of the app (see _stReadLastWriter),
+         so it cannot be trusted over the cloud - on 29 Sep such a copy had held a stale journal all day.
+         Its copy is kept in Backups; the cloud's is taken. Once per page. */
+      if (_oldLocal) _stSlog('pull: the stored journal came from an older copy of the app - taking the cloud copy');
+      if (_oldLocal || cScore > lScore) {
         _stSlog('pull: cloud has more - adopting it');
         takeSnapshot('pre-sync', local);     // snapshot local before adopting the cloud copy
         // Bias fields don't count toward contentScore, so adopting the cloud wholesale can
