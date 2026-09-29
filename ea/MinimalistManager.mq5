@@ -4751,6 +4751,8 @@ color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole
 // copier role while it has one - LEAD green / FOLLOW blue, the Trade Copier card's colours (darker shades on a light
 // chart so they read on white). So every MT5 window says which account it is. (8.84 had a second line - the login and
 // the server; removed in 8.85, Nestor 30 Sep: "remove the account number and server from underneath".)
+// 8.85 also (Nestor, 30 Sep: "in line with the settings panel top row" and "from 12pt to whatever size this is" - the
+// Trade Copier's LEAD button): Arial Bold 8, the panel buttons' size, centred on the middle of the panel's title bar.
 // The top line is three labels - the name ENDS just left of the dot, the role STARTS just right of it - so they can never
 // overlap whatever the screen's scaling; the measured widths only move the dot so the whole line comes out centred.
 // Redrawn once a second when anything changed (a role switch, a resize, the size found in the history) and on resize.
@@ -4785,25 +4787,31 @@ void AccountLabel(bool force)
    string name=AccLblName();
    string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
    int    cx  =(int)(ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)/2);
-   string key =name+"|"+role+"|"+IntegerToString(cx)+"|"+(light?"L":"D");
+   int    cy  =_s(PY+17);   // the middle of the panel's title bar (it is 34 design px tall; see BuildPanel)
+   string key =name+"|"+role+"|"+IntegerToString(cx)+"|"+IntegerToString(cy)+"|"+IntegerToString(PX)+"|"+(light?"L":"D");
    if(!force && key==s_key && ObjectFind(0,nm)>=0) return;
    s_key=key;
    color cName=ChartTextColour(), cDim=COL_PANEL_ICON;
    color cRole=(g_copyRole==CR_LEAD) ? (light ? COL_TRADE : COL_PANEL_ACC) : (light ? COL_LINE_BE : COL_TAB_ON);
    uint  wN=0,hN=0,wR=0,hR=0;
-   TextSetFont("Arial Bold",-120); TextGetSize(name,wN,hN); TextGetSize(role,wR,hR);
-   int top=_s(4), gap=_s(9);
+   TextSetFont("Arial Bold",-80); TextGetSize(name,wN,hN); TextGetSize(role,wR,hR);
+   int gap=_s(6);
+   // Level with the panel's title bar, so on a narrow chart the two could meet: the line then starts just
+   // right of the panel instead of the middle.
+   int lineW=(role=="") ? (int)wN : (int)wN+(int)wR+2*gap;
+   int minL=_s(PX+PWID)+_s(12);
+   if(cx-lineW/2<minL) cx=minL+lineW/2;
    if(role=="")
      {
-      AccLbl(nm,cx,top,name,cName,12,"Arial Bold",ANCHOR_UPPER);
+      AccLbl(nm,cx,cy,name,cName,8,"Arial Bold",ANCHOR_CENTER);
       ObjectDelete(0,nd); ObjectDelete(0,nr);
      }
    else
      {
       int dx=cx+((int)wN-(int)wR)/2;   // where the dot goes for the whole line to be centred
-      AccLbl(nm,dx-gap,top,name,cName,12,"Arial Bold",ANCHOR_RIGHT_UPPER);
-      AccLbl(nd,dx,top,dot,cDim,12,"Arial Bold",ANCHOR_UPPER);
-      AccLbl(nr,dx+gap,top,role,cRole,12,"Arial Bold",ANCHOR_LEFT_UPPER);
+      AccLbl(nm,dx-gap,cy,name,cName,8,"Arial Bold",ANCHOR_RIGHT);
+      AccLbl(nd,dx,cy,dot,cDim,8,"Arial Bold",ANCHOR_CENTER);
+      AccLbl(nr,dx+gap,cy,role,cRole,8,"Arial Bold",ANCHOR_LEFT);
      }
    ObjectDelete(0,ns);   // 8.85: no second line - also clears the one an 8.84 chart left behind
    ChartRedraw();
