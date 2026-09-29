@@ -642,7 +642,8 @@ void DrawHint()
   {
    if(g_flashMsg!="")
      {
-      if(GetTickCount64()<g_flashUntil){ HintLines(">> ",g_flashMsg,COL_PANEL_WARN); return; }
+      // No ">> " in front since 8.85 (Nestor: "just remove the >>") - the daily-limit message fits one label without it.
+      if(GetTickCount64()<g_flashUntil){ HintLines("",g_flashMsg,COL_PANEL_WARN); return; }
       g_flashMsg="";
      }
    if(!g_active){ HintLines("","",clrNONE); return; }   // no lines: all three taken away
