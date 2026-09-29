@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.83"
+#property version   "8.84"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3127,7 +3127,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.83\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.84\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -4745,6 +4745,70 @@ string CpAcctLabel(string company,double bal)
   }
 string CopyRoleText(){ return g_copyRole==CR_LEAD ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "OFF"); }
 color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole==CR_FOLLOW ? COL_TAB_ON : COL_PANEL_BTX); }
+
+// ---- v8.84: ACCOUNT LABEL (Nestor, 29 Sep 2026: "write the name of the account on the chart top center") ----------
+// Always on, nothing to set. Line 1: the firm and the account's size, read from the account itself ("FTMO 70K"), plus the
+// copier role while it has one - LEAD green / FOLLOW blue, the Trade Copier card's colours (darker shades on a light
+// chart so they read on white). Line 2: the login and the server. So every MT5 window says which account it is.
+// The top line is three labels - the name ENDS just left of the dot, the role STARTS just right of it - so they can never
+// overlap whatever the screen's scaling; the measured widths only move the dot so the whole line comes out centred.
+// Redrawn once a second when anything changed (a role switch, a resize, the size found in the history) and on resize.
+void AccLbl(string n,int x,int y,string text,color clr,int fs,string font,ENUM_ANCHOR_POINT anc)
+  {
+   if(ObjectFind(0,n)<0) ObjectCreate(0,n,OBJ_LABEL,0,0,0);
+   ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
+   ObjectSetInteger(0,n,OBJPROP_ANCHOR,anc);
+   ObjectSetInteger(0,n,OBJPROP_XDISTANCE,x); ObjectSetInteger(0,n,OBJPROP_YDISTANCE,y);
+   ObjectSetString (0,n,OBJPROP_TEXT,text);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
+   ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
+   ObjectSetString (0,n,OBJPROP_FONT,font);
+   ObjectSetInteger(0,n,OBJPROP_BACK,false);
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
+  }
+string AccLblName()
+  {
+   string co=AccountInfoString(ACCOUNT_COMPANY), sv=AccountInfoString(ACCOUNT_SERVER);
+   string firm=CpIsFtmo(co,sv) ? "FTMO" : CpClean(co);
+   if(StringLen(firm)>22) firm=StringSubstr(firm,0,22);
+   double sz=CpAccountSize();
+   return (sz>0) ? firm+" "+CpFmtK(sz) : firm;
+  }
+void AccountLabel(bool force)
+  {
+   static string s_key="";
+   string nm=PFX+"ACC_NAME", nd=PFX+"ACC_DOT", nr=PFX+"ACC_ROLE", ns=PFX+"ACC_SUB";
+   string dot =ShortToString(0x00B7);
+   bool   light=(ChartTextColour()==clrBlack);
+   string name=AccLblName();
+   string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
+   string sub =IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"  "+dot+"  "+AccountInfoString(ACCOUNT_SERVER);
+   int    cx  =(int)(ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)/2);
+   string key =name+"|"+role+"|"+sub+"|"+IntegerToString(cx)+"|"+(light?"L":"D");
+   if(!force && key==s_key && ObjectFind(0,nm)>=0 && ObjectFind(0,ns)>=0) return;
+   s_key=key;
+   color cName=ChartTextColour(), cDim=COL_PANEL_ICON;
+   color cRole=(g_copyRole==CR_LEAD) ? (light ? COL_TRADE : COL_PANEL_ACC) : (light ? COL_LINE_BE : COL_TAB_ON);
+   uint  wN=0,hN=0,wR=0,hR=0;
+   TextSetFont("Arial Bold",-120); TextGetSize(name,wN,hN); TextGetSize(role,wR,hR);
+   if(hN==0) hN=(uint)_s(18);
+   int top=_s(4), gap=_s(9);
+   if(role=="")
+     {
+      AccLbl(nm,cx,top,name,cName,12,"Arial Bold",ANCHOR_UPPER);
+      ObjectDelete(0,nd); ObjectDelete(0,nr);
+     }
+   else
+     {
+      int dx=cx+((int)wN-(int)wR)/2;   // where the dot goes for the whole line to be centred
+      AccLbl(nm,dx-gap,top,name,cName,12,"Arial Bold",ANCHOR_RIGHT_UPPER);
+      AccLbl(nd,dx,top,dot,cDim,12,"Arial Bold",ANCHOR_UPPER);
+      AccLbl(nr,dx+gap,top,role,cRole,12,"Arial Bold",ANCHOR_LEFT_UPPER);
+     }
+   AccLbl(ns,cx,top+(int)hN+_s(1),sub,cDim,8,"Arial",ANCHOR_UPPER);
+   ChartRedraw();
+  }
 int    CopierRows(){ return 1+ArraySize(g_cpRowL); }
 void   CpRow(string l,string v,color c)
   {
@@ -5797,7 +5861,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.83 loaded (trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.84 loaded (account name at the top of the chart; trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -5904,6 +5968,7 @@ int OnInit()
    if(g_copyRole==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); }
 
    BuildPanel();
+   AccountLabel(true);                 // v8.84: which account this is, top centre
    if(g_scaleLock) ApplyScaleLock();   // frame the chart on load if locking is on
    // Work any post-mortems left over from a previous run. This is why the replay reads
    // BARS and not ticks: a trade that closed while the terminal was off still resolves
@@ -6042,6 +6107,7 @@ void OnTimer()
                   (g_pip>0)?(SymbolInfoDouble(_Symbol,SYMBOL_ASK)-SymbolInfoDouble(_Symbol,SYMBOL_BID))/g_pip:0.0);
      }
    DrawInfoReadout();
+   AccountLabel(false);   // v8.84: only touches the chart when the name, role, size or width changed
    if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint();   // a message's 6 seconds are up
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
@@ -6306,6 +6372,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    if(id==CHARTEVENT_CHART_CHANGE)
      {
       RefreshLabels();
+      AccountLabel(false);   // v8.84: stay centred on a resize / background colour change
       // If locking is on and the scale got reset (MT5 event, or you double-clicked the
       // axis to re-centre), re-frame. Skipped while Scale Fix is still on, so manual
       // dragging/zooming is never fought and there is no redraw loop.
