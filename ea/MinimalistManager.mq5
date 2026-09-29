@@ -4749,7 +4749,8 @@ color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole
 // ---- v8.84: ACCOUNT LABEL (Nestor, 29 Sep 2026: "write the name of the account on the chart top center") ----------
 // Always on, nothing to set. Line 1: the firm and the account's size, read from the account itself ("FTMO 70K"), plus the
 // copier role while it has one - LEAD green / FOLLOW blue, the Trade Copier card's colours (darker shades on a light
-// chart so they read on white). Line 2: the login and the server. So every MT5 window says which account it is.
+// chart so they read on white). So every MT5 window says which account it is. (8.84 had a second line - the login and
+// the server; removed in 8.85, Nestor 30 Sep: "remove the account number and server from underneath".)
 // The top line is three labels - the name ENDS just left of the dot, the role STARTS just right of it - so they can never
 // overlap whatever the screen's scaling; the measured widths only move the dot so the whole line comes out centred.
 // Redrawn once a second when anything changed (a role switch, a resize, the size found in the history) and on resize.
@@ -4783,16 +4784,14 @@ void AccountLabel(bool force)
    bool   light=(ChartTextColour()==clrBlack);
    string name=AccLblName();
    string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
-   string sub =IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"  "+dot+"  "+AccountInfoString(ACCOUNT_SERVER);
    int    cx  =(int)(ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)/2);
-   string key =name+"|"+role+"|"+sub+"|"+IntegerToString(cx)+"|"+(light?"L":"D");
-   if(!force && key==s_key && ObjectFind(0,nm)>=0 && ObjectFind(0,ns)>=0) return;
+   string key =name+"|"+role+"|"+IntegerToString(cx)+"|"+(light?"L":"D");
+   if(!force && key==s_key && ObjectFind(0,nm)>=0) return;
    s_key=key;
    color cName=ChartTextColour(), cDim=COL_PANEL_ICON;
    color cRole=(g_copyRole==CR_LEAD) ? (light ? COL_TRADE : COL_PANEL_ACC) : (light ? COL_LINE_BE : COL_TAB_ON);
    uint  wN=0,hN=0,wR=0,hR=0;
    TextSetFont("Arial Bold",-120); TextGetSize(name,wN,hN); TextGetSize(role,wR,hR);
-   if(hN==0) hN=(uint)_s(18);
    int top=_s(4), gap=_s(9);
    if(role=="")
      {
@@ -4806,7 +4805,7 @@ void AccountLabel(bool force)
       AccLbl(nd,dx,top,dot,cDim,12,"Arial Bold",ANCHOR_UPPER);
       AccLbl(nr,dx+gap,top,role,cRole,12,"Arial Bold",ANCHOR_LEFT_UPPER);
      }
-   AccLbl(ns,cx,top+(int)hN+_s(1),sub,cDim,8,"Arial",ANCHOR_UPPER);
+   ObjectDelete(0,ns);   // 8.85: no second line - also clears the one an 8.84 chart left behind
    ChartRedraw();
   }
 int    CopierRows(){ return 1+ArraySize(g_cpRowL); }
