@@ -605,18 +605,46 @@ void Flash(string msg)
    g_flashMsg=msg; g_flashUntil=GetTickCount64()+6000;
    DrawHint(); ChartRedraw();
   }
+// v8.85 (Nestor, 30 Sep: "why is day cut off?"): MT5 cuts a chart label's text at 63 characters, so ">> Daily limit
+// reached (1 trades). Stays off until your next day." lost its last letters. A longer message is now written over up to
+// three lines, broken at a space, the later lines indented under the first line's text; the bottom line stays where the
+// hint always was.
+void HintLines(string lead,string text,color clr)
+  {
+   string lines[]; int n=0; string rest=text, pad="";
+   for(int k=0;k<StringLen(lead);k++) pad+=" ";
+   while(StringLen(rest)>0 && n<3)
+     {
+      string part=rest; int room=63-StringLen(lead);
+      if(StringLen(rest)>room)
+        {
+         int cut=room; while(cut>room/3 && StringGetCharacter(rest,cut)!=' ') cut--;
+         if(cut<=room/3) cut=room;
+         part=StringSubstr(rest,0,cut);
+         rest=StringSubstr(rest,cut); StringTrimLeft(rest);
+        }
+      else rest="";
+      ArrayResize(lines,n+1); lines[n]=((n==0) ? lead : pad)+part; n++;
+     }
+   for(int i=0;i<3;i++)
+     {
+      string nm=PFX+"HINT"+((i==0) ? "" : IntegerToString(i+1));
+      if(i>=n){ ObjectDelete(0,nm); continue; }
+      mkLabelBL(nm,12,12+(n-1-i)*16,lines[i],clr,9);   // the last line at the bottom, earlier ones above it
+     }
+  }
 void DrawHint()
   {
    if(g_flashMsg!="")
      {
-      if(GetTickCount64()<g_flashUntil){ mkLabelBL(PFX+"HINT",12,12,">> "+g_flashMsg,COL_PANEL_WARN,9); return; }
+      if(GetTickCount64()<g_flashUntil){ HintLines(">> ",g_flashMsg,COL_PANEL_WARN); return; }
       g_flashMsg="";
      }
-   if(!g_active){ ObjectDelete(0,PFX+"HINT"); return; }
+   if(!g_active){ HintLines("","",clrNONE); return; }   // no lines: all three taken away
    string msg = g_execMode
               ? "Left-click mouse to execute a trade"
               : "Press "+g_execKeyChar+" to enter/exit execution mode";
-   mkLabelBL(PFX+"HINT",12,12,msg,ChartTextColour(),9);
+   HintLines("",msg,ChartTextColour());
   }
 
 void ShowExecutionLines()
@@ -2177,7 +2205,10 @@ void BuildPanel()
    s_built   = true;
    s_wasOpen = g_panelOpen;
    int x=PX, y=PY, w=PWID;
-   int titleH=34, mX=8, padX=12;
+   // v8.85 (Nestor, 30 Sep: "why isnt the panels below filling up all the space ... like the title row does?"): the
+   // cards run the panel's full width, as the title bar does; the gaps between them still show the body. Their text
+   // starts 12 in, level with the title's. (mX was 8.)
+   int titleH=34, mX=0, padX=12;
    int cardX=x+mX, cardW=w-2*mX;
    int labelX=cardX+padX;
    int Rend=cardX+cardW-padX;
@@ -2191,7 +2222,7 @@ void BuildPanel()
    // ---- Title bar ----
    mkRect (PP+"TITLE",x,y,w,titleH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkRect (PP+"TLINE",x,y+titleH-1,w,1,COL_PANEL_LINE,COL_PANEL_LINE);
-   PanelTitle(x+12,y+11,w-124-8-12);   // v8.85: the account ("FTMO 70K · LEAD"), up to the ON/OFF button
+   PanelTitle(x+12,y+12,w-124-8-12);   // v8.85: the account ("FTMO 70K · LEAD"), up to the ON/OFF button
    // Master switch, left of the reframe arrow. It governs the EA, the take-profit, the BE
    // line and the scale lock together - the cards no longer carry their own toggles, so this
    // is the only ON/OFF on the panel and it stays reachable while collapsed.
@@ -2455,7 +2486,7 @@ void HandleClick(string s)
      {
       // The daily-limit guard belongs on the way ON only, exactly as before: the limit must
       // never be circumvented by flicking the switch, but it must never trap you either.
-      if(!g_active && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Stays off until your next day."); Warn("Daily trade limit reached - stays off until next day."); return; }
+      if(!g_active && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Stays off until your next day."); Warn("Daily trade limit reached - stays off until next day."); return; }
       MasterSet(!g_active);
       return;
      }
@@ -4751,7 +4782,7 @@ color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole
 // v8.85 in the panel's title bar instead of "Minimalist Manager" (Nestor, 30 Sep: "replace the name minimalist manager in
 // the panels title with the ftmo 70k . lead"). The firm and the account's size, read from the account itself
 // ("FTMO 70K"), plus the copier role while it has one - LEAD green / FOLLOW blue, the colours of the Trade Copier's own
-// role button. So every MT5 window says which account it is. Nothing to set. The panel's font (Arial 9); a name too
+// role button. So every MT5 window says which account it is. Nothing to set. Arial 8, the ON/OFF button's size; a name too
 // long for the bar is shortened with an ellipsis rather than run under the ON/OFF button.
 string AccLblName()
   {
@@ -4767,7 +4798,7 @@ void PanelTitle(int x,int y,int maxW)
    string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
    uint   wN=0,hN=0,wD=0,hD=0,wR=0,hR=0;
    int    gap=_s(5), avail=_s(maxW);
-   TextSetFont("Arial",-90);
+   TextSetFont("Arial",-80);   // the ON/OFF button's size (Nestor: "smaller like the off button font")
    TextGetSize(dot,wD,hD); TextGetSize(role,wR,hR);
    while(true)
      {
@@ -4777,13 +4808,13 @@ void PanelTitle(int x,int y,int maxW)
       base=StringSubstr(base,0,StringLen(base)-1);
       name=base+ShortToString(0x2026);
      }
-   mkLabel(PP+"NAME",x,y,name,COL_PANEL_NAME,9);
+   mkLabel(PP+"NAME",x,y,name,COL_PANEL_NAME,8);
    ObjectSetString(0,PP+"NAME",OBJPROP_TOOLTIP,"Minimalist Manager - "+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+" "+AccountInfoString(ACCOUNT_SERVER));
    if(role==""){ ObjectDelete(0,PP+"NDOT"); ObjectDelete(0,PP+"NROLE"); return; }
    int x0=_s(x);
-   mkLabel(PP+"NDOT",x,y,dot,COL_PANEL_ICON,9);
+   mkLabel(PP+"NDOT",x,y,dot,COL_PANEL_ICON,8);
    ObjectSetInteger(0,PP+"NDOT",OBJPROP_XDISTANCE,x0+(int)wN+gap);
-   mkLabel(PP+"NROLE",x,y,role,CopyRoleColor(),9);
+   mkLabel(PP+"NROLE",x,y,role,CopyRoleColor(),8);
    ObjectSetInteger(0,PP+"NROLE",OBJPROP_XDISTANCE,x0+(int)wN+gap+(int)wD+gap);
   }
 // Once a second: the title follows the account - the size once it is found in the history, a role switched on another
