@@ -244,11 +244,13 @@ double g_ui      = 1.0;   // UI scale = display DPI / 96 (keeps the panel propor
 bool g_active    = true;   // master visual ON/OFF (hides all chart lines when off)
 bool g_pausedByLimit = false;   // true when the daily limit auto-paused ACTIVE; auto-cleared on the new day, and a manual ACTIVE toggle clears it too
 // PWID drives the whole panel: every control is measured back from its right edge
-// (Rend = cardX + cardW - padX), so narrowing this squeezes the LABEL column, not the
+// (Rend = cardX + cardW - padR), so narrowing this squeezes the LABEL column, not the
 // boxes — the 90px controls keep their size and the text beside them loses the room.
 // 335 -> 320 leaves ~93px for a label on a two-box row, which still clears the longest
 // of them. Go much below 300 and labels start colliding with their controls.
-int  PX, PY, PWID = 320;
+// 320 -> 336 in 8.85 (Nestor, 30 Sep: "make the settings panel a tiny bit wider and move these buttons a tiny bit
+// left"), with the controls 20 in from the right edge again (padR), clear of the scroll bar.
+int  PX, PY, PWID = 336;
 int  g_panelH = 24;
 // Raised by EnsureHLine when it CREATES a line, cleared by BuildPanel when it acts on it.
 // Foreground objects draw in object-list order, and a newly created line lands at the end of that
@@ -2208,10 +2210,10 @@ void BuildPanel()
    // v8.85 (Nestor, 30 Sep: "why isnt the panels below filling up all the space ... like the title row does?"): the
    // cards run the panel's full width, as the title bar does; the gaps between them still show the body. Their text
    // starts 12 in, level with the title's. (mX was 8.)
-   int titleH=34, mX=0, padX=12;
+   int titleH=34, mX=0, padX=12, padR=20;   // text 12 in from the left; controls end 20 in from the right
    int cardX=x+mX, cardW=w-2*mX;
    int labelX=cardX+padX;
-   int Rend=cardX+cardW-padX;
+   int Rend=cardX+cardW-padR;
    int BW=90, CH=23, GAP=7, ROWH=27;
    // Header-row toggles: shorter than a body control so they sit inside the 23px band
    // above the first row, centred on the section title rather than overlapping it.
