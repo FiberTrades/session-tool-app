@@ -14084,6 +14084,30 @@ try {
       });
       d._conceptTagsCleanupV1 = true;
     }
+    // 2026-09-30 (Nestor): High Sweep + Low Sweep became one answer, H/L Sweep. Every trade's concept list -
+    // in the Trade Log, every review slot (parked ones too), the Series of 10, history, reviewSnap - and every
+    // playbook recipe's Liquidity grab answer. A trade that had both keeps one. Same result on every device.
+    if (!d._hlSweepMergedV1) {
+      const OLD = ['High Sweep', 'Low Sweep'], NEW = 'H/L Sweep';
+      const fix = arr => {
+        if (!Array.isArray(arr) || !arr.some(x => OLD.indexOf(x) >= 0)) return arr;
+        const out = [];
+        arr.forEach(x => { const v = OLD.indexOf(x) >= 0 ? NEW : x; if (out.indexOf(v) < 0) out.push(v); });
+        return out;
+      };
+      const walk = (o, depth) => {
+        if (!o || typeof o !== 'object' || depth > 8) return;
+        if (Array.isArray(o)) { o.forEach(x => walk(x, depth + 1)); return; }
+        if (Array.isArray(o.concepts)) o.concepts = fix(o.concepts);
+        Object.keys(o).forEach(k => { if (k !== 'concepts' && k.charAt(0) !== '_') walk(o[k], depth + 1); });
+      };
+      ['review', 'reviewSlots', 'reviewSlotsParked', 'currentSeries', 'history'].forEach(k => walk(d[k], 0));
+      (Array.isArray(d.playbooks) ? d.playbooks : []).forEach(pb => {
+        if (pb && pb.rec && Array.isArray(pb.rec.liq)) pb.rec.liq = fix(pb.rec.liq);
+        else if (pb && pb.rec && OLD.indexOf(pb.rec.liq) >= 0) pb.rec.liq = [NEW];
+      });
+      d._hlSweepMergedV1 = true;
+    }
     // 2026-08-09 — Setup Tag split. Fourteen entry-model tags MOVED out of Concept Tags into the new
     // per-trade Setup field, so each lives in exactly one place. This backfills every historical
     // trade's `setup` from the tags it already carries — so Setup Performance has real data on day
@@ -19035,8 +19059,9 @@ try {
       { k: 'Discount Middle', en: 'Discount middle', es: 'Medio descuento', c: 'Discount Middle' },
       { k: 'Discount Edge', en: 'Discount edge', es: 'Borde descuento', c: 'Discount Edge' } ] },
     { id: 'liq', en: 'Liquidity grab', es: 'Toma de liquidez', multi: true, opts: [   // was Liquidity (Nestor, 27 Sep)
-      { k: 'High Sweep', en: 'High sweep', es: 'Barrido de máximo', c: 'High Sweep' },
-      { k: 'Low Sweep', en: 'Low sweep', es: 'Barrido de mínimo', c: 'Low Sweep' },
+      // Nestor, 30 Sep: "combine these 2 answers into H/L Sweep" (were High sweep + Low sweep; past trades
+      // and playbook recipes are moved over once, by _hlSweepMergedV1 in migrate).
+      { k: 'H/L Sweep', en: 'H/L Sweep', es: 'Barrido de máx/mín', c: 'H/L Sweep' },
       { k: 'Prev D/W/M', en: 'Prev D/W/M', es: 'D/S/M anterior', c: 'Prev D/W/M Sweep' },
       { k: 'Asia H/L', en: 'Asia H/L', es: 'Máx/Mín Asia', c: 'Asia H/L Sweep' },
       { k: 'London H/L', en: 'London H/L', es: 'Máx/Mín Londres', c: 'London H/L Sweep' },
