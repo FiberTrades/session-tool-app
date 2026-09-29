@@ -198,6 +198,7 @@ string g_cpRowL[]; string g_cpRowV[]; color g_cpRowC[];   // TRADE COPIER card r
 int    CopierRows();
 string CopyRoleText();
 color  CopyRoleColor();
+void   PanelTitle(int x,int y,int maxW);   // v8.85: the account as the panel's title (defined with AccLblName)
 void   CopySetRole(ENUM_COPY_ROLE r);
 int    g_cpFollowers=0;                        // Lead: follow accounts linked to it (running or not), for Session Tool
 string CpSettingsJson();                       // the copier part of the settings sent to Session Tool
@@ -2190,7 +2191,7 @@ void BuildPanel()
    // ---- Title bar ----
    mkRect (PP+"TITLE",x,y,w,titleH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkRect (PP+"TLINE",x,y+titleH-1,w,1,COL_PANEL_LINE,COL_PANEL_LINE);
-   mkLabel(PP+"NAME",x+12,y+11,"Minimalist Manager",COL_PANEL_NAME,9);
+   PanelTitle(x+12,y+11,w-124-8-12);   // v8.85: the account ("FTMO 70K · LEAD"), up to the ON/OFF button
    // Master switch, left of the reframe arrow. It governs the EA, the take-profit, the BE
    // line and the scale lock together - the cards no longer carry their own toggles, so this
    // is the only ON/OFF on the panel and it stays reachable while collapsed.
@@ -4746,30 +4747,12 @@ string CpAcctLabel(string company,double bal)
 string CopyRoleText(){ return g_copyRole==CR_LEAD ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "OFF"); }
 color  CopyRoleColor(){ return g_copyRole==CR_LEAD ? COL_PANEL_ACC : (g_copyRole==CR_FOLLOW ? COL_TAB_ON : COL_PANEL_BTX); }
 
-// ---- v8.84: ACCOUNT LABEL (Nestor, 29 Sep 2026: "write the name of the account on the chart top center") ----------
-// Always on, nothing to set. Line 1: the firm and the account's size, read from the account itself ("FTMO 70K"), plus the
-// copier role while it has one - LEAD green / FOLLOW blue, the Trade Copier card's colours (darker shades on a light
-// chart so they read on white). So every MT5 window says which account it is. (8.84 had a second line - the login and
-// the server; removed in 8.85, Nestor 30 Sep: "remove the account number and server from underneath".)
-// 8.85 also (Nestor, 30 Sep: "in line with the settings panel top row" and "from 12pt to whatever size this is" - the
-// Trade Copier's LEAD button): Arial Bold 8, the panel buttons' size, centred on the middle of the panel's title bar.
-// The top line is three labels - the name ENDS just left of the dot, the role STARTS just right of it - so they can never
-// overlap whatever the screen's scaling; the measured widths only move the dot so the whole line comes out centred.
-// Redrawn once a second when anything changed (a role switch, a resize, the size found in the history) and on resize.
-void AccLbl(string n,int x,int y,string text,color clr,int fs,string font,ENUM_ANCHOR_POINT anc)
-  {
-   if(ObjectFind(0,n)<0) ObjectCreate(0,n,OBJ_LABEL,0,0,0);
-   ObjectSetInteger(0,n,OBJPROP_CORNER,CORNER_LEFT_UPPER);
-   ObjectSetInteger(0,n,OBJPROP_ANCHOR,anc);
-   ObjectSetInteger(0,n,OBJPROP_XDISTANCE,x); ObjectSetInteger(0,n,OBJPROP_YDISTANCE,y);
-   ObjectSetString (0,n,OBJPROP_TEXT,text);
-   ObjectSetInteger(0,n,OBJPROP_COLOR,clr);
-   ObjectSetInteger(0,n,OBJPROP_FONTSIZE,fs);
-   ObjectSetString (0,n,OBJPROP_FONT,font);
-   ObjectSetInteger(0,n,OBJPROP_BACK,false);
-   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
-   ObjectSetInteger(0,n,OBJPROP_HIDDEN,true);
-  }
+// ---- ACCOUNT NAME: v8.84 on the chart (Nestor, 29 Sep 2026: "write the name of the account on the chart top center");
+// v8.85 in the panel's title bar instead of "Minimalist Manager" (Nestor, 30 Sep: "replace the name minimalist manager in
+// the panels title with the ftmo 70k . lead"). The firm and the account's size, read from the account itself
+// ("FTMO 70K"), plus the copier role while it has one - LEAD green / FOLLOW blue, the colours of the Trade Copier's own
+// role button. So every MT5 window says which account it is. Nothing to set. The panel's font (Arial 9); a name too
+// long for the bar is shortened with an ellipsis rather than run under the ON/OFF button.
 string AccLblName()
   {
    string co=AccountInfoString(ACCOUNT_COMPANY), sv=AccountInfoString(ACCOUNT_SERVER);
@@ -4778,43 +4761,47 @@ string AccLblName()
    double sz=CpAccountSize();
    return (sz>0) ? firm+" "+CpFmtK(sz) : firm;
   }
+void PanelTitle(int x,int y,int maxW)
+  {
+   string name=AccLblName(), base=name, dot=ShortToString(0x00B7);
+   string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
+   uint   wN=0,hN=0,wD=0,hD=0,wR=0,hR=0;
+   int    gap=_s(5), avail=_s(maxW);
+   TextSetFont("Arial",-90);
+   TextGetSize(dot,wD,hD); TextGetSize(role,wR,hR);
+   while(true)
+     {
+      TextGetSize(name,wN,hN);
+      int tot=(int)wN+((role=="") ? 0 : 2*gap+(int)wD+(int)wR);
+      if(tot<=avail || StringLen(base)<=4) break;
+      base=StringSubstr(base,0,StringLen(base)-1);
+      name=base+ShortToString(0x2026);
+     }
+   mkLabel(PP+"NAME",x,y,name,COL_PANEL_NAME,9);
+   ObjectSetString(0,PP+"NAME",OBJPROP_TOOLTIP,"Minimalist Manager - "+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+" "+AccountInfoString(ACCOUNT_SERVER));
+   if(role==""){ ObjectDelete(0,PP+"NDOT"); ObjectDelete(0,PP+"NROLE"); return; }
+   int x0=_s(x);
+   mkLabel(PP+"NDOT",x,y,dot,COL_PANEL_ICON,9);
+   ObjectSetInteger(0,PP+"NDOT",OBJPROP_XDISTANCE,x0+(int)wN+gap);
+   mkLabel(PP+"NROLE",x,y,role,CopyRoleColor(),9);
+   ObjectSetInteger(0,PP+"NROLE",OBJPROP_XDISTANCE,x0+(int)wN+gap+(int)wD+gap);
+  }
+// Once a second: the title follows the account - the size once it is found in the history, a role switched on another
+// chart. And the chart labels 8.84 drew are taken away (a chart that ran it keeps them otherwise).
 void AccountLabel(bool force)
   {
+   static bool   s_clean=false;
    static string s_key="";
-   string nm=PFX+"ACC_NAME", nd=PFX+"ACC_DOT", nr=PFX+"ACC_ROLE", ns=PFX+"ACC_SUB";
-   string dot =ShortToString(0x00B7);
-   bool   light=(ChartTextColour()==clrBlack);
-   string name=AccLblName();
-   string role=(g_copyRole==CR_LEAD) ? "LEAD" : (g_copyRole==CR_FOLLOW ? "FOLLOW" : "");
-   int    cx  =(int)(ChartGetInteger(0,CHART_WIDTH_IN_PIXELS)/2);
-   int    cy  =_s(PY+17);   // the middle of the panel's title bar (it is 34 design px tall; see BuildPanel)
-   string key =name+"|"+role+"|"+IntegerToString(cx)+"|"+IntegerToString(cy)+"|"+IntegerToString(PX)+"|"+(light?"L":"D");
-   if(!force && key==s_key && ObjectFind(0,nm)>=0) return;
+   if(!s_clean)
+     {
+      s_clean=true;
+      ObjectDelete(0,PFX+"ACC_NAME"); ObjectDelete(0,PFX+"ACC_DOT"); ObjectDelete(0,PFX+"ACC_ROLE"); ObjectDelete(0,PFX+"ACC_SUB");
+     }
+   string key=AccLblName()+"|"+IntegerToString((int)g_copyRole);
+   if(key==s_key) return;
+   bool first=(s_key=="");
    s_key=key;
-   color cName=ChartTextColour(), cDim=COL_PANEL_ICON;
-   color cRole=(g_copyRole==CR_LEAD) ? (light ? COL_TRADE : COL_PANEL_ACC) : (light ? COL_LINE_BE : COL_TAB_ON);
-   uint  wN=0,hN=0,wR=0,hR=0;
-   TextSetFont("Arial Bold",-80); TextGetSize(name,wN,hN); TextGetSize(role,wR,hR);
-   int gap=_s(6);
-   // Level with the panel's title bar, so on a narrow chart the two could meet: the line then starts just
-   // right of the panel instead of the middle.
-   int lineW=(role=="") ? (int)wN : (int)wN+(int)wR+2*gap;
-   int minL=_s(PX+PWID)+_s(12);
-   if(cx-lineW/2<minL) cx=minL+lineW/2;
-   if(role=="")
-     {
-      AccLbl(nm,cx,cy,name,cName,8,"Arial Bold",ANCHOR_CENTER);
-      ObjectDelete(0,nd); ObjectDelete(0,nr);
-     }
-   else
-     {
-      int dx=cx+((int)wN-(int)wR)/2;   // where the dot goes for the whole line to be centred
-      AccLbl(nm,dx-gap,cy,name,cName,8,"Arial Bold",ANCHOR_RIGHT);
-      AccLbl(nd,dx,cy,dot,cDim,8,"Arial Bold",ANCHOR_CENTER);
-      AccLbl(nr,dx+gap,cy,role,cRole,8,"Arial Bold",ANCHOR_LEFT);
-     }
-   ObjectDelete(0,ns);   // 8.85: no second line - also clears the one an 8.84 chart left behind
-   ChartRedraw();
+   if(!first) BuildPanel();   // redraws the title in place (OnInit has just built the panel, so not the first time)
   }
 int    CopierRows(){ return 1+ArraySize(g_cpRowL); }
 void   CpRow(string l,string v,color c)
@@ -5868,7 +5855,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.85 loaded (copies checked 40x a second; account name at the top of the chart; trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.85 loaded (copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -5979,7 +5966,7 @@ int OnInit()
    if(g_copyRole==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); }
 
    BuildPanel();
-   AccountLabel(true);                 // v8.84: which account this is, top centre
+   AccountLabel(true);                 // v8.85: the account is the panel's title; clears 8.84's chart label
    if(g_scaleLock) ApplyScaleLock();   // frame the chart on load if locking is on
    // Work any post-mortems left over from a previous run. This is why the replay reads
    // BARS and not ticks: a trade that closed while the terminal was off still resolves
@@ -6119,7 +6106,7 @@ void OnTimer()
                   (g_pip>0)?(SymbolInfoDouble(_Symbol,SYMBOL_ASK)-SymbolInfoDouble(_Symbol,SYMBOL_BID))/g_pip:0.0);
      }
    DrawInfoReadout();
-   AccountLabel(false);   // v8.84: only touches the chart when the name, role, size or width changed
+   AccountLabel(false);   // v8.85: rebuilds the panel only when the account's name, size or role changed
    if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint();   // a message's 6 seconds are up
    DailyLimitTick();   // auto-off at the cap, and auto-on again on the new day
    bool _connNow=(bool)TerminalInfoInteger(TERMINAL_CONNECTED);
@@ -6384,7 +6371,7 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
    if(id==CHARTEVENT_CHART_CHANGE)
      {
       RefreshLabels();
-      AccountLabel(false);   // v8.84: stay centred on a resize / background colour change
+      AccountLabel(false);   // v8.85: nothing to re-place on a resize any more - cheap no-op unless the account changed
       // If locking is on and the scale got reset (MT5 event, or you double-clicked the
       // axis to re-centre), re-frame. Skipped while Scale Fix is still on, so manual
       // dragging/zooming is never fought and there is no redraw loop.
