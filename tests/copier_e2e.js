@@ -159,6 +159,65 @@
     check('series post: "Trades: 10 (11 across accounts)"', /Trades:\s+10 \(11 across accounts\)/.test(pe), pe.split('\n').filter(function (l) { return /Trades/.test(l); }));
     check('series post: the copied loss counts once (Losses 5)', /Losses:\s+5\b/.test(pe), pe.split('\n').filter(function (l) { return /Losses/.test(l); }));
 
+    // ---------------------------------------------------------------- 12. Nestor's first real copied trade (29 Sep 2026)
+    // 70K -641.65 (risk 500) and 10K copy -71.83 (risk 63.44). The Lead's row reached the app FIRST, the copy SECOND but
+    // with an EARLIER opened_at - so the copy became the "main" row (box + pop-up said BE, judged on -71.83 against the
+    // 70K's 200 band) and both were counted ("This is trade 2 this session. Your limit is 1.").
+    var _realFetch = window.fetch;   // nothing in this part may reach the live database
+    window.fetch = function (u) { if (String(u).indexOf('supabase.co') >= 0) return Promise.reject(new Error('blocked in test')); return _realFetch.apply(this, arguments); };
+    window.currentUser = { id: 'e2e-test' };   // the nudges only run signed in
+    data.settings.nudges = Object.assign({}, data.settings.nudges || {}, { on: true });
+    data.accounts[0].riskRules = { beThresholdMode: 'amount', beThresholdAmount: 200, maxTrades: 1 };
+    data.activeAccountId = 'acc_70'; data.viewScope = 'lifetime';
+    data.mt5LoginMap = { '541419576': 'acc_70', '1514778904': 'acc_10' };
+    data.nudgeLog = {};
+    var nowIso = new Date().toISOString();
+    window.__stEA.apply({ login: '541419576', symbol: 'EURUSD', settings: { copy_role: 'lead', copy_followers: 1, risk_money: 500 }, updated_at: nowIso });
+    window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: { copy_role: 'follow', risk_money: 70 }, updated_at: nowIso });
+    check('copier is on (both EAs report their role)', window.__stEA.copier().on === true, window.__stEA.copier());
+    var T0 = Date.now() - 60000;
+    var L = { ticket: 171267984, direction: 'long', symbol: 'EURUSD', lots: 16.55, risk: 500 };
+    var F = { ticket: 552520521, direction: 'long', symbol: 'EURUSD', lots: 2.1, risk: 63.44 };
+    window.__stLive.upsert(Object.assign({}, L, { opened_at: new Date(T0 + 400).toISOString(), seen_at: new Date(T0 + 400).toISOString() }));   // arrives first
+    window.__stLive.upsert(Object.assign({}, F, { opened_at: new Date(T0).toISOString(), seen_at: new Date(T0).toISOString() }));             // arrives second, earlier
+    await W(1800);   // a nudge is recorded after up to 1.5 s
+    var _lim = Object.values((data.nudgeLog || {})[Object.keys(data.nudgeLog || {})[0]] || {}).filter(function (x) { return x && x.rule === 'limit'; });
+    check('a copy never counts as a 2nd trade (no "trade 2, limit 1" nudge)', _lim.length === 0, _lim);
+    var closeAt = new Date(T0 + 700000).toISOString();
+    window.__stLive.upsert(Object.assign({}, L, { opened_at: new Date(T0 + 400).toISOString(), pnl: -641.65, closed_at: closeAt, seen_at: closeAt }));
+    window.__stLive.upsert(Object.assign({}, F, { opened_at: new Date(T0).toISOString(), pnl: -71.83, closed_at: closeAt, seen_at: closeAt }));
+    await W(200);
+    check('Session Live: the copied loss is a loss, not BE (judged on both accounts)', window.__stLive.resultFor(F.ticket) === 'Lose' && window.__stLive.resultFor(L.ticket) === 'Lose',
+      [window.__stLive.resultFor(F.ticket), window.__stLive.resultFor(L.ticket)]);
+    check('the copy alone, judged by its own size (0.4R band = 25), is a loss', window.__stLive.rowResult(Object.assign({}, F, { closed: true, pnl: -71.83 })) === 'Lose');
+    check('a real BE stays BE (+5 on the 70K, +1 on the 10K)', window.__stLive.rowResult(Object.assign({}, L, { closed: true, pnl: 5 })) === 'BE' && window.__stLive.rowResult(Object.assign({}, F, { closed: true, pnl: 1 })) === 'BE');
+    window.fetch = _realFetch; window.currentUser = null;
+
+    // ---------------------------------------------------------------- 13. import: two broker accounts filed to ONE account
+    // The 10K's login had been remembered on the 70K. Both pickers must wait for a choice, and the import must not run.
+    data.mt5LoginMap = { '541419576': 'acc_70', '1514778904': 'acc_70' };
+    var _before = allReviewTrades(false).length;
+    _mt5ParsedTrades = [
+      { position: '771', _isSync: true, _login: '541419576', symbol: 'EURUSD', type: 'buy', openTime: nowIso, sessionDateStr: dayKey(new Date()), entryTimeHHMM: '08:00', exitTimeHHMM: '08:12', result: 'Lose', profit: -641.65, netPL: -641.65, pips: -4.6, slPips: 4 },
+      { position: '772', _isSync: true, _login: '1514778904', symbol: 'EURUSD', type: 'buy', openTime: nowIso, sessionDateStr: dayKey(new Date()), entryTimeHHMM: '08:00', exitTimeHHMM: '08:12', result: 'Lose', profit: -71.83, netPL: -71.83, pips: -4, slPips: 4 }];
+    _mt5MetaInfo = {};
+    renderMt5Preview();
+    var _ltEl = document.getElementById('mt5-login-targets');
+    var _sels = _ltEl ? Array.prototype.map.call(_ltEl.querySelectorAll('select[data-login]'), function (x) { return x.getAttribute('data-login') + '=' + (x.value || '(choose)'); }) : [];
+    check('import: two logins on one account -> both wait for a choice', _sels.join(',') === '541419576=(choose),1514778904=(choose)', _sels);
+    _mt5SelectedIds = new Set(['771', '772']);
+    var _df = document.getElementById('mt5-date-filter'); if (_df) { _df.value = '__all__'; }
+    document.getElementById('mt5-import-confirm').click(); await W(400);
+    var _pe = document.getElementById('mt5-pick-error');
+    check('import: blocked until chosen, and says why', allReviewTrades(false).length === _before && _pe && _pe.style.display !== 'none' && /Choose the account/.test(_pe.textContent), [allReviewTrades(false).length - _before, _pe && _pe.textContent]);
+    // a login never seen before, next to a known one: it takes the one active account no other login is filed to
+    data.mt5LoginMap = { '541419576': 'acc_70' };
+    data.accounts = data.accounts.filter(function (a) { return a.id !== 'acc_other'; });
+    renderMt5Preview();
+    _sels = Array.prototype.map.call(document.querySelectorAll('#mt5-login-targets select[data-login]'), function (x) { return x.getAttribute('data-login') + '=' + (x.value || '(choose)'); });
+    check('import: a new login goes to the free account (the 10K), not the 70K', _sels.join(',') === '541419576=acc_70,1514778904=acc_10', _sels);
+    try { document.getElementById('mt5-modal-bg').classList.remove('show'); } catch (e) {}
+
     // ---------------------------------------------------------------- 11. removed on purpose (29 Sep 2026)
     check('Linked groups are gone from Settings', !document.getElementById('settings-linked-group-add-btn') && !document.getElementById('settings-linked-groups-list'));
     check('the old "copies per trade" window is gone', !document.getElementById('copies-modal-bg'));

@@ -16109,7 +16109,7 @@ try {
           var m = out[i].main;
           if (symCore(m.symbol) === c && m.direction === r.direction && Math.abs((r.openedAt || 0) - (m.openedAt || 0)) <= COPY_MS) { g = out[i]; break; }
         }
-        if (g) { g.rows.push(r); _copyTk[String(r.ticket)] = 1; } else out.push({ main: r, rows: [r] });
+        if (g) { g.rows.push(r); _copyTk[String(r.ticket)] = 1; } else { out.push({ main: r, rows: [r] }); delete _copyTk[String(r.ticket)]; }
       });
       return out;
     }
@@ -16131,7 +16131,32 @@ try {
         }
       });
     }
-    function resultOf(r) { if (!r.closed) return null; try { return classifyNetResult(r.pnl, getActiveAccount()); } catch (e) { return null; } }
+    /* A live trade is judged by ITS OWN size (29 Sep 2026): the active account's break-even band is a share of that
+       account's risk per trade (its EA setting), and a trade on another account - a copy on a smaller one - gets the
+       same share of ITS risk. Judging a 10K copy's -71.83 against the 70K's 200 band called a loss BE. A row with no
+       risk, or no EA risk to scale from, keeps the account's money band as before. */
+    function _bandFor(risk) {
+      var acc = null, band = 0, ar = 0, rk = Number(risk) || 0;
+      try { acc = getActiveAccount(); } catch (e) {}
+      try { band = beThresholdMoneyFor(acc) || 0; } catch (e) {}
+      try { ar = (acc && window.__stEA && window.__stEA.riskFor) ? (Number(window.__stEA.riskFor(acc.id)) || 0) : 0; } catch (e) {}
+      return (band > 0 && rk > 0 && ar > 0) ? band * rk / ar : band;
+    }
+    function _judge(pnl, band) { var n = parseFloat(pnl) || 0; return Math.abs(n) <= (band > 0 ? band : 0.005) ? 'BE' : (n > 0 ? 'Win' : 'Lose'); }
+    function _rowRes(r) { if (!r || !r.closed) return null; try { return _judge(r.pnl, _bandFor(r.risk)); } catch (e) { return null; } }
+    // A copied trade (the idea: a trade + its copies) - its total money against the total of its rows' bands.
+    function _groupRes(g) {
+      if (!g || !g.main || !g.main.closed) return null;
+      var sum = 0, band = 0;
+      g.rows.forEach(function (x) { if (x.closed) { sum += (parseFloat(x.pnl) || 0); band += _bandFor(x.risk); } });
+      try { return _judge(sum, band); } catch (e) { return null; }
+    }
+    function _groupOf(ticket) {
+      var k = String(ticket), gs = _ideas(_allRows());
+      for (var i = 0; i < gs.length; i++) if (gs[i].rows.some(function (x) { return String(x.ticket) === k; })) return gs[i];
+      return null;
+    }
+    function resultOf(r) { var g = r ? _groupOf(r.ticket) : null; return g ? _groupRes(g) : _rowRes(r); }
     // No EA (Nestor, 27 Sep): the session's quick-logged trades (Long / Short + the result picked) stand in for the
     // live feed in summary() / biasStatus(), so the greeting still knows the entries, results and against-bias losses.
     function _manualRows() {
@@ -16142,7 +16167,7 @@ try {
           .map(function (t, i) { return { ticket: i + 1, direction: t.side === 'Long' ? 'long' : 'short', closed: !!t.result, _res: t.result || null, symbol: t.symbol || defSym }; });
       } catch (e) { return []; }
     }
-    function _srcRows() { var a = _allRows(); return a.length ? _ideas(a).map(function (i) { return i.main; }) : _manualRows(); }   // one per idea
+    function _srcRows() { var a = _allRows(); return a.length ? _ideas(a).map(function (i) { var r = _groupRes(i); return r ? Object.assign({}, i.main, { _res: r }) : i.main; }) : _manualRows(); }   // one per idea, judged on all its rows
     function _resOf(r) { return (r && r._res) || resultOf(r); }
     function render() {
       var el = feedEl(); if (!el) return;
@@ -16160,7 +16185,7 @@ try {
       var chips = ideas.map(function (idea) {
         var r = idea.main;
         var isLong = r.direction === 'long';
-        var res = resultOf(r);
+        var res = _groupRes(idea);   // the trade and its copies together (29 Sep 2026)
         var arrow = isLong ? '\u2191' : '\u2193';
         var sideTxt = isLong ? (es ? 'Largo' : 'Long') : (es ? 'Corto' : 'Short');
         var resHtml;
@@ -16225,6 +16250,7 @@ try {
         var _seen = Date.parse(row.seen_at);
         var _opn = Date.parse(row.opened_at);   // when the trade first reached the feed - groups a trade with its copies
         rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '',
+                    risk: (row.risk != null && isFinite(Number(row.risk)) && Number(row.risk) > 0) ? Number(row.risk) : ex.risk,
                     seenAt: isFinite(_seen) ? _seen : (ex.seenAt || Date.now()), openedAt: isFinite(_opn) ? _opn : (ex.openedAt || Date.now()) };
         // Live behaviour nudges read the same events (re-entry after a loss, losses in a row, ...).
         try { if (window.__stNudge) window.__stNudge.observe(ex, rows[k], row); } catch (e) {}
@@ -16267,6 +16293,9 @@ try {
       isOpen: function (ticket) { try { var r = rows[String(ticket)]; return !!(r && !r.closed); } catch (e) { return false; } },
       // Trade copier: is this ticket a copy of a trade already in the feed (another of your accounts)?
       isCopy: function (ticket) { try { return _isCopy(ticket); } catch (e) { return false; } },
+      // A closed trade's result the way the box shows it: with its copies, each judged by its own size (29 Sep 2026).
+      resultFor: function (ticket, pnl) { try { var g = _groupOf(ticket); if (g && g.rows.length > 1) return _groupRes(g); var r = rows[String(ticket)]; if (r) return _rowRes(r); return _judge(pnl, _bandFor(null)); } catch (e) { return null; } },
+      rowResult: function (r) { try { return _rowRes(r); } catch (e) { return null; } },
       summary: function (symFilter) {
         // Optional symbol filter (for per-symbol / multi-bias greetings). Normalise both sides
         // so the EA's "EURUSD" matches a bias slot's "EUR/USD".
@@ -16344,6 +16373,7 @@ try {
     function msOf(v) { if (v == null || v === '') return NaN; var n = Date.parse(v); return isFinite(n) ? n : NaN; }
     function fresh(ms) { return isFinite(ms) && Math.abs(Date.now() - ms) <= FRESH_MS; }
     function resultOf(pnl) { try { return classifyNetResult(pnl, getActiveAccount()); } catch (e) { return null; } }
+    function _nCopy(tk) { try { return !!(window.__stLive && window.__stLive.isCopy && window.__stLive.isCopy(tk)); } catch (e) { return false; } }
     function eligible() {
       try { if (_isDetachedWindow()) return false; } catch (e) {}
       try { if (!_voiceSignedIn()) return false; } catch (e) {}
@@ -16633,7 +16663,8 @@ try {
         var acc = getActiveAccount(), lim = Number(acc && acc.riskRules && acc.riskRules.maxTrades) || 0;
         if (lim > 0) {
           var from = sessionStartMs(), n = 0;
-          Object.keys(st.opens).forEach(function (tk) { if (st.opens[tk] >= from) n++; });
+          // Counted now, not when each trade arrived: a copy that landed first is known as one by now (29 Sep 2026).
+          Object.keys(st.opens).forEach(function (tk) { if (st.opens[tk] >= from && !_nCopy(tk)) n++; });
           if (n > lim) out.push({ rule: 'limit', text: t('nudge.limit').replace('{N}', String(n)).replace('{L}', String(lim)), say: t('nudge.limit_say') });
         }
       } catch (e) {}
@@ -16678,7 +16709,7 @@ try {
     function onClose(k, st) {
       var me = st.closes[k];
       if (!me || me.res !== 'Lose') return [];
-      var list = Object.keys(st.closes).map(function (tk) { return st.closes[tk]; }).sort(function (a, b) { return a.at - b.at; });
+      var list = Object.keys(st.closes).filter(function (tk) { return !_nCopy(tk); }).map(function (tk) { return st.closes[tk]; }).sort(function (a, b) { return a.at - b.at; });
       var run = 0;
       for (var i = list.length - 1; i >= 0; i--) { if (list[i].res === 'Lose') run++; else if (list[i].res === 'Win') break; }
       if (run < cfg().streak) return [];
@@ -16696,7 +16727,7 @@ try {
         var st = dayState(), changed = false, found = [];
         var oAt = msOf(raw.opened_at), cAt = msOf(raw.closed_at);
         if (isFinite(oAt) && !(k in st.opens)) { st.opens[k] = oAt; changed = true; }
-        if (cur.closed && isFinite(cAt) && !(k in st.closes)) { st.closes[k] = { at: cAt, res: resultOf(cur.pnl), pnl: (cur.pnl != null && isFinite(Number(cur.pnl))) ? Number(cur.pnl) : null }; changed = true; }
+        if (cur.closed && isFinite(cAt) && !(k in st.closes)) { st.closes[k] = { at: cAt, res: (window.__stLive && window.__stLive.resultFor) ? (window.__stLive.resultFor(k, cur.pnl) || resultOf(cur.pnl)) : resultOf(cur.pnl), pnl: (cur.pnl != null && isFinite(Number(cur.pnl))) ? Number(cur.pnl) : null }; changed = true; }
         var rk = Number(raw.risk);                            // EA 8.6+; the first seen, and the largest
         if (rk > 0 && !(st.size0[k] > 0)) { st.size0[k] = rk; changed = true; }
         if (rk > 0 && !(st.size[k] >= rk)) { st.size[k] = rk; changed = true; }
@@ -46794,7 +46825,9 @@ try {
           try {
             var net = parseFloat(r.pnl) || 0;
             var acc = (typeof getActiveAccount === 'function') ? getActiveAccount() : null;
-            var out = (typeof classifyNetResult === 'function') ? classifyNetResult(net, acc) : (Math.abs(net) < 0.005 ? 'BE' : (net > 0 ? 'Win' : 'Lose'));
+            // With its copies, each judged by its own size - as the box says it (29 Sep 2026).
+            var out = (window.__stLive && window.__stLive.resultFor) ? window.__stLive.resultFor(tk, net) : null;
+            if (!out) out = (typeof classifyNetResult === 'function') ? classifyNetResult(net, acc) : (Math.abs(net) < 0.005 ? 'BE' : (net > 0 ? 'Win' : 'Lose'));
             var es = document.documentElement.lang === 'es';
             var word = out === 'Win' ? (es ? 'Ganada' : 'Won') : out === 'Lose' ? (es ? 'Perdida' : 'Lost') : 'BE';
             var sym = r.symbol || (es ? 'Operación' : 'Trade');
@@ -47112,13 +47145,38 @@ try {
             _lt.innerHTML = '<span style="' + _ls + '">' + _esc(window._stT('From ' + _mt5BatchLogins.length + ' broker accounts - each goes to its own account (remembered for next time):',
                                                                              'De ' + _mt5BatchLogins.length + ' cuentas de bróker - cada una va a su propia cuenta (se recordará):')) + '</span>'
               + _mt5BatchLogins.map(function (lg) {
-                  var m = _known[lg], def = (m && _live.some(function (a) { return a.id === m; })) ? m : (_tsel.value || '');
+                  var m = _known[lg], def = (m && _live.some(function (a) { return a.id === m; })) ? m : '';
+                  /* A broker account seen for the first time is NOT filed to the batch's account (29 Sep 2026: the 10K's
+                     login went to the 70K and was remembered). It takes the one active account no other broker login is
+                     filed to; if that is not clear, it waits for you to choose. */
+                  if (!def) {
+                    var _taken = {}; Object.keys(_known).forEach(function (x) { if (x !== lg && _known[x]) _taken[_known[x]] = 1; });
+                    var _free = _live.filter(function (a) { return !_taken[a.id]; });
+                    if (_free.length === 1) def = _free[0].id;
+                  }
                   _mt5LoginTargets[lg] = def;
                   return '<div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;"><span style="' + _ls + 'letter-spacing:0.15em;">' + _esc(window._stT('Broker account ', 'Cuenta de bróker ') + lg) + ' \u2192</span>'
-                    + '<select data-login="' + _esc(lg) + '" style="' + _ss + '">' + _opts(def) + '</select></div>';
+                    + '<select data-login="' + _esc(lg) + '" style="' + _ss + '">__CHOOSE_' + _esc(lg) + '__' + _opts(def) + '</select></div>';
                 }).join('');
+            // Two broker accounts in ONE import filed to the SAME account is almost always a wrong choice remembered from
+            // before (one MT5 account = one account here): both wait for you to choose.
+            var _seenAcc = {}, _dup = {};
+            _mt5BatchLogins.forEach(function (lg) { var a = _mt5LoginTargets[lg]; if (!a) return; if (_seenAcc[a]) { _dup[a] = 1; } _seenAcc[a] = 1; });
+            _mt5BatchLogins.forEach(function (lg) { if (_mt5LoginTargets[lg] && _dup[_mt5LoginTargets[lg]]) _mt5LoginTargets[lg] = ''; });
+            _mt5BatchLogins.forEach(function (lg) {
+              var ph = _mt5LoginTargets[lg] ? '' : '<option value="" selected>' + _esc(window._stT('Choose account\u2026', 'Elige la cuenta\u2026')) + '</option>';
+              _lt.innerHTML = _lt.innerHTML.split('__CHOOSE_' + _esc(lg) + '__').join(ph);
+            });
+            if (Object.keys(_dup).length) _lt.innerHTML += '<span style="' + _ls + 'color:#e0b23c;">' + _esc(window._stT(
+              'Two broker accounts were filed to the same account last time - choose each one\u2019s account.',
+              'La última vez dos cuentas de bróker fueron a la misma cuenta - elige la de cada una.')) + '</span>';
+            // Last, after every innerHTML change: each picker shows its account, or "Choose account..." when it has none.
             _lt.querySelectorAll('select[data-login]').forEach(function (sx) {
-              sx.onchange = function () { _mt5LoginTargets[sx.getAttribute('data-login')] = sx.value || ''; };
+              sx.value = _mt5LoginTargets[sx.getAttribute('data-login')] || '';
+              sx.onchange = function () {
+                _mt5LoginTargets[sx.getAttribute('data-login')] = sx.value || '';
+                var _pe = document.getElementById('mt5-pick-error'); if (_pe) _pe.style.display = 'none';
+              };
             });
             _lt.style.display = 'flex';
           } else { _lt.style.display = 'none'; _lt.innerHTML = ''; }
@@ -47374,6 +47432,15 @@ try {
       : _mt5ParsedTrades.filter(t => t.sessionDateStr === filter);
     const selected = visible.filter(t => _mt5SelectedIds.has(t.position));
     if (selected.length === 0) return;
+    // A broker account still waiting for its account (29 Sep 2026): never guess - say which, and wait.
+    if (_mt5BatchLogins.length > 1) {
+      const _waiting = [...new Set(selected.filter(t => t && t._login && !_mt5LoginTargets[String(t._login)]).map(t => String(t._login)))];
+      if (_waiting.length) {
+        const _pe = document.getElementById('mt5-pick-error');
+        if (_pe) { _pe.textContent = window._stT('Choose the account for broker account ' + _waiting.join(', ') + ' first.', 'Elige primero la cuenta de la cuenta de bróker ' + _waiting.join(', ') + '.'); _pe.style.display = 'block'; }
+        return;
+      }
+    }
     /* Classify break-even against the account these are actually going to, using the same
        helper the EA auto-sync uses. parseMt5Report has to run before the destination is
        picked, so it fell back to data.settings.beThreshold - a legacy scalar that is always
