@@ -2222,7 +2222,7 @@ void BuildPanel()
    // ---- Title bar ----
    mkRect (PP+"TITLE",x,y,w,titleH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkRect (PP+"TLINE",x,y+titleH-1,w,1,COL_PANEL_LINE,COL_PANEL_LINE);
-   PanelTitle(x+12,y+12,w-124-8-12);   // v8.85: the account ("FTMO 70K · LEAD"), up to the ON/OFF button
+   PanelTitle(x+12,y+17,w-124-8-12);   // v8.85: the account ("FTMO 70K · LEAD"), up to the ON/OFF button; y = its middle
    // Master switch, left of the reframe arrow. It governs the EA, the take-profit, the BE
    // line and the scale lock together - the cards no longer carry their own toggles, so this
    // is the only ON/OFF on the panel and it stays reachable while collapsed.
@@ -2445,7 +2445,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    g_clipOn=false;
-   // Scroll bar: a 3px track in the margin right of the cards, only when there is more than the
+   // Scroll bar: a 3px track along the right edge (over the cards since 8.85), only when there is more than the
    // window shows. The thumb's size is the share of the panel on view, its place how far down.
    if(g_scrollMax>0)
      {
@@ -2454,6 +2454,10 @@ void BuildPanel()
       if(g_thumbH<16) g_thumbH=16;
       if(g_thumbH>g_trackH) g_thumbH=g_trackH;
       g_thumbTop=g_trackTop+(int)MathRound((double)(g_trackH-g_thumbH)*g_stops[g_panelScroll]/(double)g_stops[g_scrollMax]);
+      // v8.85: the cards now run under the bar (full width), and MT5 draws objects in the order they were made - a
+      // card re-made on a scroll covered the bar (Nestor: "the scrolling bar that has gone below the panels"). So
+      // the bar is re-made last, every time, and always sits on top.
+      ObjectDelete(0,PP+"SB_TRK"); ObjectDelete(0,PP+"SB_THM");
       mkRect(PP+"SB_TRK",x+w-6,g_trackTop,3,g_trackH,COL_PANEL_LINE,COL_PANEL_LINE);
       mkRect(PP+"SB_THM",x+w-6,g_thumbTop,3,g_thumbH,COL_PANEL_ICON,COL_PANEL_ICON);
      }
@@ -4808,14 +4812,19 @@ void PanelTitle(int x,int y,int maxW)
       base=StringSubstr(base,0,StringLen(base)-1);
       name=base+ShortToString(0x2026);
      }
+   // y is the MIDDLE of the ON/OFF button (Nestor: "in line with the OFF button" - top-anchored it sat 3 px low):
+   // anchored by its own centre, the text lines up with the button's, which MT5 also centres.
    mkLabel(PP+"NAME",x,y,name,COL_PANEL_NAME,8);
+   ObjectSetInteger(0,PP+"NAME",OBJPROP_ANCHOR,ANCHOR_LEFT);
    ObjectSetString(0,PP+"NAME",OBJPROP_TOOLTIP,"Minimalist Manager - "+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+" "+AccountInfoString(ACCOUNT_SERVER));
    if(role==""){ ObjectDelete(0,PP+"NDOT"); ObjectDelete(0,PP+"NROLE"); return; }
    int x0=_s(x);
    mkLabel(PP+"NDOT",x,y,dot,COL_PANEL_ICON,8);
    ObjectSetInteger(0,PP+"NDOT",OBJPROP_XDISTANCE,x0+(int)wN+gap);
+   ObjectSetInteger(0,PP+"NDOT",OBJPROP_ANCHOR,ANCHOR_LEFT);
    mkLabel(PP+"NROLE",x,y,role,CopyRoleColor(),8);
    ObjectSetInteger(0,PP+"NROLE",OBJPROP_XDISTANCE,x0+(int)wN+gap+(int)wD+gap);
+   ObjectSetInteger(0,PP+"NROLE",OBJPROP_ANCHOR,ANCHOR_LEFT);
   }
 // Once a second: the title follows the account - the size once it is found in the history, a role switched on another
 // chart. And the chart labels 8.84 drew are taken away (a chart that ran it keeps them otherwise).
