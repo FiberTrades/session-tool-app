@@ -2,8 +2,9 @@
 //   python tests/browser_test.py tests/copier_e2e.js
 // Headless Edge, throwaway profile, signed out: nothing live is read or written. The two broker rows come from a
 // stand-in for the cloud inbox; Community posting is a stand-in that records the text.
-// The rule it checks (Nestor, 28-29 Sep 2026): a copied idea takes ONE spot and its review is written once, but
-// every number counts every copy; each challenge keeps its own trades; "enough data" and streaks count decisions.
+// The rule it checks (Nestor, 29 Sep 2026: "Once, money added"): viewing all accounts, a copied trade is ONE trade -
+// one spot, one result, its R once, every account's money added, its % over the accounts' combined size; its review
+// is written once; each challenge keeps its own trades (Prop Firm Progress, one account's own view).
 (async function () {
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var results = [];
@@ -72,10 +73,10 @@
     var msg = plain(buildReviewMessage());
     var lines = msg.split('\n');
     var tradeLines = lines.filter(function (l) { return /^\S*\s*\d+\.\s/.test(l.trim()) || /^\d+\./.test(l.trim()); });
-    check('review post: "1 execution, 2 trades - copied to 2 accounts"', /1 execution, 2 trades - copied to 2 accounts/.test(msg), lines.filter(function (l) { return /Traded/.test(l); }));
+    check('review post: "1 trade - copied to 2 accounts"', /Yes \(1 trade - copied to 2 accounts\)/.test(msg), lines.filter(function (l) { return /Traded/.test(l); }));
     check('review post: the trade is written once, "(2 accounts)"', (msg.match(/\(2 accounts\)/g) || []).length === 1, tradeLines);
-    check('review post: Losses 2', /Losses:\s+2\b/.test(msg), lines.filter(function (l) { return /Losses/.test(l); }));
-    check('review post: Net R -2.00R and both accounts’ % (-1.41%)', /-2\.00R \| -1\.41%/.test(msg), lines.filter(function (l) { return /Net R/.test(l); }));
+    check('review post: Losses 1', /Losses:\s+1\b/.test(msg), lines.filter(function (l) { return /Losses/.test(l); }));
+    check('review post: Net R -1.00R, % of both accounts together (-570 / 80,000 = -0.71%)', /-1\.00R \| -0\.71%/.test(msg), lines.filter(function (l) { return /Net R/.test(l); }));
 
     // ---------------------------------------------------------------- 5. save to the Series of 10
     await performReviewSave({ skipBackupModal: true }); await W(300);
@@ -90,13 +91,17 @@
     // ---------------------------------------------------------------- 6. Series of 10, All accounts
     data.viewScope = 'lifetime';
     var cs = getScopedSeries().currentSeries;
-    check('series: 2 trades take 1 spot', cs.length === 2 && _ideaMerge(cs).length === 1, [cs.length, _ideaMerge(cs).length]);
+    check('series (all accounts): the copied trade is 1 trade, 1 spot', cs.length === 1 && cs[0]._ideaN === 2, [cs.length, cs[0] && cs[0]._ideaN]);
     var st = calcSeriesStats(cs);
-    check('series: both losses count', st.l === 2, st);
+    check('series: 1 loss', st.l === 1, st);
     var money = cs.reduce(function (a, t) { return a + tradeNetPL(t); }, 0);
     check('series: money of both accounts (-570)', Math.round(money) === -570, money);
+    var r1 = cs.length ? tradeRforMath(cs[0]) : null;
+    check('series: its R once (-1.00R)', r1 !== null && Math.abs(r1 + 1) < 0.005, r1);
     var greet = plain(_seriesGreetingHTML());
-    check('series greeting: "copied to 2 accounts"', /copied to 2 accounts/.test(greet), greet.slice(0, 200));
+    check('series greeting: "1 trade in (copied to 2 accounts), 1 loss"', /1 trade in \(copied to 2 accounts\), 1 loss\b/.test(greet), greet.slice(0, 200));
+    check('all accounts: every surface reads 1 trade (filterByScope)', filterByScope(getAllLifetimeTrades()).length === 1, filterByScope(getAllLifetimeTrades()).length);
+    check('CSV export still lists both real trades (filterByScopeRaw)', filterByScopeRaw(getAllLifetimeTrades()).length === 2, filterByScopeRaw(getAllLifetimeTrades()).length);
     data.viewScope = 'acc_10';
     var s10 = getScopedSeries().currentSeries;
     data.viewScope = 'lifetime';
@@ -113,19 +118,24 @@
     var mls = (document.getElementById('stat-max-losses') || {}).textContent;
     check('stats: Max Loss Streak counts the copied loss once', String(mls).trim() === '1', mls);
     _allTradesCollapsed = false; renderAllTrades();
-    var tagged = Array.prototype.filter.call(document.querySelectorAll('#alltrades-table .atl-row[data-id]'), function (r) {
-      var c = r.querySelector('.atl-c-date'); return c && /\bcopy\b/.test(c.textContent); }).map(function (r) { return r.getAttribute('data-id'); });
-    check('All Trades History: only the copy row says "copy"', tagged.length === 1 && tagged[0] === sCopy.id, tagged);
+    var atl = Array.prototype.map.call(document.querySelectorAll('#alltrades-table .atl-row[data-id]'), function (r) {
+      var c = r.querySelector('.atl-c-date'); return [r.getAttribute('data-id'), c ? c.textContent.replace(/\s+/g, ' ').trim() : '']; });
+    check('All Trades History (all accounts): one row, the Lead’s, marked ×2', atl.length === 1 && atl[0][0] === sLead.id && /×2/.test(atl[0][1]), atl);
+    data.viewScope = 'acc_10'; renderAllTrades();
+    var atl10 = Array.prototype.map.call(document.querySelectorAll('#alltrades-table .atl-row[data-id]'), function (r) {
+      var c = r.querySelector('.atl-c-date'); return [r.getAttribute('data-id'), c ? c.textContent.replace(/\s+/g, ' ').trim() : '']; });
+    data.viewScope = 'lifetime';
+    check('All Trades History (10K only): its own trade, marked "copy"', atl10.length === 1 && atl10[0][0] === sCopy.id && /\bcopy\b/.test(atl10[0][1]), atl10);
     openDayModal(new Date(sLead.date).toDateString());
-    var dayRows = Array.prototype.map.call(document.querySelectorAll('#modal-trades .modal-trade-row[data-id]'), function (r) { return [r.getAttribute('data-id'), /\bcopy\b/.test(r.textContent)]; });
-    check('Calendar day window: only the copy row says "copy"', dayRows.length === 2 && dayRows.filter(function (x) { return x[1]; }).length === 1 && dayRows.some(function (x) { return x[1] && x[0] === sCopy.id; }), dayRows);
+    var dayRows = Array.prototype.map.call(document.querySelectorAll('#modal-trades .modal-trade-row[data-id]'), function (r) { return [r.getAttribute('data-id'), r.textContent.replace(/\s+/g, ' ').trim().slice(0, 60)]; });
+    check('Calendar day window (all accounts): one row marked ×2', dayRows.length === 1 && /×2/.test(dayRows[0][1]), dayRows);
     try { document.getElementById('day-modal-bg').classList.remove('show'); document.getElementById('day-modal-bg').style.display = 'none'; } catch (e) {}
 
     // ---------------------------------------------------------------- 9. nudge history: once, with both accounts' money
     var dk = dayKey(sLead.date);
     data.nudgeLog = {}; data.nudgeLog[dk] = {}; data.nudgeLog[dk]['risk:' + TK[0]] = { at: '09:05' };
     var ps = __stNudge.periodStats(dk, dk);
-    check('nudge history: the nudged trade counts once, with both accounts’ money', ps.into.n === 1 && Math.round(ps.into.net) === -570, ps.into);
+    check('nudge history: the nudged trade counts once, both accounts’ money, R once', ps.into.n === 1 && Math.round(ps.into.net) === -570 && Math.abs(ps.into.r + 1) < 0.005, ps.into);
     data.nudgeLog = {};
 
     // ---------------------------------------------------------------- 10. Series of 10 post
@@ -147,7 +157,11 @@
     if (shareBtn) { shareBtn.classList.remove('is-posted'); shareBtn.click(); await W(300); }
     var pe = plain(posted && posted.en);
     check('series post: "Trades: 10 (11 across accounts)"', /Trades:\s+10 \(11 across accounts\)/.test(pe), pe.split('\n').filter(function (l) { return /Trades/.test(l); }));
-    check('series post: Losses count every copy (6)', /Losses:\s+6\b/.test(pe), pe.split('\n').filter(function (l) { return /Losses/.test(l); }));
+    check('series post: the copied loss counts once (Losses 5)', /Losses:\s+5\b/.test(pe), pe.split('\n').filter(function (l) { return /Losses/.test(l); }));
+
+    // ---------------------------------------------------------------- 11. removed on purpose (29 Sep 2026)
+    check('Linked groups are gone from Settings', !document.getElementById('settings-linked-group-add-btn') && !document.getElementById('settings-linked-groups-list'));
+    check('the old "copies per trade" window is gone', !document.getElementById('copies-modal-bg'));
   } catch (e) {
     check('the test ran to the end', false, (e && e.message) + ' @ ' + String((e && e.stack) || '').split('\n')[1]);
   }

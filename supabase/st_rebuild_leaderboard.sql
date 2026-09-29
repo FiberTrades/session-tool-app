@@ -316,19 +316,9 @@ begin
                 rows between unbounded preceding and current row) as setup_no
       from raw r
     ),
-    -- Trade copier (29 Sep 2026): per setup, how many trades it holds (a trade and its copies on the member's
-    -- other accounts) and the R they made together - that is the setup's Net R when every one is EA-stamped.
-    grp2 as (
-      select g.*,
-             count(*) over w                                                       as n_copies,
-             count(*) filter (where coalesce(g.risk_gbp::numeric, 0) = 0) over w   as n_unstamped,
-             sum(g.pnl::numeric / nullif(g.risk_gbp::numeric, 0)) over w           as r_all
-      from grp g
-      window w as (partition by g.user_id, g.sym_core, g.direction, g.src, g.setup_no)
-    ),
     ded as (
       select distinct on (user_id, sym_core, direction, src, setup_no) *
-      from grp2
+      from grp
       order by user_id, sym_core, direction, src, setup_no, open_time, ticket
     ),
     -- One place that decides what a trade's risk and stop ACTUALLY were, so nothing below has to
@@ -369,9 +359,7 @@ begin
         -- inflating the risk on a hand-placed loss would otherwise shrink it in R. least() ignores
         -- NULLs, so no rule configured means no cap - and the case-when is what stops a trade with no
         -- journal entry at all from silently taking the cap itself as its risk.
-        case when lt.n_copies > 1 and lt.n_unstamped = 0 and lt.r_all is not null
-             then lt.r_all                                     -- a trade and its copies: the R all of them made
-             when nullif(lt.risk_u,0) is not null
+        case when nullif(lt.risk_u,0) is not null
              then (lt.pnl::numeric) / nullif(lt.risk_u,0)
         end                                                    as r,
         (lt.sl_pips is not null and coalesce(lt.sl_pips::numeric,0) <= 0)      as no_stop,
