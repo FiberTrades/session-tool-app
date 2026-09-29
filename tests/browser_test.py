@@ -175,7 +175,8 @@ def main():
         cdp = CDP(pages[0]['webSocketDebuggerUrl'])
         cdp.call('Page.enable')
         cdp.call('Runtime.enable')
-        cdp.call('Page.navigate', url='http://127.0.0.1:%d/app.html?e2e=%d' % (web_port, random.randint(1, 10 ** 9)))
+        app = os.environ.get('E2E_APP', 'app.html')   # another file name runs the same test against an older copy
+        cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, app, random.randint(1, 10 ** 9)))
         time.sleep(2)
         if not cdp.eval(PRELUDE):
             print('The app did not load')

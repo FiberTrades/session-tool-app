@@ -348,6 +348,7 @@ begin
         ) tr
         where jsonb_typeof(tr.v) = 'object'
           and nullif(tr.v ->> 'mt5Ticket', '') is null
+          and not (tr.v ? 'copyOf')   -- 2026-09-29: a copy made with the Trade Log's copy button - the trade it copies already counts
           and tr.v ->> 'result' in ('Win', 'Lose', 'BE')
           and tr.v ->> 'side' in ('Long', 'Short')
           and tr.v ->> 'date' ~ '^[0-9]{4}-(0[1-9]|1[0-2])-(0[1-9]|[12][0-9]|3[01])(T[0-9]{2}:[0-9]{2}(:[0-9]{2}(\.[0-9]+)?)?(Z|[+-][0-9]{2}:?[0-9]{2})?)?$'

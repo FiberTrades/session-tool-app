@@ -105,6 +105,11 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
+  // Supabase (the journal, sign-in, everything account-specific) is never touched: a cached copy of
+  // the journal served when the network blips is an OLD journal, and the sync would merge against it.
+  // Account data has no business in a shared cache either.
+  if (/\.supabase\.co$/i.test(url.hostname)) return;
+
   // 2) Cross-origin (CDNs: Twemoji, etc.) -> network, fall back to any cached copy.
   if (url.origin !== self.location.origin) {
     event.respondWith(

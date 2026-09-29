@@ -190,17 +190,24 @@
     var T0 = Date.now() - 60000;
     var L = { ticket: 171267984, direction: 'long', symbol: 'EURUSD', lots: 16.55, risk: 500 };
     var F = { ticket: 552520521, direction: 'long', symbol: 'EURUSD', lots: 2.1, risk: 63.44 };
+    // The feed clears closed trades once the session window is over, so this part pretends to be inside it - it
+    // passed during the London session and failed after it (29 Sep). The app's own ticker may take the flag away
+    // again within a second, so it is set right before each batch of rows.
+    var liveUi = function () { var p = document.getElementById('page-review'); if (p) p.classList.add('session-live-collapsed'); };
+    liveUi();
     window.__stLive.upsert(Object.assign({}, L, { opened_at: new Date(T0 + 400).toISOString(), seen_at: new Date(T0 + 400).toISOString() }));   // arrives first
     window.__stLive.upsert(Object.assign({}, F, { opened_at: new Date(T0).toISOString(), seen_at: new Date(T0).toISOString() }));             // arrives second, earlier
     await W(1800);   // a nudge is recorded after up to 1.5 s
     var _lim = Object.values((data.nudgeLog || {})[Object.keys(data.nudgeLog || {})[0]] || {}).filter(function (x) { return x && x.rule === 'limit'; });
     check('a copy never counts as a 2nd trade (no "trade 2, limit 1" nudge)', _lim.length === 0, _lim);
     var closeAt = new Date(T0 + 700000).toISOString();
+    liveUi();
     window.__stLive.upsert(Object.assign({}, L, { opened_at: new Date(T0 + 400).toISOString(), pnl: -641.65, closed_at: closeAt, seen_at: closeAt }));
     window.__stLive.upsert(Object.assign({}, F, { opened_at: new Date(T0).toISOString(), pnl: -71.83, closed_at: closeAt, seen_at: closeAt }));
+    // Read at once: outside the session window the app's ticker clears closed rows within a second.
+    var liveRes = [window.__stLive.resultFor(F.ticket), window.__stLive.resultFor(L.ticket)];
     await W(200);
-    check('Session Live: the copied loss is a loss, not BE (judged on both accounts)', window.__stLive.resultFor(F.ticket) === 'Lose' && window.__stLive.resultFor(L.ticket) === 'Lose',
-      [window.__stLive.resultFor(F.ticket), window.__stLive.resultFor(L.ticket)]);
+    check('Session Live: the copied loss is a loss, not BE (judged on both accounts)', liveRes[0] === 'Lose' && liveRes[1] === 'Lose', liveRes);
     check('the copy alone, judged by its own size (0.4R band = 25), is a loss', window.__stLive.rowResult(Object.assign({}, F, { closed: true, pnl: -71.83 })) === 'Lose');
     check('a real BE stays BE (+5 on the 70K, +1 on the 10K)', window.__stLive.rowResult(Object.assign({}, L, { closed: true, pnl: 5 })) === 'BE' && window.__stLive.rowResult(Object.assign({}, F, { closed: true, pnl: 1 })) === 'BE');
     window.fetch = _realFetch; window.currentUser = null;
@@ -229,6 +236,51 @@
     _sels = Array.prototype.map.call(document.querySelectorAll('#mt5-login-targets select[data-login]'), function (x) { return x.getAttribute('data-login') + '=' + (x.value || '(choose)'); });
     check('import: a new login goes to the free account (the 10K), not the 70K', _sels.join(',') === '541419576=acc_70,1514778904=acc_10', _sels);
     try { document.getElementById('mt5-modal-bg').classList.remove('show'); } catch (e) {}
+
+    // ---------------------------------------------------------------- 14. the Trade Log's copy button (29 Sep 2026)
+    // An outside trade copier: the EA sees only the Lead, so the copies are made here - one click per account.
+    var mk2 = function (id, name, sb) { return { id: id, name: name, status: 'active', kind: 'challenge', accountType: 'prop', startingBalance: sb, current: sb, createdAt: '2026-01-01T00:00:00Z', riskRules: {} }; };
+    data.accounts = [mk2('acc_70', 'FTMO 70K', 70000), mk2('acc_10', 'FTMO 10K', 10000), mk2('acc_25', 'FTMO 25K', 25000)];
+    data.activeAccountId = 'acc_70'; data.viewScope = 'lifetime';
+    var lead14 = Object.assign(newTradeBlank(), { id: 'tl1', accountId: 'acc_70', symbol: 'EUR/USD', side: 'Long', result: 'Lose', r: '5', sl: '4',
+      entryTime: '08:00', exitTime: '08:12', risk: '500', costs: '62.5', actualGross: -579.15, importedFrom: 'mt5', mt5Ticket: '9003001', execution: 'Flawless' });
+    data.review.trades = [lead14];
+    renderTrades(); await W(100);
+    var rows14 = document.querySelectorAll('#trade-rows .trade-row');
+    check('copy button: one on every Trade Log row', rows14.length === 1 && rows14[0].querySelectorAll('.trade-copy').length === 1, rows14.length);
+    rows14[0].querySelector('.trade-copy').click(); await W(50);
+    var menu14 = document.querySelector('.tlog-copy-menu');
+    var items14 = menu14 ? Array.prototype.map.call(menu14.querySelectorAll('.tcm-item'), function (b) { return b.getAttribute('data-acc') + ' ' + plain(b.textContent); }) : [];
+    check('copy button: the menu lists the other accounts with their size factor', items14.length === 2 && /acc_10 .*0\.14/.test(items14[0]) && /acc_25 .*0\.36/.test(items14[1]), items14);
+    var it10 = menu14 && menu14.querySelector('.tcm-item[data-acc="acc_10"]');
+    if (it10) it10.click();
+    await W(100);
+    var cp14 = data.review.trades[1] || {};
+    check('copy button: the copy lands right under the trade, on the chosen account', data.review.trades.length === 2 && cp14.accountId === 'acc_10' && cp14.copyOf === 'tl1', [data.review.trades.length, cp14.accountId, cp14.copyOf]);
+    check('copy button: same result, R, times and answers; one idea', cp14.result === 'Lose' && cp14.r === '5' && cp14.entryTime === '08:00' && cp14.execution === 'Flawless' && !!cp14.ideaId && cp14.ideaId === lead14.ideaId,
+      [cp14.result, cp14.r, cp14.entryTime, cp14.execution, cp14.ideaId, lead14.ideaId]);
+    check('copy button: money scaled by account size (10K / 70K), marked as an estimate', Math.abs(Number(cp14.risk) - 71.43) < 0.01 && Math.abs(Number(cp14.costs) - 8.93) < 0.01 && Math.abs(Number(cp14.actualGross) + 82.74) < 0.01 && cp14.copyEst === true,
+      [cp14.risk, cp14.costs, cp14.actualGross, cp14.copyEst]);
+    check('copy button: the copy is not an MT5 import (no ticket), so a real import can never be mistaken for it', !cp14.mt5Ticket && !cp14.importedFrom, [cp14.mt5Ticket, cp14.importedFrom]);
+    check('copy button: the menu closes after the pick', !document.querySelector('.tlog-copy-menu'));
+    var lab14 = document.querySelectorAll('#trade-rows .trade-acct-label');
+    var labTxt = lab14.length > 1 ? plain(lab14[1].textContent) : '';
+    check('copy button: the copy says what it is (copy of trade 1, money x 0.14 - edit it)', /copy of trade 1/.test(labTxt) && /0\.14/.test(labTxt) && /edit it/.test(labTxt), labTxt);
+    document.querySelectorAll('#trade-rows .trade-row')[0].querySelector('.trade-copy').click(); await W(50);
+    var items14b = Array.prototype.map.call(document.querySelectorAll('.tlog-copy-menu .tcm-item'), function (b) { return b.getAttribute('data-acc'); });
+    check('copy button: an account that already has the trade is not offered again', items14b.join(',') === 'acc_25', items14b);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' })); await W(20);
+    check('copy button: Escape closes the menu', !document.querySelector('.tlog-copy-menu'));
+    window.__stTlogCopy.moveCopy(1, 'acc_25'); await W(50);
+    var cp14b = data.review.trades[1] || {};
+    check('copy button: moving the copy re-scales its estimate (25K / 70K)', cp14b.accountId === 'acc_25' && Math.abs(Number(cp14b.risk) - 178.57) < 0.01, [cp14b.accountId, cp14b.risk]);
+    var riskIn = document.querySelectorAll('#trade-rows .trade-row')[1] && document.querySelectorAll('#trade-rows .trade-row')[1].querySelector('.risk-input');
+    if (riskIn) { riskIn.value = '180'; riskIn.dispatchEvent(new Event('input', { bubbles: true })); }
+    await W(50);
+    check('copy button: typing the broker\'s own money ends the estimate', data.review.trades[1] && data.review.trades[1].copyEst === false, data.review.trades[1] && data.review.trades[1].copyEst);
+    window.__stTlogCopy.moveCopy(1, 'acc_10'); await W(50);
+    check('copy button: after that, moving the copy keeps the typed money', data.review.trades[1] && data.review.trades[1].accountId === 'acc_10' && String(data.review.trades[1].risk) === '180',
+      data.review.trades[1] && [data.review.trades[1].accountId, data.review.trades[1].risk]);
 
     // ---------------------------------------------------------------- 11. removed on purpose (29 Sep 2026)
     check('Linked groups are gone from Settings', !document.getElementById('settings-linked-group-add-btn') && !document.getElementById('settings-linked-groups-list'));
