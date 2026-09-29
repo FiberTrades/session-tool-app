@@ -60,7 +60,7 @@ input double           InpBE_Offset     = 0.5;         // SL offset past entry o
 
 input group "===== Panel ====="
 input int              InpPanelX        = 8;           // Panel X (from left)
-input int              InpPanelY        = 22;          // Panel Y (from top)
+input int              InpPanelY        = 26;          // Panel Y (from top) - 26 since 8.85 (was 22)
 input bool             InpStartOpen     = true;        // Start with panel expanded?
 input int              InpPanelBodyH    = 0;           // Panel height before it scrolls, px (0 = down to Break-even)
 
@@ -2660,6 +2660,9 @@ bool LoadState()
    g_execKey    =(int)GlobalVariableGet(StateKey("execKey"));
    PX           =(int)GlobalVariableGet(StateKey("panelX"));
    PY           =(int)GlobalVariableGet(StateKey("panelY"));
+   // 8.85 (Nestor, 30 Sep: "bring the whole panel down by the smallest amount"): 4 px lower, clear of the chart's
+   // symbol line. A panel still at the old default comes down with it; one moved on purpose stays where it is.
+   if(PY==22) PY=26;
    if(GlobalVariableCheck(StateKey("maxTrd"))) g_maxTradesDay=(int)GlobalVariableGet(StateKey("maxTrd"));
    g_panelScroll=0;   // v8.80: the panel always opens scrolled to the top (Nestor), never where it was left
    // rebuild the exec-key display character from the stored key code
