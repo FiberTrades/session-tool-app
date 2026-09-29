@@ -28,6 +28,13 @@
 -- her 10K's 70). New CTEs acc_lim (every account's limits) and tacc (ticket -> account: the journal's
 -- accountId, else the EA login's mapped account); acc_days judges daily loss per account per day.
 -- Backup of the entries before: _lb_snap_0929b (RLS on, access revoked).
+-- 2026-09-29, later (Nestor: "judge all accounts"): a trade copied to other accounts (EA Trade Copier)
+-- is judged on EVERY account it landed on. It still counts once (ded keeps the Lead's row for R, W/L
+-- and the trade count), but chk / setup_chk break max risk when ANY copy broke its own account's
+-- limit, acc_days counts each account's own copies for daily loss, and max trades per day is per
+-- account too (a Lead allowed 2 whose 2nd trade the 1-a-day Follow did not copy broke nothing).
+-- Backup before: _lb_snap_0929c. Only change on real data: Nestor's year 3 -> 628 (old 10K days
+-- allowed 2 trades and had been held to the 70K's 1).
 -- ═══════════════════════════════════════════════════════════════════════════
 
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
@@ -198,7 +205,8 @@ begin
           when nullif((x.rr ->> 'beThresholdPct'), '')::numeric > 0 and x.balance > 0
             then nullif((x.rr ->> 'beThresholdPct'), '')::numeric / 100.0 * x.balance
           else nullif((x.rr ->> 'beThresholdAmount'), '')::numeric
-        end as be_band
+        end as be_band,
+        nullif((x.rr ->> 'maxTrades'), '')::int as max_trades
       from (
         select j.user_id, a.obj ->> 'id' as acc_id,
                coalesce(
@@ -400,6 +408,59 @@ begin
       from grp
       order by user_id, sym_core, direction, src, setup_no, open_time, ticket
     ),
+    -- 2026-09-29 (Nestor: "judge all accounts"): a trade copied to the member's other accounts (EA Trade
+    -- Copier) is judged on EVERY account it landed on - the copier really places each copy, and each prop firm
+    -- judges its account on its own. The setup still counts ONCE (ded keeps the Lead's row for R, W/L and the
+    -- trade count), but it breaks max risk when ANY copy broke its own account's limit (setup_chk), and each
+    -- account's daily loss counts its own copies (acc_days reads chk). Same limits and same test as tv / t.
+    chk as (
+      select c.*,
+        (
+          c.max_risk_u is not null and c.max_risk_u > 0
+          and (
+            -- The risk the trade CARRIED: at its entry stop (the EA stamp), or at the widest stop
+            -- it ever had (EA v8.4) - a stop dragged away after entry is a bigger risk taken.
+            greatest(coalesce(c.risk_gbp::numeric, 0), coalesce(c.risk_max_gbp::numeric, 0))
+              > c.max_risk_u * 1.05
+            -- What the broker says it actually LOST, before costs. Catches every trade the stamp
+            -- cannot: placed outside the EA, EA not running, or a stop widened while it was off.
+            -- A stop can fill past its level, so the loss may run over the limit by slippage -
+            -- allowed as 2 units of this position (the worst honest EURUSD stop-out seen was 1.2
+            -- pips late), with a percentage of the limit as a floor. A percentage alone is wrong:
+            -- on a 2-pip stop one pip of slippage is already 50% over. The 2 was measured on
+            -- forex only, so everything else gets a wider 10% floor until there are real index
+            -- stop-outs to measure.
+            or -(c.pnl::numeric + coalesce(c.costs::numeric, 0))
+               > c.max_risk_u
+                 + greatest(
+                     c.max_risk_u * case when coalesce(c.fx_u, false) then 0.05 else 0.10 end,
+                     2 * c.pip_u * (-(c.pnl::numeric + coalesce(c.costs::numeric, 0)))
+                       / nullif(abs(c.exit_price::numeric - c.entry_price::numeric), 0)
+                   )
+          )
+        )                                                      as over_risk_1
+      from (
+        select g.*,
+               case when al.acc_id is not null then al.max_risk else l.max_risk end  as max_risk_u,
+               case when al.acc_id is not null then al.max_loss else l.max_loss end  as max_loss_u,
+               case when al.acc_id is not null then al.max_trades else l.max_trades end as max_trades_u,
+               coalesce(g.acc_m, ta.acc_id)                                          as acc_u,
+               ps.pip                                                                as pip_u,
+               ps.is_fx                                                              as fx_u
+        from grp g
+        left join lim   l  on l.user_id  = g.user_id
+        left join pipsz ps on ps.symbol = g.symbol
+        left join tacc  ta on ta.user_id = g.user_id and ta.ticket = g.ticket::text
+        left join acc_lim al on al.user_id = g.user_id and al.acc_id = coalesce(g.acc_m, ta.acc_id)
+      ) c
+    ),
+    setup_chk as (
+      select user_id, sym_core, direction, src, setup_no,
+             bool_or(over_risk_1)          as setup_over_risk,
+             bool_or(max_risk_u > 0)       as setup_has_risk_rule
+      from chk
+      group by 1, 2, 3, 4, 5
+    ),
     -- One place that decides what a trade's risk and stop ACTUALLY were, so nothing below has to
     -- repeat the fallback. risk_u prefers the EA's stamp and falls back to the trader's own journal
     -- figure capped at their max-risk rule; sl_u does the same for the stop distance. Both stay NULL
@@ -474,33 +535,13 @@ begin
         lt.max_risk_u                                          as max_risk,
         lt.max_loss_u,
         lt.acc_u,
-        (
-          lt.max_risk_u is not null and lt.max_risk_u > 0
-          and (
-            -- The risk the trade CARRIED: at its entry stop (the EA stamp), or at the widest stop
-            -- it ever had (EA v8.4) - a stop dragged away after entry is a bigger risk taken.
-            greatest(coalesce(lt.risk_gbp::numeric, 0), coalesce(lt.risk_max_gbp::numeric, 0))
-              > lt.max_risk_u * 1.05
-            -- What the broker says it actually LOST, before costs. Catches every trade the stamp
-            -- cannot: placed outside the EA, EA not running, or a stop widened while it was off.
-            -- A stop can fill past its level, so the loss may run over the limit by slippage -
-            -- allowed as 2 units of this position (the worst honest EURUSD stop-out seen was 1.2
-            -- pips late), with a percentage of the limit as a floor. A percentage alone is wrong:
-            -- on a 2-pip stop one pip of slippage is already 50% over. The 2 was measured on
-            -- forex only, so everything else gets a wider 10% floor until there are real index
-            -- stop-outs to measure.
-            or -(lt.pnl::numeric + coalesce(lt.costs::numeric, 0))
-               > lt.max_risk_u
-                 + greatest(
-                     lt.max_risk_u * case when coalesce(lt.fx_u, false) then 0.05 else 0.10 end,
-                     2 * lt.pip_u * (-(lt.pnl::numeric + coalesce(lt.costs::numeric, 0)))
-                       / nullif(abs(lt.exit_price::numeric - lt.entry_price::numeric), 0)
-                   )
-          )
-        )                                                      as over_risk,
+        coalesce(sc.setup_over_risk, false)                    as over_risk,   -- any account it landed on (chk)
+        sc.setup_has_risk_rule,
         ceil(row_number() over (partition by lt.user_id order by lt.close_time)::numeric / 10.0) as series_no
       from tv lt
       left join lim l on l.user_id = lt.user_id
+      left join setup_chk sc on sc.user_id = lt.user_id and sc.sym_core = lt.sym_core and sc.direction = lt.direction
+                            and sc.src = lt.src and sc.setup_no = lt.setup_no
     ),
     series as (
       select
@@ -550,21 +591,24 @@ begin
         and (close_time at time zone 'Europe/London')::date <  v_end
       group by user_id
     ),
-    acc_days as (
+    acc_days as (   -- every account's own trades, copies included (chk is every row, not one per setup)
       select
-        t.user_id,
-        (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date as d,
-        t.acc_u,
-        sum(t.pnl_gross)                                                 as pnl,
-        max(t.max_loss_u)                                                as max_loss_u
-      from t
-      left join sess s on s.user_id = t.user_id
-      where (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
-        and (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
+        c.user_id,
+        (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date as d,
+        c.acc_u,
+        sum(c.pnl::numeric)                                              as pnl,
+        max(c.max_loss_u)                                                as max_loss_u,
+        count(distinct (c.sym_core, c.direction, c.src, c.setup_no))     as n_trades,   -- one per setup (copies of an unknown account stay one)
+        max(c.max_trades_u)                                              as max_trades_u
+      from chk c
+      left join sess s on s.user_id = c.user_id
+      where (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
+        and (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
       group by 1,2,3
     ),
     days as (
-      select dd.*, coalesce(ab.any_over_loss, false) as any_over_loss
+      select dd.*, coalesce(ab.any_over_loss, false) as any_over_loss, coalesce(ab.any_loss_rule, false) as has_loss_rule,
+             coalesce(ab.any_over_trades, false) as any_over_trades, coalesce(ab.any_trades_rule, false) as has_trades_rule
       from (
       select
         t.user_id,
@@ -572,15 +616,17 @@ begin
         sum(t.pnl_gross)                                                 as day_pnl,
         count(*)                                                         as day_trades,
         bool_or(t.over_risk)                                            as any_over_risk,
-        bool_or(t.max_risk > 0)                                         as has_risk_rule,
-        bool_or(t.max_loss_u > 0)                                       as has_loss_rule
+        bool_or(coalesce(t.setup_has_risk_rule, t.max_risk > 0))        as has_risk_rule
       from t
       left join sess s on s.user_id = t.user_id
       where (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
         and (t.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
       group by 1,2
       ) dd
-      left join (select user_id, d, bool_or(max_loss_u > 0 and pnl < 0 and abs(pnl) > max_loss_u) as any_over_loss
+      left join (select user_id, d, bool_or(max_loss_u > 0 and pnl < 0 and abs(pnl) > max_loss_u) as any_over_loss,
+                        bool_or(max_loss_u > 0) as any_loss_rule,
+                        bool_or(max_trades_u > 0 and n_trades > max_trades_u) as any_over_trades,
+                        bool_or(max_trades_u > 0) as any_trades_rule
                    from acc_days group by 1,2) ab on ab.user_id = dd.user_id and ab.d = dd.d
     ),
     day_breaks as (
@@ -590,8 +636,7 @@ begin
           where coalesce(d.has_loss_rule, false) and d.any_over_loss
         ) as over_loss_days,
         count(*) filter (
-          where l.max_trades is not null and l.max_trades > 0
-            and d.day_trades > l.max_trades
+          where coalesce(d.has_trades_rule, false) and d.any_over_trades
         ) as over_trade_days
       from days d
       left join lim l on l.user_id = d.user_id
@@ -788,10 +833,10 @@ begin
         count(*) filter (where rok.d is not null)  as review_kept,
         count(*) filter (where rok.d is null
                            and cd.d < (now() at time zone coalesce(sq.tz,'Europe/London'))::date) as review_missed,   -- 2026-09-28: today's review is not 'missed' until the day is over
-        count(*) filter (where dy.d is not null and l.max_trades is not null and l.max_trades > 0
-                           and dy.day_trades <= l.max_trades)                        as maxtr_kept,
-        count(*) filter (where dy.d is not null and l.max_trades is not null and l.max_trades > 0
-                           and dy.day_trades >  l.max_trades)                        as maxtr_over,
+        count(*) filter (where dy.d is not null and coalesce(dy.has_trades_rule, false)
+                           and not dy.any_over_trades)                                as maxtr_kept,
+        count(*) filter (where dy.d is not null and coalesce(dy.has_trades_rule, false)
+                           and dy.any_over_trades)                                    as maxtr_over,
         count(*) filter (where dy.d is not null and coalesce(dy.has_loss_rule, false)
                            and not dy.any_over_loss)                                   as dd_kept,
         count(*) filter (where dy.d is not null and coalesce(dy.has_loss_rule, false)
