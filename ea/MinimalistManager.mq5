@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.84"
+#property version   "8.85"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3127,7 +3127,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.84\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.85\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
@@ -5861,7 +5861,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.84 loaded (account name at the top of the chart; trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.85 loaded (copies checked 40x a second; account name at the top of the chart; trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -5929,7 +5929,11 @@ int OnInit()
    trade.SetTypeFillingBySymbol(_Symbol);
 
    ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,true);   // needed for hover + click execute
-   EventSetMillisecondTimer(100);                    // 10x a second: labels follow the chart; the 1s work below is gated
+   // v8.85 (Nestor, 30 Sep: "improve the speed of the copying from LEAD to FOLLOW"): 40x a second, so a Follow
+   // account sees a new Lead trade within 25 ms instead of up to 100 - the Lead already writes the moment its
+   // trade fills (OnTradeTransaction), so this wait was the only part of a copy the EA itself added. The labels
+   // keep their 100 ms rhythm and the once-a-second work stays gated in OnTimer.
+   EventSetMillisecondTimer(25);
    ChartSetInteger(0,CHART_EVENT_MOUSE_WHEEL,true);  // wheel zoom re-pins the line labels
 
    // If the terminal was closed over the day boundary, the pause would otherwise sit there
@@ -6083,10 +6087,11 @@ bool LabelsFollowChart()
 
 void OnTimer()
   {
-   // Every 100ms: keep the labels on their lines (cheap - a few property reads, and only
-   // repositions when the view actually moved).
-   if(LabelsFollowChart()) ChartRedraw();
-   // v8.80 trade copier: 10x a second, so a copy lands a moment after the lead's trade.
+   // v8.85: the timer runs every 25 ms for the copier; the labels still follow the chart every 100 ms
+   // (cheap - a few property reads, and only repositions when the view actually moved).
+   static uint s_lblTick=0;
+   if((++s_lblTick)%4==0 && LabelsFollowChart()) ChartRedraw();
+   // v8.80 trade copier; v8.85 40x a second, so a copy lands a moment after the lead's trade.
    CopierTick();
    // Everything below is once-a-second work, exactly as before the timer went to 100ms.
    static uint s_lastSec=0;
