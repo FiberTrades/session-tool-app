@@ -72851,7 +72851,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ var s=new Date(ms+'T12:00:00').toLocaleDateString(isEs()?'es-ES':'en-GB',{ month:'long' }); return s.charAt(0).toUpperCase()+s.slice(1); }catch(e){ return ''; }
   }
 
-  var SEEN='st_podium_seen_', CHECKED='st_podium_checked_', ov=null, waits=0, fxRaf=0, cheerBuf=null, cheerSrc=null, AC=null, onKey=null;
+  var FIRST='2026-09-01';   // the first month with a podium: shipped 30 Sep, so August's top three are not told a month late
+  var SEEN='st_podium_seen_', CHECKED='st_podium_checked_', ov=null, waits=0, retryT=null, fxRaf=0, cheerBuf=null, cheerSrc=null, AC=null, onKey=null;
 
   function seen(uid, ms){
     try{ if(localStorage.getItem(SEEN+uid)===ms) return true; }catch(e){}
@@ -72891,16 +72892,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }catch(e){ cb(null); }
   }
 
+  function later(ms){ if(retryT || waits++>=60) return; retryT=setTimeout(function(){ retryT=null; check(); }, ms); }
   function check(){
     if(ov) return;
     try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){}
     var uid=me();
-    if(!sb() || !uid || !window.__stJournalPulled || !appReady() || busy()){ if(waits++<60) setTimeout(check, 3000); return; }
+    if(!sb() || !uid || !window.__stJournalPulled || !appReady() || busy()){ later(3000); return; }
     var ms=lastMonthStart();
+    if(ms<FIRST) return;
     if(seen(uid, ms)) return;
     try{ if(localStorage.getItem(CHECKED+uid)===ms) return; }catch(e){}   // not on last month's podium: asked already
     top3(ms, function(rows){
-      if(rows===null){ if(waits++<60) setTimeout(check, 5000); return; }
+      if(rows===null){ later(5000); return; }
       if(!rows.some(function(x){ return x.user_id===uid; })){ try{ localStorage.setItem(CHECKED+uid, ms); }catch(e){} return; }
       people(function(ppl){ if(ov || seen(uid, ms)) return; markSeen(uid, ms); show(rows, ppl, uid, ms); });
     });
@@ -73101,12 +73104,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     /* Why it would not show right now - for "it never popped up" questions. */
     why:function(){ var uid=me(), ms=lastMonthStart(); try{ if(document.body.classList.contains('mentor-viewing')) return 'mentor view'; }catch(e){}
       if(ov) return 'showing'; if(!sb()) return 'no cloud'; if(!uid) return 'signed out'; if(!window.__stJournalPulled) return 'journal not pulled';
-      if(!appReady()) return 'app not ready'; if(busy()) return 'another window open'; if(seen(uid, ms)) return 'seen '+ms;
+      if(!appReady()) return 'app not ready'; if(busy()) return 'another window open'; if(ms<FIRST) return 'no podium before '+FIRST; if(seen(uid, ms)) return 'seen '+ms;
       try{ if(localStorage.getItem(CHECKED+uid)===ms) return 'not on the '+ms+' podium'; }catch(e){} return 'would ask for '+ms; },
     preview:function(){ var ms=lastMonthStart(); top3(ms, function(rows){ if(!rows || !rows.length) return; people(function(ppl){ show(rows, ppl, me(), ms); }); }); },
     _show:show, close:close
   };
-  function boot(){ setTimeout(check, 3500); setInterval(function(){ waits=0; check(); }, 30*60*1000); }
+  var lastPoke=0;
+  function poke(){
+    var now=Date.now(); if(ov || now-lastPoke<60000) return; lastPoke=now;
+    setTimeout(function(){ waits=0; check(); }, 400);
+  }
+  function boot(){
+    setTimeout(check, 3500);
+    ['pointerdown','keydown','focus'].forEach(function(ev){ window.addEventListener(ev, poke, { capture:true, passive:true }); });
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) poke(); });
+  }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
