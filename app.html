@@ -72815,6 +72815,301 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   else document.addEventListener('DOMContentLoaded', function(){ setTimeout(boot,150); });
 })();
 
+/* ═══ Month-end podium ═══════════════════════════════════════════════════════════════════════════
+   Nestor, 30 Sep 2026: "a pop up message on the top 3 peoples app like some fireworks and confetti
+   ... with a podium and the names of the 3 winners that month", with "a cheer noise that you would
+   have to save in the app" - a crowd cheering and clapping.
+   The first time one of LAST month's top three opens the app in the new month, this shows the
+   podium - avatars, names, points - over fireworks and confetti, and the crowd cheers.
+   - The three are the board's own "Last Month" podium: that month's rows by points. Months are
+     London months, as the nightly rebuild stamps them, so the month has closed for good before
+     anyone is told they won it.
+   - Once per month per ACCOUNT: journal flag _podiumSeen = the month ('YYYY-MM-01'), plus a copy
+     on the device, so the phone and the computer do not both show it. Decided only once the
+     journal is pulled - a phone's blank journal would otherwise say "not seen".
+   - The cheer is sounds/cheer.mp3, kept with the app ("Crowd Cheer and Applause" by DRAGON-STUDIO
+     on Pixabay - free for commercial use, credit optional). Played through Web Audio from a
+     fetched copy. Where the device holds sound back until a tap, it plays on the first tap on the
+     pop-up - but not a tap on Close.
+   - window.__stPodium.preview() shows last month's podium to anyone, marking nothing. */
+(function(){
+  var sb=function(){ return window.__stSB || null; };
+  function _t(en,es){ try{ return (typeof window._stT==='function') ? window._stT(en,es) : en; }catch(e){ return en; } }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function me(){ try{ return (window.STCloud&&window.STCloud.userId)||(window.currentUser&&window.currentUser.id)||null; }catch(e){ return null; } }
+  function isEs(){ return window._stLang==='es'; }
+  function londonYM(){
+    try{
+      var p=new Intl.DateTimeFormat('en-GB',{ timeZone:'Europe/London', year:'numeric', month:'2-digit' }).formatToParts(new Date()), y=0, m=0;
+      p.forEach(function(x){ if(x.type==='year') y=+x.value; if(x.type==='month') m=+x.value; });
+      if(y && m) return [y,m];
+    }catch(e){}
+    var d=new Date(); return [d.getFullYear(), d.getMonth()+1];
+  }
+  function lastMonthStart(){ var a=londonYM(), y=a[0], m=a[1]-1; if(m<1){ m=12; y--; } return y+'-'+('0'+m).slice(-2)+'-01'; }
+  function monthName(ms){
+    try{ var s=new Date(ms+'T12:00:00').toLocaleDateString(isEs()?'es-ES':'en-GB',{ month:'long' }); return s.charAt(0).toUpperCase()+s.slice(1); }catch(e){ return ''; }
+  }
+
+  var SEEN='st_podium_seen_', CHECKED='st_podium_checked_', ov=null, waits=0, fxRaf=0, cheerBuf=null, cheerSrc=null, AC=null, onKey=null;
+
+  function seen(uid, ms){
+    try{ if(localStorage.getItem(SEEN+uid)===ms) return true; }catch(e){}
+    try{ var d=window.STCloud&&window.STCloud.getData&&window.STCloud.getData(); if(d && d._podiumSeen===ms) return true; }catch(e){}
+    return false;
+  }
+  function markSeen(uid, ms){
+    try{ localStorage.setItem(SEEN+uid, ms); }catch(e){}
+    try{ var C=window.STCloud, d=C&&C.getData&&C.getData(); if(d && d._podiumSeen!==ms){ d._podiumSeen=ms; if(typeof C.save==='function') C.save(); } }catch(e){}
+  }
+  function busy(){
+    var l=document.querySelectorAll('.st-tour-ov, .modal-bg, .st-welcome, .modal.show, .dcx-modal.open, .stc-gate, [id$="upsell-bg"]');
+    for(var i=0;i<l.length;i++){ var e=l[i], cs; try{ cs=getComputedStyle(e); }catch(x){ continue; }
+      if(!cs || cs.display==='none' || cs.visibility==='hidden' || parseFloat(cs.opacity||'1')<0.05) continue;
+      var r=e.getBoundingClientRect(); if(r.width>40 && r.height>40) return true; }
+    return false;
+  }
+  function appReady(){ var t=document.querySelector('.tab[data-page="bias"]'); return !!(t && t.offsetParent!==null) && !document.hidden; }
+
+  function people(cb){
+    var ppl={};
+    try{ var st=window.STBoard&&window.STBoard.state&&window.STBoard.state(); if(st && st.ppl) for(var k in st.ppl) ppl[k]=st.ppl[k]; }catch(e){}
+    var c=sb(); if(!c){ cb(ppl); return; }
+    try{
+      c.rpc('st_members').then(function(r){
+        ((r&&r.data)||[]).forEach(function(x){ var id=x.id||x.user_id||x.uid; if(id) ppl[id]={ name:x.name||x.display_name||'Trader', avatar:x.avatar||x.avatar_url||'' }; });
+        cb(ppl);
+      }, function(){ cb(ppl); });
+    }catch(e){ cb(ppl); }
+  }
+  function top3(ms, cb){
+    var c=sb(); if(!c){ cb(null); return; }
+    try{
+      c.from('leaderboard_entries').select('user_id,points').eq('period','month').eq('period_start',ms)
+        .order('points',{ ascending:false }).limit(3)
+        .then(function(r){ cb((r && !r.error) ? (r.data||[]) : null); }, function(){ cb(null); });
+    }catch(e){ cb(null); }
+  }
+
+  function check(){
+    if(ov) return;
+    try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){}
+    var uid=me();
+    if(!sb() || !uid || !window.__stJournalPulled || !appReady() || busy()){ if(waits++<60) setTimeout(check, 3000); return; }
+    var ms=lastMonthStart();
+    if(seen(uid, ms)) return;
+    try{ if(localStorage.getItem(CHECKED+uid)===ms) return; }catch(e){}   // not on last month's podium: asked already
+    top3(ms, function(rows){
+      if(rows===null){ if(waits++<60) setTimeout(check, 5000); return; }
+      if(!rows.some(function(x){ return x.user_id===uid; })){ try{ localStorage.setItem(CHECKED+uid, ms); }catch(e){} return; }
+      people(function(ppl){ if(ov || seen(uid, ms)) return; markSeen(uid, ms); show(rows, ppl, uid, ms); });
+    });
+  }
+
+  function css(){
+    if(document.getElementById('st-podium-css')) return;
+    var s=document.createElement('style'); s.id='st-podium-css';
+    s.textContent=
+      '#st-podium{position:fixed;inset:0;z-index:100500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,10,13,.88);overflow:hidden;animation:stpIn .35s ease-out both;}'+
+      '#st-podium::before{content:"";position:absolute;top:-160px;left:50%;transform:translateX(-50%);width:780px;max-width:170vw;height:420px;background:radial-gradient(ellipse at center,rgba(244,114,182,.2),transparent 68%);pointer-events:none;}'+
+      '.stp-card{position:relative;z-index:1;width:100%;max-width:420px;background:var(--bg-elev,#131217);border:1px solid var(--border,#2A2833);border-radius:var(--radius-card,12px);padding:22px 20px 18px;text-align:center;color:var(--text,#F4F3F6);font-family:"AppNum","DM Mono",monospace;font-weight:300;box-shadow:var(--shadow-float,none);animation:stpPop .5s cubic-bezier(.2,1.3,.4,1) both;}'+
+      '.stp-eb{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim,#888);}'+
+      '.stp-h{font-family:"Fraunces",serif;font-weight:300;font-size:32px;line-height:1.15;margin:10px 0 2px;color:var(--text,#F4F3F6);}'+
+      '.stp-h em{font-style:normal;color:#f0c15a;}'+
+      '.stp-sub{font-family:"Fraunces",serif;font-style:italic;font-weight:300;font-size:15px;color:var(--text-mid,#c0c0c0);margin-bottom:18px;min-height:4px;}'+
+      '.stp-pod{display:flex;align-items:flex-end;justify-content:center;gap:8px;}'+
+      '.stp-col{flex:1;max-width:118px;min-width:0;display:flex;flex-direction:column;align-items:center;}'+
+      '.stp-av{width:40px;height:40px;border-radius:50%;background:var(--bg-elev2,#1B1A21);display:flex;align-items:center;justify-content:center;overflow:hidden;font-family:"Fraunces",serif;font-size:17px;margin-bottom:6px;box-shadow:0 0 0 2px currentColor;flex:none;}'+
+      '.stp-av img{width:100%;height:100%;object-fit:cover;display:block;}'+
+      '.stp-av span{color:var(--text,#F4F3F6);}'+
+      '.stp-col.me .stp-av{box-shadow:0 0 0 2px currentColor,0 0 0 5px rgba(244,114,182,.45);}'+
+      '.stp-nm{font-family:"Fraunces",serif;font-size:16px;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text,#F4F3F6);}'+
+      '.stp-pt{font-size:13px;font-weight:500;color:var(--accent,#f472b6);margin:1px 0 7px;letter-spacing:.04em;}'+
+      '.stp-blk{width:100%;border-radius:10px 10px 0 0;border:2px solid;border-bottom:0;display:flex;justify-content:center;padding-top:6px;font-family:"Fraunces",serif;font-weight:300;font-size:34px;line-height:1;transform-origin:bottom;animation:stpRise .7s cubic-bezier(.2,.9,.3,1) both;}'+
+      '.stp-av.g1{color:#f0c15a;} .stp-av.g2{color:rgba(198,206,222,.85);} .stp-av.g3{color:rgba(168,96,50,.95);}'+
+      '.stp-blk.g1{height:112px;border-color:rgba(240,193,90,.75);background:linear-gradient(160deg,rgba(240,193,90,.16),transparent 60%),var(--bg-elev2,#1B1A21);color:#f0c15a;animation-delay:.45s;}'+
+      '.stp-blk.g2{height:78px;border-color:rgba(198,206,222,.62);background:linear-gradient(160deg,rgba(198,206,222,.12),transparent 60%),var(--bg-elev2,#1B1A21);color:#c6cede;animation-delay:.3s;}'+
+      '.stp-blk.g3{height:56px;border-color:rgba(168,96,50,.82);background:linear-gradient(160deg,rgba(168,96,50,.18),transparent 60%),var(--bg-elev2,#1B1A21);color:#c98655;animation-delay:.15s;}'+
+      '.stp-btns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px;border-top:1px solid var(--border,#2A2833);padding-top:16px;}'+
+      '.stp-btn{background:transparent;border:1px solid var(--border-2,#332F3C);border-radius:var(--radius-ctrl,8px);color:var(--text-mid,#c0c0c0);padding:9px 14px;font-family:"AppNum","DM Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;transition:border-color 150ms ease-out,color 150ms ease-out;}'+
+      '.stp-btn.pr{border-color:var(--text-mid,#c0c0c0);color:var(--text,#F4F3F6);}'+
+      '.stp-btn:hover,.stp-btn:focus-visible{border-color:var(--accent,#f472b6);color:var(--text,#F4F3F6);outline:none;}'+
+      '.stp-fx{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}'+
+      '@keyframes stpIn{from{opacity:0}to{opacity:1}}'+
+      '@keyframes stpPop{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}'+
+      '@keyframes stpRise{from{transform:scaleY(0)}to{transform:scaleY(1)}}'+
+      '@media (prefers-reduced-motion: reduce){#st-podium,.stp-card,.stp-blk{animation:none;}}';
+    document.head.appendChild(s);
+  }
+
+  /* ---- sound ---- */
+  function actx(){
+    try{ if(typeof getAudioCtx==='function'){ var g=getAudioCtx(); if(g) return g; } }catch(e){}
+    try{ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ AC=null; }
+    return AC;
+  }
+  function loadCheer(){
+    if(cheerBuf) return Promise.resolve(cheerBuf);
+    return fetch('sounds/cheer.mp3').then(function(r){ if(!r.ok) throw new Error('cheer '+r.status); return r.arrayBuffer(); })
+      .then(function(ab){ var c=actx(); if(!c) throw new Error('no audio'); return new Promise(function(res,rej){ c.decodeAudioData(ab, function(b){ cheerBuf=b; res(b); }, rej); }); });
+  }
+  function startCheer(){
+    var c=actx(); if(!c || !cheerBuf || !ov || cheerSrc) return;
+    try{ var s=c.createBufferSource(), g=c.createGain(); g.gain.value=0.8; s.buffer=cheerBuf; s.connect(g); g.connect(c.destination); s.start(); cheerSrc={ s:s, g:g }; s.onended=function(){ cheerSrc=null; }; }catch(e){}
+  }
+  function stopCheer(){
+    var c=actx(); if(!cheerSrc || !c) return;
+    try{ cheerSrc.g.gain.setTargetAtTime(0, c.currentTime, 0.12); cheerSrc.s.stop(c.currentTime+0.6); }catch(e){}
+    cheerSrc=null;
+  }
+  function cheer(){
+    loadCheer().then(function(){
+      var c=actx(); if(!c || !ov) return;
+      if(c.state==='running'){ startCheer(); return; }
+      try{ c.resume(); }catch(e){}
+      setTimeout(function(){ if(!ov) return; if(c.state==='running') startCheer(); else armTap(); }, 300);
+    }).catch(function(){});
+  }
+  function armTap(){
+    if(!ov) return;
+    var box=ov;
+    var h=function(e){
+      if(e.target && e.target.closest && e.target.closest('[data-stp="close"]')) return;   // closing: no cheer after the fact
+      box.removeEventListener('pointerdown', h, true);
+      var c=actx(); if(!c) return;
+      try{ var p=c.resume(); if(p && p.then) p.then(startCheer, function(){}); else startCheer(); }catch(x){}
+    };
+    box.addEventListener('pointerdown', h, true);
+  }
+
+  /* ---- fireworks + confetti ---- */
+  function fx(cv){
+    var c=cv.getContext && cv.getContext('2d'); if(!c) return;
+    var W=0, H=0, DPR=Math.min(window.devicePixelRatio||1, 2), P=[], t0=0, lt=0, lastFw=0;
+    var CONF=['#f472b6','#f9a8d4','#f0c15a','#c6cede','#ffffff','#c98655'], FW=['#f472b6','#f0c15a','#f9a8d4','#ffffff'];
+    function size(){ W=cv.clientWidth; H=cv.clientHeight; cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR); c.setTransform(DPR,0,0,DPR,0,0); }
+    size(); window.addEventListener('resize', size);
+    var n=Math.round(Math.min(160, Math.max(70, W/6)));
+    for(var i=0;i<n;i++) P.push({ k:0, x:Math.random()*W, y:-10-Math.random()*H*0.7, vx:(Math.random()-.5)*1.1, vy:1.4+Math.random()*2, r:Math.random()*6.2832, vr:(Math.random()-.5)*.24, w:5+Math.random()*4, h:8+Math.random()*6, col:CONF[i%CONF.length] });
+    function burst(){
+      var x=W*(0.15+Math.random()*0.7), y=H*(0.1+Math.random()*0.3), col=FW[Math.floor(Math.random()*FW.length)];
+      for(var i=0;i<50;i++){ var a=i/50*6.2832, sp=1.8+Math.random()*2.4; P.push({ k:1, x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, col:col }); }
+    }
+    function step(ts){
+      if(!ov || !cv.isConnected){ window.removeEventListener('resize', size); return; }
+      if(!t0){ t0=ts; lt=ts; }
+      var el=ts-t0, dt=Math.min(3, (ts-lt)/16.667)||1; lt=ts;   // the same speed on a 60 Hz and a 120 Hz screen
+      c.clearRect(0,0,W,H);
+      if(el<4500 && ts-lastFw>460){ burst(); lastFw=ts; }
+      for(var i=P.length-1;i>=0;i--){ var p=P[i];
+        if(p.k===0){
+          p.x+=p.vx*dt; p.y+=p.vy*dt; p.r+=p.vr*dt;
+          c.save(); c.translate(p.x,p.y); c.rotate(p.r); c.fillStyle=p.col; c.fillRect(-p.w/2,-p.h/2,p.w,p.h*Math.abs(Math.cos(p.r*1.3))); c.restore();
+          if(p.y>H+20) P.splice(i,1);
+        } else {
+          p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=0.04*dt; p.vx*=Math.pow(0.985,dt); p.life-=0.012*dt;
+          c.globalAlpha=Math.max(p.life,0); c.fillStyle=p.col; c.beginPath(); c.arc(p.x,p.y,2,0,6.2832); c.fill(); c.globalAlpha=1;
+          if(p.life<=0) P.splice(i,1);
+        }
+      }
+      if(P.length || el<4500) fxRaf=requestAnimationFrame(step); else window.removeEventListener('resize', size);
+    }
+    fxRaf=requestAnimationFrame(step);
+  }
+
+  /* ---- the pop-up ---- */
+  function close(){
+    if(!ov) return;
+    stopCheer();
+    try{ cancelAnimationFrame(fxRaf); }catch(e){}
+    try{ if(onKey) document.removeEventListener('keydown', onKey, true); }catch(e){}
+    onKey=null;
+    var o=ov; ov=null; try{ o.remove(); }catch(e){}
+  }
+  function toBoard(){
+    close();
+    try{ var t=document.querySelector('.tab[data-page="tradeview"]'); if(t) t.click(); }catch(e){}
+    var n=0;
+    (function pick(){
+      var b=document.querySelector('#stb-board .stb-tab[data-p="lastmonth"]');
+      if(b && b.offsetParent!==null){
+        b.click();
+        try{ document.getElementById('stb-board').scrollIntoView({ behavior:'smooth', block:'start' }); }catch(e){}
+        return;
+      }
+      if(n++<40) setTimeout(pick, 150);
+    })();
+  }
+  function show(rows, ppl, uid, ms){
+    if(ov || !rows || !rows.length) return;
+    css();
+    ppl=ppl||{};
+    var place=function(i){ var p=Number(rows[i].points)||0, n=1; rows.forEach(function(y){ if((Number(y.points)||0)>p) n++; }); return n; };
+    var mineIdx=-1; rows.forEach(function(x,i){ if(x.user_id===uid) mineIdx=i; });
+    var mon=monthName(ms), head, sub='';
+    if(mineIdx>=0){
+      var pl=place(mineIdx);
+      head=isEs() ? ('Quedaste en <em>'+pl+(pl===2?'.º':'.er')+' puesto</em>')
+                  : ('You finished <em>'+pl+(pl===1?'st':(pl===2?'nd':'rd'))+'</em>');
+      var nm=(ppl[uid] && ppl[uid].name) || '';
+      if(!nm){ try{ var d=window.STCloud.getData(); nm=(d && d.userName && String(d.userName).trim()) || ''; }catch(e){} }
+      sub=_t('Congratulations','Enhorabuena')+(nm && nm!=='Trader' ? ', '+esc(nm) : '')+'.';
+    } else {
+      head=isEs() ? ('Los 3 mejores de '+esc(mon.toLowerCase())) : (esc(mon)+'’s top 3');
+    }
+    var cols=[1,0,2].filter(function(i){ return i<rows.length; }).map(function(i){
+      var x=rows[i], u=ppl[x.user_id]||{ name:'Trader', avatar:'' }, pl=place(i), g='g'+Math.min(pl,3);
+      var nmx=String(u.name||'Trader').trim()||'Trader';
+      var av=u.avatar ? '<img src="'+esc(u.avatar)+'" alt="">' : '<span>'+esc(nmx.charAt(0).toUpperCase())+'</span>';
+      return '<div class="stp-col'+(x.user_id===uid?' me':'')+'">'+
+               '<div class="stp-av '+g+'">'+av+'</div>'+
+               '<div class="stp-nm">'+esc(nmx)+'</div>'+
+               '<div class="stp-pt">'+Math.round(Number(x.points)||0)+' PTS</div>'+
+               '<div class="stp-blk '+g+'">'+pl+'</div>'+
+             '</div>';
+    }).join('');
+    ov=document.createElement('div'); ov.id='st-podium';
+    ov.setAttribute('role','dialog'); ov.setAttribute('aria-modal','true'); ov.setAttribute('aria-labelledby','stp-h');
+    ov.innerHTML=
+      '<div class="stp-card">'+
+        '<div class="stp-eb">'+esc(mon)+' · '+_t('Discipline leaderboard','Clasificación de disciplina')+'</div>'+
+        '<div class="stp-h" id="stp-h">'+head+'</div>'+
+        '<div class="stp-sub">'+sub+'</div>'+
+        '<div class="stp-pod">'+cols+'</div>'+
+        '<div class="stp-btns">'+
+          '<button type="button" class="stp-btn pr" data-stp="board">'+_t('See the leaderboard','Ver la clasificación')+'</button>'+
+          '<button type="button" class="stp-btn" data-stp="close">'+_t('Close','Cerrar')+'</button>'+
+        '</div>'+
+      '</div>'+
+      '<canvas class="stp-fx" aria-hidden="true"></canvas>';
+    document.body.appendChild(ov);
+    ov.addEventListener('click', function(e){
+      var b=e.target && e.target.closest ? e.target.closest('[data-stp]') : null;
+      if(b){ if(b.getAttribute('data-stp')==='board') toBoard(); else close(); return; }
+      if(e.target===ov) close();   // a tap outside the card
+    });
+    onKey=function(e){ if(e.key==='Escape'){ e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    try{ ov.querySelector('[data-stp="board"]').focus({ preventScroll:true }); }catch(e){}
+    var still=false; try{ still=window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+    if(!still) fx(ov.querySelector('.stp-fx'));
+    cheer();
+  }
+
+  window.__stPodium={
+    check:function(){ waits=0; check(); },
+    /* Why it would not show right now - for "it never popped up" questions. */
+    why:function(){ var uid=me(), ms=lastMonthStart(); try{ if(document.body.classList.contains('mentor-viewing')) return 'mentor view'; }catch(e){}
+      if(ov) return 'showing'; if(!sb()) return 'no cloud'; if(!uid) return 'signed out'; if(!window.__stJournalPulled) return 'journal not pulled';
+      if(!appReady()) return 'app not ready'; if(busy()) return 'another window open'; if(seen(uid, ms)) return 'seen '+ms;
+      try{ if(localStorage.getItem(CHECKED+uid)===ms) return 'not on the '+ms+' podium'; }catch(e){} return 'would ask for '+ms; },
+    preview:function(){ var ms=lastMonthStart(); top3(ms, function(rows){ if(!rows || !rows.length) return; people(function(ppl){ show(rows, ppl, me(), ms); }); }); },
+    _show:show, close:close
+  };
+  function boot(){ setTimeout(check, 3500); setInterval(function(){ waits=0; check(); }, 30*60*1000); }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+
 /* ═══ AI Meter (admin-only Settings tab) ═════════════════════════════════════
    Per-user AI usage — tokens + estimated £ — read from the `ai_usage` table that
    the st-assistant edge function writes one row per Claude call. Prices tokens
