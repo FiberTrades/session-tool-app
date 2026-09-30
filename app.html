@@ -72905,7 +72905,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     top3(ms, function(rows){
       if(rows===null){ later(5000); return; }
       if(!rows.some(function(x){ return x.user_id===uid; })){ try{ localStorage.setItem(CHECKED+uid, ms); }catch(e){} return; }
-      people(function(ppl){ if(ov || seen(uid, ms)) return; markSeen(uid, ms); show(rows, ppl, uid, ms); });
+      people(function(ppl){ if(ov || seen(uid, ms)) return; whenSettled(function(){ if(ov || seen(uid, ms)) return; markSeen(uid, ms); show(rows, ppl, uid, ms); }); });
     });
   }
 
@@ -72985,6 +72985,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     box.addEventListener('pointerdown', h, true);
   }
 
+  /* Wait for the app to finish starting up before celebrating (Nestor, 30 Sep: "it seems very laggy as the app is
+     loading while trying to play this"). Opening the app keeps the main thread busy for a few seconds - the journal,
+     the pages, the community - and fireworks drawn over that stutter. So the cheer is fetched and decoded first, then
+     the pop-up waits for a full second of smooth frames (none over 40 ms - by time, so 60 Hz, 120 Hz and a phone on
+     battery saver at 30 Hz wait alike; start-up work shows as frames of 50 ms and more), at most 15 seconds. */
+  function whenSettled(cb){
+    var done=false, t0=0, last=0, since=0;
+    function tick(ts){
+      if(done) return;
+      if(!t0) t0=ts;
+      if(last){ if(ts-last<40){ if(!since) since=last; } else since=0; }
+      last=ts;
+      if((since && ts-since>=1000) || ts-t0>15000){ done=true; cb(); return; }
+      requestAnimationFrame(tick);
+    }
+    // The cheer gets 4 seconds to arrive; a slow network plays the celebration without it rather than holding it back.
+    Promise.race([ loadCheer().catch(function(){}), new Promise(function(r){ setTimeout(r, 4000); }) ]).then(function(){ requestAnimationFrame(tick); });
+  }
+
   /* ---- fireworks + confetti ---- */
   function fx(cv){
     var c=cv.getContext && cv.getContext('2d'); if(!c) return;
@@ -73007,14 +73026,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       for(var i=P.length-1;i>=0;i--){ var p=P[i];
         if(p.k===0){
           p.x+=p.vx*dt; p.y+=p.vy*dt; p.r+=p.vr*dt;
-          c.save(); c.translate(p.x,p.y); c.rotate(p.r); c.fillStyle=p.col; c.fillRect(-p.w/2,-p.h/2,p.w,p.h*Math.abs(Math.cos(p.r*1.3))); c.restore();
+          var co=Math.cos(p.r), si=Math.sin(p.r);
+          c.setTransform(DPR*co, DPR*si, -DPR*si, DPR*co, DPR*p.x, DPR*p.y); c.fillStyle=p.col; c.fillRect(-p.w/2,-p.h/2,p.w,p.h*Math.abs(Math.cos(p.r*1.3)));
           if(p.y>H+20) P.splice(i,1);
         } else {
           p.x+=p.vx*dt; p.y+=p.vy*dt; p.vy+=0.04*dt; p.vx*=Math.pow(0.985,dt); p.life-=0.012*dt;
-          c.globalAlpha=Math.max(p.life,0); c.fillStyle=p.col; c.beginPath(); c.arc(p.x,p.y,2,0,6.2832); c.fill(); c.globalAlpha=1;
+          c.setTransform(DPR,0,0,DPR,0,0); c.globalAlpha=Math.max(p.life,0); c.fillStyle=p.col; c.fillRect(p.x-1.6,p.y-1.6,3.2,3.2); c.globalAlpha=1;
           if(p.life<=0) P.splice(i,1);
         }
       }
+      c.setTransform(DPR,0,0,DPR,0,0);
       if(P.length || el<4500) fxRaf=requestAnimationFrame(step); else window.removeEventListener('resize', size);
     }
     fxRaf=requestAnimationFrame(step);
@@ -73106,7 +73127,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(ov) return 'showing'; if(!sb()) return 'no cloud'; if(!uid) return 'signed out'; if(!window.__stJournalPulled) return 'journal not pulled';
       if(!appReady()) return 'app not ready'; if(busy()) return 'another window open'; if(ms<FIRST) return 'no podium before '+FIRST; if(seen(uid, ms)) return 'seen '+ms;
       try{ if(localStorage.getItem(CHECKED+uid)===ms) return 'not on the '+ms+' podium'; }catch(e){} return 'would ask for '+ms; },
-    preview:function(ms){ ms=ms||lastMonthStart(); top3(ms, function(rows){ if(!rows || !rows.length) return; people(function(ppl){ show(rows, ppl, me(), ms); }); }); },
+    preview:function(ms){ ms=ms||lastMonthStart(); top3(ms, function(rows){ if(!rows || !rows.length) return; people(function(ppl){ whenSettled(function(){ show(rows, ppl, me(), ms); }); }); }); },
     _fromUrl:function(){ fromUrl(); },
     _show:show, close:close
   };
