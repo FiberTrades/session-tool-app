@@ -72863,8 +72863,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ localStorage.setItem(SEEN+uid, ms); }catch(e){}
     try{ var C=window.STCloud, d=C&&C.getData&&C.getData(); if(d && d._podiumSeen!==ms){ d._podiumSeen=ms; if(typeof C.save==='function') C.save(); } }catch(e){}
   }
+  /* Anything else on screen and the podium waits its turn (Nestor, 30 Sep: "could it also clash with nudges? or week
+     rule? or any other pop up?"). The app's own "something is showing" list (__stPopStack: nudges, toasts - the weekly
+     rule reminders among them - live trade notes, windows, the mentor chat), every other full-screen layer it has
+     (Ask, the leaderboard breakdown, Session Live, the course, image viewers, the rotate-your-phone screen), and a
+     call in progress. */
+  var BUSY_SEL='.st-tour-ov, .modal-bg, .st-welcome, .modal.show, .dcx-modal.open, .stc-gate, [id$="upsell-bg"], '+
+               '.st-nudge.show, #toast.show, #rule-backdrop.show, #stchat, .st-ask-bg, .stb-bd-modal, .stl-nm, .stl-bg, '+
+               '#sthc-bg, .stsc, .stsc-sheetbg, .stdm-modal, .dcx-img, .dcx-view, #stchat-lb, #stchat-confirm, .rotate-gate';
   function busy(){
-    var l=document.querySelectorAll('.st-tour-ov, .modal-bg, .st-welcome, .modal.show, .dcx-modal.open, .stc-gate, [id$="upsell-bg"]');
+    try{ if(document.getElementById('ft-call')) return true; }catch(e){}
+    try{ var nh=document.getElementById('st-live-note-host'); if(nh && nh.childElementCount) return true; }catch(e){}
+    var l=document.querySelectorAll(BUSY_SEL);
     for(var i=0;i<l.length;i++){ var e=l[i], cs; try{ cs=getComputedStyle(e); }catch(x){ continue; }
       if(!cs || cs.display==='none' || cs.visibility==='hidden' || parseFloat(cs.opacity||'1')<0.05) continue;
       var r=e.getBoundingClientRect(); if(r.width>40 && r.height>40) return true; }
@@ -72893,9 +72903,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
 
   function later(ms){ if(retryT || waits++>=60) return; retryT=setTimeout(function(){ retryT=null; check(); }, ms); }
+  function detached(){ try{ return !!(window.__stIsDetachedWindow && window.__stIsDetachedWindow()); }catch(e){ return false; } }
   function check(){
     if(ov) return;
     try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){}
+    if(detached()) return;
     var uid=me();
     if(!sb() || !uid || !window.__stJournalPulled || !appReady() || busy()){ later(3000); return; }
     var ms=lastMonthStart();
@@ -73000,14 +73012,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      And never sooner than 4 seconds after the app opened (Nestor, 30 Sep: "the confetti is the laggy bit, maybe wait
      to display the podium 5seconds?", then "now is good, try 4 seconds") - frame times are measured from the page's own start, so coming back to an app
      that has been open a while adds no wait. */
+  var settling=0;
   function whenSettled(cb){
-    var done=false, t0=0, last=0, since=0;
+    var done=false, t0=0, last=0, since=0; settling++;
     function tick(ts){
       if(done) return;
       if(!t0) t0=ts;
       if(last){ if(ts-last<40){ if(!since) since=last; } else since=0; }
       last=ts;
-      if(ts>=4000 && ((since && ts-since>=1000) || ts-t0>15000)){ done=true; cb(); return; }
+      if(ts>=4000 && ((since && ts-since>=1000) || ts-t0>15000)){ done=true; settling--; cb(); return; }
       requestAnimationFrame(tick);
     }
     // The cheer gets 4 seconds to arrive; a slow network plays the celebration without it rather than holding it back.
@@ -73137,10 +73150,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   window.__stPodium={
     check:function(){ waits=0; check(); },
     /* Why it would not show right now - for "it never popped up" questions. */
-    why:function(){ var uid=me(), ms=lastMonthStart(); try{ if(document.body.classList.contains('mentor-viewing')) return 'mentor view'; }catch(e){}
+    why:function(){ var uid=me(), ms=lastMonthStart(); try{ if(document.body.classList.contains('mentor-viewing')) return 'mentor view'; }catch(e){} if(detached()) return 'popped-out window';
       if(ov) return 'showing'; if(!sb()) return 'no cloud'; if(!uid) return 'signed out'; if(!window.__stJournalPulled) return 'journal not pulled';
       if(!appReady()) return 'app not ready'; if(busy()) return 'another window open'; if(ms<FIRST) return 'no podium before '+FIRST; if(seen(uid, ms)) return 'seen '+ms;
-      try{ if(localStorage.getItem(CHECKED+uid)===ms) return 'not on the '+ms+' podium'; }catch(e){} return 'would ask for '+ms; },
+      try{ if(localStorage.getItem(CHECKED+uid)===ms) return 'not on the '+ms+' podium'; }catch(e){} return (settling ? 'settling' : (retryT ? 'retry pending' : 'would ask for '+ms))+(waits>=60 ? ' (retries used up)' : ''); },
     preview:function(ms){ ms=ms||lastMonthStart(); top3(ms, function(rows){ if(!rows || !rows.length) return; people(function(ppl){ whenSettled(function(){ show(rows, ppl, me(), ms); }); }); }); },
     _fromUrl:function(){ fromUrl(); },
     _show:show, close:close
