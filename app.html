@@ -52950,6 +52950,13 @@ try {
        emoji, so a Spanish name without one ("Sesgo previo") doesn't lose its first word. */
     function _chLabel(c){ var nm=String(_chName(c)||''); var sp=nm.indexOf(' '); if(sp>0 && !/[\wÀ-ɏ]/.test(nm.slice(0,sp))) nm=nm.slice(sp+1); return nm||_chSlug(c); }
     function linkify(t, allowImg){ var s=esc(t); var _cb=[]; var _imgs=[]; s=s.replace(/```[^\n]*\n?([\s\S]*?)```/g, function(_,code){ _cb.push(code); return '\u0000CB'+(_cb.length-1)+'\u0000'; }); s=_mdInline(s); if(allowImg){ s=s.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)/g, function(_i,alt,url){ var pv=previewImg(url)||url; _imgs.push('<img class="dcx-media dcx-inlineimg" src="'+pv+'" data-full="'+pv+'" alt="'+alt+'" onerror="this.style.display=\'none\'">'); return '{{IMG'+(_imgs.length-1)+'}}'; }); s=s.replace(/(^|\s)(https?:\/\/[^\s<]+)/g, function(_bf,_bp,_bu){ var _bpv=previewImg(_bu); if(!_bpv) return _bf; _imgs.push('<img class="dcx-media dcx-inlineimg" src="'+_bpv+'" data-full="'+_bpv+'" alt="">'); return _bp+'{{IMG'+(_imgs.length-1)+'}}'; }); } s=s.replace(/(https?:\/\/[^\s<]+)/g, function(u){ return '<a href="'+u+'" target="_blank" rel="noopener" class="dcx-link">'+u+'</a>'; }); s=s.replace(/(^|\s)#([\w\-:À-ɏ]{1,40})/g, function(full,pre,nm){ var _c=_chanByLabel(nm); if(_c){ return pre+'<span class="dcx-mchan" data-ch="'+esc(_c.id)+'">#'+esc(_chLabel(_c))+'</span>'; } return full; }); s=s.replace(/(^|\s)@([\w-]{1,40})/g, function(full,pre,nm){ var lc=nm.toLowerCase(); if(lc==='everyone'){ return pre+'<span class="dcx-muser everyone">@everyone</span>'; } for(var i=0;i<(roster||[]).length;i++){ if(String(roster[i].name||'').toLowerCase()===lc){ var mine=(currentUser&&roster[i].id===currentUser.id); return pre+'<span class="dcx-muser'+(mine?' me':'')+'">@'+esc(roster[i].name)+'</span>'; } } return full; }); s=_mdHeaders(s); s=s.replace(/\{\{IMG(\d+)\}\}/g, function(_,i){ return _imgs[+i]; }); s=s.replace(/\u0000CB(\d+)\u0000/g, function(_,i){ return '<pre class="dcx-codeblock">'+_cb[+i]+'</pre>'; }); try{ if(window.__stTwemojiHTML) s=window.__stTwemojiHTML(s); }catch(_){} return s; }
+    // The pictures a message's text shows in the chat - a TradingView snapshot link, an image address, a ![](..) image -
+    // each with the text that makes it, so a reply line can show the picture and leave that text out (30 Sep).
+    function picLinks(t){ var out=[]; t=String(t||'');
+      t.replace(/!\[[^\]]*\]\((https?:\/\/[^\s)]+)\)/g, function(tok,u){ out.push({ tok:tok, pic:previewImg(u)||u }); return ''; })
+       .replace(/https?:\/\/[^\s<]+/g, function(u){ var p=previewImg(u); if(p) out.push({ tok:u, pic:p }); return u; });
+      return out; }
+    function dropPicLinks(ex, pl){ ex=String(ex||''); pl.forEach(function(l){ ex=ex.split(l.tok).join(' '); }); return ex.replace(/\s+/g,' ').trim(); }
     function previewImg(url){ try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(url)) return url; var yt=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/i); if(yt) return 'https://img.youtube.com/vi/'+yt[1]+'/hqdefault.jpg'; var tv=url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i); if(tv){ var id=tv[1]; return 'https://s3.tradingview.com/snapshots/'+id.charAt(0).toLowerCase()+'/'+id+'.png'; } }catch(e){} return null; }
     /* Reusable #channel / @member autocomplete for ANY composer textarea (channels + DMs).
        Pass the textarea and an empty .dcx-mention popup that lives inside a position:relative
@@ -53397,8 +53404,13 @@ try {
       // A reply to an image shows a small copy of that image where "[image]" was (Nestor, 30 Sep) - taken from the
       // message it replies to, when that message is loaded; otherwise the words, as before.
       var _q=null; try{ var _qi=idx(m.reply_to); _q=_qi>=0?msgs[_qi]:null; }catch(e){}
-      var _th=(_q && _q.attachment_type==='image' && _q.attachment_url) ? '<img class="rr-thumb" src="'+esc(_q.attachment_url)+'" alt="">' : '';
-      if(_th && (ex==='[image]' || !ex)) ex='';
+      var _pic=(_q && _q.attachment_type==='image' && _q.attachment_url) ? _q.attachment_url : '';
+      if(_pic && (ex==='[image]' || !ex)) ex='';
+      // A reply to a chart LINK (Aurora's TradingView snapshot) shows that picture too - the one the chat shows for the
+      // link - and leaves the link's text out (Nestor, 30 Sep). Read from the message replied to, or, when that is not
+      // loaded, from the excerpt the reply keeps (whole unless it reached the 140-letter cut).
+      if(!_pic && !(_q && _q.attachment_url)){ var _src=_q ? (_q.body||'') : String(m.reply_excerpt||''); var _pl=(_q || _src.length<140) ? picLinks(_src) : []; if(_pl.length){ _pic=_pl[0].pic; ex=dropPicLinks(ex,_pl); } }
+      var _th=_pic ? '<img class="rr-thumb" src="'+esc(_pic).replace(/"/g,'&quot;')+'" alt="" onerror="this.style.display=\'none\'">' : '';
       return '<div class="dcx-reply-ref" data-goto="'+esc(m.reply_to)+'"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 17l-5-5 5-5"/><path d="M4 12h11a4 4 0 0 1 4 4v2"/></svg><span class="rr-name">'+esc(nm)+'</span>'+_th+(ex?'<span class="rr-ex">'+esc(ex)+'</span>':'')+'</div>'; }
     function gotoMsg(id){ var box=G('dcx-msgs'); var el=box?box.querySelector('.dcx-msg[data-mid="'+id+'"]'):null; if(!el) return; try{ el.scrollIntoView({behavior:'smooth',block:'center'}); }catch(_){ el.scrollIntoView(); } el.classList.add('flash'); setTimeout(function(){ el.classList.remove('flash'); },1400); }
     function setReply(m){ if(!m) return; var ex=(m.body||(m.attachment_type==='image'?'[image]':(m.attachment_url?window._stT('[attachment]','[adjunto]'):''))||''); replyTarget={ id:m.id, name:m.sender_name||'Trader', excerpt:String(ex).slice(0,140) }; var bar=G('dcx-replybar'); if(bar){ bar.innerHTML='<span class="dcx-replybar-txt">'+(lang()==='es'?'Respondiendo a ':'Replying to ')+'<b>'+esc(replyTarget.name)+'</b></span><button class="dcx-replybar-x" title="'+window._stT('Cancel','Cancelar')+'">\u00d7</button>'; bar.style.display='flex'; var x=bar.querySelector('.dcx-replybar-x'); if(x) x.addEventListener('click', cancelReply); } var ta=G('dcx-input'); if(ta) ta.focus(); }
@@ -54731,7 +54743,7 @@ try {
     }
     return { refreshIdentity:refreshIdentity, startCall:startCall, friends:function(){ return FR; }, canTalk:canTalk,
              respondRequest:respondRequest, cancelRequest:cancelRequest, loadFriends:loadFriends, roster:function(){ return roster; },
-             paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang, wireMentions:wireMentions, gotoChannel:gotoChannel };
+             paintBell:paintBell, openNotifs:openNotifs, setupCallSignal:_callSignalSetup, ensurePush:ensurePush, forcePush:forcePush, open:open, esc:esc, fmtTime:fmtTime, avaHtml:avaHtml, myName:myName, myAvatar:myAvatar, EMOJIS:EMOJIS, REACT_EMOJIS:REACT_EMOJIS, up:up, build:build, openImg:openImg, nameColor:nameColor, linkify:linkify, previewImg:previewImg, picLinks:picLinks, dropPicLinks:dropPicLinks, openInApp:openInApp, renderUnfurls:renderUnfurls, dayKey:dayKey, dateSepHtml:dateSepHtml, bumpEmoji:bumpEmoji, topEmojis:topEmojis, isDmMod:isDmMod, postToChannel:postToChannel, relang:relang, wireMentions:wireMentions, gotoChannel:gotoChannel };
   })();
   window.STCommunity = STCommunity;
   /* ================= School (STSCHOOL) =================
@@ -63494,6 +63506,8 @@ try {
     function openInApp(u){ if(C().openInApp) C().openInApp(u); }
     function linkify(t, allowImg){ return C().linkify ? C().linkify(t, allowImg) : esc(t); }
     function previewImg(u){ return C().previewImg ? C().previewImg(u) : null; }
+    function picLinks(t){ return C().picLinks ? C().picLinks(t) : []; }
+    function dropPicLinks(ex,pl){ return C().dropPicLinks ? C().dropPicLinks(ex,pl) : ex; }
     function emojis(){ return (C().EMOJIS) || []; }
     function G(id){ return document.getElementById(id); }
     function me(){ return currentUser && currentUser.id; }
@@ -63904,8 +63918,11 @@ try {
 
     function dmReplyQuote(m){ if(!m||!m.reply_to) return ''; var i=idx(m.reply_to); var q=i>=0?msgs[i]:null; if(!q) return ''; var ex=(q.body||(q.attachment_type==='image'?'[image]':(q.attachment_url?window._stT('[attachment]','[adjunto]'):'')))||'';
       // A reply to an image shows a small copy of it instead of "[image]" (Nestor, 30 Sep: "do it for Dms too").
-      var th=(q.attachment_type==='image' && q.attachment_url) ? '<img class="rq-thumb" src="'+esc(q.attachment_url)+'" alt="">' : '';
-      if(th && ex==='[image]') ex='';
+      var pic=(q.attachment_type==='image' && q.attachment_url) ? q.attachment_url : '';
+      if(pic && ex==='[image]') ex='';
+      // ...and a reply to a chart link (a TradingView snapshot) shows its picture, without the link's text (30 Sep).
+      if(!pic && !q.attachment_url){ var pl=picLinks(q.body); if(pl.length){ pic=pl[0].pic; ex=dropPicLinks(ex,pl); } }
+      var th=pic ? '<img class="rq-thumb" src="'+esc(pic).replace(/"/g,'&quot;')+'" alt="" onerror="this.style.display=\'none\'">' : '';
       return '<div class="dcx-replyq"><b>'+esc(q.sender_name||'Trader')+'</b> '+th+(ex?esc(String(ex).slice(0,120)):'')+'</div>'; }
     function dmReactionsHtml(mid){ var arr=dmReactions[mid]; if(!arr||!arr.length) return ''; var by={},order=[]; arr.forEach(function(r){ if(!by[r.emoji]){ by[r.emoji]=[]; order.push(r.emoji); } by[r.emoji].push(r.user_id); }); var uid=me(); var h=''; order.forEach(function(em){ var us=by[em]; var mine=us.indexOf(uid)>=0; h+='<button class="dcx-react'+(mine?' mine':'')+'" data-rmid="'+esc(mid)+'" data-rem="'+esc(em)+'">'+em+'<span class="rc">'+us.length+'</span></button>'; }); var _add='<button class="dcx-react-add" data-radd="'+esc(mid)+'" title="'+window._stT('Add reaction','Añadir reacción')+'"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" fill-rule="evenodd"><path d="M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20Z M8.6 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M15.4 8.6a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z M6.4 12.7c1.9 4.8 9.4 4.8 11.2 0-1.9 2.2-4 3.1-5.6 3.1s-3.7-.9-5.6-3.1Z"/></svg></button>'; return '<div class="dcx-reacts">'+h+_add+'</div>'; }
     function loadDmReactions(){ var ids=msgs.map(function(m){return m.id;}); if(!ids.length){ dmReactions={}; return; } sb.from('dm_reactions').select('message_id,user_id,emoji').in('message_id',ids).then(function(r){ dmReactions={}; ((r&&r.data)||[]).forEach(function(x){ (dmReactions[x.message_id]=dmReactions[x.message_id]||[]).push(x); }); repaint(); }).catch(function(){}); }
