@@ -72989,7 +72989,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      loading while trying to play this"). Opening the app keeps the main thread busy for a few seconds - the journal,
      the pages, the community - and fireworks drawn over that stutter. So the cheer is fetched and decoded first, then
      the pop-up waits for a full second of smooth frames (none over 40 ms - by time, so 60 Hz, 120 Hz and a phone on
-     battery saver at 30 Hz wait alike; start-up work shows as frames of 50 ms and more), at most 15 seconds. */
+     battery saver at 30 Hz wait alike; start-up work shows as frames of 50 ms and more), at most 15 seconds.
+     And never sooner than 5 seconds after the app opened (Nestor, 30 Sep: "the confetti is the laggy bit, maybe wait
+     to display the podium 5seconds?") - frame times are measured from the page's own start, so coming back to an app
+     that has been open a while adds no wait. */
   function whenSettled(cb){
     var done=false, t0=0, last=0, since=0;
     function tick(ts){
@@ -72997,7 +73000,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(!t0) t0=ts;
       if(last){ if(ts-last<40){ if(!since) since=last; } else since=0; }
       last=ts;
-      if((since && ts-since>=1000) || ts-t0>15000){ done=true; cb(); return; }
+      if(ts>=5000 && ((since && ts-since>=1000) || ts-t0>15000)){ done=true; cb(); return; }
       requestAnimationFrame(tick);
     }
     // The cheer gets 4 seconds to arrive; a slow network plays the celebration without it rather than holding it back.
@@ -73007,22 +73010,26 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   /* ---- fireworks + confetti ---- */
   function fx(cv){
     var c=cv.getContext && cv.getContext('2d'); if(!c) return;
-    var W=0, H=0, DPR=Math.min(window.devicePixelRatio||1, 2), P=[], t0=0, lt=0, lastFw=0;
+    var W=0, H=0, DPR=1, P=[], t0=0, lt=0, lastFw=0;
     var CONF=['#f472b6','#f9a8d4','#f0c15a','#c6cede','#ffffff','#c98655'], FW=['#f472b6','#f0c15a','#f9a8d4','#ffffff'];
-    function size(){ W=cv.clientWidth; H=cv.clientHeight; cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR); c.setTransform(DPR,0,0,DPR,0,0); }
+    function size(){
+      W=cv.clientWidth; H=cv.clientHeight;
+      DPR=Math.min(window.devicePixelRatio||1, 1.5, Math.sqrt(1800000/Math.max(1, W*H)));   // at most ~1.8 million pixels, whatever the screen
+      cv.width=Math.round(W*DPR); cv.height=Math.round(H*DPR); c.setTransform(DPR,0,0,DPR,0,0);
+    }
     size(); window.addEventListener('resize', size);
-    var n=Math.round(Math.min(160, Math.max(70, W/6)));
+    var n=Math.round(Math.min(110, Math.max(60, W/10)));
     for(var i=0;i<n;i++) P.push({ k:0, x:Math.random()*W, y:-10-Math.random()*H*0.7, vx:(Math.random()-.5)*1.1, vy:1.4+Math.random()*2, r:Math.random()*6.2832, vr:(Math.random()-.5)*.24, w:5+Math.random()*4, h:8+Math.random()*6, col:CONF[i%CONF.length] });
     function burst(){
       var x=W*(0.15+Math.random()*0.7), y=H*(0.1+Math.random()*0.3), col=FW[Math.floor(Math.random()*FW.length)];
-      for(var i=0;i<50;i++){ var a=i/50*6.2832, sp=1.8+Math.random()*2.4; P.push({ k:1, x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, col:col }); }
+      for(var i=0;i<36;i++){ var a=i/36*6.2832, sp=1.8+Math.random()*2.4; P.push({ k:1, x:x, y:y, vx:Math.cos(a)*sp, vy:Math.sin(a)*sp, life:1, col:col }); }
     }
     function step(ts){
       if(!ov || !cv.isConnected){ window.removeEventListener('resize', size); return; }
       if(!t0){ t0=ts; lt=ts; }
       var el=ts-t0, dt=Math.min(3, (ts-lt)/16.667)||1; lt=ts;   // the same speed on a 60 Hz and a 120 Hz screen
       c.clearRect(0,0,W,H);
-      if(el<4500 && ts-lastFw>460){ burst(); lastFw=ts; }
+      if(el<4000 && ts-lastFw>600){ burst(); lastFw=ts; }
       for(var i=P.length-1;i>=0;i--){ var p=P[i];
         if(p.k===0){
           p.x+=p.vx*dt; p.y+=p.vy*dt; p.r+=p.vr*dt;
@@ -73036,7 +73043,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         }
       }
       c.setTransform(DPR,0,0,DPR,0,0);
-      if(P.length || el<4500) fxRaf=requestAnimationFrame(step); else window.removeEventListener('resize', size);
+      if(P.length || el<4000) fxRaf=requestAnimationFrame(step); else window.removeEventListener('resize', size);
     }
     fxRaf=requestAnimationFrame(step);
   }
