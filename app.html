@@ -6916,6 +6916,22 @@ try {
       </div>
       <p class="settings-hint" data-i18n="settings.dd_type_hint">Most firms measure it from the balance you started with, so the floor never moves. Some trail it behind your highest balance, so the floor rises as you profit — your firm's rules will say which.</p>
 
+      <!-- The firm's own daily loss limit (1 Oct 2026). Its own rule, because "Max daily drawdown" below is the member's
+           own stop - on every prop account in use it is far tighter than the firm's (70K at 800, 10Ks at 150, FTMO 5%).
+           A day that loses this much fails the account (window.__stPropStatus), like the max drawdown. -->
+      <div class="settings-risk-label-row" style="margin-top:18px;">
+        <label class="settings-label" data-i18n="settings.risk_firm_daily_label">Firm daily loss limit</label>
+        <div class="settings-risk-mode-toggle" data-rule="firmDaily">
+          <button type="button" class="settings-risk-mode-btn active" data-mode="pct">%</button>
+          <button type="button" class="settings-risk-mode-btn" data-mode="amount" data-currency-symbol="{C}">£</button>
+        </div>
+      </div>
+      <div class="settings-risk-input-row">
+        <input type="number" id="settings-risk-firm-daily" class="settings-input settings-input-compact" step="0.1" min="0" placeholder="5" />
+        <span class="settings-risk-suffix" id="settings-risk-firm-daily-suffix" data-i18n="settings.risk_pct_suffix">% of balance</span>
+      </div>
+      <p class="settings-hint" data-i18n="settings.risk_firm_daily_hint">Your prop firm's own daily limit (FTMO, FundedNext, The 5%ers: 5%). A day that loses this much fails the account, like the max drawdown. It is not your own daily stop - that is Max daily drawdown below. The app counts closed trades; your firm also counts open ones. Leave it blank if your firm has none.</p>
+
       <div class="settings-risk-label-row" style="margin-top:18px;">
         <label class="settings-label" data-i18n="settings.risk_max_loss_label">Max daily drawdown + costs</label>
         <div class="settings-risk-mode-toggle" data-rule="maxLoss">
@@ -7750,6 +7766,8 @@ try {
       'mt5.import_into': 'Import into',
       'settings.dd_type_hint': 'Most firms measure it from the balance you started with, so the floor never moves. Some trail it behind your highest balance, so the floor rises as you profit — your firm\u2019s rules will say which.',
       'settings.risk_max_dd_hint': "Your account's overall loss limit. Breaching it fails a funded challenge. (FTMO / FundedNext: 10%; The 5%ers: 5%.)",
+      'settings.risk_firm_daily_label': 'Firm daily loss limit',
+      'settings.risk_firm_daily_hint': 'Your prop firm’s own daily limit (FTMO, FundedNext, The 5%ers: 5%). A day that loses this much fails the account, like the max drawdown. It is not your own daily stop — that is Max daily drawdown below. The app counts closed trades; your firm also counts open ones. Leave it blank if your firm has none.',
       'settings.risk_profit_target_label': 'Profit target',
       'settings.risk_profit_target_hint': 'The profit you need to pass your evaluation phase, from your starting balance. The app tracks your progress toward it.',
       'settings.risk_pct_suffix': '% of balance',
@@ -9602,6 +9620,8 @@ try {
       'mt5.import_into': 'Importar en',
       'settings.dd_type_hint': 'La mayoría de las firmas lo miden desde el saldo con el que empezaste, así que el suelo no se mueve. Algunas lo van subiendo detrás de tu saldo más alto, así que el suelo sube con las ganancias — las reglas de tu firma te dirán cuál.',
       'settings.risk_max_dd_hint': 'El límite de pérdida total de tu cuenta. Romperlo reprueba un challenge fondeado. (FTMO / FundedNext: 10%; The 5%ers: 5%.)',
+      'settings.risk_firm_daily_label': 'Límite de pérdida diaria de la firma',
+      'settings.risk_firm_daily_hint': 'El límite diario propio de tu prop firm (FTMO, FundedNext, The 5%ers: 5%). Un día que pierde esto reprueba la cuenta, igual que el drawdown máximo. No es tu stop diario propio — ese es el Drawdown diario máximo de abajo. La app cuenta las operaciones cerradas; tu firma también cuenta las abiertas. Déjalo en blanco si tu firma no tiene.',
       'settings.risk_profit_target_label': 'Objetivo de beneficio',
       'settings.risk_profit_target_hint': 'El beneficio que necesitas para pasar tu fase de evaluación, desde tu balance inicial. La app rastrea tu progreso hacia él.',
       'settings.risk_pct_suffix': '% del balance',
@@ -13671,6 +13691,7 @@ try {
         ['maxRiskPct', 'maxRiskAmount', 'maxRiskMode', 100],
         ['maxDrawdownPct', 'maxDrawdownAmount', 'maxDrawdownMode', 100],
         ['profitTargetPct', 'profitTargetAmount', 'profitTargetMode', 100],
+        ['firmDailyPct', 'firmDailyAmount', 'firmDailyMode', 100],
         ['beThresholdPct', 'beThresholdAmount', 'beThresholdMode', 99.999]
       ];
       function fix(rr) {
@@ -45276,7 +45297,11 @@ try {
           // Every prop account's standing (1 Oct 2026): in progress / passed / failed / funded, the firm rules, and for a
           // fail the day it happened - each trade, the one that broke the drawdown floor, the days before, and why.
           propAccounts: (function () {
-            try { var pa = window.__stAllPropStatus ? window.__stAllPropStatus() : []; return pa.length ? pa : null; } catch (e) { return null; }
+            try {
+              var pa = window.__stAllPropStatus ? window.__stAllPropStatus() : [];
+              pa = pa.map(function (x) { if (x && x.review && x.review.curve) { x = Object.assign({}, x, { review: Object.assign({}, x.review) }); delete x.review.curve; } return x; });
+              return pa.length ? pa : null;
+            } catch (e) { return null; }
           })(),
           currency: s.currency || 'GBP',
           startingBalance: nr(s.startingBalance),
@@ -45871,8 +45896,8 @@ try {
           var _pe = (surface === 'bias' && typeof window.__stPropEvents === 'function') ? window.__stPropEvents()[0] : null;
           if (_pe && _pe.kind === 'failed') {
             _propClause = (lang === 'es')
-              ? ' CONTEXTO IMPORTANTE: esta línea trata de una cuenta de prop firm que acaba de perder (tocó el drawdown máximo). Sé COMPRENSIVO y cálido, NUNCA duro, contundente ni exigente aquí, aunque sea una pérdida: nada de "hazte responsable" ni sermones. Mantén la cuenta, el día, la operación y las cifras, y el mensaje de que es un resultado y no lo que soy como trader.'
-              : ' IMPORTANT CONTEXT: this line is about a prop firm account I just lost (it hit the max drawdown). Be SUPPORTIVE and warm - NEVER harsh, blunt or demanding here, even though it is a loss: no "own it", no lecture. Keep the account, the day, the trade and the figures, and the point that it is one result, not who I am as a trader.';
+              ? ' CONTEXTO IMPORTANTE: esta línea trata de una cuenta de prop firm que acaba de perder (rompió un límite de la firma). Sé COMPRENSIVO y cálido, NUNCA duro, contundente ni exigente aquí, aunque sea una pérdida: nada de "hazte responsable" ni sermones. Mantén la cuenta, el día, la operación y las cifras, y el mensaje de que es un resultado y no lo que soy como trader.'
+              : ' IMPORTANT CONTEXT: this line is about a prop firm account I just lost (it broke one of the firm’s limits). Be SUPPORTIVE and warm - NEVER harsh, blunt or demanding here, even though it is a loss: no "own it", no lecture. Keep the account, the day, the trade and the figures, and the point that it is one result, not who I am as a trader.';
           } else if (_pe && _pe.kind === 'passed') {
             _propClause = (lang === 'es')
               ? ' CONTEXTO IMPORTANTE: esta línea celebra que superé una fase de una prop firm. Mantén la cuenta, el día, los días que tardé y el siguiente paso: es lo principal de hoy.'
@@ -48811,6 +48836,9 @@ try {
       applyToggle(document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="profitTarget"]'), ptMode);
       showActiveValue(document.getElementById('settings-risk-max-dd'), document.getElementById('settings-risk-max-dd-suffix'), ddMode, 'maxDrawdownPct', 'maxDrawdownAmount', '10', '1000');
       showActiveValue(document.getElementById('settings-risk-profit-target'), document.getElementById('settings-risk-profit-target-suffix'), ptMode, 'profitTargetPct', 'profitTargetAmount', '10', '1000');
+      const fdMode = inferMode('firmDailyMode', 'firmDailyPct', 'firmDailyAmount');
+      applyToggle(document.querySelector('#settings-modal-bg .settings-risk-mode-toggle[data-rule="firmDaily"]'), fdMode);
+      showActiveValue(document.getElementById('settings-risk-firm-daily'), document.getElementById('settings-risk-firm-daily-suffix'), fdMode, 'firmDailyPct', 'firmDailyAmount', '5', '500');
       // Drawdown type. Not a value with a unit, so it sits outside the mode machinery above.
       const _ddTypeSel = document.getElementById('settings-risk-dd-type');
       if (_ddTypeSel) {
@@ -49208,6 +49236,7 @@ try {
       { rule: 'maxLoss', inputId: 'settings-risk-max-loss',  suffixId: 'settings-risk-max-loss-suffix',  modeKey: 'maxLossMode', pctKey: 'maxLossPct', amtKey: 'maxLossAmount', pctPh: '1.0', amtPh: '100' },
       { rule: 'maxDrawdown', inputId: 'settings-risk-max-dd', suffixId: 'settings-risk-max-dd-suffix', modeKey: 'maxDrawdownMode', pctKey: 'maxDrawdownPct', amtKey: 'maxDrawdownAmount', pctPh: '10', amtPh: '1000' },
       { rule: 'profitTarget', inputId: 'settings-risk-profit-target', suffixId: 'settings-risk-profit-target-suffix', modeKey: 'profitTargetMode', pctKey: 'profitTargetPct', amtKey: 'profitTargetAmount', pctPh: '10', amtPh: '1000' },
+      { rule: 'firmDaily', inputId: 'settings-risk-firm-daily', suffixId: 'settings-risk-firm-daily-suffix', modeKey: 'firmDailyMode', pctKey: 'firmDailyPct', amtKey: 'firmDailyAmount', pctPh: '5', amtPh: '500' },
       { rule: 'maxRisk', inputId: 'settings-risk-max-trade', suffixId: 'settings-risk-max-trade-suffix', modeKey: 'maxRiskMode', pctKey: 'maxRiskPct', amtKey: 'maxRiskAmount', pctPh: '0.5', amtPh: '50'  },
       { rule: 'beThreshold', inputId: 'settings-risk-be-threshold', suffixId: 'settings-risk-be-threshold-suffix', modeKey: 'beThresholdMode', pctKey: 'beThresholdPct', amtKey: 'beThresholdAmount', pctPh: '0.1', amtPh: '1' },
     ];
@@ -49325,9 +49354,10 @@ try {
     // profit target) as % of balance. Built-in firms use typical Phase 1 values; users can also
     // save their own named presets (data.settings.propPresets) and reuse them on any account.
     const PROP_PRESETS = {
-      ftmo:       { maxLossPct: 5, maxDrawdownPct: 10, profitTargetPct: 10 },
-      fundednext: { maxLossPct: 5, maxDrawdownPct: 10, profitTargetPct: 8  },
-      the5ers:    { maxLossPct: 5, maxDrawdownPct: 5,  profitTargetPct: 8  },
+      // The firm's daily loss goes in its own rule (1 Oct 2026), never the member's own daily stop.
+      ftmo:       { firmDailyPct: 5, maxDrawdownPct: 10, profitTargetPct: 10 },
+      fundednext: { firmDailyPct: 5, maxDrawdownPct: 10, profitTargetPct: 8  },
+      the5ers:    { firmDailyPct: 5, maxDrawdownPct: 5,  profitTargetPct: 8  },
     };
     function getPropPresets() {
       if (!data.settings) data.settings = {};
@@ -49363,10 +49393,11 @@ try {
       // A user preset carries each rule in the unit it was set in, and only the rules that
       // were actually set. The built-in firm presets are percentages by definition, so they
       // are read through the same shape.
-      const R = p.rules || { maxLossMode: 'pct', maxLossPct: p.maxLossPct,
+      const R = p.rules || { firmDailyMode: 'pct', firmDailyPct: p.firmDailyPct,
                              maxDrawdownMode: 'pct', maxDrawdownPct: p.maxDrawdownPct,
                              profitTargetMode: 'pct', profitTargetPct: p.profitTargetPct };
       [['maxLossMode', 'maxLossPct', 'maxLossAmount'],
+       ['firmDailyMode', 'firmDailyPct', 'firmDailyAmount'],
        ['maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount'],
        ['profitTargetMode', 'profitTargetPct', 'profitTargetAmount']].forEach(k => {
         const mode = (R[k[0]] === 'amount') ? 'amount' : 'pct';
@@ -49399,6 +49430,7 @@ try {
       // destination account's rule on apply.
       const rules = {};
       [['maxLossMode', 'maxLossPct', 'maxLossAmount'],
+       ['firmDailyMode', 'firmDailyPct', 'firmDailyAmount'],
        ['maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount'],
        ['profitTargetMode', 'profitTargetPct', 'profitTargetAmount']].forEach(k => {
         const pct = parseFloat(rr[k[1]]), amt = parseFloat(rr[k[2]]);
@@ -73533,7 +73565,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
          kept every trade to their max risk, or all three - would the account still be alive, and at what balance.
      A habit appears only when it happened; a rule they never set is never judged. */
   function challengeReview(used, P){
-    var sb = P.sb, dd = P.dd, ddType = P.ddType, dl = P.dl, mr = P.mr, mt = P.mt;
+    var sb = P.sb, dd = P.dd, ddType = P.ddType, dl = P.dl, mr = P.mr, mt = P.mt, fdl = P.fdl || 0;
     var floorOf = function(pk){ return ddType === 'trailing' ? pk - dd : ddType === 'trailing_lock' ? Math.min(pk - dd, sb) : sb - dd; };
     var rows = [], byDay = {}, order = [];
     used.forEach(function(t, i){
@@ -73584,10 +73616,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     order.forEach(function(k){ var bad = byDay[k].some(function(r){ return r.afterStop || r.extra || r.overRisk; }); (bad ? broken : clean).push(k); });
     var dayNet = function(k){ return byDay[k].reduce(function(s, r){ return s + r.net; }, 0); };
     // The path.
-    var run = P.base, peak = P.base, peakOn = order[0], pi = 0, pays = P.pays || [], path = [];
+    var run = P.base, peak = P.base, peakOn = order[0], pi = 0, pays = P.pays || [], path = [], lowRoom = Infinity, lowOn = null, low = null;
     rows.forEach(function(r){
       while(pi < pays.length && pays[pi].day <= r.k){ run -= pays[pi].amt; peak -= pays[pi].amt; pi++; }
       run += r.net; if(run > peak){ peak = run; peakOn = r.k; } r.run = run;
+      if(dd > 0){ var rm = run - floorOf(peak); if(rm < lowRoom){ lowRoom = rm; lowOn = r.k; low = run; } }
     });
     order.forEach(function(k){ var a = byDay[k]; path.push({ date: k, trades: a.length, net: r2(dayNet(k)), balanceEnd: r2(a[a.length - 1].run),
       broke: [a.some(function(r){ return r.afterStop; }) ? 'afterStop' : '', a.some(function(r){ return r.extra; }) ? 'overMaxTrades' : '', a.some(function(r){ return r.overRisk; }) ? 'overMaxRisk' : ''].filter(Boolean) }); });
@@ -73595,13 +73628,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var afterPeak = order.slice(order.indexOf(peakOn) + 1);
     // What-ifs, replayed against the same floor.
     function replay(adj){
-      var run = P.base, pk = P.base, j = 0, touched = false, minRoom = Infinity;
+      var run = P.base, pk = P.base, j = 0, touched = false, minRoom = Infinity, ds = {};
       rows.forEach(function(r){
         while(j < pays.length && pays[j].day <= r.k){ run -= pays[j].amt; pk -= pays[j].amt; j++; }
         var n = adj(r); if(n == null) return;
-        run += n; if(run > pk) pk = run; var room = run - floorOf(pk); if(room < minRoom) minRoom = room; if(room <= 0) touched = true;
+        run += n; if(run > pk) pk = run; var room = run - floorOf(pk); if(room < minRoom) minRoom = room; if(dd > 0 && room <= 0) touched = true;
+        if(fdl > 0){ ds[r.k] = (ds[r.k] || 0) + n; if(ds[r.k] <= -fdl) touched = true; }
       });
-      return { balance: r2(run), aboveFloor: r2(run - floorOf(pk)), survived: !touched, saved: r2(run - rows[rows.length - 1].run) };
+      return { balance: r2(run), aboveFloor: dd > 0 ? r2(run - floorOf(pk)) : null, survived: !touched, saved: r2(run - rows[rows.length - 1].run) };
     }
     var capRisk = function(r){ return (mr > 0 && r.overRisk && r.risk > 0) ? r.net * mr / r.risk : r.net; };
     var whatIf = {};
@@ -73627,10 +73661,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       rulesKeptDays: rulesSet ? { days: clean.length, net: r2(clean.reduce(function(s, k){ return s + dayNet(k); }, 0)) } : null,
       rulesBrokenDays: rulesSet ? { days: broken.length, net: r2(broken.reduce(function(s, k){ return s + dayNet(k); }, 0)) } : null,
       habits: habits, worstDays: worst, whatIf: whatIf, nextTime: next,
+      bestDays: path.slice().sort(function(a, b){ return b.net - a.net; }).filter(function(d){ return d.net > 0; }).slice(0, 3),
+      low: low != null ? r2(low) : null, lowOn: lowOn, lowRoom: isFinite(lowRoom) ? r2(lowRoom) : null,
+      curve: [r2(P.base)].concat(rows.map(function(r){ return r2(r.run); })),   // for the card's chart (left out of the assistant's pack)
       path: path
     };
   }
-  function propStatus(acc){
+  function propStatus(acc, sample){
     try{
       if(!acc || acc.kind === 'personal') return null;
       var rr = acc.riskRules || {}, sb = parseFloat(acc.startingBalance) || 0; if(!(sb > 0)) return null;
@@ -73640,12 +73677,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var dl = ruleVal(rr, sb, 'maxLossMode', 'maxLossPct', 'maxLossAmount');
       var mr = ruleVal(rr, sb, 'maxRiskMode', 'maxRiskPct', 'maxRiskAmount');
       var mt = parseInt(rr.maxTrades, 10) || 0;
-      if(!(tg > 0) && !(dd > 0)) return null;   // no firm rules: nothing to judge
+      var fdl = ruleVal(rr, sb, 'firmDailyMode', 'firmDailyPct', 'firmDailyAmount');   // the firm's own daily limit (1 Oct 2026)
+      if(!(tg > 0) && !(dd > 0) && !(fdl > 0)) return null;   // no firm rules: nothing to judge
       var base = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0) ? acc.balanceAtSetup : sb;
       var cps = (typeof tradeCopies === 'function') ? tradeCopies : function(){ return 1; };
       var pays = []; try{ pays = (window.__stPayouts ? window.__stPayouts.list(acc) : []).filter(function(p){ return p && p.status === 'paid' && p.paidOn; })
         .map(function(p){ return { day: dayKey(p.paidOn), amt: parseFloat(p.amount) || 0 }; }).sort(function(a, b){ return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; }); }catch(e){}
-      var list = tradesOf(acc), run = base, peak = base, peakDay = null, daily = {}, byDay = {}, ev = null, floor = sb - dd, pi = 0;
+      var list = sample || tradesOf(acc), run = base, peak = base, peakDay = null, daily = {}, byDay = {}, ev = null, floor = sb - dd, pi = 0;
       for(var i = 0; i < list.length; i++){
         var t = list[i], k = dayKey(t.date);
         while(pi < pays.length && pays[pi].day <= k){ run -= pays[pi].amt; peak -= pays[pi].amt; pi++; }
@@ -73653,13 +73691,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         run += net; if(run > peak){ peak = run; peakDay = k; }
         floor = (ddType === 'trailing') ? (peak - dd) : (ddType === 'trailing_lock') ? Math.min(peak - dd, sb) : (sb - dd);
         daily[k] = (daily[k] || 0) + net; (byDay[k] = byDay[k] || []).push({ t: t, net: net, run: run });
-        if(dd > 0 && run <= floor){ ev = { kind: 'failed', i: i, day: k }; break; }
+        if(dd > 0 && run <= floor){ ev = { kind: 'failed', rule: 'maxDrawdown', i: i, day: k }; break; }
+        if(fdl > 0 && daily[k] <= -fdl){ ev = { kind: 'failed', rule: 'firmDailyLoss', i: i, day: k }; break; }
         if(tg > 0 && run >= sb + tg){ ev = { kind: 'passed', i: i, day: k }; break; }
       }
-      var st = window.__stAccountStats ? window.__stAccountStats(acc) : null, cur = st ? st.current : run;
+      var st = (!sample && window.__stAccountStats) ? window.__stAccountStats(acc) : null, cur = st ? st.current : run;
       var out = { account: acc.name || acc.id, accountId: acc.id, stage: stage, archived: (acc.status || 'active') !== 'active',
                   startingBalance: sb, balance: r2(cur), tradesLogged: list.length,
-                  rules: { profitTarget: tg || null, maxDrawdown: dd || null, drawdownType: ddType, ownDailyLossStop: dl || null, maxRiskPerTrade: mr || null, maxTrades: mt || null } };
+                  rules: { profitTarget: tg || null, maxDrawdown: dd || null, drawdownType: ddType, firmDailyLossLimit: fdl || null, ownDailyLossStop: dl || null, maxRiskPerTrade: mr || null, maxTrades: mt || null } };
       if(!ev){
         // Archived without reaching the target or the floor: closed (the trader ended it - the app can't say why).
         out.status = out.archived ? 'closed' : stage === 'funded' ? 'funded' : 'inProgress';
@@ -73679,7 +73718,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(ev.kind === 'passed'){
         out.status = 'passed'; out.passedOn = ev.day; out.profitAtPass = r2(run - sb);
         // The same whole-run breakdown for a pass (Nestor, 1 Oct 2026): what worked, and the habits that still cost money.
-        try{ out.review = challengeReview(used, { sb: sb, base: base, dd: dd, ddType: ddType, dl: dl, mr: mr, mt: mt, pays: pays, cps: cps, passed: true }); }catch(e){}
+        try{ out.review = challengeReview(used, { sb: sb, base: base, dd: dd, ddType: ddType, dl: dl, mr: mr, mt: mt, fdl: fdl, pays: pays, cps: cps, passed: true }); }catch(e){}
         return out;
       }
 
@@ -73713,13 +73752,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var streak = 0, best = 0; trades.forEach(function(x){ if(x.net < 0){ streak++; if(streak > best) best = streak; } else streak = 0; });
       if(best >= 2) why.push({ code: 'lossStreak', losses: best });
       out.failure = {
-        rule: 'maxDrawdown', drawdownType: ddType, date: ev.day, at: hhmmOf(brk.t), breakingTrade: day.length, tradesThatDay: day.length,
-        floor: r2(floor), balanceAfter: r2(run), belowFloorBy: r2(floor - run),
+        rule: ev.rule, drawdownType: ddType, date: ev.day, at: hhmmOf(brk.t), breakingTrade: day.length, tradesThatDay: day.length,
+        floor: r2(floor), balanceAfter: r2(run), belowFloorBy: ev.rule === 'maxDrawdown' ? r2(floor - run) : null,
+        firmDailyLimit: fdl ? r2(fdl) : null, overDailyLimitBy: ev.rule === 'firmDailyLoss' ? r2(-daily[ev.day] - fdl) : null,
         balanceBeforeThatDay: before, dayResult: r2(daily[ev.day]),
         peak: r2(peak), peakOn: peakDay, fromPeak: r2(peak - run),
         trades: trades, lastDays: lastDays, why: why
       };
-      try{ out.review = challengeReview(used, { sb: sb, base: base, dd: dd, ddType: ddType, dl: dl, mr: mr, mt: mt, pays: pays, cps: cps }); }catch(e){}
+      try{ out.review = challengeReview(used, { sb: sb, base: base, dd: dd, ddType: ddType, dl: dl, mr: mr, mt: mt, fdl: fdl, pays: pays, cps: cps }); }catch(e){}
       return out;
     }catch(e){ return null; }
   }
@@ -73762,6 +73802,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
                 : ('You passed your ' + what + ' on ' + dayWord(s.passedOn, false) + ', in ' + s.days + ' days (' + s.tradingDays + ' trading days). Next step: ' + (s.stage === 'verification' ? 'your funded account.' : 'the Verification.'));
     }
     var f = s.failure;
+    if(f.rule === 'firmDailyLoss')
+      return es ? ('Tu ' + what + ' terminó el ' + dayWord(f.date, true) + ': la operación ' + f.breakingTrade + ' de ese día' + (f.at ? ' (' + f.at + ')' : '') + ' dejó el día en −' + whole(f.dayResult) + ', por encima del límite diario de ' + whole(f.firmDailyLimit) + ' de tu firma. Es un resultado, no lo que eres como trader: respira, revisa ese día y vuelve con las mismas reglas.')
+                : ('Your ' + what + ' ended on ' + dayWord(f.date, false) + ': trade ' + f.breakingTrade + ' that day' + (f.at ? ' (' + f.at + ')' : '') + ' took the day to −' + whole(f.dayResult) + ', past your firm’s ' + whole(f.firmDailyLimit) + ' daily limit. That’s one result, not who you are as a trader. Take a breath, look back at that day, and go again with the same rules.');
     return es ? ('Tu ' + what + ' terminó el ' + dayWord(f.date, true) + ': la operación ' + f.breakingTrade + ' de ese día' + (f.at ? ' (' + f.at + ')' : '') + ' dejó el saldo en ' + whole(f.balanceAfter) + ', por debajo de tu suelo de drawdown de ' + whole(f.floor) + '. Es un resultado, no lo que eres como trader: respira, revisa ese día y vuelve con las mismas reglas.')
               : ('Your ' + what + ' ended on ' + dayWord(f.date, false) + ': trade ' + f.breakingTrade + ' that day' + (f.at ? ' (' + f.at + ')' : '') + ' took the balance to ' + whole(f.balanceAfter) + ', under your ' + whole(f.floor) + ' drawdown floor. That’s one result, not who you are as a trader. Take a breath, look back at that day, and go again with the same rules.');
   }
@@ -73796,6 +73839,46 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       '.sps-btn.is-posted{border-color:var(--good,#4ECD8B);color:var(--good,#4ECD8B);cursor:default;}'+
       '.sps-note{font-size:11px;color:var(--text-dim,#888);margin-top:10px;}'+
       '.sps-fx{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}'+
+      '#st-review{position:fixed;inset:0;z-index:100600;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,10,13,.88);overflow:hidden;animation:stpsIn .3s ease-out both;}'+
+      '#st-review.is-pass{background:rgba(11,10,13,.6);}'+
+      '#st-review::before{content:"";position:absolute;top:-160px;left:50%;transform:translateX(-50%);width:780px;max-width:170vw;height:420px;background:radial-gradient(ellipse at center,rgba(150,160,210,.12),transparent 68%);pointer-events:none;}'+
+      '#st-review.is-pass::before{background:radial-gradient(ellipse at center,rgba(240,193,90,.14),transparent 68%);}'+
+      '.spf-card{position:relative;z-index:1;width:100%;max-width:480px;max-height:calc(100vh - 32px);max-height:calc(100dvh - 32px);overflow:auto;overscroll-behavior:contain;background:var(--bg-elev,#131217);border:1px solid var(--border-2,#332F3C);border-radius:var(--radius-card,12px);padding:22px 22px 16px;color:var(--text,#F4F3F6);font-family:"AppNum","DM Mono",monospace;font-weight:300;box-shadow:var(--shadow-float,none);animation:stpsPop .45s cubic-bezier(.2,1.3,.4,1) both;}'+
+      '#st-review.is-pass .spf-card{border-color:rgba(240,193,90,.45);}'+
+      '.spf-card:focus,.spf-card:focus-visible{outline:none !important;}'+
+      '.spf-eb{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim,#888);text-align:center;}'+
+      '.spf-h{font-family:"Fraunces",serif;font-weight:300;font-size:28px;line-height:1.15;margin:8px 0 2px;text-align:center;}'+
+      '.spf-sub{font-family:"Fraunces",serif;font-style:italic;font-weight:300;font-size:15px;color:var(--text-mid,#c0c0c0);margin-bottom:14px;text-align:center;}'+
+      '.spf-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px;margin-bottom:14px;}'+
+      '.spf-st{display:flex;flex-direction:column;justify-content:space-between;background:var(--bg-elev2,#1B1A21);border:1px solid var(--border,#2A2833);border-radius:8px;padding:8px 6px;text-align:center;min-width:0;}'+
+      '.spf-st .k{display:block;font-size:9px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim,#888);margin-bottom:4px;line-height:1.3;}'+
+      '.spf-st .v{font-size:15px;font-weight:500;white-space:nowrap;font-variant-numeric:tabular-nums;} .spf-st .v.bad{color:var(--bad,#E5484D);} .spf-st .v.good{color:var(--good,#4ECD8B);}'+
+      '.spf-sec{border-top:1px solid var(--border,#2A2833);padding:12px 0 10px;}'+
+      '.spf-k{display:block;font-size:9.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim,#888);margin-bottom:7px;}'+
+      '.spf-p{font-size:12.5px;line-height:1.55;margin:0;}'+
+      '.spf-chart{display:block;width:100%;height:84px;margin:2px 0 6px;}'+
+      '.spf-lg{display:flex;justify-content:space-between;font-size:10px;color:var(--text-dim,#888);margin:-2px 0 6px;}'+
+      '.spf-lg i{display:inline-block;width:12px;border-top:1px dashed currentColor;margin-right:5px;vertical-align:middle;} .spf-lg i.g{color:var(--good,#4ECD8B);} .spf-lg i.r{color:var(--bad,#E5484D);}'+
+      '.spf-cap{font-size:11.5px;color:var(--text-mid,#c0c0c0);line-height:1.5;}'+
+      '.spf-days{margin-top:9px;} .spf-days .spf-k{margin-bottom:3px;}'+
+      '.spf-day{display:grid;grid-template-columns:minmax(0,1fr) auto 76px;column-gap:10px;row-gap:1px;align-items:baseline;font-size:11.5px;padding:4px 0;font-variant-numeric:tabular-nums;color:var(--text-mid,#c0c0c0);}'+
+      '.spf-day .m{text-align:right;} .spf-day .m.bad{color:var(--bad,#E5484D);} .spf-day .m.good{color:var(--good,#4ECD8B);} .spf-day .f{grid-column:1 / -1;font-size:10px;color:#e8b04a;letter-spacing:.03em;}'+
+      '.spf-why{list-style:none;margin:0;padding:0;display:flex;flex-direction:column;gap:8px;}'+
+      '.spf-why li{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:10px;align-items:baseline;font-size:12.5px;line-height:1.45;}'+
+      '.spf-why li .m{white-space:nowrap;font-variant-numeric:tabular-nums;} .spf-why li .m.bad{color:var(--bad,#E5484D);} .spf-why li .m.good{color:var(--good,#4ECD8B);}'+
+      '.spf-why li .d{display:block;font-size:11px;color:var(--text-dim,#888);margin-top:1px;}'+
+      '.spf-note{font-size:10.5px;color:var(--text-dim,#888);margin-top:8px;}'+
+      '.spf-two{display:grid;grid-template-columns:1fr 1fr;gap:8px;}'+
+      '.spf-two div{background:var(--bg-elev2,#1B1A21);border:1px solid var(--border,#2A2833);border-radius:8px;padding:9px 10px;font-size:11.5px;line-height:1.45;color:var(--text-mid,#c0c0c0);}'+
+      '.spf-two b{display:block;font-size:16px;font-weight:500;font-variant-numeric:tabular-nums;margin-bottom:2px;} .spf-two .g b{color:var(--good,#4ECD8B);} .spf-two .r b{color:var(--bad,#E5484D);}'+
+      '.spf-next{background:var(--bg-elev2,#1B1A21);border:1px solid var(--border,#2A2833);border-radius:8px;padding:11px 12px;font-size:12.5px;line-height:1.55;margin-top:4px;}'+
+      '.spf-next b{font-weight:400;color:var(--good,#4ECD8B);}'+
+      '.spf-btns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:14px;border-top:1px solid var(--border,#2A2833);padding-top:14px;}'+
+      '.spf-btn{background:transparent;border:1px solid var(--border-2,#332F3C);border-radius:var(--radius-ctrl,8px);color:var(--text-mid,#c0c0c0);padding:9px 14px;font-family:"AppNum","DM Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;transition:border-color 150ms ease-out,color 150ms ease-out;}'+
+      '.spf-btn.pr{border-color:var(--text-mid,#c0c0c0);color:var(--text,#F4F3F6);}'+
+      '.spf-btn:hover,.spf-btn:focus-visible{border-color:var(--text,#F4F3F6);color:var(--text,#F4F3F6);outline:none !important;}'+
+      '@media (max-width:420px){.spf-card{padding:18px 14px 12px;}.spf-h{font-size:24px;}.spf-day{column-gap:8px;font-size:11px;}}'+
+      '@media (prefers-reduced-motion: reduce){#st-review,.spf-card{animation:none;}}'+
       '@keyframes stpsIn{from{opacity:0}to{opacity:1}}'+
       '@keyframes stpsPop{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}'+
       '@media (prefers-reduced-motion: reduce){#st-passed,.sps-card{animation:none;}}';
@@ -73899,6 +73982,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var CUP = '<svg class="sps-cup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h2a2 2 0 0 1 0 4h-2.2"/><path d="M7 5H5a2 2 0 0 0 0 4h2.2"/></svg>';
   function close(){
     if(!ov) return;
+    if(rv && rv.classList.contains('is-pass')) rvClose();
     kstop();
     try{ cancelAnimationFrame(raf); }catch(e){}
     try{ if(onKey) document.removeEventListener('keydown', onKey, true); }catch(e){}
@@ -73923,6 +74007,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
              + cell(_t('Win rate', 'Acierto'), P.winRate != null ? P.winRate + '%' : '—');
     var rt = rulesText(P, es);
     var seen = (d && d.passSeen && d.passSeen[P.acc.id]) || null;
+    var PS = null; try{ PS = opts.review || ((P.acc && P.acc.id !== 'demo') ? propStatus(P.acc) : null); }catch(e){}
+    if(!(PS && PS.status === 'passed' && PS.review)) PS = null;
     ov = document.createElement('div'); ov.id = 'st-passed';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'sps-h');
     ov.innerHTML =
@@ -73934,6 +74020,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         (rt ? '<p class="sps-ok"><b>✓</b>' + esc(rt) + '</p>' : '') +
         '<div class="sps-btns">' +
           '<button type="button" class="sps-btn pr" data-sps="post">' + _t('Post to community', 'Publicar en la comunidad') + '</button>' +
+          (PS ? '<button type="button" class="sps-btn" data-sps="how">' + _t('See how you did', 'Mira cómo lo hiciste') + '</button>' : '') +
           '<button type="button" class="sps-btn" data-sps="close">' + _t('Close', 'Cerrar') + '</button>' +
         '</div>' +
         (opts.preview ? '<div class="sps-note">' + _t('Preview — nothing is posted.', 'Vista previa — no se publica nada.') + '</div>' : '') +
@@ -73945,6 +74032,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var b = e.target && e.target.closest ? e.target.closest('[data-sps]') : null;
       if(!b){ if(e.target === ov) close(); return; }
       if(b.getAttribute('data-sps') === 'close'){ close(); return; }
+      if(b.getAttribute('data-sps') === 'how'){ showReview(PS, 'pass', { preview: !!opts.preview, sample: !!opts.sample }); return; }
       if(b.classList.contains('is-posted')) return;
       if(opts.preview){ b.textContent = _t('Preview only', 'Solo vista previa'); return; }
       if(typeof _stPosting === 'function' && _stPosting(b)) return;
@@ -73967,6 +74055,241 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     kching();
   }
 
+  /* ---- The challenge in full: the fail card, and "See how you did" on a pass ----
+     Nestor, 1 Oct 2026: after a fail, "a supportive line, not a harsh one... show them a detailed message of what when
+     how and why they failed the challenge" - across "all the trades they took in the failed challenge with the things
+     they did bad too" - and a pass gets the same breakdown, framed as what worked and what to tighten.
+     Drawn from propStatus(acc).review. The fail card shows once per failed account (data.failSeen, on any device), for
+     a fail in the last 7 days, when the app is calm and no other window is up - no sound, no effects. The pass version
+     opens from the pass pop-up's "See how you did" and sits over it; Back returns to it.
+     sessiontool.app/app.html?failed=preview shows a failed account (or a sample), changing nothing. */
+  var rv = null, rvKey = null;
+  function rvClose(){
+    if(!rv) return;
+    try{ if(rvKey) window.removeEventListener('keydown', rvKey, true); }catch(e){}
+    rvKey = null; var o = rv; rv = null; try{ o.remove(); }catch(e){}
+  }
+  function sm(v){ return (v < 0 ? '−' : '') + whole(v); }
+  function pm(v){ return (v > 0 ? '+' : '') + sm(v); }
+  function chartSvg(S, R, es){
+    var c = R.curve || []; if(c.length < 2) return '';
+    var rl = S.rules || {}, tgL = (rl.profitTarget && S.stage !== 'funded') ? S.startingBalance + rl.profitTarget : null, flL = null;
+    if(rl.maxDrawdown){
+      if(S.failure && S.failure.floor != null) flL = S.failure.floor;
+      else if(rl.drawdownType === 'static' || !rl.drawdownType) flL = S.startingBalance - rl.maxDrawdown;
+      else if(R.low != null && R.lowRoom != null) flL = R.low - R.lowRoom;
+    }
+    var vals = c.slice(); if(tgL) vals.push(tgL); if(flL != null) vals.push(flL);
+    var lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals), pad = (hi - lo) * 0.06 || 1; lo -= pad; hi += pad;
+    var X = function(i){ return (i * 300 / (c.length - 1)).toFixed(1); }, Y = function(v){ return (4 + (hi - v) / (hi - lo) * 76).toFixed(1); };
+    var ln = function(v, col, dash){ return '<line x1="0" x2="300" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="' + col + '"' + (dash ? ' stroke-dasharray="3 4" stroke-opacity=".75"' : '') + ' stroke-width="1" vector-effect="non-scaling-stroke"/>'; };
+    var d = c.map(function(v, i){ return (i ? 'L' : 'M') + X(i) + ' ' + Y(v); }).join(' ');
+    return '<svg class="spf-chart" viewBox="0 0 300 84" preserveAspectRatio="none" aria-hidden="true">' + ln(c[0], 'var(--border-2,#332F3C)')
+      + (tgL ? ln(tgL, 'var(--good,#4ECD8B)', 1) : '') + (flL != null ? ln(flL, 'var(--bad,#E5484D)', 1) : '')
+      + '<path d="' + d + '" fill="none" stroke="var(--text,#F4F3F6)" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>'
+      + '<div class="spf-lg">' + (tgL ? '<span><i class="g"></i>' + (es ? 'objetivo ' : 'target ') + whole(tgL) + '</span>' : '<span></span>')
+      + (flL != null ? '<span><i class="r"></i>' + (es ? 'suelo ' : 'floor ') + whole(flL) + '</span>' : '') + '</div>';
+  }
+  function habitLine(h, es){
+    var T = function(en, sp){ return es ? sp : en; };
+    var nT = function(n){ return n + ' ' + (n === 1 ? T('trade', 'operación') : T('trades', 'operaciones')); };
+    var nD = function(n){ return n + ' ' + (n === 1 ? T('day', 'día') : T('days', 'días')); };
+    var t = '', d = '';
+    if(h.code === 'afterOwnDailyStop'){ t = T('Kept trading after your own ' + whole(h.ownStop) + ' daily stop', 'Seguiste operando tras tu stop diario de ' + whole(h.ownStop)); d = nT(h.trades) + T(' on ', ' en ') + nD(h.days); }
+    else if(h.code === 'overMaxTrades'){ t = T('More trades than your max of ' + h.maxTrades + ' a day', 'Más operaciones que tu máximo de ' + h.maxTrades + ' al día'); d = T(h.trades + ' extra ' + (h.trades === 1 ? 'trade' : 'trades') + ' on ', nT(h.trades) + ' de más en ') + nD(h.days); }
+    else if(h.code === 'overMaxRisk'){ t = T('Risked more than your ' + whole(h.maxRisk) + ' max per trade', 'Arriesgaste más de tu máximo de ' + whole(h.maxRisk) + ' por operación'); d = nT(h.trades) + T(', up to ', ', hasta ') + whole(h.biggestRisk); }
+    else if(h.code === 'quickReentry'){ t = T('Back in within 15 minutes of a loss', 'Volviste a entrar menos de 15 minutos después de una pérdida'); d = nT(h.trades) + ': ' + h.wins + T(' won, ', ' ganadas, ') + h.losses + T(' lost', ' perdidas'); }
+    else if(h.code === 'biggerRiskAfterLoss'){ t = T('Bigger risk straight after a loss', 'Más riesgo justo después de una pérdida'); d = nT(h.trades); }
+    else if(h.code === 'negativeMindset'){ t = T('Logged ', 'Registraste ') + Object.keys(h.tags).map(function(k){ return '“' + k + '”' + (h.tags[k] > 1 ? ' ×' + h.tags[k] : ''); }).join(', '); d = nT(h.trades); }
+    else if(h.code === 'bigLosses'){ t = T('Losses well over your usual ' + whole(h.usualLoss), 'Pérdidas muy por encima de tu habitual de ' + whole(h.usualLoss)); d = nT(h.trades); }
+    else return '';
+    return '<li><span>' + esc(t) + '<span class="d">' + esc(d) + '</span></span><span class="m ' + (h.net < 0 ? 'bad' : 'good') + '">' + pm(h.net) + '</span></li>';
+  }
+  // "Ask the assistant": the Session Bias tab, the assistant opened, the question sent.
+  function askAssistant(q){
+    try{ var tb = document.querySelector('.tab[data-page="bias"]'); if(tb && !tb.classList.contains('active')) tb.click(); }catch(e){}
+    setTimeout(function(){
+      var box = null; Array.prototype.some.call(document.querySelectorAll('.st-asst'), function(b){ if(b.offsetParent !== null){ box = b; return true; } return false; });
+      if(!box) return;
+      if(box.classList.contains('st-asst-collapsed')){ var h = box.querySelector('.st-asst-head'); if(h) h.click(); }
+      setTimeout(function(){
+        var inp = box.querySelector('.st-asst-in'), sb = box.querySelector('.st-asst-send'); if(!inp || !sb) return;
+        inp.value = q; try{ inp.dispatchEvent(new Event('input')); }catch(e){}
+        sb.click();
+        try{ box.scrollIntoView({ block: 'center', behavior: 'smooth' }); }catch(e){}
+      }, 700);
+    }, 300);
+  }
+  function showReview(S, mode, opts){
+    var R = S && S.review; if(rv || !R) return;
+    opts = opts || {}; css();
+    var es = (window._stLang === 'es' || window.__lang === 'es'), fail = mode === 'fail', rl = S.rules || {};
+    var T = function(en, sp){ return es ? sp : en; };
+    var nT = function(n){ return n + ' ' + (n === 1 ? T('trade', 'operación') : T('trades', 'operaciones')); };
+    var nD = function(n){ return n + ' ' + (n === 1 ? T('day', 'día') : T('days', 'días')); };
+    var ver = S.stage === 'verification', fun = S.stage === 'funded', nm = shortName(S.account);
+    var eb = nm + ' · ' + (fail ? (ver ? T('Verification', 'Verificación') : fun ? T('Funded account', 'Cuenta fondeada') : 'Challenge')
+                                : (ver ? T('Verification passed', 'Verificación superada') : T('Challenge passed', 'Challenge superado')));
+    var head = fail ? (ver ? T('This verification has ended', 'Esta verificación ha terminado') : fun ? T('This funded account has ended', 'Esta cuenta fondeada ha terminado') : T('This challenge has ended', 'Este challenge ha terminado'))
+                    : T('How you passed', 'Cómo lo superaste');
+    var sub = fail ? T('It’s one result, not who you are as a trader.', 'Es un resultado, no lo que eres como trader.') : T('Keep what worked. Tighten the rest.', 'Mantén lo que funcionó. Ajusta el resto.');
+    var cell = function(k, v, cls){ return '<div class="spf-st"><span class="k">' + k + '</span><span class="v' + (cls ? ' ' + cls : '') + '">' + v + '</span></div>'; };
+    var grid = cell(T('Trading days', 'Días de trading'), R.days) + cell(T('Trades', 'Operaciones'), R.trades) + cell(T('Win rate', 'Acierto'), R.winRate != null ? R.winRate + '%' : '—')
+             + cell(T('Avg win', 'Ganancia media'), R.wins ? whole(R.avgWin) : '—') + cell(T('Avg loss', 'Pérdida media'), R.losses ? whole(R.avgLoss) : '—') + cell(T('Result', 'Resultado'), pm(R.net), R.net < 0 ? 'bad' : 'good');
+    var sec = function(k, body){ return '<div class="spf-sec"><span class="spf-k">' + k + '</span>' + body + '</div>'; };
+    var whole_ = ver ? T('verification', 'toda la verificación') : fun ? T('account', 'toda la cuenta') : T('challenge', 'todo el challenge');
+    // What and when (a fail)
+    var what = '';
+    if(fail){
+      var F = S.failure, at = F.at ? T(' at ', ' a las ') + F.at : '', w;
+      if(F.rule === 'firmDailyLoss') w = T('Firm daily loss limit. On ' + dayWord(F.date, false) + at + ', trade ' + F.breakingTrade + ' that day took the day to ' + sm(F.dayResult) + ', past your firm’s ' + whole(F.firmDailyLimit) + ' daily limit.',
+                                           'Límite de pérdida diaria de la firma. El ' + dayWord(F.date, true) + at + ', la operación ' + F.breakingTrade + ' de ese día dejó el día en ' + sm(F.dayResult) + ', por encima del límite diario de ' + whole(F.firmDailyLimit) + ' de tu firma.');
+      else w = T('Max drawdown. On ' + dayWord(F.date, false) + at + ', trade ' + F.breakingTrade + ' that day took the balance to ' + whole(F.balanceAfter) + (F.belowFloorBy >= 1 ? ', ' + whole(F.belowFloorBy) + ' under your ' + whole(F.floor) + ' floor.' : ', right on your ' + whole(F.floor) + ' floor.'),
+                 'Drawdown máximo. El ' + dayWord(F.date, true) + at + ', la operación ' + F.breakingTrade + ' de ese día dejó el saldo en ' + whole(F.balanceAfter) + (F.belowFloorBy >= 1 ? ', ' + whole(F.belowFloorBy) + ' por debajo de tu suelo de ' + whole(F.floor) + '.' : ', justo en tu suelo de ' + whole(F.floor) + '.'));
+      what = sec(T('What · when', 'Qué · cuándo'), '<p class="spf-p">' + esc(w) + '</p>');
+    }
+    // How: the whole run
+    var cap, tgt = (rl.profitTarget && !fun) ? S.startingBalance + rl.profitTarget : 0;
+    if(fail){
+      if(R.peak <= R.start + 0.5) cap = T('It never got above the starting ' + whole(R.start) + '.', 'Nunca pasó del saldo inicial de ' + whole(R.start) + '.');
+      else {
+        var toT = (tgt && R.peak < tgt) ? T(', ' + whole(tgt - R.peak) + ' from the target', ', a ' + whole(tgt - R.peak) + ' del objetivo') : '', n = R.slide.tradingDays;
+        cap = n > 0 ? T('Up to ' + whole(R.peak) + ' by ' + dayWord(R.peakOn, false) + toT + '. Then ' + sm(R.slide.net) + (n === 1 ? ' on the next trading day.' : ' over the next ' + n + ' trading days.'),
+                        'Llegó a ' + whole(R.peak) + ' el ' + dayWord(R.peakOn, true) + toT + '. Después, ' + sm(R.slide.net) + (n === 1 ? ' en el siguiente día de trading.' : ' en los ' + n + ' días de trading siguientes.'))
+                    : T('Up to ' + whole(R.peak) + ' on ' + dayWord(R.peakOn, false) + toT + ', the day it ended.', 'Llegó a ' + whole(R.peak) + ' el ' + dayWord(R.peakOn, true) + toT + ', el mismo día que terminó.');
+      }
+    } else {
+      cap = T('Reached the ' + whole(tgt) + ' target on ' + dayWord(S.passedOn, false) + ', ' + S.tradingDays + ' trading days in.', 'Llegaste al objetivo de ' + whole(tgt) + ' el ' + dayWord(S.passedOn, true) + ', en ' + S.tradingDays + ' días de trading.');
+      if(R.lowRoom != null && R.lowOn) cap += T(' Closest to the floor: ' + whole(R.low) + ' on ' + dayWord(R.lowOn, false) + ', ' + whole(R.lowRoom) + ' above it.', ' Lo más cerca del suelo: ' + whole(R.low) + ' el ' + dayWord(R.lowOn, true) + ', ' + whole(R.lowRoom) + ' por encima.');
+    }
+    var BW = { afterStop: T('past your stop', 'pasado tu stop'), overMaxTrades: T('too many trades', 'demasiadas operaciones'), overMaxRisk: T('over risk', 'riesgo de más') };
+    var dayRow = function(d){ return '<div class="spf-day"><span>' + dayWord(d.date, es) + '</span><span>' + nT(d.trades) + '</span><span class="m ' + (d.net < 0 ? 'bad' : 'good') + '">' + pm(d.net) + '</span>' + (d.broke.length ? '<span class="f">' + d.broke.map(function(b){ return BW[b]; }).join(' · ') + '</span>' : '') + '</div>'; };
+    var dl = fail ? (R.worstDays || []) : (R.bestDays || []);
+    var how = sec(T('How · the whole ', 'Cómo · ') + whole_, chartSvg(S, R, es) + '<div class="spf-cap">' + esc(cap) + '</div>'
+      + (dl.length ? '<div class="spf-days"><span class="spf-k">' + (fail ? T('Worst days', 'Peores días') : T('Best days', 'Mejores días')) + '</span>' + dl.map(dayRow).join('') + '</div>' : ''));
+    // Why / to tighten
+    var hs = fail ? R.habits : R.habits.filter(function(h){ return h.net < 0; }).slice(0, 4);
+    var whyBody = hs.length
+      ? '<ul class="spf-why">' + hs.map(function(h){ return habitLine(h, es); }).join('') + '</ul>' + (hs.length > 1 ? '<div class="spf-note">' + T('A trade can count under more than one, so these overlap.', 'Una operación puede contar en varias, así que se solapan.') + '</div>' : '')
+      : '<p class="spf-p">' + (fail ? T('No habit stands out across the ' + (ver ? 'verification' : fun ? 'account' : 'challenge') + ': the losses stayed inside your rules.', 'Ningún hábito destaca: las pérdidas se quedaron dentro de tus reglas.')
+                                    : T('Nothing cost you money. Keep doing exactly this.', 'Nada te costó dinero. Sigue haciendo exactamente esto.')) + '</p>';
+    var why = sec(fail ? T('Why · across all ' + R.trades + ' trades', 'Por qué · en tus ' + R.trades + ' operaciones')
+                       : (ver ? T('To tighten on your funded account', 'Para ajustar en tu cuenta fondeada') : T('To tighten for the Verification', 'Para ajustar en la Verificación')), whyBody);
+    // The days that kept every rule against the rest
+    var K = R.rulesKeptDays, B = R.rulesBrokenDays, rules = '';
+    if(K && B && K.days && B.days){
+      var kHead = (K.net > B.net) ? (fail ? T('Your rules work', 'Tus reglas funcionan') : T('What worked', 'Lo que funcionó')) : T('Rule days vs the rest', 'Días con reglas frente al resto');
+      rules = sec(kHead, '<div class="spf-two"><div class="' + (K.net >= 0 ? 'g' : 'r') + '"><b>' + pm(K.net) + '</b>' + esc(T('on the ' + nD(K.days) + ' you kept every rule you set', 'en los ' + nD(K.days) + ' que respetaste todas tus reglas')) + '</div>'
+                       + '<div class="' + (B.net >= 0 ? 'g' : 'r') + '"><b>' + pm(B.net) + '</b>' + esc(T('on the ' + nD(B.days) + ' you broke one', 'en los ' + nD(B.days) + ' que rompiste alguna')) + '</div></div>');
+    } else if(!fail && K && K.days && B && !B.days) rules = sec(T('What worked', 'Lo que funcionó'), '<p class="spf-p">' + T('You kept every rule you set, every day.', 'Respetaste todas tus reglas, todos los días.') + '</p>');
+    // Next time (a fail): the one rule that would have kept it alive
+    var nx = fail ? R.nextTime : null, next = '';
+    if(nx){
+      var NW = { keptOwnDailyStop: T('Stopping at your own ' + whole(rl.ownDailyLossStop) + ' daily stop every day', 'Parar en tu stop diario de ' + whole(rl.ownDailyLossStop) + ' cada día'),
+                 keptMaxTrades: T('Keeping to ' + rl.maxTrades + ' trades a day', 'Limitarte a ' + rl.maxTrades + ' operaciones al día'),
+                 keptMaxRisk: T('Keeping every trade to ' + whole(rl.maxRiskPerTrade) + ' risk', 'Mantener cada operación en ' + whole(rl.maxRiskPerTrade) + ' de riesgo'),
+                 keptAllThree: T('Keeping your stop, your max trades and your max risk', 'Respetar tu stop, tu máximo de operaciones y tu riesgo máximo') };
+      var tail = nx.survived
+        ? (nx.aboveFloor != null ? T(' would have kept this account alive at ' + whole(nx.balance) + ', ' + whole(nx.aboveFloor) + ' above the floor.', ' habría mantenido viva esta cuenta en ' + whole(nx.balance) + ', ' + whole(nx.aboveFloor) + ' por encima del suelo.')
+                                 : T(' would have kept this account alive at ' + whole(nx.balance) + '.', ' habría mantenido viva esta cuenta en ' + whole(nx.balance) + '.'))
+        : T(' would have saved ' + whole(nx.saved) + '.', ' te habría ahorrado ' + whole(nx.saved) + '.');
+      next = '<div class="spf-next"><b>' + T('Next time:', 'La próxima vez:') + '</b> ' + esc(NW[nx.rule] + tail) + '</div>';
+    }
+    var canAsk = false; try{ canAsk = fail && !!(window.STAI && window.STAI.canChat && window.STAI.canChat()); }catch(e){}
+    var btns = '<div class="spf-btns">' + (canAsk ? '<button type="button" class="spf-btn pr" data-spf="ask">' + T('Ask the assistant', 'Preguntar al asistente') + '</button>' : '')
+             + '<button type="button" class="spf-btn' + (canAsk ? '' : ' pr') + '" data-spf="close">' + (fail ? T('Close', 'Cerrar') : T('Back', 'Volver')) + '</button></div>';
+    rv = document.createElement('div'); rv.id = 'st-review'; rv.className = fail ? 'is-fail' : 'is-pass';
+    rv.setAttribute('role', 'dialog'); rv.setAttribute('aria-modal', 'true'); rv.setAttribute('aria-labelledby', 'spf-h');
+    rv.innerHTML = '<div class="spf-card" tabindex="-1">'
+      + '<div class="spf-eb">' + esc(eb) + '</div><div class="spf-h" id="spf-h">' + esc(head) + '</div><div class="spf-sub">' + esc(sub) + '</div>'
+      + '<div class="spf-grid">' + grid + '</div>'
+      + (fail ? what + how + why + rules + next : how + rules + why)
+      + btns
+      + (opts.preview ? '<div class="sps-note">' + (opts.sample ? T('Preview with sample figures.', 'Vista previa con cifras de ejemplo.') : T('Preview.', 'Vista previa.')) + '</div>' : '')
+      + '</div>';
+    document.body.appendChild(rv);
+    var o = rv;
+    o.addEventListener('click', function(e){
+      var b = e.target && e.target.closest ? e.target.closest('[data-spf]') : null;
+      if(!b){ if(e.target === o) rvClose(); return; }
+      var a = b.getAttribute('data-spf');
+      if(a === 'close'){ rvClose(); return; }
+      if(a === 'ask'){
+        if(opts.preview){ b.textContent = T('Preview only', 'Solo vista previa'); return; }
+        rvClose();
+        askAssistant(T('Why did my ' + S.account + ' fail? Walk me through the whole ' + (ver ? 'verification' : fun ? 'account' : 'challenge') + '.', '¿Por qué perdí mi ' + S.account + '? Explícame ' + whole_ + '.'));
+      }
+    });
+    // On window, in the capture phase: ahead of the pass pop-up's own Escape, so Escape closes this one first.
+    rvKey = function(e){ if(e.key === 'Escape' && rv){ e.stopPropagation(); rvClose(); } };
+    window.addEventListener('keydown', rvKey, true);
+    try{ o.querySelector('.spf-card').focus({ preventScroll: true }); }catch(e){}
+  }
+  // Samples for the previews: a 10K challenge that slid into its floor, and a 70K that passed.
+  var SAMPLE = {
+    fail: { acc: { id: 'sample-fail', name: 'FTMO 10K - Challenge', kind: 'challenge', startingBalance: 10000,
+                   riskRules: { maxDrawdownMode: 'amount', maxDrawdownAmount: 1000, profitTargetMode: 'amount', profitTargetAmount: 1000, maxLossMode: 'amount', maxLossAmount: 150, maxRiskMode: 'amount', maxRiskAmount: 100, maxTrades: 2 } },
+            days: [['2026-09-14', [['09:00', '09:40', 180, 100], ['10:30', '11:00', -100, 100]]], ['2026-09-15', [['09:10', '10:00', 200, 100]]],
+                   ['2026-09-16', [['09:05', '09:30', -100, 100], ['10:00', '10:45', 210, 100], ['11:30', '12:00', 90, 100]]], ['2026-09-17', [['09:20', '10:10', 190, 100]]],
+                   ['2026-09-18', [['09:00', '09:25', -100, 100], ['09:40', '10:00', -100, 100], ['10:06', '10:30', -120, 120, 'Forced Trade']]], ['2026-09-21', [['09:15', '10:00', 150, 100]]],
+                   ['2026-09-22', [['09:00', '09:30', -100, 100], ['10:10', '11:00', 230, 100]]], ['2026-09-23', [['09:00', '09:20', -100, 100], ['09:50', '10:10', -100, 100], ['10:18', '10:40', -150, 150, 'Overtraded']]],
+                   ['2026-09-24', [['09:00', '09:30', -100, 100], ['10:30', '11:30', 180, 100]]],
+                   ['2026-09-25', [['09:00', '09:35', -100, 100], ['09:50', '10:15', -100, 100], ['10:20', '10:50', -200, 200, 'Ignored My Bias'], ['11:30', '12:10', 120, 200]]],
+                   ['2026-09-28', [['09:00', '09:30', -100, 100], ['10:00', '10:40', 150, 100]]], ['2026-09-29', [['09:00', '09:30', -100, 100], ['09:45', '10:10', -100, 100], ['10:20', '10:50', -100, 100, 'Overtraded']]],
+                   ['2026-09-30', [['08:10', '08:40', -100, 100], ['08:45', '09:10', -100, 100], ['09:30', '10:00', -250, 250, 'Ignored My Bias'], ['10:20', '11:00', -400, 400]]]] },
+    pass: { acc: { id: 'sample-pass', name: 'FTMO 70K - Challenge', kind: 'challenge', startingBalance: 70000,
+                   riskRules: { maxDrawdownMode: 'pct', maxDrawdownPct: 10, profitTargetMode: 'pct', profitTargetPct: 8, maxLossMode: 'amount', maxLossAmount: 800, maxRiskMode: 'amount', maxRiskAmount: 700, maxTrades: 2 } },
+            days: [['2026-09-07', [['09:00', '10:10', 1400, 700], ['10:30', '11:00', -700, 700]]], ['2026-09-08', [['09:15', '10:20', 1250, 700]]],
+                   ['2026-09-09', [['09:00', '09:40', -700, 700], ['09:50', '10:10', -700, 700], ['10:15', '10:45', -900, 900, 'Forced Trade']]], ['2026-09-10', [['09:05', '10:00', 1500, 700]]],
+                   ['2026-09-11', [['09:00', '09:50', -700, 700], ['10:20', '11:30', 1600, 700]]], ['2026-09-14', [['09:10', '10:30', 1450, 700]]],
+                   ['2026-09-15', [['09:00', '09:30', -700, 700], ['10:00', '11:00', 1400, 700]]], ['2026-09-16', [['09:20', '10:40', 1700, 700]]]] }
+  };
+  function sampleStatus(kind){
+    var X = SAMPLE[kind], list = [];
+    X.days.forEach(function(d){ d[1].forEach(function(x){
+      list.push({ id: 's' + list.length, accountId: X.acc.id, date: d[0] + 'T12:00:00', entryTime: x[0], exitTime: x[1], actualGross: x[2],
+                  result: x[2] > 0 ? 'Win' : x[2] < 0 ? 'Lose' : 'BE', risk: String(x[3]), r: x[2] > 0 ? String(Math.round(x[2] / x[3] * 100) / 100) : '1',
+                  symbol: 'EURUSD', side: 'Buy', mindset: x[4] ? [x[4]] : [] });
+    }); });
+    return propStatus(X.acc, list);
+  }
+  // A fail from the last 7 days, not shown yet, on any prop account (archived too - a failed account is often archived
+  // the same evening).
+  function failHit(){
+    var d = D(); if(!d || !Array.isArray(d.accounts)) return null;
+    var seen = (d.failSeen && typeof d.failSeen === 'object') ? d.failSeen : {}, today = new Date(), hit = null; today.setHours(12, 0, 0, 0);
+    d.accounts.some(function(a){
+      if(!a || a.kind === 'personal' || seen[a.id]) return false;
+      var s = propStatus(a); if(!s || s.status !== 'failed' || !s.review) return false;
+      var n = Math.round((today - new Date(s.failedOn + 'T12:00:00')) / 86400000);
+      if(n < 0 || n > 7) return false;
+      hit = s; return true;
+    });
+    return hit;
+  }
+  function failTick(){
+    var hit = failHit(); if(!hit) return;
+    if(!ready() || opening) return;
+    opening = true;
+    whenCalm(function(){
+      opening = false;
+      var dd = D(); if(!dd || ov || rv || (dd.failSeen && dd.failSeen[hit.accountId]) || !ready()) return;
+      dd.failSeen = (dd.failSeen && typeof dd.failSeen === 'object') ? dd.failSeen : {};
+      dd.failSeen[hit.accountId] = { at: new Date().toISOString(), on: hit.failedOn }; save();
+      showReview(hit, 'fail');
+    }, true);
+  }
+  function previewFail(){
+    var tries = 0;
+    (function go(){
+      if(rv) return;
+      if(!me() || !window.__stJournalPulled || (window.__stPopBusy && window.__stPopBusy())){ if(tries++ < 40) setTimeout(go, 1000); return; }
+      var S = null, d = D(); ((d && d.accounts) || []).some(function(a){ var s = propStatus(a); if(s && s.status === 'failed' && s.review){ S = s; return true; } return false; });
+      var sample = !S; if(sample) S = sampleStatus('fail');
+      whenCalm(function(){ if(!rv) showReview(S, 'fail', { preview: true, sample: sample }); }, true);
+    })();
+  }
+
   /* ---- when ---- */
   function ready(){
     try{ if(document.body.classList.contains('mentor-viewing')) return false; }catch(e){}
@@ -73975,6 +74298,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var t = document.querySelector('.tab[data-page="bias"]'); if(!(t && t.offsetParent !== null)) return false;
     try{ if(window.__stPopBusy && window.__stPopBusy()) return false; }catch(e){}
     try{ if(document.getElementById('st-podium')) return false; }catch(e){}
+    if(rv) return false;
     return true;
   }
   var opening = false;
@@ -73982,7 +74306,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      starting up and only then went to fetch its chime. Now, like the podium: the chime is fetched and decoded first (up
      to 2 s), then it waits for a second of smooth frames (none over 40 ms), never sooner than 4 s after the app opened,
      at most 15 s. */
-  function whenCalm(cb){
+  function whenCalm(cb, quiet){   // quiet: no chime to fetch first (the fail card)
     var done = false, t0 = 0, last = 0, since = 0;
     function tick2(ts){
       if(done) return;
@@ -73993,12 +74317,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       requestAnimationFrame(tick2);
     }
     css();   // the stylesheet in before the pop-up, never as it opens
-    Promise.race([ kload().catch(function(){}), new Promise(function(r){ setTimeout(r, 2000); }) ]).then(function(){ requestAnimationFrame(tick2); });
+    Promise.race([ quiet ? Promise.resolve() : kload().catch(function(){}), new Promise(function(r){ setTimeout(r, 2000); }) ]).then(function(){ requestAnimationFrame(tick2); });
   }
   /* Every 3 seconds: cheap - a few accounts, each one pass over its trades - and it catches a pass however it
      happened (a trade saved, imported, edited, moved to the account). */
   function tick(){
-    if(ov || document.hidden) return;
+    if(ov || rv || document.hidden) return;
     try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){}
     try{ if(window.__stIsDetachedWindow && window.__stIsDetachedWindow()) return; }catch(e){}
     if(!me() || !window.__stJournalPulled) return;   // decide only on the account's real journal
@@ -74011,7 +74335,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
     var hit = null;
     candidates().some(function(a){ if(d.passSeen[a.id]) return false; var P = passInfo(a); if(P){ hit = P; return true; } return false; });
-    if(!hit) return;
+    if(!hit){ failTick(); return; }   // no new pass: a new fail, if there is one
     if(!ready() || opening) return;   // a window is up: the next tick tries again
     opening = true;
     whenCalm(function(){
@@ -74027,15 +74351,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(ov) return;
       if(!me() || !window.__stJournalPulled || (window.__stPopBusy && window.__stPopBusy())){ if(tries++ < 40) setTimeout(go, 1000); return; }
       var P = null; candidates().concat((D() && D().accounts) || []).some(function(a){ P = a && a.kind !== 'personal' ? passInfo(a) : null; return !!P; });
+      var isSample = !P;
       if(!P){
         var a = candidates()[0] || { id: 'demo', name: 'FTMO 70K - Challenge' };
         P = { acc: a, stage: /verif/i.test(a.name || '') ? 'verification' : 'challenge', name: a.name, short: a.name, sb: 70000, target: 5600, targetPct: 8, reached: 5742, days: 15, tradingDays: 9, trades: 14, winRate: 57, netR: 9.2, rules: true, hasDl: true, hasDd: true };
       }
-      var PP = P; whenCalm(function(){ if(!ov) show(PP, { preview: true }); });
+      var PP = P;
+      whenCalm(function(){ if(!ov) show(PP, { preview: true, sample: isSample, review: isSample ? sampleStatus('pass') : null }); });
     })();
   }
   window.__stPassed = { check: function(){ tick(); }, preview: preview, _show: show, _info: passInfo, _body: postBody, close: close };
+  window.__stFailCard = { check: function(){ failTick(); }, preview: previewFail, _show: showReview, _hit: failHit, sample: sampleStatus, close: rvClose };
   function boot(){
+    try{ if(new URLSearchParams(location.search).get('failed') === 'preview'){ try{ var u2 = new URL(location.href); u2.searchParams.delete('failed'); history.replaceState(history.state, '', u2.pathname + u2.search + u2.hash); }catch(e){} setTimeout(previewFail, 4000); } }catch(e){}
     try{ if(new URLSearchParams(location.search).get('passed') === 'preview'){ try{ var u = new URL(location.href); u.searchParams.delete('passed'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }catch(e){} setTimeout(preview, 4000); } }catch(e){}
     setTimeout(tick, 5000); setInterval(tick, 3000);
     setTimeout(css, 2500);   // its stylesheet ahead of time: adding one restyles the whole page (~100 ms), so not as it opens
