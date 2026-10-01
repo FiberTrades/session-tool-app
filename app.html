@@ -18808,6 +18808,24 @@ try {
     const L = data.postedLog, ks = Object.keys(L);
     if (ks.length > 80) ks.sort((p, q) => String(L[p].at).localeCompare(String(L[q].at))).slice(0, ks.length - 80).forEach(k => { delete L[k]; });
   }
+  /* One post at a time per Post button (Nestor, 1 Oct 2026: "why did my review yesterday posted twice in a row in the
+     community?"). The button was locked only while the free text was being translated; after that it could be pressed
+     again until the post landed. On a slow connection the first press looked like it did nothing, so the review went
+     again - with Execution, Focus and Close added in between - and both posts arrived together when the connection
+     caught up, 22 ms apart. Now the button stays locked, saying Posting..., until the post has gone or failed. */
+  function _stPosting(btn) { return !!(btn && btn.__stPosting); }
+  // The copy-to-clipboard fallback of a failed post, capped: a clipboard that never answers must not hold the button.
+  function _stClipQuick(text) { return Promise.race([Promise.resolve().then(function () { return copyToClipboard(text); }).catch(function () {}), new Promise(function (r) { setTimeout(r, 1500); })]); }
+  function _stPostLock(btn) {
+    if (!btn || btn.__stPosting) return null;
+    const label = (window.__lang === 'es') ? 'Publicando\u2026' : 'Posting\u2026';
+    const keep = { html: btn.innerHTML, dis: btn.disabled };
+    btn.__stPosting = true; btn.disabled = true; btn.textContent = label;
+    return function release() {
+      btn.__stPosting = false; btn.disabled = keep.dis;
+      if (btn.textContent === label) btn.innerHTML = keep.html;   // a "Posted" label painted meanwhile stays
+    };
+  }
   // 'new' | 'posted' | 'changed'; srcFn builds what would go out now, and runs only when there is a record.
   function _stPostedState(key, srcFn) { const r = _stPostedGet(key); if (!r) return 'new'; let src; try { src = srcFn(); } catch (e) { return 'posted'; } return r.sig === _stPostHash(src) ? 'posted' : 'changed'; }
   window.__stPosted = { get: _stPostedGet, set: _stPostedSet, state: _stPostedState };
@@ -18879,7 +18897,9 @@ try {
       const _miss = biasMissingFields();
       if (_miss.length) { const _go = await _warnIncompleteBias(_miss); if (!_go) return; }
     } catch (e) {}
-    return doBiasCopyAndProceed._go(btn);
+    const _rel = _stPostLock(btn); if (btn && !_rel) return;   // one post at a time
+    try { return await doBiasCopyAndProceed._go(btn); }
+    finally { if (_rel) _rel(); }
   }
   /* Self-contained: borrows the "Finish your trade log" modal's markup for its look, but wires
      its OWN buttons via cloneNode (which strips whatever listeners are already on them) and puts
@@ -18919,7 +18939,7 @@ try {
       window.__stBuildInLang('es', buildBiasMessage));
     let _postedRow = null;
     // No "Posted to community" pop-up: the button turns into "Posted 07:53" (Nestor, 28 Sep 2026).
-    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); }catch(e){ _postedRow = null; try{ await copyToClipboard(msg); }catch(_){} }
+    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); }catch(e){ _postedRow = null; try{ await _stClipQuick(msg); }catch(_){} }
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
     // What went out, for the Posted button (only when it really posted; the clipboard fallback keeps the old button).
@@ -18960,6 +18980,7 @@ try {
   document.getElementById('bias-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     if (btn.classList.contains('is-posted')) return;   // already posted and unchanged: nothing to do
+    if (_stPosting(btn)) return;                        // a post is already on its way
     // Observation sessions are watch-only — there are no HTF/LTF charts to post, so skip the
     // "add both charts" reminder and copy straight away. This still stamps copiedAt, so the
     // "This morning's bias" card appears on Session Live exactly like any other copy.
@@ -22764,7 +22785,10 @@ try {
   document.getElementById('review-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     if (btn.classList.contains('is-posted')) return;   // already posted and unchanged: nothing to do
+    if (_stPosting(btn)) return;                        // a post is already on its way
     const _run = async () => {
+      const _rel = _stPostLock(btn); if (!_rel) return;   // one post at a time
+      try {
       jumpToDiscord('review');
       const msg = await withTranslatingButton(btn, () => buildReviewMessageMaybeTranslated());
       // Both languages, then the free-text rule line localised: see the bias post.
@@ -22774,10 +22798,11 @@ try {
         window.__stBuildInLang('es', buildReviewMessage));
       let _revRow = null;
       // No "Posted to community" pop-up: the button says Posted (Nestor, 28 Sep 2026).
-      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); }catch(e){ _revRow = null; try{ await copyToClipboard(msg); }catch(_){} }
+      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); }catch(e){ _revRow = null; try{ await _stClipQuick(msg); }catch(_){} }
       if (_revRow && _revRow.id) { _stPostedSet(_reviewPostKey(), _revRow.id, _revSrc); try { saveData(); } catch (e) {} }
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
+      } finally { _rel(); }
       try { paintReviewPostBtn(); } catch (e) {}
     };
     if (sessionLogIncomplete()) { remindIncompleteThen(() => { _run(); }); return; }
@@ -24097,6 +24122,7 @@ try {
   var _seriesShareConfirmBtn = document.getElementById('series-share-confirm');
   _seriesShareConfirmBtn && _seriesShareConfirmBtn.addEventListener('click', () => {
     if (_seriesShareConfirmBtn.classList.contains('is-posted')) return;   // this series is already posted, unchanged
+    if (_stPosting(_seriesShareConfirmBtn)) return;                         // a post is already on its way
     // Export the most recent COMPLETED series only — not lifetime totals, not the in-progress
     // series. data.history is ordered newest-first (via unshift on completion), so [0] is the
     // most recently completed. If no series has been completed yet, show a snackbar instead of
@@ -24210,7 +24236,8 @@ try {
     var _s10es = window.__stBuildInLang('es', _buildS10);
     var _s10key = _seriesPostKey(latestSeries), _s10src = _seriesPostSrc(latestSeries);
     // No pop-up: the Share button turns into Posted, so the window stays open until the post lands (Nestor, 28 Sep 2026).
-    try{ window.STCommunity.postToChannel('series-of-10-trades', _s10en, _s10es).then(function(_row){ if (_row && _row.id) { _stPostedSet(_s10key, _row.id, _s10src); try { saveData(); } catch (e) {} try { paintSeriesPostBtn(); } catch (e) {} } }, function(){ try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ try{ copyToClipboard(_s10msg); }catch(_){} }
+    var _s10rel = _stPostLock(_seriesShareConfirmBtn);
+    try{ window.STCommunity.postToChannel('series-of-10-trades', _s10en, _s10es).then(function(_row){ if (_s10rel) _s10rel(); if (_row && _row.id) { _stPostedSet(_s10key, _row.id, _s10src); try { saveData(); } catch (e) {} try { paintSeriesPostBtn(); } catch (e) {} } }, function(){ if (_s10rel) _s10rel(); try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ if (_s10rel) _s10rel(); try{ copyToClipboard(_s10msg); }catch(_){} }
     jumpToDiscord('series');
   });
   // ===== Snapshot helpers for snackbar-style undo =====
@@ -35055,6 +35082,10 @@ try {
       ['input', 'change', 'click'].forEach(function (ev) { _wr.addEventListener(ev, function () { setTimeout(function () { try { paintWeeklyPostBtn(); } catch (e) {} }, 0); }); }); } })();
     document.getElementById('rfx-discord-copy').addEventListener('click', async () => {
       if (document.getElementById('rfx-discord-copy').classList.contains('is-posted')) return;   // already posted, unchanged
+      if (_stPosting(document.getElementById('rfx-discord-copy'))) return;                        // a post is already on its way
+      const _wkRel = _stPostLock(document.getElementById('rfx-discord-copy'));
+      let _wkSent = false;   // until the post is sent, any way out of here unlocks the button
+      try {
       if (document.getElementById('rfx-discord-copy').classList.contains('is-locked')) { try { paintWeeklyPostBtn(); } catch (e) {} if (document.getElementById('rfx-discord-copy').classList.contains('is-locked')) return; }   // the week is not over yet
       /* The three questions are the minimum for a weekly review to count on the leaderboard (Nestor).
          Stop here and point at the empty ones rather than post something that will not score. */
@@ -35097,12 +35128,15 @@ try {
       const _wkEs = await window.__stBuildInLangAsync('es', () => buildWeeklyReviewDiscordMessage(weekStart, weekEnd));
       const trFailed = (__trAttempted > 0 && __trFailed >= __trAttempted);
       const _wkKey = currentReview ? 'weekly:' + currentReview.key : '', _wkSrc = _weeklyPostSrc(_weeklyEntryNow());
+      const _wkDone = () => { if (_wkRel) _wkRel(); };
+      _wkSent = true;
       window.STCommunity.postToChannel('weekend-review', _wkEn, _wkEs).then(
-        (_row) => { if (trFailed) showToast(t('toast.translate_failed'), { persist: true });   // no "Posted" pop-up: the button says it
+        (_row) => { _wkDone(); if (trFailed) showToast(t('toast.translate_failed'), { persist: true });   // no "Posted" pop-up: the button says it
           if (_row && _row.id && _wkKey) { _stPostedSet(_wkKey, _row.id, _wkSrc); try { saveData(); } catch (e) {} try { paintWeeklyPostBtn(); } catch (e) {} } },
-        () => showToast(t('toast.copy_failed'), { persist: true })
+        () => { _wkDone(); showToast(t('toast.copy_failed'), { persist: true }); }
       );
       jumpToDiscord('weekly');
+      } finally { if (!_wkSent && _wkRel) _wkRel(); }
     });
     try { paintWeeklyPostBtn(); } catch (e) {}
   }
