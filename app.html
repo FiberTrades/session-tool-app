@@ -46765,7 +46765,16 @@ try {
     const num = v => (v != null && v !== '' && !isNaN(parseFloat(v))) ? parseFloat(v) : null;
     const od = row.open_time ? new Date(row.open_time) : null;
     const cd = row.close_time ? new Date(row.close_time) : null;
-    const acc = _syncTargetAccount();
+    /* Judged by the account the trade goes TO - its broker login's account - not the one open in the app (Nestor,
+       1 Oct 2026: a -71.83 loss on his 10K showed as BE, because the open 70K counts anything within 200 as
+       breakeven; the 10K's own band is 25). */
+    const acc = (function () {
+      try {
+        const id = (row.login != null && data.mt5LoginMap) ? data.mt5LoginMap[String(row.login)] : null;
+        const a = id && Array.isArray(data.accounts) ? data.accounts.find(x => x.id === id) : null;
+        return a || _syncTargetAccount();
+      } catch (e) { return _syncTargetAccount(); }
+    })();
     const t = {
       openTime: row.open_time || '', position: String(row.ticket), symbol: symbol, type: type,
       volume: parseFloat(row.lots) || 0, entryPrice: entryPrice, slPrice: 0, tpPrice: 0,
@@ -47947,6 +47956,8 @@ try {
         if (data.mt5ImportedTickets.indexOf(s) === -1) data.mt5ImportedTickets.push(s);
         if (data.mt5UserDismissed.indexOf(s)   === -1) data.mt5UserDismissed.push(s);   // explicit → durably suppressed
       });
+      // A restore no longer overrides this: marking it imported is the newer, explicit answer.
+      if (Array.isArray(data.mt5ForceOffer) && data.mt5ForceOffer.length) data.mt5ForceOffer = data.mt5ForceOffer.filter(x => tickets.indexOf(String(x)) < 0);
       if (data.mt5ImportedTickets.length > 5000) data.mt5ImportedTickets = data.mt5ImportedTickets.slice(-5000);
       if (data.mt5UserDismissed.length   > 5000) data.mt5UserDismissed   = data.mt5UserDismissed.slice(-5000);
       saveData();
@@ -48062,6 +48073,10 @@ try {
         // comes from real net P&L (actualGross = pnl). Every field stays hand-editable.
         // Note: analytics count Lose as -1R and BE as 0R regardless; a Win's R-curve uses this
         // value, so a win shows the aimed R, not necessarily the achieved R.
+        try {
+          const _da = Array.isArray(data.accounts) ? data.accounts.find(a => a.id === _accFor(t)) : null;
+          if (_da && typeof classifyNetResult === 'function' && isFinite(parseFloat(t.netPL))) t.result = classifyNetResult(t.netPL, _da);
+        } catch (e) {}
         const isBE = t.result === 'BE';
         const _riskR = (t._riskGbp != null && t._riskGbp > 0) ? t._riskGbp : (defaultRisk > 0 ? defaultRisk : 0);
         const row = {
@@ -48206,6 +48221,13 @@ try {
         });
         if (data.mt5ImportedTickets.length > 5000) data.mt5ImportedTickets = data.mt5ImportedTickets.slice(-5000);
         if (data.mt5UserDismissed.length   > 5000) data.mt5UserDismissed   = data.mt5UserDismissed.slice(-5000);
+        /* A restore ("offer this again") has done its job once the trade is imported. Left on the list it outlived
+           the import: delete the trade and the restore put it straight back in the import list, every time (Nestor,
+           1 Oct 2026: "i keep importing this trade and deleting it and it keeps coming back"). */
+        if (Array.isArray(data.mt5ForceOffer) && data.mt5ForceOffer.length) {
+          const _imp = _consumedTickets.map(String);
+          data.mt5ForceOffer = data.mt5ForceOffer.filter(x => _imp.indexOf(String(x)) < 0);
+        }
       }
     } catch (e) {}
 
