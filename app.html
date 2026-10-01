@@ -73599,6 +73599,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           try{ var p = c.resume(); if(p && p.then) p.then(kstart, function(){}); else kstart(); }catch(x){}
         };
         box.addEventListener('pointerdown', h, true);
+        try{ var nt = box.querySelector('.sps-note'); if(nt) nt.textContent += ' ' + _t('Tap the card to hear it.', 'Toca la tarjeta para o\u00edrlo.'); }catch(e){}
       }, 300);
     }).catch(function(){});
   }
@@ -73684,6 +73685,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return true;
   }
   var opening = false;
+  /* Nestor, 1 Oct 2026: "it is laggy and the chime doesnt kick in for a while". It opened while the app was still busy
+     starting up and only then went to fetch its chime. Now, like the podium: the chime is fetched and decoded first (up
+     to 2 s), then it waits for a second of smooth frames (none over 40 ms), never sooner than 4 s after the app opened,
+     at most 15 s. */
+  function whenCalm(cb){
+    var done = false, t0 = 0, last = 0, since = 0;
+    function tick2(ts){
+      if(done) return;
+      if(!t0) t0 = ts;
+      if(last){ if(ts - last < 40){ if(!since) since = last; } else since = 0; }
+      last = ts;
+      if(ts >= 4000 && ((since && ts - since >= 1000) || ts - t0 > 15000)){ done = true; cb(); return; }
+      requestAnimationFrame(tick2);
+    }
+    css();   // the stylesheet in before the pop-up, never as it opens
+    Promise.race([ kload().catch(function(){}), new Promise(function(r){ setTimeout(r, 2000); }) ]).then(function(){ requestAnimationFrame(tick2); });
+  }
   /* Every 3 seconds: cheap - a few accounts, each one pass over its trades - and it catches a pass however it
      happened (a trade saved, imported, edited, moved to the account). */
   function tick(){
@@ -73703,7 +73721,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(!hit) return;
     if(!ready() || opening) return;   // a window is up: the next tick tries again
     opening = true;
-    Promise.race([ kload().catch(function(){}), new Promise(function(r){ setTimeout(r, 2000); }) ]).then(function(){
+    whenCalm(function(){
       opening = false;
       var dd = D(); if(!dd || ov || (dd.passSeen && dd.passSeen[hit.acc.id]) || !ready()) return;
       dd.passSeen = dd.passSeen || {}; dd.passSeen[hit.acc.id] = { at: new Date().toISOString() }; save();
@@ -73720,14 +73738,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         var a = candidates()[0] || { id: 'demo', name: 'FTMO 70K - Challenge' };
         P = { acc: a, stage: /verif/i.test(a.name || '') ? 'verification' : 'challenge', name: a.name, short: a.name, sb: 70000, target: 5600, targetPct: 8, reached: 5742, days: 15, tradingDays: 9, trades: 14, winRate: 57, netR: 9.2, rules: true, hasDl: true, hasDd: true };
       }
-      show(P, { preview: true });
+      var PP = P; whenCalm(function(){ if(!ov) show(PP, { preview: true }); });
     })();
   }
   window.__stPassed = { check: function(){ tick(); }, preview: preview, _show: show, _info: passInfo, _body: postBody, close: close };
   function boot(){
     try{ if(new URLSearchParams(location.search).get('passed') === 'preview'){ try{ var u = new URL(location.href); u.searchParams.delete('passed'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }catch(e){} setTimeout(preview, 4000); } }catch(e){}
     setTimeout(tick, 5000); setInterval(tick, 3000);
-    setTimeout(css, 7000);   // its stylesheet ahead of time: adding one restyles the whole page (~100 ms), so not as it opens
+    setTimeout(css, 2500);   // its stylesheet ahead of time: adding one restyles the whole page (~100 ms), so not as it opens
   }
   if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
