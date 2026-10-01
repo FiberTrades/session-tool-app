@@ -54770,8 +54770,48 @@ try {
        "En rango", "Indecisa" - instead of the community translator's guess at the English,
        which came back as "Alcance" and "No estoy seguro". Free text inside the post is still
        machine-translated as before; only the terms the app owns stop being guessed at. */
+    /* The sound of a post going out (Nestor, 1 Oct 2026: "whenever we press one of the buttons to post something to
+       community can we hear a sound of a plane or something similar", then picked "Whoosh Bamboo" - SoundReality on
+       Pixabay, free for use - "the first 2 seconds"). Kept with the app, trimmed to its first 2.3 s (sounds/whoosh.mp3);
+       it plays its first 2 s, easing out over the last 0.3. Every Post to community button posts through
+       postToChannel, so this one place covers them all: Session Bias, Session Review, Series of 10, the weekly review,
+       a shared playbook and Challenge passed. Fetched as the post starts and played when it has gone - so it never
+       plays for a post that failed. The press itself has already woken the app's audio. */
+    var _sentSnd = (function(){
+      var buf = null, loading = null, own = null;
+      function ctx(){
+        try{ if(typeof getAudioCtx === 'function'){ var g = getAudioCtx(); if(g) return g; } }catch(e){}
+        try{ if(!own) own = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ own = null; }
+        return own;
+      }
+      function prime(){
+        if(buf) return Promise.resolve(buf);
+        if(loading) return loading;
+        loading = fetch('sounds/whoosh.mp3').then(function(r){ if(!r.ok) throw new Error('whoosh ' + r.status); return r.arrayBuffer(); })
+          .then(function(ab){ var c = ctx(); if(!c) throw new Error('no audio'); return new Promise(function(res, rej){ c.decodeAudioData(ab, function(b){ buf = b; res(b); }, rej); }); })
+          .catch(function(e){ loading = null; throw e; });
+        return loading;
+      }
+      function play(){
+        prime().then(function(b){
+          var c = ctx(); if(!c) return;
+          var go = function(){
+            try{
+              var sn = c.createBufferSource(), g = c.createGain(), t = c.currentTime;
+              g.gain.setValueAtTime(0.8, t); g.gain.setValueAtTime(0.8, t + 1.7); g.gain.linearRampToValueAtTime(0.0001, t + 2.0);
+              sn.buffer = b; sn.connect(g); g.connect(c.destination); sn.start(t, 0, 2.0);
+            }catch(e){}
+          };
+          if(c.state === 'running') go();
+          else { try{ var p = c.resume(); if(p && p.then) p.then(function(){ if(c.state === 'running') go(); }, function(){}); }catch(e){} }
+        }).catch(function(){});
+      }
+      return { prime: function(){ try{ prime().catch(function(){}); }catch(e){} }, play: play };
+    })();
+    try{ window.__stSentSound = _sentSnd; }catch(e){}
     function postToChannel(slug, body, bodyEs){
       slug=String(slug||'').toLowerCase(); body=String(body||'').trim();
+      try{ _sentSnd.prime(); }catch(e){}
       bodyEs=(bodyEs==null?'':String(bodyEs).trim());
       return new Promise(function(resolve, reject){
         if(!body){ reject(new Error('empty')); return; }
@@ -54796,10 +54836,12 @@ try {
                                                 sender_name:myName(), sender_avatar:myAvatar() };
                   try{ if(cur && cur.id===ch.id && typeof append==='function') append(_row); }catch(e){}
                   try{ _bumpBoardAfterPost(slug); }catch(e){}
+                  try{ _sentSnd.play(); }catch(e){}   // it has gone: whoosh
                   resolve(_row);
                 }, function(){
                   // Stored fine, just could not be read back - never fail a post over the echo.
                   try{ _bumpBoardAfterPost(slug); }catch(e){}
+                  try{ _sentSnd.play(); }catch(e){}
                   resolve({ id:_id });
                 });
               }, reject);
