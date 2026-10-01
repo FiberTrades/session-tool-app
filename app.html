@@ -73845,6 +73845,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       '#st-failed .sps-cup{color:var(--text-mid,#c0c0c0);}'+
       '.sps-v.bad{color:var(--bad,#E5484D);}'+
       '.sps-end{font-size:12px;color:var(--text-mid,#c0c0c0);margin:4px 0 0;line-height:1.55;}'+
+      '.spx-flash{position:absolute;inset:0;pointer-events:none;opacity:0;background:radial-gradient(ellipse 75% 45% at 50% 4%,rgba(205,215,255,.42),rgba(150,160,210,.10) 50%,transparent 78%);}'+
+      '.spx-flash.go{animation:spxFlash .5s ease-out both;}'+
+      '@keyframes spxFlash{0%{opacity:0}12%{opacity:.85}26%{opacity:.25}40%{opacity:.6}100%{opacity:0}}'+
+      '.spf-cw{position:relative;margin:2px 0 6px;} .spf-cw .spf-chart{margin:0;}'+
+      '.spf-hit{position:absolute;width:7px;height:7px;border-radius:50%;background:currentColor;color:var(--bad,#E5484D);transform:translate(-50%,-50%);opacity:0;animation:spfHit 1.1s ease-out 1.75s both;}'+
+      '.spf-hit.g{color:var(--good,#4ECD8B);}'+
+      '@keyframes spfHit{0%{opacity:0;transform:translate(-50%,-50%) scale(.3);box-shadow:0 0 0 0 currentColor}35%{opacity:1;transform:translate(-50%,-50%) scale(1.6);box-shadow:0 0 14px 4px currentColor}100%{opacity:1;transform:translate(-50%,-50%) scale(1);box-shadow:0 0 6px 0 currentColor}}'+
+      '@media (prefers-reduced-motion: reduce){.spx-flash{display:none;}.spf-hit{animation:none;opacity:1;}}'+
       '@media (prefers-reduced-motion: reduce){#st-failed{animation:none;}}'+
       '#st-review{position:fixed;inset:0;z-index:100600;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,10,13,.88);overflow:hidden;animation:stpsIn .3s ease-out both;}'+
       '#st-review.is-pass{background:rgba(11,10,13,.6);}'+
@@ -74078,7 +74086,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function sm(v){ return (v < 0 ? '−' : '') + whole(v); }
   function pm(v){ return (v > 0 ? '+' : '') + sm(v); }
-  function chartSvg(S, R, es){
+  function chartSvg(S, R, es, mode){
     var c = R.curve || []; if(c.length < 2) return '';
     var rl = S.rules || {}, tgL = (rl.profitTarget && S.stage !== 'funded') ? S.startingBalance + rl.profitTarget : null, flL = null;
     if(rl.maxDrawdown){
@@ -74091,9 +74099,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var X = function(i){ return (i * 300 / (c.length - 1)).toFixed(1); }, Y = function(v){ return (4 + (hi - v) / (hi - lo) * 76).toFixed(1); };
     var ln = function(v, col, dash){ return '<line x1="0" x2="300" y1="' + Y(v) + '" y2="' + Y(v) + '" stroke="' + col + '"' + (dash ? ' stroke-dasharray="3 4" stroke-opacity=".75"' : '') + ' stroke-width="1" vector-effect="non-scaling-stroke"/>'; };
     var d = c.map(function(v, i){ return (i ? 'L' : 'M') + X(i) + ' ' + Y(v); }).join(' ');
-    return '<svg class="spf-chart" viewBox="0 0 300 84" preserveAspectRatio="none" aria-hidden="true">' + ln(c[0], 'var(--border-2,#332F3C)')
+    /* Nestor, 1 Oct 2026, yes to: the balance line draws itself from left to right (~1.5 s) - up to the peak, down to
+       the floor - and where it ends glows once: red where a fail broke it, green where a pass reached the target.
+       Still, and drawn in full, for anyone who has turned motion off. */
+    var still = false; try{ still = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+    return '<div class="spf-cw"><svg class="spf-chart" viewBox="0 0 300 84" preserveAspectRatio="none" aria-hidden="true">' + ln(c[0], 'var(--border-2,#332F3C)')
       + (tgL ? ln(tgL, 'var(--good,#4ECD8B)', 1) : '') + (flL != null ? ln(flL, 'var(--bad,#E5484D)', 1) : '')
-      + '<path d="' + d + '" fill="none" stroke="var(--text,#F4F3F6)" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>'
+      + '<clipPath id="spf-clip" class="spf-clip"><rect x="0" y="0" height="84" width="' + (still ? 300 : 0) + '"/></clipPath>'
+      + '<path d="' + d + '" clip-path="url(#spf-clip)" fill="none" stroke="var(--text,#F4F3F6)" stroke-width="1.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/></svg>'
+      + '<span class="spf-hit' + (mode === 'fail' ? '' : ' g') + '" style="left:100%;top:' + Y(c[c.length - 1]) + 'px"></span></div>'
       + '<div class="spf-lg">' + (tgL ? '<span><i class="g"></i>' + (es ? 'objetivo ' : 'target ') + whole(tgL) + '</span>' : '<span></span>')
       + (flL != null ? '<span><i class="r"></i>' + (es ? 'suelo ' : 'floor ') + whole(flL) + '</span>' : '') + '</div>';
   }
@@ -74111,6 +74125,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if(h.code === 'bigLosses'){ t = T('Losses well over your usual ' + whole(h.usualLoss), 'Pérdidas muy por encima de tu habitual de ' + whole(h.usualLoss)); d = nT(h.trades); }
     else return '';
     return '<li><span>' + esc(t) + '<span class="d">' + esc(d) + '</span></span><span class="m ' + (h.net < 0 ? 'bad' : 'good') + '">' + pm(h.net) + '</span></li>';
+  }
+  // The line drawn: the clip's width from 0 to the chart's, eased, from 0.3 s; in full by 3 s whatever happens.
+  function drawLine(root){
+    var r = root && root.querySelector('.spf-clip rect'); if(!r || r.getAttribute('width') === '300') return;
+    var dur = 1500, t0 = 0, done = false;
+    function fin(){ if(done) return; done = true; r.setAttribute('width', '300'); }
+    function st(ts){
+      if(done) return; if(!t0) t0 = ts;
+      var p = Math.min(1, (ts - t0) / dur), e = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+      r.setAttribute('width', (300 * e).toFixed(1));
+      if(p < 1) requestAnimationFrame(st); else fin();
+    }
+    setTimeout(function(){ requestAnimationFrame(st); }, 300);
+    setTimeout(fin, 3000);
   }
   // "Ask the assistant": the Session Bias tab, the assistant opened, the question sent.
   function askAssistant(q){
@@ -74172,7 +74200,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var BW = { afterStop: T('past your stop', 'pasado tu stop'), overMaxTrades: T('too many trades', 'demasiadas operaciones'), overMaxRisk: T('over risk', 'riesgo de más') };
     var dayRow = function(d){ return '<div class="spf-day"><span>' + dayWord(d.date, es) + '</span><span>' + nT(d.trades) + '</span><span class="m ' + (d.net < 0 ? 'bad' : 'good') + '">' + pm(d.net) + '</span>' + (d.broke.length ? '<span class="f">' + d.broke.map(function(b){ return BW[b]; }).join(' · ') + '</span>' : '') + '</div>'; };
     var dl = fail ? (R.worstDays || []) : (R.bestDays || []);
-    var how = sec(T('How · the whole ', 'Cómo · ') + whole_, chartSvg(S, R, es) + '<div class="spf-cap">' + esc(cap) + '</div>'
+    var how = sec(T('How · the whole ', 'Cómo · ') + whole_, chartSvg(S, R, es, mode) + '<div class="spf-cap">' + esc(cap) + '</div>'
       + (dl.length ? '<div class="spf-days"><span class="spf-k">' + (fail ? T('Worst days', 'Peores días') : T('Best days', 'Mejores días')) + '</span>' + dl.map(dayRow).join('') + '</div>' : ''));
     // Why / to tighten
     var hs = fail ? R.habits : R.habits.filter(function(h){ return h.net < 0; }).slice(0, 4);
@@ -74216,6 +74244,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       + '</div>';
     document.body.appendChild(rv);
     var o = rv;
+    drawLine(o);
     o.addEventListener('click', function(e){
       var b = e.target && e.target.closest ? e.target.closest('[data-spf]') : null;
       if(!b){ if(e.target === o) rvClose(); return; }
@@ -74317,8 +74346,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       g.gain.setValueAtTime(0.6, t0); g.gain.setValueAtTime(0.6, t0 + 3.6); g.gain.linearRampToValueAtTime(0.0001, t0 + 5);
       sn.connect(g); g.connect(c.destination); sn.start(t0); sn.stop(t0 + 5.1);
       ksrc = { s: sn, g: g }; sn.onended = function(){ ksrc = null; };
+      setTimeout(flash, 120);   // the flash, then the rumble building (it peaks ~1.3 s in)
     }catch(e){}
   }
+  // Lightning far off (Nestor, 1 Oct 2026, yes): the sky behind the card brightens and fades once, under half a second.
+  function flash(){ var f = (ov && ov.id === 'st-failed') ? ov.querySelector('.spx-flash') : null; if(f && !f.classList.contains('go')) f.classList.add('go'); }
   function thunder(){
     tload().then(function(){
       var c = kctx(); if(!c || !ov) return;
@@ -74353,7 +74385,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       : T('Max drawdown on ' + dayWord(F.date, false) + at + ', trade ' + F.breakingTrade + ' of the day.', 'Drawdown máximo el ' + dayWord(F.date, true) + at + ', operación ' + F.breakingTrade + ' del día.');
     ov = document.createElement('div'); ov.id = 'st-failed';
     ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'spx-h');
-    ov.innerHTML = '<div class="sps-card" tabindex="-1">'
+    ov.innerHTML = '<div class="spx-flash" aria-hidden="true"></div><div class="sps-card" tabindex="-1">'
       + '<div class="sps-eb">' + esc(S.account) + '</div>' + SUNRISE
       + '<div class="sps-h" id="spx-h">' + esc(head) + '</div>'
       + '<div class="sps-sub">' + esc(T('It’s one result, not who you are as a trader.', 'Es un resultado, no lo que eres como trader.')) + '</div>'
@@ -74376,6 +74408,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     document.addEventListener('keydown', onKey, true);
     try{ o.querySelector('.sps-card').focus({ preventScroll: true }); }catch(e){}
     thunder();
+    setTimeout(flash, 700);   // with no sound yet (a phone waiting for a tap), the flash still comes
   }
 
   /* ---- when ---- */
