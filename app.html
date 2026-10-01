@@ -73273,6 +73273,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     cheer();
   }
 
+  try{ window.__stPopBusy = busy; }catch(e){}   // shared with the Challenge-passed pop-up
   window.__stPodium={
     check:function(){ waits=0; check(); },
     /* Why it would not show right now - for "it never popped up" questions. */
@@ -73312,6 +73313,296 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     document.addEventListener('visibilitychange', function(){ if(!document.hidden) poke(); });
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+})();
+
+/* ═══ Challenge passed ═══════════════════════════════════════════════════════════════════════════
+   Nestor, 1 Oct 2026 (picked from a list of ideas): "when an account crosses its profit target, gold confetti and a
+   'Challenge passed' card with the account, days taken and rules kept, plus one tap to post it" - the button saying
+   just "Post to community" (into #prop-firm-passes).
+   - Fires once per account, the first time it is past its profit target (Prop Firm Progress's own test: active, not
+     personal, not funded, a target set, current balance at or over start + target).
+   - Accounts already past their target when this shipped are marked seen without a celebration (data.passSeen,
+     _passSeenInitV1) - only new passes celebrate. All of it in the journal, so it is once per account, not per device.
+   - The figures are the account's own trades up to the one that crossed the target: days from its first trade, trading
+     days, trades, profit, net R, win rate (BE left out, as everywhere in the app). The rules line appears only when it
+     is true: no day lost the daily-loss amount, the balance never touched the max-drawdown floor.
+   - "Challenge passed" or "Verification passed", from the account's name.
+   - Waits for any other window (window.__stPopBusy, the podium's list) and never shows in a popped-out window.
+   - sessiontool.app/app.html?passed=preview shows it for an account that has passed (or a sample), posting nothing. */
+(function(){
+  function _t(en,es){ try{ return (typeof window._stT==='function') ? window._stT(en,es) : en; }catch(e){ return en; } }
+  function esc(x){ return String(x==null?'':x).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];}); }
+  function D(){ try{ return (typeof data!=='undefined' && data) ? data : (window.STCloud && window.STCloud.getData ? window.STCloud.getData() : null); }catch(e){ return null; } }
+  function save(){ try{ if(typeof saveData==='function') saveData(); else if(window.STCloud && window.STCloud.save) window.STCloud.save(); }catch(e){} }
+  function me(){ try{ return (window.STCloud&&window.STCloud.userId)||(window.currentUser&&window.currentUser.id)||null; }catch(e){ return null; } }
+  function sym(){ try{ return (typeof curSym==='function') ? curSym() : '£'; }catch(e){ return '£'; } }
+  function whole(v){ return sym() + Math.round(Math.abs(v)).toLocaleString('en-GB'); }
+  function funded(a){ try{ return !!(window.__stIsFunded && window.__stIsFunded(a)); }catch(e){ return false; } }
+  function ruleVal(rr, sb, mk, pk, ak){   // the same reading as Prop Firm Progress's ruleValue
+    var pct = parseFloat(rr[pk]), amt = parseFloat(rr[ak]); if(isNaN(pct)) pct = 0; if(isNaN(amt)) amt = 0;
+    var mode = (rr[mk] === 'amount' || rr[mk] === 'pct') ? rr[mk] : ((amt > 0 && !(pct > 0)) ? 'amount' : 'pct');
+    if(mode === 'amount') return amt;
+    if(pct > 100) return pct;
+    return sb * pct / 100;
+  }
+  function dayKey(d){ d = new Date(d); return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); }
+  function candidates(){
+    var d = D(); if(!d || !Array.isArray(d.accounts)) return [];
+    return d.accounts.filter(function(a){ return a && a.status === 'active' && a.kind !== 'personal' && !funded(a); });
+  }
+  // The account's trades, as computeAccountStats picks them: tagged to it, or untagged and dated after it was made.
+  function tradesOf(acc){
+    var all = []; try{ all = getAllLifetimeTrades(); }catch(e){ return []; }
+    var made = acc.createdAt ? new Date(acc.createdAt).getTime() : 0, SKEW = 3600000;
+    return all.filter(function(t){
+      if(!t || !t.date) return false;
+      if(t.accountId) return t.accountId === acc.id;
+      return new Date(t.date).getTime() >= (made - SKEW);
+    }).sort(function(a, b){
+      var x = new Date(a.date).getTime() - new Date(b.date).getTime();
+      return x || String(a.exitTime || a.entryTime || '').localeCompare(String(b.exitTime || b.entryTime || ''));
+    });
+  }
+  function passInfo(acc){
+    try{
+      var rr = acc.riskRules || {}, sb = parseFloat(acc.startingBalance) || 0; if(!(sb > 0)) return null;
+      var tg = ruleVal(rr, sb, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount'); if(!(tg > 0)) return null;
+      var st = window.__stAccountStats ? window.__stAccountStats(acc) : null;
+      if(!st || !(st.current >= sb + tg)) return null;
+      var base = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0) ? acc.balanceAtSetup : sb;
+      var dd = ruleVal(rr, sb, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount'), ddType = rr.ddType || 'static';
+      var dl = ruleVal(rr, sb, 'maxLossMode', 'maxLossPct', 'maxLossAmount');
+      var cps = (typeof tradeCopies === 'function') ? tradeCopies : function(){ return 1; };
+      var list = tradesOf(acc), run = base, peak = base, cross = -1, ddHit = false, dlHit = false, daily = {};
+      for(var i = 0; i < list.length; i++){
+        var t = list[i], net = (tradeGross(t) - tradeCosts(t)) * cps(t);
+        run += net; if(run > peak) peak = run;
+        var floor = (ddType === 'trailing') ? (peak - dd) : (ddType === 'trailing_lock') ? Math.min(peak - dd, sb) : (sb - dd);
+        if(dd > 0 && run <= floor) ddHit = true;
+        var k = dayKey(t.date); daily[k] = (daily[k] || 0) + net;
+        if(dl > 0 && daily[k] <= -dl) dlHit = true;
+        if(run >= sb + tg){ cross = i; break; }
+      }
+      if(cross < 0) return null;   // past the target only on paper (no trade crossed it): nothing to celebrate
+      var used = list.slice(0, cross + 1);
+      var first = new Date(used[0].date), last = new Date(used[cross].date);
+      var f0 = new Date(first.getFullYear(), first.getMonth(), first.getDate()).getTime(), l0 = new Date(last.getFullYear(), last.getMonth(), last.getDate()).getTime();
+      var days = Math.round((l0 - f0) / 86400000) + 1;
+      var tdays = {}; used.forEach(function(x){ tdays[dayKey(x.date)] = 1; });
+      var w = used.filter(function(x){ return x.result === 'Win'; }).length, l = used.filter(function(x){ return x.result === 'Lose'; }).length;
+      var netR = used.reduce(function(s, x){ try{ return s + (typeof tradeRforMath === 'function' ? tradeRforMath(x) : 0); }catch(e){ return s; } }, 0);
+      var stage = /verif/i.test(acc.name || '') ? 'verification' : 'challenge';
+      var short = String(acc.name || '').replace(/\s*[-–—]\s*(challenge|verification|evaluation|phase\s*\d+)\s*$/i, '').trim() || String(acc.name || '');
+      return { acc: acc, stage: stage, name: acc.name || '', short: short, sb: sb, target: tg, targetPct: tg / sb * 100,
+               reached: run - sb, days: days, tradingDays: Object.keys(tdays).length, trades: used.length,
+               winRate: (w + l) ? Math.round(w / (w + l) * 100) : null, netR: netR,
+               rules: (dl > 0 || dd > 0) && !dlHit && !ddHit, hasDl: dl > 0, hasDd: dd > 0, crossedAt: last.toISOString() };
+    }catch(e){ return null; }
+  }
+  function rulesText(P, es){
+    if(!P.rules) return '';
+    if(P.hasDl && P.hasDd) return es ? 'Nunca tocaste tu límite de pérdida diaria ni tu drawdown máximo.' : 'Never hit your daily loss limit or max drawdown.';
+    if(P.hasDl) return es ? 'Nunca tocaste tu límite de pérdida diaria.' : 'Never hit your daily loss limit.';
+    return es ? 'Nunca tocaste tu drawdown máximo.' : 'Never hit your max drawdown.';
+  }
+  function rulesPost(P, es){   // the same fact, said about the trader in the third person for the community
+    if(!P.rules) return '';
+    if(P.hasDl && P.hasDd) return es ? 'nunca tocó el límite de pérdida diaria ni el drawdown máximo' : 'never hit the daily loss limit or max drawdown';
+    if(P.hasDl) return es ? 'nunca tocó el límite de pérdida diaria' : 'never hit the daily loss limit';
+    return es ? 'nunca tocó el drawdown máximo' : 'never hit the max drawdown';
+  }
+  function fmtR(r){ var v = Math.round(r * 10) / 10; return (v > 0 ? '+' : v < 0 ? '−' : '') + Math.abs(v).toFixed(1) + 'R'; }
+  // The post, in both languages (the community serves each reader theirs).
+  function postBody(P, es){
+    var title = es ? ((P.stage === 'verification' ? 'Verificación superada' : 'Challenge superado') + ' — ' + P.short)
+                   : ((P.stage === 'verification' ? 'Verification passed' : 'Challenge passed') + ' — ' + P.short);
+    var L = function(en, sp){ return ((es ? sp : en) + ':').padEnd(16); };
+    var lines = [
+      L('Target', 'Objetivo') + whole(P.target) + ' (' + (Math.round(P.targetPct * 10) / 10) + '%) · ' + (es ? 'alcanzado ' : 'reached ') + whole(P.reached),
+      L('Days taken', 'Días') + P.days + ' (' + P.tradingDays + (es ? ' días de trading)' : ' trading days)'),
+      L('Trades', 'Operaciones') + P.trades + (P.winRate != null ? ' · ' + (es ? 'Acierto ' : 'Win rate ') + P.winRate + '%' : ''),
+      L('Net R', 'R neta') + fmtR(P.netR)
+    ];
+    var rp = rulesPost(P, es); if(rp) lines.push(L('Rules', 'Reglas') + rp);
+    return '**🏆 ' + title + '**\n```\n' + lines.join('\n') + '\n```';
+  }
+
+  /* ---- the pop-up ---- */
+  var ov = null, raf = 0, onKey = null;
+  function css(){
+    if(document.getElementById('st-passed-css')) return;
+    var s = document.createElement('style'); s.id = 'st-passed-css';
+    s.textContent =
+      '#st-passed{position:fixed;inset:0;z-index:100500;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(11,10,13,.88);overflow:hidden;animation:stpsIn .35s ease-out both;}'+
+      '#st-passed::before{content:"";position:absolute;top:-160px;left:50%;transform:translateX(-50%);width:780px;max-width:170vw;height:420px;background:radial-gradient(ellipse at center,rgba(240,193,90,.18),transparent 68%);pointer-events:none;}'+
+      '.sps-card{position:relative;z-index:1;width:100%;max-width:420px;background:var(--bg-elev,#131217);border:1px solid rgba(240,193,90,.55);border-radius:var(--radius-card,12px);padding:24px 22px 18px;text-align:center;color:var(--text,#F4F3F6);font-family:"AppNum","DM Mono",monospace;font-weight:300;box-shadow:var(--shadow-float,none);animation:stpsPop .5s cubic-bezier(.2,1.3,.4,1) both;}'+
+      '.sps-card:focus,.sps-card:focus-visible{outline:none !important;}'+
+      '.sps-eb{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--text-dim,#888);}'+
+      '.sps-cup{display:block;margin:12px auto 4px;width:36px;height:36px;color:#f0c15a;}'+
+      '.sps-h{font-family:"Fraunces",serif;font-weight:300;font-size:32px;line-height:1.15;margin:4px 0 2px;}'+
+      '.sps-h em{font-style:normal;color:#f0c15a;}'+
+      '.sps-sub{font-family:"Fraunces",serif;font-style:italic;font-weight:300;font-size:15px;color:var(--text-mid,#c0c0c0);margin-bottom:18px;}'+
+      '.sps-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-bottom:12px;}'+
+      '.sps-st{background:var(--bg-elev2,#1B1A21);border:1px solid var(--border,#2A2833);border-radius:8px;padding:10px 6px;min-width:0;}'+
+      '.sps-k{display:block;font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--text-dim,#888);margin-bottom:5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}'+
+      '.sps-v{font-size:17px;font-weight:500;color:var(--text,#F4F3F6);white-space:nowrap;}'+
+      '.sps-v.p{color:var(--accent,#f472b6);} .sps-v.g{color:var(--good,#4ECD8B);}'+
+      '.sps-ok{font-size:12px;color:var(--text-mid,#c0c0c0);margin:4px 0 0;line-height:1.5;}'+
+      '.sps-ok b{color:var(--good,#4ECD8B);font-weight:400;margin-right:4px;}'+
+      '.sps-btns{display:flex;flex-wrap:wrap;gap:10px;justify-content:center;margin-top:18px;border-top:1px solid var(--border,#2A2833);padding-top:16px;}'+
+      '.sps-btn{background:transparent;border:1px solid var(--border-2,#332F3C);border-radius:var(--radius-ctrl,8px);color:var(--text-mid,#c0c0c0);padding:9px 14px;font-family:"AppNum","DM Mono",monospace;font-size:10px;letter-spacing:.18em;text-transform:uppercase;cursor:pointer;transition:border-color 150ms ease-out,color 150ms ease-out;}'+
+      '.sps-btn.pr{border-color:var(--text-mid,#c0c0c0);color:var(--text,#F4F3F6);}'+
+      '.sps-btn:hover,.sps-btn:focus-visible{border-color:var(--text,#F4F3F6);color:var(--text,#F4F3F6);outline:none !important;}'+
+      '.sps-btn.is-posted{border-color:var(--good,#4ECD8B);color:var(--good,#4ECD8B);cursor:default;}'+
+      '.sps-note{font-size:11px;color:var(--text-dim,#888);margin-top:10px;}'+
+      '.sps-fx{position:absolute;inset:0;width:100%;height:100%;z-index:2;pointer-events:none;}'+
+      '@keyframes stpsIn{from{opacity:0}to{opacity:1}}'+
+      '@keyframes stpsPop{from{opacity:0;transform:translateY(14px) scale(.96)}to{opacity:1;transform:none}}'+
+      '@media (prefers-reduced-motion: reduce){#st-passed,.sps-card{animation:none;}}';
+    document.head.appendChild(s);
+  }
+  function confetti(cv){
+    var c = cv.getContext && cv.getContext('2d'); if(!c) return;
+    var W = 0, H = 0, DPR = 1, P = [], lt = 0;
+    var COL = ['#f0c15a', '#f6d27a', '#ffe8a3', '#c98655', '#f472b6', '#ffffff'];
+    function size(){ W = cv.clientWidth; H = cv.clientHeight; DPR = Math.min(window.devicePixelRatio || 1, 1.5, Math.sqrt(1200000 / Math.max(1, W * H))); cv.width = Math.round(W * DPR); cv.height = Math.round(H * DPR); c.setTransform(DPR, 0, 0, DPR, 0, 0); }
+    size(); window.addEventListener('resize', size);
+    var n = Math.round(Math.min(130, Math.max(70, W / 9)));
+    for(var i = 0; i < n; i++) P.push({ x: Math.random() * W, y: -10 - Math.random() * H * 0.7, vx: (Math.random() - .5) * 1.1, vy: 1.6 + Math.random() * 2, r: Math.random() * 6.2832, vr: (Math.random() - .5) * .24, w: 5 + Math.random() * 4, h: 8 + Math.random() * 6, col: COL[i % COL.length] });
+    function step(ts){
+      if(!ov || !cv.isConnected){ window.removeEventListener('resize', size); return; }
+      var dt = lt ? Math.min(3, (ts - lt) / 16.667) : 1; lt = ts;
+      c.setTransform(DPR, 0, 0, DPR, 0, 0); c.clearRect(0, 0, W, H);
+      for(var i = P.length - 1; i >= 0; i--){
+        var p = P[i]; p.x += p.vx * dt; p.y += p.vy * dt; p.r += p.vr * dt;
+        var co = Math.cos(p.r), si = Math.sin(p.r);
+        c.setTransform(DPR * co, DPR * si, -DPR * si, DPR * co, DPR * p.x, DPR * p.y); c.fillStyle = p.col; c.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.r * 1.3)));
+        if(p.y > H + 20) P.splice(i, 1);
+      }
+      c.setTransform(DPR, 0, 0, DPR, 0, 0);
+      if(P.length) raf = requestAnimationFrame(step); else window.removeEventListener('resize', size);
+    }
+    raf = requestAnimationFrame(step);
+  }
+  var CUP = '<svg class="sps-cup" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v5a5 5 0 0 1-10 0V4z"/><path d="M17 5h2a2 2 0 0 1 0 4h-2.2"/><path d="M7 5H5a2 2 0 0 0 0 4h2.2"/></svg>';
+  function close(){
+    if(!ov) return;
+    try{ cancelAnimationFrame(raf); }catch(e){}
+    try{ if(onKey) document.removeEventListener('keydown', onKey, true); }catch(e){}
+    onKey = null; var o = ov; ov = null; try{ o.remove(); }catch(e){}
+  }
+  function hhmm(d){ d = new Date(d); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  function paintPosted(btn, at){
+    btn.classList.add('is-posted'); btn.disabled = false;
+    btn.textContent = '✓ ' + _t('Posted ', 'Publicado ') + hhmm(at);
+  }
+  function show(P, opts){
+    if(ov || !P) return;
+    opts = opts || {}; css();
+    var es = (window._stLang === 'es' || window.__lang === 'es');
+    var d = D(), nm = ''; try{ nm = (d && d.userName && String(d.userName).trim()) || ''; }catch(e){}
+    var head = es ? ((P.stage === 'verification' ? 'Verificación <em>superada</em>' : 'Challenge <em>superado</em>'))
+                  : ((P.stage === 'verification' ? 'Verification' : 'Challenge') + ' <em>passed</em>');
+    var sub = _t('Target reached. Well traded', 'Objetivo alcanzado. Bien operado') + (nm ? ', ' + esc(nm) : '') + '.';
+    var cell = function(k, v, cls){ return '<div class="sps-st"><span class="sps-k">' + k + '</span><span class="sps-v' + (cls ? ' ' + cls : '') + '">' + v + '</span></div>'; };
+    var grid = cell(_t('Days', 'Días'), P.days) + cell(_t('Trading days', 'Días de trading'), P.tradingDays) + cell(_t('Trades', 'Operaciones'), P.trades)
+             + cell(_t('Profit', 'Beneficio'), '+' + whole(P.reached), 'g') + cell(_t('Net R', 'R neta'), fmtR(P.netR), 'p')
+             + cell(_t('Win rate', 'Acierto'), P.winRate != null ? P.winRate + '%' : '—');
+    var rt = rulesText(P, es);
+    var seen = (d && d.passSeen && d.passSeen[P.acc.id]) || null;
+    ov = document.createElement('div'); ov.id = 'st-passed';
+    ov.setAttribute('role', 'dialog'); ov.setAttribute('aria-modal', 'true'); ov.setAttribute('aria-labelledby', 'sps-h');
+    ov.innerHTML =
+      '<div class="sps-card" tabindex="-1">' +
+        '<div class="sps-eb">' + esc(P.name) + '</div>' + CUP +
+        '<div class="sps-h" id="sps-h">' + head + '</div>' +
+        '<div class="sps-sub">' + sub + '</div>' +
+        '<div class="sps-grid">' + grid + '</div>' +
+        (rt ? '<p class="sps-ok"><b>✓</b>' + esc(rt) + '</p>' : '') +
+        '<div class="sps-btns">' +
+          '<button type="button" class="sps-btn pr" data-sps="post">' + _t('Post to community', 'Publicar en la comunidad') + '</button>' +
+          '<button type="button" class="sps-btn" data-sps="close">' + _t('Close', 'Cerrar') + '</button>' +
+        '</div>' +
+        (opts.preview ? '<div class="sps-note">' + _t('Preview — nothing is posted.', 'Vista previa — no se publica nada.') + '</div>' : '') +
+      '</div><canvas class="sps-fx" aria-hidden="true"></canvas>';
+    document.body.appendChild(ov);
+    var pb = ov.querySelector('[data-sps="post"]');
+    if(seen && seen.postedAt) paintPosted(pb, seen.postedAt);
+    ov.addEventListener('click', function(e){
+      var b = e.target && e.target.closest ? e.target.closest('[data-sps]') : null;
+      if(!b){ if(e.target === ov) close(); return; }
+      if(b.getAttribute('data-sps') === 'close'){ close(); return; }
+      if(b.classList.contains('is-posted')) return;
+      if(opts.preview){ b.textContent = _t('Preview only', 'Solo vista previa'); return; }
+      if(typeof _stPosting === 'function' && _stPosting(b)) return;
+      var rel = (typeof _stPostLock === 'function') ? _stPostLock(b) : null;
+      var done = function(){ if(rel) rel(); };
+      try{
+        window.STCommunity.postToChannel('prop-firm-passes', postBody(P, false), postBody(P, true)).then(function(row){
+          done();
+          var at = new Date().toISOString();
+          try{ var dd = D(); dd.passSeen = dd.passSeen || {}; dd.passSeen[P.acc.id] = Object.assign({}, dd.passSeen[P.acc.id] || {}, { postedAt: at, postId: row && row.id ? String(row.id) : null }); save(); }catch(e){}
+          paintPosted(b, at);
+        }, function(){ done(); b.textContent = _t('Could not post — try again', 'No se pudo publicar — inténtalo de nuevo'); });
+      }catch(e){ done(); }
+    });
+    onKey = function(e){ if(e.key === 'Escape'){ e.stopPropagation(); close(); } };
+    document.addEventListener('keydown', onKey, true);
+    try{ ov.querySelector('.sps-card').focus({ preventScroll: true }); }catch(e){}
+    var still = false; try{ still = window.matchMedia('(prefers-reduced-motion: reduce)').matches; }catch(e){}
+    if(!still) confetti(ov.querySelector('.sps-fx'));
+  }
+
+  /* ---- when ---- */
+  function ready(){
+    try{ if(document.body.classList.contains('mentor-viewing')) return false; }catch(e){}
+    try{ if(window.__stIsDetachedWindow && window.__stIsDetachedWindow()) return false; }catch(e){}
+    if(!me() || !window.__stJournalPulled || document.hidden) return false;
+    var t = document.querySelector('.tab[data-page="bias"]'); if(!(t && t.offsetParent !== null)) return false;
+    try{ if(window.__stPopBusy && window.__stPopBusy()) return false; }catch(e){}
+    try{ if(document.getElementById('st-podium')) return false; }catch(e){}
+    return true;
+  }
+  /* Every 3 seconds: cheap - a few accounts, each one pass over its trades - and it catches a pass however it
+     happened (a trade saved, imported, edited, moved to the account). */
+  function tick(){
+    if(ov || document.hidden) return;
+    try{ if(document.body.classList.contains('mentor-viewing')) return; }catch(e){}
+    try{ if(window.__stIsDetachedWindow && window.__stIsDetachedWindow()) return; }catch(e){}
+    if(!me() || !window.__stJournalPulled) return;   // decide only on the account's real journal
+    var d = D(); if(!d) return;
+    d.passSeen = (d.passSeen && typeof d.passSeen === 'object') ? d.passSeen : {};
+    // First run: every account already past its target is marked seen, quietly.
+    if(!d._passSeenInitV1){
+      candidates().forEach(function(a){ if(!d.passSeen[a.id] && passInfo(a)) d.passSeen[a.id] = { at: new Date().toISOString(), pre: true }; });
+      d._passSeenInitV1 = true; save(); return;
+    }
+    var hit = null;
+    candidates().some(function(a){ if(d.passSeen[a.id]) return false; var P = passInfo(a); if(P){ hit = P; return true; } return false; });
+    if(!hit) return;
+    if(!ready()) return;   // a window is up: the next tick tries again
+    d.passSeen[hit.acc.id] = { at: new Date().toISOString() }; save();
+    show(hit);
+  }
+  function preview(){
+    var tries = 0;
+    (function go(){
+      if(ov) return;
+      if(!me() || !window.__stJournalPulled || (window.__stPopBusy && window.__stPopBusy())){ if(tries++ < 40) setTimeout(go, 1000); return; }
+      var P = null; candidates().concat((D() && D().accounts) || []).some(function(a){ P = a && a.kind !== 'personal' ? passInfo(a) : null; return !!P; });
+      if(!P){
+        var a = candidates()[0] || { id: 'demo', name: 'FTMO 70K - Challenge' };
+        P = { acc: a, stage: /verif/i.test(a.name || '') ? 'verification' : 'challenge', name: a.name, short: a.name, sb: 70000, target: 5600, targetPct: 8, reached: 5742, days: 15, tradingDays: 9, trades: 14, winRate: 57, netR: 9.2, rules: true, hasDl: true, hasDd: true };
+      }
+      show(P, { preview: true });
+    })();
+  }
+  window.__stPassed = { check: function(){ tick(); }, preview: preview, _show: show, _info: passInfo, _body: postBody, close: close };
+  function boot(){
+    try{ if(new URLSearchParams(location.search).get('passed') === 'preview'){ try{ var u = new URL(location.href); u.searchParams.delete('passed'); history.replaceState(history.state, '', u.pathname + u.search + u.hash); }catch(e){} setTimeout(preview, 4000); } }catch(e){}
+    setTimeout(tick, 5000); setInterval(tick, 3000);
+  }
+  if(document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
 })();
 
 /* ═══ AI Meter (admin-only Settings tab) ═════════════════════════════════════

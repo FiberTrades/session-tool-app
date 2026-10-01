@@ -1,5 +1,5 @@
 -- Repo mirror of public.st_post_review (DB functions do not deploy via git - apply this by migration).
--- The app's own structured posts (bias, review, series of 10, weekend review, shared playbooks) go through here.
+-- The app's own structured posts (bias, review, series of 10, weekend review, shared playbooks, Challenge passed) go through here.
 CREATE OR REPLACE FUNCTION public.st_post_review(p_slug text, p_body text, p_body_es text DEFAULT NULL::text, p_name text DEFAULT NULL::text, p_avatar text DEFAULT NULL::text)
  RETURNS uuid
  LANGUAGE plpgsql
@@ -17,8 +17,8 @@ begin
   if v_body = '' then raise exception 'empty body'; end if;
 
   -- The channels the app posts into. Kept in step with _APP_POST_CHANS in app.html; anything else
-  -- must go through the normal composer path and its post_policy. 'playbooks' = a shared playbook card.
-  if v_slug not in ('pre-session-bias','post-session-review','weekend-review','series-of-10-trades','playbooks') then
+  -- must go through the normal composer path and its post_policy. 'playbooks' = a shared playbook card; 'prop-firm-passes' = the Challenge-passed card (1 Oct 2026).
+  if v_slug not in ('pre-session-bias','post-session-review','weekend-review','series-of-10-trades','playbooks','prop-firm-passes') then
     raise exception 'not an app-post channel: %', v_slug;
   end if;
 
