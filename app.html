@@ -73521,6 +73521,115 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function minsOf(s){ var m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? (+m[1]) * 60 + (+m[2]) : null; }
   function stageOf(acc){ if(funded(acc)) return 'funded'; return /verif/i.test((acc && acc.name) || '') ? 'verification' : 'challenge'; }
   function shortName(n){ n = String(n || ''); return n.replace(/\s*[-–—]\s*(challenge|verification|evaluation|phase\s*\d+|funded)\s*$/i, '').trim() || n; }
+  /* The whole challenge, not just its last day (Nestor, 1 Oct 2026: "it should display the reason they failed the
+     challenge across all the trades they took in the failed challenge with the things they did bad too").
+     Every trade from the first to the one that broke the floor, replayed with its day:
+       - each habit across the whole run, with what it cost: trading on after their own daily stop, trades beyond their
+         max per day, risk over their max per trade, a trade within 15 minutes of a loss, a bigger risk straight after a
+         loss, negative mindset tags, losses far bigger than their usual one, the longest losing run;
+       - the days they kept every rule they set against the days they didn't;
+       - the path: start, peak, the slide to the floor, the worst days;
+       - what-ifs, replayed against the same floor: had they stopped at their own daily stop, kept to their max trades,
+         kept every trade to their max risk, or all three - would the account still be alive, and at what balance.
+     A habit appears only when it happened; a rule they never set is never judged. */
+  function challengeReview(used, P){
+    var sb = P.sb, dd = P.dd, ddType = P.ddType, dl = P.dl, mr = P.mr, mt = P.mt;
+    var floorOf = function(pk){ return ddType === 'trailing' ? pk - dd : ddType === 'trailing_lock' ? Math.min(pk - dd, sb) : sb - dd; };
+    var rows = [], byDay = {}, order = [];
+    used.forEach(function(t, i){
+      var k = dayKey(t.date), net = (tradeGross(t) - tradeCosts(t)) * P.cps(t), neg = [];
+      try{ if(window.__stMindSplit) neg = window.__stMindSplit(t.mindset || []).neg; }catch(e){}
+      var r = { i: i, t: t, k: k, net: net, risk: parseFloat(t.risk) || 0, en: minsOf(t.entryTime), ex: minsOf(t.exitTime), neg: neg, time: hhmmOf(t) };
+      rows.push(r); if(!byDay[k]){ byDay[k] = []; order.push(k); } byDay[k].push(r);
+    });
+    // Mark every trade with what it broke.
+    order.forEach(function(k){
+      var a = byDay[k], cum = 0, stopped = false;
+      a.forEach(function(r, n){
+        r.n = n + 1;
+        if(dl > 0 && stopped) r.afterStop = true;
+        cum += r.net; if(dl > 0 && !stopped && cum <= -dl){ stopped = true; r.hitStop = true; }
+        if(mt > 0 && n >= mt) r.extra = true;
+        if(mr > 0 && r.risk > mr * 1.02) r.overRisk = true;
+        var pv = a[n - 1];
+        if(pv && pv.net < 0){
+          if(r.en != null && pv.ex != null && r.en - pv.ex >= 0 && r.en - pv.ex <= 15){ r.quick = true; r.gap = r.en - pv.ex; }
+          if(pv.risk > 0 && r.risk > pv.risk * 1.1) r.sizeUp = true;
+        }
+      });
+    });
+    var sum = function(a){ return r2(a.reduce(function(s, r){ return s + r.net; }, 0)); };
+    var daysOf = function(a){ var o = {}; a.forEach(function(r){ o[r.k] = 1; }); return Object.keys(o).length; };
+    var wins = rows.filter(function(r){ return r.net > 0; }), losses = rows.filter(function(r){ return r.net < 0; });
+    var avgW = wins.length ? sum(wins) / wins.length : 0, avgL = losses.length ? -sum(losses) / losses.length : 0;
+    var sortedL = losses.map(function(r){ return -r.net; }).sort(function(a, b){ return a - b; }), usual = sortedL.length ? sortedL[Math.floor((sortedL.length - 1) / 2)] : 0;
+    var habits = [], add = function(code, a, extra){ if(a.length) habits.push(Object.assign({ code: code, trades: a.length, days: daysOf(a), net: sum(a) }, extra || {})); };
+    add('afterOwnDailyStop', rows.filter(function(r){ return r.afterStop; }), { ownStop: r2(dl) });
+    add('overMaxTrades', rows.filter(function(r){ return r.extra; }), { maxTrades: mt });
+    var ovr = rows.filter(function(r){ return r.overRisk; });
+    add('overMaxRisk', ovr, { maxRisk: r2(mr), biggestRisk: ovr.length ? r2(Math.max.apply(null, ovr.map(function(r){ return r.risk; }))) : null,
+                              excessLoss: r2(ovr.reduce(function(s, r){ return s + (r.net < 0 ? Math.max(0, -r.net - mr) : 0); }, 0)) });
+    var qk = rows.filter(function(r){ return r.quick; });
+    add('quickReentry', qk, { wins: qk.filter(function(r){ return r.net > 0; }).length, losses: qk.filter(function(r){ return r.net < 0; }).length });
+    add('biggerRiskAfterLoss', rows.filter(function(r){ return r.sizeUp; }));
+    var ng = rows.filter(function(r){ return r.neg.length; }), tags = {};
+    ng.forEach(function(r){ r.neg.forEach(function(m){ tags[m] = (tags[m] || 0) + 1; }); });
+    add('negativeMindset', ng, { tags: tags });
+    if(usual > 0) add('bigLosses', losses.filter(function(r){ return -r.net >= usual * 1.5; }), { usualLoss: r2(usual) });
+    habits.sort(function(a, b){ return a.net - b.net; });   // what cost the most first
+    var streak = 0, best = 0, bFrom = null, bTo = null, from = null;
+    rows.forEach(function(r){ if(r.net < 0){ if(!streak) from = r.k; streak++; if(streak > best){ best = streak; bFrom = from; bTo = r.k; } } else streak = 0; });
+    // Days that kept every rule they set, against the rest.
+    var rulesSet = dl > 0 || mt > 0 || mr > 0, clean = [], broken = [];
+    order.forEach(function(k){ var bad = byDay[k].some(function(r){ return r.afterStop || r.extra || r.overRisk; }); (bad ? broken : clean).push(k); });
+    var dayNet = function(k){ return byDay[k].reduce(function(s, r){ return s + r.net; }, 0); };
+    // The path.
+    var run = P.base, peak = P.base, peakOn = order[0], pi = 0, pays = P.pays || [], path = [];
+    rows.forEach(function(r){
+      while(pi < pays.length && pays[pi].day <= r.k){ run -= pays[pi].amt; peak -= pays[pi].amt; pi++; }
+      run += r.net; if(run > peak){ peak = run; peakOn = r.k; } r.run = run;
+    });
+    order.forEach(function(k){ var a = byDay[k]; path.push({ date: k, trades: a.length, net: r2(dayNet(k)), balanceEnd: r2(a[a.length - 1].run),
+      broke: [a.some(function(r){ return r.afterStop; }) ? 'afterStop' : '', a.some(function(r){ return r.extra; }) ? 'overMaxTrades' : '', a.some(function(r){ return r.overRisk; }) ? 'overMaxRisk' : ''].filter(Boolean) }); });
+    var worst = path.slice().sort(function(a, b){ return a.net - b.net; }).filter(function(d){ return d.net < 0; }).slice(0, 3);
+    var afterPeak = order.slice(order.indexOf(peakOn) + 1);
+    // What-ifs, replayed against the same floor.
+    function replay(adj){
+      var run = P.base, pk = P.base, j = 0, touched = false, minRoom = Infinity;
+      rows.forEach(function(r){
+        while(j < pays.length && pays[j].day <= r.k){ run -= pays[j].amt; pk -= pays[j].amt; j++; }
+        var n = adj(r); if(n == null) return;
+        run += n; if(run > pk) pk = run; var room = run - floorOf(pk); if(room < minRoom) minRoom = room; if(room <= 0) touched = true;
+      });
+      return { balance: r2(run), aboveFloor: r2(run - floorOf(pk)), survived: !touched, saved: r2(run - rows[rows.length - 1].run) };
+    }
+    var capRisk = function(r){ return (mr > 0 && r.overRisk && r.risk > 0) ? r.net * mr / r.risk : r.net; };
+    var whatIf = {};
+    if(!P.passed && dl > 0 && rows.some(function(r){ return r.afterStop; })) whatIf.keptOwnDailyStop = replay(function(r){ return r.afterStop ? null : r.net; });
+    if(!P.passed && mt > 0 && rows.some(function(r){ return r.extra; })) whatIf.keptMaxTrades = replay(function(r){ return r.extra ? null : r.net; });
+    if(!P.passed && mr > 0 && ovr.length) whatIf.keptMaxRisk = replay(capRisk);
+    if(Object.keys(whatIf).length > 1) whatIf.keptAllThree = replay(function(r){ return (r.afterStop || r.extra) ? null : capRisk(r); });
+    // The one line to take away: the single rule that would have kept it alive with the most room, else the one that
+    // would have saved the most.
+    var next = null;
+    Object.keys(whatIf).forEach(function(k){ var w = whatIf[k]; if(w.saved <= 0) return;
+      var score = (w.survived ? 1e9 : 0) + (k === 'keptAllThree' ? -5e8 : 0) + w.saved;
+      if(!next || score > next.score) next = { rule: k, score: score, balance: w.balance, aboveFloor: w.aboveFloor, survived: w.survived, saved: w.saved }; });
+    if(next) delete next.score;
+    return {
+      days: order.length, trades: rows.length, wins: wins.length, losses: losses.length, bes: rows.length - wins.length - losses.length,
+      winRate: (wins.length + losses.length) ? Math.round(wins.length / (wins.length + losses.length) * 100) : null,
+      avgWin: r2(avgW), avgLoss: r2(avgL), usualLoss: r2(usual), net: sum(rows),
+      netR: r2(used.reduce(function(s, x){ try{ return s + (typeof tradeRforMath === 'function' ? tradeRforMath(x) : 0); }catch(e){ return s; } }, 0)),
+      start: r2(P.base), peak: r2(peak), peakOn: peakOn, end: r2(rows[rows.length - 1].run),
+      slide: { tradingDays: afterPeak.length, net: r2(afterPeak.reduce(function(s, k){ return s + dayNet(k); }, 0)) },
+      longestLosingRun: best >= 2 ? { losses: best, from: bFrom, to: bTo } : null,
+      rulesKeptDays: rulesSet ? { days: clean.length, net: r2(clean.reduce(function(s, k){ return s + dayNet(k); }, 0)) } : null,
+      rulesBrokenDays: rulesSet ? { days: broken.length, net: r2(broken.reduce(function(s, k){ return s + dayNet(k); }, 0)) } : null,
+      habits: habits, worstDays: worst, whatIf: whatIf, nextTime: next,
+      path: path
+    };
+  }
   function propStatus(acc){
     try{
       if(!acc || acc.kind === 'personal') return null;
@@ -73567,7 +73676,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       out.startedOn = dayKey(f0); out.days = Math.round((new Date(l0.getFullYear(), l0.getMonth(), l0.getDate()) - new Date(f0.getFullYear(), f0.getMonth(), f0.getDate())) / 86400000) + 1;
       var td = {}; used.forEach(function(x){ td[dayKey(x.date)] = 1; }); out.tradingDays = Object.keys(td).length;
       out.tradesTaken = used.length;
-      if(ev.kind === 'passed'){ out.status = 'passed'; out.passedOn = ev.day; out.profitAtPass = r2(run - sb); return out; }
+      if(ev.kind === 'passed'){
+        out.status = 'passed'; out.passedOn = ev.day; out.profitAtPass = r2(run - sb);
+        // The same whole-run breakdown for a pass (Nestor, 1 Oct 2026): what worked, and the habits that still cost money.
+        try{ out.review = challengeReview(used, { sb: sb, base: base, dd: dd, ddType: ddType, dl: dl, mr: mr, mt: mt, pays: pays, cps: cps, passed: true }); }catch(e){}
+        return out;
+      }
 
       out.status = 'failed'; out.failedOn = ev.day;
       var day = byDay[ev.day], brk = day[day.length - 1];
@@ -73605,6 +73719,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         peak: r2(peak), peakOn: peakDay, fromPeak: r2(peak - run),
         trades: trades, lastDays: lastDays, why: why
       };
+      try{ out.review = challengeReview(used, { sb: sb, base: base, dd: dd, ddType: ddType, dl: dl, mr: mr, mt: mt, pays: pays, cps: cps }); }catch(e){}
       return out;
     }catch(e){ return null; }
   }
