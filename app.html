@@ -39559,7 +39559,9 @@ try {
         if (ddType === 'trailing') floor = peak - ddAmount;
         else if (ddType === 'trailing_lock') floor = Math.min(peak - ddAmount, sb);
         else floor = sb - ddAmount;
-        if (current <= floor) {
+        let _failed = false;
+        try { const _ps = window.__stPropStatus ? window.__stPropStatus(acc) : null; _failed = !!(_ps && _ps.status === 'failed'); } catch (e) {}
+        if (current <= floor && !_failed) {
           signal = 'ddBreach';
           fields = { acct: acctName, current: money(current) };
         }
@@ -44695,7 +44697,8 @@ try {
            "you let red run past your own limit" stayed all evening, the outcome and counts unchanged. */
         let _rbK = ''; try { const _rs = (typeof getRuleStatus === 'function') ? getRuleStatus() : null; if (_rs) _rbK = 'r' + (_rs.dailyLossBroken ? 'L' : '') + (_rs.riskBroken ? 'R' : '') + (_rs.tradeCountBroken ? 'C' : '') + (_rs.allFollowed ? 'F' : ''); } catch (e) {}
         let _qK = ''; try { const _qd = (typeof quarterDay === 'function') ? quarterDay() : null; if (_qd) _qK = 'q' + _qd.kind + _qd.q; } catch (e) {}
-        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on', _clkK, _rbK, _qK].join('.');
+        let _pK = ''; try { const _pe = (typeof window.__stPropEvents === 'function') ? window.__stPropEvents()[0] : null; if (_pe) _pK = 'p' + _pe.kind.charAt(0) + String(_pe.on || '').replace(/-/g, '') + String((_pe.s && _pe.s.accountId) || _pe.accountId || '').slice(-4); } catch (e) {}
+        return [getTodayOutcome() || 'none', _nSeries, _nReview, _phase, _isOffDayToday() ? 'off' : 'on', _clkK, _rbK, _qK, _pK].join('.');
       } catch (e) { return ''; }
     })();
     targets.forEach(el => {
@@ -44712,10 +44715,12 @@ try {
         const tail   = isReview ? _cachedTailReview  : _cachedTailBias;
         // A clock change this week leads the Session Bias line (Nestor, 28 Sep 2026), and so does the first or
         // last trading day of a quarter (1 Oct 2026) - both, if they fall together.
-        let _clk = '', _qtr = '';
+        // So does a pass, a fail or a payout from the last two days (1 Oct 2026) - before the others.
+        let _clk = '', _qtr = '', _prop = '';
         try { if (!isReview && typeof clockNotice === 'function') _clk = clockNotice(window.__lang === 'es'); } catch (e) {}
         try { if (!isReview && typeof quarterNotice === 'function') _qtr = quarterNotice(window.__lang === 'es'); } catch (e) {}
-        html = compose(opener, [_qtr, _clk].filter(Boolean).join(' ') || tail);
+        try { if (!isReview && typeof window.__stPropEventLine === 'function') _prop = window.__stPropEventLine(window.__lang === 'es'); } catch (e) {}
+        html = compose(opener, [_prop, _qtr, _clk].filter(Boolean).join(' ') || tail);
       }
       // The seed is re-picked from its pool on every render and refreshAllSurfaces runs on every
       // click, so without this a greeting would reword itself in front of the reader every time
@@ -45267,6 +45272,11 @@ try {
               });
               return out.length ? out : null;
             } catch (e) { return null; }
+          })(),
+          // Every prop account's standing (1 Oct 2026): in progress / passed / failed / funded, the firm rules, and for a
+          // fail the day it happened - each trade, the one that broke the drawdown floor, the days before, and why.
+          propAccounts: (function () {
+            try { var pa = window.__stAllPropStatus ? window.__stAllPropStatus() : []; return pa.length ? pa : null; } catch (e) { return null; }
           })(),
           currency: s.currency || 'GBP',
           startingBalance: nr(s.startingBalance),
@@ -45854,9 +45864,28 @@ try {
               : (' IMPORTANT CONTEXT: today is the ' + (_qd.kind === 'start' ? 'first' : 'last') + ' trading day of Q' + _qd.q + ' ' + _qd.y + '. Keep that in the line - it is the point of it today.');
           }
         } catch (_e) {}
+        /* A pass, a fail or a payout must survive the rewrite too. The default tone for losses is blunt ("hold me
+           accountable"); Nestor, 1 Oct 2026, for a failed challenge: "a supportive line, not a harsh one". */
+        var _propClause = '';
+        try {
+          var _pe = (surface === 'bias' && typeof window.__stPropEvents === 'function') ? window.__stPropEvents()[0] : null;
+          if (_pe && _pe.kind === 'failed') {
+            _propClause = (lang === 'es')
+              ? ' CONTEXTO IMPORTANTE: esta línea trata de una cuenta de prop firm que acaba de perder (tocó el drawdown máximo). Sé COMPRENSIVO y cálido, NUNCA duro, contundente ni exigente aquí, aunque sea una pérdida: nada de "hazte responsable" ni sermones. Mantén la cuenta, el día, la operación y las cifras, y el mensaje de que es un resultado y no lo que soy como trader.'
+              : ' IMPORTANT CONTEXT: this line is about a prop firm account I just lost (it hit the max drawdown). Be SUPPORTIVE and warm - NEVER harsh, blunt or demanding here, even though it is a loss: no "own it", no lecture. Keep the account, the day, the trade and the figures, and the point that it is one result, not who I am as a trader.';
+          } else if (_pe && _pe.kind === 'passed') {
+            _propClause = (lang === 'es')
+              ? ' CONTEXTO IMPORTANTE: esta línea celebra que superé una fase de una prop firm. Mantén la cuenta, el día, los días que tardé y el siguiente paso: es lo principal de hoy.'
+              : ' IMPORTANT CONTEXT: this line celebrates passing a prop firm phase. Keep the account, the day, how long it took and the next step - it is the point of the greeting today.';
+          } else if (_pe && _pe.kind === 'payout') {
+            _propClause = (lang === 'es')
+              ? ' CONTEXTO IMPORTANTE: esta línea celebra un pago recibido de una prop firm. Mantén la cantidad y la cuenta: es lo principal de hoy.'
+              : ' IMPORTANT CONTEXT: this line celebrates a prop firm payout I received. Keep the amount and the account - it is the point of the greeting today.';
+          }
+        } catch (_e) {}
         var prompt = (lang === 'es'
           ? ('Reescribe esta frase de saludo para que suene escrita personalmente para mí y algo más afilada. QUÉDATE estrictamente en el tema de ESTA línea (sobre ' + tp.es + '); reformula lo que ya dice y NO metas datos ni ideas de otras pestañas (p. ej. mi mejor día de la semana, mi winrate de por vida) salvo que la propia línea los mencione. NO inventes ni insinúes hora, urgencia ni estado de la sesión (p. ej. "la sesión empieza pronto", "ahora mismo", "ya casi") a menos que la línea ya lo diga. Mantén el MISMO significado y cualquier número concreto, UNA sola línea corta, sin "Hola" ni despedida. TONO: motivador y alentador por defecto — pero AJUSTA el tono a la línea: cuando refleje pérdidas, días en rojo, una racha perdedora o disciplina floja, sé directo y contundente y exígeme, como un mentor que dice la verdad incómoda (firme, nunca cruel ni insultante). Devuelve SOLO la línea reescrita, sin comillas. Línea:')
-          : ('Rewrite this in-app greeting line so it feels written personally for me and a little sharper. Stay STRICTLY on the topic of THIS line (about ' + tp.en + '); rephrase what it already says and DO NOT bring in stats or insights from other tabs (e.g. my best weekday, my lifetime win rate) unless the line itself already mentions them. Do NOT invent or imply any timing, urgency, or session state (e.g. "session starts soon", "right now", "about to begin") unless the line already says it. Keep the SAME core meaning and any specific numbers, ONE short line, no "Hi"/"Hello", no sign-off. TONE: motivating and encouraging by default — but MATCH the tone to the line: when it reflects losses, red days, a losing run or slipping discipline, be direct and blunt and hold me accountable, like a mentor who tells the hard truth (firm, never cruel or insulting). Return ONLY the rewritten line, no quotes. Line:')) + '"' + seed + '"' + _biasClause + _offClause + _holClause + _qClause;   // context clauses go last so they're the freshest instruction
+          : ('Rewrite this in-app greeting line so it feels written personally for me and a little sharper. Stay STRICTLY on the topic of THIS line (about ' + tp.en + '); rephrase what it already says and DO NOT bring in stats or insights from other tabs (e.g. my best weekday, my lifetime win rate) unless the line itself already mentions them. Do NOT invent or imply any timing, urgency, or session state (e.g. "session starts soon", "right now", "about to begin") unless the line already says it. Keep the SAME core meaning and any specific numbers, ONE short line, no "Hi"/"Hello", no sign-off. TONE: motivating and encouraging by default — but MATCH the tone to the line: when it reflects losses, red days, a losing run or slipping discipline, be direct and blunt and hold me accountable, like a mentor who tells the hard truth (firm, never cruel or insulting). Return ONLY the rewritten line, no quotes. Line:')) + '"' + seed + '"' + _biasClause + _offClause + _holClause + _qClause + _propClause;   // context clauses go last so they're the freshest instruction
         call('greet', [{ role: 'user', content: prompt }]).then(function (reply) {
           _greetInflight[key] = 0; el.__aiPending = false;
           reply = String(reply || '').replace(/^["'\s]+|["'\s]+$/g, '');
@@ -73473,6 +73502,155 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var rp = rulesPost(P, es); if(rp) lines.push(L('Rules', 'Reglas') + rp);
     return '**🏆 ' + title + '**\n```\n' + lines.join('\n') + '\n```';
   }
+
+  /* ---- Every prop account's standing, for the assistant and the greeting ----
+     Nestor, 1 Oct 2026: "can the AI assistant be aware if a user passes, fails a prop challenge/verification, or if they
+     get a payout?" - and for a fail, "a detailed message of what when how and why they failed".
+     propStatus(acc) walks the account's trades in order, as the firm would, paid payouts coming off the balance on the
+     day they were paid. The FIRST of these ends it:
+       failed: the balance touching the max-drawdown floor (static, trailing or trailing-locked, as Prop Firm Progress);
+       passed: the balance reaching start + profit target (not for a funded account - it has no target).
+     The account's daily-loss rule is NOT a fail: every member sets it as their own stop (on 1 Oct the FTMO 70K's was
+     £800 and the 10Ks' £140-150, against FTMO's 5%), so going past it is a reason in the "why", never the verdict.
+     For a fail, the day it happened in full - every trade, the one that broke the floor - the last days before it, and
+     the patterns that day shows, each only when the data says so: past their own daily stop, more trades than their
+     max, risk over their max, a trade straight after a loss, negative mindset tags, a loss bigger than usual, a run of
+     losses. */
+  function r2(v){ return Math.round(v * 100) / 100; }
+  function hhmmOf(t){ var s = String((t && (t.exitTime || t.entryTime)) || ''); return /^\d{1,2}:\d{2}/.test(s) ? s.slice(0, 5) : ''; }
+  function minsOf(s){ var m = /^(\d{1,2}):(\d{2})/.exec(String(s || '')); return m ? (+m[1]) * 60 + (+m[2]) : null; }
+  function stageOf(acc){ if(funded(acc)) return 'funded'; return /verif/i.test((acc && acc.name) || '') ? 'verification' : 'challenge'; }
+  function shortName(n){ n = String(n || ''); return n.replace(/\s*[-–—]\s*(challenge|verification|evaluation|phase\s*\d+|funded)\s*$/i, '').trim() || n; }
+  function propStatus(acc){
+    try{
+      if(!acc || acc.kind === 'personal') return null;
+      var rr = acc.riskRules || {}, sb = parseFloat(acc.startingBalance) || 0; if(!(sb > 0)) return null;
+      var stage = stageOf(acc);
+      var tg = stage === 'funded' ? 0 : ruleVal(rr, sb, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount');
+      var dd = ruleVal(rr, sb, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount'), ddType = rr.ddType || 'static';
+      var dl = ruleVal(rr, sb, 'maxLossMode', 'maxLossPct', 'maxLossAmount');
+      var mr = ruleVal(rr, sb, 'maxRiskMode', 'maxRiskPct', 'maxRiskAmount');
+      var mt = parseInt(rr.maxTrades, 10) || 0;
+      if(!(tg > 0) && !(dd > 0)) return null;   // no firm rules: nothing to judge
+      var base = (typeof acc.balanceAtSetup === 'number' && acc.balanceAtSetup > 0) ? acc.balanceAtSetup : sb;
+      var cps = (typeof tradeCopies === 'function') ? tradeCopies : function(){ return 1; };
+      var pays = []; try{ pays = (window.__stPayouts ? window.__stPayouts.list(acc) : []).filter(function(p){ return p && p.status === 'paid' && p.paidOn; })
+        .map(function(p){ return { day: dayKey(p.paidOn), amt: parseFloat(p.amount) || 0 }; }).sort(function(a, b){ return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; }); }catch(e){}
+      var list = tradesOf(acc), run = base, peak = base, peakDay = null, daily = {}, byDay = {}, ev = null, floor = sb - dd, pi = 0;
+      for(var i = 0; i < list.length; i++){
+        var t = list[i], k = dayKey(t.date);
+        while(pi < pays.length && pays[pi].day <= k){ run -= pays[pi].amt; peak -= pays[pi].amt; pi++; }
+        var net = (tradeGross(t) - tradeCosts(t)) * cps(t);
+        run += net; if(run > peak){ peak = run; peakDay = k; }
+        floor = (ddType === 'trailing') ? (peak - dd) : (ddType === 'trailing_lock') ? Math.min(peak - dd, sb) : (sb - dd);
+        daily[k] = (daily[k] || 0) + net; (byDay[k] = byDay[k] || []).push({ t: t, net: net, run: run });
+        if(dd > 0 && run <= floor){ ev = { kind: 'failed', i: i, day: k }; break; }
+        if(tg > 0 && run >= sb + tg){ ev = { kind: 'passed', i: i, day: k }; break; }
+      }
+      var st = window.__stAccountStats ? window.__stAccountStats(acc) : null, cur = st ? st.current : run;
+      var out = { account: acc.name || acc.id, accountId: acc.id, stage: stage, archived: (acc.status || 'active') !== 'active',
+                  startingBalance: sb, balance: r2(cur), tradesLogged: list.length,
+                  rules: { profitTarget: tg || null, maxDrawdown: dd || null, drawdownType: ddType, ownDailyLossStop: dl || null, maxRiskPerTrade: mr || null, maxTrades: mt || null } };
+      if(!ev){
+        // Archived without reaching the target or the floor: closed (the trader ended it - the app can't say why).
+        out.status = out.archived ? 'closed' : stage === 'funded' ? 'funded' : 'inProgress';
+        if(tg > 0){ out.toTarget = r2(Math.max(0, sb + tg - cur)); out.pctOfTarget = Math.max(0, Math.round((cur - sb) / tg * 100)); }
+        if(dd > 0){
+          var pk = (st && typeof st.peak === 'number' && st.peak > 0) ? st.peak : sb;
+          var fl = (ddType === 'trailing') ? (pk - dd) : (ddType === 'trailing_lock') ? Math.min(pk - dd, sb) : (sb - dd);
+          out.drawdownFloor = r2(fl); out.roomAboveFloor = r2(cur - fl);
+        }
+        return out;
+      }
+      var used = list.slice(0, ev.i + 1);
+      var f0 = new Date(used[0].date), l0 = new Date(used[used.length - 1].date);
+      out.startedOn = dayKey(f0); out.days = Math.round((new Date(l0.getFullYear(), l0.getMonth(), l0.getDate()) - new Date(f0.getFullYear(), f0.getMonth(), f0.getDate())) / 86400000) + 1;
+      var td = {}; used.forEach(function(x){ td[dayKey(x.date)] = 1; }); out.tradingDays = Object.keys(td).length;
+      out.tradesTaken = used.length;
+      if(ev.kind === 'passed'){ out.status = 'passed'; out.passedOn = ev.day; out.profitAtPass = r2(run - sb); return out; }
+
+      out.status = 'failed'; out.failedOn = ev.day;
+      var day = byDay[ev.day], brk = day[day.length - 1];
+      var before = r2(day[0].run - day[0].net);
+      var trades = day.map(function(x, n){
+        var tt = x.t, neg = [];
+        try{ if(window.__stMindSplit) neg = window.__stMindSplit(tt.mindset || []).neg; }catch(e){}
+        return { n: n + 1, time: hhmmOf(tt), entry: String(tt.entryTime || '').slice(0, 5), exit: String(tt.exitTime || '').slice(0, 5),
+                 symbol: tt.symbol || '', side: tt.side || '', result: tt.result || '', net: r2(x.net), balanceAfter: r2(x.run),
+                 risk: parseFloat(tt.risk) || null, negativeMindset: neg };
+      });
+      // The days before it: the slide, when it took more than one day.
+      var dks = Object.keys(byDay).sort(), lastDays = dks.slice(-5).map(function(k){ var a = byDay[k]; return { date: k, trades: a.length, net: r2(daily[k]), balanceEnd: r2(a[a.length - 1].run) }; });
+      var why = [];
+      if(dl > 0){
+        var cum = 0, at = -1; for(var c = 0; c < trades.length; c++){ cum += trades[c].net; if(cum <= -dl){ at = c; break; } }
+        if(at >= 0) why.push({ code: 'pastOwnDailyStop', ownStop: r2(dl), reachedOnTrade: at + 1, at: trades[at].time, tradesAfter: trades.length - at - 1, dayLoss: r2(-daily[ev.day]) });
+      }
+      if(mt > 0 && day.length > mt) why.push({ code: 'tooManyTrades', trades: day.length, allowed: mt });
+      if(mr > 0){ var over = trades.filter(function(x){ return x.risk && x.risk > mr * 1.02; }); if(over.length) why.push({ code: 'overRisk', maxRisk: r2(mr), trades: over.map(function(x){ return { n: x.n, time: x.time, risk: x.risk }; }) }); }
+      for(var q = 1; q < trades.length; q++){
+        var prev = trades[q - 1], nx = trades[q], g = (minsOf(nx.entry) != null && minsOf(prev.exit) != null) ? minsOf(nx.entry) - minsOf(prev.exit) : null;
+        if(prev.net < 0 && g != null && g >= 0 && g <= 15){ why.push({ code: 'quickReentry', afterLossAt: prev.exit || prev.time, minutes: g, tradeN: nx.n }); break; }
+      }
+      var negs = {}; trades.forEach(function(x){ x.negativeMindset.forEach(function(m){ negs[m] = 1; }); });
+      if(Object.keys(negs).length) why.push({ code: 'negativeMindset', tags: Object.keys(negs) });
+      var losses = list.slice(0, ev.i + 1 - day.length).map(function(x){ return (tradeGross(x) - tradeCosts(x)) * cps(x); }).filter(function(v){ return v < 0; });
+      if(losses.length >= 3 && brk.net < 0){ var avg = losses.reduce(function(s, v){ return s - v; }, 0) / losses.length; if(-brk.net >= avg * 1.5) why.push({ code: 'biggerThanUsual', loss: r2(-brk.net), usualLoss: r2(avg), times: Math.round(-brk.net / avg * 10) / 10 }); }
+      var streak = 0, best = 0; trades.forEach(function(x){ if(x.net < 0){ streak++; if(streak > best) best = streak; } else streak = 0; });
+      if(best >= 2) why.push({ code: 'lossStreak', losses: best });
+      out.failure = {
+        rule: 'maxDrawdown', drawdownType: ddType, date: ev.day, at: hhmmOf(brk.t), breakingTrade: day.length, tradesThatDay: day.length,
+        floor: r2(floor), balanceAfter: r2(run), belowFloorBy: r2(floor - run),
+        balanceBeforeThatDay: before, dayResult: r2(daily[ev.day]),
+        peak: r2(peak), peakOn: peakDay, fromPeak: r2(peak - run),
+        trades: trades, lastDays: lastDays, why: why
+      };
+      return out;
+    }catch(e){ return null; }
+  }
+  function allPropStatus(){
+    var d = D(); if(!d || !Array.isArray(d.accounts)) return [];
+    return d.accounts.map(propStatus).filter(Boolean);
+  }
+  // Recent events for the greeting: a pass, a fail or a paid payout in the last two days, archived accounts included
+  // (a failed account is often archived the same evening).
+  function recentEvents(){
+    var out = [], today = new Date(); today.setHours(12, 0, 0, 0);
+    var recent = function(key){ if(!key) return false; var d = new Date(dayKey(key) + 'T12:00:00'); var n = Math.round((today - d) / 86400000); return n >= 0 && n <= 2; };
+    var d = D(); if(!d || !Array.isArray(d.accounts)) return out;
+    d.accounts.forEach(function(a){
+      var s = propStatus(a); if(!s) return;
+      if(s.status === 'failed' && recent(s.failedOn)) out.push({ kind: 'failed', on: s.failedOn, s: s });
+      else if(s.status === 'passed' && recent(s.passedOn)) out.push({ kind: 'passed', on: s.passedOn, s: s });
+    });
+    d.accounts.forEach(function(a){
+      try{ (window.__stPayouts ? window.__stPayouts.list(a) : []).forEach(function(p){
+        if(p && p.status === 'paid' && recent(p.paidOn)) out.push({ kind: 'payout', on: dayKey(p.paidOn), account: a.name || a.id, accountId: a.id, amount: parseFloat(p.amount) || 0, received: window.__stPayouts.received(a, p) });
+      }); }catch(e){}
+    });
+    var order = { failed: 0, passed: 1, payout: 2 };
+    return out.sort(function(x, y){ return order[x.kind] - order[y.kind] || (x.on < y.on ? 1 : x.on > y.on ? -1 : 0); });
+  }
+  function dayWord(key, es){ try{ return new Date(dayKey(key) + 'T12:00:00').toLocaleDateString(es ? 'es-ES' : 'en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); }catch(e){ return String(key); } }
+  // The greeting line for the most important recent event, or ''.
+  function eventLine(es){
+    var e = recentEvents()[0]; if(!e) return '';
+    if(e.kind === 'payout'){
+      return es ? ('Pago recibido: ' + whole(e.received || e.amount) + ' de tu ' + e.account + '. Bien ganado.')
+                : ('Payout received: ' + whole(e.received || e.amount) + ' from your ' + e.account + '. Well earned.');
+    }
+    var s = e.s, nm = shortName(s.account);
+    var what = es ? (s.stage === 'verification' ? 'Verificación de ' + nm : s.stage === 'funded' ? 'cuenta fondeada ' + nm : 'Challenge de ' + nm)
+                  : (nm + ' ' + (s.stage === 'verification' ? 'Verification' : s.stage === 'funded' ? 'funded account' : 'Challenge'));
+    if(e.kind === 'passed'){
+      return es ? ('Superaste tu ' + what + ' el ' + dayWord(s.passedOn, true) + ', en ' + s.days + ' días (' + s.tradingDays + ' de trading). Siguiente paso: ' + (s.stage === 'verification' ? 'tu cuenta fondeada.' : 'la Verificación.'))
+                : ('You passed your ' + what + ' on ' + dayWord(s.passedOn, false) + ', in ' + s.days + ' days (' + s.tradingDays + ' trading days). Next step: ' + (s.stage === 'verification' ? 'your funded account.' : 'the Verification.'));
+    }
+    var f = s.failure;
+    return es ? ('Tu ' + what + ' terminó el ' + dayWord(f.date, true) + ': la operación ' + f.breakingTrade + ' de ese día' + (f.at ? ' (' + f.at + ')' : '') + ' dejó el saldo en ' + whole(f.balanceAfter) + ', por debajo de tu suelo de drawdown de ' + whole(f.floor) + '. Es un resultado, no lo que eres como trader: respira, revisa ese día y vuelve con las mismas reglas.')
+              : ('Your ' + what + ' ended on ' + dayWord(f.date, false) + ': trade ' + f.breakingTrade + ' that day' + (f.at ? ' (' + f.at + ')' : '') + ' took the balance to ' + whole(f.balanceAfter) + ', under your ' + whole(f.floor) + ' drawdown floor. That’s one result, not who you are as a trader. Take a breath, look back at that day, and go again with the same rules.');
+  }
+  try{ window.__stPropStatus = propStatus; window.__stAllPropStatus = allPropStatus; window.__stPropEvents = recentEvents; window.__stPropEventLine = eventLine; }catch(e){}
 
   /* ---- the pop-up ---- */
   var ov = null, raf = 0, onKey = null;
