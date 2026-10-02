@@ -3917,6 +3917,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .dh-legend span { display: inline-flex; align-items: center; gap: 6px; }
   .dh-legend .dh-day { display: inline-block; cursor: default; }
   .dh-tip { position: absolute; z-index: 5; background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 10px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; line-height: 1.5; color: var(--text); width: max-content; max-width: min(420px, 100%); box-sizing: border-box; box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5); pointer-events: none; }
+  .dh-tip { animation: dhTipIn 90ms ease-out; }
+  @keyframes dhTipIn { from { opacity: 0; transform: translateY(-2px); } to { opacity: 1; transform: none; } }
+  @media (prefers-reduced-motion: reduce) { .dh-tip { animation: none; } }
   .dh-tip b { font-weight: 500; }
   .dh-tip .r { color: var(--bad); } .dh-tip .g { color: var(--good); } .dh-tip .m { color: var(--text-dim); }
   .dh-money { margin-top: 18px; display: flex; flex-wrap: wrap; gap: 8px 28px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; color: var(--text-mid); }
@@ -75179,8 +75182,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           var yb = e.target.closest && e.target.closest('[data-dh-year]');
           if (yb && !yb.disabled && yearSel != null) { yearSel += Number(yb.getAttribute('data-dh-year')); hideTip(); render(); }
         }, true);
-        host.addEventListener('mouseover', function(e){ var c = e.target.closest && e.target.closest('.dh-day[data-k]'); if (c && window.matchMedia && window.matchMedia('(hover: hover)').matches) showTip(c); });
-        host.addEventListener('mouseleave', function(){ if (window.matchMedia && window.matchMedia('(hover: hover)').matches) hideTip(); });
+        /* Hover (Nestor, 2 Oct 2026: the stats "stay on screen for a while" after the mouse moves away): the tip follows
+           the square under the pointer and closes as soon as the pointer is off every square - after 60 ms, so sliding
+           across the gaps between squares never makes it flicker. Leaving the section closes it at once. */
+        var hov = function(){ return !!(window.matchMedia && window.matchMedia('(hover: hover)').matches); }, hideT = null;
+        host.addEventListener('mouseover', function(e){
+          if (!hov()) return;
+          var c = e.target.closest && e.target.closest('.dh-day[data-k]');
+          if (c) { clearTimeout(hideT); hideT = null; if (!(tipEl && c.classList.contains('pick'))) showTip(c); }
+          else if (tipEl && !hideT) hideT = setTimeout(function(){ hideT = null; hideTip(); }, 60);
+        });
+        host.addEventListener('mouseleave', function(){ if (!hov()) return; clearTimeout(hideT); hideT = null; hideTip(); });
         host.addEventListener('click', function(e){ var c = e.target.closest && e.target.closest('.dh-day[data-k]'); if (c) { if (c.classList.contains('pick')) hideTip(); else showTip(c); } else hideTip(); });
         host.addEventListener('focusin', function(e){ var c = e.target.closest && e.target.closest('.dh-day[data-k]'); if (c) showTip(c); });
         host.addEventListener('scroll', hideTip, true);
