@@ -5465,7 +5465,7 @@ try {
 
     <div class="meta">
       <div class="meta-cell"><span class="meta-label" data-i18n="meta.pair">Symbol</span><span class="meta-value" id="meta-pair">EUR/USD</span></div>
-      <div class="meta-cell"><span class="meta-label" data-i18n="meta.session">Session</span><span class="meta-value" id="meta-session">London</span><span class="meta-sub" id="meta-left"></span></div>
+      <div class="meta-cell"><span class="meta-label" data-i18n="meta.session">Session</span><span class="meta-value" id="meta-session">London</span></div>
       <div class="meta-cell"><span class="meta-label" data-i18n="meta.date">Date</span><span class="meta-value" id="today">—</span></div>
       <div class="meta-cell"><span class="meta-label" data-i18n="meta.time">Time</span><span class="meta-value" id="meta-time">—</span></div>
       <!-- The next red news on your pairs, on every tab (2 Oct 2026, window.__stHeadNews); the progress line shows only in a live session. -->
@@ -13334,6 +13334,8 @@ try {
   function renderSessionMeta() {
     const el = document.getElementById('meta-session');
     if (!el) return;
+    // Live: the time left takes the place of "London 8AM-10AM" (Nestor, 2 Oct 2026). Back to the session once it ends.
+    try { const lt = window.__stHeadNews && window.__stHeadNews.leftText ? window.__stHeadNews.leftText() : ''; if (lt) { el.textContent = lt; return; } } catch (e) {}
     const ss = (typeof getSessions === 'function') ? getSessions() : [];
     if (!ss.length) { el.textContent = localizeSessionName((data.settings && data.settings.sessionName) || 'London'); return; }
     // Show only the session in focus: live now, else the next upcoming today; once all of
@@ -18006,9 +18008,9 @@ try {
      Nestor liked the red-news countdown and wanted it "permanently and not just for session live": the header row
      (Symbol / Session / Date / Time) now ends with the next high-impact release on your pairs (your symbols, plus any
      pair you hold), from the economic calendar the app already loads - its name, the time (with the day when it is not
-     today) and how long until it - moving on to the next once it is out. While the session is live, Session also says
-     how much of it is left (Nestor: "the session time remaining should display here") and a thin line under the row
-     fills as it runs. */
+     today) and how long until it - moving on to the next once it is out. While the session is live, the Session cell
+     shows how much of it is left in place of its name and times (Nestor: "substitute the london 8am-10am for the
+     remaining time during session live") and a thin line under the row fills as it runs. */
   window.__stHeadNews = (function () {
     function T2(en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } }
     function p2(v) { return ('0' + v).slice(-2); }
@@ -18025,6 +18027,15 @@ try {
       return main + (g.titles.length > 1 ? ' +' + (g.titles.length - 1) : '') + ' (' + g.curs.join('/') + ')';
     }
     function setText(el, v) { if (el && el.textContent !== v) el.textContent = v; }
+    var wasLive = false;
+    // "47 min left" / "1 h 12 m left" while a session is live, else ''.
+    function leftText() {
+      var li = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1, ss = (typeof getSessions === 'function') ? getSessions() : [];
+      if (li < 0 || !ss[li]) return '';
+      var s1 = new Date(), b = _mins(ss[li].end); s1.setHours(Math.floor(b / 60), b % 60, 0, 0);
+      var m = Math.max(1, Math.round(Math.max(0, s1.getTime() - Date.now()) / 60000)), h = Math.floor(m / 60);
+      return h ? T2(h + ' h ' + (m % 60) + ' m left', 'quedan ' + h + ' h ' + (m % 60) + ' m') : T2(m + ' min left', 'quedan ' + m + ' min');
+    }
     // The next red release for these currencies, or null.
     function next(curs) {
       var N = window.__stNudge, now = Date.now();
@@ -18046,20 +18057,22 @@ try {
             setText(sub, inTxt(g.at - now)); cell.classList.add('has'); cell.title = g.titles.join(', ') + ' (' + g.curs.join('/') + ')';
           } else { setText(val, T2('None this week', 'Ninguna esta semana')); setText(sub, ''); cell.classList.remove('has'); cell.title = ''; }
         }
-        // The session clock: only while it is live.
-        var left = document.getElementById('meta-left'), prog = document.getElementById('meta-prog');
+        // The session clock: only while it is live - the time left in the Session cell, and the progress line.
+        var prog = document.getElementById('meta-prog'), lt = leftText();
         var li = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1, ss = (typeof getSessions === 'function') ? getSessions() : [];
-        if (li >= 0 && ss[li]) {
+        if (lt && ss[li]) {
+          setText(document.getElementById('meta-session'), lt); wasLive = true;
           var s0 = new Date(), s1 = new Date(), a = _mins(ss[li].start), b = _mins(ss[li].end);
           s0.setHours(Math.floor(a / 60), a % 60, 0, 0); s1.setHours(Math.floor(b / 60), b % 60, 0, 0);
-          var rem = Math.max(0, s1.getTime() - now), m = Math.max(1, Math.round(rem / 60000)), h = Math.floor(m / 60);
-          setText(left, h ? T2(h + ' h ' + (m % 60) + ' m left', 'quedan ' + h + ' h ' + (m % 60) + ' m') : T2(m + ' min left', 'quedan ' + m + ' min'));
           if (prog) { prog.hidden = false; var f = Math.max(0, Math.min(1, (now - s0.getTime()) / Math.max(1, s1.getTime() - s0.getTime()))); prog.firstElementChild.style.width = (f * 100).toFixed(1) + '%'; }
-        } else { setText(left, ''); if (prog) prog.hidden = true; }
+        } else {
+          if (prog) prog.hidden = true;
+          if (wasLive) { wasLive = false; try { renderSessionMeta(); } catch (e) {} }   // back to "London 8AM-10AM"
+        }
       } catch (e) {}
     }
     setTimeout(function () { tick(); setInterval(tick, 15000); }, 1200);
-    return { tick: tick, next: next, inTxt: inTxt };
+    return { tick: tick, next: next, inTxt: inTxt, leftText: leftText };
   })();
 
   /* ===== Session Live: the risk budget and the open trades (2 Oct 2026) =====
