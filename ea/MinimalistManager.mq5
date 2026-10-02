@@ -307,6 +307,7 @@ bool   g_pcFired[PC_MAX];
 int    g_pcFails[PC_MAX];
 bool   g_pcArmed = false;
 ulong  g_pcClosing = 0;   // a position the ladder closed in full (its close event says "pc", not "ea")
+double g_seenSL = -1.0, g_seenTP = -1.0;   // v8.87: the open trade's real SL / TP as the EA last drew them
 double g_beTrigger= 0.0;
 int    g_beDir    = 0;
 bool   g_prevLeftDown = false;
@@ -1939,6 +1940,46 @@ void RefreshLabels()
          SetLineText(PcTxt(i),LinePrice(PcName(i)),PcLineLbl(i),g_pcFired[i]?COL_LINE_TSD:COL_LINE_PC);
   }
 
+// v8.87 (Nestor, 2 Oct 2026: "when i move my SL manually ... the EA line stays put [while] the actual SL and TP
+// lines from MT5 move ... it looks like there are 2 SL and 2 TPs"). The EA's SL line only followed the trade when
+// the EA itself moved the stop (a drag on its line, break-even, trailing); moved any other way - MT5's own
+// trade-level lines, the order window, the phone app - it stayed behind. The TP line followed, but only on the
+// next price tick. Now both follow the trade's REAL stop and target whenever those change, from anywhere: called
+// on MT5's trade event (instant), every second from the timer (quiet market, EA switched off) and every tick.
+// A line moves only when the real value has CHANGED since the EA last saw it - so your own drag on the EA's line
+// is never pulled back mid-drag (the trade's stop does not change until you let go). No stop: the SL line sits
+// on the entry, as when it is first drawn.
+bool SyncPositionLines()
+  {
+   double sl=0, tp=0, pe=0; bool any=false;
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      sl=PositionGetDouble(POSITION_SL); tp=PositionGetDouble(POSITION_TP); pe=PositionGetDouble(POSITION_PRICE_OPEN);
+      any=true; break;
+     }
+   if(!any){ g_seenSL=-1.0; g_seenTP=-1.0; return false; }
+   bool moved=false;
+   double half=g_point*0.5;
+   if(MathAbs(sl-g_seenSL)>half)
+     {
+      g_seenSL=sl;
+      double at=(sl>0) ? sl : pe;
+      if(ObjectFind(0,LN_MSL)>=0 && MathAbs(LinePrice(LN_MSL)-at)>half)
+        { ObjectSetDouble(0,LN_MSL,OBJPROP_PRICE,at); SetLineText(TX_SL,at,"SL",COL_LINE_SL); moved=true; }
+     }
+   if(MathAbs(tp-g_seenTP)>half)
+     {
+      g_seenTP=tp;
+      if(tp>0 && ObjectFind(0,LN_TP+"0")>=0 && MathAbs(LinePrice(LN_TP+"0")-tp)>half)
+        { ObjectSetDouble(0,LN_TP+"0",OBJPROP_PRICE,tp); SetLineText(TX_TP,tp,"TP",COL_LINE_TP); moved=true; }
+     }
+   return moved;
+  }
+
 // Maintain the live-position lines (SL draggable, entry fixed, BE draggable) from state.
 void UpdateManageLine()
   {
@@ -1972,7 +2013,7 @@ void UpdateManageLine()
       if(ptp>0)
         {
          if(ObjectFind(0,LN_TP+"0")<0) EnsureHLine(LN_TP+"0",ptp,COL_LINE_TP,STYLE_SOLID,true);
-         else if(MathAbs(LinePrice(LN_TP+"0")-ptp)>g_point) ObjectSetDouble(0,LN_TP+"0",OBJPROP_PRICE,ptp);
+         else if(g_execMode && MathAbs(LinePrice(LN_TP+"0")-ptp)>g_point) ObjectSetDouble(0,LN_TP+"0",OBJPROP_PRICE,ptp);   // the preview shares this line
          SetLineText(TX_TP,LinePrice(LN_TP+"0"),"TP",COL_LINE_TP);
         }
       // The same ownership rule the flat branch below already states: while exec mode is armed
@@ -1981,6 +2022,7 @@ void UpdateManageLine()
       // at OnTick 4078, this deleted it at 4079, repeat. Only clear it when nothing else is
       // drawing it; in exec mode you should still see the target you are setting up.
       else if(!g_execMode) { ObjectDelete(0,LN_TP+"0"); ObjectDelete(0,TX_TP); }
+      SyncPositionLines();       // v8.87: SL / TP lines on the trade's real stop and target
       // draggable BE line (only if armed)
       if(g_useBE && g_beArmed)
         {
@@ -6503,6 +6545,7 @@ void OnTimer()
    uint _nowMs=GetTickCount();
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
+   if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
    // frozen chart objects and a silent log look identical to "someone turned it off". One line a
@@ -6651,6 +6694,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeResult &result)
   {
    if(g_copyRole==CR_LEAD) CopyLeadTick();   // v8.80: tell the follow accounts at once, not on the next timer
+   if(trans.type==TRADE_TRANSACTION_POSITION && SyncPositionLines()) ChartRedraw();   // v8.87: stop / target changed anywhere
    if(g_maxTradesDay>0 && trans.type==TRADE_TRANSACTION_DEAL_ADD){ ulong _dk=trans.deal; if(_dk!=0 && HistoryDealSelect(_dk) && (long)HistoryDealGetInteger(_dk,DEAL_ENTRY)==DEAL_ENTRY_IN){ RefreshDayCount(); if(g_tradesToday>=g_maxTradesDay && g_active){ g_active=false; g_execMode=false; g_pausedByLimit=true; ClearEntryLines(); UpdateManageLine(); BuildPanel(); SaveState(); } } }
    // On-fill SL/TP re-anchor: snap the just-filled position's stop/target to the exact
    // requested pip distances from the REAL open price. Must run BEFORE the sync-token
