@@ -7895,7 +7895,7 @@ try {
       'nudge.period_last_month': 'last month {N}',
       'nudge.period_none_week': 'No nudges this week.',
       'nudge.period_none_month': 'No nudges this month.',
-      'nudge.period_into': 'Trades taken into a nudge: {N} · {W} won, {L} lost',
+      'nudge.period_into': 'Trades taken into a nudge: {N} · {W} won, {L} lost, {B} BE',
       'nudge.period_heeded': 'Warnings you respected: {H} of {M}',
       'nudge.period_cost_title': 'What each nudge cost',
       'nudge.period_by_day': 'By day',
@@ -7930,7 +7930,7 @@ try {
       'nudge.k_prop': 'Prop-firm limits',
       'nudge.period_trades_one': '1 trade',
       'nudge.period_trades_many': '{N} trades',
-      'nudge.period_wl': '{W} won, {L} lost',
+      'nudge.period_wl': '{W} won, {L} lost, {B} BE',
       'settings.nudges_news_label': 'Warn before red news',
       'settings.nudges_news_suffix': 'minutes before (0 = off)',
       'settings.reopen_hint': 'Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again \u2014 as often as you like (you must be inside your session Times above).',
@@ -9749,7 +9749,7 @@ try {
       'nudge.period_last_month': 'el mes pasado {N}',
       'nudge.period_none_week': 'Ningún aviso esta semana.',
       'nudge.period_none_month': 'Ningún aviso este mes.',
-      'nudge.period_into': 'Operaciones tomadas con aviso: {N} · {W} ganadas, {L} perdidas',
+      'nudge.period_into': 'Operaciones tomadas con aviso: {N} · {W} ganadas, {L} perdidas, {B} BE',
       'nudge.period_heeded': 'Avisos que respetaste: {H} de {M}',
       'nudge.period_cost_title': 'Lo que costó cada aviso',
       'nudge.period_by_day': 'Por día',
@@ -9784,7 +9784,7 @@ try {
       'nudge.k_prop': 'Límites de la prop',
       'nudge.period_trades_one': '1 operación',
       'nudge.period_trades_many': '{N} operaciones',
-      'nudge.period_wl': '{W} ganadas, {L} perdidas',
+      'nudge.period_wl': '{W} ganadas, {L} perdidas, {B} BE',
       'settings.nudges_news_label': 'Avisar antes de noticias rojas',
       'settings.nudges_news_suffix': 'minutos antes (0 = desactivado)',
       'settings.reopen_hint': 'Al finalizar una sesi\u00f3n, la pantalla en vivo se oculta el resto del d\u00eda. Re\u00e1brela para volver a usar Sesi\u00f3n en Vivo \u2014 tantas veces como quieras (debes estar dentro de tus Horas de sesi\u00f3n de arriba).',
@@ -16726,6 +16726,13 @@ try {
       isOpen: function (ticket) { try { var r = rows[String(ticket)]; return !!(r && !r.closed); } catch (e) { return false; } },
       // Trade copier: is this ticket a copy of a trade already in the feed (another of your accounts)?
       isCopy: function (ticket) { try { return _isCopy(ticket); } catch (e) { return false; } },
+      // Every ticket of the idea this ticket belongs to (itself and its copies), as strings.
+      ideaMates: function (ticket) {
+        try {
+          var k = String(ticket), g = _ideas(_allRows()).filter(function (x) { return x.rows.some(function (r) { return String(r.ticket) === k; }); })[0];
+          return g ? g.rows.map(function (r) { return String(r.ticket); }) : [k];
+        } catch (e) { return [String(ticket)]; }
+      },
       // A closed trade's result the way the box shows it: with its copies, each judged by its own size (29 Sep 2026).
       resultFor: function (ticket, pnl) { try { var g = _groupOf(ticket); if (g && g.rows.length > 1) return _groupRes(g); var r = rows[String(ticket)]; if (r) return _rowRes(r); return _judge(pnl, _bandFor(null)); } catch (e) { return null; } },
       rowResult: function (r) { try { return _rowRes(r); } catch (e) { return null; } },
@@ -17156,6 +17163,13 @@ try {
         var today = localDay(), k = String(cur.ticket);
         // Trade copier: a copy on another of your accounts is the same idea - judged once, on the first.
         try { if (window.__stLive && window.__stLive.isCopy && window.__stLive.isCopy(k)) return; } catch (e) {}
+        /* ...and when the copy reaches the app BEFORE its original (both are sent within a second), the copy was judged
+           as the idea; the original must not be judged a second time (1 Oct 2026: one EUR/USD long, nudged "against your
+           bias" on the 70K and on its 10K copy). */
+        try {
+          var mates = (window.__stLive && window.__stLive.ideaMates) ? window.__stLive.ideaMates(k) : [k];
+          if (mates.some(function (t2) { return t2 !== k && handled['o' + t2]; })) { handled['o' + k] = 1; handled['r' + k] = 1; }
+        } catch (e) {}
         if (firstSeen(k, today) !== today) return;           // an old position, re-announced
         var st = dayState(), changed = false, found = [];
         var oAt = msOf(raw.opened_at), cAt = msOf(raw.closed_at);
@@ -17418,11 +17432,11 @@ try {
           return String(tr.mt5Ticket || tr.position || '') !== skip && m >= fromMins && (toMins == null || m <= toMins);
         });
         // A trade and its copies are ONE trade: counted once, R once, every account's money (29 Sep 2026).
-        var net = 0, rr = 0, w = 0, l = 0, seenT = {}, uniq = [];
+        var net = 0, rr = 0, w = 0, l = 0, b = 0, seenT = {}, uniq = [];
         later.forEach(function (tr) { var tk = String(tr.id || tr.mt5Ticket || ''); if (tk && seenT[tk]) return; if (tk) seenT[tk] = 1; uniq.push(tr); });
         var ideas = _ideaMerge(uniq);
-        ideas.forEach(function (tr) { var ox = outOf(tr); net += ox.net; rr += ox.r; if (ox.result === 'Win') w++; else if (ox.result === 'Lose') l++; });
-        return { kind: 'after', n: ideas.length, net: net, r: rr, wins: w, losses: l, ea: id.charAt(0) === 'L', news: id.charAt(0) === 'E' };
+        ideas.forEach(function (tr) { var ox = outOf(tr); net += ox.net; rr += ox.r; if (ox.result === 'Win') w++; else if (ox.result === 'Lose') l++; else b++; });
+        return { kind: 'after', n: ideas.length, net: net, r: rr, wins: w, losses: l, bes: b, ea: id.charAt(0) === 'L', news: id.charAt(0) === 'E' };
       }
       if (id.charAt(0) === 'L') return after(minsOfHm(e.at), '');                    // loosened the EA
       if (id.charAt(0) === 'P') return after(minsOfHm(e.at), '');                    // a prop-firm limit: did you stop?
@@ -17438,6 +17452,30 @@ try {
       try { if (!window.__MV && window.__stLive && window.__stLive.isOpen(id)) return { kind: 'open' }; } catch (e2) {}   // a mentor's own feed says nothing about the member
       return { kind: 'none' };
     }
+    /* The nudges of a day that still count (1 Oct 2026, Nestor: deleting an imported trade did not take its nudge out
+       of the weekly review):
+       - a trade the member deleted takes its nudges with it - imported or dismissed once, now in no journal list and
+         not open. A trade not imported yet keeps its nudge;
+       - a trade and its copies on other accounts (EA Trade Copier) are one idea: one nudge per rule. */
+    function countedKeys(d, byT) {
+      var have = {}, done = {}, seen = {}, out = [];
+      try { getAllLifetimeTrades().concat(allReviewTrades()).forEach(function (tr) { var tk = tr && (tr.mt5Ticket || tr.position); if (tk != null && tk !== '') have[String(tk)] = 1; }); } catch (e) {}
+      try { [].concat(data.mt5UserDismissed || [], data.mt5ImportedTickets || []).forEach(function (x) { done[String(x)] = 1; }); } catch (e) {}
+      Object.keys(d || {}).forEach(function (k) {
+        if (k.indexOf('sample:') === 0) return;
+        var rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1), tk = id.charAt(0) === 'P' ? id.slice(1) : id;
+        if (/^\d+$/.test(tk) && !have[tk] && done[tk]) {
+          var open = false; try { open = !!(window.__stLive && window.__stLive.isOpen(tk)); } catch (e) {}
+          if (!open) return;
+        }
+        var tr = byT[tk], dk = rule + ':' + (id.charAt(0) === 'P' ? 'P' : '') + ((tr && tr.ideaId) ? 'i' + tr.ideaId : tk);
+        if (seen[dk]) return; seen[dk] = 1;
+        out.push(k);
+      });
+      return out;
+    }
+    // The id a trade-linked nudge counts its trade under: the idea, so a trade and its copies are one trade.
+    function ideaKeyOf(id, byT) { var tr = byT[id]; return (tr && tr.ideaId) ? 'i' + tr.ideaId : id; }
     function signedR(r) { return (r > 0 ? '+' : r < 0 ? '−' : '') + Math.abs(r).toFixed(2) + 'R'; }
     function outText(o) {
       if (!o) return { text: '', cls: '' };
@@ -17458,10 +17496,10 @@ try {
     function dayHtml(day) {
       try {
         var d = data && data.nudgeLog && data.nudgeLog[day]; if (!d) return '';
-        var keys = Object.keys(d).filter(function (k) { return k.indexOf('sample:') !== 0; });
+        var list = journalTrades(), byT = ticketMap(list);
+        var keys = countedKeys(d, byT);
         if (!keys.length) return '';
         keys.sort(function (a, b) { return String(d[a].at).localeCompare(String(d[b].at)); });
-        var list = journalTrades(), byT = ticketMap(list);
         var items = keys.map(function (k) {
           var e = d[k], o = outText(outcome(k, e, day, list, byT));
           return '<li class="dn-item"><div><span class="st-nudge-at">' + escH(e.at) + '</span>' + escH(e.text) + '</div>'
@@ -17481,14 +17519,13 @@ try {
         var counts = {}, recent = [], seen = {}, after = { n: 0, wins: 0, losses: 0, bes: 0, netMoney: 0, netR: 0 };
         Object.keys(log).filter(function (day) { return day >= cutoff; }).sort().forEach(function (day) {
           var d = log[day] || {};
-          Object.keys(d).forEach(function (k) {
-            if (k.indexOf('sample:') === 0) return;
-            var e = d[k], rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1);
+          countedKeys(d, byT).forEach(function (k) {
+            var e = d[k], rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1), ik = ideaKeyOf(id, byT);
             counts[rule] = (counts[rule] || 0) + 1;
             var o = outcome(k, e, day, list, byT);
             recent.push({ d: day, t: e.at, rule: rule, out: outText(o).text || null });
-            if (o.kind === 'trade' && !seen[id]) {
-              seen[id] = 1; after.n++;
+            if (o.kind === 'trade' && !seen[ik]) {
+              seen[ik] = 1; after.n++;
               if (o.out.result === 'Win') after.wins++; else if (o.out.result === 'Lose') after.losses++; else after.bes++;
               after.netMoney += o.out.net; after.netR += o.out.r;
             }
@@ -17504,7 +17541,7 @@ try {
           var ps = periodStats(cutoff, localDay());
           Object.keys(ps.byKind).forEach(function (g) {
             var v = ps.byKind[g]; if (!v.n) return;
-            costByKind[g.replace(/^k_/, '')] = { trades: v.n, won: v.wins, lost: v.losses, netMoney: Math.round(v.net * 100) / 100, netR: Math.round(v.r * 100) / 100 };
+            costByKind[g.replace(/^k_/, '')] = { trades: v.n, won: v.wins, lost: v.losses, be: v.bes || 0, netMoney: Math.round(v.net * 100) / 100, netR: Math.round(v.r * 100) / 100 };
           });
         } catch (e) {}
         var eaNow = null; try { if (window.__stEA) { eaNow = window.__stEA.summary(); if (!eaNow.length) eaNow = null; } } catch (e) {}
@@ -17527,9 +17564,8 @@ try {
       var res = { total: 0, kinds: {}, byKind: {}, days: {}, into: { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0 }, heeded: 0, heedable: 0 };
       Object.keys(log).filter(function (d) { return d >= fromDay && d <= toDay; }).forEach(function (day) {
         var d = log[day] || {};
-        Object.keys(d).forEach(function (k) {
-          if (k.indexOf('sample:') === 0) return;
-          var rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1), g = KIND[rule] || 'k_other';
+        countedKeys(d, byT).forEach(function (k) {
+          var rule = k.slice(0, k.indexOf(':')), id = ideaKeyOf(k.slice(k.indexOf(':') + 1), byT), g = KIND[rule] || 'k_other';
           res.total++; res.kinds[g] = (res.kinds[g] || 0) + 1;
           var dd = res.days[day] || (res.days[day] = {}); dd[g] = (dd[g] || 0) + 1;
           var o = outcome(k, d[k], day, list, byT);
@@ -17540,12 +17576,12 @@ try {
           if (o.kind === 'after') { res.heedable++; if (!o.n) res.heeded++; }
           // What this KIND of nudge cost: the trade it was about (each once per kind), or the trades
           // taken after a warning that was not respected.
-          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, net: 0, r: 0, _t: {}, _d: {} });
+          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0, _t: {}, _d: {} });
           if (o.kind === 'trade' && !bk._t[id]) {
             bk._t[id] = 1; bk._d[day] = 1; bk.n++; bk.net += o.out.net; bk.r += o.out.r;
-            if (o.out.result === 'Win') bk.wins++; else if (o.out.result === 'Lose') bk.losses++;
+            if (o.out.result === 'Win') bk.wins++; else if (o.out.result === 'Lose') bk.losses++; else bk.bes++;
           }
-          if (o.kind === 'after' && o.n) { bk._d[day] = 1; bk.n += o.n; bk.net += o.net; bk.r += o.r || 0; bk.wins += o.wins || 0; bk.losses += o.losses || 0; }
+          if (o.kind === 'after' && o.n) { bk._d[day] = 1; bk.n += o.n; bk.net += o.net; bk.r += o.r || 0; bk.wins += o.wins || 0; bk.losses += o.losses || 0; bk.bes += o.bes || 0; }
         });
       });
       return res;
@@ -17611,7 +17647,7 @@ try {
         }
         if (cur.into.n) {
           var cls = cur.into.net > 0 ? 'good' : cur.into.net < 0 ? 'bad' : '';
-          h += '<div class="pn-line">' + escH(t('nudge.period_into').replace('{N}', String(cur.into.n)).replace('{W}', String(cur.into.wins)).replace('{L}', String(cur.into.losses)))
+          h += '<div class="pn-line">' + escH(t('nudge.period_into').replace('{N}', String(cur.into.n)).replace('{W}', String(cur.into.wins)).replace('{L}', String(cur.into.losses)).replace('{B}', String(cur.into.bes)))
              + ' · <span class="' + cls + '">' + escH(fmtMoney(cur.into.net) + ' (' + signedR(cur.into.r) + ')') + '</span></div>';
         }
         var costRows = Object.keys(cur.byKind).map(function (g) { return { g: g, v: cur.byKind[g] }; })
@@ -17621,7 +17657,7 @@ try {
           costRows.forEach(function (x) {
             var v = x.v, c2 = v.net > 0 ? 'good' : v.net < 0 ? 'bad' : '';
             var tr = v.n === 1 ? t('nudge.period_trades_one') : t('nudge.period_trades_many').replace('{N}', String(v.n));
-            var wl = t('nudge.period_wl').replace('{W}', String(v.wins)).replace('{L}', String(v.losses));
+            var wl = t('nudge.period_wl').replace('{W}', String(v.wins)).replace('{L}', String(v.losses)).replace('{B}', String(v.bes || 0));
             var when = Object.keys(v._d || {}).sort().map(dayLabel).join(', ');
             h += '<div class="pn-cost-row"><span>' + escH(t('nudge.' + x.g)) + (when ? ' <span class="pn-when">\u00b7 ' + escH(when) + '</span>' : '') + '</span><span>' + escH(tr + ' \u00b7 ' + wl + ' \u00b7 ')
                + '<span class="' + c2 + '">' + escH(fmtMoney(v.net) + ' (' + signedR(v.r) + ')') + '</span></span></div>';
