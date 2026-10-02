@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.85"
+#property version   "8.86"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -308,6 +308,7 @@ ulong  g_balQueue[];     // v8.5: withdrawals waiting to be sent (deal tickets)
 string g_liveQueue[];   // ready-to-send live-status JSON (open/close), flushed in OnTimer
 int    g_liveTries[];   // parallel retry counter per queued event (v4.2: don't lose a card to one blip)
 datetime g_liveReAt=0;  // last time open positions were re-announced (v4.3: self-heal the feed after a reset)
+ulong  g_beSent[];      // v8.86: positions whose move to break-even was already announced (one "be" event each)
 bool   g_syncCatchupPending = false;
 datetime g_syncCatchAt = 0;   // last periodic catch-up (v4.5: re-scan history so a close missed in real time self-heals)
 bool   g_wasConnected = true; // last-seen broker connection state (v4.5: reconnect/wake -> catch-up immediately)
@@ -3131,6 +3132,7 @@ void LiveReannounceOpen()
                                 PositionGetDouble(POSITION_PRICE_OPEN),PositionGetDouble(POSITION_SL),0.0);
       LiveEnqueue(StringFormat("{\"event\":\"open\",\"token\":\"%s\",\"ticket\":%I64u,\"symbol\":\"%s\",\"direction\":\"%s\"%s}",
                                g_syncTokenEff,posid,sym,dir,size));
+      LiveCheckBE(pos);   // v8.86: a stop moved to break-even while the EA was off, or a missed change
      }
   }
 // v8.6: the EA's own settings, so Session Tool always knows your risk, stop limits, take profit,
@@ -3174,8 +3176,40 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.85\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.86\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
+  }
+// v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
+// why a position closed - the broker's stop loss, take profit or stop out, by hand, or by the EA.
+string LiveCloseReason(ulong deal)
+  {
+   long r=HistoryDealGetInteger(deal,DEAL_REASON);
+   if(r==DEAL_REASON_SL)     return "sl";
+   if(r==DEAL_REASON_TP)     return "tp";
+   if(r==DEAL_REASON_SO)     return "so";
+   if(r==DEAL_REASON_EXPERT) return "ea";
+   if(r==DEAL_REASON_CLIENT || r==DEAL_REASON_MOBILE || r==DEAL_REASON_WEB) return "manual";
+   return "other";
+  }
+// v8.86: the stop has reached the entry (moved to break-even by the EA, or dragged there by hand) - one "be" event
+// per position. Called when a position's stop changes, and from the 20s re-announce as a backstop; the server
+// keeps the first, so a repeat after a restart changes nothing.
+void LiveCheckBE(ulong posTicket)
+  {
+   if(StringLen(g_syncTokenEff)==0 || posTicket==0 || !PositionSelectByTicket(posTicket)) return;
+   double sl=PositionGetDouble(POSITION_SL), op=PositionGetDouble(POSITION_PRICE_OPEN);
+   if(sl<=0 || op<=0) return;
+   string sym=PositionGetString(POSITION_SYMBOL);
+   double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
+   bool buy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+   if(buy ? (sl<op-pt*0.5) : (sl>op+pt*0.5)) return;          // still behind the entry
+   ulong posid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+   for(int i=0;i<ArraySize(g_beSent);i++) if(g_beSent[i]==posid) return;
+   int n=ArraySize(g_beSent);
+   if(n>=200){ for(int i=1;i<n;i++) g_beSent[i-1]=g_beSent[i]; n--; }
+   ArrayResize(g_beSent,n+1); g_beSent[n]=posid;
+   LiveEnqueue(StringFormat("{\"event\":\"be\",\"token\":\"%s\",\"ticket\":%I64u,\"login\":\"%I64d\",\"symbol\":\"%s\",\"direction\":\"%s\"}",
+                            g_syncTokenEff,posid,AccountInfoInteger(ACCOUNT_LOGIN),sym,buy?"long":"short"));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
 double LivePositionPnl(ulong posId)
@@ -3268,7 +3302,8 @@ double RiskAtStop(string sym,int dir,double lots,double entry,double slPx)
 // later moved to break-even (risk 0, so omitted) never erases the risk the trade was taken with.
 string LiveSizeJson(string sym,int dir,double lots,double entry,double slPx,double planned)
   {
-   string j="";
+   // v8.86: the account login, so Session Tool judges a trade by ITS account's rules (phone nudges, trade alerts).
+   string j=",\"login\":\""+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"\"";
    if(lots>0) j+=",\"lots\":"+DoubleToString(lots,2);
    double risk=RiskAtStop(sym,dir,lots,entry,slPx);
    if(risk<=0 && planned>0) risk=planned;
@@ -6316,6 +6351,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
         }
      }
    if(StringLen(g_syncTokenEff)==0) return;
+   if(trans.type==TRADE_TRANSACTION_POSITION){ LiveCheckBE(trans.position); return; }   // v8.86: stop / target changed
    if(trans.type!=TRADE_TRANSACTION_DEAL_ADD) return;
    ulong dealTicket=trans.deal;
    if(dealTicket==0 || !HistoryDealSelect(dealTicket)) return;
@@ -6359,8 +6395,9 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
       if(PositionSelectByTicket(posId)) return;   // not fully closed yet
       SyncEnqueue(posId);
       double _lpnl=LivePositionPnl(posId);
-      LiveEnqueue(StringFormat("{\"event\":\"close\",\"token\":\"%s\",\"ticket\":%I64u,\"pnl\":%s}",
-                               g_syncTokenEff,posId,DoubleToString(_lpnl,2)));
+      // v8.86: why it closed (stop loss / take profit / by hand / by the EA) and the account, for the trade alerts.
+      LiveEnqueue(StringFormat("{\"event\":\"close\",\"token\":\"%s\",\"ticket\":%I64u,\"pnl\":%s,\"reason\":\"%s\",\"login\":\"%I64d\"}",
+                               g_syncTokenEff,posId,DoubleToString(_lpnl,2),LiveCloseReason(dealTicket),AccountInfoInteger(ACCOUNT_LOGIN)));
      }
   }
 
