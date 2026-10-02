@@ -77,3 +77,11 @@ create policy "own snapshot read"   on public.account_snapshots for select to au
 create policy "own snapshot insert" on public.account_snapshots for insert to authenticated with check (user_id = auth.uid());
 create policy "own snapshot update" on public.account_snapshots for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
 revoke all on public.account_snapshots from anon;
+
+-- EA 8.87 "sl" events: every step the stop moves further into profit (trail alerts).
+alter table public.nudge_trades add column if not exists lock_sl double precision;
+alter table public.nudge_trades add column if not exists lock_r double precision;
+alter table public.nudge_trades add column if not exists lock_money double precision;
+alter table public.live_trades add column if not exists lock_r double precision;
+alter table public.live_trades add column if not exists lock_money double precision;
+alter table public.live_trades add column if not exists lock_at timestamptz;

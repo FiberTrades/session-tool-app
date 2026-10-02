@@ -17,6 +17,7 @@
 //    timer (nudge-cron): news_soon, news_hold
 //    trade alerts (EA 8.86): tr_be (stop moved to break-even), tr_tp, tr_sl, tr_beout (stopped at break-even),
 //                            tr_slp (stopped out in profit, a trailed stop)
+//                 (EA 8.87): tr_trail - every step the stop moves further into profit, with what is locked in
 //  A copy made by the EA Trade Copier is the same idea and is judged once, on its first trade.
 // ============================================================
 
@@ -219,6 +220,8 @@ const T: Record<string, [string, string]> = {
   tr_sl: ["Stop loss hit on your {SYM} {SIDE}: {PNL}.", "Stop loss alcanzado en tu operación {SIDEF} de {SYM}: {PNL}."],
   tr_beout: ["Taken out at break-even on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} se cerró en break-even: {PNL}."],
   tr_slp: ["Stopped out in profit on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}."],
+  tr_trail: ["Stop trailed to +{R}R on your {SYM} {SIDE} — {M} locked in.", "Stop movido a +{R}R en tu operación {SIDEF} de {SYM}: {M} asegurados."],
+  tr_trail_nr: ["Stop trailed on your {SYM} {SIDE} — {M} locked in.", "Stop movido en tu operación {SIDEF} de {SYM}: {M} asegurados."],
   dd_left: ["{LEFT} left before your maximum drawdown — less than one full trade ({RISK}).", "Te quedan {LEFT} antes de tu drawdown máximo, menos que una operación completa ({RISK})."],
   target_hit: ["Profit target reached on {ACC}. Anything more is risk without reward.", "Objetivo de beneficio alcanzado en {ACC}. Todo lo demás es riesgo sin recompensa."],
   consistency: ["Today is now {P}% of your total profit. Your consistency rule caps a day at {L}%.", "Hoy ya es el {P}% de tu beneficio total. Tu regla de consistencia limita un día al {L}%."],
@@ -269,13 +272,13 @@ export function newsMatters(j: Any, tz: string, g: News, nowMs: number) {
 }
 
 // ---------- what the server knows about the member right now ----------
-export type Row = { ticket: number; login: string | null; symbol: string | null; direction: string | null; opened_at: string; risk0: number | null; risk: number | null; be_at: string | null; closed_at: string | null; pnl: number | null; close_reason: string | null };
+export type Row = { ticket: number; login: string | null; symbol: string | null; direction: string | null; opened_at: string; risk0: number | null; risk: number | null; be_at: string | null; closed_at: string | null; pnl: number | null; close_reason: string | null; lock_r?: number | null; lock_money?: number | null };
 export type Ctx = { userId: string; j: Any; ea: Any[]; copier: boolean; rows: Row[]; now: number };
 export async function loadCtx(admin: Any, userId: string): Promise<Ctx | null> {
   const [j, ea, nt] = await Promise.all([
     loadJournal(admin, userId),
     admin.from("ea_settings").select("login, settings, updated_at").eq("user_id", userId).then((r: Any) => r.data || []),
-    admin.from("nudge_trades").select("ticket, login, symbol, direction, opened_at, risk0, risk, be_at, closed_at, pnl, close_reason")
+    admin.from("nudge_trades").select("ticket, login, symbol, direction, opened_at, risk0, risk, be_at, closed_at, pnl, close_reason, lock_r, lock_money")
       .eq("user_id", userId).or("opened_at.gte." + new Date(Date.now() - 4 * 86400000).toISOString() + ",closed_at.is.null").then((r: Any) => r.data || []),
   ]);
   if (!j) return null;
@@ -633,6 +636,27 @@ export async function afterBE(admin: Any, userId: string, ticket: number) {
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || !me.be_at || isCopy(ctx, me)) return;
   if (me.closed_at) return;                          // already closed: the close says it
   return await deliver(admin, userId, "trade", [item("tr_be", String(ticket), tradeWords(ctx, me, "tr_be"), mates(ctx, me))], esOf(ctx.j), 0);
+}
+// EA 8.87: the stop moved further into profit ("sl" event). The first move is "moved to break-even" while what it
+// locks in is within the account's break-even band (else a tenth of an R); every step past that is a trail alert,
+// keyed by the money locked in so each step is its own. A step still inside the band is not news.
+export async function afterLock(admin: Any, userId: string, ticket: number, first: boolean) {
+  await sleep(8000);
+  const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).trades) return;
+  const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || isCopy(ctx, me)) return;
+  const lm = Number(me.lock_money) || 0, r0 = Number(me.risk0) || 0, grp = mates(ctx, me), es = esOf(ctx.j);
+  const lr = Number(me.lock_r) > 0 ? Number(me.lock_r) : (r0 > 0 ? lm / r0 : 0);
+  const band = beBand(accountFor(ctx, me.login), ctx.j);
+  const isBE = band > 0 ? lm <= band : lr <= 0.1;
+  if (isBE) {
+    if (!first) return;
+    return await deliver(admin, userId, "trade", [item("tr_be", String(ticket), tradeWords(ctx, me, "tr_be"), grp)], es, 0);
+  }
+  const suf = String(Math.round(lm)), rTxt = lr > 0 ? String(Math.round(lr * 10) / 10) : "";
+  const text = tradeWords(ctx, me, rTxt ? "tr_trail" : "tr_trail_nr").replace("{R}", rTxt).replace("{M}", money(ctx.j, lm));
+  const it: Item = { rule: "tr_trail", key: "tr_trail:" + ticket + ":" + suf, text };
+  if (grp.length > 1) it.alts = grp.map((r) => "tr_trail:" + r.ticket + ":" + suf);
+  return await deliver(admin, userId, "trade", [it], es, 0);
 }
 export async function afterCloseTrade(admin: Any, userId: string, ticket: number) {
   await sleep(8000);

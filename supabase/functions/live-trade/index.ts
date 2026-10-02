@@ -17,6 +17,9 @@
 //        -> set pnl + closed_at (and, EA 8.86, why it closed: sl / tp / so / manual / ea) on that ticket's row
 //    { event:"be", token, ticket, login, symbol, direction }   (EA 8.86)
 //        -> the stop reached the entry: be_at on that ticket's row (the first time only)
+//    { event:"sl", token, ticket, login, symbol, direction, sl, lock_r, lock_money }   (EA 8.87)
+//        -> the stop moved further into profit (break-even, the trailing ladder, or by hand): what is locked
+//           in now; the first one also stamps be_at
 //    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6; 8.83 adds copy_*)
 //        -> the EA's own settings right now (risk, stop limits, take profit,
 //           break-even, daily trade cap): upsert ea_settings, and when a real
@@ -37,7 +40,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterOpen, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
+import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: { waitUntil(p: Promise<any>): void } | undefined;
@@ -74,7 +77,7 @@ Deno.serve(async (req) => {
   const isSettings = event === "settings";          // no ticket: it describes the EA, not a trade
   if (
     !token ||
-    (event !== "open" && event !== "close" && event !== "be" && !isSettings) ||
+    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && !isSettings) ||
     (!isSettings && (!ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"))
   ) {
     return json({ error: "empty or malformed live event" }, 400);
@@ -154,6 +157,34 @@ Deno.serve(async (req) => {
     if (error) return json({ error: error.message }, 500);
     try { await rememberOpen(userId, Number(ticket), row.symbol as string | null, dir, login, (risk !== null && risk > 0) ? risk : null); }
     catch (e) { console.error("nudge open", String(e)); }
+    return json({ ok: true }, 200);
+  }
+
+  if (event === "sl") {
+    const t = Number(ticket), at = new Date().toISOString(), login = loginOf(body.login);
+    const sl = numOrNull(body.sl), lockR = numOrNull(body.lock_r), lockM = numOrNull(body.lock_money);
+    const dir = (body.direction === "short" || body.direction === "sell") ? "short" : "long";
+    try {
+      const { data: nt } = await admin.from("nudge_trades").select("be_at, closed_at, lock_sl, direction").eq("user_id", userId).eq("ticket", t).maybeSingle();
+      if (nt && nt.closed_at) return json({ ok: true }, 200);
+      const d = ((nt && nt.direction) || dir) === "short" ? -1 : 1;
+      // The EA re-announces after a restart: only a stop FURTHER than the last one known is a new step.
+      if (nt && nt.lock_sl != null && sl !== null && (sl - Number(nt.lock_sl)) * d <= 0) return json({ ok: true }, 200);
+      const first = !nt || !nt.be_at;
+      const lock: Record<string, unknown> = { lock_sl: sl, lock_r: (lockR !== null && lockR > 0) ? lockR : null, lock_money: lockM };
+      if (!nt) {
+        const openedAt = await liveOpenedAt(userId, t);
+        const { error: iErr } = await admin.from("nudge_trades").insert({ user_id: userId, ticket: t, login, symbol: strOrNull(body.symbol), direction: dir, opened_at: openedAt, be_at: at, ...lock });
+        if (iErr) return json({ ok: true }, 200);
+      } else {
+        await admin.from("nudge_trades").update(first ? { ...lock, be_at: at } : lock).eq("user_id", userId).eq("ticket", t);
+      }
+      // The app's copy: be_at and lock_at carry the SAME time on the first move, which is how it tells the first.
+      const lv: Record<string, unknown> = { lock_r: lock.lock_r, lock_money: lockM, lock_at: at };
+      if (first) lv.be_at = at;
+      await admin.from("live_trades").update(lv).eq("account", userId).eq("ticket", t);
+      later("trail", afterLock(admin, userId, t, first));
+    } catch (e) { console.error("nudge sl", String(e)); }
     return json({ ok: true }, 200);
   }
 

@@ -7959,6 +7959,8 @@ try {
       'nudge.tr_sl': 'Stop loss hit on your {SYM} {SIDE}: {PNL}.',
       'nudge.tr_beout': 'Taken out at break-even on your {SYM} {SIDE}: {PNL}.',
       'nudge.tr_slp': 'Stopped out in profit on your {SYM} {SIDE}: {PNL}.',
+      'nudge.tr_trail': 'Stop trailed to +{R}R on your {SYM} {SIDE} — {M} locked in.',
+      'nudge.tr_trail_nr': 'Stop trailed on your {SYM} {SIDE} — {M} locked in.',
       'nudge.w_long_f': 'long',
       'nudge.w_short_f': 'short',
       'settings.nudges_trades_toggle': 'Trade alerts',
@@ -9825,6 +9827,8 @@ try {
       'nudge.tr_sl': 'Stop loss alcanzado en tu operación {SIDEF} de {SYM}: {PNL}.',
       'nudge.tr_beout': 'Tu operación {SIDEF} de {SYM} se cerró en break-even: {PNL}.',
       'nudge.tr_slp': 'Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}.',
+      'nudge.tr_trail': 'Stop movido a +{R}R en tu operación {SIDEF} de {SYM}: {M} asegurados.',
+      'nudge.tr_trail_nr': 'Stop movido en tu operación {SIDEF} de {SYM}: {M} asegurados.',
       'nudge.w_long_f': 'larga',
       'nudge.w_short_f': 'corta',
       'settings.nudges_trades_toggle': 'Avisos de operación',
@@ -17278,8 +17282,31 @@ try {
     function tradeAlert(k, cur, raw, mates) {
       try {
         var other = function (p) { return mates.some(function (t2) { return t2 !== k && handled[p + t2]; }); };
-        var beAt = msOf(raw.be_at), cAt = msOf(raw.closed_at);
-        if (!cur.closed && isFinite(beAt) && fresh(beAt) && !handled['b' + k]) {
+        var beAt = msOf(raw.be_at), cAt = msOf(raw.closed_at), lkAt = msOf(raw.lock_at);
+        /* EA 8.87 (Nestor, 2 Oct 2026: "1 alert per trailed stop"): every move of the stop further into profit
+           (lock_at, with lock_money / lock_r). The first move (be_at stamped at the same moment) reads "moved to
+           break-even" while what it locks in is inside the account's break-even band (else a tenth of an R);
+           every step past that is "Stop trailed to +1R ... £500.00 locked in", one per step. A later step still
+           inside the band is not news. EA 8.86 sends only be_at, handled below. */
+        if (!cur.closed && isFinite(lkAt) && fresh(lkAt)) {
+          var lm = Number(raw.lock_money) || 0, suf = String(Math.round(lm));
+          if (!handled['l' + k + ':' + suf]) {
+            handled['l' + k + ':' + suf] = 1;
+            var first = isFinite(beAt) && Math.abs(beAt - lkAt) < 1500, r0 = 0, band = 0;
+            try { r0 = Number(dayState().size0[k]) || Number(raw.risk) || 0; } catch (e) {}
+            try { band = beThresholdMoneyFor(trAccount(raw.login)); } catch (e) {}
+            var lr = Number(raw.lock_r) > 0 ? Number(raw.lock_r) : (r0 > 0 ? lm / r0 : 0);
+            var isBE = band > 0 ? lm <= band : lr <= 0.1;
+            if (isBE) {
+              if (first && !handled['b' + k]) { handled['b' + k] = 1; if (!other('b')) raise([{ rule: 'tr_be', text: trText('nudge.tr_be', cur) }], k); }
+            } else {
+              var rTxt = lr > 0 ? String(Math.round(lr * 10) / 10) : '';
+              var txt = trText(rTxt ? 'nudge.tr_trail' : 'nudge.tr_trail_nr', cur).replace('{R}', rTxt).replace('{M}', M0(lm));
+              raise([{ rule: 'tr_trail', text: txt }], k + ':' + suf);
+            }
+          }
+        }
+        if (!cur.closed && !raw.lock_at && isFinite(beAt) && fresh(beAt) && !handled['b' + k]) {
           handled['b' + k] = 1;
           if (!other('b')) raise([{ rule: 'tr_be', text: trText('nudge.tr_be', cur) }], k);
         }
