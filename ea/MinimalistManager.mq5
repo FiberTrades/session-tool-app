@@ -333,9 +333,10 @@ double g_lockSl[];      //        ...and the stop last announced for each (a tra
 // v8.88: the open trade's running result for Session Tool's trade card - per position, what was last sent and when
 ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[];
 bool   g_tickOff = false;   // the WebRequest list does not allow the address: stop trying until the EA restarts
-// v8.89: the live chart's candles - the 5-minute candle last sent for this chart's symbol, and when / whether it failed
-#define LB_BARS 150
-datetime g_lbBar = 0; uint g_lbMs = 0; bool g_lbBad = false;
+// v8.89: the live chart's candles, on the timeframe each open trade was taken on - per timeframe in use, the candle last
+// sent for this chart's symbol, and when / whether it failed
+#define LB_BARS 240
+int g_lbTf[]; datetime g_lbBar[]; uint g_lbMs[]; bool g_lbBad[];
 bool   g_syncCatchupPending = false;
 datetime g_syncCatchAt = 0;   // last periodic catch-up (v4.5: re-scan history so a close missed in real time self-heals)
 bool   g_wasConnected = true; // last-seen broker connection state (v4.5: reconnect/wake -> catch-up immediately)
@@ -3619,6 +3620,27 @@ bool LiveRpcPost(string fn,string body)
    return (code==200);
   }
 bool LiveTickPost(string body){ return LiveRpcPost("st_live_tick",body); }
+// v8.89 (Nestor: "just display the timeframe the trade was executed in"): the chart's timeframe when the EA first saw the
+// trade, stamped once and held like the entry risk (a GlobalVariable under the same "R" prefix, so PurgeEntryRisk clears it
+// when the symbol goes flat) - a restart or a later change of the chart's timeframe does not move it.
+string TradeTfKey(ulong posid){ return StateKey("RTF"+IntegerToString((long)posid)); }
+ENUM_TIMEFRAMES TradeTf(ulong posid)
+  {
+   string k=TradeTfKey(posid);
+   if(GlobalVariableCheck(k)) return (ENUM_TIMEFRAMES)(int)GlobalVariableGet(k);
+   GlobalVariableSet(k,(double)_Period);
+   return (ENUM_TIMEFRAMES)_Period;
+  }
+// "M1", "M5", "M15", "H1", "H4", "D1", "W1", "MN1" - the name the candles are filed under
+string TfName(ENUM_TIMEFRAMES tf)
+  {
+   int s=PeriodSeconds(tf);
+   if(s>=2592000) return "MN1";
+   if(s>=604800)  return "W1";
+   if(s>=86400)   return "D"+IntegerToString(s/86400);
+   if(s>=3600)    return "H"+IntegerToString(s/3600);
+   return "M"+IntegerToString(s>=60 ? s/60 : 1);
+  }
 string LiveBarStr(datetime t,double o,double h,double l,double c)
   {
    long tu=(long)t-SrvOffAt(t);
@@ -3648,10 +3670,12 @@ void LiveTickAll()
       double slr=(rpx>0 && sl>0) ? (sl-op)*d/rpx : EMPTY_VALUE;
       double tpr=(rpx>0 && tp>0) ? (tp-op)*d/rpx : EMPTY_VALUE;
       string lad=(mg==InpMagic) ? LiveLadder(op,d,rpx) : "";
-      // v8.89: the live chart - the chart's price (bid, like MT5's own candles) and the forming 5-minute candle
+      // v8.89: the live chart - the chart's price (bid, like MT5's own candles) and the forming candle on the timeframe the
+      // trade was taken on ("t,o,h,l,c,seconds")
       double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-      datetime bt=iTime(_Symbol,PERIOD_M5,0);
-      string bar=(bt>0) ? LiveBarStr(bt,iOpen(_Symbol,PERIOD_M5,0),iHigh(_Symbol,PERIOD_M5,0),iLow(_Symbol,PERIOD_M5,0),iClose(_Symbol,PERIOD_M5,0)) : "";
+      ENUM_TIMEFRAMES ttf=TradeTf(posid);
+      datetime bt=iTime(_Symbol,ttf,0);
+      string bar=(bt>0) ? LiveBarStr(bt,iOpen(_Symbol,ttf,0),iHigh(_Symbol,ttf,0),iLow(_Symbol,ttf,0),iClose(_Symbol,ttf,0))+","+IntegerToString(PeriodSeconds(ttf)) : "";
       string sig=DoubleToString(sl,_Digits)+"|"+DoubleToString(tp,_Digits)+"|"+lad+"|"+IntegerToString((long)bt);
       int at=-1;
       for(int k=0;k<ArraySize(g_tkTk);k++) if(g_tkTk[k]==posid){ at=k; break; }
@@ -3677,10 +3701,11 @@ void LiveTickAll()
       if(g_tickOff) return;
      }
   }
-// v8.89 (Nestor, 2 Oct 2026: "build the EA chart with lines"): Session Tool's live chart. Each tick above also carries
-// the chart's price, the entry, 1R in price and the forming 5-minute candle; and when a new 5-minute candle starts, the
-// last 150 closed ones (12.5 hours) go to st_live_bars - for this chart's own symbol, whatever it is (gold, an index,
-// crypto), straight from this MT5, so the app's candles are the broker's own and the chart opens with history.
+// v8.89 (Nestor, 2 Oct 2026: "build the EA chart with lines", "just display the timeframe the trade was executed in"):
+// Session Tool's live chart. Each tick above also carries the chart's price, the entry, 1R in price and the forming candle
+// on the trade's own timeframe; and when a new candle starts on that timeframe, its last 240 closed candles go to
+// st_live_bars - one call a second at most - for this chart's own symbol, whatever it is (gold, an index, crypto),
+// straight from this MT5, so the app's candles are the broker's own and the chart opens with history.
 // Times go as UTC seconds (each candle's own broker offset, like the replay backfill). Same rules as the ticks: a
 // direct database call checked by the sync token, never the live queue, nothing from a Follow account, a failure
 // retried after 30 s.
@@ -3688,30 +3713,48 @@ void LiveBarsAll()
   {
    if(g_tickOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW) return;
    if(ArraySize(g_liveQueue)>0) return;                       // the real events go first
-   bool any=false;
-   for(int i=PositionsTotal()-1;i>=0 && !any;i--)
+   // the timeframes this chart's open trades were taken on (usually one)
+   int tfs[]; int nt=0;
+   for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i);
       if(tk==0 || !PositionSelectByTicket(tk)) continue;
       if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
       long mg=PositionGetInteger(POSITION_MAGIC);
       if(InpCopyMagic!=InpMagic && mg==InpCopyMagic) continue;   // a copy: the Lead's trade is the card
-      any=true;
+      int tf=(int)TradeTf((ulong)PositionGetInteger(POSITION_IDENTIFIER));
+      bool dup=false;
+      for(int q=0;q<nt;q++) if(tfs[q]==tf) dup=true;
+      if(!dup){ ArrayResize(tfs,nt+1); tfs[nt]=tf; nt++; }
      }
-   if(!any){ g_lbBar=0; return; }                             // no trade open here: nothing to chart
-   datetime b=iTime(_Symbol,PERIOD_M5,0);
-   if(b==0 || b==g_lbBar) return;
+   if(nt==0){ ArrayResize(g_lbTf,0); ArrayResize(g_lbBar,0); ArrayResize(g_lbMs,0); ArrayResize(g_lbBad,0); return; }   // nothing open here
    uint now=GetTickCount();
-   if(g_lbBad && now-g_lbMs<30000) return;
-   MqlRates rt[];
-   int n=CopyRates(_Symbol,PERIOD_M5,1,LB_BARS,rt);           // the closed candles, oldest first
-   if(n<=0) return;                                           // history still loading: the next second tries again
-   string s="";
-   for(int k=0;k<n;k++) s+=(k>0?";":"")+LiveBarStr(rt[k].time,rt[k].open,rt[k].high,rt[k].low,rt[k].close);
-   string body=StringFormat("{\"p_token\":\"%s\",\"p_symbol\":\"%s\",\"p_tf\":\"M5\",\"p_bars\":\"%s\",\"p_digits\":%d}",g_syncTokenEff,_Symbol,s,_Digits);
-   bool ok=LiveRpcPost("st_live_bars",body);
-   g_lbMs=now; g_lbBad=!ok;
-   if(ok) g_lbBar=b;
+   for(int q=0;q<nt;q++)
+     {
+      ENUM_TIMEFRAMES tf=(ENUM_TIMEFRAMES)tfs[q];
+      int at=-1;
+      for(int j=0;j<ArraySize(g_lbTf);j++) if(g_lbTf[j]==tfs[q]){ at=j; break; }
+      if(at<0)
+        {
+         at=ArraySize(g_lbTf);
+         ArrayResize(g_lbTf,at+1); ArrayResize(g_lbBar,at+1); ArrayResize(g_lbMs,at+1); ArrayResize(g_lbBad,at+1);
+         g_lbTf[at]=tfs[q]; g_lbBar[at]=0; g_lbMs[at]=0; g_lbBad[at]=false;
+        }
+      datetime b=iTime(_Symbol,tf,0);
+      if(b==0 || b==g_lbBar[at]) continue;
+      if(g_lbBad[at] && now-g_lbMs[at]<30000) continue;
+      MqlRates rt[];
+      int n=CopyRates(_Symbol,tf,1,LB_BARS,rt);              // the closed candles, oldest first
+      if(n<=0) continue;                                      // history still loading: the next second tries again
+      string s="";
+      for(int k=0;k<n;k++) s+=(k>0?";":"")+LiveBarStr(rt[k].time,rt[k].open,rt[k].high,rt[k].low,rt[k].close);
+      string body=StringFormat("{\"p_token\":\"%s\",\"p_symbol\":\"%s\",\"p_tf\":\"%s\",\"p_bars\":\"%s\",\"p_digits\":%d}",
+                               g_syncTokenEff,_Symbol,TfName(tf),s,_Digits);
+      bool ok=LiveRpcPost("st_live_bars",body);
+      g_lbMs[at]=now; g_lbBad[at]=!ok;
+      if(ok) g_lbBar[at]=b;
+      return;                                                 // one call a second
+     }
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
 double LivePositionPnl(ulong posId)
@@ -6690,7 +6733,7 @@ void OnTimer()
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
-   LiveBarsAll();                           // v8.89: the live chart's candles, once per new 5-minute candle (before the tick that shows it)
+   LiveBarsAll();                           // v8.89: the live chart's candles, as the trade's timeframe starts a new one (before the tick that shows it)
    LiveTickAll();                           // v8.88: the open trade's running result for Session Tool (every 5 s at most)
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:

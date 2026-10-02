@@ -1184,11 +1184,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-chs:empty { display: none; }
   .slx-cht { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-2); }
   .slx-cht[hidden] { display: none; }
-  .slx-chb { height: 300px; }
-  .slx-chc { display: flex; justify-content: space-between; gap: 10px; margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
+  .slx-chb { height: 320px; }
+  .slx-chtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+  .slx-tfl { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
+  .slx-tfl b { font-weight: 400; font-size: 11px; letter-spacing: 0.06em; text-transform: none; color: var(--text); border: 1px solid var(--border-2); border-radius: 6px; padding: 4px 9px; margin-right: 10px; background: var(--bg); }
+  .slx-tfl b:empty { display: none; }
+  .slx-chc { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); text-align: right; }
   .slx-cht.off .slx-chb { display: none; }
   .slx-cnote { margin-top: 16px; }
-  @media (max-width: 600px) { .slx-chb { height: 240px; } }
+  @media (max-width: 600px) { .slx-chb { height: 240px; } .slx-chc { display: none; } }
   @media (max-width: 600px) {
     .slx-rb.n2, .slx-rb.n3 { grid-template-columns: 1fr; }
     .slx-c { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 10px; } .slx-l { margin: 0; } .slx-bar { grid-column: 1 / -1; }
@@ -18246,12 +18250,15 @@ try {
       } else tp = '<span class="slx-hid">' + esc(T2('P/L hidden', 'P/L oculto')) + '</span>';
       var dir = long ? T2('Long', 'Largo') : T2('Short', 'Corto');
       var head = '<div class="slx-ts">' + esc(symTxt(r.symbol)) + '<em class="' + (long ? '' : 's') + '">' + esc(dir + (n > 1 ? T2(' · ' + n + ' accounts', ' · ' + n + ' cuentas') : '')) + '</em></div>';
+      // EA 8.89: a live chart under the card. With it, the line from the stop to the target goes (Nestor: "no point having
+      // this progress bar now") - the chart shows the price against every level.
       var cht = has && isFinite(tk.px) && isFinite(tk.op);
-      var stat = head + '|' + marks + seg + '|' + chips.join('') + '|' + on() + has + cht;
+      if (cht) ball = '';
+      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht;
       var html = '<div class="slx-tc" data-k="' + esc(r.ticket) + '"><div class="slx-th">' + head + '<div class="slx-right"><span class="slx-tpw">' + tp + '</span>' + (has ? tog : '') + '</div></div>'
-        + '<div class="slx-lad"><div class="slx-ln"></div>' + seg + marks + (ball ? '<div class="slx-now' + (R < -0.049 ? ' r' : '') + '" style="left:' + ball + '"></div>' : '') + '</div>'
+        + (cht ? '' : '<div class="slx-lad"><div class="slx-ln"></div>' + seg + marks + (ball ? '<div class="slx-now' + (R < -0.049 ? ' r' : '') + '" style="left:' + ball + '"></div>' : '') + '</div>')
         + (chips.length ? '<div class="slx-chips">' + chips.join('') + '</div>' : '')
-        + (has && !cht && on() ? '<div class="slx-cnote"><span class="slx-need">' + esc(T2('Live chart needs EA 8.89', 'Gráfico en vivo: necesita el EA 8.89')) + '</span></div>' : '')
+        + (has && !cht ? '<div class="slx-cnote"><span class="slx-need">' + esc(T2('Live chart needs EA 8.89', 'Gráfico en vivo: necesita el EA 8.89')) + '</span></div>' : '')
         + '<div class="slx-chs"></div></div>';
       return { k: String(r.ticket), s: stat, html: html, ball: ball, red: R < -0.049, tp: tp };
     }
@@ -18260,7 +18267,7 @@ try {
        one from every tick - with the entry, the stop (and the original stop once it has moved), the target and the EA's
        partial-close / trailing steps drawn at their real prices, so it works for any symbol the broker has. One chart per
        open trade, kept outside the card's redraws and put back into the card after each one; removed when the trade
-       closes. It follows the Live P/L switch: price against the entry is the P/L, so off hides the chart too. */
+       closes. The Live P/L switch hides only the R and money on the card; the chart stays (Nestor, 2 Oct). */
     var charts = {}, barsC = {}, lwcP = null;
     var LWC_SRC = 'https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
     function ensureLWC() {
@@ -18285,24 +18292,41 @@ try {
       out.sort(function (a, b) { return a.time - b.time; });
       return out.filter(function (b, i) { return i === 0 || b.time !== out[i - 1].time; });
     }
-    function fetchBars(sym) {
-      var c = barsC[sym] || (barsC[sym] = { bars: [], last: 0, at: 0, busy: false });
+    // The timeframe the trade was taken on (Nestor: "just display the timeframe the trade was executed in"): the EA stamps
+    // its chart's timeframe when it first sees the trade, sends that timeframe's last 240 closed candles as each new one
+    // starts, and puts the timeframe's length in seconds as a sixth field of the forming candle on every tick. MT5's copy
+    // is read when the chart opens, when a whole candle is missing and every 5 minutes to true things up; in between, a
+    // forming candle that moves on closes the one before it here.
+    function tfName(sec) { return sec >= 2592000 ? 'MN1' : sec >= 604800 ? 'W1' : sec >= 86400 ? 'D' + Math.round(sec / 86400) : sec >= 3600 ? 'H' + Math.round(sec / 3600) : 'M' + Math.max(1, Math.round(sec / 60)); }
+    function tfLabel(sec) { return sec >= 2592000 ? '1M' : sec >= 604800 ? '1W' : sec >= 86400 ? Math.round(sec / 86400) + 'D' : sec >= 3600 ? Math.round(sec / 3600) + 'h' : Math.max(1, Math.round(sec / 60)) + 'm'; }
+    function tfSec(bar) { var a = String(bar || '').split(','); var v = Number(a[5]); return (isFinite(v) && v >= 60) ? v : 60; }
+    function store(sym, tf) { var k = sym + '|' + tf; return barsC[k] || (barsC[k] = { bars: [], last: 0, at: 0, busy: false, form: null, rev: 0 }); }
+    function fetchBars(sym, tf) {
+      var c = store(sym, tf);
       if (c.busy || Date.now() - c.at < 20000 || typeof window.__stLiveBars !== 'function') return;
       c.busy = true; c.at = Date.now();
-      window.__stLiveBars(sym, 'M5').then(function (row) {
+      window.__stLiveBars(sym, tf).then(function (row) {
         c.busy = false;
-        if (row && row.bars) { c.bars = parseBars(row.bars); c.last = c.bars.length ? c.bars[c.bars.length - 1].time : 0; }
+        if (row && row.bars) { c.bars = parseBars(row.bars); c.last = c.bars.length ? c.bars[c.bars.length - 1].time : 0; c.rev++; }
         later();
       }, function () { c.busy = false; });
+    }
+    function roll(sym, tf, sec, fb) {
+      var c = store(sym, tf);
+      if (c.form && fb.time > c.form.time && c.form.time > c.last) { c.bars.push(c.form); c.last = c.form.time; if (c.bars.length > 400) c.bars.shift(); }
+      if (!c.form || fb.time >= c.form.time) c.form = fb;
+      if (!c.bars.length || Date.now() - c.at > 300000 || (c.last && fb.time > c.last + sec)) fetchBars(sym, tf);
+      return c;
     }
     function hm(ts) { var d = new Date(ts * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
     function makeChart(k, sym, dg) {
       var el = document.createElement('div'); el.className = 'slx-cht';
       var box = document.createElement('div'); box.className = 'slx-chb'; el.appendChild(box);
-      var cap = document.createElement('div'); cap.className = 'slx-chc';
-      cap.innerHTML = '<span>' + esc(T2('5m · your MT5 prices', '5m · precios de tu MT5')) + '</span><span>' + esc(T2('Times: your clock', 'Horas: tu reloj')) + '</span>';
-      el.appendChild(cap);
-      var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null };
+      var top = document.createElement('div'); top.className = 'slx-chtop';
+      top.innerHTML = '<span class="slx-tfl"><b></b>' + esc(T2('the timeframe you took it on', 'la temporalidad en la que entraste')) + '</span>'
+        + '<span class="slx-chc">' + esc(T2('Your MT5 prices · your clock', 'Precios de tu MT5 · tu reloj')) + '</span>';
+      el.insertBefore(top, box);
+      var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null, tf: '' };
       ensureLWC().then(function () {
         if (charts[k] !== c) return;
         var d = Math.max(0, Math.min(8, isFinite(dg) ? dg : 5));
@@ -18330,24 +18354,26 @@ try {
       var r = idea.main, tk = r.tick, k = String(r.ticket), long = r.direction !== 'short';
       if (!(tk && isFinite(tk.px) && isFinite(tk.op))) { dropChart(k); return; }
       var c = charts[k] || makeChart(k, r.symbol, tk.dg);
-      c.el.hidden = !on();
       var slot = el.querySelector('.slx-chs');
       if (slot && c.el.parentNode !== slot) slot.appendChild(c.el);
-      if (!c.series || c.el.hidden) return;
-      var bc = barsC[r.symbol];
-      if (!bc || !bc.bars.length) fetchBars(r.symbol);
-      var fb = parseBars(tk.bar)[0];
-      if (fb && bc && bc.last && fb.time > bc.last + 300) fetchBars(r.symbol);   // a candle closed that the copy here lacks
-      var key = bc ? bc.last + ':' + bc.bars.length : '-';
-      if (c.key !== key) { c.key = key; try { c.series.setData(bc ? bc.bars.slice() : []); } catch (e) {} }
-      if (fb && (!bc || !bc.last || fb.time > bc.last)) { try { c.series.update(fb); } catch (e) {} }
+      if (!c.series) return;
+      var sec = tfSec(tk.bar), tf = tfName(sec), fb = parseBars(tk.bar)[0], bc;
+      if (fb) bc = roll(r.symbol, tf, sec, fb);
+      else { bc = store(r.symbol, tf); if (!bc.bars.length) fetchBars(r.symbol, tf); }
+      var sw = c.tf !== tf; c.tf = tf;
+      if (sw) { var lb = c.el.querySelector('.slx-tfl b'); if (lb) lb.textContent = tfLabel(sec); }
+      var key = tf + ':' + bc.last + ':' + bc.bars.length + ':' + bc.rev;
+      if (c.key !== key) { c.key = key; try { c.series.setData(bc.bars.slice()); } catch (e) {} }
+      if (bc.form && (!bc.last || bc.form.time > bc.last)) { try { c.series.update(bc.form); } catch (e) {} }
+      if (sw) { try { c.chart.timeScale().scrollToRealTime(); } catch (e) {} }
       // the levels, at their prices: R from the entry times 1R in price
       var d = long ? 1 : -1, rp = tk.rpx, P = function (x) { return tk.op + d * x * rp; }, L = [];
-      L.push({ price: tk.op, color: '#9a96a6', lineStyle: 2, title: T2('Entry', 'Entrada') });
+      var slR = isFinite(tk.sl) ? tk.sl : (r.lockR != null ? r.lockR : (r.beAt ? 0 : -1)), be = Math.abs(slR) < 0.03;
+      // at break-even the stop sits on the entry: "SL · BE" marks both, so no second label on top of it
+      if (!(be && isFinite(rp) && rp > 0)) L.push({ price: tk.op, color: '#9a96a6', lineStyle: 2, title: T2('Entry', 'Entrada') });
       if (isFinite(rp) && rp > 0) {
-        var slR = isFinite(tk.sl) ? tk.sl : (r.lockR != null ? r.lockR : (r.beAt ? 0 : -1)), be = Math.abs(slR) < 0.03;
         if (slR > -0.97) L.push({ price: P(-1), color: 'rgba(229,103,103,0.4)', lineStyle: 1, title: '\u22121R' });
-        L.push({ price: P(slR), color: slR > 0.03 ? '#4ECD8B' : be ? '#c9c4d4' : '#E56767', lineStyle: 0, title: be ? 'SL · BE' : 'SL' });
+        L.push({ price: P(slR), color: '#E56767', lineStyle: 0, title: be ? 'SL · BE' : 'SL' });   // red wherever it sits (Nestor)
         if (isFinite(tk.tp)) L.push({ price: P(tk.tp), color: '#4ECD8B', lineStyle: 0, title: 'TP' });
         var lad = parseLad(tk.lad);
         lad.p.forEach(function (x, i) { L.push({ price: P(x.r), color: x.done ? 'rgba(232,207,99,0.35)' : 'rgb(232,207,99)', lineStyle: 2, title: 'P' + (i + 1) + ' ' + Math.round(x.pct) + '%' }); });
@@ -18395,7 +18421,7 @@ try {
             var w = old.querySelector('.slx-tpw'); if (w && w.innerHTML !== c.tp) w.innerHTML = c.tp;
             var b = old.querySelector('.slx-now');
             if (b && c.ball) { b.style.left = c.ball; b.classList.toggle('r', c.red); }
-            else if (!b && c.ball) { var nb = document.createElement('div'); nb.className = 'slx-now' + (c.red ? ' r' : ''); nb.style.left = c.ball; old.querySelector('.slx-lad').appendChild(nb); }
+            else if (!b && c.ball && old.querySelector('.slx-lad')) { var nb = document.createElement('div'); nb.className = 'slx-now' + (c.red ? ' r' : ''); nb.style.left = c.ball; old.querySelector('.slx-lad').appendChild(nb); }
             else if (b && !c.ball) b.remove();
             return;
           }
@@ -18411,9 +18437,9 @@ try {
     function later() { if (!raf) raf = requestAnimationFrame(render); }
     setTimeout(function () { render(); setInterval(render, 10000); }, 1500);
     // diag: each chart's levels and candle count
-    function chartDiag() { return Object.keys(charts).map(function (k) { var c = charts[k], bc = barsC[c.sym];
-      return { k: k, sym: c.sym, ready: !!c.series, hidden: !!c.el.hidden, inCard: !!(c.el.parentNode && c.el.parentNode.closest && c.el.parentNode.closest('.slx-tc')),
-               bars: bc ? bc.bars.length : 0, lines: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.price; }) }; }); }
+    function chartDiag() { return Object.keys(charts).map(function (k) { var c = charts[k], bc = barsC[c.sym + '|' + (c.tf || 'M1')], lb = c.el.querySelector('.slx-tfl b');
+      return { k: k, sym: c.sym, tf: c.tf, label: lb ? lb.textContent : '', ready: !!c.series, hidden: !!c.el.hidden, inCard: !!(c.el.parentNode && c.el.parentNode.closest && c.el.parentNode.closest('.slx-tc')),
+               bars: bc ? bc.bars.length : 0, form: bc && bc.form ? [bc.form.time, bc.form.open, bc.form.high, bc.form.low, bc.form.close] : null, lines: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.price; }), colors: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.color; }) }; }); }
     return { render: render, later: later, charts: chartDiag };
   })();
 
