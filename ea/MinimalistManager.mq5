@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.88"
+#property version   "8.89"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -333,6 +333,9 @@ double g_lockSl[];      //        ...and the stop last announced for each (a tra
 // v8.88: the open trade's running result for Session Tool's trade card - per position, what was last sent and when
 ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[];
 bool   g_tickOff = false;   // the WebRequest list does not allow the address: stop trying until the EA restarts
+// v8.89: the live chart's candles - the 5-minute candle last sent for this chart's symbol, and when / whether it failed
+#define LB_BARS 150
+datetime g_lbBar = 0; uint g_lbMs = 0; bool g_lbBad = false;
 bool   g_syncCatchupPending = false;
 datetime g_syncCatchAt = 0;   // last periodic catch-up (v4.5: re-scan history so a close missed in real time self-heals)
 bool   g_wasConnected = true; // last-seen broker connection state (v4.5: reconnect/wake -> catch-up immediately)
@@ -3501,7 +3504,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.88\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.89\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3598,11 +3601,11 @@ string LiveLadder(double op,int d,double rpx)
      }
    return s;
   }
-bool LiveTickPost(string body)
+bool LiveRpcPost(string fn,string body)
   {
    int p=StringFind(InpLiveURL,"/functions/");
    if(p<0) return false;
-   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_live_tick";
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/"+fn;
    char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
    char res[]; string rh;
    string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
@@ -3614,6 +3617,12 @@ bool LiveTickPost(string body)
       PrintFormat("Live P/L: '%s' is not allowed. Add the whole address (https://...supabase.co) under Tools > Options > Expert Advisors > Allow WebRequest.",url);
      }
    return (code==200);
+  }
+bool LiveTickPost(string body){ return LiveRpcPost("st_live_tick",body); }
+string LiveBarStr(datetime t,double o,double h,double l,double c)
+  {
+   long tu=(long)t-SrvOffAt(t);
+   return IntegerToString(tu)+","+DoubleToString(o,_Digits)+","+DoubleToString(h,_Digits)+","+DoubleToString(l,_Digits)+","+DoubleToString(c,_Digits);
   }
 void LiveTickAll()
   {
@@ -3639,7 +3648,11 @@ void LiveTickAll()
       double slr=(rpx>0 && sl>0) ? (sl-op)*d/rpx : EMPTY_VALUE;
       double tpr=(rpx>0 && tp>0) ? (tp-op)*d/rpx : EMPTY_VALUE;
       string lad=(mg==InpMagic) ? LiveLadder(op,d,rpx) : "";
-      string sig=DoubleToString(sl,_Digits)+"|"+DoubleToString(tp,_Digits)+"|"+lad;
+      // v8.89: the live chart - the chart's price (bid, like MT5's own candles) and the forming 5-minute candle
+      double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+      datetime bt=iTime(_Symbol,PERIOD_M5,0);
+      string bar=(bt>0) ? LiveBarStr(bt,iOpen(_Symbol,PERIOD_M5,0),iHigh(_Symbol,PERIOD_M5,0),iLow(_Symbol,PERIOD_M5,0),iClose(_Symbol,PERIOD_M5,0)) : "";
+      string sig=DoubleToString(sl,_Digits)+"|"+DoubleToString(tp,_Digits)+"|"+lad+"|"+IntegerToString((long)bt);
       int at=-1;
       for(int k=0;k<ArraySize(g_tkTk);k++) if(g_tkTk[k]==posid){ at=k; break; }
       if(at<0)
@@ -3655,13 +3668,50 @@ void LiveTickAll()
       uint el=now-g_tkMs[at];
       uint wait=(g_tkBad[at] || !changed) ? 5000 : 1000;
       if(!(changed || moved) || (g_tkMs[at]!=0 && el<wait)) continue;
-      string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\"}",
-                               g_syncTokenEff,posid,LiveTickNum(r,3),DoubleToString(pnl,2),LiveTickNum(slr,3),LiveTickNum(tpr,3),lad);
+      string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\",\"p_px\":%s,\"p_op\":%s,\"p_rpx\":%s,\"p_digits\":%d,\"p_bar\":\"%s\"}",
+                               g_syncTokenEff,posid,LiveTickNum(r,3),DoubleToString(pnl,2),LiveTickNum(slr,3),LiveTickNum(tpr,3),lad,
+                               DoubleToString(bid,_Digits),DoubleToString(op,_Digits),LiveTickNum(rpx>0?rpx:EMPTY_VALUE,_Digits+1),_Digits,bar);
       bool ok=LiveTickPost(body);
       g_tkMs[at]=now; g_tkBad[at]=!ok;
       if(ok){ g_tkPx[at]=px; g_tkSig[at]=sig; }
       if(g_tickOff) return;
      }
+  }
+// v8.89 (Nestor, 2 Oct 2026: "build the EA chart with lines"): Session Tool's live chart. Each tick above also carries
+// the chart's price, the entry, 1R in price and the forming 5-minute candle; and when a new 5-minute candle starts, the
+// last 150 closed ones (12.5 hours) go to st_live_bars - for this chart's own symbol, whatever it is (gold, an index,
+// crypto), straight from this MT5, so the app's candles are the broker's own and the chart opens with history.
+// Times go as UTC seconds (each candle's own broker offset, like the replay backfill). Same rules as the ticks: a
+// direct database call checked by the sync token, never the live queue, nothing from a Follow account, a failure
+// retried after 30 s.
+void LiveBarsAll()
+  {
+   if(g_tickOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW) return;
+   if(ArraySize(g_liveQueue)>0) return;                       // the real events go first
+   bool any=false;
+   for(int i=PositionsTotal()-1;i>=0 && !any;i--)
+     {
+      ulong tk=PositionGetTicket(i);
+      if(tk==0 || !PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      long mg=PositionGetInteger(POSITION_MAGIC);
+      if(InpCopyMagic!=InpMagic && mg==InpCopyMagic) continue;   // a copy: the Lead's trade is the card
+      any=true;
+     }
+   if(!any){ g_lbBar=0; return; }                             // no trade open here: nothing to chart
+   datetime b=iTime(_Symbol,PERIOD_M5,0);
+   if(b==0 || b==g_lbBar) return;
+   uint now=GetTickCount();
+   if(g_lbBad && now-g_lbMs<30000) return;
+   MqlRates rt[];
+   int n=CopyRates(_Symbol,PERIOD_M5,1,LB_BARS,rt);           // the closed candles, oldest first
+   if(n<=0) return;                                           // history still loading: the next second tries again
+   string s="";
+   for(int k=0;k<n;k++) s+=(k>0?";":"")+LiveBarStr(rt[k].time,rt[k].open,rt[k].high,rt[k].low,rt[k].close);
+   string body=StringFormat("{\"p_token\":\"%s\",\"p_symbol\":\"%s\",\"p_tf\":\"M5\",\"p_bars\":\"%s\",\"p_digits\":%d}",g_syncTokenEff,_Symbol,s,_Digits);
+   bool ok=LiveRpcPost("st_live_bars",body);
+   g_lbMs=now; g_lbBad=!ok;
+   if(ok) g_lbBar=b;
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
 double LivePositionPnl(ulong posId)
@@ -6640,6 +6690,7 @@ void OnTimer()
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
+   LiveBarsAll();                           // v8.89: the live chart's candles, once per new 5-minute candle (before the tick that shows it)
    LiveTickAll();                           // v8.88: the open trade's running result for Session Tool (every 5 s at most)
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
