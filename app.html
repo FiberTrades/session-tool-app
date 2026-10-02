@@ -7896,6 +7896,7 @@ try {
       'ea.be': 'Break-even',
       'ea.off': 'Off',
       'ea.lots': '{N} lots',
+      'ea.partials': 'Partial closes',
       'ea.pct_now': '{P}% ({M} now)',
       'ea.tp_closes': '{V} · closes {P}%',
       'ea.be_at': 'at {R}R · +{O}',
@@ -7961,6 +7962,9 @@ try {
       'nudge.tr_slp': 'Stopped out in profit on your {SYM} {SIDE}: {PNL}.',
       'nudge.tr_trail': 'Stop trailed to +{R}R on your {SYM} {SIDE} — {M} locked in.',
       'nudge.tr_trail_nr': 'Stop trailed on your {SYM} {SIDE} — {M} locked in.',
+      'nudge.tr_part': 'Partial close on your {SYM} {SIDE}: {P}% closed at {R} — {PNL} banked.',
+      'nudge.tr_part_nr': 'Partial close on your {SYM} {SIDE}: {P}% closed — {PNL} banked.',
+      'nudge.tr_pcend': 'Last partial close on your {SYM} {SIDE}: the trade is closed, {PNL} in total.',
       'nudge.w_long_f': 'long',
       'nudge.w_short_f': 'short',
       'settings.nudges_trades_toggle': 'Trade alerts',
@@ -9764,6 +9768,7 @@ try {
       'ea.be': 'Break-even',
       'ea.off': 'Desactivado',
       'ea.lots': '{N} lotes',
+      'ea.partials': 'Cierres parciales',
       'ea.pct_now': '{P}% ({M} ahora)',
       'ea.tp_closes': '{V} · cierra el {P}%',
       'ea.be_at': 'a {R}R · +{O}',
@@ -9829,6 +9834,9 @@ try {
       'nudge.tr_slp': 'Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}.',
       'nudge.tr_trail': 'Stop movido a +{R}R en tu operación {SIDEF} de {SYM}: {M} asegurados.',
       'nudge.tr_trail_nr': 'Stop movido en tu operación {SIDEF} de {SYM}: {M} asegurados.',
+      'nudge.tr_part': 'Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado a {R}, {PNL} realizados.',
+      'nudge.tr_part_nr': 'Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado, {PNL} realizados.',
+      'nudge.tr_pcend': 'Último cierre parcial en tu operación {SIDEF} de {SYM}: operación cerrada, {PNL} en total.',
       'nudge.w_long_f': 'larga',
       'nudge.w_short_f': 'corta',
       'settings.nudges_trades_toggle': 'Avisos de operación',
@@ -17272,6 +17280,7 @@ try {
     function trCloseRule(raw, cur, k) {
       var why = raw.close_reason, pnl = Number(cur.pnl) || 0;
       if (why === 'tp') return 'tr_tp';
+      if (why === 'pc') return 'tr_pcend';   // EA 8.87: the partial-close ladder took the last of it
       if (why !== 'sl') return null;
       var res = null; try { res = classifyNetResult(pnl, trAccount(raw.login)); } catch (e) {}
       if (res === 'Lose') return 'tr_sl';
@@ -17305,6 +17314,17 @@ try {
               raise([{ rule: 'tr_trail', text: txt }], k + ':' + suf);
             }
           }
+        }
+        /* EA 8.87: part of the trade closed (the EA's partial-close ladder, a partial by hand, Risk-off half) - one
+           line per closing deal (part_deal): the share of the original size, the R (from the EA, else banked money /
+           (entry risk x share)) and the money banked. */
+        var pAt = msOf(raw.part_at);
+        if (isFinite(pAt) && fresh(pAt) && raw.part_deal != null && !handled['p' + k + ':' + raw.part_deal]) {
+          handled['p' + k + ':' + raw.part_deal] = 1;
+          var ppct = Number(raw.part_pct) || 0, ppnl = Number(raw.part_pnl) || 0, prr = Number(raw.part_r) || 0, pr0 = 0;
+          if (!(Math.abs(prr) > 0)) { try { pr0 = Number(dayState().size0[k]) || Number(raw.risk) || 0; } catch (e) {} if (pr0 > 0 && ppct > 0) prr = ppnl / (pr0 * ppct / 100); }
+          var prTxt = (isFinite(prr) && Math.abs(prr) >= 0.05) ? (prr >= 0 ? '+' : '\u2212') + String(Math.round(Math.abs(prr) * 10) / 10) + 'R' : '';
+          raise([{ rule: 'tr_part', text: trText(prTxt ? 'nudge.tr_part' : 'nudge.tr_part_nr', cur, ppnl).replace('{P}', String(Math.round(ppct))).replace('{R}', prTxt) }], k + ':' + raw.part_deal);
         }
         if (!cur.closed && !raw.lock_at && isFinite(beAt) && fresh(beAt) && !handled['b' + k]) {
           handled['b' + k] = 1;
@@ -17929,7 +17949,9 @@ try {
       { label: 'ea.trades', keys: ['max_trades_day'], fmt: fmtTrades },
       { label: 'ea.stop',   keys: ['sl_min', 'sl_max', 'unit'], fmt: fmtStop },
       { label: 'ea.tp',     keys: ['tp_on', 'tp_mode', 'tp_value', 'tp_close_pct'], fmt: fmtTP },
-      { label: 'ea.be',     keys: ['be_on', 'be_trigger_r', 'be_offset', 'be_offset_mode'], fmt: fmtBE }
+      { label: 'ea.be',     keys: ['be_on', 'be_trigger_r', 'be_offset', 'be_offset_mode'], fmt: fmtBE },
+      // EA 8.87: the partial-close ladder, "50/25" -> "50%, 25%" (of the original size)
+      { label: 'ea.partials', keys: ['partials'], fmt: function (x) { var p = String((x && x.partials) || ''); return p ? p.split('/').map(function (v) { return v + '%'; }).join(', ') : t('ea.off'); } }
     ];
     // The account this EA trades: from the MT5 login the imports already map, else the active one.
     function accountFor(login) {

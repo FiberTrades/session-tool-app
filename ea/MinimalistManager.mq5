@@ -127,6 +127,7 @@ input ENUM_DST_MODE InpDstMode      = DST_AUTO; // Timezone: Auto (from this PC/
 #define COL_LINE_BE    C'30,120,255'
 #define COL_LINE_TS    C'244,114,182'   // trailing trigger, still live
 #define COL_LINE_TSD   C'95,95,110'     // trailing trigger already consumed
+#define COL_LINE_PC    C'93,202,165'    // v8.87 partial-close trigger, still live (consumed ones use COL_LINE_TSD)
 
 // ---- Refined panel palette (v2.32 redesign) ----
 #define COL_PANEL_BG   C'11,13,16'
@@ -204,7 +205,7 @@ int    g_cpFollowers=0;                        // Lead: follow accounts linked t
 string CpSettingsJson();                       // the copier part of the settings sent to Session Tool
 // Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
 bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
-#define PANEL_CARDS 9
+#define PANEL_CARDS 10
 int    g_cardOff[PANEL_CARDS];                 // each card's top, measured from the first card
 int    g_stops[];                              // scroll positions: card tops, plus rows inside a card taller than the window
 bool   g_clipOn=false;                         // BuildPanel is drawing the scrolling body
@@ -227,6 +228,8 @@ string TX_TP   = "MTM_TXT_TP";
 string TX_BE   = "MTM_TXT_BE";
 string LN_TS   = "MTM_LINE_TS";     // trailing triggers, suffixed 0..TS_MAX-1
 string TX_TS   = "MTM_TXT_TS";
+string LN_PC   = "MTM_LINE_PC";     // v8.87 partial-close triggers, suffixed 0..PC_MAX-1
+string TX_PC   = "MTM_TXT_PC";
 
 ENUM_ORDER_KIND g_orderKind;
 ENUM_RISK_MODE  g_riskMode;
@@ -288,6 +291,22 @@ double g_tsTrig[TS_MAX];
 bool   g_tsFired[TS_MAX];
 ENUM_BEOFF_MODE g_tsUnit = BEOFF_BY_RR;
 bool   g_tsArmed = false;
+
+// ---- PARTIAL CLOSES (v8.87) ------------------------------------------------------------
+// Nestor, 2 Oct 2026: "partial closes ... with also a maximum of 4 times like the trailing stops do".
+// The same shape as the trailing ladder: up to four steps, each a draggable TRIGGER line (P1..P4)
+// you put where part of the trade should come off, and the share it closes - a % of the ORIGINAL
+// size, so 50 then 25 leaves a quarter running to the take profit however the steps fire. Starts
+// EMPTY (opt-in); Add P1 grows it, Delete P2 shrinks it. Fresh lines park just beyond the TP, where
+// price cannot reach them, until you drag them onto structure.
+#define PC_MAX 4
+int    g_pcCount = 0;
+double g_pcPct[PC_MAX] = {50.0,25.0,25.0,25.0};
+double g_pcTrig[PC_MAX];
+bool   g_pcFired[PC_MAX];
+int    g_pcFails[PC_MAX];
+bool   g_pcArmed = false;
+ulong  g_pcClosing = 0;   // a position the ladder closed in full (its close event says "pc", not "ea")
 double g_beTrigger= 0.0;
 int    g_beDir    = 0;
 bool   g_prevLeftDown = false;
@@ -533,12 +552,13 @@ void SetLineText(string name,double price,string txt,color clr)
 // that line's label). When the lines separate again, every label returns to its home spot.
 void DeclutterLabels()
   {
-   string nm[12]; int yv[12]; int wv[12]; int n=0;
-   string all[9];
+   string nm[16]; int yv[16]; int wv[16]; int n=0;
+   string all[13];
    all[0]=TX_SL; all[1]=TX_EF; all[2]=TX_ENTRY; all[3]=TX_BE; all[4]=TX_TP;
    for(int k=0;k<TS_MAX;k++) all[5+k]=TX_TS+IntegerToString(k);
+   for(int k=0;k<PC_MAX;k++) all[9+k]=TX_PC+IntegerToString(k);   // v8.87 partial-close labels
    TextSetFont("Arial",-80);
-   for(int k=0;k<9 && n<12;k++)
+   for(int k=0;k<13 && n<16;k++)
      {
       if(ObjectFind(0,all[k])<0) continue;
       string t=ObjectGetString(0,all[k],OBJPROP_TEXT);
@@ -558,7 +578,7 @@ void DeclutterLabels()
         }
      }
    int base=_s(58), gap=_s(10), rowH=_s(13);
-   int xv[12];
+   int xv[16];
    for(int i=0;i<n;i++)
      {
       int x=base;
@@ -1671,6 +1691,191 @@ void MonitorTrail()
      }
   }
 
+//==================================================================
+//  PARTIAL CLOSES (v8.87)
+//  Built like the trailing ladder above (symbol-wide, one P1 line, per-trade state stamped with the
+//  owning ticket so a restart takes it back and the next trade starts clean). Keys start with an
+//  uppercase P - nothing else uses one.
+//==================================================================
+void SavePcState()
+  {
+   ulong own=TrailOwnerTicket();
+   if(own==0) return;
+   GlobalVariableSet(StateKey("Powner"),(double)own);
+   for(int i=0;i<PC_MAX;i++)
+     {
+      GlobalVariableSet(StateKey("Ptrg"+IntegerToString(i)),g_pcTrig[i]);
+      GlobalVariableSet(StateKey("Pfir"+IntegerToString(i)),g_pcFired[i]?1:0);
+     }
+  }
+bool RestorePcState()
+  {
+   if(!GlobalVariableCheck(StateKey("Powner"))) return false;
+   ulong own=(ulong)GlobalVariableGet(StateKey("Powner"));
+   if(own==0 || own!=TrailOwnerTicket()) return false;      // a different trade: start fresh
+   for(int i=0;i<PC_MAX;i++)
+     {
+      string kt=StateKey("Ptrg"+IntegerToString(i)), kf=StateKey("Pfir"+IntegerToString(i));
+      if(GlobalVariableCheck(kt)) g_pcTrig[i] =GlobalVariableGet(kt);
+      if(GlobalVariableCheck(kf)) g_pcFired[i]=(GlobalVariableGet(kf)>0.5);
+     }
+   return true;
+  }
+void PurgePcState()
+  {
+   string pre=StateKey("P");
+   for(int i=GlobalVariablesTotal()-1;i>=0;i--)
+     {
+      string nm=GlobalVariableName(i);
+      if(StringFind(nm,pre)==0) GlobalVariableDel(nm);
+     }
+  }
+bool   PcActive(int i){ return (i>=0 && i<g_pcCount); }
+string PcName(int i){ return LN_PC+IntegerToString(i); }
+string PcTxt (int i){ return TX_PC+IntegerToString(i); }
+string PcLbl (int i){ return "P"+IntegerToString(i+1); }
+string PcLineLbl(int i){ return PcLbl(i)+"  "+DoubleToString(g_pcPct[i],0)+"%"; }
+void LockPcLine(int i)
+  {
+   string n=PcName(i);
+   if(ObjectFind(0,n)<0) return;
+   ObjectSetInteger(0,n,OBJPROP_SELECTABLE,false);
+   ObjectSetInteger(0,n,OBJPROP_SELECTED,false);
+   ObjectSetInteger(0,n,OBJPROP_COLOR,COL_LINE_TSD);
+   SetLineText(PcTxt(i),LinePrice(n),PcLineLbl(i),COL_LINE_TSD);
+  }
+void HidePcLines()
+  {
+   for(int i=0;i<PC_MAX;i++)
+     {
+      ObjectDelete(0,PcName(i));
+      ObjectDelete(0,PcTxt(i));
+      g_pcFired[i]=false; g_pcFails[i]=0;
+     }
+   g_pcArmed=false;
+  }
+// The size the position was opened with: every IN deal of it. A partial already taken (by the ladder,
+// by hand, or by RiskOffHalf) does not shrink it, so the shares keep meaning what they said.
+double OrigVolume(ulong posId)
+  {
+   if(!HistorySelectByPosition(posId)) return 0.0;
+   double v=0.0;
+   for(int i=0;i<HistoryDealsTotal();i++)
+     {
+      ulong dt=HistoryDealGetTicket(i);
+      if(dt==0) continue;
+      long e=HistoryDealGetInteger(dt,DEAL_ENTRY);
+      if(e==DEAL_ENTRY_IN || e==DEAL_ENTRY_INOUT) v+=HistoryDealGetDouble(dt,DEAL_VOLUME);
+     }
+   return v;
+  }
+// Idempotent, like EnsureTrailLines. Fresh triggers park beyond the TP, between the T lines (TP + 7.5,
+// 12.5, ... pips), so neither ladder hides the other; with no TP they start at R multiples from the
+// entry, or from the market when it is already further along.
+void EnsurePcLines(double entry,int dir)
+  {
+   static ulong s_owner=0;
+   ulong own=TrailOwnerTicket();
+   if(own!=s_owner)
+     {
+      s_owner=own;
+      if(!RestorePcState())
+         for(int k=0;k<PC_MAX;k++){ g_pcTrig[k]=0.0; g_pcFired[k]=false; g_pcFails[k]=0; }
+     }
+   double rpx=0, ptp=0;
+   for(int p=PositionsTotal()-1;p>=0;p--)
+     {
+      ulong tk=PositionGetTicket(p);
+      if(!PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+      rpx=RecallRisk(tk);
+      if(rpx<=0)
+        {
+         double cs=PositionGetDouble(POSITION_SL);
+         if(cs>0) rpx=MathAbs(PositionGetDouble(POSITION_PRICE_OPEN)-cs);
+        }
+      ptp=PositionGetDouble(POSITION_TP);
+      break;
+     }
+   if(rpx<=0) rpx=g_pip*((g_reqSLpips>0)?g_reqSLpips:10.0);
+   double base=entry;
+   double mkt =(dir>0) ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   if((dir>0 && mkt>base)||(dir<0 && mkt<base)) base=mkt;
+   bool any=false;
+   for(int i=0;i<PC_MAX;i++)
+     {
+      if(!PcActive(i)){ ObjectDelete(0,PcName(i)); ObjectDelete(0,PcTxt(i)); continue; }
+      if(g_pcFired[i])
+        {
+         if(ObjectFind(0,PcName(i))<0 && g_pcTrig[i]>0)
+            EnsureHLine(PcName(i),g_pcTrig[i],COL_LINE_TSD,STYLE_DASH,false);
+         LockPcLine(i);
+         continue;
+        }
+      if(ObjectFind(0,PcName(i))<0)
+        {
+         if(g_pcTrig[i]<=0)                                    // a restored trigger wins
+            g_pcTrig[i]=(ptp>0) ? ptp+dir*((i+1)*5.0+2.5)*g_pip
+                                : base+dir*(i+1)*rpx;
+         EnsureHLine(PcName(i),g_pcTrig[i],COL_LINE_PC,STYLE_DASH,true);
+        }
+      SetLineText(PcTxt(i),LinePrice(PcName(i)),PcLineLbl(i),COL_LINE_PC);
+      any=true;
+     }
+   g_pcArmed=any;
+  }
+// Price reached a P line: close that step's share of each position's ORIGINAL size. A share below the
+// broker's minimum lot is skipped (said on the chart); one that would leave less than the minimum, or
+// more than is left, closes the rest. A refused close stays armed and retries next tick, five times.
+void MonitorPartials()
+  {
+   if(!g_pcArmed) return;
+   double pe; int pd;
+   if(!PositionsEntry(pe,pd)) return;
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID), ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   for(int i=0;i<PC_MAX;i++)
+     {
+      if(!PcActive(i) || g_pcFired[i] || g_pcTrig[i]<=0) continue;
+      bool hit=(pd>0) ? (bid>=g_pcTrig[i]) : (ask<=g_pcTrig[i]);
+      if(!hit) continue;
+      bool ok=true;
+      for(int p=PositionsTotal()-1;p>=0;p--)
+        {
+         ulong tk=PositionGetTicket(p);
+         if(!PositionSelectByTicket(tk)) continue;
+         if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+         if(PositionGetInteger(POSITION_MAGIC)!=InpMagic) continue;
+         double vol=PositionGetDouble(POSITION_VOLUME);
+         ulong posid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+         double orig=OrigVolume(posid); if(orig<vol) orig=vol;
+         double raw=orig*g_pcPct[i]/100.0;
+         if(raw<g_volMin-1e-9)
+           {
+            Flash(PcLbl(i)+": "+DoubleToString(raw,2)+" lots is below the broker minimum ("+DoubleToString(g_volMin,2)+") - skipped.");
+            continue;
+           }
+         double cut=(g_volStep>0) ? NormalizeDouble(MathFloor(raw/g_volStep+1e-9)*g_volStep,g_volDigits) : raw;
+         bool all=(cut>=vol-1e-9) || (vol-cut<g_volMin-1e-9);
+         bool done;
+         if(all){ g_pcClosing=posid; done=trade.PositionClose(tk); if(!done) g_pcClosing=0; }
+         else done=trade.PositionClosePartial(tk,cut);
+         if(!done)
+           {
+            ok=false;
+            Print(StringFormat("Partial close %s REJECTED for #%I64u: %d %s",PcLbl(i),tk,trade.ResultRetcode(),trade.ResultRetcodeDescription()));
+           }
+        }
+      if(ok || ++g_pcFails[i]>=5)
+        {
+         if(!ok) Warn("Partial close "+PcLbl(i)+" failed 5 times - giving up. Close it by hand.");
+         g_pcFired[i]=true; g_pcFails[i]=0;
+         LockPcLine(i);
+         SavePcState();
+        }
+     }
+  }
+
 void MonitorBE()
   {
    if(!g_beArmed) return;
@@ -1729,6 +1934,9 @@ void RefreshLabels()
    for(int i=0;i<TS_MAX;i++)
       if(ObjectFind(0,TsName(i))>=0)
          SetLineText(TsTxt(i),LinePrice(TsName(i)),TsLbl(i),g_tsFired[i]?COL_LINE_TSD:COL_LINE_TS);
+   for(int i=0;i<PC_MAX;i++)
+      if(ObjectFind(0,PcName(i))>=0)
+         SetLineText(PcTxt(i),LinePrice(PcName(i)),PcLineLbl(i),g_pcFired[i]?COL_LINE_TSD:COL_LINE_PC);
   }
 
 // Maintain the live-position lines (SL draggable, entry fixed, BE draggable) from state.
@@ -1742,6 +1950,7 @@ void UpdateManageLine()
       CaptureEntryRisk();     // stamp the entry stop before anything can drag it
       double pe; int pd; PositionsEntry(pe,pd);
       EnsureTrailLines(pe,pd);   // idempotent: also covers attaching mid-trade
+      EnsurePcLines(pe,pd);      // v8.87 partial closes, the same way
       // draggable SL
       if(ObjectFind(0,LN_MSL)<0)
          EnsureHLine(LN_MSL,(sl>0?sl:pe),COL_LINE_SL,STYLE_SOLID,true);
@@ -1781,8 +1990,9 @@ void UpdateManageLine()
      }
    else
      {
-      if(!s_riskPurged){ PurgeEntryRisk(); PurgeTrailState(); s_riskPurged=true; }   // flat: clear both once
+      if(!s_riskPurged){ PurgeEntryRisk(); PurgeTrailState(); PurgePcState(); s_riskPurged=true; }   // flat: clear them once
       HideTrailLines();          // also resets the fired flags for the next trade
+      HidePcLines();
       ObjectDelete(0,LN_MSL);
       ObjectDelete(0,LN_EFILL);ObjectDelete(0,TX_EF);
       ObjectDelete(0,LN_BE);   ObjectDelete(0,TX_BE);
@@ -2069,7 +2279,7 @@ void ReleaseScaleLock()
 //  PANEL LAYOUT + SCROLLING  (v8.80)
 //  Card heights live here and nowhere else, so the scrolling window knows the whole layout before
 //  anything is drawn. Order: 0 ORDER, 1 RISK & STOPS, 2 TAKE PROFIT, 3 BREAK-EVEN, 4 TRAILING STOPS,
-//  5 DAILY LIMIT, 6 CHART SCALE, 7 TRADE COPIER, 8 SESSION TOOL SYNC.
+//  5 PARTIAL CLOSES (v8.87), 6 DAILY LIMIT, 7 CHART SCALE, 8 TRADE COPIER, 9 SESSION TOOL SYNC.
 //==================================================================
 int PanelCardRows(int k)
   {
@@ -2080,10 +2290,11 @@ int PanelCardRows(int k)
       case 2: return 2;                                                        // target by, take profit
       case 3: return 2;                                                        // offset unit, BE offset
       case 4: return ((g_tsCount>0)?1:0)+g_tsCount+((g_tsCount<TS_MAX)?1:0);   // unit, steps, Add
-      case 5: return 2;                                                        // max trades, reset line
-      case 6: return 1;                                                        // padding
-      case 7: return CopierRows();                                             // role + the copier's rows
-      case 8: return 1;                                                        // status
+      case 5: return g_pcCount+((g_pcCount<PC_MAX)?1:0);                       // steps, Add
+      case 6: return 2;                                                        // max trades, reset line
+      case 7: return 1;                                                        // padding
+      case 8: return CopierRows();                                             // role + the copier's rows
+      case 9: return 1;                                                        // status
      }
    return 1;
   }
@@ -2382,7 +2593,35 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== DAILY LIMIT =====
-   cardH=PanelCardH(5);   // two rows: Max trades, and the reset-timezone line
+   // ===== PARTIAL CLOSES (v8.87) =====
+   // The trailing card's shape: one row per shown step ("P1 closes %" and the share, Delete on the last
+   // row), then Add. With no steps it is the title and Add P1. The P lines on the chart say where.
+   cardH=PanelCardH(5);
+   mkRect (PP+"C_PC",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
+   mkLabel(PP+"ST_PC",labelX,cy+7,"PARTIAL CLOSES",COL_PANEL_SECT,8);
+   ry=cy+23;
+   for(int i=0;i<g_pcCount;i++)
+     {
+      string sfx=IntegerToString(i);
+      mkLabel(PP+"L_PC"+sfx,labelX,ry+6,PcLbl(i)+" closes %",COL_PANEL_LBL,8);
+      if(i==g_pcCount-1)
+         mkButton(PP+"PCDEL",box2,ry+2,BW,CH,"Delete "+PcLbl(i),COL_PANEL_BTN,COL_PANEL_LBL);
+      mkEdit (PP+"PCPCT"+sfx,box1,ry+2,BW,CH,Fmt(g_pcPct[i],0));
+      ry+=ROWH;
+     }
+   if(g_pcCount<PC_MAX)
+      mkButton(PP+"PCADD",box1,ry+2,BW,CH,"Add "+PcLbl(g_pcCount),COL_PANEL_BTN,COL_PANEL_BTX);
+   for(int i=g_pcCount;i<PC_MAX;i++)
+     {
+      string dsfx=IntegerToString(i);
+      ObjectDelete(0,PP+"L_PC"+dsfx);
+      ObjectDelete(0,PP+"PCPCT"+dsfx);
+     }
+   if(g_pcCount<=0)      ObjectDelete(0,PP+"PCDEL");
+   if(g_pcCount>=PC_MAX) ObjectDelete(0,PP+"PCADD");
+   cy+=cardH+6;
+
+   cardH=PanelCardH(6);   // two rows: Max trades, and the reset-timezone line
    mkRect (PP+"C_DL",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_DL",labelX,cy+7,"DAILY LIMIT",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2402,7 +2641,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== CHART SCALE =====
-   cardH=PanelCardH(6);
+   cardH=PanelCardH(7);
    mkRect (PP+"C_SC",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_SC",labelX,cy+7,"CHART SCALE",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2414,7 +2653,7 @@ void BuildPanel()
    // v8.80. Role cycles OFF -> LEAD -> FOLLOW. The rows below it are worked out once a second by the
    // copier (CopierSlowTick) and only drawn here: each follow account with its risk and state on a
    // Lead; where it copies from and the last copy on a Follow.
-   cardH=PanelCardH(7);
+   cardH=PanelCardH(8);
    mkRect (PP+"C_CP",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_CP",labelX,cy+7,"TRADE COPIER",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2435,7 +2674,7 @@ void BuildPanel()
    cy+=cardH+6;
 
    // ===== SESSION TOOL SYNC =====
-   cardH=PanelCardH(8);
+   cardH=PanelCardH(9);
    mkRect (PP+"C_SY",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
    mkLabel(PP+"ST_SY",labelX,cy+7,"SESSION TOOL SYNC",COL_PANEL_SECT,8);
    ry=cy+23;
@@ -2537,6 +2776,22 @@ void HandleClick(string s)
         }
       SaveState(); BuildPanel(); return;
      }
+   if(s==PP+"PCADD")
+     {
+      if(g_pcCount<PC_MAX) g_pcCount++;    // its line appears next tick via EnsurePcLines
+      SaveState(); BuildPanel(); return;
+     }
+   if(s==PP+"PCDEL")
+     {
+      if(g_pcCount>0)
+        {
+         int gone=--g_pcCount;
+         ObjectDelete(0,PcName(gone)); ObjectDelete(0,PcTxt(gone));
+         g_pcFired[gone]=false; g_pcTrig[gone]=0.0; g_pcFails[gone]=0;
+         SavePcState();
+        }
+      SaveState(); BuildPanel(); return;
+     }
    if(s==PP+"CPROLE"){ CopySetRole((ENUM_COPY_ROLE)(((int)g_copyRole+1)%3)); return; }   // v8.80 copier role
    for(int i=0;i<6;i++)
       if(s==PP+"TPON"+IntegerToString(i)){ g_tpOn[i]=!g_tpOn[i]; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
@@ -2551,6 +2806,14 @@ void HandleEndEdit(string s)
    if(s==PP+"BEOFF"){ g_beOffset=ReadEdit(s); SaveState(); return; }
    for(int i=0;i<TS_MAX;i++)
       if(s==PP+"TSDEST"+IntegerToString(i)){ g_tsDest[i]=ReadEdit(s); SaveState(); return; }
+   for(int i=0;i<PC_MAX;i++)               // v8.87: a share of the original size, 1-100
+      if(s==PP+"PCPCT"+IntegerToString(i))
+        {
+         double v=ReadEdit(s); if(v<1) v=1; if(v>100) v=100;
+         g_pcPct[i]=v; SaveState(); BuildPanel();
+         if(ObjectFind(0,PcName(i))>=0) SetLineText(PcTxt(i),LinePrice(PcName(i)),PcLineLbl(i),g_pcFired[i]?COL_LINE_TSD:COL_LINE_PC);
+         return;
+        }
    if(s==PP+"SCPAD"){ g_scalePadPips=ReadEdit(s); if(g_scaleLock){ ChartSetInteger(0,CHART_SCALEFIX,false); ApplyScaleLock(); } SaveState(); return; }
    if(s==PP+"MAXTRD"){ RefreshDayCount(); if(g_tradesToday>=1){ Warn("Max trades is locked after your first trade today - unlocks next day."); BuildPanel(); return; } g_maxTradesDay=(int)ReadEdit(s); if(g_maxTradesDay<0) g_maxTradesDay=0; RefreshDayCount(); SaveState(); BuildPanel(); return; }
    for(int i=0;i<6;i++)
@@ -2568,10 +2831,11 @@ bool OverPanel(int x,int y){ return (x>=_s(PX) && x<=_s(PX)+_s(PWID) && y>=_s(PY
 // Is the cursor near a draggable line (entry / TP / BE)? Then a press = drag, not execute.
 bool OverDraggableLine(int x,int y)
   {
-   string names[16]; int n=0;      // ENTRY + BE + 6 TP + TS_MAX triggers
+   string names[20]; int n=0;      // ENTRY + BE + 6 TP + TS_MAX triggers + PC_MAX partial lines
    if(ObjectFind(0,LN_ENTRY)>=0) names[n++]=LN_ENTRY;
    if(ObjectFind(0,LN_BE)>=0)    names[n++]=LN_BE;
    for(int i=0;i<TS_MAX;i++) if(ObjectFind(0,TsName(i))>=0) names[n++]=TsName(i);
+   for(int i=0;i<PC_MAX;i++) if(ObjectFind(0,PcName(i))>=0) names[n++]=PcName(i);
    for(int i=0;i<6;i++){ string t=LN_TP+IntegerToString(i); if(ObjectFind(0,t)>=0) names[n++]=t; }
    for(int i=0;i<n;i++)
      {
@@ -2608,6 +2872,9 @@ void SaveState()
    GlobalVariableSet(StateKey("tsCount"),   (double)g_tsCount);
    for(int i=0;i<TS_MAX;i++)
       GlobalVariableSet(StateKey("tsDest"+IntegerToString(i)), g_tsDest[i]);
+   GlobalVariableSet(StateKey("pcCount"),   (double)g_pcCount);
+   for(int i=0;i<PC_MAX;i++)
+      GlobalVariableSet(StateKey("pcPct"+IntegerToString(i)), g_pcPct[i]);
    GlobalVariableSet(StateKey("beRR"),      g_beRR);
    GlobalVariableSet(StateKey("scaleLock"), g_scaleLock?1:0);
    GlobalVariableSet(StateKey("scalePad"),  g_scalePadPips);
@@ -2659,6 +2926,15 @@ bool LoadState()
      {
       string kDs=StateKey("tsDest"+IntegerToString(i));
       if(GlobalVariableCheck(kDs)) g_tsDest[i]=GlobalVariableGet(kDs);
+     }
+   // v8.87 partial closes - guarded the same way, so an older saved state keeps the empty default.
+   if(GlobalVariableCheck(StateKey("pcCount"))) g_pcCount=(int)GlobalVariableGet(StateKey("pcCount"));
+   if(g_pcCount<0)      g_pcCount=0;
+   if(g_pcCount>PC_MAX) g_pcCount=PC_MAX;
+   for(int i=0;i<PC_MAX;i++)
+     {
+      string kPc=StateKey("pcPct"+IntegerToString(i));
+      if(GlobalVariableCheck(kPc)){ g_pcPct[i]=GlobalVariableGet(kPc); if(g_pcPct[i]<1) g_pcPct[i]=1; if(g_pcPct[i]>100) g_pcPct[i]=100; }
      }
    if(GlobalVariableCheck(StateKey("scaleLock"))) g_scaleLock=(GlobalVariableGet(StateKey("scaleLock"))>0.5);
    if(GlobalVariableCheck(StateKey("scalePad")))  g_scalePadPips=GlobalVariableGet(StateKey("scalePad"));
@@ -3158,6 +3434,9 @@ string LiveSettingsBody()
                    g_tpOn[0]?"true":"false",(g_tpMode==TP_BY_RR)?"rr":"pips",DoubleToString(g_tpVal[0],2),DoubleToString(g_tpPct[0],1));
    b+=StringFormat(",\"be_on\":%s,\"be_trigger_r\":%s,\"be_offset\":%s,\"be_offset_mode\":\"%s\",\"max_trades_day\":%d",
                    g_useBE?"true":"false",DoubleToString(g_beRR,2),DoubleToString(g_beOffset,2),(g_beOffMode==BEOFF_BY_RR)?"rr":"pips",g_maxTradesDay);
+   string pcs="";                                   // v8.87: "50/25" - the partial-close shares in force
+   for(int i=0;i<g_pcCount;i++) pcs+=(i>0?"/":"")+DoubleToString(g_pcPct[i],0);
+   b+=StringFormat(",\"partials\":\"%s\"",pcs);
    b+=CpSettingsJson();   // v8.83: so Session Tool counts a Lead's trade and its copies as ONE trade
    return b;
   }
@@ -3228,6 +3507,25 @@ void LiveCheckBE(ulong posTicket)
    LiveEnqueue(StringFormat("{\"event\":\"sl\",\"token\":\"%s\",\"ticket\":%I64u,\"login\":\"%I64d\",\"symbol\":\"%s\",\"direction\":\"%s\",\"sl\":%s,\"lock_r\":%s,\"lock_money\":%s}",
                             g_syncTokenEff,posid,AccountInfoInteger(ACCOUNT_LOGIN),sym,buy?"long":"short",
                             DoubleToString(sl,dg),DoubleToString(lockR,2),DoubleToString(lockM,2)));
+  }
+// v8.87: part of a position closed (the partial-close ladder, a partial by hand, Risk-off half) - one
+// "partial" event per closing deal: the share of the ORIGINAL size, the R it closed at (when the EA
+// stamped the entry stop), and the money it banked (profit + swap + commission of that deal).
+void LivePartial(ulong deal,ulong posId)
+  {
+   if(StringLen(g_syncTokenEff)==0 || deal==0) return;
+   double vol=HistoryDealGetDouble(deal,DEAL_VOLUME), px=HistoryDealGetDouble(deal,DEAL_PRICE);
+   double pnl=HistoryDealGetDouble(deal,DEAL_PROFIT)+HistoryDealGetDouble(deal,DEAL_SWAP)+HistoryDealGetDouble(deal,DEAL_COMMISSION);
+   if(!PositionSelectByTicket(posId)) return;
+   string sym=PositionGetString(POSITION_SYMBOL);
+   bool buy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+   double op=PositionGetDouble(POSITION_PRICE_OPEN), left=PositionGetDouble(POSITION_VOLUME);
+   double rpx=RecallRisk((ulong)PositionGetInteger(POSITION_TICKET));
+   double orig=OrigVolume(posId); if(orig<vol+left-1e-9) orig=vol+left;
+   double pct=(orig>0) ? vol/orig*100.0 : 0.0, r=(rpx>0) ? (px-op)*(buy?1:-1)/rpx : 0.0;
+   LiveEnqueue(StringFormat("{\"event\":\"partial\",\"token\":\"%s\",\"ticket\":%I64u,\"deal\":%I64u,\"login\":\"%I64d\",\"symbol\":\"%s\",\"direction\":\"%s\",\"lots\":%s,\"left\":%s,\"pct\":%s,\"r\":%s,\"pnl\":%s}",
+                            g_syncTokenEff,posId,deal,AccountInfoInteger(ACCOUNT_LOGIN),sym,buy?"long":"short",
+                            DoubleToString(vol,2),DoubleToString(left,2),DoubleToString(pct,1),DoubleToString(r,2),DoubleToString(pnl,2)));
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
 double LivePositionPnl(ulong posId)
@@ -6410,12 +6708,15 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    // CLOSE (full exit, any source): queue the position for push.
    if(de==DEAL_ENTRY_OUT || de==DEAL_ENTRY_INOUT || de==DEAL_ENTRY_OUT_BY)
      {
-      if(PositionSelectByTicket(posId)) return;   // not fully closed yet
+      if(PositionSelectByTicket(posId)){ LivePartial(dealTicket,posId); return; }   // not fully closed: a partial (v8.87 alert)
       SyncEnqueue(posId);
       double _lpnl=LivePositionPnl(posId);
       // v8.86: why it closed (stop loss / take profit / by hand / by the EA) and the account, for the trade alerts.
+      // v8.87: "pc" when the partial-close ladder took the last of it.
+      string _why=(g_pcClosing!=0 && posId==g_pcClosing) ? "pc" : LiveCloseReason(dealTicket);
+      if(g_pcClosing!=0 && posId==g_pcClosing) g_pcClosing=0;
       LiveEnqueue(StringFormat("{\"event\":\"close\",\"token\":\"%s\",\"ticket\":%I64u,\"pnl\":%s,\"reason\":\"%s\",\"login\":\"%I64d\"}",
-                               g_syncTokenEff,posId,DoubleToString(_lpnl,2),LiveCloseReason(dealTicket),AccountInfoInteger(ACCOUNT_LOGIN)));
+                               g_syncTokenEff,posId,DoubleToString(_lpnl,2),_why,AccountInfoInteger(ACCOUNT_LOGIN)));
      }
   }
 
@@ -6450,9 +6751,10 @@ void OnTick()
    // claiming the configured distance (seen 2026-08-20 - "SL 4.0 pips" sitting 6 pips away).
    if(!(g_active && g_execMode) && (ObjectFind(0,LN_SL)>=0 || ObjectFind(0,LN_ENTRY)>=0))
       HideExecutionLines();
-   if(!g_active){ if(g_pausedByLimit){ MonitorBE(); MonitorTrail(); UpdateManageLine(); } ChartRedraw(); return; }
+   if(!g_active){ if(g_pausedByLimit){ MonitorBE(); MonitorTrail(); MonitorPartials(); UpdateManageLine(); } ChartRedraw(); return; }
    g_lastStage="monitor_be"; MonitorBE();
    g_lastStage="monitor_trail"; MonitorTrail();
+   g_lastStage="monitor_partials"; MonitorPartials();
    if(g_execMode) RedrawTargets();   // keep market entry / targets fresh
    UpdateManageLine();               // draggable SL / entry / BE for any live position
    g_lastStage="idle";
@@ -6638,6 +6940,15 @@ void OnChartEvent(const int id,const long &lparam,const double &dparam,const str
             g_tsTrig[i]=LinePrice(TsName(i));
             SetLineText(TsTxt(i),g_tsTrig[i],TsLbl(i),COL_LINE_TS);
             SaveTrailState();
+            ChartRedraw();
+            return;
+           }
+      for(int i=0;i<PC_MAX;i++)     // v8.87 partial-close trigger dragged onto structure
+         if(sparam==PcName(i))
+           {
+            g_pcTrig[i]=LinePrice(PcName(i));
+            SetLineText(PcTxt(i),g_pcTrig[i],PcLineLbl(i),COL_LINE_PC);
+            SavePcState();
             ChartRedraw();
             return;
            }

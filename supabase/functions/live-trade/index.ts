@@ -20,6 +20,8 @@
 //    { event:"sl", token, ticket, login, symbol, direction, sl, lock_r, lock_money }   (EA 8.87)
 //        -> the stop moved further into profit (break-even, the trailing ladder, or by hand): what is locked
 //           in now; the first one also stamps be_at
+//    { event:"partial", token, ticket, deal, login, symbol, direction, lots, left, pct, r, pnl }   (EA 8.87)
+//        -> part of the trade closed: the share of the original size, the R and the money of that deal
 //    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6; 8.83 adds copy_*)
 //        -> the EA's own settings right now (risk, stop limits, take profit,
 //           break-even, daily trade cap): upsert ea_settings, and when a real
@@ -40,7 +42,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
+import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: { waitUntil(p: Promise<any>): void } | undefined;
@@ -77,7 +79,7 @@ Deno.serve(async (req) => {
   const isSettings = event === "settings";          // no ticket: it describes the EA, not a trade
   if (
     !token ||
-    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && !isSettings) ||
+    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && event !== "partial" && !isSettings) ||
     (!isSettings && (!ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"))
   ) {
     return json({ error: "empty or malformed live event" }, 400);
@@ -157,6 +159,22 @@ Deno.serve(async (req) => {
     if (error) return json({ error: error.message }, 500);
     try { await rememberOpen(userId, Number(ticket), row.symbol as string | null, dir, login, (risk !== null && risk > 0) ? risk : null); }
     catch (e) { console.error("nudge open", String(e)); }
+    return json({ ok: true }, 200);
+  }
+
+  if (event === "partial") {
+    const t = Number(ticket), at = new Date().toISOString(), login = loginOf(body.login);
+    const deal = Number(body.deal) || 0, pct = numOrNull(body.pct) ?? 0, r = numOrNull(body.r) ?? 0, pnl = numOrNull(body.pnl) ?? 0;
+    const dir = (body.direction === "short" || body.direction === "sell") ? "short" : "long";
+    try {
+      const { data: nt } = await admin.from("nudge_trades").select("ticket").eq("user_id", userId).eq("ticket", t).maybeSingle();
+      if (!nt) {
+        const openedAt = await liveOpenedAt(userId, t);
+        await admin.from("nudge_trades").insert({ user_id: userId, ticket: t, login, symbol: strOrNull(body.symbol), direction: dir, opened_at: openedAt });
+      }
+      await admin.from("live_trades").update({ part_at: at, part_deal: deal, part_pct: pct, part_r: r, part_pnl: pnl }).eq("account", userId).eq("ticket", t);
+      if (deal) later("partial", afterPartial(admin, userId, t, deal, pct, r, pnl));
+    } catch (e) { console.error("nudge partial", String(e)); }
     return json({ ok: true }, 200);
   }
 
@@ -275,7 +293,7 @@ async function rememberClose(userId: string, t: number, pnl: number | null, clos
 }
 function strOrNull(v: unknown) { return (typeof v === "string" && v.trim()) ? v.trim().slice(0, 32) : null; }
 function loginOf(v: unknown) { const x = (v === undefined || v === null) ? "" : String(v).trim(); return /^\d{1,20}$/.test(x) && x !== "0" ? x : null; }
-function reasonOf(v: unknown) { const x = String(v ?? ""); return ["sl", "tp", "so", "manual", "ea", "other"].indexOf(x) !== -1 ? x : null; }
+function reasonOf(v: unknown) { const x = String(v ?? ""); return ["sl", "tp", "so", "manual", "ea", "pc", "other"].indexOf(x) !== -1 ? x : null; }
 
 // Values that move on their own - risk in money follows the balance on a % setting, the day's
 // trade count and the currency are facts about the moment - are sent for display, never counted

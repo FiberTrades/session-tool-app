@@ -15,7 +15,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterRisk, afterWiden, checkNoStop, deliver, newsTick, setDry } from "../_shared/nudges.ts";
+import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, deliver, newsTick, setDry } from "../_shared/nudges.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -39,6 +39,7 @@ Deno.serve(async (req) => {
       const fn = ({ open: afterOpen, risk: afterRisk, widen: afterWiden, no_stop: checkNoStop, close: afterClose, trade: afterCloseTrade, be: afterBE } as Record<string, typeof afterOpen>)[String(body.what)];
       const out = body.what === "news" ? await newsTick(admin)
         : body.what === "lock" ? await afterLock(admin, u, t, !!body.first)
+        : body.what === "partial" ? await afterPartial(admin, u, t, Number(body.deal) || 1, Number(body.pct) || 0, Number(body.r) || 0, Number(body.pnl) || 0)
         : body.what === "ea" ? await afterEaChange(admin, u, Number(body.logId) || 1, body.before, body.after, Number(body.at) || Date.now())
         : (fn ? await fn(admin, u, t) : "unknown what");
       return json({ dry: true, out: out ?? null }, 200);

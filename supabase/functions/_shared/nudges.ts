@@ -17,7 +17,9 @@
 //    timer (nudge-cron): news_soon, news_hold
 //    trade alerts (EA 8.86): tr_be (stop moved to break-even), tr_tp, tr_sl, tr_beout (stopped at break-even),
 //                            tr_slp (stopped out in profit, a trailed stop)
-//                 (EA 8.87): tr_trail - every step the stop moves further into profit, with what is locked in
+//                 (EA 8.87): tr_trail - every step the stop moves further into profit, with what is locked in;
+//                            tr_part - every partial close (the EA's ladder, by hand, Risk-off half);
+//                            tr_pcend - the partial-close ladder took the last of the trade
 //  A copy made by the EA Trade Copier is the same idea and is judged once, on its first trade.
 // ============================================================
 
@@ -222,6 +224,9 @@ const T: Record<string, [string, string]> = {
   tr_slp: ["Stopped out in profit on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}."],
   tr_trail: ["Stop trailed to +{R}R on your {SYM} {SIDE} — {M} locked in.", "Stop movido a +{R}R en tu operación {SIDEF} de {SYM}: {M} asegurados."],
   tr_trail_nr: ["Stop trailed on your {SYM} {SIDE} — {M} locked in.", "Stop movido en tu operación {SIDEF} de {SYM}: {M} asegurados."],
+  tr_part: ["Partial close on your {SYM} {SIDE}: {P}% closed at {R} — {PNL} banked.", "Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado a {R}, {PNL} realizados."],
+  tr_part_nr: ["Partial close on your {SYM} {SIDE}: {P}% closed — {PNL} banked.", "Cierre parcial en tu operación {SIDEF} de {SYM}: {P}% cerrado, {PNL} realizados."],
+  tr_pcend: ["Last partial close on your {SYM} {SIDE}: the trade is closed, {PNL} in total.", "Último cierre parcial en tu operación {SIDEF} de {SYM}: operación cerrada, {PNL} en total."],
   dd_left: ["{LEFT} left before your maximum drawdown — less than one full trade ({RISK}).", "Te quedan {LEFT} antes de tu drawdown máximo, menos que una operación completa ({RISK})."],
   target_hit: ["Profit target reached on {ACC}. Anything more is risk without reward.", "Objetivo de beneficio alcanzado en {ACC}. Todo lo demás es riesgo sin recompensa."],
   consistency: ["Today is now {P}% of your total profit. Your consistency rule caps a day at {L}%.", "Hoy ya es el {P}% de tu beneficio total. Tu regla de consistencia limita un día al {L}%."],
@@ -622,6 +627,7 @@ function tradeWords(ctx: Ctx, me: Row, key: string, pnl?: number) {
 export function closeAlert(ctx: Ctx, me: Row): string | null {
   const why = me.close_reason, pnl = Number(me.pnl) || 0;
   if (why === "tp") return "tr_tp";
+  if (why === "pc") return "tr_pcend";                // the partial-close ladder took the last of it
   if (why !== "sl") return null;                     // closed by hand or by the EA: you did it, no alert
   const res = resultOf(pnl, accountFor(ctx, me.login), ctx.j);
   if (res === "Lose") return "tr_sl";
@@ -657,6 +663,19 @@ export async function afterLock(admin: Any, userId: string, ticket: number, firs
   const it: Item = { rule: "tr_trail", key: "tr_trail:" + ticket + ":" + suf, text };
   if (grp.length > 1) it.alts = grp.map((r) => "tr_trail:" + r.ticket + ":" + suf);
   return await deliver(admin, userId, "trade", [it], es, 0);
+}
+// EA 8.87: part of the trade closed. Keyed by the closing deal, so each partial is its own alert. R from the
+// EA (the stamped entry stop), else from the money: banked / (entry risk x share closed).
+export async function afterPartial(admin: Any, userId: string, ticket: number, deal: number, pct: number, r: number, pnl: number) {
+  await sleep(8000);
+  const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).trades) return;
+  const me = ctx.rows.find((x) => x.ticket === ticket); if (!me || isCopy(ctx, me)) return;
+  const r0 = Number(me.risk0) || 0;
+  let rr = Number(r) || 0;
+  if (!(Math.abs(rr) > 0) && r0 > 0 && pct > 0) rr = pnl / (r0 * pct / 100);
+  const rTxt = (Number.isFinite(rr) && Math.abs(rr) >= 0.05) ? (rr >= 0 ? "+" : "−") + String(Math.round(Math.abs(rr) * 10) / 10) + "R" : "";
+  const text = tradeWords(ctx, me, rTxt ? "tr_part" : "tr_part_nr", pnl).replace("{P}", String(Math.round(pct))).replace("{R}", rTxt);
+  return await deliver(admin, userId, "trade", [{ rule: "tr_part", key: "tr_part:" + ticket + ":" + deal, text }], esOf(ctx.j), 0);
 }
 export async function afterCloseTrade(admin: Any, userId: string, ticket: number) {
   await sleep(8000);

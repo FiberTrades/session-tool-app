@@ -85,3 +85,10 @@ alter table public.nudge_trades add column if not exists lock_money double preci
 alter table public.live_trades add column if not exists lock_r double precision;
 alter table public.live_trades add column if not exists lock_money double precision;
 alter table public.live_trades add column if not exists lock_at timestamptz;
+
+-- EA 8.87 "partial" events: every partial close (the EA's partial-close ladder, by hand, Risk-off half).
+alter table public.live_trades add column if not exists part_at timestamptz;
+alter table public.live_trades add column if not exists part_deal bigint;
+alter table public.live_trades add column if not exists part_pct double precision;
+alter table public.live_trades add column if not exists part_r double precision;
+alter table public.live_trades add column if not exists part_pnl double precision;
