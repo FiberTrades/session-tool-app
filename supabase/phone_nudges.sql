@@ -64,3 +64,16 @@ select cron.schedule('nudge-cleanup', '17 3 * * *', $job$
   delete from public.nudge_trades where (closed_at is not null and closed_at < now() - interval '14 days') or opened_at < now() - interval '90 days';
   delete from public.session_voice_claims where kind like 'seen:%' and day < current_date - 14;
 $job$);
+
+-- The app's per-account balance snapshot, for the prop-firm phone nudges (dd_left, target_hit, consistency).
+-- snap = { <accountId>: { c: current balance, p: closed-balance peak, n: trading net, f: funded, tk: [recent MT5 tickets] } }
+create table if not exists public.account_snapshots (
+  user_id    uuid primary key references auth.users(id) on delete cascade,
+  snap       jsonb not null default '{}'::jsonb,
+  updated_at timestamptz not null default now()
+);
+alter table public.account_snapshots enable row level security;
+create policy "own snapshot read"   on public.account_snapshots for select to authenticated using (user_id = auth.uid());
+create policy "own snapshot insert" on public.account_snapshots for insert to authenticated with check (user_id = auth.uid());
+create policy "own snapshot update" on public.account_snapshots for update to authenticated using (user_id = auth.uid()) with check (user_id = auth.uid());
+revoke all on public.account_snapshots from anon;

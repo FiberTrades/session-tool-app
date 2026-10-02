@@ -15,7 +15,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterOpen, afterRisk, afterWiden, checkNoStop, newsTick, setDry } from "../_shared/nudges.ts";
+import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterOpen, afterRisk, afterWiden, checkNoStop, deliver, newsTick, setDry } from "../_shared/nudges.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -25,12 +25,21 @@ Deno.serve(async (req) => {
   // deno-lint-ignore no-explicit-any
   let body: any = {};
   try { body = await req.json(); } catch (_) { body = {}; }
+  // A real test notification to one member, through the same path as a nudge (prefs, quiet hours, every device).
+  if (body && body.mode === "test" && body.user) {
+    const es = body.lang === "es";
+    const text = es ? "Prueba de Session Tool: los avisos en el móvil funcionan." : "Session Tool test: phone nudges are working.";
+    const out = await deliver(admin, String(body.user), body.kind === "trade" ? "trade" : "nudge", [{ rule: "test", key: "test:" + Date.now(), text }], es, 0);
+    return json({ test: true, out }, 200);
+  }
   if (body && body.mode === "dry") {
-    setDry(true, Array.isArray(body.rows) ? body.rows : [], body.now);
+    setDry(true, Array.isArray(body.rows) ? body.rows : [], body.now, body.snap);
     try {
       const u = String(body.user || ""), t = Number(body.ticket);
       const fn = ({ open: afterOpen, risk: afterRisk, widen: afterWiden, no_stop: checkNoStop, close: afterClose, trade: afterCloseTrade, be: afterBE } as Record<string, typeof afterOpen>)[String(body.what)];
-      const out = body.what === "news" ? await newsTick(admin) : (fn ? await fn(admin, u, t) : "unknown what");
+      const out = body.what === "news" ? await newsTick(admin)
+        : body.what === "ea" ? await afterEaChange(admin, u, Number(body.logId) || 1, body.before, body.after, Number(body.at) || Date.now())
+        : (fn ? await fn(admin, u, t) : "unknown what");
       return json({ dry: true, out: out ?? null }, 200);
     } catch (e) {
       return json({ error: String(e && (e as Error).stack || e) }, 500);

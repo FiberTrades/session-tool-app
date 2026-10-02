@@ -37,7 +37,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterOpen, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
+import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterOpen, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: { waitUntil(p: Promise<any>): void } | undefined;
@@ -118,10 +118,14 @@ Deno.serve(async (req) => {
     // The first snapshot is a baseline, not a change - there is nothing to compare it with.
     const changed = prev ? changedKeys(prev.settings, settings) : [];
     if (changed.length) {
-      const { error: lErr } = await admin
+      const { data: lRow, error: lErr } = await admin
         .from("ea_settings_log")
-        .insert({ user_id: userId, login, symbol, changed, before: prev!.settings, after: settings });
+        .insert({ user_id: userId, login, symbol, changed, before: prev!.settings, after: settings })
+        .select("id, changed_at")
+        .maybeSingle();
       if (lErr) return json({ error: lErr.message }, 500);
+      // Loosening the EA mid-session or after a loss: a phone nudge too (as the app's eaChanged).
+      if (lRow) later("ea", afterEaChange(admin, userId, Number(lRow.id), prev!.settings, settings, Date.parse(lRow.changed_at) || Date.now()));
     }
     return json({ ok: true, changed }, 200);
   }

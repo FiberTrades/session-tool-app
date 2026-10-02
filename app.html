@@ -17818,6 +17818,53 @@ try {
              periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick };
   })();
 
+  /* ===== Account snapshot for the phone nudges (2 Oct 2026) =====
+     With the app closed, the server raises the prop-firm nudges on the phone - less than one trade above the
+     drawdown floor, profit target reached, the consistency rule - and those need each account's balance, which
+     only the app works out (its trades, copies and payouts: __stAccountStats). So the app keeps one small row per
+     member in account_snapshots: per account the current balance (c), closed-balance peak (p), trading net (n),
+     funded (f) and the MT5 tickets of its last few days already counted (tk), so the server adds only the closes
+     the journal has not got yet. Written only when it changes, from a signed-in window that is not a pop-out or a
+     mentor view, and only once the journal has arrived (a blank journal must never be written as the truth). */
+  window.__stAccSnap = (function () {
+    var last = '';
+    function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
+    function build() {
+      var out = {}, since = Date.now() - 4 * 86400000, all = [];
+      try { all = getAllLifetimeTrades(); } catch (e) { return null; }
+      (data.accounts || []).forEach(function (acc) {
+        if (!acc || !acc.id || acc.status === 'archived') return;
+        var st = null; try { st = window.__stAccountStats ? window.__stAccountStats(acc) : null; } catch (e) {}
+        if (!st) return;
+        var tk = {};
+        all.forEach(function (t) {
+          if (!t || t.accountId !== acc.id) return;
+          var k = t.mt5Ticket || t.position; if (k == null || k === '') return;
+          var ms = Date.parse(t.date); if (isFinite(ms) && ms < since) return;
+          tk[String(k)] = 1;
+        });
+        out[acc.id] = { c: r2(st.current), p: r2(st.peak), n: r2(st.totalNet), f: !!(window.__stIsFunded && window.__stIsFunded(acc)), tk: Object.keys(tk).sort() };
+      });
+      return out;
+    }
+    function tick() {
+      try {
+        var u = window.currentUser && window.currentUser.id, sb = window.__stSB;
+        if (!u || !sb || !sb.from || !window.__stJournalPulled) return;
+        try { if (new URLSearchParams(location.search).get('mv')) return; } catch (e) {}
+        try { if (_isDetachedWindow()) return; } catch (e) {}
+        var snap = build(); if (!snap) return;
+        var sig = u + '|' + JSON.stringify(snap);
+        if (sig === last) return;
+        sb.from('account_snapshots').upsert({ user_id: u, snap: snap, updated_at: new Date().toISOString() }, { onConflict: 'user_id' })
+          .then(function (r) { if (!(r && r.error)) last = sig; }, function () {});
+      } catch (e) {}
+    }
+    setTimeout(function () { tick(); setInterval(tick, 60000); }, 15000);
+    try { document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') tick(); }); } catch (e) {}
+    return { tick: tick, build: build };
+  })();
+
   /* ===== The EA's settings (EA 8.6+) =====
      What your EA is set to right now - risk per trade, max trades a day, stop limits, take profit,
      break-even - and each change, from ea_settings / ea_settings_log (fed by the live-trade

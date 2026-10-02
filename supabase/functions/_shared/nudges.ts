@@ -11,7 +11,9 @@
 //  E<releaseMs> for a news warning) so a seen claim and a push talk about the same nudge:
 //    open:  no_bias / against_bias, reentry, outside / finished (and an off day), limit, big_risk, news_open
 //    later: big_risk (the risk arrived after the open), no_stop (a minute in, still no stop)
-//    close: streak, daily_hit / daily_left (the member's own daily stop)
+//    close: streak, daily_hit / daily_left (the member's own daily stop), and from the app's account snapshot
+//           (account_snapshots: balance, peak, trading net per account) dd_left, target_hit, consistency
+//    EA settings: ea_risk / ea_trades / ea_sl (loosening the EA in a live session or on a day with a loss)
 //    timer (nudge-cron): news_soon, news_hold
 //    trade alerts (EA 8.86): tr_be (stop moved to break-even), tr_tp, tr_sl, tr_beout (stopped at break-even),
 //                            tr_slp (stopped out in profit, a trailed stop)
@@ -24,8 +26,8 @@ import webpush from "npm:web-push@3.6.7";
 type Any = any;
 
 // Dry run (nudge-cron's test mode): judge everything, claim and send nothing, wait for nobody.
-let DRY = false, DRY_ROWS: Any[] = [], DRY_NOW = 0;
-export function setDry(v: boolean, rows?: Any[], now?: number) { DRY = v; DRY_ROWS = v ? (rows || []) : []; DRY_NOW = v ? (Number(now) || 0) : 0; }
+let DRY = false, DRY_ROWS: Any[] = [], DRY_NOW = 0, DRY_SNAP: Any = null;
+export function setDry(v: boolean, rows?: Any[], now?: number, snap?: Any) { DRY = v; DRY_ROWS = v ? (rows || []) : []; DRY_NOW = v ? (Number(now) || 0) : 0; DRY_SNAP = v ? (snap || null) : null; }
 const clock = () => (DRY && DRY_NOW) ? DRY_NOW : Date.now();
 export const sleep = (ms: number) => DRY ? Promise.resolve() : new Promise((r) => setTimeout(r, ms));
 
@@ -217,11 +219,22 @@ const T: Record<string, [string, string]> = {
   tr_sl: ["Stop loss hit on your {SYM} {SIDE}: {PNL}.", "Stop loss alcanzado en tu operación {SIDEF} de {SYM}: {PNL}."],
   tr_beout: ["Taken out at break-even on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} se cerró en break-even: {PNL}."],
   tr_slp: ["Stopped out in profit on your {SYM} {SIDE}: {PNL}.", "Tu operación {SIDEF} de {SYM} tocó el stop con beneficio: {PNL}."],
+  dd_left: ["{LEFT} left before your maximum drawdown — less than one full trade ({RISK}).", "Te quedan {LEFT} antes de tu drawdown máximo, menos que una operación completa ({RISK})."],
+  target_hit: ["Profit target reached on {ACC}. Anything more is risk without reward.", "Objetivo de beneficio alcanzado en {ACC}. Todo lo demás es riesgo sin recompensa."],
+  consistency: ["Today is now {P}% of your total profit. Your consistency rule caps a day at {L}%.", "Hoy ya es el {P}% de tu beneficio total. Tu regla de consistencia limita un día al {L}%."],
+  ea_risk: ["You raised the risk in your EA from {OLD} to {NEW}.", "Has subido el riesgo en tu EA de {OLD} a {NEW}."],
+  ea_trades: ["You raised your EA’s daily trade limit from {OLD} to {NEW}.", "Has subido el límite diario de operaciones de tu EA de {OLD} a {NEW}."],
+  ea_trades_off: ["You turned off your EA’s daily trade limit (it was {OLD}).", "Has desactivado el límite diario de operaciones de tu EA (era {OLD})."],
+  ea_sl: ["You widened your EA’s maximum stop from {OLD} to {NEW}.", "Has ampliado el stop máximo de tu EA de {OLD} a {NEW}."],
+  ea_after_loss: ["Right after a loss. Is that in your plan?", "Justo después de una pérdida. ¿Está en tu plan?"],
+  ea_plan_q: ["Is that in your plan?", "¿Está en tu plan?"],
+  ea_lots: ["{N} lots", "{N} lotes"],
+  ea_pct_now: ["{P}% ({M} now)", "{P}% ({M} ahora)"],
   title: ["Nudge", "Aviso"],
   title_tr: ["Trade alert", "Aviso de operación"],
 };
 export const tr = (k: string, es: boolean) => (T[k] ? T[k][es ? 1 : 0] : k);
-const RANK: Record<string, number> = { daily_hit: 0, daily_left: 0, no_stop: 0, finished: 0, outside: 0, news_hold: 0, against_bias: 1, big_risk: 1, risk: 1, widen: 1, news_open: 1, news_soon: 1, no_bias: 2, reentry: 2, limit: 3, streak: 4 };
+const RANK: Record<string, number> = { daily_hit: 0, daily_left: 0, dd_left: 0, target_hit: 1, consistency: 2, ea_risk: 1, ea_trades: 1, ea_sl: 1, no_stop: 0, finished: 0, outside: 0, news_hold: 0, against_bias: 1, big_risk: 1, risk: 1, widen: 1, news_open: 1, news_soon: 1, no_bias: 2, reentry: 2, limit: 3, streak: 4 };
 
 // ---------- red news ----------
 export type News = { at: number; curs: string[]; titles: string[] };
@@ -520,7 +533,79 @@ export async function afterClose(admin: Any, userId: string, ticket: number) {
       else if (one > 0 && left < one) items.push(item("daily_left", String(ticket), tr("daily_left", es).replace("{LEFT}", money(ctx.j, left)).replace("{LIM}", money(ctx.j, dLim)).replace("{RISK}", money(ctx.j, one)), grp, "P"));
     }
   }
+  try { items.push(...await propChecks(admin, ctx, mine, closes, grp, items.length > 0)); } catch (_) { /* no snapshot: skip */ }
   return await deliver(admin, userId, "nudge", items, es, 0);
+}
+
+/* Prop-firm limits after a close (as the app's onCloseProp), from the account snapshot the app keeps in
+   account_snapshots: per account c = current balance, p = closed-balance peak, n = trading net, f = funded,
+   tk = MT5 tickets of its last few days already counted. Today's closes not in tk are added, the way the app
+   adds live closes the journal has not imported yet. */
+async function propChecks(admin: Any, ctx: Ctx, mine: Any, closes: Any[], grp: Row[], dailyRaised: boolean): Promise<Item[]> {
+  const acc = accountFor(ctx, mine.login); if (!acc) return [];
+  const { data } = (DRY && DRY_SNAP) ? { data: { snap: DRY_SNAP } } : await admin.from("account_snapshots").select("snap").eq("user_id", ctx.userId).maybeSingle();
+  const s = data && data.snap && data.snap[acc.id]; if (!s || !Number.isFinite(Number(s.c))) return [];
+  const es = esOf(ctx.j), rules = acc.riskRules || {}, sb = Number(acc.startingBalance) > 0 ? Number(acc.startingBalance) : 0, out: Item[] = [];
+  if (!(sb > 0)) return [];
+  const counted = new Set((s.tk || []).map(String));
+  const mineAcc = closes.filter((x) => { const a = accountFor(ctx, x.login); return a && a.id === acc.id; });
+  const un = mineAcc.filter((x) => !counted.has(String(x.ticket))).reduce((t, x) => t + x.pnl, 0);
+  const todayNet = mineAcc.reduce((t, x) => t + x.pnl, 0), pnl = Number(mine.pnl) || 0, cur = Number(s.c) + un, k = String(mine.ticket);
+  const planMax = moneyRule(rules, "maxRiskMode", "maxRiskPct", "maxRiskAmount", sb);
+  const eaRow = ctx.ea.find((r: Any) => mine.login && String(r.login) === String(mine.login)) || (ctx.ea.length === 1 ? ctx.ea[0] : null);
+  const one = (eaRow && Number(eaRow.settings && eaRow.settings.risk_money) > 0) ? Number(eaRow.settings.risk_money) : planMax;
+  // Max drawdown: less than one full trade above the floor (static / trailing / trailing-lock).
+  const ddAmt = moneyRule(rules, "maxDrawdownMode", "maxDrawdownPct", "maxDrawdownAmount", sb);
+  if (ddAmt > 0 && pnl < 0 && !dailyRaised) {
+    const ddType = rules.ddType || "static", peak = Number(s.p) > 0 ? Number(s.p) : sb;
+    const floor = ddType === "trailing" ? peak - ddAmt : (ddType === "trailing_lock" ? Math.min(peak - ddAmt, sb) : sb - ddAmt);
+    const room = cur - floor;
+    if (one > 0 && room > 0 && room < one) out.push(item("dd_left", k, tr("dd_left", es).replace("{LEFT}", money(ctx.j, room)).replace("{RISK}", money(ctx.j, one)), grp, "P"));
+  }
+  // Profit target: this close is the one that crossed it (not on a funded account - it has no target).
+  const tgt = moneyRule(rules, "profitTargetMode", "profitTargetPct", "profitTargetAmount", sb);
+  if (tgt > 0 && pnl > 0 && cur >= sb + tgt && cur - pnl < sb + tgt && !s.f)
+    out.push(item("target_hit", k, tr("target_hit", es).replace("{ACC}", acc.name || ""), grp, "P"));
+  // Consistency: today's share of the total trading profit crossed 90% of the cap.
+  const cap = parseFloat(rules.consistencyPct), total = Number(s.n) + un;
+  if (cap > 0 && pnl > 0 && todayNet > 0 && total > 0) {
+    const share = todayNet / total * 100, before = (total - pnl > 0) ? ((todayNet - pnl) / (total - pnl) * 100) : 0, thr = cap * 0.9;
+    if (share >= thr && before < thr) out.push(item("consistency", k, tr("consistency", es).replace("{P}", String(Math.round(share))).replace("{L}", String(cap)), grp, "P"));
+  }
+  return out;
+}
+
+// ---------- the EA's settings loosened (EA 8.6+ "settings" events; live-trade logs each change) ----------
+const num2 = (v: Any) => { const n = Number(v); return Number.isFinite(n) ? String(Math.round(n * 100) / 100) : "—"; };
+const UNITS: Record<string, [string, string]> = { pips: ["pips", "pips"], points: ["points", "puntos"], ticks: ["ticks", "ticks"] };
+const fmtDist = (v: Any, u: Any, es: boolean) => num2(v) + " " + (UNITS[String(u || "pips")] || UNITS.pips)[es ? 1 : 0];
+function fmtRisk(x: Any, j: Any, es: boolean) {
+  if (!x) return "—";
+  if (x.risk_mode === "lots") return tr("ea_lots", es).replace("{N}", num2(x.fixed_lot));
+  if (x.risk_mode === "percent") return tr("ea_pct_now", es).replace("{P}", num2(x.risk_percent)).replace("{M}", money(j, Number(x.risk_money) || 0));
+  return money(j, Number(x.risk_amount) || 0);
+}
+// Only a change that LOOSENS (risk up more than 10%, the daily trade cap raised or turned off, the maximum stop
+// widened), and only during a live session or on a day with a loss - as the app's eaChanged. Keyed L<log id>.
+export async function afterEaChange(admin: Any, userId: string, logId: number, b: Any, a: Any, atMs: number) {
+  await sleep(8000);
+  const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on || !b || !a) return;
+  const es = esOf(ctx.j), closes = await closesToday(admin, ctx);
+  const prior = closes.filter((x) => x.at <= atMs);
+  const lossToday = closes.some((x) => x.res === "Lose"), last = prior[prior.length - 1];
+  const afterLoss = !!(last && last.res === "Lose" && atMs >= last.at && atMs - last.at <= 3600000);
+  if (liveSessionIndex(ctx.j, tzOf(ctx.j), ctx.now) < 0 && !lossToday) return;
+  const tail = " " + tr(afterLoss ? "ea_after_loss" : "ea_plan_q", es), id = "L" + logId, out: Item[] = [];
+  const bm = Number(b.risk_money) || 0, am = Number(a.risk_money) || 0;
+  const riskUp = (b.risk_mode !== "lots" && a.risk_mode !== "lots" && bm > 0 && am > bm * 1.1)
+    || (b.risk_mode === "lots" && a.risk_mode === "lots" && Number(a.fixed_lot) > Number(b.fixed_lot) * 1.1);
+  if (riskUp) out.push({ rule: "ea_risk", key: "ea_risk:" + id, text: tr("ea_risk", es).replace("{OLD}", fmtRisk(b, ctx.j, es)).replace("{NEW}", fmtRisk(a, ctx.j, es)) + tail });
+  const bt = parseInt(b.max_trades_day, 10) || 0, nt = parseInt(a.max_trades_day, 10) || 0;
+  if (bt > 0 && nt === 0) out.push({ rule: "ea_trades", key: "ea_trades:" + id, text: tr("ea_trades_off", es).replace("{OLD}", String(bt)) + tail });
+  else if (bt > 0 && nt > bt) out.push({ rule: "ea_trades", key: "ea_trades:" + id, text: tr("ea_trades", es).replace("{OLD}", String(bt)).replace("{NEW}", String(nt)) + tail });
+  if (Number(b.sl_max) > 0 && Number(a.sl_max) > Number(b.sl_max) + 1e-9)
+    out.push({ rule: "ea_sl", key: "ea_sl:" + id, text: tr("ea_sl", es).replace("{OLD}", fmtDist(b.sl_max, b.unit, es)).replace("{NEW}", fmtDist(a.sl_max, a.unit, es)) + tail });
+  return await deliver(admin, userId, "nudge", out, es, 0);
 }
 
 // ---------- trade alerts (EA 8.86) ----------
