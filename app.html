@@ -1191,6 +1191,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-cht { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border-2); }
   .slx-cht[hidden] { display: none; }
   .slx-chb { height: 320px; }
+  /* drag to make the chart taller or shorter (Nestor), remembered on this device; a double click goes back to the default */
+  .slx-grip { height: 16px; margin-top: 2px; display: flex; align-items: center; justify-content: center; cursor: ns-resize; touch-action: none; user-select: none; }
+  .slx-grip::before { content: ''; width: 44px; height: 4px; border-radius: 2px; background: var(--border-2); transition: background .15s; }
+  .slx-grip:hover::before, .slx-grip.on::before { background: var(--text-dim); }
   .slx-chtop { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
   .slx-tfl { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
   .slx-tfl b { font-weight: 400; font-size: 11px; letter-spacing: 0.06em; text-transform: none; color: var(--text); border: 1px solid var(--border-2); border-radius: 6px; padding: 4px 9px; margin-right: 10px; background: var(--bg); }
@@ -18461,6 +18465,26 @@ try {
     function makeChart(k, sym, dg) {
       var el = document.createElement('div'); el.className = 'slx-cht';
       var box = document.createElement('div'); box.className = 'slx-chb'; el.appendChild(box);
+      try { var hh = Number(localStorage.getItem('st_live_chart_h')); if (hh >= 160 && hh <= 900) box.style.height = hh + 'px'; } catch (e) {}
+      var grip = document.createElement('div'); grip.className = 'slx-grip'; grip.setAttribute('role', 'separator'); grip.setAttribute('aria-orientation', 'horizontal');
+      grip.title = T2('Drag to make the chart taller or shorter · double-click for the default', 'Arrastra para cambiar la altura del gráfico · doble clic para la de siempre');
+      el.appendChild(grip);
+      var setH = function (v) { Object.keys(charts).forEach(function (kk) { var b = charts[kk].el.querySelector('.slx-chb'); if (b) b.style.height = v; }); };
+      grip.addEventListener('pointerdown', function (e) {
+        e.preventDefault();
+        var y0 = e.clientY, h0 = box.getBoundingClientRect().height, pid = e.pointerId;
+        try { grip.setPointerCapture(pid); } catch (e2) {}
+        grip.classList.add('on');
+        var mv = function (ev) { setH(Math.max(160, Math.min(900, Math.round(h0 + ev.clientY - y0))) + 'px'); };
+        var up = function () {
+          grip.classList.remove('on');
+          grip.removeEventListener('pointermove', mv); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
+          try { grip.releasePointerCapture(pid); } catch (e2) {}
+          try { localStorage.setItem('st_live_chart_h', String(Math.round(box.getBoundingClientRect().height))); } catch (e2) {}
+        };
+        grip.addEventListener('pointermove', mv); grip.addEventListener('pointerup', up); grip.addEventListener('pointercancel', up);
+      });
+      grip.addEventListener('dblclick', function () { setH(''); try { localStorage.removeItem('st_live_chart_h'); } catch (e) {} });
       var top = document.createElement('div'); top.className = 'slx-chtop';
       top.innerHTML = '<span class="slx-tfl"><b></b>' + esc(T2('the timeframe you took it on', 'la temporalidad en la que entraste')) + '</span>'
         + '<span class="slx-chc">' + esc(T2('Your MT5 prices · your clock', 'Precios de tu MT5 · tu reloj')) + '</span>';
