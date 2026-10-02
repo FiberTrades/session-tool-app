@@ -3891,6 +3891,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   @media (max-width: 600px) { .dh-months { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px 22px; } .dh-m { gap: 6px 3px; } }
   /* A nudged day (Nestor, 2 Oct 2026, option 3 of 4): a thin bar under the square, in the nudge card's amber. The square
      keeps its colour - green / red is only ever the three rules. */
+  .dh-year { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
+  .dh-ytitle { font-family: 'AppNum', 'DM Mono', monospace; font-size: 15px; letter-spacing: 0.08em; color: var(--text); min-width: 46px; text-align: center; }
+  .dh-year .cal-nav-btn:disabled { opacity: 0.3; cursor: default; }
   .dh-day.nd { position: relative; }
   .dh-day.nd::after { content: ''; position: absolute; left: 16%; right: 16%; bottom: -5px; height: 2px; border-radius: 2px; background: rgb(232, 207, 99); }
   .dh-tip .a { color: rgb(232, 207, 99); }
@@ -75043,7 +75046,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           : _t('max risk per trade (' + plain(b.got) + ' of ' + plain(b.lim) + ')', 'riesgo máximo por operación (' + plain(b.got) + ' de ' + plain(b.lim) + ')');
     return (many ? accShort(b.acc) + ': ' : '') + w;
   }
-  var host = null, tipEl = null, lastDays = [];
+  var host = null, tipEl = null, lastDays = [], yearSel = null;   // yearSel: the year shown (null = this year)
   function hideTip(){ if (tipEl) { tipEl.remove(); tipEl = null; } if (host) host.querySelectorAll('.dh-day.pick').forEach(function(x){ x.classList.remove('pick'); }); }
   function showTip(cell){
     hideTip();
@@ -75086,40 +75089,56 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         host.innerHTML = '<p class="dh-empty">' + esc(_t('Set max trades, your daily stop or max risk per trade in Settings → Risk rules, and each trading day will be judged here.', 'Pon un máximo de operaciones, tu stop diario o el riesgo máximo por operación en Ajustes → Reglas de riesgo, y aquí se juzgará cada día de trading.')) + '</p>';
         return;
       }
-      // Streaks over judged trading days, in order.
-      var cur = 0, curFrom = null, best = 0, bestFrom = null, bestTo = null, run = 0, runFrom = null, lastBroke = null;
+      // The current streak: every judged trading day, counting back from today.
+      var cur = 0, curFrom = null, run = 0, runFrom = null, lastBroke = null;
       judgedDays.forEach(function(d){
-        if (d.kept) { if (!run) runFrom = d.k; run++; if (run > best) { best = run; bestFrom = runFrom; bestTo = d.k; } }
+        if (d.kept) { if (!run) runFrom = d.k; run++; }
         else { run = 0; lastBroke = d.k; }
       });
       cur = run; curFrom = runFrom;
-      var kept = judgedDays.filter(function(d){ return d.kept; }), broke = judgedDays.filter(function(d){ return !d.kept; });
+      // The year shown (Nestor, 2 Oct 2026: a year picker, once the trades span more than one year). Best streak, rules
+      // kept, the money, the months and the nudges are that year's; the current streak above stays as of today.
+      var today = new Date(); today.setHours(12, 0, 0, 0);
+      var firstYear = fromKey(days[0].k).getFullYear(), thisYear = today.getFullYear();
+      if (yearSel == null || yearSel > thisYear || yearSel < firstYear) yearSel = thisYear;
+      var Y = String(yearSel), yJ = judgedDays.filter(function(d){ return d.k.slice(0, 4) === Y; });
+      var best = 0, bestFrom = null, bestTo = null, yrun = 0, yFrom = null;
+      yJ.forEach(function(d){
+        if (d.kept) { if (!yrun) yFrom = d.k; yrun++; if (yrun > best) { best = yrun; bestFrom = yFrom; bestTo = d.k; } }
+        else yrun = 0;
+      });
+      var kept = yJ.filter(function(d){ return d.kept; }), broke = yJ.filter(function(d){ return !d.kept; });
       var keptNet = kept.reduce(function(s, d){ return s + d.net; }, 0), brokeNet = broke.reduce(function(s, d){ return s + d.net; }, 0);
-      var pct = Math.round(kept.length / judgedDays.length * 100);
+      var pct = yJ.length ? Math.round(kept.length / yJ.length * 100) : null;
+      var picker = (firstYear < thisYear)
+        ? '<div class="dh-year"><button type="button" class="cal-nav-btn" data-dh-year="-1" aria-label="' + esc(_t('Previous year', 'Año anterior')) + '"' + (yearSel <= firstYear ? ' disabled' : '') + '>‹</button>'
+          + '<span class="dh-ytitle">' + yearSel + '</span>'
+          + '<button type="button" class="cal-nav-btn" data-dh-year="1" aria-label="' + esc(_t('Next year', 'Año siguiente')) + '"' + (yearSel >= thisYear ? ' disabled' : '') + '>›</button></div>'
+        : '';
       var U = function(n){ return '<span class="ds-u">' + esc(n === 1 ? _t('day', 'día') : _t('days', 'días')) + '</span>'; };
       var cells = '<div class="wl-summary dh-summary">'
         + '<div class="wl-cell"><div class="label">' + esc(_t('Current streak', 'Racha actual')) + '</div><div class="ds-v">' + cur + U(cur) + '</div><div class="detail">'
         + esc(cur ? _t('since ', 'desde ') + fmtDay(curFrom) : (lastBroke ? _t('a rule broke ', 'se rompió una regla el ') + fmtDay(lastBroke) : '—')) + '</div></div>'
         + '<div class="wl-cell"><div class="label">' + esc(_t('Best streak', 'Mejor racha')) + '</div><div class="ds-v">' + best + U(best) + '</div><div class="detail">'
         + esc(best ? (bestFrom === bestTo ? fmtDay(bestFrom, { day: 'numeric', month: 'short' }) : fmtDay(bestFrom, { day: 'numeric', month: 'short' }) + ' – ' + fmtDay(bestTo, { day: 'numeric', month: 'short' })) : '—') + '</div></div>'
-        + '<div class="wl-cell"><div class="label">' + esc(_t('Rules kept', 'Reglas respetadas')) + '</div><div class="ds-v">' + pct + '%</div><div class="detail">'
-        + esc(_t(kept.length + ' of ' + judgedDays.length + ' days', kept.length + ' de ' + judgedDays.length + ' días')) + '</div></div>'
+        + '<div class="wl-cell"><div class="label">' + esc(_t('Rules kept', 'Reglas respetadas')) + '</div><div class="ds-v">' + (pct == null ? '—' : pct + '%') + '</div><div class="detail">'
+        + esc(yJ.length ? _t(kept.length + ' of ' + yJ.length + ' days', kept.length + ' de ' + yJ.length + ' días') : '—') + '</div></div>'
         + '</div>';
       // The heatmap, laid out like the Calendar (Nestor, 2 Oct 2026): one small month per block, the Calendar's columns
       // (Sunday to Saturday), the 1st under its own weekday, weeks down; from the month of the first trade (at most a
       // year back) to this month. Days still to come are left blank.
+      // The year shown: January (or the month of the first trade) to December (or this month).
       var byK = {}; days.forEach(function(d){ byK[d.k] = d; });
-      var today = new Date(); today.setHours(12, 0, 0, 0);
-      var first = fromKey(days[0].k), mo = new Date(first.getFullYear(), first.getMonth(), 1, 12);
-      var yearAgo = new Date(today.getFullYear(), today.getMonth() - 11, 1, 12);
-      if (mo < yearAgo) mo = yearAgo;
+      var first = fromKey(days[0].k);
+      var mo = (yearSel === firstYear) ? new Date(first.getFullYear(), first.getMonth(), 1, 12) : new Date(yearSel, 0, 1, 12);
+      var endD = (yearSel === thisYear) ? today : new Date(yearSel, 11, 31, 12);
       var LET = es() ? ['D', 'L', 'M', 'X', 'J', 'V', 'S'] : ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
       var todayK = dayKey(today), months = '', fromK = dayKey(mo), fromMo = new Date(mo);
       // The nudges in these months, counted as the Weekly / Monthly Review count them.
-      var ps = null; try { ps = window.__stNudge ? window.__stNudge.periodStats(fromK, todayK) : null; } catch(e){ ps = null; }
-      for (; mo <= today; mo = new Date(mo.getFullYear(), mo.getMonth() + 1, 1, 12)) {
+      var ps = null; try { ps = window.__stNudge ? window.__stNudge.periodStats(fromK, dayKey(endD)) : null; } catch(e){ ps = null; }
+      for (; mo <= endD; mo = new Date(mo.getFullYear(), mo.getMonth() + 1, 1, 12)) {
         var yy = mo.getFullYear(), mm = mo.getMonth(), dim = new Date(yy, mm + 1, 0).getDate();
-        var mh = '<span class="dh-mname">' + esc(mo.toLocaleDateString(es() ? 'es-ES' : 'en-GB', { month: 'short' }) + (yy !== today.getFullYear() ? ' ' + yy : '')) + '</span>';
+        var mh = '<span class="dh-mname">' + esc(mo.toLocaleDateString(es() ? 'es-ES' : 'en-GB', { month: 'short' })) + '</span>';
         LET.forEach(function(l){ mh += '<span class="dh-lbl">' + l + '</span>'; });
         for (var pad = new Date(yy, mm, 1, 12).getDay(); pad > 0; pad--) mh += '<span></span>';
         for (var dn = 1; dn <= dim; dn++) {
@@ -75136,7 +75155,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var nudges = '';
       if (ps && ps.total) {
         var mFmt = function(dte){ return dte.toLocaleDateString(es() ? 'es-ES' : 'en-GB', { month: 'short' }); };
-        var range = (fromMo.getMonth() === today.getMonth() && fromMo.getFullYear() === today.getFullYear()) ? mFmt(today) : mFmt(fromMo) + ' – ' + mFmt(today);
+        var range = ((fromMo.getMonth() === endD.getMonth()) ? mFmt(endD) : mFmt(fromMo) + ' – ' + mFmt(endD)) + (yearSel !== thisYear ? ' ' + yearSel : '');
         var nh = '<div class="dh-nh"><b>' + ps.total + '</b>' + esc((ps.total === 1 ? _t('nudge', 'aviso') : _t('nudges', 'avisos')) + ' · ' + range);
         if (ps.into.n) nh += esc(' · ' + _t('trades taken into them', 'operaciones hechas tras ellos') + ' ') + '<span class="' + (ps.into.net < 0 ? 'r' : ps.into.net > 0 ? 'g' : '') + '">' + esc(money(ps.into.net)) + '</span>';
         nh += '</div>';
@@ -75153,9 +75172,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         + '<span><b class="' + (keptNet < 0 ? 'r' : 'g') + '">' + esc(money(keptNet)) + '</b>' + esc(_t('on the ' + kept.length + ' ' + (kept.length === 1 ? 'day' : 'days') + ' you kept every rule', 'en los ' + kept.length + ' ' + (kept.length === 1 ? 'día' : 'días') + ' que respetaste todas tus reglas')) + '</span>'
         + (broke.length ? '<span><b class="' + (brokeNet > 0 ? 'g' : 'r') + '">' + esc(money(brokeNet)) + '</b>' + esc(_t('on the ' + broke.length + ' ' + (broke.length === 1 ? 'day' : 'days') + ' you broke one', 'en los ' + broke.length + ' ' + (broke.length === 1 ? 'día' : 'días') + ' que rompiste alguna')) + '</span>' : '')
         + '</div>';
-      host.innerHTML = cells + '<div class="dh-months">' + months + '</div>' + legend + moneyLine + nudges;
+      host.innerHTML = picker + cells + '<div class="dh-months">' + months + '</div>' + legend + moneyLine + nudges;
       if (!host.__wired) {
         host.__wired = true;
+        host.addEventListener('click', function(e){
+          var yb = e.target.closest && e.target.closest('[data-dh-year]');
+          if (yb && !yb.disabled && yearSel != null) { yearSel += Number(yb.getAttribute('data-dh-year')); hideTip(); render(); }
+        }, true);
         host.addEventListener('mouseover', function(e){ var c = e.target.closest && e.target.closest('.dh-day[data-k]'); if (c && window.matchMedia && window.matchMedia('(hover: hover)').matches) showTip(c); });
         host.addEventListener('mouseleave', function(){ if (window.matchMedia && window.matchMedia('(hover: hover)').matches) hideTip(); });
         host.addEventListener('click', function(e){ var c = e.target.closest && e.target.closest('.dh-day[data-k]'); if (c) { if (c.classList.contains('pick')) hideTip(); else showTip(c); } else hideTip(); });
