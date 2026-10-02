@@ -331,7 +331,7 @@ datetime g_liveReAt=0;  // last time open positions were re-announced (v4.3: sel
 ulong  g_lockTk[];      // v8.87: positions whose stop has been announced past the entry...
 double g_lockSl[];      //        ...and the stop last announced for each (a trailed stop is announced at every step)
 // v8.88: the open trade's running result for Session Tool's trade card - per position, what was last sent and when
-ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[];
+ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[]; string g_tkBar[];   // v8.89: + the forming candle last sent
 bool   g_tickOff = false;   // the WebRequest list does not allow the address: stop trying until the EA restarts
 // v8.89: the live chart's candles, on the timeframe each open trade was taken on - per timeframe in use, the candle last
 // sent for this chart's symbol, and when / whether it failed
@@ -3579,7 +3579,8 @@ void LivePartial(ulong deal,ulong posId)
 // v8.88 (Nestor, 2 Oct 2026: the trade card's ball should "move live with real price action", every 5 seconds):
 // each open trade on this chart's symbol sends its running result - R from the entry stop, money, where the stop and
 // the target sit in R, and the partial-close / trailing ladders - at most every 5 s and only when price has moved a
-// twentieth of an R (a pip when R is unknown). A stop, target or ladder change goes at once. It is a direct database
+// twentieth of an R (a pip when R is unknown; since 8.89, whenever the price or the forming candle changed at all).
+// A stop, target or ladder change goes at once. It is a direct database
 // call (st_live_tick, checked by the sync token), not the live-trade function, and it never joins the live queue:
 // the real events go first, and a failed tick is simply skipped for 5 s. Follow accounts send nothing (the Lead's
 // trade is the card).
@@ -3682,13 +3683,15 @@ void LiveTickAll()
       if(at<0)
         {
          int n=ArraySize(g_tkTk);
-         if(n>=50){ for(int k=1;k<n;k++){ g_tkTk[k-1]=g_tkTk[k]; g_tkPx[k-1]=g_tkPx[k]; g_tkMs[k-1]=g_tkMs[k]; g_tkSig[k-1]=g_tkSig[k]; g_tkBad[k-1]=g_tkBad[k]; } n--; }
-         ArrayResize(g_tkTk,n+1); ArrayResize(g_tkPx,n+1); ArrayResize(g_tkMs,n+1); ArrayResize(g_tkSig,n+1); ArrayResize(g_tkBad,n+1);
-         g_tkTk[n]=posid; g_tkPx[n]=0.0; g_tkMs[n]=0; g_tkSig[n]=""; g_tkBad[n]=false; at=n;
+         if(n>=50){ for(int k=1;k<n;k++){ g_tkTk[k-1]=g_tkTk[k]; g_tkPx[k-1]=g_tkPx[k]; g_tkMs[k-1]=g_tkMs[k]; g_tkSig[k-1]=g_tkSig[k]; g_tkBad[k-1]=g_tkBad[k]; g_tkBar[k-1]=g_tkBar[k]; } n--; }
+         ArrayResize(g_tkTk,n+1); ArrayResize(g_tkPx,n+1); ArrayResize(g_tkMs,n+1); ArrayResize(g_tkSig,n+1); ArrayResize(g_tkBad,n+1); ArrayResize(g_tkBar,n+1);
+         g_tkTk[n]=posid; g_tkPx[n]=0.0; g_tkMs[n]=0; g_tkSig[n]=""; g_tkBad[n]=false; g_tkBar[n]=""; at=n;
         }
-      double step=(rpx>0) ? rpx*0.05 : SymbolPipFor(_Symbol);
+      // v8.89 (Nestor: "why this?"): any change in the price or in the forming candle - its high and low included - goes,
+      // still at most every 5 s, so the live chart's candle moves with the market. 8.88 waited for a twentieth of an R,
+      // which was enough for the ball on the card's line but left a candle and its wicks standing still.
       bool changed=(sig!=g_tkSig[at]);
-      bool moved=(MathAbs(px-g_tkPx[at])>=step-_Point*0.5);
+      bool moved=(MathAbs(px-g_tkPx[at])>=_Point*0.5) || (bar!=g_tkBar[at]);
       uint el=now-g_tkMs[at];
       uint wait=(g_tkBad[at] || !changed) ? 5000 : 1000;
       if(!(changed || moved) || (g_tkMs[at]!=0 && el<wait)) continue;
@@ -3697,7 +3700,7 @@ void LiveTickAll()
                                DoubleToString(bid,_Digits),DoubleToString(op,_Digits),LiveTickNum(rpx>0?rpx:EMPTY_VALUE,_Digits+1),_Digits,bar);
       bool ok=LiveTickPost(body);
       g_tkMs[at]=now; g_tkBad[at]=!ok;
-      if(ok){ g_tkPx[at]=px; g_tkSig[at]=sig; }
+      if(ok){ g_tkPx[at]=px; g_tkSig[at]=sig; g_tkBar[at]=bar; }
       if(g_tickOff) return;
      }
   }
