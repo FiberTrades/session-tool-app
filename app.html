@@ -14199,6 +14199,21 @@ try {
     }
     // 2026-10-01 (Nestor): "instead of trusted my bias, followed my bias". Every trade's mindset list - Trade Log,
     // review slots (parked too), Series of 10, history, reviewSnap - carries the new name.
+    // 2026-10-02 - a saved trade's day comes from its own open time when it has one (an MT5 import). A Session Review
+    // last used on an earlier day gave its date to a later trade (Nestor's 70K trade of Thu 1 Oct, saved as Tue 29 Sep,
+    // the only one in any journal). Idempotent: only a trade whose day disagrees is touched.
+    try {
+      const fixDay = (x) => {
+        if (!x || !x.openTs || !x.date) return;
+        const od = new Date(x.openTs), cd = new Date(x.date);
+        if (isNaN(od.getTime()) || isNaN(cd.getTime())) return;
+        if (od.getFullYear() === cd.getFullYear() && od.getMonth() === cd.getMonth() && od.getDate() === cd.getDate()) return;
+        const nd = new Date(od.getFullYear(), od.getMonth(), od.getDate(), 12, 0, 0);
+        x.date = nd.toISOString(); x.dayOfWeek = nd.getDay();
+      };
+      (d.currentSeries || []).forEach(fixDay);
+      (d.history || []).forEach(sr => ((sr && sr.trades) || []).forEach(fixDay));
+    } catch (e) {}
     if (!d._biasTagRenameV1) {
       const OLDM = 'Trusted My Bias', NEWM = 'Followed My Bias';
       const walkM = (o, depth) => {
@@ -22745,6 +22760,12 @@ try {
   //   2. No trades but session-level review filled (observed-only) → save state + backup flow
   //   3. Nothing valid → show toast and bail
   // Returns the number of trades actually persisted (0 for observed-only, 0 for bail-out).
+  /* The day a trade belongs to: its own open time when it carries one (an MT5 import), at local noon like every saved
+     trade. Without it the review's date is used - and a Session Review last used on an earlier day gave that day to a
+     later trade (Nestor's 70K trade of Thu 1 Oct 2026, saved as Tue 29 Sep). */
+  function _ownTradeDay(t) {
+    try { const od = t && t.openTs ? new Date(t.openTs) : null; return (od && !isNaN(od.getTime())) ? new Date(od.getFullYear(), od.getMonth(), od.getDate(), 12, 0, 0) : null; } catch (e) { return null; }
+  }
   async function performReviewSave(opts) {
     opts = opts || {};
     const skipBackupModal = !!opts.skipBackupModal;
@@ -22853,15 +22874,18 @@ try {
           for (const _s of data.history) { const _f = (_s.trades || []).find(x => x.id === t.seriesId); if (_f) { _target = _f; break; } }
         }
       }
+      const _own = _ownTradeDay(t);
       if (_target && !opts.forceNew) {
         Object.assign(_target, _fields);
+        if (_own) { _target.date = _own.toISOString(); _target.dayOfWeek = _own.getDay(); }
       } else {
         const _newId = genId();
         // Link the review trade to the series trade so future NORMAL saves update it in place.
         // In forceNew mode (the explicit "Save anyway"), only (re)link when it isn't already
         // linked, so a deliberate duplicate doesn't steal the original trade's link.
         if (!opts.forceNew || !t.seriesId) t.seriesId = _newId;
-        data.currentSeries.push({ id: _newId, ..._fields, date: sessionDate.toISOString(), dayOfWeek: sessionDate.getDay() });
+        const _d = _own || sessionDate;
+        data.currentSeries.push({ id: _newId, ..._fields, date: _d.toISOString(), dayOfWeek: _d.getDay() });
       }
     });
     rebuildSeriesByDate();
