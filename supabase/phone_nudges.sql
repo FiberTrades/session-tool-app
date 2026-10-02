@@ -92,3 +92,13 @@ alter table public.live_trades add column if not exists part_deal bigint;
 alter table public.live_trades add column if not exists part_pct double precision;
 alter table public.live_trades add column if not exists part_r double precision;
 alter table public.live_trades add column if not exists part_pnl double precision;
+
+-- EA 8.88: the open trade's running result for the Session Live trade card (every 5 s at most while it moves).
+alter table public.live_trades add column if not exists r_now double precision;
+alter table public.live_trades add column if not exists pnl_now double precision;
+alter table public.live_trades add column if not exists sl_r double precision;
+alter table public.live_trades add column if not exists tp_r double precision;
+alter table public.live_trades add column if not exists ladder text;
+alter table public.live_trades add column if not exists tick_at timestamptz;
+-- st_live_tick(p_token, p_ticket, p_r, p_pnl, p_sl_r, p_tp_r, p_ladder): security definer, checks the sync token and the paid flag,
+-- updates the member's open live_trades row; granted to anon (the EA calls /rest/v1/rpc/st_live_tick with the publishable key).

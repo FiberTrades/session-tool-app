@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.87"
+#property version   "8.88"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -330,6 +330,9 @@ int    g_liveTries[];   // parallel retry counter per queued event (v4.2: don't 
 datetime g_liveReAt=0;  // last time open positions were re-announced (v4.3: self-heal the feed after a reset)
 ulong  g_lockTk[];      // v8.87: positions whose stop has been announced past the entry...
 double g_lockSl[];      //        ...and the stop last announced for each (a trailed stop is announced at every step)
+// v8.88: the open trade's running result for Session Tool's trade card - per position, what was last sent and when
+ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[];
+bool   g_tickOff = false;   // the WebRequest list does not allow the address: stop trying until the EA restarts
 bool   g_syncCatchupPending = false;
 datetime g_syncCatchAt = 0;   // last periodic catch-up (v4.5: re-scan history so a close missed in real time self-heals)
 bool   g_wasConnected = true; // last-seen broker connection state (v4.5: reconnect/wake -> catch-up immediately)
@@ -3498,7 +3501,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.87\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.88\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3568,6 +3571,97 @@ void LivePartial(ulong deal,ulong posId)
    LiveEnqueue(StringFormat("{\"event\":\"partial\",\"token\":\"%s\",\"ticket\":%I64u,\"deal\":%I64u,\"login\":\"%I64d\",\"symbol\":\"%s\",\"direction\":\"%s\",\"lots\":%s,\"left\":%s,\"pct\":%s,\"r\":%s,\"pnl\":%s}",
                             g_syncTokenEff,posId,deal,AccountInfoInteger(ACCOUNT_LOGIN),sym,buy?"long":"short",
                             DoubleToString(vol,2),DoubleToString(left,2),DoubleToString(pct,1),DoubleToString(r,2),DoubleToString(pnl,2)));
+  }
+// v8.88 (Nestor, 2 Oct 2026: the trade card's ball should "move live with real price action", every 5 seconds):
+// each open trade on this chart's symbol sends its running result - R from the entry stop, money, where the stop and
+// the target sit in R, and the partial-close / trailing ladders - at most every 5 s and only when price has moved a
+// twentieth of an R (a pip when R is unknown). A stop, target or ladder change goes at once. It is a direct database
+// call (st_live_tick, checked by the sync token), not the live-trade function, and it never joins the live queue:
+// the real events go first, and a failed tick is simply skipped for 5 s. Follow accounts send nothing (the Lead's
+// trade is the card).
+string LiveTickNum(double v,int d){ return (v==EMPTY_VALUE) ? "null" : DoubleToString(v,d); }
+// "P:1.00:50:0|T:1.50:0.50:1" - each partial-close step (trigger in R, % of the size, done) and trailing step
+// (trigger in R, where it moves the stop in R, done).
+string LiveLadder(double op,int d,double rpx)
+  {
+   if(rpx<=0) return "";
+   string s="";
+   for(int i=0;i<g_pcCount && i<PC_MAX;i++)
+     {
+      if(g_pcTrig[i]<=0) continue;
+      s+=(StringLen(s)>0?"|":"")+"P:"+DoubleToString((g_pcTrig[i]-op)*d/rpx,2)+":"+DoubleToString(g_pcPct[i],0)+":"+(g_pcFired[i]?"1":"0");
+     }
+   for(int i=0;i<g_tsCount && i<TS_MAX;i++)
+     {
+      if(g_tsTrig[i]<=0) continue;
+      s+=(StringLen(s)>0?"|":"")+"T:"+DoubleToString((g_tsTrig[i]-op)*d/rpx,2)+":"+DoubleToString(TrailDestPx(i,rpx)/rpx,2)+":"+(g_tsFired[i]?"1":"0");
+     }
+   return s;
+  }
+bool LiveTickPost(string body)
+  {
+   int p=StringFind(InpLiveURL,"/functions/");
+   if(p<0) return false;
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_live_tick";
+   char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
+   char res[]; string rh;
+   string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
+   ResetLastError();
+   int code=WebRequest("POST",url,hdr,1500,post,res,rh);
+   if(code==-1 && GetLastError()==4060)
+     {
+      g_tickOff=true;
+      PrintFormat("Live P/L: '%s' is not allowed. Add the whole address (https://...supabase.co) under Tools > Options > Expert Advisors > Allow WebRequest.",url);
+     }
+   return (code==200);
+  }
+void LiveTickAll()
+  {
+   if(g_tickOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW) return;
+   if(ArraySize(g_liveQueue)>0) return;                       // the real events go first
+   uint now=GetTickCount();
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i);
+      if(tk==0 || !PositionSelectByTicket(tk)) continue;
+      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
+      long mg=PositionGetInteger(POSITION_MAGIC);
+      if(InpCopyMagic!=InpMagic && mg==InpCopyMagic) continue;   // a copy: the Lead's trade is the card
+      ulong posid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+      bool buy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+      int d=buy?1:-1;
+      double op=PositionGetDouble(POSITION_PRICE_OPEN), sl=PositionGetDouble(POSITION_SL), tp=PositionGetDouble(POSITION_TP);
+      double px=buy ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+      double pnl=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+      double rpx=RecallRisk(tk);
+      if(rpx<=0 && sl>0 && (op-sl)*d>0) rpx=(op-sl)*d;              // not stamped (a trade by hand): its stop while behind the entry
+      double r  =(rpx>0) ? (px-op)*d/rpx : EMPTY_VALUE;
+      double slr=(rpx>0 && sl>0) ? (sl-op)*d/rpx : EMPTY_VALUE;
+      double tpr=(rpx>0 && tp>0) ? (tp-op)*d/rpx : EMPTY_VALUE;
+      string lad=(mg==InpMagic) ? LiveLadder(op,d,rpx) : "";
+      string sig=DoubleToString(sl,_Digits)+"|"+DoubleToString(tp,_Digits)+"|"+lad;
+      int at=-1;
+      for(int k=0;k<ArraySize(g_tkTk);k++) if(g_tkTk[k]==posid){ at=k; break; }
+      if(at<0)
+        {
+         int n=ArraySize(g_tkTk);
+         if(n>=50){ for(int k=1;k<n;k++){ g_tkTk[k-1]=g_tkTk[k]; g_tkPx[k-1]=g_tkPx[k]; g_tkMs[k-1]=g_tkMs[k]; g_tkSig[k-1]=g_tkSig[k]; g_tkBad[k-1]=g_tkBad[k]; } n--; }
+         ArrayResize(g_tkTk,n+1); ArrayResize(g_tkPx,n+1); ArrayResize(g_tkMs,n+1); ArrayResize(g_tkSig,n+1); ArrayResize(g_tkBad,n+1);
+         g_tkTk[n]=posid; g_tkPx[n]=0.0; g_tkMs[n]=0; g_tkSig[n]=""; g_tkBad[n]=false; at=n;
+        }
+      double step=(rpx>0) ? rpx*0.05 : SymbolPipFor(_Symbol);
+      bool changed=(sig!=g_tkSig[at]);
+      bool moved=(MathAbs(px-g_tkPx[at])>=step-_Point*0.5);
+      uint el=now-g_tkMs[at];
+      uint wait=(g_tkBad[at] || !changed) ? 5000 : 1000;
+      if(!(changed || moved) || (g_tkMs[at]!=0 && el<wait)) continue;
+      string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\"}",
+                               g_syncTokenEff,posid,LiveTickNum(r,3),DoubleToString(pnl,2),LiveTickNum(slr,3),LiveTickNum(tpr,3),lad);
+      bool ok=LiveTickPost(body);
+      g_tkMs[at]=now; g_tkBad[at]=!ok;
+      if(ok){ g_tkPx[at]=px; g_tkSig[at]=sig; }
+      if(g_tickOff) return;
+     }
   }
 // Net money P&L of a closed position: profit + swap + commission across all its deals.
 double LivePositionPnl(ulong posId)
@@ -6546,6 +6640,7 @@ void OnTimer()
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
+   LiveTickAll();                           // v8.88: the open trade's running result for Session Tool (every 5 s at most)
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
    // frozen chart objects and a silent log look identical to "someone turned it off". One line a
