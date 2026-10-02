@@ -3618,7 +3618,15 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   /* chart cards */
   .zc-chart #equity-chart-wrap, .zch { flex: 1; margin-top: 14px; height: 240px; min-height: 240px; }
   .zc-chart #equity-chart { width: 100%; height: 240px; display: block; }
+  .zch { position: relative; }
   .zch svg { width: 100%; height: 240px; display: block; }
+  .zb-hit { fill: transparent; cursor: pointer; }
+  .zb-hit.on { fill: rgba(255, 255, 255, 0.05); }
+  .zb-tip { position: absolute; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-family: 'AppNum', 'DM Mono', monospace; white-space: nowrap; }
+  .zb-tip[hidden] { display: none; }
+  .zb-tip b { font-weight: 400; font-size: 9px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); }
+  .zb-tip span { font-size: 14px; color: var(--text); } .zb-tip span.g { color: var(--good); } .zb-tip span.r { color: var(--bad); }
+  .zb-tip em { font-style: normal; font-size: 10px; color: var(--text-mid); }
   /* three (or four) figures across: wins / losses / BE, streaks, hold time, best / worst slot */
   .zc.z3 .wl-summary, .zc.z3 .stats-summary, .zc.z3 .holdtime-grid, .zc.zt .time-hero-grid { flex: 1; margin-top: 14px; background: transparent; border: 0; border-top: 1px solid var(--border-2); border-radius: 0; box-shadow: none; gap: 0; }
   .zc.z3 .wl-cell, .zc.z3 .stat-cell, .zc.z3 .holdtime-cell, .zc.zt .time-hero-cell { background: transparent; border: 0; border-left: 1px solid var(--border-2); border-radius: 0; padding: 16px 8px 4px; text-align: center; }
@@ -26519,33 +26527,72 @@ try {
     return vals.map((v, i) => { const h = Math.max(1, Math.abs(v) / mx * 20); return '<rect x="' + (2 + i * bw + bw * 0.18).toFixed(1) + '" y="' + (v >= 0 ? mid - h : mid).toFixed(1) + '" width="' + (bw * 0.64).toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1" fill="' + (v >= 0 ? Z_G : Z_R) + '"/>'; }).join('') + '<line x1="1" y1="26" x2="75" y2="26" stroke="' + Z_DIM + '"/>';
   }
   // a bar chart at a real width: labels under the bars, a zero line, two light grid lines
-  function zBars(Wd, labels, vals, fmt, sparse) {
-    const H = 240, L = 46, Rr = 8, T = 12, Bt = 28, n = vals.length;
+  // A bar chart at a real width. The axis labels set the left margin (so "£3,360" is never cut off) and every column is a
+  // hover / tap target from top to bottom, so a break-even day's 1-pixel bar is as easy to read as a big one (Nestor).
+  function zBars(Wd, labels, vals, fmtAxis, sparse) {
+    const H = 240, Rr = 8, T = 12, Bt = 28, n = vals.length;
     const top = Math.max.apply(null, vals.concat([0])), bot = Math.min.apply(null, vals.concat([0]));
+    const ticks = [top, bot].filter(v => Math.abs(v) > 1e-9), tl = ticks.map(fmtAxis);
+    const L = Math.max(40, Math.round(Math.max.apply(null, tl.map(x => x.length).concat([3])) * 6.2 + 16));
     const span = (top - bot) || 1, y = v => T + (top - v) / span * (H - T - Bt), bw = (Wd - L - Rr) / Math.max(1, n);
     let g = '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="rgba(255,255,255,.14)"/>';
-    [top, bot].forEach(v => { if (Math.abs(v) > 1e-9) g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="rgba(255,255,255,.05)"/><text x="' + (L - 8) + '" y="' + (y(v) + 3) + '" text-anchor="end" font-size="9" fill="#8d899a" font-family="DM Mono, monospace">' + fmt(v) + '</text>'; });
+    ticks.forEach((v, k) => { g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="rgba(255,255,255,.05)"/><text x="' + (L - 8) + '" y="' + (y(v) + 3) + '" text-anchor="end" font-size="9" fill="#8d899a" font-family="DM Mono, monospace">' + tl[k] + '</text>'; });
+    const step = Math.ceil(n / Math.max(2, Math.floor(Wd / 90)));
+    let hits = '';
     vals.forEach((v, i) => {
       const x0 = L + i * bw + bw * 0.2, w = Math.max(1.5, bw * 0.6), y0 = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
-      g += '<rect x="' + x0.toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + (v > 0 ? Z_G : v < 0 ? Z_R : 'rgba(255,255,255,.18)') + '"><title>' + labels[i] + ': ' + fmt(v) + '</title></rect>';
-      if (!sparse || i === n - 1 || (i % Math.ceil(n / Math.max(2, Math.floor(Wd / 90))) === 0 && n - 1 - i >= Math.ceil(n / Math.max(2, Math.floor(Wd / 90))) / 2)) g += '<text x="' + (x0 + w / 2).toFixed(1) + '" y="' + (H - 9) + '" text-anchor="middle" font-size="9" fill="#8d899a" font-family="DM Mono, monospace">' + labels[i] + '</text>';
+      g += '<rect x="' + x0.toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + (v > 0 ? Z_G : v < 0 ? Z_R : 'rgba(255,255,255,.35)') + '"/>';
+      if (!sparse || i === n - 1 || (i % step === 0 && n - 1 - i >= step / 2)) g += '<text x="' + (x0 + w / 2).toFixed(1) + '" y="' + (H - 9) + '" text-anchor="middle" font-size="9" fill="#8d899a" font-family="DM Mono, monospace">' + labels[i] + '</text>';
+      hits += '<rect class="zb-hit" data-i="' + i + '" x="' + (L + i * bw).toFixed(1) + '" y="' + (T - 6) + '" width="' + bw.toFixed(1) + '" height="' + (H - T - Bt + 12) + '"/>';
     });
-    return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" preserveAspectRatio="none" role="img">' + g + '</svg>';
+    return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" preserveAspectRatio="none" role="img">' + g + hits + '</svg>';
+  }
+  // The pop-up over a column: what it is, its result, and how many trades - shown as soon as the pointer is anywhere in the
+  // column (or a finger taps it).
+  function zTip(host, items) {
+    const esc = x => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const tip = document.createElement('div'); tip.className = 'zb-tip'; tip.hidden = true; host.appendChild(tip);
+    let cur = null;
+    const hide = () => { if (cur) cur.classList.remove('on'); cur = null; tip.hidden = true; };
+    const show = e => {
+      const r = e.target && e.target.closest ? e.target.closest('.zb-hit') : null;
+      if (!r) { hide(); return; }
+      const it = items[+r.getAttribute('data-i')]; if (!it) return;
+      if (cur !== r) {
+        if (cur) cur.classList.remove('on');
+        r.classList.add('on'); cur = r;
+        tip.innerHTML = '<b>' + esc(it.title) + '</b><span class="' + (it.v > 0 ? 'g' : it.v < 0 ? 'r' : '') + '">' + esc(it.value) + '</span>' + (it.sub ? '<em>' + esc(it.sub) + '</em>' : '');
+        tip.hidden = false;
+      }
+      const hb = host.getBoundingClientRect(), rb = r.getBoundingClientRect();
+      const x = Math.max(0, Math.min(hb.width - tip.offsetWidth, rb.left - hb.left + rb.width / 2 - tip.offsetWidth / 2));
+      const yy = (e.clientY || (rb.top + rb.height / 2)) - hb.top - tip.offsetHeight - 14;
+      tip.style.left = x + 'px'; tip.style.top = Math.max(0, yy) + 'px';
+    };
+    host.onpointermove = show; host.onpointerdown = show; host.onpointerleave = hide;
   }
   function zDraw() {
     if (!_zLast) return;
-    const L = _zLast, fr = v => (v > 0 ? '+' : v < 0 ? '\u2212' : '') + Math.abs(v).toFixed(Math.abs(v) >= 10 ? 0 : 1) + 'R';
-    const fm = v => (v < 0 ? '\u2212' : '') + (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true }) : String(Math.round(Math.abs(v)))).replace(/\.00$/, '');
-    const put = (id, labels, vals, fmt, sparse) => {
+    const L = _zLast;
+    const sign = v => (v > 0 ? '+' : v < 0 ? '\u2212' : '');
+    const money = v => (typeof fmtMoney === 'function' ? fmtMoney(Math.abs(v), { noSign: true }) : String(Math.round(Math.abs(v) * 100) / 100));
+    const sym = money(0).replace(/[0-9.,\s]+/g, '') || '£';
+    const fmAxis = v => { const a = Math.abs(v); return sign(v) + (a >= 1000 ? sym + (a / 1000).toFixed(a >= 10000 ? 0 : 1) + 'k' : sym + Math.round(a)); };
+    const frAxis = v => sign(v) + Math.abs(v).toFixed(Math.abs(v) >= 10 ? 0 : 1) + 'R';
+    const nTr = c => c + ' ' + (c === 1 ? zT('trade', 'operación') : zT('trades', 'operaciones'));
+    const put = (id, rows, fmtAxis, sparse, tipOf) => {
       const host = document.getElementById(id); if (!host) return;
       const w = Math.round(host.clientWidth);
       if (w < 40) return;   // its tab is hidden: drawn when it comes into view
-      host.innerHTML = vals.length && vals.some(v => v !== 0 || L.n) && L.n ? zBars(w, labels, vals, fmt, sparse) : '<div class="zc-empty">' + zT('No trades in this period yet', 'Aún no hay operaciones en este periodo') + '</div>';
+      if (!(rows.length && L.n)) { host.onpointermove = host.onpointerdown = host.onpointerleave = null; host.innerHTML = '<div class="zc-empty">' + zT('No trades in this period yet', 'Aún no hay operaciones en este periodo') + '</div>'; return; }
+      host.innerHTML = zBars(w, rows.map(d => d.lab), rows.map(d => d.v), fmtAxis, sparse);
+      zTip(host, rows.map(tipOf));
     };
-    put('zd-daily', L.daily.map(d => d.lab), L.daily.map(d => d.v), fm, true);
-    put('zd-dow', L.dow.map(d => d.lab), L.dow.map(d => d.v), fr, false);
-    put('zd-sess', L.sess.map(d => d.lab), L.sess.map(d => d.v), fr, false);
-    put('zd-hour', L.hour.map(d => d.lab), L.hour.map(d => d.v), fr, false);
+    put('zd-daily', L.daily, fmAxis, true, d => ({ title: d.full, v: d.v, value: sign(d.v) + money(d.v), sub: nTr(d.n) }));
+    const rTip = d => ({ title: d.full || d.lab, v: d.v, value: sign(d.v) + Math.abs(d.v).toFixed(2) + 'R', sub: nTr(d.n) + (d.wr != null ? ' · ' + d.wr + '% ' + zT('win rate', 'acierto') : '') });
+    put('zd-dow', L.dow, frAxis, false, rTip);
+    put('zd-sess', L.sess, frAxis, false, rTip);
+    put('zd-hour', L.hour, frAxis, false, rTip);
   }
   function zCards(all, wins, losses, bes) {
     const cp = t => tradeCopies(t), rOf = t => tradeRforMath(t) * cp(t), net = t => (tradeGross(t) - tradeCosts(t)) * cp(t);
@@ -26560,9 +26607,11 @@ try {
     const winR = all.reduce((s, t) => { const r = rOf(t); return r > 0 ? s + r : s; }, 0), lossR = all.reduce((s, t) => { const r = rOf(t); return r < 0 ? s - r : s; }, 0);
     // per trade day (local), the last 30 of the period
     const byDay = {};
-    chron.forEach(t => { const d = new Date(t.date); if (isNaN(d.getTime())) return; const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); byDay[k] = (byDay[k] || 0) + net(t); });
+    const byDayN = {};
+    chron.forEach(t => { const d = new Date(t.date); if (isNaN(d.getTime())) return; const k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); byDay[k] = (byDay[k] || 0) + net(t); byDayN[k] = (byDayN[k] || 0) + cp(t); });
     const loc = (typeof tLocale === 'function') ? tLocale() : 'en-GB';
-    const daily = Object.keys(byDay).sort().slice(-30).map(k => ({ lab: new Date(k + 'T12:00:00').toLocaleDateString(loc, { day: 'numeric', month: 'short' }), v: byDay[k] }));
+    const daily = Object.keys(byDay).sort().slice(-30).map(k => { const dd = new Date(k + 'T12:00:00');
+      return { lab: dd.toLocaleDateString(loc, { day: 'numeric', month: 'short' }), full: dd.toLocaleDateString(loc, { weekday: 'short', day: 'numeric', month: 'short' }), v: byDay[k], n: byDayN[k] }; });
     // the stat cards
     let base = 0; try { base = getScopedBaseline(); } catch (e) {}
     set('zk-v-balance', zSpark([0].concat(cumNet), Z_G)); txt('zk-s-balance', base > 0 ? zT('from ' + fm(base) + ' start', 'desde ' + fm(base) + ' inicial') : '');
@@ -26582,13 +26631,15 @@ try {
     // the timing charts: weekday, session, entry hour
     const dayName = d => new Date(2024, 0, 7 + d).toLocaleDateString(loc, { weekday: 'short' }).replace('.', '');
     const dowDays = [1, 2, 3, 4, 5].concat([6, 0].filter(d => all.some(t => t.dayOfWeek === d)));
-    const dow = dowDays.map(d => ({ lab: dayName(d), v: sideStats(all.filter(t => t.dayOfWeek === d)).netR }));
+    const st = (lab, tr, full) => { const q = sideStats(tr); return { lab: lab, full: full || lab, v: q.netR, n: q.count, wr: q.wr }; };
+    const dayFull = d => new Date(2024, 0, 7 + d).toLocaleDateString(loc, { weekday: 'long' });
+    const dow = dowDays.map(d => st(dayName(d), all.filter(t => t.dayOfWeek === d), dayFull(d)));
     const timed = all.filter(t => t.entryTime && parseHHMM(t.entryTime) != null);
-    const sess = FX_SESSIONS.map(se => ({ lab: t(se.labelKey), v: sideStats(timed.filter(tr => { const m = parseHHMM(tr.entryTime); return m >= se.start && m < se.end; })).netR }));
+    const sess = FX_SESSIONS.map(se => st(t(se.labelKey), timed.filter(tr => { const m = parseHHMM(tr.entryTime); return m >= se.start && m < se.end; })));
     let hour = [];
     if (timed.length) {
       const hs = timed.map(tr => Math.floor(parseHHMM(tr.entryTime) / 60)), h0 = Math.min.apply(null, hs), h1 = Math.max.apply(null, hs);
-      for (let h = h0; h <= h1; h++) hour.push({ lab: String(h).padStart(2, '0'), v: sideStats(timed.filter(tr => Math.floor(parseHHMM(tr.entryTime) / 60) === h)).netR });
+      for (let h = h0; h <= h1; h++) hour.push(st(String(h).padStart(2, '0'), timed.filter(tr => Math.floor(parseHHMM(tr.entryTime) / 60) === h), String(h).padStart(2, '0') + ':00 \u2013 ' + String(h).padStart(2, '0') + ':59'));
     }
     txt('zd-daily-sub', daily.length ? zT(daily.length + (daily.length === 1 ? ' trading day' : ' trading days'), daily.length + (daily.length === 1 ? ' día operado' : ' días operados')) : '');
     _zLast = { n: n, daily: daily, dow: dow, sess: sess, hour: hour };
@@ -34117,25 +34168,25 @@ try {
   bindReviewMultiOptions();
   // The equity curve follows the Statistics period (2 Oct 2026: its own 1mo / 3mo / 6mo / 1yr / All buttons are gone).
   function equityRangeFromMs() { return statsPeriodFromMs(); }
-  // Statistics tabs (2 Oct 2026). Remembered per device. The equity curve measures its own width, so it is drawn again when
-  // Overview comes back into view (drawn while hidden it has no width).
+  // Statistics tabs (2 Oct 2026). Every app load opens on Overview (Nestor, 3 Oct); while the app is open the tab picked stays.
+  // The equity curve measures its own width, so it is drawn again when Overview comes back into view (drawn while hidden it
+  // has no width).
   function setupStatsTabs() {
     const page = document.getElementById('page-trades'), bar = document.getElementById('stx-tabs');
     if (!page || !bar) return;
-    const KEY = 'st_stats_tab', ALL = ['overview', 'timing', 'trades', 'setups', 'habits'];
+    const ALL = ['overview', 'timing', 'trades', 'setups', 'habits'];
     function show(k) {
       if (ALL.indexOf(k) < 0) k = 'overview';
       bar.querySelectorAll('.stx-tab').forEach(b => { const on = b.dataset.stx === k; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
       page.querySelectorAll(':scope > [data-stx]').forEach(el => el.classList.toggle('stx-hide', el.dataset.stx !== k));
-      try { localStorage.setItem(KEY, k); } catch (e) {}
       if (k === 'overview' && page.classList.contains('active')) {
         try { drawEquityChart(filterBySymbolScope(filterByScope(getAllLifetimeTrades())), { splitColor: true, rangeFromMs: equityRangeFromMs() }); } catch (e) {}
       }
       try { if (window.__stZ) window.__stZ.redraw(); } catch (e) {}
     }
     bar.addEventListener('click', e => { const b = e.target.closest('.stx-tab'); if (b) show(b.dataset.stx); });
-    let k0 = 'overview'; try { k0 = localStorage.getItem(KEY) || 'overview'; } catch (e) {}
-    show(k0);
+    try { localStorage.removeItem('st_stats_tab'); } catch (e) {}   // no longer remembered between loads
+    show('overview');
     window.__stStx = { show: show, current: () => { const b = bar.querySelector('.stx-tab.on'); return b ? b.dataset.stx : 'overview'; } };
   }
   setupTagGroup('concept-tags', 'concepts');
