@@ -3894,7 +3894,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .dh-year { display: flex; align-items: center; gap: 12px; margin-bottom: 16px; }
   .dh-ytitle { font-family: 'AppNum', 'DM Mono', monospace; font-size: 15px; letter-spacing: 0.08em; color: var(--text); min-width: 46px; text-align: center; }
   .dh-year .cal-nav-btn:disabled { opacity: 0.3; cursor: default; }
-  #discipline-body .dh-day.pre { opacity: 0.25; }   /* beats .dh-day.k / .b / .u, which set their own opacity */
   .dh-from { margin-top: 10px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; color: var(--text-dim); line-height: 1.6; }
   .dh-day.nd { position: relative; }
   .dh-day.nd::after { content: ''; position: absolute; left: 16%; right: 16%; bottom: -5px; height: 2px; border-radius: 2px; background: rgb(232, 207, 99); }
@@ -75052,7 +75051,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return (many ? accShort(b.acc) + ': ' : '') + w;
   }
   var host = null, tipEl = null, lastDays = [], yearSel = null;   // yearSel: the year shown (null = this year)
-  var countFrom = '';   // the first day that counts (see render)
   function hideTip(){ if (tipEl) { tipEl.remove(); tipEl = null; } if (host) host.querySelectorAll('.dh-day.pick').forEach(function(x){ x.classList.remove('pick'); }); }
   function showTip(cell){
     hideTip();
@@ -75067,7 +75065,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       else if (d.kept) h += '<br><span class="g">' + esc(_t('Every rule kept', 'Todas las reglas respetadas')) + '</span>';
       else d.breaks.forEach(function(b){ h += '<br><span class="r">' + esc(_t('Broke: ', 'Rompiste: ') + breakText(b, many)) + '</span>'; });
     }
-    if (countFrom && k < countFrom) h += '<br><span class="m">' + esc(_t('Before nudges, not counted', 'Antes de los avisos, no cuenta')) + '</span>';
     // The day's nudges, each with what happened after it (the same lines as the Calendar day and the reviews).
     var nl = []; try { nl = window.__stNudge ? window.__stNudge.dayList(k) : []; } catch(e){}
     if (nl.length) {
@@ -75099,7 +75096,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       /* Counted from the first day the app could warn you live (Nestor, 2 Oct 2026: the streaks "are not fair as they
          didnt have the ability to know if i had broken a rule only until recently"): the member's first nudge, or 2 Oct
          2026 - the day this section launched - for a member not nudged before then (a later first nudge never moves the
-         start forward). Earlier days stay on the months, faded, and count for nothing: no streak, %, or money. */
+         start forward). Earlier days still show on the months as they were, but count for nothing: no streak, %, or money
+         (Nestor, same day: no faded squares or "not counted" labels - just leave them out of the count). */
       var LAUNCH = '2026-10-02', firstNudge = null;
       try {
         var nlog = (data && data.nudgeLog) || {};
@@ -75107,7 +75105,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if (Object.keys(nlog[k] || {}).some(function(x){ return x.indexOf('sample:') !== 0; }) && (!firstNudge || k < firstNudge)) firstNudge = k;
         });
       } catch(e){}
-      var startK = (firstNudge && firstNudge < LAUNCH) ? firstNudge : LAUNCH; countFrom = startK;
+      var startK = (firstNudge && firstNudge < LAUNCH) ? firstNudge : LAUNCH;
       var countD = judgedDays.filter(function(d){ return d.k >= startK; }), anyBefore = days.some(function(d){ return d.k < startK; });
       // The current streak: every counted trading day, back from today.
       var cur = 0, curFrom = null, run = 0, runFrom = null, lastBroke = null;
@@ -75147,8 +75145,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (anyBefore) {
         var sd = fmtDay(startK, { day: 'numeric', month: 'short', year: 'numeric' }), own = !!(firstNudge && firstNudge === startK);
         cells += '<div class="dh-from">' + esc(own
-          ? _t('Counted from ' + sd + ', your first nudge. Earlier days are faded and don’t count.', 'Contado desde el ' + sd + ', tu primer aviso. Los días anteriores aparecen atenuados y no cuentan.')
-          : _t('Counted from ' + sd + ', when Discipline nudges started. Earlier days are faded and don’t count.', 'Contado desde el ' + sd + ', cuando empezaron los avisos de disciplina. Los días anteriores aparecen atenuados y no cuentan.')) + '</div>';
+          ? _t('Counted from ' + sd + ', your first nudge.', 'Contado desde el ' + sd + ', tu primer aviso.')
+          : _t('Counted from ' + sd + ', when Discipline nudges started.', 'Contado desde el ' + sd + ', cuando empezaron los avisos de disciplina.')) + '</div>';
       }
       // The heatmap, laid out like the Calendar (Nestor, 2 Oct 2026): one small month per block, the Calendar's columns
       // (Sunday to Saturday), the 1st under its own weekday, weeks down; from the month of the first trade (at most a
@@ -75171,13 +75169,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           var dt = new Date(yy, mm, dn, 12), k = dayKey(dt);
           if (dt > today) { mh += '<span></span>'; continue; }
           var d = byK[k], cls = d ? (!d.judged ? 'u' : d.kept ? 'k' : 'b') : (timeOff(k) ? 'off' : '');
-          mh += '<span class="dh-day ' + cls + (k < startK ? ' pre' : '') + (k === todayK ? ' today' : '') + (ps && ps.days[k] ? ' nd' : '') + '" data-k="' + k + '" tabindex="0"></span>';
+          mh += '<span class="dh-day ' + cls + (k === todayK ? ' today' : '') + (ps && ps.days[k] ? ' nd' : '') + '" data-k="' + k + '" tabindex="0"></span>';
         }
         months += '<div class="dh-m">' + mh + '</div>';
       }
       var legend = '<div class="dh-legend"><span><i class="dh-day k"></i>' + esc(_t('All rules kept', 'Todas las reglas')) + '</span><span><i class="dh-day b"></i>' + esc(_t('A rule broken', 'Una regla rota')) + '</span><span><i class="dh-day"></i>' + esc(_t('No trades', 'Sin operaciones')) + '</span><span><i class="dh-day off"></i>' + esc(_t('Time off', 'Tiempo libre')) + '</span>'
-        + (ps ? '<span><i class="dh-day nd"></i>' + esc(_t('Nudged', 'Con aviso')) + '</span>' : '')
-        + (anyBefore ? '<span><i class="dh-day k pre"></i>' + esc(_t('Before nudges, not counted', 'Antes de los avisos, no cuenta')) + '</span>' : '') + '</div>';
+        + (ps ? '<span><i class="dh-day nd"></i>' + esc(_t('Nudged', 'Con aviso')) + '</span>' : '') + '</div>';
       // Under it: the nudges of these months by kind, with what the trades taken into them made.
       var nudges = '';
       if (ps && ps.total) {
