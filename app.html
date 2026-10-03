@@ -736,6 +736,16 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     #settings-modal-bg .settings-section.set-cardsec { padding: 4px 14px 6px; }
     #settings-modal-bg .set-row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; }
   }
+  /* The example journal bar, under the tabs on every tab while the example is showing (3 Oct 2026). */
+  #st-demo-bar { display: flex; align-items: center; justify-content: space-between; gap: 14px 20px; flex-wrap: wrap; margin: 4px 0 18px; padding: 12px 16px; border: 1px solid rgba(244, 114, 182, 0.4); border-radius: 12px; background: rgba(244, 114, 182, 0.06); font-family: 'Inter', system-ui, sans-serif; }
+  #st-demo-bar .stdb-txt { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1 1 320px; font-size: 13px; line-height: 1.5; color: var(--text-mid); }
+  #st-demo-bar .stdb-k { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.22em; color: var(--accent); }
+  #st-demo-bar .stdb-act { display: flex; align-items: center; gap: 14px; flex: none; }
+  #st-demo-bar .stdb-go { background: var(--accent); color: #16070f; border: 0; border-radius: 999px; padding: 9px 18px; font: 600 13px 'Inter', system-ui, sans-serif; cursor: pointer; }
+  #st-demo-bar .stdb-go:hover { background: #f24da0; }
+  #st-demo-bar .stdb-x { background: none; border: 0; color: var(--text-dim); font: 500 12px 'Inter', system-ui, sans-serif; cursor: pointer; padding: 4px 0; text-decoration: underline; text-underline-offset: 3px; }
+  #st-demo-bar .stdb-x:hover { color: var(--text); }
+  @media (max-width: 560px) { #st-demo-bar { padding: 12px 14px; } #st-demo-bar .stdb-act { width: 100%; justify-content: space-between; } }
   .settings-risk-mode-toggle { display: inline-flex; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); overflow: hidden; height: 22px; }
   .settings-risk-mode-btn { background: transparent; border: none; color: var(--text-dim); padding: 0 12px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; cursor: pointer; transition: background 150ms, color 150ms; min-width: 32px; }
   .settings-risk-mode-btn:hover:not(.active) { background: rgba(255,255,255,0.06); color: var(--text); }
@@ -14224,6 +14234,253 @@ try {
     };
   }
 
+  /* ===== The example journal (Nestor, 3 Oct 2026) =====
+     "when a new app user signs up for the free trial the whole app will be empty ... can we set an example of what a
+     journal would look like after a few trades ... as soon as they add their own account it all disappears".
+     A trial member whose journal is empty gets an EXAMPLE account (a 100K prop challenge) with six weeks of trades
+     ending yesterday, two playbooks, two weekend reviews and two day notes - saved in their cloud journal, so every
+     device shows it. data.demo marks it; every example item carries demo: true and an id starting demo_.
+     It goes on its own the moment the member sets up their own account - their account gets a starting balance,
+     they link MT5, or a trade of their own lands in their series - or when they press Set up my account / Remove
+     the example on the banner, or delete the example account. data.demoDone then stops it ever coming back.
+     It never counts anywhere outside their own screens: the leaderboard reads journals through st_journal_nodemo,
+     and in the app the prop pop-ups, community posts from example content, the account snapshot for phone nudges,
+     onboarding and the account pickers all leave it out. */
+  function stDemoIsTrade(t) { return !!(t && (t.demo === true || t.accountId === 'demo_acc')); }
+  function stDemoHasItems(d) {
+    if (!d) return false;
+    if ((d.accounts || []).some(a => a && a.demo)) return true;
+    if ((d.currentSeries || []).some(stDemoIsTrade)) return true;
+    if ((d.history || []).some(x => x && (x.trades || []).some(stDemoIsTrade))) return true;
+    if ((d.weeklyReviews || []).some(r => r && r.demo) || (d.playbooks || []).some(p => p && p.demo)) return true;
+    return false;
+  }
+  // Has the member started their OWN journal? Any of these ends the example.
+  function stDemoRealActivity(d) {
+    if (!d) return false;
+    if ((d.accounts || []).some(a => a && !a.demo && a.status !== 'archived' && (parseFloat(a.startingBalance) || 0) > 0)) return true;
+    if (d.mt5LoginMap && typeof d.mt5LoginMap === 'object' && Object.keys(d.mt5LoginMap).length) return true;
+    if ((d.currentSeries || []).some(t => t && !stDemoIsTrade(t))) return true;
+    if ((d.history || []).some(x => x && (x.trades || []).some(t => t && !stDemoIsTrade(t)))) return true;
+    return false;
+  }
+  function stDemoNeedsStrip(d) {
+    if (!d) return false;
+    if (d.demo) return stDemoRealActivity(d) || !(d.accounts || []).some(a => a && a.demo);   // set up, or the example account deleted
+    return !!(d.demoDone && stDemoHasItems(d));                                              // a merge brought pieces back
+  }
+  // Take the example out of journal d. d may be the live journal or a copy (the save guard strips a copy of the cloud's).
+  function stDemoStrip(d, why) {
+    if (!d) return false;
+    var had = !!d.demo || stDemoHasItems(d), prevScope = d.demo && d.demo.prevScope;
+    if (!had) return false;
+    var live = (typeof data !== 'undefined' && d === data);
+    if (live && why !== 'guard') { try { if (window.STCloud && window.STCloud.notePeak) window.STCloud.notePeak(); } catch (e) {} }
+    d.accounts = (d.accounts || []).filter(a => !(a && a.demo));
+    if (d.activeAccountId === 'demo_acc' || !d.accounts.some(a => a && a.id === d.activeAccountId)) {
+      var keep = d.accounts.find(a => a && a.status === 'active') || d.accounts[0];
+      if (keep) d.activeAccountId = keep.id;
+    }
+    d.currentSeries = (d.currentSeries || []).filter(t => !stDemoIsTrade(t));
+    d.history = (d.history || []).map(x => Object.assign({}, x, { trades: (x && x.trades || []).filter(t => !stDemoIsTrade(t)) })).filter(x => x.trades.length);
+    if (Array.isArray(d.weeklyReviews)) d.weeklyReviews = d.weeklyReviews.filter(r => !(r && r.demo));
+    if (Array.isArray(d.monthlyReviews)) d.monthlyReviews = d.monthlyReviews.filter(r => !(r && r.demo));
+    if (Array.isArray(d.playbooks)) d.playbooks = d.playbooks.filter(p => !(p && p.demo));
+    if (d.dayNotes && typeof d.dayNotes === 'object') Object.keys(d.dayNotes).forEach(k => { if (d.dayNotes[k] && d.dayNotes[k].demo) delete d.dayNotes[k]; });
+    if (d.viewScope === 'demo_acc' || (prevScope && d.viewScope === 'lifetime')) d.viewScope = prevScope && prevScope !== 'demo_acc' ? prevScope : 'lifetime';
+    if (d.review && d.review.logTo === 'demo_acc') delete d.review.logTo;
+    delete d.demo;
+    d.demoDone = Date.now();
+    if (live) {
+      try { rebuildSeriesByDate(); } catch (e) {}
+      try { syncEffectiveStartingBalance(); } catch (e) {}
+    }
+    return true;
+  }
+  // Six weeks of a believable London-session trader, the same for everyone (seeded), ending yesterday.
+  function stDemoBuild(now) {
+    var seed = 20261003, rnd = function () { seed = (seed * 1103515245 + 12345) % 2147483648; return seed / 2147483648; };
+    var p2 = function (n) { return ('0' + n).slice(-2); };
+    var days = [], day0 = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    for (var k = 42; k >= 1; k--) { var dd = new Date(day0); dd.setDate(dd.getDate() - k); if (dd.getDay() > 0 && dd.getDay() < 6) days.push(dd); }
+    var slots = [];
+    days.forEach(function (dd) { if (rnd() < 0.74) { slots.push(dd); if (rnd() < 0.28) slots.push(dd); } });
+    var n = slots.length, res = [], i;
+    var nW = Math.round(n * 0.39), nB = Math.round(n * 0.2);
+    for (i = 0; i < n; i++) res.push(i < nW ? 'Win' : i < nW + nB ? 'BE' : 'Lose');
+    for (i = n - 1; i > 0; i--) { var j = Math.floor(rnd() * (i + 1)), tmp = res[i]; res[i] = res[j]; res[j] = tmp; }
+    var trades = [], lastDay = '', nth = 0;
+    var notesW = ['Waited for the sweep and the shift on the 5m. Textbook.', 'Took partials at 1R, let the rest run to the target.', 'Patient entry, the plan did the work.'];
+    var notesL = ['Entered before the shift confirmed. Rushed it.', 'Valid setup, it just did not work. Stop was where it should be.', 'Against the higher-timeframe bias - should have sat on my hands.'];
+    slots.forEach(function (dd, idx) {
+      var key = dd.toDateString(); nth = (key === lastDay) ? nth + 1 : 0; lastDay = key;
+      var result = res[idx], sweep = rnd() < (result === 'Win' ? 0.68 : 0.42), long = rnd() < 0.55, gbp = rnd() < 0.28;
+      var h = 8 + nth, m = 5 + Math.floor(rnd() * 50), hold = 12 + Math.floor(rnd() * 70);
+      var ex = new Date(dd); ex.setHours(h, m + hold, 0, 0);
+      var en = new Date(dd); en.setHours(h, m, 0, 0);
+      var risk = 500, r, pips, gross, potR = null;
+      if (result === 'Win') { r = [1.5, 2, 2, 2.5, 3][Math.floor(rnd() * 5)]; pips = r * 10; gross = Math.round(r * risk * (0.97 + rnd() * 0.06) * 100) / 100; potR = Math.round((r + 0.3 + rnd() * 1.5) * 10) / 10; }
+      else if (result === 'Lose') { r = 2; pips = 20; gross = -Math.round(risk * (0.95 + rnd() * 0.12) * 100) / 100; }
+      else { r = 2; pips = 20; gross = Math.round((rnd() * 40 - 20) * 100) / 100; }
+      var dir = long ? 'Bullish' : 'Bearish';
+      trades.push({
+        id: 'demo_t' + idx, demo: true, accountId: 'demo_acc', symbol: gbp ? 'GBP/USD' : 'EUR/USD', distUnit: 'pips', realPips: null,
+        result: result, r: r, pips: pips, potentialR: potR, potentialPips: potR != null ? potR * 10 : null, bePotentialR: null, bePotentialPips: null,
+        type: rnd() < 0.6 ? 'Reaction' : 'Continuation', setup: sweep ? 'London sweep' : 'Breakout', side: long ? 'Long' : 'Short',
+        entryTime: p2(en.getHours()) + ':' + p2(en.getMinutes()), exitTime: p2(ex.getHours()) + ':' + p2(ex.getMinutes()),
+        risk: risk, sl: null, costs: 14, actualGross: gross,
+        biasSnap: { symbol: gbp ? 'GBP/USD' : 'EUR/USD', direction: rnd() < 0.85 ? dir : (long ? 'Bearish' : 'Bullish'), structure: dir, location: long ? 'Discount' : 'Premium', notes: '', tvLinks: [] },
+        reviewSnap: { traded: 'Yes', execution: (result === 'Lose' && rnd() < 0.6) ? 'Needs Work' : 'Flawless', focus: null, close: null, rice: [], tvLinks: [], concepts: [], mindset: [],
+          reflection: rnd() < 0.35 ? (result === 'Lose' ? notesL : notesW)[Math.floor(rnd() * 3)] : '' },
+        date: en.toISOString(), dayOfWeek: en.getDay()
+      });
+    });
+    var created = new Date(day0); created.setDate(created.getDate() - 43);
+    var account = { id: 'demo_acc', demo: true, name: 'Example · FTMO 100K - Challenge', status: 'active', accountType: 'prop', kind: 'challenge',
+      createdAt: created.toISOString(), startingBalance: 100000,
+      riskRules: { maxDrawdownMode: 'pct', maxDrawdownPct: 10, ddType: 'static', profitTargetMode: 'pct', profitTargetPct: 10, firmDailyMode: 'pct', firmDailyPct: 5,
+        maxLossMode: 'pct', maxLossPct: 1.5, maxRiskMode: 'pct', maxRiskPct: 0.5, maxTrades: 2, beThresholdMode: 'pct', beThresholdPct: 0.05 } };
+    var nowMs = now.getTime();
+    var playbooks = [
+      { id: 'demo_pb_1', demo: true, name: 'London sweep', desc: 'The Asia range is swept in the first hour of London, then price shifts back inside. Entry on the 5m shift, stop beyond the sweep, target the far side of the range.', rec: {}, parent: null, created: nowMs, updated: nowMs },
+      { id: 'demo_pb_2', demo: true, name: 'Breakout', desc: 'A clean break of the Asia range with a retest. Only with the higher-timeframe bias, and never into red news.', rec: {}, parent: null, created: nowMs, updated: nowMs }
+    ];
+    var weeklyReviews = [], wk;
+    for (wk = 1; wk <= 2; wk++) {
+      var fri = new Date(day0); fri.setDate(fri.getDate() - ((fri.getDay() + 2) % 7) - 7 * (wk - 1)); if (fri >= day0) fri.setDate(fri.getDate() - 7); fri.setHours(12, 0, 0, 0);
+      var b = null; try { b = getCurrentWeekBounds(fri); } catch (e) {}
+      if (!b) continue;
+      weeklyReviews.push({ id: 'demo_wr' + wk, demo: true, weekKey: b.weekKey, weekStart: b.weekStart.toISOString(), weekEnd: b.weekEnd.toISOString(),
+        bestTrade: { notes: wk === 1 ? 'Waited for the sweep instead of chasing the open. That patience is the edge.' : 'Took the London sweep exactly as written in the playbook.' },
+        missedTrade: { tvLinks: [] }, outOfSession: [],
+        reflectionFocusNext: wk === 1 ? 'No breakout trades against the daily bias.' : 'Stop trading after two losses in a session.',
+        reflectionWentWell: wk === 1 ? 'Followed the plan on every London sweep and respected the daily stop.' : 'Kept risk at 0.5% on every trade.',
+        reflectionLearned: wk === 1 ? 'My best trades come in the first 90 minutes. After that I force it.' : 'Breakouts without a retest cost me more than they make.',
+        savedAt: new Date(fri.getTime() + 86400000).toISOString() });
+    }
+    var dayNotes = {}, iso = function (x) { return x.getFullYear() + '-' + p2(x.getMonth() + 1) + '-' + p2(x.getDate()); };
+    var lossDay = trades.filter(t => t.result === 'Lose').pop(), winDay = trades.filter(t => t.result === 'Win').pop();
+    if (winDay) dayNotes[iso(new Date(winDay.date))] = { demo: true, notes: 'Asia low swept at 08:20, waited for the 5m shift and took the long. Best execution of the week - no rush, no second-guessing.', tvLinks: [] };
+    if (lossDay) dayNotes[iso(new Date(lossDay.date))] = { demo: true, notes: 'Took a breakout before the retest. The setup was not there yet. Next time: wait for the retest or skip it.', tvLinks: [] };
+    return { account: account, trades: trades, playbooks: playbooks, weeklyReviews: weeklyReviews, dayNotes: dayNotes };
+  }
+  function stDemoSeed(d) {
+    if (!d || d.demo || d.demoDone) return false;
+    var b = stDemoBuild(new Date());
+    if (!Array.isArray(d.accounts)) d.accounts = [];
+    d.accounts.push(b.account);
+    d.currentSeries = (d.currentSeries || []).concat(b.trades);
+    if (!Array.isArray(d.playbooks)) d.playbooks = [];
+    b.playbooks.forEach(p => { if (!d.playbooks.some(x => x && String(x.name).toLowerCase() === p.name.toLowerCase())) d.playbooks.push(p); });
+    if (!Array.isArray(d.weeklyReviews)) d.weeklyReviews = [];
+    b.weeklyReviews.forEach(r => d.weeklyReviews.push(r));
+    if (!d.dayNotes || typeof d.dayNotes !== 'object') d.dayNotes = {};
+    Object.keys(b.dayNotes).forEach(k => { if (!d.dayNotes[k]) d.dayNotes[k] = b.dayNotes[k]; });
+    d.demo = { accId: 'demo_acc', seededAt: new Date().toISOString(), v: 1, prevScope: d.viewScope || null };
+    if (d.viewScope && d.viewScope !== 'lifetime') d.viewScope = 'lifetime';   // the example has to be in view
+    return true;
+  }
+  // Is this journal still empty - nothing the member made yet?
+  function stDemoEmptyJournal(d) {
+    if (!d) return false;
+    if ((d.currentSeries || []).length || (d.history || []).some(x => x && (x.trades || []).length)) return false;
+    if ((d.weeklyReviews || []).length || (d.monthlyReviews || []).length) return false;
+    if (d.mt5LoginMap && Object.keys(d.mt5LoginMap).length) return false;
+    if ((d.accounts || []).some(a => a && (parseFloat(a.startingBalance) || 0) > 0)) return false;
+    var rv = d.review && Array.isArray(d.review.trades) ? d.review.trades.filter(t => t && t.result) : [];
+    return !rv.length;
+  }
+  try {
+    window.__stDemo = {
+      has: function () { try { return !!(data && data.demo); } catch (e) { return false; } },
+      isTrade: stDemoIsTrade, strip: stDemoStrip, needsStrip: stDemoNeedsStrip, build: stDemoBuild,
+      // The banner's buttons: take the example out now, then (setup) open the account setup.
+      remove: function (setup) {
+        try {
+          if (!stDemoStrip(data, 'button')) return;
+          saveData();
+          stDemoAfter(true);
+          if (setup) setTimeout(function () {
+            var opened = false;
+            try { if (typeof window.__stMaybeOnboard === 'function') { window.__stMaybeOnboard(); var ob = document.getElementById('onboarding-modal-bg'); opened = !!(ob && ob.classList.contains('show')); } } catch (e) {}
+            if (!opened) { try { var g = document.getElementById('settings-gear'); if (g) g.click(); setTimeout(function () { var nv = document.querySelector('.settings-nav-item[data-section="accounts"]'); if (nv) nv.click(); }, 200); } catch (e) {} }
+          }, 350);
+        } catch (e) {}
+      }
+    };
+  } catch (e) {}
+  // After the example goes: redraw everything, say so once.
+  function stDemoAfter(tell) {
+    setTimeout(function () {
+      try { if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {}
+      try { stDemoBar(); } catch (e) {}
+      if (tell) { try { showToast(window._stT('Example journal removed - everything here is yours now.', 'Diario de ejemplo eliminado: todo lo que ves aquí es tuyo.'), { duration: 4000 }); } catch (e) {} }
+    }, 0);
+  }
+  // Early in a month the example's current month is nearly empty: open the Calendar on last month instead, once.
+  var _stDemoCalSet = false;
+  function stDemoCalMonth() {
+    if (_stDemoCalSet || !data || !data.demo) return;
+    _stDemoCalSet = true;
+    try {
+      var now = new Date(), n = 0;
+      getAllLifetimeTrades().forEach(t => { if (stDemoIsTrade(t)) { var d = new Date(t.date); if (d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth()) n++; } });
+      if (n >= 8 || calendarMonth !== now.getMonth() || calendarYear !== now.getFullYear()) return;
+      var prev = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      calendarMonth = prev.getMonth(); calendarYear = prev.getFullYear();
+    } catch (e) {}
+  }
+  // The bar under the tabs while the example is showing.
+  function stDemoBar() {
+    var on = false; try { on = !!(data && data.demo) && !window.__MV; } catch (e) {}
+    var bar = document.getElementById('st-demo-bar');
+    if (!on) { if (bar) bar.remove(); return; }
+    var tabs = document.querySelector('.tabs'); if (!tabs) return;
+    var T = function (en, es) { try { return window._stT(en, es); } catch (e) { return en; } };
+    if (!bar) {
+      bar = document.createElement('div'); bar.id = 'st-demo-bar'; bar.setAttribute('role', 'status');
+      tabs.parentNode.insertBefore(bar, tabs.nextSibling);
+      bar.addEventListener('click', function (e) {
+        var b = e.target.closest && e.target.closest('[data-demo-act]'); if (!b) return;
+        window.__stDemo.remove(b.getAttribute('data-demo-act') === 'setup');
+      });
+    }
+    var html = '<div class="stdb-txt"><span class="stdb-k">' + T('EXAMPLE JOURNAL', 'DIARIO DE EJEMPLO') + '</span><span>'
+      + T('Six weeks of sample trades so you can see the app at work. It disappears when you set up your own account.', 'Seis semanas de operaciones de muestra para que veas la app en acción. Desaparece cuando configuras tu propia cuenta.')
+      + '</span></div><div class="stdb-act"><button type="button" class="stdb-go" data-demo-act="setup">' + T('Set up my account', 'Configurar mi cuenta') + '</button>'
+      + '<button type="button" class="stdb-x" data-demo-act="remove">' + T('Remove the example', 'Quitar el ejemplo') + '</button></div>';
+    if (bar.getAttribute('data-h') !== html) { bar.innerHTML = html; bar.setAttribute('data-h', html); }
+  }
+  // Seed once the account's journal is in and has been settled for a few seconds, for a trial member with nothing yet.
+  (function () {
+    var since = 0, tries = 0, timer = null;
+    function tick() {
+      tries++;
+      try {
+        try { stDemoBar(); stDemoCalMonth(); } catch (e) {}
+        if (window.__MV || !window.currentUser || !window.currentUser.id) return;
+        if (!window.__stJournalPulled) { since = 0; return; }
+        if (!since) { since = Date.now(); return; }
+        if (Date.now() - since < 4000) return;
+        var pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
+        if (!pl || !pl.loaded) return;
+        if (pl.paid || data.demo || data.demoDone || !stDemoEmptyJournal(data)) { stop(); return; }
+        if (stDemoSeed(data)) {
+          try { rebuildSeriesByDate(); } catch (e) {} try { syncEffectiveStartingBalance(); } catch (e) {} saveData();
+          try { stDemoCalMonth(); } catch (e) {} stDemoAfter(false);
+          // The account setup can wait: the banner's Set up my account brings it back.
+          try { var _ob = document.getElementById('onboarding-modal-bg'); if (_ob && _ob.classList.contains('show')) _ob.classList.remove('show'); } catch (e) {}
+        }
+        stop();
+      } catch (e) {}
+      if (tries > 150) stop();
+    }
+    function stop() { if (timer) { clearInterval(timer); timer = null; } try { stDemoBar(); } catch (e) {} }
+    function boot() { timer = setInterval(tick, 2000); }
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot); else boot();
+    try { window.__stDemoTick = tick; } catch (e) {}
+  })();
+
   function migrate(d) {
     if (!d.defaults) d.defaults = { risk: '', costs: '' };
     if (!d.settings) d.settings = { beThreshold: 10 };
@@ -15331,6 +15588,8 @@ try {
       (d.history || []).forEach(s => (s.trades || []).forEach(tr => { if (!tr.accountId) tr.accountId = defaultAccId; }));
       d._tradeAccountIdBackfillV2 = true;
     }
+    // The example journal: gone once the member has started their own (see stDemoStrip); a mentor never sees it.
+    try { if (window.__MV ? (d.demo || stDemoHasItems(d)) : stDemoNeedsStrip(d)) stDemoStrip(d, 'load'); } catch (e) {}
     return d;
   }
 
@@ -15862,7 +16121,7 @@ try {
     const btnLbl = document.getElementById('logto-picker-label');
     const menu = document.getElementById('logto-picker-menu');
     if (!wrap || !btnLbl || !menu) return;
-    const activeAccounts = (data.accounts || []).filter(a => a.status === 'active');
+    const activeAccounts = (data.accounts || []).filter(a => a.status === 'active' && !a.demo);   // never log a real trade to the example
     const groups = usableGroups();   // a group with fewer than 2 active members is not a group
     // Trivial case: no active accounts — hide entirely.
     if (activeAccounts.length === 0) {
@@ -16798,6 +17057,8 @@ try {
   const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + '~v2';
   function saveData() {
     if (window.__MV) return;                  // mentor view is read-only — never persist
+    // The example journal ends the moment the member's own journal begins (a balance, MT5, a trade of their own).
+    try { if (stDemoNeedsStrip(data)) { var _wasDemo = !!data.demo; stDemoStrip(data, 'save'); stDemoAfter(_wasDemo); } } catch (e) {}
     try { _syncIdeaReviews(); } catch (e) {}  // trade copier: an idea's review is filled once, on any of its copies
     syncTopLevelToActiveAccount();
     try {
@@ -18817,7 +19078,7 @@ try {
       var out = {}, since = Date.now() - 4 * 86400000, all = [];
       try { all = getAllLifetimeTrades(); } catch (e) { return null; }
       (data.accounts || []).forEach(function (acc) {
-        if (!acc || !acc.id || acc.status === 'archived') return;
+        if (!acc || !acc.id || acc.status === 'archived' || acc.demo) return;
         var st = null; try { st = window.__stAccountStats ? window.__stAccountStats(acc) : null; } catch (e) {}
         if (!st) return;
         var tk = {};
@@ -37484,7 +37745,9 @@ try {
   // ===================================================================
   function onboardingComplete() {
     const nameSet = !!getName();
-    const sb = data.settings && data.settings.startingBalance;
+    // The example account's 100K and trades are not the member's: judge their own accounts only.
+    const sb = data.demo ? (data.accounts || []).filter(a => a && !a.demo && a.status === 'active').reduce((x, a) => x + (parseFloat(a.startingBalance) || 0), 0)
+                         : (data.settings && data.settings.startingBalance);
     const balanceDone = (sb !== null && sb !== undefined && sb !== '' && Number(sb) > 0) || data._balanceSkipped;
     const sessionDone = !!data._sessionPrompted;
     let riskDone = !!data._riskRulesPrompted;
@@ -37492,11 +37755,12 @@ try {
       // Replicate the old existing-user guards: anyone with trades or
       // pre-existing rules is past the onboarding moment — mark done so we
       // never re-onboard a returning install.
-      const hasTrades = (Array.isArray(data.currentSeries) && data.currentSeries.length > 0)
-        || (Array.isArray(data.history) && data.history.some(h => Array.isArray(h.trades) && h.trades.length > 0));
+      const hasTrades = (Array.isArray(data.currentSeries) && data.currentSeries.some(t => !stDemoIsTrade(t)))
+        || (Array.isArray(data.history) && data.history.some(h => Array.isArray(h.trades) && h.trades.some(t => !stDemoIsTrade(t))));
       const eg = (data.settings && data.settings.riskRules) || {};
       const hasGlobalRules = eg.maxLossPct > 0 || eg.maxLossAmount > 0 || eg.maxRiskPct > 0 || eg.maxRiskAmount > 0 || eg.maxTrades > 0;
       const hasPerAcc = (Array.isArray(data.accounts) ? data.accounts : []).some(a => {
+        if (a && a.demo) return false;
         const r = a.riskRules || {};
         return r.maxLossPct > 0 || r.maxLossAmount > 0 || r.maxRiskPct > 0 || r.maxRiskAmount > 0 || r.maxTrades > 0;
       });
@@ -37505,6 +37769,7 @@ try {
     return nameSet && balanceDone && sessionDone && riskDone;
   }
   try { window.__stOnboardingComplete = onboardingComplete; } catch (e) {}
+  try { window.__stMaybeOnboard = function () { maybePromptForOnboarding(); }; } catch (e) {}
   function updateOnboardSessionHint() {
     const inp = document.getElementById('onboard-session');
     const hint = document.getElementById('onboard-session-hint');
@@ -37526,6 +37791,7 @@ try {
     // The sessionStorage check keeps the suppression robust across a mid-flow reload.
     if (window.__welcomePending) return;
     try { if (sessionStorage.getItem('st_show_welcome') === '1') return; } catch (e) {}
+    if (data.demo) return;   // exploring the example journal: the banner's Set up my account opens this
     if (onboardingComplete()) return;
     const modal = document.getElementById('onboarding-modal-bg');
     if (!modal) return;
@@ -46832,6 +47098,9 @@ try {
               return out;
             } catch (e) { return null; }
           })(),
+          // The example journal (3 Oct 2026): the trades, the 100K challenge, the playbooks and weekend reviews are sample
+          // data a new trial member starts with - it goes when they set up their own account.
+          exampleJournal: (data && data.demo) ? true : undefined,
           // Every payout on every account (archived included), so "how much have I been paid"
           // is answered from the list rather than guessed. fromAccount moved the balance; toYou
           // is the trader's share.
@@ -49288,7 +49557,7 @@ try {
       var _tsel = document.getElementById('mt5-target-account');
       var _tnote = document.getElementById('mt5-target-note');
       if (_tsel) {
-        var _live = (data.accounts || []).filter(function (a) { return a && a.status === 'active'; });
+        var _live = (data.accounts || []).filter(function (a) { return a && a.status === 'active' && !a.demo; });
         // Which broker login(s) is this batch from? Trades carry it once the EA is on a build that
         // sends it. One login that we have filed before picks its own destination; a batch spanning
         // two logins is not something to guess at, so it says so and imports nothing until split.
@@ -51924,7 +52193,7 @@ try {
         try {
           var __pl = (typeof window.__stPlan === 'function') ? window.__stPlan() : null;
           if (__pl && __pl.loaded && !__pl.paid) {
-            var __activeN = (Array.isArray(data.accounts) ? data.accounts : []).filter(function (a) { return a && a.status !== 'archived'; }).length;
+            var __activeN = (Array.isArray(data.accounts) ? data.accounts : []).filter(function (a) { return a && a.status !== 'archived' && !a.demo; }).length;
             if (__activeN >= 1) {
               var __es = (window.__lang === 'es');
               var __t = __es ? 'Una cuenta en la prueba' : 'One account on the trial';
@@ -56531,6 +56800,12 @@ try {
       bodyEs=(bodyEs==null?'':String(bodyEs).trim());
       return new Promise(function(resolve, reject){
         if(!body){ reject(new Error('empty')); return; }
+        // The example journal's series, weekend reviews, playbooks and challenge are sample data: not for the community.
+        try{ var _jd = window.STCloud && window.STCloud.getData ? window.STCloud.getData() : null;
+          if(_jd && _jd.demo && /^(series-of-10|weekend-review|playbooks|prop-firm-passes)/.test(slug)){
+            try{ window.stCenterNote(window._stT('This is the example journal, so it stays here. Set up your own account and you can post your own.', 'Este es el diario de ejemplo, así que se queda aquí. Configura tu propia cuenta y podrás publicar lo tuyo.')); }catch(e){}
+            reject(new Error('example')); return;
+          } }catch(e){}
         function matchSlug(c){ var s=(c.slug||'').toLowerCase(); if(s===slug) return true; var nm=String(c.name||''); var sp=nm.indexOf(' '); return (sp>0?nm.slice(sp+1):nm).toLowerCase()===slug; }
         function withUser(uid){
           /* Through st_post_review, not a plain INSERT. cm_insert enforces post_policy, so with
@@ -69225,7 +69500,9 @@ try {
     // has never held real content (peak 0); the destructive-write guard below protects a full cloud.
     var _hasIdentity = !!(d && ((d.userName && String(d.userName).trim()) || d._sessionPrompted || d._riskRulesPrompted || d._balanceSkipped));
     var _neverHadContent = (peakLocalScore == null || peakLocalScore === 0);
-    if (lScore === 0 && !(_hasIdentity && _neverHadContent)) { accStatus(tt('synced')); return; }
+    // The example journal just left (stDemoStrip): the cloud still holds it, so this upload must go even if it scores 0.
+    var _demoGone = !!(d && d.demoDone && (Date.now() - d.demoDone) < 30 * 60000);
+    if (lScore === 0 && !(_hasIdentity && _neverHadContent) && !_demoGone) { accStatus(tt('synced')); return; }
     // Track the most journal content this session's LOCAL copy has held, and measure any
     // shrink against THAT high-water mark — never against the cloud. This is what tells a
     // deliberate deletion apart from a degraded load: a device that simply loads small
@@ -69289,6 +69566,11 @@ try {
         }
         var removed = contentScore(cloud) - lScore;
         var removedTrades = tradeCount(cloud) - tradeCount(d);   // actual trades being removed (for the message)
+        // A drop that is exactly the example journal leaving: compare against the cloud with its example taken out.
+        if (removed >= 2 && _demoGone && cloud && (cloud.demo || (window.__stDemo && window.__stDemo.needsStrip(cloud)))) {
+          try { var _cc = JSON.parse(JSON.stringify(cloud)); window.__stDemo.strip(_cc, 'guard');
+            if (contentScore(_cc) - lScore < 2) { peakLocalScore = lScore; doCloudUpsert(d, _gUat); return; } } catch (e) {}
+        }
         if (removed >= 2) {
           // The upload would remove 2+ items the cloud still holds.
           // If the drop is fully explained by deletions the trader made THIS session (each one
@@ -71715,7 +71997,15 @@ try {
   function _pv(name){
     var T=_t;
     var spark='<svg class="stt-spark" viewBox="0 0 300 64" preserveAspectRatio="none" aria-hidden="true"><defs><linearGradient id="stt-g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4ECD8B" stop-opacity=".35"/><stop offset="1" stop-color="#4ECD8B" stop-opacity="0"/></linearGradient></defs><path d="M0 54 L30 48 L60 52 L90 37 L120 41 L150 28 L180 32 L210 19 L240 24 L270 11 L300 7 L300 64 L0 64Z" fill="url(#stt-g)"/><path d="M0 54 L30 48 L60 52 L90 37 L120 41 L150 28 L180 32 L210 19 L240 24 L270 11 L300 7" fill="none" stroke="#4ECD8B" stroke-width="2.5" vector-effect="non-scaling-stroke"/></svg>';
-    if(name==='welcome') return '<div class="stt-k">'+T('YOUR JOURNAL, A FEW WEEKS IN','TU DIARIO, UNAS SEMANAS DESPUÉS')+'</div><div class="stt-big g">+£4,862</div><div class="stt-row"><span class="g">38 '+T('trades','operaciones')+'</span><span>6 '+T('weeks','semanas')+'</span><span class="g">+9.7R</span></div>'+spark;
+    if(name==='welcome'){
+      // With the example journal: its own figures, so the card matches what the app shows next.
+      var nT=38, mon='+£4,862', rr='+9.7R';
+      try{ var D=window.STCloud&&window.STCloud.getData?window.STCloud.getData():null;
+        if(D&&D.demo){ var tr=[]; (D.currentSeries||[]).forEach(function(t){ if(t&&t.demo) tr.push(t); }); (D.history||[]).forEach(function(x){ (x&&x.trades||[]).forEach(function(t){ if(t&&t.demo) tr.push(t); }); });
+          if(tr.length){ var net=0, R=0; tr.forEach(function(t){ var g=(parseFloat(t.actualGross)||0)-Math.abs(parseFloat(t.costs)||0); net+=g; R+=g/(parseFloat(t.risk)||1); });
+            nT=tr.length; mon=(typeof fmtMoney==='function')?fmtMoney(net):((net>=0?'+':'\u2212')+'£'+Math.round(Math.abs(net))); rr=(R>=0?'+':'\u2212')+Math.abs(R).toFixed(1)+'R'; } } }catch(e){}
+      return '<div class="stt-k">'+T('YOUR JOURNAL, A FEW WEEKS IN','TU DIARIO, UNAS SEMANAS DESPUÉS')+'</div><div class="stt-big g">'+mon+'</div><div class="stt-row"><span class="g">'+nT+' '+T('trades','operaciones')+'</span><span>6 '+T('weeks','semanas')+'</span><span class="g">'+rr+'</span></div>'+spark;
+    }
     if(name==='bias') return '<div class="stt-k">EUR/USD · LONDON</div><div class="stt-chips"><span class="stt-chip g">'+T('Bullish','Alcista')+'</span><span class="stt-chip">'+T('Structure: bullish','Estructura: alcista')+'</span><span class="stt-chip">'+T('In discount','En descuento')+'</span></div><div class="stt-note">'+T('Asia low swept. Looking for longs from the 1H gap, target the previous day high.','Mínimo de Asia barrido. Busco largos desde el hueco de 1H, objetivo el máximo de ayer.')+'</div><div class="stt-pill">'+T('Post to community','Publicar en la comunidad')+'</div>';
     if(name==='live'){
       var C=[[80,70,66,84],[70,76,67,80],[76,64,60,79],[64,58,53,67],[58,66,55,69],[66,55,51,68],[55,48,44,58],[48,55,45,58],[55,46,42,57],[46,40,35,49],[40,47,37,50],[47,42,38,50]], k='', i;
@@ -71779,7 +72069,8 @@ try {
       }
     }catch(e){}
   }
-  function finish(){ done(); closeSettings(); close(); }
+  // Done or Skip: back to where the day starts - Session Bias, at the top - with Statistics put back on Overview (3 Oct 2026).
+  function finish(){ done(); closeSettings(); close(); try{ var o=document.querySelector('.stx-tab[data-stx="overview"]'); if(o) o.click(); var b=document.querySelector('.tab[data-page="bias"]'); if(b) b.click(); window.scrollTo(0,0); }catch(e){} }
   function close(){ try{ document.body.classList.remove('st-tour-on'); }catch(e){} if(ov){ ov.remove(); ov=null; } try{ window.removeEventListener('resize', reflow); window.removeEventListener('scroll', reflow, true); }catch(e){} }
   function reflow(){ if(ov) render(); }
   function target(){
@@ -75231,7 +75522,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function dayKey(d){ d = new Date(d); return d.getFullYear() + '-' + ('0'+(d.getMonth()+1)).slice(-2) + '-' + ('0'+d.getDate()).slice(-2); }
   function candidates(){
     var d = D(); if(!d || !Array.isArray(d.accounts)) return [];
-    return d.accounts.filter(function(a){ return a && a.status === 'active' && a.kind !== 'personal' && !funded(a); });
+    return d.accounts.filter(function(a){ return a && a.status === 'active' && a.kind !== 'personal' && !funded(a) && !a.demo; });
   }
   // The account's trades, as computeAccountStats picks them: tagged to it, or untagged and dated after it was made.
   function tradesOf(acc){
@@ -75549,6 +75840,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var recent = function(key){ if(!key) return false; var d = new Date(dayKey(key) + 'T12:00:00'); var n = Math.round((today - d) / 86400000); return n >= 0 && n <= 2; };
     var d = D(); if(!d || !Array.isArray(d.accounts)) return out;
     d.accounts.forEach(function(a){
+      if(a && a.demo) return;   // the example journal's challenge is not news
       var s = propStatus(a); if(!s) return;
       if(s.status === 'failed' && recent(s.failedOn)) out.push({ kind: 'failed', on: s.failedOn, s: s });
       else if(s.status === 'passed' && recent(s.passedOn)) out.push({ kind: 'passed', on: s.passedOn, s: s });
@@ -76083,7 +76375,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var d = D(); if(!d || !Array.isArray(d.accounts)) return null;
     var seen = (d.failSeen && typeof d.failSeen === 'object') ? d.failSeen : {}, today = new Date(), hit = null; today.setHours(12, 0, 0, 0);
     d.accounts.some(function(a){
-      if(!a || a.kind === 'personal' || seen[a.id]) return false;
+      if(!a || a.kind === 'personal' || seen[a.id] || a.demo) return false;
       var s = propStatus(a); if(!s || s.status !== 'failed' || !s.review) return false;
       var n = Math.round((today - new Date(s.failedOn + 'T12:00:00')) / 86400000);
       if(n < 0 || n > 7) return false;

@@ -37,6 +37,11 @@
 -- allowed 2 trades and had been held to the 70K's 1).
 -- ═══════════════════════════════════════════════════════════════════════════
 
+-- 2026-10-03 (EXAMPLE JOURNAL): every read of `journals` goes through public.st_journal_nodemo(data), which
+-- drops a new trial member's example journal (data.demo; the example account, its trades and series, its
+-- weekly/monthly reviews) so sample data can never score. A journal without data.demo comes back untouched;
+-- the board was fingerprinted before and after the change (57 rows, md5 identical). Needs st_journal_nodemo.sql.
+--
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
  RETURNS void
  LANGUAGE plpgsql
@@ -90,7 +95,7 @@ begin
           '10:00'
         )::time as sess_end,
         j.data -> 'sessionEndLog' as end_log
-      from journals j
+      from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
     ),
     accts as (
       select
@@ -103,7 +108,7 @@ begin
           0
         ) as balance,
         coalesce(a.obj -> 'riskRules', j.data -> 'settings' -> 'riskRules', '{}'::jsonb) as rr
-      from journals j
+      from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
       cross join lateral jsonb_array_elements(coalesce(j.data -> 'accounts', '[]'::jsonb)) a(obj)
       where coalesce(a.obj ->> 'status', 'active') = 'active'
       union all
@@ -112,7 +117,7 @@ begin
         '{}'::jsonb,
         coalesce(nullif((j.data -> 'settings' ->> 'startingBalance'), '')::numeric, 0),
         coalesce(j.data -> 'settings' -> 'riskRules', '{}'::jsonb)
-      from journals j
+      from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
       where jsonb_array_length(coalesce(j.data -> 'accounts', '[]'::jsonb)) = 0
     ),
     per_acct as (
@@ -216,7 +221,7 @@ begin
                  0
                ) as balance,
                coalesce(a.obj -> 'riskRules', j.data -> 'settings' -> 'riskRules', '{}'::jsonb) as rr
-        from journals j
+        from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
         cross join lateral jsonb_array_elements(coalesce(j.data -> 'accounts', '[]'::jsonb)) a(obj)
         where jsonb_typeof(a.obj) = 'object' and nullif(a.obj ->> 'id', '') is not null
       ) x
@@ -226,7 +231,7 @@ begin
       select distinct on (z.user_id, z.ticket) z.user_id, z.ticket, z.acc_id
       from (
         select j.user_id, e.value ->> 'mt5Ticket' as ticket, e.value ->> 'accountId' as acc_id, 1 as pri
-          from journals j
+          from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
           cross join lateral (
             select tt.value
               from jsonb_array_elements(coalesce(j.data -> 'history','[]'::jsonb)) s
@@ -240,7 +245,7 @@ begin
            and nullif(e.value ->> 'accountId', '') is not null
         union all
         select j.user_id, i.ticket::text, mp.value, 2
-          from journals j
+          from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
           join trades_inbox i on i.token::text = j.user_id::text and i.login is not null
           join lateral jsonb_each_text(case when jsonb_typeof(j.data -> 'mt5LoginMap') = 'object'
                                             then j.data -> 'mt5LoginMap' else '{}'::jsonb end) mp
@@ -259,7 +264,7 @@ begin
              (e.value ->> 'mt5Ticket')                    as ticket,
              max(nullif(e.value ->> 'risk','')::numeric)  as risk_j,
              max(nullif(e.value ->> 'sl','')::numeric)    as sl_j
-      from journals j
+      from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
       cross join lateral (
         select tt.value
           from jsonb_array_elements(coalesce(j.data -> 'history','[]'::jsonb)) s
@@ -333,7 +338,7 @@ begin
                (case when (tr.v ->> 'sl') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'sl')::numeric end) as sl,
                (case when (tr.v ->> 'costs') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'costs')::numeric end) as costs,
                (case when (tr.v ->> 'actualGross') ~ '^\s*[-+]?([0-9]+\.?[0-9]*|\.[0-9]+)\s*$' then (tr.v ->> 'actualGross')::numeric end) as gross_a
-        from journals j
+        from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
         cross join lateral (
           select case when exists (select 1 from pg_timezone_names n where n.name = nullif(j.data -> 'settings' ->> 'tz', ''))
                       then j.data -> 'settings' ->> 'tz' else 'Europe/London' end as tz
@@ -697,7 +702,7 @@ begin
              (s.value->>'date')::timestamptz as closed_at,
              row_number() over (partition by j.user_id
                                 order by (s.value->>'date')::timestamptz) as series_no
-      from journals j
+      from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
       cross join lateral jsonb_array_elements(coalesce(j.data->'history','[]'::jsonb)) s
       where jsonb_array_length(coalesce(s.value->'trades','[]'::jsonb)) = 10
         and (s.value->>'date') ~ '^\d{4}-\d{2}-\d{2}'
@@ -738,7 +743,7 @@ begin
         j.user_id,
         (kv.key)::date as monday,
         array(select x::int from jsonb_array_elements_text(kv.value) x) as days
-      from journals j
+      from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
       cross join lateral jsonb_each(coalesce(j.data -> 'weeklyCommitments', '{}'::jsonb)) kv
       where jsonb_typeof(kv.value) = 'array'
         and jsonb_array_length(kv.value) >= 2
