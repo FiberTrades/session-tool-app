@@ -712,6 +712,29 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-risk-input-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .settings-risk-input-row .settings-input { max-width: 120px; padding: 8px 10px; }
   .settings-risk-suffix { font-size: 11px; color: var(--text-dim); letter-spacing: 0.05em; white-space: nowrap; }
+  /* Settings, the TradeZella treatment (Nestor, 3 Oct 2026: "i like the new style of settings but keep the settings tabs
+     above where they are now"): the tabs stay on top; Profile, Session and Risk rules become one card each, every
+     setting a row - its name and explanation on the left, the control on the right (stSettingsRows builds the rows). */
+  #settings-modal-bg .modal { max-width: 900px !important; }
+  #settings-modal-bg .modal-title { font-family: 'Inter', system-ui, sans-serif; font-size: 22px; font-weight: 600; letter-spacing: -0.01em; }
+  #settings-modal-bg .modal-close { width: 32px; height: 32px; padding: 0; border-radius: 50%; display: inline-flex; align-items: center; justify-content: center; }
+  #settings-modal-bg .settings-section.set-cardsec { border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-elev); padding: 6px 22px 8px; margin-top: 16px; }
+  #settings-modal-bg .set-cardsec > .settings-hint, #settings-modal-bg .set-cardsec .set-block > .settings-hint { font-family: 'Inter', system-ui, sans-serif; font-size: 12.5px; line-height: 1.6; color: var(--text-dim); margin: 14px 0 !important; }
+  #settings-modal-bg .set-row { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: 28px; padding: 16px 0; border-top: 1px solid var(--border); align-items: start; }
+  #settings-modal-bg .set-cardsec > .set-row:first-child, #settings-modal-bg .set-cardsec > .set-block:first-child > .set-row:first-child { border-top: 0; }
+  #settings-modal-bg .set-row.set-row-solo { grid-template-columns: minmax(0, 1fr); }
+  #settings-modal-bg .set-row.set-row-solo .set-r:empty { display: none; }
+  #settings-modal-bg .set-block { margin: 0 !important; padding: 0 !important; border: 0 !important; }
+  #settings-modal-bg .set-l .settings-label, #settings-modal-bg .set-l label.settings-label { font-family: 'Inter', system-ui, sans-serif; font-size: 13px; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--text); margin: 0 !important; display: block; }
+  #settings-modal-bg .set-l .settings-risk-label-row { margin: 0 !important; }
+  #settings-modal-bg .set-l .settings-hint, #settings-modal-bg .set-l .settings-parsed-hint { font-family: 'Inter', system-ui, sans-serif; font-size: 12px; line-height: 1.55; color: var(--text-dim); margin: 6px 0 0 !important; }
+  #settings-modal-bg .set-r { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
+  #settings-modal-bg .set-r > * { margin-top: 0 !important; max-width: 100%; }
+  #settings-modal-bg .set-r .settings-pref-row { margin: 0; }
+  @media (max-width: 560px) {
+    #settings-modal-bg .settings-section.set-cardsec { padding: 4px 14px 6px; }
+    #settings-modal-bg .set-row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; }
+  }
   .settings-risk-mode-toggle { display: inline-flex; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); overflow: hidden; height: 22px; }
   .settings-risk-mode-btn { background: transparent; border: none; color: var(--text-dim); padding: 0 12px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; cursor: pointer; transition: background 150ms, color 150ms; min-width: 32px; }
   .settings-risk-mode-btn:hover:not(.active) { background: rgba(255,255,255,0.06); color: var(--text); }
@@ -50062,6 +50085,45 @@ try {
     if (!gear || !modal) return;
 
     // --- Open / close
+    // Settings rows (TradeZella treatment, Nestor 3 Oct 2026): in Profile, Session and Risk rules each setting becomes one
+    // row - the label and its explanation on the left, its controls on the right. Built from the existing markup when
+    // Settings opens; elements only move into wrappers, so every id and handler stays. Runs again on every open and only
+    // groups what is still loose, so blocks other code adds later (profile picture, sign-in) join on the next open.
+    // A wrapper holding labelled settings (a hidden-until-needed block) keeps its place and gets rows inside it.
+    function stSettingsRows() {
+      const isLabel = el => el.matches('label.settings-label, div.settings-label, .settings-risk-label-row');
+      const isHint = el => el.matches('p.settings-hint, .settings-parsed-hint');
+      const newRow = (box, before, solo) => {
+        const row = document.createElement('div'), l = document.createElement('div'), r = document.createElement('div');
+        row.className = 'set-row' + (solo ? ' set-row-solo' : ''); l.className = 'set-l'; r.className = 'set-r';
+        row.appendChild(l); row.appendChild(r); box.insertBefore(row, before);
+        return { row, l, r };
+      };
+      const group = box => {
+        let cur = null;
+        Array.from(box.children).forEach(el => {
+          if (el.classList.contains('set-row') || el.tagName === 'SCRIPT' || el.tagName === 'STYLE') { cur = null; return; }
+          if (isLabel(el)) {
+            cur = newRow(box, el, false); cur.l.appendChild(el);
+            const tg = el.querySelector('.settings-risk-mode-toggle'); if (tg) cur.r.appendChild(tg);
+            return;
+          }
+          if (el.tagName === 'DIV' && el.querySelector('.settings-label')) { group(el); el.classList.add('set-block'); cur = null; return; }
+          if (el.matches('label.tk-switch') && cur && cur.r.children.length) cur = null;
+          if (!cur) {
+            if (el.matches('label.tk-switch')) { cur = newRow(box, el, true); cur.l.appendChild(el); }
+            return;   // intro text above the first setting stays as it is
+          }
+          (isHint(el) ? cur.l : cur.r).appendChild(el);
+        });
+      };
+      ['profile', 'session', 'risk_rules'].forEach(k => {
+        const sec = document.querySelector('#settings-modal-bg .settings-section[data-section="' + k + '"]');
+        if (sec) { sec.classList.add('set-cardsec'); group(sec); }
+      });
+    }
+    window.__stSettingsRows = stSettingsRows;
+
     function openSettings() {
       // Pre-fill all inputs with current state.
       // The admin 'refresh everyone' control lives in this Profile section, so paint it
@@ -50212,6 +50274,7 @@ try {
       loadRiskRulesIntoSettingsInputs();
       try { if (window.__stNudgeSettingsLoad) window.__stNudgeSettingsLoad(); } catch (e) {}
       try { if (window.__stRenderTimeOff) window.__stRenderTimeOff(document.getElementById('settings-timeoff')); } catch (e) {}
+      try { stSettingsRows(); } catch (e) {}
       modal.classList.add('show');
       // Always reopen scrolled to the very top — never resume the scroll position the
       // panel was left at when it was closed. Reset both scrollers (the .modal inner box
