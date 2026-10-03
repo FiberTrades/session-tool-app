@@ -56279,43 +56279,48 @@ try {
        "En rango", "Indecisa" - instead of the community translator's guess at the English,
        which came back as "Alcance" and "No estoy seguro". Free text inside the post is still
        machine-translated as before; only the terms the app owns stop being guessed at. */
-    /* The sound of a post going out (Nestor, 1 Oct 2026: "whenever we press one of the buttons to post something to
-       community can we hear a sound of a plane or something similar", then picked "Whoosh Bamboo" - SoundReality on
-       Pixabay, free for use - "the first 2 seconds"). Kept with the app, trimmed to its first 2.3 s (sounds/whoosh.mp3);
-       it plays its first 2 s, easing out over the last 0.3. Every Post to community button posts through
-       postToChannel, so this one place covers them all: Session Bias, Session Review, Series of 10, the weekly review,
-       a shared playbook and Challenge passed. Fetched as the post starts and played when it has gone - so it never
-       plays for a post that failed. The press itself has already woken the app's audio. */
+    /* The sound of a post going out. 1 Oct 2026: Nestor asked for "a sound of a plane or something similar" and picked
+       "Whoosh Bamboo" (a Pixabay file, sounds/whoosh.mp3). 3 Oct 2026: he asked for more choices, heard nine by ear and
+       picked "Air swoosh", which replaced it: a soft, airy swoosh built here with Web Audio (no file to fetch), 0.75 s -
+       white noise through a band-pass filter that sweeps 350 Hz -> 2.6 kHz in 0.32 s and settles to 1.5 kHz, swelling
+       in and dying away, panned left to right. Every Post to community button posts through postToChannel, so this one
+       place covers them all: Session Bias, Session Review, Series of 10, the weekly review, a shared playbook and
+       Challenge passed. It plays when the post has gone - never for a post that failed. The press itself has already
+       woken the app's audio. */
     var _sentSnd = (function(){
-      var buf = null, loading = null, own = null;
+      var own = null, noiseBuf = null;
       function ctx(){
         try{ if(typeof getAudioCtx === 'function'){ var g = getAudioCtx(); if(g) return g; } }catch(e){}
         try{ if(!own) own = new (window.AudioContext || window.webkitAudioContext)(); }catch(e){ own = null; }
         return own;
       }
-      function prime(){
-        if(buf) return Promise.resolve(buf);
-        if(loading) return loading;
-        loading = fetch('sounds/whoosh.mp3').then(function(r){ if(!r.ok) throw new Error('whoosh ' + r.status); return r.arrayBuffer(); })
-          .then(function(ab){ var c = ctx(); if(!c) throw new Error('no audio'); return new Promise(function(res, rej){ c.decodeAudioData(ab, function(b){ buf = b; res(b); }, rej); }); })
-          .catch(function(e){ loading = null; throw e; });
-        return loading;
+      function noise(c){
+        if(noiseBuf && noiseBuf.sampleRate === c.sampleRate) return noiseBuf;
+        var n = Math.floor(c.sampleRate * 0.8), b = c.createBuffer(1, n, c.sampleRate), d = b.getChannelData(0);
+        for(var i = 0; i < n; i++) d[i] = Math.random() * 2 - 1;
+        return (noiseBuf = b);
+      }
+      function swoosh(c){
+        var t = c.currentTime + 0.03, dur = 0.75, peak = 0.32;
+        var src = c.createBufferSource(), f = c.createBiquadFilter(), g = c.createGain(), m = c.createGain(), comp = c.createDynamicsCompressor();
+        src.buffer = noise(c);
+        f.type = 'bandpass'; f.Q.value = 1.1;
+        f.frequency.setValueAtTime(350, t); f.frequency.exponentialRampToValueAtTime(2600, t + peak); f.frequency.exponentialRampToValueAtTime(1500, t + dur);
+        g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.9, t + peak); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+        m.gain.value = 0.9;
+        src.connect(f); f.connect(g);
+        var out = g;
+        if(c.createStereoPanner){ var p = c.createStereoPanner(); p.pan.setValueAtTime(-0.7, t); p.pan.linearRampToValueAtTime(0.7, t + dur); g.connect(p); out = p; }
+        out.connect(m); m.connect(comp); comp.connect(c.destination);
+        src.start(t); src.stop(t + dur + 0.05);
       }
       function play(){
-        prime().then(function(b){
-          var c = ctx(); if(!c) return;
-          var go = function(){
-            try{
-              var sn = c.createBufferSource(), g = c.createGain(), t = c.currentTime;
-              g.gain.setValueAtTime(0.8, t); g.gain.setValueAtTime(0.8, t + 1.7); g.gain.linearRampToValueAtTime(0.0001, t + 2.0);
-              sn.buffer = b; sn.connect(g); g.connect(c.destination); sn.start(t, 0, 2.0);
-            }catch(e){}
-          };
-          if(c.state === 'running') go();
-          else { try{ var p = c.resume(); if(p && p.then) p.then(function(){ if(c.state === 'running') go(); }, function(){}); }catch(e){} }
-        }).catch(function(){});
+        var c = ctx(); if(!c) return;
+        var go = function(){ try{ swoosh(c); }catch(e){} };
+        if(c.state === 'running') go();
+        else { try{ var p = c.resume(); if(p && p.then) p.then(function(){ if(c.state === 'running') go(); }, function(){}); }catch(e){} }
       }
-      return { prime: function(){ try{ prime().catch(function(){}); }catch(e){} }, play: play };
+      return { prime: function(){ try{ var c = ctx(); if(c) noise(c); }catch(e){} }, play: play };
     })();
     try{ window.__stSentSound = _sentSnd; }catch(e){}
     function postToChannel(slug, body, bodyEs){
@@ -56345,7 +56350,7 @@ try {
                                                 sender_name:myName(), sender_avatar:myAvatar() };
                   try{ if(cur && cur.id===ch.id && typeof append==='function') append(_row); }catch(e){}
                   try{ _bumpBoardAfterPost(slug); }catch(e){}
-                  try{ _sentSnd.play(); }catch(e){}   // it has gone: whoosh
+                  try{ _sentSnd.play(); }catch(e){}   // it has gone: the swoosh
                   resolve(_row);
                 }, function(){
                   // Stored fine, just could not be read back - never fail a post over the echo.
