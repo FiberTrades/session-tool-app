@@ -25020,6 +25020,7 @@ try {
               good: '#4ECD8B', bad: '#E56767', be: '#6BA8E5', pink: '#f472b6' };
     var SERIF = '"Fraunces", Georgia, serif';
     var MONO  = '"AppNum", "DM Mono", ui-monospace, monospace';
+    var SANS  = '"Inter", system-ui, sans-serif';
 
     // The card is posted in public, so it follows the app language: an English member posts an
     // English card, a Spanish member a Spanish one. The wordmark and the URL stay as they are —
@@ -25100,12 +25101,21 @@ try {
         var names = Object.keys(hit).sort(function (a, b) { return hit[b] - hit[a]; });
         meta = names.join('  ·  ');
       } catch (e) {}
+      // Each trade in order for the strip of boxes, average win and loss for the expectancy bars,
+      // and how the best setup did (TradeZella-style card, Nestor 3 Oct 2026).
+      var ordered = tr.slice().sort(function (a, b) { return new Date(a.date || 0) - new Date(b.date || 0); });
+      var rs = ordered.map(function (x) { return { r: tradeRforMath(x), res: x.result === 'Win' ? 'W' : x.result === 'Lose' ? 'L' : 'BE' }; });
+      var wR = rs.filter(function (x) { return x.res === 'W'; }), lR = rs.filter(function (x) { return x.res === 'L'; });
+      var avgWin = wR.length ? wR.reduce(function (a, x) { return a + x.r; }, 0) / wR.length : 0;
+      var avgLoss = lR.length ? Math.abs(lR.reduce(function (a, x) { return a + x.r; }, 0) / lR.length) : 0;
+      var bestWins = bestSetup ? tr.filter(function (x) { return (x.setup && String(x.setup).trim()) === bestSetup && x.result === 'Win'; }).length : 0;
       return {
         num: sel.num, when: dateRange(sel), n: tr.length, w: st.w, l: st.l, be: st.be,
         netR: st.netR, money: money, pct: pct, cum: cum, sym: sym, meta: meta,
         wr: decided ? Math.round(st.w / decided * 100) : null,
         exp: tr.length ? st.netR / tr.length : 0,
-        bestSetup: bestSetup
+        bestSetup: bestSetup, bestR: bestSetup ? bestR : 0, bestWins: bestWins,
+        rs: rs, avgWin: avgWin, avgLoss: avgLoss
       };
     }
 
@@ -25167,102 +25177,119 @@ try {
       };
       var ls = function (px) { try { g.letterSpacing = px + 'px'; } catch (e) {} };
 
+      // The TradeZella-style card (Nestor, 3 Oct 2026, "I love the new card design!"): the R result as the hero, a strip
+      // of the ten trades with each one's R, the running R in its own panel with every trade marked by result, and four
+      // tiles - win rate with a half ring, W / L / BE with a split bar, expectancy with average win against average
+      // loss, and the best setup with how it did. Figures in Inter, labels in the app's mono.
+      var EL = '#121117', EB = '#24212B';
+      var tint = function (k, a) { return k === 'W' ? 'rgba(78,205,139,' + a + ')' : k === 'L' ? 'rgba(229,103,103,' + a + ')' : 'rgba(107,168,229,' + a + ')'; };
+      var colOf = function (k) { return k === 'W' ? C.good : k === 'L' ? C.bad : C.be; };
+      var fmtR1 = function (v) { var a = Math.round(Math.abs(v) * 10) / 10; return a === 0 ? '0R' : (v > 0 ? '+' : '−') + a.toFixed(1) + 'R'; };
+
       // page + card
       g.fillStyle = '#050506'; g.fillRect(0, 0, W, H);
       var M = 46, CX = M, CY = M, CW = W - M * 2, CH = H - M * 2;
       g.fillStyle = C.bg; rr(CX, CY, CW, CH, 30); g.fill();
       g.strokeStyle = '#1E1D24'; g.lineWidth = 1; rr(CX + .5, CY + .5, CW - 1, CH - 1, 30); g.stroke();
-
       var L = CX + 52, R = CX + CW - 52;
 
-      // ── logo + wordmark ─────────────────────────────────────────────────────
-      // The icon leads the wordmark. Its own near-black plate is knocked out first (see
-      // knockout) so it reads as a mark on the card rather than a square pasted onto it.
-      // MARK is the size of the mark itself now that knockout hands back its bounds — it is not a
-      // box the mark floats inside, so it needs no padding allowance. GAP is the space the eye
-      // actually sees between mark and wordmark, about half a cap height.
-      var MARK = 58, GAP = 14, BASE = 139;
+      // ── logo + wordmark (the mark is cropped to its own bounds by knockout) ──
+      var MARK = 54, GAP = 14, BASE = 128;
       g.fillStyle = C.text; g.font = '40px ' + SERIF; ls(0);
       var wm = g.measureText('SessionTool');
-      // Cap height off a capital, not off the mixed-case string: 'SessionTool' has no descender
-      // and its ascent would read taller than the caps the mark is being aligned to.
       var capA = g.measureText('S').actualBoundingBoxAscent || 29;
       var tx = L;
       if (logo) {
         try {
-          var b = logo.__bounds;
-          var gy = (BASE - capA / 2) - MARK / 2;              // mark centred on the wordmark's cap centre
-          if (b) {
-            // Square source window around the bounds, so a mark that is not square is letterboxed
-            // rather than stretched. Today's icon is square, so this lands exactly flush at L.
-            var s = Math.max(b.w, b.h);
-            g.drawImage(logo, b.x + (b.w - s) / 2, b.y + (b.h - s) / 2, s, s, L, gy, MARK, MARK);
-          } else {
-            g.drawImage(logo, L, gy, MARK, MARK);              // untrimmed fallback (tainted canvas)
-          }
-          // Gap measured to the wordmark's INK rather than its origin, so the spacing is what the
-          // eye sees and stays right if the face is ever swapped.
+          var b = logo.__bounds, lgy = (BASE - capA / 2) - MARK / 2;
+          if (b) { var sq = Math.max(b.w, b.h); g.drawImage(logo, b.x + (b.w - sq) / 2, b.y + (b.h - sq) / 2, sq, sq, L, lgy, MARK, MARK); }
+          else g.drawImage(logo, L, lgy, MARK, MARK);
           tx = L + MARK + GAP + (wm.actualBoundingBoxLeft || 0);
         } catch (e) {}
       }
       g.fillText('SessionTool', tx, BASE);
 
-      // ── series + dates, right ───────────────────────────────────────────────
+      // ── series + dates, right ──
       g.textAlign = 'right'; ls(3);
-      g.font = '17px ' + MONO; g.fillStyle = C.text;
-      g.fillText(T('SERIES OF 10 TRADES #', 'SERIE DE 10 OPERACIONES #') + String(d.num).padStart(2, '0'), R, 132);
-      g.font = '15px ' + MONO; g.fillStyle = C.dim;
-      g.fillText(String(d.when || '').toUpperCase(), R, 162);
+      g.font = '16px ' + MONO; g.fillStyle = C.text;
+      g.fillText(T('SERIES OF 10 · #', 'SERIE DE 10 · #') + String(d.num).padStart(2, '0'), R, 118);
+      g.font = '14px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(String(d.when || '').toUpperCase(), R, 146);
+      ls(0); g.textAlign = 'left';
 
-      // ── verdict pill. "SERIES", not "SESSION": this card covers ten trades across
-      //    however many days they took, so calling it a session would be plainly wrong.
+      // ── hero: the result in R, money and account % under it ──
+      ls(3); g.font = '13px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(T('NET RESULT', 'RESULTADO NETO'), L, 214); ls(0);
+      var num = (up ? '+' : '−') + Math.abs(d.netR).toFixed(2);
+      g.font = '600 112px ' + SANS; g.fillStyle = HERO;
+      try { g.letterSpacing = '-3px'; } catch (e) {}
+      g.fillText(num, L - 4, 326);
+      var nw = g.measureText(num).width; ls(0);
+      g.font = '500 56px ' + SANS; g.fillText('R', L - 4 + nw + 8, 326);
+      var money = ''; try { money = fmtMoney(d.money); } catch (e) {}
+      g.font = '500 21px ' + SANS; g.fillStyle = HERO; g.fillText(money, L, 370);
+      var mw = g.measureText(money).width;
+      g.font = '400 21px ' + SANS; g.fillStyle = C.mid;
+      g.fillText('  ·  ' + (d.pct >= 0 ? '+' : '−') + Math.abs(d.pct).toFixed(2) + T('% of account', '% de la cuenta'), L + mw, 370);
+
+      // ── verdict chip + instrument, right of the hero ──
       var pillTxt = up ? T('POSITIVE SERIES', 'SERIE POSITIVA') : T('NEGATIVE SERIES', 'SERIE NEGATIVA');
       g.font = '14px ' + MONO; ls(2.5);
-      var ptw = g.measureText(pillTxt).width, pw = ptw + 54, ph = 42, px = R - pw, py = 190;
-      g.fillStyle = up ? 'rgba(78,205,139,0.08)' : 'rgba(229,103,103,0.08)';
-      rr(px, py, pw, ph, 9); g.fill();
-      g.strokeStyle = up ? 'rgba(78,205,139,0.34)' : 'rgba(229,103,103,0.34)';
-      rr(px + .5, py + .5, pw - 1, ph - 1, 9); g.stroke();
-      g.fillStyle = HERO; g.beginPath(); g.arc(px + 22, py + ph / 2, 4.5, 0, Math.PI * 2); g.fill();
-      g.textAlign = 'left'; g.fillText(pillTxt, px + 36, py + 27);
-      ls(0);
+      var ptw = g.measureText(pillTxt).width, pw = ptw + 56, ph = 42, px = R - pw, py = 250;
+      g.fillStyle = up ? 'rgba(78,205,139,0.12)' : 'rgba(229,103,103,0.12)'; rr(px, py, pw, ph, ph / 2); g.fill();
+      g.strokeStyle = up ? 'rgba(78,205,139,0.45)' : 'rgba(229,103,103,0.45)'; rr(px + .5, py + .5, pw - 1, ph - 1, ph / 2); g.stroke();
+      g.fillStyle = HERO; g.beginPath(); g.arc(px + 23, py + ph / 2, 4.5, 0, Math.PI * 2); g.fill();
+      g.fillText(pillTxt, px + 37, py + 27); ls(0);
+      g.textAlign = 'right';
+      var metaTxt = String(d.meta || '').toUpperCase();
+      ls(2.4); g.font = '12px ' + MONO; g.fillStyle = C.dim;
+      var mtw = metaTxt ? g.measureText(metaTxt).width : 0;
+      if (metaTxt) g.fillText(metaTxt, R, 336);
+      ls(0); g.font = '600 21px ' + SANS; g.fillStyle = C.text;
+      g.fillText(d.sym || '', R - (mtw ? mtw + 14 : 0), 336);
+      g.textAlign = 'left';
 
-      // ── hero ────────────────────────────────────────────────────────────────
-      var num = (up ? '+' : '−') + Math.abs(d.netR).toFixed(2);
-      g.font = '118px ' + MONO; g.fillStyle = HERO;
-      g.fillText(num, L, 366);
-      var nw = g.measureText(num).width;
-      g.font = '46px ' + MONO; g.fillText('R', L + nw + 6, 366);
-      var money = ''; try { money = fmtMoney(d.money); } catch (e) {}
-      g.font = '21px ' + MONO; g.fillStyle = C.mid;
-      g.fillText(T('net ', 'neto ') + money + '  ·  ' + (d.pct >= 0 ? '+' : '−') + Math.abs(d.pct).toFixed(2)
-                 + T('% account', '% de la cuenta'), L, 414);
+      // ── the trades, one box each, in order ──
+      var rs = d.rs || [], nb = Math.max(1, rs.length), sgap = 8, sy = 400, sh = 64;
+      var bw0 = (R - L - sgap * (nb - 1)) / nb;
+      rs.forEach(function (t2, i) {
+        var bx0 = L + i * (bw0 + sgap);
+        g.fillStyle = tint(t2.res, 0.13); rr(bx0, sy, bw0, sh, 12); g.fill();
+        g.strokeStyle = tint(t2.res, 0.45); g.lineWidth = 1; rr(bx0 + .5, sy + .5, bw0 - 1, sh - 1, 12); g.stroke();
+        g.textAlign = 'center';
+        g.font = '11px ' + MONO; g.fillStyle = C.dim; g.fillText('#' + (i + 1), bx0 + bw0 / 2, sy + 25);
+        g.font = '600 17px ' + SANS; g.fillStyle = colOf(t2.res);
+        g.fillText(t2.res === 'BE' ? 'BE' : fmtR1(t2.r), bx0 + bw0 / 2, sy + 49);
+      });
+      g.textAlign = 'left';
 
-      // ── equity curve, with a labelled R axis so the shape is readable, not decorative ──
-      var gx = L, gy = 440, gw = (R - L) - 74, gh = 290;
+      // ── the running R, in its own panel ──
+      var px0 = L, py0 = 488, pw0 = R - L, ph0 = 304;
+      g.fillStyle = EL; rr(px0, py0, pw0, ph0, 20); g.fill();
+      g.strokeStyle = EB; g.lineWidth = 1; rr(px0 + .5, py0 + .5, pw0 - 1, ph0 - 1, 20); g.stroke();
+      ls(3); g.font = '12px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(T('RUNNING R ACROSS THE SERIES', 'R ACUMULADO EN LA SERIE'), px0 + 22, py0 + 36); ls(0);
+      g.textAlign = 'right'; g.font = '13px ' + MONO; g.fillStyle = HERO;
+      g.fillText((up ? '+' : '−') + Math.abs(d.netR).toFixed(2) + 'R ' + T('after ', 'tras ') + d.n + T(' trades', ' operaciones'), px0 + pw0 - 22, py0 + 36);
+      g.textAlign = 'left';
+      var gx = px0 + 22, gy = py0 + 58, gw = pw0 - 22 - 22 - 62, gh = ph0 - 58 - 22;
       var lo = Math.min.apply(null, d.cum), hi = Math.max.apply(null, d.cum);
       var span = hi - lo; if (span < 0.5) { hi += 0.5; lo -= 0.5; span = hi - lo; }
-      lo -= span * 0.12; hi += span * 0.12;
+      lo -= span * 0.1; hi += span * 0.1;
       var yOf = function (v) { return gy + gh - ((v - lo) / (hi - lo)) * gh; };
-      // Round ticks at a step that yields ~4 lines, so the labels read 0R / −2R / −4R rather
-      // than arbitrary decimals.
       var raw = (hi - lo) / 4, pow = Math.pow(10, Math.floor(Math.log(raw) / Math.LN10));
-      var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * pow; })
-                  .filter(function (s) { return s >= raw; })[0] || pow * 10;
-      g.textAlign = 'left'; g.font = '15px ' + MONO;
+      var step = [1, 2, 2.5, 5, 10].map(function (m) { return m * pow; }).filter(function (st2) { return st2 >= raw; })[0] || pow * 10;
+      g.font = '13px ' + MONO;
       for (var v = Math.ceil(lo / step) * step; v <= hi + 1e-9; v += step) {
-        var y = yOf(v);
-        g.strokeStyle = 'rgba(255,255,255,0.055)'; g.lineWidth = 1;
-        g.setLineDash([5, 7]); g.beginPath(); g.moveTo(gx, y + .5); g.lineTo(gx + gw, y + .5); g.stroke();
-        g.setLineDash([]);
-        g.fillStyle = C.dim;
-        g.fillText((Math.round(v * 10) / 10) + 'R', gx + gw + 18, y + 5);
+        var y = yOf(v), zero = Math.abs(v) < 1e-9;
+        g.strokeStyle = zero ? 'rgba(255,255,255,0.22)' : 'rgba(255,255,255,0.07)'; g.lineWidth = 1;
+        g.setLineDash(zero ? [] : [3, 5]); g.beginPath(); g.moveTo(gx, y + .5); g.lineTo(gx + gw + 6, y + .5); g.stroke(); g.setLineDash([]);
+        var vr = Math.round(v * 10) / 10;
+        g.fillStyle = C.dim; g.fillText((vr > 0 ? '+' : vr < 0 ? '−' : '') + Math.abs(vr) + 'R', gx + gw + 16, y + 5);
       }
-      var pts = d.cum.map(function (v, i) {
-        return [gx + (i / Math.max(1, d.cum.length - 1)) * gw, yOf(v)];
-      });
+      var pts = d.cum.map(function (v2, i) { return [gx + (i / Math.max(1, d.cum.length - 1)) * gw, yOf(v2)]; });
       var grad = g.createLinearGradient(0, gy, 0, gy + gh);
-      grad.addColorStop(0, up ? 'rgba(78,205,139,0.28)' : 'rgba(229,103,103,0.28)');
+      grad.addColorStop(0, up ? 'rgba(78,205,139,0.32)' : 'rgba(229,103,103,0.32)');
       grad.addColorStop(1, up ? 'rgba(78,205,139,0)' : 'rgba(229,103,103,0)');
       g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
       pts.forEach(function (p) { g.lineTo(p[0], p[1]); });
@@ -25270,99 +25297,84 @@ try {
       g.fillStyle = grad; g.fill();
       g.strokeStyle = HERO; g.lineWidth = 3; g.lineJoin = 'round'; g.lineCap = 'round';
       g.beginPath(); pts.forEach(function (p, i) { i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1]); }); g.stroke();
+      // every trade marked by its result: green win, red loss, blue break-even
+      rs.forEach(function (t2, i) {
+        var p = pts[i + 1]; if (!p || i === rs.length - 1) return;
+        g.fillStyle = C.bg; g.beginPath(); g.arc(p[0], p[1], 4.5, 0, Math.PI * 2); g.fill();
+        g.strokeStyle = colOf(t2.res); g.lineWidth = 2; g.beginPath(); g.arc(p[0], p[1], 4.5, 0, Math.PI * 2); g.stroke();
+      });
       var last = pts[pts.length - 1];
-      g.fillStyle = up ? 'rgba(78,205,139,0.22)' : 'rgba(229,103,103,0.22)';
-      g.beginPath(); g.arc(last[0], last[1], 16, 0, Math.PI * 2); g.fill();
+      g.fillStyle = up ? 'rgba(78,205,139,0.2)' : 'rgba(229,103,103,0.2)';
+      g.beginPath(); g.arc(last[0], last[1], 14, 0, Math.PI * 2); g.fill();
       g.fillStyle = HERO; g.beginPath(); g.arc(last[0], last[1], 7, 0, Math.PI * 2); g.fill();
 
-      // ── the supporting four ─────────────────────────────────────────────────
-      var bx = L, by = 768, bw = R - L, bh = 146;
-      g.fillStyle = 'rgba(255,255,255,0.018)'; rr(bx, by, bw, bh, 14); g.fill();
-      g.strokeStyle = '#1E1D24'; g.lineWidth = 1; rr(bx + .5, by + .5, bw - 1, bh - 1, 14); g.stroke();
-      var wrEl = (d.wr === null ? '—' : d.wr + '%');
-      // Wording matches the app's own KPI labels rather than a fresh translation, so a member
-      // reading the card recognises the same terms they see on the Statistics tab.
-      var cells = [
-        { l: T('WIN RATE', 'RATIO DE ACIERTO'),   v: wrEl,  c: C.text },
-        { l: T('W / L / BE', 'G / P / BE'),       v: null },
-        { l: T('EXPECTANCY', 'EXPECTATIVA'),      v: (d.exp >= 0 ? '+' : '−') + Math.abs(d.exp).toFixed(2) + 'R',
-          c: d.exp >= 0 ? C.good : C.bad },
-        { l: T('BEST SETUP', 'MEJOR SETUP'),      v: d.bestSetup || '—', c: C.text, small: true }
-      ];
-      var cw = bw / 4;
-      // Fit a label to its cell. Spanish runs longer than English — RATIO DE ACIERTO against
-      // WIN RATE — and an overlong label crosses the divider into the next cell rather than
-      // being clipped, so it is measured, not trusted. Tracking gives way first because it is
-      // decoration; the size only drops once there is no tracking left to give.
+      // ── four tiles ──
+      var ty = 812, th = 138, tgap = 12, tw = (R - L - tgap * 3) / 4;
       var fitLabel = function (txt, max) {
-        var sp = 2.2, px = 13;
+        var sp = 2.6, pxs = 12;
         for (;;) {
-          g.font = px + 'px ' + MONO; ls(sp);
+          g.font = pxs + 'px ' + MONO; ls(sp);
           if (g.measureText(txt).width <= max) return;
           if (sp > 0.4) { sp -= 0.4; continue; }
-          if (px > 10)  { px -= 0.5; sp = 0; continue; }
-          return;                       // floor reached: a hair of overhang beats unreadable type
+          if (pxs > 9.5) { pxs -= 0.5; sp = 0; continue; }
+          return;
         }
       };
-      cells.forEach(function (c, i) {
-        var cx = bx + cw * i;
-        if (i) { g.strokeStyle = '#1E1D24'; g.beginPath(); g.moveTo(cx + .5, by + 26); g.lineTo(cx + .5, by + bh - 26); g.stroke(); }
-        g.textAlign = 'left';
-        fitLabel(c.l, cw - 42);          // 30px in from the cell's left edge, 12px clear of the divider
-        g.fillStyle = C.dim; g.fillText(c.l, cx + 30, by + 57); ls(0);
-        if (c.v === null) {
-          g.font = '30px ' + MONO;
-          var seq = [[String(d.w), C.good], ['/', '#4a4854'], [String(d.l), C.bad], ['/', '#4a4854'], [String(d.be), C.be]];
-          var sx = cx + 30;
-          seq.forEach(function (s) { g.fillStyle = s[1]; g.fillText(s[0], sx, by + 99); sx += g.measureText(s[0]).width + 7; });
-        } else {
-          g.font = (c.small ? 21 : 32) + 'px ' + MONO; g.fillStyle = c.c;
-          var t2 = String(c.v), vmax = cw - 52;
-          if (c.small && g.measureText(t2).width > vmax) {
-            // A long setup name wraps rather than being cut off. Spanish names overrun a
-            // quarter-width cell routinely ("Ruptura de rango") where English ones ("Breakout")
-            // never did, and "Ruptura de r…" tells the reader nothing.
-            // The pair straddles the single-line baseline — 90 and 116 against 99 — so it fits
-            // inside the strip as it stands: the lower line's descenders clear the bottom edge
-            // by 25px, and nothing below has to move.
-            var words = t2.split(/\s+/), l1 = '', l2 = '';
-            for (var wi = 0; wi < words.length; wi++) {
-              var trial = l1 ? l1 + ' ' + words[wi] : words[wi];
-              if (!l1 || g.measureText(trial).width <= vmax) l1 = trial;
-              else { l2 = words.slice(wi).join(' '); break; }
-            }
-            // Still too wide on a line — a single unbroken word, or too many words for two
-            // lines. Clip that line and mark it, rather than letting it cross the divider.
-            var clip = function (s) {
-              var o = s;
-              while (g.measureText(s).width > vmax && s.length > 4) s = s.slice(0, -2);
-              return s === o ? s : s + '…';
-            };
-            if (l2) { g.fillText(clip(l1), cx + 30, by + 90); g.fillText(clip(l2), cx + 30, by + 116); }
-            else    { g.fillText(clip(l1), cx + 30, by + 99); }
-          } else {
-            g.fillText(t2, cx + 30, by + 99);
-          }
-        }
-      });
+      var tile = function (i, label) {
+        var tx0 = L + i * (tw + tgap);
+        g.fillStyle = EL; rr(tx0, ty, tw, th, 18); g.fill();
+        g.strokeStyle = EB; g.lineWidth = 1; rr(tx0 + .5, ty + .5, tw - 1, th - 1, 18); g.stroke();
+        g.textAlign = 'left'; fitLabel(label, tw - 40); g.fillStyle = C.dim; g.fillText(label, tx0 + 20, ty + 38); ls(0);
+        return tx0;
+      };
+      // win rate + half ring
+      var t0 = tile(0, T('WIN RATE', 'RATIO DE ACIERTO'));
+      g.font = '600 38px ' + SANS; g.fillStyle = C.text; g.fillText(d.wr === null ? '—' : d.wr + '%', t0 + 20, ty + 104);
+      var rcx = t0 + tw - 52, rcy = ty + 104, rad = 30;
+      g.lineCap = 'round'; g.lineWidth = 8;
+      g.strokeStyle = 'rgba(255,255,255,0.10)'; g.beginPath(); g.arc(rcx, rcy, rad, Math.PI, 2 * Math.PI); g.stroke();
+      if (d.wr) { g.strokeStyle = C.good; g.beginPath(); g.arc(rcx, rcy, rad, Math.PI, Math.PI + Math.PI * Math.min(1, d.wr / 100)); g.stroke(); }
+      g.lineCap = 'butt';
+      // W / L / BE + split bar
+      var t1 = tile(1, T('W / L / BE', 'G / P / BE'));
+      g.font = '600 34px ' + SANS;
+      var seq = [[String(d.w), C.good], ['/', '#4a4854'], [String(d.l), C.bad], ['/', '#4a4854'], [String(d.be), C.be]], sx = t1 + 20;
+      seq.forEach(function (q) { g.fillStyle = q[1]; g.fillText(q[0], sx, ty + 90); sx += g.measureText(q[0]).width + 6; });
+      var tot = d.w + d.l + d.be, bx1 = t1 + 20, bwid = tw - 40, by1 = ty + 106;
+      if (tot) {
+        var parts = [[d.w, C.good], [d.l, C.bad], [d.be, C.be]].filter(function (q) { return q[0] > 0; });
+        var avail = bwid - 3 * (parts.length - 1), cxp = bx1;
+        parts.forEach(function (q) { var wq = avail * q[0] / tot; g.fillStyle = q[1]; rr(cxp, by1, wq, 8, 4); g.fill(); cxp += wq + 3; });
+      }
+      // expectancy + average win against average loss
+      var t2x = tile(2, T('EXPECTANCY', 'EXPECTATIVA'));
+      var expTxt = (d.exp >= 0 ? '+' : '−') + Math.abs(d.exp).toFixed(2) + 'R';
+      g.font = '600 31px ' + SANS; g.fillStyle = d.exp >= 0 ? C.good : C.bad; g.fillText(expTxt, t2x + 20, ty + 104);
+      var mx = Math.max(d.avgWin || 0, d.avgLoss || 0) || 1, bh2 = 46, bxs = t2x + tw - 56, base2 = ty + 108;
+      var hW = Math.max(3, bh2 * (d.avgWin || 0) / mx), hL = Math.max(3, bh2 * (d.avgLoss || 0) / mx);
+      g.fillStyle = C.good; rr(bxs, base2 - hW, 16, hW, 3); g.fill();
+      g.fillStyle = C.bad; rr(bxs + 24, base2 - hL, 16, hL, 3); g.fill();
+      g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 1; g.beginPath(); g.moveTo(bxs - 6, base2 + .5); g.lineTo(bxs + 46, base2 + .5); g.stroke();
+      // best setup: the name over two lines if it needs them, then how it did
+      var t3 = tile(3, T('BEST SETUP', 'MEJOR SETUP'));
+      g.font = '600 19px ' + SANS; g.fillStyle = C.text;
+      var vmax = tw - 40, words = String(d.bestSetup || '—').split(/\s+/), l1 = '', l2 = '';
+      for (var wi = 0; wi < words.length; wi++) {
+        var trial = l1 ? l1 + ' ' + words[wi] : words[wi];
+        if (!l1 || g.measureText(trial).width <= vmax) l1 = trial; else { l2 = words.slice(wi).join(' '); break; }
+      }
+      var clip = function (str) { var o = str; while (g.measureText(str).width > vmax && str.length > 4) str = str.slice(0, -2); return str === o ? str : str + '…'; };
+      g.fillText(clip(l1), t3 + 20, ty + 72);
+      if (l2) g.fillText(clip(l2), t3 + 20, ty + 96);
+      if (d.bestSetup) {
+        ls(0.5); g.font = '12px ' + MONO; g.fillStyle = C.dim;
+        g.fillText(d.bestWins + (d.bestWins === 1 ? T(' win', ' ganadora') : T(' wins', ' ganadoras')) + '  ·  ' + fmtR1(d.bestR), t3 + 20, ty + 120); ls(0);
+      }
 
-      // ── footer: instrument left, brand right ────────────────────────────────
-      // Centred between the stat strip and the card's bottom edge so the cushion above the
-      // instrument and the URL matches the cushion below. Balanced on the TEXT, not on the
-      // instrument disc: the disc is stroked in #1E1D24 and barely registers, so centring the
-      // block on it would leave the type — the part anyone actually sees — sitting low.
-      // Measured: text spans 957–992 here, giving 43px above and 42px below.
-      var fy = 985;
-      g.strokeStyle = '#1E1D24'; g.lineWidth = 1;
-      g.beginPath(); g.arc(L + 21, fy - 8, 21, 0, Math.PI * 2); g.stroke();
-      g.strokeStyle = HERO; g.lineWidth = 2; g.lineJoin = 'round';
-      g.beginPath(); g.moveTo(L + 11, fy - 3); g.lineTo(L + 18, fy - 12); g.lineTo(L + 24, fy - 6); g.lineTo(L + 31, fy - 16); g.stroke();
-      g.textAlign = 'left'; g.font = '21px ' + MONO; g.fillStyle = C.text;
-      g.fillText(d.sym || '', L + 54, fy - 12);
-      ls(2); g.font = '12px ' + MONO; g.fillStyle = C.dim;
-      g.fillText(String(d.meta || '').toUpperCase(), L + 54, fy + 8); ls(0);
-
-      // The logo now leads the wordmark at the top, so the brand line here is the URL alone.
+      // ── footer ──
+      var fy = 1004;
+      g.textAlign = 'left'; ls(2.4); g.font = '12px ' + MONO; g.fillStyle = C.dim;
+      g.fillText(T('YOUR JOURNAL, YOUR EDGE', 'TU DIARIO, TU VENTAJA'), L, fy - 6); ls(0);
       g.textAlign = 'right'; g.font = '20px ' + MONO; g.fillStyle = C.pink;
       g.fillText('sessiontool.app', R, fy - 4);
       g.textAlign = 'left';
@@ -25420,6 +25432,7 @@ try {
         im.src = src;
         setTimeout(function () { once(null); }, 1500);
       };
+      try { document.fonts.load('600 112px "Inter"'); document.fonts.load('500 21px "Inter"'); } catch (e) {}
       try { document.fonts.ready.then(fire); } catch (e) {}
       setTimeout(fire, 600);
     });
