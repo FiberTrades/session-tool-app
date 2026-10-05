@@ -30,7 +30,7 @@ def svg(col, vb, w=None, h=None, bg=None):
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
 TIGHT = '58 84 184 137'           # the mark only
-SQUARE = '40 42.5 220 220'        # centred in a square, for icons
+SQUARE = '54 56.5 192 192'        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons at 40 42.5 220 220)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -48,10 +48,10 @@ for n, c in files.items():
 def page(w, h, inner, bg='transparent'):
     return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&display=swap">'
             '<style>html,body{margin:0;width:%dpx;height:%dpx;background:%s;overflow:hidden}</style></head><body>%s</body></html>') % (w, h, bg, inner)
-def icon(px, pad):
+def icon(px, pad, bg=BG):
     s = px * (1 - 2 * pad)
     return page(px, px, '<div style="width:%dpx;height:%dpx;background:%s;display:flex;align-items:center;justify-content:center">%s</div>'
-                % (px, px, BG, svg(PINK, SQUARE, s, s)))
+                % (px, px, bg, svg(PINK, SQUARE, s, s)))
 def fav(px):
     return page(px, px, svg(PINK, SQUARE, px, px))
 def og():
@@ -61,9 +61,10 @@ def og():
                 % (BG, svg(PINK, TIGHT, 300, 224), PINK), BG)
 
 pngs = [
-    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.12)),
-    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.12)),
-    ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.14)),
+    # the installed app's icon (PC taskbar, Start menu): no tile behind it (Nestor, 5 Oct) - the screen's own black keeps it readable on light taskbars
+    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.03, 'transparent')),
+    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.03, 'transparent')),
+    ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.10)),   # iOS fills transparency with black anyway, so it keeps its tile
     ('session-terminal-maskable-512.png', 512, 512, icon(512, 0.2)),
     ('session-terminal-favicon-32.png', 32, 32, fav(32)),
     ('session-terminal-favicon-16.png', 16, 16, fav(16)),
