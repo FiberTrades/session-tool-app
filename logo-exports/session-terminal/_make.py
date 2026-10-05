@@ -84,10 +84,10 @@ for n, c in files.items():
 def page(w, h, inner, bg='transparent'):
     return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&display=swap">'
             '<style>html,body{margin:0;width:%dpx;height:%dpx;background:%s;overflow:hidden}</style></head><body>%s</body></html>') % (w, h, bg, inner)
-def icon(px, pad, bg=BG):
+def icon(px, pad, bg=BG, radius=0):
     s = px * (1 - 2 * pad)
-    return page(px, px, '<div style="width:%dpx;height:%dpx;background:%s;display:flex;align-items:center;justify-content:center">%s</div>'
-                % (px, px, bg, svg(PINK, SQUARE, s, s)))
+    return page(px, px, '<div style="width:%dpx;height:%dpx;background:%s;border-radius:%g%%;display:flex;align-items:center;justify-content:center">%s</div>'
+                % (px, px, bg, radius, svg(PINK, SQUARE, s, s)))
 def fav(px):
     return page(px, px, svg(PINK, SQUARE, px, px))
 def og():
@@ -97,11 +97,14 @@ def og():
                 % (BG, svg(PINK, TIGHT, 330, 193), PINK), BG)
 
 pngs = [
-    # the installed app's icon (PC taskbar, Start menu): no tile behind it (Nestor, 5 Oct) - the screen's own black keeps it readable on light taskbars
-    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.0, 'transparent')),
-    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.0, 'transparent')),
-    ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.10)),   # iOS fills transparency with black anyway, so it keeps its tile
-    ('session-terminal-maskable-512.png', 512, 512, icon(512, 0.2)),
+    # the installed app's icon (PC taskbar, Start menu): a black tile with rounded corners (22%), the logo 78% of its width
+    # (6 Oct, Nestor picked it from: no background / 78% / 86% / tile with an edge; on 5 Oct it had no tile at all)
+    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.11, BG, 22)),
+    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.11, BG, 22)),
+    # iPhone home screen: full square black (iOS rounds the corners itself), same 78%
+    ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.11)),
+    # Android home screen (manifest purpose 'maskable'): full-bleed black, logo 68% wide so it stays inside the 80% safe circle
+    ('session-terminal-maskable-512.png', 512, 512, icon(512, 0.16)),
     ('session-terminal-favicon-32.png', 32, 32, fav(32)),
     ('session-terminal-favicon-16.png', 16, 16, fav(16)),
     ('session-terminal-og-image.png', 1200, 630, og()),
