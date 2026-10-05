@@ -3674,6 +3674,10 @@ void LiveTickAll()
       // v8.89: the live chart - the chart's price (bid, like MT5's own candles) and the forming candle on the timeframe the
       // trade was taken on ("t,o,h,l,c,seconds")
       double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+      // v8.90 (Nestor, 5 Oct 2026: "where is ... the spread?"): the spread in price (ask - bid), on the same tick - no extra call.
+      // Needs the 13-argument st_live_tick (supabase/live_spread.sql, applied 5 Oct 2026); 8.89 keeps the 12-argument one.
+      double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+      double spr=(ask>0 && bid>0 && ask>=bid) ? ask-bid : EMPTY_VALUE;
       ENUM_TIMEFRAMES ttf=TradeTf(posid);
       datetime bt=iTime(_Symbol,ttf,0);
       string bar=(bt>0) ? LiveBarStr(bt,iOpen(_Symbol,ttf,0),iHigh(_Symbol,ttf,0),iLow(_Symbol,ttf,0),iClose(_Symbol,ttf,0))+","+IntegerToString(PeriodSeconds(ttf)) : "";
@@ -3697,9 +3701,9 @@ void LiveTickAll()
       // a stop / target / ladder change still goes after 1 s, and a failed send still backs off for 5 s.
       uint wait=g_tkBad[at] ? 5000 : (changed ? 1000 : 2000);
       if(!(changed || moved) || (g_tkMs[at]!=0 && el<wait)) continue;
-      string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\",\"p_px\":%s,\"p_op\":%s,\"p_rpx\":%s,\"p_digits\":%d,\"p_bar\":\"%s\"}",
+      string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\",\"p_px\":%s,\"p_op\":%s,\"p_rpx\":%s,\"p_digits\":%d,\"p_bar\":\"%s\",\"p_spread\":%s}",
                                g_syncTokenEff,posid,LiveTickNum(r,3),DoubleToString(pnl,2),LiveTickNum(slr,3),LiveTickNum(tpr,3),lad,
-                               DoubleToString(bid,_Digits),DoubleToString(op,_Digits),LiveTickNum(rpx>0?rpx:EMPTY_VALUE,_Digits+1),_Digits,bar);
+                               DoubleToString(bid,_Digits),DoubleToString(op,_Digits),LiveTickNum(rpx>0?rpx:EMPTY_VALUE,_Digits+1),_Digits,bar,LiveTickNum(spr,_Digits+1));
       bool ok=LiveTickPost(body);
       g_tkMs[at]=now; g_tkBad[at]=!ok;
       if(ok){ g_tkPx[at]=px; g_tkSig[at]=sig; g_tkBar[at]=bar; }
