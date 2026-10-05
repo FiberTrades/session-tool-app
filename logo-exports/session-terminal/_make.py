@@ -14,7 +14,8 @@ PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 #  - no stem: the base where it was, its black circle carried up as a slot to the screen. The base is ONE outline with
 #    the slot built in - cutting the slot along the base's own edge left a hairline. Slot corners: y = 208 - 13*sqrt(1 - (9/40)^2)
 # 5 Oct evening: the base widened from 80 to 132 (rx 40 -> 66, ry 13 -> 15) under the taller screen; horns and a crescent were shown and declined
-BASE = 'M141.00,195.14 L141.00,202.84 A9,4.5 0 0 0 159.00,202.84 L159.00,195.14 A66,15 0 1 1 141.00,195.14 Z'
+# the slot (the black notch at the base's top) 28 wide and deeper since the base widened (Nestor: 'more noticeable')
+BASE = 'M136.00,195.34 L136.00,207.34 A14,7 0 0 0 164.00,207.34 L164.00,195.34 A66,15 0 1 1 136.00,195.34 Z'
 
 def paths(col):
     screen = '<rect x="62" y="64" width="176" height="104" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
