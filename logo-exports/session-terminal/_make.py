@@ -46,9 +46,15 @@ def cube_paths(col):   # the ST cube (live 5 Oct 5209b72 - ba0db8a), kept for re
 # 5 Oct 2026, night: TWO SCREENS. Nestor sent a dual-monitor icon ("do this in the app's pink"), traced to its exact shapes
 # (two 127 x 102 screens, corners 5, side by side with a 13 gap), and picked the wide oval base with a slot from seven
 # stands. The base is one outline with the slot built in (slot corners where its sides meet the rim).
-DUAL_BASE = 'M184,246.33 L184,250 A15,10 0 0 0 214,250 L214,246.33 A74,16 0 1 1 184,246.33 Z'
+# Later that night he asked for a more rectangular foot and picked "sloped sides": a trapezoid 116 wide on top, 138 at the
+# bottom, 30 tall, corners rounded 3, the same slot. (The wide oval it replaced: 'M184,246.33 L184,250 A15,10 0 0 0 214,250
+# L214,246.33 A74,16 0 1 1 184,246.33 Z'.)
+# Then rounder: screen corners 10 (from 5), and the foot's four corners rounded to the same 10 (true fillets on the
+# trapezoid 139.075-258.925 on top, 125.325-272.675 at the bottom; the 3-round version was 'M141,246 ... A3,3 ... Z').
+DUAL_BASE = ('M145.49,246.00 L184,246 L184,250 A15,10 0 0 0 214,250 L214,246 L252.51,246.00 A10,10 0 0 1 261.60,251.83 '
+             'L266.18,261.83 A10,10 0 0 1 257.09,276.00 L140.91,276.00 A10,10 0 0 1 131.82,261.83 L136.40,251.83 A10,10 0 0 1 145.49,246.00 Z')
 def paths(col):
-    return ('<rect x="66" y="116" width="127" height="102" rx="5" fill="%s"/><rect x="206" y="116" width="127" height="102" rx="5" fill="%s"/>'
+    return ('<rect x="66" y="116" width="127" height="102" rx="10" fill="%s"/><rect x="206" y="116" width="127" height="102" rx="10" fill="%s"/>'
             '<path fill="%s" d="%s"/>') % (col, col, col, DUAL_BASE)
 
 def svg(col, vb, w=None, h=None, bg=None):
