@@ -45,7 +45,7 @@ for n, c in files.items():
     io.open(os.path.join(OUT, n), 'w', encoding='utf-8').write(c)
 
 def page(w, h, inner, bg='transparent'):
-    return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Serif&display=swap">'
+    return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&display=swap">'
             '<style>html,body{margin:0;width:%dpx;height:%dpx;background:%s;overflow:hidden}</style></head><body>%s</body></html>') % (w, h, bg, inner)
 def icon(px, pad, outline=False):
     s = px * (1 - 2 * pad)
@@ -55,7 +55,8 @@ def fav(px, outline=False):
     return page(px, px, svg(PINK, SQUARE, px, px, outline=outline))
 def og(outline=False):
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
-                '<div style="font:400 74px \'Instrument Serif\',serif;color:#ece9f1;letter-spacing:-.5px">Session <span style="color:%s">Terminal</span></div></div>'
+                # the name in Fraunces, the app's own heading serif (Nestor, 5 Oct 2026; was Instrument Serif)
+                '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
                 % (BG, svg(PINK, TIGHT, 300, 210, outline=outline), PINK), BG)
 
 pngs = []
