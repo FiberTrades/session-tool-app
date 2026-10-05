@@ -9,7 +9,7 @@ PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 # THE MARK (Nestor, 5 Oct 2026), arrived at step by step:
 #  - one monitor (not two screens), 184 wide in a 300 grid, corners 16 ("rounder")
 #  - the screen black with a pink border of 8 ("too thick" at 12)
-#  - 16:10 and EMPTY (5 Oct evening): the screen grew upward from 80 to 104 high (bottom and base unchanged); a ">_"
+#  - 16:10, at first EMPTY (5 Oct evening): the screen grew upward from 80 to 104 high (bottom and base unchanged); a ">_"
 #    prompt sat on it all day and he went off it ("i just dont like the symbols"); candles and a price line were also shown
 #  - no stem: the base where it was, its black circle carried up as a slot to the screen. The base is ONE outline with
 #    the slot built in - cutting the slot along the base's own edge left a hairline. Slot corners: y = 208 - 13*sqrt(1 - (9/40)^2)
@@ -17,9 +17,24 @@ PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 # the slot (the black notch at the base's top) 28 wide and deeper since the base widened (Nestor: 'more noticeable')
 BASE = 'M136.00,195.34 L136.00,207.34 A14,7 0 0 0 164.00,207.34 L164.00,195.34 A66,15 0 1 1 136.00,195.34 Z'
 
+# THE SPARKLE (5 Oct, late): a four-pointed star in the middle of the screen whose points run out to the frame
+# (Nestor: "the points travel towards the edges"; "the star body has to be a lot smaller in the middle"; "make sure the
+# points touch the edges"; picked the finer of the slim versions). Cubic sides with both control points at 5% of the reach from the centre give the slim
+# waist; the tips go 2 units into the 8-wide border so they visibly meet it at every size.
+def sparkle(cx=150, cy=116, hx=86, hy=50, p=0.05):
+    ax, ay = hx * p, hy * p
+    pts = [(cx, cy - hy), (cx + hx, cy), (cx, cy + hy), (cx - hx, cy)]
+    ctl = [(cx + ax, cy - ay), (cx + ax, cy + ay), (cx - ax, cy + ay), (cx - ax, cy - ay)]
+    d = 'M%g,%g' % pts[0]
+    for i in range(4):
+        c, e = ctl[i], pts[(i + 1) % 4]
+        d += ' C%g,%g %g,%g %g,%g' % (c[0], c[1], c[0], c[1], e[0], e[1])
+    return d + ' Z'
+STAR = sparkle()
+
 def paths(col):
     screen = '<rect x="62" y="64" width="176" height="104" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
-    return screen + '<path fill="%s" d="%s"/>' % (col, BASE)
+    return screen + '<path fill="%s" d="%s"/>' % (col, STAR) + '<path fill="%s" d="%s"/>' % (col, BASE)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
