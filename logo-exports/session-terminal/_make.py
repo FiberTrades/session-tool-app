@@ -40,21 +40,8 @@ def monitor_paths(col):   # the sparkle monitor (live 5 Oct ecb6b77 - a351185), 
 # rounded, line, flat monogram) Nestor chose "keep original": the cube exactly as it was drawn, with today's rules kept -
 # it fills its slot (the artwork touches all four sides of its square), no tile behind the installed-app icon.
 ST_PATH = re.search(r'<path[^>]*/>', io.open(os.path.join(OUT, '_st-original.svg'), encoding='utf-8').read(), re.S).group(0)
-# The cube's enclosed gaps (the hollow top, the slots inside the S and T, the small triangle) were see-through, so a
-# light taskbar showed through them. Nestor (5 Oct 2026, night): "leave the logo pink but colour its dark spaces with
-# black" - and NOT the two notches in the outline's sides ("not these 2 spaces"). The path is one outer outline plus
-# four holes (fill-rule evenodd); the holes alone, filled black, sit behind the pink. A convex-hull backing was tried
-# first and wrongly blackened the notches.
-_subs = [x for x in re.split(r'(?=M)', re.search(r'\sd="([^"]+)"', ST_PATH).group(1)) if x.strip()]
-def _area(sp):
-    n = [float(v) for v in re.findall(r'-?\d+(?:\.\d+)?', sp)]; q = list(zip(n[0::2], n[1::2]))
-    return abs(sum(q[k][0] * q[(k + 1) % len(q)][1] - q[(k + 1) % len(q)][0] * q[k][1] for k in range(len(q)))) / 2
-_outer = max(_subs, key=_area)
-HOLES = ' '.join(x for x in _subs if x is not _outer)
-
 def paths(col):
-    back = '<path fill="%s" d="%s"/>' % (BG, HOLES)
-    return back + re.sub(r'fill="[^"]*"', 'fill="%s"' % col, ST_PATH, count=1)
+    return re.sub(r'fill="[^"]*"', 'fill="%s"' % col, ST_PATH, count=1)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
