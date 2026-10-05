@@ -12,12 +12,14 @@ PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 # edge left a hairline of pink where the two identical curves met. The slot's top corners sit on the base's edge:
 # y = 208 - 13*sqrt(1 - (9/40)^2) = 195.33.
 BASE = 'M141,195.33 L141,202 A9,4.5 0 0 0 159,202 L159,195.33 A40,13 0 1 1 141,195.33 Z'
-SCREEN = 'M68,92 H232 A10,10 0 0 1 242,102 V162 A10,10 0 0 1 232,172 H68 A10,10 0 0 1 58,162 V102 A10,10 0 0 1 68,92 Z'
+# 88 tall since 5 Oct ("a tiny bit taller"), grown upward so it still meets the base where it did
+SCREEN = 'M68,84 H232 A10,10 0 0 1 242,94 V162 A10,10 0 0 1 232,172 H68 A10,10 0 0 1 58,162 V94 A10,10 0 0 1 68,84 Z'
 
 def paths(col, outline=False):
     if outline:
-        # "a version of the screen in black with a pink border": same outer size, black inside, a 12-unit pink border
-        scr = '<rect x="64" y="98" width="172" height="68" rx="4" fill="%s" stroke="%s" stroke-width="12"/>' % (BG, col)
+        # "a version of the screen in black with a pink border": same outer size, black inside, an 8-unit pink border
+        # (12 was "too thick"; Nestor picked the two-thirds weight)
+        scr = '<rect x="62" y="88" width="176" height="80" rx="6" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
     else:
         scr = '<path fill="%s" d="%s"/>' % (col, SCREEN)
     return scr + '<path fill="%s" d="%s"/>' % (col, BASE)
@@ -27,8 +29,8 @@ def svg(col, vb, w=None, h=None, bg=None, outline=False):
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col, outline))
 
-TIGHT = '58 92 184 129'           # the mark only
-SQUARE = '40 46.5 220 220'        # centred in a square, for icons
+TIGHT = '58 84 184 137'           # the mark only
+SQUARE = '40 42.5 220 220'        # centred in a square, for icons
 
 files = {
     'session-terminal-mark-pink.svg': svg(PINK, TIGHT),
