@@ -13,7 +13,8 @@ PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 #    prompt sat on it all day and he went off it ("i just dont like the symbols"); candles and a price line were also shown
 #  - no stem: the base where it was, its black circle carried up as a slot to the screen. The base is ONE outline with
 #    the slot built in - cutting the slot along the base's own edge left a hairline. Slot corners: y = 208 - 13*sqrt(1 - (9/40)^2)
-BASE = 'M141,195.33 L141,202 A9,4.5 0 0 0 159,202 L159,195.33 A40,13 0 1 1 141,195.33 Z'
+# 5 Oct evening: the base widened from 80 to 132 (rx 40 -> 66, ry 13 -> 15) under the taller screen; horns and a crescent were shown and declined
+BASE = 'M141.00,195.14 L141.00,202.84 A9,4.5 0 0 0 159.00,202.84 L159.00,195.14 A66,15 0 1 1 141.00,195.14 Z'
 
 def paths(col):
     screen = '<rect x="62" y="64" width="176" height="104" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
@@ -24,8 +25,8 @@ def svg(col, vb, w=None, h=None, bg=None):
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '58 60 184 161'           # the mark only
-SQUARE = '54 44.5 192 192'        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
+TIGHT = '58 60 184 165'           # the mark only
+SQUARE = '54 46.5 192 192'        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -53,7 +54,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 256, 224), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 250, 224), PINK), BG)
 
 pngs = [
     # the installed app's icon (PC taskbar, Start menu): no tile behind it (Nestor, 5 Oct) - the screen's own black keeps it readable on light taskbars
