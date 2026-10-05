@@ -20,6 +20,8 @@ def paths(col):
     x0, y0 = 111, 108       # ">_" 40 high, centred on the screen
     prompt = ('<path d="M%d,%d L%d,%d L%d,%d" fill="none" stroke="%s" stroke-width="%d" stroke-linecap="round" stroke-linejoin="round"/>'
               '<rect x="%d" y="%.1f" width="44" height="%d" rx="4" fill="%s"/>') % (x0, y0, x0 + 24, y0 + 20, x0, y0 + 40, col, SW, x0 + 34, y0 + 40 - SW + 5.5, SW, col)
+    # 20% smaller around the screen's centre (Nestor, 5 Oct 2026: "20% is nice"); its line weight scales with it
+    prompt = '<g transform="translate(150 128) scale(0.8) translate(-150 -128)">%s</g>' % prompt
     return screen + prompt + '<path fill="%s" d="%s"/>' % (col, BASE)
 
 def svg(col, vb, w=None, h=None, bg=None):
