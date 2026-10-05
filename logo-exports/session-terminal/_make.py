@@ -40,8 +40,29 @@ def monitor_paths(col):   # the sparkle monitor (live 5 Oct ecb6b77 - a351185), 
 # rounded, line, flat monogram) Nestor chose "keep original": the cube exactly as it was drawn, with today's rules kept -
 # it fills its slot (the artwork touches all four sides of its square), no tile behind the installed-app icon.
 ST_PATH = re.search(r'<path[^>]*/>', io.open(os.path.join(OUT, '_st-original.svg'), encoding='utf-8').read(), re.S).group(0)
+# The cube's gaps (the hollow top, the slots in the S and T) were see-through, so a light taskbar showed through them.
+# Nestor (5 Oct 2026, night): "leave the logo pink but colour its dark spaces with black". A black shape the size of the
+# cube's silhouette sits behind it: the convex hull of the outline (the path is straight lines only), pulled 1.5% in
+# towards the centre so no black shows past the pink edge.
+def _hull(pts):
+    pts = sorted(set(pts))
+    def cross(o, a, b): return (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0])
+    lo, hi = [], []
+    for q in pts:
+        while len(lo) >= 2 and cross(lo[-2], lo[-1], q) <= 0: lo.pop()
+        lo.append(q)
+    for q in reversed(pts):
+        while len(hi) >= 2 and cross(hi[-2], hi[-1], q) <= 0: hi.pop()
+        hi.append(q)
+    return lo[:-1] + hi[:-1]
+_n = [float(x) for x in re.findall(r'-?\d+(?:\.\d+)?', re.search(r'\sd="([^"]+)"', ST_PATH).group(1))]
+_h = _hull(list(zip(_n[0::2], _n[1::2])))
+_cx, _cy = sum(q[0] for q in _h) / len(_h), sum(q[1] for q in _h) / len(_h)
+BACKING = ' '.join('%.1f,%.1f' % (_cx + (x - _cx) * 0.985, _cy + (y - _cy) * 0.985) for x, y in _h)
+
 def paths(col):
-    return re.sub(r'fill="[^"]*"', 'fill="%s"' % col, ST_PATH, count=1)
+    back = '<polygon points="%s" fill="%s"/>' % (BACKING, BG)
+    return back + re.sub(r'fill="[^"]*"', 'fill="%s"' % col, ST_PATH, count=1)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
