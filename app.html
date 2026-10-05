@@ -1258,6 +1258,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .st-sc-bar .st-sc-new { background: #ff4d97; color: #1a0b14; border-radius: 999px; font-size: 11px; font-weight: 700; padding: 2px 8px; flex: none; }
   .st-sc-bar .st-sc-last { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; color: #b7b4bf; font-size: 13px; }
   .st-sc-bar .st-sc-last b { color: #f4f3f6; font-weight: 600; }
+  .st-sc-bar .st-sc-ava { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; vertical-align: -5px; margin-right: 7px; display: inline-block; font-size: 11px; line-height: 20px; text-align: center; }
+  .st-sc-bar .st-sc-ava.dcx-ava-ph { display: inline-flex; }
   .st-sc-bar .st-sc-open { color: #b7b4bf; line-height: 0; flex: none; }
   /* one button for a taller or the normal chart (Nestor, 3 Oct 2026: "can this just be a button to make it taller and
      smaller?"), remembered on this device; it replaced the drag grip. The icon alone, no word ("just keep the icon"). */
@@ -5724,6 +5726,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #page-bias .preview, #page-review .preview { border: 0; background: transparent; padding: 0; margin-top: 18px; }   /* the buttons sit on the black, no box (Nestor, 3 Oct 2026) */
   #page-bias .preview-label, #page-review .preview-label { font-family: "AppNum","DM Mono",monospace; font-size: 10px; letter-spacing: 0.22em; color: var(--text-dim); }
   #page-review #pb-rows.pb-cardmode { background: var(--bg); }
+  #page-review .saved-bias { margin-bottom: 14px; }   /* space before the Trade Log box (Nestor, 5 Oct 2026: "clashing with the trade log") */
   #page-review > section#session-quick-log { border: 0; background: transparent; padding: 0; border-radius: 0; }   /* Finish session / Log trades live sit on the black, no box (Nestor, 5 Oct 2026) */
   #page-review .pb-pick-line > #pb-manage { align-self: stretch; min-height: 40px; box-sizing: border-box; }   /* Your playbook as tall as the setup picker beside it (Nestor, 4 Oct 2026) */
   #page-bias .econ-calendar { margin-left: 0; }   /* full width like the boxes under it (Nestor, 3 Oct 2026) */
@@ -57137,7 +57140,12 @@ try {
     function liveUi() { var p = document.getElementById('page-review'); return !!(p && p.classList.contains('active') && p.classList.contains('session-live-collapsed')); }
     function reviewOpen() { var p = document.getElementById('page-review'); return !!(p && p.classList.contains('active')); }
     function signedIn() { try { return !window.__MV && !!(window.currentUser && window.currentUser.id); } catch (e) { return false; } }
-    function draft() { var ta = document.getElementById('dcx-input'); return !!(ta && (String(ta.value || '').trim() || document.activeElement === ta)); }
+    // Something not sent yet: text in the box, or an attachment waiting. Focus alone is not a draft - after Send the box
+    // keeps focus, and that kept the chat up after the session until it was minimised (Nestor, 5 Oct 2026).
+    function draft() {
+      var ta = document.getElementById('dcx-input'), pd = document.getElementById('dcx-pending');
+      return !!((ta && String(ta.value || '').trim()) || (pd && pd.style.display !== 'none' && pd.children.length));
+    }
     var DOWN = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 9l6 6 6-6"/></svg>';
     var UP = '<svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 15l6-6 6 6"/></svg>';
     function place() {
@@ -57155,6 +57163,10 @@ try {
       bar.addEventListener('click', function () { setMin(false); });
       // The members button here is the chat's own, but with its own remembered setting (Community's is left alone):
       // caught on the way down so Community's handler never sees it.
+      // Sent (button or Enter): check straight away, so a chat kept open after the session goes as soon as the message is out.
+      var soon = function () { setTimeout(sync, 120); setTimeout(sync, 600); };
+      host.addEventListener('click', function (e) { if (e.target && e.target.closest && e.target.closest('#dcx-send')) soon(); });
+      host.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && e.target && e.target.id === 'dcx-input') soon(); });
       host.addEventListener('click', function (e) {
         var mt = e.target && e.target.closest && e.target.closest('#dcx-mtoggle'); if (!mt) return;
         e.stopPropagation(); e.preventDefault();
@@ -57172,13 +57184,27 @@ try {
       b.addEventListener('click', function () { setMin(true); });
       head.appendChild(b);
     }
+    /* The latest message on the minimised bar, as Community shows it (Nestor, 5 Oct 2026: "add troys profile photo here and
+       make his name the same color it is in the community"): the sender's own avatar and the name in its role colour, read
+       from the message row itself - a grouped follow-up takes them from the row that starts its group. */
     function lastLine() {
       try {
         var ms = document.querySelectorAll('#dcx-msgs .dcx-msg'); if (!ms.length) return '';
-        var m = ms[ms.length - 1], who = '', i = ms.length - 1;
-        while (i >= 0 && !who) { var n = ms[i].querySelector('.dcx-name'); if (n) who = n.textContent.trim(); i--; }
-        var tx = m.querySelector('.dcx-text'); var t = tx ? tx.textContent.trim() : (m.querySelector('img') ? T2('sent an image', 'envió una imagen') : '');
-        return (who ? '<b>' + who.replace(/</g, '&lt;') + ':</b> ' : '') + t.replace(/</g, '&lt;').slice(0, 160);
+        var m = ms[ms.length - 1], head = null, i = ms.length - 1;
+        while (i >= 0 && !head) { if (ms[i].querySelector('.dcx-name')) head = ms[i]; i--; }
+        var esc2 = function (x) { return String(x || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;'); };
+        var out = '';
+        if (head) {
+          var nm = head.querySelector('.dcx-name'), av = head.querySelector('.dcx-ava');
+          if (av) { var cl = av.cloneNode(true); cl.className = 'st-sc-ava' + (av.classList.contains('dcx-ava-ph') ? ' dcx-ava-ph' : ''); cl.removeAttribute('id'); out += cl.outerHTML; }
+          var col = ''; try { col = getComputedStyle(nm).color; } catch (e) {}
+          out += '<b class="st-sc-who"' + (col ? ' style="color:' + esc2(col) + '"' : '') + '>' + esc2(nm.textContent.trim()) + ':</b> ';
+        }
+        // the text, with emoji images read back as their characters
+        var tx = m.querySelector('.dcx-text'), t = '';
+        if (tx) { var c2 = tx.cloneNode(true); Array.prototype.forEach.call(c2.querySelectorAll('img'), function (im) { im.replaceWith(document.createTextNode(im.getAttribute('alt') || '')); }); t = c2.textContent.replace(/\s+/g, ' ').trim(); }
+        else if (m.querySelector('.dcx-body img, .dcx-media, .dcx-gif-msg')) t = T2('sent an image', 'envió una imagen');
+        return out + '<span class="st-sc-txt">' + esc2(t.slice(0, 160)) + '</span>';
       } catch (e) { return ''; }
     }
     function paintBar() {
