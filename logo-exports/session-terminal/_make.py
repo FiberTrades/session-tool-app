@@ -1,45 +1,44 @@
-import io, os
-# Builds every Session Terminal logo file in this folder. Run: python _make.py  (then screenshot the PNG pages it lists -
-# see the loop in the commit that added this file; headless Edge with --default-background-color=00000000).
+import io, os, glob
+# Builds every Session Terminal logo file in this folder: python _make.py, then screenshot the PNG pages it lists with
+# headless Edge (--default-background-color=00000000 for the transparent favicons).
 OUT = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(os.environ.get('TEMP', OUT), 'st_logo_pages')
 os.makedirs(SP, exist_ok=True)
 PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 
-# The mark (Nestor, 5 Oct 2026): one monitor 184 wide in a 300 grid, no stem, the base where it was, its black circle
-# carried up as a slot to the screen.
-# The base is ONE outline with the slot built into it ("remove this line"): cutting the slot out along the base's own top
-# edge left a hairline of pink where the two identical curves met. The slot's top corners sit on the base's edge:
-# y = 208 - 13*sqrt(1 - (9/40)^2) = 195.33.
+# THE MARK (Nestor, 5 Oct 2026), arrived at step by step:
+#  - one monitor (not two screens), 184 x 88 in a 300 grid, corners 16 ("rounder")
+#  - the screen black with a pink border of 8 ("too thick" at 12)
+#  - a ">_" command prompt on the screen, on its own (preferred to ST, "Session", and "S >_")
+#  - no stem: the base where it was, its black circle carried up as a slot to the screen. The base is ONE outline with
+#    the slot built in - cutting the slot along the base's own edge left a hairline. Slot corners: y = 208 - 13*sqrt(1 - (9/40)^2)
 BASE = 'M141,195.33 L141,202 A9,4.5 0 0 0 159,202 L159,195.33 A40,13 0 1 1 141,195.33 Z'
-# 88 tall since 5 Oct ("a tiny bit taller"), grown upward so it still meets the base where it did
-# corners 16 since 5 Oct ("rounder", was 10)
-SCREEN = 'M74,84 H226 A16,16 0 0 1 242,100 V156 A16,16 0 0 1 226,172 H74 A16,16 0 0 1 58,156 V100 A16,16 0 0 1 74,84 Z'
+SW = 11   # the prompt's line weight
 
-def paths(col, outline=False):
-    if outline:
-        # "a version of the screen in black with a pink border": same outer size, black inside, an 8-unit pink border
-        # (12 was "too thick"; Nestor picked the two-thirds weight)
-        scr = '<rect x="62" y="88" width="176" height="80" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
-    else:
-        scr = '<path fill="%s" d="%s"/>' % (col, SCREEN)
-    return scr + '<path fill="%s" d="%s"/>' % (col, BASE)
+def paths(col):
+    screen = '<rect x="62" y="88" width="176" height="80" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
+    x0, y0 = 111, 108       # ">_" 40 high, centred on the screen
+    prompt = ('<path d="M%d,%d L%d,%d L%d,%d" fill="none" stroke="%s" stroke-width="%d" stroke-linecap="round" stroke-linejoin="round"/>'
+              '<rect x="%d" y="%.1f" width="44" height="%d" rx="4" fill="%s"/>') % (x0, y0, x0 + 24, y0 + 20, x0, y0 + 40, col, SW, x0 + 34, y0 + 40 - SW + 5.5, SW, col)
+    return screen + prompt + '<path fill="%s" d="%s"/>' % (col, BASE)
 
-def svg(col, vb, w=None, h=None, bg=None, outline=False):
+def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
-    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col, outline))
+    return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
 TIGHT = '58 84 184 137'           # the mark only
 SQUARE = '40 42.5 220 220'        # centred in a square, for icons
+
+# start clean: only the chosen design lives here (earlier alternatives are in git history)
+for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
+    os.remove(f)
 
 files = {
     'session-terminal-mark-pink.svg': svg(PINK, TIGHT),
     'session-terminal-mark-silver.svg': svg(SILVER, TIGHT),
     'session-terminal-mark-white.svg': svg('#ffffff', TIGHT),
     'session-terminal-icon.svg': svg(PINK, SQUARE, bg=BG),
-    'session-terminal-outline-mark-pink.svg': svg(PINK, TIGHT, outline=True),
-    'session-terminal-outline-icon.svg': svg(PINK, SQUARE, bg=BG, outline=True),
 }
 for n, c in files.items():
     io.open(os.path.join(OUT, n), 'w', encoding='utf-8').write(c)
@@ -47,29 +46,27 @@ for n, c in files.items():
 def page(w, h, inner, bg='transparent'):
     return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&display=swap">'
             '<style>html,body{margin:0;width:%dpx;height:%dpx;background:%s;overflow:hidden}</style></head><body>%s</body></html>') % (w, h, bg, inner)
-def icon(px, pad, outline=False):
+def icon(px, pad):
     s = px * (1 - 2 * pad)
     return page(px, px, '<div style="width:%dpx;height:%dpx;background:%s;display:flex;align-items:center;justify-content:center">%s</div>'
-                % (px, px, BG, svg(PINK, SQUARE, s, s, outline=outline)))
-def fav(px, outline=False):
-    return page(px, px, svg(PINK, SQUARE, px, px, outline=outline))
-def og(outline=False):
+                % (px, px, BG, svg(PINK, SQUARE, s, s)))
+def fav(px):
+    return page(px, px, svg(PINK, SQUARE, px, px))
+def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
-                # the name in Fraunces, the app's own heading serif (Nestor, 5 Oct 2026; was Instrument Serif)
+                # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 300, 210, outline=outline), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 300, 224), PINK), BG)
 
-pngs = []
-for pre, o in (('session-terminal', False), ('session-terminal-outline', True)):
-    pngs += [
-        (pre + '-icon-512.png', 512, 512, icon(512, 0.12, o)),
-        (pre + '-icon-192.png', 192, 192, icon(192, 0.12, o)),
-        (pre + '-apple-touch-180.png', 180, 180, icon(180, 0.14, o)),
-        (pre + '-maskable-512.png', 512, 512, icon(512, 0.2, o)),
-        (pre + '-favicon-32.png', 32, 32, fav(32, o)),
-        (pre + '-favicon-16.png', 16, 16, fav(16, o)),
-        (pre + '-og-image.png', 1200, 630, og(o)),
-    ]
+pngs = [
+    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.12)),
+    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.12)),
+    ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.14)),
+    ('session-terminal-maskable-512.png', 512, 512, icon(512, 0.2)),
+    ('session-terminal-favicon-32.png', 32, 32, fav(32)),
+    ('session-terminal-favicon-16.png', 16, 16, fav(16)),
+    ('session-terminal-og-image.png', 1200, 630, og()),
+]
 with io.open(os.path.join(SP, 'list.txt'), 'w', encoding='utf-8') as L:
     for n, w, h, html in pngs:
         p = os.path.join(SP, n.replace('.png', '.html'))
