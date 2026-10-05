@@ -1234,11 +1234,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-chfi { overflow: hidden; min-height: 0; }
   .slx-cht.mini .slx-chf { grid-template-rows: 0fr; opacity: 0; }
   .slx-chb { position: relative; }
-  .slx-spr { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; margin-right: 10px; }
-  .slx-spr b { color: var(--text); font-weight: 500; letter-spacing: 0.04em; }
-  .slx-spr[hidden] { display: none; }
-  .slx-cd { position: absolute; z-index: 3; box-sizing: border-box; padding: 2px 6px; text-align: left; background: #c0c0c0; color: #131217; font: 500 10px/12px 'DM Mono', monospace; pointer-events: none; }
-  .slx-cd[hidden] { display: none; }
+  .slx-info { position: absolute; right: 68px; bottom: 34px; z-index: 5; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: .06em; background: rgba(19,18,23,.82); border: 1px solid var(--border-2); border-radius: 8px; padding: 5px 9px; pointer-events: none; color: var(--text-dim); white-space: nowrap; }   /* Trade Replay's spread box */
+  .slx-info[hidden] { display: none; }
+  @media (max-width: 760px) { .slx-info { font-size: 10px; padding: 4px 7px; } }
   .slx-cht.mini { padding-bottom: 0; }
   .st-sesschat { margin: 14px 0 22px; }
   .st-sesschat[hidden] { display: none !important; }
@@ -18990,7 +18988,7 @@ try {
       if (tallNow) el.classList.add('tall');
       var top = document.createElement('div'); top.className = 'slx-chtop';
       top.innerHTML = '<span class="slx-tfl"><b></b>' + esc(T2('the timeframe you took it on', 'la temporalidad en la que entraste')) + '</span>'
-        + '<span class="slx-chr"><span class="slx-spr" hidden></span><span class="slx-chc">' + esc(T2('Your MT5 prices · your clock', 'Precios de tu MT5 · tu reloj')) + '</span>'
+        + '<span class="slx-chr"><span class="slx-chc">' + esc(T2('Your MT5 prices · your clock', 'Precios de tu MT5 · tu reloj')) + '</span>'
         + '<button type="button" class="slx-hbtn slx-minb"></button><button type="button" class="slx-hbtn slx-tall"></button></span>';
       el.insertBefore(top, fold);
       // Minimise (Nestor, 5 Oct 2026: "there need to be also a way to minimize the chart in session live"): the chart folds
@@ -19026,7 +19024,7 @@ try {
         try { if (tall) localStorage.setItem('st_live_chart_tall', '1'); else localStorage.removeItem('st_live_chart_tall'); } catch (e) {}
         Object.keys(charts).forEach(function (kk) { var ce = charts[kk].el, cb = ce.querySelector('.slx-tall'); ce.classList.toggle('tall', tall); if (cb) paintH(cb, tall); });
       });
-      var cd = document.createElement('div'); cd.className = 'slx-cd'; cd.hidden = true; box.appendChild(cd);
+      var cd = document.createElement('div'); cd.className = 'slx-info'; cd.hidden = true; box.appendChild(cd);
       var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null, tf: '', born: Date.now(), cd: cd, cdBar: null, cdSec: 0 };
       ensureLWC().then(function () {
         if (charts[k] !== c) return;
@@ -19034,7 +19032,8 @@ try {
         c.chart = window.LightweightCharts.createChart(box, {
           layout: { background: { color: 'transparent' }, textColor: '#9a96a6', fontFamily: "'DM Mono',monospace", fontSize: 10 },
           grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
-          rightPriceScale: { borderColor: '#332F3C', scaleMargins: { top: 0.08, bottom: 0.08 } },
+          // room at the bottom for the Candle | Spread badge, so the lowest level line never runs under it
+          rightPriceScale: { borderColor: '#332F3C', scaleMargins: { top: 0.08, bottom: 0.2 } },
           timeScale: { borderColor: '#332F3C', timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 7,
             tickMarkFormatter: function (t, type) { var ts = (typeof t === 'number') ? t : 0, dd = new Date(ts * 1000);
               if (type === 3 || type === 4) return hm(ts); if (type === 2) return String(dd.getDate());
@@ -19061,23 +19060,26 @@ try {
         if (typeof window.requestIdleCallback === 'function') window.requestIdleCallback(preloadLWC, { timeout: 4000 }); else preloadLWC();
       } catch (e) {}
     }, 3000);
-    /* The candle countdown (Nestor, 5 Oct 2026: "where is the candle count down"): the time left on the forming candle, in
-       a label under the live price on the price scale - where TradingView and MT5 put it. The candle's start comes from the
-       EA (UTC seconds), its length from the trade's timeframe; it reads 0:00 until the next candle's first tick lands. */
+    /* Candle countdown + spread (Nestor, 5 Oct 2026: "the spread should go where it is in the trade replay ... bottom right
+       corner and also the candle remaining time like in MT5"): one badge in the bottom-right corner of the plot, clear of
+       the price scale and the time axis, reading like the EA's own chart label - "Candle 00:31 | Spread 0.3p" - in Trade
+       Replay's spread box. The candle's start comes from the EA (UTC seconds), its length from the trade's timeframe; it
+       reads 00:00 until the next candle's first tick lands. Without a spread (EA 8.89) it shows the candle alone. */
     function cdText(left, sec) {
       left = Math.max(0, Math.floor(left));
       var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), x = left % 60, p = function (n) { return (n < 10 ? '0' : '') + n; };
-      return (sec >= 3600 || h) ? (h + ':' + p(m) + ':' + p(x)) : (m + ':' + p(x));
+      return (sec >= 3600) ? (p(h) + ':' + p(m) + ':' + p(x)) : (p(Math.floor(left / 60)) + ':' + p(x));
     }
     function paintCd(c) {
       try {
         var cd = c.cd; if (!cd) return;
-        if (!c.series || !c.chart || !c.cdBar || !c.cdSec || c.el.classList.contains('mini') || !c.el.isConnected) { cd.hidden = true; return; }
-        var y = c.series.priceToCoordinate(c.cdBar.close), w = c.chart.priceScale('right').width();
-        if (y == null || !isFinite(y) || !w) { cd.hidden = true; return; }
-        cd.textContent = cdText(c.cdBar.time + c.cdSec - Date.now() / 1000, c.cdSec);
-        var bw = cd.parentNode ? cd.parentNode.clientWidth : 0;
-        cd.style.top = Math.round(y + 9) + 'px'; cd.style.left = Math.max(0, bw - w) + 'px';
+        if (!c.chart || !c.cdBar || !c.cdSec || c.el.classList.contains('mini') || !c.el.isConnected) { cd.hidden = true; return; }
+        var tx = T2('Candle', 'Vela') + ' ' + cdText(c.cdBar.time + c.cdSec - Date.now() / 1000, c.cdSec) + (c.spTxt ? ' | ' + T2('Spread', 'Margen') + ' ' + c.spTxt : '');
+        if (cd.textContent !== tx) cd.textContent = tx;
+        var pw = 0, th = 0; try { pw = c.chart.priceScale('right').width(); th = c.chart.timeScale().height(); } catch (e) {}
+        var r = (pw > 0 && pw < 200 ? pw : 60) + 8 + 'px', b = (th > 0 && th < 80 ? th : 26) + 8 + 'px';
+        if (cd.style.right !== r) cd.style.right = r;
+        if (cd.style.bottom !== b) cd.style.bottom = b;
         cd.hidden = false;
       } catch (e) {}
     }
@@ -19121,17 +19123,16 @@ try {
       /* The spread (EA 8.90): the ask as a faint dotted line above the bid candles (no axis label, so it never sits on the
          live price or the countdown) and the figure in the top line - pips on forex, price elsewhere. Moved in place each tick. */
       try {
-        var spEl = c.el.querySelector('.slx-spr');
         if (isFinite(tk.sp) && tk.sp >= 0 && isFinite(tk.px)) {
           var askPx = tk.px + tk.sp;
           if (!c.askLine) c.askLine = c.series.createPriceLine({ price: askPx, color: 'rgba(229,103,103,0.5)', lineWidth: 1, lineStyle: 1, axisLabelVisible: false, title: '' });
           else c.askLine.applyOptions({ price: askPx });
+          // like the MT5 label: pips with one decimal on forex (5 / 3 digits), points elsewhere
           var dgs = isFinite(tk.dg) ? tk.dg : 5, fx = (dgs === 5 || dgs === 3);
-          var spTxt = fx ? (Math.round(tk.sp / Math.pow(10, 1 - dgs) * 10) / 10).toFixed(1) + ' ' + T2('pips', 'pips') : tk.sp.toFixed(Math.max(0, Math.min(8, dgs)));
-          if (spEl) { var spH = esc(T2('Spread', 'Spread')) + ' <b>' + esc(spTxt) + '</b>'; if (spEl.innerHTML !== spH) spEl.innerHTML = spH; spEl.hidden = false; }
+          c.spTxt = fx ? (Math.round(tk.sp / Math.pow(10, 1 - dgs) * 10) / 10).toFixed(1) + 'p' : (Math.round(tk.sp / Math.pow(10, -dgs) * 10) / 10).toFixed(1) + ' pts';
         } else {
           if (c.askLine) { try { c.series.removePriceLine(c.askLine); } catch (e) {} c.askLine = null; }
-          if (spEl) spEl.hidden = true;
+          c.spTxt = '';
         }
       } catch (e) {}
       var sig = JSON.stringify(L);
