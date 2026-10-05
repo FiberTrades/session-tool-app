@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.89"
+#property version   "8.90"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3505,7 +3505,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.89\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.90\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3693,7 +3693,9 @@ void LiveTickAll()
       bool changed=(sig!=g_tkSig[at]);
       bool moved=(MathAbs(px-g_tkPx[at])>=_Point*0.5) || (bar!=g_tkBar[at]);
       uint el=now-g_tkMs[at];
-      uint wait=(g_tkBad[at] || !changed) ? 5000 : 1000;
+      // v8.90 (Nestor, 5 Oct 2026: "can they be every 2 seconds instead of 5?"): a price / candle move goes every 2 s;
+      // a stop / target / ladder change still goes after 1 s, and a failed send still backs off for 5 s.
+      uint wait=g_tkBad[at] ? 5000 : (changed ? 1000 : 2000);
       if(!(changed || moved) || (g_tkMs[at]!=0 && el<wait)) continue;
       string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\",\"p_px\":%s,\"p_op\":%s,\"p_rpx\":%s,\"p_digits\":%d,\"p_bar\":\"%s\"}",
                                g_syncTokenEff,posid,LiveTickNum(r,3),DoubleToString(pnl,2),LiveTickNum(slr,3),LiveTickNum(tpr,3),lad,
@@ -6737,7 +6739,7 @@ void OnTimer()
    s_lastSec=_nowMs;
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
    LiveBarsAll();                           // v8.89: the live chart's candles, as the trade's timeframe starts a new one (before the tick that shows it)
-   LiveTickAll();                           // v8.88: the open trade's running result for Session Tool (every 5 s at most)
+   LiveTickAll();                           // v8.88: the open trade's running result for Session Tool (every 2 s at most since v8.90)
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
    // frozen chart objects and a silent log look identical to "someone turned it off". One line a
