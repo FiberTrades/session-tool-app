@@ -99,10 +99,11 @@ def og():
                 % (BG, svg(PINK, TIGHT, 330, 193), PINK), BG)
 
 pngs = [
-    # the installed app's icon (PC taskbar, Start menu): a black tile with rounded corners (22%), the logo 78% of its width
-    # (6 Oct, Nestor picked it from: no background / 78% / 86% / tile with an edge; on 5 Oct it had no tile at all)
-    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.11, BG, 22)),
-    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.11, BG, 22)),
+    # the installed app's icon on a PC (taskbar, Start menu; manifest purpose 'any'): NO background, the logo edge to edge.
+    # (6 Oct he tried a black rounded tile with the logo at 78% - 2bdbb39 - and went back: "I preferred the pc taskbar logo
+    # without the black background". Phones keep their black: apple-touch below, and Android uses the maskable icon.)
+    ('session-terminal-icon-512.png', 512, 512, icon(512, 0.0, 'transparent')),
+    ('session-terminal-icon-192.png', 192, 192, icon(192, 0.0, 'transparent')),
     # iPhone home screen: full square black (iOS rounds the corners itself), same 78%
     ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.11)),
     # Android home screen (manifest purpose 'maskable'): full-bleed black, logo 68% wide so it stays inside the 80% safe circle
