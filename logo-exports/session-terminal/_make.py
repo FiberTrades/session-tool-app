@@ -51,8 +51,10 @@ def cube_paths(col):   # the ST cube (live 5 Oct 5209b72 - ba0db8a), kept for re
 # L214,246.33 A74,16 0 1 1 184,246.33 Z'.)
 # Then rounder: screen corners 10 (from 5), and the foot's four corners rounded to the same 10 (true fillets on the
 # trapezoid 139.075-258.925 on top, 125.325-272.675 at the bottom; the 3-round version was 'M141,246 ... A3,3 ... Z').
+# Then the foot reaches 10 further down, same slope (so 10 x 13.75/30 wider each side at the bottom): 'stand a little
+# longer' (6 Oct 2026, Nestor: 'number 1 screens but could the base elongate down a little', option 2, everywhere).
 DUAL_BASE = ('M145.49,246.00 L184,246 L184,250 A15,10 0 0 0 214,250 L214,246 L252.51,246.00 A10,10 0 0 1 261.60,251.83 '
-             'L266.18,261.83 A10,10 0 0 1 257.09,276.00 L140.91,276.00 A10,10 0 0 1 131.82,261.83 L136.40,251.83 A10,10 0 0 1 145.49,246.00 Z')
+             'L270.77,271.83 A10,10 0 0 1 261.67,286.00 L136.33,286.00 A10,10 0 0 1 127.23,271.83 L136.40,251.83 A10,10 0 0 1 145.49,246.00 Z')
 def paths(col):
     return ('<rect x="66" y="116" width="127" height="102" rx="10" fill="%s"/><rect x="206" y="116" width="127" height="102" rx="10" fill="%s"/>'
             '<path fill="%s" d="%s"/>') % (col, col, col, DUAL_BASE)
@@ -62,8 +64,8 @@ def svg(col, vb, w=None, h=None, bg=None):
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '62 112 275 170'           # the two screens and the base, 4 units of air
-SQUARE = '65.5 63 268 268'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
+TIGHT = '62 112 275 178'           # the two screens and the base (116-286), 4 units of air
+SQUARE = '65.5 67 268 268'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -91,7 +93,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 300, 185), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 300, 194), PINK), BG)
 
 pngs = [
     # the installed app's icon (PC taskbar, Start menu): no tile behind it (Nestor, 5 Oct) - the screen's own black keeps it readable on light taskbars
