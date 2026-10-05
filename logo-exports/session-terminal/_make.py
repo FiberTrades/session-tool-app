@@ -13,13 +13,14 @@ PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 # y = 208 - 13*sqrt(1 - (9/40)^2) = 195.33.
 BASE = 'M141,195.33 L141,202 A9,4.5 0 0 0 159,202 L159,195.33 A40,13 0 1 1 141,195.33 Z'
 # 88 tall since 5 Oct ("a tiny bit taller"), grown upward so it still meets the base where it did
-SCREEN = 'M68,84 H232 A10,10 0 0 1 242,94 V162 A10,10 0 0 1 232,172 H68 A10,10 0 0 1 58,162 V94 A10,10 0 0 1 68,84 Z'
+# corners 16 since 5 Oct ("rounder", was 10)
+SCREEN = 'M74,84 H226 A16,16 0 0 1 242,100 V156 A16,16 0 0 1 226,172 H74 A16,16 0 0 1 58,156 V100 A16,16 0 0 1 74,84 Z'
 
 def paths(col, outline=False):
     if outline:
         # "a version of the screen in black with a pink border": same outer size, black inside, an 8-unit pink border
         # (12 was "too thick"; Nestor picked the two-thirds weight)
-        scr = '<rect x="62" y="88" width="176" height="80" rx="6" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
+        scr = '<rect x="62" y="88" width="176" height="80" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
     else:
         scr = '<path fill="%s" d="%s"/>' % (col, SCREEN)
     return scr + '<path fill="%s" d="%s"/>' % (col, BASE)
