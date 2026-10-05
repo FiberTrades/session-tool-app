@@ -1,4 +1,4 @@
-import io, os, glob
+import io, os, glob, re
 # Builds every Session Terminal logo file in this folder: python _make.py, then screenshot the PNG pages it lists with
 # headless Edge (--default-background-color=00000000 for the transparent favicons).
 OUT = os.path.dirname(os.path.abspath(__file__))
@@ -32,17 +32,24 @@ def sparkle(cx=150, cy=116, hx=86, hy=50, p=0.05):
     return d + ' Z'
 STAR = sparkle()
 
-def paths(col):
+def monitor_paths(col):   # the sparkle monitor (live 5 Oct ecb6b77 - a351185), kept for reference
     screen = '<rect x="62" y="64" width="176" height="104" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
     return screen + '<path fill="%s" d="%s"/>' % (col, STAR) + '<path fill="%s" d="%s"/>' % (col, BASE)
+
+# 5 Oct 2026, late: BACK TO THE ORIGINAL ST CUBE. After the monitor, sparkle and four ST redraws (refined solid,
+# rounded, line, flat monogram) Nestor chose "keep original": the cube exactly as it was drawn, with today's rules kept -
+# it fills its slot (the artwork touches all four sides of its square), no tile behind the installed-app icon.
+ST_PATH = re.search(r'<path[^>]*/>', io.open(os.path.join(OUT, '_st-original.svg'), encoding='utf-8').read(), re.S).group(0)
+def paths(col):
+    return re.sub(r'fill="[^"]*"', 'fill="%s"' % col, ST_PATH, count=1)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '58 60 184 165'           # the mark only
-SQUARE = '54 46.5 192 192'        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
+TIGHT = '0 0 1234.43 1234.43'     # the cube touches every side of its own square
+SQUARE = '-24.7 -24.7 1283.83 1283.83'   # 2% breathing room for icons        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -70,7 +77,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 250, 224), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 236, 236), PINK), BG)
 
 pngs = [
     # the installed app's icon (PC taskbar, Start menu): no tile behind it (Nestor, 5 Oct) - the screen's own black keeps it readable on light taskbars
