@@ -1,4 +1,4 @@
-/* Session Tool — service worker
+/* Session Terminal — service worker
  *
  * The important part: both pages are fetched NETWORK-FIRST. There are two of them now - the
  * landing at the root (index.html) and the app (app.html) - and each is cached as itself.
@@ -166,7 +166,7 @@ self.addEventListener('push', (event) => {
   let data = {};
   try { data = event.data ? event.data.json() : {}; }
   catch (e) { try { data = { body: event.data && event.data.text() }; } catch (_) {} }
-  const title = data.title || 'Session Tool';
+  const title = data.title || 'Session Terminal';
   // Detect a call so it can vibrate and stay on screen until tapped.
   const isCall = data.type === 'call' || /calling you/i.test(title) || /answer/i.test(data.body || '');
   const options = {

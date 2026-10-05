@@ -1,6 +1,6 @@
 # Trade import formats — research checklist (27 Sep 2026)
 
-Goal: let traders on other platforms import their closed trades into Session Tool from the export file
+Goal: let traders on other platforms import their closed trades into Session Terminal from the export file
 their platform already makes, alongside the existing MT5 report import. **Rule for this build (Nestor): no
 guessing.** Every reader must pass on a real export from a real account before it ships.
 

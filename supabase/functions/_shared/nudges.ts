@@ -1,5 +1,5 @@
 // ============================================================
-//  Session Tool : phone nudges + trade alerts (shared by live-trade and nudge-cron)
+//  Session Terminal : phone nudges + trade alerts (shared by live-trade and nudge-cron)
 //
 //  Nestor, 2 Oct 2026: nudges that reach the phone when the app is closed, and "nudges for when my trade gets
 //  moved to BE, TP hit, SL hit, taken out for BE". The app already raises the nudges on screen from the live

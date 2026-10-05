@@ -1,4 +1,4 @@
-# SessionTool School — curriculum outline (draft)
+# Session Terminal School — curriculum outline (draft)
 
 Status: proposal. Nothing built. Drafted 28 Aug 2026.
 
@@ -9,7 +9,7 @@ paid product is the version of this most likely to draw a complaint. Rewording t
 lesson is the same problem in a hat.
 
 The subject matter is not theirs. Nobody owns what a pip is. So this is an original course over
-the same ground, structured around **SessionTool's own workflow** rather than anyone else's
+the same ground, structured around **Session Terminal's own workflow** rather than anyone else's
 progression — which is both the safe path and the better product, for the reason below.
 
 ## The thing only we can do

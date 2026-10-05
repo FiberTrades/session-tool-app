@@ -1,5 +1,5 @@
 // ============================================================
-//  Session Tool : ingest-trade  (Supabase Edge Function)
+//  Session Terminal : ingest-trade  (Supabase Edge Function)
 //
 //  The MT5 EA POSTs one closed trade here. This function:
 //    1. looks up the account by its sync_token (a dedicated

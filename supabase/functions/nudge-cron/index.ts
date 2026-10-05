@@ -1,5 +1,5 @@
 // ============================================================
-//  Session Tool : nudge-cron  (Supabase Edge Function)
+//  Session Terminal : nudge-cron  (Supabase Edge Function)
 //
 //  The red-news timer for phone nudges (2 Oct 2026). pg_cron calls this every minute while a
 //  high-impact release is under an hour away (the job checks calendar_events first, so a quiet
@@ -28,7 +28,7 @@ Deno.serve(async (req) => {
   // A real test notification to one member, through the same path as a nudge (prefs, quiet hours, every device).
   if (body && body.mode === "test" && body.user) {
     const es = body.lang === "es";
-    const text = es ? "Prueba de Session Tool: los avisos en el móvil funcionan." : "Session Tool test: phone nudges are working.";
+    const text = es ? "Prueba de Session Terminal: los avisos en el móvil funcionan." : "Session Terminal test: phone nudges are working.";
     const out = await deliver(admin, String(body.user), body.kind === "trade" ? "trade" : "nudge", [{ rule: "test", key: "test:" + Date.now(), text }], es, 0);
     return json({ test: true, out }, 200);
   }

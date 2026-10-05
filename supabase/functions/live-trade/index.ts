@@ -1,5 +1,5 @@
 // ============================================================
-//  Session Tool : live-trade  (Supabase Edge Function)
+//  Session Terminal : live-trade  (Supabase Edge Function)
 //
 //  The MT5 EA POSTs a LIVE status event here (open / close). This
 //  function mirrors ingest-trade's auth exactly:

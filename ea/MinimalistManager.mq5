@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.91"
+#property version   "8.92"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -75,8 +75,8 @@ input int              InpKeyClose      = 67;          // Close all positions   
 input int              InpKeyRiskOff    = 32;          // Close 50% of each pos   (Space=32)
 input int              InpKeySwitch     = 8;           // Switch order type  (HOTKEY DISABLED in code - use panel button)
 
-input group "===== Session Tool Sync ====="
-input string InpSyncToken = "";                         // Your Session Tool sync token (account id)
+input group "===== Session Terminal Sync ====="
+input string InpSyncToken = "";                         // Your Session Terminal sync token (account id)
 input string InpSyncURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-trade"; // Endpoint
 input int    InpSyncDays  = 90;                         // On start, re-scan this many days of history
 input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/live-trade"; // Live status endpoint (private)
@@ -201,8 +201,8 @@ string CopyRoleText();
 color  CopyRoleColor();
 void   PanelTitle(int x,int y,int maxW);   // v8.85: the account as the panel's title (defined with AccLblName)
 void   CopySetRole(ENUM_COPY_ROLE r);
-int    g_cpFollowers=0;                        // Lead: follow accounts linked to it (running or not), for Session Tool
-string CpSettingsJson();                       // the copier part of the settings sent to Session Tool
+int    g_cpFollowers=0;                        // Lead: follow accounts linked to it (running or not), for Session Terminal
+string CpSettingsJson();                       // the copier part of the settings sent to Session Terminal
 // Hotkeys on a Follow account (close all, close half, cancel pending) also reach its copies.
 bool   CpMine(long mg){ return mg==InpMagic || (g_copyRole==CR_FOLLOW && mg==InpCopyMagic); }
 #define PANEL_CARDS 10
@@ -320,7 +320,7 @@ int    g_digits;
 double g_volStep, g_volMin, g_volMax;
 int    g_volDigits;
 
-// ---- Session Tool sync ----
+// ---- Session Terminal sync ----
 #define SYNC_KEY "sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv"
 #define SYNC_TOKEN_FILE "SessionTool_sync_token.txt"   // remembers the token across re-attaches
 ulong  g_syncQueue[];
@@ -330,7 +330,7 @@ int    g_liveTries[];   // parallel retry counter per queued event (v4.2: don't 
 datetime g_liveReAt=0;  // last time open positions were re-announced (v4.3: self-heal the feed after a reset)
 ulong  g_lockTk[];      // v8.87: positions whose stop has been announced past the entry...
 double g_lockSl[];      //        ...and the stop last announced for each (a trailed stop is announced at every step)
-// v8.88: the open trade's running result for Session Tool's trade card - per position, what was last sent and when
+// v8.88: the open trade's running result for Session Terminal's trade card - per position, what was last sent and when
 ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[]; string g_tkBar[];   // v8.89: + the forming candle last sent
 bool   g_tickOff = false;   // the WebRequest list does not allow the address: stop trying until the EA restarts
 // v8.89: the live chart's candles, on the timeframe each open trade was taken on - per timeframe in use, the candle last
@@ -1186,7 +1186,7 @@ void PlaceTrade()
         }
      }
 
-   // ---- Session Tool: remember this trade's detail, stamped to the position at entry ----
+   // ---- Session Terminal: remember this trade's detail, stamped to the position at entry ----
    g_pendSL=slPips; g_pendRisk=riskMoney;
    if(g_tpOn[0])
      {
@@ -1203,7 +1203,7 @@ void PlaceTrade()
    double fill=entry;
    double pe; int pd;
    if(PositionsEntry(pe,pd)) fill=pe;   // use the broker's real fill if available
-   // ---- Session Tool: re-measure SL from the ACTUAL fill to the ACTUAL stop ----
+   // ---- Session Terminal: re-measure SL from the ACTUAL fill to the ACTUAL stop ----
    // A market BUY fills at the ask, a SELL at the bid, so the real risk is the nominal
    // line-to-line distance PLUS the spread. Read the live position's real open + stop and
    // restamp g_pendSL (and keep the TP metrics consistent). Falls back to nominal slPips.
@@ -2328,7 +2328,7 @@ void ReleaseScaleLock()
 //  PANEL LAYOUT + SCROLLING  (v8.80)
 //  Card heights live here and nowhere else, so the scrolling window knows the whole layout before
 //  anything is drawn. Order: 0 ORDER, 1 RISK & STOPS, 2 TAKE PROFIT, 3 BREAK-EVEN, 4 TRAILING STOPS,
-//  5 PARTIAL CLOSES (v8.87), 6 DAILY LIMIT, 7 CHART SCALE, 8 TRADE COPIER, 9 SESSION TOOL SYNC.
+//  5 PARTIAL CLOSES (v8.87), 6 DAILY LIMIT, 7 CHART SCALE, 8 TRADE COPIER, 9 SESSION TERMINAL SYNC.
 //==================================================================
 int PanelCardRows(int k)
   {
@@ -2722,10 +2722,10 @@ void BuildPanel()
    }
    cy+=cardH+6;
 
-   // ===== SESSION TOOL SYNC =====
+   // ===== SESSION TERMINAL SYNC =====
    cardH=PanelCardH(9);
    mkRect (PP+"C_SY",cardX,cy,cardW,cardH,COL_PANEL_CARD,COL_PANEL_CARD);
-   mkLabel(PP+"ST_SY",labelX,cy+7,"SESSION TOOL SYNC",COL_PANEL_SECT,8);
+   mkLabel(PP+"ST_SY",labelX,cy+7,"SESSION TERMINAL SYNC",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_SYNC",labelX,ry+6,"Status",COL_PANEL_LBL,8);
    if(StringLen(g_syncTokenEff)>0)
@@ -3008,15 +3008,15 @@ bool LoadState()
   }
 
 //==================================================================
-//  SESSION TOOL SYNC  (push closed trades to the journal app)
+//  SESSION TERMINAL SYNC  (push closed trades to the journal app)
 //==================================================================
 // Persist the sync token to the terminal's Files folder so re-opening the EA from the
 // Navigator (which reloads default inputs) doesn't lose it. Stored locally on this PC only.
 string SyncTokenLoad()
   {
-   if(!FileIsExist(SYNC_TOKEN_FILE)){ Print("Session Tool: no saved sync token file yet."); return ""; }
+   if(!FileIsExist(SYNC_TOKEN_FILE)){ Print("Session Terminal: no saved sync token file yet."); return ""; }
    int h=FileOpen(SYNC_TOKEN_FILE, FILE_READ|FILE_TXT|FILE_ANSI);
-   if(h==INVALID_HANDLE){ PrintFormat("Session Tool: could not read saved sync token (file error %d).",GetLastError()); return ""; }
+   if(h==INVALID_HANDLE){ PrintFormat("Session Terminal: could not read saved sync token (file error %d).",GetLastError()); return ""; }
    string s = FileIsEnding(h) ? "" : FileReadString(h);
    FileClose(h);
    StringTrimLeft(s); StringTrimRight(s);
@@ -3025,11 +3025,11 @@ string SyncTokenLoad()
 void SyncTokenSave(string tok)
   {
    int h=FileOpen(SYNC_TOKEN_FILE, FILE_WRITE|FILE_TXT|FILE_ANSI);
-   if(h==INVALID_HANDLE){ PrintFormat("Session Tool: FAILED to save sync token (file error %d).",GetLastError()); return; }
+   if(h==INVALID_HANDLE){ PrintFormat("Session Terminal: FAILED to save sync token (file error %d).",GetLastError()); return; }
    FileWriteString(h, tok);
    FileFlush(h);
    FileClose(h);
-   PrintFormat("Session Tool: sync token saved to file (len=%d) - it will be remembered next time.",StringLen(tok));
+   PrintFormat("Session Terminal: sync token saved to file (len=%d) - it will be remembered next time.",StringLen(tok));
   }
 // Masked token for the panel (shows only the last 4 chars).
 string SyncTokenMasked()
@@ -3044,7 +3044,7 @@ void SyncTokenClear()
    g_syncTokenEff="";
    g_syncCatchupPending=false;
    if(FileIsExist(SYNC_TOKEN_FILE)) FileDelete(SYNC_TOKEN_FILE);
-   Print("Session Tool: sync token cleared - sync is now off until you enter a token again.");
+   Print("Session Terminal: sync token cleared - sync is now off until you enter a token again.");
   }
 // ---- durable "already synced" record --------------------------------------
 // MT5 auto-deletes GlobalVariables not touched for ~4 weeks (and some recompiles
@@ -3146,7 +3146,7 @@ void BalFlush(int maxN)
 
 string SyncIso(datetime t)
   {
-   // t is broker SERVER time. Convert to UTC so the Session Tool app can localise it
+   // t is broker SERVER time. Convert to UTC so the Session Terminal app can localise it
    // to the user's own timezone. v8.7: the offset in force AT t, not right now - a trade
    // re-synced after a clock change was otherwise moved by an hour.
    long off=SrvOffAt(t);
@@ -3168,13 +3168,13 @@ bool SyncPost(string json)
      {
       int err=GetLastError();
       if(err==4060)
-         PrintFormat("Session Tool sync: '%s' not allowed. Add it under Tools > Options > Expert Advisors > Allow WebRequest.",InpSyncURL);
+         PrintFormat("Session Terminal sync: '%s' not allowed. Add it under Tools > Options > Expert Advisors > Allow WebRequest.",InpSyncURL);
       else
-         PrintFormat("Session Tool sync: WebRequest failed (error %d).",err);
+         PrintFormat("Session Terminal sync: WebRequest failed (error %d).",err);
       return false;
      }
    if(code==200) return true;
-   PrintFormat("Session Tool sync: server returned HTTP %d (%s)",code,CharArrayToString(result));
+   PrintFormat("Session Terminal sync: server returned HTTP %d (%s)",code,CharArrayToString(result));
    return false;
   }
 
@@ -3461,7 +3461,7 @@ void LiveReannounceOpen()
       LiveCheckBE(pos);   // v8.86: a stop moved to break-even while the EA was off, or a missed change
      }
   }
-// v8.6: the EA's own settings, so Session Tool always knows your risk, stop limits, take profit,
+// v8.6: the EA's own settings, so Session Terminal always knows your risk, stop limits, take profit,
 // break-even and daily trade cap as they are RIGHT NOW - and can say so when you loosen one mid-
 // session. A change is sent once the values have been still for 3 seconds (a number half-typed
 // into the panel never goes out), and the whole snapshot again every 5 minutes as a backstop:
@@ -3486,7 +3486,7 @@ string LiveSettingsBody()
    string pcs="";                                   // v8.87: "50/25" - the partial-close shares in force
    for(int i=0;i<g_pcCount;i++) pcs+=(i>0?"/":"")+DoubleToString(g_pcPct[i],0);
    b+=StringFormat(",\"partials\":\"%s\"",pcs);
-   b+=CpSettingsJson();   // v8.83: so Session Tool counts a Lead's trade and its copies as ONE trade
+   b+=CpSettingsJson();   // v8.83: so Session Terminal counts a Lead's trade and its copies as ONE trade
    return b;
   }
 void LiveSettingsTick()
@@ -3505,7 +3505,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.91\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.92\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3711,7 +3711,7 @@ void LiveTickAll()
      }
   }
 // v8.89 (Nestor, 2 Oct 2026: "build the EA chart with lines", "just display the timeframe the trade was executed in"):
-// Session Tool's live chart. Each tick above also carries the chart's price, the entry, 1R in price and the forming candle
+// Session Terminal's live chart. Each tick above also carries the chart's price, the entry, 1R in price and the forming candle
 // on the trade's own timeframe; and when a new candle starts on that timeframe, its last 240 closed candles go to
 // st_live_bars - one call a second at most - for this chart's own symbol, whatever it is (gold, an index, crypto),
 // straight from this MT5, so the app's candles are the broker's own and the chart opens with history.
@@ -3856,7 +3856,7 @@ double RiskAtStop(string sym,int dir,double lots,double entry,double slPx)
 // later moved to break-even (risk 0, so omitted) never erases the risk the trade was taken with.
 string LiveSizeJson(string sym,int dir,double lots,double entry,double slPx,double planned)
   {
-   // v8.86: the account login, so Session Tool judges a trade by ITS account's rules (phone nudges, trade alerts).
+   // v8.86: the account login, so Session Terminal judges a trade by ITS account's rules (phone nudges, trade alerts).
    string j=",\"login\":\""+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"\"";
    if(lots>0) j+=",\"lots\":"+DoubleToString(lots,2);
    double risk=RiskAtStop(sym,dir,lots,entry,slPx);
@@ -4849,7 +4849,7 @@ void CE_CatchupOnce()
 //  broker has - one batch at a time, and only while you have nothing open, so the EA is never
 //  held up while it manages a trade. Once a timeframe is full it is topped up hourly (not M1:
 //  three months of M1 is the storage-heavy one, so past that it stays per-trade as before).
-//  Candles are shared: each symbol is stored once for every Session Tool member.
+//  Candles are shared: each symbol is stored once for every Session Terminal member.
 //==================================================================
 string HB_FILE      = "MMReplayHist.csv";   // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
 long   HB_DEPTH[6]  = {91*86400, 182*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all
@@ -6008,7 +6008,7 @@ bool CpStopAtBE(string fsym,const CpItem &it)
    double loss=(it.dir>0) ? it.open-it.sl : it.sl-it.open;
    return loss<SymbolPipFor(fsym)*0.5;
   }
-// Session Tool detail for a copy - the same stamp the EA leaves on its own trades: stop distance and
+// Session Terminal detail for a copy - the same stamp the EA leaves on its own trades: stop distance and
 // money at risk (the Lead's stop, at our fill), target in pips and R, the unit. Once, at first sight.
 void CpStampCopy(ulong posId,string sym,int dir,double op,double sl,double tp,double lots)
   {
@@ -6319,7 +6319,7 @@ void CpFollowWrite()
    FileWriteString(h,StringFormat("E|%d\r\n",n));
    FileClose(h);
   }
-// v8.83: the copier's part of the EA settings Session Tool receives - the role, the Lead a Follow account
+// v8.83: the copier's part of the EA settings Session Terminal receives - the role, the Lead a Follow account
 // copies, and how many follow accounts a Lead has. The app uses it to count a Lead's trade and its copies as
 // ONE trade (the live boxes, the greeting, nudges) and to show "copied to 2 of 3". The server never logs these
 // as a settings change.
@@ -6504,7 +6504,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.85 loaded (copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Tool; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.85 loaded (copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -6595,9 +6595,9 @@ int OnInit()
    g_syncTokenEff = InpSyncToken;
    StringTrimLeft(g_syncTokenEff); StringTrimRight(g_syncTokenEff);
    if(StringLen(g_syncTokenEff)>0) SyncTokenSave(g_syncTokenEff);
-   else { g_syncTokenEff=SyncTokenLoad(); if(StringLen(g_syncTokenEff)>0) Print("Session Tool: restored saved sync token."); }
-   if(StringLen(g_syncTokenEff)>0) PrintFormat("Session Tool: active sync token %s (sync is always on while a token is set).",SyncTokenMasked());
-   else Print("Session Tool: no sync token set - type it in the inputs once and it will be remembered.");
+   else { g_syncTokenEff=SyncTokenLoad(); if(StringLen(g_syncTokenEff)>0) Print("Session Terminal: restored saved sync token."); }
+   if(StringLen(g_syncTokenEff)>0) PrintFormat("Session Terminal: active sync token %s (sync is always on while a token is set).",SyncTokenMasked());
+   else Print("Session Terminal: no sync token set - type it in the inputs once and it will be remembered.");
 
    g_syncCatchupPending = (StringLen(g_syncTokenEff)>0);
 
@@ -6743,7 +6743,7 @@ void OnTimer()
    s_lastSec=_nowMs;
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
    LiveBarsAll();                           // v8.89: the live chart's candles, as the trade's timeframe starts a new one (before the tick that shows it)
-   LiveTickAll();                           // v8.88: the open trade's running result for Session Tool (every 2 s at most since v8.90)
+   LiveTickAll();                           // v8.88: the open trade's running result for Session Terminal (every 2 s at most since v8.90)
    SpreadLogSample();   // cheap, and must run whether or not a position is open
    // HEARTBEAT. A wedged EA logs nothing at all, which is what made 2026-08-20 so hard to read:
    // frozen chart objects and a silent log look identical to "someone turned it off". One line a
@@ -6769,7 +6769,7 @@ void OnTimer()
    SyncFlush(3);
    BalFlush(2);
    if(TimeCurrent()-g_liveReAt>=20){ g_liveReAt=TimeCurrent(); LiveReannounceOpen(); }   // v4.3: keep open trades on the live feed
-   LiveSettingsTick();   // v8.6: your EA settings -> Session Tool, when they change
+   LiveSettingsTick();   // v8.6: your EA settings -> Session Terminal, when they change
    LiveFlush(3);
    // v8.71: deep replay history while the market is shut (weekends, holidays). No ticks means
    // OnTick - where it normally runs, once per M1 bar - never fires, and a closed market with
@@ -6896,7 +6896,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
    if(g_maxTradesDay>0 && trans.type==TRADE_TRANSACTION_DEAL_ADD){ ulong _dk=trans.deal; if(_dk!=0 && HistoryDealSelect(_dk) && (long)HistoryDealGetInteger(_dk,DEAL_ENTRY)==DEAL_ENTRY_IN){ RefreshDayCount(); if(g_tradesToday>=g_maxTradesDay && g_active){ g_active=false; g_execMode=false; g_pausedByLimit=true; ClearEntryLines(); UpdateManageLine(); BuildPanel(); SaveState(); } } }
    // On-fill SL/TP re-anchor: snap the just-filled position's stop/target to the exact
    // requested pip distances from the REAL open price. Must run BEFORE the sync-token
-   // early-return below, so it works whether or not Session Tool sync is configured.
+   // early-return below, so it works whether or not Session Terminal sync is configured.
    if(trans.type==TRADE_TRANSACTION_DEAL_ADD && g_anchorPending)
      {
       ulong _adk=trans.deal;

@@ -24,7 +24,7 @@ line up with the trade's entry/exit on the chart.
 
 ---
 
-## Step 1 — add one input (near your other `===== Session Tool Sync =====` inputs)
+## Step 1 — add one input (near your other `===== Session Terminal Sync =====` inputs)
 
 ```mql5
 input string InpCandlesURL = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-candles"; // Replay candle endpoint
