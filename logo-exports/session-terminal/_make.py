@@ -7,30 +7,25 @@ os.makedirs(SP, exist_ok=True)
 PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
 
 # THE MARK (Nestor, 5 Oct 2026), arrived at step by step:
-#  - one monitor (not two screens), 184 x 88 in a 300 grid, corners 16 ("rounder")
+#  - one monitor (not two screens), 184 wide in a 300 grid, corners 16 ("rounder")
 #  - the screen black with a pink border of 8 ("too thick" at 12)
-#  - a ">_" command prompt on the screen, on its own (preferred to ST, "Session", and "S >_")
+#  - 16:10 and EMPTY (5 Oct evening): the screen grew upward from 80 to 104 high (bottom and base unchanged); a ">_"
+#    prompt sat on it all day and he went off it ("i just dont like the symbols"); candles and a price line were also shown
 #  - no stem: the base where it was, its black circle carried up as a slot to the screen. The base is ONE outline with
 #    the slot built in - cutting the slot along the base's own edge left a hairline. Slot corners: y = 208 - 13*sqrt(1 - (9/40)^2)
 BASE = 'M141,195.33 L141,202 A9,4.5 0 0 0 159,202 L159,195.33 A40,13 0 1 1 141,195.33 Z'
-SW = 11   # the prompt's line weight
 
 def paths(col):
-    screen = '<rect x="62" y="88" width="176" height="80" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
-    x0, y0 = 111, 108       # ">_" 40 high, centred on the screen
-    prompt = ('<path d="M%d,%d L%d,%d L%d,%d" fill="none" stroke="%s" stroke-width="%d" stroke-linecap="round" stroke-linejoin="round"/>'
-              '<rect x="%d" y="%.1f" width="44" height="%d" rx="4" fill="%s"/>') % (x0, y0, x0 + 24, y0 + 20, x0, y0 + 40, col, SW, x0 + 34, y0 + 40 - SW + 5.5, SW, col)
-    # 20% smaller around the screen's centre (Nestor, 5 Oct 2026: "20% is nice"); its line weight scales with it
-    prompt = '<g transform="translate(150 128) scale(0.8) translate(-150 -128)">%s</g>' % prompt
-    return screen + prompt + '<path fill="%s" d="%s"/>' % (col, BASE)
+    screen = '<rect x="62" y="64" width="176" height="104" rx="12" fill="%s" stroke="%s" stroke-width="8"/>' % (BG, col)
+    return screen + '<path fill="%s" d="%s"/>' % (col, BASE)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '58 84 184 137'           # the mark only
-SQUARE = '54 56.5 192 192'        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons at 40 42.5 220 220)
+TIGHT = '58 60 184 161'           # the mark only
+SQUARE = '54 44.5 192 192'        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -58,7 +53,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 300, 224), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 256, 224), PINK), BG)
 
 pngs = [
     # the installed app's icon (PC taskbar, Start menu): no tile behind it (Nestor, 5 Oct) - the screen's own black keeps it readable on light taskbars
