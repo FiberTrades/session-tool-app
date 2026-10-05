@@ -55,8 +55,10 @@ def cube_paths(col):   # the ST cube (live 5 Oct 5209b72 - ba0db8a), kept for re
 # longer' (6 Oct 2026, Nestor: 'number 1 screens but could the base elongate down a little', option 2, everywhere).
 # 6 Oct, later: both sides moved in 10 (same slope, slot, corners), 'narrower' option 3: 98 wide on top, 137 at the bottom
 # (the 10-longer foot it narrowed: 'M145.49,246.00 ... L270.77,271.83 A10,10 0 0 1 261.67,286.00 L136.33,286.00 ... Z').
-DUAL_BASE = ('M155.49,246.00 L184,246 L184,250 A15,10 0 0 0 214,250 L214,246 L242.51,246.00 A10,10 0 0 1 251.60,251.83 '
-             'L260.77,271.83 A10,10 0 0 1 251.67,286.00 L146.33,286.00 A10,10 0 0 1 137.23,271.83 L146.40,251.83 A10,10 0 0 1 155.49,246.00 Z')
+# Then in 10 more each side (6 Oct, 'make base narrower', option 3): 78 wide on top, 117 at the bottom
+# (the 137 one: 'M155.49,246.00 ... L260.77,271.83 A10,10 0 0 1 251.67,286.00 L146.33,286.00 ... Z').
+DUAL_BASE = ('M165.49,246.00 L184,246 L184,250 A15,10 0 0 0 214,250 L214,246 L232.51,246.00 A10,10 0 0 1 241.60,251.83 '
+             'L250.77,271.83 A10,10 0 0 1 241.67,286.00 L156.33,286.00 A10,10 0 0 1 147.23,271.83 L156.40,251.83 A10,10 0 0 1 165.49,246.00 Z')
 def paths(col):
     # 6 Oct: screens 142 wide (were 127; Nestor: 'slightly wider', between the 137 and 147 options), same 13 gap at 193-206
     return ('<rect x="51" y="116" width="142" height="102" rx="10" fill="%s"/><rect x="206" y="116" width="142" height="102" rx="10" fill="%s"/>'
