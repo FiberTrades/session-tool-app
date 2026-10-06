@@ -61,19 +61,25 @@ def cube_paths(col):   # the ST cube (live 5 Oct 5209b72 - ba0db8a), kept for re
 # (Nestor: 'deeper like in here', from his white reference icon; option 2 'a tiny bit less deep').
 DUAL_BASE = ('M165.49,246.00 L184.00,246 L184.00,254.00 A15.00,12.00 0 0 0 214.00,254.00 L214.00,246 '
              'L232.51,246.00 A10,10 0 0 1 241.60,251.83 L250.77,271.83 A10,10 0 0 1 241.67,286.00 L156.33,286.00 A10,10 0 0 1 147.23,271.83 L156.40,251.83 A10,10 0 0 1 165.49,246.00 Z')
+# 7 Oct 2026: ONE SCREEN. Nestor felt the two screens were too close to the dual-monitor icon they were traced from, and
+# picked a single wide screen whose top and bottom edges curve gently inward (3 at the middle; corners ~6), 297 x 123.
+# Its foot: a low wide oval with a slot, drawn in our own proportions (rx 60, ry 13, slot 26 wide and half the oval deep),
+# 26 below the screen's middle. (The sloped stand it replaced is DUAL_BASE above.)
+SCREEN = ('M57,120 Q199.5,126 342,120 Q348,120.7 348,126.7 L348,236.3 Q348,242.3 342,243 Q199.5,237 57,243 '
+          'Q51,242.3 51,236.3 L51,126.7 Q51,120.7 57,120 Z')
+OVAL = 'M187.34,266.27 L187.34,269.00 A12.162,8.108 0 0 0 211.66,269.00 L211.66,266.27 A60,12.973 0 1 1 187.34,266.27 Z'   # the foot in the shape of his picture's, at our width: rx 60, ry 13, slot 24.3 wide
+# and on top, the same slot shape upside down in pink (7 Oct: 'add this black space shape up here turned upside down')
+BUMP = 'M187.34,127 L187.34,120.00 A12.162,8.108 0 0 1 211.66,120.00 L211.66,127 Z'
 def paths(col):
-    # 6 Oct: screens 142 wide (were 127; Nestor: 'slightly wider', between the 137 and 147 options), same 13 gap at 193-206
-    # 6 Oct, late: screen corners 5 (were 10) - 'less rounded but still rounded so they look more like computer monitors'
-    return ('<rect x="51" y="116" width="142" height="102" rx="5" fill="%s"/><rect x="206" y="116" width="142" height="102" rx="5" fill="%s"/>'
-            '<path fill="%s" d="%s"/>') % (col, col, col, DUAL_BASE)
+    return ('<path fill="%s" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/>') % (col, BUMP, col, SCREEN, col, OVAL)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '47 112 305 178'           # the two screens (x 51-348) and the base (y 116-286), 4 units of air
-SQUARE = '50.5 52 298 298'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
+TIGHT = '47 108 305 188'           # bump top 111.9, screen x 51-348, the oval foot to y 292, 4 units of air
+SQUARE = '50.5 52.9 298 298'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -101,7 +107,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 330, 193), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 313, 193), PINK), BG)
 
 pngs = [
     # the installed app's icon on a PC (taskbar, Start menu; manifest purpose 'any'): NO background, the logo edge to edge.
