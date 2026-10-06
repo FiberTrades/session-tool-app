@@ -69,8 +69,8 @@ SCREEN = ('M57,120 Q199.5,126 342,120 Q348,120.7 348,126.7 L348,236.3 Q348,242.3
           'Q51,242.3 51,236.3 L51,126.7 Q51,120.7 57,120 Z')
 OVAL = 'M185.30,268.84 L185.30,277.50 A14.2,6.7 0 0 0 213.70,277.50 L213.70,268.84 A52,22 0 1 1 185.30,268.84 Z'   # 7 Oct: his picture's base, 104 x 44; its slot re-measured off his picture: 28.4 wide, straight 9.5, a shallow 14.2 x 6.7 bottom
 # and on top, the same slot shape upside down in pink (7 Oct: 'add this black space shape up here turned upside down')
-CAP = 'M185.3,123.6 L185.3,123 A14.2,14.2 0 0 1 213.7,123 L213.7,123.6 Z'    # the top: one circle r 14.2 (as wide as the foot's slot) on the screen's top edge - upper half pink (CAP),
-LENS = 'M185.3,123 A14.2,14.2 0 0 0 213.7,123 Z'          # lower half cut out of the screen (LENS)
+CAP = 'M176.5,123.6 L176.5,123 A9,9 0 0 1 185.5,114 L213.5,114 A9,9 0 0 1 222.5,123 L222.5,123.6 Z'    # the top: a pill 46 x 18 on the screen's top edge (7 Oct, over a circle) - upper half pink (CAP),
+LENS = 'M176.5,123 A9,9 0 0 0 185.5,132 L213.5,132 A9,9 0 0 0 222.5,123 Z'          # lower half cut out of the screen (LENS)
 def paths(col):
     return ('<defs><mask id="st-lens" maskUnits="userSpaceOnUse" x="0" y="0" width="400" height="400"><rect width="400" height="400" fill="#fff"/>'
             '<path d="%s" fill="#000"/></mask></defs><g mask="url(#st-lens)"><path fill="%s" d="%s"/><path fill="%s" d="%s"/></g>'
@@ -81,8 +81,8 @@ def svg(col, vb, w=None, h=None, bg=None):
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '47 104 305 212'           # circle top 108, screen x 51-348, the oval foot to y 312, 4 units of air
-SQUARE = '50.5 61 298 298'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
+TIGHT = '47 110 305 206'           # pill top 114, screen x 51-348, the oval foot to y 312, 4 units of air
+SQUARE = '50.5 64 298 298'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -110,7 +110,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 302, 210), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 311, 210), PINK), BG)
 
 pngs = [
     # the installed app's icon on a PC (taskbar, Start menu; manifest purpose 'any'): NO background, the logo edge to edge.
