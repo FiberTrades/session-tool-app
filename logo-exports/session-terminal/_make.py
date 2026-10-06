@@ -63,7 +63,8 @@ DUAL_BASE = ('M165.49,246.00 L184.00,246 L184.00,254.00 A15.00,12.00 0 0 0 214.0
              'L232.51,246.00 A10,10 0 0 1 241.60,251.83 L250.77,271.83 A10,10 0 0 1 241.67,286.00 L156.33,286.00 A10,10 0 0 1 147.23,271.83 L156.40,251.83 A10,10 0 0 1 165.49,246.00 Z')
 def paths(col):
     # 6 Oct: screens 142 wide (were 127; Nestor: 'slightly wider', between the 137 and 147 options), same 13 gap at 193-206
-    return ('<rect x="51" y="116" width="142" height="102" rx="10" fill="%s"/><rect x="206" y="116" width="142" height="102" rx="10" fill="%s"/>'
+    # 6 Oct, late: screen corners 5 (were 10) - 'less rounded but still rounded so they look more like computer monitors'
+    return ('<rect x="51" y="116" width="142" height="102" rx="5" fill="%s"/><rect x="206" y="116" width="142" height="102" rx="5" fill="%s"/>'
             '<path fill="%s" d="%s"/>') % (col, col, col, DUAL_BASE)
 
 def svg(col, vb, w=None, h=None, bg=None):
