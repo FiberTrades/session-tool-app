@@ -4,7 +4,7 @@ import io, os, glob, re
 OUT = os.path.dirname(os.path.abspath(__file__))
 SP = os.path.join(os.environ.get('TEMP', OUT), 'st_logo_pages')
 os.makedirs(SP, exist_ok=True)
-PINK, SILVER, BG = '#f472b6', '#d9d9de', '#0b0b0e'
+PINK, SILVER, BG = '#fc52ab', '#d9d9de', '#0b0b0e'   # 7 Oct: the brighter pink from Nestor's picture (was #f472b6, the app's own)
 
 # THE MARK (Nestor, 5 Oct 2026), arrived at step by step:
 #  - one monitor (not two screens), 184 wide in a 300 grid, corners 16 ("rounder")
@@ -109,14 +109,43 @@ STAR_LEFT = ('M%.2f,%.2f L%.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Z'
              % (BX, BY - BR, BX, BY + BR, BX - BQ, BY + BQ, BX - BR, BY, BX - BQ, BY - BQ, BX, BY - BR))
 RIGHT_PINK = ('M%.2f,131 H317 V253 H%.2f Z ' % (BX, BX) + STAR_RIGHT + ' ' + STAR_SMALL)
 PINK_SIDE = 'left'   # Nestor kept pink on the left (7 Oct)
+
+# 7 Oct, later: CRISPER, from Nestor's own pictures. The sparkle sides are cubics with their handles ON the star's axes (cusp
+# tips: each side leaves its point exactly along the axis), handle a = 0.40 of the radius ("push the sides in ... so the
+# points look pointier", option 3). The big star reaches the screen's top and bottom (60 up and down, 53 across). Its halves
+# don't touch: the cut sits on the black half's own axis, so the cut runs straight into the curve (no corner), and the pink
+# right half sits 2.54 (0.048 x 53) to the right of it, a thin black strip between. The small star the same shape, a touch
+# bigger and further right than before (r 17.5, its top point centred on the black side; was 15.99 at 242.45). The pink left side reaches into the frame
+# band (pink over pink), so no edge of it sits on the frame's anti-aliased inner edge (that left a faint dark line).
+def _pts2(cx, cy, rx, ry, a):
+    return (cx, cy - ry), (cx, cy + ry), (cx - rx, cy), (cx + rx, cy), a * rx, a * ry
+def cusp_star(cx, cy, rx, ry, a):
+    T, B, Lf, Rt, kx, ky = _pts2(cx, cy, rx, ry, a)
+    return ('M%.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f Z'
+            % (T[0], T[1], cx, cy - ky, cx + kx, cy, Rt[0], Rt[1], cx + kx, cy, cx, cy + ky, B[0], B[1],
+               cx, cy + ky, cx - kx, cy, Lf[0], Lf[1], cx - kx, cy, cx, cy - ky, T[0], T[1]))
+def cusp_right_half(cx, cy, rx, ry, a):
+    T, B, Lf, Rt, kx, ky = _pts2(cx, cy, rx, ry, a)
+    return ('M%.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f Z'
+            % (T[0], T[1], cx, cy - ky, cx + kx, cy, Rt[0], Rt[1], cx + kx, cy, cx, cy + ky, B[0], B[1]))
+def cusp_left_side(cx, cy, rx, ry, a, x0, y0, y1):
+    # the pink left of the screen (x0 to the cut at cx) with the star's left half cut out of it
+    T, B, Lf, Rt, kx, ky = _pts2(cx, cy, rx, ry, a)
+    return ('M%g,%g H%.2f V%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f C%.2f,%.2f %.2f,%.2f %.2f,%.2f V%g H%g Z'
+            % (x0, y0, cx, T[1], cx, cy - ky, cx - kx, cy, Lf[0], Lf[1], cx - kx, cy, cx, cy + ky, B[0], B[1], y1, x0))
+SA, SRX, SRY, SX, SCY = 0.40, 53.0, 60.0, 198.25, 192.0
+SGAP = 0.048 * SRX
+LEFT_SIDE = cusp_left_side(SX, SCY, SRX, SRY, SA, 77, 125, 259)
+RIGHT_HALF = cusp_right_half(SX + SGAP, SCY, SRX, SRY, SA)
+SMALL = cusp_star((SX + 315.5) / 2, 157.27, 17.5, 17.5, SA)   # its top point on the middle of the black side (the cut to the screen's right edge): x 256.88
 def paths(col):
     if PINK_SIDE == 'right':
         return ('<rect x="82.5" y="131" width="234" height="122" rx="5" fill="#000"/><path fill="%s" fill-rule="evenodd" d="%s"/>'
                 '<path fill="%s" fill-rule="evenodd" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/>'
                 ) % (col, FRAME, col, RIGHT_PINK, col, STAR_LEFT, col, FOOT)
     return ('<rect x="82.5" y="131" width="234" height="122" rx="5" fill="#000"/><path fill="%s" fill-rule="evenodd" d="%s"/>'
-            '<path fill="%s" fill-rule="evenodd" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/>'
-            ) % (col, FRAME, col, LEFT_PINK, col, STAR_RIGHT, col, STAR_SMALL, col, FOOT)
+            '<path fill="%s" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/>'
+            ) % (col, FRAME, col, LEFT_SIDE, col, RIGHT_HALF, col, SMALL, col, FOOT)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
