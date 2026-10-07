@@ -71,18 +71,60 @@ OVAL = 'M185.30,268.84 L185.30,277.50 A14.2,6.7 0 0 0 213.70,277.50 L213.70,268.
 # and on top, the same slot shape upside down in pink (7 Oct: 'add this black space shape up here turned upside down')
 CAP = 'M176.5,123.6 L176.5,123 A9,9 0 0 1 185.5,114 L213.5,114 A9,9 0 0 1 222.5,123 L222.5,123.6 Z'    # the top: a pill 46 x 18 on the screen's top edge (7 Oct, over a circle) - upper half pink (CAP),
 LENS = 'M176.5,123 A9,9 0 0 0 185.5,132 L213.5,132 A9,9 0 0 0 222.5,123 Z'          # lower half cut out of the screen (LENS)
-def paths(col):
+def pill_paths(col):   # the curved screen with the pill (live e81072b - 3a99a85), kept for reference; viewBox '47 110 305 206'
     return ('<defs><mask id="st-lens" maskUnits="userSpaceOnUse" x="0" y="0" width="400" height="400"><rect width="400" height="400" fill="#fff"/>'
             '<path d="%s" fill="#000"/></mask></defs><g mask="url(#st-lens)"><path fill="%s" d="%s"/><path fill="%s" d="%s"/></g>'
             '<path fill="%s" d="%s"/>') % (LENS, col, CAP, col, SCREEN, col, OVAL)
+
+# 7 Oct 2026: THE MONITOR WITH AI STARS. After a night of redesigns (3D monitor, webcams, stands, stacked screens, >_)
+# Nestor chose: a pink frame round a black screen ("add a black border"), straight edges, the shape of a normal 16:9
+# monitor (256 x 144, frame 12, corners 6 outside / 4 inside), two pink AI sparkle stars on the screen - a big one just
+# left of and below the middle and a small one at its top right - on the same oval foot with its slot, 25.84 below.
+def spark(cx, cy, r, k=.16):
+    # the AI sparkle: four points, its sides curving in towards the middle
+    q = r * k
+    return ('M%.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Z'
+            % (cx, cy - r, cx + q, cy - q, cx + r, cy, cx + q, cy + q, cx, cy + r, cx - q, cy + q, cx - r, cy, cx - q, cy - q, cx, cy - r))
+FOOT = OVAL.replace('268.84', '289.84').replace('277.50', '298.50')   # the oval 21 lower, under the taller screen
+# the frame is a RING (the screen is a real hole in it), with the black screen drawn underneath, 1 bigger so no seam
+# shows: the one-colour copy (the Settings button, in currentColor) drops the black and stays a hollow monitor
+FRAME = ('M77.5,120 H321.5 A6,6 0 0 1 327.5,126 V258 A6,6 0 0 1 321.5,264 H77.5 A6,6 0 0 1 71.5,258 V126 A6,6 0 0 1 77.5,120 Z '
+         'M87.5,132 H311.5 A4,4 0 0 1 315.5,136 V248 A4,4 0 0 1 311.5,252 H87.5 A4,4 0 0 1 83.5,248 V136 A4,4 0 0 1 87.5,132 Z')
+# Then SPLIT like the NVIDIA mark (Nestor's picture), sides swapped from theirs: the screen is cut down the big star's
+# middle; to the left of the cut it is solid pink - frame and screen one area - with the star's left half black; to the
+# right it stays black inside the pink frame, with the star's right half and the small star pink. Both stars sit on the
+# screen's middle line now (the big one centred at 192). The black half-star is a HOLE in the pink, so the one-colour
+# copy keeps it.
+BX, BY, BR = 190.82, 192.0, 41.58
+BQ = BR * .16
+LEFT_PINK = ('M82,131 H%.2f V253 H82 Z ' % BX                                                          # the screen left of the cut
+             + 'M%.2f,%.2f L%.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Z'                     # minus the star's left half
+             % (BX, BY - BR, BX, BY + BR, BX - BQ, BY + BQ, BX - BR, BY, BX - BQ, BY - BQ, BX, BY - BR))
+STAR_RIGHT = ('M%.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Z'
+              % (BX, BY - BR, BX + BQ, BY - BQ, BX + BR, BY, BX + BQ, BY + BQ, BX, BY + BR))
+STAR_SMALL = spark(242.45, 157.27, 15.99)
+# the other way round, NVIDIA's own order (built 7 Oct for Nestor to compare): black screen and pink star-half on the left,
+# solid pink on the right with the star's right half and the small star cut out of it in black
+STAR_LEFT = ('M%.2f,%.2f L%.2f,%.2f Q%.2f,%.2f %.2f,%.2f Q%.2f,%.2f %.2f,%.2f Z'
+             % (BX, BY - BR, BX, BY + BR, BX - BQ, BY + BQ, BX - BR, BY, BX - BQ, BY - BQ, BX, BY - BR))
+RIGHT_PINK = ('M%.2f,131 H317 V253 H%.2f Z ' % (BX, BX) + STAR_RIGHT + ' ' + STAR_SMALL)
+PINK_SIDE = 'left'   # Nestor kept pink on the left (7 Oct)
+def paths(col):
+    if PINK_SIDE == 'right':
+        return ('<rect x="82.5" y="131" width="234" height="122" rx="5" fill="#000"/><path fill="%s" fill-rule="evenodd" d="%s"/>'
+                '<path fill="%s" fill-rule="evenodd" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/>'
+                ) % (col, FRAME, col, RIGHT_PINK, col, STAR_LEFT, col, FOOT)
+    return ('<rect x="82.5" y="131" width="234" height="122" rx="5" fill="#000"/><path fill="%s" fill-rule="evenodd" d="%s"/>'
+            '<path fill="%s" fill-rule="evenodd" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/><path fill="%s" d="%s"/>'
+            ) % (col, FRAME, col, LEFT_PINK, col, STAR_RIGHT, col, STAR_SMALL, col, FOOT)
 
 def svg(col, vb, w=None, h=None, bg=None):
     size = (' width="%s" height="%s"' % (w, h)) if w else ''
     b = ('<rect x="-1000" y="-1000" width="3000" height="3000" fill="%s"/>' % bg) if bg else ''
     return '<svg xmlns="http://www.w3.org/2000/svg" viewBox="%s"%s>%s%s</svg>' % (vb, size, b, paths(col))
 
-TIGHT = '47 110 305 206'           # pill top 114, screen x 51-348, the oval foot to y 312, 4 units of air
-SQUARE = '50.5 64 298 298'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
+TIGHT = '67.5 116 264 221'          # the monitor x 71.5-327.5 from y 120, the oval foot to y 333, 4 units of air
+SQUARE = '71 98 257 257'       # centred in a square exactly the logo's width: as big as an icon can show it (Nestor: 'as big as possible')        # centred in a square, for icons: 4px over the mark's width (5 Oct: "too small" next to other app icons with a looser square)
 
 # start clean: only the chosen design lives here (earlier alternatives are in git history)
 for f in glob.glob(os.path.join(OUT, 'session-terminal*')):
@@ -110,7 +152,7 @@ def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
                 # the name in Fraunces, the app's own heading serif
                 '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
-                % (BG, svg(PINK, TIGHT, 311, 210), PINK), BG)
+                % (BG, svg(PINK, TIGHT, 251, 210), PINK), BG)
 
 pngs = [
     # the installed app's icon on a PC (taskbar, Start menu; manifest purpose 'any'): NO background, the logo edge to edge.
