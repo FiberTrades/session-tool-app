@@ -164,8 +164,10 @@ pngs = [
     # phones use pure black #000 (6 Oct): Android's opening screen paints the manifest background (#000) and puts this
     # icon on it in a squircle - on the app's #0b0b0e it showed as a grey blob ("very ugly"); on #000 the tile disappears
     ('session-terminal-apple-touch-180.png', 180, 180, icon(180, 0.11, '#000000')),
-    # Android home screen (manifest purpose 'maskable'): full-bleed black, logo 68% wide so it stays inside the 80% safe circle
-    ('session-terminal-maskable-512.png', 512, 512, icon(512, 0.16, '#000000')),
+    # Android home screen (manifest purpose 'maskable'): full-bleed black, the logo 52% wide. Android shows only the middle
+    # two thirds of a maskable image (72 of 108) before rounding it, so at 68% the monitor ran off the icon's edges on
+    # Nestor's Samsung (7 Oct, the 16:9 star monitor - the old wide logo was short enough to get away with it)
+    ('session-terminal-maskable-512.png', 512, 512, icon(512, 0.24, '#000000')),
     ('session-terminal-favicon-32.png', 32, 32, fav(32)),
     ('session-terminal-favicon-16.png', 16, 16, fav(16)),
     ('session-terminal-og-image.png', 1200, 630, og()),
