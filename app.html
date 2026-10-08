@@ -18221,12 +18221,29 @@ try {
       } catch (e) {}
     }
 
+    // Trades held back until this window has read the EA's settings (see observe): 0 not waiting, 1 waiting, 2 known.
+    var parked = {}, eaWait = 0;
+    function eaKnown() {
+      if (eaWait === 2) return true;
+      try { if (!window.__stEA || !window.__stEA.whenReady || window.__stEA.ready()) { eaWait = 2; return true; } } catch (e) { eaWait = 2; return true; }
+      if (!eaWait) {
+        eaWait = 1;
+        var go = function () { if (eaWait === 2) return; eaWait = 2; var p = parked; parked = {}; Object.keys(p).forEach(function (tk) { observe(p[tk][0], p[tk][1], p[tk][2]); }); };
+        window.__stEA.whenReady(go); setTimeout(go, 8000);
+      }
+      return false;
+    }
     function observe(prev, cur, raw) {
       try {
         if (!cur || cur.ticket == null || !raw) return;
         var nOn = eligible(), tOn = eligibleTrades();
         if (!nOn && !tOn) return;
         var today = localDay(), k = String(cur.ticket);
+        /* The copier (8 Oct 2026): until this window has read the EA's settings it cannot tell a copy from a second
+           trade. A window opened 5 minutes after one EUR/USD short that the copier put on a second account loaded
+           the trades a moment before the settings, judged both as trades and said "This is trade 2 this session.
+           Your limit is 1." - once per ticket. So a trade waits for the settings (8 s at most, if they never come). */
+        if (!eaKnown()) { parked[k] = [prev, cur, raw]; return; }
         // Trade copier: a copy on another of your accounts is the same idea - judged once, on the first.
         try { if (window.__stLive && window.__stLive.isCopy && window.__stLive.isCopy(k)) return; } catch (e) {}
         /* ...and when the copy reaches the app BEFORE its original (both are sent within a second), the copy was judged
@@ -19315,6 +19332,10 @@ try {
      rules stay your plan: nothing here is copied into them. */
   window.__stEA = (function () {
     var rows = {}, log = [], MAXLOG = 12;
+    // Read the settings yet? (the live feed calls loaded() when the first read comes back, or fails)
+    var seeded = false, waiters = [];
+    function loaded() { if (seeded) return; seeded = true; var w = waiters; waiters = []; w.forEach(function (f) { try { f(); } catch (e) {} }); }
+    function whenReady(fn) { if (seeded) fn(); else waiters.push(fn); }
     function key(r) { return String(r.login) + '|' + String(r.symbol || ''); }
     function num(v) { var n = Number(v); return isFinite(n) ? String(Math.round(n * 100) / 100) : '—'; }
     function money(v) { return (typeof fmtMoney === 'function') ? fmtMoney(Number(v) || 0, { noSign: true }) : num(v); }
@@ -19401,6 +19422,7 @@ try {
       return best;
     }
     return { apply: apply, logged: logged, summary: summary, riskFor: riskFor, copier: copier, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe,
+             loaded: loaded, ready: function () { return seeded; }, whenReady: whenReady,
              rows: function () { return rows; }, log: function () { return log; } };
   })();
 
@@ -72353,7 +72375,7 @@ try {
   var eaChan=null, eaUid=null, eaRetryT=null, eaRetry=0;
   function seedEA(){
     if(!uid || !sb || !window.__stEA) return;
-    try{ sb.from('ea_settings').select('*').eq('user_id', uid).then(function(res){ ((res&&res.data)||[]).forEach(function(r){ window.__stEA.apply(r); }); }, function(){}); }catch(e){}
+    try{ sb.from('ea_settings').select('*').eq('user_id', uid).then(function(res){ ((res&&res.data)||[]).forEach(function(r){ window.__stEA.apply(r); }); try{ window.__stEA.loaded(); }catch(e){} }, function(){ try{ window.__stEA.loaded(); }catch(e){} }); }catch(e){}
     try{ sb.from('ea_settings_log').select('*').eq('user_id', uid).order('changed_at',{ascending:false}).limit(12).then(function(res){ ((res&&res.data)||[]).slice().reverse().forEach(function(r){ window.__stEA.logged(r); }); }, function(){}); }catch(e){}
   }
   function startEA(){
