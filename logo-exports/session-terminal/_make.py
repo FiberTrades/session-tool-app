@@ -169,7 +169,7 @@ for n, c in files.items():
     io.open(os.path.join(OUT, n), 'w', encoding='utf-8').write(c)
 
 def page(w, h, inner, bg='transparent'):
-    return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&display=swap">'
+    return ('<!doctype html><html><head><meta charset="utf-8"><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400&family=Montserrat:wght@400;700&display=swap">'
             '<style>html,body{margin:0;width:%dpx;height:%dpx;background:%s;overflow:hidden}</style></head><body>%s</body></html>') % (w, h, bg, inner)
 def icon(px, pad, bg=BG, radius=0):
     s = px * (1 - 2 * pad)
@@ -179,8 +179,9 @@ def fav(px):
     return page(px, px, svg(PINK, SQUARE, px, px))
 def og():
     return page(1200, 630, '<div style="width:1200px;height:630px;background:%s;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:34px">%s'
-                # the name in Fraunces, the app's own heading serif
-                '<div style="font:400 66px Fraunces,serif;color:#ece9f1;letter-spacing:-.8px">Session <span style="color:%s">Terminal</span></div></div>'
+                # the name in Nestor's lockup (8 Oct 2026): SESSION Montserrat 700 tracked .33em, TERMINAL 400 tracked .28em, pink
+                '<div style="font-family:Montserrat,sans-serif;font-size:34px;color:%s;line-height:1;white-space:nowrap;display:flex;align-items:baseline">'
+                '<span style="font-weight:700;letter-spacing:.33em">SESSION</span><span style="font-weight:400;letter-spacing:.28em;margin-left:.64em;margin-right:-.28em">TERMINAL</span></div></div>'
                 % (BG, svg(PINK, TIGHT, 251, 210), PINK), BG)
 
 pngs = [
