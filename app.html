@@ -57336,11 +57336,26 @@ try {
       obs = new MutationObserver(function () { if (!isMin()) return; countNew(); paintBar(); });
       obs.observe(ml, { childList: true });
     }
+    /* Each time the chat comes into view it starts at the newest message (Nestor, 9 Oct 2026: "i always find myself having
+       to scroll down quite alot"). Showing it moves the Community chat element into this box, and a moved element comes
+       back scrolled to the top; the chat only follows new messages when it is already at the bottom, so it stayed up there.
+       It is held at the bottom for the first couple of seconds while messages and images arrive, unless the member scrolls
+       or touches it first - once it is on screen, nothing pulls them away from what they are reading. */
+    var pinT = [];
+    function toLatest() {
+      var ml = document.getElementById('dcx-msgs'); if (!ml) return;
+      pinT.forEach(clearTimeout); pinT = [];
+      var stop = false, quit = function () { stop = true; };
+      ['wheel', 'touchstart', 'pointerdown'].forEach(function (ev) { ml.addEventListener(ev, quit, { once: true, passive: true }); });
+      var go = function () { if (!stop) ml.scrollTop = ml.scrollHeight; };
+      go(); requestAnimationFrame(go);
+      [150, 500, 1000, 1800, 2600].forEach(function (ms) { pinT.push(setTimeout(go, ms)); });
+    }
     function setMin(on) {
       try { if (on) localStorage.setItem(MIN_KEY, '1'); else localStorage.removeItem(MIN_KEY); } catch (e) {}
       seen = null; unread = 0; if (on) countNew();
       apply();
-      if (!on) { var ml = document.getElementById('dcx-msgs'); if (ml) setTimeout(function () { ml.scrollTop = ml.scrollHeight; }, 30); }
+      if (!on) toLatest();
     }
     function apply() {
       if (!host) return; var m = isMin();
@@ -57356,6 +57371,7 @@ try {
         ok = yes;
         if (!yes) { host.hidden = true; try { STCommunity.unembed(); } catch (e) {} return; }
         host.hidden = false; minBtn(); watch(); apply();
+        if (!isMin()) toLatest();
         try { var _r = document.getElementById('dcx-root'), _on = localStorage.getItem('st_sesschat_members') === '1'; if (_r) _r.classList.toggle('sc-members-on', _on); var _mt = document.getElementById('dcx-mtoggle'); if (_mt) _mt.setAttribute('aria-pressed', _on ? 'true' : 'false'); } catch (x) {}
       });
     }
