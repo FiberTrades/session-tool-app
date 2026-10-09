@@ -152,6 +152,16 @@ async function applySubscription(sub: Stripe.Subscription, userIdHint?: string |
     console.warn("[stripe] no current_period_end on", sub.id, "- leaving the stored value alone");
   }
 
+  // The price itself, for Settings > Business: monthly revenue needs to know a yearly plan from a
+  // monthly one. List price before any coupon. Left alone when the event carries no price, and kept
+  // after a cancel so the history can say what was lost.
+  const price = sub.items?.data?.[0]?.price;
+  if (price && typeof price.unit_amount === "number") {
+    patch.plan_amount = price.unit_amount;
+    patch.plan_interval = price.recurring?.interval ?? null;
+    patch.plan_currency = price.currency ?? null;
+  }
+
   if (PORTAL_URL) patch.portal_url = isPaid ? PORTAL_URL : null;
 
   const { error } = await admin.from("profiles").update(patch).eq("id", userId);
