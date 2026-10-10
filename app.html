@@ -1282,6 +1282,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-news.hol { border-color: rgba(91, 155, 255, 0.55); background: rgba(91, 155, 255, 0.07); }
   .slx-news.hol .slx-l, .slx-news.hol .slx-v { color: #5b9bff; }
   .slx-news.hol .slx-v small { color: var(--text-mid); }
+  /* Medium news between them, in the calendar's medium yellow (10 Oct 2026). */
+  .slx-news.med { border-color: rgba(255, 210, 77, 0.5); background: rgba(255, 210, 77, 0.06); }
+  .slx-news.med .slx-l, .slx-news.med .slx-v { color: #ffd24d; }
+  .slx-news.med .slx-v small { color: var(--text-mid); }
+  /* A countdown never breaks in two ("in 6" / "h 12 m"): when a long name leaves it no room on a phone it drops to its
+     own line as a whole, flush with the name. */
+  #st-livenews .slx-v { display: flex; flex-wrap: wrap; align-items: baseline; column-gap: 6px; row-gap: 3px; }
+  #st-livenews .slx-v small { margin-left: 0; white-space: nowrap; }
   .slx-l { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 7px; }
   .slx-v { font-size: 17px; color: var(--text); } .slx-v small { font-size: 11px; color: var(--text-mid); margin-left: 6px; }
   .slx-bar { height: 4px; background: var(--bg-elev2); border-radius: 3px; margin-top: 9px; overflow: hidden; } .slx-bar i { display: block; height: 100%; border-radius: 3px; transition: width 400ms ease; }
@@ -18283,11 +18291,12 @@ try {
       return out;
     }
     // High-impact releases for these currencies, grouped by release time (CPI + Core CPI = one).
-    function redNews(curs) {
-      var ev = [], groups = {};
+    // impact 'medium' gives the medium ones instead - only the Session Live box reads those; every nudge is red news.
+    function redNews(curs, impact) {
+      var ev = [], groups = {}, want = impact === 'medium' ? 'medium' : 'high';
       try { ev = (data && data._calendarCache && Array.isArray(data._calendarCache.events)) ? data._calendarCache.events : []; } catch (e) {}
       ev.forEach(function (e) {
-        if (!e || String(e.impact || '').toLowerCase() !== 'high' || e.isTimed === false) return;
+        if (!e || String(e.impact || '').toLowerCase() !== want || e.isTimed === false) return;
         var c = String(e.country || '').toUpperCase(); if (curs.indexOf(c) === -1) return;
         var ms = Date.parse(e.when); if (!isFinite(ms)) return;
         var g = groups[ms] || (groups[ms] = { at: ms, curs: [], titles: [] });
@@ -19225,7 +19234,7 @@ try {
       } catch (e) { return null; }
     }
     return { observe: observe, markOld: markOld, ack: ack, chime: chime, eaChanged: eaChanged, dayHtml: dayHtml, aiPack: aiPack,
-             budget: budget, redNewsFor: redNews, myCurs: myCurs, cursOf: cursOf,
+             budget: budget, redNewsFor: function (curs) { return redNews(curs); }, mediumNewsFor: function (curs) { return redNews(curs, 'medium'); }, myCurs: myCurs, cursOf: cursOf,
              periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList,
              kindLabel: function (g) { return t('nudge.' + g); } };
   })();
@@ -19309,8 +19318,32 @@ try {
       var day = sameDay ? '' : d.toLocaleDateString((typeof tLocale === 'function') ? tLocale() : 'en-GB', { weekday: 'short' }).replace('.', '') + ' ';
       return { name: shortName(g), when: day + p2(d.getHours()) + ':' + p2(d.getMinutes()), inTxt: inTxt(g.at - Date.now()), title: g.titles.join(', ') + ' (' + g.curs.join('/') + ')' };
     }
+    /* Medium news for the Session Live board (Nestor, 10 Oct 2026: "build it like this and also only show medium news
+       if they affect my session times i have selected in the app"). Quieter than red on purpose - there is about one a
+       day and most land hours after a morning session - so: only TODAY's, only on the member's pairs (and any pair
+       with a trade open), and only a release that lands inside one of their own session windows. null otherwise, and
+       then there is no box at all. No sound, no nudge, no phone alert: those stay red news. (now: for the tests.) */
+    function upcomingMedium(now) {
+      try {
+        var N = window.__stNudge;
+        if (!N || !N.mediumNewsFor || !N.myCurs) return null;
+        now = now || Date.now();
+        var curs = N.myCurs();
+        try { (window.__stLive && window.__stLive.openList ? window.__stLive.openList() : []).forEach(function (o) { N.cursOf(o.symbol).forEach(function (c) { if (curs.indexOf(c) === -1) curs.push(c); }); }); } catch (e) {}
+        var ss = []; try { ss = (typeof getSessions === 'function') ? (getSessions() || []) : []; } catch (e) {}
+        var today = new Date(now).toDateString();
+        var inSession = function (ms) {
+          var d = new Date(ms), m = d.getHours() * 60 + d.getMinutes();
+          return ss.some(function (x) { var a = _mins(x.start), b = _mins(x.end); return a <= b ? (m >= a && m <= b) : (m >= a || m <= b); });
+        };
+        var g = N.mediumNewsFor(curs).filter(function (x) { return x.at > now - 60000 && new Date(x.at).toDateString() === today && inSession(x.at); })[0];
+        if (!g) return null;
+        var d = new Date(g.at);
+        return { name: shortName(g), when: p2(d.getHours()) + ':' + p2(d.getMinutes()), inTxt: inTxt(g.at - now), title: g.titles.join(', ') + ' (' + g.curs.join('/') + ')', at: g.at };
+      } catch (e) { return null; }
+    }
     setTimeout(function () { tick(); setInterval(tick, 15000); }, 1200);
-    return { tick: tick, next: next, inTxt: inTxt, leftText: leftText, upcoming: upcoming };
+    return { tick: tick, next: next, inTxt: inTxt, leftText: leftText, upcoming: upcoming, upcomingMedium: upcomingMedium };
   })();
 
   /* ===== Session Live: the risk budget and the open trades (2 Oct 2026) =====
@@ -19367,7 +19400,13 @@ try {
         var b = (window.__stBankHolidays && window.__stBankHolidays.box) ? window.__stBankHolidays.box(window.__lang === 'es') : null;
         if (b) hol = '<div class="slx-news hol" title="' + esc(b.title) + '"><div class="slx-l">' + esc(T2('Bank holiday', 'Festivo bancario')) + '</div><div class="slx-v">' + esc(b.name + ' · ' + b.when) + (b.inTxt ? '<small>' + esc(b.inTxt) + '</small>' : '') + '</div></div>';
       } catch (e) {}
-      return red + hol;
+      // Medium news between the two, in the calendar's yellow: only a release today inside your own session times.
+      var med = '';
+      try {
+        var mn = (window.__stHeadNews && window.__stHeadNews.upcomingMedium) ? window.__stHeadNews.upcomingMedium() : null;
+        if (mn) med = '<div class="slx-news med" title="' + esc(mn.title) + '"><div class="slx-l">' + esc(T2('Medium news', 'Impacto medio')) + '</div><div class="slx-v">' + esc(mn.name + ' · ' + mn.when) + '<small>' + esc(mn.inTxt) + '</small></div></div>';
+      } catch (e) {}
+      return red + med + hol;
     }
     function parseLad(s) {
       var out = { p: [], t: [] };
