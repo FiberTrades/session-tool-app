@@ -3865,6 +3865,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   @media (max-width: 600px) { .zc-chart.zc-tall #equity-chart-wrap { height: 360px; min-height: 360px; } .zc-chart.zc-tall #equity-chart { height: 360px; } }
   .zch { position: relative; }
   .zch svg { width: 100%; height: 240px; display: block; }
+  /* a row of three small charts (Statistics > Timing, 10 Oct 2026): shorter, and drawn at that height by zBars */
+  .zr-short .zch { height: 170px; min-height: 170px; }
+  .zr-short .zch svg { height: 170px; }
   .zb-hit { fill: transparent; cursor: pointer; }
   .zb-hit.on { fill: rgba(255, 255, 255, 0.05); }
   .zb-tip { position: absolute; z-index: 5; pointer-events: none; display: flex; flex-direction: column; gap: 3px; padding: 8px 11px; background: var(--bg-elev2); border: 1px solid var(--border-2); border-radius: 8px; box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35); font-family: 'AppNum', 'DM Mono', monospace; white-space: nowrap; }
@@ -6551,7 +6554,7 @@ try {
       </div>
     </div>
 
-    <div class="zr zr-2" data-stx="timing">
+    <div class="zr zr-3 zr-short" data-stx="timing">
       <div class="zc zc-chart">
         <div class="zc-h"><span class="zc-t" data-i18n="stz.weekday">Net R by weekday</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="stz.weekday_tip">The R each weekday made in the period, after costs - the same figures as the Day of Week table.</span></span></div>
         <p class="zc-sub" id="zd-dow-sub"></p>
@@ -6562,9 +6565,6 @@ try {
         <p class="zc-sub" id="zd-sess-sub"></p>
         <div class="zch" id="zd-sess"></div>
       </div>
-    </div>
-
-    <div class="zr zr-1" data-stx="timing">
       <div class="zc zc-chart">
         <div class="zc-h"><span class="zc-t" data-i18n="stz.hour">Net R by entry hour</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="stz.hour_tip">The R made by trades entered in each hour, on the same clock as Trade Time Analysis and the sessions.</span></span></div>
         <p class="zc-sub" id="zd-hour-sub"></p>
@@ -27344,12 +27344,17 @@ try {
   // a bar chart at a real width: labels under the bars, a zero line, two light grid lines
   // A bar chart at a real width. The axis labels set the left margin (so "£3,360" is never cut off) and every column is a
   // hover / tap target from top to bottom, so a break-even day's 1-pixel bar is as easy to read as a big one (Nestor).
-  function zBars(Wd, labels, vals, fmtAxis, sparse) {
-    const H = 240, Rr = 8, T = 12, Bt = 32, n = vals.length;
+  function zBars(Wd, labels, vals, fmtAxis, sparse, Hh) {
+    const H = Hh || 240, Rr = 8, T = 12, n = vals.length;
     const top = Math.max.apply(null, vals.concat([0])), bot = Math.min.apply(null, vals.concat([0]));
     const ticks = [top, bot].filter(v => Math.abs(v) > 1e-9), tl = ticks.map(fmtAxis);
     const L = Math.max(40, Math.round(Math.max.apply(null, tl.map(x => x.length).concat([3])) * 7.2 + 18));
-    const span = (top - bot) || 1, y = v => T + (top - v) / span * (H - T - Bt), bw = (Wd - L - Rr) / Math.max(1, n);
+    const bw = (Wd - L - Rr) / Math.max(1, n);
+    // A label too wide for its column ("Pre-London" in a narrow card) breaks into two lines at a space or a hyphen.
+    const wide = s => String(s).length * 6.3 + 6 > bw, cut = s => { const m = /^(.*?[ -])(.+)$/.exec(String(s)); return m ? [m[1].trim(), m[2]] : null; };
+    const two = !sparse && labels.some(s => wide(s) && cut(s)), Bt = two ? 45 : 32;
+    const span = (top - bot) || 1, y = v => T + (top - v) / span * (H - T - Bt);
+    const lab = (s, cx, yy) => '<text x="' + cx + '" y="' + yy + '" text-anchor="middle" font-size="11" fill="#8d899a" font-family="DM Mono, monospace">' + s + '</text>';
     let g = '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(0) + '" y2="' + y(0) + '" stroke="rgba(255,255,255,.14)"/>';
     ticks.forEach((v, k) => { g += '<line x1="' + L + '" x2="' + (Wd - Rr) + '" y1="' + y(v) + '" y2="' + y(v) + '" stroke="rgba(255,255,255,.05)"/><text x="' + (L - 8) + '" y="' + (y(v) + 4) + '" text-anchor="end" font-size="11" fill="#8d899a" font-family="DM Mono, monospace">' + tl[k] + '</text>'; });
     const step = Math.ceil(n / Math.max(2, Math.floor(Wd / 110)));
@@ -27357,7 +27362,10 @@ try {
     vals.forEach((v, i) => {
       const x0 = L + i * bw + bw * 0.2, w = Math.max(1.5, bw * 0.6), y0 = Math.min(y(v), y(0)), h = Math.max(1, Math.abs(y(v) - y(0)));
       g += '<rect x="' + x0.toFixed(1) + '" y="' + y0.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="2" fill="' + (v > 0 ? Z_G : v < 0 ? Z_R : 'rgba(255,255,255,.35)') + '"/>';
-      if (!sparse || i === n - 1 || (i % step === 0 && n - 1 - i >= step / 2)) g += '<text x="' + (x0 + w / 2).toFixed(1) + '" y="' + (H - 10) + '" text-anchor="middle" font-size="11" fill="#8d899a" font-family="DM Mono, monospace">' + labels[i] + '</text>';
+      if (!sparse || i === n - 1 || (i % step === 0 && n - 1 - i >= step / 2)) {
+        const cx = (x0 + w / 2).toFixed(1), parts = two && wide(labels[i]) ? cut(labels[i]) : null;
+        g += parts ? lab(parts[0], cx, H - 23) + lab(parts[1], cx, H - 10) : lab(labels[i], cx, two ? H - 23 : H - 10);
+      }
       hits += '<rect class="zb-hit" data-i="' + i + '" x="' + (L + i * bw).toFixed(1) + '" y="' + (T - 6) + '" width="' + bw.toFixed(1) + '" height="' + (H - T - Bt + 12) + '"/>';
     });
     return '<svg viewBox="0 0 ' + Wd + ' ' + H + '" preserveAspectRatio="none" role="img">' + g + hits + '</svg>';
@@ -27400,7 +27408,7 @@ try {
       const w = Math.round(host.clientWidth);
       if (w < 40) return;   // its tab is hidden: drawn when it comes into view
       if (!(rows.length && L.n)) { host.onpointermove = host.onpointerdown = host.onpointerleave = null; host.innerHTML = '<div class="zc-empty">' + zT('No trades in this period yet', 'Aún no hay operaciones en este periodo') + '</div>'; return; }
-      host.innerHTML = zBars(w, rows.map(d => d.lab), rows.map(d => d.v), fmtAxis, sparse);
+      host.innerHTML = zBars(w, rows.map(d => d.lab), rows.map(d => d.v), fmtAxis, sparse, Math.round(host.clientHeight) || 240);
       zTip(host, rows.map(tipOf));
     };
     const rTip = d => ({ title: d.full || d.lab, v: d.v, value: sign(d.v) + Math.abs(d.v).toFixed(2) + 'R', sub: nTr(d.n) + (d.wr != null ? ' · ' + d.wr + '% ' + zT('win rate', 'acierto') : '') });
