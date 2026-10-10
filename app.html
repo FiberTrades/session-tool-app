@@ -1731,6 +1731,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .pn-line + .pn-line { margin-top: 6px; }
   .pn-line .good { color: var(--good); } .pn-line .bad { color: var(--bad); }
   .pn-muted { color: var(--text-dim); }
+  /* The warnings-respected line leads the block; green with a tick when every one was respected. A period with nothing
+     to regret (.pn-clean) shows its counts in plain grey instead of amber. */
+  .pn-heed.all { color: var(--good); font-weight: 500; }
+  .pn-tick { margin-right: 7px; }
+  .pn-clean .dn-count, .pn-clean .pn-chip b { color: var(--text-mid); }
   .pn-cost-title { font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); margin: 12px 0 6px; }
   .pn-cost-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 12px; font-size: 12px; line-height: 1.5; color: var(--text-mid); }
   .pn-cost-row > span:last-child { font-variant-numeric: tabular-nums; text-align: right; }
@@ -8786,6 +8791,8 @@ try {
       'nudge.period_none_month': 'No nudges this month.',
       'nudge.period_into': 'Trades taken into a nudge: {N} · {W} won, {L} lost, {B} BE',
       'nudge.period_heeded': 'Warnings you respected: {H} of {M}',
+      'nudge.period_heeded_all': 'You respected all {M} warnings',
+      'nudge.period_heeded_one': 'You respected the warning',
       'nudge.period_cost_title': 'What each nudge cost',
       'nudge.period_by_day': 'By day',
       'nudge.w_long': 'long',
@@ -10705,6 +10712,8 @@ try {
       'nudge.period_none_month': 'Ningún aviso este mes.',
       'nudge.period_into': 'Operaciones tomadas con aviso: {N} · {W} ganadas, {L} perdidas, {B} BE',
       'nudge.period_heeded': 'Avisos que respetaste: {H} de {M}',
+      'nudge.period_heeded_all': 'Respetaste los {M} avisos',
+      'nudge.period_heeded_one': 'Respetaste el aviso',
       'nudge.period_cost_title': 'Lo que costó cada aviso',
       'nudge.period_by_day': 'Por día',
       'nudge.w_long': 'largo',
@@ -19006,7 +19015,14 @@ try {
         else { pa = new Date(a.getTime() - 7 * 864e5); pb = new Date(b.getTime() - 7 * 864e5); }
         var cur = periodStats(localDay(a), localDay(b)), prev = periodStats(localDay(pa), localDay(pb));
         var M = noun === 'month';
-        var h = '<div class="month-insights" style="margin-top:0;"><div class="month-insights-header">' + escH(t('nudge.day_title'))
+        var costRows = Object.keys(cur.byKind).map(function (g) { return { g: g, v: cur.byKind[g] }; })
+          .filter(function (x) { return x.v.n > 0; }).sort(function (a, b) { return a.v.net - b.v.net; });
+        // Was anything in this period a mistake? Warnings that were all respected, with no trade taken into a nudge and
+        // nothing a nudge cost, are GOOD news, and the block must not read like a charge sheet (Nestor, 10 Oct 2026: "this
+        // is good news but ... it looks like if i had done a bad thing"). Then the respected line leads, in green, and
+        // the counts and the rise on the period before lose their amber and red (.pn-clean).
+        var clean = !!cur.total && !cur.into.n && !costRows.length && (!cur.heedable || cur.heeded === cur.heedable);
+        var h = '<div class="month-insights' + (clean ? ' pn-clean' : '') + '" style="margin-top:0;"><div class="month-insights-header">' + escH(t('nudge.day_title'))
               + (cur.total ? '<span class="dn-count">' + cur.total + '</span>' : '') + '</div><div class="month-insight-block">';
         if (!cur.total) {
           h += '<div class="pn-line">' + escH(t(M ? 'nudge.period_none_month' : 'nudge.period_none_week'))
@@ -19014,9 +19030,15 @@ try {
           return h + '</div></div>';
         }
         var diff = cur.total - prev.total;
+        if (cur.heedable) {
+          var allHeeded = cur.heeded === cur.heedable;
+          var heedTxt = allHeeded ? (cur.heedable === 1 ? t('nudge.period_heeded_one') : t('nudge.period_heeded_all').replace('{M}', String(cur.heedable)))
+                                  : t('nudge.period_heeded').replace('{H}', String(cur.heeded)).replace('{M}', String(cur.heedable));
+          h += '<div class="pn-line pn-heed' + (allHeeded ? ' all' : '') + '">' + (allHeeded ? '<span class="pn-tick" aria-hidden="true">✓</span>' : '') + escH(heedTxt) + '</div>';
+        }
         h += '<div class="pn-line">' + escH(t(M ? 'nudge.period_this_month' : 'nudge.period_this_week').replace('{N}', String(cur.total)))
            + ' <span class="pn-muted">· ' + escH(t(M ? 'nudge.period_last_month' : 'nudge.period_last_week').replace('{N}', String(prev.total))) + '</span>'
-           + (diff ? ' <span class="' + (diff < 0 ? 'good' : 'bad') + '">' + (diff < 0 ? '↓ ' : '↑ ') + Math.abs(diff) + '</span>' : '') + '</div>';
+           + (diff ? ' <span class="' + (diff < 0 ? 'good' : (clean ? 'pn-muted' : 'bad')) + '">' + (diff < 0 ? '↓ ' : '↑ ') + Math.abs(diff) + '</span>' : '') + '</div>';
         h += '<div class="pn-kinds">' + Object.keys(cur.kinds).sort(function (x, y) { return cur.kinds[y] - cur.kinds[x]; })
              .map(function (g) { return '<span class="pn-chip">' + escH(t('nudge.' + g)) + '<b>' + cur.kinds[g] + '</b></span>'; }).join('') + '</div>';
         // By day: which day each nudge happened. A day opens that day's view (times and outcomes).
@@ -19035,8 +19057,6 @@ try {
           h += '<div class="pn-line">' + escH(t('nudge.period_into').replace('{N}', String(cur.into.n)).replace('{W}', String(cur.into.wins)).replace('{L}', String(cur.into.losses)).replace('{B}', String(cur.into.bes)))
              + ' · <span class="' + cls + '">' + escH(fmtMoney(cur.into.net) + ' (' + signedR(cur.into.r) + ')') + '</span></div>';
         }
-        var costRows = Object.keys(cur.byKind).map(function (g) { return { g: g, v: cur.byKind[g] }; })
-          .filter(function (x) { return x.v.n > 0; }).sort(function (a, b) { return a.v.net - b.v.net; });
         if (costRows.length) {
           h += '<div class="pn-cost-title">' + escH(t('nudge.period_cost_title')) + '</div>';
           costRows.forEach(function (x) {
@@ -19048,7 +19068,6 @@ try {
                + '<span class="' + c2 + '">' + escH(fmtMoney(v.net) + ' (' + signedR(v.r) + ')') + '</span></span></div>';
           });
         }
-        if (cur.heedable) h += '<div class="pn-line" style="margin-top:10px;">' + escH(t('nudge.period_heeded').replace('{H}', String(cur.heeded)).replace('{M}', String(cur.heedable))) + '</div>';
         return h + '</div></div>';
       } catch (e) { return ''; }
     }
