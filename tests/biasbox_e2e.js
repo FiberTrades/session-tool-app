@@ -19,7 +19,11 @@
   var hero = Array.from(el.querySelectorAll('.bl-4 .bl-t')).map(txt);
   ok('four exact-match tiles with the right figures', hero.length === 4 && hero[0] === 'TRADES 6 of 37 trades' && /33%/.test(hero[1]) && /\+1\.29R all trades \+0\.35R/.test(hero[2]) && /\+7\.76R across 6 trades/.test(hero[3]), hero);
   ok('each tile has its small chart', Array.from(el.querySelectorAll('.bl-4 .bl-z')).every(function (n) { return n.children.length > 0; }));
-  ok('six chips, newest first', el.querySelectorAll('.bl-chip').length === 6 && /2 Oct/.test(txt(el.querySelector('.bl-chip'))), txt(el.querySelector('.bl-chip')));
+  var rows = function () { return Array.from(el.querySelectorAll('.bl-trades .atl-row[data-id]')); };
+  var heads = Array.from(el.querySelectorAll('.bl-trades .atl-head .atl-cell')).map(txt);
+  ok('the six trades are listed newest first, in the All Trades table', rows().length === 6 && /^02 Oct 26/.test(txt(rows()[0])) && /^24 Jul 26/.test(txt(rows()[5])), rows().map(function (r) { return txt(r).slice(0, 9); }));
+  ok('with every column of that table', heads.length === 13 && heads.slice(0, 6).join('|') === 'DATE|SYMBOL|RESULT|AIMED R · P|REAL R · P|POT R · P' && rows()[0].children.length === 13, heads);
+  ok('the table fits the box without a sideways scroll at this width, or scrolls inside it', (function () { var sc = el.querySelector('.bl-trades .atl-scroll'), bx = el.querySelector('.bl-trades').getBoundingClientRect(), r = el.getBoundingClientRect(); return bx.right <= r.right + 1 && (sc.scrollWidth <= sc.clientWidth + 1 || getComputedStyle(sc).overflowX !== 'visible'); })(), [el.querySelector('.bl-trades .atl-scroll').scrollWidth, el.querySelector('.bl-trades .atl-scroll').clientWidth]);
   ok('only the exact match: no per-pick section', el.querySelectorAll('.bl-t').length === 4 && el.querySelectorAll('.bl-lab').length === 1 && !el.querySelector('.bl-p, .bl-p3, .bl-x') && !/on its own/i.test(el.innerText), el.querySelectorAll('.bl-t').length);
   ok('no LTF line until an LTF pick is made', !el.querySelector('.bl-ltf'));
   ok('every inner box is a grey card', Array.from(el.querySelectorAll('.bl-t, .bl-ltf')).every(function (n) { return getComputedStyle(n).backgroundColor === getComputedStyle(document.documentElement).getPropertyValue('--bg-elev').trim().replace(/^#131217$/i, 'rgb(19, 18, 23)'); }), getComputedStyle(el.querySelector('.bl-t')).backgroundColor);
@@ -29,13 +33,17 @@
   ok('the LTF line appears', txt(el.querySelector('.bl-ltf')) === 'With the same LTF too Bullish 1 trade · 0 W · 1 L · 0 BE · −1.36R', txt(el.querySelector('.bl-ltf')));
   ok('an LTF pick adds only that one line', el.querySelectorAll('.bl-t').length === 4 && el.querySelectorAll('.bl-ltf').length === 1);
   var r = el.getBoundingClientRect();
-  ok('nothing overflows or is cut', !Array.from(el.querySelectorAll('*')).some(function (n) { var q = n.getBoundingClientRect(); return q.width > 0 && (q.right > r.right + 1 || q.left < r.left - 1); }) && !Array.from(el.querySelectorAll('.bl-s')).some(function (n) { return n.scrollWidth > n.clientWidth + 1; }));
+  ok('nothing overflows or is cut', !Array.from(el.querySelectorAll('*')).some(function (n) { if (n.closest('.atl-scroll')) return false; var q = n.getBoundingClientRect(); return q.width > 0 && (q.right > r.right + 1 || q.left < r.left - 1); }) && !Array.from(el.querySelectorAll('.bl-s')).some(function (n) { return n.scrollWidth > n.clientWidth + 1; }) && document.documentElement.scrollWidth <= innerWidth);
   pick('structure', 'Trending'); pick('location', 'Breakout'); await W(300);
-  ok('no exact match: dashes, no chips, and it says so', /^TRADES 0/.test(txt(el.querySelector('.bl-4 .bl-t'))) && !el.querySelector('.bl-chip') && /first time with this bias/.test(el.innerText), txt(el.querySelector('.bl-4 .bl-t')));
+  ok('no exact match: dashes, no table, and it says so', /^TRADES 0/.test(txt(el.querySelector('.bl-4 .bl-t'))) && !el.querySelector('.bl-trades') && /first time with this bias/.test(el.innerText), txt(el.querySelector('.bl-4 .bl-t')));
   pick('structure', 'Initiating'); pick('location', 'Discount Middle'); await W(300);
-  el.querySelector('.bl-chip').click(); await W(600);
+  var first = rows()[0], tid = first.getAttribute('data-id'), tr0 = findTradeById(tid);
+  first.click(); await W(700);
   var m = document.getElementById('edit-trade-modal-bg');
-  ok('a chip opens its trade', !!m && getComputedStyle(m).display !== 'none' && m.getBoundingClientRect().height > 0 && editingTradeId === 'demo_t36', (typeof editingTradeId !== 'undefined') ? editingTradeId : null);
+  ok('a row opens its trade', !!m && getComputedStyle(m).display !== 'none' && m.getBoundingClientRect().height > 0 && editingTradeId === tid, [tid, (typeof editingTradeId !== 'undefined') ? editingTradeId : null]);
+  var canReplay = !!(window.__stReplay && window.__stReplay.ticketOf && window.__stReplay.ticketOf(tr0)), hasChart = !!((tr0.tvLinks || []).some(function (l) { return l && l.url; }) || tr0.chart || tr0.chartUrl);
+  ok('its window offers Trade Replay when the trade has one', (getComputedStyle(document.getElementById('edit-trade-replay')).display !== 'none') === canReplay, [canReplay, getComputedStyle(document.getElementById('edit-trade-replay')).display]);
+  ok('and shows its chart when one was attached', (getComputedStyle(document.getElementById('edit-trade-chart')).display !== 'none') === hasChart || !hasChart, [hasChart, getComputedStyle(document.getElementById('edit-trade-chart')).display, Object.keys(tr0).filter(function (k) { return /chart|tv|img|shot/i.test(k); })]);
   try { m.classList.remove('show', 'open', 'active'); m.style.display = 'none'; } catch (e) {}
   setLanguage('es'); await W(700);
   ok('Spanish', /^MISMO SESGO Inicio · Descuento Medio · Bajista$/.test(txt(el.querySelector('.bl-lab'))) && /^OPERACIONES 6 de 37 operaciones$/.test(txt(el.querySelector('.bl-4 .bl-t'))) && /^Con el mismo LTF también Alcista 1 operación/.test(txt(el.querySelector('.bl-ltf'))), [txt(el.querySelector('.bl-lab')), txt(el.querySelector('.bl-4 .bl-t')), txt(el.querySelector('.bl-ltf'))]);
