@@ -4332,6 +4332,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .dh-nrows { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 0 26px; font-size: 12px; color: var(--text-mid); }
   .dh-nrow { display: flex; justify-content: space-between; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--border); }
   .dh-nrow .g { color: var(--good); } .dh-nrow .r { color: var(--bad); } .dh-nrow .m { color: var(--text-dim); }
+  .dh-nrow > span:last-child { white-space: nowrap; flex: none; }
+  .dh-nudges.dh-clean .dh-nh b { color: var(--text); }
   .dh-mname { grid-column: 1 / -1; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.14em; color: var(--text-mid); text-transform: uppercase; margin-bottom: 2px; white-space: nowrap; }
   .dh-lbl { font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.06em; color: var(--text-dim); text-transform: uppercase; text-align: center; line-height: 15px; }
   .dh-day { display: block; width: 15px; height: 15px; border-radius: 3px; background: var(--bg-elev2); border: 1px solid var(--border); box-sizing: border-box; cursor: pointer; }
@@ -18958,7 +18960,8 @@ try {
           if (o.kind === 'after') { res.heedable++; if (!o.n) res.heeded++; }
           // What this KIND of nudge cost: the trade it was about (each once per kind), or the trades
           // taken after a warning that was not respected.
-          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0, _t: {}, _d: {} });
+          var bk = res.byKind[g] || (res.byKind[g] = { n: 0, wins: 0, losses: 0, bes: 0, net: 0, r: 0, warn: 0, kept: 0, _t: {}, _d: {} });
+          if (o.kind === 'after') { bk.warn++; if (!o.n) bk.kept++; }   // a warning, and whether it was respected
           if (o.kind === 'trade' && !bk._t[id]) {
             bk._t[id] = 1; bk._d[day] = 1; bk.n++; bk.net += o.out.net; bk.r += o.out.r;
             if (o.out.result === 'Win') bk.wins++; else if (o.out.result === 'Lose') bk.losses++; else bk.bes++;
@@ -78626,15 +78629,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (ps && ps.total) {
         var mFmt = function(dte){ return dte.toLocaleDateString(es() ? 'es-ES' : 'en-GB', { month: 'short' }); };
         var range = ((fromMo.getMonth() === endD.getMonth()) ? mFmt(endD) : mFmt(fromMo) + ' – ' + mFmt(endD)) + (yearSel !== thisYear ? ' ' + yearSel : '');
+        /* The money belongs to the trades taken into a nudge, not to the nudges as a whole: "6 nudges · trades taken into
+           them -£654" over a row of four respected prop-firm warnings read as if respecting them had cost the money
+           (Nestor, 10 Oct 2026: "almost accusing me to have been nudged and lost money for respecting my propfirm
+           limits"). So the money names its trades, and a kind of warning that was respected every time says so in green.
+           With nothing taken into a nudge and nothing a nudge cost, the count is plain, not amber (.dh-clean). */
+        var cost = !!ps.into.n || Object.keys(ps.byKind).some(function(g){ return ps.byKind[g].n > 0; });
         var nh = '<div class="dh-nh"><b>' + ps.total + '</b>' + esc((ps.total === 1 ? _t('nudge', 'aviso') : _t('nudges', 'avisos')) + ' · ' + range);
-        if (ps.into.n) nh += esc(' · ' + _t('trades taken into them', 'operaciones hechas tras ellos') + ' ') + '<span class="' + (ps.into.net < 0 ? 'r' : ps.into.net > 0 ? 'g' : '') + '">' + esc(money(ps.into.net)) + '</span>';
+        if (ps.into.n) nh += esc(' · ' + (ps.into.n === 1 ? _t('1 trade taken into a nudge', '1 operación tomada con aviso') : _t(ps.into.n + ' trades taken into a nudge', ps.into.n + ' operaciones tomadas con aviso')) + ' ') + '<span class="' + (ps.into.net < 0 ? 'r' : ps.into.net > 0 ? 'g' : '') + '">' + esc(money(ps.into.net)) + '</span>';
         nh += '</div>';
         var rows = Object.keys(ps.kinds).sort(function(a, b){ return ps.kinds[b] - ps.kinds[a]; }).map(function(g){
           var v = ps.byKind[g], lbl = ''; try { lbl = window.__stNudge.kindLabel(g); } catch(e){ lbl = g; }
-          var right = (v && v.n) ? '<span class="' + (v.net < 0 ? 'r' : v.net > 0 ? 'g' : '') + '">' + esc(money(v.net)) + '</span>' : '<span class="m">' + esc(_t('no trade', 'sin operación')) + '</span>';
+          var right = (v && v.n) ? '<span class="' + (v.net < 0 ? 'r' : v.net > 0 ? 'g' : '') + '">' + esc(money(v.net)) + '</span>'
+                    : (v && v.warn && v.kept === v.warn) ? '<span class="g">✓ ' + esc(v.warn === 1 ? _t('respected', 'respetado') : _t('all respected', 'todos respetados')) + '</span>'
+                    : '<span class="m">' + esc(_t('no trade', 'sin operación')) + '</span>';
           return '<div class="dh-nrow"><span>' + esc(lbl + ' · ' + ps.kinds[g]) + '</span>' + right + '</div>';
         }).join('');
-        nudges = '<div class="dh-nudges">' + nh + '<div class="dh-nrows">' + rows + '</div></div>';
+        nudges = '<div class="dh-nudges' + (cost ? '' : ' dh-clean') + '">' + nh + '<div class="dh-nrows">' + rows + '</div></div>';
       } else if (ps && data && data.nudgeLog && Object.keys(data.nudgeLog).length) {
         nudges = '<div class="dh-nudges"><div class="dh-nh">' + esc(_t('No nudges in these months.', 'Sin avisos en estos meses.')) + '</div></div>';
       }

@@ -1,5 +1,6 @@
 (async function () {
-  // The Nudges block of the Weekly Review: warnings that were all respected read as good news (10 Oct 2026).
+  // The Nudges block of the Weekly Review and the Nudges card of Statistics > Discipline nudges: warnings that were all
+  // respected read as good news (10 Oct 2026).
   // Run: python tests/browser_test.py tests/nudgetone_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   await W(2500);
@@ -38,5 +39,34 @@
   ok('Spanish', /Respetaste los 4 avisos$/.test(host.querySelector('.pn-line').textContent.trim()), host.querySelector('.pn-line').textContent.trim());
   setLanguage('en'); await W(400);
   host.remove();
+  // Statistics > Discipline nudges > the Nudges card: the money is tied to the trades it came from, and warnings that
+  // were all respected say so (10 Oct 2026: "almost accusing me to have been nudged and lost money for respecting my
+  // propfirm limits").
+  try { stDemoSeed(data); } catch (e) {}
+  var yr = new Date().getFullYear(), mine = getAllLifetimeTrades().filter(function (t) { return new Date(t.date).getFullYear() === yr; });
+  var tdays = Array.from(new Set(mine.map(function (t) { return key(new Date(t.date)); }))).sort(), losers = mine.filter(function (t) { return t.result === 'Lose'; }).slice(-2);
+  data.nudgeLog = {};
+  tdays.slice(0, 4).forEach(function (k, i) { var o = data.nudgeLog[k] || (data.nudgeLog[k] = {}); o['dd_left:Pacc' + i] = { at: '23:40', text: 'Drawdown room is getting small' }; });
+  losers.forEach(function (t, i) { t.mt5Ticket = String(900001 + i); var k = key(new Date(t.date)), o = data.nudgeLog[k] || (data.nudgeLog[k] = {}); o['against_bias:' + t.mt5Ticket] = { at: t.entryTime || '10:00', text: 'This trade is against your bias' }; });
+  window.__stDiscipline.render(); await W(500);
+  var card = document.querySelector('#discipline-body .dh-nudges'), head = card ? card.querySelector('.dh-nh').textContent : '';
+  var rows = card ? Array.from(card.querySelectorAll('.dh-nrow')).map(function (n) { return [n.firstElementChild.textContent, n.lastElementChild.textContent, n.lastElementChild.className]; }) : [];
+  var prop = rows.filter(function (r) { return /^Prop-firm limits/.test(r[0]); })[0], bias = rows.filter(function (r) { return /^Against your bias/.test(r[0]); })[0];
+  ok('Discipline: the card is there with its six nudges', !!card && /^6nudges/.test(head) && rows.length === 2, [head, rows]);
+  ok('Discipline: the money is tied to the two trades, not to the six nudges', /2 trades taken into a nudge/.test(head) && !/taken into them/.test(head) && !!card.querySelector('.dh-nh span.r'), head);
+  ok('Discipline: respected prop-firm warnings say so, in green', !!prop && /^Prop-firm limits · 4$/.test(prop[0]) && prop[1] === '✓ all respected' && prop[2] === 'g', prop);
+  ok('Discipline: the trades against the bias keep their money', !!bias && /£/.test(bias[1]) && bias[2] === 'r', bias);
+  // only the respected warnings: nothing amber, nothing about trades
+  losers.forEach(function (t) { var k = key(new Date(t.date)); delete data.nudgeLog[k]['against_bias:' + t.mt5Ticket]; if (!Object.keys(data.nudgeLog[k]).length) delete data.nudgeLog[k]; });
+  window.__stDiscipline.render(); await W(400);
+  card = document.querySelector('#discipline-body .dh-nudges');
+  ok('Discipline: with only respected warnings the count is plain and no money is named', !!card && card.classList.contains('dh-clean') && !/taken into/.test(card.querySelector('.dh-nh').textContent) && getComputedStyle(card.querySelector('.dh-nh b')).color !== 'rgb(232, 207, 99)' && card.querySelectorAll('.dh-nrow').length === 1, card ? [card.className, card.querySelector('.dh-nh').textContent, getComputedStyle(card.querySelector('.dh-nh b')).color] : null);
+  // one warning, in Spanish
+  var k0 = Object.keys(data.nudgeLog).sort()[0], one = {}; one[k0] = data.nudgeLog[k0]; data.nudgeLog = one;
+  setLanguage('es'); await W(600);
+  window.__stDiscipline.render(); await W(400);
+  card = document.querySelector('#discipline-body .dh-nudges');
+  ok('Discipline: one respected warning, in Spanish', !!card && card.querySelector('.dh-nrow').lastElementChild.textContent === '✓ respetado', card ? card.innerText : null);
+  setLanguage('en'); await W(400);
   return out;
 })()
