@@ -5641,6 +5641,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #edit-trade-modal-bg .et-k b.up { color: var(--good); }
   #edit-trade-modal-bg .et-k b.dn { color: var(--bad); }
   #edit-trade-modal-bg .et-k b.be { color: var(--info); }
+  #edit-trade-modal-bg #edit-trade-chart { border: 1px solid var(--border-2); border-radius: 12px; background: var(--bg-elev); overflow: hidden; }
+  #edit-trade-modal-bg .et-chart-img { display: block; margin: 0 auto; height: 300px; width: auto; max-width: 100%; object-fit: contain; cursor: zoom-in; }
   #edit-trade-modal-bg .et-low { margin-top: 20px; padding-top: 18px; border-top: 1px solid var(--border); }
   #edit-trade-modal-bg .et-lab { margin: 0 0 14px; font-family: "AppNum","DM Mono",monospace; font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase; color: var(--text-mid); }
   #edit-trade-modal-bg .edit-trade-form { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; align-items: start; margin: 0; }
@@ -5653,10 +5655,14 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #edit-trade-modal-bg .edit-real-rp { margin-top: 0; padding: 9px 0; }
   #edit-trade-modal-bg #pb-edit { margin-top: 14px; padding-top: 0; border-top: 0; max-width: calc(25% - 10.5px); }
   #edit-trade-modal-bg .et-more { margin-top: 20px; padding-top: 16px; }
-  #edit-trade-modal-bg .et-more .pb-rows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 34px; }
+  /* Two columns read like Session Review: down the left one, then down the right one, a line between them (Nestor,
+     10 Oct 2026: "separate and do them in order like in session review" - as a grid they went left-right, left-right). */
+  #edit-trade-modal-bg .et-more .pb-rows { display: block; column-count: 2; column-gap: 56px; column-rule: 1px solid var(--border-2); }
+  #edit-trade-modal-bg .et-more .pb-rows > * { break-inside: avoid; -webkit-column-break-inside: avoid; }
   @media (max-width: 900px) {
     #edit-trade-modal-bg .modal { padding: 20px; }
     #edit-trade-modal-bg .et-sum { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    #edit-trade-modal-bg .et-chart-img { width: 100%; height: auto; aspect-ratio: 12 / 5; object-fit: cover; }
     #edit-trade-modal-bg .et-k { padding: 12px 14px 13px; }
     #edit-trade-modal-bg .et-k b small { flex-basis: 100%; }
     #edit-trade-modal-bg .et-k b small::before { content: none; }
@@ -5666,7 +5672,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     #edit-trade-modal-bg .et-cell > .label { white-space: normal; }
     #edit-trade-modal-bg div.et-hint { display: block; }
     #edit-trade-modal-bg span.et-hint { display: inline; }
-    #edit-trade-modal-bg .et-more .pb-rows { grid-template-columns: minmax(0, 1fr); }
+    #edit-trade-modal-bg .et-more .pb-rows { column-count: 1; }
   }
   .edit-result-toggle button { background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 9px 16px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.1em; cursor: pointer; transition: all 200ms; flex: 1; }
   .edit-result-toggle button:hover { border-color: var(--text-mid); color: var(--text); }
@@ -20622,8 +20628,14 @@ try {
             btn.classList.add('selected');
             data.bias[key] = btn.dataset.value;
           }
+          // Un-ticked by hand until nothing is left = cleared on purpose, exactly like the Clear bias button. Without the
+          // stamp the next load took the empty slot for one that had been wiped and refilled it from today's history, so
+          // every pick came back (Nestor, 10 Oct 2026). Picking something again lifts the stamp, so a slot emptied by a
+          // real fault is still repaired.
+          if (biasSlotHasContent(data.bias)) delete data.bias.clearedAt; else data.bias.clearedAt = new Date().toISOString();
           data.bias.date = new Date().toISOString();
           recordBiasIfComplete();
+          saveData();
           renderBiasPreview();
           // Keep the Session Live 'this morning's bias' card in step. Without this it
           // keeps whatever it was built with, so a field changed after the card was
@@ -34291,14 +34303,12 @@ try {
           const im = document.createElement('img');   // no string building, so nothing to escape
           im.src = img;
           im.alt = '';
-          // Fixed 16:9, cropped — NOT the snapshot's native shape. TradingView captures at
-          // whatever aspect the trader's screen was at the time, so one trade's chart came back
-          // wide and short and the next tall and square, and the whole modal changed height with
-          // it. Every other chart surface pins 16/9 with object-fit: contain (see the note
-          // above #bias-tv-list .tv-link-preview); this one was left on its intrinsic ratio.
-          im.style.cssText = 'display:block;width:100%;aspect-ratio:12/5;height:auto;object-fit:cover;'
-                           + 'border:1px solid var(--border-2);'
-                           + 'border-radius:12px;cursor:zoom-in;';
+          // Sized by CSS (.et-chart-img), never by the snapshot's own shape: TradingView captures at whatever
+          // aspect the trader's screen was at the time, so one trade's chart came back wide and short and the
+          // next tall and square, and the whole window changed height with it. On a computer it is a 300px
+          // panel with the whole picture inside it - across the full width it was 440px tall and Nestor found
+          // it "too big" (10 Oct 2026); on a phone it is the wide 12:5 crop it always was.
+          im.className = 'et-chart-img';
           im.addEventListener('error', function(){ box.style.display = 'none'; });
           im.addEventListener('click', function(){ try { window.stOpenChart(url); } catch (e) {} });
           box.appendChild(im);
