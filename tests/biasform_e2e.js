@@ -1,6 +1,6 @@
 (async function () {
   // Session Bias picks that are un-ticked by hand stay un-ticked after a reload (10 Oct 2026), and the load-time repair
-  // of a wiped slot still works. Also: Edit Trade's Trade Details rows read down the columns, in Session Review's order.
+  // of a wiped slot still works. Also: Edit Trade's Trade Details rows are one column, in Session Review's order.
   // Run: python tests/browser_test.py tests/biasform_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   await W(2500);
@@ -30,7 +30,7 @@
   ['mode', 'structure', 'location', 'direction'].forEach(function (k) { data.bias[k] = null; });
   reload();
   ok('a slot wiped by a fault is still filled back from today', picks(data.bias) === 'Observation,Trending,Premium Middle,Bearish', picks(data.bias));
-  // Edit Trade > Trade Details: down the left column, then down the right one
+  // Edit Trade > Trade Details: one column, top to bottom
   stDemoSeed(data);
   var tr = getAllLifetimeTrades().slice().reverse().filter(function (x) { return x.result === 'Lose'; })[0];
   openEditTradeModal(tr.id); await W(700);
@@ -39,8 +39,7 @@
   var rc = rows.map(function (n) { return n.getBoundingClientRect(); }), wide = innerWidth > 900;
   var lefts = rc.map(function (r) { return Math.round(r.left); }), L = Math.min.apply(null, lefts), firstRight = lefts.findIndex(function (x) { return x > L + 50; });
   ok('Trade Details has its rows', rows.length >= 6, rows.length);
-  ok('they read down the left column, then down the right one', !wide || (firstRight > 1 && lefts.slice(0, firstRight).every(function (x) { return x === L; }) && lefts.slice(firstRight).every(function (x) { return x > L + 50; }) && rc.slice(1, firstRight).every(function (r, i) { return r.top >= rc[i].bottom - 1; }) && rc.slice(firstRight + 1).every(function (r, i) { return r.top >= rc[firstRight + i].bottom - 1; })), [firstRight, rows.length, lefts]);
-  ok('with a line between the two columns', !wide || parseFloat(getComputedStyle(document.getElementById('pb-edit-rows')).columnRuleWidth) >= 1, getComputedStyle(document.getElementById('pb-edit-rows')).columnRuleWidth);
+  ok('they are one column, in Session Review order', lefts.every(function (x) { return x === L; }) && rc.slice(1).every(function (r, i) { return r.top >= rc[i].bottom - 1; }) && /^Session time/i.test(rows[0].textContent.trim()), [lefts.length, rows[0].textContent.trim().slice(0, 20)]);
   ok('no row is split across the columns', rc.every(function (r) { return r.height < 200; }), rc.map(function (r) { return Math.round(r.height); }));
   return out;
 })()
