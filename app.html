@@ -13115,6 +13115,105 @@ try {
       : ('Today is the last trading day of Q' + Q.q + ' ' + Q.y + '. Quarter-end flows from fund rebalancing can push price around late in the day, so trade your plan, then take stock of your quarter.');
   }
   try { window.__stQuarterDay = quarterDay; window.__stQuarterNotice = quarterNotice; } catch (e) {}
+  /* Bank holidays ahead (Nestor, 10 Oct 2026: "can the AI greetings be aware of the following weeks bankholidays so
+     this week is already alerting me that next monday is going to be bank holiday in us"). The calendar feed only
+     carries the CURRENT week, so the dates are worked out here by rule, for the same three the app already treats as
+     the ones that matter (USD, GBP, EUR):
+       US       - the eleven federal holidays plus Good Friday; one that falls on a Saturday is kept on the Friday, on a
+                  Sunday on the Monday (New Year's Day on a Saturday is not moved back into December).
+       UK       - England and Wales, with the substitute days for New Year, Christmas and Boxing Day.
+       Eurozone - the days the euro payment system (TARGET) is shut; none is moved when it lands on a weekend.
+     One-off holidays a government adds (a coronation, a day of mourning) cannot be known here. */
+  const _BH_NAME = {
+    newyear: ["New Year's Day", 'Año Nuevo'], mlk: ['Martin Luther King Jr. Day', 'el Día de Martin Luther King'], presidents: ["Presidents' Day", 'el Día de los Presidentes'],
+    goodfriday: ['Good Friday', 'Viernes Santo'], eastermonday: ['Easter Monday', 'Lunes de Pascua'], mayday: ['Labour Day', 'el Día del Trabajo'],
+    earlymay: ['the Early May bank holiday', 'el festivo de principios de mayo'], memorial: ['Memorial Day', 'Memorial Day'], spring: ['the Spring bank holiday', 'el festivo de primavera'],
+    juneteenth: ['Juneteenth', 'Juneteenth'], independence: ['Independence Day', 'el Día de la Independencia'], summer: ['the Summer bank holiday', 'el festivo de verano'],
+    labor: ['Labor Day', 'el Labor Day'], columbus: ['Columbus Day', 'el Día de Colón'], veterans: ['Veterans Day', 'el Día de los Veteranos'],
+    thanksgiving: ['Thanksgiving', 'Acción de Gracias'], christmas: ['Christmas Day', 'Navidad'], boxing: ['Boxing Day', 'San Esteban (Boxing Day)']
+  };
+  const _BH_PLACE = { US: ['the US', 'EE. UU.', 'USD'], UK: ['the UK', 'el Reino Unido', 'GBP'], EU: ['the Eurozone', 'la Eurozona', 'EUR'] };
+  function _bhEaster(y) {   // Easter Sunday, Gregorian calendar
+    const a = y % 19, b = Math.floor(y / 100), cc = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3),
+          h = (19 * a + b - d - g + 15) % 30, i = Math.floor(cc / 4), k = cc % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
+    return new Date(y, Math.floor((h + l - 7 * m + 114) / 31) - 1, ((h + l - 7 * m + 114) % 31) + 1, 12);
+  }
+  function _bhYear(y) {
+    const out = [];
+    const D = (m, d) => new Date(y, m, d, 12);
+    const nth = (m, dow, n) => D(m, 1 + ((dow - D(m, 1).getDay() + 7) % 7) + (n - 1) * 7);
+    const last = (m, dow) => { const z = new Date(y, m + 1, 0, 12); return D(m, z.getDate() - ((z.getDay() - dow + 7) % 7)); };
+    const add = (dt, id, where, moved) => { const wd = dt.getDay(); if (wd === 0 || wd === 6) return; out.push({ ms: dt.getTime(), id: id, where: where, moved: !!moved }); };
+    const E = _bhEaster(y), gf = D(E.getMonth(), E.getDate() - 2), em = D(E.getMonth(), E.getDate() + 1);
+    const usFixed = (m, d, id) => {
+      const wd = D(m, d).getDay();
+      if (wd === 6) { if (id !== 'newyear') add(D(m, d - 1), id, 'US', true); }
+      else if (wd === 0) add(D(m, d + 1), id, 'US', true);
+      else add(D(m, d), id, 'US');
+    };
+    usFixed(0, 1, 'newyear'); add(nth(0, 1, 3), 'mlk', 'US'); add(nth(1, 1, 3), 'presidents', 'US'); add(gf, 'goodfriday', 'US'); add(last(4, 1), 'memorial', 'US');
+    usFixed(5, 19, 'juneteenth'); usFixed(6, 4, 'independence'); add(nth(8, 1, 1), 'labor', 'US'); add(nth(9, 1, 2), 'columbus', 'US'); usFixed(10, 11, 'veterans');
+    add(nth(10, 4, 4), 'thanksgiving', 'US'); usFixed(11, 25, 'christmas');
+    const ny = D(0, 1).getDay();
+    if (ny === 6) add(D(0, 3), 'newyear', 'UK', true); else if (ny === 0) add(D(0, 2), 'newyear', 'UK', true); else add(D(0, 1), 'newyear', 'UK');
+    add(gf, 'goodfriday', 'UK'); add(em, 'eastermonday', 'UK'); add(nth(4, 1, 1), 'earlymay', 'UK'); add(last(4, 1), 'spring', 'UK'); add(last(7, 1), 'summer', 'UK');
+    const xm = D(11, 25).getDay();
+    if (xm === 6) { add(D(11, 27), 'christmas', 'UK', true); add(D(11, 28), 'boxing', 'UK', true); }
+    else if (xm === 0) { add(D(11, 26), 'boxing', 'UK'); add(D(11, 27), 'christmas', 'UK', true); }
+    else if (xm === 5) { add(D(11, 25), 'christmas', 'UK'); add(D(11, 28), 'boxing', 'UK', true); }
+    else { add(D(11, 25), 'christmas', 'UK'); add(D(11, 26), 'boxing', 'UK'); }
+    add(D(0, 1), 'newyear', 'EU'); add(gf, 'goodfriday', 'EU'); add(em, 'eastermonday', 'EU'); add(D(4, 1), 'mayday', 'EU'); add(D(11, 25), 'christmas', 'EU'); add(D(11, 26), 'boxing', 'EU');
+    return out;
+  }
+  // The bank holidays from `from` (today) to `days` days on, one entry per date, soonest first:
+  // { date: 'YYYY-MM-DD', ms, day: days from today, items: [{ id, moved, where: ['US', 'UK', 'EU'] }] }
+  function bankHolidaysAhead(days, from) {
+    try {
+      const t0 = from ? new Date(from) : new Date(); t0.setHours(12, 0, 0, 0);
+      const end = new Date(t0); end.setDate(end.getDate() + (days == null ? 7 : days));
+      let all = _bhYear(t0.getFullYear()); if (end.getFullYear() !== t0.getFullYear()) all = all.concat(_bhYear(end.getFullYear()));
+      const byDate = {};
+      all.filter(h => h.ms >= t0.getTime() && h.ms <= end.getTime()).forEach(h => {
+        const d = new Date(h.ms), k = d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+        const g = byDate[k] || (byDate[k] = { date: k, ms: h.ms, day: Math.round((h.ms - t0.getTime()) / 864e5), items: [] });
+        let it = g.items.find(x => x.id === h.id && x.moved === h.moved); if (!it) { it = { id: h.id, moved: h.moved, where: [] }; g.items.push(it); }
+        if (it.where.indexOf(h.where) < 0) it.where.push(h.where);
+      });
+      return Object.keys(byDate).sort().map(k => byDate[k]);
+    } catch (e) { return []; }
+  }
+  // The heads-up in words (es = Spanish): the next bank holiday within 7 days, and the one after it if there is one.
+  // Today's is left to the calendar's own line when the feed has it.
+  function bankHolidayNotice(es, from) {
+    try {
+      const list = bankHolidaysAhead(7, from); if (!list.length) return '';
+      if (list[0].day === 0 && !from) {
+        let cx = null; try { cx = (typeof getCalendarContext === 'function') ? getCalendarContext() : null; } catch (e) {}
+        if (cx && cx.kind === 'holiday') list.shift();
+      }
+      const h = list[0]; if (!h) return '';
+      const L = (en, sp) => es ? sp : en;
+      const dstr = ms => new Date(ms).toLocaleDateString(es ? 'es-ES' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).replace(/,/g, '').replace(/\.$/, '');
+      const join = arr => arr.length < 2 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + L(' and ', ' y ') + arr[arr.length - 1];
+      const order = w => ['US', 'UK', 'EU'].filter(x => w.indexOf(x) >= 0);
+      const name = it => _BH_NAME[it.id][es ? 1 : 0] + (it.moved ? L(' (observed)', ' (día trasladado)') : '');
+      const places = w => join(order(w).map(x => _BH_PLACE[x][es ? 1 : 0]));
+      const allWhere = g => order(g.items.reduce((acc, it) => acc.concat(it.where), []));
+      const when = h.day === 0 ? L('Today', 'Hoy') : h.day === 1 ? L('Tomorrow, ' + dstr(h.ms) + ',', 'Mañana, ' + dstr(h.ms) + ',') : L(dstr(h.ms), 'El ' + dstr(h.ms));
+      let txt = L('Heads-up: ', 'Aviso: ') + (h.day > 1 && es ? when.charAt(0).toLowerCase() + when.slice(1) : when);
+      if (h.items.length === 1) txt += L(' is ' + name(h.items[0]) + ', a bank holiday in ' + places(h.items[0].where) + '.', ' es ' + name(h.items[0]) + ', festivo bancario en ' + places(h.items[0].where) + '.');
+      else txt += L(' is a bank holiday in ', ' es festivo bancario en ') + join(h.items.map(it => places(it.where) + ' (' + name(it) + ')')) + '.';
+      txt += L(' Expect thinner liquidity in ', ' Espera menos liquidez en los pares con ') + join(allWhere(h).map(x => _BH_PLACE[x][2])) + L(' pairs', '') + (h.day === 0 ? '' : L(' that day', ' ese día')) + '.';
+      const n = list[1];
+      if (n) txt += L(' Then ' + dstr(n.ms) + ': ', ' Después, el ' + dstr(n.ms) + ': ') + join(n.items.map(it => name(it) + ' (' + places(it.where) + ')')) + '.';
+      return txt.replace(/\.\.(?=\s|$)/g, '.');   // 'EE. UU.' already ends in a full stop
+    } catch (e) { return ''; }
+  }
+  try {
+    window.__stBankHolidays = { ahead: bankHolidaysAhead, notice: bankHolidayNotice,
+      // for the assistant: the next two weeks, compact
+      pack: function () { try { const l = bankHolidaysAhead(14); return l.length ? l.map(g => ({ date: g.date, daysFromToday: g.day, holidays: g.items.map(it => ({ name: _BH_NAME[it.id][0] + (it.moved ? ' (observed)' : ''), bankHolidayIn: it.where.map(x => x === 'EU' ? 'Eurozone' : x) })) })) : null; } catch (e) { return null; } } };
+  } catch (e) {}
   // The notice in words (es = Spanish). mode 'nudge' only speaks for a change within 3 days or an unusual-gap day.
   function clockNotice(es, mode) {
     try {
@@ -47225,7 +47324,7 @@ try {
     })();
     targets.forEach(el => {
       const ctx = el.dataset && el.dataset.greetingContext;
-      let html;
+      let html, _holNote = '';
       if (ctx === 'series') html = _seriesGreetingHTML();
       else if (ctx === 'stats') html = _statsGreetingHTML();
       else if (ctx === 'calendar') html = _calendarGreetingHTML();
@@ -47243,6 +47342,8 @@ try {
         try { if (!isReview && typeof quarterNotice === 'function') _qtr = quarterNotice(window.__lang === 'es'); } catch (e) {}
         try { if (!isReview && typeof window.__stPropEventLine === 'function') _prop = window.__stPropEventLine(window.__lang === 'es'); } catch (e) {}
         html = compose(opener, [_prop, _qtr, _clk].filter(Boolean).join(' ') || tail);
+        // A bank holiday in the next 7 days (US, UK, Eurozone) rides behind the Session Bias line (10 Oct 2026).
+        try { if (!isReview && window.__stBankHolidays) _holNote = window.__stBankHolidays.notice(window.__lang === 'es'); } catch (e) {}
       }
       // The seed is re-picked from its pool on every render and refreshAllSurfaces runs on every
       // click, so without this a greeting would reword itself in front of the reader every time
@@ -47266,6 +47367,10 @@ try {
       try { el.__greetSeed = el.textContent; } catch (e) {}   // remember the seed so re-enhancement never compounds
       try { el.__greetSit = _greetSituation; } catch (e) {}   // and the situation it describes, for the AI cache signature
       try { if (el.id === 'bias-greeting') { var _st = (el.textContent || '').trim(); if (_st) window.__stGreetingText = _st; } } catch (e) {}   // seed fallback for "reword my greeting" (AI line overwrites this global when it lands)
+      /* The bank-holiday heads-up is its own hand-written sentence, added AFTER the seed is recorded: the AI rewrites
+         the line before it and never this one, so the day, the date and the holiday's name cannot come back vague or
+         wrong (a rewritten bank-holiday line once became "let's take stock of what that shaped for your session"). */
+      try { if (_holNote) el.innerHTML += ' <span class="greet-hol">' + _holNote.replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</span>'; } catch (e) {}
       try { if(!window.__MV && window.STMentor && window.STMentor.hasUnseen()){ el.innerHTML += ' <span class="mentor-greet-msg">' + (t('mentor.msg_waiting')||'You have a message from your mentor in your Calendar Log.') + '</span>'; } } catch(e){}
       // AI (eligible tiers) rewrites the seed above into a more personal line, keeping its essence.
       try { if (window.STAI && window.STAI.enhanceGreeting) window.STAI.enhanceGreeting(el, ctx || 'bias'); } catch(e){}
@@ -47832,6 +47937,8 @@ try {
           nudges: (window.__stNudge && window.__stNudge.aiPack) ? window.__stNudge.aiPack() : null,
           // Clock changes: gaps to the markets the member trades, the usual gaps and the next changes (28 Sep 2026).
           clocks: (typeof window.__stClockInfo === 'function') ? window.__stClockInfo() : null,
+          // Bank holidays in the US, the UK and the Eurozone over the next 14 days, worked out by rule (10 Oct 2026).
+          bankHolidays: (window.__stBankHolidays && window.__stBankHolidays.pack) ? window.__stBankHolidays.pack() : null,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
           settings: { perTradeRisk: s.risk || (typeof data !== 'undefined' && data.defaults && data.defaults.risk) || null, tradingDays: s.tradingDays || null, accountType: s.accountType || null, riskRules: (function () {
               /* The account's own rules, not data.settings.riskRules - the pre-picker global
@@ -48259,7 +48366,8 @@ try {
           var _hol = (typeof getCalendarContext === 'function') ? getCalendarContext() : null;
           if (_hol && _hol.kind === 'holiday') return;
         } catch (_e) {}
-        var mentor = el.querySelector('.mentor-greet-msg'); var mentorHTML = mentor ? (' ' + mentor.outerHTML) : '';
+        var mentor = el.querySelector('.mentor-greet-msg'), _holN = el.querySelector('.greet-hol');
+        var mentorHTML = (_holN ? (' ' + _holN.outerHTML) : '') + (mentor ? (' ' + mentor.outerHTML) : '');   // the bank-holiday heads-up, then the mentor note
         var lang = es() ? 'es' : 'en';
         var key = (surface || 'bias') + '|' + lang;
         var today = (typeof todayKey === 'function') ? todayKey() : '';
@@ -48348,7 +48456,7 @@ try {
           // Say so, rather than showing the rule-based seed as a finished line and swapping it a
           // second later. Stash the seed's own markup first so _unthink() can restore it exactly.
           try { if (el.__greetPreThink == null) el.__greetPreThink = el.innerHTML; } catch (e) {}
-          _put(el, '<span class="greet-thinking">' + ((typeof es === 'function' && es()) ? 'Pensando…' : 'Thinking…') + '</span>');
+          _put(el, '<span class="greet-thinking">' + ((typeof es === 'function' && es()) ? 'Pensando…' : 'Thinking…') + '</span>' + mentorHTML);
         }
         var topics = {
           bias:     { en: "my directional read / trading plan",     es: 'mi lectura direccional / plan de trading' },
