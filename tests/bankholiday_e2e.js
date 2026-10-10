@@ -44,5 +44,21 @@
   ok('Session Review does not repeat it', !mirror || !mirror.querySelector('.greet-hol'));
   var pk = B.pack();
   ok('the assistant gets the next two weeks', real ? (Array.isArray(pk) && !!pk[0].date && !!pk[0].holidays[0].name) : (pk === null || Array.isArray(pk)), pk);
+  // The Session Live board: a blue Bank holiday box beside Red news, on the same days.
+  var bx = function (y, m, d, es) { return B.box(!!es, new Date(y, m - 1, d, 9)); }, j = function (v) { return v ? [v.name, v.when, v.inTxt].join('|') : null; };
+  ok('box, Sat 10 Oct: the name, the day and how far off', j(bx(2026, 10, 10)) === 'Columbus Day (US)|Mon|in 2 d' && /^Monday 12 Oct is Columbus Day, a bank holiday in the US\./.test(bx(2026, 10, 10).title), [j(bx(2026, 10, 10)), bx(2026, 10, 10) && bx(2026, 10, 10).title]);
+  ok('box: tomorrow, today, then gone', j(bx(2026, 10, 11)) === 'Columbus Day (US)|Mon|tomorrow' && j(bx(2026, 10, 12)) === 'Columbus Day (US)|today|' && bx(2026, 10, 13) === null && bx(2026, 10, 7) === null, [j(bx(2026, 10, 11)), j(bx(2026, 10, 12)), j(bx(2026, 10, 13)), j(bx(2026, 10, 7))]);
+  ok('box: several places, and two holidays on one day', j(bx(2026, 4, 1)) === 'Good Friday (US/UK/Eurozone)|Fri|in 2 d' && j(bx(2026, 5, 21)) === 'Memorial Day (US), Spring bank holiday (UK)|Mon|in 4 d', [j(bx(2026, 4, 1)), j(bx(2026, 5, 21))]);
+  ok('box: Spanish', j(bx(2026, 10, 10, true)) === 'Día de Colón (EE. UU.)|lun|en 2 d', j(bx(2026, 10, 10, true)));
+  var rv = document.querySelector('.tab[data-page="review"]'); if (rv) rv.click(); await W(700);
+  var pr = document.getElementById('page-review'); pr.classList.add('session-live-collapsed');
+  try { window.__stLiveBox.render(); } catch (e) {}
+  await W(500);
+  var nh = document.getElementById('st-livenews'), hb = nh.querySelector('.slx-news.hol'), now = B.box(false);
+  ok('Session Live shows it exactly when one is due (' + (now ? 'one is due today' : 'none today') + ')', now ? (!nh.hidden && !!hb && hb.querySelector('.slx-v').textContent === now.name + ' · ' + now.when + now.inTxt && /bank holiday/i.test(hb.querySelector('.slx-l').textContent)) : !hb, [nh.hidden, nh.innerText, j(now)]);
+  ok('in the calendar blue, as wide as its words', !now || (!!hb && getComputedStyle(hb.querySelector('.slx-v')).color === 'rgb(91, 155, 255)' && getComputedStyle(hb.querySelector('.slx-l')).color === 'rgb(91, 155, 255)' && hb.getBoundingClientRect().width < nh.getBoundingClientRect().width - 40), hb && [getComputedStyle(hb.querySelector('.slx-v')).color, Math.round(hb.getBoundingClientRect().width)]);
+  var boxes = Array.from(nh.querySelectorAll('.slx-news')).map(function (n) { return n.getBoundingClientRect(); });
+  ok('beside the red news on a computer, never on top of it', !now || boxes.length < 2 || (innerWidth > 700 ? (Math.abs(boxes[0].top - boxes[1].top) < 1 && boxes[1].left >= boxes[0].right + 11) : boxes[1].top >= boxes[0].bottom + 11), boxes.map(function (r) { return [Math.round(r.left), Math.round(r.top), Math.round(r.width)]; }));
+  pr.classList.remove('session-live-collapsed');
   return out;
 })()

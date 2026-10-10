@@ -1277,6 +1277,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-news .slx-v { color: var(--text-mid); }
   .slx-news.has .slx-v { color: var(--bad); }
   .slx-news.has .slx-v small { color: var(--text-mid); }
+  /* A bank holiday beside the red news, in the news calendar's holiday blue (10 Oct 2026); under it on a phone. */
+  #st-livenews:not([hidden]) { display: flex; flex-wrap: wrap; gap: 12px; }
+  .slx-news.hol { border-color: rgba(91, 155, 255, 0.55); background: rgba(91, 155, 255, 0.07); }
+  .slx-news.hol .slx-l, .slx-news.hol .slx-v { color: #5b9bff; }
+  .slx-news.hol .slx-v small { color: var(--text-mid); }
   .slx-l { font-size: 9px; letter-spacing: 0.22em; text-transform: uppercase; color: var(--text-dim); margin-bottom: 7px; }
   .slx-v { font-size: 17px; color: var(--text); } .slx-v small { font-size: 11px; color: var(--text-mid); margin-left: 6px; }
   .slx-bar { height: 4px; background: var(--bg-elev2); border-radius: 3px; margin-top: 9px; overflow: hidden; } .slx-bar i { display: block; height: 100%; border-radius: 3px; transition: width 400ms ease; }
@@ -13132,7 +13137,7 @@ try {
     labor: ['Labor Day', 'el Labor Day'], columbus: ['Columbus Day', 'el Día de Colón'], veterans: ['Veterans Day', 'el Día de los Veteranos'],
     thanksgiving: ['Thanksgiving', 'Acción de Gracias'], christmas: ['Christmas Day', 'Navidad'], boxing: ['Boxing Day', 'San Esteban (Boxing Day)']
   };
-  const _BH_PLACE = { US: ['the US', 'EE. UU.', 'USD'], UK: ['the UK', 'el Reino Unido', 'GBP'], EU: ['the Eurozone', 'la Eurozona', 'EUR'] };
+  const _BH_PLACE = { US: ['the US', 'EE. UU.', 'USD', 'US', 'EE. UU.'], UK: ['the UK', 'el Reino Unido', 'GBP', 'UK', 'Reino Unido'], EU: ['the Eurozone', 'la Eurozona', 'EUR', 'Eurozone', 'Eurozona'] };
   function _bhEaster(y) {   // Easter Sunday, Gregorian calendar
     const a = y % 19, b = Math.floor(y / 100), cc = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3),
           h = (19 * a + b - d - g + 15) % 30, i = Math.floor(cc / 4), k = cc % 4, l = (32 + 2 * e + 2 * i - h - k) % 7, m = Math.floor((a + 11 * h + 22 * l) / 451);
@@ -13189,15 +13194,30 @@ try {
      between), a Wednesday one on the Monday and the Tuesday. A holiday that follows the first within four days (Easter
      Monday after Good Friday, Boxing Day after Christmas) is named after it. Today's is left to the calendar's own
      line when the feed has it. */
-  function bankHolidayNotice(es, from) {
+  // calendar days from the second trading day before a date to that date (2 mid-week, 4 for a Monday or a Tuesday)
+  function _bhLead(ms) { const d = new Date(ms); let n = 0, back = 0; while (n < 2) { d.setDate(d.getDate() - 1); back++; if (d.getDay() >= 1 && d.getDay() <= 5) n++; } return back; }
+  /* The same holiday for the Session Live board, beside Red news (Nestor, 10 Oct 2026: "will i see the bank holidays
+     alerts in session live like the red news?" - "yes build this one"): on the same days as the sentence above, today's
+     included. { name: 'Columbus Day (US)', when: 'Mon' | 'today', inTxt: 'in 2 d' | 'tomorrow' | '', title } or null. */
+  function bankHolidayBox(es, from) {
+    try {
+      const h = bankHolidaysAhead(9, from).find(g => g.day <= _bhLead(g.ms)); if (!h) return null;
+      const L = (en, sp) => es ? sp : en;
+      const short = it => { const nm = _BH_NAME[it.id][es ? 1 : 0].replace(/^(the|el) /i, ''); return nm.charAt(0).toUpperCase() + nm.slice(1) + ' (' + ['US', 'UK', 'EU'].filter(x => it.where.indexOf(x) >= 0).map(x => _BH_PLACE[x][es ? 4 : 3]).join('/') + ')'; };
+      return { name: h.items.map(short).join(', '),
+        when: h.day === 0 ? L('today', 'hoy') : new Date(h.ms).toLocaleDateString(es ? 'es-ES' : 'en-GB', { weekday: 'short' }).replace('.', ''),
+        inTxt: h.day === 0 ? '' : h.day === 1 ? L('tomorrow', 'mañana') : L('in ' + h.day + ' d', 'en ' + h.day + ' d'),
+        title: bankHolidayNotice(es, from, true).replace(/^(Heads-up|Aviso): /, ''), day: h.day, date: h.date };
+    } catch (e) { return null; }
+  }
+  function bankHolidayNotice(es, from, keepToday) {
     try {
       const list = bankHolidaysAhead(9, from); if (!list.length) return '';
-      if (list[0].day === 0 && !from) {
+      if (list[0].day === 0 && !from && !keepToday) {
         let cx = null; try { cx = (typeof getCalendarContext === 'function') ? getCalendarContext() : null; } catch (e) {}
         if (cx && cx.kind === 'holiday') list.shift();
       }
-      // calendar days from the second trading day before a date to that date (2 mid-week, 4 for a Monday or a Tuesday)
-      const lead = ms => { const d = new Date(ms); let n = 0, back = 0; while (n < 2) { d.setDate(d.getDate() - 1); back++; if (d.getDay() >= 1 && d.getDay() <= 5) n++; } return back; };
+      const lead = _bhLead;
       const at = list.findIndex(g => g.day <= lead(g.ms));
       const h = at < 0 ? null : list[at]; if (!h) return '';
       const L = (en, sp) => es ? sp : en;
@@ -13218,7 +13238,7 @@ try {
     } catch (e) { return ''; }
   }
   try {
-    window.__stBankHolidays = { ahead: bankHolidaysAhead, notice: bankHolidayNotice,
+    window.__stBankHolidays = { ahead: bankHolidaysAhead, notice: bankHolidayNotice, box: bankHolidayBox,
       // for the assistant: the next two weeks, compact
       pack: function () { try { const l = bankHolidaysAhead(14); return l.length ? l.map(g => ({ date: g.date, daysFromToday: g.day, holidays: g.items.map(it => ({ name: _BH_NAME[it.id][0] + (it.moved ? ' (observed)' : ''), bankHolidayIn: it.where.map(x => x === 'EU' ? 'Eurozone' : x) })) })) : null; } catch (e) { return null; } } };
   } catch (e) {}
@@ -19334,10 +19354,20 @@ try {
     }
     function newsHtml() {
       var u; try { u = window.__stHeadNews && window.__stHeadNews.upcoming ? window.__stHeadNews.upcoming() : undefined; } catch (e) {}
-      if (u === undefined) return '';
-      var lab = '<div class="slx-l">' + esc(T2('Red news', 'Noticia roja')) + '</div>';
-      if (!u) return '<div class="slx-news">' + lab + '<div class="slx-v">' + esc(T2('None this week', 'Ninguna esta semana')) + '</div></div>';
-      return '<div class="slx-news has" title="' + esc(u.title) + '">' + lab + '<div class="slx-v">' + esc(u.name + ' · ' + u.when) + '<small>' + esc(u.inTxt) + '</small></div></div>';
+      var red = '';
+      if (u !== undefined) {
+        var lab = '<div class="slx-l">' + esc(T2('Red news', 'Noticia roja')) + '</div>';
+        red = !u ? '<div class="slx-news">' + lab + '<div class="slx-v">' + esc(T2('None this week', 'Ninguna esta semana')) + '</div></div>'
+                 : '<div class="slx-news has" title="' + esc(u.title) + '">' + lab + '<div class="slx-v">' + esc(u.name + ' · ' + u.when) + '<small>' + esc(u.inTxt) + '</small></div></div>';
+      }
+      // A bank holiday coming up (US, UK, Eurozone) sits beside it, in the news calendar's holiday blue: the two trading
+      // days before, and the day itself (Nestor, 10 Oct 2026). The dates are the app's own - window.__stBankHolidays.
+      var hol = '';
+      try {
+        var b = (window.__stBankHolidays && window.__stBankHolidays.box) ? window.__stBankHolidays.box(window.__lang === 'es') : null;
+        if (b) hol = '<div class="slx-news hol" title="' + esc(b.title) + '"><div class="slx-l">' + esc(T2('Bank holiday', 'Festivo bancario')) + '</div><div class="slx-v">' + esc(b.name + ' · ' + b.when) + (b.inTxt ? '<small>' + esc(b.inTxt) + '</small>' : '') + '</div></div>';
+      } catch (e) {}
+      return red + hol;
     }
     function parseLad(s) {
       var out = { p: [], t: [] };
