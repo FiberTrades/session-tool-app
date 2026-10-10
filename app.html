@@ -13182,16 +13182,24 @@ try {
       return Object.keys(byDate).sort().map(k => byDate[k]);
     } catch (e) { return []; }
   }
-  // The heads-up in words (es = Spanish): the next bank holiday within 7 days, and the one after it if there is one.
-  // Today's is left to the calendar's own line when the feed has it.
+  /* The heads-up in words (es = Spanish). It starts on the second TRADING day before the holiday and runs to the day
+     itself - a week ahead was "a little too much" (Nestor, 10 Oct 2026: "2 days and 1 day before is enough but if today
+     is friday and there is a bank holiday of monday i should get the reminder thursday and friday"). Trading days are
+     Monday to Friday, so a Monday holiday is announced on the Thursday and the Friday (and over the weekend in
+     between), a Wednesday one on the Monday and the Tuesday. A holiday that follows the first within four days (Easter
+     Monday after Good Friday, Boxing Day after Christmas) is named after it. Today's is left to the calendar's own
+     line when the feed has it. */
   function bankHolidayNotice(es, from) {
     try {
-      const list = bankHolidaysAhead(7, from); if (!list.length) return '';
+      const list = bankHolidaysAhead(9, from); if (!list.length) return '';
       if (list[0].day === 0 && !from) {
         let cx = null; try { cx = (typeof getCalendarContext === 'function') ? getCalendarContext() : null; } catch (e) {}
         if (cx && cx.kind === 'holiday') list.shift();
       }
-      const h = list[0]; if (!h) return '';
+      // calendar days from the second trading day before a date to that date (2 mid-week, 4 for a Monday or a Tuesday)
+      const lead = ms => { const d = new Date(ms); let n = 0, back = 0; while (n < 2) { d.setDate(d.getDate() - 1); back++; if (d.getDay() >= 1 && d.getDay() <= 5) n++; } return back; };
+      const at = list.findIndex(g => g.day <= lead(g.ms));
+      const h = at < 0 ? null : list[at]; if (!h) return '';
       const L = (en, sp) => es ? sp : en;
       const dstr = ms => new Date(ms).toLocaleDateString(es ? 'es-ES' : 'en-GB', { weekday: 'long', day: 'numeric', month: 'short' }).replace(/,/g, '').replace(/\.$/, '');
       const join = arr => arr.length < 2 ? (arr[0] || '') : arr.slice(0, -1).join(', ') + L(' and ', ' y ') + arr[arr.length - 1];
@@ -13204,7 +13212,7 @@ try {
       if (h.items.length === 1) txt += L(' is ' + name(h.items[0]) + ', a bank holiday in ' + places(h.items[0].where) + '.', ' es ' + name(h.items[0]) + ', festivo bancario en ' + places(h.items[0].where) + '.');
       else txt += L(' is a bank holiday in ', ' es festivo bancario en ') + join(h.items.map(it => places(it.where) + ' (' + name(it) + ')')) + '.';
       txt += L(' Expect thinner liquidity in ', ' Espera menos liquidez en los pares con ') + join(allWhere(h).map(x => _BH_PLACE[x][2])) + L(' pairs', '') + (h.day === 0 ? '' : L(' that day', ' ese día')) + '.';
-      const n = list[1];
+      const n = (list[at + 1] && list[at + 1].day - h.day <= 4) ? list[at + 1] : null;
       if (n) txt += L(' Then ' + dstr(n.ms) + ': ', ' Después, el ' + dstr(n.ms) + ': ') + join(n.items.map(it => name(it) + ' (' + places(it.where) + ')')) + '.';
       return txt.replace(/\.\.(?=\s|$)/g, '.');   // 'EE. UU.' already ends in a full stop
     } catch (e) { return ''; }
@@ -47342,7 +47350,7 @@ try {
         try { if (!isReview && typeof quarterNotice === 'function') _qtr = quarterNotice(window.__lang === 'es'); } catch (e) {}
         try { if (!isReview && typeof window.__stPropEventLine === 'function') _prop = window.__stPropEventLine(window.__lang === 'es'); } catch (e) {}
         html = compose(opener, [_prop, _qtr, _clk].filter(Boolean).join(' ') || tail);
-        // A bank holiday in the next 7 days (US, UK, Eurozone) rides behind the Session Bias line (10 Oct 2026).
+        // A bank holiday coming up (US, UK, Eurozone) rides behind the Session Bias line from two trading days before (10 Oct 2026).
         try { if (!isReview && window.__stBankHolidays) _holNote = window.__stBankHolidays.notice(window.__lang === 'es'); } catch (e) {}
       }
       // The seed is re-picked from its pool on every render and refreshAllSurfaces runs on every

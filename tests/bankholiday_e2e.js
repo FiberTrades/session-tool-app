@@ -1,6 +1,6 @@
 (async function () {
   // Bank holidays ahead in the Session Bias greeting (10 Oct 2026): US, UK and Eurozone dates worked out by rule, a
-  // heads-up sentence from 7 days before, kept behind the line the AI rewrites.
+  // heads-up sentence from two trading days before, kept behind the line the AI rewrites.
   // Run: python tests/browser_test.py tests/bankholiday_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   await W(2500);
@@ -22,14 +22,16 @@
   // the heads-up, on the days around Columbus Day 2026 (Monday 12 Oct)
   var n = function (y, m, d, es) { return B.notice(!!es, new Date(y, m - 1, d, 9)); };
   ok('Sat 10 Oct: Monday is named, with what it is, where, and the currency', /^Heads-up: Monday 12 Oct is Columbus Day, a bank holiday in the US\. Expect thinner liquidity in USD pairs that day\.$/.test(n(2026, 10, 10)), n(2026, 10, 10));
-  ok('Mon 5 Oct: already a week before', /Monday 12 Oct is Columbus Day/.test(n(2026, 10, 5)), n(2026, 10, 5));
-  ok('Sun 4 Oct: not yet (8 days)', n(2026, 10, 4) === '', n(2026, 10, 4));
+  ok('Wed 7 Oct: not yet - a week ahead was too much', n(2026, 10, 7) === '' && n(2026, 10, 5) === '', [n(2026, 10, 5), n(2026, 10, 7)]);
+  ok('Thu 8 and Fri 9 Oct: the two trading days before a Monday holiday', /Monday 12 Oct is Columbus Day/.test(n(2026, 10, 8)) && /Monday 12 Oct is Columbus Day/.test(n(2026, 10, 9)), [n(2026, 10, 8), n(2026, 10, 9)]);
+  ok('a Wednesday holiday (Veterans Day, 11 Nov): the Monday and the Tuesday only', n(2026, 11, 6) === '' && n(2026, 11, 8) === '' && /Wednesday 11 Nov is Veterans Day/.test(n(2026, 11, 9)) && /^Heads-up: Tomorrow, Wednesday 11 Nov, is Veterans Day/.test(n(2026, 11, 10)), [n(2026, 11, 6), n(2026, 11, 8), n(2026, 11, 9), n(2026, 11, 10)]);
+  ok('Sun 4 Oct: nothing', n(2026, 10, 4) === '', n(2026, 10, 4));
   ok('Sun 11 Oct: Tomorrow', /^Heads-up: Tomorrow, Monday 12 Oct, is Columbus Day, a bank holiday in the US\./.test(n(2026, 10, 11)), n(2026, 10, 11));
   ok('Mon 12 Oct: Today', /^Heads-up: Today is Columbus Day, a bank holiday in the US\. Expect thinner liquidity in USD pairs\.$/.test(n(2026, 10, 12)), n(2026, 10, 12));
   ok('Tue 13 Oct: nothing', n(2026, 10, 13) === '', n(2026, 10, 13));
-  ok('Easter 2026: three places on the Friday, then the Monday', /^Heads-up: Friday 3 Apr is Good Friday, a bank holiday in the US, the UK and the Eurozone\. Expect thinner liquidity in USD, GBP and EUR pairs that day\. Then Monday 6 Apr: Easter Monday \(the UK and the Eurozone\)\.$/.test(n(2026, 3, 30)), n(2026, 3, 30));
-  ok('25 May 2026: two holidays with their own names on one day', /^Heads-up: Monday 25 May is a bank holiday in the US \(Memorial Day\) and the UK \(the Spring bank holiday\)\. Expect thinner liquidity in USD and GBP pairs that day\.$/.test(n(2026, 5, 20)), n(2026, 5, 20));
-  ok('across the new year', /Friday 1 Jan is New Year's Day, a bank holiday in the US, the UK and the Eurozone/.test(n(2026, 12, 29)), n(2026, 12, 29));
+  ok('Easter 2026: three places on the Friday, then the Monday', /^Heads-up: Friday 3 Apr is Good Friday, a bank holiday in the US, the UK and the Eurozone\. Expect thinner liquidity in USD, GBP and EUR pairs that day\. Then Monday 6 Apr: Easter Monday \(the UK and the Eurozone\)\.$/.test(n(2026, 4, 1)) && n(2026, 3, 31) === '', [n(2026, 3, 31), n(2026, 4, 1)]);
+  ok('25 May 2026: two holidays with their own names on one day', /^Heads-up: Monday 25 May is a bank holiday in the US \(Memorial Day\) and the UK \(the Spring bank holiday\)\. Expect thinner liquidity in USD and GBP pairs that day\.$/.test(n(2026, 5, 21)) && n(2026, 5, 20) === '', [n(2026, 5, 20), n(2026, 5, 21)]);
+  ok('across the new year', /Friday 1 Jan is New Year's Day, a bank holiday in the US, the UK and the Eurozone/.test(n(2026, 12, 30)) && n(2026, 12, 29) === '', [n(2026, 12, 29), n(2026, 12, 30)]);
   ok('Spanish', /^Aviso: el lunes 12 oct es el Día de Colón, festivo bancario en EE\. UU\. Espera menos liquidez en los pares con USD ese día\.$/.test(n(2026, 10, 10, true)), n(2026, 10, 10, true));
   // in the greeting: behind the line, in its own span, and not part of what the AI is asked to rewrite
   var real = B.notice(false), g = document.getElementById('bias-greeting');
