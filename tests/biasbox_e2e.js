@@ -1,0 +1,46 @@
+(async function () {
+  var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  await W(2500);
+  var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got }); };
+  var html = await fetch('/app.html?x=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); });
+  var doc = new DOMParser().parseFromString(html, 'text/html'), bad = [];
+  doc.querySelectorAll('script:not([src])').forEach(function (s, i) { var ty = (s.type || '').toLowerCase(); if (ty && ty !== 'text/javascript') return; try { new Function(s.textContent); } catch (e) { bad.push(i + ': ' + e.message); } });
+  ok('every inline script parses', !bad.length, bad);
+  var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
+  var el = document.getElementById('bias-like');
+  var pick = function (g, v) { var e = document.querySelector('#page-bias [data-bias="' + g + '"] [data-value="' + v + '"]'); if (e && !e.classList.contains('selected')) e.click(); };
+  var tf = function (g, which) { var e = document.querySelector('#page-bias .tf-toggle[data-tf-for="' + g + '"] .tf-btn[data-tf="' + which + '"]'); if (e) e.click(); };
+  var txt = function (n) { return n ? n.innerText.replace(/\s+/g, ' ').trim() : null; };
+  var cells = function () { return Array.from(el.querySelectorAll('.bl-xc')).map(txt); };
+  ok('hidden with an empty journal', el.classList.contains('hidden'));
+  pick('mode', 'Execution'); pick('structure', 'Initiating'); pick('location', 'Discount Middle'); pick('direction', 'Bearish'); await W(300);
+  ok('still hidden with no finished trades', el.classList.contains('hidden'));
+  stDemoSeed(data); pick('direction', 'Bullish'); await W(150); pick('direction', 'Bearish'); await W(300);
+  ok('shown once the three HTF picks are made', !el.classList.contains('hidden'));
+  var hero = Array.from(el.querySelectorAll('.bl-4 .bl-t')).map(txt);
+  ok('four exact-match tiles with the right figures', hero.length === 4 && hero[0] === 'TRADES 6 of 37 trades' && /33%/.test(hero[1]) && /\+1\.29R all trades \+0\.35R/.test(hero[2]) && /\+7\.76R across 6 trades/.test(hero[3]), hero);
+  ok('each tile has its small chart', Array.from(el.querySelectorAll('.bl-4 .bl-z')).every(function (n) { return n.children.length > 0; }));
+  ok('six chips, newest first', el.querySelectorAll('.bl-chip').length === 6 && /2 Oct/.test(txt(el.querySelector('.bl-chip'))), txt(el.querySelector('.bl-chip')));
+  ok('one strip line (HTF) with the three picks', el.querySelectorAll('.bl-xr').length === 1 && cells().join(' | ') === 'Initiating 16 trades −0.02R | Discount Middle 7 trades +1.78R | Bearish 15 trades +0.42R', cells());
+  ok('no LTF line until an LTF pick is made', !el.querySelector('.bl-ltf'));
+  ok('the six cards are gone', !el.querySelector('.bl-3') && !el.querySelector('.bl-pill') && el.querySelectorAll('.bl-t').length === 4, el.querySelectorAll('.bl-t').length);
+  tf('direction', 'ltf'); await W(200); pick('direction', 'Bullish'); await W(300); tf('direction', 'htf'); await W(300);
+  ok('an LTF pick leaves the HTF pick alone', data.bias.direction === 'Bearish' && data.bias.directionLtf === 'Bullish', [data.bias.direction, data.bias.directionLtf]);
+  ok('the LTF line appears', txt(el.querySelector('.bl-ltf')) === 'With the same LTF too Bullish 1 trade · 0 W · 1 L · 0 BE · −1.36R', txt(el.querySelector('.bl-ltf')));
+  ok('a second strip line for LTF, blanks as Not picked', el.querySelectorAll('.bl-xr').length === 2 && cells().slice(3).join(' | ') === 'Not picked — | Not picked — | Bullish 1 trade −1.36R', cells().slice(3));
+  ok('a pick with fewer than 5 trades stays grey', el.querySelectorAll('.bl-xr')[1].querySelectorAll('.r.few').length === 3);
+  var r = el.getBoundingClientRect();
+  ok('nothing overflows or is cut', !Array.from(el.querySelectorAll('*')).some(function (n) { var q = n.getBoundingClientRect(); return q.width > 0 && (q.right > r.right + 1 || q.left < r.left - 1); }) && !Array.from(el.querySelectorAll('.bl-s, .bl-xc .nm')).some(function (n) { return n.scrollWidth > n.clientWidth + 1; }));
+  pick('structure', 'Trending'); pick('location', 'Breakout'); await W(300);
+  ok('no exact match: dashes, no chips, the strip still shows each pick', /^TRADES 0/.test(txt(el.querySelector('.bl-4 .bl-t'))) && !el.querySelector('.bl-chip') && /Breakout No trades yet —/.test(cells()[1]), [txt(el.querySelector('.bl-4 .bl-t')), cells()[1]]);
+  pick('structure', 'Initiating'); pick('location', 'Discount Middle'); await W(300);
+  el.querySelector('.bl-chip').click(); await W(600);
+  var m = document.getElementById('edit-trade-modal-bg');
+  ok('a chip opens its trade', !!m && getComputedStyle(m).display !== 'none' && m.getBoundingClientRect().height > 0 && editingTradeId === 'demo_t36', (typeof editingTradeId !== 'undefined') ? editingTradeId : null);
+  try { m.classList.remove('show', 'open', 'active'); m.style.display = 'none'; } catch (e) {}
+  setLanguage('es'); await W(700);
+  ok('Spanish', txt(el.querySelectorAll('.bl-lab')[1]) === 'CADA ELECCIÓN POR SEPARADO' && cells()[0] === 'Inicio 16 operaciones −0.02R' && cells()[3] === 'Sin elegir —', [txt(el.querySelectorAll('.bl-lab')[1]), cells()[0], cells()[3]]);
+  ok('no missing translation keys on screen', !/biaslike\./.test(el.innerText), (el.innerText.match(/biaslike\.[a-z_0-9]+/g) || []));
+  ok('no script errors', !errs.length, errs);
+  return out;
+})()
