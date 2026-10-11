@@ -124,5 +124,7 @@
   try { renderScopePicker(); } catch (e) {}
   var item = document.querySelector('.scope-picker-item[data-scope-id="' + a3.id + '"]');
   ok('the account picker tags it', !item || !!item.querySelector('.scope-picker-sep'), item ? item.innerHTML : 'picker rows not rendered');
+  // a prop account kept separate never celebrates a pass or shows the fail card (their account filters skip it)
+  ok('the pass pop-up and the fail card skip a separate account', html.indexOf("!funded(a) && !a.demo && !a.separate; });") > 0 && html.indexOf("seen[a.id] || a.demo || a.separate) return false;") > 0);
   return out;
 })()
