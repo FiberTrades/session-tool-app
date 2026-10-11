@@ -963,6 +963,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-account-badge.archived { color: var(--text-dim); border-color: var(--text-dim); }
   /* An account kept separate (11 Oct 2026): a blue badge, one line saying what that means, and a tag in the picker. */
   .settings-account-badge.separate { color: #5b9bff; border-color: #5b9bff; }
+  /* The MT5 account numbers linked to an account, and the dialog that links them (11 Oct 2026). */
+  .settings-account-row > .settings-account-mt5 { grid-column: 1 / -1; margin-top: 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--text-dim); }
+  .lk-modal .lk-sub { margin: 14px 0 4px; font-size: 13px; line-height: 1.5; color: var(--text-mid); }
+  .lk-modal .lk-sub, .lk-modal .lk-hint, .lk-modal .lk-msg, .lk-modal .lk-lab { text-align: left; }   /* the rows are left-aligned, so the words around them are too */
+  .lk-modal .lk-sub b { color: var(--text); font-weight: 600; }
+  .lk-modal .lk-lab { margin: 16px 0 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
+  .lk-modal .lk-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .lk-modal .lk-num { flex: 1 1 auto; min-width: 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 15px; color: var(--text); }
+  .lk-modal .lk-num small { margin-left: 8px; font-size: 11px; color: var(--text-dim); }
+  .lk-modal .lk-input { flex: 1 1 auto; min-width: 0; }
+  .lk-modal .lk-row .settings-btn { flex: 0 0 auto; min-width: 92px; }
+  .lk-modal .lk-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+  .lk-modal .lk-msg { margin: 8px 0 0; min-height: 18px; font-size: 12px; color: var(--bad); }
+  .lk-modal .modal-actions { margin-top: 8px; }
   .settings-account-row > .settings-account-sepnote { grid-column: 1 / -1; margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
   .scope-picker-sep { margin-left: 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #5b9bff; }
   .settings-archived-group { border-top: 1px solid var(--border); padding-top: 4px; }
@@ -52546,6 +52560,8 @@ try {
             _mi.push(`<button type="button" role="menuitem" data-action="review" data-id="${acc.id}">${_ps.status === 'passed' ? window._stT('See how you did', 'Mira cómo lo hiciste') : window._stT('See what happened', 'Mira qué pasó')}</button>`);
         } catch (e) {}
         _mi.push(`<button type="button" role="menuitem" data-action="rename" data-id="${acc.id}">${tt('settings.rename')}</button>`);
+        // Link MT5 account (11 Oct 2026): which MT5 account number's trades belong to this account - see openLinkMt5.
+        if (!isArchived) _mi.push(`<button type="button" role="menuitem" data-action="linkmt5" data-id="${acc.id}">${window._stT('Link MT5 account', 'Vincular cuenta MT5')}</button>`);
         if (!isSingleAccount) {
           // Keep separate (11 Oct 2026): the account stays tradable but out of everything combined - see _sepIds().
           if (!isArchived || acc.separate) _mi.push(acc.separate
@@ -52608,6 +52624,7 @@ try {
                 <button type="button" class="settings-account-match" data-id="${acc.id}">${window._stT("doesn't match your broker?", '¿no coincide con tu bróker?')}</button>
           </div>
           ${payLine}
+          ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">MT5 ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
           ${acc.separate ? `<div class="settings-account-sepnote">${_L('Kept apart: not counted in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Aparte: no cuenta en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
@@ -53121,6 +53138,7 @@ try {
         });
         return;
       }
+      if (action === 'linkmt5') { openLinkMt5(id); return; }
       if (action === 'separate' || action === 'unseparate') {
         const on = (action === 'separate');
         // At least one active account has to count, or All accounts would be empty with no way to tell why.
@@ -53348,6 +53366,74 @@ try {
       _confirmHandler = null;
     });
     // backdrop click intentionally does nothing — respond via the confirm/cancel buttons only
+
+    /* --- Link MT5 account (11 Oct 2026, Nestor: "yes add the link button"). ---
+       The app learns which MT5 account belongs to which of your accounts the first time a trade from it is imported
+       (data.mt5LoginMap: MT5 login -> account id). Until then that MT5 account's live trades are treated as the active
+       account's - so a demo kept separate nudged, and counted against the main account's limits, on its first trade.
+       This dialog sets the link up front: pick an MT5 account your EA has already been heard from, or type its number
+       (the one at the top of the MT5 window). One MT5 account belongs to one app account; linking it here moves it. */
+    function openLinkMt5(accId) {
+      const T = window._stT, E = escapeHtml;
+      const old = document.getElementById('st-linkmt5-bg'); if (old) old.remove();
+      const bg = document.createElement('div');
+      bg.className = 'modal-bg show'; bg.id = 'st-linkmt5-bg'; bg.style.zIndex = '110';
+      const close = () => { try { document.removeEventListener('keydown', onKey, true); } catch (e) {} bg.remove(); };
+      const onKey = (ev) => { if (ev.key === 'Escape') { ev.stopPropagation(); close(); } };
+      const nameOf = (id) => { const x = getAccountById(id); return x ? accDisplayName(x) : ''; };
+      const after = () => {
+        saveData();
+        try { refreshScopeSurfaces(); } catch (e) {}
+        try { if (typeof renderSettingsAccountsList === 'function') renderSettingsAccountsList(); } catch (e) {}
+        paint();
+      };
+      const link = (login) => {
+        login = String(login || '').replace(/\s+/g, '');
+        const msg = bg.querySelector('.lk-msg');
+        if (!/^\d{4,12}$/.test(login)) { if (msg) msg.textContent = T('Type the MT5 account number: digits only.', 'Escribe el número de la cuenta MT5: solo dígitos.'); return; }
+        if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {};
+        data.mt5LoginMap[login] = accId;
+        after();
+      };
+      const unlink = (login) => { try { if (data.mt5LoginMap) delete data.mt5LoginMap[String(login)]; } catch (e) {} after(); };
+      function paint() {
+        const acc = getAccountById(accId); if (!acc) { close(); return; }
+        const map = (data.mt5LoginMap && typeof data.mt5LoginMap === 'object') ? data.mt5LoginMap : {};
+        const mine = Object.keys(map).filter(k => map[k] === accId);
+        // MT5 accounts the EA has been heard from that no account of yours holds yet (a link to a deleted account counts as none)
+        const seen = {};
+        try { const rows = (window.__stEA && window.__stEA.rows) ? window.__stEA.rows() : {}; Object.keys(rows).forEach(k => { const r = rows[k]; if (!r || r.login == null) return; const lg = String(r.login); if (map[lg] && getAccountById(map[lg])) return; (seen[lg] = seen[lg] || []).push(String(r.symbol || '')); }); } catch (e) {}
+        const elsewhere = Object.keys(map).filter(k => map[k] !== accId && getAccountById(map[k]));
+        const row = (lg, sub, btn, act) => `<div class="lk-row"><span class="lk-num">${E(lg)}${sub ? `<small>${E(sub)}</small>` : ''}</span><button type="button" class="settings-btn" data-lk="${act}" data-login="${E(lg)}">${btn}</button></div>`;
+        bg.innerHTML = `<div class="modal mdl-new lk-modal" style="max-width:440px;">
+            <div class="modal-header"><div class="modal-title">${T('Link MT5 account', 'Vincular cuenta MT5')}</div></div>
+            <p class="lk-sub">${T('Trades from a linked MT5 account belong to', 'Las operaciones de una cuenta MT5 vinculada pertenecen a')} <b>${E(accDisplayName(acc))}</b>${T(': saved to it, judged by its rules.', ': se guardan en ella y se juzgan con sus reglas.')}</p>
+            ${mine.length ? `<div class="lk-lab">${T('Linked now', 'Vinculadas ahora')}</div>` + mine.map(lg => row(lg, '', T('Unlink', 'Desvincular'), 'unlink')).join('') : ''}
+            ${Object.keys(seen).length ? `<div class="lk-lab">${T('Seen from your EA, not linked', 'Vistas desde tu EA, sin vincular')}</div>` + Object.keys(seen).map(lg => row(lg, seen[lg].filter(Boolean).join(', '), T('Link', 'Vincular'), 'link')).join('') : ''}
+            <div class="lk-lab">${T('Or type the MT5 account number', 'O escribe el número de la cuenta MT5')}</div>
+            <div class="lk-row"><input type="text" inputmode="numeric" class="settings-input lk-input" maxlength="14" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="${T('e.g. 1514906945', 'p. ej. 1514906945')}" /><button type="button" class="settings-btn" data-lk="type">${T('Link', 'Vincular')}</button></div>
+            <p class="lk-hint">${T('It is the number at the top of your MT5 window, before the broker name.', 'Es el número que aparece arriba en la ventana de MT5, antes del nombre del bróker.')}</p>
+            ${elsewhere.length ? `<p class="lk-hint">${T('Linked to your other accounts:', 'Vinculadas a tus otras cuentas:')} ${elsewhere.map(k => E(k) + ' → ' + E(nameOf(map[k]))).join(' · ')}. ${T('Linking one here moves it.', 'Vincular una aquí la mueve.')}</p>` : ''}
+            <p class="lk-msg" role="status"></p>
+            <div class="modal-actions"><button type="button" class="settings-btn" data-lk="done">${T('Done', 'Listo')}</button></div>
+          </div>`;
+      }
+      bg.addEventListener('click', (ev) => {
+        if (ev.target === bg) { close(); return; }
+        const b = ev.target.closest && ev.target.closest('[data-lk]'); if (!b) return;
+        const k = b.getAttribute('data-lk');
+        if (k === 'done') close();
+        else if (k === 'unlink') unlink(b.getAttribute('data-login'));
+        else if (k === 'link') link(b.getAttribute('data-login'));
+        else if (k === 'type') { const inp = bg.querySelector('.lk-input'); link(inp ? inp.value : ''); }
+      });
+      bg.addEventListener('keydown', (ev) => { if (ev.key === 'Enter' && ev.target && ev.target.classList && ev.target.classList.contains('lk-input')) { ev.preventDefault(); link(ev.target.value); } });
+      document.addEventListener('keydown', onKey, true);
+      document.body.appendChild(bg);
+      paint();
+      try { const inp = bg.querySelector('.lk-input'); if (inp && window.matchMedia && window.matchMedia('(hover: hover)').matches) inp.focus(); } catch (e) {}
+    }
+    try { window.__stLinkMt5 = openLinkMt5; } catch (e) {}
 
     // --- Rename modal. Replaces the OS-default window.prompt() which renders
     // in the browser's native blue/gray dialog. This modal keeps the dark
