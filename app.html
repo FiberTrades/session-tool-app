@@ -27566,7 +27566,10 @@ try {
         // for it, and putting a "Breached" verdict on that is both wrong and discouraging.
         // Accounts predating this field are judged the old way — carrying a rule meant challenge —
         // so nothing already on screen disappears on upgrade.
-        if (a.kind === 'personal') return false;
+        // A TEST account is the exception (11 Oct 2026, "build the test progress card"): it is never a prop firm
+        // account, but with a target or a drawdown of its own it gets this card as "Test progress" - and only when it
+        // is the account picked, since the all-accounts list above leaves test accounts out.
+        if (a.kind === 'personal' && !a.separate) return false;
         var r = a.riskRules || {};
         /* Judged by the same resolver that draws the block, not by an approximation of it.
            Testing the mode key on its own admitted an account whose only trace of a rule was a
@@ -27585,7 +27588,7 @@ try {
         try {
           _personalWithRules = (data.accounts || []).filter(function (a) {
             var r = a && a.riskRules;
-            if (!r || a.kind !== 'personal') return false;
+            if (!r || a.kind !== 'personal' || a.separate) return false;   // a test account is Personal on purpose
             return (r.maxDrawdownAmount > 0 || r.maxDrawdownPct > 0
                  || r.profitTargetAmount > 0 || r.profitTargetPct > 0);
           });
@@ -27734,6 +27737,11 @@ try {
                : funded ? T('Funded — no target to reach. The floor is the line that matters now.', 'Fondeada — sin objetivo que alcanzar. El suelo es la línea que importa ahora.')
                : passed ? T('Target reached — the profit objective is met.', 'Objetivo alcanzado — se ha cumplido el objetivo de beneficio.')
                : T('In progress.', 'En curso.');
+      // A test account: the same two lines, said as what they are - a test, not a challenge.
+      if (acc.separate) {
+        if (breached) vTxt = T('Floor reached — as a challenge, this test would have failed on its drawdown rule.', 'Suelo alcanzado — como reto, esta prueba habría fallado por su regla de drawdown.');
+        else if (passed) vTxt = T('Target reached — as a challenge, this test would have passed.', 'Objetivo alcanzado — como reto, esta prueba habría pasado.');
+      }
       var vRow = '<div class="chal-verdict"><span class="chal-dot" style="background:' + vCol + '"></span><span>' + vTxt + '</span></div>' + (tail || '');
       // A decided evaluation can be put away. Only offered once it is genuinely finished, so it
       // cannot be hit mid-challenge, and it archives rather than deletes: every trade stays in the
@@ -27848,9 +27856,14 @@ try {
       } catch (e) {}
 
       var ttl = document.getElementById('challenge-title');
-      if (ttl) ttl.textContent = T('Prop Firm Progress', 'Progreso de prop firm');
+      // Only test accounts on the card (a test account picked): it is "Test progress".
+      var allTest = accounts.length > 0 && accounts.every(function (a) { return a && a.separate; });
+      if (ttl) ttl.textContent = allTest ? T('Test progress', 'Progreso de prueba') : T('Prop Firm Progress', 'Progreso de prop firm');
       var hint = document.getElementById('challenge-hint');
-      if (hint) hint.textContent = single
+      if (hint) hint.textContent = allTest
+        ? T('Measured against this test account’s own target and drawdown, on closed trades. A test, not a challenge: nothing here counts anywhere else.',
+            'Medido con el objetivo y el drawdown de esta cuenta de prueba, sobre operaciones cerradas. Una prueba, no un reto: nada de esto cuenta en ningún otro sitio.')
+        : single
         ? T('Measured against this account’s own rules, on closed trades.',
             'Medido con las reglas de esta cuenta, sobre operaciones cerradas.')
         : T('Measured against each account’s own rules, on closed trades. '
@@ -51895,7 +51908,7 @@ try {
         const acc = (sel && sel.value) ? (data.accounts || []).find(x => x.id === sel.value) : null, isTest = !!(acc && acc.separate);
         let note = document.getElementById('settings-risk-test-note');
         if (!note && picker && isTest) { note = document.createElement('p'); note.id = 'settings-risk-test-note'; note.className = 'settings-hint'; picker.parentNode.insertBefore(note, picker.nextSibling); }
-        if (note) { note.style.display = isTest ? '' : 'none'; note.textContent = window._stT('Test account: these rules judge its own days, which you see when you pick it. Its trades raise no nudges and count nowhere else.', 'Cuenta de prueba: estas reglas juzgan sus propios días, que ves al elegirla. Sus operaciones no generan avisos ni cuentan en ningún otro sitio.'); }
+        if (note) { note.style.display = isTest ? '' : 'none'; note.textContent = window._stT('Test account: these rules judge its own days, which you see when you pick it. Its trades raise no nudges and count nowhere else. A profit target or a max drawdown gives it a Test progress card in Statistics.', 'Cuenta de prueba: estas reglas juzgan sus propios días, que ves al elegirla. Sus operaciones no generan avisos ni cuentan en ningún otro sitio. Un objetivo de beneficio o un drawdown máximo le da una tarjeta de Progreso de prueba en Estadísticas.'); }
       } catch (e) {}
     }
     window.__stRiskTestView = _riskTestView;
@@ -52786,11 +52799,11 @@ try {
         // options a segmented control also shows both states at once instead of hiding one.
         const _kindTitle = window._stT('Only prop firm accounts appear in Prop Firm Progress, with a target, a floor and a pass/fail verdict.', 'Solo las cuentas de prop firm aparecen en Progreso de prop firm, con objetivo, suelo y veredicto.');
         // Test (11 Oct 2026) is the third choice: an account is Personal, Prop firm or Test (Nestor: "make test part of
-        // the personal,prop firm button"). A test account has no Prop Firm Progress, and it is one-way once it has a
-        // trade - see accountHasTrades. Not offered while there is only one account: one has to count.
+        // the personal,prop firm button"). A test account is never a prop firm account (its target and drawdown show as
+        // "Test progress" when it is picked), and it is one-way once it has a trade - see accountHasTrades. Not offered while there is only one account: one has to count.
         const _isTest = !!acc.separate;
         const _testSeg = (!isArchived && (!isSingleAccount || _isTest))
-          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No nudges, no Prop Firm Progress.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin avisos ni Progreso de prop firm.')}">${window._stT('Test', 'Prueba')}</button>` : '';
+          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No nudges.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin avisos.')}">${window._stT('Test', 'Prueba')}</button>` : '';
         actions.push(`<span class="settings-acct-kind" role="group" title="${_kindTitle}">
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="personal" aria-pressed="${!_isTest && _kindNow === 'personal'}">${window._stT('Personal', 'Personal')}</button>
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="challenge" aria-pressed="${!_isTest && _kindNow === 'challenge'}">${window._stT('Prop firm', 'Prop firm')}</button>${_testSeg}
@@ -53425,7 +53438,7 @@ try {
         }
         window.__stDialog({ title: T('Make this a test account?', '¿Convertirla en cuenta de prueba?'), paras: [
           '<b style="color:var(--text);font-weight:600;">' + escapeHtml(accDisplayName(acc0)) + '</b> ' + escapeHtml(T('becomes a test account. Its trades are saved, and you see them by picking this account, but they never count in All accounts, your Series of 10, your streaks or the leaderboard, and they raise no nudges.', 'pasa a ser una cuenta de prueba. Sus operaciones se guardan, y las ves al elegir esta cuenta, pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación, y no generan avisos.')),
-          escapeHtml(T('It keeps its own risk rules, for its own days only, and has no Prop Firm Progress.', 'Mantiene sus propias reglas de riesgo, solo para sus propios días, y no tiene Progreso de prop firm.')),
+          escapeHtml(T('It keeps its own risk rules, for its own days only. With a profit target or a max drawdown it shows a Test progress card when you pick it.', 'Mantiene sus propias reglas de riesgo, solo para sus propios días. Con un objetivo de beneficio o un drawdown máximo muestra una tarjeta de Progreso de prueba al elegirla.')),
           escapeHtml(T('This cannot be undone once the account has a trade.', 'No se puede deshacer en cuanto la cuenta tenga una operación.'))
         ], buttons: [{ a: 'yes', label: T('Make it a test account', 'Hacerla de prueba') }, { a: 'no', label: T('Cancel', 'Cancelar') }] }).then(v => { if (v === 'yes') apply(true); });
         return;

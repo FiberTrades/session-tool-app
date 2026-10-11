@@ -145,7 +145,7 @@
   t4().click(); await W(400);
   var bs = dg() ? dg().querySelectorAll('.mdl-actions .btn') : [];
   a4.kind = 'challenge'; a4.riskRules = { maxTrades: 3, maxLossMode: 'amount', maxLossAmount: 500, beThresholdMode: 'amount', beThresholdAmount: 50 };
-  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /It keeps its own risk rules, for its own days only, and has no Prop Firm Progress\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
+  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /It keeps its own risk rules, for its own days only\. With a profit target or a max drawdown it shows a Test progress card when you pick it\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
   dg().querySelector('[data-a="no"]').click(); await W(300);
   ok('Cancel leaves it as it was', !dg() && !a4.separate, [!!dg(), a4.separate]);
   await reRows(); t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600); await reRows();
