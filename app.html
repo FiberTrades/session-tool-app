@@ -20799,8 +20799,26 @@ try {
     } catch (e) {}
     return data.bias || {};
   }
-  // Letters only, upper case; MT5's metal codes read as the names members give them (XAUUSD = gold).
-  function _symNorm(x) { const n = String(x == null ? '' : x).replace(/[^A-Za-z]/g, '').toUpperCase(); return ({ XAUUSD: 'GOLD', XAGUSD: 'SILVER' })[n] || n; }
+  // One name per instrument, however it is written: EUR/USD = EURUSD = EURUSD.r = #EURUSDm, XAU/USD = XAUUSD = GOLD.
+  // (The same core the trade copier matches copies on. It was letters-only before 11 Oct 2026, so a broker suffix -
+  // EURUSD.r - matched no review.)
+  function _symNorm(x) { try { return _ideaSymCore(x); } catch (e) { return String(x == null ? '' : x).replace(/[^A-Za-z0-9]/g, '').toUpperCase(); } }
+  /* The journal's name for a broker symbol (11 Oct 2026, Nestor: "if i never mentioned in the app that i trade gold and
+     i take a gold trade, will the symbol in trade log say gold? or would it mistake it for eurusd?" - it did: an
+     imported row took the symbol of whatever review it landed in, or none, and none reads as the default pair).
+     The member's own spelling when it is one of their symbols ("XAU/USD"), else a readable form of the broker's code:
+     a currency or metal pair gets its slash (XAUUSD -> XAU/USD), anything else keeps its core (US30.cash -> US30). */
+  function _symbolForMt5(code) {
+    let core = ''; try { core = _ideaSymCore(code); } catch (e) {}
+    if (!core) return '';
+    let mine = [];
+    try { mine = (data.settings.symbols && data.settings.symbols.length) ? data.settings.symbols.slice() : [data.settings.pair || 'EUR/USD']; } catch (e) {}
+    const hit = mine.find(x => { try { return _ideaSymCore(x) === core; } catch (e) { return false; } });
+    if (hit) return hit;
+    let pair = false; try { pair = core.length === 6 && window.__stDU.forexLike(core); } catch (e) {}
+    return pair ? core.slice(0, 3) + '/' + core.slice(3) : core;
+  }
+  try { window.__stSymbolForMt5 = _symbolForMt5; } catch (e) {}
   // The review an imported trade belongs to: its own symbol, in the session its entry time falls in.
   function _reviewSlotForTrade(sym, hhmm) {
     if (!_multiReview()) return data.review;
@@ -50932,7 +50950,9 @@ try {
     const _impSlots = [];
     const _impTo = (t, row) => {
       const r = _reviewSlotForTrade(t && t.symbol, t && t.entryTimeHHMM) || data.review;
-      if (_multiReview() && r.slotSymbol) row.symbol = r.slotSymbol;
+      // The trade keeps ITS OWN symbol, wherever it lands (see _symbolForMt5); a trade the broker did not name takes its review's.
+      const _own = _symbolForMt5(t && t.symbol);
+      if (_own) row.symbol = _own; else if (_multiReview() && r.slotSymbol) row.symbol = r.slotSymbol;
       r.sessionDate = targetDate;
       if (_impSlots.indexOf(r) < 0) _impSlots.push(r);
       r.trades.push(row);
