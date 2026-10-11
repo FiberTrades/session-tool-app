@@ -21184,6 +21184,65 @@ try {
      again - with Execution, Focus and Close added in between - and both posts arrived together when the connection
      caught up, 22 ms apart. Now the button stays locked, saying Posting..., until the post has gone or failed. */
   function _stPosting(btn) { return !!(btn && btn.__stPosting); }
+  /* ===== Post all, or just this one? (11 Oct 2026) =====
+     With more than one symbol (or session) there is a bias and a review for each, and each has its own post. Nestor:
+     "when you press post to community it should say post all bias to community or just this one? ... i can see people
+     forgetting to see 2 or 3 biases if thats how many symbols they trade". So when OTHER biases (or reviews) are filled
+     in and not posted, the button asks. "All" posts the others first, each as its own post exactly as its own button
+     would, then carries on with the one on screen. Nothing is asked when this is the only one waiting. */
+  let _stPostAllRun = false;   // true while the others are being posted: the bias flow must not jump to Session Review after each
+  function _biasesWaiting(mine) {
+    const slots = Array.isArray(data.biasSlots) ? data.biasSlots : [], out = [];
+    slots.forEach((b, i) => { if (i === mine || !b || !biasSlotHasContent(b)) return; if (_biasPostState(b) !== 'posted') out.push(i); });
+    return out;
+  }
+  // 'new' | 'posted' | 'changed' for a review that is not the one on screen (built with it swapped in for a moment).
+  function _reviewStateOf(r) {
+    const keep = data.review; let st = 'new';
+    try { data.review = r; const key = _reviewPostKey(), rec = _stPostedGet(key); st = rec ? _stPostedState(key, () => window.__stBuildInLang('en', buildReviewMessage)) : 'new'; }
+    catch (e) { st = 'posted'; } finally { data.review = keep; }
+    return st;
+  }
+  function _reviewsWaiting(mine) {
+    const slots = Array.isArray(data.reviewSlots) ? data.reviewSlots : [], td = todayDateStr(), out = [];
+    slots.forEach((r, i) => { if (i === mine || !r || !_reviewHasContent(r)) return; if (r.sessionDate && r.sessionDate !== td) return; if (_reviewStateOf(r) !== 'posted') out.push(i); });
+    return out;
+  }
+  function _slotName(x, review) {
+    const sym = review ? (x && x.slotSymbol) : (x && x.symbol), ses = review ? (x && x.slotSession) : (x && x.sessionName);
+    let sn = ''; try { sn = ses ? localizeSessionName(ses) : ''; } catch (e) { sn = ses || ''; }
+    return [sym, sn].filter(Boolean).join(' \u00b7 ');
+  }
+  // Resolves 'all' | 'one' | null (closed without choosing). names: every one that would go out, this one first.
+  window.__stAskPostAll = function (kind, names) {
+    return new Promise(function (resolve) {
+      try {
+        const T = window._stT, esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const n = names.length, rev = kind === 'review', named = names.every(Boolean);
+        const bg = document.createElement('div'); bg.className = 'modal-bg show'; bg.id = 'st-postall-bg'; bg.style.zIndex = '100000';
+        bg.innerHTML = '<div class="modal mdl-new" style="max-width:440px;" role="dialog" aria-modal="true">'
+          + '<div class="modal-header"><div><div class="modal-title">' + esc(rev ? T('Post all your reviews?', '\u00bfPublicar todas tus revisiones?') : T('Post all your biases?', '\u00bfPublicar todos tus sesgos?')) + '</div></div></div>'
+          + '<p style="margin:14px 0 0;color:var(--text-mid);font-size:13px;line-height:1.6;">'
+          + esc(rev ? T('You have ' + n + ' reviews filled in today that are not posted', 'Tienes ' + n + ' revisiones de hoy sin publicar') : T('You have ' + n + ' biases filled in today that are not posted', 'Tienes ' + n + ' sesgos de hoy sin publicar'))
+          + (named ? ': <b style="color:var(--text);font-weight:600;">' + names.map(esc).join(', ') + '</b>. ' : '. ')
+          + esc(T('Each goes out as its own post.', 'Cada uno sale como su propia publicaci\u00f3n.')) + '</p>'
+          + '<div class="mdl-actions">'
+          +   '<button type="button" class="btn" data-a="all">' + esc(T('Post all ' + n, (rev ? 'Publicar las ' : 'Publicar los ') + n)) + '</button>'
+          +   '<button type="button" class="btn" data-a="one">' + esc(T('Just this one', rev ? 'Solo esta' : 'Solo este')) + '</button>'
+          + '</div></div>';
+        const done = (v) => { try { document.removeEventListener('keydown', onKey, true); bg.remove(); } catch (e) {} resolve(v); };
+        const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+        bg.addEventListener('click', (e) => {
+          const b2 = e.target.closest ? e.target.closest('[data-a]') : null;
+          if (b2) { done(b2.getAttribute('data-a')); return; }
+          if (e.target === bg) done(null);
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(bg);
+        try { bg.querySelector('[data-a="all"]').focus(); } catch (e) {}
+      } catch (e) { resolve('one'); }   // if the question cannot be shown, never block the post
+    });
+  };
   // The copy-to-clipboard fallback of a failed post, capped: a clipboard that never answers must not hold the button.
   function _stClipQuick(text) { return Promise.race([Promise.resolve().then(function () { return copyToClipboard(text); }).catch(function () {}), new Promise(function (r) { setTimeout(r, 1500); })]); }
   function _stPostLock(btn) {
@@ -21431,12 +21490,36 @@ try {
     // only ever decided by the configured session window, or the explicit "Reopen session live"
     // button in Settings → Session. Posting a bias outside your hours just posts the bias.
     const reviewTab = document.querySelector('.tab[data-page="review"]');
-    if (reviewTab) reviewTab.click();
+    if (reviewTab && !_stPostAllRun) reviewTab.click();   // not between the biases of a "post all": only after the last
   };
   document.getElementById('bias-copy').addEventListener('click', async (ev) => {
     const btn = ev.currentTarget;
     if (btn.classList.contains('is-posted')) return;   // already posted and unchanged: nothing to do
     if (_stPosting(btn)) return;                        // a post is already on its way
+    // Other biases waiting (more than one symbol or session): post them all, or just this one?
+    try {
+      const _mine = Array.isArray(data.biasSlots) ? data.biasSlots.indexOf(data.bias) : -1;
+      const _rest = (_mine >= 0) ? _biasesWaiting(_mine) : [];
+      if (_rest.length) {
+        const _pick = await window.__stAskPostAll('bias', [_slotName(data.bias, false)].concat(_rest.map(i => _slotName(data.biasSlots[i], false))));
+        if (!_pick) return;
+        if (_pick === 'all') {
+          let _stopped = false;
+          _stPostAllRun = true;
+          try {
+            for (const i of _rest) {
+              const _was = (data.biasSlots[i] || {}).copiedAt;
+              switchBiasSlot(i);
+              await doBiasCopyAndProceed(btn);
+              // backed out of its "not finished" warning: stay on that bias, the rest wait for the next press
+              if (((data.biasSlots[i] || {}).copiedAt) === _was) { _stopped = true; break; }
+            }
+          } finally { _stPostAllRun = false; }
+          if (_stopped) return;
+          switchBiasSlot(_mine);
+        }
+      }
+    } catch (e) { _stPostAllRun = false; }
     // Observation sessions are watch-only — there are no HTF/LTF charts to post, so skip the
     // "add both charts" reminder and copy straight away. This still stamps copiedAt, so the
     // "This morning's bias" card appears on Session Live exactly like any other copy.
@@ -23919,10 +24002,17 @@ try {
     const bg = document.getElementById('incomplete-log-modal-bg');
     if (!bg) return;
     const close = () => bg.classList.remove('show');
-    const backBtn = document.getElementById('incomplete-log-back');
-    const contBtn = document.getElementById('incomplete-log-continue');
-    if (backBtn) backBtn.addEventListener('click', () => { close(); _logThenAction = null; });
-    if (contBtn) contBtn.addEventListener('click', () => { close(); const c = _logThenAction; _logThenAction = null; if (c) setTimeout(c, 0); });
+    /* On the modal, not on the two buttons (11 Oct 2026): the bias's "not finished" warning borrows this modal and
+       swaps in clones of them (_warnIncompleteBias), so listeners on the buttons themselves were gone after the first
+       bias warning - and this reminder then could not be answered or closed for the rest of the tab. While the bias
+       warning is the one showing, _logThenAction is empty and its own listeners decide. */
+    bg.addEventListener('click', (e) => {
+      const b = (e.target && e.target.closest) ? e.target.closest('#incomplete-log-back, #incomplete-log-continue') : null;
+      if (!b) return;
+      close();
+      const c = _logThenAction; _logThenAction = null;
+      if (b.id === 'incomplete-log-continue' && c) setTimeout(c, 0);
+    });
   })();
   function collectPendingPotential() {
     const out = []; const map = {};
@@ -24466,9 +24556,16 @@ try {
     } catch (e) {}
     // Trade copier: a trade copied to your other accounts is ONE trade in the post, its review written once
     // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
-    const r = Object.assign({}, data.review, { trades: _ideaFirsts(_noSep(data.review.trades || [])) }), b = _reviewBias();   // never a separate account's trades: the post is public (11 Oct 2026)   // this session + asset's bias (28 Sep 2026)
+    /* An account kept separate (11 Oct 2026). A review that also holds real trades posts those alone - a practice
+       trade must not pad a real session's numbers. A review whose trades are ALL on a separate account is a practice
+       session: it posts its numbers, and says so on the Traded line (Nestor: "change it to traded on a practice
+       account and display the numbers in the post" - it had read "No - Observed Only", which was not true). */
+    const _revRows = data.review.trades || [], _revReal = _noSep(_revRows);
+    const _practice = _revRows.length > 0 && _revReal.length === 0;
+    const _postRows = _practice ? _revRows : _revReal;
+    const r = Object.assign({}, data.review, { trades: _ideaFirsts(_postRows) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
     const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && tt._ideaN) || 1), 1);
-    const _allT = _ideaMerge(_noSep(data.review.trades || []));   // a copied trade counts once, with every account's money (29 Sep 2026)
+    const _allT = _ideaMerge(_postRows);   // a copied trade counts once, with every account's money (29 Sep 2026)
     // Use the picked session date in the Discord header (defaults to today, but back-fillable).
     let headerDate = _headerDateStr();
     if (r.sessionDate && r.sessionDate !== todayDateStr()) {
@@ -24624,7 +24721,7 @@ try {
     // copies across all logged setups. A session with 2 logged setups and copies=3
     // on each reads as 6 trades total in the Discord summary.
     const totalExecs = _allT.reduce((s, t) => s + tradeCopies(t), 0);
-    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
+    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}${_practice ? 'On a practice account' : 'Yes'}${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
       + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + `)`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
@@ -25129,7 +25226,7 @@ try {
     if (valid.length === 0 && hasSessionLevelReview) {
       saveData();
       const statsTab = document.querySelector('.tab[data-page="stats"]');
-      if (statsTab) statsTab.click();
+      if (statsTab && !_stPostAllRun) statsTab.click();
       if (!skipBackupModal) showToast(t('toast.saved'), { duration: 4000 });   // 1 s longer than the usual 3 (Nestor, 28 Sep 2026)
       return 0;
     }
@@ -25239,7 +25336,7 @@ try {
     // series trades in place (see above), so the form never needs clearing to avoid duplicates.
     renderTrades();
     const statsTab = document.querySelector('.tab[data-page="stats"]');
-    if (statsTab) statsTab.click();
+    if (statsTab && !_stPostAllRun) statsTab.click();   // not between the reviews of a "post all"
     // "1 trade saved" stays 4 s, 1 s longer than the usual 3 (Nestor, 28 Sep 2026: "can it last a couple of seconds longer", then "do 4 seconds").
     if (!skipBackupModal) showToast(valid.length + ' ' + (valid.length === 1 ? t('backup.trade_singular') : t('backup.trade_plural')) + ' ' + (valid.length === 1 ? t('toast.saved_word_sing') : t('toast.saved_word_plural')), { duration: 4000 });
     return valid.length;
@@ -25271,6 +25368,27 @@ try {
       } finally { _rel(); }
       try { paintReviewPostBtn(); } catch (e) {}
     };
+    // Other reviews waiting (more than one symbol or session): post them all, or just this one?
+    try {
+      const _mineR = Array.isArray(data.reviewSlots) ? data.reviewSlots.indexOf(data.review) : -1;
+      const _restR = (_mineR >= 0) ? _reviewsWaiting(_mineR) : [];
+      if (_restR.length) {
+        const _pickR = await window.__stAskPostAll('review', [_slotName(data.review, true)].concat(_restR.map(i => _slotName(data.reviewSlots[i], true))));
+        if (!_pickR) return;
+        if (_pickR === 'all') {
+          _stPostAllRun = true;   // the save after each post stays on this page; only the last one opens Statistics
+          try {
+            for (const i of _restR) {
+              switchReviewSlot(i);
+              // an unfinished trade log stops here, on that review, with the usual reminder - the rest wait for the next press
+              if (sessionLogIncomplete()) { _stPostAllRun = false; remindIncompleteThen(() => { _run(); }); return; }
+              await _run();
+            }
+          } finally { _stPostAllRun = false; }
+          switchReviewSlot(_mineR);
+        }
+      }
+    } catch (e) { _stPostAllRun = false; }
     if (sessionLogIncomplete()) { remindIncompleteThen(() => { _run(); }); return; }
     await _run();
   });
