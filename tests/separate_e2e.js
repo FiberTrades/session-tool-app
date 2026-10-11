@@ -96,13 +96,13 @@
   ok('the community post is the same with or without the separate trade', !!msgReal && !/^ERR/.test(msgReal) && msgReal === msgBoth, [msgReal.length, msgBoth.length, msgBoth.slice(0, 200)]);
   ok('the Session Review itself still holds both', allReviewTrades().length === 2);
   // a review made ONLY of trades on the hidden account posts its numbers, and says what that means to a reader:
-  // "Yes (2 trades, not counted on the leaderboard)" - never 'practice' (it may be a real account), never 'hidden'
+  // "Yes (2 trades on a test account)"
   var sepW = Object.assign({}, sepT, { id: 'rv3', result: 'Win', r: 6, pips: 3000, actualGross: 3000, entryTime: '09:40', exitTime: '09:55' });
   data.review.trades = [sepT, sepW];
   var msgPr = ''; try { msgPr = buildReviewMessage(); } catch (e) { msgPr = 'ERR ' + e.message; }
-  ok('a review of hidden-account trades alone posts its trades, marked not counted on the leaderboard', /Yes/.test(msgPr) && /2 trades, not counted on the leaderboard\)/.test(msgPr) && !/practice|hidden|separate/i.test(msgPr) && !/Observed Only/.test(msgPr) && !/^ERR/.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 420));
+  ok('a review of test-account trades alone posts its trades, marked on a test account', /Yes/.test(msgPr) && /2 trades on a test account\)/.test(msgPr) && !/practice|hidden|separate|not counted/i.test(msgPr) && !/Observed Only/.test(msgPr) && !/^ERR/.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 420));
   ok('with its numbers', /1W/i.test(msgPr.replace(/\u001b\[[0-9;]*m/g, '')) || /Win/i.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 900));
-  ok('a review of counted trades says plain Yes', !/not counted/i.test(msgReal) && /Yes/.test(msgReal) && /Traded:/.test(msgReal.replace(/\u001b\[[0-9;]*m/g, '')), msgReal.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 300));
+  ok('a review of counted trades says plain Yes', !/test account/i.test(msgReal) && /Yes/.test(msgReal) && /Traded:/.test(msgReal.replace(/\u001b\[[0-9;]*m/g, '')), msgReal.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 300));
   data.review = keepRev || { trades: [] }; data.reviewSlots = keepSlots || null;
   // E) Settings: the option, the badge, the note and the totals
   var modal = document.getElementById('settings-modal-bg'); modal.classList.add('show');
@@ -113,25 +113,53 @@
   var rows = Array.from(modal.querySelectorAll('.settings-account-row')), rowOf = function (nm) { return rows.filter(function (r) { return r.querySelector('.san-txt') && r.querySelector('.san-txt').textContent === nm; })[0]; };
   var r3 = rowOf('Demo 70K'), r1 = rowOf('Live 70K');
   if (!r3 || !r1) { ok('Settings: the account rows are on screen', false, [rows.length, modal.innerText.slice(0, 200)]); return out; }
-  ok('Settings: the hidden account wears a Hidden badge and says what it means', !!r3 && /^hidden$/i.test(((r3.querySelector('.settings-account-badge') || {}).textContent || '').trim()) && /Hidden from All accounts/i.test((r3.querySelector('.settings-account-sepnote') || {}).textContent || '') && !!r3.querySelector('.settings-account-sepnote') && /leaderboard/.test(r3.querySelector('.settings-account-sepnote').textContent), r3 && r3.innerText.slice(0, 200));
-  ok('Settings: its menu offers Show in All accounts, the others Hide from All accounts', !!r3.querySelector('[data-action="unseparate"]') && /^Show in All accounts$/i.test(r3.querySelector('[data-action="unseparate"]').textContent.trim()) && !r3.querySelector('[data-action="separate"]') && !!r1.querySelector('[data-action="separate"]') && /^Hide from All accounts$/i.test(r1.querySelector('[data-action="separate"]').textContent.trim()) && !r1.querySelector('.settings-account-sepnote'), [!!r3.querySelector('[data-action="unseparate"]'), !!r1.querySelector('[data-action="separate"]')]);
+  ok('Settings: the test account wears a Test badge and says what it means', !!r3 && /^test$/i.test(((r3.querySelector('.settings-account-badge') || {}).textContent || '').trim()) && /^Test account:/i.test(((r3.querySelector('.settings-account-sepnote') || {}).textContent || '').trim()) && /leaderboard/.test(r3.querySelector('.settings-account-sepnote').textContent), r3 && r3.innerText.slice(0, 200));
+  var tb3 = r3.querySelector('.sak-test'), tb1 = r1.querySelector('.sak-test');
+  ok('Settings: a Test button beside Personal / Prop firm, lit on the test account only', !!tb3 && !!tb1 && tb3.getAttribute('aria-pressed') === 'true' && tb1.getAttribute('aria-pressed') === 'false' && /^test$/i.test(tb1.textContent.trim()) && !!tb1.previousElementSibling && tb1.previousElementSibling.classList.contains('settings-acct-kind') && !r1.querySelector('.settings-account-sepnote'), [tb3 && tb3.outerHTML.slice(0, 120), tb1 && tb1.outerHTML.slice(0, 120)]);
+  ok('Settings: Hide from / Show in All accounts are gone from the Options menu', !modal.querySelector('[data-action="separate"]') && !modal.querySelector('[data-action="unseparate"]') && !/Hide from All accounts|Show in All accounts|Keep separate/i.test(modal.innerText));
   var tot = modal.querySelector('.settings-account-total') || modal.querySelector('.sat-sub');
   var totTxt = (modal.querySelector('.sat-sub') || {}).textContent || '';
   ok('Settings: the combined totals count two accounts, not three', /\b2\b/.test(totTxt) && !/\b3\b/.test(totTxt), totTxt);
-  // the menu item works end to end
-  r3.querySelector('[data-action="unseparate"]').click(); await W(500);
+  // The Test button. An account with trades cannot become a test account; a test account with trades stays one.
+  var dg = function () { return document.querySelector('.st-dialog-bg'); }, dgT = function () { var d = dg(); return d ? d.innerText.replace(/\s+/g, ' ') : ''; };
+  var reRows = async function () { try { renderSettingsAccountsList(); } catch (e) {} await W(300); rows = Array.from(modal.querySelectorAll('.settings-account-row')); };
+  tb1.click(); await W(400);
+  ok('an account with trades: "cannot become a test account ... create a new account"', !!dg() && /This account cannot become a test account/i.test(dgT()) && /Trades have already been logged on it\. Create a new account to use as a test account\./i.test(dgT()) && dg().querySelectorAll('.mdl-actions .btn').length === 1 && !a1.separate, dgT());
+  dg().querySelector('[data-a]').click(); await W(300);
+  ok('OK closes it and nothing changed', !dg() && !a1.separate && diff(A, snap()).filter(function (k) { return k !== 'money'; }).length === 0, [!!dg(), a1.separate]);
+  await reRows(); rowOf('Demo 70K').querySelector('.sak-test').click(); await W(400);
+  ok('a test account with trades stays a test account', !!dg() && /This is a test account/i.test(dgT()) && /stays a test account once it has trades/i.test(dgT()) && a3.separate === true, dgT());
+  dg().querySelector('[data-a]').click(); await W(300);
+  // a new account with no trades: the confirmation, then it is a test account - and can be switched back while empty
+  var a4 = mk('Sandbox 10K', 10000); data.accounts.push(a4); await reRows();
+  var t4 = function () { return rowOf('Sandbox 10K').querySelector('.sak-test'); };
+  ok('an empty account has no trades', window.__stSep.hasTrades(a4.id) === false && window.__stSep.hasTrades(a1.id) === true && window.__stSep.hasTrades(a3.id) === true);
+  t4().click(); await W(400);
+  var bs = dg() ? dg().querySelectorAll('.mdl-actions .btn') : [];
+  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
+  dg().querySelector('[data-a="no"]').click(); await W(300);
+  ok('Cancel leaves it as it was', !dg() && !a4.separate, [!!dg(), a4.separate]);
+  await reRows(); t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600); await reRows();
+  ok('Make it a test account: lit, badged, out of the combined totals', a4.separate === true && t4().getAttribute('aria-pressed') === 'true' && /^test$/i.test((rowOf('Sandbox 10K').querySelector('.settings-account-badge') || {}).textContent.trim()), [a4.separate, t4().outerHTML.slice(0, 100)]);
+  t4().click(); await W(500); await reRows();
+  ok('with no trades yet, the button switches it back off (no pop-up)', !dg() && a4.separate === false && t4().getAttribute('aria-pressed') === 'false', [!!dg(), a4.separate]);
+  t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600);
+  data.currentSeries.push({ id: 'sb1', accountId: a4.id, symbol: 'XAU/USD', date: iso(0, 10), dayOfWeek: new Date(iso(0, 10)).getDay(), result: 'Win', r: 2, pips: 100, sl: 50, risk: 100, side: 'Long', type: 'Continuation', entryTime: '10:05', exitTime: '10:20', actualGross: 200 }); rebuildSeriesByDate();
+  await reRows(); t4().click(); await W(400);
+  ok('after its first trade it can no longer be switched back', a4.separate === true && !!dg() && /This is a test account/i.test(dgT()), [a4.separate, dgT()]);
+  if (dg()) dg().querySelector('[data-a]').click(); await W(300);
+  // (put the journal back as it was: the sandbox and its trade go)
+  data.accounts = data.accounts.filter(function (z) { return z.id !== a4.id; }); data.history = (data.history || []).map(function (h) { if (h && Array.isArray(h.trades)) h.trades = h.trades.filter(function (t) { return t.accountId !== a4.id; }); return h; }).filter(function (h) { return !h || !Array.isArray(h.trades) || h.trades.length || !h.separate; }); data.currentSeries = (data.currentSeries || []).filter(function (t) { return t.accountId !== a4.id; }); rebuildSeriesByDate(); await reRows();
+  // the flag itself still works both ways (what the differential above proves): off, every trade counts again; on, out again
+  setAccountSeparate(a3.id, false);
   var C = snap();
-  ok('switched off from the menu: its whole history counts again', !a3.separate && JSON.stringify(C.scoped) === JSON.stringify(withAll.scoped) && !data.history.some(function (h) { return h.separate; }) && C.series[1] === withAll.series[1], [a3.separate, C.scoped, withAll.scoped]);
-  try { renderSettingsAccountsList(); } catch (e) {}
-  await W(300);
-  rows = Array.from(modal.querySelectorAll('.settings-account-row')); r3 = rowOf('Demo 70K');
-  r3.querySelector('[data-action="separate"]').click(); await W(500);
-  ok('switched on from the menu: separate again', a3.separate === true && diff(A, snap()).filter(function (k) { return k !== 'money'; }).length === 0, diff(A, snap()));
-  modal.classList.remove('show');
+  ok('the flag off: its whole history counts again', !a3.separate && JSON.stringify(C.scoped) === JSON.stringify(withAll.scoped) && !data.history.some(function (h) { return h.separate; }) && C.series[1] === withAll.series[1], [a3.separate, C.scoped, withAll.scoped]);
+  setAccountSeparate(a3.id, true);
+  ok('the flag on: separate again', a3.separate === true && diff(A, snap()).filter(function (k) { return k !== 'money'; }).length === 0, diff(A, snap()));
   // the picker tags it
   try { renderScopePicker(); } catch (e) {}
   var item = document.querySelector('.scope-picker-item[data-scope-id="' + a3.id + '"]');
-  ok('the account picker tags it hidden', !item || (!!item.querySelector('.scope-picker-sep') && /hidden/i.test(item.querySelector('.scope-picker-sep').textContent)), item ? item.innerHTML : 'picker rows not rendered');
+  ok('the account picker tags it test', !item || (!!item.querySelector('.scope-picker-sep') && /^test$/i.test(item.querySelector('.scope-picker-sep').textContent.trim())), item ? item.innerHTML : 'picker rows not rendered');
   // Risk rules: the Max trades box and the Consistency box sit on the right, in line with their titles, the size of the others
   try {
     try { window.__stSettingsRows(); } catch (e) {}

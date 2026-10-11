@@ -1019,7 +1019,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      that circularity generously - which squeezed the name column 4px short and wrapped the
      longest account name onto a second line. 250px is what the widest button row actually needs
      (Rename + Unarchive + Delete), so the name keeps the rest. */
-  .settings-account-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; width: 250px; }
+  .settings-account-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; width: 320px; }   /* 320: Personal / Prop firm + Test + Options on one line (was 250, 11 Oct 2026) */
+  /* The Test switch: lit in the blue of the Test badge. */
+  .settings-account-actions .sak-test:hover { color: #5b9bff; border-color: #5b9bff; }
+  .settings-account-actions .sak-test[aria-pressed="true"] { color: #5b9bff; border-color: #5b9bff; background: rgba(91,155,255,0.10); }
   .settings-account-actions .settings-btn { flex: 0 0 auto; }
   .settings-account-actions button { padding: 6px 10px; font-size: 9px; letter-spacing: 0.15em; }
   /* Rename / Archive / Delete - and See how you did / See what happened on a prop account that has passed or failed -
@@ -16540,7 +16543,20 @@ try {
     saveData();
     return true;
   }
-  try { window.__stSep = { ids: _sepIds, is: isSeparateAccount, strip: _noSep, view: _sepView, hist: _seriesHist, set: setAccountSeparate }; } catch (e) {}
+  /* Test accounts (11 Oct 2026): acc.separate is now reached by the Test button beside Personal / Prop firm, and it is
+     one-way. Only an account with NO trades can become a test account, and once it has a trade it stays one - so no
+     trade is ever counted and then un-counted, or left out and then brought into a series and the leaderboard late
+     (what Nestor disliked about hiding and showing an account). accountHasTrades: any saved trade (the parked ones of
+     a test account included) or any trade in today's reviews, on that account; a trade from before accounts existed
+     belongs to the first account. */
+  function accountHasTrades(id) {
+    const first = (Array.isArray(data.accounts) && data.accounts[0]) ? data.accounts[0].id : null;
+    const mine = (t) => !!t && (t.accountId ? t.accountId === id : first === id);
+    try { if (getAllLifetimeTrades().some(mine)) return true; } catch (e) {}
+    try { if (allReviewTrades().some(mine)) return true; } catch (e) {}
+    return false;
+  }
+  try { window.__stSep = { ids: _sepIds, is: isSeparateAccount, strip: _noSep, view: _sepView, hist: _seriesHist, set: setAccountSeparate, hasTrades: accountHasTrades }; } catch (e) {}
 
   // Nestor's rule (29 Sep 2026): viewing more than one account, a trade copied to your other accounts is ONE trade -
   // one result, its R once, every account's money added (_ideaMerge). The merged rows are views: they carry the Lead
@@ -17075,7 +17091,7 @@ try {
       if (expanded.accounts) {
         active.forEach(acc => {
           const cls = 'scope-picker-item' + (scopeId === acc.id ? ' active' : '');
-          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}${acc.separate ? '<span class="scope-picker-sep">' + window._stT('hidden', 'oculta') + '</span>' : ''}</button>`);
+          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}${acc.separate ? '<span class="scope-picker-sep">' + window._stT('test', 'prueba') + '</span>' : ''}</button>`);
         });
       }
     }
@@ -21257,6 +21273,31 @@ try {
     let sn = ''; try { sn = ses ? localizeSessionName(ses) : ''; } catch (e) { sn = ses || ''; }
     return [sym, sn].filter(Boolean).join(' \u00b7 ');
   }
+  // A small dialog in the app's look: a title, one or more paragraphs (HTML the caller has already escaped), and one
+  // or two equal buttons. Resolves the pressed button's key; null when closed with Esc or a click outside.
+  window.__stDialog = function (o) {
+    o = o || {};
+    return new Promise(function (resolve) {
+      try {
+        const esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+        const bg = document.createElement('div'); bg.className = 'modal-bg show st-dialog-bg'; bg.style.zIndex = '100000';
+        bg.innerHTML = '<div class="modal mdl-new" style="max-width:' + (o.width || 460) + 'px;" role="dialog" aria-modal="true">'
+          + '<div class="modal-header"><div><div class="modal-title">' + esc(o.title || '') + '</div></div></div>'
+          + (o.paras || []).map((p, i) => '<p style="margin:' + (i ? 12 : 14) + 'px 0 0;color:var(--text-mid);font-size:13px;line-height:1.6;">' + p + '</p>').join('')
+          + '<div class="mdl-actions">' + (o.buttons || [{ a: 'ok', label: 'OK' }]).map((b) => '<button type="button" class="btn" data-a="' + esc(b.a) + '">' + esc(b.label) + '</button>').join('') + '</div></div>';
+        const done = (v) => { try { document.removeEventListener('keydown', onKey, true); bg.remove(); } catch (e) {} resolve(v); };
+        const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+        bg.addEventListener('click', (e) => {
+          const b2 = e.target.closest ? e.target.closest('[data-a]') : null;
+          if (b2) { done(b2.getAttribute('data-a')); return; }
+          if (e.target === bg) done(null);
+        });
+        document.addEventListener('keydown', onKey, true);
+        document.body.appendChild(bg);
+        try { bg.querySelector('[data-a]').focus(); } catch (e) {}
+      } catch (e) { resolve(null); }
+    });
+  };
   // What the "just this one" button calls the one on screen (Nestor, 11 Oct 2026: "instead of saying just this one it
   // should say just eurusd or just xauusd"): the shortest thing that tells it from the others in the question - its
   // symbol, or its session when they share the symbol, or both when neither does on its own.
@@ -24613,10 +24654,10 @@ try {
     // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
     /* An account kept separate (11 Oct 2026). A review that also holds trades on accounts that count posts those
        alone - a separate account's trade must not pad that session's numbers. A review whose trades are ALL on a
-       separate account posts its numbers, and says what that means to the people reading: "Yes (2 trades, not counted
-       on the leaderboard)". It had read "No - Observed Only", which was not true; then "On a practice account" (Nestor:
-       "it might be an actual account and not a practice one"); the account is "hidden" in Settings, but a post saying
-       "hidden account" would read as hiding something, so the post says the fact instead (11 Oct 2026). */
+       separate account posts its numbers, and says where they were taken: "Yes (2 trades on a test account)" - the
+       name the account has in Settings since it became the Test button (11 Oct 2026). Before that the line had read
+       "No - Observed Only" (not true), "On a practice account", "On a separate account" and "not counted on the
+       leaderboard", as the feature was renamed through the day. */
     const _revRows = data.review.trades || [], _revReal = _noSep(_revRows);
     const _sepOnly = _revRows.length > 0 && _revReal.length === 0;
     const _postRows = _sepOnly ? _revRows : _revReal;
@@ -24779,7 +24820,7 @@ try {
     // on each reads as 6 trades total in the Discord summary.
     const totalExecs = _allT.reduce((s, t) => s + tradeCopies(t), 0);
     statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
-      + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + (_sepOnly ? ', not counted on the leaderboard' : '') + `)`);
+      + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + (_sepOnly ? ' on a test account' : '') + `)`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
     // exports.
@@ -52723,7 +52764,7 @@ try {
         const rowCls = ['settings-account-row'];
         if (isArchived) rowCls.push('archived');
         const badgeKey = isArchived ? 'archived' : (acc.separate ? 'separate' : 'active');
-        const badgeText = isArchived ? tt('settings.archive') : (acc.separate ? window._stT('Hidden', 'Oculta') : tt('settings.active_now'));
+        const badgeText = isArchived ? tt('settings.archive') : (acc.separate ? window._stT('Test', 'Prueba') : tt('settings.active_now'));
         const pctCls = s.pct > 0 ? 'good' : s.pct < 0 ? 'bad' : '';
         const pctSign = s.pct > 0 ? '+' : '';
         // Action buttons: Rename is always available (single or multi-account).
@@ -52746,6 +52787,10 @@ try {
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="personal" aria-pressed="${_kindNow === 'personal'}">${window._stT('Personal', 'Personal')}</button>
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="challenge" aria-pressed="${_kindNow === 'challenge'}">${window._stT('Prop firm', 'Prop firm')}</button>
           </span>`);
+        // Test account (11 Oct 2026): its own switch beside Personal / Prop firm, so a test account is still one or the
+        // other (a prop firm demo keeps its Prop Firm Progress). One-way once it has a trade - see accountHasTrades.
+        // Not offered while there is only one account: at least one has to count.
+        if (!isArchived && (!isSingleAccount || acc.separate)) actions.push(`<button type="button" class="settings-btn sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${!!acc.separate}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación.')}">${window._stT('Test', 'Prueba')}</button>`);
         // Rename / Archive / Delete, and the breakdown of a prop account that has passed or failed, in one Options menu
         // (Nestor, 1 Oct 2026: "inside a picker that when pressed you see all the options... less space and look tidier").
         const _mi = [];
@@ -52758,12 +52803,8 @@ try {
         // Link MT5 account (11 Oct 2026): which MT5 account number's trades belong to this account - see openLinkMt5.
         if (!isArchived) _mi.push(`<button type="button" role="menuitem" data-action="linkmt5" data-id="${acc.id}">${window._stT('Link MT5 account', 'Vincular cuenta MT5')}</button>`);
         if (!isSingleAccount) {
-          // Hide from All accounts (11 Oct 2026; first called "Keep separate" - Nestor the same day: "should it be called,
-          // hide from all accounts? and ... the blue label be called hidden?"). In the code it is still acc.separate: the
-          // account stays tradable but out of everything combined - see _sepIds().
-          if (!isArchived || acc.separate) _mi.push(acc.separate
-            ? `<button type="button" role="menuitem" data-action="unseparate" data-id="${acc.id}">${window._stT('Show in All accounts', 'Mostrar en Todas las cuentas')}</button>`
-            : `<button type="button" role="menuitem" data-action="separate" data-id="${acc.id}">${window._stT('Hide from All accounts', 'Ocultar de Todas las cuentas')}</button>`);
+          // (Keep separate, then Hide from / Show in All accounts, were here for a day - 11 Oct 2026. It is the Test
+          // button beside Personal / Prop firm now, and one-way.)
           _mi.push(isArchived
             ? `<button type="button" role="menuitem" data-action="unarchive" data-id="${acc.id}">${tt('settings.unarchive')}</button>`
             : `<button type="button" role="menuitem" data-action="archive" data-id="${acc.id}">${tt('settings.archive')}</button>`);
@@ -52822,7 +52863,7 @@ try {
           </div>
           ${payLine}
           ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">${window._stT('MT5 login', 'Login MT5')} ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
-          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Hidden from All accounts: not counted there, in your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Oculta de Todas las cuentas: no cuenta ahí, ni en tu Serie de 10, tus rachas o la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
+          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -53336,23 +53377,42 @@ try {
         return;
       }
       if (action === 'linkmt5') { openLinkMt5(id); return; }
-      if (action === 'separate' || action === 'unseparate') {
-        const on = (action === 'separate');
-        // At least one active account has to count, or All accounts would be empty with no way to tell why.
-        if (on && !data.accounts.some(a => a && a.id !== id && a.status === 'active' && !a.separate)) {
-          (typeof showToast === 'function' ? showToast : alert)(window._stT('At least one account has to count. Add another account first, or show another hidden one in All accounts.', 'Al menos una cuenta tiene que contar. Añade otra cuenta primero, o muestra otra oculta en Todas las cuentas.'), { duration: 7000 });
+      if (action === 'test') {
+        // Test account - see accountHasTrades for the rule.
+        const acc0 = getAccountById(id); if (!acc0) return;
+        const T = window._stT, has = accountHasTrades(id);
+        const apply = (on) => {
+          setAccountSeparate(id, on);
+          settleGroupTargets();
+          refreshScopeSurfaces();
+          try { if (typeof renderSettingsAccountsList === 'function') renderSettingsAccountsList(); } catch (e) {}
+          try { if (typeof renderSettingsLinkedGroupsList === 'function') renderSettingsLinkedGroupsList(); } catch (e) {}
+          try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
+          try { if (window.STAI && window.STAI.onGreet) window.STAI.onGreet(); } catch (e) {}
+          // The leaderboard reads the account's flag from the journal in the cloud, so it recalculates once the save has
+          // had time to land (the nightly rebuild catches it if this one is too early).
+          try { setTimeout(function () { try { var sbc = window.__stSB; if (sbc && sbc.rpc) sbc.rpc('st_bump_leaderboard').then(function () { try { if (window.STBoard && STBoard.refresh) STBoard.refresh(); } catch (e) {} }, function () {}); } catch (e) {} }, 9000); } catch (e) {}
+        };
+        const okBtn = [{ a: 'ok', label: T('OK', 'Entendido') }];
+        if (acc0.separate) {
+          // with a trade in it, it stays a test account; with none, nothing was ever counted or left out
+          if (has) { window.__stDialog({ title: T('This is a test account', 'Esta es una cuenta de prueba'), paras: [escapeHtml(T('A test account stays a test account once it has trades. They are saved in it, and you see them by picking this account.', 'Una cuenta de prueba sigue siéndolo en cuanto tiene operaciones. Se guardan en ella, y las ves al elegir esta cuenta.'))], buttons: okBtn }); return; }
+          apply(false);
           return;
         }
-        setAccountSeparate(id, on);
-        settleGroupTargets();
-        refreshScopeSurfaces();
-        try { if (typeof renderSettingsAccountsList === 'function') renderSettingsAccountsList(); } catch (e) {}
-        try { if (typeof renderSettingsLinkedGroupsList === 'function') renderSettingsLinkedGroupsList(); } catch (e) {}
-        try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
-        try { if (window.STAI && window.STAI.onGreet) window.STAI.onGreet(); } catch (e) {}
-        // The leaderboard reads the account's flag from the journal in the cloud, so it recalculates once the save has
-        // had time to land (the nightly rebuild catches it if this one is too early).
-        try { setTimeout(function () { try { var sbc = window.__stSB; if (sbc && sbc.rpc) sbc.rpc('st_bump_leaderboard').then(function () { try { if (window.STBoard && STBoard.refresh) STBoard.refresh(); } catch (e) {} }, function () {}); } catch (e) {} }, 9000); } catch (e) {}
+        if (has) {
+          window.__stDialog({ title: T('This account cannot become a test account', 'Esta cuenta no puede ser una cuenta de prueba'), paras: [escapeHtml(T('Trades have already been logged on it. Create a new account to use as a test account.', 'Ya tiene operaciones registradas. Crea una cuenta nueva para usarla como cuenta de prueba.'))], buttons: okBtn });
+          return;
+        }
+        // At least one active account has to count, or All accounts would be empty with no way to tell why.
+        if (!data.accounts.some(x => x && x.id !== id && x.status === 'active' && !x.separate)) {
+          (typeof showToast === 'function' ? showToast : alert)(T('At least one account has to count. Add another account first.', 'Al menos una cuenta tiene que contar. Añade otra cuenta primero.'), { duration: 7000 });
+          return;
+        }
+        window.__stDialog({ title: T('Make this a test account?', '¿Convertirla en cuenta de prueba?'), paras: [
+          '<b style="color:var(--text);font-weight:600;">' + escapeHtml(accDisplayName(acc0)) + '</b> ' + escapeHtml(T('becomes a test account. Its trades are saved, and you see them by picking this account, but they never count in All accounts, your Series of 10, your streaks or the leaderboard, and they raise no nudges.', 'pasa a ser una cuenta de prueba. Sus operaciones se guardan, y las ves al elegir esta cuenta, pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación, y no generan avisos.')),
+          escapeHtml(T('This cannot be undone once the account has a trade.', 'No se puede deshacer en cuanto la cuenta tenga una operación.'))
+        ], buttons: [{ a: 'yes', label: T('Make it a test account', 'Hacerla de prueba') }, { a: 'no', label: T('Cancel', 'Cancelar') }] }).then(v => { if (v === 'yes') apply(true); });
         return;
       }
       if (action === 'unarchive') {
