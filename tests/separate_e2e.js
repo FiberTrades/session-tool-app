@@ -93,7 +93,15 @@
   var outBoth = getTodayOutcome(), msgBoth = '';
   try { msgBoth = buildReviewMessage(); } catch (e) { msgBoth = 'ERR ' + e.message; }
   ok('today reads as the real trade alone', outReal === outBoth && !!outReal, [outReal, outBoth]);
-  ok('the community post is the same with or without the separate trade', !!msgReal && !/^ERR/.test(msgReal) && msgReal === msgBoth, [msgReal.length, msgBoth.length, msgBoth.slice(0, 200)]);
+  var mB = msgBoth.replace(/\u001b\[[0-9;]*m/g, ''), mR = msgReal.replace(/\u001b\[[0-9;]*m/g, '');
+  ok('a review with a real and a test trade: the post shows both, the test one marked', !/^ERR/.test(mB) && /Yes \(1 trade, plus 1 on a test account\)/.test(mB) && /1\. .*Win.*\n2\. .*Lose.*\(test account\)/.test(mB) && !/test account/.test(mR), mB.slice(0, 520));
+  ok('and its totals are the real trade alone', /Wins:\s+1\b/.test(mB) && /Losses:\s+0\b/.test(mB) && (mB.match(/Net R[^\n]*/) || [''])[0] === (mR.match(/Net R[^\n]*/) || ['x'])[0], [(mB.match(/Net R[^\n]*/) || [''])[0], (mR.match(/Net R[^\n]*/) || [''])[0]]);
+  // a test account that COPIES the real trade (the same idea): one trade, noted as also copied to a test account
+  var cpy = Object.assign({}, realT, { id: 'rv1c', accountId: a3.id, ideaId: 'idea-1', actualGross: 2400 }); realT.ideaId = 'idea-1';
+  data.review.trades = [realT, cpy];
+  var msgCp = ''; try { msgCp = buildReviewMessage().replace(/\u001b\[[0-9;]*m/g, ''); } catch (e) { msgCp = 'ERR ' + e.message; }
+  ok('a real trade copied to a test account: one trade, "also copied to a test account"', /Yes \(1 trade, also copied to a test account\)/.test(msgCp) && /1\. .*Win[^\n]*\(\+ test account\)/.test(msgCp) && !/\n2\. /.test(msgCp) && !/copied to 2 accounts/.test(msgCp) && (msgCp.match(/Net R[^\n]*/) || [''])[0] === (mR.match(/Net R[^\n]*/) || ['x'])[0], msgCp.slice(0, 520));
+  delete realT.ideaId; data.review.trades = [realT, sepT];
   ok('the Session Review itself still holds both', allReviewTrades().length === 2);
   // a review made ONLY of trades on the hidden account posts its numbers, and says what that means to a reader:
   // "Yes (2 trades on a test account)"
@@ -137,16 +145,31 @@
   t4().click(); await W(400);
   var bs = dg() ? dg().querySelectorAll('.mdl-actions .btn') : [];
   a4.kind = 'challenge'; a4.riskRules = { maxTrades: 3, maxLossMode: 'amount', maxLossAmount: 500, beThresholdMode: 'amount', beThresholdAmount: 50 };
-  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /A test account has no risk rules and no Prop Firm Progress\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
+  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /A test account has no risk rules except a break-even threshold, and no Prop Firm Progress\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
   dg().querySelector('[data-a="no"]').click(); await W(300);
   ok('Cancel leaves it as it was', !dg() && !a4.separate, [!!dg(), a4.separate]);
   await reRows(); t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600); await reRows();
-  ok('a test account has no risk rules and is not a prop firm account', Object.keys(a4.riskRules || {}).length === 0 && a4.kind === 'personal', [a4.riskRules, a4.kind]);
+  ok('a test account keeps one rule, its break-even threshold, and is not a prop firm account', JSON.stringify(a4.riskRules) === JSON.stringify({ beThresholdMode: 'amount', beThresholdAmount: 50 }) && a4.kind === 'personal', [a4.riskRules, a4.kind]);
   a1.riskRules = Object.assign({}, a1.riskRules || {}, { beThresholdMode: 'amount', beThresholdAmount: 200 });
-  ok('its break-even band is the main account\'s', beThresholdMoneyFor(a4) === 200 && classifyNetResult(150, a4) === 'BE' && classifyNetResult(250, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
+  ok('its own break-even threshold is used', beThresholdMoneyFor(a4) === 50 && classifyNetResult(40, a4) === 'BE' && classifyNetResult(150, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
+  // Settings > Risk rules: a test account is listed, with only the break-even row
   try { populateRiskAccountPicker(); } catch (e) {}
-  var rsel = Array.from(document.querySelectorAll('#settings-risk-account-select option')).map(function (o) { return o.textContent; });
-  ok('Risk rules does not offer test accounts', rsel.length >= 1 && rsel.indexOf('Sandbox 10K') < 0 && rsel.indexOf('Demo 70K') < 0 && rsel.indexOf('Live 70K') >= 0, rsel);
+  var rselEl = document.getElementById('settings-risk-account-select'), rsel = Array.from(rselEl.options).map(function (o) { return o.textContent; });
+  ok('Risk rules lists the test account, marked', rsel.indexOf('Sandbox 10K (test)') >= 0 && rsel.indexOf('Live 70K') >= 0, rsel);
+  var rsec2 = document.querySelector('#settings-modal-bg .settings-section[data-section="risk_rules"]'), keepD = rsec2.style.display; rsec2.style.display = '';
+  rselEl.value = a4.id; rselEl.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
+  var shown = Array.from(rsec2.children).filter(function (el) { return getComputedStyle(el).display !== 'none'; });
+  var beIn = document.getElementById('settings-risk-be-threshold'), mtIn = document.getElementById('settings-risk-max-trades');
+  ok('with a test account picked, only the break-even threshold is on screen', rsec2.classList.contains('risk-test-acct') && beIn.getBoundingClientRect().height > 0 && mtIn.getBoundingClientRect().height === 0 && shown.length === 3 && /one rule: its break-even threshold/i.test((document.getElementById('settings-risk-test-note') || {}).textContent || ''), [shown.length, shown.map(function (el) { return el.id || el.className; })]);
+  ok('and it shows the account\'s own value', String(beIn.value) === '50', beIn.value);
+  beIn.value = '75'; beIn.dispatchEvent(new Event('change', { bubbles: true })); beIn.dispatchEvent(new Event('blur')); await W(200);
+  mtIn.value = '4'; mtIn.dispatchEvent(new Event('change', { bubbles: true })); await W(200);
+  ok('the break-even threshold can be changed there; no other rule can be saved', a4.riskRules.beThresholdAmount === 75 && !('maxTrades' in a4.riskRules) && beThresholdMoneyFor(a4) === 75, a4.riskRules);
+  delete a4.riskRules.beThresholdAmount;
+  ok('left blank, the band is the main account\'s', beThresholdMoneyFor(a4) === 200 && classifyNetResult(150, a4) === 'BE' && classifyNetResult(250, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
+  rselEl.value = a1.id; rselEl.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
+  ok('back on a counting account, every rule is on screen again', !rsec2.classList.contains('risk-test-acct') && mtIn.getBoundingClientRect().height > 0 && getComputedStyle(document.getElementById('settings-risk-test-note')).display === 'none', rsec2.className);
+  rsec2.style.display = keepD;
   ok('Make it a test account: lit, badged, out of the combined totals', a4.separate === true && t4().getAttribute('aria-pressed') === 'true' && rowOf('Sandbox 10K').querySelectorAll('.settings-acct-kind .sak-opt[aria-pressed="true"]').length === 1 && /^test$/i.test((rowOf('Sandbox 10K').querySelector('.settings-account-badge') || {}).textContent.trim()), [a4.separate, t4().outerHTML.slice(0, 100)]);
   rowOf('Sandbox 10K').querySelector('.sak-opt[data-kind="personal"]').click(); await W(500); await reRows();
   ok('with no trades yet, pressing Personal switches the test off (no pop-up)', !dg() && a4.separate === false && t4().getAttribute('aria-pressed') === 'false' && rowOf('Sandbox 10K').querySelector('.sak-opt[data-kind="personal"]').getAttribute('aria-pressed') === 'true', [!!dg(), a4.separate, a4.kind]);
@@ -161,9 +184,10 @@
   // (put the journal back as it was: the sandbox and its trade go)
   data.accounts = data.accounts.filter(function (z) { return z.id !== a4.id; }); data.history = (data.history || []).map(function (h) { if (h && Array.isArray(h.trades)) h.trades = h.trades.filter(function (t) { return t.accountId !== a4.id; }); return h; }).filter(function (h) { return !h || !Array.isArray(h.trades) || h.trades.length || !h.separate; }); data.currentSeries = (data.currentSeries || []).filter(function (t) { return t.accountId !== a4.id; }); rebuildSeriesByDate(); await reRows();
   // a test account from before the no-rules rule (or another device) loses its rules when the journal arrives
-  a3.riskRules = { maxTrades: 10, maxLossMode: 'amount', maxLossAmount: 800 }; a3.kind = 'challenge';
+  a3.riskRules = { maxTrades: 10, maxLossMode: 'amount', maxLossAmount: 800, beThresholdMode: 'amount', beThresholdAmount: 200 }; a3.kind = 'challenge';
   try { window.__stFreshDates(); } catch (e) {}
-  ok('an older test account is tidied: no rules, not a prop firm account', Object.keys(a3.riskRules || {}).length === 0 && a3.kind === 'personal', [a3.riskRules, a3.kind]);
+  ok('an older test account is tidied: only its break-even threshold is left, not a prop firm account', JSON.stringify(a3.riskRules) === JSON.stringify({ beThresholdMode: 'amount', beThresholdAmount: 200 }) && a3.kind === 'personal', [a3.riskRules, a3.kind]);
+  delete a3.riskRules;
   // the flag itself still works both ways (what the differential above proves): off, every trade counts again; on, out again
   setAccountSeparate(a3.id, false);
   var C = snap();

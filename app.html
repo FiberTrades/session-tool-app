@@ -812,6 +812,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .set-r { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
   #settings-modal-bg .set-r > * { margin-top: 0 !important; max-width: 100%; }
   #settings-modal-bg .set-r .settings-pref-row { margin: 0; }
+  /* A test account picked in Risk rules: only its break-even threshold (and the account picker, and the line that says
+     why) stay on screen - see _riskTestView. */
+  #settings-modal-bg .settings-section.risk-test-acct > *:not(.risk-keep) { display: none !important; }
   /* Risk rules: every box the same width (11 Oct 2026). A box's width came from the words after it - 230px beside
      "£ amount", 261px beside "% of balance", and Max trades, with nothing after it, was the width of the column. */
   #settings-modal-bg .settings-section[data-section="risk_rules"] .set-r > .settings-risk-input-row { width: 230px; }
@@ -16553,10 +16556,14 @@ try {
      for a test account ... i dont care if the current demo account cant track the propfirm progress"). So nothing judges
      its days, and Prop Firm Progress leaves it out. _testAccountsTidy runs when a journal arrives and when the Accounts
      tab is drawn, for an account that was made a test account before this rule (or on a device that has not updated). */
+  // ...except ONE: its break-even threshold (Nestor, the same evening: "i need to be able to add a breakeven to test
+  // accounts!"), so a trade closed a few pounds either side of zero is a break-even in its statistics, not a win.
+  const _TEST_RULES = ['beThresholdMode', 'beThresholdPct', 'beThresholdAmount'];
   function _testAccountTidy(acc) {
     if (!acc || !acc.separate) return false;
     let ch = false;
-    if (acc.riskRules && Object.keys(acc.riskRules).length) { acc.riskRules = {}; ch = true; }
+    const rr0 = acc.riskRules || {};
+    if (Object.keys(rr0).some(k => _TEST_RULES.indexOf(k) < 0)) { const keep = {}; _TEST_RULES.forEach(k => { if (rr0[k] != null) keep[k] = rr0[k]; }); acc.riskRules = keep; ch = true; }
     if (acc.kind !== 'personal') { acc.kind = 'personal'; ch = true; }
     return ch;
   }
@@ -17960,10 +17967,11 @@ try {
   // 'Win' / 'Lose' / 'BE'. Used when MT5 trades auto-import. % mode = percentage
   // of that account's starting balance; amount mode = a flat sum.
   function beThresholdMoneyFor(acc) {
-    // A test account has no risk rules of its own (11 Oct 2026): a result close to zero is break-even by the same band
-    // as the member's main account - the active one when it counts, else the first that does.
+    // A test account's one rule is its break-even threshold (11 Oct 2026). Left blank, a result close to zero is
+    // break-even by the same band as the member's main account - the active one when it counts, else the first that does.
     if (acc && acc.separate) {
-      try { const cnt = (data.accounts || []).filter(x => x && x.status === 'active' && !x.separate); const main = cnt.find(x => x.id === data.activeAccountId) || cnt[0]; if (main) acc = main; } catch (e) {}
+      const own = acc.riskRules || {}, set = (own.beThresholdMode === 'amount') ? parseFloat(own.beThresholdAmount) > 0 : parseFloat(own.beThresholdPct) > 0;
+      if (!set) { try { const cnt = (data.accounts || []).filter(x => x && x.status === 'active' && !x.separate); const main = cnt.find(x => x.id === data.activeAccountId) || cnt[0]; if (main) acc = main; } catch (e) {} }
     }
     const rr = (acc && acc.riskRules) || (data.settings && data.settings.riskRules) || {};
     const mode = (rr.beThresholdMode === 'amount') ? 'amount' : 'pct';
@@ -24639,8 +24647,21 @@ try {
     const _revRows = data.review.trades || [], _revReal = _noSep(_revRows);
     const _sepOnly = _revRows.length > 0 && _revReal.length === 0;
     const _postRows = _sepOnly ? _revRows : _revReal;
-    const r = Object.assign({}, data.review, { trades: _ideaFirsts(_postRows) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
-    const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && tt._ideaN) || 1), 1);
+    /* A review with BOTH real and test-account trades (the same symbol on both, or a test account that copies the
+       real one): the test trades are shown too (Nestor, 11 Oct 2026: "i want those shown too"), marked, and the
+       totals stay the real trades'. Each idea is listed once, in the review's own order:
+         - an idea with a real trade is that trade; _testN says how many test accounts also took it (a copy);
+         - an idea taken only on test accounts is listed as a test trade (_test). */
+    const _mixed = !_sepOnly && _revReal.length < _revRows.length;
+    let _listed = null;
+    if (_mixed) {
+      const _isReal = new Set(_revReal), _gs = [], _at = {};
+      _revRows.forEach(tt => { if (!tt) return; const id = tt.ideaId; let g; if (id && _at[id] != null) g = _gs[_at[id]]; else { g = { real: [], test: [] }; if (id) _at[id] = _gs.length; _gs.push(g); } (_isReal.has(tt) ? g.real : g.test).push(tt); });
+      _listed = _gs.map(g => g.real.length ? Object.assign({}, g.real[0], { _ideaN: g.real.length, _testN: g.test.length }) : Object.assign({}, g.test[0], { _ideaN: 1, _test: true }));
+    }
+    const r = Object.assign({}, data.review, { trades: _listed || _ideaFirsts(_postRows) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
+    const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && !tt._test && tt._ideaN) || 1), 1);
+    const _testOwn = r.trades.filter(tt => tt && tt._test).length, _testCopied = r.trades.some(tt => tt && tt._testN > 0);
     const _allT = _ideaMerge(_postRows);   // a copied trade counts once, with every account's money (29 Sep 2026)
     // Use the picked session date in the Discord header (defaults to today, but back-fillable).
     let headerDate = _headerDateStr();
@@ -24798,7 +24819,8 @@ try {
     // on each reads as 6 trades total in the Discord summary.
     const totalExecs = _allT.reduce((s, t) => s + tradeCopies(t), 0);
     statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
-      + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + (_sepOnly ? ' on a test account' : '') + `)`);
+      + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + (_sepOnly ? ' on a test account' : '')
+      + (_testOwn ? `, plus ${_testOwn} on a test account` : '') + (_testCopied ? ', also copied to a test account' : '') + `)`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
     // exports.
@@ -24870,7 +24892,8 @@ try {
         const rpStr = rpJoin ? `   ${rpJoin}` : '';
         // Append "× N" suffix when this setup was executed in multiple accounts.
         const nCopies = tradeCopies(t);
-        const copyStr = (t._ideaN > 1) ? `   (${t._ideaN} accounts)` : (nCopies > 1 ? `   × ${nCopies}` : '');
+        const copyStr = ((t._ideaN > 1) ? `   (${t._ideaN} accounts)` : (nCopies > 1 ? `   × ${nCopies}` : ''))
+          + (t._test ? '   (test account)' : '') + (t._testN > 0 ? '   (+ test account)' : '');
         statsBlock.push(`${i + 1}. ${lineColor}${arrow} ${t.result || '—'}${sideStr}${rpStr}${copyStr}${A.reset}`);
       }
     });
@@ -24911,7 +24934,7 @@ try {
       const _bx = _reviewBox(t);
       if (!_bx.length && !(t.reflection && t.reflection.trim())) return;   // only charts: they are listed under Charts
       lines.push('');
-      lines.push(_showSym && t.symbol ? `— Trade ${i + 1} \u00b7 ${t.symbol} —` : `— Trade ${i + 1} —`);
+      lines.push((_showSym && t.symbol ? `— Trade ${i + 1} \u00b7 ${t.symbol}` : `— Trade ${i + 1}`) + (t._test ? ' \u00b7 test account' : '') + ' —');
       if (_bx.length) { lines.push('```'); lines.push(..._bx); lines.push('```'); }
       if (t.reflection && t.reflection.trim()) { lines.push(''); lines.push(t.reflection.trim()); }
     });
@@ -51814,7 +51837,7 @@ try {
       const sel = document.getElementById('settings-risk-account-select');
       const wrap = document.getElementById('settings-risk-account-picker');
       if (!sel || !wrap) return;
-      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active' && !a.separate);   // a test account has no risk rules
+      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active');   // a test account is listed for its one rule, the break-even threshold
       /* An ARCHIVED account can still be the view scope, and the greeting and Prop Firm
          Progress go on enforcing its rules while it is. Listing only active accounts meant
          those rules were enforced, invisible and uneditable - so a scoped archived account
@@ -51823,7 +51846,7 @@ try {
       try {
         const sc = (typeof currentScopeResolved === 'function') ? currentScopeResolved() : null;
         const sa = (sc && sc.kind === 'account') ? sc.account : null;
-        if (sa && sa.status === 'archived' && !sa.separate) scopedArchived = sa;
+        if (sa && sa.status === 'archived') scopedArchived = sa;
       } catch (e) {}
       const list = scopedArchived ? active.concat([scopedArchived]) : active;
       sel.innerHTML = ''; // clear previous options
@@ -51846,6 +51869,7 @@ try {
         const opt = document.createElement('option');
         opt.value = a.id;
         opt.textContent = accDisplayName(a)
+          + (a.separate ? ' (' + window._stT('test', 'prueba') + ')' : '')
           + (a.status === 'archived' ? _archivedSuffix() : '');
         sel.appendChild(opt);
       });
@@ -51872,15 +51896,34 @@ try {
       const id = sel && sel.value;
       if (!id) return null;
       const acc = (data.accounts || []).find(a => a.id === id);
-      if (!acc || acc.separate) return null;   // a test account has no risk rules to edit
+      if (!acc) return null;
       if (!acc.riskRules) acc.riskRules = {};
       return acc.riskRules;
     }
+    // A test account has one rule, its break-even threshold: while one is picked here, every other row of this tab is
+    // put away (a class on the section; the rows keep whatever display their own code gave them) and a line says why.
+    function _riskTestView() {
+      try {
+        try { if (window.__stSettingsRows) window.__stSettingsRows(); } catch (e) {}
+        const sec = document.querySelector('#settings-modal-bg .settings-section[data-section="risk_rules"]'); if (!sec) return;
+        const sel = document.getElementById('settings-risk-account-select'), picker = document.getElementById('settings-risk-account-picker');
+        const acc = (sel && sel.value) ? (data.accounts || []).find(x => x.id === sel.value) : null, isTest = !!(acc && acc.separate);
+        const be = document.getElementById('settings-risk-be-threshold');
+        let top = be; while (top && top.parentNode !== sec) top = top.parentNode;
+        let note = document.getElementById('settings-risk-test-note');
+        if (!note && picker) { note = document.createElement('p'); note.id = 'settings-risk-test-note'; note.className = 'settings-hint'; picker.parentNode.insertBefore(note, picker.nextSibling); }
+        [picker, note, top].forEach(el => { if (el) el.classList.add('risk-keep'); });
+        if (note) { note.style.display = isTest ? '' : 'none'; note.textContent = window._stT('A test account has one rule: its break-even threshold. Left blank, it uses your main account\u2019s.', 'Una cuenta de prueba tiene una sola regla: su umbral de break-even. En blanco, usa el de tu cuenta principal.'); }
+        sec.classList.toggle('risk-test-acct', isTest);
+      } catch (e) {}
+    }
+    window.__stRiskTestView = _riskTestView;
     // Load the editing-account's rules into the Settings UI: applies the
     // mode toggle (% or £), sets each input's value to the active mode's
     // stored number, and updates the suffix label accordingly. Called on
     // settings open AND whenever the account picker changes.
     function loadRiskRulesIntoSettingsInputs() {
+      _riskTestView();
       const rr = getEditingRiskRules() || {};
       const inferMode = (modeKey, pctKey, amtKey) => {
         if (rr[modeKey] === 'amount' || rr[modeKey] === 'pct') return rr[modeKey];
@@ -52276,6 +52319,7 @@ try {
     function saveRiskRule(key, rawValue) {
       const rr = getEditingRiskRules();
       if (!rr) return;
+      try { const _sv = document.getElementById('settings-risk-account-select'), _ea = (_sv && _sv.value) ? (data.accounts || []).find(x => x.id === _sv.value) : null; if (_ea && _ea.separate && _TEST_RULES.indexOf(key) < 0) return; } catch (e) {}   // a test account keeps only its break-even threshold
       const trimmed = (rawValue == null) ? '' : String(rawValue).trim();
       if (trimmed === '' || isNaN(Number(trimmed)) || Number(trimmed) <= 0) {
         delete rr[key];
@@ -52766,7 +52810,7 @@ try {
         // once it has a trade - see accountHasTrades. Not offered while there is only one account: one has to count.
         const _isTest = !!acc.separate;
         const _testSeg = (!isArchived && (!isSingleAccount || _isTest))
-          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No risk rules, no Prop Firm Progress.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin reglas de riesgo ni Progreso de prop firm.')}">${window._stT('Test', 'Prueba')}</button>` : '';
+          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No risk rules but a break-even threshold, no Prop Firm Progress.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin reglas de riesgo salvo un umbral de break-even, ni Progreso de prop firm.')}">${window._stT('Test', 'Prueba')}</button>` : '';
         actions.push(`<span class="settings-acct-kind" role="group" title="${_kindTitle}">
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="personal" aria-pressed="${!_isTest && _kindNow === 'personal'}">${window._stT('Personal', 'Personal')}</button>
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="challenge" aria-pressed="${!_isTest && _kindNow === 'challenge'}">${window._stT('Prop firm', 'Prop firm')}</button>${_testSeg}
@@ -52843,7 +52887,7 @@ try {
           </div>
           ${payLine}
           ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">${window._stT('MT5 login', 'Login MT5')} ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
-          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. It has no risk rules. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. No tiene reglas de riesgo. Elígela en el selector de cuentas para verla.')}</div>` : ''}
+          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. Its only rule is a break-even threshold. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Su única regla es un umbral de break-even. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -53401,7 +53445,7 @@ try {
         }
         window.__stDialog({ title: T('Make this a test account?', '¿Convertirla en cuenta de prueba?'), paras: [
           '<b style="color:var(--text);font-weight:600;">' + escapeHtml(accDisplayName(acc0)) + '</b> ' + escapeHtml(T('becomes a test account. Its trades are saved, and you see them by picking this account, but they never count in All accounts, your Series of 10, your streaks or the leaderboard, and they raise no nudges.', 'pasa a ser una cuenta de prueba. Sus operaciones se guardan, y las ves al elegir esta cuenta, pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación, y no generan avisos.')),
-          escapeHtml(T('A test account has no risk rules and no Prop Firm Progress.', 'Una cuenta de prueba no tiene reglas de riesgo ni Progreso de prop firm.')),
+          escapeHtml(T('A test account has no risk rules except a break-even threshold, and no Prop Firm Progress.', 'Una cuenta de prueba no tiene reglas de riesgo salvo un umbral de break-even, ni Progreso de prop firm.')),
           escapeHtml(T('This cannot be undone once the account has a trade.', 'No se puede deshacer en cuanto la cuenta tenga una operación.'))
         ], buttons: [{ a: 'yes', label: T('Make it a test account', 'Hacerla de prueba') }, { a: 'no', label: T('Cancel', 'Cancelar') }] }).then(v => { if (v === 'yes') apply(true); });
         return;
