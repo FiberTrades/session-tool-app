@@ -812,9 +812,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .set-r { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
   #settings-modal-bg .set-r > * { margin-top: 0 !important; max-width: 100%; }
   #settings-modal-bg .set-r .settings-pref-row { margin: 0; }
-  /* A test account picked in Risk rules: only its break-even threshold (and the account picker, and the line that says
-     why) stay on screen - see _riskTestView. */
-  #settings-modal-bg .settings-section.risk-test-acct > *:not(.risk-keep) { display: none !important; }
   /* Risk rules: every box the same width (11 Oct 2026). A box's width came from the words after it - 230px beside
      "£ amount", 261px beside "% of balance", and Max trades, with nothing after it, was the width of the column. */
   #settings-modal-bg .settings-section[data-section="risk_rules"] .set-r > .settings-risk-input-row { width: 230px; }
@@ -16552,20 +16549,16 @@ try {
      (what Nestor disliked about hiding and showing an account). accountHasTrades: any saved trade (the parked ones of
      a test account included) or any trade in today's reviews, on that account; a trade from before accounts existed
      belongs to the first account. */
-  /* A test account has no risk rules and is not a prop firm account (Nestor, 11 Oct 2026: "dont allow to set risk rules
-     for a test account ... i dont care if the current demo account cant track the propfirm progress"). So nothing judges
-     its days, and Prop Firm Progress leaves it out. _testAccountsTidy runs when a journal arrives and when the Accounts
-     tab is drawn, for an account that was made a test account before this rule (or on a device that has not updated). */
-  // ...except ONE: its break-even threshold (Nestor, the same evening: "i need to be able to add a breakeven to test
-  // accounts!"), so a trade closed a few pounds either side of zero is a break-even in its statistics, not a win.
-  const _TEST_RULES = ['beThresholdMode', 'beThresholdPct', 'beThresholdAmount'];
+  /* A test account is not a prop firm account (Nestor, 11 Oct 2026: Test is the third choice of the Personal | Prop firm
+     switch - "i dont care if the current demo account cant track the propfirm progress"), so Prop Firm Progress leaves
+     it out. Its RISK RULES are its own, like any account's: for an evening they were cleared (then all but the
+     break-even threshold), until he asked "shall we give a test account all the risk rules? just to keep it consistent
+     with the rest of accounts?". They judge its own days, seen when it is picked; its trades still raise no nudges.
+     _testAccountsTidy runs when a journal arrives and when the Accounts tab is drawn. */
   function _testAccountTidy(acc) {
     if (!acc || !acc.separate) return false;
-    let ch = false;
-    const rr0 = acc.riskRules || {};
-    if (Object.keys(rr0).some(k => _TEST_RULES.indexOf(k) < 0)) { const keep = {}; _TEST_RULES.forEach(k => { if (rr0[k] != null) keep[k] = rr0[k]; }); acc.riskRules = keep; ch = true; }
-    if (acc.kind !== 'personal') { acc.kind = 'personal'; ch = true; }
-    return ch;
+    if (acc.kind !== 'personal') { acc.kind = 'personal'; return true; }
+    return false;
   }
   function _testAccountsTidy() { let ch = false; try { (Array.isArray(data.accounts) ? data.accounts : []).forEach(a => { if (_testAccountTidy(a)) ch = true; }); } catch (e) {} return ch; }
   function accountHasTrades(id) {
@@ -17967,12 +17960,6 @@ try {
   // 'Win' / 'Lose' / 'BE'. Used when MT5 trades auto-import. % mode = percentage
   // of that account's starting balance; amount mode = a flat sum.
   function beThresholdMoneyFor(acc) {
-    // A test account's one rule is its break-even threshold (11 Oct 2026). Left blank, a result close to zero is
-    // break-even by the same band as the member's main account - the active one when it counts, else the first that does.
-    if (acc && acc.separate) {
-      const own = acc.riskRules || {}, set = (own.beThresholdMode === 'amount') ? parseFloat(own.beThresholdAmount) > 0 : parseFloat(own.beThresholdPct) > 0;
-      if (!set) { try { const cnt = (data.accounts || []).filter(x => x && x.status === 'active' && !x.separate); const main = cnt.find(x => x.id === data.activeAccountId) || cnt[0]; if (main) acc = main; } catch (e) {} }
-    }
     const rr = (acc && acc.riskRules) || (data.settings && data.settings.riskRules) || {};
     const mode = (rr.beThresholdMode === 'amount') ? 'amount' : 'pct';
     if (mode === 'amount') {
@@ -18492,7 +18479,8 @@ try {
     function liveAccount() {
       try {
         var map = data.mt5LoginMap || {}, ids = [];
-        (window.__stEA ? window.__stEA.summary() : []).forEach(function (r) { var id = map[String(r.login)]; if (id && ids.indexOf(id) === -1) ids.push(id); });
+        // a test account's EA is not one of them: its trades are never counted here (11 Oct 2026)
+        (window.__stEA ? window.__stEA.summary() : []).forEach(function (r) { var id = map[String(r.login)]; if (id && ids.indexOf(id) === -1 && !isSepLogin(r.login)) ids.push(id); });
         if (ids.length === 1) { var a = (data.accounts || []).find(function (x) { return x && x.id === ids[0]; }); if (a) return a; }
       } catch (e) {}
       try { return getActiveAccount(); } catch (e) { return null; }
@@ -21091,7 +21079,7 @@ try {
   // yesterday's date back after the new-day checks had already run (Troy, 28 Sep 2026 - two copies of the app saving
   // over each other flipped his bias between the 27th and the 28th, and he posted from the one holding the 27th).
   window.__stFreshDates = function () {
-    try { _testAccountsTidy(); } catch (e) {}   // a journal from the cloud or another window: a test account carries no rules
+    try { _testAccountsTidy(); } catch (e) {}   // a journal from the cloud or another window: a test account is never a prop firm account
     try {
       (Array.isArray(data.biasSlots) ? data.biasSlots : []).forEach(function (sl) { _biasDateFresh(sl); });
       _biasDateFresh(data.bias);
@@ -51837,7 +51825,7 @@ try {
       const sel = document.getElementById('settings-risk-account-select');
       const wrap = document.getElementById('settings-risk-account-picker');
       if (!sel || !wrap) return;
-      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active');   // a test account is listed for its one rule, the break-even threshold
+      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active');   // test accounts too: they have their own rules
       /* An ARCHIVED account can still be the view scope, and the greeting and Prop Firm
          Progress go on enforcing its rules while it is. Listing only active accounts meant
          those rules were enforced, invisible and uneditable - so a scoped archived account
@@ -51900,21 +51888,14 @@ try {
       if (!acc.riskRules) acc.riskRules = {};
       return acc.riskRules;
     }
-    // A test account has one rule, its break-even threshold: while one is picked here, every other row of this tab is
-    // put away (a class on the section; the rows keep whatever display their own code gave them) and a line says why.
+    // A test account picked here has every rule, like any account; one line says what they do on it.
     function _riskTestView() {
       try {
-        try { if (window.__stSettingsRows) window.__stSettingsRows(); } catch (e) {}
-        const sec = document.querySelector('#settings-modal-bg .settings-section[data-section="risk_rules"]'); if (!sec) return;
         const sel = document.getElementById('settings-risk-account-select'), picker = document.getElementById('settings-risk-account-picker');
         const acc = (sel && sel.value) ? (data.accounts || []).find(x => x.id === sel.value) : null, isTest = !!(acc && acc.separate);
-        const be = document.getElementById('settings-risk-be-threshold');
-        let top = be; while (top && top.parentNode !== sec) top = top.parentNode;
         let note = document.getElementById('settings-risk-test-note');
-        if (!note && picker) { note = document.createElement('p'); note.id = 'settings-risk-test-note'; note.className = 'settings-hint'; picker.parentNode.insertBefore(note, picker.nextSibling); }
-        [picker, note, top].forEach(el => { if (el) el.classList.add('risk-keep'); });
-        if (note) { note.style.display = isTest ? '' : 'none'; note.textContent = window._stT('A test account has one rule: its break-even threshold. Left blank, it uses your main account\u2019s.', 'Una cuenta de prueba tiene una sola regla: su umbral de break-even. En blanco, usa el de tu cuenta principal.'); }
-        sec.classList.toggle('risk-test-acct', isTest);
+        if (!note && picker && isTest) { note = document.createElement('p'); note.id = 'settings-risk-test-note'; note.className = 'settings-hint'; picker.parentNode.insertBefore(note, picker.nextSibling); }
+        if (note) { note.style.display = isTest ? '' : 'none'; note.textContent = window._stT('Test account: these rules judge its own days, which you see when you pick it. Its trades raise no nudges and count nowhere else.', 'Cuenta de prueba: estas reglas juzgan sus propios días, que ves al elegirla. Sus operaciones no generan avisos ni cuentan en ningún otro sitio.'); }
       } catch (e) {}
     }
     window.__stRiskTestView = _riskTestView;
@@ -52319,7 +52300,6 @@ try {
     function saveRiskRule(key, rawValue) {
       const rr = getEditingRiskRules();
       if (!rr) return;
-      try { const _sv = document.getElementById('settings-risk-account-select'), _ea = (_sv && _sv.value) ? (data.accounts || []).find(x => x.id === _sv.value) : null; if (_ea && _ea.separate && _TEST_RULES.indexOf(key) < 0) return; } catch (e) {}   // a test account keeps only its break-even threshold
       const trimmed = (rawValue == null) ? '' : String(rawValue).trim();
       if (trimmed === '' || isNaN(Number(trimmed)) || Number(trimmed) <= 0) {
         delete rr[key];
@@ -52806,11 +52786,11 @@ try {
         // options a segmented control also shows both states at once instead of hiding one.
         const _kindTitle = window._stT('Only prop firm accounts appear in Prop Firm Progress, with a target, a floor and a pass/fail verdict.', 'Solo las cuentas de prop firm aparecen en Progreso de prop firm, con objetivo, suelo y veredicto.');
         // Test (11 Oct 2026) is the third choice: an account is Personal, Prop firm or Test (Nestor: "make test part of
-        // the personal,prop firm button"). A test account has no risk rules and no Prop Firm Progress, and it is one-way
-        // once it has a trade - see accountHasTrades. Not offered while there is only one account: one has to count.
+        // the personal,prop firm button"). A test account has no Prop Firm Progress, and it is one-way once it has a
+        // trade - see accountHasTrades. Not offered while there is only one account: one has to count.
         const _isTest = !!acc.separate;
         const _testSeg = (!isArchived && (!isSingleAccount || _isTest))
-          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No risk rules but a break-even threshold, no Prop Firm Progress.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin reglas de riesgo salvo un umbral de break-even, ni Progreso de prop firm.')}">${window._stT('Test', 'Prueba')}</button>` : '';
+          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No nudges, no Prop Firm Progress.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin avisos ni Progreso de prop firm.')}">${window._stT('Test', 'Prueba')}</button>` : '';
         actions.push(`<span class="settings-acct-kind" role="group" title="${_kindTitle}">
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="personal" aria-pressed="${!_isTest && _kindNow === 'personal'}">${window._stT('Personal', 'Personal')}</button>
             <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="challenge" aria-pressed="${!_isTest && _kindNow === 'challenge'}">${window._stT('Prop firm', 'Prop firm')}</button>${_testSeg}
@@ -52887,7 +52867,7 @@ try {
           </div>
           ${payLine}
           ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">${window._stT('MT5 login', 'Login MT5')} ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
-          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. Its only rule is a break-even threshold. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Su única regla es un umbral de break-even. Elígela en el selector de cuentas para verla.')}</div>` : ''}
+          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -52901,7 +52881,7 @@ try {
            </details>`
         : '';
       wrap.innerHTML = summary + activeRows + archivedHtml;
-      try { if (_testAccountsTidy()) saveData(); } catch (e) {}   // a test account from before the no-rules rule
+      try { if (_testAccountsTidy()) saveData(); } catch (e) {}   // a test account that was still marked prop firm
       // The Payouts section reads the same accounts - repaint it with them.
       try { if (typeof window.renderSettingsPayoutsList === 'function') window.renderSettingsPayoutsList(); } catch (e) {}
       // Wire row actions
@@ -53445,7 +53425,7 @@ try {
         }
         window.__stDialog({ title: T('Make this a test account?', '¿Convertirla en cuenta de prueba?'), paras: [
           '<b style="color:var(--text);font-weight:600;">' + escapeHtml(accDisplayName(acc0)) + '</b> ' + escapeHtml(T('becomes a test account. Its trades are saved, and you see them by picking this account, but they never count in All accounts, your Series of 10, your streaks or the leaderboard, and they raise no nudges.', 'pasa a ser una cuenta de prueba. Sus operaciones se guardan, y las ves al elegir esta cuenta, pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación, y no generan avisos.')),
-          escapeHtml(T('A test account has no risk rules except a break-even threshold, and no Prop Firm Progress.', 'Una cuenta de prueba no tiene reglas de riesgo salvo un umbral de break-even, ni Progreso de prop firm.')),
+          escapeHtml(T('It keeps its own risk rules, for its own days only, and has no Prop Firm Progress.', 'Mantiene sus propias reglas de riesgo, solo para sus propios días, y no tiene Progreso de prop firm.')),
           escapeHtml(T('This cannot be undone once the account has a trade.', 'No se puede deshacer en cuanto la cuenta tenga una operación.'))
         ], buttons: [{ a: 'yes', label: T('Make it a test account', 'Hacerla de prueba') }, { a: 'no', label: T('Cancel', 'Cancelar') }] }).then(v => { if (v === 'yes') apply(true); });
         return;

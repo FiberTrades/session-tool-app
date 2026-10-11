@@ -145,14 +145,14 @@
   t4().click(); await W(400);
   var bs = dg() ? dg().querySelectorAll('.mdl-actions .btn') : [];
   a4.kind = 'challenge'; a4.riskRules = { maxTrades: 3, maxLossMode: 'amount', maxLossAmount: 500, beThresholdMode: 'amount', beThresholdAmount: 50 };
-  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /A test account has no risk rules except a break-even threshold, and no Prop Firm Progress\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
+  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /It keeps its own risk rules, for its own days only, and has no Prop Firm Progress\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
   dg().querySelector('[data-a="no"]').click(); await W(300);
   ok('Cancel leaves it as it was', !dg() && !a4.separate, [!!dg(), a4.separate]);
   await reRows(); t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600); await reRows();
-  ok('a test account keeps one rule, its break-even threshold, and is not a prop firm account', JSON.stringify(a4.riskRules) === JSON.stringify({ beThresholdMode: 'amount', beThresholdAmount: 50 }) && a4.kind === 'personal', [a4.riskRules, a4.kind]);
+  ok('a test account keeps every risk rule it has, and is not a prop firm account', JSON.stringify(a4.riskRules) === JSON.stringify({ maxTrades: 3, maxLossMode: 'amount', maxLossAmount: 500, beThresholdMode: 'amount', beThresholdAmount: 50 }) && a4.kind === 'personal', JSON.stringify([a4.riskRules, a4.kind]));
   a1.riskRules = Object.assign({}, a1.riskRules || {}, { beThresholdMode: 'amount', beThresholdAmount: 200 });
   ok('its own break-even threshold is used', beThresholdMoneyFor(a4) === 50 && classifyNetResult(40, a4) === 'BE' && classifyNetResult(150, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
-  // Settings > Risk rules: a test account is listed, with only the break-even row
+  // Settings > Risk rules: a test account is listed, with every rule, and a line saying what they do on it
   try { populateRiskAccountPicker(); } catch (e) {}
   var rselEl = document.getElementById('settings-risk-account-select'), rsel = Array.from(rselEl.options).map(function (o) { return o.textContent; });
   ok('Risk rules lists the test account, marked', rsel.indexOf('Sandbox 10K (test)') >= 0 && rsel.indexOf('Live 70K') >= 0, rsel);
@@ -160,15 +160,16 @@
   rselEl.value = a4.id; rselEl.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
   var shown = Array.from(rsec2.children).filter(function (el) { return getComputedStyle(el).display !== 'none'; });
   var beIn = document.getElementById('settings-risk-be-threshold'), mtIn = document.getElementById('settings-risk-max-trades');
-  ok('with a test account picked, only the break-even threshold is on screen', rsec2.classList.contains('risk-test-acct') && beIn.getBoundingClientRect().height > 0 && mtIn.getBoundingClientRect().height === 0 && shown.length === 3 && /one rule: its break-even threshold/i.test((document.getElementById('settings-risk-test-note') || {}).textContent || ''), [shown.length, shown.map(function (el) { return el.id || el.className; })]);
-  ok('and it shows the account\'s own value', String(beIn.value) === '50', beIn.value);
+  var tnote = document.getElementById('settings-risk-test-note');
+  ok('with a test account picked, every rule is on screen, and a line says what they do', beIn.getBoundingClientRect().height > 0 && mtIn.getBoundingClientRect().height > 0 && !!tnote && getComputedStyle(tnote).display !== 'none' && /these rules judge its own days/i.test(tnote.textContent) && /raise no nudges/i.test(tnote.textContent), [shown.length, tnote && tnote.textContent]);
+  ok('and it shows the account\'s own values', String(beIn.value) === '50' && String(mtIn.value) === '3', [beIn.value, mtIn.value]);
   beIn.value = '75'; beIn.dispatchEvent(new Event('change', { bubbles: true })); beIn.dispatchEvent(new Event('blur')); await W(200);
   mtIn.value = '4'; mtIn.dispatchEvent(new Event('change', { bubbles: true })); await W(200);
-  ok('the break-even threshold can be changed there; no other rule can be saved', a4.riskRules.beThresholdAmount === 75 && !('maxTrades' in a4.riskRules) && beThresholdMoneyFor(a4) === 75, a4.riskRules);
+  ok('its rules can be changed there, like any account\'s', a4.riskRules.beThresholdAmount === 75 && a4.riskRules.maxTrades === 4 && beThresholdMoneyFor(a4) === 75, JSON.stringify(a4.riskRules));
   delete a4.riskRules.beThresholdAmount;
-  ok('left blank, the band is the main account\'s', beThresholdMoneyFor(a4) === 200 && classifyNetResult(150, a4) === 'BE' && classifyNetResult(250, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
+  ok('with no break-even threshold of its own it has none, like any account', beThresholdMoneyFor(a4) === 0 && classifyNetResult(150, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
   rselEl.value = a1.id; rselEl.dispatchEvent(new Event('change', { bubbles: true })); await W(300);
-  ok('back on a counting account, every rule is on screen again', !rsec2.classList.contains('risk-test-acct') && mtIn.getBoundingClientRect().height > 0 && getComputedStyle(document.getElementById('settings-risk-test-note')).display === 'none', rsec2.className);
+  ok('back on a counting account, the line is gone', mtIn.getBoundingClientRect().height > 0 && getComputedStyle(document.getElementById('settings-risk-test-note')).display === 'none', rsec2.className);
   rsec2.style.display = keepD;
   ok('Make it a test account: lit, badged, out of the combined totals', a4.separate === true && t4().getAttribute('aria-pressed') === 'true' && rowOf('Sandbox 10K').querySelectorAll('.settings-acct-kind .sak-opt[aria-pressed="true"]').length === 1 && /^test$/i.test((rowOf('Sandbox 10K').querySelector('.settings-account-badge') || {}).textContent.trim()), [a4.separate, t4().outerHTML.slice(0, 100)]);
   rowOf('Sandbox 10K').querySelector('.sak-opt[data-kind="personal"]').click(); await W(500); await reRows();
@@ -186,7 +187,13 @@
   // a test account from before the no-rules rule (or another device) loses its rules when the journal arrives
   a3.riskRules = { maxTrades: 10, maxLossMode: 'amount', maxLossAmount: 800, beThresholdMode: 'amount', beThresholdAmount: 200 }; a3.kind = 'challenge';
   try { window.__stFreshDates(); } catch (e) {}
-  ok('an older test account is tidied: only its break-even threshold is left, not a prop firm account', JSON.stringify(a3.riskRules) === JSON.stringify({ beThresholdMode: 'amount', beThresholdAmount: 200 }) && a3.kind === 'personal', [a3.riskRules, a3.kind]);
+  ok('a test account still marked prop firm is tidied: its rules stay, it is not a prop firm account', JSON.stringify(a3.riskRules) === JSON.stringify({ maxTrades: 10, maxLossMode: 'amount', maxLossAmount: 800, beThresholdMode: 'amount', beThresholdAmount: 200 }) && a3.kind === 'personal', JSON.stringify([a3.riskRules, a3.kind]));
+  // its rules judge its own days, seen when it is picked - and nowhere else
+  a3.riskRules = { maxTrades: 1 };
+  data.viewScope = a3.id; var jOwn = window.__stDiscipline.judge(); data.viewScope = 'lifetime'; var jAll = window.__stDiscipline.judge();
+  var brokeOwn = jOwn.filter(function (d) { return d.breaks.some(function (b) { return b.what === 'trades' && b.acc === a3.id; }); });
+  ok('picked, the test account\'s days are judged by its own rules (two trades on a day against a max of 1)', jOwn.length > 0 && brokeOwn.length >= 1 && brokeOwn[0].breaks[0].got === 2 && brokeOwn[0].breaks[0].lim === 1, [jOwn.length, brokeOwn.length, brokeOwn[0] && brokeOwn[0].breaks]);
+  ok('in All accounts none of its days or breaks appear', !jAll.some(function (d) { return d.breaks.some(function (b) { return b.acc === a3.id; }); }), jAll.length);
   delete a3.riskRules;
   // the flag itself still works both ways (what the differential above proves): off, every trade counts again; on, out again
   setAccountSeparate(a3.id, false);
