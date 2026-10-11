@@ -95,13 +95,13 @@
   ok('today reads as the real trade alone', outReal === outBoth && !!outReal, [outReal, outBoth]);
   ok('the community post is the same with or without the separate trade', !!msgReal && !/^ERR/.test(msgReal) && msgReal === msgBoth, [msgReal.length, msgBoth.length, msgBoth.slice(0, 200)]);
   ok('the Session Review itself still holds both', allReviewTrades().length === 2);
-  // a review made ONLY of trades on the separate account is a practice session: it posts its numbers, and says so
+  // a review made ONLY of trades on the separate account posts its numbers, and says which kind of account (never 'practice': it may be a real one)
   var sepW = Object.assign({}, sepT, { id: 'rv3', result: 'Win', r: 6, pips: 3000, actualGross: 3000, entryTime: '09:40', exitTime: '09:55' });
   data.review.trades = [sepT, sepW];
   var msgPr = ''; try { msgPr = buildReviewMessage(); } catch (e) { msgPr = 'ERR ' + e.message; }
-  ok('a practice-only review posts as traded on a practice account', /On a practice account/.test(msgPr) && /2 trades/.test(msgPr) && !/Observed Only/.test(msgPr) && !/^ERR/.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 420));
+  ok('a review of separate-account trades alone posts as traded on a separate account', /On a separate account/.test(msgPr) && !/practice/i.test(msgPr) && /2 trades/.test(msgPr) && !/Observed Only/.test(msgPr) && !/^ERR/.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 420));
   ok('with its numbers', /1W/i.test(msgPr.replace(/\u001b\[[0-9;]*m/g, '')) || /Win/i.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 900));
-  ok('a real review never says practice', !/practice account/i.test(msgReal) && /Traded:/.test(msgReal.replace(/\u001b\[[0-9;]*m/g, '')), msgReal.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 300));
+  ok('a review of counted trades says plain Yes', !/separate account/i.test(msgReal) && /Yes/.test(msgReal) && /Traded:/.test(msgReal.replace(/\u001b\[[0-9;]*m/g, '')), msgReal.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 300));
   data.review = keepRev || { trades: [] }; data.reviewSlots = keepSlots || null;
   // E) Settings: the option, the badge, the note and the totals
   var modal = document.getElementById('settings-modal-bg'); modal.classList.add('show');

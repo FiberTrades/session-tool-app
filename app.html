@@ -21213,8 +21213,19 @@ try {
     let sn = ''; try { sn = ses ? localizeSessionName(ses) : ''; } catch (e) { sn = ses || ''; }
     return [sym, sn].filter(Boolean).join(' \u00b7 ');
   }
+  // What the "just this one" button calls the one on screen (Nestor, 11 Oct 2026: "instead of saying just this one it
+  // should say just eurusd or just xauusd"): the shortest thing that tells it from the others in the question - its
+  // symbol, or its session when they share the symbol, or both when neither does on its own.
+  function _slotOnly(x, others, review) {
+    const sym = (v) => String((review ? (v && v.slotSymbol) : (v && v.symbol)) || ''), ses = (v) => String((review ? (v && v.slotSession) : (v && v.sessionName)) || '');
+    const mySym = sym(x), mySes = ses(x);
+    if (mySym && others.every(o => sym(o) !== mySym)) return mySym;
+    if (mySes && others.every(o => ses(o) !== mySes)) { try { return localizeSessionName(mySes) || mySes; } catch (e) { return mySes; } }
+    return _slotName(x, review);
+  }
   // Resolves 'all' | 'one' | null (closed without choosing). names: every one that would go out, this one first.
-  window.__stAskPostAll = function (kind, names) {
+  // one: what the second button calls this one ("Just EUR/USD"); without it, "Just this one".
+  window.__stAskPostAll = function (kind, names, one) {
     return new Promise(function (resolve) {
       try {
         const T = window._stT, esc = (v) => String(v == null ? '' : v).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
@@ -21228,7 +21239,7 @@ try {
           + esc(T('Each goes out as its own post.', 'Cada uno sale como su propia publicaci\u00f3n.')) + '</p>'
           + '<div class="mdl-actions">'
           +   '<button type="button" class="btn" data-a="all">' + esc(T('Post all ' + n, (rev ? 'Publicar las ' : 'Publicar los ') + n)) + '</button>'
-          +   '<button type="button" class="btn" data-a="one">' + esc(T('Just this one', rev ? 'Solo esta' : 'Solo este')) + '</button>'
+          +   '<button type="button" class="btn" data-a="one">' + esc(one ? T('Just ' + one, 'Solo ' + one) : T('Just this one', rev ? 'Solo esta' : 'Solo este')) + '</button>'
           + '</div></div>';
         const done = (v) => { try { document.removeEventListener('keydown', onKey, true); bg.remove(); } catch (e) {} resolve(v); };
         const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
@@ -21501,7 +21512,7 @@ try {
       const _mine = Array.isArray(data.biasSlots) ? data.biasSlots.indexOf(data.bias) : -1;
       const _rest = (_mine >= 0) ? _biasesWaiting(_mine) : [];
       if (_rest.length) {
-        const _pick = await window.__stAskPostAll('bias', [_slotName(data.bias, false)].concat(_rest.map(i => _slotName(data.biasSlots[i], false))));
+        const _pick = await window.__stAskPostAll('bias', [_slotName(data.bias, false)].concat(_rest.map(i => _slotName(data.biasSlots[i], false))), _slotOnly(data.bias, _rest.map(i => data.biasSlots[i]), false));
         if (!_pick) return;
         if (_pick === 'all') {
           let _stopped = false;
@@ -24556,13 +24567,14 @@ try {
     } catch (e) {}
     // Trade copier: a trade copied to your other accounts is ONE trade in the post, its review written once
     // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
-    /* An account kept separate (11 Oct 2026). A review that also holds real trades posts those alone - a practice
-       trade must not pad a real session's numbers. A review whose trades are ALL on a separate account is a practice
-       session: it posts its numbers, and says so on the Traded line (Nestor: "change it to traded on a practice
-       account and display the numbers in the post" - it had read "No - Observed Only", which was not true). */
+    /* An account kept separate (11 Oct 2026). A review that also holds trades on accounts that count posts those
+       alone - a separate account's trade must not pad that session's numbers. A review whose trades are ALL on a
+       separate account posts its numbers, and says so on the Traded line: it had read "No - Observed Only", which was
+       not true. The line says "separate", the app's own word, not "practice": Nestor, the same day - "it might be an
+       actual account and not a practice one". */
     const _revRows = data.review.trades || [], _revReal = _noSep(_revRows);
-    const _practice = _revRows.length > 0 && _revReal.length === 0;
-    const _postRows = _practice ? _revRows : _revReal;
+    const _sepOnly = _revRows.length > 0 && _revReal.length === 0;
+    const _postRows = _sepOnly ? _revRows : _revReal;
     const r = Object.assign({}, data.review, { trades: _ideaFirsts(_postRows) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
     const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && tt._ideaN) || 1), 1);
     const _allT = _ideaMerge(_postRows);   // a copied trade counts once, with every account's money (29 Sep 2026)
@@ -24721,7 +24733,7 @@ try {
     // copies across all logged setups. A session with 2 logged setups and copies=3
     // on each reads as 6 trades total in the Discord summary.
     const totalExecs = _allT.reduce((s, t) => s + tradeCopies(t), 0);
-    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}${_practice ? 'On a practice account' : 'Yes'}${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
+    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}${_sepOnly ? 'On a separate account' : 'Yes'}${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
       + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + `)`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
@@ -25373,7 +25385,7 @@ try {
       const _mineR = Array.isArray(data.reviewSlots) ? data.reviewSlots.indexOf(data.review) : -1;
       const _restR = (_mineR >= 0) ? _reviewsWaiting(_mineR) : [];
       if (_restR.length) {
-        const _pickR = await window.__stAskPostAll('review', [_slotName(data.review, true)].concat(_restR.map(i => _slotName(data.reviewSlots[i], true))));
+        const _pickR = await window.__stAskPostAll('review', [_slotName(data.review, true)].concat(_restR.map(i => _slotName(data.reviewSlots[i], true))), _slotOnly(data.review, _restR.map(i => data.reviewSlots[i]), true));
         if (!_pickR) return;
         if (_pickR === 'all') {
           _stPostAllRun = true;   // the save after each post stays on this page; only the last one opens Statistics

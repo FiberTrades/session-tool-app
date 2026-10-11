@@ -45,7 +45,7 @@
   btn.click(); await W(400);
   ok('two biases waiting: it asks', !!dlg() && /Post all your biases\?/i.test(tx()) && /2 biases/i.test(tx()) && /EUR\/USD/.test(tx()) && /XAU\/USD/.test(tx()) && /own post/i.test(tx()), tx());
   var bs = dlg() ? dlg().querySelectorAll('.mdl-actions .btn') : [];
-  ok('with two equal buttons: Post all 2, Just this one', bs.length === 2 && /Post all 2/i.test(bs[0].textContent) && /Just this one/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, [].map.call(bs, function (b) { return b.textContent + ' ' + Math.round(b.getBoundingClientRect().width); }));
+  ok('with two equal buttons: Post all 2, Just EUR/USD', bs.length === 2 && /Post all 2/i.test(bs[0].textContent) && /^Just EUR\/USD$/i.test(bs[1].textContent.trim()) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, [].map.call(bs, function (b) { return b.textContent + ' ' + Math.round(b.getBoundingClientRect().width); }));
   ok('nothing is posted while it asks', posts.length === 0);
   // closed without choosing: nothing goes out
   document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(500);
@@ -61,6 +61,7 @@
   posts.length = 0; fill(data.biasSlots[0], 'Long'); fill(data.biasSlots[1], 'Short'); switchBiasSlot(1); go('bias'); await W(200);
   btn.click(); await W(400);
   ok('asked from the second bias, it is named first', /XAU\/USD[^,]*, EUR\/USD/.test(tx()), tx());
+  ok('and its button says Just XAU/USD', /^Just XAU\/USD$/i.test(dlg().querySelector('[data-a="one"]').textContent.trim()), dlg().querySelector('[data-a="one"]').textContent);
   dlg().querySelector('[data-a="all"]').click(); await W(1600);
   ok('Post all: each bias is its own post', posts.length === 2 && posts.every(function (p) { return p.ch === 'pre-session-bias'; }) && /EUR\/USD/.test(posts[0].en) && /XAU\/USD/.test(posts[1].en), posts.map(function (p) { return p.en.slice(0, 90); }));
   ok('both are marked Posted', _biasPostState(data.biasSlots[0]) === 'posted' && _biasPostState(data.biasSlots[1]) === 'posted', [_biasPostState(data.biasSlots[0]), _biasPostState(data.biasSlots[1])]);
@@ -94,6 +95,7 @@
   posts.length = 0; setRev(); switchReviewSlot(0); go('review'); await W(400);
   rbtn.click(); await W(500);
   ok('two reviews waiting: it asks about the reviews', !!dlg() && /Post all your reviews\?/i.test(tx()) && /2 reviews/i.test(tx()) && /EUR\/USD/.test(tx()) && /XAU\/USD/.test(tx()), tx());
+  ok('the review button names it too: Just EUR/USD', /^Just EUR\/USD$/i.test(dlg().querySelector('[data-a="one"]').textContent.trim()), dlg().querySelector('[data-a="one"]').textContent);
   dlg().querySelector('[data-a="one"]').click(); await W(500); incomplete(); await W(1200);
   ok('Just this one: one review post, the other still waiting', posts.length === 1 && posts[0].ch === 'post-session-review' && rstate(0) === 'posted' && rstate(1) === 'new', [posts.length, rstate(0), rstate(1)]);
   ok('and its trade is saved to the series', getAllLifetimeTrades().length === 1, getAllLifetimeTrades().length);
@@ -118,6 +120,11 @@
   ok('Continue anyway posts that review; the other waits for the next press', !rem.classList.contains('show') && posts.length === 1 && /EUR\/USD/.test(posts[0].en) && rstate(0) === 'posted' && rstate(1) === 'new', [rem.className, posts.length, rstate(0), rstate(1)]);
   switchReviewSlot(1); go('review'); await W(400); rbtn.click(); await W(1500);
   ok('the next press posts the one left, without asking', !dlg() && posts.length === 2 && rstate(1) === 'posted', [!!dlg(), posts.length, rstate(1)]);
+  // H) what the button calls the one on screen: its symbol, its session when the symbol is shared, both when neither tells
+  var B = function (sym, ses) { return { symbol: sym, sessionName: ses }; };
+  ok('same symbol in two sessions: the session names it', _slotOnly(B('EUR/USD', 'London'), [B('EUR/USD', 'New York')], false) === localizeSessionName('London'), _slotOnly(B('EUR/USD', 'London'), [B('EUR/USD', 'New York')], false));
+  ok('neither alone tells it apart: symbol and session', /EUR\/USD/.test(_slotOnly(B('EUR/USD', 'London'), [B('XAU/USD', 'London'), B('EUR/USD', 'New York')], false)) && /London/i.test(_slotOnly(B('EUR/USD', 'London'), [B('XAU/USD', 'London'), B('EUR/USD', 'New York')], false)), _slotOnly(B('EUR/USD', 'London'), [B('XAU/USD', 'London'), B('EUR/USD', 'New York')], false));
+  ok('a review reads its own fields', _slotOnly({ slotSymbol: 'XAU/USD', slotSession: 'London' }, [{ slotSymbol: 'EUR/USD', slotSession: 'London' }], true) === 'XAU/USD');
   // F) Spanish
   var keepLang = data.settings.language;
   try {
