@@ -113,17 +113,6 @@ export function liveSessionIndex(j: Any, tz: string, ms: number) {
   for (let i = 0; i < ss.length; i++) { if (ended.indexOf(i) !== -1) continue; if (nm >= mins(ss[i].start) && nm < mins(ss[i].end)) return i; }
   return -1;
 }
-// The start of the live session, or of the last one to start today, else local midnight (ms).
-function sessionStartMs(j: Any, tz: string, ms: number) {
-  const ss = sessions(j), p = parts(tz, ms);
-  let bestStart = -1;
-  const li = liveSessionIndex(j, tz, ms);
-  if (li >= 0) bestStart = mins(ss[li].start);
-  else ss.forEach((s) => { const st = mins(s.start); if (st <= p.mins && st > bestStart) bestStart = st; });
-  const back = (bestStart >= 0 ? (p.mins - bestStart) : p.mins) * 60000;
-  return ms - back - (ms % 60000);
-}
-
 // ---------- accounts and rules ----------
 function accounts(j: Any): Any[] { return Array.isArray(j && j.acc) ? j.acc : []; }
 // The account a trade belongs to: its own login (EA 8.86), else the one account the running EAs map to, else the active one.
@@ -181,8 +170,6 @@ export function symCore(x: Any) {
   if (o.length > 6 && /^(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD|XAU|XAG)(USD|EUR|GBP|JPY|CHF|AUD|NZD|CAD)/.test(o)) o = o.slice(0, 6);
   return o;
 }
-// A symbol core as a member reads it: EURUSD -> EUR/USD, anything else as it is.
-function symShown(core: string) { return /^[A-Z]{6}$/.test(core) ? core.slice(0, 3) + "/" + core.slice(3) : core; }
 const CURS = ["USD", "EUR", "GBP", "JPY", "AUD", "NZD", "CAD", "CHF", "CNY"];
 export function cursOf(sym: Any) {
   const x = String(sym || "").toUpperCase().replace(/[^A-Z0-9]/g, ""), out: string[] = [];
@@ -217,8 +204,7 @@ const T: Record<string, [string, string]> = {
   finished: ["You finished your session at {T}. This trade is outside your plan.", "Terminaste tu sesión a las {T}. Esta operación está fuera de tu plan."],
   finished_nt: ["You already finished today’s session. This trade is outside your plan.", "Ya terminaste la sesión de hoy. Esta operación está fuera de tu plan."],
   outside: ["Your session is {W}. This trade is outside it.", "Tu sesión es {W}. Esta operación está fuera de ella."],
-  limit: ["This is trade {N} this session. Your limit is {L}.", "Esta es la operación {N} de la sesión. Tu límite es {L}."],
-  limit_sym: ["This is {S} trade {N} this session. Your limit is {L} per symbol.", "Esta es la operación {N} en {S} de la sesión. Tu límite es {L} por símbolo."],
+  limit: ["This is trade {N} today. Your limit is {L}.", "Esta es la operación {N} de hoy. Tu límite es {L}."],
   big_risk: ["This trade risks {R}. Your max per trade is {P}.", "Esta operación arriesga {R}. Tu máximo por operación es {P}."],
   risk_up: ["You raised your risk after a loss: {NEW} on this trade, {OLD} on the one you lost. Is that in your plan?", "Has subido el riesgo después de una pérdida: {NEW} en esta operación, {OLD} en la que perdiste. ¿Está en tu plan?"],
   widen: ["Your risk on this trade grew from {OLD} to {NEW}. Did you move your stop away?", "El riesgo de esta operación ha pasado de {OLD} a {NEW}. ¿Has alejado el stop?"],
@@ -365,16 +351,15 @@ function onOpenRules(ctx: Ctx, me: Row, closes: Any[], news: News[]): Item[] {
       push("finished", t0 ? tr("finished", es).replace("{T}", t0) : tr("finished_nt", es));
     } else if (ss.length) push("outside", tr("outside", es).replace("{W}", ss.map((s) => s.start + "–" + s.end).join(", ")));
   }
-  // over the max trades this session (the trade's account)
+  // over the max trades per day (the trade's account)
   const acc = accountFor(ctx, me.login), rules = (acc && acc.riskRules) || {}, sb = Number(acc && acc.startingBalance) || 0;
   const lim = Number(rules.maxTrades) || 0;
   if (lim > 0) {
-    const from = sessionStartMs(j, tz, ctx.now);
-    // Per symbol (11 Oct 2026, with EA 8.94): only this trade's symbol counts against the limit - EUR/USD at 1 and
-    // XAU/USD at 1 is one of each. When other symbols were traded too, the nudge names the one it is counting.
-    const sess = ctx.rows.filter((r) => Date.parse(r.opened_at) >= from && !isCopy(ctx, r) && !sepLogin(ctx, r.login));
-    const mine = symCore(me.symbol), n = sess.filter((r) => symCore(r.symbol) === mine).length;
-    if (n > lim) push("limit", (sess.length > n ? tr("limit_sym", es).replace("{S}", symShown(mine)) : tr("limit", es)).replace("{N}", String(n)).replace("{L}", String(lim)));
+    // Per DAY since 11 Oct 2026 (it was "this session", and for a morning per symbol): every trade opened on the
+    // member's own day counts, whatever the session or the symbol - as the app's Discipline days and the leaderboard do.
+    const dayKey = parts(tz, ctx.now).key;
+    const n = ctx.rows.filter((r) => parts(tz, Date.parse(r.opened_at)).key === dayKey && !isCopy(ctx, r) && !sepLogin(ctx, r.login)).length;
+    if (n > lim) push("limit", tr("limit", es).replace("{N}", String(n)).replace("{L}", String(lim)));
   }
   // today's bias: none logged (the day's first trade), or this trade goes against it
   const slots = (Array.isArray(j.bs) && j.bs.length) ? j.bs : (j.b ? [j.b] : []), td = parts(tz, ctx.now).key;
