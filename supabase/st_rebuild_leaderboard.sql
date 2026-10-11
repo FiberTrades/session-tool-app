@@ -45,6 +45,9 @@
 -- separate; "separate": true on the account) takes no part - see the sep_acc CTE. Proven a no-op while no account is
 -- separate (board fingerprinted before and after), and that marking a real account separate removes exactly its trades
 -- (inside a DO block that raised, so nothing was kept).
+-- 2026-10-11 (MAX TRADES PER SYMBOL): the max-trades rule is judged per symbol on each account - acc_days.n_trades is
+-- the day's busiest symbol, where it was the account's whole day. Matches EA 8.94 (each chart counts its own symbol)
+-- and the app's Max trades rule. Dry-run first inside a DO block that raised: see what it reported in the commit.
 --
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
  RETURNS void
@@ -621,18 +624,31 @@ begin
       group by user_id
     ),
     acc_days as (   -- every account's own trades, copies included (chk is every row, not one per setup)
-      select
-        c.user_id,
-        (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date as d,
-        c.acc_u,
-        sum(c.pnl::numeric)                                              as pnl,
-        max(c.max_loss_u)                                                as max_loss_u,
-        count(distinct (c.sym_core, c.direction, c.src, c.setup_no))     as n_trades,   -- one per setup (copies of an unknown account stay one)
-        max(c.max_trades_u)                                              as max_trades_u
-      from chk c
-      left join sess s on s.user_id = c.user_id
-      where (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
-        and (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
+      -- 2026-10-11 (MAX TRADES PER SYMBOL - Nestor: "a max daily limit of trades in eurusd to lets say 1 and then
+      -- xauusd limit 1 also but the eurusd trade doesnt block the xauusd"): n_trades is the day's BUSIEST SYMBOL on
+      -- the account, not the account's total - EUR/USD at 1 and XAU/USD at 1 is one of each a day, as EA 8.94 and the
+      -- app's own Max trades rule count it. Daily loss stays the account's whole day. One symbol: nothing changes.
+      select q.user_id, q.d, q.acc_u,
+             sum(q.pnl)          as pnl,
+             max(q.max_loss_u)   as max_loss_u,
+             max(q.n_trades)     as n_trades,
+             max(q.max_trades_u) as max_trades_u
+      from (
+        select
+          c.user_id,
+          (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date as d,
+          c.acc_u,
+          c.sym_core,
+          sum(c.pnl::numeric)                                  as pnl,
+          max(c.max_loss_u)                                    as max_loss_u,
+          count(distinct (c.direction, c.src, c.setup_no))     as n_trades,   -- one per setup (copies of an unknown account stay one)
+          max(c.max_trades_u)                                  as max_trades_u
+        from chk c
+        left join sess s on s.user_id = c.user_id
+        where (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date >= v_start
+          and (c.close_time at time zone coalesce(s.tz,'Europe/London'))::date <  v_end
+        group by 1,2,3,4
+      ) q
       group by 1,2,3
     ),
     days as (

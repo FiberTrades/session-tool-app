@@ -154,7 +154,7 @@
     ok('and they raise no nudge at all', !/91000[234]/.test(f2), f2.slice(0, 300));
     // the same trades on an account that counts: the limit nudge does fire
     a3.separate = false;
-    feed(910005, '222', 'XAUUSD'); await W(400);
+    feed(910005, '222', 'EURUSD'); await W(400);   // the same symbol as the main account's trade: Max trades is per symbol (11 Oct 2026)
     var o3 = opens(), f3 = fired();
     var b3 = Nn.budget() || {};
     ok('the session count used for the limit: 1 of 1 with the demo separate, 2 of 1 once it counts', b2.n === 1 && b2.lim === 1 && b3.n === 2 && o3.indexOf('910005') >= 0, [b2.n, b2.lim, b3.n, o3]);

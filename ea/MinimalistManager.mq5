@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.93"
+#property version   "8.94"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -1054,7 +1054,10 @@ datetime UserDayStartServer()
    return (datetime)((long)startUTC + BrokerOff());          // trusted offset, NOT TimeCurrent()
   }
 
-int CountTradesSince(datetime dayStart)
+// v8.94: the daily limit is PER SYMBOL (Nestor, 11 Oct 2026: EURUSD at 1 and XAUUSD at 1 = one of each a day; a
+// EURUSD trade must not use up gold's). Each chart counts today's entries in its own symbol against its own Max
+// trades; until 8.93 every chart counted every entry on the account. sym "" still counts them all.
+int CountTradesSince(datetime dayStart,string sym="")
   {
    // End bound from TimeGMT() too - TimeCurrent()+3600 is stale over a weekend, and an end
    // that lands BEFORE dayStart makes HistorySelect return an empty set at random.
@@ -1068,6 +1071,7 @@ int CountTradesSince(datetime dayStart)
       if((long)HistoryDealGetInteger(tk,DEAL_ENTRY)!=DEAL_ENTRY_IN) continue;
       long dt=(long)HistoryDealGetInteger(tk,DEAL_TYPE);
       if(dt!=DEAL_TYPE_BUY && dt!=DEAL_TYPE_SELL) continue;
+      if(sym!="" && HistoryDealGetString(tk,DEAL_SYMBOL)!=sym) continue;
       cnt++;
      }
    return cnt;
@@ -1076,7 +1080,7 @@ int CountTradesSince(datetime dayStart)
 void RefreshDayCount()
   {
    g_dayStartSrv = UserDayStartServer();
-   g_tradesToday = CountTradesSince(g_dayStartSrv);
+   g_tradesToday = CountTradesSince(g_dayStartSrv,_Symbol);   // this chart's symbol only (8.94)
   }
 
 bool DayLimitReached()
@@ -1091,7 +1095,7 @@ void PlaceTrade()
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED))
      { Flash("Trading not allowed - enable Algo Trading."); Warn("Trading not allowed (Algo Trading off)."); return; }
    if(DayLimitReached())
-     { Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Paused until your next day."); Warn("Daily trade limit reached - paused until next day."); return; }
+     { Flash(_Symbol+" daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Paused until your next day."); Warn(_Symbol+" daily trade limit reached - paused until next day."); return; }
    int dir; double entry,slPrice,slPips; string err;
    if(!ResolveForOrder(dir,entry,slPrice,slPips,err)){ Flash("CANNOT TRADE: "+err); Warn(err); return; }
    double riskMoney; double total=CalcLot(slPips,riskMoney);
@@ -1498,7 +1502,7 @@ void RiskOffHalf()
 // the order type before turning it on). No g_active guard here.
 void SwitchOrderKind(){ g_orderKind=(ENUM_ORDER_KIND)(((int)g_orderKind+1)%3); if(g_execMode) ShowExecutionLines(); BuildPanel(); }
 void CycleRiskMode(){ g_riskMode=(ENUM_RISK_MODE)(((int)g_riskMode+1)%3); BuildPanel(); }
-void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Warn("Follow account: execution mode stays off - trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+" trades). Execution stays off until your next day."); Warn("Daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
+void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Warn("Follow account: execution mode stays off - trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash(_Symbol+" daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Execution stays off until your next day."); Warn(_Symbol+" daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
 
 //==================================================================
 //  TRAILING STOPS
@@ -2708,6 +2712,7 @@ void BuildPanel()
    mkLabel(PP+"ST_DL",labelX,cy+7,"DAILY LIMIT",COL_PANEL_SECT,8);
    ry=cy+23;
    mkLabel (PP+"L_DL",labelX,ry+6,"Max trades",COL_PANEL_LBL,8);
+   ObjectSetString(0,PP+"L_DL",OBJPROP_TOOLTIP,"Max trades a day on "+_Symbol+". Each chart counts its own symbol, so another symbol's trades don't use these up. 0 = no limit.");
    {
       bool _dmax =(g_maxTradesDay>0 && g_tradesToday>=g_maxTradesDay);   // reached
       bool _dlock=(g_maxTradesDay>0 && g_tradesToday>=1);                // frozen after first trade
@@ -2716,6 +2721,7 @@ void BuildPanel()
       // Set both ways round: without the delete-all, a property left unset simply keeps
       // whatever it was on the previous build.
       ObjectSetInteger(0,PP+"MAXTRD",OBJPROP_READONLY,_dlock);
+      ObjectSetString(0,PP+"MAXTRD",OBJPROP_TOOLTIP,"Max trades a day on "+_Symbol+" (0 = no limit). Locks after the first "+_Symbol+" trade of the day.");
       ObjectSetInteger(0,PP+"MAXTRD",OBJPROP_COLOR,_dmax?COL_PANEL_WARN:COL_PANEL_NUMX);
    }
    ry+=ROWH;
@@ -2821,7 +2827,7 @@ void HandleClick(string s)
      {
       // The daily-limit guard belongs on the way ON only, exactly as before: the limit must
       // never be circumvented by flicking the switch, but it must never trap you either.
-      if(!g_active && DayLimitReached()){ Flash("Daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Stays off until your next day."); Warn("Daily trade limit reached - stays off until next day."); return; }
+      if(!g_active && DayLimitReached()){ Flash(_Symbol+" daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Stays off until your next day."); Warn(_Symbol+" daily trade limit reached - stays off until next day."); return; }
       MasterSet(!g_active);
       return;
      }
@@ -2897,7 +2903,7 @@ void HandleEndEdit(string s)
          return;
         }
    if(s==PP+"SCPAD"){ g_scalePadPips=ReadEdit(s); if(g_scaleLock){ ChartSetInteger(0,CHART_SCALEFIX,false); ApplyScaleLock(); } SaveState(); return; }
-   if(s==PP+"MAXTRD"){ RefreshDayCount(); if(g_tradesToday>=1){ Warn("Max trades is locked after your first trade today - unlocks next day."); BuildPanel(); return; } g_maxTradesDay=(int)ReadEdit(s); if(g_maxTradesDay<0) g_maxTradesDay=0; RefreshDayCount(); SaveState(); BuildPanel(); return; }
+   if(s==PP+"MAXTRD"){ RefreshDayCount(); if(g_tradesToday>=1){ Warn("Max trades is locked after your first "+_Symbol+" trade today - unlocks next day."); BuildPanel(); return; } g_maxTradesDay=(int)ReadEdit(s); if(g_maxTradesDay<0) g_maxTradesDay=0; RefreshDayCount(); SaveState(); BuildPanel(); return; }
    for(int i=0;i<6;i++)
      {
       if(s==PP+"TPVAL"+IntegerToString(i)){ g_tpVal[i]=ReadEdit(s); SaveState(); return; }
@@ -3538,7 +3544,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.93\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.94\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -5316,7 +5322,10 @@ void SyncTrackMFE()
 //    - a copy is only forgotten once this account's history confirms it closed, and a refused request
 //      backs off (1s, then 10s, then once a minute) instead of hammering the server;
 //    - the Follow account's ON/OFF switch, daily trade limit and Algo Trading gate new copies, and a
-//      lot below the broker's minimum that would overrisk is skipped rather than rounded up;
+//      lot below the broker's minimum that would overrisk is skipped rather than rounded up. The daily
+//      limit is per symbol (8.94): a copy is checked against today's entries in ITS symbol and the Max
+//      trades of that symbol's chart on this account (this chart's when it has none), so a EURUSD copy
+//      never uses up gold's;
 //    - one chart per account does the copying (an atomic shared lock), so two charts can't double a
 //      trade; a role only takes effect after it has been held for 3 seconds, so clicking through the
 //      Role button can't make an account a Lead or a Follow for a moment;
@@ -6245,12 +6254,36 @@ void CpFollowOne(int m,const CpItem &it)
    if(!CpConfirmClosed(ft)) return;
    g_cm[m].st=3; CpSaveMap(m);
   }
+// v8.94: the Follow account's daily limit for one copy, per symbol. The limit is the Max trades saved by that
+// symbol's own chart on this account (StateKey's name, for that symbol) - or this chart's when the account has
+// no chart for it - and the count is today's entries in that symbol, copies included. Asked up to 10 times a
+// second while a blocked Lead trade stays open, so the answer is kept for 2 seconds per symbol.
+string g_clSym[]; ulong g_clAt[]; bool g_clHit[];
+int CpMaxTradesFor(string fsym)
+  {
+   if(fsym==_Symbol) return g_maxTradesDay;
+   string k="MM_"+(string)InpMagic+"_"+fsym+"_maxTrd";
+   return GlobalVariableCheck(k) ? (int)GlobalVariableGet(k) : g_maxTradesDay;
+  }
+bool CpDayLimitFor(string fsym)
+  {
+   int mx=CpMaxTradesFor(fsym);
+   if(mx<=0) return false;
+   ulong now=GetTickCount64(); int n=ArraySize(g_clSym), at=-1;
+   for(int i=0;i<n;i++) if(g_clSym[i]==fsym){ at=i; break; }
+   if(at>=0 && now-g_clAt[at]<2000) return g_clHit[at];
+   if(at<0){ at=n; ArrayResize(g_clSym,n+1); ArrayResize(g_clAt,n+1); ArrayResize(g_clHit,n+1); g_clSym[at]=fsym; }
+   g_clAt[at]=now; g_clHit[at]=(CountTradesSince(UserDayStartServer(),fsym)>=mx);
+   return g_clHit[at];
+  }
+void CpDayLimitForget(string fsym){ for(int i=0;i<ArraySize(g_clSym);i++) if(g_clSym[i]==fsym) g_clAt[i]=0; }   // a copy was just sent: count again
 void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
   {
    bool canNew=true; string why="";
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED)){ canNew=false; why="Algo Trading is off"; }
-   else if(!g_active){ canNew=false; why=g_pausedByLimit ? "daily limit reached" : "EA is OFF"; }
-   else if(DayLimitReached()){ canNew=false; why="daily limit reached"; }
+   // Paused by this chart's own symbol reaching its limit is NOT "off" for the other symbols (8.94): each new
+   // copy is checked against its own symbol's limit further down.
+   else if(!g_active && !g_pausedByLimit){ canNew=false; why="EA is OFF"; }
    else if(g_leadCap==1){ canNew=false; why="FTMO total over the max"; }
    else if(g_leadCount>1 && InpCopyFrom<=0){ canNew=false; why="2+ Leads - pick one in Inputs"; }
    g_cpStatus=why; g_cpStatusWarn=!canNew;
@@ -6300,12 +6333,15 @@ void CpReconcile(CpItem &items[],ulong &closed[],long fileAge)
       if(!canNew) continue;                  // shown as the status; copied when it can be, while still fresh
       string fsym=CpSymbol(items[i].sym);
       if(fsym==""){ CpSkip(items[i].tk,items[i].sym+" skipped - not on this account"); continue; }
+      // This symbol's daily limit (8.94): shown as the status; copied when it can be, while still fresh.
+      if(CpDayLimitFor(fsym)){ g_cpStatus=fsym+" daily limit reached"; g_cpStatusWarn=true; continue; }
       if(items[i].pos)
         {
          if(items[i].age+fileAge>CP_MAX_AGE_SEC){ CpSkip(items[i].tk,fsym+" skipped - opened too long ago"); continue; }
          CpOpenMarket(-1,items[i],fsym);
         }
       else CpOpenPending(items[i],fsym);
+      CpDayLimitForget(fsym);
      }
   }
 // Follows only from a settled, connected terminal (after a reconnect this account's own lists resync
@@ -6537,7 +6573,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.93 loaded (copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.94 loaded (daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
