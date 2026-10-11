@@ -895,6 +895,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-acct-kind .sak-opt { border-radius: 0; }
   .settings-acct-kind .sak-opt:first-child { border-top-left-radius: var(--radius-ctrl); border-bottom-left-radius: var(--radius-ctrl); }
   .settings-acct-kind .sak-opt:last-child { border-top-right-radius: var(--radius-ctrl); border-bottom-right-radius: var(--radius-ctrl); margin-left: -1px; }
+  .settings-acct-kind .sak-opt + .sak-opt { margin-left: -1px; }   /* three choices since Test joined (11 Oct 2026) */
+  /* Test: lit in the blue of the Test badge, not the pink of the other two. */
+  .settings-acct-kind .sak-opt.sak-test:hover { color: #5b9bff; border-color: #5b9bff; }
+  .settings-acct-kind .sak-opt.sak-test[aria-pressed="true"] { color: #5b9bff; border-color: #5b9bff; background: rgba(91,155,255,0.10); }
   .settings-acct-kind .sak-opt:hover { color: var(--accent); border-color: var(--accent); z-index: 1; }
   .settings-acct-kind .sak-opt[aria-pressed="true"] { color: var(--accent); border-color: var(--accent); background: rgba(244,114,182,0.10); position: relative; z-index: 1; }
 #stc-a-signout:hover { border-color: var(--bad); color: var(--bad); box-shadow: 0 0 0 1px var(--bad), 0 0 14px rgba(232,93,93,0.5); }
@@ -1020,9 +1024,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      longest account name onto a second line. 250px is what the widest button row actually needs
      (Rename + Unarchive + Delete), so the name keeps the rest. */
   .settings-account-actions { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; width: 320px; }   /* 320: Personal / Prop firm + Test + Options on one line (was 250, 11 Oct 2026) */
-  /* The Test switch: lit in the blue of the Test badge. */
-  .settings-account-actions .sak-test:hover { color: #5b9bff; border-color: #5b9bff; }
-  .settings-account-actions .sak-test[aria-pressed="true"] { color: #5b9bff; border-color: #5b9bff; background: rgba(91,155,255,0.10); }
   .settings-account-actions .settings-btn { flex: 0 0 auto; }
   .settings-account-actions button { padding: 6px 10px; font-size: 9px; letter-spacing: 0.15em; }
   /* Rename / Archive / Delete - and See how you did / See what happened on a prop account that has passed or failed -
@@ -16538,6 +16539,7 @@ try {
     const acc = getAccountById(id);
     if (!acc) return false;
     acc.separate = !!on;   // an explicit false, not a deleted key: another device's copy must see the change, not an absence
+    if (on) _testAccountTidy(acc);
     try { syncEffectiveStartingBalance(); } catch (e) {}
     try { rebuildSeriesByDate(); } catch (e) {}
     saveData();
@@ -16549,6 +16551,18 @@ try {
      (what Nestor disliked about hiding and showing an account). accountHasTrades: any saved trade (the parked ones of
      a test account included) or any trade in today's reviews, on that account; a trade from before accounts existed
      belongs to the first account. */
+  /* A test account has no risk rules and is not a prop firm account (Nestor, 11 Oct 2026: "dont allow to set risk rules
+     for a test account ... i dont care if the current demo account cant track the propfirm progress"). So nothing judges
+     its days, and Prop Firm Progress leaves it out. _testAccountsTidy runs when a journal arrives and when the Accounts
+     tab is drawn, for an account that was made a test account before this rule (or on a device that has not updated). */
+  function _testAccountTidy(acc) {
+    if (!acc || !acc.separate) return false;
+    let ch = false;
+    if (acc.riskRules && Object.keys(acc.riskRules).length) { acc.riskRules = {}; ch = true; }
+    if (acc.kind !== 'personal') { acc.kind = 'personal'; ch = true; }
+    return ch;
+  }
+  function _testAccountsTidy() { let ch = false; try { (Array.isArray(data.accounts) ? data.accounts : []).forEach(a => { if (_testAccountTidy(a)) ch = true; }); } catch (e) {} return ch; }
   function accountHasTrades(id) {
     const first = (Array.isArray(data.accounts) && data.accounts[0]) ? data.accounts[0].id : null;
     const mine = (t) => !!t && (t.accountId ? t.accountId === id : first === id);
@@ -16556,7 +16570,7 @@ try {
     try { if (allReviewTrades().some(mine)) return true; } catch (e) {}
     return false;
   }
-  try { window.__stSep = { ids: _sepIds, is: isSeparateAccount, strip: _noSep, view: _sepView, hist: _seriesHist, set: setAccountSeparate, hasTrades: accountHasTrades }; } catch (e) {}
+  try { window.__stSep = { ids: _sepIds, is: isSeparateAccount, strip: _noSep, view: _sepView, hist: _seriesHist, set: setAccountSeparate, hasTrades: accountHasTrades, tidy: _testAccountsTidy }; } catch (e) {}
 
   // Nestor's rule (29 Sep 2026): viewing more than one account, a trade copied to your other accounts is ONE trade -
   // one result, its R once, every account's money added (_ideaMerge). The merged rows are views: they carry the Lead
@@ -17963,6 +17977,11 @@ try {
   // 'Win' / 'Lose' / 'BE'. Used when MT5 trades auto-import. % mode = percentage
   // of that account's starting balance; amount mode = a flat sum.
   function beThresholdMoneyFor(acc) {
+    // A test account has no risk rules of its own (11 Oct 2026): a result close to zero is break-even by the same band
+    // as the member's main account - the active one when it counts, else the first that does.
+    if (acc && acc.separate) {
+      try { const cnt = (data.accounts || []).filter(x => x && x.status === 'active' && !x.separate); const main = cnt.find(x => x.id === data.activeAccountId) || cnt[0]; if (main) acc = main; } catch (e) {}
+    }
     const rr = (acc && acc.riskRules) || (data.settings && data.settings.riskRules) || {};
     const mode = (rr.beThresholdMode === 'amount') ? 'amount' : 'pct';
     if (mode === 'amount') {
@@ -21106,6 +21125,7 @@ try {
   // yesterday's date back after the new-day checks had already run (Troy, 28 Sep 2026 - two copies of the app saving
   // over each other flipped his bias between the 27th and the 28th, and he posted from the one holding the 27th).
   window.__stFreshDates = function () {
+    try { _testAccountsTidy(); } catch (e) {}   // a journal from the cloud or another window: a test account carries no rules
     try {
       (Array.isArray(data.biasSlots) ? data.biasSlots : []).forEach(function (sl) { _biasDateFresh(sl); });
       _biasDateFresh(data.bias);
@@ -51836,7 +51856,7 @@ try {
       const sel = document.getElementById('settings-risk-account-select');
       const wrap = document.getElementById('settings-risk-account-picker');
       if (!sel || !wrap) return;
-      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active');
+      const active = (Array.isArray(data.accounts) ? data.accounts : []).filter(a => a.status === 'active' && !a.separate);   // a test account has no risk rules
       /* An ARCHIVED account can still be the view scope, and the greeting and Prop Firm
          Progress go on enforcing its rules while it is. Listing only active accounts meant
          those rules were enforced, invisible and uneditable - so a scoped archived account
@@ -51845,7 +51865,7 @@ try {
       try {
         const sc = (typeof currentScopeResolved === 'function') ? currentScopeResolved() : null;
         const sa = (sc && sc.kind === 'account') ? sc.account : null;
-        if (sa && sa.status === 'archived') scopedArchived = sa;
+        if (sa && sa.status === 'archived' && !sa.separate) scopedArchived = sa;
       } catch (e) {}
       const list = scopedArchived ? active.concat([scopedArchived]) : active;
       sel.innerHTML = ''; // clear previous options
@@ -51894,7 +51914,7 @@ try {
       const id = sel && sel.value;
       if (!id) return null;
       const acc = (data.accounts || []).find(a => a.id === id);
-      if (!acc) return null;
+      if (!acc || acc.separate) return null;   // a test account has no risk rules to edit
       if (!acc.riskRules) acc.riskRules = {};
       return acc.riskRules;
     }
@@ -52783,14 +52803,16 @@ try {
         // blue highlight — and cannot be themed to match anything around it. With exactly two
         // options a segmented control also shows both states at once instead of hiding one.
         const _kindTitle = window._stT('Only prop firm accounts appear in Prop Firm Progress, with a target, a floor and a pass/fail verdict.', 'Solo las cuentas de prop firm aparecen en Progreso de prop firm, con objetivo, suelo y veredicto.');
+        // Test (11 Oct 2026) is the third choice: an account is Personal, Prop firm or Test (Nestor: "make test part of
+        // the personal,prop firm button"). A test account has no risk rules and no Prop Firm Progress, and it is one-way
+        // once it has a trade - see accountHasTrades. Not offered while there is only one account: one has to count.
+        const _isTest = !!acc.separate;
+        const _testSeg = (!isArchived && (!isSingleAccount || _isTest))
+          ? `<button type="button" class="settings-btn sak-opt sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${_isTest}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard. No risk rules, no Prop Firm Progress.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Sin reglas de riesgo ni Progreso de prop firm.')}">${window._stT('Test', 'Prueba')}</button>` : '';
         actions.push(`<span class="settings-acct-kind" role="group" title="${_kindTitle}">
-            <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="personal" aria-pressed="${_kindNow === 'personal'}">${window._stT('Personal', 'Personal')}</button>
-            <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="challenge" aria-pressed="${_kindNow === 'challenge'}">${window._stT('Prop firm', 'Prop firm')}</button>
+            <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="personal" aria-pressed="${!_isTest && _kindNow === 'personal'}">${window._stT('Personal', 'Personal')}</button>
+            <button type="button" class="settings-btn sak-opt" data-id="${acc.id}" data-kind="challenge" aria-pressed="${!_isTest && _kindNow === 'challenge'}">${window._stT('Prop firm', 'Prop firm')}</button>${_testSeg}
           </span>`);
-        // Test account (11 Oct 2026): its own switch beside Personal / Prop firm, so a test account is still one or the
-        // other (a prop firm demo keeps its Prop Firm Progress). One-way once it has a trade - see accountHasTrades.
-        // Not offered while there is only one account: at least one has to count.
-        if (!isArchived && (!isSingleAccount || acc.separate)) actions.push(`<button type="button" class="settings-btn sak-test" data-action="test" data-id="${acc.id}" aria-pressed="${!!acc.separate}" title="${window._stT('A test account keeps its trades to itself: they never count in All accounts, your Series of 10, your streaks or the leaderboard.', 'Una cuenta de prueba guarda sus operaciones para sí: nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación.')}">${window._stT('Test', 'Prueba')}</button>`);
         // Rename / Archive / Delete, and the breakdown of a prop account that has passed or failed, in one Options menu
         // (Nestor, 1 Oct 2026: "inside a picker that when pressed you see all the options... less space and look tidier").
         const _mi = [];
@@ -52863,7 +52885,7 @@ try {
           </div>
           ${payLine}
           ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">${window._stT('MT5 login', 'Login MT5')} ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
-          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
+          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Test account: its trades are saved here but never count in All accounts, your Series of 10, your streaks or the leaderboard. It has no risk rules. Pick it in the account picker to see it.', 'Cuenta de prueba: sus operaciones se guardan aquí pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. No tiene reglas de riesgo. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -52877,6 +52899,7 @@ try {
            </details>`
         : '';
       wrap.innerHTML = summary + activeRows + archivedHtml;
+      try { if (_testAccountsTidy()) saveData(); } catch (e) {}   // a test account from before the no-rules rule
       // The Payouts section reads the same accounts - repaint it with them.
       try { if (typeof window.renderSettingsPayoutsList === 'function') window.renderSettingsPayoutsList(); } catch (e) {}
       // Wire row actions
@@ -52933,8 +52956,17 @@ try {
       // rather than by re-rendering the whole list, so the row doesn't jump under the cursor.
       wrap.querySelectorAll('.settings-acct-kind .sak-opt').forEach(btn => {
         btn.addEventListener('click', () => {
+          if (btn.dataset.action === 'test') return;   // the Test choice has its own handler (handleAccountAction 'test')
           const a = (typeof getAccountById === 'function') ? getAccountById(btn.dataset.id) : null;
           if (!a) return;
+          // Personal or Prop firm pressed on a test account. With a trade in it, it stays a test account (the pop-up says
+          // so). With none, the test is switched off, and the choice pressed is then made on the redrawn row.
+          if (a.separate) {
+            const _had = accountHasTrades(a.id);
+            handleAccountAction('test', a.id);
+            if (!_had && !a.separate) { const nb = wrap.querySelector('.settings-acct-kind .sak-opt[data-id="' + a.id + '"][data-kind="' + btn.dataset.kind + '"]'); if (nb && nb !== btn) nb.click(); }
+            return;
+          }
           const kind = (btn.dataset.kind === 'challenge') ? 'challenge' : 'personal';
           if (a.kind === kind) return;
           a.kind = kind;
@@ -53411,6 +53443,7 @@ try {
         }
         window.__stDialog({ title: T('Make this a test account?', '¿Convertirla en cuenta de prueba?'), paras: [
           '<b style="color:var(--text);font-weight:600;">' + escapeHtml(accDisplayName(acc0)) + '</b> ' + escapeHtml(T('becomes a test account. Its trades are saved, and you see them by picking this account, but they never count in All accounts, your Series of 10, your streaks or the leaderboard, and they raise no nudges.', 'pasa a ser una cuenta de prueba. Sus operaciones se guardan, y las ves al elegir esta cuenta, pero nunca cuentan en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación, y no generan avisos.')),
+          escapeHtml(T('A test account has no risk rules and no Prop Firm Progress.', 'Una cuenta de prueba no tiene reglas de riesgo ni Progreso de prop firm.')),
           escapeHtml(T('This cannot be undone once the account has a trade.', 'No se puede deshacer en cuanto la cuenta tenga una operación.'))
         ], buttons: [{ a: 'yes', label: T('Make it a test account', 'Hacerla de prueba') }, { a: 'no', label: T('Cancel', 'Cancelar') }] }).then(v => { if (v === 'yes') apply(true); });
         return;

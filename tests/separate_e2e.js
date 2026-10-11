@@ -115,7 +115,7 @@
   if (!r3 || !r1) { ok('Settings: the account rows are on screen', false, [rows.length, modal.innerText.slice(0, 200)]); return out; }
   ok('Settings: the test account wears a Test badge and says what it means', !!r3 && /^test$/i.test(((r3.querySelector('.settings-account-badge') || {}).textContent || '').trim()) && /^Test account:/i.test(((r3.querySelector('.settings-account-sepnote') || {}).textContent || '').trim()) && /leaderboard/.test(r3.querySelector('.settings-account-sepnote').textContent), r3 && r3.innerText.slice(0, 200));
   var tb3 = r3.querySelector('.sak-test'), tb1 = r1.querySelector('.sak-test');
-  ok('Settings: a Test button beside Personal / Prop firm, lit on the test account only', !!tb3 && !!tb1 && tb3.getAttribute('aria-pressed') === 'true' && tb1.getAttribute('aria-pressed') === 'false' && /^test$/i.test(tb1.textContent.trim()) && !!tb1.previousElementSibling && tb1.previousElementSibling.classList.contains('settings-acct-kind') && !r1.querySelector('.settings-account-sepnote'), [tb3 && tb3.outerHTML.slice(0, 120), tb1 && tb1.outerHTML.slice(0, 120)]);
+  ok('Settings: Test is the third choice of the Personal / Prop firm switch, the only one lit on a test account', !!tb3 && !!tb1 && tb1.parentNode.classList.contains('settings-acct-kind') && tb1.parentNode.querySelectorAll('.sak-opt').length === 3 && tb1.parentNode.lastElementChild === tb1 && /^test$/i.test(tb1.textContent.trim()) && tb3.getAttribute('aria-pressed') === 'true' && tb3.parentNode.querySelectorAll('.sak-opt[aria-pressed="true"]').length === 1 && tb1.getAttribute('aria-pressed') === 'false' && tb1.parentNode.querySelectorAll('.sak-opt[aria-pressed="true"]').length === 1 && !r1.querySelector('.settings-account-sepnote'), [tb3 && tb3.outerHTML.slice(0, 120), tb1 && tb1.outerHTML.slice(0, 120)]);
   ok('Settings: Hide from / Show in All accounts are gone from the Options menu', !modal.querySelector('[data-action="separate"]') && !modal.querySelector('[data-action="unseparate"]') && !/Hide from All accounts|Show in All accounts|Keep separate/i.test(modal.innerText));
   var tot = modal.querySelector('.settings-account-total') || modal.querySelector('.sat-sub');
   var totTxt = (modal.querySelector('.sat-sub') || {}).textContent || '';
@@ -136,20 +136,34 @@
   ok('an empty account has no trades', window.__stSep.hasTrades(a4.id) === false && window.__stSep.hasTrades(a1.id) === true && window.__stSep.hasTrades(a3.id) === true);
   t4().click(); await W(400);
   var bs = dg() ? dg().querySelectorAll('.mdl-actions .btn') : [];
-  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
+  a4.kind = 'challenge'; a4.riskRules = { maxTrades: 3, maxLossMode: 'amount', maxLossAmount: 500, beThresholdMode: 'amount', beThresholdAmount: 50 };
+  ok('an empty account: the confirmation, naming it', !!dg() && /Make this a test account\?/i.test(dgT()) && /Sandbox 10K becomes a test account/i.test(dgT()) && /A test account has no risk rules and no Prop Firm Progress\./i.test(dgT()) && /cannot be undone once the account has a trade/i.test(dgT()) && bs.length === 2 && /Make it a test account/i.test(bs[0].textContent) && /Cancel/i.test(bs[1].textContent) && Math.abs(bs[0].getBoundingClientRect().width - bs[1].getBoundingClientRect().width) < 2, dgT());
   dg().querySelector('[data-a="no"]').click(); await W(300);
   ok('Cancel leaves it as it was', !dg() && !a4.separate, [!!dg(), a4.separate]);
   await reRows(); t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600); await reRows();
-  ok('Make it a test account: lit, badged, out of the combined totals', a4.separate === true && t4().getAttribute('aria-pressed') === 'true' && /^test$/i.test((rowOf('Sandbox 10K').querySelector('.settings-account-badge') || {}).textContent.trim()), [a4.separate, t4().outerHTML.slice(0, 100)]);
-  t4().click(); await W(500); await reRows();
-  ok('with no trades yet, the button switches it back off (no pop-up)', !dg() && a4.separate === false && t4().getAttribute('aria-pressed') === 'false', [!!dg(), a4.separate]);
+  ok('a test account has no risk rules and is not a prop firm account', Object.keys(a4.riskRules || {}).length === 0 && a4.kind === 'personal', [a4.riskRules, a4.kind]);
+  a1.riskRules = Object.assign({}, a1.riskRules || {}, { beThresholdMode: 'amount', beThresholdAmount: 200 });
+  ok('its break-even band is the main account\'s', beThresholdMoneyFor(a4) === 200 && classifyNetResult(150, a4) === 'BE' && classifyNetResult(250, a4) === 'Win', [beThresholdMoneyFor(a4), classifyNetResult(150, a4)]);
+  try { populateRiskAccountPicker(); } catch (e) {}
+  var rsel = Array.from(document.querySelectorAll('#settings-risk-account-select option')).map(function (o) { return o.textContent; });
+  ok('Risk rules does not offer test accounts', rsel.length >= 1 && rsel.indexOf('Sandbox 10K') < 0 && rsel.indexOf('Demo 70K') < 0 && rsel.indexOf('Live 70K') >= 0, rsel);
+  ok('Make it a test account: lit, badged, out of the combined totals', a4.separate === true && t4().getAttribute('aria-pressed') === 'true' && rowOf('Sandbox 10K').querySelectorAll('.settings-acct-kind .sak-opt[aria-pressed="true"]').length === 1 && /^test$/i.test((rowOf('Sandbox 10K').querySelector('.settings-account-badge') || {}).textContent.trim()), [a4.separate, t4().outerHTML.slice(0, 100)]);
+  rowOf('Sandbox 10K').querySelector('.sak-opt[data-kind="personal"]').click(); await W(500); await reRows();
+  ok('with no trades yet, pressing Personal switches the test off (no pop-up)', !dg() && a4.separate === false && t4().getAttribute('aria-pressed') === 'false' && rowOf('Sandbox 10K').querySelector('.sak-opt[data-kind="personal"]').getAttribute('aria-pressed') === 'true', [!!dg(), a4.separate, a4.kind]);
   t4().click(); await W(400); dg().querySelector('[data-a="yes"]').click(); await W(600);
   data.currentSeries.push({ id: 'sb1', accountId: a4.id, symbol: 'XAU/USD', date: iso(0, 10), dayOfWeek: new Date(iso(0, 10)).getDay(), result: 'Win', r: 2, pips: 100, sl: 50, risk: 100, side: 'Long', type: 'Continuation', entryTime: '10:05', exitTime: '10:20', actualGross: 200 }); rebuildSeriesByDate();
   await reRows(); t4().click(); await W(400);
   ok('after its first trade it can no longer be switched back', a4.separate === true && !!dg() && /This is a test account/i.test(dgT()), [a4.separate, dgT()]);
   if (dg()) dg().querySelector('[data-a]').click(); await W(300);
+  rowOf('Sandbox 10K').querySelector('.sak-opt[data-kind="challenge"]').click(); await W(400);
+  ok('nor by pressing Prop firm', a4.separate === true && a4.kind === 'personal' && !!dg() && /This is a test account/i.test(dgT()), [a4.separate, a4.kind, dgT()]);
+  if (dg()) dg().querySelector('[data-a]').click(); await W(300);
   // (put the journal back as it was: the sandbox and its trade go)
   data.accounts = data.accounts.filter(function (z) { return z.id !== a4.id; }); data.history = (data.history || []).map(function (h) { if (h && Array.isArray(h.trades)) h.trades = h.trades.filter(function (t) { return t.accountId !== a4.id; }); return h; }).filter(function (h) { return !h || !Array.isArray(h.trades) || h.trades.length || !h.separate; }); data.currentSeries = (data.currentSeries || []).filter(function (t) { return t.accountId !== a4.id; }); rebuildSeriesByDate(); await reRows();
+  // a test account from before the no-rules rule (or another device) loses its rules when the journal arrives
+  a3.riskRules = { maxTrades: 10, maxLossMode: 'amount', maxLossAmount: 800 }; a3.kind = 'challenge';
+  try { window.__stFreshDates(); } catch (e) {}
+  ok('an older test account is tidied: no rules, not a prop firm account', Object.keys(a3.riskRules || {}).length === 0 && a3.kind === 'personal', [a3.riskRules, a3.kind]);
   // the flag itself still works both ways (what the differential above proves): off, every trade counts again; on, out again
   setAccountSeparate(a3.id, false);
   var C = snap();
