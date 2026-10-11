@@ -7,6 +7,10 @@
 //  raises on screen - "red news in 15 min" (news_soon) and "still in a trade before red news"
 //  (news_hold) - waits for an open window to claim it, and pushes the rest. See ../_shared/nudges.ts.
 //
+//  Since 12 Oct 2026 the same job also runs while a red release's figure is fresh, and this announces it
+//  (news_out: actual, forecast, previous; news_fix: a corrected figure). { mode:"results" } runs only that
+//  part - actuals-quick calls it the moment it has written a figure.
+//
 //  Guarded by the x-cron-key header (NUDGE_CRON_KEY, also in the vault for the pg_cron job).
 //  Deploy with "Verify JWT" OFF.
 //
@@ -15,7 +19,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, deliver, newsTick, setDry } from "../_shared/nudges.ts";
+import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, deliver, newsTick, resultsTick, setDry } from "../_shared/nudges.ts";
 
 const admin = createClient(Deno.env.get("SUPABASE_URL")!, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
 
@@ -33,11 +37,12 @@ Deno.serve(async (req) => {
     return json({ test: true, out }, 200);
   }
   if (body && body.mode === "dry") {
-    setDry(true, Array.isArray(body.rows) ? body.rows : [], body.now, body.snap);
+    setDry(true, Array.isArray(body.rows) ? body.rows : [], body.now, body.snap, Array.isArray(body.events) ? body.events : undefined);
     try {
       const u = String(body.user || ""), t = Number(body.ticket);
       const fn = ({ open: afterOpen, risk: afterRisk, widen: afterWiden, no_stop: checkNoStop, close: afterClose, trade: afterCloseTrade, be: afterBE } as Record<string, typeof afterOpen>)[String(body.what)];
       const out = body.what === "news" ? await newsTick(admin)
+        : body.what === "results" ? await resultsTick(admin, u || undefined)
         : body.what === "lock" ? await afterLock(admin, u, t, !!body.first)
         : body.what === "partial" ? await afterPartial(admin, u, t, Number(body.deal) || 1, Number(body.pct) || 0, Number(body.r) || 0, Number(body.pnl) || 0)
         : body.what === "ea" ? await afterEaChange(admin, u, Number(body.logId) || 1, body.before, body.after, Number(body.at) || Date.now())
@@ -48,7 +53,10 @@ Deno.serve(async (req) => {
     } finally { setDry(false); }
   }
   try {
-    return json(await newsTick(admin), 200);
+    if (body && body.mode === "results") return json(await resultsTick(admin), 200);
+    // Both wait for an open window to claim what it showed, so they run side by side.
+    const [news, results] = await Promise.all([newsTick(admin), resultsTick(admin)]);
+    return json({ ...news, ...results }, 200);
   } catch (e) {
     console.error("nudge-cron", String(e && (e as Error).stack || e));
     return json({ error: "failed" }, 500);

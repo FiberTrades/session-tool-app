@@ -7747,6 +7747,7 @@ try {
         <input type="number" id="settings-nudges-news" class="settings-input settings-input-compact" step="1" min="0" max="60" placeholder="15" />
         <span class="settings-risk-suffix" data-i18n="settings.nudges_news_suffix">minutes before (0 = off)</span>
       </div>
+      <p class="settings-hint" data-i18n="settings.nudges_news_hint">After the release you also get the result as a nudge: the actual figure with its forecast and previous.</p>
       <!-- Trade alerts (2 Oct 2026, EA 8.86): stop to break-even, take profit, stop loss. data.settings.nudges.trades. -->
       <label class="tk-switch" style="margin-top:18px;">
         <span class="tk-switch-label" data-i18n="settings.nudges_trades_toggle">Trade alerts</span>
@@ -8836,6 +8837,10 @@ try {
       'nudge.k_risk': 'Risk raised after a loss',
       'nudge.k_ea': 'EA loosened',
       'nudge.k_news': 'Red news',
+      'nudge.news_out': '{CUR} {N} is out: {A}{X}.',
+      'nudge.news_fix': 'Correction: {CUR} {N} was {A}, not {W}{X}.',
+      'nudge.w_fc': 'forecast {F}',
+      'nudge.w_pv': 'previous {P}',
       'nudge.k_other': 'Other',
       'nudge.period_this_week': '{N} this week',
       'nudge.period_last_week': 'last week {N}',
@@ -8898,6 +8903,7 @@ try {
       'nudge.period_wl': '{W} won, {L} lost, {B} BE',
       'settings.nudges_news_label': 'Warn before red news',
       'settings.nudges_news_suffix': 'minutes before (0 = off)',
+      'settings.nudges_news_hint': 'After the release you also get the result as a nudge: the actual figure with its forecast and previous.',
       'settings.reopen_hint': 'Finishing a session hides the live screen for the rest of the day. Reopen it to run Session Live again \u2014 as often as you like (you must be inside your session Times above).',
       'settings.reopen_done': 'Session Live reopened.', 'settings.reopen_outside': 'Reopened \u2014 but you\u2019re outside your session window. Set your session Times to include now.',
       'settings.mt5_factor_label': 'Copier size factor',
@@ -10758,6 +10764,10 @@ try {
       'nudge.k_risk': 'Más riesgo tras una pérdida',
       'nudge.k_ea': 'EA aflojado',
       'nudge.k_news': 'Noticias rojas',
+      'nudge.news_out': '{CUR} {N} ya salió: {A}{X}.',
+      'nudge.news_fix': 'Corrección: {CUR} {N} fue {A}, no {W}{X}.',
+      'nudge.w_fc': 'previsión {F}',
+      'nudge.w_pv': 'anterior {P}',
       'nudge.k_other': 'Otros',
       'nudge.period_this_week': '{N} esta semana',
       'nudge.period_last_week': 'la semana pasada {N}',
@@ -10820,6 +10830,7 @@ try {
       'nudge.period_wl': '{W} ganadas, {L} perdidas, {B} BE',
       'settings.nudges_news_label': 'Avisar antes de noticias rojas',
       'settings.nudges_news_suffix': 'minutos antes (0 = desactivado)',
+      'settings.nudges_news_hint': 'Tras la publicación también recibes el resultado como aviso: el dato real con su previsión y el anterior.',
       'settings.reopen_hint': 'Al finalizar una sesi\u00f3n, la pantalla en vivo se oculta el resto del d\u00eda. Re\u00e1brela para volver a usar Sesi\u00f3n en Vivo \u2014 tantas veces como quieras (debes estar dentro de tus Horas de sesi\u00f3n de arriba).',
       'settings.reopen_done': 'Sesi\u00f3n en vivo reabierta.', 'settings.reopen_outside': 'Reabierta \u2014 pero est\u00e1s fuera de tu ventana de sesi\u00f3n. Ajusta tus Horas para incluir la hora actual.',
       'settings.mt5_factor_label': 'Factor de tama\u00f1o del copiador',
@@ -18465,6 +18476,62 @@ try {
         });
       } catch (e) {}
     }
+    // Results (12 Oct 2026): the figure of a red release, minutes after it - "can you build nudges with the results
+    // indicating previous, forecast and actual?" The calendar hands over the rows it reads from calendar_events while
+    // a release is fresh (_calActualsFromDb). The rule and the keys are the server's (resultsTick in
+    // _shared/nudges.ts), so the window that shows it stops the phone push. Whoever the warning was for gets the
+    // result: the release is on one of your currencies, and a trade is open on it, your session is live, or it landed
+    // inside your session window on a day you trade. The figures of one release are said together - once they are all
+    // in, or four minutes after the first. A later read that gives another number is said as a correction, to a
+    // window that showed the first one.
+    var RES_FRESH = 12 * 60000, RES_LATE = 75 * 60000, RES_WAIT = 4 * 60000;
+    function slugOf(x) { return String(x || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, ''); }
+    function resultLine(key, r) {
+      var bits = [];
+      if (/\d/.test(r.forecast || '')) bits.push(t('nudge.w_fc').replace('{F}', r.forecast));
+      if (/\d/.test(r.previous || '')) bits.push(t('nudge.w_pv').replace('{P}', r.previous));
+      var name = r.title || '';
+      try { if (typeof getEventTitle === 'function') name = getEventTitle(name) || name; } catch (e) {}
+      return t(key).replace('{CUR}', r.currency).replace('{N}', name).replace('{A}', r.actual).replace('{W}', r.actual_prev || '')
+        .replace('{X}', bits.length ? ' (' + bits.join(', ') + ')' : '');
+    }
+    function resultsIn(rows) {
+      try {
+        if (!eligible() || !(cfg().news > 0)) return;
+        var now = Date.now(), open = [];
+        try { open = (window.__stLive && window.__stLive.openList) ? window.__stLive.openList() : []; } catch (e) {}
+        open = open.filter(function (o) { return !isSepLogin(loginOf[String(o.ticket)]); });
+        var curs = myCurs();
+        open.forEach(function (o) { cursOf(o.symbol).forEach(function (c) { if (curs.indexOf(c) === -1) curs.push(c); }); });
+        var byAt = {};
+        (rows || []).forEach(function (r) {
+          var ms = Date.parse(r && r.at);
+          if (!r || String(r.impact || '').toLowerCase() !== 'high' || r.timed === false || !isFinite(ms)) return;
+          if (!(/\d/.test(r.forecast || '') || /\d/.test(r.previous || ''))) return;
+          (byAt[ms] = byAt[ms] || []).push(Object.assign({}, r, { currency: String(r.currency || '').toUpperCase() }));
+        });
+        var found = [];
+        Object.keys(byAt).forEach(function (k) {
+          var at = +k, all = byAt[k], have = all.filter(function (r) { return r.actual && r.actual_at; });
+          var fresh = have.filter(function (r) { return now - Date.parse(r.actual_at) <= RES_FRESH; });
+          if (!fresh.length) return;
+          var ready = have.length === all.length || have.some(function (r) { return now - Date.parse(r.actual_at) >= RES_WAIT; });
+          var say = function (rule, r) {
+            if (curs.indexOf(r.currency) === -1) return;
+            var holding = open.some(function (o) { return cursOf(o.symbol).indexOf(r.currency) !== -1; });
+            if (!holding && !newsMatters({ at: at })) return;
+            var id = 'E' + at + ':' + r.currency + ':' + slugOf(r.title);
+            if (handled[rule + id]) return;
+            if (rule === 'news_fix' && !firedMap().keys['news_out:' + id]) return;
+            handled[rule + id] = 1;
+            found.push({ rule: rule, k: id, text: resultLine('nudge.' + rule, r) });
+          };
+          if (ready) fresh.filter(function (r) { return !r.actual_prev && Date.parse(r.actual_at) - at <= RES_LATE; }).forEach(function (r) { say('news_out', r); });
+          fresh.filter(function (r) { return r.actual_prev; }).forEach(function (r) { say('news_fix', r); });
+        });
+        if (found.length) raise(found, '');
+      } catch (e) {}
+    }
     // Clock changes (28 Sep 2026): once a day on a trading day, from 30 minutes before the first session until the
     // last one ends, when a clock change is within 3 days or today is an unusual-gap day (e.g. UK/US 4 hours apart).
     function clockTick() {
@@ -18845,12 +18912,12 @@ try {
     // Most important first - it tops the card and is the line that is spoken: breaking the session
     // plan, then raising risk after a loss, then the re-entry, then the count, then the run.
     var RANK = { clock: 4, daily_hit: 0, daily_left: 0, dd_left: 0, no_stop: 0, against_bias: 1, big_risk: 1, widen: 1, target_hit: 1, no_bias: 2, consistency: 2,
-                 finished: 0, outside: 0, news_hold: 0, news_open: 1, news_soon: 1, risk: 1, ea_risk: 1, ea_trades: 1, ea_sl: 1, reentry: 2, limit: 3, streak: 4 };
+                 finished: 0, outside: 0, news_hold: 0, news_open: 1, news_soon: 1, risk: 1, ea_risk: 1, ea_trades: 1, ea_sl: 1, reentry: 2, limit: 3, streak: 4, news_fix: 5, news_out: 6 };
     function rankOf(x) { return (x.rule in RANK) ? RANK[x.rule] : 9; }
     function raise(found, k) {
       found.sort(function (a, b) { return rankOf(a) - rankOf(b); });
       var f = firedMap();
-      var list = found.filter(function (x) { x.key = x.rule + ':' + k; var e = f.keys[x.key]; return !(e && e.ack); });
+      var list = found.filter(function (x) { x.key = x.rule + ':' + (x.k != null ? x.k : k); var e = f.keys[x.key]; return !(e && e.ack); });
       if (!list.length) return;
       showCard(list);
       /* Phone nudges (2 Oct 2026): the server pushes a nudge to the phone a few seconds after the event unless a window
@@ -18870,7 +18937,7 @@ try {
     }
     function record(list) {
       try {
-        list = list.filter(function (x) { return String(x.rule).indexOf('tr_') !== 0; });   // trade alerts: not nudges
+        list = list.filter(function (x) { return String(x.rule).indexOf('tr_') !== 0 && x.rule !== 'news_out' && x.rule !== 'news_fix'; });   // trade alerts and news results: not nudges
         if (!list.length) return;
         var day = localDay(), log = (data.nudgeLog && typeof data.nudgeLog === 'object') ? data.nudgeLog : {};
         var d = log[day] || {};
@@ -19378,7 +19445,7 @@ try {
     }
     return { observe: observe, markOld: markOld, ack: ack, chime: chime, eaChanged: eaChanged, dayHtml: dayHtml, aiPack: aiPack,
              budget: budget, redNewsFor: function (curs) { return redNews(curs); }, mediumNewsFor: function (curs) { return redNews(curs, 'medium'); }, myCurs: myCurs, cursOf: cursOf,
-             periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList,
+             periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList, results: resultsIn,
              kindLabel: function (g) { return t('nudge.' + g); } };
   })();
 
@@ -46053,13 +46120,16 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   var _stActualsLookup = null;     // Map<`${easternDateKey}|${country}|${title}`, actual>
   var _stActualsEtFmt  = null;
   function _overlayActuals(events) {
-    if (!_stActualsLookup || !_stActualsLookup.size || !Array.isArray(events)) return;
+    var has1 = !!(_stActualsLookup && _stActualsLookup.size), has2 = !!(_calDbActuals && _calDbActuals.size);
+    if ((!has1 && !has2) || !Array.isArray(events)) return;
     if (!_stActualsEtFmt) _stActualsEtFmt = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
     events.forEach(function (e) {
       if (!e || !e.when || !e.country || !e.title) return;
       var dt = (typeof e.when === 'string') ? new Date(e.when) : e.when;
       if (isNaN(dt.getTime())) return;
-      var val = _stActualsLookup.get(_stActualsEtFmt.format(dt) + '|' + e.country + '|' + e.title);
+      var k = _stActualsEtFmt.format(dt) + '|' + e.country + '|' + e.title;
+      // the worker's own read first; else the figure read minutes after the release (_calActualsFromDb)
+      var val = (has1 && _stActualsLookup.get(k)) || (has2 && _calDbActuals.get(k));
       if (val) e.actual = val;
     });
   }
@@ -47384,6 +47454,89 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       if (document.visibilityState === 'visible') poll();
     });
   })();
+
+  // ── The figure minutes after a release (12 Oct 2026) ───────────────────────
+  // Nestor: "why dont we change it for when news that expect to have an actual number get release so the actual
+  // numbers appear almost instantly?" A server job (actuals-quick) now reads the figure about 3, 8 and 18 minutes
+  // after a red or orange release and writes it to calendar_events. While such a release is fresh and still has no
+  // figure here, this window reads that table every 15 seconds (a handful of rows, only while the tab is visible),
+  // fills the Actual column, and hands the rows to the nudges so a red release's result is said on screen. For four
+  // hours after a red release it also looks once every five minutes: that is how a corrected figure arrives.
+  var _calDbActuals = null;                 // Map<`${easternDateKey}|${country}|${title}`, actual>, like _stActualsLookup
+  var _calAct = { last: 0, busy: false };
+  function _calFigured(e) { return /\d/.test(e.forecast || '') || /\d/.test(e.previous || ''); }
+  // every: how often to look right now, in ms (0 = no need)
+  function _calActualsNeed(now) {
+    let every = 0;
+    try {
+      const ev = (data && data._calendarCache && Array.isArray(data._calendarCache.events)) ? data._calendarCache.events : [];
+      for (const e of ev) {
+        if (!e || !e.when || e.isTimed === false || !_calFigured(e)) continue;
+        const imp = String(e.impact || '').toLowerCase();
+        if (imp !== 'high' && imp !== 'medium') continue;
+        const age = now - new Date(e.when).getTime();
+        if (!(age >= 0)) continue;
+        let want = 0;
+        if (!e.actual && age >= 2 * 60000 && age <= 22 * 60000) want = 15000;          // any moment now
+        else if (!e.actual && age > 22 * 60000 && age <= 45 * 60000) want = 60000;      // the last try is at +18 min
+        else if (imp === 'high' && age <= 4 * 3600000) want = 5 * 60000;                // a correction can still come
+        if (want && (!every || want < every)) every = want;
+      }
+    } catch (e) {}
+    return every;
+  }
+  async function _calActualsFromDb() {
+    try {
+      const sb = window.__stSB;
+      if (!sb || typeof sb.from !== 'function' || _calAct.busy) return null;
+      if (!data || !data._calendarCache || !Array.isArray(data._calendarCache.events)) return null;
+      const now = Date.now();
+      _calAct.busy = true; _calAct.last = now;
+      let rows = null;
+      try {
+        const r = await sb.from('calendar_events').select('at,timed,currency,title,impact,forecast,previous,actual,actual_prev,actual_at')
+          .gte('at', new Date(now - 4 * 3600000).toISOString()).lte('at', new Date(now).toISOString());
+        rows = (r && !r.error && Array.isArray(r.data)) ? r.data : null;
+      } catch (e) { rows = null; }
+      _calAct.busy = false;
+      if (!rows) return null;
+      const byKey = new Map();
+      rows.forEach(r => { const d = new Date(r && r.at); if (r && r.actual && !isNaN(d.getTime())) byKey.set(d.toISOString() + '|' + String(r.currency || '').toUpperCase() + '|' + (r.title || ''), r.actual); });
+      let changed = 0;
+      if (byKey.size) {
+        if (!_stActualsEtFmt) _stActualsEtFmt = new Intl.DateTimeFormat('en-CA', { year: 'numeric', month: '2-digit', day: '2-digit', timeZone: 'America/New_York' });
+        if (!_calDbActuals) _calDbActuals = new Map();
+        data._calendarCache.events.forEach(e => {
+          if (!e || !e.when || !e.title) return;
+          const dt = new Date(e.when); if (isNaN(dt.getTime())) return;
+          const val = byKey.get(dt.toISOString() + '|' + String(e.country || '').toUpperCase() + '|' + e.title);
+          if (!val) return;
+          _calDbActuals.set(_stActualsEtFmt.format(dt) + '|' + e.country + '|' + e.title, val);   // survives a cache rebuild
+          if (e.actual !== val) { e.actual = val; changed++; }
+        });
+      }
+      if (changed) {
+        try { if (typeof save === 'function') save(); } catch (e) { /* non-fatal */ }
+        renderCalendarFromCache();
+      }
+      try { if (window.__stNudge && typeof window.__stNudge.results === 'function') window.__stNudge.results(rows); } catch (e) { /* non-fatal */ }
+      return { rows: rows.length, changed: changed };
+    } catch (e) { _calAct.busy = false; return null; }
+  }
+  (function installActualsWatch() {
+    if (window.__stActualsWatchInstalled) return;
+    window.__stActualsWatchInstalled = true;
+    setInterval(function () {
+      try {
+        if (document.visibilityState === 'hidden') return;
+        if (typeof data === 'undefined' || !data || !data._calendarCache) return;
+        const now = Date.now(), every = _calActualsNeed(now);
+        if (every && now - _calAct.last >= every - 1000) _calActualsFromDb();
+      } catch (e) { /* non-fatal */ }
+    }, 15000);
+  })();
+  // Diagnosis: is a figure expected right now, and read the table at once.
+  window.__stCalActuals = { need: function () { return _calActualsNeed(Date.now()); }, read: function () { return _calActualsFromDb(); } };
 
   // Single-proxy attempt — used internally by tryFetch.
   // Returns { ok: true, events } on success, { ok: false, error } on failure.

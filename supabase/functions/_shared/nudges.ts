@@ -15,6 +15,8 @@
 //           (account_snapshots: balance, peak, trading net per account) dd_left, target_hit, consistency
 //    EA settings: ea_risk / ea_trades / ea_sl (loosening the EA in a live session or on a day with a loss)
 //    timer (nudge-cron): news_soon, news_hold
+//    results (12 Oct 2026): news_out - the figure of a red release, minutes after it, with its forecast and
+//                           previous; news_fix - a later read gave another number
 //    trade alerts (EA 8.86): tr_be (stop moved to break-even), tr_tp, tr_sl, tr_beout (stopped at break-even),
 //                            tr_slp (stopped out in profit, a trailed stop)
 //                 (EA 8.87): tr_trail - every step the stop moves further into profit, with what is locked in;
@@ -29,8 +31,8 @@ import webpush from "npm:web-push@3.6.7";
 type Any = any;
 
 // Dry run (nudge-cron's test mode): judge everything, claim and send nothing, wait for nobody.
-let DRY = false, DRY_ROWS: Any[] = [], DRY_NOW = 0, DRY_SNAP: Any = null;
-export function setDry(v: boolean, rows?: Any[], now?: number, snap?: Any) { DRY = v; DRY_ROWS = v ? (rows || []) : []; DRY_NOW = v ? (Number(now) || 0) : 0; DRY_SNAP = v ? (snap || null) : null; }
+let DRY = false, DRY_ROWS: Any[] = [], DRY_NOW = 0, DRY_SNAP: Any = null, DRY_EVENTS: Any[] | null = null;
+export function setDry(v: boolean, rows?: Any[], now?: number, snap?: Any, events?: Any[]) { DRY = v; DRY_ROWS = v ? (rows || []) : []; DRY_NOW = v ? (Number(now) || 0) : 0; DRY_SNAP = v ? (snap || null) : null; DRY_EVENTS = (v && Array.isArray(events)) ? events : null; }
 const clock = () => (DRY && DRY_NOW) ? DRY_NOW : Date.now();
 export const sleep = (ms: number) => DRY ? Promise.resolve() : new Promise((r) => setTimeout(r, ms));
 
@@ -240,11 +242,17 @@ const T: Record<string, [string, string]> = {
   ea_plan_q: ["Is that in your plan?", "¿Está en tu plan?"],
   ea_lots: ["{N} lots", "{N} lotes"],
   ea_pct_now: ["{P}% ({M} now)", "{P}% ({M} ahora)"],
+  // Results (12 Oct 2026): {X} is " (forecast 0.2%, previous 0.3%)", with whichever of the two the release carries.
+  news_out: ["{CUR} {N} is out: {A}{X}.", "{CUR} {N} ya salió: {A}{X}."],
+  news_fix: ["Correction: {CUR} {N} was {A}, not {W}{X}.", "Corrección: {CUR} {N} fue {A}, no {W}{X}."],
+  w_fc: ["forecast {F}", "previsión {F}"],
+  w_pv: ["previous {P}", "anterior {P}"],
+  title_res: ["Red news result", "Resultado de noticia roja"],
   title: ["Nudge", "Aviso"],
   title_tr: ["Trade alert", "Aviso de operación"],
 };
 export const tr = (k: string, es: boolean) => (T[k] ? T[k][es ? 1 : 0] : k);
-const RANK: Record<string, number> = { daily_hit: 0, daily_left: 0, dd_left: 0, target_hit: 1, consistency: 2, ea_risk: 1, ea_trades: 1, ea_sl: 1, no_stop: 0, finished: 0, outside: 0, news_hold: 0, against_bias: 1, big_risk: 1, risk: 1, widen: 1, news_open: 1, news_soon: 1, no_bias: 2, reentry: 2, limit: 3, streak: 4 };
+const RANK: Record<string, number> = { daily_hit: 0, daily_left: 0, dd_left: 0, target_hit: 1, consistency: 2, ea_risk: 1, ea_trades: 1, ea_sl: 1, no_stop: 0, finished: 0, outside: 0, news_hold: 0, against_bias: 1, big_risk: 1, risk: 1, widen: 1, news_open: 1, news_soon: 1, no_bias: 2, reentry: 2, limit: 3, streak: 4, news_fix: 5, news_out: 6 };
 
 // ---------- red news ----------
 export type News = { at: number; curs: string[]; titles: string[] };
@@ -435,7 +443,7 @@ export async function sendPush(admin: Any, userId: string, kind: string, title: 
 /* Deliver a batch: each key is claimed once (nudge_pushes), the window that showed it is given time to say so
    (seen:<key> in session_voice_claims - any of the idea's tickets counts), and only the unseen ones go to the
    phone, as one notification. */
-export async function deliver(admin: Any, userId: string, kind: "nudge" | "trade", items: Item[], es: boolean, waitMs: number) {
+export async function deliver(admin: Any, userId: string, kind: "nudge" | "trade", items: Item[], es: boolean, waitMs: number, titleKey?: string) {
   if (!items.length) return [];
   items.sort((a, b) => (RANK[a.rule] ?? 9) - (RANK[b.rule] ?? 9));
   if (DRY) return items.map((x) => kind + " " + x.key + (x.alts ? " (" + x.alts.join(",") + ")" : "") + ": " + x.text);
@@ -457,7 +465,7 @@ export async function deliver(admin: Any, userId: string, kind: "nudge" | "trade
   const mark = async (list: Item[], status: string) => { if (list.length) await admin.from("nudge_pushes").update({ status }).eq("user_id", userId).eq("day", day).in("key", list.map((x) => x.key)); };
   await mark(mine.filter(wasSeen), "seen");
   if (!unseen.length) return mine.map((x) => x.key + "=seen");
-  const title = tr(kind === "trade" ? "title_tr" : "title", es);
+  const title = tr(titleKey || (kind === "trade" ? "title_tr" : "title"), es);
   const res = await sendPush(admin, userId, kind, title, unseen.map((x) => x.text).join("\n"), (kind === "nudge" ? "st-nudge-" : "st-trade-") + unseen[0].key);
   await mark(unseen, res);
   return unseen.map((x) => x.key + "=" + res);
@@ -691,6 +699,102 @@ export async function afterCloseTrade(admin: Any, userId: string, ticket: number
   return await deliver(admin, userId, "trade", [item(rule, String(ticket), tradeWords(ctx, me, rule, Number(me.pnl)), mates(ctx, me))], esOf(ctx.j), 0);
 }
 
+// Open now: the server's open rows that the EA is still announcing (seen in the last 2 minutes).
+async function openNow(admin: Any, ctx: Ctx, userId: string, now: number): Promise<Row[]> {
+  const open0 = ctx.rows.filter((r) => !r.closed_at);
+  if (!open0.length) return [];
+  const { data: lt } = await admin.from("live_trades").select("ticket, seen_at, closed_at").eq("account", userId).in("ticket", open0.map((r) => r.ticket));
+  const live = new Set((lt || []).filter((x: Any) => !x.closed_at && x.seen_at && now - Date.parse(x.seen_at) < 120000).map((x: Any) => Number(x.ticket)));
+  if (DRY) DRY_ROWS.forEach((x) => { if (!x.closed_at) live.add(Number(x.ticket)); });
+  return open0.filter((r) => live.has(r.ticket) && !isCopy(ctx, r) && !sepLogin(ctx, r.login));
+}
+
+// ---------- results (12 Oct 2026): the figure of a red release, minutes after it ----------
+// Nestor: "if we can get instant actuals can you build nudges with the results indicating previous, forecast and
+// actual?" The figure lands in calendar_events.actual (actuals-quick a few minutes after the release, or the
+// worker's own read), stamped actual_at by the table's trigger. Whoever the warning was for gets the result: the
+// release is on one of their currencies, and it mattered to them - a trade open on it, their session live, or a
+// release inside their session window on a day they trade. Red news only, like the warning.
+//   news_out: within 12 minutes of the figure landing, and only a figure that landed within 75 minutes of the
+//             release (later it is old news). The figures of one release are said together: once they are all in,
+//             or four minutes after the first one landed.
+//   news_fix: a later read gave a different number (actual_prev) - only to a member who was told the first one.
+// The app raises the same keys on screen (news_out:E<releaseMs>:<CUR>:<title>), so a seen claim stops the push.
+const RES_FRESH_MS = 12 * 60000, RES_LATE_MS = 75 * 60000, RES_WAIT_MS = 4 * 60000;
+const slug = (s: string) => String(s || "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "");
+export const resultKey = (atMs: number, cur: string, title: string) => "E" + atMs + ":" + cur + ":" + slug(title);
+function resultLine(rule: string, es: boolean, r: Any) {
+  const bits: string[] = [];
+  if (/\d/.test(r.forecast || "")) bits.push(tr("w_fc", es).replace("{F}", String(r.forecast)));
+  if (/\d/.test(r.previous || "")) bits.push(tr("w_pv", es).replace("{P}", String(r.previous)));
+  return tr(rule, es).replace("{CUR}", r.currency).replace("{N}", String(r.title)).replace("{A}", String(r.actual))
+    .replace("{W}", String(r.actual_prev || "")).replace("{X}", bits.length ? " (" + bits.join(", ") + ")" : "");
+}
+export async function resultsTick(admin: Any, onlyUser?: string) {
+  const now = clock();
+  let rows: Any[] = [];
+  if (DRY && DRY_EVENTS) rows = DRY_EVENTS;
+  else {
+    const { data } = await admin.from("calendar_events").select("at, timed, currency, title, impact, forecast, previous, actual, actual_at, actual_prev")
+      .gte("at", new Date(now - 4 * 3600000).toISOString()).lte("at", new Date(now).toISOString());
+    rows = data || [];
+  }
+  const num = (r: Any) => /\d/.test(r.forecast || "") || /\d/.test(r.previous || "");
+  const byAt: Record<string, Any[]> = {};
+  rows.forEach((r) => {
+    const ms = Date.parse(r.at);
+    if (String(r.impact || "").toLowerCase() !== "high" || r.timed === false || !num(r) || !Number.isFinite(ms)) return;
+    (byAt[ms] = byAt[ms] || []).push({ ...r, currency: String(r.currency || "").toUpperCase() });
+  });
+  const outs: { at: number; rule: string; r: Any }[] = [];
+  for (const k of Object.keys(byAt)) {
+    const at = Number(k), all = byAt[k], have = all.filter((r) => r.actual && r.actual_at);
+    const fresh = have.filter((r) => now - Date.parse(r.actual_at) <= RES_FRESH_MS);
+    if (!fresh.length) continue;
+    const ready = have.length === all.length || have.some((r) => now - Date.parse(r.actual_at) >= RES_WAIT_MS);
+    if (ready) fresh.filter((r) => !r.actual_prev && Date.parse(r.actual_at) - at <= RES_LATE_MS).forEach((r) => outs.push({ at, rule: "news_out", r }));
+    fresh.filter((r) => r.actual_prev).forEach((r) => outs.push({ at, rule: "news_fix", r }));
+  }
+  if (!outs.length) return { results: 0 };
+  let users: string[] = [];
+  if (onlyUser) users = [onlyUser];
+  else {
+    const { data: subs } = await admin.from("push_subscriptions").select("user_id");
+    users = Array.from(new Set((subs || []).map((r: Any) => String(r.user_id))));
+  }
+  const sent: string[] = [];
+  await Promise.all(users.map(async (userId) => {
+    try {
+      const ctx = await loadCtx(admin, userId); if (!ctx) return;
+      const c = cfgOf(ctx.j); if (!c.on || !(c.news > 0)) return;
+      const tz = tzOf(ctx.j), es = esOf(ctx.j);
+      const open = await openNow(admin, ctx, userId, now);
+      const curs = myCurs(ctx.j);
+      open.forEach((o) => cursOf(o.symbol).forEach((x) => { if (curs.indexOf(x) === -1) curs.push(x); }));
+      let items: Item[] = [];
+      for (const o of outs) {
+        const cur = o.r.currency;
+        if (curs.indexOf(cur) === -1) continue;
+        const holding = open.some((x) => cursOf(x.symbol).indexOf(cur) !== -1);
+        if (!holding && !newsMatters(ctx.j, tz, { at: o.at, curs: [cur], titles: [] }, now)) continue;
+        items.push({ rule: o.rule, key: o.rule + ":" + resultKey(o.at, cur, o.r.title), text: resultLine(o.rule, es, o.r) });
+      }
+      // A correction is for someone who was told the first figure.
+      const fixes = items.filter((x) => x.rule === "news_fix");
+      if (fixes.length && !DRY) {
+        const firstKey = (x: Item) => "news_out:" + x.key.slice("news_fix:".length);
+        const { data: told } = await admin.from("nudge_pushes").select("key").eq("user_id", userId).in("key", fixes.map(firstKey)).gte("day", utcDay(now - 86400000));
+        const toldSet = new Set((told || []).map((t: Any) => String(t.key)));
+        items = items.filter((x) => x.rule !== "news_fix" || toldSet.has(firstKey(x)));
+      }
+      // The app reads the figure within seconds while a release is fresh: give an open window time to claim it.
+      const r = await deliver(admin, userId, "nudge", items, es, 30000, "title_res");
+      if (r && r.length) sent.push(userId.slice(0, 6) + ":" + r.join(","));
+    } catch (_) { /* one member never stops the rest */ }
+  }));
+  return { results: outs.length, resultUsers: users.length, resultsSent: sent };
+}
+
 // ---------- the red-news timer (nudge-cron, every minute while red news is under an hour away) ----------
 export async function newsTick(admin: Any) {
   const now = clock(), news = await redNews(admin, now, now + 61 * 60000);
@@ -704,15 +808,7 @@ export async function newsTick(admin: Any) {
       const ctx = await loadCtx(admin, userId); if (!ctx) return;
       const c = cfgOf(ctx.j); if (!c.on || !(c.news > 0)) return;
       const tz = tzOf(ctx.j), es = esOf(ctx.j);
-      // Open now: the server's open rows that the EA is still announcing (seen in the last 2 minutes).
-      const open0 = ctx.rows.filter((r) => !r.closed_at);
-      let open: Row[] = [];
-      if (open0.length) {
-        const { data: lt } = await admin.from("live_trades").select("ticket, seen_at, closed_at").eq("account", userId).in("ticket", open0.map((r) => r.ticket));
-        const live = new Set((lt || []).filter((x: Any) => !x.closed_at && x.seen_at && now - Date.parse(x.seen_at) < 120000).map((x: Any) => Number(x.ticket)));
-        if (DRY) DRY_ROWS.forEach((x) => { if (!x.closed_at) live.add(Number(x.ticket)); });
-        open = open0.filter((r) => live.has(r.ticket) && !isCopy(ctx, r) && !sepLogin(ctx, r.login));
-      }
+      const open = await openNow(admin, ctx, userId, now);
       const curs = myCurs(ctx.j);
       open.forEach((o) => cursOf(o.symbol).forEach((x) => { if (curs.indexOf(x) === -1) curs.push(x); }));
       const items: Item[] = [];
