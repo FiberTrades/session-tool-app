@@ -95,13 +95,14 @@
   ok('today reads as the real trade alone', outReal === outBoth && !!outReal, [outReal, outBoth]);
   ok('the community post is the same with or without the separate trade', !!msgReal && !/^ERR/.test(msgReal) && msgReal === msgBoth, [msgReal.length, msgBoth.length, msgBoth.slice(0, 200)]);
   ok('the Session Review itself still holds both', allReviewTrades().length === 2);
-  // a review made ONLY of trades on the separate account posts its numbers, and says which kind of account (never 'practice': it may be a real one)
+  // a review made ONLY of trades on the hidden account posts its numbers, and says what that means to a reader:
+  // "Yes (2 trades, not counted on the leaderboard)" - never 'practice' (it may be a real account), never 'hidden'
   var sepW = Object.assign({}, sepT, { id: 'rv3', result: 'Win', r: 6, pips: 3000, actualGross: 3000, entryTime: '09:40', exitTime: '09:55' });
   data.review.trades = [sepT, sepW];
   var msgPr = ''; try { msgPr = buildReviewMessage(); } catch (e) { msgPr = 'ERR ' + e.message; }
-  ok('a review of separate-account trades alone posts as traded on a separate account', /On a separate account/.test(msgPr) && !/practice/i.test(msgPr) && /2 trades/.test(msgPr) && !/Observed Only/.test(msgPr) && !/^ERR/.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 420));
+  ok('a review of hidden-account trades alone posts its trades, marked not counted on the leaderboard', /Yes/.test(msgPr) && /2 trades, not counted on the leaderboard\)/.test(msgPr) && !/practice|hidden|separate/i.test(msgPr) && !/Observed Only/.test(msgPr) && !/^ERR/.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 420));
   ok('with its numbers', /1W/i.test(msgPr.replace(/\u001b\[[0-9;]*m/g, '')) || /Win/i.test(msgPr), msgPr.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 900));
-  ok('a review of counted trades says plain Yes', !/separate account/i.test(msgReal) && /Yes/.test(msgReal) && /Traded:/.test(msgReal.replace(/\u001b\[[0-9;]*m/g, '')), msgReal.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 300));
+  ok('a review of counted trades says plain Yes', !/not counted/i.test(msgReal) && /Yes/.test(msgReal) && /Traded:/.test(msgReal.replace(/\u001b\[[0-9;]*m/g, '')), msgReal.replace(/\u001b\[[0-9;]*m/g, '').slice(0, 300));
   data.review = keepRev || { trades: [] }; data.reviewSlots = keepSlots || null;
   // E) Settings: the option, the badge, the note and the totals
   var modal = document.getElementById('settings-modal-bg'); modal.classList.add('show');
@@ -112,8 +113,8 @@
   var rows = Array.from(modal.querySelectorAll('.settings-account-row')), rowOf = function (nm) { return rows.filter(function (r) { return r.querySelector('.san-txt') && r.querySelector('.san-txt').textContent === nm; })[0]; };
   var r3 = rowOf('Demo 70K'), r1 = rowOf('Live 70K');
   if (!r3 || !r1) { ok('Settings: the account rows are on screen', false, [rows.length, modal.innerText.slice(0, 200)]); return out; }
-  ok('Settings: the separate account wears a Separate badge and says what it means', !!r3 && /separate/i.test((r3.querySelector('.settings-account-badge') || {}).textContent || '') && !!r3.querySelector('.settings-account-sepnote') && /leaderboard/.test(r3.querySelector('.settings-account-sepnote').textContent), r3 && r3.innerText.slice(0, 200));
-  ok('Settings: its menu offers the way back, the others offer Keep separate', !!r3.querySelector('[data-action="unseparate"]') && !r3.querySelector('[data-action="separate"]') && !!r1.querySelector('[data-action="separate"]') && !r1.querySelector('.settings-account-sepnote'), [!!r3.querySelector('[data-action="unseparate"]'), !!r1.querySelector('[data-action="separate"]')]);
+  ok('Settings: the hidden account wears a Hidden badge and says what it means', !!r3 && /^hidden$/i.test(((r3.querySelector('.settings-account-badge') || {}).textContent || '').trim()) && /Hidden from All accounts/i.test((r3.querySelector('.settings-account-sepnote') || {}).textContent || '') && !!r3.querySelector('.settings-account-sepnote') && /leaderboard/.test(r3.querySelector('.settings-account-sepnote').textContent), r3 && r3.innerText.slice(0, 200));
+  ok('Settings: its menu offers Show in All accounts, the others Hide from All accounts', !!r3.querySelector('[data-action="unseparate"]') && /^Show in All accounts$/i.test(r3.querySelector('[data-action="unseparate"]').textContent.trim()) && !r3.querySelector('[data-action="separate"]') && !!r1.querySelector('[data-action="separate"]') && /^Hide from All accounts$/i.test(r1.querySelector('[data-action="separate"]').textContent.trim()) && !r1.querySelector('.settings-account-sepnote'), [!!r3.querySelector('[data-action="unseparate"]'), !!r1.querySelector('[data-action="separate"]')]);
   var tot = modal.querySelector('.settings-account-total') || modal.querySelector('.sat-sub');
   var totTxt = (modal.querySelector('.sat-sub') || {}).textContent || '';
   ok('Settings: the combined totals count two accounts, not three', /\b2\b/.test(totTxt) && !/\b3\b/.test(totTxt), totTxt);
@@ -130,7 +131,19 @@
   // the picker tags it
   try { renderScopePicker(); } catch (e) {}
   var item = document.querySelector('.scope-picker-item[data-scope-id="' + a3.id + '"]');
-  ok('the account picker tags it', !item || !!item.querySelector('.scope-picker-sep'), item ? item.innerHTML : 'picker rows not rendered');
+  ok('the account picker tags it hidden', !item || (!!item.querySelector('.scope-picker-sep') && /hidden/i.test(item.querySelector('.scope-picker-sep').textContent)), item ? item.innerHTML : 'picker rows not rendered');
+  // Risk rules: the Max trades box and the Consistency box sit on the right, in line with their titles, the size of the others
+  try {
+    try { window.__stSettingsRows(); } catch (e) {}
+    var rsec = document.querySelector('#settings-modal-bg .settings-section[data-section="risk_rules"]'), keepDisp = rsec.style.display, smod = document.getElementById('settings-modal-bg'), wasShown = smod.classList.contains('show'); smod.classList.add('show'); rsec.style.display = ''; await W(200);
+    var box = function (id) { var el = document.getElementById(id), row = el.closest('.set-row'), r = el.getBoundingClientRect(), lab = row ? row.querySelector('.set-l .settings-label') : null, lr = lab ? lab.getBoundingClientRect() : { top: -999, right: 0 };
+      return { w: Math.round(r.width), inRight: !!el.closest('.set-r'), row: !!row, hintLeft: !!(row && row.querySelector('.set-l .settings-hint')), right: r.left >= lr.right - 1, dy: Math.round(r.top - lr.top) }; };
+    var ref = box('settings-risk-profit-target'), mt = box('settings-risk-max-trades'), cs = box('settings-risk-consistency');
+    var wide = innerWidth > 560;
+    ok('Risk rules: the Max trades box is the size of the boxes above, on the right', mt.row && mt.inRight && mt.hintLeft && ref.w > 60 && mt.w === ref.w && (!wide || mt.right), [ref, mt]);
+    ok('Risk rules: the Consistency box is on the right, in line with its title, the same size', cs.row && cs.inRight && cs.hintLeft && ref.w > 60 && cs.w === ref.w && (!wide || (cs.right && Math.abs(cs.dy) <= 12)), [ref, cs]);
+    rsec.style.display = keepDisp; if (!wasShown) smod.classList.remove('show');
+  } catch (e) { ok('Risk rules boxes', false, String(e && e.stack || e).slice(0, 300)); }
   // Live nudges: the main account allows 1 trade a day; the separate demo is traded several times on the same sync
   // token. Its trades raise no nudge and are not counted; the same trades on a counted account would break the limit.
   try {

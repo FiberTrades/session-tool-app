@@ -812,6 +812,9 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   #settings-modal-bg .set-r { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; min-width: 0; }
   #settings-modal-bg .set-r > * { margin-top: 0 !important; max-width: 100%; }
   #settings-modal-bg .set-r .settings-pref-row { margin: 0; }
+  /* Risk rules: every box the same width (11 Oct 2026). A box's width came from the words after it - 230px beside
+     "£ amount", 261px beside "% of balance", and Max trades, with nothing after it, was the width of the column. */
+  #settings-modal-bg .settings-section[data-section="risk_rules"] .set-r > .settings-risk-input-row { width: 230px; }
   @media (max-width: 560px) {
     #settings-modal-bg .settings-section.set-cardsec { padding: 4px 14px 6px; }
     #settings-modal-bg .set-row { grid-template-columns: minmax(0, 1fr); gap: 10px; padding: 14px 0; }
@@ -7871,13 +7874,17 @@ try {
       </div>
       <p class="settings-hint" data-i18n="settings.risk_be_threshold_hint">When your broker's trades auto-import, a net result within this band of zero is logged as break-even (BE) rather than a small win or loss. Set as % of balance or a fixed amount.</p>
 
+      <!-- Max trades and the Consistency rule are a plain label + an input row + a hint, like the rules above, so the
+           row builder (stSettingsRows) puts each box on the right, in line with its title and at the same size as the
+           others (Nestor, 11 Oct 2026: the Max trades box was the full width of the column, and the Consistency box sat
+           under its title on the left). -->
       <label class="settings-label" style="margin-top:18px;" data-i18n="settings.risk_max_trades_label">Max trades per session</label>
-      <input type="number" id="settings-risk-max-trades" class="settings-input settings-input-compact" step="1" min="0" placeholder="5" />
+      <div class="settings-risk-input-row">
+        <input type="number" id="settings-risk-max-trades" class="settings-input settings-input-compact" step="1" min="0" placeholder="5" />
+      </div>
       <p class="settings-hint" data-i18n="settings.risk_max_trades_hint">Number of trades you allow yourself per session before stopping, win or lose. Helps prevent overtrading and revenge trades. If you trade more than one symbol, each symbol has its own count.</p>
 
-      <div class="settings-risk-input-row" style="margin-top:18px;">
-        <label class="settings-label" style="margin:0;" data-i18n="settings.risk_consistency_label">Consistency rule</label>
-      </div>
+      <label class="settings-label" style="margin-top:18px;" data-i18n="settings.risk_consistency_label">Consistency rule</label>
       <div class="settings-risk-input-row">
         <input type="number" id="settings-risk-consistency" class="settings-input settings-input-compact" step="1" min="0" max="100" placeholder="40" />
         <span class="settings-risk-suffix" data-i18n="settings.risk_consistency_suffix">% of total profit</span>
@@ -17068,7 +17075,7 @@ try {
       if (expanded.accounts) {
         active.forEach(acc => {
           const cls = 'scope-picker-item' + (scopeId === acc.id ? ' active' : '');
-          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}${acc.separate ? '<span class="scope-picker-sep">' + window._stT('separate', 'aparte') + '</span>' : ''}</button>`);
+          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}${acc.separate ? '<span class="scope-picker-sep">' + window._stT('hidden', 'oculta') + '</span>' : ''}</button>`);
         });
       }
     }
@@ -24606,9 +24613,10 @@ try {
     // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
     /* An account kept separate (11 Oct 2026). A review that also holds trades on accounts that count posts those
        alone - a separate account's trade must not pad that session's numbers. A review whose trades are ALL on a
-       separate account posts its numbers, and says so on the Traded line: it had read "No - Observed Only", which was
-       not true. The line says "separate", the app's own word, not "practice": Nestor, the same day - "it might be an
-       actual account and not a practice one". */
+       separate account posts its numbers, and says what that means to the people reading: "Yes (2 trades, not counted
+       on the leaderboard)". It had read "No - Observed Only", which was not true; then "On a practice account" (Nestor:
+       "it might be an actual account and not a practice one"); the account is "hidden" in Settings, but a post saying
+       "hidden account" would read as hiding something, so the post says the fact instead (11 Oct 2026). */
     const _revRows = data.review.trades || [], _revReal = _noSep(_revRows);
     const _sepOnly = _revRows.length > 0 && _revReal.length === 0;
     const _postRows = _sepOnly ? _revRows : _revReal;
@@ -24770,8 +24778,8 @@ try {
     // copies across all logged setups. A session with 2 logged setups and copies=3
     // on each reads as 6 trades total in the Discord summary.
     const totalExecs = _allT.reduce((s, t) => s + tradeCopies(t), 0);
-    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}${_sepOnly ? 'On a separate account' : 'Yes'}${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
-      + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + `)`);
+    statsBlock.push(`${A.lbl}${'Traded:'.padEnd(PAD)}${A.reset}${A.good}Yes${A.reset} (` + `${totalExecs} trade${totalExecs === 1 ? '' : 's'}`
+      + (_cpN > 1 ? ` - copied to ${_cpN} accounts` : '') + (_sepOnly ? ', not counted on the leaderboard' : '') + `)`);
     // Summary counts — copy-weighted W/L/BE tallies so the post matches what the
     // user sees on the Statistics tab. Same idiom as the Weekly + Series-of-10
     // exports.
@@ -52715,7 +52723,7 @@ try {
         const rowCls = ['settings-account-row'];
         if (isArchived) rowCls.push('archived');
         const badgeKey = isArchived ? 'archived' : (acc.separate ? 'separate' : 'active');
-        const badgeText = isArchived ? tt('settings.archive') : (acc.separate ? window._stT('Separate', 'Aparte') : tt('settings.active_now'));
+        const badgeText = isArchived ? tt('settings.archive') : (acc.separate ? window._stT('Hidden', 'Oculta') : tt('settings.active_now'));
         const pctCls = s.pct > 0 ? 'good' : s.pct < 0 ? 'bad' : '';
         const pctSign = s.pct > 0 ? '+' : '';
         // Action buttons: Rename is always available (single or multi-account).
@@ -52750,10 +52758,12 @@ try {
         // Link MT5 account (11 Oct 2026): which MT5 account number's trades belong to this account - see openLinkMt5.
         if (!isArchived) _mi.push(`<button type="button" role="menuitem" data-action="linkmt5" data-id="${acc.id}">${window._stT('Link MT5 account', 'Vincular cuenta MT5')}</button>`);
         if (!isSingleAccount) {
-          // Keep separate (11 Oct 2026): the account stays tradable but out of everything combined - see _sepIds().
+          // Hide from All accounts (11 Oct 2026; first called "Keep separate" - Nestor the same day: "should it be called,
+          // hide from all accounts? and ... the blue label be called hidden?"). In the code it is still acc.separate: the
+          // account stays tradable but out of everything combined - see _sepIds().
           if (!isArchived || acc.separate) _mi.push(acc.separate
-            ? `<button type="button" role="menuitem" data-action="unseparate" data-id="${acc.id}">${window._stT('Count with the others', 'Contar con las demás')}</button>`
-            : `<button type="button" role="menuitem" data-action="separate" data-id="${acc.id}">${window._stT('Keep separate', 'Mantener aparte')}</button>`);
+            ? `<button type="button" role="menuitem" data-action="unseparate" data-id="${acc.id}">${window._stT('Show in All accounts', 'Mostrar en Todas las cuentas')}</button>`
+            : `<button type="button" role="menuitem" data-action="separate" data-id="${acc.id}">${window._stT('Hide from All accounts', 'Ocultar de Todas las cuentas')}</button>`);
           _mi.push(isArchived
             ? `<button type="button" role="menuitem" data-action="unarchive" data-id="${acc.id}">${tt('settings.unarchive')}</button>`
             : `<button type="button" role="menuitem" data-action="archive" data-id="${acc.id}">${tt('settings.archive')}</button>`);
@@ -52812,7 +52822,7 @@ try {
           </div>
           ${payLine}
           ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">${window._stT('MT5 login', 'Login MT5')} ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
-          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Kept apart: not counted in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Aparte: no cuenta en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
+          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Hidden from All accounts: not counted there, in your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Oculta de Todas las cuentas: no cuenta ahí, ni en tu Serie de 10, tus rachas o la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -53330,7 +53340,7 @@ try {
         const on = (action === 'separate');
         // At least one active account has to count, or All accounts would be empty with no way to tell why.
         if (on && !data.accounts.some(a => a && a.id !== id && a.status === 'active' && !a.separate)) {
-          (typeof showToast === 'function' ? showToast : alert)(window._stT('At least one account has to count. Add another account first, or stop keeping another one separate.', 'Al menos una cuenta tiene que contar. Añade otra cuenta primero, o deja de mantener aparte otra.'), { duration: 7000 });
+          (typeof showToast === 'function' ? showToast : alert)(window._stT('At least one account has to count. Add another account first, or show another hidden one in All accounts.', 'Al menos una cuenta tiene que contar. Añade otra cuenta primero, o muestra otra oculta en Todas las cuentas.'), { duration: 7000 });
           return;
         }
         setAccountSeparate(id, on);
