@@ -41,6 +41,10 @@
 -- drops a new trial member's example journal (data.demo; the example account, its trades and series, its
 -- weekly/monthly reviews) so sample data can never score. A journal without data.demo comes back untouched;
 -- the board was fingerprinted before and after the change (57 rows, md5 identical). Needs st_journal_nodemo.sql.
+-- 2026-10-11 (SEPARATE ACCOUNTS): an account the member keeps separate (Settings > Accounts > Options > Keep
+-- separate; "separate": true on the account) takes no part - see the sep_acc CTE. Proven a no-op while no account is
+-- separate (board fingerprinted before and after), and that marking a real account separate removes exactly its trades
+-- (inside a DO block that raised, so nothing was kept).
 --
 CREATE OR REPLACE FUNCTION public.st_rebuild_leaderboard()
  RETURNS void
@@ -111,6 +115,7 @@ begin
       from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
       cross join lateral jsonb_array_elements(coalesce(j.data -> 'accounts', '[]'::jsonb)) a(obj)
       where coalesce(a.obj ->> 'status', 'active') = 'active'
+        and coalesce(a.obj ->> 'separate', 'false') <> 'true'   -- an account kept separate is not one of them
       union all
       select
         j.user_id,
@@ -226,6 +231,21 @@ begin
         where jsonb_typeof(a.obj) = 'object' and nullif(a.obj ->> 'id', '') is not null
       ) x
       order by x.user_id, x.acc_id
+    ),
+    -- 2026-10-11 (SEPARATE ACCOUNTS - Nestor: "an option to toggle on an account that i just want to keep apart
+    -- from evrey account in the app"): an account carrying "separate": true is its own little journal in the app and
+    -- takes no part here. Its EA trades (found through tacc: the journal's accountId for the ticket, else the EA
+    -- login's mapped account) and its typed trades are left out of raw, so nothing downstream ever sees them; it is
+    -- not one of the active accounts whose limits make the fallback; and its trades never set "the last trade of
+    -- the day" a review has to come after. With no separate account anywhere this changes nothing.
+    sep_acc as (
+      select j.user_id, a.obj ->> 'id' as acc_id
+        from journals j
+        cross join lateral jsonb_array_elements(case when jsonb_typeof(j.data -> 'accounts') = 'array'
+                                                     then j.data -> 'accounts' else '[]'::jsonb end) a(obj)
+       where jsonb_typeof(a.obj) = 'object'
+         and a.obj ->> 'separate' = 'true'
+         and nullif(a.obj ->> 'id', '') is not null
     ),
     tacc as (
       select distinct on (z.user_id, z.ticket) z.user_id, z.ticket, z.acc_id
@@ -393,8 +413,11 @@ begin
           from trades_verified tv0
          where tv0.close_time is not null
            and tv0.pnl is not null
+           and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
+                            where ta.user_id = tv0.user_id and ta.ticket = tv0.ticket::text)   -- not on an account kept separate
         union all
-        select * from jtr
+        select jt.* from jtr jt
+         where not exists (select 1 from sep_acc sa where sa.user_id = jt.user_id and sa.acc_id = jt.acc_m)
       ) lt
     ),
     grp as (
@@ -671,6 +694,8 @@ begin
                  from trades_verified t2
                 where t2.user_id = m.sender_id
                   and t2.close_time is not null
+                  and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
+                                   where ta.user_id = t2.user_id and ta.ticket = t2.ticket::text)
                   and (t2.close_time at time zone coalesce(s.tz,'Europe/London'))::date
                       = (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date),
               time '00:00')   -- no trades that day: any time counts
@@ -706,6 +731,7 @@ begin
       cross join lateral jsonb_array_elements(coalesce(j.data->'history','[]'::jsonb)) s
       where jsonb_array_length(coalesce(s.value->'trades','[]'::jsonb)) = 10
         and (s.value->>'date') ~ '^\d{4}-\d{2}-\d{2}'
+        and coalesce(s.value->>'separate', 'false') <> 'true'   -- the app parks separate accounts' trades in one such entry
     ),
     posts as (
       select user_id, sum(n)::bigint as n
@@ -803,6 +829,8 @@ begin
                  from trades_verified t2
                 where t2.user_id = m.sender_id
                   and t2.close_time is not null
+                  and not exists (select 1 from tacc ta join sep_acc sa on sa.user_id = ta.user_id and sa.acc_id = ta.acc_id
+                                   where ta.user_id = t2.user_id and ta.ticket = t2.ticket::text)
                   and (t2.close_time at time zone coalesce(s.tz,'Europe/London'))::date
                       = (m.created_at at time zone coalesce(s.tz,'Europe/London'))::date),
               time '00:00')   -- no trades that day: any time counts

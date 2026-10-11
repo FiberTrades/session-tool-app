@@ -961,6 +961,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-account-badge { flex: 0 0 auto; white-space: nowrap; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase; padding: 2px 6px; border: 1px solid var(--border-2); border-radius: var(--radius-chip); color: var(--text-dim); }
   .settings-account-badge.active { color: var(--good); border-color: var(--good); }
   .settings-account-badge.archived { color: var(--text-dim); border-color: var(--text-dim); }
+  /* An account kept separate (11 Oct 2026): a blue badge, one line saying what that means, and a tag in the picker. */
+  .settings-account-badge.separate { color: #5b9bff; border-color: #5b9bff; }
+  .settings-account-row > .settings-account-sepnote { grid-column: 1 / -1; margin-top: 10px; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+  .scope-picker-sep { margin-left: 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.14em; text-transform: uppercase; color: #5b9bff; }
   .settings-archived-group { border-top: 1px solid var(--border); padding-top: 4px; }
   .settings-archived-group > summary { cursor: pointer; list-style: none; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--text-dim); padding: 10px 0; user-select: none; display: flex; align-items: center; gap: 9px; }
   .settings-archived-group > summary::-webkit-details-marker { display: none; }
@@ -16351,7 +16355,7 @@ try {
       return (data.settings && data.settings.startingBalance) || 0;
     }
     return data.accounts
-      .filter(a => a.status === 'active')
+      .filter(a => a.status === 'active' && !a.separate)
       .reduce((sum, a) => sum + (a.startingBalance || 0), 0);
   }
   function getStatsLifetimeStartingBalance() {
@@ -16363,7 +16367,7 @@ try {
     if (!Array.isArray(data.accounts) || data.accounts.length === 0) {
       return (data.settings && data.settings.startingBalance) || 0;
     }
-    return data.accounts.reduce((sum, a) => sum + (a.startingBalance || 0), 0);
+    return data.accounts.reduce((sum, a) => sum + ((a && a.separate) ? 0 : (a.startingBalance || 0)), 0);
   }
   // -----------------------------------------------------------------------------
   // Per-trade account starting balance — THE core helper for the option-2
@@ -16469,6 +16473,52 @@ try {
     var def = (data.settings.symbols && data.settings.symbols[0]) || data.settings.pair || 'EUR/USD';
     return trades.filter(function (t) { return (t && (t.symbol || def)) === statsSymbolFilter; });
   }
+  /* ===== Separate accounts (11 Oct 2026) =====
+     Nestor: "an option to toggle on an account that i just want to keep apart from evrey account in the app" - a demo
+     he tests gold on, say. acc.separate = true (Settings > Accounts > Options > Keep separate) makes the account its
+     own little journal: its trades show only when that account is picked in the account picker, and everything
+     COMBINED leaves them out - All accounts, the Series of 10, streaks, the greeting, the assistant's figures, the
+     community post and the leaderboard (server: st_rebuild_leaderboard). Nothing is deleted or moved: switch it off
+     and its whole history counts again.
+     - The store is unchanged except for the series chunks: rebuildSeriesByDate keeps separate trades out of the tens
+       and parks them in ONE trailing data.history entry marked { separate: true }, so whatever finds, edits, syncs or
+       de-duplicates a trade by walking the store still sees them. Read completed series through _seriesHist(),
+       never data.history.
+     - getAllLifetimeTrades() stays the RAW list: balances, prop status, nudges and imports need every trade. A reader
+       that shows a COMBINED figure and does not go through filterByScope passes its list through _sepView(). */
+  function _sepIds() {
+    const out = new Set();
+    try { (Array.isArray(data.accounts) ? data.accounts : []).forEach(a => { if (a && a.separate) out.add(a.id); }); } catch (e) {}
+    return out;
+  }
+  function isSeparateAccount(id) { return !!id && _sepIds().has(id); }
+  function _noSep(list) {
+    const ids = _sepIds();
+    if (!ids.size || !Array.isArray(list)) return list;
+    return list.filter(t => !(t && t.accountId && ids.has(t.accountId)));
+  }
+  // What a combined figure may read: on a separate account's own view, that account's trades; anywhere else, every
+  // trade but the separate accounts'.
+  function _sepView(list) {
+    const ids = _sepIds();
+    if (!ids.size || !Array.isArray(list)) return list;
+    let r = null; try { r = currentScopeResolved(); } catch (e) {}
+    if (r && r.kind === 'account' && ids.has(r.account.id)) return list.filter(t => t && t.accountId === r.account.id);
+    return list.filter(t => !(t && t.accountId && ids.has(t.accountId)));
+  }
+  // Completed series, newest first - without the parked entry holding the separate accounts' trades.
+  function _seriesHist() { return (Array.isArray(data.history) ? data.history : []).filter(h => h && !h.separate); }
+  function setAccountSeparate(id, on) {
+    const acc = getAccountById(id);
+    if (!acc) return false;
+    acc.separate = !!on;   // an explicit false, not a deleted key: another device's copy must see the change, not an absence
+    try { syncEffectiveStartingBalance(); } catch (e) {}
+    try { rebuildSeriesByDate(); } catch (e) {}
+    saveData();
+    return true;
+  }
+  try { window.__stSep = { ids: _sepIds, is: isSeparateAccount, strip: _noSep, view: _sepView, hist: _seriesHist, set: setAccountSeparate }; } catch (e) {}
+
   // Nestor's rule (29 Sep 2026): viewing more than one account, a trade copied to your other accounts is ONE trade -
   // one result, its R once, every account's money added (_ideaMerge). The merged rows are views: they carry the Lead
   // trade's id, so opening one edits the real trade. One account's view is its own trades, untouched.
@@ -16480,7 +16530,7 @@ try {
   function filterByScopeRaw(trades) {
     if (!Array.isArray(trades)) return [];
     const r = currentScopeResolved();
-    if (r.kind === 'lifetime') return trades.slice();
+    if (r.kind === 'lifetime') return _noSep(trades.slice());   // All accounts never includes a separate account's trades
     if (r.kind === 'account') {
       return trades.filter(t => t && t.accountId === r.account.id);
     }
@@ -16488,7 +16538,7 @@ try {
       const idSet = new Set(r.accountIds);
       return trades.filter(t => t && idSet.has(t.accountId));
     }
-    return trades.slice();
+    return _noSep(trades.slice());
   }
   function accBaseline(a) {
     if (!a) return 0;
@@ -16507,8 +16557,8 @@ try {
     if (r.kind === 'group') {
       return r.accountIds.reduce((sum, id) => sum + accBaseline(accs.find(x => x.id === id)), 0);
     }
-    // lifetime: every account's baseline, summed
-    return accs.reduce((sum, a) => sum + accBaseline(a), 0);
+    // lifetime: every account's baseline, summed (a separate account's is not part of All accounts)
+    return accs.reduce((sum, a) => sum + ((a && a.separate) ? 0 : accBaseline(a)), 0);
   }
   // ---------------------------------------------------------------------------
   // PAYOUTS - money taken OUT of an account: a prop-firm payout, or your own withdrawal.
@@ -16538,7 +16588,7 @@ try {
     const accs = (Array.isArray(data.accounts) ? data.accounts : []);
     if (r.kind === 'account') return accPaidOut(r.account);
     if (r.kind === 'group') return r.accountIds.reduce((sum, id) => sum + accPaidOut(accs.find(x => x.id === id)), 0);
-    return accs.reduce((sum, a) => sum + accPaidOut(a), 0);
+    return accs.reduce((sum, a) => sum + ((a && a.separate) ? 0 : accPaidOut(a)), 0);
   }
   window.__stPayouts = { list: accPayouts, received: payoutReceived, paidOut: accPaidOut };
   function getScopedSB() {
@@ -16841,7 +16891,7 @@ try {
       // Ten IDEAS a series (rebuildSeriesByDate), and each copied trade shows as ONE trade: one result, its R once,
       // every account's money (Nestor, 29 Sep 2026).
       return { currentSeries: _ideaMerge(data.currentSeries || []),
-               history: (data.history || []).map(h => Object.assign({}, h, { trades: _ideaMerge((h && h.trades) || []) })) };
+               history: _seriesHist().map(h => Object.assign({}, h, { trades: _ideaMerge((h && h.trades) || []) })) };
     }
     // For account or group scope, rebuild 10-idea chunks from filtered trades
     // sorted chronologically. filterByScope() already handles the account-vs-
@@ -17002,7 +17052,7 @@ try {
       if (expanded.accounts) {
         active.forEach(acc => {
           const cls = 'scope-picker-item' + (scopeId === acc.id ? ' active' : '');
-          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}</button>`);
+          parts.push(`<button type="button" class="${cls}" data-scope-id="${acc.id}">${escHtmlGlobal(accDisplayName(acc))}${acc.separate ? '<span class="scope-picker-sep">' + window._stT('separate', 'aparte') + '</span>' : ''}</button>`);
         });
       }
     }
@@ -17812,12 +17862,18 @@ try {
   }
   function rebuildSeriesByDate() {
     let all = getAllLifetimeTrades();
+    // A separate account's trades take no place in the tens (11 Oct 2026): they are parked, in date order, in one
+    // trailing history entry marked { separate: true } - still in the store, never a series. See _seriesHist().
+    const _sep = _sepIds();
+    const parked = _sep.size ? all.filter(t => t && t.accountId && _sep.has(t.accountId)) : [];
+    if (parked.length) all = all.filter(t => !(t && t.accountId && _sep.has(t.accountId)));
     all.sort(_tradeChronoCompare);
     // Ten IDEAS a series: a trade copied to your other accounts rides in its idea's series (28 Sep 2026).
     const ck = _chunkIdeas(all);
     data.history = [];
     ck.chunks.forEach(chunk => { data.history.unshift({ trades: chunk, date: chunk[chunk.length - 1].date }); });
     data.currentSeries = ck.pending;
+    if (parked.length) { parked.sort(_tradeChronoCompare); data.history.push({ trades: parked, separate: true, date: parked[parked.length - 1].date }); }
   }
 
   function tradeNetPL(t) {
@@ -18988,6 +19044,8 @@ try {
        - a trade and its copies on other accounts (EA Trade Copier) are one idea: one nudge per rule. */
     function countedKeys(d, byT) {
       var have = {}, done = {}, seen = {}, out = [];
+      var sepIds = new Set(), sepOwn = null;
+      try { sepIds = _sepIds(); if (sepIds.size) { var sr = currentScopeResolved(); if (sr && sr.kind === 'account' && sepIds.has(sr.account.id)) sepOwn = sr.account.id; } } catch (e) {}
       try { getAllLifetimeTrades().concat(allReviewTrades()).forEach(function (tr) { var tk = tr && (tr.mt5Ticket || tr.position); if (tk != null && tk !== '') have[String(tk)] = 1; }); } catch (e) {}
       try { [].concat(data.mt5UserDismissed || [], data.mt5ImportedTickets || []).forEach(function (x) { done[String(x)] = 1; }); } catch (e) {}
       Object.keys(d || {}).forEach(function (k) {
@@ -18998,6 +19056,8 @@ try {
           if (!open) return;
         }
         var tr = byT[tk], dk = rule + ':' + (id.charAt(0) === 'P' ? 'P' : '') + ((tr && tr.ideaId) ? 'i' + tr.ideaId : tk);
+        // a nudge about a trade on an account kept separate counts only on that account's own view (11 Oct 2026)
+        if (tr && tr.accountId && sepIds.has(tr.accountId) && !(sepOwn && sepOwn === tr.accountId)) return;
         if (seen[dk]) return; seen[dk] = 1;
         out.push(k);
       });
@@ -21137,7 +21197,7 @@ try {
     var el = document.getElementById('bias-like'); if (!el) return;
     var b = data.bias || {}, st = data.settings || {};
     var all = [];
-    try { all = getAllLifetimeTrades() || []; if (typeof _ideaMerge === 'function') all = _ideaMerge(all); } catch (e) { all = []; }
+    try { all = _sepView(getAllLifetimeTrades() || []); if (typeof _ideaMerge === 'function') all = _ideaMerge(all); } catch (e) { all = []; }
     all = all.filter(function (x) { return x && (x.result === 'Win' || x.result === 'Lose' || x.result === 'BE'); });
     var snap = function (x) { return x.biasSnap || {}; };
     if ((st.symbols || []).length > 1 && b.symbol) all = all.filter(function (x) { return (x.symbol || snap(x).symbol || '') === b.symbol; });
@@ -22376,8 +22436,8 @@ try {
   function _pbTradesOf(name) {
     const n = String(name).toLowerCase();
     let all = [];
-    try { all = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []; } catch (e) { all = []; }
-    if (!all.length) try { (data.currentSeries || []).forEach(t => all.push(t)); (data.history || []).forEach(s2 => (s2.trades || []).forEach(t => all.push(t))); } catch (e) {}
+    try { all = (typeof getAllLifetimeTrades === 'function') ? _sepView(getAllLifetimeTrades()) : []; } catch (e) { all = []; }
+    if (!all.length) try { (data.currentSeries || []).forEach(t => all.push(t)); _seriesHist().forEach(s2 => (s2.trades || []).forEach(t => all.push(t))); } catch (e) {}
     return all.filter(t => t && t.setup && String(t.setup).toLowerCase() === n).sort((a, b) => new Date(b.date) - new Date(a.date));
   }
   let _pbFind = '';   // the "Find a setup" text in Your Playbook
@@ -24359,9 +24419,9 @@ try {
     } catch (e) {}
     // Trade copier: a trade copied to your other accounts is ONE trade in the post, its review written once
     // (Nestor: "count as 1 if copied"). Each keeps its own account's numbers; _ideaN says how many accounts.
-    const r = Object.assign({}, data.review, { trades: _ideaFirsts(data.review.trades || []) }), b = _reviewBias();   // this session + asset's bias (28 Sep 2026)
+    const r = Object.assign({}, data.review, { trades: _ideaFirsts(_noSep(data.review.trades || [])) }), b = _reviewBias();   // never a separate account's trades: the post is public (11 Oct 2026)   // this session + asset's bias (28 Sep 2026)
     const _cpN = r.trades.reduce((mx, tt) => Math.max(mx, (tt && tt._ideaN) || 1), 1);
-    const _allT = _ideaMerge(data.review.trades || []);   // a copied trade counts once, with every account's money (29 Sep 2026)
+    const _allT = _ideaMerge(_noSep(data.review.trades || []));   // a copied trade counts once, with every account's money (29 Sep 2026)
     // Use the picked session date in the Discord header (defaults to today, but back-fillable).
     let headerDate = _headerDateStr();
     if (r.sessionDate && r.sessionDate !== todayDateStr()) {
@@ -26019,7 +26079,7 @@ try {
   function _seriesPostSrc(sr) { return JSON.stringify(((sr && sr.trades) || []).map(x => [x.id || '', x.date || '', x.result || '', x.r == null ? '' : x.r, x.pips == null ? '' : x.pips, x.potentialR == null ? '' : x.potentialR])); }
   function paintSeriesPostBtn() {
     const btn = document.getElementById('series-share-confirm'); if (!btn) return;
-    const H = Array.isArray(data.history) ? data.history : [];
+    const H = _seriesHist();
     const sel = document.getElementById('stats-export-series');
     let i = parseInt(sel && sel.value, 10); if (isNaN(i) || i < 0 || i >= H.length) i = 0;
     const sr = H[i], key = _seriesPostKey(sr), rec = _stPostedGet(key);
@@ -26037,7 +26097,7 @@ try {
     var inp = document.getElementById('stats-export-series');
     var list = document.getElementById('series-share-list');
     if (!inp || !list) return;
-    var hist = (data && data.history) || [];
+    var hist = _seriesHist();
     var total = hist.length;
     var pfx = (window._stT ? window._stT('Series #', 'Serie #') : 'Series #');
     var cur = 0;
@@ -26063,7 +26123,7 @@ try {
     // so neither flow can be triggered from the other's button by mistake.
     function _open(mode) {
       var card = (mode === 'card');
-      if (!data.history || data.history.length === 0) { if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true }); return; }
+      if (_seriesHist().length === 0) { if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true }); return; }
       try { renderSeriesPostSelector(); } catch (e) {}
       try {
         var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
@@ -26122,7 +26182,7 @@ try {
     var T = function (en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } };
 
     function seriesAt(i) {
-      var h = (data && Array.isArray(data.history)) ? data.history : [];
+      var h = _seriesHist();
       if (!h.length) return null;
       if (!(i >= 0 && i < h.length)) i = 0;
       return { series: h[i], num: h.length - i, trades: (h[i] && h[i].trades) || [] };
@@ -26475,7 +26535,7 @@ try {
 
     btn.addEventListener('click', function () {
       var T = function (en, es) { return (window._stT ? window._stT(en, es) : en); };
-      if (!data.history || !data.history.length) {
+      if (!_seriesHist().length) {
         if (typeof showToast === 'function') showToast(t('series.no_completed_yet'), { persist: true });
         return;
       }
@@ -26538,7 +26598,7 @@ try {
     // series. data.history is ordered newest-first (via unshift on completion), so [0] is the
     // most recently completed. If no series has been completed yet, show a snackbar instead of
     // silently copying a misleading empty message.
-    if (!data.history || data.history.length === 0) {
+    if (_seriesHist().length === 0) {
       if (typeof showToast === 'function') {
         showToast(t('series.no_completed_yet'), { persist: true });
       }
@@ -26548,9 +26608,9 @@ try {
     // newest-first), defaulting to the most recent when there is no/invalid selection.
     var _sel = document.getElementById('stats-export-series');
     var _si = (_sel && _sel.value !== '' && !isNaN(parseInt(_sel.value, 10))) ? parseInt(_sel.value, 10) : 0;
-    if (_si < 0 || _si >= data.history.length) _si = 0;
-    const latestSeries = data.history[_si];
-    const seriesNum = data.history.length - _si; // newest-first: index 0 = highest number
+    if (_si < 0 || _si >= _seriesHist().length) _si = 0;
+    const latestSeries = _seriesHist()[_si];
+    const seriesNum = _seriesHist().length - _si; // newest-first: index 0 = highest number
     const _s10all = latestSeries.trades || [];
     // A trade copied to your other accounts is ONE trade: one result, its R once, every account's money (29 Sep 2026).
     const trades = _ideaMerge(_s10all);
@@ -27241,7 +27301,7 @@ try {
           var ids = sc.accountIds;
           accounts = (data.accounts || []).filter(function (a) { return a && ids.indexOf(a.id) >= 0; });
         } else {
-          accounts = (data.accounts || []).filter(function (a) { return a && a.status === 'active'; });
+          accounts = (data.accounts || []).filter(function (a) { return a && a.status === 'active' && !a.separate; });
         }
       } catch (e) { accounts = []; }
       // Only accounts carrying a firm rule have an evaluation to track — a personal account never
@@ -40051,9 +40111,9 @@ try {
       if (slots.some(b => b && b.copiedAt && today(b.copiedAt))) return true;
       if ((data.biasHistory || []).some(e => e && e.dateKey === tk && e.copiedAt)) return true;
       const done = x => x && x.date && String(x.date).slice(0, 10) === tk && (x.result || x.pnl != null);
-      const rv = (typeof allReviewTrades === 'function') ? allReviewTrades(true) : ((data.review && data.review.trades) || []);
+      const rv = (typeof allReviewTrades === 'function') ? _sepView(allReviewTrades(true)) : ((data.review && data.review.trades) || []);
       if (rv.some(done) || (data.currentSeries || []).some(done)) return true;
-      const h0 = (data.history || [])[0];
+      const h0 = _seriesHist()[0];
       if (h0 && (h0.trades || []).some(done)) return true;
     } catch (e) {}
     return false;
@@ -42050,7 +42110,7 @@ try {
     // user is logging trades for the current session — if it's not today's, the in-progress
     // trades belong to a different day and must NOT count toward today's outcome.
     // Every session's review dated today (28 Sep 2026: one per session + asset).
-    const _todayRevTrades = _reviewSlotsArr().filter(r => r && r.sessionDate && isSameDay(r.sessionDate)).reduce((a, r) => a.concat(r.trades || []), []);
+    const _todayRevTrades = _sepView(_reviewSlotsArr().filter(r => r && r.sessionDate && isSameDay(r.sessionDate)).reduce((a, r) => a.concat(r.trades || []), []));
     const reviewIsToday = _todayRevTrades.length > 0;
     // Today's saved trades from currentSeries.
     const saved = (data.currentSeries || []).filter(t => isSameDay(t.date) && t.result);
@@ -42196,10 +42256,10 @@ try {
         const idSet = new Set(s.accountIds);
         accountsInScope = (data.accounts || []).filter(a => idSet.has(a.id) && a.status === 'active');
       } else {
-        accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+        accountsInScope = (data.accounts || []).filter(a => a.status === 'active' && !a.separate);
       }
     } catch (e) {
-      accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+      accountsInScope = (data.accounts || []).filter(a => a.status === 'active' && !a.separate);
     }
     if (!accountsInScope.length) return null;
 
@@ -42304,13 +42364,13 @@ try {
           const idSet = new Set(s.accountIds);
           accountsInScope = (data.accounts || []).filter(a => idSet.has(a.id) && a.status === 'active');
         } else { // lifetime
-          accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+          accountsInScope = (data.accounts || []).filter(a => a.status === 'active' && !a.separate);
         }
       } else {
-        accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+        accountsInScope = (data.accounts || []).filter(a => a.status === 'active' && !a.separate);
       }
     } catch (e) {
-      accountsInScope = (data.accounts || []).filter(a => a.status === 'active');
+      accountsInScope = (data.accounts || []).filter(a => a.status === 'active' && !a.separate);
     }
     // Single-day matcher reused per account.
     const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -47145,7 +47205,7 @@ try {
     } catch (e) {}
     var tradedToday = false;
     try {
-      var all = ((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).concat(allReviewTrades());
+      var all = _sepView(((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).concat(allReviewTrades()));
       tradedToday = all.some(function (t) { return t && t.result && t.date && _ld(t.date) === today; });
     } catch (e) {}
     var _say = function (en, es) { return S ? es : en; };
@@ -47161,7 +47221,7 @@ try {
                     'Aún no has publicado tu revisión de sesión de hoy, ' + nm + ': suma +10 si la publicas antes de medianoche. Pregúntame lo que quieras.');
       // 3) a finished Series of 10 that hasn't been posted since it finished
       try {
-        var last = (data && Array.isArray(data.history) && data.history.length) ? data.history[0] : null;
+        var last = _seriesHist()[0] || null;
         var lastDay = last && last.date ? _ld(last.date) : '';
         var fresh = lastDay && (now.getTime() - new Date(last.date).getTime()) < 14 * 864e5;
         if (fresh && !P.series.some(function (x) { return _ld(x) >= lastDay; }))
@@ -47668,7 +47728,7 @@ try {
       try {
         input = input || {};
         var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
-        var lifetime = function () { return (typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []; };
+        var lifetime = function () { return (typeof getAllLifetimeTrades === 'function') ? _sepView(getAllLifetimeTrades() || []) : []; };
         if (name === 'query_trades') {
           // Resolve an account NAME to its id once, rather than per trade. Substring and
           // case-insensitive, because the trader will say "funded" for "FTMO Funded 100k".
@@ -47725,7 +47785,7 @@ try {
         if (name === 'get_series') {
           var w = String(input.which || '').toLowerCase();
           if (w === 'current') { var cs = (typeof data !== 'undefined' && data.currentSeries) || []; return { which: 'current', logged: cs.length, trades: cs.map(_liteTrade) }; }
-          var idx = parseInt(w, 10); var hist = (typeof data !== 'undefined' && data.history) || [];
+          var idx = parseInt(w, 10); var hist = _seriesHist();
           if (!isNaN(idx) && idx >= 1 && idx <= hist.length) { var s = hist[idx - 1]; return { which: idx, date: s.date, trades: (s.trades || []).map(_liteTrade) }; }
           return { error: 'no such series', completedSeries: hist.length };
         }
@@ -47837,7 +47897,7 @@ try {
       try {
         // A trade copied to the trader's other accounts is ONE trade here too: one result, its R once, every account's
         // money (Nestor, 29 Sep 2026). query_trades still returns each account's own copy.
-        var all = _ideaMerge((typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []);
+        var all = _ideaMerge(_sepView((typeof getAllLifetimeTrades === 'function') ? (getAllLifetimeTrades() || []) : []));
         var wins = 0, losses = 0, bes = 0, netR = 0, winR = 0, lossR = 0, netMoney = 0;
         var bySym = {}, byDow = {}, bySess = {}, bySetup = {}, DOW = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
         all.forEach(function (tr) {
@@ -48010,6 +48070,8 @@ try {
           propAccounts: (function () {
             try {
               var pa = window.__stAllPropStatus ? window.__stAllPropStatus() : [];
+              // a prop account kept separate is only the assistant's business while it is the account on screen (11 Oct 2026)
+              try { var _sp = _sepIds(), _sr = currentScopeResolved(), _own = (_sr && _sr.kind === 'account') ? _sr.account.id : null; if (_sp.size) pa = pa.filter(function (x) { var id = x && x.accountId; return !id || !_sp.has(id) || id === _own; }); } catch (e2) {}
               pa = pa.map(function (x) { if (x && x.review && x.review.curve) { x = Object.assign({}, x, { review: Object.assign({}, x.review) }); delete x.review.curve; } return x; });
               return pa.length ? pa : null;
             } catch (e) { return null; }
@@ -48034,6 +48096,8 @@ try {
           nudges: (window.__stNudge && window.__stNudge.aiPack) ? window.__stNudge.aiPack() : null,
           // Clock changes: gaps to the markets the member trades, the usual gaps and the next changes (28 Sep 2026).
           clocks: (typeof window.__stClockInfo === 'function') ? window.__stClockInfo() : null,
+          // Accounts the member keeps separate: their trades are in none of the figures above unless that account is the one on screen.
+          separateAccounts: (function () { try { var n = (data.accounts || []).filter(function (a) { return a && a.separate; }).map(function (a) { return a.name || a.id; }); return n.length ? n : null; } catch (e) { return null; } })(),
           // Bank holidays in the US, the UK and the Eurozone over the next 14 days, worked out by rule (10 Oct 2026).
           bankHolidays: (window.__stBankHolidays && window.__stBankHolidays.pack) ? window.__stBankHolidays.pack() : null,
           currentSeries: { logged: (typeof data !== 'undefined' && data.currentSeries) ? data.currentSeries.length : 0, of: 10 },
@@ -51236,8 +51300,8 @@ try {
   function checkSkipNudge() {
     const banner = document.getElementById('skip-nudge-banner');
     if (!banner) return;
-    if (!data.history || data.history.length === 0) return;
-    const lastEntry = data.history[data.history.length - 1];
+    if (_seriesHist().length === 0) return;
+    const lastEntry = _seriesHist()[_seriesHist().length - 1];
     if (!lastEntry || !lastEntry.reviewSnap) return;
     if (lastEntry.reviewSnap.traded !== 'Yes') return;
     const hasTrades = Array.isArray(lastEntry.trades) && lastEntry.trades.length > 0;
@@ -52407,10 +52471,12 @@ try {
       // edit are the only meaningful actions, so those are the only ones shown.
       const isSingleAccount = data.accounts.length === 1;
       const activeAccounts = data.accounts.filter(a => a.status === 'active');
-      const totalActiveBal = activeAccounts.reduce((s, a) => s + (a.startingBalance || 0), 0);
-      const totalActiveCur = activeAccounts.reduce((s, a) => s + computeAccountStats(a).current, 0);
+      // The combined figures are the accounts that count: one kept separate is not part of them (11 Oct 2026).
+      const countedAccounts = activeAccounts.filter(a => !a.separate);
+      const totalActiveBal = countedAccounts.reduce((s, a) => s + (a.startingBalance || 0), 0);
+      const totalActiveCur = countedAccounts.reduce((s, a) => s + computeAccountStats(a).current, 0);
       // What the trading made, payouts added back - same rule as each account's own %.
-      const totalActiveMade = activeAccounts.reduce((s, a) => { const x = computeAccountStats(a); return s + x.current + (x.paidOut || 0); }, 0);
+      const totalActiveMade = countedAccounts.reduce((s, a) => { const x = computeAccountStats(a); return s + x.current + (x.paidOut || 0); }, 0);
       const totalPct = totalActiveBal > 0 ? ((totalActiveMade - totalActiveBal) / totalActiveBal) * 100 : 0;
       const totalPctCls = totalPct > 0 ? 'good' : totalPct < 0 ? 'bad' : '';
       const totalPctSign = totalPct > 0 ? '+' : '';
@@ -52425,15 +52491,15 @@ try {
         : `<div class="settings-account-total">
              <div class="sat-row"><span class="sat-k">${_lbl(tt('settings.total_active_label'))}</span><strong class="sat-v"><span class="sat-num">${fmt(totalActiveBal, { noSign: true })}</span></strong></div>
              <div class="sat-row"><span class="sat-k">${_lbl(window._stT('Combined current:', 'Saldo actual combinado:'))}</span><strong class="sat-v"><span class="sat-num">${fmt(totalActiveCur, { noSign: true })}</span><span class="settings-account-total-pct ${totalPctCls}">${totalPctSign}${totalPct.toFixed(2)}%</span></strong></div>
-             <div class="sat-sub">${tt('settings.across_label')} ${activeAccounts.length} ${activeAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div>
+             <div class="sat-sub">${tt('settings.across_label')} ${countedAccounts.length} ${countedAccounts.length === 1 ? tt('settings.account_word') : tt('settings.accounts_word')}</div>
            </div>`;
       const buildRow = (acc) => {
         const s = computeAccountStats(acc);
         const isArchived = acc.status === 'archived';
         const rowCls = ['settings-account-row'];
         if (isArchived) rowCls.push('archived');
-        const badgeKey = isArchived ? 'archived' : 'active';
-        const badgeText = isArchived ? tt('settings.archive') : tt('settings.active_now');
+        const badgeKey = isArchived ? 'archived' : (acc.separate ? 'separate' : 'active');
+        const badgeText = isArchived ? tt('settings.archive') : (acc.separate ? window._stT('Separate', 'Aparte') : tt('settings.active_now'));
         const pctCls = s.pct > 0 ? 'good' : s.pct < 0 ? 'bad' : '';
         const pctSign = s.pct > 0 ? '+' : '';
         // Action buttons: Rename is always available (single or multi-account).
@@ -52466,6 +52532,10 @@ try {
         } catch (e) {}
         _mi.push(`<button type="button" role="menuitem" data-action="rename" data-id="${acc.id}">${tt('settings.rename')}</button>`);
         if (!isSingleAccount) {
+          // Keep separate (11 Oct 2026): the account stays tradable but out of everything combined - see _sepIds().
+          if (!isArchived || acc.separate) _mi.push(acc.separate
+            ? `<button type="button" role="menuitem" data-action="unseparate" data-id="${acc.id}">${window._stT('Count with the others', 'Contar con las demás')}</button>`
+            : `<button type="button" role="menuitem" data-action="separate" data-id="${acc.id}">${window._stT('Keep separate', 'Mantener aparte')}</button>`);
           _mi.push(isArchived
             ? `<button type="button" role="menuitem" data-action="unarchive" data-id="${acc.id}">${tt('settings.unarchive')}</button>`
             : `<button type="button" role="menuitem" data-action="archive" data-id="${acc.id}">${tt('settings.archive')}</button>`);
@@ -52523,6 +52593,7 @@ try {
                 <button type="button" class="settings-account-match" data-id="${acc.id}">${window._stT("doesn't match your broker?", '¿no coincide con tu bróker?')}</button>
           </div>
           ${payLine}
+          ${acc.separate ? `<div class="settings-account-sepnote">${_L('Kept apart: not counted in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Aparte: no cuenta en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
       const activeRows = data.accounts.filter(a => a.status === 'active').map(buildRow).join('');
@@ -53033,6 +53104,25 @@ try {
             } else (typeof showToast==='function'?showToast:alert)('Cannot archive the only active account. Create another account first.');
           }
         });
+        return;
+      }
+      if (action === 'separate' || action === 'unseparate') {
+        const on = (action === 'separate');
+        // At least one active account has to count, or All accounts would be empty with no way to tell why.
+        if (on && !data.accounts.some(a => a && a.id !== id && a.status === 'active' && !a.separate)) {
+          (typeof showToast === 'function' ? showToast : alert)(window._stT('At least one account has to count. Add another account first, or stop keeping another one separate.', 'Al menos una cuenta tiene que contar. Añade otra cuenta primero, o deja de mantener aparte otra.'), { duration: 7000 });
+          return;
+        }
+        setAccountSeparate(id, on);
+        settleGroupTargets();
+        refreshScopeSurfaces();
+        try { if (typeof renderSettingsAccountsList === 'function') renderSettingsAccountsList(); } catch (e) {}
+        try { if (typeof renderSettingsLinkedGroupsList === 'function') renderSettingsLinkedGroupsList(); } catch (e) {}
+        try { if (typeof renderLogToField === 'function') renderLogToField(); } catch (e) {}
+        try { if (window.STAI && window.STAI.onGreet) window.STAI.onGreet(); } catch (e) {}
+        // The leaderboard reads the account's flag from the journal in the cloud, so it recalculates once the save has
+        // had time to land (the nightly rebuild catches it if this one is too early).
+        try { setTimeout(function () { try { var sbc = window.__stSB; if (sbc && sbc.rpc) sbc.rpc('st_bump_leaderboard').then(function () { try { if (window.STBoard && STBoard.refresh) STBoard.refresh(); } catch (e) {} }, function () {}); } catch (e) {} }, 9000); } catch (e) {}
         return;
       }
       if (action === 'unarchive') {
@@ -64054,7 +64144,7 @@ try {
        rather than in seriesPanel so there is one order for everything downstream. */
     function allTrades(){
       var d=DAT(), out=[];
-      try{ (d.history||[]).slice().reverse().forEach(function(s){ (s.trades||[]).forEach(function(t){ out.push(t); }); }); }catch(e){}
+      try{ (d.history||[]).filter(function(s){ return !(s && s.separate); }).slice().reverse().forEach(function(s){ (s.trades||[]).forEach(function(t){ out.push(t); }); }); }catch(e){}
       try{ (d.currentSeries||[]).forEach(function(t){ out.push(t); }); }catch(e){}
       return out;
     }
@@ -77831,12 +77921,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var recent = function(key){ if(!key) return false; var d = new Date(dayKey(key) + 'T12:00:00'); var n = Math.round((today - d) / 86400000); return n >= 0 && n <= 2; };
     var d = D(); if(!d || !Array.isArray(d.accounts)) return out;
     d.accounts.forEach(function(a){
-      if(a && a.demo) return;   // the example journal's challenge is not news
+      if(a && (a.demo || a.separate)) return;   // the example journal's challenge is not news, nor is an account kept separate
       var s = propStatus(a); if(!s) return;
       if(s.status === 'failed' && recent(s.failedOn)) out.push({ kind: 'failed', on: s.failedOn, s: s });
       else if(s.status === 'passed' && recent(s.passedOn)) out.push({ kind: 'passed', on: s.passedOn, s: s });
     });
     d.accounts.forEach(function(a){
+      if(a && a.separate) return;
       try{ (window.__stPayouts ? window.__stPayouts.list(a) : []).forEach(function(p){
         if(p && p.status === 'paid' && recent(p.paidOn)) out.push({ kind: 'payout', on: dayKey(p.paidOn), account: a.name || a.id, accountId: a.id, amount: parseFloat(p.amount) || 0, received: window.__stPayouts.received(a, p) });
       }); }catch(e){}
