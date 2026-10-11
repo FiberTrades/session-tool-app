@@ -24,26 +24,32 @@
   var rowOf = function (nm) { return Array.from(modal.querySelectorAll('.settings-account-row')).filter(function (r) { return r.querySelector('.san-txt') && r.querySelector('.san-txt').textContent === nm; })[0]; };
   var r1 = rowOf('FTMO 70K - Challenge'), r3 = rowOf('FTMO 70K - Demo');
   if (!r1 || !r3) { ok('the account rows are on screen', false, modal.innerText.slice(0, 200)); return out; }
-  ok('a linked account shows its MT5 number; an unlinked one shows none', /MT5 541419576/.test((r1.querySelector('.settings-account-mt5') || {}).textContent || '') && !r3.querySelector('.settings-account-mt5'), [(r1.querySelector('.settings-account-mt5') || {}).textContent]);
+  ok('a linked account shows its MT5 number; an unlinked one shows none', /MT5 login 541419576/i.test((r1.querySelector('.settings-account-mt5') || {}).textContent || '') && !r3.querySelector('.settings-account-mt5'), [(r1.querySelector('.settings-account-mt5') || {}).textContent]);
   ok('every active account offers Link MT5 account', !!r1.querySelector('[data-action="linkmt5"]') && !!r3.querySelector('[data-action="linkmt5"]'));
   r3.querySelector('[data-action="linkmt5"]').click(); await W(300);
   var dlg = function () { return document.getElementById('st-linkmt5-bg'); }, tx = function () { return dlg().innerText.replace(/\s+/g, ' '); };
   ok('the dialog opens for that account', !!dlg() && /Link MT5 account/.test(tx()) && /FTMO 70K - Demo/.test(tx()), dlg() && tx().slice(0, 200));
-  ok('it lists the MT5 account the EA was heard from that nobody holds, and not the one already linked', /777888/.test(tx()) && /XAUUSD/.test(tx()) && !!dlg().querySelector('[data-lk="link"][data-login="777888"]') && !dlg().querySelector('[data-lk="link"][data-login="541419576"]'), tx().slice(0, 300));
+  ok('it lists the MT5 account the EA was heard from that nobody holds, and not the one already linked', /777888/.test(tx()) && /XAUUSD/.test(tx()) && /last seen/i.test(tx()) && /login number/i.test(tx()) && !!dlg().querySelector('[data-lk="link"][data-login="777888"]') && !dlg().querySelector('[data-lk="link"][data-login="541419576"]'), tx().slice(0, 300));
   ok('it says which numbers your other accounts hold', /541419576 → FTMO 70K - Challenge/.test(tx()) && !/999000/.test(tx()), tx().slice(-260));
   // a wrong number is refused
   var inp = dlg().querySelector('.lk-input'); inp.value = '15149abc'; dlg().querySelector('[data-lk="type"]').click(); await W(200);
-  ok('letters are refused, with a reason', !Object.keys(data.mt5LoginMap).some(function (k) { return data.mt5LoginMap[k] === a3.id; }) && /digits only/.test(dlg().querySelector('.lk-msg').textContent), dlg().querySelector('.lk-msg').textContent);
+  ok('letters are refused, with a reason', !Object.keys(data.mt5LoginMap).some(function (k) { return data.mt5LoginMap[k] === a3.id; }) && /login number: digits only/.test(dlg().querySelector('.lk-msg').textContent), dlg().querySelector('.lk-msg').textContent);
   // typing the number links it
   inp = dlg().querySelector('.lk-input'); inp.value = ' 1514906945 '; dlg().querySelector('[data-lk="type"]').click(); await W(300);
   ok('typing the number links it', data.mt5LoginMap['1514906945'] === a3.id && !!dlg().querySelector('[data-lk="unlink"][data-login="1514906945"]') && /linked now/i.test(tx()), [data.mt5LoginMap['1514906945'], tx().slice(0, 200)]);
+  ok('an account that has its MT5 login is not offered another one', !dlg().querySelector('[data-lk="link"]') && !/seen from your EA/i.test(tx()), tx().slice(0, 260));
+  dlg().querySelector('[data-lk="unlink"][data-login="1514906945"]').click(); await W(300);
+  ok('unlinked: the row loses the number and the suggestion is back', !('1514906945' in data.mt5LoginMap) && !!dlg().querySelector('[data-lk="link"][data-login="777888"]') && !rowOf('FTMO 70K - Demo').querySelector('.settings-account-mt5'), Object.keys(data.mt5LoginMap));
+  inp = dlg().querySelector('.lk-input'); inp.value = '1514906945'; dlg().querySelector('[data-lk="type"]').click(); await W(300);
   r3 = rowOf('FTMO 70K - Demo');
-  ok('the row now shows it', /MT5 1514906945/.test((r3.querySelector('.settings-account-mt5') || {}).textContent || ''), (r3.querySelector('.settings-account-mt5') || {}).textContent);
-  // one click links an account the EA was heard from
+  ok('the row now shows it', /MT5 login 1514906945/i.test((r3.querySelector('.settings-account-mt5') || {}).textContent || ''), (r3.querySelector('.settings-account-mt5') || {}).textContent);
+  // one click links an account the EA was heard from (offered once this account holds none)
+  dlg().querySelector('[data-lk="unlink"][data-login="1514906945"]').click(); await W(300);
   dlg().querySelector('[data-lk="link"][data-login="777888"]').click(); await W(300);
   ok('one click links an MT5 account the EA was heard from', data.mt5LoginMap['777888'] === a3.id && !dlg().querySelector('[data-lk="link"][data-login="777888"]'), data.mt5LoginMap['777888']);
   dlg().querySelector('[data-lk="unlink"][data-login="777888"]').click(); await W(300);
   ok('Unlink takes it off again', !('777888' in data.mt5LoginMap) && !!dlg().querySelector('[data-lk="link"][data-login="777888"]'), Object.keys(data.mt5LoginMap));
+  inp = dlg().querySelector('.lk-input'); inp.value = '1514906945'; dlg().querySelector('[data-lk="type"]').click(); await W(300);
   // layout: nothing wider than the dialog, buttons the same width
   var box = dlg().querySelector('.modal').getBoundingClientRect();
   var over = Array.from(dlg().querySelectorAll('.modal *')).filter(function (n) { var q = n.getBoundingClientRect(); return q.width > 0 && (q.right > box.right + 1 || q.left < box.left - 1); }).length;

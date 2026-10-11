@@ -971,7 +971,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .lk-modal .lk-lab { margin: 16px 0 8px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--text-dim); }
   .lk-modal .lk-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
   .lk-modal .lk-num { flex: 1 1 auto; min-width: 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 15px; color: var(--text); }
-  .lk-modal .lk-num small { margin-left: 8px; font-size: 11px; color: var(--text-dim); }
+  .lk-modal .lk-num small { display: block; margin: 3px 0 0; font-size: 11px; color: var(--text-dim); }   /* its symbol and when it was last seen, under the number */
   .lk-modal .lk-input { flex: 1 1 auto; min-width: 0; }
   .lk-modal .lk-row .settings-btn { flex: 0 0 auto; min-width: 92px; }
   .lk-modal .lk-hint { margin: 6px 0 0; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
@@ -52644,7 +52644,7 @@ try {
                 <button type="button" class="settings-account-match" data-id="${acc.id}">${window._stT("doesn't match your broker?", '¿no coincide con tu bróker?')}</button>
           </div>
           ${payLine}
-          ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">MT5 ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
+          ${(() => { try { const lg = Object.keys(data.mt5LoginMap || {}).filter(k => data.mt5LoginMap[k] === acc.id); return lg.length ? `<div class="settings-account-mt5">${window._stT('MT5 login', 'Login MT5')} ${lg.map(escapeHtml).join(' · ')}</div>` : ''; } catch (e) { return ''; } })()}
           ${acc.separate ? `<div class="settings-account-sepnote">${_L('Kept apart: not counted in All accounts, your Series of 10, your streaks or the leaderboard. Pick it in the account picker to see it.', 'Aparte: no cuenta en Todas las cuentas, tu Serie de 10, tus rachas ni la clasificación. Elígela en el selector de cuentas para verla.')}</div>` : ''}
         </div>`;
       };
@@ -53410,7 +53410,7 @@ try {
       const link = (login) => {
         login = String(login || '').replace(/\s+/g, '');
         const msg = bg.querySelector('.lk-msg');
-        if (!/^\d{4,12}$/.test(login)) { if (msg) msg.textContent = T('Type the MT5 account number: digits only.', 'Escribe el número de la cuenta MT5: solo dígitos.'); return; }
+        if (!/^\d{4,12}$/.test(login)) { if (msg) msg.textContent = T('Type the MT5 login number: digits only.', 'Escribe el número de login de MT5: solo dígitos.'); return; }
         if (!data.mt5LoginMap || typeof data.mt5LoginMap !== 'object') data.mt5LoginMap = {};
         data.mt5LoginMap[login] = accId;
         after();
@@ -53421,18 +53421,21 @@ try {
         const map = (data.mt5LoginMap && typeof data.mt5LoginMap === 'object') ? data.mt5LoginMap : {};
         const mine = Object.keys(map).filter(k => map[k] === accId);
         // MT5 accounts the EA has been heard from that no account of yours holds yet (a link to a deleted account counts as none)
-        const seen = {};
-        try { const rows = (window.__stEA && window.__stEA.rows) ? window.__stEA.rows() : {}; Object.keys(rows).forEach(k => { const r = rows[k]; if (!r || r.login == null) return; const lg = String(r.login); if (map[lg] && getAccountById(map[lg])) return; (seen[lg] = seen[lg] || []).push(String(r.symbol || '')); }); } catch (e) {}
+        // Only offered to an account that has none yet (Nestor, 11 Oct 2026, on his linked 70K being offered an old
+        // demo: "why is it suggesting this when this account is already linked"). Each says when its EA was last heard.
+        const seen = {}, seenAt = {};
+        try { const rows = (window.__stEA && window.__stEA.rows && !mine.length) ? window.__stEA.rows() : {}; Object.keys(rows).forEach(k => { const r = rows[k]; if (!r || r.login == null) return; const lg = String(r.login); if (map[lg] && getAccountById(map[lg])) return; (seen[lg] = seen[lg] || []).push(String(r.symbol || '')); const at = Date.parse(r.updated_at) || 0; if (at > (seenAt[lg] || 0)) seenAt[lg] = at; }); } catch (e) {}
+        const lastSeen = (lg) => { try { return seenAt[lg] ? T('last seen ', 'vista el ') + new Date(seenAt[lg]).toLocaleDateString((typeof tLocale === 'function') ? tLocale() : undefined, { day: 'numeric', month: 'short' }) : ''; } catch (e) { return ''; } };
         const elsewhere = Object.keys(map).filter(k => map[k] !== accId && getAccountById(map[k]));
         const row = (lg, sub, btn, act) => `<div class="lk-row"><span class="lk-num">${E(lg)}${sub ? `<small>${E(sub)}</small>` : ''}</span><button type="button" class="settings-btn" data-lk="${act}" data-login="${E(lg)}">${btn}</button></div>`;
         bg.innerHTML = `<div class="modal mdl-new lk-modal" style="max-width:440px;">
             <div class="modal-header"><div class="modal-title">${T('Link MT5 account', 'Vincular cuenta MT5')}</div></div>
             <p class="lk-sub">${T('Trades from a linked MT5 account belong to', 'Las operaciones de una cuenta MT5 vinculada pertenecen a')} <b>${E(accDisplayName(acc))}</b>${T(': saved to it, judged by its rules.', ': se guardan en ella y se juzgan con sus reglas.')}</p>
-            ${mine.length ? `<div class="lk-lab">${T('Linked now', 'Vinculadas ahora')}</div>` + mine.map(lg => row(lg, '', T('Unlink', 'Desvincular'), 'unlink')).join('') : ''}
-            ${Object.keys(seen).length ? `<div class="lk-lab">${T('Seen from your EA, not linked', 'Vistas desde tu EA, sin vincular')}</div>` + Object.keys(seen).map(lg => row(lg, seen[lg].filter(Boolean).join(', '), T('Link', 'Vincular'), 'link')).join('') : ''}
-            <div class="lk-lab">${T('Or type the MT5 account number', 'O escribe el número de la cuenta MT5')}</div>
-            <div class="lk-row"><input type="text" inputmode="numeric" class="settings-input lk-input" maxlength="14" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="${T('e.g. 1514906945', 'p. ej. 1514906945')}" /><button type="button" class="settings-btn" data-lk="type">${T('Link', 'Vincular')}</button></div>
-            <p class="lk-hint">${T('It is the number at the top of your MT5 window, before the broker name.', 'Es el número que aparece arriba en la ventana de MT5, antes del nombre del bróker.')}</p>
+            ${mine.length ? `<div class="lk-lab">${T('Linked now · MT5 login', 'Vinculado ahora · login de MT5')}</div>` + mine.map(lg => row(lg, '', T('Unlink', 'Desvincular'), 'unlink')).join('') : ''}
+            ${Object.keys(seen).length ? `<div class="lk-lab">${T('Seen from your EA, not linked', 'Vistas desde tu EA, sin vincular')}</div>` + Object.keys(seen).map(lg => row(lg, [seen[lg].filter(Boolean).join(', '), lastSeen(lg)].filter(Boolean).join(' · '), T('Link', 'Vincular'), 'link')).join('') : ''}
+            <div class="lk-lab">${Object.keys(seen).length ? T('Or type the MT5 login number', 'O escribe el número de login de MT5') : T('Type the MT5 login number', 'Escribe el número de login de MT5')}</div>
+            <div class="lk-row"><input type="text" inputmode="numeric" class="settings-input lk-input" maxlength="14" autocomplete="off" data-lpignore="true" data-1p-ignore="true" data-form-type="other" placeholder="${T('MT5 login number', 'Número de login de MT5')}" /><button type="button" class="settings-btn" data-lk="type">${T('Link', 'Vincular')}</button></div>
+            <p class="lk-hint">${T('Your MT5 account’s login number: the number you sign in to MT5 with, shown at the top of the MT5 window before the broker name.', 'El número de login de tu cuenta MT5: el número con el que entras en MT5, que aparece arriba en la ventana de MT5 antes del nombre del bróker.')}</p>
             ${elsewhere.length ? `<p class="lk-hint">${T('Linked to your other accounts:', 'Vinculadas a tus otras cuentas:')} ${elsewhere.map(k => E(k) + ' → ' + E(nameOf(map[k]))).join(' · ')}. ${T('Linking one here moves it.', 'Vincular una aquí la mueve.')}</p>` : ''}
             <p class="lk-msg" role="status"></p>
             <div class="modal-actions"><button type="button" class="settings-btn" data-lk="done">${T('Done', 'Listo')}</button></div>
