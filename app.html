@@ -1639,14 +1639,20 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .econ-ticker-btn.active { color: var(--text); border-color: var(--text-mid); }
   #econ-filter-toggle .btn-icon { width: 12px; height: 12px; opacity: 0.7; transition: opacity 150ms; }
   #econ-filter-toggle:hover .btn-icon { opacity: 1; }
-  /* Phone: Today / Tomorrow / This Week / Filters as one full-width row of equal segments. */
+  /* Phone: Today / Tomorrow / This Week / Next Week as one full-width row of equal segments, and
+     Countries on its own full-width row under them - five buttons do not fit one row at 375px. */
   @media (max-width: 560px) {
     .econ-calendar-controls { flex-wrap: nowrap; gap: 8px; }
-    .econ-controls-left { flex-wrap: nowrap; width: 100%; min-width: 0; gap: 5px; }
-    .econ-range-pills { flex-wrap: nowrap; gap: 5px; flex: 3 1 0; min-width: 0; }
+    .econ-controls-left { flex-wrap: wrap; width: 100%; min-width: 0; gap: 5px; }
+    .econ-range-pills { flex-wrap: nowrap; gap: 5px; flex: 1 1 100%; min-width: 0; }
     .econ-range-pill { flex: 1 1 0; min-width: 0; }
-    .econ-filter-toggle { flex: 1 1 0; min-width: 0; }
+    .econ-filter-toggle { flex: 1 1 100%; min-width: 0; justify-content: center; }
     .econ-range-pill, .econ-filter-toggle { white-space: nowrap; padding: 6px 4px; letter-spacing: 0.02em; }
+    /* Spanish: "Próxima Semana" needs more than a quarter of the row, so the widths follow the words. */
+    html[lang="es"] .econ-range-pill { flex: 1 1 auto; }
+  }
+  @media (max-width: 350px) {
+    .econ-range-pill { font-size: 9px; letter-spacing: 0; padding: 6px 2px; }
   }
   /* Full-width market ticker bar (TradingView Ticker Tape embed). Hidden until
      toggled from the calendar Ticker pill. Sticky by default; the --static
@@ -6163,13 +6169,14 @@ try {
             <button type="button" class="econ-range-pill" data-range="today"    data-i18n="econ.range_today">Today</button>
             <button type="button" class="econ-range-pill" data-range="tomorrow" data-i18n="econ.range_tomorrow">Tomorrow</button>
             <button type="button" class="econ-range-pill" data-range="week"     data-i18n="econ.range_week">This Week</button>
+            <button type="button" class="econ-range-pill" data-range="nextweek" data-i18n="econ.range_nextweek">Next Week</button>
           </div>
           <button type="button" class="econ-filter-toggle" id="econ-filter-toggle">
             <svg class="btn-icon" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" aria-hidden="true">
               <line x1="2" y1="5" x2="14" y2="5"/><circle cx="6" cy="5" r="1.7" fill="var(--bg-elev)"/>
               <line x1="2" y1="11" x2="14" y2="11"/><circle cx="10.5" cy="11" r="1.7" fill="var(--bg-elev)"/>
             </svg>
-            <span data-i18n="econ.filters">Filters</span>
+            <span data-i18n="econ.countries">Countries</span>
             <span class="econ-filter-summary" id="econ-filter-summary"></span>
           </button>
           </div>
@@ -6177,7 +6184,6 @@ try {
         <div class="econ-calendar-filters" id="econ-calendar-filters">
           <div class="econ-calendar-filters-inner">
           <div class="econ-filter-row">
-            <span class="econ-filter-label" data-i18n="econ.countries">Countries</span>
             <div class="econ-chip-group" id="econ-country-chips"></div>
           </div>
           <div class="econ-filter-row" id="econ-impact-row" style="display:none">
@@ -43108,15 +43114,8 @@ try {
     url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
     url => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(url),
   ];
-  // Next-week feed proxies. The Deno worker is tried FIRST via ?week=next — it fetches
-  // ff_calendar_nextweek.xml server-side. The public proxies are unreliable for this
-  // because Forex Factory blocks their shared egress IPs, so they're fallback only.
-  // (Requires the worker to honour ?week=next — see forex-calendar-deno.ts.)
-  const NEXTWEEK_PROXIES = [
-    () => 'https://smooth-quail-95.fibertrades.deno.net/?week=next',
-    url => 'https://api.allorigins.win/raw?url=' + encodeURIComponent(url),
-    url => 'https://api.codetabs.com/v1/proxy/?quest=' + encodeURIComponent(url),
-  ];
+  // Next week has no feed of its own (ff_calendar_nextweek.xml answers 404): it is read from
+  // calendar_ahead instead - see calendarWithExtra.
 
   // ============================================================================
   // EVENT DESCRIPTIONS
@@ -45156,25 +45155,18 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
     const tomorrowKey = calendarLocalDateKey(tomorrow);
     // "Week" = the current trading week, Monday 00:00 → Saturday 00:00 (Mon-Fri
-    // inclusive). Weekends are non-trading days and shouldn't appear under the
-    // "This Week" filter — keeps the list focused on actionable news days.
-    //
-    // On weekends (Sat/Sun), the window is extended to also include NEXT week's
-    // Mon-Fri. This handles the seam at the Forex Factory feed rollover:
-    // sometime between Friday close and Monday open, FF rolls `thisweek.xml`
-    // from the just-finished week to the upcoming week. A user on Sat/Sun whose
-    // cache (or fresh fetch) has already rolled over would otherwise see no
-    // events at all under "This Week", because the freshly-fetched events are
-    // for next week but the filter window is the past Mon-Fri. Extending the
-    // window covers both possibilities so the user sees whichever the feed has.
+    // inclusive), and it stays that week until Monday - Saturday and Sunday included.
+    // It used to stretch over next week too at the weekend, because the feed rolls
+    // over to the coming week some time between Friday's close and Monday's open and
+    // "This Week" would otherwise have gone empty. Next week now has its own view,
+    // and the week that just ended is read back from the app's own record of it
+    // (see calendarWithExtra), so This Week keeps showing this week's news
+    // (Nestor, 11 Oct 2026).
     const now = new Date(); now.setHours(0,0,0,0);
     const day = now.getDay();
     const diffToMon = (day === 0) ? -6 : (1 - day);
     const weekStart = new Date(now); weekStart.setDate(now.getDate() + diffToMon); weekStart.setHours(0,0,0,0);
-    const isWeekend = (day === 0) || (day === 6);
-    // Weekday: +5 days → next Saturday 00:00 (covers this Mon-Fri).
-    // Weekend: +12 days → Saturday after next at 00:00 (covers this week Mon-Fri PLUS next week Mon-Fri).
-    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + (isWeekend ? 12 : 5));
+    const weekEnd = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 5);
     // Next week = next Monday 00:00 → next Saturday 00:00 (next Mon-Fri inclusive).
     const nextWeekStart = new Date(weekStart); nextWeekStart.setDate(weekStart.getDate() + 7);
     const nextWeekEnd   = new Date(nextWeekStart); nextWeekEnd.setDate(nextWeekStart.getDate() + 5);
@@ -46090,11 +46082,130 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       try { fetchEconomicCalendar(); } catch (e) { /* non-fatal */ }
       return;
     }
-    const events = cache.events.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
+    const feedEvents = cache.events.map(e => ({ ...e, when: e.when ? new Date(e.when) : null }));
+    _calExtraLoad(feedEvents);                       // next week / the week just ended: read once, then laid over the feed
+    const events = calendarWithExtra(feedEvents);
     _overlayActuals(events);   // re-apply released actuals every render (survives cache rebuilds / tab switches)
     const filtered = applyCalendarFilters(events);
+    // A week view with nothing to show while its week is still being read: say loading, not "no events".
+    const rng = getCalendarFilters().dateRange;
+    if (filtered.length === 0 && _calExtra.busy && (rng === 'week' || rng === 'nextweek')) {
+      _calExtra.waiting = true;
+      renderEconomicCalendarUI({ kind: 'loading' });
+      return;
+    }
     renderEconomicCalendarUI(filtered.length === 0 ? { kind: 'empty_filtered', all: events } : { kind: 'ok', events: filtered });
   }
+
+  // ── The weeks the feed does not carry ──────────────────────────────────────
+  // The public feed only ever holds ONE week: the current one until some time at the
+  // weekend, then the coming one. So a Next Week view had nothing to show on a weekday,
+  // and at the weekend This Week lost the week that had just ended. Two tables fill the
+  // gap, read with the member's own session:
+  //   calendar_ahead  - the coming weeks, collected ahead of the feed (st_calendar_ahead)
+  //   calendar_events - every week the feed has already shown, with the released figures
+  // Their rows are laid OVER the feed's events when the calendar is drawn and are never
+  // written into data._calendarCache: everything else that reads that cache (news tags on
+  // trades, nudges, the greeting, the header) keeps seeing the feed alone. The feed always
+  // wins for a week it covers - the extra rows are only used for a week it does not carry.
+  var _calExtra = { sig: '', at: 0, ok: false, busy: false, waiting: false, stamp: '', weeks: null };
+  const _CAL_EXTRA_LS = 'st_cal_extra_v1';
+  function _calMonday(off) {
+    const d = new Date(); d.setHours(0, 0, 0, 0);
+    const wd = d.getDay(); d.setDate(d.getDate() + (wd === 0 ? -6 : 1 - wd) + 7 * (off || 0));
+    return d;
+  }
+  function _calPlus(d0, days) { const d = new Date(d0); d.setDate(d.getDate() + days); return d; }
+  // Does this list hold anything for that week's Monday-Friday?
+  function _calWeekHas(events, mon) {
+    const a = mon.getTime(), b = _calPlus(mon, 5).getTime();
+    return (events || []).some(e => { const t = e && e.when ? new Date(e.when).getTime() : NaN; return t >= a && t < b; });
+  }
+  function _calExtraWeeks() {
+    if (_calExtra.weeks) return _calExtra.weeks;
+    let w = {};
+    try {
+      const raw = JSON.parse(localStorage.getItem(_CAL_EXTRA_LS) || 'null');
+      if (raw && raw.weeks && typeof raw.weeks === 'object') {
+        Object.keys(raw.weeks).forEach(k => {
+          w[k] = (raw.weeks[k] || []).map(e => ({ ...e, when: e.when ? new Date(e.when) : null })).filter(e => e.when && !isNaN(e.when.getTime()));
+        });
+      }
+    } catch (e) { w = {}; }
+    _calExtra.weeks = w;
+    return w;
+  }
+  function calendarWithExtra(events) {
+    try {
+      const weeks = _calExtraWeeks();
+      const keyOf = e => (e.when ? new Date(e.when).toISOString() : '') + '|' + (e.country || '') + '|' + (e.title || '');
+      const out = events.slice(), seen = new Set(events.map(keyOf));
+      [0, 1].forEach(off => {
+        const mon = _calMonday(off), ex = weeks[calendarLocalDateKey(mon)];
+        if (!ex || !ex.length || _calWeekHas(events, mon)) return;
+        ex.forEach(e => { const k = keyOf(e); if (!seen.has(k)) { seen.add(k); out.push({ ...e }); } });
+      });
+      return out;
+    } catch (e) { return events; }
+  }
+  function _calExtraLoad(feedEvents) {
+    try {
+      const sb = window.__stSB;
+      if (!sb || typeof sb.rpc !== 'function' || _calExtra.busy) return;
+      const mon0 = _calMonday(0), mon1 = _calMonday(1);
+      const need0 = !_calWeekHas(feedEvents, mon0), need1 = !_calWeekHas(feedEvents, mon1);
+      if (!need0 && !need1) return;
+      const sig = calendarLocalDateKey() + '|' + (need0 ? 1 : 0) + (need1 ? 1 : 0);
+      // read again every three hours (a forecast can be added), sooner after a failed read
+      if (_calExtra.sig === sig && Date.now() - _calExtra.at < (_calExtra.ok ? 3 * 3600e3 : 10 * 60e3)) return;
+      _calExtra.busy = true; _calExtra.sig = sig; _calExtra.at = Date.now();
+      const from = _calPlus(mon0, -1), to = _calPlus(mon1, 6);
+      const settle = p => Promise.resolve(p).then(r => r || {}, () => ({ error: true }));
+      const jobs = [settle(sb.rpc('st_calendar_ahead', { p_from: from.toISOString(), p_to: to.toISOString() }))];
+      if (need0 && typeof sb.from === 'function') {
+        jobs.push(settle(sb.from('calendar_events').select('at,timed,currency,title,impact,forecast,previous,actual')
+          .gte('at', from.toISOString()).lt('at', _calPlus(mon0, 6).toISOString())));
+      }
+      const toEv = r => {
+        const when = new Date(r && r.at);
+        if (!r || isNaN(when.getTime())) return null;
+        return { title: r.title || '', country: String(r.currency || '').toUpperCase(), impact: r.impact || '', url: r.url || '',
+                 forecast: r.forecast || '', previous: r.previous || '', actual: r.actual || '', when: when, isTimed: r.timed !== false };
+      };
+      Promise.all(jobs).then(res => {
+        const aheadR = res[0] || {}, pastR = res[1] || {};
+        const ahead = (!aheadR.error && Array.isArray(aheadR.data) ? aheadR.data : []).map(toEv).filter(Boolean);
+        const past  = (!pastR.error && Array.isArray(pastR.data) ? pastR.data : []).map(toEv).filter(Boolean);
+        const old = _calExtraWeeks(), weeks = {};
+        [mon0, mon1].forEach((mon, i) => {
+          const a = _calPlus(mon, -1).getTime(), b = _calPlus(mon, 6).getTime();
+          const inWk = e => e.when.getTime() >= a && e.when.getTime() < b;
+          // The feed's own record of the week (it has the released figures) before the one collected ahead of it.
+          const p = (i === 0 ? past : []).filter(inWk), h = ahead.filter(inWk), k = calendarLocalDateKey(mon);
+          weeks[k] = _calWeekHas(p, mon) ? p : h;
+          // a failed read never throws away what an earlier read brought
+          if (!weeks[k].length && (aheadR.error || (i === 0 && pastR.error)) && old[k] && old[k].length) weeks[k] = old[k];
+        });
+        _calExtra.ok = !aheadR.error && !(need0 && pastR.error);
+        _calExtra.weeks = weeks;
+        const flat = {}; Object.keys(weeks).forEach(k => { flat[k] = weeks[k].map(e => ({ ...e, when: e.when.toISOString() })); });
+        const stamp = JSON.stringify(flat), changed = stamp !== _calExtra.stamp;
+        _calExtra.stamp = stamp;
+        try { localStorage.setItem(_CAL_EXTRA_LS, JSON.stringify({ weeks: flat })); } catch (e) {}
+        _calExtra.busy = false;
+        const waiting = _calExtra.waiting; _calExtra.waiting = false;
+        if (changed || waiting) { try { renderCalendarFromCache(); } catch (e) {} }
+      }).catch(() => { _calExtra.busy = false; _calExtra.ok = false; if (_calExtra.waiting) { _calExtra.waiting = false; try { renderCalendarFromCache(); } catch (e) {} } });
+    } catch (e) { _calExtra.busy = false; }
+  }
+  // Diagnosis: what the calendar holds beyond the feed, and whether it is being used.
+  window.__stCalExtra = function () {
+    const weeks = _calExtraWeeks(), out = { busy: _calExtra.busy, ok: _calExtra.ok, sig: _calExtra.sig, weeks: {} };
+    Object.keys(weeks).forEach(k => { out.weeks[k] = weeks[k].length; });
+    return out;
+  };
+  // Read the extra weeks again now, without waiting for the three hours.
+  window.__stCalExtra.refresh = function () { _calExtra.sig = ''; try { renderCalendarFromCache(); } catch (e) {} };
 
   // Renders the event list into #econ-calendar-body. `state` is one of:
   //   { kind: 'loading' }                     — initial spinner
@@ -46749,13 +46860,19 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
           return;
         }
       }
+      if (f0.dateRange === 'nextweek' && Array.isArray(state.all) && !_calWeekHas(state.all, _calMonday(1))) {
+        const T1 = (en, es) => (typeof window._stT === 'function') ? window._stT(en, es) : en;
+        const esc1 = x => String(x).replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
+        __setCalBody(`<div class="econ-calendar-empty">${esc1(T1("Next week's news is not in yet. It shows here as soon as it is scheduled.", 'Las noticias de la próxima semana aún no están. Aparecerán aquí en cuanto se programen.'))}</div>`);
+        return;
+      }
       __setCalBody(`<div class="econ-calendar-empty">${t('econ.empty_filtered')}</div>`);
       return;
     }
     // ok — render events. In week view, group by day with date headers.
     const f = getCalendarFilters();
     const todayKey = calendarLocalDateKey();
-    const groupByDay = f.dateRange === 'week';
+    const groupByDay = f.dateRange === 'week' || f.dateRange === 'nextweek';
     const escape = s => (s || '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
     // Index events so the click handler can look up the right one when the row is clicked.
     // Stable across this render only — re-renders rebuild the index.
@@ -46947,66 +47064,6 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
 
   // Main entry point — call this when the bias tab becomes visible. Honours the
   // per-day cache to avoid hammering the proxy on every tab switch.
-  // ── Next-week feed ─────────────────────────────────────────────────────────
-  // The primary Deno proxy is hardcoded server-side to ff_calendar_thisweek.xml and
-  // ignores any URL argument — so it can't return next week's data (this is why a
-  // previous attempt to add "next week" failed). We fetch ff_calendar_nextweek.xml
-  // ONLY through the URL-passthrough proxies (allorigins / codetabs), then merge the
-  // events into the existing cache. Best-effort: any failure leaves this-week intact.
-  // Result is held in memory for the day so we hit the network at most once per open-session.
-  const FF_NEXTWEEK_URL = 'https://nfs.faireconomy.media/ff_calendar_nextweek.xml';
-  var _nextWeekState = { key: null, events: null };
-  function applyNextWeekMerge(nextEvents) {
-    if (!data._calendarCache || !Array.isArray(data._calendarCache.events)) return;
-    const existing = data._calendarCache.events;
-    const keyOf = e => (e.when ? new Date(e.when).toISOString() : '') + '|' + (e.country || '') + '|' + (e.title || '');
-    const seen = new Set(existing.map(keyOf));
-    let added = 0;
-    nextEvents.forEach(e => {
-      const k = keyOf(e);
-      if (!seen.has(k)) { seen.add(k); existing.push({ ...e, when: e.when ? e.when.toISOString() : null }); added++; }
-    });
-    if (added > 0) {
-      try { if (typeof save === 'function') save(); } catch (e) { /* non-fatal */ }
-      renderCalendarFromCache();
-    }
-  }
-  async function fetchNextWeekAndMerge() {
-    if (!document.getElementById('econ-calendar-body')) return;
-    const todayKey = calendarLocalDateKey();
-    // Already fetched this day's next-week data? Just re-apply the (idempotent) merge.
-    if (_nextWeekState.key === todayKey) {
-      if (_nextWeekState.events) applyNextWeekMerge(_nextWeekState.events);
-      return;
-    }
-    _nextWeekState = { key: todayKey, events: null }; // mark in-flight to prevent refetch
-    const proxies = NEXTWEEK_PROXIES;
-    const failures = [];
-    for (let i = 0; i < proxies.length; i++) {
-      const proxyName = proxies[i](FF_NEXTWEEK_URL).split('?')[0];
-      try {
-        const url = proxies[i](FF_NEXTWEEK_URL);
-        const resp = await Promise.race([
-          fetch(url, { method: 'GET' }),
-          new Promise((_, rej) => setTimeout(() => rej(new Error('timeout')), 10000))
-        ]);
-        if (!resp.ok) { failures.push(`${proxyName}: HTTP ${resp.status}`); continue; }
-        const xmlText = await resp.text();
-        const doc = new DOMParser().parseFromString(xmlText, 'application/xml');
-        if (doc.querySelector('parsererror')) { failures.push(`${proxyName}: parse error`); continue; }
-        const eventEls = Array.from(doc.querySelectorAll('event'));
-        if (!eventEls.length) { failures.push(`${proxyName}: no events`); continue; }
-        const nextEvents = eventEls.map(parseCalendarEvent);
-        _nextWeekState.events = nextEvents;
-        applyNextWeekMerge(nextEvents);
-        return;
-      } catch (e) { failures.push(`${proxyName}: ${(e && e.message) || e}`); }
-    }
-    // Every proxy failed — log why (visible in the console), and clear the key so the
-    // next calendar open retries.
-    console.warn('Next-week calendar fetch failed across all proxies:\n' + failures.join('\n'));
-    if (!_nextWeekState.events) _nextWeekState.key = null;
-  }
 
   // ── News auto-tagging ───────────────────────────────────────────────────────────────────────
   // A trade taken through a high-impact release is a different trade from the same setup on a
