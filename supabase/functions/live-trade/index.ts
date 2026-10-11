@@ -130,7 +130,7 @@ Deno.serve(async (req) => {
         .maybeSingle();
       if (lErr) return json({ error: lErr.message }, 500);
       // Loosening the EA mid-session or after a loss: a phone nudge too (as the app's eaChanged).
-      if (lRow) later("ea", afterEaChange(admin, userId, Number(lRow.id), prev!.settings, settings, Date.parse(lRow.changed_at) || Date.now()));
+      if (lRow) later("ea", afterEaChange(admin, userId, Number(lRow.id), prev!.settings, settings, Date.parse(lRow.changed_at) || Date.now(), login));
     }
     return json({ ok: true, changed }, 200);
   }

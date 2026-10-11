@@ -136,6 +136,19 @@ export function accountFor(ctx: Ctx, login: string | null) {
   if (!login && ids.length === 1) { const a = byId(ids[0]); if (a) return a; }
   return byId(j && j.act) || accs.find((a) => a && (a.status || "active") === "active") || null;
 }
+// An account the member keeps separate (Settings > Accounts > Options > Keep separate, 11 Oct 2026 - Nestor tests gold
+// on a demo whose EA allows ten trades a day while his main account allows one: "will i get nudges that i have breached
+// my day limits?"). A trade on it is outside the plan: no discipline nudge, and no place in the day's counts (max
+// trades, the loss before a re-entry, the run of losses, red news with a trade open, a loosened EA). Its trade alerts
+// still go out. Known by the MT5 login the app has linked to the account (mt5LoginMap).
+export function sepLogin(ctx: Ctx, login: Any): boolean {
+  try {
+    const lm = (ctx.j && ctx.j.lm) || {}, id = login != null ? lm[String(login)] : null;
+    if (!id) return false;
+    const a = accounts(ctx.j).find((x) => x && x.id === id);
+    return !!(a && a.separate === true);
+  } catch (_e) { return false; }
+}
 function moneyRule(rules: Any, mk: string, pk: string, ak: string, sb: number) {
   rules = rules || {};
   const mode = (rules[mk] === "amount" || rules[mk] === "pct") ? rules[mk] : ((rules[ak] > 0 && !(rules[pk] > 0)) ? "amount" : "pct");
@@ -296,7 +309,7 @@ const todayOf = (ctx: Ctx, iso: string | null) => !!iso && parts(tzOf(ctx.j), Da
 export function mates(ctx: Ctx, me: Row): Row[] {
   if (!ctx.copier) return [me];
   const at = Date.parse(me.opened_at), c = symCore(me.symbol);
-  const m = ctx.rows.filter((r) => symCore(r.symbol) === c && r.direction === me.direction && Math.abs(Date.parse(r.opened_at) - at) <= 15000);
+  const m = ctx.rows.filter((r) => symCore(r.symbol) === c && r.direction === me.direction && Math.abs(Date.parse(r.opened_at) - at) <= 15000 && (r.ticket === me.ticket || !sepLogin(ctx, r.login)));
   if (!m.some((r) => r.ticket === me.ticket)) m.push(me);
   return m.sort((a, b) => (Date.parse(a.opened_at) - Date.parse(b.opened_at)) || (a.ticket - b.ticket));
 }
@@ -319,7 +332,7 @@ async function closesToday(admin: Any, ctx: Ctx) {
     const login = r.login != null ? String(r.login) : null;
     out.push({ ticket: Number(r.ticket), at: Date.parse(r.close_time), pnl: Number(r.pnl) || 0, login, res: resultOf(Number(r.pnl) || 0, accountFor(ctx, login), ctx.j), copy: false });
   });
-  return out.sort((a, b) => a.at - b.at);
+  return out.filter((x) => !sepLogin(ctx, x.login)).sort((a, b) => a.at - b.at);   // a separate account's closes count for nothing
 }
 
 // ---------- the rules ----------
@@ -354,7 +367,7 @@ function onOpenRules(ctx: Ctx, me: Row, closes: Any[], news: News[]): Item[] {
   const lim = Number(rules.maxTrades) || 0;
   if (lim > 0) {
     const from = sessionStartMs(j, tz, ctx.now);
-    const n = ctx.rows.filter((r) => Date.parse(r.opened_at) >= from && !isCopy(ctx, r)).length;
+    const n = ctx.rows.filter((r) => Date.parse(r.opened_at) >= from && !isCopy(ctx, r) && !sepLogin(ctx, r.login)).length;
     if (n > lim) push("limit", tr("limit", es).replace("{N}", String(n)).replace("{L}", String(lim)));
   }
   // today's bias: none logged (the day's first trade), or this trade goes against it
@@ -466,6 +479,7 @@ export async function afterOpen(admin: Any, userId: string, ticket: number) {
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on) return;
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at) return;
   if (isCopy(ctx, me)) return;                      // its first trade is judged instead
+  if (sepLogin(ctx, me.login)) return;              // an account kept separate is outside the plan
   const closes = await closesToday(admin, ctx);
   const news = await redNews(admin, ctx.now - 60000, ctx.now + 61 * 60000);
   const items = onOpenRules(ctx, me, closes, news);
@@ -486,7 +500,7 @@ export async function afterOpen(admin: Any, userId: string, ticket: number) {
 export async function afterRisk(admin: Any, userId: string, ticket: number) {
   await sleep(8000);
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on) return;
-  const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || isCopy(ctx, me)) return;
+  const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || isCopy(ctx, me) || sepLogin(ctx, me.login)) return;
   const acc = accountFor(ctx, me.login), rules = (acc && acc.riskRules) || {}, sb = Number(acc && acc.startingBalance) || 0;
   const items: Item[] = [], big = bigRisk(ctx, me, rules, sb), up = riskUp(ctx, me, await closesToday(admin, ctx));
   if (big) items.push(big); if (up) items.push(up);
@@ -497,7 +511,7 @@ export async function afterRisk(admin: Any, userId: string, ticket: number) {
 export async function afterWiden(admin: Any, userId: string, ticket: number) {
   await sleep(8000);
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on) return;
-  const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || isCopy(ctx, me)) return;
+  const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || isCopy(ctx, me) || sepLogin(ctx, me.login)) return;
   const r0 = Number(me.risk0) || 0, r = Number(me.risk) || 0;
   if (!(r0 > 0 && r > r0 * 1.1)) return;
   return await deliver(admin, userId, "nudge", [item("widen", String(ticket), tr("widen", esOf(ctx.j)).replace("{OLD}", money(ctx.j, r0)).replace("{NEW}", money(ctx.j, r)), mates(ctx, me))], esOf(ctx.j), 0);
@@ -509,7 +523,7 @@ export async function checkNoStop(admin: Any, userId: string, ticket: number) {
   if (!ctx.ea.some((r: Any) => ctx.now - Date.parse(r.updated_at) < 10 * 60000)) return;
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || Number(me.risk0) > 0) return;
   const age = ctx.now - Date.parse(me.opened_at); if (age < 60000 || age > 30 * 60000) return;
-  if (isCopy(ctx, me)) return;
+  if (isCopy(ctx, me) || sepLogin(ctx, me.login)) return;
   return await deliver(admin, userId, "nudge", [item("no_stop", String(ticket), tr("no_stop", esOf(ctx.j)), mates(ctx, me))], esOf(ctx.j), 8000);
 }
 
@@ -518,7 +532,7 @@ export async function afterClose(admin: Any, userId: string, ticket: number) {
   await sleep(8000);
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on) return;
   const es = esOf(ctx.j), me = ctx.rows.find((r) => r.ticket === ticket);
-  if (!me || me.pnl == null || isCopy(ctx, me)) return;
+  if (!me || me.pnl == null || isCopy(ctx, me) || sepLogin(ctx, me.login)) return;
   const closes = await closesToday(admin, ctx), mine = closes.find((x) => x.ticket === ticket); if (!mine) return;
   const items: Item[] = [], grp = mates(ctx, me);
   // losses in a row (copies left out; a break-even neither counts nor resets)
@@ -595,9 +609,10 @@ function fmtRisk(x: Any, j: Any, es: boolean) {
 }
 // Only a change that LOOSENS (risk up more than 10%, the daily trade cap raised or turned off, the maximum stop
 // widened), and only during a live session or on a day with a loss - as the app's eaChanged. Keyed L<log id>.
-export async function afterEaChange(admin: Any, userId: string, logId: number, b: Any, a: Any, atMs: number) {
+export async function afterEaChange(admin: Any, userId: string, logId: number, b: Any, a: Any, atMs: number, login?: Any) {
   await sleep(8000);
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on || !b || !a) return;
+  if (login != null && sepLogin(ctx, login)) return;   // the EA of an account kept separate
   const es = esOf(ctx.j), closes = await closesToday(admin, ctx);
   const prior = closes.filter((x) => x.at <= atMs);
   const lossToday = closes.some((x) => x.res === "Lose"), last = prior[prior.length - 1];
@@ -705,7 +720,7 @@ export async function newsTick(admin: Any) {
         const { data: lt } = await admin.from("live_trades").select("ticket, seen_at, closed_at").eq("account", userId).in("ticket", open0.map((r) => r.ticket));
         const live = new Set((lt || []).filter((x: Any) => !x.closed_at && x.seen_at && now - Date.parse(x.seen_at) < 120000).map((x: Any) => Number(x.ticket)));
         if (DRY) DRY_ROWS.forEach((x) => { if (!x.closed_at) live.add(Number(x.ticket)); });
-        open = open0.filter((r) => live.has(r.ticket) && !isCopy(ctx, r));
+        open = open0.filter((r) => live.has(r.ticket) && !isCopy(ctx, r) && !sepLogin(ctx, r.login));
       }
       const curs = myCurs(ctx.j);
       open.forEach((o) => cursOf(o.symbol).forEach((x) => { if (curs.indexOf(x) === -1) curs.push(x); }));

@@ -18394,6 +18394,7 @@ try {
         var win = cfg().news; if (!(win > 0)) return;
         var now = Date.now(), open = [];
         try { open = (window.__stLive && window.__stLive.openList) ? window.__stLive.openList() : []; } catch (e) {}
+        open = open.filter(function (o) { return !isSepLogin(loginOf[String(o.ticket)]); });   // not a separate account's trade
         var curs = myCurs();
         open.forEach(function (o) { cursOf(o.symbol).forEach(function (c) { if (curs.indexOf(c) === -1) curs.push(c); }); });
         redNews(curs).filter(function (g) { return g.at > now && g.at - now <= win * 60000; }).forEach(function (g) {
@@ -18645,6 +18646,17 @@ try {
         .replace('{SIDEF}', t(long ? 'nudge.w_long_f' : 'nudge.w_short_f'))
         .replace('{PNL}', (pnl == null) ? '' : ((pnl > 0 ? '+' : pnl < 0 ? '\u2212' : '') + M0(pnl)));
     }
+    /* A trade on an account kept separate (11 Oct 2026). Nestor tests gold on a demo whose EA allows ten trades a day
+       while his main account allows one, both EAs on the same sync token: "will i get nudges that i have breached my day
+       limits?" He would have - max trades counted every open from any MT5 account. A separate account's trade is
+       outside the plan: no discipline nudge, and no place in the day's counts (max trades, the loss before a re-entry,
+       the run of losses, red news with a trade open, a loosened EA). Its take profit / stop alerts still come.
+       Known by the MT5 login the app has linked to that account (data.mt5LoginMap - set when a trade from it is first
+       saved to the account). */
+    var loginOf = {};
+    function isSepLogin(login) {
+      try { var id = (login != null && data.mt5LoginMap) ? data.mt5LoginMap[String(login)] : null; return !!(id && typeof isSeparateAccount === 'function' && isSeparateAccount(id)); } catch (e) { return false; }
+    }
     function trAccount(login) {
       try { var id = login && data.mt5LoginMap && data.mt5LoginMap[String(login)]; if (id) { var a = (data.accounts || []).find(function (x) { return x && x.id === id; }); if (a) return a; } } catch (e) {}
       return liveAccount();
@@ -18746,6 +18758,8 @@ try {
         } catch (e) {}
         // Trade alerts first: a position held overnight still gets its take profit / stop alert today.
         if (tOn) { var _m = [k]; try { _m = (window.__stLive && window.__stLive.ideaMates) ? window.__stLive.ideaMates(k) : [k]; } catch (e) {} tradeAlert(k, cur, raw, _m); }
+        if (raw.login != null) loginOf[k] = String(raw.login);
+        if (isSepLogin(raw.login)) return;                   // an account kept separate: alerts above, no nudges, not counted
         if (!nOn) return;
         if (firstSeen(k, today) !== today) return;           // an old position, re-announced
         var st = dayState(), changed = false, found = [];
@@ -18902,6 +18916,7 @@ try {
     function eaChanged(r) {
       try {
         if (!r || r.id == null || !r.before || !r.after || !eligible()) return;
+        if (isSepLogin(r.login)) return;                      // loosening the EA of an account kept separate is not a nudge
         var at = msOf(r.changed_at);
         if (!fresh(at) || handled['e' + r.id]) return;
         handled['e' + r.id] = 1;

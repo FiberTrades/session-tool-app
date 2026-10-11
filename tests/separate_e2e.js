@@ -124,6 +124,35 @@
   try { renderScopePicker(); } catch (e) {}
   var item = document.querySelector('.scope-picker-item[data-scope-id="' + a3.id + '"]');
   ok('the account picker tags it', !item || !!item.querySelector('.scope-picker-sep'), item ? item.innerHTML : 'picker rows not rendered');
+  // Live nudges: the main account allows 1 trade a day; the separate demo is traded several times on the same sync
+  // token. Its trades raise no nudge and are not counted; the same trades on a counted account would break the limit.
+  try {
+    _voiceSignedIn = function () { return true; };
+    data.settings.nudges = Object.assign({}, data.settings.nudges || {}, { on: true });
+    a1.riskRules = Object.assign({}, a1.riskRules || {}, { maxTrades: 1 }); data.activeAccountId = a1.id; data.viewScope = 'lifetime';
+    data.mt5LoginMap = { '111': a1.id, '222': a3.id };
+    try { window.__stEA.loaded(); } catch (e) {}
+    var Nn = window.__stNudge, nowIso = function (off) { return new Date(Date.now() - (off || 0)).toISOString(); };
+    var feed = function (tk, login, sym) { Nn.observe(null, { ticket: tk, symbol: sym, direction: 'long', closed: false, pnl: null }, { ticket: tk, login: login, symbol: sym, direction: 'long', opened_at: nowIso(1000), closed_at: null, risk: 100 }); };
+    var opens = function () { try { return Object.keys((window.__stNudgeDiag().day || {}).opens || {}); } catch (e) { return ['ERR']; } };
+    var fired = function () { try { return JSON.stringify(window.__stNudgeDiag().fired || {}); } catch (e) { return 'ERR'; } };
+    var cfgOn = !!(window.__stNudgeDiag().cfg || {}).on, elig = window.__stNudgeDiag().eligible;
+    var o0 = opens().length;
+    feed(910001, '111', 'EURUSD'); await W(300);
+    var o1 = opens();
+    feed(910002, '222', 'XAUUSD'); feed(910003, '222', 'XAUUSD'); feed(910004, '222', 'XAUUSD'); await W(400);
+    var o2 = opens(), f2 = fired(), b2 = Nn.budget() || {};
+    ok('nudges are running in the test', cfgOn && elig && o1.indexOf('910001') >= 0, [cfgOn, elig, o1]);
+    ok('three trades on the separate demo are not counted against the one-a-day limit of the main account',o2.indexOf('910002') < 0 && o2.indexOf('910003') < 0 && o2.indexOf('910004') < 0 && o2.length === o1.length, o2);
+    ok('and they raise no nudge at all', !/91000[234]/.test(f2), f2.slice(0, 300));
+    // the same trades on an account that counts: the limit nudge does fire
+    a3.separate = false;
+    feed(910005, '222', 'XAUUSD'); await W(400);
+    var o3 = opens(), f3 = fired();
+    var b3 = Nn.budget() || {};
+    ok('the session count used for the limit: 1 of 1 with the demo separate, 2 of 1 once it counts', b2.n === 1 && b2.lim === 1 && b3.n === 2 && o3.indexOf('910005') >= 0, [b2.n, b2.lim, b3.n, o3]);
+    a3.separate = true;
+  } catch (e) { ok('live nudges on a separate account', false, String(e && e.stack || e).slice(0, 300)); }
   // a prop account kept separate never celebrates a pass or shows the fail card (their account filters skip it)
   ok('the pass pop-up and the fail card skip a separate account', html.indexOf("!funded(a) && !a.demo && !a.separate; });") > 0 && html.indexOf("seen[a.id] || a.demo || a.separate) return false;") > 0);
   return out;
