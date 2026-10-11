@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.92"
+#property version   "8.93"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -42,9 +42,9 @@ input double           InpFixedLot      = 0.10;        // Fixed lot size
 input bool             InpOverrideBal   = false;       // Override account balance?
 input double           InpCustomBalance = 0.0;         // Custom balance (if overriding)
 
-input group "===== Stop Loss (pips on forex, points on indices) ====="
-input double           InpMinSLpips     = 1.8;         // Minimum SL size (pips on forex, points on indices)
-input double           InpMaxSLpips     = 3.8;         // Maximum SL size (pips on forex, points on indices)
+input group "===== Stop Loss (pips on forex, points on gold and indices) ====="
+input double           InpMinSLpips     = 1.8;         // Minimum SL size (pips on forex, points on gold and indices)
+input double           InpMaxSLpips     = 3.8;         // Maximum SL size (pips on forex, points on gold and indices)
 
 input group "===== Take Profit ====="
 input ENUM_TP_MODE     InpTPMode        = TP_BY_RR;    // TP measured by RR or pips
@@ -394,10 +394,38 @@ double UnitSizeOf(string sym,int u)
   }
 // Price size of ONE unit on a symbol, in the unit currently in force.
 double DistUnitSize(string sym){ return UnitSizeOf(sym,DistUnitFor(sym)); }
-string DistUnitKey(string sym){ int u=DistUnitFor(sym); return u==DU_POINTS?"points":(u==DU_TICKS?"ticks":"pips"); }
-string UnitLbl()  { int u=DistUnitFor(_Symbol); return u==DU_POINTS?"pts":(u==DU_TICKS?"ticks":"pips"); }
-string UnitBtn()  { int u=DistUnitFor(_Symbol); return u==DU_POINTS?"PTS":(u==DU_TICKS?"TICKS":"PIPS"); }
+// ---- What the unit is CALLED (v8.93) ----
+// A metal priced like a currency pair (XAUUSD, XAGUSD ...) keeps the pip MATHS above, but nobody calls a cent of gold
+// a pip. Where its unit IS the symbol's own point - a 2-decimal gold quote such as 4195.09 - the panel, the SL line
+// and the settings sent to the app call it points (Nestor, 11 Oct 2026: "the panel should identify what asset the user
+// trades and adapt the labels"). On a 3-decimal gold feed the unit is 10 points, so it stays "pips" there.
+// WORDS ONLY: unit sizes, saved settings and every trade's dist_unit are exactly what they were.
+bool SymbolIsMetal(string sym)
+  {
+   string u=sym; StringToUpper(u);
+   return (StringFind(u,"XAU")>=0 || StringFind(u,"XAG")>=0 || StringFind(u,"XPT")>=0 || StringFind(u,"XPD")>=0);
+  }
+bool UnitReadsAsPoints(string sym)
+  {
+   int u=DistUnitFor(sym);
+   if(u==DU_POINTS) return true;
+   if(u!=DU_PIPS || !SymbolIsMetal(sym)) return false;
+   double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
+   return (pt>0 && MathAbs(UnitSizeOf(sym,DU_PIPS)-pt)<pt*0.5);
+  }
+string DistUnitKey(string sym){ int u=DistUnitFor(sym); return u==DU_TICKS?"ticks":(UnitReadsAsPoints(sym)?"points":"pips"); }
+string UnitLbl()  { int u=DistUnitFor(_Symbol); return u==DU_TICKS?"ticks":(UnitReadsAsPoints(_Symbol)?"pts":"pips"); }
+string UnitBtn()  { int u=DistUnitFor(_Symbol); return u==DU_TICKS?"TICKS":(UnitReadsAsPoints(_Symbol)?"PTS":"PIPS"); }
 double PipSize() { return DistUnitSize(_Symbol); }
+// What ONE unit is worth on this chart, for the tooltips of the stop labels and the unit buttons (v8.93):
+// "1 pt = 0.01 of price on XAUUSD". A point of gold, of an index and of bitcoin are different sizes, and so are a
+// pip of EURUSD and of USDJPY - the word alone never says which.
+string UnitTip()
+  {
+   string l=UnitLbl();
+   string one=(l=="pts")?"pt":((l=="ticks")?"tick":"pip");
+   return "1 "+one+" = "+DoubleToString(PipSize(),g_digits)+" of price on "+_Symbol;
+  }
 int    _s(int v){ return (int)MathRound(v*g_ui); }   // scale a design pixel by the UI factor
 int VolumeDigits(double step){ int d=0; double s=step; while(s<1.0 && d<8){s*=10.0;d++;} return d; }
 
@@ -2557,9 +2585,11 @@ void BuildPanel()
    mkEdit  (PP+"RISKVAL",box1,ry+2,BW,CH,Fmt(RiskValGet(),2));
    ry+=ROWH;
    mkLabel (PP+"L_MIN",labelX,ry+6,(UnitLbl()=="pips")?"Min SL":("Min SL "+UnitLbl()),COL_PANEL_LBL,8);
+   ObjectSetString(0,PP+"L_MIN",OBJPROP_TOOLTIP,UnitTip());
    mkEdit  (PP+"MINSL",box1,ry+2,BW,CH,Fmt(g_minSL,1));
    ry+=ROWH;
    mkLabel (PP+"L_MAX",labelX,ry+6,(UnitLbl()=="pips")?"Max SL":("Max SL "+UnitLbl()),COL_PANEL_LBL,8);
+   ObjectSetString(0,PP+"L_MAX",OBJPROP_TOOLTIP,UnitTip());
    mkEdit  (PP+"MAXSL",box1,ry+2,BW,CH,Fmt(g_maxSL,1));
    cy+=cardH+6;
 
@@ -2570,6 +2600,7 @@ void BuildPanel()
    ry=cy+23;
    mkLabel (PP+"L_TPM",labelX,ry+6,"Target by",COL_PANEL_LBL,8);
    mkButton(PP+"TPMODE",box1,ry+2,BW,CH,(g_tpMode==TP_BY_RR)?"R":UnitBtn(),COL_PANEL_BTN,COL_PANEL_BTX);
+   if(g_tpMode!=TP_BY_RR) ObjectSetString(0,PP+"TPMODE",OBJPROP_TOOLTIP,UnitTip());
    ry+=ROWH;
    mkLabel (PP+"L_TP",labelX,ry+6,"Take profit",COL_PANEL_LBL,8);
    mkEdit  (PP+"TPVAL0",box1,ry+2,BW,CH,Fmt(g_tpVal[0],2));
@@ -2585,6 +2616,7 @@ void BuildPanel()
    // repeat it in brackets.
    mkLabel (PP+"L_BEM",labelX,ry+6,"Offset unit",COL_PANEL_LBL,8);
    mkButton(PP+"BEOMODE",box1,ry+2,BW,CH,(g_beOffMode==BEOFF_BY_RR)?"R":UnitBtn(),COL_PANEL_BTN,COL_PANEL_BTX);
+   if(g_beOffMode!=BEOFF_BY_RR) ObjectSetString(0,PP+"BEOMODE",OBJPROP_TOOLTIP,UnitTip());
    ry+=ROWH;
    // On/off beside the value it switches, exactly as the Take profit row does.
    mkLabel (PP+"L_BEO",labelX,ry+6,"BE offset",COL_PANEL_LBL,8);
@@ -2605,6 +2637,7 @@ void BuildPanel()
      {
       mkLabel (PP+"L_TSU",labelX,ry+6,"Move to unit",COL_PANEL_LBL,8);
       mkButton(PP+"TSUNIT",box1,ry+2,BW,CH,(g_tsUnit==BEOFF_BY_RR)?"R":UnitBtn(),COL_PANEL_BTN,COL_PANEL_BTX);
+      if(g_tsUnit!=BEOFF_BY_RR) ObjectSetString(0,PP+"TSUNIT",OBJPROP_TOOLTIP,UnitTip());
       ry+=ROWH;
      }
    else
@@ -3473,7 +3506,7 @@ datetime g_setAt=0;
 string LiveSettingsBody()
   {
    int du=DistUnitFor(_Symbol);
-   string unit=(du==DU_POINTS)?"points":((du==DU_TICKS)?"ticks":"pips");
+   string unit=(du==DU_TICKS)?"ticks":(UnitReadsAsPoints(_Symbol)?"points":"pips");   // as the panel words it (v8.93: points on 2-decimal gold)
    string rm=(g_riskMode==RISK_PERCENT)?"percent":((g_riskMode==RISK_FIXED_LOT)?"lots":"amount");
    string b=StringFormat("\"risk_mode\":\"%s\",\"risk_percent\":%s,\"risk_amount\":%s,\"fixed_lot\":%s",
                          rm,DoubleToString(g_riskPercent,2),DoubleToString(g_riskAmount,2),DoubleToString(g_fixedLot,2));
@@ -3505,7 +3538,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.92\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.93\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3870,7 +3903,7 @@ double SymbolPipFor(string sym)
   {
    double pt=SymbolInfoDouble(sym,SYMBOL_POINT);
    if(pt<=0) return g_pip;
-   return DistUnitSize(sym);   // pips on forex, points on indices - see DistUnitFor
+   return DistUnitSize(sym);   // pips on forex, points on gold and indices - see DistUnitFor
   }
 
 
@@ -6504,7 +6537,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.92 loaded (copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.93 loaded (copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

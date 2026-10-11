@@ -12222,10 +12222,19 @@ try {
       return c.length >= 6 && CCY.test(c.slice(0, 3)) && CCY.test(c.slice(3, 6));
     }
     function symUnit(sym) { return forexLike(sym == null || sym === '' ? defSym() : sym) ? 'pips' : 'points'; }
+    /* What a unit is CALLED on a symbol (11 Oct 2026, Nestor on gold: "the panel should identify what asset the user
+       trades and adapt the labels"). A metal's numbers are kept in the pip unit (0.01 of price), but on a 2-decimal
+       gold quote that is the symbol's point, and EA 8.93 says so - then the app says points too. Only the member's own
+       EA knows their broker's decimals, so this follows what it reports (__stEA.unitOf) and changes nothing without
+       it. WORDS ONLY: symUnit / mult and every stored number are untouched. */
+    function shown(u, sym) {
+      if (u !== 'pips' || !/^(XAU|XAG|XPT|XPD)/.test(clean(sym))) return u;
+      try { return (window.__stEA && window.__stEA.unitOf && window.__stEA.unitOf(sym) === 'points') ? 'points' : u; } catch (e) { return u; }
+    }
     function ofTrade(t) {
       var u = t && t.distUnit;
-      if (u && UNITS[u]) return u;
-      return symUnit(t && t.symbol);
+      if (!(u && UNITS[u])) u = symUnit(t && t.symbol);
+      return shown(u, t && t.symbol);
     }
     function ofTrades(list) {
       var seen = {}, n = 0, only = null;
@@ -12308,7 +12317,7 @@ try {
         });
       });
     }
-    return { symUnit: symUnit, ofTrade: ofTrade, ofTrades: ofTrades, display: display, words: words,
+    return { symUnit: symUnit, ofTrade: ofTrade, ofTrades: ofTrades, display: display, words: words, shown: shown,
              lbl: lbl, mult: mult, withUnit: withUnit, sync: sync, applyIn: applyIn, forexLike: forexLike };
   })();
 
@@ -19898,7 +19907,18 @@ try {
       keys.forEach(function (k) { var r = rows[k]; if (keys.length === 1 || !accId || map[String(r.login)] === accId) { var v = Number((r.settings || {}).risk_money) || 0; if (v > best) best = v; } });
       return best;
     }
-    return { apply: apply, logged: logged, summary: summary, riskFor: riskFor, copier: copier, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe,
+    // What the member's own EA calls one unit of distance on a symbol - 'pips' | 'points' | 'ticks' - from the latest
+    // settings it sent for that chart; null when no EA has reported that symbol. (EA 8.93 says points on 2-decimal gold.)
+    function unitOf(sym) {
+      var c = String(sym || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), best = null, at = -1;
+      if (!c) return null;
+      Object.keys(rows).forEach(function (k) {
+        var r = rows[k], s = String(r.symbol || '').toUpperCase().replace(/[^A-Z0-9]/g, ''), u = (r.settings || {}).unit, up = Date.parse(r.updated_at) || 0;
+        if (s && (s.indexOf(c) === 0 || c.indexOf(s) === 0) && (u === 'pips' || u === 'points' || u === 'ticks') && up >= at) { best = u; at = up; }
+      });
+      return best;
+    }
+    return { apply: apply, logged: logged, summary: summary, riskFor: riskFor, copier: copier, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe, unitOf: unitOf,
              loaded: loaded, ready: function () { return seeded; }, whenReady: whenReady,
              rows: function () { return rows; }, log: function () { return log; } };
   })();
@@ -28969,8 +28989,8 @@ try {
               + '<span class="unit-toggle-opt' + (u === lens ? ' active' : '') + '" data-lens="' + u + '">'
               + DU.lbl(u, 'T') + ' \u00b7 ' + counts[u] + '</span>').join('') + '</span>'
             + '<span class="combo-unit-lens-note">' + (es
-                ? 'Operas forex e índices. Los pips y los puntos no se pueden sumar, así que cada grupo se analiza por separado.'
-                : 'You trade forex and indices. Pips and points can\u2019t be added together, so each set is analysed on its own.')
+                ? 'Operas más de un tipo de mercado. Los pips y los puntos no se pueden sumar, así que cada grupo se analiza por separado.'
+                : 'You trade more than one kind of market. Pips and points can\u2019t be added together, so each set is analysed on its own.')
             + '</span>';
           lensEl.querySelectorAll('[data-lens]').forEach(b => b.addEventListener('click', () => {
             window.__stComboLens = b.getAttribute('data-lens');
@@ -50654,8 +50674,8 @@ try {
                   <span style="text-transform:capitalize;color:var(--text-mid);">${t.type === 'buy' ? 'Long' : 'Short'}</span>
                   <span class="mt5-result ${resCls}">${t.result}</span>
                   <span class="mt5-profit ${plCls}">${t.netPL >= 0 ? '+' : ''}${t.netPL.toFixed(2)}</span>
-                  <span class="mt5-profit ${pipsCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}${window.__stDU.lbl(t._distUnit || window.__stDU.symUnit(t.symbol), 'a')}</span>
-                  <span style="color:var(--text-dim);font-size:10px;">${t.symbol} · Vol ${t.volume}${t.slPips ? ' · SL ' + t.slPips.toFixed(1) + window.__stDU.lbl(t._distUnit || window.__stDU.symUnit(t.symbol), 'a') : ''}</span>
+                  <span class="mt5-profit ${pipsCls}">${t.pips >= 0 ? '+' : ''}${t.pips.toFixed(1)}${window.__stDU.lbl(window.__stDU.shown(t._distUnit || window.__stDU.symUnit(t.symbol), t.symbol), 'a')}</span>
+                  <span style="color:var(--text-dim);font-size:10px;">${t.symbol} · Vol ${t.volume}${t.slPips ? ' · SL ' + t.slPips.toFixed(1) + window.__stDU.lbl(window.__stDU.shown(t._distUnit || window.__stDU.symUnit(t.symbol), t.symbol), 'a') : ''}</span>
                 </div>
               `;
             }).join('')}
