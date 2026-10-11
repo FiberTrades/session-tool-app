@@ -2120,6 +2120,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
      small uppercase "HOW TO READ" label tag below is enough to separate the
      two blocks visually without needing a colour shift or accent border. */
   .econ-event-detail-interp { /* inherits text-mid colour from parent */ }
+  /* The facts under an event: a label column and a value column, like a short spec sheet. */
+  .econ-event-specs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 5px 16px; padding-top: 10px; border-top: 1px solid var(--border); }
+  .econ-spec-k { color: var(--text-dim); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; padding-top: 2px; white-space: nowrap; }
+  .econ-spec-v { color: var(--text-mid); min-width: 0; }
   .econ-event-detail-label { display: block; color: var(--text-dim); font-size: 9px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 4px; }
   .econ-event-detail-link { display: inline-flex; align-items: center; justify-content: center; padding: 4px; text-decoration: none; color: var(--text); opacity: 0.7; transition: opacity 150ms; cursor: pointer; flex-shrink: 0; margin-left: auto; }
   .econ-event-detail-link:hover { opacity: 1; }
@@ -9463,6 +9467,7 @@ try {
       'econ.col_forecast': 'Forecast',
       'econ.col_previous': 'Previous',
       'econ.detail_how_to_read': 'How to read',
+      'econ.detail_why': 'Why it matters', 'econ.spec_source': 'Source', 'econ.spec_measures': 'Measures', 'econ.spec_effect': 'Usual effect', 'econ.spec_freq': 'Frequency', 'econ.spec_aka': 'Also called', 'econ.spec_type': 'Event type',
       'econ.detail_what_is_it': 'What is it',
       'econ.today_mark': 'TODAY',
       'econ.loading_tomorrow': 'Loading tomorrow\'s events…',
@@ -11384,6 +11389,7 @@ try {
       'econ.col_forecast': 'Pronóstico',
       'econ.col_previous': 'Anterior',
       'econ.detail_how_to_read': 'Cómo interpretarlo',
+      'econ.detail_why': 'Por qué importa', 'econ.spec_source': 'Fuente', 'econ.spec_measures': 'Mide', 'econ.spec_effect': 'Efecto habitual', 'econ.spec_freq': 'Frecuencia', 'econ.spec_aka': 'También llamado', 'econ.spec_type': 'Tipo de evento',
       'econ.detail_what_is_it': 'Qué es',
       'econ.today_mark': 'HOY',
       'econ.loading_tomorrow': 'Cargando eventos de mañana…',
@@ -43891,11 +43897,727 @@ try {
   // impact level so low-/medium-impact events never show "No description
   // available" — the user always gets at least an at-a-glance sense of
   // what to expect from the release.
-  function getEventDescription(title, impact, country) {
+  // ============================================================================
+  // EVENT SPECS - what the calendar knows about each red and orange event (11 Oct 2026)
+  // ----------------------------------------------------------------------------
+  // Nestor: "all red and orange news should be known well by the app, so the info is not generic", and of a data
+  // provider's event page: "when i click on core CPI it should give me the same information as here ... i like this
+  // type of info too" (source, what it measures, the usual effect, how often it comes out, what else it is called).
+  // The FACTS are the same public ones; every word is the app's own - nothing is copied from a provider's page.
+  //
+  // One record per currency + title (the same title means different things for different currencies):
+  //   CUR | title (or ~regex for "X Speaks") | type | effect | frequency | source | also called | measures EN | measures ES
+  //   effect: U actual above forecast is good for the currency, D below is good, R a higher rate is good,
+  //           H a more hawkish tone is good, N no consistent effect.
+  // From a record the panel gets Source / Measures / Usual effect / Frequency / Also called / Event type, "Why it
+  // matters" (by type) and - where no hand-written text exists for that currency - "What is it" and "How to read".
+  // ============================================================================
+  const EVENT_SPEC_ROWS = `USD|Non-Farm Employment Change|job|U|NFP|Bureau of Labor Statistics|NFP, Non-Farm Payrolls|Change in the number of people employed outside farming during the previous month|Variación del número de personas empleadas fuera del sector agrícola durante el mes anterior
+USD|Unemployment Rate|job|D|NFP|Bureau of Labor Statistics|Jobless Rate|Share of the labour force that is out of work and actively looking for a job|Porcentaje de la población activa que está sin trabajo y busca empleo activamente
+USD|Average Hourly Earnings m/m|wage|U|NFP|Bureau of Labor Statistics|Wage Growth|Change in the average hourly pay of private-sector workers outside farming|Variación del salario medio por hora de los trabajadores del sector privado no agrícola
+USD|ADP Non-Farm Employment Change|job|U|ADP|ADP Research|ADP Payrolls, ADP Employment Report|Estimated change in private-sector jobs, built from the payroll records ADP processes|Variación estimada del empleo privado, a partir de las nóminas que procesa ADP
+USD|CPI m/m|inf|U|M~12|Bureau of Labor Statistics|Headline Inflation, Consumer Price Index|Change in the price of the goods and services consumers buy|Variación del precio de los bienes y servicios que compran los consumidores
+USD|CPI y/y|inf|U|M~12|Bureau of Labor Statistics|Headline Inflation, Consumer Price Index|Change in consumer prices compared with the same month a year earlier|Variación de los precios al consumo frente al mismo mes del año anterior
+USD|Core CPI m/m|inf|U|M~12|Bureau of Labor Statistics|CPI Ex Food and Energy, Underlying CPI|Change in the price of the goods and services consumers buy, leaving out food and energy|Variación del precio de los bienes y servicios que compran los consumidores, sin alimentos ni energía
+USD|Core CPI y/y|inf|U|M~12|Bureau of Labor Statistics|CPI Ex Food and Energy, Underlying CPI|Change in consumer prices, leaving out food and energy, compared with a year earlier|Variación de los precios al consumo, sin alimentos ni energía, frente al año anterior
+USD|PPI m/m|inf|U|M~13|Bureau of Labor Statistics|Producer Price Index, Wholesale Prices|Change in the prices producers receive for their finished goods and services|Variación de los precios que reciben los productores por sus bienes y servicios terminados
+USD|Core PPI m/m|inf|U|M~13|Bureau of Labor Statistics|PPI Ex Food and Energy|Change in the prices producers receive, leaving out food and energy|Variación de los precios que reciben los productores, sin alimentos ni energía
+USD|Core PCE Price Index m/m|inf|U|M~28|Bureau of Economic Analysis|Core PCE Deflator|Change in the prices of what consumers actually spend on, leaving out food and energy|Variación de los precios de aquello en lo que gastan los consumidores, sin alimentos ni energía
+USD|Federal Funds Rate|rate|R|8Y|Federal Reserve|Fed Rate Decision, FOMC Rate|The interest-rate range the Fed sets for overnight lending between banks|El rango de tipos de interés que fija la Fed para los préstamos a un día entre bancos
+USD|FOMC Statement|cbtext|H|8Y|Federal Reserve|Fed Statement|The Fed's written explanation of its rate decision and how it sees the economy|La explicación escrita de la Fed sobre su decisión de tipos y cómo ve la economía
+USD|FOMC Press Conference|cbtalk|H|8Y|Federal Reserve|Fed Presser|The Fed Chair taking questions from the press right after the rate decision|El presidente de la Fed respondiendo a la prensa justo después de la decisión de tipos
+USD|FOMC Economic Projections|cbtext|H|4Y|Federal Reserve|Dot Plot, Summary of Economic Projections|Each Fed official's forecasts for interest rates, growth, inflation and unemployment|Las previsiones de cada miembro de la Fed sobre tipos, crecimiento, inflación y desempleo
+USD|FOMC Meeting Minutes|cbtext|H|8Y3W|Federal Reserve|Fed Minutes|The detailed record of what was discussed at the Fed's latest rate meeting|El acta detallada de lo que se discutió en la última reunión de tipos de la Fed
+USD|~^Fed Chair(man)? .* Speaks$|cbtalk|H|IRR|Federal Reserve||A public speech or interview by the head of the Federal Reserve|Un discurso o entrevista pública del presidente de la Reserva Federal
+USD|~^Fed Chair(man)? .* Testifies$|cbtalk|H|2Y|Federal Reserve|Semi-Annual Monetary Policy Testimony|The Fed Chair answering questions from Congress about the economy and policy|El presidente de la Fed respondiendo ante el Congreso sobre la economía y la política monetaria
+USD|~^FOMC Member .* Speaks$|cbtalk|H|IRR|Federal Reserve||A public speech by one of the officials who take part in the Fed's rate decisions|Un discurso público de uno de los miembros que participan en las decisiones de tipos de la Fed
+USD|Advance GDP q/q|gdp|U|Q~30|Bureau of Economic Analysis|First GDP Estimate|First estimate of the annualised change in the value of everything the economy produced|Primera estimación de la variación anualizada del valor de todo lo producido por la economía
+USD|Prelim GDP q/q|gdp|U|Q~60|Bureau of Economic Analysis|Second GDP Estimate|Second estimate of the annualised change in the value of everything the economy produced|Segunda estimación de la variación anualizada del valor de todo lo producido por la economía
+USD|Final GDP q/q|gdp|U|Q~85|Bureau of Economic Analysis|Third GDP Estimate|Third and last estimate of the annualised change in the value of everything the economy produced|Tercera y última estimación de la variación anualizada del valor de todo lo producido por la economía
+USD|Advance GDP Price Index q/q|inf|U|Q~30|Bureau of Economic Analysis|GDP Deflator|First estimate of the annualised change in the prices of everything counted in GDP|Primera estimación de la variación anualizada de los precios de todo lo que cuenta en el PIB
+USD|Prelim GDP Price Index q/q|inf|U|Q~60|Bureau of Economic Analysis|GDP Deflator|Second estimate of the annualised change in the prices of everything counted in GDP|Segunda estimación de la variación anualizada de los precios de todo lo que cuenta en el PIB
+USD|Final GDP Price Index q/q|inf|U|Q~85|Bureau of Economic Analysis|GDP Deflator|Last estimate of the annualised change in the prices of everything counted in GDP|Última estimación de la variación anualizada de los precios de todo lo que cuenta en el PIB
+USD|Retail Sales m/m|cons|U|M~14|Census Bureau|Advance Retail Sales|Change in the total value of sales at shops, restaurants and online retailers|Variación del valor total de las ventas en tiendas, restaurantes y comercio en línea
+USD|Core Retail Sales m/m|cons|U|M~14|Census Bureau|Retail Sales Ex Autos|Change in the total value of retail sales, leaving out cars|Variación del valor total de las ventas minoristas, sin automóviles
+USD|ISM Manufacturing PMI|biz|U|M~1|Institute for Supply Management|Manufacturing ISM|Survey of purchasing managers at factories; a reading above 50 means the sector is growing|Encuesta a los gestores de compras de las fábricas; por encima de 50 el sector crece
+USD|ISM Services PMI|biz|U|M~3|Institute for Supply Management|Non-Manufacturing ISM|Survey of purchasing managers at service companies; a reading above 50 means the sector is growing|Encuesta a los gestores de compras de empresas de servicios; por encima de 50 el sector crece
+USD|ISM Manufacturing Prices|inf|U|M~1|Institute for Supply Management|Prices Paid|Whether factory purchasing managers are paying more for their inputs; above 50 means prices are rising|Si los gestores de compras de las fábricas pagan más por sus insumos; por encima de 50 los precios suben
+USD|Flash Manufacturing PMI|biz|U|FLASH|S&P Global||Early survey of purchasing managers at factories; a reading above 50 means the sector is growing|Encuesta preliminar a los gestores de compras de las fábricas; por encima de 50 el sector crece
+USD|Flash Services PMI|biz|U|FLASH|S&P Global||Early survey of purchasing managers at service companies; a reading above 50 means the sector is growing|Encuesta preliminar a los gestores de compras de servicios; por encima de 50 el sector crece
+USD|JOLTS Job Openings|job|U|M~35|Bureau of Labor Statistics|Job Openings|Number of unfilled job vacancies on the last business day of the month|Número de vacantes de empleo sin cubrir el último día hábil del mes
+USD|Unemployment Claims|job|D|W~5|Department of Labor|Initial Jobless Claims|Number of people who filed for unemployment benefits for the first time during the past week|Número de personas que pidieron el subsidio de desempleo por primera vez durante la última semana
+USD|CB Consumer Confidence|sent|U|ENDM|The Conference Board||Survey of households on how they see business conditions, jobs and their income, now and six months ahead|Encuesta a hogares sobre cómo ven la economía, el empleo y sus ingresos, ahora y a seis meses
+USD|Prelim UoM Consumer Sentiment|sent|U|MIDM|University of Michigan|Michigan Sentiment|Early reading of a survey asking consumers about their finances and the economy|Lectura preliminar de una encuesta a consumidores sobre sus finanzas y la economía
+USD|Revised UoM Consumer Sentiment|sent|U|ENDM|University of Michigan|Michigan Sentiment|Final reading of the month's survey asking consumers about their finances and the economy|Lectura final de la encuesta del mes a consumidores sobre sus finanzas y la economía
+USD|Prelim UoM Inflation Expectations|inf|U|MIDM|University of Michigan||Early reading of how much consumers expect prices to rise over the next 12 months|Lectura preliminar de cuánto esperan los consumidores que suban los precios en los próximos 12 meses
+USD|Revised UoM Inflation Expectations|inf|U|ENDM|University of Michigan||Final reading of how much consumers expect prices to rise over the next 12 months|Lectura final de cuánto esperan los consumidores que suban los precios en los próximos 12 meses
+USD|Philly Fed Manufacturing Index|biz|U|MIDM|Federal Reserve Bank of Philadelphia|Philadelphia Fed Survey|Survey of manufacturers in the Philadelphia region; a reading above 0 means conditions are improving|Encuesta a fabricantes de la región de Filadelfia; por encima de 0 las condiciones mejoran
+USD|Empire State Manufacturing Index|biz|U|MIDM|Federal Reserve Bank of New York|New York Fed Manufacturing|Survey of manufacturers in New York State; a reading above 0 means conditions are improving|Encuesta a fabricantes del estado de Nueva York; por encima de 0 las condiciones mejoran
+USD|Richmond Manufacturing Index|biz|U|ENDM|Federal Reserve Bank of Richmond||Survey of manufacturers in the Richmond region; a reading above 0 means conditions are improving|Encuesta a fabricantes de la región de Richmond; por encima de 0 las condiciones mejoran
+USD|Chicago PMI|biz|U|ENDM|ISM-Chicago and MNI|Chicago Business Barometer|Survey of purchasing managers in the Chicago area; a reading above 50 means business is growing|Encuesta a gestores de compras del área de Chicago; por encima de 50 la actividad crece
+USD|NFIB Small Business Index|biz|U|M~10|National Federation of Independent Business||Survey of small-business owners on their outlook, hiring and spending plans|Encuesta a dueños de pequeñas empresas sobre sus perspectivas y planes de contratación y gasto
+USD|Durable Goods Orders m/m|prod|U|M~26|Census Bureau||Change in the value of new orders placed with manufacturers for long-lasting goods|Variación del valor de los nuevos pedidos a fabricantes de bienes duraderos
+USD|Core Durable Goods Orders m/m|prod|U|M~26|Census Bureau|Durable Goods Ex Transportation|Change in the value of new orders for long-lasting goods, leaving out transport equipment|Variación del valor de los nuevos pedidos de bienes duraderos, sin material de transporte
+USD|Factory Orders m/m|prod|U|M~35|Census Bureau||Change in the total value of new orders placed with manufacturers|Variación del valor total de los nuevos pedidos a fabricantes
+USD|Industrial Production m/m|prod|U|M~16|Federal Reserve||Change in the output of factories, mines and utilities|Variación de la producción de fábricas, minas y suministros
+USD|Capacity Utilization Rate|prod|U|M~16|Federal Reserve||Share of their available capacity that factories, mines and utilities are using|Porcentaje de su capacidad disponible que usan fábricas, minas y suministros
+USD|Prelim Nonfarm Productivity q/q|prod|U|Q~35|Bureau of Labor Statistics||First estimate of the annualised change in output per hour worked outside farming|Primera estimación de la variación anualizada de la producción por hora trabajada fuera del sector agrícola
+USD|Prelim Unit Labor Costs q/q|wage|U|Q~35|Bureau of Labor Statistics||First estimate of the annualised change in what businesses pay for labour per unit of output|Primera estimación de la variación anualizada del coste laboral por unidad producida
+USD|Employment Cost Index q/q|wage|U|Q~30|Bureau of Labor Statistics|ECI|Change in what employers pay for labour, wages and benefits together|Variación de lo que pagan los empleadores por el trabajo, salarios y beneficios juntos
+USD|Existing Home Sales|house|U|M~20|National Association of Realtors|Home Resales|Annualised number of previously owned homes sold during the month|Número anualizado de viviendas de segunda mano vendidas durante el mes
+USD|New Home Sales|house|U|M~25|Census Bureau||Annualised number of newly built homes sold during the month|Número anualizado de viviendas nuevas vendidas durante el mes
+USD|Pending Home Sales m/m|house|U|M~28|National Association of Realtors||Change in the number of homes under contract to be sold but not yet completed|Variación del número de viviendas con contrato de venta firmado pero aún sin cerrar
+USD|Building Permits|house|U|M~17|Census Bureau||Annualised number of permits issued to build new homes|Número anualizado de permisos concedidos para construir viviendas nuevas
+USD|Housing Starts|house|U|M~17|Census Bureau||Annualised number of new homes on which building work began|Número anualizado de viviendas nuevas cuya construcción ha comenzado
+USD|Personal Income m/m|cons|U|M~28|Bureau of Economic Analysis||Change in the total income households received from all sources|Variación de los ingresos totales que recibieron los hogares de todas las fuentes
+USD|Personal Spending m/m|cons|U|M~28|Bureau of Economic Analysis|Consumer Spending|Change in the total value of what consumers spent|Variación del valor total de lo que gastaron los consumidores
+USD|Consumer Credit m/m|money|U|M~38|Federal Reserve||Change in the total of consumer borrowing that is repaid in instalments|Variación del total del crédito al consumo que se devuelve a plazos
+USD|Trade Balance|trade|U|M~35|Census Bureau and Bureau of Economic Analysis||Difference in value between the goods and services exported and imported|Diferencia de valor entre los bienes y servicios exportados e importados
+USD|Import Prices m/m|inf|U|M~14|Bureau of Labor Statistics||Change in the price of goods bought from abroad|Variación del precio de los bienes comprados en el exterior
+USD|Crude Oil Inventories|energy|N|W~5|Energy Information Administration|Crude Stocks|Change in the number of barrels of crude oil held by commercial firms during the past week|Variación del número de barriles de crudo almacenados por empresas durante la última semana
+USD|Challenger Job Cuts y/y|job|D|M~3|Challenger, Gray & Christmas||Change in the number of job cuts employers announced, compared with a year earlier|Variación del número de despidos anunciados por las empresas frente al año anterior
+USD|Prelim Benchmark Payrolls Revision|job|U|Y|Bureau of Labor Statistics|Benchmark Revision|The yearly correction of payroll job counts against unemployment-insurance tax records|La corrección anual del recuento de empleos con los registros fiscales del seguro de desempleo
+USD|10-y Bond Auction|bond|N|M|US Treasury||Sale of 10-year government notes: the yield paid and how much demand there was|Subasta de deuda pública a 10 años: el rendimiento pagado y cuánta demanda hubo
+USD|30-y Bond Auction|bond|N|M|US Treasury||Sale of 30-year government bonds: the yield paid and how much demand there was|Subasta de deuda pública a 30 años: el rendimiento pagado y cuánta demanda hubo
+USD|Beige Book|cbtext|H|8Y|Federal Reserve||Summary of economic conditions gathered by the 12 regional Fed banks, out two weeks before each meeting|Resumen de las condiciones económicas recogidas por los 12 bancos regionales de la Fed, dos semanas antes de cada reunión
+USD|Fed Monetary Policy Report|cbtext|H|2Y|Federal Reserve||The Fed's twice-yearly report to Congress on the economy and its policy|El informe semestral de la Fed al Congreso sobre la economía y su política
+USD|Bank Stress Test Results|cbtext|N|Y|Federal Reserve||Whether the largest US banks would still hold enough capital through a severe downturn|Si los mayores bancos de EE. UU. mantendrían capital suficiente en una recesión severa
+USD|Treasury Currency Report|pol|N|2Y|US Treasury||The Treasury's review of the currency practices of the main trading partners|El examen del Tesoro sobre las prácticas cambiarias de los principales socios comerciales
+USD|~^President .* Speaks$|pol|N|IRR|The White House||A public speech or press event by the US President|Un discurso o acto público del presidente de EE. UU.
+USD|~^Treasury Sec .* Speaks$|pol|N|IRR|US Treasury||A public speech by the US Treasury Secretary|Un discurso público del secretario del Tesoro de EE. UU.
+USD|Presidential Election|pol|N|4YRS|||Voters choose the US President|Los votantes eligen al presidente de EE. UU.
+USD|Congressional Elections|pol|N|2YRS|||Voters choose the members of Congress|Los votantes eligen a los miembros del Congreso
+EUR|Main Refinancing Rate|rate|R|8Y|European Central Bank|ECB Rate Decision|The rate at which banks can borrow from the ECB for a week, announced with its other policy rates|El tipo al que los bancos pueden pedir prestado al BCE a una semana, anunciado con sus otros tipos
+EUR|Deposit Facility Rate|rate|R|8Y|European Central Bank|ECB Deposit Rate|The rate banks earn on money left overnight at the ECB, the rate that steers eurozone policy|El tipo que reciben los bancos por el dinero depositado a un día en el BCE, el que guía la política de la eurozona
+EUR|Monetary Policy Statement|cbtext|H|8Y|European Central Bank|ECB Statement|The ECB's written explanation of its rate decision and how it sees the economy|La explicación escrita del BCE sobre su decisión de tipos y cómo ve la economía
+EUR|ECB Press Conference|cbtalk|H|8Y|European Central Bank|ECB Presser|The ECB President taking questions from the press after the rate decision|La presidenta del BCE respondiendo a la prensa tras la decisión de tipos
+EUR|~^ECB President .* Speaks$|cbtalk|H|IRR|European Central Bank||A public speech or interview by the head of the European Central Bank|Un discurso o entrevista pública de la presidenta del Banco Central Europeo
+EUR|~^German Buba President .* Speaks$|cbtalk|H|IRR|Deutsche Bundesbank||A public speech by the head of Germany's central bank, who sits on the ECB's rate-setting council|Un discurso del presidente del banco central alemán, miembro del consejo que fija los tipos del BCE
+EUR|ECB Monetary Policy Meeting Accounts|cbtext|H|8Y4W|European Central Bank|ECB Minutes|The detailed record of what was discussed at the ECB's latest rate meeting|El acta detallada de lo que se discutió en la última reunión de tipos del BCE
+EUR|ECB Economic Bulletin|cbtext|H|8Y|European Central Bank||The economic analysis the ECB's council used for its latest rate decision|El análisis económico que usó el consejo del BCE para su última decisión de tipos
+EUR|ECB Financial Stability Review|cbtext|N|2Y|European Central Bank||The ECB's review of the risks to the eurozone's banks and financial system|El examen del BCE de los riesgos para los bancos y el sistema financiero de la eurozona
+EUR|CPI Flash Estimate y/y|inf|U|M~1|Eurostat|Flash HICP|Early estimate of the change in eurozone consumer prices compared with a year earlier|Estimación preliminar de la variación de los precios al consumo de la eurozona frente al año anterior
+EUR|Core CPI Flash Estimate y/y|inf|U|M~1|Eurostat|Flash Core HICP|Early estimate of eurozone consumer prices, leaving out food, energy, alcohol and tobacco, compared with a year earlier|Estimación preliminar de los precios al consumo de la eurozona, sin alimentos, energía, alcohol ni tabaco, frente al año anterior
+EUR|Final CPI y/y|inf|U|M~16|Eurostat|Final HICP|Confirmed change in eurozone consumer prices compared with a year earlier|Variación confirmada de los precios al consumo de la eurozona frente al año anterior
+EUR|Final Core CPI y/y|inf|U|M~16|Eurostat|Final Core HICP|Confirmed change in eurozone consumer prices, leaving out food, energy, alcohol and tobacco|Variación confirmada de los precios al consumo de la eurozona, sin alimentos, energía, alcohol ni tabaco
+EUR|German Prelim CPI m/m|inf|U|ENDM|Destatis|German Flash Inflation|Early estimate of the change in consumer prices in Germany, the eurozone's largest economy|Estimación preliminar de la variación de los precios al consumo en Alemania, la mayor economía de la eurozona
+EUR|German Final CPI m/m|inf|U|M~12|Destatis||Confirmed change in consumer prices in Germany|Variación confirmada de los precios al consumo en Alemania
+EUR|Spanish Flash CPI y/y|inf|U|ENDM|INE (Spain)||Early estimate of the change in consumer prices in Spain compared with a year earlier|Estimación preliminar de la variación de los precios al consumo en España frente al año anterior
+EUR|French Prelim CPI m/m|inf|U|ENDM|INSEE (France)||Early estimate of the change in consumer prices in France|Estimación preliminar de la variación de los precios al consumo en Francia
+EUR|Italian Prelim CPI m/m|inf|U|ENDM|Istat (Italy)||Early estimate of the change in consumer prices in Italy|Estimación preliminar de la variación de los precios al consumo en Italia
+EUR|PPI m/m|inf|U|M~33|Eurostat||Change in the prices eurozone producers receive for their goods|Variación de los precios que reciben los productores de la eurozona por sus bienes
+EUR|German PPI m/m|inf|U|M~20|Destatis||Change in the prices German producers receive for their goods|Variación de los precios que reciben los productores alemanes por sus bienes
+EUR|German Flash Manufacturing PMI|biz|U|FLASH|S&P Global (HCOB)||Early survey of purchasing managers at German factories; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de fábricas alemanas; por encima de 50 el sector crece
+EUR|German Flash Services PMI|biz|U|FLASH|S&P Global (HCOB)||Early survey of purchasing managers at German service companies; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de servicios en Alemania; por encima de 50 el sector crece
+EUR|French Flash Manufacturing PMI|biz|U|FLASH|S&P Global (HCOB)||Early survey of purchasing managers at French factories; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de fábricas francesas; por encima de 50 el sector crece
+EUR|French Flash Services PMI|biz|U|FLASH|S&P Global (HCOB)||Early survey of purchasing managers at French service companies; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de servicios en Francia; por encima de 50 el sector crece
+EUR|Flash Manufacturing PMI|biz|U|FLASH|S&P Global (HCOB)||Early survey of purchasing managers at eurozone factories; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de fábricas de la eurozona; por encima de 50 el sector crece
+EUR|Flash Services PMI|biz|U|FLASH|S&P Global (HCOB)||Early survey of purchasing managers at eurozone service companies; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de servicios de la eurozona; por encima de 50 el sector crece
+EUR|Final Manufacturing PMI|biz|U|M~1|S&P Global (HCOB)||Final reading of the month's survey of eurozone factory purchasing managers; above 50 means growth|Lectura final de la encuesta del mes a gestores de compras de fábricas de la eurozona; por encima de 50 hay crecimiento
+EUR|Final Services PMI|biz|U|M~3|S&P Global (HCOB)||Final reading of the month's survey of eurozone service-sector purchasing managers; above 50 means growth|Lectura final de la encuesta del mes a gestores de compras de servicios de la eurozona; por encima de 50 hay crecimiento
+EUR|Spanish Manufacturing PMI|biz|U|M~1|S&P Global (HCOB)||Survey of purchasing managers at Spanish factories; above 50 means the sector is growing|Encuesta a gestores de compras de fábricas españolas; por encima de 50 el sector crece
+EUR|Italian Manufacturing PMI|biz|U|M~1|S&P Global (HCOB)||Survey of purchasing managers at Italian factories; above 50 means the sector is growing|Encuesta a gestores de compras de fábricas italianas; por encima de 50 el sector crece
+EUR|German ifo Business Climate|biz|U|ENDM|ifo Institute||Survey of about 9,000 German companies on their current business and their expectations for six months ahead|Encuesta a unas 9.000 empresas alemanas sobre su situación actual y sus expectativas a seis meses
+EUR|German ZEW Economic Sentiment|sent|U|MIDM|ZEW||Survey of financial analysts on where they expect the German economy to be in six months; above 0 means optimism|Encuesta a analistas financieros sobre dónde esperan la economía alemana en seis meses; por encima de 0 hay optimismo
+EUR|ZEW Economic Sentiment|sent|U|MIDM|ZEW||Survey of financial analysts on where they expect the eurozone economy to be in six months; above 0 means optimism|Encuesta a analistas financieros sobre dónde esperan la economía de la eurozona en seis meses; por encima de 0 hay optimismo
+EUR|Sentix Investor Confidence|sent|U|M~-20|Sentix||Survey of investors and analysts on the eurozone's economic outlook; above 0 means optimism|Encuesta a inversores y analistas sobre las perspectivas de la eurozona; por encima de 0 hay optimismo
+EUR|German GfK Consumer Climate|sent|U|ENDM|GfK and NIM||Survey of German consumers on their income expectations and willingness to spend, as a forecast for next month|Encuesta a consumidores alemanes sobre sus ingresos esperados y su disposición a gastar, como previsión del mes siguiente
+EUR|Consumer Confidence|sent|U|ENDM|European Commission||Survey of eurozone households on their finances and the economy; below 0 means pessimism|Encuesta a hogares de la eurozona sobre sus finanzas y la economía; por debajo de 0 hay pesimismo
+EUR|German Prelim GDP q/q|gdp|U|Q~30|Destatis||First estimate of the change in the value of everything the German economy produced|Primera estimación de la variación del valor de todo lo producido por la economía alemana
+EUR|French Flash GDP q/q|gdp|U|Q~30|INSEE (France)||First estimate of the change in the value of everything the French economy produced|Primera estimación de la variación del valor de todo lo producido por la economía francesa
+EUR|Prelim Flash GDP q/q|gdp|U|Q~30|Eurostat||First estimate of the change in the value of everything the eurozone economy produced|Primera estimación de la variación del valor de todo lo producido por la economía de la eurozona
+EUR|Flash GDP q/q|gdp|U|Q~45|Eurostat||Second estimate of the change in the value of everything the eurozone economy produced|Segunda estimación de la variación del valor de todo lo producido por la economía de la eurozona
+EUR|Revised GDP q/q|gdp|U|Q~65|Eurostat||Third estimate of the change in the value of everything the eurozone economy produced|Tercera estimación de la variación del valor de todo lo producido por la economía de la eurozona
+EUR|German Unemployment Change|job|D|M~-1|Federal Employment Agency (Germany)||Change in the number of people registered as unemployed in Germany during the month|Variación del número de personas registradas como desempleadas en Alemania durante el mes
+EUR|Spanish Unemployment Change|job|D|M~2|Ministry of Labour (Spain)||Change in the number of people registered as unemployed in Spain during the month|Variación del número de personas registradas como desempleadas en España durante el mes
+EUR|Unemployment Rate|job|D|M~32|Eurostat||Share of the eurozone's labour force that is out of work and looking for a job|Porcentaje de la población activa de la eurozona sin trabajo y en busca de empleo
+EUR|Italian Monthly Unemployment Rate|job|D|M~32|Istat (Italy)||Share of Italy's labour force that is out of work and looking for a job|Porcentaje de la población activa de Italia sin trabajo y en busca de empleo
+EUR|German Retail Sales m/m|cons|U|M~32|Destatis||Change in the inflation-adjusted value of sales at German shops|Variación del valor, ajustado por inflación, de las ventas en las tiendas alemanas
+EUR|Retail Sales m/m|cons|U|M~35|Eurostat||Change in the inflation-adjusted value of sales at eurozone shops|Variación del valor, ajustado por inflación, de las ventas en las tiendas de la eurozona
+EUR|German Industrial Production m/m|prod|U|M~38|Destatis||Change in the output of German factories, mines and utilities|Variación de la producción de fábricas, minas y suministros alemanes
+EUR|Industrial Production m/m|prod|U|M~43|Eurostat||Change in the output of eurozone factories, mines and utilities|Variación de la producción de fábricas, minas y suministros de la eurozona
+EUR|German Factory Orders m/m|prod|U|M~36|Destatis||Change in the value of new orders placed with German manufacturers|Variación del valor de los nuevos pedidos a fabricantes alemanes
+EUR|German Trade Balance|trade|U|M~40|Destatis||Difference in value between the goods Germany exported and imported|Diferencia de valor entre los bienes que Alemania exportó e importó
+EUR|Trade Balance|trade|U|M~45|Eurostat||Difference in value between the goods the eurozone exported and imported|Diferencia de valor entre los bienes que la eurozona exportó e importó
+EUR|Current Account|trade|U|M~50|European Central Bank||Difference in value between the eurozone's exports and imports of goods, services and income flows|Diferencia de valor entre exportaciones e importaciones de bienes, servicios y rentas de la eurozona
+EUR|M3 Money Supply y/y|money|U|M~28|European Central Bank||Change in the total amount of money in circulation and in bank deposits in the eurozone|Variación de la cantidad total de dinero en circulación y en depósitos bancarios en la eurozona
+EUR|Eurogroup Meetings|summit|N|M|Eurogroup||Meeting of the eurozone's finance ministers|Reunión de los ministros de finanzas de la eurozona
+EUR|ECOFIN Meetings|summit|N|M|Council of the European Union||Meeting of the European Union's finance ministers|Reunión de los ministros de finanzas de la Unión Europea
+EUR|EU Economic Summit|summit|N|IRR|European Council||Meeting of the European Union's heads of government|Reunión de los jefes de gobierno de la Unión Europea
+GBP|Official Bank Rate|rate|R|8Y|Bank of England|BoE Rate Decision, Base Rate|The interest rate the Bank of England pays on the reserves banks hold with it|El tipo de interés que el Banco de Inglaterra paga por las reservas que los bancos mantienen en él
+GBP|Monetary Policy Summary|cbtext|H|8Y|Bank of England|BoE Statement|The Bank of England's written explanation of its rate decision, with the minutes of the meeting|La explicación escrita del Banco de Inglaterra sobre su decisión de tipos, con el acta de la reunión
+GBP|MPC Official Bank Rate Votes|cbtext|H|8Y|Bank of England|MPC Vote Split|How the nine rate-setters voted: to raise, cut or hold the rate|Cómo votaron los nueve miembros que fijan los tipos: subir, bajar o mantener
+GBP|BOE Monetary Policy Report|cbtext|H|4Y|Bank of England|Inflation Report|The Bank of England's quarterly forecasts for inflation and growth|Las previsiones trimestrales del Banco de Inglaterra sobre inflación y crecimiento
+GBP|~^BOE Gov .* Speaks$|cbtalk|H|IRR|Bank of England||A public speech or interview by the Governor of the Bank of England|Un discurso o entrevista pública del gobernador del Banco de Inglaterra
+GBP|~^MPC Member .* Speaks$|cbtalk|H|IRR|Bank of England||A public speech by one of the nine officials who set UK interest rates|Un discurso público de uno de los nueve miembros que fijan los tipos de interés británicos
+GBP|Monetary Policy Report Hearings|cbtalk|H|4Y|Bank of England and Parliament|Treasury Committee Hearing|The Governor and other rate-setters answering Parliament's questions on the latest report|El gobernador y otros miembros respondiendo al Parlamento sobre el último informe
+GBP|Inflation Report Hearings|cbtalk|H|4Y|Bank of England and Parliament||The Governor and other rate-setters answering Parliament's questions on inflation and the outlook|El gobernador y otros miembros respondiendo al Parlamento sobre la inflación y las perspectivas
+GBP|BOE Financial Stability Report|cbtext|N|2Y|Bank of England||The Bank of England's review of the risks to UK banks and the financial system|El examen del Banco de Inglaterra de los riesgos para los bancos y el sistema financiero británicos
+GBP|CPI y/y|inf|U|M~16|Office for National Statistics|Headline Inflation|Change in the price of the goods and services UK consumers buy, compared with a year earlier|Variación del precio de los bienes y servicios que compran los consumidores británicos frente al año anterior
+GBP|Core CPI y/y|inf|U|M~16|Office for National Statistics||Change in UK consumer prices, leaving out food, energy, alcohol and tobacco, compared with a year earlier|Variación de los precios al consumo británicos, sin alimentos, energía, alcohol ni tabaco, frente al año anterior
+GBP|RPI y/y|inf|U|M~16|Office for National Statistics|Retail Price Index|An older measure of UK consumer prices that includes housing costs, compared with a year earlier|Una medida más antigua de los precios al consumo británicos que incluye la vivienda, frente al año anterior
+GBP|PPI Input m/m|inf|U|M~16|Office for National Statistics||Change in the price of the materials and fuel UK manufacturers buy|Variación del precio de las materias primas y el combustible que compran los fabricantes británicos
+GBP|PPI Output m/m|inf|U|M~16|Office for National Statistics|Factory Gate Prices|Change in the price of the goods UK manufacturers sell|Variación del precio de los bienes que venden los fabricantes británicos
+GBP|GDP m/m|gdp|U|M~40|Office for National Statistics||Change in the value of everything the UK economy produced during the month|Variación del valor de todo lo producido por la economía británica durante el mes
+GBP|Prelim GDP q/q|gdp|U|Q~40|Office for National Statistics||First estimate of the change in the value of everything the UK economy produced in the quarter|Primera estimación de la variación del valor de todo lo producido por la economía británica en el trimestre
+GBP|Final GDP q/q|gdp|U|Q~85|Office for National Statistics||Revised estimate of the change in the value of everything the UK economy produced in the quarter|Estimación revisada de la variación del valor de todo lo producido por la economía británica en el trimestre
+GBP|Claimant Count Change|job|D|M~14|Office for National Statistics||Change in the number of people claiming unemployment-related benefits during the month|Variación del número de personas que cobran prestaciones por desempleo durante el mes
+GBP|Unemployment Rate|job|D|M~45|Office for National Statistics||Share of the UK's labour force out of work and looking for a job, over the last three months|Porcentaje de la población activa británica sin trabajo y en busca de empleo, en los últimos tres meses
+GBP|Average Earnings Index 3m/y|wage|U|M~45|Office for National Statistics|Wage Growth|Change in average pay including bonuses over the last three months, compared with a year earlier|Variación del salario medio con primas en los últimos tres meses frente al año anterior
+GBP|Retail Sales m/m|cons|U|M~20|Office for National Statistics||Change in the inflation-adjusted volume of sales at UK shops and online|Variación del volumen, ajustado por inflación, de las ventas en tiendas británicas y en línea
+GBP|BRC Retail Sales Monitor y/y|cons|U|M~5|British Retail Consortium||Change in the value of sales at the same stores of large UK retailers, compared with a year earlier|Variación del valor de las ventas en las mismas tiendas de grandes minoristas británicos frente al año anterior
+GBP|Flash Manufacturing PMI|biz|U|FLASH|S&P Global||Early survey of purchasing managers at UK factories; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de fábricas británicas; por encima de 50 el sector crece
+GBP|Flash Services PMI|biz|U|FLASH|S&P Global||Early survey of purchasing managers at UK service companies; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de servicios británicos; por encima de 50 el sector crece
+GBP|Final Manufacturing PMI|biz|U|M~1|S&P Global||Final reading of the month's survey of UK factory purchasing managers; above 50 means growth|Lectura final de la encuesta del mes a gestores de compras de fábricas británicas; por encima de 50 hay crecimiento
+GBP|Final Services PMI|biz|U|M~3|S&P Global||Final reading of the month's survey of UK service-sector purchasing managers; above 50 means growth|Lectura final de la encuesta del mes a gestores de compras de servicios británicos; por encima de 50 hay crecimiento
+GBP|Construction PMI|biz|U|M~4|S&P Global||Survey of purchasing managers at UK building companies; above 50 means the sector is growing|Encuesta a gestores de compras de constructoras británicas; por encima de 50 el sector crece
+GBP|CBI Industrial Order Expectations|biz|U|ENDM|Confederation of British Industry||Survey of UK manufacturers on whether their order books are above or below normal|Encuesta a fabricantes británicos sobre si su cartera de pedidos está por encima o por debajo de lo normal
+GBP|GfK Consumer Confidence|sent|U|ENDM|GfK and NIM||Survey of UK households on their finances and the economy; below 0 means pessimism|Encuesta a hogares británicos sobre sus finanzas y la economía; por debajo de 0 hay pesimismo
+GBP|Manufacturing Production m/m|prod|U|M~40|Office for National Statistics||Change in the output of UK manufacturers|Variación de la producción de los fabricantes británicos
+GBP|Industrial Production m/m|prod|U|M~40|Office for National Statistics||Change in the output of UK factories, mines and utilities|Variación de la producción de fábricas, minas y suministros británicos
+GBP|Goods Trade Balance|trade|U|M~40|Office for National Statistics||Difference in value between the goods the UK exported and imported|Diferencia de valor entre los bienes que el Reino Unido exportó e importó
+GBP|Public Sector Net Borrowing|fiscal|D|M~21|Office for National Statistics||How much more the UK government spent than it received during the month|Cuánto más gastó el gobierno británico de lo que ingresó durante el mes
+GBP|Halifax HPI m/m|house|U|M~7|Halifax (Lloyds Banking Group)||Change in the price of homes bought with a Halifax mortgage|Variación del precio de las viviendas compradas con una hipoteca de Halifax
+GBP|Nationwide HPI m/m|house|U|M~1|Nationwide Building Society||Change in the price of homes bought with a Nationwide mortgage|Variación del precio de las viviendas compradas con una hipoteca de Nationwide
+GBP|Rightmove HPI m/m|house|U|MIDM|Rightmove||Change in the asking price of homes newly put up for sale|Variación del precio de oferta de las viviendas recién puestas a la venta
+GBP|Mortgage Approvals|house|U|M~29|Bank of England||Number of new home loans approved for purchases during the month|Número de nuevas hipotecas aprobadas para compra durante el mes
+GBP|Autumn Forecast Statement|fiscal|N|Y|HM Treasury|Autumn Statement, Autumn Budget|The Chancellor's update to Parliament on the public finances, with new forecasts|La actualización del ministro de Hacienda al Parlamento sobre las finanzas públicas, con nuevas previsiones
+GBP|Annual Budget Release|fiscal|N|Y|HM Treasury|The Budget|The government's yearly plan for taxes, spending and borrowing|El plan anual del gobierno de impuestos, gasto y endeudamiento
+GBP|10-y Bond Auction|bond|N|M|UK Debt Management Office|Gilt Auction|Sale of 10-year UK government bonds: the yield paid and how much demand there was|Subasta de bonos británicos a 10 años: el rendimiento pagado y cuánta demanda hubo
+GBP|Parliamentary Elections|pol|N|IRR|||Voters choose the members of the UK Parliament|Los votantes eligen a los miembros del Parlamento británico
+JPY|BOJ Policy Rate|rate|R|8Y|Bank of Japan|BoJ Rate Decision|The short-term interest rate the Bank of Japan sets for overnight lending between banks|El tipo de interés a corto plazo que fija el Banco de Japón para los préstamos a un día entre bancos
+JPY|Monetary Policy Statement|cbtext|H|8Y|Bank of Japan|BoJ Statement|The Bank of Japan's written explanation of its rate decision and how it sees the economy|La explicación escrita del Banco de Japón sobre su decisión de tipos y cómo ve la economía
+JPY|BOJ Outlook Report|cbtext|H|4Y|Bank of Japan||The Bank of Japan's quarterly forecasts for inflation and growth|Las previsiones trimestrales del Banco de Japón sobre inflación y crecimiento
+JPY|BOJ Press Conference|cbtalk|H|8Y|Bank of Japan|BoJ Presser|The Bank of Japan Governor taking questions from the press after the rate decision|El gobernador del Banco de Japón respondiendo a la prensa tras la decisión de tipos
+JPY|~^BOJ Gov .* Speaks$|cbtalk|H|IRR|Bank of Japan||A public speech or interview by the Governor of the Bank of Japan|Un discurso o entrevista pública del gobernador del Banco de Japón
+JPY|Monetary Policy Meeting Minutes|cbtext|H|8Y|Bank of Japan|BoJ Minutes|The detailed record of a Bank of Japan rate meeting, published after the following one|El acta detallada de una reunión de tipos del Banco de Japón, publicada tras la siguiente
+JPY|BOJ Summary of Opinions|cbtext|H|8Y|Bank of Japan||The views each board member voiced at the latest rate meeting, out about a week after it|Las opiniones que expresó cada miembro en la última reunión de tipos, una semana después de ella
+JPY|Tokyo Core CPI y/y|inf|U|ENDM|Statistics Bureau of Japan||Change in consumer prices in Tokyo, leaving out fresh food, compared with a year earlier; an early guide to the national figure|Variación de los precios al consumo en Tokio, sin alimentos frescos, frente al año anterior; un anticipo del dato nacional
+JPY|National Core CPI y/y|inf|U|M~20|Statistics Bureau of Japan||Change in Japan's consumer prices, leaving out fresh food, compared with a year earlier|Variación de los precios al consumo de Japón, sin alimentos frescos, frente al año anterior
+JPY|BOJ Core CPI y/y|inf|U|M~25|Bank of Japan||The Bank of Japan's own measures of underlying inflation, compared with a year earlier|Las medidas propias del Banco de Japón de la inflación subyacente, frente al año anterior
+JPY|SPPI y/y|inf|U|M~25|Bank of Japan|Services Producer Price Index|Change in the prices companies charge each other for services, compared with a year earlier|Variación de los precios que las empresas se cobran entre sí por servicios, frente al año anterior
+JPY|PPI y/y|inf|U|M~10|Bank of Japan|Corporate Goods Price Index|Change in the prices companies charge each other for goods, compared with a year earlier|Variación de los precios que las empresas se cobran entre sí por bienes, frente al año anterior
+JPY|Prelim GDP q/q|gdp|U|Q~45|Cabinet Office||First estimate of the change in the value of everything Japan's economy produced in the quarter|Primera estimación de la variación del valor de todo lo producido por la economía japonesa en el trimestre
+JPY|Final GDP q/q|gdp|U|Q~70|Cabinet Office||Revised estimate of the change in the value of everything Japan's economy produced in the quarter|Estimación revisada de la variación del valor de todo lo producido por la economía japonesa en el trimestre
+JPY|Prelim GDP Price Index y/y|inf|U|Q~45|Cabinet Office|GDP Deflator|First estimate of the change in the prices of everything counted in Japan's GDP, compared with a year earlier|Primera estimación de la variación de los precios de todo lo que cuenta en el PIB japonés, frente al año anterior
+JPY|Tankan Manufacturing Index|biz|U|Q~1|Bank of Japan||The Bank of Japan's quarterly survey of large manufacturers; above 0 means more see conditions as good than bad|La encuesta trimestral del Banco de Japón a grandes fabricantes; por encima de 0, más ven buenas condiciones que malas
+JPY|Tankan Non-Manufacturing Index|biz|U|Q~1|Bank of Japan||The Bank of Japan's quarterly survey of large service companies; above 0 means more see conditions as good than bad|La encuesta trimestral del Banco de Japón a grandes empresas de servicios; por encima de 0, más ven buenas condiciones que malas
+JPY|Flash Manufacturing PMI|biz|U|FLASH|S&P Global (au Jibun Bank)||Early survey of purchasing managers at Japanese factories; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de fábricas japonesas; por encima de 50 el sector crece
+JPY|Final Manufacturing PMI|biz|U|M~1|S&P Global (au Jibun Bank)||Final reading of the month's survey of Japanese factory purchasing managers; above 50 means growth|Lectura final de la encuesta del mes a gestores de compras de fábricas japonesas; por encima de 50 hay crecimiento
+JPY|Economy Watchers Sentiment|sent|U|M~8|Cabinet Office||Survey of workers who deal with consumers every day, such as taxi drivers and shop staff; above 50 means optimism|Encuesta a trabajadores en contacto diario con consumidores, como taxistas y dependientes; por encima de 50 hay optimismo
+JPY|Unemployment Rate|job|D|M~30|Statistics Bureau of Japan||Share of Japan's labour force that is out of work and looking for a job|Porcentaje de la población activa de Japón sin trabajo y en busca de empleo
+JPY|Average Cash Earnings y/y|wage|U|M~38|Ministry of Health, Labour and Welfare|Wage Growth|Change in the average pay of workers, with overtime and bonuses, compared with a year earlier|Variación del salario medio de los trabajadores, con horas extra y primas, frente al año anterior
+JPY|Household Spending y/y|cons|U|M~35|Statistics Bureau of Japan||Change in the inflation-adjusted amount households spent, compared with a year earlier|Variación de lo que gastaron los hogares, ajustado por inflación, frente al año anterior
+JPY|Retail Sales y/y|cons|U|M~28|Ministry of Economy, Trade and Industry||Change in the total value of sales at Japanese shops, compared with a year earlier|Variación del valor total de las ventas en las tiendas japonesas frente al año anterior
+JPY|Prelim Industrial Production m/m|prod|U|M~28|Ministry of Economy, Trade and Industry||First estimate of the change in the output of Japan's factories, mines and utilities|Primera estimación de la variación de la producción de fábricas, minas y suministros de Japón
+JPY|Core Machinery Orders m/m|prod|U|M~45|Cabinet Office||Change in the value of new private orders for machinery, leaving out ships and utilities; a guide to future investment|Variación del valor de los nuevos pedidos privados de maquinaria, sin barcos ni suministros; una guía de la inversión futura
+JPY|Capital Spending q/y|prod|U|Q~62|Ministry of Finance||Change in what companies invested in buildings and equipment, compared with a year earlier|Variación de lo que invirtieron las empresas en edificios y equipos frente al año anterior
+JPY|Trade Balance|trade|U|M~20|Ministry of Finance||Difference in value between the goods Japan exported and imported|Diferencia de valor entre los bienes que Japón exportó e importó
+JPY|Current Account|trade|U|M~40|Ministry of Finance||Difference in value between Japan's exports and imports of goods, services and income flows|Diferencia de valor entre exportaciones e importaciones de bienes, servicios y rentas de Japón
+JPY|Bank Lending y/y|money|U|M~8|Bank of Japan||Change in the total value of loans outstanding at Japanese banks, compared with a year earlier|Variación del valor total de los préstamos vivos de los bancos japoneses frente al año anterior
+JPY|Lower House Elections|pol|N|IRR|||Voters choose the members of the lower house of Japan's parliament|Los votantes eligen a los miembros de la cámara baja del parlamento japonés
+AUD|Cash Rate|rate|R|8Y|Reserve Bank of Australia|RBA Rate Decision|The interest rate the RBA sets for overnight loans between banks|El tipo de interés que fija el RBA para los préstamos a un día entre bancos
+AUD|RBA Rate Statement|cbtext|H|8Y|Reserve Bank of Australia||The RBA's written explanation of its rate decision and how it sees the economy|La explicación escrita del RBA sobre su decisión de tipos y cómo ve la economía
+AUD|RBA Press Conference|cbtalk|H|8Y|Reserve Bank of Australia||The RBA Governor taking questions from the press after the rate decision|La gobernadora del RBA respondiendo a la prensa tras la decisión de tipos
+AUD|RBA Monetary Policy Statement|cbtext|H|4Y|Reserve Bank of Australia|Statement on Monetary Policy|The RBA's quarterly assessment of the economy, with its forecasts for inflation and growth|La valoración trimestral del RBA sobre la economía, con sus previsiones de inflación y crecimiento
+AUD|Monetary Policy Meeting Minutes|cbtext|H|8Y2W|Reserve Bank of Australia|RBA Minutes|The detailed record of what was discussed at the RBA's latest rate meeting|El acta detallada de lo que se discutió en la última reunión de tipos del RBA
+AUD|~^RBA Gov .* Speaks$|cbtalk|H|IRR|Reserve Bank of Australia||A public speech or interview by the Governor of the Reserve Bank of Australia|Un discurso o entrevista pública de la gobernadora del Banco de la Reserva de Australia
+AUD|~^RBA Deputy Gov .* Speaks$|cbtalk|H|IRR|Reserve Bank of Australia||A public speech by a senior official of the Reserve Bank of Australia|Un discurso público de un alto cargo del Banco de la Reserva de Australia
+AUD|~^RBA Assist Gov .* Speaks$|cbtalk|H|IRR|Reserve Bank of Australia||A public speech by a senior official of the Reserve Bank of Australia|Un discurso público de un alto cargo del Banco de la Reserva de Australia
+AUD|RBA Financial Stability Review|cbtext|N|2Y|Reserve Bank of Australia||The RBA's review of the risks to Australian banks and the financial system|El examen del RBA de los riesgos para los bancos y el sistema financiero australianos
+AUD|Employment Change|job|U|M~15|Australian Bureau of Statistics||Change in the number of people employed during the previous month|Variación del número de personas empleadas durante el mes anterior
+AUD|Unemployment Rate|job|D|M~15|Australian Bureau of Statistics||Share of Australia's labour force that is out of work and looking for a job|Porcentaje de la población activa de Australia sin trabajo y en busca de empleo
+AUD|CPI m/m|inf|U|M~26|Australian Bureau of Statistics||Change in the price of the goods and services Australian consumers buy, month on month|Variación mensual del precio de los bienes y servicios que compran los consumidores australianos
+AUD|CPI y/y|inf|U|M~26|Australian Bureau of Statistics|Monthly CPI Indicator|Change in Australian consumer prices compared with the same month a year earlier|Variación de los precios al consumo australianos frente al mismo mes del año anterior
+AUD|CPI q/q|inf|U|Q~26|Australian Bureau of Statistics||Change in the price of the goods and services Australian consumers buy, quarter on quarter|Variación trimestral del precio de los bienes y servicios que compran los consumidores australianos
+AUD|Trimmed Mean CPI q/q|inf|U|Q~26|Australian Bureau of Statistics|Underlying Inflation|Change in consumer prices after removing the items that moved the most; the RBA's preferred underlying measure|Variación de los precios al consumo tras quitar las partidas que más se movieron; la medida subyacente preferida del RBA
+AUD|Trimmed Mean CPI m/m|inf|U|M~26|Australian Bureau of Statistics|Underlying Inflation|Monthly change in consumer prices after removing the items that moved the most|Variación mensual de los precios al consumo tras quitar las partidas que más se movieron
+AUD|PPI q/q|inf|U|Q~30|Australian Bureau of Statistics||Change in the prices Australian producers receive for their goods and services|Variación de los precios que reciben los productores australianos por sus bienes y servicios
+AUD|MI Inflation Expectations|inf|U|M~-15|Melbourne Institute||How much consumers expect prices to rise over the next 12 months|Cuánto esperan los consumidores que suban los precios en los próximos 12 meses
+AUD|Wage Price Index q/q|wage|U|Q~45|Australian Bureau of Statistics||Change in the hourly rates businesses and government pay for labour, leaving out bonuses|Variación de las tarifas por hora que empresas y gobierno pagan por el trabajo, sin primas
+AUD|GDP q/q|gdp|U|Q~65|Australian Bureau of Statistics||Change in the value of everything Australia's economy produced in the quarter|Variación del valor de todo lo producido por la economía australiana en el trimestre
+AUD|Retail Sales m/m|cons|U|M~30|Australian Bureau of Statistics||Change in the total value of sales at Australian shops|Variación del valor total de las ventas en las tiendas australianas
+AUD|Household Spending m/m|cons|U|M~35|Australian Bureau of Statistics||Change in the total amount Australian households spent on goods and services|Variación del total que gastaron los hogares australianos en bienes y servicios
+AUD|NAB Business Confidence|biz|U|M~10|National Australia Bank||Survey of Australian businesses outside farming; above 0 means conditions are improving|Encuesta a empresas australianas no agrícolas; por encima de 0 las condiciones mejoran
+AUD|Westpac Consumer Sentiment|sent|U|MIDM|Westpac and Melbourne Institute||Change in a survey of Australian households on their finances and the economy|Variación de una encuesta a hogares australianos sobre sus finanzas y la economía
+AUD|Flash Manufacturing PMI|biz|U|FLASH|S&P Global||Early survey of purchasing managers at Australian factories; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de fábricas australianas; por encima de 50 el sector crece
+AUD|Flash Services PMI|biz|U|FLASH|S&P Global||Early survey of purchasing managers at Australian service companies; above 50 means the sector is growing|Encuesta preliminar a gestores de compras de servicios australianos; por encima de 50 el sector crece
+AUD|Building Approvals m/m|house|U|M~32|Australian Bureau of Statistics||Change in the number of new building permits issued|Variación del número de nuevas licencias de obra concedidas
+AUD|Home Loans m/m|house|U|M~40|Australian Bureau of Statistics||Change in the number of new loans granted to people buying a home to live in|Variación del número de nuevos préstamos concedidos para comprar vivienda habitual
+AUD|Private Capital Expenditure q/q|prod|U|Q~58|Australian Bureau of Statistics|Capex|Change in what private businesses invested in buildings and equipment|Variación de lo que invirtieron las empresas privadas en edificios y equipos
+AUD|Company Operating Profits q/q|prod|U|Q~62|Australian Bureau of Statistics||Change in the total profits earned by Australian companies|Variación de los beneficios totales obtenidos por las empresas australianas
+AUD|Trade Balance|trade|U|M~35|Australian Bureau of Statistics||Difference in value between the goods Australia exported and imported|Diferencia de valor entre los bienes que Australia exportó e importó
+AUD|Current Account|trade|U|Q~62|Australian Bureau of Statistics||Difference in value between Australia's exports and imports of goods, services and income flows|Diferencia de valor entre exportaciones e importaciones de bienes, servicios y rentas de Australia
+AUD|ANZ Job Advertisements m/m|job|U|M~3|ANZ and Indeed||Change in the number of jobs advertised online and in newspapers|Variación del número de ofertas de empleo anunciadas en línea y en prensa
+AUD|Annual Budget Release|fiscal|N|Y|Australian Treasury||The government's yearly plan for taxes, spending and borrowing|El plan anual del gobierno de impuestos, gasto y endeudamiento
+AUD|Parliamentary Elections|pol|N|IRR|||Voters choose the members of Australia's parliament|Los votantes eligen a los miembros del parlamento australiano
+NZD|Official Cash Rate|rate|R|7Y|Reserve Bank of New Zealand|RBNZ Rate Decision, OCR|The interest rate the RBNZ sets for overnight loans between banks|El tipo de interés que fija el RBNZ para los préstamos a un día entre bancos
+NZD|RBNZ Rate Statement|cbtext|H|7Y|Reserve Bank of New Zealand||The RBNZ's written explanation of its rate decision and how it sees the economy|La explicación escrita del RBNZ sobre su decisión de tipos y cómo ve la economía
+NZD|RBNZ Monetary Policy Statement|cbtext|H|4Y|Reserve Bank of New Zealand||The RBNZ's quarterly assessment of the economy, with its forecasts for inflation, growth and rates|La valoración trimestral del RBNZ sobre la economía, con sus previsiones de inflación, crecimiento y tipos
+NZD|RBNZ Press Conference|cbtalk|H|4Y|Reserve Bank of New Zealand||The RBNZ Governor taking questions from the press after the quarterly statement|El gobernador del RBNZ respondiendo a la prensa tras el informe trimestral
+NZD|~^RBNZ Gov .* Speaks$|cbtalk|H|IRR|Reserve Bank of New Zealand||A public speech or interview by the Governor of the Reserve Bank of New Zealand|Un discurso o entrevista pública del gobernador del Banco de la Reserva de Nueva Zelanda
+NZD|RBNZ Financial Stability Report|cbtext|N|2Y|Reserve Bank of New Zealand||The RBNZ's review of the risks to New Zealand's banks and financial system|El examen del RBNZ de los riesgos para los bancos y el sistema financiero neozelandeses
+NZD|GDP q/q|gdp|U|Q~80|Stats NZ||Change in the value of everything New Zealand's economy produced in the quarter|Variación del valor de todo lo producido por la economía neozelandesa en el trimestre
+NZD|CPI q/q|inf|U|Q~20|Stats NZ||Change in the price of the goods and services New Zealand consumers buy|Variación del precio de los bienes y servicios que compran los consumidores neozelandeses
+NZD|Inflation Expectations q/q|inf|U|Q~-45|Reserve Bank of New Zealand||How much business managers expect prices to rise each year over the next two years|Cuánto esperan los directivos de empresas que suban los precios cada año en los próximos dos años
+NZD|PPI Input q/q|inf|U|Q~50|Stats NZ||Change in the prices New Zealand producers pay for the goods and services they use|Variación de los precios que pagan los productores neozelandeses por lo que usan
+NZD|PPI Output q/q|inf|U|Q~50|Stats NZ||Change in the prices New Zealand producers receive for what they sell|Variación de los precios que reciben los productores neozelandeses por lo que venden
+NZD|Employment Change q/q|job|U|Q~35|Stats NZ||Change in the number of people employed during the quarter|Variación del número de personas empleadas durante el trimestre
+NZD|Unemployment Rate|job|D|Q~35|Stats NZ||Share of New Zealand's labour force that is out of work and looking for a job|Porcentaje de la población activa de Nueva Zelanda sin trabajo y en busca de empleo
+NZD|Labor Cost Index q/q|wage|U|Q~35|Stats NZ||Change in what businesses and government pay for labour, leaving out overtime|Variación de lo que pagan empresas y gobierno por el trabajo, sin horas extra
+NZD|Retail Sales q/q|cons|U|Q~55|Stats NZ||Change in the inflation-adjusted value of sales at New Zealand shops|Variación del valor, ajustado por inflación, de las ventas en las tiendas neozelandesas
+NZD|Core Retail Sales q/q|cons|U|Q~55|Stats NZ||Change in the inflation-adjusted value of retail sales, leaving out cars and fuel|Variación del valor, ajustado por inflación, de las ventas minoristas, sin vehículos ni combustible
+NZD|GDT Price Index|trade|U|2W|GlobalDairyTrade||Change in the average price of dairy products sold at the twice-monthly auction; dairy is New Zealand's largest export|Variación del precio medio de los lácteos vendidos en la subasta quincenal; los lácteos son la mayor exportación de Nueva Zelanda
+NZD|Trade Balance|trade|U|M~25|Stats NZ||Difference in value between the goods New Zealand exported and imported|Diferencia de valor entre los bienes que Nueva Zelanda exportó e importó
+NZD|Current Account|trade|U|Q~80|Stats NZ||Difference in value between New Zealand's exports and imports of goods, services and income flows|Diferencia de valor entre exportaciones e importaciones de bienes, servicios y rentas de Nueva Zelanda
+NZD|Visitor Arrivals m/m|trade|U|M~40|Stats NZ||Change in the number of short-term visitors arriving from overseas|Variación del número de visitantes de corta estancia llegados del extranjero
+NZD|ANZ Business Confidence|biz|U|ENDM|ANZ||Survey of New Zealand businesses on the year ahead; above 0 means optimism|Encuesta a empresas neozelandesas sobre el próximo año; por encima de 0 hay optimismo
+NZD|NZIER Business Confidence|biz|U|Q~10|New Zealand Institute of Economic Research||Quarterly survey of New Zealand businesses; above 0 means more expect conditions to improve than worsen|Encuesta trimestral a empresas neozelandesas; por encima de 0, más esperan mejora que deterioro
+NZD|BusinessNZ Manufacturing Index|biz|U|M~12|BusinessNZ||Survey of New Zealand manufacturers; above 50 means the sector is growing|Encuesta a fabricantes neozelandeses; por encima de 50 el sector crece
+NZD|BusinessNZ Services Index|biz|U|M~15|BusinessNZ||Survey of New Zealand service companies; above 50 means the sector is growing|Encuesta a empresas de servicios neozelandesas; por encima de 50 el sector crece
+NZD|Westpac Consumer Sentiment|sent|U|Q~-15|Westpac and McDermott Miller||Quarterly survey of New Zealand households; above 100 means optimism|Encuesta trimestral a hogares neozelandeses; por encima de 100 hay optimismo
+NZD|Building Consents m/m|house|U|M~30|Stats NZ||Change in the number of new homes given approval to be built|Variación del número de viviendas nuevas con permiso de construcción
+NZD|Annual Budget Release|fiscal|N|Y|New Zealand Treasury||The government's yearly plan for taxes, spending and borrowing|El plan anual del gobierno de impuestos, gasto y endeudamiento
+NZD|Parliamentary Elections|pol|N|IRR|||Voters choose the members of New Zealand's parliament|Los votantes eligen a los miembros del parlamento neozelandés
+CAD|Overnight Rate|rate|R|8Y|Bank of Canada|BoC Rate Decision|The interest rate the Bank of Canada sets for overnight loans between banks|El tipo de interés que fija el Banco de Canadá para los préstamos a un día entre bancos
+CAD|BOC Rate Statement|cbtext|H|8Y|Bank of Canada||The Bank of Canada's written explanation of its rate decision and how it sees the economy|La explicación escrita del Banco de Canadá sobre su decisión de tipos y cómo ve la economía
+CAD|BOC Monetary Policy Report|cbtext|H|4Y|Bank of Canada||The Bank of Canada's quarterly forecasts for inflation and growth|Las previsiones trimestrales del Banco de Canadá sobre inflación y crecimiento
+CAD|BOC Press Conference|cbtalk|H|8Y|Bank of Canada||The Bank of Canada Governor taking questions from the press after the rate decision|El gobernador del Banco de Canadá respondiendo a la prensa tras la decisión de tipos
+CAD|~^BOC Gov .* Speaks$|cbtalk|H|IRR|Bank of Canada||A public speech or interview by the Governor of the Bank of Canada|Un discurso o entrevista pública del gobernador del Banco de Canadá
+CAD|~^BOC (Senior )?Deputy Gov .* Speaks$|cbtalk|H|IRR|Bank of Canada||A public speech by a deputy governor of the Bank of Canada|Un discurso público de un subgobernador del Banco de Canadá
+CAD|BOC Summary of Deliberations|cbtext|H|8Y2W|Bank of Canada|BoC Minutes|The record of what the Bank of Canada's council discussed before its latest rate decision|El resumen de lo que discutió el consejo del Banco de Canadá antes de su última decisión de tipos
+CAD|BOC Business Outlook Survey|biz|U|4Y|Bank of Canada||The Bank of Canada's quarterly survey of about 100 companies on sales, hiring, investment and prices|La encuesta trimestral del Banco de Canadá a unas 100 empresas sobre ventas, contratación, inversión y precios
+CAD|BOC Financial System Review|cbtext|N|Y|Bank of Canada||The Bank of Canada's review of the risks to Canada's banks and financial system|El examen del Banco de Canadá de los riesgos para los bancos y el sistema financiero canadienses
+CAD|Employment Change|job|U|M~8|Statistics Canada|Net Change in Employment|Change in the number of people employed during the previous month|Variación del número de personas empleadas durante el mes anterior
+CAD|Unemployment Rate|job|D|M~8|Statistics Canada||Share of Canada's labour force that is out of work and looking for a job|Porcentaje de la población activa de Canadá sin trabajo y en busca de empleo
+CAD|CPI m/m|inf|U|M~20|Statistics Canada|Headline Inflation|Change in the price of the goods and services Canadian consumers buy|Variación del precio de los bienes y servicios que compran los consumidores canadienses
+CAD|Core CPI m/m|inf|U|M~20|Statistics Canada||Change in Canadian consumer prices, leaving out the eight most volatile items|Variación de los precios al consumo canadienses, sin las ocho partidas más volátiles
+CAD|Median CPI y/y|inf|U|M~20|Statistics Canada|CPI-median|The price change of the item in the middle of the basket, compared with a year earlier; a Bank of Canada core measure|La variación de precio de la partida central de la cesta frente al año anterior; una medida subyacente del Banco de Canadá
+CAD|Trimmed CPI y/y|inf|U|M~20|Statistics Canada|CPI-trim|Change in consumer prices after removing the items that moved the most, compared with a year earlier; a Bank of Canada core measure|Variación de los precios al consumo tras quitar las partidas que más se movieron, frente al año anterior; una medida subyacente del Banco de Canadá
+CAD|Common CPI y/y|inf|U|M~20|Statistics Canada|CPI-common|The price change shared across the items in the basket, compared with a year earlier|La variación de precios común a las partidas de la cesta, frente al año anterior
+CAD|IPPI m/m|inf|U|M~28|Statistics Canada|Industrial Product Price Index|Change in the prices Canadian manufacturers receive for their goods|Variación de los precios que reciben los fabricantes canadienses por sus bienes
+CAD|RMPI m/m|inf|U|M~28|Statistics Canada|Raw Materials Price Index|Change in the prices Canadian manufacturers pay for raw materials|Variación de los precios que pagan los fabricantes canadienses por las materias primas
+CAD|GDP m/m|gdp|U|M~60|Statistics Canada||Change in the value of everything Canada's economy produced during the month|Variación del valor de todo lo producido por la economía canadiense durante el mes
+CAD|Retail Sales m/m|cons|U|M~50|Statistics Canada||Change in the total value of sales at Canadian shops|Variación del valor total de las ventas en las tiendas canadienses
+CAD|Core Retail Sales m/m|cons|U|M~50|Statistics Canada|Retail Sales Ex Autos|Change in the total value of Canadian retail sales, leaving out cars|Variación del valor total de las ventas minoristas canadienses, sin automóviles
+CAD|Ivey PMI|biz|U|M~5|Ivey Business School||Survey of purchasing managers across Canada's public and private sectors; above 50 means purchases are rising|Encuesta a gestores de compras de los sectores público y privado de Canadá; por encima de 50 las compras suben
+CAD|Manufacturing PMI|biz|U|M~1|S&P Global||Survey of purchasing managers at Canadian factories; above 50 means the sector is growing|Encuesta a gestores de compras de fábricas canadienses; por encima de 50 el sector crece
+CAD|Manufacturing Sales m/m|prod|U|M~45|Statistics Canada||Change in the total value of sales made by Canadian manufacturers|Variación del valor total de las ventas de los fabricantes canadienses
+CAD|Wholesale Sales m/m|cons|U|M~45|Statistics Canada||Change in the total value of sales made by Canadian wholesalers|Variación del valor total de las ventas de los mayoristas canadienses
+CAD|Trade Balance|trade|U|M~35|Statistics Canada||Difference in value between the goods Canada exported and imported|Diferencia de valor entre los bienes que Canadá exportó e importó
+CAD|Current Account|trade|U|Q~60|Statistics Canada||Difference in value between Canada's exports and imports of goods, services and income flows|Diferencia de valor entre exportaciones e importaciones de bienes, servicios y rentas de Canadá
+CAD|Foreign Securities Purchases|trade|U|M~48|Statistics Canada||Total value of Canadian stocks and bonds bought by foreigners during the month|Valor total de las acciones y bonos canadienses comprados por extranjeros durante el mes
+CAD|Building Permits m/m|house|U|M~35|Statistics Canada||Change in the total value of new building permits issued|Variación del valor total de las nuevas licencias de obra concedidas
+CAD|Housing Starts|house|U|M~10|Canada Mortgage and Housing Corporation||Annualised number of new homes on which building work began|Número anualizado de viviendas nuevas cuya construcción ha comenzado
+CAD|Capacity Utilization Rate|prod|U|Q~70|Statistics Canada||Share of their available capacity that Canadian factories, mines and utilities are using|Porcentaje de su capacidad disponible que usan fábricas, minas y suministros canadienses
+CAD|Annual Budget Release|fiscal|N|Y|Department of Finance Canada||The government's yearly plan for taxes, spending and borrowing|El plan anual del gobierno de impuestos, gasto y endeudamiento
+CAD|Federal Election|pol|N|IRR|||Voters choose the members of Canada's parliament|Los votantes eligen a los miembros del parlamento canadiense
+CHF|SNB Policy Rate|rate|R|4Y|Swiss National Bank|SNB Rate Decision|The interest rate the Swiss National Bank sets to steer Swiss money-market rates|El tipo de interés que fija el Banco Nacional Suizo para guiar los tipos del mercado monetario suizo
+CHF|SNB Monetary Policy Assessment|cbtext|H|4Y|Swiss National Bank||The SNB's written explanation of its rate decision, with its inflation forecast|La explicación escrita del BNS sobre su decisión de tipos, con su previsión de inflación
+CHF|SNB Press Conference|cbtalk|H|4Y|Swiss National Bank||The SNB's governing board taking questions from the press after the rate decision|La dirección del BNS respondiendo a la prensa tras la decisión de tipos
+CHF|~^SNB Chairman .* Speaks$|cbtalk|H|IRR|Swiss National Bank||A public speech or interview by the head of the Swiss National Bank|Un discurso o entrevista pública del presidente del Banco Nacional Suizo
+CHF|~^SNB Gov Board Member .* Speaks$|cbtalk|H|IRR|Swiss National Bank||A public speech by one of the three members of the SNB's governing board|Un discurso público de uno de los tres miembros de la dirección del BNS
+CHF|SNB Financial Stability Report|cbtext|N|Y|Swiss National Bank||The SNB's review of the risks to Swiss banks and the financial system|El examen del BNS de los riesgos para los bancos y el sistema financiero suizos
+CHF|CPI m/m|inf|U|M~3|Federal Statistical Office||Change in the price of the goods and services Swiss consumers buy|Variación del precio de los bienes y servicios que compran los consumidores suizos
+CHF|PPI m/m|inf|U|M~14|Federal Statistical Office|Producer and Import Prices|Change in the prices of goods produced in or imported into Switzerland|Variación de los precios de los bienes producidos en Suiza o importados
+CHF|GDP q/q|gdp|U|Q~60|State Secretariat for Economic Affairs (SECO)||Change in the value of everything Switzerland's economy produced in the quarter|Variación del valor de todo lo producido por la economía suiza en el trimestre
+CHF|Retail Sales y/y|cons|U|M~32|Federal Statistical Office||Change in the inflation-adjusted value of sales at Swiss shops, compared with a year earlier|Variación del valor, ajustado por inflación, de las ventas en las tiendas suizas frente al año anterior
+CHF|KOF Economic Barometer|biz|U|ENDM|KOF Swiss Economic Institute||An index built from more than 200 indicators that points to where the Swiss economy is heading; above 100 means above-average growth|Un índice construido con más de 200 indicadores que apunta hacia dónde va la economía suiza; por encima de 100, crecimiento superior a la media
+CHF|Manufacturing PMI|biz|U|M~1|procure.ch||Survey of purchasing managers at Swiss factories; above 50 means the sector is growing|Encuesta a gestores de compras de fábricas suizas; por encima de 50 el sector crece
+CHF|SECO Consumer Climate|sent|U|M~5|State Secretariat for Economic Affairs (SECO)||Survey of Swiss households on their finances and the economy; below 0 means pessimism|Encuesta a hogares suizos sobre sus finanzas y la economía; por debajo de 0 hay pesimismo
+CHF|Unemployment Rate|job|D|M~8|State Secretariat for Economic Affairs (SECO)||Share of Switzerland's labour force registered as out of work|Porcentaje de la población activa de Suiza registrada como desempleada
+CHF|Trade Balance|trade|U|M~20|Federal Office for Customs and Border Security||Difference in value between the goods Switzerland exported and imported|Diferencia de valor entre los bienes que Suiza exportó e importó
+CHF|Foreign Currency Reserves|money|N|M~7|Swiss National Bank||Total value of the foreign currencies the SNB holds; changes hint at whether it has been buying or selling francs|Valor total de las divisas que mantiene el BNS; los cambios sugieren si ha comprado o vendido francos
+CNY|Manufacturing PMI|biz|U|M~0|National Bureau of Statistics of China|Official Manufacturing PMI|Survey of purchasing managers at Chinese factories, mostly large and state-owned; above 50 means the sector is growing|Encuesta a gestores de compras de fábricas chinas, sobre todo grandes y estatales; por encima de 50 el sector crece
+CNY|Non-Manufacturing PMI|biz|U|M~0|National Bureau of Statistics of China|Official Services PMI|Survey of purchasing managers at Chinese service and construction companies; above 50 means growth|Encuesta a gestores de compras de empresas chinas de servicios y construcción; por encima de 50 hay crecimiento
+CNY|Caixin Manufacturing PMI|biz|U|M~1|Caixin and S&P Global||Survey of purchasing managers at Chinese factories, weighted to smaller private firms; above 50 means growth|Encuesta a gestores de compras de fábricas chinas, con más peso de las privadas pequeñas; por encima de 50 hay crecimiento
+CNY|Caixin Services PMI|biz|U|M~3|Caixin and S&P Global||Survey of purchasing managers at Chinese service companies, weighted to private firms; above 50 means growth|Encuesta a gestores de compras de servicios chinos, con más peso de las privadas; por encima de 50 hay crecimiento
+CNY|RatingDog Manufacturing PMI|biz|U|M~1|RatingDog and S&P Global||Survey of purchasing managers at Chinese factories, weighted to smaller private firms; above 50 means growth|Encuesta a gestores de compras de fábricas chinas, con más peso de las privadas pequeñas; por encima de 50 hay crecimiento
+CNY|RatingDog Services PMI|biz|U|M~3|RatingDog and S&P Global||Survey of purchasing managers at Chinese service companies, weighted to private firms; above 50 means growth|Encuesta a gestores de compras de servicios chinos, con más peso de las privadas; por encima de 50 hay crecimiento
+CNY|GDP q/y|gdp|U|Q~18|National Bureau of Statistics of China||Change in the value of everything China's economy produced in the quarter, compared with a year earlier|Variación del valor de todo lo producido por la economía china en el trimestre frente al año anterior
+CNY|GDP ytd/y|gdp|U|Q~18|National Bureau of Statistics of China||Change in the value of everything China's economy produced so far this year, compared with the same period last year|Variación del valor de todo lo producido por la economía china en lo que va de año frente al mismo periodo del anterior
+CNY|CPI y/y|inf|U|M~10|National Bureau of Statistics of China||Change in the price of the goods and services Chinese consumers buy, compared with a year earlier|Variación del precio de los bienes y servicios que compran los consumidores chinos frente al año anterior
+CNY|PPI y/y|inf|U|M~10|National Bureau of Statistics of China||Change in the prices Chinese producers receive for their goods, compared with a year earlier|Variación de los precios que reciben los productores chinos por sus bienes frente al año anterior
+CNY|Industrial Production y/y|prod|U|M~15|National Bureau of Statistics of China||Change in the output of China's factories, mines and utilities, compared with a year earlier|Variación de la producción de fábricas, minas y suministros de China frente al año anterior
+CNY|Industrial Profits ytd/y|prod|U|M~27|National Bureau of Statistics of China||Change in the profits of China's large industrial companies so far this year, compared with last year|Variación de los beneficios de las grandes empresas industriales chinas en lo que va de año frente al anterior
+CNY|Retail Sales y/y|cons|U|M~15|National Bureau of Statistics of China||Change in the total value of sales at Chinese shops, compared with a year earlier|Variación del valor total de las ventas en las tiendas chinas frente al año anterior
+CNY|Fixed Asset Investment ytd/y|prod|U|M~15|National Bureau of Statistics of China||Change in spending on buildings, machinery and infrastructure so far this year, compared with last year|Variación del gasto en edificios, maquinaria e infraestructuras en lo que va de año frente al anterior
+CNY|Unemployment Rate|job|D|M~15|National Bureau of Statistics of China|Surveyed Urban Unemployment|Share of the labour force in China's cities that is out of work|Porcentaje de la población activa de las ciudades chinas que está sin trabajo
+CNY|Trade Balance|trade|U|M~10|General Administration of Customs of China||Difference in value, in yuan, between the goods China exported and imported|Diferencia de valor, en yuanes, entre los bienes que China exportó e importó
+CNY|USD-Denominated Trade Balance|trade|U|M~10|General Administration of Customs of China||Difference in value, in US dollars, between the goods China exported and imported|Diferencia de valor, en dólares, entre los bienes que China exportó e importó
+CNY|New Loans|money|U|M~12|People's Bank of China||Total value of new yuan loans granted to consumers and businesses during the month|Valor total de los nuevos préstamos en yuanes concedidos a consumidores y empresas durante el mes
+CNY|M2 Money Supply y/y|money|U|M~12|People's Bank of China||Change in the total amount of money in circulation and in bank deposits, compared with a year earlier|Variación de la cantidad total de dinero en circulación y en depósitos bancarios frente al año anterior
+CNY|1-y Loan Prime Rate|rate|R|M|People's Bank of China|LPR|The benchmark rate for one-year loans to banks' best customers, set each month|El tipo de referencia de los préstamos a un año a los mejores clientes de los bancos, fijado cada mes
+CNY|5-y Loan Prime Rate|rate|R|M|People's Bank of China|LPR|The benchmark rate for five-year loans, which most Chinese mortgages follow, set each month|El tipo de referencia de los préstamos a cinco años, al que siguen la mayoría de hipotecas chinas, fijado cada mes
+CNY|Foreign Direct Investment ytd/y|trade|U|M~18|Ministry of Commerce of China||Change in what foreign companies invested in China so far this year, compared with last year|Variación de lo que invirtieron las empresas extranjeras en China en lo que va de año frente al anterior
+CNY|New Home Prices m/m|house|U|M~15|National Bureau of Statistics of China||Change in the price of new homes across 70 Chinese cities|Variación del precio de la vivienda nueva en 70 ciudades chinas
+CNY|National People's Congress|pol|N|Y|||The yearly meeting of China's parliament, where the growth target and the budget are announced|La reunión anual del parlamento chino, donde se anuncian el objetivo de crecimiento y el presupuesto
+ALL|OPEC-JMMC Meetings|summit|N|IRR|OPEC and allied producers||The committee of oil-producing countries that reviews the market and recommends output levels|El comité de países productores de petróleo que revisa el mercado y recomienda niveles de producción
+ALL|OPEC Meetings|summit|N|IRR|OPEC||Meeting of the oil-producing countries that decide how much crude to pump|Reunión de los países productores de petróleo que deciden cuánto crudo bombear
+ALL|G7 Meetings|summit|N|IRR|Group of Seven||Meeting of the leaders or finance chiefs of the seven largest advanced economies|Reunión de los líderes o responsables de finanzas de las siete mayores economías avanzadas
+ALL|G20 Meetings|summit|N|IRR|Group of Twenty||Meeting of the leaders or finance chiefs of the world's 20 largest economies|Reunión de los líderes o responsables de finanzas de las 20 mayores economías del mundo
+ALL|Jackson Hole Symposium|cbtalk|H|Y|Federal Reserve Bank of Kansas City||The yearly gathering of central bankers in Wyoming, where the Fed Chair's speech often signals what comes next|El encuentro anual de banqueros centrales en Wyoming, donde el discurso del presidente de la Fed suele señalar lo que viene
+ALL|IMF Meetings|summit|N|2Y|International Monetary Fund||The twice-yearly meetings of the world's finance ministers and central bankers|Las reuniones semestrales de los ministros de finanzas y banqueros centrales del mundo
+ALL|WEF Annual Meetings|summit|N|Y|World Economic Forum|Davos|The yearly gathering of political and business leaders in Davos|El encuentro anual de líderes políticos y empresariales en Davos
+ALL|BRICS Summit|summit|N|Y|BRICS||The yearly meeting of the leaders of Brazil, Russia, India, China, South Africa and the group's newer members|La reunión anual de los líderes de Brasil, Rusia, India, China, Sudáfrica y los miembros más recientes del grupo
+ALL|NATO Summit|summit|N|Y|NATO||Meeting of the heads of government of the NATO alliance|Reunión de los jefes de gobierno de la alianza de la OTAN
+EUR|German WPI m/m|inf|U|M~14|Destatis|Wholesale Price Index|Change in the prices German wholesalers charge|Variación de los precios que cobran los mayoristas alemanes
+EUR|German Import Prices m/m|inf|U|M~28|Destatis||Change in the price of goods imported into Germany|Variación del precio de los bienes importados por Alemania
+EUR|French Consumer Spending m/m|cons|U|M~28|INSEE (France)||Change in the inflation-adjusted amount French households spent on goods|Variación de lo que gastaron los hogares franceses en bienes, ajustado por inflación
+GBP|Construction Output m/m|prod|U|M~40|Office for National Statistics||Change in the volume of building work done in Great Britain|Variación del volumen de obra realizada en Gran Bretaña
+GBP|Index of Services 3m/3m|prod|U|M~40|Office for National Statistics||Change in the output of the UK’s service sector over the last three months, compared with the three before|Variación de la producción del sector servicios británico en los últimos tres meses frente a los tres anteriores
+GBP|HPI y/y|house|U|M~45|Office for National Statistics|UK House Price Index|Change in the price of homes sold across the UK, compared with a year earlier|Variación del precio de las viviendas vendidas en el Reino Unido frente al año anterior
+GBP|CBI Realized Sales|cons|U|ENDM|Confederation of British Industry|Distributive Trades Survey|Survey of UK retailers on whether their sales are up or down on a year earlier; above 0 means up|Encuesta a minoristas británicos sobre si sus ventas suben o bajan frente al año anterior; por encima de 0, suben
+GBP|BOE Credit Conditions Survey|cbtext|N|4Y|Bank of England||Quarterly survey of UK lenders on how easy credit is to get and how much demand there is for it|Encuesta trimestral a prestamistas británicos sobre la facilidad del crédito y cuánta demanda hay
+GBP|Asset Purchase Facility|cbtext|N|8Y|Bank of England||The total value of bonds the Bank of England holds under its bond-buying programme|El valor total de los bonos que mantiene el Banco de Inglaterra en su programa de compras
+GBP|MPC Asset Purchase Facility Votes|cbtext|H|8Y|Bank of England||How the nine rate-setters voted on the size of the bond-buying programme|Cómo votaron los nueve miembros sobre el tamaño del programa de compra de bonos
+GBP|Net Lending to Individuals m/m|money|U|M~29|Bank of England||Change in the total value of new lending to UK consumers, mortgages and consumer credit together|Variación del valor total del nuevo crédito a los consumidores británicos, hipotecas y consumo juntos
+GBP|M4 Money Supply m/m|money|U|M~29|Bank of England||Change in the total amount of money in circulation and in bank deposits in the UK|Variación de la cantidad total de dinero en circulación y en depósitos bancarios en el Reino Unido
+JPY|Housing Starts y/y|house|U|M~30|Ministry of Land, Infrastructure, Transport and Tourism||Change in the number of new homes on which building began, compared with a year earlier|Variación del número de viviendas nuevas iniciadas frente al año anterior
+JPY|Leading Indicators|prod|U|M~38|Cabinet Office||An index built from 11 indicators, such as machinery orders and share prices, that points to where the economy is heading|Un índice construido con 11 indicadores, como pedidos de maquinaria y bolsa, que apunta hacia dónde va la economía
+JPY|Consumer Confidence|sent|U|ENDM|Cabinet Office||Survey of Japanese households on their living standards, income and jobs; above 50 means optimism|Encuesta a hogares japoneses sobre su nivel de vida, ingresos y empleo; por encima de 50 hay optimismo
+JPY|Tertiary Industry Activity m/m|prod|U|M~45|Ministry of Economy, Trade and Industry||Change in the output of Japan’s service sector|Variación de la producción del sector servicios de Japón
+JPY|M2 Money Stock y/y|money|U|M~10|Bank of Japan||Change in the total amount of money in circulation and in bank deposits, compared with a year earlier|Variación de la cantidad total de dinero en circulación y en depósitos bancarios frente al año anterior
+JPY|Monetary Base y/y|money|U|M~2|Bank of Japan||Change in the cash in circulation plus the reserves banks hold at the Bank of Japan, compared with a year earlier|Variación del efectivo en circulación más las reservas de los bancos en el Banco de Japón, frente al año anterior
+JPY|Revised Industrial Production m/m|prod|U|M~45|Ministry of Economy, Trade and Industry||Revised change in the output of Japan’s factories, mines and utilities|Variación revisada de la producción de fábricas, minas y suministros de Japón
+AUD|MI Inflation Gauge m/m|inf|U|M~3|Melbourne Institute||A monthly estimate of the change in consumer prices, out before the official figures|Una estimación mensual de la variación de los precios al consumo, anterior a los datos oficiales
+AUD|Private Sector Credit m/m|money|U|M~30|Reserve Bank of Australia||Change in the total value of new credit given to consumers and businesses|Variación del valor total del nuevo crédito concedido a consumidores y empresas
+AUD|Construction Work Done q/q|prod|U|Q~55|Australian Bureau of Statistics||Change in the total value of building work completed|Variación del valor total de la obra terminada
+AUD|Import Prices q/q|inf|U|Q~27|Australian Bureau of Statistics||Change in the price of goods and services bought from abroad|Variación del precio de los bienes y servicios comprados en el exterior
+AUD|RBA Bulletin|cbtext|N|4Y|Reserve Bank of Australia||The RBA’s quarterly collection of articles on the economy and financial markets|La colección trimestral de artículos del RBA sobre la economía y los mercados financieros
+NZD|FPI m/m|inf|U|M~12|Stats NZ|Food Price Index|Change in the price of food and food services bought by households|Variación del precio de los alimentos y servicios de comida que compran los hogares
+NZD|ANZ Commodity Prices m/m|trade|U|M~3|ANZ||Change in the world prices of the commodities New Zealand exports|Variación de los precios mundiales de las materias primas que exporta Nueva Zelanda
+NZD|Overseas Trade Index q/q|trade|U|Q~62|Stats NZ|Terms of Trade|Change in the prices New Zealand receives for its exports relative to what it pays for imports|Variación de los precios que recibe Nueva Zelanda por sus exportaciones frente a lo que paga por sus importaciones
+NZD|Electronic Card Retail Sales m/m|cons|U|M~10|Stats NZ||Change in the total value of purchases made with debit and credit cards at retailers|Variación del valor total de las compras con tarjeta de débito y crédito en comercios
+CAD|NHPI m/m|house|U|M~22|Statistics Canada|New Housing Price Index|Change in the selling price of new homes|Variación del precio de venta de las viviendas nuevas
+CAD|Labor Productivity q/q|prod|U|Q~65|Statistics Canada||Change in output per hour worked in Canadian businesses|Variación de la producción por hora trabajada en las empresas canadienses
+CAD|Corporate Profits q/q|prod|U|Q~55|Statistics Canada||Change in the total profits earned by Canadian companies|Variación de los beneficios totales obtenidos por las empresas canadienses
+CHF|UBS Economic Expectations|sent|U|ENDM|UBS and CFA Society Switzerland||Survey of financial analysts on where they expect the Swiss economy to be in six months; above 0 means optimism|Encuesta a analistas financieros sobre dónde esperan la economía suiza en seis meses; por encima de 0 hay optimismo
+CHF|Credit Suisse Economic Expectations|sent|U|ENDM|CFA Society Switzerland||Survey of financial analysts on where they expect the Swiss economy to be in six months; above 0 means optimism|Encuesta a analistas financieros sobre dónde esperan la economía suiza en seis meses; por encima de 0 hay optimismo
+ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its scheduled releases move by an hour against your clock until yours change too|Cambio de hora en este país: sus publicaciones se mueven una hora respecto a tu reloj hasta que cambie también el tuyo`;
+  const _EV_CB = { USD: ['the Fed', 'la Fed'], EUR: ['the ECB', 'el BCE'], GBP: ['the Bank of England', 'el Banco de Inglaterra'], JPY: ['the Bank of Japan', 'el Banco de Japón'], AUD: ['the RBA', 'el RBA'],
+                   NZD: ['the RBNZ', 'el RBNZ'], CAD: ['the Bank of Canada', 'el Banco de Canadá'], CHF: ['the SNB', 'el BNS'], CNY: ["China's central bank", 'el banco central de China'], ALL: ['the central bank', 'el banco central'] };
+  const _EV_EFFECT = {
+    U: ['‘Actual’ above ‘Forecast’ is usually good for the currency', 'Un «Actual» por encima del «Pronóstico» suele favorecer a la divisa'],
+    D: ['‘Actual’ below ‘Forecast’ is usually good for the currency', 'Un «Actual» por debajo del «Pronóstico» suele favorecer a la divisa'],
+    R: ['A higher rate than expected is usually good for the currency', 'Un tipo más alto de lo esperado suele favorecer a la divisa'],
+    H: ['A more hawkish tone than expected is usually good for the currency', 'Un tono más restrictivo de lo esperado suele favorecer a la divisa'],
+    N: ['No consistent effect: it depends on what is said or decided', 'Sin efecto constante: depende de lo que se diga o se decida']
+  };
+  // type -> label, why it matters, how to read (by effect). {CB} = the currency's central bank, {CUR} = its code.
+  const _EV_TYPE = {
+    inf: { l: ['Inflation', 'Inflación'],
+      why: ['Central banks exist to keep inflation near their target, so prices drive interest rates more directly than any other data. A hotter reading makes {CB} more likely to raise rates or hold them high, which tends to lift the currency; a cooler one opens the door to cuts.',
+            'Los bancos centrales existen para mantener la inflación cerca de su objetivo, así que los precios mueven los tipos de interés más directamente que ningún otro dato. Una lectura más alta hace más probable que {CB} suba los tipos o los mantenga altos, lo que suele impulsar a la divisa; una más baja abre la puerta a recortes.'],
+      how: { U: ['Above forecast → {CUR} bullish: inflation running hotter makes {CB} less likely to cut rates. Below forecast → {CUR} bearish: cooler prices bring cuts closer. The surprise against the forecast matters more than the number itself.',
+                 'Por encima del pronóstico → {CUR} alcista: una inflación más alta hace menos probable que {CB} recorte los tipos. Por debajo → {CUR} bajista: unos precios más fríos acercan los recortes. Importa más la sorpresa frente al pronóstico que la cifra en sí.'] } },
+    job: { l: ['Employment', 'Empleo'],
+      why: ['Jobs are the clearest sign of how strong an economy is, and people in work spend. A firm labour market lets {CB} keep rates higher; a weakening one pushes it towards cuts.',
+            'El empleo es la señal más clara de la fortaleza de una economía, y quien trabaja gasta. Un mercado laboral firme permite a {CB} mantener los tipos más altos; uno que se debilita lo empuja hacia los recortes.'],
+      how: { U: ['Above forecast → {CUR} bullish: a stronger labour market supports higher rates. Below forecast → {CUR} bearish: weaker hiring brings rate cuts closer.',
+                 'Por encima del pronóstico → {CUR} alcista: un mercado laboral más fuerte respalda tipos más altos. Por debajo → {CUR} bajista: una contratación más débil acerca los recortes.'],
+             D: ['Below forecast → {CUR} bullish: fewer people out of work means a stronger economy. Above forecast → {CUR} bearish: a weakening labour market brings rate cuts closer.',
+                 'Por debajo del pronóstico → {CUR} alcista: menos gente sin trabajo significa una economía más fuerte. Por encima → {CUR} bajista: un mercado laboral que se debilita acerca los recortes.'] } },
+    wage: { l: ['Wages', 'Salarios'],
+      why: ['Pay is household income and a cost for businesses at the same time. Faster wage growth feeds spending and inflation, so {CB} watches it closely when it decides on rates.',
+            'El salario es a la vez ingreso de los hogares y coste para las empresas. Un crecimiento salarial más rápido alimenta el gasto y la inflación, por lo que {CB} lo sigue de cerca al decidir los tipos.'],
+      how: { U: ['Above forecast → {CUR} bullish: faster pay growth adds to inflation pressure, so rates stay higher for longer. Below forecast → {CUR} bearish.',
+                 'Por encima del pronóstico → {CUR} alcista: unos salarios que suben más rápido añaden presión inflacionista y los tipos siguen altos más tiempo. Por debajo → {CUR} bajista.'] } },
+    gdp: { l: ['Growth', 'Crecimiento'],
+      why: ['GDP is the broadest measure of an economy’s health. Faster growth supports the currency through higher rates and investment; a contraction does the opposite.',
+            'El PIB es la medida más amplia de la salud de una economía. Un crecimiento más rápido apoya a la divisa por la vía de tipos más altos e inversión; una contracción hace lo contrario.'],
+      how: { U: ['Above forecast → {CUR} bullish: the economy grew faster than expected. Below forecast → {CUR} bearish. Later estimates of the same period usually move the market less than the first.',
+                 'Por encima del pronóstico → {CUR} alcista: la economía creció más de lo esperado. Por debajo → {CUR} bajista. Las estimaciones posteriores del mismo periodo suelen mover menos el mercado que la primera.'] } },
+    cons: { l: ['Consumer spending', 'Consumo'],
+      why: ['Consumer spending is the largest part of most economies, so it is an early read on growth.',
+            'El gasto de los consumidores es la mayor parte de casi todas las economías, así que es un anticipo del crecimiento.'],
+      how: { U: ['Above forecast → {CUR} bullish: consumers are spending more than expected. Below forecast → {CUR} bearish.',
+                 'Por encima del pronóstico → {CUR} alcista: los consumidores gastan más de lo esperado. Por debajo → {CUR} bajista.'] } },
+    sent: { l: ['Sentiment survey', 'Encuesta de confianza'],
+      why: ['How people feel about the economy tends to lead what they spend and invest, so sentiment surveys hint at growth before the hard data arrives.',
+            'Cómo se siente la gente sobre la economía suele anticipar lo que gasta e invierte, así que las encuestas de confianza dan pistas del crecimiento antes de que lleguen los datos duros.'],
+      how: { U: ['Above forecast → mildly {CUR} bullish: more confident households and investors usually spend and invest more. Below forecast → mildly {CUR} bearish. Surveys move the market less than hard data.',
+                 'Por encima del pronóstico → {CUR} ligeramente alcista: hogares e inversores más confiados suelen gastar e invertir más. Por debajo → ligeramente bajista. Las encuestas mueven el mercado menos que los datos duros.'] } },
+    biz: { l: ['Business survey', 'Encuesta empresarial'],
+      why: ['Purchasing managers and business owners see changes in orders, prices and hiring before they reach the official statistics, so these surveys are one of the timeliest reads on an economy.',
+            'Los gestores de compras y los empresarios ven los cambios en pedidos, precios y contratación antes de que lleguen a las estadísticas oficiales, por eso estas encuestas son una de las lecturas más tempranas de una economía.'],
+      how: { U: ['Above forecast → {CUR} bullish: businesses report stronger activity. Below forecast → {CUR} bearish. For an index built around 50 or 0, crossing that line matters more than a small change.',
+                 'Por encima del pronóstico → {CUR} alcista: las empresas informan de más actividad. Por debajo → {CUR} bajista. En un índice construido alrededor de 50 o de 0, cruzar esa línea importa más que un cambio pequeño.'] } },
+    prod: { l: ['Production and orders', 'Producción y pedidos'],
+      why: ['Output, orders and investment show how busy producers are and how confident they are about demand in the months ahead.',
+            'La producción, los pedidos y la inversión muestran cuánta actividad tienen los productores y cuánta confianza tienen en la demanda de los próximos meses.'],
+      how: { U: ['Above forecast → {CUR} bullish: producers are busier than expected. Below forecast → {CUR} bearish.',
+                 'Por encima del pronóstico → {CUR} alcista: los productores tienen más actividad de la esperada. Por debajo → {CUR} bajista.'] } },
+    house: { l: ['Housing', 'Vivienda'],
+      why: ['Housing reacts quickly to interest rates and drives spending on building, furnishing and borrowing, so it often turns before the rest of the economy.',
+            'La vivienda reacciona rápido a los tipos de interés y arrastra gasto en construcción, equipamiento y crédito, por lo que suele girar antes que el resto de la economía.'],
+      how: { U: ['Above forecast → {CUR} bullish: a stronger housing market points to a healthier economy. Below forecast → {CUR} bearish.',
+                 'Por encima del pronóstico → {CUR} alcista: un mercado de la vivienda más fuerte apunta a una economía más sana. Por debajo → {CUR} bajista.'] } },
+    trade: { l: ['Trade and capital flows', 'Comercio y flujos de capital'],
+      why: ['Foreign buyers have to buy a country’s currency to pay for what it sells, so trade and investment flows feed straight into demand for it.',
+            'Los compradores extranjeros tienen que comprar la divisa de un país para pagar lo que vende, así que el comercio y la inversión alimentan directamente su demanda.'],
+      how: { U: ['Above forecast → {CUR} bullish: more demand for the currency from abroad. Below forecast → {CUR} bearish. Usually a modest mover.',
+                 'Por encima del pronóstico → {CUR} alcista: más demanda de la divisa desde el exterior. Por debajo → {CUR} bajista. Suele mover poco.'] } },
+    rate: { l: ['Interest rate decision', 'Decisión de tipos'],
+      why: ['Interest rates are the main driver of a currency’s value: higher rates attract money looking for a better return. The decision itself is usually expected, so the market reacts to surprises and to what the bank says about its next moves.',
+            'Los tipos de interés son el principal motor del valor de una divisa: unos tipos más altos atraen dinero en busca de más rentabilidad. La decisión suele estar descontada, así que el mercado reacciona a las sorpresas y a lo que el banco diga sobre sus próximos pasos.'],
+      how: { R: ['Higher than expected, or a hold when a cut was expected → {CUR} bullish. Lower than expected → {CUR} bearish. When the decision matches expectations, the statement and the press conference decide the move.',
+                 'Más alto de lo esperado, o mantener cuando se esperaba un recorte → {CUR} alcista. Más bajo de lo esperado → {CUR} bajista. Cuando la decisión es la esperada, el comunicado y la rueda de prensa deciden el movimiento.'] } },
+    cbtext: { l: ['Central bank communication', 'Comunicación del banco central'],
+      why: ['The words say what the decision alone cannot: how worried the bank is about inflation or growth, and where rates are likely to go next.',
+            'Las palabras dicen lo que la decisión por sí sola no puede: cuánto preocupa al banco la inflación o el crecimiento, y hacia dónde irán probablemente los tipos.'],
+      how: { H: ['More hawkish than expected (worried about inflation, in no hurry to cut) → {CUR} bullish. More dovish than expected (worried about growth, open to cuts) → {CUR} bearish.',
+                 'Más restrictivo de lo esperado (preocupado por la inflación, sin prisa por recortar) → {CUR} alcista. Más acomodaticio de lo esperado (preocupado por el crecimiento, abierto a recortes) → {CUR} bajista.'],
+             N: ['No forecast to beat. The market reads it for any change in how the bank sees risks; most releases pass quietly.',
+                 'No hay pronóstico que batir. El mercado busca cualquier cambio en cómo ve el banco los riesgos; la mayoría pasa sin ruido.'] } },
+    cbtalk: { l: ['Central bank speech', 'Discurso del banco central'],
+      why: ['Central bankers use public appearances to steer expectations about future rates, so a change of tone can move the currency with no data out at all.',
+            'Los banqueros centrales usan sus apariciones públicas para guiar las expectativas sobre los tipos futuros, así que un cambio de tono puede mover la divisa sin que salga ningún dato.'],
+      how: { H: ['More hawkish than expected (worried about inflation, in no hurry to cut) → {CUR} bullish. More dovish than expected (worried about growth, open to cuts) → {CUR} bearish. Unscripted answers move the market most.',
+                 'Más restrictivo de lo esperado (preocupado por la inflación, sin prisa por recortar) → {CUR} alcista. Más acomodaticio de lo esperado (preocupado por el crecimiento, abierto a recortes) → {CUR} bajista. Las respuestas improvisadas son las que más mueven el mercado.'] } },
+    money: { l: ['Money and credit', 'Dinero y crédito'],
+      why: ['How much money and credit there is in an economy shows whether households and businesses are borrowing and spending, and it can lead inflation.',
+            'Cuánto dinero y crédito hay en una economía muestra si los hogares y las empresas se endeudan y gastan, y puede anticipar la inflación.'],
+      how: { U: ['Above forecast → mildly {CUR} bullish: more borrowing and more money in circulation. Below forecast → mildly {CUR} bearish. Rarely a strong mover.',
+                 'Por encima del pronóstico → {CUR} ligeramente alcista: más crédito y más dinero en circulación. Por debajo → ligeramente bajista. Rara vez mueve mucho.'],
+             N: ['No simple beat or miss: read what the figure says about what the central bank has been doing in the market.',
+                 'No hay un simple mejor o peor de lo esperado: lee lo que la cifra dice sobre lo que ha hecho el banco central en el mercado.'] } },
+    bond: { l: ['Bond auction', 'Subasta de bonos'],
+      why: ['The yield a government has to pay shows how much investors want its debt, and that yield feeds into every other interest rate in the economy.',
+            'El rendimiento que tiene que pagar un gobierno muestra cuánto quieren los inversores su deuda, y ese rendimiento se traslada a todos los demás tipos de interés de la economía.'],
+      how: { N: ['No simple beat or miss. Strong demand pulls yields down; weak demand pushes them up, which tends to support {CUR} unless it reflects worry about the government’s finances.',
+                 'No hay un simple mejor o peor de lo esperado. Una demanda fuerte baja los rendimientos; una débil los sube, lo que suele apoyar a {CUR} salvo que refleje preocupación por las finanzas públicas.'] } },
+    energy: { l: ['Energy', 'Energía'],
+      why: ['Oil stocks move the oil price, which feeds into inflation and matters most to oil-exporting currencies such as the Canadian dollar.',
+            'Las reservas de petróleo mueven su precio, que se traslada a la inflación e importa sobre todo a las divisas de países exportadores, como el dólar canadiense.'],
+      how: { N: ['A bigger build than expected → oil lower; a bigger draw → oil higher. The effect on currencies comes through the oil price rather than directly.',
+                 'Un aumento de reservas mayor de lo esperado → petróleo a la baja; una caída mayor → petróleo al alza. El efecto en las divisas llega a través del precio del petróleo, no directamente.'] } },
+    fiscal: { l: ['Government budget', 'Presupuesto público'],
+      why: ['Tax and spending plans change how much a government borrows and how fast the economy grows, which feeds into bond yields and the currency.',
+            'Los planes de impuestos y gasto cambian cuánto se endeuda un gobierno y a qué ritmo crece la economía, lo que se traslada a los rendimientos de los bonos y a la divisa.'],
+      how: { N: ['No simple beat or miss: the market reads how much will be borrowed and whether the plans look credible.',
+                 'No hay un simple mejor o peor de lo esperado: el mercado mira cuánto se va a pedir prestado y si los planes parecen creíbles.'],
+             D: ['Below forecast (less borrowing) → mildly {CUR} bullish. Above forecast → mildly {CUR} bearish. Usually a small mover.',
+                 'Por debajo del pronóstico (menos endeudamiento) → {CUR} ligeramente alcista. Por encima → ligeramente bajista. Suele mover poco.'] } },
+    pol: { l: ['Politics', 'Política'],
+      why: ['Politics changes the outlook for taxes, spending, trade and regulation, and uncertainty by itself makes investors cautious.',
+            'La política cambia las perspectivas de impuestos, gasto, comercio y regulación, y la incertidumbre por sí sola vuelve cautos a los inversores.'],
+      how: { N: ['No forecast to beat. The currency reacts to what is said or decided, and to how far it differs from what was expected.',
+                 'No hay pronóstico que batir. La divisa reacciona a lo que se dice o se decide, y a cuánto difiere de lo esperado.'] } },
+    summit: { l: ['International meeting', 'Reunión internacional'],
+      why: ['These meetings rarely produce numbers, but statements and remarks to reporters can shift expectations on policy, trade or oil supply.',
+            'Estas reuniones rara vez dan cifras, pero los comunicados y las declaraciones a la prensa pueden mover las expectativas sobre política, comercio u oferta de petróleo.'],
+      how: { N: ['No forecast to beat. Watch the final statement and the headlines during the meeting; most pass without moving the market.',
+                 'No hay pronóstico que batir. Sigue el comunicado final y los titulares durante la reunión; la mayoría pasa sin mover el mercado.'] } }
+  };
+  const _EV_FREQ = {
+    M: ['Monthly', 'Mensual'], Q: ['Quarterly', 'Trimestral'], W: ['Weekly', 'Semanal'], Y: ['Once a year', 'Una vez al año'], '2W': ['Twice a month', 'Dos veces al mes'],
+    NFP: ['Monthly, usually on the first Friday after the month ends', 'Mensual, normalmente el primer viernes tras acabar el mes'],
+    ADP: ['Monthly, two days before the government jobs report', 'Mensual, dos días antes del informe oficial de empleo'],
+    FLASH: ['Monthly, about three weeks into the month it covers', 'Mensual, unas tres semanas después de empezar el mes que cubre'],
+    EARLYM: ['Monthly, early in the month it covers', 'Mensual, a principios del mes que cubre'],
+    MIDM: ['Monthly, around the middle of the month it covers', 'Mensual, hacia mediados del mes que cubre'],
+    ENDM: ['Monthly, near the end of the month it covers', 'Mensual, hacia el final del mes que cubre'],
+    LASTDAY: ['Monthly, on the last day of the month it covers', 'Mensual, el último día del mes que cubre'],
+    MIDQ: ['Quarterly, about halfway through the quarter', 'Trimestral, hacia la mitad del trimestre'], ENDQ: ['Quarterly, near the end of the quarter', 'Trimestral, hacia el final del trimestre'],
+    '8Y': ['Eight times a year', 'Ocho veces al año'], '7Y': ['Seven times a year', 'Siete veces al año'], '4Y': ['Four times a year', 'Cuatro veces al año'], '2Y': ['Twice a year', 'Dos veces al año'],
+    '8Y2W': ['Eight times a year, two weeks after each rate decision', 'Ocho veces al año, dos semanas después de cada decisión de tipos'],
+    '8Y3W': ['Eight times a year, three weeks after each rate decision', 'Ocho veces al año, tres semanas después de cada decisión de tipos'],
+    '8Y4W': ['Eight times a year, four weeks after each rate decision', 'Ocho veces al año, cuatro semanas después de cada decisión de tipos'],
+    '4YRS': ['Every four years', 'Cada cuatro años'], '2YRS': ['Every two years', 'Cada dos años'], IRR: ['No fixed schedule', 'Sin calendario fijo']
+  };
+  function _evFreq(code, es) {
+    const i = es ? 1 : 0;
+    if (_EV_FREQ[code]) return _EV_FREQ[code][i];
+    const m = /^([MQW])~(-?\d+)$/.exec(code || '');
+    if (!m) return '';
+    const n = parseInt(m[2], 10), per = m[1];
+    if (per === 'M' && n === 0) return _EV_FREQ.LASTDAY[i];
+    if (per === 'M' && n < 0) return _EV_FREQ[n <= -18 ? 'EARLYM' : n <= -8 ? 'MIDM' : 'ENDM'][i];
+    if (per === 'Q' && n < 0) return _EV_FREQ[n <= -30 ? 'MIDQ' : 'ENDQ'][i];
+    const unit = per === 'M' ? ['the month', 'acabar el mes'] : per === 'Q' ? ['the quarter', 'acabar el trimestre'] : ['the week', 'acabar la semana'];
+    const head = per === 'M' ? _EV_FREQ.M[i] : per === 'Q' ? _EV_FREQ.Q[i] : _EV_FREQ.W[i];
+    let lag;
+    if (n <= 4) lag = es ? 'en los primeros días tras ' + unit[1] : 'in the first few days after ' + unit[0] + ' ends';
+    else if (n < 28) lag = es ? 'unos ' + n + ' días después de ' + unit[1] : 'about ' + n + ' days after ' + unit[0] + ' ends';
+    else if (n <= 35) lag = es ? 'aproximadamente un mes después de ' + unit[1] : 'about a month after ' + unit[0] + ' ends';
+    else if (n <= 50) lag = es ? 'unas seis semanas después de ' + unit[1] : 'about six weeks after ' + unit[0] + ' ends';
+    else if (n <= 70) lag = es ? 'unos dos meses después de ' + unit[1] : 'about two months after ' + unit[0] + ' ends';
+    else lag = es ? 'unos tres meses después de ' + unit[1] : 'about three months after ' + unit[0] + ' ends';
+    return head + ', ' + lag;
+  }
+  // Parsed once: exact records by "CUR|title", "X Speaks" patterns by currency, and how many currencies share a title.
+  const _EV_SPEC = (function () {
+    const exact = {}, fuzzy = {}, titles = {};
+    EVENT_SPEC_ROWS.split('\n').forEach(function (ln) {
+      const f = ln.trim().split('|'); if (f.length !== 9) return;
+      const rec = { cur: f[0], type: f[2], dir: f[3], freq: f[4], src: f[5], aka: f[6], en: f[7], es: f[8] };
+      if (f[1].charAt(0) === '~') { rec.fz = true; try { (fuzzy[f[0]] = fuzzy[f[0]] || []).push([new RegExp(f[1].slice(1), 'i'), rec]); } catch (e) {} }
+      else { exact[f[0] + '|' + f[1]] = rec; (titles[f[1]] = titles[f[1]] || {})[f[0]] = 1; }
+    });
+    return { exact: exact, fuzzy: fuzzy, titles: titles };
+  })();
+  function getEventSpec(title, country) {
+    if (!title) return null;
+    const cur = String(country || '').toUpperCase() || 'ALL';
+    const tries = cur === 'ALL' ? ['ALL'] : [cur, 'ALL'];
+    for (const c of tries) {
+      if (_EV_SPEC.exact[c + '|' + title]) return _EV_SPEC.exact[c + '|' + title];
+      const fz = _EV_SPEC.fuzzy[c] || [];
+      for (const pr of fz) { if (pr[0].test(title)) return pr[1]; }
+    }
+    return null;
+  }
+  function _evFill(s, rec, es) {
+    const i = es ? 1 : 0, cb = (_EV_CB[rec.cur] || _EV_CB.ALL)[i];
+    const cur = rec.cur === 'ALL' ? (rec.type === 'cbtalk' ? 'USD' : (es ? 'la divisa' : 'the currency')) : rec.cur;
+    return String(s || '').replace(/\{CB\}/g, cb).replace(/\{CUR\}/g, cur);
+  }
+  // Everything the panel shows for a record, in the app's language.
+  function eventSpecInfo(title, country) {
+    const rec = getEventSpec(title, country); if (!rec) return null;
+    const es = (window.__lang === 'es'), i = es ? 1 : 0, ty = _EV_TYPE[rec.type] || null;
+    const how = ty ? (ty.how[rec.dir] || ty.how[Object.keys(ty.how)[0]]) : null;
+    return { source: rec.src || '', measures: es ? rec.es : rec.en, effect: (_EV_EFFECT[rec.dir] || _EV_EFFECT.N)[i], freq: _evFreq(rec.freq, es), aka: rec.aka || '',
+             type: ty ? ty.l[i] : '', why: ty ? _evFill(ty.why[i], rec, es) : '', how: how ? _evFill(how[i], rec, es) : '' };
+  }
+  /* A hand-written text with no "(CUR)" on its key was written with one currency in mind - usually the dollar - and the
+     same title exists for others ("CPI m/m", "Unemployment Rate", "Trade Balance"). So Canada's CPI read "the Fed's
+     preferred inflation signal" and "USD bullish". A text that names another currency's central bank or country, and
+     not this one's, is not used for this currency. */
+  const _EV_MARK = { USD: /\b(USD|Fed|FOMC|Federal Reserve|Reserva Federal|EE\. ?UU|estadounidense)/, EUR: /\b(EUR|ECB|BCE|eurozone|eurozona)/i, GBP: /\b(GBP|BoE|BOE|Bank of England|Banco de Inglaterra|UK|Reino Unido|brit[aá]nic)/,
+                     JPY: /\b(JPY|BoJ|BOJ|Bank of Japan|Banco de Jap[oó]n|Japan|Jap[oó]n|japon)/, AUD: /\b(AUD|RBA|Australia)/, NZD: /\b(NZD|RBNZ|New Zealand|Nueva Zelanda|neozeland)/,
+                     CAD: /\b(CAD|BoC|BOC|Bank of Canada|Banco de Canad[aá]|Canad)/, CHF: /\b(CHF|SNB|BNS|Swiss|Switzerland|Suiza|suiz)/, CNY: /\b(CNY|PBoC|PBOC|China|Chinese|chin[oa])/ };
+  function _evFits(text, country) {
+    const cur = String(country || '').toUpperCase();
+    if (!text || !_EV_MARK[cur]) return true;
+    if (_EV_MARK[cur].test(text)) return true;
+    return !Object.keys(_EV_MARK).some(function (k) { return k !== cur && _EV_MARK[k].test(text); });
+  }
+  // ---- Which bank holiday is it? The feed only says "Bank Holiday" (Nestor: "why doesnt the economic calendar know it
+  // is Columbus day tomorrow? can the calendar know which specific bank holidays are?" ... "and also their bank
+  // holidays", of the other countries). US, UK and the euro payment system come from the app's own rules (_bhYear); the
+  // other countries' public holidays are worked out here. A day the rules do not know stays "Bank Holiday". ----
+  const _CAL_TZ = { USD: 'America/New_York', GBP: 'Europe/London', EUR: 'Europe/Berlin', JPY: 'Asia/Tokyo', AUD: 'Australia/Sydney', NZD: 'Pacific/Auckland', CAD: 'America/Toronto', CHF: 'Europe/Zurich', CNY: 'Asia/Shanghai' };
+  // Lunar-calendar dates cannot be computed simply: Chinese New Year, Qingming, Dragon Boat, Mid-Autumn; and Matariki (NZ).
+  const _CAL_LUNAR = { 2025: ['01-29', '04-04', '05-31', '10-06'], 2026: ['02-17', '04-05', '06-19', '09-25'], 2027: ['02-06', '04-05', '06-09', '09-15'], 2028: ['01-26', '04-04', '05-28', '10-03'], 2029: ['02-13', '04-04', '06-16', '09-22'], 2030: ['02-03', '04-05', '06-05', '09-12'] };
+  const _CAL_MATARIKI = { 2025: '06-20', 2026: '07-10', 2027: '06-25', 2028: '07-14', 2029: '07-06', 2030: '06-21' };
+  const _CAL_PLACE = { USD: ['the United States', 'Estados Unidos'], GBP: ['the United Kingdom', 'el Reino Unido'], EZ: ['the Eurozone (the euro payment system is shut)', 'la Eurozona (el sistema de pagos del euro cierra)'], DE: ['Germany', 'Alemania'], FR: ['France', 'Francia'], IT: ['Italy', 'Italia'], SP: ['Spain', 'España'],
+                       JPY: ['Japan', 'Japón'], AUD: ['Australia', 'Australia'], NZD: ['New Zealand', 'Nueva Zelanda'], CAD: ['Canada', 'Canadá'], CHF: ['Switzerland', 'Suiza'], CNY: ['China', 'China'] };
+  function _calHolidays(kind, y) {
+    const E = _bhEaster(y), H = [];
+    const ed = function (off) { const d = new Date(y, E.getMonth(), E.getDate() + off, 12); return [d.getMonth() + 1, d.getDate()]; };
+    const nth = function (m, dow, n) { const f = new Date(y, m - 1, 1, 12).getDay(); return [m, 1 + ((dow - f + 7) % 7) + (n - 1) * 7]; };
+    const last = function (m, dow) { const z = new Date(y, m, 0, 12); return [m, z.getDate() - ((z.getDay() - dow + 7) % 7)]; };
+    const add = function (md, en, es) { H.push({ m: md[0], d: md[1], en: en, es: es }); };
+    const NY = ['New Year’s Day', 'Año Nuevo'], GF = ['Good Friday', 'Viernes Santo'], EM = ['Easter Monday', 'Lunes de Pascua'], LD = ['Labour Day', 'Día del Trabajo'], AS = ['Ascension Day', 'la Ascensión'], WM = ['Whit Monday', 'Lunes de Pentecostés'],
+          XM = ['Christmas Day', 'Navidad'], BX = ['Boxing Day', 'San Esteban (Boxing Day)'], ST = ['St Stephen’s Day', 'San Esteban'], ALLS = ['All Saints’ Day', 'Todos los Santos'], ASM = ['Assumption Day', 'la Asunción'], EP = ['Epiphany', 'Epifanía (Reyes)'];
+    const A = function (md, n) { add(md, n[0], n[1]); };
+    if (kind === 'DE') { A([1, 1], NY); A(ed(-2), GF); A(ed(1), EM); A([5, 1], LD); A(ed(39), AS); A(ed(50), WM); add(ed(60), 'Corpus Christi (regional)', 'Corpus Christi (regional)'); add([10, 3], 'German Unity Day', 'Día de la Unidad Alemana'); add([10, 31], 'Reformation Day (regional)', 'Día de la Reforma (regional)'); A([11, 1], ALLS); A([12, 25], XM); add([12, 26], 'Second Day of Christmas', 'Segundo día de Navidad'); }
+    else if (kind === 'FR') { A([1, 1], NY); A(ed(1), EM); A([5, 1], LD); add([5, 8], 'Victory in Europe Day', 'Día de la Victoria de 1945'); A(ed(39), AS); A(ed(50), WM); add([7, 14], 'Bastille Day', 'Fiesta Nacional de Francia'); A([8, 15], ASM); A([11, 1], ALLS); add([11, 11], 'Armistice Day', 'Día del Armisticio'); A([12, 25], XM); }
+    else if (kind === 'IT') { A([1, 1], NY); A([1, 6], EP); A(ed(1), EM); add([4, 25], 'Liberation Day', 'Día de la Liberación'); A([5, 1], LD); add([6, 2], 'Republic Day', 'Fiesta de la República'); A([8, 15], ASM); A([11, 1], ALLS); add([12, 8], 'Immaculate Conception', 'la Inmaculada Concepción'); A([12, 25], XM); A([12, 26], ST); }
+    else if (kind === 'SP') { A([1, 1], NY); A([1, 6], EP); A(ed(-2), GF); A([5, 1], LD); A([8, 15], ASM); add([10, 12], 'National Day of Spain', 'Fiesta Nacional de España'); A([11, 1], ALLS); add([12, 6], 'Constitution Day', 'Día de la Constitución'); add([12, 8], 'Immaculate Conception', 'la Inmaculada Concepción'); A([12, 25], XM); }
+    else if (kind === 'JPY') {
+      const eq = function (base) { return Math.floor(base + 0.242194 * (y - 1980) - Math.floor((y - 1980) / 4)); };   // the equinox days, 1980-2099
+      add([1, 1], 'New Year’s Day', 'Año Nuevo'); add([1, 2], 'New Year bank holiday', 'festivo bancario de Año Nuevo'); add([1, 3], 'New Year bank holiday', 'festivo bancario de Año Nuevo'); add([12, 31], 'Year-end bank holiday', 'festivo bancario de fin de año');
+      add(nth(1, 1, 2), 'Coming of Age Day', 'Día de la Mayoría de Edad'); add([2, 11], 'National Foundation Day', 'Día de la Fundación Nacional'); add([2, 23], 'the Emperor’s Birthday', 'Cumpleaños del Emperador');
+      add([3, eq(20.8431)], 'Vernal Equinox Day', 'Equinoccio de Primavera'); add([4, 29], 'Showa Day', 'Día de Showa'); add([5, 3], 'Constitution Memorial Day', 'Día de la Constitución'); add([5, 4], 'Greenery Day', 'Día del Verdor'); add([5, 5], 'Children’s Day', 'Día de los Niños');
+      add(nth(7, 1, 3), 'Marine Day', 'Día del Mar'); add([8, 11], 'Mountain Day', 'Día de la Montaña'); add(nth(9, 1, 3), 'Respect for the Aged Day', 'Día del Respeto a los Mayores'); add([9, eq(23.2488)], 'Autumnal Equinox Day', 'Equinoccio de Otoño');
+      add(nth(10, 1, 2), 'Sports Day', 'Día del Deporte'); add([11, 3], 'Culture Day', 'Día de la Cultura'); add([11, 23], 'Labour Thanksgiving Day', 'Día de Acción de Gracias por el Trabajo');
+    }
+    else if (kind === 'AUD') { A([1, 1], NY); add([1, 26], 'Australia Day', 'Día de Australia'); A(ed(-2), GF); A(ed(1), EM); add([4, 25], 'Anzac Day', 'Día de Anzac'); add(nth(6, 1, 2), 'the King’s Birthday', 'Cumpleaños del Rey'); add(nth(10, 1, 1), 'Labour Day', 'Día del Trabajo'); A([12, 25], XM); A([12, 26], BX); }
+    else if (kind === 'NZD') { A([1, 1], NY); add([1, 2], 'the Day after New Year’s Day', 'el día siguiente a Año Nuevo'); add([2, 6], 'Waitangi Day', 'Día de Waitangi'); A(ed(-2), GF); A(ed(1), EM); add([4, 25], 'Anzac Day', 'Día de Anzac'); add(nth(6, 1, 1), 'the King’s Birthday', 'Cumpleaños del Rey');
+      if (_CAL_MATARIKI[y]) { const p = _CAL_MATARIKI[y].split('-'); add([+p[0], +p[1]], 'Matariki', 'Matariki'); }
+      add(nth(10, 1, 4), 'Labour Day', 'Día del Trabajo'); A([12, 25], XM); A([12, 26], BX); }
+    else if (kind === 'CAD') { A([1, 1], NY); add(nth(2, 1, 3), 'Family Day', 'Día de la Familia'); A(ed(-2), GF);
+      const v = new Date(y, 4, 24, 12); v.setDate(24 - ((v.getDay() + 6) % 7)); add([5, v.getDate()], 'Victoria Day', 'Día de Victoria');   // the Monday before 25 May
+      add([7, 1], 'Canada Day', 'Día de Canadá'); add(nth(8, 1, 1), 'the Civic Holiday', 'el festivo cívico de agosto'); add(nth(9, 1, 1), 'Labour Day', 'Día del Trabajo'); add([9, 30], 'the National Day for Truth and Reconciliation', 'Día Nacional de la Verdad y la Reconciliación');
+      add(nth(10, 1, 2), 'Thanksgiving', 'Acción de Gracias'); add([11, 11], 'Remembrance Day', 'Día del Recuerdo'); A([12, 25], XM); A([12, 26], BX); }
+    else if (kind === 'CHF') { A([1, 1], NY); add([1, 2], 'Berchtold’s Day', 'San Bertoldo'); A(ed(-2), GF); A(ed(1), EM); A([5, 1], LD); A(ed(39), AS); A(ed(50), WM); add([8, 1], 'Swiss National Day', 'Fiesta Nacional Suiza'); A([12, 25], XM); A([12, 26], ST); }
+    return H;
+  }
+  // The local calendar day of an event in its own country, { y, m, d, wd } (wd: 0 Sunday).
+  function _calLocalDay(ms, cur) {
+    try {
+      const s = new Intl.DateTimeFormat('en-CA', { timeZone: _CAL_TZ[cur] || 'UTC', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date(ms));
+      const p = s.split('-'), y = +p[0], m = +p[1], d = +p[2];
+      return { y: y, m: m, d: d, wd: new Date(Date.UTC(y, m - 1, d)).getUTCDay() };
+    } catch (e) { return null; }
+  }
+  // { name, place, id } for a "Bank Holiday" row, or null when the rules do not know the day.
+  function calHolidayInfo(e) {
+    try {
+      if (!e || !/Bank Holiday/i.test(e.title || '') || !e.when) return null;
+      const cur = String(e.country || '').toUpperCase(), es = (window.__lang === 'es'), i = es ? 1 : 0;
+      const ld = _calLocalDay(new Date(e.when).getTime(), cur); if (!ld) return null;
+      let kind = cur;
+      if (cur === 'EUR') kind = /^German/i.test(e.title) ? 'DE' : /^French/i.test(e.title) ? 'FR' : /^Italian/i.test(e.title) ? 'IT' : /^Spanish/i.test(e.title) ? 'SP' : 'EZ';
+      const place = (_CAL_PLACE[kind] || ['', ''])[i], strip = function (s) { return String(s || '').replace(/^(the|el|la) /i, ''); };
+      const obs = es ? ' (trasladado)' : ' (observed)';
+      // US, UK and the euro payment system: the app's own rules, substitute days included
+      if (kind === 'USD' || kind === 'GBP' || kind === 'EZ') {
+        const where = kind === 'USD' ? 'US' : kind === 'GBP' ? 'UK' : 'EU';
+        const hit = _bhYear(ld.y).filter(function (h) { const d = new Date(h.ms); return h.where === where && d.getMonth() + 1 === ld.m && d.getDate() === ld.d; })[0];
+        if (!hit) return null;
+        return { id: hit.id, kind: kind, place: place, name: strip((_BH_NAME[hit.id] || ['', ''])[i]) + (hit.moved ? obs : '') };
+      }
+      if (kind === 'CNY') {
+        const L = _CAL_LUNAR[ld.y], days = function (md) { const p = md.split('-'); return Math.round((Date.UTC(ld.y, ld.m - 1, ld.d) - Date.UTC(ld.y, +p[0] - 1, +p[1])) / 864e5); };
+        const N = function (en, es2) { return { id: 'cn', kind: kind, place: place, name: es ? es2 : en }; };
+        if (ld.m === 1 && ld.d <= 3 && !(L && Math.abs(days(L[0])) <= 8)) return N('New Year’s Day', 'Año Nuevo');
+        if (ld.m === 10 && ld.d <= 8) return N('National Day (Golden Week)', 'Día Nacional (Semana Dorada)');
+        if (ld.m === 5 && ld.d <= 5) return N('Labour Day holiday', 'festivo del Día del Trabajo');
+        if (L) {
+          const a = days(L[0]); if (a >= -2 && a <= 8) return N('Spring Festival (Chinese New Year)', 'Fiesta de la Primavera (Año Nuevo chino)');
+          if (Math.abs(days(L[1])) <= 2) return N('Qingming Festival', 'Festival Qingming');
+          if (Math.abs(days(L[2])) <= 2) return N('Dragon Boat Festival', 'Festival del Barco del Dragón');
+          if (Math.abs(days(L[3])) <= 2) return N('Mid-Autumn Festival', 'Festival del Medio Otoño');
+        }
+        return null;
+      }
+      const list = _calHolidays(kind, ld.y), at = function (m, d) { const x = new Date(Date.UTC(ld.y, m - 1, d)); return list.filter(function (h) { return h.m === x.getUTCMonth() + 1 && h.d === x.getUTCDate(); })[0]; };
+      let h = at(ld.m, ld.d), moved = false;
+      // a holiday that fell on the weekend, kept on the Monday (or the Tuesday when Monday is one too, or the Friday before a Saturday)
+      // Saturday's holiday goes to the Monday and Sunday's to the Tuesday when both days were holidays (Christmas and
+      // Boxing Day); a lone Sunday holiday goes to the Monday, or to the Tuesday when the Monday is a holiday itself.
+      // Japan moves only a Sunday holiday.
+      if (!h && ld.wd === 1) { const sun = at(ld.m, ld.d - 1), sat = kind !== 'JPY' ? at(ld.m, ld.d - 2) : null; h = (sat && sun) ? sat : (sun || sat); moved = !!h; }
+      if (!h && ld.wd === 2) { const sun = at(ld.m, ld.d - 2), sat = kind !== 'JPY' ? at(ld.m, ld.d - 3) : null; h = (sat && sun) ? sun : ((sun && at(ld.m, ld.d - 1)) ? sun : null); moved = !!h; }
+      if (!h && ld.wd === 5 && (kind === 'CAD')) { h = at(ld.m, ld.d + 1); moved = !!h; }
+      if (!h && kind === 'JPY') {
+        if (ld.m === 5 && ld.d === 6) return { id: 'jp', kind: kind, place: place, name: es ? 'festivo sustitutivo de la Semana Dorada' : 'Golden Week substitute holiday' };
+        if (at(ld.m, ld.d - 1) && at(ld.m, ld.d + 1)) return { id: 'jp', kind: kind, place: place, name: es ? 'festivo puente entre dos festivos' : 'Bridge holiday between two holidays' };
+      }
+      if (!h) return null;
+      return { id: kind.toLowerCase(), kind: kind, place: place, name: strip(es ? h.es : h.en) + (moved ? obs : '') };
+    } catch (err) { return null; }
+  }
+  window.__stCalHoliday = calHolidayInfo;
+  // The row's title: "Bank Holiday · Columbus Day" when the day is known.
+  function calEventTitle(e) {
+    const base = getEventTitle(e.title), h = calHolidayInfo(e);
+    return h ? base + ' · ' + h.name : base;
+  }
+  // What is it, for a named holiday. On two US holidays the stock market trades while banks and bonds are shut.
+  function _calHolidayDesc(e) {
+    const h = calHolidayInfo(e); if (!h) return null;
+    const es = (window.__lang === 'es'), cur = String(e.country || '').toUpperCase();
+    let note = '';
+    if (h.kind === 'USD') note = (h.id === 'columbus' || h.id === 'veterans')
+      ? (es ? ' Los bancos y el mercado de bonos cierran, pero las bolsas de EE. UU. abren.' : ' Banks and the bond market are closed, but US stock markets are open.')
+      : (es ? ' Los bancos, las bolsas y el mercado de bonos de EE. UU. cierran.' : ' US banks, stock markets and the bond market are closed.');
+    return es
+      ? h.name + ': festivo bancario en ' + h.place + '.' + note + ' Espera menos liquidez y spreads más amplios en los pares de ' + cur + ', con un precio más errático.'
+      : h.name + ': a bank holiday in ' + h.place + '.' + note + ' Expect thinner liquidity and wider spreads in ' + cur + ' pairs, with choppier price action.';
+  }
+
+  // ev (optional): the event itself, so a "Bank Holiday" row can say which holiday it is.
+  function getEventDescription(title, impact, country, ev) {
     if (!title) return null;
     const lang  = (window.__lang === 'es') ? 'es' : 'en';
     const dict  = (lang === 'es') ? EVENT_DESCRIPTIONS_ES : EVENT_DESCRIPTIONS_EN;
     const fuzzy = (lang === 'es') ? EVENT_FUZZY_ES        : EVENT_FUZZY_EN;
+    if (ev && /Bank Holiday/i.test(title)) { const hd = _calHolidayDesc(ev); if (hd) return hd; }
     // Try country-qualified key first ("Employment Change (CAD)") so titles
     // shared by multiple countries can have country-specific descriptions.
     // Falls through to the plain title lookup if no qualified entry exists.
@@ -43903,10 +44625,16 @@ try {
       const ctryKey = `${title} (${country.toUpperCase()})`;
       if (dict[ctryKey]) return dict[ctryKey];
     }
-    if (dict[title]) return dict[title];
+    // A plain entry only when it was not written for another currency (_evFits); then the app's own record of this
+    // currency's event; then the patterns ("X Speaks"); a pattern record last. The generic lines below are what is
+    // left for an event the app has never been told about.
+    if (dict[title] && _evFits(dict[title], country)) return dict[title];
+    const _spec = getEventSpec(title, country);
+    if (_spec && !_spec.fz) return (lang === 'es' ? _spec.es : _spec.en) + '.';
     for (const [re, desc] of fuzzy) {
-      if (re.test(title)) return desc;
+      if (re.test(title) && _evFits(desc, country)) return desc;
     }
+    if (_spec) return (lang === 'es' ? _spec.es : _spec.en) + '.';
     // Generic impact-based fallback. Only kicks in for events not in the
     // curated dictionary AND not matched by a fuzzy pattern — primarily
     // low-impact data releases that aren't worth a custom write-up but
@@ -44238,10 +44966,14 @@ try {
       const ctryKey = `${title} (${country.toUpperCase()})`;
       if (dict[ctryKey]) return dict[ctryKey];
     }
-    if (dict[title]) return dict[title];
+    // The same order as the description: never a text written for another currency ("USD bullish" on Canada's CPI).
+    if (dict[title] && _evFits(dict[title], country)) return dict[title];
+    const _info = eventSpecInfo(title, country), _fz = !!(_info && (getEventSpec(title, country) || {}).fz);
+    if (_info && _info.how && !_fz) return _info.how;
     for (const [re, interp] of fuzzy) {
-      if (re.test(title)) return interp;
+      if (re.test(title) && _evFits(interp, country)) return interp;
     }
+    if (_info && _info.how) return _info.how;
     // Generic impact-based fallback. Doesn't try to be currency-specific —
     // just gives the user the standard "beat → bullish, miss → bearish"
     // direction with the appropriate confidence level.
@@ -46045,7 +46777,7 @@ try {
         <span class="econ-event-time">${time}</span>
         <span class="econ-event-currency">${escape(e.country)}</span>
         <span class="econ-event-impact ${impactKey}">${impactDot}</span>
-        <span class="econ-event-title">${escape(getEventTitle(e.title))}</span>
+        <span class="econ-event-title">${escape(calEventTitle(e))}</span>
         <span class="econ-event-actual">${aCell}</span>
         <span class="econ-event-forecast">${fCell}</span>
         <span class="econ-event-previous">${pCell}</span>
@@ -46160,8 +46892,9 @@ try {
       body.querySelectorAll('.econ-event-detail').forEach(el => el.remove());
       body.querySelectorAll('.econ-event.expanded').forEach(el => el.classList.remove('expanded'));
       // Build and insert the detail panel
-      const desc   = getEventDescription(e.title, e.impact, e.country);
+      const desc   = getEventDescription(e.title, e.impact, e.country, e);
       const interp = getEventInterpretation(e.title, e.impact, e.country);
+      const spec   = /Bank Holiday/i.test(e.title || '') ? null : eventSpecInfo(e.title, e.country);   // the app's own record of this event
       const safeUrl = (typeof e.url === 'string' && /^https:\/\/(www\.)?forexfactory\.com\//i.test(e.url)) ? e.url : null;
       // Tiny helper so we don't repeat the entity-encoding inline 3 times.
       const safe = s => s.replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c]));
@@ -46172,8 +46905,18 @@ try {
       if (desc) {
         blocks.push(`<div class="econ-event-detail-desc"><span class="econ-event-detail-label">${t('econ.detail_what_is_it')}</span>${safe(desc)}</div>`);
       }
+      // Why it matters (by kind of event), then how to read it, then the facts: who publishes it, what it measures, its
+      // usual effect, how often it comes out, what else it is called and what kind of event it is.
+      if (spec && spec.why) {
+        blocks.push(`<div class="econ-event-detail-why"><span class="econ-event-detail-label">${t('econ.detail_why')}</span>${safe(spec.why)}</div>`);
+      }
       if (interp) {
         blocks.push(`<div class="econ-event-detail-interp"><span class="econ-event-detail-label">${t('econ.detail_how_to_read')}</span>${safe(interp)}</div>`);
+      }
+      if (spec) {
+        const rowsS = [['econ.spec_source', spec.source], ['econ.spec_measures', spec.measures], ['econ.spec_effect', spec.effect], ['econ.spec_freq', spec.freq], ['econ.spec_aka', spec.aka], ['econ.spec_type', spec.type]]
+          .filter(r => r[1]).map(r => `<span class="econ-spec-k">${t(r[0])}</span><span class="econ-spec-v">${safe(r[1])}</span>`).join('');
+        if (rowsS) blocks.push(`<div class="econ-event-specs">${rowsS}</div>`);
       }
       const textHtml = blocks.length
         ? `<div class="econ-event-detail-text">${blocks.join('')}</div>`
@@ -46190,6 +46933,15 @@ try {
       detail.innerHTML = textHtml + linkHtml;
       row.classList.add('expanded');
       row.parentNode.insertBefore(detail, row.nextSibling);
+      /* On a phone the rows scroll sideways (their columns need the width), and the opened panel was as wide as they
+         are, so its sentences ran off the screen. It now takes the width you can see and stays put while the rows
+         scroll (11 Oct 2026, with the longer event information). */
+      try {
+        if (body.scrollWidth > body.clientWidth + 2) {
+          detail.style.minWidth = '0'; detail.style.boxSizing = 'border-box'; detail.style.width = body.clientWidth + 'px';
+          detail.style.position = 'sticky'; detail.style.left = '0';
+        }
+      } catch (e) {}
     };
   }
 
@@ -79439,7 +80191,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function modelKind(m){ m=String(m||'').toLowerCase(); if(m.indexOf('sonnet')>=0) return 'sonnet'; if(m.indexOf('haiku')>=0) return 'haiku'; if(m.indexOf('opus')>=0) return 'opus'; return 'other'; }
   function _localDate(dt){ var y=dt.getFullYear(), m=('0'+(dt.getMonth()+1)).slice(-2), d=('0'+dt.getDate()).slice(-2); return y+'-'+m+'-'+d; }
 
-  var _busy=false, _byUser={}, _names={}, _allRange={from:'',to:''};   // _allRange = the "All traders" summary-row date scope
+  var _busy=false, _byUser={}, _names={}, _gone={}, _allRange={from:'',to:''};   // _gone: usage rows whose account no longer exists (kept in the totals, not listed)   // _allRange = the "All traders" summary-row date scope
   var ECA_UID='00000000-0000-0000-0000-000000000eca';   // system user_id for economic-calendar-actuals fetches (mode 'ecafetch') — its own column, not a member
   function render(){
     if(!isAdmin()) return;
@@ -79454,10 +80206,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     tableEl.innerHTML='<div class="empty">'+_t('Loading…','Cargando…')+'</div>'; var det=el('aimeter-detail'); if(det) det.innerHTML='';
     // Fire the usage query and the member-names query IN PARALLEL (they don't depend on each other) so
     // the tab loads in one round-trip instead of two.
-    Promise.all([ sb.rpc('st_ai_usage_summary'), sb.rpc('st_members') ]).then(function(res){
-      var r=res[0]||{}, m=res[1]||{};
+    // st_ai_usage_people (11 Oct 2026): a name for every account that has one, trial members included, and whether the
+    // account still exists. It can fail without taking the tab down - the list then reads as it did before.
+    var _people=sb.rpc('st_ai_usage_people').then(function(x){ return x; }, function(){ return {}; });
+    Promise.all([ sb.rpc('st_ai_usage_summary'), sb.rpc('st_members'), _people ]).then(function(res){
+      var r=res[0]||{}, m=res[1]||{}, pp=res[2]||{};
       if(r.error){ _busy=false; tableEl.innerHTML='<div class="empty">'+_t('Not set up yet — create the ','Aún no configurado — crea la tabla ')+'<code>ai_usage</code>'+_t(' table + ',' + ')+'<code>st_ai_usage_summary()</code>'+_t(' and add the recorder to the st-assistant edge function (see chat).',' y añade el registrador a la edge function st-assistant (ver chat).')+'<br><small>'+esc(r.error.message||'')+'</small></div>'; return; }
       _names={}; ((m&&m.data)||[]).forEach(function(x){ var id=x.id||x.user_id; if(id) _names[id]=x.name||x.display_name||'Trader'; });
+      _gone={}; ((pp&&!pp.error&&pp.data)||[]).forEach(function(x){ var id=x.user_id; if(!id) return; if(x.account_exists===false) _gone[id]=1; else if(!_names[id]) _names[id]=x.name||_t('Trader (no name yet)','Trader (sin nombre aún)'); });
       aggregate((r.data)||[]); paintLeft(); paintTable(); _mountCombinedRange(); _busy=false;
     }, function(){ _busy=false; tableEl.innerHTML='<div class="empty">'+_t('Usage unavailable.','Uso no disponible.')+'</div>'; });
   }
@@ -79643,7 +80399,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // Sorted on the SAME window the rows now show, or the biggest spender of the range could
     // appear below someone who merely spent more in some earlier month.
     var _rt={}; var _rtOf=function(u){ return (_rt[u]||(_rt[u]=_userRangeTotals(u))); };
-    var users=Object.keys(_byUser).filter(function(u){ return u!==ECA_UID; }).sort(function(a,b){ return _rtOf(b).gbp-_rtOf(a).gbp; });
+    // An account that no longer exists is not listed (Nestor: "who are these strange traders? delete them from here");
+    // what it used stays in the All traders row above - that money was spent.
+    var _nGone=Object.keys(_byUser).filter(function(u){ return _gone[u]; }).length;
+    var users=Object.keys(_byUser).filter(function(u){ return u!==ECA_UID && !_gone[u]; }).sort(function(a,b){ return _rtOf(b).gbp-_rtOf(a).gbp; });
     if(q) users=users.filter(function(u){ return (_names[u]||'').toLowerCase().indexOf(q)>=0; });
     if(!users.length){ tableEl.innerHTML='<div class="empty">'+(q?_t('No trader matches “','Ningún trader coincide con “')+esc(q)+'”.':_t('No AI usage recorded yet.','Aún no hay uso de IA registrado.'))+'</div>'; return; }
     // Header + "All traders" summary + dashed separator all live in <thead>; the thead is sticky inside a
@@ -79660,7 +80419,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     });
     h+='</tbody></table></div>'; tableEl.innerHTML=h;
     Array.prototype.forEach.call(tableEl.querySelectorAll('.aimeter-row'), function(tr){ tr.addEventListener('click', function(){ showDetail(tr.getAttribute('data-uid')); }); });
-    var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent=_t('Sonnet/Haiku columns = number of questions on each model. $ estimated at Sonnet $','Columnas Sonnet/Haiku = número de preguntas en cada modelo. $ estimado a Sonnet $')+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+_t(' per 1M tokens (cache read ×0.1, write ×1.25) + $0.01/web search, in USD to match claude.com.',' por 1M de tokens (lectura de caché ×0,1, escritura ×1,25) + $0,01/búsqueda web, en USD para coincidir con claude.com.');
+    var _goneTxt=_nGone ? ' '+_t(_nGone+(_nGone===1?' deleted account is':' deleted accounts are')+' not listed; what '+(_nGone===1?'it':'they')+' used is still in All traders.', _nGone+(_nGone===1?' cuenta eliminada no aparece':' cuentas eliminadas no aparecen')+' en la lista; su uso sigue en Todos los traders.') : '';
+    var noteEl=el('aimeter-note'); if(noteEl) noteEl.textContent=_t('Sonnet/Haiku columns = number of questions on each model. $ estimated at Sonnet $','Columnas Sonnet/Haiku = número de preguntas en cada modelo. $ estimado a Sonnet $')+PRICE['claude-sonnet-5'].in+'/$'+PRICE['claude-sonnet-5'].out+', Haiku $'+PRICE['claude-haiku-4-5'].in+'/$'+PRICE['claude-haiku-4-5'].out+_t(' per 1M tokens (cache read ×0.1, write ×1.25) + $0.01/web search, in USD to match claude.com.',' por 1M de tokens (lectura de caché ×0,1, escritura ×1,25) + $0,01/búsqueda web, en USD para coincidir con claude.com.')+_goneTxt;
   }
 
   function _wireBack(det){ var back=det.querySelector('.aimeter-back'); if(back) back.addEventListener('click', function(){ det.innerHTML=''; }); }
