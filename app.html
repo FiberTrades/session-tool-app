@@ -14887,7 +14887,7 @@ try {
     } else {
       try { localStorage.removeItem('st_mv_payload'); } catch (e) {}   // clear any stale view payload on a normal load
     }
-    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { _stReadStoredBase(); _stReadLastWriter(); return persist(migrate(JSON.parse(raw))); } } catch (e) {}
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { _stReadStoredBase(); _stReadLastWriter(); _stKinLoaded(raw); return persist(migrate(JSON.parse(raw))); } } catch (e) {}
     for (const oldKey of OLD_KEYS) {
       try { const v = localStorage.getItem(oldKey); if (v) return persist(migrate(JSON.parse(v))); } catch (e) {}
     }
@@ -17643,6 +17643,71 @@ try {
      of the three-way merge above. Declared without a value on purpose: loadData() runs before this
      line and sets it, and `= null` here would wipe that. */
   var __stLocalBase;
+  /* Which saves a stored journal was made from. Another tab's copy is merged against the journal as THIS tab last
+     saved it - right only when that tab had taken this tab's last save in before it saved. It may not have: a tab
+     learns of another tab's write a moment late (the browser passes it on afterwards - seconds late when the tab is
+     busy or in the background), so it can save over a newer copy it never saw. Merged against this tab's last save,
+     everything that save held and the copy lacks then read as "removed over there" and was dropped - and the drop
+     was uploaded: a setting saved on the phone seconds earlier, or this tab's own last change (12 Oct 2026).
+     So every save leaves a note beside the journal (st_last_write_from): a fingerprint of the journal itself, then of
+     the saves it was made from. A tab taking a copy in looks for its own last save in that note. When it is missing,
+     the merge starts from the newest journal this tab has held that the note does list - the one both sides really
+     share; with none to start from, the copy is left alone and this tab's save goes over it (the other tab then
+     merges this one in by the same rule, and loses nothing). No note, or a note that belongs to another journal (a
+     tab from before this, or a write caught half-way): the rule as it was. */
+  var __stKin, __stKnown, __stShared, __stSkipped, __stFpMemo;      // no values here either: loadData() runs first and sets them
+  function _stFp(s) {
+    var m = __stFpMemo || (__stFpMemo = []);
+    for (var j = 0; j < m.length; j++) if (m[j].s === s) return m[j].f;
+    var h = 5381;
+    for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+    var f = s.length.toString(36) + '.' + (h >>> 0).toString(36);
+    m.unshift({ s: s, f: f }); if (m.length > 3) m.pop();
+    return f;
+  }
+  function _stKinAdd(list) {                    // the note: newest first, each once, 60 at most
+    var old = (__stKin || []).filter(function (x) { return list.indexOf(x) < 0; });
+    __stKin = list.concat(old).slice(0, 60);
+  }
+  function _stKnow(f, s) {                      // the journals this tab has held, newest first, four at most
+    var k = (__stKnown || []).filter(function (x) { return x.f !== f; });
+    k.unshift({ f: f, s: s }); __stKnown = k.slice(0, 4);
+  }
+  function _stKinLoaded(raw) {                  // a page starts from the stored journal, and from what that was made from
+    try {
+      var f = _stFp(raw), note = (localStorage.getItem('st_last_write_from') || '').split(',');
+      __stKin = (note[0] === f) ? note.slice(0, 60) : [f];
+      __stKnown = [{ f: f, s: raw }]; __stShared = __stKnown[0];
+    } catch (e) {}
+  }
+  function _stKinSaved(str) {                   // after every write of the journal to storage; always written, like the journal
+    try { var f = _stFp(str); _stKnow(f, str); _stKinAdd([f]); localStorage.setItem('st_last_write_from', __stKin.join(',')); } catch (e) {}
+  }
+  function _stKinEcho() {                       // the other tab's stored copy IS this tab's last save: both hold it
+    try { if (__stKnown && __stKnown[0] && __stKnown[0].s === __stLocalBase) __stShared = __stKnown[0]; } catch (e) {}
+  }
+  /* The journal to merge another tab's stored copy from. null: this tab's own last save (the usual case, and the
+     rule as it was). false: do not take the copy in at all. */
+  function _stKinBase(storedRaw) {
+    var base = null;
+    try {
+      var f = _stFp(storedRaw), note = (localStorage.getItem('st_last_write_from') || '').split(',');
+      if (note[0] === f) {
+        if (note.indexOf(_stFp(__stLocalBase)) < 0) {
+          var c = (__stKnown || []).concat(__stShared ? [__stShared] : []);
+          for (var i = 0; i < c.length && base === null; i++) if (note.indexOf(c[i].f) >= 0) base = c[i].s;
+          if (base === null && __stShared) {     // (a page that never loaded or took in a stored journal: the rule as it was)
+            if (__stSkipped !== f) { __stSkipped = f; _stSlog('tab: another tab saved without the last save of this tab, and no journal is shared - not taken in; this save goes over it'); }
+            return false;
+          }
+          if (base !== null) _stSlog('tab: another tab saved without the last save of this tab - merging from the last journal both had');
+        }
+        _stKinAdd(note);
+      } else _stKinAdd([f]);
+      _stKnow(f, storedRaw); __stShared = __stKnown[0];
+    } catch (e) {}
+    return base;
+  }
   // Every write of the journal to this browser's storage goes through here, so the next save can
   // tell whether someone else wrote since.
   /* The cloud version the stored journal descends from, read in the same moment as the journal (a
@@ -17665,7 +17730,7 @@ try {
     } catch (e) { window.__stStoredBase = null; }
   }
   function _stLsWriteJournal(str, claim) {
-    localStorage.setItem(STORAGE_KEY, str);
+    localStorage.setItem(STORAGE_KEY, str); _stKinSaved(str);
     __stLocalBase = str;
     /* ...and which cloud version it descends from (st_cloud_base), so a RELOAD can still merge
        instead of choosing a whole journal. Rewritten only when the version or the writing tab
@@ -17690,10 +17755,10 @@ try {
   }
   function _stWriterUid() { try { return String((window.STCloud && window.STCloud.userId) || ''); } catch (e) { return ''; } }
   // Another tab changed the journal: take its changes in, keep ours, and redraw.
-  function _stTabMerge(otherJ) {
+  function _stTabMerge(otherJ, baseStr) {
     var cur = JSON.stringify(data), conflicts = [];
-    var merged = (cur === __stLocalBase) ? otherJ : _stMerge3(JSON.parse(__stLocalBase), JSON.parse(cur), otherJ, [], conflicts);
-    _stSlog('tab: another tab saved - ' + (cur === __stLocalBase ? 'took its copy' : 'merged; ours changed ' + _m3Diff(JSON.parse(__stLocalBase), JSON.parse(cur), '', [], 8).join(' ') + (conflicts.length ? '; clashes: ' + conflicts.map(function (c) { return c.path; }).slice(0, 5).join(' ') : '')));
+    var _b = baseStr || __stLocalBase, merged = (cur === _b) ? otherJ : _stMerge3(JSON.parse(_b), JSON.parse(cur), otherJ, [], conflicts);
+    _stSlog('tab: another tab saved - ' + (cur === _b ? 'took its copy' : 'merged; ours changed ' + _m3Diff(JSON.parse(_b), JSON.parse(cur), '', [], 8).join(' ') + (conflicts.length ? '; clashes: ' + conflicts.map(function (c) { return c.path; }).slice(0, 5).join(' ') : '')));
     // Both sides changed the same list differently and ours was kept: the other copy goes to Backups.
     if (conflicts.some(function (c) { return c.list && c.path.charAt(0) !== '_'; })) {
       try { if (window.__stTakeSnapshot) window.__stTakeSnapshot('tab-merge', otherJ); } catch (e) {}
@@ -17766,9 +17831,9 @@ try {
     var lastUid = localStorage.getItem('st_last_write_uid');
     if (lastUid !== null && lastUid !== _stWriterUid()) { if (window.__stSyncVerbose) _stSlog('tab: other tab save is another account (' + lastUid.slice(0, 6) + ') - not merged'); return; }
     var storedRaw = localStorage.getItem(STORAGE_KEY);
-    if (!storedRaw || storedRaw === __stLocalBase) return;
+    if (!storedRaw) return; if (storedRaw === __stLocalBase) { _stKinEcho(); return; }
     var _otherJ = JSON.parse(storedRaw);
-    if (__stLocalBase) { _stTabMerge(_otherJ); return; }
+    if (__stLocalBase) { var _kb = _stKinBase(storedRaw); if (_kb !== false) _stTabMerge(_otherJ, _kb); return; }
     window.__stMergeFresherBias(data, _otherJ); if (window.__stMergeSchool) window.__stMergeSchool(data, _otherJ); if (window.__stMergeFresherSessions) window.__stMergeFresherSessions(data, _otherJ); if (window.__stMergeUnionDismissed) window.__stMergeUnionDismissed(data, _otherJ);
   }
 

@@ -14,6 +14,10 @@ What it proves (29 Sep 2026, a copied trade moved to its right account kept comi
   the old trade, account mapping or BE threshold back - and picks the fix up itself;
 - a stale TAB on the same browser takes the other tab's changes in within one save cycle;
 - a reload afterwards shows the fixed journal;
+- a tab whose view of the browser's storage is BEHIND (12 Oct 2026): another tab's write reaches a tab a moment late,
+  so it can save over a newer journal it never saw. The other tab must not read that as "they removed everything
+  I had". Two cases with no timing in them (the view is held still on purpose): plain, and with the first tab
+  reloaded in between;
 - every inline script in app.html parses.
 """
 import datetime
@@ -322,6 +326,102 @@ def fixed(p):
     return all(p.get(k) == v for k, v in FIXED.items())
 
 
+FREEZE_JS = r"""(() => {
+  // From now on this tab sees its own writes of these keys and nobody else's: a view that is behind.
+  const keys = ['fiberTradesData_v3', 'st_last_write_tab', 'st_last_write_uid', 'st_last_write_from', 'st_cloud_base', 'st_cloud_base_tag'];
+  const frozen = {};
+  const g = Storage.prototype.getItem, s = Storage.prototype.setItem;
+  keys.forEach(k => { frozen[k] = g.call(localStorage, k); });
+  Storage.prototype.getItem = function (k) { return (this === localStorage && k in frozen) ? frozen[k] : g.apply(this, arguments); };
+  Storage.prototype.setItem = function (k, v) { if (this === localStorage && k in frozen) frozen[k] = String(v); return s.apply(this, arguments); };
+  window.__e2eThaw = () => { Storage.prototype.getItem = g; Storage.prototype.setItem = s; };
+  return true;
+})()"""
+
+DET_STATE_JS = r"""(() => JSON.stringify({ one: data.settings.e2eDet1 || null, two: data.settings.e2eDet2 || null,
+  last: (localStorage.getItem('st_last_write_tab') || '').slice(-10),
+  log: (window.__stSyncLog || []).filter(l => / tab: /.test(l)).slice(-3) }))()"""
+
+
+def det(A, A2, check, ev, wait):
+    """Tab 1 and tab 2 share a browser. Returns nothing; adds checks."""
+    import json as _json
+    import time as _time
+    # 1. In step: tab 1 saves, tab 2 takes it in and saves last, tab 1 takes that in. Repeated until both agree.
+    for _ in range(12):
+        ev(A, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        ev(A2, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        ev(A, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        ev(A2, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        a = ev(A, "JSON.stringify(data.settings) + '|' + (localStorage.getItem('fiberTradesData_v3') === JSON.stringify(data))")
+        b = ev(A2, "JSON.stringify(data.settings) + '|' + (localStorage.getItem('fiberTradesData_v3') === JSON.stringify(data))")
+        if a == b and a.endswith('|true'):
+            break
+    check('view behind: the two tabs agree before it starts', a == b and a.endswith('|true'), [a[-60:], b[-60:]])
+    # 2. Tab 2's view stops here.
+    ev(A2, FREEZE_JS)
+    # 3. Tab 1 changes something and saves. The browser has it; tab 2's view does not.
+    id1 = ev(A, "(() => { data.settings.e2eDet1 = 'one'; STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    # 4. Tab 2 changes something else and saves: as far as it can see nobody wrote since, so it does not merge.
+    id2 = ev(A2, "(() => { data.settings.e2eDet2 = 'two'; STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    s2 = _json.loads(ev(A2, DET_STATE_JS))
+    check('view behind: tab 2 saved without seeing tab 1 (the situation under test)', s2['one'] is None and s2['two'] == 'two', s2)
+    ev(A2, "(() => { window.__e2eThaw(); return true; })()")
+    # 5. Tab 1 sees tab 2's save and saves again. Its own change must still be there, with tab 2's next to it.
+    wait(A, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id2), 10)
+    ev(A, "(() => { STCloud.save(); return true; })()")
+    s1 = _json.loads(ev(A, DET_STATE_JS))
+    check('view behind: tab 1 keeps its own change when tab 2 saved without it', s1['one'] == 'one', s1)
+    check('view behind: ...and takes tab 2\'s change in', s1['two'] == 'two', s1)
+    # 6. Tab 2 then takes tab 1's save in as usual.
+    wait(A2, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id1), 10)
+    ev(A2, "(() => { STCloud.save(); return true; })()")
+    s2 = _json.loads(ev(A2, DET_STATE_JS))
+    check('view behind: tab 2 ends with both changes', s2['one'] == 'one' and s2['two'] == 'two', s2)
+
+    # ---- The same, but tab 1 is RELOADED before tab 2's late save arrives: a page that has just loaded holds only
+    # ---- the journal it loaded, so there is no older journal for it to merge from.
+    state = r"""(() => JSON.stringify({ three: data.settings.e2eDet3 || null, four: data.settings.e2eDet4 || null,
+      log: (window.__stSyncLog || []).filter(l => / tab: /.test(l)).slice(-3) }))()"""
+    for _ in range(12):
+        ev(A, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        ev(A2, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        a = ev(A, "JSON.stringify(data.settings) + '|' + (localStorage.getItem('fiberTradesData_v3') === JSON.stringify(data))")
+        b = ev(A2, "JSON.stringify(data.settings) + '|' + (localStorage.getItem('fiberTradesData_v3') === JSON.stringify(data))")
+        if a == b and a.endswith('|true'):
+            break
+    check('after a reload: the two tabs agree before it starts', a == b and a.endswith('|true'), [a[-60:], b[-60:]])
+    ev(A2, FREEZE_JS)
+    ev(A, "(() => { data.settings.e2eDet3 = 'three'; STCloud.save(); return true; })()")
+    A.call('Page.reload', ignoreCache=True)
+    _time.sleep(1)
+    ok = wait(A, READY_JS, 40)
+    ev(A, bt.PRELUDE)
+    ev(A, 'window.__stSyncVerbose = true')
+    s1 = _json.loads(ev(A, state))
+    check('after a reload: tab 1 came back with its own change', ok and s1['three'] == 'three', s1)
+    id2 = ev(A2, "(() => { data.settings.e2eDet4 = 'four'; STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    ev(A2, "(() => { window.__e2eThaw(); return true; })()")
+    wait(A, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id2), 10)
+    id1 = ev(A, "(() => { STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    s1 = _json.loads(ev(A, state))
+    check('after a reload: tab 1 keeps its own change when tab 2 saved without it', s1['three'] == 'three', s1)
+    wait(A2, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id1), 10)
+    id2 = ev(A2, "(() => { STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    s2 = _json.loads(ev(A2, state))
+    check('after a reload: tab 2 ends with both changes', s2['three'] == 'three' and s2['four'] == 'four', s2)
+    wait(A, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id2), 10)
+    ev(A, "(() => { STCloud.save(); return true; })()")
+    s1 = _json.loads(ev(A, state))
+    check('after a reload: tab 1 ends with both changes', s1['three'] == 'three' and s1['four'] == 'four', s1)
+
+
 def main():
     edge = next((p for p in bt.EDGE_PATHS if os.path.exists(p)), None)
     if not edge:
@@ -435,6 +535,10 @@ def main():
         parse = json.loads(ev(A, PARSE_JS))
         check('every inline script in app.html parses', parse['n'] > 10 and not parse['bad'], parse)
         results.extend(json.loads(ev(A, UNIT_JS)))
+
+        # 0. A tab saving without having seen the other tab's last save (see det above). First, while both tabs
+        #    hold the journal they pulled.
+        det(A, A2, check, ev, wait)
 
         # 1. Tab 1 fixes the copied trade: moved to the 10K, a loss, BE threshold 25, login mapped, junk row deleted.
         act(A, FIX_JS)
