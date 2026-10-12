@@ -51404,10 +51404,18 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     // Early staggered attempts so it fires soon after load even if auth/plan wasn't ready on the
     // first try (maybePromptAutoSync no-ops until currentUser exists), then settle to a slow poll.
     [4000, 12000, 30000, 60000].forEach(function (ms) { setTimeout(function () { try { maybePromptAutoSync('startup'); } catch (e) {} }, ms); });
-    setInterval(function () { try { maybePromptAutoSync('poll'); } catch (e) {} }, 90000);
+    setInterval(function () { try { if (!document.hidden) maybePromptAutoSync('poll'); } catch (e) {} }, 90000);
     // Withdrawals change rarely: two early looks after load, then every five minutes.
     [20000, 75000].forEach(function (ms) { setTimeout(function () { try { maybeCheckMt5Withdrawals(); } catch (e) {} }, ms); });
-    setInterval(function () { try { maybeCheckMt5Withdrawals(); } catch (e) {} }, 300000);
+    setInterval(function () { try { if (!document.hidden) maybeCheckMt5Withdrawals(); } catch (e) {} }, 300000);
+    // A hidden tab no longer asks (its prompt could not be seen anyway); the moment it is looked at again it does.
+    var _inboxLookAt = 0;
+    document.addEventListener('visibilitychange', function () {
+      if (document.hidden) return;
+      var n = Date.now(); if (n - _inboxLookAt < 60000) return; _inboxLookAt = n;
+      try { maybePromptAutoSync('poll'); } catch (e) {}
+      try { maybeCheckMt5Withdrawals(); } catch (e) {}
+    });
   } catch (e) {}
 
   // ── Mid-session live close watcher ──────────────────────────────────────────────
@@ -51528,6 +51536,12 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       var _live = (typeof isSessionLive === 'function' && isSessionLive());
       var _anyOpen = (typeof window.__stLive.hasOpen === 'function' && window.__stLive.hasOpen());
       if (!_live && !_anyOpen) return;
+      /* Every row below is ignored unless its trade is showing open here or was shown open earlier and has not been
+         announced yet. With neither, the download can change nothing - and it used to run every 20 seconds through
+         the whole session window, trade or no trade. */
+      var _waiting = false;
+      try { var _eo = window.__stLiveEverOpen || {}; for (var _k in _eo) { if (_eo[_k] && !_liveClosedSeen[_k]) { _waiting = true; break; } } } catch (e) { _waiting = true; }
+      if (!_anyOpen && !_waiting) return;
       if (!window.STCloud || typeof window.STCloud.pullInbox !== 'function') return;
       Promise.resolve(window.STCloud.pullInbox()).then(function (res) {
         if (!res || res.error) return;
@@ -51568,7 +51582,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   }
   window.__stLiveCloseWatch = _liveCloseWatch;
   // Poll on a shortish cadence — only actually hits the network while a session is live.
-  setInterval(function () { try { _liveCloseWatch(); } catch (e) {} }, 20000);
+  setInterval(function () { try { if (!document.hidden) _liveCloseWatch(); } catch (e) {} }, 20000);
+  // a tab nobody is looking at does not ask; it asks the moment it is looked at again
+  document.addEventListener('visibilitychange', function () { if (!document.hidden) { try { _liveCloseWatch(); } catch (e) {} } });
 
   // ----- Broker trades not in the journal: list them, and put them back -----
   function renderMt5Excluded() {
@@ -71051,10 +71067,11 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     set('stc-a-signup', tt('signup')); set('stc-a-login', tt('login'));
     set('stc-a-lacc', tt('account')); set('stc-a-as', tt('signedInAs')); set('stc-a-signout', tt('signout'));
     if (currentUser) set('stc-a-email-show', currentUser.email);
-    if (currentUser) renderBackups();
+    // The backups list is fetched when its panel is opened (the toggle above); here only if it is open already.
+    if (currentUser) { var _bkb = document.getElementById('stc-a-bkbody'); if (_bkb && _bkb.style.display !== 'none') renderBackups(); }
+    // renderPlan draws the mentor share, the mentor viewer and the AI Meter tab itself: they used to be fetched a
+    // second time right after it.
     if (currentUser) renderPlan();
-    if (currentUser) renderMentorShare();
-    if (currentUser) { try { renderMentorViewer(); updateMentorTab(); } catch(e){} try { if(window.STAIMeter) window.STAIMeter.updateTab(); } catch(e){} }
   }
 
   /* ============ rolling safety snapshots ============ */
@@ -72399,10 +72416,21 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     el.appendChild(mkRow); el.appendChild(msg);
   }
 
+  // Is the Settings section that holds this card on screen right now?
+  function _svcShown(id) {
+    try {
+      var el = document.getElementById(id), sec = el && el.closest('.settings-section'), bg = document.getElementById('settings-modal-bg');
+      return !!(sec && bg && bg.classList.contains('show') && sec.style.display !== 'none');
+    } catch (e) { return true; }
+  }
   function renderServices() {
     try { renderAdminReload(); } catch (e) {}
-    try { renderVipAdmin(); } catch (e) {}
-    try { renderRefCard(); } catch (e) {}
+    /* These two fetch from the server: the admin cards ask for the access list, the totals, the takings and one
+       payout record per member, the referral card for the member's code. renderServices runs every time the plan is
+       re-checked, so with Settings closed they were downloaded hundreds of times a day to fill cards nobody could
+       see. Now only while their section is open; opening the section calls this again (the tab click does). */
+    try { if (_svcShown('svc-vip-admin') || _svcShown('svc-takings-admin')) renderVipAdmin(); } catch (e) {}
+    try { if (_svcShown('svc-ref-card')) renderRefCard(); } catch (e) {}
     var badge = document.getElementById('svc-premium-badge');
     var cta = document.getElementById('svc-premium-cta');
     var mng = document.getElementById('svc-premium-manage');
@@ -73325,6 +73353,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     return false;
   }
 
+  var _acctPaintedFor = null;   // the member whose account has been fully drawn and read once in this tab
   sb.auth.onAuthStateChange(function (event, session) {
     if (window.__MV) { currentUser = session ? session.user : null; try { window.STCloud.userId = currentUser ? currentUser.id : null; } catch(e){} try { mvBoot(); } catch(e){} return; }
     // AUTHORITATIVE ACCOUNT-SWITCH GUARD (in-memory — cannot be corrupted by storage tags):
@@ -73345,6 +73374,16 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       }
     } catch (e) {}
     if (event === 'PASSWORD_RECOVERY') { recoveryMode = true; currentUser = session ? session.user : null; paintAccount(); showReset(); return; }
+    /* Same member, nothing new. supabase-js repeats SIGNED_IN every time a tab comes back to the front and sends
+       TOKEN_REFRESHED about hourly - to every open tab, hidden ones too. Each used to re-draw the account and re-read
+       the plan, the journal stamp, the shares and the backups: some fifty requests per return to the window for the
+       owner. Keep the fresh session and stop; the first event for a member still does everything, and returning to
+       the window has its own plan re-check (refreshProfileSoon) and journal pull (__cloudResume). */
+    if (!recoveryMode && _newId && _newId === _prevId && _acctPaintedFor === _newId && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+      currentUser = session.user;
+      try { window.currentUser = currentUser; } catch (e) {}
+      return;
+    }
     currentUser = session ? session.user : null;
     try { window.currentUser = currentUser; } catch (e) {}   // publish for out-of-scope readers (AI Meter admin gate, etc.)
     try { window.STCloud.userId = currentUser ? currentUser.id : null; if (!currentUser) window.STCloud.syncToken = null; } catch (e) {}
@@ -73355,8 +73394,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     if (currentUser) { try { if (window.stWatchAppControl) window.stWatchAppControl(); } catch (e) {} }
     paintAccount();
     if (recoveryMode) { showReset(); return; }
-    if (currentUser) { try { sessionStorage.removeItem('st_sess_recover'); sessionStorage.removeItem('st_sess_recover_t'); } catch (e) {} hideGate(); accStatus(''); fetchProfile(); maybeShowWelcome(); try{ if(window.STCommunity){ if(STCommunity.setupCallSignal) STCommunity.setupCallSignal(); if(STCommunity.ensurePush) STCommunity.ensurePush(); } }catch(e){} try { window.STMentor.loadOwn(window.__mnRepaint); } catch(e){} try { if (typeof window.__bbRestoreIfWanted === 'function') setTimeout(window.__bbRestoreIfWanted, 300); } catch(e){} }
+    if (currentUser) { try { sessionStorage.removeItem('st_sess_recover'); sessionStorage.removeItem('st_sess_recover_t'); } catch (e) {} hideGate(); accStatus(''); _acctPaintedFor = currentUser.id; fetchProfile(); maybeShowWelcome(); try{ if(window.STCommunity){ if(STCommunity.setupCallSignal) STCommunity.setupCallSignal(); if(STCommunity.ensurePush) STCommunity.ensurePush(); } }catch(e){} try { window.STMentor.loadOwn(window.__mnRepaint); } catch(e){} try { if (typeof window.__bbRestoreIfWanted === 'function') setTimeout(window.__bbRestoreIfWanted, 300); } catch(e){} }
     else {
+      _acctPaintedFor = null;
       clearTimeout(pushTimer);
       // ONLY on a real sign-out transition: wipe this account's local journal cache so the NEXT
       // login on the same browser can never inherit it. The cloud copy is the source of truth and
@@ -73452,15 +73492,17 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   function refreshProfileSoon() {
     if (!currentUser) return;
     var now = Date.now();
-    if (now - _lastProfRefresh < 4000) return;
+    /* Someone not on a paid plan may be coming back from the checkout: look at once, 4 s apart at most, as before.
+       A paid or comped plan changes rarely, so two minutes apart is plenty - every look re-draws the plan and
+       everything that hangs off it. This used to run on EVERY return to the window, and a second, unthrottled
+       focus listener ran it again each time (12 Oct 2026, request-log volume). */
+    if (now - _lastProfRefresh < (profilePaid ? 120000 : 4000)) return;
     _lastProfRefresh = now;
     fetchProfile();
     try { setTimeout(function(){ if (currentUser && !profilePaid) fetchProfile(); }, 5000); } catch (e) {}
   }
   document.addEventListener('visibilitychange', function () { if (!document.hidden) refreshProfileSoon(); });
   window.addEventListener('focus', refreshProfileSoon);
-
-  window.addEventListener('focus', function () { if (currentUser) fetchProfile(); });
 
   // Re-evaluate the countdown / lockout periodically for long-open sessions.
   setInterval(function () { if (currentUser) renderPlan(); }, 3600000);
@@ -75401,8 +75443,11 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       try{ if(chan) sb.removeChannel(chan); }catch(e){}
       var ch;
       ch = chan = sb.channel('live-trades:'+uid)
-        .on('postgres_changes',{event:'INSERT',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
-        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
+        /* The close-watch downloads the whole trade inbox. The EA updates an open trade's row every two seconds, so
+           calling it on every change meant one inbox download per tick per open tab. It runs when the row says the
+           trade closed, when the row is removed, and on its own 20-second timer while a trade is open. */
+        .on('postgres_changes',{event:'INSERT',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(p && p.new && p.new.closed_at && window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
+        .on('postgres_changes',{event:'UPDATE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ apply(p.new); try{ if(p && p.new && p.new.closed_at && window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
         // A position row being removed usually means it closed — check the inbox right away so the
         // live chip flips to its result (active -> Won/Lost) without waiting for the 20s poll.
         .on('postgres_changes',{event:'DELETE',schema:'public',table:'live_trades',filter:'account=eq.'+uid},function(p){ try{ if(window.__stLiveCloseWatch) window.__stLiveCloseWatch(); }catch(e){} })
@@ -75435,8 +75480,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   }, 60000);
   // And when the tab is brought forward, since that is the moment someone is about to look at it.
   try{
-    document.addEventListener('visibilitychange', function(){ if(!document.hidden) seed(); });
-    window.addEventListener('focus', function(){ seed(); });
+    // focus and visibilitychange both fire on returning to the tab: one read, not two
+    var _seedAt=0, seedSoon=function(){ var n=Date.now(); if(n-_seedAt<5000) return; _seedAt=n; seed(); };
+    document.addEventListener('visibilitychange', function(){ if(!document.hidden) seedSoon(); });
+    window.addEventListener('focus', seedSoon);
   }catch(e){}
   start(); setTimeout(start, 2500);
 })();
@@ -77923,7 +77970,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   function start(){
     mount(); watch(); loadLive();
-    if(!S.pollT) S.pollT=setInterval(function(){ if(document.visibilityState==='visible') loadLive(); }, 30000);
+    /* The realtime subscription in watch() says the moment a live session starts or ends; this is only the safety
+       net for a socket that died quietly. It ran every 30 seconds in every visible tab - the most frequent request
+       the app made, about 1,800 a day - so it runs every three minutes now, and once when the tab is brought back
+       to the front (12 Oct 2026, request-log volume). */
+    if(!S.pollT){
+      S.pollT=setInterval(function(){ if(document.visibilityState==='visible') loadLive(); }, 180000);
+      var _llAt=0;
+      document.addEventListener('visibilitychange', function(){ if(document.visibilityState!=='visible') return; var n=Date.now(); if(n-_llAt<30000) return; _llAt=n; loadLive(); });
+    }
   }
   function boot(){
     var c=sb();
