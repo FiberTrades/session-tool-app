@@ -884,6 +884,11 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .settings-btn { background: transparent; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); color: var(--text-mid); padding: 8px 14px; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; cursor: pointer; transition: color 150ms ease-out, background-color 150ms ease-out, border-color 150ms ease-out, filter 150ms ease-out; }
   .settings-range { width: 160px; max-width: 55%; accent-color: var(--good); vertical-align: middle; cursor: pointer; }
   .settings-btn:hover { border-color: var(--text-mid); color: var(--text); }
+  /* A settings button that shows something is already done (notifications on for this device): green, and pressing it
+     does nothing - the same idea as a Posted button. Its meaning is written in the line right under it. */
+  .settings-btn.is-on, .settings-btn.is-on:hover { color: var(--good); border-color: rgba(78, 205, 139, 0.55); background: rgba(78, 205, 139, 0.08); cursor: default; }
+  .settings-notif-cap { font-family: 'Inter', system-ui, sans-serif; font-size: 12px; line-height: 1.5; color: var(--text-dim); }
+  .settings-notif-cap:empty { display: none; }
   /* Account type: two joined segments sharing .settings-btn, so the font, padding and letter
      spacing are identical to Rename/Archive/Delete beside them by construction rather than by
      copied values. The selected side is pink; hover previews the same. */
@@ -7625,11 +7630,13 @@ try {
       <div class="settings-data-actions">
         <button type="button" id="settings-tour-btn" class="settings-btn" data-i18n="settings.tour_btn">Take the tour</button>
       </div>
-      <label class="settings-label" style="margin-top:24px;">Notifications</label>
-      <p class="settings-hint">Get notified on this device for DMs, @mentions and calls — even when the app is closed. On phones, install the app to your home screen first, then tap this.</p>
+      <label class="settings-label" style="margin-top:24px;" data-i18n="settings.notif_label">Notifications</label>
+      <p class="settings-hint" data-i18n="settings.notif_hint">Get notified on this device, even when the app is closed: DMs, @mentions and calls, nudges and trade alerts, red-news warnings and results, and when a live session starts. On phones, install the app to your home screen first, then tap this. Community settings → Notifications chooses which ones you get.</p>
       <div class="settings-data-actions">
         <button type="button" id="settings-notif-btn" class="settings-btn">Turn on notifications</button>
       </div>
+      <!-- What the button's state means, right under it (not a settings-hint: those go to the left of a row). -->
+      <div id="settings-notif-cap" class="settings-notif-cap"></div>
       <!-- Admin only: push a refresh to every open app. Hidden unless the signed-in
            account is the owner; renderAdminReload() decides. Sits above Data, so for
            everyone else (who never sees this block) Data simply stays last. -->
@@ -9824,6 +9831,8 @@ try {
       'settings.tour_label': 'App tour',
       'settings.tour_hint': 'Twelve short steps through everything the app does.',
       'settings.tour_btn': 'Take the tour',
+      'settings.notif_label': 'Notifications',
+      'settings.notif_hint': 'Get notified on this device, even when the app is closed: DMs, @mentions and calls, nudges and trade alerts, red-news warnings and results, and when a live session starts. On phones, install the app to your home screen first, then tap this. Community settings → Notifications chooses which ones you get.',
       'run.day': 'P&L through the day',
       'run.week': 'P&L through the week',
       'run.month': 'P&L through the month',
@@ -11752,6 +11761,8 @@ try {
       'settings.tour_label': 'Tour de la app',
       'settings.tour_hint': 'Doce pasos cortos por todo lo que hace la app.',
       'settings.tour_btn': 'Hacer el tour',
+      'settings.notif_label': 'Notificaciones',
+      'settings.notif_hint': 'Recibe avisos en este dispositivo, incluso con la app cerrada: mensajes directos, @menciones y llamadas, avisos y alertas de operación, avisos y resultados de noticias rojas, y cuando empieza una sesión en vivo. En el móvil, instala primero la app en la pantalla de inicio y luego pulsa aquí. En Ajustes de Comunidad → Notificaciones eliges cuáles recibes.',
       'run.day': 'P&G a lo largo del día',
       'run.week': 'P&G a lo largo de la semana',
       'run.month': 'P&G a lo largo del mes',
@@ -12468,6 +12479,8 @@ try {
         el.setAttribute(targetAttr, t(key));
       });
     });
+    // The notifications button writes its own words (they depend on this device), so it follows a language change here.
+    try { if (window.__stNotifBtnPaint) window.__stNotifBtnPaint(); } catch (e) {}
   }
 
   // Apply language: stores choice, re-renders translatable surfaces.
@@ -35880,7 +35893,55 @@ try {
     const _csvBtn = document.getElementById('data-export-csv');
     if (_csvBtn) _csvBtn.addEventListener('click', e => { e.preventDefault(); try { exportTradesCsv(); } catch (err) { try { showToast(String(err && err.message || err)); } catch (_) {} } });
   })();
-  (function(){ var _nb=document.getElementById('settings-notif-btn'); if(!_nb) return; _nb.addEventListener('click', function(){ var b=_nb, orig=b.textContent; b.disabled=true; b.textContent='Working\u2026'; var done=function(code,msg){ b.disabled=false; if(code==='ok'){ b.textContent='Notifications on \u2713'; setTimeout(function(){ b.textContent=orig; },2500); return; } var m={denied:'Blocked \u2014 allow in settings',signin:'Sign in first',unsupported:'Not supported here',nokey:'Not configured',dberr:'Save failed',suberr:'Subscribe failed',nosub:'Subscribe failed',err:'Something went wrong'}; b.textContent=(m[code]||'Failed'); if(msg){ try{ console.warn('notif enable:',code,msg); }catch(_){ } } setTimeout(function(){ b.textContent=orig; },3500); }; try{ if(window.STCommunity && STCommunity.forcePush){ STCommunity.forcePush(done); } else { done('unsupported'); } }catch(e){ done('err', String(e)); } }); })();
+  /* Settings > Notifications. The button shows what is true for THIS device, read from the browser each time
+     Settings opens: "Notifications on" (green, pressing does nothing) when the browser has allowed them and the device
+     is registered, otherwise "Turn on notifications". It used to flash "on" for two seconds and go back, so it never
+     showed that a device was already set up (Nestor, 12 Oct 2026: "does this button actually do anything?").
+     window.__stNotifProbe, when set, stands in for the browser's answer (tests). */
+  (function(){
+    var b=document.getElementById('settings-notif-btn'); if(!b) return;
+    var cap=document.getElementById('settings-notif-cap');
+    var T=function(en,es){ return (typeof window._stT==='function') ? window._stT(en,es) : en; };
+    var busy=false, hold=0;
+    function state(){
+      try{
+        if(typeof window.__stNotifProbe==='function') return Promise.resolve(window.__stNotifProbe());
+        if(!('serviceWorker' in navigator) || !('PushManager' in window) || !window.Notification) return Promise.resolve('unsupported');
+        if(Notification.permission==='denied') return Promise.resolve('blocked');
+        if(Notification.permission!=='granted') return Promise.resolve('off');
+        var ready=Promise.race([navigator.serviceWorker.ready, new Promise(function(r){ setTimeout(function(){ r(null); }, 2500); })]);
+        return ready.then(function(reg){ return reg ? reg.pushManager.getSubscription() : null; }).then(function(sub){ return sub ? 'on' : 'off'; }).catch(function(){ return 'off'; });
+      }catch(e){ return Promise.resolve('off'); }
+    }
+    function paint(){
+      return state().then(function(st){
+        if(busy || Date.now()<hold) return st;
+        b.setAttribute('data-state', st); b.classList.toggle('is-on', st==='on'); b.disabled=false;
+        b.textContent = (st==='on') ? T('Notifications on \u2713','Notificaciones activadas \u2713') : T('Turn on notifications','Activar notificaciones');
+        if(cap) cap.textContent = (st==='on') ? T('This device is set up.','Este dispositivo ya está configurado.')
+          : (st==='blocked') ? T('Blocked for this site in your browser. Allow notifications in the browser\u2019s site settings, then press this again.','Bloqueadas para este sitio en tu navegador. Permite las notificaciones en los ajustes del sitio y vuelve a pulsar aquí.')
+          : (st==='unsupported') ? T('Not available in this browser. On a phone, add the app to your home screen first.','No disponible en este navegador. En el móvil, añade primero la app a la pantalla de inicio.')
+          : '';
+        return st;
+      });
+    }
+    window.__stNotifBtnPaint=paint;
+    b.addEventListener('click', function(){
+      if(busy || b.getAttribute('data-state')==='on') return;      // already on: nothing to do
+      busy=true; b.disabled=true; b.textContent=T('Working\u2026','Un momento\u2026');
+      var done=function(code,msg){
+        busy=false; b.disabled=false;
+        if(code==='ok'){ paint(); return; }
+        var m={ denied:['Blocked \u2014 allow in settings','Bloqueadas: permítelas en ajustes'], signin:['Sign in first','Inicia sesión primero'], unsupported:['Not supported here','No disponible aquí'], nokey:['Not configured','Sin configurar'],
+                dberr:['Save failed','No se pudo guardar'], suberr:['Subscribe failed','No se pudo activar'], nosub:['Subscribe failed','No se pudo activar'], err:['Something went wrong','Algo salió mal'] };
+        var x=m[code]||['Failed','Error']; b.textContent=T(x[0],x[1]);
+        if(msg){ try{ console.warn('notif enable:',code,msg); }catch(_){ } }
+        hold=Date.now()+3400; setTimeout(function(){ hold=0; paint(); },3500);
+      };
+      try{ if(window.STCommunity && STCommunity.forcePush){ STCommunity.forcePush(done); } else { done('unsupported'); } }catch(e){ done('err', String(e)); }
+    });
+    paint();
+  })();
   document.getElementById('data-import-input').addEventListener('change', e => {
     const file = e.target.files[0];
     if (!file) return;
@@ -52788,6 +52849,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       try { if (window.__stNudgeSettingsLoad) window.__stNudgeSettingsLoad(); } catch (e) {}
       try { if (window.__stRenderTimeOff) window.__stRenderTimeOff(document.getElementById('settings-timeoff')); } catch (e) {}
       try { stSettingsRows(); } catch (e) {}
+      try { if (window.__stNotifBtnPaint) window.__stNotifBtnPaint(); } catch (e) {}   // is this device on?
       modal.classList.add('show');
       // Always reopen scrolled to the very top — never resume the scroll position the
       // panel was left at when it was closed. Reset both scrollers (the .modal inner box
