@@ -20891,6 +20891,7 @@ try {
     try { renderReviewTvLinks(); } catch (e) {}
     try { renderReviewPreview(); } catch (e) {}
     try { renderSavedBias(); } catch (e) {}
+    try { _reviewDateFresh(data.review); } catch (e) {}   // the review being shown: an empty one is today's
     try { const p = document.getElementById('session-date'); if (p) { p.value = (data.review && data.review.sessionDate) || todayDateStr(); updateSessionDateStatus(); } } catch (e) {}
     try { renderReviewNav(); } catch (e) {}
   }
@@ -25335,22 +25336,29 @@ try {
     }
   }
 
+  /* One review's date. It is today unless the review already holds that day's work - trades, or the day's own
+     answers (deleting a day's last trade keeps them on the day, and rolling the date would re-label its review as
+     today's) - or the member picked a past day in the date box today, to back-fill. */
+  function _reviewDateFresh(r) {
+    try {
+      if (!r) return;
+      const today = todayDateStr();
+      const hasTrades = Array.isArray(r.trades) && r.trades.length > 0;
+      const hasDayReview = !!(r.execution || r.focus || r.close || (r.reflection && String(r.reflection).trim()) ||
+        (Array.isArray(r.rice) && r.rice.length) || (Array.isArray(r.concepts) && r.concepts.length) ||
+        (Array.isArray(r.mindset) && r.mindset.length) || (Array.isArray(r.tvLinks) && r.tvLinks.some(l => l && (l.url || (l.notes && String(l.notes).trim())))));
+      if (!r.sessionDate || (!hasTrades && !hasDayReview && r.sessionDate < today && r.sessionDatePickedOn !== today)) r.sessionDate = today;
+    } catch (e) {}
+  }
   function initSessionDatePicker() {
+    /* Every review, not only the one on screen. With two symbols in a session each has its own review, and the rule
+       used to run for the one on screen alone: the other kept the date it had when it was last looked at, so
+       switching symbol after midnight showed yesterday's date on an empty review (Nestor, 12 Oct 2026: "why is
+       switching from eurusd to gold changing the date???"). */
+    _reviewDateFresh(data.review);
+    try { (Array.isArray(data.reviewSlots) ? data.reviewSlots : []).forEach(_reviewDateFresh); } catch (e) {}
     const picker = document.getElementById('session-date');
     if (!picker) return;
-    const today = todayDateStr();
-    const hasTrades = !!(data.review && Array.isArray(data.review.trades) && data.review.trades.length > 0);
-    /* The day's own review answers count as content too: deleting a day's last trade keeps them on
-       the day, and rolling that day's date to today would re-label its review as today's. */
-    const _r = data.review || {};
-    const hasDayReview = !!(_r.execution || _r.focus || _r.close || (_r.reflection && String(_r.reflection).trim()) ||
-      (Array.isArray(_r.rice) && _r.rice.length) || (Array.isArray(_r.concepts) && _r.concepts.length) ||
-      (Array.isArray(_r.mindset) && _r.mindset.length) || (Array.isArray(_r.tvLinks) && _r.tvLinks.some(l => l && (l.url || (l.notes && String(l.notes).trim())))));
-    // Default to today, and advance a stale (past-day) date on load — but only when there
-    // are no in-progress trades AND no review answers, so a previous day's work is never re-dated.
-    if (!data.review.sessionDate || (!hasTrades && !hasDayReview && data.review.sessionDate < today)) {
-      data.review.sessionDate = today;
-    }
     picker.value = data.review.sessionDate;
     updateSessionDateStatus();
   }
@@ -25368,6 +25376,7 @@ try {
 
   document.getElementById('session-date').addEventListener('change', e => {
     data.review.sessionDate = e.target.value;
+    data.review.sessionDatePickedOn = todayDateStr();   // a past day chosen on purpose - kept until midnight, as the bias does
     saveData();
     updateSessionDateStatus();
   });
