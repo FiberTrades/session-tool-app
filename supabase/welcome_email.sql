@@ -74,13 +74,17 @@ $function$;
 revoke all on function public.st_welcome_due() from public, anon, authenticated;
 revoke all on function public.st_welcome_take() from public, anon, authenticated;
 
+-- SUPERSEDED the same day: these timers are no longer separate pg_cron jobs. One job, st-minute-tick, runs
+-- public.st_minute_tick() every minute and applies the same conditions - see supabase/minute_tick.sql. (Every run of
+-- every pg_cron job writes two lines to the Postgres log, and log volume is metered.) Kept below as the record of
+-- what each condition is.
 -- ---- the timer (migration welcome_email_cron) ----
-select cron.schedule('welcome-email-timer', '*/5 * * * *', $job$
-  select net.http_post(
-    url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/welcome-email',
-    headers := jsonb_build_object('content-type', 'application/json',
-                                  'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 60000)
-  where exists (select 1 from public.st_welcome_due());
-$job$);
+-- select cron.schedule('welcome-email-timer', '*/5 * * * *', $job$
+--   select net.http_post(
+--     url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/welcome-email',
+--     headers := jsonb_build_object('content-type', 'application/json',
+--                                   'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 60000)
+--   where exists (select 1 from public.st_welcome_due());
+-- $job$);

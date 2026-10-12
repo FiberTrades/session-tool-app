@@ -121,30 +121,34 @@ $function$;
 revoke all on function public.st_actuals_take() from public, anon, authenticated;
 revoke all on function public.st_actuals_due(public.calendar_events) from public, anon, authenticated;
 
+-- SUPERSEDED the same day: these timers are no longer separate pg_cron jobs. One job, st-minute-tick, runs
+-- public.st_minute_tick() every minute and applies the same conditions - see supabase/minute_tick.sql. (Every run of
+-- every pg_cron job writes two lines to the Postgres log, and log volume is metered.) Kept below as the record of
+-- what each condition is.
 -- ---- the two timers (migration actuals_quick_cron) ----
 -- 1. Quick reads: every minute, but the function is only called while something is due.
-select cron.schedule('actuals-quick-timer', '* * * * *', $job$
-  select net.http_post(
-    url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/actuals-quick',
-    headers := jsonb_build_object('content-type', 'application/json',
-                                  'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 140000)
-  where exists (select 1 from public.calendar_events e where public.st_actuals_due(e));
-$job$);
+-- select cron.schedule('actuals-quick-timer', '* * * * *', $job$
+--   select net.http_post(
+--     url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/actuals-quick',
+--     headers := jsonb_build_object('content-type', 'application/json',
+--                                   'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 140000)
+--   where exists (select 1 from public.calendar_events e where public.st_actuals_due(e));
+-- $job$);
 
 -- 2. The red-news timer also runs while a red release's figure is fresh, so nudge-cron can announce it.
-select cron.schedule('nudge-news-timer', '* * * * *', $job$
-  select net.http_post(
-    url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/nudge-cron',
-    headers := jsonb_build_object('content-type', 'application/json',
-                                  'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 90000)
-  where exists (select 1 from public.calendar_events
-                where lower(impact) = 'high' and coalesce(timed, true)
-                  and at > now() and at <= now() + interval '61 minutes')
-     or exists (select 1 from public.calendar_events
-                where lower(impact) = 'high' and actual is not null
-                  and actual_at > now() - interval '12 minutes' and at > now() - interval '4 hours');
-$job$);
+-- select cron.schedule('nudge-news-timer', '* * * * *', $job$
+--   select net.http_post(
+--     url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/nudge-cron',
+--     headers := jsonb_build_object('content-type', 'application/json',
+--                                   'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 90000)
+--   where exists (select 1 from public.calendar_events
+--                 where lower(impact) = 'high' and coalesce(timed, true)
+--                   and at > now() and at <= now() + interval '61 minutes')
+--      or exists (select 1 from public.calendar_events
+--                 where lower(impact) = 'high' and actual is not null
+--                   and actual_at > now() - interval '12 minutes' and at > now() - interval '4 hours');
+-- $job$);

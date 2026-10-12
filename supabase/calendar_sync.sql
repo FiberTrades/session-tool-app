@@ -10,11 +10,15 @@
 -- the feed has the same title twice on one Eastern date the worker's single batch is refused as a whole (the key is
 -- event_date, currency, title); calendar-sync gives the later one another date key, so both are kept.
 -- Applied as migration calendar_sync_cron.
-select cron.schedule('calendar-sync-timer', '7 * * * *', $job$
-  select net.http_post(
-    url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/calendar-sync',
-    headers := jsonb_build_object('content-type', 'application/json',
-                                  'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
-    body := '{}'::jsonb,
-    timeout_milliseconds := 60000);
-$job$);
+-- SUPERSEDED the same day: these timers are no longer separate pg_cron jobs. One job, st-minute-tick, runs
+-- public.st_minute_tick() every minute and applies the same conditions - see supabase/minute_tick.sql. (Every run of
+-- every pg_cron job writes two lines to the Postgres log, and log volume is metered.) Kept below as the record of
+-- what each condition is.
+-- select cron.schedule('calendar-sync-timer', '7 * * * *', $job$
+--   select net.http_post(
+--     url := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/calendar-sync',
+--     headers := jsonb_build_object('content-type', 'application/json',
+--                                   'x-cron-key', (select decrypted_secret from vault.decrypted_secrets where name = 'nudge_cron_key')),
+--     body := '{}'::jsonb,
+--     timeout_milliseconds := 60000);
+-- $job$);
