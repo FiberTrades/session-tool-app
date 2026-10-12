@@ -1,6 +1,7 @@
 (async function () {
-  // The Post to community sound is "Chime up" (12 Oct 2026). Nestor: "id like a different sound for when i post things
-  // to community, the swoosh i dont like" - picked by ear from ten: three quick rising notes.
+  // The Post to community sound is "Sent, two notes" (12 Oct 2026). Nestor: "id like a different sound for when i post
+  // things to community, the swoosh i dont like" - picked by ear from ten (Chime up first, then this one): two soft
+  // notes going up.
   // Run: python tests/browser_test.py tests/postsound_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
@@ -36,10 +37,11 @@
     try { delete c0.state; } catch (e) {}
     P.createOscillator = co; P.createBufferSource = cb;
     var f = oscs.map(function (o) { return o.freq; }), t0 = oscs[0].at;
-    ok('three notes, rising: C6, E6, G6', oscs.length === 3 && f.join(',') === '1047,1319,1568', f);
+    ok('two notes, going up: E5 then A5', oscs.length === 2 && f.join(',') === '659,880', f);
     ok('plain soft notes (sine)', oscs.every(function (o) { return o.type === 'sine'; }), oscs.map(function (o) { return o.type; }));
-    ok('70 ms apart', Math.abs((oscs[1].at - t0) - 0.07) < 0.002 && Math.abs((oscs[2].at - t0) - 0.14) < 0.002, oscs.map(function (o) { return +(o.at - t0).toFixed(3); }));
-    ok('over in about half a second', (oscs[2].stop - t0) > 0.5 && (oscs[2].stop - t0) < 0.7, +(oscs[2].stop - t0).toFixed(3));
+    ok('the second a tenth of a second after the first', Math.abs((oscs[1].at - t0) - 0.1) < 0.002, oscs.map(function (o) { return +(o.at - t0).toFixed(3); }));
+    ok('over in about a third of a second', (oscs[1].stop - t0) > 0.3 && (oscs[1].stop - t0) < 0.45, +(oscs[1].stop - t0).toFixed(3));
+    ok('the app says which notes it plays', (window.__stSentSound.notes || []).join(',') === '659,880', window.__stSentSound.notes);
     ok('no swoosh left: nothing made of noise', noises === 0 && !/function swoosh\(c\)/.test(html), noises);
     ok('it still plays when a post has gone, from the one place every Post button uses', (html.match(/_sentSnd\.play\(\);/g) || []).length === 2 && /function postToChannel\(slug, body, bodyEs, replaceId\)\{/.test(html), (html.match(/_sentSnd\.play\(\);/g) || []).length);
   } catch (err) { ok('test ran without throwing', false, String(err && err.stack || err)); }
