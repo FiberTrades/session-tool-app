@@ -122,7 +122,7 @@
     data.settings.symbols = ['EUR/USD', 'XAU/USD']; data.settings.pair = 'EUR/USD';
     getSessions().forEach(function (s, i) { s.symbols = (i === 0) ? ['EUR/USD', 'XAU/USD'] : ['EUR/USD']; });
     data.biasSlots = []; data.reviewSlots = []; reconcileBiasSlots();
-    var fill = function (b, dir) { b.mode = 'Execution'; b.structure = 'Ranging'; b.location = '50%'; b.direction = dir; b.notes = ''; b.tvLinks = [{ url: 'https://www.tradingview.com/x/a' + dir + '/', notes: '' }, { url: 'https://www.tradingview.com/x/b' + dir + '/', notes: '' }]; delete b.copiedAt; delete b.postedSig; delete b.postedId; delete b.postedOn; };
+    var fill = function (b, dir) { b.news = 'None'; b.mode = 'Execution'; b.structure = 'Ranging'; b.location = '50%'; b.direction = dir; b.notes = ''; b.tvLinks = [{ url: 'https://www.tradingview.com/x/a' + dir + '/', notes: '' }, { url: 'https://www.tradingview.com/x/b' + dir + '/', notes: '' }]; delete b.copiedAt; delete b.postedSig; delete b.postedId; delete b.postedOn; };
     var btn = document.getElementById('bias-copy');
     var todayStr = todayDateStr();
 

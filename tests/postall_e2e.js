@@ -31,7 +31,7 @@
   data.biasSlots = []; data.reviewSlots = []; reconcileBiasSlots();
   var nSlots = data.biasSlots.length;
   ok('one bias and one review per session and symbol', nSlots >= 2 && data.reviewSlots.length === nSlots && data.biasSlots[0].symbol === 'EUR/USD' && data.biasSlots[1].symbol === 'XAU/USD', [nSlots, data.reviewSlots.length]);
-  var fill = function (b, dir) { b.mode = 'Trading'; b.structure = 'Bullish'; b.location = 'Discount'; b.direction = dir; b.notes = ''; b.tvLinks = [{ url: 'https://www.tradingview.com/x/a' + dir + '/', notes: '' }, { url: 'https://www.tradingview.com/x/b' + dir + '/', notes: '' }]; delete b.copiedAt; delete b.postedSig; delete b.postedId; };
+  var fill = function (b, dir) { b.news = 'None'; b.mode = 'Trading'; b.structure = 'Bullish'; b.location = 'Discount'; b.direction = dir; b.notes = ''; b.tvLinks = [{ url: 'https://www.tradingview.com/x/a' + dir + '/', notes: '' }, { url: 'https://www.tradingview.com/x/b' + dir + '/', notes: '' }]; delete b.copiedAt; delete b.postedSig; delete b.postedId; };
   var btn = document.getElementById('bias-copy');
 
   // A) only this bias is filled in: no question, it just posts

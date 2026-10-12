@@ -60,5 +60,29 @@
   var boxes = Array.from(nh.querySelectorAll('.slx-news')).map(function (n) { return n.getBoundingClientRect(); });
   ok('beside the red news on a computer, never on top of it', !now || boxes.length < 2 || (innerWidth > 700 ? (Math.abs(boxes[0].top - boxes[1].top) < 1 && boxes[1].left >= boxes[0].right + 11) : boxes[1].top >= boxes[0].bottom + 11), boxes.map(function (r) { return [Math.round(r.left), Math.round(r.top), Math.round(r.width)]; }));
   pr.classList.remove('session-live-collapsed');
+
+  // ---- the greeting names the holiday, not only its currency (12 Oct 2026, Nestor of "Bank holiday in USD: expect
+  //      wider spreads and thinner flows": "does it know is columbus day?"). The clock is pinned to that Monday. ----
+  var RealDate = Date, keepCache = data._calendarCache;
+  var pin = function (y, m, d, h) { var FIX = new RealDate(y, m, d, h, 30, 0).getTime();
+    function FakeDate() { var a = arguments; if (!(this instanceof FakeDate)) return new RealDate(FIX).toString(); return a.length ? new (Function.prototype.bind.apply(RealDate, [null].concat([].slice.call(a))))() : new RealDate(FIX); }
+    FakeDate.now = function () { return FIX; }; FakeDate.parse = RealDate.parse; FakeDate.UTC = RealDate.UTC; FakeDate.prototype = RealDate.prototype; window.Date = FakeDate; };
+  var hol = function (y, m, d, cur) { return { events: [{ title: 'Bank Holiday', country: cur, impact: 'Holiday', when: new RealDate(y, m, d, 12, 0, 0).toISOString(), isTimed: false, timeStr: 'All Day' }], fetchedAt: RealDate.now() }; };
+  try {
+    pin(2026, 9, 12, 7); data._calendarCache = hol(2026, 9, 12, 'USD');
+    var cx = getCalendarContext();
+    ok('Columbus Day: the calendar context knows the holiday by name', !!cx && cx.kind === 'holiday' && cx.currency === 'USD' && cx.holidayName === 'Columbus Day' && cx.currencyNamed === 'USD (Columbus Day)', cx);
+    var lines = NEWS_TAIL_HOLIDAY.map(function (l) { return l.replace(/\{currency\}/g, cx.currencyNamed || cx.currency || ''); });
+    ok('so both greeting lines say which one', lines[0] === 'USD (Columbus Day) on holiday — thinner liquidity, choppier price action.' && lines[1] === 'bank holiday in USD (Columbus Day): expect wider spreads and thinner flows.', lines);
+    ok('and the greeting fills the line from the named form', (html.match(/replace\(\/\\{currency\\}\/g, ctx\.currencyNamed \|\| ctx\.currency \|\| ''\)/g) || []).length === 2);
+    setLanguage('es'); await W(500);
+    var cxEs = getCalendarContext();
+    ok('in Spanish too', !!cxEs && /^USD \(.+\)$/.test(cxEs.currencyNamed) && cxEs.holidayName && cxEs.holidayName !== 'Columbus Day', cxEs && cxEs.currencyNamed);
+    setLanguage('en'); await W(500);
+    pin(2026, 9, 13, 7); data._calendarCache = hol(2026, 9, 13, 'USD');   // a day the app has no name for
+    var cx2 = getCalendarContext();
+    ok('a holiday it cannot name stays as it was: the currency alone', !!cx2 && cx2.kind === 'holiday' && cx2.holidayName === '' && cx2.currencyNamed === 'USD', cx2);
+  } catch (e) { ok('holiday-name checks ran', false, String(e && e.stack || e)); }
+  window.Date = RealDate; data._calendarCache = keepCache;
   return out;
 })()
