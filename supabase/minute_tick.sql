@@ -9,11 +9,12 @@
 -- st_minute_tick() does the work of all four: it runs once a minute, checks each gate, and posts to the matching
 -- edge function only when there is something to do. The job's command is "select public.st_minute_tick()", so each
 -- run logs two short lines. Behaviour is unchanged:
---   * nudge-cron    - while a red release is under 61 minutes away, or a red figure is under 12 minutes old
+--   * nudge-cron    - while a red release is nearer than the longest warning any member has set (15 minutes
+--                     unless changed; it used to be the whole hour before), or a red figure is under 12 minutes old
 --   * actuals-quick - while a release is due a quick read (st_actuals_due)
 --   * welcome-email - on minutes divisible by 5, while someone is due (st_welcome_due)
 --   * calendar-sync - at seven minutes past each hour
--- Applied as migration minute_tick.
+-- Applied as migrations minute_tick and minute_tick_window.
 
 create or replace function public.st_minute_tick()
 returns void
@@ -26,6 +27,8 @@ declare
   base constant text := 'https://figozyxoyobixadhqewr.supabase.co/functions/v1/';
   hdr  jsonb;
   mi   integer := extract(minute from now())::integer;
+  win  integer;
+  fire boolean := false;
 begin
   select decrypted_secret into k from vault.decrypted_secrets where name = 'nudge_cron_key';
   hdr := jsonb_build_object('content-type', 'application/json', 'x-cron-key', k);
@@ -34,10 +37,19 @@ begin
   begin
     if exists (select 1 from public.calendar_events
                 where lower(impact) = 'high' and coalesce(timed, true)
-                  and at > now() and at <= now() + interval '61 minutes')
-       or exists (select 1 from public.calendar_events
-                   where lower(impact) = 'high' and actual is not null
-                     and actual_at > now() - interval '12 minutes' and at > now() - interval '4 hours') then
+                  and at > now() and at <= now() + interval '61 minutes') then
+      -- Only as far ahead as the longest warning any member has set (15 minutes unless changed, 60 at most): the
+      -- function used to be called on every minute of the hour before a release, whatever the members' settings.
+      select least(60, greatest(1, coalesce(max(case when coalesce(j.data->'settings'->'nudges'->>'newsMins', '') ~ '^[0-9]+$'
+                                                     then (j.data->'settings'->'nudges'->>'newsMins')::integer else 15 end), 15)))
+        into win from public.journals j;
+      fire := exists (select 1 from public.calendar_events
+                       where lower(impact) = 'high' and coalesce(timed, true)
+                         and at > now() and at <= now() + make_interval(mins => win + 1));
+    end if;
+    if fire or exists (select 1 from public.calendar_events
+                        where lower(impact) = 'high' and actual is not null
+                          and actual_at > now() - interval '12 minutes' and at > now() - interval '4 hours') then
       perform net.http_post(url := base || 'nudge-cron', headers := hdr, body := '{}'::jsonb, timeout_milliseconds := 90000);
     end if;
   exception when others then raise warning 'st_minute_tick nudge-cron: %', sqlerrm;

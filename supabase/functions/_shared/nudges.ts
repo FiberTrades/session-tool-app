@@ -801,7 +801,24 @@ export async function newsTick(admin: Any) {
   if (!news.length) return { news: 0 };
   // Members a phone push can reach.
   const { data: subs } = await admin.from("push_subscriptions").select("user_id");
-  const users = Array.from(new Set((subs || []).map((r: Any) => String(r.user_id))));
+  const everyone = Array.from(new Set((subs || []).map((r: Any) => String(r.user_id))));
+  // One light read of every member's own warning window (minutes before a release; most are 15), so the full
+  // context - three more reads each - is only loaded for a member whose window a release has entered. Before
+  // 12 Oct 2026 every member was loaded on every minute of the hour before a release: about 17 reads a minute,
+  // each one a line in the request log.
+  let users = everyone;
+  if (!DRY && everyone.length) {
+    const { data: wins, error: werr } = await admin.from("journals").select("user_id, n:data->settings->nudges").in("user_id", everyone);
+    if (!werr && wins) {
+      const due = new Set<string>();
+      for (const w of wins) {
+        const c0 = cfgOf({ s: { nudges: w.n } });
+        if (c0.on && c0.news > 0 && news.some((g) => g.at > now && g.at - now <= c0.news * 60000)) due.add(String(w.user_id));
+      }
+      users = everyone.filter((u) => due.has(u));
+    }
+  }
+  if (!users.length) return { news: news.length, users: 0, sent: [] };
   const out: string[] = [];
   await Promise.all(users.map(async (userId) => {
     try {
