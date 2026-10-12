@@ -14513,7 +14513,12 @@ try {
   let _pendingNewDaySession = false;
   let _prevSessionDateSrc = null;   // previous session's date, captured BEFORE a render stamps bias.sessionDate to today
   let _newDaySnapshot = null;   // content signatures captured when the new-day prompt is armed; the reset only clears prior-day content the user has NOT touched (never today's fresh/sent bias).
-  function biasSlotHasContent(b){ b=b||{}; return !!(b.mode||b.structure||b.location||b.direction||(b.notes&&b.notes.trim())||(Array.isArray(b.tvLinks)&&b.tvLinks.some(function(l){return l&&l.url;}))); }
+  /* Everything a post carries: a pick on EITHER timeframe, the notes, a chart or a chart's note. The LTF picks used to be
+     left out, so a bias holding only LTF picks counted as empty: un-ticking the HTF picks by hand "cleared" it with the
+     LTF picks still there behind the LTF tab, the next days rolled over without asking ("nothing to keep"), and they
+     went out with the next bias he filled in (Nestor, 12 Oct 2026: "why did the LTF bias filled out by itself????
+     i never made those choises today" - they were Saturday's). */
+  function biasSlotHasContent(b){ b=b||{}; return !!(b.mode||b.structure||b.structureLtf||b.location||b.locationLtf||b.direction||b.directionLtf||(b.notes&&String(b.notes).trim())||(Array.isArray(b.tvLinks)&&b.tvLinks.some(function(l){return l&&(l.url||(l.notes&&String(l.notes).trim()));}))); }
   function biasSig(b){ b=b||{}; return JSON.stringify([b.mode||'',b.structure||'',b.structureLtf||'',b.location||'',b.locationLtf||'',b.direction||'',b.directionLtf||'',(b.notes||'').trim(),(Array.isArray(b.tvLinks)?b.tvLinks.map(function(l){return (l&&l.url)||'';}):[])]); }
   function _isTodayIso(s){ try{ var t=(typeof todayDateStr==='function')?todayDateStr():new Date().toISOString().slice(0,10); return String(s||'').slice(0,10)===t; }catch(e){ return false; } }
   function _biasSlotsArr(){ return (Array.isArray(data.biasSlots)&&data.biasSlots.length)?data.biasSlots:[data.bias||{}]; }
@@ -14529,9 +14534,9 @@ try {
     return !!(r.sessionDate===todayDateStr() && Array.isArray(r.trades) && r.trades.length>0 && _newDaySnapshot && JSON.stringify(r.trades||[])!==snapSig); }catch(e){ return false; } }
   function _reviewIsStale(){ try{ return _reviewSlotsArr().some(function(r){ return !!(r && Array.isArray(r.trades) && r.trades.length>0 && !_reviewIsTodaysWork(r)); }); }catch(e){ return false; } }
   function hasPriorSessionContent() {
-    const b = data.bias || {};
-    const biasHasContent = !!(b.mode || b.structure || b.location || b.direction ||
-      (b.notes && b.notes.trim()) || (Array.isArray(b.tvLinks) && b.tvLinks.some(l => l && l.url)));
+    /* Every bias, not only the one on screen: with two symbols, yesterday's bias for the other symbol was never asked
+       about and simply took today's date. */
+    const biasHasContent = _biasSlotsArr().some(biasSlotHasContent);
     const reviewHasContent = _reviewSlotsArr().some(r => r && Array.isArray(r.trades) && r.trades.length > 0);
     return biasHasContent || reviewHasContent;
   }
@@ -21291,6 +21296,7 @@ try {
   // and unchanged since -> "Posted 07:53" in green, and pressing it does nothing (Nestor did not want it to open
   // Community); changed since -> "Post update".
   // Local dates on purpose (copiedAt is UTC ISO). No postedSig = posted before this existed -> the old button.
+  function _isTodayLocal(iso) { try { const d = new Date(iso); return !!iso && !isNaN(d) && d.toDateString() === new Date().toDateString(); } catch (e) { return false; } }
   function _biasPostState(b) {
     b = b || {};
     if (!b.copiedAt || !b.postedSig) return 'new';
@@ -21545,9 +21551,8 @@ try {
     try { renderBiasLike(); } catch (e) {}
     const b = data.bias;
     const out = document.getElementById('bias-preview');
-    const hasLinks = (b.tvLinks || []).some(l => l && l.url);
-    const filled = b.mode || b.structure || b.location || b.direction || hasLinks || b.notes;
-    if (!filled) { out.innerHTML = t('discord.empty_review'); return; }
+    // A bias with only LTF picks is not empty: it shows here, as it would post.
+    if (!biasSlotHasContent(b)) { out.innerHTML = t('discord.empty_review'); return; }
     const html = buildBiasMessage()
       .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
       .replace(/\*\*(.+?)\*\*/g, '<span class="heading">$1</span>');
@@ -21624,12 +21629,14 @@ try {
       window.__stBuildInLang('en', buildBiasMessage),
       window.__stBuildInLang('es', buildBiasMessage));
     let _postedRow = null;
+    // Today's earlier post of this bias, if there is one: this post takes its place (12 Oct 2026).
+    const _biasOld = (data.bias.postedId && (data.bias.postedOn === todayDateStr() || _biasPostState(data.bias) === 'changed')) ? data.bias.postedId : null;
     // No "Posted to community" pop-up: the button turns into "Posted 07:53" (Nestor, 28 Sep 2026).
-    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs); }catch(e){ _postedRow = null; try{ await _stClipQuick(msg); }catch(_){} }
+    try{ _postedRow = await window.STCommunity.postToChannel('pre-session-bias', _biasEn, _biasEs, _biasOld); }catch(e){ _postedRow = null; try{ await _stClipQuick(msg); }catch(_){} }
     const nowIso = new Date().toISOString();
     data.bias.copiedAt = nowIso;
     // What went out, for the Posted button (only when it really posted; the clipboard fallback keeps the old button).
-    if (_postedRow && _postedRow.id) { data.bias.postedSig = biasSig(data.bias); data.bias.postedId = _postedRow.id; }
+    if (_postedRow && _postedRow.id) { data.bias.postedSig = biasSig(data.bias); data.bias.postedId = _postedRow.id; data.bias.postedOn = todayDateStr(); }
     data.bias.date = nowIso; // committing adopts today's date, so the card shows even when the form was filled the night before
     /* A new day detected at load has to be RESOLVED, not silently dropped. This used to clear the
        flag outright on the reasoning that posting a bias means the day is under way - but that also
@@ -21726,10 +21733,13 @@ try {
     if (!await window.appConfirm({ title: t('confirm.clear_bias_title'), body: t('confirm.clear_bias') })) return;
     // Reset only the active bias slot in place (preserves its session/symbol identity
     // and keeps data.bias linked to the slot).
+    // Today's post stays known through the clear, so a bias redone and posted again today takes its place.
+    const _keepPost = (data.bias.postedId && (data.bias.postedOn === todayDateStr() || _isTodayLocal(data.bias.copiedAt))) ? data.bias.postedId : null;
     Object.assign(data.bias, newBiasBlank());
     data.bias.sessionDate = todayDateStr();
     data.bias.clearedAt = new Date().toISOString();   // cleared on purpose: not filled back from today's history
-    delete data.bias.postedSig; delete data.bias.postedId;
+    delete data.bias.postedSig; delete data.bias.postedId; delete data.bias.postedOn;
+    if (_keepPost) { data.bias.postedId = _keepPost; data.bias.postedOn = todayDateStr(); }
     saveData();
     document.querySelectorAll('[data-bias] .option').forEach(b => b.classList.remove('selected'));
     renderBiasTvLinks();
@@ -25557,7 +25567,8 @@ try {
         window.__stBuildInLang('es', buildReviewMessage));
       let _revRow = null;
       // No "Posted to community" pop-up: the button says Posted (Nestor, 28 Sep 2026).
-      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs); }catch(e){ _revRow = null; try{ await _stClipQuick(msg); }catch(_){} }
+      const _revOld = _stPostedGet(_reviewPostKey());   // this review's earlier post: the new one takes its place
+      try{ _revRow = await window.STCommunity.postToChannel('post-session-review', _revEn, _revEs, _revOld && _revOld.id); }catch(e){ _revRow = null; try{ await _stClipQuick(msg); }catch(_){} }
       if (_revRow && _revRow.id) { _stPostedSet(_reviewPostKey(), _revRow.id, _revSrc); try { saveData(); } catch (e) {} }
       const hasTrades = (data.review.trades || []).length > 0;
       if (hasTrades) await performReviewSave({ skipBackupModal: true });
@@ -25809,11 +25820,11 @@ try {
     const confirmBtn = document.getElementById('new-session-confirm');
     const keepBtn = document.getElementById('new-session-keep');
     if (confirmBtn) confirmBtn.addEventListener('click', () => {
-      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null; startNewSession(); _refreshStaleForNewDay();
+      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null; startNewSession(); _newDaySnapshot = null; _refreshStaleForNewDay();   // the snapshot belongs to the question just answered (see recheckNewDayOnResume)
     });
     // Keep previous = non-destructive. Roll the date over so we don't ask again today.
     const keep = () => {
-      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null;
+      close(); _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null;
       data.lastSessionDate = new Date().toDateString();
       saveData();
       _refreshStaleForNewDay();
@@ -25833,7 +25844,10 @@ try {
       var tIso = (typeof todayDateStr === 'function') ? todayDateStr() : new Date().toISOString().slice(0, 10);
       var bd = (data.bias && data.bias.sessionDate) || null;
       _prevSessionDateSrc = (bd && /^\d{4}-\d{2}-\d{2}/.test(bd) && bd < tIso) ? bd : (data.lastSessionDate || bd || null);
-      if(!_newDaySnapshot) _newDaySnapshot = _captureNewDaySnapshot();
+      /* Always a fresh snapshot. No question is pending here, so one still held belongs to a question already answered
+         on an earlier day (the app left open over two midnights): compared against that, yesterday's whole bias read
+         as "changed since, so today's work", and the day rolled over without asking (found 12 Oct 2026). */
+      _newDaySnapshot = _captureNewDaySnapshot();
       _pendingNewDaySession = true;
       showNewDaySessionPrompt();
     } catch (e) {}
@@ -27069,7 +27083,8 @@ try {
     var _s10key = _seriesPostKey(latestSeries), _s10src = _seriesPostSrc(latestSeries);
     // No pop-up: the Share button turns into Posted, so the window stays open until the post lands (Nestor, 28 Sep 2026).
     var _s10rel = _stPostLock(_seriesShareConfirmBtn);
-    try{ window.STCommunity.postToChannel('series-of-10-trades', _s10en, _s10es).then(function(_row){ if (_s10rel) _s10rel(); if (_row && _row.id) { _stPostedSet(_s10key, _row.id, _s10src); try { saveData(); } catch (e) {} try { paintSeriesPostBtn(); } catch (e) {} } }, function(){ if (_s10rel) _s10rel(); try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ if (_s10rel) _s10rel(); try{ copyToClipboard(_s10msg); }catch(_){} }
+    var _s10old = _stPostedGet(_s10key);   // this series' earlier post: the new one takes its place
+    try{ window.STCommunity.postToChannel('series-of-10-trades', _s10en, _s10es, _s10old && _s10old.id).then(function(_row){ if (_s10rel) _s10rel(); if (_row && _row.id) { _stPostedSet(_s10key, _row.id, _s10src); try { saveData(); } catch (e) {} try { paintSeriesPostBtn(); } catch (e) {} } }, function(){ if (_s10rel) _s10rel(); try{ copyToClipboard(_s10msg); }catch(_){} }); }catch(e){ if (_s10rel) _s10rel(); try{ copyToClipboard(_s10msg); }catch(_){} }
     jumpToDiscord('series');
   });
   // ===== Snapshot helpers for snackbar-style undo =====
@@ -38312,7 +38327,8 @@ try {
       const _wkKey = currentReview ? 'weekly:' + currentReview.key : '', _wkSrc = _weeklyPostSrc(_weeklyEntryNow());
       const _wkDone = () => { if (_wkRel) _wkRel(); };
       _wkSent = true;
-      window.STCommunity.postToChannel('weekend-review', _wkEn, _wkEs).then(
+      const _wkOld = _wkKey ? _stPostedGet(_wkKey) : null;   // this week's earlier post: the new one takes its place
+      window.STCommunity.postToChannel('weekend-review', _wkEn, _wkEs, _wkOld && _wkOld.id).then(
         (_row) => { _wkDone(); if (trFailed) showToast(t('toast.translate_failed'), { persist: true });   // no "Posted" pop-up: the button says it
           if (_row && _row.id && _wkKey) { _stPostedSet(_wkKey, _row.id, _wkSrc); try { saveData(); } catch (e) {} try { paintWeeklyPostBtn(); } catch (e) {} } },
         () => { _wkDone(); showToast(t('toast.copy_failed'), { persist: true }); }
@@ -49275,7 +49291,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         });
         // Today's plan + review in full — the live diary entry.
         var _slots = (typeof data !== 'undefined' && Array.isArray(data.biasSlots) && data.biasSlots.length) ? data.biasSlots : ((typeof data !== 'undefined' && data.bias) ? [data.bias] : []);
-        var todayBias = _slots.filter(function (b) { return b && (b.direction || b.structure || b.location || (b.notes && b.notes.trim())); }).map(function (b) {
+        var todayBias = _slots.filter(function (b) { return b && (b.direction || b.structure || b.location || b.directionLtf || b.structureLtf || b.locationLtf || (b.notes && b.notes.trim())); }).map(function (b) {
           // Each read is logged per timeframe now: the base field is the HTF read, *Ltf the lower.
           return { sym: b.symbol || null,
                    direction: b.direction || null, directionLtf: b.directionLtf || null,
@@ -59274,8 +59290,13 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       return { prime: function(){ try{ var c = ctx(); if(c) noise(c); }catch(e){} }, play: play };
     })();
     try{ window.__stSentSound = _sentSnd; }catch(e){}
-    function postToChannel(slug, body, bodyEs){
+    /* replaceId = the earlier post this one corrects (12 Oct 2026, Nestor: "shouldn't reposting it get rid of the old
+       bias and just show the new corrected bias?"). The server posts the new one and removes the earlier one where
+       that cannot change what the leaderboard scores (supabase/st_post_review.sql): a bias re-posted before the
+       session starts, a review the same day, a weekly review the same week, the same series. Otherwise both stay. */
+    function postToChannel(slug, body, bodyEs, replaceId){
       slug=String(slug||'').toLowerCase(); body=String(body||'').trim();
+      replaceId = (replaceId && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(String(replaceId))) ? String(replaceId) : null;
       try{ _sentSnd.prime(); }catch(e){}
       bodyEs=(bodyEs==null?'':String(bodyEs).trim());
       return new Promise(function(resolve, reject){
@@ -59294,14 +59315,26 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
              a structured review on the member's behalf; the composer stays refused.
              The row is read back by id rather than assembled here, so what the channel shows is
              what the database actually stored. */
+          /* The earlier post, once the server has really removed it, comes off this screen too (everyone else's
+             comes off through the live feed). Asked rather than assumed: the server keeps it when it is the record
+             the leaderboard scores. */
+          function dropIfGone(old){
+            try{ sb.from('channel_messages').select('id').eq('id', old).maybeSingle().then(function(q){
+              if(!q || q.error || q.data) return;
+              try{ var i=idx(old); if(i>=0){ msgs.splice(i,1); delete seen[old]; repaint(); } }catch(e){}
+            }, function(){}); }catch(e){}
+          }
           function doInsert(ch){
             if(!ch){ reject(new Error('channel not found: '+slug)); return; }
-            sb.rpc('st_post_review', { p_slug: slug, p_body: body,
-                                       p_body_es: (bodyEs && bodyEs!==body) ? bodyEs : null,
-                                       p_name: myName(), p_avatar: myAvatar() })
+            var _args = { p_slug: slug, p_body: body,
+                          p_body_es: (bodyEs && bodyEs!==body) ? bodyEs : null,
+                          p_name: myName(), p_avatar: myAvatar() };
+            if(replaceId) _args.p_replace = replaceId;
+            sb.rpc('st_post_review', _args)
               .then(function(r){
                 if(r.error){ reject(r.error); return; }
                 var _id = r.data;
+                if(replaceId && String(_id) !== replaceId) dropIfGone(replaceId);
                 sb.from('channel_messages').select('*').eq('id', _id).maybeSingle().then(function(g){
                   var _row = (g && g.data) || { id:_id, channel_id:ch.id, sender_id:uid, body:body,
                                                 sender_name:myName(), sender_avatar:myAvatar() };
