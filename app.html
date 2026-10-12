@@ -49678,6 +49678,18 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         add.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); file.click(); });
         file.addEventListener('change', function () { if (file.files && file.files[0]) { attachBlob(file.files[0]); file.value = ''; } });
         btn.addEventListener('click', function (ev) { ev.preventDefault(); ev.stopPropagation(); go(); });
+        /* A dropped image attaches like a pasted one (12 Oct 2026). Only pasting and the + button did; a drop went to
+           the browser, which opened the file in place of the app (Nestor: "why ... it opens this window?"). */
+        (function () {
+          var files = function (ev) { try { return [].indexOf.call((ev.dataTransfer && ev.dataTransfer.types) || [], 'Files') >= 0; } catch (e) { return false; } };
+          box.addEventListener('dragover', function (ev) { if (!files(ev)) return; ev.preventDefault(); try { ev.dataTransfer.dropEffect = canChat() ? 'copy' : 'none'; } catch (e) {} });
+          box.addEventListener('drop', function (ev) {
+            if (!files(ev)) return; ev.preventDefault();
+            if (!canChat()) return;
+            var fl = ev.dataTransfer.files || [];
+            for (var i = 0; i < fl.length; i++) { if (fl[i] && fl[i].type && fl[i].type.indexOf('image') === 0) { attachBlob(fl[i]); try { inp.focus(); } catch (e) {} break; } }
+          });
+        })();
         inp.addEventListener('input', autosize);
         // stopPropagation so no ancestor / global handler can swallow the keystroke.
         inp.addEventListener('keydown', function (ev) { ev.stopPropagation(); if (ev.key === 'Enter' && !ev.shiftKey) { ev.preventDefault(); go(); } });
@@ -50454,6 +50466,15 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const file = e.target.files && e.target.files[0];
     if (file) handleMt5File(file);
   });
+  /* A file dropped where nothing takes it is refused, not opened (12 Oct 2026). The browser's own answer to an
+     unhandled drop is to load the file in this tab, which threw the member out of the app. Bubble phase on the window,
+     so whatever did take the drop (a chat, the MT5 zone below) has already said so. Only drags that carry files. */
+  if (!window.__stDropNet) {
+    window.__stDropNet = true;
+    const _dropHasFiles = e => { try { return [].indexOf.call((e.dataTransfer && e.dataTransfer.types) || [], 'Files') >= 0; } catch (_) { return false; } };
+    window.addEventListener('dragover', e => { if (!_dropHasFiles(e) || e.defaultPrevented) return; e.preventDefault(); try { e.dataTransfer.dropEffect = 'none'; } catch (_) {} });
+    window.addEventListener('drop', e => { if (!_dropHasFiles(e) || e.defaultPrevented) return; e.preventDefault(); });
+  }
   const dropZone = document.getElementById('mt5-drop-zone');
   ['dragenter', 'dragover'].forEach(ev => {
     dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('dragover'); });
@@ -56654,6 +56675,13 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         if(_e.key==='Escape'){ var _row=tg.closest('.dcx-msg'); var _cb=_row && _row.querySelector('.dcx-edit-cancel'); if(_cb){ _e.preventDefault(); _cb.click(); } }
       }); } }catch(e){}
       ta.addEventListener('paste', function(e){ var items=(e.clipboardData&&e.clipboardData.items)||[]; var did=false; for(var i=0;i<items.length;i++){ if(items[i].kind==='file'){ var f=items[i].getAsFile(); if(f){ did=true; setPending(f); } } } if(did) e.preventDefault(); });
+      /* A file dropped on the conversation attaches like a pasted one (12 Oct 2026): same preview, same Send. */
+      (function(){ var zone=ta.closest('.dcx-main')||ta.parentNode;
+        var files=function(e){ try{ return [].indexOf.call((e.dataTransfer&&e.dataTransfer.types)||[],'Files')>=0; }catch(_){ return false; } };
+        var open=function(){ return !ta.disabled && ta.offsetParent!==null; };   /* a channel you can write in */
+        zone.addEventListener('dragover', function(e){ if(!files(e)) return; e.preventDefault(); try{ e.dataTransfer.dropEffect=open()?'copy':'none'; }catch(_){} });
+        zone.addEventListener('drop', function(e){ if(!files(e)) return; e.preventDefault(); if(!open()) return; var f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) setPending(f); });
+      })();
       G('dcx-send').addEventListener('click', sendText);
       fillEmojiPicker();
       var gq=G('dcx-gif-q'); gq.addEventListener('input', function(){ clearTimeout(_gifT); var v=gq.value.trim(); _gifT=setTimeout(function(){ gifLoad(v); },350); });
@@ -69218,6 +69246,13 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       });
       ta.addEventListener('input', function(){ ta.style.height='auto'; ta.style.height=Math.min(220,ta.scrollHeight)+'px'; });
       ta.addEventListener('paste', function(e){ var items=(e.clipboardData&&e.clipboardData.items)||[]; var did=false; for(var i=0;i<items.length;i++){ if(items[i].kind==='file'){ var f=items[i].getAsFile(); if(f){ did=true; setPending(f); } } } if(did) e.preventDefault(); });
+      /* A file dropped on the conversation attaches like a pasted one (12 Oct 2026). */
+      (function(){ var zone=ta.closest('.stdm-main')||ta.parentNode;
+        var files=function(e){ try{ return [].indexOf.call((e.dataTransfer&&e.dataTransfer.types)||[],'Files')>=0; }catch(_){ return false; } };
+        var open=function(){ return !ta.disabled && ta.offsetParent!==null; };   /* a conversation is open */
+        zone.addEventListener('dragover', function(e){ if(!files(e)) return; e.preventDefault(); try{ e.dataTransfer.dropEffect=open()?'copy':'none'; }catch(_){} });
+        zone.addEventListener('drop', function(e){ if(!files(e)) return; e.preventDefault(); if(!open()) return; var f=e.dataTransfer.files&&e.dataTransfer.files[0]; if(f) setPending(f); });
+      })();
       G('stdm-send').addEventListener('click', sendText);
       fillEmojiPicker();
       var gq=G('stdm-gif-q'); gq.addEventListener('input', function(){ clearTimeout(_gifT); var v=gq.value.trim(); _gifT=setTimeout(function(){ gifLoad(v); },350); });
