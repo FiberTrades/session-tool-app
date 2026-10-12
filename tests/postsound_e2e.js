@@ -42,6 +42,7 @@
     ok('the second a tenth of a second after the first', Math.abs((oscs[1].at - t0) - 0.1) < 0.002, oscs.map(function (o) { return +(o.at - t0).toFixed(3); }));
     ok('over in about a third of a second', (oscs[1].stop - t0) > 0.3 && (oscs[1].stop - t0) < 0.45, +(oscs[1].stop - t0).toFixed(3));
     ok('the app says which notes it plays', (window.__stSentSound.notes || []).join(',') === '659,880', window.__stSentSound.notes);
+    ok('at the level he picked by ear (0.42, up from 0.28)', window.__stSentSound.level === 0.42 && /exponentialRampToValueAtTime\(0\.42, t \+ 0\.006\)/.test(html) && !/exponentialRampToValueAtTime\(0\.28, t \+ 0\.006\)/.test(html), window.__stSentSound.level);
     ok('no swoosh left: nothing made of noise', noises === 0 && !/function swoosh\(c\)/.test(html), noises);
     ok('it still plays when a post has gone, from the one place every Post button uses', (html.match(/_sentSnd\.play\(\);/g) || []).length === 2 && /function postToChannel\(slug, body, bodyEs, replaceId\)\{/.test(html), (html.match(/_sentSnd\.play\(\);/g) || []).length);
   } catch (err) { ok('test ran without throwing', false, String(err && err.stack || err)); }
