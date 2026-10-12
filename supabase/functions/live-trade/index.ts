@@ -4,7 +4,7 @@
 //  The MT5 EA POSTs a LIVE status event here (open / close). This
 //  function mirrors ingest-trade's auth exactly:
 //    1. looks up the account by its sync_token (per-user secret)
-//    2. checks that account is on a PAID plan (any tier)
+//    2. checks that account is on a PAID plan (any tier) or still inside its free trial
 //    3. writes to live_trades (service role), keyed by the real UUID
 //
 //  Event types:
@@ -53,6 +53,7 @@ function later(what: string, p: Promise<unknown>) {
   try { if (typeof EdgeRuntime !== "undefined" && EdgeRuntime) EdgeRuntime.waitUntil(q); } catch (_) { /* local runs */ }
 }
 const FRESH_MS = 5 * 60 * 1000;   // an open older than this is history, not news (as in the app)
+const TRIAL_DAYS = 14;            // keep in step with ingest-trade and with TRIAL_DAYS in app.html
 
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
@@ -88,15 +89,22 @@ Deno.serve(async (req) => {
   // 1. Resolve the sync_token to an account (same as ingest-trade).
   const { data: prof, error: pErr } = await admin
     .from("profiles")
-    .select("id, is_paid")
+    .select("id, is_paid, created_at, trial_days")
     .eq("sync_token", String(token))
     .maybeSingle();
   if (pErr)  return json({ error: "profile lookup failed" }, 500);
   if (!prof) return json({ error: "unknown token" }, 403);
 
-  // 2. Paid gate (enforced server-side, same as auto-sync).
+  // 2. Paid on any tier, OR still inside the free trial (12 Oct 2026, Nestor: "give free trial access too").
+  //    The live feed used to need a paid plan while the trade sync next door (ingest-trade) already let a trial
+  //    in: a trial member saw their closed trades arrive but never a live card or a live nudge - the very things
+  //    the adverts show under "Free for fourteen days". Same rule as the app's trialExpired(): the trial runs
+  //    trial_days (14 unless set) from created_at, and an unreadable signup date fails OPEN.
   if (prof.is_paid !== true) {
-    return json({ error: "live status requires a paid plan" }, 402);
+    const created = prof.created_at ? Date.parse(String(prof.created_at)) : NaN;
+    const days = Number(prof.trial_days) > 0 ? Number(prof.trial_days) : TRIAL_DAYS;
+    const expired = Number.isFinite(created) && Date.now() >= created + days * 86400000;
+    if (expired) return json({ error: "live status requires a paid plan" }, 402);
   }
 
   const userId = String(prof.id); // real account UUID
