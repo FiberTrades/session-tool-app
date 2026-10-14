@@ -1,7 +1,7 @@
 (async function () {
   // Practice Replay, Nestor's batch of 15 Oct 2026: 8x / 16x and Go to a typed time ("do option 4"); no SL / TP lines on
   // hovering BUY / SELL; charts that move up and down without dragging the scale ("the charts feel stuck"); charts that
-  // move together ("they need to be all conected"); Trade Replay's drawing behaviour and options box ("the objects seem
+  // line up ("they need to be all conected") but drag on their own ("stop that"); Trade Replay's drawing behaviour and options box ("the objects seem
   // very buggy ... i dont get the same options box"); session times of his own ("users should be able to edit the times").
   // Real EUR/USD candles of Thu 1 Oct 2026, on this PC's London clock.
   // Run: python tests/browser_test.py tests/practice_tools_e2e.js
@@ -27,10 +27,14 @@
     ok('speed goes 1x 2x 4x 8x 16x and back to 1x', seen.join(' ') === '1× 2× 4× 8× 16× 1×', seen.join(' '));
     P._goto('14:30');
     ok('Go to 14:30 plays the market to 14:30', hhmm(S().now) === '14:30', hhmm(S().now));
-    var gi = document.getElementById('stpr-goto'); gi.value = '9:05'; gi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(50);
-    ok('typing 9:05 and Enter goes back to 09:05 (no trade yet), and the box shows the time', hhmm(S().now) === '09:05' && gi.placeholder === '09:05' && gi.value === '', [hhmm(S().now), gi.placeholder]);
-    gi.value = '25:00'; gi.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(30);
-    ok('a time that is not one is refused with a message', hhmm(S().now) === '09:05' && document.getElementById('stpr-flash').classList.contains('show'));
+    document.getElementById('stpr-goto').click(); await W(30);
+    var hb = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-goh]'), function (x) { return x.textContent; });
+    ok('Go to opens a picker: the 24 hours from the 22:00 open, London tagged on 08', hb.length === 24 && hb[0] === '22Asia' && hb[10] === '08London' && hb[23] === '21', hb.join(' '));
+    document.querySelector('#stpr-menu [data-goh="9"]').click(); await W(30);
+    var mb = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-gom]'), function (x) { return x.textContent; });
+    ok('picking 09 shows its minutes, 09:00 to 09:55', mb.length === 12 && mb[0] === '09:00' && mb[11] === '09:55', mb.join(' '));
+    document.querySelector('#stpr-menu [data-gom="09:05"]').click(); await W(50);
+    ok('picking 09:05 goes back to 09:05 (no trade yet), closes the picker and the button shows the time', hhmm(S().now) === '09:05' && document.getElementById('stpr-gotot').textContent === '09:05' && !document.getElementById('stpr-menu').classList.contains('show'), [hhmm(S().now), document.getElementById('stpr-gotot').textContent]);
 
     // session times of their own
     document.getElementById('stpr-sesed').click(); await W(30);
@@ -52,19 +56,20 @@
     // the charts line up and move together
     var a0 = atF(0), a1 = atF(1);
     ok('after a jump both charts have now at the same place: 07:55 on the 5m, the 07:00 hour on the 1h', hhmm(a0) === '07:55' && hhmm(a1) === '07:00', [hhmm(a0), hhmm(a1)]);
-    var r0 = rng(0); P._drive(0); pane(0).chart.timeScale().setVisibleLogicalRange({ from: r0.from - 60, to: r0.to - 60 }); await W(250);
-    var b0 = atF(0), b1 = atF(1);
-    ok('moving the 5m back 5 hours moves the 1h back to the same time', hhmm(b0) === '02:55' && Math.abs(b1 - b0) <= 3600, [hhmm(b0), hhmm(b1)]);
-    var hold0 = rng(0); P._drive(-1); P._step(); P._step(); await W(100); var after0 = rng(0);
+    var r0 = rng(0), r1 = rng(1), pe = function (t) { pane(0).el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerId: 9, pointerType: 'mouse' })); };
+    pe('pointerdown'); pane(0).chart.timeScale().setVisibleLogicalRange({ from: r0.from - 60, to: r0.to - 60 }); pe('pointerup'); await W(250);
+    var b0 = atF(0), r1b = rng(1);
+    ok('dragging the 5m back 5 hours moves only the 5m: the 1h stays where it was', hhmm(b0) === '02:55' && Math.abs(r1b.from - r1.from) < 0.01, [hhmm(b0), r1.from, r1b.from]);
+    var hold0 = rng(0); P._step(); P._step(); await W(100); var after0 = rng(0);
     ok('scrolled back into history, playing does not pull the chart back', Math.abs(after0.from - hold0.from) < 0.01, [hold0, after0]);
     P._jump('ny'); await W(350);
     ok('a jump lines them up on now again', hhmm(atF(0)) === '13:25' && hhmm(atF(1)) === '13:00', [hhmm(atF(0)), hhmm(atF(1))]);
     var fr0 = rng(0), last0 = pane(0).n - 1; P._step(); await W(60); var fr1 = rng(0);
     ok('with now on screen, each new candle slides the chart by one candle (now keeps its place)', Math.abs((fr1.from - fr0.from) - (pane(0).n - 1 - last0)) < 0.01 && pane(0).n - 1 - last0 === 1, [fr0.from, fr1.from]);
-    var got = null, q1 = pane(1).chart, keep = q1.setCrosshairPosition; q1.setCrosshairPosition = function (pr, t) { got = t; };
-    var tb = pane(0).times.filter(function (t) { return hhmm(t) === '12:35'; })[0];
-    P._xhair(pane(0), { point: { x: 100, y: 100 }, time: tb }); q1.setCrosshairPosition = keep;
-    ok('the crosshair on the 5m at 12:35 shows on the 1h at the 12:00 candle', got && hhmm(got) === '12:00', got && hhmm(got));
+    var tb = pane(0).times.filter(function (t) { return hhmm(t) === '12:35' && new Date(t * 1000).getDate() === 1; })[0];
+    mev(0, 'mousemove', P._xOfT(0, tb), 150); await W(60);
+    var c0 = P._cx(0), c1 = P._cx(1);
+    ok("Trade Replay's crosshair: the chart's own is hidden, ours sits on the 5m at 12:35 and on the 1h at the 12:00 candle, same price", pane(0).chart.options().crosshair.mode === 2 && c0 && hhmm(c0.t) === '12:35' && c1 && hhmm(c1.t) === '12:00' && Math.abs(c1.pr - c0.pr) < 1e-9, [c0 && hhmm(c0.t), c1 && hhmm(c1.t)]);
 
     // the chart moves up and down without touching the scale
     var ps0 = pane(0).chart.priceScale('right');
@@ -74,6 +79,21 @@
     P._jump('ny'); await W(200);
     mev(0, 'mousedown', 300, 200); mev(0, 'mousemove', 340, 201, { held: true }); mev(0, 'mouseup', 340, 201);
     ok('a level drag (sideways only) gives auto-fit back when it ends', ps0.options().autoScale === true);
+
+    // Show on chart: Trade Replay's Trade marks and Position tool
+    document.getElementById('stpr-layersbtn').click(); await W(30);
+    var mn = document.getElementById('stpr-menu');
+    ok("the layers button opens Trade Replay's Show on chart: Trade marks and Position tool, both on", mn.classList.contains('show') && /Show on chart/i.test(mn.textContent) && document.getElementById('stpr-marks').checked && document.getElementById('stpr-pos').checked, mn.textContent);
+    C.stopPx.EURUSD = 0.01; P._place(1); for (k = 0; k < 4; k++) P._step(); await W(150);
+    ok('in a trade the position tool draws its zones on both charts', pane(0)._zones === 1 && pane(1)._zones === 1, [pane(0)._zones, pane(1)._zones]);
+    var mk = document.getElementById('stpr-marks'); mk.checked = false; mk.dispatchEvent(new Event('change', { bubbles: true })); await W(80);
+    ok('Trade marks off hides the Entry / SL / TP lines and their labels (and lights the dot)', C.marks === false && P._lines(0).length === 3 && P._lines(0).every(function (l) { return !l.vis; }) && document.getElementById('stpr-layersbtn').classList.contains('dot'), P._lines(0));
+    var po = document.getElementById('stpr-pos'); po.checked = false; po.dispatchEvent(new Event('change', { bubbles: true })); await W(150);
+    ok('Position tool off takes the zones away', C.pos === false && pane(0)._zones === 0);
+    mk.checked = true; mk.dispatchEvent(new Event('change', { bubbles: true })); po.checked = true; po.dispatchEvent(new Event('change', { bubbles: true }));
+    P._close(); S().done = null; P._render(); await W(150);
+    ok('a closed trade keeps its box, with the R it made', pane(0)._zones === 1 && C.marks === true && !document.getElementById('stpr-layersbtn').classList.contains('dot'));
+    document.getElementById('stpr-layersbtn').click(); await W(20); C.stopPx.EURUSD = 0.0012;
 
     // drawings: one drawing on every chart, Trade Replay's options box
     DW.list = []; DW.hist = ['[]']; DW.hpos = 0; DW.sel = null;
@@ -102,6 +122,12 @@
     ok('Clone makes a second one, moved along a little', DW.list.length === 2 && DW.list[1].a.t > d0.a.t && DW.sel === 1);
     var before = DW.list.map(function (d) { return d.a.t; }); mev(1, 'mousedown', mid.x, mid.y); mev(1, 'mousemove', mid.x + 40, mid.y + 10, { held: true }); mev(1, 'mouseup', mid.x + 40, mid.y + 10); await W(30);
     ok('dragging the body moves it', DW.list.some(function (d, i) { return d.a.t > before[i]; }), [before, DW.list.map(function (d) { return d.a.t; })]);
+    var cur = DW.list[DW.sel], m2 = { x: (P._xOfT(1, cur.a.t) + P._xOfT(1, cur.b.t)) / 2, y: (P._yOf(1, cur.a.price) + P._yOf(1, cur.b.price)) / 2 };
+    mev(1, 'mousedown', m2.x, m2.y); var si = DW.sel, w0 = P._lOfT(1, DW.list[si].b.t) - P._lOfT(1, DW.list[si].a.t), wk = [];
+    for (k = 1; k <= 20; k++) { mev(1, 'mousemove', m2.x - k * 30, m2.y, { held: true }); wk.push(Math.round((P._lOfT(1, DW.list[si].b.t) - P._lOfT(1, DW.list[si].a.t)) * 100) / 100); }
+    mev(1, 'mouseup', m2.x - 600, m2.y); await W(30);
+    var crossed = new Date(DW.list[si].a.t * 1000).getDay() <= 5 && DW.list[si].a.t < Date.parse('2026-09-26T21:00:00Z') / 1000;
+    ok('a rectangle dragged back across the weekend keeps its width in candles the whole way', crossed && wk.every(function (w) { return Math.abs(w - w0) < 0.01; }), { w0: w0, widths: wk, a: new Date(DW.list[si].a.t * 1000).toISOString() });
     document.querySelector('#stpr-tools [data-tool="pen"]').click();
     mev(0, 'mousedown', 100, 150); for (k = 1; k <= 8; k++) mev(0, 'mousemove', 100 + k * 12, 150 + (k % 3) * 6, { held: true }); mev(0, 'mouseup', 196, 162); await W(30);
     ok('the pen draws while held and stays armed for the next stroke', DW.list.length === 3 && DW.list[2].type === 'pen' && DW.list[2].pts.length > 3 && DW.tool === 'pen');

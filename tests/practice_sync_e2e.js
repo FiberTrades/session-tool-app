@@ -10,11 +10,12 @@
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB); i++) await W(100);
     await W(1000);
     var P = window.__stPractice, C = P._cfg();
-    var DB = { practice_trades: [], practice_settings: [] }, calls = [];
+    var DB = { practice_trades: [], practice_settings: [], practice_drawings: [] }, calls = [];
+    var keyOf = function (table, r) { return table === 'practice_trades' ? (r.user_id + '|' + r.client_id) : (table === 'practice_drawings' ? (r.user_id + '|' + r.sym) : r.user_id); };
     function q(table) {
-      var st = { table: table, op: 'select', rows: null, opts: null };
+      var st = { table: table, op: 'select', rows: null, opts: null, eq: {} };
       var b = {
-        select: function () { return b; }, order: function () { return b; }, limit: function () { return b; }, eq: function () { return b; },
+        select: function () { return b; }, order: function () { return b; }, limit: function () { return b; }, eq: function (k, v) { st.eq[k] = v; return b; },
         maybeSingle: function () { st.single = true; return b; },
         upsert: function (rows, opts) { st.op = 'upsert'; st.rows = Array.isArray(rows) ? rows : [rows]; st.opts = opts || {}; return b; },
         then: function (res, rej) {
@@ -22,14 +23,14 @@
           var T = DB[table];
           if (st.op === 'upsert') {
             st.rows.forEach(function (r) {
-              var key = table === 'practice_trades' ? (r.user_id + '|' + r.client_id) : r.user_id;
-              var at = -1; T.forEach(function (x, k) { if ((table === 'practice_trades' ? (x.user_id + '|' + x.client_id) : x.user_id) === key) at = k; });
+              var key = keyOf(table, r);
+              var at = -1; T.forEach(function (x, k) { if (keyOf(table, x) === key) at = k; });
               if (at >= 0) { if (!st.opts.ignoreDuplicates) T[at] = Object.assign({}, T[at], r); }
               else T.push(Object.assign({}, r));
             });
             return Promise.resolve({ data: null, error: null }).then(res, rej);
           }
-          var mine = T.filter(function (x) { return x.user_id === 'u-1'; });
+          var mine = T.filter(function (x) { return x.user_id === 'u-1' && Object.keys(st.eq).every(function (k) { return x[k] === st.eq[k]; }); });
           if (table === 'practice_trades') mine = mine.slice().sort(function (a, b) { return Date.parse(b.taken_at) - Date.parse(a.taken_at); });
           return Promise.resolve({ data: st.single ? (mine[0] || null) : mine, error: null }).then(res, rej);
         }
@@ -47,6 +48,12 @@
     DB.practice_trades.push(other);
     C.savedAt = Date.now() - 3600000;
     DB.practice_settings.push({ user_id: 'u-1', cfg: Object.assign({}, C, { stopPx: { EURUSD: 0.0007 }, tgtUnit: 'R', tgtR: 3 }), updated_at: new Date().toISOString() });
+
+    // drawings: the phone drew a level on EUR/USD a minute ago; this browser drew a zone on Gold before syncing existed
+    var phoneLine = { type: 'hline', price: 1.1324, text: 'from the phone' };
+    DB.practice_drawings.push({ user_id: 'u-1', sym: 'EURUSD', items: [phoneLine], updated_at: new Date(Date.now() - 60000).toISOString() });
+    DB.practice_drawings.push({ user_id: 'u-1', sym: 'XAUUSD', items: [{ type: 'hline', price: 2650 }], updated_at: new Date(Date.now() - 60000).toISOString() });
+    localStorage.setItem('st_practice_draw2:XAUUSD', JSON.stringify([{ type: 'rect', a: { t: 1789000000, price: 2640 }, b: { t: 1789010000, price: 2630 } }]));
 
     var changed = await P.pull(true);
     var log = P.log();
@@ -70,6 +77,19 @@
     await W(300);
     var mine = DB.practice_trades.filter(function (x) { return x.sym === 'EURUSD' && x.day === '2026-10-01'; });
     ok('the new trade is on the server once', mine.length === 2 && mine.filter(function (x) { return x.r === 2; }).length === 2, mine.map(function (x) { return x.client_id + ':' + x.r; }));
+    await W(300);
+    var DW = P._dr();
+    ok("the phone's EUR/USD drawing came down when EUR/USD opened", DW.list.length === 1 && DW.list[0].text === 'from the phone', DW.list);
+    document.getElementById('stpr-drawbtn').click(); document.querySelector('#stpr-tools [data-tool="hline"]').click();
+    var ch = P._panes()[0].el.querySelector('.stpr-pc'), rc = ch.getBoundingClientRect(), tg = document.elementFromPoint(rc.left + 200, rc.top + 150) || ch;
+    tg.dispatchEvent(new MouseEvent('mousedown', { clientX: rc.left + 200, clientY: rc.top + 150, bubbles: true, cancelable: true, button: 0, buttons: 1 }));
+    tg.dispatchEvent(new MouseEvent('mouseup', { clientX: rc.left + 200, clientY: rc.top + 150, bubbles: true, cancelable: true, button: 0 }));
+    await W(1900);
+    var srvE = DB.practice_drawings.filter(function (x) { return x.sym === 'EURUSD'; })[0];
+    ok('a line drawn here goes up to the server a moment later (both lines, newer stamp)', srvE && srvE.items.length === 2 && Date.parse(srvE.updated_at) > Date.now() - 10000, srvE && srvE.items.length);
+    await P._dwPull('XAUUSD'); await W(200);
+    var gold = JSON.parse(localStorage.getItem('st_practice_draw2:XAUUSD') || '[]'), srvG = DB.practice_drawings.filter(function (x) { return x.sym === 'XAUUSD'; })[0];
+    ok("the first sync of drawings made before syncing keeps both sets, here and on the server", gold.length === 2 && srvG.items.length === 2, [gold.length, srvG.items.length]);
     // a change in the Stop box goes up a moment later
     P._s().done = null; window.__stPractice._render();
     var sb2 = document.getElementById('stpr-stop'); sb2.value = '9.5'; sb2.dispatchEvent(new Event('input', { bubbles: true })); sb2.dispatchEvent(new Event('change', { bubbles: true }));
