@@ -17,6 +17,22 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
 const MAX_BARS = 5000;   // reject oversized batches (the EA chunks to ~3000)
 
+// Storage guard (15 Oct 2026). EA 8.95 fills a year of M1 and M5 per symbol - about 50 MB of M1 each - and the project is
+// on the free plan, whose database holds 500 MB (over it, everything goes read-only, members' journals included). Past
+// DEEP_CAP the DEEP part of an M1 / M5 batch (older than DEEP_AGE) is dropped; recent candles always go in, so today's
+// days never go empty. The EA is told "ok" either way, so it moves on instead of retrying the same batch.
+const DEEP_CAP = 400 * 1024 * 1024;
+const DEEP_AGE = 100 * 86400;
+let sizeAt = 0, sizeBytes = 0;
+async function dbBytes(): Promise<number> {
+  if (Date.now() - sizeAt < 10 * 60000) return sizeBytes;
+  try {
+    const r = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_db_bytes`, { method: "POST", headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` }, body: "{}" });
+    if (r.ok) { sizeBytes = Number(await r.json()) || 0; sizeAt = Date.now(); }
+  } catch { /* unknown: let it through */ }
+  return sizeBytes;
+}
+
 const CORS = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "POST, OPTIONS",
@@ -48,7 +64,7 @@ Deno.serve(async (req: Request): Promise<Response> => {
   // want parity with ingest-trade, validate `token` against your accounts table here
   // and 403 on an unknown token.
 
-  const rows: Array<Record<string, number | string>> = [];
+  let rows: Array<Record<string, number | string>> = [];
   for (const b of bars) {
     if (!Array.isArray(b) || b.length < 5) continue;
     // Every timeframe opens on a whole minute. Older EA builds sent some bars a second early,
@@ -60,6 +76,13 @@ Deno.serve(async (req: Request): Promise<Response> => {
     rows.push({ symbol, tf, t, o, h, l, c });
   }
   if (!rows.length) return json({ ok: true, upserted: 0 });
+  if (tf <= 5) {
+    const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;
+    if (deep && (await dbBytes()) > DEEP_CAP) {
+      rows = rows.filter((x) => Number(x.t) >= edge);
+      if (!rows.length) return json({ ok: true, upserted: 0, skipped: deep, reason: "storage cap" });
+    }
+  }
 
   const r = await fetch(`${SUPABASE_URL}/rest/v1/candles?on_conflict=symbol,tf,t`, {
     method: "POST",

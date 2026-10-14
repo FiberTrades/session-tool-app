@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.94"
+#property version   "8.95"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3544,7 +3544,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.94\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.95\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -4886,12 +4886,19 @@ void CE_CatchupOnce()
 //  TRADE REPLAY - DEEP HISTORY  (v8.7)
 //  For every symbol you trade, fills each timeframe back to a set depth - D1: everything the
 //  broker has - one batch at a time, and only while you have nothing open, so the EA is never
-//  held up while it manages a trade. Once a timeframe is full it is topped up hourly (not M1:
-//  three months of M1 is the storage-heavy one, so past that it stays per-trade as before).
+//  held up while it manages a trade. Once a timeframe is full it is topped up hourly.
 //  Candles are shared: each symbol is stored once for every Session Terminal member.
+//  v8.95 (Nestor, 15 Oct 2026: "can we have more 1m and 5m candles stored? same amount as 15m
+//  candles? so they never look empty?"): M1 and M5 go back a year like M15 (they were 3 and 6
+//  months, so Practice Replay's 1m / 5m charts had nothing on older days), and M1 is topped up
+//  hourly like the rest. A terminal that already finished at the old depth carries on from where
+//  it stopped (HB_Load). MT5 only hands over as many bars as Tools > Options > Charts > "Max. bars
+//  in chart" allows - a year of M1 is about 375,000, so that needs Unlimited; with less, the
+//  Experts tab says "nothing older on this terminal" and M1 stops there. The server keeps the
+//  shared store inside its plan: deep M1 / M5 is refused once the database passes its cap.
 //==================================================================
 string HB_FILE      = "MMReplayHist.csv";   // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
-long   HB_DEPTH[6]  = {91*86400, 182*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all
+long   HB_DEPTH[6]  = {365*86400, 365*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all (M1, M5: a year since 8.95)
 int    HB_POSTS_BAR = 2;                    // batches per M1 bar, at most (each is one blocking WebRequest)
 string g_hbSym[]; int g_hbSymN=0;
 string g_hbS[]; int g_hbT[]; long g_hbDep[]; long g_hbOld[]; long g_hbNew[]; int g_hbDone[]; long g_hbTop[]; int g_hbN=0;
@@ -5094,7 +5101,7 @@ bool HB_Back(int k)
 bool HB_Top(int k)
   {
    int ti=g_hbT[k];
-   if(ti==0 || g_hbNew[k]==0) return false;
+   if(g_hbNew[k]==0) return false;                    // M1 included since 8.95: Practice Replay needs it every day
    if((long)TimeCurrent()-g_hbTop[k] < 3600) return false;
    string sym=g_hbS[k];
    MqlRates r[];
@@ -6573,7 +6580,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.94 loaded (daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.95 loaded (a year of M1 and M5 for Practice Replay; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

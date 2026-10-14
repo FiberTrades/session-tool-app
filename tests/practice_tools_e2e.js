@@ -28,13 +28,12 @@
     P._goto('14:30');
     ok('Go to 14:30 plays the market to 14:30', hhmm(S().now) === '14:30', hhmm(S().now));
     document.getElementById('stpr-goto').click(); await W(30);
-    var hb = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-goh]'), function (x) { return x.textContent; });
-    ok('Go to opens a picker: the 24 hours from the 22:00 open, London tagged on 08', hb.length === 24 && hb[0] === '22Asia' && hb[10] === '08London' && hb[23] === '21', hb.join(' '));
-    document.querySelector('#stpr-menu [data-goh="9"]').click(); await W(30);
-    var mb = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-gom]'), function (x) { return x.textContent; });
-    ok('picking 09 shows its minutes, 09:00 to 09:55', mb.length === 12 && mb[0] === '09:00' && mb[11] === '09:55', mb.join(' '));
-    document.querySelector('#stpr-menu [data-gom="09:05"]').click(); await W(50);
-    ok('picking 09:05 goes back to 09:05 (no trade yet), closes the picker and the button shows the time', hhmm(S().now) === '09:05' && document.getElementById('stpr-gotot').textContent === '09:05' && !document.getElementById('stpr-menu').classList.contains('show'), [hhmm(S().now), document.getElementById('stpr-gotot').textContent]);
+    var hs = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-tph]'), function (x) { return x.textContent; }), ms = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-tpm]'), function (x) { return x.textContent; }), gb = document.querySelector('#stpr-menu [data-tpgo]');
+    ok('Go to opens a plain time picker: hours 00-23, minutes in 5s, the time now picked', hs.length === 24 && hs[0] === '00' && hs[23] === '23' && ms.length === 12 && ms[1] === '05' && gb && gb.textContent === 'Go to 14:30', [hs.length, ms.join(' '), gb && gb.textContent]);
+    document.querySelector('#stpr-menu [data-tph="9"]').click(); document.querySelector('#stpr-menu [data-tpm="5"]').click(); await W(20);
+    ok('picking 09 and 05 changes the button to Go to 09:05 (nothing moves yet)', gb.textContent === 'Go to 09:05' && hhmm(S().now) === '14:30', gb.textContent);
+    gb.click(); await W(50);
+    ok('Go to 09:05 goes back to 09:05 (no trade yet), closes the picker and the button shows the time', hhmm(S().now) === '09:05' && document.getElementById('stpr-gotot').textContent === '09:05' && !document.getElementById('stpr-menu').classList.contains('show'), [hhmm(S().now), document.getElementById('stpr-gotot').textContent]);
 
     // session times of their own
     document.getElementById('stpr-sesed').click(); await W(30);
@@ -64,7 +63,7 @@
     ok('scrolled back into history, playing does not pull the chart back', Math.abs(after0.from - hold0.from) < 0.01, [hold0, after0]);
     P._jump('ny'); await W(350);
     ok('a jump lines them up on now again', hhmm(atF(0)) === '13:25' && hhmm(atF(1)) === '13:00', [hhmm(atF(0)), hhmm(atF(1))]);
-    var fr0 = rng(0), last0 = pane(0).n - 1; P._step(); await W(60); var fr1 = rng(0);
+    var fr0 = rng(0), last0 = pane(0).n - 1; P._step(); for (var zz = 0; zz < 30 && Math.abs(rng(0).from - fr0.from) < 0.01; zz++) await W(100); var fr1 = rng(0);   // a busy headless browser can be slow to apply the view
     ok('with now on screen, each new candle slides the chart by one candle (now keeps its place)', Math.abs((fr1.from - fr0.from) - (pane(0).n - 1 - last0)) < 0.01 && pane(0).n - 1 - last0 === 1, [fr0.from, fr1.from]);
     var tb = pane(0).times.filter(function (t) { return hhmm(t) === '12:35' && new Date(t * 1000).getDate() === 1; })[0];
     mev(0, 'mousemove', P._xOfT(0, tb), 150); await W(60);
