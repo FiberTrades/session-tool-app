@@ -46,7 +46,7 @@
     var other = { user_id: 'u-1', client_id: 'phone-abc123', sym: 'XAUUSD', day: '2026-09-15', tf: 5, dir: 1, entry: 2600, entry_ts: 1789000000, exit_ts: 1789003600, r: -1, money: -100, why: 'sl', mae: 1, parts: 1, taken_at: new Date(Date.now() - 30000).toISOString() };
     DB.practice_trades.push(other);
     C.savedAt = Date.now() - 3600000;
-    DB.practice_settings.push({ user_id: 'u-1', cfg: Object.assign({}, C, { stop: { EURUSD: 7, XAUUSD: 400 }, tpVal: 3 }), updated_at: new Date().toISOString() });
+    DB.practice_settings.push({ user_id: 'u-1', cfg: Object.assign({}, C, { stopPx: { EURUSD: 0.0007 }, tgtUnit: 'R', tgtR: 3 }), updated_at: new Date().toISOString() });
 
     var changed = await P.pull(true);
     var log = P.log();
@@ -54,7 +54,8 @@
     ok("this browser's signed-out trade moved to the member and went up once", DB.practice_trades.filter(function (x) { return x.sym === 'EURUSD' && x.r === 2; }).length === 1 && !localStorage.getItem('st_practice_log'), DB.practice_trades.map(function (x) { return x.client_id + ':' + x.r; }));
     ok("the other device's trade came down", log.some(function (t) { return t.cid === 'phone-abc123' && t.r === -1; }) && log.length === 2, log.map(function (t) { return t.cid + ':' + t.r + ':' + t.synced; }));
     ok('both are marked as saved', log.every(function (t) { return t.synced; }));
-    ok("the newer settings from the other device were taken (stop 7, target 3R)", C.stop.EURUSD === 7 && C.tpVal === 3, { stop: C.stop.EURUSD, tpVal: C.tpVal });
+    C = P._cfg();
+    ok("the newer settings from the other device were taken (stop 7 pips, target 3R)", C.stopPx.EURUSD === 0.0007 && C.tgtR === 3, { stop: C.stopPx.EURUSD, tgtR: C.tgtR });
     ok('the Academy box counts both', P.stats().n === 2 && near(P.stats().netR, 1, 1e-9), P.stats());
 
     // A second pull on the same page does nothing (no extra requests)
@@ -62,9 +63,9 @@
     ok('a second pull on the same page asks nothing', again === false && calls.length === before, calls.slice(before));
 
     // A new trade here goes up when it closes, once, even if sent twice
-    await P.open({ symbol: 'EURUSD', tf: 5, day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._s().bars.length); k++) await W(100);
-    C.tpOn = true; C.tpVal = 2; C.stop.EURUSD = 12;
-    P._jump('london'); var g = 0; while (g++ < 60) { var tt = new Date(P._s().bars[P._s().cursor - 1].time * 1000); if (tt.getHours() === 8 && tt.getMinutes() === 15) break; P._step(); }
+    await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length); k++) await W(100);
+    C = P._cfg(); C.tgtOn = true; C.tgtUnit = 'R'; C.tgtR = 2; C.stopPx.EURUSD = 0.0012; C.stopUnit = 'pips';
+    P._jump('london'); var g = 0; while (g++ < 60) { var tt = new Date(P._s().now * 1000); if (tt.getHours() === 8 && tt.getMinutes() === 20) break; P._step(); }
     P._place(-1); g = 0; while (P._s().pos && g++ < 400) P._step();
     await W(300);
     var mine = DB.practice_trades.filter(function (x) { return x.sym === 'EURUSD' && x.day === '2026-10-01'; });
@@ -74,7 +75,7 @@
     var sb2 = document.getElementById('stpr-stop'); sb2.value = '9.5'; sb2.dispatchEvent(new Event('input', { bubbles: true })); sb2.dispatchEvent(new Event('change', { bubbles: true }));
     await W(1900);
     var sv = DB.practice_settings[0];
-    ok('a Stop box change is saved to the server', sv && sv.cfg && sv.cfg.stop && sv.cfg.stop.EURUSD === 9.5, sv && sv.cfg && sv.cfg.stop);
+    ok('a Stop box change is saved to the server (9.5 pips)', sv && sv.cfg && sv.cfg.stopPx && Math.abs(sv.cfg.stopPx.EURUSD - 0.00095) < 1e-9, sv && sv.cfg && sv.cfg.stopPx);
     ok('three trades in the log', P.log().length === 3, P.log().length);
 
     P.close();
