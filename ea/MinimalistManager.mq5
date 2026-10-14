@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.95"
+#property version   "8.96"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3544,7 +3544,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.95\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.96\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -4896,6 +4896,8 @@ void CE_CatchupOnce()
 //  in chart" allows - a year of M1 is about 375,000, so that needs Unlimited; with less, the
 //  Experts tab says "nothing older on this terminal" and M1 stops there. The server keeps the
 //  shared store inside its plan: deep M1 / M5 is refused once the database passes its cap.
+//  v8.96: a timeframe that stopped short of its depth is looked at again on every start (HB_Load),
+//  so raising "Max. bars in chart" and restarting MT5 carries on - before or after M1's turn.
 //==================================================================
 string HB_FILE      = "MMReplayHist.csv";   // sym,tf index,depth,oldest sent,newest sent,done,last top-up (server time)
 long   HB_DEPTH[6]  = {365*86400, 365*86400, 365*86400, 3*365*86400, 5*365*86400, 0};   // M1..D1 before now; 0 = all (M1, M5: a year since 8.95)
@@ -4942,6 +4944,10 @@ void HB_Load()
       int k=HB_Idx(sym,ti);
       g_hbOld[k]=old; g_hbNew[k]=nw; g_hbDone[k]=done; g_hbTop[k]=top;
       if(dep!=HB_DEPTH[ti]) g_hbDone[k]=0;   // a later build asked for more: carry on from where it stopped
+      // 8.96: it stopped SHORT of the depth (MT5's "Max. bars in chart", or the broker's history still arriving) - look
+      // again on every start, so raising that setting and restarting MT5 carries on whenever it is done. A terminal that
+      // truly has nothing older costs one empty CopyRates per start.
+      if(g_hbDone[k] && HB_DEPTH[ti]>0 && old>0 && old > (long)TimeCurrent()-HB_DEPTH[ti]+7*86400) g_hbDone[k]=0;
       g_hbDep[k]=HB_DEPTH[ti];
       HB_AddSymbol(sym);
      }
@@ -6580,7 +6586,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.95 loaded (a year of M1 and M5 for Practice Replay; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.96 loaded (a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
