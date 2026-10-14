@@ -1930,6 +1930,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   body.mentor-viewing .toast,
   body.mentor-viewing #rule-backdrop,
   body.mentor-viewing #skip-nudge-banner,
+  body.mentor-viewing #ea-update-banner,
   body.mentor-viewing #new-session-modal-bg,
   body.mentor-viewing .st-welcome,
   body.mentor-viewing .st-tour-ov,
@@ -3456,6 +3457,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
     .billing-banner-act { margin-right: auto; }
     .billing-banner-x { position: absolute; top: 6px; right: 8px; padding: 6px; }
   }
+  /* A newer Minimalist Manager EA on the MQL5 Market (14 Oct 2026, window.__stEAUpdate). The billing banner's shape
+     in the info blue: news about a tool, not a problem with the member's trading or their payment. */
+  .ea-update-banner { border-color: rgba(96,165,250,0.38); border-left-color: var(--info); background: rgba(96,165,250,0.08); }
+  .ea-update-banner .billing-banner-ic, .ea-update-banner .billing-banner-text b { color: var(--info); }
+  .ea-update-banner .billing-banner-act { border-color: var(--info); color: var(--info); }
+  .ea-update-banner .billing-banner-act:hover { background: var(--info); color: #17151d; }
   .rule-banner-eyebrow { font-size: 10px; letter-spacing: 0.3em; text-transform: uppercase; color: var(--text-dim); flex-shrink: 0; }
   .rule-banner-text { flex: 0 1 auto; font-family: 'Fraunces', serif; font-size: 14px; color: var(--text); line-height: 1.45; }
   /* Inline bias date picker — lives in the section-01 header, right-aligned, no surrounding box. */
@@ -6117,6 +6124,12 @@ try {
       <span class="billing-banner-text" id="billing-banner-text"></span>
       <button type="button" class="billing-banner-act" id="billing-banner-fix"></button>
       <button type="button" class="billing-banner-x" id="billing-banner-x" aria-label="Dismiss">&times;</button>
+    </div>
+    <div class="billing-banner ea-update-banner" id="ea-update-banner" role="status">
+      <span class="billing-banner-ic" aria-hidden="true"><svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19.5h14"/></svg></span>
+      <span class="billing-banner-text" id="ea-update-text"></span>
+      <button type="button" class="billing-banner-act" id="ea-update-go"></button>
+      <button type="button" class="billing-banner-x" id="ea-update-x" aria-label="Dismiss">&times;</button>
     </div>
 
     <div class="meta">
@@ -20198,7 +20211,7 @@ try {
                  settings: GROUPS.map(function (g) { return t(g.label) + ': ' + g.fmt(x); }).join('; ') };
       });
     }
-    function apply(r) { if (!r || !r.login || !r.settings) return; rows[key(r)] = r; }
+    function apply(r) { if (!r || !r.login || !r.settings) return; rows[key(r)] = r; try { if (window.__stEAUpdate) window.__stEAUpdate.soon(); } catch (e) {} }
     function logged(r) {
       if (!r || r.id == null) return;
       if (log.some(function (c) { return c.id === r.id; })) return;
@@ -20249,6 +20262,98 @@ try {
     return { apply: apply, logged: logged, summary: summary, riskFor: riskFor, copier: copier, fmtRisk: fmtRisk, fmtDist: fmtDist, describe: describe, unitOf: unitOf,
              loaded: loaded, ready: function () { return seeded; }, whenReady: whenReady,
              rows: function () { return rows; }, log: function () { return log; } };
+  })();
+
+  /* ===== "A newer EA is ready" (14 Oct 2026) =====
+     Nestor, after seeing that a competitor's EA updates itself: "yes do this one!!". Members install the EA once and keep
+     that build, so whatever needs a newer one (the live P/L, the live chart, newer nudges) quietly never reaches them.
+     Each EA reports its version with its settings every 5 minutes (ea_settings.ea_version, EA 8.6+). The version on
+     the MQL5 Market comes from the ea-version function (it reads the product page at most every 6 hours) - the Market,
+     not the newest build anyone runs, because Nestor runs his builds before MQL5 has approved them.
+     Shown when any MT5 login heard from in the last 7 days runs an older EA; its newest report per login counts (a
+     chart taken off the EA stops reporting). x hides it for 3 days for that version. Nothing shows when the Market
+     cannot be read. EA versions are decimals as Nestor numbers them (8.5 < 8.72 < 8.9 = 8.90 < 8.94). */
+  window.__stEAUpdate = (function () {
+    var PRODUCT = 'https://www.mql5.com/en/market/product/180026';
+    var LS = 'st_ea_market', HUSH = 'st_ea_update_hush', FRESH = 6 * 3600000, ACTIVE = 7 * 86400000, HUSH_MS = 3 * 86400000;
+    var market = null, asking = false, wired = false, timer = null;
+    function num(v) { var n = parseFloat(String(v == null ? '' : v).replace(/[^0-9.]/g, '')); return isFinite(n) ? n : NaN; }
+    function older(a, b) { var x = num(a), y = num(b); return isFinite(x) && isFinite(y) && x < y - 1e-9; }
+    function T(en, es) { try { return window._stT(en, es); } catch (e) { return en; } }
+    function esc(v) { return String(v == null ? '' : v).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+    // Each MT5 login's newest report from the last 7 days: { login, v, up }
+    function active() {
+      var rows = (window.__stEA && window.__stEA.rows) ? window.__stEA.rows() : {}, per = {}, now = Date.now();
+      Object.keys(rows).forEach(function (k) {
+        var r = rows[k], up = Date.parse(r.updated_at), L = String(r.login || '');
+        if (!L || !r.ea_version || !(isFinite(up) && now - up < ACTIVE)) return;
+        if (!per[L] || up > per[L].up) per[L] = { login: L, v: String(r.ea_version), up: up };
+      });
+      return Object.keys(per).map(function (L) { return per[L]; });
+    }
+    function nameOf(login) {
+      try {
+        var id = (data.mt5LoginMap || {})[String(login)];
+        var a = id && Array.isArray(data.accounts) ? data.accounts.find(function (x) { return x && x.id === id; }) : null;
+        if (a && a.name) return a.name;
+      } catch (e) {}
+      return String(login);
+    }
+    function cached() {
+      try { var c = JSON.parse(localStorage.getItem(LS) || 'null'); if (c && c.v && Date.now() - c.at < FRESH) return c; } catch (e) {}
+      return null;
+    }
+    function fetchMarket(done) {
+      var c = cached(); if (c) { market = c; done(); return; }
+      var sb = window.__stSB; if (asking || !sb || !sb.functions) return;
+      asking = true;
+      sb.functions.invoke('ea-version', { body: {} }).then(function (res) {
+        asking = false;
+        var d = res && res.data;
+        if (d && typeof d.version === 'string' && /^[0-9]+(\.[0-9]+)+$/.test(d.version)) {
+          market = { v: d.version, url: d.url || PRODUCT, at: Date.now() };
+          try { localStorage.setItem(LS, JSON.stringify(market)); } catch (e) {}
+          done();
+        }
+      }, function () { asking = false; });
+    }
+    function hushed() {
+      try { var h = JSON.parse(localStorage.getItem(HUSH) || 'null'); return !!(h && market && h.v === market.v && Date.now() - h.at < HUSH_MS); } catch (e) { return false; }
+    }
+    // The text of the line, or '' when nothing is behind. Kept apart from the page so a test can read it.
+    function text(list, all) {
+      if (!market || !list.length) return '';
+      var head = '<b>' + T('A newer Minimalist Manager EA is ready: ', 'Hay una versi\u00f3n nueva del EA Minimalist Manager: ') + esc(market.v) + '.</b> ';
+      var yours;
+      if (list.length === 1 && all.length === 1) yours = T('Yours is ', 'La tuya es la ') + esc(list[0].v) + '. ';
+      else if (list.length === 1) yours = T('Yours on ', 'La tuya en ') + esc(nameOf(list[0].login)) + T(' is ', ' es la ') + esc(list[0].v) + '. ';
+      else yours = T('Yours is older on ', 'La tuya es m\u00e1s antigua en ') + list.map(function (p) { return esc(nameOf(p.login)) + ' (' + esc(p.v) + ')'; }).join(', ') + '. ';
+      return head + yours + T('Update it from the MQL5 Market, then restart MT5 so your charts load it. Your token and settings stay.',
+                              'Actual\u00edzalo desde el Mercado MQL5 y reinicia MT5 para que tus gr\u00e1ficos lo carguen. Tu token y tus ajustes se mantienen.');
+    }
+    function render() {
+      var el = document.getElementById('ea-update-banner'); if (!el) return;
+      var all = active(), list = market ? all.filter(function (p) { return older(p.v, market.v); }) : [];
+      var show = !!(window.currentUser && list.length && !hushed());
+      el.classList.toggle('show', show);
+      if (!show) return;
+      var txt = document.getElementById('ea-update-text'); if (txt) txt.innerHTML = text(list, all);
+      var go = document.getElementById('ea-update-go'); if (go) go.textContent = T('Get ', 'Obtener ') + market.v;
+      if (wired) return;
+      wired = true;
+      if (go) go.addEventListener('click', function () { try { window.open((market && market.url) || PRODUCT, '_blank', 'noopener'); } catch (e) {} });
+      var x = document.getElementById('ea-update-x');
+      if (x) x.addEventListener('click', function () {
+        try { localStorage.setItem(HUSH, JSON.stringify({ v: market && market.v, at: Date.now() })); } catch (e) {}
+        el.classList.remove('show');
+      });
+    }
+    // Only a member whose EA has reported asks for the Market's version.
+    function check() { if (!active().length) { render(); return; } if (market && Date.now() - market.at < FRESH) render(); else fetchMarket(render); }
+    function soon() { clearTimeout(timer); timer = setTimeout(function () { try { check(); } catch (e) {} }, 400); }
+    try { if (window.__stEA && window.__stEA.whenReady) window.__stEA.whenReady(soon); } catch (e) {}
+    // forget(): what a fresh page load starts with (no Market answer in memory) - for the test.
+    return { check: check, soon: soon, text: text, older: older, active: active, market: function () { return market; }, forget: function () { market = null; } };
   })();
 
   function tradeRforMath(t) {
