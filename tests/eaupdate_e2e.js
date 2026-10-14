@@ -54,18 +54,21 @@
     ok('no second Market request inside six hours', calls === 1, { calls: calls });
 
     // Two logins, one behind
-    window.__stEA.apply({ login: '1514906945', symbol: 'XAUUSD', settings: {}, ea_version: '8.93', updated_at: iso(3600000) });
+    window.__stEA.apply({ login: '1514906945', symbol: 'XAUUSD', settings: {}, ea_version: '8.93', updated_at: iso(10 * 60000) });
     await W(800);
     ok('two logins, one on 8.93: the line names that one', shown() && /Yours on 1514906945 is 8\.93\./.test(txt()), txt());
 
-    // A login silent for 10 days does not count
-    window.__stEA.apply({ login: '1514906945', symbol: 'XAUUSD', settings: {}, ea_version: '8.93', updated_at: iso(10 * 86400000) });
-    window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: {}, ea_version: '8.5', updated_at: iso(9 * 86400000) });
+    // Switched-off terminals do not count: Nestor's two demo logins, last heard 70 and 156 hours ago on 8.93 and 8.92
+    window.__stEA.apply({ login: '1514906945', symbol: 'XAUUSD', settings: {}, ea_version: '8.93', updated_at: iso(70 * 3600000) });
+    window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: {}, ea_version: '8.92', updated_at: iso(156 * 3600000) });
     await W(800);
-    ok('EAs not heard from for over a week are left out', !shown(), txt());
+    ok('MT5s switched off (silent for hours) are left out', !shown(), txt());
+    window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: {}, ea_version: '8.92', updated_at: iso(45 * 60000) });
+    await W(800);
+    ok('an EA silent for 45 minutes is left out too (running EAs report every 5)', !shown(), txt());
 
     // A chart taken off the EA keeps its old row; the login's newest report decides
-    window.__stEA.apply({ login: '541419576', symbol: 'GBPUSD', settings: {}, ea_version: '8.88', updated_at: iso(2 * 86400000) });
+    window.__stEA.apply({ login: '541419576', symbol: 'GBPUSD', settings: {}, ea_version: '8.88', updated_at: iso(20 * 60000) });
     window.__stEA.apply({ login: '541419576', symbol: 'EURUSD', settings: {}, ea_version: '8.94', updated_at: iso(60000) });
     await W(800);
     ok('one login: its newest report (8.94) counts, not an old chart (8.88)', !shown(), txt());
