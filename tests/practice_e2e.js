@@ -66,7 +66,7 @@
     await W(300);
     var hits = pane()._news || []; ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect();
     ok('the 08:00 release has its disc, the 13:30 one not yet', hits.length === 1 && hits[0].e.title === 'Test PMI', { hits: hits.map(function (h) { return h.e.title; }), rows: P._newsRows().length, x: P._xOfT(0, 1790838000), now: S().now, w: pane().el.clientWidth, layout: P._panes().length });
-    if (hits[0]) { ch.dispatchEvent(new PointerEvent('pointermove', { clientX: r.left + hits[0].x, clientY: r.top + hits[0].y, bubbles: true, pointerId: 8, pointerType: 'mouse' })); await W(30); }
+    if (hits[0]) { (document.elementFromPoint(r.left + hits[0].x, r.top + hits[0].y) || ch).dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + hits[0].x, clientY: r.top + hits[0].y, bubbles: true })); await W(30); }
     var card = pane().el.querySelector('.strp-newscard');
     ok('hovering it shows the card with Actual / Forecast / Previous', card && card.style.display === 'block' && /EUR · Test PMI/.test(card.textContent) && /51\.0/.test(card.textContent), card && card.textContent);
 
@@ -127,21 +127,23 @@
     ok('after Show the rest the day is finished and every chart has auto-fit back on (the view itself: see the screenshot check)', S().now === S().f.close && !lost.length, lost);
     await P._layout(1); await W(300);
 
-    // drawings
-    await openDay(); P._jump('london');
-    var DR = P._dr(); DR.list = []; DR.hist = ['[]']; DR.hpos = 0;
+    // drawings: Trade Replay's tools, placed click, click (all of it in practice_tools_e2e.js)
+    await openDay(); P._jump('london'); await W(300);
+    var DW = P._dr(); DW.list = []; DW.hist = ['[]']; DW.hpos = 0; DW.sel = null;
     document.getElementById('stpr-drawbtn').click();
     document.querySelector('#stpr-tools [data-tool="trend"]').click();
     ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect();
-    var ev = function (t, xx, yy) { ch.dispatchEvent(new PointerEvent(t, { clientX: r.left + xx, clientY: r.top + yy, bubbles: true, pointerId: 7, pointerType: 'mouse' })); };
-    ev('pointerdown', 200, 150); ev('pointermove', 300, 220); ev('pointerup', 300, 220); await W(50);
-    ok('a trend line is drawn with the Trade Replay tool', DR.list.length === 1 && DR.list[0].type === 'trend' && DR.tool === null, DR.list);
-    document.querySelector('#stpr-tools [data-tool="hline"]').click(); ev('pointerdown', 250, 260); ev('pointerup', 250, 260); await W(30);
-    ok('a horizontal line with one click', DR.list.length === 2 && DR.list[1].type === 'hline');
+    var mev = function (t, xx, yy) { var el = document.elementFromPoint(r.left + xx, r.top + yy) || ch; el.dispatchEvent(new MouseEvent(t, { clientX: r.left + xx, clientY: r.top + yy, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' ? 1 : 0 })); };
+    mev('mousedown', 200, 150); mev('mouseup', 200, 150); mev('mousemove', 300, 220); mev('mousedown', 300, 220); mev('mouseup', 300, 220); await W(50);
+    ok('a trend line is placed click, click, like Trade Replay, and stays selected', DW.list.length === 1 && DW.list[0].type === 'trend' && DW.tool === 'none' && DW.sel === 0, DW.list);
+    var box = pane().el.querySelector('.stpr-props');
+    ok("its options box opens: Trade Replay's eight colours", box && box.style.display === 'flex' && box.querySelectorAll('[data-col]').length === 8);
+    document.querySelector('#stpr-tools [data-tool="hline"]').click(); mev('mousedown', 250, 260); mev('mouseup', 250, 260); await W(30);
+    ok('a horizontal line with one click', DW.list.length === 2 && DW.list[1].type === 'hline');
     document.getElementById('stpr-undo').click();
-    ok('undo takes it away, redo brings it back', DR.list.length === 1 && (document.getElementById('stpr-redo').click(), DR.list.length === 2));
-    ev('pointerdown', 250, 260); ev('pointerup', 250, 260);
-    ok('a click on it selects it, Delete removes it', DR.sel && DR.sel.type === 'hline' && (document.getElementById('stpr-del').click(), DR.list.length === 1));
+    ok('undo takes it away, redo brings it back', DW.list.length === 1 && (document.getElementById('stpr-redo').click(), DW.list.length === 2));
+    DW.sel = null; mev('mousedown', 250, 260); mev('mouseup', 250, 260);
+    ok('a click on it selects it, Delete removes it', DW.sel === 1 && (document.getElementById('stpr-del').click(), DW.list.length === 1));
 
     // a stop-out and Gold
     S().exec = false; S().pv = null; stepTo('08:20'); P._place(1); playOut();
