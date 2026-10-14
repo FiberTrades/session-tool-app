@@ -28,23 +28,6 @@
     ok('the new window opens straight into Practice Replay, full window, at the same time and with the same two charts', fs && fs.day === '2026-10-01' && fs.now === now && fbg.classList.contains('max') && fbg.classList.contains('popped') && fw.__stPractice._panes().length === 2, fs && { day: fs.day, now: fs.now, want: now, cls: fbg.className });
     ok('there it has no Maximise or New window button', fw && fw.getComputedStyle(fw.document.getElementById('stpr-pop')).display === 'none' && fw.getComputedStyle(fw.document.getElementById('stpr-max')).display === 'none');
     fr.remove();
-    // an old day, Random day, and only the X closes it (moved here from practice_tools_e2e.js: one run has 4 minutes)
-    var S = function () { return P._s(); }, pane = function (i) { return P._panes()[i || 0]; }, k;
-    C = P._cfg(); C.max = false; await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (k = 0; k < 100 && !(S() && pane(0) && pane(0).n); k++) await W(100);
-    // only the X closes it
-    var bgx = document.getElementById('stpr-bg'); bgx.dispatchEvent(new MouseEvent('click', { bubbles: true }));
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(50);
-    ok('a click outside the box and Escape do not close it', bgx.classList.contains('show') && !!S());
-
-    // a day older than the 1m and 5m candles
-    await P._layout(1); C.tfs[0] = 1; await P.open({ symbol: 'EURUSD', day: '2026-03-18' }); for (k = 0; k < 100 && !(S() && S().day === '2026-03-18' && pane(0) && pane(0).n); k++) await W(100); await W(200);
-    var note = pane(0).el.querySelector('.stpr-tfnote');
-    ok('18 Mar has only 15m: the 1m chart shows 15m candles and says why', S().baseTf === 15 && pane(0).tf === 15 && pane(0).want === 1 && pane(0).n > 50 && note && /1m candles start .*28 Jun/.test(note.textContent) && /showing 15m/.test(note.textContent), note && note.textContent);
-    ok('and the clock says UTC for a March day in London, not UTC+1', / UTC$/.test(document.getElementById('stpr-when').textContent), document.getElementById('stpr-when').textContent);
-    await P._random('EURUSD'); for (k = 0; k < 100 && !(S() && S().day !== '2026-03-18' && pane(0) && pane(0).n); k++) await W(100);
-    ok('Random day with a 1m chart picks a day that has 1m candles', S().baseTf === 1 && S().day >= '2026-06-29' && pane(0).tf === 1 && !pane(0).el.querySelector('.stpr-tfnote'), S().day);
-    document.getElementById('stpr-close').click(); await W(150);
-    ok('the X closes it', !document.getElementById('stpr-bg').classList.contains('show'));
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return JSON.stringify(out);

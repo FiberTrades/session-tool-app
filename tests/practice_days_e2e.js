@@ -1,0 +1,38 @@
+(async function () {
+  // Practice Replay on days older than the 1m candles, Random day, and only the X closes it (15 Oct 2026). Nestor: "why do
+  // the 1m and 5m look broken?", "only exit the box when clicking on the X". Split from practice_window_e2e.js: one run
+  // has a 4-minute limit.
+  // Run: python tests/browser_test.py tests/practice_days_e2e.js
+  var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
+  try {
+    for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB); i++) await W(100);
+    await W(1000);
+    var P = window.__stPractice, C = P._cfg(); C.layout = 1; C.tfs = [5, 60, 15, 240];
+    // an old day, Random day, and only the X closes it (moved here from practice_tools_e2e.js: one run has 4 minutes)
+    var S = function () { return P._s(); }, pane = function (i) { return P._panes()[i || 0]; }, k;
+    C = P._cfg(); C.max = false; await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (k = 0; k < 100 && !(S() && pane(0) && pane(0).n); k++) await W(100);
+    // only the X closes it
+    var bgx = document.getElementById('stpr-bg'); bgx.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(50);
+    ok('a click outside the box and Escape do not close it', bgx.classList.contains('show') && !!S());
+
+    // a day older than the 1m candles (the store keeps growing - EA 8.95 fills a year - so the day is worked out from it)
+    var sy = (P._syms() || []).filter(function (x) { return x.key === 'EURUSD'; })[0], f1 = sy && sy.tf[1] && sy.tf[1][0], fc = sy && (sy.tf[15] || sy.tf[5]) && (sy.tf[15] || sy.tf[5])[0];
+    var od = new Date(((f1 || 0) - 5 * 86400) * 1000); while (od.getDay() === 0 || od.getDay() === 6) od.setDate(od.getDate() - 1);
+    var oday = od.getFullYear() + '-' + String(od.getMonth() + 1).padStart(2, '0') + '-' + String(od.getDate()).padStart(2, '0');
+    if (f1 && fc && od.getTime() / 1000 > fc + 2 * 86400) {
+      await P._layout(1); C.tfs[0] = 1; await P.open({ symbol: 'EURUSD', day: oday }); for (k = 0; k < 100 && !(S() && S().day === oday && pane(0) && pane(0).n); k++) await W(100); await W(200);
+      var note = pane(0).el.querySelector('.stpr-tfnote');
+      ok('a day before the first 1m candle (' + oday + '): the 1m chart shows the finest candles there are and says why', S().baseTf > 1 && pane(0).tf === S().baseTf && pane(0).want === 1 && pane(0).n > 50 && note && /1m candles start/.test(note.textContent) && new RegExp('showing ' + (S().baseTf === 5 ? '5m' : '15m')).test(note.textContent), note && note.textContent);
+      var off = -new Date(S().now * 1000).getTimezoneOffset(), tz = off ? 'UTC' + (off > 0 ? '+' : '-') + Math.floor(Math.abs(off) / 60) : 'UTC';
+      ok('and the clock names the offset of that day (' + tz + ')', new RegExp(' ' + tz.replace('+', '\\+') + '$').test(document.getElementById('stpr-when').textContent), document.getElementById('stpr-when').textContent);
+    } else { ok('a day before the first 1m candle: none left to try (1m reaches as far back as the coarser candles)', true); ok('and the clock names the offset of that day', true); }
+    await P._random('EURUSD'); for (k = 0; k < 100 && !(S() && S().day !== oday && pane(0) && pane(0).n); k++) await W(100);
+    ok('Random day with a 1m chart picks a day that has 1m candles', S().baseTf === 1 && pane(0).tf === 1 && !pane(0).el.querySelector('.stpr-tfnote'), S().day);
+    document.getElementById('stpr-close').click(); await W(150);
+    ok('the X closes it', !document.getElementById('stpr-bg').classList.contains('show'));
+    try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
+  } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
+  return JSON.stringify(out);
+})()
