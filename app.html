@@ -16494,6 +16494,21 @@ try {
       syncTopLevelToActiveAccount();
       loadAccountIntoTopLevel(otherActive.id);
     }
+    // Its broker trades are answered, not missing (Nestor, 15 Oct 2026: after he deleted two archived accounts the app said
+    // he had trades to sync, from those very accounts). The tickets its trades wore go on the import's handled lists, and
+    // its MT5 logins are remembered with the moment it went (data.mt5GoneLogins): nothing those logins closed before then
+    // is offered, counted as waiting, or listed as missing from the journal again. A trade one of them closes LATER is still
+    // offered (into an account that exists). Undo restores all of it from the snapshot.
+    try {
+      const _tks = [];
+      const _wear = t => { if (t && t.accountId === id && t.mt5Ticket != null && _tks.indexOf(String(t.mt5Ticket)) < 0) _tks.push(String(t.mt5Ticket)); };
+      (data.currentSeries || []).forEach(_wear); (data.history || []).forEach(s => (s.trades || []).forEach(_wear));
+      try { allReviewTrades(false).forEach(_wear); } catch (e) {}
+      const _add = (k) => { data[k] = (data[k] || []).filter(x => _tks.indexOf(String(x)) < 0).concat(_tks); };
+      if (_tks.length) { _add('mt5UserDismissed'); _add('mt5ImportedTickets'); data.mt5ForceOffer = (data.mt5ForceOffer || []).filter(x => _tks.indexOf(String(x)) < 0); }
+      const _map = data.mt5LoginMap || {}, _now = new Date().toISOString();
+      Object.keys(_map).forEach(l => { if (_map[l] === id) { data.mt5GoneLogins = Object.assign({}, data.mt5GoneLogins || {}); data.mt5GoneLogins[l] = _now; delete _map[l]; } });
+    } catch (e) {}
     // Strip every trade tagged to this account from both pools. Legacy
     // untagged trades (no accountId field) are left untouched — they belong
     // to no specific account, so deleting one shouldn't sweep them up.
@@ -51987,6 +52002,16 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   // this one. mt5IgnoreLifted wins, mirroring how mt5ForceOffer overrides mt5UserDismissed: ties
   // resolve towards the trade being VISIBLE, because a trade reappearing in the list is something
   // you can see and act on, while one silently vanishing is the failure this panel exists to stop.
+  // A broker trade from the login of an account that was deleted, closed before it was deleted: answered (see deleteAccount).
+  function _mt5GoneRow(r) {
+    try {
+      const g = r && r.login != null ? (data.mt5GoneLogins || {})[String(r.login)] : null;
+      if (!g) return false;
+      const c = Date.parse(r.close_time || r.open_time || '');
+      return !isFinite(c) || c <= Date.parse(g);
+    } catch (e) { return false; }
+  }
+  try { window.__stMt5GoneRow = _mt5GoneRow; } catch (e) {}
   function _mt5IsIgnored(ticket) {
     try {
       const tk = String(ticket);
@@ -52006,6 +52031,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // first journalled day is never dropped by a timezone boundary.
       if (start !== null) { const d = _mt5Day(r.close_time); if (d !== null && d < start - 1) return false; }
       if (_mt5IsIgnored(r.ticket)) return false;   // answered: stop listing it and stop counting it
+      if (_mt5GoneRow(r)) return false;            // its account was deleted: answered too
       if (binTk.has(String(r.ticket))) return false;   // deleted from the Trade Log: it is in Deleted trades, not missing
       return !worn.has(String(r.ticket)) && !_mt5RowMatchesLogged(r, idx) && !_mt5RowAllowed(r);
     });
@@ -52124,7 +52150,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // must still be offered — otherwise an orphaned winner can never be imported.
       const have = _existingMt5Tickets(false);
       const haveLedger = _existingMt5Tickets(true);
-      const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
+      const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)) && !_mt5GoneRow(r));
       if (!fresh.length) {
         // Diagnostic: say exactly why each cloud row is excluded, so a stuck trade is explainable
         // instead of a flat "already imported". consumed = cloud marked it done; worn = a logged
@@ -52183,7 +52209,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
         // WEARS, not the imported-ledger (includeLedger=false), so a trade the pairing step
         // stranded in the ledger still surfaces its prompt instead of being silently skipped.
         const have = (typeof _existingMt5Tickets === 'function') ? _existingMt5Tickets(false) : new Set();
-        const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)));
+        const fresh = rows.filter(r => _mt5RowIsValid(r) && !have.has(String(r.ticket)) && !(window.__stMt5GoneRow && window.__stMt5GoneRow(r)));
         if (!fresh.length) return;
         // Nudge once per unique waiting ticket (per app session), not once per day: a trade that
         // closes long AFTER the session ends still surfaces its prompt on its own, but dismissing
