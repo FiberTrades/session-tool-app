@@ -30437,11 +30437,13 @@ try {
       if (!passTier) return 'data';
       const d = _uSum(sc) - _uSum(current);
       if (!(d > _thrR())) return 'no';
+      if (!_runs(sc).ok) return 'no';   // its losing runs would break or nearly use up an account's limit
       return concentrationOf(deltaWithoutBestTrade(sc, current, allTrades)) ? 'no' : 'yes';
     }
     function _row(k, v) { return v ? '<div class="cr-row"><span class="cr-k">' + k + '</span><span class="cr-v">' + v + '</span></div>' : ''; }
     function _card(p) {
-      const why = (p.why || []).filter(Boolean).map(x => '<span class="cr-li">' + x + '</span>').join('');
+      const _rk = p.sc ? _runs(p.sc) : null;   // a losing-run "no" leads the reasons
+      const why = ((_rk && !_rk.ok) ? [_rk.why] : []).concat(p.why || []).filter(Boolean).map(x => '<span class="cr-li">' + x + '</span>').join('');
       return _row(p.ideaLabel || t('cr.idea'), p.idea) + _row(t('cr.result'), p.result)
         + (p.extra || []).map(e => _row(e[0], e[1])).join('')
         + (p.sc ? _row(t('cr.runs'), _runsRow(p.sc)) : '')
@@ -30453,7 +30455,17 @@ try {
        the longest run of losses with the rule against now (where and when, what it costs at the trader's own risk and at 1%
        a trade), and each prop account checked against its own daily and overall limits by the app's prop checker
        (__stPropStatus) with the rule's results in place of the real ones. */
-    function _runsRow(sc) {
+    /* ...and it DECIDES (Nestor, 15 Oct 2026: "you must take this new metric into account to recommend changing strategies!!!").
+       A rule is not recommended when, with it, a prop account would have broken a daily or overall limit it really kept, or
+       when it makes the losing run longer and that one run alone would use more than half of the account's overall limit
+       (its firm's maximum drawdown; 10% of the account where none is set). Card status, the Overall box and its reason all
+       read this one answer, so they cannot disagree. Memoised per scenario: each card asks more than once. */
+    const _runsMemo = new Map();
+    function _runsRow(sc) { return _runs(sc).html; }
+    function _runs(sc) {
+      if (!sc) return { html: '', ok: true, why: '', reason: '' };
+      if (_runsMemo.has(sc)) return _runsMemo.get(sc);
+      let res = { html: '', ok: true, why: '', reason: '' };
       try {
         const su = sc.perTradeUnits || [], sg = sc.perTradeGbp || [], cu = (current && current.perTradeUnits) || [];
         const es = (window.__lang === 'es'), T2 = (a, b) => (es ? b : a);
@@ -30464,23 +30476,40 @@ try {
         const longest = (ids, u) => { let best = 0, run = 0, from = 0, bf = 0, bt = -1;
           ids.forEach((i, j) => { if ((Number(u[i]) || 0) < -0.05) { if (!run) from = j; run++; if (run > best) { best = run; bf = from; bt = j; } } else run = 0; });
           return { n: best, ids: best ? ids.slice(bf, bt + 1) : [] }; };
-        let pick = null;
-        Object.keys(byAcc).forEach(k => { const a = longest(byAcc[k], su), b = longest(byAcc[k], cu);
-          if (!pick || a.n > pick.a.n || (a.n === pick.a.n && (a.n - b.n) > (pick.a.n - pick.b.n))) pick = { k: k, a: a, b: b }; });
         const accOf = k => (Array.isArray(data.accounts) ? data.accounts : []).find(x => x && x.id === k) || null;
         const nm = k => { const a = accOf(k); return a && a.name ? a.name : ''; };
         const dShort = tr => new Date(tr.date).toLocaleDateString(tLocale(), { day: 'numeric', month: 'short' });
+        // the account's overall loss limit: its firm's maximum drawdown, else 10% of the account
+        const limitOf = acc => {
+          if (!acc) return { amt: 0, firm: false };
+          const rr = acc.riskRules || {}, sb = parseFloat(acc.startingBalance) || 0;
+          const mode = (rr.maxDrawdownMode === 'amount' || rr.maxDrawdownMode === 'pct') ? rr.maxDrawdownMode : ((rr.maxDrawdownAmount > 0 && !(rr.maxDrawdownPct > 0)) ? 'amount' : 'pct');
+          const p = Number(rr.maxDrawdownPct), amt = mode === 'amount' ? (Number(rr.maxDrawdownAmount) || 0) : (p > 100 ? p : (p > 0 && sb > 0 ? sb * p / 100 : 0));
+          return amt > 0 ? { amt: amt, firm: true } : { amt: sb > 0 ? sb * 0.1 : 0, firm: false };
+        };
+        const accs = Object.keys(byAcc).map(k => {
+          const a = longest(byAcc[k], su), b = longest(byAcc[k], cu), money = a.ids.reduce((t2, i) => t2 + (Number(sg[i]) || 0), 0), lim = limitOf(accOf(k));
+          return { k: k, a: a, b: b, money: money, lim: lim, share: lim.amt > 0 ? Math.abs(money) / lim.amt : 0 };
+        });
+        // shown: the account whose longer run takes most of its limit; else the longest run anywhere
+        let pick = null;
+        accs.forEach(x => { if (x.a.n > x.b.n && x.lim.amt > 0 && (!pick || x.share > pick.share)) pick = x; });
+        const risky = pick && pick.share >= 0.5 ? pick : null;
+        if (!pick) accs.forEach(x => { if (!pick || x.a.n > pick.a.n || (x.a.n === pick.a.n && (x.a.n - x.b.n) > (pick.a.n - pick.b.n))) pick = x; });
         const out = [];
+        let span = '';
         if (pick && pick.a.n) {
           const n = pick.a.n, m = pick.b.n, a0 = allTrades[pick.a.ids[0]], a1 = allTrades[pick.a.ids[pick.a.ids.length - 1]];
-          const money = pick.a.ids.reduce((t2, i) => t2 + (Number(sg[i]) || 0), 0), acc = accOf(pick.k), sb = acc ? (parseFloat(acc.startingBalance) || 0) : 0;
-          const where = (nm(pick.k) ? T2(', on ', ', en ') + nm(pick.k) : '') + ', ' + (dShort(a0) === dShort(a1) ? dShort(a0) : dShort(a0) + '–' + dShort(a1));
-          const cost = fmtGbp(money) + (sb > 0 ? ' (' + (Math.abs(money) / sb * 100).toFixed(1) + T2('% of the account; ', '% de la cuenta; ') + n + T2('% at 1% a trade)', '% arriesgando un 1% por operación)') : '');
+          const acc = accOf(pick.k), sb = acc ? (parseFloat(acc.startingBalance) || 0) : 0;
+          span = dShort(a0) === dShort(a1) ? dShort(a0) : dShort(a0) + '–' + dShort(a1);
+          const where = (nm(pick.k) ? T2(', on ', ', en ') + nm(pick.k) : '') + ', ' + span;
+          const cost = fmtGbp(pick.money) + (sb > 0 ? ' (' + (Math.abs(pick.money) / sb * 100).toFixed(1) + T2('% of the account; ', '% de la cuenta; ') + n + T2('% at 1% a trade)', '% arriesgando un 1% por operación)') : '');
           out.push(n === m
             ? T2('Longest run of losses: ' + n + ' in a row, the same as now', 'Peor racha: ' + n + ' pérdidas seguidas, igual que ahora') + where + ': ' + cost + '.'
             : T2('With this rule: <strong>' + n + ' losses in a row</strong> at worst (now ' + m + ')', 'Con esta regla: <strong>' + n + ' pérdidas seguidas</strong> como peor racha (ahora ' + m + ')') + where + ': ' + cost + '.');
         }
         // every prop account in view, against its own limits
+        let broke = null;
         if (typeof window.__stPropStatus === 'function' && typeof getAllLifetimeTrades === 'function') {
           const ruleW = r => (r === 'firmDailyLoss' ? T2('daily limit', 'límite diario') : T2('overall limit', 'límite total'));
           const dayW = d => new Date(d + 'T12:00:00').toLocaleDateString(tLocale(), { day: 'numeric', month: 'short' });
@@ -30493,7 +30522,7 @@ try {
             const alt = window.__stPropStatus(acc, life.map(t2 => (t2.id in net) ? Object.assign({}, t2, { actualGross: net[t2.id] + ((typeof tradeCosts === 'function') ? tradeCosts(t2) : 0) }) : t2));
             const nf = now.status === 'failed', af = alt && alt.status === 'failed';
             const said = x => ruleW(x.failure && x.failure.rule) + T2(' on ', ' el ') + dayW(x.failedOn);
-            if (af && !nf) out.push('<span class="cr-bad">' + nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + '.</span>');
+            if (af && !nf) { out.push('<span class="cr-bad">' + nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + '.</span>'); if (!broke) broke = nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt); }
             else if (af && nf) out.push(nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + T2(' (it really broke its ', ' (en realidad rompió su ') + said(now) + ').');
             else if (!af && nf) out.push('<span class="cr-good">' + nm(k) + T2(' would have stayed inside its limits', ' habría seguido dentro de sus límites') + '</span>' + T2(' (it really broke its ', ' (en realidad rompió su ') + said(now) + ').');
             else inside.push(nm(k));
@@ -30501,8 +30530,22 @@ try {
           const list = inside.length > 1 ? inside.slice(0, -1).join(', ') + T2(' and ', ' y ') + inside[inside.length - 1] : inside[0];
           if (inside.length) out.push(T2('Inside the daily and overall limits on ', 'Dentro de los límites diario y total en ') + list + '.');
         }
-        return out.map(x => '<span class="cr-li">' + x + '</span>').join('');
-      } catch (e) { return ''; }
+        res.html = out.map(x => '<span class="cr-li">' + x + '</span>').join('');
+        if (broke) {
+          res.ok = false;
+          res.why = broke + T2(' with this rule.', ' con esta regla.');
+          res.reason = broke.charAt(0).toLowerCase() + broke.slice(1) + T2(' with it', ' con ella');
+        } else if (risky) {
+          const pct = Math.round(risky.share * 100), lw = risky.lim.firm ? T2('its overall limit', 'su límite total') : T2('a 10% loss limit', 'un límite de pérdida del 10%');
+          const what = risky.a.n + T2(' in a row', ' seguidas') + (nm(risky.k) ? T2(' on ', ' en ') + nm(risky.k) : '') + ', ' + span;
+          res.ok = false;
+          res.why = T2('One losing run like this (' + what + ') would use ' + pct + '% of ' + lw + ' - more than half of it.',
+                       'Una racha así (' + what + ') usaría el ' + pct + '% de ' + lw + ', más de la mitad.');
+          res.reason = T2('one losing run with it (' + what + ') would use ' + pct + '% of ' + lw, 'una racha con ella (' + what + ') usaría el ' + pct + '% de ' + lw);
+        }
+      } catch (e) {}
+      _runsMemo.set(sc, res);
+      return res;
     }
     function _based(status, n, whatKey) {
       return (status === 'data' ? t('cr.needed') : t('cr.based')).replace('{N}', String(n)).replace('{WHAT}', t(whatKey));
@@ -31371,12 +31414,15 @@ try {
       c.woTop2 = lo ? lo.withoutTop2 : null;
       // Same helper as the card's own sentence, so the verdict and the card cannot disagree.
       c.passesConcentration = (lo == null) ? true : !concentrationOf(lo);
+      // Fourth gate: its losing runs (see _runs) - the same answer the card shows
+      const rk = c.scenario ? _runs(c.scenario) : null;
+      c.passesRisk = !rk || rk.ok; c.riskReason = rk ? rk.reason : '';
     });
     // How many trades each rule was really tested on - the same count its own card shows (_testedN above).
     candidates.forEach((c, k) => { c.tested = _testedN('ABCD'[k], c.scenario); });
 
     const beats = candidates.filter(c => c.delta > 0).sort((x, y) => y.delta - x.delta);
-    const actionable = beats.filter(c => c.passesTier && c.passesDelta && c.passesConcentration);
+    const actionable = beats.filter(c => c.passesTier && c.passesDelta && c.passesConcentration && c.passesRisk);
 
     let profitVerdict;
     if (beats.length === 0) {
@@ -31392,7 +31438,8 @@ try {
     } else {
       // Something looks promising but has not earned the right to be acted on.
       const near = beats[0];
-      const reason = buildGateReason(near.passesTier, near.passesDelta, near.n, near.sampleLabel,
+      const reason = (near.passesRisk === false && near.riskReason) ? near.riskReason
+                   : buildGateReason(near.passesTier, near.passesDelta, near.n, near.sampleLabel,
                                      near.passesConcentration, near.woBest, near.woTop2);
       profitVerdict = (t('combo.verdict_near_miss')
           || 'Stay the course - no rule is recommended. The closest, <strong>{NAME}</strong> ({SUGGEST}), would have been <strong>{GBP}</strong> better, but {REASON}.')

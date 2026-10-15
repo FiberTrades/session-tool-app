@@ -60,9 +60,10 @@
     data.accounts = [{ id: 'acc_p', name: 'Prop 10K', status: 'active', kind: 'challenge', accountType: 'prop', startingBalance: 10000, current: 10000, createdAt: '2026-01-01T00:00:00Z',
       riskRules: { maxDrawdownMode: 'pct', maxDrawdownPct: 10, ddType: 'static', firmDailyMode: 'pct', firmDailyPct: 5 } }];
     data.activeAccountId = 'acc_p'; data.viewScope = 'lifetime';
-    function book(lossesFirst) {
+    function book(lossesFirst, risk) {
+      risk = risk || 100;
       var out = [], dd = Date.UTC(2026, 6, 1, 9), n = 0;
-      function add(res, r, sim, pot) { out.push({ id: 'p' + n, date: new Date(dd + n * 86400e3).toISOString(), entryTime: '09:00', symbol: 'EURUSD', accountId: 'acc_p', result: res, r: r, risk: 100, sl: 5, pips: r * 5, costs: 0,
+      function add(res, r, sim, pot) { out.push({ id: 'p' + n, date: new Date(dd + n * 86400e3).toISOString(), entryTime: '09:00', symbol: 'EURUSD', accountId: 'acc_p', result: res, r: r, risk: risk, sl: 5, pips: r * 5, costs: 0,
         beSim: sim, bePotentialR: res === 'BE' ? 0.2 : undefined, potentialR: res === 'Win' ? r : undefined }); n++; }
       var wins = function () { for (var i = 0; i < 5; i++) add('Win', 3, [3, 3, 3, 3, 3, 3, 3]); };
       var lose12 = function () { for (var i = 0; i < 12; i++) add('BE', 5, [-1, 0, 0, 0, 0, 0, 0]); };
@@ -78,6 +79,11 @@
     var rD = cardRuns('D');
     check('card D shows Losing runs: 12 in a row with the rule (now 0), on Prop 10K, with what it costs and the 1% view', !!rD && /12 losses in a row/.test(rD) && /\(now 0\)/.test(rD) && /Prop 10K/.test(rD) && /12\.0% of the account; 12% at 1% a trade/.test(rD), rD);
     check('...and checks the prop account: wins came first, so it stays inside its limits', !!rD && /Inside the daily and overall limits on Prop 10K/.test(rD), rD);
+    // the new metric DECIDES (Nestor, 15 Oct 2026: "you must take this new metric into account to recommend changing strategies!!!")
+    var cardOf = function (L) { return Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0]; };
+    var dSt = cardOf('D').querySelector('.cr-st'), ovSt = document.querySelector('#combo-wrap .combo-verdict .cr-st');
+    check('£100 a trade: that one run (£1,200) is more than the £1,000 overall limit, so D is NOT recommended, and says why', /cr-no/.test(dSt.className) && /One losing run like this \(12 in a row on Prop 10K/.test(cardOf('D').textContent) && /would use 120% of its overall limit/.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
+    check('...and the Overall box recommends no rule, giving the same reason', /cr-no/.test(ovSt.className) && /would use 120% of its overall limit/.test(document.querySelector('#combo-wrap .combo-verdict').textContent), ovSt.textContent);
     var ov = document.querySelector('#combo-wrap .combo-verdict');
     check('the Overall box carries the same row for its best rule', !!ov && /Losing runs/.test(ov.textContent) && /12 losses in a row/.test(ov.textContent), ov && ov.textContent.replace(/\s+/g, ' ').slice(0, 300));
     bk = book(true); data.currentSeries = bk;
@@ -85,6 +91,11 @@
     rD = cardRuns('D');
     var bad = document.querySelector('#combo-wrap .combo-direction .cr-bad');
     check('the same losses FIRST: it says Prop 10K would have broken its overall limit, in red', !!rD && /Prop 10K would have broken its overall limit on/.test(rD) && !!bad, rD);
+    check('...not recommended, and that is the first reason', /cr-no/.test(cardOf('D').querySelector('.cr-st').className) && /Prop 10K would have broken its overall limit on .* with this rule\./.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
+    // £20 a trade: the same 12 losses are £240, 24% of the limit - the rule is recommended again
+    bk = book(false, 20); data.currentSeries = bk;
+    renderCombinedAnalysis(bk); await W(100);
+    check('£20 a trade: the run uses 24% of the limit, so D is recommended, and so is the Overall box', /cr-yes/.test(cardOf('D').querySelector('.cr-st').className) && /cr-yes/.test(document.querySelector('#combo-wrap .combo-verdict .cr-st').className), [cardOf('D').querySelector('.cr-st').textContent, document.querySelector('#combo-wrap .combo-verdict .cr-st').textContent]);
     data.currentSeries = []; data.accounts = [];
   } catch (e) {
     check('the test ran to the end', false, (e && e.message) + ' @ ' + String((e && e.stack) || '').split('\n')[1]);
