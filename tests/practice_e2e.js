@@ -20,8 +20,8 @@
     page.classList.add('active'); page.style.display = 'block'; hub.style.display = '';
     try { window.__stAcademyHub(); } catch (e) {}
     await W(200);
-    var cards = Array.prototype.slice.call(hub.querySelectorAll('.vault-hub-card')), tops = cards.map(function (c) { return Math.round(c.getBoundingClientRect().top); });
-    ok('three boxes in one row, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && tops[0] === tops[1] && tops[1] === tops[2], tops);
+    var cards = Array.prototype.slice.call(hub.querySelectorAll('.vault-hub-card')), rc = cards.map(function (c) { return c.getBoundingClientRect(); });
+    ok('three rows, one under the other, the same width, four figures each, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && rc[0].bottom <= rc[1].top && rc[1].bottom <= rc[2].top && Math.abs(rc[0].width - rc[2].width) < 1 && cards.every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.width); }));
     ok('no Members area strip over the boxes', getComputedStyle(document.querySelector('.vault-hero')).display === 'none');
 
     var P = window.__stPractice;
@@ -154,7 +154,7 @@
     ok('Gold loads (2 decimals)', S() && S().sym.key === 'XAUUSD' && S().digits === 2, S() && { digits: S().digits });
     ok('no practice trade in the journal', !((getAllLifetimeTrades() || []).some(function (t) { return t && t.practice; })));
     P.close(); await W(200);
-    ok('closing hides it and the box counts the trades', /practice trades/.test(document.getElementById('vault-hub-practice-meta').textContent), document.getElementById('vault-hub-practice-meta').textContent);
+    ok('closing hides it and the Practice Replay row counts the trades and says when it was last practised', /Practice trades\s*[1-9]/.test(document.getElementById('vault-hub-practice-tiles').textContent) && /Last practised · .* · EUR\/USD/.test(document.getElementById('vault-hub-practice-meta').textContent), document.getElementById('vault-hub-practice-tiles').textContent + ' | ' + document.getElementById('vault-hub-practice-meta').textContent);
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return JSON.stringify(out);
