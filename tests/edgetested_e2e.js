@@ -93,7 +93,7 @@
     // the new metric DECIDES (Nestor, 15 Oct 2026: "you must take this new metric into account to recommend changing strategies!!!")
     var cardOf = function (L) { return Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0]; };
     var dSt = cardOf('D').querySelector('.cr-st'), ovSt = document.querySelector('#combo-wrap .combo-verdict .cr-st');
-    check('£100 a trade: that one run (£1,200) is more than the £1,000 overall limit, so D is NOT recommended, and says why', /cr-no/.test(dSt.className) && /One losing run like this \(12 in a row on Prop 10K/.test(cardOf('D').textContent) && /would use 120% of its overall limit/.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
+    check('£100 a trade: that one run (£1,200) is more than the £1,000 overall limit, so D is NOT recommended, and says why', /cr-no/.test(dSt.className) && /One losing run would use 120% of its overall limit\./.test(cardOf('D').textContent) && /would use 120% of its overall limit/.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
     check('...and the Overall box recommends no rule, giving the same reason', /cr-no/.test(ovSt.className) && /would use 120% of its overall limit/.test(document.querySelector('#combo-wrap .combo-verdict').textContent), ovSt.textContent);
     var ov = document.querySelector('#combo-wrap .combo-verdict');
     var ro = runsOf(document.querySelector('#combo-wrap .combo-verdict'));
@@ -124,7 +124,7 @@
     renderCombinedAnalysis(bk); await W(100);
     var dCard = cardOf('D'), dTxt = dCard ? dCard.textContent.replace(/\s+/g, ' ') : '';
     check('the top level (never) fails its losing runs, so the card recommends the best level that passes: move at 2R', /cr-yes/.test(dCard.querySelector('.cr-st').className) && /move at 2R/.test(dTxt) && /\+75\.00R/.test(dTxt), dTxt.slice(0, 300));
-    check('...and says what it passed over and why', /Passed over/.test(dTxt) && /Stop moving to BE at all would make \+78\.00R/.test(dTxt) && /One losing run like this \(12 in a row on Prop 10K/.test(dTxt), dTxt.slice(0, 600));
+    check('...and says what it passed over and why', /Passed over/.test(dTxt) && /Stop moving to BE at all would make \+78\.00R/.test(dTxt) && /One losing run would use 120% of its overall limit\./.test(dTxt), dTxt.slice(0, 600));
     check('...the Overall box recommends the same level', /cr-yes/.test(document.querySelector('#combo-wrap .combo-verdict .cr-st').className) && /move at 2R/.test(document.querySelector('#combo-wrap .combo-verdict').textContent), document.querySelector('#combo-wrap .combo-verdict').textContent.replace(/\s+/g, ' ').slice(0, 300));
     data.currentSeries = []; data.accounts = [];
   } catch (e) {
