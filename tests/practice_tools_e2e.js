@@ -17,6 +17,7 @@
     var S = function () { return P._s(); }, pane = function (i) { return P._panes()[i || 0]; }, DW = P._dr();
     var hhmm = function (t) { var d = new Date(t * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); };
     var rng = function (i) { return pane(i).chart.timeScale().getVisibleLogicalRange(); };
+    var settle = async function () { for (var z = 0; z < 80; z++) { if (P._panes().every(function (p) { var r = p.chart.timeScale().getVisibleLogicalRange(); return !p._set || (r && Math.abs(r.from - p._set.from) < 0.01 && Math.abs(r.to - p._set.to) < 0.01); })) return; await W(100); } };   // until every chart shows the view it was given
     var atF = function (i) { var r = rng(i); return P._tOfL(i, r.from + (r.to - r.from) * 0.7); };
     var mev = function (i, t, xx, yy, o) { var ch = pane(i).el.querySelector('.stpr-pc'), r = ch.getBoundingClientRect(), el = document.elementFromPoint(r.left + xx, r.top + yy) || ch;
       el.dispatchEvent(new MouseEvent(t, Object.assign({ clientX: r.left + xx, clientY: r.top + yy, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' || t === 'mousemove' && o && o.held ? 1 : 0 }, o || {}))); };
@@ -48,25 +49,25 @@
     ok('Usual times puts them back', !Object.keys(C.ses).length && hhmm(S().f.ses.filter(function (x) { return x.id === 'london'; })[0].at) === '08:00');
 
     // no lines on hovering BUY / SELL any more
-    P._jump('london'); await W(300);
+    P._jump('london'); await W(300); await settle();
     var sell = document.querySelector('#stpr-tr [data-a="sell"]'); sell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await W(30);
     ok('pointing at SELL shows no lines (the SL / TP button does that)', !S().pv && !P._lines(0).length && /Press SL \/ TP/.test(document.getElementById('stpr-tr').textContent), P._lines(0));
 
     // the charts line up and move together
     var a0 = atF(0), a1 = atF(1);
-    ok('after a jump both charts have now at the same place: 07:55 on the 5m, the 07:00 hour on the 1h', hhmm(a0) === '07:55' && hhmm(a1) === '07:00', [hhmm(a0), hhmm(a1)]);
+    ok('after a jump both charts have now at the same place: 07:55 on the 5m, the 07:00 hour on the 1h', hhmm(a0) === '07:55' && hhmm(a1) === '07:00', [hhmm(a0), hhmm(a1), 'now ' + hhmm(S().now), JSON.stringify(C.ses), S().f.ses.map(function (x) { return x.id + ' ' + hhmm(x.at); }).join(','), rng(0), pane(0)._set]);
     var r0 = rng(0), r1 = rng(1), pe = function (t) { pane(0).el.dispatchEvent(new PointerEvent(t, { bubbles: true, pointerId: 9, pointerType: 'mouse' })); };
-    pe('pointerdown'); pane(0).chart.timeScale().setVisibleLogicalRange({ from: r0.from - 60, to: r0.to - 60 }); pe('pointerup'); await W(250);
+    pe('pointerdown'); pane(0).chart.timeScale().setVisibleLogicalRange({ from: r0.from - 60, to: r0.to - 60 }); pe('pointerup'); for (var zw = 0; zw < 80 && Math.abs(rng(0).from - (r0.from - 60)) > 0.01; zw++) await W(100); await W(250);
     var b0 = atF(0), r1b = rng(1);
     ok('dragging the 5m back 5 hours moves only the 5m: the 1h stays where it was', hhmm(b0) === '02:55' && Math.abs(r1b.from - r1.from) < 0.01, [hhmm(b0), r1.from, r1b.from]);
-    var hold0 = rng(0); P._step(); P._step(); await W(100); var after0 = rng(0);
+    var hold0 = rng(0); P._step(); P._step(); await W(300); var after0 = rng(0);
     ok('scrolled back into history, playing does not pull the chart back', Math.abs(after0.from - hold0.from) < 0.01, [hold0, after0]);
-    P._jump('ny'); await W(350);
+    P._jump('ny'); await W(350); await settle();
     ok('a jump lines them up on now again', hhmm(atF(0)) === '13:25' && hhmm(atF(1)) === '13:00', [hhmm(atF(0)), hhmm(atF(1))]);
     var fr0 = rng(0), last0 = pane(0).n - 1; P._step(); for (var zz = 0; zz < 30 && Math.abs(rng(0).from - fr0.from) < 0.01; zz++) await W(100); var fr1 = rng(0);   // a busy headless browser can be slow to apply the view
     ok('with now on screen, each new candle slides the chart by one candle (now keeps its place)', Math.abs((fr1.from - fr0.from) - (pane(0).n - 1 - last0)) < 0.01 && pane(0).n - 1 - last0 === 1, [fr0.from, fr1.from]);
     var tb = pane(0).times.filter(function (t) { return hhmm(t) === '12:35' && new Date(t * 1000).getDate() === 1; })[0];
-    mev(0, 'mousemove', P._xOfT(0, tb), 150); await W(60);
+    await settle(); mev(0, 'mousemove', P._xOfT(0, tb), 150); await W(60);
     var c0 = P._cx(0), c1 = P._cx(1);
     ok("Trade Replay's crosshair: the chart's own is hidden, ours sits on the 5m at 12:35 and on the 1h at the 12:00 candle, same price", pane(0).chart.options().crosshair.mode === 2 && c0 && hhmm(c0.t) === '12:35' && c1 && hhmm(c1.t) === '12:00' && Math.abs(c1.pr - c0.pr) < 1e-9, [c0 && hhmm(c0.t), c1 && hhmm(c1.t)]);
 
@@ -75,7 +76,7 @@
     ok('auto-fit is on after a jump', ps0.options().autoScale === true);
     mev(0, 'mousedown', 300, 200); mev(0, 'mousemove', 300, 240, { held: true }); mev(0, 'mouseup', 300, 240);
     ok('pressing on the chart frees it to move up and down; dragged up or down it stays where it was put', ps0.options().autoScale === false);
-    P._jump('ny'); await W(200);
+    P._jump('ny'); await W(200); await settle();
     mev(0, 'mousedown', 300, 200); mev(0, 'mousemove', 340, 201, { held: true }); mev(0, 'mouseup', 340, 201);
     ok('a level drag (sideways only) gives auto-fit back when it ends', ps0.options().autoScale === true);
 
@@ -83,14 +84,14 @@
     document.getElementById('stpr-layersbtn').click(); await W(30);
     var mn = document.getElementById('stpr-menu');
     ok("the layers button opens Trade Replay's Show on chart: Trade marks and Position tool, both on", mn.classList.contains('show') && /Show on chart/i.test(mn.textContent) && document.getElementById('stpr-marks').checked && document.getElementById('stpr-pos').checked, mn.textContent);
-    C.stopPx.EURUSD = 0.01; P._place(1); for (k = 0; k < 4; k++) P._step(); await W(150);
+    C.stopPx.EURUSD = 0.01; P._place(1); for (k = 0; k < 4; k++) P._step(); await settle(); P._render(); await W(150);
     ok('in a trade the position tool draws its zones on both charts', pane(0)._zones === 1 && pane(1)._zones === 1, [pane(0)._zones, pane(1)._zones]);
     var mk = document.getElementById('stpr-marks'); mk.checked = false; mk.dispatchEvent(new Event('change', { bubbles: true })); await W(80);
     ok('Trade marks off hides the Entry / SL / TP lines and their labels (and lights the dot)', C.marks === false && P._lines(0).length === 3 && P._lines(0).every(function (l) { return !l.vis; }) && document.getElementById('stpr-layersbtn').classList.contains('dot'), P._lines(0));
-    var po = document.getElementById('stpr-pos'); po.checked = false; po.dispatchEvent(new Event('change', { bubbles: true })); await W(150);
+    var po = document.getElementById('stpr-pos'); po.checked = false; po.dispatchEvent(new Event('change', { bubbles: true })); await settle(); P._render(); await W(150);
     ok('Position tool off takes the zones away', C.pos === false && pane(0)._zones === 0);
     mk.checked = true; mk.dispatchEvent(new Event('change', { bubbles: true })); po.checked = true; po.dispatchEvent(new Event('change', { bubbles: true }));
-    P._close(); S().done = null; P._render(); await W(150);
+    P._close(); S().done = null; await settle(); P._render(); await W(150);
     ok('a closed trade keeps its box, with the R it made', pane(0)._zones === 1 && C.marks === true && !document.getElementById('stpr-layersbtn').classList.contains('dot'));
     document.getElementById('stpr-layersbtn').click(); await W(20); C.stopPx.EURUSD = 0.0012;
 

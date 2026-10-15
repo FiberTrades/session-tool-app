@@ -24,6 +24,15 @@
     ok('the progress bar scrubs: pressed, dragged to half way and let go, the day plays to its middle', Math.abs(S().now - mid) <= 2 * 60, [S().now, mid]);
     pev('pointerdown', 0.1); pev('pointerup', 0.1); await W(200);
     ok('and back again (no trade yet), to a tenth of the day', Math.abs(S().now - (S().f.open + (S().f.close - S().f.open) * 0.1)) <= S().baseTf * 60);
+    // all the history: at its left edge a chart fetches older candles, and the view stays on the same candles
+    var p0 = pane(0), n0 = p0.static.length, t0 = p0.times[10];
+    p0.chart.timeScale().setVisibleLogicalRange({ from: 2, to: 152 }); for (k = 0; k < 30 && p0.chart.timeScale().getVisibleLogicalRange().from > 3; k++) await W(100);
+    await P._more(0); var added = p0.static.length - n0; for (k = 0; k < 30 && p0.chart.timeScale().getVisibleLogicalRange().from < 1 + added; k++) await W(100);
+    var r1 = p0.chart.timeScale().getVisibleLogicalRange();
+    ok('at its left edge a chart loads older candles (' + added + ' more) and stays on the same candles', added > 0 && p0.times[10 + added] === t0 && Math.abs(r1.from - (2 + added)) < 1.5, { added: added, from: r1 && r1.from });
+    p0.hand = false; p0.handAt = 0; var noHand = P._byHand(0);
+    p0.el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId: 21, pointerType: 'mouse' })); var withHand = P._byHand(0); document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 21, pointerType: 'mouse' }));
+    ok('only a hand on the chart fetches: not a view the app set itself', noHand === false && withHand === true && P._byHand(0) === true);
     // the phone's scroll strip only comes with two charts or more
     await P._layout(2); var cw2 = !document.getElementById('stpr-cw').classList.contains('one'); await P._layout(1);
     ok('one chart: the charts area is marked for no scroll strip; two charts: it is not', document.getElementById('stpr-cw').classList.contains('one') && cw2);
