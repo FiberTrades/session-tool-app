@@ -155,7 +155,7 @@
     ok('Gold loads (2 decimals)', S() && S().sym.key === 'XAUUSD' && S().digits === 2, S() && { digits: S().digits });
     ok('no practice trade in the journal', !((getAllLifetimeTrades() || []).some(function (t) { return t && t.practice; })));
     P.close(); await W(200);
-    ok('closing hides it and the Practice Replay row counts the trades and says when it was last practised', /Practice trades\s*[1-9]/.test(document.getElementById('vault-hub-practice-tiles').textContent) && /Last practised · .* · EUR\/USD/.test(document.getElementById('vault-hub-practice-meta').textContent), document.getElementById('vault-hub-practice-tiles').textContent + ' | ' + document.getElementById('vault-hub-practice-meta').textContent);
+    ok('closing hides it and the Practice Replay box counts the trades (and has no line under its text)', /Practice trades\s*[1-9]/.test(document.getElementById('vault-hub-practice-tiles').textContent) && !document.querySelector('#vault-hub .vault-hub-meta'), document.getElementById('vault-hub-practice-tiles').textContent);
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return JSON.stringify(out);
