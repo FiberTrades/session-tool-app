@@ -71,27 +71,38 @@
       for (var i = 0; i < 15; i++) add('BE', 5, [5, 0, 0, 0, 0, 0, 0]);
       return out;
     }
+    // the Losing runs row is figures in boxes now (Nestor, 15 Oct 2026: "go with B but use losing runs idea from option A")
+    var runsOf = function (box) { var row = box && Array.prototype.filter.call(box.querySelectorAll('.cr-row'), function (r) { return /Losing runs/.test(r.querySelector('.cr-k').textContent); })[0];
+      if (!row) return null; var o = { tiles: {}, chips: [], why: '' };
+      Array.prototype.forEach.call(row.querySelectorAll('.cr-rt'), function (x) { o.tiles[x.querySelector('b').textContent.replace('?', '').trim()] = { n: x.querySelector('strong').firstChild.textContent.trim(), sub: (x.querySelector('i') || {}).textContent || '' }; });
+      o.chips = Array.prototype.map.call(row.querySelectorAll('.cr-chip'), function (x) { return { text: x.textContent, cls: x.className }; });
+      var w = row.querySelector('.cr-rt-why'); o.why = w ? w.textContent : ''; o.q = !!row.querySelector('.cr-q'); o.wrap = row.querySelector('.cr-runs-wrap'); return o; };
+    var cardOf2 = function (L) { return Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0]; };
     var cardRuns = function (L) { var b = Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0];
       var row = b && Array.prototype.filter.call(b.querySelectorAll('.cr-row'), function (r) { return /Losing runs/.test(r.querySelector('.cr-k').textContent); })[0];
       return row ? row.querySelector('.cr-v').textContent : null; };
     var bk = book(false); data.currentSeries = bk; data.history = [];
     renderCombinedAnalysis(bk); await W(100);
     var rD = cardRuns('D');
-    check('card D shows Losing runs in plain words: none now, 12 in a row with the rule and what that costs', !!rD && /Now: no losses in a row on Prop 10K\./.test(rD) && /With this rule: 12 in a row, 6–17 Jul: .*1,?200\.00, 12\.0% of the account\./.test(rD), rD);
-    check('...and the line: about 5 losses in a row cost half of its £1,000.00 overall limit at £100.00 a loss', !!rD && /The line: about 5 losses in a row would cost half of its £1,000\.00 overall limit \(about £100\.00 a loss\)\. A rule whose worst run gets there, and is longer than yours now, is not recommended\./.test(rD), rD);
-    check('...and checks the prop account: wins came first, so it stays inside its limits', !!rD && /Inside the daily and overall limits on Prop 10K/.test(rD), rD);
+    var rr = runsOf(cardOf2('D'));
+    check('card D shows Losing runs as figures: worst run now 0, with this rule 12 (with its dates and cost), not recommended from 5', !!rr && rr.tiles['Worst run now'].n === '0' && rr.tiles['With this rule'].n === '12' && /6–17 Jul · .*1,?200\.00/.test(rr.tiles['With this rule'].sub) && rr.tiles['Not recommended from'].n === '5', rr && rr.tiles);
+    check('...its ? opens what the line means: about 5 losses in a row cost half of its £1,000.00 overall limit at £100.00 a loss', !!rr && rr.q && /About 5 losses in a row would cost half of its £1,000\.00 overall limit \(about £100\.00 a loss\)\. A rule whose worst run gets there, and is longer than yours now, is not recommended\./.test(rr.why) && getComputedStyle(rr.wrap.querySelector('.cr-rt-why')).display === 'none', rr && rr.why);
+    rr.wrap.querySelector('.cr-q').click(); await W(50);
+    check('...pressing the ? shows it', getComputedStyle(rr.wrap.querySelector('.cr-rt-why')).display === 'block');
+    check('...and checks the prop account: wins came first, so a green tag says it stays inside its limits', !!rr && rr.chips.some(function (c) { return /Inside Prop 10K limits/.test(c.text) && /\bok\b/.test(c.cls); }), rr && rr.chips);
     // the new metric DECIDES (Nestor, 15 Oct 2026: "you must take this new metric into account to recommend changing strategies!!!")
     var cardOf = function (L) { return Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0]; };
     var dSt = cardOf('D').querySelector('.cr-st'), ovSt = document.querySelector('#combo-wrap .combo-verdict .cr-st');
     check('£100 a trade: that one run (£1,200) is more than the £1,000 overall limit, so D is NOT recommended, and says why', /cr-no/.test(dSt.className) && /One losing run like this \(12 in a row on Prop 10K/.test(cardOf('D').textContent) && /would use 120% of its overall limit/.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
     check('...and the Overall box recommends no rule, giving the same reason', /cr-no/.test(ovSt.className) && /would use 120% of its overall limit/.test(document.querySelector('#combo-wrap .combo-verdict').textContent), ovSt.textContent);
     var ov = document.querySelector('#combo-wrap .combo-verdict');
-    check('the Overall box carries the same row for its best rule', !!ov && /Losing runs/.test(ov.textContent) && /12 in a row/.test(ov.textContent), ov && ov.textContent.replace(/\s+/g, ' ').slice(0, 300));
+    var ro = runsOf(document.querySelector('#combo-wrap .combo-verdict'));
+    check('the Overall box carries the same row for its best rule', !!ro && ro.tiles['With this rule'].n === '12', ro && ro.tiles);
     bk = book(true); data.currentSeries = bk;
     renderCombinedAnalysis(bk); await W(100);
     rD = cardRuns('D');
-    var bad = document.querySelector('#combo-wrap .combo-direction .cr-bad');
-    check('the same losses FIRST: it says Prop 10K would have broken its overall limit, in red', !!rD && /Prop 10K would have broken its overall limit on/.test(rD) && !!bad, rD);
+    var rb = runsOf(cardOf2('D'));
+    check('the same losses FIRST: a red tag says Prop 10K would break its overall limit', !!rb && rb.chips.some(function (c) { return /Prop 10K would break its overall limit on/.test(c.text) && /\bbad\b/.test(c.cls); }), rb && rb.chips);
     check('...not recommended, and that is the first reason', /cr-no/.test(cardOf('D').querySelector('.cr-st').className) && /Prop 10K would have broken its overall limit on .* with this rule\./.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
     // £20 a trade: the same 12 losses are £240, 24% of the limit - the rule is recommended again
     bk = book(false, 20); data.currentSeries = bk;

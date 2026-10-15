@@ -2525,6 +2525,32 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .cr-k { color: var(--text-dim); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; padding-top: 2px; }
   .cr-v { color: var(--text-mid); }
   .cr-li { display: block; }
+  /* Edge Adjuster rows, each in its own box, so the reading comes in pieces (Nestor, 15 Oct 2026: "it feels very text heavy
+     ... more separation between sentences with lines or boxes" - he picked the boxed layout) */
+  .combo-direction-rec .cr-row { padding: 11px 14px; margin-bottom: 8px; border: 1px solid var(--border); border-radius: 10px; background: rgba(255,255,255,.018); }
+  .combo-direction-rec .cr-row:last-child { margin-bottom: 0; }
+  /* ...and Losing runs as figures instead of sentences (the idea he took from the other layout) */
+  .cr-runs { display: flex; flex-wrap: wrap; gap: 8px; align-items: stretch; }
+  .cr-runs-acc { display: block; margin-bottom: 8px; color: var(--text-dim); font-size: 11px; }
+  .cr-rt { min-width: 118px; padding: 9px 12px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg); display: flex; flex-direction: column; gap: 6px; }
+  .cr-rt b { font-weight: 400; font-size: 9px; letter-spacing: .18em; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; display: flex; align-items: center; gap: 7px; }
+  .cr-rt strong { font-weight: 400; font-size: 18px; line-height: 1; color: var(--text); }
+  .cr-rt strong small { font-size: 11px; color: var(--text-dim); margin-left: 5px; }
+  .cr-rt i { font-style: normal; font-size: 10px; color: var(--text-dim); white-space: nowrap; }
+  .cr-rt.line { border-color: rgba(244,114,182,.45); }
+  .cr-rt.line strong { color: var(--accent); }
+  .cr-q { width: 15px; height: 15px; padding: 0; border-radius: 50%; border: 1px solid var(--border-2); background: transparent; color: var(--text-dim); font: inherit; font-size: 9px; line-height: 13px; cursor: pointer; letter-spacing: 0; }
+  .cr-runs-wrap.open .cr-q { border-color: var(--accent); color: var(--accent); }
+  .cr-rt-why { display: none; margin-top: 8px; padding: 9px 12px; border-left: 2px solid rgba(244,114,182,.45); color: var(--text-mid); font-size: 11px; line-height: 1.55; }
+  .cr-runs-wrap.open .cr-rt-why { display: block; }
+  .cr-chip { align-self: center; padding: 5px 11px; border: 1px solid var(--border-2); border-radius: 999px; color: var(--text-mid); font-size: 10px; letter-spacing: .1em; text-transform: uppercase; }
+  .cr-chip.ok { border-color: rgba(78,205,139,.45); color: var(--good); }
+  .cr-chip.bad { border-color: rgba(229,103,103,.5); color: var(--bad); }
+  @media (max-width: 600px) {   /* a phone: two figures side by side, the line and the tag full width under them */
+    .cr-runs { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .cr-rt { min-width: 0; } .cr-rt i { white-space: normal; } .cr-rt i .nw { white-space: nowrap; } .cr-rt b { white-space: normal; }
+    .cr-rt.line, .cr-chip { grid-column: 1 / -1; } .cr-chip { justify-self: start; }
+  }
   .cr-li + .cr-li { margin-top: 3px; }
   .cr-li::before { content: '\2022'; margin-right: 7px; color: var(--text-dim); }
   .cr-good { color: var(--good); } .cr-bad { color: var(--bad); }
@@ -30518,26 +30544,22 @@ try {
         if (!pick) accs.forEach(x => { if (!pick || x.a.n > pick.a.n || (x.a.n === pick.a.n && (x.a.n - x.b.n) > (pick.a.n - pick.b.n))) pick = x; });
         const out = [];
         let span = '';
-        // Said in plain words (Nestor, 15 Oct 2026: "show this on the losing runs now? ... i dont know what this means"): your
-        // worst run now, the rule's worst run, and THE LINE - about how many losses in a row cost half the account's overall
-        // limit at what a loss costs you, which is where a rule stops being recommended.
+        // Drawn as figures in boxes (Nestor, 15 Oct 2026: "go with B but use losing runs idea from option A"): your worst run
+        // now, the rule's worst run, the line where a rule stops being recommended (what it means opens under its ?), and a
+        // tag per prop account for its limits.
+        const tiles = [], chips = [];
+        let why = '', caption = '';
+        const tile = (label, num, sub, cls, q) => '<span class="cr-rt' + (cls ? ' ' + cls : '') + '"><b>' + label + (q ? '<button type="button" class="cr-q" aria-label="' + T2('What this means', 'Qué significa') + '">?</button>' : '') + '</b>'
+          + '<strong>' + num + '<small>' + T2('in a row', 'seguidas') + '</small></strong>' + (sub ? '<i>' + sub + '</i>' : '') + '</span>';
         if (pick && (pick.a.n || pick.b.n)) {
-          const n = pick.a.n, m = pick.b.n, acc = accOf(pick.k), sb = acc ? (parseFloat(acc.startingBalance) || 0) : 0, name = nm(pick.k);
+          const n = pick.a.n, m = pick.b.n, name = nm(pick.k);
           const cg = (current && current.perTradeGbp) || [];
           const runCost = (r2, g) => r2.ids.reduce((t2, i) => t2 + (Number(g[i]) || 0), 0);
-          const pctOf = v => (sb > 0 ? ', ' + (Math.abs(v) / sb * 100).toFixed(1) + T2('% of the account', '% de la cuenta') : '');
           const spanOf = r2 => { const a0 = allTrades[r2.ids[0]], a1 = allTrades[r2.ids[r2.ids.length - 1]], d0 = new Date(a0.date), d1 = new Date(a1.date); if (dShort(a0) === dShort(a1)) return dShort(a0); return (d0.getMonth() === d1.getMonth() && d0.getFullYear() === d1.getFullYear()) ? d0.getDate() + '–' + dShort(a1) : dShort(a0) + '–' + dShort(a1); };   // 6–17 Jul
           span = n ? spanOf(pick.a) : '';
-          const onAcc = name ? T2(' on ', ' en ') + name : '';
-          if (n === m) {
-            out.push(T2('Your worst losing run stays ' + n + ' in a row with this rule', 'Tu peor racha sigue siendo de ' + n + ' pérdidas seguidas con esta regla') + onAcc
-              + (n ? ' (' + span + ': ' + fmtGbp(pick.money) + pctOf(pick.money) + ')' : '') + '.');
-          } else {
-            const nowMoney = runCost(pick.b, cg);
-            out.push(m ? T2('Your worst losing run now: ' + m + ' in a row', 'Tu peor racha ahora: ' + m + ' pérdidas seguidas') + ' (' + fmtGbp(nowMoney) + ')' + onAcc + '.'
-                       : T2('Now: no losses in a row', 'Ahora: ninguna racha de pérdidas') + onAcc + '.');
-            out.push(T2('With this rule: <strong>' + n + ' in a row</strong>', 'Con esta regla: <strong>' + n + ' seguidas</strong>') + (span ? ', ' + span : '') + ': ' + fmtGbp(pick.money) + pctOf(pick.money) + '.');
-          }
+          if (name && Object.keys(byAcc).filter(k => k !== '_').length > 1) caption = '<span class="cr-runs-acc">' + name + '</span>';
+          tiles.push(tile(T2('Worst run now', 'Peor racha ahora'), m, m ? '<span class="nw">' + spanOf(pick.b) + '</span> · <span class="nw">' + fmtGbp(runCost(pick.b, cg)) + '</span>' : '', '', false));
+          tiles.push(tile(T2('With this rule', 'Con esta regla'), n, n ? '<span class="nw">' + span + '</span> · <span class="nw">' + fmtGbp(pick.money) + '</span>' : '', '', false));
           // the line, at what a loss really costs on this account (its real losses, costs included; else its risk)
           if (pick.lim.amt > 0) {
             const losses = byAcc[pick.k].filter(i => (Number(cu[i]) || 0) < -0.05).map(i => Math.abs(Number(cg[i]) || 0)).filter(v => v > 0);
@@ -30546,8 +30568,9 @@ try {
             if (avg > 0) {
               const L = Math.max(1, Math.ceil(pick.lim.amt * 0.5 / avg)), lim = fmtMoney(pick.lim.amt, { noSign: true }), per = fmtMoney(avg, { noSign: true });
               const whose = pick.lim.firm ? T2('its ' + lim + ' overall limit', 'su límite total de ' + lim) : T2('a 10% loss limit (' + lim + ')', 'un límite de pérdida del 10% (' + lim + ')');
-              out.push(T2('The line: about <strong>' + L + ' losses in a row</strong> would cost half of ' + whose + ' (about ' + per + ' a loss). A rule whose worst run gets there, and is longer than yours now, is not recommended.',
-                          'El límite: unas <strong>' + L + ' pérdidas seguidas</strong> costarían la mitad de ' + whose + ' (unos ' + per + ' por pérdida). Una regla cuya peor racha llegue ahí, y sea más larga que la tuya ahora, no se recomienda.'));
+              tiles.push(tile(T2('Not recommended from', 'No recomendada desde'), L, '', 'line', true));
+              why = T2('About ' + L + ' losses in a row would cost half of ' + whose + ' (about ' + per + ' a loss). A rule whose worst run gets there, and is longer than yours now, is not recommended.',
+                       'Unas ' + L + ' pérdidas seguidas costarían la mitad de ' + whose + ' (unos ' + per + ' por pérdida). Una regla cuya peor racha llegue ahí, y sea más larga que la tuya ahora, no se recomienda.');
             }
           }
         }
@@ -30565,15 +30588,18 @@ try {
             const alt = window.__stPropStatus(acc, life.map(t2 => (t2.id in net) ? Object.assign({}, t2, { actualGross: net[t2.id] + ((typeof tradeCosts === 'function') ? tradeCosts(t2) : 0) }) : t2));
             const nf = now.status === 'failed', af = alt && alt.status === 'failed';
             const said = x => ruleW(x.failure && x.failure.rule) + T2(' on ', ' el ') + dayW(x.failedOn);
-            if (af && !nf) { out.push('<span class="cr-bad">' + nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + '.</span>'); if (!broke) broke = nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt); }
-            else if (af && nf) out.push(nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + T2(' (it really broke its ', ' (en realidad rompió su ') + said(now) + ').');
-            else if (!af && nf) out.push('<span class="cr-good">' + nm(k) + T2(' would have stayed inside its limits', ' habría seguido dentro de sus límites') + '</span>' + T2(' (it really broke its ', ' (en realidad rompió su ') + said(now) + ').');
+            if (af && !nf) { chips.push('<span class="cr-chip bad">✗ ' + nm(k) + T2(' would break its ', ' rompería su ') + said(alt) + '</span>'); if (!broke) broke = nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt); }
+            else if (af && nf) chips.push('<span class="cr-chip">' + nm(k) + T2(' would break its ', ' rompería su ') + said(alt) + T2(' (it really did on ', ' (en realidad el ') + dayW(now.failedOn) + ')</span>');
+            else if (!af && nf) chips.push('<span class="cr-chip ok">✓ ' + nm(k) + T2(' would stay inside its limits', ' seguiría dentro de sus límites') + '</span>');
             else inside.push(nm(k));
           });
           const list = inside.length > 1 ? inside.slice(0, -1).join(', ') + T2(' and ', ' y ') + inside[inside.length - 1] : inside[0];
-          if (inside.length) out.push(T2('Inside the daily and overall limits on ', 'Dentro de los límites diario y total en ') + list + '.');
+          if (inside.length) chips.push('<span class="cr-chip ok">✓ ' + T2('Inside ' + list + ' limits', 'Dentro de los límites de ' + list) + '</span>');
         }
-        res.html = out.map(x => '<span class="cr-li">' + x + '</span>').join('');
+        res.html = (tiles.length || chips.length)
+          ? '<span class="cr-runs-wrap">' + caption + '<span class="cr-runs">' + tiles.join('') + chips.join('') + '</span>' + (why ? '<span class="cr-rt-why">' + why + '</span>' : '') + '</span>' : '';
+        // the ? under "Not recommended from" opens its meaning (one listener for the page; phones hide the app's hover tips)
+        if (!window.__stCrQ) { window.__stCrQ = 1; document.addEventListener('click', ev => { const q = ev.target && ev.target.closest ? ev.target.closest('.cr-q') : null; if (!q) return; const w = q.closest('.cr-runs-wrap'); if (w) w.classList.toggle('open'); }); }
         if (broke) {
           res.ok = false;
           res.why = broke + T2(' with this rule.', ' con esta regla.');
