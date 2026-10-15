@@ -40,6 +40,24 @@
     check('Spanish into English: the app\'s Spanish name becomes its English one, nothing else rewritten', b.back === 'mi Edge Adjuster dice que deje de mover el SL a BE' || b.back === 'mi Trading Edge Adjuster dice que deje de mover el SL a BE', b);
     check('Spanish into English: chat rewriting does not run ("u", "im" are left)', P('u im', 'en').back === 'u im', P('u im', 'en').back);
     check('the Series of 10 and Session Bias keep their app names', P('my Series of 10 and session bias', 'es').back === 'my Serie de 10 and Sesgo de Sesión', P('my Series of 10 and session bias', 'es').back);
+    // Spanish chat into English (Nestor, 15 Oct 2026: "make the spanish to english understand slang too")
+    var esCases = [
+      ['xq no entraste?', 'por qué no entraste?'],
+      ['toy en verde hoy', 'estoy en ganancias hoy'],
+      ['tb pillé el movimiento de londres', 'también atrapé el movimiento de londres'],
+      ['gracias x todo', 'gracias por todo'],
+      ['q tal tío, como va la sesión?', "how's it going mate, como va la sesión?"],
+      ['me saltó el stop por 2 pips, q rabia', 'I got stopped out por 2 pips, so annoying'],
+      ['el mercado está lateral, paso', 'el mercado está en rango, paso'],
+      ['palmé 1R pero bien', 'perdí 1R pero bien'],
+      ['nse si entrar pa la sesión de NY', 'no sé si entrar para la sesión de NY'],
+      ['mi Serie de 10 va bien jajaja', 'mi Series of 10 va bien haha']
+    ];
+    var esBad = esCases.filter(function (c) { return P(c[0], 'en').back !== c[1]; }).map(function (c) { return { in: c[0], got: P(c[0], 'en').back, want: c[1] }; });
+    check('Spanish chat reads as plain Spanish before it goes into English (' + esCases.length + ' lines)', esBad.length === 0, esBad);
+    var enKeep = ['my nose is blocked', 'that toy is cheap', 'pasta for dinner', 'I will pa the bill'];
+    var enChanged = enKeep.filter(function (k) { return P(k, 'en').back !== k; });
+    check('English is never "made plain Spanish" (nose, toy, pasta stay)', enChanged.length === 0, enChanged.map(function (k) { return [k, P(k, 'en').back]; }));
     // whole path with a stand-in translator that hands back what it was sent (and adds a full stop, as Google does)
     var realFetch = window.fetch;
     window.fetch = function (url) {
@@ -52,6 +70,8 @@
     check('"ffs" alone becomes "madre mía" without asking the translator; "...lol" keeps its sentence', t2 === 'madre mía' && t3 === 'no too much for now jaja', [t2, t3]);
     var t4 = await window.stTranslateText('Done.', 'auto', 'es');
     check('a sentence that had its own full stop keeps it', t4 === 'Done..' || t4 === 'Done.', t4);
+    var t5 = await window.stTranslateText('toy en verde hoy jajaja', 'auto', 'en'), t6 = await window.stTranslateText('joder, otra vez BE', 'auto', 'en');
+    check('Spanish into English: "jajaja" at the end is "haha" after the sentence; "joder," opening it is "damn,"', t5 === 'estoy en ganancias hoy haha' && t6 === 'damn, otra vez BE.', [t5, t6]);
     window.fetch = realFetch;
   } catch (err) {
     check('the test ran to the end', false, (err && err.message) + ' @ ' + String((err && err.stack) || '').split('\n')[1]);
