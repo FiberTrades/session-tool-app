@@ -49,6 +49,14 @@
     } else { ok('a day before the first 1m candle: none left to try (1m reaches as far back as the coarser candles)', true); ok('and the clock names the offset of that day', true); }
     await P._random('EURUSD'); for (k = 0; k < 100 && !(S() && S().day !== oday && pane(0) && pane(0).n); k++) await W(100);
     ok('Random day with a 1m chart picks a day that has 1m candles', S().baseTf === 1 && pane(0).tf === 1 && !pane(0).el.querySelector('.stpr-tfnote'), S().day);
+    // Spanish (Nestor, 15 Oct 2026: "the tooltips are all in english!!! also play needs to say reproducir, sell buy buttons need to be translated")
+    if (typeof setLanguage === 'function') { setLanguage('es'); await W(250); P._render();
+      var ttl = function (id) { return document.getElementById(id).getAttribute('title'); };
+      var tools = Array.prototype.map.call(document.querySelectorAll('#stpr-tools [data-tool]'), function (b) { return b.title; });
+      ok('in Spanish every tooltip is Spanish: the toolbar, the tools, the window buttons', ttl('stpr-undo') === 'Deshacer' && ttl('stpr-redo') === 'Rehacer' && ttl('stpr-drawbtn') === 'Herramientas de dibujo' && ttl('stpr-layersbtn') === 'Mostrar en el gráfico' && ttl('stpr-newsbtn') === 'Noticias en el gráfico' && ttl('stpr-close') === 'Cerrar' && ttl('stpr-back') === 'Un paso atrás' && tools.join(',') === 'Línea horizontal,Línea de tendencia,Rectángulo,Fib,Dibujar,Medir', [ttl('stpr-undo'), ttl('stpr-close'), tools.join(',')]);
+      ok('and the buttons say Reproducir, VENDER and COMPRAR', /Reproducir/.test(document.getElementById('stpr-play').textContent) && /VENDER/.test(document.querySelector('#stpr-tr [data-a="sell"]').textContent) && /COMPRAR/.test(document.querySelector('#stpr-tr [data-a="buy"]').textContent), [document.getElementById('stpr-play').textContent, document.querySelector('#stpr-tr [data-a="buy"]').textContent]);
+      setLanguage('en'); await W(250);
+      ok('back in English: Undo, Play, SELL', ttl('stpr-undo') === 'Undo' && /Play/.test(document.getElementById('stpr-play').textContent) && /SELL/.test(document.querySelector('#stpr-tr [data-a="sell"]').textContent)); }
     document.getElementById('stpr-close').click(); await W(150);
     ok('the X closes it', !document.getElementById('stpr-bg').classList.contains('show'));
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}

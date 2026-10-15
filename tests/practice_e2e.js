@@ -65,7 +65,7 @@
     P._step();   // the 08:00 candle prints
     P._news([{ at: '2026-10-01T07:00:00Z', currency: 'EUR', title: 'Test PMI', impact: 'High', forecast: '50.1', previous: '49.8', actual: '51.0' }, { at: '2026-10-01T12:30:00Z', currency: 'USD', title: 'Later release', impact: 'High', forecast: '1', previous: '1', actual: '2' }]);
     await W(300);
-    for (var zz = 0; zz < 40 && !(P._xOfT(0, 1790838000) < pane().el.clientWidth - 70); zz++) await W(100);   // a busy headless browser can be slow to apply the jump's view
+    for (var zz = 0; zz < 100 && !(P._xOfT(0, 1790838000) < pane().el.clientWidth - 70); zz++) await W(100);   // a busy headless browser can be slow to apply the jump's view
     P._render();
     var hits = pane()._news || []; ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect();
     ok('the 08:00 release has its disc, the 13:30 one not yet', hits.length === 1 && hits[0].e.title === 'Test PMI', { hits: hits.map(function (h) { return h.e.title; }), rows: P._newsRows().length, x: P._xOfT(0, 1790838000), now: S().now, w: pane().el.clientWidth, layout: P._panes().length });
