@@ -12,6 +12,14 @@
     // an old day, Random day, and only the X closes it (moved here from practice_tools_e2e.js: one run has 4 minutes)
     var S = function () { return P._s(); }, pane = function (i) { return P._panes()[i || 0]; }, k;
     C = P._cfg(); C.max = false; await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (k = 0; k < 100 && !(S() && pane(0) && pane(0).n); k++) await W(100);
+    // opened with no day, it lands on the latest whole trading day stored, not a random one
+    P.close(); await W(150); await P.open({ symbol: 'EURUSD' }); for (k = 0; k < 100 && !(S() && pane(0) && pane(0).n); k++) await W(100);
+    var ld = new Date(); ld.setHours(12, 0, 0, 0); var want = null;
+    for (var q = 0; q < 12 && !want; q++, ld.setDate(ld.getDate() - 1)) { if (ld.getDay() === 0 || ld.getDay() === 6) continue; var iso = ld.getFullYear() + '-' + String(ld.getMonth() + 1).padStart(2, '0') + '-' + String(ld.getDate()).padStart(2, '0'); var cl = new Date(iso + 'T21:00:00Z').getTime() / 1000; if (cl <= Date.now() / 1000) want = iso; }
+    ok('opening Practice Replay lands on the latest whole trading day (' + want + '), at the Asia open', S() && S().day === want && S().now === S().f.open, S() && S().day);
+    // the phone's scroll strip only comes with two charts or more
+    await P._layout(2); var cw2 = !document.getElementById('stpr-cw').classList.contains('one'); await P._layout(1);
+    ok('one chart: the charts area is marked for no scroll strip; two charts: it is not', document.getElementById('stpr-cw').classList.contains('one') && cw2);
     // only the X closes it
     var bgx = document.getElementById('stpr-bg'); bgx.dispatchEvent(new MouseEvent('click', { bubbles: true }));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(50);
@@ -22,7 +30,11 @@
     var od = new Date(((f1 || 0) - 5 * 86400) * 1000); while (od.getDay() === 0 || od.getDay() === 6) od.setDate(od.getDate() - 1);
     var oday = od.getFullYear() + '-' + String(od.getMonth() + 1).padStart(2, '0') + '-' + String(od.getDate()).padStart(2, '0');
     if (f1 && fc && od.getTime() / 1000 > fc + 2 * 86400) {
-      await P._layout(1); C.tfs[0] = 1; await P.open({ symbol: 'EURUSD', day: oday }); for (k = 0; k < 100 && !(S() && S().day === oday && pane(0) && pane(0).n); k++) await W(100); await W(200);
+      // a few tries: the day picked can be a market holiday (Christmas Day was, on 15 Oct 2026)
+      await P._layout(1); C.tfs[0] = 1;
+      for (var tries = 0; tries < 6; tries++) { await P.open({ symbol: 'EURUSD', day: oday }); for (k = 0; k < 60 && !(S() && S().day === oday && pane(0) && pane(0).n); k++) await W(100); await W(200);
+        if (S() && S().day === oday && S().baseTf > 1) break;
+        do { od.setDate(od.getDate() - 1); } while (od.getDay() === 0 || od.getDay() === 6); oday = od.getFullYear() + '-' + String(od.getMonth() + 1).padStart(2, '0') + '-' + String(od.getDate()).padStart(2, '0'); }
       var note = pane(0).el.querySelector('.stpr-tfnote');
       ok('a day before the first 1m candle (' + oday + '): the 1m chart shows the finest candles there are and says why', S().baseTf > 1 && pane(0).tf === S().baseTf && pane(0).want === 1 && pane(0).n > 50 && note && /1m candles start/.test(note.textContent) && new RegExp('showing ' + (S().baseTf === 5 ? '5m' : '15m')).test(note.textContent), note && note.textContent);
       var off = -new Date(S().now * 1000).getTimezoneOffset(), tz = off ? 'UTC' + (off > 0 ? '+' : '-') + Math.floor(Math.abs(off) / 60) : 'UTC';
