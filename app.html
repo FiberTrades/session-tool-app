@@ -30287,6 +30287,28 @@ try {
       return (d > 0 && d <= _thrR()) ? t('cr.too_small').replace('{THR}', _Rabs(_thrR())) : '';
     }
     const _tw = (n, one, many) => n + ' ' + (n === 1 ? t(one) : t(many));
+    /* Every card says how many trades its rule was really TESTED on (Nestor, 15 Oct 2026: "make all card display the truth
+       about how many trades were actually tested against"). A trade is tested when the card's replay works it out - a
+       win's best price (A), a win's or break-even's best price (B), a stop and, on a loser, the EA's wider-stop replay
+       (C), the EA's break-even replay (D), the EA's offset replay (E) - or when the rule changed it anyway. Every other
+       trade counts at what it really made. Out of all the trades in view, copies included, like the Trades figure.
+       A card still short of evidence keeps "N so far - 10 needed": that gate counts its own kind of trade. */
+    const _hasW = new Set(trackedWins), _hasWB = new Set(trackedWins.concat(trackedBes)), _hasL = new Set(trackedLosers);
+    const _HAS = {
+      A: tr => _hasW.has(tr),
+      B: tr => _hasWB.has(tr),
+      C: tr => (parseFloat(tr.risk) || 0) > 0 && (parseFloat(tr.sl) || 0) > 0 && (tr.result !== 'Lose' || _hasL.has(tr)),
+      D: tr => Array.isArray(tr.beSim) && tr.beSim.length >= 7 && (parseFloat(tr.risk) || 0) > 0,
+      E: tr => Array.isArray(tr.beOffR) && tr.beOffR.length === BE_OFF_LADDER.length && (parseFloat(tr.risk) || 0) > 0
+    };
+    function _testedN(key, sc) {
+      const su = (sc && sc.perTradeUnits) || [], cu = (current && current.perTradeUnits) || [];
+      return allTrades.reduce((n, tr, i) => n + ((_HAS[key](tr) || Math.abs((Number(su[i]) || 0) - (Number(cu[i]) || 0)) > 1e-9) ? 1 : 0), 0);
+    }
+    function _testedLbl(status, key, sc, n, whatKey) {
+      return status === 'data' ? _based(status, n, whatKey)
+        : t('cr.tested').replace('{T}', String(_testedN(key, sc))).replace('{N}', String(current.tradeCount || 0));
+    }
 
     // Direction A - hold winners longer
     const cardA = { status: 'data', html: '' };
@@ -30318,7 +30340,7 @@ try {
         result: _moreRes(scenarioA),
         why: [_concWhy(scenarioA), _smallWhy(scenarioA), _cliff, _wr] });
     }
-    cardA.based = _based(cardA.status, nWins, 'cr.w_wins');
+    cardA.based = _testedLbl(cardA.status, 'A', scenarioA, nWins, 'cr.w_wins');
 
     /* CONCENTRATION, ON EVERY CARD THAT NAMES A RULE (A, C, D, E). The verdict gates on it; without the same note a card
        reads as advice the verdict has just rejected - D said "stop moving to BE at all" while the verdict said it rests on
@@ -30366,7 +30388,7 @@ try {
         idea: t('cr.b_idea_found').replace('{X}', '<strong class="rec-suggest">' + _dualTP() + '</strong>'),
         result: _moreRes(scenarioB), why: [_concWhy(scenarioB), _smallWhy(scenarioB)] });
     }
-    cardB.based = _based(cardB.status, nBes, 'cr.w_bes');
+    cardB.based = _testedLbl(cardB.status, 'B', scenarioB, nBes, 'cr.w_bes');
 
     // ------------------------------------------------------------------
     // C - WIDEN THE INITIAL STOP
@@ -30732,7 +30754,7 @@ try {
         idea: t('cr.c_idea_found').replace('{X}', '<strong class="rec-suggest">+' + bestWiden + ' ' + _pipW(bestWiden) + '</strong>'),
         result: _moreRes(scenarioC), why: [_concWhy(scenarioC), _smallWhy(scenarioC)] });
     }
-    cardC.based = _based(cardC.status, nLosers, 'cr.w_losers');
+    cardC.based = _testedLbl(cardC.status, 'C', scenarioC, nLosers, 'cr.w_losers');
 
     // --- What your ACTUAL BE rule is worth ---------------------------------------
     //
@@ -30829,7 +30851,7 @@ try {
       cardD.html = _card({ status: cardD.status, idea: _dIdea, result: _moreRes(scenarioD), extra: _habitRow,
         why: [_concWhy(scenarioD), _smallWhy(scenarioD)] });
     }
-    cardD.based = _based(cardD.status, nBeSim, 'cr.w_bes');
+    cardD.based = _testedLbl(cardD.status, 'D', scenarioD, nBeSim, 'cr.w_bes');
 
     // E's label carries both units, because "+0.5R" and "+2 pips" are the same rule only on a
     // 4-pip stop. The pip figure is from the median stop and marked ~, exactly as D does it.
@@ -30866,7 +30888,7 @@ try {
         why: [_concWhy(scenarioE), _smallWhy(scenarioE),
               _mE > 0 ? t('cr.e_missed').replace('{N}', _tw(_mE, 'combo.trade_one', 'combo.trade_many')) : ''] });
     }
-    cardE.based = _based(cardE.status, nBeOff, 'cr.w_beoff');
+    cardE.based = _testedLbl(cardE.status, 'E', scenarioE, nBeOff, 'cr.w_beoff');
 
     const directionAHtml = buildDirectionBlock({
       letter: 'A',
@@ -31115,22 +31137,8 @@ try {
       // Same helper as the card's own sentence, so the verdict and the card cannot disagree.
       c.passesConcentration = (lo == null) ? true : !concentrationOf(lo);
     });
-    /* How many trades each rule was really TESTED on (Nestor, 15 Oct 2026: "change the label to show how many trades were
-       actually tested against this strategy"). A trade is tested when it carries what the rule reads - a win's best price
-       (A), a win's or break-even's best price (B), a stop and, on a loser, the EA's wider-stop replay (C), the EA's
-       break-even replay (D) - or when the rule changed it anyway. Every other trade counts at what it really made. */
-    const _hasW = new Set(trackedWins), _hasWB = new Set(trackedWins.concat(trackedBes)), _hasL = new Set(trackedLosers);
-    const _hasData = [
-      tr => _hasW.has(tr),
-      tr => _hasWB.has(tr),
-      tr => (parseFloat(tr.risk) || 0) > 0 && (parseFloat(tr.sl) || 0) > 0 && (tr.result !== 'Lose' || _hasL.has(tr)),
-      tr => Array.isArray(tr.beSim) && tr.beSim.length >= 7 && (parseFloat(tr.risk) || 0) > 0
-    ];
-    const _curPT = (current && current.perTradeUnits) || [];
-    candidates.forEach((c, k) => {
-      const su = (c.scenario && c.scenario.perTradeUnits) || [];
-      c.tested = allTrades.reduce((n, tr, i) => n + ((_hasData[k](tr) || Math.abs((Number(su[i]) || 0) - (Number(_curPT[i]) || 0)) > 1e-9) ? 1 : 0), 0);
-    });
+    // How many trades each rule was really tested on - the same count its own card shows (_testedN above).
+    candidates.forEach((c, k) => { c.tested = _testedN('ABCD'[k], c.scenario); });
 
     const beats = candidates.filter(c => c.delta > 0).sort((x, y) => y.delta - x.delta);
     const actionable = beats.filter(c => c.passesTier && c.passesDelta && c.passesConcentration);

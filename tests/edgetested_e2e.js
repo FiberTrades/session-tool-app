@@ -32,6 +32,14 @@
     var st = box && box.querySelector('.cr-st');
     check('the Overall box recommends the break-even rule', !!st && /recommended/i.test(st.textContent) && /break-even|BE/i.test(box.textContent), st && st.textContent);
     check('its label says the rule was tested on the 20 replayed trades of 35', lbl && lbl.textContent.trim() === 'Tested on 20 of 35 trades', lbl && lbl.textContent);
+    // every card says the same kind of truth (Nestor, 15 Oct 2026: "make all card display the truth about how many trades
+    // were actually tested against"); a card short of evidence still says what it needs
+    var card = function (L) { var b = Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0];
+      var e = b && b.querySelector('.cr-based'); return e ? e.textContent.trim() : null; };
+    var got = { A: card('A'), B: card('B'), C: card('C'), D: card('D'), E: card('E') };
+    check('card D: tested on the 20 trades with the break-even replay', got.D === 'Tested on 20 of 35 trades', got);
+    check('card B: tested on the 25 trades with a recorded best price', got.B === 'Tested on 25 of 35 trades', got);
+    check('cards A, C and E, short of evidence, still say what they need', /10 needed/.test(got.A) && /10 needed/.test(got.C) && /10 needed/.test(got.E), got);
 
     setLanguage('es'); await W(100);
     renderCombinedAnalysis(trades); await W(100);
