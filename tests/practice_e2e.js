@@ -22,7 +22,9 @@
     await W(200);
     var cards = Array.prototype.slice.call(hub.querySelectorAll('.vault-hub-card')), rc = cards.map(function (c) { return c.getBoundingClientRect(); });
     var bt = cards.map(function (c) { return Math.round(c.querySelector('.vh-go').getBoundingClientRect().top); });
-    ok('three boxes in one row, the same size, four figures each, the buttons lined up, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && Math.round(rc[0].top) === Math.round(rc[2].top) && Math.abs(rc[0].height - rc[2].height) < 1 && Math.abs(rc[0].width - rc[1].width) < 1 && bt[0] === bt[1] && bt[1] === bt[2] && cards.every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.height); }).concat(bt));
+    // Media Vault before it opens (a member, as here): "Coming soon" only - no figures, no button (Nestor, 15 Oct 2026)
+    ok('three boxes in one row, the same size, four figures and lined-up buttons on Academy and Practice Replay, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && Math.round(rc[0].top) === Math.round(rc[2].top) && Math.abs(rc[0].height - rc[2].height) < 1 && Math.abs(rc[0].width - rc[1].width) < 1 && bt[1] === bt[2] && cards.slice(1).every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.height); }).concat(bt));
+    ok('Media Vault says Coming soon to a member: no counts, no button', cards[0].querySelectorAll('.vh-t').length === 0 && /Coming soon/i.test(cards[0].textContent) && getComputedStyle(cards[0].querySelector('.vh-go')).display === 'none', cards[0].textContent.replace(/\s+/g, ' ').slice(0, 120));
     ok('no Members area strip over the boxes', getComputedStyle(document.querySelector('.vault-hero')).display === 'none');
 
     var P = window.__stPractice;

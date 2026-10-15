@@ -84520,6 +84520,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-tfseg { display: none; } .stpr-ptfw.open .stpr-tfseg { display: inline-flex; }
   .stpr-ptfw.open ~ .stpr-pill { display: none; }
   .stpr-ov { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+  /* The chart Play steps by: the last one clicked, its edge lit (Nestor, 15 Oct 2026: "the last chart i click on its borders
+     highlights slightly and that gives the clue that if i press play that charts timeframe is whats gonna play") */
+  .stpr-pane.act::after { content: ''; position: absolute; inset: 0; border: 1px solid rgba(244,114,182,.55); pointer-events: none; z-index: 4; }
   .stpr-tfnote { position: absolute; left: 8px; top: 44px; z-index: 4; font-family: 'AppNum','DM Mono',monospace; font-size: 10.5px; color: #f4c05a; background: rgba(19,18,23,.92); border: 1px solid rgba(244,192,90,.4); border-radius: 7px; padding: 4px 8px; pointer-events: none; max-width: calc(100% - 90px); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stpr-pane .strp-newscard { z-index: 8; }
   .stpr-pane.drawing .stpr-pc { cursor: crosshair; }
@@ -84981,7 +84984,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var before = p.static.length; e.agg = aggStatic(e.rows, p.tf); p.static = e.agg;
     var k = p.static.length - before; if (k > 0) paintPane(p, false, k, getRange(p));
   }
-  function stepSec(){ var m = 60; panes.forEach(function(p){ m = Math.min(m, p.tf); }); return Math.max(m, S.baseTf) * 60; }
+  // Play, step and back move by the ACTIVE chart's candles: the last chart clicked (CFG.act), else the finest one on
+  // screen as before. A daily or longer chart would end the day in one step, so those step by 4 hours.
+  function actPane(){
+    if (!panes.length) return null;
+    var i = CFG.act;
+    if (typeof i !== 'number' || !panes[i]) { i = 0; panes.forEach(function(p, k){ if (p.tf < panes[i].tf) i = k; }); }
+    return panes[i];
+  }
+  function paintAct(){ var a = panes.length > 1 ? actPane() : null; panes.forEach(function(p){ p.el.classList.toggle('act', p === a); }); }
+  function stepSec(){ var p = actPane(), m = p ? Math.min(p.tf, 240) : 60; return Math.max(m, S.baseTf) * 60; }
   function px(){ var c = null; for (var i = 0; i < S.base.length && S.base[i].time < S.now; i++) c = S.base[i].close; return c != null ? c : S.base[0].open; }
   function sesNow(){ if (!S) return null; var id = 'asia'; S.f.ses.forEach(function(x){ if (S.now >= x.at) id = x.id; }); return id; }
   function U(u){ var x = units(S.sym); return u === 'pips' ? (x.pips || x.pts) : x.pts; }
@@ -85094,6 +85106,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         try { chart.timeScale().subscribeSizeChange(function(w){ if (w > 0 && !pp.sized) { pp.sized = true; if (pp._set) setRange(pp, pp._set); } }); } catch (e) {}
       })(pane);
     }
+    paintAct();
   }
   async function loadPanes(){ for (var i = 0; i < panes.length; i++) { var e = await paneStatic(panes[i].tf); panes[i].hist = e; panes[i].static = e.agg; } }
   // A chart's candles at this moment: before the day from the store, the day so far from the replay (its last candle only
@@ -85777,7 +85790,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       render(); }, true);
     el.addEventListener('pointercancel', function(){ if (drag && drag.p === p) { drag = null; hold(false); } }, true);
     // a hand on this chart (for loading older candles at its left edge)
-    p.el.addEventListener('pointerdown', function(){ p.hand = true; p.handAt = Date.now(); }, true);
+    p.el.addEventListener('pointerdown', function(){ p.hand = true; p.handAt = Date.now();
+      if (CFG.act !== p.i) { CFG.act = p.i; save(); paintAct(); } }, true);   // the chart clicked last is the one Play steps by
     p.el.addEventListener('wheel', function(){ p.handAt = Date.now(); }, { capture: true, passive: true });
     // off the chart, its crosshair goes (a finger's stays where it lifted, as in Trade Replay)
     p.el.addEventListener('pointerleave', function(e){ if (e.pointerType !== 'touch' && DW.cx && DW.cx.p === p) { DW.cx = null; dirty(); } if (!(DW.pin && DW.pin.p === p)) newsCard(p, null); });
@@ -86052,7 +86066,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   window.__stPractice = { open: open, close: close, stats: stats, log: logAll, pull: pull,
     // for the tests
     logShown: logShown, symName: function(raw){ return nameOf(canon(raw)); },
-    _s: function(){ return S; }, _step: step, _place: place, _close: closeNow, _jump: jumpTo, _preview: setPreview, _panes: function(){ return panes; },
+    _s: function(){ return S; }, _step: step, _act: function(){ var a = actPane(); return a ? a.i : -1; }, _stepSec: function(){ return stepSec(); }, _place: place, _close: closeNow, _jump: jumpTo, _preview: setPreview, _panes: function(){ return panes; },
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: o.lineVisible !== false && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
     _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
