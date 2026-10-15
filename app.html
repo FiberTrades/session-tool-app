@@ -3937,6 +3937,10 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .zc-t .pnl-toggle { font-size: 9px; letter-spacing: 0.2em; display: inline-flex; flex-wrap: nowrap; white-space: nowrap; }
   @media (max-width: 600px) { .zc-t .pnl-toggle { letter-spacing: 0.1em; } }
   .zc-h .info-tip { margin-left: auto; }
+  /* The Trading Edge Adjuster's title stands out, with room under it before the first box (Nestor, 15 Oct 2026: "shouldnt
+     this be a bit more spaced from A box? also make trading edge adjuster title more apparent") */
+  #edge-adj > .zc-h { margin-bottom: 18px; }
+  #edge-adj > .zc-h .zc-t { font-size: 14px; font-weight: 700; letter-spacing: .14em; color: var(--text); }
   .zc-h .info-tip-content { left: auto; right: -8px; text-transform: none; letter-spacing: 0; }
   .zc-sub { margin: 6px 0 0; font-family: 'AppNum', 'DM Mono', monospace; font-size: 10px; letter-spacing: 0.06em; line-height: 1.5; color: var(--text-dim); }
   .zc-sub:empty { display: none; }
@@ -6922,7 +6926,7 @@ try {
 
 
     <div class="zr zr-1" data-stx="habits">
-      <div class="zc">
+      <div class="zc" id="edge-adj">
         <div class="zc-h"><span class="zc-t" data-i18n="trades.s_combo.title">Hold Winners longer VS close BEs sooner?</span><span class="info-tip"><span class="info-tip-icon">?</span><span class="info-tip-content" data-i18n="tip.combo">Compares two alternative rules against your actual trades: (A) holding winners longer based on how much of the move you typically capture, and (B) using a shorter TP based on how far price extends on your BEs before reversing. Replays your history under each rule and shows which direction is more profitable AND which improves win rate. Tier badges show conviction (too few / early / building / strong) based on sample size. Detailed per-trade breakdown is collapsed below — expand to see exactly which trades drive each recommendation.</span></span></div>
       <div class="potr-period-row">
         <span class="potr-period-count" id="combo-period-count"></span>
@@ -30500,15 +30504,38 @@ try {
         if (!pick) accs.forEach(x => { if (!pick || x.a.n > pick.a.n || (x.a.n === pick.a.n && (x.a.n - x.b.n) > (pick.a.n - pick.b.n))) pick = x; });
         const out = [];
         let span = '';
-        if (pick && pick.a.n) {
-          const n = pick.a.n, m = pick.b.n, a0 = allTrades[pick.a.ids[0]], a1 = allTrades[pick.a.ids[pick.a.ids.length - 1]];
-          const acc = accOf(pick.k), sb = acc ? (parseFloat(acc.startingBalance) || 0) : 0;
-          span = dShort(a0) === dShort(a1) ? dShort(a0) : dShort(a0) + '–' + dShort(a1);
-          const where = (nm(pick.k) ? T2(', on ', ', en ') + nm(pick.k) : '') + ', ' + span;
-          const cost = fmtGbp(pick.money) + (sb > 0 ? ' (' + (Math.abs(pick.money) / sb * 100).toFixed(1) + T2('% of the account; ', '% de la cuenta; ') + n + T2('% at 1% a trade)', '% arriesgando un 1% por operación)') : '');
-          out.push(n === m
-            ? T2('Longest run of losses: ' + n + ' in a row, the same as now', 'Peor racha: ' + n + ' pérdidas seguidas, igual que ahora') + where + ': ' + cost + '.'
-            : T2('With this rule: <strong>' + n + ' losses in a row</strong> at worst (now ' + m + ')', 'Con esta regla: <strong>' + n + ' pérdidas seguidas</strong> como peor racha (ahora ' + m + ')') + where + ': ' + cost + '.');
+        // Said in plain words (Nestor, 15 Oct 2026: "show this on the losing runs now? ... i dont know what this means"): your
+        // worst run now, the rule's worst run, and THE LINE - about how many losses in a row cost half the account's overall
+        // limit at what a loss costs you, which is where a rule stops being recommended.
+        if (pick && (pick.a.n || pick.b.n)) {
+          const n = pick.a.n, m = pick.b.n, acc = accOf(pick.k), sb = acc ? (parseFloat(acc.startingBalance) || 0) : 0, name = nm(pick.k);
+          const cg = (current && current.perTradeGbp) || [];
+          const runCost = (r2, g) => r2.ids.reduce((t2, i) => t2 + (Number(g[i]) || 0), 0);
+          const pctOf = v => (sb > 0 ? ', ' + (Math.abs(v) / sb * 100).toFixed(1) + T2('% of the account', '% de la cuenta') : '');
+          const spanOf = r2 => { const a0 = allTrades[r2.ids[0]], a1 = allTrades[r2.ids[r2.ids.length - 1]], d0 = new Date(a0.date), d1 = new Date(a1.date); if (dShort(a0) === dShort(a1)) return dShort(a0); return (d0.getMonth() === d1.getMonth() && d0.getFullYear() === d1.getFullYear()) ? d0.getDate() + '–' + dShort(a1) : dShort(a0) + '–' + dShort(a1); };   // 6–17 Jul
+          span = n ? spanOf(pick.a) : '';
+          const onAcc = name ? T2(' on ', ' en ') + name : '';
+          if (n === m) {
+            out.push(T2('Your worst losing run stays ' + n + ' in a row with this rule', 'Tu peor racha sigue siendo de ' + n + ' pérdidas seguidas con esta regla') + onAcc
+              + (n ? ' (' + span + ': ' + fmtGbp(pick.money) + pctOf(pick.money) + ')' : '') + '.');
+          } else {
+            const nowMoney = runCost(pick.b, cg);
+            out.push(m ? T2('Your worst losing run now: ' + m + ' in a row', 'Tu peor racha ahora: ' + m + ' pérdidas seguidas') + ' (' + fmtGbp(nowMoney) + ')' + onAcc + '.'
+                       : T2('Now: no losses in a row', 'Ahora: ninguna racha de pérdidas') + onAcc + '.');
+            out.push(T2('With this rule: <strong>' + n + ' in a row</strong>', 'Con esta regla: <strong>' + n + ' seguidas</strong>') + (span ? ', ' + span : '') + ': ' + fmtGbp(pick.money) + pctOf(pick.money) + '.');
+          }
+          // the line, at what a loss really costs on this account (its real losses, costs included; else its risk)
+          if (pick.lim.amt > 0) {
+            const losses = byAcc[pick.k].filter(i => (Number(cu[i]) || 0) < -0.05).map(i => Math.abs(Number(cg[i]) || 0)).filter(v => v > 0);
+            const risks = byAcc[pick.k].map(i => (parseFloat(allTrades[i].risk) || 0) * ((typeof tradeCopies === 'function') ? tradeCopies(allTrades[i]) : 1)).filter(v => v > 0);
+            const avg = losses.length ? losses.reduce((a2, b2) => a2 + b2, 0) / losses.length : (risks.length ? risks.reduce((a2, b2) => a2 + b2, 0) / risks.length : 0);
+            if (avg > 0) {
+              const L = Math.max(1, Math.ceil(pick.lim.amt * 0.5 / avg)), lim = fmtMoney(pick.lim.amt, { noSign: true }), per = fmtMoney(avg, { noSign: true });
+              const whose = pick.lim.firm ? T2('its ' + lim + ' overall limit', 'su límite total de ' + lim) : T2('a 10% loss limit (' + lim + ')', 'un límite de pérdida del 10% (' + lim + ')');
+              out.push(T2('The line: about <strong>' + L + ' losses in a row</strong> would cost half of ' + whose + ' (about ' + per + ' a loss). A rule whose worst run gets there, and is longer than yours now, is not recommended.',
+                          'El límite: unas <strong>' + L + ' pérdidas seguidas</strong> costarían la mitad de ' + whose + ' (unos ' + per + ' por pérdida). Una regla cuya peor racha llegue ahí, y sea más larga que la tuya ahora, no se recomienda.'));
+            }
+          }
         }
         // every prop account in view, against its own limits
         let broke = null;

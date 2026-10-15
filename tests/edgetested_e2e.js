@@ -77,7 +77,8 @@
     var bk = book(false); data.currentSeries = bk; data.history = [];
     renderCombinedAnalysis(bk); await W(100);
     var rD = cardRuns('D');
-    check('card D shows Losing runs: 12 in a row with the rule (now 0), on Prop 10K, with what it costs and the 1% view', !!rD && /12 losses in a row/.test(rD) && /\(now 0\)/.test(rD) && /Prop 10K/.test(rD) && /12\.0% of the account; 12% at 1% a trade/.test(rD), rD);
+    check('card D shows Losing runs in plain words: none now, 12 in a row with the rule and what that costs', !!rD && /Now: no losses in a row on Prop 10K\./.test(rD) && /With this rule: 12 in a row, 6–17 Jul: .*1,?200\.00, 12\.0% of the account\./.test(rD), rD);
+    check('...and the line: about 5 losses in a row cost half of its £1,000.00 overall limit at £100.00 a loss', !!rD && /The line: about 5 losses in a row would cost half of its £1,000\.00 overall limit \(about £100\.00 a loss\)\. A rule whose worst run gets there, and is longer than yours now, is not recommended\./.test(rD), rD);
     check('...and checks the prop account: wins came first, so it stays inside its limits', !!rD && /Inside the daily and overall limits on Prop 10K/.test(rD), rD);
     // the new metric DECIDES (Nestor, 15 Oct 2026: "you must take this new metric into account to recommend changing strategies!!!")
     var cardOf = function (L) { return Array.prototype.filter.call(document.querySelectorAll('#combo-wrap .combo-direction'), function (d) { var x = d.querySelector('.combo-direction-letter'); return x && x.textContent.trim() === L; })[0]; };
@@ -85,7 +86,7 @@
     check('£100 a trade: that one run (£1,200) is more than the £1,000 overall limit, so D is NOT recommended, and says why', /cr-no/.test(dSt.className) && /One losing run like this \(12 in a row on Prop 10K/.test(cardOf('D').textContent) && /would use 120% of its overall limit/.test(cardOf('D').textContent), cardOf('D').textContent.replace(/\s+/g, ' ').slice(0, 400));
     check('...and the Overall box recommends no rule, giving the same reason', /cr-no/.test(ovSt.className) && /would use 120% of its overall limit/.test(document.querySelector('#combo-wrap .combo-verdict').textContent), ovSt.textContent);
     var ov = document.querySelector('#combo-wrap .combo-verdict');
-    check('the Overall box carries the same row for its best rule', !!ov && /Losing runs/.test(ov.textContent) && /12 losses in a row/.test(ov.textContent), ov && ov.textContent.replace(/\s+/g, ' ').slice(0, 300));
+    check('the Overall box carries the same row for its best rule', !!ov && /Losing runs/.test(ov.textContent) && /12 in a row/.test(ov.textContent), ov && ov.textContent.replace(/\s+/g, ' ').slice(0, 300));
     bk = book(true); data.currentSeries = bk;
     renderCombinedAnalysis(bk); await W(100);
     rD = cardRuns('D');
