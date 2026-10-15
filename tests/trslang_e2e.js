@@ -58,6 +58,32 @@
     var enKeep = ['my nose is blocked', 'that toy is cheap', 'pasta for dinner', 'I will pa the bill'];
     var enChanged = enKeep.filter(function (k) { return P(k, 'en').back !== k; });
     check('English is never "made plain Spanish" (nose, toy, pasta stay)', enChanged.length === 0, enChanged.map(function (k) { return [k, P(k, 'en').back]; }));
+    // weekly check-up, 15 Oct 2026: this week's Community chat
+    var wk = [
+      ['but probs wouldnt have caught on the wick', "but probably wouldn't have caught on the wick"],
+      ['i thought u were long for the sesh', 'I thought you were in a long position for the session'],
+      ['yeah gold was pants', 'yes gold was terrible'],
+      ['sitting on hands for 30 mins', 'waiting without trading for 30 minutes'],
+      ["can't be asked at the moment to change platforms", "I don't want at the moment to change platforms"],
+      ['I thought about the sell bang on 8am', 'I thought about the sell exactly at 8am'],
+      ['as i wanna focus on EU', 'as I want to focus on EURUSD'],
+      ['when u put that on a position on TV', 'when you put that on a position on TradingView'],
+      ['i dont move my be into profit', "I don't move my BE into the profit"],
+      ['u in anything', 'are you in any trade'],
+      ['just sold high of the range after taking a high of it', 'just sold high of the range after taking out a previous high'],
+      ['bankl hols, price does an initial move then dies', 'bank holidays, price does an initial move then dies'],
+      ['i defiantly will', 'I definitely will'], ['yep ik this is different', 'yes I know this is different'], ['tmrw im not sure', "tomorrow I'm not sure"],
+      ['i went short and i got smoked', 'me puse en corto and me reventaron'],
+      ['was tempted to sell at open', 'was tempted to sell en la apertura'],
+      ['but taken the high, also the high of NY', 'but taken out the previous high, also el máximo de NY'],
+      ['i knew they were going to close the gap', 'I knew they were going to cerrar el gap']
+    ];
+    var wkBad = wk.filter(function (c) { return P(c[0], 'es').back !== c[1]; }).map(function (c) { return { in: c[0], got: P(c[0], 'es').back, want: c[1] }; });
+    check('this week\'s chat: shorthand made plain, positions, the open, the gap (' + wk.length + ' lines)', wkBad.length === 0, wkBad);
+    var wkKeep = ['I was short of time', 'it was a long day', 'take the high road', 'the shop is open', 'I bought pants', 'she was ill', 'we are long term holders'];
+    var wkChanged = wkKeep.filter(function (k) { return P(k, 'es').back !== k; });
+    check('ordinary English is left alone (short of time, long day, high road, open shop, pants)', wkChanged.length === 0, wkChanged.map(function (k) { return [k, P(k, 'es').back]; }));
+    check('Spanish "en be" is break-even', P('en be', 'en').back === 'en BE', P('en be', 'en').back);
     // whole path with a stand-in translator that hands back what it was sent (and adds a full stop, as Google does)
     var realFetch = window.fetch;
     window.fetch = function (url) {
@@ -72,6 +98,13 @@
     check('a sentence that had its own full stop keeps it', t4 === 'Done..' || t4 === 'Done.', t4);
     var t5 = await window.stTranslateText('toy en verde hoy jajaja', 'auto', 'en'), t6 = await window.stTranslateText('joder, otra vez BE', 'auto', 'en');
     check('Spanish into English: "jajaja" at the end is "haha" after the sentence; "joder," opening it is "damn,"', t5 === 'estoy en ganancias hoy haha' && t6 === 'damn, otra vez BE.', [t5, t6]);
+    var w1 = await window.stTranslateText('Morning ☕', 'auto', 'es'), w2 = await window.stTranslateText('sweet', 'auto', 'es'), w3 = await window.stTranslateText('speak tomorrow', 'auto', 'es');
+    var w4 = await window.stTranslateText('a sweet trade', 'auto', 'es');
+    check('one-word replies are answered without the translator ("Morning" is not "Mañana"); inside a sentence the word is left to it',
+      w1 === 'buenos días ☕' && w2 === 'genial' && w3 === 'hablamos mañana' && w4 === 'a sweet trade.', [w1, w2, w3, w4]);
+    var o1 = await window.stTranslateText('solo 8 intercambios, un intercambio increíble y los intercambios; estás intercambiando puntos', 'en', 'es');
+    var o2 = await window.stTranslateText('van tras la brecha 1D', 'en', 'es');
+    check('a trade comes back "operación" with its article, a gap "gap"', o1 === 'solo 8 operaciones, una operación increíble y las operaciones; estás operando puntos.' && o2 === 'van tras el gap 1D.', [o1, o2]);
     window.fetch = realFetch;
   } catch (err) {
     check('the test ran to the end', false, (err && err.message) + ' @ ' + String((err && err.stack) || '').split('\n')[1]);
