@@ -155,7 +155,11 @@ def main():
     dbg_port = free_port()
     prof = tempfile.mkdtemp(prefix='edgeprof_e2e_')
     proc = subprocess.Popen([edge, '--headless=new', '--remote-debugging-port=%d' % dbg_port, '--user-data-dir=' + prof,
-                             '--no-first-run', '--no-default-browser-check', '--window-size=1280,1000', 'about:blank'],
+                             '--no-first-run', '--no-default-browser-check', '--window-size=1280,1000',
+                             # a headless page counts as backgrounded and gets a few frames a second; the charts apply a new view only on a
+                             # frame, so view checks failed at random (15 Oct 2026: 3 frames a second measured)
+                             '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+                             'about:blank'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     failed = 1
     try:

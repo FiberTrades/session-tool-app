@@ -21,7 +21,8 @@
     try { window.__stAcademyHub(); } catch (e) {}
     await W(200);
     var cards = Array.prototype.slice.call(hub.querySelectorAll('.vault-hub-card')), rc = cards.map(function (c) { return c.getBoundingClientRect(); });
-    ok('three rows, one under the other, the same width, four figures each, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && rc[0].bottom <= rc[1].top && rc[1].bottom <= rc[2].top && Math.abs(rc[0].width - rc[2].width) < 1 && cards.every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.width); }));
+    var bt = cards.map(function (c) { return Math.round(c.querySelector('.vh-go').getBoundingClientRect().top); });
+    ok('three boxes in one row, the same size, four figures each, the buttons lined up, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && Math.round(rc[0].top) === Math.round(rc[2].top) && Math.abs(rc[0].height - rc[2].height) < 1 && Math.abs(rc[0].width - rc[1].width) < 1 && bt[0] === bt[1] && bt[1] === bt[2] && cards.every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.height); }).concat(bt));
     ok('no Members area strip over the boxes', getComputedStyle(document.querySelector('.vault-hero')).display === 'none');
 
     var P = window.__stPractice;
