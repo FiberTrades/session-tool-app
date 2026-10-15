@@ -2194,6 +2194,12 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .vault-hub-card.soon .vault-hub-ic, .vault-hub-card.soon .vault-hub-title { opacity: .5; }
   .vault-hub-card.soon .vault-hub-body, .vault-hub-card.soon .vh-ts { opacity: .72; }
   .vault-hub-card.soon .vh-go, .vault-hub-card.soon:hover .vh-go { opacity: .5; border-color: var(--border-2); color: var(--text-mid); }
+  /* Before it opens, members see only that it is coming - no counts of videos they cannot watch (Nestor, 15 Oct 2026) */
+  .vault-hub-card.soon .vh-go { display: none; }
+  .vault-hub-card.soon > .vh-l { flex: none; }
+  .vault-hub-card.soon .vh-ts { flex: 1; display: flex; opacity: 1; }
+  .vh-soon { flex: 1; display: flex; align-items: center; justify-content: center; min-height: 116px; border: 1px dashed var(--border-2); border-radius: 10px;
+    font-family: 'AppNum','DM Mono',monospace; font-size: 11px; letter-spacing: .18em; text-transform: uppercase; color: var(--text-mid); }
   @media (max-width: 900px) { .vault-hub { grid-template-columns: minmax(0, 1fr); } .vault-hub-card { padding: 18px 16px; } }
   .vault-back { display: inline-flex; align-items: center; gap: 7px; background: transparent;
     border: none; color: var(--text-dim); cursor: pointer; font: inherit; font-size: 12px;
@@ -4905,6 +4911,24 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .atl-date-input { background: var(--bg-elev); border: 1px solid var(--border-2); border-radius: var(--radius-chip); color: var(--text); font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; padding: 5px 8px; color-scheme: dark; max-width: 100%; }
   .atl-date-input:focus { outline: none; border-color: var(--text-mid); }
   .atl-scroll { max-height: 520px; overflow: auto; }
+  /* Deleted trades, under All Trades History (15 Oct 2026) - the import window's deleted list, same look */
+  .atl-bin { margin-top: 12px; }
+  .atl-bin-tg { display: inline-flex; align-items: center; gap: 7px; background: transparent; border: 0; padding: 0; margin: 0; cursor: pointer; text-align: left;
+    font-family: 'AppNum','DM Mono',monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--text-dim); }
+  .atl-bin-chev { display: inline-block; font-size: 9px; line-height: 1; transition: transform 180ms; }
+  .atl-bin-tg[aria-expanded="true"] .atl-bin-chev { transform: rotate(90deg); }
+  .atl-bin-list { margin-top: 8px; border: 1px solid var(--border-2); border-radius: var(--radius-ctrl); max-height: 260px; overflow: auto; }
+  .atl-bin-row { display: flex; align-items: center; gap: 10px; min-width: 660px; padding: 9px 12px; border-bottom: 1px solid var(--border-2);
+    font-family: 'AppNum','DM Mono',monospace; font-size: 11px; color: var(--text-mid); }
+  .atl-bin-row:last-child { border-bottom: 0; }
+  .atl-bin-row > span { flex: 0 0 auto; white-space: nowrap; }
+  .atl-bin-d { width: 76px; color: var(--text-dim); } .atl-bin-s { width: 70px; color: var(--text); } .atl-bin-sd { width: 40px; } .atl-bin-r { width: 62px; }
+  .atl-bin-n { width: 90px; } .atl-bin-n.good { color: var(--good); } .atl-bin-n.bad { color: var(--bad); }
+  .atl-bin-row > .atl-bin-at { flex: 1 1 auto; color: var(--text-dim); }
+  .atl-bin-btn { flex: 0 0 auto; background: transparent; padding: 5px 12px; font-family: inherit; font-size: 10px; letter-spacing: .12em; text-transform: uppercase;
+    cursor: pointer; border-radius: var(--radius-ctrl); border: 1px solid var(--border-2); color: var(--text-dim); }
+  .atl-bin-btn.put { border-color: var(--good); color: var(--good); }
+  @media (hover: hover) { .atl-bin-tg:hover { color: var(--text-mid); } .atl-bin-btn.drop:hover { border-color: var(--bad); color: var(--bad); } }
   .atl-table { font-family: 'AppNum', 'DM Mono', monospace; font-size: 12px; min-width: 1330px; }
   /* Shares measured on the longest header / value per column (27 Sep). The floors are the widest EN / ES header or
      value + padding (e.g. "26 Sept 26 x2", "Entrada / Salida", "£1,250.00 · 150p"), so nothing clips at any
@@ -6997,6 +7021,7 @@ try {
             </div>
           </div>
           <div class="atl-scroll"><div class="atl-table" id="alltrades-table"></div></div>
+          <div class="atl-bin" id="atl-bin" hidden></div>
           </div>
         </div>
       </div>
@@ -18090,6 +18115,153 @@ try {
     data.history = data.history.filter(s => s.trades.length > 0);
   }
 
+  // ----- Deleted trades (Nestor, 15 Oct 2026: "if i delete a trade of the trade log, now i cant resync it or find it in
+  // deleted trades?") -----
+  // Deleting from the Trade Log moves the WHOLE trade here - notes, tags, charts, broker ticket - and Put back returns it
+  // exactly as it was. The Session Review's own copy of the trade goes with it: it wears the same broker ticket, so left
+  // behind it made the app believe the trade was still logged - it could be neither synced again nor found anywhere.
+  // data.deletedTrades = [{ id, at, trade, review: [{ sessionDate, slotSession, slotSymbol, at, trade }] }], merged by id.
+  function _binList() { return (Array.isArray(data.deletedTrades) ? data.deletedTrades : []).filter(e => e && e.id && e.trade); }
+  function _binClone(x) { return JSON.parse(JSON.stringify(x)); }
+  // The × in the Session Review's Trade Log takes a trade off that day's review only (its logged copy stays in All Trades
+  // History and the stats). It waits here too ({ from: 'review' }), so Put back returns it to the review.
+  function _binKeepReview(tr, r, at) {
+    if (!tr) return null;
+    const id = 'rv_' + (tr.id || genId());
+    const keep = (Array.isArray(data.deletedTrades) ? data.deletedTrades : []).filter(e => e && e.id !== id);
+    keep.push({ id: id, at: new Date().toISOString(), from: 'review', trade: _binClone(tr),
+      review: [{ sessionDate: (r && r.sessionDate) || '', slotSession: (r && r.slotSession) || '', slotSymbol: (r && r.slotSymbol) || '', at: at, trade: _binClone(tr) }] });
+    data.deletedTrades = keep;
+    return id;
+  }
+  function _binForget(id) { data.deletedTrades = (Array.isArray(data.deletedTrades) ? data.deletedTrades : []).filter(e => e && e.id !== id); }
+  function _binTrade(id) {
+    const tr = findTradeById(id);
+    if (!tr) { deleteTradeById(id); return false; }
+    const tk = tr.mt5Ticket != null ? String(tr.mt5Ticket) : '';
+    const rv = [];
+    _reviewSlotsArr().forEach(r => {
+      if (!r || !Array.isArray(r.trades)) return;
+      for (let i = r.trades.length - 1; i >= 0; i--) {
+        const x = r.trades[i];
+        if (!x) continue;
+        const other = x.seriesId && x.seriesId !== id && findTradeById(x.seriesId);   // linked to a different logged trade: not ours
+        if (x.seriesId === id || (tk && x.mt5Ticket != null && String(x.mt5Ticket) === tk && !other)) {
+          rv.unshift({ sessionDate: r.sessionDate || '', slotSession: r.slotSession || '', slotSymbol: r.slotSymbol || '', at: i, trade: _binClone(x) });
+          r.trades.splice(i, 1);
+        }
+      }
+    });
+    const keep = (Array.isArray(data.deletedTrades) ? data.deletedTrades : []).filter(e => e && e.id !== id);
+    keep.push({ id: id, at: new Date().toISOString(), trade: _binClone(tr), review: rv });
+    data.deletedTrades = keep;
+    deleteTradeById(id);
+    return true;
+  }
+  // Put back: the trade returns to the Trade Log with its own id (so its review copy, its replay and its posts still find it),
+  // and its review copy returns to that day's review if the review is still there. Never twice: not when the trade is
+  // already back (put back on another device), nor when its broker trade has since been synced in again.
+  function _unbinTrade(id) {
+    const all = Array.isArray(data.deletedTrades) ? data.deletedTrades : [];
+    const e = all.find(x => x && x.id === id);
+    if (!e || !e.trade) return false;
+    const tk = e.trade.mt5Ticket != null ? String(e.trade.mt5Ticket) : '';
+    const worn = tk && getAllLifetimeTrades().some(x => x && x.mt5Ticket != null && String(x.mt5Ticket) === tk);
+    if (e.from !== 'review' && !findTradeById(id) && !worn) data.currentSeries.push(_binClone(e.trade));
+    (e.review || []).forEach(x => {
+      if (!x || !x.trade) return;
+      let r = _reviewSlotsArr().find(sl => sl && (sl.sessionDate || '') === x.sessionDate && (sl.slotSession || '') === x.slotSession && (sl.slotSymbol || '') === x.slotSymbol);
+      // That day's review has closed: a trade that never reached the Trade Log goes into the review on screen, to be saved
+      // from there; one that is logged is already safe in All Trades History.
+      if (!r && e.from === 'review' && !(x.trade.seriesId && findTradeById(x.trade.seriesId))) r = data.review;
+      if (!r || !Array.isArray(r.trades)) return;
+      if (r.trades.some(y => y && ((x.trade.id && y.id === x.trade.id) || (tk && y.mt5Ticket != null && String(y.mt5Ticket) === tk)))) return;
+      r.trades.splice(Math.min(x.at, r.trades.length), 0, _binClone(x.trade));
+    });
+    data.deletedTrades = all.filter(x => x && x.id !== id);
+    rebuildSeriesByDate();
+    saveData();
+    return true;
+  }
+  // Delete for good: asked first. Its charts go too, unless another trade still shows them; a synced trade's broker row
+  // joins the import window's deleted list, so it is not reported as missing from the balance.
+  async function _dropBinTrade(id) {
+    const e = _binList().find(x => x.id === id);
+    if (!e) return false;
+    const ok = await window.appConfirm({ title: window._stT('Delete this trade for good?', '¿Eliminar esta operación para siempre?'),
+      body: window._stT('It and its charts are removed for good. This cannot be undone.', 'Se eliminan para siempre, con sus gráficos. No se puede deshacer.'),
+      ok: window._stT('Delete for good', 'Eliminar para siempre') });
+    if (!ok) return false;
+    const urls = [], linksOf = x => (x && Array.isArray(x.tvLinks) ? x.tvLinks : []).map(l => l && l.url).filter(Boolean);
+    [e.trade].concat((e.review || []).map(x => x && x.trade)).forEach(x => linksOf(x).forEach(u => { if (urls.indexOf(u) < 0) urls.push(u); }));
+    data.deletedTrades = (data.deletedTrades || []).filter(x => x && x.id !== id);
+    const tk = e.trade.mt5Ticket != null ? String(e.trade.mt5Ticket) : '';
+    if (tk) {
+      data.mt5Ignored = (data.mt5Ignored || []).filter(x => String(x) !== tk).concat([tk]);
+      data.mt5IgnoreLifted = (data.mt5IgnoreLifted || []).filter(x => String(x) !== tk);
+    }
+    saveData();
+    const used = new Set();
+    getAllLifetimeTrades().forEach(x => linksOf(x).forEach(u => used.add(u)));
+    allReviewTrades(false).forEach(x => linksOf(x).forEach(u => used.add(u)));
+    _binList().forEach(b => { linksOf(b.trade).forEach(u => used.add(u)); (b.review || []).forEach(r => linksOf(r && r.trade).forEach(u => used.add(u))); });
+    if (window.__stDeleteChart) urls.filter(u => !used.has(u)).forEach(u => window.__stDeleteChart(u));
+    return true;
+  }
+  function _binRefresh() {
+    try { renderAllTrades(); } catch (e) {}
+    try { renderStats(); } catch (e) {}
+    try { if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats(); } catch (e) {}
+    try { if (document.getElementById('page-tradeview').classList.contains('active')) renderTradeView(); } catch (e) {}
+    try { if (typeof syncTradedFromTrades === 'function') syncTradedFromTrades(); } catch (e) {}
+    try { if (typeof renderReviewTvLinks === 'function') renderReviewTvLinks(); } catch (e) {}   // as the ×'s own Undo does
+    try { if (typeof fullUpdate === 'function') fullUpdate(); else renderTrades(); } catch (e) {}
+    try { if (typeof syncReviewSectionsToActiveTrade === 'function') syncReviewSectionsToActiveTrade(); } catch (e) {}
+    try { if (typeof renderReviewPreview === 'function') renderReviewPreview(); } catch (e) {}
+    try { if (window.__stMt5ScanExcluded) window.__stMt5ScanExcluded(); } catch (e) {}
+    try { if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce(); } catch (e) {}
+  }
+  // Put back / Delete for good from either list (under All Trades History, and the import window's deleted list).
+  document.addEventListener('click', function (ev) {
+    const el = ev.target && ev.target.closest ? ev.target.closest('[data-bin-put],[data-bin-drop]') : null;
+    if (!el) return;
+    ev.preventDefault(); ev.stopPropagation();
+    if (el.hasAttribute('data-bin-put')) { if (_unbinTrade(el.getAttribute('data-bin-put'))) _binRefresh(); }
+    else _dropBinTrade(el.getAttribute('data-bin-drop')).then(ok => { if (ok) _binRefresh(); });
+  });
+  var _binOpen = false;
+  function renderTradeBin() {
+    const box = document.getElementById('atl-bin');
+    if (!box) return;
+    const all = _binList(), inView = new Set(filterByScopeRaw(all.map(e => e.trade)));
+    const rows = all.filter(e => inView.has(e.trade)).sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    if (!rows.length) { box.hidden = true; box.innerHTML = ''; return; }
+    box.hidden = false;
+    const esc = v => String(v == null ? '' : v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    const loc = (window.__lang === 'es') ? 'es-ES' : 'en-GB', n = rows.length;
+    let h = '<button type="button" class="atl-bin-tg" aria-expanded="' + (_binOpen ? 'true' : 'false') + '"><span class="atl-bin-chev" aria-hidden="true">&#9656;</span><span>'
+      + window._stT(n + ' deleted trade' + (n === 1 ? '' : 's'), n + (n === 1 ? ' operación eliminada' : ' operaciones eliminadas')) + '</span></button>';
+    if (_binOpen) {
+      h += '<div class="atl-bin-list">' + rows.map(e => {
+        const tr = e.trade, d = new Date(tr.date || ((e.review && e.review[0] && e.review[0].sessionDate) ? e.review[0].sessionDate + 'T12:00:00' : 0)), at = new Date(e.at || 0);
+        const net = tradeNetPL(tr) * tradeCopies(tr), tag = tr.result === 'Win' ? 'win' : tr.result === 'Lose' ? 'lose' : 'be';
+        return '<div class="atl-bin-row">'
+          + '<span class="atl-bin-d">' + (isNaN(d.getTime()) ? '\u2014' : d.toLocaleDateString(loc, { day: '2-digit', month: 'short', year: '2-digit' })) + '</span>'
+          + '<span class="atl-bin-s">' + esc(tr.symbol || '\u2014') + '</span>'
+          + '<span class="atl-bin-sd">' + esc(tSide(tr.side) || '\u2014') + '</span>'
+          + '<span class="atl-bin-r">' + (tr.result ? '<span class="atl-tag ' + tag + '">' + tResult(tr.result) + '</span>' : '\u2014') + '</span>'
+          + '<span class="atl-bin-n ' + (net > 0 ? 'good' : net < 0 ? 'bad' : '') + '">' + fmtMoney(net) + '</span>'
+          + '<span class="atl-bin-at">' + (isNaN(at.getTime()) ? '' : (e.from === 'review' ? window._stT('removed from the review ', 'quitada de la revisión el ') : window._stT('deleted ', 'eliminada el ')) + at.toLocaleDateString(loc, { day: 'numeric', month: 'short' })) + '</span>'
+          + '<button type="button" class="atl-bin-btn put" data-bin-put="' + esc(e.id) + '">' + window._stT('Put back', 'Recuperar') + '</button>'
+          + '<button type="button" class="atl-bin-btn drop" data-bin-drop="' + esc(e.id) + '">' + window._stT('Delete for good', 'Eliminar para siempre') + '</button>'
+          + '</div>';
+      }).join('') + '</div>';
+    }
+    box.innerHTML = h;
+    box.querySelector('.atl-bin-tg').onclick = () => { _binOpen = !_binOpen; renderTradeBin(); };
+  }
+  window.__stBin = { list: _binList, put: _unbinTrade, drop: _dropBinTrade, render: renderTradeBin, keep: _binKeepReview, forget: _binForget };
+
   // Chronological comparator shared by the series rebuild AND the display surfaces, so the
   // calendar-log day table and the Series-of-10 always show the same order: by calendar day,
   // then by entry time (exit time as a fallback). Trades with no time keep their relative order.
@@ -24264,6 +24436,8 @@ try {
         const removed = data.review.trades[idx];
         const removedIdx = idx;
         const prevActive = _activeReviewTradeIdx;
+        // Into Deleted trades as well (15 Oct 2026): the Undo below lasts 10 seconds, Put back lasts.
+        const _binId = (window.__stBin && removed) ? window.__stBin.keep(removed, data.review, removedIdx) : null;
         data.review.trades.splice(idx, 1);
         /* The day's review lives ON the trade while there are trades, and on data.review when there
            are none. Deleting the last trade used to throw the answers away with it - so move them
@@ -24292,6 +24466,7 @@ try {
           showUndoToast(
             _tlogT('Trade deleted', 'Operaci\u00f3n eliminada'),
             () => {
+              if (_binId && window.__stBin) window.__stBin.forget(_binId);   // undone: not deleted after all
               Object.keys(_dayBefore).forEach(k => { data.review[k] = _dayBefore[k]; });   // the day's own fields, as they were
               data.review.trades.splice(removedIdx, 0, removed);   // back where it was
               _activeReviewTradeIdx = Math.min(prevActive, data.review.trades.length - 1);
@@ -34014,6 +34189,7 @@ try {
     const panel = document.getElementById('alltrades-panel');
     const table = document.getElementById('alltrades-table');
     if (!panel || !table) return;
+    renderTradeBin();   // the deleted trades under the table
 
     panel.classList.toggle('atl-collapsed', _allTradesCollapsed);
     const toggle = document.getElementById('alltrades-toggle');
@@ -35530,20 +35706,19 @@ try {
     // First safety net: styled confirmation dialog (matches the app aesthetic)
     const _ok = await window.appConfirm({ title: t('confirm.delete_trade_title'), body: t('confirm.delete_trade') });
     if (!_ok) return;
-    // Capture this trade's uploaded chart URLs before deleting, so they can be purged
-    // from Storage once the undo window closes (skipped if the trade is restored).
-    const _delId = editingTradeId;
-    const _delTrade = (typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades().find(tt => tt.id === _delId) : null;
-    const _delUrls = (_delTrade && Array.isArray(_delTrade.tvLinks)) ? _delTrade.tvLinks.map(l => l && l.url).filter(Boolean) : [];
     // Capture snapshot BEFORE mutating so the undo toast can restore it
     const snap = _snapshotData();
-    deleteTradeById(editingTradeId);
+    // Into Deleted trades, whole (15 Oct 2026). Its charts are no longer wiped 12 seconds later: they stay while the trade
+    // can be put back, and go only with Delete for good.
+    _binTrade(editingTradeId);
     rebuildSeriesByDate();
     saveData();
     closeEditTradeModal();
     renderStats();
     if (document.getElementById('page-trades').classList.contains('active')) renderTradesStats();
     if (document.getElementById('page-tradeview').classList.contains('active')) renderTradeView();
+    try { renderTrades(); } catch (e) {}   // the review's copy went with it
+    try { if (window.__stMt5ScanExcluded) window.__stMt5ScanExcluded(); } catch (e) {}
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     // Second safety net: snackbar with UNDO button, stays up for 10 seconds
     showUndoToast(t('toast.trade_deleted'), () => {
@@ -35551,14 +35726,6 @@ try {
       showToast(t('toast.trade_restored'));
       if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
     });
-    // Once the undo window passes, purge this trade's chart images from Storage,
-    // but only if the trade was not restored via Undo.
-    if (_delUrls.length && window.__stDeleteChart) {
-      setTimeout(() => {
-        const back = ((typeof getAllLifetimeTrades === 'function') ? getAllLifetimeTrades() : []).some(tt => tt.id === _delId);
-        if (!back) _delUrls.forEach(u => window.__stDeleteChart(u));
-      }, 12000);
-    }
   });
 
   // ─── DISCORD COPY: optional notes translation ────────────────────────────
@@ -51359,14 +51526,39 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // a database change (the consumed_at column has a trigger that preserves it).
       (data.mt5ForceOffer || []).forEach(x => { if (x != null) set.delete(String(x)); });
       // ...but never a ticket a trade in the journal actually wears. Restoring is for trades that
-      // are MISSING; offering one that is already logged only invites a duplicate import.
-      _mt5WornTickets().forEach(x => set.add(x));
+      // are MISSING; offering one that is already logged only invites a duplicate import. Except a
+      // logged trade its day's review lost (_mt5LoggedOnly): that one is offered for the review.
+      const _back = _mt5LoggedOnly();
+      _back.forEach((v, k) => set.delete(k));
+      _mt5WornTickets().forEach(x => { if (!_back.has(x)) set.add(x); });
     } catch (e) {}
     return set;
   }
   // Tickets a trade in the journal ACTUALLY wears — no ledgers, no dismissals. This is the honest
   // answer to "is this broker trade in my log", which the excluded list needs and the blocked-set
   // above deliberately conflates with "handled".
+  // A synced trade of the review's day that is in All Trades History but in no review - taken off it with the × before
+  // Deleted trades existed (Nestor, 15 Oct 2026: "now i cant resync it"). Auto-sync offers it again, and the import links it
+  // to the logged trade and brings that trade's details with it, so saving the review neither logs it twice nor blanks it.
+  // Not a trade waiting in Deleted trades (Put back is its way back), nor one deleted for good.
+  function _mt5Ymd(v) { const x = new Date(v); return isNaN(x.getTime()) ? '' : x.getFullYear() + '-' + String(x.getMonth() + 1).padStart(2, '0') + '-' + String(x.getDate()).padStart(2, '0'); }
+  function _mt5LoggedOnly() {
+    const out = new Map();
+    try {
+      const day = (data.review && data.review.sessionDate) || _mt5Ymd(Date.now());
+      const inReview = new Set(allReviewTrades(false).map(x => x && x.mt5Ticket).filter(x => x != null).map(String));
+      const bin = new Set(((window.__stBin && window.__stBin.list()) || []).map(e => e.trade && e.trade.mt5Ticket).filter(x => x != null).map(String));
+      const scan = arr => (arr || []).forEach(t => {
+        if (!t || t.mt5Ticket == null) return;
+        const tk = String(t.mt5Ticket);
+        if (inReview.has(tk) || bin.has(tk) || _mt5IsIgnored(tk) || _mt5Ymd(t.date) !== day) return;
+        out.set(tk, t);
+      });
+      scan(data.currentSeries);
+      (data.history || []).forEach(h => scan(h && h.trades));
+    } catch (e) {}
+    return out;
+  }
   function _mt5WornTickets() {
     const set = new Set();
     const add = (list) => { (list || []).forEach(t => { if (t && t.mt5Ticket != null) set.add(String(t.mt5Ticket)); }); };
@@ -51467,12 +51659,14 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const worn = _mt5WornTickets();
     const idx = _mt5LoggedIndex();
     const start = _mt5JournalStartDay();
+    const binTk = new Set(((window.__stBin && window.__stBin.list()) || []).map(e => e.trade && e.trade.mt5Ticket).filter(x => x != null).map(String));
     return (all || []).filter(r => {
       if (!_mt5RowIsValid(r)) return false;
       // Predates the journal → out of scope, not missing. One day of slack so a trade on the very
       // first journalled day is never dropped by a timezone boundary.
       if (start !== null) { const d = _mt5Day(r.close_time); if (d !== null && d < start - 1) return false; }
       if (_mt5IsIgnored(r.ticket)) return false;   // answered: stop listing it and stop counting it
+      if (binTk.has(String(r.ticket))) return false;   // deleted from the Trade Log: it is in Deleted trades, not missing
       return !worn.has(String(r.ticket)) && !_mt5RowMatchesLogged(r, idx) && !_mt5RowAllowed(r);
     });
   }
@@ -51561,6 +51755,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   function _mt5RowAllowed(r) {
     if (!r) return false;
     if (!r.consumed_at) return true;
+    try { if (_mt5LoggedOnly().has(String(r.ticket))) return true; } catch (e) {}
     try { return (data.mt5ForceOffer || []).some(x => String(x) === String(r.ticket)); } catch (e) { return false; }
   }
   function runMt5AutoSync() {
@@ -51939,11 +52134,15 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const rows = live.sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
     // Deleted trades that are not already shown greyed-in-place above.
     const shownNow = new Set(rows.map(r => String(r.ticket)));
-    const delRows = (_mt5IgnoredRows || []).filter(r => !shownNow.has(String(r.ticket)))
+    // Synced trades deleted from the Trade Log sit in the same list (15 Oct 2026); their Put back returns the trade itself.
+    const binRows = ((window.__stBin && window.__stBin.list()) || []).filter(e => e.trade && e.trade.mt5Ticket != null)
+      .sort((a, b) => String(b.at || '').localeCompare(String(a.at || '')));
+    const binTk = new Set(binRows.map(e => String(e.trade.mt5Ticket)));
+    const delRows = (_mt5IgnoredRows || []).filter(r => !shownNow.has(String(r.ticket)) && !binTk.has(String(r.ticket)))
       .slice().sort((a, b) => String(b.close_time || '').localeCompare(String(a.close_time || '')));
     // Hiding the whole panel when the live list empties is what would have stranded the deleted
     // trades: every one deleted meant the section vanished, taking the only way back with it.
-    if (!rows.length && !delRows.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
+    if (!rows.length && !delRows.length && !binRows.length) { wrap.style.display = 'none'; list.innerHTML = ''; return; }
     wrap.style.display = '';
     const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
     const nLive = rows.filter(r => !_mt5JustDeleted[String(r.ticket)]).length;
@@ -52091,17 +52290,32 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     const dChev = document.getElementById('mt5-deleted-chev');
     const dToggle = document.getElementById('mt5-deleted-toggle');
     if (dWrap && dList && dLabel) {
-      if (!delRows.length) { dWrap.style.display = 'none'; dList.innerHTML = ''; }
+      const _dN = delRows.length + binRows.length;
+      if (!_dN) { dWrap.style.display = 'none'; dList.innerHTML = ''; }
       else {
         dWrap.style.display = '';
-        const _dOne = delRows.length === 1;
+        const _dOne = _dN === 1;
         dLabel.textContent = window._stT(
-          delRows.length + ' deleted trade' + (_dOne ? '' : 's'),
-          delRows.length + (_dOne ? ' operación eliminada' : ' operaciones eliminadas'));
+          _dN + ' deleted trade' + (_dOne ? '' : 's'),
+          _dN + (_dOne ? ' operación eliminada' : ' operaciones eliminadas'));
         dList.style.display = _mt5DeletedOpen ? '' : 'none';
         if (dChev) dChev.style.transform = _mt5DeletedOpen ? 'rotate(90deg)' : '';
         if (dToggle) dToggle.setAttribute('aria-expanded', _mt5DeletedOpen ? 'true' : 'false');
-        dList.innerHTML = delRows.map(r => {
+        const _binLoc = (window.__lang === 'es') ? 'es-ES' : 'en-GB';
+        dList.innerHTML = binRows.map(e => {
+          const tr = e.trade, net = tradeNetPL(tr) * tradeCopies(tr), d = new Date(tr.date || ((e.review && e.review[0] && e.review[0].sessionDate) ? e.review[0].sessionDate + 'T12:00:00' : 0));
+          const netStr = (net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2);
+          const when = isNaN(d.getTime()) ? '—' : d.toLocaleDateString(_binLoc, { day: '2-digit', month: 'short', year: '2-digit' });
+          return '<div class="mt5-exc-row" style="display:flex;align-items:center;gap:10px;padding:9px 12px;border-bottom:1px solid var(--border-2);font-family:\'AppNum\',\'DM Mono\',monospace;font-size:11px;">'
+            + '<span style="color:var(--text-dim);flex:0 0 108px;">' + esc(when) + '</span>'
+            + '<span style="color:var(--text-mid);flex:0 0 84px;">' + esc(tr.symbol || '—') + '</span>'
+            + '<span style="color:var(--text-dim);flex:0 0 54px;">' + esc(tSide(tr.side) || '') + '</span>'
+            + '<span style="color:var(--text-dim);flex:0 0 82px;">' + netStr + '</span>'
+            + '<span style="color:var(--text-dim);flex:1 1 auto;min-width:0;">#' + esc(tr.mt5Ticket) + ' · ' + (e.from === 'review' ? window._stT('removed from the review', 'quitada de la revisión') : window._stT('deleted', 'eliminada')) + '</span>'
+            + '<button type="button" data-bin-put="' + esc(e.id) + '" style="flex:0 0 auto;background:transparent;border:1px solid var(--border-2);color:var(--text-mid);padding:5px 12px;font-family:inherit;font-size:10px;letter-spacing:0.12em;text-transform:uppercase;cursor:pointer;border-radius:var(--radius-ctrl);">'
+            + window._stT('Put back', 'Recuperar') + '</button>'
+            + '</div>';
+        }).join('') + delRows.map(r => {
           const net = parseFloat(r.pnl);
           const netStr = isFinite(net) ? ((net >= 0 ? '+' : '−') + Math.abs(net).toFixed(2)) : '—';
           const when = r.close_time ? String(r.close_time).slice(0, 16).replace('T', ' ') : '—';
@@ -52593,6 +52807,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   }
     const _consumedTickets = [];
     const _newSync = [];   // trade copier: rows to join with their copies once all are in
+    const _loggedOnlyNow = _mt5LoggedOnly();   // logged trades coming back into their day's review
     selectedForDate.forEach(t => {
       if (t._isSync) {
         // Auto-synced EA trade. R-P column = the AIM you set on the trade (EA tp_r / tp_pips),
@@ -52640,6 +52855,16 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
           mt5Login: t._login ? String(t._login) : undefined,
           mt5Symbol: t.symbol || undefined
         };
+        // Back into its day's review while it is still logged (_mt5LoggedOnly): linked to that trade, with its details.
+        try {
+          const _lg = _loggedOnlyNow.get(String(t.position));
+          if (_lg) {
+            row.seriesId = _lg.id;
+            ['type', 'setup', 'symbol', 'ideaId'].forEach(k => { if (_lg[k] != null && _lg[k] !== '') row[k] = _lg[k]; });
+            const _rs = _lg.reviewSnap || {};
+            ['execution', 'focus', 'close', 'rice', 'tvLinks', 'concepts', 'mindset', 'reflection'].forEach(k => { if (_rs[k] != null) row[k] = JSON.parse(JSON.stringify(_rs[k])); });
+          }
+        } catch (e) {}
         _newSync.push(row);
         // The replay measures the peak from entry until price comes back to your BE stop.
         // That is the same number for a Win and a BE - the only difference is whether the
@@ -69249,7 +69474,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       var cnt=function(k){ return document.querySelectorAll('#vault-sec-'+k+' .vault-card').length; };
       var all=document.querySelectorAll('#vault-library .vault-card').length;
       var mt=G('vault-hub-media-tiles');
-      if(mt) mt.innerHTML = vhTile(T('Videos','Vídeos'), all) + vhTile(T('Walkthroughs','Recorridos'), cnt('method')) + vhTile(T('Live sessions','En directo'), cnt('live')) + vhTile(T('Weekly reviews','Revisiones'), cnt('reviews'));
+      if(mt) mt.innerHTML = open ? (vhTile(T('Videos','Vídeos'), all) + vhTile(T('Walkthroughs','Recorridos'), cnt('method')) + vhTile(T('Live sessions','En directo'), cnt('live')) + vhTile(T('Weekly reviews','Revisiones'), cnt('reviews')))
+        : '<span class="vh-soon">'+T('Coming soon','Próximamente')+'</span>';   // members: no counts of videos they cannot open yet
       var mg=G('vault-hub-media-go'); if(mg) mg.textContent = open ? T('Open','Abrir') : T('Soon','Pronto');
       var st=null; try{ st=window.STSCHOOL && STSCHOOL.stats && STSCHOOL.stats(); }catch(e){}
       var at=G('vault-hub-academy-tiles');
