@@ -97,6 +97,24 @@
     bk = book(false, 20); data.currentSeries = bk;
     renderCombinedAnalysis(bk); await W(100);
     check('£20 a trade: the run uses 24% of the limit, so D is recommended, and so is the Overall box', /cr-yes/.test(cardOf('D').querySelector('.cr-st').className) && /cr-yes/.test(document.querySelector('#combo-wrap .combo-verdict .cr-st').className), [cardOf('D').querySelector('.cr-st').textContent, document.querySelector('#combo-wrap .combo-verdict .cr-st').textContent]);
+    // ---- the break-even card picks the level that PASSES (Nestor, 15 Oct 2026: "make the be card pick the level that passes") ----
+    // "Never" makes the most (+78R) but brings 12 losses in a row (£1,200, over the £1,000 limit); moving at 2R makes +75R
+    // with no losing run at all.
+    var book2 = function () {
+      var out = [], dd = Date.UTC(2026, 6, 1, 9), n = 0;
+      function add(res, r, sim) { out.push({ id: 'q' + n, date: new Date(dd + n * 86400e3).toISOString(), entryTime: '09:00', symbol: 'EURUSD', accountId: 'acc_p', result: res, r: r, risk: 100, sl: 5, pips: r * 5, costs: 0,
+        beSim: sim, bePotentialR: res === 'BE' ? 0.2 : undefined, potentialR: res === 'Win' ? r : undefined }); n++; }
+      for (var i = 0; i < 5; i++) add('Win', 3, [3, 3, 3, 3, 3, 3, 3]);
+      for (i = 0; i < 12; i++) add('BE', 5, [-1, 0, 0, 0, 0, 0, 0]);
+      for (i = 0; i < 15; i++) add('BE', 5, [6, 0, 0, 0, 5, 5, 0]);
+      return out;
+    };
+    bk = book2(); data.currentSeries = bk;
+    renderCombinedAnalysis(bk); await W(100);
+    var dCard = cardOf('D'), dTxt = dCard ? dCard.textContent.replace(/\s+/g, ' ') : '';
+    check('the top level (never) fails its losing runs, so the card recommends the best level that passes: move at 2R', /cr-yes/.test(dCard.querySelector('.cr-st').className) && /move at 2R/.test(dTxt) && /\+75\.00R/.test(dTxt), dTxt.slice(0, 300));
+    check('...and says what it passed over and why', /Passed over/.test(dTxt) && /Stop moving to BE at all would make \+78\.00R/.test(dTxt) && /One losing run like this \(12 in a row on Prop 10K/.test(dTxt), dTxt.slice(0, 600));
+    check('...the Overall box recommends the same level', /cr-yes/.test(document.querySelector('#combo-wrap .combo-verdict .cr-st').className) && /move at 2R/.test(document.querySelector('#combo-wrap .combo-verdict').textContent), document.querySelector('#combo-wrap .combo-verdict').textContent.replace(/\s+/g, ' ').slice(0, 300));
     data.currentSeries = []; data.accounts = [];
   } catch (e) {
     check('the test ran to the end', false, (e && e.message) + ' @ ' + String((e && e.stack) || '').split('\n')[1]);

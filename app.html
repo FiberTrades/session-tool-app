@@ -30914,11 +30914,26 @@ try {
     // The no-change fallback IS current, so it carries current's figures verbatim.
     let bestBeIdx = -1, scenarioD = { totalGbp: current.totalGbp, perTradeGbp: current.perTradeGbp, perTradeUnits: (current.perTradeUnits || []).slice(),
                                       totalR: current.totalR, total: current.total };
+    const _dLadder = [];
     if (trackedBeSim.length > 0) {
       for (let k = 0; k < BE_LADDER.length; k++) {
         const sc = projectBeRule(k);
+        _dLadder[k] = sc;
         if (_uSum(sc) > _uSum(scenarioD) + 1e-9) { scenarioD = sc; bestBeIdx = k; }   // in R / pips, not money
       }
+    }
+    /* The best level that PASSES (Nestor, 15 Oct 2026: "make the be card pick the level that passes"). When the level that
+       makes the most fails one of the four tests (enough trades, a big enough gain, not one or two trades, losing runs), the
+       card works down the ladder and recommends the best level that clears all four; _dSkipped keeps the top one, so the card
+       can say what it would have made and why it was passed over. No level passes: the card stays on the top one, as before. */
+    let _dSkipped = null;
+    if (bestBeIdx >= 0 && tierIsStrong(tierD) && _statusOf(true, scenarioD) !== 'yes') {
+      let alt = -1;
+      _dLadder.forEach((sc, k) => {
+        if (k === bestBeIdx || !sc) return;
+        if (_uSum(sc) > _uSum(current) + 1e-9 && _statusOf(true, sc) === 'yes' && (alt < 0 || _uSum(sc) > _uSum(_dLadder[alt]) + 1e-9)) alt = k;
+      });
+      if (alt >= 0) { _dSkipped = { k: bestBeIdx, sc: scenarioD }; scenarioD = _dLadder[alt]; bestBeIdx = alt; }
     }
     // ---- E: WHERE the BE stop goes, as opposed to D's WHEN ----------------------------
     // The EA replays each trade once per offset - each rung arming when price reaches that
@@ -31155,7 +31170,18 @@ try {
       cardD.status = _statusOf(true, scenarioD);
       const _dIdea = (BE_LADDER[bestBeIdx] === null) ? t('cr.d_idea_never')
         : t('cr.d_idea_at').replace('{X}', '<strong class="rec-suggest">' + bestBeLabel + '</strong>');
-      cardD.html = _card({ status: cardD.status, sc: scenarioD, idea: _dIdea, result: _moreRes(scenarioD), extra: _habitRow,
+      // the level passed over, and why (see _dSkipped)
+      let _dPassed = [];
+      if (_dSkipped) {
+        const _es = (window.__lang === 'es'), _sk = _dSkipped.sc, _rk = _runs(_sk);
+        const _skName = BE_LADDER[_dSkipped.k] === null ? (t('combo.be_never') || 'stop moving to BE at all')
+          : (t('combo.be_at') || 'move at {R}R').replace('{R}', String(BE_LADDER[_dSkipped.k]));
+        const _skWhy = !_rk.ok ? _rk.why : (_concWhy(_sk) || _smallWhy(_sk) || '');
+        _dPassed = [[_es ? 'Descartada' : 'Passed over',
+          '<strong>' + _skName.charAt(0).toUpperCase() + _skName.slice(1) + '</strong>' + (_es ? ' daría ' : ' would make ')
+          + '<span class="cr-good">' + _R(_uSum(_sk) - _uSum(current)) + '</span>' + (_gbpD(_sk) ? ' (' + _gbpD(_sk) + ')' : '') + '. ' + _skWhy]];
+      }
+      cardD.html = _card({ status: cardD.status, sc: scenarioD, idea: _dIdea, result: _moreRes(scenarioD), extra: _habitRow.concat(_dPassed),
         why: [_concWhy(scenarioD), _smallWhy(scenarioD)] });
     }
     cardD.based = _testedLbl(cardD.status, 'D', scenarioD, nBeSim, 'cr.w_bes');
