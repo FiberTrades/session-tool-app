@@ -17,6 +17,13 @@
     var ld = new Date(); ld.setHours(12, 0, 0, 0); var want = null;
     for (var q = 0; q < 12 && !want; q++, ld.setDate(ld.getDate() - 1)) { if (ld.getDay() === 0 || ld.getDay() === 6) continue; var iso = ld.getFullYear() + '-' + String(ld.getMonth() + 1).padStart(2, '0') + '-' + String(ld.getDate()).padStart(2, '0'); var cl = new Date(iso + 'T21:00:00Z').getTime() / 1000; if (cl <= Date.now() / 1000) want = iso; }
     ok('opening Practice Replay lands on the latest whole trading day (' + want + '), at the Asia open', S() && S().day === want && S().now === S().f.open, S() && S().day);
+    // the progress bar scrubs: press half way along it and let go - the day plays to its middle
+    var trk = document.querySelector('#stpr-win .stpr-track'), tr2 = trk.getBoundingClientRect(), mid = S().f.open + (S().f.close - S().f.open) / 2;
+    var pev = function (ty, f) { trk.dispatchEvent(new PointerEvent(ty, { clientX: tr2.left + tr2.width * f, clientY: tr2.top + 1, bubbles: true, cancelable: true, pointerId: 11, pointerType: 'mouse' })); };
+    pev('pointerdown', 0.3); pev('pointermove', 0.5); pev('pointerup', 0.5); await W(300);
+    ok('the progress bar scrubs: pressed, dragged to half way and let go, the day plays to its middle', Math.abs(S().now - mid) <= 2 * 60, [S().now, mid]);
+    pev('pointerdown', 0.1); pev('pointerup', 0.1); await W(200);
+    ok('and back again (no trade yet), to a tenth of the day', Math.abs(S().now - (S().f.open + (S().f.close - S().f.open) * 0.1)) <= S().baseTf * 60);
     // the phone's scroll strip only comes with two charts or more
     await P._layout(2); var cw2 = !document.getElementById('stpr-cw').classList.contains('one'); await P._layout(1);
     ok('one chart: the charts area is marked for no scroll strip; two charts: it is not', document.getElementById('stpr-cw').classList.contains('one') && cw2);

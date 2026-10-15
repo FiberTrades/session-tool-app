@@ -84195,10 +84195,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-cb .stpr-b { height: 34px; min-width: 36px; }
   .stpr-play { height: 34px; padding: 0 22px; border-radius: 8px; background: var(--accent); color: #0B0A0D; border: 0; font-family: 'AppNum','DM Mono',monospace; font-size: 12px; font-weight: 500; display: inline-flex; align-items: center; gap: 7px; cursor: pointer; }
   .stpr-play:disabled { opacity: .45; cursor: default; }
-  .stpr-track { flex: 1; height: 3px; background: var(--border-2); border-radius: 3px; position: relative; margin: 0 8px; }
+  .stpr-track { flex: 1; height: 3px; background: var(--border-2); border-radius: 3px; position: relative; margin: 0 8px; cursor: pointer; touch-action: none; }
+  .stpr-track::before { content: ''; position: absolute; left: -8px; right: -8px; top: -13px; bottom: -13px; }   /* a finger-sized grab area */
   .stpr-track i { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); border-radius: 3px; }
   .stpr-track u { position: absolute; top: 50%; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%; background: var(--accent); }
-  .stpr-tm { font-family: 'AppNum','DM Mono',monospace; font-size: 12px; color: var(--text-mid); min-width: 92px; text-align: right; }
+  .stpr-tm { font-family: 'AppNum','DM Mono',monospace; font-size: 12px; color: var(--text-mid); min-width: 156px; text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }   /* fixed, so the progress bar beside it does not shift while it is dragged */
   .stpr-bg.max { padding: 0; }
   .stpr-bg.max .stpr-win { width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; }
   .stpr-bg.max .stpr-cw { height: auto; flex: 1 1 auto; min-height: 320px; }
@@ -84236,7 +84237,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     .stpr-act { width: auto; font-size: 9.5px; letter-spacing: .06em; }
     .stpr-cb { padding: 10px 12px; gap: 6px; }
     .stpr-cb .ph-hide { display: none; }
-    .stpr-tm { min-width: 0; font-size: 11px; }
+    .stpr-tm { min-width: 0; font-size: 11px; margin-left: auto; }
+    /* the progress bar on its own full-width row under the buttons (Nestor, 15 Oct 2026: "move the progress bar below on its
+       own, on phone it doesnt even work because its too small right now") */
+    .stpr-cb { flex-wrap: wrap; row-gap: 18px; }
+    .stpr-track { order: 9; flex: 1 0 100%; height: 4px; margin: 2px 7px 8px; }
+    .stpr-track u { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
     .stpr-play { padding: 0 16px; }
   }
 </style>
@@ -85493,6 +85499,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     $('stpr-fwd').addEventListener('click', function(){ pause(); step(); });
     $('stpr-back').addEventListener('click', function(){ pause(); back(); });
     $('stpr-restart').addEventListener('click', restart);
+    // The progress bar scrubs: press, drag and let go to go to that moment - forward plays the market on the way, back only
+    // to after the last trade, like the session buttons (it only showed where you were before).
+    var trk = document.querySelector('#stpr-win .stpr-track'), scrub = null;
+    var scrubAt = function(e){ var r = trk.getBoundingClientRect(), f = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width)), st = S.baseTf * 60, t = Math.round((S.f.open + f * (S.f.close - S.f.open)) / st) * st;
+      $('stpr-ti').style.width = (f * 100) + '%'; $('stpr-tu').style.left = (f * 100) + '%'; $('stpr-tm').textContent = dshort(new Date(t * 1000)) + ' ' + hm(t); return t; };
+    trk.addEventListener('pointerdown', function(e){ if (!S) return; e.preventDefault(); pause(); scrub = scrubAt(e); try { trk.setPointerCapture(e.pointerId); } catch (x) {} });
+    trk.addEventListener('pointermove', function(e){ if (scrub != null && S) scrub = scrubAt(e); });
+    trk.addEventListener('pointerup', function(){ if (scrub == null || !S) return; var t = scrub; scrub = null; if (!jumpAt(t)) paintProgress(); });
+    trk.addEventListener('pointercancel', function(){ scrub = null; if (S) paintProgress(); });
     $('stpr-speed').addEventListener('click', function(){ CFG.speed = ((CFG.speed || 0) + 1) % SPEEDS.length; save(); if (S && S.playing) { pause(); play(); } else paintProgress(); });
     $('stpr-rand').addEventListener('click', function(){ if (S) randomDay(S.sym.raw); });
     $('stpr-date').addEventListener('change', function(e){ var v = e.target.value; if (v && S) go(S.sym.raw, v); });
