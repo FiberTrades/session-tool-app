@@ -84255,6 +84255,32 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     .stpr-track u { width: 18px; height: 18px; margin: -9px 0 0 -9px; }
     .stpr-play { padding: 0 16px; } .stpr-play.es { padding: 0 10px; gap: 5px; font-size: 11px; }   /* "Reproducir" fits a phone row too (Nestor: "play needs to say reproducir") */
   }
+  /* A phone held sideways (Nestor, 15 Oct 2026: "can practice replay be rotated on phone to landscape? when in and off
+     fullscreen?"). The app's "rotate to portrait" screen stays away while practice is open, as it does for Trade Replay;
+     the bars go compact, the charts are sized so that charts, trade buttons and Play fill the screen once scrolled to (the
+     strip on the right scrolls), and Maximise gives the charts everything above the trade buttons. */
+  @media (orientation: landscape) and (hover: none) and (pointer: coarse) and (max-height: 560px) {
+    body:has(#stpr-bg.show) .rotate-gate { display: none !important; }
+    .stpr-bg { padding: 0; }
+    .stpr-win { width: 100%; height: 100%; max-height: none; border-radius: 0; border: 0; }
+    #stpr-pop { display: none; }
+    .stpr-hd { padding: 6px 12px; } .stpr-tb { padding: 5px 12px; gap: 6px; }
+    .stpr-cw, .stpr-bg.max .stpr-cw { height: max(200px, calc(100vh - 104px)); flex: none; min-height: 0; padding-right: 26px; }
+    .stpr-grid { right: 26px; } .stpr-bg.chartmax .stpr-grid { right: 0; }   /* the charts stop at the strip */
+    .stpr-scr { display: block; position: absolute; top: 0; right: 0; bottom: 0; width: 26px; z-index: 9; touch-action: pan-y; background: var(--bg-elev); border-left: 1px solid var(--border);
+      background-image: repeating-linear-gradient(to bottom, transparent 0 14px, rgba(255,255,255,.07) 14px 16px); background-size: 2px 100%; background-repeat: no-repeat; background-position: center; }
+    .stpr-scr i { position: absolute; left: 1px; top: 0; display: flex; align-items: center; justify-content: center; width: 22px; height: 34px; border-radius: 6px; background: var(--bg-elev2); border: 1px solid var(--border-2); color: var(--text-mid); }
+    .stpr-scr svg { width: 14px; height: 14px; }
+    .stpr-tr { padding: 6px 12px; min-height: 0; gap: 8px; }
+    .stpr-side, .stpr-exec, .stpr-fld input, .stpr-unit { height: 34px; }
+    .stpr-note { display: none; }
+    .stpr-cb { padding: 6px 12px; }
+    .stpr-bg.chartmax .stpr-hd, .stpr-bg.chartmax .stpr-tb { display: none; }
+    .stpr-bg.chartmax .stpr-win { overflow: hidden; }
+    .stpr-bg.chartmax .stpr-cw { flex: 1 1 auto; height: auto; min-height: 0; padding-right: 0; }
+    .stpr-bg.chartmax .stpr-scr { display: none; }
+    .stpr-bg.chartmax .stpr-cmx { display: flex; }
+  }
 </style>
 <div class="stpr-bg" id="stpr-bg" aria-hidden="true">
   <div class="stpr-win" id="stpr-win" role="dialog" aria-modal="true" aria-label="Practice Replay">
@@ -84675,7 +84701,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var pane = { i: i, tf: tf, want: want, el: el, chart: chart, series: series, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
       if (tf === 525600) pane.step = 365 * 86400;
       panes.push(pane); wirePane(pane);
-      (function(pp){ chart.timeScale().subscribeVisibleLogicalRangeChange(function(r){ dirty(); if (r && r.from < 30 && pp.hist && !pp.hist.full && !pp.hist.busy && byHand(pp)) morePast(pp); }); })(pane);
+      (function(pp){ chart.timeScale().subscribeVisibleLogicalRangeChange(function(r){ dirty(); if (r && r.from < 30 && pp.hist && !pp.hist.full && !pp.hist.busy && byHand(pp)) morePast(pp); }); 
+        // A view set before the chart has its size can be lost (it comes back squashed and zoomed out - the 80 ms re-apply
+        // is too soon on a slow phone): the moment the chart first gets its width, the last view asked for goes in again.
+        try { chart.timeScale().subscribeSizeChange(function(w){ if (w > 0 && !pp.sized) { pp.sized = true; if (pp._set) setRange(pp, pp._set); } }); } catch (e) {}
+      })(pane);
     }
   }
   async function loadPanes(){ for (var i = 0; i < panes.length; i++) { var e = await paneStatic(panes[i].tf); panes[i].hist = e; panes[i].static = e.agg; } }
@@ -85488,6 +85518,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     i.style.transform = 'translateY(' + Math.round(4 + f * (sc.clientHeight - i.offsetHeight - 8)) + 'px)'; }
   // On a phone the window already fills the screen, so Maximise gives the charts the whole of it (Trade Replay's "more
   // chart"): no header, no toolbars; the button on the chart brings them back. Each chart keeps the candles it showed.
+  function landPhone(){ try { return matchMedia('(orientation: landscape) and (hover: none) and (pointer: coarse) and (max-height: 560px)').matches; } catch (e) { return false; } }
   function chartMax(on){ var keep = panes.map(function(p){ return getRange(p); }); $('stpr-bg').classList.toggle('chartmax', !!on); $('stpr-max').classList.toggle('on', !!on); closeMenu();
     var put = function(){ panes.forEach(function(p, i){ if (keep[i]) setRange(p, { from: keep[i].from, to: keep[i].to }); }); dirty(); stripThumb(); };
     setTimeout(put, 90); setTimeout(put, 300); }
@@ -85525,7 +85556,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function wire(){
     wired = true;
     $('stpr-close').addEventListener('click', close);
-    $('stpr-max').addEventListener('click', function(){ if (phone()) { chartMax(!$('stpr-bg').classList.contains('chartmax')); return; } CFG.max = !$('stpr-bg').classList.contains('max'); save(); setMax(CFG.max); });
+    $('stpr-max').addEventListener('click', function(){ if (phone() || landPhone()) { chartMax(!$('stpr-bg').classList.contains('chartmax')); return; } CFG.max = !$('stpr-bg').classList.contains('max'); save(); setMax(CFG.max); });
     $('stpr-cmx').addEventListener('click', function(){ chartMax(false); });
     $('stpr-pop').addEventListener('click', popOut);
     $('stpr-win').addEventListener('click', function(e){
