@@ -10148,6 +10148,7 @@ try {
       'cr.st_no': 'Not recommended',
       'cr.st_data': 'Not enough data yet',
       'cr.based': 'Based on {N} {WHAT}',
+      'cr.tested': 'Tested on {T} of {N} trades',
       'cr.needed': '{N} {WHAT} so far · 10 needed',
       'cr.w_wins': 'winning trades',
       'cr.w_bes': 'break-evens',
@@ -12082,6 +12083,7 @@ try {
       'cr.st_no': 'No recomendado',
       'cr.st_data': 'Aún faltan datos',
       'cr.based': 'Basado en {N} {WHAT}',
+      'cr.tested': 'Probada en {T} de {N} operaciones',
       'cr.needed': '{N} {WHAT} hasta ahora · se necesitan 10',
       'cr.w_wins': 'operaciones ganadoras',
       'cr.w_bes': 'operaciones en BE',
@@ -31113,6 +31115,22 @@ try {
       // Same helper as the card's own sentence, so the verdict and the card cannot disagree.
       c.passesConcentration = (lo == null) ? true : !concentrationOf(lo);
     });
+    /* How many trades each rule was really TESTED on (Nestor, 15 Oct 2026: "change the label to show how many trades were
+       actually tested against this strategy"). A trade is tested when it carries what the rule reads - a win's best price
+       (A), a win's or break-even's best price (B), a stop and, on a loser, the EA's wider-stop replay (C), the EA's
+       break-even replay (D) - or when the rule changed it anyway. Every other trade counts at what it really made. */
+    const _hasW = new Set(trackedWins), _hasWB = new Set(trackedWins.concat(trackedBes)), _hasL = new Set(trackedLosers);
+    const _hasData = [
+      tr => _hasW.has(tr),
+      tr => _hasWB.has(tr),
+      tr => (parseFloat(tr.risk) || 0) > 0 && (parseFloat(tr.sl) || 0) > 0 && (tr.result !== 'Lose' || _hasL.has(tr)),
+      tr => Array.isArray(tr.beSim) && tr.beSim.length >= 7 && (parseFloat(tr.risk) || 0) > 0
+    ];
+    const _curPT = (current && current.perTradeUnits) || [];
+    candidates.forEach((c, k) => {
+      const su = (c.scenario && c.scenario.perTradeUnits) || [];
+      c.tested = allTrades.reduce((n, tr, i) => n + ((_hasData[k](tr) || Math.abs((Number(su[i]) || 0) - (Number(_curPT[i]) || 0)) > 1e-9) ? 1 : 0), 0);
+    });
 
     const beats = candidates.filter(c => c.delta > 0).sort((x, y) => y.delta - x.delta);
     const actionable = beats.filter(c => c.passesTier && c.passesDelta && c.passesConcentration);
@@ -31165,13 +31183,14 @@ try {
 
     // The Overall box in the same pattern as the cards (27 Sep 2026): status tag, then Best / Closest rule, Result,
     // Win rate and Why not. Same decision as before - the first actionable candidate, else the closest one.
-    let _vStatus = 'no', _vRows = '';
+    let _vStatus = 'no', _vRows = '', _vTested = null;
     const _wrExtra = _wrRow ? [[t('cr.v_wr_k'), _wrRow]] : [];
     if (beats.length === 0) {
       _vRows = _card({ status: 'no', result: t('cr.v_none'), extra: _wrExtra });
     } else {
       const _c = actionable.length ? actionable[0] : beats[0];
       _vStatus = actionable.length ? 'yes' : 'no';
+      _vTested = _c.tested;
       const _why = [];
       if (!actionable.length) {
         if (!_c.passesTier) _why.push(t('cr.v_few').replace('{N}', String(_c.n)).replace('{WHAT}', t(_c.whatKey || 'cr.w_trades')));
@@ -31462,7 +31481,7 @@ try {
     const _verdictHtml = showBaseline ? `<div class="combo-verdict combo-verdict-top">
         <div class="combo-verdict-body">
           <div class="combo-verdict-label"><span class="combo-verdict-spark">&#10022;</span>${t('combo.verdict_label') || 'Overall \u00b7 all four compared'}</div>
-          <div class="combo-direction-header"><span class="cr-st cr-${_vStatus}">${t(_vStatus === 'yes' ? 'cr.v_st_yes' : 'cr.v_st_no')}</span><span class="cr-based">${t('cr.based').replace('{N}', String(current.tradeCount || 0)).replace('{WHAT}', t('cr.w_trades'))}</span></div>
+          <div class="combo-direction-header"><span class="cr-st cr-${_vStatus}">${t(_vStatus === 'yes' ? 'cr.v_st_yes' : 'cr.v_st_no')}</span><span class="cr-based">${(_vTested != null ? t('cr.tested').replace('{T}', String(_vTested)) : t('cr.based').replace('{WHAT}', t('cr.w_trades'))).replace('{N}', String(current.tradeCount || 0))}</span></div>
           <div class="combo-direction-rec combo-verdict-rows">${_vRows}</div>
         </div>
         ${_sparkline()}
