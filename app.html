@@ -10167,6 +10167,7 @@ try {
       'cr.idea': 'The idea',
       'cr.result': 'Result',
       'cr.why_not': 'Why not',
+      'cr.runs': 'Losing runs',
       'cr.watch': 'Watch out',
       'cr.habit': 'Your BE habit',
       'cr.st_yes': 'Recommended',
@@ -12102,6 +12103,7 @@ try {
       'cr.idea': 'La idea',
       'cr.result': 'Resultado',
       'cr.why_not': 'Por qué no',
+      'cr.runs': 'Rachas de pérdidas',
       'cr.watch': 'Ojo',
       'cr.habit': 'Tu hábito de BE',
       'cr.st_yes': 'Recomendado',
@@ -30442,7 +30444,65 @@ try {
       const why = (p.why || []).filter(Boolean).map(x => '<span class="cr-li">' + x + '</span>').join('');
       return _row(p.ideaLabel || t('cr.idea'), p.idea) + _row(t('cr.result'), p.result)
         + (p.extra || []).map(e => _row(e[0], e[1])).join('')
+        + (p.sc ? _row(t('cr.runs'), _runsRow(p.sc)) : '')
         + _row(p.status === 'yes' ? t('cr.watch') : t('cr.why_not'), why);
+    }
+    /* ---- Losing runs (Nestor, 15 Oct 2026: "if i am doing a prop firm challenge and i lose 16 times in a row i would blow my
+       account so i need also this type of information when you tell me to change my strategy") ----
+       A rule that adds R overall can still bring longer runs of losses. Worked out per ACCOUNT, as a prop firm judges it:
+       the longest run of losses with the rule against now (where and when, what it costs at the trader's own risk and at 1%
+       a trade), and each prop account checked against its own daily and overall limits by the app's prop checker
+       (__stPropStatus) with the rule's results in place of the real ones. */
+    function _runsRow(sc) {
+      try {
+        const su = sc.perTradeUnits || [], sg = sc.perTradeGbp || [], cu = (current && current.perTradeUnits) || [];
+        const es = (window.__lang === 'es'), T2 = (a, b) => (es ? b : a);
+        const ms = tr => { const d = new Date(tr && tr.date).getTime() || 0, m = /^(\d{1,2}):(\d{2})/.exec(String((tr && (tr.entryTime || tr.exitTime)) || '').trim()); return d + (m ? (+m[1] * 60 + +m[2]) * 60000 : 0); };
+        const order = allTrades.map((tr, i) => i).sort((a, b) => ms(allTrades[a]) - ms(allTrades[b]));
+        const byAcc = {};
+        order.forEach(i => { const k = (allTrades[i] && allTrades[i].accountId) || '_'; (byAcc[k] = byAcc[k] || []).push(i); });
+        const longest = (ids, u) => { let best = 0, run = 0, from = 0, bf = 0, bt = -1;
+          ids.forEach((i, j) => { if ((Number(u[i]) || 0) < -0.05) { if (!run) from = j; run++; if (run > best) { best = run; bf = from; bt = j; } } else run = 0; });
+          return { n: best, ids: best ? ids.slice(bf, bt + 1) : [] }; };
+        let pick = null;
+        Object.keys(byAcc).forEach(k => { const a = longest(byAcc[k], su), b = longest(byAcc[k], cu);
+          if (!pick || a.n > pick.a.n || (a.n === pick.a.n && (a.n - b.n) > (pick.a.n - pick.b.n))) pick = { k: k, a: a, b: b }; });
+        const accOf = k => (Array.isArray(data.accounts) ? data.accounts : []).find(x => x && x.id === k) || null;
+        const nm = k => { const a = accOf(k); return a && a.name ? a.name : ''; };
+        const dShort = tr => new Date(tr.date).toLocaleDateString(tLocale(), { day: 'numeric', month: 'short' });
+        const out = [];
+        if (pick && pick.a.n) {
+          const n = pick.a.n, m = pick.b.n, a0 = allTrades[pick.a.ids[0]], a1 = allTrades[pick.a.ids[pick.a.ids.length - 1]];
+          const money = pick.a.ids.reduce((t2, i) => t2 + (Number(sg[i]) || 0), 0), acc = accOf(pick.k), sb = acc ? (parseFloat(acc.startingBalance) || 0) : 0;
+          const where = (nm(pick.k) ? T2(', on ', ', en ') + nm(pick.k) : '') + ', ' + (dShort(a0) === dShort(a1) ? dShort(a0) : dShort(a0) + '–' + dShort(a1));
+          const cost = fmtGbp(money) + (sb > 0 ? ' (' + (Math.abs(money) / sb * 100).toFixed(1) + T2('% of the account; ', '% de la cuenta; ') + n + T2('% at 1% a trade)', '% arriesgando un 1% por operación)') : '');
+          out.push(n === m
+            ? T2('Longest run of losses: ' + n + ' in a row, the same as now', 'Peor racha: ' + n + ' pérdidas seguidas, igual que ahora') + where + ': ' + cost + '.'
+            : T2('With this rule: <strong>' + n + ' losses in a row</strong> at worst (now ' + m + ')', 'Con esta regla: <strong>' + n + ' pérdidas seguidas</strong> como peor racha (ahora ' + m + ')') + where + ': ' + cost + '.');
+        }
+        // every prop account in view, against its own limits
+        if (typeof window.__stPropStatus === 'function' && typeof getAllLifetimeTrades === 'function') {
+          const ruleW = r => (r === 'firmDailyLoss' ? T2('daily limit', 'límite diario') : T2('overall limit', 'límite total'));
+          const dayW = d => new Date(d + 'T12:00:00').toLocaleDateString(tLocale(), { day: 'numeric', month: 'short' });
+          const inside = [];
+          Object.keys(byAcc).forEach(k => {
+            const acc = accOf(k); if (!acc) return;
+            const life = getAllLifetimeTrades().filter(t2 => t2 && t2.accountId === k && t2.date).sort((x, y) => ms(x) - ms(y));
+            const now = window.__stPropStatus(acc, life); if (!now) return;   // not a prop account with limits
+            const net = {}; byAcc[k].forEach(i => { const tr = allTrades[i]; if (tr && tr.id) net[tr.id] = (Number(sg[i]) || 0) / ((typeof tradeCopies === 'function') ? tradeCopies(tr) : 1); });
+            const alt = window.__stPropStatus(acc, life.map(t2 => (t2.id in net) ? Object.assign({}, t2, { actualGross: net[t2.id] + ((typeof tradeCosts === 'function') ? tradeCosts(t2) : 0) }) : t2));
+            const nf = now.status === 'failed', af = alt && alt.status === 'failed';
+            const said = x => ruleW(x.failure && x.failure.rule) + T2(' on ', ' el ') + dayW(x.failedOn);
+            if (af && !nf) out.push('<span class="cr-bad">' + nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + '.</span>');
+            else if (af && nf) out.push(nm(k) + T2(' would have broken its ', ' habría roto su ') + said(alt) + T2(' (it really broke its ', ' (en realidad rompió su ') + said(now) + ').');
+            else if (!af && nf) out.push('<span class="cr-good">' + nm(k) + T2(' would have stayed inside its limits', ' habría seguido dentro de sus límites') + '</span>' + T2(' (it really broke its ', ' (en realidad rompió su ') + said(now) + ').');
+            else inside.push(nm(k));
+          });
+          const list = inside.length > 1 ? inside.slice(0, -1).join(', ') + T2(' and ', ' y ') + inside[inside.length - 1] : inside[0];
+          if (inside.length) out.push(T2('Inside the daily and overall limits on ', 'Dentro de los límites diario y total en ') + list + '.');
+        }
+        return out.map(x => '<span class="cr-li">' + x + '</span>').join('');
+      } catch (e) { return ''; }
     }
     function _based(status, n, whatKey) {
       return (status === 'data' ? t('cr.needed') : t('cr.based')).replace('{N}', String(n)).replace('{WHAT}', t(whatKey));
@@ -30510,7 +30570,7 @@ try {
       const _wrC = current && typeof current.winRate === 'number' ? Math.round(current.winRate) : null;
       const _wrS = typeof scenarioA.winRate === 'number' ? Math.round(scenarioA.winRate) : null;
       const _wr = (_wrC !== null && _wrS !== null && _wrS < _wrC) ? t('cr.wr_drop').replace('{A}', String(_wrC)).replace('{B}', String(_wrS)) : '';
-      cardA.html = _card({ status: cardA.status,
+      cardA.html = _card({ status: cardA.status, sc: scenarioA,
         idea: t('cr.a_idea_found').replace('{X}', '<strong class="rec-suggest">' + _dualStretch() + '</strong>'),
         result: _moreRes(scenarioA),
         why: [_concWhy(scenarioA), _smallWhy(scenarioA), _cliff, _wr] });
@@ -30559,7 +30619,7 @@ try {
       cardB.html = _card({ status: 'no', idea: t('cr.b_idea'), result: _res, why: _why });
     } else {
       cardB.status = _statusOf(true, scenarioB);
-      cardB.html = _card({ status: cardB.status,
+      cardB.html = _card({ status: cardB.status, sc: scenarioB,
         idea: t('cr.b_idea_found').replace('{X}', '<strong class="rec-suggest">' + _dualTP() + '</strong>'),
         result: _moreRes(scenarioB), why: [_concWhy(scenarioB), _smallWhy(scenarioB)] });
     }
@@ -30925,7 +30985,7 @@ try {
       cardC.html = _card({ status: 'no', idea: t('cr.c_idea'), result: _res, why: _why });
     } else {
       cardC.status = _statusOf(tierIsStrong(tierC), scenarioC);
-      cardC.html = _card({ status: cardC.status,
+      cardC.html = _card({ status: cardC.status, sc: scenarioC,
         idea: t('cr.c_idea_found').replace('{X}', '<strong class="rec-suggest">+' + bestWiden + ' ' + _pipW(bestWiden) + '</strong>'),
         result: _moreRes(scenarioC), why: [_concWhy(scenarioC), _smallWhy(scenarioC)] });
     }
@@ -31023,7 +31083,7 @@ try {
       cardD.status = _statusOf(true, scenarioD);
       const _dIdea = (BE_LADDER[bestBeIdx] === null) ? t('cr.d_idea_never')
         : t('cr.d_idea_at').replace('{X}', '<strong class="rec-suggest">' + bestBeLabel + '</strong>');
-      cardD.html = _card({ status: cardD.status, idea: _dIdea, result: _moreRes(scenarioD), extra: _habitRow,
+      cardD.html = _card({ status: cardD.status, sc: scenarioD, idea: _dIdea, result: _moreRes(scenarioD), extra: _habitRow,
         why: [_concWhy(scenarioD), _smallWhy(scenarioD)] });
     }
     cardD.based = _testedLbl(cardD.status, 'D', scenarioD, nBeSim, 'cr.w_bes');
@@ -31057,7 +31117,7 @@ try {
     } else {
       cardE.status = _statusOf(true, scenarioE);
       const _mE = Math.round(scenarioE.missed || 0);
-      cardE.html = _card({ status: cardE.status,
+      cardE.html = _card({ status: cardE.status, sc: scenarioE,
         idea: t('cr.e_idea_found').replace('{X}', '<strong class="rec-suggest">' + bestOffLabel + '</strong>'),
         result: _moreRes(scenarioE),
         why: [_concWhy(scenarioE), _smallWhy(scenarioE),
@@ -31379,7 +31439,7 @@ try {
         if (!_c.passesTier) _why.push(t('cr.v_few').replace('{N}', String(_c.n)).replace('{WHAT}', t(_c.whatKey || 'cr.w_trades')));
         _why.push(_concWhy(_c.scenario), _smallWhy(_c.scenario), t('cr.v_keep'));
       }
-      _vRows = _card({ status: _vStatus, ideaLabel: t(actionable.length ? 'cr.v_best' : 'cr.v_closest'),
+      _vRows = _card({ status: _vStatus, sc: _c.scenario, ideaLabel: t(actionable.length ? 'cr.v_best' : 'cr.v_closest'),
         idea: '<strong>' + _c.name + '</strong> (' + _c.suggest + ')', result: _moreRes(_c.scenario), extra: _wrExtra, why: _why });
     }
 
