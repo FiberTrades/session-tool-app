@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.96"
+#property version   "8.97"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3544,7 +3544,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.96\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.97\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3624,12 +3624,18 @@ void LivePartial(ulong deal,ulong posId)
 // the real events go first, and a failed tick is simply skipped for 5 s. Follow accounts send nothing (the Lead's
 // trade is the card).
 string LiveTickNum(double v,int d){ return (v==EMPTY_VALUE) ? "null" : DoubleToString(v,d); }
-// "P:1.00:50:0|T:1.50:0.50:1" - each partial-close step (trigger in R, % of the size, done) and trailing step
-// (trigger in R, where it moves the stop in R, done).
+// "P:1.00:50:0|T:1.50:0.50:1|B:1.82:0.11:0" - each partial-close step (trigger in R, % of the size, done), trailing step
+// (trigger in R, where it moves the stop in R, done) and the BE line (below).
 string LiveLadder(double op,int d,double rpx)
   {
    if(rpx<=0) return "";
    string s="";
+   // v8.97 (Nestor, 16 Oct 2026: "can this display where the BE line is?"): the break-even line while it waits - where
+   // it sits in R (dragged or not) and where it moves the stop in R. Sent only while armed, so it goes from the app's
+   // chart the moment the stop has moved, as the line does on this chart. The tick's signature carries the ladder, so a
+   // drag reaches the app within a second.
+   if(g_useBE && g_beArmed && g_beTrigger>0 && g_beDir==d)
+      s+="B:"+DoubleToString((g_beTrigger-op)*d/rpx,2)+":"+DoubleToString(BEOffsetPx(rpx)/rpx,2)+":0";
    for(int i=0;i<g_pcCount && i<PC_MAX;i++)
      {
       if(g_pcTrig[i]<=0) continue;
@@ -6586,7 +6592,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.96 loaded (a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.97 loaded (the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

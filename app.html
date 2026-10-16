@@ -1349,6 +1349,7 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-mk.orig { background: var(--border-2); } .slx-mk.orig span { opacity: 0.6; }
   .slx-mk.sl { background: var(--text-mid); height: 20px; top: 5px; } .slx-mk.sl span { color: var(--text-mid); top: 22px; }
   .slx-mk.t { height: 8px; top: 11px; }
+  .slx-mk.be { background: #4C8DFF; } .slx-mk.be span { color: #4C8DFF; }
   .slx-mk.done { opacity: 0.45; }
   .slx-now { position: absolute; top: 9px; width: 12px; height: 12px; margin-left: -6px; border-radius: 50%; background: var(--good); border: 2px solid var(--bg-elev); transition: left 1.2s ease-out; }
   .slx-now.r { background: var(--bad); }
@@ -20017,12 +20018,15 @@ try {
       } catch (e) {}
       return red + med + hol;
     }
+    // EA 8.97 adds "B:<where the BE line sits, R>:<where it moves the stop, R>:0" while the BE line waits (Nestor, 16 Oct
+    // 2026: "can this display where the BE line is?"); older EAs leave b null.
     function parseLad(s) {
-      var out = { p: [], t: [] };
+      var out = { p: [], t: [], b: null };
       String(s || '').split('|').forEach(function (x) {
         var a = x.split(':'); if (a.length < 4) return;
         if (a[0] === 'P') out.p.push({ r: Number(a[1]), pct: Number(a[2]), done: a[3] === '1' });
         else if (a[0] === 'T') out.t.push({ r: Number(a[1]), to: Number(a[2]), done: a[3] === '1' });
+        else if (a[0] === 'B' && isFinite(Number(a[1]))) out.b = { r: Number(a[1]), to: Number(a[2]), done: a[3] === '1' };
       });
       return out;
     }
@@ -20033,7 +20037,7 @@ try {
       var R = has ? (isFinite(tk.r) ? tk.r : ((risk0 > 0 && isFinite(tk.pnl)) ? tk.pnl / risk0 : NaN)) : NaN, pnl = has && isFinite(tk.pnl) ? tk.pnl : NaN;
       var slR = (has && isFinite(tk.sl)) ? tk.sl : (r.lockR != null ? r.lockR : (r.beAt ? 0 : -1));
       var tpR = (has && isFinite(tk.tp)) ? tk.tp : NaN, lad = parseLad(has ? tk.lad : '');
-      var pts = [-1, 0, slR]; if (isFinite(tpR)) pts.push(tpR); lad.p.forEach(function (x) { pts.push(x.r); }); lad.t.forEach(function (x) { pts.push(x.r); });
+      var pts = [-1, 0, slR]; if (isFinite(tpR)) pts.push(tpR); lad.p.forEach(function (x) { pts.push(x.r); }); lad.t.forEach(function (x) { pts.push(x.r); }); if (lad.b) pts.push(lad.b.r);
       var lo = Math.min.apply(null, pts), hi = Math.max.apply(null, pts.concat([isFinite(tpR) ? tpR : 2]));
       if (on() && isFinite(R)) { lo = Math.min(lo, R); hi = Math.max(hi, R); }
       var span = (hi - lo) || 1, pos = function (x) { return ((x - lo) / span * 100).toFixed(2) + '%'; };
@@ -20043,6 +20047,7 @@ try {
       marks += '<div class="slx-mk sl" style="left:' + pos(slR) + '"><span>' + esc(be ? 'SL · BE' : 'SL ' + fR(slR)) + '</span></div>';
       lad.p.forEach(function (x, i) { marks += '<div class="slx-mk' + (x.done ? ' done' : '') + '" style="left:' + pos(x.r) + '"><span>' + esc('P' + (i + 1) + ' ' + fR(x.r)) + '</span></div>'; });
       lad.t.forEach(function (x, i) { marks += '<div class="slx-mk t up' + (x.done ? ' done' : '') + '" style="left:' + pos(x.r) + '"><span>' + esc('T' + (i + 1)) + '</span></div>'; });
+      if (lad.b) marks += '<div class="slx-mk be up" style="left:' + pos(lad.b.r) + '"><span>BE</span></div>';
       if (isFinite(tpR)) marks += '<div class="slx-mk" style="left:' + pos(tpR) + '"><span>' + esc('TP ' + fR(tpR)) + '</span></div>';
       var seg = slR < -0.03 ? '<div class="slx-seg" style="left:' + pos(slR) + ';width:' + ((0 - slR) / span * 100).toFixed(2) + '%;background:var(--bad)"></div>'
               : slR > 0.03 ? '<div class="slx-seg" style="left:' + pos(0) + ';width:' + (slR / span * 100).toFixed(2) + '%;background:var(--good)"></div>' : '';
@@ -20272,13 +20277,18 @@ try {
       var d = long ? 1 : -1, rp = tk.rpx, P = function (x) { return tk.op + d * x * rp; }, L = [];
       var slR = isFinite(tk.sl) ? tk.sl : (r.lockR != null ? r.lockR : (r.beAt ? 0 : -1)), be = Math.abs(slR) < 0.03;
       // at break-even the stop sits on the entry: "SL · BE" marks both, so no second label on top of it
-      if (!(be && isFinite(rp) && rp > 0)) L.push({ price: tk.op, color: '#9a96a6', lineStyle: 2, title: T2('Entry', 'Entrada') });
+      // solid, like the entry line on the MT5 chart (Nestor, 16 Oct 2026: "can the entry line be a solid line?")
+      if (!(be && isFinite(rp) && rp > 0)) L.push({ price: tk.op, color: '#9a96a6', lineStyle: 0, title: T2('Entry', 'Entrada') });
       if (isFinite(rp) && rp > 0) {
         L.push({ price: P(slR), color: '#E56767', lineStyle: 0, title: be ? 'SL · BE' : 'SL' });   // red wherever it sits (Nestor)
         if (isFinite(tk.tp)) L.push({ price: P(tk.tp), color: '#4ECD8B', lineStyle: 0, title: 'TP' });
         var lad = parseLad(tk.lad);
-        lad.p.forEach(function (x, i) { L.push({ price: P(x.r), color: x.done ? 'rgba(232,207,99,0.35)' : 'rgb(232,207,99)', lineStyle: 2, title: 'P' + (i + 1) + ' ' + Math.round(x.pct) + '%' }); });
-        lad.t.forEach(function (x, i) { L.push({ price: P(x.r), color: x.done ? 'rgba(150,165,215,0.3)' : 'rgba(150,165,215,0.75)', lineStyle: 1, title: 'T' + (i + 1) }); });
+        // the EA's own colours on the MT5 chart (Nestor, 16 Oct 2026, comparing the two): partial closes teal and dashed,
+        // trailing steps pink and dotted, a step already used grey
+        lad.p.forEach(function (x, i) { L.push({ price: P(x.r), color: x.done ? '#5F5F6E' : '#5DCAA5', lineStyle: 2, title: 'P' + (i + 1) + ' ' + Math.round(x.pct) + '%' }); });
+        lad.t.forEach(function (x, i) { L.push({ price: P(x.r), color: x.done ? '#5F5F6E' : '#F472B6', lineStyle: 1, title: 'T' + (i + 1) }); });
+        // EA 8.97: the BE line where it sits on the MT5 chart (dragged or not), solid blue like it; gone once the stop has moved
+        if (lad.b) L.push({ price: P(lad.b.r), color: '#4C8DFF', lineStyle: 0, title: 'BE' });
       }
       /* The spread (EA 8.90): the ask as a faint dotted line above the bid candles (no axis label, so it never sits on the
          live price or the countdown) and the figure in the top line - pips on forex, price elsewhere. Moved in place each tick. */
@@ -20300,7 +20310,7 @@ try {
         c.sig = sig;
         c.lines.forEach(function (pl) { try { c.series.removePriceLine(pl); } catch (e) {} });
         c.lines = L.map(function (o) { return c.series.createPriceLine({ price: o.price, color: o.color, lineWidth: 1, lineStyle: o.lineStyle, axisLabelVisible: true, title: o.title }); });
-        var ps = L.filter(function (o) { return o.title === 'SL' || o.title === 'SL · BE' || o.title === 'TP' || o.lineStyle === 2; }).map(function (o) { return o.price; });
+        var ps = L.filter(function (o) { return !/^T\d/.test(o.title); }).map(function (o) { return o.price; });
         c.rng = ps.length ? [Math.min.apply(null, ps), Math.max.apply(null, ps)] : null;
       }
     }
@@ -20358,8 +20368,11 @@ try {
     // diag: each chart's levels and candle count
     function chartDiag() { return Object.keys(charts).map(function (k) { var c = charts[k], bc = barsC[c.sym + '|' + (c.tf || 'M1')], lb = c.el.querySelector('.slx-tfl b');
       return { k: k, sym: c.sym, tf: c.tf, label: lb ? lb.textContent : '', ready: !!c.series, hidden: !!c.el.hidden, inCard: !!(c.el.parentNode && c.el.parentNode.closest && c.el.parentNode.closest('.slx-tc')),
-               bars: bc ? bc.bars.length : 0, form: bc && bc.form ? [bc.form.time, bc.form.open, bc.form.high, bc.form.low, bc.form.close] : null, lines: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.price; }), colors: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.color; }) }; }); }
-    return { render: render, later: later, charts: chartDiag };
+               bars: bc ? bc.bars.length : 0, form: bc && bc.form ? [bc.form.time, bc.form.open, bc.form.high, bc.form.low, bc.form.close] : null, lines: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.price; }), colors: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.color; }),
+               styles: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.lineStyle; }),
+               ys: c.series ? JSON.parse(c.sig || '[]').map(function (o) { var y = null; try { y = c.series.priceToCoordinate(o.price); } catch (e) {} return { t: o.title, y: y }; }) : [],
+               h: (function () { try { var b = c.el.querySelector('.slx-chb'); return b.clientHeight - c.chart.timeScale().height(); } catch (e) { return 0; } })() }; }); }
+    return { render: render, later: later, charts: chartDiag, parseLad: parseLad };
   })();
 
   /* ===== Account snapshot for the phone nudges (2 Oct 2026) =====
