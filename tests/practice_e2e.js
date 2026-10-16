@@ -108,6 +108,9 @@
     var d1 = S().done;
     ok('target hit at 09:39: +2.00R, +24.0 pips', d1 && d1.why === 'tp' && near(d1.r, 2, 0.001) && near(d1.dist, 24, 0.05) && d1.unit === 'pips' && hhmm(d1.exitTs) === '09:39', d1);
     ok('the result card says it', /TARGET HIT/.test(document.getElementById('stpr-tr').textContent) && /\+24\.0 pips/.test(document.getElementById('stpr-tr').textContent), document.getElementById('stpr-tr').textContent.slice(0, 90));
+    // the slim arrows (16 Oct 2026, as on the live chart): the sell's entry arrow is drawn by __stArrows, the exit circle stays a library marker
+    var arw = (P._panes()[0] && P._panes()[0].series.__stArw) ? P._panes()[0].series.__stArw.items : [];
+    ok('the sell\'s entry is a slim pink down-arrow over its candle', arw.some(function (m) { return m.shape === 'arrowDown' && m.position === 'aboveBar' && m.color === '#f472b6'; }), arw);
     S().done = null; S().exec = false; S().pv = null; P._render();
 
     // four charts, none showing the future
