@@ -19966,6 +19966,53 @@ try {
        as a faint tick), the partial-close and trailing steps, and chips for what has happened. The running figures need
        EA 8.88, which sends them every 5 s while price moves; the ball glides between updates.
      - a Live P/L switch on the card (data.settings.livePL): off hides the money, the R and the ball. */
+  /* Slimmer chart arrows (Nestor, 16 Oct 2026: "do the arrow just a tiny bit narrower"). Lightweight Charts' own arrow
+     can only be scaled as a whole, and not below its size at normal zoom, so arrows are drawn here instead: the library's
+     own size, height and gap from the candle (its sums, copied), the head and the stem 20% narrower.
+     __stArrows(series, marks) takes the list series.setMarkers takes: arrowUp / arrowDown are drawn here, any other
+     shape (a circle) still goes to setMarkers. */
+  window.__stArrows = function (series, marks) {
+    var NARROW = 0.8;
+    var odd = function (v) { var c = Math.ceil(v); return c % 2 === 0 ? c - 1 : c; };
+    var even = function (v) { var c = Math.ceil(v); return c % 2 !== 0 ? c - 1 : c; };
+    var sz1 = function (bs, k) { return odd(Math.min(Math.max(bs, 12), 30) * k); };
+    var P = series.__stArw;
+    if (!P) {
+      P = series.__stArw = { items: [], chart: null, req: null };
+      var draw = function (target) {
+        var ch = P.chart; if (!ch || !P.items.length) return;
+        var ts = ch.timeScale(), bs = 6;
+        try { var a = ts.logicalToCoordinate(0), b = ts.logicalToCoordinate(1); if (a != null && b != null && b > a) bs = b - a; } catch (e) {}
+        var sz = even(sz1(bs, 1)), half = (sz1(sz, 1) - 1) / 2, stem = (odd(sz / 2) - 1) / 2, gap = Math.max(sz1(bs, 0.1), 3);
+        target.useBitmapCoordinateSpace(function (sc) {
+          var ctx = sc.context, hr = sc.horizontalPixelRatio, vr = sc.verticalPixelRatio;
+          P.items.forEach(function (m) {
+            var x = ts.timeToCoordinate(m.time); if (x == null) return;
+            var lg = ts.coordinateToLogical(x), bar = null;
+            try { bar = (lg == null) ? null : series.dataByIndex(Math.round(lg)); } catch (e) {}
+            if (!bar || bar.time !== m.time || bar.high == null) return;
+            var above = m.position === 'aboveBar', py = series.priceToCoordinate(above ? bar.high : bar.low); if (py == null) return;
+            var cy = above ? py - sz / 2 - gap : py + sz / 2 + gap;   // where the library puts the arrow's middle
+            var X = Math.round(x * hr), Y = cy * vr, hw = half * NARROW * hr, sw = stem * NARROW * hr, h = half * vr, d = m.shape === 'arrowUp' ? -1 : 1;
+            ctx.fillStyle = m.color || '#f472b6';
+            ctx.beginPath();
+            ctx.moveTo(X - hw, Y); ctx.lineTo(X, Y + d * h); ctx.lineTo(X + hw, Y);
+            ctx.lineTo(X + sw, Y); ctx.lineTo(X + sw, Y - d * h); ctx.lineTo(X - sw, Y - d * h); ctx.lineTo(X - sw, Y);
+            ctx.closePath(); ctx.fill();
+          });
+        });
+      };
+      var view = { renderer: function () { return { draw: draw }; }, zOrder: function () { return 'top'; } };
+      series.attachPrimitive({ paneViews: function () { return [view]; }, updateAllViews: function () {},
+        attached: function (p) { P.chart = p.chart; P.req = p.requestUpdate; }, detached: function () { P.chart = null; P.req = null; } });
+    }
+    var arr = [], rest = [];
+    (marks || []).forEach(function (m) { if (m && (m.shape === 'arrowUp' || m.shape === 'arrowDown')) arr.push(m); else if (m) rest.push(m); });
+    P.items = arr;
+    try { series.setMarkers(rest); } catch (e) {}
+    try { if (P.req) P.req(); } catch (e) {}
+  };
+
   window.__stLiveBox = (function () {
     var host = null, raf = 0, wired = false;
     function T2(en, es) { try { return window._stT ? window._stT(en, es) : en; } catch (e) { return en; } }
@@ -20267,8 +20314,21 @@ try {
       var sw = c.tf !== tf; c.tf = tf;
       if (sw) { var lb = c.el.querySelector('.slx-tfl b'); if (lb) lb.textContent = tfLabel(sec); }
       var key = tf + ':' + bc.last + ':' + bc.bars.length + ':' + bc.rev;
-      if (c.key !== key) { c.key = key; try { c.series.setData(bc.bars.slice()); } catch (e) {} }
+      if (c.key !== key) { c.key = key; c.mk = ''; try { c.series.setData(bc.bars.slice()); } catch (e) {} }
       if (bc.form && (!bc.last || bc.form.time > bc.last)) { try { c.series.update(bc.form); } catch (e) {} }
+      /* The entry arrow (Nestor, 16 Oct 2026: "an entry arrow on top of a candle sell and below on a buy candle"), Trade
+         Replay's: pink, under the candle on a buy, over it on a sell. The candle is the one the trade reached the feed in
+         (a few seconds after the fill); when the entry price is not in it but is in the one before, the fill was at the
+         end of that one. Gone when the entry candle is older than the candles the chart holds. */
+      try {
+        var all = bc.bars.concat((bc.form && (!bc.last || bc.form.time > bc.last)) ? [bc.form] : []), ot = Math.floor((r.openedAt || 0) / 1000), eb = -1;
+        for (var ei = all.length - 1; ei >= 0; ei--) if (all[ei].time <= ot) { eb = ei; break; }
+        var inB = function (b) { return b && b.low <= tk.op && tk.op <= b.high; };
+        if (eb > 0 && all[eb].time > all[0].time && !inB(all[eb]) && inB(all[eb - 1])) eb--;
+        var mk = (eb >= 0 && ot - all[eb].time < 2 * sec) ? [{ time: all[eb].time, position: long ? 'belowBar' : 'aboveBar', color: '#f472b6', shape: long ? 'arrowUp' : 'arrowDown' }] : [];
+        var ms = JSON.stringify(mk);
+        if (ms !== c.mk) { c.mk = ms; window.__stArrows(c.series, mk); }
+      } catch (e) {}
       c.cdBar = (bc.form && (!bc.last || bc.form.time > bc.last)) ? bc.form : (bc.bars.length ? bc.bars[bc.bars.length - 1] : null); c.cdSec = sec; paintCd(c);
       if (sw) { try { c.chart.timeScale().scrollToRealTime(); } catch (e) {} }
       // Shown once the closed candles are in (or after 2.5 s with whatever there is), so it never appears empty first.
@@ -20369,7 +20429,7 @@ try {
     function chartDiag() { return Object.keys(charts).map(function (k) { var c = charts[k], bc = barsC[c.sym + '|' + (c.tf || 'M1')], lb = c.el.querySelector('.slx-tfl b');
       return { k: k, sym: c.sym, tf: c.tf, label: lb ? lb.textContent : '', ready: !!c.series, hidden: !!c.el.hidden, inCard: !!(c.el.parentNode && c.el.parentNode.closest && c.el.parentNode.closest('.slx-tc')),
                bars: bc ? bc.bars.length : 0, form: bc && bc.form ? [bc.form.time, bc.form.open, bc.form.high, bc.form.low, bc.form.close] : null, lines: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.price; }), colors: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.color; }),
-               styles: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.lineStyle; }),
+               styles: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.lineStyle; }), marks: JSON.parse(c.mk || '[]'),
                ys: c.series ? JSON.parse(c.sig || '[]').map(function (o) { var y = null; try { y = c.series.priceToCoordinate(o.price); } catch (e) {} return { t: o.title, y: y }; }) : [],
                h: (function () { try { var b = c.el.querySelector('.slx-chb'); return b.clientHeight - c.chart.timeScale().height(); } catch (e) { return 0; } })() }; }); }
     return { render: render, later: later, charts: chartDiag, parseLad: parseLad };

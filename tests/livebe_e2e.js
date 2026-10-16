@@ -55,6 +55,12 @@
     var off = ((D && D.ys) || []).filter(function (y) { return !(y.y != null && y.y >= 0 && y.y <= D.h); });
     check('the stop, entry, BE and target all sit inside the plot', D && D.ys && D.ys.length >= 4 && off.length === 0, D && { ys: D.ys, h: D.h });
 
+    // the entry arrow (Trade Replay's pink arrow, slimmer): over the entry candle on a sell, pointing down
+    var mk0 = (D && D.marks) || [], openS = Math.floor(Date.parse(row.opened_at) / 1000);
+    check('a sell has one pink down-arrow over its entry candle', mk0.length === 1 && mk0[0].shape === 'arrowDown' && mk0[0].position === 'aboveBar' && mk0[0].color === '#f472b6'
+      && mk0[0].time <= openS && openS - mk0[0].time < 120, { marks: mk0, openS: openS });
+    check('the arrow is drawn by the slim-arrow layer, not the library', typeof window.__stArrows === 'function', null);
+
     // the BE fires: the EA stops sending it, so the line goes (MT5 removes its line too)
     window.__stLive.upsert(Object.assign({}, row, { ladder: '', sl_r: 0.111, tick_at: new Date().toISOString() }));
     for (var k2 = 0; k2 < 12; k2++) { await W(200); try { window.__stLiveBox.render(); } catch (e) {} D = window.__stLiveBox.charts()[0]; if (D && !line('BE')) break; }
@@ -74,6 +80,14 @@
     check('the ladder reads the BE step next to the partials and trailing steps', parse && parse.p.length === 1 && parse.t.length === 1 && parse.b && Math.abs(parse.b.r - 1.82) < 1e-9, parse);
     var old = window.__stLiveBox.parseLad ? window.__stLiveBox.parseLad('P:1.00:50:0') : null;
     check('an older EA (no BE step) leaves it empty', old && old.b === null && old.p.length === 1, old);
+
+    // a buy: the arrow goes under the candle, pointing up
+    window.__stLive.upsert(Object.assign({}, row, { ticket: 176083399, direction: 'long', closed_at: null }));
+    window.__stLive.upsert(Object.assign({}, row, { closed_at: new Date().toISOString(), pnl: 10 }));
+    var DB = null;
+    for (var k4 = 0; k4 < 20; k4++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} DB = window.__stLiveBox.charts().filter(function (x) { return x.k === '176083399'; })[0]; if (DB && DB.marks && DB.marks.length) break; }
+    var mb = (DB && DB.marks) || [];
+    check('a buy has one pink up-arrow under its entry candle', mb.length === 1 && mb[0].shape === 'arrowUp' && mb[0].position === 'belowBar', DB);
 
     // the card without a chart (EA before 8.89) marks it on its line too
     var host = document.getElementById('st-livebox');
