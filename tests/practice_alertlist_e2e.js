@@ -41,6 +41,14 @@
     ok('Delete all: none left, the lines stay, it says so; the dot goes', DW.list.length === n0 && !DW.list.some(function (d) { return d.alert; }) && /deleted/.test(document.getElementById('stpr-flash').textContent) && !bell.classList.contains('dot'));
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await W(40);
     ok('Undo brings them back', DW.list.filter(function (d) { return d.alert; }).length === 1, DW.list.map(function (d) { return !!d.alert; }));
+    // the + beside the crosshair's price (Nestor: "can i get one of these + signs to make it more obvious for users how to add alerts?")
+    var p0 = P._panes()[0], pc0 = p0.el.querySelector('.stpr-pc'), rr = pc0.getBoundingClientRect(), pw0 = p0.el.clientWidth - p0.chart.priceScale('right').width(), yy = Math.round(rr.height * 0.35);
+    var mm = function (t, x, y) { var el = document.elementFromPoint(rr.left + x, rr.top + y) || pc0; el.dispatchEvent(new MouseEvent(t, { clientX: rr.left + x, clientY: rr.top + y, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' ? 1 : 0 })); };
+    mm('mousemove', pw0 - 11, yy); await W(80);
+    ok('the mouse on the chart by the price scale: a + beside the crosshair price, lit under the mouse', P._dr().plusHov === p0);
+    var n1 = DW.list.length, pr1 = p0.series.coordinateToPrice(yy);
+    mm('mousedown', pw0 - 11, yy); mm('mouseup', pw0 - 11, yy); await W(80);
+    ok('a click on the +: an alert at that price', DW.list.length === n1 + 1 && DW.list[n1].alert && Math.abs(DW.list[n1].price - pr1) < 0.0002 && /Alert set at/.test(document.getElementById('stpr-flash').textContent), DW.list[n1]);
     P.close(); await W(150);
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }

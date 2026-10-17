@@ -26,6 +26,7 @@
     var fw = null; for (var z = 0; z < 120; z++) { await W(250); try { fw = fr.contentWindow; if (fw.__stPractice && fw.__stPractice._s() && fw.__stPractice._panes().length && fw.__stPractice._s().now === now) break; } catch (e) {} }
     var fs = fw && fw.__stPractice && fw.__stPractice._s(), fbg = fw && fw.document.getElementById('stpr-bg');
     ok('the new window opens straight into Practice Replay, full window, at the same time and with the same two charts', fs && fs.day === '2026-10-01' && fs.now === now && fbg.classList.contains('max') && fbg.classList.contains('popped') && fw.__stPractice._panes().length === 2, fs && { day: fs.day, now: fs.now, want: now, cls: fbg.className });
+    ok('the app itself never shows in that window, only Practice Replay (no tabs first - Nestor: "this seems glitchy")', fw && fw.document.documentElement.classList.contains('st-practice-only') && fw.getComputedStyle(fw.document.body).visibility === 'hidden' && fw.getComputedStyle(fbg).visibility === 'visible', fw && [fw.document.documentElement.className, fw.getComputedStyle(fw.document.body).visibility]);
     ok('there it has no Maximise or New window button', fw && fw.getComputedStyle(fw.document.getElementById('stpr-pop')).display === 'none' && fw.getComputedStyle(fw.document.getElementById('stpr-max')).display === 'none');
     fr.remove();
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}

@@ -54,12 +54,13 @@
     ok('London jumps to 08:00: the last 5m candle is 07:55, London lit', hhmm(lastBar().time) === '07:55' && document.querySelector('#stpr-ses [data-ses="london"]').classList.contains('on'), hhmm(lastBar().time));
 
     // the timeframe pill and its row
-    var pill = pane().el.querySelector('.stpr-tfpill'), wrap = pane().el.querySelector('.stpr-ptfw');
+    var pill = document.querySelector('#stpr-maintf .stpr-tfpill'), wrap = pill && pill.parentNode;
+    ok('one chart: its timeframe button sits in the top bar, before the pencil (Nestor: "are you moving this up here?")', pill && !pane().el.querySelector('.stpr-tfpill') && pill.getBoundingClientRect().right <= document.getElementById('stpr-drawbtn').getBoundingClientRect().left && pill.textContent.indexOf('5m') === 0, pill && pill.textContent);
     pill.click(); await W(50);
     ok("the timeframe pill opens Trade Replay's row: 1m 5m 15m 1h 4h 12h 1D 1W 1Y", wrap.classList.contains('open') && Array.prototype.map.call(wrap.querySelectorAll('[data-tf]'), function (b) { return b.textContent; }).join(' ') === '1m 5m 15m 1h 4h 12h 1D 1W 1Y');
     wrap.querySelector('[data-tf="60"]').click(); for (var z = 0; z < 50 && pane().tf !== 60; z++) await W(100); await W(300);
     ok('1h picked: the chart is 1h and its last candle is the 07:00 hour', pane().tf === 60 && hhmm(lastBar().time) === '07:00', hhmm(lastBar().time));
-    pane().el.querySelector('.stpr-tfpill').click(); await W(30); pane().el.querySelector('[data-tf="5"]').click(); for (z = 0; z < 50 && pane().tf !== 5; z++) await W(100); await W(300);
+    document.querySelector('#stpr-maintf .stpr-tfpill').click(); await W(30); document.querySelector('#stpr-maintf [data-tf="5"]').click(); for (z = 0; z < 50 && pane().tf !== 5; z++) await W(100); await W(300);
 
     var ch, r;
     await P._tf(0, 5); await W(300); P._jump('london'); await W(300);   // the jump re-fits the chart on the next frames
@@ -84,8 +85,8 @@
     var mmIn = function (k) { return mmEl.querySelector('[data-mmi="' + k + '"]'); }, mmBtn = function (k) { return mmEl.querySelector('[data-mm="' + k + '"]'); };
     var setIn = function (k, v) { var el = mmIn(k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
     var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
-    var tfR = P._panes()[0].el.querySelector('.stpr-tfpill').getBoundingClientRect(), pmR = mmEl && mmEl.getBoundingClientRect();
-    ok('open, the panel hangs from the top left of the first chart under its timeframe button, 300 px wide, over the chart: the charts keep the whole width (17 Oct 2026: "it just extends down")', mmEl && mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.classList.contains('drop') && Math.abs(pmR.width - 300) < 2 && gridL < 2 && pmR.top >= tfR.bottom && Math.abs(pmR.left - tfR.left) < 2 && pmR.bottom <= P._panes()[0].el.getBoundingClientRect().bottom + 1, { w: pmR && pmR.width, gridL: gridL, top: pmR && pmR.top, tf: tfR.top });
+    var tfR = P._panes()[0].el.getBoundingClientRect(), pmR = mmEl && mmEl.getBoundingClientRect();   // (one chart: its timeframe button is in the top bar; the panel keeps its place under the O H L C line)
+    ok('open, the panel hangs from the top left of the first chart under its timeframe button, 300 px wide, over the chart: the charts keep the whole width (17 Oct 2026: "it just extends down")', mmEl && mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.classList.contains('drop') && Math.abs(pmR.width - 300) < 2 && gridL < 2 && pmR.top - tfR.top >= 40 && Math.abs(pmR.left - tfR.left - 8) < 2 && pmR.bottom <= P._panes()[0].el.getBoundingClientRect().bottom + 1, { w: pmR && pmR.width, gridL: gridL, top: pmR && pmR.top, tf: tfR.top });
     ok('its title says Practice account, not a real account (17 Oct 2026)', mmEl.querySelector('.stpr-mm-n').textContent === 'Practice account', mmEl.querySelector('.stpr-mm-n').textContent);
     ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && !mmBtn('exec') && /Press O, then click the chart where your stop goes/.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
     setIn('min', '2'); setIn('max', '12'); await W(30);
@@ -151,7 +152,7 @@
     mmBtn('col').click(); await W(300);
     var gl2 = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     var mr = mmEl.getBoundingClientRect(), cr = cw.getBoundingClientRect();
-    ok('− folds the panel to a strip at the top left of the first chart, under its timeframe button (title, ON, +), the charts take the whole width, no idle question beside it', mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.parentNode.parentNode === P._panes()[0].el && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && !mmBtn('exec') && gl2 < 2 && mr.height <= 32 && mr.top >= P._panes()[0].el.querySelector('.stpr-tfpill').getBoundingClientRect().bottom && !/What would you do/.test(P._panes()[0].el.textContent) && getComputedStyle(document.getElementById('stpr-pill')).display === 'none', { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
+    ok('− folds the panel to a strip at the top left of the first chart, under its timeframe button (title, ON, +), the charts take the whole width, no idle question beside it', mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.parentNode.parentNode === P._panes()[0].el && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && !mmBtn('exec') && gl2 < 2 && mr.height <= 32 && mr.top - P._panes()[0].el.getBoundingClientRect().top >= 40 && !/What would you do/.test(P._panes()[0].el.textContent) && getComputedStyle(document.getElementById('stpr-pill')).display === 'none', { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(30);
     ok('the O key works with the panel folded, and the strip lights up while it is on', S().exec && mmEl.classList.contains('armed') && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec && !mmEl.classList.contains('armed')));
     // execution mode ends when the mouse leaves the window or the app, or the app loses the focus (as the EA disarms off the chart)

@@ -18,10 +18,11 @@
     var mev = function (t, xx, yy, o) { var el = document.elementFromPoint(r.left + xx, r.top + yy) || ch; el.dispatchEvent(new MouseEvent(t, Object.assign({ clientX: r.left + xx, clientY: r.top + yy, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' || (o && o.held) ? 1 : 0 }, o || {}))); };
     var px = function (x, y) { var c = pane().ov, d = window.devicePixelRatio || 1; return Array.prototype.slice.call(c.getContext('2d').getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data); };
     var near = function (a, b, e) { return Math.abs(a - b) < (e || 1e-7); };
+    var until = async function (f, ms) { for (var u = 0; u < (ms || 1500); u += 40) { if (f()) return true; await W(40); } return !!f(); };   // the overlay redraws on the next frame: wait for it, not a fixed time
 
     document.getElementById('stpr-drawbtn').click(); await W(20);
     var lb = document.querySelector('#stpr-tools [data-tool="long"]'), sb = document.querySelector('#stpr-tools [data-tool="short"]');
-    ok('Long position and Short position in the drawing tools, after Text', lb && sb && lb.title === 'Long position' && sb.title === 'Short position' && lb.previousElementSibling.getAttribute('data-tool') === 'text');
+    ok('Long position and Short position in the drawing tools, after Text and Emoji', lb && sb && lb.title === 'Long position' && sb.title === 'Short position' && lb.previousElementSibling.getAttribute('data-tool') === 'emoji');
     var X = Math.round(r.width * 0.45), Y = Math.round(r.height * 0.45);
     lb.click(); mev('mousedown', X, Y); mev('mouseup', X, Y); await W(60);
     var d = DW.list[0], B = pane().bars, La = P._lOfT(0, d && d.a.t), Lb = P._lOfT(0, d && d.b.t);
@@ -59,11 +60,11 @@
     var isTag = function (c) { return c[1] > 130 && c[0] < 90 && c[3] > 200; };
     ok('not selected, not under the mouse: no Target / Stop / Risk/reward tags', !isTag(tagPx(e1)), tagPx(e1));
     var hx = (P._xOfT(0, e1.a.t) + P._xOfT(0, e1.b.t)) / 2, hy = (P._yOf(0, e1.a.price) + P._yOf(0, e1.tp)) / 2;
-    mev('mousemove', hx, hy); await W(120);
+    mev('mousemove', hx, hy); await until(function () { return isTag(tagPx(e1)); });
     ok('the mouse over it: the tags show', DW.hov === 0 && isTag(tagPx(e1)), [DW.hov, tagPx(e1)]);
-    mev('mousemove', 20, 20); await W(120);
+    mev('mousemove', 20, 20); await until(function () { return !isTag(tagPx(e1)); });
     ok('the mouse off it: gone again', !isTag(tagPx(e1)));
-    mev('mousedown', hx, hy); mev('mouseup', hx, hy); await W(120);
+    mev('mousedown', hx, hy); mev('mouseup', hx, hy); await until(function () { return isTag(tagPx(e1)); });
     var box2 = pane().el.querySelector('.stpr-props');
     ok('clicked: selected, its tags and its options box show', DW.sel === 0 && isTag(tagPx(e1)) && box2 && box2.style.display !== 'none', [DW.sel, box2 && box2.style.display]);
     mev('mousedown', hx, hy); mev('mousemove', hx + 25, hy + 20, { held: true }); await W(120);
@@ -74,7 +75,7 @@
     mev('mousedown', hx, hy); mev('mouseup', hx, hy); await W(120);
     ok('a click on it: the box opens', box2.style.display !== 'none');
     // a zoom (the window's pixel ratio and size change together): the overlay keeps its size on screen
-    var ovc = pane().ov, wcss = ovc.style.width; ovc.style.width = (parseFloat(wcss) / 2) + 'px'; DW.ver++; await W(150);
+    var ovc = pane().ov, wcss = ovc.style.width; ovc.style.width = (parseFloat(wcss) / 2) + 'px'; DW.ver++; await until(function () { return ovc.style.width === wcss; });
     ok('the overlay always fills its chart (a zoom keeps the bitmap size but not the size on screen)', ovc.style.width === wcss, [wcss, ovc.style.width]);
     // Remove all drawings: the bin with nothing selected
     mev('mousedown', 20, r.height - 60); mev('mouseup', 20, r.height - 60); await W(30); DW.sel = null; P._render(); await W(20);
