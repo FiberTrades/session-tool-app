@@ -13,7 +13,7 @@ try: ea.wait(5)
 except Exception: pass
 try:
     log = json.load(open(out))
-    print('stand-in EA:', json.dumps({k: log[k] for k in ('joined', 'watch', 'unwatch', 'sent_ticks', 'errors')}))
+    print('stand-in EA:', json.dumps({k: log.get(k) for k in ('joined', 'watch', 'unwatch', 'sent_ticks', 'braked', 'errors')}))
 except Exception as e:
     print('stand-in EA log not written (stopped early):', e)
 sys.exit(rc)

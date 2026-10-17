@@ -3746,14 +3746,21 @@ bool LiveTickMine()
 // Realtime (a WebSocket over the terminal's own sockets, port 443, no DLL) and joins a broadcast channel named from the
 // sync token (sha-256: the name gives nothing away and cannot be found without the token). While a Session Terminal
 // window shows the trade it says "watch" (every 15 s, "unwatch" when it goes), and only then does the EA stream the
-// trade's figures - the price, MT5's own forming candle (open / high / low / close) and the levels - on every change, up
-// to four times a second (LW_STREAM_MS). The database row then needs only a level change and a refresh every 30 s (for a
-// reload, the phone and older windows), instead of every 2 s. Without the line - MT5 refusing the address, no network,
-// the tester - everything works exactly as 8.97 did, through the database every 2 s.
+// trade's figures - the price, MT5's own forming candle (open / high / low / close) and the levels - once a second when
+// they change (LW_STREAM_MS; Nestor chose 1 a second over 4: Supabase counts every message sent AND every one received,
+// and on the Free plan a used-up allowance stops the whole app). The database row then needs only a level change and a
+// refresh every 30 s (for a reload, the phone and older windows), instead of every 2 s. Without the line - MT5 refusing
+// the address, no network, the tester, the daily brake below - everything works exactly as 8.97 did, through the database
+// every 2 s.
+// The safety brake (Nestor, 17 Oct 2026: "build the safety break"): each MT5 account streams at most LW_DAY_SENDS
+// updates a UTC day - 3 hours of a market that moves every second - counted across all its charts in a terminal global
+// variable. Then the EA tells the app ("brake"), closes the line and the chart is back on the 2-second updates until
+// midnight UTC, so no member, however long they watch, can use up the shared allowance.
 // The address is the one already in Tools > Options > Expert Advisors > Allow WebRequest for Session Terminal; the
 // terminal checks sockets against the same list.
 #define LW_HOST       "figozyxoyobixadhqewr.supabase.co"
-#define LW_STREAM_MS  250        // the fastest the price goes out while a window watches: 4 a second
+#define LW_STREAM_MS  1000       // the fastest the price goes out while a window watches: once a second
+#define LW_DAY_SENDS  10800      // the safety brake: live updates per MT5 account per UTC day (3 hours at one a second)
 #define LW_WATCH_MS   45000      // a "watch" holds for 45 s (the app repeats it every 15 s)
 #define LW_LINGER_MS  120000     // the line stays up 2 minutes after the last trade on this chart closed
 int    g_lw=INVALID_HANDLE;      // the socket
@@ -3773,6 +3780,25 @@ uchar  g_lwIn[];                 // bytes received that are not yet a whole mess
 ulong  g_lwTk[]; uint g_lwMs[]; string g_lwKey[];   // per position: last streamed, and what it was
 
 bool LwJoined(){ return g_lw!=INVALID_HANDLE && g_lwState==3; }
+// The daily brake: today's count of live updates for this MT5 account, shared by all its charts in this terminal.
+string g_lwDay="", g_lwBrakeSaid="";
+string LwDayKey(){ return "STLW"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+g_lwDay; }
+bool LwBraked()
+  {
+   string d=TimeToString(TimeGMT(),TIME_DATE);
+   if(d!=g_lwDay)
+     {
+      if(StringLen(g_lwDay)>0) GlobalVariableDel(LwDayKey());   // yesterday's count goes
+      g_lwDay=d;
+     }
+   string k=LwDayKey();
+   return GlobalVariableCheck(k) && GlobalVariableGet(k)>=LW_DAY_SENDS;
+  }
+void LwCount()
+  {
+   string k=LwDayKey();
+   GlobalVariableSet(k,(GlobalVariableCheck(k) ? GlobalVariableGet(k) : 0.0)+1.0);
+  }
 bool LwWatched(){ return LwJoined() && g_lwWatchAt!=0 && GetTickCount()-g_lwWatchAt<LW_WATCH_MS; }
 string LwRef(){ g_lwRef++; return IntegerToString(g_lwRef); }
 // "realtime:stl-" + the first 16 bytes of sha-256("st-live:" + token), in hex - the app works out the same name
@@ -3872,7 +3898,7 @@ void LwOnText(string s)
      {
       if(StringFind(s,"\"status\":\"ok\"")<0){ LwDrop("join refused"); g_lwWait=300000; return; }
       g_lwState=3; g_lwFails=0;
-      Print("Live line: connected - the live chart follows MT5 tick by tick while Session Terminal shows the trade.");
+      Print("Live line: connected - the live chart updates every second while Session Terminal shows the trade.");
       LwText(LwBroadcast("hi","{\"v\":\"8.98\"}"));   // a window already watching says so at once
       return;
      }
@@ -3931,6 +3957,16 @@ void LwService()
   {
    if(g_lwOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0)
      { if(g_lw!=INVALID_HANDLE) LwClose(); return; }
+   if(LwBraked())   // today's live updates are used up: tell the app, close the line, 2-second updates until midnight UTC
+     {
+      if(g_lw!=INVALID_HANDLE){ if(g_lwState==3) LwText(LwBroadcast("brake","{\"until\":\"utc-midnight\"}")); LwClose(); }
+      if(g_lwBrakeSaid!=g_lwDay)
+        {
+         g_lwBrakeSaid=g_lwDay;
+         PrintFormat("Live line: today's live updates are used up (%d, 3 hours) - the live chart updates every 2 s until midnight UTC.",LW_DAY_SENDS);
+        }
+      return;
+     }
    uint now=GetTickCount();
    if(g_lwPosAt==0 || now-g_lwPosAt>=1000)
      {
@@ -3990,6 +4026,7 @@ void LwStream()
                             DoubleToString(t.bid,_Digits),DoubleToString(t.op,_Digits),LiveTickNum(t.rpx>0?t.rpx:EMPTY_VALUE,_Digits+1),_Digits,t.bar,LiveTickNum(t.spr,_Digits+1));
       if(!LwText(LwBroadcast("tick",p))) return;
       g_lwMs[at]=now; g_lwKey[at]=key;
+      LwCount();
      }
   }
 
@@ -6884,7 +6921,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.98 loaded (a live line to Session Terminal: the live chart follows MT5 tick by tick; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.98 loaded (a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

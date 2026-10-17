@@ -36,13 +36,13 @@
 
     // the app joins, says "watch", and the EA streams
     var S = null;
-    for (var k = 0; k < 60; k++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} S = window.__stLiveLine.state(); if (S.ticks >= 12) break; }
+    for (var k = 0; k < 100; k++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} S = window.__stLiveLine.state(); if (S.ticks >= 6) break; }
     check('the app joins the channel and says "watch"', S && S.joined && S.watching && S.watchSent >= 1, S);
-    check('updates stream in, several a second', S && S.ticks >= 12, S && { ticks: S.ticks });
-    var t0 = S.ticks, ms0 = Date.now(); await W(4000); var S2 = window.__stLiveLine.state();
+    check('updates stream in', S && S.ticks >= 6, S && { ticks: S.ticks });
+    var t0 = S.ticks, ms0 = Date.now(); await W(6000); var S2 = window.__stLiveLine.state();
     var rate = (S2.ticks - t0) / ((Date.now() - ms0) / 1000);
     var chans = (window.__stSB.getChannels ? window.__stSB.getChannels() : []).map(function (c) { return c.topic + ':' + c.state; });
-    check('about four updates a second (the EA\'s cap; the network bunches some)', rate >= 2.5 && rate <= 5, { rate: Math.round(rate * 10) / 10, chans: chans, lat: S2.lat });
+    check('about one update a second (the EA\'s pace since Nestor chose it; the network bunches some)', rate >= 0.6 && rate <= 1.6, { rate: Math.round(rate * 10) / 10, chans: chans, lat: S2.lat });
 
     // how long an update takes from the EA to this window, once the page has settled (the stand-in stamps its send time)
     var lat = (window.__stLiveLine.state().lat || []).slice(-10).slice().sort(function (a, b) { return a - b; }), med = lat[Math.floor(lat.length / 2)];
@@ -70,11 +70,25 @@
 
     // back on the page: "watch" again and it streams again
     if (tab) tab.click(); await W(200); if (pr) pr.classList.add('session-live-collapsed'); try { window.__stLiveBox.render(); } catch (e) {}
-    var n5 = window.__stLiveLine.state().ticks; await W(2500); var S6 = window.__stLiveLine.state();
+    var n5 = window.__stLiveLine.state().ticks; await W(3500); var S6 = window.__stLiveLine.state();
     var hb = document.getElementById('st-livebox');
-    check('back on the page it streams again within a second or two', S6.watching && S6.ticks - n5 >= 4, { watching: S6.watching, more: S6.ticks - n5, joined: S6.joined,
+    check('back on the page it streams again within a second or two', S6.watching && S6.ticks - n5 >= 2, { watching: S6.watching, more: S6.ticks - n5, joined: S6.joined,
       host: hb && { hidden: hb.hidden, op: !!hb.offsetParent, card: !!hb.querySelector('.slx-tc') }, page: (document.querySelector('.page.active') || {}).id,
       live: pr && pr.className, open: window.__stLive.openIdeas().length, docHidden: document.hidden });
+
+    // the safety brake: the EA says "brake" (its daily allowance is used up) and closes the line; this window stops asking
+    // and the chart's top line says it is on the 2-second updates until tomorrow
+    window.__stLiveLine._send('test_brake');
+    var B = null;
+    for (var kb = 0; kb < 20; kb++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} if (window.__stLiveLine.braked()) break; }
+    try { window.__stLiveBox.render(); } catch (e) {}
+    var chc = document.querySelector('#st-livebox .slx-tc[data-k="' + TICKET + '"] .slx-chc');
+    var nb = window.__stLiveLine.state().ticks; await W(2500); B = window.__stLiveLine.state();
+    var until = Number(localStorage.getItem('st_live_brake')) || 0, mid = new Date(); mid.setUTCHours(24, 0, 0, 0);
+    check('after "brake" the window stops asking until midnight UTC and no more updates come', window.__stLiveLine.braked() && !B.watching && B.ticks - nb === 0 && until === mid.getTime(),
+      { braked: window.__stLiveLine.braked(), watching: B.watching, after: B.ticks - nb, until: until, midnight: mid.getTime() });
+    check('the chart says it is on the 2-second updates until tomorrow', chc && /every 2 s until tomorrow/.test(chc.textContent) && /3 hours a day/.test(chc.title), chc && [chc.textContent, chc.title]);
+    localStorage.removeItem('st_live_brake');
   } catch (e) {
     check('no exception', false, String(e && e.stack || e));
   }

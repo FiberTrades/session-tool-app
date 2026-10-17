@@ -20324,6 +20324,16 @@ try {
       if (!c.series) return;
       var sw = c.tf !== tf; c.tf = tf;
       if (sw) { var lb = c.el.querySelector('.slx-tfl b'); if (lb) lb.textContent = tfLabel(sec); }
+      // EA 8.98's daily brake: today's live updates are used up, so the chart is on the 2-second updates until midnight UTC
+      try {
+        var chc = c.el.querySelector('.slx-chc'), brk = !!(window.__stLiveLine && window.__stLiveLine.braked());
+        var chx = T2('Your MT5 prices \u00b7 your clock', 'Precios de tu MT5 \u00b7 tu reloj') + (brk ? T2(' \u00b7 every 2 s until tomorrow', ' \u00b7 cada 2 s hasta ma\u00f1ana') : '');
+        if (chc && chc.textContent !== chx) {
+          chc.textContent = chx;
+          chc.title = brk ? T2('Today\'s live updates are used up (3 hours a day per MT5 account). The chart updates every 2 seconds until midnight UTC.',
+                               'Las actualizaciones en vivo de hoy se han agotado (3 horas al d\u00eda por cuenta de MT5). El gr\u00e1fico se actualiza cada 2 segundos hasta medianoche UTC.') : '';
+        }
+      } catch (e) {}
       var key = tf + ':' + bc.last + ':' + bc.bars.length + ':' + bc.rev;
       if (c.key !== key) { c.key = key; c.mk = ''; try { c.series.setData(bc.bars.slice()); } catch (e) {} }
       if (bc.form && (!bc.last || bc.form.time > bc.last)) { try { c.series.update(bc.form); } catch (e) {} }
@@ -76565,9 +76575,11 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
    channel named from the member's sync token (sha-256 of "st-live:" + token, first 16 bytes in hex - the name gives
    nothing away and cannot be found without the token). This window joins the same channel while there is an open trade
    and, while the trade's card is on screen in a visible tab, says "watch" every 15 s ("unwatch" when it goes off
-   screen). Only then does the EA stream the price, MT5's own forming candle and the levels - on every change, up to
-   four times a second - so nothing goes out while nobody looks (Supabase counts every message sent and every one
-   received). Another window that still watches answers an "unwatch" with its own "watch", and the EA's "hi" when it
+   screen). Only then does the EA stream the price, MT5's own forming candle and the levels - once a second when they
+   change (Nestor chose 1 a second over 4) - so nothing goes out while nobody looks (Supabase counts every message sent
+   and every one received, and on the Free plan a used-up allowance stops the whole app). The safety brake: each MT5
+   account streams at most 3 hours a UTC day; then the EA says "brake" and closes the line, this window stops asking and
+   the chart's top line says it is on the 2-second updates until tomorrow (remembered on this device until midnight UTC). Another window that still watches answers an "unwatch" with its own "watch", and the EA's "hi" when it
    (re)joins. The database row still updates on a level change and every 30 s, for a reload, the phone and a window
    without the line; an EA without the line (older, or MT5 refusing the connection) keeps the 2-second updates exactly
    as before. Never in a mentor view (?mv=). */
@@ -76583,6 +76595,12 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     });
   }
   function hasOpen(){ try { return !!(window.__stLive && window.__stLive.openIdeas && window.__stLive.openIdeas().length); } catch (e) { return false; } }
+  function braked(){ try { return Date.now() < (Number(localStorage.getItem('st_live_brake')) || 0); } catch (e) { return false; } }
+  function onBrake(){
+    try { var d = new Date(); d.setUTCHours(24, 0, 0, 0); localStorage.setItem('st_live_brake', String(d.getTime())); } catch (e) {}
+    watching = false;
+    try { if (window.__stLiveBox) window.__stLiveBox.later(); } catch (e) {}
+  }
   function onScreen(){ try { if (document.hidden) return false; var h = document.getElementById('st-livebox'); return !!(h && !h.hidden && h.offsetParent !== null && h.querySelector('.slx-tc')); } catch (e) { return false; } }
   function num(v){ return (v == null || v === '') ? NaN : Number(v); }
   function send(ev){ try { if (ch && joined) { ch.send({ type: 'broadcast', event: ev, payload: { t: Date.now() } }); if (ev === 'watch') stat.watchSent++; } } catch (e) {} }
@@ -76609,6 +76627,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       me.on('broadcast', { event: 'tick' }, onTick)
         .on('broadcast', { event: 'hi' }, function () { if (watching) send('watch'); })        // the EA has just (re)joined
         .on('broadcast', { event: 'unwatch' }, function () { if (watching) send('watch'); })   // another window stopped; this one still looks
+        .on('broadcast', { event: 'brake' }, onBrake)                                           // today's live updates are used up
         .subscribe(function (st) {
           if (me !== ch) return;
           if (st === 'SUBSCRIBED') { joined = true; watching = false; tickle(); }
@@ -76623,7 +76642,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       else if (ch) { if (!idleAt) idleAt = Date.now(); if (Date.now() - idleAt > 120000) { leave(); return; } }
       if (want && !ch) { join(tok); return; }
       if (!ch || !joined) return;
-      var w = want && onScreen();
+      var w = want && onScreen() && !braked();
       if (w && (!watching || Date.now() - lastWatch > 15000)) { watching = true; lastWatch = Date.now(); send('watch'); }
       else if (!w && watching) { watching = false; send('unwatch'); }
     } catch (e) {}
@@ -76632,7 +76651,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   document.addEventListener('visibilitychange', tickle);
   window.addEventListener('pagehide', function () { if (watching) send('unwatch'); });
   // for the tests and for a quick look in the console
-  window.__stLiveLine = { state: function () { return { name: name, joined: joined, watching: watching, ticks: stat.ticks, lastAt: stat.at, last: stat.last, watchSent: stat.watchSent, seq: (stat.seq || []).slice(-30), lat: (stat.lat || []).slice(-40) }; },
+  window.__stLiveLine = { braked: braked, _send: send, state: function () { return { name: name, joined: joined, watching: watching, ticks: stat.ticks, lastAt: stat.at, last: stat.last, watchSent: stat.watchSent, seq: (stat.seq || []).slice(-30), lat: (stat.lat || []).slice(-40) }; },
                           nameOf: nameOf, tickle: tickle };
 })();
 </script>

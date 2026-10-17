@@ -71,13 +71,16 @@ while time.time() - t0 < secs:
                 text(bcast('hi', {'v': '8.98'}))
             elif '"event":"watch"' in m: watch_at = time.time(); log['watch'] += 1; ev('watch')
             elif '"event":"unwatch"' in m: watch_at = 0; log['unwatch'] += 1; ev('unwatch')
+            elif '"event":"test_brake"' in m:
+                # as the EA does when LW_DAY_SENDS is reached: say "brake", close the line
+                text(bcast('brake', {'until': 'utc-midnight'})); log['braked'] = True; ev('brake'); state = 0; break
             elif '"phx_error"' in m or '"phx_close"' in m: log['errors'].append('channel closed'); state = 0
         elif op == 8: log['errors'].append('server close'); state = 0
         elif op == 9: frame(0xA, pl)
     if state == 0: break
     now = time.time()
     if state >= 2 and now - hb >= 25: hb = now; text(json.dumps({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': nref()}, separators=(',', ':')))
-    if state == 3 and watch_at and now - watch_at < 45 and now - last_send >= 0.25:
+    if state == 3 and watch_at and now - watch_at < 45 and now - last_send >= 1.0:   # LW_STREAM_MS 1000
         # a sell drifting down: the forming candle's high/low/close move with it
         n_tick += 1; px = round(px - 0.00001 * (1 if n_tick % 3 else -1), 5)
         o, h, l = 1.12440, max(1.12440, px, 1.12452), min(1.12440, px)
