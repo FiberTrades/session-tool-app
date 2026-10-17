@@ -51,7 +51,7 @@
     // no lines on hovering BUY / SELL any more
     P._jump('london'); await W(300); await settle();
     var sell = document.querySelector('#stpr-tr [data-a="sell"]'); sell.dispatchEvent(new MouseEvent('mouseover', { bubbles: true })); await W(30);
-    ok('pointing at SELL shows no lines (the SL / TP button does that)', !S().pv && !P._lines(0).length && /Press SL \/ TP/.test(document.getElementById('stpr-tr').textContent), P._lines(0));
+    ok('pointing at SELL shows no lines (execution mode in the panel does that, 17 Oct 2026)', !S().pv && !P._lines(0).length && /or Execute/.test(document.getElementById('stpr-tr').textContent), P._lines(0));
 
     // the charts line up and move together
     var a0 = atF(0), a1 = atF(1);
@@ -87,7 +87,7 @@
     C.stopPx.EURUSD = 0.01; P._place(1); for (k = 0; k < 4; k++) P._step(); await settle(); P._render(); await W(150);
     ok('in a trade the position tool draws its zones on both charts', pane(0)._zones === 1 && pane(1)._zones === 1, [pane(0)._zones, pane(1)._zones]);
     var mk = document.getElementById('stpr-marks'); mk.checked = false; mk.dispatchEvent(new Event('change', { bubbles: true })); await W(80);
-    ok('Trade marks off hides the Entry / SL / TP lines and their labels (and lights the dot)', C.marks === false && P._lines(0).length === 3 && P._lines(0).every(function (l) { return !l.vis; }) && document.getElementById('stpr-layersbtn').classList.contains('dot'), P._lines(0));
+    ok('Trade marks off hides the Entry / SL / TP lines and their labels (and lights the dot)', C.marks === false && P._lines(0).length >= 3 && ['Entry', 'SL', 'TP'].every(function (t) { return P._lines(0).some(function (l) { return l.title.indexOf(t) === 0; }); }) && P._lines(0).every(function (l) { return !l.vis; }) && document.getElementById('stpr-layersbtn').classList.contains('dot'), P._lines(0));
     var po = document.getElementById('stpr-pos'); po.checked = false; po.dispatchEvent(new Event('change', { bubbles: true })); await settle(); P._render(); await W(150);
     ok('Position tool off takes the zones away', C.pos === false && pane(0)._zones === 0);
     mk.checked = true; mk.dispatchEvent(new Event('change', { bubbles: true })); po.checked = true; po.dispatchEvent(new Event('change', { bubbles: true }));
@@ -123,6 +123,7 @@
     var before = DW.list.map(function (d) { return d.a.t; }); mev(1, 'mousedown', mid.x, mid.y); mev(1, 'mousemove', mid.x + 40, mid.y + 10, { held: true }); mev(1, 'mouseup', mid.x + 40, mid.y + 10); await W(30);
     ok('dragging the body moves it', DW.list.some(function (d, i) { return d.a.t > before[i]; }), [before, DW.list.map(function (d) { return d.a.t; })]);
     var cur = DW.list[DW.sel], m2 = { x: (P._xOfT(1, cur.a.t) + P._xOfT(1, cur.b.t)) / 2, y: (P._yOf(1, cur.a.price) + P._yOf(1, cur.b.price)) / 2 };
+    var pb1 = pane(1).el.querySelector('.stpr-props'); if (pb1) pb1.style.display = 'none';   // beside the panel the chart is narrower and the options box sat over the shape's middle
     mev(1, 'mousedown', m2.x, m2.y); var si = DW.sel, w0 = P._lOfT(1, DW.list[si].b.t) - P._lOfT(1, DW.list[si].a.t), wk = [];
     for (k = 1; k <= 20; k++) { mev(1, 'mousemove', m2.x - k * 30, m2.y, { held: true }); wk.push(Math.round((P._lOfT(1, DW.list[si].b.t) - P._lOfT(1, DW.list[si].a.t)) * 100) / 100); }
     mev(1, 'mouseup', m2.x - 600, m2.y); await W(30);
@@ -133,7 +134,7 @@
     ok('the pen draws while held and stays armed for the next stroke', DW.list.length === 3 && DW.list[2].type === 'pen' && DW.list[2].pts.length > 3 && DW.tool === 'pen');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }));
     ok('Escape puts the pen away', DW.tool === 'none');
-    document.querySelector('#stpr-tools [data-tool="hline"]').click(); mev(0, 'mousedown', 200, 120); mev(0, 'mouseup', 200, 120); await W(120);
+    var hx = pane(0).el.clientWidth * 0.6; document.querySelector('#stpr-tools [data-tool="hline"]').click(); mev(0, 'mousedown', hx, 260); mev(0, 'mouseup', hx, 260); await W(120);   // clear of the pen's options box
     ok('a horizontal line is a line on the price scale of both charts', (pane(0).hl || []).length === 1 && (pane(1).hl || []).length === 1);
     var stored = JSON.parse(localStorage.getItem('st_practice_draw2:EURUSD') || '[]');
     ok('kept for EURUSD in this browser', stored.length === 4);

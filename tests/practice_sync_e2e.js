@@ -90,12 +90,12 @@
     await P._dwPull('XAUUSD'); await W(200);
     var gold = JSON.parse(localStorage.getItem('st_practice_draw2:XAUUSD') || '[]'), srvG = DB.practice_drawings.filter(function (x) { return x.sym === 'XAUUSD'; })[0];
     ok("the first sync of drawings made before syncing keeps both sets, here and on the server", gold.length === 2 && srvG.items.length === 2, [gold.length, srvG.items.length]);
-    // a change in the Stop box goes up a moment later
+    // a change in the Minimalist Manager panel (17 Oct 2026: it took over the Stop box) goes up a moment later
     P._s().done = null; window.__stPractice._render();
-    var sb2 = document.getElementById('stpr-stop'); sb2.value = '9.5'; sb2.dispatchEvent(new Event('input', { bubbles: true })); sb2.dispatchEvent(new Event('change', { bubbles: true }));
+    var sb2 = document.querySelector('#stpr-mm [data-mmi="max"]'); sb2.value = '9.5'; sb2.dispatchEvent(new Event('input', { bubbles: true })); sb2.dispatchEvent(new Event('change', { bubbles: true }));
     await W(1900);
     var sv = DB.practice_settings[0];
-    ok('a Stop box change is saved to the server (9.5 pips)', sv && sv.cfg && sv.cfg.stopPx && Math.abs(sv.cfg.stopPx.EURUSD - 0.00095) < 1e-9, sv && sv.cfg && sv.cfg.stopPx);
+    ok("a panel change is saved to the server (Max SL 9.5 pips)", sv && sv.cfg && sv.cfg.mm && sv.cfg.mm.maxSL && Math.abs(sv.cfg.mm.maxSL.EURUSD - 0.00095) < 1e-9, sv && sv.cfg && sv.cfg.mm);
     ok('three trades in the log', P.log().length === 3, P.log().length);
 
     P.close();

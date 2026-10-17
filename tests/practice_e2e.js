@@ -1,5 +1,5 @@
 (async function () {
-  // Practice Replay (14 Oct 2026), everything Nestor asked for that evening: the third Academy box; no EA panel; the whole
+  // Practice Replay (14 Oct 2026), everything Nestor asked for that evening: the third Academy box; the whole
   // day (17:00 New York to 17:00 New York) with Asia / London / New York; SL and TP before the press, the SL / TP button and
   // the lines dragged; pips / points / R; 1-4 charts with 1m..1Y each and Trade Replay's timeframe pill; drawings and news
   // from Trade Replay; the date in the crosshair; no black chart after a jump; the automatic symbol list.
@@ -48,7 +48,7 @@
     ok('the 5m chart shows the 3 hours before, ending just before 22:00 on 30 Sep', lastBar().time + 300 <= S().f.open && hhmm(lastBar().time) >= '21:40', hhmm(lastBar().time));
     var ses = document.querySelectorAll('#stpr-ses [data-ses]');
     ok('Asia, London and New York, Asia lit', ses.length === 3 && ses[0].classList.contains('on'));
-    ok('no EA panel, no sign over the future', !document.getElementById('stpr-ea') && !/hidden/i.test(document.getElementById('stpr-cw').textContent));
+    ok('no sign over the future (the old practice EA panel is gone; the Minimalist Manager panel is checked below)', !document.getElementById('stpr-ea') && !/hidden/i.test(document.getElementById('stpr-cw').textContent));
     ok('the crosshair says the date: "Thu 1 Oct \'26  08:15"', pane().chart.options().localization.timeFormatter(Date.parse('2026-10-01T07:15:00Z') / 1000) === "Thu 1 Oct '26  08:15", pane().chart.options().localization.timeFormatter(Date.parse('2026-10-01T07:15:00Z') / 1000));
     document.querySelector('#stpr-ses [data-ses="london"]').click(); await W(150);
     ok('London jumps to 08:00: the last 5m candle is 07:55, London lit', hhmm(lastBar().time) === '07:55' && document.querySelector('#stpr-ses [data-ses="london"]').classList.contains('on'), hhmm(lastBar().time));
@@ -76,41 +76,82 @@
     ok('hovering it shows the card with Actual / Forecast / Previous', card && card.style.display === 'block' && /EUR · Test PMI/.test(card.textContent) && /51\.0/.test(card.textContent), card && card.textContent);
 
     P._news([]);
-    // units and the SL / TP button
+    // the Minimalist Manager panel (17 Oct 2026): the EA's rows beside the chart, execution mode, the confirm box, and the
+    // EA's break-even, partial closes, pending orders, daily limit, ON / OFF and folding
     stepTo('08:20');
     ok('price after the 08:15 candle (the clock at 08:20) is 1.13147', near(lastBar().close, 1.13147), lastBar());
-    var stopBox = function () { return document.getElementById('stpr-stop').value; }, tgtBox = function () { return document.getElementById('stpr-tgt').value; };
-    ok('Stop 12.0 pips, Target 2 R', stopBox() === '12.0' && tgtBox() === '2', [stopBox(), tgtBox()]);
-    document.querySelector('#stpr-tr [data-a="su"]').click(); await W(30);
-    ok('Stop in points: 120', stopBox() === '120' && /pts/.test(document.querySelector('#stpr-tr [data-a="su"]').textContent), stopBox());
-    document.querySelector('#stpr-tr [data-a="su"]').click(); await W(30);
-    document.querySelector('#stpr-tr [data-a="tu"]').click(); await W(30);
-    ok('Target in pips: 24.0', tgtBox() === '24.0', tgtBox());
-    document.querySelector('#stpr-tr [data-a="tu"]').click(); await W(30);
-    ok('Target in points: 240', tgtBox() === '240', tgtBox());
-    document.querySelector('#stpr-tr [data-a="tu"]').click(); await W(30);
-    ok('Target back in R: 2', tgtBox() === '2', tgtBox());
-    document.querySelector('#stpr-tr [data-a="exec"]').click(); await W(50);
+    var mmEl = document.getElementById('stpr-mm'), cw = document.getElementById('stpr-cw');
+    var mmIn = function (k) { return mmEl.querySelector('[data-mmi="' + k + '"]'); }, mmBtn = function (k) { return mmEl.querySelector('[data-mm="' + k + '"]'); };
+    var setIn = function (k, v) { var el = mmIn(k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
+    var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
+    ok('the panel sits beside the chart: 300 px wide, the chart starts after it', mmEl && mmEl.parentNode === cw && Math.abs(mmEl.getBoundingClientRect().width - 300) < 2 && gridL >= 299, { w: mmEl && mmEl.getBoundingClientRect().width, gridL: gridL });
+    ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && /Execute/i.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
+    setIn('min', '2'); setIn('max', '12'); await W(30);
+    ok('Min SL 2.0 and Max SL 12.0 pips held (the stop box is gone: the panel holds it)', mmIn('min').value === '2.0' && mmIn('max').value === '12.0' && !document.getElementById('stpr-stop'), [mmIn('min').value, mmIn('max').value]);
+    ok('Target by R, Take profit 2', mmBtn('tpu').textContent === 'R' && mmIn('tp').value === '2.00', [mmBtn('tpu').textContent, mmIn('tp').value]);
+    mmBtn('tpu').click(); await W(30);
+    ok('Target by Pips: 24.0', mmBtn('tpu').textContent === 'Pips' && mmIn('tp').value === '24.0', mmIn('tp').value);
+    mmBtn('tpu').click(); await W(30);
+    ok('Target by Points: 240', mmBtn('tpu').textContent === 'Points' && mmIn('tp').value === '240', mmIn('tp').value);
+    mmBtn('tpu').click(); await W(30);
+    ok('back to R: 2', mmBtn('tpu').textContent === 'R' && mmIn('tp').value === '2.00', mmIn('tp').value);
+    // execution mode: Execute, the stop follows the mouse (held at Max SL), a click asks, Enter places
+    mmBtn('exec').click(); await W(50);
     var find = function (k) { return P._lines(0).filter(function (l) { return l.k === k; })[0]; };
-    ok('SL / TP shows the lines without pointing at anything (a buy to start)', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9), P._lines(0));
+    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9) && /Execution mode on/i.test(mmBtn('exec').textContent), P._lines(0));
     ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect(); var x = r.left + r.width * 0.5;
-    var y0 = r.top + P._yOf(0, 1.13027), y1 = r.top + P._yOf(0, 1.13267);
-    ch.dispatchEvent(new PointerEvent('pointerdown', { clientX: x, clientY: y0, bubbles: true, pointerId: 5, pointerType: 'mouse' }));
-    ch.dispatchEvent(new PointerEvent('pointermove', { clientX: x, clientY: y1, bubbles: true, pointerId: 5, pointerType: 'mouse' }));
-    ch.dispatchEvent(new PointerEvent('pointerup', { clientX: x, clientY: y1, bubbles: true, pointerId: 5, pointerType: 'mouse' }));
-    await W(50);
-    ok('dragging the SL above price turns it into a sell with a ~12-pip stop', S().pv.dir === -1 && near(C.stopPx.EURUSD, 0.0012, 0.00004) && document.querySelector('#stpr-tr [data-a="sell"]').classList.contains('pv'), { dir: S().pv.dir, stop: C.stopPx.EURUSD });
-    C.stopPx.EURUSD = 0.0012;
-    document.querySelector('#stpr-tr [data-a="sell"]').click(); await W(50);
+    var pev = function (t, price, btn) { ch.dispatchEvent(new PointerEvent(t, { clientX: x, clientY: r.top + P._yOf(0, price), bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: btn || 0 })); };
+    pev('pointermove', 1.13227); await W(60);
+    ok('the mouse 8 pips above price: a sell with an 8-pip stop', S().pv.dir === -1 && near(S().pv.rd, 0.0008, 0.00002), S().pv);
+    pev('pointermove', 1.13447); await W(60);
+    ok('30 pips above: held at Max SL, 12 pips', S().pv.dir === -1 && near(S().pv.rd, 0.0012, 1e-9), S().pv);
+    pev('pointerdown', 1.13267); await W(60);
+    var cf = document.getElementById('stpr-cf');
+    ok('a click asks first: Sell at market, stop 1.13267 (12.0 pips), target 1.12907 (2.0R)', P._cfOpen() && !S().pos && /Sell .*at market\?/.test(cf.textContent) && /Stop 1\.13267 \(12\.0 pips\)/.test(cf.textContent) && /target 1\.12907 \(2\.0R\)/.test(cf.textContent), cf.textContent);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(50);
     var p = S().pos;
-    ok('SELL: entry 1.13147, stop 1.13267, target 1.12907', p && near(p.entry, 1.13147) && near(p.sl, 1.13267, 1e-9) && near(p.tp, 1.12907, 1e-9), p && { e: p.entry, sl: p.sl, tp: p.tp });
+    ok('Enter places it: SELL at 1.13147, stop 1.13267, target 1.12907; execution mode ends', p && p.dir === -1 && near(p.entry, 1.13147) && near(p.sl, 1.13267, 1e-9) && near(p.tp, 1.12907, 1e-9) && !S().exec && !P._cfOpen(), p && { e: p.entry, sl: p.sl, tp: p.tp });
+    ok('the BE line is parked just inside the target, as the EA parks it (5 pips)', p && near(p.be, 1.12957, 1e-9) && find('be'), p && p.be);
+    // the BE line dragged to 1R, and a partial: P1 closes 50% at 1R
+    P._setLine('be', 1.13027);
+    mmBtn('pcadd').click(); await W(30);
+    ok('Add P1: a P1 50% line on the open trade', S().pos.pc.length === 1 && S().pos.pc[0].pct === 50 && find('pc0') && mmIn('pc:0').value === '50', S().pos.pc);
+    P._setLine('pc0', 1.13027);
     playOut();
     var d1 = S().done;
-    ok('target hit at 09:39: +2.00R, +24.0 pips', d1 && d1.why === 'tp' && near(d1.r, 2, 0.001) && near(d1.dist, 24, 0.05) && d1.unit === 'pips' && hhmm(d1.exitTs) === '09:39', d1);
-    ok('the result card says it', /TARGET HIT/.test(document.getElementById('stpr-tr').textContent) && /\+24\.0 pips/.test(document.getElementById('stpr-tr').textContent), document.getElementById('stpr-tr').textContent.slice(0, 90));
+    ok('break-even at 1R and P1 at 1R, then the target at 09:39: +1.50R in 2 parts, the stop at the entry', d1 && d1.why === 'tp' && near(d1.r, 1.5, 0.001) && d1.parts === 2 && near(d1.sl, 1.13147, 1e-9) && hhmm(d1.exitTs) === '09:39', d1);
+    ok('the result card says it', /TARGET HIT IN 2 PARTS/.test(document.getElementById('stpr-tr').textContent) && /\+1\.50R/.test(document.getElementById('stpr-tr').textContent), document.getElementById('stpr-tr').textContent.slice(0, 120));
     // the slim arrows (16 Oct 2026, as on the live chart): the sell's entry arrow is drawn by __stArrows, the exit circle stays a library marker
     var arw = (P._panes()[0] && P._panes()[0].series.__stArw) ? P._panes()[0].series.__stArw.items : [];
     ok('the sell\'s entry is a slim pink down-arrow over its candle', arw.some(function (m) { return m.shape === 'arrowDown' && m.position === 'aboveBar' && m.color === '#f472b6'; }), arw);
+    mmBtn('pcdel').click(); await W(30);
+    // pending orders: a Buy Limit above price is refused; a Sell Stop below fills when price gets there
+    S().done = null; P._render(); await openDay(); stepTo('08:20');
+    mmBtn('ord').click(); await W(30);
+    ok('Order type Limit', /Limit/.test(mmBtn('ord').textContent) && P._mm().ord === 'limit');
+    P._exec(true); P._setLine('pvent', 1.13200); P._aim(1.13150); P._cfShow(0); P._cfYes(); await W(30);
+    ok('a Buy Limit above price is refused, as the broker refuses it', !S().pend && !S().pos, S().pend);
+    mmBtn('ord').click(); await W(30);
+    P._exec(true); P._setLine('pvent', 1.13100); P._aim(1.13200); P._cfShow(0);
+    ok('the box names it: a Sell Stop at 1.13100', /Sell Stop at 1\.13100\?/.test(document.getElementById('stpr-cf').textContent), document.getElementById('stpr-cf').textContent);
+    P._cfYes(); await W(30);
+    ok('it waits: SELL STOP 1.13100 with a Cancel order button', S().pend && S().pend.kind === 'stop' && near(S().pend.entry, 1.13100) && /SELL STOP/.test(document.getElementById('stpr-tr').textContent) && document.querySelector('#stpr-tr [data-a="cancel"]'), S().pend);
+    var g2 = 0; while (S().pend && g2++ < 200) P._step();
+    ok('it fills when price comes down to 1.13100: a sell from there', S().pos && S().pos.dir === -1 && near(S().pos.entry, 1.13100) && !S().pend, S().pos && S().pos.entry);
+    P._close(); S().done = null; mmBtn('ord').click(); await W(30);
+    ok('back to Market', P._mm().ord === 'market');
+    // the execution key, the daily limit, ON / OFF and folding
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(30);
+    ok('the O key turns execution mode on (and off again)', S().exec && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec));
+    setIn('maxd', '1'); await W(30);
+    ok('Max trades 1 with a trade taken today: OFF, Execute off, SELL and BUY off', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && document.querySelector('#stpr-tr [data-a="sell"]').disabled && /Daily limit reached/.test(mmEl.textContent), mmEl.querySelector('.stpr-mm-f').textContent);
+    setIn('maxd', '0'); await W(30);
+    mmBtn('on').click(); await W(30);
+    ok('ON / OFF: off, Execute is off; on again', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && (mmBtn('on').click(), /ON/.test(mmBtn('on').textContent) && !mmBtn('exec').disabled));
+    mmBtn('col').click(); await W(300);
+    var gl2 = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
+    ok('− folds the panel to its title and Execute; the chart takes the whole width', cw.classList.contains('mmcol') && !mmEl.querySelector('.stpr-mm-b') && mmBtn('exec') && gl2 < 2, { gl2: gl2 });
+    mmBtn('col').click(); await W(200);
     S().done = null; S().exec = false; S().pv = null; P._render();
 
     // four charts, none showing the future

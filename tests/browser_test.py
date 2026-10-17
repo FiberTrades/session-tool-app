@@ -172,6 +172,8 @@ def main():
                              # a headless page counts as backgrounded and gets a few frames a second; the charts apply a new view only on a
                              # frame, so view checks failed at random (15 Oct 2026: 3 frames a second measured)
                              '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
+                             # Windows marked the headless window hidden ~11 s in (17 Oct 2026), and a hidden page draws no frames
+                             '--disable-features=CalculateNativeWinOcclusion',
                              'about:blank'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     failed = 1
@@ -192,6 +194,11 @@ def main():
         cdp = CDP(pages[0]['webSocketDebuggerUrl'])
         cdp.call('Page.enable')
         cdp.call('Runtime.enable')
+        # keep the page the focused, visible one: otherwise it turns hidden ~10 s in and draws no frames (17 Oct 2026)
+        try:
+            cdp.call('Page.bringToFront'); cdp.call('Emulation.setFocusEmulationEnabled', enabled=True)
+        except Exception:
+            pass
         app = os.environ.get('E2E_APP', 'app.html')   # another file name runs the same test against an older copy
         cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, app, random.randint(1, 10 ** 9)))
         time.sleep(2)
