@@ -50,7 +50,7 @@
 
     // no lines on hovering BUY / SELL any more
     P._jump('london'); await W(300); await settle();
-    ok('no SELL / BUY under the chart and no lines until execution mode (Nestor, 17 Oct 2026: "remove buy sell buttons")', !document.querySelector('#stpr-tr [data-a="sell"]') && !document.querySelector('#stpr-tr [data-a="buy"]') && !S().pv && !P._lines(0).length && /or Execute/.test(document.getElementById('stpr-tr').textContent), P._lines(0));
+    ok('no SELL / BUY under the chart and no lines until execution mode (Nestor, 17 Oct 2026: "remove buy sell buttons")', !document.querySelector('#stpr-tr [data-a="sell"]') && !document.querySelector('#stpr-tr [data-a="buy"]') && !S().pv && !P._lines(0).length && /then click the chart where your stop goes/.test(document.getElementById('stpr-tr').textContent), P._lines(0));
 
     // the charts line up and move together
     var a0 = atF(0), a1 = atF(1);

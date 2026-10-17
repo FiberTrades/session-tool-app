@@ -63,10 +63,10 @@
       var ttl = function (id) { return document.getElementById(id).getAttribute('title'); };
       var tools = Array.prototype.map.call(document.querySelectorAll('#stpr-tools [data-tool]'), function (b) { return b.title; });
       ok('in Spanish every tooltip is Spanish: the toolbar, the tools, the window buttons', ttl('stpr-undo') === 'Deshacer' && ttl('stpr-redo') === 'Rehacer' && ttl('stpr-drawbtn') === 'Herramientas de dibujo' && ttl('stpr-layersbtn') === 'Mostrar en el gráfico' && ttl('stpr-newsbtn') === 'Noticias en el gráfico' && ttl('stpr-close') === 'Cerrar' && ttl('stpr-back') === 'Un paso atrás' && tools.join(',') === 'Línea horizontal,Línea de tendencia,Rectángulo,Fib,Dibujar,Medir', [ttl('stpr-undo'), ttl('stpr-close'), tools.join(',')]);
-      var xb = function () { var b = document.querySelector('#stpr-mm [data-mm="exec"]'); return b ? b.textContent : ''; };
-      ok('and the buttons say Reproducir and Ejecutar', /Reproducir/.test(document.getElementById('stpr-play').textContent) && /Ejecutar/.test(xb()), [document.getElementById('stpr-play').textContent, xb()]);
+      var xb = function () { var b = document.querySelector('#stpr-mm .stpr-mm-n'); return b ? b.textContent : ''; };   // the panel's title (no Execute button on a computer)
+      ok('and it says Reproducir and Cuenta de práctica', /Reproducir/.test(document.getElementById('stpr-play').textContent) && /Cuenta de práctica/.test(xb()), [document.getElementById('stpr-play').textContent, xb()]);
       setLanguage('en'); await W(250);
-      ok('back in English: Undo, Play, Execute', ttl('stpr-undo') === 'Undo' && /Play/.test(document.getElementById('stpr-play').textContent) && /Execute/.test(xb())); }
+      ok('back in English: Undo, Play, Practice account', ttl('stpr-undo') === 'Undo' && /Play/.test(document.getElementById('stpr-play').textContent) && /Practice account/.test(xb())); }
     document.getElementById('stpr-close').click(); await W(150);
     ok('the X closes it', !document.getElementById('stpr-bg').classList.contains('show'));
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}

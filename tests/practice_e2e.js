@@ -86,7 +86,7 @@
     var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     ok('the panel sits beside the chart: 300 px wide, the chart starts after it', mmEl && mmEl.parentNode === cw && Math.abs(mmEl.getBoundingClientRect().width - 300) < 2 && gridL >= 299, { w: mmEl && mmEl.getBoundingClientRect().width, gridL: gridL });
     ok('its title says Practice account, not a real account (17 Oct 2026)', mmEl.querySelector('.stpr-mm-n').textContent === 'Practice account', mmEl.querySelector('.stpr-mm-n').textContent);
-    ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && /Execute/i.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
+    ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && !mmBtn('exec') && /Press O, then click the chart where your stop goes/.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
     setIn('min', '2'); setIn('max', '12'); await W(30);
     ok('Min SL 2.0 and Max SL 12.0 pips held (the stop box is gone: the panel holds it)', mmIn('min').value === '2.0' && mmIn('max').value === '12.0' && !document.getElementById('stpr-stop'), [mmIn('min').value, mmIn('max').value]);
     ok('Target by R, Take profit 2', mmBtn('tpu').textContent === 'R' && mmIn('tp').value === '2.00', [mmBtn('tpu').textContent, mmIn('tp').value]);
@@ -97,9 +97,9 @@
     mmBtn('tpu').click(); await W(30);
     ok('back to R: 2', mmBtn('tpu').textContent === 'R' && mmIn('tp').value === '2.00', mmIn('tp').value);
     // execution mode: Execute, the stop follows the mouse (held at Max SL), a click asks, Enter places
-    mmBtn('exec').click(); await W(50);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(50);   // the key arms it, as in MT5: no Execute button on a computer (17 Oct 2026)
     var find = function (k) { return P._lines(0).filter(function (l) { return l.k === k; })[0]; };
-    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9) && /Execution mode on/i.test(mmBtn('exec').textContent), P._lines(0));
+    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9) && /Execution mode on/.test(mmEl.querySelector('.stpr-mm-fn').textContent) && mmEl.querySelector('.stpr-mm-fn').classList.contains('on'), P._lines(0));
     ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect(); var x = r.left + r.width * 0.5;
     var pev = function (t, price, btn) { ch.dispatchEvent(new PointerEvent(t, { clientX: x, clientY: r.top + P._yOf(0, price), bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: btn || 0 })); };
     pev('pointermove', 1.13227); await W(60);
@@ -142,20 +142,21 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(30);
     ok('the O key turns execution mode on (and off again)', S().exec && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec));
     setIn('maxd', '1'); await W(30);
-    ok('Max trades 1 with a trade taken today: OFF, Execute off, the row says so', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && /Daily limit reached/.test(document.getElementById('stpr-tr').textContent) && /Daily limit reached/.test(mmEl.textContent), mmEl.querySelector('.stpr-mm-f').textContent);
+    ok('Max trades 1 with a trade taken today: OFF, the O key does nothing, the row says so', /OFF/.test(mmBtn('on').textContent) && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec) && /Daily limit reached/.test(document.getElementById('stpr-tr').textContent) && /Daily limit reached/.test(mmEl.textContent), mmEl.querySelector('.stpr-mm-f').textContent);
     setIn('maxd', '0'); await W(30);
     mmBtn('on').click(); await W(30);
-    ok('ON / OFF: off, Execute is off; on again', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && (mmBtn('on').click(), /ON/.test(mmBtn('on').textContent) && !mmBtn('exec').disabled));
+    ok('ON / OFF: off, the O key does nothing; on again and it works', /OFF/.test(mmBtn('on').textContent) && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec) && (mmBtn('on').click(), /ON/.test(mmBtn('on').textContent) && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), S().exec)));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(20);
     mmBtn('col').click(); await W(300);
     var gl2 = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     var mr = mmEl.getBoundingClientRect(), cr = cw.getBoundingClientRect();
-    ok('− folds the panel to a strip in the row above the charts (title, ON, Execute): nothing on a chart, the charts take the whole width', mmEl.parentNode === document.getElementById('stpr-tb2') && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && mmBtn('exec') && gl2 < 2 && mr.bottom <= cr.top + 1 && mr.height <= 32, { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
-    mmBtn('exec').click(); await W(30);
-    ok('Execute works from the strip', S().exec && (mmBtn('exec').click(), !S().exec));
+    ok('− folds the panel to a strip in the row above the charts (title, ON, +): nothing on a chart, the charts take the whole width', mmEl.parentNode === document.getElementById('stpr-tb2') && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && !mmBtn('exec') && gl2 < 2 && mr.bottom <= cr.top + 1 && mr.height <= 32, { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(30);
+    ok('the O key works with the panel folded, and the strip lights up while it is on', S().exec && mmEl.classList.contains('armed') && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec && !mmEl.classList.contains('armed')));
     // execution mode ends when the mouse leaves the window or the app, or the app loses the focus (as the EA disarms off the chart)
-    mmBtn('exec').click(); await W(20); var a1 = S().exec; document.getElementById('stpr-win').dispatchEvent(new MouseEvent('mouseleave')); await W(20);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(20); var a1 = S().exec; document.getElementById('stpr-win').dispatchEvent(new MouseEvent('mouseleave')); await W(20);
     ok('the mouse leaving the window turns execution mode off', a1 && !S().exec);
-    mmBtn('exec').click(); await W(20); var a2 = S().exec; window.dispatchEvent(new Event('blur')); await W(20);
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(20); var a2 = S().exec; window.dispatchEvent(new Event('blur')); await W(20);
     ok('switching to another program (the app loses the focus) turns it off too', a2 && !S().exec);
     mmBtn('col').click(); await W(200);
     S().done = null; S().exec = false; S().pv = null; P._render();
