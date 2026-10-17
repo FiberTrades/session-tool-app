@@ -35,8 +35,7 @@
     var mi = document.getElementById('stpr-mini');
     ok('Show on chart lists Minimalist, off to begin with, its parts hidden', mi && !mi.checked && !document.querySelector('#stpr-menu [data-mini]'), document.getElementById('stpr-menu').textContent);
     mi.click(); await W(40);
-    var parts = Array.prototype.map.call(document.querySelectorAll('#stpr-menu [data-mini]'), function (x) { return x.getAttribute('data-mini') + (x.checked ? '+' : '-'); });
-    ok('switched on: saved, the menu stays open and shows its six parts, all on', C.mini === true && document.getElementById('stpr-menu').classList.contains('show') && parts.join(' ') === 'zone+ ses+ dwm+ days+ gaps+ q+', parts);
+    ok('switched on: saved, the menu stays open with a Settings button (its parts are switched in its window, not here)', C.mini === true && document.getElementById('stpr-menu').classList.contains('show') && document.querySelector('#stpr-menu [data-miniset]') && !document.querySelector('#stpr-menu [data-mini]'), document.getElementById('stpr-menu').textContent);
     ok('no ICT words in the menu', !/premium|discount|kill ?zone|liquidity|order block/i.test(document.getElementById('stpr-menu').textContent));
     var M = P._mini(0), B = pane(0).bars, n = B.length;
     ok('worked out from the candles up to now only (15m)', M && M.n === n && B[n - 1].time < S().now, M && M.n);
@@ -79,10 +78,10 @@
     var zR = M.zone.top - M.zone.bot, zTop = P._yOf(0, M.zone.top - zR * 0.125), zx = Math.max(10, P._xOfT(0, B[M.zone.i0].time) + 4) / 2 + P._xOfT(0, B[n - 1].time) / 2, onTop = zTop > 5;
     var zy = onTop ? zTop : P._yOf(0, M.zone.bot + zR * 0.125), zp = px(0, zx, zy);
     ok('drawn: the ' + (onTop ? 'top quarter of the zone is tinted pink' : 'bottom quarter of the zone is tinted cyan'), zp[3] > 10 && (onTop ? zp[0] > zp[2] : zp[2] > zp[0]), [zp, zx, zy]);
-    document.querySelector('#stpr-menu [data-mini="zone"]').click(); await W(40); redraw(); await W(60);
+    P._miniDialog(); await W(60); document.querySelector('.stpr-dlg [data-k="part.zone"]').click(); await W(40); document.querySelector('.stpr-dlg [data-dok]').click(); await W(40); redraw(); await W(60);
     var zp2 = px(0, zx, zy);
-    ok('the Range zone part switched off: saved, the tint is gone', C.miniOff.zone === true && zp2[3] === 0, zp2);
-    document.querySelector('#stpr-menu [data-mini="zone"]').click(); await W(40);
+    ok('the P/D Zone switched off in its settings: saved, the tint is gone', C.miniOff.zone === true && zp2[3] === 0, zp2);
+    P._miniDialog(); await W(60); document.querySelector('.stpr-dlg [data-k="part.zone"]').click(); await W(40); document.querySelector('.stpr-dlg [data-dok]').click(); await W(40);
     ok('and back on', !C.miniOff.zone);
     var M1 = P._mini(1);
     ok('on the 1h: no London box (15m and below), day names still', M1 && M1.ses.length === 0 && M1.days.length > 0);
