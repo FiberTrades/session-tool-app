@@ -84957,7 +84957,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-tfpill svg { width: 11px; height: 11px; transition: transform .15s; }
   .stpr-ptfw.open .stpr-tfpill svg { transform: rotate(180deg); }
   .stpr-tfseg { display: none; } .stpr-ptfw.open .stpr-tfseg { display: inline-flex; }
-  .stpr-ptfw.open ~ .stpr-pill { display: none; }
+  .stpr-ptfw.open ~ .stpr-tl { display: none; }
+  /* Nestor, 17 Oct 2026: "remove what would you do here? and move settings panel there" - the folded panel sits at the top
+     left of the first chart, beside its timeframe; the trade's own line (SELL - +0.5R - 6 pips) follows it */
+  .stpr-tl { position: absolute; left: 68px; top: 8px; z-index: 5; display: flex; gap: 6px; align-items: center; max-width: calc(100% - 150px); pointer-events: none; }
+  .stpr-tl > * { pointer-events: auto; }
+  .stpr-tl .stpr-mm.strip { margin-left: 0; flex: none; }
+  .stpr-tl .stpr-pill { position: static; max-width: none; min-width: 0; flex: 0 1 auto; pointer-events: none; }
+  .stpr-pill.idle { display: none; }
   .stpr-ov { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
   /* The chart Play steps by: the last one clicked, its edge lit (Nestor, 15 Oct 2026: "the last chart i click on its borders
      highlights slightly and that gives the clue that if i press play that charts timeframe is whats gonna play") */
@@ -85744,13 +85751,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function crossFmt(tf){ return function(t){ var d = new Date(t * 1000); if (tf === 525600) return String(d.getFullYear()); if (tf >= 1440) return dshort(d); return dshort(d) + '  ' + hm(t); }; }
   function buildPanes(){
     panes.forEach(function(p){ try { p.chart.remove(); } catch (e) {} }); panes = [];
-    var g = $('stpr-grid'), n = CFG.layout; g.className = 'stpr-grid l' + n + ' v' + layV(n); g.innerHTML = '';
+    var g = $('stpr-grid'), n = CFG.layout, mk = mmEl(); if (mk && g.contains(mk)) $('stpr-cw').appendChild(mk);   // the folded panel lives on the first chart: keep it
+    g.className = 'stpr-grid l' + n + ' v' + layV(n); g.innerHTML = '';
     $('stpr-cw').classList.toggle('one', n === 1); relangAt = null;   // one chart: no scroll strip on a phone (Nestor, 15 Oct 2026: "when its just 1 chart you dont need to have this scroll bar")
     for (var i = 0; i < n; i++) {
       var el = document.createElement('div'); el.className = 'stpr-pane'; el.setAttribute('data-i', i);
       el.innerHTML = '<div class="stpr-pc"></div><canvas class="stpr-ov"></canvas>'
         + '<div class="stpr-ptfw" data-i="' + i + '"><button type="button" class="stpr-tfpill" data-i="' + i + '"></button><div class="stpr-seg stpr-tfseg">' + TFS.map(function(x){ return '<button type="button" data-tf="' + x + '" data-i="' + i + '">' + TFL[x] + '</button>'; }).join('') + '</div></div>'
-        + (i === 0 ? '<div class="stpr-pill" id="stpr-pill"></div>' : '') + '<div class="strp-newscard" style="display:none"></div>';
+        + (i === 0 ? '<div class="stpr-tl" id="stpr-tl"><div class="stpr-pill idle" id="stpr-pill"></div></div>' : '') + '<div class="strp-newscard" style="display:none"></div>';
       g.appendChild(el);
       // 1m is kept about 3 months back and 5m about 6, so an older day has neither: such a chart shows the finest candles
       // there are for the day and says so (an empty chart with no scale looked broken - Nestor, 15 Oct 2026: "why do the
@@ -85781,6 +85789,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         try { chart.timeScale().subscribeSizeChange(function(w){ if (w > 0 && !pp.sized) { pp.sized = true; if (pp._set) setRange(pp, pp._set); } }); } catch (e) {}
       })(pane);
     }
+    placeMM();
     paintAct();
   }
   async function loadPanes(){ for (var i = 0; i < panes.length; i++) { var e = await paneStatic(panes[i].tf); panes[i].hist = e; panes[i].static = e.agg; } }
@@ -85930,9 +85939,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       pill.textContent = sideW(q.dir) + ' · ' + fR(live) + ' · ' + (live >= 0 ? '+' : '−') + fmtU(Math.abs(c - q.entry), su) + ' ' + uLbl(su);
       return; }
     if (S.pend) { pill.className = 'stpr-pill'; pill.textContent = pendName(S.pend) + ' · ' + S.pend.entry.toFixed(S.digits) + T(' · waiting', ' · esperando'); return; }
-    var v = pvLevels(); pill.className = 'stpr-pill';
+    var v = pvLevels(); pill.className = 'stpr-pill' + (v ? '' : ' idle');
     pill.textContent = v ? ((v.kind ? pendName({ dir: v.dir, kind: v.kind }) : sideW(v.dir)) + ' · SL ' + fmtU(v.rd, su) + ' ' + uLbl(su) + (v.tp ? ' · TP ' + ((v.tp - v.entry) * v.dir / v.rd).toFixed(1) + 'R' : '') + T(' · drag the lines', ' · arrastra las líneas'))
-      : T('What would you do here?', '¿Qué harías aquí?');
+      : '';
   }
   function durTxt(sec){ var m = Math.max(1, Math.round(sec / 60)), h = Math.floor(m / 60); m = m % 60; return h ? (h + ' h ' + (m ? m + ' min' : '')) : (m + ' min'); }
   var CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>';
@@ -86036,7 +86045,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var ph = phone(), strip = !ph && !!CFG.mm.col && !!(bar && del);
     el.classList.toggle('strip', strip);
     if (ph) { if (el.parentNode !== win) win.insertBefore(el, $('stpr-tr')); cw.classList.remove('mm'); }
-    else if (strip) { if (del.nextElementSibling !== el) bar.insertBefore(el, del.nextSibling); cw.classList.remove('mm'); }   // folded: in the row above the charts
+    else if (strip) { var tl = $('stpr-tl');   // folded: at the top left of the first chart (else, with no chart yet, in the row above)
+      if (tl) { if (tl.firstChild !== el) tl.insertBefore(el, tl.firstChild); } else if (del.nextElementSibling !== el) bar.insertBefore(el, del.nextSibling); cw.classList.remove('mm'); }
     else { if (el.parentNode !== cw) cw.appendChild(el); cw.classList.add('mm'); }
   }
   function mmInit(){
@@ -86260,6 +86270,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var GANNS = [0, 0.25, 0.382, 0.5, 0.618, 0.75, 1], GANNC = { '0': '#94a3b8', '0.25': '#f59e0b', '0.382': '#a3e635', '0.5': '#4ECD8B', '0.618': '#2dd4bf', '0.75': '#60a5fa', '1': '#94a3b8' };
   function gannCol(d, lv){ return (d && d.color) || GANNC[String(lv)] || '#c084fc'; }
   function lvDef(ty){ return (ty === 'gann' ? GANNS : FIBS).slice(); }
+  // Nestor, 17 Oct 2026: "can i be able to remove and add vertical and horizontal lines in the gann box separately?" - the
+  // horizontal lines are d.levels, the vertical ones d.tlevels (a box drawn before then used d.levels for both)
+  function gannP(d){ return (d.levels && d.levels.length) ? d.levels : GANNS; }
+  function gannT(d){ return (d.tlevels && d.tlevels.length) ? d.tlevels : ((d.levels && d.levels.length) ? d.levels : GANNS); }
   var DW = { raw: null, list: [], hist: ['[]'], hpos: 0, sel: null, multi: null, tool: 'none', ns: {}, pending: null, penning: null, penP: null, drag: null, marq: null, snap: null,
     at: null, pin: null, asTemp: null, cx: null, ver: 0 };
   function dirty(){ DW.ver++; }
@@ -86376,22 +86390,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if (ly != null) { g.fillStyle = hexA(C, ix % 2 ? 0.05 : 0.09); g.fillRect(xl, Math.min(ly, y), xr - xl, Math.abs(y - ly)); }
           ly = y; g.strokeStyle = hexA(C, 0.55); g.lineWidth = W; g.beginPath(); g.moveTo(xl, y); g.lineTo(xr, y); g.stroke();
           g.fillStyle = C; g.textBaseline = 'middle'; g.fillText(fibLbl(lv), Math.min(xr + 6, pw - 30), y); }); } }
-    else if (d.type === 'gann') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { var GL = (d.levels && d.levels.length) ? d.levels : GANNS;
+    else if (d.type === 'gann') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { var PL = gannP(d), TL = gannT(d);
         x0 = Math.min(a.x, b.x); x1 = Math.max(a.x, b.x); y0 = Math.min(a.y, b.y); y1 = Math.max(a.y, b.y);
-        var gy = GL.map(function(lv){ return yOf(p, d.a.price + (d.b.price - d.a.price) * lv); }), gx = GL.map(function(lv){ return a.x + (b.x - a.x) * lv; });
+        var gy = PL.map(function(lv){ return yOf(p, d.a.price + (d.b.price - d.a.price) * lv); }), gx = TL.map(function(lv){ return a.x + (b.x - a.x) * lv; });
         // the bands between the levels, across in price and down in time, so the grid shows through both
-        for (var gk = 1; gk < GL.length; gk++) { var gc = gannCol(d, GL[gk]);
-          if (gy[gk] != null && gy[gk - 1] != null) { g.fillStyle = hexA(gc, 0.07); g.fillRect(x0, Math.min(gy[gk], gy[gk - 1]), x1 - x0, Math.abs(gy[gk] - gy[gk - 1])); }
-          g.fillStyle = hexA(gc, 0.05); g.fillRect(Math.min(gx[gk], gx[gk - 1]), y0, Math.abs(gx[gk] - gx[gk - 1]), y1 - y0); }
+        for (var gk = 1; gk < PL.length; gk++) if (gy[gk] != null && gy[gk - 1] != null) { g.fillStyle = hexA(gannCol(d, PL[gk]), 0.07); g.fillRect(x0, Math.min(gy[gk], gy[gk - 1]), x1 - x0, Math.abs(gy[gk] - gy[gk - 1])); }
+        for (gk = 1; gk < TL.length; gk++) { g.fillStyle = hexA(gannCol(d, TL[gk]), 0.05); g.fillRect(Math.min(gx[gk], gx[gk - 1]), y0, Math.abs(gx[gk] - gx[gk - 1]), y1 - y0); }
         g.lineWidth = W;
-        GL.forEach(function(lv, k){ g.strokeStyle = hexA(gannCol(d, lv), 0.85);
-          if (gy[k] != null) { g.beginPath(); g.moveTo(x0, gy[k]); g.lineTo(x1, gy[k]); g.stroke(); }
-          g.beginPath(); g.moveTo(gx[k], y0); g.lineTo(gx[k], y1); g.stroke(); });
+        PL.forEach(function(lv, k){ if (gy[k] == null) return; g.strokeStyle = hexA(gannCol(d, lv), 0.85); g.beginPath(); g.moveTo(x0, gy[k]); g.lineTo(x1, gy[k]); g.stroke(); });
+        TL.forEach(function(lv, k){ g.strokeStyle = hexA(gannCol(d, lv), 0.85); g.beginPath(); g.moveTo(gx[k], y0); g.lineTo(gx[k], y1); g.stroke(); });
         // the levels named on all four sides, once the box is big enough for them not to run into each other
         var lvP = (y1 - y0) > 100, lvT = (x1 - x0) > 290;
-        GL.forEach(function(lv, k){ var tx = fibLbl(lv); g.fillStyle = gannCol(d, lv);
-          if (lvP && gy[k] != null) { g.textBaseline = 'middle'; g.textAlign = 'right'; g.fillText(tx, x0 - 4, gy[k]); g.textAlign = 'left'; g.fillText(tx, x1 + 4, gy[k]); }
-          if (lvT) { g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText(tx, gx[k], y0 - 3); g.textBaseline = 'top'; g.fillText(tx, gx[k], y1 + 3); } });
+        if (lvP) PL.forEach(function(lv, k){ if (gy[k] == null) return; var tx = fibLbl(lv); g.fillStyle = gannCol(d, lv); g.textBaseline = 'middle'; g.textAlign = 'right'; g.fillText(tx, x0 - 4, gy[k]); g.textAlign = 'left'; g.fillText(tx, x1 + 4, gy[k]); });
+        if (lvT) TL.forEach(function(lv, k){ var tx = fibLbl(lv); g.fillStyle = gannCol(d, lv); g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText(tx, gx[k], y0 - 3); g.textBaseline = 'top'; g.fillText(tx, gx[k], y1 + 3); });
         g.textAlign = 'left'; g.textBaseline = 'middle'; } }
     // The measure: the distance in the stop's unit, in R of the stop, and in this chart's candles. Neutral colour on
     // purpose, as in Trade Replay: it reports a distance, not a verdict.
@@ -86640,9 +86651,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (ty === 'hline' && sd) { H.push('<button type="button" data-alert style="padding:5px 0;' + BTN + chip(!!sd.alert) + 'letter-spacing:0.12em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:6px;"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V7.5a4 4 0 0 1 8 0V11l1.2 1.5H2.8z"/><path d="M6.6 14a1.5 1.5 0 0 0 2.8 0"/></svg>' + (sd.alert ? (sd.hitAt ? T('Alert hit · arm again', 'Alcanzada · activar') : T('Alert on', 'Alerta activa')) : T('Alert off', 'Alerta apagada')) + '</button>');
       if (sd.alert && sd.hitAt) H.push('<div style="color:var(--text-dim);">' + esc(T('Reached at ', 'Alcanzada a las ') + hm(sd.hitAt) + ' · ' + dshort(new Date(sd.hitAt * 1000))) + '</div>'); }
     if (ty === 'range') H.push('<div style="display:flex;gap:5px;">' + [['pips', uLbl(stopUnit()).toUpperCase()], ['r', 'R'], ['bars', T('BARS', 'BARRAS')]].map(function(k){ return '<button type="button" data-show="' + k[0] + '" style="flex:1;padding:4px 0;' + BTN + chip(rShow(d, k[0])) + '">' + esc(k[1]) + '</button>'; }).join('') + '</div>');
-    if ((ty === 'fib' || ty === 'gann') && sd) { var LV = (d.levels && d.levels.length) ? d.levels : lvDef(ty);
-      H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">' + LV.map(function(lv, ix){ return '<button type="button" data-lvl="' + ix + '" title="' + esc(T('Remove', 'Quitar')) + '" style="padding:3px 6px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + fibLbl(lv) + ' &times;</button>'; }).join('') + '</div>');
-      H.push('<div style="display:flex;gap:5px;"><input data-fiblv placeholder="0.705" style="flex:1;min-width:0;padding:4px 6px;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;"><button type="button" data-fibadd style="padding:4px 8px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + T('Add', 'Añadir') + '</button></div>'); }
+    if ((ty === 'fib' || ty === 'gann') && sd) {
+      var lvSet = function(list, rm, inp, addk, ph){ H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">' + list.map(function(lv, ix){ return '<button type="button" ' + rm + '="' + ix + '" title="' + esc(T('Remove', 'Quitar')) + '" style="padding:3px 6px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + fibLbl(lv) + ' &times;</button>'; }).join('') + '</div>');
+        H.push('<div style="display:flex;gap:5px;"><input ' + inp + ' placeholder="' + ph + '" style="flex:1;min-width:0;padding:4px 6px;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;"><button type="button" ' + addk + ' style="padding:4px 8px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + T('Add', 'Añadir') + '</button></div>'); };
+      var lvHd = function(t){ H.push('<div style="letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);margin-top:2px;">' + t + '</div>'); };
+      if (ty === 'gann') { lvHd(T('Horizontal lines (price)', 'Líneas horizontales (precio)')); lvSet(gannP(sd), 'data-lvl', 'data-fiblv', 'data-fibadd', '0.66');
+        lvHd(T('Vertical lines (time)', 'Líneas verticales (tiempo)')); lvSet(gannT(sd), 'data-tlvl', 'data-tlv', 'data-tadd', '0.66'); }
+      else lvSet((d.levels && d.levels.length) ? d.levels : lvDef(ty), 'data-lvl', 'data-fiblv', 'data-fibadd', '0.705'); }
     if (sd) {
       if (sd.type !== 'range') H.push('<input data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(sd.text || '') + '" style="width:100%;box-sizing:border-box;padding:5px 7px;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;">');
       H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">' + TFS.map(function(tf){ var on = visibleOn(sd, tf); return '<button type="button" data-dtf="' + tf + '" style="padding:3px 7px;' + BTN + chip(on) + '">' + esc(TFL[tf]) + '</button>'; }).join('') + '</div>');
@@ -86653,8 +86668,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     e.querySelectorAll('[data-col]').forEach(function(b){ b.onclick = function(){ styleTgt().color = b.getAttribute('data-col'); after(); }; });
     e.querySelectorAll('[data-wid]').forEach(function(b){ b.onclick = function(){ styleTgt().width = parseFloat(b.getAttribute('data-wid')); after(); }; });
     e.querySelectorAll('[data-show]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), k = b.getAttribute('data-show'); if (!o.show) o.show = {}; o.show[k] = !rShow(o, k); after(); }; });
-    e.querySelectorAll('[data-lvl]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), L = (o.levels && o.levels.length) ? o.levels.slice() : lvDef(o.type); L.splice(parseInt(b.getAttribute('data-lvl'), 10), 1); o.levels = L; commit(); renderProps(); }; });
-    var add = e.querySelector('[data-fibadd]'); if (add) add.onclick = function(){ var v = parseFloat((e.querySelector('[data-fiblv]') || {}).value); if (!isFinite(v)) return; var o = styleTgt(), L = (o.levels && o.levels.length) ? o.levels.slice() : lvDef(o.type); if (L.indexOf(v) < 0) L.push(v); L.sort(function(x, y){ return x - y; }); o.levels = L; commit(); renderProps(); };
+    // a Gann box drawn before the two sets keeps its vertical lines as they were when its horizontal ones change
+    var keepT = function(o){ if (o.type === 'gann' && !(o.tlevels && o.tlevels.length)) o.tlevels = gannT(o).slice(); };
+    e.querySelectorAll('[data-lvl]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(); keepT(o); var L = (o.levels && o.levels.length) ? o.levels.slice() : lvDef(o.type); L.splice(parseInt(b.getAttribute('data-lvl'), 10), 1); if (!L.length) return; o.levels = L; commit(); renderProps(); }; });
+    e.querySelectorAll('[data-tlvl]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), L = gannT(o).slice(); L.splice(parseInt(b.getAttribute('data-tlvl'), 10), 1); if (!L.length) return; o.tlevels = L; commit(); renderProps(); }; });
+    var add = e.querySelector('[data-fibadd]'); if (add) add.onclick = function(){ var v = parseFloat((e.querySelector('[data-fiblv]') || {}).value); if (!isFinite(v)) return; var o = styleTgt(); keepT(o); var L = (o.levels && o.levels.length) ? o.levels.slice() : lvDef(o.type); if (L.indexOf(v) < 0) L.push(v); L.sort(function(x, y){ return x - y; }); o.levels = L; commit(); renderProps(); };
+    var tadd = e.querySelector('[data-tadd]'); if (tadd) tadd.onclick = function(){ var v = parseFloat((e.querySelector('[data-tlv]') || {}).value); if (!isFinite(v)) return; var o = styleTgt(), L = gannT(o).slice(); if (L.indexOf(v) < 0) L.push(v); L.sort(function(x, y){ return x - y; }); o.tlevels = L; commit(); renderProps(); };
     var note = e.querySelector('[data-note]'); if (note) { note.oninput = function(){ var o = styleTgt(); o.text = note.value; persist(); dirty(); }; note.onchange = function(){ commit(); }; }
     // Never invisible everywhere: an object on no timeframe could not be found again to fix.
     e.querySelectorAll('[data-dtf]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), v = +b.getAttribute('data-dtf'), cur2 = (o.tfs && o.tfs.length) ? o.tfs.slice() : TFS.slice(), at = cur2.indexOf(v);

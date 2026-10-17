@@ -37,7 +37,17 @@
     var onH = px(0, xa + (xb - xa) * 0.13, y5), onV = px(0, xm, ya + (yb - ya) * 0.13), between = px(0, xa + (xb - xa) * 0.13, ya + (yb - ya) * 0.44);
     ok('the 0.5 level is drawn across in price (green) and down in time; a band between levels is tinted', onH[3] > 150 && onH[1] > onH[0] && onV[3] > 80 && onV[1] > onV[0] && between[3] > 0 && between[3] < 60, { onH: onH, onV: onV, between: between });
     box.querySelector('[data-lvl="2"]').click(); await W(30);
-    ok('a level can be removed (0.382), the others stay', DW.list[0].levels && DW.list[0].levels.length === 6 && DW.list[0].levels.indexOf(0.382) < 0, DW.list[0].levels);
+    ok('a horizontal line can be removed (0.382): the vertical ones stay all seven', DW.list[0].levels && DW.list[0].levels.length === 6 && DW.list[0].levels.indexOf(0.382) < 0 && DW.list[0].tlevels && DW.list[0].tlevels.length === 7, [DW.list[0].levels, DW.list[0].tlevels]);
+    // horizontal and vertical lines separately (Nestor, 17 Oct 2026: "remove and add vertical and horizontal lines in the gann box separately")
+    box = pane(0).el.querySelector('.stpr-props');
+    ok('the box lists them in two sets: Horizontal lines (price) and Vertical lines (time), each with its own Add', /Horizontal lines \(price\)/.test(box.textContent) && /Vertical lines \(time\)/.test(box.textContent) && box.querySelectorAll('[data-lvl]').length === 6 && box.querySelectorAll('[data-tlvl]').length === 7 && box.querySelector('[data-tadd]') && box.querySelector('[data-fibadd]'), box.textContent);
+    box.querySelector('[data-tlvl="3"]').click(); await W(30); P._render(); await W(60);
+    var onV2 = px(0, xm, ya + (yb - ya) * 0.13), onH2 = px(0, xa + (xb - xa) * 0.13, y5);
+    ok('removing the vertical 0.5: gone down in time, the horizontal 0.5 still drawn', DW.list[0].tlevels.indexOf(0.5) < 0 && DW.list[0].levels.indexOf(0.5) >= 0 && onV2[3] < 60 && onH2[3] > 150, { onV2: onV2, onH2: onH2, t: DW.list[0].tlevels });
+    box = pane(0).el.querySelector('.stpr-props'); box.querySelector('[data-tlv]').value = '0.66'; box.querySelector('[data-tadd]').click(); await W(30);
+    ok('a vertical line added at 0.66 (only there)', DW.list[0].tlevels.indexOf(0.66) >= 0 && DW.list[0].levels.indexOf(0.66) < 0, [DW.list[0].levels, DW.list[0].tlevels]);
+    box = pane(0).el.querySelector('.stpr-props'); box.querySelector('[data-fiblv]').value = '0.9'; box.querySelector('[data-fibadd]').click(); await W(30);
+    ok('a horizontal line added at 0.9 (only there)', DW.list[0].levels.indexOf(0.9) >= 0 && DW.list[0].tlevels.indexOf(0.9) < 0);
     box = pane(0).el.querySelector('.stpr-props'); box.querySelector('[data-col="#60a5fa"]').click(); await W(30);
     ok('one colour can be picked for the whole box, and the many-colour swatch brings the levels back', DW.list[0].color === '#60a5fa' && (pane(0).el.querySelector('.stpr-props [data-col=""]').click(), !DW.list[0].color), DW.list[0].color);
     var a0 = { t: DW.list[0].a.t, p: DW.list[0].a.price }, bp0 = DW.list[0].b.price;
