@@ -174,6 +174,8 @@ def main():
                              '--disable-background-timer-throttling', '--disable-renderer-backgrounding', '--disable-backgrounding-occluded-windows',
                              # Windows marked the headless window hidden ~11 s in (17 Oct 2026), and a hidden page draws no frames
                              '--disable-features=CalculateNativeWinOcclusion',
+                             # a chart opened in a window of its own (Practice Replay) is a script's window.open: allowed here
+                             '--disable-popup-blocking',
                              'about:blank'],
                             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     failed = 1
