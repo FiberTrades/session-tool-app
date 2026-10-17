@@ -22,6 +22,8 @@
 //           in now; the first one also stamps be_at
 //    { event:"partial", token, ticket, deal, login, symbol, direction, lots, left, pct, r, pnl }   (EA 8.87)
 //        -> part of the trade closed: the share of the original size, the R and the money of that deal
+//    { event:"alert", token, id, px, symbol, login }   (EA 8.99)
+//        -> price reached one of the member's price alerts: marked fired once and pushed to the phone (afterAlert)
 //    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6; 8.83 adds copy_*)
 //        -> the EA's own settings right now (risk, stop limits, take profit,
 //           break-even, daily trade cap): upsert ea_settings, and when a real
@@ -42,7 +44,7 @@
 // ============================================================
 
 import { createClient } from "jsr:@supabase/supabase-js@2";
-import { afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
+import { afterAlert, afterBE, afterClose, afterCloseTrade, afterEaChange, afterLock, afterOpen, afterPartial, afterRisk, afterWiden, checkNoStop, utcDay } from "../_shared/nudges.ts";
 
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: { waitUntil(p: Promise<any>): void } | undefined;
@@ -78,10 +80,11 @@ Deno.serve(async (req) => {
   const { token, event, ticket } = body ?? {};
   const ticketStr = (ticket === undefined || ticket === null) ? "" : String(ticket).trim();
   const isSettings = event === "settings";          // no ticket: it describes the EA, not a trade
+  const isAlert = event === "alert";                // no ticket either: a price alert of the member's
   if (
     !token ||
-    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && event !== "partial" && !isSettings) ||
-    (!isSettings && (!ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"))
+    (event !== "open" && event !== "close" && event !== "be" && event !== "sl" && event !== "partial" && !isSettings && !isAlert) ||
+    (!isSettings && !isAlert && (!ticketStr || ticketStr === "0" || ticketStr === "null" || ticketStr === "undefined"))
   ) {
     return json({ error: "empty or malformed live event" }, 400);
   }
@@ -108,6 +111,14 @@ Deno.serve(async (req) => {
   }
 
   const userId = String(prof.id); // real account UUID
+
+  // A price alert reached (EA 8.99): the EA has its answer at once; the alert is marked and pushed straight after.
+  if (isAlert) {
+    const id = String(body.id ?? "").trim().slice(0, 40), px = Number(body.px);
+    if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "bad alert id" }, 400);
+    later("alert", afterAlert(admin, userId, id, px));
+    return json({ ok: true });
+  }
 
   if (isSettings) {
     const login = String(body.login ?? "").trim().slice(0, 32);

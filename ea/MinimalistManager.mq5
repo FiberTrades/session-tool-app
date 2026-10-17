@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.98"
+#property version   "8.99"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3545,7 +3545,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.98\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.99\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3899,7 +3899,7 @@ void LwOnText(string s)
       if(StringFind(s,"\"status\":\"ok\"")<0){ LwDrop("join refused"); g_lwWait=300000; return; }
       g_lwState=3; g_lwFails=0;
       Print("Live line: connected - the live chart updates every second while Session Terminal shows the trade.");
-      LwText(LwBroadcast("hi","{\"v\":\"8.98\"}"));   // a window already watching says so at once
+      LwText(LwBroadcast("hi","{\"v\":\"8.99\"}"));   // a window already watching says so at once
       return;
      }
    if(StringFind(s,"\"phx_error\"")>=0 || StringFind(s,"\"phx_close\"")>=0){ LwDrop("channel closed"); return; }
@@ -4096,7 +4096,9 @@ void LiveBarsAll()
   {
    if(g_tickOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW) return;
    if(ArraySize(g_liveQueue)>0) return;                       // the real events go first
-   // the timeframes this chart's open trades were taken on (usually one)
+   // the timeframes this chart's open trades were taken on (usually one); v8.99 adds M1 while one is open (Nestor, 17 Oct
+   // 2026: "on live chart i need to be able to change TF if i want to and also to be able to open up to 4 charts") - the
+   // app builds any timeframe's latest candles from the minute ones, on top of the stored history
    int tfs[]; int nt=0;
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
@@ -4111,12 +4113,17 @@ void LiveBarsAll()
       if(!dup){ ArrayResize(tfs,nt+1); tfs[nt]=tf; nt++; }
      }
    if(nt==0){ ArrayResize(g_lbTf,0); ArrayResize(g_lbBar,0); ArrayResize(g_lbMs,0); ArrayResize(g_lbBad,0); return; }   // nothing open here
+   if(nt>0)
+     {
+      bool m1=false; for(int q=0;q<nt;q++) if(tfs[q]==(int)PERIOD_M1) m1=true;
+      if(!m1){ ArrayResize(tfs,nt+1); tfs[nt]=(int)PERIOD_M1; nt++; }
+     }
    uint now=GetTickCount();
    for(int q=0;q<nt;q++)
      {
       ENUM_TIMEFRAMES tf=(ENUM_TIMEFRAMES)tfs[q];
       int at=-1;
-      for(int j=0;j<ArraySize(g_lbTf);j++) if(g_lbTf[j]==tfs[q]){ at=j; break; }
+      for(int j=0;j<ArraySize(g_lbTf);j++) if(g_lbTf[j]==tfs[q]){ at=j; break; }   // (v8.99: M1 is in the list too, see above)
       if(at<0)
         {
          at=ArraySize(g_lbTf);
@@ -6921,7 +6928,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.98 loaded (a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.99 loaded (price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -7146,6 +7153,97 @@ bool LabelsFollowChart()
    return true;
   }
 
+//==================================================================
+//  PRICE ALERTS  (v8.99, 17 Oct 2026)
+//==================================================================
+// Nestor: "for the live chart i might want to be able to set alarms like in tradingview when a certain price has been
+// reached", "these alarms will have to be sent as nudges so i also get them on my phone". Session Terminal keeps the
+// member's alerts; this EA reads the active ones for its chart's symbol (st_ea_alerts, by the sync token - every minute
+// while the member has any alert, every 5 minutes otherwise, and only while the market moves) and checks every tick.
+// When the bid reaches one it tells live-trade (through the live queue, so a blip is retried), which marks it fired and
+// pushes it to the phone. Whichever terminal reports first wins; a second report finds it already fired. Nothing from a
+// Follow account: the Lead's terminal watches the same prices.
+#define AL_MAX 50
+string g_alId[]; double g_alPx[]; int g_alDir[]; int g_alN=0;
+string g_alDone[];             // reported this session: never twice
+uint   g_alAt=0;               // GetTickCount() of the last read
+bool   g_alAny=false;          // the member has an active alert on some symbol
+bool   g_alOff=false;          // MT5 does not allow the address: stop until the EA restarts
+
+string AlertRead()
+  {
+   int p=StringFind(InpLiveURL,"/functions/");
+   if(p<0) return "";
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_alerts";
+   string body=StringFormat("{\"p_token\":\"%s\",\"p_sym\":\"%s\"}",g_syncTokenEff,_Symbol);
+   char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
+   char res[]; string rh;
+   string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
+   ResetLastError();
+   int code=WebRequest("POST",url,hdr,1500,post,res,rh);
+   if(code==-1 && GetLastError()==4060)
+     {
+      g_alOff=true;
+      PrintFormat("Price alerts: '%s' is not allowed. Add the whole address (https://...supabase.co) under Tools > Options > Expert Advisors > Allow WebRequest.",url);
+     }
+   if(code!=200) return "";
+   return CharArrayToString(res,0,WHOLE_ARRAY,CP_UTF8);
+  }
+bool AlertDone(string id){ for(int i=0;i<ArraySize(g_alDone);i++) if(g_alDone[i]==id) return true; return false; }
+// The answer: "<1 if the member has any active alert>|<id>,<price>,<direction>;..." (a JSON string, so in quotes).
+void AlertPoll()
+  {
+   if(g_alOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0) return;
+   uint now=GetTickCount();
+   bool moving=(g_lastTickMs!=0 && now-g_lastTickMs<120000);
+   uint every=g_alAny ? 60000 : 300000;
+   if(g_alAt!=0 && (now-g_alAt<every || !moving)) return;
+   g_alAt=now;
+   string r=AlertRead();
+   if(StringLen(r)==0) return;                               // a failed read keeps what we had
+   StringReplace(r,"\"",""); StringTrimLeft(r); StringTrimRight(r);
+   if(r=="null"){ g_alN=0; g_alAny=false; return; }          // the token is not a member's (or the plan ran out)
+   int bar=StringFind(r,"|"); if(bar<0) return;
+   g_alAny=(StringSubstr(r,0,bar)=="1");
+   string lst=StringSubstr(r,bar+1);
+   string items[];
+   int n=(StringLen(lst)>0) ? StringSplit(lst,';',items) : 0;
+   // a direction already judged on this terminal is kept for an alert that is still there
+   string oId[]; int oDir[]; int on=g_alN; ArrayResize(oId,on); ArrayResize(oDir,on);
+   for(int i=0;i<on;i++){ oId[i]=g_alId[i]; oDir[i]=g_alDir[i]; }
+   g_alN=0; ArrayResize(g_alId,0); ArrayResize(g_alPx,0); ArrayResize(g_alDir,0);
+   for(int i=0;i<n && g_alN<AL_MAX;i++)
+     {
+      string f[];
+      if(StringSplit(items[i],',',f)<3 || AlertDone(f[0])) continue;
+      double px=StringToDouble(f[1]); int dir=(int)StringToInteger(f[2]);
+      if(px<=0) continue;
+      if(dir==0) for(int k=0;k<on;k++) if(oId[k]==f[0]) dir=oDir[k];
+      ArrayResize(g_alId,g_alN+1); ArrayResize(g_alPx,g_alN+1); ArrayResize(g_alDir,g_alN+1);
+      g_alId[g_alN]=f[0]; g_alPx[g_alN]=px; g_alDir[g_alN]=dir; g_alN++;
+     }
+  }
+// Every tick: has the bid reached one? An alert set without a direction takes it from the first price seen here (above
+// the bid: price has to rise to it; below: fall).
+void AlertCheck()
+  {
+   if(g_alN==0) return;
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   if(bid<=0) return;
+   for(int i=g_alN-1;i>=0;i--)
+     {
+      if(g_alDir[i]==0){ g_alDir[i]=(g_alPx[i]>=bid) ? 1 : -1; continue; }
+      bool hit=(g_alDir[i]>0 && bid>=g_alPx[i]) || (g_alDir[i]<0 && bid<=g_alPx[i]);
+      if(!hit) continue;
+      LiveEnqueue(StringFormat("{\"event\":\"alert\",\"token\":\"%s\",\"id\":\"%s\",\"px\":%s,\"symbol\":\"%s\",\"login\":\"%I64d\"}",
+                               g_syncTokenEff,g_alId[i],DoubleToString(bid,_Digits),_Symbol,AccountInfoInteger(ACCOUNT_LOGIN)));
+      int d=ArraySize(g_alDone); ArrayResize(g_alDone,d+1); g_alDone[d]=g_alId[i];
+      PrintFormat("Price alert: %s reached %s - sent to Session Terminal.",_Symbol,DoubleToString(g_alPx[i],_Digits));
+      for(int k=i+1;k<g_alN;k++){ g_alId[k-1]=g_alId[k]; g_alPx[k-1]=g_alPx[k]; g_alDir[k-1]=g_alDir[k]; }
+      g_alN--; ArrayResize(g_alId,g_alN); ArrayResize(g_alPx,g_alN); ArrayResize(g_alDir,g_alN);
+     }
+  }
+
 void OnTimer()
   {
    // v8.85: the timer runs every 25 ms for the copier; the labels still follow the chart every 100 ms
@@ -7189,6 +7287,7 @@ void OnTimer()
    BalFlush(2);
    if(TimeCurrent()-g_liveReAt>=20){ g_liveReAt=TimeCurrent(); LiveReannounceOpen(); }   // v4.3: keep open trades on the live feed
    LiveSettingsTick();   // v8.6: your EA settings -> Session Terminal, when they change
+   AlertPoll();          // v8.99: the member's price alerts for this symbol (every minute while there are any, else every 5)
    LiveFlush(3);
    // v8.71: deep replay history while the market is shut (weekends, holidays). No ticks means
    // OnTick - where it normally runs, once per M1 bar - never fires, and a closed market with
@@ -7384,6 +7483,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 void OnTick()
   {
    g_lastTickMs=GetTickCount();
+   AlertCheck();                     // v8.99: price alerts from Session Terminal (a few comparisons; sends nothing itself)
    DrawInfoReadout();                // updates spread + countdown labels (no redraw inside)
    SyncTrackMFE();                   // grow favourable-peak for POT BE R-P (runs even when visuals off)
 

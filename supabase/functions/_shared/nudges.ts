@@ -250,6 +250,11 @@ const T: Record<string, [string, string]> = {
   title_res: ["Red news result", "Resultado de noticia roja"],
   title: ["Nudge", "Aviso"],
   title_tr: ["Trade alert", "Aviso de operación"],
+  // price alerts (EA 8.99): {S} the symbol, {P} the alert's price, {N} " - its note" when it has one
+  alert_up: ["{S} rose to {P}{N}.", "{S} subió a {P}{N}."],
+  alert_dn: ["{S} fell to {P}{N}.", "{S} bajó a {P}{N}."],
+  alert_at: ["{S} reached {P}{N}.", "{S} llegó a {P}{N}."],
+  title_alert: ["Price alert", "Alerta de precio"],
 };
 export const tr = (k: string, es: boolean) => (T[k] ? T[k][es ? 1 : 0] : k);
 const RANK: Record<string, number> = { daily_hit: 0, daily_left: 0, dd_left: 0, target_hit: 1, consistency: 2, ea_risk: 1, ea_trades: 1, ea_sl: 1, no_stop: 0, finished: 0, outside: 0, news_hold: 0, against_bias: 1, big_risk: 1, risk: 1, widen: 1, news_open: 1, news_soon: 1, no_bias: 2, reentry: 2, limit: 3, streak: 4, news_fix: 5, news_out: 6 };
@@ -469,6 +474,32 @@ export async function deliver(admin: Any, userId: string, kind: "nudge" | "trade
   const res = await sendPush(admin, userId, kind, title, unseen.map((x) => x.text).join("\n"), (kind === "nudge" ? "st-nudge-" : "st-trade-") + unseen[0].key);
   await mark(unseen, res);
   return unseen.map((x) => x.key + "=" + res);
+}
+
+// ---------- price alerts (EA 8.99, 17 Oct 2026) ----------
+// The EA saw price reach one of the member's alerts. It is marked fired once (whichever terminal reports first; a second
+// report finds it no longer active) and goes to the phone straight away. An alert the member set is always sent, open
+// window or not, as TradingView's are (Nestor: "these alarms will have to be sent as nudges so i also get them on my phone").
+const symShow = (k: string) => (/^[A-Z]{6}$/.test(k) ? k.slice(0, 3) + "/" + k.slice(3) : k);
+export function alertText(sym: string, price: number, dir: number, note: string | null, es: boolean) {
+  const dg = Math.min(6, Math.max(0, (String(price).split(".")[1] || "").length));
+  return tr(dir > 0 ? "alert_up" : dir < 0 ? "alert_dn" : "alert_at", es).replace("{S}", symShow(sym)).replace("{P}", Number(price).toFixed(dg))
+    .replace("{N}", note ? " - " + String(note).slice(0, 120) : "");
+}
+export async function afterAlert(admin: Any, userId: string, id: string, px: number) {
+  if (!/^[0-9a-f-]{36}$/i.test(String(id || ""))) return [];
+  const q = admin.from("price_alerts");
+  const { data: row, error } = await (DRY ? q.select("sym, price, dir, note")   // a dry run reads it and changes nothing
+    : q.update({ active: false, fired_at: new Date().toISOString(), fired_px: Number.isFinite(px) ? px : null }).select("sym, price, dir, note"))
+    .eq("id", id).eq("user_id", userId).eq("active", true).maybeSingle();
+  if (error || !row) return [];
+  const { data: jr } = await admin.from("journals").select("s:data->settings").eq("user_id", userId).maybeSingle();
+  const es = esOf(jr), key = "alert:" + id, text = alertText(row.sym, row.price, row.dir, row.note, es);
+  if (DRY) return ["alert " + key + ": " + text];
+  await admin.from("nudge_pushes").insert({ user_id: userId, day: utcDay(Date.now()), key, status: "pending" });
+  const res = await sendPush(admin, userId, "nudge", tr("title_alert", es), text, "st-alert-" + id);
+  await admin.from("nudge_pushes").update({ status: res }).eq("user_id", userId).eq("key", key);
+  return [key + "=" + res];
 }
 
 // ---------- entry points (live-trade) ----------
