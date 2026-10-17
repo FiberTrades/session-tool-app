@@ -159,6 +159,26 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(20); var a2 = S().exec; window.dispatchEvent(new Event('blur')); await W(20);
     ok('switching to another program (the app loses the focus) turns it off too', a2 && !S().exec);
     mmBtn('col').click(); await W(200);
+    // a touch screen (Nestor, 17 Oct 2026): Execute shows the lines, a touch on the chart never places, the SL line is dragged,
+    // one button that says SELL or BUY places it
+    P._touch(true); await W(50);
+    ok('on a touch screen the panel has Execute and no key row', mmBtn('exec') && /Execute/.test(mmBtn('exec').textContent) && !mmBtn('key'), mmEl.querySelector('.stpr-mm-f').textContent);
+    mmBtn('exec').click(); await W(50);
+    var place = function () { return mmBtn('place'); };
+    ok('Execute: the lines appear, with Cancel and a green BUY button', S().exec && find('pvsl') && place() && /BUY/.test(place().textContent) && place().classList.contains('buy') && /Cancel/.test(mmBtn('exec').textContent), place() && place().textContent);
+    ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect(); x = r.left + r.width * 0.3;
+    var tev = function (t, price) { ch.dispatchEvent(new PointerEvent(t, { clientX: x, clientY: r.top + P._yOf(0, price), bubbles: true, cancelable: true, pointerId: 9, pointerType: 'touch' })); };
+    var c0 = lastBar().close;
+    tev('pointerdown', c0 + 0.0030); tev('pointerup', c0 + 0.0030); await W(40);
+    ok('a touch on the chart (away from the lines) never opens a trade', !S().pos && S().exec, S().pos);
+    var slp = find('pvsl').p; tev('pointerdown', slp); tev('pointermove', c0 + 0.0003); tev('pointerup', c0 + 0.0003); await W(60);
+    ok('dragging the SL line above price makes it a sell: the button turns red and says SELL', S().pv.dir === -1 && place() && /SELL/.test(place().textContent) && place().classList.contains('sell') && !S().pos, place() && place().textContent);
+    place().click(); await W(50);
+    ok('the button places it: a sell with that stop', S().pos && S().pos.dir === -1 && near(S().pos.sl - S().pos.entry, 0.0003, 0.00002) && !S().exec, S().pos && { e: S().pos.entry, sl: S().pos.sl });
+    P._close(); S().done = null; P._render(); await W(30);
+    mmBtn('exec').click(); await W(30); mmBtn('exec').click(); await W(30);
+    ok('Cancel leaves execution mode', !S().exec && !mmBtn('place'));
+    P._touch(null); C.stopPx.EURUSD = 0.0012; await W(30);   // the drag set a 3-pip stop; the checks below start from 12
     S().done = null; S().exec = false; S().pv = null; P._render();
 
     // four charts, none showing the future
