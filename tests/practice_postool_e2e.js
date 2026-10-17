@@ -93,6 +93,8 @@
     P._exec(true); P._aim(P._px() - 0.0012); await W(30); P._fire(); await W(40);
     for (k = 0; k < 6; k++) P._step(); await W(100);
     var hadPos = !!P._s().pos, at0 = P._s().now;
+    var lt = (P.log() || []).slice(-1)[0];
+    ok('a practice trade keeps what the log table shows: its stop, target, exit, distance, how far it ran and its risk', !lt || (lt.sl != null && lt.tp != null && lt.exit != null && lt.dist != null && lt.mfe != null && ('rm' in lt)), lt);
     P.close(); await W(300);
     ok('closing keeps where it was (the symbol, the day, the moment)', C.resume && C.resume.sym === 'EURUSD' && C.resume.day === '2026-10-01' && C.resume.now === at0, C.resume);
     P.open(); for (k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100); await W(400);
