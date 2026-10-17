@@ -199,6 +199,11 @@ def main():
             cdp.call('Page.bringToFront'); cdp.call('Emulation.setFocusEmulationEnabled', enabled=True)
         except Exception:
             pass
+        # the clipboard, so a test can copy an image and read it back (the snapshot's Copy image, 17 Oct 2026)
+        try:
+            cdp.call('Browser.grantPermissions', permissions=['clipboardReadWrite', 'clipboardSanitizedWrite'], origin='http://127.0.0.1:%d' % web_port)
+        except Exception:
+            pass
         app = os.environ.get('E2E_APP', 'app.html')   # another file name runs the same test against an older copy
         cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, app, random.randint(1, 10 ** 9)))
         time.sleep(2)
