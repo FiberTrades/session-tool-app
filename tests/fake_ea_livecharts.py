@@ -5,11 +5,13 @@
 # speed the watch asked for (500 / 2000 / 5000 ms, the fastest asked in the last 45 s); "hist" gets the last closed
 # 1-minute candles ("bars", 300 to a message). Time runs from a given moment (a weekday, for a test on a weekend), prices
 # walk from a given price. Only a throwaway test channel; nothing is written to the database.
-#   python fake_ea_livecharts.py <token> <seconds> <out.json> <symbol> <start unix> <price>
+#   python fake_ea_livecharts.py <token> <seconds> <out.json> <symbol> <start unix> <price> [digits] [login]
 import base64, hashlib, json, math, random, socket, ssl, sys, time
 HOST = 'figozyxoyobixadhqewr.supabase.co'
 KEY = 'sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv'
 tok, secs, out, SYM, T0, P0 = sys.argv[1], float(sys.argv[2]), sys.argv[3], sys.argv[4], int(sys.argv[5]), float(sys.argv[6])
+DG = int(sys.argv[7]) if len(sys.argv) > 7 else 5          # digits (gold: 2)
+LG = int(sys.argv[8]) if len(sys.argv) > 8 else 90001234   # the account's login
 topic = 'realtime:stl-' + hashlib.sha256(('st-live:' + tok).encode()).digest()[:16].hex()
 log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': []}
 w0 = time.time()
@@ -40,7 +42,7 @@ def frame(op, pl):
         except (ssl.SSLWantWriteError, BlockingIOError): time.sleep(0.005)
 def text(x): frame(0x1, x.encode())
 def bcast(e, payload): return json.dumps({'topic': topic, 'event': 'broadcast', 'payload': {'type': 'broadcast', 'event': e, 'payload': payload}, 'ref': nref(), 'join_ref': '1'}, separators=(',', ':'))
-def hi(): text(bcast('hi', {'v': '9.00', 'sym': SYM, 'dg': 5}))
+def hi(): text(bcast('hi', {'v': '9.00', 'sym': SYM, 'dg': DG, 'lg': LG}))
 def inner(m):                                        # the app's own payload inside a broadcast
     try: return json.loads(m).get('payload', {}).get('payload', {}) or {}
     except Exception: return {}
@@ -81,7 +83,7 @@ while time.time() - w0 < secs:
                 p = inner(m); now = time.time(); watch_at = now; ms = int(p.get('ms') or 2000)
                 if ms <= 500: fast_at = now
                 elif ms <= 2000: mid_at = now
-                if p.get('sym') == SYM: sym_at = now
+                if SYM in str(p.get('sym') or '').split(','): sym_at = now   # the symbols on screen, comma-separated
                 log['watches'].append([round(now - w0, 2), ms, p.get('sym', '')])
             elif '"event":"unwatch"' in m: watch_at = fast_at = mid_at = sym_at = 0; log['unwatch'] += 1
             elif '"event":"who"' in m: log['who'] += 1; hi()
@@ -103,8 +105,8 @@ while time.time() - w0 < secs:
     if state == 3 and watch_at and now - watch_at < 45 and sym_at and now - sym_at < 45:
         iv = 0.5 if (fast_at and now - fast_at < 45) else (2.0 if (mid_at and now - mid_at < 45) else 5.0)
         if now - last_px >= iv:
-            t = fnow(); m0 = int(t) - int(t) % 60; b = price_at(t); a = round(b + 0.00007, 5)
-            p = {'s': SYM, 'b': b, 'a': a, 't': int(t), 'dg': 5, 'bar': bstr(bar(m0)), 'pb': bstr(bar(m0 - 60))}
+            t = fnow(); m0 = int(t) - int(t) % 60; b = price_at(t); a = round(b + 7 * 10 ** -DG, 5)   # a spread of 0.7 pips (7 points on gold)
+            p = {'s': SYM, 'b': b, 'a': a, 't': int(t), 'dg': DG, 'bar': bstr(bar(m0)), 'pb': bstr(bar(m0 - 60))}
             key = '%s|%s' % (b, p['bar'])
             if key != last_key:
                 text(bcast('px', p)); log['px'] += 1; last_key = key

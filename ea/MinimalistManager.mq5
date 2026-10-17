@@ -3907,7 +3907,8 @@ void LwOpen()
   }
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
-string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d}",_Symbol,_Digits); }
+// "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
+string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN)); }
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -3991,7 +3992,8 @@ void LwOnText(string s)
       uint now=GetTickCount(); g_lwWatchAt=now;
       long ms=LwNum(s,"\"ms\":",LW_MID_MS);
       if(ms<=LW_FAST_MS) g_lwFastAt=now; else if(ms<=LW_MID_MS) g_lwMidAt=now;
-      if(LwStr(s,"\"sym\":\"")==_Symbol) g_lwSymAt=now;
+      string ws=","+LwStr(s,"\"sym\":\"")+",";   // the symbols on screen, comma-separated: each Live Charts chart can have its own
+      if(StringFind(ws,","+_Symbol+",")>=0) g_lwSymAt=now;
      }
    else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; }   // another window still watching says so again
    else if(StringFind(s,"\"event\":\"who\"")>=0) LwText(LwBroadcast("hi",LwHi()));   // a window that joined after this chart

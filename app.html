@@ -34601,7 +34601,13 @@ try {
       }
     }
 
-    let trades = filterByScope(getAllLifetimeTrades()).filter(tr => tr && tr.date);
+    // Under Live Charts it is the broker account the chart's EA is on, named after it, with all its trades (Nestor, 17 Oct 2026:
+    // "this should be called the brokers account linked to it with all its trades in there"); elsewhere the header's scope.
+    const _lcHost = document.getElementById('lc-log'), _lcA = (window.__stLCAcct && _lcHost && _lcHost.contains(panel)) ? window.__stLCAcct : null;
+    const _atlT = panel.querySelector('.alltrades-title [data-i18n="atl.title"]'); let _atlA = panel.querySelector('.alltrades-title .atl-acct');
+    if (_lcA && _atlT) { if (!_atlA) { _atlA = document.createElement('span'); _atlA.className = 'atl-acct'; _atlT.after(_atlA); } _atlA.textContent = _lcA.name; _atlA.hidden = false; _atlT.hidden = true; }
+    else { if (_atlA) _atlA.hidden = true; if (_atlT) _atlT.hidden = false; }
+    let trades = (_lcA ? getAllLifetimeTrades().filter(tr => tr && tr.accountId === _lcA.id) : filterByScope(getAllLifetimeTrades())).filter(tr => tr && tr.date);
     if (_allTradesFilter === 'win')  trades = trades.filter(tr => tr.result === 'Win');
     else if (_allTradesFilter === 'lose') trades = trades.filter(tr => tr.result === 'Lose');
     else if (_allTradesFilter === 'be')   trades = trades.filter(tr => tr.result === 'BE');
@@ -76699,7 +76705,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var me = ch = c.channel(nm, { config: { broadcast: { self: false, ack: false } } });
       me.on('broadcast', { event: 'tick' }, onTick)
         .on('broadcast', { event: 'hi' }, function (m) {                                       // an EA has just (re)joined, or answers "who"
-          var p = (m && m.payload) || {}; if (p.sym) eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, at: Date.now() };
+          var p = (m && m.payload) || {}; if (p.sym) eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, at: Date.now() };
           if (watching) watchNow(); })
         .on('broadcast', { event: 'unwatch' }, function () { if (watching) watchNow(); })      // another window stopped; this one still looks
         .on('broadcast', { event: 'px' }, function (m) { stat.px++; try { if (window.__stLC) window.__stLC.px(m && m.payload); } catch (e) {} })
@@ -85475,26 +85481,24 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-sesn { margin: 9px 2px 2px; max-width: 220px; font-family: 'Fraunces',serif; font-size: 12px; line-height: 1.4; color: var(--text-dim); }
   .stpr-sesr { margin-top: 8px; width: 100%; height: 30px; border-radius: 7px; border: 1px solid var(--border-2); background: transparent; color: var(--text-mid); font-family: 'AppNum','DM Mono',monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
   @media (hover: hover) { .stpr-sesr:hover { border-color: var(--accent); color: var(--text); } }
-  .stpr-lay { width: 30px; padding: 0; }
-  .stpr-lay i { display: grid; gap: 1.5px; width: 14px; height: 11px; }
-  .stpr-lay i b { background: currentColor; border-radius: 1px; opacity: .85; }
+  /* Charts: one button showing the arrangement on screen; it opens TradingView's picker, 1 to 8 charts (17 Oct 2026) */
+  .stpr-lay { gap: 7px; padding: 0 8px 0 9px; }
+  .stpr-lay > svg { width: 10px; height: 10px; opacity: .7; }
+  .stpr-lyi { position: relative; display: block; flex: none; width: 18px; height: 13px; }
+  .stpr-lyi.big { width: 26px; height: 18px; }
+  .stpr-lyi b { position: absolute; box-sizing: border-box; padding: .75px; background: currentColor; background-clip: content-box; opacity: .85; }
+  .stpr-lym { display: grid; gap: 2px; }
+  .stpr-lyr { display: flex; align-items: center; gap: 2px; }
+  .stpr-lyr > span { width: 18px; flex: none; font-family: 'AppNum','DM Mono',monospace; font-size: 11px; color: var(--text-dim); text-align: center; }
+  .stpr-lyb { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 30px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-mid); cursor: pointer; }
+  .stpr-lyb.on { color: var(--accent); border-color: var(--accent); background: rgba(244,114,182,.08); }
+  @media (hover: hover) { .stpr-lyb:hover { background: var(--bg-elev); color: var(--text); } .stpr-lyb.on:hover { color: var(--accent); } }
   .stpr-cw { position: relative; height: min(560px, 62vh); min-height: 320px; background: #121116; }
   .stpr-win > :not(.stpr-cw) { flex-shrink: 0; }   /* the window is a fixed-height column: only the charts give way, the trade row and Play bar never squash into each other */
   .stpr-grid { position: absolute; inset: 0; display: grid; gap: 2px; background: var(--border); }
-  .stpr-grid.l1 { grid-template-columns: 1fr; }
-  .stpr-grid.l2 { grid-template-columns: 1fr 1fr; }
-  .stpr-grid.l3 { grid-template-columns: 3fr 2fr; grid-template-rows: 1fr 1fr; }
-  .stpr-grid.l3 .stpr-pane:first-child { grid-row: 1 / span 2; }
-  .stpr-grid.l4 { grid-template-columns: 1fr 1fr; grid-template-rows: 1fr 1fr; }
-  /* the same button pressed again changes the arrangement (Nestor, 17 Oct 2026): 2 one above the other; 3 with the big
-     chart on the right, on top or at the bottom */
-  .stpr-grid.l2.vv { grid-template-columns: 1fr; grid-template-rows: 1fr 1fr; }
-  .stpr-grid.l3.vR { grid-template-columns: 2fr 3fr; }
-  .stpr-grid.l3.vR .stpr-pane:first-child { grid-column: 2; grid-row: 1 / span 2; }
-  .stpr-grid.l3.vT, .stpr-grid.l3.vB { grid-template-columns: 1fr 1fr; grid-template-rows: 3fr 2fr; }
-  .stpr-grid.l3.vB { grid-template-rows: 2fr 3fr; }
-  .stpr-grid.l3.vT .stpr-pane:first-child { grid-column: 1 / span 2; grid-row: 1; }
-  .stpr-grid.l3.vB .stpr-pane:first-child { grid-column: 1 / span 2; grid-row: 2; }
+  /* the arrangement: layApply sets the columns, the rows and each chart's cell (LAYS) */
+  .stpr-grid { grid-template-columns: var(--gc, 1fr); grid-template-rows: var(--gr, 1fr); }
+  .stpr-grid > .stpr-pane { grid-column: var(--pc, auto); grid-row: var(--pr, auto); }
   .stpr-pane { position: relative; background: #121116; min-width: 0; min-height: 0; touch-action: none; }
   .stpr-pc { position: absolute; inset: 0; }
   /* A phone's charts take every swipe, so stacked charts left nowhere to scroll the page (Nestor, 15 Oct 2026: "i cant
@@ -85520,6 +85524,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-tools { display: none; } .stpr-tb2.drawing .stpr-tools { display: inline-flex; }
   @media (max-width: 760px) { .stpr-tb2.drawing .stpr-tools { display: flex; flex: 1 1 100%; } .stpr-tools button { flex: 1 1 0; min-width: 0; padding: 0; } }   /* a phone: the ten tools share the width (Short was cut off once Emoji came, 17 Oct 2026) */
   .stpr-ptfw { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; align-items: center; }
+  /* each chart's own symbol (17 Oct 2026), beside its timeframe when there is more than one chart */
+  .stpr-sympill { height: 30px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-2); background: rgba(19,18,23,.94); color: var(--text); font-family: 'AppNum','DM Mono',monospace; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
+  .stpr-sympill::after { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); opacity: .6; }
+  @media (hover: hover) { .stpr-sympill:hover { border-color: var(--accent); } }
   .stpr-tfpill { height: 30px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--accent); background: rgba(19,18,23,.94); color: var(--text); font-family: 'AppNum','DM Mono',monospace; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; box-shadow: 0 0 0 1px rgba(244,114,182,.25); }
   .stpr-tfpill svg { width: 11px; height: 11px; transition: transform .15s; }
   .stpr-ptfw.open .stpr-tfpill svg { transform: rotate(180deg); }
@@ -85580,6 +85588,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-win.lc #stpr-golbl, .stpr-win.lc #stpr-goto, .stpr-win.lc #stpr-logbtn, .stpr-win.lc .stpr-cb, .stpr-win.lc #stpr-tr, .stpr-win.lc #stpr-mm, .stpr-win.lc #stpr-log,
   .stpr-win.lc #stpr-pill, .stpr-win.lc #stpr-pop, .stpr-win.lc #stpr-close { display: none !important; }
   .stpr-win.lc #stpr-score { cursor: default; }
+  .stpr-win.lc > .stpr-tb:not(.stpr-tb2) { display: none !important; }
   .stpr-lvbar { display: none; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; border-top: 1px solid var(--border); font-family: 'AppNum','DM Mono',monospace; font-size: 11px; color: var(--text-dim); letter-spacing: .04em; }
   .stpr-win.lc .stpr-lvbar { display: flex; }
   .stpr-lvst { display: flex; align-items: center; gap: 8px; min-width: 0; }
@@ -85692,6 +85701,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-syl button.on { border-color: var(--accent); color: var(--accent); }
   .stpr-syl small { color: var(--text-dim); font-size: 10px; letter-spacing: .04em; }
   .stpr-tr { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-top: 1px solid var(--border); flex-wrap: wrap; min-height: 66px; }
+  .stpr-tr.nt { min-height: 0; padding: 7px 14px; }
   .stpr-side { height: 40px; width: 112px; border-radius: 8px; font-family: 'AppNum','DM Mono',monospace; font-size: 12px; letter-spacing: .14em; font-weight: 500; display: inline-flex; align-items: center; justify-content: center; gap: 8px; cursor: pointer; background: transparent; }
   .stpr-side.sell { color: var(--bad); border: 1px solid rgba(229,103,103,.6); background: rgba(229,103,103,.10); }
   .stpr-side.buy { color: var(--good); border: 1px solid rgba(78,205,139,.6); background: rgba(78,205,139,.10); }
@@ -85770,7 +85780,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     .stpr-scr svg { width: 14px; height: 14px; }
     .stpr-grid { position: relative; inset: auto; display: flex; flex-direction: column; gap: 2px; }
     .stpr-pane { height: 340px; flex: none; }
-    .stpr-grid.l3 .stpr-pane, .stpr-grid.l4 .stpr-pane { height: 260px; }
+    .stpr-grid:not(.l1):not(.l2) .stpr-pane { height: 260px; }
     .stpr-tr { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); padding: 10px 12px; gap: 8px; }
     .stpr-side, .stpr-exec { width: auto; justify-content: center; grid-column: span 2; min-width: 0; }
     .stpr-side { letter-spacing: .08em; gap: 6px; }
@@ -85986,7 +85996,40 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // each time a chart is scrolled to its left edge it fetches this much more, back to the oldest candle stored
   var MORE = { 1: 2 * 86400, 5: 10 * 86400, 15: 30 * 86400, 60: 120 * 86400, 240: 366 * 86400, 720: 2 * 366 * 86400, 1440: 6 * 366 * 86400, 10080: 30 * 366 * 86400, 525600: 30 * 366 * 86400 };
   var SHOW = { 1: 150, 5: 150, 15: 120, 60: 120, 240: 100, 720: 100, 1440: 120, 10080: 120, 525600: 30 };
-  var LAYTF = { 1: [5], 2: [5, 60], 3: [5, 60, 15], 4: [5, 15, 60, 240] };
+  var LAYTF = { 1: [5], 2: [5, 60], 3: [5, 60, 15], 4: [5, 15, 60, 240], 5: [5, 15, 60, 240, 1], 6: [1, 5, 15, 60, 240, 1440], 7: [1, 5, 15, 60, 240, 720, 1440], 8: [1, 5, 15, 60, 240, 720, 1440, 10080] };
+  // Up to 8 charts in TradingView's arrangements (Nestor, 17 Oct 2026: "give users the options to open up to 8 charts like
+  // this"): each is its columns and rows (fr) and a cell per chart, [column, row, columns wide, rows tall], chart 1 first.
+  // The first of each count is the one a count starts on; 2 h/v and 3 L/R/T/B keep the keys they had.
+  function E(n){ var a = []; for (var i = 0; i < n; i++) a.push(1); return a; }
+  function cellsRow(n){ var a = []; for (var i = 1; i <= n; i++) a.push([i, 1]); return a; }
+  function cellsCol(n){ var a = []; for (var i = 1; i <= n; i++) a.push([1, i]); return a; }
+  function cellsGrid(c, r){ var a = []; for (var y = 1; y <= r; y++) for (var x = 1; x <= c; x++) a.push([x, y]); return a; }
+  var LAYS = {
+    1: { x: { c: [1], r: [1], a: [[1, 1]] } },
+    2: { h: { c: [1, 1], r: [1], a: cellsRow(2) }, v: { c: [1], r: [1, 1], a: cellsCol(2) } },
+    3: { L: { c: [3, 2], r: [1, 1], a: [[1, 1, 1, 2], [2, 1], [2, 2]] }, R: { c: [2, 3], r: [1, 1], a: [[2, 1, 1, 2], [1, 1], [1, 2]] },
+         T: { c: [1, 1], r: [3, 2], a: [[1, 1, 2, 1], [1, 2], [2, 2]] }, B: { c: [1, 1], r: [2, 3], a: [[1, 2, 2, 1], [1, 1], [2, 1]] },
+         h: { c: E(3), r: [1], a: cellsRow(3) }, v: { c: [1], r: E(3), a: cellsCol(3) } },
+    4: { x: { c: [1, 1], r: [1, 1], a: cellsGrid(2, 2) },
+         L: { c: [2, 1], r: E(3), a: [[1, 1, 1, 3], [2, 1], [2, 2], [2, 3]] }, R: { c: [1, 2], r: E(3), a: [[2, 1, 1, 3], [1, 1], [1, 2], [1, 3]] },
+         T: { c: E(3), r: [2, 1], a: [[1, 1, 3, 1], [1, 2], [2, 2], [3, 2]] }, B: { c: E(3), r: [1, 2], a: [[1, 2, 3, 1], [1, 1], [2, 1], [3, 1]] },
+         L2: { c: [2, 1, 1], r: [1, 1], a: [[1, 1, 1, 2], [2, 1, 2, 1], [2, 2], [3, 2]] }, R2: { c: [1, 1, 2], r: [1, 1], a: [[3, 1, 1, 2], [1, 1, 2, 1], [1, 2], [2, 2]] },
+         T2: { c: [1, 1], r: [2, 1, 1], a: [[1, 1, 2, 1], [1, 2, 1, 2], [2, 2], [2, 3]] },
+         h: { c: E(4), r: [1], a: cellsRow(4) }, v: { c: [1], r: E(4), a: cellsCol(4) } },
+    5: { L4: { c: [2, 1, 1], r: [1, 1], a: [[1, 1, 1, 2], [2, 1], [3, 1], [2, 2], [3, 2]] }, R4: { c: [1, 1, 2], r: [1, 1], a: [[3, 1, 1, 2], [1, 1], [2, 1], [1, 2], [2, 2]] },
+         T4: { c: [1, 1], r: [2, 1, 1], a: [[1, 1, 2, 1], [1, 2], [2, 2], [1, 3], [2, 3]] },
+         P: { c: E(6), r: [1, 1], a: [[1, 1, 3, 1], [4, 1, 3, 1], [1, 2, 2, 1], [3, 2, 2, 1], [5, 2, 2, 1]] }, Q: { c: E(6), r: [1, 1], a: [[1, 1, 2, 1], [3, 1, 2, 1], [5, 1, 2, 1], [1, 2, 3, 1], [4, 2, 3, 1]] },
+         L: { c: [2, 1], r: E(4), a: [[1, 1, 1, 4], [2, 1], [2, 2], [2, 3], [2, 4]] }, R: { c: [1, 2], r: E(4), a: [[2, 1, 1, 4], [1, 1], [1, 2], [1, 3], [1, 4]] },
+         T: { c: E(4), r: [2, 1], a: [[1, 1, 4, 1], [1, 2], [2, 2], [3, 2], [4, 2]] }, B: { c: E(4), r: [1, 2], a: [[1, 2, 4, 1], [1, 1], [2, 1], [3, 1], [4, 1]] },
+         h: { c: E(5), r: [1], a: cellsRow(5) }, v: { c: [1], r: E(5), a: cellsCol(5) } },
+    6: { g: { c: E(3), r: [1, 1], a: cellsGrid(3, 2) }, g2: { c: [1, 1], r: E(3), a: cellsGrid(2, 3) },
+         C: { c: E(3), r: E(3), a: [[1, 1, 2, 2], [3, 1], [3, 2], [1, 3], [2, 3], [3, 3]] }, T: { c: E(5), r: [2, 1], a: [[1, 1, 5, 1], [1, 2], [2, 2], [3, 2], [4, 2], [5, 2]] },
+         h: { c: E(6), r: [1], a: cellsRow(6) }, v: { c: [1], r: E(6), a: cellsCol(6) } },
+    7: { L6: { c: [2, 1, 1], r: E(3), a: [[1, 1, 1, 3], [2, 1], [3, 1], [2, 2], [3, 2], [2, 3], [3, 3]] },
+         T6: { c: E(3), r: [2, 1, 1], a: [[1, 1, 3, 1], [1, 2], [2, 2], [3, 2], [1, 3], [2, 3], [3, 3]] },
+         P: { c: E(12), r: [1, 1], a: [[1, 1, 3, 1], [4, 1, 3, 1], [7, 1, 3, 1], [10, 1, 3, 1], [1, 2, 4, 1], [5, 2, 4, 1], [9, 2, 4, 1]] } },
+    8: { g: { c: E(4), r: [1, 1], a: cellsGrid(4, 2) }, g2: { c: [1, 1], r: E(4), a: cellsGrid(2, 4) },
+         C: { c: E(4), r: E(4), a: [[1, 1, 3, 3], [4, 1], [4, 2], [4, 3], [1, 4], [2, 4], [3, 4], [4, 4]] }, h: { c: E(8), r: [1], a: cellsRow(8) } } };
   var SPEEDS = [900, 450, 225, 110, 55], SPEEDX = [1, 2, 4, 8, 16];
   var LS_CFG = 'st_practice_cfg', LS_LOG = 'st_practice_log', LS_SYMS = 'st_practice_syms';
 
@@ -86075,7 +86118,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function load(){ var c = null; try { c = JSON.parse(localStorage.getItem(LS_CFG) || 'null'); } catch (e) {}
     c = Object.assign(JSON.parse(JSON.stringify(DEF)), c || {}); c.stopPx = Object.assign({}, c.stopPx || {}); c.tgtPx = Object.assign({}, c.tgtPx || {});
     if (!Array.isArray(c.tfs) || c.tfs.length < 4) c.tfs = DEF.tfs.slice(); c.tfs = c.tfs.map(function(x){ return TFS.indexOf(+x) >= 0 ? +x : 5; });
-    if (!(c.layout >= 1 && c.layout <= 4)) c.layout = 1; if (!(c.speed >= 0 && c.speed < SPEEDS.length)) c.speed = 0; if (!c.ses || typeof c.ses !== 'object') c.ses = {};
+    if (!(c.layout >= 1 && c.layout <= 8)) c.layout = 1; if (!Array.isArray(c.syms)) c.syms = []; c.syms = c.syms.slice(0, 8).map(function(x){ return (typeof x === 'string' && x) ? x.slice(0, 32) : null; }); if (!(c.speed >= 0 && c.speed < SPEEDS.length)) c.speed = 0; if (!c.ses || typeof c.ses !== 'object') c.ses = {};
     c.mm = Object.assign(JSON.parse(JSON.stringify(DEF.mm)), (c.mm && typeof c.mm === 'object') ? c.mm : {}); c.mm.minSL = Object.assign({}, c.mm.minSL || {}); c.mm.maxSL = Object.assign({}, c.mm.maxSL || {});
     if (!Array.isArray(c.mm.ts)) c.mm.ts = []; if (!Array.isArray(c.mm.pc)) c.mm.pc = []; c.mm.ts = c.mm.ts.slice(0, 4); c.mm.pc = c.mm.pc.slice(0, 4);
     if (['market', 'limit', 'stop'].indexOf(c.mm.ord) < 0) c.mm.ord = 'market'; if (!/^[A-Z0-9]$/.test(String(c.mm.key || ''))) c.mm.key = 'O'; return c; }
@@ -86171,6 +86214,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var S = null, panes = [], drag = null, timer = 0, timerW = window, flashT = 0, flashEl = null, popped = false, staticCache = {};
   var POP = {}, WH = {}, UI = { w: window };   // charts in windows of their own, the window-wide handlers they share, the window last used
   function phone(){ return (window.innerWidth || 1200) <= 760; }
+  // ---- each chart its own symbol (Nestor, 17 Oct 2026: "Should each chart also get its own symbol, so EUR/USD and gold can
+  //      sit side by side?" - "yes"). Chart 1 is the replay's own symbol (S: the trade, the panel, the log); any other chart
+  //      can be put on another (CFG.syms[i], from its symbol button), on the same day and at the same moment. Each other
+  //      symbol is a feed of its own, S.side[raw], with S's fields: sym, base, baseTf, digits - and live, its EA and prices.
+  //      The drawings in hand are those of the symbol of the chart last pressed; the other charts show their own. ----
+  function PS(p){ return (p && p.src) || S; }
+  function feeds(){ if (!S) return []; var a = [S]; for (var k in (S.side || {})) a.push(S.side[k]); return a; }
+  function symAt(i){ var r = i > 0 && CFG.syms && CFG.syms[i]; return (r && S && r !== S.sym.raw && symBy(r)) ? r : (S ? S.sym.raw : CFG.sym); }
+  function symShort(s){ return s.cls === 'index' ? s.key : s.name; }
+  function mixedSyms(){ return panes.some(function(q){ return PS(q) !== S; }); }
+  function dgFmt(X){ return function(v){ return Number(v).toFixed(X && X.digits != null ? X.digits : 5); }; }
+  async function dayFeed(sym, day){ var r = await loadDay(sym, day);
+    if (!r.err) return { sym: sym, base: r.s.base, baseTf: r.s.baseTf, digits: r.s.digits };
+    var f = dayFrame(day), dg = digitsOf(await fetchCandles(sym.raw, 5, f.open - 5 * 86400, f.open)) || 5;
+    return { sym: sym, base: [], baseTf: S ? S.baseTf : 5, digits: dg, err: r.err }; }
+  async function loadSides(){ var S0 = S; if (!S0) return; S0.side = S0.side || {}; var want = {};
+    for (var i = 1; i < CFG.layout; i++) { var r = symAt(i); if (r !== S0.sym.raw) want[r] = 1; }
+    Object.keys(S0.side).forEach(function(k){ if (!want[k]) delete S0.side[k]; });
+    for (var raw in want) { if (S0.side[raw]) continue; var sym = symBy(raw); if (!sym) continue;
+      var X = S0.live ? await liveFeed(sym, S0.f) : await dayFeed(sym, S0.day); if (S !== S0) return;
+      Object.defineProperty(X, 'now', { get: function(){ return S ? S.now : 0; } });   // the Minimalist reads its feed's moment
+      S0.side[raw] = X; dwPull(raw); } }
+  // a chart's symbol picked from its button: chart 1's symbol again puts it back on chart 1's
+  async function setPaneSym(i, raw){ if (!S || !(i >= 1 && i < CFG.layout)) return; closeMenu();
+    CFG.syms = (Array.isArray(CFG.syms) ? CFG.syms : []).slice(); CFG.syms[i] = (raw && raw !== S.sym.raw) ? raw : null; save();
+    var S0 = S; await loadSides(); if (S !== S0) return; buildPanes(); dwPanes(); renderProps(); await loadPanes(); if (S !== S0) return;
+    if (S.live) { lvMergePre(); lvClock(); } render(true); }
   var forceTouch = null;   // the tests' stand-in for a touch screen
   function touchOnly(){ if (forceTouch != null) return forceTouch; try { return window.matchMedia('(hover: none)').matches; } catch (e) { return false; } }
   function digitsOf(bars){ var d = 0; for (var i = 0; i < Math.min(60, bars.length); i++) { var s = String(bars[i].close), k = s.indexOf('.'); if (k >= 0) d = Math.max(d, s.length - k - 1); } return Math.min(6, Math.max(0, d)); }
@@ -86189,11 +86259,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // A chart's history before the day: the stored candles it is built from (rows), how far back they go (from) and whether
   // that is everything there is (full). Cached per symbol, day and timeframe.
   function aggStatic(rows, tf){ var src = SRC[tf]; return (tf === src && tf <= 60) ? rows.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: b.time }; }) : aggregate(rows, tf); }
-  async function paneStatic(tf){
-    var key = S.sym.raw + '|' + S.day + '|' + tf; if (staticCache[key]) return staticCache[key];
-    var src = SRC[tf], cov = S.sym.tf[src], from = cov ? Math.max(S.f.open - LOOK[tf], cov[0]) : S.f.open;
-    var rows = cov ? await fetchCandles(S.sym.raw, src, from, S.f.open - 1) : [];
-    rows = rows.filter(function(b){ return b.time + src * 60 <= S.f.open; });
+  async function paneStatic(tf, X){
+    X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
+    var src = SRC[tf], cov = X.sym.tf[src], from = cov ? Math.max(open - LOOK[tf], cov[0]) : open;
+    var rows = cov ? await fetchCandles(X.sym.raw, src, from, open - 1) : [];
+    rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
     var e = { rows: rows, from: from, full: !cov || from <= cov[0], agg: aggStatic(rows, tf) };
     staticCache[key] = e; return e;
   }
@@ -86204,9 +86274,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function byHand(p){ return !!(p.hand || Date.now() - (p.handAt || 0) < 1600); }
   async function morePast(p){
     var e = p.hist; if (!S || !e || e.full || e.busy) return; e.busy = true;
-    var src = SRC[p.tf], cov = S.sym.tf[src], from = Math.max(cov ? cov[0] : e.from, e.from - MORE[p.tf]), sym = S.sym.raw, day = S.day;
+    var XF = PS(p), src = SRC[p.tf], cov = XF.sym.tf[src], from = Math.max(cov ? cov[0] : e.from, e.from - MORE[p.tf]), sym = XF.sym.raw, day = S.day;
     var rows = from < e.from ? await fetchCandles(sym, src, from, e.from - 1) : [];
-    e.busy = false; if (!S || S.sym.raw !== sym || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e) return;
+    e.busy = false; if (!S || PS(p).sym.raw !== sym || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e) return;
     var seen = {}; e.rows.forEach(function(b){ seen[b.time] = 1; }); rows = rows.filter(function(b){ return !seen[b.time]; });
     e.rows = rows.concat(e.rows); e.from = from; if (!rows.length || !cov || from <= cov[0]) e.full = true;
     if (!rows.length) return;
@@ -86228,8 +86298,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function U(u){ var x = units(S.sym); return u === 'pips' ? (x.pips || x.pts) : x.pts; }
   function stopUnit(){ var x = units(S.sym); return (CFG.stopUnit === 'pips' && x.pips) ? 'pips' : 'pts'; }
   function tgtUnit(){ var x = units(S.sym); if (CFG.tgtUnit === 'R') return 'R'; return (CFG.tgtUnit === 'pips' && x.pips) ? 'pips' : 'pts'; }
-  function defStop(){ var x = units(S.sym), p = px(); if (S.sym.cls === 'fx') return 10 * x.pips; if (S.sym.key === 'XAUUSD') return 4; if (S.sym.key === 'XAGUSD') return 0.1;
-    var r = S.sym.cls === 'crypto' ? 0.004 : (S.sym.cls === 'index' ? 0.0015 : 0.002); return Math.max(x.pts, Math.round(p * r / x.pts) * x.pts); }
+  function defStopFor(sym, p){ var x = units(sym); if (sym.cls === 'fx') return 10 * x.pips; if (sym.key === 'XAUUSD') return 4; if (sym.key === 'XAGUSD') return 0.1;
+    var r = sym.cls === 'crypto' ? 0.004 : (sym.cls === 'index' ? 0.0015 : 0.002); return Math.max(x.pts, Math.round(p * r / x.pts) * x.pts); }
+  function defStop(){ return defStopFor(S.sym, px()); }
+  function suFor(X){ return (!X || X === S) ? stopUnit() : ((CFG.stopUnit === 'pips' && units(X.sym).pips) ? 'pips' : 'pts'); }
+  function uFor(X, u){ var x = units((X || S).sym); return u === 'pips' ? (x.pips || x.pts) : x.pts; }
+  function fmtUs(X, d, u){ var U0 = uFor(X, u), v = d / U0; return (u === 'pts' && U0 < 1 ? v.toFixed(0) : v.toFixed(1)); }
   function stopPx(){ var v = Number(CFG.stopPx[S.sym.raw]); return clampSL(v > 0 ? v : defStop()); }   // held between the panel's Min SL and Max SL
   function tgtDist(rd){ if (!CFG.tgtOn) return 0; if (tgtUnit() === 'R') return Number(CFG.tgtR) > 0 ? CFG.tgtR * rd : 0; var v = Number(CFG.tgtPx[S.sym.raw]); return v > 0 ? v : 2 * rd; }
   function fmtU(px, u){ var v = px / U(u); return (u === 'pts' && U('pts') < 1 ? v.toFixed(0) : v.toFixed(1)); }
@@ -86388,23 +86462,25 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   //      Going back before that moment arms it again. Set from a line's options box, a right-click on the chart (Add alert
   //      at that price) or Alt+A (at the crosshair, as in TradingView). ----
   var ALERT = { hits: [], ac: null };
-  function alertScan(t0, t1){ var L = DW.list.filter(function(d){ return d && d.type === 'hline' && d.alert && !d.hitAt && !d.live; }); if (!L.length) return;   // a live chart's alerts are live ones
-    var pc = null;
-    for (var i = 0; i < S.base.length; i++) { var b = S.base[i]; if (b.time < t0) { pc = b.close; continue; } if (b.time >= t1) break;
+  function alertScan(t0, t1){ feeds().forEach(function(X){ var raw = X.sym.raw, L = dwListOf(raw).filter(function(d){ return d && d.type === 'hline' && d.alert && !d.hitAt && !d.live; }); if (!L.length) return;   // a live chart's alerts are live ones
+    var pc = null, got = false;
+    for (var i = 0; i < X.base.length; i++) { var b = X.base[i]; if (b.time < t0) { pc = b.close; continue; } if (b.time >= t1) break;
       var lo = Math.min(b.low, pc == null ? b.open : pc), hi = Math.max(b.high, pc == null ? b.open : pc);
-      L.forEach(function(d){ if (!d.hitAt && d.price >= lo && d.price <= hi) { d.hitAt = b.time; ALERT.hits.push(d); } }); pc = b.close; } }
+      L.forEach(function(d){ if (!d.hitAt && d.price >= lo && d.price <= hi) { d.hitAt = b.time; ALERT.hits.push(d); got = true; } }); pc = b.close; }
+    if (got && raw !== DW.raw) dwSaveRaw(raw); }); }
   function alertChime(){ try { var A = window.AudioContext || window.webkitAudioContext; if (!A) return; var ac = ALERT.ac || (ALERT.ac = new A()), go = function(){ var t0 = ac.currentTime;
       [[987.77, 0], [1318.51, 0.16], [1975.53, 0.32]].forEach(function(n){ var o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = n[0]; o.connect(g); g.connect(ac.destination);
         g.gain.setValueAtTime(0.0001, t0 + n[1]); g.gain.exponentialRampToValueAtTime(0.2, t0 + n[1] + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t0 + n[1] + 0.5); o.start(t0 + n[1]); o.stop(t0 + n[1] + 0.55); }); };
       if (ac.state === 'suspended') ac.resume().then(go).catch(go); else go(); } catch (e) {} }
   // after the replay moved on: stop, chime, say which line and when; back before a hit, the line is armed again
   function alertTick(){ if (!S) return; var ch = false;
-    if (!S.live) DW.list.forEach(function(d){ if (d && d.hitAt && d.hitAt >= S.now) { delete d.hitAt; ch = true; } });   // a replay going back arms them again
-    if (ALERT.hits.length) { var d = ALERT.hits[0], n = ALERT.hits.length; ALERT.hits = []; ch = true; pause(); alertChime();
-      flash(T('Alert: price reached ', 'Alerta: el precio llegó a ') + Number(d.price).toFixed(S.digits) + (d.text ? ' (' + d.text + ')' : '') + T(' at ', ' a las ') + hm(d.hitAt) + (n > 1 ? T(' (+' + (n - 1) + ' more)', ' (+' + (n - 1) + ' más)') : '')); }
+    if (!S.live) feeds().forEach(function(X){ var raw = X.sym.raw, c2 = false; dwListOf(raw).forEach(function(d){ if (d && d.hitAt && d.hitAt >= S.now) { delete d.hitAt; c2 = true; } });   // a replay going back arms them again
+      if (c2) { if (raw === DW.raw) ch = true; else dwSaveRaw(raw); } });
+    if (ALERT.hits.length) { var d = ALERT.hits[0], n = ALERT.hits.length, XA = feeds().filter(function(F){ return dwListOf(F.sym.raw).indexOf(d) >= 0; })[0] || S; ALERT.hits = []; ch = true; pause(); alertChime();
+      flash(T('Alert: price reached ', 'Alerta: el precio llegó a ') + (XA !== S ? XA.sym.name + ' ' : '') + Number(d.price).toFixed(XA.digits) + (d.text ? ' (' + d.text + ')' : '') + T(' at ', ' a las ') + hm(d.hitAt) + (n > 1 ? T(' (+' + (n - 1) + ' more)', ' (+' + (n - 1) + ' más)') : '')); }
     if (ch) { persist(); hlAll(); renderProps(); } }
-  function alertAt(pr, p){ if (!S || !(pr > 0)) return; var d = styleNew({ type: 'hline', price: +Number(pr).toFixed(S.digits), alert: true }); if (S.live) d.live = true; DW.list.push(d); DW.sel = DW.list.length - 1; DW.at = p || DW.at; commit(); updDel();
-    flash(T('Alert set at ', 'Alerta puesta en ') + d.price.toFixed(S.digits)); }
+  function alertAt(pr, p){ if (!S || !(pr > 0)) return; if (p) dwFocus(p); var dga = PS(p || DW.at).digits, d = styleNew({ type: 'hline', price: +Number(pr).toFixed(dga), alert: true }); if (S.live) d.live = true; DW.list.push(d); DW.sel = DW.list.length - 1; DW.at = p || DW.at; commit(); updDel();
+    flash(T('Alert set at ', 'Alerta puesta en ') + d.price.toFixed(dga)); }
   // ---- the alerts list (Nestor, 17 Oct 2026: "can i also get an icon that when pressed you open a list of the alerts set to
   //      manage them? keep or delete them"): this symbol's alerts, highest first, waiting or reached; a click on one selects
   //      its line, x deletes the alert and keeps the line (as TradingView's list does); Undo brings it back ----
@@ -86415,7 +86491,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var OT_EYEOFF = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 8s2.4-4.5 6.5-4.5S14.5 8 14.5 8 12.1 12.5 8 12.5 1.5 8 1.5 8z"/><circle cx="8" cy="8" r="2"/><line x1="2.5" y1="13.5" x2="13.5" y2="2.5"/></svg>';
   var OT_LOCK = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>';
   var OT_OPEN = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg>';
-  function otDetail(d){ var dg = S ? S.digits : 5, at = function(t){ return dshort(new Date(t * 1000)) + ' ' + hm(t); };
+  function otDetail(d){ var dg = dwDigits(), at = function(t){ return dshort(new Date(t * 1000)) + ' ' + hm(t); };
     if (d.type === 'hline') return Number(d.price).toFixed(dg) + (d.alert ? T(' · alert', ' · alerta') : '');
     if (d.type === 'long' || d.type === 'short') return Number(d.a.price).toFixed(dg);
     if (d.type === 'text') return String(d.text || '').replace(/\s+/g, ' ').slice(0, 24);
@@ -86423,7 +86499,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var p0 = d.type === 'pen' ? (d.pts || [])[0] : d.a; return p0 && p0.t ? at(p0.t) : ''; }
   function treeMenu(anchor, refresh){
     var L = DW.list.map(function(d, i){ return i; }).reverse(), n = DW.list.filter(function(d){ return d && !d.lock; }).length;
-    var h = '<div class="stpr-tglh">' + T('Object tree', 'Árbol de objetos') + ' \u00b7 ' + esc(S ? S.sym.name : '') + '</div>';
+    var h = '<div class="stpr-tglh">' + T('Object tree', 'Árbol de objetos') + ' \u00b7 ' + esc(dwName()) + '</div>';
     if (!L.length) h += '<div class="stpr-sesn">' + esc(T('No drawings on this symbol yet.', 'Aún no hay dibujos en este símbolo.')) + '</div>';
     else { var bin = ($('stpr-del') && $('stpr-del').querySelector('svg')) ? $('stpr-del').querySelector('svg').outerHTML : '&times;';
       h += '<div class="stpr-otl">' + L.map(function(i){ var d = DW.list[i], tb = $('stpr-tools') && $('stpr-tools').querySelector('[data-tool="' + d.type + '"] svg'), nm = TOOLN[d.type] ? T(TOOLN[d.type][0], TOOLN[d.type][1]) : String(d.type), dt = otDetail(d);
@@ -86443,7 +86519,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function alertsDot(){ var b = $('stpr-alertsbtn'); if (b) b.classList.toggle('dot', DW.list.some(function(d){ return d && d.type === 'hline' && d.alert && !d.hitAt; })); }
   function alertsMenu(anchor, refresh){
     var L = []; DW.list.forEach(function(d, i){ if (d && d.type === 'hline' && d.alert) L.push(i); }); L.sort(function(a, b){ return DW.list[b].price - DW.list[a].price; });
-    var dg = S ? S.digits : 5, h = '<div class="stpr-tglh">' + T('Alerts', 'Alertas') + ' \u00b7 ' + esc(S ? S.sym.name : '') + '</div>';
+    var dg = dwDigits(), h = '<div class="stpr-tglh">' + T('Alerts', 'Alertas') + ' \u00b7 ' + esc(dwName()) + '</div>';
     if (!L.length) h += '<div class="stpr-sesn">' + esc(T('No alerts on this symbol. Right-click the chart and pick Add alert, press Alt+A, or select a horizontal line and press Alert.', 'No hay alertas en este símbolo. Clic derecho en el gráfico y Añadir alerta, Alt+A, o selecciona una línea horizontal y pulsa Alerta.')) + '</div>';
     else h += '<div class="stpr-all">' + L.map(function(i){ var d = DW.list[i];
         return '<div class="stpr-alr' + (d.hitAt ? ' hit' : '') + '"><button type="button" class="stpr-alg" data-algo="' + i + '" title="' + esc(T('Select its line', 'Seleccionar su línea')) + '"><b>' + Number(d.price).toFixed(dg) + '</b><span>'
@@ -86501,39 +86577,41 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     panes.forEach(function(p){ try { p.chart.remove(); } catch (e) {} }); panes = []; DW.oh = null;
     var g = $('stpr-grid'), n = CFG.layout, mk = mmEl(); if (mk && g.contains(mk)) $('stpr-cw').appendChild(mk);   // the folded panel lives on the first chart: keep it
     Object.keys(POP).forEach(function(k){ if (+k >= n) popShut(+k); });   // fewer charts now: the window of one that went closes
-    var m = mainN(); g.className = 'stpr-grid l' + m + ' v' + layV(m); g.innerHTML = '';   // this window lays out the charts it still has
+    g.innerHTML = '';   // this window lays out the charts it still has (layApply, below)
     var mtf = $('stpr-maintf'); if (mtf) mtf.innerHTML = '';
     $('stpr-cw').classList.toggle('one', n === 1); relangAt = null;   // one chart: no scroll strip on a phone (Nestor, 15 Oct 2026: "when its just 1 chart you dont need to have this scroll bar")
     for (var i = 0; i < n; i++) {
+      var sr = symAt(i), X = sr === S.sym.raw ? S : ((S.side && S.side[sr]) || S);
       var pw = popOn(i) ? POP[i] : null, el = (pw ? pw.w.document : document).createElement('div'); el.className = 'stpr-pane'; el.setAttribute('data-i', i);
       el.innerHTML = '<div class="stpr-pc"></div><canvas class="stpr-ov"></canvas>'
-        + '<div class="stpr-ptfw" data-i="' + i + '"><button type="button" class="stpr-tfpill" data-i="' + i + '"></button><div class="stpr-seg stpr-tfseg">' + TFS.map(function(x){ return '<button type="button" data-tf="' + x + '" data-i="' + i + '">' + TFL[x] + '</button>'; }).join('') + '</div><span class="stpr-ohlc" aria-hidden="true"></span></div>' + popBtn(i)
+        + '<div class="stpr-ptfw" data-i="' + i + '">' + (n > 1 ? '<button type="button" class="stpr-sympill" data-psym="' + i + '" title="' + esc(T('This chart\'s symbol', 'Símbolo de este gráfico')) + '">' + esc(symShort(X.sym)) + '</button>' : '') + '<button type="button" class="stpr-tfpill" data-i="' + i + '"></button><div class="stpr-seg stpr-tfseg">' + TFS.map(function(x){ return '<button type="button" data-tf="' + x + '" data-i="' + i + '">' + TFL[x] + '</button>'; }).join('') + '</div><span class="stpr-ohlc" aria-hidden="true"></span></div>' + popBtn(i)
         + (i === 0 ? '<div class="stpr-tl" id="stpr-tl"><div class="stpr-pill idle" id="stpr-pill"></div></div>' : '') + '<div class="strp-newscard" style="display:none"></div>';
       if (pw) { var pg = pw.w.document.getElementById('stpr-grid'); pg.innerHTML = ''; pg.appendChild(el); } else g.appendChild(el);
       // 1m is kept about 3 months back and 5m about 6, so an older day has neither: such a chart shows the finest candles
       // there are for the day and says so (an empty chart with no scale looked broken - Nestor, 15 Oct 2026: "why do the
       // 1m and 5m look broken? where are the candles and price scales?")
-      var want = CFG.tfs[i] || 5, tf = Math.max(want, S.baseTf), pc = el.querySelector('.stpr-pc');
-      if (tf !== want) { var cv = S.sym.tf[want], nt = document.createElement('div'); nt.className = 'stpr-tfnote';
+      var want = CFG.tfs[i] || 5, tf = Math.max(want, X.baseTf), pc = el.querySelector('.stpr-pc');
+      if (tf !== want) { var cv = X.sym.tf[want], nt = document.createElement('div'); nt.className = 'stpr-tfnote';
         nt.textContent = (cv ? T(TFL[want] + ' candles start ' + dshort(new Date(cv[0] * 1000)), 'Las velas de ' + TFL[want] + ' empiezan el ' + dshort(new Date(cv[0] * 1000))) : T('No ' + TFL[want] + ' candles stored', 'No hay velas de ' + TFL[want])) + T(' · showing ' + TFL[tf], ' · se ve ' + TFL[tf]);
         el.appendChild(nt); }
+      if (X.err) { var ne = document.createElement('div'); ne.className = 'stpr-tfnote'; ne.textContent = X.sym.name + ': ' + X.err; el.appendChild(ne); }
       var chart = (pw ? pw.w.LightweightCharts : LightweightCharts).createChart(pc, { autoSize: true,
         layout: { background: { type: 'solid', color: '#121116' }, textColor: '#9a97a3', fontFamily: "'AppNum','DM Mono',monospace", fontSize: 11 },
         grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.045)' } },
         rightPriceScale: { borderColor: '#2A2833', scaleMargins: { top: 0.14, bottom: 0.1 } },
         timeScale: { borderColor: '#2A2833', timeVisible: tf < 1440, secondsVisible: false, rightOffset: tf <= 60 ? 0 : 3, tickMarkFormatter: tickFmt(tf) },
-        localization: { timeFormatter: crossFmt(tf), priceFormatter: function(p){ return Number(p).toFixed(S ? S.digits : 5); } },
+        localization: { timeFormatter: crossFmt(tf), priceFormatter: dgFmt(X) },
         crosshair: { mode: 2 } });   // hidden: the crosshair is drawn on the overlay, Trade Replay's own (paintCx)
       var series = chart.addCandlestickSeries({ upColor: '#4ECD8B', downColor: '#E56767', borderVisible: false, wickUpColor: '#4ECD8B', wickDownColor: '#E56767', priceLineVisible: false, lastValueVisible: true,
-        priceFormat: { type: 'price', precision: S.digits, minMove: Math.pow(10, -S.digits) },
-        autoscaleInfoProvider: function(orig){ var r = orig(); if (!r || !r.priceRange || !S) return r; var lo = r.priceRange.minValue, hi = r.priceRange.maxValue;
+        priceFormat: { type: 'price', precision: X.digits, minMove: Math.pow(10, -X.digits) },
+        autoscaleInfoProvider: (function(X0){ return function(orig){ var r = orig(); if (!r || !r.priceRange || !S || X0 !== S) return r; var lo = r.priceRange.minValue, hi = r.priceRange.maxValue;
           var add = function(v){ if (v > 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); } };
           if (S.pos) { add(S.pos.sl); add(S.pos.tp); } var pv = pvLevels(); if (pv) { add(pv.sl); add(pv.tp); }
-          return { priceRange: { minValue: lo, maxValue: hi }, margins: r.margins }; } });
-      var pane = { i: i, tf: tf, want: want, el: el, chart: chart, series: series, _look: 1, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
+          return { priceRange: { minValue: lo, maxValue: hi }, margins: r.margins }; }; })(X) });
+      var pane = { i: i, src: X, tf: tf, want: want, el: el, chart: chart, series: series, _look: 1, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
       if (tf === 525600) pane.step = 365 * 86400;
       panes.push(pane); wirePane(pane); lookPane(pane);
-      if (pw) try { pw.w.document.title = S.sym.name + ' \u00b7 ' + TFL[tf] + ' \u00b7 ' + T('Practice Replay', 'Práctica de repetición'); } catch (e) {}
+      if (pw) try { pw.w.document.title = X.sym.name + ' \u00b7 ' + TFL[tf] + ' \u00b7 ' + T('Practice Replay', 'Práctica de repetición'); } catch (e) {}
       if (!pw && mainN() === 1 && !phone()) { var mth = $('stpr-maintf'), mpf = el.querySelector('.stpr-ptfw');   // the only chart here: its timeframe button in the top bar, before the drawing tools
         if (mth && mpf) { var mtw = document.createElement('div'); mtw.className = 'stpr-ptfw'; mtw.setAttribute('data-i', i); mtw.appendChild(mpf.querySelector('.stpr-tfpill')); mtw.appendChild(mpf.querySelector('.stpr-tfseg')); mth.innerHTML = ''; mth.appendChild(mtw); pane.tfw = mtw;
           el.classList.add('tfbar'); var tl0 = el.querySelector('.stpr-tl'); if (tl0) tl0.appendChild(mpf); } }   // the panel up top, the O H L C line beside it
@@ -86547,20 +86625,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
     placeMM();
     paintAct();
+    layApply(mainN());
   }
-  async function loadPanes(){ for (var i = 0; i < panes.length; i++) { var e = await paneStatic(panes[i].tf); panes[i].hist = e; panes[i].static = e.agg; } }
+  async function loadPanes(){ var P0 = panes; for (var i = 0; i < P0.length; i++) { var p = P0[i], e = await paneStatic(p.tf, PS(p)); if (!S || panes !== P0) return; p.hist = e; p.static = e.agg; } }
   // A chart's candles at this moment: before the day from the store, the day so far from the replay (its last candle only
   // as far as now), the rest of the day as empty slots on the intraday charts.
   function paneBars(p){
-    var tf = p.tf, until = S.now, dyn = [];
-    var day = S.base.filter(function(b){ return b.time < until; });
-    if (tf < S.baseTf) dyn = day.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: b.time }; });
+    var tf = p.tf, until = S.now, dyn = [], XF = PS(p);
+    var day = XF.base.filter(function(b){ return b.time < until; });
+    if (tf < XF.baseTf) dyn = day.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: b.time }; });
     else dyn = aggregate(day, tf);
     var st = p.static, out = st.slice(0);
     if (dyn.length && out.length && out[out.length - 1]._k === dyn[0]._k) { var a = out[out.length - 1], b = dyn[0]; out[out.length - 1] = { time: a.time, open: a.open, high: Math.max(a.high, b.high), low: Math.min(a.low, b.low), close: b.close, vol: (a.vol == null || b.vol == null) ? null : a.vol + b.vol, _k: a._k }; dyn = dyn.slice(1); }
     out = out.concat(dyn);
     var real = out.length, ws = [];
-    if (tf <= 60) { var s = Math.max(tf, S.baseTf) * 60, t = (out.length ? out[out.length - 1].time : S.f.open) + s; for (; t < S.f.close; t += s) ws.push({ time: t }); }
+    if (tf <= 60) { var s = Math.max(tf, XF.baseTf) * 60, t = (out.length ? out[out.length - 1].time : S.f.open) + s; for (; t < S.f.close; t += s) ws.push({ time: t }); }
     var clean = lookBars(out.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }; }));
     return { data: clean.concat(ws), real: real, vols: out.map(function(b){ return b.vol == null ? null : b.vol; }) };
   }
@@ -86586,15 +86665,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (!seen || !p.bars.length) return;
     try { var ps = p.chart.priceScale('right'); if (!ps.options().autoScale) { var y = p.series.priceToCoordinate(p.bars[p.bars.length - 1].close); if (y == null || y < 0 || y > paneDims(p).ph) ps.applyOptions({ autoScale: true }); } } catch (e) {}
   }
-  function markerTime(p, ts, bars){ var k = keyOf(p.tf < S.baseTf ? S.baseTf : p.tf, ts), best = null; for (var i = 0; i < bars.length; i++) { if (bars[i].time <= (p.tf === 525600 ? ts : k)) best = bars[i].time; else break; } return best; }
+  function markerTime(p, ts, bars){ var bt = PS(p).baseTf, k = keyOf(p.tf < bt ? bt : p.tf, ts), best = null; for (var i = 0; i < bars.length; i++) { if (bars[i].time <= (p.tf === 525600 ? ts : k)) best = bars[i].time; else break; } return best; }
   function paintPane(p, force, shift, rs){
     var r0 = getRange(p), last0 = p.n - 1;
     var pb = paneBars(p); p.n = pb.real; p.series.setData(pb.data); p.times = pb.data.map(function(b){ return b.time; }); p.bars = pb.data.slice(0, pb.real); p.vols = pb.vols || [];
     var real = pb.data.slice(0, pb.real), mk = [];
     var add = function(ts, pos, col, shape){ var t = markerTime(p, ts, real); if (t != null) mk.push({ time: t, position: pos, color: col, shape: shape }); };
-    S.trades.forEach(function(t){ if (t.exitTs > S.now) return; add(t.entryTs, t.dir > 0 ? 'belowBar' : 'aboveBar', '#f472b6', t.dir > 0 ? 'arrowUp' : 'arrowDown'); add(t.exitTs - 1, 'inBar', t.r > 0.02 ? '#4ECD8B' : (t.r < -0.02 ? '#E56767' : '#c0c0c0'), 'circle'); });
-    if (S.pos) add(S.pos.entryTs, S.pos.dir > 0 ? 'belowBar' : 'aboveBar', '#f472b6', S.pos.dir > 0 ? 'arrowUp' : 'arrowDown');
-    if (S.live) lvIdeas().forEach(function(x){ if (x.at) add(x.at, x.long ? 'belowBar' : 'aboveBar', '#f472b6', x.long ? 'arrowUp' : 'arrowDown'); });
+    var mine = PS(p) === S; if (mine) S.trades.forEach(function(t){ if (t.exitTs > S.now) return; add(t.entryTs, t.dir > 0 ? 'belowBar' : 'aboveBar', '#f472b6', t.dir > 0 ? 'arrowUp' : 'arrowDown'); add(t.exitTs - 1, 'inBar', t.r > 0.02 ? '#4ECD8B' : (t.r < -0.02 ? '#E56767' : '#c0c0c0'), 'circle'); });
+    if (mine && S.pos) add(S.pos.entryTs, S.pos.dir > 0 ? 'belowBar' : 'aboveBar', '#f472b6', S.pos.dir > 0 ? 'arrowUp' : 'arrowDown');
+    if (S.live) lvIdeas(PS(p).sym).forEach(function(x){ if (x.at) add(x.at, x.long ? 'belowBar' : 'aboveBar', '#f472b6', x.long ? 'arrowUp' : 'arrowDown'); });
     var seen = {}; mk = mk.filter(function(m){ var k = m.time + m.shape + m.position; if (seen[k]) return false; seen[k] = 1; return true; }).sort(function(a, b){ return a.time - b.time; });
     if (CFG.marks === false) mk.forEach(function(m){ m.color = 'rgba(0,0,0,0)'; });
     window.__stArrows(p.series, mk);   // the slim arrows, as on the live chart (Nestor, 16 Oct 2026: "do that for all")
@@ -86613,6 +86692,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function paintLines(p){
     p.lines.forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} }); p.lines = [];
     if (S.live) { liveLines(p); return; }   // Live Charts: the open trades' lines, as on the Session Live chart
+    if (PS(p) !== S) return;   // another symbol's chart: the trade is chart 1's
     var su = stopUnit(), q = S.pos;
     // the EA's colours on the MT5 chart, as on the Session Live chart: BE blue, trailing steps pink dotted, partials teal dashed, used ones grey
     if (q) { var hd = CFG.marks === false; addLine(p, q.entry, '#c0c0c0', 0, T('Entry', 'Entrada'), null, hd);
@@ -86644,7 +86724,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (S.live) { liveRender(force); return; }
     panes.forEach(function(p){ paintPane(p, force); });
     if (force) setTimeout(function(){ if (S) panes.forEach(function(p){ viewPane(p, true); }); }, 80);
-    paintPlay(); paintHeader(); paintRow(); paintMM(); paintProgress(); stripThumb();
+    paintPlay(); paintHeader(); paintRow(); paintMM(); paintProgress(); stripThumb(); if (LV.inl) lcFit();
     panes.forEach(function(p){ try { drawOv(p); } catch (e) {} });   // now, not only on the next frame (a hidden or busy tab may skip frames)
     alertTick();
   }
@@ -86686,18 +86766,35 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     paintLay();
     paintPill();
   }
-  // the Charts buttons (Practice Replay and Live Charts)
+  // the Charts button (Practice Replay and Live Charts): the arrangement on screen; it opens the picker (layMenu)
+  function layIco(n, v, big){ var L = LAYS[n] && LAYS[n][v]; if (!L) return '';
+    var sum = function(a, k){ var s = 0; for (var i = 0; i < k; i++) s += a[i]; return s; }, tc = sum(L.c, L.c.length), tr = sum(L.r, L.r.length), pc = function(x){ return (x * 100).toFixed(2) + '%'; };
+    return '<i class="stpr-lyi' + (big ? ' big' : '') + '">' + L.a.map(function(c){ var cs = c[2] || 1, rs = c[3] || 1, x0 = sum(L.c, c[0] - 1), y0 = sum(L.r, c[1] - 1);
+      return '<b style="left:' + pc(x0 / tc) + ';top:' + pc(y0 / tr) + ';width:' + pc((sum(L.c, c[0] - 1 + cs) - x0) / tc) + ';height:' + pc((sum(L.r, c[1] - 1 + rs) - y0) / tr) + '"></b>'; }).join('') + '</i>'; }
+  function layWords(n, v){ var L = LAYS[n] && LAYS[n][v]; if (!L || n === 1) return '';
+    if (v === 'h') return T('side by side', 'uno al lado del otro'); if (v === 'v') return T('one above the other', 'uno encima del otro');
+    if (v === 'x' || v === 'g' || v === 'g2') return T('in a grid', 'en cuadrícula'); if (v === 'C') return T('one big chart, the rest around it', 'uno grande, el resto alrededor');
+    if (v === 'P' || v === 'Q') { var up = L.a.filter(function(c){ return c[1] === 1; }).length; return T(up + ' above, ' + (n - up) + ' below', up + ' arriba, ' + (n - up) + ' abajo'); }
+    return { L: T('big chart on the left', 'gráfico grande a la izquierda'), R: T('big chart on the right', 'gráfico grande a la derecha'), T: T('big chart on top', 'gráfico grande arriba'), B: T('big chart at the bottom', 'gráfico grande abajo') }[v.charAt(0)] || ''; }
+  function layName(n, v){ var w = layWords(n, v); return n + ' ' + (n === 1 ? T('chart', 'gráfico') : T('charts', 'gráficos')) + (w ? ', ' + w : ''); }
   function paintLay(){
-    // each button shows the arrangement it is on; pressed again it moves to the next (2: side by side / one above the other;
-    // 3: the big chart left, right, top, bottom). [column, row, 'r' spans two rows / 'c' two columns]
-    var ic = { 1: { x: [[1, 1]] }, 2: { h: [[1, 1], [2, 1]], v: [[1, 1], [1, 2]] }, 3: { L: [[1, 1, 'r'], [2, 1], [2, 2]], R: [[2, 1, 'r'], [1, 1], [1, 2]], T: [[1, 1, 'c'], [1, 2], [2, 2]], B: [[1, 2, 'c'], [1, 1], [2, 1]] }, 4: { x: [[1, 1], [2, 1], [1, 2], [2, 2]] } };
-    var lvw = { h: T('side by side', 'uno al lado del otro'), v: T('one above the other', 'uno encima del otro'), L: T('big chart on the left', 'gráfico grande a la izquierda'), R: T('big chart on the right', 'gráfico grande a la derecha'), T: T('big chart on top', 'gráfico grande arriba'), B: T('big chart at the bottom', 'gráfico grande abajo') };
-    var lh = [1, 2, 3, 4].map(function(n){ var v = layV(n), cells = (ic[n][v] || ic[n].x), cols = cells.some(function(c){ return c[0] === 2; }) ? '1fr 1fr' : '1fr', rows = cells.some(function(c){ return c[1] === 2; }) ? '1fr 1fr' : '1fr';
-      var bs = cells.map(function(c){ return '<b style="grid-column:' + c[0] + (c[2] === 'c' ? ' / span 2' : '') + ';grid-row:' + c[1] + (c[2] === 'r' ? ' / span 2' : '') + '"></b>'; }).join('');
-      var tt = n + ' ' + (n === 1 ? T('chart', 'gráfico') : T('charts', 'gráficos')) + (lvw[v] ? ', ' + lvw[v] + (n === CFG.layout && !phone() ? T(' · press again to change', ' · pulsa otra vez para cambiar') : '') : '');
-      return '<button type="button" class="stpr-b stpr-lay' + (n === CFG.layout ? ' on' : '') + '" data-lay="' + n + '" data-lv="' + v + '" title="' + esc(tt) + '"><i style="grid-template-columns:' + cols + ';grid-template-rows:' + rows + '">' + bs + '</i></button>'; }).join('');
+    var n = CFG.layout, v = layV(n), tt = esc(T('Charts: ', 'Gráficos: ') + layName(n, v));
+    var lh = '<button type="button" class="stpr-b stpr-lay" id="stpr-laybtn" title="' + tt + '" aria-label="' + tt + '" aria-expanded="' + (menuFor === 'lay' ? 'true' : 'false') + '">' + layIco(n, v) + CHEV + '</button>';
     var le = $('stpr-lay'); if (le && le.innerHTML !== lh) le.innerHTML = lh;
+    layHome();
   }
+  // Live Charts keeps one toolbar row: the Charts button moves in beside the timeframe (its own row held only that)
+  function layHome(){ var le = $('stpr-lay'), lb = $('stpr-laylbl'), tb2 = $('stpr-tb2'), dr = $('stpr-drawbtn'); if (!le || !lb || !tb2 || !dr) return;
+    if (S && S.live) { if (le.nextElementSibling !== dr) tb2.insertBefore(le, dr); }
+    else if (lb.nextElementSibling !== le) lb.parentNode.insertBefore(le, lb.nextSibling); }
+  // TradingView's picker: a row for each count, every arrangement of it (a phone stacks them, so one each)
+  function layMenu(anchor){
+    var ph = phone(), cur = CFG.layout, cv = layV(cur);
+    var h = '<div class="stpr-tglh">' + T('Charts', 'Gráficos') + '</div><div class="stpr-lym">' + [1, 2, 3, 4, 5, 6, 7, 8].map(function(n){ var ks = ph ? [layV(n)] : Object.keys(LAYS[n]);
+      return '<div class="stpr-lyr"><span>' + n + '</span>' + ks.map(function(v){ var nm = esc(layName(n, v));
+        return '<button type="button" class="stpr-lyb' + (n === cur && v === cv ? ' on' : '') + '" data-lay="' + n + '" data-lv="' + v + '" title="' + nm + '" aria-label="' + nm + '">' + layIco(n, v, true) + '</button>'; }).join('') + '</div>'; }).join('') + '</div>'
+      + (ph ? '<div class="stpr-sesn">' + esc(T('On a phone the charts sit one under the other.', 'En el móvil los gráficos van uno debajo del otro.')) + '</div>' : '');
+    openMenu(anchor, h, 'lay'); }
   function paintPill(){
     var pill = $('stpr-pill'); if (!pill) return; var q = S.pos, su = stopUnit();
     if (q) { var c = px(), live = q.dir * (c - q.entry) / q.rd;
@@ -86712,7 +86809,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function durTxt(sec){ var m = Math.max(1, Math.round(sec / 60)), h = Math.floor(m / 60); m = m % 60; return h ? (h + ' h ' + (m ? m + ' min' : '')) : (m + ' min'); }
   var CHEV = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m6 9 6 6 6-6"/></svg>';
   function paintRow(){
-    var tr = $('stpr-tr');
+    var tr = $('stpr-tr'); tr.classList.remove('nt');
     if (S.done) {
       var t = S.done, cls = t.r > 0.02 ? '' : (t.r < -0.02 ? ' r' : ' m');
       var head = { tp: T('TARGET HIT', 'OBJETIVO ALCANZADO'), sl: T('STOPPED OUT', 'STOP ALCANZADO'), manual: T('CLOSED BY HAND', 'CERRADA A MANO'), eod: T('CLOSED AT THE END OF THE DAY', 'CERRADA AL FINAL DEL DÍA'),
@@ -86738,7 +86835,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       : (!can ? (limitHit() ? T('Daily limit reached: no more trades this practice day.', 'Límite diario alcanzado: no más operaciones este día de práctica.') : T('The panel is OFF.', 'El panel está en OFF.'))
       : (S.exec ? (ph ? T('Drag the SL line, then tap SELL / BUY under the chart.', 'Arrastra la línea SL y pulsa VENDER / COMPRAR bajo el gráfico.') : T('Move the mouse to set the stop, click to place it. Press ', 'Mueve el ratón para poner el stop y haz clic para abrir. Pulsa ') + CFG.mm.key + T(' again to leave.', ' otra vez para salir.'))
       : (ph ? T('Tap Execute in the panel to see the SL and TP lines.', 'Pulsa Ejecutar en el panel para ver las líneas SL y TP.') : T('Press ', 'Pulsa ') + CFG.mm.key + T(', then click the chart where your stop goes.', ' y haz clic en el gráfico donde va tu stop.'))));
-    tr.innerHTML = '<span class="stpr-note">' + esc(note) + '</span>';
+    tr.innerHTML = '<span class="stpr-note">' + esc(note) + '</span>'; tr.classList.add('nt');
   }
   function sideW(d){ return d > 0 ? T('BUY', 'COMPRAR') : T('SELL', 'VENDER'); }
   function sideTxt(d){ return '<svg class="stpr-arw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="' + (d < 0 ? 'M12 4v16M5.5 13.5 12 20l6.5-6.5' : 'M12 20V4M5.5 10.5 12 4l6.5 6.5') + '"/></svg>' + sideW(d); }
@@ -86889,7 +86986,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   // ---- menus: a chart's timeframe, the symbol ----
   var menuFor = null;
-  var MENU_BTNS = ['stpr-del', 'stpr-treebtn', 'stpr-alertsbtn', 'stpr-snapbtn', 'stpr-layersbtn', 'stpr-lookbtn', 'stpr-sesed', 'stpr-goto'];
+  var MENU_BTNS = ['stpr-laybtn', 'stpr-del', 'stpr-treebtn', 'stpr-alertsbtn', 'stpr-snapbtn', 'stpr-layersbtn', 'stpr-lookbtn', 'stpr-sesed', 'stpr-goto'];
   var MH = null;   // the menu open now: this window's, or a chart window's
   function mEl(){ return (MH && MH.isConnected) ? MH : $('stpr-menu'); }
   function popDocs(){ var a = []; for (var k in POP) if (popOn(+k)) { try { a.push(POP[k].w.document); } catch (e) {} } return a; }
@@ -86910,12 +87007,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var h = '<h6>' + T('Timeframe', 'Temporalidad') + '</h6><div class="stpr-tfg">' + TFS.map(function(tf){ return '<button type="button" data-tf="' + tf + '" data-i="' + i + '" class="' + (tf === cur ? 'on' : '') + '">' + TFL[tf] + '</button>'; }).join('') + '</div>';
     anchor.classList.add('open'); openMenu(anchor, h, 'tf' + i);
   }
-  function symMenu(anchor){
+  function symMenu(anchor, si){
     var mon = function(t){ var d = new Date(t * 1000); return MONS[L()][d.getMonth()] + " '" + String(d.getFullYear()).slice(2); };
-    var h = '<h6>' + T('Symbol', 'Símbolo') + '</h6><div class="stpr-syl">' + (SYMS || []).map(function(s){ var c = s.tf[1] || s.tf[5] || s.tf[15];
-      return '<button type="button" data-sym="' + esc(s.raw) + '" class="' + (S && S.sym.raw === s.raw ? 'on' : '') + '"><span>' + esc(s.name) + '</span><small>' + esc((S && S.live) ? (eaFor(s) ? T('Live from your MT5', 'En vivo desde tu MT5') : T('Stored candles', 'Velas guardadas')) : (T('from ', 'desde ') + mon(c[0]))) + '</small></button>'; }).join('') + '</div>'
+    var cur = (si != null && panes[si]) ? PS(panes[si]).sym.raw : (S && S.sym.raw), hd = si > 0 ? T('Chart ' + (si + 1) + ' · symbol', 'Gráfico ' + (si + 1) + ' · símbolo') : T('Symbol', 'Símbolo');
+    var h = '<h6>' + hd + '</h6><div class="stpr-syl">' + (SYMS || []).map(function(s){ var c = s.tf[1] || s.tf[5] || s.tf[15];
+      return '<button type="button" data-sym="' + esc(s.raw) + '"' + (si > 0 ? ' data-si="' + si + '"' : '') + ' class="' + (cur === s.raw ? 'on' : '') + '"><span>' + esc(s.name) + '</span><small>' + esc((S && S.live) ? (eaFor(s) ? T('Live from your MT5', 'En vivo desde tu MT5') : T('Stored candles', 'Velas guardadas')) : (T('from ', 'desde ') + mon(c[0]))) + '</small></button>'; }).join('') + '</div>'
       + '<div style="margin:8px 4px 2px;max-width:250px;font-family:Fraunces,serif;font-size:12px;color:var(--text-dim)">' + esc(T('A symbol appears here once a member’s EA has run on its chart.', 'Un símbolo aparece aquí cuando el EA de un miembro ha funcionado en su gráfico.')) + '</div>';
-    openMenu(anchor, h, 'sym');
+    openMenu(anchor, h, si > 0 ? 'sym' + si : 'sym');
   }
 
   // "Go to": a plain time picker - an hours column (00-23) and a minutes column, the time now picked, one Go button
@@ -86967,7 +87065,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function lookPane(p){ var L = look(), clear = 'rgba(0,0,0,0)';
     try { p.chart.applyOptions({ layout: { background: L.bgT === 'grad' ? { type: 'gradient', topColor: L.bg, bottomColor: L.bg2 } : { type: 'solid', color: L.bg }, textColor: L.tx, fontSize: Math.max(9, Math.min(16, +L.fs || 11)) },
       grid: { vertLines: { visible: !!L.vg, color: L.vgc }, horzLines: { visible: !!L.hg, color: L.hgc } }, rightPriceScale: { borderColor: L.ln }, timeScale: { borderColor: L.ln },
-      watermark: { visible: !!L.wm, text: S ? S.sym.name + ', ' + TFL[p.tf] : '', color: L.wmc, fontSize: phone() ? 30 : 46, horzAlign: 'center', vertAlign: 'center' } }); } catch (e) {}
+      watermark: { visible: !!L.wm, text: S ? PS(p).sym.name + ', ' + TFL[p.tf] : '', color: L.wmc, fontSize: phone() ? 30 : 46, horzAlign: 'center', vertAlign: 'center' } }); } catch (e) {}
     try { p.series.applyOptions({ upColor: L.body ? L.up : clear, downColor: L.body ? L.dn : clear, borderVisible: !!L.bord, borderUpColor: L.bup, borderDownColor: L.bdn, wickVisible: !!L.wick, wickUpColor: L.wup, wickDownColor: L.wdn }); } catch (e) {}
     p.el.style.background = L.bg; }
   // "Color bars based on previous close": each candle coloured by its close against the one before, not its own open
@@ -87037,7 +87135,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     mp.forEach(function(p){ var pc = p.el.querySelector('.stpr-pc'), r = (pc || p.el).getBoundingClientRect(), x = r.left - gr.left, y = r.top - gr.top + head;
       try { var sc = p.chart.takeScreenshot(); g.drawImage(sc, x, y, r.width, r.height); } catch (e) {}
       try { var er = p.el.getBoundingClientRect(); g.drawImage(p.ov, er.left - gr.left, er.top - gr.top + head, er.width, er.height); } catch (e) {}
-      var ol = p.el.querySelector('.stpr-ohlc'), lab = TFL[p.tf] + '   ' + (ol ? Array.prototype.map.call(ol.querySelectorAll('i,b'), function(x){ return x.textContent; }).join(' ') : '');   // O 1.12893 H ... with spaces
+      var ol = p.el.querySelector('.stpr-ohlc'), lab = (mixedSyms() ? symShort(PS(p).sym) + '  ' : '') + TFL[p.tf] + '   ' + (ol ? Array.prototype.map.call(ol.querySelectorAll('i,b'), function(x){ return x.textContent; }).join(' ') : '');   // O 1.12893 H ... with spaces
       g.font = "600 11.5px 'AppNum','DM Mono',monospace"; var tw = g.measureText(lab).width;
       g.fillStyle = lt ? 'rgba(255,255,255,0.85)' : 'rgba(11,10,13,0.75)'; g.fillRect(x + 6, y + 6, tw + 12, 20);
       g.fillStyle = lt ? '#131722' : '#e8e6ee'; g.textBaseline = 'middle'; g.fillText(lab, x + 12, y + 16); });
@@ -87110,15 +87208,28 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return !d || !d.tfs || !d.tfs.length || d.tfs.indexOf(tf) >= 0; }
   function clone(x){ return JSON.parse(JSON.stringify(x)); }
   function dwKey(){ return 'st_practice_draw2:' + DW.raw; }
+  // the other symbols on screen: their drawings, read from this browser and kept in step with it (DW holds the one in hand)
+  var DWO = {};
+  function dwListOf(raw){ if (raw === DW.raw) return DW.list; if (!DWO[raw]) DWO[raw] = dwLocal(raw); return DWO[raw]; }
+  function dwListFor(p){ return S ? dwListOf(PS(p).sym.raw) : DW.list; }
+  function dwSaveRaw(raw){ if (raw === DW.raw) { persist(); return; } try { localStorage.setItem('st_practice_draw2:' + raw, JSON.stringify(DWO[raw] || [])); } catch (e) {}
+    var m = dwMeta(raw); m.at = Date.now(); dwMetaPut(raw, m); setTimeout(function(){ dwPush(raw); }, 1500); if (S && S.live) lvAlertSoon(); }
+  // a press on a chart of another symbol: its drawings come into hand (the tools, undo, the object tree and the alerts list follow)
+  function dwFocus(p){ if (!S || !p) return false; var raw = PS(p).sym.raw; if (raw === DW.raw) return false; if (DW.ted) txtDone(); hideCtx();
+    DWO[DW.raw] = DW.list; var pa = DW.pulled || (DW.pulled = {}), quiet = !!(pa[raw] && Date.now() - pa[raw] < 60000); if (!quiet) pa[raw] = Date.now();
+    dwLoad(raw, quiet); hlAll(); dirty(); return true; }
+  function dwFeed(){ var r = DW.raw; return feeds().filter(function(F){ return F.sym.raw === r; })[0] || S; }
+  function dwName(){ var F = dwFeed(); return F ? F.sym.name : ''; }
+  function dwDigits(){ var F = dwFeed(); return F ? F.digits : 5; }
   // The first build kept {type, pts: [{t, p}]} under st_practice_draw: read once into the new shape and stored again.
-  function dwLoad(raw){
+  function dwLoad(raw, quiet){
     DW.raw = raw; DW.sel = null; DW.multi = null; DW.pending = null; DW.penning = null; DW.drag = null; DW.marq = null; DW.pin = null; DW.snap = null;
     var a = null; try { a = JSON.parse(localStorage.getItem(dwKey()) || 'null'); } catch (e) {}
     if (!Array.isArray(a)) { a = [];
       try { (JSON.parse(localStorage.getItem('st_practice_draw:' + raw) || '[]') || []).forEach(function(o){ if (!o || !o.pts || !o.pts.length) return; var q = function(z){ return { t: z.t, price: z.p }; };
           if (o.type === 'hline') a.push({ type: 'hline', price: o.pts[0].p }); else if (o.type === 'pen') a.push({ type: 'pen', pts: o.pts.map(q) }); else if (o.pts[1]) a.push({ type: o.type, a: q(o.pts[0]), b: q(o.pts[1]) }); }); } catch (e) {}
       if (a.length) try { localStorage.setItem(dwKey(), JSON.stringify(a)); } catch (e) {} }
-    DW.list = a; DW.hist = [JSON.stringify(a)]; DW.hpos = 0; updUR(); updDel(); dwPull(raw); }
+    DW.list = a; DW.hist = [JSON.stringify(a)]; DW.hpos = 0; delete DWO[raw]; updUR(); updDel(); if (!quiet) dwPull(raw); }
   function persist(){ if (!DW.raw) return; try { localStorage.setItem(dwKey(), JSON.stringify(DW.list)); } catch (e) {}
     var m = dwMeta(DW.raw); m.at = Date.now(); dwMetaPut(DW.raw, m); clearTimeout(dwPushT); var raw = DW.raw; dwPushT = setTimeout(function(){ dwPush(raw); }, 1500);
     if (S && S.live) lvAlertSoon(); }   // Live Charts: its alerts are MT5's too
@@ -87134,7 +87245,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try { var r = await sb.from('practice_drawings').upsert({ user_id: u, sym: String(raw).slice(0, 32), items: dwLocal(raw), updated_at: new Date(m.at).toISOString() }, { onConflict: 'user_id,sym' });
       if (r && !r.error) { var m2 = dwMeta(raw); m2.up = Math.max(m2.up || 0, m.at); dwMetaPut(raw, m2); } } catch (e) {} }
   function dwAdopt(raw, list, at){ try { localStorage.setItem('st_practice_draw2:' + raw, JSON.stringify(list)); } catch (e) {}
-    if (DW.raw === raw && !DW.drag && !DW.pending && !DW.penning) { DW.list = list; DW.hist = [JSON.stringify(list)]; DW.hpos = 0; DW.sel = null; DW.multi = null; updUR(); updDel(); hlAll(); } }
+    if (DW.raw === raw && !DW.drag && !DW.pending && !DW.penning) { DW.list = list; DW.hist = [JSON.stringify(list)]; DW.hpos = 0; DW.sel = null; DW.multi = null; updUR(); updDel(); hlAll(); }
+    else if (DW.raw !== raw && DWO[raw]) { DWO[raw] = list; hlAll(); dirty(); } }
   async function dwPull(raw){ var u = uidNow(), sb = sbc(); if (!u || !sb || !raw) return;
     try { var r = await sb.from('practice_drawings').select('items,updated_at').eq('sym', String(raw).slice(0, 32)).maybeSingle(); if (!r || r.error) return;
       var m = dwMeta(raw), local = dwLocal(raw), srv = (r.data && Array.isArray(r.data.items)) ? r.data.items : null, sAt = r.data ? (Date.parse(r.data.updated_at) || 0) : 0;
@@ -87152,7 +87264,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (x && sel && !$('stpr-tb2').classList.contains('drawing')) drawerOpen(true); dirty(); }
   function delClick(){ if (DW.sel != null || (DW.multi && DW.multi.length)) { delSel(); return; }
     if (!DW.list.length) return; var n = DW.list.filter(function(d){ return d && !d.lock; }).length, lk = DW.list.length - n;
-    openMenu($('stpr-del'), '<div class="stpr-tglh">' + T('Drawings', 'Dibujos') + ' \u00b7 ' + esc(S ? S.sym.name : '') + '</div>' + (n ? '<button type="button" class="stpr-snapi" data-delall><span>' + T('Remove all drawings', 'Quitar todos los dibujos') + ' (' + n + ')</span></button>' : '')
+    openMenu($('stpr-del'), '<div class="stpr-tglh">' + T('Drawings', 'Dibujos') + ' \u00b7 ' + esc(dwName()) + '</div>' + (n ? '<button type="button" class="stpr-snapi" data-delall><span>' + T('Remove all drawings', 'Quitar todos los dibujos') + ' (' + n + ')</span></button>' : '')
       + '<div class="stpr-sesn">' + esc(n ? T('Every drawing on this symbol, on every day. Undo (Ctrl+Z) brings them back.', 'Todos los dibujos de este símbolo, en todos los días. Deshacer (Ctrl+Z) los recupera.') : '') + (lk ? (n ? ' ' : '') + esc(T(lk + (lk === 1 ? ' locked drawing stays.' : ' locked drawings stay.'), lk + (lk === 1 ? ' dibujo bloqueado se queda.' : ' dibujos bloqueados se quedan.'))) : '') + '</div>', 'del'); }
   function delAll(){ var n = DW.list.filter(function(d){ return d && !d.lock; }).length, lk = DW.list.length - n; DW.list = DW.list.filter(function(d){ return d && d.lock; }); DW.sel = null; DW.multi = null; commit(); updDel(); closeMenu();
     flash(T(n + (n === 1 ? ' drawing' : ' drawings') + ' removed' + (lk ? ', ' + lk + ' locked kept' : '') + '. Undo (Ctrl+Z) brings them back.', n + (n === 1 ? ' dibujo quitado' : ' dibujos quitados') + (lk ? ', ' + lk + ' bloqueados se quedan' : '') + '. Deshacer (Ctrl+Z) los recupera.')); }
@@ -87237,11 +87349,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         g.strokeStyle = 'rgba(229,103,103,0.75)'; g.strokeRect(Math.round(pz.x0) + .5, Math.round(Math.min(pz.ye, pz.ys)) + .5, Math.round(w0) - 1, Math.round(Math.abs(pz.ys - pz.ye)));
         g.strokeStyle = '#c0c0c0'; g.beginPath(); g.moveTo(pz.x0, Math.round(pz.ye) + .5); g.lineTo(pz.x1, Math.round(pz.ye) + .5); g.stroke();
         var di = DW.list.indexOf(d), tagsOn = !DW.drag && (DW.sel === di || (DW.hov === di && DW.hovP === p) || !!(DW.multi && DW.multi.indexOf(di) >= 0));
-        var su = stopUnit(), sd = Math.abs(d.a.price - d.sl), td = Math.abs(d.tp - d.a.price), cxm = (pz.x0 + pz.x1) / 2, dg = S.digits;
+        var XF = PS(p), su = suFor(XF), sd = Math.abs(d.a.price - d.sl), td = Math.abs(d.tp - d.a.price), cxm = (pz.x0 + pz.x1) / 2, dg = XF.digits;
         var tag = function(txt, y, bg){ g.font = "600 11px 'AppNum','DM Mono',monospace"; var tw = g.measureText(txt).width + 12; g.fillStyle = bg; var rx = cxm - tw / 2;
           g.beginPath(); if (g.roundRect) g.roundRect(rx, y - 9, tw, 18, 4); else g.rect(rx, y - 9, tw, 18); g.fill(); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(txt, cxm, y + 0.5); g.textAlign = 'left'; };
-        if (tagsOn) tag(T('Target: ', 'Objetivo: ') + d.tp.toFixed(dg) + ' (' + fmtU(td, su) + ' ' + uLbl(su) + ')', pz.yt + (pz.yt < pz.ye ? -12 : 12), 'rgba(46,160,103,0.95)');
-        if (tagsOn) tag(T('Stop: ', 'Stop: ') + d.sl.toFixed(dg) + ' (' + fmtU(sd, su) + ' ' + uLbl(su) + ')', pz.ys + (pz.ys > pz.ye ? 12 : -12), 'rgba(196,72,72,0.95)');
+        if (tagsOn) tag(T('Target: ', 'Objetivo: ') + d.tp.toFixed(dg) + ' (' + fmtUs(XF, td, su) + ' ' + uLbl(su) + ')', pz.yt + (pz.yt < pz.ye ? -12 : 12), 'rgba(46,160,103,0.95)');
+        if (tagsOn) tag(T('Stop: ', 'Stop: ') + d.sl.toFixed(dg) + ' (' + fmtUs(XF, sd, su) + ' ' + uLbl(su) + ')', pz.ys + (pz.ys > pz.ye ? 12 : -12), 'rgba(196,72,72,0.95)');
         if (tagsOn && Math.abs(pz.ys - pz.yt) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + (sd > 0 ? (td / sd).toFixed(2) : '-'), pz.ye + (pz.yt < pz.ye ? 14 : -14), 'rgba(42,40,51,0.92)'); } }
     // The measure: the distance in the stop's unit, in R of the stop, and in this chart's candles. Neutral colour on
     // purpose, as in Trade Replay: it reports a distance, not a verdict.
@@ -87251,7 +87363,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         var xmr = Math.round((x0 + x1) / 2) + .5, yar = Math.round(a.y) + .5, ybr = Math.round(b.y) + .5, adir = ybr >= yar ? 1 : -1;
         g.strokeStyle = C; g.lineWidth = W; g.beginPath(); g.moveTo(x0, yar); g.lineTo(x1, yar); g.moveTo(x0, ybr); g.lineTo(x1, ybr); g.moveTo(xmr, yar); g.lineTo(xmr, ybr); g.stroke();
         if (Math.abs(ybr - yar) > 8) { g.beginPath(); g.moveTo(xmr - 4, ybr - adir * 6); g.lineTo(xmr, ybr); g.lineTo(xmr + 4, ybr - adir * 6); g.stroke(); }
-        var su = stopUnit(), dP = d.b.price - d.a.price, dist = dP / U(su), rr = dP / (S.pos ? S.pos.rd : stopPx()), La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t), db = (La == null || Lb == null) ? 0 : Math.round(Math.abs(Lb - La)), parts = [];
+        var XR = PS(p), su = suFor(XR), dP = d.b.price - d.a.price, dist = dP / uFor(XR, su), rr = dP / (XR !== S ? defStopFor(XR.sym, d.a.price) : (S.pos ? S.pos.rd : stopPx())), La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t), db = (La == null || Lb == null) ? 0 : Math.round(Math.abs(Lb - La)), parts = [];
         if (rShow(d, 'pips')) parts.push((dist >= 0 ? '+' : '') + dist.toFixed(1) + ' ' + uLbl(su));
         if (rShow(d, 'r')) parts.push((rr >= 0 ? '+' : '') + rr.toFixed(2) + 'R');
         if (rShow(d, 'bars')) parts.push(db + T(' bars', ' barras'));
@@ -87303,6 +87415,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function marqNorm(m){ return { x0: Math.min(m.x0, m.x1), y0: Math.min(m.y0, m.y1), x1: Math.max(m.x0, m.x1), y1: Math.max(m.y0, m.y1) }; }
   function d2seg(px, py, x1, y1, x2, y2){ var dx = x2 - x1, dy = y2 - y1; if (dx === 0 && dy === 0) return Math.hypot(px - x1, py - y1); var t = ((px - x1) * dx + (py - y1) * dy) / (dx * dx + dy * dy); t = Math.max(0, Math.min(1, t)); return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy)); }
   function hit(p, px, py){
+    if (S && dwListFor(p) !== DW.list) return null;   // another symbol's chart: a press brings its drawings into hand first (dwFocus)
     for (var i = DW.list.length - 1; i >= 0; i--) { var d = DW.list[i]; if (!visibleOn(d, p.tf)) continue;
       if (d.type === 'hline') { var y = yOf(p, d.price); if (y != null && Math.abs(py - y) < 6) return { i: i, part: 'line' }; continue; }
       if (d.type === 'text') { var tb = txtBox(p, d); if (tb && px >= tb.x0 - 5 && px <= tb.x1 + 5 && py >= tb.y0 - 4 && py <= tb.y1 + 4) return { i: i, part: 'body' }; continue; }
@@ -87329,8 +87442,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // ends where it ended (or at now).
   function xAt(p, ts){ var L = lOfT(p, ts); return L == null ? null : xL(p, L - 0.5); }
   function drawZones(p, g, dm){
-    var list = S.live ? liveZones() : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; });
-    if (S.pos) list.push({ e: S.pos.entry, sl: S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });
+    var mine = PS(p) === S, list = S.live ? liveZones(p) : (!mine ? [] : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; }));
+    if (S.pos && mine) list.push({ e: S.pos.entry, sl: S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });
     list.forEach(function(o){ var yE = yOf(p, o.e), yS = yOf(p, o.sl), yT = o.tp ? yOf(p, o.tp) : null, xE = xAt(p, o.a), xR = xAt(p, o.b);
       if (yE == null || yS == null || xE == null || xR == null) return;
       xE = Math.max(0, Math.min(dm.pw, xE)); xR = Math.max(0, Math.min(dm.pw, xR)); var bw = xR - xE; if (bw < 1) return; p._zones++;
@@ -87347,7 +87460,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         g.fillStyle = '#0b0a0d'; g.textAlign = 'left'; g.fillText(tx, px0 + 7, py + ph / 2 + 0.5); }
       g.restore(); }); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
-  function syncHL(p){ var want = []; DW.list.forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: d.alert && d.hitAt ? 2 : 0 }); });
+  function syncHL(p){ var want = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: d.alert && d.hitAt ? 2 : 0 }); });
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
     (p.hl || []).forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} });
     p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: o.s || 0, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
@@ -87382,7 +87495,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   MTIP.vpOff = ["Position of the VP liquidity arrows relative to the right edge of the P/D zone box.\n\n• Positive = arrows sit to the RIGHT of the chart\n• Negative = arrows are pulled LEFT, into the chart area, closer to the price candles where the volume actually occurred\n• 0 = arrows sit right at the right edge of the zone box", "Posición de las flechas de liquidez del VP respecto al borde derecho de la caja de la zona P/D.\n\n• Positivo = las flechas quedan a la DERECHA del gráfico\n• Negativo = las flechas se mueven a la IZQUIERDA, dentro del gráfico, más cerca de las velas donde ocurrió el volumen\n• 0 = las flechas quedan justo en el borde derecho de la caja"];
   var MINI_P = null;   // the chart being drawn: its own settings when they are not linked
   var MX = null, DLGX = null;   // another replay's chart being drawn (Trade Replay's) and its settings window: { sym, digits, now, rows(tf), volAsk(...) }
-  function mxS(){ return MX || S; }
+  function mxS(){ return MX || (MINI_P && MINI_P.src) || S; }   // the chart being drawn: its own symbol's feed
   function miniLinked(){ return CFG.miniLink !== false; }
   function msRaw(p){ p = p || MINI_P; if (miniLinked() || !p) return CFG.miniS || {}; var per = CFG.miniPer || {}; return per[p.i] || CFG.miniS || {}; }
   function offRaw(p){ p = p || MINI_P; if (miniLinked() || !p) return CFG.miniOff || {}; var per = CFG.miniOffPer || {}; return per[p.i] || CFG.miniOff || {}; }
@@ -87442,13 +87555,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function volRanges(p, B, V, a, e){ var st = null, day = false, out = [], src = SRC[p.tf];
     for (var i = a; i < e; i++) if (V[i] == null) { if (B[i].time < S.f.open) { if (!st) st = [B[i].time, B[i].time]; st[1] = B[i].time; } else day = true; }
     if (st) out.push({ tf: src, from: st[0], to: Math.min(S.f.open - 1, st[1] + p.tf * 60 - 1) });
-    if (day) out.push({ tf: S.baseTf, from: S.f.open, to: S.f.close - 1 });
+    if (day) out.push({ tf: PS(p).baseTf, from: S.f.open, to: S.f.close - 1 });
     return out; }
   // ...asked for once (candle_requests): the member's EA picks the ask up with its alerts (st_ea_poll) and sends those
   // candles again with their volume; they are fetched again every 20 seconds for 10 minutes. 'asked', 'fail', 'out'.
   var VOL = { asked: {}, t: 0 };
-  function volAsk(list){ var sb = VOL.sb || sbc(), uid = VOL.uid || uidNow(); if (!S || !list.length) return 'asked'; if (!sb || !uid) return 'out';   // VOL.sb / VOL.uid: the tests' stand-ins
-    var sym = S.sym.raw, rows = [], st = 'asked';
+  function volAsk(list, raw){ var sb = VOL.sb || sbc(), uid = VOL.uid || uidNow(); if (!S || !list.length) return 'asked'; if (!sb || !uid) return 'out';   // VOL.sb / VOL.uid: the tests' stand-ins
+    var sym = raw || S.sym.raw, rows = [], st = 'asked';
     list.forEach(function(q){ var cov = null; Object.keys(VOL.asked).forEach(function(k){ var o = VOL.asked[k]; if (o.sym === sym && o.tf === q.tf && o.from <= q.from && o.to >= q.to) cov = o; });
       if (cov) { if (cov.fail) st = 'fail'; return; }
       var o2 = { sym: sym, tf: q.tf, from: q.from, to: q.to, at: Date.now() }; VOL.asked[sym + '|' + q.tf + '|' + q.from + '|' + q.to] = o2;
@@ -87470,10 +87583,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function eaNewest(){ var best = ''; try { var rows = (window.__stEA && window.__stEA.rows) ? window.__stEA.rows() : {};
       Object.keys(rows).forEach(function(k){ var v = String((rows[k] || {}).ea_version || ''); if (v && (!best || parseFloat(v) > parseFloat(best))) best = v; }); } catch (e) {} return best; }
   // the volume that came in goes onto the candles already here (each chart keeps its view)
-  function volMerge(sym, tf, rows){ if (!S || S.sym.raw !== sym) return; var m = {}; rows.forEach(function(b){ if (b.vol != null) m[b.time] = b.vol; });
+  function volMerge(sym, tf, rows){ var XF = feeds().filter(function(F){ return F.sym.raw === sym; })[0]; if (!XF) return; var m = {}; rows.forEach(function(b){ if (b.vol != null) m[b.time] = b.vol; });
     Object.keys(staticCache).forEach(function(key){ var ps = key.split('|'), ptf = +ps[2]; if (ps[0] !== sym || SRC[ptf] !== tf) return; var e = staticCache[key];
       e.rows.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; }); e.agg = aggStatic(e.rows, ptf); panes.forEach(function(p){ if (p.hist === e) p.static = e.agg; }); });
-    if (tf === S.baseTf) S.base.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; });
+    if (tf === XF.baseTf) XF.base.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; });
     panes.forEach(function(p){ p._mini = null; try { paintPane(p, false, 0, getRange(p)); } catch (e) {} }); dirty(); }
   // TradingView's label.style_label_left, empty, size tiny: a small tag pointing left at its price
   function vpDraw(g, vp, x, Y, o, pw, ink){
@@ -87515,7 +87628,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       M.zone = { i0: sI, top: top, bot: bot, end: zEnd < n ? zEnd - 1 : null, hand: !o.auto, iTo: zTo }; }
     // his volume profile: the zone's own window (as far back as TradingView's 4,990 bars), on this chart's candles
     if (M.zone && o.vpOn) { var va = Math.max(M.zone.i0, n - 1 - 4990), V = p.vols || []; M.vp = vpCalc(B, V, va, M.zone.iTo, o);
-      if (M.vp && M.vp.miss) M.vp.st = MX ? MX.volAsk(p, B, V, va, M.zone.iTo) : volAsk(volRanges(p, B, V, va, M.zone.iTo)); }
+      if (M.vp && M.vp.miss) M.vp.st = MX ? MX.volAsk(p, B, V, va, M.zone.iTo) : volAsk(volRanges(p, B, V, va, M.zone.iTo), PS(p).sym.raw); }
     // previous day / week / month, the day lines, weekday names, opening gaps, the sessions
     var C = { d: null, w: null, m: null }, PV = { d: null, w: null, m: null }, gl = [], s0 = [], tz = +o.tz || 0, sesTf = !o.sesCap || tf <= o.sesMax;
     for (i = 0; i < n; i++) { var b = B[i], lk = lonK(b.time), nd = false;
@@ -87540,8 +87653,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // the period before the one now, from the coarser history (1h, else 4h) when it holds the whole of it
   var miniWait = {};
   function miniPrev(kk, cur, p){
-    var pick = null; [60, 240].some(function(tf){ var e = MX ? MX.rows(tf) : staticCache[S.sym.raw + '|' + S.day + '|' + tf];
-      if (!e) { if (MX) return false; var wk = S.sym.raw + '|' + S.day + '|' + tf; if (!miniWait[wk]) { miniWait[wk] = 1; paneStatic(tf).then(function(){ panes.forEach(function(q){ q._mini = null; }); dirty(); }).catch(function(){}); } return false; }
+    var pick = null; [60, 240].some(function(tf){ var e = MX ? MX.rows(tf) : staticCache[PS(p).sym.raw + '|' + S.day + '|' + tf];
+      if (!e) { if (MX) return false; var wk = PS(p).sym.raw + '|' + S.day + '|' + tf; if (!miniWait[wk]) { miniWait[wk] = 1; paneStatic(tf, PS(p)).then(function(){ panes.forEach(function(q){ q._mini = null; }); dirty(); }).catch(function(){}); } return false; }
       var R = e.rows, by = null, prevK = null, o = null; if (!R.length) return false;
       for (var j = R.length - 1; j >= 0; j--) { var k2 = lonK(R[j].time)[kk]; if (k2 >= cur) continue; if (prevK == null) prevK = k2; if (k2 !== prevK) { by = j; break; }
         if (!o) o = { hi: -Infinity, lo: Infinity, t0: 0 }; if (R[j].high > o.hi) o.hi = R[j].high; if (R[j].low < o.lo) o.lo = R[j].low; o.t0 = R[j].time; }
@@ -87761,7 +87874,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       onChange: function(el){ var k = el.getAttribute('data-k'); if (!k) return false;
         if (k === 'mlink') { var cur = JSON.parse(JSON.stringify(W)); if (visFull(cur.vis)) cur.vis = null; var co = Object.assign({}, OFF);   // linked: this chart's settings for all; unlinked: each chart starts from them
           if (el.checked) { CFG.miniLink = true; CFG.miniS = cur; CFG.miniOff = co; CFG.miniPer = {}; CFG.miniOffPer = {}; }
-          else { CFG.miniLink = false; CFG.miniPer = {}; CFG.miniOffPer = {}; for (var mi = 0; mi < 4; mi++) { CFG.miniPer[mi] = JSON.parse(JSON.stringify(cur)); CFG.miniOffPer[mi] = Object.assign({}, co); } }
+          else { CFG.miniLink = false; CFG.miniPer = {}; CFG.miniOffPer = {}; for (var mi = 0; mi < 8; mi++) { CFG.miniPer[mi] = JSON.parse(JSON.stringify(cur)); CFG.miniOffPer[mi] = Object.assign({}, co); } }
           save(); panes.forEach(function(q){ q._mini = null; }); dirty(); var tab0 = DLG ? DLG.tab : 0; DLG.cancel = null; dlgClose(false); miniDialog(tab0, tp); return false; }
         if (/^vis\./.test(k)) { visSet(W.vis, k, el.type === 'checkbox' ? el.checked : el.value); apply(); return true; }
         if (/^part\./.test(k)) { var pk = k.slice(5); if (el.checked) delete OFF[pk]; else OFF[pk] = true; apply(); return false; }
@@ -87790,13 +87903,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     g.save(); g.beginPath(); g.rect(0, 0, dm.pw, dm.ph); g.clip();
     if (CFG.mini) { MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; }   // under the trades and the drawings (MINI_P: this chart's settings)
     p._zones = 0; if (CFG.pos !== false) drawZones(p, g, dm);
-    DW.list.forEach(function(d){ if (visibleOn(d, p.tf)) try { drawOne(p, g, d, dm.pw, false); } catch (e) {} });
-    p._bells = []; DW.list.forEach(function(d){ if (!(d && d.type === 'hline' && d.alert && visibleOn(d, p.tf))) return; var by = yOf(p, d.price);   // a bell on each alert's line
+    var LST = dwListFor(p), act = LST === DW.list;   // this chart's symbol's drawings; selecting and drawing only on the one in hand
+    LST.forEach(function(d){ if (visibleOn(d, p.tf)) try { drawOne(p, g, d, dm.pw, false); } catch (e) {} });
+    p._bells = []; LST.forEach(function(d){ if (!(d && d.type === 'hline' && d.alert && visibleOn(d, p.tf))) return; var by = yOf(p, d.price);   // a bell on each alert's line
       if (by != null && by >= 0 && by <= dm.ph) { bellAt(g, dm.pw - 13, by, dC(d), !!d.hitAt); p._bells.push({ y: by, hit: !!d.hitAt, price: d.price }); } });
-    if (DW.pending) try { drawOne(p, g, DW.pending, dm.pw, true); } catch (e) {}
-    if (DW.penning && DW.penP === p) drawPenLive(g, DW.penning);
-    var sel = DW.drag ? DW.list[DW.drag.i] : (DW.sel != null ? DW.list[DW.sel] : null); if (sel && visibleOn(sel, p.tf)) { if (sel.lock) lockMark(p, g, sel, dm.pw); else handles(p, g, sel, dm.pw); }
-    if (DW.multi && DW.multi.length) { g.save(); g.strokeStyle = '#f472b6'; g.lineWidth = 1; g.setLineDash([3, 3]);
+    if (act && DW.pending) try { drawOne(p, g, DW.pending, dm.pw, true); } catch (e) {}
+    if (act && DW.penning && DW.penP === p) drawPenLive(g, DW.penning);
+    var sel = !act ? null : (DW.drag ? DW.list[DW.drag.i] : (DW.sel != null ? DW.list[DW.sel] : null)); if (sel && visibleOn(sel, p.tf)) { if (sel.lock) lockMark(p, g, sel, dm.pw); else handles(p, g, sel, dm.pw); }
+    if (act && DW.multi && DW.multi.length) { g.save(); g.strokeStyle = '#f472b6'; g.lineWidth = 1; g.setLineDash([3, 3]);
       DW.multi.forEach(function(i){ var bb = DW.list[i] && bboxOf(p, DW.list[i], dm.pw); if (bb) g.strokeRect(bb.x0 - 3.5, bb.y0 - 3.5, (bb.x1 - bb.x0) + 7, (bb.y1 - bb.y0) + 7); }); g.restore(); }
     if (DW.snap && DW.snap.p === p) { var sq = Pt(p, DW.snap.q); if (sq) { g.save(); g.strokeStyle = '#f472b6'; g.fillStyle = 'rgba(244,114,182,0.9)'; g.lineWidth = 1;
       g.beginPath(); g.arc(sq.x, sq.y, 4, 0, Math.PI * 2); g.fill(); g.beginPath(); g.moveTo(sq.x - 9, sq.y); g.lineTo(sq.x + 9, sq.y); g.moveTo(sq.x, sq.y - 9); g.lineTo(sq.x, sq.y + 9); g.stroke(); g.restore(); } }
@@ -87813,7 +87927,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function ovSig(p){ var r = null, y1 = null, y2 = null, ref = S.base.length ? S.base[0].open : 1;
     try { r = p.chart.timeScale().getVisibleLogicalRange(); y1 = p.series.priceToCoordinate(ref); y2 = p.series.priceToCoordinate(ref * 1.001); } catch (e) {}
     return (r ? r.from.toFixed(3) + ',' + r.to.toFixed(3) : '-') + '|' + y1 + '|' + y2 + '|' + p.el.clientWidth + 'x' + p.el.clientHeight + '|' + p.n + '|' + ((p.el.ownerDocument.defaultView || window).devicePixelRatio || 1); }
-  function frame(){ loopId = 0; if (!S || !panes.length || !$('stpr-bg').classList.contains('show')) return;
+  function frame(){ loopId = 0; if (!S || !panes.length || !isOpen()) return;   // isOpen: over the app, or in the Live Charts tab
     panes.forEach(function(p){ try { var sig = ovSig(p); if (sig !== p._sig || p._ver !== DW.ver) { p._sig = sig; p._ver = DW.ver; drawOv(p); } syncHL(p); } catch (e) {} });
     loopW = liveWin(); loopId = loopW.requestAnimationFrame(frame); }
   function startLoop(){ if (!loopId) { loopW = liveWin(); loopId = loopW.requestAnimationFrame(frame); } }
@@ -87919,7 +88033,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return e; }
   function hideCtx(){ panes.forEach(function(p){ p.el.querySelectorAll('.stpr-ctx').forEach(function(e){ e.style.display = 'none'; }); }); }
   function showCtx(p, x, y, pr){ var e = ctxEl(p), multi = (DW.multi && DW.multi.length) ? DW.multi.length : 0, sd = !multi && DW.sel != null && DW.list[DW.sel];
-    var rows = pr != null ? [['alert', T('Add alert at ', 'Alerta en ') + Number(pr).toFixed(S.digits)]]
+    var rows = pr != null ? [['alert', T('Add alert at ', 'Alerta en ') + Number(pr).toFixed(PS(p).digits)]]
       : [['clone', T('Clone', 'Duplicar')], ['del', multi ? T('Delete ' + multi, 'Borrar ' + multi) : T('Delete', 'Borrar')]].concat(sd && sd.type === 'hline' ? [['alt', sd.alert && !sd.hitAt ? T('Alert off', 'Quitar alerta') : T('Alert on', 'Poner alerta')]] : [])
         .concat(sd ? [['lock', sd.lock ? T('Unlock', 'Desbloquear') : T('Lock', 'Bloquear')]] : []);
     e.innerHTML = rows.map(function(r){ return '<button type="button" data-act="' + r[0] + '" style="text-align:center;padding:6px 9px;cursor:pointer;letter-spacing:0.12em;text-transform:uppercase;background:transparent;border:none;color:var(--text-mid);font:inherit;border-radius:4px;white-space:nowrap;">' + r[1] + '</button>'; }).join('');
@@ -87948,7 +88062,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (DW.tool === 'none' && e.ctrlKey) { e.stopPropagation(); e.preventDefault(); DW.marq = { p: p, x0: xy.x, y0: xy.y, x1: xy.x, y1: xy.y }; DW.sel = null; DW.multi = null; updDel(); return; }
     if (DW.tool !== 'none') { e.stopPropagation(); e.preventDefault();
       if (DW.tool === 'hline') { DW.list.push(styleNew({ type: 'hline', price: q.price })); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
-      else if (DW.tool === 'long' || DW.tool === 'short') { var pdir = DW.tool === 'long' ? 1 : -1, prd = stopPx(), ptd = tgtDist(prd) || 2 * prd, pLa = lOfT(p, q.t);
+      else if (DW.tool === 'long' || DW.tool === 'short') { var pdir = DW.tool === 'long' ? 1 : -1, XF = PS(p), prd = XF === S ? stopPx() : defStopFor(XF.sym, q.price), ptd = XF === S ? (tgtDist(prd) || 2 * prd) : 2 * prd, pLa = lOfT(p, q.t);
         DW.list.push({ type: DW.tool, a: { t: q.t, price: q.price }, b: { t: tOfL(p, (pLa == null ? 0 : pLa) + 20), price: q.price }, sl: q.price - pdir * prd, tp: q.price + pdir * ptd });
         DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
       else if (DW.tool === 'emoji') { DW.list.push({ type: 'emoji', a: toPf(p, e) || q, e: emoNow(), size: 32 }); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
@@ -88040,13 +88154,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var lg = c.p.chart.timeScale().coordinateToLogical(c.x), pr = c.p.series.coordinateToPrice(c.y); if (lg == null || pr == null) return null;
     var t = tOfL(c.p, Math.round(lg)); if (t == null) return null;
     if (p === c.p) return { x: c.x, y: c.y, t: t, pr: pr };
-    var tb = barAt(p, t); if (tb == null) return null; var x = xOfT(p, tb), y = yOf(p, pr); return x == null ? null : { x: x, y: y == null ? -1 : y, t: tb, pr: pr }; }
+    // on a chart of another symbol: the time only
+    var tb = barAt(p, t); if (tb == null) return null; var x = xOfT(p, tb), y = PS(p).sym.raw === PS(c.p).sym.raw ? yOf(p, pr) : null; return x == null ? null : { x: x, y: y == null ? -1 : y, t: tb, pr: pr }; }
   // the legend's figures: the candle clicked on, on the chart it was clicked on - nothing otherwise
   function paintOhlc(p){ var el = p.el.querySelector('.stpr-ohlc'), B = p.bars; if (!el) return;
     var o = DW.oh, k = -1;
     if (o && o.p === p && B && B.length) { var lo = 0, hi = B.length - 1; while (lo < hi) { var m = (lo + hi + 1) >> 1; if (B[m].time <= o.t) lo = m; else hi = m - 1; } if (B[lo].time === o.t) k = lo; }
     if (k < 0) { if (el._k !== '') { el._k = ''; el.className = 'stpr-ohlc'; el.innerHTML = ''; } return; }
-    var b = B[k], pc = k > 0 ? B[k - 1].close : b.open, ch = b.close - pc, dg = S.digits, f = function(v){ return Number(v).toFixed(dg); };
+    var b = B[k], pc = k > 0 ? B[k - 1].close : b.open, ch = b.close - pc, dg = PS(p).digits, f = function(v){ return Number(v).toFixed(dg); };
     var key = p.tf + '|' + b.time + '|' + b.open + '|' + b.high + '|' + b.low + '|' + b.close + '|' + pc; if (el._k === key) return; el._k = key;
     el.className = 'stpr-ohlc ' + (b.close >= b.open ? 'u' : 'd');
     el.innerHTML = '<i>O</i><b>' + f(b.open) + '</b><i>H</i><b>' + f(b.high) + '</b><i>L</i><b>' + f(b.low) + '</b><i>C</i><b>' + f(b.close) + '</b><b class="chg">' + (ch >= 0 ? '+' : '\u2212') + f(Math.abs(ch)) + ' (' + (ch >= 0 ? '+' : '\u2212') + (pc ? Math.abs(ch / pc * 100) : 0).toFixed(2) + '%)</b>'; }
@@ -88076,11 +88191,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     g.save(); g.strokeStyle = look().cxc; g.lineWidth = 1; g.setLineDash(cxDash()); g.beginPath();
     if (okX) { g.moveTo(X, 0); g.lineTo(X, dm.h); } if (okY) { g.moveTo(0, Y); g.lineTo(dm.w, Y); } g.stroke(); g.setLineDash([]);
     g.font = fs + "px 'AppNum','DM Mono',monospace"; g.textBaseline = 'middle';
-    if (okY) { var bh = fs + 5, x0 = dm.pw + 1; g.fillStyle = '#2a2833'; g.fillRect(x0, c.y - bh / 2, Math.max(12, dm.w - x0), bh); g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.fillText(Number(c.pr).toFixed(S.digits), x0 + 4, c.y); }
+    if (okY) { var bh = fs + 5, x0 = dm.pw + 1; g.fillStyle = '#2a2833'; g.fillRect(x0, c.y - bh / 2, Math.max(12, dm.w - x0), bh); g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.fillText(Number(c.pr).toFixed(PS(p).digits), x0 + 4, c.y); }
     if (okY && plusOn(p)) { var pX = dm.pw - 11, hv = DW.plusHov === p;   // the + that adds an alert at this price
       g.beginPath(); g.arc(pX, c.y, 7.5, 0, Math.PI * 2); g.fillStyle = hv ? '#f472b6' : '#2a2833'; g.fill(); g.lineWidth = 1; g.strokeStyle = hv ? '#f472b6' : 'rgba(255,255,255,0.75)'; g.stroke();
       g.lineWidth = 1.4; g.strokeStyle = hv ? '#0b0a0d' : '#ffffff'; g.beginPath(); g.moveTo(pX - 3.5, c.y); g.lineTo(pX + 3.5, c.y); g.moveTo(pX, c.y - 3.5); g.lineTo(pX, c.y + 3.5); g.stroke();
-      if (hv) { var plt = T('Add alert at ', 'Alerta en ') + Number(c.pr).toFixed(S.digits), plw = g.measureText(plt).width; g.fillStyle = '#2a2833'; g.fillRect(pX - 13 - plw - 10, c.y - 9, plw + 10, 18); g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.fillText(plt, pX - 13 - plw - 5, c.y); } }
+      if (hv) { var plt = T('Add alert at ', 'Alerta en ') + Number(c.pr).toFixed(PS(p).digits), plw = g.measureText(plt).width; g.fillStyle = '#2a2833'; g.fillRect(pX - 13 - plw - 10, c.y - 9, plw + 10, 18); g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.fillText(plt, pX - 13 - plw - 5, c.y); } }
     if (okX) { var tt = crossFmt(p.tf)(c.t), tw = g.measureText(tt).width, tbh = fs + 5, ty = dm.ph + tbh / 2 + 2, tx = Math.max(tw / 2 + 6, Math.min(dm.pw - tw / 2 - 6, c.x));
       g.fillStyle = '#2a2833'; g.fillRect(tx - tw / 2 - 5, ty - tbh / 2, tw + 10, tbh); g.fillStyle = '#ffffff'; g.textAlign = 'center'; g.fillText(tt, tx, ty); }
     g.restore(); }
@@ -88099,7 +88214,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function drawNews(p, g, pw, ph){
     if (p.tf > 240 || !NEWS.rows.length) return;
     var R = 8, STEP = R * 2 + 3, COL = ['#6b6878', '#f4c05a', '#E56767'], groups = {};
-    NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || t > S.now) return; var k = keyOf(Math.max(p.tf, S.baseTf), t); (groups[k] = groups[k] || []).push(e); });
+    NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || t > S.now) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
     Object.keys(groups).forEach(function(k){ var x = xOfT(p, +k); if (x == null || x < R + 2 || x > pw - R - 2) return; x = Math.round(x);
       groups[k].sort(function(a, b){ return impRank(b) - impRank(a); }).forEach(function(e, j){ var y = ph - 4 - R - j * STEP, col = COL[impRank(e)];
         g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fillStyle = '#131217'; g.fill(); g.lineWidth = 1.6; g.strokeStyle = col; g.stroke();
@@ -88146,11 +88261,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (l) { e.preventDefault(); e.stopPropagation(); drag = { k: l._k, p: p }; hold(true); try { el.setPointerCapture(e.pointerId); } catch (x) {} return; }
       // execution mode: a mouse click where the stop goes places the trade there and then; a touch never does (the SL line is
       // dragged and the panel's SELL / BUY button places it), so a finger meant to scroll the chart cannot open a trade
-      if (mouse && S.exec && !S.pos && !S.pend && e.button === 0) { var pr = p.series.coordinateToPrice(rel(e).y); if (pr == null) return;
+      if (mouse && S.exec && !S.pos && !S.pend && e.button === 0) {
+        if (PS(p) !== S) { e.preventDefault(); e.stopPropagation(); flash(T('Trades go on chart 1 (' + S.sym.name + '): click that chart.', 'Las operaciones van en el gráfico 1 (' + S.sym.name + '): haz clic en ese gráfico.')); return; }
+        var pr = p.series.coordinateToPrice(rel(e).y); if (pr == null) return;
         e.preventDefault(); e.stopPropagation(); aim(pr); if (!fire()) { linesAll(); paintPill(); } }
     }, true);
     // and before the click, the stop follows the mouse
-    el.addEventListener('pointermove', function(e){ if (!S || drag || !S.exec || S.pos || S.pend || e.pointerType !== 'mouse') return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { aim(pr); aimSoon(); } });
+    el.addEventListener('pointermove', function(e){ if (!S || drag || !S.exec || S.pos || S.pend || e.pointerType !== 'mouse' || PS(p) !== S) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { aim(pr); aimSoon(); } });
     el.addEventListener('pointermove', function(e){ if (!S || !drag || drag.p !== p) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { setLine(drag.k, pr); linesAll(); paintPill(); paintPlace(); } }, true);
     el.addEventListener('pointerup', function(){ if (!drag || drag.p !== p) return; var k = drag.k; drag = null; hold(false);
       if (k === 'pvsl' || k === 'pvtp' || k === 'pvent') save();
@@ -88158,7 +88275,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       render(); }, true);
     el.addEventListener('pointercancel', function(){ if (drag && drag.p === p) { drag = null; hold(false); } }, true);
     // a hand on this chart (for loading older candles at its left edge)
-    p.el.addEventListener('pointerdown', function(){ p.hand = true; p.handAt = Date.now();
+    p.el.addEventListener('pointerdown', function(){ p.hand = true; p.handAt = Date.now(); dwFocus(p);
       if (CFG.act !== p.i) { CFG.act = p.i; save(); paintAct(); } }, true);   // the chart clicked last is the one Play steps by
     p.el.addEventListener('wheel', function(){ p.handAt = Date.now(); }, { capture: true, passive: true });
     // off the chart, its crosshair goes (a finger's stays where it lifted, as in Trade Replay)
@@ -88253,7 +88370,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (r.err) { st.textContent = r.err; return false; }
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
     S = r.s; CFG.sym = sym.raw; CFG.recent = [day].concat((CFG.recent || []).filter(function(d){ return d !== day; })).slice(0, 30); save();
-    buildPanes(); dwLoad(sym.raw); dwPanes(); await loadPanes();
+    var S0 = S; await loadSides(); if (S !== S0) return false;
+    buildPanes(); dwLoad(sym.raw); dwPanes(); await loadPanes(); if (S !== S0) return false;
     if (restore) { S.trades = logShown().filter(function(t){ return t && t.sym === sym.raw && t.day === day && t.exitTs <= at && t.entryTs; });   // back where it was left: that day's trades on the chart again
       S.trades.forEach(function(t){ if (t.exitTs > S.lastExitTs) S.lastExitTs = t.exitTs; }); }
     if (at > S.f.open) advanceTo(at); ALERT.hits = [];   // a day opened part-way: lines it passed are marked, without a chime
@@ -88286,12 +88404,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   function nextDay(){ if (!S) return; var d = new Date(S.day + 'T12:00:00'); do { d.setDate(d.getDate() + 1); } while (d.getDay() === 0 || d.getDay() === 6);
     if (d.getTime() / 1000 > Date.now() / 1000 - 86400) { randomDay(S.sym.raw); return; } go(S.sym.raw, isoDay(d)); }
-  var LVS = { 2: ['h', 'v'], 3: ['L', 'R', 'T', 'B'] };
-  function layV(n){ var o = LVS[n]; if (!o) return 'x'; var v = CFG.lv && CFG.lv[n]; return o.indexOf(v) >= 0 ? v : o[0]; }
-  // the button of the layout on screen, pressed again: the next arrangement, the same charts (a phone stacks them all anyway)
-  function nextLayV(n){ var o = LVS[n]; if (!o || phone()) return false; var v = o[(o.indexOf(layV(n)) + 1) % o.length]; CFG.lv = Object.assign({}, CFG.lv || {}); CFG.lv[n] = v; save();
-    $('stpr-grid').className = 'stpr-grid l' + n + ' v' + v; paintHeader(); dirty(); return true; }
-  async function setLayout(n){ if (!S) return; if (n === CFG.layout && panes.length === n) { nextLayV(mainN()); return; } CFG.layout = n; for (var i = 0; i < n; i++) if (!CFG.tfs[i]) CFG.tfs[i] = LAYTF[n][i] || 5; save(); buildPanes(); dwPanes(); renderProps(); await loadPanes(); if (S && S.live) lvMergePre(); render(true); }
+  var LAYD = { 1: 'x', 2: 'h', 3: 'L', 4: 'x', 5: 'L4', 6: 'g', 7: 'L6', 8: 'g' };
+  function layV(n){ var o = LAYS[n]; if (!o) return 'x'; var v = CFG.lv && CFG.lv[n]; return o[v] ? v : LAYD[n]; }
+  // the arrangement of the charts in this window, on the charts already there (each keeps its candles and view)
+  function layApply(m){ var g = $('stpr-grid'); if (!g) return; var v = layV(m), L = LAYS[m] && LAYS[m][v], fr = function(a){ return a.map(function(x){ return x + 'fr'; }).join(' '); };
+    g.className = 'stpr-grid l' + m + ' v' + v; g.style.setProperty('--gc', L ? fr(L.c) : '1fr'); g.style.setProperty('--gr', L ? fr(L.r) : '1fr');
+    var k = 0; Array.prototype.forEach.call(g.children, function(el){ if (!el.classList.contains('stpr-pane')) return; var c = L && L.a[k++];
+      el.style.setProperty('--pc', c ? c[0] + ' / span ' + (c[2] || 1) : 'auto'); el.style.setProperty('--pr', c ? c[1] + ' / span ' + (c[3] || 1) : 'auto'); }); }
+  async function setLayout(n, v){ if (!S || !(n >= 1 && n <= 8)) return; if (menuFor === 'lay') closeMenu();
+    if (v && LAYS[n] && LAYS[n][v]) { CFG.lv = Object.assign({}, CFG.lv || {}); CFG.lv[n] = v; }
+    if (n === CFG.layout && panes.length === n) { save(); layApply(mainN()); paintLay(); dirty(); return; }   // the same charts, another arrangement
+    CFG.layout = n; for (var i = 0; i < n; i++) if (!CFG.tfs[i]) CFG.tfs[i] = LAYTF[n][i] || 5; save(); var S0 = S; await loadSides(); if (S !== S0) return; buildPanes(); dwPanes(); renderProps(); await loadPanes(); if (S && S.live) lvMergePre(); render(true); }
   async function setTf(i, tf){ if (!S) return; CFG.tfs[i] = tf; save(); closeMenu(); buildPanes(); dwPanes(); renderProps(); await loadPanes(); if (S && S.live) lvMergePre(); render(true); }
 
   // The strip's grip is its scroll thumb: at the top of the strip with the page at the top, at the bottom with the page at
@@ -88423,17 +88546,28 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   //      timeframe is built from them as in a replay. The open trades are drawn as on the Session Live chart. Alerts set
   //      here are MT5's too (price_alerts: the EA watches them and the phone hears). Replay turns the same charts into
   //      Practice Replay; Live brings them back. ----
-  var LV = { inl: false, max: false, host: null, ea: null, px: null, dg: null, at: 0, pre: [], parts: {}, gotHist: false, histAt: 0, clk: 0, rq: 0, sig: '', paT: 0, paAt: 0, paSeen: {}, logBack: null, want: null };
+  var LV = { inl: false, max: false, host: null, clk: 0, rq: 0, sig: '', paT: 0, paAt: 0, paSeen: {}, logBack: null, want: null, acctK: null };
   function nowS(){ return Math.floor((Date.now() + (LV.toff || 0)) / 1000); }   // toff: the tests' weekday on a weekend
   // today's trading day; at a weekend the last one (Friday's)
   function liveDay(){ var t = nowS(), td = tradeDate(t), k = 0; while ((td.w === 0 || td.w === 6) && k++ < 4) { t -= 86400; td = tradeDate(t); } return td.y + '-' + p2(td.m + 1) + '-' + p2(td.d); }
   function vNum(v){ var n = parseFloat(v); return isFinite(n) ? n : 0; }
-  // the charts the member's EAs run on (each says "hi" with its symbol as MT5 names it)
-  function liveEAs(){ try { var m = (window.__stLiveLine && window.__stLiveLine.eas) ? window.__stLiveLine.eas() : {}; return Object.keys(m).map(function(k){ var o = m[k] || {}; return { raw: k, v: o.v, dg: o.dg, at: o.at || 0 }; }); } catch (e) { return []; } }
+  // the charts the member's EAs run on (each says "hi" with its symbol as MT5 names it, and its account)
+  function liveEAs(){ try { var m = (window.__stLiveLine && window.__stLiveLine.eas) ? window.__stLiveLine.eas() : {}; return Object.keys(m).map(function(k){ var o = m[k] || {}; return { raw: k, v: o.v, dg: o.dg, lg: o.lg || null, at: o.at || 0 }; }); } catch (e) { return []; } }
   function eaFor(sym){ var best = null; liveEAs().forEach(function(o){ if (canon(o.raw) === sym.key && (!best || o.at > best.at)) best = o; }); return best; }
   function lvMs(){ try { return (window.__stLiveLine && window.__stLiveLine.ms) ? window.__stLiveLine.ms() : 2000; } catch (e) { return 2000; } }
-  function lvFresh(){ return !!(LV.at && Date.now() - LV.at < Math.max(15000, 3 * lvMs())); }
+  // F: a feed (chart 1's, S, unless said) - its EA's prices came lately
+  function lvFresh(F){ F = F || S; return !!(F && F.at && Date.now() - F.at < Math.max(15000, 3 * lvMs())); }
   function clearLiveT(){ clearInterval(LV.clk); LV.clk = 0; clearTimeout(LV.rq); LV.rq = 0; }
+  // a symbol on a live chart: the day's 1-minute candles from the store (its EA tops them up), its digits; then its EA's prices
+  async function liveFeed(sym, f){
+    var end = Math.min(nowS(), f.close), ea = eaFor(sym), base = [], baseTf = 1;
+    if (sym.tf[1]) base = await fetchCandles(sym.raw, 1, f.open, end - 1);
+    // no EA streaming this symbol: the store's 5-minute candles when its 1-minute ones are thin (the EA tops it up hourly)
+    if (!(ea && vNum(ea.v) >= 9.00) && base.length < (end - f.open) / 60 * 0.5 && sym.tf[5]) { var b5 = await fetchCandles(sym.raw, 5, f.open, end - 1); if (b5.length * 5 > base.length) { base = b5; baseTf = 5; } }
+    var dg = (ea && ea.dg) || digitsOf(base); if (!dg) dg = digitsOf(await fetchCandles(sym.raw, 5, end - 5 * 86400, end)) || 5;
+    return { sym: sym, base: base, baseTf: baseTf, digits: dg, ea: ea, px: null, dg: null, at: 0, pre: [], parts: {}, gotHist: false, histAt: 0 }; }
+  // the feed a message from an EA is for (it names its chart's symbol as MT5 does)
+  function feedFor(s){ if (!S || !s) return null; return feeds().filter(function(F){ return F.ea && F.ea.raw === s; })[0] || null; }
   async function goLive(raw){
     if (!LV.inl && !LV.max) return false;
     if (!wired) wire();
@@ -88444,79 +88578,77 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     await loadSymbols(); var sym = symBy(raw) || symBy(canon(raw)) || symBy(CFG.sym) || (SYMS && SYMS[0]);
     if (!sym) { st.textContent = T('No candles stored yet.', 'Aún no hay velas guardadas.'); return false; }
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
-    var day = liveDay(), f = dayFrame(day), end = Math.min(nowS(), f.close), ea = eaFor(sym), base = [], baseTf = 1;
-    if (sym.tf[1]) base = await fetchCandles(sym.raw, 1, f.open, end - 1);
-    // no EA streaming this symbol: the store's 5-minute candles when its 1-minute ones are thin (the EA tops it up hourly)
-    if (!(ea && vNum(ea.v) >= 9.00) && base.length < (end - f.open) / 60 * 0.5 && sym.tf[5]) { var b5 = await fetchCandles(sym.raw, 5, f.open, end - 1); if (b5.length * 5 > base.length) { base = b5; baseTf = 5; } }
+    var day = liveDay(), f = dayFrame(day), end = Math.min(nowS(), f.close), F0 = await liveFeed(sym, f);
     if (!LV.inl && !LV.max) return false;   // the tab was left meanwhile
-    var dg = (ea && ea.dg) || digitsOf(base); if (!dg) dg = digitsOf(await fetchCandles(sym.raw, 5, end - 5 * 86400, end)) || 5;
-    S = { sym: sym, day: day, f: f, base: base, baseTf: baseTf, now: end, pos: null, trades: [], done: null, pv: null, exec: false, playing: false, lastExitTs: 0, digits: dg, live: true };
-    CFG.sym = sym.raw; save();
-    LV.ea = ea; LV.px = null; LV.dg = null; LV.at = 0; LV.pre = []; LV.parts = {}; LV.gotHist = false; LV.histAt = 0; LV.sig = '';
-    buildPanes(); dwLoad(sym.raw); dwPanes(); await loadPanes(); lvMergePre();
+    S = Object.assign(F0, { day: day, f: f, now: end, pos: null, trades: [], done: null, pv: null, exec: false, playing: false, lastExitTs: 0, live: true, side: {} });
+    CFG.sym = sym.raw; save(); LV.sig = '';
+    var S0 = S; await loadSides(); if (S !== S0) return false;
+    buildPanes(); dwLoad(sym.raw); dwPanes(); await loadPanes(); if (S !== S0) return false; lvMergePre();
     ALERT.hits = []; NEWS.key = null; loadNews(); $('stpr-newsbtn').classList.toggle('on', CFG.news !== false); layersDot();
-    st.style.display = 'none'; render(true); startLoop();
+    st.style.display = 'none'; render(true); startLoop(); if (LV.snap) { LV.snap = false; setTimeout(lcSnap, 60); }
     pull().then(function(ch){ if (ch && S) render(); });
-    LV.clk = setInterval(lvClock, 1000); lvHist(); lvAlertsPull();
+    LV.clk = setInterval(lvClock, 1000); feeds().forEach(function(F){ lvHist(F); }); lvAlertsPull(); lcAcctSync();
     try { if (window.__stLiveLine && window.__stLiveLine.tickle) window.__stLiveLine.tickle(); } catch (e) {}
     return true;
   }
-  // every second: the clock, the countdowns, the status; a new trading day starts itself; the EA's chart arriving brings its
+  // every second: the clock, the countdowns, the status; a new trading day starts itself; an EA's chart arriving brings its
   // minutes; the open trades' lines follow their levels
   function lvClock(){
     if (!S || !S.live) { clearLiveT(); return; }
     var n = nowS();
     if (n >= S.f.close + 30 && liveDay() !== S.day) { goLive(S.sym.raw); return; }
     S.now = Math.max(S.now, Math.min(n, S.f.close));
-    var ea = eaFor(S.sym);
-    if (ea && (!LV.ea || LV.ea.raw !== ea.raw || LV.ea.v !== ea.v)) { LV.ea = ea; if (vNum(ea.v) >= 9.00) { if (S.baseTf !== 1) { goLive(S.sym.raw); return; } LV.histAt = 0; lvHist(); } }
-    else if (!ea) LV.ea = null;
-    if (LV.ea && vNum(LV.ea.v) >= 9.00 && !LV.gotHist) lvHist();
+    var again = false;
+    feeds().forEach(function(F){ var ea = eaFor(F.sym);
+      if (ea && (!F.ea || F.ea.raw !== ea.raw || F.ea.v !== ea.v)) { F.ea = ea; if (vNum(ea.v) >= 9.00) { if (F.baseTf !== 1) again = true; else { F.histAt = 0; lvHist(F); } } }
+      else if (!ea) F.ea = null;
+      if (F.ea && vNum(F.ea.v) >= 9.00 && !F.gotHist) lvHist(F); });
+    if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
     var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }
-    lvBadges(); liveBar(); liveHeader();
+    lvBadges(); liveBar(); liveHeader(); lcFit(); lcAcctSync();
     if (Date.now() - (LV.paAt || 0) > 60000) lvAlertsPull();
   }
-  // the day's minutes from the EA (and some of the day before, for a 1-minute chart): asked once, again after a gap
-  function lvHist(gap){ var ln = window.__stLiveLine, ea = LV.ea; if (!S || !S.live || !ea || vNum(ea.v) < 9.00 || !ln || !ln.hist) return;
-    if (ln.joined && !ln.joined()) return; if (Date.now() - LV.histAt < 20000) return; LV.histAt = Date.now();
+  // a symbol's minutes from its EA (and some of the day before, for a 1-minute chart): asked once, again after a gap
+  function lvHist(F, gap){ var ln = window.__stLiveLine, ea = F && F.ea; if (!S || !S.live || !ea || vNum(ea.v) < 9.00 || !ln || !ln.hist) return;
+    if (ln.joined && !ln.joined()) return; if (Date.now() - F.histAt < 20000) return; F.histAt = Date.now();
     var n = gap ? gap : Math.ceil((nowS() - (S.f.open - 6 * 3600)) / 60) + 2; ln.hist(ea.raw, Math.max(10, Math.min(1500, n))); }
   function parseBar(sv){ var a = String(sv || '').split(','); if (a.length < 5) return null; var t = +a[0]; if (!(t > 0)) return null;
     return { time: t, open: +a[1], high: +a[2], low: +a[3], close: +a[4], vol: (a.length > 5 && a[5] !== '') ? +a[5] : null }; }
   function upsertBar(arr, b){ var lo = 0, hi = arr.length; while (lo < hi) { var m = (lo + hi) >> 1; if (arr[m].time < b.time) lo = m + 1; else hi = m; }
     if (lo < arr.length && arr[lo].time === b.time) arr[lo] = b; else arr.splice(lo, 0, b); }
-  function lvBars(p){ if (!S || !S.live || !LV.ea || !p || p.s !== LV.ea.raw || +p.tf !== 1 || S.baseTf !== 1) return;
-    String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (!b) return; if (b.time >= S.f.open) { if (b.time < S.f.close) upsertBar(S.base, b); } else upsertBar(LV.pre, b); });
-    LV.parts[p.i] = 1; LV.gotHist = true;
-    if (Object.keys(LV.parts).length >= (+p.of || 1)) { LV.parts = {}; lvMergePre(); }
+  function lvBars(p){ var F = p && feedFor(p.s); if (!S || !S.live || !F || +p.tf !== 1 || F.baseTf !== 1) return;
+    String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (!b) return; if (b.time >= S.f.open) { if (b.time < S.f.close) upsertBar(F.base, b); } else upsertBar(F.pre, b); });
+    F.parts[p.i] = 1; F.gotHist = true;
+    if (Object.keys(F.parts).length >= (+p.of || 1)) { F.parts = {}; lvMergePre(F); }
     lvSoon(); }
-  // the EA's minutes from before the day go under a 1-minute chart's own history
-  function lvMergePre(){ if (!S || !S.live || !LV.pre.length) return; var e = staticCache[S.sym.raw + '|' + S.day + '|1']; if (!e) return;
-    var m = {}; e.rows.forEach(function(b){ m[b.time] = b; }); LV.pre.forEach(function(b){ if (b.time + 60 <= S.f.open) m[b.time] = b; });
+  // an EA's minutes from before the day go under its symbol's 1-minute chart history
+  function lvMergePre(F){ if (!S || !S.live) return; (F ? [F] : feeds()).forEach(function(X){ if (!X.pre || !X.pre.length) return; var e = staticCache[X.sym.raw + '|' + S.day + '|1']; if (!e) return;
+    var m = {}; e.rows.forEach(function(b){ m[b.time] = b; }); X.pre.forEach(function(b){ if (b.time + 60 <= S.f.open) m[b.time] = b; });
     e.rows = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; }); e.agg = aggStatic(e.rows, 1);
-    panes.forEach(function(q){ if (q.tf === 1 && q.hist === e) q.static = e.agg; }); }
-  // a price from the EA: the forming minute and the one before it into the day; a missing stretch is asked for again
-  function lvPx(p){ if (!S || !S.live || !LV.ea || !p || p.s !== LV.ea.raw) return;
-    var b = +p.b, a = +p.a; if (!(b > 0)) return; var prev = LV.px ? LV.px.b : null;
-    LV.px = { b: b, a: a, sp: (a >= b) ? a - b : null, t: +p.t || nowS() }; LV.at = Date.now(); if (isFinite(+p.dg)) LV.dg = +p.dg;
-    if (S.baseTf === 1) { var pb = parseBar(p.pb), fb = parseBar(p.bar), last = S.base.length ? S.base[S.base.length - 1].time : 0;
-      if (pb && pb.time >= S.f.open && pb.time < S.f.close) { if (last && pb.time - last > 60) lvHist(Math.ceil((pb.time - last) / 60) + 3); upsertBar(S.base, pb); }
-      if (fb && fb.time >= S.f.open && fb.time < S.f.close) upsertBar(S.base, fb); }
+    panes.forEach(function(q){ if (q.tf === 1 && q.hist === e) q.static = e.agg; }); }); }
+  // a price from an EA: its symbol's forming minute and the one before it into the day; a missing stretch is asked for again
+  function lvPx(p){ var F = p && feedFor(p.s); if (!S || !S.live || !F) return;
+    var b = +p.b, a = +p.a; if (!(b > 0)) return; var prev = F.px ? F.px.b : null;
+    F.px = { b: b, a: a, sp: (a >= b) ? a - b : null, t: +p.t || nowS() }; F.at = Date.now(); if (isFinite(+p.dg)) F.dg = +p.dg;
+    if (F.baseTf === 1) { var pb = parseBar(p.pb), fb = parseBar(p.bar), last = F.base.length ? F.base[F.base.length - 1].time : 0;
+      if (pb && pb.time >= S.f.open && pb.time < S.f.close) { if (last && pb.time - last > 60) lvHist(F, Math.ceil((pb.time - last) / 60) + 3); upsertBar(F.base, pb); }
+      if (fb && fb.time >= S.f.open && fb.time < S.f.close) upsertBar(F.base, fb); }
     S.now = Math.max(S.now, Math.min(nowS(), S.f.close));
-    if (prev != null) lvAlertScan(prev, b);
+    if (prev != null) lvAlertScan(F, prev, b);
     lvSoon(); }
   function lvSoon(){ if (LV.rq) return; LV.rq = setTimeout(function(){ LV.rq = 0; if (S && S.live) render(); }, 100); }
   function liveRender(force){
     panes.forEach(function(p){ paintPane(p, force); });
     if (force) setTimeout(function(){ if (S) panes.forEach(function(p){ viewPane(p, true); }); }, 80);
     liveHeader(); liveBar(); lvBadges(); panes.forEach(function(p){ try { drawOv(p); } catch (e) {} }); alertTick(); }
-  // the member's open trades on this symbol, from the live feed (the Session Live cards)
-  function lvIdeas(){ var out = []; try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
-      L0.forEach(function(idea){ var r = idea && (idea.main || idea); if (!r || !r.symbol || canon(r.symbol) !== S.sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
+  // the member's open trades on a symbol, from the live feed (the Session Live cards)
+  function lvIdeas(sym){ sym = sym || (S && S.sym); var out = []; if (!sym) return out; try { var L0 = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
+      L0.forEach(function(idea){ var r = idea && (idea.main || idea); if (!r || !r.symbol || canon(r.symbol) !== sym.key) return; var tk = r.tick || {}; if (!(isFinite(tk.op) && isFinite(tk.rpx))) return;
         out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); }); } catch (e) {} return out; }
   function lvLevels(x){ try { return (window.__stLiveBox && window.__stLiveBox.levels) ? window.__stLiveBox.levels(x.r) : []; } catch (e) { return []; } }
-  function lvSig(){ return JSON.stringify(lvIdeas().map(lvLevels)); }
-  function liveLines(p){ var hd = CFG.marks === false; lvIdeas().forEach(function(x){ lvLevels(x).forEach(function(o){ addLine(p, o.price, o.color, o.lineStyle, o.title, null, hd); }); }); }
-  function liveZones(){ if (CFG.pos === false) return []; return lvIdeas().map(function(x){ var sl = null, tp = null; lvLevels(x).forEach(function(o){ if (/^SL/.test(o.title)) sl = o.price; else if (o.title === 'TP') tp = o.price; });
+  function lvSig(){ return JSON.stringify(feeds().map(function(F){ return lvIdeas(F.sym).map(lvLevels); })); }
+  function liveLines(p){ var hd = CFG.marks === false; lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ addLine(p, o.price, o.color, o.lineStyle, o.title, null, hd); }); }); }
+  function liveZones(p){ if (CFG.pos === false) return []; return lvIdeas(PS(p).sym).map(function(x){ var sl = null, tp = null; lvLevels(x).forEach(function(o){ if (/^SL/.test(o.title)) sl = o.price; else if (o.title === 'TP') tp = o.price; });
       return { e: x.tk.op, sl: sl, tp: tp, a: x.at, b: S.now, r: null }; }).filter(function(o){ return o.sl != null && o.a; }); }
   function liveHeader(){ if (!S || !S.live) return; relang();
     $('stpr-symt').textContent = S.sym.name;
@@ -88530,7 +88662,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     $('stpr-laylbl').textContent = T('Charts', 'Gráficos'); paintLay(); var rp = $('stpr-lvrpt'); if (rp) rp.textContent = T('Replay', 'Repetición'); }
   // the bar under the charts: how live it is (and why not), and the clock - TradingView's, bottom right (Nestor, 17 Oct 2026:
   // "perhaps to have the time like tradingview does have it displayed at the bottom right corner")
-  function lvStatus(){ var ln = window.__stLiveLine, n = nowS(), ea = LV.ea;
+  function lvStatus(){ var ln = window.__stLiveLine, n = nowS(), ea = S.ea;
     if (n >= S.f.close) return { on: false, t: T("Market closed · the last session's candles", 'Mercado cerrado · las velas de la última sesión') };
     if (ln && ln.braked && ln.braked()) return { on: false, t: T("Today's live updates are used up · live again at midnight UTC", 'Las actualizaciones en vivo de hoy se han agotado · de nuevo en vivo a medianoche UTC') };
     if (ea && vNum(ea.v) >= 9.00 && lvFresh()) { var ms = lvMs(); return { on: true, t: ms <= 500 ? T('Live · 2 updates a second · your session', 'En vivo · 2 por segundo · tu sesión') : (ms <= 2000 ? T('Live · every 2 seconds · a trade is open', 'En vivo · cada 2 segundos · hay una operación abierta') : T('Live · every 5 seconds · outside your session', 'En vivo · cada 5 segundos · fuera de tu sesión')) }; }
@@ -88541,43 +88673,53 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (on.length) return { on: false, t: T('Not live: the EA runs on ' + on.join(', ') + ' in MT5 · open it on a ' + S.sym.name + ' chart to see this one live', 'No en vivo: el EA está en ' + on.join(', ') + ' en MT5 · ábrelo en un gráfico de ' + S.sym.name + ' para verlo en vivo') };
     var v = eaNewest(); if (v && vNum(v) < 9.00) return { on: false, t: T('Stored candles · live needs EA 9.00 or newer in MT5 (yours is ' + v + ')', 'Velas guardadas · en vivo necesita el EA 9.00 o posterior en MT5 (el tuyo es ' + v + ')') };
     return { on: false, t: T('Stored candles · run the EA (9.00 or newer) in MT5 to see them live', 'Velas guardadas · abre el EA (9.00 o posterior) en MT5 para verlas en vivo') }; }
+  // the other symbols on screen with no live EA chart in MT5, said after chart 1's state
+  function sideOff(){ if (!S || !S.side || nowS() >= S.f.close) return ''; var a = Object.keys(S.side).map(function(k){ return S.side[k]; }).filter(function(F){ return !(F.ea && vNum(F.ea.v) >= 9.00 && lvFresh(F)); }).map(function(F){ return F.sym.name; });
+    if (!a.length) return ''; var one = a.length === 1;
+    return T(a.join(', ') + ': stored candles (open the EA on ' + (one ? 'a ' + a[0] + ' chart' : 'those charts') + ' in MT5 to see ' + (one ? 'it' : 'them') + ' live)', a.join(', ') + ': velas guardadas (abre el EA en ' + (one ? 'un gráfico de ' + a[0] : 'esos gráficos') + ' en MT5 para verlo en vivo)'); }
   function liveBar(){ var st = $('stpr-lvst'), ck = $('stpr-lvclk'); if (!st || !ck || !S) return;
     var d = new Date(Date.now() + (LV.toff || 0)), tx = p2(d.getHours()) + ':' + p2(d.getMinutes()) + ':' + p2(d.getSeconds()) + ' ' + tzl(nowS()); if (ck.textContent !== tx) ck.textContent = tx;
-    var s0 = lvStatus(), sp = st.querySelector('span'); st.classList.toggle('on', s0.on); if (sp.textContent !== s0.t) { sp.textContent = s0.t; st.title = s0.t; } }
-  // each chart: the time left on its candle and the spread, bottom right of the plot (the Session Live chart's badge)
+    var s0 = lvStatus(), so = sideOff(), sp = st.querySelector('span'); if (so) s0 = { on: s0.on, t: s0.t + ' · ' + so }; st.classList.toggle('on', s0.on); if (sp.textContent !== s0.t) { sp.textContent = s0.t; st.title = s0.t; } }
+  // each chart: the time left on its candle and its symbol's spread, bottom right of the plot (the Session Live chart's badge)
   function cdTxt(left){ left = Math.max(0, Math.floor(left)); var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), x = left % 60; return (h ? p2(h) + ':' : '') + p2(m) + ':' + p2(x); }
-  function lvBadges(){ if (!S || !S.live) return; var n = nowS(), dg = LV.dg || S.digits, fx = (dg === 5 || dg === 3), sp = '';
-    if (LV.px && LV.px.sp != null && lvFresh()) sp = fx ? (Math.round(LV.px.sp / Math.pow(10, 1 - dg) * 10) / 10).toFixed(1) + 'p' : (Math.round(LV.px.sp / Math.pow(10, -dg) * 10) / 10).toFixed(1) + ' pts';
-    panes.forEach(function(p){ var b = p.cdb; if (!b || !b.isConnected) { b = p.cdb = p.el.ownerDocument.createElement('div'); b.className = 'slx-info stpr-cdb'; p.el.appendChild(b); }
+  function lvBadges(){ if (!S || !S.live) return; var n = nowS();
+    panes.forEach(function(p){ var F = PS(p), dg = F.dg || F.digits, fx = (dg === 5 || dg === 3), sp = '';
+      if (F.px && F.px.sp != null && lvFresh(F)) sp = fx ? (Math.round(F.px.sp / Math.pow(10, 1 - dg) * 10) / 10).toFixed(1) + 'p' : (Math.round(F.px.sp / Math.pow(10, -dg) * 10) / 10).toFixed(1) + ' pts';
+      var b = p.cdb; if (!b || !b.isConnected) { b = p.cdb = p.el.ownerDocument.createElement('div'); b.className = 'slx-info stpr-cdb'; p.el.appendChild(b); }
       var left = (p.tf >= 10080 || n >= S.f.close) ? null : keyOf(p.tf, n) + p.tf * 60 - n;
       var tx = (left != null ? T('Candle', 'Vela') + ' ' + cdTxt(left) : '') + (sp ? (left != null ? ' | ' : '') + T('Spread', 'Margen') + ' ' + sp : '');
       if (!tx) { b.hidden = true; return; } b.hidden = false; if (b.textContent !== tx) b.textContent = tx;
       var psw = 56, th = 28; try { psw = p.chart.priceScale('right').width() || 56; th = p.chart.timeScale().height() || 28; } catch (e) {}
       var rr = (psw + 8) + 'px', bb = (th + 8) + 'px'; if (b.style.right !== rr) b.style.right = rr; if (b.style.bottom !== bb) b.style.bottom = bb; }); }
   // ---- alerts on a live chart: a price_alerts row each (the EA watches them, MT5 rings, the phone hears); reached here too ----
-  function lvAlertScan(a, b){ var lo = Math.min(a, b), hi = Math.max(a, b);
-    DW.list.forEach(function(d){ if (d && d.type === 'hline' && d.alert && d.live && !d.hitAt && d.price >= lo && d.price <= hi) { d.hitAt = nowS(); ALERT.hits.push(d); } }); }
+  function lvAlertScan(F, a, b){ var lo = Math.min(a, b), hi = Math.max(a, b), raw = F.sym.raw, got = false;
+    dwListOf(raw).forEach(function(d){ if (d && d.type === 'hline' && d.alert && d.live && !d.hitAt && d.price >= lo && d.price <= hi) { d.hitAt = nowS(); ALERT.hits.push(d); got = true; } });
+    if (got && raw !== DW.raw) dwSaveRaw(raw); }
   function lvAlertSoon(){ clearTimeout(LV.paT); LV.paT = setTimeout(lvAlertSync, 1200); }
-  async function lvAlertSync(){ var u = uidNow(), sb = sbc(); if (!S || !S.live || !u || !sb) return; var ch = false, now = {};
-    for (var i = 0; i < DW.list.length; i++) { var d = DW.list[i]; if (!d || d.type !== 'hline' || !d.live) continue;
-      var on = !!d.alert;
-      try {
-        if (on && !d.paId) { var r = await sb.from('price_alerts').insert({ sym: S.sym.raw, price: d.price, dir: 0, note: d.text || null, src: 'line' }).select('id').single();
-          if (r && r.data && r.data.id) { d.paId = r.data.id; d.paPx = d.price; d.paOn = true; d.paFired = false; ch = true; } }
-        else if (on && d.paId && (d.paPx !== d.price || !d.paOn || (d.paFired && !d.hitAt))) { await sb.from('price_alerts').update({ price: d.price, note: d.text || null, active: true, fired_at: null, fired_px: null }).eq('id', d.paId); d.paPx = d.price; d.paOn = true; d.paFired = false; ch = true; }
-        else if (!on && d.paId && d.paOn) { await sb.from('price_alerts').update({ active: false }).eq('id', d.paId); d.paOn = false; ch = true; }
-      } catch (e) {}
-      if (d.paId) { now[d.paId] = 1; LV.paSeen[d.paId] = 1; } }
-    // a line deleted here: its alert goes in MT5 too (only rows this browser has had on a line)
-    for (var id in LV.paSeen) if (!now[id]) { try { await sb.from('price_alerts').update({ active: false }).eq('id', id); } catch (e) {} delete LV.paSeen[id]; }
-    if (ch) { try { localStorage.setItem(dwKey(), JSON.stringify(DW.list)); } catch (e) {} } }
+  async function lvAlertSync(){ var u = uidNow(), sb = sbc(); if (!S || !S.live || !u || !sb) return; var FS = feeds();
+    for (var fi = 0; fi < FS.length; fi++) { var raw = FS[fi].sym.raw, L = dwListOf(raw), ch = false, now = {}, seen = LV.paSeen[raw] || (LV.paSeen[raw] = {});
+      for (var i = 0; i < L.length; i++) { var d = L[i]; if (!d || d.type !== 'hline' || !d.live) continue;
+        var on = !!d.alert;
+        try {
+          if (on && !d.paId) { var r = await sb.from('price_alerts').insert({ sym: raw, price: d.price, dir: 0, note: d.text || null, src: 'line' }).select('id').single();
+            if (r && r.data && r.data.id) { d.paId = r.data.id; d.paPx = d.price; d.paOn = true; d.paFired = false; ch = true; } }
+          else if (on && d.paId && (d.paPx !== d.price || !d.paOn || (d.paFired && !d.hitAt))) { await sb.from('price_alerts').update({ price: d.price, note: d.text || null, active: true, fired_at: null, fired_px: null }).eq('id', d.paId); d.paPx = d.price; d.paOn = true; d.paFired = false; ch = true; }
+          else if (!on && d.paId && d.paOn) { await sb.from('price_alerts').update({ active: false }).eq('id', d.paId); d.paOn = false; ch = true; }
+        } catch (e) {}
+        if (d.paId) { now[d.paId] = 1; seen[d.paId] = 1; } }
+      // a line deleted here: its alert goes in MT5 too (only rows this browser has had on a line of this symbol)
+      for (var id in seen) if (!now[id]) { try { await sb.from('price_alerts').update({ active: false }).eq('id', id); } catch (e) {} delete seen[id]; }
+      if (ch) { try { localStorage.setItem('st_practice_draw2:' + raw, JSON.stringify(L)); } catch (e) {} } } }
   // reached in MT5 while this chart was not watching: marked here, with the chime
   async function lvAlertsPull(){ LV.paAt = Date.now(); var u = uidNow(), sb = sbc(); if (!S || !S.live || !u || !sb) return;
-    try { var r = await sb.from('price_alerts').select('id,price,active,fired_at,fired_px').eq('sym', S.sym.key).eq('active', true); if (!r || r.error || !S || !S.live) return;
-      var by = {}, ch = false; (r.data || []).forEach(function(x){ by[x.id] = x; });
-      DW.list.forEach(function(d){ if (!d || !d.paId) return; LV.paSeen[d.paId] = 1; var x = by[d.paId];
-        if (x && x.fired_at && !d.paFired) { d.paFired = true; ch = true; if (!d.hitAt) { d.hitAt = Math.floor(Date.parse(x.fired_at) / 1000) || nowS(); ALERT.hits.push(d); } } });
-      if (ch) { persist(); hlAll(); render(); } } catch (e) {} }
+    var FS = feeds(), ks = []; FS.forEach(function(F){ [F.sym.key, F.sym.raw].forEach(function(k){ if (ks.indexOf(k) < 0) ks.push(k); }); });
+    try { var r = await sb.from('price_alerts').select('id,price,active,fired_at,fired_px').in('sym', ks).eq('active', true); if (!r || r.error || !S || !S.live) return;
+      var by = {}, any = false; (r.data || []).forEach(function(x){ by[x.id] = x; });
+      feeds().forEach(function(F){ var raw = F.sym.raw, ch = false, seen = LV.paSeen[raw] || (LV.paSeen[raw] = {});
+        dwListOf(raw).forEach(function(d){ if (!d || !d.paId) return; seen[d.paId] = 1; var x = by[d.paId];
+          if (x && x.fired_at && !d.paFired) { d.paFired = true; ch = true; if (!d.hitAt) { d.hitAt = Math.floor(Date.parse(x.fired_at) / 1000) || nowS(); ALERT.hits.push(d); } } });
+        if (ch) { any = true; if (raw === DW.raw) persist(); else dwSaveRaw(raw); } });
+      if (any) { hlAll(); render(); } } catch (e) {} }
   // ---- in the tab: the window moves in (and back out), Replay and Live, the bigger view ----
   function lvReplay(){ if (!S || !S.live) return; var raw = S.sym.raw; clearLiveT(); S = null;
     var win = $('stpr-win'); win.classList.remove('lc'); win.classList.add('lcp');
@@ -88590,17 +88732,39 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var mb = $('stpr-max'); if (mb) mb.classList.toggle('on', !!LV.max);
     var put = function(){ panes.forEach(function(p, i){ if (keep[i]) setRange(p, { from: keep[i].from, to: keep[i].to }); }); dirty(); };
     setTimeout(put, 90); setTimeout(put, 300); }
+  // the account chart 1's EA is on: its login from the EA's "hi" (9.00), else from the settings report of the EA on that symbol,
+  // else from an open trade on it; then the app's link from a login to an account (mt5LoginMap)
+  function lcAcct(){ try { if (!S || !S.live || typeof data === 'undefined' || !data) return null; var map = data.mt5LoginMap || {}, lg = null;
+      if (S.ea && S.ea.lg && map[String(S.ea.lg)]) lg = String(S.ea.lg);
+      if (!lg && window.__stEA && window.__stEA.rows) { var rows = window.__stEA.rows() || {}, best = null;
+        Object.keys(rows).forEach(function(k){ var r = rows[k]; if (!r || r.login == null || canon(r.symbol) !== S.sym.key || !map[String(r.login)]) return; if (!best || (Date.parse(r.updated_at) || 0) > (Date.parse(best.updated_at) || 0)) best = r; });
+        if (best) lg = String(best.login); }
+      if (!lg) lvIdeas(S.sym).forEach(function(x){ if (!lg && x.r && x.r.login != null && map[String(x.r.login)]) lg = String(x.r.login); });
+      var id = lg && map[lg], a = id ? (data.accounts || []).filter(function(x){ return x && x.id === id; })[0] : null;
+      return a ? { id: a.id, name: a.name || ('MT5 ' + lg), login: lg } : null; } catch (e) { return null; } }
+  function lcAcctSync(){ if (!S || !S.live) return; var a = lcAcct(), k = a ? a.id + '|' + a.name : '';
+    if (k !== LV.acctK) { LV.acctK = k; window.__stLCAcct = a; try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} } }
   function lcLog(on){ var wrap = document.querySelector('.alltrades-wrap'), host = $('lc-log'); if (!wrap || !host) return;
     if (on) { if (wrap.parentNode !== host) { LV.logBack = { p: wrap.parentNode, n: wrap.nextSibling }; host.appendChild(wrap); } try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} }
-    else if (LV.logBack && wrap.parentNode === host) { try { LV.logBack.p.insertBefore(wrap, LV.logBack.n); } catch (e) { LV.logBack.p.appendChild(wrap); } LV.logBack = null; } }
+    else if (LV.logBack && wrap.parentNode === host) { try { LV.logBack.p.insertBefore(wrap, LV.logBack.n); } catch (e) { LV.logBack.p.appendChild(wrap); } LV.logBack = null; try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} } }
+  // the charts' height: the whole window (its bars and the clock under the charts) fits under the tab bar, which stays on top
+  function lcUnder(){ var bar = document.querySelector('.tab[data-page="livecharts"]'), tb = bar && bar.closest('.tabs'); if (!tb) return 0; var cs = getComputedStyle(tb);
+    return (cs.position === 'sticky' ? (parseFloat(cs.top) || 0) : Math.max(0, tb.getBoundingClientRect().top)) + tb.offsetHeight; }
+  function lcFit(){ var cw = $('stpr-cw'), win = $('stpr-win'); if (!cw || !win) return;
+    if (!LV.inl || phone()) { if (cw.style.height) cw.style.height = ''; return; }
+    var under = lcUnder(), chrome = win.offsetHeight - cw.offsetHeight;
+    var h = Math.round(Math.max(360, Math.min(1100, window.innerHeight - under - chrome - 22))); if (cw.style.height !== h + 'px') cw.style.height = h + 'px'; }
+  // opening the tab: the page scrolls so the window sits under the tab bar, all of it on screen
+  function lcSnap(){ var win = $('stpr-win'); if (!LV.inl || phone() || !win) return; lcFit();
+    var r = win.getBoundingClientRect(), under = lcUnder(); if (r.top < under - 1 || r.bottom > window.innerHeight + 1) { try { window.scrollTo(0, Math.max(0, window.scrollY + r.top - under - 10)); } catch (e) {} } }
   function lcShow(){ var host = $('lc-host'); if (!host) return; LV.host = host;
     if ($('stpr-bg').classList.contains('show') && !LV.max) return;   // Practice Replay is open over the app
     var win = $('stpr-win'); if (!LV.max) { if (win.parentNode !== host) host.appendChild(win); LV.inl = true; }
-    lcLog(true);
+    lcLog(true); LV.snap = true; if (S && S.live) setTimeout(function(){ LV.snap = false; lcSnap(); }, 60);
     if (S && S.live) { render(true); return; }
     if (S && !S.live) return;   // a replay started here stays
     var w = LV.want; LV.want = null; goLive(w || CFG.sym); }
-  function lcHide(){ lcLog(false); if (!LV.inl && !LV.max) return; if (LV.max) inlineMax(false);
+  function lcHide(){ lcLog(false); if (!LV.inl && !LV.max) return; if (LV.max) inlineMax(false); var cw0 = $('stpr-cw'); if (cw0) cw0.style.height = '';
     if (S) { if (S.live) { clearLiveT(); popShutAll(); closeMenu(); dlgClose(false); stopLoop(); DW.cx = null; DW.pending = null; DW.penning = null; DW.drag = null; DW.marq = null; DW.pin = null;
         panes.forEach(function(p){ try { p.chart.remove(); } catch (e) {} }); panes = []; S = null; }
       else close(); }
@@ -88615,9 +88779,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (tb && tb.classList.contains('active') && S && S.live) { var w = LV.want; LV.want = null; if (w && w !== S.sym.raw) goLive(w); else if (o.tf) setTf(0, +o.tf); return; }
       if (tb) tb.click(); },
     visible: function(){ return !!(S && S.live && (LV.inl || LV.max) && !document.hidden); },
-    sym: function(){ return (S && S.live && LV.ea) ? LV.ea.raw : ''; },
+    // the charts' symbols as their EAs name them, chart 1's first ("watch" carries them; each EA streams its own)
+    sym: function(){ if (!S || !S.live) return ''; var a = []; feeds().forEach(function(F){ if (F.ea && a.indexOf(F.ea.raw) < 0) a.push(F.ea.raw); }); return a.join(','); },
     px: lvPx, bars: lvBars,
-    state: function(){ return { live: !!(S && S.live), inl: LV.inl, max: LV.max, sym: S ? S.sym.raw : null, baseTf: S ? S.baseTf : null, base: S ? S.base.length : 0, ea: LV.ea, fresh: lvFresh(), at: LV.at, px: LV.px, gotHist: LV.gotHist, status: (S && S.live) ? lvStatus().t : '', panes: panes.length }; } };
+    state: function(){ return { live: !!(S && S.live), inl: LV.inl, max: LV.max, sym: S ? S.sym.raw : null, baseTf: S ? S.baseTf : null, base: S ? S.base.length : 0, ea: S ? S.ea || null : null, fresh: lvFresh(), at: S ? S.at || 0 : 0, px: S ? S.px || null : null, gotHist: !!(S && S.gotHist),
+      sides: (S && S.side) ? Object.keys(S.side).map(function(k){ var F = S.side[k]; return { sym: k, ea: F.ea || null, px: F.px || null, base: F.base.length, baseTf: F.baseTf, fresh: lvFresh(F), gotHist: !!F.gotHist, err: F.err || null }; }) : [], status: (S && S.live) ? lvStatus().t : '', panes: panes.length }; } };
 
   var wired = false;
   function wire(){
@@ -88638,9 +88804,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var tfb = t.closest && t.closest('.stpr-tfpill'); if (tfb) { var w0 = tfb.parentNode, was = w0.classList.contains('open');
         [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ if (x !== w0) x.classList.remove('open'); }); }); w0.classList.toggle('open', !was); if (!was && $('stpr-tb2').classList.contains('drawing')) drawerOpen(false); return; }   // pressed again: closed (in a chart window too); opened, the drawing tools close (Nestor, 17 Oct 2026: "if objects are open and i open TFs close objects inmediately and viceversa")
       var tfp = t.closest && t.closest('[data-tf]'); if (tfp) { var wi = +tfp.getAttribute('data-i'), nt = +tfp.getAttribute('data-tf'); if (panes[wi] && panes[wi].tf === nt) { tfp.closest('.stpr-ptfw').classList.remove('open'); return; } setTf(wi, nt); return; }
-      var sy = t.closest && t.closest('[data-sym]'); if (sy) { var raw = sy.getAttribute('data-sym'); closeMenu(); if (S && S.live) { goLive(raw); return; } if (S && S.pos) { flash(T('Close the trade before switching symbol.', 'Cierra la operación antes de cambiar de símbolo.')); return; } go(raw, S ? S.day : null).then(function(ok){ if (!ok) randomDay(raw); }); return; }
+      var psb = t.closest && t.closest('[data-psym]'); if (psb) { var psi = +psb.getAttribute('data-psym'); if (psi > 0) symMenu(psb, psi); else symMenu(psb); return; }
+      var sy = t.closest && t.closest('[data-sym]'); if (sy) { var raw = sy.getAttribute('data-sym'), syi = +sy.getAttribute('data-si') || 0; closeMenu(); if (syi > 0) { setPaneSym(syi, raw); return; } if (S && S.live) { goLive(raw); return; } if (S && S.pos) { flash(T('Close the trade before switching symbol.', 'Cierra la operación antes de cambiar de símbolo.')); return; } go(raw, S ? S.day : null).then(function(ok){ if (!ok) randomDay(raw); }); return; }
       if (t.closest && t.closest('#stpr-sym')) { symMenu($('stpr-sym')); return; }
-      var ly = t.closest && t.closest('[data-lay]'); if (ly) { setLayout(+ly.getAttribute('data-lay')); return; }
+      if (t.closest && t.closest('#stpr-laybtn')) { layMenu(t.closest('#stpr-laybtn')); return; }
+      var ly = t.closest && t.closest('[data-lay]'); if (ly) { setLayout(+ly.getAttribute('data-lay'), ly.getAttribute('data-lv')); return; }
       if (t.closest && t.closest('#stpr-logbtn, #stpr-score') && !(S && S.live)) { logOpen(!LOG.open); return; }
       if (t.closest && t.closest('[data-lg="back"]')) { logOpen(false); return; }
       var lga = t.closest && t.closest('[data-lg]'); if (lga) { var a2 = lga.getAttribute('data-lg');
@@ -88719,7 +88887,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (!h) { var dm0 = paneDims(p), pr0 = xy.x < dm0.pw && xy.y < dm0.ph ? p.series.coordinateToPrice(xy.y) : null; if (pr0 == null) { hideCtx(); return; } DW.sel = null; DW.multi = null; updDel(); DW.at = p; showCtx(p, xy.x, xy.y, pr0); return; }
       if (!(DW.multi && DW.multi.indexOf(h.i) >= 0)) { DW.sel = h.i; DW.multi = null; } DW.at = p; updDel(); showCtx(p, xy.x, xy.y); }, true);
     window.addEventListener('keyup', WH.kup = function(e){ if (e.key === 'Control' && DW.snap) { DW.snap = null; dirty(); } });
-    window.addEventListener('resize', function(){ if (LOG.open) logTop(); stripThumb(); placeMM(); });
+    window.addEventListener('resize', function(){ if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); });
     // Execution mode ends when the mouse leaves the window - off the app, onto another monitor - or the app loses the focus,
     // as the EA disarms it when the cursor leaves the chart (Nestor, 17 Oct 2026: "when the mouse goes off the screen to a
     // different monitor or outside the app the execution mode should turn off"). The panel counts as the chart, as on MT5.
@@ -88780,6 +88948,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   } catch (e) {}
   window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, stats: stats, log: logAll, pull: pull, _satReady: satReady,
     _pop: popChart, _unpop: unpop, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
+    _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests
     logShown: logShown, symName: function(raw){ return nameOf(canon(raw)); },

@@ -91,25 +91,39 @@
     ok('Minimalist off: its parts leave the menu', C.mini === false && !document.querySelector('#stpr-menu [data-mini]'));
     lb.click(); await W(30);
 
-    // ---- layouts: the same button again changes the arrangement ----
-    var grid = document.getElementById('stpr-grid'), R = function (i) { return pane(i).el.getBoundingClientRect(); }, lay = function (nn) { return document.querySelector('#stpr-lay [data-lay="' + nn + '"]'); };
-    ok('2 charts side by side to begin with', /\bvh\b/.test(grid.className) && R(1).left > R(0).right - 3 && Math.abs(R(1).top - R(0).top) < 2 && /side by side/.test(lay(2).title), [grid.className, lay(2).title]);
-    lay(2).click(); await W(150);
-    ok('pressed again: one above the other, same two charts, the button shows it', /\bvv\b/.test(grid.className) && P._panes().length === 2 && R(1).top > R(0).bottom - 3 && Math.abs(R(1).left - R(0).left) < 2 && lay(2).getAttribute('data-lv') === 'v' && /one above the other/.test(lay(2).title) && C.lv[2] === 'v', [grid.className, lay(2).title]);
-    lay(2).click(); await W(150);
-    ok('and again: side by side', /\bvh\b/.test(grid.className) && C.lv[2] === 'h');
-    lay(3).click(); for (k = 0; k < 60 && !(P._panes().length === 3 && P._panes()[2].n); k++) await W(100); await W(100);
-    var big = function () { var a = R(0); return a.width * a.height; };
+    // ---- layouts: TradingView's picker - one Charts button, a row for each count 1-8 with its arrangements ----
+    var grid = document.getElementById('stpr-grid'), R = function (i) { return pane(i).el.getBoundingClientRect(); };
+    var lbtn = function () { return document.getElementById('stpr-laybtn'); };
+    var pick = async function (nn, v) { lbtn().click(); await W(60); var b = document.querySelector('#stpr-menu.show [data-lay="' + nn + '"][data-lv="' + v + '"]'); if (!b) return false; b.click(); return true; };
+    var waitN = async function (nn) { for (var q = 0; q < 80 && !(P._panes().length === nn && P._panes()[nn - 1].n); q++) await W(100); await W(120); };
+    ok('2 charts side by side to begin with; the Charts button says so', /\bvh\b/.test(grid.className) && R(1).left > R(0).right - 3 && Math.abs(R(1).top - R(0).top) < 2 && /side by side/.test(lbtn().title), [grid.className, lbtn().title]);
+    lbtn().click(); await W(80);
+    var rows = document.querySelectorAll('#stpr-menu.show .stpr-lyr'), per = Array.prototype.map.call(rows, function (r) { return r.querySelectorAll('[data-lay]').length; });
+    ok('the picker: rows 1 to 8 with TradingView\'s counts of arrangements (1, 2, 6, 10, 11, 6, 3, 4)', rows.length === 8 && per.join(',') === '1,2,6,10,11,6,3,4', per);
+    ok('the one on screen is marked', !!document.querySelector('#stpr-menu.show [data-lay="2"][data-lv="h"].on'));
+    lbtn().click(); await W(60);
+    await pick(2, 'v'); await W(150);
+    ok('2, one above the other: the same two charts, the button shows it', /\bvv\b/.test(grid.className) && P._panes().length === 2 && R(1).top > R(0).bottom - 3 && Math.abs(R(1).left - R(0).left) < 2 && /one above the other/.test(lbtn().title) && C.lv[2] === 'v' && !document.querySelector('#stpr-menu.show'), [grid.className, lbtn().title]);
+    await pick(2, 'h'); await W(150);
+    ok('and side by side again', /\bvh\b/.test(grid.className) && C.lv[2] === 'h');
+    await pick(3, 'L'); await waitN(3);
     ok('3 charts: the big one on the left', /\bvL\b/.test(grid.className) && R(0).right < R(1).left + 3 && R(0).height > R(1).height * 1.8, grid.className);
-    lay(3).click(); await W(150);
-    ok('pressed again: the big one on the right', /\bvR\b/.test(grid.className) && R(0).left > R(1).right - 3 && R(0).height > R(1).height * 1.8 && /on the right/.test(lay(3).title), [grid.className, lay(3).title]);
-    lay(3).click(); await W(150);
-    ok('again: the big one on top, across the whole width', /\bvT\b/.test(grid.className) && R(0).bottom < R(1).top + 3 && R(0).width > R(1).width * 1.8 && Math.abs(R(1).top - R(2).top) < 2, grid.className);
-    lay(3).click(); await W(150);
-    ok('again: the big one at the bottom', /\bvB\b/.test(grid.className) && R(0).top > R(1).bottom - 3 && R(0).width > R(1).width * 1.8, grid.className);
-    lay(3).click(); await W(150);
-    ok('and round to the left again; the charts were never rebuilt', /\bvL\b/.test(grid.className) && P._panes().length === 3 && pane(2).n > 0);
-    lay(2).click(); for (k = 0; k < 60 && !(P._panes().length === 2 && P._panes()[1].n); k++) await W(100);
+    await pick(3, 'R'); await W(150);
+    ok('the big one on the right', /\bvR\b/.test(grid.className) && R(0).left > R(1).right - 3 && R(0).height > R(1).height * 1.8 && /on the right/.test(lbtn().title), [grid.className, lbtn().title]);
+    await pick(3, 'T'); await W(150);
+    ok('the big one on top, across the whole width', /\bvT\b/.test(grid.className) && R(0).bottom < R(1).top + 3 && R(0).width > R(1).width * 1.8 && Math.abs(R(1).top - R(2).top) < 2, grid.className);
+    await pick(3, 'B'); await W(150);
+    ok('the big one at the bottom', /\bvB\b/.test(grid.className) && R(0).top > R(1).bottom - 3 && R(0).width > R(1).width * 1.8, grid.className);
+    await pick(3, 'h'); await W(150);
+    ok('3 side by side; the charts were never rebuilt', /\bvh\b/.test(grid.className) && P._panes().length === 3 && pane(2).n > 0 && R(1).left > R(0).right - 3 && R(2).left > R(1).right - 3 && Math.abs(R(2).top - R(0).top) < 2, grid.className);
+    await pick(5, 'L4'); await waitN(5);
+    ok('5 charts: the big one on the left, four in a square beside it', P._panes().length === 5 && R(0).height > R(1).height * 1.8 && R(1).right < R(2).left + 3 && R(3).top > R(1).bottom - 3 && R(4).left > R(3).right - 3, [grid.className, P._panes().length]);
+    await pick(8, 'g'); await waitN(8);
+    var tops = [0, 1, 2, 3, 4, 5, 6, 7].map(function (i) { return Math.round(R(i).top); });
+    ok('8 charts: four across, two rows, every chart with candles', P._panes().length === 8 && tops[0] === tops[3] && tops[4] === tops[7] && tops[4] > tops[0] && P._panes().every(function (q) { return q.n > 0; }), [tops, P._panes().map(function (q) { return q.n; })]);
+    await pick(7, 'P'); await W(150);
+    ok('7 charts, 4 above and 3 below', P._panes().length === 7 && Math.abs(R(3).top - R(0).top) < 2 && R(4).top > R(0).bottom - 3 && R(4).width > R(0).width * 1.2, [R(0).width, R(4).width]);
+    await pick(2, 'h'); for (k = 0; k < 60 && !(P._panes().length === 2 && P._panes()[1].n); k++) await W(100);
     ok('back to 2 charts: the arrangement picked for 2 is kept (side by side)', /\bvh\b/.test(grid.className) && P._panes().length === 2);
     P.close(); await W(150);
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
