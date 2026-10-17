@@ -3758,9 +3758,20 @@ bool LiveTickMine()
 // midnight UTC, so no member, however long they watch, can use up the shared allowance.
 // The address is the one already in Tools > Options > Expert Advisors > Allow WebRequest for Session Terminal; the
 // terminal checks sockets against the same list.
+// v9.00 (Nestor, 17 Oct 2026: "build live charts now"): the line stays up while MT5 is connected, trade or not. The app's
+// "watch" carries the speed (ms) and, from Live Charts, the symbol it shows (sym): the EA streams that symbol's price and
+// forming 1-minute candle ("px") as well as its trades' figures ("tick"), answers "who" with "hi" (its version, symbol and
+// digits) and "hist" with the chart's last closed 1-minute candles ("bars", up to LW_HIST_MAX, LW_HIST_PART a message).
 #define LW_HOST       "figozyxoyobixadhqewr.supabase.co"
-#define LW_STREAM_MS  1000       // the fastest the price goes out while a window watches: once a second
-#define LW_DAY_SENDS  10800      // the safety brake: live updates per MT5 account per UTC day (3 hours at one a second)
+// v9.00 (Nestor, 17 Oct 2026, Live Charts): the app says how fast in its "watch" - "2 updates a second in session ... With
+// a trade open: once every 2 seconds. Outside your session: every 5 seconds." The fastest any window asked for in the last
+// 45 s wins; an app from before 9.00 says nothing and gets every 2 s.
+#define LW_FAST_MS    500        // in the member's session with no trade open: 2 a second
+#define LW_MID_MS     2000       // a trade open (or an older app): every 2 seconds
+#define LW_SLOW_MS    5000       // outside the session: every 5 seconds
+#define LW_DAY_SENDS  30000      // the safety brake: live updates per MT5 account per UTC day (v9.00: was 10800)
+#define LW_HIST_MAX   1500       // the most 1-minute candles one Live Charts ask gets back (25 hours)
+#define LW_HIST_PART  300        // candles per message
 #define LW_WATCH_MS   45000      // a "watch" holds for 45 s (the app repeats it every 15 s)
 #define LW_LINGER_MS  120000     // the line stays up 2 minutes after the last trade on this chart closed
 int    g_lw=INVALID_HANDLE;      // the socket
@@ -3772,6 +3783,9 @@ uint   g_lwFailAt=0, g_lwWait=0; // after a failure: wait g_lwWait ms from g_lwF
 int    g_lwFails=0;
 bool   g_lwOff=false;            // the terminal does not allow the address: off until the EA restarts
 uint   g_lwWatchAt=0;            // last "watch" heard
+uint   g_lwFastAt=0, g_lwMidAt=0; // v9.00: last "watch" asking for 2 a second / every 2 s (none: every 5 s)
+uint   g_lwSymAt=0;              // v9.00: last "watch" naming this chart's symbol (Live Charts shows it)
+uint   g_lwPxMs=0; string g_lwPxKey="";   // v9.00: the symbol's last price sent, and what it was
 uint   g_lwUseAt=0;              // last time this chart had a trade the card shows
 uint   g_lwPosAt=0; bool g_lwPos=false;   // that check, once a second
 int    g_lwRef=1;
@@ -3892,19 +3906,96 @@ void LwOpen()
    g_lwState=1; g_lwAt=GetTickCount(); g_lwRx=g_lwAt; ArrayResize(g_lwIn,0);
   }
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
+// v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
+string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d}",_Symbol,_Digits); }
+// a number after a key in a message from the app (def when it is not there)
+long LwNum(string s,string key,long def)
+  {
+   int p=StringFind(s,key); if(p<0) return def;
+   p+=StringLen(key); string d=""; int n=StringLen(s);
+   while(p<n){ ushort c=StringGetCharacter(s,p); if(c>='0' && c<='9') d+=ShortToString(c); else if(StringLen(d)>0 || c!=' ') break; p++; }
+   return (StringLen(d)>0) ? StringToInteger(d) : def;
+  }
+// a text value after a key (the key ends with its opening quote)
+string LwStr(string s,string key)
+  {
+   int p=StringFind(s,key); if(p<0) return "";
+   p+=StringLen(key); int e=StringFind(s,"\"",p); if(e<0) return "";
+   return StringSubstr(s,p,e-p);
+  }
+// how often the price goes out now: the fastest any window asked for in the last 45 s
+uint LwInterval()
+  {
+   uint now=GetTickCount();
+   if(g_lwFastAt!=0 && now-g_lwFastAt<LW_WATCH_MS) return LW_FAST_MS;
+   if(g_lwMidAt!=0 && now-g_lwMidAt<LW_WATCH_MS) return LW_MID_MS;
+   return LW_SLOW_MS;
+  }
+// one 1-minute candle as "t,o,h,l,c,tick volume", t in UTC seconds (the broker offset of its own date)
+string LwBarV(const MqlRates &b)
+  {
+   long tu=(long)b.time-SrvOffAt(b.time);
+   return IntegerToString(tu)+","+DoubleToString(b.open,_Digits)+","+DoubleToString(b.high,_Digits)+","+DoubleToString(b.low,_Digits)+","+DoubleToString(b.close,_Digits)+","+IntegerToString((long)b.tick_volume);
+  }
+// v9.00 Live Charts: the chart's last closed 1-minute candles, oldest first (at most LW_HIST_MAX), when a window asks - the
+// store keeps 1-minute candles only around trades, so the day's minutes come from MT5 itself, LW_HIST_PART to a message
+void LwHist(int n)
+  {
+   if(n<1) n=1;
+   if(n>LW_HIST_MAX) n=LW_HIST_MAX;
+   MqlRates r[]; ArraySetAsSeries(r,false);
+   int got=CopyRates(_Symbol,PERIOD_M1,1,n,r);   // shift 1: the last closed candle; not a series, so r[0] is the oldest
+   if(got<=0) return;
+   int parts=(got+LW_HIST_PART-1)/LW_HIST_PART;
+   for(int k=0;k<parts;k++)
+     {
+      string rows="";
+      for(int i=k*LW_HIST_PART;i<got && i<(k+1)*LW_HIST_PART;i++){ if(StringLen(rows)>0) rows+=";"; rows+=LwBarV(r[i]); }
+      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"tf\":1,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",_Symbol,k,parts,rows)))) return;
+      LwCount();
+     }
+  }
+// v9.00 Live Charts: this chart's symbol - the price, the ask and MT5's forming 1-minute candle with the one before it -
+// while a Live Charts window shows it, at the speed the app asked for, whenever any of it changed
+void LwStreamPx()
+  {
+   uint now=GetTickCount();
+   if(g_lwSymAt==0 || now-g_lwSymAt>=LW_WATCH_MS) return;
+   if(g_lwPxMs!=0 && now-g_lwPxMs<LwInterval()) return;
+   MqlRates r[]; ArraySetAsSeries(r,true);
+   if(CopyRates(_Symbol,PERIOD_M1,0,2,r)<2) return;   // r[0] forming, r[1] the one before
+   double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID), ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   if(bid<=0) return;
+   string bar=LwBarV(r[0]), pb=LwBarV(r[1]);
+   string key=DoubleToString(bid,_Digits)+"|"+DoubleToString(ask,_Digits)+"|"+bar;
+   if(key==g_lwPxKey) return;
+   string p=StringFormat("{\"s\":\"%s\",\"b\":%s,\"a\":%s,\"t\":%I64d,\"dg\":%d,\"bar\":\"%s\",\"pb\":\"%s\"}",
+                         _Symbol,DoubleToString(bid,_Digits),DoubleToString(ask,_Digits),(long)TimeGMT(),_Digits,bar,pb);
+   if(!LwText(LwBroadcast("px",p))) return;
+   g_lwPxMs=now; g_lwPxKey=key;
+   LwCount();
+  }
 void LwOnText(string s)
   {
    if(g_lwState==2 && StringFind(s,"\"phx_reply\"")>=0 && StringFind(s,"\"ref\":\"1\"")>=0)
      {
       if(StringFind(s,"\"status\":\"ok\"")<0){ LwDrop("join refused"); g_lwWait=300000; return; }
       g_lwState=3; g_lwFails=0;
-      Print("Live line: connected - the live chart updates every second while Session Terminal shows the trade.");
-      LwText(LwBroadcast("hi","{\"v\":\"9.00\"}"));   // a window already watching says so at once
+      Print("Live line: connected - Session Terminal's live charts update while a window shows them (2 a second in your session, every 2 s with a trade open, every 5 s otherwise).");
+      LwText(LwBroadcast("hi",LwHi()));   // a window already watching says so at once; Live Charts learns this chart's symbol
       return;
      }
    if(StringFind(s,"\"phx_error\"")>=0 || StringFind(s,"\"phx_close\"")>=0){ LwDrop("channel closed"); return; }
-   if(StringFind(s,"\"event\":\"watch\"")>=0) g_lwWatchAt=GetTickCount();
-   else if(StringFind(s,"\"event\":\"unwatch\"")>=0) g_lwWatchAt=0;
+   if(StringFind(s,"\"event\":\"watch\"")>=0)
+     {
+      uint now=GetTickCount(); g_lwWatchAt=now;
+      long ms=LwNum(s,"\"ms\":",LW_MID_MS);
+      if(ms<=LW_FAST_MS) g_lwFastAt=now; else if(ms<=LW_MID_MS) g_lwMidAt=now;
+      if(LwStr(s,"\"sym\":\"")==_Symbol) g_lwSymAt=now;
+     }
+   else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; }   // another window still watching says so again
+   else if(StringFind(s,"\"event\":\"who\"")>=0) LwText(LwBroadcast("hi",LwHi()));   // a window that joined after this chart
+   else if(StringFind(s,"\"event\":\"hist\"")>=0){ if(LwStr(s,"\"sym\":\"")==_Symbol) LwHist((int)LwNum(s,"\"n\":",600)); }
   }
 // Read what has arrived (never waits) and handle every whole frame in it.
 void LwPump()
@@ -3963,23 +4054,14 @@ void LwService()
       if(g_lwBrakeSaid!=g_lwDay)
         {
          g_lwBrakeSaid=g_lwDay;
-         PrintFormat("Live line: today's live updates are used up (%d, 3 hours) - the live chart updates every 2 s until midnight UTC.",LW_DAY_SENDS);
+         PrintFormat("Live line: today's live updates are used up (%d) - the live chart updates every 2 s until midnight UTC.",LW_DAY_SENDS);
         }
       return;
      }
    uint now=GetTickCount();
-   if(g_lwPosAt==0 || now-g_lwPosAt>=1000)
-     {
-      g_lwPosAt=now; g_lwPos=false;
-      for(int i=PositionsTotal()-1;i>=0 && !g_lwPos;i--)
-        {
-         ulong tk=PositionGetTicket(i);
-         if(tk!=0 && PositionSelectByTicket(tk) && LiveTickMine()) g_lwPos=true;
-        }
-     }
-   if(g_lwPos) g_lwUseAt=now;
-   bool want=g_lwPos || (g_lwUseAt!=0 && now-g_lwUseAt<LW_LINGER_MS);
-   if(!want){ if(g_lw!=INVALID_HANDLE) LwClose(); return; }
+   // v9.00: the line stays up while MT5 is connected, trade or not - Live Charts can ask for this chart's prices any time.
+   // An idle line costs only its heartbeat; nothing streams until a window says "watch".
+   if(TerminalInfoInteger(TERMINAL_CONNECTED)==0){ if(g_lw!=INVALID_HANDLE) LwClose(); return; }
    if(g_lw==INVALID_HANDLE)
      {
       if(g_lwFailAt!=0 && now-g_lwFailAt<g_lwWait) return;
@@ -3997,10 +4079,10 @@ void LwService()
       g_lwHb=now;
       if(!LwText("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\""+LwRef()+"\"}")) return;
      }
-   if(LwWatched()) LwStream();
+   if(LwWatched()){ LwStream(); LwStreamPx(); }
   }
 // The trade's figures over the line: on any change in the price, the forming candle or a level, at most every
-// LW_STREAM_MS per position. Same figures as the database row (LiveTickRead).
+// LwInterval() per position (v9.00: the speed the app asked for; LW_STREAM_MS, once a second, before). Same figures as the database row (LiveTickRead).
 void LwStream()
   {
    uint now=GetTickCount();
@@ -4020,7 +4102,7 @@ void LwStream()
          g_lwTk[n]=t.posid; g_lwMs[n]=0; g_lwKey[n]=""; at=n;
         }
       if(key==g_lwKey[at]) continue;
-      if(g_lwMs[at]!=0 && now-g_lwMs[at]<LW_STREAM_MS) continue;
+      if(g_lwMs[at]!=0 && now-g_lwMs[at]<LwInterval()) continue;   // v9.00: the speed the app asked for (every 2 s with a trade open)
       string p=StringFormat("{\"k\":%I64u,\"r\":%s,\"pnl\":%s,\"sl\":%s,\"tp\":%s,\"lad\":\"%s\",\"px\":%s,\"op\":%s,\"rpx\":%s,\"dg\":%d,\"bar\":\"%s\",\"sp\":%s}",
                             t.posid,LiveTickNum(t.r,3),DoubleToString(t.pnl,2),LiveTickNum(t.slr,3),LiveTickNum(t.tpr,3),t.lad,
                             DoubleToString(t.bid,_Digits),DoubleToString(t.op,_Digits),LiveTickNum(t.rpx>0?t.rpx:EMPTY_VALUE,_Digits+1),_Digits,t.bar,LiveTickNum(t.spr,_Digits+1));
@@ -6928,7 +7010,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.00 loaded (tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.00 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
