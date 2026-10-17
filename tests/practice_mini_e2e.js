@@ -1,9 +1,9 @@
 (async function () {
-  // Practice Replay, Nestor 17 Oct 2026: "can you also buid a Gann box and the minimalist indicator from trading view to be
-  // used in practice replay", and the layout buttons pressed again to change the arrangement ("the left one also give me
+  // Practice Replay, Nestor 17 Oct 2026: "the minimalist indicator from trading view to be used in practice replay" (the
+  // Gann box asked for with it was taken out again the same day), and the layout buttons pressed again to change the arrangement ("the left one also give me
   // the option of having 2 charts horizontally ... the large horizontal chart below and above and also on the right side").
   // Real EUR/USD candles of Thu 1 Oct 2026.
-  // Run: python tests/browser_test.py tests/practice_gann_e2e.js
+  // Run: python tests/browser_test.py tests/practice_mini_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   try {
@@ -20,41 +20,14 @@
     var redraw = function () { P._render(); };
     P._goto('14:30'); await W(400);
 
-    // ---- the Gann box ----
-    DW.list = []; DW.hist = ['[]']; DW.hpos = 0; DW.sel = null;
+    // ---- no Gann box (taken out again on 17 Oct 2026: "the fibo looks too similar i dont think i need it") ----
+    DW.list = []; DW.sel = null;
     document.getElementById('stpr-drawbtn').click(); await W(20);
-    var gb = document.querySelector('#stpr-tools [data-tool="gann"]');
-    ok('a Gann box button sits in the drawing tools, after the Fib', gb && gb.title === 'Gann box' && gb.previousElementSibling && gb.previousElementSibling.getAttribute('data-tool') === 'fib', gb && gb.title);
-    gb.click(); mev(0, 'mousedown', 80, 70); mev(0, 'mouseup', 80, 70); mev(0, 'mousemove', 420, 330); await W(40);
-    ok('after the first click it follows the pointer', DW.pending && DW.pending.type === 'gann');
-    mev(0, 'mousedown', 420, 330); mev(0, 'mouseup', 420, 330); await W(80);
-    var g0 = DW.list[0];
-    ok('the second click places it and puts the tool away', DW.list.length === 1 && g0.type === 'gann' && DW.tool === 'none' && DW.sel === 0, g0);
-    var box = pane(0).el.querySelector('.stpr-props');
-    ok('its options box: GANN BOX, a colour per level picked, the seven levels to remove or add to', box && /GANN BOX/.test(box.textContent) && box.querySelector('[data-col=""]') && /#fff|rgb\(255, 255, 255\)/.test(box.querySelector('[data-col=""]').style.border) && box.querySelectorAll('[data-lvl]').length === 7 && /0\.382/.test(box.textContent) && /0\.75/.test(box.textContent), box && box.textContent);
-    redraw(); await W(60);
-    var xa = P._xOfT(0, g0.a.t), xb = P._xOfT(0, g0.b.t), ya = P._yOf(0, g0.a.price), yb = P._yOf(0, g0.b.price), xm = xa + (xb - xa) * 0.5, y5 = ya + (yb - ya) * 0.5;
-    var onH = px(0, xa + (xb - xa) * 0.13, y5), onV = px(0, xm, ya + (yb - ya) * 0.13), between = px(0, xa + (xb - xa) * 0.13, ya + (yb - ya) * 0.44);
-    ok('the 0.5 level is drawn across in price (green) and down in time; a band between levels is tinted', onH[3] > 150 && onH[1] > onH[0] && onV[3] > 80 && onV[1] > onV[0] && between[3] > 0 && between[3] < 60, { onH: onH, onV: onV, between: between });
-    box.querySelector('[data-lvl="2"]').click(); await W(30);
-    ok('a horizontal line can be removed (0.382): the vertical ones stay all seven', DW.list[0].levels && DW.list[0].levels.length === 6 && DW.list[0].levels.indexOf(0.382) < 0 && DW.list[0].tlevels && DW.list[0].tlevels.length === 7, [DW.list[0].levels, DW.list[0].tlevels]);
-    // horizontal and vertical lines separately (Nestor, 17 Oct 2026: "remove and add vertical and horizontal lines in the gann box separately")
-    box = pane(0).el.querySelector('.stpr-props');
-    ok('the box lists them in two sets: Horizontal lines (price) and Vertical lines (time), each with its own Add', /Horizontal lines \(price\)/.test(box.textContent) && /Vertical lines \(time\)/.test(box.textContent) && box.querySelectorAll('[data-lvl]').length === 6 && box.querySelectorAll('[data-tlvl]').length === 7 && box.querySelector('[data-tadd]') && box.querySelector('[data-fibadd]'), box.textContent);
-    box.querySelector('[data-tlvl="3"]').click(); await W(30); P._render(); await W(60);
-    var onV2 = px(0, xm, ya + (yb - ya) * 0.13), onH2 = px(0, xa + (xb - xa) * 0.13, y5);
-    ok('removing the vertical 0.5: gone down in time, the horizontal 0.5 still drawn', DW.list[0].tlevels.indexOf(0.5) < 0 && DW.list[0].levels.indexOf(0.5) >= 0 && onV2[3] < 60 && onH2[3] > 150, { onV2: onV2, onH2: onH2, t: DW.list[0].tlevels });
-    box = pane(0).el.querySelector('.stpr-props'); box.querySelector('[data-tlv]').value = '0.66'; box.querySelector('[data-tadd]').click(); await W(30);
-    ok('a vertical line added at 0.66 (only there)', DW.list[0].tlevels.indexOf(0.66) >= 0 && DW.list[0].levels.indexOf(0.66) < 0, [DW.list[0].levels, DW.list[0].tlevels]);
-    box = pane(0).el.querySelector('.stpr-props'); box.querySelector('[data-fiblv]').value = '0.9'; box.querySelector('[data-fibadd]').click(); await W(30);
-    ok('a horizontal line added at 0.9 (only there)', DW.list[0].levels.indexOf(0.9) >= 0 && DW.list[0].tlevels.indexOf(0.9) < 0);
-    box = pane(0).el.querySelector('.stpr-props'); box.querySelector('[data-col="#60a5fa"]').click(); await W(30);
-    ok('one colour can be picked for the whole box, and the many-colour swatch brings the levels back', DW.list[0].color === '#60a5fa' && (pane(0).el.querySelector('.stpr-props [data-col=""]').click(), !DW.list[0].color), DW.list[0].color);
-    var a0 = { t: DW.list[0].a.t, p: DW.list[0].a.price }, bp0 = DW.list[0].b.price;
-    mev(0, 'mousedown', xa, yb); mev(0, 'mousemove', xa - 40, yb + 30, { held: true }); mev(0, 'mouseup', xa - 40, yb + 30); await W(30);
-    ok("its corners drag like a rectangle's (the bottom-left one moves the start time and the far price)", DW.list[0].a.t < a0.t && DW.list[0].b.price !== bp0 && DW.list[0].a.price === a0.p, [a0, DW.list[0].a, bp0, DW.list[0].b.price]);
-    var x5 = P._xOfT(1, DW.list[0].a.t);
-    ok('the same box is on the 1h chart', x5 != null && isFinite(x5));
+    ok('no Gann box button among the drawing tools', !document.querySelector('#stpr-tools [data-tool="gann"]') && document.querySelector('#stpr-tools [data-tool="fib"]'));
+    var B0 = pane(0).bars, n0 = B0.length; DW.list = [{ type: 'gann', a: { t: B0[n0 - 40].time, price: B0[n0 - 40].low }, b: { t: B0[n0 - 5].time, price: B0[n0 - 5].high } }]; P._render(); await W(60);
+    var gx = (P._xOfT(0, DW.list[0].a.t) + P._xOfT(0, DW.list[0].b.t)) / 2, gy = (P._yOf(0, DW.list[0].a.price) + P._yOf(0, DW.list[0].b.price)) / 2;
+    mev(0, 'mousedown', gx, gy); mev(0, 'mouseup', gx, gy); await W(40);
+    ok('a Gann box drawn before is kept in the list but neither drawn nor picked', DW.list.length === 1 && DW.sel == null, DW.sel);
     DW.list = []; DW.sel = null; P._render(); await W(30);
 
     // ---- the Minimalist indicator ----
