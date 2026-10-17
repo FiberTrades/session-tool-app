@@ -30,8 +30,15 @@
     var cv = win.document.querySelectorAll('.stpr-pc canvas'), r2 = p2.el.getBoundingClientRect(), tb2 = win.document.getElementById('stpr-tb2');
     ok('it is drawn by that window\'s own chart library, filling the window under its toolbar', cv.length > 2 && win.LightweightCharts && win.LightweightCharts !== window.LightweightCharts && Math.abs(r2.width - win.innerWidth) < 4 && Math.abs(r2.height + tb2.offsetHeight - win.innerHeight) < 4, [cv.length, r2.width, win.innerWidth, r2.height, tb2.offsetHeight, win.innerHeight]);
     // its toolbar (Nestor, 17 Oct 2026: "when i open a new window of a chart i want to have all of these options too")
-    var ids = function (d) { return Array.prototype.map.call(d.querySelectorAll('#stpr-tb2 button'), function (b) { return b.id || b.getAttribute('data-tool'); }).join(','); };
-    ok('that window has the same toolbar: drawing tools, undo / redo / delete, snapshot, Show on chart, chart settings, news', ids(win.document) === ids(document) && /stpr-snapbtn/.test(ids(win.document)) && /long,short/.test(ids(win.document)), ids(win.document));
+    var ids = function (d, sel) { return Array.prototype.map.call(d.querySelectorAll(sel), function (b) { return b.id || b.getAttribute('data-tool'); }).join(','); };
+    ok('that window has the same toolbar: drawing tools, undo / redo / delete, snapshot, Show on chart, chart settings, news', ids(win.document, '#stpr-tb2 .stpr-tbm button') === ids(document, '#stpr-tb2 button') && /stpr-snapbtn/.test(ids(win.document, '#stpr-tb2 .stpr-tbm button')) && /long,short/.test(ids(win.document, '#stpr-tb2 .stpr-tbm button')), ids(win.document, '#stpr-tb2 .stpr-tbm button'));
+    // its timeframe button in the top bar, before the drawing tools (Nestor: "can the TF go on the bar above before the objects list?")
+    var wtb = win.document.getElementById('stpr-tb2'), wpill = wtb.querySelector('.stpr-tfpill');
+    ok('its timeframe button sits in the top bar, first, before the pencil; not on the chart', wpill && wtb.firstElementChild.contains(wpill) && wpill.textContent.indexOf('4h') === 0 && !p2.el.querySelector('.stpr-tfpill') && wpill.getBoundingClientRect().right <= wtb.querySelector('#stpr-drawbtn').getBoundingClientRect().left, wpill && wpill.textContent);
+    wpill.click(); await W(40); var wtw = wpill.parentNode;
+    ok('pressed: its timeframes open', wtw.classList.contains('open'));
+    wpill.click(); await W(40);
+    ok('pressed again: they close (Nestor: "clicking on the TF on the external window doesnt make the list go away")', !wtw.classList.contains('open'));
     win.document.querySelector('#stpr-tb2 #stpr-drawbtn').click(); await W(60);
     ok('its pencil opens the drawing tools (there and here)', document.getElementById('stpr-tb2').classList.contains('drawing') && win.document.getElementById('stpr-tb2').classList.contains('drawing'));
     win.document.querySelector('#stpr-tb2 [data-tool="hline"]').click(); await W(40);
@@ -70,10 +77,10 @@
     win.document.dispatchEvent(new win.KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); await W(60);
     ok('and Delete there removes the selected line', DW.list.length === 0, DW.list.length);
     // its timeframe changed there
-    var pill = p2.el.querySelector('.stpr-tfpill'); pill.click(); await W(40);
-    var b1h = p2.el.querySelector('.stpr-tfseg [data-tf="60"]'); b1h.click();
+    var pill = win.document.querySelector('#stpr-tb2 .stpr-tfpill'); pill.click(); await W(40);
+    var b1h = win.document.querySelector('#stpr-tb2 .stpr-tfseg [data-tf="60"]'); b1h.click();
     for (k = 0; k < 60 && !(P._panes()[2] && P._panes()[2].tf === 60 && P._panes()[2].n && P._panes()[2].el.ownerDocument === win.document); k++) await W(100);
-    ok('its timeframe changed in that window: it stays there, now 1h, and the title follows', P._panes()[2].tf === 60 && P._panes()[2].el.ownerDocument === win.document && C.tfs[2] === 60 && /· 1h ·/.test(win.document.title), [P._panes()[2].tf, win.document.title]);
+    ok('its timeframe changed in that window: it stays there, now 1h, and the title and its button follow', P._panes()[2].tf === 60 && P._panes()[2].el.ownerDocument === win.document && C.tfs[2] === 60 && /· 1h ·/.test(win.document.title) && win.document.querySelector('#stpr-tb2 .stpr-tfpill').textContent.indexOf('1h') === 0, [P._panes()[2].tf, win.document.title]);
     // the snapshot of this window: only its own charts
     win.document.dispatchEvent(new win.PointerEvent('pointerdown', { bubbles: true })); var snw = P._snap(), gw = win.document.getElementById('stpr-grid').getBoundingClientRect();
     ok('Copy image asked from that window pictures its chart', snw && Math.abs(snw.width - Math.round(gw.width * Math.max(1, Math.min(2, win.devicePixelRatio || 1)))) <= 1, snw && [snw.width, gw.width]);
