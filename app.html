@@ -86864,7 +86864,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   MTIP.vpSig = ["Filters which volume rows qualify as significant peaks worth marking with liquidity arrows.\n\nA row only counts as a peak if its volume exceeds (mean + σ × standard deviation) of all rows in the profile.\n\n• 0.0 = no filter — every local-maxima row gets an arrow (busiest)\n• 1.0 = only rows with volume one std-dev above the mean qualify (cleaner)\n• 2.0+ = very strict, only the highest-volume nodes get arrows\n\nLower values = more arrows, higher values = fewer but more meaningful arrows.", "Filtra qué filas de volumen cuentan como picos importantes que merecen una flecha de liquidez.\n\nUna fila solo cuenta como pico si su volumen supera (media + σ × desviación típica) de todas las filas del perfil.\n\n• 0.0 = sin filtro: cada máximo local recibe una flecha (lo más cargado)\n• 1.0 = solo las filas con volumen una desviación típica por encima de la media (más limpio)\n• 2.0+ = muy estricto, solo los nodos de más volumen reciben flecha\n\nValores bajos = más flechas; valores altos = menos flechas pero más significativas."];
   MTIP.vpRows = ["Number of horizontal price rows the volume profile is divided into. Each row sums the volume that traded within its price slice.\n\nMatch this to the \"Row Size\" setting in TradingView's built-in Fixed Range Volume Profile (FRVP) tool to get directly comparable results.\n\n• 12-24 = chunky, low-resolution profile (default 24)\n• 50 = medium resolution\n• 100+ = fine-grained, smoother distribution but more visual noise\n\nMore rows = thinner price slices, finer detail.", "Número de filas horizontales de precio en que se divide el perfil de volumen. Cada fila suma el volumen negociado dentro de su franja de precio.\n\nPon el mismo valor que el ajuste \"Row Size\" de la herramienta Fixed Range Volume Profile (FRVP) de TradingView para obtener resultados comparables.\n\n• 12-24 = perfil grueso, de baja resolución (por defecto 24)\n• 50 = resolución media\n• 100+ = detallado, distribución más suave pero con más ruido visual\n\nMás filas = franjas de precio más finas, más detalle."];
   MTIP.vpOff = ["Position of the VP liquidity arrows relative to the right edge of the P/D zone box.\n\n• Positive = arrows sit to the RIGHT of the chart\n• Negative = arrows are pulled LEFT, into the chart area, closer to the price candles where the volume actually occurred\n• 0 = arrows sit right at the right edge of the zone box", "Posición de las flechas de liquidez del VP respecto al borde derecho de la caja de la zona P/D.\n\n• Positivo = las flechas quedan a la DERECHA del gráfico\n• Negativo = las flechas se mueven a la IZQUIERDA, dentro del gráfico, más cerca de las velas donde ocurrió el volumen\n• 0 = las flechas quedan justo en el borde derecho de la caja"];
-  function ms(){ var c = CFG.miniS || {}, o = Object.assign({}, MINIDEF, c); o.ses = MINIDEF.ses.map(function(d, i){ return Object.assign({}, d, (c.ses || [])[i] || {}); }); return o; }
+  var MINI_P = null;   // the chart being drawn: its own settings when they are not linked
+  function miniLinked(){ return CFG.miniLink !== false; }
+  function msRaw(p){ p = p || MINI_P; if (miniLinked() || !p) return CFG.miniS || {}; var per = CFG.miniPer || {}; return per[p.i] || CFG.miniS || {}; }
+  function offRaw(p){ p = p || MINI_P; if (miniLinked() || !p) return CFG.miniOff || {}; var per = CFG.miniOffPer || {}; return per[p.i] || CFG.miniOff || {}; }
+  function msSet(p, v){ if (miniLinked() || !p) { CFG.miniS = v; return; } CFG.miniPer = Object.assign({}, CFG.miniPer || {}); CFG.miniPer[p.i] = v; }
+  function offSet(p, v){ if (miniLinked() || !p) { CFG.miniOff = v; return; } CFG.miniOffPer = Object.assign({}, CFG.miniOffPer || {}); CFG.miniOffPer[p.i] = v; }
+  function ms(p){ var c = msRaw(p), o = Object.assign({}, MINIDEF, c); o.ses = MINIDEF.ses.map(function(d, i){ return Object.assign({}, d, (c.ses || [])[i] || {}); }); return o; }
   // the trading day a moment belongs to (22:00 London starts the next one), its week (from Monday's) and month, the hour
   function lonK(t){ var k = Math.floor(t / 3600), c = LONC[k]; if (c) return c;
     var o = zParts(k * 3600000, LON), h = (+o.hour) % 24, nx = h >= 22 ? 1 : 0, cwd = WD[o.weekday] || 0, day = Math.floor(Date.UTC(+o.year, +o.month - 1, +o.day) / 864e5) + nx, wd = (cwd + nx) % 7, dt = new Date(day * 864e5);
@@ -86872,7 +86878,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function lookBg(){ return parseC(look().bg).h; }
   function lightBg(){ var h = String(lookBg()).replace('#', ''); if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; var v = parseInt(h.slice(0, 6), 16); if (!isFinite(v)) return false;
     return (0.299 * ((v >> 16) & 255) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) / 255 > 0.55; }
-  function miniOn(k){ return !(CFG.miniOff && CFG.miniOff[k]); }
+  function miniOn(k, p){ var o = offRaw(p); return !(o && o[k]); }
   // his Distance Unit: Auto = pips on currency pairs, points elsewhere; or Pips / Points / Ticks, with the unit after it if asked
   function miniUnit(){ var u = ms().unit; return u === 'auto' ? (S.sym.cls === 'fx' ? 'pips' : 'points') : u; }
   function miniDist(d){ var o = ms(), x = units(S.sym), u = miniUnit(), pip = x.pips || x.pts * 10;
@@ -86967,8 +86973,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     vp.peaks.forEach(function(k){ tag(Y(k.price), hexA(ac, 1 - 0.75 * (1 - k.r))); });   // Pine: transparency 75 x (1 - volume / the busiest row)
     tag(Y(vp.poc), hexA(pc.h, pc.a)); }
   function miniCalc(p){
-    var B = p.bars, n = B ? B.length : 0; if (n < 2 || !S) return null; var Lb = B[n - 1], o = ms();
-    var key = S.sym.raw + '|' + p.tf + '|' + n + '|' + B[0].time + '|' + Lb.time + '|' + Lb.high + '|' + Lb.low + '|' + Lb.close + '|' + JSON.stringify(CFG.miniS || {});
+    var B = p.bars, n = B ? B.length : 0; if (n < 2 || !S) return null; var Lb = B[n - 1], o = ms(p);
+    var key = S.sym.raw + '|' + p.tf + '|' + n + '|' + B[0].time + '|' + Lb.time + '|' + Lb.high + '|' + Lb.low + '|' + Lb.close + '|' + JSON.stringify(msRaw(p));
     if (p._mini && p._mini.key === key) return p._mini;
     var M = { key: key, n: n, zone: null, dwm: {}, ses: [], days: [], seps: [], gaps: [], q: [], thr: 0 }, tf = p.tf, len = Math.max(3, Math.min(500, Math.round(+o.len) || 30)), i, k;
     // Auto: swings of len bars each side, counted once len bars have closed after them; a CLOSE beyond one is a break
@@ -87025,8 +87031,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return pick; }
   function dashOf(s){ return s === 'dotted' ? [1, 3] : (s === 'solid' ? [] : [4, 3]); }
   function drawMini(p, g, dm){
-    p._mz = null; if (!visOK(ms().vis, p.tf)) return;
-    var M = miniCalc(p); if (!M) return; var o = ms(), lt = lightBg(), pw = dm.pw, ph = dm.ph, tf = p.tf, n = M.n;
+    p._mz = null; if (!visOK(ms(p).vis, p.tf)) return;
+    var M = miniCalc(p); if (!M) return; var o = ms(p), lt = lightBg(), pw = dm.pw, ph = dm.ph, tf = p.tf, n = M.n;
     // his black lines and labels on a light chart, light ones on a dark chart; or the colour picked for them
     var ink = function(a){ if (o.ink) return hexA(parseC(o.ink).h, Math.min(1, a * (parseC(o.ink).a || 1))); return lt ? 'rgba(0,0,0,' + a + ')' : 'rgba(228,226,234,' + a + ')'; };
     var sesCol = function(c, a){ var pc = parseC(c); return (pc.h === '#555555' && !lt) ? 'rgba(200,198,210,' + Math.min(1, a * pc.a * 0.95) + ')' : hexA(pc.h, a * pc.a); };   // his grey would vanish on a dark chart
@@ -87141,10 +87147,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function visSet(v, k, val){ var m = /^vis\.(\w+)\.(on|a|b)$/.exec(k); if (!m) return false; var u = VISU.filter(function(x){ return x[0] === m[1]; })[0], r = v[m[1]] || (v[m[1]] = { on: true, a: u[3], b: u[4] });
     if (m[2] === 'on') r.on = !!val; else { var x = Math.max(u[3], Math.min(u[4], Math.round(+val) || u[3])); r[m[2]] = x; if (r.a > r.b) { if (m[2] === 'a') r.b = x; else r.a = x; } } return true; }
   // the Minimalist's window
-  function miniDialog(tab){
-    var snap = { s: JSON.stringify(CFG.miniS || {}), off: JSON.stringify(CFG.miniOff || {}) }, W = JSON.parse(JSON.stringify(ms())), OFF = Object.assign({}, CFG.miniOff || {});
+  function miniDialog(tab, forP){
+    var tp = (forP && panes.indexOf(forP) >= 0) ? forP : ((DW.at && panes.indexOf(DW.at) >= 0) ? DW.at : panes[0]);   // the chart these settings are for
+    var snap = { s: JSON.stringify(msRaw(tp)), off: JSON.stringify(offRaw(tp)) }, W = JSON.parse(JSON.stringify(ms(tp))), OFF = Object.assign({}, offRaw(tp));
     if (!W.vis) W.vis = visAll();
-    var apply = function(){ var w = JSON.parse(JSON.stringify(W)); if (visFull(w.vis)) w.vis = null; CFG.miniS = w; CFG.miniOff = Object.assign({}, OFF); panes.forEach(function(q){ q._mini = null; }); dirty(); };
+    var apply = function(){ var w = JSON.parse(JSON.stringify(W)); if (visFull(w.vis)) w.vis = null; msSet(tp, w); offSet(tp, Object.assign({}, OFF)); panes.forEach(function(q){ q._mini = null; }); dirty(); };
     var on = function(k){ return !OFF[k]; }, gmt = []; for (var z = -5; z <= 12; z++) gmt.push([z, 'GMT' + (z >= 0 ? '+' : '') + z]);
     var tfo = [[15, '15m'], [30, '30m'], [60, '1H'], [120, '2H'], [240, '4H'], [1440, '1D']];
     // Inputs: his TradingView panel, input for input - its groups, order, wording, (i) notes and colours with opacity
@@ -87152,6 +87159,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // indicator panel"). His volume-profile group is left out until the profile has data to draw from.
     var inputs = function(){ var H = [], row = function(left, right, keys){ H.push(dRow(left, right || '')); (keys || []).forEach(function(k){ if (DLG && DLG.pick === k) H.push(dPick(k, getK(k))); }); };
       var chk = function(k, on, label, tk){ return dChk(k, on, label) + mInfo(tk); }, lsz = [['tiny', 'tiny'], ['small', 'small'], ['normal', 'normal'], ['large', 'large']], sty = [['solid', 'solid'], ['dashed', 'dashed'], ['dotted', 'dotted']];
+      if (panes.length > 1 || CFG.layout > 1) { H.push(dRow(dChk('mlink', miniLinked(), T('Same settings on every chart', 'Los mismos ajustes en todos los gráficos')), ''));
+        H.push('<div class="stpr-dnote">' + esc(miniLinked() ? T('Untick it to give each chart its own settings and its own P/D zone.', 'Desmárcalo para que cada gráfico tenga sus propios ajustes y su propia zona P/D.')
+          : T('These are chart ' + (tp.i + 1) + ' (' + TFL[tp.tf] + ') only. Double-click the zone on another chart, or pick that chart first, for its own.', 'Solo los del gráfico ' + (tp.i + 1) + ' (' + TFL[tp.tf] + '). Doble clic en la zona de otro gráfico, o elígelo antes, para los suyos.')) + '</div>'); }
       H.push(dSec(T('Premium & Discount Zones', 'Zonas Premium y Discount')));
       row(chk('part.zone', on('zone'), '━━ P/D Zone', 'zone'));
       row(chk('detach', W.detach, 'Detach Start Only', 'detach'));
@@ -87215,8 +87225,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       return H.join(''); };
     var getK = function(k){ var m = /^s(\d)\.(\w+)$/.exec(k); return m ? W.ses[+m[1]][m[2]] : W[k]; };
     var setK = function(k, v){ var m = /^s(\d)\.(\w+)$/.exec(k); if (m) W.ses[+m[1]][m[2]] = v; else W[k] = v; };
-    dlgOpen({ title: 'Minimalist', tabs: [{ name: T('Inputs', 'Entradas'), html: inputs }, { name: T('Style', 'Estilo'), html: style }, { name: T('Visibility', 'Visibilidad'), html: function(){ return visHtml(W.vis); } }],
-      onOk: function(){ apply(); save(); }, onCancel: function(){ CFG.miniS = JSON.parse(snap.s); CFG.miniOff = JSON.parse(snap.off); panes.forEach(function(q){ q._mini = null; }); },
+    dlgOpen({ title: 'Minimalist' + (!miniLinked() && panes.length > 1 ? ' \u00b7 ' + T('chart ', 'gráfico ') + (tp.i + 1) + ' \u00b7 ' + TFL[tp.tf] : ''), tabs: [{ name: T('Inputs', 'Entradas'), html: inputs }, { name: T('Style', 'Estilo'), html: style }, { name: T('Visibility', 'Visibilidad'), html: function(){ return visHtml(W.vis); } }],
+      onOk: function(){ apply(); save(); }, onCancel: function(){ msSet(tp, JSON.parse(snap.s)); offSet(tp, JSON.parse(snap.off)); panes.forEach(function(q){ q._mini = null; }); },
       onReset: function(){ W = JSON.parse(JSON.stringify(MINIDEF)); W.vis = visAll(); OFF = {}; apply(); },
       onClick: function(t){ var b = t.closest('[data-dsw]'); if (b) { var k = b.getAttribute('data-dsw'); DLG.pick = DLG.pick === k ? null : k; return true; }
         var cb = t.closest('[data-dcol]'); if (cb && DLG.pick) { setK(DLG.pick, mkC(cb.getAttribute('data-dcol'), parseC(getK(DLG.pick)).a)); apply(); return true; } return false; },
@@ -87231,6 +87241,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (el.type === 'datetime-local') return false;   // on change
         setK(k, el.value); apply(); return false; },
       onChange: function(el){ var k = el.getAttribute('data-k'); if (!k) return false;
+        if (k === 'mlink') { var cur = JSON.parse(JSON.stringify(W)); if (visFull(cur.vis)) cur.vis = null; var co = Object.assign({}, OFF);   // linked: this chart's settings for all; unlinked: each chart starts from them
+          if (el.checked) { CFG.miniLink = true; CFG.miniS = cur; CFG.miniOff = co; CFG.miniPer = {}; CFG.miniOffPer = {}; }
+          else { CFG.miniLink = false; CFG.miniPer = {}; CFG.miniOffPer = {}; for (var mi = 0; mi < 4; mi++) { CFG.miniPer[mi] = JSON.parse(JSON.stringify(cur)); CFG.miniOffPer[mi] = Object.assign({}, co); } }
+          save(); panes.forEach(function(q){ q._mini = null; }); dirty(); var tab0 = DLG ? DLG.tab : 0; DLG.cancel = null; dlgClose(false); miniDialog(tab0, tp); return false; }
         if (/^vis\./.test(k)) { visSet(W.vis, k, el.type === 'checkbox' ? el.checked : el.value); apply(); return true; }
         if (/^part\./.test(k)) { var pk = k.slice(5); if (el.checked) delete OFF[pk]; else OFF[pk] = true; apply(); return false; }
         if (k === 'inkAuto') { W.ink = el.checked ? '' : '#ffffff'; DLG.pick = el.checked ? null : 'ink'; apply(); return true; }
@@ -87256,7 +87270,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (c.style.width !== w + 'px' || c.style.height !== h + 'px') { c.style.width = w + 'px'; c.style.height = h + 'px'; }   // a zoom changes the size on screen and the pixel ratio together: the bitmap can stay the same size while this must not (Nestor, 17 Oct 2026: "i zoomed out in the external window and the indicator looks broken")
     var g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
     g.save(); g.beginPath(); g.rect(0, 0, dm.pw, dm.ph); g.clip();
-    if (CFG.mini) try { drawMini(p, g, dm); } catch (e) {}   // under the trades and the drawings
+    if (CFG.mini) { MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; }   // under the trades and the drawings (MINI_P: this chart's settings)
     p._zones = 0; if (CFG.pos !== false) drawZones(p, g, dm);
     DW.list.forEach(function(d){ if (visibleOn(d, p.tf)) try { drawOne(p, g, d, dm.pw, false); } catch (e) {} });
     p._bells = []; DW.list.forEach(function(d){ if (!(d && d.type === 'hline' && d.alert && visibleOn(d, p.tf))) return; var by = yOf(p, d.price);   // a bell on each alert's line
@@ -87434,11 +87448,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       dirty(); return; }
     // the Minimalist's range zone: its left edge (and its right one when it has an end) moves its start (and end) by hand
     // (Nestor, 17 Oct 2026: "i cant move the P/D zone?"); the first drag turns Auto (follow structure) off
-    var mz = CFG.mini && miniOn('zone') && p._mz;
-    if (mz && !touch && xy.y >= mz.y0 - 4 && xy.y <= mz.y1 + 4) { var o0 = ms(), ed = Math.abs(xy.x - mz.x0) < 6 ? 'a' : (!o0.detach && Math.abs(xy.x - mz.x1) < 6 ? 'b' : null);
-      if (ed) { e.stopPropagation(); e.preventDefault(); var W0 = Object.assign({}, CFG.miniS || {});
+    var mz = CFG.mini && miniOn('zone', p) && p._mz;
+    if (mz && !touch && xy.y >= mz.y0 - 4 && xy.y <= mz.y1 + 4) { var o0 = ms(p), ed = Math.abs(xy.x - mz.x0) < 6 ? 'a' : (!o0.detach && Math.abs(xy.x - mz.x1) < 6 ? 'b' : null);
+      if (ed) { e.stopPropagation(); e.preventDefault(); var W0 = Object.assign({}, msRaw(p));
         if (W0.auto !== false) { W0.auto = false; W0.zA = mz.tA; W0.detach = true; flash(T('Range zone moved by hand: Auto (follow structure) is off in its settings.', 'Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
-        CFG.miniS = W0; DW.mz = { p: p, edge: ed }; panes.forEach(function(q){ q._mini = null; }); dirty(); return; } }
+        msSet(p, W0); DW.mz = { p: p, edge: ed }; panes.forEach(function(q){ q._mini = null; }); dirty(); return; } }
     if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); }
     // A plain press on the chart is the chart being moved. Auto-fit is switched off before the drag starts, so it moves up
     // and down as well as sideways (Nestor, 15 Oct 2026: "i hate how the charts feel stuck and its only when i drag the
@@ -87451,7 +87465,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (!p && DW.hov != null) { DW.hov = null; dirty(); } if (!p && DW.plusHov) { DW.plusHov = null; dirty(); }   // off the chart (onto its buttons too): no drawing is under the mouse
     if (DW.asTemp) { var a0 = evXY(DW.asTemp.p, e); DW.asTemp.dy = Math.max(DW.asTemp.dy, Math.abs(a0.y - DW.asTemp.y0)); }
     if (DW.marq) { var mxy = evXY(DW.marq.p, e); DW.marq.x1 = mxy.x; DW.marq.y1 = mxy.y; dirty(); return; }
-    if (DW.mz) { var q4 = toP(DW.mz.p, e); if (q4) { var W1 = Object.assign({}, CFG.miniS || {}); if (DW.mz.edge === 'a') W1.zA = q4.t; else W1.zB = q4.t; CFG.miniS = W1; panes.forEach(function(q){ q._mini = null; }); dirty(); } return; }
+    if (DW.mz) { var q4 = toP(DW.mz.p, e); if (q4) { var W1 = Object.assign({}, msRaw(DW.mz.p)); if (DW.mz.edge === 'a') W1.zA = q4.t; else W1.zB = q4.t; msSet(DW.mz.p, W1); panes.forEach(function(q){ q._mini = null; }); dirty(); } return; }
     if (DW.penning) { var pp = DW.penP, xy = evXY(pp, e); DW.penning.tip = xy; var lp = DW.penning.px[DW.penning.px.length - 1];
       if (!lp || Math.hypot(xy.x - lp.x, xy.y - lp.y) >= 2) { var pf = toPf(pp, e); if (pf) { DW.penning.pts.push(pf); DW.penning.px.push(xy); } } dirty(); return; }
     if (DW.tool !== 'none' && e.ctrlKey && p) { var sp = toP(p, e); DW.snap = sp ? { p: p, q: sp } : null; dirty(); } else if (DW.snap) { DW.snap = null; dirty(); }
@@ -87475,7 +87489,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (o.sl != null && o.tp != null) { d.sl = o.sl + dp; d.tp = o.tp + dp; } }
       dirty(); return; }
     if (p && DW.tool === 'none' && !e.touches) { var xy2 = evXY(p, e), nh = newsAt(p, xy2.x, xy2.y); if (!DW.pin) newsCard(p, nh);
-      var mz2 = CFG.mini && miniOn('zone') && p._mz, onEdge = !!(mz2 && xy2.y >= mz2.y0 - 4 && xy2.y <= mz2.y1 + 4 && (Math.abs(xy2.x - mz2.x0) < 6 || (!ms().detach && Math.abs(xy2.x - mz2.x1) < 6)));
+      var mz2 = CFG.mini && miniOn('zone', p) && p._mz, onEdge = !!(mz2 && xy2.y >= mz2.y0 - 4 && xy2.y <= mz2.y1 + 4 && (Math.abs(xy2.x - mz2.x0) < 6 || (!ms(p).detach && Math.abs(xy2.x - mz2.x1) < 6)));
       if ((DW.mzHover === p) !== onEdge) { DW.mzHover = onEdge ? p : null; dirty(); }
       var hh = hit(p, xy2.x, xy2.y), hv = hh ? hh.i : null; if (DW.hov !== hv || DW.hovP !== p) { DW.hov = hv; DW.hovP = p; dirty(); }
       var onPl = onPlus(p, xy2) ? p : null; if (DW.plusHov !== onPl) { DW.plusHov = onPl; dirty(); } if (onPl) { p.el.querySelector('.stpr-pc').style.cursor = 'pointer'; return; }
@@ -87969,7 +87983,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     document.addEventListener('mousedown', dwDown, true);
     document.addEventListener('dblclick', WH.dbl = function(e){ if (!isOpen()) return; var p = paneOf(e); if (!p) return; var xy = evXY(p, e), h = hit(p, xy.x, xy.y), d = h && DW.list[h.i];
       if (d && d.type === 'text') { e.preventDefault(); e.stopPropagation(); DW.sel = h.i; DW.noProps = false; updDel(); txtEdit(p, d, false); return; }
-      var mz3 = !h && CFG.mini && miniOn('zone') && p._mz; if (mz3 && xy.x >= mz3.x0 && xy.x <= mz3.x1 && xy.y >= mz3.y0 && xy.y <= mz3.y1) { e.preventDefault(); e.stopPropagation(); miniDialog(); } }, true);
+      var mz3 = !h && CFG.mini && miniOn('zone', p) && p._mz; if (mz3 && xy.x >= mz3.x0 && xy.x <= mz3.x1 && xy.y >= mz3.y0 && xy.y <= mz3.y1) { e.preventDefault(); e.stopPropagation(); miniDialog(null, p); } }, true);
     window.addEventListener('mousemove', dwMove);
     window.addEventListener('mouseup', dwUp);
     document.addEventListener('touchstart', function(e){ DW.tin = !!(isOpen() && paneOf(e)); if (DW.tin) dwDown(e); }, { passive: false, capture: true });
