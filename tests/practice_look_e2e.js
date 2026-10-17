@@ -78,7 +78,7 @@
     ok('on the light background the Minimalist switches to black ink', (function () { var bgc = P._parseC(P._look().bg); return bgc.h === '#f7f3ea'; })());
     // reset
     document.getElementById('stpr-lookbtn').click(); await W(40); q('[data-lkreset]').click(); await W(300);
-    ok("Back to the app's look puts every setting back", !Object.keys(C.look).length && co(0).layout.background.color === '#121116' && so(0).upColor === '#4ECD8B' && so(0).borderVisible === false && co(0).grid.vertLines.visible === true && co(0).watermark.visible === false && !pane(0).series.data().some(function (b) { return b.color; }), [co(0).layout.background, so(0).upColor]);
+    ok('Reset settings puts every setting back', /^Reset settings$/.test(q('[data-lkreset]').textContent) && !Object.keys(C.look).length && co(0).layout.background.color === '#121116' && so(0).upColor === '#4ECD8B' && so(0).borderVisible === false && co(0).grid.vertLines.visible === true && co(0).watermark.visible === false && !pane(0).series.data().some(function (b) { return b.color; }), [co(0).layout.background, so(0).upColor]);
     document.getElementById('stpr-lookbtn').click(); await W(30);
     ok('the button closes it again', !menu.classList.contains('show'));
     P.close(); await W(150);
