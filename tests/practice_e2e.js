@@ -66,6 +66,10 @@
     ok('the drawing tools open: the same height', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, document.getElementById('stpr-tb2').getBoundingClientRect().height);
     if (!wasD) { dwb.click(); await W(40); }
     if (!wrap.classList.contains('open')) { pill.click(); await W(40); }   // (a click elsewhere closes the list: open it again)
+    dwb.click(); await W(40);
+    ok('the drawing tools opened: the timeframes close (Nestor: "if objects are open and i open TFs close objects inmediately and viceversa")', document.getElementById('stpr-tb2').classList.contains('drawing') && !wrap.classList.contains('open'));
+    pill.click(); await W(40);
+    ok('and the timeframes opened: the drawing tools close', wrap.classList.contains('open') && !document.getElementById('stpr-tb2').classList.contains('drawing'));
     ok("the timeframe pill opens Trade Replay's row: 1m 5m 15m 1h 4h 12h 1D 1W 1Y", wrap.classList.contains('open') && Array.prototype.map.call(wrap.querySelectorAll('[data-tf]'), function (b) { return b.textContent; }).join(' ') === '1m 5m 15m 1h 4h 12h 1D 1W 1Y');
     wrap.querySelector('[data-tf="60"]').click(); for (var z = 0; z < 50 && pane().tf !== 60; z++) await W(100); await W(300);
     ok('1h picked: the chart is 1h and its last candle is the 07:00 hour', pane().tf === 60 && hhmm(lastBar().time) === '07:00', hhmm(lastBar().time));

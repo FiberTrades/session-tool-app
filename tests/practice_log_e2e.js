@@ -31,22 +31,9 @@
     ok('the R curve: the reviews\' running chart, in R, ending +1.50R after 4 trades', run && run.classList.contains('good') && /\+1\.50R · 4 trades/.test(run.textContent) && run.querySelector('svg path.st-run-l'), run && run.textContent);
     var tb = tables();
     ok('by session: Asia 1 trade +0.50R, London 2 trades 50% +2.00R, New York 1 trade −1.00R', tb[0] && tb[0][0] === 'Asia|1|100%|+0.50R|+0.50R' && tb[0][1] === 'London|2|50%|+2.00R|+1.00R' && tb[0][2] === 'New York|1|0%|−1.00R|−1.00R', tb[0]);
-    var arows = function () { return Array.prototype.map.call(lg.querySelectorAll('.stpr-atl .atl-row[data-rp]'), function (r) { return Array.prototype.map.call(r.querySelectorAll('.atl-cell'), function (c) { return c.textContent.trim(); }).join('|'); }); };
-    var ar = arows(), hd = Array.prototype.map.call(lg.querySelectorAll('.stpr-atl .atl-head .atl-cell'), function (c) { return c.textContent.trim(); }).join('|');
-    ok('the trades in All Trades History\'s table (Nestor: "can the log for practice replay also look like this?"): its columns', hd === 'Date|Symbol|Result|Aimed R · P|Real R · P|Pot R · P|Type|Side|Entry / Exit|Hold|Risk · SL|Gross|Net' && !!lg.querySelector('.atl-controls .atl-group'), hd);
-    ok('newest practised first: 30 Sep (BE, 0.00 · 0.0p, Short, 09:00 / 09:30, 30m), Gold, the stop-out, the target (+2.00 · +24.0p)', ar.length === 4 && /^30 Sept? 26\|EUR\/USD\|BE\|— · —\|0\.00 · 0\.0p\|— · —\|—\|Short\|09:00 \/ 09:30\|30m/.test(ar[0]) && /Gold/.test(ar[1]) && /Lose/.test(ar[2]) && /Win\|— · —\|\+2\.00 · \+24\.0p/.test(ar[3]), ar);
+    ok('the trades, newest first: Wed 30 Sep, then Gold with no distance, then the stop-out, then the target', tb[1] && tb[1].length === 4 && /^Wed 30 Sep '26\|EUR\/USD\|↓ SELL\|London\|09:00\|09:30\|30 min\|By hand\|0.5R\|\+0.00R\|\+0.0 pips/.test(tb[1][0]) && /Gold/.test(tb[1][1]) && /\|—\|$/.test(tb[1][1]) && /Stop/.test(tb[1][2]) && /Target\|0.1R\|\+2.00R\|\+24.0 pips/.test(tb[1][3]), tb[1]);
     lg.querySelector('[data-lgsym="EURUSD"]').click(); await W(30); tl = tiles();
-    ok('the EUR/USD filter: 3 trades, +1.00R', tl[0] === 'Trades=3' && tl[2] === 'Net R=+1.00R' && arows().length === 3, tl);
-    lg.querySelector('[data-plh="filter"]').click(); await W(20); lg.querySelector('[data-plf="win"]').click(); await W(30);
-    ok('its Filter: Wins shows the target only (EUR/USD)', arows().length === 1 && /Win/.test(arows()[0]) && /FILTER\s*WINS|Filter\s*Wins/i.test(lg.querySelector('[data-plh="filter"]').textContent), arows());
-    lg.querySelector('[data-plh="filter"]').click(); await W(20); lg.querySelector('[data-plf="all"]').click(); await W(30);
-    lg.querySelector('[data-plh="sort"]').click(); await W(20); lg.querySelector('[data-pls="r"]').click(); await W(30);
-    ok('its Sort: R multiple puts the +2.00R first', /\+2\.00 ·/.test(arows()[0]), arows()[0]);
-    lg.querySelector('[data-plh="sort"]').click(); await W(20); lg.querySelector('[data-pls="date_desc"]').click(); await W(30);
-    var dfi = lg.querySelector('[data-pld="from"]'); dfi.value = '2026-10-01'; dfi.dispatchEvent(new Event('change', { bubbles: true })); await W(30);
-    ok('its Date Range: from 1 Oct shows that day\'s two', arows().length === 2 && arows().every(function (r) { return /^01 Oct 26/.test(r); }), arows());
-    lg.querySelector('[data-plh="time"]').click(); await W(20); lg.querySelector('[data-plc]').click(); await W(30);
-    ok('Clear: all three again', arows().length === 3);
+    ok('the EUR/USD filter: 3 trades, +1.00R', tl[0] === 'Trades=3' && tl[2] === 'Net R=+1.00R' && tables()[1].length === 3, tl);
     lg.querySelector('[data-lgsym="all"]').click(); await W(20);
     // the day on the chart has its two trades (as when it was reopened where it was left)
     P._goto('16:00'); await W(200); P._s().trades = JSON.parse(localStorage.getItem(key)).filter(function (t) { return t.day === '2026-10-01'; }); P._render(true); await W(60);
@@ -61,7 +48,7 @@
     ok('Bring them back puts all four back', tiles()[0] === 'Trades=4' && P.stats().n === 4 && !P._cfg().logFrom, tiles());
     var tb0 = document.querySelector('.stpr-tb:not(.stpr-tb2)'), lb = document.getElementById('stpr-logbtn');
     ok('the Log button sits at the right end of the top toolbar', tb0.contains(lb) && Math.abs(lb.getBoundingClientRect().right - (tb0.getBoundingClientRect().right - 14)) < 3, [lb.getBoundingClientRect().right, tb0.getBoundingClientRect().right]);
-    lg.querySelector('.atl-row[data-rp="0"]').click(); for (k = 0; k < 100 && !(P._s() && P._s().day === '2026-09-30' && P._panes()[0].n); k++) await W(100);
+    lg.querySelector('tr[data-rp="0"]').click(); for (k = 0; k < 100 && !(P._s() && P._s().day === '2026-09-30' && P._panes()[0].n); k++) await W(100);
     ok('a row reopens that day at the moment of the entry, and the log closes', !win.classList.contains('logv') && P._s().day === '2026-09-30' && P._s().now === at('2026-09-30T08:00:00Z'), [P._s().day, P._s().now]);
     document.getElementById('stpr-score').click(); await W(60);
     ok('the score opens the log too', win.classList.contains('logv'));
