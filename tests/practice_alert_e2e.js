@@ -36,14 +36,16 @@
     var L = DW.list[DW.list.length - 1];
     ok('it adds a horizontal line with its alert on, at that price', L && L.type === 'hline' && L.alert === true && !L.hitAt && Math.abs(L.price - shown) < 1e-9 && /Alert set at/.test(flash()), L);
     var hlT = function () { return (pane().hl || []).map(function (l) { return l.options().title + '|' + l.options().lineStyle; }); };
-    ok('the line on the price scale reads ALERT', hlT().some(function (t) { return /^ALERT\|0$/.test(t); }), hlT());
+    P._render(); await W(150);
+    ok('a bell on the line by the price scale (Nestor: "a bell icon in the line"), its price label just the price', hlT().some(function (t) { return /^\|0$/.test(t); }) && (pane()._bells || []).some(function (b) { return !b.hit && Math.abs(b.price - L.price) < 1e-9; }), [hlT(), pane()._bells]);
     L.price = target; P._render(); await W(30);   // exactly on the level worked out above
 
     // play: it stops where price reaches the line
     P._play(); for (k = 0; k < 120 && S().playing; k++) await W(100);
     ok('Play stops by itself when price reaches it, on that candle', !S().playing && L.hitAt === hitBar.time && S().now > hitBar.time && S().now <= hitBar.time + 3 * 3600, [hhmm(S().now), L.hitAt && hhmm(L.hitAt), hhmm(hitBar.time)]);
     ok('and says so: Alert: price reached ' + target + ' at ' + hhmm(hitBar.time), flash().indexOf('Alert: price reached ' + target.toFixed(5) + ' at ' + hhmm(hitBar.time)) === 0, flash());
-    ok('the line now reads ALERT HIT, dashed', hlT().some(function (t) { return /^ALERT HIT\|2$/.test(t); }), hlT());
+    P._render(); await W(150);
+    ok('reached: the line dashed, its bell dimmed', hlT().some(function (t) { return /^\|2$/.test(t); }) && (pane()._bells || []).some(function (b) { return b.hit; }), [hlT(), pane()._bells]);
     P._step(); P._step(); await W(60);
     ok('playing on, it does not stop there again', !L.hitAt === false && L.hitAt === hitBar.time);
 

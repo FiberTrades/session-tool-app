@@ -56,7 +56,14 @@
     // the timeframe pill and its row
     var pill = document.querySelector('#stpr-maintf .stpr-tfpill'), wrap = pill && pill.parentNode;
     ok('one chart: its timeframe button sits in the top bar, before the pencil (Nestor: "are you moving this up here?")', pill && !pane().el.querySelector('.stpr-tfpill') && pill.getBoundingClientRect().right <= document.getElementById('stpr-drawbtn').getBoundingClientRect().left && pill.textContent.indexOf('5m') === 0, pill && pill.textContent);
+    var tbH = document.getElementById('stpr-tb2').getBoundingClientRect().height;
+    ok('the timeframe button reads just the timeframe (no arrow)', pill && !pill.querySelector('svg') && pill.textContent === '5m', pill && pill.innerHTML);
     pill.click(); await W(50);
+    ok('its list open: the top bar keeps its height (Nestor: "why when clicking on these the row gets taller")', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, [tbH, document.getElementById('stpr-tb2').getBoundingClientRect().height]);
+    var dwb = document.getElementById('stpr-drawbtn'), wasD = document.getElementById('stpr-tb2').classList.contains('drawing'); if (!wasD) { dwb.click(); await W(40); }
+    ok('the drawing tools open: the same height', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, document.getElementById('stpr-tb2').getBoundingClientRect().height);
+    if (!wasD) { dwb.click(); await W(40); }
+    if (!wrap.classList.contains('open')) { pill.click(); await W(40); }   // (a click elsewhere closes the list: open it again)
     ok("the timeframe pill opens Trade Replay's row: 1m 5m 15m 1h 4h 12h 1D 1W 1Y", wrap.classList.contains('open') && Array.prototype.map.call(wrap.querySelectorAll('[data-tf]'), function (b) { return b.textContent; }).join(' ') === '1m 5m 15m 1h 4h 12h 1D 1W 1Y');
     wrap.querySelector('[data-tf="60"]').click(); for (var z = 0; z < 50 && pane().tf !== 60; z++) await W(100); await W(300);
     ok('1h picked: the chart is 1h and its last candle is the 07:00 hour', pane().tf === 60 && hhmm(lastBar().time) === '07:00', hhmm(lastBar().time));
@@ -86,7 +93,7 @@
     var setIn = function (k, v) { var el = mmIn(k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
     var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     var tfR = P._panes()[0].el.getBoundingClientRect(), pmR = mmEl && mmEl.getBoundingClientRect();   // (one chart: its timeframe button is in the top bar; the panel keeps its place under the O H L C line)
-    ok('open, the panel hangs from the top left of the first chart under its timeframe button, 300 px wide, over the chart: the charts keep the whole width (17 Oct 2026: "it just extends down")', mmEl && mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.classList.contains('drop') && Math.abs(pmR.width - 300) < 2 && gridL < 2 && pmR.top - tfR.top >= 40 && Math.abs(pmR.left - tfR.left - 8) < 2 && pmR.bottom <= P._panes()[0].el.getBoundingClientRect().bottom + 1, { w: pmR && pmR.width, gridL: gridL, top: pmR && pmR.top, tf: tfR.top });
+    ok('open, the panel hangs from the top left of the first chart under its timeframe button, 300 px wide, over the chart: the charts keep the whole width (17 Oct 2026: "it just extends down")', mmEl && mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.classList.contains('drop') && Math.abs(pmR.width - 300) < 2 && gridL < 2 && Math.abs(pmR.top - tfR.top - 8) < 2 && Math.abs(pmR.left - tfR.left - 8) < 2 && pmR.bottom <= P._panes()[0].el.getBoundingClientRect().bottom + 1, { w: pmR && pmR.width, gridL: gridL, top: pmR && pmR.top, tf: tfR.top });
     ok('its title says Practice account, not a real account (17 Oct 2026)', mmEl.querySelector('.stpr-mm-n').textContent === 'Practice account', mmEl.querySelector('.stpr-mm-n').textContent);
     ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && !mmBtn('exec') && /Press O, then click the chart where your stop goes/.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
     setIn('min', '2'); setIn('max', '12'); await W(30);
@@ -152,7 +159,7 @@
     mmBtn('col').click(); await W(300);
     var gl2 = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     var mr = mmEl.getBoundingClientRect(), cr = cw.getBoundingClientRect();
-    ok('− folds the panel to a strip at the top left of the first chart, under its timeframe button (title, ON, +), the charts take the whole width, no idle question beside it', mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.parentNode.parentNode === P._panes()[0].el && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && !mmBtn('exec') && gl2 < 2 && mr.height <= 32 && mr.top - P._panes()[0].el.getBoundingClientRect().top >= 40 && !/What would you do/.test(P._panes()[0].el.textContent) && getComputedStyle(document.getElementById('stpr-pill')).display === 'none', { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
+    ok('− folds the panel to a strip at the top left of the first chart, under its timeframe button (title, ON, +), the charts take the whole width, no idle question beside it', mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.parentNode.parentNode === P._panes()[0].el && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && !mmBtn('exec') && gl2 < 2 && mr.height <= 32 && Math.abs(mr.top - P._panes()[0].el.getBoundingClientRect().top - 8) < 2 && !/What would you do/.test(P._panes()[0].el.textContent) && getComputedStyle(document.getElementById('stpr-pill')).display === 'none', { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(30);
     ok('the O key works with the panel folded, and the strip lights up while it is on', S().exec && mmEl.classList.contains('armed') && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec && !mmEl.classList.contains('armed')));
     // execution mode ends when the mouse leaves the window or the app, or the app loses the focus (as the EA disarms off the chart)
