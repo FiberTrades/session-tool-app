@@ -85465,8 +85465,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function aggregate(bars, tf){
     var out = [], cur = null;
     for (var i = 0; i < bars.length; i++) { var b = bars[i], k = keyOf(tf, b.time);
-      if (cur && cur._k === k) { if (b.high > cur.high) cur.high = b.high; if (b.low < cur.low) cur.low = b.low; cur.close = b.close; }
-      else { cur = { time: tf === 525600 ? b.time : k, open: b.open, high: b.high, low: b.low, close: b.close, _k: k }; out.push(cur); } }
+      if (cur && cur._k === k) { if (b.high > cur.high) cur.high = b.high; if (b.low < cur.low) cur.low = b.low; cur.close = b.close; cur.vol = (cur.vol == null || b.vol == null) ? null : cur.vol + b.vol; }
+      else { cur = { time: tf === 525600 ? b.time : k, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: k }; out.push(cur); } }
     return out;
   }
 
@@ -85593,7 +85593,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try { while (pg < 30) { var r = await sb.rpc('st_candles', { p_symbol: sym, p_tf: tf, p_from: Math.floor(from), p_to: Math.ceil(to) }).range(pg * PAGE, pg * PAGE + PAGE - 1);
         var d = (r && r.data) || []; for (var k = 0; k < d.length; k++) rows.push(d[k]); if (d.length < PAGE) break; pg++; } } catch (e) {}
     var out = [], last = -1e18;
-    for (var i = 0; i < rows.length; i++) { var t = Number(rows[i].t); if (t - last < 30) continue; out.push({ time: t, open: +rows[i].o, high: +rows[i].h, low: +rows[i].l, close: +rows[i].c }); last = t; }
+    for (var i = 0; i < rows.length; i++) { var t = Number(rows[i].t); if (t - last < 30) continue; out.push({ time: t, open: +rows[i].o, high: +rows[i].h, low: +rows[i].l, close: +rows[i].c, vol: rows[i].v == null ? null : +rows[i].v }); last = t; }
     return out; }
 
   // ---- the trading day ----
@@ -85637,7 +85637,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // Each chart's candles from before the trading day, completed (cached per symbol, day and timeframe).
   // A chart's history before the day: the stored candles it is built from (rows), how far back they go (from) and whether
   // that is everything there is (full). Cached per symbol, day and timeframe.
-  function aggStatic(rows, tf){ var src = SRC[tf]; return (tf === src && tf <= 60) ? rows.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, _k: b.time }; }) : aggregate(rows, tf); }
+  function aggStatic(rows, tf){ var src = SRC[tf]; return (tf === src && tf <= 60) ? rows.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: b.time }; }) : aggregate(rows, tf); }
   async function paneStatic(tf){
     var key = S.sym.raw + '|' + S.day + '|' + tf; if (staticCache[key]) return staticCache[key];
     var src = SRC[tf], cov = S.sym.tf[src], from = cov ? Math.max(S.f.open - LOOK[tf], cov[0]) : S.f.open;
@@ -85938,15 +85938,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function paneBars(p){
     var tf = p.tf, until = S.now, dyn = [];
     var day = S.base.filter(function(b){ return b.time < until; });
-    if (tf < S.baseTf) dyn = day.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, _k: b.time }; });
+    if (tf < S.baseTf) dyn = day.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close, vol: b.vol == null ? null : b.vol, _k: b.time }; });
     else dyn = aggregate(day, tf);
     var st = p.static, out = st.slice(0);
-    if (dyn.length && out.length && out[out.length - 1]._k === dyn[0]._k) { var a = out[out.length - 1], b = dyn[0]; out[out.length - 1] = { time: a.time, open: a.open, high: Math.max(a.high, b.high), low: Math.min(a.low, b.low), close: b.close, _k: a._k }; dyn = dyn.slice(1); }
+    if (dyn.length && out.length && out[out.length - 1]._k === dyn[0]._k) { var a = out[out.length - 1], b = dyn[0]; out[out.length - 1] = { time: a.time, open: a.open, high: Math.max(a.high, b.high), low: Math.min(a.low, b.low), close: b.close, vol: (a.vol == null || b.vol == null) ? null : a.vol + b.vol, _k: a._k }; dyn = dyn.slice(1); }
     out = out.concat(dyn);
     var real = out.length, ws = [];
     if (tf <= 60) { var s = Math.max(tf, S.baseTf) * 60, t = (out.length ? out[out.length - 1].time : S.f.open) + s; for (; t < S.f.close; t += s) ws.push({ time: t }); }
     var clean = lookBars(out.map(function(b){ return { time: b.time, open: b.open, high: b.high, low: b.low, close: b.close }; }));
-    return { data: clean.concat(ws), real: real };
+    return { data: clean.concat(ws), real: real, vols: out.map(function(b){ return b.vol == null ? null : b.vol; }) };
   }
   // A jump, a new day, a layout or timeframe change: every chart shows its latest candles with now at the same place
   // across it (F), auto-fit on - so the charts line up in time.
@@ -85973,7 +85973,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function markerTime(p, ts, bars){ var k = keyOf(p.tf < S.baseTf ? S.baseTf : p.tf, ts), best = null; for (var i = 0; i < bars.length; i++) { if (bars[i].time <= (p.tf === 525600 ? ts : k)) best = bars[i].time; else break; } return best; }
   function paintPane(p, force, shift, rs){
     var r0 = getRange(p), last0 = p.n - 1;
-    var pb = paneBars(p); p.n = pb.real; p.series.setData(pb.data); p.times = pb.data.map(function(b){ return b.time; }); p.bars = pb.data.slice(0, pb.real);
+    var pb = paneBars(p); p.n = pb.real; p.series.setData(pb.data); p.times = pb.data.map(function(b){ return b.time; }); p.bars = pb.data.slice(0, pb.real); p.vols = pb.vols || [];
     var real = pb.data.slice(0, pb.real), mk = [];
     var add = function(ts, pos, col, shape){ var t = markerTime(p, ts, real); if (t != null) mk.push({ time: t, position: pos, color: col, shape: shape }); };
     S.trades.forEach(function(t){ if (t.exitTs > S.now) return; add(t.entryTs, t.dir > 0 ? 'belowBar' : 'aboveBar', '#f472b6', t.dir > 0 ? 'arrowUp' : 'arrowDown'); add(t.exitTs - 1, 'inBar', t.r > 0.02 ? '#4ECD8B' : (t.r < -0.02 ? '#E56767' : '#c0c0c0'), 'circle'); });
@@ -86707,6 +86707,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // his settings (Minimalist-v4.pine's inputs, his values)
   var MINIDEF = { auto: true, len: 30, zA: 0, zB: 0, detach: true, extTo: false, ext: 10, marks: true,
     cTop: 'rgba(233,30,99,0.1)', cMid: 'rgba(144,164,174,0.1)', cBot: 'rgba(0,188,212,0.1)',
+    vpOn: false, vpSig: 0, vpRows: 16, vpOff: 6, vpCol: 'rgba(178,181,190,0.7)', vpPoc: 'rgba(242,54,69,1)',
     tz: 1, hist: 6, sesCap: true, sesMax: 15, prefill: true, sesNum: true, sesSize: 'small', sesPos: 'C', sesOvr: true, sesInk: '#555555', sesOp: 100, sesLine: 'solid',
     ses: [{ on: true, name: 'London', col: 'rgba(85,85,85,0.4)', a: '08:00', b: '10:00' }, { on: false, name: 'New York', col: 'rgba(253,151,31,0.4)', a: '13:00', b: '22:00' },
       { on: false, name: 'Tokyo', col: 'rgba(174,129,255,0.4)', a: '00:00', b: '09:00' }, { on: false, name: 'Sydney', col: 'rgba(251,113,163,0.4)', a: '20:00', b: '05:00' }],
@@ -86714,6 +86715,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     gUp: 'rgba(0,255,104,0.3)', gDn: 'rgba(255,0,8,0.3)', vis: null };
   var LSZ = { tiny: 8, small: 10, normal: 12, large: 15 };   // TradingView's label sizes
   var MTIP = {"zone":["Master toggle. When on, draws the Premium / Equilibrium / Discount zone using the time window selected below.","Interruptor general. Encendido, dibuja la zona Premium / Equilibrium / Discount con la ventana de tiempo elegida abajo."],"detach":["When on (default), the End date is ignored — the zone anchors to the P/D Range Start and tracks the running highest high / lowest low all the way to the current bar.\n\nTurn off to use a fixed window between Start and End.","Encendido (por defecto), se ignora la fecha de fin: la zona parte del inicio (P/D Range Start) y sigue el máximo y el mínimo hasta la vela actual.\n\nApágalo para usar una ventana fija entre inicio y fin."],"auto":["When on, the zone follows market structure instead of the P/D Range Start / End dates.\n\nWhen a candle closes above the last swing high (bullish break), the zone anchors to the strong low (the lowest point of the move that broke it) and stretches up to the newest high. When a candle closes below the last swing low (bearish break), it anchors to the strong high and stretches down to the newest low. Every new break re-anchors it.\n\nUntil the first break on the chart, your Start / End dates are used. While this is on, Detach Start Only, the dates and Extend to Latest High/Low are ignored.","Encendido, la zona sigue la estructura del mercado en vez de las fechas.\n\nCuando una vela cierra por encima del último máximo de swing, la zona parte del mínimo fuerte del movimiento que lo rompió y llega al máximo más reciente; cuando cierra por debajo del último mínimo, parte del máximo fuerte. Cada nueva ruptura la vuelve a anclar.\n\nHasta la primera ruptura del gráfico se usan tus fechas."],"len":["How big a swing must be to count as structure for Auto: Follow Structure. A swing high needs this many bars on each side with lower highs; a swing low, this many with higher lows. Breaks of structure are measured against these swings.\n\nA swing only counts once this many bars have closed after it.\n\n• 10-20 = intraday structure\n• 30 = your setting (default)\n• 50 = major swings\n• 100+ = only the biggest swings","Lo grande que debe ser un swing para contar como estructura: un máximo de swing necesita este número de velas a cada lado con máximos más bajos; un mínimo, con mínimos más altos. Cuenta cuando han cerrado este número de velas después.\n\n10-20 = estructura intradía\n30 = tu ajuste\n50 = swings mayores\n100+ = solo los más grandes"],"extTo":["After computing the box from your selected window, the box stretches both top and bottom out to the latest extremes seen between the End date and the current bar.\n\nLets you frame a tight zone but keep the box covering the whole subsequent move. No effect when Detach Start Only is on.","Tras calcular la caja con tu ventana, la caja se estira arriba y abajo hasta los extremos más recientes entre la fecha de fin y la vela actual. Sin efecto con Detach Start Only encendido."],"marks":["Display the zone height at Equilibrium, at the right edge of the P/D zone, as 45.3 (in your Distance Unit), with ▲ / ▼ at the top and bottom.","Muestra la altura de la zona en Equilibrium, en el borde derecho, como 45.3 (en tu unidad de distancia), con flechas arriba y abajo."],"prefill":["When on, the session box is drawn at its full expected width the moment the session starts, rather than growing bar-by-bar. For example, a session set to 08:00-10:00 shows the full 2-hour area at 08:00. High/low still update as price develops inside the session.","Encendido, la caja de la sesión se dibuja con su ancho completo en cuanto empieza la sesión. El máximo y el mínimo se siguen actualizando."],"sesNum":["Show the session's range (in your Distance Unit) alongside the session name.","Muestra el rango de la sesión (en tu unidad de distancia) junto a su nombre."],"sesPos":["Position of the session name/pip label inside the session box.\n\n• Left — anchored to the start of the session\n• Center — centered horizontally (default)\n• Right — anchored to the end of the session","Dónde va el nombre de la sesión en la caja: Left = al inicio, Center = en el centro (por defecto), Right = al final."],"sesOvr":["When OFF, session labels use each session's own box color (default behavior).\n\nWhen ON, all session labels use the override color picked here — useful when your session box colors are too pale or too saturated to read at small text sizes.","Apagado, cada etiqueta usa el color de su sesión. Encendido, todas usan el color elegido aquí: útil si los colores de las cajas son muy claros o muy intensos para leer."],"sesOp":["Box opacity applied to all enabled sessions (0 = opaque, 100 = fully transparent).","Opacidad de todas las cajas de sesión (0 = opaca, 100 = transparente)."],"sesLine":["Line style applied to every enabled session box border.","Estilo del borde de todas las cajas de sesión."],"dwm":["Single toggle for all three: previous day, week, and month high/low lines.","Un solo interruptor para las tres: líneas de máximo y mínimo del día, la semana y el mes anteriores."],"nums":["On: the labels read PDH 45.3, PWL 120.6 and so on (the previous day / week / month range, in your Distance Unit).\n\nOff: the labels read just PDH, PDL, PWH, PWL, PMH, PML. The lines stay.","Encendido: las etiquetas dicen PDH 45.3, PWL 120.6, etc. (el rango del día / semana / mes anterior en tu unidad de distancia). Apagado: solo PDH, PDL, PWH, PWL, PMH, PML. Las líneas se quedan."],"seps":["Draw a thin vertical line at the start of each new trading day. Only visible on chart timeframes ≤ 1H, same as the Day-of-Week labels.","Una línea vertical fina al inicio de cada día de trading. Solo en temporalidades de 1H o menos, como los nombres de los días."],"q":["Vertical lines marking the start of each yearly calendar quarter (Jan 1, Apr 1, Jul 1, Oct 1).\n\nDraws the current year's 4 quarter lines (Q1, Q2, Q3, Q4) plus the Q1 line of the following year. Use Years Back to extend retroactively into past years.\n\nLines and labels only display on the 1D (Daily) chart timeframe. On any other chart TF the feature stays hidden.","Líneas verticales al inicio de cada trimestre del año (1 ene, 1 abr, 1 jul, 1 oct): los cuatro de este año y el Q1 del siguiente. Solo en el gráfico diario (1D)."],"qBack":["How many past years to draw quarter lines for. Current year + next year Q1 are always drawn regardless of this setting.\n\n• 0 = current year + Q1 of next year only\n• 1 = also include the previous year (default)\n• 5 = previous 5 years\n• 10 = previous 10 years","Cuántos años atrás dibujar las líneas de trimestre (este año y el Q1 del siguiente siempre). 0 = solo este año, 1 = también el anterior."],"qLblY":["Vertical offset for Q labels relative to the all-history lowest low. Multiplied by ATR(50) so the offset scales with instrument volatility.\n\n• Negative = below the lowest low (further down off-chart)\n• 0 = right at the lowest low\n• Positive = above the lowest low (closer to recent prices)\n\nAdjust this until the labels sit where you like for your typical chart zoom.","Altura de las etiquetas Q respecto al mínimo más bajo del historial, en múltiplos de ATR(50). Negativo = por debajo, 0 = en el mínimo, positivo = por encima."],"unit":["The unit for every distance on the chart: session ranges, the P/D zone height and the previous day / week / month ranges.\n\n• Auto = pips on forex pairs, points on everything else (NQ, ES and other indices, gold, oil, crypto, stocks)\n• Pips = always pips (0.0001 on most pairs, 0.01 on JPY pairs; 0.1 on gold)\n• Points = the plain price difference (NQ 21,500 to 21,550 = 50 points)\n• Ticks = how many of the instrument's minimum price steps (NQ: 0.25 = 1 tick)","La unidad de todas las distancias del gráfico: rangos de sesión, altura de la zona P/D y rangos del día / semana / mes anterior.\n\nAuto = pips en divisas, puntos en el resto (índices, oro, petróleo, cripto)\nPips = siempre pips\nPoints = la diferencia de precio tal cual\nTicks = número de pasos mínimos de precio"],"suffix":["Adds the unit after each number: 23.4p, 50.25 pts, 201t.","Añade la unidad tras cada número: 23.4p, 50.25 pts, 201t."]};
+  // his Volume Profile group's notes, as in his panel
+  MTIP.vpSig = ["Filters which volume rows qualify as significant peaks worth marking with liquidity arrows.\n\nA row only counts as a peak if its volume exceeds (mean + σ × standard deviation) of all rows in the profile.\n\n• 0.0 = no filter — every local-maxima row gets an arrow (busiest)\n• 1.0 = only rows with volume one std-dev above the mean qualify (cleaner)\n• 2.0+ = very strict, only the highest-volume nodes get arrows\n\nLower values = more arrows, higher values = fewer but more meaningful arrows.", "Filtra qué filas de volumen cuentan como picos importantes que merecen una flecha de liquidez.\n\nUna fila solo cuenta como pico si su volumen supera (media + σ × desviación típica) de todas las filas del perfil.\n\n• 0.0 = sin filtro: cada máximo local recibe una flecha (lo más cargado)\n• 1.0 = solo las filas con volumen una desviación típica por encima de la media (más limpio)\n• 2.0+ = muy estricto, solo los nodos de más volumen reciben flecha\n\nValores bajos = más flechas; valores altos = menos flechas pero más significativas."];
+  MTIP.vpRows = ["Number of horizontal price rows the volume profile is divided into. Each row sums the volume that traded within its price slice.\n\nMatch this to the \"Row Size\" setting in TradingView's built-in Fixed Range Volume Profile (FRVP) tool to get directly comparable results.\n\n• 12-24 = chunky, low-resolution profile (default 24)\n• 50 = medium resolution\n• 100+ = fine-grained, smoother distribution but more visual noise\n\nMore rows = thinner price slices, finer detail.", "Número de filas horizontales de precio en que se divide el perfil de volumen. Cada fila suma el volumen negociado dentro de su franja de precio.\n\nPon el mismo valor que el ajuste \"Row Size\" de la herramienta Fixed Range Volume Profile (FRVP) de TradingView para obtener resultados comparables.\n\n• 12-24 = perfil grueso, de baja resolución (por defecto 24)\n• 50 = resolución media\n• 100+ = detallado, distribución más suave pero con más ruido visual\n\nMás filas = franjas de precio más finas, más detalle."];
+  MTIP.vpOff = ["Position of the VP liquidity arrows relative to the right edge of the P/D zone box.\n\n• Positive = arrows sit to the RIGHT of the chart\n• Negative = arrows are pulled LEFT, into the chart area, closer to the price candles where the volume actually occurred\n• 0 = arrows sit right at the right edge of the zone box", "Posición de las flechas de liquidez del VP respecto al borde derecho de la caja de la zona P/D.\n\n• Positivo = las flechas quedan a la DERECHA del gráfico\n• Negativo = las flechas se mueven a la IZQUIERDA, dentro del gráfico, más cerca de las velas donde ocurrió el volumen\n• 0 = las flechas quedan justo en el borde derecho de la caja"];
   function ms(){ var c = CFG.miniS || {}, o = Object.assign({}, MINIDEF, c); o.ses = MINIDEF.ses.map(function(d, i){ return Object.assign({}, d, (c.ses || [])[i] || {}); }); return o; }
   // the trading day a moment belongs to (22:00 London starts the next one), its week (from Monday's) and month, the hour
   function lonK(t){ var k = Math.floor(t / 3600), c = LONC[k]; if (c) return c;
@@ -86740,6 +86745,71 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function visFromTfs(tfs){ var v = visAll(); if (!tfs || !tfs.length) return v; VISU.forEach(function(u){ var vals = tfs.filter(function(tf){ return tfUnit(tf)[0] === u[0]; }).map(function(tf){ return tfUnit(tf)[1]; });
     v[u[0]] = vals.length ? { on: true, a: Math.min.apply(null, vals), b: Math.max.apply(null, vals) } : { on: false, a: u[3], b: u[4] }; }); return v; }
   function visTxt(v){ var on = TFS.filter(function(tf){ return visOK(v, tf); }); return on.length === TFS.length ? T('All timeframes', 'Todas las temporalidades') : (on.length ? on.map(function(tf){ return TFL[tf]; }).join(' ') : T('No timeframe', 'Ninguna')); }
+  // ---- his volume profile (Minimalist-v4.pine: f_buildVols, the POC vote and the liquidity arrows), from the candles'
+  //      tick volume. Four profiles of the window - each candle's volume in the row of its (H+L)/2, (H+L+C)/3, C,
+  //      (H+L+2C)/4 - vote for the dominant row (the POC; a tie goes to the busier row of the first); an arrow marks every
+  //      other row busier than both neighbours and at least mean + sigma x standard deviation. ----
+  function vpCalc(B, V, a, e, o){
+    var rows = Math.max(5, Math.min(500, Math.round(+o.vpRows) || 16)), sig = Math.max(0, Math.min(3, +o.vpSig || 0)), top = -Infinity, bot = Infinity, miss = 0, i, k;
+    if (!(e > a)) return null;
+    for (i = a; i < e; i++) { if (B[i].high > top) top = B[i].high; if (B[i].low < bot) bot = B[i].low; if (V[i] == null) miss++; }
+    if (!(top > bot)) return null;
+    if (miss) return { miss: miss, n: e - a, top: top, bot: bot };
+    var bs = (top - bot) / rows;
+    var mk = function(m){ var v = []; for (var q = 0; q < rows; q++) v.push(0);
+      for (var j = a; j < e; j++) { var b = B[j], pr = m === 1 ? (b.high + b.low) / 2 : (m === 2 ? (b.high + b.low + b.close) / 3 : (m === 3 ? b.close : (b.high + b.low + b.close + b.close) / 4));
+        var ix = Math.max(0, Math.min(rows - 1, Math.floor((pr - bot) / bs))); v[ix] += V[j]; }
+      return v; };
+    var v1 = mk(1), first = function(v){ return v.indexOf(Math.max.apply(null, v)); }, votes = [];
+    for (k = 0; k < rows; k++) votes.push(0);
+    [v1, mk(2), mk(3), mk(4)].forEach(function(v){ votes[first(v)]++; });
+    var poc = 0, mv = 0; for (k = 0; k < rows; k++) if (votes[k] > mv || (votes[k] === mv && v1[k] > v1[poc])) { mv = votes[k]; poc = k; }
+    var sum = 0; v1.forEach(function(x){ sum += x; }); var mean = sum / rows, sq = 0; v1.forEach(function(x){ sq += (x - mean) * (x - mean); });
+    var thr = mean + sig * Math.sqrt(sq / rows), mx = Math.max.apply(null, v1), peaks = [];
+    for (k = 1; k <= rows - 2; k++) { var x = v1[k]; if (x > v1[k - 1] && x > v1[k + 1] && x >= thr && k !== poc) peaks.push({ price: bot + (k + 0.5) * bs, r: mx > 0 ? x / mx : 0.5 }); }
+    return { rows: rows, top: top, bot: bot, bs: bs, poc: bot + (poc + 0.5) * bs, peaks: peaks, v1: v1, thr: thr }; }
+  // Candles stored before EA 9.00 have no volume. What the window needs, as stored: the history before the day on the
+  // timeframe this chart is built from, the day itself on the replay's own candles.
+  function volRanges(p, B, V, a, e){ var st = null, day = false, out = [], src = SRC[p.tf];
+    for (var i = a; i < e; i++) if (V[i] == null) { if (B[i].time < S.f.open) { if (!st) st = [B[i].time, B[i].time]; st[1] = B[i].time; } else day = true; }
+    if (st) out.push({ tf: src, from: st[0], to: Math.min(S.f.open - 1, st[1] + p.tf * 60 - 1) });
+    if (day) out.push({ tf: S.baseTf, from: S.f.open, to: S.f.close - 1 });
+    return out; }
+  // ...asked for once (candle_requests): the member's EA picks the ask up with its alerts (st_ea_poll) and sends those
+  // candles again with their volume; they are fetched again every 20 seconds for 10 minutes. 'asked', 'fail', 'out'.
+  var VOL = { asked: {}, t: 0 };
+  function volAsk(list){ var sb = VOL.sb || sbc(), uid = VOL.uid || uidNow(); if (!S || !list.length) return 'asked'; if (!sb || !uid) return 'out';   // VOL.sb / VOL.uid: the tests' stand-ins
+    var sym = S.sym.raw, rows = [], st = 'asked';
+    list.forEach(function(q){ var cov = null; Object.keys(VOL.asked).forEach(function(k){ var o = VOL.asked[k]; if (o.sym === sym && o.tf === q.tf && o.from <= q.from && o.to >= q.to) cov = o; });
+      if (cov) { if (cov.fail) st = 'fail'; return; }
+      var o2 = { sym: sym, tf: q.tf, from: q.from, to: q.to, at: Date.now() }; VOL.asked[sym + '|' + q.tf + '|' + q.from + '|' + q.to] = o2;
+      rows.push({ user_id: uid, symbol: sym, tf: q.tf, from_t: q.from, to_t: q.to, note: 'vol' }); });
+    if (rows.length) { try { sb.from('candle_requests').insert(rows).then(function(){}, function(){}); } catch (e) {} volWatch(); }
+    return st; }
+  function volWatch(){ if (VOL.t) return; VOL.t = setInterval(async function(){ var open = 0;
+      for (var k in VOL.asked) { var o = VOL.asked[k]; if (o.done || o.fail || o.busy) continue; open++;
+        if (Date.now() - o.at > 600000) { o.fail = true; panes.forEach(function(q){ q._mini = null; }); dirty(); continue; }
+        o.busy = true; var rows = await fetchCandles(o.sym, o.tf, o.from, o.to); o.busy = false;
+        if (rows.length && rows.every(function(b){ return b.vol != null; })) { o.done = true; volMerge(o.sym, o.tf, rows); } }
+      if (!open) { clearInterval(VOL.t); VOL.t = 0; } }, 20000); }
+  // the volume that came in goes onto the candles already here (each chart keeps its view)
+  function volMerge(sym, tf, rows){ if (!S || S.sym.raw !== sym) return; var m = {}; rows.forEach(function(b){ if (b.vol != null) m[b.time] = b.vol; });
+    Object.keys(staticCache).forEach(function(key){ var ps = key.split('|'), ptf = +ps[2]; if (ps[0] !== sym || SRC[ptf] !== tf) return; var e = staticCache[key];
+      e.rows.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; }); e.agg = aggStatic(e.rows, ptf); panes.forEach(function(p){ if (p.hist === e) p.static = e.agg; }); });
+    if (tf === S.baseTf) S.base.forEach(function(b){ if (m[b.time] != null) b.vol = m[b.time]; });
+    panes.forEach(function(p){ p._mini = null; try { paintPane(p, false, 0, getRange(p)); } catch (e) {} }); dirty(); }
+  // TradingView's label.style_label_left, empty, size tiny: a small tag pointing left at its price
+  function vpDraw(g, vp, x, Y, o, pw, ink){
+    if (x == null) return;
+    if (vp.miss) { var ym = Y((vp.top + vp.bot) / 2); if (ym == null) return;
+      var tx = vp.st === 'out' ? T('Volume profile: sign in for the volume', 'Perfil de volumen: inicia sesión para el volumen')
+        : (vp.st === 'fail' ? T('Volume profile: no volume yet - needs the EA 9.00 running', 'Perfil de volumen: aún sin volumen - necesita el EA 9.00 abierto') : T('Volume profile: asking your EA for the volume…', 'Perfil de volumen: pidiendo el volumen a tu EA…'));
+      g.save(); g.font = "10px 'AppNum','DM Mono',monospace"; g.fillStyle = ink(0.55); g.textAlign = 'left'; g.textBaseline = 'middle';
+      g.fillText(tx, Math.max(4, Math.min(x, pw - g.measureText(tx).width - 4)), ym + 14); g.restore(); return; }
+    var tag = function(y, col){ if (y == null) return; var xx = Math.round(x); g.fillStyle = col; g.beginPath(); g.moveTo(xx, y); g.lineTo(xx + 5, y - 5); g.lineTo(xx + 14, y - 5); g.lineTo(xx + 14, y + 5); g.lineTo(xx + 5, y + 5); g.closePath(); g.fill(); };
+    var ac = parseC(o.vpCol).h, pc = parseC(o.vpPoc);
+    vp.peaks.forEach(function(k){ tag(Y(k.price), hexA(ac, 1 - 0.75 * (1 - k.r))); });   // Pine: transparency 75 x (1 - volume / the busiest row)
+    tag(Y(vp.poc), hexA(pc.h, pc.a)); }
   function miniCalc(p){
     var B = p.bars, n = B ? B.length : 0; if (n < 2 || !S) return null; var Lb = B[n - 1], o = ms();
     var key = S.sym.raw + '|' + p.tf + '|' + n + '|' + B[0].time + '|' + Lb.time + '|' + Lb.high + '|' + Lb.low + '|' + Lb.close + '|' + JSON.stringify(CFG.miniS || {});
@@ -86762,7 +86832,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (!o.detach && o.zB > o.zA) { for (k = 0; k < n && B[k].time < o.zB; k++) {} zEnd = Math.max(sI + 1, k); } }
     if (sI >= 0) { var top = -Infinity, bot = Infinity, zTo = (zEnd < n && o.extTo && !o.detach) ? n : zEnd;   // Extend to Latest High/Low: the box covers everything after its end too
       for (k = sI; k < zTo; k++) { if (B[k].high > top) top = B[k].high; if (B[k].low < bot) bot = B[k].low; }
-      M.zone = { i0: sI, top: top, bot: bot, end: zEnd < n ? zEnd - 1 : null, hand: !o.auto }; }
+      M.zone = { i0: sI, top: top, bot: bot, end: zEnd < n ? zEnd - 1 : null, hand: !o.auto, iTo: zTo }; }
+    // his volume profile: the zone's own window (as far back as TradingView's 4,990 bars), on this chart's candles
+    if (M.zone && o.vpOn) { var va = Math.max(M.zone.i0, n - 1 - 4990), V = p.vols || []; M.vp = vpCalc(B, V, va, M.zone.iTo, o);
+      if (M.vp && M.vp.miss) M.vp.st = volAsk(volRanges(p, B, V, va, M.zone.iTo)); }
     // previous day / week / month, the day lines, weekday names, opening gaps, the sessions
     var C = { d: null, w: null, m: null }, PV = { d: null, w: null, m: null }, gl = [], s0 = [], tz = +o.tz || 0, sesTf = !o.sesCap || tf <= o.sesMax;
     for (i = 0; i < n; i++) { var b = B[i], lk = lonK(b.time), nd = false;
@@ -86841,6 +86914,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         // drawn by hand: its edges can be dragged (the left one always, the right one when it has an end)
         if (DW.mzHover === p || (DW.mz && DW.mz.p === p)) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
           if (!o.detach) { g.moveTo(Math.round(xb) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xb) + .5, Math.max(y0, y1)); } g.stroke(); g.lineWidth = 1; } } }
+    // his volume profile's arrows: offset candles right of the zone's box (its right edge: now + Extend Right)
+    if (miniOn('zone') && M.zone && o.vpOn && M.vp) vpDraw(g, M.vp, X(n - 1 + (+o.ext || 0) + (+o.vpOff || 0)), Y, o, pw, ink);
     // previous day / week / month: from the period's start to dwmExt candles past now; labels that would sit on top of
     // each other share one (the day's carries the week's or month's name under its own)
     if (miniOn('dwm') && tf < 525600) { var D = M.dwm, th = M.thr, sD = tf < 10080 && D.d, sW = D.w, sM = tf >= 5 && D.m, ex = Math.max(1, +o.dwmExt || 20);
@@ -86933,6 +87008,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       row('<span class="stpr-dcl">Premium ' + dSw('cTop', W.cTop) + '<span>Equilibrium</span> ' + dSw('cMid', W.cMid) + '<span>Discount</span> ' + dSw('cBot', W.cBot) + '</span>', '', ['cTop', 'cMid', 'cBot']);
       H.push('<div class="stpr-dnote">' + esc(W.auto ? T('In the app you can also drag the zone\'s left edge on the chart to move it by hand (Auto turns off).', 'En la app también puedes arrastrar el borde izquierdo de la zona para moverla a mano (Auto se apaga).')
         : T('Drag its left edge on the chart' + (W.detach ? '' : ', and its right edge') + ' to move it.', 'Arrastra su borde izquierdo' + (W.detach ? '' : ' y el derecho') + ' en el gráfico para moverla.')) + '</div>');
+      // his Volume Profile group (Nestor, 17 Oct 2026: "Tick volume from the EA"): always the P/D zone's window
+      H.push(dSec(T('Volume Profile', 'Perfil de volumen')));
+      row(dChk('vpOn', W.vpOn, '━━ Show Liquidity Arrows'));
+      row('Peak Threshold (σ multiplier)' + mInfo('vpSig'), dNum('vpSig', W.vpSig, 0, 3, 70, 0.1));
+      row('Rows (match TV FRVP Row Size)' + mInfo('vpRows'), dNum('vpRows', W.vpRows, 5, 500));
+      row('Arrow Offset (bars)' + mInfo('vpOff'), dNum('vpOff', W.vpOff, -500, 200));
+      row('Arrow Color', dSw('vpCol', W.vpCol), ['vpCol']);
+      row('Dominant POC Color', dSw('vpPoc', W.vpPoc), ['vpPoc']);
+      H.push('<div class="stpr-dnote">' + esc(T('The volume is MT5\'s tick volume, sent by the EA (9.00 or newer). Candles stored before that get it the first time a zone needs them: the app asks the EA, which sends them within a few minutes while MT5 runs.',
+        'El volumen es el de ticks de MT5, enviado por el EA (9.00 o posterior). Las velas guardadas antes lo reciben la primera vez que una zona las necesita: la app se lo pide al EA, que las envía en unos minutos mientras MT5 está abierto.')) + '</div>');
       H.push(dSec(T('Sessions', 'Sesiones')));
       row('Timezone', dSel('tz', W.tz, gmt));
       row('History (sessions)', dNum('hist', W.hist, 1, 500));
@@ -86985,7 +87070,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (/^vis\./.test(k)) { visSet(W.vis, k, el.type === 'checkbox' ? el.checked : el.value); apply(); return el.type === 'range' ? (function(){ var r = /^vis\.(\w+)\./.exec(k)[1], row = W.vis[r], box = el.closest('.stpr-dvr'); box.querySelectorAll('input[type=number]').forEach(function(n2){ n2.value = row[/\.a$/.test(n2.getAttribute('data-k')) ? 'a' : 'b']; });
           var u = VISU.filter(function(x){ return x[0] === r; })[0], bar = box.querySelector('.stpr-dslr i'); bar.style.left = ((row.a - u[3]) / (u[4] - u[3]) * 100) + '%'; bar.style.right = ((u[4] - row.b) / (u[4] - u[3]) * 100) + '%'; DLG.bg.querySelector('.stpr-dvn').textContent = T('Shows on: ', 'Se ve en: ') + visTxt(W.vis); return false; })() : false; }
         if (el.type === 'checkbox' || el.tagName === 'SELECT') return false;   // on change
-        if (el.type === 'number') { var nv = k === 'qLblY' ? Math.round(+el.value * 2) / 2 : Math.round(+el.value); if (isFinite(nv)) { setK(k, nv); apply(); } return false; }
+        if (el.type === 'number') { var nv = k === 'qLblY' ? Math.round(+el.value * 2) / 2 : (k === 'vpSig' ? Math.round(+el.value * 10) / 10 : Math.round(+el.value)); if (isFinite(nv)) { setK(k, nv); apply(); } return false; }
         if (el.type === 'datetime-local') return false;   // on change
         setK(k, el.value); apply(); return false; },
       onChange: function(el){ var k = el.getAttribute('data-k'); if (!k) return false;
@@ -87716,6 +87801,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   } catch (e) {}
   window.__stPractice = { open: open, close: close, stats: stats, log: logAll, pull: pull, _satReady: satReady,
     _pop: popChart, _unpop: unpop, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
+    _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests
     logShown: logShown, symName: function(raw){ return nameOf(canon(raw)); },
     _s: function(){ return S; }, _mm: function(){ return CFG.mm; }, _exec: toggleExec, _aim: function(pr){ aim(pr); linesAll(); paintPill(); }, _fire: fire, _touch: function(v){ forceTouch = v; if (S) render(); },

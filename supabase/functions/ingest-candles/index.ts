@@ -11,7 +11,7 @@
 //     supabase functions deploy ingest-candles --no-verify-jwt
 // Requires public.candles (see supabase/candles_setup.sql).
 //
-// Body: { token, symbol, tf, bars:[[t,o,h,l,c], …] }   (t = bar open, unix secs UTC)
+// Body: { token, symbol, tf, bars:[[t,o,h,l,c,v], …] }   (t = bar open, unix secs UTC; v = MT5 tick volume, EA 9.00+)
 // ─────────────────────────────────────────────────────────────────────────────
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") || "";
 const SERVICE_KEY  = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") || "";
@@ -73,8 +73,12 @@ Deno.serve(async (req: Request): Promise<Response> => {
     const t = Math.round(Number(b[0]) / 60) * 60;
     const o = Number(b[1]), h = Number(b[2]), l = Number(b[3]), c = Number(b[4]);
     if (!Number.isFinite(t) || !Number.isFinite(o) || !Number.isFinite(h) || !Number.isFinite(l) || !Number.isFinite(c)) continue;
-    rows.push({ symbol, tf, t, o, h, l, c });
+    rows.push({ symbol, tf, t, o, h, l, c, v: b.length > 5 ? Math.round(Number(b[5])) : NaN });
   }
+  // The tick volume (the Minimalist's volume profile): kept when every bar of the batch has it. A batch from an older EA
+  // has none and leaves the stored volume alone (every row of one POST must name the same columns).
+  const allV = rows.length > 0 && rows.every((x) => Number.isFinite(Number(x.v)) && Number(x.v) >= 0);
+  for (const x of rows) if (!allV) delete x.v;
   if (!rows.length) return json({ ok: true, upserted: 0 });
   if (tf <= 5) {
     const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;

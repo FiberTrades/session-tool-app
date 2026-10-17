@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.99"
+#property version   "9.00"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3545,7 +3545,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.99\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.00\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3899,7 +3899,7 @@ void LwOnText(string s)
       if(StringFind(s,"\"status\":\"ok\"")<0){ LwDrop("join refused"); g_lwWait=300000; return; }
       g_lwState=3; g_lwFails=0;
       Print("Live line: connected - the live chart updates every second while Session Terminal shows the trade.");
-      LwText(LwBroadcast("hi","{\"v\":\"8.99\"}"));   // a window already watching says so at once
+      LwText(LwBroadcast("hi","{\"v\":\"9.00\"}"));   // a window already watching says so at once
       return;
      }
    if(StringFind(s,"\"phx_error\"")>=0 || StringFind(s,"\"phx_close\"")>=0){ LwDrop("channel closed"); return; }
@@ -5093,9 +5093,9 @@ bool CE_ExportTrade(string sym,datetime openT,datetime closeT,bool full)
            {
             long tu=(long)r[i].time - SrvOffAt(r[i].time);   // v8.7: the offset of the bar's own date
             if(cnt>0) bars+=",";
-            bars+=StringFormat("[%I64d,%s,%s,%s,%s]",tu,
+            bars+=StringFormat("[%I64d,%s,%s,%s,%s,%I64d]",tu,   // v9.00: + tick volume
                      DoubleToString(r[i].open,dg),DoubleToString(r[i].high,dg),
-                     DoubleToString(r[i].low,dg), DoubleToString(r[i].close,dg));
+                     DoubleToString(r[i].low,dg), DoubleToString(r[i].close,dg),(long)r[i].tick_volume);
            }
          string js=StringFormat("{\"token\":\"%s\",\"symbol\":\"%s\",\"tf\":%d,\"bars\":[%s]}",
                                  g_syncTokenEff,sym,CE_TF_MIN[ti],bars);
@@ -5412,9 +5412,9 @@ bool HB_Post(string sym,int ti,MqlRates &r[],int from,int to)
      {
       long tu=(long)r[i].time-SrvOffAt(r[i].time);
       if(cnt>0) bars+=",";
-      bars+=StringFormat("[%I64d,%s,%s,%s,%s]",tu,
+      bars+=StringFormat("[%I64d,%s,%s,%s,%s,%I64d]",tu,   // v9.00: + tick volume
                DoubleToString(r[i].open,dg),DoubleToString(r[i].high,dg),
-               DoubleToString(r[i].low,dg), DoubleToString(r[i].close,dg));
+               DoubleToString(r[i].low,dg), DoubleToString(r[i].close,dg),(long)r[i].tick_volume);
       cnt++;
      }
    if(cnt==0) return true;
@@ -6928,7 +6928,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.99 loaded (price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.00 loaded (tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -7158,7 +7158,7 @@ bool LabelsFollowChart()
 //==================================================================
 // Nestor: "for the live chart i might want to be able to set alarms like in tradingview when a certain price has been
 // reached", "these alarms will have to be sent as nudges so i also get them on my phone". Session Terminal keeps the
-// member's alerts; this EA reads the active ones for its chart's symbol (st_ea_alerts, by the sync token - every minute
+// member's alerts; this EA reads the active ones for its chart's symbol (st_ea_poll since 9.00, by the sync token - every minute
 // while the member has any alert, every 5 minutes otherwise, and only while the market moves) and checks every tick.
 // When the bid reaches one it tells live-trade (through the live queue, so a blip is retried), which marks it fired and
 // pushes it to the phone. Whichever terminal reports first wins; a second report finds it already fired. Nothing from a
@@ -7169,13 +7169,23 @@ string g_alDone[];             // reported this session: never twice
 uint   g_alAt=0;               // GetTickCount() of the last read
 bool   g_alAny=false;          // the member has an active alert on some symbol
 bool   g_alOff=false;          // MT5 does not allow the address: stop until the EA restarts
+// v9.00 (Nestor, 17 Oct 2026: "Tick volume from the EA, but the EA should only send the information about the P/D zone
+// selected so it shouldnt take up that much space?"): every candle sent now carries its tick volume, and candles stored
+// before that get it only when a volume profile in Practice Replay needs them - the app asks, the same poll as the
+// alerts (st_ea_poll) hands the ask to a terminal that sends that symbol, and VolServe sends those candles again.
+#define VQ_MAX 8
+string g_vqId[]; string g_vqSym[]; int g_vqTf[]; long g_vqFrom[]; long g_vqTo[]; int g_vqPos[]; int g_vqFail[]; int g_vqN=0;
+uint   g_vqSeen=0;             // GetTickCount() of the last ask: poll every minute for a while after one
+void VolTake(string lst);      // defined below the poll
 
 string AlertRead()
   {
    int p=StringFind(InpLiveURL,"/functions/");
    if(p<0) return "";
-   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_alerts";
-   string body=StringFormat("{\"p_token\":\"%s\",\"p_sym\":\"%s\"}",g_syncTokenEff,_Symbol);
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_poll";   // v9.00: the alerts and the volume asks in one read
+   string syms=_Symbol;                                                    // this chart's symbol first (its alerts), then the ones it sends
+   for(int i=0;i<g_hbSymN && StringLen(syms)<400;i++) if(g_hbSym[i]!=_Symbol) syms+=","+g_hbSym[i];
+   string body=StringFormat("{\"p_token\":\"%s\",\"p_syms\":\"%s\"}",g_syncTokenEff,syms);
    char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
    char res[]; string rh;
    string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
@@ -7196,13 +7206,18 @@ void AlertPoll()
    if(g_alOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0) return;
    uint now=GetTickCount();
    bool moving=(g_lastTickMs!=0 && now-g_lastTickMs<120000);
-   uint every=g_alAny ? 60000 : 300000;
-   if(g_alAt!=0 && (now-g_alAt<every || !moving)) return;
+   // v9.00: also while the market is shut (every 10 minutes) - practice happens at weekends too - and every minute for
+   // 15 minutes after a volume ask, so the next zone looked at is served quickly
+   bool hot=(g_vqN>0 || (g_vqSeen!=0 && now-g_vqSeen<900000));
+   uint every=((g_alAny && moving) || hot) ? 60000 : (moving ? 300000 : 600000);
+   if(g_alAt!=0 && now-g_alAt<every) return;
    g_alAt=now;
    string r=AlertRead();
    if(StringLen(r)==0) return;                               // a failed read keeps what we had
    StringReplace(r,"\"",""); StringTrimLeft(r); StringTrimRight(r);
    if(r=="null"){ g_alN=0; g_alAny=false; return; }          // the token is not a member's (or the plan ran out)
+   int hash=StringFind(r,"#");                               // v9.00: '<alerts>#<volume asks>'
+   if(hash>=0){ VolTake(StringSubstr(r,hash+1)); r=StringSubstr(r,0,hash); }
    int bar=StringFind(r,"|"); if(bar<0) return;
    g_alAny=(StringSubstr(r,0,bar)=="1");
    string lst=StringSubstr(r,bar+1);
@@ -7222,6 +7237,53 @@ void AlertPoll()
       ArrayResize(g_alId,g_alN+1); ArrayResize(g_alPx,g_alN+1); ArrayResize(g_alDir,g_alN+1);
       g_alId[g_alN]=f[0]; g_alPx[g_alN]=px; g_alDir[g_alN]=dir; g_alN++;
      }
+  }
+// v9.00: 'id,symbol,tf,from,to;...' (tf in minutes, times unix UTC): queued, sent by VolServe
+void VolTake(string lst)
+  {
+   if(StringLen(lst)==0) return;
+   string items[]; int n=StringSplit(lst,';',items);
+   for(int i=0;i<n && g_vqN<VQ_MAX;i++)
+     {
+      string f[];
+      if(StringSplit(items[i],',',f)<5) continue;
+      int tf=(int)StringToInteger(f[2]); long a=StringToInteger(f[3]), b=StringToInteger(f[4]);
+      if(tf<=0 || a<=0 || b<a) continue;
+      ArrayResize(g_vqId,g_vqN+1); ArrayResize(g_vqSym,g_vqN+1); ArrayResize(g_vqTf,g_vqN+1); ArrayResize(g_vqFrom,g_vqN+1);
+      ArrayResize(g_vqTo,g_vqN+1); ArrayResize(g_vqPos,g_vqN+1); ArrayResize(g_vqFail,g_vqN+1);
+      g_vqId[g_vqN]=f[0]; g_vqSym[g_vqN]=f[1]; g_vqTf[g_vqN]=tf; g_vqFrom[g_vqN]=a; g_vqTo[g_vqN]=b; g_vqPos[g_vqN]=0; g_vqFail[g_vqN]=0; g_vqN++;
+      g_vqSeen=GetTickCount();
+     }
+  }
+void VolDrop()
+  {
+   for(int k=1;k<g_vqN;k++){ g_vqId[k-1]=g_vqId[k]; g_vqSym[k-1]=g_vqSym[k]; g_vqTf[k-1]=g_vqTf[k]; g_vqFrom[k-1]=g_vqFrom[k]; g_vqTo[k-1]=g_vqTo[k]; g_vqPos[k-1]=g_vqPos[k]; g_vqFail[k-1]=g_vqFail[k]; }
+   g_vqN--;
+   ArrayResize(g_vqId,g_vqN); ArrayResize(g_vqSym,g_vqN); ArrayResize(g_vqTf,g_vqN); ArrayResize(g_vqFrom,g_vqN); ArrayResize(g_vqTo,g_vqN); ArrayResize(g_vqPos,g_vqN); ArrayResize(g_vqFail,g_vqN);
+  }
+// One POST (up to CE_BATCH candles) of the oldest ask, at most every 2 seconds, and never while a trade or order is open:
+// each POST blocks the EA's one thread for up to 5 seconds, as the deep history does (HB_Step).
+void VolServe()
+  {
+   if(g_vqN==0 || StringLen(g_syncTokenEff)==0 || MQLInfoInteger(MQL_TESTER)!=0) return;
+   if(PositionsTotal()>0 || OrdersTotal()>0) return;
+   static uint s_at=0; uint now=GetTickCount();
+   if(s_at!=0 && now-s_at<2000) return;
+   s_at=now;
+   int ti=-1; for(int k=0;k<6;k++) if(CE_TF_MIN[k]==g_vqTf[0]) ti=k;
+   string sym=g_vqSym[0];
+   if(ti<0 || !SymbolSelect(sym,true)){ VolDrop(); return; }
+   // the ask is in UTC, MT5 counts server time; an hour and two candles either side covers a clock change
+   long pad=3600+2*60*(long)CE_TF_MIN[ti];
+   datetime a=(datetime)(g_vqFrom[0]+SrvOffAt((datetime)g_vqFrom[0])-pad), b=(datetime)(g_vqTo[0]+SrvOffAt((datetime)g_vqTo[0])+pad);
+   MqlRates r[];
+   int n=CopyRates(sym,CE_TF_PER[ti],a,b,r);
+   if(n<=0){ PrintFormat("Volume profile: %s has no %d-minute candles here for that zone.",sym,CE_TF_MIN[ti]); VolDrop(); return; }
+   int from=g_vqPos[0], to=MathMin(n,from+CE_BATCH);
+   if(from>=n){ VolDrop(); return; }
+   if(!HB_Post(sym,ti,r,from,to)){ if(++g_vqFail[0]>=5) VolDrop(); return; }
+   g_vqPos[0]=to;
+   if(to>=n){ PrintFormat("Volume profile: %s %d-minute, %d candles sent again with their volume (a zone in Practice Replay).",sym,CE_TF_MIN[ti],n); VolDrop(); }
   }
 // Every tick: has the bid reached one? An alert set without a direction takes it from the first price seen here (above
 // the bid: price has to rise to it; below: fall).
@@ -7288,6 +7350,7 @@ void OnTimer()
    if(TimeCurrent()-g_liveReAt>=20){ g_liveReAt=TimeCurrent(); LiveReannounceOpen(); }   // v4.3: keep open trades on the live feed
    LiveSettingsTick();   // v8.6: your EA settings -> Session Terminal, when they change
    AlertPoll();          // v8.99: the member's price alerts for this symbol (every minute while there are any, else every 5)
+   VolServe();           // v9.00: candles a volume profile asked for, again with their volume
    LiveFlush(3);
    // v8.71: deep replay history while the market is shut (weekends, holidays). No ticks means
    // OnTick - where it normally runs, once per M1 bar - never fires, and a closed market with
