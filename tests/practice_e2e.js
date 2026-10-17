@@ -106,11 +106,8 @@
     pev('pointermove', 1.13447); await W(60);
     ok('30 pips above: held at Max SL, 12 pips', S().pv.dir === -1 && near(S().pv.rd, 0.0012, 1e-9), S().pv);
     pev('pointerdown', 1.13267); await W(60);
-    var cf = document.getElementById('stpr-cf');
-    ok('a click asks first: Sell at market, stop 1.13267 (12.0 pips), target 1.12907 (2.0R)', P._cfOpen() && !S().pos && /Sell .*at market\?/.test(cf.textContent) && /Stop 1\.13267 \(12\.0 pips\)/.test(cf.textContent) && /target 1\.12907 \(2\.0R\)/.test(cf.textContent), cf.textContent);
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(50);
     var p = S().pos;
-    ok('Enter places it: SELL at 1.13147, stop 1.13267, target 1.12907; execution mode ends', p && p.dir === -1 && near(p.entry, 1.13147) && near(p.sl, 1.13267, 1e-9) && near(p.tp, 1.12907, 1e-9) && !S().exec && !P._cfOpen(), p && { e: p.entry, sl: p.sl, tp: p.tp });
+    ok('the click places it at once, as the EA does (no box to answer): SELL at 1.13147, stop 1.13267, target 1.12907; execution mode ends', p && p.dir === -1 && near(p.entry, 1.13147) && near(p.sl, 1.13267, 1e-9) && near(p.tp, 1.12907, 1e-9) && !S().exec && !document.getElementById('stpr-cf'), p && { e: p.entry, sl: p.sl, tp: p.tp });
     ok('the BE line is parked just inside the target, as the EA parks it (5 pips)', p && near(p.be, 1.12957, 1e-9) && find('be'), p && p.be);
     // the BE line dragged to 1R, and a partial: P1 closes 50% at 1R
     P._setLine('be', 1.13027);
@@ -129,12 +126,12 @@
     S().done = null; P._render(); await openDay(); stepTo('08:20');
     mmBtn('ord').click(); await W(30);
     ok('Order type Limit', /Limit/.test(mmBtn('ord').textContent) && P._mm().ord === 'limit');
-    P._exec(true); P._setLine('pvent', 1.13200); P._aim(1.13150); P._cfShow(0); P._cfYes(); await W(30);
+    P._exec(true); P._setLine('pvent', 1.13200); P._aim(1.13150); P._fire(); await W(30);
     ok('a Buy Limit above price is refused, as the broker refuses it', !S().pend && !S().pos, S().pend);
     mmBtn('ord').click(); await W(30);
-    P._exec(true); P._setLine('pvent', 1.13100); P._aim(1.13200); P._cfShow(0);
-    ok('the box names it: a Sell Stop at 1.13100', /Sell Stop at 1\.13100\?/.test(document.getElementById('stpr-cf').textContent), document.getElementById('stpr-cf').textContent);
-    P._cfYes(); await W(30);
+    P._exec(true); P._setLine('pvent', 1.13100); P._aim(1.13200);
+    ok('the preview names it: SELL STOP on the entry line', P._lines(0).some(function (l) { return l.k === 'pvent' && /SELL STOP/.test(l.title); }), P._lines(0));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(30);   // Enter places it, as a click does
     ok('it waits: SELL STOP 1.13100 with a Cancel order button', S().pend && S().pend.kind === 'stop' && near(S().pend.entry, 1.13100) && /SELL STOP/.test(document.getElementById('stpr-tr').textContent) && document.querySelector('#stpr-tr [data-a="cancel"]'), S().pend);
     var g2 = 0; while (S().pend && g2++ < 200) P._step();
     ok('it fills when price comes down to 1.13100: a sell from there', S().pos && S().pos.dir === -1 && near(S().pos.entry, 1.13100) && !S().pend, S().pos && S().pos.entry);
@@ -144,7 +141,7 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(30);
     ok('the O key turns execution mode on (and off again)', S().exec && (document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })), !S().exec));
     setIn('maxd', '1'); await W(30);
-    ok('Max trades 1 with a trade taken today: OFF, Execute off, SELL and BUY off', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && document.querySelector('#stpr-tr [data-a="sell"]').disabled && /Daily limit reached/.test(mmEl.textContent), mmEl.querySelector('.stpr-mm-f').textContent);
+    ok('Max trades 1 with a trade taken today: OFF, Execute off, the row says so', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && /Daily limit reached/.test(document.getElementById('stpr-tr').textContent) && /Daily limit reached/.test(mmEl.textContent), mmEl.querySelector('.stpr-mm-f').textContent);
     setIn('maxd', '0'); await W(30);
     mmBtn('on').click(); await W(30);
     ok('ON / OFF: off, Execute is off; on again', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && (mmBtn('on').click(), /ON/.test(mmBtn('on').textContent) && !mmBtn('exec').disabled));

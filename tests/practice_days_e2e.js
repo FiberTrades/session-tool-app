@@ -63,9 +63,10 @@
       var ttl = function (id) { return document.getElementById(id).getAttribute('title'); };
       var tools = Array.prototype.map.call(document.querySelectorAll('#stpr-tools [data-tool]'), function (b) { return b.title; });
       ok('in Spanish every tooltip is Spanish: the toolbar, the tools, the window buttons', ttl('stpr-undo') === 'Deshacer' && ttl('stpr-redo') === 'Rehacer' && ttl('stpr-drawbtn') === 'Herramientas de dibujo' && ttl('stpr-layersbtn') === 'Mostrar en el gráfico' && ttl('stpr-newsbtn') === 'Noticias en el gráfico' && ttl('stpr-close') === 'Cerrar' && ttl('stpr-back') === 'Un paso atrás' && tools.join(',') === 'Línea horizontal,Línea de tendencia,Rectángulo,Fib,Dibujar,Medir', [ttl('stpr-undo'), ttl('stpr-close'), tools.join(',')]);
-      ok('and the buttons say Reproducir, VENDER and COMPRAR', /Reproducir/.test(document.getElementById('stpr-play').textContent) && /VENDER/.test(document.querySelector('#stpr-tr [data-a="sell"]').textContent) && /COMPRAR/.test(document.querySelector('#stpr-tr [data-a="buy"]').textContent), [document.getElementById('stpr-play').textContent, document.querySelector('#stpr-tr [data-a="buy"]').textContent]);
+      var xb = function () { var b = document.querySelector('#stpr-mm [data-mm="exec"]'); return b ? b.textContent : ''; };
+      ok('and the buttons say Reproducir and Ejecutar', /Reproducir/.test(document.getElementById('stpr-play').textContent) && /Ejecutar/.test(xb()), [document.getElementById('stpr-play').textContent, xb()]);
       setLanguage('en'); await W(250);
-      ok('back in English: Undo, Play, SELL', ttl('stpr-undo') === 'Undo' && /Play/.test(document.getElementById('stpr-play').textContent) && /SELL/.test(document.querySelector('#stpr-tr [data-a="sell"]').textContent)); }
+      ok('back in English: Undo, Play, Execute', ttl('stpr-undo') === 'Undo' && /Play/.test(document.getElementById('stpr-play').textContent) && /Execute/.test(xb())); }
     document.getElementById('stpr-close').click(); await W(150);
     ok('the X closes it', !document.getElementById('stpr-bg').classList.contains('show'));
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
