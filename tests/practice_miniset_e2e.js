@@ -28,10 +28,20 @@
     var tabs = dlg() && Array.prototype.map.call(dlg().querySelectorAll('[data-dt]'), function (b) { return b.textContent; });
     ok("it opens TradingView's window: Minimalist, tabs Inputs / Style / Visibility, Defaults, Cancel, Ok", dlg() && /Minimalist/.test(dlg().querySelector('.stpr-dlgh').textContent) && tabs.join(',') === 'Inputs,Style,Visibility' && dlg().querySelector('[data-ddef]') && dlg().querySelector('[data-dc]') && dlg().querySelector('[data-dok]'), tabs);
     var txt = dlg().textContent;
-    ok('Inputs: his settings - Range zone (Auto, Structure length 30, Start only, Extend right 10, markers), Sessions (GMT+1, history 6, hide above 15m, London 08:00-10:00 on, New York / Tokyo / Sydney off), Previous day / week / month, days, gaps, quarters, Distance unit Auto',
-      ['Range zone', 'Auto: follow structure', 'Structure length', 'Start only', 'Extend right', 'Range markers', 'Sessions', 'Timezone', 'History (sessions)', 'Hide sessions above', 'Pre-fill session box', 'Show range', 'Label position', 'Previous day / week / month', 'Show range numbers', 'Move labels right', 'Line style', 'Abbreviate', 'Day separators', 'Opening gaps', 'Quarter lines', 'Years back', 'Distance unit'].every(function (w) { return txt.indexOf(w) >= 0; })
-      && inp('len').value === '30' && inp('ext').value === '10' && inp('tz').value === '1' && inp('hist').value === '6' && inp('sesMax').value === '15' && inp('s0.on').checked && inp('s0.name').value === 'London' && inp('s0.a').value === '08:00' && inp('s0.b').value === '10:00' && !inp('s1.on').checked && inp('unit').value === 'auto', txt);
-    ok('no ICT words in it', !/premium|discount|kill ?zone|liquidity|order block|equilibrium/i.test(txt));
+    // his panel, input for input (17 Oct 2026: "why dont you just copy all the options that i have")
+    var want = ['Premium & Discount Zones', '\u2501\u2501 P/D Zone', 'Detach Start Only', 'P/D Range Start', 'P/D Range End', 'Auto: Follow Structure', 'Structure Length (bars)', 'Extend to Latest High/Low', 'Extend Right (bars)', 'Show Range Markers', 'Premium', 'Equilibrium', 'Discount',
+      'Sessions', 'Timezone', 'History (sessions)', 'Hide Sessions Above', 'Pre-fill Session Box', 'Show Range', 'Label Size', 'Label Position', 'Override Label Color', 'Box Opacity', 'Box Border Style', 'S1', 'S2', 'S3', 'S4',
+      'Previous Day / Week / Month', '\u2501\u2501 Previous Day/Week/Month H/L', 'Show Range Numbers', 'Abbreviate Days of the Week', 'Day Separators', 'Move labels right (bars)', 'Line Style', '\u2501\u2501 Yearly Quarter Lines', 'Years Back', 'Label Y Offset (\u00d7 ATR)', 'Distance Units', 'Distance Unit', 'Show Unit (p / pts / t)'];
+    var missing = want.filter(function (w) { return txt.indexOf(w) < 0; });
+    ok('Inputs: every input of his TradingView panel, in its groups and with its wording', !missing.length, missing);
+    ok('his values: Structure Length 30, Extend Right 10, GMT+1, History 6, hide above 15m, London 08:00-10:00 on and the others off, Box Opacity 100, Show Range Numbers off, Line Style dotted, Label Size small, Move labels right 20, Years Back 1, Label Y Offset 35, Distance Unit Auto',
+      inp('len').value === '30' && inp('ext').value === '10' && inp('tz').value === '1' && inp('hist').value === '6' && inp('sesMax').value === '15' && inp('s0.on').checked && inp('s0.name').value === 'London' && inp('s0.a').value === '08:00' && inp('s0.b').value === '10:00' && !inp('s1.on').checked
+      && inp('sesOp').value === '100' && !inp('nums').checked && inp('dwmLine').value === 'dotted' && inp('dwmSize').value === 'small' && inp('sesSize').value === 'small' && inp('dwmExt').value === '20' && inp('qBack').value === '1' && inp('qLblY').value === '35' && inp('unit').value === 'auto' && inp('sesOvr').checked, txt);
+    ok('with his notes: an (i) beside the inputs that have one (20)', dlg().querySelectorAll('.stpr-dinfo').length === 20 && /Single toggle for all three/.test(dlg().querySelector('.stpr-dinfo').parentNode.parentNode.parentNode.innerHTML + Array.prototype.map.call(dlg().querySelectorAll('.stpr-dinfo'), function (x) { return x.title; }).join('|')), dlg().querySelectorAll('.stpr-dinfo').length);
+    var i0b = dlg().querySelector('.stpr-dinfo'); i0b.click(); await W(30);
+    var tipEl = dlg().querySelector('.stpr-dtip');
+    ok('pressing an (i) opens its note under the row (a phone has no hover); pressed again it closes', tipEl && /Master toggle/.test(tipEl.textContent) && (i0b.click(), !dlg().querySelector('.stpr-dtip')), tipEl && tipEl.textContent);
+    ok('colours inline with opacity, as on his panel: Premium, Equilibrium, Discount, the label colour, each session', ['cTop', 'cMid', 'cBot', 'sesInk', 's0.col', 's1.col', 's2.col', 's3.col'].every(function (k) { return dlg().querySelector('[data-dsw="' + k + '"]'); }));
     var z0 = M().zone; inp('len').value = '15'; fire(inp('len'), 'input'); await W(60);
     var z1 = M().zone;
     ok('a change shows on the chart at once (structure length 15: a different zone)', C.miniS.len === 15 && z1 && (z1.i0 !== z0.i0 || z1.top !== z0.top || z1.bot !== z0.bot), [z0, z1]);
@@ -50,9 +60,18 @@
     inp('unit').value = 'auto'; fire(inp('unit'), 'change'); inp('suffix').click(); await W(30);
     // style
     dlg().querySelector('[data-dt="1"]').click(); await W(40);
-    ok('Style: the zone colours, each session, the labels, the gaps, lines and labels', /Top quarter/.test(dlg().textContent) && /Bottom quarter/.test(dlg().textContent) && /New York/.test(dlg().textContent) && /Opened above/.test(dlg().textContent) && /Follow the chart/.test(dlg().textContent));
-    dlg().querySelector('[data-dsw="cTop"]').click(); await W(30); dlg().querySelector('[data-dcol="#2962ff"]').click(); await W(40);
+    ok('Style: the day-of-week labels, the opening gaps, lines and labels', /Day of week labels/i.test(dlg().textContent) && /Market Open Imbalance Gaps/i.test(dlg().textContent) && /Lines and labels/i.test(dlg().textContent) && dlg().querySelector('[data-dsw="gUp"]'));
+    dlg().querySelector('[data-dt="0"]').click(); await W(40);
+    dlg().querySelector('[data-dsw="cTop"]').click(); await W(30);
+    ok('a colour opens the palette with its opacity (Premium: 10%)', dlg().querySelector('[data-dop]') && dlg().querySelector('[data-dop]').value === '10');
+    dlg().querySelector('[data-dcol="#2962ff"]').click(); await W(40);
     ok('a colour from the palette keeps his opacity (10%)', C.miniS.cTop === 'rgba(41,98,255,0.1)', C.miniS.cTop);
+    var opn = dlg().querySelector('[data-dop]'); opn.value = '25'; fire(opn, 'input'); await W(30);
+    ok('and the opacity slider sets it (25%)', C.miniS.cTop === 'rgba(41,98,255,0.25)', C.miniS.cTop);
+    // sessions: Box Opacity fills them, the labels' size and colour
+    inp('sesOp').value = '80'; fire(inp('sesOp'), 'input'); inp('sesSize').value = 'large'; fire(inp('sesSize'), 'change'); await W(60);
+    ok('Box Opacity 80 and Label Size large are kept', C.miniS.sesOp === 80 && C.miniS.sesSize === 'large', [C.miniS.sesOp, C.miniS.sesSize]);
+    inp('sesOp').value = '100'; fire(inp('sesOp'), 'input'); inp('sesSize').value = 'small'; fire(inp('sesSize'), 'change'); await W(30);
     // visibility
     dlg().querySelector('[data-dt="2"]').click(); await W(40);
     ok('Visibility: Minutes, Hours, Days, Weeks, Months', dlg().querySelectorAll('.stpr-dvr').length === 5);
@@ -60,7 +79,14 @@
     ok('Minutes off: the indicator leaves the 15m chart', C.miniS.vis && !P._visOK(C.miniS.vis, 15) && pane()._mz == null, C.miniS.vis);
     inp('vis.m.on').click(); await W(40);
     dlg().querySelector('[data-dok]').click(); await W(60);
-    ok('Ok keeps it all (saved): New York on, the blue top quarter, every timeframe again', C.miniS.ses[1].on === true && C.miniS.cTop === 'rgba(41,98,255,0.1)' && !C.miniS.vis, C.miniS);
+    ok('Ok keeps it all (saved): New York on, the blue Premium, every timeframe again', C.miniS.ses[1].on === true && C.miniS.cTop === 'rgba(41,98,255,0.25)' && !C.miniS.vis, C.miniS);
+    // P/D Range Start / End as dates, as on his panel
+    P._miniDialog(); await W(60); var sd0 = inp('zA');
+    ok('P/D Range Start shows where the zone starts now', sd0 && sd0.type === 'datetime-local' && sd0.value.length === 16, sd0 && sd0.value);
+    inp('auto').click(); await W(40); var Bz = pane().bars, tA = Bz[Bz.length - 40].time, dl = new Date(tA * 1000), p2 = function (x) { return (x < 10 ? '0' : '') + x; };
+    inp('zA').value = dl.getFullYear() + '-' + p2(dl.getMonth() + 1) + '-' + p2(dl.getDate()) + 'T' + p2(dl.getHours()) + ':' + p2(dl.getMinutes()); fire(inp('zA'), 'change'); await W(60);
+    ok('Auto off and a Range Start typed in: the zone starts on that candle', C.miniS.auto === false && M().zone.i0 === Bz.length - 40, [M().zone.i0, Bz.length - 40]);
+    dlg().querySelector('[data-dc]').click(); await W(40);
 
     // the zone, moved by hand
     P._render(); await W(100); var mz = pane()._mz;
