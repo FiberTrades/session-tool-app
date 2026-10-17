@@ -85,6 +85,7 @@
     var setIn = function (k, v) { var el = mmIn(k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
     var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     ok('the panel sits beside the chart: 300 px wide, the chart starts after it', mmEl && mmEl.parentNode === cw && Math.abs(mmEl.getBoundingClientRect().width - 300) < 2 && gridL >= 299, { w: mmEl && mmEl.getBoundingClientRect().width, gridL: gridL });
+    ok('its title says Practice account, not a real account (17 Oct 2026)', mmEl.querySelector('.stpr-mm-n').textContent === 'Practice account', mmEl.querySelector('.stpr-mm-n').textContent);
     ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && /Execute/i.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
     setIn('min', '2'); setIn('max', '12'); await W(30);
     ok('Min SL 2.0 and Max SL 12.0 pips held (the stop box is gone: the panel holds it)', mmIn('min').value === '2.0' && mmIn('max').value === '12.0' && !document.getElementById('stpr-stop'), [mmIn('min').value, mmIn('max').value]);
@@ -147,7 +148,15 @@
     ok('ON / OFF: off, Execute is off; on again', /OFF/.test(mmBtn('on').textContent) && mmBtn('exec').disabled && (mmBtn('on').click(), /ON/.test(mmBtn('on').textContent) && !mmBtn('exec').disabled));
     mmBtn('col').click(); await W(300);
     var gl2 = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
-    ok('− folds the panel to its title and Execute; the chart takes the whole width', cw.classList.contains('mmcol') && !mmEl.querySelector('.stpr-mm-b') && mmBtn('exec') && gl2 < 2, { gl2: gl2 });
+    var mr = mmEl.getBoundingClientRect(), cr = cw.getBoundingClientRect();
+    ok('− folds the panel to a strip in the row above the charts (title, ON, Execute): nothing on a chart, the charts take the whole width', mmEl.parentNode === document.getElementById('stpr-tb2') && mmEl.classList.contains('strip') && !mmEl.querySelector('.stpr-mm-b') && mmBtn('exec') && gl2 < 2 && mr.bottom <= cr.top + 1 && mr.height <= 32, { gl2: gl2, bottom: mr.bottom, cwTop: cr.top, h: mr.height });
+    mmBtn('exec').click(); await W(30);
+    ok('Execute works from the strip', S().exec && (mmBtn('exec').click(), !S().exec));
+    // execution mode ends when the mouse leaves the window or the app, or the app loses the focus (as the EA disarms off the chart)
+    mmBtn('exec').click(); await W(20); var a1 = S().exec; document.getElementById('stpr-win').dispatchEvent(new MouseEvent('mouseleave')); await W(20);
+    ok('the mouse leaving the window turns execution mode off', a1 && !S().exec);
+    mmBtn('exec').click(); await W(20); var a2 = S().exec; window.dispatchEvent(new Event('blur')); await W(20);
+    ok('switching to another program (the app loses the focus) turns it off too', a2 && !S().exec);
     mmBtn('col').click(); await W(200);
     S().done = null; S().exec = false; S().pv = null; P._render();
 
