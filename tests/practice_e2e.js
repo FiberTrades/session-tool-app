@@ -99,7 +99,7 @@
     // execution mode: Execute, the stop follows the mouse (held at Max SL), a click asks, Enter places
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(50);   // the key arms it, as in MT5: no Execute button on a computer (17 Oct 2026)
     var find = function (k) { return P._lines(0).filter(function (l) { return l.k === k; })[0]; };
-    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9) && /Execution mode on/.test(mmEl.querySelector('.stpr-mm-fn').textContent) && mmEl.querySelector('.stpr-mm-fn').classList.contains('on'), P._lines(0));
+    ok('Execute: execution mode on, the preview a buy with a 12-pip stop to start', S().exec && S().pv && S().pv.dir === 1 && find('pvsl') && near(find('pvsl').p, 1.13027, 1e-9) && find('pvtp') && near(find('pvtp').p, 1.13387, 1e-9) && /Execution mode on: click the chart where your stop goes\. Press O again to leave\./.test(mmEl.querySelector('.stpr-mm-fn').textContent) && /Press O again to leave/.test(document.getElementById('stpr-tr').textContent) && mmEl.querySelector('.stpr-mm-fn').classList.contains('on'), P._lines(0));
     ch = pane().el.querySelector('.stpr-pc'); r = ch.getBoundingClientRect(); var x = r.left + r.width * 0.5;
     var pev = function (t, price, btn) { ch.dispatchEvent(new PointerEvent(t, { clientX: x, clientY: r.top + P._yOf(0, price), bubbles: true, cancelable: true, pointerId: 7, pointerType: 'mouse', button: btn || 0 })); };
     pev('pointermove', 1.13227); await W(60);
