@@ -19982,6 +19982,24 @@ try {
      own size, height and gap from the candle (its sums, copied), the head and the stem 20% narrower.
      __stArrows(series, marks) takes the list series.setMarkers takes: arrowUp / arrowDown are drawn here, any other
      shape (a circle) still goes to setMarkers. */
+  /* The Session Live chart's crosshair, drawn like Practice Replay's (Nestor, 17 Oct 2026: "can the cross hairs in the live
+     session chart look like this one? same size and colour"): pink dashed lines (4 on, 3 off) across the whole chart, the
+     price and the time on the dark #2a2833 labels. The library keeps its labels; its own lines are hidden. The vertical line
+     sits on the candle, the horizontal one on the mouse. Returns its state (pt) for the tests. */
+  window.__stCx = function (chart, series) {
+    var line = { visible: false, labelVisible: true, labelBackgroundColor: '#2a2833' }, st = { pt: null, req: null };
+    try { chart.applyOptions({ crosshair: { mode: 0, vertLine: line, horzLine: line } }); } catch (e) {}
+    var draw = function (target) { var pt = st.pt; if (!pt) return;
+      target.useMediaCoordinateSpace(function (sc) { var g = sc.context, w = sc.mediaSize.width, h = sc.mediaSize.height, X = Math.round(pt.x) + 0.5, Y = Math.round(pt.y) + 0.5;
+        g.save(); g.strokeStyle = 'rgba(244,114,182,0.55)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath();
+        if (pt.x >= 0 && pt.x <= w) { g.moveTo(X, 0); g.lineTo(X, h); } if (pt.y >= 0 && pt.y <= h) { g.moveTo(0, Y); g.lineTo(w, Y); } g.stroke(); g.restore(); }); };
+    var view = { renderer: function () { return { draw: draw }; }, zOrder: function () { return 'top'; } };
+    try { series.attachPrimitive({ paneViews: function () { return [view]; }, updateAllViews: function () {}, attached: function (p) { st.req = p.requestUpdate; }, detached: function () { st.req = null; } }); } catch (e) {}
+    try { chart.subscribeCrosshairMove(function (prm) { var pt = prm && prm.point, x = pt ? pt.x : null;
+      if (pt && prm.time != null) { try { var tx = chart.timeScale().timeToCoordinate(prm.time); if (tx != null) x = tx; } catch (e) {} }
+      st.pt = pt ? { x: x, y: pt.y } : null; if (st.req) st.req(); }); } catch (e) {}
+    return st;
+  };
   window.__stArrows = function (series, marks) {
     var NARROW = 0.8;
     var odd = function (v) { var c = Math.ceil(v); return c % 2 === 0 ? c - 1 : c; };
@@ -20196,6 +20214,9 @@ try {
       return c;
     }
     function hm(ts) { var d = new Date(ts * 1000); return String(d.getHours()).padStart(2, '0') + ':' + String(d.getMinutes()).padStart(2, '0'); }
+    function cxTime(ts) { var d = new Date(ts * 1000), es = T2('en', 'es') === 'es';
+      var dn = (es ? ['dom', 'lun', 'mar', 'mié', 'jue', 'vie', 'sáb'] : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'])[d.getDay()], mn = (es ? ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'] : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'])[d.getMonth()];
+      return dn + ' ' + d.getDate() + ' ' + mn + " '" + String(d.getFullYear()).slice(2) + '  ' + hm(ts); }
     function makeChart(k, sym, dg) {
       var el = document.createElement('div'); el.className = 'slx-cht';
       var box = document.createElement('div'); box.className = 'slx-chb';
@@ -20252,7 +20273,7 @@ try {
         if (charts[k] !== c) return;
         var d = Math.max(0, Math.min(8, isFinite(dg) ? dg : 5));
         c.chart = window.LightweightCharts.createChart(box, {
-          layout: { background: { color: 'transparent' }, textColor: '#9a96a6', fontFamily: "'DM Mono',monospace", fontSize: 10 },
+          layout: { background: { color: 'transparent' }, textColor: '#9a96a6', fontFamily: "'DM Mono',monospace", fontSize: 11 },   // 11 as on the practice charts (17 Oct 2026)
           grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
           // room at the bottom for the Candle | Spread badge, so the lowest level line never runs under it
           rightPriceScale: { borderColor: '#332F3C', scaleMargins: { top: 0.08, bottom: 0.2 } },
@@ -20260,13 +20281,14 @@ try {
             tickMarkFormatter: function (t, type) { var ts = (typeof t === 'number') ? t : 0, dd = new Date(ts * 1000);
               if (type === 3 || type === 4) return hm(ts); if (type === 2) return String(dd.getDate());
               if (type === 1) return dd.toLocaleDateString(undefined, { month: 'short' }); return String(dd.getFullYear()); } },
-          localization: { timeFormatter: function (t) { return hm(typeof t === 'number' ? t : 0); } },
+          localization: { timeFormatter: function (t) { return cxTime(typeof t === 'number' ? t : 0); } },   // the crosshair's label: Thu 15 Oct '26  22:00, as in practice
           crosshair: { mode: 0 }, autoSize: true });
         c.series = c.chart.addCandlestickSeries({ upColor: '#4ECD8B', downColor: '#E56767', borderVisible: false, wickUpColor: '#4ECD8B', wickDownColor: '#E56767',
           priceLineVisible: true, lastValueVisible: true, priceLineColor: '#c0c0c0', priceFormat: { type: 'price', precision: d, minMove: Math.pow(10, -d) },
           // keep the stop and the target on screen, not only the candles
           autoscaleInfoProvider: function (orig) { var r = orig(); if (!r || !c.rng) return r;
             return { priceRange: { minValue: Math.min(r.priceRange.minValue, c.rng[0]), maxValue: Math.max(r.priceRange.maxValue, c.rng[1]) }, margins: r.margins }; } });
+        c.cx = window.__stCx(c.chart, c.series);
         later();
       }, function () { el.classList.add('off'); });
       return c;
@@ -20451,6 +20473,7 @@ try {
       return { k: k, sym: c.sym, tf: c.tf, label: lb ? lb.textContent : '', ready: !!c.series, hidden: !!c.el.hidden, inCard: !!(c.el.parentNode && c.el.parentNode.closest && c.el.parentNode.closest('.slx-tc')),
                bars: bc ? bc.bars.length : 0, form: bc && bc.form ? [bc.form.time, bc.form.open, bc.form.high, bc.form.low, bc.form.close] : null, lines: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.price; }), colors: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.color; }),
                styles: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.lineStyle; }), marks: JSON.parse(c.mk || '[]'),
+               cx: c.chart ? (function () { var o = c.chart.options(); return { mode: o.crosshair.mode, v: o.crosshair.vertLine.visible, lv: o.crosshair.vertLine.labelVisible, bg: o.crosshair.vertLine.labelBackgroundColor, hbg: o.crosshair.horzLine.labelBackgroundColor, fs: o.layout.fontSize, t: o.localization.timeFormatter(1792094400), pt: c.cx ? c.cx.pt : null }; })() : null,
                ys: c.series ? JSON.parse(c.sig || '[]').map(function (o) { var y = null; try { y = c.series.priceToCoordinate(o.price); } catch (e) {} return { t: o.title, y: y }; }) : [],
                h: (function () { try { var b = c.el.querySelector('.slx-chb'); return b.clientHeight - c.chart.timeScale().height(); } catch (e) { return 0; } })() }; }); }
     return { render: render, later: later, charts: chartDiag, parseLad: parseLad };
@@ -84960,7 +84983,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-ptfw.open ~ .stpr-tl { display: none; }
   /* Nestor, 17 Oct 2026: "remove what would you do here? and move settings panel there" - the folded panel sits at the top
      left of the first chart, beside its timeframe; the trade's own line (SELL - +0.5R - 6 pips) follows it */
-  .stpr-tl { position: absolute; left: 68px; top: 8px; z-index: 5; display: flex; gap: 6px; align-items: center; max-width: calc(100% - 150px); pointer-events: none; }
+  .stpr-tl { position: absolute; left: 68px; top: 8px; bottom: 8px; z-index: 5; display: flex; gap: 6px; align-items: flex-start; max-width: calc(100% - 150px); pointer-events: none; }
+  /* open, it drops down from the strip over the first chart (Nestor, 17 Oct 2026: "so when i open it it just extends down?
+     it glitches at the moment when it opens") - the charts keep their size */
+  .stpr-tl .stpr-mm.drop { width: 300px; max-width: 100%; max-height: 100%; box-sizing: border-box; border: 1px solid var(--mm-line); border-radius: 8px; overflow: hidden; box-shadow: 0 14px 34px rgba(0,0,0,.5); }
+  .stpr-tl .stpr-mm.drop .stpr-mm-t { height: 28px; padding: 0 6px 0 10px; }
+  .stpr-tl .stpr-mm.drop .stpr-mm-n { flex: none; font-size: 11.5px; }
+  .stpr-tl .stpr-mm.drop.armed { border-color: var(--mm-acc); box-shadow: 0 0 0 1px var(--mm-acc) inset, 0 14px 34px rgba(0,0,0,.5); }
   .stpr-tl > * { pointer-events: auto; }
   .stpr-tl .stpr-mm.strip { margin-left: 0; flex: none; }
   .stpr-tl .stpr-pill { position: static; max-width: none; min-width: 0; flex: 0 1 auto; pointer-events: none; }
@@ -86041,8 +86070,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // beside the charts on a computer, under them on a phone; folded, a strip in the row above the charts (they take the whole width)
   function placeMM(){
     var el = mmEl(), cw = $('stpr-cw'), win = $('stpr-win'), bar = $('stpr-tb2'), del = $('stpr-del'); if (!el || !cw) return;
-    var ph = phone(), strip = !ph && !!CFG.mm.col && !!(bar && del);
-    el.classList.toggle('strip', strip);
+    var ph = phone(), tl = !ph && $('stpr-tl'), strip = !ph && !!CFG.mm.col && !!(bar && del), drop = !!tl && !CFG.mm.col;
+    el.classList.toggle('strip', strip); el.classList.toggle('drop', drop);
+    if (drop) { if (tl.firstChild !== el) tl.insertBefore(el, tl.firstChild); cw.classList.remove('mm'); return; }
     if (ph) { if (el.parentNode !== win) win.insertBefore(el, $('stpr-tr')); cw.classList.remove('mm'); }
     else if (strip) { var tl = $('stpr-tl');   // folded: at the top left of the first chart (else, with no chart yet, in the row above)
       if (tl) { if (tl.firstChild !== el) tl.insertBefore(el, tl.firstChild); } else if (del.nextElementSibling !== el) bar.insertBefore(el, del.nextSibling); cw.classList.remove('mm'); }

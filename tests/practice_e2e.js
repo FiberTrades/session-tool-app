@@ -84,7 +84,8 @@
     var mmIn = function (k) { return mmEl.querySelector('[data-mmi="' + k + '"]'); }, mmBtn = function (k) { return mmEl.querySelector('[data-mm="' + k + '"]'); };
     var setIn = function (k, v) { var el = mmIn(k); el.value = v; el.dispatchEvent(new Event('input', { bubbles: true })); el.dispatchEvent(new Event('change', { bubbles: true })); };
     var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
-    ok('the panel sits beside the chart: 300 px wide, the chart starts after it', mmEl && mmEl.parentNode === cw && Math.abs(mmEl.getBoundingClientRect().width - 300) < 2 && gridL >= 299, { w: mmEl && mmEl.getBoundingClientRect().width, gridL: gridL });
+    var tfR = P._panes()[0].el.querySelector('.stpr-tfpill').getBoundingClientRect(), pmR = mmEl && mmEl.getBoundingClientRect();
+    ok('open, the panel hangs from the top left of the first chart beside its timeframe, 300 px wide, over the chart: the charts keep the whole width (17 Oct 2026: "it just extends down")', mmEl && mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.classList.contains('drop') && Math.abs(pmR.width - 300) < 2 && gridL < 2 && pmR.left > tfR.right && Math.abs(pmR.top - tfR.top) < 2 && pmR.bottom <= P._panes()[0].el.getBoundingClientRect().bottom + 1, { w: pmR && pmR.width, gridL: gridL, top: pmR && pmR.top, tf: tfR.top });
     ok('its title says Practice account, not a real account (17 Oct 2026)', mmEl.querySelector('.stpr-mm-n').textContent === 'Practice account', mmEl.querySelector('.stpr-mm-n').textContent);
     ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && !mmBtn('exec') && /Press O, then click the chart where your stop goes/.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
     setIn('min', '2'); setIn('max', '12'); await W(30);
@@ -205,6 +206,8 @@
 
     // drawings: Trade Replay's tools, placed click, click (all of it in practice_tools_e2e.js)
     await openDay(); P._jump('london'); await W(300);
+    // the open panel hangs over the top left of the chart: folded, these clicks reach the chart
+    if (!P._mm().col) { document.querySelector('#stpr-mm [data-mm="col"]').click(); await W(150); }
     var DW = P._dr(); DW.list = []; DW.hist = ['[]']; DW.hpos = 0; DW.sel = null;
     document.getElementById('stpr-drawbtn').click();
     document.querySelector('#stpr-tools [data-tool="trend"]').click();

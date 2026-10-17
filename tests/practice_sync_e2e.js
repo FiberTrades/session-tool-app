@@ -81,9 +81,9 @@
     var DW = P._dr();
     ok("the phone's EUR/USD drawing came down when EUR/USD opened", DW.list.length === 1 && DW.list[0].text === 'from the phone', DW.list);
     document.getElementById('stpr-drawbtn').click(); document.querySelector('#stpr-tools [data-tool="hline"]').click();
-    var ch = P._panes()[0].el.querySelector('.stpr-pc'), rc = ch.getBoundingClientRect(), tg = document.elementFromPoint(rc.left + 200, rc.top + 150) || ch;
-    tg.dispatchEvent(new MouseEvent('mousedown', { clientX: rc.left + 200, clientY: rc.top + 150, bubbles: true, cancelable: true, button: 0, buttons: 1 }));
-    tg.dispatchEvent(new MouseEvent('mouseup', { clientX: rc.left + 200, clientY: rc.top + 150, bubbles: true, cancelable: true, button: 0 }));
+    var ch = P._panes()[0].el.querySelector('.stpr-pc'), rc = ch.getBoundingClientRect(), cxx = rc.width * 0.7, tg = document.elementFromPoint(rc.left + cxx, rc.top + 150) || ch;   // clear of the open panel at the top left
+    tg.dispatchEvent(new MouseEvent('mousedown', { clientX: rc.left + cxx, clientY: rc.top + 150, bubbles: true, cancelable: true, button: 0, buttons: 1 }));
+    tg.dispatchEvent(new MouseEvent('mouseup', { clientX: rc.left + cxx, clientY: rc.top + 150, bubbles: true, cancelable: true, button: 0 }));
     await W(1900);
     var srvE = DB.practice_drawings.filter(function (x) { return x.sym === 'EURUSD'; })[0];
     ok('a line drawn here goes up to the server a moment later (both lines, newer stamp)', srvE && srvE.items.length === 2 && Date.parse(srvE.updated_at) > Date.now() - 10000, srvE && srvE.items.length);

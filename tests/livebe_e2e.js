@@ -89,6 +89,19 @@
     var mb = (DB && DB.marks) || [];
     check('a buy has one pink up-arrow under its entry candle', mb.length === 1 && mb[0].shape === 'arrowUp' && mb[0].position === 'belowBar', DB);
 
+    // the crosshair as in Practice Replay (17 Oct 2026: "same size and colour")
+    var D0 = window.__stLiveBox.charts().filter(function (x) { return x.ready; })[0], cx = D0 && D0.cx;
+    check("the crosshair is Practice Replay's: the library's lines hidden, its labels on #2a2833, text at 11, the time label reads like Thu 15 Oct '26  22:00", cx && cx.mode === 0 && cx.v === false && cx.lv === true && cx.bg === '#2a2833' && cx.hbg === '#2a2833' && cx.fs === 11 && /^[A-Z][a-z]{2} \d{1,2} [A-Z][a-z]{2} '\d{2}  \d{2}:\d{2}$/.test(cx.t), cx);
+    var box0 = document.querySelector('#st-livebox .slx-chb'); if (box0) { box0.scrollIntoView({ block: 'center' }); await W(200); }
+    var cv = box0 && box0.querySelector('canvas'), br = cv && cv.getBoundingClientRect();
+    if (cv) { var mx = br.left + br.width * 0.4, my = br.top + br.height * 0.4, tgt = document.elementFromPoint(mx, my) || cv;
+      ['pointerover', 'pointerenter', 'mouseover', 'mouseenter', 'pointermove', 'mousemove', 'pointermove', 'mousemove'].forEach(function (ty, j) {
+        var o = { clientX: mx + j, clientY: my, bubbles: ty.indexOf('enter') < 0, pointerType: 'mouse', pointerId: 1, isPrimary: true };
+        tgt.dispatchEvent(ty.indexOf('pointer') === 0 ? new PointerEvent(ty, o) : new MouseEvent(ty, o)); });
+      await W(300); }
+    var cx2 = (window.__stLiveBox.charts().filter(function (x) { return x.ready; })[0] || {}).cx;
+    check('moving the mouse over it puts our pink dashed lines on the candle and at the mouse', cx2 && cx2.pt && cx2.pt.x > 0 && Math.abs(cx2.pt.y - br.height * 0.4) < 4, cx2);
+
     // the card without a chart (EA before 8.89) marks it on its line too
     var host = document.getElementById('st-livebox');
     check('the card has no error text', host && !/undefined|NaN/.test(host.textContent), host && host.textContent.slice(0, 300));
