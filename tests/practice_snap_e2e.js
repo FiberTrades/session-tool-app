@@ -13,19 +13,28 @@
     await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length === 2 && P._panes()[1].n); k++) await W(100);
     P._goto('14:30'); await W(500); P._render(); await W(100);
     var pane = function (i) { return P._panes()[i || 0]; }, f5 = function (v) { return Number(v).toFixed(5); };
-    var B = pane(0).bars, lb = B[B.length - 1], pb = B[B.length - 2];
-    var txt = P._ohlc(0), ch = lb.close - pb.close;
-    ok('each chart shows O H L C and the change of its latest candle, TradingView\'s way', txt === 'O' + f5(lb.open) + 'H' + f5(lb.high) + 'L' + f5(lb.low) + 'C' + f5(lb.close) + (ch >= 0 ? '+' : '−') + f5(Math.abs(ch)) + ' (' + (ch >= 0 ? '+' : '−') + Math.abs(ch / pb.close * 100).toFixed(2) + '%)', [txt, lb]);
+    var B = pane(0).bars, tb = B[B.length - 30], pb = B[B.length - 31], ch0 = pane(0).el.querySelector('.stpr-pc'), r = ch0.getBoundingClientRect();
+    var pev = function (t, x, y, o) { var el = document.elementFromPoint(r.left + x, r.top + y) || ch0; el.dispatchEvent(new PointerEvent(t, Object.assign({ clientX: r.left + x, clientY: r.top + y, bubbles: true, cancelable: true, pointerType: 'mouse', button: 0, buttons: t === 'pointerup' ? 0 : 1 }, o || {}))); };
+    var click = function (x, y) { pev('pointerdown', x, y); pev('pointerup', x, y); };
+    var x = P._xOfT(0, tb.time), y = (P._yOf(0, tb.high) + P._yOf(0, tb.low)) / 2;
+    ok('no O H L C line until a candle is clicked (Nestor: "only when i click on a candle")', P._ohlc(0) === '' && P._ohlc(1) === '', [P._ohlc(0), P._ohlc(1)]);
+    click(x, y); await W(40);
+    var txt = P._ohlc(0), ch = tb.close - pb.close;
+    ok('a candle clicked: its O H L C and change, TradingView\'s way', txt === 'O' + f5(tb.open) + 'H' + f5(tb.high) + 'L' + f5(tb.low) + 'C' + f5(tb.close) + (ch >= 0 ? '+' : '−') + f5(Math.abs(ch)) + ' (' + (ch >= 0 ? '+' : '−') + Math.abs(ch / pb.close * 100).toFixed(2) + '%)', [txt, tb]);
     var el = pane(0).el.querySelector('.stpr-ohlc');
-    ok('coloured by the candle (green up, red down), beside the timeframe button', el && el.classList.contains(lb.close >= lb.open ? 'u' : 'd') && el.parentNode.classList.contains('stpr-ptfw'));
-    // the crosshair on a candle
-    var tb = B[B.length - 30], ch0 = pane(0).el.querySelector('.stpr-pc'), r = ch0.getBoundingClientRect(), x = P._xOfT(0, tb.time);
-    var tg = document.elementFromPoint(r.left + x, r.top + 200) || ch0; tg.dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + x, clientY: r.top + 200, bubbles: true })); await W(80);
-    var t2 = P._ohlc(0);
-    ok('the crosshair on a candle: its figures instead', t2.indexOf('O' + f5(tb.open) + 'H' + f5(tb.high) + 'L' + f5(tb.low) + 'C' + f5(tb.close)) === 0, [t2, tb]);
-    var B1 = pane(1).bars, h1 = B1.filter(function (b) { return b.time <= tb.time; }).pop(), t3 = P._ohlc(1);
-    ok('and the other chart shows its own candle at that moment (the 1h)', h1 && t3.indexOf('O' + f5(h1.open) + 'H' + f5(h1.high)) === 0, [t3, h1]);
-    window.dispatchEvent(new MouseEvent('mousemove', { clientX: 5, clientY: 5, bubbles: true })); document.dispatchEvent(new MouseEvent('mousemove', { clientX: 5, clientY: 5, bubbles: true }));
+    ok('coloured by the candle (green up, red down), beside the timeframe button; on that chart only', el && el.classList.contains(tb.close >= tb.open ? 'u' : 'd') && el.parentNode.classList.contains('stpr-ptfw') && P._ohlc(1) === '');
+    var yAbove = Math.max(4, Math.min(P._yOf(0, tb.high), P._yOf(0, tb.low)) - 60);
+    click(x, yAbove); await W(40);
+    ok('a click on the chart away from the candle: gone', P._ohlc(0) === '', P._ohlc(0));
+    click(x, y); await W(30); var shown = P._ohlc(0) !== '';
+    pev('pointerdown', x, y); pev('pointermove', x + 40, y); pev('pointerup', x + 40, y); await W(30);
+    ok('shown again, then the chart dragged (a scroll): gone', shown && P._ohlc(0) === '');
+    click(x, y); await W(30); shown = P._ohlc(0) !== '';
+    var wt = document.elementFromPoint(r.left + x, r.top + y) || ch0; wt.dispatchEvent(new WheelEvent('wheel', { clientX: r.left + x, clientY: r.top + y, deltaY: 100, bubbles: true, cancelable: true })); await W(30);
+    ok('and the wheel: gone', shown && P._ohlc(0) === '');
+    await W(200); x = P._xOfT(0, tb.time); y = (P._yOf(0, tb.high) + P._yOf(0, tb.low)) / 2;   // the wheel moved the view
+    click(x, y); await W(30); shown = P._ohlc(0) !== ''; document.getElementById('stpr-layersbtn').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); document.getElementById('stpr-layersbtn').dispatchEvent(new PointerEvent('pointerup', { bubbles: true })); await W(30);
+    ok('and a click on something else (a button): gone', shown && P._ohlc(0) === '');
     // the snapshot
     var sb = document.getElementById('stpr-snapbtn');
     ok('a snapshot button (camera) in the row with Show on chart', sb && sb.title === 'Take a snapshot' && sb.nextElementSibling && sb.nextElementSibling.id === 'stpr-layersbtn');

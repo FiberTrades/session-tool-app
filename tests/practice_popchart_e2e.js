@@ -15,7 +15,9 @@
     await P.open({ symbol: 'EURUSD', day: '2026-10-01' }); for (var k = 0; k < 100 && !(P._s() && P._panes().length === 3 && P._panes()[2].n); k++) await W(100);
     P._goto('12:00'); await W(400);
     var btn = function (j) { return P._panes()[j].el.querySelector('[data-popc]'); };
-    ok('charts 2 and 3 have a new-window button beside their timeframe, chart 1 (with the panel) does not', !btn(0) && btn(1) && btn(2) && btn(1).title === 'Open this chart in a new window' && btn(1).previousElementSibling.classList.contains('stpr-tfpill'), [!!btn(0), btn(1) && btn(1).title]);
+    P._render(); await W(100);
+    var br = btn(1).getBoundingClientRect(), pr1 = P._panes()[1].el.getBoundingClientRect(), psw1 = P._panes()[1].chart.priceScale('right').width();
+    ok('charts 2 and 3 have a new-window button at their top right, beside the price scale (Nestor: "can this be on this side?"); chart 1 (with the panel) does not', !btn(0) && btn(1) && btn(2) && btn(1).title === 'Open this chart in a new window' && br.top - pr1.top < 14 && Math.abs((pr1.right - br.right) - (psw1 + 8)) < 3, [!!btn(0), btn(1) && btn(1).title, br.top - pr1.top, pr1.right - br.right, psw1]);
 
     btn(2).click();
     for (k = 0; k < 120 && !(P._pops()[2] && P._pops()[2].ready && P._panes()[2] && P._panes()[2].el.ownerDocument !== document && P._panes()[2].n); k++) await W(100);
