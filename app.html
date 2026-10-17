@@ -82756,6 +82756,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         <div class="strp-tglh" id="strp-tglh">Show on chart</div>
         <label class="strp-tgl" title="Entry and exit arrows, and the Entry / SL / TP lines with their labels on the price scale"><input type="checkbox" id="strp-marks" checked> <span id="strp-markslbl">Trade marks</span></label>
         <label class="strp-tgl" style="margin-left:14px;"><input type="checkbox" id="strp-pos" checked> <span id="strp-poslbl">Position tool</span></label>
+        <label class="strp-tgl" title="Nestor's indicator from TradingView"><input type="checkbox" id="strp-mini"> <span>Minimalist</span></label>
+        <button type="button" class="stpr-tglset" id="strp-miniset" style="display:none">Settings</button>
       </div>
       <button class="strp-ico" id="strp-lookbtn" type="button" title="Chart settings" aria-label="Chart settings" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><circle cx="8" cy="8" r="2.1"/><circle cx="8" cy="8" r="4.7"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/></svg></button>
       <div class="stpr-menu" id="strp-menu"></div>
@@ -82990,7 +82992,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try{ var r=await sb.rpc('st_candles_before',{p_symbol:symbol,p_tf:tf,p_before:Math.floor(before),p_n:n});
       var d=(r&&r.data)||[], out=[], lastT=-1e18;
       for(var i=0;i<d.length;i++){ var t=Number(d[i].t); if(t-lastT<30) continue;
-        out.push({time:t,open:Number(d[i].o),high:Number(d[i].h),low:Number(d[i].l),close:Number(d[i].c)}); lastT=t; }
+        out.push({time:t,open:Number(d[i].o),high:Number(d[i].h),low:Number(d[i].l),close:Number(d[i].c),vol:d[i].v==null?null:+d[i].v}); lastT=t; }
       return out; }catch(_){ return []; } }
   async function fetchCandles(symbol,tf,from,to){ var sb=sbc(); if(!sb) return [];
     // Supabase caps an RPC response at ~1000 rows, so page through with .range() and
@@ -83005,7 +83007,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // same bar twice, ~1s apart. Real bars are >=60s apart, so collapse anything <30s.
     var out=[],lastT=-1e18;
     for(var i=0;i<rows.length;i++){ var t=Number(rows[i].t); if(t-lastT<30) continue;
-      out.push({time:t,open:Number(rows[i].o),high:Number(rows[i].h),low:Number(rows[i].l),close:Number(rows[i].c)}); lastT=t; }
+      out.push({time:t,open:Number(rows[i].o),high:Number(rows[i].h),low:Number(rows[i].l),close:Number(rows[i].c),vol:rows[i].v==null?null:+rows[i].v}); lastT=t; }
     return out; }
 
   // MAE / MFE for a closed trade, from the SAME stored candles the replay draws. That means it's
@@ -83058,8 +83060,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      both land on their own date. Days since 1970-01-01 (a Thursday) + 4 puts Sunday at 0. */
   function toWeekly(d1){ var out=[], cur=null, key=null;
     for(var i=0;i<d1.length;i++){ var b=d1[i], k=Math.floor((Math.floor((b.time+6*3600)/86400)+4)/7);
-      if(k!==key){ if(cur) out.push(cur); key=k; cur={time:b.time,open:b.open,high:b.high,low:b.low,close:b.close}; }
-      else { if(b.high>cur.high) cur.high=b.high; if(b.low<cur.low) cur.low=b.low; cur.close=b.close; } }
+      if(k!==key){ if(cur) out.push(cur); key=k; cur={time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,vol:b.vol==null?null:b.vol}; }
+      else { if(b.high>cur.high) cur.high=b.high; if(b.low<cur.low) cur.low=b.low; cur.close=b.close; cur.vol=(cur.vol==null||b.vol==null)?null:cur.vol+b.vol; } }
     if(cur) out.push(cur); return out; }
   // Window measured in BARS around the trade. Anchored to entry (back) AND exit (fwd),
   // so the FULL trade always loads no matter how long it ran; pagination handles the volume.
@@ -83141,7 +83143,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         newsRows:null, newsMarks:null };
     // The checkboxes outlive a replay; make them say what this one will do.
     try{ el('strp-marks').checked=S.showMarks; el('strp-pos').checked=true; }catch(_){}
-    updLayersDot(); layersOpen(false); tfOpen(_tfPref(),false); drawerOpen(_drawerPref(),false);
+    updLayersDot(); try{ MSHOW=localStorage.getItem('st_replay_mini')==='1'; }catch(_){} miniPaint(); layersOpen(false); tfOpen(_tfPref(),false); drawerOpen(_drawerPref(),false);
     S.login=(row&&row.login!=null)?String(row.login):null;
     S.untilTs=(opts&&opts.untilTs>0)?opts.untilTs:0;   // "Replay the week": candles to the end of the week
     // Which of your other trades this replay shows (Nestor): a single trade shows the trades of ITS DAY,
@@ -84055,6 +84057,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ctx.beginPath(); ctx.arc(x,y-3,3,Math.PI,0); ctx.stroke(); ctx.fillRect(x-4.5,y-3,9,7); ctx.strokeRect(x-4.5,y-3,9,7); ctx.restore(); }
   function _draw(){ if(!S||!S.bars.length) return;
     try{ _lastDrawAt=(window.performance&&performance.now)?performance.now():Date.now(); }catch(_){} var s=sizeO(),ctx=s.ctx,w=s.w,h=s.h; ctx.clearRect(0,0,w,h);
+    if(MSHOW){ var _mp=miniPane(), _PR=window.__stPractice; if(_mp&&_PR&&_PR._miniDraw){ var _pw=plotW(w), _ph=_axisTop(h); ctx.save(); ctx.beginPath(); ctx.rect(0,0,_pw,_ph); ctx.clip(); _PR._miniDraw(_mp,ctx,{w:w,h:h,pw:_pw,ph:_ph,psw:w-_pw},miniCtx()); ctx.restore(); } }
     if(S.cx){ ctx.save(); ctx.strokeStyle=LKC.cxc; ctx.lineWidth=1; ctx.setLineDash(cxDash());
       ctx.beginPath(); ctx.moveTo(S.cx.x+0.5,0); ctx.lineTo(S.cx.x+0.5,h); ctx.moveTo(0,S.cx.y+0.5); ctx.lineTo(w,S.cx.y+0.5); ctx.stroke();
       /* The two readouts LWC used to draw. Same font as the axis, taken from the chart's layout so
@@ -84445,6 +84448,63 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      information only when i click on a candle, then it goes away when i scroll or click on something else"): a click
      (pressed and let go within 5 px) on a candle - between its high and low, a little either side - shows its figures;
      any other click, a drag, the wheel or a timeframe change clears them. Not while drawing, nor on a drawing or a news disc. ---- */
+  /* ---- The Minimalist (Practice Replay's, Nestor 17 Oct 2026: "Minimalist indicator, with its settings window and volume
+     profile"): the same indicator, drawn by Practice Replay's own code on this chart and with the same settings (synced). Its
+     switch is in Show on chart; the zone's edges drag; a double-click on the zone opens its settings. MP is this chart as that
+     code reads one (its candles up to now, their times and volume, the chart and the series). ---- */
+  var MP=null, MPW={}, TRV={asked:{},t:0}, MSHOW=(function(){ try{ return localStorage.getItem('st_replay_mini')==='1'; }catch(_){ return false; } })();
+  function miniPane(){ if(!S||!chart||!series) return null; var n=Math.min(S.cursor,S.bars.length);
+    if(!MP||MP.S!==S) MP={i:'tr',S:S,sig:null,mzHot:false};
+    var sig=S.tf+'|'+n+'|'+(n?S.bars[0].time+'|'+S.bars[n-1].time:'')+'|'+(S.volVer||0);
+    if(MP.sig!==sig){ MP.sig=sig; MP.tf=S.tf; MP.bars=S.bars.slice(0,n); MP.times=MP.bars.map(function(b){ return b.time; }); MP.vols=MP.bars.map(function(b){ return b.vol==null?null:b.vol; }); MP.step=S.tf*60; MP._mini=null; }
+    MP.chart=chart; MP.series=series; return MP; }
+  function miniNow(){ var n=Math.min(S.cursor,S.bars.length), lb=S.bars[n-1]; return lb?lb.time+S.tf*60:0; }
+  function miniCtx(){ var P=window.__stPractice;
+    if(!S._msym||S._msym.raw!==S.symbol) S._msym=(P&&P._symFor)?P._symFor(S.symbol):{key:S.symbol,raw:S.symbol,name:S.symbol,cls:'other'};
+    return {sym:S._msym, digits:_prec(), now:miniNow(), rows:miniRows, volAsk:miniVol}; }
+  /* the previous day / week / month when this chart's candles do not hold all of it: the 1h (else 4h) history up to now,
+     fetched once per trading day of the replay (nothing after the replay's own moment) */
+  function miniRows(tf){ var now=miniNow(); if(!now) return null; var P=window.__stPractice, dk=(P&&P._lonDay)?P._lonDay(now-1):Math.floor(now/86400), k=S.symbol+'|'+tf+'|'+dk, e=MPW[k];
+    if(e) return e.rows?e:null;
+    MPW[k]={rows:null}; var sRef=S;
+    fetchCandles(S.symbol,tf,now-75*86400,now-1).then(function(r){ MPW[k].rows=r.filter(function(b){ return b.time<now; }); if(MP&&S===sRef) MP._mini=null; },function(){});
+    return null; }
+  /* the volume profile's candles without volume (stored before EA 9.00): asked of the member's EA once (candle_requests, as
+     Practice Replay does), fetched again every 20 seconds for 10 minutes, then every 2 minutes while the replay is open */
+  function miniVol(p,B,V,a,e){ var u=uid(), sb=sbc(); if(!u||!sb) return 'out';
+    var f=null,t=null; for(var i=a;i<e;i++) if(V[i]==null){ if(f==null) f=B[i].time; t=B[i].time; }
+    if(f==null) return 'asked';
+    var atf=S.tf===TF_W1?1440:S.tf, to=t+S.tf*60-1, sym=S.symbol, cov=null;
+    Object.keys(TRV.asked).forEach(function(k){ var o=TRV.asked[k]; if(o.sym===sym&&o.tf===atf&&o.from<=f&&o.to>=to) cov=o; });
+    if(cov) return cov.fail?'fail':'asked';
+    TRV.asked[sym+'|'+atf+'|'+f+'|'+to]={sym:sym,tf:atf,from:f,to:to,at:Date.now()};
+    try{ sb.from('candle_requests').insert([{user_id:u,symbol:sym,tf:atf,from_t:f,to_t:to,note:'vol'}]).then(function(){},function(){}); }catch(_){}
+    trvWatch(); return 'asked'; }
+  function trvWatch(){ if(TRV.t) return; TRV.t=setInterval(async function(){ var open=0;
+      if(!S||!el('strp-modal-bg').classList.contains('show')) return;
+      for(var k in TRV.asked){ var o=TRV.asked[k]; if(o.done||o.busy) continue; open++;
+        if(!o.fail&&Date.now()-o.at>600000){ o.fail=true; if(MP) MP._mini=null; }
+        if(o.fail&&Date.now()-(o.last||0)<120000) continue; o.last=Date.now();
+        o.busy=true; var rows=await fetchCandles(o.sym,o.tf,o.from,o.to); o.busy=false;
+        if(rows.length&&rows.every(function(b){ return b.vol!=null; })){ o.done=true; o.fail=false; trvMerge(o,rows); } }
+      if(!open){ clearInterval(TRV.t); TRV.t=0; } },20000); }
+  function trvMerge(o,rows){ if(!S||S.symbol!==o.sym) return; var m={}; rows.forEach(function(b){ m[b.time]=b.vol; });
+    [S.cache&&S.cache[o.tf], S.tf===o.tf?S.bars:null].forEach(function(arr){ if(arr) arr.forEach(function(b){ if(b.vol==null&&m[b.time]!=null) b.vol=m[b.time]; }); });
+    if(S.tf===TF_W1&&o.tf===1440){ var wk={}; rows.forEach(function(b){ var k=Math.floor((Math.floor((b.time+6*3600)/86400)+4)/7); wk[k]=(wk[k]||0)+b.vol; });
+      S.bars.forEach(function(b){ var k=Math.floor((Math.floor((b.time+6*3600)/86400)+4)/7); if(b.vol==null&&wk[k]!=null) b.vol=wk[k]; }); }
+    S.volVer=(S.volVer||0)+1; }
+  function miniPaint(){ var c=el('strp-mini'), b=el('strp-miniset'); if(c) c.checked=MSHOW; if(b){ b.style.display=MSHOW?'':'none'; b.textContent=L('Settings','Ajustes'); } }
+  function miniSettings(){ var P=window.__stPractice, mp=miniPane(); if(!P||!P._miniDialogFor||!mp) return; layersOpen(false); P._miniDialogFor(el('strp-modal-bg'),mp,miniCtx()); }
+  /* the zone's left edge (and its right one when it has an end) moves its start (and end) by hand; the first drag turns Auto
+     (follow structure) off - Practice Replay's */
+  function miniEdgeAt(xy){ var mz=MSHOW&&MP&&MP._mz, P=window.__stPractice; if(!mz||!P||!P._ms||(P._miniOn&&!P._miniOn('zone',MP))) return null;
+    if(xy.y<mz.y0-4||xy.y>mz.y1+4) return null; var o0=P._ms(MP); return Math.abs(xy.x-mz.x0)<6?'a':((!o0.detach&&mz.x1!=null&&Math.abs(xy.x-mz.x1)<6)?'b':null); }
+  function miniEdgeDown(e,xy){ if(e.touches) return false; var ed=miniEdgeAt(xy), P=window.__stPractice; if(!ed) return false;
+    e.stopPropagation(); e.preventDefault(); var W0=Object.assign({},P._msRaw(MP));
+    if(W0.auto!==false){ W0.auto=false; W0.zA=MP._mz.tA; W0.detach=true; flash(L('Range zone moved by hand: Auto (follow structure) is off in its settings.','Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
+    P._msSet(MP,W0); S.mzDrag={edge:ed}; MP.mzHot=true; return true; }
+  el('strp-mini').onchange=function(ev){ MSHOW=!!ev.target.checked; try{ localStorage.setItem('st_replay_mini',MSHOW?'1':'0'); }catch(_){} if(MP){ MP._mini=null; MP._mz=null; } miniPaint(); };
+  el('strp-miniset').onclick=function(ev){ ev.stopPropagation(); miniSettings(); };
   var OH0=null;
   function ohPaint(){ var e=el('strp-ohlc'); if(!e) return; var B=S&&S.bars, k=-1, t=S&&S.oh;
     if(t!=null&&B&&B.length){ var lo=0, hi=Math.min(S.cursor,B.length)-1; while(lo<hi){ var m=(lo+hi+1)>>1; if(B[m].time<=t) lo=m; else hi=m-1; } if(hi>=0&&B[lo].time===t) k=lo; }
@@ -84617,6 +84677,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   window.__stReplayRelang = function(){
     try{ if(document.getElementById('strp-props')) renderProps(); }catch(_){}
     try{ if(S && S.bars && S.bars.length) liveR(); }catch(_){}
+    try{ miniPaint(); }catch(_){}
   };
   function renderProps(){
     var e=propsEl(); if(!e) return;
@@ -85050,7 +85111,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
          chart. Decided once, here, and held until the button comes up. */
       try{ var _dd=S.drawings[h.i];
         if(h.part==='l'||h.part==='r'){ var _aL=(_dd.a.idx<=_dd.b.idx); S.drag.pt=(((h.part==='l')===_aL)?'a':'b'); }
-        else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); }
+        else if(h.part==='t'||h.part==='bo'){ var _aT=(_dd.a.price>=_dd.b.price); S.drag.pt=(((h.part==='t')===_aT)?'a':'b'); } }catch(_){} draw(); } else { if(miniEdgeDown(e,xy)) return; if(S.sel!=null||(S.selMulti&&S.selMulti.length)){ S.sel=null; clearMulti(); updDel(); draw(); } }
   }
   /* TOUCH. Lightweight Charts consumes touch events on the chart and calls preventDefault, so
      the browser never synthesizes the mousedown the badge handler above listens for: on a phone
@@ -85097,6 +85158,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function _ptrMoveAll(e){ if(!S) return;
     if(!_RAW) _ptrTrack(e);
     if(S.marq){ var mxy=evXY(e); S.marq.x1=mxy.x; S.marq.y1=mxy.y; return; }
+    if(S.mzDrag){ var q4=toP(e), PR4=window.__stPractice; if(q4&&MP&&PR4){ var bi4=Math.max(0,Math.min(Math.min(S.cursor,S.bars.length)-1,q4.idx+_preN())), W1=Object.assign({},PR4._msRaw(MP));
+        if(S.mzDrag.edge==='a') W1.zA=S.bars[bi4].time; else W1.zB=S.bars[bi4].time; PR4._msSet(MP,W1); } return; }
     /* Show WHERE Ctrl will put the point before the click, not after. toP() already applies the
        snap, so the marker is by construction the exact coordinate that would be committed - it
        cannot promise one place and draw in another. Also nudges the chart's own crosshair when
@@ -85137,10 +85200,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var prev=S._newsHover; S._newsHover=nh?{i:nh.i,j:nh.j}:null;
       if(nh){ newsCard(nh); } else if(prev&&!S._newsPinned){ newsCard(null); }
       /* the drawing under the mouse: a position tool shows its tags while it is there */
-      var hh=hit(xy.x,xy.y); S.hov=hh?hh.i:null;
-      chartEl.style.cursor=nh?'pointer':(hh?((S.drawings[hh.i]&&S.drawings[hh.i].lock)?'pointer':'move'):'crosshair'); }
+      var hh=hit(xy.x,xy.y); S.hov=hh?hh.i:null; var onEdge=!hh&&!nh&&!!miniEdgeAt(xy); if(MP) MP.mzHot=onEdge;
+      chartEl.style.cursor=nh?'pointer':(hh?((S.drawings[hh.i]&&S.drawings[hh.i].lock)?'pointer':'move'):(onEdge?'ew-resize':'crosshair')); }
       else { S.hov=null; if(S._newsHover&&!S._newsPinned){ S._newsHover=null; newsCard(null); } } }  }
   function _ptrUp(){ if(!S) return;
+    if(S.mzDrag){ S.mzDrag=null; if(MP) MP.mzHot=false; try{ window.__stPractice._cfgSave(); }catch(_){} return; }
     if(S.marq){ var mr=marqNorm(S.marq); S.marq=null;
       /* A band smaller than a few pixels is a Ctrl-click, not a drag - treat it as clearing the
          selection rather than selecting everything it happens to touch. */
@@ -85171,7 +85235,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
      ordinary swipe still pans and pinches the chart. */
   document.addEventListener('mousedown',_ptrDown,true);
   document.addEventListener('dblclick',function(e){ if(!S||!chartEl||!el('strp-modal-bg').classList.contains('show')||!chartEl.contains(e.target)) return;
-    var xy=evXY(e), h=hit(xy.x,xy.y), d=h&&S.drawings[h.i]; if(d&&d.type==='text'){ e.preventDefault(); e.stopPropagation(); S.sel=h.i; S.noProps=false; updDel(); txtEdit(d,false); } },true);
+    var xy=evXY(e), h=hit(xy.x,xy.y), d=h&&S.drawings[h.i]; if(d&&d.type==='text'){ e.preventDefault(); e.stopPropagation(); S.sel=h.i; S.noProps=false; updDel(); txtEdit(d,false); }
+    else if(!h&&MSHOW&&MP&&MP._mz){ var z=MP._mz; if(xy.x>=z.x0&&xy.x<=(z.x1==null?z.x0:z.x1)&&xy.y>=z.y0&&xy.y<=z.y1){ e.preventDefault(); e.stopPropagation(); miniSettings(); } } },true);
   window.addEventListener('mousemove',_ptrMoveAll);
   window.addEventListener('mouseup',_ptrUp);
   document.addEventListener('touchstart',function(e){
@@ -85193,6 +85258,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   },{passive:false,capture:true});
   document.addEventListener('keydown',function(e){ if(!S||!el('strp-modal-bg').classList.contains('show')) return;
     if(VDLG){ if(e.key==='Escape'){ e.preventDefault(); visDlgClose(false); } return; }
+    if(el('strp-modal-bg').querySelector('.stpr-dlgbg')) return;
     if(e.key==='Escape'&&MFOR){ closeMenuR(); return; }
     if(!(e.target&&/^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName))){
       if(e.ctrlKey&&e.shiftKey&&(e.code==='KeyS'||e.key==='S'||e.key==='s')){ e.preventDefault(); snapCopy(); return; }
@@ -85213,7 +85279,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // position alone was replayable but never offered, which is exactly the report of synced traders
   // seeing no Replay button.
   function ticketOf(trade){ return (trade && (trade.mt5Ticket || trade.position)) || null; }
-  window.__stReplay={ open:open, close:closeModal, excursions:excursions, ticketOf:ticketOf, _s:function(){ return S; }, _txtBox:function(d){ return txtBox(d); }, _posGeo:function(d){ return posGeo(d); }, _emoGeo:function(d){ return emoGeo(d); }, _bbox:function(d){ return bboxOf(d,(overlay&&overlay.clientWidth)||0); }, _snap:function(){ return snapShot(); }, _look:function(){ return LKC; } };   // _s, _txtBox: for the tests
+  window.__stReplay={ open:open, close:closeModal, excursions:excursions, ticketOf:ticketOf, _s:function(){ return S; }, _txtBox:function(d){ return txtBox(d); }, _posGeo:function(d){ return posGeo(d); }, _emoGeo:function(d){ return emoGeo(d); }, _bbox:function(d){ return bboxOf(d,(overlay&&overlay.clientWidth)||0); }, _snap:function(){ return snapShot(); }, _look:function(){ return LKC; }, _mp:function(){ return MP; }, _trv:function(){ return TRV; } };   // _s, _txtBox: for the tests
 })();
 </script>
 <!-- ═══ PRACTICE REPLAY (14 Oct 2026) ═══ Nestor: "in here can you add a 3rd box for Practice replay". A real past trading
@@ -85917,7 +85983,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (k === 'XAUUSD') return { pips: 0.1, pts: 0.01 };
     if (k === 'XAGUSD') return { pips: 0.01, pts: 0.001 };
     if (c === 'index' || c === 'crypto') return { pips: null, pts: 1 };
-    return { pips: null, pts: Math.pow(10, -(S ? S.digits : 2)) };
+    return { pips: null, pts: Math.pow(10, -(mxS() ? mxS().digits : 2)) };
   }
   function uLbl(u){ return u === 'R' ? 'R' : (u === 'pips' ? T('pips', 'pips') : T('pts', 'ptos')); }
 
@@ -87226,6 +87292,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   MTIP.vpRows = ["Number of horizontal price rows the volume profile is divided into. Each row sums the volume that traded within its price slice.\n\nMatch this to the \"Row Size\" setting in TradingView's built-in Fixed Range Volume Profile (FRVP) tool to get directly comparable results.\n\n• 12-24 = chunky, low-resolution profile (default 24)\n• 50 = medium resolution\n• 100+ = fine-grained, smoother distribution but more visual noise\n\nMore rows = thinner price slices, finer detail.", "Número de filas horizontales de precio en que se divide el perfil de volumen. Cada fila suma el volumen negociado dentro de su franja de precio.\n\nPon el mismo valor que el ajuste \"Row Size\" de la herramienta Fixed Range Volume Profile (FRVP) de TradingView para obtener resultados comparables.\n\n• 12-24 = perfil grueso, de baja resolución (por defecto 24)\n• 50 = resolución media\n• 100+ = detallado, distribución más suave pero con más ruido visual\n\nMás filas = franjas de precio más finas, más detalle."];
   MTIP.vpOff = ["Position of the VP liquidity arrows relative to the right edge of the P/D zone box.\n\n• Positive = arrows sit to the RIGHT of the chart\n• Negative = arrows are pulled LEFT, into the chart area, closer to the price candles where the volume actually occurred\n• 0 = arrows sit right at the right edge of the zone box", "Posición de las flechas de liquidez del VP respecto al borde derecho de la caja de la zona P/D.\n\n• Positivo = las flechas quedan a la DERECHA del gráfico\n• Negativo = las flechas se mueven a la IZQUIERDA, dentro del gráfico, más cerca de las velas donde ocurrió el volumen\n• 0 = las flechas quedan justo en el borde derecho de la caja"];
   var MINI_P = null;   // the chart being drawn: its own settings when they are not linked
+  var MX = null, DLGX = null;   // another replay's chart being drawn (Trade Replay's) and its settings window: { sym, digits, now, rows(tf), volAsk(...) }
+  function mxS(){ return MX || S; }
   function miniLinked(){ return CFG.miniLink !== false; }
   function msRaw(p){ p = p || MINI_P; if (miniLinked() || !p) return CFG.miniS || {}; var per = CFG.miniPer || {}; return per[p.i] || CFG.miniS || {}; }
   function offRaw(p){ p = p || MINI_P; if (miniLinked() || !p) return CFG.miniOff || {}; var per = CFG.miniOffPer || {}; return per[p.i] || CFG.miniOff || {}; }
@@ -87241,9 +87309,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return (0.299 * ((v >> 16) & 255) + 0.587 * ((v >> 8) & 255) + 0.114 * (v & 255)) / 255 > 0.55; }
   function miniOn(k, p){ var o = offRaw(p); return !(o && o[k]); }
   // his Distance Unit: Auto = pips on currency pairs, points elsewhere; or Pips / Points / Ticks, with the unit after it if asked
-  function miniUnit(){ var u = ms().unit; return u === 'auto' ? (S.sym.cls === 'fx' ? 'pips' : 'points') : u; }
-  function miniDist(d){ var o = ms(), x = units(S.sym), u = miniUnit(), pip = x.pips || x.pts * 10;
-    var v = u === 'pips' ? d / pip : (u === 'ticks' ? d / x.pts : d), dec = u === 'pips' ? 1 : (u === 'ticks' ? 0 : Math.max(0, Math.min(S.digits, 2)));
+  function miniUnit(){ var u = ms().unit; return u === 'auto' ? (mxS().sym.cls === 'fx' ? 'pips' : 'points') : u; }
+  function miniDist(d){ var o = ms(), x = units(mxS().sym), u = miniUnit(), pip = x.pips || x.pts * 10;
+    var v = u === 'pips' ? d / pip : (u === 'ticks' ? d / x.pts : d), dec = u === 'pips' ? 1 : (u === 'ticks' ? 0 : Math.max(0, Math.min(mxS().digits, 2)));
     return String(parseFloat(v.toFixed(dec))) + (o.suffix ? (u === 'pips' ? 'p' : (u === 'ticks' ? 't' : ' pts')) : ''); }
   function hhmm(s){ var m = /^(\d{1,2}):?(\d{2})$/.exec(String(s || '').trim()); return m && +m[1] < 24 && +m[2] < 60 ? (+m[1]) * 60 + (+m[2]) : null; }
   function sesIn(t, s, tz){ var a = hhmm(s.a), b = hhmm(s.b); if (a == null || b == null || a === b) return false; var m = ((Math.floor(t / 60) + tz * 60) % 1440 + 1440) % 1440; return a < b ? (m >= a && m < b) : (m >= a || m < b); }
@@ -87334,8 +87402,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     vp.peaks.forEach(function(k){ tag(Y(k.price), hexA(ac, 1 - 0.75 * (1 - k.r))); });   // Pine: transparency 75 x (1 - volume / the busiest row)
     tag(Y(vp.poc), hexA(pc.h, pc.a)); }
   function miniCalc(p){
-    var B = p.bars, n = B ? B.length : 0; if (n < 2 || !S) return null; var Lb = B[n - 1], o = ms(p);
-    var key = S.sym.raw + '|' + p.tf + '|' + n + '|' + B[0].time + '|' + Lb.time + '|' + Lb.high + '|' + Lb.low + '|' + Lb.close + '|' + JSON.stringify(msRaw(p));
+    var B = p.bars, n = B ? B.length : 0; if (n < 2 || !mxS()) return null; var Lb = B[n - 1], o = ms(p);
+    var key = mxS().sym.raw + '|' + p.tf + '|' + n + '|' + B[0].time + '|' + Lb.time + '|' + Lb.high + '|' + Lb.low + '|' + Lb.close + '|' + JSON.stringify(msRaw(p));
     if (p._mini && p._mini.key === key) return p._mini;
     var M = { key: key, n: n, zone: null, dwm: {}, ses: [], days: [], seps: [], gaps: [], q: [], thr: 0 }, tf = p.tf, len = Math.max(3, Math.min(500, Math.round(+o.len) || 30)), i, k;
     // Auto: swings of len bars each side, counted once len bars have closed after them; a CLOSE beyond one is a break
@@ -87358,7 +87426,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       M.zone = { i0: sI, top: top, bot: bot, end: zEnd < n ? zEnd - 1 : null, hand: !o.auto, iTo: zTo }; }
     // his volume profile: the zone's own window (as far back as TradingView's 4,990 bars), on this chart's candles
     if (M.zone && o.vpOn) { var va = Math.max(M.zone.i0, n - 1 - 4990), V = p.vols || []; M.vp = vpCalc(B, V, va, M.zone.iTo, o);
-      if (M.vp && M.vp.miss) M.vp.st = volAsk(volRanges(p, B, V, va, M.zone.iTo)); }
+      if (M.vp && M.vp.miss) M.vp.st = MX ? MX.volAsk(p, B, V, va, M.zone.iTo) : volAsk(volRanges(p, B, V, va, M.zone.iTo)); }
     // previous day / week / month, the day lines, weekday names, opening gaps, the sessions
     var C = { d: null, w: null, m: null }, PV = { d: null, w: null, m: null }, gl = [], s0 = [], tz = +o.tz || 0, sesTf = !o.sesCap || tf <= o.sesMax;
     for (i = 0; i < n; i++) { var b = B[i], lk = lonK(b.time), nd = false;
@@ -87375,16 +87443,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var kk = { d: 'day', w: 'wk', m: 'mo' }[z]; M.dwm[z] = miniPrev(kk, lonK(Lb.time)[kk], p); });
     // a gap goes once price trades back through it (from its own candle on); the newest 100 are kept
     M.gaps = gl.filter(function(g0){ for (var j = g0.i; j < n; j++) if (g0.bull ? B[j].low < g0.bot : B[j].high > g0.top) return false; return true; }).slice(-100);
-    if (tf === 1440) { var yr = new Date(S.now * 1000).getUTCFullYear(), back = Math.max(0, Math.min(10, Math.round(+o.qBack) || 0));
+    if (tf === 1440) { var yr = new Date(mxS().now * 1000).getUTCFullYear(), back = Math.max(0, Math.min(10, Math.round(+o.qBack) || 0));
       for (var yy = yr - back; yy <= yr + 1; yy++) for (var q = 1; q <= 4; q++) if (!(yy === yr + 1 && q > 1)) M.q.push({ t: Date.UTC(yy, (q - 1) * 3, 1) / 1000 - tz * 3600, q: q }); }
     // labels closer than this share one: 3 pips on a currency pair, half the average candle elsewhere
-    if (S.sym.cls === 'fx') M.thr = units(S.sym).pts * 30; else { var sm = 0, cn = 0; for (k = Math.max(0, n - 200); k < n; k++) { sm += B[k].high - B[k].low; cn++; } M.thr = cn ? 0.5 * sm / cn : 0; }
+    if (mxS().sym.cls === 'fx') M.thr = units(mxS().sym).pts * 30; else { var sm = 0, cn = 0; for (k = Math.max(0, n - 200); k < n; k++) { sm += B[k].high - B[k].low; cn++; } M.thr = cn ? 0.5 * sm / cn : 0; }
     p._mini = M; return M; }
   // the period before the one now, from the coarser history (1h, else 4h) when it holds the whole of it
   var miniWait = {};
   function miniPrev(kk, cur, p){
-    var pick = null; [60, 240].some(function(tf){ var e = staticCache[S.sym.raw + '|' + S.day + '|' + tf];
-      if (!e) { var wk = S.sym.raw + '|' + S.day + '|' + tf; if (!miniWait[wk]) { miniWait[wk] = 1; paneStatic(tf).then(function(){ panes.forEach(function(q){ q._mini = null; }); dirty(); }).catch(function(){}); } return false; }
+    var pick = null; [60, 240].some(function(tf){ var e = MX ? MX.rows(tf) : staticCache[S.sym.raw + '|' + S.day + '|' + tf];
+      if (!e) { if (MX) return false; var wk = S.sym.raw + '|' + S.day + '|' + tf; if (!miniWait[wk]) { miniWait[wk] = 1; paneStatic(tf).then(function(){ panes.forEach(function(q){ q._mini = null; }); dirty(); }).catch(function(){}); } return false; }
       var R = e.rows, by = null, prevK = null, o = null; if (!R.length) return false;
       for (var j = R.length - 1; j >= 0; j--) { var k2 = lonK(R[j].time)[kk]; if (k2 >= cur) continue; if (prevK == null) prevK = k2; if (k2 !== prevK) { by = j; break; }
         if (!o) o = { hi: -Infinity, lo: Infinity, t0: 0 }; if (R[j].high > o.hi) o.hi = R[j].high; if (R[j].low < o.lo) o.lo = R[j].low; o.t0 = R[j].time; }
@@ -87435,7 +87503,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           if (y0 != null) { g.textBaseline = 'top'; g.fillText('▲', xb + 3, y0 + 2); }
           if (y1 != null) { g.textBaseline = 'bottom'; g.fillText('▼', xb + 3, y1 - 2); } }
         // drawn by hand: its edges can be dragged (the left one always, the right one when it has an end)
-        if (DW.mzHover === p || (DW.mz && DW.mz.p === p)) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
+        if (DW.mzHover === p || (DW.mz && DW.mz.p === p) || p.mzHot) { g.strokeStyle = '#f472b6'; g.lineWidth = 2; g.beginPath(); g.moveTo(Math.round(xa) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xa) + .5, Math.max(y0, y1));
           if (!o.detach) { g.moveTo(Math.round(xb) + .5, Math.min(y0, y1)); g.lineTo(Math.round(xb) + .5, Math.max(y0, y1)); } g.stroke(); g.lineWidth = 1; } } }
     // his volume profile's arrows: offset candles right of the zone's box (its right edge: now + Extend Right)
     if (miniOn('zone') && M.zone && o.vpOn && M.vp) vpDraw(g, M.vp, X(n - 1 + (+o.ext || 0) + (+o.vpOff || 0)), Y, o, pw, ink);
@@ -87461,13 +87529,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   //      Visibility (Nestor, 17 Oct 2026: "i need the visability option for the indicator but also for all the objects").
   //      Changes show on the chart as they are made; Cancel puts back what was there. ----
   var DLG = null;
-  function dlgClose(ok){ var d = DLG; if (!d) return; DLG = null; try { d.bg.remove(); } catch (e) {} if (ok) { if (d.ok) d.ok(); } else if (d.cancel) d.cancel(); dirty(); }
+  function dlgClose(ok){ var d = DLG; if (!d) return; DLG = null; try { d.bg.remove(); } catch (e) {} if (ok) { if (d.ok) d.ok(); } else if (d.cancel) d.cancel(); if (d.o && d.o.host) DLGX = null; dirty(); }
   function dlgOpen(o){ dlgClose(false);
     var bg = document.createElement('div'); bg.className = 'stpr-dlgbg'; bg.innerHTML = '<div class="stpr-dlg" role="dialog" aria-label="' + esc(o.title) + '"><div class="stpr-dlgh"><b>' + esc(o.title) + '</b><button type="button" class="stpr-dlgx" data-dx aria-label="' + esc(T('Close', 'Cerrar')) + '">&times;</button></div>'
       + '<div class="stpr-dlgt">' + o.tabs.map(function(t, i){ return '<button type="button" data-dt="' + i + '"' + (i === 0 ? ' class="on"' : '') + '>' + esc(t.name) + '</button>'; }).join('') + '</div>'
       + '<div class="stpr-dlgb"></div><div class="stpr-dlgf"><span class="stpr-dlgdw"><button type="button" class="stpr-dlgbt" data-ddef>' + T('Defaults', 'Valores') + ' ▾</button><span class="stpr-dlgdm"><button type="button" data-dreset>' + T('Reset settings', 'Restablecer ajustes') + '</button></span></span><span style="flex:1"></span>'
       + '<button type="button" class="stpr-dlgbt" data-dc>' + T('Cancel', 'Cancelar') + '</button><button type="button" class="stpr-dlgbt ok" data-dok>Ok</button></div></div>';
-    uiEl('stpr-win').appendChild(bg); DLG = { bg: bg, tab: 0, o: o, ok: o.onOk, cancel: o.onCancel, pick: null };
+    (o.host || uiEl('stpr-win')).appendChild(bg); DLG = { bg: bg, tab: 0, o: o, ok: o.onOk, cancel: o.onCancel, pick: null };
     var paint = function(){ var b = bg.querySelector('.stpr-dlgb'), st = b.scrollTop; b.innerHTML = o.tabs[DLG.tab].html(); b.scrollTop = st; bg.querySelectorAll('[data-dt]').forEach(function(x){ x.classList.toggle('on', +x.getAttribute('data-dt') === DLG.tab); }); };
     DLG.paint = paint; paint();
     bg.addEventListener('click', function(e){ var t = e.target;
@@ -87491,7 +87559,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function mInfo(k){ var t = MTIP[k]; return t ? '<span class="stpr-dinfo" tabindex="0" title="' + esc(T(t[0], t[1])) + '" aria-label="' + esc(T(t[0], t[1])) + '">i</span>' : ''; }
   function dtLocal(t){ if (!t) return ''; var d = new Date(t * 1000), p0 = function(x){ return (x < 10 ? '0' : '') + x; }; return d.getFullYear() + '-' + p0(d.getMonth() + 1) + '-' + p0(d.getDate()) + 'T' + p0(d.getHours()) + ':' + p0(d.getMinutes()); }
   function dDate(k, t){ return '<input type="datetime-local" class="stpr-dn" data-k="' + k + '" value="' + dtLocal(t) + '" style="width:200px">'; }
-  function curStart(){ var q = panes[0] && panes[0]._mz; return q ? q.tA : (S ? S.f.open : 0); }
+  function curStart(){ var q = (DLGX && DLGX.p && DLGX.p._mz) || (panes[0] && panes[0]._mz); return q ? q.tA : (S ? S.f.open : (DLGX ? DLGX.mx.now : 0)); }
   function dSel(k, v, opts){ return '<select class="stpr-dsel" data-k="' + k + '">' + opts.map(function(x){ return '<option value="' + esc(x[0]) + '"' + (String(x[0]) === String(v) ? ' selected' : '') + '>' + esc(x[1]) + '</option>'; }).join('') + '</select>'; }
   function dTxt(k, v, w, ph){ return '<input type="text" class="stpr-dn" data-k="' + k + '" value="' + esc(v) + '" style="width:' + (w || 90) + 'px"' + (ph ? ' placeholder="' + esc(ph) + '"' : '') + '>'; }
   function dSw(k, c){ return '<button type="button" class="stpr-lksw' + (DLG && DLG.pick === k ? ' on' : '') + '" data-dsw="' + k + '" title="' + esc(T('Colour', 'Color')) + '"><i style="--c:' + esc(c) + '"></i></button>'; }
@@ -87509,7 +87577,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (m[2] === 'on') r.on = !!val; else { var x = Math.max(u[3], Math.min(u[4], Math.round(+val) || u[3])); r[m[2]] = x; if (r.a > r.b) { if (m[2] === 'a') r.b = x; else r.a = x; } } return true; }
   // the Minimalist's window
   function miniDialog(tab, forP){
-    var tp = (forP && panes.indexOf(forP) >= 0) ? forP : ((DW.at && panes.indexOf(DW.at) >= 0) ? DW.at : panes[0]);   // the chart these settings are for
+    var tp = DLGX ? DLGX.p : ((forP && panes.indexOf(forP) >= 0) ? forP : ((DW.at && panes.indexOf(DW.at) >= 0) ? DW.at : panes[0]));   // the chart these settings are for
     var snap = { s: JSON.stringify(msRaw(tp)), off: JSON.stringify(offRaw(tp)) }, W = JSON.parse(JSON.stringify(ms(tp))), OFF = Object.assign({}, offRaw(tp));
     if (!W.vis) W.vis = visAll();
     var apply = function(){ var w = JSON.parse(JSON.stringify(W)); if (visFull(w.vis)) w.vis = null; msSet(tp, w); offSet(tp, Object.assign({}, OFF)); panes.forEach(function(q){ q._mini = null; }); dirty(); };
@@ -87520,14 +87588,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // indicator panel"). His volume-profile group is left out until the profile has data to draw from.
     var inputs = function(){ var H = [], row = function(left, right, keys){ H.push(dRow(left, right || '')); (keys || []).forEach(function(k){ if (DLG && DLG.pick === k) H.push(dPick(k, getK(k))); }); };
       var chk = function(k, on, label, tk){ return dChk(k, on, label) + mInfo(tk); }, lsz = [['tiny', 'tiny'], ['small', 'small'], ['normal', 'normal'], ['large', 'large']], sty = [['solid', 'solid'], ['dashed', 'dashed'], ['dotted', 'dotted']];
-      if (panes.length > 1 || CFG.layout > 1) { H.push(dRow(dChk('mlink', miniLinked(), T('Same settings on every chart', 'Los mismos ajustes en todos los gráficos')), ''));
+      if (!DLGX && (panes.length > 1 || CFG.layout > 1)) { H.push(dRow(dChk('mlink', miniLinked(), T('Same settings on every chart', 'Los mismos ajustes en todos los gráficos')), ''));
         H.push('<div class="stpr-dnote">' + esc(miniLinked() ? T('Untick it to give each chart its own settings and its own P/D zone.', 'Desmárcalo para que cada gráfico tenga sus propios ajustes y su propia zona P/D.')
           : T('These are chart ' + (tp.i + 1) + ' (' + TFL[tp.tf] + ') only. Double-click the zone on another chart, or pick that chart first, for its own.', 'Solo los del gráfico ' + (tp.i + 1) + ' (' + TFL[tp.tf] + '). Doble clic en la zona de otro gráfico, o elígelo antes, para los suyos.')) + '</div>'); }
       H.push(dSec(T('Premium & Discount Zones', 'Zonas Premium y Discount')));
       row(chk('part.zone', on('zone'), '━━ P/D Zone', 'zone'));
       row(chk('detach', W.detach, 'Detach Start Only', 'detach'));
       row('P/D Range Start', dDate('zA', W.zA || curStart()));
-      row('P/D Range End', dDate('zB', W.zB || (S ? S.now : 0)));
+      row('P/D Range End', dDate('zB', W.zB || (S ? S.now : (DLGX ? DLGX.mx.now : 0))));
       row(chk('auto', W.auto, 'Auto: Follow Structure', 'auto'));
       row('Structure Length (bars)' + mInfo('len'), dNum('len', W.len, 3, 500));
       row(chk('extTo', W.extTo, 'Extend to Latest High/Low', 'extTo'));
@@ -87586,7 +87654,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       return H.join(''); };
     var getK = function(k){ var m = /^s(\d)\.(\w+)$/.exec(k); return m ? W.ses[+m[1]][m[2]] : W[k]; };
     var setK = function(k, v){ var m = /^s(\d)\.(\w+)$/.exec(k); if (m) W.ses[+m[1]][m[2]] = v; else W[k] = v; };
-    dlgOpen({ title: 'Minimalist' + (!miniLinked() && panes.length > 1 ? ' \u00b7 ' + T('chart ', 'gráfico ') + (tp.i + 1) + ' \u00b7 ' + TFL[tp.tf] : ''), tabs: [{ name: T('Inputs', 'Entradas'), html: inputs }, { name: T('Style', 'Estilo'), html: style }, { name: T('Visibility', 'Visibilidad'), html: function(){ return visHtml(W.vis); } }],
+    dlgOpen({ host: DLGX ? DLGX.host : null, title: 'Minimalist' + (!DLGX && !miniLinked() && panes.length > 1 ? ' \u00b7 ' + T('chart ', 'gráfico ') + (tp.i + 1) + ' \u00b7 ' + TFL[tp.tf] : ''), tabs: [{ name: T('Inputs', 'Entradas'), html: inputs }, { name: T('Style', 'Estilo'), html: style }, { name: T('Visibility', 'Visibilidad'), html: function(){ return visHtml(W.vis); } }],
       onOk: function(){ apply(); save(); }, onCancel: function(){ msSet(tp, JSON.parse(snap.s)); offSet(tp, JSON.parse(snap.off)); panes.forEach(function(q){ q._mini = null; }); },
       onReset: function(){ W = JSON.parse(JSON.stringify(MINIDEF)); W.vis = visAll(); OFF = {}; apply(); },
       onClick: function(t){ var b = t.closest('[data-dsw]'); if (b) { var k = b.getAttribute('data-dsw'); DLG.pick = DLG.pick === k ? null : k; return true; }
@@ -88423,7 +88491,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: o.lineVisible !== false && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
     _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
-    _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
+    _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
+    _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },
+    _miniDialogFor: function(host, p, mx){ DLGX = { host: host, p: p, mx: mx }; miniDialog(null, p); },
+    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: nameOf(k), cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
 })();
 </script>
 
