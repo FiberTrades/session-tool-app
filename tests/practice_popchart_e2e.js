@@ -27,8 +27,24 @@
     var g = document.getElementById('stpr-grid');
     ok('this window lays out the two it still has, side by side, bigger', g.className.indexOf('l2') >= 0 && g.querySelectorAll('.stpr-pane').length === 2 && P._panes().length === 3, g.className);
     await W(300);
-    var cv = win.document.querySelectorAll('.stpr-pc canvas'), r2 = p2.el.getBoundingClientRect();
-    ok('it is drawn by that window\'s own chart library, full window', cv.length > 2 && win.LightweightCharts && win.LightweightCharts !== window.LightweightCharts && Math.abs(r2.width - win.innerWidth) < 4 && Math.abs(r2.height - win.innerHeight) < 4, [cv.length, r2.width, win.innerWidth, r2.height, win.innerHeight]);
+    var cv = win.document.querySelectorAll('.stpr-pc canvas'), r2 = p2.el.getBoundingClientRect(), tb2 = win.document.getElementById('stpr-tb2');
+    ok('it is drawn by that window\'s own chart library, filling the window under its toolbar', cv.length > 2 && win.LightweightCharts && win.LightweightCharts !== window.LightweightCharts && Math.abs(r2.width - win.innerWidth) < 4 && Math.abs(r2.height + tb2.offsetHeight - win.innerHeight) < 4, [cv.length, r2.width, win.innerWidth, r2.height, tb2.offsetHeight, win.innerHeight]);
+    // its toolbar (Nestor, 17 Oct 2026: "when i open a new window of a chart i want to have all of these options too")
+    var ids = function (d) { return Array.prototype.map.call(d.querySelectorAll('#stpr-tb2 button'), function (b) { return b.id || b.getAttribute('data-tool'); }).join(','); };
+    ok('that window has the same toolbar: drawing tools, undo / redo / delete, snapshot, Show on chart, chart settings, news', ids(win.document) === ids(document) && /stpr-snapbtn/.test(ids(win.document)) && /long,short/.test(ids(win.document)), ids(win.document));
+    win.document.querySelector('#stpr-tb2 #stpr-drawbtn').click(); await W(60);
+    ok('its pencil opens the drawing tools (there and here)', document.getElementById('stpr-tb2').classList.contains('drawing') && win.document.getElementById('stpr-tb2').classList.contains('drawing'));
+    win.document.querySelector('#stpr-tb2 [data-tool="hline"]').click(); await W(40);
+    ok('a tool picked there is the tool', P._dr().tool === 'hline' && win.document.querySelector('#stpr-tb2 [data-tool="hline"]').classList.contains('on'));
+    win.document.querySelector('#stpr-tb2 [data-tool="hline"]').click(); await W(40);
+    win.document.querySelector('#stpr-tb2 #stpr-snapbtn').click(); await W(60);
+    var wm = win.document.getElementById('stpr-menu');
+    ok('its snapshot button opens the menu in that window, under the button', wm.classList.contains('show') && /Copy image/.test(wm.textContent) && !document.getElementById('stpr-menu').classList.contains('show') && Math.abs(wm.getBoundingClientRect().left - win.document.querySelector('#stpr-tb2 #stpr-snapbtn').getBoundingClientRect().left) < 260, wm.className);
+    win.document.querySelector('#stpr-tb2 #stpr-snapbtn').click(); await W(40);
+    ok('pressed again it closes', !wm.classList.contains('show'));
+    win.document.querySelector('#stpr-tb2 #stpr-layersbtn').click(); await W(60);
+    ok('Show on chart opens there too, with the Minimalist switch', wm.classList.contains('show') && /Minimalist/.test(wm.textContent));
+    win.document.querySelector('#stpr-tb2 #stpr-layersbtn').click(); await W(40);
     ok('its title names the symbol and timeframe', /EUR\/USD · 4h · Practice Replay/.test(win.document.title), win.document.title);
     var bk = p2.el.querySelector('[data-popc]');
     ok('there its button reads Back to the main window', bk && bk.title === 'Back to the main window');
@@ -59,6 +75,9 @@
     for (k = 0; k < 60 && !(P._panes()[2] && P._panes()[2].tf === 60 && P._panes()[2].n && P._panes()[2].el.ownerDocument === win.document); k++) await W(100);
     ok('its timeframe changed in that window: it stays there, now 1h, and the title follows', P._panes()[2].tf === 60 && P._panes()[2].el.ownerDocument === win.document && C.tfs[2] === 60 && /· 1h ·/.test(win.document.title), [P._panes()[2].tf, win.document.title]);
     // the snapshot of this window: only its own charts
+    win.document.dispatchEvent(new win.PointerEvent('pointerdown', { bubbles: true })); var snw = P._snap(), gw = win.document.getElementById('stpr-grid').getBoundingClientRect();
+    ok('Copy image asked from that window pictures its chart', snw && Math.abs(snw.width - Math.round(gw.width * Math.max(1, Math.min(2, win.devicePixelRatio || 1)))) <= 1, snw && [snw.width, gw.width]);
+    document.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true }));
     var sn = P._snap(), gr = g.getBoundingClientRect(), dpr = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
     ok('Copy image here pictures the charts in this window', sn && Math.abs(sn.width - Math.round(gr.width * dpr)) <= 1);
     // this window hidden (minimised, or covered): the frames and the clock run on the chart window

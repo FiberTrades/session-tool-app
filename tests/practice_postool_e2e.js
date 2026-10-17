@@ -37,7 +37,7 @@
     P._render(); await W(40); ys = P._yOf(0, d.sl); yt = P._yOf(0, d.tp); ye = P._yOf(0, d.a.price);
     var sl0 = d.sl; mev('mousedown', xe, ys); mev('mousemove', xe, ys + 30, { held: true }); mev('mouseup', xe, ys + 30); await W(40);
     ok('its stop handle drags the stop', d.sl < sl0, [sl0, d.sl]);
-    var tp0 = d.tp; P._render(); yt = P._yOf(0, d.tp); mev('mousedown', xe, yt); mev('mousemove', xe, yt - 25, { held: true }); mev('mouseup', xe, yt - 25); await W(40);
+    var tp0 = d.tp; P._render(); await W(200); yt = P._yOf(0, d.tp); xe = P._xOfT(0, d.a.t); mev('mousedown', xe, yt); mev('mousemove', xe, yt - 25, { held: true }); mev('mouseup', xe, yt - 25); await W(40);
     ok('its target handle drags the target', d.tp > tp0, [tp0, d.tp]);
     var bt0 = d.b.t; P._render(); xr = P._xOfT(0, d.b.t); ye = P._yOf(0, d.a.price); mev('mousedown', xr, ye); mev('mousemove', xr + 60, ye, { held: true }); mev('mouseup', xr + 60, ye); await W(40);
     ok('its right edge drags its width', d.b.t > bt0, [bt0, d.b.t]);
@@ -51,6 +51,31 @@
     var st = JSON.parse(localStorage.getItem('st_practice_draw2:EURUSD') || '[]');
     ok('both kept with the drawings (synced like them)', st.length === 2 && st[0].type === 'long' && st[1].type === 'short');
 
+    // its tags (Nestor, 17 Oct 2026: "i want to be able to see them only on hover or when clicking on the object and not when
+    // dragging it") and its options box ("when i am dragging it the settings panel opens and ruins the visibility")
+    var e1 = DW.list[0]; DW.sel = null; DW.multi = null; DW.hov = null; P._render(); await W(120);
+    var tagPx = function (dd) { var pz0 = { x0: P._xOfT(0, dd.a.t), x1: P._xOfT(0, dd.b.t), yt: P._yOf(0, dd.tp), ye: P._yOf(0, dd.a.price) }, yy = pz0.yt + (pz0.yt < pz0.ye ? -12 : 12) - 7;
+      return px((pz0.x0 + pz0.x1) / 2, yy); };
+    var isTag = function (c) { return c[1] > 130 && c[0] < 90 && c[3] > 200; };
+    ok('not selected, not under the mouse: no Target / Stop / Risk/reward tags', !isTag(tagPx(e1)), tagPx(e1));
+    var hx = (P._xOfT(0, e1.a.t) + P._xOfT(0, e1.b.t)) / 2, hy = (P._yOf(0, e1.a.price) + P._yOf(0, e1.tp)) / 2;
+    mev('mousemove', hx, hy); await W(120);
+    ok('the mouse over it: the tags show', DW.hov === 0 && isTag(tagPx(e1)), [DW.hov, tagPx(e1)]);
+    mev('mousemove', 20, 20); await W(120);
+    ok('the mouse off it: gone again', !isTag(tagPx(e1)));
+    mev('mousedown', hx, hy); mev('mouseup', hx, hy); await W(120);
+    var box2 = pane().el.querySelector('.stpr-props');
+    ok('clicked: selected, its tags and its options box show', DW.sel === 0 && isTag(tagPx(e1)) && box2 && box2.style.display !== 'none', [DW.sel, box2 && box2.style.display]);
+    mev('mousedown', hx, hy); mev('mousemove', hx + 25, hy + 20, { held: true }); await W(120);
+    ok('dragged: no tags and no options box while it moves', !!DW.drag && !isTag(tagPx(e1)) && box2.style.display === 'none', [!!DW.drag, box2.style.display]);
+    mev('mouseup', hx + 25, hy + 20); await W(120);
+    ok('let go after a drag: the box stays closed (a click opens it)', !DW.drag && box2.style.display === 'none' && DW.sel === 0);
+    hx = (P._xOfT(0, e1.a.t) + P._xOfT(0, e1.b.t)) / 2; hy = (P._yOf(0, e1.a.price) + P._yOf(0, e1.tp)) / 2;
+    mev('mousedown', hx, hy); mev('mouseup', hx, hy); await W(120);
+    ok('a click on it: the box opens', box2.style.display !== 'none');
+    // a zoom (the window's pixel ratio and size change together): the overlay keeps its size on screen
+    var ovc = pane().ov, wcss = ovc.style.width; ovc.style.width = (parseFloat(wcss) / 2) + 'px'; DW.ver++; await W(150);
+    ok('the overlay always fills its chart (a zoom keeps the bitmap size but not the size on screen)', ovc.style.width === wcss, [wcss, ovc.style.width]);
     // Remove all drawings: the bin with nothing selected
     mev('mousedown', 20, r.height - 60); mev('mouseup', 20, r.height - 60); await W(30); DW.sel = null; P._render(); await W(20);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(20);
