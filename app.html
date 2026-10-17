@@ -85422,7 +85422,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <button type="button" class="stpr-ico" id="stpr-redo" title="Redo" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3.5 13.5,7 10,10.5"/><path d="M13.5 7H6a3.5 3.5 0 0 0 0 7h2"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-del" title="Delete selected" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><path d="M6.3 4.5V3h3.4v1.5"/><path d="M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg></button>
       <span class="stpr-sp"></span>
-      <button type="button" class="stpr-ico" id="stpr-treebtn" title="Object tree" aria-label="Object tree" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.8" y="2.3" width="3.4" height="3.4" rx=".7"/><path d="M3.5 5.7v6.8h3"/><path d="M3.5 9h3"/><line x1="8.5" y1="4" x2="14.2" y2="4"/><line x1="8.5" y1="9" x2="14.2" y2="9"/><line x1="8.5" y1="12.5" x2="14.2" y2="12.5"/></svg></button>
+      <button type="button" class="stpr-ico" id="stpr-treebtn" title="Object tree" aria-label="Object tree" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L11 5.5H9.8L12 9H10.5L13 12.5H3L5.5 9H4L6.2 5.5H5Z"/><line x1="8" y1="12.5" x2="8" y2="14.8"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-alertsbtn" title="Alerts" aria-label="Alerts" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11.3V7.2a4 4 0 0 1 8 0v4.1l1.3 1.3H2.7z"/><path d="M6.6 14.2a1.5 1.5 0 0 0 2.8 0"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-snapbtn" title="Take a snapshot" aria-label="Take a snapshot" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 5.5h2.2l1.1-1.6h4.4l1.1 1.6h2.2v7h-11z"/><circle cx="8" cy="8.9" r="2.2"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-layersbtn" title="Show on chart" aria-label="Show on chart" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2.4l5.6 3.1L8 8.6 2.4 5.5z"/><path d="M2.4 8.3L8 11.4l5.6-3.1"/><path d="M2.4 11L8 14.1l5.6-3.1"/></svg></button>
@@ -87703,6 +87703,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function logReplay(i){ var t = LOG.rows[i]; if (!t) return; if (S && S.pos) { flash(T('Close your trade first.', 'Cierra tu operación primero.')); return; } logOpen(false); go(t.sym, t.day, t.entryTs); }
 
   // ---- opening a day ----
+  // The day on the chart follows the log: a fresh start takes its trades off the chart, the score and the daily limit;
+  // bringing them back puts back the ones this day had up to now
+  function logSync(){ if (!S) return; var f = Number(CFG.logFrom) || 0, seen = {};
+    var keep = S.trades.filter(function(t){ return (t.at || 0) >= f; }); keep.forEach(function(t){ if (t.cid) seen[t.cid] = 1; });
+    logShown().forEach(function(t){ if (t && t.sym === S.sym.raw && t.day === S.day && t.entryTs && t.exitTs <= S.now && !(t.cid && seen[t.cid])) keep.push(t); });
+    keep.sort(function(a, b){ return a.exitTs - b.exitTs; }); S.trades = keep; S.lastExitTs = 0; S.trades.forEach(function(t){ if (t.exitTs > S.lastExitTs) S.lastExitTs = t.exitTs; });
+    S.done = null; render(true); paintHeader(); }
   function resumeSave(){ if (!S) return; CFG.resume = { sym: S.sym.raw, day: S.day, now: S.now, at: Date.now() }; save(); }
   async function go(raw, day, at, restore){
     pause(); closeMenu(); var st = $('stpr-state'); st.style.display = 'flex'; st.textContent = T('Loading the day…', 'Cargando el día…');
@@ -87713,7 +87720,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
     S = r.s; CFG.sym = sym.raw; CFG.recent = [day].concat((CFG.recent || []).filter(function(d){ return d !== day; })).slice(0, 30); save();
     buildPanes(); dwLoad(sym.raw); dwPanes(); await loadPanes();
-    if (restore) { S.trades = logAll().filter(function(t){ return t && t.sym === sym.raw && t.day === day && t.exitTs <= at && t.entryTs; });   // back where it was left: that day's trades on the chart again
+    if (restore) { S.trades = logShown().filter(function(t){ return t && t.sym === sym.raw && t.day === day && t.exitTs <= at && t.entryTs; });   // back where it was left: that day's trades on the chart again
       S.trades.forEach(function(t){ if (t.exitTs > S.lastExitTs) S.lastExitTs = t.exitTs; }); }
     if (at > S.f.open) advanceTo(at); ALERT.hits = [];   // a day opened part-way: lines it passed are marked, without a chime
     NEWS.key = null; loadNews(); $('stpr-newsbtn').classList.toggle('on', CFG.news !== false); layersDot();
@@ -87898,8 +87905,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (t.closest && t.closest('[data-lg="back"]')) { logOpen(false); return; }
       var lga = t.closest && t.closest('[data-lg]'); if (lga) { var a2 = lga.getAttribute('data-lg');
         if (a2 === 'fresh') { LOG.ask = true; renderLog(); return; } if (a2 === 'fresh-no') { LOG.ask = false; renderLog(); return; }
-        if (a2 === 'fresh-yes') { LOG.ask = false; CFG.logFrom = Date.now(); LOG.sym = 'all'; save(); renderLog(); if (S) paintHeader(); return; }
-        if (a2 === 'restore') { CFG.logFrom = 0; save(); renderLog(); return; } }
+        if (a2 === 'fresh-yes') { LOG.ask = false; CFG.logFrom = Date.now(); LOG.sym = 'all'; save(); renderLog(); logSync(); return; }
+        if (a2 === 'restore') { CFG.logFrom = 0; save(); renderLog(); logSync(); return; } }
       var lsy = t.closest && t.closest('[data-lgsym]'); if (lsy) { LOG.sym = lsy.getAttribute('data-lgsym'); renderLog(); return; }
       var lrp = t.closest && t.closest('tr[data-rp]'); if (lrp) { logReplay(+lrp.getAttribute('data-rp')); return; }
       if (t.closest && t.closest('#stpr-sesed')) { sesMenu($('stpr-sesed')); return; }
@@ -88031,7 +88038,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   } catch (e) {}
   window.__stPractice = { open: open, close: close, stats: stats, log: logAll, pull: pull, _satReady: satReady,
     _pop: popChart, _unpop: unpop, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
-    _alertsMenu: alertsMenu, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
+    _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests
     logShown: logShown, symName: function(raw){ return nameOf(canon(raw)); },
     _s: function(){ return S; }, _mm: function(){ return CFG.mm; }, _exec: toggleExec, _aim: function(pr){ aim(pr); linesAll(); paintPill(); }, _fire: fire, _touch: function(v){ forceTouch = v; if (S) render(); },

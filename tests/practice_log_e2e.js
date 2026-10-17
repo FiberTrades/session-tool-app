@@ -35,11 +35,16 @@
     lg.querySelector('[data-lgsym="EURUSD"]').click(); await W(30); tl = tiles();
     ok('the EUR/USD filter: 3 trades, +1.00R', tl[0] === 'Trades=3' && tl[2] === 'Net R=+1.00R' && tables()[1].length === 3, tl);
     lg.querySelector('[data-lgsym="all"]').click(); await W(20);
+    // the day on the chart has its two trades (as when it was reopened where it was left)
+    P._goto('16:00'); await W(200); P._s().trades = JSON.parse(localStorage.getItem(key)).filter(function (t) { return t.day === '2026-10-01'; }); P._render(true); await W(60);
+    var sc0 = document.getElementById('stpr-score').textContent;
     lg.querySelector('[data-lg="fresh"]').click(); await W(20);
     ok('Start fresh asks first, and says the trades are kept', /Start a fresh log\?/.test(lg.textContent) && /kept/.test(lg.textContent) && !!lg.querySelector('[data-lg="fresh-yes"]'), lg.textContent.slice(0, 160));
     lg.querySelector('[data-lg="fresh-yes"]').click(); await W(30);
     ok('after Start fresh the log, its figures and the Academy count start from nothing, with a way back', !lg.querySelector('.stpr-lgt') && /4 earlier practice trades kept out/.test(lg.textContent) && /since you started fresh/.test(lg.textContent) && !!lg.querySelector('[data-lg="restore"]') && P.stats().n === 0 && P._cfg().logFrom > 0, lg.textContent.slice(0, 220));
+    ok('and the chart follows (Nestor: "ive deleted the log and these still show!"): the day\'s trades off the chart, the score 0.00R', /2 trades on this day/.test(sc0) && P._s().trades.length === 0 && /0\.00R/.test(document.getElementById('stpr-score').textContent) && /no trades on this day yet/.test(document.getElementById('stpr-score').textContent), [sc0, document.getElementById('stpr-score').textContent]);
     lg.querySelector('[data-lg="restore"]').click(); await W(30);
+    ok('Bring them back: the day\'s two trades back on the chart', P._s().trades.length === 2 && /2 trades on this day/.test(document.getElementById('stpr-score').textContent), document.getElementById('stpr-score').textContent);
     ok('Bring them back puts all four back', tiles()[0] === 'Trades=4' && P.stats().n === 4 && !P._cfg().logFrom, tiles());
     var tb0 = document.querySelector('.stpr-tb:not(.stpr-tb2)'), lb = document.getElementById('stpr-logbtn');
     ok('the Log button sits at the right end of the top toolbar', tb0.contains(lb) && Math.abs(lb.getBoundingClientRect().right - (tb0.getBoundingClientRect().right - 14)) < 3, [lb.getBoundingClientRect().right, tb0.getBoundingClientRect().right]);
