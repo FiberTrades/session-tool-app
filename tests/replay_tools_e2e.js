@@ -33,7 +33,7 @@
     ok('the drawing tools: Emoji, Long position and Short position after Text', tools.join(',') === 'hline,trend,rect,fib,pen,range,text,emoji,long,short', tools.join(','));
     var rIco = document.querySelector('#strp-tools [data-tool="range"] svg');
     ok('Measure has TradingView\'s price-range icon (two lines with end dots, an arrow between)', rIco && rIco.querySelectorAll('circle').length === 2 && rIco.querySelectorAll('line').length === 3, rIco && rIco.innerHTML.slice(0, 80));
-    ok('an Object tree button sits beside Show on chart', document.getElementById('strp-treebtn') && document.getElementById('strp-treebtn').nextElementSibling.id === 'strp-layersbtn');
+    ok('an Object tree button sits on the right, before Show on chart', document.getElementById('strp-treebtn') && document.getElementById('strp-treebtn').getBoundingClientRect().left < document.getElementById('strp-layersbtn').getBoundingClientRect().left);
 
     // ---- Long position ----
     var X = Math.round(r.width * 0.35), Y = Math.round(r.height * 0.45);
