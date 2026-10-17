@@ -85683,10 +85683,35 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     t = Math.min(t, S.f.close); if (t <= S.now) return false;
     for (var i = 0; i < S.base.length; i++) { var b = S.base[i]; if (b.time < S.now) continue; if (b.time >= t) break;
       if ((S.pos && b.time >= S.pos.entryTs) || (S.pend && b.time >= S.pend.at)) simBar(b); if (!S) return false; }
+    alertScan(S.now, t);
     S.now = t;
     if (S.now >= S.f.close) { if (S.pend) S.pend = null; if (S.pos) closeAt(px(), 'eod', S.now); pause(); }
     return true;
   }
+
+  // ---- alerts on horizontal lines (Nestor, 17 Oct 2026: "allow to set alarms on horizontal lines too"): as TradingView's
+  //      alert, once price reaches the line the replay stops there with a chime and says so; the line then reads ALERT HIT.
+  //      Going back before that moment arms it again. Set from a line's options box, a right-click on the chart (Add alert
+  //      at that price) or Alt+A (at the crosshair, as in TradingView). ----
+  var ALERT = { hits: [], ac: null };
+  function alertScan(t0, t1){ var L = DW.list.filter(function(d){ return d && d.type === 'hline' && d.alert && !d.hitAt; }); if (!L.length) return;
+    var pc = null;
+    for (var i = 0; i < S.base.length; i++) { var b = S.base[i]; if (b.time < t0) { pc = b.close; continue; } if (b.time >= t1) break;
+      var lo = Math.min(b.low, pc == null ? b.open : pc), hi = Math.max(b.high, pc == null ? b.open : pc);
+      L.forEach(function(d){ if (!d.hitAt && d.price >= lo && d.price <= hi) { d.hitAt = b.time; ALERT.hits.push(d); } }); pc = b.close; } }
+  function alertChime(){ try { var A = window.AudioContext || window.webkitAudioContext; if (!A) return; var ac = ALERT.ac || (ALERT.ac = new A()), go = function(){ var t0 = ac.currentTime;
+      [[987.77, 0], [1318.51, 0.16], [1975.53, 0.32]].forEach(function(n){ var o = ac.createOscillator(), g = ac.createGain(); o.type = 'triangle'; o.frequency.value = n[0]; o.connect(g); g.connect(ac.destination);
+        g.gain.setValueAtTime(0.0001, t0 + n[1]); g.gain.exponentialRampToValueAtTime(0.2, t0 + n[1] + 0.015); g.gain.exponentialRampToValueAtTime(0.0001, t0 + n[1] + 0.5); o.start(t0 + n[1]); o.stop(t0 + n[1] + 0.55); }); };
+      if (ac.state === 'suspended') ac.resume().then(go).catch(go); else go(); } catch (e) {} }
+  // after the replay moved on: stop, chime, say which line and when; back before a hit, the line is armed again
+  function alertTick(){ if (!S) return; var ch = false;
+    DW.list.forEach(function(d){ if (d && d.hitAt && d.hitAt >= S.now) { delete d.hitAt; ch = true; } });
+    if (ALERT.hits.length) { var d = ALERT.hits[0], n = ALERT.hits.length; ALERT.hits = []; ch = true; pause(); alertChime();
+      flash(T('Alert: price reached ', 'Alerta: el precio llegó a ') + Number(d.price).toFixed(S.digits) + (d.text ? ' (' + d.text + ')' : '') + T(' at ', ' a las ') + hm(d.hitAt) + (n > 1 ? T(' (+' + (n - 1) + ' more)', ' (+' + (n - 1) + ' más)') : '')); }
+    if (ch) { persist(); hlAll(); renderProps(); } }
+  function alertAt(pr, p){ if (!S || !(pr > 0)) return; var d = styleNew({ type: 'hline', price: +Number(pr).toFixed(S.digits), alert: true }); DW.list.push(d); DW.sel = DW.list.length - 1; DW.at = p || DW.at; commit(); updDel();
+    flash(T('Alert set at ', 'Alerta puesta en ') + d.price.toFixed(S.digits)); }
+  function alertTitle(d){ var a = d.alert ? (d.hitAt ? T('ALERT HIT', 'ALERTA ALCANZADA') : T('ALERT', 'ALERTA')) : ''; return a + (a && d.text ? ' · ' : '') + String(d.text || ''); }
 
   // ---- playback ----
   function step(){ if (!S || S.now >= S.f.close) { pause(); if (S) render(); return false; } var s = stepSec(); advanceTo(Math.floor(S.now / s) * s + s); render(); return true; }
@@ -85853,6 +85878,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (force) setTimeout(function(){ if (S) panes.forEach(function(p){ viewPane(p, true); }); }, 80);
     paintPlay(); paintHeader(); paintRow(); paintMM(); paintProgress(); stripThumb();
     panes.forEach(function(p){ try { drawOv(p); } catch (e) {} });   // now, not only on the next frame (a hidden or busy tab may skip frames)
+    alertTick();
   }
   var I18N = [
     ['stpr-win', 'aria-label', 'Practice Replay', 'Práctica de repetición'],
@@ -86438,10 +86464,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         g.fillStyle = '#0b0a0d'; g.textAlign = 'left'; g.fillText(tx, px0 + 7, py + ph / 2 + 0.5); }
       g.restore(); }); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
-  function syncHL(p){ var want = []; DW.list.forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: String(d.text || '') }); });
+  function syncHL(p){ var want = []; DW.list.forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: d.alert && d.hitAt ? 2 : 0 }); });
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
     (p.hl || []).forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} });
-    p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: 0, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
+    p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: o.s || 0, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
   // ---- Nestor's Minimalist indicator (his TradingView script, tradingview/Minimalist-v4.pine; Nestor, 17 Oct 2026: "the
   //      minimalist indicator from trading view to be used in practice replay"), worked out from the candles up to now:
   //      the range zone of the latest break (a close past the last 30-bar swing anchors it at the strong low / high of the
@@ -86611,6 +86637,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     H.push('<div style="letter-spacing:0.12em;text-transform:uppercase;color:var(--text-mid);">' + esc(tyName(ty)) + '</div>');
     H.push('<div style="display:flex;gap:5px;flex-wrap:wrap;">' + (ty === 'gann' ? '<button type="button" data-col="" title="' + esc(T('A colour per level', 'Un color por nivel')) + '" style="width:18px;height:18px;padding:0;cursor:pointer;border-radius:4px;background:conic-gradient(#f59e0b,#a3e635,#4ECD8B,#2dd4bf,#60a5fa,#94a3b8,#f59e0b);border:2px solid ' + (!cur ? '#fff' : 'transparent') + ';box-shadow:0 0 0 1px rgba(255,255,255,0.18);"></button>' : '') + DCOLS.map(function(c){ return '<button type="button" data-col="' + c + '" style="width:18px;height:18px;padding:0;cursor:pointer;border-radius:4px;background:' + c + ';border:2px solid ' + (c === cur ? '#fff' : 'transparent') + ';box-shadow:0 0 0 1px rgba(255,255,255,0.18);"></button>'; }).join('') + '</div>');
     if (ty !== 'rect') H.push('<div style="display:flex;gap:5px;align-items:center;">' + DWIDS.map(function(wv){ return '<button type="button" data-wid="' + wv + '" style="flex:1;padding:4px 0;' + BTN + chip(wv === curW) + '">' + wv + '</button>'; }).join('') + '</div>');
+    if (ty === 'hline' && sd) { H.push('<button type="button" data-alert style="padding:5px 0;' + BTN + chip(!!sd.alert) + 'letter-spacing:0.12em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:6px;"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V7.5a4 4 0 0 1 8 0V11l1.2 1.5H2.8z"/><path d="M6.6 14a1.5 1.5 0 0 0 2.8 0"/></svg>' + (sd.alert ? (sd.hitAt ? T('Alert hit · arm again', 'Alcanzada · activar') : T('Alert on', 'Alerta activa')) : T('Alert off', 'Alerta apagada')) + '</button>');
+      if (sd.alert && sd.hitAt) H.push('<div style="color:var(--text-dim);">' + esc(T('Reached at ', 'Alcanzada a las ') + hm(sd.hitAt) + ' · ' + dshort(new Date(sd.hitAt * 1000))) + '</div>'); }
     if (ty === 'range') H.push('<div style="display:flex;gap:5px;">' + [['pips', uLbl(stopUnit()).toUpperCase()], ['r', 'R'], ['bars', T('BARS', 'BARRAS')]].map(function(k){ return '<button type="button" data-show="' + k[0] + '" style="flex:1;padding:4px 0;' + BTN + chip(rShow(d, k[0])) + '">' + esc(k[1]) + '</button>'; }).join('') + '</div>');
     if ((ty === 'fib' || ty === 'gann') && sd) { var LV = (d.levels && d.levels.length) ? d.levels : lvDef(ty);
       H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">' + LV.map(function(lv, ix){ return '<button type="button" data-lvl="' + ix + '" title="' + esc(T('Remove', 'Quitar')) + '" style="padding:3px 6px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + fibLbl(lv) + ' &times;</button>'; }).join('') + '</div>');
@@ -86632,6 +86660,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     e.querySelectorAll('[data-dtf]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), v = +b.getAttribute('data-dtf'), cur2 = (o.tfs && o.tfs.length) ? o.tfs.slice() : TFS.slice(), at = cur2.indexOf(v);
       if (at >= 0) cur2.splice(at, 1); else cur2.push(v); if (!cur2.length) cur2 = [v]; if (cur2.length >= TFS.length) delete o.tfs; else o.tfs = cur2.sort(function(x, y){ return x - y; }); commit(); renderProps(); }; });
     var cl = e.querySelector('[data-clone]'); if (cl) cl.onclick = cloneSel;
+    var al = e.querySelector('[data-alert]'); if (al) al.onclick = function(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; if (!o.alert) { o.alert = true; delete o.hitAt; } else if (o.hitAt) delete o.hitAt; else { o.alert = false; delete o.hitAt; } commit(); renderProps(); };
   }
   function cloneSel(){ if (DW.sel == null || !DW.list[DW.sel]) return; var p = DW.at || panes[0], c = clone(DW.list[DW.sel]);
     var mv = function(q){ var L = p && lOfT(p, q.t); if (L != null) q.t = tOfL(p, L + 3); };   // three candles along, on the chart it was cloned on
@@ -86645,11 +86674,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       p.el.appendChild(e); }
     return e; }
   function hideCtx(){ document.querySelectorAll('.stpr-ctx').forEach(function(e){ e.style.display = 'none'; }); }
-  function showCtx(p, x, y){ var e = ctxEl(p), multi = (DW.multi && DW.multi.length) ? DW.multi.length : 0;
-    var rows = [['clone', T('Clone', 'Duplicar')], ['del', multi ? T('Delete ' + multi, 'Borrar ' + multi) : T('Delete', 'Borrar')]];
+  function showCtx(p, x, y, pr){ var e = ctxEl(p), multi = (DW.multi && DW.multi.length) ? DW.multi.length : 0, sd = !multi && DW.sel != null && DW.list[DW.sel];
+    var rows = pr != null ? [['alert', T('Add alert at ', 'Alerta en ') + Number(pr).toFixed(S.digits)]]
+      : [['clone', T('Clone', 'Duplicar')], ['del', multi ? T('Delete ' + multi, 'Borrar ' + multi) : T('Delete', 'Borrar')]].concat(sd && sd.type === 'hline' ? [['alt', sd.alert && !sd.hitAt ? T('Alert off', 'Quitar alerta') : T('Alert on', 'Poner alerta')]] : []);
     e.innerHTML = rows.map(function(r){ return '<button type="button" data-act="' + r[0] + '" style="text-align:center;padding:6px 9px;cursor:pointer;letter-spacing:0.12em;text-transform:uppercase;background:transparent;border:none;color:var(--text-mid);font:inherit;border-radius:4px;white-space:nowrap;">' + r[1] + '</button>'; }).join('');
     e.querySelectorAll('[data-act]').forEach(function(b){ b.onmouseenter = function(){ b.style.background = 'var(--bg-elev)'; b.style.color = 'var(--text)'; }; b.onmouseleave = function(){ b.style.background = 'transparent'; b.style.color = 'var(--text-mid)'; };
-      b.onclick = function(){ hideCtx(); if (b.getAttribute('data-act') === 'clone') cloneSel(); else delSel(); }; });
+      b.onclick = function(){ hideCtx(); var a = b.getAttribute('data-act');
+        if (a === 'alert') { alertAt(pr, p); return; }
+        if (a === 'alt') { var o = DW.sel != null && DW.list[DW.sel]; if (o) { if (o.alert && !o.hitAt) o.alert = false; else o.alert = true; delete o.hitAt; commit(); renderProps(); } return; }
+        if (a === 'clone') cloneSel(); else delSel(); }; });
     e.style.display = 'flex'; var mw = e.offsetWidth || 120, mh = e.offsetHeight || 70;
     e.style.left = Math.max(0, Math.min(x, p.el.clientWidth - mw - 4)) + 'px'; e.style.top = Math.max(0, Math.min(y, p.el.clientHeight - mh - 4)) + 'px'; }
 
@@ -86908,7 +86941,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
     S = r.s; CFG.sym = sym.raw; CFG.recent = [day].concat((CFG.recent || []).filter(function(d){ return d !== day; })).slice(0, 30); save();
     buildPanes(); dwLoad(sym.raw); dwPanes(); await loadPanes();
-    if (at > S.f.open) advanceTo(at);
+    if (at > S.f.open) advanceTo(at); ALERT.hits = [];   // a day opened part-way: lines it passed are marked, without a chime
     NEWS.key = null; loadNews(); $('stpr-newsbtn').classList.toggle('on', CFG.news !== false); layersDot();
     st.style.display = 'none'; render(true); startLoop(); return true;
   }
@@ -87062,7 +87095,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     document.addEventListener('touchend', function(e){ if (!isOpen()) return; if ((DW.penning || DW.pending || DW.drag || DW.marq) && e.cancelable) e.preventDefault(); dwUp(e); }, { passive: false, capture: true });
     document.addEventListener('contextmenu', function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stpr-props,.stpr-ctx'); if (!p && !box) return; e.preventDefault(); if (!p) return;
       if (DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); hideCtx(); return; }
-      var xy = evXY(p, e), h = hit(p, xy.x, xy.y); if (!h) { hideCtx(); return; }
+      var xy = evXY(p, e), h = hit(p, xy.x, xy.y);
+      if (!h) { var dm0 = paneDims(p), pr0 = xy.x < dm0.pw && xy.y < dm0.ph ? p.series.coordinateToPrice(xy.y) : null; if (pr0 == null) { hideCtx(); return; } DW.sel = null; DW.multi = null; updDel(); DW.at = p; showCtx(p, xy.x, xy.y, pr0); return; }
       if (!(DW.multi && DW.multi.indexOf(h.i) >= 0)) { DW.sel = h.i; DW.multi = null; } DW.at = p; updDel(); showCtx(p, xy.x, xy.y); }, true);
     window.addEventListener('keyup', function(e){ if (e.key === 'Control' && DW.snap) { DW.snap = null; dirty(); } });
     window.addEventListener('resize', function(){ if (LOG.open) logTop(); stripThumb(); placeMM(); });
@@ -87098,6 +87132,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (MMK.wait && !typing) { if (e.key === 'Escape') { MMK.wait = false; paintMM(); e.preventDefault(); return; }
         if (/^[a-z0-9]$/i.test(e.key)) { CFG.mm.key = e.key.toUpperCase(); MMK.wait = false; save(); paintMM(); paintRow(); e.preventDefault(); return; } }
       if (S.exec && !typing && e.key === 'Enter') { fire(); e.preventDefault(); return; }   // Enter places it where the stop is, as a click does
+      if (e.altKey && !typing && (e.key === 'a' || e.key === 'A' || e.code === 'KeyA')) { var cp = DW.cx && DW.cx.p, cpr = cp ? cp.series.coordinateToPrice(DW.cx.y) : null; alertAt(cpr != null ? cpr : px(), cp); e.preventDefault(); return; }
       if (e.key === 'Escape') { hideCtx(); if (menuFor) closeMenu(); else if (LOG.open) logOpen(false); else if (DW.tool !== 'none' || DW.pending) { DW.pending = null; DW.penning = null; setTool('none'); } else if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } else if (S.exec) toggleExec(false); else if (S.pv) { S.pv = null; render(); } e.preventDefault(); return; }
       if (typing) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { undoRedo(e.shiftKey ? 1 : -1); e.preventDefault(); return; }
@@ -87126,7 +87161,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: o.lineVisible !== false && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
     _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
-    _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
+    _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
 })();
 </script>
 
