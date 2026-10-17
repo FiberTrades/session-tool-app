@@ -59,6 +59,8 @@
     var tbH = document.getElementById('stpr-tb2').getBoundingClientRect().height;
     ok('the timeframe button reads just the timeframe (no arrow)', pill && !pill.querySelector('svg') && pill.textContent === '5m', pill && pill.innerHTML);
     pill.click(); await W(50);
+    var sgR = wrap.querySelector('.stpr-tfseg').getBoundingClientRect(), plR = pill.getBoundingClientRect();
+    ok('it opens sideways, on the same row, right of the button (Nestor: "i want the time frames to still open sideways like before")', Math.abs(sgR.top - plR.top) < 2 && sgR.left > plR.right, [sgR.top, plR.top, sgR.left, plR.right]);
     ok('its list open: the top bar keeps its height (Nestor: "why when clicking on these the row gets taller")', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, [tbH, document.getElementById('stpr-tb2').getBoundingClientRect().height]);
     var dwb = document.getElementById('stpr-drawbtn'), wasD = document.getElementById('stpr-tb2').classList.contains('drawing'); if (!wasD) { dwb.click(); await W(40); }
     ok('the drawing tools open: the same height', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, document.getElementById('stpr-tb2').getBoundingClientRect().height);
