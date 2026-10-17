@@ -45,6 +45,19 @@ def free_port():
     return p
 
 
+def kill_profile(prof):
+    """Close every Edge process started with this throwaway profile folder (its name is unique to the run)."""
+    tag = os.path.basename(prof.rstrip('\\/'))
+    if not tag:
+        return
+    ps = ("Get-CimInstance Win32_Process -Filter \"Name='msedge.exe'\" | Where-Object { $_.CommandLine -like '*" + tag + "*' } | "
+          "ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }")
+    try:
+        subprocess.run(['powershell', '-NoProfile', '-Command', ps], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
+    except Exception:
+        pass
+
+
 class Quiet(http.server.SimpleHTTPRequestHandler):
     def log_message(self, *a):
         pass
@@ -201,6 +214,9 @@ def main():
             subprocess.run(['taskkill', '/PID', str(proc.pid), '/T', '/F'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception:
             proc.kill()
+        # The tree kill does not always reach the browser: 30 headless Edges from earlier runs were still open on 17 Oct
+        # 2026, still running their test pages. Close anything that uses this run's own throwaway profile.
+        kill_profile(prof)
         httpd.shutdown()
         time.sleep(0.5)
         shutil.rmtree(prof, ignore_errors=True)

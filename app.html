@@ -18623,7 +18623,8 @@ try {
                     // EA 8.88 (2 Oct 2026): the running result every 5 s for the Session Live trade card, and what the trade was taken with
                     risk0: ex.risk0 || ((row.risk != null && Number(row.risk) > 0) ? Number(row.risk) : undefined),
                     beAt: row.be_at || ex.beAt || null, lockR: (row.lock_r != null) ? Number(row.lock_r) : (ex.lockR != null ? ex.lockR : null),
-                    tick: row.tick_at ? { r: (row.r_now == null ? NaN : Number(row.r_now)), pnl: (row.pnl_now == null ? NaN : Number(row.pnl_now)), sl: (row.sl_r == null ? NaN : Number(row.sl_r)),
+                    // EA 8.98: the live line streams the figures; a row (refreshed only every 30 s then) never replaces a fresher one
+                    tick: (row.tick_at && !(ex.tick && ex.tick.ws && Date.now() - ex.tick.at < 5000)) ? { r: (row.r_now == null ? NaN : Number(row.r_now)), pnl: (row.pnl_now == null ? NaN : Number(row.pnl_now)), sl: (row.sl_r == null ? NaN : Number(row.sl_r)),
                                           tp: (row.tp_r == null ? NaN : Number(row.tp_r)), lad: row.ladder || '', at: Date.parse(row.tick_at),
                                           // EA 8.89: the live chart - the chart's price, the entry, 1R in price, the digits, the forming 5-minute candle
                                           px: (row.px == null ? NaN : Number(row.px)), op: (row.op == null ? NaN : Number(row.op)), rpx: (row.rpx == null ? NaN : Number(row.rpx)),
@@ -18669,6 +18670,16 @@ try {
       },
       // Is this ticket currently shown as an OPEN (active) trade in the live feed?
       isOpen: function (ticket) { try { var r = rows[String(ticket)]; return !!(r && !r.closed); } catch (e) { return false; } },
+      // EA 8.98's live line: one streamed update onto the open trade it belongs to (a trade the feed has not announced yet
+      // waits for its row; the next update lands a quarter of a second later).
+      tick: function (ticket, t) {
+        try {
+          var r = rows[String(ticket)]; if (!r || r.closed || !t) return false;
+          r.tick = t;
+          if (window.__stLiveBox) window.__stLiveBox.later();
+          return true;
+        } catch (e) { return false; }
+      },
       // Trade copier: is this ticket a copy of a trade already in the feed (another of your accounts)?
       isCopy: function (ticket) { try { return _isCopy(ticket); } catch (e) { return false; } },
       // Every ticket of the idea this ticket belongs to (itself and its copies), as strings.
@@ -76545,6 +76556,84 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     window.addEventListener('focus', seedSoon);
   }catch(e){}
   start(); setTimeout(start, 2500);
+})();
+</script>
+<script>
+/* ===== The EA's live line (EA 8.98, 17 Oct 2026) =====
+   Nestor: "build the live connection" and "make the candle reading from 2 seconds to live reading so price action is
+   exactly the same as MT5". While a trade is open, the EA keeps one Supabase Realtime connection and joins a broadcast
+   channel named from the member's sync token (sha-256 of "st-live:" + token, first 16 bytes in hex - the name gives
+   nothing away and cannot be found without the token). This window joins the same channel while there is an open trade
+   and, while the trade's card is on screen in a visible tab, says "watch" every 15 s ("unwatch" when it goes off
+   screen). Only then does the EA stream the price, MT5's own forming candle and the levels - on every change, up to
+   four times a second - so nothing goes out while nobody looks (Supabase counts every message sent and every one
+   received). Another window that still watches answers an "unwatch" with its own "watch", and the EA's "hi" when it
+   (re)joins. The database row still updates on a level change and every 30 s, for a reload, the phone and a window
+   without the line; an EA without the line (older, or MT5 refusing the connection) keeps the 2-second updates exactly
+   as before. Never in a mentor view (?mv=). */
+(function(){
+  'use strict';
+  var ch = null, name = '', joined = false, joining = false, watching = false, lastWatch = 0, idleAt = 0, stat = { ticks: 0, at: 0, last: null, watchSent: 0 };
+  function client(){ return window.__stSB || null; }
+  function token(){ try { return (window.STCloud && window.STCloud.syncToken) || ''; } catch (e) { return ''; } }
+  function mentor(){ try { return !!new URLSearchParams(location.search).get('mv'); } catch (e) { return false; } }
+  function nameOf(tok){
+    return crypto.subtle.digest('SHA-256', new TextEncoder().encode('st-live:' + tok)).then(function (b) {
+      var a = new Uint8Array(b), s = ''; for (var i = 0; i < 16; i++) s += ('0' + a[i].toString(16)).slice(-2); return 'stl-' + s;
+    });
+  }
+  function hasOpen(){ try { return !!(window.__stLive && window.__stLive.openIdeas && window.__stLive.openIdeas().length); } catch (e) { return false; } }
+  function onScreen(){ try { if (document.hidden) return false; var h = document.getElementById('st-livebox'); return !!(h && !h.hidden && h.offsetParent !== null && h.querySelector('.slx-tc')); } catch (e) { return false; } }
+  function num(v){ return (v == null || v === '') ? NaN : Number(v); }
+  function send(ev){ try { if (ch && joined) { ch.send({ type: 'broadcast', event: ev, payload: { t: Date.now() } }); if (ev === 'watch') stat.watchSent++; } } catch (e) {} }
+  function onTick(m){
+    var p = m && m.payload; if (!p || p.k == null) return;
+    var t = { r: num(p.r), pnl: num(p.pnl), sl: num(p.sl), tp: num(p.tp), lad: p.lad || '', at: Date.now(), px: num(p.px), op: num(p.op), rpx: num(p.rpx),
+              dg: num(p.dg), bar: p.bar || '', sp: num(p.sp), ws: true };
+    stat.ticks++; stat.at = t.at; stat.last = p; if (p.n != null) (stat.seq = stat.seq || []).push(p.n); if (p.ts) (stat.lat = stat.lat || []).push(t.at - p.ts);
+    try { if (window.__stLive && window.__stLive.tick) window.__stLive.tick(p.k, t); } catch (e) {}
+  }
+  function leave(){
+    if (ch) { if (watching) send('unwatch'); try { client().removeChannel(ch); } catch (e) {} }
+    ch = null; name = ''; joined = false; watching = false;
+  }
+  function join(tok){
+    var c = client(); if (!c || joining) return;
+    joining = true;
+    nameOf(tok).then(function (nm) {
+      joining = false;
+      if (ch && name === nm) return;
+      leave();
+      name = nm;
+      var me = ch = c.channel(nm, { config: { broadcast: { self: false, ack: false } } });
+      me.on('broadcast', { event: 'tick' }, onTick)
+        .on('broadcast', { event: 'hi' }, function () { if (watching) send('watch'); })        // the EA has just (re)joined
+        .on('broadcast', { event: 'unwatch' }, function () { if (watching) send('watch'); })   // another window stopped; this one still looks
+        .subscribe(function (st) {
+          if (me !== ch) return;
+          if (st === 'SUBSCRIBED') { joined = true; watching = false; tickle(); }
+          else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') { joined = false; watching = false; ch = null; name = ''; try { c.removeChannel(me); } catch (e) {} }
+        });
+    }, function () { joining = false; });
+  }
+  function tickle(){
+    try {
+      var tok = token(), want = !!(tok && !mentor() && hasOpen());
+      if (want) idleAt = 0;
+      else if (ch) { if (!idleAt) idleAt = Date.now(); if (Date.now() - idleAt > 120000) { leave(); return; } }
+      if (want && !ch) { join(tok); return; }
+      if (!ch || !joined) return;
+      var w = want && onScreen();
+      if (w && (!watching || Date.now() - lastWatch > 15000)) { watching = true; lastWatch = Date.now(); send('watch'); }
+      else if (!w && watching) { watching = false; send('unwatch'); }
+    } catch (e) {}
+  }
+  setInterval(tickle, 1000);
+  document.addEventListener('visibilitychange', tickle);
+  window.addEventListener('pagehide', function () { if (watching) send('unwatch'); });
+  // for the tests and for a quick look in the console
+  window.__stLiveLine = { state: function () { return { name: name, joined: joined, watching: watching, ticks: stat.ticks, lastAt: stat.at, last: stat.last, watchSent: stat.watchSent, seq: (stat.seq || []).slice(-30), lat: (stat.lat || []).slice(-40) }; },
+                          nameOf: nameOf, tickle: tickle };
 })();
 </script>
 <script>

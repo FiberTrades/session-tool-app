@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "8.97"
+#property version   "8.98"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -332,6 +332,7 @@ ulong  g_lockTk[];      // v8.87: positions whose stop has been announced past t
 double g_lockSl[];      //        ...and the stop last announced for each (a trailed stop is announced at every step)
 // v8.88: the open trade's running result for Session Terminal's trade card - per position, what was last sent and when
 ulong  g_tkTk[]; double g_tkPx[]; uint g_tkMs[]; string g_tkSig[]; bool g_tkBad[]; string g_tkBar[];   // v8.89: + the forming candle last sent
+string g_tkLv[];             // v8.98: + the levels (stop, target, ladder) last sent
 bool   g_tickOff = false;   // the WebRequest list does not allow the address: stop trying until the EA restarts
 // v8.89: the live chart's candles, on the timeframe each open trade was taken on - per timeframe in use, the candle last
 // sent for this chart's symbol, and when / whether it failed
@@ -3544,7 +3545,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.97\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"8.98\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3692,66 +3693,357 @@ string LiveBarStr(datetime t,double o,double h,double l,double c)
    long tu=(long)t-SrvOffAt(t);
    return IntegerToString(tu)+","+DoubleToString(o,_Digits)+","+DoubleToString(h,_Digits)+","+DoubleToString(l,_Digits)+","+DoubleToString(c,_Digits);
   }
+// One open position's live figures, read the same way for the database row and for the live line (v8.98).
+// The position must be selected (PositionSelectByTicket).
+struct LiveTk
+  {
+   ulong    posid;
+   double   px, r, pnl, slr, tpr, bid, op, rpx, spr, sl, tp;
+   string   lad, bar, lv;
+   datetime bt;
+  };
+void LiveTickRead(ulong tk,LiveTk &t)
+  {
+   long mg=PositionGetInteger(POSITION_MAGIC);
+   t.posid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
+   bool buy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
+   int d=buy?1:-1;
+   t.op=PositionGetDouble(POSITION_PRICE_OPEN); t.sl=PositionGetDouble(POSITION_SL); t.tp=PositionGetDouble(POSITION_TP);
+   t.px=buy ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   t.pnl=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
+   t.rpx=RecallRisk(tk);
+   if(t.rpx<=0 && t.sl>0 && (t.op-t.sl)*d>0) t.rpx=(t.op-t.sl)*d;              // not stamped (a trade by hand): its stop while behind the entry
+   t.r  =(t.rpx>0) ? (t.px-t.op)*d/t.rpx : EMPTY_VALUE;
+   t.slr=(t.rpx>0 && t.sl>0) ? (t.sl-t.op)*d/t.rpx : EMPTY_VALUE;
+   t.tpr=(t.rpx>0 && t.tp>0) ? (t.tp-t.op)*d/t.rpx : EMPTY_VALUE;
+   t.lad=(mg==InpMagic) ? LiveLadder(t.op,d,t.rpx) : "";
+   // v8.89: the live chart - the chart's price (bid, like MT5's own candles) and the forming candle on the timeframe the
+   // trade was taken on ("t,o,h,l,c,seconds")
+   t.bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
+   // v8.90 (Nestor, 5 Oct 2026: "where is ... the spread?"): the spread in price (ask - bid), on the same tick - no extra call.
+   // Needs the 13-argument st_live_tick (supabase/live_spread.sql, applied 5 Oct 2026); 8.89 keeps the 12-argument one.
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
+   t.spr=(ask>0 && t.bid>0 && ask>=t.bid) ? ask-t.bid : EMPTY_VALUE;
+   ENUM_TIMEFRAMES ttf=TradeTf(t.posid);
+   t.bt=iTime(_Symbol,ttf,0);
+   t.bar=(t.bt>0) ? LiveBarStr(t.bt,iOpen(_Symbol,ttf,0),iHigh(_Symbol,ttf,0),iLow(_Symbol,ttf,0),iClose(_Symbol,ttf,0))+","+IntegerToString(PeriodSeconds(ttf)) : "";
+   t.lv=DoubleToString(t.sl,_Digits)+"|"+DoubleToString(t.tp,_Digits)+"|"+t.lad;   // the levels: stop, target, ladder
+  }
+// The positions Session Terminal shows a card for: this chart's symbol, not a copy (the Lead's trade is the card).
+bool LiveTickMine()
+  {
+   if(PositionGetString(POSITION_SYMBOL)!=_Symbol) return false;
+   long mg=PositionGetInteger(POSITION_MAGIC);
+   if(InpCopyMagic!=InpMagic && mg==InpCopyMagic) return false;
+   return true;
+  }
+
+//==================================================================
+//  THE LIVE LINE  (v8.98)
+//==================================================================
+// Nestor, 17 Oct 2026: "build the live connection" and "make the candle reading from 2 seconds to live reading so price
+// action is exactly the same as MT5". While this chart has an open trade, the EA keeps ONE connection open to Supabase
+// Realtime (a WebSocket over the terminal's own sockets, port 443, no DLL) and joins a broadcast channel named from the
+// sync token (sha-256: the name gives nothing away and cannot be found without the token). While a Session Terminal
+// window shows the trade it says "watch" (every 15 s, "unwatch" when it goes), and only then does the EA stream the
+// trade's figures - the price, MT5's own forming candle (open / high / low / close) and the levels - on every change, up
+// to four times a second (LW_STREAM_MS). The database row then needs only a level change and a refresh every 30 s (for a
+// reload, the phone and older windows), instead of every 2 s. Without the line - MT5 refusing the address, no network,
+// the tester - everything works exactly as 8.97 did, through the database every 2 s.
+// The address is the one already in Tools > Options > Expert Advisors > Allow WebRequest for Session Terminal; the
+// terminal checks sockets against the same list.
+#define LW_HOST       "figozyxoyobixadhqewr.supabase.co"
+#define LW_STREAM_MS  250        // the fastest the price goes out while a window watches: 4 a second
+#define LW_WATCH_MS   45000      // a "watch" holds for 45 s (the app repeats it every 15 s)
+#define LW_LINGER_MS  120000     // the line stays up 2 minutes after the last trade on this chart closed
+int    g_lw=INVALID_HANDLE;      // the socket
+int    g_lwState=0;              // 0 closed, 1 upgrade sent, 2 join sent, 3 joined
+uint   g_lwAt=0;                 // when the current state began (GetTickCount)
+uint   g_lwRx=0;                 // last time anything arrived
+uint   g_lwHb=0;                 // last heartbeat sent
+uint   g_lwFailAt=0, g_lwWait=0; // after a failure: wait g_lwWait ms from g_lwFailAt
+int    g_lwFails=0;
+bool   g_lwOff=false;            // the terminal does not allow the address: off until the EA restarts
+uint   g_lwWatchAt=0;            // last "watch" heard
+uint   g_lwUseAt=0;              // last time this chart had a trade the card shows
+uint   g_lwPosAt=0; bool g_lwPos=false;   // that check, once a second
+int    g_lwRef=1;
+string g_lwTopic="";
+uchar  g_lwIn[];                 // bytes received that are not yet a whole message
+ulong  g_lwTk[]; uint g_lwMs[]; string g_lwKey[];   // per position: last streamed, and what it was
+
+bool LwJoined(){ return g_lw!=INVALID_HANDLE && g_lwState==3; }
+bool LwWatched(){ return LwJoined() && g_lwWatchAt!=0 && GetTickCount()-g_lwWatchAt<LW_WATCH_MS; }
+string LwRef(){ g_lwRef++; return IntegerToString(g_lwRef); }
+// "realtime:stl-" + the first 16 bytes of sha-256("st-live:" + token), in hex - the app works out the same name
+string LwTopic()
+  {
+   string src="st-live:"+g_syncTokenEff;
+   uchar data[], key[], hash[];
+   StringToCharArray(src,data,0,StringLen(src),CP_UTF8);
+   if(CryptEncode(CRYPT_HASH_SHA256,data,key,hash)<16) return "";
+   string s="";
+   for(int i=0;i<16;i++) s+=StringFormat("%02x",hash[i]);
+   return "realtime:stl-"+s;
+  }
+void LwClose()
+  {
+   if(g_lw!=INVALID_HANDLE) SocketClose(g_lw);   // the server sees the line go; nothing is waiting on it
+   g_lw=INVALID_HANDLE; g_lwState=0; g_lwWatchAt=0; ArrayResize(g_lwIn,0);
+  }
+void LwDrop(string why)
+  {
+   bool was=(g_lwState==3);
+   if(g_lw!=INVALID_HANDLE) SocketClose(g_lw);
+   g_lw=INVALID_HANDLE; g_lwState=0; g_lwWatchAt=0; ArrayResize(g_lwIn,0);
+   g_lwFails++; g_lwFailAt=GetTickCount();
+   g_lwWait=(g_lwFails<=1) ? 5000 : (g_lwFails<=3 ? 15000 : (g_lwFails<=6 ? 60000 : 300000));
+   if(was || g_lwFails==1 || g_lwFails%10==0)
+      PrintFormat("Live line: %s (%s) - trying again in %d s; the live chart updates every 2 s meanwhile.",was?"closed":"could not connect",why,(int)(g_lwWait/1000));
+  }
+// One frame to the server: client frames are masked (RFC 6455). op 0x1 text, 0x8 close, 0xA pong.
+bool LwFrame(int op,const uchar &pl[])
+  {
+   if(g_lw==INVALID_HANDLE) return false;
+   int n=ArraySize(pl), h=(n<126) ? 2 : (n<65536 ? 4 : 10);
+   uchar f[]; ArrayResize(f,h+4+n);
+   f[0]=(uchar)(0x80|op);
+   if(n<126) f[1]=(uchar)(0x80|n);
+   else if(n<65536){ f[1]=(uchar)(0x80|126); f[2]=(uchar)((n>>8)&0xFF); f[3]=(uchar)(n&0xFF); }
+   else { f[1]=(uchar)(0x80|127); for(int i=0;i<8;i++) f[2+i]=(uchar)((i<4) ? 0 : ((n>>(8*(7-i)))&0xFF)); }
+   uchar m[4];
+   for(int i=0;i<4;i++){ m[i]=(uchar)(MathRand()&0xFF); f[h+i]=m[i]; }
+   for(int i=0;i<n;i++) f[h+4+i]=(uchar)(pl[i]^m[i%4]);
+   ResetLastError();
+   int sent=SocketTlsSend(g_lw,f,ArraySize(f));
+   if(sent!=ArraySize(f)){ LwDrop("send "+IntegerToString(GetLastError())); return false; }
+   return true;
+  }
+bool LwText(string s)
+  {
+   uchar b[]; int n=StringToCharArray(s,b,0,StringLen(s),CP_UTF8);
+   if(n<0) return false;
+   ArrayResize(b,n);
+   return LwFrame(0x1,b);
+  }
+string LwBroadcast(string ev,string payload)
+  {
+   return "{\"topic\":\""+g_lwTopic+"\",\"event\":\"broadcast\",\"payload\":{\"type\":\"broadcast\",\"event\":\""+ev+"\",\"payload\":"+payload+"},\"ref\":\""+LwRef()+"\",\"join_ref\":\"1\"}";
+  }
+// Open the socket and ask for the WebSocket upgrade. The connect blocks up to 2.5 s, so it is tried at most every few
+// seconds and backs off after failures.
+void LwOpen()
+  {
+   g_lwTopic=LwTopic();
+   if(StringLen(g_lwTopic)==0){ g_lwOff=true; return; }
+   ResetLastError();
+   g_lw=SocketCreate();
+   if(g_lw==INVALID_HANDLE){ LwDrop("socket "+IntegerToString(GetLastError())); return; }
+   if(!SocketConnect(g_lw,LW_HOST,443,2500))
+     {
+      int e=GetLastError();
+      SocketClose(g_lw); g_lw=INVALID_HANDLE;
+      if(e==4014)   // ERR_FUNCTION_NOT_ALLOWED: the address is not in the allowed list
+        {
+         g_lwOff=true;
+         Print("Live line: MT5 does not allow the connection. Add https://"+LW_HOST+" under Tools > Options > Expert Advisors > Allow WebRequest. The live chart updates every 2 s until then.");
+         return;
+        }
+      LwDrop("connect "+IntegerToString(e)); return;
+     }
+   SocketTimeouts(g_lw,1500,1500);
+   // port 443: the terminal normally sets up TLS itself; if not, do it here
+   string subj, iss, ser, thumb; datetime expiry;
+   if(!SocketTlsCertificate(g_lw,subj,iss,ser,thumb,expiry) && !SocketTlsHandshake(g_lw,LW_HOST)){ LwDrop("tls "+IntegerToString(GetLastError())); return; }
+   uchar raw[16], none[], key[];
+   for(int i=0;i<16;i++) raw[i]=(uchar)(MathRand()&0xFF);
+   CryptEncode(CRYPT_BASE64,raw,none,key);
+   string req="GET /realtime/v1/websocket?apikey="+SYNC_KEY+"&vsn=1.0.0 HTTP/1.1\r\nHost: "+LW_HOST+"\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+             +"Sec-WebSocket-Key: "+CharArrayToString(key,0,WHOLE_ARRAY,CP_UTF8)+"\r\nSec-WebSocket-Version: 13\r\n\r\n";
+   uchar b[]; int n=StringToCharArray(req,b,0,StringLen(req),CP_UTF8);
+   ResetLastError();
+   if(SocketTlsSend(g_lw,b,n)!=n){ LwDrop("upgrade "+IntegerToString(GetLastError())); return; }
+   g_lwState=1; g_lwAt=GetTickCount(); g_lwRx=g_lwAt; ArrayResize(g_lwIn,0);
+  }
+// A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
+void LwOnText(string s)
+  {
+   if(g_lwState==2 && StringFind(s,"\"phx_reply\"")>=0 && StringFind(s,"\"ref\":\"1\"")>=0)
+     {
+      if(StringFind(s,"\"status\":\"ok\"")<0){ LwDrop("join refused"); g_lwWait=300000; return; }
+      g_lwState=3; g_lwFails=0;
+      Print("Live line: connected - the live chart follows MT5 tick by tick while Session Terminal shows the trade.");
+      LwText(LwBroadcast("hi","{\"v\":\"8.98\"}"));   // a window already watching says so at once
+      return;
+     }
+   if(StringFind(s,"\"phx_error\"")>=0 || StringFind(s,"\"phx_close\"")>=0){ LwDrop("channel closed"); return; }
+   if(StringFind(s,"\"event\":\"watch\"")>=0) g_lwWatchAt=GetTickCount();
+   else if(StringFind(s,"\"event\":\"unwatch\"")>=0) g_lwWatchAt=0;
+  }
+// Read what has arrived (never waits) and handle every whole frame in it.
+void LwPump()
+  {
+   uchar blk[];
+   for(int guard=0;guard<32 && g_lw!=INVALID_HANDLE;guard++)
+     {
+      ResetLastError();
+      int len=SocketTlsReadAvailable(g_lw,blk,8192);
+      if(len<0){ LwDrop("read "+IntegerToString(GetLastError())); return; }
+      if(len==0){ if(!SocketIsConnected(g_lw)) LwDrop("connection lost"); break; }
+      int n0=ArraySize(g_lwIn); ArrayResize(g_lwIn,n0+len); ArrayCopy(g_lwIn,blk,n0,0,len);
+      g_lwRx=GetTickCount();
+     }
+   if(g_lw==INVALID_HANDLE) return;
+   if(g_lwState==1)   // waiting for "HTTP/1.1 101 Switching Protocols" and the blank line after the headers
+     {
+      int n=ArraySize(g_lwIn), end=-1;
+      for(int i=3;i<n;i++) if(g_lwIn[i-3]==13 && g_lwIn[i-2]==10 && g_lwIn[i-1]==13 && g_lwIn[i]==10){ end=i+1; break; }
+      if(end<0) return;
+      string head=CharArrayToString(g_lwIn,0,end,CP_UTF8);
+      ArrayRemove(g_lwIn,0,end);
+      if(StringFind(head," 101")<0){ LwDrop("upgrade refused"); return; }
+      g_lwState=2; g_lwAt=GetTickCount(); g_lwHb=g_lwAt;
+      LwText("{\"topic\":\""+g_lwTopic+"\",\"event\":\"phx_join\",\"payload\":{\"config\":{\"broadcast\":{\"ack\":false,\"self\":false},\"presence\":{\"enabled\":false},\"postgres_changes\":[],\"private\":false}},\"ref\":\"1\",\"join_ref\":\"1\"}");
+      if(g_lw==INVALID_HANDLE) return;
+     }
+   while(g_lw!=INVALID_HANDLE)
+     {
+      int n=ArraySize(g_lwIn); if(n<2) break;
+      int op=g_lwIn[0]&0x0F;
+      bool masked=((g_lwIn[1]&0x80)!=0);
+      long len=g_lwIn[1]&0x7F; int pos=2;
+      if(len==126){ if(n<4) break; len=((long)g_lwIn[2]<<8)|(long)g_lwIn[3]; pos=4; }
+      else if(len==127){ if(n<10) break; len=0; for(int i=2;i<10;i++) len=(len<<8)|(long)g_lwIn[i]; pos=10; }
+      if(len>2000000){ LwDrop("frame too big"); return; }
+      int mk=pos; if(masked) pos+=4;
+      if(n<pos+(int)len) break;
+      uchar pl[]; ArrayResize(pl,(int)len);
+      for(int i=0;i<(int)len;i++) pl[i]=(uchar)(masked ? (g_lwIn[pos+i]^g_lwIn[mk+(i%4)]) : g_lwIn[pos+i]);
+      ArrayRemove(g_lwIn,0,pos+(int)len);
+      if(op==0x1 || op==0x0){ if(len>0) LwOnText(CharArrayToString(pl,0,(int)len,CP_UTF8)); }
+      else if(op==0x8){ LwDrop("closed by the server"); return; }
+      else if(op==0x9) LwFrame(0xA,pl);   // ping -> pong
+     }
+  }
+// Every 25 ms from OnTimer: keep the line while this chart has a trade the card shows (and 2 minutes after), heartbeat
+// every 25 s, and stream while a window watches.
+void LwService()
+  {
+   if(g_lwOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0)
+     { if(g_lw!=INVALID_HANDLE) LwClose(); return; }
+   uint now=GetTickCount();
+   if(g_lwPosAt==0 || now-g_lwPosAt>=1000)
+     {
+      g_lwPosAt=now; g_lwPos=false;
+      for(int i=PositionsTotal()-1;i>=0 && !g_lwPos;i--)
+        {
+         ulong tk=PositionGetTicket(i);
+         if(tk!=0 && PositionSelectByTicket(tk) && LiveTickMine()) g_lwPos=true;
+        }
+     }
+   if(g_lwPos) g_lwUseAt=now;
+   bool want=g_lwPos || (g_lwUseAt!=0 && now-g_lwUseAt<LW_LINGER_MS);
+   if(!want){ if(g_lw!=INVALID_HANDLE) LwClose(); return; }
+   if(g_lw==INVALID_HANDLE)
+     {
+      if(g_lwFailAt!=0 && now-g_lwFailAt<g_lwWait) return;
+      LwOpen();
+      return;
+     }
+   LwPump();
+   if(g_lw==INVALID_HANDLE) return;
+   now=GetTickCount();
+   if(g_lwState==1 && now-g_lwAt>6000){ LwDrop("no answer to the upgrade"); return; }
+   if(g_lwState==2 && now-g_lwAt>8000){ LwDrop("no answer to the join"); return; }
+   if(g_lwState==3 && now-g_lwRx>70000){ LwDrop("silent for 70 s"); return; }   // heartbeats are answered: silence is a dead line
+   if(g_lwState>=2 && now-g_lwHb>=25000)
+     {
+      g_lwHb=now;
+      if(!LwText("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\""+LwRef()+"\"}")) return;
+     }
+   if(LwWatched()) LwStream();
+  }
+// The trade's figures over the line: on any change in the price, the forming candle or a level, at most every
+// LW_STREAM_MS per position. Same figures as the database row (LiveTickRead).
+void LwStream()
+  {
+   uint now=GetTickCount();
+   for(int i=PositionsTotal()-1;i>=0;i--)
+     {
+      ulong tk=PositionGetTicket(i);
+      if(tk==0 || !PositionSelectByTicket(tk) || !LiveTickMine()) continue;
+      LiveTk t; LiveTickRead(tk,t);
+      string key=DoubleToString(t.bid,_Digits)+"|"+DoubleToString(t.px,_Digits)+"|"+t.bar+"|"+t.lv+"|"+DoubleToString(t.pnl,2);
+      int at=-1;
+      for(int k=0;k<ArraySize(g_lwTk);k++) if(g_lwTk[k]==t.posid){ at=k; break; }
+      if(at<0)
+        {
+         int n=ArraySize(g_lwTk);
+         if(n>=50){ for(int k=1;k<n;k++){ g_lwTk[k-1]=g_lwTk[k]; g_lwMs[k-1]=g_lwMs[k]; g_lwKey[k-1]=g_lwKey[k]; } n--; }
+         ArrayResize(g_lwTk,n+1); ArrayResize(g_lwMs,n+1); ArrayResize(g_lwKey,n+1);
+         g_lwTk[n]=t.posid; g_lwMs[n]=0; g_lwKey[n]=""; at=n;
+        }
+      if(key==g_lwKey[at]) continue;
+      if(g_lwMs[at]!=0 && now-g_lwMs[at]<LW_STREAM_MS) continue;
+      string p=StringFormat("{\"k\":%I64u,\"r\":%s,\"pnl\":%s,\"sl\":%s,\"tp\":%s,\"lad\":\"%s\",\"px\":%s,\"op\":%s,\"rpx\":%s,\"dg\":%d,\"bar\":\"%s\",\"sp\":%s}",
+                            t.posid,LiveTickNum(t.r,3),DoubleToString(t.pnl,2),LiveTickNum(t.slr,3),LiveTickNum(t.tpr,3),t.lad,
+                            DoubleToString(t.bid,_Digits),DoubleToString(t.op,_Digits),LiveTickNum(t.rpx>0?t.rpx:EMPTY_VALUE,_Digits+1),_Digits,t.bar,LiveTickNum(t.spr,_Digits+1));
+      if(!LwText(LwBroadcast("tick",p))) return;
+      g_lwMs[at]=now; g_lwKey[at]=key;
+     }
+  }
+
 void LiveTickAll()
   {
    if(g_tickOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW) return;
    if(ArraySize(g_liveQueue)>0) return;                       // the real events go first
    uint now=GetTickCount();
+   bool line=LwJoined();                                       // v8.98: the live line carries the price
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i);
-      if(tk==0 || !PositionSelectByTicket(tk)) continue;
-      if(PositionGetString(POSITION_SYMBOL)!=_Symbol) continue;
-      long mg=PositionGetInteger(POSITION_MAGIC);
-      if(InpCopyMagic!=InpMagic && mg==InpCopyMagic) continue;   // a copy: the Lead's trade is the card
-      ulong posid=(ulong)PositionGetInteger(POSITION_IDENTIFIER);
-      bool buy=(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY);
-      int d=buy?1:-1;
-      double op=PositionGetDouble(POSITION_PRICE_OPEN), sl=PositionGetDouble(POSITION_SL), tp=PositionGetDouble(POSITION_TP);
-      double px=buy ? SymbolInfoDouble(_Symbol,SYMBOL_BID) : SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-      double pnl=PositionGetDouble(POSITION_PROFIT)+PositionGetDouble(POSITION_SWAP);
-      double rpx=RecallRisk(tk);
-      if(rpx<=0 && sl>0 && (op-sl)*d>0) rpx=(op-sl)*d;              // not stamped (a trade by hand): its stop while behind the entry
-      double r  =(rpx>0) ? (px-op)*d/rpx : EMPTY_VALUE;
-      double slr=(rpx>0 && sl>0) ? (sl-op)*d/rpx : EMPTY_VALUE;
-      double tpr=(rpx>0 && tp>0) ? (tp-op)*d/rpx : EMPTY_VALUE;
-      string lad=(mg==InpMagic) ? LiveLadder(op,d,rpx) : "";
-      // v8.89: the live chart - the chart's price (bid, like MT5's own candles) and the forming candle on the timeframe the
-      // trade was taken on ("t,o,h,l,c,seconds")
-      double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
-      // v8.90 (Nestor, 5 Oct 2026: "where is ... the spread?"): the spread in price (ask - bid), on the same tick - no extra call.
-      // Needs the 13-argument st_live_tick (supabase/live_spread.sql, applied 5 Oct 2026); 8.89 keeps the 12-argument one.
-      double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK);
-      double spr=(ask>0 && bid>0 && ask>=bid) ? ask-bid : EMPTY_VALUE;
-      ENUM_TIMEFRAMES ttf=TradeTf(posid);
-      datetime bt=iTime(_Symbol,ttf,0);
-      string bar=(bt>0) ? LiveBarStr(bt,iOpen(_Symbol,ttf,0),iHigh(_Symbol,ttf,0),iLow(_Symbol,ttf,0),iClose(_Symbol,ttf,0))+","+IntegerToString(PeriodSeconds(ttf)) : "";
-      string sig=DoubleToString(sl,_Digits)+"|"+DoubleToString(tp,_Digits)+"|"+lad+"|"+IntegerToString((long)bt);
+      if(tk==0 || !PositionSelectByTicket(tk) || !LiveTickMine()) continue;
+      LiveTk t; LiveTickRead(tk,t);
+      ulong posid=t.posid;
+      string sig=t.lv+"|"+IntegerToString((long)t.bt);
       int at=-1;
       for(int k=0;k<ArraySize(g_tkTk);k++) if(g_tkTk[k]==posid){ at=k; break; }
       if(at<0)
         {
          int n=ArraySize(g_tkTk);
-         if(n>=50){ for(int k=1;k<n;k++){ g_tkTk[k-1]=g_tkTk[k]; g_tkPx[k-1]=g_tkPx[k]; g_tkMs[k-1]=g_tkMs[k]; g_tkSig[k-1]=g_tkSig[k]; g_tkBad[k-1]=g_tkBad[k]; g_tkBar[k-1]=g_tkBar[k]; } n--; }
-         ArrayResize(g_tkTk,n+1); ArrayResize(g_tkPx,n+1); ArrayResize(g_tkMs,n+1); ArrayResize(g_tkSig,n+1); ArrayResize(g_tkBad,n+1); ArrayResize(g_tkBar,n+1);
-         g_tkTk[n]=posid; g_tkPx[n]=0.0; g_tkMs[n]=0; g_tkSig[n]=""; g_tkBad[n]=false; g_tkBar[n]=""; at=n;
+         if(n>=50){ for(int k=1;k<n;k++){ g_tkTk[k-1]=g_tkTk[k]; g_tkPx[k-1]=g_tkPx[k]; g_tkMs[k-1]=g_tkMs[k]; g_tkSig[k-1]=g_tkSig[k]; g_tkBad[k-1]=g_tkBad[k]; g_tkBar[k-1]=g_tkBar[k]; g_tkLv[k-1]=g_tkLv[k]; } n--; }
+         ArrayResize(g_tkTk,n+1); ArrayResize(g_tkPx,n+1); ArrayResize(g_tkMs,n+1); ArrayResize(g_tkSig,n+1); ArrayResize(g_tkBad,n+1); ArrayResize(g_tkBar,n+1); ArrayResize(g_tkLv,n+1);
+         g_tkTk[n]=posid; g_tkPx[n]=0.0; g_tkMs[n]=0; g_tkSig[n]=""; g_tkBad[n]=false; g_tkBar[n]=""; g_tkLv[n]=""; at=n;
         }
       // v8.89 (Nestor: "why this?"): any change in the price or in the forming candle - its high and low included - goes,
       // still at most every 5 s, so the live chart's candle moves with the market. 8.88 waited for a twentieth of an R,
       // which was enough for the ball on the card's line but left a candle and its wicks standing still.
       bool changed=(sig!=g_tkSig[at]);
-      bool moved=(MathAbs(px-g_tkPx[at])>=_Point*0.5) || (bar!=g_tkBar[at]);
+      bool moved=(MathAbs(t.px-g_tkPx[at])>=_Point*0.5) || (t.bar!=g_tkBar[at]);
       uint el=now-g_tkMs[at];
-      // v8.90 (Nestor, 5 Oct 2026: "can they be every 2 seconds instead of 5?"): a price / candle move goes every 2 s;
-      // a stop / target / ladder change still goes after 1 s, and a failed send still backs off for 5 s.
-      uint wait=g_tkBad[at] ? 5000 : (changed ? 1000 : 2000);
-      if(!(changed || moved) || (g_tkMs[at]!=0 && el<wait)) continue;
+      bool due;
+      if(line)
+        {
+         // v8.98: the price and the candle go over the live line while a window watches, so the row only needs a
+         // level change (stop, target, ladder - after 1 s) and a refresh every 30 s for a reload, the phone and older windows
+         bool lvc=(t.lv!=g_tkLv[at]);
+         uint w=g_tkBad[at] ? 5000 : (lvc ? 1000 : 30000);
+         due=(g_tkMs[at]==0) || (el>=w && (lvc || moved));
+        }
+      else
+        {
+         // v8.90 (Nestor, 5 Oct 2026: "can they be every 2 seconds instead of 5?"): a price / candle move goes every 2 s;
+         // a stop / target / ladder change still goes after 1 s, and a failed send still backs off for 5 s.
+         uint w=g_tkBad[at] ? 5000 : (changed ? 1000 : 2000);
+         due=(changed || moved) && (g_tkMs[at]==0 || el>=w);
+        }
+      if(!due) continue;
       string body=StringFormat("{\"p_token\":\"%s\",\"p_ticket\":%I64u,\"p_r\":%s,\"p_pnl\":%s,\"p_sl_r\":%s,\"p_tp_r\":%s,\"p_ladder\":\"%s\",\"p_px\":%s,\"p_op\":%s,\"p_rpx\":%s,\"p_digits\":%d,\"p_bar\":\"%s\",\"p_spread\":%s}",
-                               g_syncTokenEff,posid,LiveTickNum(r,3),DoubleToString(pnl,2),LiveTickNum(slr,3),LiveTickNum(tpr,3),lad,
-                               DoubleToString(bid,_Digits),DoubleToString(op,_Digits),LiveTickNum(rpx>0?rpx:EMPTY_VALUE,_Digits+1),_Digits,bar,LiveTickNum(spr,_Digits+1));
+                               g_syncTokenEff,posid,LiveTickNum(t.r,3),DoubleToString(t.pnl,2),LiveTickNum(t.slr,3),LiveTickNum(t.tpr,3),t.lad,
+                               DoubleToString(t.bid,_Digits),DoubleToString(t.op,_Digits),LiveTickNum(t.rpx>0?t.rpx:EMPTY_VALUE,_Digits+1),_Digits,t.bar,LiveTickNum(t.spr,_Digits+1));
       bool ok=LiveTickPost(body);
       g_tkMs[at]=now; g_tkBad[at]=!ok;
-      if(ok){ g_tkPx[at]=px; g_tkSig[at]=sig; g_tkBar[at]=bar; }
+      if(ok){ g_tkPx[at]=t.px; g_tkSig[at]=sig; g_tkBar[at]=t.bar; g_tkLv[at]=t.lv; }
       if(g_tickOff) return;
      }
   }
@@ -6592,7 +6884,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v8.97 loaded (the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v8.98 loaded (a live line to Session Terminal: the live chart follows MT5 tick by tick; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -6721,6 +7013,7 @@ void OnDeinit(const int reason)
   {
    SaveState();                      // remember all settings for next launch
    EventKillTimer();
+   LwClose();                                        // v8.98: the live line goes with the EA
    CpRelease();                                      // v8.80: another chart on this account may take over copying at once
    ChartSetInteger(0,CHART_MOUSE_SCROLL,true);       // the panel may have been holding the chart still
    ChartSetInteger(0,CHART_EVENT_MOUSE_MOVE,false);
@@ -6824,6 +7117,7 @@ void OnTimer()
    if((++s_lblTick)%4==0 && LabelsFollowChart()) ChartRedraw();
    // v8.80 trade copier; v8.85 40x a second, so a copy lands a moment after the lead's trade.
    CopierTick();
+   LwService();                             // v8.98: the live line to Session Terminal (keeps it, heartbeats, streams while watched)
    // Everything below is once-a-second work, exactly as before the timer went to 100ms.
    static uint s_lastSec=0;
    uint _nowMs=GetTickCount();
