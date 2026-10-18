@@ -52,7 +52,7 @@
     win.document.querySelector('#stpr-tb2 #stpr-layersbtn').click(); await W(60);
     ok('Show on chart opens there too, with the Minimalist switch', wm.classList.contains('show') && /Minimalist/.test(wm.textContent));
     win.document.querySelector('#stpr-tb2 #stpr-layersbtn').click(); await W(40);
-    ok('its title names the symbol and timeframe', /EUR\/USD · 4h · Back Testing/.test(win.document.title), win.document.title);
+    ok('its title names the symbol (as MT5 does) and timeframe', /EURUSD · 4h · Back Testing/.test(win.document.title), win.document.title);
     var bk = p2.el.querySelector('[data-popc]');
     ok('there its button reads Back to the main window', bk && bk.title === 'Back to the main window');
     var lastT = function (p) { var a = p.series.data().filter(function (x) { return x.close != null; }); return a.length ? a[a.length - 1].time : null; };

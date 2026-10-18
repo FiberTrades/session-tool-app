@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.01"
+#property version   "9.02"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3546,7 +3546,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.01\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.02\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3934,7 +3934,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.01\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
+string LwHi(){ return StringFormat("{\"v\":\"9.02\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -3959,6 +3959,12 @@ uint LwInterval()
    if(g_lwMidAt!=0 && now-g_lwMidAt<LW_WATCH_MS) return LW_MID_MS;
    return LW_SLOW_MS;
   }
+// v9.02: a candle in another symbol's digits (the watchlist hub streams symbols with no chart of their own)
+string LwBarVD(const MqlRates &b,int dg)
+  {
+   long tu=(long)b.time-SrvOffAt(b.time);
+   return IntegerToString(tu)+","+DoubleToString(b.open,dg)+","+DoubleToString(b.high,dg)+","+DoubleToString(b.low,dg)+","+DoubleToString(b.close,dg)+","+IntegerToString((long)b.tick_volume);
+  }
 // one 1-minute candle as "t,o,h,l,c,tick volume", t in UTC seconds (the broker offset of its own date)
 string LwBarV(const MqlRates &b)
   {
@@ -3980,8 +3986,10 @@ ENUM_TIMEFRAMES LwPer(int tf)
      }
    return PERIOD_CURRENT;
   }
-void LwHist(int n,int tf=1)
+void LwHist(int n,int tf=1,string sym="")
   {
+   if(StringLen(sym)==0) sym=_Symbol;
+   int dg=(int)SymbolInfoInteger(sym,SYMBOL_DIGITS);
    ENUM_TIMEFRAMES per=LwPer(tf);
    if(per==PERIOD_CURRENT) return;   // a timeframe the app does not ask for
    int most=(tf==1) ? LW_HIST_MAX : LW_HIST_TF_MAX, part=(tf==1) ? LW_HIST_PART : LW_HIST_TF_PART;
@@ -3989,14 +3997,14 @@ void LwHist(int n,int tf=1)
    if(n>most) n=most;
    if(tf>1 && g_bdst<0) BrokerDstDetect();   // old bars go out with the right UTC times (the broker's summer time)
    MqlRates r[]; ArraySetAsSeries(r,false);
-   int got=CopyRates(_Symbol,per,1,n,r);   // shift 1: the last closed candle; not a series, so r[0] is the oldest
+   int got=CopyRates(sym,per,1,n,r);       // shift 1: the last closed candle; not a series, so r[0] is the oldest
    if(got<=0) return;                      // MT5 still loading that history: the app asks again
    int parts=(got+part-1)/part;
    for(int k=0;k<parts;k++)
      {
       string rows="";
-      for(int i=k*part;i<got && i<(k+1)*part;i++){ if(StringLen(rows)>0) rows+=";"; rows+=LwBarV(r[i]); }
-      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"tf\":%d,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",_Symbol,tf,k,parts,rows)))) return;
+      for(int i=k*part;i<got && i<(k+1)*part;i++){ if(StringLen(rows)>0) rows+=";"; rows+=LwBarVD(r[i],dg); }
+      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"tf\":%d,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",sym,tf,k,parts,rows)))) return;
       LwCount();
      }
   }
@@ -4019,6 +4027,94 @@ void LwStreamPx()
    if(!LwText(LwBroadcast("px",p))) return;
    g_lwPxMs=now; g_lwPxKey=key;
    LwCount();
+  }
+// ---- v9.02 the watchlist hub (Nestor, 18 Oct 2026: "one EA streams every symbol in your list ... ok do it") ----
+// The app names ONE of the member's EA charts as its hub (by "symbol|login"). That EA: streams the price of every symbol in
+// the member's watchlist once a second ("q": symbol, bid, ask, the day before's close, digits) while Live Charts shows; answers
+// a search of its broker's symbols ("syms" -> "symlist"); and streams the price, forming candle and history of a symbol Live
+// Charts shows that has no EA chart of its own ("hs" in "watch", "by" in "hist") - so no MT5 chart is needed per symbol.
+#define LW_WL_MAX   40           // symbols in a watchlist
+#define LW_HUB_MAX  8            // symbols with no chart of their own on screen at once
+string g_wlSyms[]; int g_wlN=0; uint g_wlAt=0, g_wlQAt=0; string g_wlQKey="";
+string g_hubSyms[]; int g_hubN=0; uint g_hubAt=0; uint g_hubPxMs[]; string g_hubPxKey[];
+string LwKey(){ return _Symbol+"|"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN)); }
+// a comma list of symbols this broker has (added to Market Watch so their prices flow); at most `most`
+int LwSymList(string csv,string &out[],int most)
+  {
+   string parts[]; int n=StringSplit(csv,',',parts), k=0; ArrayResize(out,0);
+   for(int i=0;i<n && k<most;i++)
+     {
+      string sy=parts[i]; StringTrimLeft(sy); StringTrimRight(sy); if(StringLen(sy)==0) continue;
+      bool cus=false; if(!SymbolExist(sy,cus)) continue;
+      SymbolSelect(sy,true);
+      ArrayResize(out,k+1); out[k]=sy; k++;
+     }
+   return k;
+  }
+void LwWlSet(string csv){ g_wlN=LwSymList(csv,g_wlSyms,LW_WL_MAX); g_wlAt=GetTickCount(); g_wlQKey=""; }
+void LwHubSet(string csv)
+  {
+   g_hubN=LwSymList(csv,g_hubSyms,LW_HUB_MAX); g_hubAt=GetTickCount();
+   if(ArraySize(g_hubPxMs)!=g_hubN){ ArrayResize(g_hubPxMs,g_hubN); ArrayResize(g_hubPxKey,g_hubN); for(int i=0;i<g_hubN;i++){ g_hubPxMs[i]=0; g_hubPxKey[i]=""; } }
+  }
+// the watchlist's prices: once a second on the relay (every 5 s on Supabase), when any changed (and every 10 s anyway)
+void LwStreamQuotes()
+  {
+   uint now=GetTickCount();
+   if(g_wlN==0 || now-g_wlAt>=LW_WATCH_MS) return;
+   uint every=g_lwRelay ? 1000 : 5000;
+   if(g_wlQAt!=0 && now-g_wlQAt<every) return;
+   string rows="";
+   for(int i=0;i<g_wlN;i++)
+     {
+      string sy=g_wlSyms[i]; int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS);
+      double b=SymbolInfoDouble(sy,SYMBOL_BID), a=SymbolInfoDouble(sy,SYMBOL_ASK), pc=iClose(sy,PERIOD_D1,1);
+      if(StringLen(rows)>0) rows+=";";
+      rows+=sy+","+DoubleToString(b,dg)+","+DoubleToString(a,dg)+","+DoubleToString(pc,dg)+","+IntegerToString(dg);
+     }
+   if(rows==g_wlQKey && now-g_wlQAt<10000) return;
+   if(!LwText(LwBroadcast("q",StringFormat("{\"by\":\"%s\",\"r\":\"%s\"}",LwKey(),rows)))) return;
+   g_wlQAt=now; g_wlQKey=rows;
+   LwCount();
+  }
+// the broker's symbols containing what was typed: those starting with it first; at most 20
+void LwSymSearch(string q)
+  {
+   string Q=q; StringToUpper(Q); if(StringLen(Q)==0 || StringLen(Q)>20) return;
+   string hit=""; int n=0, tot=SymbolsTotal(false);
+   for(int pass=0;pass<2 && n<20;pass++)
+      for(int i=0;i<tot && n<20;i++)
+        {
+         string nm=SymbolName(i,false), U=nm; StringToUpper(U);
+         int at=StringFind(U,Q);
+         if((pass==0 && at!=0) || (pass==1 && at<=0)) continue;
+         if(StringLen(hit)>0) hit+=","; hit+=nm; n++;
+        }
+   LwText(LwBroadcast("symlist",StringFormat("{\"by\":\"%s\",\"q\":\"%s\",\"r\":\"%s\"}",LwKey(),q,hit)));
+   LwCount();
+  }
+// a symbol with no chart of its own, on a Live Charts chart: its price and forming candle, as this chart's own
+void LwStreamHub()
+  {
+   uint now=GetTickCount();
+   if(g_hubN==0 || now-g_hubAt>=LW_WATCH_MS) return;
+   for(int i=0;i<g_hubN;i++)
+     {
+      if(g_hubPxMs[i]!=0 && now-g_hubPxMs[i]<LwInterval()) continue;
+      string sy=g_hubSyms[i]; int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS);
+      MqlRates r[]; ArraySetAsSeries(r,true);
+      if(CopyRates(sy,PERIOD_M1,0,2,r)<2) continue;
+      double bid=SymbolInfoDouble(sy,SYMBOL_BID), ask=SymbolInfoDouble(sy,SYMBOL_ASK);
+      if(bid<=0) continue;
+      string bar=LwBarVD(r[0],dg), pb=LwBarVD(r[1],dg);
+      string key=DoubleToString(bid,dg)+"|"+DoubleToString(ask,dg)+"|"+bar;
+      if(key==g_hubPxKey[i]) continue;
+      string p=StringFormat("{\"s\":\"%s\",\"b\":%s,\"a\":%s,\"t\":%I64d,\"dg\":%d,\"bar\":\"%s\",\"pb\":\"%s\"}",
+                            sy,DoubleToString(bid,dg),DoubleToString(ask,dg),(long)TimeGMT(),dg,bar,pb);
+      if(!LwText(LwBroadcast("px",p))) return;
+      g_hubPxMs[i]=now; g_hubPxKey[i]=key;
+      LwCount();
+     }
   }
 // ---- Trade management from Session Terminal (18 Oct 2026, Nestor: "start the trade management from the app now") ----
 // The app sends "cmd" on the live line to move this trade's SL, TP, BE trigger or a T / P step, or to close it (Move to BE and
@@ -4135,11 +4231,19 @@ void LwOnText(string s)
       if(ms<=LW_FAST_MS) g_lwFastAt=now; else if(ms<=LW_MID_MS) g_lwMidAt=now;
       string ws=","+LwStr(s,"\"sym\":\"")+",";   // the symbols on screen, comma-separated: each Live Charts chart can have its own
       if(StringFind(ws,","+_Symbol+",")>=0) g_lwSymAt=now;
+      if(LwStr(s,"\"hub\":\"")==LwKey()) LwHubSet(LwStr(s,"\"hs\":\""));   // v9.02: symbols on screen with no chart of their own
      }
-   else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; }   // another window still watching says so again
+   else if(StringFind(s,"\"event\":\"wl\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwWlSet(LwStr(s,"\"syms\":\"")); }       // v9.02: the watchlist
+   else if(StringFind(s,"\"event\":\"syms\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwSymSearch(LwStr(s,"\"q\":\"")); }   // v9.02: a symbol search
+   else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; g_hubAt=0; g_wlAt=0; }   // another window still watching says so again
    else if(StringFind(s,"\"event\":\"who\"")>=0) LwText(LwBroadcast("hi",LwHi()));   // a window that joined after this chart
    else if(StringFind(s,"\"event\":\"cmd\"")>=0) LwCmd(s);   // trade management from the app
-   else if(StringFind(s,"\"event\":\"hist\"")>=0){ if(LwStr(s,"\"sym\":\"")==_Symbol) LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1)); }   // v9.01: + tf
+   else if(StringFind(s,"\"event\":\"hist\"")>=0)   // v9.01: + tf; v9.02: + another symbol, asked of the hub ("by")
+     {
+      string hs=LwStr(s,"\"sym\":\"");
+      if(hs==_Symbol) LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1));
+      else if(StringLen(hs)>0 && LwStr(s,"\"by\":\"")==LwKey()){ bool cus=false; if(SymbolExist(hs,cus)){ SymbolSelect(hs,true); LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1),hs); } }
+     }
   }
 // Read what has arrived (never waits) and handle every whole frame in it.
 void LwPump()
@@ -4223,7 +4327,7 @@ void LwService()
       g_lwHb=now;
       if(!LwText("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\""+LwRef()+"\"}")) return;
      }
-   if(LwWatched()){ LwStream(); LwStreamPx(); }
+   if(LwWatched()){ LwStream(); LwStreamPx(); LwStreamHub(); LwStreamQuotes(); }
   }
 // The trade's figures over the line: on any change in the price, the forming candle or a level, at most every
 // LwInterval() per position (v9.00: the speed the app asked for; LW_STREAM_MS, once a second, before). Same figures as the database row (LiveTickRead).
@@ -7154,7 +7258,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.01 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.02 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

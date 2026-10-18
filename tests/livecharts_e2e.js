@@ -63,8 +63,8 @@
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.ea && st.gotHist && st.fresh) break; }
     for (k = 0; k < 20 && LN.state().px < 2; k++) await W(250);   // the second price too
     var ls = LN.state();
-    check('joined the channel; the EA said which chart it runs on (EUR/USD, 9.00)', ls.joined && st.ea && st.ea.raw === 'EURUSD' && st.ea.v === '9.00', [ls.joined, st.ea]);
-    check('"watch" says 2 a second and the symbol (in the member\'s session, no trade open)', ls.key === '500|EURUSD', ls.key);
+    check('joined the channel; the EA said which chart it runs on (EUR/USD, 9.02)', ls.joined && st.ea && st.ea.raw === 'EURUSD' && st.ea.v === '9.02', [ls.joined, st.ea]);
+    check('"watch" says 2 a second and the symbol (in the member\'s session, no trade open), and names the hub (9.02)', /^500\|EURUSD\|EURUSD\|90001234>/.test(ls.key), ls.key);
     check('the day\'s 1-minute candles came from the EA', st.gotHist && st.baseTf === 1 && st.base > 30, [st.gotHist, st.baseTf, st.base]);
     check('prices flow (px)', st.fresh && ls.px >= 2 && st.px && st.px.b > 0, [ls.px, st.px]);
     // the page's clock on the EA's moment, so the forming candle is "now"
@@ -100,8 +100,8 @@
     window.__stLive.upsert({ ticket: 990077, login: 90001234, symbol: 'EURUSD', direction: 'short', lots: 1, risk: 100,
       opened_at: new Date(Date.now() - 5 * 60000).toISOString(), seen_at: new Date().toISOString(), tick_at: new Date().toISOString(),
       r_now: -0.1, pnl_now: -10, sl_r: -1, tp_r: 3, ladder: '', px: op, op: op, rpx: 0.0004, digits: 5, bar: (nowS - nowS % 60) + ',' + op + ',' + op + ',' + op + ',' + op + ',60', spread: 0.00007 });
-    for (k = 0; k < 20; k++) { await W(300); if (LN.state().key === '2000|EURUSD') break; }
-    check('a trade open: "watch" says every 2 s', LN.state().key === '2000|EURUSD', LN.state().key);
+    for (k = 0; k < 20; k++) { await W(300); if (/^2000\|EURUSD\|/.test(LN.state().key)) break; }
+    check('a trade open: "watch" says every 2 s', /^2000\|EURUSD\|/.test(LN.state().key), LN.state().key);
     await W(1500);
     var lines = P._lines(0).map(function (l) { return l.title; });
     check('its lines on the chart: Entry, SL, TP (the Session Live chart\'s)', lines.indexOf('Entry') >= 0 && lines.indexOf('SL') >= 0 && lines.indexOf('TP') >= 0, lines);
@@ -140,13 +140,13 @@
     // ---- switching the symbol: every chart turns to gold (Nestor, 18 Oct 2026: "then all the charts turn to gold") ----
     document.getElementById('stpr-sym').click(); await W(120);
     var gbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /XAUUSD/.test(b.textContent); })[0];
-    check('the symbol menu says which symbols stream live from MT5', gbtn && /Live from your MT5/.test(gbtn.textContent), gbtn && gbtn.textContent);
+    check('the symbol button\'s list marks what streams live from MT5 (a green dot)', gbtn && !!gbtn.querySelector('b i'), gbtn && gbtn.innerHTML.slice(0, 160));
     gbtn.click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && /XAU|GOLD/.test(st.sym) && st.fresh && st.px && st.gotHist) break; }
     var ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
     check('both charts are gold now, live from its own EA', ks.join(',') === 'XAUUSD,XAUUSD' && st.fresh && st.px && st.px.b > 1000 && st.gotHist, [ks, st.px, st.gotHist]);
-    for (k = 0; k < 20; k++) { await W(300); if (LN.state().key === '2000|XAUUSD') break; }
-    check('"watch" names gold only (a trade still open on EUR/USD: every 2 s)', LN.state().key === '2000|XAUUSD', LN.state().key);
+    for (k = 0; k < 20; k++) { await W(300); if (/^2000\|XAUUSD\|/.test(LN.state().key)) break; }
+    check('"watch" names gold only (a trade still open on EUR/USD: every 2 s)', /^2000\|XAUUSD\|/.test(LN.state().key), LN.state().key);
     await W(1500);
     var gp = P._paneBars(1), gl = gp.data[gp.real - 1], gpx = LC.state().px;
     check('the charts\' last candle is gold\'s forming one at its live price', gl && Math.abs(gl.close - gpx.b) < 0.5, [gl && gl.close, gpx && gpx.b]);
@@ -173,7 +173,7 @@
     check('BTCUSD has no stored candles (Back Testing\'s list does not have it)', !(P._syms() || []).some(function (s) { return s.key === 'BTCUSD'; }), (P._syms() || []).map(function (s) { return s.key; }));
     document.getElementById('stpr-sym').click(); await W(120);
     var bbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /BTCUSD/.test(b.textContent); })[0];
-    check('...but Live Charts lists it, by its MT5 name: "BTCUSD · Live from your MT5"', bbtn && /^BTCUSD/.test(bbtn.textContent) && /Live from your MT5/.test(bbtn.textContent), bbtn && bbtn.textContent);
+    check('...but Live Charts lists it, by its MT5 name, live (its own EA)', bbtn && /^BTCUSD/.test(bbtn.textContent) && !!bbtn.querySelector('b i'), bbtn && bbtn.textContent);
     if (bbtn) bbtn.click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'BTCUSD' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
     ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
@@ -201,6 +201,36 @@
     var askd = Object.keys(P._feeds()[0].tfh || {}).sort(function (a, b) { return a - b; }).join(',');
     check('...asked of the EA once per source timeframe (15m, 1h, 4h, 1D - 12h, 1W and 1Y built from them)', askd === '15,60,240,1440', askd);
     P._tf(0, 15); await W(400);
+
+    // ---- the watchlist (18 Oct 2026): the symbol button opens it; the hub (the EUR/USD EA, 9.02) streams the list's prices,
+    //      searches the broker's symbols, and serves a symbol with no MT5 chart of its own ----
+    document.getElementById('stpr-sym').click(); await W(200);
+    var wm = document.querySelector('#stpr-menu.show'), WLs = P._wl();
+    check('the symbol button opens the watchlist: your EAs\' symbols; the hub is the EUR/USD EA (9.02)', wm && /Watchlist/.test(wm.textContent) && ['EURUSD', 'XAUUSD', 'BTCUSD'].every(function (x) { return WLs.list.indexOf(x) >= 0; }) && WLs.hub === 'EURUSD|90001234', [WLs.list, WLs.hub]);
+    for (k = 0; k < 30 && !(P._wl().q.XAUUSD && P._wl().q.BTCUSD); k++) await W(200);
+    var xr = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]');
+    check('the hub streams the list\'s prices: last, change and change % on each row', xr && /\d,\d{3}\.\d{2}/.test(xr.textContent) && /\d\.\d{2}%/.test(xr.textContent) && /[+−]/.test(xr.textContent), xr && xr.textContent);
+    document.querySelector('#stpr-menu.show [data-wladd]').click(); await W(100);
+    var wq = document.getElementById('stpr-wlq'); wq.value = 'USDJ'; wq.dispatchEvent(new Event('input', { bubbles: true }));
+    for (k = 0; k < 30 && !document.querySelector('#stpr-menu.show [data-wlpick="USDJPY"]'); k++) await W(150);
+    var sug = Array.prototype.map.call(document.querySelectorAll('#stpr-menu.show [data-wlpick]'), function (x) { return x.getAttribute('data-wlpick'); });
+    check('+ searches the broker\'s symbols through the hub: USDJ finds USDJPY and USDJPY.r', sug.join(',') === 'USDJPY,USDJPY.r', sug);
+    document.querySelector('#stpr-menu.show [data-wlpick="USDJPY"]').click(); await W(300);
+    check('picked: USDJPY is on the list, and saved', P._wl().list.indexOf('USDJPY') >= 0 && (P._cfg().wl || []).indexOf('USDJPY') >= 0 && !!document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]'), P._cfg().wl);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]').click();
+    for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'USDJPY' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
+    ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
+    check('USDJPY opens on every chart with no MT5 chart of its own: the hub sends its prices and minutes', ks.join(',') === 'USDJPY,USDJPY' && st.fresh && st.px && st.px.b > 100 && st.gotHist && st.base > 100 && P._feeds()[0].ea && P._feeds()[0].ea.hub === 'EURUSD|90001234', [ks, st.px, st.base, P._feeds()[0].ea]);
+    check('...in its own digits (3)', P._feeds()[0].digits === 3 || P._feeds()[0].dg === 3, [P._feeds()[0].digits, P._feeds()[0].dg]);
+    for (k = 0; k < 40 && !(P._panes()[0].static.length > 1000); k++) await W(250);
+    check('...with its history from the hub (15-minute candles, none stored)', P._panes()[0].static.length > 1000, P._panes()[0].static.length);
+    document.getElementById('stpr-sym').click(); await W(200);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"]').click();
+    for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'EURUSD' && st.fresh) break; }
+    document.getElementById('stpr-sym').click(); await W(200);
+    var ux = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"] [data-wlx]'); if (ux) ux.click(); await W(200);
+    check('back on EURUSD; × takes USDJPY off the list', st.sym === 'EURUSD' && P._wl().list.indexOf('USDJPY') < 0 && !document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]'), P._wl().list);
+    document.getElementById('stpr-sym').click(); await W(150);
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);

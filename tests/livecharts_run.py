@@ -29,7 +29,7 @@ time.sleep(1)
 out2 = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts_gold.json')
 out3 = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts_btc.json')
 # two MT5 charts with the EA: EUR/USD on account 90001234, gold on account 90005678 (each streams its own symbol)
-ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out, 'EURUSD', str(T0), str(p0), '5', '90001234'], env=dict(os.environ, ST_RELAY=EA_RELAY))
+ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out, 'EURUSD', str(T0), str(p0), '5', '90001234'], env=dict(os.environ, ST_RELAY=EA_RELAY, ST_FAKE_V='9.02'))   # EA 9.02: the watchlist hub
 ea2 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out2, 'XAUUSD', str(T0), str(g0), '2', '90005678', '0'])   # gold's EA: managing from the app OFF
 # a third chart: BTCUSD, a symbol with NO stored candles (18 Oct 2026) - through the relay, its chart built from what it sends
 ea3 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out3, 'BTCUSD', str(T0), '67250.0', '2', '90009999', '0'], env=dict(os.environ, ST_RELAY=EA_RELAY, ST_FAKE_V='9.01'))   # EA 9.01: other timeframes' history too
@@ -47,6 +47,7 @@ for e2 in (ea, ea2, ea3):
 try:
     log = json.load(open(out))
     print('stand-in EA:', json.dumps({k: log.get(k) for k in ('joined', 'who', 'hist', 'bars_msgs', 'px', 'unwatch', 'errors', 'cmds', 'bad_sig')}))
+    print('hub (EURUSD, 9.02):', json.dumps({k: log.get(k) for k in ('wl', 'q', 'syms', 'hub_hs', 'hist_by', 'hub_px')})[:900])
     print('watches (s, ms, sym):', json.dumps(log.get('watches', [])[-12:]))
     print('px gaps (ms):', json.dumps(log.get('gaps_ms', [])[-12:]))
 except Exception as e:

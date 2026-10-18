@@ -14,7 +14,7 @@ DG = int(sys.argv[7]) if len(sys.argv) > 7 else 5          # digits (gold: 2)
 LG = int(sys.argv[8]) if len(sys.argv) > 8 else 90001234   # the account's login
 TM = int(sys.argv[9]) if len(sys.argv) > 9 else 1          # "Manage trades from Session Terminal" on (1) or off (0)
 topic = 'realtime:stl-' + hashlib.sha256(('st-live:' + tok).encode()).digest()[:16].hex()
-log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
+log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'wl': [], 'q': 0, 'syms': [], 'hub_hs': [], 'hist_by': [], 'hub_px': 0, 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
 w0 = time.time()
 def fnow(): return T0 + (time.time() - w0)          # the stand-in's clock: the given moment, running
 def price_at(t):                                     # a gentle walk, the same at any moment asked twice
@@ -26,7 +26,18 @@ def bstr(b): return '%d,%.5f,%.5f,%.5f,%.5f,%d' % tuple(b)
 def bar_tf(m, step):                                 # a closed candle of another timeframe (EA 9.01's history), from the same walk
     pts = [price_at(m + k * step // 6) for k in range(6)] + [price_at(m + step - 1)]
     return [int(m), pts[0], max(pts), min(pts), pts[-1], 100]
-VER = os.environ.get('ST_FAKE_V', '9.00')            # 9.01: answers history asks for other timeframes too
+VER = os.environ.get('ST_FAKE_V', '9.00')            # 9.01: answers history asks for other timeframes too; 9.02: the watchlist hub
+# EA 9.02's hub: the broker's symbols it knows (price, digits) - its own symbol walks as above, the others alike from their price
+UNI = {'EURUSD': (1.16420, 5), 'GBPUSD': (1.30112, 5), 'USDJPY': (151.204, 3), 'USDJPY.r': (151.206, 3), 'USDCHF': (0.81230, 5), 'XAUUSD': (4100.0, 2), 'BTCUSD': (67250.0, 2), 'US100.cash': (25140.6, 1)}
+KEYME = SYM + '|' + str(LG)
+def price_sym(sy, t):
+    if sy == SYM: return price_at(t)
+    base, dg = UNI[sy]; return round(base * (1 + 0.0005 * math.sin(t / 700.0) + 0.0002 * math.sin(t / 83.0)), dg)
+def bar_sym(sy, m, step):                             # a candle of another symbol (step: seconds)
+    end = min(fnow(), m + step); pts = [price_sym(sy, m + k * step // 6) for k in range(6)] + [price_sym(sy, end)]
+    return [int(m), pts[0], max(pts), min(pts), pts[-1], 50]
+def bstr_d(b, dg): return ('%d,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%d') % tuple(b)
+hub = {'wl': [], 'wl_at': 0, 'q_at': 0, 'hs': [], 'hs_at': 0, 'px_at': {}}
 RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay on this machine (plain ws), or wss://host (the live one): the EA on the relay
 if RELAY.startswith('wss://'):
     rh = RELAY[6:]; s = ssl.create_default_context().wrap_socket(socket.create_connection((rh, 443), timeout=5), server_hostname=rh); HOSTH = rh
@@ -114,6 +125,18 @@ while time.time() - w0 < secs:
                 elif ms <= 2000: mid_at = now
                 if SYM in str(p.get('sym') or '').split(','): sym_at = now   # the symbols on screen, comma-separated
                 log['watches'].append([round(now - w0, 2), ms, p.get('sym', '')])
+                if VER >= '9.02' and p.get('hub') == KEYME:
+                    hub['hs'] = [x for x in str(p.get('hs') or '').split(',') if x in UNI][:8]; hub['hs_at'] = now
+                    if p.get('hs') and (not log['hub_hs'] or log['hub_hs'][-1] != p.get('hs')): log['hub_hs'].append(p.get('hs'))
+            elif '"event":"wl"' in m and VER >= '9.02':
+                p = inner(m)
+                if p.get('by') == KEYME: hub['wl'] = [x for x in str(p.get('syms') or '').split(',') if x in UNI][:40]; hub['wl_at'] = time.time(); hub['q_at'] = 0; log['wl'].append(p.get('syms'))
+            elif '"event":"syms"' in m and VER >= '9.02':
+                p = inner(m)
+                if p.get('by') == KEYME:
+                    q = str(p.get('q') or '').upper(); log['syms'].append(q)
+                    hits = [x for x in UNI if x.upper().startswith(q)] + [x for x in UNI if q in x.upper() and not x.upper().startswith(q)]
+                    text(bcast('symlist', {'by': KEYME, 'q': p.get('q'), 'r': ','.join(hits[:20])}))
             elif '"event":"unwatch"' in m: watch_at = fast_at = mid_at = sym_at = 0; log['unwatch'] += 1
             elif '"event":"who"' in m: log['who'] += 1; hi()
             elif '"event":"cmd"' in m: on_cmd(inner(m))
@@ -127,6 +150,13 @@ while time.time() - w0 < secs:
                     parts = [rows[i:i + 1000] for i in range(0, len(rows), 1000)]
                     for i, pr in enumerate(parts):
                         text(bcast('bars', {'s': SYM, 'tf': tf, 'i': i, 'of': len(parts), 'rows': ';'.join(pr)})); log['bars_msgs'] += 1
+                elif VER >= '9.02' and p.get('sym') != SYM and p.get('by') == KEYME and p.get('sym') in UNI:   # the hub: a symbol with no chart of its own
+                    sy = p.get('sym'); dg = UNI[sy][1]; step = tf * 60; n = max(1, min(5000 if tf > 1 else 1500, int(p.get('n') or 600))); log['hist_by'].append([sy, tf, n])
+                    c0 = int(fnow()) - int(fnow()) % step
+                    rows = [bstr_d(bar_sym(sy, c0 - step * k, step), dg) for k in range(n, 0, -1)]
+                    per = 1000 if tf > 1 else 300; parts = [rows[i:i + per] for i in range(0, len(rows), per)]
+                    for i, pr in enumerate(parts):
+                        text(bcast('bars', {'s': sy, 'tf': tf, 'i': i, 'of': len(parts), 'rows': ';'.join(pr)})); log['bars_msgs'] += 1
                 elif p.get('sym') == SYM:
                     n = max(1, min(1500, int(p.get('n') or 600))); log['hist'].append(n)
                     cur = int(fnow()) - int(fnow()) % 60
@@ -150,6 +180,20 @@ while time.time() - w0 < secs:
                 text(bcast('px', p)); log['px'] += 1; last_key = key
                 if last_px: log['gaps_ms'].append(int((now - last_px) * 1000))
                 last_px = now
+    # the hub (9.02): the list's prices once a second, and the price of each symbol on screen with no chart of its own
+    if state == 3 and VER >= '9.02' and watch_at and now - watch_at < 45:
+        if hub['wl'] and now - hub['wl_at'] < 45 and now - hub['q_at'] >= 1.0:
+            t = fnow(); rows = []
+            for sy in hub['wl']:
+                dg = DG if sy == SYM else UNI[sy][1]; b = price_sym(sy, t); pc = price_sym(sy, t - 86400 * 1.3)
+                rows.append(('%s,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%d') % (sy, b, b + 7 * 10 ** -dg, pc, dg))
+            text(bcast('q', {'by': KEYME, 'r': ';'.join(rows)})); log['q'] += 1; hub['q_at'] = now
+        if hub['hs'] and now - hub['hs_at'] < 45:
+            for sy in hub['hs']:
+                if now - hub['px_at'].get(sy, 0) < (0.1 if RELAY else 0.5): continue
+                t = fnow(); dg = UNI[sy][1]; m0 = int(t) - int(t) % 60; b = price_sym(sy, t)
+                text(bcast('px', {'s': sy, 'b': b, 'a': round(b + 7 * 10 ** -dg, dg), 't': int(t), 'dg': dg, 'bar': bstr_d(bar_sym(sy, m0, 60), dg), 'pb': bstr_d(bar_sym(sy, m0 - 60, 60), dg)}))
+                hub['px_at'][sy] = now; log['hub_px'] += 1
     if int(now) != int(now - 0.03): json.dump(log, open(out, 'w'), indent=1)
     time.sleep(0.02)
 try: s.close()
