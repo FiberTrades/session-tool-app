@@ -50,8 +50,8 @@
     check('one toolbar row: the Charts button beside the timeframe and the drawing tools (its own row is gone)', getComputedStyle(tb1).display === 'none' && lbt && document.getElementById('stpr-tb2').contains(lbt), [getComputedStyle(tb1).display, lbt && lbt.parentNode.parentNode.id]);
     await W(600); var wr = win.getBoundingClientRect(), tbs = document.querySelector('.tabs').getBoundingClientRect();
     check('the whole window fits the screen under the tabs (charts, the live bar, the clock), scrolled into place', wr.height <= window.innerHeight - tbs.height && wr.bottom <= window.innerHeight + 2 && wr.top >= tbs.bottom - 2, [Math.round(tbs.bottom), Math.round(wr.top), Math.round(wr.bottom), window.innerHeight]);
-    check('the replay\'s own controls are not there; Replay and the live bar are', getComputedStyle(document.getElementById('stpr-rand')).display === 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
-      && getComputedStyle(document.getElementById('stpr-lvrp')).display !== 'none' && getComputedStyle(document.getElementById('stpr-lvbar')).display !== 'none');
+    check('the replay\'s own controls are not there (no Replay either); the live bar is', getComputedStyle(document.getElementById('stpr-rand')).display === 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
+      && getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none' &&getComputedStyle(document.getElementById('stpr-lvbar')).display !== 'none');
 
     // ---- the line: joined, the EA says hi, the charts ask for the day's minutes, prices flow ----
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.ea && st.gotHist && st.fresh) break; }
@@ -84,43 +84,42 @@
     check('the trade log is named after the broker account (FTMO 70K Challenge), not All Trades History', aa && !aa.hidden && aa.textContent === 'FTMO 70K Challenge' && at0.hidden, [aa && aa.textContent, at0 && at0.hidden]);
     check('with that account\'s trades only (2 of the 3)', /^2\b/.test(document.getElementById('alltrades-count').textContent.trim()), document.getElementById('alltrades-count').textContent);
 
-    // ---- chart 2 on gold: its own EA, its own prices ----
-    var sp2 = document.querySelectorAll('#lc-host .stpr-sympill')[1]; sp2.click(); await W(80);
-    var gbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym][data-si="1"]'), function (b) { return /Gold/.test(b.textContent); })[0];
-    check('chart 2\'s symbol menu says which symbols stream live from MT5', gbtn && /Live from your MT5/.test(gbtn.textContent), gbtn && gbtn.textContent);
-    gbtn.click();
-    var sd = null; for (k = 0; k < 80; k++) { await W(250); st = LC.state(); sd = st.sides && st.sides[0]; if (sd && sd.fresh && sd.px && sd.gotHist) break; }
-    ls = LN.state();
-    check('"watch" now names both symbols (each EA streams its own)', ls.key === '500|EURUSD,XAUUSD', ls.key);
-    check('gold\'s EA: its minutes and its prices on chart 2', sd && sd.sym && sd.gotHist && sd.fresh && sd.px && sd.px.b > 1000 && sd.baseTf === 1, sd);
-    await W(1200);
-    var gp = P._paneBars(1), gl = gp.data[gp.real - 1], gpx = LC.state().sides[0].px;
-    check('chart 2\'s last candle is gold\'s forming one at its live price; chart 1 stays EUR/USD', P._ps(P._panes()[1]).sym.key === 'XAUUSD' && gl && Math.abs(gl.close - gpx.b) < 0.5 && P._paneBars(0).data[P._paneBars(0).real - 1].close < 2, [gl && gl.close, gpx && gpx.b]);
-    cd = document.querySelectorAll('#lc-host .stpr-cdb');
-    check('each chart\'s badge has its own spread (EUR/USD 0.7p, gold 7.0 pts)', /Spread 0\.7p$/.test(cd[0].textContent) && /Spread 7\.0 pts$/.test(cd[1].textContent), [cd[0].textContent, cd[1].textContent]);
-    check('the bar under the charts is still live (gold has its EA too)', /Live · 2 updates a second · your session/.test(lvst.textContent) && !/stored candles/.test(lvst.textContent), lvst.textContent);
+    check('one symbol on every chart: no per-chart symbol buttons in Live Charts', !document.querySelector('#lc-host .stpr-sympill'));
 
     // ---- an open trade: every 2 seconds, and its lines on the charts ----
     var nowS = Math.floor(Date.now() / 1000), op = LC.state().px.b;
     window.__stLive.upsert({ ticket: 990077, login: 541419576, symbol: 'EURUSD', direction: 'short', lots: 1, risk: 100,
       opened_at: new Date(Date.now() - 5 * 60000).toISOString(), seen_at: new Date().toISOString(), tick_at: new Date().toISOString(),
       r_now: -0.1, pnl_now: -10, sl_r: -1, tp_r: 3, ladder: '', px: op, op: op, rpx: 0.0004, digits: 5, bar: (nowS - nowS % 60) + ',' + op + ',' + op + ',' + op + ',' + op + ',60', spread: 0.00007 });
-    for (k = 0; k < 20; k++) { await W(300); if (LN.state().key === '2000|EURUSD,XAUUSD') break; }
-    check('a trade open: "watch" says every 2 s', LN.state().key === '2000|EURUSD,XAUUSD', LN.state().key);
+    for (k = 0; k < 20; k++) { await W(300); if (LN.state().key === '2000|EURUSD') break; }
+    check('a trade open: "watch" says every 2 s', LN.state().key === '2000|EURUSD', LN.state().key);
     await W(1500);
     var lines = P._lines(0).map(function (l) { return l.title; });
     check('its lines on the chart: Entry, SL, TP (the Session Live chart\'s)', lines.indexOf('Entry') >= 0 && lines.indexOf('SL') >= 0 && lines.indexOf('TP') >= 0, lines);
     check('the header counts it', /1 open trade/.test(document.getElementById('stpr-score').textContent), document.getElementById('stpr-score').textContent);
     check('the bar says why: every 2 seconds, a trade is open', /every 2 seconds · a trade is open/.test(document.getElementById('stpr-lvst').textContent) || true, document.getElementById('stpr-lvst').textContent);
 
-    // ---- Replay: the same charts as Practice Replay; Live comes back ----
-    document.getElementById('stpr-lvrp').click();
-    for (k = 0; k < 80; k++) { await W(250); S = P._s(); if (S && !S.live && P._panes().length && P._panes()[0].src === S && P._panes()[0].n) break; }
-    check('Replay: Practice Replay in the same place (its day picker, Play), a Live button to go back', S && !S.live && win.classList.contains('lcp') && win.parentNode.id === 'lc-host' && getComputedStyle(document.getElementById('stpr-lvback')).display !== 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display !== 'none',
-      [S && S.live, win.className]);
-    document.getElementById('stpr-lvback').click();
-    for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live) break; }
-    check('Live: back to the live charts', st.live && win.classList.contains('lc'), st);
+    // ---- no Replay in Live Charts (Nestor, 18 Oct 2026: Back Testing stays in the Academy tab, nothing live near it) ----
+    check('no Replay button in Live Charts', getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none');
+
+    // ---- switching the symbol: every chart turns to gold (Nestor, 18 Oct 2026: "then all the charts turn to gold") ----
+    document.getElementById('stpr-sym').click(); await W(120);
+    var gbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /Gold/.test(b.textContent); })[0];
+    check('the symbol menu says which symbols stream live from MT5', gbtn && /Live from your MT5/.test(gbtn.textContent), gbtn && gbtn.textContent);
+    gbtn.click();
+    for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && /XAU|GOLD/.test(st.sym) && st.fresh && st.px && st.gotHist) break; }
+    var ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
+    check('both charts are gold now, live from its own EA', ks.join(',') === 'XAUUSD,XAUUSD' && st.fresh && st.px && st.px.b > 1000 && st.gotHist, [ks, st.px, st.gotHist]);
+    for (k = 0; k < 20; k++) { await W(300); if (LN.state().key === '2000|XAUUSD') break; }
+    check('"watch" names gold only (a trade still open on EUR/USD: every 2 s)', LN.state().key === '2000|XAUUSD', LN.state().key);
+    await W(1500);
+    var gp = P._paneBars(1), gl = gp.data[gp.real - 1], gpx = LC.state().px;
+    check('the charts\' last candle is gold\'s forming one at its live price', gl && Math.abs(gl.close - gpx.b) < 0.5, [gl && gl.close, gpx && gpx.b]);
+    cd = document.querySelectorAll('#lc-host .stpr-cdb');
+    check('the badges show gold\'s spread (7.0 pts)', /Spread 7\.0 pts$/.test(cd[0].textContent) && /Spread 7\.0 pts$/.test(cd[1].textContent), [cd[0].textContent, cd[1].textContent]);
+    check('the EUR/USD trade\'s lines are not on the gold charts', P._lines(0).length === 0, P._lines(0));
+    for (k = 0; k < 12; k++) { await W(250); var aa3 = document.querySelector('#lc-log .atl-acct'); if (!aa3 || aa3.hidden) break; }
+    check('gold\'s EA is on an account not linked in the journal: the log is All Trades History', (!aa3 || aa3.hidden) && /^All Trades History$/.test(document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]').textContent), aa3 && aa3.textContent);
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
