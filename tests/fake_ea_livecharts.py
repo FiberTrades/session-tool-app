@@ -23,8 +23,10 @@ def bar(m):                                          # the 1-minute candle start
     end = min(fnow(), m + 60); pts = [price_at(m + k) for k in range(0, max(1, int(end - m)), 5)] + [price_at(end)]   # closing at the price now, as MT5's forming candle does
     return [int(m), pts[0], max(pts), min(pts), pts[-1], 10 + int(abs(pts[-1] - pts[0]) * 1e6) % 90]
 def bstr(b): return '%d,%.5f,%.5f,%.5f,%.5f,%d' % tuple(b)
-RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay running on this machine (plain ws): the EA on the relay
-if RELAY:
+RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay on this machine (plain ws), or wss://host (the live one): the EA on the relay
+if RELAY.startswith('wss://'):
+    rh = RELAY[6:]; s = ssl.create_default_context().wrap_socket(socket.create_connection((rh, 443), timeout=5), server_hostname=rh); HOSTH = rh
+elif RELAY:
     rh, rp = RELAY.rsplit(':', 1); s = socket.create_connection((rh, int(rp)), timeout=5); HOSTH = RELAY
 else:
     raw = socket.create_connection((HOST, 443), timeout=5)

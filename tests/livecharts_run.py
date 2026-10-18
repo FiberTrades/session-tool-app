@@ -18,21 +18,25 @@ def stored_close(sym, dflt):
 p0, g0 = stored_close('EURUSD', 1.1640), stored_close('XAUUSD', 4100.0)
 out = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts.json')
 # Session Terminal's relay (relay/server.py) on this machine: the EUR/USD EA streams through it, gold's through Supabase
+# ST_RELAY_REAL=<host>: the live relay on Railway instead
 import socket as _sk
+REAL = os.environ.get('ST_RELAY_REAL', '')
 _s = _sk.socket(); _s.bind(('127.0.0.1', 0)); RPORT = _s.getsockname()[1]; _s.close()
-relay = subprocess.Popen([sys.executable, os.path.join(HERE, '..', 'relay', 'server.py')], env=dict(os.environ, PORT=str(RPORT)))
+relay = subprocess.Popen([sys.executable, os.path.join(HERE, '..', 'relay', 'server.py')], env=dict(os.environ, PORT=str(RPORT))) if not REAL else None
+EA_RELAY = ('wss://' + REAL) if REAL else ('127.0.0.1:%d' % RPORT)
+APP_RELAY = ('wss://%s/realtime/v1/websocket?vsn=1.0.0' % REAL) if REAL else ('ws://127.0.0.1:%d/realtime/v1/websocket?vsn=1.0.0' % RPORT)
 time.sleep(1)
 out2 = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts_gold.json')
 # two MT5 charts with the EA: EUR/USD on account 90001234, gold on account 90005678 (each streams its own symbol)
-ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out, 'EURUSD', str(T0), str(p0), '5', '90001234'], env=dict(os.environ, ST_RELAY='127.0.0.1:%d' % RPORT))
+ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out, 'EURUSD', str(T0), str(p0), '5', '90001234'], env=dict(os.environ, ST_RELAY=EA_RELAY))
 ea2 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out2, 'XAUUSD', str(T0), str(g0), '2', '90005678', '0'])   # gold's EA: managing from the app OFF
 time.sleep(2)
 env = dict(os.environ, PYTHONIOENCODING='utf-8')
 # the test with the relay's address in it
 tjs = os.path.join(tempfile.gettempdir(), 'st_livecharts_e2e_run.js')
-open(tjs, 'w', encoding='utf-8').write(open(os.path.join(HERE, 'livecharts_e2e.js'), encoding='utf-8').read().replace('__RELAY__', 'ws://127.0.0.1:%d/realtime/v1/websocket?vsn=1.0.0' % RPORT))
+open(tjs, 'w', encoding='utf-8').write(open(os.path.join(HERE, 'livecharts_e2e.js'), encoding='utf-8').read().replace('__RELAY__', APP_RELAY))
 rc = subprocess.call([sys.executable, os.path.join(HERE, 'browser_test.py'), tjs], env=env)
-relay.terminate()
+if relay: relay.terminate()
 for e2 in (ea, ea2):
     e2.terminate()
     try: e2.wait(5)
