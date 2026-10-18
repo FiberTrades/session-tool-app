@@ -265,7 +265,7 @@
     for (k = 0; k < 40 && !(LC._ord() && LC._ord().st === 'ok'); k++) await W(150);
     var fn1 = document.querySelector('#stpr-mm .stpr-mm-fn');
     check('MT5 placed it: "Filled 1.xxxxx · BUY 0.xx EURUSD · HH:MM:SS", in green', /^Filled 1\.\d{5} · BUY \d+\.\d\d EURUSD · \d\d:\d\d:\d\d$/.test(fn1.textContent) && fn1.classList.contains('on'), fn1.textContent);
-    check('...with the fill\'s chime', LC._chimes() === ch0 + 1, LC._chimes());
+    check('...and "Order filled" is said (the first good English voice here, or the chime when the browser has none)', LC._chimes() === ch0 + 1 && !!LC._fv().said, [LC._chimes(), LC._fv()]);
 
     // ---- MT5's Toolbox under the charts (18 Oct 2026): Trade - the account and its positions, live; History - with commission ----
     var tbx = document.getElementById('lc-tb');
@@ -274,14 +274,35 @@
     check('the Toolbox shows under the charts, MT5\'s Trade tab: Symbol | Ticket | Time | Type | Volume | Price | S / L | T / P | Price | Profit', !tbx.hidden && tth === 'Symbol|Ticket|Time|Type|Volume|Price|S / L|T / P|Price|Profit', tth);
     var sumT = (tbx.querySelector('.lctb-sum') || {}).textContent || '';
     check('...the order just placed (ticket 555001, buy), and MT5\'s line: Balance: 65 311.87 GBP  Equity  Free Margin', /555001/.test(tbx.textContent) && /buy/.test(tbx.textContent) && /Balance: 65 311\.87 GBP/.test(sumT) && /Equity: /.test(sumT) && /Free Margin: /.test(sumT), sumT);
+    var tb1 = tbx.querySelector('.lctb-b');
+    check('Trade: the box only as tall as its rows - no empty space, nothing to scroll ("the box can adapt to the amount of trades")', Math.abs(tb1.offsetHeight - tb1.querySelector('table').offsetHeight) <= 3 && tb1.scrollHeight <= tb1.clientHeight + 1, [tb1.offsetHeight, tb1.querySelector('table').offsetHeight]);
     tbx.querySelector('[data-lctb="hist"]').click();
-    for (k = 0; k < 40 && !/880001/.test(tbx.textContent); k++) await W(150);
+    for (k = 0; k < 40 && !/870012/.test(tbx.textContent); k++) await W(150);
     var hth = Array.prototype.map.call(tbx.querySelectorAll('th'), function (x) { return x.textContent; }).join('|'), hsum = (tbx.querySelector('.lctb-sum') || {}).textContent || '';
+    var hrows = Array.prototype.filter.call(tbx.querySelectorAll('.lctb-t tr'), function (r, i) { return i > 0 && !r.classList.contains('lctb-sum'); });
     check('History: the closed trades with Commission and Swap, as MT5 shows them', /Commission\|Swap\|Profit$/.test(hth) && /880001/.test(tbx.textContent) && /-8\.75/.test(tbx.textContent) && /-0\.42/.test(tbx.textContent), hth);
-    check('...and MT5\'s line: Profit (after costs) · Deposit · Withdrawal · Balance', /Profit: -51\.97/.test(hsum) && /Deposit: 1 000\.00/.test(hsum) && /Balance: 65 311\.87/.test(hsum), hsum);
+    check('...ALL of the account\'s history, no periods to pick: 14 closed trades (sent in two parts), the last closed first', !tbx.querySelector('[data-lctbp]') && hrows.length === 14 && /880001/.test(hrows[0].textContent) && /870012/.test(hrows[13].textContent), [hrows.length, hrows[0] && hrows[0].textContent.slice(0, 40)]);
+    check('...and MT5\'s line: Profit (after costs) · Deposit · Withdrawal · Balance', /Profit: -63\.97/.test(hsum) && /Deposit: 1 000\.00/.test(hsum) && /Balance: 65 311\.87/.test(hsum), hsum);
+    var hb = tbx.querySelector('.lctb-b'), sumR = tbx.querySelector('.lctb-sum td').getBoundingClientRect(), hbR = hb.getBoundingClientRect();
+    check('...the box shows the last 10 trades, the older ones a scroll down, MT5\'s line kept under them', hb.scrollHeight > hb.clientHeight + 20 && hrows[9].getBoundingClientRect().bottom <= sumR.top + 1 && hrows[10].getBoundingClientRect().top >= sumR.top - 1 && Math.abs(sumR.bottom - hbR.bottom) <= 2,
+      [hb.clientHeight, hb.scrollHeight, Math.round(hrows[9].getBoundingClientRect().bottom), Math.round(sumR.top), Math.round(sumR.bottom), Math.round(hbR.bottom)]);
+    hb.scrollTop = hb.scrollHeight; await W(150); sumR = tbx.querySelector('.lctb-sum td').getBoundingClientRect();
+    check('...scrolled to the oldest: it shows, the line still under it', hrows[13].getBoundingClientRect().bottom <= sumR.top + 1 && hrows[13].getBoundingClientRect().top >= hbR.top && Math.abs(sumR.bottom - hbR.bottom) <= 2, [Math.round(hrows[13].getBoundingClientRect().bottom), Math.round(sumR.top)]);
     tbx.querySelector('[data-lctb="trade"]').click(); await W(200);
-    var snd = document.querySelector('#stpr-mm [data-mm="sndpick"]');
-    check('the panel has the fill\'s sound: our chime, or one picked from your computer (e.g. MT5\'s own)', snd && /Chime/.test(snd.textContent) && !!document.querySelector('#stpr-mm [data-mm="sndtest"]'), snd && snd.textContent);
+    var mmt = document.getElementById('stpr-mm').textContent;
+    check('the panel has no Sound row now ("why did you add this in the panel? remove it")', !document.querySelector('#stpr-mm [data-mm="sndpick"]') && !/When filled/.test(mmt), mmt.slice(-200));
+    var fv = document.getElementById('set-fillvoice');
+    check('Settings has "Order filled": the voices to pick, the chime and Off - for Nestor only, like Live Charts', fv && /Order filled/.test(fv.textContent) && !!fv.querySelector('[data-fv="chime"]') && !!fv.querySelector('[data-fv="off"]') && fv.classList.contains('st-lc-only'), fv && fv.textContent.slice(0, 160));
+    document.body.classList.remove('st-lc-on'); var fvHid = getComputedStyle(fv).display === 'none'; document.body.classList.add('st-lc-on');
+    check('...hidden from everyone else', fvHid);
+    var c1 = LC._chimes(); fv.querySelector('[data-fv="chime"]').click(); await W(100);
+    check('pressing Chime plays it and keeps it', data.settings.fillVoice === 'chime' && LC._fv().said === 'chime' && LC._chimes() === c1 + 1 && fv.querySelector('[data-fv="chime"]').classList.contains('is-on'), [data.settings.fillVoice, LC._fv(), LC._chimes() - c1]);
+    var vb = fv.querySelector('[data-fv]:not([data-fv="chime"]):not([data-fv="off"])');
+    if (vb) { var vn = vb.getAttribute('data-fv'); vb.click(); await W(100); var vb2 = Array.prototype.filter.call(fv.querySelectorAll('[data-fv]'), function (x) { return x.getAttribute('data-fv') === vn; })[0];
+      check('pressing a voice says "Order filled" in it and keeps it', data.settings.fillVoice === vn && LC._fv().said === vn && !!vb2 && vb2.classList.contains('is-on'), [data.settings.fillVoice, LC._fv()]); }
+    var c2 = LC._chimes(); fv.querySelector('[data-fv="off"]').click(); await W(100);
+    check('pressing Off keeps it quiet', data.settings.fillVoice === 'off' && LC._chimes() === c2, [data.settings.fillVoice, LC._chimes() - c2]);
+    data.settings.fillVoice = '';
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);

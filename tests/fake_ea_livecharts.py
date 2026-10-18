@@ -58,7 +58,15 @@ def send_dhist(p):
     t1 = int(fnow()) - 3600; t0 = t1 - 1800
     rows = ['%d,EURUSD,%d,sell,1.25,1.16210,1.16290,1.16050,%d,1.16050,-8.75,0.00,200.00,5' % (880001, t0, t1),
             '%d,XAUUSD,%d,buy,0.40,4120.50,4114.50,4138.50,%d,4114.50,-2.80,-0.42,-240.00,2' % (880002, t0 - 7200, t1 - 5400)]
-    text(bcast('dhist', {'by': KEYME, 'rid': p.get('rid'), 'i': 0, 'of': 1, 'dep': 1000.00, 'wd': 0.00, 'cr': 0.00, 'bal': 65311.87, 'rows': ';'.join(rows)}))
+    for i in range(12):   # older trades, 20 to 64 days back: only an ask for all history gets them (+100 / -100, 1.00 commission each)
+        c = t1 - (20 + 4 * i) * 86400
+        rows.append('%d,EURUSD,%d,buy,1.00,1.16000,1.15900,1.16100,%d,%s,-1.00,0.00,%s,5' % (870001 + i, c - 1800, c, '1.16100' if i % 2 == 0 else '1.15900', '100.00' if i % 2 == 0 else '-100.00'))
+    frm = int(p.get('from') or 0)
+    rows = [r for r in rows if int(r.split(',')[8]) >= frm]
+    log['dh_from'] = frm
+    half = (len(rows) + 1) // 2   # in two parts, as the EA sends a long history
+    for i, part in enumerate([rows[:half], rows[half:]]):
+        text(bcast('dhist', {'by': KEYME, 'rid': p.get('rid'), 'i': i, 'of': 2, 'dep': 1000.00, 'wd': 0.00, 'cr': 0.00, 'bal': 65311.87, 'rows': ';'.join(part)}))
     log['dh'] += 1
 RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay on this machine (plain ws), or wss://host (the live one): the EA on the relay
 if RELAY.startswith('wss://'):

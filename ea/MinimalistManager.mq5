@@ -4310,11 +4310,11 @@ void LwDealHist(string rid,long from,long to)
          long en=HistoryDealGetInteger(d,DEAL_ENTRY); if(en!=DEAL_ENTRY_OUT && en!=DEAL_ENTRY_INOUT && en!=DEAL_ENTRY_OUT_BY) continue;
          ulong pid=(ulong)HistoryDealGetInteger(d,DEAL_POSITION_ID); bool seen=false;
          for(int k=0;k<np;k++) if(pids[k]==pid){ seen=true; break; }
-         if(!seen && np<500){ ArrayResize(pids,np+1); pids[np]=pid; np++; }
+         if(!seen){ ArrayResize(pids,np+1,256); pids[np]=pid; np++; }
         }
      }
    string rows[]; int nr=0;
-   for(int k=0;k<np;k++)
+   for(int k=MathMax(0,np-1000);k<np;k++)   // all history (18 Oct 2026): the newest 1000 closed trades
      {
       if(!HistorySelectByPosition(pids[k])) continue;
       int m=HistoryDealsTotal(); string sy=""; int dir=0; double inV=0,inPV=0,outV=0,outPV=0,com=0,swp=0,pr=0,sl=0,tp=0; datetime ot=0,ct=0;
