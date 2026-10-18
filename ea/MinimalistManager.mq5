@@ -3764,6 +3764,12 @@ bool LiveTickMine()
 // forming 1-minute candle ("px") as well as its trades' figures ("tick"), answers "who" with "hi" (its version, symbol and
 // digits) and "hist" with the chart's last closed 1-minute candles ("bars", up to LW_HIST_MAX, LW_HIST_PART a message).
 #define LW_HOST       "figozyxoyobixadhqewr.supabase.co"
+// v9.00 (Nestor, 18 Oct 2026: "relay first"): Session Terminal's own relay - the same messages over a flat-cost server, so the
+// price can go out on every tick (at most LW_RELAY_MS apart) all day while a window shows it. Tried first; Supabase is the
+// fallback (not allowed in MT5's list yet, or not answering), and is tried again for the relay after LW_RELAY_RETRY.
+#define LW_RELAY      ""         // the relay's address (Railway); empty: Supabase only
+#define LW_RELAY_MS   100        // on the relay: up to 10 a second, in the session or not, trade or not
+#define LW_RELAY_RETRY 1800000   // a relay that failed is tried again after 30 minutes
 // v9.00 (Nestor, 17 Oct 2026, Live Charts): the app says how fast in its "watch" - "2 updates a second in session ... With
 // a trade open: once every 2 seconds. Outside your session: every 5 seconds." The fastest any window asked for in the last
 // 45 s wins; an app from before 9.00 says nothing and gets every 2 s.
@@ -3786,6 +3792,10 @@ bool   g_lwOff=false;            // the terminal does not allow the address: off
 uint   g_lwWatchAt=0;            // last "watch" heard
 uint   g_lwFastAt=0, g_lwMidAt=0; // v9.00: last "watch" asking for 2 a second / every 2 s (none: every 5 s)
 uint   g_lwSymAt=0;              // v9.00: last "watch" naming this chart's symbol (Live Charts shows it)
+bool   g_lwRelay=false;          // v9.00: the line is on the relay (else Supabase)
+uint   g_lwRelayNoAt=0;          // the relay failed at: Supabase until LW_RELAY_RETRY has passed
+int    g_lwRelayFails=0;
+string g_lwHost="";              // the host of the line now
 uint   g_lwPxMs=0; string g_lwPxKey="";   // v9.00: the symbol's last price sent, and what it was
 uint   g_lwUseAt=0;              // last time this chart had a trade the card shows
 uint   g_lwPosAt=0; bool g_lwPos=false;   // that check, once a second
@@ -3795,6 +3805,8 @@ uchar  g_lwIn[];                 // bytes received that are not yet a whole mess
 ulong  g_lwTk[]; uint g_lwMs[]; string g_lwKey[];   // per position: last streamed, and what it was
 
 bool LwJoined(){ return g_lw!=INVALID_HANDLE && g_lwState==3; }
+// the relay, unless it has no address or failed in the last 30 minutes
+bool LwRelayWanted(){ return StringLen(LW_RELAY)>0 && (g_lwRelayNoAt==0 || GetTickCount()-g_lwRelayNoAt>=LW_RELAY_RETRY); }
 // The daily brake: today's count of live updates for this MT5 account, shared by all its charts in this terminal.
 string g_lwDay="", g_lwBrakeSaid="";
 string LwDayKey(){ return "STLW"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+g_lwDay; }
@@ -3811,6 +3823,7 @@ bool LwBraked()
   }
 void LwCount()
   {
+   if(g_lwRelay) return;   // the relay costs nothing per message: no brake there
    string k=LwDayKey();
    GlobalVariableSet(k,(GlobalVariableCheck(k) ? GlobalVariableGet(k) : 0.0)+1.0);
   }
@@ -3839,6 +3852,9 @@ void LwDrop(string why)
    g_lw=INVALID_HANDLE; g_lwState=0; g_lwWatchAt=0; ArrayResize(g_lwIn,0);
    g_lwFails++; g_lwFailAt=GetTickCount();
    g_lwWait=(g_lwFails<=1) ? 5000 : (g_lwFails<=3 ? 15000 : (g_lwFails<=6 ? 60000 : 300000));
+   // the relay failing twice in a row: Supabase at once, the relay again in 30 minutes
+   if(g_lwRelay && !was && ++g_lwRelayFails>=2){ g_lwRelayNoAt=GetTickCount(); if(g_lwRelayNoAt==0) g_lwRelayNoAt=1; g_lwRelayFails=0; g_lwWait=1000;
+      Print("Live line: the relay is not answering - using Supabase (every 2 s) and trying the relay again in 30 minutes."); }
    if(was || g_lwFails==1 || g_lwFails%10==0)
       PrintFormat("Live line: %s (%s) - trying again in %d s; the live chart updates every 2 s meanwhile.",was?"closed":"could not connect",why,(int)(g_lwWait/1000));
   }
@@ -3877,13 +3893,20 @@ void LwOpen()
   {
    g_lwTopic=LwTopic();
    if(StringLen(g_lwTopic)==0){ g_lwOff=true; return; }
+   g_lwRelay=LwRelayWanted(); g_lwHost=g_lwRelay ? LW_RELAY : LW_HOST;
    ResetLastError();
    g_lw=SocketCreate();
    if(g_lw==INVALID_HANDLE){ LwDrop("socket "+IntegerToString(GetLastError())); return; }
-   if(!SocketConnect(g_lw,LW_HOST,443,2500))
+   if(!SocketConnect(g_lw,g_lwHost,443,2500))
      {
       int e=GetLastError();
       SocketClose(g_lw); g_lw=INVALID_HANDLE;
+      if(e==4014 && g_lwRelay)   // the relay's address is not in MT5's list yet: Supabase meanwhile, and say how
+        {
+         g_lwRelayNoAt=GetTickCount(); if(g_lwRelayNoAt==0) g_lwRelayNoAt=1; g_lwFailAt=0;
+         Print("Live line: for prices at full speed, add https://"+LW_RELAY+" under Tools > Options > Expert Advisors > Allow WebRequest (then restart the EA). Using Supabase (every 2 s) until then.");
+         return;
+        }
       if(e==4014)   // ERR_FUNCTION_NOT_ALLOWED: the address is not in the allowed list
         {
          g_lwOff=true;
@@ -3895,11 +3918,11 @@ void LwOpen()
    SocketTimeouts(g_lw,1500,1500);
    // port 443: the terminal normally sets up TLS itself; if not, do it here
    string subj, iss, ser, thumb; datetime expiry;
-   if(!SocketTlsCertificate(g_lw,subj,iss,ser,thumb,expiry) && !SocketTlsHandshake(g_lw,LW_HOST)){ LwDrop("tls "+IntegerToString(GetLastError())); return; }
+   if(!SocketTlsCertificate(g_lw,subj,iss,ser,thumb,expiry) && !SocketTlsHandshake(g_lw,g_lwHost)){ LwDrop("tls "+IntegerToString(GetLastError())); return; }
    uchar raw[16], none[], key[];
    for(int i=0;i<16;i++) raw[i]=(uchar)(MathRand()&0xFF);
    CryptEncode(CRYPT_BASE64,raw,none,key);
-   string req="GET /realtime/v1/websocket?apikey="+SYNC_KEY+"&vsn=1.0.0 HTTP/1.1\r\nHost: "+LW_HOST+"\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+   string req="GET /realtime/v1/websocket?apikey="+SYNC_KEY+"&vsn=1.0.0 HTTP/1.1\r\nHost: "+g_lwHost+"\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
              +"Sec-WebSocket-Key: "+CharArrayToString(key,0,WHOLE_ARRAY,CP_UTF8)+"\r\nSec-WebSocket-Version: 13\r\n\r\n";
    uchar b[]; int n=StringToCharArray(req,b,0,StringLen(req),CP_UTF8);
    ResetLastError();
@@ -3909,7 +3932,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0); }   // tm: trade management from the app is on
+string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -3928,6 +3951,7 @@ string LwStr(string s,string key)
 // how often the price goes out now: the fastest any window asked for in the last 45 s
 uint LwInterval()
   {
+   if(g_lwRelay) return LW_RELAY_MS;   // the relay: every tick (at most 10 a second), whatever the app asked for
    uint now=GetTickCount();
    if(g_lwFastAt!=0 && now-g_lwFastAt<LW_WATCH_MS) return LW_FAST_MS;
    if(g_lwMidAt!=0 && now-g_lwMidAt<LW_WATCH_MS) return LW_MID_MS;
@@ -4078,8 +4102,9 @@ void LwOnText(string s)
    if(g_lwState==2 && StringFind(s,"\"phx_reply\"")>=0 && StringFind(s,"\"ref\":\"1\"")>=0)
      {
       if(StringFind(s,"\"status\":\"ok\"")<0){ LwDrop("join refused"); g_lwWait=300000; return; }
-      g_lwState=3; g_lwFails=0;
-      Print("Live line: connected - Session Terminal's live charts update while a window shows them (2 a second in your session, every 2 s with a trade open, every 5 s otherwise).");
+      g_lwState=3; g_lwFails=0; if(g_lwRelay) g_lwRelayFails=0;
+      if(g_lwRelay) Print("Live line: connected to Session Terminal's relay - live charts get every tick (up to 10 a second) while a window shows them.");
+      else Print("Live line: connected - Session Terminal's live charts update while a window shows them (2 a second in your session, every 2 s with a trade open, every 5 s otherwise).");
       LwText(LwBroadcast("hi",LwHi()));   // a window already watching says so at once; Live Charts learns this chart's symbol
       return;
      }
@@ -4148,7 +4173,7 @@ void LwService()
   {
    if(g_lwOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0)
      { if(g_lw!=INVALID_HANDLE) LwClose(); return; }
-   if(LwBraked())   // today's live updates are used up: tell the app, close the line, 2-second updates until midnight UTC
+   if(!LwRelayWanted() && LwBraked())   // today's live updates on Supabase are used up: tell the app, close the line, 2-second updates until midnight UTC
      {
       if(g_lw!=INVALID_HANDLE){ if(g_lwState==3) LwText(LwBroadcast("brake","{\"until\":\"utc-midnight\"}")); LwClose(); }
       if(g_lwBrakeSaid!=g_lwDay)

@@ -6,7 +6,7 @@
 # 1-minute candles ("bars", 300 to a message). Time runs from a given moment (a weekday, for a test on a weekend), prices
 # walk from a given price. Only a throwaway test channel; nothing is written to the database.
 #   python fake_ea_livecharts.py <token> <seconds> <out.json> <symbol> <start unix> <price> [digits] [login]
-import base64, hashlib, hmac, json, math, random, socket, ssl, sys, time
+import base64, hashlib, hmac, json, math, os, random, socket, ssl, sys, time
 HOST = 'figozyxoyobixadhqewr.supabase.co'
 KEY = 'sb_publishable_h-TrkkVzrGOkwX6LxMDsaQ_hE8540Nv'
 tok, secs, out, SYM, T0, P0 = sys.argv[1], float(sys.argv[2]), sys.argv[3], sys.argv[4], int(sys.argv[5]), float(sys.argv[6])
@@ -23,11 +23,15 @@ def bar(m):                                          # the 1-minute candle start
     end = min(fnow(), m + 60); pts = [price_at(m + k) for k in range(0, max(1, int(end - m)), 5)] + [price_at(end)]   # closing at the price now, as MT5's forming candle does
     return [int(m), pts[0], max(pts), min(pts), pts[-1], 10 + int(abs(pts[-1] - pts[0]) * 1e6) % 90]
 def bstr(b): return '%d,%.5f,%.5f,%.5f,%.5f,%d' % tuple(b)
-raw = socket.create_connection((HOST, 443), timeout=5)
-s = ssl.create_default_context().wrap_socket(raw, server_hostname=HOST)
+RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay running on this machine (plain ws): the EA on the relay
+if RELAY:
+    rh, rp = RELAY.rsplit(':', 1); s = socket.create_connection((rh, int(rp)), timeout=5); HOSTH = RELAY
+else:
+    raw = socket.create_connection((HOST, 443), timeout=5)
+    s = ssl.create_default_context().wrap_socket(raw, server_hostname=HOST); HOSTH = HOST
 s.setblocking(False)
 key = base64.b64encode(bytes(random.getrandbits(8) for _ in range(16))).decode()
-s.sendall(('GET /realtime/v1/websocket?apikey=' + KEY + '&vsn=1.0.0 HTTP/1.1\r\nHost: ' + HOST + '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
+s.sendall(('GET /realtime/v1/websocket?apikey=' + KEY + '&vsn=1.0.0 HTTP/1.1\r\nHost: ' + HOSTH + '\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n'
            'Sec-WebSocket-Key: ' + key + '\r\nSec-WebSocket-Version: 13\r\n\r\n').encode())
 buf = b''; state = 1; ref = [1]
 def nref(): ref[0] += 1; return str(ref[0])
@@ -43,7 +47,7 @@ def frame(op, pl):
         except (ssl.SSLWantWriteError, BlockingIOError): time.sleep(0.005)
 def text(x): frame(0x1, x.encode())
 def bcast(e, payload): return json.dumps({'topic': topic, 'event': 'broadcast', 'payload': {'type': 'broadcast', 'event': e, 'payload': payload}, 'ref': nref(), 'join_ref': '1'}, separators=(',', ':'))
-def hi(): text(bcast('hi', {'v': '9.00', 'sym': SYM, 'dg': DG, 'lg': LG, 'tm': TM}))
+def hi(): text(bcast('hi', {'v': '9.00', 'sym': SYM, 'dg': DG, 'lg': LG, 'tm': TM, 'rl': 1 if RELAY else 0}))
 # trade management (EA 9.00 LwCmd): only its own account and symbol, signed with the sync token, fresh, seen once
 cmd_ids = []
 def on_cmd(p):
@@ -123,7 +127,7 @@ while time.time() - w0 < secs:
     now = time.time()
     if state >= 2 and now - hb >= 25: hb = now; text(json.dumps({'topic': 'phoenix', 'event': 'heartbeat', 'payload': {}, 'ref': nref()}, separators=(',', ':')))
     if state == 3 and watch_at and now - watch_at < 45 and sym_at and now - sym_at < 45:
-        iv = 0.5 if (fast_at and now - fast_at < 45) else (2.0 if (mid_at and now - mid_at < 45) else 5.0)
+        iv = 0.1 if RELAY else (0.5 if (fast_at and now - fast_at < 45) else (2.0 if (mid_at and now - mid_at < 45) else 5.0))   # the relay: every tick (10 a second at most)
         if now - last_px >= iv:
             t = fnow(); m0 = int(t) - int(t) % 60; b = price_at(t); a = round(b + 7 * 10 ** -DG, 5)   # a spread of 0.7 pips (7 points on gold)
             p = {'s': SYM, 'b': b, 'a': a, 't': int(t), 'dg': DG, 'bar': bstr(bar(m0)), 'pb': bstr(bar(m0 - 60))}

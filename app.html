@@ -76694,7 +76694,37 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
   }
   function onScreen(){ try { if (document.hidden) return false; var h = document.getElementById('st-livebox'); return !!(h && !h.hidden && h.offsetParent !== null && h.querySelector('.slx-tc')); } catch (e) { return false; } }
   function num(v){ return (v == null || v === '') ? NaN : Number(v); }
-  function send(ev, extra){ try { if (ch && joined) { ch.send({ type: 'broadcast', event: ev, payload: Object.assign({ t: Date.now() }, extra || {}) }); if (ev === 'watch') stat.watchSent++; } } catch (e) {} }
+  // ---- Session Terminal's relay (18 Oct 2026, Nestor: "relay first"): the same messages over our own flat-cost server, so an
+  //      EA on it streams every tick all day. The app joins the relay AND Supabase (an EA is on one of them: the relay, or
+  //      Supabase when its MT5 does not allow the relay yet or the EA is older) and sends on both. ----
+  var RELAY = '';   // wss://<relay host>/realtime/v1/websocket?vsn=1.0.0 (empty: Supabase only)
+  var rc = null;    // the relay's channel
+  function relayURL(){ try { if (window.__stRelayURL != null) return String(window.__stRelayURL); } catch (e) {} return RELAY; }
+  // a channel on the relay with supabase-js's shape: on('broadcast', {event}, fn), subscribe(fn(status)), send({type, event, payload})
+  function rchan(nm, url){
+    var hs = {}, ws = null, ref = 1, topic = 'realtime:' + nm, cb = null, hb = 0, gone = false, back = 1000, ok = false;
+    var o = { on: function (t, f, fn){ (hs[f.event] = hs[f.event] || []).push(fn); return o; },
+      subscribe: function (f){ cb = f; open(); return o; },
+      send: function (m){ if (!ws || ws.readyState !== 1 || !ok) return 'closed'; ws.send(JSON.stringify({ topic: topic, event: 'broadcast', payload: { type: 'broadcast', event: m.event, payload: m.payload }, ref: String(++ref), join_ref: '1' })); return 'ok'; },
+      close: function (){ gone = true; ok = false; clearInterval(hb); try { if (ws) ws.close(); } catch (e) {} },
+      joined: function (){ return ok; } };
+    function retry(){ if (!gone) setTimeout(open, back); back = Math.min(back * 2, 30000); }
+    function open(){ if (gone) return; try { ws = new WebSocket(url); } catch (e) { retry(); return; }
+      ws.onopen = function (){ back = 1000; ws.send(JSON.stringify({ topic: topic, event: 'phx_join', payload: { config: { broadcast: { ack: false, self: false } } }, ref: '1', join_ref: '1' }));
+        clearInterval(hb); hb = setInterval(function (){ try { ws.send(JSON.stringify({ topic: 'phoenix', event: 'heartbeat', payload: {}, ref: String(++ref) })); } catch (e) {} }, 25000); };
+      ws.onmessage = function (ev){ var m; try { m = JSON.parse(ev.data); } catch (e) { return; }
+        if (m.event === 'phx_reply' && m.ref === '1' && m.topic === topic) { ok = !!(m.payload && m.payload.status === 'ok'); if (cb) cb(ok ? 'SUBSCRIBED' : 'CHANNEL_ERROR'); return; }
+        if (m.event === 'broadcast' && m.payload) (hs[m.payload.event] || []).forEach(function (fn){ try { fn({ event: m.payload.event, payload: m.payload.payload }); } catch (e) {} }); };
+      ws.onclose = function (){ var was = ok; ok = false; clearInterval(hb); if (cb && was && !gone) cb('CLOSED'); retry(); };
+      ws.onerror = function (){}; }
+    return o; }
+  function relayJoined(){ return !!(rc && rc.joined()); }
+  function anyJoined(){ return (ch && joined) || relayJoined(); }
+  function relayEA(){ for (var k in eas) if (eas[k] && eas[k].rl) return true; return false; }
+  function send(ev, extra){ try { var m = { type: 'broadcast', event: ev, payload: Object.assign({ t: Date.now() }, extra || {}) }, any = false;
+      if (ch && joined) { ch.send(m); any = true; }
+      if (relayJoined()) { rc.send(m); any = true; }
+      if (any && ev === 'watch') stat.watchSent++; } catch (e) {} }
   // Live Charts on screen with a live chart, and the chart's symbol as MT5 names it
   function lcOn(){ try { return !!(window.__stLC && window.__stLC.visible()); } catch (e) { return false; } }
   function lcSym(){ try { return lcOn() ? (window.__stLC.sym() || '') : ''; } catch (e) { return ''; } }
@@ -76709,8 +76739,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     try { if (window.__stLive && window.__stLive.tick) window.__stLive.tick(p.k, t); } catch (e) {}
   }
   function leave(){
-    if (ch) { if (watching) send('unwatch'); try { client().removeChannel(ch); } catch (e) {} }
-    ch = null; name = ''; joined = false; watching = false;
+    if (ch || rc) { if (watching) send('unwatch'); }
+    if (ch) { try { client().removeChannel(ch); } catch (e) {} }
+    if (rc) { try { rc.close(); } catch (e) {} }
+    ch = null; rc = null; name = ''; joined = false; watching = false;
   }
   function join(tok){
     var c = client(); if (!c || joining) return;
@@ -76720,17 +76752,20 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       if (ch && name === nm) return;
       leave();
       name = nm;
-      var me = ch = c.channel(nm, { config: { broadcast: { self: false, ack: false } } });
-      me.on('broadcast', { event: 'tick' }, onTick)
+      // the same handlers on Supabase's channel and on the relay's
+      var hook = function (x) { return x.on('broadcast', { event: 'tick' }, onTick)
         .on('broadcast', { event: 'hi' }, function (m) {                                       // an EA has just (re)joined, or answers "who"
-          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
+          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, rl: +p.rl === 1, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
           if (watching) watchNow(); })
         .on('broadcast', { event: 'unwatch' }, function () { if (watching) watchNow(); })      // another window stopped; this one still looks
         .on('broadcast', { event: 'px' }, function (m) { stat.px++; try { if (window.__stLC) window.__stLC.px(m && m.payload); } catch (e) {} })
         .on('broadcast', { event: 'bars' }, function (m) { stat.bars++; try { if (window.__stLC) window.__stLC.bars(m && m.payload); } catch (e) {} })
         .on('broadcast', { event: 'ack' }, function (m) { try { if (window.__stTM) window.__stTM.ack(m && m.payload); } catch (e) {} })   // an EA's answer to a command
-        .on('broadcast', { event: 'brake' }, onBrake)                                           // today's live updates are used up
-        .subscribe(function (st) {
+        .on('broadcast', { event: 'brake' }, onBrake); };                                       // today's live updates are used up
+      var ru = relayURL();
+      if (ru) { var rme = rc = rchan(nm, ru); hook(rme).subscribe(function (st) { if (rme !== rc) return; if (st === 'SUBSCRIBED') { send('who'); if (watching) watchNow(); else tickle(); } }); }
+      var me = ch = c.channel(nm, { config: { broadcast: { self: false, ack: false } } });
+      hook(me).subscribe(function (st) {
           if (me !== ch) return;
           if (st === 'SUBSCRIBED') { joined = true; watching = false; send('who'); tickle(); }
           else if (st === 'CHANNEL_ERROR' || st === 'TIMED_OUT' || st === 'CLOSED') { joined = false; watching = false; ch = null; name = ''; try { c.removeChannel(me); } catch (e) {} }
@@ -76741,10 +76776,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
     try {
       var tok = token(), lc = lcOn(), want = !!(tok && !mentor() && (hasOpen() || lc));
       if (want) idleAt = 0;
-      else if (ch) { if (!idleAt) idleAt = Date.now(); if (Date.now() - idleAt > 120000) { leave(); return; } }
-      if (want && !ch) { join(tok); return; }
-      if (!ch || !joined) return;
-      var w = want && (onScreen() || lc) && !braked();
+      else if (ch || rc) { if (!idleAt) idleAt = Date.now(); if (Date.now() - idleAt > 120000) { leave(); return; } }
+      if (want && !ch && !rc) { join(tok); return; }
+      if (!anyJoined()) return;
+      var w = want && (onScreen() || lc) && (!braked() || relayEA());   // Supabase's brake does not stop an EA on the relay
       if (w && (!watching || Date.now() - lastWatch > 15000 || lastKey !== curMs() + '|' + lcSym())) watchNow();   // and at once when the speed or the symbol changes
       else if (!w && watching) { watching = false; send('unwatch'); }
     } catch (e) {}
@@ -76758,9 +76793,10 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
                           eas: function () { return eas; },                                          // the charts the EAs run on
                           ms: function () { return watching ? lastMs : curMs(); },                  // how fast now
                           hist: function (sym, n) { send('hist', { sym: sym, n: n }); },            // a chart's last 1-minute candles
-                          joined: function () { return joined; },
+                          joined: function () { return !!anyJoined(); },
+                          relay: function () { return { url: relayURL(), joined: relayJoined(), ea: relayEA() }; },   // the relay: joined, an EA on it
                           easL: function () { return easL; },                                         // the EAs by chart symbol and account
-                          cmd: function (c) { if (!ch || !joined) return false; send('cmd', c); return true; } };   // a trade command to the EAs
+                          cmd: function (c) { if (!anyJoined()) return false; send('cmd', c); return true; } };   // a trade command to the EAs
 })();
 </script>
 <script>
@@ -88679,7 +88715,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function liveDay(){ var t = nowS(), td = tradeDate(t), k = 0; while ((td.w === 0 || td.w === 6) && k++ < 4) { t -= 86400; td = tradeDate(t); } return td.y + '-' + p2(td.m + 1) + '-' + p2(td.d); }
   function vNum(v){ var n = parseFloat(v); return isFinite(n) ? n : 0; }
   // the charts the member's EAs run on (each says "hi" with its symbol as MT5 names it, and its account)
-  function liveEAs(){ try { var m = (window.__stLiveLine && window.__stLiveLine.eas) ? window.__stLiveLine.eas() : {}; return Object.keys(m).map(function(k){ var o = m[k] || {}; return { raw: k, v: o.v, dg: o.dg, lg: o.lg || null, at: o.at || 0 }; }); } catch (e) { return []; } }
+  function liveEAs(){ try { var m = (window.__stLiveLine && window.__stLiveLine.eas) ? window.__stLiveLine.eas() : {}; return Object.keys(m).map(function(k){ var o = m[k] || {}; return { raw: k, v: o.v, dg: o.dg, lg: o.lg || null, rl: !!o.rl, at: o.at || 0 }; }); } catch (e) { return []; } }
   function eaFor(sym){ var best = null; liveEAs().forEach(function(o){ if (canon(o.raw) === sym.key && (!best || o.at > best.at)) best = o; }); return best; }
   function lvMs(){ try { return (window.__stLiveLine && window.__stLiveLine.ms) ? window.__stLiveLine.ms() : 2000; } catch (e) { return 2000; } }
   // F: a feed (chart 1's, S, unless said) - its EA's prices came lately
@@ -88824,6 +88860,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function lvStatus(){ var ln = window.__stLiveLine, n = nowS(), ea = S.ea;
     if (n >= S.f.close) return { on: false, t: T("Market closed · the last session's candles", 'Mercado cerrado · las velas de la última sesión') };
     if (ln && ln.braked && ln.braked()) return { on: false, t: T("Today's live updates are used up · live again at midnight UTC", 'Las actualizaciones en vivo de hoy se han agotado · de nuevo en vivo a medianoche UTC') };
+    if (ea && vNum(ea.v) >= 9.00 && lvFresh() && ea.rl) return { on: true, t: T('Live · every tick', 'En vivo · cada tick') };   // on the relay (18 Oct 2026)
     if (ea && vNum(ea.v) >= 9.00 && lvFresh()) { var ms = lvMs(); return { on: true, t: ms <= 500 ? T('Live · 2 updates a second · your session', 'En vivo · 2 por segundo · tu sesión') : (ms <= 2000 ? T('Live · every 2 seconds · a trade is open', 'En vivo · cada 2 segundos · hay una operación abierta') : T('Live · every 5 seconds · outside your session', 'En vivo · cada 5 segundos · fuera de tu sesión')) }; }
     if (!uidNow() && !(window.STCloud && window.STCloud.syncToken)) return { on: false, t: T('Sign in to see your MT5 prices live', 'Inicia sesión para ver tus precios de MT5 en vivo') };
     if (ea && vNum(ea.v) >= 9.00) return { on: false, t: T('Connecting to your MT5…', 'Conectando con tu MT5…') };

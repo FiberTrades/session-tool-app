@@ -26,6 +26,7 @@
     P._lvClock(T0 * 1000 - Date.now());
     window.isSessionLive = function () { return true; };   // in the member's session (the speed rule's first case)
     window.STCloud.syncToken = 'st-test-livecharts-e2e';
+    if ('__RELAY__'.indexOf('ws') === 0) window.__stRelayURL = '__RELAY__';   // livecharts_run.py puts its relay here
     try { var C = P._cfg(); C.layout = 2; C.lv = { 2: 'h' }; C.tfs = [15, 1, 60, 240]; C.syms = []; C.mini = false; C.resume = null; } catch (e) {}
     // the member's journal: an account linked to the EUR/USD EA's login, two trades on it and one on another account
     var acc0 = (data.accounts || [])[0] || {}, other = acc0.id || 'acc-other';
@@ -69,14 +70,14 @@
     var pb0 = P._paneBars(0), l15 = pb0.data[pb0.real - 1];
     check('the 15-minute chart\'s forming candle is built from those minutes', l15 && l15.time === P._keyOf(15, last.time) && Math.abs(l15.close - last.close) < 1e-9, [l15, last.time]);
     var lvst = document.getElementById('stpr-lvst');
-    check('the bar under the charts: "Live · 2 updates a second · your session"', /Live · 2 updates a second · your session/.test(lvst.textContent) && lvst.classList.contains('on'), lvst.textContent);
+    check('the EUR/USD EA is on the relay (the app joined it too): the bar says "Live · every tick"', LN.relay().joined && st.ea && st.ea.rl && /Live · every tick/.test(lvst.textContent) && lvst.classList.contains('on'), [LN.relay(), st.ea, lvst.textContent]);
     check('and the clock, bottom right (HH:MM:SS UTC±)', /^\d\d:\d\d:\d\d UTC/.test(document.getElementById('stpr-lvclk').textContent), document.getElementById('stpr-lvclk').textContent);
     check('the header: LIVE (green) and "Your MT5 prices"', document.getElementById('stpr-chip').classList.contains('lv') && /Live/.test(document.getElementById('stpr-chip').textContent) && document.getElementById('stpr-when').textContent === 'Your MT5 prices',
       [document.getElementById('stpr-chip').className, document.getElementById('stpr-when').textContent]);
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
     check('each chart: "Candle MM:SS | Spread 0.7p" bottom right', cd.length === 2 && /^Candle \d\d:\d\d \| Spread 0\.7p$/.test(cd[0].textContent) && /^Candle 00:\d\d \| Spread 0\.7p$/.test(cd[1].textContent), [cd.length, cd[0] && cd[0].textContent, cd[1] && cd[1].textContent]);
-    var gaps = [], prevAt = LC.state().at; for (k = 0; k < 8; k++) { await W(400); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
-    check('about 2 a second', gaps.length >= 3 && gaps.every(function (g) { return g < 1500; }), gaps);
+    var gaps = [], prevAt = LC.state().at; for (k = 0; k < 40; k++) { await W(80); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
+    check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
 
     // ---- the trade log: the account chart 1's EA is on (its login in the EA's "hi"), its trades only ----
     for (k = 0; k < 20 && !(document.querySelector('#lc-log .atl-acct') && !document.querySelector('#lc-log .atl-acct').hidden); k++) await W(250);
