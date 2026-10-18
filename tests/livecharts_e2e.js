@@ -127,8 +127,9 @@
     var sl0 = P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0], pane0 = P._panes()[0], pc0 = pane0.el.querySelector('.stpr-pc'), rc0 = pc0.getBoundingClientRect();
     check('the trade\'s SL line can be dragged (and the entry cannot)', !!sl0 && !P._lines(0).some(function (l) { return /^Entry/.test(l.title) && l.k; }), P._lines(0));
     var ySL = pane0.series.priceToCoordinate(sl0.p), pev = function (t, y) { pc0.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerType: 'mouse', pointerId: 7, button: 0, buttons: t === 'pointerup' ? 0 : 1, clientX: rc0.left + 160, clientY: rc0.top + y })); };
-    pev('pointerdown', ySL); pev('pointermove', ySL - 20); pev('pointermove', ySL - 40); pev('pointerup', ySL - 40); await W(120);
-    var box = pane0.el.querySelector('.stpr-tmc'), want = pane0.series.coordinateToPrice(ySL - 40);
+    pev('pointerdown', ySL); pev('pointermove', ySL - 20); pev('pointermove', ySL - 40); pev('pointerup', ySL - 40);
+    var want = pane0.series.coordinateToPrice(ySL - 40); await W(120);   // the price where it was let go (the scale may move after)
+    var box = pane0.el.querySelector('.stpr-tmc');
     check('let go: "Move SL to <price> in MT5?" with Move and Cancel; the line waits where it was let go', box && box.style.display === 'flex' && /Move SL to \d\.\d{5} in MT5\?/.test(box.textContent) && Math.abs(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p - want) < 0.00002, box && box.textContent);
     box.querySelector('[data-tmc="1"]').click();
     for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'sl'); k++) await W(150);
@@ -170,7 +171,7 @@
       r_now: 0.2, pnl_now: 20, sl_r: -1, tp_r: 2, ladder: '', px: gop, op: gop, rpx: 2.5, digits: 2, bar: (nowG - nowG % 60) + ',' + gop + ',' + gop + ',' + gop + ',' + gop + ',60', spread: 0.07 });
     for (k = 0; k < 20 && !/Off in your EA/.test(document.getElementById('stpr-lvtm').textContent); k++) await W(250);
     var gb = document.getElementById('stpr-lvtm');
-    check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', /BUY/.test(gb.textContent) && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /Manage trades from Session Terminal/.test(gb.textContent), gb.textContent);
+    check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', /BUY/.test(gb.textContent) && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /App trading/.test(gb.textContent) && /Session Terminal Sync/.test(gb.textContent), gb.textContent);
     for (k = 0; k < 12; k++) { await W(250); var aa3 = document.querySelector('#lc-log .atl-acct'); if (!aa3 || aa3.hidden) break; }
     for (k = 0; k < 12 && getComputedStyle(document.getElementById('lcp-section')).display !== 'none'; k++) await W(250);
     check('...and no Prop Firm Progress (no linked account)', getComputedStyle(document.getElementById('lcp-section')).display === 'none');
@@ -265,6 +266,22 @@
     var fn1 = document.querySelector('#stpr-mm .stpr-mm-fn');
     check('MT5 placed it: "Filled 1.xxxxx · BUY 0.xx EURUSD · HH:MM:SS", in green', /^Filled 1\.\d{5} · BUY \d+\.\d\d EURUSD · \d\d:\d\d:\d\d$/.test(fn1.textContent) && fn1.classList.contains('on'), fn1.textContent);
     check('...with the fill\'s chime', LC._chimes() === ch0 + 1, LC._chimes());
+
+    // ---- MT5's Toolbox under the charts (18 Oct 2026): Trade - the account and its positions, live; History - with commission ----
+    var tbx = document.getElementById('lc-tb');
+    for (k = 0; k < 40 && !(tbx && !tbx.hidden && /555001/.test(tbx.textContent)); k++) await W(250);
+    var tth = Array.prototype.map.call(tbx.querySelectorAll('th'), function (x) { return x.textContent; }).join('|');
+    check('the Toolbox shows under the charts, MT5\'s Trade tab: Symbol | Ticket | Time | Type | Volume | Price | S / L | T / P | Price | Profit', !tbx.hidden && tth === 'Symbol|Ticket|Time|Type|Volume|Price|S / L|T / P|Price|Profit', tth);
+    var sumT = (tbx.querySelector('.lctb-sum') || {}).textContent || '';
+    check('...the order just placed (ticket 555001, buy), and MT5\'s line: Balance: 65 311.87 GBP  Equity  Free Margin', /555001/.test(tbx.textContent) && /buy/.test(tbx.textContent) && /Balance: 65 311\.87 GBP/.test(sumT) && /Equity: /.test(sumT) && /Free Margin: /.test(sumT), sumT);
+    tbx.querySelector('[data-lctb="hist"]').click();
+    for (k = 0; k < 40 && !/880001/.test(tbx.textContent); k++) await W(150);
+    var hth = Array.prototype.map.call(tbx.querySelectorAll('th'), function (x) { return x.textContent; }).join('|'), hsum = (tbx.querySelector('.lctb-sum') || {}).textContent || '';
+    check('History: the closed trades with Commission and Swap, as MT5 shows them', /Commission\|Swap\|Profit$/.test(hth) && /880001/.test(tbx.textContent) && /-8\.75/.test(tbx.textContent) && /-0\.42/.test(tbx.textContent), hth);
+    check('...and MT5\'s line: Profit (after costs) · Deposit · Withdrawal · Balance', /Profit: -51\.97/.test(hsum) && /Deposit: 1 000\.00/.test(hsum) && /Balance: 65 311\.87/.test(hsum), hsum);
+    tbx.querySelector('[data-lctb="trade"]').click(); await W(200);
+    var snd = document.querySelector('#stpr-mm [data-mm="sndpick"]');
+    check('the panel has the fill\'s sound: our chime, or one picked from your computer (e.g. MT5\'s own)', snd && /Chime/.test(snd.textContent) && !!document.querySelector('#stpr-mm [data-mm="sndtest"]'), snd && snd.textContent);
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);

@@ -14,7 +14,7 @@ DG = int(sys.argv[7]) if len(sys.argv) > 7 else 5          # digits (gold: 2)
 LG = int(sys.argv[8]) if len(sys.argv) > 8 else 90001234   # the account's login
 TM = int(sys.argv[9]) if len(sys.argv) > 9 else 1          # "Manage trades from Session Terminal" on (1) or off (0)
 topic = 'realtime:stl-' + hashlib.sha256(('st-live:' + tok).encode()).digest()[:16].hex()
-log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'opens': [], 'cfgs': [], 'wl': [], 'q': 0, 'syms': [], 'hub_hs': [], 'hist_by': [], 'hub_px': 0, 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
+log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'opens': [], 'cfgs': [], 'acct': 0, 'dh': 0, 'wl': [], 'q': 0, 'syms': [], 'hub_hs': [], 'hist_by': [], 'hub_px': 0, 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
 w0 = time.time()
 def fnow(): return T0 + (time.time() - w0)          # the stand-in's clock: the given moment, running
 def price_at(t):                                     # a gentle walk, the same at any moment asked twice
@@ -44,6 +44,22 @@ ST = {'risk_mode': 'amount', 'risk_percent': 1.0, 'risk_amount': 250.0, 'fixed_l
       'tp_close_pct': 100.0, 'be_on': True, 'be_trigger_r': 1.0, 'be_offset': 0.5, 'be_offset_mode': 'pips', 'max_trades_day': 3, 'partials': '50', 'order_kind': 'market', 'exec_key': 'O',
       'active': 1, 'pip': PIP, 'ts_unit': 'rr', 'ts': '0.50', 'digits': DG}
 def send_set(): text(bcast('set', {'s': SYM, 'lg': LG, 'st': ST}))
+# EA 9.02's account for the app's Trade tab ("acct") and its History tab ("dh" -> "dhist")
+POS = []            # [ticket, symbol, open time, type, volume, open price, sl, tp] - an order from the app adds one
+acc = {'want': 0, 'at': 0}
+def send_acct():
+    px = price_at(fnow()); rows = []; prof = 0.0
+    for tk, sy, ot, ty, vol, op, sl, tp in POS:
+        p = round((px - op if ty == 'buy' else op - px) * vol * 100000, 2); prof += p
+        rows.append('%s,%s,%d,%s,%.2f,%.*f,%.*f,%.*f,%.*f,%.2f,0.00,%d' % (tk, sy, ot, ty, vol, DG, op, DG, sl, DG, tp, DG, px, p, DG))
+    bal = 65311.87; text(bcast('acct', {'by': KEYME, 'lg': LG, 'cur': 'GBP', 'bal': bal, 'eq': round(bal + prof, 2), 'mg': 0, 'fm': round(bal + prof, 2), 'ml': 0, 'pos': ';'.join(rows), 'ord': ''}))
+    log['acct'] += 1
+def send_dhist(p):
+    t1 = int(fnow()) - 3600; t0 = t1 - 1800
+    rows = ['%d,EURUSD,%d,sell,1.25,1.16210,1.16290,1.16050,%d,1.16050,-8.75,0.00,200.00,5' % (880001, t0, t1),
+            '%d,XAUUSD,%d,buy,0.40,4120.50,4114.50,4138.50,%d,4114.50,-2.80,-0.42,-240.00,2' % (880002, t0 - 7200, t1 - 5400)]
+    text(bcast('dhist', {'by': KEYME, 'rid': p.get('rid'), 'i': 0, 'of': 1, 'dep': 1000.00, 'wd': 0.00, 'cr': 0.00, 'bal': 65311.87, 'rows': ';'.join(rows)}))
+    log['dh'] += 1
 RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay on this machine (plain ws), or wss://host (the live one): the EA on the relay
 if RELAY.startswith('wss://'):
     rh = RELAY[6:]; s = ssl.create_default_context().wrap_socket(socket.create_connection((rh, 443), timeout=5), server_hostname=rh); HOSTH = rh
@@ -90,6 +106,7 @@ def on_cmd(p):
         slp = float(p.get('cp') or 0); px = price_at(fnow()); d = 1 if slp < px else -1; pips = min(max(abs(px - slp) / PIP, ST['sl_min']), ST['sl_max'])
         vol = round(ST['risk_amount'] / (pips * 10.0), 2); fill = round(px + (7 * 10 ** -DG if d > 0 else 0), DG)
         log['opens'].append({'sl': p.get('cp'), 'ci': p.get('ci'), 'dir': d, 'vol': vol, 'px': fill})
+        POS.append(['555001', SYM, int(fnow()), 'buy' if d > 0 else 'sell', vol, fill, round(slp, DG), round(fill + 3 * abs(fill - slp) * d, DG)])
         return text(bcast('ack', {'cid': cid, 'ok': 1, 'ca': 'open', 'ctk': '555001', 'm': '', 'px': fill, 'vol': vol, 'dir': d, 'sym': SYM}))
     if a == 'cfg' and VER >= '9.02':    # the panel's settings from Live Charts (LwCfgCmd), then the settings now in force
         log['cfgs'].append(p.get('cp')); kv = dict(x.split('=', 1) for x in str(p.get('cp') or '').split(';') if '=' in x)
@@ -150,12 +167,16 @@ while time.time() - w0 < secs:
                 elif ms <= 2000: mid_at = now
                 if SYM in str(p.get('sym') or '').split(','): sym_at = now   # the symbols on screen, comma-separated
                 log['watches'].append([round(now - w0, 2), ms, p.get('sym', '')])
+                if VER >= '9.02' and p.get('acc') == KEYME: acc['want'] = now
                 if VER >= '9.02' and p.get('hub') == KEYME:
                     hub['hs'] = [x for x in str(p.get('hs') or '').split(',') if x in UNI][:8]; hub['hs_at'] = now
                     if p.get('hs') and (not log['hub_hs'] or log['hub_hs'][-1] != p.get('hs')): log['hub_hs'].append(p.get('hs'))
             elif '"event":"wl"' in m and VER >= '9.02':
                 p = inner(m)
                 if p.get('by') == KEYME: hub['wl'] = [x for x in str(p.get('syms') or '').split(',') if x in UNI][:40]; hub['wl_at'] = time.time(); hub['q_at'] = 0; log['wl'].append(p.get('syms'))
+            elif '"event":"dh"' in m and VER >= '9.02':
+                p = inner(m)
+                if p.get('by') == KEYME: send_dhist(p)
             elif '"event":"syms"' in m and VER >= '9.02':
                 p = inner(m)
                 if p.get('by') == KEYME:
@@ -207,6 +228,7 @@ while time.time() - w0 < secs:
                 text(bcast('px', p)); log['px'] += 1; last_key = key
                 if last_px: log['gaps_ms'].append(int((now - last_px) * 1000))
                 last_px = now
+    if state == 3 and VER >= '9.02' and acc['want'] and now - acc['want'] < 45 and now - acc['at'] >= (0.5 if RELAY else 2.0): acc['at'] = now; send_acct()
     # the hub (9.02): the list's prices once a second, and the price of each symbol on screen with no chart of its own
     if state == 3 and VER >= '9.02' and watch_at and now - watch_at < 45:
         if hub['wl'] and now - hub['wl_at'] < 45 and now - hub['q_at'] >= 1.0:

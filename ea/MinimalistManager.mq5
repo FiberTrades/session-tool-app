@@ -81,7 +81,7 @@ input string InpSyncURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/
 input int    InpSyncDays  = 90;                         // On start, re-scan this many days of history
 input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/live-trade"; // Live status endpoint (private)
 input string InpCandlesURL= "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-candles"; // Trade Replay candle endpoint
-input bool   InpAppTrade  = false;                      // Manage trades from Session Terminal (move SL/TP/BE, close) - off until switched on
+input bool   InpAppTrade  = false;                      // App trading at first: trades from Session Terminal (v9.02: then the App trading button on the panel)
 enum ENUM_BROKER_DST { BDST_AUTO=0, BDST_NONE=1, BDST_US=2, BDST_EU=3 };
 input ENUM_BROKER_DST InpBrokerDst = BDST_AUTO;          // Broker server clock: Auto (detect) / No DST / US DST / EU DST
 
@@ -911,6 +911,8 @@ datetime g_dayStartSrv = 0;
 long     g_brokerOff   = LONG_MAX;   // server-time minus UTC, in seconds. LONG_MAX = not known yet.
 
 string StateKey(string field);       // defined further down; declared here so the offset helpers can use it
+bool AppTradeOn();                    // v9.02: the panel's App trading button (defined further down)
+bool g_hiAgain=false;                 // v9.02: App trading switched - the live line says "hi" again
 
 // Measure the broker offset ONLY on a fresh tick. TimeCurrent() is the time of the last
 // tick, so between ticks (weekends, holidays, a terminal that just started) it is stale
@@ -2379,7 +2381,7 @@ int PanelCardRows(int k)
       case 6: return 2;                                                        // max trades, reset line
       case 7: return 1;                                                        // padding
       case 8: return CopierRows();                                             // role + the copier's rows
-      case 9: return 1;                                                        // status
+      case 9: return 2;                                                        // status, App trading (v9.02)
      }
    return 1;
   }
@@ -2781,6 +2783,10 @@ void BuildPanel()
       mkLabel (PP+"V_SYNC",labelX+58,ry+6,"no token",COL_PANEL_WARN,8);
       ObjectDelete(0,PP+"SYNCCLR");        // the only conditionally-created object: it must go
      }
+   ry+=ROWH;                               // v9.02: App trading
+   mkLabel (PP+"L_APPT",labelX,ry+6,"App trading",COL_PANEL_LBL,8);
+   mkButton(PP+"APPTRD",box1,ry+2,BW,CH,AppTradeOn()?"ON":"OFF",COL_PANEL_BTN,AppTradeOn()?COL_PANEL_ACC:COL_PANEL_BTX);
+   ObjectSetString(0,PP+"APPTRD",OBJPROP_TOOLTIP,"Place and manage trades from Session Terminal's Live Charts (OFF until you switch it on here)");
    cy+=cardH+6;
 
    g_clipOn=false;
@@ -2885,6 +2891,13 @@ void HandleClick(string s)
       SaveState(); BuildPanel(); return;
      }
    if(s==PP+"CPROLE"){ CopySetRole((ENUM_COPY_ROLE)(((int)g_copyRole+1)%3)); return; }   // v8.80 copier role
+   if(s==PP+"APPTRD")                     // v9.02 App trading on / off - the app hears it at once
+     {
+      bool on=!AppTradeOn(); GlobalVariableSet(StateKey("appTrade"),on?1.0:0.0); BuildPanel(); ChartRedraw();
+      g_hiAgain=true;                      // the live line tells the app (LwService)
+      Print("App trading ",(on?"ON: Session Terminal can place and manage trades on this chart.":"OFF: Session Terminal cannot trade on this chart."));
+      return;
+     }
    for(int i=0;i<6;i++)
       if(s==PP+"TPON"+IntegerToString(i)){ g_tpOn[i]=!g_tpOn[i]; if(g_execMode) RedrawTargets(); BuildPanel(); return; }
   }
@@ -2943,6 +2956,10 @@ bool OverDraggableLine(int x,int y)
 // All settings are stored in MT5 global variables, keyed per symbol+magic
 // so multiple charts keep separate settings. GVs persist across restarts.
 string StateKey(string field){ return "MM_"+(string)InpMagic+"_"+_Symbol+"_"+field; }
+// v9.02 (Nestor, 18 Oct 2026: "this is going to have to go in the main panel for users to be aware of it more"): App trading - placing
+// and managing trades from Session Terminal - is a button on the panel (SESSION TERMINAL SYNC), kept per chart; the input only
+// gives its first value. It is switched on here only: nothing in the app can switch it on.
+bool AppTradeOn(){ string k=StateKey("appTrade"); return GlobalVariableCheck(k) ? (GlobalVariableGet(k)>0.5) : InpAppTrade; }
 
 void SaveState()
   {
@@ -3936,7 +3953,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.02\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
+string LwHi(){ return StringFormat("{\"v\":\"9.02\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -4232,6 +4249,103 @@ void LwSetSend(bool force)
    if(!LwText(LwBroadcast("set",StringFormat("{\"s\":\"%s\",\"lg\":%I64d,\"st\":{%s}}",_Symbol,AccountInfoInteger(ACCOUNT_LOGIN),b)))) return;
    g_lwSetSig=b; g_lwSetAt=now; LwCount();
   }
+// ---- v9.02 MT5's Toolbox in Live Charts (Nestor, 18 Oct 2026: "yes like you would have in MT5 ... add the small history tab
+// ... i would like to see the commissions like in MT5 history"). The app names one EA of the account ("acc" in "watch"): it streams
+// the account - balance, equity, margin, free margin, margin level - with every open position and pending order ("acct", at most
+// twice a second on the relay, every 2 s on Supabase, when anything changed and every 5 s anyway); asked ("dh"), it sends the
+// positions closed in a period with their commission, swap and profit, and the deposits / withdrawals ("dhist", in parts).
+uint g_acWant=0, g_acChk=0, g_acAt=0; string g_acKey="";
+void LwStreamAcct()
+  {
+   uint now=GetTickCount();
+   if(g_acWant==0 || now-g_acWant>=LW_WATCH_MS) return;
+   uint every=g_lwRelay ? 500 : 2000; if(g_acChk!=0 && now-g_acChk<every) return; g_acChk=now;
+   string pos="";
+   for(int i=0;i<PositionsTotal();i++)
+     {
+      ulong tk=PositionGetTicket(i); if(tk==0 || !PositionSelectByTicket(tk)) continue;
+      string sy=PositionGetString(POSITION_SYMBOL); int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS);
+      datetime ot=(datetime)PositionGetInteger(POSITION_TIME);
+      if(StringLen(pos)>0) pos+=";";
+      pos+=StringFormat("%I64u,%s,%I64d,%s,%s,%s,%s,%s,%s,%s,%s,%d",tk,sy,(long)ot-SrvOffAt(ot),(PositionGetInteger(POSITION_TYPE)==POSITION_TYPE_BUY)?"buy":"sell",
+           DoubleToString(PositionGetDouble(POSITION_VOLUME),2),DoubleToString(PositionGetDouble(POSITION_PRICE_OPEN),dg),DoubleToString(PositionGetDouble(POSITION_SL),dg),
+           DoubleToString(PositionGetDouble(POSITION_TP),dg),DoubleToString(PositionGetDouble(POSITION_PRICE_CURRENT),dg),DoubleToString(PositionGetDouble(POSITION_PROFIT),2),
+           DoubleToString(PositionGetDouble(POSITION_SWAP),2),dg);
+     }
+   string ord="";
+   for(int i=0;i<OrdersTotal();i++)
+     {
+      ulong tk=OrderGetTicket(i); if(tk==0 || !OrderSelect(tk)) continue;
+      string sy=OrderGetString(ORDER_SYMBOL); int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS);
+      long ty=OrderGetInteger(ORDER_TYPE);
+      string tn=(ty==ORDER_TYPE_BUY_LIMIT)?"buy limit":((ty==ORDER_TYPE_SELL_LIMIT)?"sell limit":((ty==ORDER_TYPE_BUY_STOP)?"buy stop":((ty==ORDER_TYPE_SELL_STOP)?"sell stop":"order")));
+      double cur=(ty==ORDER_TYPE_BUY_LIMIT || ty==ORDER_TYPE_BUY_STOP) ? SymbolInfoDouble(sy,SYMBOL_ASK) : SymbolInfoDouble(sy,SYMBOL_BID);
+      datetime st=(datetime)OrderGetInteger(ORDER_TIME_SETUP);
+      if(StringLen(ord)>0) ord+=";";
+      ord+=StringFormat("%I64u,%s,%I64d,%s,%s,%s,%s,%s,%s,%d",tk,sy,(long)st-SrvOffAt(st),tn,DoubleToString(OrderGetDouble(ORDER_VOLUME_CURRENT),2),
+           DoubleToString(OrderGetDouble(ORDER_PRICE_OPEN),dg),DoubleToString(OrderGetDouble(ORDER_SL),dg),DoubleToString(OrderGetDouble(ORDER_TP),dg),DoubleToString(cur,dg),dg);
+     }
+   string a=StringFormat("\"by\":\"%s\",\"lg\":%I64d,\"cur\":\"%s\",\"bal\":%s,\"eq\":%s,\"mg\":%s,\"fm\":%s,\"ml\":%s,\"pos\":\"%s\",\"ord\":\"%s\"",
+          LwKey(),AccountInfoInteger(ACCOUNT_LOGIN),AccountInfoString(ACCOUNT_CURRENCY),DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),
+          DoubleToString(AccountInfoDouble(ACCOUNT_EQUITY),2),DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN),2),DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_FREE),2),
+          DoubleToString(AccountInfoDouble(ACCOUNT_MARGIN_LEVEL),2),pos,ord);
+   if(a==g_acKey && now-g_acAt<5000) return;
+   if(!LwText(LwBroadcast("acct","{"+a+"}"))) return;
+   g_acKey=a; g_acAt=now; LwCount();
+  }
+void LwDealHist(string rid,long from,long to)
+  {
+   long off=BrokerOff(); datetime f=(datetime)(from+off), t=(datetime)(to+off);
+   double dep=0, wd=0, cr=0; ulong pids[]; int np=0;
+   if(HistorySelect(f,t))
+     {
+      int n=HistoryDealsTotal();
+      for(int i=0;i<n;i++)
+        {
+         ulong d=HistoryDealGetTicket(i); if(d==0) continue;
+         long ty=HistoryDealGetInteger(d,DEAL_TYPE);
+         if(ty==DEAL_TYPE_BALANCE){ double p=HistoryDealGetDouble(d,DEAL_PROFIT); if(p>=0) dep+=p; else wd+=p; continue; }
+         if(ty==DEAL_TYPE_CREDIT){ cr+=HistoryDealGetDouble(d,DEAL_PROFIT); continue; }
+         if(ty!=DEAL_TYPE_BUY && ty!=DEAL_TYPE_SELL) continue;
+         long en=HistoryDealGetInteger(d,DEAL_ENTRY); if(en!=DEAL_ENTRY_OUT && en!=DEAL_ENTRY_INOUT && en!=DEAL_ENTRY_OUT_BY) continue;
+         ulong pid=(ulong)HistoryDealGetInteger(d,DEAL_POSITION_ID); bool seen=false;
+         for(int k=0;k<np;k++) if(pids[k]==pid){ seen=true; break; }
+         if(!seen && np<500){ ArrayResize(pids,np+1); pids[np]=pid; np++; }
+        }
+     }
+   string rows[]; int nr=0;
+   for(int k=0;k<np;k++)
+     {
+      if(!HistorySelectByPosition(pids[k])) continue;
+      int m=HistoryDealsTotal(); string sy=""; int dir=0; double inV=0,inPV=0,outV=0,outPV=0,com=0,swp=0,pr=0,sl=0,tp=0; datetime ot=0,ct=0;
+      for(int j=0;j<m;j++)
+        {
+         ulong d=HistoryDealGetTicket(j); if(d==0) continue;
+         long ty=HistoryDealGetInteger(d,DEAL_TYPE); if(ty!=DEAL_TYPE_BUY && ty!=DEAL_TYPE_SELL) continue;
+         long en=HistoryDealGetInteger(d,DEAL_ENTRY); double v=HistoryDealGetDouble(d,DEAL_VOLUME), px=HistoryDealGetDouble(d,DEAL_PRICE); datetime tt=(datetime)HistoryDealGetInteger(d,DEAL_TIME);
+         if(sy=="") sy=HistoryDealGetString(d,DEAL_SYMBOL);
+         com+=HistoryDealGetDouble(d,DEAL_COMMISSION); swp+=HistoryDealGetDouble(d,DEAL_SWAP); pr+=HistoryDealGetDouble(d,DEAL_PROFIT);
+         if(en==DEAL_ENTRY_IN){ inV+=v; inPV+=px*v; if(ot==0 || tt<ot){ ot=tt; dir=(ty==DEAL_TYPE_BUY)?1:-1; } if(sl==0) sl=HistoryDealGetDouble(d,DEAL_SL); if(tp==0) tp=HistoryDealGetDouble(d,DEAL_TP); }
+         else { outV+=v; outPV+=px*v; if(tt>ct) ct=tt; double s2=HistoryDealGetDouble(d,DEAL_SL), t2=HistoryDealGetDouble(d,DEAL_TP); if(s2>0) sl=s2; if(t2>0) tp=t2; }
+        }
+      if(outV<=0 || inV<=0 || ct<f) continue;
+      int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS); if(dg<=0) dg=5;
+      ArrayResize(rows,nr+1);
+      rows[nr]=StringFormat("%I64u,%s,%I64d,%s,%s,%s,%s,%s,%I64d,%s,%s,%s,%s,%d",pids[k],sy,(long)ot-SrvOffAt(ot),(dir>0)?"buy":"sell",DoubleToString(inV,2),
+               DoubleToString(inPV/inV,dg),DoubleToString(sl,dg),DoubleToString(tp,dg),(long)ct-SrvOffAt(ct),DoubleToString(outPV/outV,dg),DoubleToString(com,2),
+               DoubleToString(swp,2),DoubleToString(pr,2),dg);
+      nr++;
+     }
+   int part=150, parts=(nr+part-1)/part; if(parts<1) parts=1;
+   for(int p=0;p<parts;p++)
+     {
+      string body="";
+      for(int i=p*part;i<nr && i<(p+1)*part;i++){ if(StringLen(body)>0) body+=";"; body+=rows[i]; }
+      if(!LwText(LwBroadcast("dhist",StringFormat("{\"by\":\"%s\",\"rid\":\"%s\",\"i\":%d,\"of\":%d,\"dep\":%s,\"wd\":%s,\"cr\":%s,\"bal\":%s,\"rows\":\"%s\"}",
+                LwKey(),rid,p,parts,DoubleToString(dep,2),DoubleToString(wd,2),DoubleToString(cr,2),DoubleToString(AccountInfoDouble(ACCOUNT_BALANCE),2),body)))) return;
+      LwCount();
+     }
+  }
 // ---- Trade management from Session Terminal (18 Oct 2026, Nestor: "start the trade management from the app now") ----
 // The app sends "cmd" on the live line to move this trade's SL, TP, BE trigger or a T / P step, or to close it (Move to BE and
 // Close 50% were left to the EA's own BE and partial closes - Nestor, 18 Oct 2026). This EA acts only when the member switched it on (InpAppTrade), on its own account and
@@ -4284,7 +4398,7 @@ void LwCmd(string s)
    if(id=="" || sy!=_Symbol || lg!=IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))) return;   // another chart's or account's: its EA answers
    for(int i=0;i<ArraySize(g_lwCmdIds);i++) if(g_lwCmdIds[i]==id) return;                        // seen already: done once only
    int n=ArraySize(g_lwCmdIds); if(n>=64){ ArrayRemove(g_lwCmdIds,0,1); n--; } ArrayResize(g_lwCmdIds,n+1); g_lwCmdIds[n]=id;
-   if(!InpAppTrade){ LwAck(id,false,a,tk,"off"); return; }
+   if(!AppTradeOn()){ LwAck(id,false,a,tk,"off"); return; }   // v9.02: the panel's App trading button
    string msg="v1|"+id+"|"+lg+"|"+sy+"|"+tk+"|"+a+"|"+p+"|"+ix+"|"+ts;
    if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
    long age=(long)TimeGMT()-StringToInteger(ts);
@@ -4351,10 +4465,12 @@ void LwOnText(string s)
       string ws=","+LwStr(s,"\"sym\":\"")+",";   // the symbols on screen, comma-separated: each Live Charts chart can have its own
       if(StringFind(ws,","+_Symbol+",")>=0) g_lwSymAt=now;
       if(LwStr(s,"\"hub\":\"")==LwKey()) LwHubSet(LwStr(s,"\"hs\":\""));   // v9.02: symbols on screen with no chart of their own
+      if(LwStr(s,"\"acc\":\"")==LwKey()) g_acWant=now;                          // v9.02: this EA streams the account for the app's Trade tab
      }
    else if(StringFind(s,"\"event\":\"wl\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwWlSet(LwStr(s,"\"syms\":\"")); }       // v9.02: the watchlist
    else if(StringFind(s,"\"event\":\"syms\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwSymSearch(LwStr(s,"\"q\":\"")); }   // v9.02: a symbol search
-   else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; g_hubAt=0; g_wlAt=0; }   // another window still watching says so again
+   else if(StringFind(s,"\"event\":\"dh\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwDealHist(LwStr(s,"\"rid\":\""),LwNum(s,"\"from\":",0),LwNum(s,"\"to\":",0)); }   // v9.02: the History tab
+   else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; g_hubAt=0; g_wlAt=0; g_acWant=0; }   // another window still watching says so again
    else if(StringFind(s,"\"event\":\"who\"")>=0){ LwText(LwBroadcast("hi",LwHi())); LwSetSend(true); }   // a window that joined after this chart (v9.02: + the settings)
    else if(StringFind(s,"\"event\":\"cmd\"")>=0) LwCmd(s);   // trade management from the app
    else if(StringFind(s,"\"event\":\"hist\"")>=0)   // v9.01: + tf; v9.02: + another symbol, asked of the hub ("by")
@@ -4447,7 +4563,8 @@ void LwService()
       if(!LwText("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\""+LwRef()+"\"}")) return;
      }
    if(g_lwState==3) LwSetSend(false);   // v9.02: a change to the panel's settings, to the app
-   if(LwWatched()){ LwStream(); LwStreamPx(); LwStreamHub(); LwStreamQuotes(); }
+   if(g_lwState==3 && g_hiAgain){ g_hiAgain=false; LwText(LwBroadcast("hi",LwHi())); }   // v9.02: App trading switched on the panel
+   if(LwWatched()){ LwStream(); LwStreamPx(); LwStreamHub(); LwStreamQuotes(); LwStreamAcct(); }
   }
 // The trade's figures over the line: on any change in the price, the forming candle or a level, at most every
 // LwInterval() per position (v9.00: the speed the app asked for; LW_STREAM_MS, once a second, before). Same figures as the database row (LiveTickRead).
