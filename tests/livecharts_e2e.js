@@ -30,7 +30,8 @@
     try { var C = P._cfg(); C.layout = 2; C.lv = { 2: 'h' }; C.tfs = [15, 1, 60, 240]; C.syms = []; C.mini = false; C.resume = null; } catch (e) {}
     // the member's journal: an account linked to the EUR/USD EA's login, two trades on it and one on another account
     var acc0 = (data.accounts || [])[0] || {}, other = acc0.id || 'acc-other';
-    data.accounts.push(Object.assign(JSON.parse(JSON.stringify(acc0)), { id: 'acc-lc-e2e', name: 'FTMO 70K Challenge' }));
+    data.accounts.push(Object.assign(JSON.parse(JSON.stringify(acc0)), { id: 'acc-lc-e2e', name: 'FTMO 70K Challenge', kind: 'challenge', status: 'active', separate: false, startingBalance: 70000, balanceAtSetup: 70000,
+      riskRules: Object.assign({}, acc0.riskRules || {}, { maxDrawdownMode: 'pct', maxDrawdownPct: 10, profitTargetMode: 'pct', profitTargetPct: 10, ddType: 'static' }) }));
     data.mt5LoginMap = Object.assign({}, data.mt5LoginMap || {}, { '90001234': 'acc-lc-e2e' });
     var mkT = function (id, acc, day, res) { return { id: id, date: day, pair: 'EURUSD', direction: 'Long', result: res, accountId: acc, rMultiple: res === 'Win' ? 2 : -1, pnl: res === 'Win' ? 200 : -100, entryTime: '09:30' }; };
     data.currentSeries.push(mkT('lc-e2e-1', 'acc-lc-e2e', '2026-10-13', 'Win'), mkT('lc-e2e-2', 'acc-lc-e2e', '2026-10-12', 'Lose'), mkT('lc-e2e-3', other, '2026-10-12', 'Win'));
@@ -84,6 +85,9 @@
     var aa = document.querySelector('#lc-log .atl-acct'), at0 = document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]');
     check('the trade log is named after the broker account (FTMO 70K Challenge), not All Trades History', aa && !aa.hidden && aa.textContent === 'FTMO 70K Challenge' && at0.hidden, [aa && aa.textContent, at0 && at0.hidden]);
     check('with that account\'s trades only (2 of the 3)', /^2\b/.test(document.getElementById('alltrades-count').textContent.trim()), document.getElementById('alltrades-count').textContent);
+    for (k = 0; k < 20 && getComputedStyle(document.getElementById('lcp-section')).display === 'none'; k++) await W(250);
+    var pfp = document.getElementById('lcp-section');
+    check('under it, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-log').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
 
     check('one symbol on every chart: no per-chart symbol buttons in Live Charts', !document.querySelector('#lc-host .stpr-sympill'));
 
@@ -154,6 +158,8 @@
     var gb = document.getElementById('stpr-lvtm');
     check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', /BUY/.test(gb.textContent) && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /Manage trades from Session Terminal/.test(gb.textContent), gb.textContent);
     for (k = 0; k < 12; k++) { await W(250); var aa3 = document.querySelector('#lc-log .atl-acct'); if (!aa3 || aa3.hidden) break; }
+    for (k = 0; k < 12 && getComputedStyle(document.getElementById('lcp-section')).display !== 'none'; k++) await W(250);
+    check('...and no Prop Firm Progress (no linked account)', getComputedStyle(document.getElementById('lcp-section')).display === 'none');
     check('gold\'s EA is on an account not linked in the journal: the log is All Trades History', (!aa3 || aa3.hidden) && /^All Trades History$/.test(document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]').textContent), aa3 && aa3.textContent);
 
     // ---- the bigger view and back ----

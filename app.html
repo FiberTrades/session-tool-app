@@ -6661,7 +6661,7 @@ try {
        the tab is open), and the trade log under them (All Trades History's panel, moved in from the Calendar) -->
   <div class="page" id="page-livecharts">
     <div class="lc-host" id="lc-host"></div>
-    <div class="lc-log" id="lc-log"></div>
+    <div class="lc-log" id="lc-log"></div><div class="lc-pfp" id="lc-pfp"><div class="zc" id="lcp-section" style="display:none;"><div class="zc-h"><span class="zc-t" id="lcp-title">Prop Firm Progress</span></div><p class="zc-sub" id="lcp-hint"></p><div id="lcp-body"></div></div></div>
   </div>
 
   <div class="page" id="page-stats">
@@ -28316,9 +28316,12 @@ try {
     // silently take out the equity curve and every section below it. A panel that cannot compute
     // itself hides; it never costs the rest of the tab.
     try { if (window.__stDiscipline) window.__stDiscipline.render(); } catch (e) {}
-    try { (function renderChallengeProgress() {
-      var sec = document.getElementById('challenge-section');
-      var body = document.getElementById('challenge-body');
+    // Also drawn in Live Charts under the trade log, for the account the EA is on (Nestor, 18 Oct 2026: "yes build it"):
+    // window.__stChallenge({ sec, body, title, hint, accounts: [that account] }). Statistics keeps every challenge.
+    try { (window.__stChallenge = function renderChallengeProgress(O) {
+      O = O || {};
+      var sec = O.sec || document.getElementById('challenge-section');
+      var body = O.body || document.getElementById('challenge-body');
       /* Declared here, above the account filter: the empty state below needs it, and a var
          hoists its name without its value. */
       var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
@@ -28336,7 +28339,8 @@ try {
       var accounts = [];
       try {
         var sc = (typeof currentScopeResolved === 'function') ? currentScopeResolved() : null;
-        if (sc && sc.kind === 'account' && sc.account) accounts = [sc.account];
+        if (O.accounts) accounts = O.accounts.slice();
+        else if (sc && sc.kind === 'account' && sc.account) accounts = [sc.account];
         else if (sc && sc.kind === 'group' && Array.isArray(sc.accountIds)) {
           var ids = sc.accountIds;
           accounts = (data.accounts || []).filter(function (a) { return a && ids.indexOf(a.id) >= 0; });
@@ -28367,6 +28371,7 @@ try {
         return ruleValue(r, sb0, 'maxDrawdownMode', 'maxDrawdownPct', 'maxDrawdownAmount') > 0
             || (!isFunded(a) && ruleValue(r, sb0, 'profitTargetMode', 'profitTargetPct', 'profitTargetAmount') > 0);
       });
+      if (!accounts.length && O.accounts) { sec.style.display = 'none'; return; }   // Live Charts: that account is no prop firm account
       if (!accounts.length) {
         /* An account carrying a firm rule but still marked Personal is deliberately excluded -
            holding yourself to a drawdown on your own money should not earn a "Breached"
@@ -28643,11 +28648,11 @@ try {
         });
       } catch (e) {}
 
-      var ttl = document.getElementById('challenge-title');
+      var ttl = O.title || document.getElementById('challenge-title');
       // Only test accounts on the card (a test account picked): it is "Test progress".
       var allTest = accounts.length > 0 && accounts.every(function (a) { return a && a.separate; });
       if (ttl) ttl.textContent = allTest ? T('Test progress', 'Progreso de prueba') : T('Prop Firm Progress', 'Progreso de prop firm');
-      var hint = document.getElementById('challenge-hint');
+      var hint = O.hint || document.getElementById('challenge-hint');
       if (hint) hint.textContent = allTest
         ? T('Measured against this test account’s own target and drawdown, on closed trades. A test, not a challenge: nothing here counts anywhere else.',
             'Medido con el objetivo y el drawdown de esta cuenta de prueba, sobre operaciones cerradas. Una prueba, no un reto: nada de esto cuenta en ningún otro sitio.')
@@ -85732,6 +85737,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   #lc-host .stpr-grid { right: 0; }
   #lc-host .stpr-scr, #lc-host #stpr-close, #lc-host #stpr-pop { display: none !important; }
   .lc-log { margin-top: 26px; }
+  .lc-pfp { margin-top: 18px; }   /* Prop Firm Progress of the EA's account, under its trade log (18 Oct 2026) */
   .stpr-win.lc #stpr-daylbl, .stpr-win.lc #stpr-rand, .stpr-win.lc #stpr-daybtn, .stpr-win.lc #stpr-seslbl, .stpr-win.lc #stpr-ses, .stpr-win.lc #stpr-sesed,
   .stpr-win.lc #stpr-golbl, .stpr-win.lc #stpr-goto, .stpr-win.lc #stpr-logbtn, .stpr-win.lc .stpr-cb, .stpr-win.lc #stpr-tr, .stpr-win.lc #stpr-mm, .stpr-win.lc #stpr-log,
   .stpr-win.lc #stpr-pill, .stpr-win.lc #stpr-pop, .stpr-win.lc #stpr-close { display: none !important; }
@@ -88939,7 +88945,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var id = lg && map[lg], a = id ? (data.accounts || []).filter(function(x){ return x && x.id === id; })[0] : null;
       return a ? { id: a.id, name: a.name || ('MT5 ' + lg), login: lg } : null; } catch (e) { return null; } }
   function lcAcctSync(){ if (!S || !S.live) return; var a = lcAcct(), k = a ? a.id + '|' + a.name : '';
-    if (k !== LV.acctK) { LV.acctK = k; window.__stLCAcct = a; try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} } }
+    if (k !== LV.acctK) { LV.acctK = k; window.__stLCAcct = a; try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} lcPfp(); }
+    else if (Date.now() - (LV.pfpAt || 0) > 20000) lcPfp(); }
+  // Prop Firm Progress of that account under its trade log (Nestor, 18 Oct 2026: "perhaps it makes more sense to move the prop
+  // firm progress here?" - "yes build it"): Statistics' own card, for that one account; nothing when it is no prop firm account
+  function lcPfp(){ LV.pfpAt = Date.now(); var sec = $('lcp-section'); if (!sec) return; var a = null;
+    try { var k = window.__stLCAcct; if (k && k.id) a = (data.accounts || []).filter(function(x){ return x && x.id === k.id; })[0] || null; } catch (e) {}
+    if (!a || typeof window.__stChallenge !== 'function') { sec.style.display = 'none'; return; }
+    try { window.__stChallenge({ sec: sec, body: $('lcp-body'), title: $('lcp-title'), hint: $('lcp-hint'), accounts: [a] }); } catch (e) { sec.style.display = 'none'; } }
   function lcLog(on){ var wrap = document.querySelector('.alltrades-wrap'), host = $('lc-log'); if (!wrap || !host) return;
     if (on) { if (wrap.parentNode !== host) { LV.logBack = { p: wrap.parentNode, n: wrap.nextSibling }; host.appendChild(wrap); } try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} }
     else if (LV.logBack && wrap.parentNode === host) { try { LV.logBack.p.insertBefore(wrap, LV.logBack.n); } catch (e) { LV.logBack.p.appendChild(wrap); } LV.logBack = null; try { if (window.__stRenderAllTrades) window.__stRenderAllTrades(); } catch (e) {} } }
