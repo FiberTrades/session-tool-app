@@ -4308,14 +4308,14 @@ void LwDealHist(string rid,long from,long to)
          if(ty==DEAL_TYPE_CREDIT){ cr+=HistoryDealGetDouble(d,DEAL_PROFIT); continue; }
          if(ty!=DEAL_TYPE_BUY && ty!=DEAL_TYPE_SELL) continue;
          long en=HistoryDealGetInteger(d,DEAL_ENTRY); if(en!=DEAL_ENTRY_OUT && en!=DEAL_ENTRY_INOUT && en!=DEAL_ENTRY_OUT_BY) continue;
-         ulong pid=(ulong)HistoryDealGetInteger(d,DEAL_POSITION_ID); bool seen=false;
-         for(int k=0;k<np;k++) if(pids[k]==pid){ seen=true; break; }
-         if(!seen){ ArrayResize(pids,np+1,256); pids[np]=pid; np++; }
+         ArrayResize(pids,np+1,1024); pids[np]=(ulong)HistoryDealGetInteger(d,DEAL_POSITION_ID); np++;
         }
      }
+   if(np>1) ArraySort(pids);   // all history, no limit (Nestor, 18 Oct 2026: "can this not have a limit?"): sorted, each position once
    string rows[]; int nr=0;
-   for(int k=MathMax(0,np-1000);k<np;k++)   // all history (18 Oct 2026): the newest 1000 closed trades
+   for(int k=0;k<np;k++)
      {
+      if(k>0 && pids[k]==pids[k-1]) continue;   // a position closed in parts has several closing deals
       if(!HistorySelectByPosition(pids[k])) continue;
       int m=HistoryDealsTotal(); string sy=""; int dir=0; double inV=0,inPV=0,outV=0,outPV=0,com=0,swp=0,pr=0,sl=0,tp=0; datetime ot=0,ct=0;
       for(int j=0;j<m;j++)
@@ -4330,7 +4330,7 @@ void LwDealHist(string rid,long from,long to)
         }
       if(outV<=0 || inV<=0 || ct<f) continue;
       int dg=(int)SymbolInfoInteger(sy,SYMBOL_DIGITS); if(dg<=0) dg=5;
-      ArrayResize(rows,nr+1);
+      ArrayResize(rows,nr+1,1024);
       rows[nr]=StringFormat("%I64u,%s,%I64d,%s,%s,%s,%s,%s,%I64d,%s,%s,%s,%s,%d",pids[k],sy,(long)ot-SrvOffAt(ot),(dir>0)?"buy":"sell",DoubleToString(inV,2),
                DoubleToString(inPV/inV,dg),DoubleToString(sl,dg),DoubleToString(tp,dg),(long)ct-SrvOffAt(ct),DoubleToString(outPV/outV,dg),DoubleToString(com,2),
                DoubleToString(swp,2),DoubleToString(pr,2),dg);

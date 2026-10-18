@@ -1,7 +1,7 @@
 // End-to-end test: Live Charts (17 Oct 2026, Nestor: "the mock up is good build live charts now"), through the real app,
 // the real Supabase Realtime and two stand-in EA 9.00 charts on a throwaway channel (EUR/USD on account 90001234, gold on
-// 90005678). Also: chart 2 on its own symbol, one toolbar row, the window fitting the screen, and the trade log named after
-// the account chart 1's EA is on.
+// 90005678). Also: chart 2 on its own symbol, one toolbar row, the window fitting the screen, and Prop Firm Progress for
+// the account chart 1's EA is on (no trade log under the charts since 18 Oct 2026).
 //   python tests/livecharts_run.py      (starts the stand-in EA - tests/fake_ea_livecharts.py - then this test)
 // The app is signed out; the sync token is a test one. The stand-in's clock is Wed 14 Oct 2026 08:30 UTC (a weekday with
 // stored candles), and this page's live charts are put on the same clock.
@@ -53,14 +53,16 @@
     // ---- the tab ----
     var tab = document.querySelector('.tab[data-page="livecharts"]');
     check('a Live Charts tab after Session Review', tab && document.querySelector('.tab[data-page="review"]').nextElementSibling === tab && /Live Charts/.test(tab.textContent), tab && tab.textContent);
-    tab.click(); await W(400);
+    var chipEl = document.getElementById('stpr-chip'), chipSeen = [], chipRec = function () { var v = chipEl.className + '|' + chipEl.textContent; if (chipSeen[chipSeen.length - 1] !== v) chipSeen.push(v); };
+    var chipObs = new MutationObserver(chipRec); chipObs.observe(chipEl, { attributes: true, childList: true, characterData: true, subtree: true });
+    tab.click(); chipRec(); await W(400);
     var win = document.getElementById('stpr-win');
     check('opened: its page shows, titled Live Charts; the chart window is in it, live', document.getElementById('page-livecharts').classList.contains('active') && document.getElementById('header-mode').textContent === 'Live Charts' && win.parentNode.id === 'lc-host' && win.classList.contains('lc'),
       [document.getElementById('header-mode').textContent, win.parentNode.id, win.className]);
     var st = null;
     for (var k = 0; k < 100; k++) { await W(200); st = LC.state(); if (st.live && st.panes === 2) break; }
     check('two charts, EUR/USD, on today\'s (the clock\'s) trading day', st && st.live && st.panes === 2 && st.sym === 'EURUSD', st);
-    check('the trade log is under the charts (All Trades History\'s panel, moved in)', !!document.querySelector('#lc-log .alltrades-wrap'));
+    check('no trade log under the charts ("yes remove it", 18 Oct 2026) - All Trades History stays in the Calendar', !document.querySelector('#page-livecharts .alltrades-wrap') && !!document.querySelector('#page-tradeview .alltrades-wrap'));
     for (k = 0; k < 40 && !document.getElementById('stpr-laybtn'); k++) await W(100);
     var tb1 = document.querySelector('#stpr-win > .stpr-tb:not(.stpr-tb2)'), lbt = document.getElementById('stpr-laybtn');
     check('one toolbar row: the Charts button beside the timeframe and the drawing tools (its own row is gone)', getComputedStyle(tb1).display === 'none' && lbt && document.getElementById('stpr-tb2').contains(lbt), [getComputedStyle(tb1).display, lbt && lbt.parentNode.parentNode.id]);
@@ -87,6 +89,8 @@
     var lvst = document.getElementById('stpr-lvst');
     check('the EUR/USD EA is on the relay (the app joined it too): the bar says "Live · every tick"', LN.relay().joined && st.ea && st.ea.rl && /Live · every tick/.test(lvst.textContent) && lvst.classList.contains('on'), [LN.relay(), st.ea, lvst.textContent]);
     check('and the clock, bottom right (HH:MM:SS UTC±)', /^\d\d:\d\d:\d\d UTC/.test(document.getElementById('stpr-lvclk').textContent), document.getElementById('stpr-lvclk').textContent);
+    chipObs.disconnect();
+    check('LIVE from the first frame while it loads - never Practice\'s pink ("for a split second the practice pink button")', chipSeen.length > 0 && chipSeen.every(function (v) { return /\blv(off)?\b/.test(v) && !/Practice/i.test(v); }), chipSeen);
     check('the header: LIVE (green) and "Your MT5 prices"', document.getElementById('stpr-chip').classList.contains('lv') && /Live/.test(document.getElementById('stpr-chip').textContent) && document.getElementById('stpr-when').textContent === 'Your MT5 prices',
       [document.getElementById('stpr-chip').className, document.getElementById('stpr-when').textContent]);
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
@@ -94,14 +98,10 @@
     var gaps = [], prevAt = LC.state().at; for (k = 0; k < 40; k++) { await W(80); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
     check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
 
-    // ---- the trade log: the account chart 1's EA is on (its login in the EA's "hi"), its trades only ----
-    for (k = 0; k < 20 && !(document.querySelector('#lc-log .atl-acct') && !document.querySelector('#lc-log .atl-acct').hidden); k++) await W(250);
-    var aa = document.querySelector('#lc-log .atl-acct'), at0 = document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]');
-    check('the trade log is named after the broker account (FTMO 70K Challenge), not All Trades History', aa && !aa.hidden && aa.textContent === 'FTMO 70K Challenge' && at0.hidden, [aa && aa.textContent, at0 && at0.hidden]);
-    check('with that account\'s trades only (2 of the 3)', /^2\b/.test(document.getElementById('alltrades-count').textContent.trim()), document.getElementById('alltrades-count').textContent);
+    // ---- the account chart 1's EA is on (its login in the EA's "hi") ----
     for (k = 0; k < 20 && getComputedStyle(document.getElementById('lcp-section')).display === 'none'; k++) await W(250);
     var pfp = document.getElementById('lcp-section');
-    check('under it, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-log').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
+    check('under the Toolbox, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-tb').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
 
     check('one symbol on every chart: no per-chart symbol buttons in Live Charts', !document.querySelector('#lc-host .stpr-sympill'));
 
@@ -172,10 +172,8 @@
     for (k = 0; k < 20 && !/Off in your EA/.test(document.getElementById('stpr-lvtm').textContent); k++) await W(250);
     var gb = document.getElementById('stpr-lvtm');
     check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', /BUY/.test(gb.textContent) && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /App trading/.test(gb.textContent) && /Session Terminal Sync/.test(gb.textContent), gb.textContent);
-    for (k = 0; k < 12; k++) { await W(250); var aa3 = document.querySelector('#lc-log .atl-acct'); if (!aa3 || aa3.hidden) break; }
     for (k = 0; k < 12 && getComputedStyle(document.getElementById('lcp-section')).display !== 'none'; k++) await W(250);
     check('...and no Prop Firm Progress (no linked account)', getComputedStyle(document.getElementById('lcp-section')).display === 'none');
-    check('gold\'s EA is on an account not linked in the journal: the log is All Trades History', (!aa3 || aa3.hidden) && /^All Trades History$/.test(document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]').textContent), aa3 && aa3.textContent);
 
     // ---- a symbol with NO stored candles, streamed by an EA (Nestor, 18 Oct 2026, BTCUSD on a Sunday: "i thought i didnt
     //      need stored candles anymore because of the relay?"): listed, and its charts built from what its EA sends ----
@@ -265,7 +263,7 @@
     for (k = 0; k < 40 && !(LC._ord() && LC._ord().st === 'ok'); k++) await W(150);
     var fn1 = document.querySelector('#stpr-mm .stpr-mm-fn');
     check('MT5 placed it: "Filled 1.xxxxx · BUY 0.xx EURUSD · HH:MM:SS", in green', /^Filled 1\.\d{5} · BUY \d+\.\d\d EURUSD · \d\d:\d\d:\d\d$/.test(fn1.textContent) && fn1.classList.contains('on'), fn1.textContent);
-    check('...and "Order filled" is said (the first good English voice here, or the chime when the browser has none)', LC._chimes() === ch0 + 1 && !!LC._fv().said, [LC._chimes(), LC._fv()]);
+    check('...with the fill\'s chime', LC._chimes() === ch0 + 1, LC._chimes());
 
     // ---- MT5's Toolbox under the charts (18 Oct 2026): Trade - the account and its positions, live; History - with commission ----
     var tbx = document.getElementById('lc-tb');
@@ -276,8 +274,12 @@
     check('...the order just placed (ticket 555001, buy), and MT5\'s line: Balance: 65 311.87 GBP  Equity  Free Margin', /555001/.test(tbx.textContent) && /buy/.test(tbx.textContent) && /Balance: 65 311\.87 GBP/.test(sumT) && /Equity: /.test(sumT) && /Free Margin: /.test(sumT), sumT);
     var tb1 = tbx.querySelector('.lctb-b');
     check('Trade: the box only as tall as its rows - no empty space, nothing to scroll ("the box can adapt to the amount of trades")', Math.abs(tb1.offsetHeight - tb1.querySelector('table').offsetHeight) <= 3 && tb1.scrollHeight <= tb1.clientHeight + 1, [tb1.offsetHeight, tb1.querySelector('table').offsetHeight]);
+    var tbSt = [], tbObs = new MutationObserver(function () { tbSt.push(tbx.style.transition + '|' + tbx.style.height); }); tbObs.observe(tbx, { attributes: true, attributeFilter: ['style'] });
+    var tbH0 = tbx.offsetHeight;
     tbx.querySelector('[data-lctb="hist"]').click();
     for (k = 0; k < 40 && !/870012/.test(tbx.textContent); k++) await W(150);
+    await W(700); tbObs.disconnect();
+    check('History opens with a slide (0.45 s, as the app\'s panels), then rests at its full height', tbSt.some(function (v) { return /height 0\.45s/.test(v) && /\d+px$/.test(v); }) && tbx.style.height === '' && tbx.offsetHeight > tbH0 + 100, [tbSt.slice(0, 6), tbx.style.height, tbH0, tbx.offsetHeight]);
     var hth = Array.prototype.map.call(tbx.querySelectorAll('th'), function (x) { return x.textContent; }).join('|'), hsum = (tbx.querySelector('.lctb-sum') || {}).textContent || '';
     var hrows = Array.prototype.filter.call(tbx.querySelectorAll('.lctb-t tr'), function (r, i) { return i > 0 && !r.classList.contains('lctb-sum'); });
     check('History: the closed trades with Commission and Swap, as MT5 shows them', /Commission\|Swap\|Profit$/.test(hth) && /880001/.test(tbx.textContent) && /-8\.75/.test(tbx.textContent) && /-0\.42/.test(tbx.textContent), hth);
@@ -291,18 +293,7 @@
     tbx.querySelector('[data-lctb="trade"]').click(); await W(200);
     var mmt = document.getElementById('stpr-mm').textContent;
     check('the panel has no Sound row now ("why did you add this in the panel? remove it")', !document.querySelector('#stpr-mm [data-mm="sndpick"]') && !/When filled/.test(mmt), mmt.slice(-200));
-    var fv = document.getElementById('set-fillvoice');
-    check('Settings has "Order filled": the voices to pick, the chime and Off - for Nestor only, like Live Charts', fv && /Order filled/.test(fv.textContent) && !!fv.querySelector('[data-fv="chime"]') && !!fv.querySelector('[data-fv="off"]') && fv.classList.contains('st-lc-only'), fv && fv.textContent.slice(0, 160));
-    document.body.classList.remove('st-lc-on'); var fvHid = getComputedStyle(fv).display === 'none'; document.body.classList.add('st-lc-on');
-    check('...hidden from everyone else', fvHid);
-    var c1 = LC._chimes(); fv.querySelector('[data-fv="chime"]').click(); await W(100);
-    check('pressing Chime plays it and keeps it', data.settings.fillVoice === 'chime' && LC._fv().said === 'chime' && LC._chimes() === c1 + 1 && fv.querySelector('[data-fv="chime"]').classList.contains('is-on'), [data.settings.fillVoice, LC._fv(), LC._chimes() - c1]);
-    var vb = fv.querySelector('[data-fv]:not([data-fv="chime"]):not([data-fv="off"])');
-    if (vb) { var vn = vb.getAttribute('data-fv'); vb.click(); await W(100); var vb2 = Array.prototype.filter.call(fv.querySelectorAll('[data-fv]'), function (x) { return x.getAttribute('data-fv') === vn; })[0];
-      check('pressing a voice says "Order filled" in it and keeps it', data.settings.fillVoice === vn && LC._fv().said === vn && !!vb2 && vb2.classList.contains('is-on'), [data.settings.fillVoice, LC._fv()]); }
-    var c2 = LC._chimes(); fv.querySelector('[data-fv="off"]').click(); await W(100);
-    check('pressing Off keeps it quiet', data.settings.fillVoice === 'off' && LC._chimes() === c2, [data.settings.fillVoice, LC._chimes() - c2]);
-    data.settings.fillVoice = '';
+    check('...and no sound or voice setting anywhere ("remove all these options and have the chime as default")', !document.getElementById('set-fillvoice') && !/Order filled/.test((document.querySelector('.settings-section[data-section="profile"]') || {}).textContent || ''));
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
@@ -313,11 +304,9 @@
     // ---- leaving the tab ----
     document.querySelector('.tab[data-page="trades"]').click(); await W(600);
     for (k = 0; k < 20; k++) { await W(250); if (!LN.state().watching) break; }
-    check('left: the window goes back, the live chart stops, the trade log returns to the Calendar', win.parentNode.id === 'stpr-bg' && !P._s() && !document.querySelector('#lc-log .alltrades-wrap') && !!document.querySelector('#page-tradeview .alltrades-wrap'),
+    check('left: the window goes back, the live chart stops', win.parentNode.id === 'stpr-bg' && !P._s() && !!document.querySelector('#page-tradeview .alltrades-wrap'),
       [win.parentNode.id, !!P._s()]);
     check('nothing on screen shows a live chart or the trade card: the line stops watching (the EA stops sending)', !LN.state().watching, LN.state());
-    var aa2 = document.querySelector('.alltrades-title .atl-acct'), at2 = document.querySelector('.alltrades-title [data-i18n="atl.title"]');
-    check('back in the Calendar the log is All Trades History again', (!aa2 || aa2.hidden) && !at2.hidden && at2.textContent === 'All Trades History', [aa2 && aa2.hidden, at2.textContent]);
 
     // ---- Session Live's chart: Open in Live Charts ----
     document.querySelector('.tab[data-page="review"]').click(); await W(400);
@@ -334,6 +323,8 @@
     // ---- Back Testing's today (18 Oct 2026): today's candles from the EA, any moment of it replayed, then the live price ----
     document.querySelector('.tab[data-page="trades"]').click(); await W(600);
     await P.open({ symbol: 'EURUSD', day: '2026-10-13' }); for (k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
+    var chB = document.getElementById('stpr-chip');
+    check('Back Testing after Live Charts: the pink PRACTICE label again (not Live Charts\' green or grey)', chB.className === 'stpr-chip' && /Practice/i.test(chB.textContent) && /244, 114, 182/.test(getComputedStyle(chB).backgroundColor), [chB.className, chB.textContent, getComputedStyle(chB).backgroundColor]);
     var tb = document.getElementById('stpr-today');
     check('Back Testing has a Today button beside Random day', tb && getComputedStyle(tb).display !== 'none' && tb.previousElementSibling && tb.previousElementSibling.id === 'stpr-rand' && /Today/.test(tb.textContent), tb && tb.outerHTML.slice(0, 60));
     tb.click();
