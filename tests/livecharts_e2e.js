@@ -139,7 +139,7 @@
 
     // ---- switching the symbol: every chart turns to gold (Nestor, 18 Oct 2026: "then all the charts turn to gold") ----
     document.getElementById('stpr-sym').click(); await W(120);
-    var gbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /Gold/.test(b.textContent); })[0];
+    var gbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /XAUUSD/.test(b.textContent); })[0];
     check('the symbol menu says which symbols stream live from MT5', gbtn && /Live from your MT5/.test(gbtn.textContent), gbtn && gbtn.textContent);
     gbtn.click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && /XAU|GOLD/.test(st.sym) && st.fresh && st.px && st.gotHist) break; }
@@ -168,10 +168,12 @@
 
     // ---- a symbol with NO stored candles, streamed by an EA (Nestor, 18 Oct 2026, BTCUSD on a Sunday: "i thought i didnt
     //      need stored candles anymore because of the relay?"): listed, and its charts built from what its EA sends ----
+    // a symbol nobody has stored: BTCUSD taken out of this page's list (whatever the real store holds today)
+    var SY = P._syms() || []; for (k = SY.length - 1; k >= 0; k--) if (SY[k].key === 'BTCUSD') SY.splice(k, 1);
     check('BTCUSD has no stored candles (Back Testing\'s list does not have it)', !(P._syms() || []).some(function (s) { return s.key === 'BTCUSD'; }), (P._syms() || []).map(function (s) { return s.key; }));
     document.getElementById('stpr-sym').click(); await W(120);
-    var bbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /Bitcoin/.test(b.textContent); })[0];
-    check('...but Live Charts lists it: "Bitcoin · Live from your MT5"', bbtn && /Live from your MT5/.test(bbtn.textContent), bbtn && bbtn.textContent);
+    var bbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /BTCUSD/.test(b.textContent); })[0];
+    check('...but Live Charts lists it, by its MT5 name: "BTCUSD · Live from your MT5"', bbtn && /^BTCUSD/.test(bbtn.textContent) && /Live from your MT5/.test(bbtn.textContent), bbtn && bbtn.textContent);
     if (bbtn) bbtn.click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'BTCUSD' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
     ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
@@ -181,6 +183,9 @@
     for (k = 0; k < 40 && !(bq.static.length > 1000); k++) await W(250);
     var b15 = P._paneBars(0), bb = P._paneBars(1);
     check('the 15-minute chart has weeks of history from its EA (9.01: 15-minute candles, none stored)', bq.tf === 15 && bq.static.length > 1000 && b15.real > bq.static.length && P._feeds()[0].tfh && P._feeds()[0].tfh[15], [bq.tf, bq.static.length, b15 && b15.real]);
+    check('the header calls it what MT5 does: BTCUSD', document.getElementById('stpr-symt').textContent === 'BTCUSD', document.getElementById('stpr-symt').textContent);
+    var Mb = P._mini(0), wds = (Mb && Mb.days || []).map(function (o) { return o.wd; });
+    check('the Minimalist names Saturday and Sunday on Bitcoin (it trades at the weekend)', wds.indexOf(6) >= 0 && wds.indexOf(0) >= 0 && wds.indexOf(3) >= 0, wds.join(','));
     var bl = bb.data[bb.real - 1];
     check('its last candle is at the live price', bl && Math.abs(bl.close - LC.state().px.b) < 5, [bl && bl.close, LC.state().px.b]);
     for (k = 0; k < 12 && !/every tick/.test(document.getElementById('stpr-lvst').textContent); k++) await W(250);

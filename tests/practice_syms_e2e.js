@@ -18,15 +18,15 @@
 
     // ---- each chart's symbol button ----
     var pills = document.querySelectorAll('#stpr-grid .stpr-sympill');
-    ok('two charts: a symbol button on each, both EUR/USD to begin with', pills.length === 2 && /EUR\/USD/.test(pills[0].textContent) && /EUR\/USD/.test(pills[1].textContent), Array.prototype.map.call(pills, function (b) { return b.textContent; }));
+    ok('two charts: a symbol button on each, both EUR/USD to begin with', pills.length === 2 && /EURUSD/.test(pills[0].textContent) && /EURUSD/.test(pills[1].textContent), Array.prototype.map.call(pills, function (b) { return b.textContent; }));
     pills[1].click(); await W(80);
-    var menu = document.querySelector('#stpr-menu.show'), gold = menu && Array.prototype.filter.call(menu.querySelectorAll('[data-sym][data-si="1"]'), function (b) { return /Gold/.test(b.textContent); })[0];
+    var menu = document.querySelector('#stpr-menu.show'), gold = menu && Array.prototype.filter.call(menu.querySelectorAll('[data-sym][data-si="1"]'), function (b) { return /XAUUSD/.test(b.textContent); })[0];
     ok('its menu is chart 2\'s: every symbol, gold among them', menu && /Chart 2/.test(menu.textContent) && !!gold, menu && menu.textContent.slice(0, 120));
     var goldRaw = gold && gold.getAttribute('data-sym');
     gold.click();
     for (k = 0; k < 100 && !(P._ps(pane(1)).sym.key === 'XAUUSD' && pane(1).n > 0); k++) await W(100); await W(300);
     var c0 = last(0).close, c1 = last(1).close;
-    ok('chart 2 is gold, on the same day: its own candles (thousands); chart 1 is still EUR/USD', P._ps(pane(1)).sym.key === 'XAUUSD' && c1 > 1000 && c0 > 0.5 && c0 < 2 && C.syms[1] === goldRaw && /Gold/.test(document.querySelectorAll('#stpr-grid .stpr-sympill')[1].textContent), [c0, c1, C.syms]);
+    ok('chart 2 is gold, on the same day: its own candles (thousands); chart 1 is still EUR/USD', P._ps(pane(1)).sym.key === 'XAUUSD' && c1 > 1000 && c0 > 0.5 && c0 < 2 && C.syms[1] === goldRaw && /XAUUSD/.test(document.querySelectorAll('#stpr-grid .stpr-sympill')[1].textContent), [c0, c1, C.syms]);
     var now = P._s().now;
     ok('at the same moment: both charts end at the replay\'s now', last(0).time < now && last(1).time < now && now - last(0).time <= 900 && now - last(1).time <= 900, [last(0).time, last(1).time, now]);
     ok('gold\'s prices read with its own decimals', pane(1).series.options().priceFormat.precision === P._ps(pane(1)).digits && P._ps(pane(1)).digits < 5 && pane(0).series.options().priceFormat.precision === 5, [pane(1).series.options().priceFormat.precision, P._ps(pane(1)).digits]);

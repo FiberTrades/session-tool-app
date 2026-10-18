@@ -48,7 +48,7 @@
     ok('Crosshair: dotted and black (it keeps its opacity)', C.look.cxs === 'dotted' && /^rgba\(0,0,0,0\.55\)$/.test(C.look.cxc), [C.look.cxs, C.look.cxc]);
     // watermark
     q('[data-lkseg="wm"][data-v="true"]').click(); await W(30);
-    ok('Watermark visible: the symbol and timeframe across each chart', co(0).watermark.visible === true && co(0).watermark.text === 'EUR/USD, 15m' && co(1).watermark.text === 'EUR/USD, 1h', co(0).watermark);
+    ok('Watermark visible: the symbol and timeframe across each chart', co(0).watermark.visible === true && co(0).watermark.text === 'EURUSD, 15m' && co(1).watermark.text === 'EURUSD, 1h', co(0).watermark);
     // scales
     var fs = q('[data-lkfs]'); fs.value = '13'; fire(fs, 'change'); await W(30);
     q('[data-lksw="tx"]').click(); await W(20); q('[data-lkcol="#000000"]').click(); await W(20);

@@ -86243,7 +86243,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     GER40: ['GER40','DE40','DAX40','DE30','GER30','DAX'], UK100: ['UK100','FTSE100','FTSE'], JP225: ['JP225','JPN225','NIKKEI','NI225'], XAUUSD: ['XAUUSD','GOLD'], XAGUSD: ['XAGUSD','SILVER'],
     USOIL: ['USOIL','WTI','XTIUSD','CL','OILUSD','USOUSD'], UKOIL: ['UKOIL','BRENT','XBRUSD'], BTCUSD: ['BTCUSD','BTCUSDT','BITCOIN','XBTUSD'], ETHUSD: ['ETHUSD','ETHUSDT','ETHEREUM'] };
   var INDEX = { NQ: 1, US30: 1, US500: 1, GER40: 1, UK100: 1, JP225: 1 };
-  var NAMES = { NQ: 'NQ · Nasdaq 100', US30: 'US30 · Dow', US500: 'US500 · S&P 500', GER40: 'GER40 · DAX', UK100: 'UK100 · FTSE', JP225: 'JP225 · Nikkei', XAUUSD: 'Gold', XAGUSD: 'Silver', USOIL: 'US Oil', UKOIL: 'UK Oil', BTCUSD: 'Bitcoin', ETHUSD: 'Ethereum' };
   function canon(raw){
     var c = String(raw || '').toUpperCase().replace(/\.(CASH|PRO|RAW|ECN|STD|STP|R|I|M|A|B|C)$/, '').replace(/[^A-Z0-9]/g, '');
     for (var pass = 0; pass < 2; pass++) {
@@ -86254,7 +86253,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return c;
   }
   function clsOf(k){ if (/^[A-Z]{6}$/.test(k) && CCY.test(k.slice(0, 3)) && CCY.test(k.slice(3))) return 'fx'; if (k === 'XAUUSD' || k === 'XAGUSD') return 'metal'; if (INDEX[k]) return 'index'; if (k === 'BTCUSD' || k === 'ETHUSD') return 'crypto'; return 'other'; }
-  function nameOf(k){ return NAMES[k] || (clsOf(k) === 'fx' ? k.slice(0, 3) + '/' + k.slice(3) : k); }
   var SYMS = null;
   async function loadSymbols(){
     if (SYMS) return SYMS;
@@ -86268,7 +86266,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     Object.keys(raw).forEach(function(k){ var s = raw[k], key = canon(k), span = function(x){ var a = x.tf[5] || x.tf[1] || x.tf[15]; return a ? a[1] - a[0] : -1; };
       if (span(s) < 3 * 86400) return;
       if (!by[key] || span(s) > span(by[key])) by[key] = s; });
-    SYMS = Object.keys(by).map(function(k){ var s = by[k]; return { key: k, raw: s.raw, name: nameOf(k), cls: clsOf(k), tf: s.tf }; })
+    // name: what MT5 calls it (Nestor, 18 Oct 2026: "can the assets be called exactly what they are called in MT5?")
+    SYMS = Object.keys(by).map(function(k){ var s = by[k]; return { key: k, raw: s.raw, name: s.raw, cls: clsOf(k), tf: s.tf }; })
       .sort(function(a, b){ var o = { fx: 0, metal: 1, index: 2, crypto: 3, other: 4 }; return (o[a.cls] - o[b.cls]) || a.name.localeCompare(b.name); });
     return SYMS;
   }
@@ -86398,7 +86397,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function feeds(){ if (!S) return []; var a = [S]; for (var k in (S.side || {})) a.push(S.side[k]); return a; }
   function symAt(i){ if (S && S.live) return S.sym.raw;   // Live Charts: one symbol on every chart (Back Testing keeps a symbol per chart)
     var r = i > 0 && CFG.syms && CFG.syms[i]; return (r && S && r !== S.sym.raw && symBy(r)) ? r : (S ? S.sym.raw : CFG.sym); }
-  function symShort(s){ return s.cls === 'index' ? s.key : s.name; }
+  function symShort(s){ return s.name; }
   function mixedSyms(){ return panes.some(function(q){ return PS(q) !== S; }); }
   function dgFmt(X){ return function(v){ return Number(v).toFixed(X && X.digits != null ? X.digits : 5); }; }
   async function dayFeed(sym, day){ var r = await loadDay(sym, day);
@@ -86439,8 +86438,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
     var src = SRC[tf], cov = X.sym.tf[src], from = cov ? Math.max(open - LOOK[tf], cov[0]) : open;
     var rows = cov ? await fetchCandles(X.sym.raw, src, from, open - 1) : ((S.live && X.tfh && X.tfh[src]) ? X.tfh[src] : []);   // Live Charts: none stored - its EA's (9.01)
+    // Live Charts: listed as stored but nothing came (deleted since the symbol list was cached, 6 hours) - its EA's instead
+    var gone = !!(cov && !rows.length && S.live && src > 1); if (gone) { (X.nost = X.nost || {})[src] = 1; if (X.tfh && X.tfh[src]) rows = X.tfh[src]; }
     rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
-    var e = { rows: rows, from: from, full: !cov || from <= cov[0], agg: aggStatic(rows, tf) };
+    var e = { rows: rows, from: from, full: !cov || gone || from <= cov[0], agg: aggStatic(rows, tf) };
     staticCache[key] = e; return e;
   }
   // Older candles for a chart scrolled to its left edge. The view moves by exactly the candles added, so nothing jumps;
@@ -87187,7 +87188,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var mon = function(t){ var d = new Date(t * 1000); return MONS[L()][d.getMonth()] + " '" + String(d.getFullYear()).slice(2); };
     var cur = (si != null && panes[si]) ? PS(panes[si]).sym.raw : (S && S.sym.raw), hd = si > 0 ? T('Chart ' + (si + 1) + ' · symbol', 'Gráfico ' + (si + 1) + ' · símbolo') : T('Symbol', 'Símbolo');
     var h = '<h6>' + hd + '</h6><div class="stpr-syl">' + ((S && S.live) ? (SYMS || []).concat(lvOnly()) : (SYMS || [])).map(function(s){ var c = s.tf[1] || s.tf[5] || s.tf[15];
-      return '<button type="button" data-sym="' + esc(s.raw) + '"' + (si > 0 ? ' data-si="' + si + '"' : '') + ' class="' + (cur === s.raw ? 'on' : '') + '"><span>' + esc(s.name) + '</span><small>' + esc((S && S.live) ? (eaFor(s) ? T('Live from your MT5', 'En vivo desde tu MT5') : T('Stored candles', 'Velas guardadas')) : (T('from ', 'desde ') + mon(c[0]))) + '</small></button>'; }).join('') + '</div>'
+      return '<button type="button" data-sym="' + esc(s.raw) + '"' + (si > 0 ? ' data-si="' + si + '"' : '') + ' class="' + (cur === s.raw ? 'on' : '') + '"><span>' + esc((S && S.live && eaFor(s)) ? eaFor(s).raw : s.name) + '</span><small>' + esc((S && S.live) ? (eaFor(s) ? T('Live from your MT5', 'En vivo desde tu MT5') : T('Stored candles', 'Velas guardadas')) : (T('from ', 'desde ') + mon(c[0]))) + '</small></button>'; }).join('') + '</div>'
       + '<div style="margin:8px 4px 2px;max-width:250px;font-family:Fraunces,serif;font-size:12px;color:var(--text-dim)">' + esc(T('A symbol appears here once a member’s EA has run on its chart.', 'Un símbolo aparece aquí cuando el EA de un miembro ha funcionado en su gráfico.')) + '</div>';
     openMenu(anchor, h, si > 0 ? 'sym' + si : 'sym');
   }
@@ -87811,7 +87812,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       [['d', lk.day], ['w', lk.wk], ['m', lk.mo]].forEach(function(z){ if (!C[z[0]] || C[z[0]].k !== z[1]) { if (z[0] === 'd' && C.d) nd = true; PV[z[0]] = C[z[0]]; C[z[0]] = { k: z[1], i0: i, hi: -Infinity, lo: Infinity }; } var oo = C[z[0]]; if (b.high > oo.hi) oo.hi = b.high; if (b.low < oo.lo) oo.lo = b.low; });
       if (nd) { if (tf <= 60) M.seps.push(i);
         if (tf < 1440 && i < n - 1) { var gp = b.open - B[i - 1].close; if (Math.abs(gp) > 1e-12) gl.push({ i: i, top: Math.max(b.open, B[i - 1].close), bot: Math.min(b.open, B[i - 1].close), bull: gp > 0 }); } }
-      if (tf <= 60 && i > 0 && lk.h >= 10 && lonK(B[i - 1].time).h < 10 && lk.cwd >= 1 && lk.cwd <= 5) M.days.push({ i: i, wd: lk.cwd });
+      if (tf <= 60 && i > 0 && lk.h >= 10 && lonK(B[i - 1].time).h < 10) M.days.push({ i: i, wd: lk.cwd });   // any day with a 10:00 London candle (a weekend one only where it trades)
       if (sesTf && tf < 1440) o.ses.forEach(function(s, si){ if (!s.on) return; var inn = sesIn(b.time, s, tz);
         if (inn && !(i > 0 && sesIn(B[i - 1].time, s, tz))) { s0[si] = { k: si, i0: i, hi: b.high, lo: b.low, nb: Math.max(1, Math.floor(sesDur(s) / tf)), last: i }; M.ses.push(s0[si]);
           var same = M.ses.filter(function(x){ return x.k === si; }); if (same.length > Math.max(1, +o.hist || 6)) M.ses.splice(M.ses.indexOf(same[0]), 1); }
@@ -87854,7 +87855,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (miniOn('q') && tf === 1440) M.q.forEach(function(qq){ var x = xOfT(p, qq.t); if (x == null || x < 0 || x > pw) return; vline(x); if (qY == null) return;
       g.font = "11px 'AppNum','DM Mono',monospace"; var tw = g.measureText('Q' + qq.q).width; g.fillStyle = lookBg(); g.fillRect(x - tw / 2 - 3, qY - 7.5, tw + 6, 15); g.fillStyle = ink(lt ? 1 : 0.7); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('Q' + qq.q, x, qY); });
     g.setLineDash([]); g.font = "10px 'AppNum','DM Mono',monospace";
-    if (miniOn('days') && tf <= 60) { var DN = es() ? (o.abbr ? ['', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE'] : ['', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES']) : (o.abbr ? ['', 'MON', 'TUE', 'WED', 'THU', 'FRI'] : ['', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY']);
+    // (Saturday and Sunday too, where the market trades then - Nestor, 18 Oct 2026, on Bitcoin: "where are the names of saturday and sunday")
+    if (miniOn('days') && tf <= 60) { var DN = es() ? (o.abbr ? ['DOM', 'LUN', 'MAR', 'MIÉ', 'JUE', 'VIE', 'SÁB'] : ['DOMINGO', 'LUNES', 'MARTES', 'MIÉRCOLES', 'JUEVES', 'VIERNES', 'SÁBADO']) : (o.abbr ? ['SUN', 'MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT'] : ['SUNDAY', 'MONDAY', 'TUESDAY', 'WEDNESDAY', 'THURSDAY', 'FRIDAY', 'SATURDAY']);
       g.font = "11px 'AppNum','DM Mono',monospace"; g.fillStyle = o.dayCol ? (function(){ var pc = parseC(o.dayCol); return hexA(pc.h, pc.a); })() : ink(lt ? 1 : 0.55); g.textAlign = 'center'; g.textBaseline = 'top';
       M.days.forEach(function(dd){ var x = X(dd.i); if (x != null && x > -60 && x < pw + 60) g.fillText(DN[dd.wd], x, 6); }); g.font = "10px 'AppNum','DM Mono',monospace"; }
     // opening gaps
@@ -88736,7 +88738,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // thought i didnt need stored candles anymore because of the relay?"): Live Charts lists them too, and their charts are
   // built from the minutes their EA sends (its last 25 hours) and its prices. Back Testing still needs stored candles.
   function lvOnly(){ var have = {}, out = []; (SYMS || []).forEach(function(s){ have[s.key] = 1; });
-    liveEAs().forEach(function(o){ var k = canon(o.raw); if (have[k] || vNum(o.v) < 9.00) return; have[k] = 1; out.push({ key: k, raw: o.raw, name: nameOf(k), cls: clsOf(k), tf: {}, lv: true }); });
+    liveEAs().forEach(function(o){ var k = canon(o.raw); if (have[k] || vNum(o.v) < 9.00) return; have[k] = 1; out.push({ key: k, raw: o.raw, name: o.raw, cls: clsOf(k), tf: {}, lv: true }); });
     return out; }
   function symLive(raw){ if (!raw) return null; return symBy(raw) || lvOnly().filter(function(s){ return s.raw === raw || s.key === raw; })[0] || null; }
   function lvMs(){ try { return (window.__stLiveLine && window.__stLiveLine.ms) ? window.__stLiveLine.ms() : 2000; } catch (e) { return 2000; } }
@@ -88764,6 +88766,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (!sym) { st.textContent = T('No candles stored yet.', 'Aún no hay velas guardadas.'); return false; }
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
     var day = liveDay(sym), f = dayFrame(day), end = Math.min(nowS(), f.close), F0 = await liveFeed(sym, f);
+    if (F0.ea && F0.ea.raw && F0.ea.raw !== sym.name) F0.sym = Object.assign({}, sym, { name: F0.ea.raw });   // what this member's MT5 calls it
     if (!LV.inl && !LV.max) return false;   // the tab was left meanwhile
     S = Object.assign(F0, { day: day, f: f, now: end, pos: null, trades: [], done: null, pv: null, exec: false, playing: false, lastExitTs: 0, live: true, side: {} });
     CFG.sym = sym.raw; save(); LV.sig = '';
@@ -88815,10 +88818,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // 1Y share one answer and nothing is asked twice.
   function lvTfAsk(){ var ln = window.__stLiveLine; if (!S || !S.live || !ln || !ln.hist || (ln.joined && !ln.joined())) return;
     var now = Date.now(), want = null;
-    panes.forEach(function(q){ if (want) return; var X = PS(q), src = SRC[q.tf]; if (src === 1 || !X.ea || vNum(X.ea.v) < 9.01 || X.sym.tf[src]) return;
+    panes.forEach(function(q){ if (want) return; var X = PS(q), src = SRC[q.tf]; if (src === 1 || !X.ea || vNum(X.ea.v) < 9.01 || (X.sym.tf[src] && !(X.nost && X.nost[src]))) return;
       X.tfh = X.tfh || {}; X.tfa = X.tfa || {}; if (X.tfh[src] || now - (X.tfa[src] || 0) < 20000) return; want = { X: X, src: src }; });
     if (!want) return; want.X.tfa[want.src] = now; ln.hist(want.X.ea.raw, 5000, want.src); }   // all it gives (D1: about 20 years), once per timeframe
-  function lvBarsTf(F, p){ var tf = +p.tf; if (!(SRC[tf] === tf) || F.sym.tf[tf]) return;
+  function lvBarsTf(F, p){ var tf = +p.tf; if (!(SRC[tf] === tf) || (F.sym.tf[tf] && !(F.nost && F.nost[tf]))) return;
     var acc = (F.tfp = F.tfp || {})[tf] || (F.tfp[tf] = { rows: [], parts: {} });
     String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (b) acc.rows.push(b); });
     acc.parts[p.i] = 1; if (Object.keys(acc.parts).length < (+p.of || 1)) return;
@@ -88913,7 +88916,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (!uidNow() && !(window.STCloud && window.STCloud.syncToken)) return { on: false, t: T('Sign in to see your MT5 prices live', 'Inicia sesión para ver tus precios de MT5 en vivo') };
     if (ea && vNum(ea.v) >= 9.00) return { on: false, t: T('Connecting to your MT5…', 'Conectando con tu MT5…') };
     if (ea) return { on: false, t: T('Live needs EA 9.00 or newer in MT5 (yours is ' + ea.v + ')', 'En vivo necesita el EA 9.00 o posterior en MT5 (el tuyo es ' + ea.v + ')') };
-    var on = liveEAs().filter(function(o){ return vNum(o.v) >= 9.00; }).map(function(o){ return nameOf(canon(o.raw)); });
+    var on = liveEAs().filter(function(o){ return vNum(o.v) >= 9.00; }).map(function(o){ return o.raw; });
     if (on.length) return { on: false, t: T('Not live: the EA runs on ' + on.join(', ') + ' in MT5 · open it on a ' + S.sym.name + ' chart to see this one live', 'No en vivo: el EA está en ' + on.join(', ') + ' en MT5 · ábrelo en un gráfico de ' + S.sym.name + ' para verlo en vivo') };
     var v = eaNewest(); if (v && vNum(v) < 9.00) return { on: false, t: T('Stored candles · live needs EA 9.00 or newer in MT5 (yours is ' + v + ')', 'Velas guardadas · en vivo necesita el EA 9.00 o posterior en MT5 (el tuyo es ' + v + ')') };
     return { on: false, t: T('Stored candles · run the EA (9.00 or newer) in MT5 to see them live', 'Velas guardadas · abre el EA (9.00 o posterior) en MT5 para verlas en vivo') }; }
@@ -89202,7 +89205,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests
-    logShown: logShown, symName: function(raw){ return nameOf(canon(raw)); },
+    logShown: logShown, symName: function(raw){ var s = symBy(raw); return s ? s.name : raw; },
     _s: function(){ return S; }, _mm: function(){ return CFG.mm; }, _exec: toggleExec, _aim: function(pr){ aim(pr); linesAll(); paintPill(); }, _fire: fire, _touch: function(v){ forceTouch = v; if (S) render(); },
     _settle: function(){ settleNow(); render(); }, _setLine: function(k, pr){ setLine(k, pr); settleNow(); render(); }, _lots: function(rd){ return lotsFor(rd); }, _step: step, _act: function(){ var a = actPane(); return a ? a.i : -1; }, _stepSec: function(){ return stepSec(); }, _place: place, _close: closeNow, _jump: jumpTo, _preview: setPreview, _panes: function(){ return panes; },
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: o.lineVisible !== false && o.axisLabelVisible !== false }; }) : []; },
@@ -89211,7 +89214,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
     _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },
     _miniDialogFor: function(host, p, mx){ DLGX = { host: host, p: p, mx: mx }; miniDialog(null, p); },
-    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: nameOf(k), cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
+    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: raw, cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
 })();
 </script>
 
