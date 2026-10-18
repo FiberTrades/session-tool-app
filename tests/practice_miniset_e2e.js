@@ -23,7 +23,7 @@
     // the window, from Show on chart
     document.getElementById('stpr-layersbtn').click(); await W(40);
     var sb = document.querySelector('#stpr-menu [data-miniset]');
-    ok('Show on chart has a Settings button under Minimalist', sb && /Settings/.test(sb.textContent));
+    ok('Show on chart has a gear beside Minimalist (its settings)', sb && sb.classList.contains('stpr-tglgear') && !!sb.closest('.stpr-tgl') && /Minimalist/.test(sb.closest('.stpr-tgl').textContent));
     sb.click(); await W(60);
     var tabs = dlg() && Array.prototype.map.call(dlg().querySelectorAll('[data-dt]'), function (b) { return b.textContent; });
     ok("it opens TradingView's window: Minimalist, tabs Inputs / Style / Visibility, Defaults, Cancel, Ok", dlg() && /Minimalist/.test(dlg().querySelector('.stpr-dlgh').textContent) && tabs.join(',') === 'Inputs,Style,Visibility' && dlg().querySelector('[data-ddef]') && dlg().querySelector('[data-dc]') && dlg().querySelector('[data-dok]'), tabs);

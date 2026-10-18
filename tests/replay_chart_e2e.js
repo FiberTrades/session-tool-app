@@ -52,7 +52,7 @@
     // ---- Chart settings ----
     document.getElementById('strp-lookbtn').click(); await W(60);
     var mn = document.getElementById('strp-menu');
-    ok('Chart settings: Practice Replay\'s menu (styles, scales, candles)', mn.classList.contains('show') && /Chart basic styles/i.test(mn.textContent) && /Scales/i.test(mn.textContent) && /Candles/i.test(mn.textContent) && /same settings as Practice Replay/.test(mn.textContent), mn.textContent.slice(0, 120));
+    ok('Chart settings: Practice Replay\'s menu (styles, scales, candles)', mn.classList.contains('show') && /Chart basic styles/i.test(mn.textContent) && /Scales/i.test(mn.textContent) && /Candles/i.test(mn.textContent) && /same settings as Back Testing/.test(mn.textContent), mn.textContent.slice(0, 120));
     ok('it fits in the replay (scrolls inside when tall)', mn.getBoundingClientRect().bottom <= document.querySelector('.strp-card').getBoundingClientRect().bottom + 1, [mn.getBoundingClientRect().bottom, document.querySelector('.strp-card').getBoundingClientRect().bottom]);
     ok('Trade Replay keeps its own look until something is changed (text #c0c0c0, size 12)', S.chart.options().layout.textColor === '#c0c0c0' && S.chart.options().layout.fontSize === 12, [S.chart.options().layout.textColor, S.chart.options().layout.fontSize]);
     mn.querySelector('[data-lksw="up"]').click(); await W(30);

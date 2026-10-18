@@ -94,7 +94,9 @@
     check('the header: LIVE (green) and "Your MT5 prices"', document.getElementById('stpr-chip').classList.contains('lv') && /Live/.test(document.getElementById('stpr-chip').textContent) && document.getElementById('stpr-when').textContent === 'Your MT5 prices',
       [document.getElementById('stpr-chip').className, document.getElementById('stpr-when').textContent]);
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
-    check('each chart: "Candle MM:SS | Spread 0.7p" bottom right', cd.length === 2 && /^Candle \d\d:\d\d \| Spread 0\.7p$/.test(cd[0].textContent) && /^Candle 0[01]:\d\d \| Spread 0\.7p$/.test(cd[1].textContent), [cd.length, cd[0] && cd[0].textContent, cd[1] && cd[1].textContent]);
+    var cdl = document.querySelectorAll('#lc-host .stpr-cdl:not([hidden])');
+    check('each chart: the spread alone bottom right ("Spread 0.7p"), the candle\'s time left under the price on the scale (MM:SS)', cd.length === 2 && /^Spread 0\.7p$/.test(cd[0].textContent) && /^Spread 0\.7p$/.test(cd[1].textContent) && cdl.length === 2 && /^\d\d:\d\d$/.test(cdl[0].textContent) && /^0[01]:\d\d$/.test(cdl[1].textContent), [cd.length, cd[0] && cd[0].textContent, cdl.length, cdl[0] && cdl[0].textContent, cdl[1] && cdl[1].textContent]);
+    var tbx0 = document.getElementById('lc-tb');
     var gaps = [], prevAt = LC.state().at; for (k = 0; k < 40; k++) { await W(80); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
     check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
 
@@ -292,6 +294,15 @@
 
     // ---- MT5's Toolbox under the charts (18 Oct 2026): Trade - the account and its positions, live; History - with commission ----
     var tbx = document.getElementById('lc-tb');
+    for (k = 0; k < 40 && !(tbx && !tbx.hidden && tbx.querySelector('[data-lctbx="min"]')); k++) await W(250);
+    tbx.querySelector('[data-lctbx="min"]').click(); await W(700);
+    check('the Toolbox minimises to its tab row (-), and opens again (+)', !tbx.querySelector('.lctb-b') && tbx.querySelector('[data-lctbx="min"]').textContent === '+', tbx.textContent.slice(0, 60));
+    tbx.querySelector('[data-lctbx="min"]').click(); await W(700);
+    tbx.querySelector('[data-lctbx="hide"]').click(); await W(400);
+    var tsb = document.getElementById('stpr-tbshow');
+    check('...and hides (x): "Show the Toolbox" in the bar under the charts brings it back', tbx.hidden && tsb && !tsb.hidden, [tbx.hidden, tsb && tsb.hidden]);
+    tsb.click(); await W(500);
+    check('...back', !tbx.hidden && !!tbx.querySelector('.lctb-b') && tsb.hidden);
     for (k = 0; k < 40 && !(tbx && !tbx.hidden && /555001/.test(tbx.textContent)); k++) await W(250);
     var tth = Array.prototype.map.call(tbx.querySelectorAll('th'), function (x) { return x.textContent; }).join('|');
     check('the Toolbox shows under the charts, MT5\'s Trade tab: Symbol | Ticket | Time | Type | Volume | Price | S / L | T / P | Price | Profit', !tbx.hidden && tth === 'Symbol|Ticket|Time|Type|Volume|Price|S / L|T / P|Price|Profit', tth);
