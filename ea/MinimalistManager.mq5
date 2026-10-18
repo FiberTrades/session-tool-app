@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.02"
+#property version   "9.03"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3953,7 +3953,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.02\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
+string LwHi(){ return StringFormat("{\"v\":\"9.03\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -4023,7 +4023,7 @@ void LwHist(int n,int tf=1,string sym="")
      {
       string rows="";
       for(int i=k*part;i<got && i<(k+1)*part;i++){ if(StringLen(rows)>0) rows+=";"; rows+=LwBarVD(r[i],dg); }
-      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"tf\":%d,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",sym,tf,k,parts,rows)))) return;
+      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"lg\":%I64d,\"tf\":%d,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",sym,AccountInfoInteger(ACCOUNT_LOGIN),tf,k,parts,rows)))) return;   // v9.03: + lg
       LwCount();
      }
   }
@@ -4041,8 +4041,8 @@ void LwStreamPx()
    string bar=LwBarV(r[0]), pb=LwBarV(r[1]);
    string key=DoubleToString(bid,_Digits)+"|"+DoubleToString(ask,_Digits)+"|"+bar;
    if(key==g_lwPxKey) return;
-   string p=StringFormat("{\"s\":\"%s\",\"b\":%s,\"a\":%s,\"t\":%I64d,\"dg\":%d,\"bar\":\"%s\",\"pb\":\"%s\"}",
-                         _Symbol,DoubleToString(bid,_Digits),DoubleToString(ask,_Digits),(long)TimeGMT(),_Digits,bar,pb);
+   string p=StringFormat("{\"s\":\"%s\",\"lg\":%I64d,\"b\":%s,\"a\":%s,\"t\":%I64d,\"dg\":%d,\"bar\":\"%s\",\"pb\":\"%s\"}",   // v9.03: + lg
+                         _Symbol,AccountInfoInteger(ACCOUNT_LOGIN),DoubleToString(bid,_Digits),DoubleToString(ask,_Digits),(long)TimeGMT(),_Digits,bar,pb);
    if(!LwText(LwBroadcast("px",p))) return;
    g_lwPxMs=now; g_lwPxKey=key;
    LwCount();
@@ -4128,8 +4128,8 @@ void LwStreamHub()
       string bar=LwBarVD(r[0],dg), pb=LwBarVD(r[1],dg);
       string key=DoubleToString(bid,dg)+"|"+DoubleToString(ask,dg)+"|"+bar;
       if(key==g_hubPxKey[i]) continue;
-      string p=StringFormat("{\"s\":\"%s\",\"b\":%s,\"a\":%s,\"t\":%I64d,\"dg\":%d,\"bar\":\"%s\",\"pb\":\"%s\"}",
-                            sy,DoubleToString(bid,dg),DoubleToString(ask,dg),(long)TimeGMT(),dg,bar,pb);
+      string p=StringFormat("{\"s\":\"%s\",\"lg\":%I64d,\"b\":%s,\"a\":%s,\"t\":%I64d,\"dg\":%d,\"bar\":\"%s\",\"pb\":\"%s\"}",   // v9.03: + lg
+                            sy,AccountInfoInteger(ACCOUNT_LOGIN),DoubleToString(bid,dg),DoubleToString(ask,dg),(long)TimeGMT(),dg,bar,pb);
       if(!LwText(LwBroadcast("px",p))) return;
       g_hubPxMs[i]=now; g_hubPxKey[i]=key;
       LwCount();
@@ -4463,7 +4463,8 @@ void LwOnText(string s)
       long ms=LwNum(s,"\"ms\":",LW_MID_MS);
       if(ms<=LW_FAST_MS) g_lwFastAt=now; else if(ms<=LW_MID_MS) g_lwMidAt=now;
       string ws=","+LwStr(s,"\"sym\":\"")+",";   // the symbols on screen, comma-separated: each Live Charts chart can have its own
-      if(StringFind(ws,","+_Symbol+",")>=0) g_lwSymAt=now;
+      long wlg=LwNum(s,"\"lg\":",0);                 // v9.03: the account Live Charts shows (0: any)
+      if(StringFind(ws,","+_Symbol+",")>=0) g_lwSymAt=(wlg==0 || wlg==AccountInfoInteger(ACCOUNT_LOGIN)) ? now : 0;
       if(LwStr(s,"\"hub\":\"")==LwKey()) LwHubSet(LwStr(s,"\"hs\":\""));   // v9.02: symbols on screen with no chart of their own
       if(LwStr(s,"\"acc\":\"")==LwKey()) g_acWant=now;                          // v9.02: this EA streams the account for the app's Trade tab
      }
@@ -4476,7 +4477,8 @@ void LwOnText(string s)
    else if(StringFind(s,"\"event\":\"hist\"")>=0)   // v9.01: + tf; v9.02: + another symbol, asked of the hub ("by")
      {
       string hs=LwStr(s,"\"sym\":\"");
-      if(hs==_Symbol) LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1));
+      long hlg=LwNum(s,"\"lg\":",0);                 // v9.03: asked of one account's EA (0: any)
+      if(hs==_Symbol && (hlg==0 || hlg==AccountInfoInteger(ACCOUNT_LOGIN))) LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1));
       else if(StringLen(hs)>0 && LwStr(s,"\"by\":\"")==LwKey()){ bool cus=false; if(SymbolExist(hs,cus)){ SymbolSelect(hs,true); LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1),hs); } }
      }
   }
@@ -7495,7 +7497,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.02 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.03 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

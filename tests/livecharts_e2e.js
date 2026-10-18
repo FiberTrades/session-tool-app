@@ -75,7 +75,7 @@
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.ea && st.gotHist && st.fresh) break; }
     for (k = 0; k < 20 && LN.state().px < 2; k++) await W(250);   // the second price too
     var ls = LN.state();
-    check('joined the channel; the EA said which chart it runs on (EUR/USD, 9.02)', ls.joined && st.ea && st.ea.raw === 'EURUSD' && st.ea.v === '9.02', [ls.joined, st.ea]);
+    check('joined the channel; the EA said which chart it runs on (EUR/USD, 9.03, account 90001234 - the one on the relay)', ls.joined && st.ea && st.ea.raw === 'EURUSD' && st.ea.v === '9.03' && String(st.ea.lg) === '90001234', [ls.joined, st.ea]);
     check('"watch" says 2 a second and the symbol (in the member\'s session, no trade open), and names the hub (9.02)', /^500\|EURUSD\|EURUSD\|90001234>/.test(ls.key), ls.key);
     check('the day\'s 1-minute candles came from the EA', st.gotHist && st.baseTf === 1 && st.base > 30, [st.gotHist, st.baseTf, st.base]);
     check('prices flow (px)', st.fresh && ls.px >= 2 && st.px && st.px.b > 0, [ls.px, st.px]);
@@ -293,6 +293,26 @@
     tbx.querySelector('[data-lctb="trade"]').click(); await W(200);
     var mmt = document.getElementById('stpr-mm').textContent;
     check('the panel has no Sound row now ("why did you add this in the panel? remove it")', !document.querySelector('#stpr-mm [data-mm="sndpick"]') && !/When filled/.test(mmt), mmt.slice(-200));
+    // ---- the account picker (18 Oct 2026: "what would i do if i want to switch accounts to trade with?" - "yes"): a second
+    // ---- account's EA on EUR/USD (90007777, 50 pips above); the panel's title lists both, the pick moves everything ----
+    for (k = 0; k < 40 && LC._accs().length < 2; k++) await W(250);
+    var nb = document.querySelector('#stpr-mm [data-mm="acct"]');
+    check('two accounts run the EA on EUR/USD: the panel\'s account name is a picker (a small arrow)', nb && !!nb.querySelector('svg') && LC._accs().join() === '90001234,90007777', [LC._accs(), nb && nb.outerHTML.slice(0, 120)]);
+    var pxA = LC.state().px.b; nb.click(); await W(1900);
+    var am = document.getElementById('stpr-menu'), rowsA = am.querySelectorAll('[data-lvacc]');
+    check('...it lists both - FTMO 70K Challenge · 90001234 (the one shown) and MT5 · 90007777 - after asking every EA to say hi', am.classList.contains('show') && rowsA.length === 2 && /FTMO 70K Challenge · 90001234/.test(am.textContent) && /MT5 · 90007777/.test(am.textContent) && am.querySelector('[data-lvacc="90001234"]').classList.contains('on') && /follow the account you pick/.test(am.textContent), am.textContent);
+    am.querySelector('[data-lvacc="90007777"]').click();
+    for (k = 0; k < 80; k++) { await W(250); st = LC.state(); if (st.live && st.ea && String(st.ea.lg) === '90007777' && st.fresh && st.px && Math.abs(st.px.b - (pxA + 0.005)) < 0.002) break; }
+    var nm2 = (document.querySelector('#stpr-mm .stpr-mm-an') || {}).textContent || '';
+    check('picking 90007777: the chart shows that account\'s prices (50 pips apart here), the panel its name, and it is remembered', st.ea && String(st.ea.lg) === '90007777' && st.px && Math.abs(st.px.b - (pxA + 0.005)) < 0.002 && /MT5 · 90007777/.test(nm2) && P._cfg().lvLg === '90007777', [st.ea, st.px, pxA, nm2]);
+    check('...the line names that account ("lg" in watch), so the other account\'s EA stops sending', /\|90007777$/.test(LN.state().key), LN.state().key);
+    var pxs = []; for (k = 0; k < 12; k++) { await W(250); var pk = LC.state().px; if (pk) pxs.push(pk.b); }
+    check('...and only its prices reach the chart (none from 90001234)', pxs.length > 5 && pxs.every(function (b) { return Math.abs(b - (pxA + 0.005)) < 0.002; }), pxs.slice(0, 6));
+    document.querySelector('#stpr-mm [data-mm="acct"]').click(); await W(400);
+    document.querySelector('#stpr-menu [data-lvacc="90001234"]').click();
+    for (k = 0; k < 80; k++) { await W(250); st = LC.state(); if (st.live && st.ea && String(st.ea.lg) === '90001234' && st.fresh && st.px && Math.abs(st.px.b - pxA) < 0.002) break; }
+    for (k = 0; k < 40 && !/555001/.test(document.getElementById('lc-tb').textContent); k++) await W(250);
+    check('back to FTMO 70K Challenge · 90001234: its prices, its name, its Toolbox again', String(st.ea.lg) === '90001234' && Math.abs(st.px.b - pxA) < 0.002 && /FTMO 70K Challenge · 90001234/.test(document.querySelector('#stpr-mm .stpr-mm-an').textContent) && /555001/.test(document.getElementById('lc-tb').textContent), [st.ea, st.px]);
     check('...and no sound or voice setting anywhere ("remove all these options and have the chime as default")', !document.getElementById('set-fillvoice') && !/Order filled/.test((document.querySelector('.settings-section[data-section="profile"]') || {}).textContent || ''));
 
     // ---- the bigger view and back ----

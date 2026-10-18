@@ -173,7 +173,8 @@ while time.time() - w0 < secs:
                 p = inner(m); now = time.time(); watch_at = now; ms = int(p.get('ms') or 2000)
                 if ms <= 500: fast_at = now
                 elif ms <= 2000: mid_at = now
-                if SYM in str(p.get('sym') or '').split(','): sym_at = now   # the symbols on screen, comma-separated
+                if SYM in str(p.get('sym') or '').split(','):   # the symbols on screen, comma-separated
+                    sym_at = now if (VER < '9.03' or not p.get('lg') or int(p.get('lg')) == LG) else 0   # 9.03: only for the account the app names
                 log['watches'].append([round(now - w0, 2), ms, p.get('sym', '')])
                 if VER >= '9.02' and p.get('acc') == KEYME: acc['want'] = now
                 if VER >= '9.02' and p.get('hub') == KEYME:
@@ -213,13 +214,14 @@ while time.time() - w0 < secs:
                     per = 1000 if tf > 1 else 300; parts = [rows[i:i + per] for i in range(0, len(rows), per)]
                     for i, pr in enumerate(parts):
                         text(bcast('bars', {'s': sy, 'tf': tf, 'i': i, 'of': len(parts), 'rows': ';'.join(pr)})); log['bars_msgs'] += 1
+                elif p.get('sym') == SYM and VER >= '9.03' and p.get('lg') and int(p.get('lg')) != LG: pass   # 9.03: asked of another account's EA
                 elif p.get('sym') == SYM:
                     n = max(1, min(1500, int(p.get('n') or 600))); log['hist'].append(n)
                     cur = int(fnow()) - int(fnow()) % 60
                     rows = [bstr(bar(cur - 60 * k)) for k in range(n, 0, -1)]
                     parts = [rows[i:i + 300] for i in range(0, len(rows), 300)]
                     for i, pr in enumerate(parts):
-                        text(bcast('bars', {'s': SYM, 'tf': 1, 'i': i, 'of': len(parts), 'rows': ';'.join(pr)})); log['bars_msgs'] += 1
+                        text(bcast('bars', dict({'s': SYM, 'tf': 1, 'i': i, 'of': len(parts), 'rows': ';'.join(pr)}, **({'lg': LG} if VER >= '9.03' else {})))); log['bars_msgs'] += 1
             elif '"phx_error"' in m or '"phx_close"' in m: log['errors'].append('channel closed'); state = 0
         elif op == 8: log['errors'].append('server close'); state = 0
         elif op == 9: frame(0xA, pl)
@@ -231,6 +233,7 @@ while time.time() - w0 < secs:
         if now - last_px >= iv:
             t = fnow(); m0 = int(t) - int(t) % 60; b = price_at(t); a = round(b + 7 * 10 ** -DG, 5)   # a spread of 0.7 pips (7 points on gold)
             p = {'s': SYM, 'b': b, 'a': a, 't': int(t), 'dg': DG, 'bar': bstr(bar(m0)), 'pb': bstr(bar(m0 - 60))}
+            if VER >= '9.03': p['lg'] = LG   # 9.03: whose prices
             key = '%s|%s' % (b, p['bar'])
             if key != last_key:
                 text(bcast('px', p)); log['px'] += 1; last_key = key
