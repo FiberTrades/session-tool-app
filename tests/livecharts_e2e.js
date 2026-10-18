@@ -68,7 +68,7 @@
     check('one toolbar row: the Charts button beside the timeframe and the drawing tools (its own row is gone)', getComputedStyle(tb1).display === 'none' && lbt && document.getElementById('stpr-tb2').contains(lbt), [getComputedStyle(tb1).display, lbt && lbt.parentNode.parentNode.id]);
     await W(600); var wr = win.getBoundingClientRect(), tbs = document.querySelector('.tabs').getBoundingClientRect();
     check('the whole window fits the screen under the tabs (charts, the live bar, the clock), scrolled into place', wr.height <= window.innerHeight - tbs.height && wr.bottom <= window.innerHeight + 2 && wr.top >= tbs.bottom - 2, [Math.round(tbs.bottom), Math.round(wr.top), Math.round(wr.bottom), window.innerHeight]);
-    check('the replay\'s own controls are not there (no Replay either); the live bar is', getComputedStyle(document.getElementById('stpr-rand')).display === 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
+    check('the replay\'s own controls are not there (no Replay either); the live bar is', !document.getElementById('stpr-rand') && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
       && getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none' &&getComputedStyle(document.getElementById('stpr-lvbar')).display !== 'none');
 
     // ---- the line: joined, the EA says hi, the charts ask for the day's minutes, prices flow ----
@@ -103,7 +103,26 @@
     var pfp = document.getElementById('lcp-section');
     check('under the Toolbox, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-tb').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
 
-    check('one symbol on every chart: no per-chart symbol buttons in Live Charts', !document.querySelector('#lc-host .stpr-sympill'));
+    // ---- each chart its own symbol (18 Oct 2026: "give every chart the oportunity to be a different asset ... also for live charts"):
+    // ---- chart 2 on gold, whose EA runs on another account (90005678, on Supabase) ----
+    var lcPills = function () { return Array.prototype.map.call(document.querySelectorAll('#lc-host .stpr-sympill'), function (x) { return x.textContent; }).join(','); };
+    var lcKeys = function () { return P._panes().map(function (q) { return P._ps(q).sym.key; }).join(','); };
+    check('each chart has its own symbol button in Live Charts too', lcPills() === 'EURUSD,EURUSD', lcPills());
+    document.querySelectorAll('#lc-host .stpr-sympill')[1].click(); await W(300);
+    var lm2 = document.querySelector('#stpr-menu.show'), lg2 = lm2 && lm2.querySelector('.stpr-wlr[data-sym="XAUUSD"][data-si="1"]');
+    check('...chart 2\'s opens the watchlist for chart 2, gold in it', !!lg2 && /Chart 2 · watchlist/.test(lm2.textContent), lm2 && lm2.textContent.slice(0, 100));
+    lg2.click();
+    for (k = 0; k < 80; k++) { await W(250); var pb2 = P._paneBars(1); if (lcKeys() === 'EURUSD,XAUUSD' && pb2 && pb2.real > 5 && pb2.data[pb2.real - 1].close > 100) break; }
+    var pb2b = P._paneBars(1);
+    check('chart 2 shows gold live from its own EA, chart 1 stays EURUSD', lcKeys() === 'EURUSD,XAUUSD' && pb2b.real > 5 && pb2b.data[pb2b.real - 1].close > 100 && LC.state().px.b < 2 && lcPills() === 'EURUSD,XAUUSD', [lcKeys(), pb2b.real, pb2b.data[pb2b.real - 1], lcPills()]);
+    for (k = 0; k < 40 && !/^\d+\|EURUSD,XAUUSD\|/.test(LN.state().key); k++) await W(250);
+    check('...the line watches both symbols and names no account (two accounts\' EAs: each stays on, their prices say whose they are)', /^\d+\|EURUSD,XAUUSD\|/.test(LN.state().key) && /\|$/.test(LN.state().key), LN.state().key);
+    document.querySelectorAll('#lc-host .stpr-sympill')[1].click(); await W(300);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"][data-si="1"]').click();
+    for (k = 0; k < 60 && !(lcKeys() === 'EURUSD,EURUSD' && /\|90001234$/.test(LN.state().key)); k++) await W(250);
+    check('...and back: both charts EURUSD, the line names its account again', lcKeys() === 'EURUSD,EURUSD' && /\|90001234$/.test(LN.state().key), [lcKeys(), LN.state().key]);
+    var lsb = document.getElementById('stpr-sym').getBoundingClientRect(), lcb = document.getElementById('stpr-chip').getBoundingClientRect();
+    check('LIVE is exactly as tall as the symbol button beside it', Math.abs(lsb.height - lcb.height) < 0.5 && Math.abs(lsb.top - lcb.top) < 1, [lsb.height, lcb.height]);
 
     // ---- an open trade: every 2 seconds, and its lines on the charts ----
     var nowS = Math.floor(Date.now() / 1000), op = LC.state().px.b;
@@ -250,6 +269,12 @@
     check('...with the EA\'s own settings from MT5: risk 250.00, Min SL 4.0, Max SL 20.0, TP 3.00 R, 3 trades a day', LC._mmLive() && P._cfg().mm.riskAmt === 250 && mmb.querySelector('[data-mmi="rval"]').value === '250.00' && mmb.querySelector('[data-mmi="min"]').value === '4.0' && mmb.querySelector('[data-mmi="max"]').value === '20.0' && /3\.00/.test(mmb.querySelector('[data-mmi="tp"]').value) && mmb.querySelector('[data-mmi="maxd"]').value === '3',
       [P._cfg().mm.riskAmt, mmb.querySelector('[data-mmi="min"]').value, mmb.querySelector('[data-mmi="max"]').value, mmb.querySelector('[data-mmi="tp"]').value]);
     check('...while practice\'s own settings are left alone', (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt === practiceRisk && practiceRisk !== 250, [practiceRisk]);
+    var mbody = mmb.querySelector('.stpr-mm-b'), wev = function (dy) { var ev = new WheelEvent('wheel', { deltaY: dy, bubbles: true, cancelable: true }); (mbody || mmb).dispatchEvent(ev); return ev.defaultPrevented; };
+    if (mbody) mbody.scrollTop = 0;
+    var wUpTop = wev(-120), canScroll = mbody && mbody.scrollHeight > mbody.clientHeight + 1, wDown = wev(120);
+    if (mbody) mbody.scrollTop = mbody.scrollHeight; var wDownEnd = wev(120);
+    check('the wheel over the panel never scrolls the page: kept at its top and its end, free in between', wUpTop && wDownEnd && (canScroll ? !wDown : wDown), [wUpTop, canScroll, wDown, wDownEnd]);
+    if (mbody) mbody.scrollTop = 0;
     var rin = mmb.querySelector('[data-mmi="rval"]'); rin.focus(); rin.value = '300'; rin.dispatchEvent(new Event('input', { bubbles: true })); rin.dispatchEvent(new Event('change', { bubbles: true })); rin.blur();
     for (k = 0; k < 40 && !(LC._mmLive() && P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00'); k++) await W(150);   // the EA's settings come back and the panel shows them
     check('a change in the panel goes to the EA ("cfg", signed) and stays: risk 300.00', P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt === practiceRisk, [P._cfg().mm.riskAmt, document.querySelector('#stpr-mm [data-mmi="rval"]').value, (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt, practiceRisk]);
@@ -346,7 +371,7 @@
     var chB = document.getElementById('stpr-chip');
     check('Back Testing after Live Charts: the pink PRACTICE label again (not Live Charts\' green or grey)', chB.className === 'stpr-chip' && /Practice/i.test(chB.textContent) && /244, 114, 182/.test(getComputedStyle(chB).backgroundColor), [chB.className, chB.textContent, getComputedStyle(chB).backgroundColor]);
     var tb = document.getElementById('stpr-today');
-    check('Back Testing has a Today button beside Random day', tb && getComputedStyle(tb).display !== 'none' && tb.previousElementSibling && tb.previousElementSibling.id === 'stpr-rand' && /Today/.test(tb.textContent), tb && tb.outerHTML.slice(0, 60));
+    check('Back Testing has a Today button (Random day is gone)', tb && getComputedStyle(tb).display !== 'none' && !document.getElementById('stpr-rand') && /Today/.test(tb.textContent), tb && tb.outerHTML.slice(0, 60));
     tb.click();
     var nowT = function () { return Math.floor(Date.now() / 1000) + Math.round((T0 * 1000 - (window.__t0ref || 0)) / 1000); };
     for (k = 0; k < 120; k++) { await W(250); var ts = P._s(); if (ts && ts.today && ts.gotHist && ts.base.length > 100 && ts.follow) break; }
