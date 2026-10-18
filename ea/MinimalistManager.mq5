@@ -3767,7 +3767,7 @@ bool LiveTickMine()
 // v9.00 (Nestor, 18 Oct 2026: "relay first"): Session Terminal's own relay - the same messages over a flat-cost server, so the
 // price can go out on every tick (at most LW_RELAY_MS apart) all day while a window shows it. Tried first; Supabase is the
 // fallback (not allowed in MT5's list yet, or not answering), and is tried again for the relay after LW_RELAY_RETRY.
-#define LW_RELAY      "session-tool-app-production.up.railway.app"   // the relay's address (Railway, 18 Oct 2026); empty: Supabase only
+#define LW_RELAY      "live.sessionterminal.com"   // the relay's address (Railway, 18 Oct 2026); empty: Supabase only
 #define LW_RELAY_MS   100        // on the relay: up to 10 a second, in the session or not, trade or not
 #define LW_RELAY_RETRY 1800000   // a relay that failed is tried again after 30 minutes
 // v9.00 (Nestor, 17 Oct 2026, Live Charts): the app says how fast in its "watch" - "2 updates a second in session ... With
