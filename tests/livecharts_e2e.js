@@ -177,12 +177,25 @@
     ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
     check('both charts are Bitcoin, live, with the minutes its EA sent', ks.join(',') === 'BTCUSD,BTCUSD' && st.fresh && st.px && st.px.b > 10000 && st.gotHist && st.base > 100, [ks, st.px, st.gotHist, st.base]);
     await W(800);
-    var bq = P._panes()[0], b15 = P._paneBars(0), bb = P._paneBars(1);
-    check('the 15-minute chart has history from before the day too (the EA\'s earlier minutes)', bq && bq.tf === 15 && bq.static.length >= 40 && b15.real > bq.static.length, [bq && bq.tf, bq && bq.static.length, b15 && b15.real]);
+    var bq = P._panes()[0];
+    for (k = 0; k < 40 && !(bq.static.length > 1000); k++) await W(250);
+    var b15 = P._paneBars(0), bb = P._paneBars(1);
+    check('the 15-minute chart has weeks of history from its EA (9.01: 15-minute candles, none stored)', bq.tf === 15 && bq.static.length > 1000 && b15.real > bq.static.length && P._feeds()[0].tfh && P._feeds()[0].tfh[15], [bq.tf, bq.static.length, b15 && b15.real]);
     var bl = bb.data[bb.real - 1];
     check('its last candle is at the live price', bl && Math.abs(bl.close - LC.state().px.b) < 5, [bl && bl.close, LC.state().px.b]);
     for (k = 0; k < 12 && !/every tick/.test(document.getElementById('stpr-lvst').textContent); k++) await W(250);
     check('through the relay: "Live · every tick"', /Live · every tick/.test(document.getElementById('stpr-lvst').textContent), document.getElementById('stpr-lvst').textContent);
+    // every timeframe: 1h and 4h asked of the EA, 12h from its 4h, 1D, and 1W / 1Y from its 1D
+    var tfOk = [];
+    for (var ti = 0, TFX = [60, 240, 720, 1440, 10080, 525600]; ti < TFX.length; ti++) {
+      P._tf(0, TFX[ti]);
+      for (k = 0; k < 40; k++) { await W(250); var q0 = P._panes()[0]; if (q0.tf === TFX[ti] && q0.static.length > (TFX[ti] === 525600 ? 2 : 50)) break; }
+      q0 = P._panes()[0]; tfOk.push([TFX[ti], q0.tf, q0.static.length]);
+    }
+    check('every timeframe has history from the EA: 1h, 4h, 12h, 1D, 1W and 1Y', tfOk.every(function (x) { return x[0] === x[1] && x[2] > (x[0] === 525600 ? 2 : 50); }), tfOk);
+    var askd = Object.keys(P._feeds()[0].tfh || {}).sort(function (a, b) { return a - b; }).join(',');
+    check('...asked of the EA once per source timeframe (15m, 1h, 4h, 1D - 12h, 1W and 1Y built from them)', askd === '15,60,240,1440', askd);
+    P._tf(0, 15); await W(400);
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);

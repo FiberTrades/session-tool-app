@@ -32,7 +32,7 @@ out3 = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts_btc.json')
 ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out, 'EURUSD', str(T0), str(p0), '5', '90001234'], env=dict(os.environ, ST_RELAY=EA_RELAY))
 ea2 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out2, 'XAUUSD', str(T0), str(g0), '2', '90005678', '0'])   # gold's EA: managing from the app OFF
 # a third chart: BTCUSD, a symbol with NO stored candles (18 Oct 2026) - through the relay, its chart built from what it sends
-ea3 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out3, 'BTCUSD', str(T0), '67250.0', '2', '90009999', '0'], env=dict(os.environ, ST_RELAY=EA_RELAY))
+ea3 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out3, 'BTCUSD', str(T0), '67250.0', '2', '90009999', '0'], env=dict(os.environ, ST_RELAY=EA_RELAY, ST_FAKE_V='9.01'))   # EA 9.01: other timeframes' history too
 time.sleep(2)
 env = dict(os.environ, PYTHONIOENCODING='utf-8')
 # the test with the relay's address in it
@@ -59,7 +59,7 @@ except Exception as e:
     print('gold stand-in log not written:', e)
 try:
     log3 = json.load(open(out3))
-    print('stand-in EA (BTCUSD):', json.dumps({k: log3.get(k) for k in ('joined', 'who', 'hist', 'bars_msgs', 'px', 'unwatch', 'errors')}))
+    print('stand-in EA (BTCUSD):', json.dumps({k: log3.get(k) for k in ('joined', 'who', 'hist', 'hist_tf', 'bars_msgs', 'px', 'unwatch', 'errors')}))
 except Exception as e:
     print('BTCUSD stand-in log not written:', e)
 sys.exit(rc)

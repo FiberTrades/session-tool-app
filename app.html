@@ -76805,7 +76805,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
                           nameOf: nameOf, tickle: tickle,
                           eas: function () { return eas; },                                          // the charts the EAs run on
                           ms: function () { return watching ? lastMs : curMs(); },                  // how fast now
-                          hist: function (sym, n) { send('hist', { sym: sym, n: n }); },            // a chart's last 1-minute candles
+                          hist: function (sym, n, tf) { send('hist', { sym: sym, n: n, tf: tf || 1 }); },   // a chart's last candles (1-minute; another timeframe from EA 9.01)
                           joined: function () { return !!anyJoined(); },
                           relay: function () { return { url: relayURL(), joined: relayJoined(), ea: relayEA() }; },   // the relay: joined, an EA on it
                           easL: function () { return easL; },                                         // the EAs by chart symbol and account
@@ -86438,7 +86438,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   async function paneStatic(tf, X){
     X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
     var src = SRC[tf], cov = X.sym.tf[src], from = cov ? Math.max(open - LOOK[tf], cov[0]) : open;
-    var rows = cov ? await fetchCandles(X.sym.raw, src, from, open - 1) : [];
+    var rows = cov ? await fetchCandles(X.sym.raw, src, from, open - 1) : ((S.live && X.tfh && X.tfh[src]) ? X.tfh[src] : []);   // Live Charts: none stored - its EA's (9.01)
     rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
     var e = { rows: rows, from: from, full: !cov || from <= cov[0], agg: aggStatic(rows, tf) };
     staticCache[key] = e; return e;
@@ -88789,6 +88789,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (ea && (!F.ea || F.ea.raw !== ea.raw || F.ea.v !== ea.v)) { F.ea = ea; if (vNum(ea.v) >= 9.00) { if (F.baseTf !== 1) again = true; else { F.histAt = 0; lvHist(F); } } }
       else if (!ea) F.ea = null;
       if (F.ea && vNum(F.ea.v) >= 9.00 && !F.gotHist) lvHist(F); });
+    lvTfAsk();
     if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
     var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }   // MT5's new figures: the line moved there
     lvBadges(); liveBar(); liveHeader(); lcFit(); lcAcctSync(); lvTm();
@@ -88802,15 +88803,37 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return { time: t, open: +a[1], high: +a[2], low: +a[3], close: +a[4], vol: (a.length > 5 && a[5] !== '') ? +a[5] : null }; }
   function upsertBar(arr, b){ var lo = 0, hi = arr.length; while (lo < hi) { var m = (lo + hi) >> 1; if (arr[m].time < b.time) lo = m + 1; else hi = m; }
     if (lo < arr.length && arr[lo].time === b.time) arr[lo] = b; else arr.splice(lo, 0, b); }
-  function lvBars(p){ var F = p && feedFor(p.s); if (!S || !S.live || !F || +p.tf !== 1 || F.baseTf !== 1) return;
+  function lvBars(p){ var F = p && feedFor(p.s); if (!S || !S.live || !F) return; if (+p.tf > 1) { lvBarsTf(F, p); return; } if (+p.tf !== 1 || F.baseTf !== 1) return;
     String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (!b) return; if (b.time >= S.f.open) { if (b.time < S.f.close) upsertBar(F.base, b); } else upsertBar(F.pre, b); });
     F.parts[p.i] = 1; F.gotHist = true;
     if (Object.keys(F.parts).length >= (+p.of || 1)) { F.parts = {}; lvMergePre(F); }
     lvSoon(); }
+  // Another timeframe's history from the EA (9.01; Nestor, 18 Oct 2026: "yes do it for all these timeframes"), for a chart
+  // whose symbol has none of it stored: 5m, 15m, 1h, 4h and 1D candles (12h is built from 4h, 1W and 1Y from 1D), so Live
+  // Charts goes back months and years on any symbol without storing it. One ask a second (each is up to 5 messages), asked
+  // again after 20 s until it comes (MT5 may still be loading that history). Always the most the EA sends (5,000), so 1D, 1W and
+  // 1Y share one answer and nothing is asked twice.
+  function lvTfAsk(){ var ln = window.__stLiveLine; if (!S || !S.live || !ln || !ln.hist || (ln.joined && !ln.joined())) return;
+    var now = Date.now(), want = null;
+    panes.forEach(function(q){ if (want) return; var X = PS(q), src = SRC[q.tf]; if (src === 1 || !X.ea || vNum(X.ea.v) < 9.01 || X.sym.tf[src]) return;
+      X.tfh = X.tfh || {}; X.tfa = X.tfa || {}; if (X.tfh[src] || now - (X.tfa[src] || 0) < 20000) return; want = { X: X, src: src }; });
+    if (!want) return; want.X.tfa[want.src] = now; ln.hist(want.X.ea.raw, 5000, want.src); }   // all it gives (D1: about 20 years), once per timeframe
+  function lvBarsTf(F, p){ var tf = +p.tf; if (!(SRC[tf] === tf) || F.sym.tf[tf]) return;
+    var acc = (F.tfp = F.tfp || {})[tf] || (F.tfp[tf] = { rows: [], parts: {} });
+    String(p.rows || '').split(';').forEach(function(r){ var b = parseBar(r); if (b) acc.rows.push(b); });
+    acc.parts[p.i] = 1; if (Object.keys(acc.parts).length < (+p.of || 1)) return;
+    delete F.tfp[tf]; var m = {}; acc.rows.forEach(function(b){ m[b.time] = b; });
+    (F.tfh = F.tfh || {})[tf] = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; });
+    panes.forEach(function(q){ if (PS(q) === F && SRC[q.tf] === tf) lvSetStatic(q, F.tfh[tf].filter(function(b){ return b.time + tf * 60 <= S.f.open; }), false); });
+    lvSoon(); }
+  // a chart's history replaced (minutes: 1-minute rows for any timeframe); the candles on screen stay where they were
+  function lvSetStatic(q, rows, minutes){ var e = q.hist; if (!e || !S) return; var before = (q.static || []).length;
+    e.rows = rows; e.from = rows.length ? rows[0].time : S.f.open; e.full = true; e.agg = minutes ? aggregate(rows, q.tf) : aggStatic(rows, q.tf); q.static = e.agg;
+    var k = q.static.length - before; if (q.shown && k > 0) paintPane(q, false, k, getRange(q)); }
   // an EA's minutes from before the day go under its symbol's 1-minute chart history
   function lvMergePre(F){ if (!S || !S.live) return; (F ? [F] : feeds()).forEach(function(X){ if (!X.pre || !X.pre.length) return;
     if (X.sym.lv) { var pre = X.pre.filter(function(b){ return b.time + 60 <= S.f.open; });
-      panes.forEach(function(q){ if (PS(q) !== X || !q.hist) return; q.hist.rows = pre; q.hist.agg = aggregate(pre, q.tf); q.static = q.hist.agg; }); return; }
+      panes.forEach(function(q){ if (PS(q) !== X || !q.hist || (SRC[q.tf] !== 1 && X.tfh && X.tfh[SRC[q.tf]])) return; lvSetStatic(q, pre, true); }); return; }
     var e = staticCache[X.sym.raw + '|' + S.day + '|1']; if (!e) return;
     var m = {}; e.rows.forEach(function(b){ m[b.time] = b; }); X.pre.forEach(function(b){ if (b.time + 60 <= S.f.open) m[b.time] = b; });
     e.rows = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; }); e.agg = aggStatic(e.rows, 1);

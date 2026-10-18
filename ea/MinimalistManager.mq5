@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.00"
+#property version   "9.01"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3546,7 +3546,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.00\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.01\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3779,6 +3779,8 @@ bool LiveTickMine()
 #define LW_DAY_SENDS  30000      // the safety brake: live updates per MT5 account per UTC day (v9.00: was 10800)
 #define LW_HIST_MAX   1500       // the most 1-minute candles one Live Charts ask gets back (25 hours)
 #define LW_HIST_PART  300        // candles per message
+#define LW_HIST_TF_MAX  5000     // v9.01: the most candles of another timeframe one ask gets back (D1: about 20 years)
+#define LW_HIST_TF_PART 1000     // v9.01: ...and to a message (about 55 KB)
 #define LW_WATCH_MS   45000      // a "watch" holds for 45 s (the app repeats it every 15 s)
 #define LW_LINGER_MS  120000     // the line stays up 2 minutes after the last trade on this chart closed
 int    g_lw=INVALID_HANDLE;      // the socket
@@ -3932,7 +3934,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
+string LwHi(){ return StringFormat("{\"v\":\"9.01\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -3964,20 +3966,37 @@ string LwBarV(const MqlRates &b)
    return IntegerToString(tu)+","+DoubleToString(b.open,_Digits)+","+DoubleToString(b.high,_Digits)+","+DoubleToString(b.low,_Digits)+","+DoubleToString(b.close,_Digits)+","+IntegerToString((long)b.tick_volume);
   }
 // v9.00 Live Charts: the chart's last closed 1-minute candles, oldest first (at most LW_HIST_MAX), when a window asks - the
-// store keeps 1-minute candles only around trades, so the day's minutes come from MT5 itself, LW_HIST_PART to a message
-void LwHist(int n)
+// store keeps 1-minute candles only around trades, so the day's minutes come from MT5 itself, LW_HIST_PART to a message.
+// v9.01 (Nestor, 18 Oct 2026: "yes do it for all these timeframes"): the ask can name another timeframe (tf, in minutes:
+// 5, 15, 60, 240 or 1440 - the app builds 12h, 1W and 1Y from those) for a symbol with no stored candles of it, so Live
+// Charts has long history on any symbol without storing it; up to LW_HIST_TF_MAX candles, LW_HIST_TF_PART to a message.
+void BrokerDstDetect();   // the broker's summer-time rule, defined below
+ENUM_TIMEFRAMES LwPer(int tf)
   {
+   switch(tf)
+     {
+      case 1: return PERIOD_M1; case 5: return PERIOD_M5; case 15: return PERIOD_M15; case 60: return PERIOD_H1;
+      case 240: return PERIOD_H4; case 720: return PERIOD_H12; case 1440: return PERIOD_D1;
+     }
+   return PERIOD_CURRENT;
+  }
+void LwHist(int n,int tf=1)
+  {
+   ENUM_TIMEFRAMES per=LwPer(tf);
+   if(per==PERIOD_CURRENT) return;   // a timeframe the app does not ask for
+   int most=(tf==1) ? LW_HIST_MAX : LW_HIST_TF_MAX, part=(tf==1) ? LW_HIST_PART : LW_HIST_TF_PART;
    if(n<1) n=1;
-   if(n>LW_HIST_MAX) n=LW_HIST_MAX;
+   if(n>most) n=most;
+   if(tf>1 && g_bdst<0) BrokerDstDetect();   // old bars go out with the right UTC times (the broker's summer time)
    MqlRates r[]; ArraySetAsSeries(r,false);
-   int got=CopyRates(_Symbol,PERIOD_M1,1,n,r);   // shift 1: the last closed candle; not a series, so r[0] is the oldest
-   if(got<=0) return;
-   int parts=(got+LW_HIST_PART-1)/LW_HIST_PART;
+   int got=CopyRates(_Symbol,per,1,n,r);   // shift 1: the last closed candle; not a series, so r[0] is the oldest
+   if(got<=0) return;                      // MT5 still loading that history: the app asks again
+   int parts=(got+part-1)/part;
    for(int k=0;k<parts;k++)
      {
       string rows="";
-      for(int i=k*LW_HIST_PART;i<got && i<(k+1)*LW_HIST_PART;i++){ if(StringLen(rows)>0) rows+=";"; rows+=LwBarV(r[i]); }
-      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"tf\":1,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",_Symbol,k,parts,rows)))) return;
+      for(int i=k*part;i<got && i<(k+1)*part;i++){ if(StringLen(rows)>0) rows+=";"; rows+=LwBarV(r[i]); }
+      if(!LwText(LwBroadcast("bars",StringFormat("{\"s\":\"%s\",\"tf\":%d,\"i\":%d,\"of\":%d,\"rows\":\"%s\"}",_Symbol,tf,k,parts,rows)))) return;
       LwCount();
      }
   }
@@ -4120,7 +4139,7 @@ void LwOnText(string s)
    else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; }   // another window still watching says so again
    else if(StringFind(s,"\"event\":\"who\"")>=0) LwText(LwBroadcast("hi",LwHi()));   // a window that joined after this chart
    else if(StringFind(s,"\"event\":\"cmd\"")>=0) LwCmd(s);   // trade management from the app
-   else if(StringFind(s,"\"event\":\"hist\"")>=0){ if(LwStr(s,"\"sym\":\"")==_Symbol) LwHist((int)LwNum(s,"\"n\":",600)); }
+   else if(StringFind(s,"\"event\":\"hist\"")>=0){ if(LwStr(s,"\"sym\":\"")==_Symbol) LwHist((int)LwNum(s,"\"n\":",600),(int)LwNum(s,"\"tf\":",1)); }   // v9.01: + tf
   }
 // Read what has arrived (never waits) and handle every whole frame in it.
 void LwPump()
@@ -7135,7 +7154,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.00 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.01 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)

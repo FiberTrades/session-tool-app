@@ -14,7 +14,7 @@ DG = int(sys.argv[7]) if len(sys.argv) > 7 else 5          # digits (gold: 2)
 LG = int(sys.argv[8]) if len(sys.argv) > 8 else 90001234   # the account's login
 TM = int(sys.argv[9]) if len(sys.argv) > 9 else 1          # "Manage trades from Session Terminal" on (1) or off (0)
 topic = 'realtime:stl-' + hashlib.sha256(('st-live:' + tok).encode()).digest()[:16].hex()
-log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
+log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
 w0 = time.time()
 def fnow(): return T0 + (time.time() - w0)          # the stand-in's clock: the given moment, running
 def price_at(t):                                     # a gentle walk, the same at any moment asked twice
@@ -23,6 +23,10 @@ def bar(m):                                          # the 1-minute candle start
     end = min(fnow(), m + 60); pts = [price_at(m + k) for k in range(0, max(1, int(end - m)), 5)] + [price_at(end)]   # closing at the price now, as MT5's forming candle does
     return [int(m), pts[0], max(pts), min(pts), pts[-1], 10 + int(abs(pts[-1] - pts[0]) * 1e6) % 90]
 def bstr(b): return '%d,%.5f,%.5f,%.5f,%.5f,%d' % tuple(b)
+def bar_tf(m, step):                                 # a closed candle of another timeframe (EA 9.01's history), from the same walk
+    pts = [price_at(m + k * step // 6) for k in range(6)] + [price_at(m + step - 1)]
+    return [int(m), pts[0], max(pts), min(pts), pts[-1], 100]
+VER = os.environ.get('ST_FAKE_V', '9.00')            # 9.01: answers history asks for other timeframes too
 RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay on this machine (plain ws), or wss://host (the live one): the EA on the relay
 if RELAY.startswith('wss://'):
     rh = RELAY[6:]; s = ssl.create_default_context().wrap_socket(socket.create_connection((rh, 443), timeout=5), server_hostname=rh); HOSTH = rh
@@ -49,7 +53,7 @@ def frame(op, pl):
         except (ssl.SSLWantWriteError, BlockingIOError): time.sleep(0.005)
 def text(x): frame(0x1, x.encode())
 def bcast(e, payload): return json.dumps({'topic': topic, 'event': 'broadcast', 'payload': {'type': 'broadcast', 'event': e, 'payload': payload}, 'ref': nref(), 'join_ref': '1'}, separators=(',', ':'))
-def hi(): text(bcast('hi', {'v': '9.00', 'sym': SYM, 'dg': DG, 'lg': LG, 'tm': TM, 'rl': 1 if RELAY else 0}))
+def hi(): text(bcast('hi', {'v': VER, 'sym': SYM, 'dg': DG, 'lg': LG, 'tm': TM, 'rl': 1 if RELAY else 0}))
 # trade management (EA 9.00 LwCmd): only its own account and symbol, signed with the sync token, fresh, seen once
 cmd_ids = []
 def on_cmd(p):
@@ -115,7 +119,15 @@ while time.time() - w0 < secs:
             elif '"event":"cmd"' in m: on_cmd(inner(m))
             elif '"event":"hist"' in m:
                 p = inner(m)
-                if p.get('sym') == SYM:
+                tf = int(p.get('tf') or 1) if VER >= '9.01' else 1
+                if p.get('sym') == SYM and tf > 1:
+                    n = max(1, min(5000, int(p.get('n') or 600))); log['hist_tf'].append([tf, n]); step = tf * 60
+                    c0 = int(fnow()) - int(fnow()) % step
+                    rows = [bstr(bar_tf(c0 - step * k, step)) for k in range(n, 0, -1)]
+                    parts = [rows[i:i + 1000] for i in range(0, len(rows), 1000)]
+                    for i, pr in enumerate(parts):
+                        text(bcast('bars', {'s': SYM, 'tf': tf, 'i': i, 'of': len(parts), 'rows': ';'.join(pr)})); log['bars_msgs'] += 1
+                elif p.get('sym') == SYM:
                     n = max(1, min(1500, int(p.get('n') or 600))); log['hist'].append(n)
                     cur = int(fnow()) - int(fnow()) % 60
                     rows = [bstr(bar(cur - 60 * k)) for k in range(n, 0, -1)]
