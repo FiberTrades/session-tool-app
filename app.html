@@ -87186,7 +87186,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function symMenu(anchor, si){
     var mon = function(t){ var d = new Date(t * 1000); return MONS[L()][d.getMonth()] + " '" + String(d.getFullYear()).slice(2); };
     var cur = (si != null && panes[si]) ? PS(panes[si]).sym.raw : (S && S.sym.raw), hd = si > 0 ? T('Chart ' + (si + 1) + ' · symbol', 'Gráfico ' + (si + 1) + ' · símbolo') : T('Symbol', 'Símbolo');
-    var h = '<h6>' + hd + '</h6><div class="stpr-syl">' + (SYMS || []).map(function(s){ var c = s.tf[1] || s.tf[5] || s.tf[15];
+    var h = '<h6>' + hd + '</h6><div class="stpr-syl">' + ((S && S.live) ? (SYMS || []).concat(lvOnly()) : (SYMS || [])).map(function(s){ var c = s.tf[1] || s.tf[5] || s.tf[15];
       return '<button type="button" data-sym="' + esc(s.raw) + '"' + (si > 0 ? ' data-si="' + si + '"' : '') + ' class="' + (cur === s.raw ? 'on' : '') + '"><span>' + esc(s.name) + '</span><small>' + esc((S && S.live) ? (eaFor(s) ? T('Live from your MT5', 'En vivo desde tu MT5') : T('Stored candles', 'Velas guardadas')) : (T('from ', 'desde ') + mon(c[0]))) + '</small></button>'; }).join('') + '</div>'
       + '<div style="margin:8px 4px 2px;max-width:250px;font-family:Fraunces,serif;font-size:12px;color:var(--text-dim)">' + esc(T('A symbol appears here once a member’s EA has run on its chart.', 'Un símbolo aparece aquí cuando el EA de un miembro ha funcionado en su gráfico.')) + '</div>';
     openMenu(anchor, h, si > 0 ? 'sym' + si : 'sym');
@@ -88726,11 +88726,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   var LV = { inl: false, max: false, host: null, clk: 0, rq: 0, sig: '', paT: 0, paAt: 0, paSeen: {}, logBack: null, want: null, acctK: null };
   function nowS(){ return Math.floor((Date.now() + (LV.toff || 0)) / 1000); }   // toff: the tests' weekday on a weekend
   // today's trading day; at a weekend the last one (Friday's)
-  function liveDay(){ var t = nowS(), td = tradeDate(t), k = 0; while ((td.w === 0 || td.w === 6) && k++ < 4) { t -= 86400; td = tradeDate(t); } return td.y + '-' + p2(td.m + 1) + '-' + p2(td.d); }
+  // (crypto trades at the weekend too: its day is always today's - Nestor's BTCUSD on a Sunday, 18 Oct 2026)
+  function liveDay(sym){ var t = nowS(), td = tradeDate(t), k = 0; while (!(sym && sym.cls === 'crypto') && (td.w === 0 || td.w === 6) && k++ < 4) { t -= 86400; td = tradeDate(t); } return td.y + '-' + p2(td.m + 1) + '-' + p2(td.d); }
   function vNum(v){ var n = parseFloat(v); return isFinite(n) ? n : 0; }
   // the charts the member's EAs run on (each says "hi" with its symbol as MT5 names it, and its account)
   function liveEAs(){ try { var m = (window.__stLiveLine && window.__stLiveLine.eas) ? window.__stLiveLine.eas() : {}; return Object.keys(m).map(function(k){ var o = m[k] || {}; return { raw: k, v: o.v, dg: o.dg, lg: o.lg || null, rl: !!o.rl, at: o.at || 0 }; }); } catch (e) { return []; } }
   function eaFor(sym){ var best = null; liveEAs().forEach(function(o){ if (canon(o.raw) === sym.key && (!best || o.at > best.at)) best = o; }); return best; }
+  // The symbols an EA 9.00 streams that have no stored candles yet (Nestor, 18 Oct 2026, the EA on BTCUSD on a Sunday: "i
+  // thought i didnt need stored candles anymore because of the relay?"): Live Charts lists them too, and their charts are
+  // built from the minutes their EA sends (its last 25 hours) and its prices. Back Testing still needs stored candles.
+  function lvOnly(){ var have = {}, out = []; (SYMS || []).forEach(function(s){ have[s.key] = 1; });
+    liveEAs().forEach(function(o){ var k = canon(o.raw); if (have[k] || vNum(o.v) < 9.00) return; have[k] = 1; out.push({ key: k, raw: o.raw, name: nameOf(k), cls: clsOf(k), tf: {}, lv: true }); });
+    return out; }
+  function symLive(raw){ if (!raw) return null; return symBy(raw) || lvOnly().filter(function(s){ return s.raw === raw || s.key === raw; })[0] || null; }
   function lvMs(){ try { return (window.__stLiveLine && window.__stLiveLine.ms) ? window.__stLiveLine.ms() : 2000; } catch (e) { return 2000; } }
   // F: a feed (chart 1's, S, unless said) - its EA's prices came lately
   function lvFresh(F){ F = F || S; return !!(F && F.at && Date.now() - F.at < Math.max(15000, 3 * lvMs())); }
@@ -88752,10 +88760,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var st = $('stpr-state'); st.style.display = 'flex'; st.textContent = T('Loading your live chart…', 'Cargando tu gráfico en vivo…');
     var win = $('stpr-win'); win.classList.add('lc'); win.classList.remove('lcp');
     if (S && !S.live) { if (S.pos) closeNow(); if (S) S.pend = null; resumeSave(); pushTrades(); popShutAll(); if (LOG.open) logOpen(false); }   // the replay that was here
-    await loadSymbols(); var sym = symBy(raw) || symBy(canon(raw)) || symBy(CFG.sym) || (SYMS && SYMS[0]);
+    await loadSymbols(); var sym = symLive(raw) || symLive(canon(raw)) || symLive(CFG.sym) || (SYMS && SYMS[0]);
     if (!sym) { st.textContent = T('No candles stored yet.', 'Aún no hay velas guardadas.'); return false; }
     try { await ensureLWC(); } catch (e) { st.textContent = T('The chart could not load (it needs internet).', 'No se pudo cargar el gráfico (necesita internet).'); return false; }
-    var day = liveDay(), f = dayFrame(day), end = Math.min(nowS(), f.close), F0 = await liveFeed(sym, f);
+    var day = liveDay(sym), f = dayFrame(day), end = Math.min(nowS(), f.close), F0 = await liveFeed(sym, f);
     if (!LV.inl && !LV.max) return false;   // the tab was left meanwhile
     S = Object.assign(F0, { day: day, f: f, now: end, pos: null, trades: [], done: null, pv: null, exec: false, playing: false, lastExitTs: 0, live: true, side: {} });
     CFG.sym = sym.raw; save(); LV.sig = '';
@@ -88774,7 +88782,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function lvClock(){
     if (!S || !S.live) { clearLiveT(); return; }
     var n = nowS();
-    if (n >= S.f.close + 30 && liveDay() !== S.day) { goLive(S.sym.raw); return; }
+    if (n >= S.f.close + 30 && liveDay(S.sym) !== S.day) { goLive(S.sym.raw); return; }
     S.now = Math.max(S.now, Math.min(n, S.f.close));
     var again = false;
     feeds().forEach(function(F){ var ea = eaFor(F.sym);
@@ -88789,7 +88797,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // a symbol's minutes from its EA (and some of the day before, for a 1-minute chart): asked once, again after a gap
   function lvHist(F, gap){ var ln = window.__stLiveLine, ea = F && F.ea; if (!S || !S.live || !ea || vNum(ea.v) < 9.00 || !ln || !ln.hist) return;
     if (ln.joined && !ln.joined()) return; if (Date.now() - F.histAt < 20000) return; F.histAt = Date.now();
-    var n = gap ? gap : Math.ceil((nowS() - (S.f.open - 6 * 3600)) / 60) + 2; ln.hist(ea.raw, Math.max(10, Math.min(1500, n))); }
+    var n = gap ? gap : (F.sym.lv ? 1500 : Math.ceil((nowS() - (S.f.open - 6 * 3600)) / 60) + 2); ln.hist(ea.raw, Math.max(10, Math.min(1500, n))); }
   function parseBar(sv){ var a = String(sv || '').split(','); if (a.length < 5) return null; var t = +a[0]; if (!(t > 0)) return null;
     return { time: t, open: +a[1], high: +a[2], low: +a[3], close: +a[4], vol: (a.length > 5 && a[5] !== '') ? +a[5] : null }; }
   function upsertBar(arr, b){ var lo = 0, hi = arr.length; while (lo < hi) { var m = (lo + hi) >> 1; if (arr[m].time < b.time) lo = m + 1; else hi = m; }
@@ -88800,7 +88808,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (Object.keys(F.parts).length >= (+p.of || 1)) { F.parts = {}; lvMergePre(F); }
     lvSoon(); }
   // an EA's minutes from before the day go under its symbol's 1-minute chart history
-  function lvMergePre(F){ if (!S || !S.live) return; (F ? [F] : feeds()).forEach(function(X){ if (!X.pre || !X.pre.length) return; var e = staticCache[X.sym.raw + '|' + S.day + '|1']; if (!e) return;
+  function lvMergePre(F){ if (!S || !S.live) return; (F ? [F] : feeds()).forEach(function(X){ if (!X.pre || !X.pre.length) return;
+    if (X.sym.lv) { var pre = X.pre.filter(function(b){ return b.time + 60 <= S.f.open; });
+      panes.forEach(function(q){ if (PS(q) !== X || !q.hist) return; q.hist.rows = pre; q.hist.agg = aggregate(pre, q.tf); q.static = q.hist.agg; }); return; }
+    var e = staticCache[X.sym.raw + '|' + S.day + '|1']; if (!e) return;
     var m = {}; e.rows.forEach(function(b){ m[b.time] = b; }); X.pre.forEach(function(b){ if (b.time + 60 <= S.f.open) m[b.time] = b; });
     e.rows = Object.keys(m).map(Number).sort(function(a, b){ return a - b; }).map(function(t){ return m[t]; }); e.agg = aggStatic(e.rows, 1);
     panes.forEach(function(q){ if (q.tf === 1 && q.hist === e) q.static = e.agg; }); }); }
@@ -89163,7 +89174,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       setTimeout(go1, 300);
     }
   } catch (e) {}
-  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, stats: stats, log: logAll, pull: pull, _satReady: satReady,
+  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady,
     _pop: popChart, _unpop: unpop, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,

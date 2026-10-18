@@ -23,6 +23,10 @@
     var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
     var P = window.__stPractice, LC = window.__stLC, LN = window.__stLiveLine;
     var T0 = Date.UTC(2026, 9, 14, 8, 30) / 1000;
+    // a weekend: an FX symbol's live day is Friday's, a crypto one's is today's (BTCUSD trades on a Saturday)
+    P._lvClock(Date.UTC(2026, 9, 17, 12, 0) - Date.now());
+    var wkFx = P._liveDay({ cls: 'fx' }), wkBtc = P._liveDay({ cls: 'crypto' });
+    check('at the weekend: EUR/USD\'s live day is Friday\'s, Bitcoin\'s is Saturday\'s', wkFx === '2026-10-16' && wkBtc === '2026-10-17', [wkFx, wkBtc]);
     P._lvClock(T0 * 1000 - Date.now());
     window.isSessionLive = function () { return true; };   // in the member's session (the speed rule's first case)
     window.STCloud.syncToken = 'st-test-livecharts-e2e';
@@ -161,6 +165,24 @@
     for (k = 0; k < 12 && getComputedStyle(document.getElementById('lcp-section')).display !== 'none'; k++) await W(250);
     check('...and no Prop Firm Progress (no linked account)', getComputedStyle(document.getElementById('lcp-section')).display === 'none');
     check('gold\'s EA is on an account not linked in the journal: the log is All Trades History', (!aa3 || aa3.hidden) && /^All Trades History$/.test(document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]').textContent), aa3 && aa3.textContent);
+
+    // ---- a symbol with NO stored candles, streamed by an EA (Nestor, 18 Oct 2026, BTCUSD on a Sunday: "i thought i didnt
+    //      need stored candles anymore because of the relay?"): listed, and its charts built from what its EA sends ----
+    check('BTCUSD has no stored candles (Back Testing\'s list does not have it)', !(P._syms() || []).some(function (s) { return s.key === 'BTCUSD'; }), (P._syms() || []).map(function (s) { return s.key; }));
+    document.getElementById('stpr-sym').click(); await W(120);
+    var bbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /Bitcoin/.test(b.textContent); })[0];
+    check('...but Live Charts lists it: "Bitcoin · Live from your MT5"', bbtn && /Live from your MT5/.test(bbtn.textContent), bbtn && bbtn.textContent);
+    if (bbtn) bbtn.click();
+    for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'BTCUSD' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
+    ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
+    check('both charts are Bitcoin, live, with the minutes its EA sent', ks.join(',') === 'BTCUSD,BTCUSD' && st.fresh && st.px && st.px.b > 10000 && st.gotHist && st.base > 100, [ks, st.px, st.gotHist, st.base]);
+    await W(800);
+    var bq = P._panes()[0], b15 = P._paneBars(0), bb = P._paneBars(1);
+    check('the 15-minute chart has history from before the day too (the EA\'s earlier minutes)', bq && bq.tf === 15 && bq.static.length >= 40 && b15.real > bq.static.length, [bq && bq.tf, bq && bq.static.length, b15 && b15.real]);
+    var bl = bb.data[bb.real - 1];
+    check('its last candle is at the live price', bl && Math.abs(bl.close - LC.state().px.b) < 5, [bl && bl.close, LC.state().px.b]);
+    for (k = 0; k < 12 && !/every tick/.test(document.getElementById('stpr-lvst').textContent); k++) await W(250);
+    check('through the relay: "Live · every tick"', /Live · every tick/.test(document.getElementById('stpr-lvst').textContent), document.getElementById('stpr-lvst').textContent);
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
