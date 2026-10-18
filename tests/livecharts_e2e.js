@@ -96,6 +96,17 @@
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
     var cdl = document.querySelectorAll('#lc-host .stpr-cdl:not([hidden])');
     check('each chart: the spread alone bottom right ("Spread 0.7p"), the candle\'s time left under the price on the scale (MM:SS)', cd.length === 2 && /^Spread 0\.7p$/.test(cd[0].textContent) && /^Spread 0\.7p$/.test(cd[1].textContent) && cdl.length === 2 && /^\d\d:\d\d$/.test(cdl[0].textContent) && /^0[01]:\d\d$/.test(cdl[1].textContent), [cd.length, cd[0] && cd[0].textContent, cdl.length, cdl[0] && cdl[0].textContent, cdl[1] && cdl[1].textContent]);
+    check('the candle timer takes the price label\'s place on the scale (no last-price label while it counts)', P._lvv().length === 2 && P._lvv().every(function (v) { return v === false; }), P._lvv());
+    // ---- the Assistant's line above the charts (19 Oct 2026): fixed sentences, the first that applies ----
+    var lg = document.querySelector('#page-livecharts .bias-greeting[data-greeting-context="livecharts"]');
+    for (k = 0; k < 30 && !(lg && lg.textContent.trim()); k++) await W(200);
+    check('the Assistant\'s line shows above the charts, and with the EA streaming it is not the "start the EA" line', lg && lg.offsetHeight > 0 && lg.textContent.trim().length > 10 && !/come alive/.test(lg.textContent), lg && lg.textContent);
+    var gi0 = window.__stLC.greetInfo, gtx = function (o) { window.__stLC.greetInfo = function () { return o; }; window.__stLiveGreet(); return lg.textContent; };
+    var g0 = gtx(null), g1 = gtx({ sym: 'EURUSD', ea: false }), g2 = gtx({ sym: 'EURUSD', ea: true, closed: true, dayName: 'Friday' });
+    window.__stLC.greetInfo = gi0; window.__stLiveGreet();
+    check('...still loading: a neutral "Your MT5 prices, live."', g0 === 'Your MT5 prices, live.', g0);
+    check('...no EA: "Your charts come alive when the EA runs ... Open it on EURUSD"; market closed: "Markets are closed: the charts show Friday\'s session"', /come alive when the EA runs/.test(g1) && /Open it on EURUSD/.test(g1) && /^Markets are closed: the charts show Friday.s session\. Back Testing is open/.test(g2), [g1, g2]);
+    check('...it is never rewritten (no AI): after a while it is still one of the fixed lines', (await W(1500), !/come alive/.test(lg.textContent) && lg.textContent.trim().length > 10), lg.textContent);
     var tbx0 = document.getElementById('lc-tb');
     var gaps = [], prevAt = LC.state().at; for (k = 0; k < 40; k++) { await W(80); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
     check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
@@ -298,11 +309,7 @@
     tbx.querySelector('[data-lctbx="min"]').click(); await W(700);
     check('the Toolbox minimises to its tab row (-), and opens again (+)', !tbx.querySelector('.lctb-b') && tbx.querySelector('[data-lctbx="min"]').textContent === '+', tbx.textContent.slice(0, 60));
     tbx.querySelector('[data-lctbx="min"]').click(); await W(700);
-    tbx.querySelector('[data-lctbx="hide"]').click(); await W(400);
-    var tsb = document.getElementById('stpr-tbshow');
-    check('...and hides (x): "Show the Toolbox" in the bar under the charts brings it back', tbx.hidden && tsb && !tsb.hidden, [tbx.hidden, tsb && tsb.hidden]);
-    tsb.click(); await W(500);
-    check('...back', !tbx.hidden && !!tbx.querySelector('.lctb-b') && tsb.hidden);
+    check('...back; and there is no x to hide it ("remove the option of the x in toolbox")', !tbx.hidden && !!tbx.querySelector('.lctb-b') && tbx.querySelectorAll('[data-lctbx]').length === 1 && !document.getElementById('stpr-tbshow'), tbx.querySelectorAll('[data-lctbx]').length);
     for (k = 0; k < 40 && !(tbx && !tbx.hidden && /555001/.test(tbx.textContent)); k++) await W(250);
     var tth = Array.prototype.map.call(tbx.querySelectorAll('th'), function (x) { return x.textContent; }).join('|');
     check('the Toolbox shows under the charts, MT5\'s Trade tab: Symbol | Ticket | Time | Type | Volume | Price | S / L | T / P | Price | Profit', !tbx.hidden && tth === 'Symbol|Ticket|Time|Type|Volume|Price|S / L|T / P|Price|Profit', tth);

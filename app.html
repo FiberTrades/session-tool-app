@@ -6667,6 +6667,7 @@ try {
   <!-- Live Charts (17 Oct 2026): Practice Replay's charts on the member's own MT5 prices (the window moves in here while
        the tab is open), and the trade log under them (All Trades History's panel, moved in from the Calendar) -->
   <div class="page" id="page-livecharts">
+    <div class="st-asst"><div class="st-asst-av">AI</div><div class="st-asst-body"><div class="st-asst-head"><span class="st-asst-name">Assistant</span></div><div class="bias-greeting" data-greeting-mirror data-greeting-context="livecharts"></div></div></div>
     <div class="lc-host" id="lc-host"></div>
     <div class="lc-tb" id="lc-tb" hidden></div>
     <div class="lc-pfp" id="lc-pfp"><div class="zc" id="lcp-section" style="display:none;"><div class="zc-h"><span class="zc-t" id="lcp-title">Prop Firm Progress</span></div><p class="zc-sub" id="lcp-hint"></p><div id="lcp-body"></div></div></div>
@@ -49477,6 +49478,72 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     return S ? ('Bienvenido a la Academia, ' + nm + '. ¿Atascado en una lección? Pregúntame.')
              : ('Welcome to the Academy, ' + nm + '. Stuck on a lesson? Ask me about it.');
   }
+  // ---- Live Charts' line (Nestor, 19 Oct 2026: "do i need to add the AI assistant greetings to the charts live? i think so" -
+  //      "yes build greeting like that"). Fixed sentences, the first that applies: no EA on this symbol, market closed, red news
+  //      within the hour, a trade open, in a session, outside the sessions (or done for the day). Never names a mistake. ----
+  function _liveChartsGreetingHTML() {
+    var S = (window.__lang === 'es'), info = null, N = window.__stNudge || null;
+    try { info = (window.__stLC && window.__stLC.greetInfo) ? window.__stLC.greetInfo() : null; } catch (e) {}
+    var sym = (info && info.sym) || 'EURUSD', esym = _grEsc(sym), now = Date.now();
+    var hm = function (ms) { var d = new Date(ms); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
+    var dur = function (min) { var h = Math.floor(min / 60), m = min % 60; return h ? (h + 'h ' + m + 'm') : (m + (S ? (m === 1 ? ' minuto' : ' minutos') : (m === 1 ? ' minute' : ' minutes'))); };
+    var norm = function (x) { return String(x || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); };
+    if (!info) return S ? 'Tus precios de MT5, en vivo.' : 'Your MT5 prices, live.';   // still loading
+    // 1. no EA streaming this symbol
+    if (!info.ea) return S ? ('Tus gráficos cobran vida cuando el EA corre en un gráfico de MT5. Ábrelo en ' + esym + ' y sus precios llegan aquí con cada tick.')
+                                    : ('Your charts come alive when the EA runs on a chart in MT5. Open it on ' + esym + ' and its prices stream here every tick.');
+    // 2. market closed
+    if (info.closed) { var dn = _grEsc(info.dayName || (S ? 'viernes' : 'Friday'));
+      return S ? ('Los mercados están cerrados: los gráficos muestran la sesión del ' + dn.toLowerCase() + '. Backtesting está abierto si quieres practicar.')
+               : ('Markets are closed: the charts show ' + dn + '\u2019s session. Back Testing is open if you want to practise.'); }
+    // 3. red news within the hour
+    try { var curs = (N && N.cursOf) ? N.cursOf(sym) : ((N && N.myCurs) ? N.myCurs() : []), ev = (N && N.redNewsFor) ? N.redNewsFor(curs) : [];
+      var nx = (ev || []).filter(function (g) { return g.at > now && g.at - now <= 3600000; })[0];
+      if (nx) { var nm = _grEsc(nx.curs.join('/') + ' ' + (nx.titles[0] || '')), mins = Math.max(1, Math.round((nx.at - now) / 60000));
+        return S ? ('Noticia roja: ' + nm + ' a las ' + hm(nx.at) + ', dentro de ' + dur(mins) + '.') : ('Red news: ' + nm + ' at ' + hm(nx.at) + ', ' + dur(mins) + ' away.'); } } catch (e) {}
+    // 4. a trade open
+    try { var ideas = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
+      var one = function (i) { var x = i && (i.main || i), t = x && x.tick, r = (t && isFinite(+t.r)) ? +t.r : ((x && isFinite(+x.r_now)) ? +x.r_now : 0);
+        var side = x && x.direction === 'long' ? (S ? 'compra' : 'buy') : (S ? 'venta' : 'sell'), rs = (r >= 0 ? '+' : '\u2212') + Math.abs(r).toFixed(2) + 'R';
+        return { txt: _grEsc(String(x && x.symbol || '')) + ' ' + side + (S ? ' en ' : ' at ') + rs, be: x && x.be_at ? Date.parse(x.be_at) : null }; };
+      if (ideas.length === 1) { var o = one(ideas[0]);
+        return S ? ('Estás en ' + o.txt + (o.be ? ', stop en break-even desde las ' + hm(o.be) : '') + '.') : ('You\u2019re in ' + o.txt + (o.be ? ', stop at break-even since ' + hm(o.be) : '') + '.'); }
+      if (ideas.length > 1) { var list = ideas.slice(0, 3).map(function (i) { return one(i).txt; }).join(', ');
+        return S ? ('Tienes ' + ideas.length + ' operaciones abiertas: ' + list + '.') : ('You have ' + ideas.length + ' trades open: ' + list + '.'); } } catch (e) {}
+    // 5. in a session
+    var ss = (typeof getSessions === 'function') ? getSessions() : [], li = (typeof liveSessionIndex === 'function') ? liveSessionIndex() : -1;
+    if (li >= 0 && ss[li]) {
+      var sn = _grEsc(ss[li].name || (S ? 'Tu sesión' : 'Your session')), bias = '', left = '';
+      try { var sl = (Array.isArray(data.biasSlots) ? data.biasSlots : []).filter(function (b, k) { return b && b.sessionIdx === li && norm(b.symbol) === norm(sym) && (b.direction === 'Bullish' || b.direction === 'Bearish') && (typeof _slotIsTodaysWork !== 'function' || _slotIsTodaysWork(b, k)); })[0];
+        if (sl) bias = S ? (' Sesgo de hoy: ' + (sl.direction === 'Bullish' ? 'largo' : 'corto') + ' en ' + esym + '.') : (' Today\u2019s bias: ' + (sl.direction === 'Bullish' ? 'long' : 'short') + ' ' + esym + '.'); } catch (e) {}
+      try { var bu = (N && N.budget) ? N.budget() : null, parts = [];
+        if (bu && bu.lim > 0) { var tl = Math.max(0, bu.lim - bu.n); parts.push(S ? (tl + (tl === 1 ? ' operación' : ' operaciones')) : (tl + (tl === 1 ? ' trade' : ' trades'))); }
+        if (bu && bu.dLim > 0) parts.push(_grEsc(typeof fmtMoney === 'function' ? fmtMoney(Math.max(0, bu.left)) : String(Math.round(Math.max(0, bu.left)))) + (S ? ' de riesgo' : ' of risk'));
+        if (parts.length) left = ' ' + parts.join(S ? ' y ' : ' and ') + (S ? ' disponibles.' : ' left.'); } catch (e) {}
+      return S ? (sn + ' está en vivo.' + bias + left) : (sn + ' is live.' + bias + left);
+    }
+    // 6./7. outside the sessions: the next one today, or done for the day
+    var nowMin = new Date().getHours() * 60 + new Date().getMinutes(), ended = (typeof endedSessionsToday === 'function') ? endedSessionsToday() : [];
+    var nxt = null; ss.forEach(function (x, k) { var st = (typeof _mins === 'function') ? _mins(x.start) : 0; if (ended.indexOf(k) === -1 && st > nowMin && (!nxt || st < nxt.st)) nxt = { st: st, name: x.name }; });
+    var sm = null; try { sm = (window.__stLive && window.__stLive.summary) ? window.__stLive.summary() : null; } catch (e) {}
+    if (!nxt && sm && sm.count > 0) {
+      var res = []; if (sm.wins) res.push(sm.wins + (S ? (sm.wins === 1 ? ' ganada' : ' ganadas') : (sm.wins === 1 ? ' win' : ' wins'))); if (sm.bes) res.push(sm.bes + ' BE'); if (sm.losses) res.push(sm.losses + (S ? (sm.losses === 1 ? ' perdida' : ' perdidas') : (sm.losses === 1 ? ' loss' : ' losses')));
+      var nt = sm.count + (S ? (sm.count === 1 ? ' operación' : ' operaciones') : (sm.count === 1 ? ' trade' : ' trades'));
+      return S ? ('Sesión terminada: ' + nt + ' hoy' + (res.length ? ' (' + res.join(', ') + ')' : '') + '. Los gráficos siguen en vivo si quieres mirar.')
+               : ('Session done: ' + nt + ' today' + (res.length ? ' (' + res.join(', ') + ')' : '') + '. The charts stay live if you want to watch.'); }
+    if (nxt) { var nn = _grEsc(nxt.name || (S ? 'Tu sesión' : 'Your session'));
+      return S ? (nn + ' abre en ' + dur(nxt.st - nowMin) + '. Mientras tanto los gráficos siguen en vivo.') : (nn + ' opens in ' + dur(nxt.st - nowMin) + '. The charts stay live meanwhile.'); }
+    var first = ss[0]; if (first) { var fn = _grEsc(first.name || (S ? 'Tu sesión' : 'Your session'));
+      return S ? (fn + ' abre mañana a las ' + _grEsc(first.start) + '. Mientras tanto los gráficos siguen en vivo.') : (fn + ' opens tomorrow at ' + _grEsc(first.start) + '. The charts stay live meanwhile.'); }
+    return S ? 'Tus precios de MT5, en vivo.' : 'Your MT5 prices, live.';
+  }
+  window.__stLiveGreet = function () {
+    try {
+      Array.prototype.forEach.call(document.querySelectorAll('.bias-greeting[data-greeting-context="livecharts"]'), function (el) {
+        var h = _liveChartsGreetingHTML(); if (el.__greetSrcRaw === h) return; el.__greetSrcRaw = h; el.innerHTML = h; el.__greetSeed = el.textContent;
+      });
+    } catch (e) {}
+  };
   // Refreshes only the Academy line - the course calls it when a lesson opens and when the hub shows.
   window.__stAcademyGreet = function () {
     try {
@@ -49828,6 +49895,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       else if (ctx === 'calendar') html = _calendarGreetingHTML();
       else if (ctx === 'academy') html = _academyGreetingHTML();
       else if (ctx === 'community') html = _communityGreetingHTML();
+      else if (ctx === 'livecharts') html = _liveChartsGreetingHTML();
       else {
         const isReview = (ctx === 'review');
         const opener = isReview ? _cachedReviewOpener : _cachedOpener;
@@ -49858,7 +49926,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
          opener IS a time-of-day line ("You're up early", "Working late"), so it is wrong in the next slot.
          Kept out of __greetSit on purpose - that feeds the AI cache, which handles time itself. */
       const _slotNow = (typeof window.__stTimeSlot === 'function') ? window.__stTimeSlot() : '';
-      if (ctx !== 'academy' && ctx !== 'community' && el.__greetSeed != null && _greetOnScreen(el) && html !== el.__greetSrcRaw && el.__greetSit === _greetSituation && el.__greetSlot === _slotNow) return;
+      if (ctx !== 'academy' && ctx !== 'community' && ctx !== 'livecharts' && el.__greetSeed != null && _greetOnScreen(el) && html !== el.__greetSrcRaw && el.__greetSit === _greetSituation && el.__greetSlot === _slotNow) return;
       el.__greetSlot = _slotNow;
       el.__greetSrcRaw = html;
       el.innerHTML = html;
@@ -50867,7 +50935,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     }
     function enhanceGreeting(el, surface) {
       try {
-        if (surface === 'academy' || surface === 'community') return;   // fixed sentences on purpose (Nestor, 28 Sep 2026)
+        if (surface === 'academy' || surface === 'community' || surface === 'livecharts') return;   // fixed sentences on purpose (Nestor, 28 Sep 2026; Live Charts 19 Oct 2026)
         if (!el || !canGreet()) return;
         var seed = (el.__greetSeed != null) ? String(el.__greetSeed) : (el.textContent || '');
         seed = seed.trim(); if (!seed || !/[A-Za-zÀ-ÿ]/.test(seed)) return;   // need a REAL line (letters), else the AI is asked to rewrite nothing
@@ -86104,9 +86172,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .lctb-b { overflow: auto; }
   .lctb-ctl { margin-left: auto; display: flex; gap: 4px; }
   .lctb-h .lctb-ctl button { width: 26px; padding: 0; font-size: 14px; line-height: 1; }
-  .stpr-tbshow { margin-left: auto; margin-right: 14px; height: 24px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border-2); background: transparent; color: var(--text-mid); font-family: 'AppNum','DM Mono',monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; cursor: pointer; }
-  .stpr-tbshow[hidden] { display: none; }
-  @media (hover: hover) { .stpr-tbshow:hover { color: var(--text); border-color: var(--text-dim); } }   /* as tall as its rows; past 10 rows it scrolls (tbFit) */
+   /* as tall as its rows; past 10 rows it scrolls (tbFit) */
   .lctb-b.h .lctb-sum td { position: sticky; bottom: 0; z-index: 1; background-color: var(--bg-elev); background-image: linear-gradient(rgba(255,255,255,.03), rgba(255,255,255,.03)); box-shadow: inset 0 1px 0 var(--border); }   /* History: MT5's line stays under the rows while they scroll */
   .lctb-t { width: 100%; border-collapse: collapse; font-family: 'AppNum','DM Mono',monospace; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
   .lctb-t th { position: sticky; top: 0; z-index: 1; background: var(--bg-elev); color: var(--text-dim); font-weight: 400; text-align: right; padding: 6px 10px; border-bottom: 1px solid var(--border); }
@@ -89360,9 +89426,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   //      asked of the EA ("dh" -> "dhist"). ----
   var TB = { tab: 'trade', hist: null, rid: '', parts: null, acct: null };
   function tbUi(k, v){ var o = {}; try { o = JSON.parse(localStorage.getItem('st_lctb') || '{}') || {}; } catch (e) {} if (v === undefined) return !!o[k]; o[k] = !!v; try { localStorage.setItem('st_lctb', JSON.stringify(o)); } catch (e) {} return !!v; }
-  function tbShowBtn(on){ var b = $('stpr-tbshow'), bar = $('stpr-lvbar'); if (!bar) return;
-    if (!b) { b = document.createElement('button'); b.type = 'button'; b.id = 'stpr-tbshow'; b.className = 'stpr-tbshow'; bar.insertBefore(b, $('stpr-lvclk')); b.addEventListener('click', function(){ tbUi('hide', false); tbPaint(); }); }
-    var t = T('Show the Toolbox', 'Mostrar la caja de herramientas'); if (b.textContent !== t) b.textContent = t; b.hidden = !on; }
   function tbEA(){ var e = S && S.live && S.ea; return (e && vNum(e.v) >= 9.02) ? (e.hub || (e.raw + '|' + e.lg)) : ''; }
   function tbAcct(p){ if (!p || p.by !== tbEA()) return; TB.acct = p; if (TB.tab === 'trade') tbSoon();
     var tk = tbRows(p.pos, 12).map(function(r){ return r[0]; }).join(','); if (TB.tk != null && TB.tk !== tk && TB.tab === 'hist') setTimeout(tbHistReq, 1500); TB.tk = tk; }   // a trade opened or closed: History again
@@ -89400,14 +89463,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     h += '<tr class="lctb-sum"><td colspan="10"><b>' + T('Profit', 'Beneficio') + ': ' + tbNum(pr + cm + sw, 2) + (x.cr ? ' &nbsp; ' + T('Credit', 'Crédito') + ': ' + tbNum(x.cr, 2) : '') + ' &nbsp; ' + T('Deposit', 'Depósito') + ': ' + tbNum(x.dep, 2)
       + ' &nbsp; ' + T('Withdrawal', 'Retirada') + ': ' + tbNum(x.wd, 2) + ' &nbsp; ' + T('Balance', 'Balance') + ': ' + tbNum(x.bal, 2) + '</b></td><td><b>' + tbNum(cm, 2) + '</b></td><td><b>' + tbNum(sw, 2) + '</b></td><td class="' + tbCl(pr) + '"><b>' + tbNum(pr, 2) + '</b></td></tr>';
     return '<table class="lctb-t">' + hd + h + '</table>'; }
-  function tbPaint(){ var box = $('lc-tb'); if (!box) return; var can = !!(S && S.live && tbEA()), on = can && !tbUi('hide'); tbShowBtn(can && !on); if (box.hidden === on) box.hidden = !on; if (!on) return;
+  function tbPaint(){ var box = $('lc-tb'); if (!box) return; var on = !!(S && S.live && tbEA()); if (box.hidden === on) box.hidden = !on; if (!on) return;
     if (!box._w) { box._w = true; box.addEventListener('click', function(e){ var x = e.target.closest && e.target.closest('[data-lctbx]');
-        if (x) { var k = x.getAttribute('data-lctbx'); if (k === 'min') tbUi('min', !tbUi('min')); else tbUi('hide', true); tbPaint(); return; }
+        if (x) { tbUi('min', !tbUi('min')); tbPaint(); return; }
         var b = e.target.closest && e.target.closest('[data-lctb],[data-lctbp]'); if (!b) return;
         TB.tab = b.getAttribute('data-lctb'); if (tbUi('min')) tbUi('min', false); var bd = box.querySelector('.lctb-b'); if (bd) bd.scrollTop = 0; if (TB.tab === 'hist') tbHistReq(); else tbPaint(); }); }
-    var mn = tbUi('min'), tm = mn ? T('Open the Toolbox', 'Abrir la caja de herramientas') : T('Minimise the Toolbox', 'Minimizar la caja de herramientas'), th = T('Hide the Toolbox', 'Ocultar la caja de herramientas');
+    var mn = tbUi('min'), tm = mn ? T('Open the Toolbox', 'Abrir la caja de herramientas') : T('Minimise the Toolbox', 'Minimizar la caja de herramientas');
     var html = '<div class="lctb-h"><button type="button" data-lctb="trade" class="' + (TB.tab === 'trade' && !mn ? 'on' : '') + '">' + T('Trade', 'Operaciones') + '</button><button type="button" data-lctb="hist" class="' + (TB.tab === 'hist' && !mn ? 'on' : '') + '">' + T('History', 'Historial') + '</button>'
-      + '<span class="lctb-ctl"><button type="button" data-lctbx="min" title="' + esc(tm) + '" aria-label="' + esc(tm) + '">' + (mn ? '+' : '\u2212') + '</button><button type="button" data-lctbx="hide" title="' + esc(th) + '" aria-label="' + esc(th) + '">\u00d7</button></span></div>'
+      + '<span class="lctb-ctl"><button type="button" data-lctbx="min" title="' + esc(tm) + '" aria-label="' + esc(tm) + '">' + (mn ? '+' : '\u2212') + '</button></span></div>'
       + (mn ? '' : '<div class="lctb-b' + (TB.tab === 'hist' ? ' h' : '') + '">' + (TB.tab === 'trade' ? tbTrade() : tbHist()) + '</div>');
     var from = box.offsetHeight;
     if (box._h !== html) { var b0 = box.querySelector('.lctb-b'), sl = b0 ? b0.scrollLeft : 0, st = b0 ? b0.scrollTop : 0; box.innerHTML = html; box._h = html; var b1 = box.querySelector('.lctb-b'); if (b1) { b1.scrollLeft = sl; b1.scrollTop = st; } }
@@ -89558,6 +89621,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
     var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }   // MT5's new figures: the line moved there
     lvBadges(); panes.forEach(function(p){ try { cdLbl(p); } catch (e) {} }); liveBar(); liveHeader(); lcFit(); lcAcctSync(); lvTm();
+    var gsg = (S.ea ? 1 : 0) + '|' + (lvFresh(S) ? 1 : 0) + '|' + (nowS() >= S.f.close ? 1 : 0) + '|' + ((S.ea && S.ea.raw) || S.sym.name);
+    if (!LV.grAt || Date.now() - LV.grAt > 5000 || LV.grSig !== gsg) { LV.grAt = Date.now(); LV.grSig = gsg; try { if (window.__stLiveGreet) window.__stLiveGreet(); } catch (e) {} }   // the Assistant's line above the charts
     if (Date.now() - (LV.paAt || 0) > 60000) lvAlertsPull();
   }
   // a symbol's minutes from its EA (and some of the day before, for a 1-minute chart): asked once, again after a gap
@@ -89693,13 +89758,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var s0 = lvStatus(), so = sideOff(), sp = st.querySelector('span'); if (so) s0 = { on: s0.on, t: s0.t + ' · ' + so }; st.classList.toggle('on', s0.on); if (sp.textContent !== s0.t) { sp.textContent = s0.t; st.title = s0.t; } }
   // each chart: the time left on its candle and its symbol's spread, bottom right of the plot (the Session Live chart's badge)
   function cdTxt(left){ left = Math.max(0, Math.floor(left)); var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), x = left % 60; return (h ? p2(h) + ':' : '') + p2(m) + ':' + p2(x); }
-  // under the last price on the scale: the time left in the forming candle (Live Charts: now; Back Testing: the replay's moment)
+  // on the price scale where the last price's label was: the time left in the forming candle (Live Charts: now; Back Testing: the replay's moment)
+  function cdLv(p, on){ var sr = p.series; if (!sr || sr.__lvv === on) return; sr.__lvv = on; try { sr.applyOptions({ lastValueVisible: on }); } catch (e) {} }
   function cdLbl(p){ if (!S || !p || !p.series) return; var el = p.cdl; if (!el || !el.isConnected) { el = p.cdl = p.el.ownerDocument.createElement('div'); el.className = 'stpr-cdl'; el.hidden = true; p.el.appendChild(el); }
     var b = p.bars && p.bars[p.bars.length - 1], n = S.live ? nowS() : S.now, left = null, y = null;
     if (b && p.tf < 10080 && !(S.live && n >= S.f.close)) { left = keyOf(p.tf, n) + p.tf * 60 - n; if (!(left > 0 && left <= p.tf * 60)) left = null; }
     try { if (left != null) y = p.series.priceToCoordinate(b.close); } catch (e) {}
-    var dm = paneDims(p); if (y == null || y < 2 || y > dm.ph - 20) { if (!el.hidden) el.hidden = true; return; }
-    var tx = cdTxt(left), cl = 'stpr-cdl ' + (b.close >= b.open ? 'u' : 'd'), tp = Math.round(y + 10) + 'px', wd = dm.psw + 'px';
+    var dm = paneDims(p); if (y == null || y < 9 || y > dm.ph - 9) { if (!el.hidden) el.hidden = true; cdLv(p, left == null); return; }
+    cdLv(p, false);
+    var tx = cdTxt(left), cl = 'stpr-cdl ' + (b.close >= b.open ? 'u' : 'd'), tp = Math.round(y - 9) + 'px', wd = dm.psw + 'px';
     if (el.hidden) el.hidden = false; if (el.textContent !== tx) el.textContent = tx; if (el.className !== cl) el.className = cl;
     if (el.style.top !== tp) el.style.top = tp; if (el.style.width !== wd) el.style.width = wd; }
   function lvBadges(){ if (!S || !(S.live || S.today)) return; var n = nowS();
@@ -89837,6 +89904,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _tb: function(){ return TB; },
     lg: function(){ if (!lvData()) return ''; var ls = {}; feeds().forEach(function(F){ var e = F.ea; if (e && !e.hub && e.lg) ls[String(e.lg)] = 1; }); var k = Object.keys(ls); return k.length === 1 ? k[0] : ''; },   // the account the charts show, when it is one (EA 9.03 streams only for it)
     _accs: function(){ return lvAccs().map(function(o){ return String(o.lg); }); },
+    greetInfo: function(){ if (!S || !S.live) return null; var n = nowS(), d = new Date(S.day + 'T12:00:00');
+      return { sym: (S.ea && S.ea.raw) || S.sym.name, ea: !!(S.ea && (lvFresh(S) || !S.ea.hub)), closed: n >= S.f.close, dayName: dayName(d) }; },
     _ord: function(){ return LV.ord || null; }, _chimes: function(){ return LV.chimes || 0; }, _mmLive: function(){ return !!LV.mmStash; },
     // the hub (EA 9.02) and the symbols on screen it serves (no chart of their own)
     hub: function(){ if (!lvData()) return null; var k = hubKey(); if (!k) return null; var hs = []; feeds().forEach(function(F){ if (F.ea && F.ea.hub && hs.indexOf(F.ea.raw) < 0) hs.push(F.ea.raw); }); return { hub: k, hs: hs.join(',') }; },
@@ -90026,7 +90095,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
   } catch (e) {}
   window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady,
-    _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
+    _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests
