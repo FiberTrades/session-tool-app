@@ -103,12 +103,7 @@
     var TM = window.__stTM;
     for (k = 0; k < 20 && !document.querySelector('#stpr-lvtm .stm-st.on'); k++) await W(250);
     var bar = document.getElementById('stpr-lvtm'), tb = function (a) { return bar.querySelector('[data-tma="' + a + '"]'); };
-    check('Live Charts shows the open trade with MT5 connected and Move to BE / Close 50% / Close trade', bar && /SELL/.test(bar.textContent) && /MT5 connected/.test(bar.textContent) && tb('tobe') && !tb('tobe').disabled && tb('half') && tb('close') && /Close trade/.test(tb('close').textContent), bar && bar.textContent);
-    tb('tobe').click();
-    var sending = /Sending/.test(tb('tobe').textContent);   // at once: MT5's answer can come within 50 ms
-    for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'tobe'); k++) await W(150);
-    await W(200);
-    check('Move to BE: Sending... until MT5 answers, then "Moved to BE HH:MM" (pressed, not pressable again)', sending && TM.last(990077) && TM.last(990077).ok && /^Moved to BE \d\d:\d\d$/.test(tb('tobe').textContent) && tb('tobe').disabled, [sending, TM.last(990077), tb('tobe').textContent]);
+    check('Live Charts shows the open trade with MT5 connected and Close trade only (the EA does BE and partials itself)', bar && /SELL/.test(bar.textContent) && /MT5 connected/.test(bar.textContent) && tb('close') && !tb('close').disabled && /Close trade/.test(tb('close').textContent) && !tb('tobe') && !tb('half'), bar && bar.textContent);
     // drag the SL line on the chart: a confirm box, then MT5
     var sl0 = P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0], pane0 = P._panes()[0], pc0 = pane0.el.querySelector('.stpr-pc'), rc0 = pc0.getBoundingClientRect();
     check('the trade\'s SL line can be dragged (and the entry cannot)', !!sl0 && !P._lines(0).some(function (l) { return /^Entry/.test(l.title) && l.k; }), P._lines(0));
@@ -124,6 +119,11 @@
     pev('pointerdown', pane0.series.priceToCoordinate(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p)); pev('pointermove', ySL + 30); pev('pointerup', ySL + 30); await W(120);
     box.querySelector('[data-tmc="0"]').click(); await W(120);
     check('Cancel: nothing is sent and the line goes back', TM.last(990077).a === 'sl' && !TM.busy(990077) && box.style.display === 'none', TM.last(990077));
+    tb('close').click();
+    var sending = /Sending/.test(tb('close').textContent);   // at once: MT5's answer can come within 50 ms
+    for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'close'); k++) await W(150);
+    await W(200);
+    check('Close trade: Sending... until MT5 answers, then "Closed HH:MM" (pressed, not pressable again)', sending && TM.last(990077) && TM.last(990077).ok && /^Closed \d\d:\d\d$/.test(tb('close').textContent) && tb('close').disabled, [sending, TM.last(990077), tb('close').textContent]);
 
     // ---- no Replay in Live Charts (Nestor, 18 Oct 2026: Back Testing stays in the Academy tab, nothing live near it) ----
     check('no Replay button in Live Charts', getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none');
@@ -177,7 +177,7 @@
     var ob = document.querySelector('#st-livebox .slx-open');
     check('the Session Live chart has "Open in Live Charts"', ob && /Open in Live Charts/.test(ob.textContent), ob && ob.textContent);
     var card = document.querySelector('#st-livebox .slx-tc[data-k="990077"]');
-    check('its card has MT5\'s state and the same three buttons (Move to BE done at its time)', card && card.querySelector('.stm-st.on') && card.querySelector('[data-tma="half"]') && /Moved to BE/.test(card.querySelector('[data-tma="tobe"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
+    check('its card has MT5\'s state and the same Close trade (done at its time)', card && card.querySelector('.stm-st.on') && !card.querySelector('[data-tma="tobe"]') && !card.querySelector('[data-tma="half"]') && /^Closed \d\d:\d\d$/.test(card.querySelector('[data-tma="close"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
     if (ob) ob.click();
     for (k = 0; k < 60; k++) { await W(250); st = LC.state(); if (st.live) break; }
     check('it opens Live Charts on that trade\'s symbol', document.getElementById('page-livecharts').classList.contains('active') && st.live && st.sym === 'EURUSD', st);

@@ -60,7 +60,7 @@ def on_cmd(p):
     if want != p.get('ch'): log['bad_sig'] += 1; return ack(False, 'sig')
     if abs(int(fnow() - (time.time() - int(p.get('cts', '0'))) - fnow())) > 120 and abs(time.time() - int(p.get('cts', '0'))) > 120: return ack(False, 'old')
     if a in ('sl', 'tp', 'be', 'ts', 'pc'): return ack(True, '', float(p.get('cp') or 0) if a == 'sl' else 0.0, float(p.get('cp') or 0) if a == 'tp' else 0.0)
-    if a in ('tobe', 'half', 'close'): return ack(True)
+    if a == 'close': return ack(True)
     return ack(False, 'unknown')
 def inner(m):                                        # the app's own payload inside a broadcast
     try: return json.loads(m).get('payload', {}).get('payload', {}) or {}

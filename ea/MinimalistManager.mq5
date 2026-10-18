@@ -3978,8 +3978,8 @@ void LwStreamPx()
    LwCount();
   }
 // ---- Trade management from Session Terminal (18 Oct 2026, Nestor: "start the trade management from the app now") ----
-// The app sends "cmd" on the live line to move this trade's SL, TP, BE trigger or a T / P step, to move the stop to break-even
-// now, or to close half or all of it. This EA acts only when the member switched it on (InpAppTrade), on its own account and
+// The app sends "cmd" on the live line to move this trade's SL, TP, BE trigger or a T / P step, or to close it (Move to BE and
+// Close 50% were left to the EA's own BE and partial closes - Nestor, 18 Oct 2026). This EA acts only when the member switched it on (InpAppTrade), on its own account and
 // its own trade on this chart's symbol, for a command made in the last 2 minutes, seen once, and signed with the sync token
 // (HMAC-SHA256) - knowing the channel's name is not enough. It does what the same drag or key does on this chart, then
 // answers "ack" with how it went (the broker's words when it refuses).
@@ -4063,24 +4063,6 @@ void LwCmd(string s)
      {
       if(k<0 || k>=g_pcCount || g_pcFired[k]) why="nostep";
       else { g_pcTrig[k]=px; LwMoveLine(PcName(k),px,PcTxt(k),PcLineLbl(k),COL_LINE_PC); SavePcState(); ok=true; }
-     }
-   else if(a=="tobe")  // the stop to break-even now: where BreakEvenAll puts it (entry + the BE offset)
-     {
-      long type=PositionGetInteger(POSITION_TYPE); int d=(type==POSITION_TYPE_BUY)?+1:-1;
-      double open=PositionGetDouble(POSITION_PRICE_OPEN), slDist=RecallRisk(t);
-      if(slDist<=0) slDist=(sl>0)?MathAbs(open-sl):0.0;
-      double want=NormalizeDouble(open+d*BEOffsetPx(slDist),_Digits);
-      double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID), ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK), lvl=(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)*g_point;
-      if(sl>0 && ((d>0 && sl>=want-g_point*0.5)||(d<0 && sl<=want+g_point*0.5))) { ok=true; why="already"; }
-      else if((d>0 && want>bid-lvl)||(d<0 && want<ask+lvl)) why="price";   // price has not passed it yet: the broker would refuse
-      else { ok=trade.PositionModify(t,want,tp); if(!ok) why=LwWhy(); }
-      if(ok){ g_beArmed=false; g_beFails=0; ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE); int cnt; double now=PositionsSL(cnt); if(now>0) LwMoveLine(LN_MSL,now,TX_SL,"SL",COL_LINE_SL); }
-     }
-   else if(a=="half")  // half of it, as the Close 50% key does
-     {
-      double vol=PositionGetDouble(POSITION_VOLUME), half=NormalizeVolume(vol/2.0);
-      if(half<g_volMin || half>=vol) why="small";
-      else { ok=trade.PositionClosePartial(t,half); if(!ok) why=LwWhy(); }
      }
    else if(a=="close") // all of it
      {
