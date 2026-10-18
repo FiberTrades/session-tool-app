@@ -76924,6 +76924,7 @@ window.__stTM = (function () {
     last[p.k] = { a: p.a, ok: !!out.ok, why: out.why || '', at: Date.now(), p: p.p }; if (out.ok) done[p.k + '|' + p.a] = Date.now(); emit(); try { p.res(out); } catch (e) {} }
   // a = sl | tp | be | ts | pc (a line to a price; ts / pc with the step's index) | close
   function send(r, a, price, idx) {
+    if (gated()) return Promise.resolve({ ok: false, why: 'mv' });
     var st = state(r); if (st !== 'on') return Promise.resolve({ ok: false, why: st });
     var key = String(r.ticket); if (busy[key]) return Promise.resolve({ ok: false, why: 'busy' });
     var c = { cid: newId(), clg: String(r.login), csy: String(r.symbol), ctk: key, ca: a, cp: price != null ? Number(price).toFixed(dgOf(r)) : '', ci: idx != null ? String(idx) : '', cts: String(Math.floor(Date.now() / 1000)) };
@@ -76942,7 +76943,7 @@ window.__stTM = (function () {
   // a command not about an open trade (EA 9.02, 18 Oct 2026): 'open' a new order from Live Charts (cp: the stop's price; ci: 'm',
   // or 'l' / 's' and the entry), 'cfg' the panel's settings (cp: 'k=v;k=v') - to the EA on that symbol's chart and account
   function acct(o) {
-    if (mentor()) return Promise.resolve({ ok: false, why: 'mv' });
+    if (mentor() || gated()) return Promise.resolve({ ok: false, why: 'mv' });
     if (!token()) return Promise.resolve({ ok: false, why: 'token' });
     var ln = window.__stLiveLine; if (!ln || !ln.joined || !ln.joined()) return Promise.resolve({ ok: false, why: 'line' });
     var ea = eaOf({ symbol: o.sym, login: o.login }); if (!ea) return Promise.resolve({ ok: false, why: 'noea' });
@@ -76982,8 +76983,11 @@ window.__stTM = (function () {
   function whyTxt(w) { var x = WHY[w]; if (x) return T2(x[0], x[1]); return w ? T2('MT5 refused it: ', 'MT5 lo rechazó: ') + w : ''; }
   var DONE = { close: ['Closed', 'Cerrada'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
   // MT5's state and Close trade, for a trade's card and for Live Charts
+  // trading from the app - Close trade on the Session Live card too - is Nestor's only for now, with Live Charts (18 Oct 2026:
+  // "Close trade on the Session Live card. why would this stay if this is useless to someone that hasnt got access to live charts?")
+  function gated() { try { return !!(window.__stLcAllowed && !window.__stLcAllowed()); } catch (e) { return true; } }
   function row(r) {
-    if (!r || mentor()) return '';
+    if (!r || mentor() || gated()) return '';
     var k = String(r.ticket), st = state(r), b = busy[k], l = last[k], on = st === 'on', fresh = l && Date.now() - l.at < 60000;
     var btn = function (a, en, es, cls) { var lab = T2(en, es), c = 'stm-b' + (cls ? ' ' + cls : ''), dis = !on || !!b;
       if (b && b.a === a) { lab = T2('Sending…', 'Enviando…'); c += ' busy'; }
