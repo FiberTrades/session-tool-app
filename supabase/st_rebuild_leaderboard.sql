@@ -729,6 +729,8 @@ begin
     journal_series as (
       select j.user_id,
              (s.value->>'date')::timestamptz as closed_at,
+             (select min((t->>'date')::timestamptz) from jsonb_array_elements(coalesce(s.value->'trades','[]'::jsonb)) t
+               where (t->>'date') ~ '^\d{4}-\d{2}-\d{2}')  as first_at,
              row_number() over (partition by j.user_id
                                 order by (s.value->>'date')::timestamptz) as series_no
       from (select jj.user_id, public.st_journal_nodemo(jj.data) as data from journals jj) j
@@ -750,10 +752,14 @@ begin
           and (m.created_at at time zone s.tz)::date <  least(v_end, date '2026-09-01')
         group by m.sender_id
         union all
-        -- From the cutover: a completed series counts as posted only when a message actually names
-        -- it, no matter when that message was written. Comparing two per-period counts meant a
-        -- trader who closed on the 30th and posted on the 2nd was penalised in one month and
-        -- unrewarded in the next, and two posts about one series could cancel a series never shown.
+        -- From the cutover: a completed series counts as posted when a post in the series channel
+        -- belongs to it, no matter which period that post fell in. Comparing two per-period counts
+        -- meant a trader who closed on the 30th and posted on the 2nd was penalised in one month and
+        -- unrewarded in the next. Since 18 Oct 2026 a post belongs to a series by DATE, not by the
+        -- "Series #N" in it: the journal renumbers its series whenever trades or accounts are removed
+        -- (Nestor's "Series #10" became his #2 and cost him 10 points). A post can belong to a series
+        -- from that series' first trade to 14 days after its last; when it fits two, it goes to the one
+        -- that closed nearest to it - so one post never counts for two series.
         select js.user_id, count(*) as n
         from journal_series js
         where (js.closed_at at time zone 'Europe/London')::date >= greatest(v_start, date '2026-09-01')
@@ -762,7 +768,15 @@ begin
             select 1 from channel_messages m
             where m.sender_id = js.user_id
               and ch_series is not null and m.channel_id = ch_series
-              and m.body ~ ('Series #' || js.series_no || '([^0-9]|$)')
+              and (m.created_at at time zone 'Europe/London')::date
+                  between (js.first_at at time zone 'Europe/London')::date and (js.closed_at at time zone 'Europe/London')::date + 14
+              and js.series_no = (
+                select js2.series_no from journal_series js2
+                where js2.user_id = m.sender_id
+                  and (m.created_at at time zone 'Europe/London')::date
+                      between (js2.first_at at time zone 'Europe/London')::date and (js2.closed_at at time zone 'Europe/London')::date + 14
+                order by abs(extract(epoch from (m.created_at - js2.closed_at))), js2.series_no
+                limit 1)
           )
         group by js.user_id
       ) q
