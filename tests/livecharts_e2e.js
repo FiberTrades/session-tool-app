@@ -88,7 +88,7 @@
 
     // ---- an open trade: every 2 seconds, and its lines on the charts ----
     var nowS = Math.floor(Date.now() / 1000), op = LC.state().px.b;
-    window.__stLive.upsert({ ticket: 990077, login: 541419576, symbol: 'EURUSD', direction: 'short', lots: 1, risk: 100,
+    window.__stLive.upsert({ ticket: 990077, login: 90001234, symbol: 'EURUSD', direction: 'short', lots: 1, risk: 100,
       opened_at: new Date(Date.now() - 5 * 60000).toISOString(), seen_at: new Date().toISOString(), tick_at: new Date().toISOString(),
       r_now: -0.1, pnl_now: -10, sl_r: -1, tp_r: 3, ladder: '', px: op, op: op, rpx: 0.0004, digits: 5, bar: (nowS - nowS % 60) + ',' + op + ',' + op + ',' + op + ',' + op + ',60', spread: 0.00007 });
     for (k = 0; k < 20; k++) { await W(300); if (LN.state().key === '2000|EURUSD') break; }
@@ -98,6 +98,32 @@
     check('its lines on the chart: Entry, SL, TP (the Session Live chart\'s)', lines.indexOf('Entry') >= 0 && lines.indexOf('SL') >= 0 && lines.indexOf('TP') >= 0, lines);
     check('the header counts it', /1 open trade/.test(document.getElementById('stpr-score').textContent), document.getElementById('stpr-score').textContent);
     check('the bar says why: every 2 seconds, a trade is open', /every 2 seconds · a trade is open/.test(document.getElementById('stpr-lvst').textContent) || true, document.getElementById('stpr-lvst').textContent);
+
+    // ---- managing it from the app (18 Oct 2026): the EA's answer to each signed command ----
+    var TM = window.__stTM;
+    for (k = 0; k < 20 && !document.querySelector('#stpr-lvtm .stm-st.on'); k++) await W(250);
+    var bar = document.getElementById('stpr-lvtm'), tb = function (a) { return bar.querySelector('[data-tma="' + a + '"]'); };
+    check('Live Charts shows the open trade with MT5 connected and Move to BE / Close 50% / Close trade', bar && /SELL/.test(bar.textContent) && /MT5 connected/.test(bar.textContent) && tb('tobe') && !tb('tobe').disabled && tb('half') && tb('close') && /Close trade/.test(tb('close').textContent), bar && bar.textContent);
+    tb('tobe').click();
+    var sending = /Sending/.test(tb('tobe').textContent);   // at once: MT5's answer can come within 50 ms
+    for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'tobe'); k++) await W(150);
+    await W(200);
+    check('Move to BE: Sending... until MT5 answers, then "Moved to BE HH:MM" (pressed, not pressable again)', sending && TM.last(990077) && TM.last(990077).ok && /^Moved to BE \d\d:\d\d$/.test(tb('tobe').textContent) && tb('tobe').disabled, [sending, TM.last(990077), tb('tobe').textContent]);
+    // drag the SL line on the chart: a confirm box, then MT5
+    var sl0 = P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0], pane0 = P._panes()[0], pc0 = pane0.el.querySelector('.stpr-pc'), rc0 = pc0.getBoundingClientRect();
+    check('the trade\'s SL line can be dragged (and the entry cannot)', !!sl0 && !P._lines(0).some(function (l) { return /^Entry/.test(l.title) && l.k; }), P._lines(0));
+    var ySL = pane0.series.priceToCoordinate(sl0.p), pev = function (t, y) { pc0.dispatchEvent(new PointerEvent(t, { bubbles: true, cancelable: true, pointerType: 'mouse', pointerId: 7, button: 0, buttons: t === 'pointerup' ? 0 : 1, clientX: rc0.left + 160, clientY: rc0.top + y })); };
+    pev('pointerdown', ySL); pev('pointermove', ySL - 20); pev('pointermove', ySL - 40); pev('pointerup', ySL - 40); await W(120);
+    var box = pane0.el.querySelector('.stpr-tmc'), want = pane0.series.coordinateToPrice(ySL - 40);
+    check('let go: "Move SL to <price> in MT5?" with Move and Cancel; the line waits where it was let go', box && box.style.display === 'flex' && /Move SL to \d\.\d{5} in MT5\?/.test(box.textContent) && Math.abs(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p - want) < 0.00002, box && box.textContent);
+    box.querySelector('[data-tmc="1"]').click();
+    for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'sl'); k++) await W(150);
+    await W(150);
+    var lsl = TM.last(990077);
+    check('Move: MT5 moved it (the EA checked the signature), the app says so', lsl && lsl.ok && lsl.a === 'sl' && Math.abs(+lsl.p - want) < 0.00002 && /SL moved to/.test(document.getElementById('stpr-flash').textContent), [lsl, document.getElementById('stpr-flash').textContent]);
+    pev('pointerdown', pane0.series.priceToCoordinate(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p)); pev('pointermove', ySL + 30); pev('pointerup', ySL + 30); await W(120);
+    box.querySelector('[data-tmc="0"]').click(); await W(120);
+    check('Cancel: nothing is sent and the line goes back', TM.last(990077).a === 'sl' && !TM.busy(990077) && box.style.display === 'none', TM.last(990077));
 
     // ---- no Replay in Live Charts (Nestor, 18 Oct 2026: Back Testing stays in the Academy tab, nothing live near it) ----
     check('no Replay button in Live Charts', getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none');
@@ -118,6 +144,14 @@
     cd = document.querySelectorAll('#lc-host .stpr-cdb');
     check('the badges show gold\'s spread (7.0 pts)', /Spread 7\.0 pts$/.test(cd[0].textContent) && /Spread 7\.0 pts$/.test(cd[1].textContent), [cd[0].textContent, cd[1].textContent]);
     check('the EUR/USD trade\'s lines are not on the gold charts', P._lines(0).length === 0, P._lines(0));
+    // a gold trade on an EA whose "Manage trades from Session Terminal" is off: shown, buttons off, and how to switch it on
+    var nowG = Math.floor(Date.now() / 1000), gop = LC.state().px.b;
+    window.__stLive.upsert({ ticket: 990088, login: 90005678, symbol: 'XAUUSD', direction: 'long', lots: 0.5, risk: 100,
+      opened_at: new Date(Date.now() - 3 * 60000).toISOString(), seen_at: new Date().toISOString(), tick_at: new Date().toISOString(),
+      r_now: 0.2, pnl_now: 20, sl_r: -1, tp_r: 2, ladder: '', px: gop, op: gop, rpx: 2.5, digits: 2, bar: (nowG - nowG % 60) + ',' + gop + ',' + gop + ',' + gop + ',' + gop + ',60', spread: 0.07 });
+    for (k = 0; k < 20 && !/Off in your EA/.test(document.getElementById('stpr-lvtm').textContent); k++) await W(250);
+    var gb = document.getElementById('stpr-lvtm');
+    check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', /BUY/.test(gb.textContent) && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /Manage trades from Session Terminal/.test(gb.textContent), gb.textContent);
     for (k = 0; k < 12; k++) { await W(250); var aa3 = document.querySelector('#lc-log .atl-acct'); if (!aa3 || aa3.hidden) break; }
     check('gold\'s EA is on an account not linked in the journal: the log is All Trades History', (!aa3 || aa3.hidden) && /^All Trades History$/.test(document.querySelector('#lc-log .alltrades-title [data-i18n="atl.title"]').textContent), aa3 && aa3.textContent);
 
@@ -142,6 +176,8 @@
     for (k = 0; k < 30; k++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} if (document.querySelector('#st-livebox .slx-open')) break; }
     var ob = document.querySelector('#st-livebox .slx-open');
     check('the Session Live chart has "Open in Live Charts"', ob && /Open in Live Charts/.test(ob.textContent), ob && ob.textContent);
+    var card = document.querySelector('#st-livebox .slx-tc[data-k="990077"]');
+    check('its card has MT5\'s state and the same three buttons (Move to BE done at its time)', card && card.querySelector('.stm-st.on') && card.querySelector('[data-tma="half"]') && /Moved to BE/.test(card.querySelector('[data-tma="tobe"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
     if (ob) ob.click();
     for (k = 0; k < 60; k++) { await W(250); st = LC.state(); if (st.live) break; }
     check('it opens Live Charts on that trade\'s symbol', document.getElementById('page-livecharts').classList.contains('active') && st.live && st.sym === 'EURUSD', st);

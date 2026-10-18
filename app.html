@@ -1419,6 +1419,22 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-tfl b:empty { display: none; }
   .slx-hbtn.slx-open { width: auto; padding: 0 11px; gap: 7px; font: 500 10.5px 'AppNum', 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--text-mid); }
   .slx-hbtn.slx-open svg { width: 13px; height: 13px; flex: none; }
+  /* Managing the trade from the app (18 Oct 2026): MT5's state and Move to BE / Close 50% / Close trade, on the card and in Live Charts */
+  .stm { margin-top: 12px; }
+  .stm-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .stm-st { display: inline-flex; align-items: center; gap: 7px; font: 500 10px 'AppNum', 'DM Mono', monospace; letter-spacing: .1em; text-transform: uppercase; color: var(--text-dim); white-space: nowrap; }
+  .stm-st i { width: 7px; height: 7px; border-radius: 50%; background: var(--text-dim); flex: none; }
+  .stm-st.on i { background: #4ECD8B; box-shadow: 0 0 0 3px rgba(78,205,139,.18); } .stm-st.off i { background: #f4c05a; }
+  .stm-sp { flex: 1; }
+  .stm-b { height: 30px; padding: 0 12px; border: 1px solid var(--border-2); border-radius: 8px; background: transparent; color: var(--text); font: 500 10.5px 'AppNum', 'DM Mono', monospace; letter-spacing: .08em; text-transform: uppercase; cursor: pointer; white-space: nowrap; }
+  .stm-b.x { border-color: rgba(229,103,103,.55); color: #E56767; }
+  .stm-b:disabled { opacity: .42; cursor: default; }
+  .stm-b.done { opacity: 1; border-color: rgba(78,205,139,.55); color: #4ECD8B; }
+  .stm-b.busy { opacity: 1; color: var(--text-mid); }
+  @media (hover: hover) { .stm-b:not(:disabled):hover { border-color: var(--accent); } .stm-b.x:not(:disabled):hover { background: rgba(229,103,103,.1); border-color: #E56767; } }
+  .stm-msg { margin-top: 8px; font-family: 'Fraunces', serif; font-size: 12.5px; line-height: 1.4; color: var(--text-dim); }
+  .stm-msg.r { color: #f4c05a; } .stm-msg.g { color: #4ECD8B; }
+  @media (max-width: 600px) { .stm-sp { flex-basis: 100%; height: 0; } .stm-b { flex: 1 1 0; min-width: 0; padding: 0 6px; font-size: 10px; letter-spacing: .04em; } }
   .slx-open .slx-ops { display: none; }
   @media (max-width: 600px) { .slx-hbtn.slx-open { padding: 0 9px; } .slx-open .slx-opl { display: none; } .slx-open .slx-ops { display: inline; }
     .slx-chtop .slx-tfl { font-size: 0; } .slx-chtop .slx-tfl b { font-size: 11px; } }   /* a phone: the 1m pill alone, so the button fits */
@@ -18644,6 +18660,7 @@ try {
         var _seen = Date.parse(row.seen_at);
         var _opn = Date.parse(row.opened_at);   // when the trade first reached the feed - groups a trade with its copies
         rows[k] = { ticket: Number(row.ticket), direction: row.direction || ex.direction || 'long', pnl: (row.pnl != null ? row.pnl : ex.pnl), closed: (row.closed_at != null) || ex.closed || false, symbol: row.symbol || ex.symbol || '',
+                    login: (row.login != null && row.login !== '') ? String(row.login) : (ex.login || null),   // the MT5 account it is on: the app's trade commands go to that account's EA (18 Oct 2026)
                     risk: (row.risk != null && isFinite(Number(row.risk)) && Number(row.risk) > 0) ? Number(row.risk) : ex.risk,
                     seenAt: isFinite(_seen) ? _seen : (ex.seenAt || Date.now()), openedAt: isFinite(_opn) ? _opn : (ex.openedAt || Date.now()),
                     // EA 8.88 (2 Oct 2026): the running result every 5 s for the Session Live trade card, and what the trade was taken with
@@ -20175,12 +20192,13 @@ try {
       // this progress bar now") - the chart shows the price against every level.
       var cht = has && isFinite(tk.px) && isFinite(tk.op);
       if (cht) ball = '';
-      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht;
+      var tmRow = window.__stTM ? window.__stTM.row(r) : '';   // MT5's state and Move to BE / Close 50% / Close trade (18 Oct 2026)
+      var stat = head + '|' + (cht ? '' : marks + seg) + '|' + chips.join('') + '|' + on() + has + cht + '|' + tmRow;
       var html = '<div class="slx-tc" data-k="' + esc(r.ticket) + '"><div class="slx-th">' + head + '<div class="slx-right"><span class="slx-tpw">' + tp + '</span>' + (has ? tog : '') + '</div></div>'
         + (cht ? '' : '<div class="slx-lad"><div class="slx-ln"></div>' + seg + marks + (ball ? '<div class="slx-now' + (R < -0.049 ? ' r' : '') + '" style="left:' + ball + '"></div>' : '') + '</div>')
         + (chips.length ? '<div class="slx-chips">' + chips.join('') + '</div>' : '')
         + (has && !cht ? '<div class="slx-cnote"><span class="slx-need">' + esc(T2('Live chart needs EA 8.89', 'Gráfico en vivo: necesita el EA 8.89')) + '</span></div>' : '')
-        + '<div class="slx-chs"></div></div>';
+        + '<div class="slx-chs"></div>' + tmRow + '</div>';
       return { k: String(r.ticket), s: stat, html: html, ball: ball, red: R < -0.049, tp: tp };
     }
     /* The live chart (EA 8.89, 2 Oct 2026, Nestor: "build the EA chart with lines"). The trade's own 5-minute candles from the
@@ -76658,7 +76676,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
    candle). "who" asks the EAs which charts they run on ("hi"), "hist" asks for a chart's last 1-minute candles ("bars"). */
 (function(){
   'use strict';
-  var ch = null, name = '', joined = false, joining = false, watching = false, lastWatch = 0, lastKey = '', lastMs = 0, idleAt = 0, eas = {}, stat = { ticks: 0, at: 0, last: null, watchSent: 0, px: 0, bars: 0 };
+  var ch = null, name = '', joined = false, joining = false, watching = false, lastWatch = 0, lastKey = '', lastMs = 0, idleAt = 0, eas = {}, easL = {}, stat = { ticks: 0, at: 0, last: null, watchSent: 0, px: 0, bars: 0 };
   function client(){ return window.__stSB || null; }
   function token(){ try { return (window.STCloud && window.STCloud.syncToken) || ''; } catch (e) { return ''; } }
   function mentor(){ try { return !!new URLSearchParams(location.search).get('mv'); } catch (e) { return false; } }
@@ -76705,11 +76723,12 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var me = ch = c.channel(nm, { config: { broadcast: { self: false, ack: false } } });
       me.on('broadcast', { event: 'tick' }, onTick)
         .on('broadcast', { event: 'hi' }, function (m) {                                       // an EA has just (re)joined, or answers "who"
-          var p = (m && m.payload) || {}; if (p.sym) eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, at: Date.now() };
+          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
           if (watching) watchNow(); })
         .on('broadcast', { event: 'unwatch' }, function () { if (watching) watchNow(); })      // another window stopped; this one still looks
         .on('broadcast', { event: 'px' }, function (m) { stat.px++; try { if (window.__stLC) window.__stLC.px(m && m.payload); } catch (e) {} })
         .on('broadcast', { event: 'bars' }, function (m) { stat.bars++; try { if (window.__stLC) window.__stLC.bars(m && m.payload); } catch (e) {} })
+        .on('broadcast', { event: 'ack' }, function (m) { try { if (window.__stTM) window.__stTM.ack(m && m.payload); } catch (e) {} })   // an EA's answer to a command
         .on('broadcast', { event: 'brake' }, onBrake)                                           // today's live updates are used up
         .subscribe(function (st) {
           if (me !== ch) return;
@@ -76739,7 +76758,101 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
                           eas: function () { return eas; },                                          // the charts the EAs run on
                           ms: function () { return watching ? lastMs : curMs(); },                  // how fast now
                           hist: function (sym, n) { send('hist', { sym: sym, n: n }); },            // a chart's last 1-minute candles
-                          joined: function () { return joined; } };
+                          joined: function () { return joined; },
+                          easL: function () { return easL; },                                         // the EAs by chart symbol and account
+                          cmd: function (c) { if (!ch || !joined) return false; send('cmd', c); return true; } };   // a trade command to the EAs
+})();
+</script>
+<script>
+/* ---- Managing an open trade from the app (18 Oct 2026, Nestor: "start the trade management from the app now"): Move to BE,
+   Close 50% and Close trade on the Session Live card and in Live Charts, and the trade's SL, TP, BE line and T / P steps
+   dragged on Live Charts (with a confirm box). Each is a command on the live line to the EA running that trade in MT5 (its
+   account, its chart's symbol). The EA acts only when its "Manage trades from Session Terminal" setting is on and the command
+   is signed with the member's sync token, fresh and new; it does what the same drag or key does in MT5 and answers. Until the
+   answer the button says Sending...; then it shows what was done and when (as a posted button does), or why MT5 refused. ---- */
+window.__stTM = (function () {
+  var pend = {}, busy = {}, last = {}, done = {}, subs = [];   // done: each button's last success (ticket|action -> time)
+  function T2(en, es) { try { return (document.documentElement.lang === 'es' || window.__lang === 'es') ? es : en; } catch (e) { return en; } }
+  function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function token() { try { return (window.STCloud && window.STCloud.syncToken) || ''; } catch (e) { return ''; } }
+  function hex(buf) { var a = new Uint8Array(buf), s = ''; for (var i = 0; i < a.length; i++) s += ('0' + a[i].toString(16)).slice(-2); return s; }
+  function hmac(key, msg) { var enc = new TextEncoder();
+    return crypto.subtle.importKey('raw', enc.encode(key), { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']).then(function (k) { return crypto.subtle.sign('HMAC', k, enc.encode(msg)); }).then(hex); }
+  function newId() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
+  function mentor() { try { return !!new URLSearchParams(location.search).get('mv'); } catch (e) { return false; } }
+  function hmT(ms) { var d = new Date(ms); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); }
+  // the EA running a trade (its "hi": the chart's symbol as MT5 names it, its account login, whether it manages trades)
+  function eaOf(r) { try { var m = (window.__stLiveLine && window.__stLiveLine.easL) ? window.__stLiveLine.easL() : {}; return m[String(r.symbol) + '|' + String(r.login)] || null; } catch (e) { return null; } }
+  function state(r) {
+    if (!r || mentor()) return 'mv';
+    if (!token()) return 'token';
+    var ln = window.__stLiveLine; if (!ln || !ln.joined || !ln.joined()) return 'line';
+    var ea = eaOf(r); if (!ea) return 'noea'; if (parseFloat(ea.v) < 9) return 'ver'; if (!ea.tm) return 'off';
+    var tk = r.tick; if (!tk || !isFinite(tk.at) || Date.now() - tk.at > 90000) return 'stale';
+    return 'on'; }
+  function dgOf(r) { var t = r && r.tick; return (t && isFinite(t.dg) && t.dg > 0) ? t.dg : ((isFinite(+r.digits) && +r.digits > 0) ? +r.digits : 5); }
+  function emit() { subs.forEach(function (f) { try { f(); } catch (e) {} }); try { if (window.__stLiveBox) window.__stLiveBox.later(); } catch (e) {} }
+  function finish(id, out) { var p = pend[id]; if (!p) return; delete pend[id]; delete busy[p.k];
+    last[p.k] = { a: p.a, ok: !!out.ok, why: out.why || '', at: Date.now(), p: p.p }; if (out.ok) done[p.k + '|' + p.a] = Date.now(); emit(); try { p.res(out); } catch (e) {} }
+  // a = sl | tp | be | ts | pc (a line to a price; ts / pc with the step's index) | tobe | half | close
+  function send(r, a, price, idx) {
+    var st = state(r); if (st !== 'on') return Promise.resolve({ ok: false, why: st });
+    var key = String(r.ticket); if (busy[key]) return Promise.resolve({ ok: false, why: 'busy' });
+    var c = { cid: newId(), clg: String(r.login), csy: String(r.symbol), ctk: key, ca: a, cp: price != null ? Number(price).toFixed(dgOf(r)) : '', ci: idx != null ? String(idx) : '', cts: String(Math.floor(Date.now() / 1000)) };
+    busy[key] = { a: a, p: c.cp, at: Date.now() }; delete last[key]; delete done[key + '|' + a]; emit();
+    return hmac(token(), ['v1', c.cid, c.clg, c.csy, c.ctk, c.ca, c.cp, c.ci, c.cts].join('|')).then(function (h) {
+      c.ch = h;
+      return new Promise(function (res) {
+        pend[c.cid] = { res: res, k: key, a: a, p: c.cp };
+        var sent = false; try { sent = window.__stLiveLine.cmd(c); } catch (e) {}
+        if (!sent) { finish(c.cid, { ok: false, why: 'line' }); return; }
+        setTimeout(function () { finish(c.cid, { ok: false, why: 'timeout' }); }, 12000);
+      });
+    }, function () { delete busy[key]; emit(); return { ok: false, why: 'crypto' }; });
+  }
+  function ack(x) { if (!x || !x.cid || !pend[x.cid]) return; finish(x.cid, { ok: +x.ok === 1, why: String(x.m || ''), sl: +x.sl, tp: +x.tp, open: +x.open === 1 }); }
+  var WHY = {
+    off: ['Managing trades from the app is off in your EA. In MT5 open the EA\'s settings (F7), Inputs, and set "Manage trades from Session Terminal" to true.', 'La gestión desde la app está apagada en tu EA. En MT5 abre los ajustes del EA (F7), Entradas, y pon "Manage trades from Session Terminal" en true.'],
+    noea: ['MT5 has not answered yet: is it open, with the EA (9.00 or newer) on this chart?', 'MT5 aún no ha respondido: ¿está abierto, con el EA (9.00 o posterior) en este gráfico?'],
+    ver: ['Managing trades from the app needs EA 9.00 or newer in MT5.', 'Gestionar operaciones desde la app necesita el EA 9.00 o posterior en MT5.'],
+    stale: ['No prices from MT5 for over a minute: is it still connected?', 'Sin precios de MT5 desde hace más de un minuto: ¿sigue conectado?'],
+    line: ['Not connected to MT5 yet. Try again in a moment.', 'Aún sin conexión con MT5. Inténtalo en un momento.'],
+    token: ['Sign in to manage trades from here.', 'Inicia sesión para gestionar operaciones desde aquí.'],
+    mv: ['Only the trader can manage this trade.', 'Solo el trader puede gestionar esta operación.'],
+    sig: ['MT5 refused it: the sync token in the EA is not this account\'s.', 'MT5 lo rechazó: el token de sincronización del EA no es el de esta cuenta.'],
+    old: ['MT5 refused it: this device\'s clock is more than 2 minutes off.', 'MT5 lo rechazó: el reloj de este dispositivo va más de 2 minutos desfasado.'],
+    gone: ['That trade is no longer open in MT5.', 'Esa operación ya no está abierta en MT5.'],
+    nobe: ['This trade has no BE line in MT5 any more.', 'Esta operación ya no tiene línea BE en MT5.'],
+    nostep: ['That step has been used already.', 'Ese paso ya se ha usado.'],
+    price: ['Price has not passed break-even yet, so MT5 cannot put the stop there.', 'El precio aún no ha pasado el break-even, así que MT5 no puede poner el stop ahí.'],
+    small: ['The position is too small to close half of it.', 'La posición es demasiado pequeña para cerrar la mitad.'],
+    timeout: ['No answer from MT5. Check the trade there.', 'Sin respuesta de MT5. Revisa la operación allí.'],
+    busy: ['Still waiting for MT5\'s answer to the last one.', 'Aún esperando la respuesta de MT5 a la anterior.'],
+    crypto: ['This browser could not sign the command.', 'Este navegador no pudo firmar la orden.'],
+    unknown: ['MT5 did not know that command: update the EA.', 'MT5 no conoce esa orden: actualiza el EA.'] };
+  function whyTxt(w) { var x = WHY[w]; if (x) return T2(x[0], x[1]); return w ? T2('MT5 refused it: ', 'MT5 lo rechazó: ') + w : ''; }
+  var DONE = { tobe: ['Moved to BE', 'Movido a BE'], half: ['Closed 50%', 'Cerrado 50%'], close: ['Closed', 'Cerrada'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
+  // MT5's state and the three buttons, for a trade's card and for Live Charts
+  function row(r) {
+    if (!r || mentor()) return '';
+    var k = String(r.ticket), st = state(r), b = busy[k], l = last[k], on = st === 'on', fresh = l && Date.now() - l.at < 60000;
+    var btn = function (a, en, es, cls) { var lab = T2(en, es), c = 'stm-b' + (cls ? ' ' + cls : ''), dis = !on || !!b;
+      if (b && b.a === a) { lab = T2('Sending…', 'Enviando…'); c += ' busy'; }
+      else if (done[k + '|' + a] && Date.now() - done[k + '|' + a] < 60000) { lab = T2(DONE[a][0], DONE[a][1]) + ' ' + hmT(done[k + '|' + a]); c += ' done'; dis = true; }
+      return '<button type="button" class="' + c + '" data-tma="' + a + '" data-tmk="' + esc(k) + '"' + (dis ? ' disabled' : '') + '>' + esc(lab) + '</button>'; };
+    var dot = on ? T2('MT5 connected', 'MT5 conectado') : (st === 'off' ? T2('Off in your EA', 'Apagado en tu EA') : T2('MT5 not connected', 'MT5 no conectado'));
+    var note = '';
+    if (fresh && !l.ok) note = '<div class="stm-msg r">' + esc(whyTxt(l.why)) + '</div>';
+    else if (fresh && l.ok && /^(sl|tp|be|ts|pc)$/.test(l.a)) note = '<div class="stm-msg g">' + esc(T2(DONE[l.a][0], DONE[l.a][1]) + (l.p ? T2(' to ', ' a ') + l.p : '') + ' · ' + hmT(l.at)) + '</div>';
+    else if (!on && st !== 'mv') note = '<div class="stm-msg">' + esc(whyTxt(st)) + '</div>';
+    return '<div class="stm"><div class="stm-row"><span class="stm-st' + (on ? ' on' : (st === 'off' ? ' off' : '')) + '"><i></i>' + esc(dot) + '</span><span class="stm-sp"></span>'
+      + btn('tobe', 'Move to BE', 'Mover a BE') + btn('half', 'Close 50%', 'Cerrar 50%') + btn('close', 'Close trade', 'Cerrar operación', 'x') + '</div>' + note + '</div>'; }
+  // a trade by its ticket among the open ones (a copy's own ticket too)
+  function tradeOf(k) { try { var L = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
+      for (var i = 0; i < L.length; i++) { var rs = L[i].rows || [L[i].main || L[i]]; for (var j = 0; j < rs.length; j++) if (String(rs[j].ticket) === k) return String((L[i].main || {}).ticket) === k ? L[i].main : rs[j]; } } catch (e) {} return null; }
+  document.addEventListener('click', function (e) { var b = e.target && e.target.closest && e.target.closest('[data-tma]'); if (!b) return; e.preventDefault(); e.stopPropagation(); if (b.disabled) return;
+    var r = tradeOf(b.getAttribute('data-tmk')); if (r) send(r, b.getAttribute('data-tma')); }, true);
+  return { send: send, ack: ack, state: state, row: row, whyTxt: whyTxt, on: function (f) { subs.push(f); }, last: function (k) { return last[String(k)] || null; }, busy: function (k) { return busy[String(k)] || null; }, _hmac: hmac };
 })();
 </script>
 <script>
@@ -85605,6 +85718,17 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-win.lcp #stpr-lvback { display: inline-flex; }   /* Live Charts has no Replay button since 18 Oct 2026 */
   #stpr-lvback i { width: 7px; height: 7px; border-radius: 50%; background: #4ECD8B; }
   .stpr-pane .stpr-cdb { z-index: 6; }
+  /* Trade management from the app (18 Oct 2026): the open trades' row in Live Charts, and the confirm box of a line dragged */
+  .stpr-lvtm { display: none; }
+  .stpr-win.lc .stpr-lvtm:not(:empty) { display: grid; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); }
+  .stpr-lvtr { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .stpr-lvtt { font-family: 'AppNum','DM Mono',monospace; font-size: 12px; color: var(--text); white-space: nowrap; }
+  .stpr-lvtt b.g, .stpr-lvtt .g { color: #4ECD8B; } .stpr-lvtt b.r, .stpr-lvtt .r { color: #E56767; }
+  .stpr-lvtr .stm { margin: 0; flex: 1 1 380px; min-width: 0; }
+  .stpr-tmc { position: absolute; right: 74px; z-index: 9; display: none; align-items: center; gap: 8px; padding: 8px 10px; background: rgba(11,10,13,.96); border: 1px solid var(--accent); border-radius: 8px;
+    font-family: 'AppNum','DM Mono',monospace; font-size: 11.5px; color: var(--text); box-shadow: 0 10px 28px rgba(0,0,0,.5); }
+  .stpr-tmc .stpr-b { height: 28px; }
+  .stpr-tmc .stpr-b.go { border-color: var(--accent); color: var(--accent); }
   @media (max-width: 760px) { #lc-host .stpr-cw { height: auto; } .stpr-lvbar { padding: 9px 12px; } #lc-host .stpr-win { border-radius: 10px; } }
   @media (orientation: landscape) and (hover: none) and (pointer: coarse) and (max-height: 560px) { body:has(#page-livecharts.active) .rotate-gate { display: none !important; } }
   /* the menus: timeframes, symbols */
@@ -85961,6 +86085,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <span class="stpr-track"><i id="stpr-ti"></i><u id="stpr-tu"></u></span>
       <span class="stpr-tm" id="stpr-tm"></span>
     </div>
+    <div class="stpr-lvtm" id="stpr-lvtm"></div>
     <div class="stpr-lvbar" id="stpr-lvbar"><span class="stpr-lvst" id="stpr-lvst"><i></i><span></span></span><span class="stpr-lvclk" id="stpr-lvclk"></span></div>
     <div class="stpr-log" id="stpr-log" role="region" aria-label="Practice log"></div>
     <div class="stpr-menu" id="stpr-menu"></div>
@@ -88236,6 +88361,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // ---- dragging the lines ----
   function nearLine(p, y, reach){ var best = null, r = reach || 8; p.lines.forEach(function(l){ if (!l._k) return; var ly = p.series.priceToCoordinate(l._p); if (ly == null) return; var d = Math.abs(ly - y); if (d <= r && (!best || d < best.d)) best = { d: d, l: l }; }); return best && best.l; }
   function setLine(k, price){
+    if (/^lt\|/.test(k)) { if (!LT.wait) { LT.k = k; LT.price = price; } return; }   // a live trade's line: held where it is dragged
     if (k === 'pvsl') { var v0 = pvLevels(), e = v0 ? v0.entry : px(), dir = price < e ? 1 : -1, d = clampSL(Math.max(U('pts'), Math.abs(e - price)));
       S.pv = { dir: dir, rd: d, entry: (S.pv && S.pv.entry) || 0 }; CFG.stopPx[S.sym.raw] = d; paintSides(); return; }
     if (k === 'pvtp') { var v = pvLevels(); if (!v) return; var dist = (price - v.entry) * v.dir; if (dist <= 0) return; CFG.tgtOn = true;
@@ -88271,6 +88397,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     el.addEventListener('pointermove', function(e){ if (!S || drag || !S.exec || S.pos || S.pend || e.pointerType !== 'mouse' || PS(p) !== S) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { aim(pr); aimSoon(); } });
     el.addEventListener('pointermove', function(e){ if (!S || !drag || drag.p !== p) return; var pr = p.series.coordinateToPrice(rel(e).y); if (pr != null) { setLine(drag.k, pr); linesAll(); paintPill(); paintPlace(); } }, true);
     el.addEventListener('pointerup', function(){ if (!drag || drag.p !== p) return; var k = drag.k; drag = null; hold(false);
+      if (/^lt\|/.test(k)) { ltDrop(k, p); return; }   // a live trade's line: confirm, then MT5
       if (k === 'pvsl' || k === 'pvtp' || k === 'pvent') save();
       else if (S && S.pos) settleNow();
       render(); }, true);
@@ -88588,7 +88715,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ALERT.hits = []; NEWS.key = null; loadNews(); $('stpr-newsbtn').classList.toggle('on', CFG.news !== false); layersDot();
     st.style.display = 'none'; render(true); startLoop(); if (LV.snap) { LV.snap = false; setTimeout(lcSnap, 60); }
     pull().then(function(ch){ if (ch && S) render(); });
-    LV.clk = setInterval(lvClock, 1000); feeds().forEach(function(F){ lvHist(F); }); lvAlertsPull(); lcAcctSync();
+    LV.clk = setInterval(lvClock, 1000); feeds().forEach(function(F){ lvHist(F); }); lvAlertsPull(); lcAcctSync(); lvTm();
+    if (!LV.tmOn && window.__stTM) { LV.tmOn = true; window.__stTM.on(function(){ if (S && S.live) { lvTm(); linesAll(); } }); }
     try { if (window.__stLiveLine && window.__stLiveLine.tickle) window.__stLiveLine.tickle(); } catch (e) {}
     return true;
   }
@@ -88605,8 +88733,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       else if (!ea) F.ea = null;
       if (F.ea && vNum(F.ea.v) >= 9.00 && !F.gotHist) lvHist(F); });
     if (again) { goLive(S.sym.raw); return; }   // an EA came on a chart showing 5-minute candles: its minutes from here
-    var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }
-    lvBadges(); liveBar(); liveHeader(); lcFit(); lcAcctSync();
+    var sig = lvSig(); if (sig !== LV.sig) { LV.sig = sig; if (LT.k && !LT.wait && LT.at) LT.k = null; panes.forEach(function(p){ try { paintLines(p); } catch (e) {} }); dirty(); }   // MT5's new figures: the line moved there
+    lvBadges(); liveBar(); liveHeader(); lcFit(); lcAcctSync(); lvTm();
     if (Date.now() - (LV.paAt || 0) > 60000) lvAlertsPull();
   }
   // a symbol's minutes from its EA (and some of the day before, for a 1-minute chart): asked once, again after a gap
@@ -88648,7 +88776,38 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         out.push({ r: r, tk: tk, long: r.direction !== 'short', at: Math.floor((r.openedAt || Date.parse(r.opened_at) || 0) / 1000) }); }); } catch (e) {} return out; }
   function lvLevels(x){ try { return (window.__stLiveBox && window.__stLiveBox.levels) ? window.__stLiveBox.levels(x.r) : []; } catch (e) { return []; } }
   function lvSig(){ return JSON.stringify(feeds().map(function(F){ return lvIdeas(F.sym).map(lvLevels); })); }
-  function liveLines(p){ var hd = CFG.marks === false; lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ addLine(p, o.price, o.color, o.lineStyle, o.title, null, hd); }); }); }
+  // A trade's SL, TP, BE line and T / P steps can be dragged (18 Oct 2026): each carries its key (lt|ticket|kind|step); one being
+  // dragged or sent sits where it was let go (LT) until MT5's next figures move it there
+  var LT = { k: null, price: 0, wait: false, at: 0 };
+  function ltKey(r, o){ if (o.color === '#5F5F6E') return null; var t = String(o.title || ''), m, b = 'lt|' + r.ticket + '|';
+    if (/^SL/.test(t)) return b + 'sl|'; if (t === 'TP') return b + 'tp|'; if (t === 'BE') return b + 'be|';
+    if ((m = /^T(\d+)$/.exec(t))) return b + 'ts|' + (m[1] - 1); if ((m = /^P(\d+)/.exec(t))) return b + 'pc|' + (m[1] - 1); return null; }
+  function liveLines(p){ var hd = CFG.marks === false; lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var k = ltKey(x.r, o), mv = k && LT.k === k && LT.price > 0;
+    addLine(p, mv ? LT.price : o.price, o.color, o.lineStyle, mv && LT.wait ? o.title + T(' · sending…', ' · enviando…') : o.title, k, hd); }); }); }
+  // let go: a confirm box by the line, then the command to MT5 (the EA does what the same drag does there)
+  function ltAsk(p, txt, cb){ var d = p.el.ownerDocument, b = p.el.querySelector('.stpr-tmc'); if (!b) { b = d.createElement('div'); b.className = 'stpr-tmc'; p.el.appendChild(b); }
+    b.innerHTML = '<span>' + esc(txt) + '</span><button type="button" class="stpr-b go" data-tmc="1">' + esc(T('Move', 'Mover')) + '</button><button type="button" class="stpr-b" data-tmc="0">' + esc(T('Cancel', 'Cancelar')) + '</button>';
+    var y = yOf(p, LT.price), h = p.el.clientHeight; b.style.top = Math.max(6, Math.min(h - 52, (y == null ? h / 2 : y) + 12)) + 'px'; b.style.display = 'flex';
+    b.onclick = function(e){ var t = e.target.closest && e.target.closest('[data-tmc]'); if (!t) return; e.stopPropagation(); b.style.display = 'none'; b.onclick = null; cb(t.getAttribute('data-tmc') === '1'); }; }
+  function ltDrop(k, p){
+    var a = k.split('|'), tk = a[1], kind = a[2], ix = a[3] === '' ? null : +a[3], x = lvIdeas(PS(p).sym).filter(function(o){ return String(o.r.ticket) === tk; })[0];
+    if (!x || LT.k !== k || !(LT.price > 0)) { LT.k = null; linesAll(); return; }
+    var TM = window.__stTM, st = TM ? TM.state(x.r) : 'line';
+    if (st !== 'on') { LT.k = null; linesAll(); flash(TM ? TM.whyTxt(st) : '', 6000); return; }
+    var dg = PS(p).digits, nm = { sl: 'SL', tp: 'TP', be: 'BE', ts: 'T' + (ix + 1), pc: 'P' + (ix + 1) }[kind], pr = LT.price;
+    ltAsk(p, T('Move ' + nm + ' to ', 'Mover ' + nm + ' a ') + pr.toFixed(dg) + T(' in MT5?', ' en MT5?'), function(yes){
+      if (!yes || LT.k !== k) { if (LT.k === k) LT.k = null; linesAll(); return; }
+      LT.wait = true; linesAll();
+      TM.send(x.r, kind, pr, ix).then(function(out){
+        if (!out.ok) { if (LT.k === k) LT.k = null; linesAll(); flash(TM.whyTxt(out.why), 6000); return; }
+        LT.wait = false; LT.at = Date.now(); linesAll(); flash(T(nm + ' moved to ', nm + ' movido a ') + pr.toFixed(dg) + T(' in MT5', ' en MT5'));
+        setTimeout(function(){ if (LT.k === k && !LT.wait) { LT.k = null; linesAll(); } }, 15000); }); }); }
+  // the open trades on this symbol: what each is, MT5's state and the three buttons
+  function lvTm(){ var el = $('stpr-lvtm'); if (!el) return; var h = '';
+    if (S && S.live && window.__stTM) h = lvIdeas(S.sym).map(function(x){ var r = x.r, R = isFinite(+x.tk.r) ? +x.tk.r : NaN;
+      return '<div class="stpr-lvtr"><span class="stpr-lvtt"><b class="' + (x.long ? 'g' : 'r') + '">' + esc(x.long ? T('BUY', 'COMPRA') : T('SELL', 'VENTA')) + '</b> ' + esc(S.sym.name)
+        + (+r.lots > 0 ? ' · ' + (+r.lots).toFixed(2) + T(' lots', ' lotes') : '') + (isFinite(R) ? ' · <span class="' + (R >= 0 ? 'g' : 'r') + '">' + fR(R) + '</span>' : '') + '</span>' + window.__stTM.row(r) + '</div>'; }).join('');
+    if (el._h !== h) { el.innerHTML = h; el._h = h; } }
   function liveZones(p){ if (CFG.pos === false) return []; return lvIdeas(PS(p).sym).map(function(x){ var sl = null, tp = null; lvLevels(x).forEach(function(o){ if (/^SL/.test(o.title)) sl = o.price; else if (o.title === 'TP') tp = o.price; });
       return { e: x.tk.op, sl: sl, tp: tp, a: x.at, b: S.now, r: null }; }).filter(function(o){ return o.sl != null && o.a; }); }
   function liveHeader(){ if (!S || !S.live) return; relang();

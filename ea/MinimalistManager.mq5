@@ -81,6 +81,7 @@ input string InpSyncURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/
 input int    InpSyncDays  = 90;                         // On start, re-scan this many days of history
 input string InpLiveURL   = "https://figozyxoyobixadhqewr.supabase.co/functions/v1/live-trade"; // Live status endpoint (private)
 input string InpCandlesURL= "https://figozyxoyobixadhqewr.supabase.co/functions/v1/ingest-candles"; // Trade Replay candle endpoint
+input bool   InpAppTrade  = false;                      // Manage trades from Session Terminal (move SL/TP/BE, close) - off until switched on
 enum ENUM_BROKER_DST { BDST_AUTO=0, BDST_NONE=1, BDST_US=2, BDST_EU=3 };
 input ENUM_BROKER_DST InpBrokerDst = BDST_AUTO;          // Broker server clock: Auto (detect) / No DST / US DST / EU DST
 
@@ -3908,7 +3909,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN)); }
+string LwHi(){ return StringFormat("{\"v\":\"9.00\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),InpAppTrade?1:0); }   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -3976,6 +3977,120 @@ void LwStreamPx()
    g_lwPxMs=now; g_lwPxKey=key;
    LwCount();
   }
+// ---- Trade management from Session Terminal (18 Oct 2026, Nestor: "start the trade management from the app now") ----
+// The app sends "cmd" on the live line to move this trade's SL, TP, BE trigger or a T / P step, to move the stop to break-even
+// now, or to close half or all of it. This EA acts only when the member switched it on (InpAppTrade), on its own account and
+// its own trade on this chart's symbol, for a command made in the last 2 minutes, seen once, and signed with the sync token
+// (HMAC-SHA256) - knowing the channel's name is not enough. It does what the same drag or key does on this chart, then
+// answers "ack" with how it went (the broker's words when it refuses).
+#define LW_CMD_AGE 120   // seconds a command stays good (the PC's clock and the app's may differ a little)
+string g_lwCmdIds[];
+string LwHex(const uchar &a[],int n){ string s=""; for(int i=0;i<n;i++) s+=StringFormat("%02x",a[i]); return s; }
+string LwHmac(string key,string msg)
+  {
+   uchar k[],m[],kb[],ip[],op[],h1[],h2[],nk[];
+   int kn=StringToCharArray(key,k,0,WHOLE_ARRAY,CP_UTF8)-1; if(kn<0) kn=0; ArrayResize(k,kn);   // without the closing zero
+   if(kn>64){ uchar t[]; CryptEncode(CRYPT_HASH_SHA256,k,nk,t); ArrayResize(k,0); ArrayCopy(k,t); kn=ArraySize(k); }
+   ArrayResize(kb,64); ArrayInitialize(kb,0); if(kn>0) ArrayCopy(kb,k,0,0,kn);
+   int mn=StringToCharArray(msg,m,0,WHOLE_ARRAY,CP_UTF8)-1; if(mn<0) mn=0;
+   ArrayResize(ip,64+mn); for(int i=0;i<64;i++) ip[i]=(uchar)(kb[i]^0x36); if(mn>0) ArrayCopy(ip,m,64,0,mn);
+   if(CryptEncode(CRYPT_HASH_SHA256,ip,nk,h1)!=32) return "";
+   ArrayResize(op,96); for(int i=0;i<64;i++) op[i]=(uchar)(kb[i]^0x5c); ArrayCopy(op,h1,64,0,32);
+   if(CryptEncode(CRYPT_HASH_SHA256,op,nk,h2)!=32) return "";
+   return LwHex(h2,32);
+  }
+bool LwPos(ulong tk)
+  {
+   if(!PositionSelectByTicket(tk)) return false;
+   if(PositionGetString(POSITION_SYMBOL)!=_Symbol) return false;
+   return PositionGetInteger(POSITION_MAGIC)==InpMagic;
+  }
+string LwWhy(){ return IntegerToString((int)trade.ResultRetcode())+" "+trade.ResultRetcodeDescription(); }
+void LwMoveLine(string name,double price,string txt,string label,color clr)
+  {
+   if(ObjectFind(0,name)>=0) ObjectSetDouble(0,name,OBJPROP_PRICE,price);
+   if(txt!="" && ObjectFind(0,name)>=0) SetLineText(txt,price,label,clr);
+  }
+// the answer: done or not (and why), with the trade's stop and target as the broker holds them now
+void LwAck(string id,bool ok,string a,string tk,string why)
+  {
+   StringReplace(why,"\"","'"); StringReplace(why,"\\","/");
+   ulong t=(ulong)StringToInteger(tk); bool open=PositionSelectByTicket(t);
+   double sl=open?PositionGetDouble(POSITION_SL):0.0, tp=open?PositionGetDouble(POSITION_TP):0.0;
+   string p=StringFormat("{\"cid\":\"%s\",\"ok\":%d,\"ca\":\"%s\",\"ctk\":\"%s\",\"m\":\"%s\",\"sl\":%s,\"tp\":%s,\"open\":%d}",
+                         id,ok?1:0,a,tk,why,DoubleToString(sl,_Digits),DoubleToString(tp,_Digits),open?1:0);
+   if(LwText(LwBroadcast("ack",p))) LwCount();
+   Print("Session Terminal: ",a," on #",tk," - ",(ok?"done":"refused"),(why!=""?" ("+why+")":""));
+  }
+void LwCmd(string s)
+  {
+   string id=LwStr(s,"\"cid\":\""), lg=LwStr(s,"\"clg\":\""), sy=LwStr(s,"\"csy\":\""), tk=LwStr(s,"\"ctk\":\""), a=LwStr(s,"\"ca\":\"");
+   string p=LwStr(s,"\"cp\":\""), ix=LwStr(s,"\"ci\":\""), ts=LwStr(s,"\"cts\":\""), h=LwStr(s,"\"ch\":\"");
+   if(id=="" || sy!=_Symbol || lg!=IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))) return;   // another chart's or account's: its EA answers
+   for(int i=0;i<ArraySize(g_lwCmdIds);i++) if(g_lwCmdIds[i]==id) return;                        // seen already: done once only
+   int n=ArraySize(g_lwCmdIds); if(n>=64){ ArrayRemove(g_lwCmdIds,0,1); n--; } ArrayResize(g_lwCmdIds,n+1); g_lwCmdIds[n]=id;
+   if(!InpAppTrade){ LwAck(id,false,a,tk,"off"); return; }
+   string msg="v1|"+id+"|"+lg+"|"+sy+"|"+tk+"|"+a+"|"+p+"|"+ix+"|"+ts;
+   if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
+   long age=(long)TimeGMT()-StringToInteger(ts);
+   if(age>LW_CMD_AGE || age<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }
+   ulong t=(ulong)StringToInteger(tk);
+   if(!LwPos(t)){ LwAck(id,false,a,tk,"gone"); return; }
+   double px=NormalizeDouble(StringToDouble(p),_Digits);
+   int k=(int)StringToInteger(ix);
+   double sl=PositionGetDouble(POSITION_SL), tp=PositionGetDouble(POSITION_TP);
+   bool ok=false; string why="";
+   if(a=="sl")         // the live trade's SL line dragged (ModifyPositionsSL's move, on this ticket)
+     {
+      ok=trade.PositionModify(t,px,tp); if(!ok) why=LwWhy();
+      int cnt; double now=PositionsSL(cnt); if(now>0) LwMoveLine(LN_MSL,now,TX_SL,"SL",COL_LINE_SL);
+     }
+   else if(a=="tp")    // the TP line dragged
+     {
+      ok=trade.PositionModify(t,sl,px); if(!ok) why=LwWhy(); else LwMoveLine(LN_TP+"0",px,TX_TP,"TP",COL_LINE_TP);
+     }
+   else if(a=="be")    // the BE trigger line dragged
+     {
+      if(!g_beArmed) why="nobe";
+      else { g_beTrigger=px; LwMoveLine(LN_BE,px,TX_BE,"BE",COL_LINE_BE); ok=true; }
+     }
+   else if(a=="ts")    // a trailing step dragged
+     {
+      if(k<0 || k>=g_tsCount || g_tsFired[k]) why="nostep";
+      else { g_tsTrig[k]=px; LwMoveLine(TsName(k),px,TsTxt(k),TsLbl(k),COL_LINE_TS); SaveTrailState(); ok=true; }
+     }
+   else if(a=="pc")    // a partial-close step dragged
+     {
+      if(k<0 || k>=g_pcCount || g_pcFired[k]) why="nostep";
+      else { g_pcTrig[k]=px; LwMoveLine(PcName(k),px,PcTxt(k),PcLineLbl(k),COL_LINE_PC); SavePcState(); ok=true; }
+     }
+   else if(a=="tobe")  // the stop to break-even now: where BreakEvenAll puts it (entry + the BE offset)
+     {
+      long type=PositionGetInteger(POSITION_TYPE); int d=(type==POSITION_TYPE_BUY)?+1:-1;
+      double open=PositionGetDouble(POSITION_PRICE_OPEN), slDist=RecallRisk(t);
+      if(slDist<=0) slDist=(sl>0)?MathAbs(open-sl):0.0;
+      double want=NormalizeDouble(open+d*BEOffsetPx(slDist),_Digits);
+      double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID), ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK), lvl=(double)SymbolInfoInteger(_Symbol,SYMBOL_TRADE_STOPS_LEVEL)*g_point;
+      if(sl>0 && ((d>0 && sl>=want-g_point*0.5)||(d<0 && sl<=want+g_point*0.5))) { ok=true; why="already"; }
+      else if((d>0 && want>bid-lvl)||(d<0 && want<ask+lvl)) why="price";   // price has not passed it yet: the broker would refuse
+      else { ok=trade.PositionModify(t,want,tp); if(!ok) why=LwWhy(); }
+      if(ok){ g_beArmed=false; g_beFails=0; ObjectDelete(0,LN_BE); ObjectDelete(0,TX_BE); int cnt; double now=PositionsSL(cnt); if(now>0) LwMoveLine(LN_MSL,now,TX_SL,"SL",COL_LINE_SL); }
+     }
+   else if(a=="half")  // half of it, as the Close 50% key does
+     {
+      double vol=PositionGetDouble(POSITION_VOLUME), half=NormalizeVolume(vol/2.0);
+      if(half<g_volMin || half>=vol) why="small";
+      else { ok=trade.PositionClosePartial(t,half); if(!ok) why=LwWhy(); }
+     }
+   else if(a=="close") // all of it
+     {
+      ok=trade.PositionClose(t); if(!ok) why=LwWhy();
+      if(ok){ int cnt; PositionsSL(cnt); if(cnt==0) g_beArmed=false; }
+     }
+   else why="unknown";
+   ChartRedraw();
+   LwAck(id,ok,a,tk,why);
+  }
 void LwOnText(string s)
   {
    if(g_lwState==2 && StringFind(s,"\"phx_reply\"")>=0 && StringFind(s,"\"ref\":\"1\"")>=0)
@@ -3997,6 +4112,7 @@ void LwOnText(string s)
      }
    else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; }   // another window still watching says so again
    else if(StringFind(s,"\"event\":\"who\"")>=0) LwText(LwBroadcast("hi",LwHi()));   // a window that joined after this chart
+   else if(StringFind(s,"\"event\":\"cmd\"")>=0) LwCmd(s);   // trade management from the app
    else if(StringFind(s,"\"event\":\"hist\"")>=0){ if(LwStr(s,"\"sym\":\"")==_Symbol) LwHist((int)LwNum(s,"\"n\":",600)); }
   }
 // Read what has arrived (never waits) and handle every whole frame in it.

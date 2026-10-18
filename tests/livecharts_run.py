@@ -20,7 +20,7 @@ out = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts.json')
 out2 = os.path.join(tempfile.gettempdir(), 'st_fake_ea_livecharts_gold.json')
 # two MT5 charts with the EA: EUR/USD on account 90001234, gold on account 90005678 (each streams its own symbol)
 ea = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out, 'EURUSD', str(T0), str(p0), '5', '90001234'])
-ea2 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out2, 'XAUUSD', str(T0), str(g0), '2', '90005678'])
+ea2 = subprocess.Popen([sys.executable, os.path.join(HERE, 'fake_ea_livecharts.py'), 'st-test-livecharts-e2e', '200', out2, 'XAUUSD', str(T0), str(g0), '2', '90005678', '0'])   # gold's EA: managing from the app OFF
 time.sleep(2)
 env = dict(os.environ, PYTHONIOENCODING='utf-8')
 rc = subprocess.call([sys.executable, os.path.join(HERE, 'browser_test.py'), os.path.join(HERE, 'livecharts_e2e.js')], env=env)
@@ -30,7 +30,7 @@ for e2 in (ea, ea2):
     except Exception: pass
 try:
     log = json.load(open(out))
-    print('stand-in EA:', json.dumps({k: log.get(k) for k in ('joined', 'who', 'hist', 'bars_msgs', 'px', 'unwatch', 'errors')}))
+    print('stand-in EA:', json.dumps({k: log.get(k) for k in ('joined', 'who', 'hist', 'bars_msgs', 'px', 'unwatch', 'errors', 'cmds', 'bad_sig')}))
     print('watches (s, ms, sym):', json.dumps(log.get('watches', [])[-12:]))
     print('px gaps (ms):', json.dumps(log.get('gaps_ms', [])[-12:]))
 except Exception as e:
