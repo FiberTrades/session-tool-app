@@ -14,7 +14,7 @@ DG = int(sys.argv[7]) if len(sys.argv) > 7 else 5          # digits (gold: 2)
 LG = int(sys.argv[8]) if len(sys.argv) > 8 else 90001234   # the account's login
 TM = int(sys.argv[9]) if len(sys.argv) > 9 else 1          # "Manage trades from Session Terminal" on (1) or off (0)
 topic = 'realtime:stl-' + hashlib.sha256(('st-live:' + tok).encode()).digest()[:16].hex()
-log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'wl': [], 'q': 0, 'syms': [], 'hub_hs': [], 'hist_by': [], 'hub_px': 0, 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
+log = {'topic': topic, 'joined': False, 'watches': [], 'unwatch': 0, 'who': 0, 'hist': [], 'hist_tf': [], 'opens': [], 'cfgs': [], 'wl': [], 'q': 0, 'syms': [], 'hub_hs': [], 'hist_by': [], 'hub_px': 0, 'bars_msgs': 0, 'px': 0, 'errors': [], 'gaps_ms': [], 'cmds': [], 'bad_sig': 0}
 w0 = time.time()
 def fnow(): return T0 + (time.time() - w0)          # the stand-in's clock: the given moment, running
 def price_at(t):                                     # a gentle walk, the same at any moment asked twice
@@ -38,6 +38,12 @@ def bar_sym(sy, m, step):                             # a candle of another symb
     return [int(m), pts[0], max(pts), min(pts), pts[-1], 50]
 def bstr_d(b, dg): return ('%d,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%.' + str(dg) + 'f,%d') % tuple(b)
 hub = {'wl': [], 'wl_at': 0, 'q_at': 0, 'hs': [], 'hs_at': 0, 'px_at': {}}
+# EA 9.02: its panel's settings ("set"), deliberately unlike practice's defaults so the test can tell whose the panel shows
+PIP = 10 ** -(DG - 1)
+ST = {'risk_mode': 'amount', 'risk_percent': 1.0, 'risk_amount': 250.0, 'fixed_lot': 0.1, 'sl_min': 4.0, 'sl_max': 20.0, 'unit': 'pips', 'tp_on': True, 'tp_mode': 'rr', 'tp_value': 3.0,
+      'tp_close_pct': 100.0, 'be_on': True, 'be_trigger_r': 1.0, 'be_offset': 0.5, 'be_offset_mode': 'pips', 'max_trades_day': 3, 'partials': '50', 'order_kind': 'market', 'exec_key': 'O',
+      'active': 1, 'pip': PIP, 'ts_unit': 'rr', 'ts': '0.50', 'digits': DG}
+def send_set(): text(bcast('set', {'s': SYM, 'lg': LG, 'st': ST}))
 RELAY = os.environ.get('ST_RELAY', '')   # host:port of Session Terminal's relay on this machine (plain ws), or wss://host (the live one): the EA on the relay
 if RELAY.startswith('wss://'):
     rh = RELAY[6:]; s = ssl.create_default_context().wrap_socket(socket.create_connection((rh, 443), timeout=5), server_hostname=rh); HOSTH = rh
@@ -80,6 +86,24 @@ def on_cmd(p):
     want = hmac.new(tok.encode(), msg.encode(), hashlib.sha256).hexdigest()
     if want != p.get('ch'): log['bad_sig'] += 1; return ack(False, 'sig')
     if abs(int(fnow() - (time.time() - int(p.get('cts', '0'))) - fnow())) > 120 and abs(time.time() - int(p.get('cts', '0'))) > 120: return ack(False, 'old')
+    if a == 'open' and VER >= '9.02':   # a new order (EA 9.02's LwOpenCmd): placed at the price now, sized from the risk
+        slp = float(p.get('cp') or 0); px = price_at(fnow()); d = 1 if slp < px else -1; pips = min(max(abs(px - slp) / PIP, ST['sl_min']), ST['sl_max'])
+        vol = round(ST['risk_amount'] / (pips * 10.0), 2); fill = round(px + (7 * 10 ** -DG if d > 0 else 0), DG)
+        log['opens'].append({'sl': p.get('cp'), 'ci': p.get('ci'), 'dir': d, 'vol': vol, 'px': fill})
+        return text(bcast('ack', {'cid': cid, 'ok': 1, 'ca': 'open', 'ctk': '555001', 'm': '', 'px': fill, 'vol': vol, 'dir': d, 'sym': SYM}))
+    if a == 'cfg' and VER >= '9.02':    # the panel's settings from Live Charts (LwCfgCmd), then the settings now in force
+        log['cfgs'].append(p.get('cp')); kv = dict(x.split('=', 1) for x in str(p.get('cp') or '').split(';') if '=' in x)
+        num = lambda k: float(kv[k]) if k in kv else None
+        if 'on' in kv: ST['active'] = 1 if kv['on'] != '0' else 0
+        if 'ord' in kv: ST['order_kind'] = {'l': 'limit', 's': 'stop'}.get(kv['ord'], 'market')
+        if 'rm' in kv: ST['risk_mode'] = kv['rm']
+        for k, n in (('ra', 'risk_amount'), ('rp', 'risk_percent'), ('fl', 'fixed_lot'), ('mn', 'sl_min'), ('mx', 'sl_max'), ('tpv', 'tp_value'), ('beo', 'be_offset')):
+            if num(k) is not None and num(k) > 0: ST[n] = num(k)
+        if 'mtd' in kv: ST['max_trades_day'] = int(float(kv['mtd']))
+        if 'tpm' in kv: ST['tp_mode'] = kv['tpm']
+        if 'ts' in kv: ST['ts'] = kv['ts']
+        if 'pc' in kv: ST['partials'] = kv['pc']
+        ack(True); return send_set()
     if a in ('sl', 'tp', 'be', 'ts', 'pc'): return ack(True, '', float(p.get('cp') or 0) if a == 'sl' else 0.0, float(p.get('cp') or 0) if a == 'tp' else 0.0)
     if a == 'close': return ack(True)
     return ack(False, 'unknown')
@@ -119,6 +143,7 @@ while time.time() - w0 < secs:
             if state == 2 and '"phx_reply"' in m and '"ref":"1"' in m:
                 if '"status":"ok"' not in m: log['errors'].append('join refused: ' + m[:200]); state = 0; break
                 state = 3; log['joined'] = True; hi()
+                if VER >= '9.02': send_set()
             elif '"event":"watch"' in m:
                 p = inner(m); now = time.time(); watch_at = now; ms = int(p.get('ms') or 2000)
                 if ms <= 500: fast_at = now
@@ -138,7 +163,9 @@ while time.time() - w0 < secs:
                     hits = [x for x in UNI if x.upper().startswith(q)] + [x for x in UNI if q in x.upper() and not x.upper().startswith(q)]
                     text(bcast('symlist', {'by': KEYME, 'q': p.get('q'), 'r': ','.join(hits[:20])}))
             elif '"event":"unwatch"' in m: watch_at = fast_at = mid_at = sym_at = 0; log['unwatch'] += 1
-            elif '"event":"who"' in m: log['who'] += 1; hi()
+            elif '"event":"who"' in m:
+                log['who'] += 1; hi()
+                if VER >= '9.02': send_set()
             elif '"event":"cmd"' in m: on_cmd(inner(m))
             elif '"event":"hist"' in m:
                 p = inner(m)

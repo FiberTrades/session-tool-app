@@ -21,6 +21,7 @@
     await W(800);
     try { Object.defineProperty(document, 'hidden', { configurable: true, get: function () { return false; } }); } catch (e) {}
     var errs = []; window.addEventListener('error', function (e) { errs.push(String(e.message)); });
+    window.addEventListener('unhandledrejection', function (e) { errs.push('rejected: ' + String(e.reason && (e.reason.stack || e.reason.message) || e.reason).slice(0, 300)); });
     var P = window.__stPractice, LC = window.__stLC, LN = window.__stLiveLine;
     var T0 = Date.UTC(2026, 9, 14, 8, 30) / 1000;
     // a weekend: an FX symbol's live day is Friday's, a crypto one's is today's (BTCUSD trades on a Saturday)
@@ -232,6 +233,30 @@
     check('back on EURUSD; × takes USDJPY off the list', st.sym === 'EURUSD' && P._wl().list.indexOf('USDJPY') < 0 && !document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]'), P._wl().list);
     document.getElementById('stpr-sym').click(); await W(150);
 
+    // ---- orders from Live Charts (18 Oct 2026, EA 9.02): the panel is the EA's own, two ways; the key and the stop place it at
+    //      once - no confirm box; the panel's line says sent, then filled, with our own chime ----
+    var practiceRisk = (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt;
+    for (k = 0; k < 40 && !LC._mmLive(); k++) await W(150);
+    var mmb = document.getElementById('stpr-mm');
+    check('the panel shows in Live Charts, titled with the account (its name and login)', mmb && getComputedStyle(mmb).display !== 'none' && mmb.offsetWidth > 0 && /FTMO 70K Challenge · 90001234/.test(mmb.textContent), mmb && mmb.textContent.slice(0, 80));
+    check('...with the EA\'s own settings from MT5: risk 250.00, Min SL 4.0, Max SL 20.0, TP 3.00 R, 3 trades a day', LC._mmLive() && P._cfg().mm.riskAmt === 250 && mmb.querySelector('[data-mmi="rval"]').value === '250.00' && mmb.querySelector('[data-mmi="min"]').value === '4.0' && mmb.querySelector('[data-mmi="max"]').value === '20.0' && /3\.00/.test(mmb.querySelector('[data-mmi="tp"]').value) && mmb.querySelector('[data-mmi="maxd"]').value === '3',
+      [P._cfg().mm.riskAmt, mmb.querySelector('[data-mmi="min"]').value, mmb.querySelector('[data-mmi="max"]').value, mmb.querySelector('[data-mmi="tp"]').value]);
+    check('...while practice\'s own settings are left alone', (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt === practiceRisk && practiceRisk !== 250, [practiceRisk]);
+    var rin = mmb.querySelector('[data-mmi="rval"]'); rin.focus(); rin.value = '300'; rin.dispatchEvent(new Event('input', { bubbles: true })); rin.dispatchEvent(new Event('change', { bubbles: true })); rin.blur();
+    for (k = 0; k < 40 && !(LC._mmLive() && P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00'); k++) await W(150);   // the EA's settings come back and the panel shows them
+    check('a change in the panel goes to the EA ("cfg", signed) and stays: risk 300.00', P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt === practiceRisk, [P._cfg().mm.riskAmt, document.querySelector('#stpr-mm [data-mmi="rval"]').value, (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt, practiceRisk]);
+    var ch0 = LC._chimes();
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(200);
+    check('the execution key arms it on Live Charts: the stop, entry and target lines where the order would go', P._s().exec && P._lines(0).some(function (l) { return /^SL /.test(l.title || l.t || ''); }), P._lines(0).map(function (l) { return l.title || l.t; }));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+    var o0 = LC._ord() && JSON.parse(JSON.stringify(LC._ord())); await new Promise(function (r) { requestAnimationFrame(function () { requestAnimationFrame(r); }); });
+    var fn0 = document.querySelector('#stpr-mm .stpr-mm-fn').textContent;
+    check('...and the order goes at once - no confirm box: "BUY ... EURUSD · sent HH:MM:SS" (or already filled)', o0 && o0.st === 'sent' && o0.dir === 1 && !P._s().exec && (/^BUY .*EURUSD · sent \d\d:\d\d:\d\d$/.test(fn0) || /^Filled /.test(fn0)), [o0, fn0]);
+    for (k = 0; k < 40 && !(LC._ord() && LC._ord().st === 'ok'); k++) await W(150);
+    var fn1 = document.querySelector('#stpr-mm .stpr-mm-fn');
+    check('MT5 placed it: "Filled 1.xxxxx · BUY 0.xx EURUSD · HH:MM:SS", in green', /^Filled 1\.\d{5} · BUY \d+\.\d\d EURUSD · \d\d:\d\d:\d\d$/.test(fn1.textContent) && fn1.classList.contains('on'), fn1.textContent);
+    check('...with the fill\'s chime', LC._chimes() === ch0 + 1, LC._chimes());
+
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
     check('Maximise: the charts fill the screen', document.getElementById('stpr-bg').classList.contains('show') && win.parentNode.id === 'stpr-bg' && LC.state().max);
@@ -258,6 +283,24 @@
     if (ob) ob.click();
     for (k = 0; k < 60; k++) { await W(250); st = LC.state(); if (st.live) break; }
     check('it opens Live Charts on that trade\'s symbol', document.getElementById('page-livecharts').classList.contains('active') && st.live && st.sym === 'EURUSD', st);
+
+    // ---- Back Testing's today (18 Oct 2026): today's candles from the EA, any moment of it replayed, then the live price ----
+    document.querySelector('.tab[data-page="trades"]').click(); await W(600);
+    await P.open({ symbol: 'EURUSD', day: '2026-10-13' }); for (k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
+    var tb = document.getElementById('stpr-today');
+    check('Back Testing has a Today button beside Random day', tb && getComputedStyle(tb).display !== 'none' && tb.previousElementSibling && tb.previousElementSibling.id === 'stpr-rand' && /Today/.test(tb.textContent), tb && tb.outerHTML.slice(0, 60));
+    tb.click();
+    var nowT = function () { return Math.floor(Date.now() / 1000) + Math.round((T0 * 1000 - (window.__t0ref || 0)) / 1000); };
+    for (k = 0; k < 120; k++) { await W(250); var ts = P._s(); if (ts && ts.today && ts.gotHist && ts.base.length > 100 && ts.follow) break; }
+    ts = P._s(); var whenT = document.getElementById('stpr-when').textContent;
+    check('Today opens today (the EA\'s minutes), at the present, following the live price - still PRACTICE', ts && ts.today && ts.day === '2026-10-14' && ts.base.length > 100 && ts.follow && /TODAY · LIVE PRICE/.test(whenT) && /Practice/i.test(document.getElementById('stpr-chip').textContent), [ts && ts.day, ts && ts.base.length, ts && ts.follow, whenT]);
+    var n0 = ts.now; P._goto('09:00'); await W(1500); ts = P._s();
+    check('Go to replays an earlier moment of today (09:00): no longer at the present', ts.today && ts.now < n0 - 600 && !ts.follow && /TODAY$/.test(document.getElementById('stpr-when').textContent), [n0, ts.now, ts.follow, document.getElementById('stpr-when').textContent]);
+    P._goto('16:00'); for (k = 0; k < 12 && !(P._s().follow); k++) await W(250); ts = P._s();
+    check('...and a jump past now stops at the present, then follows the live price again', ts.follow && ts.now >= n0 && /LIVE PRICE/.test(document.getElementById('stpr-when').textContent), [ts.now, n0, ts.follow]);
+    var ord0 = LC._ord() && LC._ord().at; P._place(1); await W(400);
+    check('a trade on today is a practice trade: on the chart, nothing sent to MT5', !!P._s().pos && (LC._ord() && LC._ord().at) === ord0, [!!P._s().pos, ord0]);
+    P._close(); await W(200); P.close(); await W(300);
     check('no page errors', !errs.length, errs.slice(0, 4));
     document.querySelector('.tab[data-page="trades"]').click(); await W(400);
   } catch (e) { check('test ran', false, String(e && e.stack || e)); }

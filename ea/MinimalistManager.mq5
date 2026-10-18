@@ -867,8 +867,10 @@ bool ResolveForOrder(int &dir,double &entry,double &slPrice,double &slPips,strin
 // structure, on any market.
 #define SLIP_PCT_OF_SL 20.0
 
+bool g_sendTried=false;   // v9.02: SendOne was reached (an order from the app tells a refusal by the EA from the broker's)
 bool SendOne(int dir,double volume,double entry,double slPrice,double tpPrice)
   {
+   g_sendTried=true;
    if(volume<=0) return false;
    string cm="MTM";
    if(g_orderKind==OK_MARKET)
@@ -4116,6 +4118,120 @@ void LwStreamHub()
       LwCount();
      }
   }
+// ---- v9.02 orders from Live Charts (Nestor, 18 Oct 2026: no confirm box - "if i am going to have to press place order everytime
+// i trade the oportunity of entering in a good position will be gone"). The app's "open" says where the stop goes (cp) and the
+// order kind ("m", or "l"/"s" and the entry price, in ci); this EA does exactly what its key and a click on the chart do: the
+// execution lines at that stop, then PlaceTrade() - its risk sizing, Min / Max SL, daily limit, BE, trailing and partials. It
+// answers "ack" with the fill (price, lots, ticket) or why it did not trade. Its panel's settings travel both ways ("set" out,
+// "cfg" in), so the panel in Live Charts and the one in MT5 always match ("YES it should change it too").
+string LwWhy();                                                  // defined below
+void LwAck(string id,bool ok,string a,string tk,string why);    // defined below
+string g_lwSetSig=""; uint g_lwSetChk=0, g_lwSetAt=0;           // the settings last sent to the app, and when
+void LwAckOpen(string id,bool ok,string why,double px,double vol,ulong tk,int dir)
+  {
+   StringReplace(why,"\"","'"); StringReplace(why,"\\","/");
+   string p=StringFormat("{\"cid\":\"%s\",\"ok\":%d,\"ca\":\"open\",\"ctk\":\"%I64u\",\"m\":\"%s\",\"px\":%s,\"vol\":%s,\"dir\":%d,\"sym\":\"%s\"}",
+                         id,ok?1:0,tk,why,DoubleToString(px,_Digits),DoubleToString(vol,2),dir,_Symbol);
+   if(LwText(LwBroadcast("ack",p))) LwCount();
+   Print("Session Terminal: order from the app - ",(ok?"done":"not placed"),(why!=""?" ("+why+")":""));
+  }
+void LwOpenCmd(string id,string p,string ix)
+  {
+   if(!g_active){ LwAckOpen(id,false,"inactive",0,0,0,0); return; }
+   if(g_copyRole==CR_FOLLOW){ LwAckOpen(id,false,"follow",0,0,0,0); return; }
+   double slp=NormalizeDouble(StringToDouble(p),_Digits);
+   string k=StringSubstr(ix,0,1); double ent=NormalizeDouble(StringToDouble(StringSubstr(ix,1)),_Digits);
+   ENUM_ORDER_KIND kind=(k=="l")?OK_LIMIT:((k=="s")?OK_STOP:OK_MARKET);
+   if(slp<=0 || (kind!=OK_MARKET && ent<=0)){ LwAckOpen(id,false,"price",0,0,0,0); return; }
+   bool was=g_execMode;
+   if(g_orderKind!=kind){ g_orderKind=kind; SaveState(); }
+   if(!g_execMode){ g_execMode=true; ShowExecutionLines(); }          // what a press of the execution key draws
+   else ShowExecutionLines();
+   if(kind!=OK_MARKET) EnsureHLine(LN_ENTRY,ent,EntryLineColour(),STYLE_SOLID,true);
+   double ask=SymbolInfoDouble(_Symbol,SYMBOL_ASK), bid=SymbolInfoDouble(_Symbol,SYMBOL_BID), mid=(ask+bid)/2.0;
+   double anchor=(kind==OK_MARKET) ? mid : ent;
+   int side=(slp<anchor) ? -1 : +1;                                   // the stop below: a buy
+   double ref=(kind==OK_MARKET) ? (side>0?bid:ask) : anchor;
+   double dist=MathAbs(slp-ref)/g_pip;
+   if(dist<g_minSL) dist=g_minSL; if(dist>g_maxSL) dist=g_maxSL;      // as the line is held on the chart
+   g_slSetPips=dist; g_slSetSide=side; RedrawTargets();
+   g_sendTried=false; g_flashMsg="";
+   PlaceTrade();                                                      // the click
+   bool ok=false; string why=""; double px=0, vol=0; ulong tk=0;
+   if(g_sendTried)
+     {
+      uint rc=trade.ResultRetcode();
+      ok=(rc==TRADE_RETCODE_DONE || rc==TRADE_RETCODE_PLACED || rc==TRADE_RETCODE_DONE_PARTIAL);
+      if(ok){ px=trade.ResultPrice(); if(px<=0) px=(kind==OK_MARKET)?((side<0)?ask:bid):ent; vol=trade.ResultVolume(); tk=trade.ResultOrder(); }
+      else why=LwWhy();
+     }
+   else { why=g_flashMsg; StringReplace(why,"CANNOT TRADE: ",""); if(why=="") why="not placed"; }
+   if(g_execMode && (!was || !ok)){ g_execMode=false; HideExecutionLines(); BuildPanel(); }   // as it was (a placed trade turns it off anyway)
+   LwAckOpen(id,ok,why,px,vol,tk,-side);
+  }
+// the panel's settings from Live Charts: "k=v;k=v" (the same names travel out in "set")
+void LwCfgCmd(string id,string p)
+  {
+   string kv[]; int n=StringSplit(p,';',kv);
+   for(int i=0;i<n;i++)
+     {
+      int e=StringFind(kv[i],"="); if(e<=0) continue;
+      string k=StringSubstr(kv[i],0,e), v=StringSubstr(kv[i],e+1); double d=StringToDouble(v);
+      if(k=="on"){ bool want=(d!=0); if(want!=g_active && !(want && DayLimitReached())) MasterSet(want); }
+      else if(k=="ord") g_orderKind=(v=="l")?OK_LIMIT:((v=="s")?OK_STOP:OK_MARKET);
+      else if(k=="key"){ int c=(int)d; if(c>=48 && c<=90) g_execKey=c; }
+      else if(k=="rm") g_riskMode=(v=="percent")?RISK_PERCENT:((v=="lots")?RISK_FIXED_LOT:RISK_AMOUNT);
+      else if(k=="ra"){ if(d>0) g_riskAmount=d; }
+      else if(k=="rp"){ if(d>0) g_riskPercent=d; }
+      else if(k=="fl"){ if(d>0) g_fixedLot=d; }
+      else if(k=="mn"){ if(d>0) g_minSL=d; }
+      else if(k=="mx"){ if(d>0) g_maxSL=d; }
+      else if(k=="tpo") g_tpOn[0]=(d!=0);
+      else if(k=="tpm") g_tpMode=(v=="pips")?TP_BY_PIPS:TP_BY_RR;
+      else if(k=="tpv"){ if(d>0) g_tpVal[0]=d; }
+      else if(k=="beo"){ if(d>=0) g_beOffset=d; }
+      else if(k=="bem") g_beOffMode=(v=="rr")?BEOFF_BY_RR:BEOFF_BY_PIPS;
+      else if(k=="mtd"){ if(d>=0) g_maxTradesDay=(int)d; }
+      else if(k=="tsu") g_tsUnit=(v=="pips")?BEOFF_BY_PIPS:BEOFF_BY_RR;
+      else if(k=="ts")
+        {
+         string a[]; int m=(StringLen(v)>0)?StringSplit(v,'/',a):0; if(m>TS_MAX) m=TS_MAX;
+         for(int j=0;j<m;j++) g_tsDest[j]=StringToDouble(a[j]);
+         while(g_tsCount>m){ int gone=--g_tsCount; ObjectDelete(0,TsName(gone)); ObjectDelete(0,TsTxt(gone)); g_tsFired[gone]=false; g_tsTrig[gone]=0.0; SaveTrailState(); }
+         if(g_tsCount<m) g_tsCount=m;                                 // their lines appear next tick, as Add T does
+        }
+      else if(k=="pc")
+        {
+         string a[]; int m=(StringLen(v)>0)?StringSplit(v,'/',a):0; if(m>PC_MAX) m=PC_MAX;
+         for(int j=0;j<m;j++){ double q=StringToDouble(a[j]); if(q>0 && q<=100) g_pcPct[j]=q; }
+         while(g_pcCount>m){ int gone=--g_pcCount; ObjectDelete(0,PcName(gone)); ObjectDelete(0,PcTxt(gone)); g_pcFired[gone]=false; g_pcTrig[gone]=0.0; g_pcFails[gone]=0; SavePcState(); }
+         if(g_pcCount<m) g_pcCount=m;
+        }
+     }
+   if(g_maxSL<g_minSL) g_maxSL=g_minSL;
+   SaveState(); BuildPanel(); if(g_execMode) RedrawTargets(); ChartRedraw();
+   g_lwSetSig="";                                                    // the app hears the settings now in force at once
+   LwAck(id,true,"cfg","","");
+  }
+// this chart's panel settings to the app ("set"): when they change (looked at once a second) and every minute while watched
+string LwSetBody()
+  {
+   string ts="";
+   for(int i=0;i<g_tsCount;i++) ts+=(i>0?"/":"")+DoubleToString(g_tsDest[i],2);
+   string ek=ShortToString((ushort)g_execKey);
+   return LiveSettingsBody()+StringFormat(",\"order_kind\":\"%s\",\"exec_key\":\"%s\",\"active\":%d,\"pip\":%s,\"ts_unit\":\"%s\",\"ts\":\"%s\",\"digits\":%d",
+          (g_orderKind==OK_LIMIT)?"limit":((g_orderKind==OK_STOP)?"stop":"market"),ek,g_active?1:0,DoubleToString(g_pip,8),(g_tsUnit==BEOFF_BY_RR)?"rr":"pips",ts,_Digits);
+  }
+void LwSetSend(bool force)
+  {
+   uint now=GetTickCount();
+   if(!force && now-g_lwSetChk<1000) return;
+   g_lwSetChk=now;
+   string b=LwSetBody();
+   if(!force && b==g_lwSetSig && !(LwWatched() && now-g_lwSetAt>=60000)) return;
+   if(!LwText(LwBroadcast("set",StringFormat("{\"s\":\"%s\",\"lg\":%I64d,\"st\":{%s}}",_Symbol,AccountInfoInteger(ACCOUNT_LOGIN),b)))) return;
+   g_lwSetSig=b; g_lwSetAt=now; LwCount();
+  }
 // ---- Trade management from Session Terminal (18 Oct 2026, Nestor: "start the trade management from the app now") ----
 // The app sends "cmd" on the live line to move this trade's SL, TP, BE trigger or a T / P step, or to close it (Move to BE and
 // Close 50% were left to the EA's own BE and partial closes - Nestor, 18 Oct 2026). This EA acts only when the member switched it on (InpAppTrade), on its own account and
@@ -4173,6 +4289,8 @@ void LwCmd(string s)
    if(StringLen(g_syncTokenEff)==0 || LwHmac(g_syncTokenEff,msg)!=h){ LwAck(id,false,a,tk,"sig"); return; }
    long age=(long)TimeGMT()-StringToInteger(ts);
    if(age>LW_CMD_AGE || age<-LW_CMD_AGE){ LwAck(id,false,a,tk,"old"); return; }
+   if(a=="open"){ LwOpenCmd(id,p,ix); return; }   // v9.02: a new order from Live Charts
+   if(a=="cfg"){ LwCfgCmd(id,p); return; }        // v9.02: the panel's settings changed in Live Charts
    ulong t=(ulong)StringToInteger(tk);
    if(!LwPos(t)){ LwAck(id,false,a,tk,"gone"); return; }
    double px=NormalizeDouble(StringToDouble(p),_Digits);
@@ -4221,6 +4339,7 @@ void LwOnText(string s)
       if(g_lwRelay) Print("Live line: connected to Session Terminal's relay - live charts get every tick (up to 10 a second) while a window shows them.");
       else Print("Live line: connected - Session Terminal's live charts update while a window shows them (2 a second in your session, every 2 s with a trade open, every 5 s otherwise).");
       LwText(LwBroadcast("hi",LwHi()));   // a window already watching says so at once; Live Charts learns this chart's symbol
+      LwSetSend(true);                     // v9.02: and its panel's settings
       return;
      }
    if(StringFind(s,"\"phx_error\"")>=0 || StringFind(s,"\"phx_close\"")>=0){ LwDrop("channel closed"); return; }
@@ -4236,7 +4355,7 @@ void LwOnText(string s)
    else if(StringFind(s,"\"event\":\"wl\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwWlSet(LwStr(s,"\"syms\":\"")); }       // v9.02: the watchlist
    else if(StringFind(s,"\"event\":\"syms\"")>=0){ if(LwStr(s,"\"by\":\"")==LwKey()) LwSymSearch(LwStr(s,"\"q\":\"")); }   // v9.02: a symbol search
    else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; g_hubAt=0; g_wlAt=0; }   // another window still watching says so again
-   else if(StringFind(s,"\"event\":\"who\"")>=0) LwText(LwBroadcast("hi",LwHi()));   // a window that joined after this chart
+   else if(StringFind(s,"\"event\":\"who\"")>=0){ LwText(LwBroadcast("hi",LwHi())); LwSetSend(true); }   // a window that joined after this chart (v9.02: + the settings)
    else if(StringFind(s,"\"event\":\"cmd\"")>=0) LwCmd(s);   // trade management from the app
    else if(StringFind(s,"\"event\":\"hist\"")>=0)   // v9.01: + tf; v9.02: + another symbol, asked of the hub ("by")
      {
@@ -4327,6 +4446,7 @@ void LwService()
       g_lwHb=now;
       if(!LwText("{\"topic\":\"phoenix\",\"event\":\"heartbeat\",\"payload\":{},\"ref\":\""+LwRef()+"\"}")) return;
      }
+   if(g_lwState==3) LwSetSend(false);   // v9.02: a change to the panel's settings, to the app
    if(LwWatched()){ LwStream(); LwStreamPx(); LwStreamHub(); LwStreamQuotes(); }
   }
 // The trade's figures over the line: on any change in the price, the forming candle or a level, at most every

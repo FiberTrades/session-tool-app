@@ -48,6 +48,7 @@ try:
     log = json.load(open(out))
     print('stand-in EA:', json.dumps({k: log.get(k) for k in ('joined', 'who', 'hist', 'bars_msgs', 'px', 'unwatch', 'errors', 'cmds', 'bad_sig')}))
     print('hub (EURUSD, 9.02):', json.dumps({k: log.get(k) for k in ('wl', 'q', 'syms', 'hub_hs', 'hist_by', 'hub_px')})[:900])
+    print('orders + settings (EURUSD, 9.02):', json.dumps({k: log.get(k) for k in ('opens', 'cfgs')})[:900])
     print('watches (s, ms, sym):', json.dumps(log.get('watches', [])[-12:]))
     print('px gaps (ms):', json.dumps(log.get('gaps_ms', [])[-12:]))
 except Exception as e:

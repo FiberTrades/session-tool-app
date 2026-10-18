@@ -40,7 +40,9 @@
     ok('his defaults: arrows off, 0.0, 16 rows, 6 bars, silver at 70%, red POC', d0.vpOn === false && d0.vpSig === 0 && d0.vpRows === 16 && d0.vpOff === 6 && d0.vpCol === 'rgba(178,181,190,0.7)' && d0.vpPoc === 'rgba(242,54,69,1)', d0);
     dl.querySelector('[data-dc]').click(); await W(40);
 
-    // signed out: no volume on these candles yet, nothing to ask with
+    // signed out: no volume on these candles yet, nothing to ask with (the page's own copy: the real store has since got volume
+    // on some of these candles from the EA answering asks like this one - 18 Oct 2026)
+    var stc = P._static(); Object.keys(stc).forEach(function (key) { if (key.split('|')[0] !== 'EURUSD') return; (stc[key].rows || []).forEach(function (b) { b.vol = null; }); (stc[key].agg || []).forEach(function (b) { b.vol = null; }); });
     var p0 = P._panes()[0]; P._miniFresh(); P._render(); await W(120);
     var M = P._mini(0);
     ok('candles without volume (stored before EA 9.00): no arrows; signed out it says to sign in', M && M.vp && M.vp.miss > 0 && M.vp.st === 'out', M && M.vp);
