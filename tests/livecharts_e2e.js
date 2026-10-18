@@ -65,7 +65,7 @@
     check('no trade log under the charts ("yes remove it", 18 Oct 2026) - All Trades History stays in the Calendar', !document.querySelector('#page-livecharts .alltrades-wrap') && !!document.querySelector('#page-tradeview .alltrades-wrap'));
     for (k = 0; k < 40 && !document.getElementById('stpr-laybtn'); k++) await W(100);
     var tb1 = document.querySelector('#stpr-win > .stpr-tb:not(.stpr-tb2)'), lbt = document.getElementById('stpr-laybtn');
-    check('one toolbar row: the Charts button beside the timeframe and the drawing tools (its own row is gone)', getComputedStyle(tb1).display === 'none' && lbt && document.getElementById('stpr-tb2').contains(lbt), [getComputedStyle(tb1).display, lbt && lbt.parentNode.parentNode.id]);
+    check('one toolbar row: the Charts button at its right, before the object tree, no "Charts" word', getComputedStyle(tb1).display === 'none' && lbt && document.getElementById('stpr-tb2').contains(lbt) && lbt.parentNode.nextElementSibling && lbt.parentNode.nextElementSibling.id === 'stpr-treebtn' && !document.getElementById('stpr-laylbl'), [getComputedStyle(tb1).display, lbt && lbt.parentNode.parentNode.id]);
     await W(600); var wr = win.getBoundingClientRect(), tbs = document.querySelector('.tabs').getBoundingClientRect();
     check('the whole window fits the screen under the tabs (charts, the live bar, the clock), scrolled into place', wr.height <= window.innerHeight - tbs.height && wr.bottom <= window.innerHeight + 2 && wr.top >= tbs.bottom - 2, [Math.round(tbs.bottom), Math.round(wr.top), Math.round(wr.bottom), window.innerHeight]);
     check('the replay\'s own controls are not there (no Replay either); the live bar is', !document.getElementById('stpr-rand') && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
@@ -94,7 +94,7 @@
     check('the header: LIVE (green) and "Your MT5 prices"', document.getElementById('stpr-chip').classList.contains('lv') && /Live/.test(document.getElementById('stpr-chip').textContent) && document.getElementById('stpr-when').textContent === 'Your MT5 prices',
       [document.getElementById('stpr-chip').className, document.getElementById('stpr-when').textContent]);
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
-    check('each chart: "Candle MM:SS | Spread 0.7p" bottom right', cd.length === 2 && /^Candle \d\d:\d\d \| Spread 0\.7p$/.test(cd[0].textContent) && /^Candle 00:\d\d \| Spread 0\.7p$/.test(cd[1].textContent), [cd.length, cd[0] && cd[0].textContent, cd[1] && cd[1].textContent]);
+    check('each chart: "Candle MM:SS | Spread 0.7p" bottom right', cd.length === 2 && /^Candle \d\d:\d\d \| Spread 0\.7p$/.test(cd[0].textContent) && /^Candle 0[01]:\d\d \| Spread 0\.7p$/.test(cd[1].textContent), [cd.length, cd[0] && cd[0].textContent, cd[1] && cd[1].textContent]);
     var gaps = [], prevAt = LC.state().at; for (k = 0; k < 40; k++) { await W(80); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
     check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
 
@@ -346,6 +346,30 @@
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(300);
     check('Escape: back in the tab', win.parentNode.id === 'lc-host' && !document.getElementById('stpr-bg').classList.contains('show'));
 
+    // ---- Live Charts remembers each chart's zoom on this device (18 Oct 2026: "can the chart remember where i left it") ----
+    await W(1500);   // the window settles after Maximise / Escape first
+    var zp = P._panes()[0], zl = zp.n - 1, zt = null;
+    P._zoom(0, { from: zl - 56, to: zl + 4 });   // as a wheel zoom leaves it (the chart's own handlers are not reachable from a script)
+    await W(1500);
+    var zr0 = zp.chart.timeScale().getVisibleLogicalRange(), zsv = {}; try { zsv = JSON.parse(localStorage.getItem('st_lc_view') || '{}'); } catch (e) {}
+    var zk = zsv['0|' + zp.tf], zspan = zr0 ? zr0.to - zr0.from : 0;
+    check('a chart zoomed by hand is remembered on this device (60 candles, ending 4 right of the latest)', !!zk && Math.abs(zk.span - 60) < 1.5 && Math.abs(zk.off - 4) < 1.5, [zsv, zspan]);
+    document.querySelector('.tab[data-page="trades"]').click(); await W(900);
+    document.querySelector('.tab[data-page="livecharts"]').click();
+    for (k = 0; k < 80; k++) { await W(200); st = LC.state(); if (st.live && P._panes().length && P._panes()[0].n > 30 && P._panes()[0].shown) break; } await W(1200);
+    var zq = P._panes()[0], zr = zq.chart.timeScale().getVisibleLogicalRange();
+    check('...and Live Charts opens at that zoom again, the latest candle on screen', !!zr && !!zk && Math.abs((zr.to - zr.from) - zk.span) < 2.5 && zr.to >= zq.n - 1, zr && zk && [zr.to - zr.from, zk.span, zr.to - (zq.n - 1)]);
+    // ---- Live Charts in a window of its own (18 Oct 2026: "where is the open in a new window button?") ----
+    var popEl = document.getElementById('stpr-pop');
+    check('Live Charts has the open-in-a-new-window button', popEl && getComputedStyle(popEl).display !== 'none' && popEl.offsetWidth > 0);
+    var opened = null, fakeW = { closed: false, close: function () { this.closed = true; } }, wo = window.open;
+    window.open = function (u, n, f) { opened = [u, n, f]; return fakeW; };
+    popEl.click(); await W(500); window.open = wo;
+    var away = document.getElementById('lc-away');
+    check('...it opens the app in a window of its own on Live Charts (this symbol); this tab says so and stops its chart', !!opened && /\?livecharts=1&sym=EURUSD/.test(opened[0]) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, away && away.textContent]);
+    fakeW.closed = true;
+    for (k = 0; k < 60 && !(LC.state().live && !document.getElementById('lc-away')); k++) await W(250);
+    check('...closing that window brings Live Charts back here', LC.state().live && !document.getElementById('lc-away'));
     // ---- leaving the tab ----
     document.querySelector('.tab[data-page="trades"]').click(); await W(600);
     for (k = 0; k < 20; k++) { await W(250); if (!LN.state().watching) break; }
