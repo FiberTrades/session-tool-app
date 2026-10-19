@@ -19415,15 +19415,20 @@ try {
         if (isFinite(oAt) && !(k in st.opens)) { st.opens[k] = oAt; changed = true; }
         if (cur.closed && isFinite(cAt) && !(k in st.closes)) { st.closes[k] = { at: cAt, res: (window.__stLive && window.__stLive.resultFor) ? (window.__stLive.resultFor(k, cur.pnl) || resultOf(cur.pnl)) : resultOf(cur.pnl), pnl: (cur.pnl != null && isFinite(Number(cur.pnl))) ? Number(cur.pnl) : null }; changed = true; }
         var rk = Number(raw.risk);                            // EA 8.6+; the first seen, and the largest
-        if (rk > 0 && !(st.size0[k] > 0)) { st.size0[k] = rk; changed = true; }
-        if (rk > 0 && !(st.size[k] >= rk)) { st.size[k] = rk; changed = true; }
+        /* The first 30 s are the trade SETTLING (Nestor, 19 Oct 2026: "this nudge is wrong, risk is still the same, i havent moved
+           anything"): MT5 fills, then the EA moves the stop onto the real fill 50 ms later, and a risk announced in between (£587.50 for a
+           4.7-pip stop that became 4.0 = £500) stayed until the next announcement. While settling the latest figure is the risk the trade
+           was taken with; no risk nudge is judged until it has settled. */
+        var settling = isFinite(oAt) && Date.now() - oAt < 30000;
+        if (rk > 0 && (settling ? st.size0[k] !== rk : !(st.size0[k] > 0))) { st.size0[k] = rk; changed = true; }
+        if (rk > 0 && (settling ? st.size[k] !== rk : !(st.size[k] >= rk))) { st.size[k] = rk; changed = true; }
         if (changed) writeJ(DAY, st);
         if (!cur.closed && isFinite(oAt) && fresh(oAt) && !handled['o' + k]) { handled['o' + k] = 1; found = found.concat(onOpen(k, oAt, st, cur.symbol, cur.direction)); }
         // The risk can arrive after the open (the stop is set a moment after the fill, and the EA
         // re-announces every 20s), so it is judged the first time it is known, while still fresh.
-        if (!cur.closed && isFinite(oAt) && fresh(oAt) && st.size[k] > 0 && !handled['r' + k]) { handled['r' + k] = 1; found = found.concat(onRisk(k, oAt, st)).concat(onSize(k, st)); }
+        if (!cur.closed && isFinite(oAt) && fresh(oAt) && st.size[k] > 0 && !settling && !handled['r' + k]) { handled['r' + k] = 1; found = found.concat(onRisk(k, oAt, st)).concat(onSize(k, st)); }
         // 2) Stop moved away: an open trade's money at risk grew more than 10% above what it was taken with.
-        if (!cur.closed && rk > 0 && st.size0[k] > 0 && rk > st.size0[k] * 1.1 && !handled['w' + k]) {
+        if (!cur.closed && !settling && rk > 0 && st.size0[k] > 0 && rk > st.size0[k] * 1.1 && !handled['w' + k]) {
           handled['w' + k] = 1;
           found.push({ rule: 'widen', text: t('nudge.widen').replace('{OLD}', M0(st.size0[k])).replace('{NEW}', M0(rk)), say: t('nudge.widen_say') });
         }
@@ -20128,7 +20133,9 @@ try {
       return (0.199 * r + 0.687 * g + 0.114 * b) > 160 ? '#000000' : '#ffffff'; };   // the library's own rule for its labels
     var views = ['cd', 'cx'].map(function (k) { return { coordinate: function () { return V[k] ? V[k].y : -10000; }, text: function () { return V[k] ? V[k].t : ''; },
       textColor: function () { return V[k] ? fg(V[k].bg) : '#ffffff'; }, backColor: function () { return V[k] ? V[k].bg : '#2a2833'; }, visible: function () { return !!V[k]; } }; });
-    try { series.attachPrimitive({ priceAxisViews: function () { return views; }, updateAllViews: function () {}, attached: function (a) { req = a.requestUpdate; }, detached: function () { req = null; } }); } catch (e) {}
+    // only the labels on show: a hidden one (y -10000) still took part in the library's label spacing and pushed the SL / TP labels to
+    // the top of the scale (Nestor, 19 Oct 2026, on the Session Live card: "why are these labels sitting up here? looks broken")
+    try { series.attachPrimitive({ priceAxisViews: function () { return views.filter(function (v) { return v.visible(); }); }, updateAllViews: function () {}, attached: function (a) { req = a.requestUpdate; }, detached: function () { req = null; } }); } catch (e) {}
     return series.__stAx = { set: function (k, o) { var a = V[k] ? V[k].y + '|' + V[k].t + '|' + V[k].bg : '', b = o ? o.y + '|' + o.t + '|' + o.bg : ''; if (a === b) return; V[k] = o || null; try { if (req) req(); } catch (e) {} },
       get: function (k) { return V[k] || null; } };
   };
@@ -20434,7 +20441,7 @@ try {
           layout: { background: { color: 'transparent' }, textColor: '#9a96a6', fontFamily: "'DM Mono',monospace", fontSize: 11 },   // 11 as on the practice charts (17 Oct 2026)
           grid: { vertLines: { visible: false }, horzLines: { color: 'rgba(255,255,255,0.04)' } },
           // room at the bottom for the Candle | Spread badge, so the lowest level line never runs under it
-          rightPriceScale: { borderColor: '#332F3C', scaleMargins: { top: 0.08, bottom: 0.2 } },
+          rightPriceScale: { borderColor: '#332F3C', scaleMargins: { top: 0.08, bottom: 0.2 }, alignLabels: false },   // every label on its own price, as on TradingView (19 Oct 2026)
           timeScale: { borderColor: '#332F3C', timeVisible: true, secondsVisible: false, rightOffset: 8, barSpacing: 7,
             tickMarkFormatter: function (t, type) { var ts = (typeof t === 'number') ? t : 0, dd = new Date(ts * 1000);
               if (type === 3 || type === 4) return hm(ts); if (type === 2) return String(dd.getDate());
@@ -84351,7 +84358,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     chart=S.chart=window.LightweightCharts.createChart(chartEl,{
       layout:{background:{color:'#131217'},textColor:'#c0c0c0',fontFamily:"'DM Mono',monospace"},
       grid:{vertLines:{color:'rgba(255,255,255,0.03)'},horzLines:{color:'rgba(255,255,255,0.045)'}},   // the faint grid of Practice Replay (Nestor, 14 Oct 2026: "i like this grid, maybe add for trade replay")
-      rightPriceScale:{borderColor:'#332F3C',ticksVisible:true,scaleMargins:{top:0.12,bottom:0.12}},
+      rightPriceScale:{borderColor:'#332F3C',ticksVisible:true,scaleMargins:{top:0.12,bottom:0.12},alignLabels:false},   /* every label on its own price (19 Oct 2026) */
       // Axis labels in LOCAL time via _hm(). LWC's default treats bar time as UTC and prints it
       // as-is, which is why the axis disagreed with the (local-time) calendar tab. The tick marks
       // (tickMarkFormatter) and the crosshair label (localization.timeFormatter) are two separate
@@ -87860,7 +87867,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var chart = (pw ? pw.w.LightweightCharts : LightweightCharts).createChart(pc, { autoSize: true,
         layout: { background: { type: 'solid', color: '#121116' }, textColor: '#9a97a3', fontFamily: "'AppNum','DM Mono',monospace", fontSize: 11 },
         grid: { vertLines: { color: 'rgba(255,255,255,0.03)' }, horzLines: { color: 'rgba(255,255,255,0.045)' } },
-        rightPriceScale: { borderColor: '#2A2833', scaleMargins: { top: 0.14, bottom: 0.1 } },
+        rightPriceScale: { borderColor: '#2A2833', scaleMargins: { top: 0.14, bottom: 0.1 }, alignLabels: false },   // every label on its own price, not pushed off it by its neighbours (19 Oct 2026: "why are these labels sitting up here? looks broken")
         timeScale: { borderColor: '#2A2833', timeVisible: tf < 1440, secondsVisible: false, rightOffset: tf <= 60 ? 0 : 3, tickMarkFormatter: tickFmt(tf) },
         localization: { timeFormatter: crossFmt(tf), priceFormatter: dgFmt(X) },
         crosshair: { mode: 2 } });   // hidden: the crosshair is drawn on the overlay, Trade Replay's own (paintCx)

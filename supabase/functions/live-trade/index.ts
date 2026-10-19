@@ -49,6 +49,7 @@ import { afterAlert, afterBE, afterClose, afterCloseTrade, afterEaChange, afterL
 // deno-lint-ignore no-explicit-any
 declare const EdgeRuntime: { waitUntil(p: Promise<any>): void } | undefined;
 // Work that runs after the EA has its answer (the EA never waits on the nudges).
+const SETTLE_MS = 30000;   // a trade's first 30 s: the EA re-anchoring its stop onto the fill (19 Oct 2026)
 function later(what: string, p: Promise<unknown>) {
   const q = p.then((r) => { if (r && (r as unknown[]).length) console.log("nudge", what, JSON.stringify(r)); })
     .catch((e) => console.error("nudge", what, String(e && (e as Error).stack || e)));
@@ -276,14 +277,19 @@ async function rememberOpen(userId: string, t: number, symbol: string | null, di
   if (nt.closed_at) return;
   const set: Record<string, unknown> = {};
   if (login && !nt.login) set.login = login;
-  if (risk !== null && !(Number(nt.risk0) > 0)) { set.risk0 = risk; set.risk = risk; }
+  const age = Date.now() - Date.parse(nt.opened_at);
+  // The first 30 s are the trade SETTLING (19 Oct 2026): MT5 fills, then the EA moves the stop onto the real fill 50 ms later, and a
+  // risk announced in between (a 4.7-pip stop that became 4.0) is not the trade's. While settling, the latest figure is the risk it was
+  // taken with; after that the largest one is kept, as before.
+  const settling = age < SETTLE_MS;
+  const firstRisk = risk !== null && !(Number(nt.risk0) > 0);
+  if (risk !== null && (firstRisk || (settling && Number(nt.risk0) !== risk))) { set.risk0 = risk; set.risk = risk; }
   else if (risk !== null && risk > (Number(nt.risk) || 0)) set.risk = risk;
   if (Object.keys(set).length) await admin.from("nudge_trades").update(set).eq("user_id", userId).eq("ticket", t);
-  const age = Date.now() - Date.parse(nt.opened_at);
-  // The risk arrived after the open (the stop goes on a moment after the fill).
-  if (set.risk0 && age <= FRESH_MS) later("risk", afterRisk(admin, userId, t));
-  // The stop moved away: more than 10% above the risk the trade was taken with (each new high is checked once).
-  if (!set.risk0 && set.risk && Number(nt.risk0) > 0 && (set.risk as number) > Number(nt.risk0) * 1.1) later("widen", afterWiden(admin, userId, t));
+  // The risk arrived after the open (the stop goes on a moment after the fill): judged once the trade has settled (afterRisk waits).
+  if (firstRisk && age <= FRESH_MS) later("risk", afterRisk(admin, userId, t));
+  // The stop moved away: more than 10% above the risk the trade was taken with (each new high is checked once) - never while settling.
+  if (!settling && !set.risk0 && set.risk && Number(nt.risk0) > 0 && (set.risk as number) > Number(nt.risk0) * 1.1) later("widen", afterWiden(admin, userId, t));
   // A minute in, still announced, never a stop: once per trade (a quick look before the full check).
   if (risk === null && !(Number(nt.risk0) > 0) && age >= 60000 && age <= 30 * 60000) {
     const { data: done } = await admin.from("nudge_pushes").select("key").eq("user_id", userId).eq("day", utcDay(Date.now())).eq("key", "no_stop:" + t).maybeSingle();

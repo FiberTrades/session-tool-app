@@ -503,9 +503,19 @@ export async function afterAlert(admin: Any, userId: string, id: string, px: num
 }
 
 // ---------- entry points (live-trade) ----------
+// Wait until the trade is 30 s old: MT5 fills, then the EA moves the stop onto the real fill a moment later, and the risk announced in
+// between is not the trade's (19 Oct 2026: a "risk grew" nudge on a trade nobody touched). live-trade keeps the latest risk while
+// settling, so the risk read after this is the one it settled on.
+async function settled(admin: Any, userId: string, ticket: number) {
+  try {
+    const { data } = await admin.from("nudge_trades").select("opened_at").eq("user_id", userId).eq("ticket", ticket).maybeSingle();
+    const left = data && data.opened_at ? Date.parse(data.opened_at) + 31000 - Date.now() : 0;
+    if (left > 0) await sleep(Math.min(left, 31000));
+  } catch (_e) { /* judged as before */ }
+}
 // A trade the server is seeing for the first time (judged ~8 s later, once the copies and the app have had their say).
 export async function afterOpen(admin: Any, userId: string, ticket: number) {
-  await sleep(8000);
+  await sleep(8000); await settled(admin, userId, ticket);
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on) return;
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at) return;
   if (isCopy(ctx, me)) return;                      // its first trade is judged instead
@@ -528,7 +538,7 @@ export async function afterOpen(admin: Any, userId: string, ticket: number) {
 
 // The risk arrived after the open: over the plan's max per trade.
 export async function afterRisk(admin: Any, userId: string, ticket: number) {
-  await sleep(8000);
+  await sleep(8000); await settled(admin, userId, ticket);
   const ctx = await loadCtx(admin, userId); if (!ctx || !cfgOf(ctx.j).on) return;
   const me = ctx.rows.find((r) => r.ticket === ticket); if (!me || me.closed_at || isCopy(ctx, me) || sepLogin(ctx, me.login)) return;
   const acc = accountFor(ctx, me.login), rules = (acc && acc.riskRules) || {}, sb = Number(acc && acc.startingBalance) || 0;
