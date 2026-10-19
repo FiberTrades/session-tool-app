@@ -88488,6 +88488,8 @@ window.__stAZ = (function () {
     X = X || S; var day = S.day, open = S.f.open, key = X.sym.raw + '|' + day + '|' + tf; if (staticCache[key]) return staticCache[key];
     var src = SRC[tf], cov = X.sym.tf[src], from = cov ? Math.max(open - LOOK[tf], cov[0]) : open;
     var rows = cov ? await fetchCandles(X.sym.raw, src, from, open - 1) : ((lvData() && X.tfh && X.tfh[src]) ? X.tfh[src] : []);   // Live Charts: none stored - its EA's (9.01)
+    // A window that is all weekend (1m on a Monday's day: Saturday) holds nothing: reach back to the last candles before it
+    for (var wk = 0; cov && !rows.length && from > cov[0] && wk < 4; wk++) { var f2 = Math.max(cov[0], from - MORE[tf]); rows = await fetchCandles(X.sym.raw, src, f2, from - 1); from = f2; }
     // Live Charts: listed as stored but nothing came (deleted since the symbol list was cached, 6 hours) - its EA's instead
     var gone = !!(cov && !rows.length && lvData() && src > 1); if (gone) { (X.nost = X.nost || {})[src] = 1; if (X.tfh && X.tfh[src]) rows = X.tfh[src]; }
     rows = rows.filter(function(b){ return b.time + src * 60 <= open; });
@@ -88503,9 +88505,13 @@ window.__stAZ = (function () {
     var e = p.hist; if (!S || !e || e.full || e.busy) return; e.busy = true;
     var XF = PS(p), src = SRC[p.tf], cov = XF.sym.tf[src], from = Math.max(cov ? cov[0] : e.from, e.from - MORE[p.tf]), sym = XF.sym.raw, day = S.day;
     var rows = from < e.from ? await fetchCandles(sym, src, from, e.from - 1) : [];
+    // Nestor, 19 Oct 2026: "why am i only getting 1d worth of 1m candles now? its supposed to be 1y". On a Monday the 2-day
+    // chunk before the day is exactly Friday's close to Sunday's open - empty - and an empty chunk used to mark the history
+    // full for good. Skip empty chunks (weekends, holidays) until candles come or the start of what is stored is reached.
+    for (var wk = 0; cov && !rows.length && from > cov[0] && wk < 6; wk++) { var f2 = Math.max(cov[0], from - MORE[p.tf]); rows = await fetchCandles(sym, src, f2, from - 1); from = f2; }
     e.busy = false; if (!S || PS(p).sym.raw !== sym || S.day !== day || panes.indexOf(p) < 0 || p.hist !== e) return;
     var seen = {}; e.rows.forEach(function(b){ seen[b.time] = 1; }); rows = rows.filter(function(b){ return !seen[b.time]; });
-    e.rows = rows.concat(e.rows); e.from = from; if (!rows.length || !cov || from <= cov[0]) e.full = true;
+    e.rows = rows.concat(e.rows); e.from = from; if (!cov || from <= cov[0]) e.full = true;
     if (!rows.length) return;
     var before = p.static.length; e.agg = aggStatic(e.rows, p.tf); p.static = e.agg;
     var k = p.static.length - before; if (k > 0) paintPane(p, false, k, getRange(p));

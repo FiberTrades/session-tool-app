@@ -60,6 +60,8 @@
     var R = window.__stReplay;
     var trade = { mt5Ticket: 999999911, symbol: 'EURUSD', side: 'short', entryPrice: 1.13215, closePrice: 1.13105, openTime: '2026-10-01T09:00:00Z', closeTime: '2026-10-01T10:00:00Z', slPips: 10 };
     R.open(trade); for (k = 0; k < 120 && !(R._s() && R._s().chart && R._s().bars && R._s().bars.length); k++) await W(100); await W(900);
+    // Trade Replay settles its view (more candles, its first fit) for a moment after opening: wait until it holds still
+    for (k = 0; k < 30; k++) { var a1 = JSON.stringify(R._s().chart.timeScale().getVisibleLogicalRange()), sp1 = span(R._s().series, geo(R._s().chart).ph); await W(500); if (a1 === JSON.stringify(R._s().chart.timeScale().getVisibleLogicalRange()) && sp1 === span(R._s().series, geo(R._s().chart).ph)) break; }
     var S = R._s(), tg = geo(S.chart), ts0 = span(S.series, tg.ph), tl0 = lspan(S.chart);
     var tpv = wheel(tg.price, -300); await W(250);
     var ts1 = span(S.series, tg.ph);
