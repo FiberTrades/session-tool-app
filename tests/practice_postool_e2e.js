@@ -31,10 +31,11 @@
     var xe = P._xOfT(0, d.a.t), xr = P._xOfT(0, d.b.t), ye = P._yOf(0, d.a.price), yt = P._yOf(0, d.tp), ys = P._yOf(0, d.sl), xm = (xe + xr) / 2 + 30;
     var gpx = px(xm, (ye + yt) / 2 + 22), rpx = px(xm, (ye + ys) / 2 + 3);
     ok('drawn: green above the entry, red below', gpx[1] > gpx[0] && gpx[3] > 20 && rpx[0] > rpx[1] && rpx[3] > 20, [gpx, rpx]);
-    var box = pane().el.querySelector('.stpr-props');
-    ok('its options box: LONG POSITION, the stop in pips and the target in R, no colours', box && /LONG POSITION/.test(box.textContent) && box.querySelector('[data-pstop]').value === '10.0' && box.querySelector('[data-ptgt]').value === '2.00' && !box.querySelector('[data-col]'), box && box.textContent);
+    P._dbar().open('more'); await W(30); var box = P._dbar().pop();
+    ok('its toolbar\'s More: LONG POSITION, the stop in pips and the target in R; no colours in its toolbar', box && /LONG POSITION/.test(box.textContent) && box.querySelector('[data-pstop]').value === '10.0' && box.querySelector('[data-ptgt]').value === '2.00' && !document.querySelector('.stdb-bar [data-db="line"]'), box && box.textContent);
     var ps = box.querySelector('[data-pstop]'); ps.value = '15'; ps.dispatchEvent(new Event('input', { bubbles: true })); var pt = box.querySelector('[data-ptgt]'); pt.value = '3'; pt.dispatchEvent(new Event('input', { bubbles: true })); await W(30);
     ok('typing a 15 pip stop and 3R: the stop and target move', near(d.a.price - d.sl, 0.0015, 1e-9) && near(d.tp - d.a.price, 0.0045, 1e-9), [d.sl, d.tp]);
+    P._dbar().closePop();
     P._render(); await W(40); ys = P._yOf(0, d.sl); yt = P._yOf(0, d.tp); ye = P._yOf(0, d.a.price);
     var sl0 = d.sl; mev('mousedown', xe, ys); mev('mousemove', xe, ys + 30, { held: true }); mev('mouseup', xe, ys + 30); await W(40);
     ok('its stop handle drags the stop', d.sl < sl0, [sl0, d.sl]);
@@ -65,7 +66,7 @@
     mev('mousemove', 20, 20); await until(function () { return !isTag(tagPx(e1)); });
     ok('the mouse off it: gone again', !isTag(tagPx(e1)));
     mev('mousedown', hx, hy); mev('mouseup', hx, hy); await until(function () { return isTag(tagPx(e1)); });
-    var box2 = pane().el.querySelector('.stpr-props');
+    var box2 = document.querySelector('.stdb-bar');
     ok('clicked: selected, its tags and its options box show', DW.sel === 0 && isTag(tagPx(e1)) && box2 && box2.style.display !== 'none', [DW.sel, box2 && box2.style.display]);
     mev('mousedown', hx, hy); mev('mousemove', hx + 25, hy + 20, { held: true }); await W(120);
     ok('dragged: no tags and no options box while it moves', !!DW.drag && !isTag(tagPx(e1)) && box2.style.display === 'none', [!!DW.drag, box2.style.display]);

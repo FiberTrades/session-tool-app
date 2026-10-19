@@ -83661,6 +83661,276 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   </div>
 </div>
 <script>
+/* ---- The drawing toolbar (Nestor, 19 Oct 2026: "build all the tradingview suggestions! i love them!!"): TradingView's
+   floating bar over the selected drawing, in place of the old vertical options box - Templates, line colour, fill, text,
+   line width, line style, Visibility, alert, lock, delete and More (Clone, the note and each tool's own settings). It
+   floats just above the drawing (below it when there is no room), moves by its grip and stays where it was put for the
+   session; with a tool picked and nothing selected it sits at the top of the chart and sets the next drawing's look.
+   Templates are the member's own (none ship with the app), per tool, synced with the chart settings; a tool's default
+   look goes on every new drawing of it. A look is never a position: colours, width, style, fill, text, extend, middle line,
+   fib levels, the measure's parts. Shared by Back Testing / Live Charts and Trade Replay: each hands it an adapter (A). ---- */
+(function(){
+  var PAL = ['#ffffff', '#d1d4dc', '#9598a1', '#5d606b', '#363a45', '#2a2833', '#1d1b24', '#121116', '#0b0a0d', '#000000',
+    '#f23645', '#E56767', '#ff9800', '#f4c05a', '#ffeb3b', '#4caf50', '#4ECD8B', '#089981', '#00bcd4', '#2dd4bf',
+    '#2962ff', '#60a5fa', '#673ab7', '#c084fc', '#9c27b0', '#e91e63', '#f472b6', '#795548', '#b2b5be', '#fce4ec'];
+  // what a look is, per tool (anything else on a drawing - its points, words, alert, lock, visibility - is not)
+  var KEYS = { hline: ['color', 'width', 'dash'], trend: ['color', 'width', 'dash', 'extL', 'extR'],
+    rect: ['color', 'width', 'dash', 'fill', 'tcol', 'tsz', 'ta', 'tv', 'extL', 'extR', 'mid', 'midDash'],
+    fib: ['color', 'width', 'dash', 'levels'], pen: ['color', 'width', 'dash'], range: ['color', 'width', 'dash', 'show'], text: ['color', 'width'] };
+  var FIBS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
+  var TYN = { hline: ['horizontal line', 'horizontal lines', 'línea horizontal', 'líneas horizontales'], trend: ['trend line', 'trend lines', 'línea de tendencia', 'líneas de tendencia'],
+    rect: ['rectangle', 'rectangles', 'rectángulo', 'rectángulos'], fib: ['fib', 'fibs', 'fib', 'fibs'], pen: ['pen stroke', 'pen strokes', 'trazo', 'trazos'],
+    range: ['measure', 'measures', 'medida', 'medidas'], text: ['text', 'texts', 'texto', 'textos'] };
+  var TSIZES = [10, 11, 12, 14, 16, 20, 24];
+  var IC = {
+    grip: '<svg viewBox="0 0 6 14" width="6" height="14" fill="currentColor" aria-hidden="true"><circle cx="1.5" cy="2" r="1"/><circle cx="4.5" cy="2" r="1"/><circle cx="1.5" cy="7" r="1"/><circle cx="4.5" cy="7" r="1"/><circle cx="1.5" cy="12" r="1"/><circle cx="4.5" cy="12" r="1"/></svg>',
+    grid: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2" y="2" width="5.5" height="5.5" rx="1"/><rect x="10.5" y="2" width="5.5" height="5.5" rx="1"/><rect x="2" y="10.5" width="5.5" height="5.5" rx="1"/><path d="M13.25 10.5v5.5M10.5 13.25H16"/></svg>',
+    pen: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 15l1-4 8-8 3 3-8 8z"/></svg>',
+    fill: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M8 2l6.5 6.5-5 5L3 7z"/><path d="M15.5 11.5s1.5 1.8 1.5 2.8a1.5 1.5 0 0 1-3 0c0-1 1.5-2.8 1.5-2.8z" fill="currentColor"/></svg>',
+    text: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 4h10M9 4v11"/></svg>',
+    eye: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><path d="M1.5 9S4.5 3.5 9 3.5 16.5 9 16.5 9 13.5 14.5 9 14.5 1.5 9 1.5 9z"/><circle cx="9" cy="9" r="2.3"/></svg>',
+    bell: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M4.5 12.5V8a4.5 4.5 0 0 1 9 0v4.5l1.5 1.5h-12z"/><path d="M7.5 15.5a1.5 1.5 0 0 0 3 0"/></svg>',
+    lock: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="8" width="11" height="8" rx="1.5"/><path d="M6 8V5.5a3 3 0 0 1 6 0V8"/></svg>',
+    unlock: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="3.5" y="8" width="11" height="8" rx="1.5"/><path d="M6 8V5.5a3 3 0 0 1 5.8-1"/></svg>',
+    trash: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"><path d="M3 5h12M7 5V3h4v2M4.5 5l.8 10.5h7.4L13.5 5"/></svg>',
+    more: '<svg viewBox="0 0 18 18" fill="currentColor"><circle cx="4" cy="9" r="1.4"/><circle cx="9" cy="9" r="1.4"/><circle cx="14" cy="9" r="1.4"/></svg>',
+    solid: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 9h14"/></svg>',
+    dashed: '<svg viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2 9h3M7.5 9h3M13 9h3"/></svg>',
+    dotted: '<svg viewBox="0 0 18 18" fill="currentColor"><circle cx="2.5" cy="9" r="1.1"/><circle cx="6.8" cy="9" r="1.1"/><circle cx="11.2" cy="9" r="1.1"/><circle cx="15.5" cy="9" r="1.1"/></svg>'
+  };
+  function cp(x){ return x == null ? x : JSON.parse(JSON.stringify(x)); }
+  function esc(v){ return String(v == null ? '' : v).replace(/[&<>"]/g, function(c){ return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
+  function parseC(c){ c = String(c || '').trim(); var m = /^rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i.exec(c), hx = function(v){ return ('0' + Math.max(0, Math.min(255, Math.round(+v))).toString(16)).slice(-2); };
+    if (m) return { h: '#' + hx(m[1]) + hx(m[2]) + hx(m[3]), a: m[4] == null ? 1 : Math.max(0, Math.min(1, +m[4])) };
+    var h = c.replace('#', ''); if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+    if (/^[0-9a-f]{8}$/i.test(h)) return { h: '#' + h.slice(0, 6).toLowerCase(), a: parseInt(h.slice(6), 16) / 255 };
+    return /^[0-9a-f]{6}$/i.test(h) ? { h: '#' + h.toLowerCase(), a: 1 } : { h: '#ffffff', a: 1 }; }
+  function mkC(h, a){ a = Math.round(Math.max(0, Math.min(1, a)) * 100) / 100; if (a >= 1) return h; var n = parseInt(String(h).replace('#', ''), 16) || 0; return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
+  function withA(c, a){ var p = parseC(c); return mkC(p.h, p.a * a); }
+  // a dash pattern for a line of this width
+  function dash(st, w){ w = +w || 1; return st === 'dashed' ? [Math.max(5, w * 3.5), Math.max(3, w * 2.5)] : (st === 'dotted' ? [Math.max(1.2, w), Math.max(2.5, w * 2)] : []); }
+  function lookOf(d){ var o = {}; (KEYS[d && d.type] || []).forEach(function(k){ if (d[k] != null) o[k] = cp(d[k]); }); return o; }
+  // a look put on a drawing: every part of it, so what it leaves out goes back to the app's own
+  function applyLook(d, L){ (KEYS[d && d.type] || []).forEach(function(k){ if (L && L[k] != null) d[k] = cp(L[k]); else delete d[k]; }); return d; }
+  // a part's value: the look's, or the app's own (today's look: a drawing that never had one stays exactly as it was)
+  function eff(dsty, ty, o, k){ if (o && o[k] != null) return o[k]; var ds = (dsty && dsty[ty]) || {};
+    switch (k) { case 'color': return ds.c || '#ffffff'; case 'width': return ds.w || 1; case 'dash': return 'solid';
+      case 'fill': return withA(eff(dsty, ty, o, 'color'), 0.10); case 'tcol': return eff(dsty, ty, o, 'color'); case 'tsz': return 11; case 'ta': return 'c'; case 'tv': return 'above';
+      case 'midDash': return 'dotted'; case 'levels': return FIBS.slice(); case 'show': return {}; default: return false; } }
+  function norm(k, v){ if (k === 'color' || k === 'fill' || k === 'tcol') { var p = parseC(v); return p.h + '/' + p.a.toFixed(2); }
+    if (k === 'show') return ['pips', 'r', 'bars'].map(function(x){ return !(v && v[x] === false); }).join(','); return JSON.stringify(v); }
+  function same(dsty, ty, a, b){ return (KEYS[ty] || []).every(function(k){ return norm(k, eff(dsty, ty, a, k)) === norm(k, eff(dsty, ty, b, k)); }); }
+
+  function make(A){
+    var T = A.T, B = { el: null, pop: null, popK: null, wrap: null, doc: null, key: null, pos: null, dlg: null, popBtn: null };
+    function ty(){ return A.ty(); }
+    function sel(){ return A.sel(); }
+    function store(){ var s = A.store() || {}; if (!s.list) s.list = {}; if (!s.def) s.def = {}; return s; }
+    function defOf(t){ var s = store(), L = s.def[t]; return (L && typeof L === 'object') ? L : null; }
+    // what the bar shows: the drawing, or (a tool picked) the next one's look - this session's, else the tool's default
+    function cur(){ var d = sel(); if (d) return d; var t = ty(); return A.nsGet(t) || defOf(t) || {}; }
+    // what it changes: the drawing, or the next one's look (started from the default, so one change keeps the rest)
+    function tgtW(){ var d = sel(); if (d) return d; var t = ty(), n = A.nsGet(t); if (!n) { n = cp(defOf(t) || {}); A.nsSet(t, n); } return n; }
+    function v(k){ return eff(A.dsty, ty(), cur(), k); }
+    function nm(t, many){ var n = TYN[t]; if (!n) return String(t || ''); return T(n[many ? 1 : 0], n[many ? 3 : 2]); }
+    function hasLook(t){ return !!KEYS[t]; }
+    function final(){ A.change(true); render(); }
+    function live(){ A.change(false); paintBar(); }
+    // ---- the bar ----
+    function ensure(wrap){ if (B.el && B.wrap === wrap && B.el.isConnected) return; if (B.el) { try { B.el.remove(); } catch (e) {} try { B.pop.remove(); } catch (e) {} }
+      var doc = wrap.ownerDocument; B.wrap = wrap; B.doc = doc; B.popK = null; B.key = null;
+      B.el = doc.createElement('div'); B.el.className = 'stdb-bar'; B.el.setAttribute('role', 'toolbar'); wrap.appendChild(B.el);
+      B.pop = doc.createElement('div'); B.pop.className = 'stdb-pop'; wrap.appendChild(B.pop);
+      B.el.addEventListener('click', barClick); B.el.addEventListener('pointerdown', gripDown);
+      B.el.addEventListener('contextmenu', function(e){ e.preventDefault(); });
+      B.pop.addEventListener('click', popClick); B.pop.addEventListener('input', popInput); B.pop.addEventListener('change', popChange);
+      B.pop.addEventListener('keydown', function(e){ if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closePop(); return; }
+        if (e.key === 'Enter' && e.target && e.target.hasAttribute && e.target.hasAttribute('data-fiblv')) { e.preventDefault(); fibAdd(); }
+        if ((e.key === 'Enter' || e.key === ' ') && e.target && e.target.hasAttribute && e.target.hasAttribute('data-tpa')) { e.preventDefault(); e.target.click(); } });
+      if (!doc.__stdbOut) { doc.__stdbOut = []; doc.addEventListener('pointerdown', function(e){ doc.__stdbOut.forEach(function(f){ try { f(e); } catch (x) {} }); }, true); }
+      if (doc.__stdbOut.indexOf(outside) < 0) doc.__stdbOut.push(outside); }
+    // a press anywhere else closes the popover open
+    function outside(e){ if (!B.popK || !B.pop) return; var t = e.target; if (B.pop.contains(t) || (B.el && B.el.contains(t))) return; closePop(); }
+    function btn(act, title, inner, cls, attrs){ return '<button type="button" class="' + (cls || '') + '" data-db="' + act + '" title="' + esc(title) + '" aria-label="' + esc(title) + '"' + (attrs || '') + '>' + inner + '</button>'; }
+    function popBtn(act, title, inner, cls){ return btn(act, title, inner, cls, ' aria-haspopup="true" aria-expanded="' + (B.popK === act ? 'true' : 'false') + '"'); }
+    function cbar(c){ return '<i class="stdb-cb" style="background:' + esc(c) + '"></i>'; }
+    function barHtml(){ var t = ty(), d = sel(), H = ['<div class="stdb-gr" title="' + esc(T('Drag to move the toolbar', 'Arrastra para mover la barra')) + '">' + IC.grip + '</div>'], lineT = t !== 'text' && t !== 'emoji' && t !== 'long' && t !== 'short';
+      if (hasLook(t)) H.push(popBtn('tpl', T('Templates', 'Plantillas'), IC.grid));
+      if (lineT) H.push(popBtn('line', T('Line colour', 'Color de la línea'), IC.pen + cbar(v('color'))));
+      if (t === 'rect') H.push(popBtn('fill', T('Fill', 'Relleno'), IC.fill + cbar(v('fill'))));
+      if (t === 'rect') H.push(popBtn('text', T('Text', 'Texto'), IC.text + cbar(v('tcol'))));
+      if (t === 'text') { H.push(popBtn('text', T('Text colour', 'Color del texto'), IC.text + cbar(v('color')))); H.push(popBtn('tsize', T('Text size', 'Tamaño del texto'), ['S', 'M', 'L', 'XL'][Math.max(0, Math.min(3, Math.round(v('width')) - 1))], 'stdb-tz')); }
+      if (t === 'emoji') H.push(popBtn('emoji', T('Emoji', 'Emoji'), esc(d ? (d.e || A.emojiNow()) : A.emojiNow()), 'stdb-emo'));
+      if (lineT) { var w = Math.round(v('width')); H.push('<span class="stdb-sep"></span>'); H.push(popBtn('width', T('Line width', 'Grosor de la línea'), '<i style="height:' + Math.max(1, w) + 'px"></i>' + w + 'px', 'stdb-wd'));
+        H.push(popBtn('dash', T('Line style', 'Estilo de la línea'), IC[v('dash')] || IC.solid)); }
+      if (d) { H.push('<span class="stdb-sep"></span>'); H.push(btn('vis', T('Visibility: ', 'Visibilidad: ') + A.visTxt(d), IC.eye));
+        if (d.type === 'hline') { var al = A.alertInfo(d); H.push(btn('alert', al.title, IC.bell, al.hit ? 'hit' : (al.on ? 'act' : ''), ' aria-pressed="' + (al.on && !al.hit ? 'true' : 'false') + '"')); }
+        var lk = A.locked(d); H.push(btn('lock', lk ? (A.lockAll() ? T('Every drawing is locked (the toolbar\'s padlock)', 'Todos los dibujos están bloqueados (el candado de la barra)') : T('Locked: press to unlock it', 'Bloqueado: pulsa para desbloquearlo')) : T('Lock it: it cannot be moved or deleted until unlocked', 'Bloquear: no se puede mover ni borrar hasta desbloquearlo'), lk ? IC.lock : IC.unlock, lk ? 'act' : '', ' aria-pressed="' + (lk ? 'true' : 'false') + '"'));
+        H.push(btn('del', T('Delete', 'Borrar'), IC.trash)); }
+      if (d || moreHas(t)) H.push(popBtn('more', T('More', 'Más'), IC.more));
+      return H.join(''); }
+    function moreHas(t){ return t === 'range' || t === 'rect' || t === 'trend'; }   // with nothing selected, More has these tools' settings for the next one
+    function paintBar(){ if (!B.el) return; var sx = B.el.scrollLeft; B.el.innerHTML = barHtml(); B.el.scrollLeft = sx; }
+    function host(){ var h = null; try { h = A.host(); } catch (e) {} return (h && h.wrap) ? h : null; }
+    function render(){ var t = ty(), h = host(); if (!t || t === 'none' || !h || (!sel() && (t === 'long' || t === 'short'))) { hide(); return; }
+      ensure(h.wrap); var d = sel(), key = d ? d : 'tool:' + t;
+      paintBar(); B.el.style.display = 'flex';
+      if (B.key !== key) { var was = B.key; closePop(); B.key = key; place(h); if (!d && t === 'emoji' && !(was && was === 'tool:emoji')) openPop('emoji'); }
+      else { clampBar(); if (B.popK) paintPop(); } }
+    function wrapXY(r){ var wr = B.wrap.getBoundingClientRect(); return { x: r.left - wr.left - B.wrap.clientLeft + B.wrap.scrollLeft, y: r.top - wr.top - B.wrap.clientTop + B.wrap.scrollTop }; }
+    function place(h){ var bw = B.el.offsetWidth, bh = B.el.offsetHeight, D = h.dock, d0 = wrapXY(D), Dw = D.right - D.left, Dh = D.bottom - D.top, x, y;
+      if (B.pos && B.pos.wrap === B.wrap) { x = B.pos.x; y = B.pos.y; }
+      else if (h.sel) { var s = h.sel, s0 = wrapXY(s), sw = s.right - s.left, sh = s.bottom - s.top;
+        x = sw > Dw * 0.8 ? d0.x + Dw / 2 - bw / 2 : s0.x - 6;
+        y = s0.y - bh - 10; if (y < d0.y + 2) { y = s0.y + sh + 10; if (y + bh > d0.y + Dh - 2) y = d0.y + 8; } }
+      else { x = d0.x + Dw - bw - 8; y = d0.y + 8; if (h.avoid) { var a0 = wrapXY(h.avoid), ax = Math.max(4, x); if (ax < a0.x + (h.avoid.right - h.avoid.left) && ax + bw > a0.x && y < a0.y + (h.avoid.bottom - h.avoid.top)) y = a0.y + (h.avoid.bottom - h.avoid.top) + 6; } }   // clear of the chart's timeframe button
+      B.el.style.left = x + 'px'; B.el.style.top = y + 'px'; clampBar(); }
+    function clampBar(){ if (!B.el || B.el.style.display === 'none') return; var bw = B.el.offsetWidth, bh = B.el.offsetHeight, W = B.wrap.clientWidth, H = Math.max(B.wrap.clientHeight, B.wrap.scrollHeight);
+      var x = parseFloat(B.el.style.left) || 0, y = parseFloat(B.el.style.top) || 0, nx = Math.max(8 + B.wrap.scrollLeft, Math.min(x, B.wrap.scrollLeft + W - bw - 8)), ny = Math.max(4, Math.min(y, H - bh - 4));
+      if (nx !== x) B.el.style.left = nx + 'px'; if (ny !== y) B.el.style.top = ny + 'px'; }
+    function hide(){ if (B.el) B.el.style.display = 'none'; closePop(); B.key = null; }
+    // the grip: dragged, the bar stays there for the session
+    function gripDown(e){ var g = e.target.closest && e.target.closest('.stdb-gr'); if (!g || (e.button != null && e.button !== 0)) return; e.preventDefault(); e.stopPropagation(); closePop();
+      var sx = e.clientX, sy = e.clientY, x0 = parseFloat(B.el.style.left) || 0, y0 = parseFloat(B.el.style.top) || 0, el = B.el, id = e.pointerId;
+      try { el.setPointerCapture(id); } catch (x) {}
+      var mv = function(ev){ el.style.left = (x0 + ev.clientX - sx) + 'px'; el.style.top = (y0 + ev.clientY - sy) + 'px'; clampBar(); };
+      var up = function(){ el.removeEventListener('pointermove', mv); el.removeEventListener('pointerup', up); el.removeEventListener('pointercancel', up); try { el.releasePointerCapture(id); } catch (x) {}
+        B.pos = { wrap: B.wrap, x: parseFloat(el.style.left) || 0, y: parseFloat(el.style.top) || 0 }; };
+      el.addEventListener('pointermove', mv); el.addEventListener('pointerup', up); el.addEventListener('pointercancel', up); }
+    function barClick(e){ var b = e.target.closest && e.target.closest('[data-db]'); if (!b) return; e.preventDefault(); e.stopPropagation(); var a = b.getAttribute('data-db');
+      if (a === 'vis' || a === 'alert' || a === 'lock' || a === 'del') { closePop(); A.act(a); return; }
+      if (B.popK === a) { closePop(); return; } openPop(a); }
+    // ---- the popovers ----
+    function openPop(k){ if (!B.el) return; B.popK = k; paintBar(); paintPop(); }
+    function closePop(){ var was = !!B.popK; B.popK = null; if (B.pop) { B.pop.style.display = 'none'; B.pop.innerHTML = ''; } if (was && B.el && B.el.style.display !== 'none') paintBar(); return was; }
+    function placePop(){ var b = B.el.querySelector('[data-db="' + B.popK + '"]'); if (!b) { closePop(); return; } var br = b.getBoundingClientRect(), barR = B.el.getBoundingClientRect(), p = wrapXY(br), pb = wrapXY(barR);
+      var pw = B.pop.offsetWidth, ph = B.pop.offsetHeight, W = B.wrap.clientWidth, x = Math.max(B.wrap.scrollLeft + 6, Math.min(p.x, B.wrap.scrollLeft + W - pw - 6)), y = pb.y + barR.height + 6;
+      var visBot = B.wrap.scrollTop + B.wrap.clientHeight; if (y + ph > visBot - 4 && pb.y - ph - 6 >= B.wrap.scrollTop) y = pb.y - ph - 6;
+      B.pop.style.left = x + 'px'; B.pop.style.top = y + 'px'; }
+    function paintPop(){ var k = B.popK; if (!k || !B.pop) return; var em = B.pop.querySelector('.stdb-emos'), st = em ? em.scrollTop : 0;
+      B.pop.innerHTML = popHtml(k); B.pop.style.display = 'flex'; placePop();
+      var em2 = B.pop.querySelector('.stdb-emos'); if (em2 && st) em2.scrollTop = st;
+      if (k === 'more' && A.posWire && sel()) A.posWire(B.pop, sel()); }
+    function palHtml(kind, label, c){ var pc = parseC(c);
+      return '<div class="stdb-lb">' + esc(label) + '</div><div class="stdb-pal">' + PAL.map(function(h){ return '<button type="button" data-pc="' + h + '" data-pk="' + kind + '" style="background:' + h + '" class="' + (h.toLowerCase() === pc.h ? 'on' : '') + '" title="' + h + '" aria-label="' + h + '"></button>'; }).join('') + '</div>'
+        + '<div class="stdb-op">' + esc(T('Opacity', 'Opacidad')) + '<input type="range" min="0" max="100" step="1" data-pop="' + kind + '" value="' + Math.round(pc.a * 100) + '" aria-label="' + esc(T('Opacity', 'Opacidad')) + '"><b>' + Math.round(pc.a * 100) + '%</b></div>'
+        + '<div class="stdb-dv"></div><label class="stdb-it stdb-cus">' + esc(T('+ Custom colour', '+ Color personalizado')) + '<input type="color" data-pcus="' + kind + '" value="' + pc.h + '" aria-label="' + esc(T('Custom colour', 'Color personalizado')) + '"></label>'; }
+    function swatch(t, L){ var c = eff(A.dsty, t, L, 'color'), dsh = eff(A.dsty, t, L, 'dash'), bs = dsh === 'solid' ? 'solid' : dsh;
+      if (t === 'rect') return '<span class="stdb-sw" style="background:' + esc(eff(A.dsty, t, L, 'fill')) + ';border:1px ' + bs + ' ' + esc(c) + '"></span>';
+      if (t === 'text') return '<span class="stdb-sw tx" style="color:' + esc(c) + '">Aa</span>';
+      return '<span class="stdb-sw ln" style="border-top:' + Math.max(1, Math.min(3, Math.round(eff(A.dsty, t, L, 'width')))) + 'px ' + bs + ' ' + esc(c) + '"></span>'; }
+    function popHtml(k){ var t = ty(), d = sel(), o = cur(), H = [];
+      if (k === 'tpl') { var s = store(), L = s.list[t] || [], df = defOf(t);
+        H.push('<button type="button" class="stdb-it" data-tp="save">' + esc(T('Save template as…', 'Guardar plantilla como…')) + '</button>');
+        H.push('<button type="button" class="stdb-it" data-tp="apply">' + esc(T('Apply default', 'Aplicar la predeterminada')) + '</button>');
+        H.push('<button type="button" class="stdb-it" data-tp="setdef">' + esc(T('Set this look as the default for ' + nm(t, true), 'Usar este aspecto por defecto en ' + nm(t, true))) + '</button>');
+        if (df) H.push('<button type="button" class="stdb-it" data-tp="resetdef">' + esc(T('New ' + nm(t, true) + ': back to the app\'s look', 'Nuevos ' + nm(t, true) + ': volver al aspecto de la app')) + '</button>');
+        H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Your ' + nm(t) + ' templates', 'Tus plantillas de ' + nm(t))) + '</div>');
+        if (!L.length) H.push('<div class="stdb-empty">' + esc(T('None yet. Save this look under a name to use it again on any ' + nm(t) + '.', 'Ninguna todavía. Guarda este aspecto con un nombre para usarlo en cualquier ' + nm(t) + '.')) + '</div>');
+        L.forEach(function(x, i){ var isDef = df && same(A.dsty, t, x.l, df);
+          H.push('<div class="stdb-it" role="button" tabindex="0" data-tpa="' + i + '">' + swatch(t, x.l) + '<span class="stdb-nm">' + esc(x.n) + '</span>' + (isDef ? '<span class="stdb-ck">' + esc(T('✓ default', '✓ predeterminada')) + '</span>' : '')
+            + '<button type="button" class="stdb-x" data-tpx="' + i + '" title="' + esc(T('Delete this template', 'Borrar esta plantilla')) + '" aria-label="' + esc(T('Delete this template', 'Borrar esta plantilla')) + '">&times;</button></div>'); });
+        B.pop.style.minWidth = '260px'; return H.join(''); }
+      B.pop.style.minWidth = '';
+      if (k === 'line') return palHtml('color', T('Line', 'Línea'), v('color'));
+      if (k === 'fill') return palHtml('fill', T('Fill', 'Relleno'), v('fill'));
+      if (k === 'text') { if (t === 'text') { H.push(palHtml('color', T('Text', 'Texto'), v('color'))); if (d) H.push('<div class="stdb-dv"></div><textarea data-tw rows="2" placeholder="' + esc(T('Text', 'Texto')) + '">' + esc(d.text || '') + '</textarea>'); return H.join(''); }
+        H.push(palHtml('tcol', T('Text', 'Texto'), v('tcol')));
+        H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Size', 'Tamaño')) + '</div><div class="stdb-row">' + TSIZES.map(function(z){ return '<button type="button" class="stdb-ch' + (+v('tsz') === z ? ' on' : '') + '" data-ts="' + z + '">' + z + '</button>'; }).join('') + '</div>');
+        H.push('<div class="stdb-lb">' + esc(T('Position', 'Posición')) + '</div><div class="stdb-row">' + [['above', T('Above', 'Encima')], ['top', T('Top', 'Arriba')], ['middle', T('Middle', 'Centro')], ['bottom', T('Bottom', 'Abajo')], ['below', T('Below', 'Debajo')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('tv') === x[0] ? ' on' : '') + '" data-tv="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
+        H.push('<div class="stdb-row">' + [['l', T('Left', 'Izquierda')], ['c', T('Centre', 'Centro')], ['r', T('Right', 'Derecha')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('ta') === x[0] ? ' on' : '') + '" data-ta="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
+        if (d) H.push('<textarea data-tw rows="2" placeholder="' + esc(T('Text in the box', 'Texto en el rectángulo')) + '">' + esc(d.text || '') + '</textarea>');
+        return H.join(''); }
+      if (k === 'tsize') return '<div class="stdb-lb">' + esc(T('Text size', 'Tamaño del texto')) + '</div>' + [1, 2, 3, 4].map(function(z){ return '<button type="button" class="stdb-wrow' + (Math.round(v('width')) === z ? ' on' : '') + '" data-tz="' + z + '"><span style="font:600 ' + A.tsz(z) + 'px \'DM Mono\',monospace;min-width:46px">Aa</span>' + ['S', 'M', 'L', 'XL'][z - 1] + ' · ' + A.tsz(z) + 'px</button>'; }).join('');
+      if (k === 'width') return '<div class="stdb-lb">' + esc(T('Line width', 'Grosor de la línea')) + '</div>' + [1, 2, 3, 4].map(function(z){ return '<button type="button" class="stdb-wrow' + (Math.round(v('width')) === z ? ' on' : '') + '" data-pw="' + z + '"><i style="border-top-width:' + z + 'px"></i>' + z + 'px</button>'; }).join('');
+      if (k === 'dash') return '<div class="stdb-lb">' + esc(T('Line style', 'Estilo de la línea')) + '</div>' + [['solid', T('Solid', 'Continua')], ['dashed', T('Dashed', 'Discontinua')], ['dotted', T('Dotted', 'Punteada')]].map(function(x){ return '<button type="button" class="stdb-wrow' + (v('dash') === x[0] ? ' on' : '') + '" data-pd="' + x[0] + '"><i style="border-top-width:2px;border-top-style:' + x[0] + '"></i>' + esc(x[1]) + '</button>'; }).join('');
+      if (k === 'emoji') { var ce = d ? (d.e || A.emojiNow()) : A.emojiNow(), ls = A.emojis(), eb = function(x){ return '<button type="button" data-emo="' + x + '" class="' + (x === ce ? 'on' : '') + '">' + x + '</button>'; };
+        H.push('<div class="stdb-emos"><div class="stdb-elb">' + esc(T('Trading', 'Trading')) + '</div>' + ls.mine.map(eb).join('') + (ls.all.length ? '<div class="stdb-elb">' + esc(T('All emojis', 'Todos los emojis')) + '</div>' + ls.all.map(eb).join('') : '') + '</div>');
+        if (!d) H.push('<div class="stdb-info">' + esc(T('Click the chart to place it.', 'Haz clic en el gráfico para ponerlo.')) + '</div>');
+        return H.join(''); }
+      if (k === 'more') { H.push('<div class="stdb-hd">' + esc(A.name(t)) + '</div>');
+        if ((t === 'long' || t === 'short') && d && A.posHtml) H.push(A.posHtml(d));
+        if (t === 'fib' && d) { var LV = (d.levels && d.levels.length) ? d.levels : FIBS.slice();
+          H.push('<div class="stdb-lb">' + esc(T('Levels', 'Niveles')) + '</div><div class="stdb-row">' + LV.map(function(lv, ix){ return '<button type="button" class="stdb-ch" data-lvl="' + ix + '" title="' + esc(T('Remove', 'Quitar')) + '">' + esc(A.fibLbl(lv)) + ' &times;</button>'; }).join('') + '</div>');
+          H.push('<div class="stdb-fl"><input type="text" data-fiblv placeholder="0.705" inputmode="decimal" style="flex:1;min-width:0"><button type="button" class="stdb-ch" data-fibadd>' + esc(T('Add', 'Añadir')) + '</button></div>'); }
+        if (t === 'range') H.push('<div class="stdb-lb">' + esc(T('Shows', 'Muestra')) + '</div><div class="stdb-row">' + [['pips', A.unitLbl()], ['r', 'R'], ['bars', T('BARS', 'BARRAS')]].map(function(x){ var sh = o.show; return '<button type="button" class="stdb-ch' + (!(sh && sh[x[0]] === false) ? ' on' : '') + '" data-show="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
+        if (t === 'emoji' && d) H.push('<div class="stdb-fl">' + esc(T('Size', 'Tamaño')) + '<input data-esz type="range" min="12" max="160" step="2" value="' + Math.round(+d.size || 32) + '"></div>');
+        if (t === 'rect' || t === 'trend') { var tg = function(k2, lb){ return '<label class="stdb-tg"><input type="checkbox" data-tgl="' + k2 + '"' + (v(k2) ? ' checked' : '') + '><span>' + esc(lb) + '</span></label>'; };
+          H.push(tg('extL', T('Extend left', 'Extender a la izquierda')) + tg('extR', T('Extend right', 'Extender a la derecha')));
+          if (t === 'rect') { H.push(tg('mid', T('Middle line', 'Línea central')));
+            if (v('mid')) H.push('<div class="stdb-row" style="padding-left:34px">' + [['solid', T('Solid', 'Continua')], ['dashed', T('Dashed', 'Discontinua')], ['dotted', T('Dotted', 'Punteada')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('midDash') === x[0] ? ' on' : '') + '" data-md="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>'); } }
+        if (d && d.type === 'hline') { var ai = A.alertInfo(d); if (ai.hitTxt) H.push('<div class="stdb-info">' + esc(ai.hitTxt) + '</div>'); }
+        if (d) { if (d.type !== 'range' && d.type !== 'text' && d.type !== 'rect') H.push('<div class="stdb-fl" style="padding:6px"><input type="text" data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(d.text || '') + '" style="flex:1;min-width:0"></div>');
+          H.push('<div class="stdb-dv"></div><button type="button" class="stdb-it" data-mvis>' + esc(T('Visibility: ', 'Visibilidad: ') + A.visTxt(d)) + ' &rsaquo;</button>');
+          H.push('<button type="button" class="stdb-it" data-clone>' + esc(T('Clone', 'Duplicar')) + '</button>'); }
+        return H.join(''); }
+      return ''; }
+    function popClick(e){ var t = e.target, ty0 = ty(), d = sel(), g;
+      if ((g = t.closest('[data-pc]'))) { var kind = g.getAttribute('data-pk'), a0 = parseC(v(kind)).a, pc = g.getAttribute('data-pc'); tgtW()[kind] = a0 >= 1 ? pc : mkC(parseC(pc).h, a0); final(); return; }
+      if ((g = t.closest('[data-pw]'))) { tgtW().width = +g.getAttribute('data-pw'); final(); return; }
+      if ((g = t.closest('[data-tz]'))) { tgtW().width = +g.getAttribute('data-tz'); final(); return; }
+      if ((g = t.closest('[data-pd]'))) { var dv = g.getAttribute('data-pd'), o1 = tgtW(); if (dv === 'solid' && sel()) delete o1.dash; else o1.dash = dv; final(); return; }
+      if ((g = t.closest('[data-ts]'))) { tgtW().tsz = +g.getAttribute('data-ts'); final(); return; }
+      if ((g = t.closest('[data-tv]'))) { tgtW().tv = g.getAttribute('data-tv'); final(); return; }
+      if ((g = t.closest('[data-ta]'))) { tgtW().ta = g.getAttribute('data-ta'); final(); return; }
+      if ((g = t.closest('[data-md]'))) { tgtW().midDash = g.getAttribute('data-md'); final(); return; }
+      if ((g = t.closest('[data-show]'))) { var o2 = tgtW(), k2 = g.getAttribute('data-show'); o2.show = Object.assign({}, o2.show || {}); o2.show[k2] = !!(o2.show[k2] === false); if (o2.show[k2]) delete o2.show[k2]; if (!Object.keys(o2.show).length) delete o2.show; final(); return; }
+      if ((g = t.closest('[data-lvl]')) && d) { var LV = (d.levels && d.levels.length) ? d.levels.slice() : FIBS.slice(); LV.splice(+g.getAttribute('data-lvl'), 1); d.levels = LV; final(); return; }
+      if (t.closest('[data-fibadd]')) { fibAdd(); return; }
+      if ((g = t.closest('[data-emo]'))) { A.emojiPick(g.getAttribute('data-emo')); render(); return; }
+      if (t.closest('[data-mvis]')) { closePop(); A.act('vis'); return; }
+      if (t.closest('[data-clone]')) { closePop(); A.act('clone'); return; }
+      if ((g = t.closest('[data-tpx]'))) { e.stopPropagation(); var s = store(), L = s.list[ty0] || [], ix = +g.getAttribute('data-tpx'), gone = L[ix]; if (!gone) return; L.splice(ix, 1); if (!L.length) delete s.list[ty0]; A.save(); paintPop();
+        A.flash(T('Template deleted: ' + gone.n, 'Plantilla borrada: ' + gone.n)); return; }
+      if ((g = t.closest('[data-tpa]'))) { var x = (store().list[ty0] || [])[+g.getAttribute('data-tpa')]; if (!x) return; useLook(x.l); closePop(); A.flash(T('Template applied: ', 'Plantilla aplicada: ') + x.n); return; }
+      if ((g = t.closest('[data-tp]'))) { var a = g.getAttribute('data-tp'), s2 = store();
+        if (a === 'save') { closePop(); saveDlg(); return; }
+        if (a === 'apply') { useLook(defOf(ty0) || {}); closePop(); A.flash(defOf(ty0) ? T('The default look is on it.', 'Tiene el aspecto predeterminado.') : T('The app\'s own look is on it (no default of your own yet).', 'Tiene el aspecto de la app (aún no tienes uno predeterminado).')); return; }
+        if (a === 'setdef') { var L2 = lookOf(Object.assign({ type: ty0 }, cur())); if (Object.keys(L2).length) s2.def[ty0] = L2; else delete s2.def[ty0]; A.nsSet(ty0, null); A.save(); closePop(); render();
+          A.flash(T('New ' + nm(ty0, true) + ' will look like this.', 'Los nuevos ' + nm(ty0, true) + ' tendrán este aspecto.')); return; }
+        if (a === 'resetdef') { delete s2.def[ty0]; A.nsSet(ty0, null); A.save(); closePop(); render(); A.flash(T('New ' + nm(ty0, true) + ' have the app\'s look again.', 'Los nuevos ' + nm(ty0, true) + ' vuelven al aspecto de la app.')); return; } } }
+    function useLook(L){ var d = sel(), t = ty(); if (d) { applyLook(d, L); final(); } else { A.nsSet(t, cp(L || {})); A.change(false); render(); } }
+    function fibAdd(){ var d = sel(), inp = B.pop && B.pop.querySelector('[data-fiblv]'); if (!d || !inp) return; var x = parseFloat(String(inp.value).replace(',', '.')); if (!isFinite(x)) return;
+      var LV = (d.levels && d.levels.length) ? d.levels.slice() : FIBS.slice(); if (LV.indexOf(x) < 0) LV.push(x); LV.sort(function(p, q){ return p - q; }); d.levels = LV; final(); }
+    function popInput(e){ var t = e.target, k;
+      if ((k = t.getAttribute('data-pop'))) { var c0 = parseC(v(k)), a = Math.max(0, Math.min(100, +t.value)) / 100, b = t.parentNode.querySelector('b'); if (b) b.textContent = Math.round(a * 100) + '%'; tgtW()[k] = mkC(c0.h, a); live(); return; }
+      if ((k = t.getAttribute('data-pcus'))) { tgtW()[k] = mkC(t.value, parseC(v(k)).a); live(); return; }
+      if (t.hasAttribute('data-tw') || t.hasAttribute('data-note')) { var d = sel(); if (!d) return; d.text = t.value; A.change(false); return; }
+      if (t.hasAttribute('data-esz')) { var d2 = sel(); if (d2) { d2.size = +t.value; A.change(false); } return; } }
+    function popChange(e){ var t = e.target, k;
+      if ((k = t.getAttribute('data-tgl'))) { var o = tgtW(); if (t.checked) o[k] = true; else delete o[k]; if (!sel()) o[k] = !!t.checked; final(); return; }
+      if (t.getAttribute('data-pop') || t.getAttribute('data-pcus')) { final(); return; }
+      if (t.hasAttribute('data-tw') || t.hasAttribute('data-note') || t.hasAttribute('data-esz')) { if (sel()) A.change(true); paintBar(); return; } }
+    // ---- Save template (mock 3): a name, and whether new drawings of this tool take it ----
+    function saveDlg(){ var t = ty(), look = lookOf(Object.assign({ type: t }, cur())), doc = B.doc || document;
+      if (B.dlg) try { B.dlg.remove(); } catch (e) {}
+      var what = t === 'rect' ? T('line, fill, text and style', 'línea, relleno, texto y estilo') : (t === 'text' ? T('colour and size', 'color y tamaño') : T('colour, width and style', 'color, grosor y estilo'));
+      var bg = doc.createElement('div'); bg.className = 'stdb-dlgbg'; B.dlg = bg;
+      bg.innerHTML = '<div class="stdb-dlg" role="dialog" aria-modal="true" aria-label="' + esc(T('Save template', 'Guardar plantilla')) + '"><h4>' + esc(T('Save template', 'Guardar plantilla')) + '</h4>'
+        + '<p>' + esc(T('This ' + nm(t) + '’s look — ' + what + ' — under a name, to use again on any ' + nm(t) + '.', 'El aspecto de este ' + nm(t) + ' — ' + what + ' — con un nombre, para usarlo en cualquier ' + nm(t) + '.')) + '</p>'
+        + '<input type="text" data-tpn maxlength="40" autocomplete="off" spellcheck="false" placeholder="' + esc(T('Template name', 'Nombre de la plantilla')) + '" aria-label="' + esc(T('Template name', 'Nombre de la plantilla')) + '">'
+        + '<label><input type="checkbox" data-tpd> <span>' + esc(T('Use it for new ' + nm(t, true), 'Usarla en los nuevos ' + nm(t, true))) + '</span></label>'
+        + '<div class="stdb-dr"><button type="button" class="stdb-db" data-tpc>' + esc(T('Cancel', 'Cancelar')) + '</button><button type="button" class="stdb-db p" data-tps disabled>' + esc(T('Save', 'Guardar')) + '</button></div></div>';
+      (B.wrap && B.wrap.closest ? (B.wrap.closest('.stpr-bg') || B.wrap) : doc.body).appendChild(bg);
+      var inp = bg.querySelector('[data-tpn]'), ok = bg.querySelector('[data-tps]');
+      var shut = function(){ try { bg.remove(); } catch (e) {} if (B.dlg === bg) B.dlg = null; };
+      var go = function(){ var n = String(inp.value || '').trim().slice(0, 40); if (!n) { inp.focus(); return; } var s = store(), L = s.list[t] || (s.list[t] = []), ix = -1;
+        L.forEach(function(x, i){ if (String(x.n).toLowerCase() === n.toLowerCase()) ix = i; });
+        if (ix >= 0) L[ix] = { n: n, l: cp(look) }; else L.push({ n: n, l: cp(look) });
+        if (bg.querySelector('[data-tpd]').checked) { if (Object.keys(look).length) s.def[t] = cp(look); else delete s.def[t]; A.nsSet(t, null); }
+        A.save(); shut(); render(); A.flash(ix >= 0 ? T('Template updated: ' + n, 'Plantilla actualizada: ' + n) : T('Template saved: ' + n, 'Plantilla guardada: ' + n)); };
+      inp.addEventListener('input', function(){ ok.disabled = !String(inp.value || '').trim(); });
+      bg.addEventListener('click', function(e){ if (e.target === bg || e.target.closest('[data-tpc]')) { shut(); return; } if (e.target.closest('[data-tps]')) go(); });
+      bg.addEventListener('keydown', function(e){ e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); shut(); } else if (e.key === 'Enter' && e.target.tagName !== 'BUTTON') { e.preventDefault(); go(); } });
+      ['mousedown', 'pointerdown', 'touchstart', 'contextmenu'].forEach(function(n){ bg.addEventListener(n, function(e){ e.stopPropagation(); }); });
+      setTimeout(function(){ try { inp.focus(); } catch (e) {} }, 0); return bg; }
+    return { render: render, hide: hide, closePop: closePop, open: function(k){ render(); if (B.el && B.el.style.display !== 'none') openPop(k); }, el: function(){ return B.el; }, pop: function(){ return B.pop; }, dlg: function(){ return B.dlg; }, popK: function(){ return B.popK; },
+      moveTo: function(x, y){ if (!B.el) return; B.el.style.left = x + 'px'; B.el.style.top = y + 'px'; clampBar(); B.pos = { wrap: B.wrap, x: parseFloat(B.el.style.left), y: parseFloat(B.el.style.top) }; }, unpin: function(){ B.pos = null; } };
+  }
+  window.__stDrawBar = { make: make, KEYS: KEYS, PAL: PAL, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash };
+})();
+</script>
+<script>
 (function(){
   var LWC_SRC='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
   var lwcP=null;
@@ -86496,6 +86766,79 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-lkop b { font-weight: 400; min-width: 34px; text-align: right; color: var(--text); }
   .stpr-lkreset { margin-top: 10px; padding: 8px; border: 1px solid var(--border-2); border-radius: 6px; background: transparent; color: var(--text-mid); font: inherit; letter-spacing: .12em; text-transform: uppercase; cursor: pointer; }
   @media (hover: hover) { .stpr-lkreset:hover { color: var(--text); border-color: var(--text-dim); } }
+  /* the drawing toolbar (19 Oct 2026): TradingView's floating bar over the selected drawing, and its popovers */
+  .stdb-bar { position: absolute; z-index: 30; display: none; align-items: center; gap: 2px; padding: 4px; background: var(--bg-elev2, #1b1a21); border: 1px solid var(--border-2, #332F3C); border-radius: 9px; box-shadow: 0 14px 34px rgba(0,0,0,.55); font-family: 'AppNum','DM Mono',monospace; width: max-content; max-width: calc(100% - 8px); box-sizing: border-box; user-select: none; -webkit-user-select: none; }
+  .stdb-gr { flex: none; width: 14px; height: 28px; display: grid; place-items: center; color: #5d5a66; cursor: grab; touch-action: none; }
+  .stdb-gr:active { cursor: grabbing; }
+  .stdb-bar button, .stdb-pop button { all: unset; box-sizing: border-box; cursor: pointer; }
+  .stdb-bar button { flex: none; height: 30px; min-width: 30px; padding: 0 6px; border-radius: 6px; display: inline-flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; color: #c9c6d2; font-size: 11px; line-height: 1; }
+  .stdb-bar button svg { width: 17px; height: 17px; flex: none; }
+  .stdb-bar button.on, .stdb-bar button[aria-expanded="true"] { background: #2a2833; color: #fff; }
+  .stdb-bar button.act { color: var(--accent, #f472b6); }
+  .stdb-bar button.hit { color: var(--accent, #f472b6); opacity: .55; }
+  .stdb-bar button:focus-visible, .stdb-pop button:focus-visible { outline: 1px solid var(--accent, #f472b6); outline-offset: 1px; }
+  @media (hover: hover) { .stdb-bar button:hover { background: #2a2833; color: #fff; } .stdb-pop .stdb-it:hover, .stdb-pop .stdb-ch:hover { background: #2a2833; } }
+  .stdb-bar .stdb-cb { width: 16px; height: 3px; border-radius: 2px; box-shadow: 0 0 0 1px rgba(255,255,255,.12); }
+  .stdb-bar .stdb-wd { flex-direction: row; gap: 6px; }
+  .stdb-bar .stdb-wd i { display: block; width: 14px; background: currentColor; border-radius: 1px; }
+  .stdb-bar .stdb-emo { font-size: 17px; font-family: 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif; }
+  .stdb-bar .stdb-tz { font-size: 11px; letter-spacing: .04em; min-width: 30px; }
+  .stdb-sep { flex: none; width: 1px; height: 20px; background: var(--border-2, #332F3C); margin: 0 3px; }
+  @media (max-width: 560px) { .stdb-bar { flex-wrap: wrap; max-width: calc(100% - 16px); gap: 1px; padding: 3px; } .stdb-sep { display: none; } .stdb-bar button { min-width: 28px; padding: 0 3px; } .stdb-gr { width: 10px; } .stdb-bar .stdb-wd { gap: 4px; } .stdb-bar .stdb-wd i { width: 9px; } }   /* a phone: one row (it wraps if a tool needs more) */
+  .stdb-pop { position: absolute; z-index: 31; display: none; flex-direction: column; width: max-content; min-width: 200px; max-width: calc(100% - 16px); box-sizing: border-box; padding: 6px; background: var(--bg-elev2, #1b1a21); border: 1px solid var(--border-2, #332F3C); border-radius: 9px; box-shadow: 0 18px 40px rgba(0,0,0,.6); font-family: Inter, system-ui, sans-serif; font-size: 13px; color: #e9e7ee; }
+  .stdb-pop .stdb-it { display: flex; align-items: center; gap: 10px; padding: 8px 10px; border-radius: 6px; color: #e9e7ee; text-align: left; }
+  .stdb-pop .stdb-it.on { background: #2a2833; }
+  .stdb-pop .stdb-nm { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .stdb-pop .stdb-x { flex: none; width: 22px; height: 22px; display: grid; place-items: center; border-radius: 5px; color: #77737f; font-size: 15px; }
+  @media (hover: hover) { .stdb-pop .stdb-x:hover { color: #fff; background: #3a3744; } }
+  .stdb-pop .stdb-ck { flex: none; color: var(--accent, #f472b6); font-size: 12px; }
+  .stdb-pop .stdb-lb { padding: 8px 10px 4px; font: 10px 'AppNum','DM Mono',monospace; letter-spacing: .14em; text-transform: uppercase; color: #77737f; }
+  .stdb-pop .stdb-dv { height: 1px; background: var(--border-2, #332F3C); margin: 5px 2px; flex: none; }
+  .stdb-pop .stdb-empty { padding: 4px 10px 8px; color: #8c8996; font-size: 12px; line-height: 1.45; max-width: 250px; }
+  .stdb-sw { flex: none; width: 22px; height: 14px; border-radius: 3px; box-sizing: border-box; }
+  .stdb-sw.ln { height: 0; border-radius: 0; }
+  .stdb-sw.tx { width: 22px; height: auto; font: 600 12px 'DM Mono',monospace; text-align: center; }
+  .stdb-pal { display: grid; grid-template-columns: repeat(10, 20px); gap: 5px; padding: 6px 6px 2px; }
+  .stdb-pal button { display: block; width: 20px; height: 20px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(255,255,255,.14); }
+  .stdb-pal button.on { box-shadow: 0 0 0 2px var(--bg-elev2, #1b1a21), 0 0 0 4px #fff; }
+  .stdb-op { display: flex; align-items: center; gap: 10px; padding: 12px 6px 6px; font: 11px 'AppNum','DM Mono',monospace; color: #c9c6d2; }
+  .stdb-op input[type=range] { flex: 1; min-width: 0; accent-color: #fff; height: 6px; }
+  .stdb-op b { font-weight: 400; min-width: 34px; text-align: right; }
+  .stdb-cus { position: relative; cursor: pointer; color: #c9c6d2 !important; padding: 7px 8px !important; }
+  .stdb-cus input { position: absolute; left: 0; top: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; border: 0; padding: 0; }
+  .stdb-row { display: flex; flex-wrap: wrap; gap: 4px; padding: 4px 6px; }
+  .stdb-pop .stdb-ch { padding: 6px 9px; border-radius: 6px; border: 1px solid var(--border-2, #332F3C); color: #c9c6d2; font: 11px 'AppNum','DM Mono',monospace; letter-spacing: .04em; }
+  .stdb-pop .stdb-ch.on { border-color: var(--accent, #f472b6); color: #fff; background: rgba(244,114,182,.12); }
+  .stdb-pop .stdb-wrow { display: flex !important; align-items: center; gap: 12px; padding: 8px 10px; border-radius: 6px; font: 11px 'AppNum','DM Mono',monospace; color: #c9c6d2; }
+  .stdb-pop .stdb-wrow.on { background: #2a2833; color: #fff; }
+  .stdb-pop .stdb-wrow i { display: block; width: 46px; border-top-color: currentColor; border-top-style: solid; }
+  .stdb-pop textarea, .stdb-pop input[type=text], .stdb-pop input[type=number] { box-sizing: border-box; padding: 6px 8px; background: var(--bg-elev, #131217); border: 1px solid var(--border-2, #332F3C); border-radius: 6px; color: #fff; font: 12px 'AppNum','DM Mono',monospace; outline: none; }
+  .stdb-pop textarea:focus, .stdb-pop input[type=text]:focus, .stdb-pop input[type=number]:focus { border-color: var(--accent, #f472b6); }
+  .stdb-pop textarea { width: calc(100% - 12px); margin: 4px 6px 6px; resize: vertical; min-height: 44px; }
+  .stdb-pop .stdb-fl { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 6px 10px; font: 11px 'AppNum','DM Mono',monospace; color: #c9c6d2; }
+  .stdb-pop .stdb-fl input[type=number] { width: 80px; text-align: right; }
+  .stdb-pop .stdb-fl input[type=range] { flex: 1; min-width: 0; accent-color: var(--accent, #f472b6); }
+  .stdb-pop .stdb-tg { display: flex; align-items: center; gap: 9px; padding: 7px 10px; cursor: pointer; color: #e9e7ee; font-size: 13px; }
+  .stdb-pop .stdb-tg input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent, #f472b6); cursor: pointer; }
+  .stdb-pop .stdb-hd { padding: 6px 10px 4px; font: 10px 'AppNum','DM Mono',monospace; letter-spacing: .14em; text-transform: uppercase; color: #9a97a3; }
+  .stdb-pop .stdb-info { padding: 4px 10px 6px; color: #8c8996; font: 11px 'AppNum','DM Mono',monospace; }
+  .stdb-emos { display: grid; grid-template-columns: repeat(7, 30px); gap: 3px; max-height: 210px; overflow-y: auto; overflow-x: hidden; padding: 2px 4px; scrollbar-width: thin; }
+  .stdb-emos button { width: 30px; height: 28px; display: grid !important; place-items: center; border-radius: 5px; font-size: 17px; line-height: 1; font-family: 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif; border: 1px solid transparent; }
+  .stdb-emos button.on { background: rgba(244,114,182,.2); border-color: var(--accent, #f472b6); }
+  .stdb-emos .stdb-elb { grid-column: 1 / -1; padding: 6px 2px 2px; font: 9px 'AppNum','DM Mono',monospace; letter-spacing: .12em; text-transform: uppercase; color: #77737f; }
+  .stdb-dlgbg { position: fixed; inset: 0; z-index: 9500; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; padding: 16px; }
+  .stdb-dlg { width: 360px; max-width: 100%; box-sizing: border-box; padding: 18px 20px; background: var(--bg-elev, #131217); border: 1px solid var(--border-2, #332F3C); border-radius: 12px; box-shadow: 0 24px 60px rgba(0,0,0,.65); font-family: Inter, system-ui, sans-serif; color: #e9e7ee; }
+  .stdb-dlg h4 { margin: 0 0 4px; font-size: 15px; font-weight: 600; color: #fff; }
+  .stdb-dlg p { margin: 0 0 14px; font-size: 12px; color: #8c8996; line-height: 1.5; }
+  .stdb-dlg input[type=text] { width: 100%; box-sizing: border-box; padding: 10px 12px; background: #0b0a0d; border: 1px solid var(--border-2, #332F3C); border-radius: 8px; color: #fff; font: 13px 'AppNum','DM Mono',monospace; outline: none; }
+  .stdb-dlg input[type=text]:focus { border-color: var(--accent, #f472b6); }
+  .stdb-dlg label { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 12.5px; color: #c9c6d2; cursor: pointer; }
+  .stdb-dlg label input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent, #f472b6); cursor: pointer; }
+  .stdb-dlg .stdb-dr { display: flex; justify-content: flex-end; gap: 8px; margin-top: 16px; }
+  .stdb-dlg .stdb-db { all: unset; box-sizing: border-box; cursor: pointer; padding: 8px 14px; border: 1px solid var(--border-2, #332F3C); border-radius: 8px; font: 11px 'AppNum','DM Mono',monospace; letter-spacing: .12em; text-transform: uppercase; color: #c9c6d2; }
+  .stdb-dlg .stdb-db.p { border-color: var(--accent, #f472b6); color: #fff; background: rgba(244,114,182,.12); }
+  .stdb-dlg .stdb-db:disabled { opacity: .4; cursor: default; }
+  .stdb-dlg .stdb-db:focus-visible { outline: 1px solid var(--accent, #f472b6); outline-offset: 1px; }
   /* a settings window like TradingView's (17 Oct 2026) */
   .stpr-dlgbg { position: absolute; inset: 0; z-index: 40; background: rgba(0,0,0,.35); display: flex; align-items: center; justify-content: center; }
   .stpr-dlg { width: min(470px, calc(100% - 24px)); max-height: calc(100% - 40px); display: flex; flex-direction: column; background: #1e1e22; border: 1px solid var(--border-2); border-radius: 10px; box-shadow: 0 22px 60px rgba(0,0,0,.6); color: var(--text); font-family: 'AppNum','DM Mono',monospace; font-size: 12px; }
@@ -86837,6 +87180,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <button type="button" class="stpr-ico" id="stpr-undo" title="Undo" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6,3.5 2.5,7 6,10.5"/><path d="M2.5 7H10a3.5 3.5 0 0 1 0 7H8"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-redo" title="Redo" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="10,3.5 13.5,7 10,10.5"/><path d="M13.5 7H6a3.5 3.5 0 0 0 0 7h2"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-del" title="Delete selected" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><path d="M6.3 4.5V3h3.4v1.5"/><path d="M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg></button>
+      <button type="button" class="stpr-ico" id="stpr-hideall" title="Hide all drawings" aria-label="Hide all drawings" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 8S3.9 4 8 4s6.4 4 6.4 4-2.3 4-6.4 4S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="1.9"/><path d="M2.6 13.4L13.4 2.6"/></svg></button>
+      <button type="button" class="stpr-ico" id="stpr-lockall" title="Lock all drawings" aria-label="Lock all drawings" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg></button>
       <span class="stpr-sp"></span>
       <span class="stpr-grp" id="stpr-lay"></span>
       <button type="button" class="stpr-ico" id="stpr-treebtn" title="Object tree" aria-label="Object tree" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L11 5.5H9.8L12 9H10.5L13 12.5H3L5.5 9H4L6.2 5.5H5Z"/><line x1="8" y1="12.5" x2="8" y2="14.8"/></svg></button>
@@ -87013,7 +87358,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function uLbl(u){ return u === 'R' ? 'R' : (u === 'pips' ? T('pips', 'pips') : T('pts', 'ptos')); }
 
   // ---- settings (synced) ----
-  var DEF = { sym: 'EURUSD', news: true, layout: 1, tfs: [5, 60, 15, 240], stopPx: {}, stopUnit: 'pips', tgtUnit: 'R', tgtR: 2, tgtPx: {}, tgtOn: true, speed: 0, ses: {}, marks: true, pos: true, mini: false, miniOff: {}, lv: { 2: 'h', 3: 'L' }, logFrom: 0, recent: [], max: false, savedAt: 0,
+  var DEF = { sym: 'EURUSD', news: true, layout: 1, tfs: [5, 60, 15, 240], stopPx: {}, stopUnit: 'pips', tgtUnit: 'R', tgtR: 2, tgtPx: {}, tgtOn: true, speed: 0, ses: {}, marks: true, pos: true, mini: false, miniOff: {}, lv: { 2: 'h', 3: 'L' }, logFrom: 0, recent: [], max: false, savedAt: 0, dwHide: false, dwLock: false, dtpl: {}, ddef: {},
     // the Minimalist Manager panel (17 Oct 2026): seeded once from the member's own EA, then practice's own copy
     mm: { seeded: false, acct: '', on: true, col: false, ord: 'market', key: 'O', riskMode: 'amount', riskPct: 1, riskAmt: 100, lots: 0.1, minSL: {}, maxSL: {},
           beOn: true, beR: 1, beOffMode: 'rr', beOff: 0, tsUnit: 'rr', ts: [], pc: [], maxDay: 0 } };
@@ -87025,7 +87370,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (!(c.layout >= 1 && c.layout <= 8)) c.layout = 1; if (!Array.isArray(c.syms)) c.syms = []; c.syms = c.syms.slice(0, 8).map(function(x){ return (typeof x === 'string' && x) ? x.slice(0, 32) : null; }); if (!(c.speed >= 0 && c.speed < SPEEDS.length)) c.speed = 0; if (!c.ses || typeof c.ses !== 'object') c.ses = {};
     c.mm = Object.assign(JSON.parse(JSON.stringify(DEF.mm)), (c.mm && typeof c.mm === 'object') ? c.mm : {}); c.mm.minSL = Object.assign({}, c.mm.minSL || {}); c.mm.maxSL = Object.assign({}, c.mm.maxSL || {});
     if (!Array.isArray(c.mm.ts)) c.mm.ts = []; if (!Array.isArray(c.mm.pc)) c.mm.pc = []; c.mm.ts = c.mm.ts.slice(0, 4); c.mm.pc = c.mm.pc.slice(0, 4);
-    if (['market', 'limit', 'stop'].indexOf(c.mm.ord) < 0) c.mm.ord = 'market'; if (!/^[A-Z0-9]$/.test(String(c.mm.key || ''))) c.mm.key = 'O'; return c; }
+    if (['market', 'limit', 'stop'].indexOf(c.mm.ord) < 0) c.mm.ord = 'market'; if (!/^[A-Z0-9]$/.test(String(c.mm.key || ''))) c.mm.key = 'O';
+    // the drawing templates (per tool: [{ n: name, l: look }]) and each tool's default look (19 Oct 2026)
+    var okObj = function(o){ return !!o && typeof o === 'object' && !Array.isArray(o); }; if (!okObj(c.dtpl)) c.dtpl = {}; if (!okObj(c.ddef)) c.ddef = {};
+    Object.keys(c.dtpl).forEach(function(k){ var a = c.dtpl[k]; if (!Array.isArray(a)) { delete c.dtpl[k]; return; } c.dtpl[k] = a.filter(function(x){ return x && typeof x.n === 'string' && okObj(x.l); }).slice(0, 60); });
+    Object.keys(c.ddef).forEach(function(k){ if (!okObj(c.ddef[k])) delete c.ddef[k]; }); c.dwHide = !!c.dwHide; c.dwLock = !!c.dwLock; return c; }
   var cfgT = 0;
   function save(){ CFG.savedAt = Date.now(); try { localStorage.setItem(LS_CFG, JSON.stringify(cfgPractice())); } catch (e) {} if (LV.mmStash) lvCfgSoon(); clearTimeout(cfgT); cfgT = setTimeout(pushCfg, 1500); }
 
@@ -87396,7 +87745,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (ALERT.hits.length) { var d = ALERT.hits[0], n = ALERT.hits.length, XA = feeds().filter(function(F){ return dwListOf(F.sym.raw).indexOf(d) >= 0; })[0] || S; ALERT.hits = []; ch = true; pause(); alertChime();
       flash(T('Alert: price reached ', 'Alerta: el precio llegó a ') + (XA !== S ? XA.sym.name + ' ' : '') + Number(d.price).toFixed(XA.digits) + (d.text ? ' (' + d.text + ')' : '') + T(' at ', ' a las ') + hm(d.hitAt) + (n > 1 ? T(' (+' + (n - 1) + ' more)', ' (+' + (n - 1) + ' más)') : '')); }
     if (ch) { persist(); hlAll(); renderProps(); } }
-  function alertAt(pr, p){ if (!S || !(pr > 0)) return; if (p) dwFocus(p); var dga = PS(p || DW.at).digits, d = styleNew({ type: 'hline', price: +Number(pr).toFixed(dga), alert: true }); if (S.live) d.live = true; DW.list.push(d); DW.sel = DW.list.length - 1; DW.at = p || DW.at; commit(); updDel();
+  function alertAt(pr, p){ if (!S || !(pr > 0)) return; if (p) dwFocus(p); dwUnhide(); var dga = PS(p || DW.at).digits, d = styleNew({ type: 'hline', price: +Number(pr).toFixed(dga), alert: true }); if (S.live) d.live = true; DW.list.push(d); DW.sel = DW.list.length - 1; DW.at = p || DW.at; commit(); updDel();
     flash(T('Alert set at ', 'Alerta puesta en ') + d.price.toFixed(dga)); }
   // ---- the alerts list (Nestor, 17 Oct 2026: "can i also get an icon that when pressed you open a list of the alerts set to
   //      manage them? keep or delete them"): this symbol's alerts, highest first, waiting or reached; a click on one selects
@@ -87415,7 +87764,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (d.type === 'emoji') return d.e || '';
     var p0 = d.type === 'pen' ? (d.pts || [])[0] : d.a; return p0 && p0.t ? at(p0.t) : ''; }
   function treeMenu(anchor, refresh){
-    var L = DW.list.map(function(d, i){ return i; }).reverse(), n = DW.list.filter(function(d){ return d && !d.lock; }).length;
+    var L = DW.list.map(function(d, i){ return i; }).reverse(), n = DW.list.filter(function(d){ return d && !lkd(d); }).length;
     var h = '<div class="stpr-tglh">' + T('Object tree', 'Árbol de objetos') + ' \u00b7 ' + esc(dwName()) + '</div>';
     if (!L.length) h += '<div class="stpr-sesn">' + esc(T('No drawings on this symbol yet.', 'Aún no hay dibujos en este símbolo.')) + '</div>';
     else { var bin = ($('stpr-del') && $('stpr-del').querySelector('svg')) ? $('stpr-del').querySelector('svg').outerHTML : '&times;';
@@ -87428,10 +87777,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (refresh) { if (menuFor === 'tree') { var m = mEl(), ol = m.querySelector('.stpr-otl'), st = ol ? ol.scrollTop : 0; m.innerHTML = h; var ol2 = m.querySelector('.stpr-otl'); if (ol2) ol2.scrollTop = st; } return; }
     openMenu(anchor, h, 'tree'); }
   function treeAct(a, i){ var d = DW.list[i]; if (!d) return;
-    if (a === 'sel') { if (d.hidden) { delete d.hidden; commit(); } DW.sel = i; DW.multi = null; DW.noProps = false; updDel(); }
+    if (a === 'sel') { dwUnhide(); if (d.hidden) { delete d.hidden; commit(); } DW.sel = i; DW.multi = null; DW.noProps = false; updDel(); }
     else if (a === 'hide') { if (d.hidden) delete d.hidden; else { d.hidden = true; if (DW.sel === i) DW.sel = null; } commit(); updDel(); }
     else if (a === 'lock') { if (d.lock) delete d.lock; else d.lock = true; commit(); renderProps(); }
-    else if (a === 'del') { if (d.lock) { lockSay(1); return; } DW.list.splice(i, 1); if (DW.sel === i) DW.sel = null; else if (DW.sel != null && DW.sel > i) DW.sel--; DW.multi = null; commit(); updDel(); }
+    else if (a === 'del') { if (lkd(d)) { lockSay(1); return; } DW.list.splice(i, 1); if (DW.sel === i) DW.sel = null; else if (DW.sel != null && DW.sel > i) DW.sel--; DW.multi = null; commit(); updDel(); }
     treeMenu(null, true); dirty(); }
   function alertsDot(){ var b = $('stpr-alertsbtn'); if (b) b.classList.toggle('dot', DW.list.some(function(d){ return d && d.type === 'hline' && d.alert && !d.hitAt; })); }
   function alertsMenu(anchor, refresh){
@@ -87451,12 +87800,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function alertDelAll(){ var n = 0; DW.list.forEach(function(d){ if (d && d.alert) { d.alert = false; delete d.hitAt; n++; } }); if (!n) return; commit(); renderProps(); closeMenu();
     flash(T(n + (n === 1 ? ' alert' : ' alerts') + ' deleted (the lines stay). Undo (Ctrl+Z) brings them back.', n + (n === 1 ? ' alerta borrada' : ' alertas borradas') + ' (las líneas se quedan). Deshacer (Ctrl+Z) las recupera.')); }
   function alertTitle(d){ return String(d.text || ''); }   // its alert is the bell on the line (bellAt), not a word on the price scale
-  // the bell: the toolbar's, on the line by the price scale, in the line's colour; dimmed once price has reached it
-  var BELLP = null;
-  function bellAt(g, x, y, col, hit){ if (!BELLP) { try { BELLP = [new Path2D('M4 11.3V7.2a4 4 0 0 1 8 0v4.1l1.3 1.3H2.7z'), new Path2D('M6.6 14.2a1.5 1.5 0 0 0 2.8 0')]; } catch (e) { return; } }
-    var pc = parseC(col), c1 = hexA(pc.h, hit ? 0.45 : 1); g.save();
-    g.fillStyle = 'rgba(19,18,23,0.92)'; g.strokeStyle = c1; g.lineWidth = 1; g.beginPath(); if (g.roundRect) g.roundRect(x - 9.5, y - 9.5, 19, 19, 4); else g.rect(x - 9.5, y - 9.5, 19, 19); g.fill(); g.stroke();
-    var sc = 0.86; g.translate(x - 8 * sc, y - 8 * sc - 0.5); g.scale(sc, sc); g.lineWidth = 1.5; g.lineJoin = 'round'; g.lineCap = 'round'; g.strokeStyle = c1; g.stroke(BELLP[0]); g.stroke(BELLP[1]); g.restore(); }
+  // the bell on an alert's line (Nestor, 19 Oct 2026: "bring the bell back on alerts"), where TradingView marks one: at the line's right
+  // end, just left of the price scale, level with it. A bell and nothing like a padlock (the boxed one of 17 Oct read as one): a
+  // solid dome with its crown, a flared rim and the clapper under it, about 13 px, in the line's colour, a dark edge so the line
+  // does not run through it; dimmed once price has reached it. A press on it picks the line (its toolbar opens).
+  var BELLX = 12;
+  function bellAt(g, x, y, col, hit){ var pc = parseC(col), c1 = hexA(pc.h, hit ? 0.42 : 1);
+    g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(0.85, 0.85); g.setLineDash([]); g.lineJoin = 'round';
+    var body = function(){ g.beginPath(); g.moveTo(-6.2, 3.4); g.quadraticCurveTo(-3.9, 2.3, -3.9, -0.6); g.bezierCurveTo(-3.9, -4.3, -2.1, -5.5, 0, -5.5); g.bezierCurveTo(2.1, -5.5, 3.9, -4.3, 3.9, -0.6);
+      g.quadraticCurveTo(3.9, 2.3, 6.2, 3.4); g.lineTo(6.2, 4.7); g.lineTo(-6.2, 4.7); g.closePath(); };
+    var bits = function(){ g.beginPath(); g.moveTo(1.7, 6.9); g.arc(0, 6.9, 1.7, 0, Math.PI * 2); g.moveTo(1.1, -6.4); g.arc(0, -6.4, 1.1, 0, Math.PI * 2); };
+    g.strokeStyle = 'rgba(11,10,13,0.92)'; g.lineWidth = 2.6; body(); g.stroke(); bits(); g.stroke();
+    g.fillStyle = c1; body(); g.fill(); bits(); g.fill(); g.restore(); }
 
   // ---- playback ----
   function step(){ if (!S || S.now >= S.f.close) { pause(); if (S) render(); return false; } var s = stepSec(); advanceTo(Math.floor(S.now / s) * s + s); render(); return true; }
@@ -87684,6 +88039,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     document.querySelectorAll('#stpr-grid .stpr-tfpill').forEach(function(b){ b.title = T('Timeframe', 'Temporalidad'); });
     panes.forEach(function(p){ var b = p.el.querySelector('.stpr-popc'); if (b) { b.title = popTitle(p.i); b.setAttribute('aria-label', b.title); } });
     var st = $('stpr-state'); if (st && /^Loading/.test(st.textContent)) st.textContent = T('Loading…', 'Cargando…');
+    dwAllBtns(); renderProps();
     if (S) { paintRow(); paintPlay(); paintPill(); paintMM(); linesAll(); } }   // the panel too: it stayed in the old language
   window.__stPracticeRelang = function(){ try { relang(true); if (LOG.open) renderLog(); } catch (e) {} };
   function paintHeader(){
@@ -88146,17 +88502,32 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function txtBox(p, d){ var a = Pt(p, d.a); if (!a) return null; var lines = String(d.text || '').split('\n'), fs = TSZ[Math.round(dW(d))] || 14, lh = Math.round(fs * 1.3);
     var g = tMeas || (tMeas = document.createElement('canvas').getContext('2d')); g.font = txtFont(d); var w = 0; lines.forEach(function(l){ w = Math.max(w, g.measureText(l).width); });
     return { x0: a.x, y0: a.y, x1: a.x + Math.max(w, 6), y1: a.y + lines.length * lh, lh: lh, lines: lines }; }
-  var DW = { raw: null, list: [], hist: ['[]'], hpos: 0, sel: null, multi: null, tool: 'none', ns: {}, pending: null, penning: null, penP: null, drag: null, marq: null, snap: null,
+  var DW = { raw: null, list: [], hist: ['[]'], hpos: 0, sel: null, multi: null, tool: 'none', nsT: {}, pending: null, penning: null, penP: null, drag: null, marq: null, snap: null,
     at: null, pin: null, asTemp: null, cx: null, ver: 0 };
   function dirty(){ DW.ver++; }
   function drawAll(){ dirty(); }
   function dC(d){ return (d && d.color) || ((DSTY[d && d.type] || {}).c) || '#ffffff'; }
   function dW(d){ return (d && d.width) || ((DSTY[d && d.type] || {}).w) || 1; }
-  function hexA(hex, a){ var h = String(hex || '#fff').replace('#', ''); if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
-    var n = parseInt(h, 16) || 0; return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')'; }
+  // a colour (hex, or rgba since colours have an opacity of their own - 19 Oct 2026) at this opacity
+  function hexA(hex, a){ var pc = parseC(hex), n = parseInt(pc.h.slice(1), 16) || 0; return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + (+(pc.a * a).toFixed(4)) + ')'; }
+  // ---- TradingView's looks (19 Oct 2026): solid / dashed / dotted lines, a rectangle's own fill, its words inside it, extend
+  //      left / right, a middle line. A drawing without them looks exactly as before. ----
+  function dDash(d, W){ return window.__stDrawBar ? window.__stDrawBar.dash(d && d.dash, W) : []; }
+  function lkd(d){ return !!(d && (d.lock || CFG.dwLock)); }   // locked: on its own, or every drawing (the toolbar's padlock)
+  function trendSeg(a, b, d, pw){ if (!d || !(d.extL || d.extR)) return [a, b]; var L = a.x <= b.x ? a : b, R = a.x <= b.x ? b : a, dx = R.x - L.x; if (dx < 0.5) return [a, b];
+    var k = (R.y - L.y) / dx, l = L, r = R; if (d.extL) l = { x: -2, y: L.y + k * (-2 - L.x) }; if (d.extR) r = { x: pw + 2, y: R.y + k * (pw + 2 - R.x) }; return [l, r]; }
+  function rectText(p, g, d, C){ var a = Pt(p, d.a), b = Pt(p, d.b); if (!a || !b) return; var x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y);
+    var fs = +d.tsz || 11, ta = d.ta || 'c', tv = d.tv || 'above', L = String(d.text).split('\n'), n = L.length, lh = Math.round(fs * 1.25), pad = 5, out = tv === 'above' || tv === 'below';
+    g.save(); g.setLineDash([]); g.font = fs + "px 'DM Mono',monospace"; g.fillStyle = d.tcol || C; g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 4;
+    g.textAlign = ta === 'l' ? 'left' : (ta === 'r' ? 'right' : 'center'); var x = ta === 'l' ? x0 + (out ? 0 : pad) : (ta === 'r' ? x1 - (out ? 0 : pad) : (x0 + x1) / 2);
+    L.forEach(function(l, k){ var y; if (tv === 'above') { g.textBaseline = 'bottom'; y = y0 - 5 - (n - 1 - k) * lh; } else if (tv === 'below') { g.textBaseline = 'top'; y = y1 + 5 + k * lh; }
+      else if (tv === 'top') { g.textBaseline = 'top'; y = y0 + pad + k * lh; } else if (tv === 'bottom') { g.textBaseline = 'bottom'; y = y1 - pad - (n - 1 - k) * lh; }
+      else { g.textBaseline = 'middle'; y = (y0 + y1) / 2 + (k - (n - 1) / 2) * lh; } g.fillText(l, x, y); }); g.restore(); }
+  // a horizontal line's style on the price scale (Lightweight Charts': 0 solid, 1 dotted, 2 dashed, 3 large dashed, 4 sparse dotted); a reached alert shows dashed
+  function hlStyle(d){ var st = d.dash === 'dotted' ? 1 : (d.dash === 'dashed' ? 2 : 0); if (d.alert && d.hitAt) st = st === 0 ? 2 : (st === 2 ? 3 : 4); return st; }
   function rShow(d, k){ var sh = d && d.show; return !sh || sh[k] !== false; }
   function fibLbl(lv){ var n = Number(lv); return isFinite(n) ? String(parseFloat(n.toFixed(4))) : String(lv); }
-  function visibleOn(d, tf){ if (d && d.hidden) return false; if (d && d.type === 'gann') return false; if (d && d.vis) return visOK(d.vis, tf);   // the Gann box was taken out again on 17 Oct 2026 ("the fibo looks too similar")
+  function visibleOn(d, tf){ if (CFG.dwHide) return false; if (d && d.hidden) return false; if (d && d.type === 'gann') return false; if (d && d.vis) return visOK(d.vis, tf);   // the Gann box was taken out again on 17 Oct 2026 ("the fibo looks too similar")
     return !d || !d.tfs || !d.tfs.length || d.tfs.indexOf(tf) >= 0; }
   function clone(x){ return JSON.parse(JSON.stringify(x)); }
   var DWM = '';   // '' Back Testing, 'L|' Live Charts: each its own drawings
@@ -88214,28 +88585,28 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if ((m.at || 0) > (m.up || 0)) dwPush(raw); } catch (e) {} }
   function commit(){ DW.hist = DW.hist.slice(0, DW.hpos + 1); DW.hist.push(JSON.stringify(DW.list)); DW.hpos = DW.hist.length - 1; updUR(); persist(); hlAll(); dirty(); }
   function hlAll(){ panes.forEach(function(p){ try { syncHL(p); } catch (e) {} }); alertsDot(); if (menuFor === 'alerts') alertsMenu(null, true); if (menuFor === 'tree') treeMenu(null, true); }
-  function updUR(){ var u = $('stpr-undo'), r = $('stpr-redo'); if (u) u.disabled = DW.hpos <= 0; if (r) r.disabled = DW.hpos >= DW.hist.length - 1; }
+  function updUR(){ var u = $('stpr-undo'), r = $('stpr-redo'); if (u) u.disabled = DW.hpos <= 0; if (r) r.disabled = DW.hpos >= DW.hist.length - 1; dwAllBtns(); }
   function updDel(){ var x = $('stpr-del'), sel = DW.sel != null || !!(DW.multi && DW.multi.length);
     // with nothing selected the bin removes every drawing on this symbol (Nestor, 17 Oct 2026: "how do i deal with old objects drawn in the charts?")
     if (x) { x.disabled = !sel && !DW.list.length; x.title = sel ? T('Delete selected', 'Borrar lo seleccionado') : T('Remove all drawings', 'Quitar todos los dibujos'); } renderProps();
     if (x && sel && !$('stpr-tb2').classList.contains('drawing')) drawerOpen(true); dirty(); }
   function delClick(){ if (DW.sel != null || (DW.multi && DW.multi.length)) { delSel(); return; }
-    if (!DW.list.length) return; var n = DW.list.filter(function(d){ return d && !d.lock; }).length, lk = DW.list.length - n;
+    if (!DW.list.length) return; var n = DW.list.filter(function(d){ return d && !lkd(d); }).length, lk = DW.list.length - n;
     openMenu($('stpr-del'), '<div class="stpr-tglh">' + T('Drawings', 'Dibujos') + ' \u00b7 ' + esc(dwName()) + '</div>' + (n ? '<button type="button" class="stpr-snapi" data-delall><span>' + T('Remove all drawings', 'Quitar todos los dibujos') + ' (' + n + ')</span></button>' : '')
       + '<div class="stpr-sesn">' + esc(n ? T('Every drawing on this symbol, on every day. Undo (Ctrl+Z) brings them back.', 'Todos los dibujos de este símbolo, en todos los días. Deshacer (Ctrl+Z) los recupera.') : '') + (lk ? (n ? ' ' : '') + esc(T(lk + (lk === 1 ? ' locked drawing stays.' : ' locked drawings stay.'), lk + (lk === 1 ? ' dibujo bloqueado se queda.' : ' dibujos bloqueados se quedan.'))) : '') + '</div>', 'del'); }
-  function delAll(){ var n = DW.list.filter(function(d){ return d && !d.lock; }).length, lk = DW.list.length - n; DW.list = DW.list.filter(function(d){ return d && d.lock; }); DW.sel = null; DW.multi = null; commit(); updDel(); closeMenu();
+  function delAll(){ var n = DW.list.filter(function(d){ return d && !lkd(d); }).length, lk = DW.list.length - n; DW.list = DW.list.filter(function(d){ return d && lkd(d); }); DW.sel = null; DW.multi = null; commit(); updDel(); closeMenu();
     flash(T(n + (n === 1 ? ' drawing' : ' drawings') + ' removed' + (lk ? ', ' + lk + ' locked kept' : '') + '. Undo (Ctrl+Z) brings them back.', n + (n === 1 ? ' dibujo quitado' : ' dibujos quitados') + (lk ? ', ' + lk + ' bloqueados se quedan' : '') + '. Deshacer (Ctrl+Z) los recupera.')); }
   function undoRedo(k){ var n = DW.hpos + k; if (n < 0 || n >= DW.hist.length) return; DW.hpos = n; DW.list = JSON.parse(DW.hist[n]); DW.sel = null; DW.multi = null; updUR(); updDel(); persist(); hlAll(); }
-  function lockSay(n){ flash(n > 1 ? T(n + ' locked drawings stay: unlock them to delete them (their options box or a right-click).', n + ' dibujos bloqueados se quedan: desbloquéalos para borrarlos (su caja de opciones o clic derecho).')
-    : T('Locked: unlock it to delete it (its options box or a right-click).', 'Bloqueado: desbloquéalo para borrarlo (su caja de opciones o clic derecho).')); }
+  function lockSay(n){ if (CFG.dwLock) { flash(T('Every drawing is locked: unlock them with the padlock beside the bin in the toolbar.', 'Todos los dibujos están bloqueados: desbloquéalos con el candado junto a la papelera de la barra.')); return; } flash(n > 1 ? T(n + ' locked drawings stay: unlock them to delete them (the padlock in their toolbar, or a right-click).', n + ' dibujos bloqueados se quedan: desbloquéalos para borrarlos (el candado de su barra o clic derecho).')
+    : T('Locked: unlock it to delete it (the padlock in its toolbar, or a right-click).', 'Bloqueado: desbloquéalo para borrarlo (el candado de su barra o clic derecho).')); }
   function delSel(){
-    if (DW.multi && DW.multi.length) { var lk = DW.multi.filter(function(i){ return DW.list[i] && DW.list[i].lock; }).length, go = DW.multi.filter(function(i){ return DW.list[i] && !DW.list[i].lock; });
+    if (DW.multi && DW.multi.length) { var lk = DW.multi.filter(function(i){ return DW.list[i] && lkd(DW.list[i]); }).length, go = DW.multi.filter(function(i){ return DW.list[i] && !lkd(DW.list[i]); });
       go.sort(function(a, b){ return b - a; }).forEach(function(i){ DW.list.splice(i, 1); }); DW.multi = null; DW.sel = null; if (go.length) commit(); updDel(); if (lk) lockSay(lk); return; }
-    if (DW.sel == null) return; if (DW.list[DW.sel] && DW.list[DW.sel].lock) { lockSay(1); return; }   // locked: stays
+    if (DW.sel == null) return; if (DW.list[DW.sel] && lkd(DW.list[DW.sel])) { lockSay(1); return; }   // locked: stays
     DW.list.splice(DW.sel, 1); DW.sel = null; commit(); updDel(); }
   function drawerOpen(on){ if (on) [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); }); $('stpr-tb2').classList.toggle('drawing', !!on); $('stpr-drawbtn').classList.toggle('on', !!on); if (!on && DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); } }
   function dwPanes(){ panes.forEach(function(p){ p.el.classList.toggle('drawing', DW.tool !== 'none'); }); }
-  function setTool(t){ hideCtx(); DW.noProps = false; DW.tool = (DW.tool === t ? 'none' : t); DW.pending = null; DW.snap = null; if (DW.tool !== 'none' && (DW.sel != null || (DW.multi && DW.multi.length))) { DW.sel = null; DW.multi = null; updDel(); }   // picking a tool puts the selection down (TradingView's)
+  function setTool(t){ hideCtx(); DW.noProps = false; DW.tool = (DW.tool === t ? 'none' : t); DW.pending = null; DW.snap = null; if (DW.tool !== 'none') dwUnhide(); if (DW.tool !== 'none' && (DW.sel != null || (DW.multi && DW.multi.length))) { DW.sel = null; DW.multi = null; updDel(); }   // picking a tool puts the selection down (TradingView's)
     document.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tool') === DW.tool); });
     dwPanes(); renderProps(); dirty(); }
 
@@ -88282,14 +88653,18 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (d.type === 'pen') { var x0 = Infinity, x1 = -Infinity, y0 = Infinity; (d.pts || []).forEach(function(z){ var q = Pt(p, z); if (!q) return; if (q.x < x0) x0 = q.x; if (q.x > x1) x1 = q.x; if (q.y < y0) y0 = q.y; });
       return isFinite(x0) ? { x: (x0 + x1) / 2, y: y0 } : null; }
     var a = Pt(p, d.a), b = Pt(p, d.b); return (a && b) ? { x: (a.x + b.x) / 2, y: Math.min(a.y, b.y) } : null; }
-  function drawOne(p, g, d, pw, pv){ g.save(); g.setLineDash(pv ? [4, 3] : []); g.font = "10px 'DM Mono',monospace";
-    var C = dC(d), W = dW(d), a, b, x0, x1, y0, y1;
+  function drawOne(p, g, d, pw, pv){ g.save(); g.font = "10px 'DM Mono',monospace";
+    var C = dC(d), W = dW(d), a, b, x0, x1, y0, y1; g.setLineDash(pv ? [4, 3] : dDash(d, W));
     if (d.type === 'hline') { /* a native price line with its label on the scale: syncHL */ }
-    else if (d.type === 'trend') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { g.strokeStyle = C; g.lineWidth = W; g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x, b.y); g.stroke(); } }
+    else if (d.type === 'trend') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { var tsg = trendSeg(a, b, d, pw); g.strokeStyle = C; g.lineWidth = W; g.beginPath(); g.moveTo(tsg[0].x, tsg[0].y); g.lineTo(tsg[1].x, tsg[1].y); g.stroke(); } }
     else if (d.type === 'pen') { var q = (d.pts || []).map(function(z){ return Pt(p, z); }).filter(Boolean);
       if (q.length > 1) { g.strokeStyle = C; g.lineWidth = W; g.lineJoin = 'round'; g.lineCap = 'round'; curve(g, q); } }
     else if (d.type === 'rect') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { x0 = Math.min(a.x, b.x); x1 = Math.max(a.x, b.x); y0 = Math.min(a.y, b.y); y1 = Math.max(a.y, b.y);
-        g.fillStyle = hexA(C, 0.10); g.fillRect(x0, y0, x1 - x0, y1 - y0); g.strokeStyle = C; g.lineWidth = W; g.strokeRect(x0 + .5, y0 + .5, x1 - x0 - 1, y1 - y0 - 1); } }
+        var rx0 = d.extL ? 0 : x0, rx1 = d.extR ? pw : x1;
+        g.fillStyle = d.fill || hexA(C, 0.10); g.fillRect(rx0, y0, rx1 - rx0, y1 - y0); g.strokeStyle = C; g.lineWidth = W;
+        if (!d.extL && !d.extR) g.strokeRect(x0 + .5, y0 + .5, x1 - x0 - 1, y1 - y0 - 1);
+        else { g.beginPath(); g.moveTo(rx0, y0 + .5); g.lineTo(rx1, y0 + .5); g.moveTo(rx0, y1 - .5); g.lineTo(rx1, y1 - .5); if (!d.extL) { g.moveTo(x0 + .5, y0); g.lineTo(x0 + .5, y1); } if (!d.extR) { g.moveTo(x1 - .5, y0); g.lineTo(x1 - .5, y1); } g.stroke(); }
+        if (d.mid) { var ymd = Math.round((y0 + y1) / 2) + .5; g.save(); g.setLineDash(pv ? [4, 3] : dDash({ dash: d.midDash || 'dotted' }, W)); g.beginPath(); g.moveTo(rx0, ymd); g.lineTo(rx1, ymd); g.stroke(); g.restore(); } } }
     else if (d.type === 'fib') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { var LV = (d.levels && d.levels.length) ? d.levels : FIBS, xl = Math.min(a.x, b.x), xr = Math.max(a.x, b.x), ly = null;
         LV.forEach(function(lv, ix){ var y = yOf(p, d.a.price + (d.b.price - d.a.price) * lv); if (y == null) return;
           if (ly != null) { g.fillStyle = hexA(C, ix % 2 ? 0.05 : 0.09); g.fillRect(xl, Math.min(ly, y), xr - xl, Math.abs(y - ly)); }
@@ -88319,7 +88694,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if (d.type === 'range') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { x0 = Math.min(a.x, b.x); x1 = Math.max(a.x, b.x); y0 = Math.min(a.y, b.y); y1 = Math.max(a.y, b.y);
         var xmr = Math.round((x0 + x1) / 2) + .5, yar = Math.round(a.y) + .5, ybr = Math.round(b.y) + .5, adir = ybr >= yar ? 1 : -1;
         g.strokeStyle = C; g.lineWidth = W; g.beginPath(); g.moveTo(x0, yar); g.lineTo(x1, yar); g.moveTo(x0, ybr); g.lineTo(x1, ybr); g.moveTo(xmr, yar); g.lineTo(xmr, ybr); g.stroke();
-        if (Math.abs(ybr - yar) > 8) { g.beginPath(); g.moveTo(xmr - 4, ybr - adir * 6); g.lineTo(xmr, ybr); g.lineTo(xmr + 4, ybr - adir * 6); g.stroke(); }
+        if (Math.abs(ybr - yar) > 8) { if (!pv) g.setLineDash([]); g.beginPath(); g.moveTo(xmr - 4, ybr - adir * 6); g.lineTo(xmr, ybr); g.lineTo(xmr + 4, ybr - adir * 6); g.stroke(); }
         var XR = PS(p), su = suFor(XR), dP = d.b.price - d.a.price, dist = dP / uFor(XR, su), rr = dP / (XR !== S ? defStopFor(XR.sym, d.a.price) : (S.pos ? S.pos.rd : stopPx())), La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t), db = (La == null || Lb == null) ? 0 : Math.round(Math.abs(Lb - La)), parts = [];
         if (rShow(d, 'pips')) parts.push((dist >= 0 ? '+' : '') + dist.toFixed(1) + ' ' + uLbl(su));
         if (rShow(d, 'r')) parts.push((rr >= 0 ? '+' : '') + rr.toFixed(2) + 'R');
@@ -88327,7 +88702,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (parts.length) { g.save(); g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 4; g.fillStyle = C; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(parts.join(' · '), xmr, ybr + adir * 12); g.restore(); } } }
     // the object's own note, riding on it (along a trend line, centred above anything else)
     if (d.text && d.type !== 'hline' && d.type !== 'range' && d.type !== 'text') {
-      if (d.type === 'trend') { var A = Pt(p, d.a), B = Pt(p, d.b);
+      if (d.type === 'rect') rectText(p, g, d, C);   // its words: above it as before, or inside it (Text > Position)
+      else if (d.type === 'trend') { var A = Pt(p, d.a), B = Pt(p, d.b);
         if (A && B) { var ang = Math.atan2(B.y - A.y, B.x - A.x); if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
           g.save(); g.translate((A.x + B.x) / 2, (A.y + B.y) / 2); g.rotate(ang); g.font = "11px 'DM Mono',monospace"; g.fillStyle = C; g.textAlign = 'center'; g.textBaseline = 'bottom';
           g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 4; g.fillText(String(d.text), 0, -5); g.restore(); } }
@@ -88374,7 +88750,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function hit(p, px, py){
     if (S && dwListFor(p) !== DW.list) return null;   // another symbol's chart: a press brings its drawings into hand first (dwFocus)
     for (var i = DW.list.length - 1; i >= 0; i--) { var d = DW.list[i]; if (!visibleOn(d, p.tf)) continue;
-      if (d.type === 'hline') { var y = yOf(p, d.price); if (y != null && Math.abs(py - y) < 6) return { i: i, part: 'line' }; continue; }
+      if (d.type === 'hline') { var y = yOf(p, d.price); if (y != null && Math.abs(py - y) < 6) return { i: i, part: 'line' };
+        if (y != null && d.alert && Math.abs(py - y) < 10 && Math.abs(px - (paneDims(p).pw - BELLX)) < 9) return { i: i, part: 'line' }; continue; }   // its bell
       if (d.type === 'text') { var tb = txtBox(p, d); if (tb && px >= tb.x0 - 5 && px <= tb.x1 + 5 && py >= tb.y0 - 4 && py <= tb.y1 + 4) return { i: i, part: 'body' }; continue; }
       if (d.type === 'emoji') { var eg = emoGeo(p, d); if (!eg) continue; var hs = eg.s / 2;
         if ([[-1, -1], [1, -1], [-1, 1], [1, 1]].some(function(c){ return Math.hypot(px - (eg.x + c[0] * hs), py - (eg.y + c[1] * hs)) < 8; })) return { i: i, part: 'esz' };
@@ -88391,8 +88768,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         var onY = (py > ry0 - 6 && py < ry1 + 6), onX = (px > rx0 - 6 && px < rx1 + 6);
         if (onY && Math.abs(px - rx0) < 6) return { i: i, part: 'l' }; if (onY && Math.abs(px - rx1) < 6) return { i: i, part: 'r' };
         if (onX && Math.abs(py - ry0) < 6) return { i: i, part: 't' }; if (onX && Math.abs(py - ry1) < 6) return { i: i, part: 'bo' }; }
-      if (d.type === 'trend') { if (d2seg(px, py, a.x, a.y, b.x, b.y) < 6) return { i: i, part: 'body' }; }
-      else if (d.type === 'rect' || d.type === 'range') { if (px >= Math.min(a.x, b.x) && px <= Math.max(a.x, b.x) && py >= Math.min(a.y, b.y) && py <= Math.max(a.y, b.y)) return { i: i, part: 'body' }; }
+      if (d.type === 'trend') { var tsh = (d.extL || d.extR) ? trendSeg(a, b, d, paneDims(p).pw) : [a, b]; if (d2seg(px, py, tsh[0].x, tsh[0].y, tsh[1].x, tsh[1].y) < 6) return { i: i, part: 'body' }; }
+      else if (d.type === 'rect' || d.type === 'range') { if (px >= ((d.type === 'rect' && d.extL) ? -1e9 : Math.min(a.x, b.x)) && px <= ((d.type === 'rect' && d.extR) ? 1e9 : Math.max(a.x, b.x)) && py >= Math.min(a.y, b.y) && py <= Math.max(a.y, b.y)) return { i: i, part: 'body' }; }
       else if (d.type === 'fib') { var LV = (d.levels && d.levels.length) ? d.levels : FIBS; if (px >= Math.min(a.x, b.x) - 3 && px <= Math.max(a.x, b.x) + 3) for (var L = 0; L < LV.length; L++) { var yy = yOf(p, d.a.price + (d.b.price - d.a.price) * LV[L]); if (yy != null && Math.abs(py - yy) < 5) return { i: i, part: 'body' }; } } }
     return null; }
   // Trade Replay's position tool. A moment sits at the left edge of its candle, so the box starts where the trade began and
@@ -88417,7 +88794,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         g.fillStyle = '#0b0a0d'; g.textAlign = 'left'; g.fillText(tx, px0 + 7, py + ph / 2 + 0.5); }
       g.restore(); }); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
-  function syncHL(p){ var want = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: d.alert && d.hitAt ? 2 : 0 }); });
+  function syncHL(p){ var want = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: hlStyle(d) }); });
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
     (p.hl || []).forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} });
     p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: o.s || 0, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
@@ -88868,10 +89245,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     try { cdLbl(p); } catch (e) {}
     var LST = dwListFor(p), act = LST === DW.list;   // this chart's symbol's drawings; selecting and drawing only on the one in hand
     LST.forEach(function(d){ if (visibleOn(d, p.tf)) try { drawOne(p, g, d, dm.pw, false); } catch (e) {} });
-    p._bells = [];   // no bell drawn on an alert's line since 18 Oct 2026 (Nestor: "remove the lock icon from appearing on the chart"); the toolbar's Alerts list has them
+    p._bells = []; LST.forEach(function(d){ if (!(d && d.type === 'hline' && d.alert && visibleOn(d, p.tf))) return; var by = yOf(p, d.price);   // the bell on each alert's line (back 19 Oct 2026)
+      if (by != null && by >= 0 && by <= dm.ph) { bellAt(g, dm.pw - BELLX, by, dC(d), !!d.hitAt); p._bells.push({ x: dm.pw - BELLX, y: by, hit: !!d.hitAt, price: d.price }); } });
     if (act && DW.pending) try { drawOne(p, g, DW.pending, dm.pw, true); } catch (e) {}
     if (act && DW.penning && DW.penP === p) drawPenLive(g, DW.penning);
-    var sel = !act ? null : (DW.drag ? DW.list[DW.drag.i] : (DW.sel != null ? DW.list[DW.sel] : null)); if (sel && visibleOn(sel, p.tf)) { if (sel.lock) lockMark(p, g, sel, dm.pw); else handles(p, g, sel, dm.pw); }
+    var sel = !act ? null : (DW.drag ? DW.list[DW.drag.i] : (DW.sel != null ? DW.list[DW.sel] : null)); if (sel && visibleOn(sel, p.tf)) { if (lkd(sel)) lockMark(p, g, sel, dm.pw); else handles(p, g, sel, dm.pw); }
     if (act && DW.multi && DW.multi.length) { g.save(); g.strokeStyle = '#f472b6'; g.lineWidth = 1; g.setLineDash([3, 3]);
       DW.multi.forEach(function(i){ var bb = DW.list[i] && bboxOf(p, DW.list[i], dm.pw); if (bb) g.strokeRect(bb.x0 - 3.5, bb.y0 - 3.5, (bb.x1 - bb.x0) + 7, (bb.y1 - bb.y0) + 7); }); g.restore(); }
     if (DW.snap && DW.snap.p === p) { var sq = Pt(p, DW.snap.q); if (sq) { g.save(); g.strokeStyle = '#f472b6'; g.fillStyle = 'rgba(244,114,182,0.9)'; g.lineWidth = 1;
@@ -88911,75 +89289,73 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var i = DW.list.indexOf(t.d); if (i >= 0 && !String(t.d.text || '').trim()) { DW.list.splice(i, 1); if (DW.sel === i) DW.sel = null; if (!t.isNew) commit(); updDel(); dirty(); return; }
     if (i >= 0) { commit(); renderProps(); } dirty(); }
   // ---- the options box (Trade Replay's), in the chart last touched ----
-  function styleTgt(){ return (DW.sel != null && DW.list[DW.sel]) ? DW.list[DW.sel] : DW.ns; }
+  function styleTgt(){ return (DW.sel != null && DW.list[DW.sel]) ? DW.list[DW.sel] : (DW.nsT[DW.tool] || (DW.nsT[DW.tool] = {})); }
   function styleType(){ return (DW.sel != null && DW.list[DW.sel]) ? DW.list[DW.sel].type : DW.tool; }
-  function styleNew(o){ if (DW.ns.color) o.color = DW.ns.color; if (DW.ns.width) o.width = DW.ns.width; return o; }
+  // a new drawing: the look set for the next one (this session), else the tool's default (Templates), else the app's own
+  function styleNew(o){ var L = DW.nsT[o.type] || (CFG.ddef || {})[o.type]; if (L && window.__stDrawBar) window.__stDrawBar.applyLook(o, L); return o; }
   function tyName(ty){ return { hline: T('HLINE', 'LÍNEA H'), trend: T('TREND', 'TENDENCIA'), rect: T('RECT', 'RECTÁNGULO'), fib: 'FIB', text: T('TEXT', 'TEXTO'), emoji: 'EMOJI', long: T('LONG POSITION', 'POSICIÓN LARGA'), short: T('SHORT POSITION', 'POSICIÓN CORTA'), range: T('RANGE', 'RANGO'), pen: T('PEN', 'LÁPIZ') }[ty] || String(ty || '').toUpperCase(); }
-  function propsEl(p){ var e = p.el.querySelector('.stpr-props');
-    if (!e) { e = document.createElement('div'); e.className = 'stpr-props';
-      e.style.cssText = 'position:absolute;top:' + (p.el.querySelector('.stpr-popc') ? 46 : 8) + 'px;right:64px;z-index:9;display:none;flex-direction:column;gap:8px;padding:10px;border:1px solid var(--border-2);border-radius:8px;background:rgba(11,10,13,0.94);'
-        + "font-family:'AppNum','DM Mono',monospace;font-size:10px;color:var(--text-dim);max-width:min(210px,calc(100vw - 24px));";
-      p.el.appendChild(e); }
-    return e; }
-  var BTN = 'cursor:pointer;background:transparent;border-radius:4px;font:inherit;';
-  function chip(on){ return 'color:' + (on ? 'var(--text)' : 'var(--text-dim)') + ';border:1px solid ' + (on ? 'var(--accent)' : 'var(--border-2)') + ';'; }
-  function renderProps(){
-    var host = (DW.at && panes.indexOf(DW.at) >= 0) ? DW.at : panes[0];
-    panes.forEach(function(q){ var e0 = q.el.querySelector('.stpr-props'); if (e0 && q !== host) e0.style.display = 'none'; });
-    if (!host) return; var e = propsEl(host), ty = styleType();
-    if (!ty || ty === 'none' || (DW.noProps && DW.tool === 'none')) { e.style.display = 'none'; return; }   // pressed on and being dragged: not yet (a click opens it)
-    var d = styleTgt(), cur = (d && d.color) || ((DSTY[ty] || {}).c), curW = (d && d.width) || ((DSTY[ty] || {}).w), sd = (DW.sel != null && DW.list[DW.sel]) ? DW.list[DW.sel] : null, H = [];
-    H.push('<div style="letter-spacing:0.12em;text-transform:uppercase;color:var(--text-mid);">' + esc(tyName(ty)) + '</div>');
-    var isPos = ty === 'long' || ty === 'short';
-    if (isPos && sd) { var su0 = stopUnit(), psd = Math.abs(sd.a.price - sd.sl), ptd = Math.abs(sd.tp - sd.a.price), inp0 = 'width:74px;padding:4px 6px;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;text-align:right;';
-      H.push('<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">' + esc(T('Stop', 'Stop')) + ' (' + esc(uLbl(su0)) + ')<input data-pstop type="number" step="0.1" min="0" value="' + fmtU(psd, su0) + '" style="' + inp0 + '"></div>');
-      H.push('<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">' + esc(T('Target', 'Objetivo')) + ' (R)<input data-ptgt type="number" step="0.1" min="0" value="' + (psd > 0 ? (ptd / psd).toFixed(2) : '2.00') + '" style="' + inp0 + '"></div>'); }
-    if (ty === 'emoji') { var cur3 = sd ? sd.e : emoNow();
-      // the trading ones first, then every emoji the community chat has (Nestor, 17 Oct 2026: "do i get all the emoji options i get in the community chat?")
-      var eBtn = function(x){ return '<button type="button" data-emo="' + x + '" style="width:100%;height:24px;padding:0;cursor:pointer;border-radius:5px;font-size:15px;line-height:1;font-family:' + EFONT.replace(/'/g, '') + ';background:' + (x === cur3 ? 'rgba(244,114,182,0.2)' : 'transparent') + ';border:1px solid ' + (x === cur3 ? '#f472b6' : 'transparent') + ';">' + x + '</button>'; };
-      var eAll = (window.__stEmojis || []).filter(function(x){ return EMOJIS.indexOf(x) < 0; }), eLbl = function(t){ return '<div style="grid-column:1/-1;padding:4px 0 2px;letter-spacing:0.12em;text-transform:uppercase;color:var(--text-dim);font-size:9px;">' + esc(t) + '</div>'; };
-      H.push('<div class="stpr-emos" style="display:grid;grid-template-columns:repeat(7,minmax(0,1fr));gap:3px;max-height:196px;overflow-y:auto;overflow-x:hidden;scrollbar-width:thin;">' + eLbl(T('Trading', 'Trading')) + EMOJIS.map(eBtn).join('') + (eAll.length ? eLbl(T('All emojis', 'Todos los emojis')) + eAll.map(eBtn).join('') : '') + '</div>');
-      if (!sd) H.push('<div style="color:var(--text-dim);">' + esc(T('Click the chart to place it.', 'Haz clic en el gráfico para ponerlo.')) + '</div>');
-      if (sd) H.push('<div style="display:flex;align-items:center;gap:8px;">' + esc(T('Size', 'Tamaño')) + '<input data-esz type="range" min="12" max="160" step="2" value="' + Math.round(+sd.size || 32) + '" style="flex:1;accent-color:#f472b6;"></div>'); }
-    if (!isPos && ty !== 'emoji') H.push('<div style="display:flex;gap:5px;flex-wrap:wrap;">' + DCOLS.map(function(c){ return '<button type="button" data-col="' + c + '" style="width:18px;height:18px;padding:0;cursor:pointer;border-radius:4px;background:' + c + ';border:2px solid ' + (c === cur ? '#fff' : 'transparent') + ';box-shadow:0 0 0 1px rgba(255,255,255,0.18);"></button>'; }).join('') + '</div>');
-    if (ty !== 'rect' && !isPos && ty !== 'emoji') H.push('<div style="display:flex;gap:5px;align-items:center;">' + DWIDS.map(function(wv){ return '<button type="button" data-wid="' + wv + '" style="flex:1;padding:4px 0;' + BTN + chip(wv === curW) + '"' + (ty === 'text' ? ' title="' + TSZ[wv] + ' px"' : '') + '>' + (ty === 'text' ? ['S', 'M', 'L', 'XL'][wv - 1] : wv) + '</button>'; }).join('') + '</div>');
-    if (ty === 'hline' && sd) { H.push('<button type="button" data-alert style="padding:5px 0;' + BTN + chip(!!sd.alert) + 'letter-spacing:0.12em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:6px;"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M4 11V7.5a4 4 0 0 1 8 0V11l1.2 1.5H2.8z"/><path d="M6.6 14a1.5 1.5 0 0 0 2.8 0"/></svg>' + (sd.alert ? (sd.hitAt ? T('Alert hit · arm again', 'Alcanzada · activar') : T('Alert on', 'Alerta activa')) : T('Alert off', 'Alerta apagada')) + '</button>');
-      if (sd.alert && sd.hitAt) H.push('<div style="color:var(--text-dim);">' + esc(T('Reached at ', 'Alcanzada a las ') + hm(sd.hitAt) + ' · ' + dshort(new Date(sd.hitAt * 1000))) + '</div>'); }
-    if (ty === 'range') H.push('<div style="display:flex;gap:5px;">' + [['pips', uLbl(stopUnit()).toUpperCase()], ['r', 'R'], ['bars', T('BARS', 'BARRAS')]].map(function(k){ return '<button type="button" data-show="' + k[0] + '" style="flex:1;padding:4px 0;' + BTN + chip(rShow(d, k[0])) + '">' + esc(k[1]) + '</button>'; }).join('') + '</div>');
-    if (ty === 'fib' && sd) { var LV = (d.levels && d.levels.length) ? d.levels : FIBS.slice();
-      H.push('<div style="display:flex;gap:4px;flex-wrap:wrap;">' + LV.map(function(lv, ix){ return '<button type="button" data-lvl="' + ix + '" title="' + esc(T('Remove', 'Quitar')) + '" style="padding:3px 6px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + fibLbl(lv) + ' &times;</button>'; }).join('') + '</div>');
-      H.push('<div style="display:flex;gap:5px;"><input data-fiblv placeholder="0.705" style="flex:1;min-width:0;padding:4px 6px;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;"><button type="button" data-fibadd style="padding:4px 8px;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);">' + T('Add', 'Añadir') + '</button></div>'); }
-    if (sd) {
-      var nst = 'width:100%;box-sizing:border-box;padding:5px 7px;background:var(--bg-elev);border:1px solid var(--border-2);border-radius:4px;color:var(--text);font:inherit;';
-      if (sd.type === 'text') H.push('<textarea data-note rows="2" placeholder="' + esc(T('Text', 'Texto')) + '" style="' + nst + 'resize:vertical;">' + esc(sd.text || '') + '</textarea>');   // keeps its line breaks
-      else if (sd.type !== 'range') H.push('<input data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(sd.text || '') + '" style="' + nst + '">');
-      H.push('<button type="button" data-visdlg style="padding:5px 7px;' + BTN + 'text-align:left;color:var(--text-mid);border:1px solid var(--border-2);">' + esc(T('Visibility: ', 'Visibilidad: ') + visTxt(sd.vis || visFromTfs(sd.tfs))) + ' &rsaquo;</button>');
-      H.push('<div style="display:flex;gap:6px;"><button type="button" data-clone style="flex:1;padding:5px 0;' + BTN + 'color:var(--text-mid);border:1px solid var(--border-2);letter-spacing:0.12em;text-transform:uppercase;">' + T('Clone', 'Duplicar') + '</button>'
-        + '<button type="button" data-lock title="' + esc(sd.lock ? T('Unlock it: it can be moved and deleted again', 'Desbloquear: se puede mover y borrar de nuevo') : T('Lock it: it cannot be moved or deleted until unlocked', 'Bloquear: no se puede mover ni borrar hasta desbloquearlo')) + '" style="flex:1;padding:5px 0;' + BTN + chip(!!sd.lock) + 'letter-spacing:0.12em;text-transform:uppercase;display:flex;align-items:center;justify-content:center;gap:5px;"><svg viewBox=\"0 0 16 16\" width=\"12\" height=\"12\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"1.5\" stroke-linecap=\"round\" stroke-linejoin=\"round\"><rect x=\"3.5\" y=\"7\" width=\"9\" height=\"6.5\" rx=\"1.3\"/><path d=\"M5.5 7V5a2.5 2.5 0 0 1 5 0v2\"/></svg>' + (sd.lock ? T('Locked', 'Bloqueado') : T('Lock', 'Bloquear')) + '</button></div>'); }
-    e.innerHTML = H.join('');
-    e.style.right = (paneDims(host).psw + 8) + 'px'; e.style.top = '8px'; e.style.display = 'flex';
-    var after = function(){ if (DW.sel != null) commit(); else dirty(); renderProps(); };
-    e.querySelectorAll('[data-col]').forEach(function(b){ b.onclick = function(){ styleTgt().color = b.getAttribute('data-col'); after(); }; });
-    e.querySelectorAll('[data-wid]').forEach(function(b){ b.onclick = function(){ styleTgt().width = parseFloat(b.getAttribute('data-wid')); after(); }; });
-    e.querySelectorAll('[data-show]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), k = b.getAttribute('data-show'); if (!o.show) o.show = {}; o.show[k] = !rShow(o, k); after(); }; });
-    e.querySelectorAll('[data-lvl]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), L = (o.levels && o.levels.length) ? o.levels.slice() : FIBS.slice(); L.splice(parseInt(b.getAttribute('data-lvl'), 10), 1); o.levels = L; commit(); renderProps(); }; });
-    var add = e.querySelector('[data-fibadd]'); if (add) add.onclick = function(){ var v = parseFloat((e.querySelector('[data-fiblv]') || {}).value); if (!isFinite(v)) return; var o = styleTgt(), L = (o.levels && o.levels.length) ? o.levels.slice() : FIBS.slice(); if (L.indexOf(v) < 0) L.push(v); L.sort(function(x, y){ return x - y; }); o.levels = L; commit(); renderProps(); };
-    var note = e.querySelector('[data-note]'); if (note) { note.oninput = function(){ var o = styleTgt(); o.text = note.value; persist(); dirty(); }; note.onchange = function(){ commit(); }; }
-    // Never invisible everywhere: an object on no timeframe could not be found again to fix.
-    e.querySelectorAll('[data-dtf]').forEach(function(b){ b.onclick = function(){ var o = styleTgt(), v = +b.getAttribute('data-dtf'), cur2 = (o.tfs && o.tfs.length) ? o.tfs.slice() : TFS.slice(), at = cur2.indexOf(v);
-      if (at >= 0) cur2.splice(at, 1); else cur2.push(v); if (!cur2.length) cur2 = [v]; if (cur2.length >= TFS.length) delete o.tfs; else o.tfs = cur2.sort(function(x, y){ return x - y; }); commit(); renderProps(); }; });
-    var cl = e.querySelector('[data-clone]'); if (cl) cl.onclick = cloneSel;
-    var lkb = e.querySelector('[data-lock]'); if (lkb) lkb.onclick = lockSel;
-    e.querySelectorAll('[data-emo]').forEach(function(b){ b.onclick = function(){ var x = b.getAttribute('data-emo'), o = DW.sel != null && DW.list[DW.sel], gr = e.querySelector('.stpr-emos'), st = gr ? gr.scrollTop : 0;
-      if (o && o.type === 'emoji') { o.e = x; commit(); } else { DW.emoji = x; CFG.emoji = x; save(); } renderProps(); var gr2 = e.querySelector('.stpr-emos'); if (gr2) gr2.scrollTop = st; dirty(); }; });   // the grid keeps its scroll place
-    var esz = e.querySelector('[data-esz]'); if (esz) { esz.oninput = function(){ var o = DW.sel != null && DW.list[DW.sel]; if (o && o.type === 'emoji') { o.size = +esz.value; dirty(); } }; esz.onchange = function(){ commit(); }; }
-    var pst = e.querySelector('[data-pstop]'), ptg = e.querySelector('[data-ptgt]');
-    if (pst && ptg) { var pdo = function(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; var dir = o.type === 'long' ? 1 : -1, dist = Math.max(0, +pst.value) * U(stopUnit()), rr = Math.max(0, +ptg.value);
-        if (!(dist > 0)) return; o.sl = o.a.price - dir * dist; o.tp = o.a.price + dir * rr * dist; persist(); dirty(); };
-      pst.oninput = pdo; ptg.oninput = pdo; pst.onchange = function(){ commit(); }; ptg.onchange = function(){ commit(); }; }
-    var vbt = e.querySelector('[data-visdlg]'); if (vbt) vbt.onclick = function(){ if (DW.sel != null) visDialog(DW.sel); };
-    var al = e.querySelector('[data-alert]'); if (al) al.onclick = function(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; if (!o.alert) { o.alert = true; delete o.hitAt; if (S.live) o.live = true; else delete o.live; } else if (o.hitAt) { delete o.hitAt; if (S.live) o.live = true; } else { o.alert = false; delete o.hitAt; } commit(); renderProps(); };
-  }
+  // ---- the drawing toolbar (Nestor, 19 Oct 2026: "build all the tradingview suggestions! i love them!!"; window.__stDrawBar):
+  //      TradingView's floating bar over the selected drawing, in the chart last touched, in place of the options box. Everything
+  //      the box had is in it: colours (now the 30 of the chart settings, with an opacity), thickness, the alert, Visibility,
+  //      Lock, Clone, the note, the position's stop and target, the fib's levels, the measure's parts, the emoji and its size. ----
+  var DBAR = null;
+  function dbar(){ if (DBAR || !window.__stDrawBar) return DBAR;
+    DBAR = window.__stDrawBar.make({ T: T, dsty: DSTY,
+      ty: function(){ var t = styleType(); return t && t !== 'none' ? t : null; },
+      sel: function(){ return (DW.sel != null && DW.list[DW.sel]) || null; },
+      nsGet: function(t){ return DW.nsT[t] || null; }, nsSet: function(t, o){ if (o) DW.nsT[t] = o; else delete DW.nsT[t]; },
+      // the member's templates and each tool's default look: in the practice settings (synced), Back Testing's and Live Charts'
+      store: function(){ if (!CFG.dtpl || typeof CFG.dtpl !== 'object') CFG.dtpl = {}; if (!CFG.ddef || typeof CFG.ddef !== 'object') CFG.ddef = {}; return { list: CFG.dtpl, def: CFG.ddef }; },
+      save: function(){ save(); },
+      change: function(fin){ if (DW.sel != null && DW.list[DW.sel]) { if (fin) commit(); else { persist(); hlAll(); dirty(); } } else dirty(); },
+      host: dbHost, act: dbAct, locked: lkd, lockAll: function(){ return !!CFG.dwLock; },
+      alertInfo: function(d){ var on = !!d.alert, hit = !!(d.alert && d.hitAt);
+        return { on: on, hit: hit, title: !on ? T('Alert off: press to set an alert on this line', 'Alerta apagada: pulsa para poner una alerta en esta línea')
+          : (hit ? T('Alert reached at ' + hm(d.hitAt) + ': press to arm it again', 'Alerta alcanzada a las ' + hm(d.hitAt) + ': pulsa para activarla otra vez') : T('Alert on: press to turn it off', 'Alerta activa: pulsa para apagarla')),
+          hitTxt: hit ? T('Alert reached at ', 'Alerta alcanzada a las ') + hm(d.hitAt) + ' · ' + dshort(new Date(d.hitAt * 1000)) : '' }; },
+      visTxt: function(d){ return visTxt(d.vis || visFromTfs(d.tfs)); },
+      name: tyName, unitLbl: function(){ return uLbl(stopUnit()).toUpperCase(); }, fibLbl: fibLbl, tsz: function(z){ return TSZ[z] || 14; },
+      emojiNow: emoNow, emojis: function(){ return { mine: EMOJIS, all: (window.__stEmojis || []).filter(function(x){ return EMOJIS.indexOf(x) < 0; }) }; },   // the trading ones first, then every emoji the community chat has
+      emojiPick: function(x){ var o = DW.sel != null && DW.list[DW.sel]; if (o && o.type === 'emoji') { o.e = x; commit(); } else { DW.emoji = x; CFG.emoji = x; save(); } dirty(); },
+      posHtml: posHtml, posWire: posWire, flash: function(m){ flash(m); } });
+    return DBAR; }
+  // where it goes: the window of the chart last touched (a chart window has its own), over that chart; the drawing's box on it
+  function dbHost(){ var host = (DW.at && panes.indexOf(DW.at) >= 0) ? DW.at : panes[0]; if (!host) return null;
+    var wrap = host.el.ownerDocument.getElementById('stpr-win'); if (!wrap) return null;
+    var pc = host.el.querySelector('.stpr-pc') || host.el, r = pc.getBoundingClientRect(), dm = paneDims(host), sel = null, d = DW.sel != null && DW.list[DW.sel];
+    if (d && dwListFor(host) === DW.list && visibleOn(d, host.tf)) { var bb = bboxOf(host, d, dm.pw); if (bb) sel = { left: r.left + Math.max(0, bb.x0), top: r.top + Math.max(0, bb.y0), right: r.left + Math.min(dm.pw, bb.x1), bottom: r.top + Math.min(dm.ph, bb.y1) }; }
+    if (sel && (sel.right < sel.left || sel.bottom < sel.top)) sel = null;
+    var tw = host.el.querySelector('.stpr-ptfw'), ar = tw && tw.offsetWidth ? tw.getBoundingClientRect() : null;
+    return { wrap: wrap, dock: { left: r.left, top: r.top, right: r.left + dm.pw, bottom: r.top + dm.ph }, sel: sel, avoid: ar }; }
+  function dbAct(a){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return;
+    if (a === 'vis') visDialog(DW.sel);
+    else if (a === 'alert') { if (!o.alert) { o.alert = true; delete o.hitAt; if (S.live) o.live = true; else delete o.live; } else if (o.hitAt) { delete o.hitAt; if (S.live) o.live = true; } else { o.alert = false; delete o.hitAt; } commit(); renderProps(); }
+    else if (a === 'lock') { if (CFG.dwLock) { lockSay(1); return; } lockSel(); }
+    else if (a === 'del') delSel();
+    else if (a === 'clone') cloneSel(); }
+  // the position tool's stop (in the stop's unit) and target (in R), in its More
+  function posHtml(sd){ var su0 = stopUnit(), psd = Math.abs(sd.a.price - sd.sl), ptd = Math.abs(sd.tp - sd.a.price);
+    return '<div class="stdb-fl">' + esc(T('Stop', 'Stop')) + ' (' + esc(uLbl(su0)) + ')<input data-pstop type="number" step="0.1" min="0" value="' + fmtU(psd, su0) + '"></div>'
+      + '<div class="stdb-fl">' + esc(T('Target', 'Objetivo')) + ' (R)<input data-ptgt type="number" step="0.1" min="0" value="' + (psd > 0 ? (ptd / psd).toFixed(2) : '2.00') + '"></div>'; }
+  function posWire(e){ var pst = e.querySelector('[data-pstop]'), ptg = e.querySelector('[data-ptgt]'); if (!pst || !ptg) return;
+    var pdo = function(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; var dir = o.type === 'long' ? 1 : -1, dist = Math.max(0, +pst.value) * U(stopUnit()), rr = Math.max(0, +ptg.value);
+      if (!(dist > 0)) return; o.sl = o.a.price - dir * dist; o.tp = o.a.price + dir * rr * dist; persist(); dirty(); };
+    pst.oninput = pdo; ptg.oninput = pdo; pst.onchange = function(){ commit(); }; ptg.onchange = function(){ commit(); }; }
+  function renderProps(){ var b = dbar(); if (!b) return; var ty = styleType();
+    if (!panes.length || !ty || ty === 'none' || (DW.noProps && DW.tool === 'none') || DW.drag) { b.hide(); return; }   // pressed on and being dragged: not yet (a click opens it)
+    b.render(); }
+  // ---- Hide all drawings / Lock all drawings (TradingView's, beside undo / redo / the bin): every drawing on the charts, kept
+  //      with the chart settings. Hidden ones stay in the object tree; picking a tool, an alert or a drawing there shows them. ----
+  var LKI = { on: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2"/></svg>',
+    off: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg>' };
+  function dwAllBtns(){ var h = $('stpr-hideall'), l = $('stpr-lockall');
+    if (h) { var hv = !!CFG.dwHide, ht = hv ? T('Show all drawings', 'Mostrar todos los dibujos') : T('Hide all drawings', 'Ocultar todos los dibujos'); h.classList.toggle('on', hv); if (h.title !== ht) { h.title = ht; h.setAttribute('aria-label', ht); } h.setAttribute('aria-pressed', hv ? 'true' : 'false'); }
+    if (l) { var lv = !!CFG.dwLock, lt = lv ? T('Unlock all drawings', 'Desbloquear todos los dibujos') : T('Lock all drawings', 'Bloquear todos los dibujos'), ic = lv ? LKI.on : LKI.off; l.classList.toggle('on', lv); if (l.title !== lt) { l.title = lt; l.setAttribute('aria-label', lt); } l.setAttribute('aria-pressed', lv ? 'true' : 'false'); if (l._ic !== ic) { l.innerHTML = ic; l._ic = ic; } } }
+  function hideAll(on){ CFG.dwHide = !!on; save(); if (on) { DW.sel = null; DW.multi = null; DW.pending = null; } dwAllBtns(); hlAll(); updDel(); dirty();
+    flash(on ? T('Every drawing hidden (the object tree still lists them). Press the eye again to show them.', 'Todos los dibujos ocultos (el árbol de objetos los sigue mostrando). Pulsa el ojo otra vez para verlos.') : T('Drawings shown.', 'Dibujos visibles.')); }
+  function lockAll(on){ CFG.dwLock = !!on; save(); dwAllBtns(); renderProps(); dirty();
+    flash(on ? T('Every drawing locked: none can be moved or deleted until you unlock them here.', 'Todos los dibujos bloqueados: ninguno se puede mover ni borrar hasta desbloquearlos aquí.') : T('Drawings unlocked (any you locked one by one stay locked).', 'Dibujos desbloqueados (los que bloqueaste uno a uno siguen bloqueados).')); }
+  function dwUnhide(){ if (CFG.dwHide) hideAll(false); }
   function lockSel(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; if (o.lock) delete o.lock; else o.lock = true; commit(); renderProps(); dirty();
     flash(o.lock ? T('Locked: it cannot be moved or deleted until unlocked.', 'Bloqueado: no se puede mover ni borrar hasta desbloquearlo.') : T('Unlocked.', 'Desbloqueado.')); }
   function cloneSel(){ if (DW.sel == null || !DW.list[DW.sel]) return; var p = DW.at || panes[0], c = clone(DW.list[DW.sel]); delete c.lock;   // a copy starts unlocked
@@ -89034,7 +89410,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       else { DW.pending.b = q; DW.list.push(DW.pending); DW.pending = null; DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
       dirty(); return; }
     var h = hit(p, xy.x, xy.y);
-    if (h) { e.stopPropagation(); e.preventDefault(); DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: !!DW.list[h.i].lock };
+    if (h) { e.stopPropagation(); e.preventDefault(); DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: lkd(DW.list[h.i]) };
       // a side handle is bound to ONE point for the whole drag, so dragging an edge past the other one cannot hand it over
       var dd = DW.list[h.i];
       if (h.part === 'l' || h.part === 'r') DW.drag.pt = ((h.part === 'l') === (dd.a.t <= dd.b.t)) ? 'a' : 'b';
@@ -89066,7 +89442,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (DW.pending) { if (p) { var q = toP(p, e); if (q) { DW.pending.b = q; dirty(); } } return; }
     if (DW.drag) { var g = DW.drag, q2 = toP(g.p, e); if (!q2) return; var d = DW.list[g.i], o = g.orig;
       if (!g.moved) { var gm = evXY(g.p, e); if (Math.abs(gm.x - g.x0) < 3 && Math.abs(gm.y - g.y0) < 3) return; g.moved = true; }   // a click is not a drag
-      if (g.lock) { if (!g.said) { g.said = true; flash(T('Locked: unlock it to move it.', 'Bloqueado: desbloquéalo para moverlo.')); } return; }
+      if (g.lock) { if (!g.said) { g.said = true; flash(CFG.dwLock ? T('Every drawing is locked: unlock them with the padlock beside the bin.', 'Todos los dibujos están bloqueados: desbloquéalos con el candado junto a la papelera.') : T('Locked: unlock it to move it.', 'Bloqueado: desbloquéalo para moverlo.')); } return; }
       if (g.part === 'line') d.price = q2.price;
       else if (g.part === 'a') d.a = { t: q2.t, price: q2.price }; else if (g.part === 'b') d.b = { t: q2.t, price: q2.price };
       else if (g.part === 'l' || g.part === 'r') { var tI = d[g.pt || 'a']; if (tI) tI.t = q2.t; }
@@ -89087,7 +89463,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if ((DW.mzHover === p) !== onEdge) { DW.mzHover = onEdge ? p : null; dirty(); }
       var hh = hit(p, xy2.x, xy2.y), hv = hh ? hh.i : null; if (DW.hov !== hv || DW.hovP !== p) { DW.hov = hv; DW.hovP = p; dirty(); }
       var onPl = onPlus(p, xy2) ? p : null; if (DW.plusHov !== onPl) { DW.plusHov = onPl; dirty(); } if (onPl) { p.el.querySelector('.stpr-pc').style.cursor = 'pointer'; return; }
-      p.el.querySelector('.stpr-pc').style.cursor = nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? (DW.list[hh.i] && DW.list[hh.i].lock ? 'pointer' : 'move') : (onEdge ? 'ew-resize' : 'crosshair'))); }
+      p.el.querySelector('.stpr-pc').style.cursor = nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? (DW.list[hh.i] && lkd(DW.list[hh.i]) ? 'pointer' : 'move') : (onEdge ? 'ew-resize' : 'crosshair'))); }
   }
   function dwUp(){
     if (DW.mz) { DW.mz = null; save(); dirty(); return; }
@@ -90221,6 +90597,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     $('stpr-drawbtn').addEventListener('click', function(){ drawerOpen(!$('stpr-tb2').classList.contains('drawing')); });
     $('stpr-tools').addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-tool]'); if (b) setTool(b.getAttribute('data-tool')); });
     $('stpr-undo').addEventListener('click', function(){ undoRedo(-1); });
+    $('stpr-hideall').addEventListener('click', function(){ hideAll(!CFG.dwHide); });
+    $('stpr-lockall').addEventListener('click', function(){ lockAll(!CFG.dwLock); });
     $('stpr-redo').addEventListener('click', function(){ undoRedo(1); });
     // the bin: in the window's own click handler, so the menu it opens is not taken for a click outside and shut
     $('stpr-newsbtn').addEventListener('click', function(){ CFG.news = CFG.news === false; save(); $('stpr-newsbtn').classList.toggle('on', CFG.news !== false); drawAll(); });
@@ -90263,7 +90641,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     document.addEventListener('touchstart', function(e){ DW.tin = !!(isOpen() && paneOf(e)); if (DW.tin) dwDown(e); }, { passive: false, capture: true });
     document.addEventListener('touchmove', function(e){ if (!isOpen() || !DW.tin) return; if ((DW.penning || DW.pending || DW.drag || DW.marq || DW.tool !== 'none') && e.cancelable) e.preventDefault(); dwMove(e); }, { passive: false, capture: true });
     document.addEventListener('touchend', function(e){ if (!isOpen()) return; if ((DW.penning || DW.pending || DW.drag || DW.marq) && e.cancelable) e.preventDefault(); dwUp(e); }, { passive: false, capture: true });
-    document.addEventListener('contextmenu', WH.ctx = function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stpr-props,.stpr-ctx'); if (!p && !box) return; e.preventDefault(); if (!p) return;
+    document.addEventListener('contextmenu', WH.ctx = function(e){ if (!isOpen()) return; var p = paneOf(e), box = e.target && e.target.closest && e.target.closest('.stdb-bar,.stdb-pop,.stpr-ctx'); if (!p && !box) return; e.preventDefault(); if (!p) return;
       if (DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); hideCtx(); return; }
       var xy = evXY(p, e), h = hit(p, xy.x, xy.y);
       if (!h) { var dm0 = paneDims(p), pr0 = xy.x < dm0.pw && xy.y < dm0.ph ? p.series.coordinateToPrice(xy.y) : null; if (pr0 == null) { hideCtx(); return; } DW.sel = null; DW.multi = null; updDel(); DW.at = p; showCtx(p, xy.x, xy.y, pr0); return; }
@@ -90308,6 +90686,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (!typing && e.ctrlKey && e.shiftKey && e.code === 'KeyS') { e.preventDefault(); snapCopy(); return; }   // TradingView's: Copy image
       if (!typing && e.altKey && !e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); snapLink(); return; }    // and Copy link
       if (e.altKey && !typing && (e.key === 'a' || e.key === 'A' || e.code === 'KeyA')) { var cp = DW.cx && DW.cx.p, cpr = cp ? cp.series.coordinateToPrice(DW.cx.y) : null; alertAt(cpr != null ? cpr : px(), cp); e.preventDefault(); return; }
+      if (e.key === 'Escape' && DBAR && DBAR.closePop()) { e.preventDefault(); return; }   // a toolbar popover first
       if (e.key === 'Escape') { hideCtx(); if (menuFor) closeMenu(); else if (LOG.open) logOpen(false); else if (DW.tool !== 'none' || DW.pending) { DW.pending = null; DW.penning = null; setTool('none'); } else if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } else if (S.exec) toggleExec(false); else if (S.pv) { S.pv = null; render(); } e.preventDefault(); return; }
       if (typing) return;
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { undoRedo(e.shiftKey ? 1 : -1); e.preventDefault(); return; }
@@ -90355,7 +90734,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
     _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },
     _miniDialogFor: function(host, p, mx){ DLGX = { host: host, p: p, mx: mx }; miniDialog(null, p); },
-    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: raw, cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
+    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: raw, cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _dbar: function(){ return dbar(); }, _hideAll: hideAll, _lockAll: lockAll, _bellX: function(){ return BELLX; }, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
 })();
 </script>
 

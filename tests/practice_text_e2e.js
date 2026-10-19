@@ -34,12 +34,17 @@
     var bx = P._txtBox(0, d), hitInk = false;
     for (var xx = bx.x0 + 2; xx < bx.x0 + 60 && !hitInk; xx += 1) for (var yy = bx.y0 + 3; yy < bx.y1 - 2 && !hitInk; yy += 1) { var c = px(xx, yy); if (c[3] > 150 && c[0] > 200 && c[1] > 200 && c[2] > 200) hitInk = true; }
     ok('drawn in white from that point, top left', hitInk && Math.abs(bx.x0 - X) < 3 && Math.abs(bx.y0 - Y) < 3, bx);
-    var box = pane().el.querySelector('.stpr-props');
-    ok('its options box: TEXT, the colours, sizes S M L XL, the words to edit', box && /TEXT/.test(box.textContent) && box.querySelectorAll('[data-col]').length === 8 && /S\s*M\s*L\s*XL/.test(box.textContent.replace(/\s+/g, ' ')) && box.querySelector('[data-note]').value === 'Wait for London' && box.querySelector('[data-note]').placeholder === 'Text', box && box.textContent);
-    var h0 = bx.y1 - bx.y0; box.querySelector('[data-wid="4"]').click(); await W(40);
+    var DB = P._dbar(), bar = document.querySelector('.stdb-bar'); DB.open('text'); await W(20); var box = DB.pop();
+    ok('its toolbar: the text colour (the 30 colours) with its words to edit, the size (M)', bar && bar.querySelector('[data-db="text"]') && bar.querySelector('[data-db="tsize"]').textContent === 'M' && box.querySelectorAll('[data-pc]').length === 30 && box.querySelector('[data-tw]').value === 'Wait for London' && box.querySelector('[data-tw]').placeholder === 'Text', box && box.textContent);
+    DB.open('tsize'); await W(20);
+    ok('its size: S M L XL', /S\s*·\s*11px/.test(DB.pop().textContent) && /XL\s*·\s*24px/.test(DB.pop().textContent) && DB.pop().querySelectorAll('[data-tz]').length === 4, DB.pop().textContent);
+    DB.open('more'); await W(20);
+    ok('its More: TEXT, Visibility, Clone', /TEXT/.test(DB.pop().textContent) && DB.pop().querySelector('[data-clone]'), DB.pop().textContent);
+    DB.open('tsize'); await W(20);
+    var h0 = bx.y1 - bx.y0; DB.pop().querySelector('[data-tz="4"]').click(); await W(40);
     var bx2 = P._txtBox(0, d);
     ok('XL makes it bigger (24 px)', d.width === 4 && bx2.y1 - bx2.y0 > h0 * 1.5, [h0, bx2.y1 - bx2.y0]);
-    pane().el.querySelector('.stpr-props [data-col="#f4c05a"]').click(); await W(30);
+    DB.open('text'); await W(20); DB.pop().querySelector('[data-pc="#f4c05a"]').click(); await W(30); DB.closePop();
     ok('and any colour (yellow)', d.color === '#f4c05a');
     // drag it
     var t0 = d.a.t, p0 = d.a.price; mev('mousedown', bx2.x0 + 10, bx2.y0 + 8); mev('mousemove', bx2.x0 + 70, bx2.y0 + 48, { held: true }); mev('mouseup', bx2.x0 + 70, bx2.y0 + 48); await W(40);
@@ -54,7 +59,7 @@
     ta.value = 'Wait for London'; key(ta, 'Enter', { shiftKey: true }); ta.value = 'Wait for London\nthen New York'; ta.dispatchEvent(new Event('input', { bubbles: true })); key(ta, 'Enter'); await W(60);
     var bx4 = P._txtBox(0, d);
     ok('Shift+Enter gives a second line', d.text === 'Wait for London\nthen New York' && bx4.lines.length === 2, d.text);
-    var nb2 = pane().el.querySelector('.stpr-props [data-note]');
+    DB.open('text'); await W(20); var nb2 = DB.pop().querySelector('[data-tw]'); DB.closePop();
     ok('the options box shows both lines in a box that keeps line breaks', nb2 && nb2.tagName === 'TEXTAREA' && nb2.value === 'Wait for London\nthen New York', nb2 && [nb2.tagName, nb2.value]);
     // nothing typed: nothing kept
     document.querySelector('#stpr-tools [data-tool="text"]').click(); mev('mousedown', X, Y + 160); mev('mouseup', X, Y + 160); await W(60);

@@ -21,7 +21,7 @@
     var eb = document.querySelector('#stpr-tools [data-tool="emoji"]');
     ok('an Emoji tool after Text', eb && eb.title === 'Emoji' && eb.previousElementSibling.getAttribute('data-tool') === 'text');
     eb.click(); await W(40);
-    var box = pane().el.querySelector('.stpr-props'), emo = box && box.querySelectorAll('[data-emo]'), chat = window.__stEmojis || [];
+    var box = P._dbar().popK() === 'emoji' && P._dbar().pop(), emo = box && box.querySelectorAll('[data-emo]'), chat = window.__stEmojis || [];
     var extra = chat.filter(function (x) { return P._emojis.indexOf(x) < 0; }).length;
     ok('picked: its box shows the 28 trading emojis first, then every emoji the community chat has (865), and says to click the chart', DW.tool === 'emoji' && emo && emo[0].getAttribute('data-emo') === P._emojis[0]
       && chat.length > 800 && emo.length === 28 + extra && box.querySelector('[data-emo="😂"]') && /All emojis/.test(box.textContent) && /Click the chart to place it/.test(box.textContent), emo && [emo.length, chat.length]);
@@ -37,13 +37,13 @@
     var cx = X + 16, cy = Y + 16; mev('mousedown', cx, cy); mev('mousemove', cx + 20, cy + 20, { held: true }); mev('mouseup', cx + 20, cy + 20); await W(60);
     ok('dragging a corner resizes it (bigger)', d.size > 60, d.size);
     // its box: size and the emoji (one from the community chat's list too)
-    mev('mousedown', X, Y); mev('mouseup', X, Y); await W(60); box = pane().el.querySelector('.stpr-props');
+    mev('mousedown', X, Y); mev('mouseup', X, Y); await W(60); P._dbar().open('more'); await W(20); box = P._dbar().pop();
     var sz = box.querySelector('[data-esz]'); sz.value = '100'; sz.dispatchEvent(new Event('input', { bubbles: true })); sz.dispatchEvent(new Event('change', { bubbles: true })); await W(30);
     ok('its box: Size changes it', d.size === 100, d.size);
-    box.querySelector('[data-emo="😂"]').click(); await W(30);
-    ok('and a click on another emoji (one from the chat list) changes it', d.e === '😂');
-    box = pane().el.querySelector('.stpr-props');
-    ok('no colours or line widths for an emoji', !box.querySelector('[data-col]') && !box.querySelector('[data-wid]'));
+    P._dbar().open('emoji'); await W(20); P._dbar().pop().querySelector('[data-emo="😂"]').click(); await W(30);
+    ok('and a click on another emoji (one from the chat list) changes it', d.e === '😂' && document.querySelector('.stdb-bar [data-db="emoji"]').textContent === '😂');
+    box = document.querySelector('.stdb-bar'); P._dbar().closePop();
+    ok('no colours or line widths for an emoji', !box.querySelector('[data-db="line"]') && !box.querySelector('[data-db="width"]') && !box.querySelector('[data-db="tpl"]'));
     // moved by its body
     var t0 = d.a.t, p0 = d.a.price; mev('mousedown', X, Y); mev('mousemove', X + 60, Y + 30, { held: true }); mev('mouseup', X + 60, Y + 30); await W(60);
     ok('dragged by its body, it moves', d.a.t !== t0 && d.a.price !== p0, [t0, d.a.t]);

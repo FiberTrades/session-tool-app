@@ -104,26 +104,29 @@
     mev(1, 'mousedown', 260, 200); mev(1, 'mouseup', 260, 200); await W(60);
     var d0 = DW.list[0];
     ok('the second click places it and puts the tool away', DW.list.length === 1 && d0.type === 'rect' && DW.tool === 'none' && DW.sel === 0);
-    var box = pane(1).el.querySelector('.stpr-props');
-    ok("Trade Replay's options box, in that chart: name, eight colours, its Visibility (all timeframes), Clone (no thickness on a rectangle)", box && box.style.display === 'flex' && /RECT/.test(box.textContent) && box.querySelectorAll('[data-col]').length === 8 && box.querySelector('[data-visdlg]') && /Visibility: All timeframes/.test(box.querySelector('[data-visdlg]').textContent) && !box.querySelector('[data-wid]') && box.querySelector('[data-clone]'), box && box.textContent);
-    box.querySelector('[data-col="#4ECD8B"]').click();
-    ok('a colour from the box goes on the drawing (and into undo)', d0.color === '#4ECD8B' && DW.hist.length >= 3);
+    // the options box is TradingView's drawing toolbar since 19 Oct 2026 (Nestor: "build all the tradingview suggestions!")
+    var bar = document.querySelector('.stdb-bar'), DB = P._dbar(), pr1 = pane(1).el.querySelector('.stpr-pc').getBoundingClientRect(), br = bar && bar.getBoundingClientRect(), vbtn = function () { return document.querySelector('.stdb-bar [data-db="vis"]'); };
+    ok("the drawing toolbar over it, in that chart: Templates, line colour, fill, text, width, style, Visibility (all timeframes), lock, delete, More", bar && bar.style.display === 'flex' && ['tpl', 'line', 'fill', 'text', 'width', 'dash', 'vis', 'lock', 'del', 'more'].every(function (k) { return bar.querySelector('[data-db="' + k + '"]'); }) && /Visibility: All timeframes/.test(vbtn().title) && br.left >= pr1.left - 8 && br.bottom <= pr1.top + Math.min(P._yOf(1, d0.a.price), P._yOf(1, d0.b.price)), br && [br.left, br.bottom, pr1.left, pr1.top]);
+    DB.open('more'); await W(30);
+    ok('its More: RECT, Visibility: All timeframes, Clone', /RECT/.test(DB.pop().textContent) && /Visibility: All timeframes/.test(DB.pop().querySelector('[data-mvis]').textContent) && DB.pop().querySelector('[data-clone]'), DB.pop().textContent);
+    DB.open('line'); await W(30); DB.pop().querySelector('[data-pc="#4ECD8B"]').click(); DB.closePop();
+    ok('a colour from its line colour goes on the drawing (and into undo)', d0.color === '#4ECD8B' && DW.hist.length >= 3);
     var x5 = (function () { var r = pane(0).chart.timeScale(); return P._xOfT(0, d0.a.t); })();
     ok('the same rectangle is on the 5m chart, at the same time', x5 != null && isFinite(x5), x5);
     // its Visibility window, TradingView's (17 Oct 2026: "i need the visability option ... for all the objects")
-    box.querySelector('[data-visdlg]').click(); await W(40);
+    vbtn().click(); await W(40);
     var dlg = document.querySelector('.stpr-dlg');
     ok('Visibility opens a window like TradingView\'s: Minutes, Hours, Days, Weeks, Months, each with a range', dlg && /Visibility/.test(dlg.textContent) && dlg.querySelectorAll('.stpr-dvr').length === 5 && /Shows on: All timeframes/.test(dlg.textContent), dlg && dlg.textContent);
     var mOn = dlg.querySelector('[data-k="vis.m.on"]'); mOn.checked = false; mOn.dispatchEvent(new Event('change', { bubbles: true })); await W(40);
     ok('Minutes off: gone from the 5m chart at once, still on the 1h; the window says where it shows', d0.vis && !P._visOK(d0.vis, 5) && P._visOK(d0.vis, 60) && /Shows on: 1h 4h 12h 1D 1W 1Y/.test(document.querySelector('.stpr-dlg').textContent), d0.vis);
     document.querySelector('.stpr-dlg [data-dok]').click(); await W(40);
-    ok('Ok keeps it; the box reads Visibility: 1h 4h 12h 1D 1W 1Y', !document.querySelector('.stpr-dlg') && /Visibility: 1h 4h 12h 1D 1W 1Y/.test(pane(1).el.querySelector('.stpr-props [data-visdlg]').textContent), pane(1).el.querySelector('.stpr-props').textContent);
-    pane(1).el.querySelector('.stpr-props [data-visdlg]').click(); await W(40);
+    ok('Ok keeps it; its eye reads Visibility: 1h 4h 12h 1D 1W 1Y', !document.querySelector('.stpr-dlg') && /Visibility: 1h 4h 12h 1D 1W 1Y/.test(vbtn().title), vbtn().title);
+    vbtn().click(); await W(40);
     var hb = document.querySelector('.stpr-dlg [data-k="vis.h.b"][type="number"]'); hb.value = '1'; hb.dispatchEvent(new Event('change', { bubbles: true })); await W(30);
     ok('Hours 1 to 1: on the 1h only, not the 4h', P._visOK(d0.vis, 60) && !P._visOK(d0.vis, 240), d0.vis);
     document.querySelector('.stpr-dlg [data-dc]').click(); await W(30);
     ok('Cancel puts back what it was (1h and up)', P._visOK(d0.vis, 240) && !P._visOK(d0.vis, 5), d0.vis);
-    pane(1).el.querySelector('.stpr-props [data-visdlg]').click(); await W(40);
+    vbtn().click(); await W(40);
     document.querySelector('.stpr-dlg [data-ddef]').click(); document.querySelector('.stpr-dlg [data-dreset]').click(); await W(30); document.querySelector('.stpr-dlg [data-dok]').click(); await W(30);
     ok('Defaults > Reset settings: every timeframe again', !d0.vis && !d0.tfs);
     var mid = { x: (P._xOfT(1, d0.a.t) + P._xOfT(1, d0.b.t)) / 2, y: (P._yOf(1, d0.a.price) + P._yOf(1, d0.b.price)) / 2 };
@@ -135,7 +138,7 @@
     var before = DW.list.map(function (d) { return d.a.t; }); mev(1, 'mousedown', mid.x, mid.y); mev(1, 'mousemove', mid.x + 40, mid.y + 10, { held: true }); mev(1, 'mouseup', mid.x + 40, mid.y + 10); await W(30);
     ok('dragging the body moves it', DW.list.some(function (d, i) { return d.a.t > before[i]; }), [before, DW.list.map(function (d) { return d.a.t; })]);
     var cur = DW.list[DW.sel], m2 = { x: (P._xOfT(1, cur.a.t) + P._xOfT(1, cur.b.t)) / 2, y: (P._yOf(1, cur.a.price) + P._yOf(1, cur.b.price)) / 2 };
-    var pb1 = pane(1).el.querySelector('.stpr-props'); if (pb1) pb1.style.display = 'none';   // beside the panel the chart is narrower and the options box sat over the shape's middle
+    var pb1 = document.querySelector('.stdb-bar'); if (pb1) pb1.style.display = 'none';   // out of the way of the presses below
     mev(1, 'mousedown', m2.x, m2.y); var si = DW.sel, w0 = P._lOfT(1, DW.list[si].b.t) - P._lOfT(1, DW.list[si].a.t), wk = [];
     for (k = 1; k <= 20; k++) { mev(1, 'mousemove', m2.x - k * 30, m2.y, { held: true }); wk.push(Math.round((P._lOfT(1, DW.list[si].b.t) - P._lOfT(1, DW.list[si].a.t)) * 100) / 100); }
     mev(1, 'mouseup', m2.x - 600, m2.y); await W(30);

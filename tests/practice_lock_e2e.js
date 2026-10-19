@@ -18,10 +18,10 @@
     DW.list = [{ type: 'hline', price: +(px + 0.0010).toFixed(5) }, { type: 'hline', price: +(px - 0.0010).toFixed(5) }]; DW.sel = null; P._render(); await W(100);
     var y0 = P._yOf(0, DW.list[0].price), X = r.width * 0.3;
     mev('mousedown', X, y0); mev('mouseup', X, y0); await W(60);
-    var box = pane().el.querySelector('.stpr-props'), lb = box && box.querySelector('[data-lock]');
-    ok('its options box has Lock beside Clone', DW.sel === 0 && lb && /Lock/.test(lb.textContent) && lb.previousElementSibling && lb.previousElementSibling.hasAttribute('data-clone'), box && box.textContent);
+    var box = document.querySelector('.stdb-bar'), lb = box && box.querySelector('[data-db="lock"]');
+    ok('its toolbar has the padlock (Lock it) beside the bin', DW.sel === 0 && lb && /Lock it/.test(lb.title) && lb.nextElementSibling && lb.nextElementSibling.getAttribute('data-db') === 'del', box && box.innerHTML.length);
     lb.click(); await W(40);
-    ok('locked: kept with the drawing (synced like it), the button reads Locked, it says so', DW.list[0].lock === true && /Locked/.test(box.querySelector('[data-lock]').textContent) && /cannot be moved or deleted/.test(document.getElementById('stpr-flash').textContent)
+    ok('locked: kept with the drawing (synced like it), the padlock reads Locked, it says so', DW.list[0].lock === true && /Locked/.test(document.querySelector('.stdb-bar [data-db="lock"]').title) && /cannot be moved or deleted/.test(document.getElementById('stpr-flash').textContent)
       && JSON.parse(localStorage.getItem('st_practice_draw2:EURUSD') || '[]')[0].lock === true);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); await W(40);
     ok('Delete: it stays, and it says how to unlock it', DW.list.length === 2 && /unlock it to delete it/.test(document.getElementById('stpr-flash').textContent));
@@ -32,7 +32,7 @@
     ok('right-click on it offers Unlock', ctx && ctx.style.display !== 'none' && /Unlock/.test(ctx.textContent), ctx && ctx.textContent);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(20);
     // Clone: the copy starts unlocked
-    DW.sel = 0; P._render(); await W(40); pane().el.querySelector('.stpr-props [data-clone]').click(); await W(40);
+    DW.sel = 0; DW.noProps = false; P._props(); P._dbar().open('more'); await W(40); P._dbar().pop().querySelector('[data-clone]').click(); await W(40);
     ok('its copy (Clone) starts unlocked', DW.list.length === 3 && !DW.list[2].lock);
     // Remove all drawings: the locked one stays
     DW.sel = null; DW.multi = null; P._render(); await W(30);

@@ -37,7 +37,11 @@
     ok('it adds a horizontal line with its alert on, at that price', L && L.type === 'hline' && L.alert === true && !L.hitAt && Math.abs(L.price - shown) < 1e-9 && /Alert set at/.test(flash()), L);
     var hlT = function () { return (pane().hl || []).map(function (l) { return l.options().title + '|' + l.options().lineStyle; }); };
     P._render(); await W(150);
-    ok('no bell drawn on the chart (Nestor, 18 Oct 2026: "remove the lock icon from appearing on the chart"), its price label just the price', hlT().some(function (t) { return /^\|0$/.test(t); }) && !(pane()._bells || []).length, [hlT(), pane()._bells]);
+    // the bell is back (Nestor, 19 Oct 2026: "bring the bell back on alerts"): a bell, not a padlock, at the line's right end
+    var bl = (pane()._bells || [])[0], pwB = bl ? bl.x + P._bellX() : 0, bpx = function (x, y) { P._drawOv(0); var c = pane().ov, dd = window.devicePixelRatio || 1; return Array.prototype.slice.call(c.getContext('2d').getImageData(Math.round(x * dd), Math.round(y * dd), 1, 1).data); };
+    var dome = bl && bpx(bl.x, bl.y - 2), clap = bl && bpx(bl.x, bl.y + 6), side = bl && bpx(bl.x - 9, bl.y - 4);
+    ok('a bell on its line: at the right end, just left of the price scale, level with the line, in the line\'s colour (dome, clapper; no box round it); its price label just the price', hlT().some(function (t) { return /^\|0$/.test(t); }) && (pane()._bells || []).length === 1 && !bl.hit && Math.abs(bl.y - P._yOf(0, L.price)) < 1 && bl.x > pwB - 16 && bl.x < pwB - 6
+      && dome[0] > 220 && dome[1] > 170 && dome[3] > 200 && clap[3] > 150 && side[3] < 60, [hlT(), pane()._bells, dome, clap, side]);
     L.price = target; P._render(); await W(30);   // exactly on the level worked out above
 
     // play: it stops where price reaches the line
@@ -45,23 +49,25 @@
     ok('Play stops by itself when price reaches it, on that candle', !S().playing && L.hitAt === hitBar.time && S().now > hitBar.time && S().now <= hitBar.time + 3 * 3600, [hhmm(S().now), L.hitAt && hhmm(L.hitAt), hhmm(hitBar.time)]);
     ok('and says so: Alert: price reached ' + target + ' at ' + hhmm(hitBar.time), flash().indexOf('Alert: price reached ' + target.toFixed(5) + ' at ' + hhmm(hitBar.time)) === 0, flash());
     P._render(); await W(150);
-    ok('reached: the line dashed', hlT().some(function (t) { return /^\|2$/.test(t); }), hlT());
+    ok('reached: the line dashed, its bell dimmed', hlT().some(function (t) { return /^\|2$/.test(t); }) && pane()._bells.length === 1 && pane()._bells[0].hit && bpx(pane()._bells[0].x, pane()._bells[0].y - 2)[3] < 140, [hlT(), pane()._bells]);
     P._step(); P._step(); await W(60);
     ok('playing on, it does not stop there again', !L.hitAt === false && L.hitAt === hitBar.time);
 
     // its options box
     DW.sel = DW.list.indexOf(L); DW.at = pane(); P._render(); P._dr(); await W(30);
-    var box = pane().el.querySelector('.stpr-props'); if (box) box.remove(); P._render();
-    DW.sel = DW.list.indexOf(L); document.dispatchEvent(new Event('stpr-props')); await W(20);
-    // select it by clicking it
-    var ly = P._yOf(0, L.price); mev('mousedown', x, ly); mev('mouseup', x, ly); await W(60);
-    box = pane().el.querySelector('.stpr-props'); var ab = box && box.querySelector('[data-alert]');
-    ok("its options box: Alert hit · arm again, and when it was reached", ab && /Alert hit/.test(ab.textContent) && /Reached at/.test(box.textContent), box && box.textContent);
-    ab.click(); await W(30);
-    ok('pressing it arms it again', L.alert === true && !L.hitAt && /Alert on/.test(pane().el.querySelector('.stpr-props [data-alert]').textContent));
-    pane().el.querySelector('.stpr-props [data-alert]').click(); await W(30);
-    ok('pressed again: alert off (the line stays)', L.alert === false && DW.list.indexOf(L) >= 0 && hlT().some(function (t) { return /^\|0$/.test(t); }), hlT());
-    pane().el.querySelector('.stpr-props [data-alert]').click(); await W(30);
+    DW.sel = null; DW.noProps = false; P._props(); await W(20);
+    // a press on its bell picks the line: its toolbar opens
+    var bl2 = pane()._bells[0]; mev('mousedown', bl2.x, bl2.y - 7); mev('mouseup', bl2.x, bl2.y - 7); await W(60);
+    var bar = document.querySelector('.stdb-bar'), ab = bar && bar.querySelector('[data-db="alert"]');
+    ok('a press on the bell picks its line and opens its toolbar, with the alert (the bell) in it', DW.sel === DW.list.indexOf(L) && bar && bar.style.display === 'flex' && ab, [DW.sel, bar && bar.style.display]);
+    P._dbar().open('more'); await W(20);
+    ok("its toolbar's bell: Alert reached at, press to arm it again (More says when)", ab && /Alert reached at \d\d:\d\d: press to arm it again/.test(ab.title) && ab.classList.contains('hit') && /Alert reached at \d\d:\d\d/.test(P._dbar().pop().textContent), [ab && ab.title, P._dbar().pop().textContent]);
+    P._dbar().closePop();
+    document.querySelector('.stdb-bar [data-db="alert"]').click(); await W(30);
+    ok('pressing it arms it again', L.alert === true && !L.hitAt && /Alert on/.test(document.querySelector('.stdb-bar [data-db="alert"]').title));
+    document.querySelector('.stdb-bar [data-db="alert"]').click(); await W(30);
+    ok('pressed again: alert off (the line stays, its bell goes)', L.alert === false && DW.list.indexOf(L) >= 0 && hlT().some(function (t) { return /^\|0$/.test(t); }) && (P._drawOv(0), !pane()._bells.length) && /Alert off/.test(document.querySelector('.stdb-bar [data-db="alert"]').title), hlT());
+    document.querySelector('.stdb-bar [data-db="alert"]').click(); await W(30);
 
     // going back before the hit arms it again
     L.hitAt = hitBar.time; P._render(); await W(20);

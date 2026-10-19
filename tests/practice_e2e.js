@@ -229,8 +229,9 @@
     var mev = function (t, xx, yy) { var el = document.elementFromPoint(r.left + xx, r.top + yy) || ch; el.dispatchEvent(new MouseEvent(t, { clientX: r.left + xx, clientY: r.top + yy, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' ? 1 : 0 })); };
     mev('mousedown', 200, 150); mev('mouseup', 200, 150); mev('mousemove', 300, 220); mev('mousedown', 300, 220); mev('mouseup', 300, 220); await W(50);
     ok('a trend line is placed click, click, like Trade Replay, and stays selected', DW.list.length === 1 && DW.list[0].type === 'trend' && DW.tool === 'none' && DW.sel === 0, DW.list);
-    var box = pane().el.querySelector('.stpr-props');
-    ok("its options box opens: Trade Replay's eight colours", box && box.style.display === 'flex' && box.querySelectorAll('[data-col]').length === 8);
+    var bar0 = document.querySelector('.stdb-bar'); P._dbar().open('line'); await W(30); var pop0 = P._dbar().pop();
+    ok("its toolbar opens over it (TradingView's, 19 Oct 2026): the line colour has the chart settings' 30 colours and an opacity", bar0 && bar0.style.display === 'flex' && bar0.querySelector('[data-db="line"]') && pop0.querySelectorAll('[data-pc]').length === 30 && pop0.querySelector('[data-pop]'));
+    P._dbar().closePop();
     document.querySelector('#stpr-tools [data-tool="hline"]').click(); mev('mousedown', 250, 260); mev('mouseup', 250, 260); await W(30);
     ok('a horizontal line with one click', DW.list.length === 2 && DW.list[1].type === 'hline');
     document.getElementById('stpr-undo').click();
