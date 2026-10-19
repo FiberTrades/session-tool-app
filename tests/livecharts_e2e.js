@@ -30,15 +30,15 @@
     check('at the weekend: EUR/USD\'s live day is Friday\'s, Bitcoin\'s is Saturday\'s', wkFx === '2026-10-16' && wkBtc === '2026-10-17', [wkFx, wkBtc]);
     P._lvClock(T0 * 1000 - Date.now());
     window.isSessionLive = function () { return true; };   // in the member's session (the speed rule's first case)
-    // Live Charts is Nestor's only for now (18 Oct 2026): signed out, no tab and no way in
+    // Signed out: no Charts tab and no way in (Nestor's only 18-19 Oct 2026; every member signed in since 19 Oct)
     await W(1200);
     var lct = document.querySelector('.tab[data-page="livecharts"]');
-    check('Live Charts is hidden from everyone but Nestor: no tab', lct && getComputedStyle(lct).display === 'none' && !document.body.classList.contains('st-lc-on'), lct && getComputedStyle(lct).display);
+    check('signed out: no Charts tab', lct && getComputedStyle(lct).display === 'none' && !document.body.classList.contains('st-lc-on'), lct && getComputedStyle(lct).display);
     LC.open({ sym: 'EURUSD' }); await W(300);
     check('...and no way in from elsewhere (a Session Live card)', !document.getElementById('page-livecharts').classList.contains('active'));
-    check('...nor Close trade on a Session Live card (trading from the app is his only too)', window.__stTM.row({ ticket: 1, login: 1, symbol: 'EURUSD' }) === '', window.__stTM.row({ ticket: 1, login: 1, symbol: 'EURUSD' }).slice(0, 80));
+    check('...nor Close trade on a Session Live card', window.__stTM.row({ ticket: 1, login: 1, symbol: 'EURUSD' }) === '', window.__stTM.row({ ticket: 1, login: 1, symbol: 'EURUSD' }).slice(0, 80));
     window.__stLcForce = true; await W(1200);
-    check('for his account it shows', getComputedStyle(lct).display !== 'none' && document.body.classList.contains('st-lc-on') && window.__stTM.row({ ticket: 1, login: 1, symbol: 'EURUSD' }) !== '', getComputedStyle(lct).display);
+    check('signed in it shows', getComputedStyle(lct).display !== 'none' && document.body.classList.contains('st-lc-on') && window.__stTM.row({ ticket: 1, login: 1, symbol: 'EURUSD' }) !== '', getComputedStyle(lct).display);
     window.STCloud.syncToken = 'st-test-livecharts-e2e';
     if ('__RELAY__'.indexOf('ws') === 0) window.__stRelayURL = '__RELAY__';   // livecharts_run.py puts its relay here
     try { var C = P._cfg(); C.layout = 2; C.lv = { 2: 'h' }; C.tfs = [15, 1, 60, 240]; C.syms = []; C.mini = false; C.resume = null; } catch (e) {}
