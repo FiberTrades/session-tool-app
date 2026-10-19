@@ -83394,6 +83394,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .strp-nc-grid{ display:grid; grid-template-columns:auto 1fr; column-gap:22px; row-gap:2px; }
   .strp-nc-k{ color:var(--text-mid); } .strp-nc-v{ text-align:right; font-variant-numeric:tabular-nums; }
   .strp-nc-v.act{ color:#fff; font-weight:600; } .strp-nc-v.act.beat{ color:var(--good); } .strp-nc-v.act.miss{ color:var(--bad); }
+  /* several releases on one candle (19 Oct 2026): one card, a compact block each, highest impact first; it scrolls when tall */
+  .strp-newscard.multi{ pointer-events:auto; overflow-y:auto; overscroll-behavior:contain; scrollbar-width:thin; }
+  .strp-newscard.multi::after{ display:none; }
+  .strp-nc-item + .strp-nc-item{ margin-top:8px; padding-top:8px; border-top:1px solid rgba(255,255,255,.08); }
+  .strp-nc-item .strp-nc-title{ font-size:12px; margin-bottom:4px; display:flex; align-items:baseline; gap:6px; }
+  .strp-nc-dot{ flex:none; width:7px; height:7px; border-radius:50%; background:#6b6878; transform:translateY(-1px); } .strp-nc-dot.high{ background:#E56767; } .strp-nc-dot.med{ background:#f4c05a; }
   .strp-brk{ display:none; }
   /* The toolbar's own buttons (timeframe, pencil, layers, the phone's expand) start hidden; the
      toolbar block below the landscape comment turns on the ones each screen uses. */
@@ -84529,19 +84535,20 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       var x=xOf(i); if(x==null) continue;
       x=Math.round(x); if(x<NEWS_R+2||x>w-NEWS_R-2) continue;
       var list=S.newsMarks[k];
-      // Highest impact at the BOTTOM (on the axis line), the rest climbing above it.
+      /* ONE disc per candle (Nestor, 19 Oct 2026: "can you just have 1 news dot instead of 4 blocking the view of the candle?" - the
+         14 Oct US CPI was four releases at 13:30, four stacked discs over its candle): the highest impact's colour, how many when more
+         than one, every one of them in its card. */
       var sorted=list.slice().sort(function(a,b){ return _impRank(b)-_impRank(a); });
-      for(var j=0;j<sorted.length;j++){
-        var e=sorted[j], col=COL[_impRank(e)], y=cy-j*NEWS_STEP;
-        var hot=S._newsHover&&S._newsHover.i===i&&S._newsHover.j===j;
-        ctx.save();
-        var r=hot?NEWS_R+1.5:NEWS_R;
-        ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle='#131217'; ctx.fill();          // knock out anything under
-        ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.lineWidth=1.6; ctx.strokeStyle=col; ctx.stroke();   // outer ring
-        ctx.beginPath(); ctx.arc(x,y,r-3.2,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();          // inner disc, white gap between
-        ctx.restore();
-        S._newsHit.push({x:x,y:y,i:i,j:j,e:e});
-      }
+      var e=sorted[0], rk=_impRank(e), col=COL[rk], y=cy, n=sorted.length;
+      var hot=S._newsHover&&S._newsHover.i===i;
+      ctx.save(); ctx.setLineDash([]);
+      var r=hot?NEWS_R+1.5:NEWS_R;
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fillStyle='#131217'; ctx.fill();          // knock out anything under
+      ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.lineWidth=1.6; ctx.strokeStyle=col; ctx.stroke();   // outer ring
+      ctx.beginPath(); ctx.arc(x,y,n>1?r-2.2:r-3.2,0,Math.PI*2); ctx.fillStyle=col; ctx.fill();          // inner disc, white gap between
+      if(n>1){ var tx=n>9?'9+':String(n); ctx.font='700 '+(tx.length>1?8:10)+"px 'AppNum','DM Mono',monospace"; ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle=rk?'#0b0a0d':'#ffffff'; ctx.fillText(tx,x,y+0.5); }   // how many, inside the disc
+      ctx.restore();
+      S._newsHit.push({x:x,y:y,i:i,j:0,e:e,list:sorted,n:n});
     }
   }
   function _impRank(e){ var c=_impCls(e.impact); return c==='high'?2:(c==='med'?1:0); }
@@ -84570,20 +84577,23 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function newsCard(hit){
     var c=el('strp-newscard'); if(!c) return;
     if(!hit){ c.style.display='none'; return; }
-    var e=hit.e, d=new Date(e.at);
+    var e=hit.e, d=new Date(e.at), list=hit.list||[e], many=list.length>1;
     var when=isNaN(d.getTime())?'':(d.toLocaleDateString(undefined,{day:'2-digit',month:'short',year:'2-digit'})+' '+_hm(Math.floor(d.getTime()/1000)));
-    var hol=_impCls(e.impact)==='hol';
     c.innerHTML='';
-    var t=document.createElement('div'); t.className='strp-nc-title'; t.textContent=(e.currency?e.currency+' · ':'')+(e.title||''); c.appendChild(t);
-    var w=document.createElement('div'); w.className='strp-nc-when'; w.textContent=when; c.appendChild(w);
-    if(!hol){
-      var rows=[[L('Actual','Real'),e.actual,'act'],[L('Forecast','Previsión'),e.forecast,''],[L('Previous','Anterior'),e.previous,'']];
+    var grid=function(x,into){ if(_impCls(x.impact)==='hol') return;
+      var rows=[[L('Actual','Real'),x.actual,'act'],[L('Forecast','Previsión'),x.forecast,''],[L('Previous','Anterior'),x.previous,'']];
       var g=document.createElement('div'); g.className='strp-nc-grid';
       rows.forEach(function(r){ var k=document.createElement('div'); k.className='strp-nc-k'; k.textContent=r[0]; g.appendChild(k);
-        var v=document.createElement('div'); v.className='strp-nc-v'+(r[2]?' '+r[2]+' '+_beat(e.actual,e.forecast):''); v.textContent=(r[1]==null||r[1]==='')?'—':String(r[1]); g.appendChild(v); });
-      c.appendChild(g);
-    }
-    c.className='strp-newscard '+_impCls(e.impact);
+        var v=document.createElement('div'); v.className='strp-nc-v'+(r[2]?' '+r[2]+' '+_beat(x.actual,x.forecast):''); v.textContent=(r[1]==null||r[1]==='')?'—':String(r[1]); g.appendChild(v); });
+      into.appendChild(g); };
+    var w=document.createElement('div'); w.className='strp-nc-when'; w.textContent=when+(many?' · '+L(list.length+' releases',list.length+' publicaciones'):'');
+    if(!many){ var t=document.createElement('div'); t.className='strp-nc-title'; t.textContent=(e.currency?e.currency+' · ':'')+(e.title||''); c.appendChild(t); c.appendChild(w); grid(e,c); }
+    else { c.appendChild(w);   /* every release on the candle, highest impact first, each in a compact block */
+      list.forEach(function(x){ var it=document.createElement('div'); it.className='strp-nc-item'; var tt=document.createElement('div'); tt.className='strp-nc-title';
+        var dot=document.createElement('i'); dot.className='strp-nc-dot '+_impCls(x.impact); var sp=document.createElement('span'); sp.textContent=(x.currency?x.currency+' · ':'')+(x.title||'');
+        tt.appendChild(dot); tt.appendChild(sp); it.appendChild(tt); grid(x,it); c.appendChild(it); }); }
+    c.className='strp-newscard '+_impCls(e.impact)+(many?' multi':''); c.scrollTop=0;
+    c.style.maxHeight=many?Math.max(90,Math.min(320,hit.y-NEWS_R-10-6))+'px':'';
     // Position: above the disc, clamped inside the chart, never over the price scale.
     var cw=chartEl.clientWidth, W=Math.min(260,cw-16);
     c.style.width=W+'px';
@@ -86296,7 +86306,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       else if(d.type==='text'||d.type==='emoji'){ var dI2=p.idx-S.drag.start.idx,dP2=p.price-S.drag.start.price; d.a={idx:S.drag.orig.a.idx+dI2,price:S.drag.orig.a.price+dP2}; }
       else { var dI=p.idx-S.drag.start.idx,dP=p.price-S.drag.start.price; d.a={idx:S.drag.orig.a.idx+dI,price:S.drag.orig.a.price+dP}; d.b={idx:S.drag.orig.b.idx+dI,price:S.drag.orig.b.price+dP};
         if(S.drag.orig.sl!=null&&S.drag.orig.tp!=null){ d.sl=S.drag.orig.sl+dP; d.tp=S.drag.orig.tp+dP; } } draw(); return; }
-    if(S.activeTool==='none'&&chartEl){ var xy=evXY(e); if(xy.x>=0&&xy.y>=0&&xy.x<=chartEl.clientWidth&&xy.y<=chartEl.clientHeight){
+    if(S.activeTool==='none'&&chartEl){ if(e.target&&e.target.closest&&e.target.closest('#strp-newscard')) return;   /* on the card (several releases scroll in it): it stays */
+      var xy=evXY(e); if(xy.x>=0&&xy.y>=0&&xy.x<=chartEl.clientWidth&&xy.y<=chartEl.clientHeight){
       var nh=newsHitAt(xy.x,xy.y);
       // Hover card on a mouse. S._newsHover feeds the enlarged-disc feedback in drawNews.
       var prev=S._newsHover; S._newsHover=nh?{i:nh.i,j:nh.j}:null;
@@ -86382,7 +86393,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // position alone was replayable but never offered, which is exactly the report of synced traders
   // seeing no Replay button.
   function ticketOf(trade){ return (trade && (trade.mt5Ticket || trade.position)) || null; }
-  window.__stReplay={ open:open, close:closeModal, excursions:excursions, ticketOf:ticketOf, _s:function(){ return S; }, _txtBox:function(d){ return txtBox(d); }, _dbar:function(){ return dbar(); }, _hideAll:function(v){ rHideAll(v); }, _lockAll:function(v){ rLockAll(v); }, _all:function(){ return RALL; }, _posGeo:function(d){ return posGeo(d); }, _emoGeo:function(d){ return emoGeo(d); }, _bbox:function(d){ return bboxOf(d,(overlay&&overlay.clientWidth)||0); }, _snap:function(){ return snapShot(); }, _look:function(){ return LKC; }, _mp:function(){ return MP; }, _trv:function(){ return TRV; } };   // _s, _txtBox: for the tests
+  window.__stReplay={ open:open, close:closeModal, excursions:excursions, ticketOf:ticketOf, _s:function(){ return S; }, _newsSet:function(rows){ if(!S) return; S.newsRows=rows||[]; buildNewsMarks(); }, _newsCard:newsCard, _txtBox:function(d){ return txtBox(d); }, _dbar:function(){ return dbar(); }, _hideAll:function(v){ rHideAll(v); }, _lockAll:function(v){ rLockAll(v); }, _all:function(){ return RALL; }, _posGeo:function(d){ return posGeo(d); }, _emoGeo:function(d){ return emoGeo(d); }, _bbox:function(d){ return bboxOf(d,(overlay&&overlay.clientWidth)||0); }, _snap:function(){ return snapShot(); }, _look:function(){ return LKC; }, _mp:function(){ return MP; }, _trv:function(){ return TRV; } };   // _s, _txtBox: for the tests
 })();
 </script>
 <!-- ═══ PRACTICE REPLAY (14 Oct 2026) ═══ Nestor: "in here can you add a 3rd box for Practice replay". A real past trading
@@ -89532,18 +89543,29 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (p.tf > 240 || !NEWS.rows.length) return;
     var R = 8, STEP = R * 2 + 3, COL = ['#6b6878', '#f4c05a', '#E56767'], groups = {};
     NEWS.rows.forEach(function(e){ var t = Math.floor(Date.parse(e.at) / 1000); if (!(t >= 0) || t > S.now) return; var k = keyOf(Math.max(p.tf, PS(p).baseTf), t); (groups[k] = groups[k] || []).push(e); });
+    // ONE disc per candle (Nestor, 19 Oct 2026: "can you just have 1 news dot instead of 4 blocking the view of the candle?" - the
+    // 14 Oct US CPI was four releases at 13:30): the highest impact's colour, how many on it when more than one, all of them in its card
     Object.keys(groups).forEach(function(k){ var x = xOfT(p, +k); if (x == null || x < R + 2 || x > pw - R - 2) return; x = Math.round(x);
-      groups[k].sort(function(a, b){ return impRank(b) - impRank(a); }).forEach(function(e, j){ var y = ph - 4 - R - j * STEP, col = COL[impRank(e)];
-        g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fillStyle = '#131217'; g.fill(); g.lineWidth = 1.6; g.strokeStyle = col; g.stroke();
-        g.beginPath(); g.arc(x, y, R - 3.2, 0, Math.PI * 2); g.fillStyle = col; g.fill(); p._news.push({ x: x, y: y, e: e }); }); });
+      var list = groups[k].sort(function(a, b){ return impRank(b) - impRank(a); }), y = ph - 4 - R, rk = impRank(list[0]);
+      newsDisc(g, x, y, R, COL[rk], list.length, rk); p._news.push({ x: x, y: y, e: list[0], list: list, n: list.length }); });
   }
+  // a news disc: the ring and the dot in the impact's colour; with several releases the dot fills out and carries their number
+  function newsDisc(g, x, y, R, col, n, rk){ g.save(); g.setLineDash([]);
+    g.beginPath(); g.arc(x, y, R, 0, Math.PI * 2); g.fillStyle = '#131217'; g.fill(); g.lineWidth = 1.6; g.strokeStyle = col; g.stroke();
+    g.beginPath(); g.arc(x, y, n > 1 ? R - 2.2 : R - 3.2, 0, Math.PI * 2); g.fillStyle = col; g.fill();
+    if (n > 1) { var tx = n > 9 ? '9+' : String(n); g.font = '700 ' + (tx.length > 1 ? 8 : 10) + "px 'AppNum','DM Mono',monospace"; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillStyle = rk ? '#0b0a0d' : '#ffffff'; g.fillText(tx, x, y + 0.5); }
+    g.restore(); }
   function newsAt(p, x, y){ var best = null, bd = 1e9; (p._news || []).forEach(function(h){ var dx = Math.abs(h.x - x), dy = Math.abs(h.y - y); if (dx <= 11 && dy <= 11 && dx * dx + dy * dy < bd) { bd = dx * dx + dy * dy; best = h; } }); return best; }
   function newsCard(p, hit){
     var c = p.card; if (!c) return; if (!hit) { c.style.display = 'none'; return; }
-    var e = hit.e, t = Math.floor(Date.parse(e.at) / 1000), hol = impCls(e.impact) === 'hol';
-    var rows = hol ? '' : '<div class="strp-nc-grid">' + [[T('Actual', 'Real'), e.actual], [T('Forecast', 'Previsión'), e.forecast], [T('Previous', 'Anterior'), e.previous]].map(function(r){ return '<div class="strp-nc-k">' + esc(r[0]) + '</div><div class="strp-nc-v">' + esc(r[1] == null || r[1] === '' ? '—' : r[1]) + '</div>'; }).join('') + '</div>';
-    c.innerHTML = '<div class="strp-nc-title">' + esc((e.currency ? e.currency + ' · ' : '') + (e.title || '')) + '</div><div class="strp-nc-when">' + esc(dshort(new Date(t * 1000)) + ' ' + hm(t)) + '</div>' + rows;
-    c.className = 'strp-newscard ' + impCls(e.impact);
+    var e = hit.e, t = Math.floor(Date.parse(e.at) / 1000), list = hit.list || [e], many = list.length > 1;
+    var grid = function(x){ return impCls(x.impact) === 'hol' ? '' : '<div class="strp-nc-grid">' + [[T('Actual', 'Real'), x.actual], [T('Forecast', 'Previsión'), x.forecast], [T('Previous', 'Anterior'), x.previous]].map(function(r){ return '<div class="strp-nc-k">' + esc(r[0]) + '</div><div class="strp-nc-v">' + esc(r[1] == null || r[1] === '' ? '—' : r[1]) + '</div>'; }).join('') + '</div>'; };
+    var when = '<div class="strp-nc-when">' + esc(dshort(new Date(t * 1000)) + ' ' + hm(t)) + (many ? ' · ' + T(list.length + ' releases', list.length + ' publicaciones') : '') + '</div>';
+    // every release on the candle, highest impact first, each in a compact block (one release: the card as it always was)
+    c.innerHTML = !many ? '<div class="strp-nc-title">' + esc((e.currency ? e.currency + ' · ' : '') + (e.title || '')) + '</div>' + when + grid(e)
+      : when + list.map(function(x){ return '<div class="strp-nc-item"><div class="strp-nc-title"><i class="strp-nc-dot ' + impCls(x.impact) + '"></i><span>' + esc((x.currency ? x.currency + ' · ' : '') + (x.title || '')) + '</span></div>' + grid(x) + '</div>'; }).join('');
+    c.className = 'strp-newscard ' + impCls(e.impact) + (many ? ' multi' : ''); c.scrollTop = 0;
+    c.style.maxHeight = many ? Math.max(90, Math.min(320, hit.y - 18 - 6)) + 'px' : '';
     var W = Math.min(260, p.el.clientWidth - 16); c.style.width = W + 'px'; var left = Math.max(8, Math.min(p.el.clientWidth - W - 8, hit.x - W / 2));
     c.style.left = left + 'px'; c.style.display = 'block'; c.style.top = Math.max(6, hit.y - 18 - (c.offsetHeight || 90)) + 'px';
     c.style.setProperty('--arrow-x', Math.max(10, Math.min(W - 10, hit.x - left - 3)) + 'px');

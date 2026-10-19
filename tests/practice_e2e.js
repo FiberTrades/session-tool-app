@@ -88,6 +88,17 @@
     if (hits[0]) { (document.elementFromPoint(r.left + hits[0].x, r.top + hits[0].y) || ch).dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + hits[0].x, clientY: r.top + hits[0].y, bubbles: true })); await W(30); }
     var card = pane().el.querySelector('.strp-newscard');
     ok('hovering it shows the card with Actual / Forecast / Previous', card && card.style.display === 'block' && /EUR · Test PMI/.test(card.textContent) && /51\.0/.test(card.textContent), card && card.textContent);
+    // ONE disc per candle (Nestor, 19 Oct 2026: "can you just have 1 news dot instead of 4 blocking the view of the candle?")
+    P._news([{ at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'Core CPI y/y', impact: 'Medium', forecast: '3.1%', previous: '3.1%', actual: '3.0%' },
+      { at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.4%', actual: '0.2%' },
+      { at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'Core CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.3%', actual: '0.3%' },
+      { at: '2026-10-01T07:00:00Z', currency: 'USD', title: 'CPI y/y', impact: 'High', forecast: '2.9%', previous: '2.9%', actual: '2.8%' }]);
+    await W(100); P._render(); var cpiDraw = P._drawOv(0); hits = pane()._news || [];
+    ok('four releases on one candle: ONE disc (red, the highest), with a 4 on it - not four stacked over the candle', hits.length === 1 && hits[0].n === 4 && hits[0].list.length === 4 && /High/.test(hits[0].e.impact), hits.map(function (h) { return [h.n, h.e.title, h.y]; }));
+    if (hits[0]) { (document.elementFromPoint(r.left + hits[0].x, r.top + hits[0].y) || ch).dispatchEvent(new MouseEvent('mousemove', { clientX: r.left + hits[0].x, clientY: r.top + hits[0].y, bubbles: true })); await W(30); }
+    var items = card ? card.querySelectorAll('.strp-nc-item') : [];
+    ok('its card lists all four - currency · title, Actual / Forecast / Previous each - highest impact first, and scrolls when tall', card.style.display === 'block' && card.classList.contains('multi') && items.length === 4 && ['CPI m/m', 'Core CPI m/m', 'CPI y/y', 'Core CPI y/y'].every(function (t2) { return card.textContent.indexOf('USD · ' + t2) >= 0; })
+      && /Core CPI y\/y/.test(items[3].textContent) && items[3].querySelector('.strp-nc-dot.med') && items[0].querySelector('.strp-nc-dot.high') && items[0].querySelectorAll('.strp-nc-k').length === 3 && /4 releases/.test(card.textContent) && getComputedStyle(card).overflowY === 'auto', card && card.textContent);
 
     P._news([]);
     // the Minimalist Manager panel (17 Oct 2026): the EA's rows beside the chart, execution mode, the confirm box, and the

@@ -64,6 +64,15 @@
     ok('locked: it does not move and Delete leaves it', d0.a.idx === a0 && S.drawings.length === 2, [a0, d0.a.idx, S.drawings.length]);
     lb.click(); await W(40);
     ok('pressed again: unlocked', !R._all().lock && !lb.classList.contains('on'));
+    // news: ONE disc per candle (Nestor, 19 Oct 2026: "can you just have 1 news dot instead of 4 blocking the view of the candle?")
+    var bi = S.cursor - 6, bt = new Date(S.bars[bi].time * 1000).toISOString();
+    R._newsSet([{ at: bt, currency: 'USD', title: 'Core CPI y/y', impact: 'Medium', forecast: '3.1%', previous: '3.1%', actual: '3.0%' }, { at: bt, currency: 'USD', title: 'CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.4%', actual: '0.2%' },
+      { at: bt, currency: 'USD', title: 'Core CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.3%', actual: '0.3%' }, { at: bt, currency: 'USD', title: 'CPI y/y', impact: 'High', forecast: '2.9%', previous: '2.9%', actual: '2.8%' }]);
+    await W(200); var nh = (S._newsHit || []).filter(function (h) { return h.i === bi; });
+    ok('Trade Replay, four releases on one candle: ONE disc with a 4 on it', nh.length === 1 && nh[0].n === 4 && (S._newsHit || []).length === 1, (S._newsHit || []).map(function (h) { return [h.i, h.n, h.y]; }));
+    if (nh[0]) R._newsCard(nh[0]); var ncard = document.getElementById('strp-newscard'), nit = ncard ? ncard.querySelectorAll('.strp-nc-item') : [];
+    ok('its card lists all four, highest impact first, each with Actual / Forecast / Previous', ncard && ncard.style.display === 'block' && ncard.classList.contains('multi') && nit.length === 4 && nit[0].querySelector('.strp-nc-dot.high') && /Core CPI y\/y/.test(nit[3].textContent) && nit[3].querySelector('.strp-nc-dot.med') && nit[0].querySelectorAll('.strp-nc-k').length === 3, ncard && ncard.textContent);
+    R._newsCard(null); R._newsSet([]);
     R.close(); await W(150);
     PC.dtpl = {}; PC.ddef = {};
     try { localStorage.removeItem('st_replay_draw2_999999903'); localStorage.removeItem('st_replay_dwhide'); localStorage.removeItem('st_replay_dwlock'); Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
