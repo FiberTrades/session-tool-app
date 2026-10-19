@@ -41166,7 +41166,7 @@ try {
       'fuera de sesión. La operación "solo una más" es como los buenos sistemas se vuelven recuerdos.',
       'no es tu momento. Usa el hueco para estudiar, no para actuar.',
       'no es tu ventana ahora mismo. Al gráfico le da igual — pero a tus estadísticas no.',
-      'hora equivocada. Hora correcta para repasar ayer o {SREF}.',
+      'hora equivocada. Hora correcta para repasar {LASTDAY} o {SREF}.',
       'fuera de tus horas. Las operaciones que tomas aquí son las que explicarás más tarde.',
       'no es tu ventana. El mercado está abierto para todos — tu ventaja no.',
       'fuera de horas. La disciplina es estar bien con no estar en la acción.',
@@ -41409,7 +41409,7 @@ try {
     'off-session. The "just one more" trade is how good systems become memories.',
     'this is not your time. Use the gap to study, not to act.',
     'not your window right now. The chart doesn\'t care — but your stats will.',
-    'wrong hour. Right hour for reviewing yesterday or {SREF}.',
+    'wrong hour. Right hour for reviewing {LASTDAY} or {SREF}.',
     'outside your hours. The trades you take here are the ones you\'ll explain away later.',
     'not your window. The market\'s open to everyone — your edge isn\'t.',
     'off-hours. The discipline is being okay with not being in the action.',
@@ -49155,6 +49155,23 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       return _againstBiasLossLine(hit.direction, total, es);
     } catch (e) { return null; }
   }
+  // The last day there was to review, for the {LASTDAY} token (Nestor, Monday 19 Oct 2026: "yesterday was sunday and
+  // markets are closed, what am i going to review?"): "yesterday" when yesterday was one of your trading days (and not
+  // time off), else that day's name - "Friday" after a weekend.
+  function _lastDayRef(now) {
+    var es = false; try { es = (window.__lang === 'es'); } catch (e) {}
+    var EN = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'], ES = ['el domingo', 'el lunes', 'el martes', 'el mi\u00e9rcoles', 'el jueves', 'el viernes', 'el s\u00e1bado'];
+    try {
+      var days = (typeof _tradingDaysPref === 'function') ? _tradingDaysPref() : [1, 2, 3, 4, 5];
+      for (var k = 1; k <= 7; k++) {
+        var d = now ? new Date(now) : new Date(); d.setHours(12, 0, 0, 0); d.setDate(d.getDate() - k);
+        var off = false; try { off = (typeof _isTimeOff === 'function') && !!_isTimeOff(d); } catch (e) {}
+        if (days.indexOf(d.getDay()) !== -1 && !off) return k === 1 ? (es ? 'ayer' : 'yesterday') : (es ? ES[d.getDay()] : EN[d.getDay()]);
+      }
+    } catch (e) {}
+    return es ? 'ayer' : 'yesterday';
+  }
+  try { window.__stLastDayRef = _lastDayRef; } catch (e) {}
   // Session-aware phrase for the {SREF} token in the out-of-session greeting. Reads the
   // user's actual session window(s), so "reviewing yesterday or ___" completes correctly
   // whenever it fires: before a session -> "planning today's session"; after a morning
@@ -49955,7 +49972,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     if (!_cachedReviewOpener) _cachedReviewOpener = reviewOpener();
     const vocativePattern = /\b(mate|trader|night owl|owl|caffeinated|búho|colega)\b/i;
     const compose = (opener, tail) => {
-      tail = String(tail || '').replace('{SREF}', _sessionRef());   // session-aware phrase, no-op if absent
+      tail = String(tail || '').replace('{SREF}', _sessionRef()).replace('{LASTDAY}', _lastDayRef());   // session- and day-aware phrases, no-ops if absent
       const hasBuiltInVocative = vocativePattern.test(opener);
       if (hasBuiltInVocative) {
         return `${opener}. ${nameSpan}, ${tail}`;
@@ -50992,7 +51009,9 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
        p4 — 2026-08-20: day-attribution clause added to the rewrite prompt after "rough one"
             (a yesterday recap) came back as "Rough session today" six minutes into a fresh
             session. Bumped so the mislabelled line already cached for the day misses. */
-    var GREET_POOL_VER = 'p4';
+    /* p5 - 2026-10-19: "reviewing yesterday" on a Monday morning (yesterday was Sunday) - the seed now names the last
+            trading day ({LASTDAY}); bumped so the line already cached for today misses. */
+    var GREET_POOL_VER = 'p5';
     // Same fault, and worse: a greeting is written FROM the account's own trading, so a shared
     // key handed a new member someone else's performance as their welcome line.
     try { localStorage.removeItem(GREET_LS); } catch (e) {}
