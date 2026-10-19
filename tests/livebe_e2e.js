@@ -52,6 +52,7 @@
     check('SL, Entry and TP are still drawn', line('SL') && line('Entry') && line('TP'), D && D.lines);
     check('the entry line is solid now (not dotted)', D && (D.styles || []).indexOf('Entry 0') >= 0, D && D.styles);
     // every level inside the plot, the target 4.4R away included
+    for (var q0 = 0; q0 < 8; q0++) { if (!((D && D.ys) || []).some(function (y) { return !(y.y != null && y.y >= 0 && y.y <= D.h); })) break; await W(250); D = window.__stLiveBox.charts()[0]; }   // the scale settles a frame after the chart's look is applied
     var off = ((D && D.ys) || []).filter(function (y) { return !(y.y != null && y.y >= 0 && y.y <= D.h); });
     check('the stop, entry, BE and target all sit inside the plot', D && D.ys && D.ys.length >= 4 && off.length === 0, D && { ys: D.ys, h: D.h });
 
@@ -60,6 +61,18 @@
     check('a sell has one pink down-arrow over its entry candle', mk0.length === 1 && mk0[0].shape === 'arrowDown' && mk0[0].position === 'aboveBar' && mk0[0].color === '#f472b6'
       && mk0[0].time <= openS && openS - mk0[0].time < 120, { marks: mk0, openS: openS });
     check('the arrow is drawn by the slim-arrow layer, not the library', typeof window.__stArrows === 'function', null);
+
+    // 19 Oct 2026: the candle's time left on the price scale in place of the price label; the spread alone bottom right
+    for (var k5 = 0; k5 < 12 && !(D && D.cdl && D.info); k5++) { await W(250); D = window.__stLiveBox.charts()[0]; }
+    check('the candle\'s time left sits on the price scale where the price label was (MM:SS), the price line dotted', D && /^\d\d:\d\d$/.test(D.cdl || '') && D.so && D.so.lvv === false && D.so.pls === 1, D && [D.cdl, D.so]);
+    check('...and the bottom right shows the spread alone ("Spread 0.1p", no Candle)', D && D.info === 'Spread 0.1p', D && D.info);
+    // Live Charts' Chart settings (colours, background) - never its drawings
+    var PR = window.__stPractice;
+    PR._lookSet('up', '#2962ff'); PR._lookSet('bg', '#202020'); await W(400);
+    D = window.__stLiveBox.charts()[0];
+    check('it takes Live Charts\' Chart settings: a blue up candle and the background picked there', D && D.so && D.so.up === '#2962ff' && D.bg === '#202020', D && [D.so, D.bg]);
+    PR._lookReset(); await W(400); D = window.__stLiveBox.charts()[0];
+    check('...and back to the app\'s look when they are reset', D && D.so && D.so.up === '#4ECD8B' && D.bg === '#121116', D && [D.so, D.bg]);
 
     // the BE fires: the EA stops sending it, so the line goes (MT5 removes its line too)
     window.__stLive.upsert(Object.assign({}, row, { ladder: '', sl_r: 0.111, tick_at: new Date().toISOString() }));

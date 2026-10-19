@@ -161,7 +161,7 @@
     var TM = window.__stTM;
     for (k = 0; k < 20 && !document.querySelector('#stpr-lvtm .stm-st.on'); k++) await W(250);
     var bar = document.getElementById('stpr-lvtm'), tb = function (a) { return bar.querySelector('[data-tma="' + a + '"]'); };
-    check('Live Charts shows the open trade with MT5 connected and Close trade only (the EA does BE and partials itself)', bar && /SELL/.test(bar.textContent) && /MT5 connected/.test(bar.textContent) && tb('close') && !tb('close').disabled && /Close trade/.test(tb('close').textContent) && !tb('tobe') && !tb('half'), bar && bar.textContent);
+    check('Live Charts shows the open trade with MT5 connected, Move to BE and Close trade (no Close 50%)', bar && /SELL/.test(bar.textContent) && /MT5 connected/.test(bar.textContent) && tb('close') && !tb('close').disabled && /Close trade/.test(tb('close').textContent) && tb('tobe') && tb('tobe').nextElementSibling === tb('close') && !tb('half'), bar && bar.textContent);
     // drag the SL line on the chart: a confirm box, then MT5
     var sl0 = P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0], pane0 = P._panes()[0], pc0 = pane0.el.querySelector('.stpr-pc'), rc0 = pc0.getBoundingClientRect();
     check('the trade\'s SL line can be dragged (and the entry cannot)', !!sl0 && !P._lines(0).some(function (l) { return /^Entry/.test(l.title) && l.k; }), P._lines(0));
@@ -178,6 +178,18 @@
     pev('pointerdown', pane0.series.priceToCoordinate(P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0].p)); pev('pointermove', ySL + 30); pev('pointerup', ySL + 30); await W(120);
     box.querySelector('[data-tmc="0"]').click(); await W(120);
     check('Cancel: nothing is sent and the line goes back', TM.last(990077).a === 'sl' && !TM.busy(990077) && box.style.display === 'none', TM.last(990077));
+    // Move to BE (19 Oct 2026: "next to close trade add button move to BE"): the stop to where the EA's own BE puts it
+    var r0 = ((window.__stLive.openIdeas().filter(function (i) { return String(i.main.ticket) === '990077'; })[0]) || {}).main;
+    var mkR = function (o) { return Object.assign({}, r0, { tick: Object.assign({}, r0 && r0.tick, { op: 1.12433, rpx: 0.00045, dg: 5 }, o, { at: Date.now() }) }); };
+    var tbOf = function (h) { var dv = document.createElement('div'); dv.innerHTML = h; return dv.querySelector('[data-tma="tobe"]'); };
+    var bLoss = tbOf(TM.row(mkR({ r: -0.3, sl: -1, lad: 'B:1.82:0.11:0' }))), bWin = tbOf(TM.row(mkR({ r: 1.5, sl: -1, lad: 'B:1.82:0.11:0' }))), bAt = tbOf(TM.row(mkR({ r: 1.5, sl: 0.11, lad: '' })));
+    check('Move to BE: off while the price has not passed break-even, on once it has (to the EA\'s BE: entry + 0.11R), "At BE" once the stop is there',
+      bLoss && bLoss.disabled && /pass break-even/.test(bLoss.title) && bWin && !bWin.disabled && /1\.12428/.test(bWin.title) && bAt && bAt.disabled && /^At BE$/.test(bAt.textContent), [bLoss && bLoss.outerHTML, bWin && bWin.outerHTML, bAt && bAt.outerHTML]);
+    var rBE = await TM.send(mkR({ r: 1.5, sl: -1, lad: 'B:1.82:0.11:0' }), 'tobe');
+    var lbe = TM.last(990077);
+    check('...pressed: MT5 moves the stop to 1.12428 (the EA\'s SL move, signed), the button says "Moved to BE HH:MM"', rBE && rBE.ok && lbe && lbe.a === 'tobe' && lbe.p === '1.12428' && /^Moved to BE \d\d:\d\d$/.test((tbOf(TM.row(mkR({ r: 1.5, sl: 0.11, lad: '' }))) || {}).textContent || ''), [rBE, lbe]);
+    var rNo = await TM.send(mkR({ r: -0.3, sl: -1, lad: 'B:1.82:0.11:0' }), 'tobe');
+    check('...and nothing is sent while the price is short of break-even', rNo && !rNo.ok && rNo.why === 'notbe', rNo);
     tb('close').click();
     var sending = /Sending/.test(tb('close').textContent);   // at once: MT5's answer can come within 50 ms
     for (k = 0; k < 40 && !(TM.last(990077) && TM.last(990077).a === 'close'); k++) await W(150);
@@ -409,7 +421,7 @@
     var ob = document.querySelector('#st-livebox .slx-open');
     check('the Session Live chart has "Open in Live Charts"', ob && /Open in Live Charts/.test(ob.textContent), ob && ob.textContent);
     var card = document.querySelector('#st-livebox .slx-tc[data-k="990077"]');
-    check('its card has MT5\'s state and the same Close trade (done at its time)', card && card.querySelector('.stm-st.on') && !card.querySelector('[data-tma="tobe"]') && !card.querySelector('[data-tma="half"]') && /^Closed \d\d:\d\d$/.test(card.querySelector('[data-tma="close"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
+    check('its card has MT5\'s state, Move to BE and the same Close trade (done at its time)', card && card.querySelector('.stm-st.on') && !!card.querySelector('[data-tma="tobe"]') && !card.querySelector('[data-tma="half"]') && /^Closed \d\d:\d\d$/.test(card.querySelector('[data-tma="close"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
     if (ob) ob.click();
     for (k = 0; k < 60; k++) { await W(250); st = LC.state(); if (st.live) break; }
     check('it opens Live Charts on that trade\'s symbol', document.getElementById('page-livecharts').classList.contains('active') && st.live && st.sym === 'EURUSD', st);

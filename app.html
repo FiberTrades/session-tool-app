@@ -1386,6 +1386,8 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-topl { position: absolute; left: 0; right: 60px; top: 0; height: 1px; background: #332F3C; z-index: 3; pointer-events: none; }
   .slx-info { position: absolute; right: 68px; bottom: 34px; z-index: 5; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: .06em; background: none; border: 0; padding: 0; text-shadow: 0 0 3px #121116, 0 0 6px #121116; font-variant-numeric: tabular-nums; text-align: right; pointer-events: none; color: var(--text-dim); white-space: nowrap; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }   /* Trade Replay's spread box; never font-boosted on a phone (Nestor, 5 Oct 2026: same size as Replay's) */
   .slx-info[hidden] { display: none; }
+  .slx-cdl { position: absolute; right: 0; z-index: 6; height: 18px; line-height: 18px; text-align: center; font-family: 'AppNum','DM Mono',monospace; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
+  .slx-cdl.u { background: #4ECD8B; color: #0b0a0d; } .slx-cdl.d { background: #E56767; color: #fff; } .slx-cdl[hidden] { display: none; }
   @media (max-width: 760px) { .slx-info { font-size: 10px; } }
   .slx-cht.mini { padding-bottom: 0; }
   .st-sesschat { margin: 14px 0 22px; }
@@ -20048,7 +20050,8 @@ try {
     try { chart.applyOptions({ crosshair: { mode: 0, vertLine: line, horzLine: line } }); } catch (e) {}
     var draw = function (target) { var pt = st.pt; if (!pt) return;
       target.useMediaCoordinateSpace(function (sc) { var g = sc.context, w = sc.mediaSize.width, h = sc.mediaSize.height, X = Math.round(pt.x) + 0.5, Y = Math.round(pt.y) + 0.5;
-        g.save(); g.strokeStyle = 'rgba(244,114,182,0.55)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.beginPath();
+        var L0 = null; try { L0 = (window.__stLC && window.__stLC.look) ? window.__stLC.look() : null; } catch (e) {}   // Live Charts' Chart settings (19 Oct 2026)
+        g.save(); g.strokeStyle = (L0 && L0.cxc) || 'rgba(244,114,182,0.55)'; g.lineWidth = 1; g.setLineDash(L0 && L0.cxs === 'solid' ? [] : (L0 && L0.cxs === 'dotted' ? [1, 3] : [4, 3])); g.beginPath();
         if (pt.x >= 0 && pt.x <= w) { g.moveTo(X, 0); g.lineTo(X, h); } if (pt.y >= 0 && pt.y <= h) { g.moveTo(0, Y); g.lineTo(w, Y); } g.stroke(); g.restore(); }); };
     var view = { renderer: function () { return { draw: draw }; }, zOrder: function () { return 'top'; } };
     try { series.attachPrimitive({ paneViews: function () { return [view]; }, updateAllViews: function () {}, attached: function (p) { st.req = p.requestUpdate; }, detached: function () { st.req = null; } }); } catch (e) {}
@@ -20350,8 +20353,9 @@ try {
         Object.keys(charts).forEach(function (kk) { var ce = charts[kk].el, cb = ce.querySelector('.slx-tall'); ce.classList.toggle('tall', tall); if (cb) paintH(cb, tall); });
       });
       var cd = document.createElement('div'); cd.className = 'slx-info'; cd.hidden = true; box.appendChild(cd);
+      var cdl = document.createElement('div'); cdl.className = 'slx-cdl'; cdl.hidden = true; box.appendChild(cdl);
       var tl = document.createElement('div'); tl.className = 'slx-topl'; box.appendChild(tl);
-      var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null, tf: '', born: Date.now(), cd: cd, cdBar: null, cdSec: 0 };
+      var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null, tf: '', born: Date.now(), cd: cd, cdl: cdl, cdBar: null, cdSec: 0 };
       ensureLWC().then(function () {
         if (charts[k] !== c) return;
         var d = Math.max(0, Math.min(8, isFinite(dg) ? dg : 5));
@@ -20367,11 +20371,13 @@ try {
           localization: { timeFormatter: function (t) { return cxTime(typeof t === 'number' ? t : 0); } },   // the crosshair's label: Thu 15 Oct '26  22:00, as in practice
           crosshair: { mode: 0 }, autoSize: true });
         c.series = c.chart.addCandlestickSeries({ upColor: '#4ECD8B', downColor: '#E56767', borderVisible: false, wickUpColor: '#4ECD8B', wickDownColor: '#E56767',
-          priceLineVisible: true, lastValueVisible: true, priceLineColor: '#c0c0c0', priceFormat: { type: 'price', precision: d, minMove: Math.pow(10, -d) },
+          priceLineVisible: true, priceLineStyle: 1, priceLineWidth: 1, lastValueVisible: true, priceFormat: { type: 'price', precision: d, minMove: Math.pow(10, -d) },
           // keep the stop and the target on screen, not only the candles
           autoscaleInfoProvider: function (orig) { var r = orig(); if (!r || !c.rng) return r;
             return { priceRange: { minValue: Math.min(r.priceRange.minValue, c.rng[0]), maxValue: Math.max(r.priceRange.maxValue, c.rng[1]) }, margins: r.margins }; } });
         c.cx = window.__stCx(c.chart, c.series);
+        lookCard(c);
+        try { c.chart.timeScale().subscribeVisibleLogicalRangeChange(function () { paintCd(c); }); } catch (e) {}   // the timer follows the price when the chart moves
         later();
       }, function () { el.classList.add('off'); });
       return c;
@@ -20397,18 +20403,44 @@ try {
       var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), x = left % 60, p = function (n) { return (n < 10 ? '0' : '') + n; };
       return (sec >= 3600) ? (p(h) + ':' + p(m) + ':' + p(x)) : (p(Math.floor(left / 60)) + ':' + p(x));
     }
+    // Live Charts' Chart settings on this chart: background, grid, scales, text, watermark and candles - never its drawings,
+    // indicators or position tools (19 Oct 2026); the crosshair reads them in __stCx
+    function lkL() { try { return (window.__stLC && window.__stLC.look) ? window.__stLC.look() : null; } catch (e) { return null; } }
+    function lkBars(a) { try { return (window.__stLC && window.__stLC.lookBars) ? window.__stLC.lookBars(a) : a; } catch (e) { return a; } }
+    function lkForm(bc) { var L = lkL(); if (!L || !L.prev || !bc.bars.length) return bc.form; return lkBars([bc.bars[bc.bars.length - 1], bc.form])[1]; }
+    function lookCard(c) { var L = lkL(); if (!L || !c.chart || !c.series) return; var clear = 'rgba(0,0,0,0)', lb = c.el.querySelector('.slx-tfl b');
+      try { c.chart.applyOptions({ layout: { background: L.bgT === 'grad' ? { type: 'gradient', topColor: L.bg, bottomColor: L.bg2 } : { type: 'solid', color: L.bg }, textColor: L.tx, fontSize: Math.max(9, Math.min(16, +L.fs || 11)) },
+        grid: { vertLines: { visible: !!L.vg, color: L.vgc }, horzLines: { visible: !!L.hg, color: L.hgc } }, rightPriceScale: { borderColor: L.ln }, timeScale: { borderColor: L.ln },
+        watermark: { visible: !!L.wm, text: c.sym + (lb && lb.textContent ? ', ' + lb.textContent : ''), color: L.wmc, fontSize: 30, horzAlign: 'center', vertAlign: 'center' } }); } catch (e) {}
+      try { c.series.applyOptions({ upColor: L.body ? L.up : clear, downColor: L.body ? L.dn : clear, borderVisible: !!L.bord, borderUpColor: L.bup, borderDownColor: L.bdn, wickVisible: !!L.wick, wickUpColor: L.wup, wickDownColor: L.wdn }); } catch (e) {}
+      var bx = c.el.querySelector('.slx-chb'); if (bx) bx.style.background = L.bg; }
+    function relook() { Object.keys(charts).forEach(function (k) { var c = charts[k]; lookCard(c); c.key = ''; }); later(); }
+    /* The candle's time left on the price scale where the last price's label was, in the candle's colour, as on Live Charts,
+       Back Testing and Trade Replay (Nestor, 19 Oct 2026: "why is the candle time down here? move it to where you have moved
+       the rest"); the bottom right keeps the spread alone. Counted from the clock, so a quiet minute keeps counting; with no
+       candle for a long while (market closed) there is no timer and the price label is back. */
+    function cdLv(c, on) { var sr = c.series; if (!sr || sr.__lvv === on) return; sr.__lvv = on; try { sr.applyOptions({ lastValueVisible: on }); } catch (e) {} }
     function paintCd(c) {
       try {
         var cd = c.cd; if (!cd) return;
         try { var tl = c.el.querySelector('.slx-topl'); if (tl && c.chart) { var pw0 = c.chart.priceScale('right').width(), rr = (pw0 > 0 && pw0 < 200 ? pw0 : 60) + 'px'; if (tl.style.right !== rr) tl.style.right = rr; } } catch (e) {}
-        if (!c.chart || !c.cdBar || !c.cdSec || c.el.classList.contains('mini') || !c.el.isConnected) { cd.hidden = true; return; }
-        var tx = T2('Candle', 'Vela') + ' ' + cdText(c.cdBar.time + c.cdSec - Date.now() / 1000, c.cdSec) + (c.spTxt ? ' | ' + T2('Spread', 'Margen') + ' ' + c.spTxt : '');
-        if (cd.textContent !== tx) cd.textContent = tx;
+        var off = !c.chart || !c.series || c.el.classList.contains('mini') || !c.el.isConnected;
         var pw = 0, th = 0; try { pw = c.chart.priceScale('right').width(); th = c.chart.timeScale().height(); } catch (e) {}
-        var r = (pw > 0 && pw < 200 ? pw : 60) + 8 + 'px', b = (th > 0 && th < 80 ? th : 26) + 8 + 'px';
-        if (cd.style.right !== r) cd.style.right = r;
-        if (cd.style.bottom !== b) cd.style.bottom = b;
-        cd.hidden = false;
+        var tx = (!off && c.spTxt) ? T2('Spread', 'Margen') + ' ' + c.spTxt : '';
+        if (!tx) cd.hidden = true;
+        else { if (cd.textContent !== tx) cd.textContent = tx;
+          var r = (pw > 0 && pw < 200 ? pw : 60) + 8 + 'px', b = (th > 0 && th < 80 ? th : 26) + 8 + 'px';
+          if (cd.style.right !== r) cd.style.right = r; if (cd.style.bottom !== b) cd.style.bottom = b; cd.hidden = false; }
+        var el = c.cdl; if (!el) return;
+        var bar = c.cdBar, sec = c.cdSec, now = Date.now() / 1000, left = null, y = null;
+        if (!off && bar && sec > 0 && now - bar.time <= sec + Math.max(sec, 900)) left = (bar.time + sec > now) ? bar.time + sec - now : sec - ((now - bar.time) % sec);
+        if (left != null) { try { y = c.series.priceToCoordinate(bar.close); } catch (e) {} }
+        var bx = c.el.querySelector('.slx-chb'), ph = bx ? bx.clientHeight - th : 0;
+        if (y == null || y < 9 || y > ph - 9) { if (!el.hidden) el.hidden = true; cdLv(c, left == null); return; }
+        cdLv(c, false);
+        var t2 = cdText(left, sec), cl = 'slx-cdl ' + (bar.close >= bar.open ? 'u' : 'd'), tp = Math.round(y - 9) + 'px', wd = (pw > 0 && pw < 200 ? pw : 60) + 'px';
+        if (el.textContent !== t2) el.textContent = t2; if (el.className !== cl) el.className = cl;
+        if (el.style.top !== tp) el.style.top = tp; if (el.style.width !== wd) el.style.width = wd; if (el.hidden) el.hidden = false;
       } catch (e) {}
     }
     setInterval(function () { Object.keys(charts).forEach(function (k) { paintCd(charts[k]); }); }, 1000);
@@ -20428,7 +20460,7 @@ try {
       else { bc = store(r.symbol, tf); if (!bc.bars.length) fetchBars(r.symbol, tf); }
       if (!c.series) return;
       var sw = c.tf !== tf; c.tf = tf;
-      if (sw) { var lb = c.el.querySelector('.slx-tfl b'); if (lb) lb.textContent = tfLabel(sec); }
+      if (sw) { var lb = c.el.querySelector('.slx-tfl b'); if (lb) lb.textContent = tfLabel(sec); lookCard(c); }
       // EA 8.98's daily brake: today's live updates are used up, so the chart is on the 2-second updates until midnight UTC
       try {
         var chc = c.el.querySelector('.slx-chc'), brk = !!(window.__stLiveLine && window.__stLiveLine.braked());
@@ -20440,8 +20472,8 @@ try {
         }
       } catch (e) {}
       var key = tf + ':' + bc.last + ':' + bc.bars.length + ':' + bc.rev;
-      if (c.key !== key) { c.key = key; c.mk = ''; try { c.series.setData(bc.bars.slice()); } catch (e) {} }
-      if (bc.form && (!bc.last || bc.form.time > bc.last)) { try { c.series.update(bc.form); } catch (e) {} }
+      if (c.key !== key) { c.key = key; c.mk = ''; try { c.series.setData(lkBars(bc.bars.slice())); } catch (e) {} }
+      if (bc.form && (!bc.last || bc.form.time > bc.last)) { try { c.series.update(lkForm(bc)); } catch (e) {} }
       /* The entry arrow (Nestor, 16 Oct 2026: "an entry arrow on top of a candle sell and below on a buy candle"), Trade
          Replay's: pink, under the candle on a buy, over it on a sell. The candle is the one the trade reached the feed in
          (a few seconds after the fill); when the entry price is not in it but is in the one before, the fill was at the
@@ -20475,6 +20507,7 @@ try {
           c.spTxt = '';
         }
       } catch (e) {}
+      paintCd(c);   // the spread is known now: bottom right at once
       var sig = JSON.stringify(L);
       if (sig !== c.sig) {
         c.sig = sig;
@@ -20542,8 +20575,11 @@ try {
                styles: JSON.parse(c.sig || '[]').map(function (o) { return o.title + ' ' + o.lineStyle; }), marks: JSON.parse(c.mk || '[]'),
                cx: c.chart ? (function () { var o = c.chart.options(); return { mode: o.crosshair.mode, v: o.crosshair.vertLine.visible, lv: o.crosshair.vertLine.labelVisible, bg: o.crosshair.vertLine.labelBackgroundColor, hbg: o.crosshair.horzLine.labelBackgroundColor, fs: o.layout.fontSize, t: o.localization.timeFormatter(1792094400), pt: c.cx ? c.cx.pt : null }; })() : null,
                ys: c.series ? JSON.parse(c.sig || '[]').map(function (o) { var y = null; try { y = c.series.priceToCoordinate(o.price); } catch (e) {} return { t: o.title, y: y }; }) : [],
-               h: (function () { try { var b = c.el.querySelector('.slx-chb'); return b.clientHeight - c.chart.timeScale().height(); } catch (e) { return 0; } })() }; }); }
-    return { render: render, later: later, charts: chartDiag, parseLad: parseLad, levels: levelsOf };
+               h: (function () { try { var b = c.el.querySelector('.slx-chb'); return b.clientHeight - c.chart.timeScale().height(); } catch (e) { return 0; } })(),
+               so: c.series ? (function () { var o = c.series.options(); return { lvv: o.lastValueVisible, pls: o.priceLineStyle, up: o.upColor, dn: o.downColor }; })() : null,
+               bg: c.chart ? (function () { var b = c.chart.options().layout.background; return b.color || b.topColor || ''; })() : '',
+               cdl: c.cdl && !c.cdl.hidden ? c.cdl.textContent : null, info: c.cd && !c.cd.hidden ? c.cd.textContent : null }; }); }
+    return { render: render, later: later, charts: chartDiag, parseLad: parseLad, levels: levelsOf, relook: relook };
   })();
 
   /* ===== Account snapshot for the phone nudges (2 Oct 2026) =====
@@ -77217,6 +77253,11 @@ window.__stTM = (function () {
     var tk = r.tick; if (!tk || !isFinite(tk.at) || Date.now() - tk.at > 90000) return 'stale';
     return 'on'; }
   function dgOf(r) { var t = r && r.tick; return (t && isFinite(t.dg) && t.dg > 0) ? t.dg : ((isFinite(+r.digits) && +r.digits > 0) ? +r.digits : 5); }
+  // where Move to BE puts the stop; at: the stop is there already (or past it); can: the price is past it, so MT5 can take it
+  function beOf(r) { var t = r && r.tick; if (!t || !(t.op > 0) || !(t.rpx > 0)) return null;
+    var d = r.direction === 'short' ? -1 : 1, lad = null; try { lad = window.__stLiveBox && window.__stLiveBox.parseLad ? window.__stLiveBox.parseLad(t.lad) : null; } catch (e) {}
+    var off = (lad && lad.b && isFinite(lad.b.to)) ? Math.max(0, lad.b.to) : 0;
+    return { px: Number((t.op + d * off * t.rpx).toFixed(dgOf(r))), off: off, at: isFinite(t.sl) && t.sl >= off - 0.02, can: isFinite(t.r) && t.r > off + 0.05 }; }
   function emit() { subs.forEach(function (f) { try { f(); } catch (e) {} }); try { if (window.__stLiveBox) window.__stLiveBox.later(); } catch (e) {} }
   function finish(id, out) { var p = pend[id]; if (!p) return; delete pend[id]; delete busy[p.k];
     last[p.k] = { a: p.a, ok: !!out.ok, why: out.why || '', at: Date.now(), p: p.p }; if (out.ok) done[p.k + '|' + p.a] = Date.now(); emit(); try { p.res(out); } catch (e) {} }
@@ -77225,7 +77266,8 @@ window.__stTM = (function () {
     if (gated()) return Promise.resolve({ ok: false, why: 'mv' });
     var st = state(r); if (st !== 'on') return Promise.resolve({ ok: false, why: st });
     var key = String(r.ticket); if (busy[key]) return Promise.resolve({ ok: false, why: 'busy' });
-    var c = { cid: newId(), clg: String(r.login), csy: String(r.symbol), ctk: key, ca: a, cp: price != null ? Number(price).toFixed(dgOf(r)) : '', ci: idx != null ? String(idx) : '', cts: String(Math.floor(Date.now() / 1000)) };
+    var ca = a; if (a === 'tobe') { var be = beOf(r); if (!be) return Promise.resolve({ ok: false, why: 'stale' }); if (be.at) return Promise.resolve({ ok: false, why: 'atbe' }); if (!be.can) return Promise.resolve({ ok: false, why: 'notbe' }); ca = 'sl'; price = be.px; }   // the EA's SL move
+    var c = { cid: newId(), clg: String(r.login), csy: String(r.symbol), ctk: key, ca: ca, cp: price != null ? Number(price).toFixed(dgOf(r)) : '', ci: idx != null ? String(idx) : '', cts: String(Math.floor(Date.now() / 1000)) };
     busy[key] = { a: a, p: c.cp, at: Date.now() }; delete last[key]; delete done[key + '|' + a]; emit();
     return hmac(token(), ['v1', c.cid, c.clg, c.csy, c.ctk, c.ca, c.cp, c.ci, c.cts].join('|')).then(function (h) {
       c.ch = h;
@@ -77277,9 +77319,11 @@ window.__stTM = (function () {
     ver2: ['Placing orders from here needs EA 9.02 or newer in MT5.', 'Abrir órdenes desde aquí necesita el EA 9.02 o posterior en MT5.'],
     inactive: ['Your EA is OFF on its panel in MT5: press ON there.', 'Tu EA está en OFF en su panel de MT5: pulsa ON allí.'],
     follow: ['This is a Follow (copy) account: place the trade on the Lead.', 'Esta es una cuenta Follow (copia): abre la operación en la Lead.'],
-    price: ['That price was not valid.', 'Ese precio no era válido.'] };
+    price: ['That price was not valid.', 'Ese precio no era válido.'],
+    atbe: ['The stop is at break-even already.', 'El stop ya está en break-even.'],
+    notbe: ['The price has to pass break-even first.', 'El precio tiene que pasar el break-even primero.'] };
   function whyTxt(w) { var x = WHY[w]; if (x) return T2(x[0], x[1]); return w ? T2('MT5 refused it: ', 'MT5 lo rechazó: ') + w : ''; }
-  var DONE = { close: ['Closed', 'Cerrada'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
+  var DONE = { tobe: ['Moved to BE', 'Movido a BE'], close: ['Closed', 'Cerrada'], sl: ['SL moved', 'SL movido'], tp: ['TP moved', 'TP movido'], be: ['BE line moved', 'Línea BE movida'], ts: ['Step moved', 'Paso movido'], pc: ['Step moved', 'Paso movido'] };
   // MT5's state and Close trade, for a trade's card and for Live Charts
   // trading from the app - Close trade on the Session Live card too - is Nestor's only for now, with Live Charts (18 Oct 2026:
   // "Close trade on the Session Live card. why would this stay if this is useless to someone that hasnt got access to live charts?")
@@ -77287,17 +77331,19 @@ window.__stTM = (function () {
   function row(r) {
     if (!r || mentor() || gated()) return '';
     var k = String(r.ticket), st = state(r), b = busy[k], l = last[k], on = st === 'on', fresh = l && Date.now() - l.at < 60000;
-    var btn = function (a, en, es, cls) { var lab = T2(en, es), c = 'stm-b' + (cls ? ' ' + cls : ''), dis = !on || !!b;
-      if (b && b.a === a) { lab = T2('Sending…', 'Enviando…'); c += ' busy'; }
-      else if (done[k + '|' + a] && Date.now() - done[k + '|' + a] < 60000) { lab = T2(DONE[a][0], DONE[a][1]) + ' ' + hmT(done[k + '|' + a]); c += ' done'; dis = true; }
-      return '<button type="button" class="' + c + '" data-tma="' + a + '" data-tmk="' + esc(k) + '"' + (dis ? ' disabled' : '') + '>' + esc(lab) + '</button>'; };
+    var btn = function (a, en, es, cls, xdis, ttl) { var lab = T2(en, es), c = 'stm-b' + (cls ? ' ' + cls : ''), dis = !on || !!b || !!xdis;
+      if (b && b.a === a) { lab = T2('Sending…', 'Enviando…'); c += ' busy'; ttl = ''; }
+      else if (done[k + '|' + a] && Date.now() - done[k + '|' + a] < 60000) { lab = T2(DONE[a][0], DONE[a][1]) + ' ' + hmT(done[k + '|' + a]); c += ' done'; dis = true; ttl = ''; }
+      return '<button type="button" class="' + c + '" data-tma="' + a + '" data-tmk="' + esc(k) + '"' + (dis ? ' disabled' : '') + (ttl ? ' title="' + esc(ttl) + '"' : '') + '>' + esc(lab) + '</button>'; };
+    var be = beOf(r), beBtn = (be && be.at && !(done[k + '|tobe'] && Date.now() - done[k + '|tobe'] < 60000)) ? btn('tobe', 'At BE', 'En BE', '', true, whyTxt('atbe'))
+      : btn('tobe', 'Move to BE', 'Mover a BE', '', !be || !be.can, !be ? '' : (!be.can ? whyTxt('notbe') : T2('Stop to ', 'Stop a ') + be.px.toFixed(dgOf(r)) + (be.off ? T2(' (the EA\'s break-even: entry + ', ' (el break-even del EA: entrada + ') + be.off.toFixed(2) + 'R)' : T2(' (the entry)', ' (la entrada)'))));
     var dot = on ? T2('MT5 connected', 'MT5 conectado') : (st === 'off' ? T2('Off in your EA', 'Apagado en tu EA') : T2('MT5 not connected', 'MT5 no conectado'));
     var note = '';
     if (fresh && !l.ok) note = '<div class="stm-msg r">' + esc(whyTxt(l.why)) + '</div>';
     else if (fresh && l.ok && /^(sl|tp|be|ts|pc)$/.test(l.a)) note = '<div class="stm-msg g">' + esc(T2(DONE[l.a][0], DONE[l.a][1]) + (l.p ? T2(' to ', ' a ') + l.p : '') + ' · ' + hmT(l.at)) + '</div>';
     else if (!on && st !== 'mv') note = '<div class="stm-msg">' + esc(whyTxt(st)) + '</div>';
     return '<div class="stm"><div class="stm-row"><span class="stm-st' + (on ? ' on' : (st === 'off' ? ' off' : '')) + '"><i></i>' + esc(dot) + '</span><span class="stm-sp"></span>'
-      + btn('close', 'Close trade', 'Cerrar operación', 'x') + '</div>' + note + '</div>'; }
+      + beBtn + btn('close', 'Close trade', 'Cerrar operación', 'x') + '</div>' + note + '</div>'; }
   // a trade by its ticket among the open ones (a copy's own ticket too)
   function tradeOf(k) { try { var L = (window.__stLive && window.__stLive.openIdeas) ? window.__stLive.openIdeas() : [];
       for (var i = 0; i < L.length; i++) { var rs = L[i].rows || [L[i].main || L[i]]; for (var j = 0; j < rs.length; j++) if (String(rs[j].ticket) === k) return String((L[i].main || {}).ticket) === k ? L[i].main : rs[j]; } } catch (e) {} return null; }
@@ -87786,7 +87832,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return data.map(function(b){ if (b.close == null) return b; var up = pc == null ? b.close >= b.open : b.close >= pc; pc = b.close;
       return Object.assign({}, b, { color: L.body ? (up ? L.up : L.dn) : clear, borderColor: up ? L.bup : L.bdn, wickColor: up ? L.wup : L.wdn }); }); }
   function lookSet(k, v){ var o = Object.assign({}, CFG.look || {}); o[k] = v; CFG.look = o; save(); lookAll(k === 'prev' || (look().prev && /^(up|dn|bup|bdn|wup|wdn|body)$/.test(k))); }
-  function lookAll(rebar){ panes.forEach(lookPane); if (rebar && S) render(); dirty(); if (menuFor === 'look') lookMenu($('stpr-lookbtn'), true); }
+  function lookAll(rebar){ panes.forEach(lookPane); if (rebar && S) render(); dirty(); if (menuFor === 'look') lookMenu($('stpr-lookbtn'), true); try { if (window.__stLiveBox && window.__stLiveBox.relook) window.__stLiveBox.relook(); } catch (e) {} }
   function lookMenu(anchor, refresh){
     var L = look(), H = [], es2 = es();
     var sw = function(k){ return '<button type="button" class="stpr-lksw' + (LK.pick === k ? ' on' : '') + '" data-lksw="' + k + '" title="' + esc(T('Colour', 'Color')) + '"><i style="--c:' + esc(L[k]) + '"></i></button>'; };
@@ -89904,6 +89950,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _tb: function(){ return TB; },
     lg: function(){ if (!lvData()) return ''; var ls = {}; feeds().forEach(function(F){ var e = F.ea; if (e && !e.hub && e.lg) ls[String(e.lg)] = 1; }); var k = Object.keys(ls); return k.length === 1 ? k[0] : ''; },   // the account the charts show, when it is one (EA 9.03 streams only for it)
     _accs: function(){ return lvAccs().map(function(o){ return String(o.lg); }); },
+    look: function(){ return look(); }, lookBars: function(a){ return lookBars(a); },
     greetInfo: function(){ if (!S || !S.live) return null; var n = nowS(), d = new Date(S.day + 'T12:00:00');
       return { sym: (S.ea && S.ea.raw) || S.sym.name, ea: !!(S.ea && (lvFresh(S) || !S.ea.hub)), closed: n >= S.f.close, dayName: dayName(d) }; },
     _ord: function(){ return LV.ord || null; }, _chimes: function(){ return LV.chimes || 0; }, _mmLive: function(){ return !!LV.mmStash; },
