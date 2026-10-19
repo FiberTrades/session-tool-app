@@ -22,7 +22,7 @@
 //           in now; the first one also stamps be_at
 //    { event:"partial", token, ticket, deal, login, symbol, direction, lots, left, pct, r, pnl }   (EA 8.87)
 //        -> part of the trade closed: the share of the original size, the R and the money of that deal
-//    { event:"alert", token, id, px, symbol, login }   (EA 8.99)
+//    { event:"alert", token, id, px, symbol, login[, zx] }   (EA 8.99; zx "in" / "out": a zone entered or left, EA 9.05)
 //        -> price reached one of the member's price alerts: marked fired once and pushed to the phone (afterAlert)
 //    { event:"settings", token, login, symbol, ea_version, settings:{...} }   (EA 8.6; 8.83 adds copy_*)
 //        -> the EA's own settings right now (risk, stop limits, take profit,
@@ -115,9 +115,9 @@ Deno.serve(async (req) => {
 
   // A price alert reached (EA 8.99): the EA has its answer at once; the alert is marked and pushed straight after.
   if (isAlert) {
-    const id = String(body.id ?? "").trim().slice(0, 40), px = Number(body.px);
+    const id = String(body.id ?? "").trim().slice(0, 40), px = Number(body.px), zx = String(body.zx ?? "").slice(0, 3);
     if (!/^[0-9a-f-]{36}$/i.test(id)) return json({ error: "bad alert id" }, 400);
-    later("alert", afterAlert(admin, userId, id, px));
+    later("alert", afterAlert(admin, userId, id, px, zx));
     return json({ ok: true });
   }
 

@@ -254,6 +254,14 @@ const T: Record<string, [string, string]> = {
   alert_up: ["{S} rose to {P}{N}.", "{S} subió a {P}{N}."],
   alert_dn: ["{S} fell to {P}{N}.", "{S} bajó a {P}{N}."],
   alert_at: ["{S} reached {P}{N}.", "{S} llegó a {P}{N}."],
+  // alerts on drawings (19 Oct 2026; a zone's from EA 9.05): {P} the price it rang at, {Z} a rectangle's bottom - top
+  alert_hray: ["{S} reached your horizontal ray at {P}{N}.", "{S} llegó a tu rayo horizontal en {P}{N}."],
+  alert_trend: ["{S} crossed your trend line at {P}{N}.", "{S} cruzó tu línea de tendencia en {P}{N}."],
+  alert_ray: ["{S} crossed your ray at {P}{N}.", "{S} cruzó tu rayo en {P}{N}."],
+  alert_in: ["{S} entered your zone {Z} at {P}{N}.", "{S} entró en tu zona {Z} en {P}{N}."],
+  alert_out: ["{S} left your zone {Z} at {P}{N}.", "{S} salió de tu zona {Z} en {P}{N}."],
+  alert_cin: ["{S} entered your channel at {P}{N}.", "{S} entró en tu canal en {P}{N}."],
+  alert_cout: ["{S} left your channel at {P}{N}.", "{S} salió de tu canal en {P}{N}."],
   title_alert: ["Price alert", "Alerta de precio"],
 };
 export const tr = (k: string, es: boolean) => (T[k] ? T[k][es ? 1 : 0] : k);
@@ -481,20 +489,27 @@ export async function deliver(admin: Any, userId: string, kind: "nudge" | "trade
 // report finds it no longer active) and goes to the phone straight away. An alert the member set is always sent, open
 // window or not, as TradingView's are (Nestor: "these alarms will have to be sent as nudges so i also get them on my phone").
 const symShow = (k: string) => (/^[A-Z]{6}$/.test(k) ? k.slice(0, 3) + "/" + k.slice(3) : k);
-export function alertText(sym: string, price: number, dir: number, note: string | null, es: boolean) {
-  const dg = Math.min(6, Math.max(0, (String(price).split(".")[1] || "").length));
-  return tr(dir > 0 ? "alert_up" : dir < 0 ? "alert_dn" : "alert_at", es).replace("{S}", symShow(sym)).replace("{P}", Number(price).toFixed(dg))
-    .replace("{N}", note ? " - " + String(note).slice(0, 120) : "");
+export function alertText(sym: string, price: number, dir: number, note: string | null, es: boolean, d?: { src?: string; hi?: number | null; px?: number; zx?: string }) {
+  const dg = Math.min(6, Math.max(0, (String(price).split(".")[1] || "").length)), src = String((d && d.src) || "line");
+  const N = note ? " - " + String(note).slice(0, 120) : "";
+  if (src === "line" || src === "price" || !d) return tr(dir > 0 ? "alert_up" : dir < 0 ? "alert_dn" : "alert_at", es).replace("{S}", symShow(sym)).replace("{P}", Number(price).toFixed(dg)).replace("{N}", N);
+  // a drawing's (19 Oct 2026): the price it rang at, as the EA saw it (a sloping line's or a zone's edge moves)
+  const hiN = Number(d.hi), at = Number.isFinite(Number(d.px)) && Number(d.px) > 0 ? Number(d.px) : Number(price);
+  const pdg = /JPY/.test(String(sym)) ? 3 : at < 10 ? 5 : at < 100 ? 3 : 2, P = at.toFixed(pdg), zx = d.zx === "out" ? "out" : "in";   // a drawing's prices are where it was drawn: as the symbol shows them
+  const k = src === "hray" ? "alert_hray" : src === "trend" ? "alert_trend" : src === "ray" ? "alert_ray" : src === "channel" ? (zx === "out" ? "alert_cout" : "alert_cin") : (zx === "out" ? "alert_out" : "alert_in");
+  const Z = src === "rect" && Number.isFinite(hiN) ? Number(price).toFixed(pdg) + "-" + hiN.toFixed(pdg) : "";
+  return tr(k, es).replace("{S}", symShow(sym)).replace("{P}", P).replace("{Z}", Z).replace("{N}", N).replace("  ", " ");
 }
-export async function afterAlert(admin: Any, userId: string, id: string, px: number) {
+// zx: a zone's "in" (entered) or "out" (left), from EA 9.05; anything else for a line
+export async function afterAlert(admin: Any, userId: string, id: string, px: number, zx?: string) {
   if (!/^[0-9a-f-]{36}$/i.test(String(id || ""))) return [];
-  const q = admin.from("price_alerts");
-  const { data: row, error } = await (DRY ? q.select("sym, price, dir, note")   // a dry run reads it and changes nothing
-    : q.update({ active: false, fired_at: new Date().toISOString(), fired_px: Number.isFinite(px) ? px : null }).select("sym, price, dir, note"))
+  const q = admin.from("price_alerts"), how = zx === "in" || zx === "out" ? zx : null, cols = "sym, price, dir, note, src, hi";
+  const { data: row, error } = await (DRY ? q.select(cols)   // a dry run reads it and changes nothing
+    : q.update(Object.assign({ active: false, fired_at: new Date().toISOString(), fired_px: Number.isFinite(px) ? px : null }, how ? { fired_how: how } : {})).select(cols))
     .eq("id", id).eq("user_id", userId).eq("active", true).maybeSingle();
   if (error || !row) return [];
   const { data: jr } = await admin.from("journals").select("s:data->settings").eq("user_id", userId).maybeSingle();
-  const es = esOf(jr), key = "alert:" + id, text = alertText(row.sym, row.price, row.dir, row.note, es);
+  const es = esOf(jr), key = "alert:" + id, text = alertText(row.sym, row.price, row.dir, row.note, es, { src: row.src, hi: row.hi, px, zx: how || undefined });
   if (DRY) return ["alert " + key + ": " + text];
   await admin.from("nudge_pushes").insert({ user_id: userId, day: utcDay(Date.now()), key, status: "pending" });
   const res = await sendPush(admin, userId, "nudge", tr("title_alert", es), text, "st-alert-" + id);

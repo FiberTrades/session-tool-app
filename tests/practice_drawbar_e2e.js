@@ -31,7 +31,7 @@
     var d0 = await draw2('rect', X0, Y0, X1, Y1), b = bar(), br = b && b.getBoundingClientRect();
     ok('a rectangle placed: no options box any more, the toolbar floats just above it', d0 && d0.type === 'rect' && DW.sel === 0 && !document.querySelector('.stpr-props') && shown(b) && br.bottom <= r.top + Y0 && br.bottom >= r.top + Y0 - 30 && Math.abs(br.left - (r.left + X0 - 6)) < 4, br && [br.left, br.top, br.bottom, r.left + X0, r.top + Y0]);
     var acts = Array.prototype.map.call(b.querySelectorAll('[data-db]'), function (x) { return x.getAttribute('data-db'); });
-    ok('in order: grip, Templates, line colour, fill, text, line width, line style, Visibility, lock, delete, More', b.firstElementChild.classList.contains('stdb-gr') && acts.join(',') === 'tpl,line,fill,text,width,dash,vis,lock,del,more', acts);
+    ok('in order: grip, Templates, line colour, fill, text, line width, line style, Visibility, alert (a zone has one, batch D), lock, delete, More', b.firstElementChild.classList.contains('stdb-gr') && acts.join(',') === 'tpl,line,fill,text,width,dash,vis,alert,lock,del,more', acts);
     var r0 = rectOn(d0), legacy = px((r0.x0 + r0.x1) / 2 + 3, (r0.y0 + r0.y1) / 2 + 9);
     ok('a rectangle with no look of its own is drawn as before: its colour at 10% inside', Math.abs(legacy[0] - 96) <= 6 && Math.abs(legacy[1] - 165) <= 6 && Math.abs(legacy[2] - 250) <= 6 && Math.abs(legacy[3] - 26) <= 1, legacy);
 

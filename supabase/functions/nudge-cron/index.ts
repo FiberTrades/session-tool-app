@@ -45,7 +45,7 @@ Deno.serve(async (req) => {
         : body.what === "results" ? await resultsTick(admin, u || undefined)
         : body.what === "lock" ? await afterLock(admin, u, t, !!body.first)
         : body.what === "partial" ? await afterPartial(admin, u, t, Number(body.deal) || 1, Number(body.pct) || 0, Number(body.r) || 0, Number(body.pnl) || 0)
-        : body.what === "alert" ? await afterAlert(admin, u, String(body.id || ""), Number(body.px))
+        : body.what === "alert" ? await afterAlert(admin, u, String(body.id || ""), Number(body.px), String(body.zx || ""))
         : body.what === "ea" ? await afterEaChange(admin, u, Number(body.logId) || 1, body.before, body.after, Number(body.at) || Date.now())
         : (fn ? await fn(admin, u, t) : "unknown what");
       return json({ dry: true, out: out ?? null }, 200);

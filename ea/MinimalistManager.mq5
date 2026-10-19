@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.04"
+#property version   "9.05"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3565,7 +3565,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.04\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.05\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3953,7 +3953,7 @@ void LwOpen()
 // A whole text message from the server (Phoenix, vsn 1.0.0: {"topic","event","payload","ref"})
 // v9.00: what this chart is, for Live Charts: the EA's version, the chart's symbol as MT5 names it, its digits
 // "hi": this chart's symbol and digits, and its account's login (Live Charts names the trade log after the account it is on)
-string LwHi(){ return StringFormat("{\"v\":\"9.04\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
+string LwHi(){ return StringFormat("{\"v\":\"9.05\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0); }   // rl: on the relay (every tick)   // tm: trade management from the app is on
 // a number after a key in a message from the app (def when it is not there)
 long LwNum(string s,string key,long def)
   {
@@ -7497,7 +7497,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.04 loaded (Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.05 loaded (alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
@@ -7732,9 +7732,23 @@ bool LabelsFollowChart()
 // When the bid reaches one it tells live-trade (through the live queue, so a blip is retried), which marks it fired and
 // pushes it to the phone. Whichever terminal reports first wins; a second report finds it already fired. Nothing from a
 // Follow account: the Lead's terminal watches the same prices.
+// v9.05 (Nestor, 19 Oct 2026: alerts on any drawing - "build all the tradingview suggestions!"): besides a level, an alert can
+// be a sloping line (a trend line, a ray: its level now and its slope per second, so it is followed tick by tick between the
+// reads, which work its level out afresh every minute) or a zone (a rectangle, a parallel channel: its bottom and top now, the
+// same slope, and whether it rings when price ENTERS it, LEAVES it, or either). A zone's first price here only says where price
+// is; it rings on the change after that, never on where price already was. EAs before 9.05 read the first three fields: a
+// sloping line at its level of that minute, and a zone not at all (its price is 0).
 #define AL_MAX 50
 string g_alId[]; double g_alPx[]; int g_alDir[]; int g_alN=0;
+int    g_alK[];                // 0 a level, 1 a sloping line, 2 a zone (v9.05)
+double g_alHi[];               // a zone's top (g_alPx is its bottom)
+double g_alSl[];               // price per second (a sloping line, a channel)
+int    g_alMode[];             // a zone: 1 enter, 2 exit, 3 either
+int    g_alIn[];               // a zone: -1 not judged yet, 0 price outside, 1 inside
+double g_alPrev[];             // a zone: the bid before (a jump right through it)
+uint   g_alRecv=0;             // GetTickCount() when the levels were read
 string g_alDone[];             // reported this session: never twice
+void AlertSize(int n);         // v9.05: every alert array to n (defined below the poll)
 uint   g_alAt=0;               // GetTickCount() of the last read
 bool   g_alAny=false;          // the member has an active alert on some symbol
 bool   g_alOff=false;          // MT5 does not allow the address: stop until the EA restarts
@@ -7792,20 +7806,37 @@ void AlertPoll()
    string lst=StringSubstr(r,bar+1);
    string items[];
    int n=(StringLen(lst)>0) ? StringSplit(lst,';',items) : 0;
-   // a direction already judged on this terminal is kept for an alert that is still there
-   string oId[]; int oDir[]; int on=g_alN; ArrayResize(oId,on); ArrayResize(oDir,on);
-   for(int i=0;i<on;i++){ oId[i]=g_alId[i]; oDir[i]=g_alDir[i]; }
-   g_alN=0; ArrayResize(g_alId,0); ArrayResize(g_alPx,0); ArrayResize(g_alDir,0);
+   // a direction (a zone: inside or out) already judged on this terminal is kept for an alert that is still there
+   string oId[]; int oDir[]; int oIn[]; double oPrev[]; int on=g_alN; ArrayResize(oId,on); ArrayResize(oDir,on); ArrayResize(oIn,on); ArrayResize(oPrev,on);
+   for(int i=0;i<on;i++){ oId[i]=g_alId[i]; oDir[i]=g_alDir[i]; oIn[i]=g_alIn[i]; oPrev[i]=g_alPrev[i]; }
+   g_alN=0; AlertSize(0);
    for(int i=0;i<n && g_alN<AL_MAX;i++)
      {
       string f[];
-      if(StringSplit(items[i],',',f)<3 || AlertDone(f[0])) continue;
+      int nf=StringSplit(items[i],',',f);
+      if(nf<3 || AlertDone(f[0])) continue;
       double px=StringToDouble(f[1]); int dir=(int)StringToInteger(f[2]);
+      int kind=0, mode=3; double hi=0, sl=0;
+      if(nf>=8 && f[3]=="Z")                                   // v9.05: a zone - its bottom and top now, enter / exit / either, its slope
+        {
+         kind=2; px=StringToDouble(f[4]); hi=StringToDouble(f[5]); mode=(int)StringToInteger(f[6]); sl=StringToDouble(f[7]);
+         if(hi<px){ double t=px; px=hi; hi=t; }
+         if(mode<1 || mode>3) mode=3;
+        }
+      else if(nf>=5 && f[3]=="S"){ kind=1; sl=StringToDouble(f[4]); }   // v9.05: a sloping line - its level now and its slope
       if(px<=0) continue;
-      if(dir==0) for(int k=0;k<on;k++) if(oId[k]==f[0]) dir=oDir[k];
-      ArrayResize(g_alId,g_alN+1); ArrayResize(g_alPx,g_alN+1); ArrayResize(g_alDir,g_alN+1);
-      g_alId[g_alN]=f[0]; g_alPx[g_alN]=px; g_alDir[g_alN]=dir; g_alN++;
+      int inside=-1; double prev=0;
+      for(int k=0;k<on;k++) if(oId[k]==f[0]){ if(dir==0) dir=oDir[k]; inside=oIn[k]; prev=oPrev[k]; }
+      AlertSize(g_alN+1);
+      g_alId[g_alN]=f[0]; g_alPx[g_alN]=px; g_alDir[g_alN]=dir; g_alK[g_alN]=kind; g_alHi[g_alN]=hi; g_alSl[g_alN]=sl;
+      g_alMode[g_alN]=mode; g_alIn[g_alN]=inside; g_alPrev[g_alN]=prev; g_alN++;
      }
+   g_alRecv=GetTickCount();
+  }
+void AlertSize(int n)
+  {
+   ArrayResize(g_alId,n); ArrayResize(g_alPx,n); ArrayResize(g_alDir,n); ArrayResize(g_alK,n); ArrayResize(g_alHi,n);
+   ArrayResize(g_alSl,n); ArrayResize(g_alMode,n); ArrayResize(g_alIn,n); ArrayResize(g_alPrev,n);
   }
 // v9.00: 'id,symbol,tf,from,to;...' (tf in minutes, times unix UTC): queued, sent by VolServe
 void VolTake(string lst)
@@ -7855,23 +7886,49 @@ void VolServe()
    if(to>=n){ PrintFormat("Volume profile: %s %d-minute, %d candles sent again with their volume (a zone in Practice Replay).",sym,CE_TF_MIN[ti],n); VolDrop(); }
   }
 // Every tick: has the bid reached one? An alert set without a direction takes it from the first price seen here (above
-// the bid: price has to rise to it; below: fall).
+// the bid: price has to rise to it; below: fall). v9.05: a sloping line's level moves on by its slope since the read; a zone
+// rings when price comes into it or leaves it (as it asks), judged against where the last price was.
 void AlertCheck()
   {
    if(g_alN==0) return;
    double bid=SymbolInfoDouble(_Symbol,SYMBOL_BID);
    if(bid<=0) return;
+   double dt=(double)(uint)(GetTickCount()-g_alRecv)/1000.0;   // seconds since the levels were read
    for(int i=g_alN-1;i>=0;i--)
      {
-      if(g_alDir[i]==0){ g_alDir[i]=(g_alPx[i]>=bid) ? 1 : -1; continue; }
-      bool hit=(g_alDir[i]>0 && bid>=g_alPx[i]) || (g_alDir[i]<0 && bid<=g_alPx[i]);
-      if(!hit) continue;
-      LiveEnqueue(StringFormat("{\"event\":\"alert\",\"token\":\"%s\",\"id\":\"%s\",\"px\":%s,\"symbol\":\"%s\",\"login\":\"%I64d\"}",
-                               g_syncTokenEff,g_alId[i],DoubleToString(bid,_Digits),_Symbol,AccountInfoInteger(ACCOUNT_LOGIN)));
+      double lv=g_alPx[i]+g_alSl[i]*dt;
+      string zx="";
+      if(g_alK[i]==2)
+        {
+         double lo=lv, hi=g_alHi[i]+g_alSl[i]*dt;
+         bool inside=(bid>=lo && bid<=hi);
+         if(g_alIn[i]<0){ g_alIn[i]=inside ? 1 : 0; g_alPrev[i]=bid; continue; }   // the first price: only where it is
+         double pv=g_alPrev[i]; g_alPrev[i]=bid;
+         bool was=(g_alIn[i]==1);
+         bool through=(!was && !inside && ((pv<lo && bid>hi) || (pv>hi && bid<lo)));   // jumped right across it in one tick
+         g_alIn[i]=inside ? 1 : 0;
+         bool wIn=(g_alMode[i]!=2), wOut=(g_alMode[i]!=1);
+         if(!was && (inside || through) && wIn) zx="in";
+         else if(((was && !inside) || through) && wOut) zx="out";
+         if(zx=="") continue;
+        }
+      else
+        {
+         if(g_alDir[i]==0){ g_alDir[i]=(lv>=bid) ? 1 : -1; continue; }
+         bool hit=(g_alDir[i]>0 && bid>=lv) || (g_alDir[i]<0 && bid<=lv);
+         if(!hit) continue;
+        }
+      LiveEnqueue(StringFormat("{\"event\":\"alert\",\"token\":\"%s\",\"id\":\"%s\",\"px\":%s,\"symbol\":\"%s\",\"login\":\"%I64d\"%s}",
+                               g_syncTokenEff,g_alId[i],DoubleToString(bid,_Digits),_Symbol,AccountInfoInteger(ACCOUNT_LOGIN),(zx=="") ? "" : ",\"zx\":\""+zx+"\""));
       int d=ArraySize(g_alDone); ArrayResize(g_alDone,d+1); g_alDone[d]=g_alId[i];
-      PrintFormat("Price alert: %s reached %s - sent to Session Terminal.",_Symbol,DoubleToString(g_alPx[i],_Digits));
-      for(int k=i+1;k<g_alN;k++){ g_alId[k-1]=g_alId[k]; g_alPx[k-1]=g_alPx[k]; g_alDir[k-1]=g_alDir[k]; }
-      g_alN--; ArrayResize(g_alId,g_alN); ArrayResize(g_alPx,g_alN); ArrayResize(g_alDir,g_alN);
+      if(g_alK[i]==2) PrintFormat("Price alert: %s %s your zone %s-%s - sent to Session Terminal.",_Symbol,(zx=="in") ? "entered" : "left",DoubleToString(lv,_Digits),DoubleToString(g_alHi[i]+g_alSl[i]*dt,_Digits));
+      else PrintFormat("Price alert: %s reached %s - sent to Session Terminal.",_Symbol,DoubleToString(lv,_Digits));
+      for(int k=i+1;k<g_alN;k++)
+        {
+         g_alId[k-1]=g_alId[k]; g_alPx[k-1]=g_alPx[k]; g_alDir[k-1]=g_alDir[k]; g_alK[k-1]=g_alK[k]; g_alHi[k-1]=g_alHi[k];
+         g_alSl[k-1]=g_alSl[k]; g_alMode[k-1]=g_alMode[k]; g_alIn[k-1]=g_alIn[k]; g_alPrev[k-1]=g_alPrev[k];
+        }
+      g_alN--; AlertSize(g_alN);
      }
   }
 
