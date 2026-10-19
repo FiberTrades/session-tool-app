@@ -19,7 +19,7 @@
     var key = function (el, k, o) { el.dispatchEvent(new KeyboardEvent('keydown', Object.assign({ key: k, bubbles: true, cancelable: true }, o || {}))); };
     var db = document.getElementById('strp-drawbtn'); if (db) db.click(); await W(40);
     var tb = document.querySelector('#strp-tools [data-tool="text"]');
-    ok('a Text button sits in the drawing tools, after Measure', tb && /Text/.test(tb.title) && tb.previousElementSibling && tb.previousElementSibling.getAttribute('data-tool') === 'range', tb && tb.title);
+    ok('a Text button sits in the drawing tools, in the text and notes group after Measure (batch B)', tb && /Text/.test(tb.title) && tb.closest('.stpr-tg') && tb.closest('.stpr-tg').previousElementSibling && tb.closest('.stpr-tg').previousElementSibling.getAttribute('data-tool') === 'range', tb && tb.title);
     var X = Math.round(r.width * 0.4), Y = 110;
     tb.click(); await W(20); mev('mousedown', X, Y); mev('mouseup', X, Y); await W(100);
     var ta = document.querySelector('textarea.strp-txed'), d = S.drawings[0];
