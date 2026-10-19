@@ -56,6 +56,37 @@
   ok('in the weekly review the editor still shows its own title and hint', /Time off/i.test(free.textContent) && /Away for a while/.test(free.textContent), free.textContent.trim().slice(0, 60));
   free.remove();
 
+  // ---- the other tabs in the same look (19 Oct 2026: "yes build the settings but also do the setting that are unique to admin only") ----
+  var secOf = function (k) { return bg.querySelector('.settings-section[data-section="' + k + '"]'); };
+  var showTab = async function (k) { var nb = bg.querySelector('.settings-nav-item[data-section="' + k + '"]'); if (nb) { nb.style.display = ''; nb.click(); } await W(500); return secOf(k); };
+  var acc = await showTab('accounts');
+  ok('Accounts: three cards under their headings - your accounts, add an account, payouts', acc && acc.querySelectorAll(':scope > .set-card').length === 3 && acc.querySelectorAll(':scope > .set-h').length === 3
+    && !!acc.querySelector('.sacc-card #settings-accounts-list') && !!acc.querySelector('.spo-card #settings-payouts-list'), acc && acc.querySelectorAll(':scope > *').length);
+  var addRows = acc.querySelectorAll('.set-card .set-row'), addIds = ['settings-account-add-name', 'settings-account-add-balance', 'settings-account-add-current', 'settings-account-add-create'];
+  ok('...adding an account is a row each: name, starting balance, balance now, Add - each control on the right', addIds.every(function (id) { var e = document.getElementById(id); return e && e.closest('.set-r') && e.closest('.set-card'); }), addRows.length);
+  var tallest = Array.prototype.reduce.call(bg.querySelectorAll('.set-card input, .set-card textarea'), function (m, e) { return e.offsetParent ? Math.max(m, e.getBoundingClientRect().height) : m; }, 0);
+  ok('...no input is drawn taller than a line (a column flex basis once made them 230 px tall)', tallest > 0 && tallest < 60, tallest);
+  var acRow = acc.querySelector('.sacc-card .settings-account-row');
+  ok('...an account is a row in the card: no box of its own, a line above it', acRow && getComputedStyle(acRow).borderLeftWidth === '0px' && getComputedStyle(acRow).backgroundColor === 'rgba(0, 0, 0, 0)', acRow && [getComputedStyle(acRow).borderLeftWidth, getComputedStyle(acRow).backgroundColor]);
+  var svc = await showTab('services');
+  var sRows = svc.querySelectorAll('.set-card > .set-row');
+  ok('Subscriptions: one card, a row each (plan, referral when there is one, community, EA, indicator), the badge on the right',
+    sRows.length === 5 && !!svc.querySelector('#svc-premium-badge').closest('.set-r') && !!svc.querySelector('#svc-ref-card.set-row') && !svc.querySelector('.svc-card'), sRows.length);
+  var men = secOf('mentor');
+  ok('Mentor access: the member\'s share row and Stop sharing row, the mentor\'s Connect row and members card', men && !!men.querySelector('#stc-a-mentor .set-card #stc-m-stoprow') && !!men.querySelector('#stc-mv .set-card #stc-mv-code') && !!men.querySelector('#stc-mv .set-card #stc-mv-list'), !!men);
+  var biz = secOf('business');
+  ok('Business (admin): App takings and Give user full access are cards of rows under headings', biz && !!biz.querySelector('#svc-takings-admin > .set-card #access-takings') && !!biz.querySelector('#svc-vip-admin .set-row #vip-gen-label') && !!biz.querySelector('#svc-vip-admin .set-row #vip-gen-days') && !biz.querySelector('.svc-card'), !!biz);
+  var aim = secOf('aimeter');
+  ok('AI Meter (admin): credit and search as rows, the usage in a card under its heading', aim && !!aim.querySelector('.set-row #aimeter-budget') && !!aim.querySelector('.set-row #aimeter-search') && !!aim.querySelector('.set-card #aimeter-table') && !!aim.querySelector('#aimeter-usage-h'), !!aim);
+  // every new word in both languages (t() gives the key back when one is missing)
+  var keys = ['settings.your_accounts', 'settings.add_account_h', 'settings.add_name_label', 'settings.add_start_label', 'settings.add_start_hint', 'settings.add_now_label', 'settings.add_now_hint', 'settings.add_hint'];
+  var miss = [];
+  var txt = function (k) { var e = document.querySelector('[data-i18n="' + k + '"]'); return e ? e.textContent.trim() : null; }, en = {};
+  try { window.setLanguage('en'); await W(200); keys.forEach(function (k) { en[k] = txt(k); if (!en[k] || en[k] === k) miss.push('en:' + k); });
+    window.setLanguage('es'); await W(200); keys.forEach(function (k) { var v = txt(k); if (!v || v === k || v === en[k]) miss.push('es:' + k + '=' + v); });
+    window.setLanguage('en'); await W(200); } catch (e) { miss.push(String(e)); }
+  ok('the new rows\' words are in English and Spanish', !miss.length, miss);
+
   // put things back
   try { data.timeOff = JSON.parse(keepOff) || []; if (typeof saveData === 'function') saveData(); } catch (e) {}
   try { document.getElementById('settings-modal-close').click(); } catch (e) {}
