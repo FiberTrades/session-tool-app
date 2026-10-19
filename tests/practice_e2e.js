@@ -58,9 +58,12 @@
     ok('one chart: its timeframe button sits in the top bar, before the pencil (Nestor: "are you moving this up here?")', pill && !pane().el.querySelector('.stpr-tfpill') && pill.getBoundingClientRect().right <= document.getElementById('stpr-drawbtn').getBoundingClientRect().left && pill.textContent.indexOf('5m') === 0, pill && pill.textContent);
     var tbH = document.getElementById('stpr-tb2').getBoundingClientRect().height;
     ok('the timeframe button reads just the timeframe (no arrow)', pill && !pill.querySelector('svg') && pill.textContent === '5m', pill && pill.innerHTML);
+    var plR = pill.getBoundingClientRect();
     pill.click(); await W(50);
-    var sgR = wrap.querySelector('.stpr-tfseg').getBoundingClientRect(), plR = pill.getBoundingClientRect();
-    ok('it opens sideways, on the same row, right of the button (Nestor: "i want the time frames to still open sideways like before")', Math.abs(sgR.top - plR.top) < 2 && sgR.left > plR.right, [sgR.top, plR.top, sgR.left, plR.right]);
+    var sgR = wrap.querySelector('.stpr-tfseg').getBoundingClientRect();
+    ok('it opens sideways, on the same row (Nestor: "i want the time frames to still open sideways like before")', Math.abs(sgR.top - plR.top) < 2 && sgR.width > plR.width * 4, [sgR.top, plR.top, sgR.width, plR.width]);
+    var shown5 = Array.prototype.filter.call(wrap.querySelectorAll('button'), function (b) { return b.offsetParent && b.textContent.trim() === '5m'; });
+    ok('...one 5m, not two: the button gives way to the list, where 5m keeps its pink tile (19 Oct 2026: "why is there two 1m?")', getComputedStyle(pill).display === 'none' && shown5.length === 1 && shown5[0].classList.contains('on') && Math.abs(sgR.left - plR.left) < 2, [shown5.length, getComputedStyle(pill).display, sgR.left, plR.left]);
     ok('its list open: the top bar keeps its height (Nestor: "why when clicking on these the row gets taller")', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, [tbH, document.getElementById('stpr-tb2').getBoundingClientRect().height]);
     var dwb = document.getElementById('stpr-drawbtn'), wasD = document.getElementById('stpr-tb2').classList.contains('drawing'); if (!wasD) { dwb.click(); await W(40); }
     ok('the drawing tools open: the same height', Math.abs(document.getElementById('stpr-tb2').getBoundingClientRect().height - tbH) < 0.5, document.getElementById('stpr-tb2').getBoundingClientRect().height);
