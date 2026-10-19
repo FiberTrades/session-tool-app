@@ -132,10 +132,12 @@ export function accountFor(ctx: Ctx, login: string | null) {
 // my day limits?"). A trade on it is outside the plan: no discipline nudge, and no place in the day's counts (max
 // trades, the loss before a re-entry, the run of losses, red news with a trade open, a loosened EA). Its trade alerts
 // still go out. Known by the MT5 login the app has linked to the account (mt5LoginMap).
+// 19 Oct 2026: a login linked to NONE of the accounts, when others are linked, counts as kept separate too (Nestor's test trades on a
+// gold demo were judged by his main account's limit, session and daily loss limit: "i havent broken any rules today").
 export function sepLogin(ctx: Ctx, login: Any): boolean {
   try {
-    const lm = (ctx.j && ctx.j.lm) || {}, id = login != null ? lm[String(login)] : null;
-    if (!id) return false;
+    const lm = (ctx.j && ctx.j.lm) || {}, id = login != null && login !== "" ? lm[String(login)] : null;
+    if (!id) return login != null && login !== "" && Object.keys(lm).length > 0;
     const a = accounts(ctx.j).find((x) => x && x.id === id);
     return !!(a && a.separate === true);
   } catch (_e) { return false; }

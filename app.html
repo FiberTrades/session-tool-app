@@ -19302,8 +19302,17 @@ try {
        Known by the MT5 login the app has linked to that account (data.mt5LoginMap - set when a trade from it is first
        saved to the account). */
     var loginOf = {};
+    // An MT5 login linked to NONE of the member's accounts, when they have linked others, counts as kept separate too (Nestor, 19 Oct
+    // 2026, after test trades on a gold demo from Live Charts: "i get this nudge ... i havent broken any rules today" - his main account's
+    // limit of 1 trade, its session and its daily loss limit were applied to the demo's trades). Its alerts still come; no discipline
+    // nudge, and no place in the day's counts. A member who has linked no login at all keeps the old rule (the active account's).
     function isSepLogin(login) {
-      try { var id = (login != null && data.mt5LoginMap) ? data.mt5LoginMap[String(login)] : null; return !!(id && typeof isSeparateAccount === 'function' && isSeparateAccount(id)); } catch (e) { return false; }
+      try {
+        if (login == null || login === '') return false;
+        var map = data.mt5LoginMap || {}, id = map[String(login)];
+        if (!id) return Object.keys(map).length > 0;   // not linked, while others are: not one of the accounts the plan is for
+        return !!(typeof isSeparateAccount === 'function' && isSeparateAccount(id));
+      } catch (e) { return false; }
     }
     function trAccount(login) {
       try { var id = login && data.mt5LoginMap && data.mt5LoginMap[String(login)]; if (id) { var a = (data.accounts || []).find(function (x) { return x && x.id === id; }); if (a) return a; } } catch (e) {}
@@ -19718,6 +19727,7 @@ try {
       try { [].concat(data.mt5UserDismissed || [], data.mt5ImportedTickets || []).forEach(function (x) { done[String(x)] = 1; }); } catch (e) {}
       Object.keys(d || {}).forEach(function (k) {
         if (k.indexOf('sample:') === 0) return;
+        if (d[k] && d[k].void) return;   // set aside as wrong (19 Oct 2026: test trades on a demo, a stop re-anchor read as moved) - kept, not counted
         var rule = k.slice(0, k.indexOf(':')), id = k.slice(k.indexOf(':') + 1), tk = id.charAt(0) === 'P' ? id.slice(1) : id;
         if (/^\d+$/.test(tk) && !have[tk] && done[tk]) {
           var open = false; try { open = !!(window.__stLive && window.__stLive.isOpen(tk)); } catch (e) {}
@@ -19974,7 +19984,7 @@ try {
     }
     return { observe: observe, markOld: markOld, ack: ack, chime: chime, eaChanged: eaChanged, dayHtml: dayHtml, aiPack: aiPack,
              budget: budget, redNewsFor: function (curs) { return redNews(curs); }, mediumNewsFor: function (curs) { return redNews(curs, 'medium'); }, myCurs: myCurs, cursOf: cursOf,
-             periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList, results: resultsIn,
+             periodHtml: periodHtml, periodStats: periodStats, newsTick: newsTick, dayList: dayList, results: resultsIn, _isSepLogin: isSepLogin,
              kindLabel: function (g) { return t('nudge.' + g); } };
   })();
 

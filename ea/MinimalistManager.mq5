@@ -419,6 +419,10 @@ string DistUnitKey(string sym){ int u=DistUnitFor(sym); return u==DU_TICKS?"tick
 string UnitLbl()  { int u=DistUnitFor(_Symbol); return u==DU_TICKS?"ticks":(UnitReadsAsPoints(_Symbol)?"pts":"pips"); }
 string UnitBtn()  { int u=DistUnitFor(_Symbol); return u==DU_TICKS?"TICKS":(UnitReadsAsPoints(_Symbol)?"PTS":"PIPS"); }
 double PipSize() { return DistUnitSize(_Symbol); }
+// v9.06 (Nestor, 19 Oct 2026: "these are meant to appear a little beyond the TP line so they dont get triggered by accident"): the gap
+// between the TP and each trailing / partial step parked beyond it - 5 units, or half the stop when that is more. 5 units is 5 pips
+// on EURUSD (unchanged) but only 0.05 on gold counted in points, which stacked every step on the TP line. riskPx: the stop's distance.
+double StepGap(double riskPx){ double g=5.0*g_pip; if(riskPx*0.5>g) g=riskPx*0.5; return g; }
 // What ONE unit is worth on this chart, for the tooltips of the stop labels and the unit buttons (v8.93):
 // "1 pt = 0.01 of price on XAUUSD". A point of gold, of an index and of bitcoin are different sizes, and so are a
 // pip of EURUSD and of USDJPY - the word alone never says which.
@@ -1275,12 +1279,14 @@ void PlaceTrade()
    EnsureHLine(LN_EFILL,fill,EntryLineColour(),STYLE_SOLID,false);
 
    // NOW create the draggable break-even line (only appears after a trade).
-   // It starts up NEAR THE TP (safely away from price) - drag it down when you want it.
+   // v9.06 (Nestor, 19 Oct 2026: "the be line should appear half way in between the entry line and tp line, like it used to"): HALFWAY
+   // between the entry and the TP. It sat "5 units inside the TP" - 5 pips on EURUSD, but 5 POINTS (0.05) on gold counted in points,
+   // which put it on the TP line itself.
    g_beArmed=false;
    if(g_useBE)
      {
       double bePrice;
-      if(tpPrice>0) bePrice=tpPrice-dir*5*g_pip;        // just inside the TP
+      if(tpPrice>0) bePrice=NormalizeDouble(fill+(tpPrice-fill)*0.5,g_digits);   // halfway to the TP
       else          bePrice=fill+dir*g_beRR*slPips*g_pip; // no TP set -> fall back to R distance
       EnsureHLine(LN_BE,bePrice,COL_LINE_BE,STYLE_SOLID,true);
       SetLineText(TX_BE,bePrice,"BE",COL_LINE_BE);
@@ -1311,7 +1317,7 @@ void ApplyBEState()
          ptp=PositionGetDouble(POSITION_TP); break;
         }
       double bePrice;
-      if(ptp>0) bePrice=ptp-pd*5*g_pip;                 // just inside the TP
+      if(ptp>0) bePrice=NormalizeDouble(pe+(ptp-pe)*0.5,g_digits);   // v9.06: halfway to the TP
       else
         {
          int cnt; double slp=PositionsSL(cnt);
@@ -1639,6 +1645,7 @@ void EnsureTrailLines(double entry,int dir)
       break;
      }
    if(rpx<=0) rpx=g_pip*((g_reqSLpips>0)?g_reqSLpips:10.0);
+   // v9.06: how far apart the steps park beyond the TP - see StepGap
    // Fresh triggers park just BEYOND the take-profit, where price cannot reach them: TP closes
    // the trade first, so a step can never fire before you have dragged it onto the structure you
    // actually meant. Stacked 5 pips apart so four of them stay readable and separately grabbable.
@@ -1666,7 +1673,7 @@ void EnsureTrailLines(double entry,int dir)
       if(ObjectFind(0,TsName(i))<0)
         {
          if(g_tsTrig[i]<=0)                                    // a restored trigger wins
-            g_tsTrig[i]=(ptp>0) ? ptp+dir*(i+1)*5.0*g_pip
+            g_tsTrig[i]=(ptp>0) ? ptp+dir*(i+1)*StepGap(rpx)
                                 : base+dir*(i+1)*rpx;
          EnsureHLine(TsName(i),g_tsTrig[i],COL_LINE_TS,STYLE_DOT,true);
         }
@@ -1864,7 +1871,7 @@ void EnsurePcLines(double entry,int dir)
       if(ObjectFind(0,PcName(i))<0)
         {
          if(g_pcTrig[i]<=0)                                    // a restored trigger wins
-            g_pcTrig[i]=(ptp>0) ? ptp+dir*((i+1)*5.0+2.5)*g_pip
+            g_pcTrig[i]=(ptp>0) ? ptp+dir*((i+1)+0.5)*StepGap(rpx)
                                 : base+dir*(i+1)*rpx;
          EnsureHLine(PcName(i),g_pcTrig[i],COL_LINE_PC,STYLE_DASH,true);
         }
@@ -7511,7 +7518,7 @@ int OnInit()
   {
    // Build stamp - printed the instant the EA loads, so the Experts log proves which
    // build is actually running on the chart (a recompile does not re-attach the EA).
-   Print("=== MinimalistManager v9.06 loaded (MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
+   Print("=== MinimalistManager v9.06 loaded (BE halfway between the entry and the TP, the trailing / partial steps parked clear of the TP on every unit; MT5's messages and Algo Trading on or off, to Session Terminal; alerts on drawings from Session Terminal: a trend line or ray followed tick by tick, a rectangle or channel rings when price enters or leaves it; Live Charts: this chart's prices streamed to Session Terminal while its Live Charts tab shows them - 2 a second in your session, every 2 s with a trade open, every 5 s otherwise - and today's 1-minute candles when it asks; tick volume with every candle sent, and the older candles a volume profile in Practice Replay asks for; price alerts from Session Terminal, sent to your phone; 1-minute candles for the live chart; a live line to Session Terminal: the live chart updates every second, 3 hours a day; the BE line on Session Terminal's live chart; a year of M1 and M5 for Practice Replay, carried on after MT5's bar limit is raised; daily limit per symbol; copies checked 40x a second; the panel title is the account; trade copier: Lead / Follow between your own accounts, reported to Session Terminal; the panel scrolls at one height; FTMO total by account size) ===");
    Print("=== MinimalistManager v5.7 notes (BE-offset ladder now sweeps EVERY level from +0R to +1R in 0.05R steps, arms itself off the price path so it runs on EVERY trade instead of only ones moved to BE, and reports a stop-never-moved baseline so locking in can be judged against doing nothing. v5.6 kept: the sweep freeze fix and the heartbeat) ===");
    // ---- Validate inputs ----
    if(InpMinSLpips<=0 || InpMaxSLpips<=0)
