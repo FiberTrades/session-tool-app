@@ -377,6 +377,44 @@
     check('back to FTMO 70K Challenge · 90001234: its prices, its name, its Toolbox again', String(st.ea.lg) === '90001234' && Math.abs(st.px.b - pxA) < 0.002 && /FTMO 70K Challenge · 90001234/.test(document.querySelector('#stpr-mm .stpr-mm-an').textContent) && /555001/.test(document.getElementById('lc-tb').textContent), [st.ea, st.px]);
     check('...and no sound or voice setting anywhere ("remove all these options and have the chime as default")', !document.getElementById('set-fillvoice') && !/Order filled/.test((document.querySelector('.settings-section[data-section="profile"]') || {}).textContent || ''));
 
+    // ---- the member's closed trades: an entry and an exit arrow, and a card on hover (Nestor, 19 Oct 2026: "i should see 2 arrows the
+    //      one that filled me in and the one when i got taken out, and potentially hovering over them they should give you a quick summary")
+    var tq = P._panes().filter(function (q) { return q.tf === 1; })[0] || P._panes()[0], tqi = P._panes().indexOf(tq);
+    var tE = Date.UTC(2026, 9, 14, 7, 41, 10) / 1000, tX = Date.UTC(2026, 9, 14, 7, 58, 40) / 1000, iso = function (t) { return new Date(t * 1000).toISOString(); };
+    var bE = tq.bars.filter(function (b) { return b.time <= tE; }).pop(), pE = bE ? bE.close : pxA;
+    var hmL = function (t) { var d = new Date(t * 1000); return ('0' + d.getHours()).slice(-2) + ':' + ('0' + d.getMinutes()).slice(-2); };
+    P._lvTr([
+      { ticket: 770001, symbol: 'EURUSD', direction: 'sell', lots: '1.50', entry_price: String(pE), exit_price: String(+(pE + 0.0012).toFixed(5)), open_time: iso(tE), close_time: iso(tX), pnl: '-300.00', risk_gbp: '250', login: 90001234 },
+      { ticket: 770002, symbol: 'EURUSD', direction: 'sell', lots: '1.50', entry_price: String(pE), exit_price: String(+(pE + 0.0012).toFixed(5)), open_time: iso(tE), close_time: iso(tX), pnl: '-300.00', risk_gbp: '250', login: 90007777 },
+      { ticket: 770003, symbol: 'GBPUSD', direction: 'buy', lots: '1', entry_price: '1.33', exit_price: '1.331', open_time: iso(tE), close_time: iso(tX), pnl: '100', risk_gbp: '100', login: 90001234 }]);
+    await W(600);
+    var kE = P._keyOf(tq.tf, tE), kX = P._keyOf(tq.tf, tX), arw = P._arw(tqi);
+    var aE = arw.filter(function (m) { return m.time === kE && m.shape === 'arrowDown' && m.position === 'aboveBar'; }), aX = arw.filter(function (m) { return m.time === kX && m.shape === 'arrowUp' && m.position === 'belowBar'; });
+    var gE = (P._tmk(tqi) || []).filter(function (g) { return g.time === kE; })[0];
+    check('a closed trade on the live chart: a pink sell arrow over its entry candle, a red buy arrow under its exit candle (a loss)', aE.length === 1 && aE[0].color === '#f472b6' && aX.length === 1 && aX[0].color === '#E56767', [kE, kX, arw.map(function (m) { return m.time + ' ' + m.shape + ' ' + m.color; }).slice(-6)]);
+    check('...only the account the chart shows: its copy on 90007777 is not marked again, nor the GBP/USD trade', !!gE && gE.list.length === 1 && gE.list[0].ticket === '770001', gE && gE.list.map(function (x) { return x.ticket; }));
+    var LE = P._lOfT(tqi, kE), tr0 = tq.chart.timeScale().getVisibleLogicalRange(); tq.chart.timeScale().setVisibleLogicalRange({ from: LE - 15, to: LE + 35 }); await W(600);
+    var pc = tq.el.querySelector('.stpr-pc'), pr = pc.getBoundingClientRect(), xE = tq.chart.timeScale().timeToCoordinate(kE), hE = null, yy;
+    for (yy = 0; yy < pr.height && !hE; yy += 2) hE = P._tmAt(tqi, xE, yy);
+    check('...its arrow answers under the mouse, where it is drawn (over the candle)', !!hE && hE.above && hE.g.key === gE.key, hE && [hE.top, hE.bot]);
+    var mv = function (x, y) { var t = document.elementFromPoint(pr.left + x, pr.top + y) || pc; t.dispatchEvent(new MouseEvent('mousemove', { clientX: pr.left + x, clientY: pr.top + y, bubbles: true })); };
+    if (hE) mv(xE, (hE.top + hE.bot) / 2); await W(300);
+    var cd = tq.card, ct = cd ? cd.textContent : '', cr = cd ? cd.getBoundingClientRect() : null;
+    check('hovering it: a card - Sell · EURUSD · 1.50 lots, its times and how long (17 min), entry and exit',
+      cd && cd.style.display === 'block' && /Sell · EURUSD · 1\.50 lots/.test(ct) && ct.indexOf(hmL(tE) + ' → ' + hmL(tX)) >= 0 && /17\smin/.test(ct) && ct.indexOf('Entry' + pE.toFixed(5)) >= 0 && ct.indexOf('Exit' + (pE + 0.0012).toFixed(5)) >= 0, ct);
+    check('...the result in pips and R, and the money, in red: −12.0 pips · −1.20R, P&L −', /Result−(12\.0 pips|120 pts) · −1\.20R/.test(ct) && /P&L−/.test(ct) && /300/.test(ct) && cd.querySelector('.strp-nc-v.dn') && cd.classList.contains('tml'), ct);
+    check('...over the arrow (the arrow is over the candle), and the trade\'s path dotted on the chart while it shows', cr && cr.bottom <= pr.top + hE.top + 1 && !cd.classList.contains('below') && tq._tmShow && tq._tmShow.e === gE.key, cr && [cr.bottom, pr.top + hE.top]);
+    var xX = tq.chart.timeScale().timeToCoordinate(kX), hX = null;
+    for (yy = Math.round(pr.height) - 30; yy > 0 && !hX; yy -= 2) hX = P._tmAt(tqi, xX, yy);
+    if (hX) mv(xX, (hX.top + hX.bot) / 2); await W(300); cr = cd.getBoundingClientRect();
+    check('the exit arrow (under its candle): the same trade\'s card, under the arrow (over it when the chart has no room below)', !!hX && !hX.above && cd.style.display === 'block' && /Sell · EURUSD/.test(cd.textContent) && (cd.classList.contains('below') ? cr.top >= pr.top + hX.bot - 1 : (cr.bottom <= pr.top + hX.top + 1 && pr.top + hX.bot + 12 + cr.height > pr.bottom - 30)), hX && [cr.top, cr.bottom, pr.top + hX.top, pr.top + hX.bot, cd.classList.contains('below')]);
+    var away = [[pr.width * 0.5, pr.height * 0.5], [pr.width * 0.3, pr.height * 0.3], [pr.width * 0.7, pr.height * 0.6]].filter(function (q) { var e0 = document.elementFromPoint(pr.left + q[0], pr.top + q[1]); return e0 && pc.contains(e0) && !P._tmAt(tqi, q[0], q[1]); })[0] || [pr.width * 0.5, pr.height * 0.5];
+    mv(away[0], away[1]); await W(300);
+    check('...the mouse away: the card goes, and the path', cd.style.display === 'none' && !tq._tmShow, cd.style.display);
+    P._cfg().marks = false; P._render(); await W(300);
+    check('Trade marks off: the arrows are hidden and do not answer the mouse', P._arw(tqi).filter(function (m) { return m.time === kE; }).every(function (m) { return m.color === 'rgba(0,0,0,0)'; }) && !P._tmAt(tqi, xE, (hE.top + hE.bot) / 2));
+    P._cfg().marks = true; P._lvTr([]); P._render(); if (tr0) tq.chart.timeScale().setVisibleLogicalRange(tr0); await W(300);
+
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
     check('Maximise: the charts fill the screen', document.getElementById('stpr-bg').classList.contains('show') && win.parentNode.id === 'stpr-bg' && LC.state().max);
