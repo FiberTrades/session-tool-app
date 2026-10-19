@@ -19,7 +19,7 @@
     var px = function (x, y) { var c = pane().ov, d = window.devicePixelRatio || 1; return Array.prototype.slice.call(c.getContext('2d').getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data); };
     document.getElementById('stpr-drawbtn').click(); await W(20);
     var eb = document.querySelector('#stpr-tools [data-tool="emoji"]');
-    ok('an Emoji tool after Text', eb && eb.title === 'Emoji' && eb.previousElementSibling.getAttribute('data-tool') === 'text');
+    ok('an Emoji tool after Text (its text and notes group, batch B)', eb && eb.title === 'Emoji' && eb.previousElementSibling.getAttribute('data-grp') === 'notes' && eb.previousElementSibling.querySelector('[data-tool="text"]'));
     eb.click(); await W(40);
     var box = P._dbar().popK() === 'emoji' && P._dbar().pop(), emo = box && box.querySelectorAll('[data-emo]'), chat = window.__stEmojis || [];
     var extra = chat.filter(function (x) { return P._emojis.indexOf(x) < 0; }).length;

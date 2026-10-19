@@ -83695,11 +83695,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // what a look is, per tool (anything else on a drawing - its points, words, alert, lock, visibility - is not)
   var KEYS = { hline: ['color', 'width', 'dash'], trend: ['color', 'width', 'dash', 'extL', 'extR'],
     rect: ['color', 'width', 'dash', 'fill', 'tcol', 'tsz', 'ta', 'tv', 'extL', 'extR', 'mid', 'midDash'],
-    fib: ['color', 'width', 'dash', 'levels'], pen: ['color', 'width', 'dash'], range: ['color', 'width', 'dash', 'show'], text: ['color', 'width'] };
+    fib: ['color', 'width', 'dash', 'levels'], pen: ['color', 'width', 'dash'], range: ['color', 'width', 'dash', 'show'], text: ['color', 'width'],
+    // batch B's tools (19 Oct 2026)
+    vline: ['color', 'width', 'dash'], ray: ['color', 'width', 'dash'], hray: ['color', 'width', 'dash'], arrow: ['color', 'width', 'dash'],
+    channel: ['color', 'width', 'dash', 'fill', 'extL', 'extR', 'mid', 'midDash'], brush: ['color', 'width'], note: ['color', 'width', 'fill', 'tcol', 'tsz'], circle: ['color', 'width', 'dash', 'fill'] };
+  var FILLT = { rect: 1, channel: 1, circle: 1, note: 1 };   // the tools with a fill of their own
+  // their own looks, put into each chart's DSTY (f: a fill other than the colour at 10%, tc: the words' colour, ts: their size)
+  var NDSTY = { vline: { c: '#60a5fa', w: 1 }, ray: { c: '#60a5fa', w: 1.6 }, hray: { c: '#f4c05a', w: 1 }, arrow: { c: '#60a5fa', w: 2 }, channel: { c: '#60a5fa', w: 1 },
+    brush: { c: 'rgba(255,235,59,0.45)', w: 12 }, note: { c: '#60a5fa', w: 1, f: 'rgba(19,18,23,0.92)', tc: '#ffffff', ts: 12 }, circle: { c: '#c084fc', w: 1 } };
   var FIBS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
   var TYN = { hline: ['horizontal line', 'horizontal lines', 'línea horizontal', 'líneas horizontales'], trend: ['trend line', 'trend lines', 'línea de tendencia', 'líneas de tendencia'],
     rect: ['rectangle', 'rectangles', 'rectángulo', 'rectángulos'], fib: ['fib', 'fibs', 'fib', 'fibs'], pen: ['pen stroke', 'pen strokes', 'trazo', 'trazos'],
-    range: ['measure', 'measures', 'medida', 'medidas'], text: ['text', 'texts', 'texto', 'textos'] };
+    range: ['measure', 'measures', 'medida', 'medidas'], text: ['text', 'texts', 'texto', 'textos'],
+    vline: ['vertical line', 'vertical lines', 'línea vertical', 'líneas verticales'], ray: ['ray', 'rays', 'rayo', 'rayos'], hray: ['horizontal ray', 'horizontal rays', 'rayo horizontal', 'rayos horizontales'],
+    arrow: ['arrow', 'arrows', 'flecha', 'flechas'], channel: ['parallel channel', 'parallel channels', 'canal paralelo', 'canales paralelos'], brush: ['highlighter stroke', 'highlighter strokes', 'trazo de resaltador', 'trazos de resaltador'],
+    note: ['price note', 'price notes', 'nota de precio', 'notas de precio'], circle: ['circle', 'circles', 'círculo', 'círculos'] };
   var TSIZES = [10, 11, 12, 14, 16, 20, 24];
   var IC = {
     grip: '<svg viewBox="0 0 6 14" width="6" height="14" fill="currentColor" aria-hidden="true"><circle cx="1.5" cy="2" r="1"/><circle cx="4.5" cy="2" r="1"/><circle cx="1.5" cy="7" r="1"/><circle cx="4.5" cy="7" r="1"/><circle cx="1.5" cy="12" r="1"/><circle cx="4.5" cy="12" r="1"/></svg>',
@@ -83734,11 +83744,133 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   // a part's value: the look's, or the app's own (today's look: a drawing that never had one stays exactly as it was)
   function eff(dsty, ty, o, k){ if (o && o[k] != null) return o[k]; var ds = (dsty && dsty[ty]) || {};
     switch (k) { case 'color': return ds.c || '#ffffff'; case 'width': return ds.w || 1; case 'dash': return 'solid';
-      case 'fill': return withA(eff(dsty, ty, o, 'color'), 0.10); case 'tcol': return eff(dsty, ty, o, 'color'); case 'tsz': return 11; case 'ta': return 'c'; case 'tv': return 'above';
+      case 'fill': return ds.f || withA(eff(dsty, ty, o, 'color'), 0.10); case 'tcol': return ds.tc || eff(dsty, ty, o, 'color'); case 'tsz': return ds.ts || 11; case 'ta': return 'c'; case 'tv': return 'above';
       case 'midDash': return 'dotted'; case 'levels': return FIBS.slice(); case 'show': return {}; default: return false; } }
   function norm(k, v){ if (k === 'color' || k === 'fill' || k === 'tcol') { var p = parseC(v); return p.h + '/' + p.a.toFixed(2); }
     if (k === 'show') return ['pips', 'r', 'bars'].map(function(x){ return !(v && v[x] === false); }).join(','); return JSON.stringify(v); }
   function same(dsty, ty, a, b){ return (KEYS[ty] || []).every(function(k){ return norm(k, eff(dsty, ty, a, k)) === norm(k, eff(dsty, ty, b, k)); }); }
+
+  // ---- batch B's tools (Nestor, 19 Oct 2026: "build all the tradingview suggestions!", batch B): TradingView's vertical line,
+  //      ray, horizontal ray, arrow, parallel channel, highlighter, price note and circle, painted, hit and handled the same
+  //      way on Back Testing / Live Charts and on Trade Replay. A chart hands over X: P (one of its stored points to pixels),
+  //      pw / ph (its plot), dsty (its tools' looks), pv (a preview while placing), tl (a point's time as its crosshair writes
+  //      it), pl (a price as its scale writes it) and ted (the note is being typed in). The points stay the chart's own ({t,
+  //      price} or {idx, price}); a channel's off is a price, a note's off is pixels, so its box sits as far from its point on
+  //      every timeframe. ----
+  var KT = { vline: 1, ray: 1, hray: 1, arrow: 1, channel: 1, brush: 1, note: 1, circle: 1 }, NOFF = { x: 54, y: -44 }, KM = null;
+  function kE(X, d, k){ return eff(X.dsty, d.type, d, k); }
+  function kW(X, d){ return +kE(X, d, 'width') || 1; }
+  function kAt(q, pr){ var o = {}; for (var k in q) if (Object.prototype.hasOwnProperty.call(q, k)) o[k] = q[k]; o.price = pr; return o; }   // the same moment at another price
+  function kSeg(px, py, a, b){ var dx = b.x - a.x, dy = b.y - a.y, l = dx * dx + dy * dy, t = l ? Math.max(0, Math.min(1, ((px - a.x) * dx + (py - a.y) * dy) / l)) : 0; return Math.hypot(px - (a.x + t * dx), py - (a.y + t * dy)); }
+  function kIn(px, py, pl){ var c = false; for (var i = 0, j = pl.length - 1; i < pl.length; j = i++) { var a = pl[i], b = pl[j]; if (((a.y > py) !== (b.y > py)) && (px < (b.x - a.x) * (py - a.y) / ((b.y - a.y) || 1e-9) + a.x)) c = !c; } return c; }
+  function kSpan(pp){ var x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity; pp.forEach(function(q){ if (!q) return; x0 = Math.min(x0, q.x); y0 = Math.min(y0, q.y); x1 = Math.max(x1, q.x); y1 = Math.max(y1, q.y); }); return isFinite(x0) ? { x0: x0, y0: y0, x1: x1, y1: y1 } : null; }
+  // a ray: from its first point through its second, on to the plot's edge
+  function kRay(a, b, X){ var dx = b.x - a.x, dy = b.y - a.y, s = Infinity; if (Math.abs(dx) < 0.01 && Math.abs(dy) < 0.01) return { x: b.x, y: b.y };
+    if (dx > 0) s = Math.min(s, (X.pw + 4 - a.x) / dx); else if (dx < 0) s = Math.min(s, (-4 - a.x) / dx);
+    if (dy > 0) s = Math.min(s, (X.ph + 4 - a.y) / dy); else if (dy < 0) s = Math.min(s, (-4 - a.y) / dy);
+    if (!isFinite(s) || s < 1) s = 1; return { x: a.x + dx * s, y: a.y + dy * s }; }
+  // a line through two points, run on to the left and / or the right edge (a rectangle's and a trend line's extend)
+  function kExt(a, b, d, X){ if (!(d.extL || d.extR)) return [a, b]; var l = a.x <= b.x ? a : b, r = a.x <= b.x ? b : a, dx = r.x - l.x; if (dx < 0.5) return [a, b];
+    var k = (r.y - l.y) / dx; return [d.extL ? { x: -4, y: l.y + k * (-4 - l.x) } : l, d.extR ? { x: X.pw + 4, y: r.y + k * (X.pw + 4 - r.x) } : r]; }
+  // a parallel channel: its base line (a, b) and the same line off higher or lower (c, e)
+  function kChan(d, X){ var a = X.P(d.a), b = X.P(d.b), o = +d.off || 0; if (!a || !b) return null; var c = X.P(kAt(d.a, d.a.price + o)), e = X.P(kAt(d.b, d.b.price + o)); if (!c || !e) return null;
+    return { a: a, b: b, c: c, e: e, L: kExt(a, b, d, X), U: kExt(c, e, d, X) }; }
+  // a circle / ellipse: its centre, and a corner of the box it fills (the same span of time and price on every timeframe)
+  function kEll(d, X){ var a = X.P(d.a), b = X.P(d.b); return (a && b) ? { x: a.x, y: a.y, rx: Math.abs(b.x - a.x), ry: Math.abs(b.y - a.y) } : null; }
+  function kPts(d, X){ var F = X.Pf || X.P; return (d.pts || []).map(function(z){ return F(z); }).filter(Boolean); }   // a stroke's points can sit between candles (Pf)
+  // a price note: its point, and a box of its words (or its price, while it has none) where it was put, kept inside the plot
+  function kNote(d, X){ var a = X.P(d.a); if (!a) return null; var fs = +kE(X, d, 'tsz') || 12, has = String(d.text || '').trim() !== '', lines = (has ? String(d.text) : (X.pl ? X.pl(d.a.price) : String(d.a.price))).split('\n'), lh = Math.round(fs * 1.3);
+    var g = KM || (KM = document.createElement('canvas').getContext('2d')); g.font = '600 ' + fs + "px 'DM Mono',monospace"; var w = 0; lines.forEach(function(l){ w = Math.max(w, g.measureText(l).width); });
+    var o = d.off || NOFF, bw = Math.ceil(w) + 16, bh = lines.length * lh + 10, x0 = a.x + o.x - bw / 2, y0 = a.y + o.y - bh / 2;
+    x0 = Math.max(2, Math.min(x0, X.pw - bw - 2)); y0 = Math.max(2, Math.min(y0, X.ph - bh - 2));
+    return { ax: a.x, ay: a.y, x0: x0, y0: y0, x1: x0 + bw, y1: y0 + bh, tx: Math.max(x0, Math.min(a.x, x0 + bw)), ty: Math.max(y0, Math.min(a.y, y0 + bh)), fs: fs, lh: lh, lines: lines, has: has }; }
+  function kRR(g, x, y, w, h, r){ g.beginPath(); if (g.roundRect) g.roundRect(x, y, w, h, r); else g.rect(x, y, w, h); }
+  function kCurve(g, q){ g.beginPath(); g.moveTo(q[0].x, q[0].y); for (var k = 1; k < q.length - 1; k++) g.quadraticCurveTo(q[k].x, q[k].y, (q[k].x + q[k + 1].x) / 2, (q[k].y + q[k + 1].y) / 2); g.lineTo(q[q.length - 1].x, q[q.length - 1].y); g.stroke(); }
+  function kPaint(g, d, X){ var C = kE(X, d, 'color'), W = kW(X, d), t = d.type, a, b; g.save(); g.strokeStyle = C; g.fillStyle = C; g.lineWidth = W; g.setLineDash(X.pv ? [4, 3] : dash(kE(X, d, 'dash'), W));
+    var hp = W % 2 ? 0.5 : 0;   // a crisp one-pixel line
+    if (t === 'vline') { a = X.P(d.a); if (a) { var vx = Math.round(a.x) + hp; g.beginPath(); g.moveTo(vx, 0); g.lineTo(vx, X.ph); g.stroke(); } }
+    else if (t === 'hray') { a = X.P(d.a); if (a) { var hy = Math.round(a.y) + hp; g.beginPath(); g.moveTo(a.x, hy); g.lineTo(X.pw + 4, hy); g.stroke(); } }
+    else if (t === 'ray') { a = X.P(d.a); b = X.P(d.b); if (a && b) { var re = kRay(a, b, X); g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(re.x, re.y); g.stroke(); } }
+    else if (t === 'arrow') { a = X.P(d.a); b = X.P(d.b); if (a && b) { var an = Math.atan2(b.y - a.y, b.x - a.x), hl = Math.max(10, W * 4), hw = Math.max(5, W * 2.4), ln = Math.hypot(b.x - a.x, b.y - a.y), cs = Math.cos(an), sn = Math.sin(an), cut = Math.min(ln, hl * 0.75);
+        g.beginPath(); g.moveTo(a.x, a.y); g.lineTo(b.x - cs * cut, b.y - sn * cut); g.stroke();
+        if (ln > 2) { g.setLineDash([]); g.beginPath(); g.moveTo(b.x, b.y); g.lineTo(b.x - cs * hl + sn * hw, b.y - sn * hl - cs * hw); g.lineTo(b.x - cs * hl - sn * hw, b.y - sn * hl + cs * hw); g.closePath(); g.fill(); } } }
+    else if (t === 'channel') { var ch = kChan(d, X); if (ch) { g.fillStyle = kE(X, d, 'fill'); g.beginPath(); g.moveTo(ch.L[0].x, ch.L[0].y); g.lineTo(ch.L[1].x, ch.L[1].y); g.lineTo(ch.U[1].x, ch.U[1].y); g.lineTo(ch.U[0].x, ch.U[0].y); g.closePath(); g.fill();
+        g.beginPath(); g.moveTo(ch.L[0].x, ch.L[0].y); g.lineTo(ch.L[1].x, ch.L[1].y); g.moveTo(ch.U[0].x, ch.U[0].y); g.lineTo(ch.U[1].x, ch.U[1].y); g.stroke();
+        if (d.mid) { g.setLineDash(X.pv ? [4, 3] : dash(d.midDash || 'dotted', W)); g.beginPath(); g.moveTo((ch.L[0].x + ch.U[0].x) / 2, (ch.L[0].y + ch.U[0].y) / 2); g.lineTo((ch.L[1].x + ch.U[1].x) / 2, (ch.L[1].y + ch.U[1].y) / 2); g.stroke(); } } }
+    else if (t === 'brush') { var q = kPts(d, X); if (q.length > 1) { g.setLineDash([]); g.lineJoin = 'round'; g.lineCap = 'round'; kCurve(g, q); } }   // one path, so a stroke crossing itself stays one even shade
+    else if (t === 'circle') { var el = kEll(d, X); if (el) { g.beginPath(); g.ellipse(el.x, el.y, Math.max(0.5, el.rx), Math.max(0.5, el.ry), 0, 0, Math.PI * 2); g.fillStyle = kE(X, d, 'fill'); g.fill(); g.stroke(); } }
+    else if (t === 'note') { var nb = kNote(d, X); if (nb) { g.setLineDash([]);
+        if (Math.hypot(nb.tx - nb.ax, nb.ty - nb.ay) > 2) { g.beginPath(); g.moveTo(nb.ax, nb.ay); g.lineTo(nb.tx, nb.ty); g.stroke(); }
+        g.beginPath(); g.arc(nb.ax, nb.ay, Math.max(2.5, W + 1.5), 0, Math.PI * 2); g.fill();
+        g.fillStyle = kE(X, d, 'fill'); kRR(g, nb.x0, nb.y0, nb.x1 - nb.x0, nb.y1 - nb.y0, 4); g.fill(); g.lineWidth = 1; kRR(g, nb.x0 + .5, nb.y0 + .5, nb.x1 - nb.x0 - 1, nb.y1 - nb.y0 - 1, 4); g.stroke();
+        if (!X.ted) { g.font = '600 ' + nb.fs + "px 'DM Mono',monospace"; g.fillStyle = kE(X, d, 'tcol'); g.textAlign = 'left'; g.textBaseline = 'middle'; nb.lines.forEach(function(l, k){ g.fillText(l, nb.x0 + 8, nb.y0 + 5 + k * nb.lh + nb.lh / 2); }); } } }
+    g.restore(); }
+  // a vertical line's time on the time axis, in its colour (painted outside the plot, before the crosshair's own)
+  function kAxis(g, d, X){ if (d.type !== 'vline' || !X.tl) return; var a = X.P(d.a); if (!a || a.x < -1 || a.x > X.pw + 1) return; var tt = X.tl(d.a); if (!tt) return;
+    var C = parseC(kE(X, d, 'color')), n = parseInt(C.h.slice(1), 16) || 0, lum = 0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255);
+    g.save(); g.setLineDash([]); g.font = "11px 'AppNum','DM Mono',monospace"; var tw = g.measureText(tt).width, bh = 16, cy = X.ph + bh / 2 + 2, cx = Math.max(tw / 2 + 6, Math.min(X.pw - tw / 2 - 6, a.x));
+    g.fillStyle = C.h; g.fillRect(cx - tw / 2 - 5, cy - bh / 2, tw + 10, bh); g.fillStyle = lum > 150 ? '#0b0a0d' : '#ffffff'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(tt, cx, cy); g.restore(); }
+  // the drawing's note (More > Note), riding on it: along a ray, an arrow and a channel's base line, at the top of a vertical
+  // line, above the start of a horizontal ray, above a circle, above a highlighter stroke
+  function kText(g, d, X, C){ var s = String(d.text || ''); if (!s || d.type === 'note') return; var a = X.P(d.a), b = d.b ? X.P(d.b) : null, x, y, al = 'center', ang = 0;
+    if (d.type === 'vline') { if (!a) return; x = a.x + 5; y = 16; al = 'left'; }
+    else if (d.type === 'hray') { if (!a) return; x = a.x + 4; y = a.y - 4; al = 'left'; }
+    else if (d.type === 'circle') { var el = kEll(d, X); if (!el) return; x = el.x; y = el.y - el.ry - 5; }
+    else if (d.type === 'brush') { var bb = kSpan(kPts(d, X)); if (!bb) return; x = (bb.x0 + bb.x1) / 2; y = bb.y0 - 5; }
+    else { if (!a || !b) return; x = (a.x + b.x) / 2; y = (a.y + b.y) / 2 - 5; ang = Math.atan2(b.y - a.y, b.x - a.x); if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI; }
+    g.save(); g.setLineDash([]); g.font = "11px 'DM Mono',monospace"; g.fillStyle = C; g.textAlign = al; g.textBaseline = 'bottom'; g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 4;
+    if (ang) { g.translate(x, y + 5); g.rotate(ang); g.fillText(s, 0, -5); } else g.fillText(s, x, y); g.restore(); }
+  // what is under the mouse: 'a' / 'b' (an end), 'po' (a channel's other line: its offset), 'rx' / 'ry' (a circle's sides),
+  // 'box' (a note's box), 'body' (the whole of it)
+  function kHit(d, X, px, py){ var t = d.type, a, b;
+    if (t === 'vline') { a = X.P(d.a); return (a && Math.abs(px - a.x) < 6 && py >= -2 && py <= X.ph + 2) ? 'body' : null; }
+    if (t === 'hray') { a = X.P(d.a); if (!a) return null; if (Math.hypot(px - a.x, py - a.y) < 8) return 'a'; return (Math.abs(py - a.y) < 6 && px >= a.x - 4) ? 'body' : null; }
+    if (t === 'ray' || t === 'arrow') { a = X.P(d.a); b = X.P(d.b); if (!a || !b) return null; if (Math.hypot(px - a.x, py - a.y) < 8) return 'a'; if (Math.hypot(px - b.x, py - b.y) < 8) return 'b';
+      return kSeg(px, py, a, t === 'ray' ? kRay(a, b, X) : b) < 6 ? 'body' : null; }
+    if (t === 'channel') { var ch = kChan(d, X); if (!ch) return null; if (Math.hypot(px - ch.a.x, py - ch.a.y) < 8) return 'a'; if (Math.hypot(px - ch.b.x, py - ch.b.y) < 8) return 'b';
+      if (Math.hypot(px - ch.c.x, py - ch.c.y) < 8 || Math.hypot(px - ch.e.x, py - ch.e.y) < 8) return 'po';
+      return (kSeg(px, py, ch.L[0], ch.L[1]) < 6 || kSeg(px, py, ch.U[0], ch.U[1]) < 6 || kIn(px, py, [ch.L[0], ch.L[1], ch.U[1], ch.U[0]])) ? 'body' : null; }
+    if (t === 'brush') { var q = kPts(d, X), r = Math.max(7, kW(X, d) / 2 + 3); for (var k = 1; k < q.length; k++) if (kSeg(px, py, q[k - 1], q[k]) < r) return 'body'; return null; }
+    if (t === 'circle') { var el = kEll(d, X); if (!el) return null;
+      if (Math.hypot(px - (el.x + el.rx), py - el.y) < 8 || Math.hypot(px - (el.x - el.rx), py - el.y) < 8) return 'rx';
+      if (Math.hypot(px - el.x, py - (el.y - el.ry)) < 8 || Math.hypot(px - el.x, py - (el.y + el.ry)) < 8) return 'ry';
+      return (Math.pow((px - el.x) / (Math.max(el.rx, 1) + 5), 2) + Math.pow((py - el.y) / (Math.max(el.ry, 1) + 5), 2) <= 1) ? 'body' : null; }
+    if (t === 'note') { var nb = kNote(d, X); if (!nb) return null; if (px >= nb.x0 - 2 && px <= nb.x1 + 2 && py >= nb.y0 - 2 && py <= nb.y1 + 2) return 'box';
+      if (Math.hypot(px - nb.ax, py - nb.ay) < 8) return 'a'; return kSeg(px, py, { x: nb.ax, y: nb.ay }, { x: nb.tx, y: nb.ty }) < 5 ? 'body' : null; }
+    return null; }
+  // the selected one's handles (sq: the chart's own square), a note's box outlined
+  function kHandles(g, d, X, sq){ var t = d.type, a, b;
+    if (t === 'vline') { a = X.P(d.a); if (a) sq(a.x, X.ph / 2); }
+    else if (t === 'hray') { a = X.P(d.a); if (a) sq(a.x, a.y); }
+    else if (t === 'ray' || t === 'arrow') { a = X.P(d.a); b = X.P(d.b); if (a) sq(a.x, a.y); if (b) sq(b.x, b.y); }
+    else if (t === 'channel') { var ch = kChan(d, X); if (ch) { sq(ch.a.x, ch.a.y); sq(ch.b.x, ch.b.y); sq(ch.c.x, ch.c.y); sq(ch.e.x, ch.e.y); } }
+    else if (t === 'circle') { var el = kEll(d, X); if (el) { sq(el.x + el.rx, el.y); sq(el.x - el.rx, el.y); sq(el.x, el.y - el.ry); sq(el.x, el.y + el.ry); } }
+    else if (t === 'note') { var nb = kNote(d, X); if (nb) { g.save(); g.strokeStyle = '#f472b6'; g.lineWidth = 1; g.setLineDash([3, 3]); g.strokeRect(Math.round(nb.x0) - 3.5, Math.round(nb.y0) - 3.5, Math.round(nb.x1 - nb.x0) + 7, Math.round(nb.y1 - nb.y0) + 7); g.restore(); sq(nb.ax, nb.ay); } } }
+  function kBox(d, X){ var t = d.type, a, b;
+    if (t === 'vline') { a = X.P(d.a); return a ? { x0: a.x - 3, y0: 0, x1: a.x + 3, y1: X.ph } : null; }
+    if (t === 'hray') { a = X.P(d.a); return a ? { x0: a.x, y0: a.y - 3, x1: X.pw, y1: a.y + 3 } : null; }
+    if (t === 'ray') { a = X.P(d.a); b = X.P(d.b); return (a && b) ? kSpan([a, kRay(a, b, X)]) : null; }
+    if (t === 'channel') { var ch = kChan(d, X); return ch ? kSpan([ch.a, ch.b, ch.c, ch.e]) : null; }
+    if (t === 'brush') return kSpan(kPts(d, X));
+    if (t === 'circle') { var el = kEll(d, X); return el ? { x0: el.x - el.rx, y0: el.y - el.ry, x1: el.x + el.rx, y1: el.y + el.ry } : null; }
+    if (t === 'note') { var nb = kNote(d, X); return nb ? kSpan([{ x: nb.x0, y: nb.y0 }, { x: nb.x1, y: nb.y1 }, { x: nb.ax, y: nb.ay }]) : null; }
+    a = X.P(d.a); b = d.b ? X.P(d.b) : null; return (a && b) ? kSpan([a, b]) : null; }
+  // ---- the keyboard shortcuts, as a list (TradingView's keys; the toolbar's More and the keyboard button open it) ----
+  var KWORD = { drag: ['drag', 'arrastrar'], click: ['click', 'clic'], hold: ['hold', 'mantener'] };
+  // the keys, as both charts have them (o.alert: Alt+A; o.exec: the execution key; o.step: the right arrow; o.esc: what Esc does there)
+  function keyRows(o){ o = o || {}; var R = [
+      ['Alt+H', 'Horizontal line at the mouse', 'Línea horizontal en el ratón'], ['Alt+V', 'Vertical line at the mouse', 'Línea vertical en el ratón'], ['Alt+J', 'Horizontal ray at the mouse', 'Rayo horizontal en el ratón'],
+      ['Alt+T', 'Trend line', 'Línea de tendencia'], ['Alt+R', 'Rectangle', 'Rectángulo'], ['Alt+F', 'Fib', 'Fib']];
+    if (o.alert) R.push(['Alt+A', 'Alert at the mouse', 'Alerta en el ratón']);
+    R.push(['Shift+drag', 'Measure, until the next click', 'Medir, hasta el siguiente clic'], ['Ctrl+drag', 'Select several drawings', 'Seleccionar varios dibujos'], ['Ctrl', 'Held while drawing: onto the candle\'s high or low', 'Mantenido al dibujar: al máximo o mínimo de la vela'],
+      ['Ctrl+C', 'Copy the selected drawing', 'Copiar el dibujo seleccionado'], ['Ctrl+V', 'Paste it, three candles on', 'Pegarlo, tres velas más allá'], ['Ctrl+Z', 'Undo', 'Deshacer'], ['Ctrl+Y', 'Redo', 'Rehacer'],
+      ['Delete / Backspace', 'Delete the selected drawing', 'Borrar el dibujo seleccionado'], ['Esc', o.esc ? o.esc[0] : 'Deselect, or put the tool down', o.esc ? o.esc[1] : 'Deseleccionar o soltar la herramienta']);
+    if (o.exec) R.push([o.exec, 'Execution mode', 'Modo de ejecución']);
+    R.push(['Ctrl+Shift+S', 'Copy the chart\'s image', 'Copiar la imagen del gráfico'], ['Alt+S', 'Copy the chart\'s link', 'Copiar el enlace del gráfico']);
+    if (o.step) R.push(['→', 'Next step', 'Siguiente paso']); return R; }
+  function keysHtml(T, rows){ return '<div class="stk-list">' + (rows || []).map(function(r){
+      var ks = String(r[0]).split(' / ').map(function(k){ return k.split('+').map(function(x){ return KWORD[x] ? '<em>' + esc(T(KWORD[x][0], KWORD[x][1])) + '</em>' : '<kbd>' + esc(x) + '</kbd>'; }).join('<i>+</i>'); }).join('<i>/</i>');
+      return '<div class="stk-r"><span class="stk-k">' + ks + '</span><span class="stk-d">' + esc(T(r[1], r[2])) + '</span></div>'; }).join('') + '</div>'; }
 
   function make(A){
     var T = A.T, B = { el: null, pop: null, popK: null, wrap: null, doc: null, key: null, pos: null, dlg: null, popBtn: null };
@@ -83776,19 +83908,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     function barHtml(){ var t = ty(), d = sel(), H = ['<div class="stdb-gr" title="' + esc(T('Drag to move the toolbar', 'Arrastra para mover la barra')) + '">' + IC.grip + '</div>'], lineT = t !== 'text' && t !== 'emoji' && t !== 'long' && t !== 'short';
       if (hasLook(t)) H.push(popBtn('tpl', T('Templates', 'Plantillas'), IC.grid));
       if (lineT) H.push(popBtn('line', T('Line colour', 'Color de la línea'), IC.pen + cbar(v('color'))));
-      if (t === 'rect') H.push(popBtn('fill', T('Fill', 'Relleno'), IC.fill + cbar(v('fill'))));
-      if (t === 'rect') H.push(popBtn('text', T('Text', 'Texto'), IC.text + cbar(v('tcol'))));
+      if (FILLT[t]) H.push(popBtn('fill', t === 'note' ? T('Box', 'Recuadro') : T('Fill', 'Relleno'), IC.fill + cbar(v('fill'))));
+      if (t === 'rect' || t === 'note') H.push(popBtn('text', T('Text', 'Texto'), IC.text + cbar(v('tcol'))));
       if (t === 'text') { H.push(popBtn('text', T('Text colour', 'Color del texto'), IC.text + cbar(v('color')))); H.push(popBtn('tsize', T('Text size', 'Tamaño del texto'), ['S', 'M', 'L', 'XL'][Math.max(0, Math.min(3, Math.round(v('width')) - 1))], 'stdb-tz')); }
       if (t === 'emoji') H.push(popBtn('emoji', T('Emoji', 'Emoji'), esc(d ? (d.e || A.emojiNow()) : A.emojiNow()), 'stdb-emo'));
-      if (lineT) { var w = Math.round(v('width')); H.push('<span class="stdb-sep"></span>'); H.push(popBtn('width', T('Line width', 'Grosor de la línea'), '<i style="height:' + Math.max(1, w) + 'px"></i>' + w + 'px', 'stdb-wd'));
-        H.push(popBtn('dash', T('Line style', 'Estilo de la línea'), IC[v('dash')] || IC.solid)); }
+      if (lineT) { var w = Math.round(v('width')); H.push('<span class="stdb-sep"></span>'); H.push(popBtn('width', T('Line width', 'Grosor de la línea'), '<i style="height:' + Math.max(1, Math.min(6, w)) + 'px"></i>' + w + 'px', 'stdb-wd'));
+        if (t !== 'brush' && t !== 'note') H.push(popBtn('dash', T('Line style', 'Estilo de la línea'), IC[v('dash')] || IC.solid)); }
       if (d) { H.push('<span class="stdb-sep"></span>'); H.push(btn('vis', T('Visibility: ', 'Visibilidad: ') + A.visTxt(d), IC.eye));
         if (d.type === 'hline' && A.alertInfo) { var al = A.alertInfo(d); H.push(btn('alert', al.title, IC.bell, al.hit ? 'hit' : (al.on ? 'act' : ''), ' aria-pressed="' + (al.on && !al.hit ? 'true' : 'false') + '"')); }
         var lk = A.locked(d); H.push(btn('lock', lk ? (A.lockAll() ? T('Every drawing is locked (the toolbar\'s padlock)', 'Todos los dibujos están bloqueados (el candado de la barra)') : T('Locked: press to unlock it', 'Bloqueado: pulsa para desbloquearlo')) : T('Lock it: it cannot be moved or deleted until unlocked', 'Bloquear: no se puede mover ni borrar hasta desbloquearlo'), lk ? IC.lock : IC.unlock, lk ? 'act' : '', ' aria-pressed="' + (lk ? 'true' : 'false') + '"'));
         H.push(btn('del', T('Delete', 'Borrar'), IC.trash)); }
       if (d || moreHas(t)) H.push(popBtn('more', T('More', 'Más'), IC.more));
       return H.join(''); }
-    function moreHas(t){ return t === 'range' || t === 'rect' || t === 'trend'; }   // with nothing selected, More has these tools' settings for the next one
+    function moreHas(t){ return t === 'range' || t === 'rect' || t === 'trend' || t === 'channel'; }   // with nothing selected, More has these tools' settings for the next one
     function paintBar(){ if (!B.el) return; var sx = B.el.scrollLeft; B.el.innerHTML = barHtml(); B.el.scrollLeft = sx; }
     function host(){ var h = null; try { h = A.host(); } catch (e) {} return (h && h.wrap) ? h : null; }
     function render(){ var t = ty(), h = host(); if (!t || t === 'none' || !h || (!sel() && (t === 'long' || t === 'short'))) { hide(); return; }
@@ -83822,7 +83954,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // ---- the popovers ----
     function openPop(k){ if (!B.el) return; B.popK = k; paintBar(); paintPop(); }
     function closePop(){ var was = !!B.popK; B.popK = null; if (B.pop) { B.pop.style.display = 'none'; B.pop.innerHTML = ''; } if (was && B.el && B.el.style.display !== 'none') paintBar(); return was; }
-    function placePop(){ var b = B.el.querySelector('[data-db="' + B.popK + '"]'); if (!b) { closePop(); return; } var br = b.getBoundingClientRect(), barR = B.el.getBoundingClientRect(), p = wrapXY(br), pb = wrapXY(barR);
+    function placePop(){ var b = B.el.querySelector('[data-db="' + (B.popK === 'keys' ? 'more' : B.popK) + '"]'); if (!b) { closePop(); return; } var br = b.getBoundingClientRect(), barR = B.el.getBoundingClientRect(), p = wrapXY(br), pb = wrapXY(barR);
       var pw = B.pop.offsetWidth, ph = B.pop.offsetHeight, W = B.wrap.clientWidth, x = Math.max(B.wrap.scrollLeft + 6, Math.min(p.x, B.wrap.scrollLeft + W - pw - 6)), y = pb.y + barR.height + 6;
       var visBot = B.wrap.scrollTop + B.wrap.clientHeight; if (y + ph > visBot - 4 && pb.y - ph - 6 >= B.wrap.scrollTop) y = pb.y - ph - 6;
       B.pop.style.left = x + 'px'; B.pop.style.top = y + 'px'; }
@@ -83835,7 +83967,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         + '<div class="stdb-op">' + esc(T('Opacity', 'Opacidad')) + '<input type="range" min="0" max="100" step="1" data-pop="' + kind + '" value="' + Math.round(pc.a * 100) + '" aria-label="' + esc(T('Opacity', 'Opacidad')) + '"><b>' + Math.round(pc.a * 100) + '%</b></div>'
         + '<div class="stdb-dv"></div><label class="stdb-it stdb-cus">' + esc(T('+ Custom colour', '+ Color personalizado')) + '<input type="color" data-pcus="' + kind + '" value="' + pc.h + '" aria-label="' + esc(T('Custom colour', 'Color personalizado')) + '"></label>'; }
     function swatch(t, L){ var c = eff(A.dsty, t, L, 'color'), dsh = eff(A.dsty, t, L, 'dash'), bs = dsh === 'solid' ? 'solid' : dsh;
-      if (t === 'rect') return '<span class="stdb-sw" style="background:' + esc(eff(A.dsty, t, L, 'fill')) + ';border:1px ' + bs + ' ' + esc(c) + '"></span>';
+      if (FILLT[t]) return '<span class="stdb-sw" style="background:' + esc(eff(A.dsty, t, L, 'fill')) + ';border:1px ' + bs + ' ' + esc(c) + '"></span>';
       if (t === 'text') return '<span class="stdb-sw tx" style="color:' + esc(c) + '">Aa</span>';
       return '<span class="stdb-sw ln" style="border-top:' + Math.max(1, Math.min(3, Math.round(eff(A.dsty, t, L, 'width')))) + 'px ' + bs + ' ' + esc(c) + '"></span>'; }
     function popHtml(k){ var t = ty(), d = sel(), o = cur(), H = [];
@@ -83854,6 +83986,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (k === 'line') return palHtml('color', T('Line', 'Línea'), v('color'));
       if (k === 'fill') return palHtml('fill', T('Fill', 'Relleno'), v('fill'));
       if (k === 'text') { if (t === 'text') { H.push(palHtml('color', T('Text', 'Texto'), v('color'))); if (d) H.push('<div class="stdb-dv"></div><textarea data-tw rows="2" placeholder="' + esc(T('Text', 'Texto')) + '">' + esc(d.text || '') + '</textarea>'); return H.join(''); }
+        if (t === 'note') { H.push(palHtml('tcol', T('Text', 'Texto'), v('tcol')));   // a price note: its words' colour and size, and the words (none: its price)
+          H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Size', 'Tamaño')) + '</div><div class="stdb-row">' + TSIZES.map(function(z){ return '<button type="button" class="stdb-ch' + (+v('tsz') === z ? ' on' : '') + '" data-ts="' + z + '">' + z + '</button>'; }).join('') + '</div>');
+          if (d) H.push('<textarea data-tw rows="2" placeholder="' + esc(T('Its words (none: its price)', 'Su texto (sin texto: su precio)')) + '">' + esc(d.text || '') + '</textarea>');
+          return H.join(''); }
         H.push(palHtml('tcol', T('Text', 'Texto'), v('tcol')));
         H.push('<div class="stdb-dv"></div><div class="stdb-lb">' + esc(T('Size', 'Tamaño')) + '</div><div class="stdb-row">' + TSIZES.map(function(z){ return '<button type="button" class="stdb-ch' + (+v('tsz') === z ? ' on' : '') + '" data-ts="' + z + '">' + z + '</button>'; }).join('') + '</div>');
         H.push('<div class="stdb-lb">' + esc(T('Position', 'Posición')) + '</div><div class="stdb-row">' + [['above', T('Above', 'Encima')], ['top', T('Top', 'Arriba')], ['middle', T('Middle', 'Centro')], ['bottom', T('Bottom', 'Abajo')], ['below', T('Below', 'Debajo')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('tv') === x[0] ? ' on' : '') + '" data-tv="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
@@ -83861,12 +83997,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (d) H.push('<textarea data-tw rows="2" placeholder="' + esc(T('Text in the box', 'Texto en el rectángulo')) + '">' + esc(d.text || '') + '</textarea>');
         return H.join(''); }
       if (k === 'tsize') return '<div class="stdb-lb">' + esc(T('Text size', 'Tamaño del texto')) + '</div>' + [1, 2, 3, 4].map(function(z){ return '<button type="button" class="stdb-wrow' + (Math.round(v('width')) === z ? ' on' : '') + '" data-tz="' + z + '"><span style="font:600 ' + A.tsz(z) + 'px \'DM Mono\',monospace;min-width:46px">Aa</span>' + ['S', 'M', 'L', 'XL'][z - 1] + ' · ' + A.tsz(z) + 'px</button>'; }).join('');
-      if (k === 'width') return '<div class="stdb-lb">' + esc(T('Line width', 'Grosor de la línea')) + '</div>' + [1, 2, 3, 4].map(function(z){ return '<button type="button" class="stdb-wrow' + (Math.round(v('width')) === z ? ' on' : '') + '" data-pw="' + z + '"><i style="border-top-width:' + z + 'px"></i>' + z + 'px</button>'; }).join('');
+      if (k === 'width') return '<div class="stdb-lb">' + esc(T('Line width', 'Grosor de la línea')) + '</div>' + (t === 'brush' ? [8, 12, 16, 20] : [1, 2, 3, 4]).map(function(z){ return '<button type="button" class="stdb-wrow' + (Math.round(v('width')) === z ? ' on' : '') + '" data-pw="' + z + '"><i style="border-top-width:' + Math.min(z, 14) + 'px"></i>' + z + 'px</button>'; }).join('');
       if (k === 'dash') return '<div class="stdb-lb">' + esc(T('Line style', 'Estilo de la línea')) + '</div>' + [['solid', T('Solid', 'Continua')], ['dashed', T('Dashed', 'Discontinua')], ['dotted', T('Dotted', 'Punteada')]].map(function(x){ return '<button type="button" class="stdb-wrow' + (v('dash') === x[0] ? ' on' : '') + '" data-pd="' + x[0] + '"><i style="border-top-width:2px;border-top-style:' + x[0] + '"></i>' + esc(x[1]) + '</button>'; }).join('');
       if (k === 'emoji') { var ce = d ? (d.e || A.emojiNow()) : A.emojiNow(), ls = A.emojis(), eb = function(x){ return '<button type="button" data-emo="' + x + '" class="' + (x === ce ? 'on' : '') + '">' + x + '</button>'; };
         H.push('<div class="stdb-emos"><div class="stdb-elb">' + esc(T('Trading', 'Trading')) + '</div>' + ls.mine.map(eb).join('') + (ls.all.length ? '<div class="stdb-elb">' + esc(T('All emojis', 'Todos los emojis')) + '</div>' + ls.all.map(eb).join('') : '') + '</div>');
         if (!d) H.push('<div class="stdb-info">' + esc(T('Click the chart to place it.', 'Haz clic en el gráfico para ponerlo.')) + '</div>');
         return H.join(''); }
+      if (k === 'keys') { B.pop.style.minWidth = '300px'; return '<div class="stdb-hd">' + esc(T('Keyboard shortcuts', 'Atajos de teclado')) + '</div>' + keysHtml(T, A.keys ? A.keys() : []); }
       if (k === 'more') { H.push('<div class="stdb-hd">' + esc(A.name(t)) + '</div>');
         if ((t === 'long' || t === 'short') && d && A.posHtml) H.push(A.posHtml(d));
         if (t === 'fib' && d) { var LV = (d.levels && d.levels.length) ? d.levels : FIBS.slice();
@@ -83874,14 +84011,15 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           H.push('<div class="stdb-fl"><input type="text" data-fiblv placeholder="0.705" inputmode="decimal" style="flex:1;min-width:0"><button type="button" class="stdb-ch" data-fibadd>' + esc(T('Add', 'Añadir')) + '</button></div>'); }
         if (t === 'range') H.push('<div class="stdb-lb">' + esc(T('Shows', 'Muestra')) + '</div><div class="stdb-row">' + [['pips', A.unitLbl()], ['r', 'R'], ['bars', T('BARS', 'BARRAS')]].map(function(x){ var sh = o.show; return '<button type="button" class="stdb-ch' + (!(sh && sh[x[0]] === false) ? ' on' : '') + '" data-show="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>');
         if (t === 'emoji' && d) H.push('<div class="stdb-fl">' + esc(T('Size', 'Tamaño')) + '<input data-esz type="range" min="12" max="160" step="2" value="' + Math.round(+d.size || 32) + '"></div>');
-        if (t === 'rect' || t === 'trend') { var tg = function(k2, lb){ return '<label class="stdb-tg"><input type="checkbox" data-tgl="' + k2 + '"' + (v(k2) ? ' checked' : '') + '><span>' + esc(lb) + '</span></label>'; };
+        if (t === 'rect' || t === 'trend' || t === 'channel') { var tg = function(k2, lb){ return '<label class="stdb-tg"><input type="checkbox" data-tgl="' + k2 + '"' + (v(k2) ? ' checked' : '') + '><span>' + esc(lb) + '</span></label>'; };
           H.push(tg('extL', T('Extend left', 'Extender a la izquierda')) + tg('extR', T('Extend right', 'Extender a la derecha')));
-          if (t === 'rect') { H.push(tg('mid', T('Middle line', 'Línea central')));
+          if (t === 'rect' || t === 'channel') { H.push(tg('mid', T('Middle line', 'Línea central')));
             if (v('mid')) H.push('<div class="stdb-row" style="padding-left:34px">' + [['solid', T('Solid', 'Continua')], ['dashed', T('Dashed', 'Discontinua')], ['dotted', T('Dotted', 'Punteada')]].map(function(x){ return '<button type="button" class="stdb-ch' + (v('midDash') === x[0] ? ' on' : '') + '" data-md="' + x[0] + '">' + esc(x[1]) + '</button>'; }).join('') + '</div>'); } }
         if (d && d.type === 'hline' && A.alertInfo) { var ai = A.alertInfo(d); if (ai.hitTxt) H.push('<div class="stdb-info">' + esc(ai.hitTxt) + '</div>'); }
-        if (d) { if (d.type !== 'range' && d.type !== 'text' && d.type !== 'rect') H.push('<div class="stdb-fl" style="padding:6px"><input type="text" data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(d.text || '') + '" style="flex:1;min-width:0"></div>');
+        if (d) { if (d.type !== 'range' && d.type !== 'text' && d.type !== 'rect' && d.type !== 'note') H.push('<div class="stdb-fl" style="padding:6px"><input type="text" data-note placeholder="' + esc(T('Note', 'Nota')) + '" value="' + esc(d.text || '') + '" style="flex:1;min-width:0"></div>');
           H.push('<div class="stdb-dv"></div><button type="button" class="stdb-it" data-mvis>' + esc(T('Visibility: ', 'Visibilidad: ') + A.visTxt(d)) + ' &rsaquo;</button>');
           H.push('<button type="button" class="stdb-it" data-clone>' + esc(T('Clone', 'Duplicar')) + '</button>'); }
+        if (A.keys) H.push('<div class="stdb-dv"></div><button type="button" class="stdb-it" data-keys>' + esc(T('Keyboard shortcuts', 'Atajos de teclado')) + ' &rsaquo;</button>');
         return H.join(''); }
       return ''; }
     function popClick(e){ var t = e.target, ty0 = ty(), d = sel(), g;
@@ -83899,6 +84037,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if ((g = t.closest('[data-emo]'))) { A.emojiPick(g.getAttribute('data-emo')); render(); return; }
       if (t.closest('[data-mvis]')) { closePop(); A.act('vis'); return; }
       if (t.closest('[data-clone]')) { closePop(); A.act('clone'); return; }
+      if (t.closest('[data-keys]')) { openPop('keys'); return; }
       if ((g = t.closest('[data-tpx]'))) { e.stopPropagation(); var s = store(), L = s.list[ty0] || [], ix = +g.getAttribute('data-tpx'), gone = L[ix]; if (!gone) return; L.splice(ix, 1); if (!L.length) delete s.list[ty0]; A.save(); paintPop();
         A.flash(T('Template deleted: ' + gone.n, 'Plantilla borrada: ' + gone.n)); return; }
       if ((g = t.closest('[data-tpa]'))) { var x = (store().list[ty0] || [])[+g.getAttribute('data-tpa')]; if (!x) return; useLook(x.l); closePop(); A.flash(T('Template applied: ', 'Plantilla aplicada: ') + x.n); return; }
@@ -83923,7 +84062,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // ---- Save template (mock 3): a name, and whether new drawings of this tool take it ----
     function saveDlg(){ var t = ty(), look = lookOf(Object.assign({ type: t }, cur())), doc = B.doc || document;
       if (B.dlg) try { B.dlg.remove(); } catch (e) {}
-      var what = t === 'rect' ? T('line, fill, text and style', 'línea, relleno, texto y estilo') : (t === 'text' ? T('colour and size', 'color y tamaño') : T('colour, width and style', 'color, grosor y estilo'));
+      var what = t === 'rect' ? T('line, fill, text and style', 'línea, relleno, texto y estilo') : (t === 'text' ? T('colour and size', 'color y tamaño') : (t === 'note' ? T('line, box, text colour and size', 'línea, recuadro, color y tamaño del texto') : (t === 'channel' || t === 'circle' ? T('line, fill and style', 'línea, relleno y estilo') : (t === 'brush' ? T('colour and width', 'color y grosor') : T('colour, width and style', 'color, grosor y estilo')))));
       var bg = doc.createElement('div'); bg.className = 'stdb-dlgbg'; B.dlg = bg;
       bg.innerHTML = '<div class="stdb-dlg" role="dialog" aria-modal="true" aria-label="' + esc(T('Save template', 'Guardar plantilla')) + '"><h4>' + esc(T('Save template', 'Guardar plantilla')) + '</h4>'
         + '<p>' + esc(T('This ' + nm(t) + '’s look — ' + what + ' — under a name, to use again on any ' + nm(t) + '.', 'El aspecto de este ' + nm(t) + ' — ' + what + ' — con un nombre, para usarlo en cualquier ' + nm(t) + '.')) + '</p>'
@@ -83946,7 +84085,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     return { render: render, hide: hide, closePop: closePop, open: function(k){ render(); if (B.el && B.el.style.display !== 'none') openPop(k); }, el: function(){ return B.el; }, pop: function(){ return B.pop; }, dlg: function(){ return B.dlg; }, popK: function(){ return B.popK; },
       moveTo: function(x, y){ if (!B.el) return; B.el.style.left = x + 'px'; B.el.style.top = y + 'px'; clampBar(); B.pos = { wrap: B.wrap, x: parseFloat(B.el.style.left), y: parseFloat(B.el.style.top) }; }, unpin: function(){ B.pos = null; } };
   }
-  window.__stDrawBar = { make: make, KEYS: KEYS, PAL: PAL, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash };
+  window.__stDrawBar = { make: make, KEYS: KEYS, PAL: PAL, FIBS: FIBS, lookOf: lookOf, applyLook: applyLook, eff: eff, same: same, parseC: parseC, mkC: mkC, withA: withA, dash: dash,
+    DSTY: NDSTY, keysHtml: keysHtml, keyRows: keyRows, kit: { has: function(t){ return !!KT[t]; }, paint: kPaint, axis: kAxis, text: kText, hit: kHit, handles: kHandles, box: kBox, note: kNote, NOFF: NOFF } };
 })();
 </script>
 <script>
@@ -86592,7 +86732,26 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-ico.on, .stpr-ico[aria-expanded="true"], .stpr-goto[aria-expanded="true"] { color: var(--accent); border-color: var(--accent); }   /* on, or its menu open */
   .stpr-tb2 { padding: 7px 14px; }
   .stpr-tools { display: none; } .stpr-tb2.drawing .stpr-tools { display: inline-flex; }
-  @media (max-width: 760px) { .stpr-tb2.drawing .stpr-tools { display: flex; flex: 1 1 100%; } .stpr-tools button { flex: 1 1 0; min-width: 0; padding: 0; } }   /* a phone: the ten tools share the width (Short was cut off once Emoji came, 17 Oct 2026) */
+  /* the tools in groups (batch B, 19 Oct 2026): a group's button shows its tool used last, its arrow opens the rest - TradingView's */
+  #stpr-tools { overflow: visible; }
+  #stpr-tools > :first-child, #stpr-tools > :first-child > .stpr-tgm { border-top-left-radius: 7px; border-bottom-left-radius: 7px; }
+  #stpr-tools > :last-child { border-top-right-radius: 7px; border-bottom-right-radius: 7px; }
+  .stpr-tg { position: relative; display: inline-flex; border-left: 1px solid var(--border-2); }
+  #stpr-tools > .stpr-tg:first-child { border-left: 0; }
+  .stpr-seg .stpr-tg .stpr-tgm { min-width: 29px; padding: 0 0 0 5px; border-left: 0; }
+  .stpr-seg .stpr-tg .stpr-tgc { min-width: 0; width: 13px; padding: 0 2px 0 0; border-left: 0; opacity: .75; }
+  .stpr-seg .stpr-tg .stpr-tgc svg { width: 8px; height: 8px; }
+  .stpr-tg.open .stpr-tgc { opacity: 1; color: var(--accent); }
+  .stpr-tfl { position: absolute; top: calc(100% + 6px); left: -1px; z-index: 40; display: none; flex-direction: column; min-width: 224px; padding: 4px; background: var(--bg-elev2, #1b1a21); border: 1px solid var(--border-2, #332F3C); border-radius: 9px; box-shadow: 0 16px 36px rgba(0,0,0,.6); }
+  .stpr-tg.open .stpr-tfl { display: flex; }
+  .stpr-seg .stpr-tfl button { justify-content: flex-start; gap: 10px; height: 32px; min-width: 0; padding: 0 10px; border: 0; border-radius: 6px; color: #c9c6d2; font: 13px Inter, system-ui, sans-serif; text-align: left; white-space: nowrap; }
+  .stpr-seg .stpr-tfl button span { flex: 1 1 auto; }
+  .stpr-seg .stpr-tfl button kbd { font: 10.5px 'AppNum','DM Mono',monospace; color: #8c8996; }
+  @media (hover: hover) { .stpr-seg .stpr-tfl button:hover { background: #2a2833; color: #fff; } }
+  .stpr-seg .stpr-tfl button.on { background: rgba(244,114,182,.16); color: var(--accent); font-weight: 400; }
+  @media (hover: none) and (pointer: coarse) { #stpr-keysbtn { display: none; } }   /* no keyboard on a phone */
+  @media (max-width: 760px) { .stpr-tb2.drawing .stpr-tools { display: flex; flex: 1 1 100%; } .stpr-tools button { flex: 1 1 0; min-width: 0; padding: 0; }
+    .stpr-tools > .stpr-tg { flex: 1.3 1 0; min-width: 0; } .stpr-tools .stpr-tg .stpr-tgm { flex: 1 1 0; padding: 0 0 0 4px; } .stpr-tools .stpr-tg .stpr-tgc { flex: 0 0 14px; } .stpr-tools .stpr-tfl button { flex: none; height: 40px; padding: 0 12px; } }   /* a phone: the ten tools share the width (Short was cut off once Emoji came, 17 Oct 2026) */
   .stpr-ptfw { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; align-items: center; }
   /* each chart's own symbol (17 Oct 2026), beside its timeframe when there is more than one chart */
   .stpr-sympill { height: 30px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-2); background: rgba(19,18,23,.94); color: var(--text); font-family: 'AppNum','DM Mono',monospace; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
@@ -86819,6 +86978,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stdb-pop .stdb-tg input { width: 15px; height: 15px; margin: 0; accent-color: var(--accent, #f472b6); cursor: pointer; }
   .stdb-pop .stdb-hd { padding: 6px 10px 4px; font: 10px 'AppNum','DM Mono',monospace; letter-spacing: .14em; text-transform: uppercase; color: #9a97a3; }
   .stdb-pop .stdb-info { padding: 4px 10px 6px; color: #8c8996; font: 11px 'AppNum','DM Mono',monospace; }
+  /* the keyboard shortcuts list (batch B, 19 Oct 2026): the toolbar's More, and the keyboard button by the padlock */
+  .stk-list { display: flex; flex-direction: column; padding: 2px 0 4px; min-width: 0; max-width: 100%; }
+  .stk-r { display: flex; align-items: center; gap: 12px; padding: 5px 8px; }
+  .stk-k { flex: 0 0 140px; display: inline-flex; align-items: center; flex-wrap: wrap; gap: 3px; }
+  .stk-k kbd { font: 10.5px 'AppNum','DM Mono',monospace; color: #e9e7ee; background: #2a2833; border: 1px solid #3a3744; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; line-height: 1.35; }
+  .stk-k em { font: 11px 'AppNum','DM Mono',monospace; font-style: normal; color: #9a97a3; }
+  .stk-k i { font-style: normal; color: #77737f; font-size: 10px; }
+  .stk-d { flex: 1 1 auto; min-width: 0; color: #c9c6d2; font: 12px Inter, system-ui, sans-serif; line-height: 1.35; }
+  .stpr-menu .stk-list { width: 360px; max-width: calc(100vw - 40px); }
+  @media (max-width: 420px) { .stk-k { flex-basis: 112px; } .stk-r { gap: 8px; padding: 5px 4px; } }
   .stdb-emos { display: grid; grid-template-columns: repeat(7, 30px); gap: 3px; max-height: 210px; overflow-y: auto; overflow-x: hidden; padding: 2px 4px; scrollbar-width: thin; }
   .stdb-emos button { width: 30px; height: 28px; display: grid !important; place-items: center; border-radius: 5px; font-size: 17px; line-height: 1; font-family: 'Segoe UI Emoji','Apple Color Emoji','Noto Color Emoji',sans-serif; border: 1px solid transparent; }
   .stdb-emos button.on { background: rgba(244,114,182,.2); border-color: var(--accent, #f472b6); }
@@ -87163,13 +87332,14 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     <div class="stpr-tb stpr-tb2" id="stpr-tb2"><span class="stpr-sattf" id="stpr-maintf"></span>
       <button type="button" class="stpr-ico" id="stpr-drawbtn" title="Drawing tools"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 13.5l1-3 7-7 2 2-7 7z"/><path d="M9.5 4.5l2 2"/></svg></button>
       <div class="stpr-seg stpr-tools" id="stpr-tools">
-        <button type="button" data-tool="hline" title="Horizontal line"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="1" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg></button>
-        <button type="button" data-tool="trend" title="Trend line"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3" y1="13" x2="13" y2="3"/><circle cx="3" cy="13" r="1.8" fill="currentColor" stroke="none"/><circle cx="13" cy="3" r="1.8" fill="currentColor" stroke="none"/></svg></button>
-        <button type="button" data-tool="rect" title="Rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="11" height="9" rx="1.2"/></svg></button>
+        <span class="stpr-tg" data-grp="lines"><button type="button" class="stpr-tgm" data-gtool="lines" title="Horizontal line" aria-label="Horizontal line"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="1" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg></button><button type="button" class="stpr-tgc" data-tgrp="lines" title="Line tools" aria-label="Line tools" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 8 8" fill="currentColor"><path d="M1.2 2.6h5.6L4 5.8z"/></svg></button>
+          <span class="stpr-tfl" role="menu"><button type="button" data-tool="trend" title="Trend line"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3" y1="13" x2="13" y2="3"/><circle cx="3" cy="13" r="1.8" fill="currentColor" stroke="none"/><circle cx="13" cy="3" r="1.8" fill="currentColor" stroke="none"/></svg><span>Trend line</span><kbd>Alt+T</kbd></button><button type="button" data-tool="ray" title="Ray"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="3" y1="13" x2="15" y2="1.5"/><circle cx="3" cy="13" r="1.8" fill="currentColor" stroke="none"/><circle cx="8.5" cy="7.8" r="1.8" fill="currentColor" stroke="none"/></svg><span>Ray</span></button><button type="button" data-tool="arrow" title="Arrow"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="13" x2="12.6" y2="3.4"/><path d="M7 3h6v6"/></svg><span>Arrow</span></button><button type="button" data-tool="hline" title="Horizontal line"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="1" y1="8" x2="15" y2="8"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg><span>Horizontal line</span><kbd>Alt+H</kbd></button><button type="button" data-tool="hray" title="Horizontal ray"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="4" y1="8" x2="15" y2="8"/><circle cx="4" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg><span>Horizontal ray</span><kbd>Alt+J</kbd></button><button type="button" data-tool="vline" title="Vertical line"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="8" y1="1" x2="8" y2="15"/><circle cx="8" cy="8" r="1.8" fill="currentColor" stroke="none"/></svg><span>Vertical line</span><kbd>Alt+V</kbd></button><button type="button" data-tool="channel" title="Parallel channel"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><line x1="1.8" y1="9.6" x2="10.6" y2="2.6"/><line x1="5.4" y1="13.4" x2="14.2" y2="6.4"/><circle cx="1.8" cy="9.6" r="1.5" fill="currentColor" stroke="none"/><circle cx="14.2" cy="6.4" r="1.5" fill="currentColor" stroke="none"/></svg><span>Parallel channel</span></button></span></span>
         <button type="button" data-tool="fib" title="Fib"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"><line x1="2" y1="3" x2="14" y2="3"/><line x1="2" y1="6.3" x2="14" y2="6.3"/><line x1="2" y1="9.6" x2="14" y2="9.6"/><line x1="2" y1="13" x2="14" y2="13"/></svg></button>
-        <button type="button" data-tool="pen" title="Draw"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 13.5l1-3 7-7 2 2-7 7z"/><path d="M9.5 4.5l2 2"/></svg></button>
+        <span class="stpr-tg" data-grp="shapes"><button type="button" class="stpr-tgm" data-gtool="shapes" title="Rectangle" aria-label="Rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="11" height="9" rx="1.2"/></svg></button><button type="button" class="stpr-tgc" data-tgrp="shapes" title="Shapes and brushes" aria-label="Shapes and brushes" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 8 8" fill="currentColor"><path d="M1.2 2.6h5.6L4 5.8z"/></svg></button>
+          <span class="stpr-tfl" role="menu"><button type="button" data-tool="rect" title="Rectangle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><rect x="2.5" y="3.5" width="11" height="9" rx="1.2"/></svg><span>Rectangle</span><kbd>Alt+R</kbd></button><button type="button" data-tool="circle" title="Circle"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><ellipse cx="8" cy="8" rx="6.2" ry="5.2"/></svg><span>Circle</span></button><button type="button" data-tool="pen" title="Draw"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 13.5l1-3 7-7 2 2-7 7z"/><path d="M9.5 4.5l2 2"/></svg><span>Draw</span></button><button type="button" data-tool="brush" title="Highlighter"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M9.6 2.2l4.2 4.2-5.3 5.3H4.3V7.5z"/><path d="M4.3 11.7L2.6 13.4"/><path d="M1.8 14.6h9" stroke-width="2.4" opacity=".5"/></svg><span>Highlighter</span></button></span></span>
         <button type="button" data-tool="range" title="Measure"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.1" stroke-linecap="round"><line x1="2.3" y1="2.6" x2="11.5" y2="2.6"/><circle cx="12.9" cy="2.6" r="1.2"/><line x1="4.9" y1="14" x2="14.3" y2="14"/><circle cx="3.5" cy="14" r="1.2"/><line x1="8.3" y1="5.3" x2="8.3" y2="13.2"/><path d="M8.3 3.4l1.5 1.9h-3z" fill="currentColor" stroke="none"/></svg></button>
-        <button type="button" data-tool="text" title="Text"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4V2.8h10V4"/><path d="M8 2.8v10.4"/><path d="M6 13.2h4"/></svg></button>
+        <span class="stpr-tg" data-grp="notes"><button type="button" class="stpr-tgm" data-gtool="notes" title="Text" aria-label="Text"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4V2.8h10V4"/><path d="M8 2.8v10.4"/><path d="M6 13.2h4"/></svg></button><button type="button" class="stpr-tgc" data-tgrp="notes" title="Text and notes" aria-label="Text and notes" aria-haspopup="true" aria-expanded="false"><svg viewBox="0 0 8 8" fill="currentColor"><path d="M1.2 2.6h5.6L4 5.8z"/></svg></button>
+          <span class="stpr-tfl" role="menu"><button type="button" data-tool="text" title="Text"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 4V2.8h10V4"/><path d="M8 2.8v10.4"/><path d="M6 13.2h4"/></svg><span>Text</span></button><button type="button" data-tool="note" title="Price note"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M5.6 2.5h8v6.2H9.2L7 11.2V8.7H5.6z"/><line x1="7.6" y1="5.6" x2="11.6" y2="5.6"/><circle cx="2.6" cy="13.4" r="1.6" fill="currentColor" stroke="none"/><path d="M3.6 12.3l2.2-2.4"/></svg><span>Price note</span></button></span></span>
         <button type="button" data-tool="emoji" id="stpr-tool-emoji" title="Emoji"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><circle cx="8" cy="8" r="5.8"/><path d="M5.6 9.5a3 3 0 0 0 4.8 0"/><circle cx="6" cy="6.6" r=".7" fill="currentColor" stroke="none"/><circle cx="10" cy="6.6" r=".7" fill="currentColor" stroke="none"/></svg></button>
         <button type="button" data-tool="long" title="Long position"><svg viewBox="0 0 16 16" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2.65" y="2.45" width="10.7" height="6.6" rx="1.2" stroke="currentColor" stroke-width="1.3"/><rect x="2" y="10.4" width="12" height="3.8" rx="1.2" fill="currentColor"/><path d="M8 7.5V4.1M6.3 5.8L8 4.1l1.7 1.7" stroke="currentColor" stroke-width="1.4"/></svg></button>
         <button type="button" data-tool="short" title="Short position"><svg viewBox="0 0 16 16" fill="none" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="1.8" width="12" height="3.8" rx="1.2" fill="currentColor"/><rect x="2.65" y="6.95" width="10.7" height="6.6" rx="1.2" stroke="currentColor" stroke-width="1.3"/><path d="M8 8.5v3.4M6.3 10.2L8 11.9l1.7-1.7" stroke="currentColor" stroke-width="1.4"/></svg></button>
@@ -87179,6 +87349,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       <button type="button" class="stpr-ico" id="stpr-del" title="Delete selected" disabled><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="4.5" x2="13" y2="4.5"/><path d="M6.3 4.5V3h3.4v1.5"/><path d="M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-hideall" title="Hide all drawings" aria-label="Hide all drawings" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M1.6 8S3.9 4 8 4s6.4 4 6.4 4-2.3 4-6.4 4S1.6 8 1.6 8z"/><circle cx="8" cy="8" r="1.9"/><path d="M2.6 13.4L13.4 2.6"/></svg></button>
       <button type="button" class="stpr-ico" id="stpr-lockall" title="Lock all drawings" aria-label="Lock all drawings" aria-pressed="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="3.5" y="7" width="9" height="6.5" rx="1.3"/><path d="M5.5 7V5a2.5 2.5 0 0 1 4.9-.7"/></svg></button>
+      <button type="button" class="stpr-ico" id="stpr-keysbtn" title="Keyboard shortcuts" aria-label="Keyboard shortcuts" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><rect x="1.5" y="4" width="13" height="8.5" rx="1.6"/><path d="M4 6.9h.7M6.6 6.9h.7M9.2 6.9h.7M11.6 6.9h.7M4.7 9.9h6.6"/></svg></button>
       <span class="stpr-sp"></span>
       <span class="stpr-grp" id="stpr-lay"></span>
       <button type="button" class="stpr-ico" id="stpr-treebtn" title="Object tree" aria-label="Object tree" aria-expanded="false"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round"><path d="M8 1.5L11 5.5H9.8L12 9H10.5L13 12.5H3L5.5 9H4L6.2 5.5H5Z"/><line x1="8" y1="12.5" x2="8" y2="14.8"/></svg></button>
@@ -87759,7 +87930,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (d.type === 'long' || d.type === 'short') return Number(d.a.price).toFixed(dg);
     if (d.type === 'text') return String(d.text || '').replace(/\s+/g, ' ').slice(0, 24);
     if (d.type === 'emoji') return d.e || '';
-    var p0 = d.type === 'pen' ? (d.pts || [])[0] : d.a; return p0 && p0.t ? at(p0.t) : ''; }
+    if (d.type === 'hray') return d.a ? Number(d.a.price).toFixed(dg) : '';
+    if (d.type === 'note') return String(d.text || '').replace(/\s+/g, ' ').slice(0, 24) || (d.a ? Number(d.a.price).toFixed(dg) : '');
+    var p0 = (d.type === 'pen' || d.type === 'brush') ? (d.pts || [])[0] : d.a; return p0 && p0.t ? at(p0.t) : ''; }
   function treeMenu(anchor, refresh){
     var L = DW.list.map(function(d, i){ return i; }).reverse(), n = DW.list.filter(function(d){ return d && !lkd(d); }).length;
     var h = '<div class="stpr-tglh">' + T('Object tree', 'Árbol de objetos') + ' \u00b7 ' + esc(dwName()) + '</div>';
@@ -88024,15 +88197,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ['stpr-today', 'title', 'Today, from your MT5: replay any moment of it, and carry on with the live price', 'Hoy, desde tu MT5: repite cualquier momento y sigue con el precio en vivo'], ['stpr-daybtn', 'title', 'Pick a date', 'Elige una fecha'],
     ['stpr-sesed', 'title', 'Edit the session times', 'Editar el horario de las sesiones'], ['stpr-goto', 'title', 'Go to a time', 'Ir a una hora'],
     ['stpr-drawbtn', 'title', 'Drawing tools', 'Herramientas de dibujo'], ['stpr-undo', 'title', 'Undo', 'Deshacer'], ['stpr-redo', 'title', 'Redo', 'Rehacer'],
-    ['stpr-treebtn', 'title', 'Object tree', 'Árbol de objetos'], ['stpr-alertsbtn', 'title', 'Alerts', 'Alertas'], ['stpr-snapbtn', 'title', 'Take a snapshot', 'Hacer una captura'], ['stpr-layersbtn', 'title', 'Show on chart', 'Mostrar en el gráfico'], ['stpr-lookbtn', 'title', 'Chart settings', 'Ajustes del gráfico'], ['stpr-newsbtn', 'title', 'News on the chart', 'Noticias en el gráfico'],
+    ['stpr-treebtn', 'title', 'Object tree', 'Árbol de objetos'], ['stpr-keysbtn', 'title', 'Keyboard shortcuts', 'Atajos de teclado'], ['stpr-alertsbtn', 'title', 'Alerts', 'Alertas'], ['stpr-snapbtn', 'title', 'Take a snapshot', 'Hacer una captura'], ['stpr-layersbtn', 'title', 'Show on chart', 'Mostrar en el gráfico'], ['stpr-lookbtn', 'title', 'Chart settings', 'Ajustes del gráfico'], ['stpr-newsbtn', 'title', 'News on the chart', 'Noticias en el gráfico'],
     ['stpr-restart', 'title', 'Back to the open', 'Volver a la apertura'], ['stpr-back', 'title', 'Back one step', 'Un paso atrás'], ['stpr-fwd', 'title', 'Next step', 'Siguiente paso'],
     ['stpr-speed', 'title', 'Speed', 'Velocidad'], ['stpr-lvrp', 'title', 'Replay', 'Repetición'], ['stpr-lvback', 'title', 'Back to live', 'Volver a en vivo'], ['stpr-cmx', 'title', 'Show the toolbars', 'Mostrar las barras'], ['stpr-play', 'title', 'Play / pause', 'Reproducir / pausa']
   ];
-  var TOOLN = { hline: ['Horizontal line', 'Línea horizontal'], trend: ['Trend line', 'Línea de tendencia'], rect: ['Rectangle', 'Rectángulo'], fib: ['Fib', 'Fib'], text: ['Text', 'Texto'], emoji: ['Emoji', 'Emoji'], long: ['Long position', 'Posición larga'], short: ['Short position', 'Posición corta'], pen: ['Draw', 'Dibujar'], range: ['Measure', 'Medir'] };
+  var TOOLN = { hline: ['Horizontal line', 'Línea horizontal'], trend: ['Trend line', 'Línea de tendencia'], rect: ['Rectangle', 'Rectángulo'], fib: ['Fib', 'Fib'], text: ['Text', 'Texto'], emoji: ['Emoji', 'Emoji'], long: ['Long position', 'Posición larga'], short: ['Short position', 'Posición corta'], pen: ['Draw', 'Dibujar'], range: ['Measure', 'Medir'],
+    ray: ['Ray', 'Rayo'], arrow: ['Arrow', 'Flecha'], hray: ['Horizontal ray', 'Rayo horizontal'], vline: ['Vertical line', 'Línea vertical'], channel: ['Parallel channel', 'Canal paralelo'], circle: ['Circle', 'Círculo'], brush: ['Highlighter', 'Resaltador'], note: ['Price note', 'Nota de precio'] };
   var relangAt = null;
   function relang(force){ var l = L(); if (!force && relangAt === l) return; relangAt = l;
     I18N.forEach(function(r){ var e = $(r[0]); if (!e) return; var v = T(r[2], r[3]); e.setAttribute(r[1], v); if (r[1] === 'title' && e.hasAttribute('aria-label')) e.setAttribute('aria-label', v); });
-    document.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ var n = TOOLN[b.getAttribute('data-tool')]; if (n) b.title = T(n[0], n[1]); });
+    document.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ var n = TOOLN[b.getAttribute('data-tool')]; if (n) b.title = T(n[0], n[1]); }); toolsPaint();
     document.querySelectorAll('#stpr-grid .stpr-tfpill').forEach(function(b){ b.title = T('Timeframe', 'Temporalidad'); });
     panes.forEach(function(p){ var b = p.el.querySelector('.stpr-popc'); if (b) { b.title = popTitle(p.i); b.setAttribute('aria-label', b.title); } });
     var st = $('stpr-state'); if (st && /^Loading/.test(st.textContent)) st.textContent = T('Loading…', 'Cargando…');
@@ -88290,7 +88464,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 
   // ---- menus: a chart's timeframe, the symbol ----
   var menuFor = null;
-  var MENU_BTNS = ['stpr-laybtn', 'stpr-del', 'stpr-treebtn', 'stpr-alertsbtn', 'stpr-snapbtn', 'stpr-layersbtn', 'stpr-lookbtn', 'stpr-sesed', 'stpr-goto'];
+  var MENU_BTNS = ['stpr-laybtn', 'stpr-del', 'stpr-keysbtn', 'stpr-treebtn', 'stpr-alertsbtn', 'stpr-snapbtn', 'stpr-layersbtn', 'stpr-lookbtn', 'stpr-sesed', 'stpr-goto'];
   var MH = null;   // the menu open now: this window's, or a chart window's
   function mEl(){ return (MH && MH.isConnected) ? MH : $('stpr-menu'); }
   function popDocs(){ var a = []; for (var k in POP) if (popOn(+k)) { try { a.push(POP[k].w.document); } catch (e) {} } return a; }
@@ -88489,6 +88663,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   //      bar number, so one drawing sits on every chart whatever its timeframe (it shows on all of them unless its
   //      timeframes are narrowed in the box). Kept per symbol in this browser. ----
   var DSTY = { hline: { c: '#f4c05a', w: 1 }, trend: { c: '#60a5fa', w: 1.6 }, rect: { c: '#60a5fa', w: 1 }, fib: { c: '#f472b6', w: 1 }, text: { c: '#ffffff', w: 2 }, emoji: { c: '#ffffff', w: 1 }, long: { c: '#4ECD8B', w: 1 }, short: { c: '#E56767', w: 1 }, range: { c: '#ffffff', w: 1 }, pen: { c: '#f472b6', w: 2 } };
+  // batch B's tools (19 Oct 2026: vertical line, ray, horizontal ray, arrow, parallel channel, highlighter, price note, circle):
+  // their looks, and the kit that paints, hits and handles them, are the drawing bar's (Trade Replay uses the same)
+  var KIT = window.__stDrawBar ? window.__stDrawBar.kit : null; (function(){ var nd = window.__stDrawBar && window.__stDrawBar.DSTY; if (nd) for (var k in nd) DSTY[k] = nd[k]; })();
+  function KH(t){ return !!(KIT && KIT.has(t)); }
+  // a chart, for the kit: its points in pixels, its plot (as last painted), its time and price as its crosshair and scale write them
+  function kx(p, pv, dm, d){ dm = dm || p._kdm || paneDims(p); return { P: function(q){ return Pt(p, q); }, pw: dm.pw, ph: dm.ph, dsty: DSTY, pv: !!pv, ted: !!(d && DW.ted && DW.ted.d === d),
+    tl: function(q){ return crossFmt(p.tf)(q.t); }, pl: function(pr){ return Number(pr).toFixed(PS(p).digits); } }; }
+  // a parallel channel's other line goes through this point: how far it is from the base line there, in price
+  function chanOff(p, d, q){ var La = lOfT(p, d.a.t), Lb = lOfT(p, d.b.t), Lq = lOfT(p, q.t); if (La == null || Lb == null || Lq == null) return d.off || 0;
+    return q.price - (Math.abs(Lb - La) < 1e-6 ? d.a.price : d.a.price + (d.b.price - d.a.price) * (Lq - La) / (Lb - La)); }
   var DCOLS = ['#ffffff', '#f472b6', '#60a5fa', '#4ECD8B', '#f4c05a', '#E56767', '#c084fc', '#94a3b8'], DWIDS = [1, 2, 3, 4];
   var FIBS = [0, 0.236, 0.382, 0.5, 0.618, 0.786, 1];
   // Text on the chart (Nestor, 17 Oct 2026: "can you add a text option for the chart in practise replay? and also in trade
@@ -88601,11 +88785,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       go.sort(function(a, b){ return b - a; }).forEach(function(i){ DW.list.splice(i, 1); }); DW.multi = null; DW.sel = null; if (go.length) commit(); updDel(); if (lk) lockSay(lk); return; }
     if (DW.sel == null) return; if (DW.list[DW.sel] && lkd(DW.list[DW.sel])) { lockSay(1); return; }   // locked: stays
     DW.list.splice(DW.sel, 1); DW.sel = null; commit(); updDel(); }
-  function drawerOpen(on){ if (on) [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); }); $('stpr-tb2').classList.toggle('drawing', !!on); $('stpr-drawbtn').classList.toggle('on', !!on); if (!on && DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); } }
+  function drawerOpen(on){ flyShut(); if (on) [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); }); $('stpr-tb2').classList.toggle('drawing', !!on); $('stpr-drawbtn').classList.toggle('on', !!on); if (!on && DW.tool !== 'none') { DW.pending = null; DW.penning = null; setTool('none'); } }
   function dwPanes(){ panes.forEach(function(p){ p.el.classList.toggle('drawing', DW.tool !== 'none'); }); }
   function setTool(t){ hideCtx(); DW.noProps = false; DW.tool = (DW.tool === t ? 'none' : t); DW.pending = null; DW.snap = null; if (DW.tool !== 'none') dwUnhide(); if (DW.tool !== 'none' && (DW.sel != null || (DW.multi && DW.multi.length))) { DW.sel = null; DW.multi = null; updDel(); }   // picking a tool puts the selection down (TradingView's)
     document.querySelectorAll('#stpr-tools [data-tool]').forEach(function(b){ b.classList.toggle('on', b.getAttribute('data-tool') === DW.tool); });
-    dwPanes(); renderProps(); dirty(); }
+    if (DW.tool !== 'none') tgSet(DW.tool); DW.pdn = null; toolsPaint(); dwPanes(); renderProps(); dirty(); }
+  // a two-point drawing (or a channel's third point) placed: kept, selected, the tool put down
+  function pendDone(){ var d = DW.pending; if (!d) return; delete d.st; DW.list.push(d); DW.pending = null; DW.pdn = null; DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
 
   // ---- a chart's geometry: time <-> logical position <-> pixels, between and beyond its candles ----
   function paneDims(p){ var w = p.el.clientWidth, h = p.el.clientHeight, psw = 0, th = 28;
@@ -88653,6 +88839,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function drawOne(p, g, d, pw, pv){ g.save(); g.font = "10px 'DM Mono',monospace";
     var C = dC(d), W = dW(d), a, b, x0, x1, y0, y1; g.setLineDash(pv ? [4, 3] : dDash(d, W));
     if (d.type === 'hline') { /* a native price line with its label on the scale: syncHL */ }
+    else if (KH(d.type)) KIT.paint(g, d, kx(p, pv, null, d));   // batch B's tools
     else if (d.type === 'trend') { a = Pt(p, d.a); b = Pt(p, d.b); if (a && b) { var tsg = trendSeg(a, b, d, pw); g.strokeStyle = C; g.lineWidth = W; g.beginPath(); g.moveTo(tsg[0].x, tsg[0].y); g.lineTo(tsg[1].x, tsg[1].y); g.stroke(); } }
     else if (d.type === 'pen') { var q = (d.pts || []).map(function(z){ return Pt(p, z); }).filter(Boolean);
       if (q.length > 1) { g.strokeStyle = C; g.lineWidth = W; g.lineJoin = 'round'; g.lineCap = 'round'; curve(g, q); } }
@@ -88699,7 +88886,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (parts.length) { g.save(); g.shadowColor = 'rgba(0,0,0,0.9)'; g.shadowBlur = 4; g.fillStyle = C; g.textBaseline = 'middle'; g.textAlign = 'center'; g.fillText(parts.join(' · '), xmr, ybr + adir * 12); g.restore(); } } }
     // the object's own note, riding on it (along a trend line, centred above anything else)
     if (d.text && d.type !== 'hline' && d.type !== 'range' && d.type !== 'text') {
-      if (d.type === 'rect') rectText(p, g, d, C);   // its words: above it as before, or inside it (Text > Position)
+      if (KH(d.type)) KIT.text(g, d, kx(p, pv, null, d), C);
+      else if (d.type === 'rect') rectText(p, g, d, C);   // its words: above it as before, or inside it (Text > Position)
       else if (d.type === 'trend') { var A = Pt(p, d.a), B = Pt(p, d.b);
         if (A && B) { var ang = Math.atan2(B.y - A.y, B.x - A.x); if (ang > Math.PI / 2 || ang < -Math.PI / 2) ang += Math.PI;
           g.save(); g.translate((A.x + B.x) / 2, (A.y + B.y) / 2); g.rotate(ang); g.font = "11px 'DM Mono',monospace"; g.fillStyle = C; g.textAlign = 'center'; g.textBaseline = 'bottom';
@@ -88718,6 +88906,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     else if (d.type === 'long' || d.type === 'short') { var pz = posGeo(p, d); if (pz) { sq(pz.ax, pz.ye); sq(pz.xr, pz.ye); sq(pz.ax, pz.ys); sq(pz.ax, pz.yt); } }
     else if (d.type === 'emoji') { var eg = emoGeo(p, d); if (eg) { var hs = eg.s / 2; g.setLineDash([3, 3]); g.strokeRect(Math.round(eg.x - hs) - .5, Math.round(eg.y - hs) - .5, Math.round(eg.s) + 1, Math.round(eg.s) + 1); g.setLineDash([]);
       sq(eg.x - hs, eg.y - hs); sq(eg.x + hs, eg.y - hs); sq(eg.x - hs, eg.y + hs); sq(eg.x + hs, eg.y + hs); } }
+    else if (KH(d.type)) KIT.handles(g, d, kx(p), sq);
     else if (d.type === 'rect') { var a = Pt(p, d.a), b = Pt(p, d.b);
       if (a && b) { var x0 = Math.min(a.x, b.x), x1 = Math.max(a.x, b.x), y0 = Math.min(a.y, b.y), y1 = Math.max(a.y, b.y), mx = (x0 + x1) / 2, my = (y0 + y1) / 2;
         sq(x0, y0); sq(x1, y0); sq(x0, y1); sq(x1, y1); sq(mx, y0); sq(mx, y1); sq(x0, my); sq(x1, my); } }
@@ -88734,6 +88923,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function posGeo(p, d){ var a = Pt(p, d.a), xr = d.b ? xOfT(p, d.b.t) : null, ye = yOf(p, d.a.price), ys = yOf(p, d.sl), yt = yOf(p, d.tp);
     if (!a || xr == null || ye == null || ys == null || yt == null) return null; return { ax: a.x, x0: Math.min(a.x, xr), x1: Math.max(a.x, xr), xr: xr, ye: ye, ys: ys, yt: yt }; }
   function bboxOf(p, d, pw){
+    if (KH(d.type)) return KIT.box(d, kx(p));
     if (d.type === 'long' || d.type === 'short') { var pz = posGeo(p, d); return pz ? { x0: pz.x0, y0: Math.min(pz.ys, pz.yt), x1: pz.x1, y1: Math.max(pz.ys, pz.yt) } : null; }
     if (d.type === 'text') { var tb = txtBox(p, d); return tb ? { x0: tb.x0, y0: tb.y0, x1: tb.x1, y1: tb.y1 } : null; }
     if (d.type === 'emoji') { var eg = emoGeo(p, d); return eg ? { x0: eg.x - eg.s / 2, y0: eg.y - eg.s / 2, x1: eg.x + eg.s / 2, y1: eg.y + eg.s / 2 } : null; }
@@ -88758,6 +88948,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         if (Math.hypot(px - pz.ax, py - pz.ye) < 8) return { i: i, part: 'a' }; if (Math.hypot(px - pz.xr, py - pz.ye) < 8) return { i: i, part: 'pr' };
         if (px >= pz.x0 && px <= pz.x1 && py >= Math.min(pz.ys, pz.yt) && py <= Math.max(pz.ys, pz.yt)) return { i: i, part: 'body' }; continue; }
       if (d.type === 'pen') { var ps = d.pts || []; for (var k = 1; k < ps.length; k++) { var q1 = Pt(p, ps[k - 1]), q2 = Pt(p, ps[k]); if (q1 && q2 && d2seg(px, py, q1.x, q1.y, q2.x, q2.y) < 7) return { i: i, part: 'body' }; } continue; }
+      if (KH(d.type)) { var kh = KIT.hit(d, kx(p), px, py); if (kh) return { i: i, part: kh }; continue; }
       var a = Pt(p, d.a), b = Pt(p, d.b); if (!a || !b) continue;
       if (Math.hypot(px - a.x, py - a.y) < 8) return { i: i, part: 'a' }; if (Math.hypot(px - b.x, py - b.y) < 8) return { i: i, part: 'b' };
       if (d.type === 'rect') { var rx0 = Math.min(a.x, b.x), rx1 = Math.max(a.x, b.x), ry0 = Math.min(a.y, b.y), ry1 = Math.max(a.y, b.y);
@@ -88791,10 +88982,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         g.fillStyle = '#0b0a0d'; g.textAlign = 'left'; g.fillText(tx, px0 + 7, py + ph / 2 + 0.5); }
       g.restore(); }); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
-  function syncHL(p){ var want = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: hlStyle(d) }); });
+  function syncHL(p){ var want = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: hlStyle(d) });
+      else if (d && d.type === 'hray' && d.a && isFinite(d.a.price) && visibleOn(d, p.tf)) want.push({ p: d.a.price, c: dC(d), w: 1, t: '', s: 0, nl: 1 }); });   // a horizontal ray: its price on the scale (its line is its own: it starts where it was put)
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
     (p.hl || []).forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} });
-    p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: o.s || 0, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
+    p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: o.s || 0, lineVisible: !o.nl, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
   // ---- Nestor's Minimalist indicator (his TradingView script, tradingview/Minimalist-v4.pine; Nestor, 17 Oct 2026: "the
   //      minimalist indicator from trading view to be used in practice replay"), worked out from the candles up to now:
   //      the range zone (by default of the latest break: a close past the last 30-bar swing anchors it at the strong low /
@@ -89235,7 +89427,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var pcb = p._popc || (p._popc = p.el.querySelector('.stpr-popc')); if (pcb && pcb._r !== dm.psw) { pcb._r = dm.psw; pcb.style.right = (dm.psw + 8) + 'px'; }
     if (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr)) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
     if (c.style.width !== w + 'px' || c.style.height !== h + 'px') { c.style.width = w + 'px'; c.style.height = h + 'px'; }   // a zoom changes the size on screen and the pixel ratio together: the bitmap can stay the same size while this must not (Nestor, 17 Oct 2026: "i zoomed out in the external window and the indicator looks broken")
-    var g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h);
+    var g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h); p._kdm = dm;
     g.save(); g.beginPath(); g.rect(0, 0, dm.pw, dm.ph); g.clip();
     if (CFG.mini) { MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; }   // under the trades and the drawings (MINI_P: this chart's settings)
     p._zones = 0; if (CFG.pos !== false) drawZones(p, g, dm);
@@ -89245,6 +89437,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     p._bells = []; LST.forEach(function(d){ if (!(d && d.type === 'hline' && d.alert && visibleOn(d, p.tf))) return; var by = yOf(p, d.price);   // the bell on each alert's line (back 19 Oct 2026)
       if (by != null && by >= 0 && by <= dm.ph) { bellAt(g, dm.pw - BELLX, by, dC(d), !!d.hitAt); p._bells.push({ x: dm.pw - BELLX, y: by, hit: !!d.hitAt, price: d.price }); } });
     if (act && DW.pending) try { drawOne(p, g, DW.pending, dm.pw, true); } catch (e) {}
+    if (DW.meas && DW.meas.p === p) try { drawOne(p, g, DW.meas.d, dm.pw, false); } catch (e) {}   // Shift + drag: a measure until the next click
     if (act && DW.penning && DW.penP === p) drawPenLive(g, DW.penning);
     var sel = !act ? null : (DW.drag ? DW.list[DW.drag.i] : (DW.sel != null ? DW.list[DW.sel] : null)); if (sel && visibleOn(sel, p.tf)) { if (lkd(sel)) lockMark(p, g, sel, dm.pw); else handles(p, g, sel, dm.pw); }
     if (act && DW.multi && DW.multi.length) { g.save(); g.strokeStyle = '#f472b6'; g.lineWidth = 1; g.setLineDash([3, 3]);
@@ -89254,6 +89447,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (DW.marq && DW.marq.p === p) { var mm = marqNorm(DW.marq); g.save(); g.fillStyle = 'rgba(244,114,182,0.10)'; g.fillRect(mm.x0, mm.y0, mm.x1 - mm.x0, mm.y1 - mm.y0);
       g.strokeStyle = 'rgba(244,114,182,0.85)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(mm.x0 + .5, mm.y0 + .5, mm.x1 - mm.x0 - 1, mm.y1 - mm.y0 - 1); g.restore(); }
     g.restore();
+    if (KIT) LST.forEach(function(d){ if (d && d.type === 'vline' && visibleOn(d, p.tf)) try { KIT.axis(g, d, kx(p, false, dm)); } catch (e) {} });   // a vertical line's time on the time axis
     p._news = []; if (CFG.news !== false) drawNews(p, g, dm.pw, dm.ph);
     var cx = cxFor(p); if (cx) paintCx(p, g, cx, dm); else { try { window.__stAxisLbl(p.series).set('cx', null); } catch (e) {} }
     try { paintOhlc(p); } catch (e) {}
@@ -89271,10 +89465,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function stopLoop(){ if (loopId) try { loopW.cancelAnimationFrame(loopId); } catch (e) {} loopId = 0; }
 
   function txtEdit(p, d, isNew){
-    txtDone(); var a = Pt(p, d.a); if (!a) return; var fs = TSZ[Math.round(dW(d))] || 14;
+    txtDone(); var nb = (d.type === 'note' && KIT) ? KIT.note(d, kx(p)) : null, a = nb ? { x: nb.x0 + 4, y: nb.y0 + 2 } : Pt(p, d.a); if (!a) return; var fs = nb ? nb.fs : (TSZ[Math.round(dW(d))] || 14);   // a price note: on its box
     var ta = document.createElement('textarea'); ta.className = 'stpr-txed'; ta.value = d.text || ''; ta.rows = 1; ta.setAttribute('aria-label', T('Text', 'Texto'));
     ta.style.cssText = 'position:absolute;z-index:8;left:' + (a.x - 4) + 'px;top:' + (a.y - 3) + 'px;min-width:120px;max-width:60%;padding:2px 3px;margin:0;resize:none;overflow:hidden;background:rgba(11,10,13,0.85);'
-      + 'border:1px dashed #f472b6;border-radius:3px;outline:none;color:' + dC(d) + ';font:600 ' + fs + "px 'DM Mono',monospace;line-height:1.3;white-space:pre;";
+      + 'border:1px dashed #f472b6;border-radius:3px;outline:none;color:' + (nb ? window.__stDrawBar.eff(DSTY, 'note', d, 'tcol') : dC(d)) + ';font:600 ' + fs + "px 'DM Mono',monospace;line-height:1.3;white-space:pre;";
+    if (nb) ta.placeholder = Number(d.a.price).toFixed(PS(p).digits);   // a note with no words shows its price
     var fit = function(){ ta.style.height = 'auto'; ta.style.height = ta.scrollHeight + 'px'; ta.style.width = 'auto'; ta.style.width = Math.max(120, ta.scrollWidth + 8) + 'px'; };
     p.el.appendChild(ta); DW.ted = { p: p, d: d, ta: ta, isNew: !!isNew }; dirty(); fit();
     ta.addEventListener('input', function(){ d.text = ta.value; fit(); renderProps(); });
@@ -89283,14 +89478,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     ta.addEventListener('blur', function(){ setTimeout(txtDone, 0); });
     DW.ted.was = d.text || ''; setTimeout(function(){ try { ta.focus(); ta.select(); } catch (x) {} }, 0); }
   function txtDone(){ var t = DW.ted; if (!t) return; DW.ted = null; try { t.ta.remove(); } catch (e) {}
-    var i = DW.list.indexOf(t.d); if (i >= 0 && !String(t.d.text || '').trim()) { DW.list.splice(i, 1); if (DW.sel === i) DW.sel = null; if (!t.isNew) commit(); updDel(); dirty(); return; }
+    if (t.d.type === 'note' && !String(t.d.text || '').trim()) delete t.d.text;   // a price note keeps its place with no words: it shows its price
+    var i = DW.list.indexOf(t.d); if (i >= 0 && !String(t.d.text || '').trim() && t.d.type !== 'note') { DW.list.splice(i, 1); if (DW.sel === i) DW.sel = null; if (!t.isNew) commit(); updDel(); dirty(); return; }
     if (i >= 0) { commit(); renderProps(); } dirty(); }
   // ---- the options box (Trade Replay's), in the chart last touched ----
   function styleTgt(){ return (DW.sel != null && DW.list[DW.sel]) ? DW.list[DW.sel] : (DW.nsT[DW.tool] || (DW.nsT[DW.tool] = {})); }
   function styleType(){ return (DW.sel != null && DW.list[DW.sel]) ? DW.list[DW.sel].type : DW.tool; }
   // a new drawing: the look set for the next one (this session), else the tool's default (Templates), else the app's own
   function styleNew(o){ var L = DW.nsT[o.type] || (CFG.ddef || {})[o.type]; if (L && window.__stDrawBar) window.__stDrawBar.applyLook(o, L); return o; }
-  function tyName(ty){ return { hline: T('HLINE', 'LÍNEA H'), trend: T('TREND', 'TENDENCIA'), rect: T('RECT', 'RECTÁNGULO'), fib: 'FIB', text: T('TEXT', 'TEXTO'), emoji: 'EMOJI', long: T('LONG POSITION', 'POSICIÓN LARGA'), short: T('SHORT POSITION', 'POSICIÓN CORTA'), range: T('RANGE', 'RANGO'), pen: T('PEN', 'LÁPIZ') }[ty] || String(ty || '').toUpperCase(); }
+  function tyName(ty){ return { hline: T('HLINE', 'LÍNEA H'), trend: T('TREND', 'TENDENCIA'), rect: T('RECT', 'RECTÁNGULO'), fib: 'FIB', text: T('TEXT', 'TEXTO'), emoji: 'EMOJI', long: T('LONG POSITION', 'POSICIÓN LARGA'), short: T('SHORT POSITION', 'POSICIÓN CORTA'), range: T('RANGE', 'RANGO'), pen: T('PEN', 'LÁPIZ'),
+    vline: T('VERTICAL LINE', 'LÍNEA VERTICAL'), ray: T('RAY', 'RAYO'), hray: T('HORIZONTAL RAY', 'RAYO HORIZONTAL'), arrow: T('ARROW', 'FLECHA'), channel: T('PARALLEL CHANNEL', 'CANAL PARALELO'), brush: T('HIGHLIGHTER', 'RESALTADOR'), note: T('PRICE NOTE', 'NOTA DE PRECIO'), circle: T('CIRCLE', 'CÍRCULO') }[ty] || String(ty || '').toUpperCase(); }
   // ---- the drawing toolbar (Nestor, 19 Oct 2026: "build all the tradingview suggestions! i love them!!"; window.__stDrawBar):
   //      TradingView's floating bar over the selected drawing, in the chart last touched, in place of the options box. Everything
   //      the box had is in it: colours (now the 30 of the chart settings, with an opacity), thickness, the alert, Visibility,
@@ -89314,7 +89511,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       name: tyName, unitLbl: function(){ return uLbl(stopUnit()).toUpperCase(); }, fibLbl: fibLbl, tsz: function(z){ return TSZ[z] || 14; },
       emojiNow: emoNow, emojis: function(){ return { mine: EMOJIS, all: (window.__stEmojis || []).filter(function(x){ return EMOJIS.indexOf(x) < 0; }) }; },   // the trading ones first, then every emoji the community chat has
       emojiPick: function(x){ var o = DW.sel != null && DW.list[DW.sel]; if (o && o.type === 'emoji') { o.e = x; commit(); } else { DW.emoji = x; CFG.emoji = x; save(); } dirty(); },
-      posHtml: posHtml, posWire: posWire, flash: function(m){ flash(m); } });
+      posHtml: posHtml, posWire: posWire, flash: function(m){ flash(m); }, keys: keyRows });
     return DBAR; }
   // where it goes: the window of the chart last touched (a chart window has its own), over that chart; the drawing's box on it
   function dbHost(){ var host = (DW.at && panes.indexOf(DW.at) >= 0) ? DW.at : panes[0]; if (!host) return null;
@@ -89355,10 +89552,56 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function dwUnhide(){ if (CFG.dwHide) hideAll(false); }
   function lockSel(){ var o = DW.sel != null && DW.list[DW.sel]; if (!o) return; if (o.lock) delete o.lock; else o.lock = true; commit(); renderProps(); dirty();
     flash(o.lock ? T('Locked: it cannot be moved or deleted until unlocked.', 'Bloqueado: no se puede mover ni borrar hasta desbloquearlo.') : T('Unlocked.', 'Desbloqueado.')); }
+  function nudge(c, p){ var mv = function(q){ var L = p && lOfT(p, q.t); if (L != null) q.t = tOfL(p, L + 3); };   // three candles along, on the chart it was cloned on
+    if (c.type === 'hline') c.price = c.price + U('pips') * 5; else if (c.type === 'pen' || c.type === 'brush') (c.pts || []).forEach(mv); else { if (c.a) mv(c.a); if (c.b) mv(c.b); if (c.type === 'hray' && c.a) c.a.price = c.a.price + U('pips') * 5; } return c; }
   function cloneSel(){ if (DW.sel == null || !DW.list[DW.sel]) return; var p = DW.at || panes[0], c = clone(DW.list[DW.sel]); delete c.lock;   // a copy starts unlocked
-    var mv = function(q){ var L = p && lOfT(p, q.t); if (L != null) q.t = tOfL(p, L + 3); };   // three candles along, on the chart it was cloned on
-    if (c.type === 'hline') c.price = c.price + U('pips') * 5; else if (c.type === 'pen') (c.pts || []).forEach(mv); else { if (c.a) mv(c.a); if (c.b) mv(c.b); }
-    DW.list.push(c); DW.sel = DW.list.length - 1; DW.multi = null; commit(); updDel(); }
+    nudge(c, p); DW.list.push(c); DW.sel = DW.list.length - 1; DW.multi = null; commit(); updDel(); }
+  // ---- TradingView's keys (batch B, Nestor 19 Oct 2026: "build all the tradingview suggestions!") ----
+  // Ctrl+C / Ctrl+V: the selected drawings, pasted where they were, three candles on (again on each paste), on the same symbol
+  function copySel(){ var ix = ((DW.multi && DW.multi.length) ? DW.multi.slice() : (DW.sel != null ? [DW.sel] : [])).filter(function(i){ return !!DW.list[i]; }); if (!ix.length) return false;
+    DW.clip = { raw: DW.raw, m: DWM, items: ix.map(function(i){ return clone(DW.list[i]); }) };
+    flash(ix.length > 1 ? T(ix.length + ' drawings copied: Ctrl+V pastes them.', ix.length + ' dibujos copiados: Ctrl+V los pega.') : T('Drawing copied: Ctrl+V pastes it.', 'Dibujo copiado: Ctrl+V lo pega.')); return true; }
+  function pasteClip(){ var c = DW.clip; if (!c || !c.items || !c.items.length || !S) return false;
+    if (c.raw !== DW.raw || c.m !== DWM) { var sn = (symBy(c.raw) || {}).name || c.raw; flash(T('These drawings were copied on ' + sn + ': they paste on ' + sn + ' only (its prices).', 'Estos dibujos se copiaron en ' + sn + ': solo se pegan en ' + sn + ' (sus precios).')); return true; }
+    if (DW.ted) txtDone(); hideCtx(); dwUnhide(); if (DW.tool !== 'none') setTool('none');
+    var p = (DW.at && panes.indexOf(DW.at) >= 0 && dwListFor(DW.at) === DW.list) ? DW.at : (panes.filter(function(x){ return dwListFor(x) === DW.list; })[0] || panes[0]);
+    var made = c.items.map(function(o){ var n = clone(o); delete n.lock; delete n.alert; delete n.hitAt; delete n.live; delete n.hidden; return nudge(n, p); }), i0 = DW.list.length;   // a copy is unlocked, with no alert
+    made.forEach(function(n){ DW.list.push(n); }); c.items = made.map(clone);
+    if (made.length === 1) { DW.sel = i0; DW.multi = null; } else { DW.sel = null; DW.multi = made.map(function(n, k){ return i0 + k; }); }
+    DW.noProps = false; commit(); updDel(); dirty(); return true; }
+  // Alt+H / Alt+V / Alt+J: a horizontal line, a vertical line or a horizontal ray at the mouse (no mouse on a chart: the last candle and price)
+  function quickDraw(ty){ if (!S || !panes.length) return; var c = (DW.cx && panes.indexOf(DW.cx.p) >= 0) ? DW.cx : null, p = null, q = null;
+    if (c) { var dm = paneDims(c.p); if (c.x >= 0 && c.x <= dm.pw && c.y >= 0 && c.y <= dm.ph) { p = c.p; dwFocus(p); var lg = p.chart.timeScale().coordinateToLogical(c.x), pr = p.series.coordinateToPrice(c.y);
+        if (lg != null && pr != null) { var t = tOfL(p, Math.round(lg)); if (t != null) q = { t: t, price: pr }; } } }
+    if (!q) { p = (DW.at && panes.indexOf(DW.at) >= 0 && dwListFor(DW.at) === DW.list) ? DW.at : (panes.filter(function(x){ return dwListFor(x) === DW.list; })[0] || panes[0]);
+      var B = p && p.bars, lb = B && B.length ? B[B.length - 1] : null; if (!lb) return; q = { t: lb.time, price: lb.close }; }
+    if (DW.ted) txtDone(); hideCtx(); dwUnhide(); if (DW.tool !== 'none') setTool('none'); DW.pending = null;
+    var pr2 = +Number(q.price).toFixed(PS(p).digits), o = ty === 'hline' ? { type: 'hline', price: pr2 } : { type: ty, a: { t: q.t, price: pr2 } };
+    DW.list.push(styleNew(o)); DW.sel = DW.list.length - 1; DW.multi = null; DW.noProps = false; DW.at = p; commit(); updDel(); dirty(); }
+  // Alt+T / Alt+R / Alt+F: the tool picked (the drawing tools open)
+  function pickTool(t){ if (!$('stpr-tb2').classList.contains('drawing')) drawerOpen(true); if (DW.tool !== t) setTool(t); }
+  function keyRows(){ return window.__stDrawBar ? window.__stDrawBar.keyRows({ alert: true, exec: String(CFG.mm.key || 'O'), step: !!(S && !S.live) }) : []; }
+  function keysMenu(anchor){ openMenu(anchor, '<div class="stpr-tglh">' + T('Keyboard shortcuts', 'Atajos de teclado') + '</div>' + (window.__stDrawBar ? window.__stDrawBar.keysHtml(T, keyRows()) : ''), 'keys');
+    var m = mEl(); if (menuFor === 'keys' && m) { var vh = (m.ownerDocument.defaultView || window).innerHeight, tp = m.getBoundingClientRect().top; m.style.maxHeight = Math.max(200, vh - tp - 12) + 'px'; m.style.overflowY = 'auto'; } }
+  // ---- the tools row in groups, as TradingView's (batch B): lines, shapes and brushes, text and notes each behind one button
+  //      showing the one used last (kept in this browser); its arrow opens the rest, with their keys ----
+  var TGRP = { lines: ['trend', 'ray', 'arrow', 'hline', 'hray', 'vline', 'channel'], shapes: ['rect', 'circle', 'pen', 'brush'], notes: ['text', 'note'] };
+  var TGN = { lines: ['Line tools', 'Herramientas de líneas'], shapes: ['Shapes and brushes', 'Formas y pinceles'], notes: ['Text and notes', 'Texto y notas'] };
+  var TKEY = { trend: 'Alt+T', hline: 'Alt+H', hray: 'Alt+J', vline: 'Alt+V', rect: 'Alt+R', fib: 'Alt+F' };
+  var TG = { lines: 'hline', shapes: 'rect', notes: 'text' };
+  try { var tg0 = JSON.parse(localStorage.getItem('st_practice_tgrp') || 'null'); if (tg0) Object.keys(TGRP).forEach(function(g){ if (TGRP[g].indexOf(tg0[g]) >= 0) TG[g] = tg0[g]; }); } catch (e) {}
+  function tgSet(t){ for (var g in TGRP) if (TGRP[g].indexOf(t) >= 0 && TG[g] !== t) { TG[g] = t; try { localStorage.setItem('st_practice_tgrp', JSON.stringify(TG)); } catch (e) {} } }
+  function toolsPaint(){ var box = $('stpr-tools'); if (!box) return;
+    box.querySelectorAll('[data-tool]').forEach(function(b){ var n = TOOLN[b.getAttribute('data-tool')], sp = b.querySelector('span'); if (n && sp && sp.textContent !== T(n[0], n[1])) sp.textContent = T(n[0], n[1]); });
+    box.querySelectorAll('[data-gtool]').forEach(function(m){ var g = m.getAttribute('data-gtool'), t = TG[g], src = box.querySelector('.stpr-tfl [data-tool="' + t + '"] svg'), n = TOOLN[t], nm = n ? T(n[0], n[1]) + (TKEY[t] ? ' (' + TKEY[t] + ')' : '') : '', on = TGRP[g].indexOf(DW.tool) >= 0;
+      if (m._t !== t && src) { m.innerHTML = src.outerHTML; m._t = t; } if (m.title !== nm) { m.title = nm; m.setAttribute('aria-label', nm); } if (m.classList.contains('on') !== on) m.classList.toggle('on', on); });
+    box.querySelectorAll('[data-tgrp]').forEach(function(c){ var n = TGN[c.getAttribute('data-tgrp')], nm = n ? T(n[0], n[1]) : ''; if (c.title !== nm) { c.title = nm; c.setAttribute('aria-label', nm); } }); }
+  function flyShut(){ var any = false; document.querySelectorAll('#stpr-tools .stpr-tg.open').forEach(function(s){ s.classList.remove('open'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); any = true; }); return any; }
+  function flyOpen(g){ var s = document.querySelector('#stpr-tools .stpr-tg[data-grp="' + g + '"]'); if (!s) return; var was = s.classList.contains('open'); flyShut(); if (was) return;
+    s.classList.add('open'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'true');
+    var f = s.querySelector('.stpr-tfl'); f.style.left = ''; var r = f.getBoundingClientRect(), vw = document.documentElement.clientWidth || window.innerWidth, sh = 0;   // kept on screen (a phone)
+    if (r.right > vw - 8) sh = r.right - (vw - 8); if (r.left - sh < 8) sh = r.left - 8; if (sh) f.style.left = Math.round(-1 - sh) + 'px'; }
+  function measOff(){ if (!DW.meas) return false; DW.meas = null; dirty(); return true; }
   // right-click on a drawing: Clone / Delete
   function ctxEl(p){ var e = p.el.querySelector('.stpr-ctx');
     if (!e) { e = document.createElement('div'); e.className = 'stpr-ctx';
@@ -89385,7 +89628,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function isOpen(){ return !!(S && ($('stpr-bg').classList.contains('show') || LV.inl)); }
   function paneOf(e){ var t = e.target; for (var i = 0; i < panes.length; i++) { var pc = panes[i].el.querySelector('.stpr-pc'); if (pc && t && pc.contains(t)) return panes[i]; } return null; }
   function dwDown(e){
-    if (!isOpen() || drag) return; var p = paneOf(e); if (!p) return;
+    if (!isOpen() || drag) return; if (DW.meas && !DW.meas.live) { DW.meas = null; dirty(); }   // a Shift-measure goes with the next click
+    var p = paneOf(e); if (!p) return; flyShut();
     if (e.button != null && e.button !== 0) return;   // left button only; a touch has none
     var xy = evXY(p, e), touch = !!e.touches; DW.at = p;
     if (!touch && onPlus(p, xy)) { e.stopPropagation(); e.preventDefault(); var ppr = p.series.coordinateToPrice(DW.cx.y); if (ppr != null) alertAt(ppr, p); return; }   // the + by the price: an alert there
@@ -89395,16 +89639,22 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     hideCtx();
     var q = toP(p, e); if (!q) return;
     if (DW.tool === 'none' && e.ctrlKey) { e.stopPropagation(); e.preventDefault(); DW.marq = { p: p, x0: xy.x, y0: xy.y, x1: xy.x, y1: xy.y }; DW.sel = null; DW.multi = null; updDel(); return; }
+    // TradingView's Shift-measure: Shift + drag measures from the press to the release in the Measure tool's look, gone at the next click
+    if (DW.tool === 'none' && e.shiftKey && !touch) { e.stopPropagation(); e.preventDefault(); DW.meas = { p: p, live: true, d: styleNew({ type: 'range', a: q, b: { t: q.t, price: q.price } }) }; dirty(); return; }
     if (DW.tool !== 'none') { e.stopPropagation(); e.preventDefault();
       if (DW.tool === 'hline') { DW.list.push(styleNew({ type: 'hline', price: q.price })); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
+      else if (DW.tool === 'vline' || DW.tool === 'hray') { DW.list.push(styleNew({ type: DW.tool, a: q })); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }   // one click
+      else if (DW.tool === 'note') { var nd = styleNew({ type: 'note', a: q, off: { x: KIT.NOFF.x, y: KIT.NOFF.y } }); DW.list.push(nd); DW.sel = DW.list.length - 1; setTool('none'); updDel(); txtEdit(p, nd, true); }   // one click, then its words
       else if (DW.tool === 'long' || DW.tool === 'short') { var pdir = DW.tool === 'long' ? 1 : -1, XF = PS(p), prd = XF === S ? stopPx() : defStopFor(XF.sym, q.price), ptd = XF === S ? (tgtDist(prd) || 2 * prd) : 2 * prd, pLa = lOfT(p, q.t);
         DW.list.push({ type: DW.tool, a: { t: q.t, price: q.price }, b: { t: tOfL(p, (pLa == null ? 0 : pLa) + 20), price: q.price }, sl: q.price - pdir * prd, tp: q.price + pdir * ptd });
         DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
       else if (DW.tool === 'emoji') { DW.list.push({ type: 'emoji', a: toPf(p, e) || q, e: emoNow(), size: 32 }); DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
       else if (DW.tool === 'text') { var td = styleNew({ type: 'text', a: toPf(p, e) || q, text: '' }); DW.list.push(td); DW.sel = DW.list.length - 1; setTool('none'); updDel(); txtEdit(p, td, true); }
-      else if (DW.tool === 'pen') { DW.penning = styleNew({ type: 'pen', pts: [toPf(p, e) || q] }); DW.penning.px = [xy]; DW.penP = p; }
-      else if (!DW.pending) DW.pending = styleNew({ type: DW.tool, a: q, b: { t: q.t, price: q.price } });
-      else { DW.pending.b = q; DW.list.push(DW.pending); DW.pending = null; DW.sel = DW.list.length - 1; commit(); updDel(); setTool('none'); }
+      else if (DW.tool === 'pen' || DW.tool === 'brush') { DW.penning = styleNew({ type: DW.tool, pts: [toPf(p, e) || q] }); DW.penning.px = [xy]; DW.penP = p; }   // the highlighter is a wide, see-through pen
+      // two points: press, move, press again - or press and drag (batch B); a parallel channel takes a third press for its other line
+      else if (!DW.pending) { DW.pending = styleNew({ type: DW.tool, a: q, b: { t: q.t, price: q.price } }); if (DW.tool === 'channel') { DW.pending.off = 0; DW.pending.st = 1; } DW.pdn = { p: p, x: xy.x, y: xy.y }; }
+      else if (DW.pending.st === 1) { DW.pending.b = q; DW.pending.st = 2; }
+      else { if (DW.pending.st === 2) DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.b = q; pendDone(); }
       dirty(); return; }
     var h = hit(p, xy.x, xy.y);
     if (h) { e.stopPropagation(); e.preventDefault(); DW.sel = h.i; DW.multi = null; DW.noProps = true; updDel(); DW.drag = { p: p, i: h.i, part: h.part, start: q, orig: clone(DW.list[h.i]), x0: xy.x, y0: xy.y, lock: lkd(DW.list[h.i]) };
@@ -89432,27 +89682,33 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if (!p && DW.hov != null) { DW.hov = null; dirty(); } if (!p && DW.plusHov) { DW.plusHov = null; dirty(); }   // off the chart (onto its buttons too): no drawing is under the mouse
     if (DW.asTemp) { var a0 = evXY(DW.asTemp.p, e); DW.asTemp.dy = Math.max(DW.asTemp.dy, Math.abs(a0.y - DW.asTemp.y0)); }
     if (DW.marq) { var mxy = evXY(DW.marq.p, e); DW.marq.x1 = mxy.x; DW.marq.y1 = mxy.y; dirty(); return; }
+    if (DW.meas && DW.meas.live) { var qm = toP(DW.meas.p, e); if (qm) { DW.meas.d.b = qm; dirty(); } return; }
+    if (DW.pdn && (e.touches || (e.buttons & 1))) { var pm = evXY(DW.pdn.p, e); if (Math.hypot(pm.x - DW.pdn.x, pm.y - DW.pdn.y) > 10) DW.pdn.far = true; }   // a two-point drawing being dragged out
     if (DW.mz) { var q4 = toP(DW.mz.p, e); if (q4) { var W1 = Object.assign({}, msRaw(DW.mz.p)); if (DW.mz.edge === 'a') W1.zA = q4.t; else W1.zB = q4.t; msSet(DW.mz.p, W1); panes.forEach(function(q){ q._mini = null; }); dirty(); } return; }
     if (DW.penning) { var pp = DW.penP, xy = evXY(pp, e); DW.penning.tip = xy; var lp = DW.penning.px[DW.penning.px.length - 1];
       if (!lp || Math.hypot(xy.x - lp.x, xy.y - lp.y) >= 2) { var pf = toPf(pp, e); if (pf) { DW.penning.pts.push(pf); DW.penning.px.push(xy); } } dirty(); return; }
     if (DW.tool !== 'none' && e.ctrlKey && p) { var sp = toP(p, e); DW.snap = sp ? { p: p, q: sp } : null; dirty(); } else if (DW.snap) { DW.snap = null; dirty(); }
-    if (DW.pending) { if (p) { var q = toP(p, e); if (q) { DW.pending.b = q; dirty(); } } return; }
+    if (DW.pending) { if (p) { var q = toP(p, e); if (q) { if (DW.pending.st === 2) DW.pending.off = chanOff(p, DW.pending, q); else DW.pending.b = q; dirty(); } } return; }
     if (DW.drag) { var g = DW.drag, q2 = toP(g.p, e); if (!q2) return; var d = DW.list[g.i], o = g.orig;
       if (!g.moved) { var gm = evXY(g.p, e); if (Math.abs(gm.x - g.x0) < 3 && Math.abs(gm.y - g.y0) < 3) return; g.moved = true; }   // a click is not a drag
       if (g.lock) { if (!g.said) { g.said = true; flash(CFG.dwLock ? T('Every drawing is locked: unlock them with the padlock beside the bin.', 'Todos los dibujos están bloqueados: desbloquéalos con el candado junto a la papelera.') : T('Locked: unlock it to move it.', 'Bloqueado: desbloquéalo para moverlo.')); } return; }
       if (g.part === 'line') d.price = q2.price;
-      else if (g.part === 'a') d.a = { t: q2.t, price: q2.price }; else if (g.part === 'b') d.b = { t: q2.t, price: q2.price };
+      else if (g.part === 'a') { d.a = { t: q2.t, price: q2.price }; if (d.type === 'note') { var A0 = Pt(g.p, o.a), A1 = Pt(g.p, d.a), ob = o.off || KIT.NOFF; if (A0 && A1) d.off = { x: ob.x - (A1.x - A0.x), y: ob.y - (A1.y - A0.y) }; } }   // a note's point: its box stays
+      else if (g.part === 'b') d.b = { t: q2.t, price: q2.price };
       else if (g.part === 'l' || g.part === 'r') { var tI = d[g.pt || 'a']; if (tI) tI.t = q2.t; }
       else if (g.part === 't' || g.part === 'bo') { var tP = d[g.pt || 'a']; if (tP) tP.price = q2.price; }
       else if (g.part === 'c1') { d.a.t = q2.t; d.b.price = q2.price; } else if (g.part === 'c2') { d.b.t = q2.t; d.a.price = q2.price; }
       else if (g.part === 'esz') { var eg3 = emoGeo(g.p, d), m3 = evXY(g.p, e); if (eg3) d.size = Math.max(12, Math.min(200, Math.round(2 * Math.max(Math.abs(m3.x - eg3.x), Math.abs(m3.y - eg3.y))))); }
       else if (g.part === 'psl') d.sl = q2.price; else if (g.part === 'ptp') d.tp = q2.price; else if (g.part === 'pr') d.b.t = q2.t;
+      else if (g.part === 'po') d.off = (+o.off || 0) + (q2.price - g.start.price);   // a channel's other line: how far it is
+      else if (g.part === 'rx') d.b.t = q2.t; else if (g.part === 'ry') d.b.price = q2.price;   // a circle's sides
+      else if (g.part === 'box') { var mb = evXY(g.p, e), bo = o.off || KIT.NOFF; d.off = { x: bo.x + mb.x - g.x0, y: bo.y + mb.y - g.y0 }; }   // a note's box: its point stays
       // Moved by a number of CANDLES on the chart being dragged, as Trade Replay does. Moving by a span of time made a
       // shape shrink and grow while it crossed a weekend or a missing candle (Nestor, 15 Oct 2026: "when i am dragging it
       // it keeps making itself smaller then bigger").
       else { var p0 = g.p, dL = lOfT(p0, q2.t) - lOfT(p0, g.start.t), dp = q2.price - g.start.price;
         var sh = function(z){ var L = lOfT(p0, z.t); return { t: L == null ? z.t : tOfL(p0, L + dL), price: z.price + dp }; };
-        if (d.type === 'pen') d.pts = o.pts.map(sh); else if (d.type === 'text' || d.type === 'emoji') d.a = sh(o.a); else { d.a = sh(o.a); d.b = sh(o.b); }
+        if (d.type === 'pen' || d.type === 'brush') d.pts = o.pts.map(sh); else if (d.type === 'text' || d.type === 'emoji' || !o.b) d.a = sh(o.a); else { d.a = sh(o.a); d.b = sh(o.b); }
         if (o.sl != null && o.tp != null) { d.sl = o.sl + dp; d.tp = o.tp + dp; } }
       dirty(); return; }
     if (p && DW.tool === 'none' && !e.touches) { var xy2 = evXY(p, e), nh = newsAt(p, xy2.x, xy2.y); if (!DW.pin) newsCard(p, nh);
@@ -89463,9 +89719,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       p.el.querySelector('.stpr-pc').style.cursor = nh ? 'pointer' : (nearLine(p, xy2.y) ? 'ns-resize' : (hh ? (DW.list[hh.i] && lkd(DW.list[hh.i]) ? 'pointer' : 'move') : (onEdge ? 'ew-resize' : 'crosshair'))); }
   }
   function dwUp(){
+    if (DW.meas && DW.meas.live) { var md = DW.meas.d; DW.meas.live = false; if (md.a.t === md.b.t && md.a.price === md.b.price) DW.meas = null; dirty(); return; }   // a Shift-click with no drag: nothing to keep
     if (DW.mz) { DW.mz = null; save(); dirty(); return; }
     if (DW.asTemp) { var a = DW.asTemp; DW.asTemp = null; if (a.dy < 5) try { a.p.chart.priceScale('right').applyOptions({ autoScale: true }); } catch (x) {} }
     if (!S) return;
+    if (DW.pdn) { var pd = DW.pdn; DW.pdn = null; if (pd.far && DW.pending) { if (DW.pending.st === 1) DW.pending.st = 2; else pendDone(); dirty(); return; } }   // dragged out: let go, it is drawn
     if (DW.marq) { var mp = DW.marq.p, mr = marqNorm(DW.marq); DW.marq = null; DW.noProps = false;
       if (Math.abs(mr.x1 - mr.x0) < 4 && Math.abs(mr.y1 - mr.y0) < 4) { DW.multi = null; updDel(); return; }
       var pw = paneDims(mp).pw, picked = []; DW.list.forEach(function(d, i){ var bb = visibleOn(d, mp.tf) && bboxOf(mp, d, pw); if (bb && !(bb.x1 < mr.x0 || bb.x0 > mr.x1 || bb.y1 < mr.y0 || bb.y0 > mr.y1)) picked.push(i); });
@@ -89881,7 +90139,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     var pm = d.getElementById('stpr-menu'); pm.addEventListener('change', WH.mchg); pm.addEventListener('click', lookClick); pm.addEventListener('input', lookInput); pm.addEventListener('change', WH.mchg2); pm.addEventListener('keydown', WH.mkey);
     // its toolbar: a copy of this window's, kept the same (satBar); a press there is the same press here, its menu opening there
     d.getElementById('stpr-tb2').addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('.stpr-tbm button'); if (!b) return; e.preventDefault(); e.stopPropagation();   // (its timeframe button is its own)
-      var tl = b.getAttribute('data-tool'), mb = tl ? $('stpr-tools').querySelector('[data-tool="' + tl + '"]') : (b.id ? document.getElementById(b.id) : null);
+      var tl = b.getAttribute('data-tool'), ga = b.hasAttribute('data-gtool') ? 'data-gtool' : (b.hasAttribute('data-tgrp') ? 'data-tgrp' : null);   // a tools group's button or arrow: the same one here
+      var mb = tl ? $('stpr-tools').querySelector('[data-tool="' + tl + '"]') : (ga ? $('stpr-tools').querySelector('[' + ga + '="' + b.getAttribute(ga) + '"]') : (b.id ? document.getElementById(b.id) : null));
       if (!mb || mb.disabled) return; UI.w = w; UI.fwd = b; try { mb.click(); } finally { UI.fwd = null; } satBar(); });
     satBar(); satBarWatch();
     d.addEventListener('visibilitychange', reLive);
@@ -90551,7 +90810,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     $('stpr-cmx').addEventListener('click', function(){ chartMax(false); });
     $('stpr-pop').addEventListener('click', function(){ if (S && S.live) lcPopOut(); else popOut(); });
     $('stpr-win').addEventListener('click', WH.win = function(e){
-      var t = e.target;
+      var t = e.target; if (!(t.closest && t.closest('.stpr-tg'))) flyShut();   // a click anywhere else closes a tools group
+      if (t.closest && t.closest('#stpr-keysbtn')) { keysMenu($('stpr-keysbtn')); return; }
       if (!(t.closest && t.closest('.stpr-sattf'))) [document].concat(popDocs()).forEach(function(d){ d.querySelectorAll('.stpr-sattf .stpr-ptfw.open').forEach(function(x){ x.classList.remove('open'); }); });   // a click anywhere else closes the top bar's timeframes
       if (t.closest && t.closest('#stpr-lvrp')) { lvReplay(); return; }
       if (t.closest && t.closest('#stpr-lvback')) { lvBack(); return; }
@@ -90603,7 +90863,9 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (menuFor && !(t.closest && t.closest('#stpr-menu')) && t.isConnected !== false) closeMenu();   // a button the menu just redrew is no longer in the page: not a click outside
     });
     $('stpr-drawbtn').addEventListener('click', function(){ drawerOpen(!$('stpr-tb2').classList.contains('drawing')); });
-    $('stpr-tools').addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-tool]'); if (b) setTool(b.getAttribute('data-tool')); });
+    $('stpr-tools').addEventListener('click', function(e){ var t = e.target, c = t.closest && t.closest('[data-tgrp]'), m = t.closest && t.closest('[data-gtool]'), b = t.closest && t.closest('[data-tool]');
+      if (c) { flyOpen(c.getAttribute('data-tgrp')); return; }   // a group's arrow: the rest of its tools
+      flyShut(); if (m) { setTool(TG[m.getAttribute('data-gtool')]); return; } if (b) setTool(b.getAttribute('data-tool')); });
     $('stpr-undo').addEventListener('click', function(){ undoRedo(-1); });
     $('stpr-hideall').addEventListener('click', function(){ hideAll(!CFG.dwHide); });
     $('stpr-lockall').addEventListener('click', function(){ lockAll(!CFG.dwLock); });
@@ -90642,7 +90904,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     // the drawing tools: mouse and touch, in the capture phase, as in Trade Replay
     document.addEventListener('mousedown', dwDown, true);
     document.addEventListener('dblclick', WH.dbl = function(e){ if (!isOpen()) return; var p = paneOf(e); if (!p) return; var xy = evXY(p, e), h = hit(p, xy.x, xy.y), d = h && DW.list[h.i];
-      if (d && d.type === 'text') { e.preventDefault(); e.stopPropagation(); DW.sel = h.i; DW.noProps = false; updDel(); txtEdit(p, d, false); return; }
+      if (d && (d.type === 'text' || d.type === 'note')) { e.preventDefault(); e.stopPropagation(); DW.sel = h.i; DW.noProps = false; updDel(); txtEdit(p, d, false); return; }   // a price note's words too
       var mz3 = !h && CFG.mini && miniOn('zone', p) && p._mz; if (mz3 && xy.x >= mz3.x0 && xy.x <= mz3.x1 && xy.y >= mz3.y0 && xy.y <= mz3.y1) { e.preventDefault(); e.stopPropagation(); miniDialog(null, p); } }, true);
     window.addEventListener('mousemove', dwMove);
     window.addEventListener('mouseup', dwUp);
@@ -90695,8 +90957,16 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if (!typing && e.altKey && !e.ctrlKey && e.code === 'KeyS') { e.preventDefault(); snapLink(); return; }    // and Copy link
       if (e.altKey && !typing && (e.key === 'a' || e.key === 'A' || e.code === 'KeyA')) { var cp = DW.cx && DW.cx.p, cpr = cp ? cp.series.coordinateToPrice(DW.cx.y) : null; alertAt(cpr != null ? cpr : px(), cp); e.preventDefault(); return; }
       if (e.key === 'Escape' && DBAR && DBAR.closePop()) { e.preventDefault(); return; }   // a toolbar popover first
+      if (e.key === 'Escape' && (flyShut() || measOff())) { e.preventDefault(); return; }   // then a tools group, a Shift-measure
       if (e.key === 'Escape') { hideCtx(); if (menuFor) closeMenu(); else if (LOG.open) logOpen(false); else if (DW.tool !== 'none' || DW.pending) { DW.pending = null; DW.penning = null; setTool('none'); } else if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } else if (S.exec) toggleExec(false); else if (S.pv) { S.pv = null; render(); } e.preventDefault(); return; }
       if (typing) return;
+      // TradingView's drawing keys (batch B): Alt+H / Alt+V / Alt+J a horizontal line, a vertical line, a horizontal ray at the mouse;
+      // Alt+T / Alt+R / Alt+F the trend line, the rectangle, the fib; Ctrl+C / Ctrl+V the selected drawings. By the key (e.code), so
+      // Option on a Mac and other keyboard layouts work too; AltGr (Ctrl+Alt) never.
+      if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey) { var qk = { KeyH: 'hline', KeyV: 'vline', KeyJ: 'hray' }[e.code], tk = { KeyT: 'trend', KeyR: 'rect', KeyF: 'fib' }[e.code];
+        if (qk) { e.preventDefault(); quickDraw(qk); return; } if (tk) { e.preventDefault(); pickTool(tk); return; } }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyC') { if (copySel()) e.preventDefault(); return; }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.code === 'KeyV') { if (pasteClip()) e.preventDefault(); return; }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z')) { undoRedo(e.shiftKey ? 1 : -1); e.preventDefault(); return; }
       if ((e.ctrlKey || e.metaKey) && (e.key === 'y' || e.key === 'Y')) { undoRedo(1); e.preventDefault(); return; }
       if ((e.key === 'Delete' || e.key === 'Backspace') && (DW.sel != null || (DW.multi && DW.multi.length))) { delSel(); e.preventDefault(); return; }
@@ -90739,7 +91009,8 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: o.lineVisible !== false && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
     _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _wl: function(){ return { list: wlList(), q: WL.q, hub: hubKey() }; }, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
-    _dr: function(){ return DW; }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
+    _dr: function(){ return DW; }, _quick: quickDraw, _copy: copySel, _paste: pasteClip, _pick: pickTool, _keyRows: keyRows, _keysMenu: function(){ keysMenu($('stpr-keysbtn')); }, _flyOpen: flyOpen, _flyShut: flyShut, _tg: function(){ return TG; },
+    _hit: function(i, x, y){ return hit(panes[i || 0], x, y); }, _bbox: function(i, d){ var p = panes[i || 0]; return p ? bboxOf(p, d, paneDims(p).pw) : null; }, _kx: function(i){ return kx(panes[i || 0]); }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
     _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },
     _miniDialogFor: function(host, p, mx){ DLGX = { host: host, p: p, mx: mx }; miniDialog(null, p); },
     _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: raw, cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _dbar: function(){ return dbar(); }, _hideAll: hideAll, _lockAll: lockAll, _bellX: function(){ return BELLX; }, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; } };
