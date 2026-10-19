@@ -107,6 +107,13 @@
     check('...still loading: a neutral "Your MT5 prices, live."', g0 === 'Your MT5 prices, live.', g0);
     check('...no EA: "Your charts come alive when the EA runs ... Open it on EURUSD"; market closed: "Markets are closed: the charts show Friday\'s session"', /come alive when the EA runs/.test(g1) && /Open it on EURUSD/.test(g1) && /^Markets are closed: the charts show Friday.s session\. Back Testing is open/.test(g2), [g1, g2]);
     check('...it is never rewritten (no AI): after a while it is still one of the fixed lines', (await W(1500), !/come alive/.test(lg.textContent) && lg.textContent.trim().length > 10), lg.textContent);
+    // chart 1's row (19 Oct 2026: "move these 2 around ... make the asset watchlist and the EA boxes sit at same height")
+    var tlp = document.querySelector('#lc-host .stpr-tlp'), tlb = tlp && Array.prototype.filter.call(tlp.children, function (x) { return x.tagName === 'BUTTON'; }),
+        mmx = document.querySelector('#lc-host .stpr-tl .stpr-mm'), mmt = mmx && mmx.querySelector('.stpr-mm-t');
+    var rq = function (e) { var r = e.getBoundingClientRect(); return [Math.round(r.top * 10) / 10, Math.round(r.bottom * 10) / 10]; };
+    var rTf = tlb && tlb[0] && rq(tlb[0]), rSy = tlb && tlb[1] && rq(tlb[1]), rMm = mmx && rq(mmx), rMt = mmt && rq(mmt);
+    check('chart 1: the timeframe first, then the symbol, then the panel', tlb && tlb.length === 2 && tlb[0].classList.contains('stpr-tfpill') && tlb[1].classList.contains('stpr-sympill') && tlp.nextElementSibling && tlp.parentNode.contains(mmx), tlb && tlb.map(function (x) { return x.className; }));
+    check('...level with the panel box: the same top and the same height as its title bar', rTf && rSy && rMm && rMt && Math.abs(rTf[0] - rMm[0]) <= 0.6 && Math.abs(rSy[0] - rMm[0]) <= 0.6 && Math.abs(rSy[1] - (rMt[1] + 1)) <= 0.6, { tf: rTf, sym: rSy, panel: rMm, title: rMt });
     var tbx0 = document.getElementById('lc-tb');
     var gaps = [], prevAt = LC.state().at; for (k = 0; k < 40; k++) { await W(80); var a2 = LC.state().at; if (a2 !== prevAt) { gaps.push(a2 - prevAt); prevAt = a2; } }
     check('every tick: several a second over the relay', gaps.length >= 5 && gaps.filter(function (g) { return g < 300; }).length >= gaps.length * 0.6, gaps);
