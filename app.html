@@ -91063,14 +91063,32 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       c.X = X; c.name = X ? ((S.live && X.ea && X.ea.raw) || X.sym.name) : id;
       c.cl = cmpAlign(p, (X && !X.none) ? cmpBars(p, X) : []); c.none = !c.cl.some(function(v){ return v != null; }); c.why = (!X || X.none) ? 'sym' : (X.err ? 'day' : 'wait'); });
     Object.keys(have).forEach(function(id){ if (keep[id]) return; try { p.chart.removeSeries(have[id].s); } catch (e) {} delete have[id]; });
-    p._cmpI0 = null; cmpRebase(p); }
-  // rebased at the first candle on screen: the chart's close there, times its change since its own first close on screen
+    cmpRebase(p); }
+  // Rebased at a candle on screen - the first one when it was anchored: the chart's close there, times the compared symbol's change
+  // since its own close there. STEADY (Nestor, 19 Oct 2026: "the compare symbol seems a bit glitchy and very jumpy"): it was re-anchored
+  // to the first candle on screen on every frame of a drag, on every live price and on every new candle - each time the whole line
+  // jumped and the price scale with it. Now the anchor stays while the chart is moved by hand (the lines ride with the candles), and is
+  // taken again once the chart is let go (0.3 s still), or when it has slid off the screen; a new price only moves the line's last point.
+  function cmpIdx(p, t){ var a = p.bars, lo = 0, hi = p.n - 1; while (lo <= hi) { var m = (lo + hi) >> 1, v = a[m].time; if (v === t) return m; if (v < t) lo = m + 1; else hi = m - 1; } return -1; }
   function cmpRebase(p){ var have = p.cmp, ids = have ? Object.keys(have) : []; if (!ids.length || !p.n || !p.bars) return;
-    var r = getRange(p), i0 = r ? Math.max(0, Math.min(p.n - 1, Math.ceil(r.from))) : 0; if (p._cmpI0 === i0 && p._cmpN === p.n) return; p._cmpI0 = i0; p._cmpN = p.n;
-    var mb = p.bars[i0] && p.bars[i0].close;
-    ids.forEach(function(id){ var c = have[id], j0 = -1, data = []; if (!c.s) return; for (var j = i0; j < p.n; j++) if (c.cl[j] != null) { j0 = j; break; }
+    var now = Date.now(), r = getRange(p), first = r ? Math.max(0, Math.min(p.n - 1, Math.ceil(r.from))) : 0, last = r ? Math.max(first, Math.min(p.n - 1, Math.floor(r.to))) : p.n - 1;
+    var rk = r ? r.from.toFixed(2) + '|' + r.to.toFixed(2) : ''; if (rk !== p._cmpRk) { p._cmpRk = rk; p._cmpMv = now; }   // the view changing
+    if (byHand(p)) p._cmpHand = now;
+    var ai = p._cmpT != null ? cmpIdx(p, p._cmpT) : -1, moving = !!(p._cmpHand && now - p._cmpHand < 1700 && now - (p._cmpMv || 0) < 250);   // by hand, and not still for 0.25 s yet
+    if (moving) { clearTimeout(p._cmpTo); p._cmpTo = setTimeout(function(){ if (S && panes.indexOf(p) >= 0) { try { cmpRebase(p); drawOv(p); } catch (e) {} } }, 280); }   // let go: anchored again even with nothing else to paint
+    if (!moving && (ai < 0 || ai < first || ai > last || (p._cmpHand || 0) > (p._cmpAt || 0))) { ai = first; p._cmpT = p.bars[ai].time; p._cmpAt = now; }
+    if (ai < 0) return;   // moving, and its anchor gone (a new day): wait for it to settle
+    p._cmpI0 = ai;
+    var mb = p.bars[ai] && p.bars[ai].close;
+    ids.forEach(function(id){ var c = have[id], j0 = -1, data = [], cnt = 0, lk = -1; if (!c.s) return; for (var j = ai; j < p.n; j++) if (c.cl[j] != null) { j0 = j; break; }
       c.j0 = j0; c.base = j0 >= 0 ? c.cl[j0] : null;
-      if (mb > 0 && c.base > 0) for (var k = 0; k < p.n; k++) if (c.cl[k] != null) data.push({ time: p.bars[k].time, value: mb * c.cl[k] / c.base });
+      for (var k = 0; k < p.n; k++) if (c.cl[k] != null) { cnt++; lk = k; }
+      var key = ai + '|' + p.n + '|' + mb + '|' + c.base + '|' + cnt + '|' + (lk >= 0 ? p.bars[lk].time : '');
+      if (c._key === key) {   // the same line: only its last point can have moved (a new price)
+        if (lk >= 0 && mb > 0 && c.base > 0 && c._lv !== c.cl[lk]) { c._lv = c.cl[lk]; try { c.s.update({ time: p.bars[lk].time, value: mb * c.cl[lk] / c.base }); } catch (e) {} }
+        return; }
+      c._key = key; c._lv = lk >= 0 ? c.cl[lk] : null;
+      if (mb > 0 && c.base > 0) for (var k2 = 0; k2 < p.n; k2++) if (c.cl[k2] != null) data.push({ time: p.bars[k2].time, value: mb * c.cl[k2] / c.base });
       try { c.s.setData(data); } catch (e) {} }); }
   function cmpWhy(c){ if (c.why === 'sym') return S.live ? T('not streaming from your MT5', 'no llega de tu MT5') : T('no stored candles', 'sin velas guardadas');
     if (c.why === 'day') return T('no candles this day', 'sin velas este día');

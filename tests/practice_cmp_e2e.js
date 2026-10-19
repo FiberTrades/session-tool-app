@@ -41,6 +41,7 @@
     ok('then it moves by gold\'s own change since there', Math.abs(dl[dl.length - 1].value - want) < 1e-9 && Math.abs(c.cl[pb.length - 1] - xb.close) < 1e-9, [dl[dl.length - 1].value, want]);
     // zoomed, it starts level again at the new first candle
     P._zoom(0, { from: pb.length - 40, to: pb.length + 2 }); for (k = 0; k < 20; k++) { await W(80); P._drawOv(0); var r2 = pane(0).chart.timeScale().getVisibleLogicalRange(); if (r2 && Math.abs(r2.from - (pb.length - 40)) < 1) break; }
+    await W(700); P._drawOv(0);   // let go: the lines re-anchor once the view has been still a moment (19 Oct 2026, steady compare)
     var dl3 = c.s.data(), i1 = Math.max(0, Math.ceil(pane(0).chart.timeScale().getVisibleLogicalRange().from)), at1 = dl3.filter(function (p) { return p.time === pb[i1].time; })[0];
     ok('moved to a later view, it is rebased there (level at the new first candle)', at1 && Math.abs(at1.value - pb[i1].close) < 1e-9, [at1, pb[i1].close]);
     var lg = pane(0).el.querySelector('.stpr-cmpl');
