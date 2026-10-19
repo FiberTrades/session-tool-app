@@ -22,6 +22,7 @@
       seen.push(titleOf());
       var c = countOf();
       if (/Charts: Live and Replay/.test(titleOf())) extra.charts = { c: c, txt: tip().textContent, ring: !!document.querySelector('.tab[data-page="livecharts"]') };
+      if (/^Session Live$/.test(titleOf())) extra.live = { txt: tip().textContent, review: document.getElementById('page-review') && document.getElementById('page-review').classList.contains('active') };
       if (/Prop firm progress/.test(titleOf())) { var ov = document.querySelector('.stx-tab[data-stx="overview"]'); extra.prop = ov && (ov.classList.contains('active') || ov.getAttribute('aria-selected') === 'true'); }
       if (/Community, Leaderboard and Academy/.test(titleOf())) extra.grow = tip().textContent;
       if (/Your account and settings/.test(titleOf())) extra.acc = tip().textContent;
@@ -31,6 +32,7 @@
     }
     ok('fourteen steps in order, Charts after the live nudges, Connect MT5 last', seen.length === 14 && /Charts: Live and Replay/.test(seen[5]) && /Live nudges/.test(seen[4]) && seen[13] === 'Connect MT5', seen);
     ok('the Charts step: Live (your MT5 prices, trade from here) and Replay (practice, nothing sent to MT5)', extra.charts && /Live is your MT5 prices/.test(extra.charts.txt) && /Replay is any day of the past year/.test(extra.charts.txt) && /nothing is sent to MT5/.test(extra.charts.txt), extra.charts && extra.charts.txt.slice(0, 200));
+    ok('Session Live: it is the Session Review tab that turns into Session Live (not Session Bias), and that tab is shown', extra.live && /the Session Review tab turns into Session Live/.test(extra.live.txt) && extra.live.review, extra.live);
     ok('the prop firm step shows Statistics on Overview (where Prop Firm Progress is)', extra.prop === true, extra.prop);
     ok('the Academy preview says 45 lessons', extra.grow && /45 lessons/.test(extra.grow) && !/40 lessons/.test(extra.grow), extra.grow && extra.grow.slice(-120));
     ok('the account step no longer sends MT5 set-up to Accounts', extra.acc && !/connect MT5/i.test(extra.acc) && !/MT5 auto-sync/.test(extra.acc), extra.acc && extra.acc.slice(0, 200));
