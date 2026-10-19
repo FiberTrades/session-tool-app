@@ -64,6 +64,23 @@
     } else ok('Trades go into: no journal account to pick (skipped)', true);
     await W(1800);   // the card follows on the next tick (every 1.5 s)
     ok('connected: the Session Bias card is gone', card.hidden);
+    // ---- old MT5 accounts (Nestor, 19 Oct 2026: "how do you get rid of these suggestions for old inactive accounts?") ----
+    window.__stEA.apply({ login: 70000001, symbol: 'XAUUSD', ea_version: '8.97', updated_at: new Date(Date.now() - 3 * 864e5).toISOString(), settings: { unit: 'points' } });
+    window.__stEA.apply({ login: 70000002, symbol: 'EURUSD', ea_version: '8.92', updated_at: new Date(Date.now() - 11 * 864e5).toISOString(), settings: { unit: 'pips' } });
+    M.render(); await W(50);
+    var lgShown = function (lg) { return !!sec.querySelector('[data-mt5c-login="' + lg + '"]'); };
+    ok('an MT5 account last seen 3 days ago still shows, with Remove; one not linked and not seen for 11 days is folded ("1 older MT5 account ... Show")', lgShown('70000001') && sec.querySelector('[data-mt5c-rm="70000001"]') && !lgShown('70000002') && /1 older MT5 account, not seen for over a week/.test(sec.textContent), sec.querySelector('.mt5c-old') && sec.querySelector('.mt5c-old').textContent);
+    ok('...the running one has no Remove', !sec.querySelector('[data-mt5c-rm="' + LG + '"]'));
+    sec.querySelector('[data-mt5c-older]').click(); await W(50);
+    ok('Show lists it, and the line says Hide', lgShown('70000002') && /Hide the older MT5 accounts/.test(sec.textContent));
+    sec.querySelector('[data-mt5c-older]').click(); await W(50);
+    data.mt5LoginMap = data.mt5LoginMap || {}; data.mt5LoginMap['70000001'] = 'acc_whatever';
+    sec.querySelector('[data-mt5c-rm="70000001"]').click(); await W(50);
+    ok('Remove takes it off the list (saved: mt5Hide) and unlinks it', !lgShown('70000001') && data.mt5Hide && data.mt5Hide['70000001'] && !('70000001' in data.mt5LoginMap));
+    window.__stEA.apply({ login: 70000001, symbol: 'XAUUSD', ea_version: '9.06', updated_at: new Date(Date.now() + 1000).toISOString(), settings: { unit: 'points' } });
+    M.render(); await W(50);
+    ok('...and it comes back by itself when its EA checks in again', lgShown('70000001'));
+    delete rows['70000001|XAUUSD']; delete rows['70000002|EURUSD']; delete data.mt5Hide; M.render();
     // ---- Spanish ----
     document.documentElement.lang = 'es'; M.render(); await W(50);
     ok('in Spanish: Conectar MT5, Pega tu código', /Conectar MT5/.test(sec.textContent) && /Pega tu código/.test(sec.textContent));
