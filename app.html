@@ -83487,6 +83487,12 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   #strp-tb .strp-sp{ display:block; flex:1 1 0; min-width:0; }
   /* The two drawers, closed until their button opens them. */
   #strp-tb:not(.strp-tfopen) #strp-tfs{ display:none; }
+  /* a custom timeframe (19 Oct 2026): the + at the end of the timeframes and its box (Back Testing's look) */
+  #strp-tb{ position:relative; }
+  #strp-tfs .strp-tfadd{ color:var(--text-dim); font-size:15px; }
+  .strp-tfbox{ position:absolute; z-index:40; padding:12px; border-radius:10px; border:1px solid #332f3c; background:#1b1a21; box-shadow:0 12px 32px rgba(0,0,0,.55); }
+  .strp-tfbox h6{ margin:0 0 9px; font:400 10px 'AppNum','DM Mono',monospace; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); }
+  @media (max-width:760px){ #strp-tb.strp-tfopen #strp-tfs{ overflow-x:auto; scrollbar-width:none; } #strp-tb #strp-tfs button{ flex:none; min-width:44px; } }
   #strp-tb:not(.strp-drawopen) #strp-tools, #strp-tb:not(.strp-drawopen) #strp-undo,
   #strp-tb:not(.strp-drawopen) #strp-redo, #strp-tb:not(.strp-drawopen) #strp-del{ display:none; }
   /* A pink dot on the layers button while something is switched off, so a hidden trade is never a mystery. */
@@ -84412,6 +84418,19 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       if(k!==key){ if(cur) out.push(cur); key=k; cur={time:b.time,open:b.open,high:b.high,low:b.low,close:b.close,vol:b.vol==null?null:b.vol}; }
       else { if(b.high>cur.high) cur.high=b.high; if(b.low<cur.low) cur.low=b.low; cur.close=b.close; cur.vol=(cur.vol==null||b.vol==null)?null:cur.vol+b.vol; } }
     if(cur) out.push(cur); return out; }
+  // A member's own timeframe (19 Oct 2026: custom timeframes, as in Back Testing and Live Charts): built from the largest stored
+  // timeframe that divides it - 2m and 3m from 1m, 10m from 5m, 45m from 15m, 2h and 3h from 1h, 8h from 4h - on the clock (UTC).
+  var RSTD=[1,5,15,60,240,1440,10080];
+  function rSrcTf(tf){ return [240,60,15,5,1].filter(function(x){ return tf%x===0; })[0]||1; }
+  function toTf(rows,tf){ var s=tf*60, out=[], cur=null, key=null;
+    for(var i=0;i<rows.length;i++){ var b=rows[i], k=Math.floor(b.time/s)*s;
+      if(k!==key){ if(cur) out.push(cur); key=k; cur={time:k,open:b.open,high:b.high,low:b.low,close:b.close,vol:b.vol==null?null:b.vol}; }
+      else { if(b.high>cur.high) cur.high=b.high; if(b.low<cur.low) cur.low=b.low; cur.close=b.close; cur.vol=(cur.vol==null||b.vol==null)?null:cur.vol+b.vol; } }
+    if(cur) out.push(cur); return out; }
+  async function fetchTf(sym,tf,from,to){
+    if(tf===TF_W1) return toWeekly(await fetchCandles(sym,1440,from,to));
+    if(RSTD.indexOf(tf)>=0) return fetchCandles(sym,tf,from,to);
+    var s=tf*60; return toTf(await fetchCandles(sym,rSrcTf(tf),Math.floor(from/s)*s,to),tf); }
   // Window measured in BARS around the trade. Anchored to entry (back) AND exit (fwd),
   // so the FULL trade always loads no matter how long it ran; pagination handles the volume.
   var TF_LOOKBACK=700, TF_FWDBARS=180;
@@ -84533,7 +84552,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     if(tf===TF_W1){
       bars=toWeekly(await fetchCandles(S.symbol,1440,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod,S.untilTs||0)));
       if(bars.length>1) bars.shift();   // the window can start mid-week: never show a cut-off first week
-    } else bars=await fetchCandles(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod,S.untilTs||0));
+    } else bars=await fetchTf(S.symbol,tf,S.entryTs-TF_LOOKBACK*span,Math.max(S.exitTs+TF_FWDBARS*span,_eod,S.untilTs||0));   // a custom one too
     S.cache[tf]=bars; return bars;
   }
   function bidx(bars,ts){ var x=0; for(var k=0;k<bars.length;k++){ if(bars[k].time<=ts) x=k; else break; } return x; }
@@ -84551,7 +84570,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     S.cursor=Math.min(S.bars.length,S.eBI+1);     // OPEN with the entry already on screen (no waiting to reach it)
     S.drawings=loadDrawings(S.ticket,tf); S.pending=null; S.sel=null; S.history=[clone(S.drawings)]; S.hpos=0; S.userView=false;
     el('strp-scrub').max=String(S.bars.length-1);
-    Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
+    rtfPaint(); Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button[data-tf]'),function(b){ b.classList.toggle('on',+b.dataset.tf===tf); });
     updTfPill();
     buildSpread(); buildMoves(); buildNewsMarks(); _newsCardReset();   // need S.bars + S.eBI, so they re-key on every timeframe change
     keyOthers();
@@ -85666,7 +85685,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function visFull(v){ return !v||VISU.every(function(u){ var r=v[u[0]]; return r&&r.on!==false&&+r.a<=u[3]&&+r.b>=u[4]; }); }
   function visFromTfs(tfs){ var v=visAll(); if(!tfs||!tfs.length) return v; VISU.forEach(function(u){ var vals=tfs.filter(function(tf){ return tfUnit(tf)[0]===u[0]; }).map(function(tf){ return tfUnit(tf)[1]; });
     v[u[0]]=vals.length?{on:true,a:Math.min.apply(null,vals),b:Math.max.apply(null,vals)}:{on:false,a:u[3],b:u[4]}; }); return v; }
-  function tfList(){ return [].map.call(document.querySelectorAll('#strp-tfs button'),function(b){ return {v:+b.dataset.tf,l:(b.textContent||'').trim()}; }); }
+  function tfList(){ return [].map.call(document.querySelectorAll('#strp-tfs button[data-tf]'),function(b){ return {v:+b.dataset.tf,l:(b.textContent||'').trim()}; }); }
   function visTxt(v){ var all=tfList(), on=all.filter(function(t){ return visOK(v,t.v); }); return on.length===all.length?L('All timeframes','Todas las temporalidades'):(on.length?on.map(function(t){ return t.l; }).join(' '):L('No timeframe','Ninguna')); }
   function visHtml(v){ var H=['<div class="stpr-dvis">'];
     VISU.forEach(function(u){ var r=v[u[0]]||{on:true,a:u[3],b:u[4]};
@@ -85928,7 +85947,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function rcName(raw){ var s=(RCMP.syms||[]).filter(function(x){ return x.raw===raw; })[0]; return s?s.name:raw; }
   async function rcLoad(){ if(!S||!S.bars||!S.bars.length) return; var sRef=S, tf=S.tf, L0=rcList(); S.cmpC=S.cmpC||{};
     for(var i=0;i<L0.length;i++){ var k=L0[i].s+'|'+tf; if(S.cmpC[k]) continue; var span=tf===TF_W1?7*86400:tf*60, from=S.bars[0].time, to=S.bars[S.bars.length-1].time+span, rows=[];
-      try{ rows=tf===TF_W1?toWeekly(await fetchCandles(L0[i].s,1440,from-7*86400,to)):await fetchCandles(L0[i].s,tf,from,to); }catch(_){ rows=[]; }
+      try{ rows=tf===TF_W1?toWeekly(await fetchCandles(L0[i].s,1440,from-7*86400,to)):await fetchTf(L0[i].s,tf,from,to); }catch(_){ rows=[]; }
       if(S!==sRef||S.tf!==tf) return; S.cmpC[k]=rows||[]; }
     rcPaint(); }
   // each compared symbol's close at each of the chart's candles up to the replay's (the last one at or before it)
@@ -86464,8 +86483,38 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   el('strp-spdcur').onclick=function(e){ e.stopPropagation(); el('strp-spd').classList.toggle('open'); };
   Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(b){ b.onclick=function(){ if(!S)return; Array.prototype.forEach.call(document.querySelectorAll('#strp-spdmenu button'),function(x){x.classList.remove('on');}); b.classList.add('on'); S.ms=+b.dataset.ms; el('strp-spdcur').innerHTML=b.querySelector('b').innerHTML; el('strp-spd').classList.remove('open'); if(S.playing){ clearInterval(S.timer); S.timer=setInterval(tick,Math.max(24,S.ms)); } }; });
   document.addEventListener('click',function(e){ var sp=el('strp-spd'); if(sp&&!sp.contains(e.target)) sp.classList.remove('open'); });
-  Array.prototype.forEach.call(document.querySelectorAll('#strp-tfs button'),function(b){ b.onclick=function(){ if(!S)return;
-    el('strp-tfcur').textContent=(b.textContent||'').trim(); setTf(+b.dataset.tf); }; });
+  // the timeframe row: the standard ones, the member's own (shared with Back Testing and Live Charts) in their place, and a + to add one
+  function rctfApi(){ return window.__stPractice||null; }
+  function rtfPaint(){ var box=el('strp-tfs'); if(!box) return; var api=rctfApi(), mine=(api&&api.ctfList)?api.ctfList():[], all=RSTD.concat(mine).sort(function(a,b){ return a-b; });
+    var lbl=function(n){ return ({1:'1m',5:'5m',15:'15m',60:'1h',240:'4h',1440:'1D',10080:'1W'})[n]||((api&&api.ctfLbl)?api.ctfLbl(n):n+'m'); };
+    var sig=all.join(','); if(box._sig===sig) return; box._sig=sig;
+    box.innerHTML=all.map(function(n){ return '<button type="button" data-tf="'+n+'"'+(S&&S.tf===n?' class="on"':'')+'>'+lbl(n)+'</button>'; }).join('')
+      +'<button type="button" class="strp-tfadd" data-rtfadd="1" title="'+esc2(L('Custom timeframe','Temporalidad personalizada'))+'" aria-label="'+esc2(L('Custom timeframe','Temporalidad personalizada'))+'">+</button>'; }
+  var RTFC={n:2,u:1};
+  function rtfBoxShut(){ var b=document.getElementById('strp-tfbox'); if(b) b.remove(); }
+  function rtfBox(anchor){ rtfBoxShut(); var api=rctfApi(); if(!api||!api.ctfList) return; var mine=api.ctfList(), tb=el('strp-tb'), b=document.createElement('div'); b.id='strp-tfbox'; b.className='strp-tfbox';
+    b.innerHTML='<h6>'+esc2(L('Custom timeframe','Temporalidad personalizada'))+'</h6><div class="stpr-tfc"><input type="number" id="strp-tfn" min="1" max="1440" step="1" value="'+RTFC.n+'" inputmode="numeric" aria-label="'+esc2(L('How many','Cuántos'))+'">'
+      +'<div class="stpr-seg stpr-tfu"><button type="button" data-rtfu="1"'+(RTFC.u===1?' class="on"':'')+'>'+L('minutes','minutos')+'</button><button type="button" data-rtfu="60"'+(RTFC.u===60?' class="on"':'')+'>'+L('hours','horas')+'</button></div>'
+      +'<button type="button" class="stpr-b go" data-rtfok="1">'+L('Add','Añadir')+'</button></div>'
+      +'<p class="stpr-tfh">'+esc2(L('From 1 minute to 24 hours, such as 2m, 3m, 10m, 45m, 2h or 8h. Shared with Back Testing and Live Charts.','De 1 minuto a 24 horas, como 2m, 3m, 10m, 45m, 2h u 8h. Compartidas con Backtesting y Gráficos en vivo.'))+'</p>'
+      +(mine.length?'<div class="stpr-tfcl"><span>'+L('Yours','Las tuyas')+'</span>'+mine.map(function(n){ var l=api.ctfLbl(n); return '<span class="stpr-tfci'+(S&&S.tf===n?' on':'')+'"><button type="button" data-rtfpick="'+n+'">'+l+'</button><button type="button" class="stpr-tfx" data-rtfx="'+n+'" title="'+esc2(L('Remove','Quitar'))+' '+l+'" aria-label="'+esc2(L('Remove','Quitar'))+' '+l+'">&times;</button></span>'; }).join('')+'</div>':'');
+    tb.appendChild(b);
+    var ar=anchor.getBoundingClientRect(), tr=tb.getBoundingClientRect(), W=Math.min(330,tb.clientWidth-16);
+    b.style.width=W+'px'; b.style.left=Math.max(8,Math.min(tb.clientWidth-W-8,ar.left-tr.left-W+ar.width))+'px'; b.style.top=(ar.bottom-tr.top+6)+'px';
+    var inp=b.querySelector('#strp-tfn'); inp.addEventListener('keydown',function(e){ if(e.key==='Escape'){ rtfBoxShut(); return; } e.stopPropagation(); if(e.key==='Enter'){ e.preventDefault(); rtfGo(); } }); try{ inp.focus(); inp.select(); }catch(_){} }
+  function rtfGo(){ var inp=document.getElementById('strp-tfn'), v=inp?+inp.value:0, n=Math.round(v)*RTFC.u, api=rctfApi();
+    if(!(v>=1)||Math.round(v)!==v||!(n>=1&&n<=1440)){ var h=document.querySelector('#strp-tfbox .stpr-tfh'); if(h){ h.textContent=L('Pick a whole number: 1 to 1440 minutes, or 1 to 24 hours.','Elige un número entero: de 1 a 1440 minutos, o de 1 a 24 horas.'); h.style.color='#f4c05a'; } return; }
+    RTFC.n=v; if(!api||!api.ctfAdd(n)) return; rtfBoxShut(); rtfPaint(); rtfPick(n); }
+  function rtfPick(n){ if(!S) return; var b=document.querySelector('#strp-tfs button[data-tf="'+n+'"]'); el('strp-tfcur').textContent=b?(b.textContent||'').trim():String(n); setTf(n); }
+  el('strp-tfs').addEventListener('click',function(e){ if(!S) return; var t=e.target, a=t.closest&&t.closest('[data-rtfadd]'), b=t.closest&&t.closest('button[data-tf]');
+    if(a){ e.stopPropagation(); if(document.getElementById('strp-tfbox')) rtfBoxShut(); else rtfBox(a); return; }
+    if(b){ rtfBoxShut(); el('strp-tfcur').textContent=(b.textContent||'').trim(); setTf(+b.dataset.tf); } });
+  el('strp-tb').addEventListener('click',function(e){ var t=e.target, box=t.closest&&t.closest('#strp-tfbox'); if(!box) return; e.stopPropagation();
+    var u=t.closest('[data-rtfu]'); if(u){ RTFC.u=+u.getAttribute('data-rtfu')===60?60:1; box.querySelectorAll('[data-rtfu]').forEach(function(x){ x.classList.toggle('on',x===u); }); var ni=document.getElementById('strp-tfn'); if(ni) try{ ni.focus(); }catch(_){} return; }
+    if(t.closest('[data-rtfok]')){ rtfGo(); return; }
+    var pk=t.closest('[data-rtfpick]'); if(pk){ rtfBoxShut(); rtfPick(+pk.getAttribute('data-rtfpick')); return; }
+    var x=t.closest('[data-rtfx]'); if(x){ var n=+x.getAttribute('data-rtfx'), api=rctfApi(); if(api&&api.ctfDel) api.ctfDel(n); rtfBoxShut(); rtfPaint(); if(S&&S.tf===n){ var std=RSTD.filter(function(v){ return v<=n; }).pop()||1; rtfPick(std); } else if(S) rtfPaint(); } });
+  document.addEventListener('click',function(e){ if(!(e.target&&e.target.closest&&(e.target.closest('#strp-tfbox')||e.target.closest('[data-rtfadd]')))) rtfBoxShut(); });
   el('strp-tools').addEventListener('click',function(e){ if(!S) return; var t=e.target, c=t.closest&&t.closest('[data-tgrp]'), m=t.closest&&t.closest('[data-gtool]'), b=t.closest&&t.closest('[data-tool]');
     if(c){ flyOpenR(c.getAttribute('data-tgrp')); return; }   /* a group's arrow: the rest of its tools */
     flyShutR(); if(m){ setTool(RTG[m.getAttribute('data-gtool')]); return; } if(b) setTool(b.getAttribute('data-tool')); });
@@ -91813,7 +91862,11 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     _hit: function(i, x, y){ return hit(panes[i || 0], x, y); }, _bbox: function(i, d){ var p = panes[i || 0]; return p ? bboxOf(p, d, paneDims(p).pw) : null; }, _kx: function(i){ return kx(panes[i || 0]); }, _mini: function(i){ return miniCalc(panes[i || 0]); }, _miniFresh: function(){ panes.forEach(function(q){ q._mini = null; }); }, _look: look, _parseC: parseC, _lookSet: lookSet, _lookReset: function(){ CFG.look = {}; LK.pick = null; save(); lookAll(true); }, _txtBox: function(i, d){ return txtBox(panes[i || 0], d); }, _ms: ms, _msRaw: function(p){ return msRaw(p); }, _msSet: function(p, v){ msSet(p, v); }, _cfgSave: function(){ save(); }, _miniOn: function(k, p){ return miniOn(k, p); },
     _miniDraw: function(p, g, dm, mx){ MX = mx; MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; MX = null; },
     _miniDialogFor: function(host, p, mx){ DLGX = { host: host, p: p, mx: mx }; miniDialog(null, p); },
-    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: raw, cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _dbar: function(){ return dbar(); }, _hideAll: hideAll, _lockAll: lockAll, _bellX: function(){ return BELLX; }, _cmpMenu: function(i){ CMP.ci = i || 0; CMP.q = ''; cmpMenu($('stpr-cmpbtn')); }, _cmpAdd: cmpAdd, _cmpDel: cmpDel, _cmpOf: cmpOf, _cmpFeed: cmpFeed, _allFeeds: allFeeds, _cmpBars: function(i, raw){ var p = panes[i || 0], X = cmpFeed(raw); return (p && X) ? cmpBars(p, X) : null; }, _altLv: altLv, _altEv: altEv, _mspan: mspan, _paRow: paRow, _lvAlertScan: function(raw, a, b){ var F = feeds().filter(function(X){ return X.sym.raw === raw; })[0]; lvAlertScan(F, a, b); }, _altWhere: altWhere, _paEaOk: paEaOk, _alertsPull: lvAlertsPull, _alertSync: lvAlertSync, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = document.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
+    _symFor: function(raw){ var k = canon(raw); return { key: k, raw: raw, name: raw, cls: clsOf(k) }; }, _lonDay: function(t){ return lonK(t).day; }, _miniDialog: miniDialog, _resumeSave: resumeSave, _snap: snapShot, _snapCopy: snapCopy, _snapLink: snapLink, _ohSet: function(i, t){ ohSet(i == null ? null : { p: panes[i], t: t }); }, _ohlc: function(i){ var p = panes[i || 0]; if (p) paintOhlc(p); var el = p && p.el.querySelector('.stpr-ohlc'); return el ? el.textContent : null; }, _visOK: visOK, _dlg: function(){ return DLG; }, _alertAt: alertAt, _back: back, _play: play, _pause: pause, _px: px, _lonK: lonK, _miniDist: miniDist, _goto: goTo, _jumpAt: jumpAt, _lOfT: function(i, t){ return lOfT(panes[i], t); }, _tOfL: function(i, L){ return tOfL(panes[i], L); }, _cx: function(i){ return cxFor(panes[i]); }, _drawOv: function(i){ var p = panes[i || 0]; if (!p) return null; var err = null; try { drawOv(p); } catch (e) { err = String(e && e.stack || e); } return { zones: p._zones, err: err, loop: loopId }; }, _props: renderProps, _dbar: function(){ return dbar(); }, _hideAll: hideAll, _lockAll: lockAll, _bellX: function(){ return BELLX; }, _cmpMenu: function(i){ CMP.ci = i || 0; CMP.q = ''; cmpMenu($('stpr-cmpbtn')); }, _cmpAdd: cmpAdd, _cmpDel: cmpDel, _cmpOf: cmpOf, _cmpFeed: cmpFeed, _allFeeds: allFeeds, _cmpBars: function(i, raw){ var p = panes[i || 0], X = cmpFeed(raw); return (p && X) ? cmpBars(p, X) : null; }, _altLv: altLv, _altEv: altEv, _mspan: mspan, _paRow: paRow, _lvAlertScan: function(raw, a, b){ var F = feeds().filter(function(X){ return X.sym.raw === raw; })[0]; lvAlertScan(F, a, b); }, _altWhere: altWhere, _paEaOk: paEaOk, _alertsPull: lvAlertsPull, _alertSync: lvAlertSync, _speeds: SPEEDX, _more: function(i){ return morePast(panes[i]); }, _byHand: function(i){ return byHand(panes[i]); }, _chartMax: chartMax, _log: function(){ return LOG; }, _logOpen: logOpen, _dwPull: dwPull, _dwPush: dwPush, _random: randomDay, _news: function(rows){ NEWS.rows = rows || []; NEWS.key = S && S.day; drawAll(); }, _showRest: showRest, _xOfT: function(i, t){ return xOfT(panes[i], t); }, _newsRows: function(){ return NEWS.rows; },
+    // the member's own timeframes, shared with Trade Replay (19 Oct 2026)
+    ctfList: function(){ return (CFG.ctf || []).filter(function(n){ return !!TFL[n]; }).slice().sort(function(a, b){ return a - b; }); }, ctfLbl: tfLbl,
+    ctfAdd: function(n){ n = Math.round(+n); if (!(n >= 1 && n <= 1440)) return false; if (TF_STD.indexOf(n) >= 0) return true; tfReg(n); if ((CFG.ctf || []).indexOf(n) < 0) { CFG.ctf = (CFG.ctf || []).concat([n]); save(); } return true; },
+    ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = document.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
     _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
