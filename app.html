@@ -84394,6 +84394,63 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
 })();
 </script>
 <script>
+/* ---- The mouse wheel over a chart's scales, as TradingView (Nestor, 19 Oct 2026: "when i scroll my mouse over the price scale i
+   expect the candles to become taller or srink and when i scroll over the time scale i expect to see the chart becoming wider or
+   narrower, like in tradingview"). Lightweight Charts 4 only zooms time, and only with the wheel on the chart itself. Over the
+   price scale: the price range shrinks (taller candles) or grows around its middle - the autoscale stays on, scaled by az.yz
+   through the series' autoscaleInfoProvider (fit), so the price never runs off the chart; a double-click on the scale goes back
+   to the normal fit. Over the time scale: the candles widen or narrow around the mouse (a sideways swipe moves along in time).
+   Used by the Charts tab (Live and Replay, every chart and chart window) and Trade Replay. Named __stAZ: __stZ is the app's
+   zoom helper. ---- */
+window.__stAZ = (function () {
+  function fit(H, r) {
+    var z = (H && H.yz) || 1; if (z === 1 || !r || !r.priceRange) return r;
+    var a = r.priceRange.minValue, b = r.priceRange.maxValue, m = (a + b) / 2, h = Math.max((b - a) / 2, 1e-9) * z;
+    return { priceRange: { minValue: m - h, maxValue: m + h }, margins: r.margins };
+  }
+  // the series asks its autoscaleInfoProvider again only when told something changed
+  function refit(g) { try { g.series.applyOptions({ autoscaleInfoProvider: g.series.options().autoscaleInfoProvider }); } catch (e) {} }
+  function where(el, e, get) {
+    var g = get(); if (!g || !g.chart || !g.series) return null;
+    var box = g.box || el, r = box.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top, psw = 56, th = 28;
+    try { psw = g.chart.priceScale('right').width(); } catch (e1) {} try { th = g.chart.timeScale().height(); } catch (e2) {}
+    if (!(psw > 4 && psw < 220)) psw = 56; if (!(th > 10 && th < 90)) th = 28;
+    var pw = r.width - psw, ph = r.height - th;
+    if (x < 0 || y < 0 || x > r.width || y > r.height) return null;
+    return { g: g, x: x, y: y, pw: pw, price: x >= pw && y < ph, time: y >= ph && x < pw };
+  }
+  function wire(el, get) {
+    if (!el || el._stAZ) return; el._stAZ = 1;
+    el.addEventListener('wheel', function (e) {
+      var w = where(el, e, get); if (!w || !(w.price || w.time)) return;
+      e.preventDefault(); e.stopPropagation();
+      var g = w.g, u = e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1, dy = (e.deltaY || 0) * u, dx = (e.deltaX || 0) * u;
+      if (w.price) {
+        if (!dy) return;
+        try { var ps = g.chart.priceScale('right'); if (!ps.options().autoScale) ps.applyOptions({ autoScale: true }); } catch (e3) {}
+        g.az.yz = Math.max(0.05, Math.min(20, (g.az.yz || 1) * Math.exp(Math.max(-600, Math.min(600, dy)) * 0.0015)));   // a wheel notch: about 16 %
+        refit(g); if (g.after) try { g.after(); } catch (e4) {}
+        return;
+      }
+      var ts = g.chart.timeScale(), lr = ts.getVisibleLogicalRange(); if (!lr) return;
+      var span = lr.to - lr.from; if (!(span > 0)) return;
+      var nr;
+      if (Math.abs(dx) > Math.abs(dy)) { var sh = dx / Math.max(1, w.pw) * span; nr = { from: lr.from + sh, to: lr.to + sh }; }   // a sideways swipe: along in time
+      else {
+        if (!dy) return;
+        var k = Math.exp(Math.max(-600, Math.min(600, dy)) * 0.0015), at = ts.coordinateToLogical(w.x); if (at == null) at = lr.to;
+        nr = { from: at - (at - lr.from) * k, to: at + (lr.to - at) * k };
+        if (nr.to - nr.from < 6 || nr.to - nr.from > 6000) return;   // the candles stay readable either way
+      }
+      if (g.hand) try { g.hand(); } catch (e5) {}
+      ts.setVisibleLogicalRange(nr);
+    }, { passive: false, capture: true });
+    el.addEventListener('dblclick', function (e) { var w = where(el, e, get); if (!w || !w.price) return; w.g.az.yz = 1; refit(w.g); if (w.g.after) try { w.g.after(); } catch (e6) {} }, true);
+  }
+  return { fit: fit, wire: wire, refit: refit };
+})();
+</script>
+<script>
 (function(){
   var LWC_SRC='https://cdn.jsdelivr.net/npm/lightweight-charts@4.2.3/dist/lightweight-charts.standalone.production.js';
   var lwcP=null;
@@ -84847,7 +84904,10 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       crosshair:{mode:2},
       autoSize:true });
     S.oh=null; LKC=lookR(); S.cmpS={};
-    series=S.series=chart.addCandlestickSeries({upColor:'#4ECD8B',downColor:'#E56767',borderVisible:false,wickUpColor:'#4ECD8B',wickDownColor:'#E56767',priceLineVisible:true,priceLineStyle:1,priceLineWidth:1,lastValueVisible:true,priceFormat:{type:'price',precision:_prec(),minMove:Math.pow(10,-_prec())}});
+    S.az={yz:1};   /* the wheel over the price scale (window.__stAZ) */
+    series=S.series=chart.addCandlestickSeries({upColor:'#4ECD8B',downColor:'#E56767',borderVisible:false,wickUpColor:'#4ECD8B',wickDownColor:'#E56767',priceLineVisible:true,priceLineStyle:1,priceLineWidth:1,lastValueVisible:true,priceFormat:{type:'price',precision:_prec(),minMove:Math.pow(10,-_prec())},
+      autoscaleInfoProvider:function(o){ var r=o(); return (window.__stAZ&&S&&S.az)?window.__stAZ.fit(S.az,r):r; }});
+    try{ window.__stAZ.wire(chartEl.parentNode||chartEl,function(){ return (S&&S.chart&&S.series&&S.az)?{chart:S.chart,series:S.series,az:S.az,box:chartEl,hand:function(){ trHandAt=Date.now(); }}:null; }); }catch(e){}
     lookApply();   /* Chart settings (shared with Practice Replay) */
     // ONE line per level, all solid, and the SL/TP lines are the ones that MOVE. There used to
     // be a static "SL" plus a dotted "SL now" that stepped with the move history — two lines and
@@ -88843,19 +88903,21 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
         timeScale: { borderColor: '#2A2833', timeVisible: tf < 1440, secondsVisible: false, rightOffset: tf <= 60 ? 0 : 3, tickMarkFormatter: tickFmt(tf) },
         localization: { timeFormatter: crossFmt(tf), priceFormatter: dgFmt(X) },
         crosshair: { mode: 2 } });   // hidden: the crosshair is drawn on the overlay, Trade Replay's own (paintCx)
+      var AZ = { yz: 1 };   // the wheel over the price scale (window.__stAZ)
       var series = chart.addCandlestickSeries({ upColor: '#4ECD8B', downColor: '#E56767', borderVisible: false, wickUpColor: '#4ECD8B', wickDownColor: '#E56767', priceLineVisible: true, priceLineStyle: 1, priceLineWidth: 1, lastValueVisible: true,
         priceFormat: { type: 'price', precision: X.digits, minMove: Math.pow(10, -X.digits) },
         autoscaleInfoProvider: (function(X0, H){ return function(orig){ var r = orig(); if (!r || !r.priceRange || !S || X0 !== S) return r; var lo = r.priceRange.minValue, hi = r.priceRange.maxValue;
           if ((S.exec && !S.pos && !S.pend) || drag) { if (!H.f) H.f = H.last || { lo: lo, hi: hi };   // aiming an order or dragging a line: hold still
-            return { priceRange: { minValue: Math.min(lo, H.f.lo), maxValue: Math.max(hi, H.f.hi) }, margins: r.margins }; }
+            return window.__stAZ.fit(H, { priceRange: { minValue: Math.min(lo, H.f.lo), maxValue: Math.max(hi, H.f.hi) }, margins: r.margins }); }
           H.f = null;
           var add = function(v){ if (v > 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); } };
           if (S.pos) { add(S.pos.sl); add(S.pos.tp); }
           H.last = { lo: lo, hi: hi };
-          return { priceRange: { minValue: lo, maxValue: hi }, margins: r.margins }; }; })(X, {}) });
+          return window.__stAZ.fit(H, { priceRange: { minValue: lo, maxValue: hi }, margins: r.margins }); }; })(X, AZ) });
       var pane = { i: i, src: X, tf: tf, want: want, el: el, chart: chart, series: series, _look: 1, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
       if (tf === 525600) pane.step = 365 * 86400;
-      panes.push(pane); wirePane(pane); lookPane(pane);
+      pane.az = AZ; panes.push(pane); wirePane(pane); lookPane(pane);
+      try { window.__stAZ.wire(el, function(){ return { chart: chart, series: series, az: AZ, box: pc, hand: function(){ pane.handAt = Date.now(); }, after: dirty }; }); } catch (e) {}
       if (pw) try { pw.w.document.title = (X.ea && X.ea.raw ? X.ea.raw : X.sym.name) + ' \u00b7 ' + TFL[tf] + ' \u00b7 ' + (S.live ? T('Live', 'En vivo') : 'Replay');
         var pbg = pw.w.document.getElementById('stpr-bg'); if (pbg) pbg.classList.toggle('lcsat', !!S.live); } catch (e) {}
       if (!pw && mainN() === 1 && !phone()) { var mth = $('stpr-maintf'), mpf = el.querySelector('.stpr-ptfw');   // the only chart here: its timeframe button in the top bar, before the drawing tools
