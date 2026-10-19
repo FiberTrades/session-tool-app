@@ -1386,8 +1386,6 @@ try{if(/iP(hone|ad|od)/.test(navigator.userAgent)||(navigator.platform==='MacInt
   .slx-topl { position: absolute; left: 0; right: 60px; top: 0; height: 1px; background: #332F3C; z-index: 3; pointer-events: none; }
   .slx-info { position: absolute; right: 68px; bottom: 34px; z-index: 5; font-family: 'AppNum', 'DM Mono', monospace; font-size: 11px; letter-spacing: .06em; background: none; border: 0; padding: 0; text-shadow: 0 0 3px #121116, 0 0 6px #121116; font-variant-numeric: tabular-nums; text-align: right; pointer-events: none; color: var(--text-dim); white-space: nowrap; -webkit-text-size-adjust: 100%; text-size-adjust: 100%; }   /* Trade Replay's spread box; never font-boosted on a phone (Nestor, 5 Oct 2026: same size as Replay's) */
   .slx-info[hidden] { display: none; }
-  .slx-cdl { position: absolute; right: 0; z-index: 6; height: 18px; line-height: 18px; text-align: center; font-family: 'AppNum','DM Mono',monospace; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
-  .slx-cdl.u { background: #4ECD8B; color: #0b0a0d; } .slx-cdl.d { background: #E56767; color: #fff; } .slx-cdl[hidden] { display: none; }
   @media (max-width: 760px) { .slx-info { font-size: 10px; } }
   .slx-cht.mini { padding-bottom: 0; }
   .st-sesschat { margin: 14px 0 22px; }
@@ -20060,6 +20058,24 @@ try {
       st.pt = pt ? { x: x, y: pt.y } : null; if (st.req) st.req(); }); } catch (e) {}
     return st;
   };
+  /* Labels on the price scale drawn by the chart library itself, so they look exactly like its own SL / TP labels - same
+     height, padding and centring, text dark or white by the colour behind it (Nestor, 19 Oct 2026: "i like how the box in the
+     price scale looks for TP and SL but the crosshairs one looks off center and too skinny and too wide and the candle timer i
+     want it also looking like the TP and SL ones"): the candle's time left ('cd') and the crosshair's price ('cx').
+     set(key, { y, t, bg }) or set(key, null). */
+  window.__stAxisLbl = function (series) {
+    if (series.__stAx) return series.__stAx;
+    var V = {}, req = null;
+    var fg = function (c) { var m = /^#([0-9a-f]{6})/i.exec(String(c || '')), r = 0, g = 0, b = 0;
+      if (m) { var n = parseInt(m[1], 16); r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255; }
+      else { var q = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(String(c || '')); if (q) { r = +q[1]; g = +q[2]; b = +q[3]; } }
+      return (0.199 * r + 0.687 * g + 0.114 * b) > 160 ? '#000000' : '#ffffff'; };   // the library's own rule for its labels
+    var views = ['cd', 'cx'].map(function (k) { return { coordinate: function () { return V[k] ? V[k].y : -10000; }, text: function () { return V[k] ? V[k].t : ''; },
+      textColor: function () { return V[k] ? fg(V[k].bg) : '#ffffff'; }, backColor: function () { return V[k] ? V[k].bg : '#2a2833'; }, visible: function () { return !!V[k]; } }; });
+    try { series.attachPrimitive({ priceAxisViews: function () { return views; }, updateAllViews: function () {}, attached: function (a) { req = a.requestUpdate; }, detached: function () { req = null; } }); } catch (e) {}
+    return series.__stAx = { set: function (k, o) { var a = V[k] ? V[k].y + '|' + V[k].t + '|' + V[k].bg : '', b = o ? o.y + '|' + o.t + '|' + o.bg : ''; if (a === b) return; V[k] = o || null; try { if (req) req(); } catch (e) {} },
+      get: function (k) { return V[k] || null; } };
+  };
   window.__stArrows = function (series, marks) {
     var NARROW = 0.8;
     var odd = function (v) { var c = Math.ceil(v); return c % 2 === 0 ? c - 1 : c; };
@@ -20353,9 +20369,8 @@ try {
         Object.keys(charts).forEach(function (kk) { var ce = charts[kk].el, cb = ce.querySelector('.slx-tall'); ce.classList.toggle('tall', tall); if (cb) paintH(cb, tall); });
       });
       var cd = document.createElement('div'); cd.className = 'slx-info'; cd.hidden = true; box.appendChild(cd);
-      var cdl = document.createElement('div'); cdl.className = 'slx-cdl'; cdl.hidden = true; box.appendChild(cdl);
       var tl = document.createElement('div'); tl.className = 'slx-topl'; box.appendChild(tl);
-      var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null, tf: '', born: Date.now(), cd: cd, cdl: cdl, cdBar: null, cdSec: 0 };
+      var c = charts[k] = { el: el, sym: sym, chart: null, series: null, lines: [], sig: '', key: '', rng: null, tf: '', born: Date.now(), cd: cd, cdBar: null, cdSec: 0 };
       ensureLWC().then(function () {
         if (charts[k] !== c) return;
         var d = Math.max(0, Math.min(8, isFinite(dg) ? dg : 5));
@@ -20431,16 +20446,14 @@ try {
         else { if (cd.textContent !== tx) cd.textContent = tx;
           var r = (pw > 0 && pw < 200 ? pw : 60) + 8 + 'px', b = (th > 0 && th < 80 ? th : 26) + 8 + 'px';
           if (cd.style.right !== r) cd.style.right = r; if (cd.style.bottom !== b) cd.style.bottom = b; cd.hidden = false; }
-        var el = c.cdl; if (!el) return;
+        if (!c.series) return; var ax = window.__stAxisLbl(c.series);
         var bar = c.cdBar, sec = c.cdSec, now = Date.now() / 1000, left = null, y = null;
         if (!off && bar && sec > 0 && now - bar.time <= sec + Math.max(sec, 900)) left = (bar.time + sec > now) ? bar.time + sec - now : sec - ((now - bar.time) % sec);
         if (left != null) { try { y = c.series.priceToCoordinate(bar.close); } catch (e) {} }
         var bx = c.el.querySelector('.slx-chb'), ph = bx ? bx.clientHeight - th : 0;
-        if (y == null || y < 9 || y > ph - 9) { if (!el.hidden) el.hidden = true; cdLv(c, left == null); return; }
-        cdLv(c, false);
-        var t2 = cdText(left, sec), cl = 'slx-cdl ' + (bar.close >= bar.open ? 'u' : 'd'), tp = Math.round(y - 9) + 'px', wd = (pw > 0 && pw < 200 ? pw : 60) + 'px';
-        if (el.textContent !== t2) el.textContent = t2; if (el.className !== cl) el.className = cl;
-        if (el.style.top !== tp) el.style.top = tp; if (el.style.width !== wd) el.style.width = wd; if (el.hidden) el.hidden = false;
+        if (y == null || y < 0 || y > ph) { ax.set('cd', null); cdLv(c, left == null); return; }
+        cdLv(c, false); var L = lkL() || { up: '#4ECD8B', dn: '#E56767' };
+        ax.set('cd', { y: y, t: cdText(left, sec), bg: bar.close >= bar.open ? L.up : L.dn });
       } catch (e) {}
     }
     setInterval(function () { Object.keys(charts).forEach(function (k) { paintCd(charts[k]); }); }, 1000);
@@ -20578,7 +20591,7 @@ try {
                h: (function () { try { var b = c.el.querySelector('.slx-chb'); return b.clientHeight - c.chart.timeScale().height(); } catch (e) { return 0; } })(),
                so: c.series ? (function () { var o = c.series.options(); return { lvv: o.lastValueVisible, pls: o.priceLineStyle, up: o.upColor, dn: o.downColor }; })() : null,
                bg: c.chart ? (function () { var b = c.chart.options().layout.background; return b.color || b.topColor || ''; })() : '',
-               cdl: c.cdl && !c.cdl.hidden ? c.cdl.textContent : null, info: c.cd && !c.cd.hidden ? c.cd.textContent : null }; }); }
+               cdl: c.series && c.series.__stAx && c.series.__stAx.get('cd') ? c.series.__stAx.get('cd').t : null, info: c.cd && !c.cd.hidden ? c.cd.textContent : null }; }); }
     return { render: render, later: later, charts: chartDiag, parseLad: parseLad, levels: levelsOf, relook: relook };
   })();
 
@@ -84732,8 +84745,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       ctx.font=_cf+'px '+_cff; ctx.textBaseline='middle';
       try{ var _pr=series.coordinateToPrice(S.cx.y);
         if(_pr!=null){ var _pt=Number(_pr).toFixed(_prec()), _px0=plotW(w)+1, _pbh=_cf+5;
-          ctx.fillStyle='#2a2833'; ctx.fillRect(_px0,S.cx.y-_pbh/2,Math.max(12,w-_px0),_pbh);
-          ctx.fillStyle='#ffffff'; ctx.textAlign='left'; ctx.fillText(_pt,_px0+4,S.cx.y); } }catch(_){}
+          window.__stAxisLbl(series).set('cx',{ y:S.cx.y, t:_pt, bg:'#2a2833' }); } else window.__stAxisLbl(series).set('cx',null); }catch(_){}   /* drawn by the chart, like its SL / TP labels (19 Oct 2026) */
       try{ var _lg=chart.timeScale().coordinateToLogical(S.cx.x);
         var _bi=(_lg==null)?-1:Math.round(_lg);
         /* SECONDS, not milliseconds: _hm multiplies by 1000 itself. Passing time*1000 built the date
@@ -84746,6 +84758,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
           ctx.fillStyle='#2a2833'; ctx.fillRect(_tx-_tw/2-5,_ty-_tbh/2,_tw+10,_tbh);
           ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.fillText(_tt,_tx,_ty); } }catch(_){}
       ctx.textAlign='left'; ctx.restore(); }
+    else { try{ window.__stAxisLbl(series).set('cx',null); }catch(_){} }
     if(S.showPos){ drawOthers(ctx,w); drawPos(ctx,w); } S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel&&visibleOn(sel)){ if(sel.lock) lockMark(ctx,sel,w); else handles(ctx,sel,w); }
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
@@ -86265,8 +86278,6 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   .stpr-win.lcp #stpr-lvback { display: inline-flex; }   /* Live Charts has no Replay button since 18 Oct 2026 */
   #stpr-lvback i { width: 7px; height: 7px; border-radius: 50%; background: #4ECD8B; }
   .stpr-pane .stpr-cdb { z-index: 6; }
-  .stpr-cdl { position: absolute; right: 0; z-index: 6; height: 18px; line-height: 18px; text-align: center; font-family: 'AppNum','DM Mono',monospace; font-size: 11px; font-variant-numeric: tabular-nums; pointer-events: none; }
-  .stpr-cdl.u { background: #4ECD8B; color: #0b0a0d; } .stpr-cdl.d { background: #E56767; color: #fff; } .stpr-cdl[hidden] { display: none; }
   /* Trade management from the app (18 Oct 2026): the open trades' row in Live Charts, and the confirm box of a line dragged */
   .stpr-lvtm { display: none; }
   .stpr-win.lc .stpr-lvtm:not(:empty) { display: grid; gap: 10px; padding: 10px 14px; border-top: 1px solid var(--border); }
@@ -88686,7 +88697,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
       g.strokeStyle = 'rgba(244,114,182,0.85)'; g.lineWidth = 1; g.setLineDash([4, 3]); g.strokeRect(mm.x0 + .5, mm.y0 + .5, mm.x1 - mm.x0 - 1, mm.y1 - mm.y0 - 1); g.restore(); }
     g.restore();
     p._news = []; if (CFG.news !== false) drawNews(p, g, dm.pw, dm.ph);
-    var cx = cxFor(p); if (cx) paintCx(p, g, cx, dm);
+    var cx = cxFor(p); if (cx) paintCx(p, g, cx, dm); else { try { window.__stAxisLbl(p.series).set('cx', null); } catch (e) {} }
     try { paintOhlc(p); } catch (e) {}
   }
   // One paint per frame per chart, and only when something moved (the view, the price scale, the size, a drawing), so the
@@ -88959,7 +88970,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     g.save(); g.strokeStyle = look().cxc; g.lineWidth = 1; g.setLineDash(cxDash()); g.beginPath();
     if (okX) { g.moveTo(X, 0); g.lineTo(X, dm.h); } if (okY) { g.moveTo(0, Y); g.lineTo(dm.w, Y); } g.stroke(); g.setLineDash([]);
     g.font = fs + "px 'AppNum','DM Mono',monospace"; g.textBaseline = 'middle';
-    if (okY) { var bh = fs + 5, x0 = dm.pw + 1; g.fillStyle = '#2a2833'; g.fillRect(x0, c.y - bh / 2, Math.max(12, dm.w - x0), bh); g.fillStyle = '#ffffff'; g.textAlign = 'left'; g.fillText(Number(c.pr).toFixed(PS(p).digits), x0 + 4, c.y); }
+    try { window.__stAxisLbl(p.series).set('cx', okY ? { y: c.y, t: Number(c.pr).toFixed(PS(p).digits), bg: '#2a2833' } : null); } catch (e) {}   // drawn by the chart, like its SL / TP labels
     if (okY && plusOn(p)) { var pX = dm.pw - 11, hv = DW.plusHov === p;   // the + that adds an alert at this price
       g.beginPath(); g.arc(pX, c.y, 7.5, 0, Math.PI * 2); g.fillStyle = hv ? '#f472b6' : '#2a2833'; g.fill(); g.lineWidth = 1; g.strokeStyle = hv ? '#f472b6' : 'rgba(255,255,255,0.75)'; g.stroke();
       g.lineWidth = 1.4; g.strokeStyle = hv ? '#0b0a0d' : '#ffffff'; g.beginPath(); g.moveTo(pX - 3.5, c.y); g.lineTo(pX + 3.5, c.y); g.moveTo(pX, c.y - 3.5); g.lineTo(pX, c.y + 3.5); g.stroke();
@@ -89809,15 +89820,13 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   function cdTxt(left){ left = Math.max(0, Math.floor(left)); var h = Math.floor(left / 3600), m = Math.floor((left % 3600) / 60), x = left % 60; return (h ? p2(h) + ':' : '') + p2(m) + ':' + p2(x); }
   // on the price scale where the last price's label was: the time left in the forming candle (Live Charts: now; Back Testing: the replay's moment)
   function cdLv(p, on){ var sr = p.series; if (!sr || sr.__lvv === on) return; sr.__lvv = on; try { sr.applyOptions({ lastValueVisible: on }); } catch (e) {} }
-  function cdLbl(p){ if (!S || !p || !p.series) return; var el = p.cdl; if (!el || !el.isConnected) { el = p.cdl = p.el.ownerDocument.createElement('div'); el.className = 'stpr-cdl'; el.hidden = true; p.el.appendChild(el); }
+  function cdLbl(p){ if (!S || !p || !p.series) return; var ax = window.__stAxisLbl(p.series);
     var b = p.bars && p.bars[p.bars.length - 1], n = S.live ? nowS() : S.now, left = null, y = null;
     if (b && p.tf < 10080 && !(S.live && n >= S.f.close)) { left = keyOf(p.tf, n) + p.tf * 60 - n; if (!(left > 0 && left <= p.tf * 60)) left = null; }
     try { if (left != null) y = p.series.priceToCoordinate(b.close); } catch (e) {}
-    var dm = paneDims(p); if (y == null || y < 9 || y > dm.ph - 9) { if (!el.hidden) el.hidden = true; cdLv(p, left == null); return; }
-    cdLv(p, false);
-    var tx = cdTxt(left), cl = 'stpr-cdl ' + (b.close >= b.open ? 'u' : 'd'), tp = Math.round(y - 9) + 'px', wd = dm.psw + 'px';
-    if (el.hidden) el.hidden = false; if (el.textContent !== tx) el.textContent = tx; if (el.className !== cl) el.className = cl;
-    if (el.style.top !== tp) el.style.top = tp; if (el.style.width !== wd) el.style.width = wd; }
+    var dm = paneDims(p); if (y == null || y < 0 || y > dm.ph) { ax.set('cd', null); cdLv(p, left == null); return; }
+    cdLv(p, false); var L = look();
+    ax.set('cd', { y: y, t: cdTxt(left), bg: b.close >= b.open ? L.up : L.dn }); }
   function lvBadges(){ if (!S || !(S.live || S.today)) return; var n = nowS();
     panes.forEach(function(p){ var F = PS(p), dg = F.dg || F.digits, fx = (dg === 5 || dg === 3), sp = '';
       if (F.px && F.px.sp != null && lvFresh(F) && (S.live || S.follow)) sp = fx ? (Math.round(F.px.sp / Math.pow(10, 1 - dg) * 10) / 10).toFixed(1) + 'p' : (Math.round(F.px.sp / Math.pow(10, -dg) * 10) / 10).toFixed(1) + ' pts';
@@ -90145,7 +90154,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
     }
   } catch (e) {}
   window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady,
-    _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
+    _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests

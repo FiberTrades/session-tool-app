@@ -94,7 +94,7 @@
     check('the header: LIVE (green) and "Your MT5 prices"', document.getElementById('stpr-chip').classList.contains('lv') && /Live/.test(document.getElementById('stpr-chip').textContent) && document.getElementById('stpr-when').textContent === 'Your MT5 prices',
       [document.getElementById('stpr-chip').className, document.getElementById('stpr-when').textContent]);
     var cd = document.querySelectorAll('#lc-host .stpr-cdb');
-    var cdl = document.querySelectorAll('#lc-host .stpr-cdl:not([hidden])');
+    var cdl = [P._axl(0), P._axl(1)].filter(Boolean).map(function (o) { return { textContent: o.t }; });   // the chart's own label on its price scale (19 Oct 2026)
     check('each chart: the spread alone bottom right ("Spread 0.7p"), the candle\'s time left under the price on the scale (MM:SS)', cd.length === 2 && /^Spread 0\.7p$/.test(cd[0].textContent) && /^Spread 0\.7p$/.test(cd[1].textContent) && cdl.length === 2 && /^\d\d:\d\d$/.test(cdl[0].textContent) && /^0[01]:\d\d$/.test(cdl[1].textContent), [cd.length, cd[0] && cd[0].textContent, cdl.length, cdl[0] && cdl[0].textContent, cdl[1] && cdl[1].textContent]);
     check('the candle timer takes the price label\'s place on the scale (no last-price label while it counts)', P._lvv().length === 2 && P._lvv().every(function (v) { return v === false; }), P._lvv());
     // ---- the Assistant's line above the charts (19 Oct 2026): fixed sentences, the first that applies ----
