@@ -52,13 +52,34 @@
 
     // ---- the tab ----
     var tab = document.querySelector('.tab[data-page="livecharts"]');
-    check('a Live Charts tab after Session Review', tab && document.querySelector('.tab[data-page="review"]').nextElementSibling === tab && /Live Charts/.test(tab.textContent), tab && tab.textContent);
+    check('a Charts tab after Session Review (Live Charts + Replay, 19 Oct 2026)', tab && document.querySelector('.tab[data-page="review"]').nextElementSibling === tab && /Charts/.test(tab.textContent) && !/Live Charts/.test(tab.textContent), tab && tab.textContent);
     var chipEl = document.getElementById('stpr-chip'), chipSeen = [], chipRec = function () { var v = chipEl.className + '|' + chipEl.textContent; if (chipSeen[chipSeen.length - 1] !== v) chipSeen.push(v); };
     var chipObs = new MutationObserver(chipRec); chipObs.observe(chipEl, { attributes: true, childList: true, characterData: true, subtree: true });
     tab.click(); chipRec(); await W(400);
     var win = document.getElementById('stpr-win');
-    check('opened: its page shows, titled Live Charts; the chart window is in it, live', document.getElementById('page-livecharts').classList.contains('active') && document.getElementById('header-mode').textContent === 'Live Charts' && win.parentNode.id === 'lc-host' && win.classList.contains('lc'),
+    check('opened: its page shows, titled Charts; the chart window is in it, live', document.getElementById('page-livecharts').classList.contains('active') && document.getElementById('header-mode').textContent === 'Charts' && win.parentNode.id === 'lc-host' && win.classList.contains('lc'),
       [document.getElementById('header-mode').textContent, win.parentNode.id, win.className]);
+    // ---- one Charts tab: Live | Replay (Nestor, 19 Oct 2026: TradingView's Replay; a confirm on every swap) ----
+    for (var rk0 = 0; rk0 < 80 && !(P._s() && P._s().live); rk0++) await W(150);   // live loaded first
+    var chipKeep = chipSeen.slice();   // the label's own check (below) is about loading Live; this swap to Replay and back is not
+    var lcm = document.getElementById('lc-mode'), mbtn = function (m) { return lcm.querySelector('[data-lcm="' + m + '"]'); }, askEl = function () { return document.getElementById('lc-ask-bg'); };
+    await W(800);
+    check('the switch over the charts: Live (on, green) | Replay (TradingView\'s rewind icon), and the line under it', !lcm.hidden && mbtn('live').classList.contains('on') && !mbtn('replay').classList.contains('on') && mbtn('replay').querySelector('svg.lc-rw') && /Replay/.test(mbtn('replay').textContent) && /MT5 prices/.test(document.getElementById('lc-msub').textContent), lcm.textContent);
+    mbtn('replay').click(); await W(150);
+    check('Replay asks first: "Switch to Replay?" - live charts stop, practice trades only - Stay on Live / Switch to Replay', askEl() && /Switch to Replay\?/.test(askEl().textContent) && /nothing is sent to MT5/.test(askEl().textContent) && /Stay on Live/.test(askEl().textContent), askEl() && askEl().textContent);
+    askEl().querySelector('[data-lca="0"]').click(); await W(300);
+    check('...Stay on Live: nothing changes', !askEl() && P._s() && P._s().live && mbtn('live').classList.contains('on'));
+    mbtn('replay').click(); await W(150); askEl().querySelector('[data-lca="1"]').click();
+    for (var rk = 0; rk < 80 && !(P._s() && !P._s().live && P._panes().length && P._panes()[0].n); rk++) await W(150);
+    await W(800);
+    var rch = document.getElementById('stpr-chip');
+    check('Switch to Replay: a past day in the same window (REPLAY label, its day and play bar), the switch on Replay, MT5\'s Toolbox put away', P._s() && !P._s().live && win.parentNode.id === 'lc-host' && win.classList.contains('lcp') && rch.textContent === 'Replay' && mbtn('replay').classList.contains('on') && getComputedStyle(document.getElementById('lc-tb')).display === 'none' && getComputedStyle(document.querySelector('.stpr-cb')).display !== 'none', [rch.textContent, win.className]);
+    mbtn('live').click(); await W(150);
+    check('Live asks too: "Switch to Live?" - Stay in Replay / Switch to Live', askEl() && /Switch to Live\?/.test(askEl().textContent) && /Stay in Replay/.test(askEl().textContent), askEl() && askEl().textContent);
+    askEl().querySelector('[data-lca="1"]').click();
+    for (rk = 0; rk < 80 && !(P._s() && P._s().live && LC.state().fresh); rk++) await W(250);
+    check('...Switch to Live: the live charts again, the switch on Live', P._s() && P._s().live && win.classList.contains('lc') && mbtn('live').classList.contains('on'), P._s() && P._s().live);
+    chipSeen.splice(0, chipSeen.length); Array.prototype.push.apply(chipSeen, chipKeep);
     var st = null;
     for (var k = 0; k < 100; k++) { await W(200); st = LC.state(); if (st.live && st.panes === 2) break; }
     check('two charts, EUR/USD, on today\'s (the clock\'s) trading day', st && st.live && st.panes === 2 && st.sym === 'EURUSD', st);
@@ -105,7 +126,7 @@
     var g0 = gtx(null), g1 = gtx({ sym: 'EURUSD', ea: false }), g2 = gtx({ sym: 'EURUSD', ea: true, closed: true, dayName: 'Friday' });
     window.__stLC.greetInfo = gi0; window.__stLiveGreet();
     check('...still loading: a neutral "Your MT5 prices, live."', g0 === 'Your MT5 prices, live.', g0);
-    check('...no EA: "Your charts come alive when the EA runs ... Open it on EURUSD"; market closed: "Markets are closed: the charts show Friday\'s session"', /come alive when the EA runs/.test(g1) && /Open it on EURUSD/.test(g1) && /^Markets are closed: the charts show Friday.s session\. Back Testing is open/.test(g2), [g1, g2]);
+    check('...no EA: "Your charts come alive when the EA runs ... Open it on EURUSD"; market closed: "Markets are closed: the charts show Friday\'s session"', /come alive when the EA runs/.test(g1) && /Open it on EURUSD/.test(g1) && /^Markets are closed: the charts show Friday.s session\. Replay, in the Charts tab, is open/.test(g2), [g1, g2]);
     check('...it is never rewritten (no AI): after a while it is still one of the fixed lines', (await W(1500), !/come alive/.test(lg.textContent) && lg.textContent.trim().length > 10), lg.textContent);
     // chart 1's row (19 Oct 2026: "move these 2 around ... make the asset watchlist and the EA boxes sit at same height")
     var tlp = document.querySelector('#lc-host .stpr-tlp'), tlb = tlp && Array.prototype.filter.call(tlp.children, function (x) { return x.tagName === 'BUTTON'; }),
@@ -491,14 +512,14 @@
     document.querySelector('.tab[data-page="trades"]').click(); await W(600);
     await P.open({ symbol: 'EURUSD', day: '2026-10-13' }); for (k = 0; k < 100 && !(P._s() && P._panes().length && P._panes()[0].n); k++) await W(100);
     var chB = document.getElementById('stpr-chip');
-    check('Back Testing after Live Charts: the pink PRACTICE label again (not Live Charts\' green or grey)', chB.className === 'stpr-chip' && /Practice/i.test(chB.textContent) && /244, 114, 182/.test(getComputedStyle(chB).backgroundColor), [chB.className, chB.textContent, getComputedStyle(chB).backgroundColor]);
+    check('Back Testing (Replay) after Live Charts: the pink REPLAY label again (not Live Charts\' green or grey)', chB.className === 'stpr-chip' && /Replay/.test(chB.textContent) && /244, 114, 182/.test(getComputedStyle(chB).backgroundColor), [chB.className, chB.textContent, getComputedStyle(chB).backgroundColor]);
     var tb = document.getElementById('stpr-today');
     check('Back Testing has a Today button (Random day is gone)', tb && getComputedStyle(tb).display !== 'none' && !document.getElementById('stpr-rand') && /Today/.test(tb.textContent), tb && tb.outerHTML.slice(0, 60));
     tb.click();
     var nowT = function () { return Math.floor(Date.now() / 1000) + Math.round((T0 * 1000 - (window.__t0ref || 0)) / 1000); };
     for (k = 0; k < 120; k++) { await W(250); var ts = P._s(); if (ts && ts.today && ts.gotHist && ts.base.length > 100 && ts.follow) break; }
     ts = P._s(); var whenT = document.getElementById('stpr-when').textContent;
-    check('Today opens today (the EA\'s minutes), at the present, following the live price - still PRACTICE', ts && ts.today && ts.day === '2026-10-14' && ts.base.length > 100 && ts.follow && /TODAY · LIVE PRICE/.test(whenT) && /Practice/i.test(document.getElementById('stpr-chip').textContent), [ts && ts.day, ts && ts.base.length, ts && ts.follow, whenT]);
+    check('Today opens today (the EA\'s minutes), at the present, following the live price - still REPLAY', ts && ts.today && ts.day === '2026-10-14' && ts.base.length > 100 && ts.follow && /TODAY · LIVE PRICE/.test(whenT) && /Replay/.test(document.getElementById('stpr-chip').textContent), [ts && ts.day, ts && ts.base.length, ts && ts.follow, whenT]);
     var n0 = ts.now; P._goto('09:00'); await W(1500); ts = P._s();
     check('Go to replays an earlier moment of today (09:00): no longer at the present', ts.today && ts.now < n0 - 600 && !ts.follow && /TODAY$/.test(document.getElementById('stpr-when').textContent), [n0, ts.now, ts.follow, document.getElementById('stpr-when').textContent]);
     P._goto('16:00'); for (k = 0; k < 12 && !(P._s().follow); k++) await W(250); ts = P._s();

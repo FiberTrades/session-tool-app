@@ -23,7 +23,7 @@
     var cards = Array.prototype.slice.call(hub.querySelectorAll('.vault-hub-card')), rc = cards.map(function (c) { return c.getBoundingClientRect(); });
     var bt = cards.map(function (c) { return Math.round(c.querySelector('.vh-go').getBoundingClientRect().top); });
     // Media Vault before it opens (a member, as here): "Coming soon" only - no figures, no button (Nestor, 15 Oct 2026)
-    ok('three boxes in one row, the same size, four figures and lined-up buttons on Academy and Practice Replay, the third Practice Replay', cards.length === 3 && cards[2].getAttribute('data-hub') === 'practice' && Math.round(rc[0].top) === Math.round(rc[2].top) && Math.abs(rc[0].height - rc[2].height) < 1 && Math.abs(rc[0].width - rc[1].width) < 1 && bt[1] === bt[2] && cards.slice(1).every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.height); }).concat(bt));
+    ok('two boxes in one row, the same size, four figures on the Academy (Back Testing left for the Charts tab as Replay, 19 Oct 2026)', cards.length === 2 && !hub.querySelector('[data-hub="practice"]') && Math.round(rc[0].top) === Math.round(rc[1].top) && Math.abs(rc[0].height - rc[1].height) < 1 && Math.abs(rc[0].width - rc[1].width) < 1 && cards.slice(1).every(function (c) { return c.querySelectorAll('.vh-t').length === 4; }), rc.map(function (r) { return Math.round(r.top) + '/' + Math.round(r.height); }).concat(bt));
     ok('Media Vault says Coming soon to a member: no counts, no button', cards[0].querySelectorAll('.vh-t').length === 0 && /Coming soon/i.test(cards[0].textContent) && getComputedStyle(cards[0].querySelector('.vh-go')).display === 'none', cards[0].textContent.replace(/\s+/g, ' ').slice(0, 120));
     ok('no Members area strip over the boxes', getComputedStyle(document.querySelector('.vault-hero')).display === 'none');
 
@@ -111,7 +111,7 @@
     var gridL = document.getElementById('stpr-grid').getBoundingClientRect().left - cw.getBoundingClientRect().left;
     var tfR = P._panes()[0].el.getBoundingClientRect(), pmR = mmEl && mmEl.getBoundingClientRect();   // (one chart: its timeframe button is in the top bar; the panel keeps its place under the O H L C line)
     ok('open, the panel hangs from the top left of the first chart under its timeframe button, 300 px wide, over the chart: the charts keep the whole width (17 Oct 2026: "it just extends down")', mmEl && mmEl.parentNode === document.getElementById('stpr-tl') && mmEl.classList.contains('drop') && Math.abs(pmR.width - 300) < 2 && gridL < 2 && Math.abs(pmR.top - tfR.top - 8) < 2 && Math.abs(pmR.left - tfR.left - 8) < 2 && pmR.bottom <= P._panes()[0].el.getBoundingClientRect().bottom + 1, { w: pmR && pmR.width, gridL: gridL, top: pmR && pmR.top, tf: tfR.top });
-    ok('its title says Practice account, not a real account (17 Oct 2026)', mmEl.querySelector('.stpr-mm-n').textContent === 'Practice account', mmEl.querySelector('.stpr-mm-n').textContent);
+    ok('its title says Replay account, not a real account (17 Oct 2026; Replay since 19 Oct)', mmEl.querySelector('.stpr-mm-n').textContent === 'Replay account', mmEl.querySelector('.stpr-mm-n').textContent);
     ok("it has the EA's sections", ['Order', 'Risk', 'Take profit', 'Break-even', 'Trailing stops', 'Partial closes', 'Daily limit'].every(function (t) { return new RegExp(t, 'i').test(mmEl.textContent); }) && !mmBtn('exec') && /Press O, then click the chart where your stop goes/.test(mmEl.textContent), mmEl.textContent.slice(0, 200));
     setIn('min', '2'); setIn('max', '12'); await W(30);
     ok('Min SL 2.0 and Max SL 12.0 pips held (the stop box is gone: the panel holds it)', mmIn('min').value === '2.0' && mmIn('max').value === '12.0' && !document.getElementById('stpr-stop'), [mmIn('min').value, mmIn('max').value]);
@@ -257,7 +257,7 @@
     ok('Gold loads (2 decimals)', S() && S().sym.key === 'XAUUSD' && S().digits === 2, S() && { digits: S().digits });
     ok('no practice trade in the journal', !((getAllLifetimeTrades() || []).some(function (t) { return t && t.practice; })));
     P.close(); await W(200);
-    ok('closing hides it and the Practice Replay box counts the trades (and has no line under its text)', /Practice trades\s*[1-9]/.test(document.getElementById('vault-hub-practice-tiles').textContent) && !document.querySelector('#vault-hub .vault-hub-meta'), document.getElementById('vault-hub-practice-tiles').textContent);
+    ok('closing hides it; the Academy has no Back Testing box any more (Replay is in the Charts tab since 19 Oct 2026)', !document.getElementById('vault-hub-practice') && !document.getElementById('stpr-bg').classList.contains('show'));
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   return JSON.stringify(out);
