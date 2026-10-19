@@ -161,7 +161,7 @@
     var TM = window.__stTM;
     for (k = 0; k < 20 && !document.querySelector('#stpr-lvtm .stm-st.on'); k++) await W(250);
     var bar = document.getElementById('stpr-lvtm'), tb = function (a) { return bar.querySelector('[data-tma="' + a + '"]'); };
-    check('Live Charts shows the open trade with MT5 connected, Move to BE and Close trade (no Close 50%)', bar && /SELL/.test(bar.textContent) && /MT5 connected/.test(bar.textContent) && tb('close') && !tb('close').disabled && /Close trade/.test(tb('close').textContent) && tb('tobe') && tb('tobe').nextElementSibling === tb('close') && !tb('half'), bar && bar.textContent);
+    check('Live Charts shows the open trade with MT5 connected, Move to BE and Close trade (no Close 50%) - no SELL / symbol / R label in front ("i have the toolbox to get this information")', bar && !/SELL/.test(bar.textContent) && bar.querySelector('.stpr-lvtr[data-side="sell"]') && /MT5 connected/.test(bar.textContent) && tb('close') && !tb('close').disabled && /Close trade/.test(tb('close').textContent) && tb('tobe') && tb('tobe').nextElementSibling === tb('close') && !tb('half'), bar && bar.textContent);
     // drag the SL line on the chart: a confirm box, then MT5
     var sl0 = P._lines(0).filter(function (l) { return l.k === 'lt|990077|sl|'; })[0], pane0 = P._panes()[0], pc0 = pane0.el.querySelector('.stpr-pc'), rc0 = pc0.getBoundingClientRect();
     check('the trade\'s SL line can be dragged (and the entry cannot)', !!sl0 && !P._lines(0).some(function (l) { return /^Entry/.test(l.title) && l.k; }), P._lines(0));
@@ -222,7 +222,7 @@
       r_now: 0.2, pnl_now: 20, sl_r: -1, tp_r: 2, ladder: '', px: gop, op: gop, rpx: 2.5, digits: 2, bar: (nowG - nowG % 60) + ',' + gop + ',' + gop + ',' + gop + ',' + gop + ',60', spread: 0.07 });
     for (k = 0; k < 20 && !/Off in your EA/.test(document.getElementById('stpr-lvtm').textContent); k++) await W(250);
     var gb = document.getElementById('stpr-lvtm');
-    check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', /BUY/.test(gb.textContent) && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /App trading/.test(gb.textContent) && /Session Terminal Sync/.test(gb.textContent), gb.textContent);
+    check('a trade on an EA with managing off: "Off in your EA", the buttons off, and where to switch it on', gb.querySelector('.stpr-lvtr[data-side="buy"]') && /Off in your EA/.test(gb.textContent) && gb.querySelector('[data-tma="close"]').disabled && /App trading/.test(gb.textContent) && /Session Terminal Sync/.test(gb.textContent), gb.textContent);
     for (k = 0; k < 12 && getComputedStyle(document.getElementById('lcp-section')).display !== 'none'; k++) await W(250);
     check('...and no Prop Firm Progress (no linked account)', getComputedStyle(document.getElementById('lcp-section')).display === 'none');
 
@@ -321,6 +321,20 @@
     var fn1 = document.querySelector('#stpr-mm .stpr-mm-fn');
     check('MT5 placed it: "Filled 1.xxxxx · BUY 0.xx EURUSD · HH:MM:SS", in green', /^Filled 1\.\d{5} · BUY \d+\.\d\d EURUSD · \d\d:\d\d:\d\d$/.test(fn1.textContent) && fn1.classList.contains('on'), fn1.textContent);
     check('...with the fill\'s chime', LC._chimes() === ch0 + 1, LC._chimes());
+    // ---- MT5's messages in the app (19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app") ----
+    var emb = function () { return document.querySelector('#stpr-cw .stpr-eamsg'); };
+    LC.emsg({ m: 'XAUUSD daily limit reached (3 trades). Paused until your next day.', sym: 'XAUUSD', lg: '90005678' }); await W(150);
+    check('a message an EA wrote on its MT5 chart (9.06 "emsg") shows on the chart: who said it and its words, with an x', emb() && emb().classList.contains('show') && /MT5 · XAUUSD · 90005678/.test(emb().textContent) && /daily limit reached/.test(emb().textContent) && emb().querySelector('[data-emx]') && getComputedStyle(emb()).display === 'flex', emb() && emb().textContent);
+    emb().querySelector('[data-emx]').click(); await W(100);
+    check('...x closes it', !emb().classList.contains('show') && getComputedStyle(emb()).display === 'none');
+    var aE = LN.easL()['EURUSD|90001234']; aE.al = false; await W(1300);
+    check('Algo Trading off in MT5 (9.06 "al" in its hi): the chart says so at once, in red, and how to turn it on', emb().classList.contains('show') && emb().classList.contains('r') && /Algo Trading is off in MT5/.test(emb().textContent) && /turns green/.test(emb().textContent), emb().textContent);
+    var ord1 = LC._ord(); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(200); document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(300);
+    check('...and an order is not sent: the reason stays on the chart (not only on the panel\'s last line)', LC._ord() === ord1 && /Algo Trading is off/.test(emb().textContent) && emb().classList.contains('show'), [LC._ord() === ord1, emb().textContent]);
+    aE.al = true; await W(1300);
+    check('...switched on in MT5: the warning goes by itself', !emb().classList.contains('show'));
+    P._s().exec = false; P._s().pv = null; P._render();
+    window.__stTM.whyTxt && check('MT5\'s own refusal reads plainly: "Trading not allowed - enable Algo Trading." -> how to turn it on', /Algo Trading button/.test(window.__stTM.whyTxt('Trading not allowed - enable Algo Trading.')), window.__stTM.whyTxt('Trading not allowed - enable Algo Trading.'));
 
     // ---- MT5's Toolbox under the charts (18 Oct 2026): Trade - the account and its positions, live; History - with commission ----
     var tbx = document.getElementById('lc-tb');
@@ -425,11 +439,20 @@
     await W(1500);   // the window settles after Maximise / Escape first
     var zp = P._panes()[0], zl = zp.n - 1, zt = null;
     P._zoom(0, { from: zl - 56, to: zl + 4 });   // as a wheel zoom leaves it (the chart's own handlers are not reachable from a script)
-    await W(1500);
-    var zr0 = zp.chart.timeScale().getVisibleLogicalRange(), zsv = {}; try { zsv = JSON.parse(localStorage.getItem('st_lc_view') || '{}'); } catch (e) {}
-    var zk = zsv['0|' + zp.tf], zspan = zr0 ? zr0.to - zr0.from : 0;
+    // saved 700 ms after the chart reports the new view, which it does on its next drawn frame - 0.2 to 0.9 s late in this busy
+    // headless window (19 Oct 2026: a fixed 1.5 s wait read too early 2 runs in 5): wait for the save itself, up to 6 s
+    var zsv = {}, zk = null; for (k = 0; k < 40; k++) { await W(150); try { zsv = JSON.parse(localStorage.getItem('st_lc_view') || '{}'); } catch (e) {} zk = zsv['0|' + zp.tf]; if (zk && Math.abs(zk.span - 60) < 1.5) break; }
+    var zr0 = zp.chart.timeScale().getVisibleLogicalRange(), zspan = zr0 ? zr0.to - zr0.from : 0;
     check('a chart zoomed by hand is remembered on this device (60 candles, ending 4 right of the latest)', !!zk && Math.abs(zk.span - 60) < 1.5 && Math.abs(zk.off - 4) < 1.5, [zsv, zspan]);
-    document.querySelector('.tab[data-page="trades"]').click(); await W(900);
+    // zoomed again and Live Charts left at once, its save still waiting: saved as the charts go, not lost with them (19 Oct 2026)
+    zl = zp.n - 1; P._zoom(0, { from: zl - 76, to: zl + 4 });
+    for (k = 0; k < 80; k++) { await W(50); zr0 = zp.chart.timeScale().getVisibleLogicalRange(); if (zp._vt && zr0 && Math.abs(zr0.to - zr0.from - 80) < 1.5) break; }
+    document.querySelector('.tab[data-page="trades"]').click();
+    for (k = 0; k < 60 && P._panes().length; k++) await W(50);
+    var zf = null; try { zf = JSON.parse(localStorage.getItem('st_lc_view') || '{}')['0|' + zp.tf]; } catch (e) {}
+    check('...and a zoom made just before leaving Live Charts is kept too (80 candles, saved as it leaves)', !!zf && Math.abs(zf.span - 80) < 1.5 && Math.abs(zf.off - 4) < 1.5, [zf, P._panes().length]);
+    if (zf) zk = zf;
+    await W(900);
     document.querySelector('.tab[data-page="livecharts"]').click();
     for (k = 0; k < 80; k++) { await W(200); st = LC.state(); if (st.live && P._panes().length && P._panes()[0].n > 30 && P._panes()[0].shown) break; } await W(1200);
     var zq = P._panes()[0], zr = zq.chart.timeScale().getVisibleLogicalRange();
