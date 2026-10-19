@@ -22,7 +22,7 @@
     var click = function (xx, yy) { mev('mousedown', xx, yy); mev('mouseup', xx, yy); mev('click', xx, yy); };
     var drag = function (x0, y0, x1, y1) { mev('mousedown', x0, y0); mev('mousemove', (x0 + x1) / 2, (y0 + y1) / 2, { held: true }); mev('mousemove', x1, y1, { held: true }); mev('mouseup', x1, y1); };
     var key = function (k) { document.dispatchEvent(new KeyboardEvent('keydown', { key: k, bubbles: true, cancelable: true })); };
-    var box = function () { var b = document.getElementById('strp-props'); return b && b.style.display !== 'none' ? b : null; };
+    var box = function () { var b = document.querySelector('.strp-card .stdb-bar'); return b && b.style.display !== 'none' ? b : null; };   // the drawing toolbar (19 Oct 2026)
     var flashTxt = function () { var f = document.getElementById('strp-flash'); return f && f.classList.contains('show') ? f.textContent : ''; };
     // what the overlay writes over a few frames
     var g = document.getElementById('strp-ov').getContext('2d'), texts = [], of = g.fillText;
@@ -41,13 +41,14 @@
     // this trade's own stop (10 pips) and target (its exit, 11 pips: no recorded target)
     var L0 = S.drawings[0], pip = S.pip, tpp = S.tpPips > 0 ? S.tpPips : 2 * S.slPips, L0s = JSON.stringify(L0);
     ok('Long position: one click, the entry there, this trade\'s stop (10 pips) under it and its target (' + tpp.toFixed(1) + ' pips) over it, 20 candles wide', Math.abs(pip - 0.0001) < 1e-9 && L0 && L0.type === 'long' && Math.abs((L0.a.price - L0.sl) / pip - 10) < 0.01 && Math.abs((L0.tp - L0.a.price) / pip - tpp) < 0.01 && L0.b.idx - L0.a.idx === 20 && S.activeTool === 'none', L0s);
-    var bx = box();
-    ok('its options box: LONG POSITION, Stop (pips) 10.0, Target (R) ' + (tpp / 10).toFixed(2) + ', no colours', bx && /LONG POSITION/.test(bx.textContent) && bx.querySelector('[data-pstop]').value === '10.0' && bx.querySelector('[data-ptgt]').value === (tpp / 10).toFixed(2) && !bx.querySelector('[data-col]'), bx && [bx.querySelector('[data-pstop]').value, bx.querySelector('[data-ptgt]').value]);
+    R._dbar().open('more'); await W(30); var bx = R._dbar().pop();
+    ok('its toolbar\'s More: LONG POSITION, Stop (pips) 10.0, Target (R) ' + (tpp / 10).toFixed(2) + '; no colours in its toolbar', bx && /LONG POSITION/.test(bx.textContent) && bx.querySelector('[data-pstop]').value === '10.0' && bx.querySelector('[data-ptgt]').value === (tpp / 10).toFixed(2) && box() && !box().querySelector('[data-db="line"]'), bx && [bx.querySelector('[data-pstop]').value, bx.querySelector('[data-ptgt]').value]);
     var tx = await painted();
     ok('selected: its tags show - Target (' + tpp.toFixed(1) + ' pips), Stop (10.0 pips)', tx.some(function (t) { return t.indexOf('Target: ') === 0 && t.indexOf('(' + tpp.toFixed(1) + ' pips)') > 0; }) && tx.some(function (t) { return /^Stop: .*\(10\.0 pips\)/.test(t); }), tx.filter(function (t) { return /Target|Stop|Risk/.test(t); }).slice(0, 3));
     var st = bx.querySelector('[data-pstop]'); st.value = '15'; st.dispatchEvent(new Event('input', { bubbles: true })); st.dispatchEvent(new Event('change', { bubbles: true }));
     var tg = bx.querySelector('[data-ptgt]'); tg.value = '3'; tg.dispatchEvent(new Event('input', { bubbles: true })); tg.dispatchEvent(new Event('change', { bubbles: true })); await W(40);
     ok('typing Stop 15 and Target 3R moves them: 15 pips under, 45 pips over', Math.abs((L0.a.price - L0.sl) / pip - 15) < 0.01 && Math.abs((L0.tp - L0.a.price) / pip - 45) < 0.01, [(L0.a.price - L0.sl) / pip, (L0.tp - L0.a.price) / pip]);
+    R._dbar().closePop();
     // off it, nothing selected: no tags; the mouse on it: tags
     click(Math.round(r.width * 0.12), Math.round(r.height * 0.85)); await W(40); mev('mousemove', Math.round(r.width * 0.12), Math.round(r.height * 0.85)); tx = await painted();
     ok('not selected, mouse elsewhere: no tags', S.sel == null && !tx.some(function (t) { return /^Target: |^Stop: /.test(t); }), S.sel);
@@ -66,17 +67,18 @@
     ok('dragging its target handle moves the target only', L0.tp > tp0 && Math.abs((L0.a.price - L0.sl) / pip - 15) < 0.01, [tp0, L0.tp]);
 
     // ---- Emoji ----
-    document.querySelector('#strp-tools [data-tool="emoji"]').click(); await W(40); bx = box();
+    document.querySelector('#strp-tools [data-tool="emoji"]').click(); await W(40); bx = R._dbar().popK() === 'emoji' ? R._dbar().pop() : null;
     var emos = bx ? bx.querySelectorAll('[data-emo]') : [];
-    ok('Emoji: its box lists the trading ones and every community-chat emoji', bx && /EMOJI/.test(bx.textContent) && /Trading/.test(bx.textContent) && emos.length >= 28 + ((window.__stEmojis || []).length ? 100 : 0), emos.length);
+    ok('Emoji: its toolbar opens its emojis, the trading ones and every community-chat emoji', bx && /Trading/.test(bx.textContent) && /Click the chart to place it/.test(bx.textContent) && emos.length >= 28 + ((window.__stEmojis || []).length ? 100 : 0), emos.length);
     var fire = bx.querySelector('[data-emo="🔥"]'); fire.click(); await W(30);
     var EX = Math.round(r.width * 0.6), EY = Math.round(r.height * 0.3); click(EX, EY); await W(60);
     var E0 = S.drawings[1];
     ok('picked the fire, one click places it (32 px), the pick remembered', E0 && E0.type === 'emoji' && E0.e === '🔥' && E0.size === 32 && localStorage.getItem('st_replay_emoji') === '🔥', E0);
     var eg = R._emoGeo(E0); drag(eg.x + eg.s / 2, eg.y + eg.s / 2, eg.x + eg.s / 2 + 20, eg.y + eg.s / 2 + 20); await W(40);
     ok('dragging a corner makes it bigger', E0.size > 50, E0.size);
-    click(eg.x, eg.y); await W(40); bx = box(); var sz = bx && bx.querySelector('[data-esz]');
-    ok('its box has a Size slider', sz && Math.abs(+sz.value - E0.size) <= 2, sz && [sz.value, E0.size]);
+    click(eg.x, eg.y); await W(40); R._dbar().open('more'); await W(30); bx = R._dbar().pop(); var sz = bx && bx.querySelector('[data-esz]');
+    ok('its More has a Size slider', sz && Math.abs(+sz.value - E0.size) <= 2, sz && [sz.value, E0.size]);
+    R._dbar().closePop();
 
     // ---- Measure: TradingView's price range ----
     document.querySelector('#strp-tools [data-tool="range"]').click(); await W(20);
@@ -87,8 +89,8 @@
 
     // ---- Lock ----
     pz = R._posGeo(L0); click((pz.x0 + pz.x1) / 2, pz.ye - 8); await W(40); bx = box();
-    bx.querySelector('#strp-lock').click(); await W(40);
-    ok('Lock in its options box: locked, it says so', L0.lock === true && /Locked/.test(flashTxt()) && /Locked/i.test(box().querySelector('#strp-lock').textContent), flashTxt());
+    bx.querySelector('[data-db="lock"]').click(); await W(40);
+    ok('the padlock in its toolbar: locked, it says so', L0.lock === true && /Locked/.test(flashTxt()) && /Locked/.test(box().querySelector('[data-db="lock"]').title), flashTxt());
     key('Delete'); await W(40);
     ok('Delete on a locked drawing: it stays, and says how to unlock it', S.drawings.indexOf(L0) === 0 && /unlock it to delete it/.test(flashTxt()), flashTxt());
     var la = L0.a.idx; pz = R._posGeo(L0); drag((pz.x0 + pz.x1) / 2, pz.ye - 8, (pz.x0 + pz.x1) / 2 + 80, pz.ye - 8); await W(40);
@@ -117,16 +119,16 @@
     ok('Escape closes the tree', !document.getElementById('strp-menu').classList.contains('show'));
 
     // ---- Visibility ----
-    var vb = box() && box().querySelector('#strp-visbtn'), tfl = Array.prototype.map.call(document.querySelectorAll('#strp-tfs button'), function (b) { return [+b.dataset.tf, b.textContent.trim()]; }).filter(function (x) { return x[0] === S.tf; })[0];
-    ok('its options box: "Visibility: ' + (tfl && tfl[1]) + '" (where it was drawn)', vb && vb.textContent.indexOf('Visibility: ' + tfl[1]) === 0, vb && vb.textContent);
+    var vb = box() && box().querySelector('[data-db="vis"]'), tfl = Array.prototype.map.call(document.querySelectorAll('#strp-tfs button'), function (b) { return [+b.dataset.tf, b.textContent.trim()]; }).filter(function (x) { return x[0] === S.tf; })[0];
+    ok('its toolbar\'s eye: "Visibility: ' + (tfl && tfl[1]) + '" (where it was drawn)', vb && vb.title.indexOf('Visibility: ' + tfl[1]) === 0, vb && vb.title);
     vb.click(); await W(60); var dlg = document.getElementById('strp-visdlg');
     ok('it opens the Visibility window: Minutes, Hours, Days, Weeks', dlg && dlg.querySelectorAll('.stpr-dvr').length === 4 && /Minutes/.test(dlg.textContent) && /Weeks/.test(dlg.textContent), dlg && dlg.textContent.slice(0, 120));
     var hOn = dlg.querySelector('[data-k="vis.h.on"]'); hOn.click(); await W(40);
     ok('ticking Hours: it shows on the 1h and 4h too', /1h 4h/.test(dlg.querySelector('.stpr-dvn').textContent) && E0.vis && E0.vis.h.on === true, dlg.querySelector('.stpr-dvn').textContent);
     dlg.querySelector('[data-dc]').click(); await W(40);
     ok('Cancel puts it back as it was', !document.getElementById('strp-visdlg') && !E0.vis && E0.tfs && E0.tfs.length === 1, [E0.vis, E0.tfs]);
-    box().querySelector('#strp-visbtn').click(); await W(60); dlg = document.getElementById('strp-visdlg'); dlg.querySelector('[data-k="vis.h.on"]').click(); await W(30); dlg.querySelector('[data-dok]').click(); await W(40);
-    ok('Ok keeps it: Visibility names its timeframes', E0.vis && E0.vis.h.on && !E0.tfs && /1h 4h/.test(box().querySelector('#strp-visbtn').textContent), box().querySelector('#strp-visbtn').textContent);
+    box().querySelector('[data-db="vis"]').click(); await W(60); dlg = document.getElementById('strp-visdlg'); dlg.querySelector('[data-k="vis.h.on"]').click(); await W(30); dlg.querySelector('[data-dok]').click(); await W(40);
+    ok('Ok keeps it: Visibility names its timeframes', E0.vis && E0.vis.h.on && !E0.tfs && /1h 4h/.test(box().querySelector('[data-db="vis"]').title), box().querySelector('[data-db="vis"]').title);
 
     // ---- the bin with nothing selected: Remove all drawings (a locked one stays) ----
     click(Math.round(r.width * 0.12), Math.round(r.height * 0.85)); await W(40);

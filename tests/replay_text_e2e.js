@@ -26,9 +26,9 @@
     ok('one click: a typing box on the chart at that spot, the cursor in it', ta && document.activeElement === ta && d && d.type === 'text', ta && [ta.style.left, ta.style.top]);
     ta.value = 'Entry was late'; ta.dispatchEvent(new Event('input', { bubbles: true })); key(ta, 'Enter'); await W(100);
     ok('Enter keeps it: on the chart, the box gone, selected', !document.querySelector('textarea.strp-txed') && d.text === 'Entry was late' && S.sel === 0, d);
-    var box = document.getElementById('strp-props');
-    ok('its options box: TEXT, sizes S M L XL, its words', box && /TEXT/.test(box.textContent) && /S\s*M\s*L\s*XL/.test(box.textContent.replace(/\s+/g, ' ')) && document.getElementById('strp-note') && document.getElementById('strp-note').value === 'Entry was late', box && box.textContent);
-    var bx = R._txtBox(d); var bigBtn = box.querySelector('[data-wid="3"]'); if (bigBtn) bigBtn.click(); await W(40); var bx2 = R._txtBox(d);
+    var DB = R._dbar(), bar = document.querySelector('.strp-card .stdb-bar'); DB.open('text'); await W(20); var box = DB.pop();
+    ok('its toolbar (19 Oct 2026): the text colour with its words, the size (M); S M L XL', bar && bar.style.display === 'flex' && bar.querySelector('[data-db="tsize"]').textContent === 'M' && box.querySelector('[data-tw]') && box.querySelector('[data-tw]').value === 'Entry was late' && (DB.open('tsize'), /S\s*·\s*11px[\s\S]*XL\s*·\s*24px/.test(DB.pop().textContent)), box && box.textContent);
+    var bx = R._txtBox(d); var bigBtn = DB.pop().querySelector('[data-tz="3"]'); if (bigBtn) bigBtn.click(); await W(40); var bx2 = R._txtBox(d); DB.closePop();
     ok('L makes it bigger', d.width === 3 && (bx2.y1 - bx2.y0) > (bx.y1 - bx.y0), [bx.y1 - bx.y0, bx2.y1 - bx2.y0]);
     var i0 = d.a.idx; mev('mousedown', bx2.x0 + 10, bx2.y0 + 8); mev('mousemove', bx2.x0 + 80, bx2.y0 + 40, { held: true }); mev('mouseup', bx2.x0 + 80, bx2.y0 + 40); await W(60);
     ok('it drags', d.a.idx > i0, [i0, d.a.idx]);
@@ -36,10 +36,11 @@
     ok('double-click to type again', ta && ta.value === 'Entry was late', ta && ta.value);
     ta.value = 'Entry was late - waited for the close'; ta.dispatchEvent(new Event('input', { bubbles: true })); key(ta, 'Enter'); await W(60);
     ok('the new words are kept', d.text === 'Entry was late - waited for the close');
-    var nb = document.getElementById('strp-note');
+    DB.open('text'); await W(20); var nb = DB.pop().querySelector('[data-tw]');
     ok('the options box shows the words in a box that keeps line breaks', nb && nb.tagName === 'TEXTAREA' && nb.value === 'Entry was late - waited for the close', nb && nb.tagName);
     nb.focus(); nb.dispatchEvent(new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true })); await W(40);
     ok('Backspace while typing there edits the words: the drawing stays', S.drawings.length === 1, S.drawings.length);
+    DB.closePop();
     document.querySelector('#strp-tools [data-tool="text"]').click(); mev('mousedown', X, Y + 150); mev('mouseup', X, Y + 150); await W(80);
     ta = document.querySelector('textarea.strp-txed'); key(ta, 'Escape'); await W(60);
     ok('a new one left empty is not kept', S.drawings.length === 1, S.drawings.length);
