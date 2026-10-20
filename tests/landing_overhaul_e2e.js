@@ -34,7 +34,7 @@
     ok('Journal Pro: first line, in bold, "Place trades on MT5 from Session Terminal", the three chart lines combined; 10 lines', li.length === 10 && li[0].querySelector('strong') && tx(li[0].querySelector('strong')) === 'Place trades on MT5 from Session Terminal' && /replay any day of the past year/.test(tx(li[0])) && !/Many more features/.test(tx(plist)), [li.length, tx(li[0])]);
     ok('the trial strip says what the trial includes', /Live and Replay charts/.test(tx(D.querySelector('[data-i18n="pr.trial_desc"]'))));
     var qs = Array.prototype.map.call(D.querySelectorAll('.faq-q summary'), tx);
-    ok('FAQ: 15 questions, the six new ones after "Can I place trades"', qs.length === 15 && /Can I place trades/.test(qs[1]) && qs[2] === 'How do I connect MT5?' && qs[4] === 'What is Replay?' && /Do I need MetaTrader 5/.test(qs[8]), qs);
+    ok('FAQ: 11 questions, without the four Nestor struck out (20 Oct 2026: "delete these 4")', qs.length === 11 && /Can I place trades/.test(qs[1]) && qs[2] === 'How do I connect MT5?' && qs[4] === 'Does MT5 need to stay open?' && /Do I need MetaTrader 5/.test(qs[6]) && !qs.some(function (q) { return /What is Replay|Do alerts reach my phone|free trial\?|Who can see my journal/.test(q); }), qs);
     ok('no SMC / liquidity wording on the page', !/\bSMC\b|liquidity/i.test(D.body.textContent));
     var md = D.querySelector('meta[property="og:description"]');
     ok('the link preview says what it is now', md && /trading journal with your MT5 built in/.test(md.getAttribute('content')), md && md.getAttribute('content'));

@@ -87,8 +87,9 @@
     for (k = 0; k < 40 && !document.getElementById('stpr-laybtn'); k++) await W(100);
     var tb1 = document.querySelector('#stpr-win > .stpr-tb:not(.stpr-tb2)'), lbt = document.getElementById('stpr-laybtn');
     check('one toolbar row: the Charts button at its right, before the object tree, no "Charts" word', getComputedStyle(tb1).display === 'none' && lbt && document.getElementById('stpr-tb2').contains(lbt) && lbt.parentNode.nextElementSibling && lbt.parentNode.nextElementSibling.id === 'stpr-treebtn' && !document.getElementById('stpr-laylbl'), [getComputedStyle(tb1).display, lbt && lbt.parentNode.parentNode.id]);
-    await W(600); var wr = win.getBoundingClientRect(), tbs = document.querySelector('.tabs').getBoundingClientRect();
-    check('the whole window fits the screen under the tabs (charts, the live bar, the clock), scrolled into place', wr.height <= window.innerHeight - tbs.height && wr.bottom <= window.innerHeight + 2 && wr.top >= tbs.bottom - 2, [Math.round(tbs.bottom), Math.round(wr.top), Math.round(wr.bottom), window.innerHeight]);
+    await W(600); var wr = win.getBoundingClientRect(), tbs = document.querySelector('.tabs').getBoundingClientRect(), lvr = win.querySelector('.stpr-lvbar').getBoundingClientRect();
+    // MT5's Toolbox is joined under the window's live bar since 20 Oct 2026, just below the screen's edge like before
+    check('the window fits the screen under the tabs (charts, the live bar, the clock; the Toolbox joined under them), scrolled into place', lvr.bottom - wr.top <= window.innerHeight - tbs.height && lvr.bottom <= window.innerHeight + 2 && wr.top >= tbs.bottom - 2, [Math.round(tbs.bottom), Math.round(wr.top), Math.round(lvr.bottom), Math.round(wr.bottom), window.innerHeight]);
     check('the replay\'s own controls are not there (no Replay either); the live bar is', !document.getElementById('stpr-rand') && getComputedStyle(document.querySelector('.stpr-cb')).display === 'none'
       && getComputedStyle(document.getElementById('stpr-lvrp')).display === 'none' &&getComputedStyle(document.getElementById('stpr-lvbar')).display !== 'none');
 
@@ -142,7 +143,7 @@
     // ---- the account chart 1's EA is on (its login in the EA's "hi") ----
     for (k = 0; k < 20 && getComputedStyle(document.getElementById('lcp-section')).display === 'none'; k++) await W(250);
     var pfp = document.getElementById('lcp-section');
-    check('under the Toolbox, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-tb').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
+    check('under the Toolbox, Prop Firm Progress for that account (Statistics\' card): its target and its room to the floor', getComputedStyle(pfp).display !== 'none' && /Prop Firm Progress/.test(pfp.textContent) && /FTMO 70K Challenge/.test(pfp.textContent) && /Profit target/.test(pfp.textContent) && /Room to the floor/.test(pfp.textContent) && document.getElementById('lc-host').nextElementSibling.id === 'lc-pfp', pfp.textContent.slice(0, 200));
 
     // ---- each chart its own symbol (18 Oct 2026: "give every chart the oportunity to be a different asset ... also for live charts"):
     // ---- chart 2 on gold, whose EA runs on another account (90005678, on Supabase) ----
@@ -360,6 +361,8 @@
     // ---- MT5's Toolbox under the charts (18 Oct 2026): Trade - the account and its positions, live; History - with commission ----
     var tbx = document.getElementById('lc-tb');
     for (k = 0; k < 40 && !(tbx && !tbx.hidden && tbx.querySelector('[data-lctbx="min"]')); k++) await W(250);
+    var tbr = tbx.getBoundingClientRect(), lvb = win.querySelector('.stpr-lvbar').getBoundingClientRect(), wr = win.getBoundingClientRect();
+    check('in the tab, the Toolbox is joined to the bottom of the charts (20 Oct 2026: "can the toolbox also be attached to the bottom of the chart when not in fullscreen?")', LC.state().inl && tbx.parentNode === win && win.lastElementChild === tbx && Math.abs(tbr.top - lvb.bottom) <= 1 && Math.abs(tbr.bottom - (wr.bottom - 1)) <= 1.5 && getComputedStyle(tbx).borderBottomLeftRadius !== '0px', [tbx.parentNode && tbx.parentNode.id, Math.round(tbr.top), Math.round(lvb.bottom), Math.round(tbr.bottom), Math.round(wr.bottom)]);
     tbx.querySelector('[data-lctbx="min"]').click(); await W(700);
     check('the Toolbox minimises to its tab row (-), and opens again (+)', !tbx.querySelector('.lctb-b') && tbx.querySelector('[data-lctbx="min"]').textContent === '+', tbx.textContent.slice(0, 60));
     tbx.querySelector('[data-lctbx="min"]').click(); await W(700);
@@ -457,7 +460,7 @@
     check('...with MT5\'s Toolbox under the charts, on screen (20 Oct 2026: "in full screen i need to be able to see the toolbox at the bottom too")', tbM.parentNode === win && !tbM.hidden && tbR.height > 20 && tbR.bottom <= innerHeight + 1 && tbR.top > win.querySelector('.stpr-cw').getBoundingClientRect().top, [tbM.parentNode && tbM.parentNode.id, tbM.hidden, Math.round(tbR.top), Math.round(tbR.bottom), innerHeight]);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(300);
     check('Escape: back in the tab', win.parentNode.id === 'lc-host' && !document.getElementById('stpr-bg').classList.contains('show'));
-    check('...and the Toolbox back under the window in the tab', document.getElementById('lc-tb').previousElementSibling === document.getElementById('lc-host') && document.getElementById('lc-tb').parentNode.id === 'page-livecharts');
+    check('...and the Toolbox still joined under the charts in the tab', document.getElementById('lc-tb').parentNode === win && win.parentNode.id === 'lc-host');
 
     // ---- Live Charts remembers each chart's zoom on this device (18 Oct 2026: "can the chart remember where i left it") ----
     await W(1500);   // the window settles after Maximise / Escape first

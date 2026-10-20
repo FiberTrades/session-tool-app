@@ -23,11 +23,15 @@
     eb.click(); await W(40);
     var box = P._dbar().popK() === 'emoji' && P._dbar().pop(), emo = box && box.querySelectorAll('[data-emo]'), chat = window.__stEmojis || [];
     var extra = chat.filter(function (x) { return P._emojis.indexOf(x) < 0; }).length;
-    ok('picked: its box shows the 28 trading emojis first, then every emoji the community chat has (865), and says to click the chart', DW.tool === 'emoji' && emo && emo[0].getAttribute('data-emo') === P._emojis[0]
-      && chat.length > 800 && emo.length === 28 + extra && box.querySelector('[data-emo="😂"]') && /All emojis/.test(box.textContent) && /Click the chart to place it/.test(box.textContent), emo && [emo.length, chat.length]);
-    var rocket = P._emojis[3]; box.querySelector('[data-emo="' + rocket + '"]').click(); await W(30);
-    ok('choosing one: it is the one placed next (remembered)', C.emoji === rocket && DW.tool === 'emoji');
+    ok('picked: its box shows the 28 trading emojis first, then every emoji the community chat has (865), none marked, and says to pick one', DW.tool === 'emoji' && emo && emo[0].getAttribute('data-emo') === P._emojis[0]
+      && chat.length > 800 && emo.length === 28 + extra && box.querySelector('[data-emo="😂"]') && /All emojis/.test(box.textContent) && /Pick an emoji, then click the chart/.test(box.textContent) && !box.querySelector('[data-emo].on'), emo && [emo.length, chat.length]);
+    ok('...and the toolbar\'s Emoji button is a plain face, no emoji in it yet', document.querySelector('.stdb-bar [data-db="emoji"] svg') && !document.querySelector('.stdb-bar .stdb-emo'));
     var X = Math.round(r.width * 0.4), Y = Math.round(r.height * 0.4);
+    mev('mousedown', X, Y); mev('mouseup', X, Y); await W(80);
+    ok('a click on the chart before picking one places nothing and puts the tool down (20 Oct 2026: "it places an emoji without me having selected one")', DW.list.length === 0 && DW.tool === 'none' && P._dbar().popK() !== 'emoji', [DW.list.length, DW.tool]);
+    eb.click(); await W(40); box = P._dbar().pop();
+    var rocket = P._emojis[3]; box.querySelector('[data-emo="' + rocket + '"]').click(); await W(30); box = P._dbar().pop();
+    ok('choosing one: it is the one placed next (remembered), marked, and the box says to click the chart', C.emoji === rocket && DW.tool === 'emoji' && box.querySelector('[data-emo].on') && box.querySelector('[data-emo].on').getAttribute('data-emo') === rocket && /Click the chart to place it/.test(box.textContent) && document.querySelector('.stdb-bar .stdb-emo').textContent === rocket);
     mev('mousedown', X, Y); mev('mouseup', X, Y); await W(80);
     var d = DW.list[0];
     ok('a click on the chart places it there, 32 px, selected', d && d.type === 'emoji' && d.e === rocket && d.size === 32 && DW.sel === 0 && DW.tool === 'none', d);
@@ -50,6 +54,11 @@
     ok('kept with the drawings (synced like them)', JSON.parse(localStorage.getItem('st_practice_draw2:EURUSD') || '[]')[0].e === '😂');
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Delete', bubbles: true })); await W(40);
     ok('Delete removes it', DW.list.length === 0);
+    // the next time: the last one is remembered, but nothing is placed until one is picked again
+    eb.click(); await W(40); box = P._dbar().pop();
+    ok('Emoji again: none marked even though the rocket is remembered', C.emoji === rocket && DW.tool === 'emoji' && box && !box.querySelector('[data-emo].on') && /Pick an emoji/.test(box.textContent), [C.emoji, DW.tool, !!box, P._dbar().popK(), box && box.textContent.slice(0, 60)]);
+    mev('mousedown', X, Y); mev('mouseup', X, Y); await W(80);
+    ok('...and a click on the chart still places nothing', DW.list.length === 0 && DW.tool === 'none', [DW.list.length, DW.tool]);
     P.close(); await W(150);
     try { Object.keys(localStorage).filter(function (k) { return /^st_practice/.test(k); }).forEach(function (k) { localStorage.removeItem(k); }); } catch (e) {}
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }

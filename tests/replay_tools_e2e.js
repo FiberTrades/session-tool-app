@@ -69,9 +69,13 @@
     // ---- Emoji ----
     document.querySelector('#strp-tools [data-tool="emoji"]').click(); await W(40); bx = R._dbar().popK() === 'emoji' ? R._dbar().pop() : null;
     var emos = bx ? bx.querySelectorAll('[data-emo]') : [];
-    ok('Emoji: its toolbar opens its emojis, the trading ones and every community-chat emoji', bx && /Trading/.test(bx.textContent) && /Click the chart to place it/.test(bx.textContent) && emos.length >= 28 + ((window.__stEmojis || []).length ? 100 : 0), emos.length);
+    ok('Emoji: its toolbar opens its emojis, the trading ones and every community-chat emoji, none marked until one is picked', bx && /Trading/.test(bx.textContent) && /Pick an emoji, then click the chart/.test(bx.textContent) && !bx.querySelector('[data-emo].on') && emos.length >= 28 + ((window.__stEmojis || []).length ? 100 : 0), emos.length);
+    var EX = Math.round(r.width * 0.6), EY = Math.round(r.height * 0.3), drN = S.drawings.length; click(EX, EY); await W(60);
+    ok('a click on the chart before picking one places nothing and puts the tool down (20 Oct 2026: "it places an emoji without me having selected one")', S.drawings.length === drN && S.activeTool === 'none', [S.drawings.length, S.activeTool]);
+    document.querySelector('#strp-tools [data-tool="emoji"]').click(); await W(40); bx = R._dbar().pop();
     var fire = bx.querySelector('[data-emo="🔥"]'); fire.click(); await W(30);
-    var EX = Math.round(r.width * 0.6), EY = Math.round(r.height * 0.3); click(EX, EY); await W(60);
+    ok('picking one marks it and the box says to click the chart', R._dbar().pop().querySelector('[data-emo="🔥"].on') && /Click the chart to place it/.test(R._dbar().pop().textContent));
+    click(EX, EY); await W(60);
     var E0 = S.drawings[1];
     ok('picked the fire, one click places it (32 px), the pick remembered', E0 && E0.type === 'emoji' && E0.e === '🔥' && E0.size === 32 && localStorage.getItem('st_replay_emoji') === '🔥', E0);
     var eg = R._emoGeo(E0); drag(eg.x + eg.s / 2, eg.y + eg.s / 2, eg.x + eg.s / 2 + 20, eg.y + eg.s / 2 + 20); await W(40);
