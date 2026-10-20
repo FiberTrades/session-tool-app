@@ -143,8 +143,9 @@
     ok('its top dragged up 20 px: 20 px taller each way, as wide as before', Math.abs(Math.abs(P._yOf(0, ci.b.price) - el.y) - (ery + 20)) < 2 && Math.abs(Math.abs(P._xOfT(0, ci.b.t) - el.x) - erx) < 1);
     DW.sel = DW.list.indexOf(ci); P._props(); await W(20);
     ok('its toolbar: Templates, line, fill, width, style, Visibility, lock, delete, More', acts() === 'tpl,line,fill,width,dash,vis,lock,del,more', acts());
-    var dr2 = await draw2('circle', X + 300, 470, X + 330, 490);
-    ok('two clicks draw one too', dr2 && dr2.type === 'circle' && dr2 !== ci);
+    var PH = r.height - pane().chart.timeScale().height();   // on the chart, not its scales: a press there scales the chart (20 Oct 2026)
+    var dr2 = await draw2('circle', X + 250, PH - 70, X + 280, PH - 50);   // on the chart, left of the price scale (588 px wide here)
+    ok('two clicks draw one too', dr2 && dr2.type === 'circle' && dr2 !== ci, [dr2 && dr2.type, dr2 === ci, DW.list.length, Math.round(PH), Math.round(r.height), X, Math.round(r.width), DW.tool, !!DW.pending, P._s() && P._panes()[0].chart.priceScale('right').width()]);
     DW.list.pop(); DW.sel = null; P._props();
 
     // 10. lock, clone, delete, undo / redo on a new one
@@ -165,7 +166,7 @@
     bar().querySelector('[data-db="tpl"]').click(); await W(20);
     ok('Templates on a channel: Save template as..., Set this look as the default for parallel channels', /Save template as/.test(pop().textContent) && /default for parallel channels/.test(pop().textContent), pop().textContent);
     pop().querySelector('[data-tp="setdef"]').click(); await W(30);
-    DW.sel = null; P._props(); await pick('channel'); click(X + 250, 200); mev('mousemove', X + 330, 190); click(X + 330, 190); mev('mousemove', X + 300, 160); click(X + 300, 160); await W(80);
+    DW.sel = null; P._props(); await pick('channel'); click(X + 200, 200); mev('mousemove', X + 280, 190); click(X + 280, 190); mev('mousemove', X + 250, 160); click(X + 250, 160);   // on the chart, left of its price scale await W(80);
     var cn2 = last();
     ok('a new channel takes that default: the fill, the middle line', cn2.type === 'channel' && /244,192,90/.test(cn2.fill) && cn2.mid === true && C.ddef.channel && C.ddef.channel.mid === true, cn2);
 

@@ -62,7 +62,7 @@
     mev('mouseup', X + 340, 200); await W(80);
     var br = last();
     ok('Highlighter: a wide see-through stroke, the tool still armed', br.type === 'brush' && br.pts.length > 3 && S.activeTool === 'brush' && K.box(br, R._kx()), br.pts.length);
-    await pick('brush'); await pick('note'); click(X + 60, 460); await W(80);
+    await pick('brush'); await pick('note'); click(X + 60, XK.ph - 40); await W(80);   // above the time scale: a press there scales the chart (20 Oct 2026)
     var nt = last(), ta = document.querySelector('.strp-txed');
     ok('Price note: one click, its box opens to type in', nt.type === 'note' && ta && ta.placeholder === Number(nt.a.price).toFixed(5), ta && ta.placeholder);
     ta.value = 'Retest'; ta.dispatchEvent(new Event('input', { bubbles: true })); ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(60);
@@ -89,7 +89,7 @@
     var nm = S.drawings.length;
     mev('mousedown', X - 60, 150, { shiftKey: true }); mev('mousemove', X, 220, { held: true, shiftKey: true }); mev('mouseup', X, 220, { shiftKey: true }); await W(40);
     ok('Shift + drag: a measure, not kept as a drawing', S.meas && !S.meas.live && S.meas.d.type === 'range' && S.drawings.length === nm);
-    click(X + 300, 470); await W(30);
+    click(X + 300, XK.ph - 40); await W(30);
     ok('gone at the next click', !S.meas);
 
     // 5. the list of keys
