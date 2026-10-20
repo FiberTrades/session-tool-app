@@ -7,13 +7,14 @@
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   try {
     var html = await fetch('/index.html?x=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); });
-    ok('index.html has it, before Pricing', html.indexOf('id="save"') > 0 && html.indexOf('id="save"') < html.indexOf('id="pricing"'));
+    ok('index.html has it, below Pricing (Nestor, 20 Oct 2026: "i feel this should go below pricing?")', html.indexOf('id="pricing"') > 0 && html.indexOf('id="save"') > html.indexOf('id="pricing"') && html.indexOf('id="save"') < html.indexOf('id="faq"'));
     var fr; for (var i = 0; i < 100 && !(fr = document.getElementById('lp-front')); i++) await W(100);
     var w = fr && fr.contentWindow; for (i = 0; i < 100 && !(w && w.document && w.document.querySelector('#save')); i++) await W(100);
     var D = w.document; await W(800);
     var tx = function (el) { return (el && el.textContent || '').replace(/\s+/g, ' ').trim(); };
     var sec = D.getElementById('save');
-    ok('between Also inside and Pricing', sec.previousElementSibling && sec.previousElementSibling.id === 'more' && sec.nextElementSibling && sec.nextElementSibling.id === 'pricing', [sec.previousElementSibling && sec.previousElementSibling.id, sec.nextElementSibling && sec.nextElementSibling.id]);
+    var nx = sec.nextElementSibling; while (nx && !nx.id) nx = nx.nextElementSibling;
+    ok('between Pricing and Questions', sec.previousElementSibling && sec.previousElementSibling.id === 'pricing' && nx && nx.id === 'faq' && D.getElementById('more').nextElementSibling.id === 'pricing', [sec.previousElementSibling && sec.previousElementSibling.id, nx && nx.id]);
     ok('the words: Ten tools. One subscription. about £300 a month, £35, or £30 yearly; over £3,000 a year back', tx(sec.querySelector('h2')) === 'Ten tools. One subscription.' && /about £300 a month\. Here they are £35 a month, or £30 a month on the yearly plan\./.test(tx(sec.querySelector('.lede'))) && tx(sec.querySelector('.sv-num')) === 'Over £3,000' && tx(sec.querySelector('.sv-cap')) === 'a year back in your pocket', tx(sec.querySelector('.lede')));
     var li = Array.prototype.map.call(sec.querySelectorAll('.sv-bill li'), function (l) { return tx(l.querySelector('.sv-n > span')) + '|' + tx(l.querySelector('small')) + '|' + tx(l.querySelector('.sv-p')); });
     ok('ten lines: Charts is TradingView Plus £34.95 (not Premium: replay is FX Replay\'s line), FX Replay kept', li.length === 10 && li[0] === 'Charts|TradingView Plus|£34.95' && li[5] === 'Backtesting|FX Replay Pro · $35|£26.25' && !/Premium|Charts \+ replay/.test(tx(sec)), li);
