@@ -26,7 +26,7 @@
     ok('...picture and words alternate sides', revs.join() === 'false,true,false,true,false', revs);
     ok('...no separate Replay or Academy & Community section ("get rid of card 05 ... also get rid of 07")', !/Practise on any day|Learn the method/.test(D.body.textContent) && !D.querySelector('[data-i18n="n1.p2"]'));
     var s2 = secs[1];
-    ok('02 keeps its 1 → 2 → 4 → 8 charts and folds Replay into its words', s2.querySelector('.mc-grid') && /Flip to Replay to practise on any day of the past year/.test(tx(s2)) && /Replay any day of the past year with a Replay account/.test(tx(s2)) && /Press O and click where your stop goes/.test(tx(s2)), tx(s2).slice(0, 200));
+    ok('02 keeps its 1 → 2 → 4 → 8 charts and folds Replay into its words', s2.querySelector('.mc-grid') && /Flip to Replay to practise on any day of the past year/.test(tx(s2)) && /Replay any day of the past year with a Replay account/.test(tx(s2)) && /Press your execution key and click where your stop goes/.test(tx(s2)) && !/Press O\b/.test(tx(D.body)), tx(s2).slice(0, 200));
     ok('03 Session Live says Session Review turns into Session Live', /Session Review turns into Session Live/.test(tx(secs[2])));
     var more = D.querySelector('.more-grid'), mh = Array.prototype.map.call(more.querySelectorAll('.mcard h3'), tx);
     ok('Also inside: a plain list (no boxes), 8 things, Academy & Community in, On your phone out', more.classList.contains('ml') && mh.length === 8 && mh.indexOf('Academy & Community') >= 0 && !/On your phone/.test(tx(more)) && getComputedStyle(more.querySelector('.mcard')).borderTopWidth === '0px', mh);
