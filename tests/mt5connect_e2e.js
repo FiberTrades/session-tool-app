@@ -33,6 +33,16 @@
     ok('step 3 shows the code, step 4 both web addresses, each with Copy', codes[0] === 'st_test_mt5c_0001' && codes[1] === 'https://figozyxoyobixadhqewr.supabase.co' && codes[2] === 'https://live.sessionterminal.com' && sec.querySelectorAll('[data-mt5c-copy]').length === 3, codes);
     ok('step 4 also says to untick the two "Disable algorithmic trading when..." boxes (20 Oct 2026: "Troy had these 2 options switched on by default")', /untick Disable algorithmic trading when the account has been changed and … when the profile has been changed/.test(stepN(4).textContent), stepN(4).textContent);
     ok('step 5 names the EA\'s own Allow Algo Trading (its Common tab) as well as MT5\'s button', /Allow Algo Trading is ticked on the EA’s Common tab/.test(stepN(5).textContent), stepN(5).textContent);
+    // "Show me" (20 Oct 2026: "whould it help if we display this or a mockup of these in MT5 tab in settings?"): his own MT5, cropped and ringed
+    ok('Show me on steps 3-6 (not 1-2), closed to begin with', [3, 4, 5, 6].every(function (n) { return stepN(n).querySelector('[data-mt5c-show]'); }) && !stepN(1).querySelector('[data-mt5c-show]') && !stepN(2).querySelector('[data-mt5c-show]') && !sec.querySelector('.mt5c-figs'));
+    stepN(4).querySelector('[data-mt5c-show]').click(); await W(50);
+    var figs = sec.querySelector('[data-mt5c-figs="4"]'), imgs = figs ? Array.prototype.slice.call(figs.querySelectorAll('img')) : [];
+    for (k = 0; k < 40 && !imgs.every(function (im) { return im.complete && im.naturalWidth > 0; }); k++) await W(100);
+    ok('step 4\'s Show me: the two boxes to untick, then Allow WebRequest with both addresses - loaded, captioned, Hide the picture', imgs.length === 2 && /step4-boxes\.png$/.test(imgs[0].src) && /step4-urls\.png$/.test(imgs[1].src) && imgs.every(function (im) { return im.naturalWidth > 400 && im.closest('a').target === '_blank'; }) && /these two unticked/.test(figs.textContent) && /Hide the picture/.test(stepN(4).textContent), imgs.map(function (im) { return [im.src.split('/').pop(), im.naturalWidth]; }));
+    stepN(5).querySelector('[data-mt5c-show]').click(); await W(50);
+    ok('step 5\'s: the Algo Trading button under MT5\'s menu, and the EA\'s Common tab', sec.querySelectorAll('[data-mt5c-figs="5"] img').length === 2 && /step5-button\.png$/.test(sec.querySelector('[data-mt5c-figs="5"] img').src) && sec.querySelectorAll('.mt5c-figs').length === 2);
+    stepN(4).querySelector('[data-mt5c-show]').click(); stepN(5).querySelector('[data-mt5c-show]').click(); await W(50);
+    ok('...and they close again', !sec.querySelector('.mt5c-figs') && /Show me/.test(stepN(4).textContent));
     ok('waiting: "Waiting for your EA", no help yet', /Waiting for your EA/.test(sec.textContent) && !sec.querySelector('.mt5c-help'));
     M._wait(200000); await W(50);
     ok('3 minutes with nothing: the help says what usually stops it (step 4, the Experts tab, a space in the code)', sec.querySelector('.mt5c-help') && /Still waiting after 3 minutes/.test(sec.querySelector('.mt5c-help').textContent) && /Experts/.test(sec.querySelector('.mt5c-help').textContent));
