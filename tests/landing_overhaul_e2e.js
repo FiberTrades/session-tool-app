@@ -40,6 +40,7 @@
     ok('What markets can I trade? is the second question (no longer under Pricing), the market names in white', qs[1] === 'What markets can I trade?' && !D.querySelector('.pr-markets') && !D.querySelector('#pricing [data-i18n="hm.toggle"]') && mq && /^Forex, Indices, Gold, Oil, Crypto and Stocks\. All data/.test(tx(mq.parentNode.querySelector('p'))) && mq.parentNode.querySelector('p .hm-hi'), qs[1]);
     var pq = D.querySelector('.faq-q summary[data-i18n="faq.q11"]');
     ok('chart prices and MT5 staying open are one question now, with both answers', qs[4] === 'Where do the prices come from, and does MT5 need to stay open?' && !qs.some(function (q) { return q === 'Does MT5 need to stay open?' || q === 'Where do the chart prices come from?'; }) && /up to 8 charts/.test(tx(pq.parentNode.querySelector('p'))) && /MT5 stays open on your computer or a VPS/.test(tx(pq.parentNode.querySelector('p'))) && !D.querySelector('[data-i18n="faq.q14"]'), qs[4]);
+    ok('no savings comparison on the landing page (Nestor, 20 Oct 2026: "dont like it, delete that" - it runs as weekly reels instead)', !D.getElementById('save') && !D.querySelector('.save, .svb, .hsv') && !/300\.66|Ten tools\. One subscription/.test(D.body.textContent));
     ok('no SMC / liquidity wording on the page', !/\bSMC\b|liquidity/i.test(D.body.textContent));
     var md = D.querySelector('meta[property="og:description"]');
     ok('the link preview says what it is now', md && /trading journal with your MT5 built in/.test(md.getAttribute('content')), md && md.getAttribute('content'));
