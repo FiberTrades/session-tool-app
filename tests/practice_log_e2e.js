@@ -31,7 +31,7 @@
     ok('the R curve: the reviews\' running chart, in R, ending +1.50R after 4 trades', run && run.classList.contains('good') && /\+1\.50R · 4 trades/.test(run.textContent) && run.querySelector('svg path.st-run-l'), run && run.textContent);
     var tb = tables();
     ok('by session: Asia 1 trade +0.50R, London 2 trades 50% +2.00R, New York 1 trade −1.00R', tb[0] && tb[0][0] === 'Asia|1|100%|+0.50R|+0.50R' && tb[0][1] === 'London|2|50%|+2.00R|+1.00R' && tb[0][2] === 'New York|1|0%|−1.00R|−1.00R', tb[0]);
-    ok('the trades, newest first: Wed 30 Sep, then Gold with no distance, then the stop-out, then the target', tb[1] && tb[1].length === 4 && /^Wed 30 Sep '26\|EURUSD\|↓ SELL\|London\|09:00\|09:30\|30 min\|By hand\|0.5R\|\+0.00R\|\+0.0 pips/.test(tb[1][0]) && /XAUUSD/.test(tb[1][1]) && /\|—\|$/.test(tb[1][1]) && /Stop/.test(tb[1][2]) && /Target\|0.1R\|\+2.00R\|\+24.0 pips/.test(tb[1][3]), tb[1]);
+    ok('the trades, newest first: Wed 30 Sep, then Gold with no distance, then the stop-out, then the target', tb[1] && tb[1].length === 4 && /^Wed 30 Sep '26\|EURUSD\|↓ SELL\|London\|09:00\|09:30\|30 min\|By hand\|0.5R\|\+0.00R\|\+0.0 pips/.test(tb[1][0]) && /XAUUSD/.test(tb[1][1]) && /\|—\|\|$/.test(tb[1][1]) && /Stop/.test(tb[1][2]) && /Target\|0.1R\|\+2.00R\|\+24.0 pips/.test(tb[1][3]), tb[1]);
     lg.querySelector('[data-lgsym="EURUSD"]').click(); await W(30); tl = tiles();
     ok('the EUR/USD filter: 3 trades, +1.00R', tl[0] === 'Trades=3' && tl[2] === 'Net R=+1.00R' && tables()[1].length === 3, tl);
     lg.querySelector('[data-lgsym="all"]').click(); await W(20);

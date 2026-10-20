@@ -87292,6 +87292,15 @@ window.__stAZ = (function () {
   .stpr-lgtab .g { color: var(--good); } .stpr-lgtab .r { color: var(--bad); } .stpr-lgtab .w { color: var(--text); }
   .stpr-lgtab tr[data-rp] { cursor: pointer; } .stpr-lgtab tr[data-rp]:hover td { background: rgba(244,114,182,.05); color: var(--text); }
   .stpr-lgp { width: 11px; height: 11px; color: var(--text-dim); vertical-align: -1px; } .stpr-lgtab tr[data-rp]:hover .stpr-lgp { color: var(--accent); }
+  /* a practice trade's bin (20 Oct 2026): quiet until the row is under the mouse; a first press asks "Delete?" in red */
+  .stpr-lgtab td.stpr-lgdc { padding-right: 2px; }
+  .stpr-lgdel { display: inline-flex; align-items: center; justify-content: center; min-width: 26px; height: 24px; padding: 0 5px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; opacity: .55; font-family: 'AppNum','DM Mono',monospace; font-size: 10.5px; letter-spacing: .04em; white-space: nowrap; }
+  .stpr-lgdel svg { width: 14px; height: 14px; }
+  .stpr-lgtab tr[data-rp]:hover .stpr-lgdel { opacity: 1; }
+  @media (hover: hover) { .stpr-lgdel:hover { color: #E56767; border-color: rgba(229,103,103,.45); background: rgba(229,103,103,.08); } }
+  @media (hover: none) { .stpr-lgdel { opacity: .9; } }
+  .stpr-lgdel.arm { opacity: 1; color: #fff; background: #E56767; border-color: #E56767; }
+  .stpr-lgdn { margin: 8px 0 10px; }
   .stpr-lgfr { gap: 6px; } .stpr-lgfr svg { width: 13px; height: 13px; }
   .stpr-lgask { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 0 0 16px; padding: 12px 14px; border: 1px solid var(--accent); border-radius: var(--radius-card, 12px); background: rgba(244,114,182,.06); font-family: 'Fraunces',serif; font-size: 14px; color: var(--text); }
   .stpr-lgask span { flex: 1; min-width: 220px; }
@@ -88360,7 +88369,7 @@ window.__stAZ = (function () {
   function uLbl(u){ return u === 'R' ? 'R' : (u === 'pips' ? T('pips', 'pips') : T('pts', 'ptos')); }
 
   // ---- settings (synced) ----
-  var DEF = { sym: 'EURUSD', news: true, layout: 1, tfs: [5, 60, 15, 240], stopPx: {}, stopUnit: 'pips', tgtUnit: 'R', tgtR: 2, tgtPx: {}, tgtOn: true, speed: 0, ses: {}, marks: true, pos: true, mini: false, miniOff: {}, lv: { 2: 'h', 3: 'L' }, logFrom: 0, recent: [], max: false, savedAt: 0, dwHide: false, dwLock: false, dtpl: {}, ddef: {},
+  var DEF = { sym: 'EURUSD', news: true, layout: 1, tfs: [5, 60, 15, 240], stopPx: {}, stopUnit: 'pips', tgtUnit: 'R', tgtR: 2, tgtPx: {}, tgtOn: true, speed: 0, ses: {}, marks: true, pos: true, mini: false, miniOff: {}, lv: { 2: 'h', 3: 'L' }, logFrom: 0, logDel: [], recent: [], max: false, savedAt: 0, dwHide: false, dwLock: false, dtpl: {}, ddef: {},
     // the Minimalist Manager panel (17 Oct 2026): seeded once from the member's own EA, then practice's own copy
     mm: { seeded: false, acct: '', on: true, col: false, ord: 'market', key: 'O', riskMode: 'amount', riskPct: 1, riskAmt: 100, lots: 0.1, minSL: {}, maxSL: {},
           beOn: true, beR: 1, beOffMode: 'rr', beOff: 0, tsUnit: 'rr', ts: [], pc: [], maxDay: 0 } };
@@ -88398,7 +88407,13 @@ window.__stAZ = (function () {
   // The log can start fresh (Nestor, 15 Oct 2026: "can i have a way to erase the log to start again fresh?"): trades taken
   // before that moment leave the log, its figures and the Academy box. They are kept (practice_trades takes no deletes),
   // so "Bring them back" undoes it; the moment rides in the synced settings, so every device starts fresh together.
-  function logShown(){ var f = Number(CFG.logFrom) || 0; return logAll().filter(function(t){ return (t.at || 0) >= f; }); }
+  function logDel(){ var o = {}; (Array.isArray(CFG.logDel) ? CFG.logDel : []).forEach(function(c){ o[c] = 1; }); return o; }   // deleted one by one (20 Oct 2026)
+  function logShown(){ var f = Number(CFG.logFrom) || 0, d = logDel(); return logAll().filter(function(t){ return (t.at || 0) >= f && !(t.cid && d[t.cid]); }); }
+  function logDelete(cid){ var t = logAll().filter(function(x){ return x.cid === cid; })[0]; if (!t) return;
+    var a = Array.isArray(CFG.logDel) ? CFG.logDel.slice() : []; if (a.indexOf(cid) < 0) a.push(cid); CFG.logDel = a.slice(-1000);
+    LOG.undo = { cid: cid, day: t.day, sym: t.sym, r: Number(t.r) || 0 }; LOG.arm = null; save(); renderLog(); logSync(); }
+  function logUndel(){ var u = LOG.undo; if (!u) return; CFG.logDel = (Array.isArray(CFG.logDel) ? CFG.logDel : []).filter(function(c){ return c !== u.cid; });
+    LOG.undo = null; save(); renderLog(); logSync(); }
   function stats(){ var a = logShown(), r = 0, w = 0; a.forEach(function(t){ r += Number(t.r) || 0; if ((Number(t.r) || 0) > 0.02) w++; }); return { n: a.length, netR: r, wins: w }; }
   var pushing = false, pulledFor = null;
   async function pushTrades(){
@@ -90996,7 +91011,8 @@ window.__stAZ = (function () {
   }
   function renderLog(){
     var el = $('stpr-log'); if (!el) return; logTop();
-    var all = logShown().filter(function(t){ return t && t.day && isFinite(Number(t.r)); }), syms = {}, hidden = logAll().length - logShown().length;
+    var dl = logDel(), f0 = Number(CFG.logFrom) || 0;
+    var all = logShown().filter(function(t){ return t && t.day && isFinite(Number(t.r)); }), syms = {}, hidden = logAll().filter(function(t){ return (t.at || 0) < f0 && !(t.cid && dl[t.cid]); }).length;
     all.forEach(function(t){ syms[t.sym] = 1; }); if (LOG.sym !== 'all' && !syms[LOG.sym]) LOG.sym = 'all';
     var list = all.filter(function(t){ return LOG.sym === 'all' || t.sym === LOG.sym; }).sort(function(a, b){ return (a.at || 0) - (b.at || 0); });
     var Rv = function(t){ return Number(t.r) || 0; }, rc = function(r){ return r > 0.02 ? 'g' : (r < -0.02 ? 'r' : ''); };
@@ -91029,13 +91045,18 @@ window.__stAZ = (function () {
           return '<tr><td class="w">' + T(SESN[id][0], SESN[id][1]) + '</td><td class="n">' + k + '</td><td class="n">' + (k ? Math.round(ww / k * 100) + '%' : '—') + '</td><td class="n ' + (k ? rc(s) : '') + '">' + (k ? fR(s) : '—') + '</td><td class="n ' + (k ? rc(s / k) : '') + '">' + (k ? fR(s / k) : '—') + '</td></tr>'; }).join('')
       + '</tbody></table></div></div>');
     LOG.rows = list.slice().reverse();
-    H.push('<div class="stpr-lgc"><b>' + T('Practice trades', 'Operaciones de práctica') + ' · ' + T('newest first, open one to replay that day', 'las últimas primero, abre una para repetir ese día') + '</b><div class="stpr-lgw"><table class="stpr-lgtab"><thead><tr>'
+    var un = LOG.undo && dl[LOG.undo.cid] ? LOG.undo : null;
+    H.push('<div class="stpr-lgc"><b>' + T('Practice trades', 'Operaciones de práctica') + ' · ' + T('newest first, open one to replay that day', 'las últimas primero, abre una para repetir ese día') + '</b>'
+      + (un ? '<div class="stpr-lgnote stpr-lgdn">' + esc(T('Deleted: ', 'Borrada: ') + dshort(new Date(un.day + 'T12:00:00')) + ' · ' + symName(un.sym) + ' · ' + fR(un.r)) + '<button type="button" data-lg="undel">' + esc(T('Put back', 'Recuperar')) + '</button></div>' : '')
+      + '<div class="stpr-lgw"><table class="stpr-lgtab"><thead><tr>'
       + [T('Day', 'Día'), T('Symbol', 'Símbolo'), T('Side', 'Lado'), T('Session', 'Sesión'), T('In', 'Entrada'), T('Out', 'Salida'), T('Time', 'Tiempo'), T('Result', 'Resultado'), T('Against', 'En contra')].map(function(h){ return '<th>' + h + '</th>'; }).join('')
-      + '<th class="n">R</th><th class="n">' + T('Distance', 'Distancia') + '</th><th></th></tr></thead><tbody>'
+      + '<th class="n">R</th><th class="n">' + T('Distance', 'Distancia') + '</th><th></th><th></th></tr></thead><tbody>'
       + LOG.rows.map(function(t, i){ var r = Rv(t), wy = WHYN[t.why] || ['—', '—'];
           return '<tr data-rp="' + i + '"><td class="w">' + esc(dshort(new Date(t.day + 'T12:00:00'))) + '</td><td>' + esc(symName(t.sym)) + '</td><td class="' + (t.dir > 0 ? 'g' : 'r') + '">' + (t.dir > 0 ? '↑ ' : '↓ ') + sideW(t.dir) + '</td><td>' + T(SESN[sesOf(t)][0], SESN[sesOf(t)][1]) + '</td>'
             + '<td>' + (t.entryTs ? hm(t.entryTs) : '—') + '</td><td>' + (t.exitTs ? hm(t.exitTs) : '—') + '</td><td>' + (t.exitTs > t.entryTs ? durTxt(t.exitTs - t.entryTs) : '—') + '</td><td>' + T(wy[0], wy[1]) + '</td><td>' + (t.mae != null && isFinite(Number(t.mae)) ? Number(t.mae).toFixed(1) + 'R' : '—') + '</td>'
             + '<td class="n ' + rc(r) + '">' + fR(r) + '</td><td class="n">' + (t.dist != null && t.unit ? (t.dist >= 0 ? '+' : '−') + Math.abs(t.dist).toFixed(1) + ' ' + esc(uLbl(t.unit)) : '—') + '</td>'
+            + '<td class="n stpr-lgdc">' + (t.cid ? '<button type="button" class="stpr-lgdel' + (LOG.arm === t.cid ? ' arm' : '') + '" data-lgdel="' + esc(t.cid) + '" title="' + esc(LOG.arm === t.cid ? T('Press again to delete this practice trade', 'Pulsa otra vez para borrar esta operación de práctica') : T('Delete this practice trade', 'Borrar esta operación de práctica')) + '" aria-label="' + esc(T('Delete this practice trade', 'Borrar esta operación de práctica')) + '">'
+              + (LOG.arm === t.cid ? esc(T('Delete?', '¿Borrar?')) : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h16M10 11v6M14 11v6M5 7l1 12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/></svg>') + '</button>' : '') + '</td>'
             + '<td class="n"><svg class="stpr-lgp" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg></td></tr>'; }).join('')
       + '</tbody></table></div></div>');
     el.innerHTML = H.join('');
@@ -91045,8 +91066,8 @@ window.__stAZ = (function () {
   // ---- opening a day ----
   // The day on the chart follows the log: a fresh start takes its trades off the chart, the score and the daily limit;
   // bringing them back puts back the ones this day had up to now
-  function logSync(){ if (!S) return; var f = Number(CFG.logFrom) || 0, seen = {};
-    var keep = S.trades.filter(function(t){ return (t.at || 0) >= f; }); keep.forEach(function(t){ if (t.cid) seen[t.cid] = 1; });
+  function logSync(){ if (!S) return; var f = Number(CFG.logFrom) || 0, seen = {}, dl = logDel();
+    var keep = S.trades.filter(function(t){ return (t.at || 0) >= f && !(t.cid && dl[t.cid]); }); keep.forEach(function(t){ if (t.cid) seen[t.cid] = 1; });
     logShown().forEach(function(t){ if (t && t.sym === S.sym.raw && t.day === S.day && t.entryTs && t.exitTs <= S.now && !(t.cid && seen[t.cid])) keep.push(t); });
     keep.sort(function(a, b){ return a.exitTs - b.exitTs; }); S.trades = keep; S.lastExitTs = 0; S.trades.forEach(function(t){ if (t.exitTs > S.lastExitTs) S.lastExitTs = t.exitTs; });
     S.done = null; render(true); paintHeader(); }
@@ -92195,7 +92216,11 @@ window.__stAZ = (function () {
       var lga = t.closest && t.closest('[data-lg]'); if (lga) { var a2 = lga.getAttribute('data-lg');
         if (a2 === 'fresh') { LOG.ask = true; renderLog(); return; } if (a2 === 'fresh-no') { LOG.ask = false; renderLog(); return; }
         if (a2 === 'fresh-yes') { LOG.ask = false; CFG.logFrom = Date.now(); LOG.sym = 'all'; save(); renderLog(); logSync(); return; }
-        if (a2 === 'restore') { CFG.logFrom = 0; save(); renderLog(); logSync(); return; } }
+        if (a2 === 'restore') { CFG.logFrom = 0; save(); renderLog(); logSync(); return; }
+        if (a2 === 'undel') { logUndel(); return; } }
+      var ldl = t.closest && t.closest('[data-lgdel]'); if (ldl) { var dcid = ldl.getAttribute('data-lgdel');
+        if (LOG.arm !== dcid) { LOG.arm = dcid; clearTimeout(LOG.armT); LOG.armT = setTimeout(function(){ if (LOG.arm === dcid) { LOG.arm = null; if (LOG.open) renderLog(); } }, 3000); renderLog(); return; }
+        clearTimeout(LOG.armT); logDelete(dcid); return; }
       var lsy = t.closest && t.closest('[data-lgsym]'); if (lsy) { LOG.sym = lsy.getAttribute('data-lgsym'); renderLog(); return; }
       var lrp = t.closest && t.closest('tr[data-rp]'); if (lrp) { logReplay(+lrp.getAttribute('data-rp')); return; }
       if (t.closest && t.closest('#stpr-sesed')) { sesMenu($('stpr-sesed')); return; }
