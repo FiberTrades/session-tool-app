@@ -31,6 +31,8 @@
     ok('six steps (6: Keep a year of history, 20 Oct 2026): Get the EA (MQL5, a new tab) is next, the others to do', stepEls.length === 6 && stepN(1).querySelector('.mt5c-n.next') && !sec.querySelector('.mt5c-n.ok') && link && /mql5\.com\/en\/market\/product\/180026/.test(link.href) && link.target === '_blank', stepEls.length);
     var codes = Array.prototype.map.call(sec.querySelectorAll('.mt5c-code code'), function (c) { return c.textContent; });
     ok('step 3 shows the code, step 4 both web addresses, each with Copy', codes[0] === 'st_test_mt5c_0001' && codes[1] === 'https://figozyxoyobixadhqewr.supabase.co' && codes[2] === 'https://live.sessionterminal.com' && sec.querySelectorAll('[data-mt5c-copy]').length === 3, codes);
+    ok('step 4 also says to untick the two "Disable algorithmic trading when..." boxes (20 Oct 2026: "Troy had these 2 options switched on by default")', /untick Disable algorithmic trading when the account has been changed and … when the profile has been changed/.test(stepN(4).textContent), stepN(4).textContent);
+    ok('step 5 names the EA\'s own Allow Algo Trading (its Common tab) as well as MT5\'s button', /Allow Algo Trading is ticked on the EA’s Common tab/.test(stepN(5).textContent), stepN(5).textContent);
     ok('waiting: "Waiting for your EA", no help yet', /Waiting for your EA/.test(sec.textContent) && !sec.querySelector('.mt5c-help'));
     M._wait(200000); await W(50);
     ok('3 minutes with nothing: the help says what usually stops it (step 4, the Experts tab, a space in the code)', sec.querySelector('.mt5c-help') && /Still waiting after 3 minutes/.test(sec.querySelector('.mt5c-help').textContent) && /Experts/.test(sec.querySelector('.mt5c-help').textContent));
@@ -58,7 +60,7 @@
     ok('...set to Unlimited: step 6 ticks itself, all six done', stepN(6).querySelector('.mt5c-n.ok') && /A year or more/.test(stepN(6).textContent) && sec.querySelectorAll('.mt5c-n.ok').length === 6, stepN(6).textContent);
     easL['EURUSD|' + LG] = { v: '9.06', lg: LG, rl: false, al: false, at: Date.now() }; M.render(); await W(50);
     ea = sec.querySelector('[data-mt5c-login="' + LG + '"]');
-    ok('Algo Trading off: a red chip and step 5 says press the button; no relay: Live prices slower', /Algo Trading off/.test(ea.textContent) && ea.querySelector('.mt5c-chip.off') && /Off in MT5/.test(stepN(5).textContent) && /Live prices slower/.test(ea.textContent) && !stepN(5).querySelector('.mt5c-n.ok'));
+    ok('Algo Trading off: a red chip and step 5 says press the button; no relay: Live prices slower', /Algo Trading off/.test(ea.textContent) && ea.querySelector('.mt5c-chip.off') && /Off in MT5/.test(stepN(5).textContent) && /Untick the two boxes in step 4/.test(stepN(5).textContent) && /Live prices slower/.test(ea.textContent) && !stepN(5).querySelector('.mt5c-n.ok'));
     // ---- which journal account its trades go into ----
     var sel = ea.querySelector('select[data-mt5c-acc]'), accs = (data.accounts || []).filter(function (a) { return a && !a.archived; });
     if (accs.length) {
