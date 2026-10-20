@@ -1,0 +1,52 @@
+(async function () {
+  // The landing page overhaul (Nestor, 20 Oct 2026: "here add charts. live. replay so this way you can get rid of card 05. also get
+  // rid of 07 ... in also inside remove the on your phone and have in there something about the academy and community instead ...
+  // everything else is good and i want you to build it"; the price card: "combine the 3 circled ones and definately mention that you
+  // can place trades on MT5 from session terminal"). Checks the landing inside the app (#lp-front, LP_HTML) in English and Spanish,
+  // and that index.html's scripts parse. Run: python tests/browser_test.py tests/landing_overhaul_e2e.js
+  var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
+  try {
+    // index.html (generated from LP_HTML): every inline script parses
+    var html = await fetch('/index.html?x=' + Date.now(), { cache: 'no-store' }).then(function (r) { return r.text(); });
+    var doc = new DOMParser().parseFromString(html, 'text/html'), bad = [];
+    doc.querySelectorAll('script:not([src])').forEach(function (s, i) { var ty = (s.type || '').toLowerCase(); if (ty && ty !== 'text/javascript') return; try { new Function(s.textContent); } catch (e) { bad.push(i + ': ' + e.message); } });
+    ok('index.html: every inline script parses', !bad.length, bad);
+    // the landing inside the app
+    var fr; for (var i = 0; i < 100 && !(fr = document.getElementById('lp-front')); i++) await W(100);
+    var w = fr && fr.contentWindow; for (i = 0; i < 100 && !(w && w.document && w.document.querySelector('.pricing')); i++) await W(100);
+    var D = w.document; await W(800);
+    var bad2 = []; D.querySelectorAll('script:not([src])').forEach(function (s, k) { try { new w.Function(s.textContent); } catch (e) { bad2.push(k + ': ' + e.message); } });
+    ok('the app\'s landing (#lp-front): its scripts parse and the reveal observer ran (lp-io)', !bad2.length && D.documentElement.classList.contains('lp-io'), [bad2, D.documentElement.className]);
+    var tx = function (el) { return (el && el.textContent || '').replace(/\s+/g, ' ').trim(); };
+    ok('the hero line: "A trading journal with your MT5 built in…"', /^A trading journal with your MT5 built in: plan the session, trade it from live charts, and review every trade, in one place\.$/.test(tx(D.querySelector('[data-i18n="hero.lede"]'))), tx(D.querySelector('[data-i18n="hero.lede"]')));
+    var secs = Array.prototype.slice.call(D.querySelectorAll('section.feat'));
+    var nums = secs.map(function (x) { return tx(x.querySelector('.feat-num')); }), eyes = secs.map(function (x) { return tx(x.querySelector('.feat-eyebrow')); }), revs = secs.map(function (x) { return x.classList.contains('rev'); });
+    ok('five sections in the order of a trading day: Bias & Review, Charts · Live · Replay, Session Live, MT5 Sync, Series & Stats', nums.join() === '01,02,03,04,05' && eyes[0] === 'Bias & Review' && eyes[1] === 'Charts · Live · Replay' && eyes[2] === 'Session Live' && /MT5 Sync/.test(eyes[3]) && /Series of 10/.test(eyes[4]), [nums, eyes]);
+    ok('...picture and words alternate sides', revs.join() === 'false,true,false,true,false', revs);
+    ok('...no separate Replay or Academy & Community section ("get rid of card 05 ... also get rid of 07")', !/Practise on any day|Learn the method/.test(D.body.textContent) && !D.querySelector('[data-i18n="n1.p2"]'));
+    var s2 = secs[1];
+    ok('02 keeps its 1 → 2 → 4 → 8 charts and folds Replay into its words', s2.querySelector('.mc-grid') && /Flip to Replay to practise on any day of the past year/.test(tx(s2)) && /Replay any day of the past year with a Replay account/.test(tx(s2)) && /Press O and click where your stop goes/.test(tx(s2)), tx(s2).slice(0, 200));
+    ok('03 Session Live says Session Review turns into Session Live', /Session Review turns into Session Live/.test(tx(secs[2])));
+    var more = D.querySelector('.more-grid'), mh = Array.prototype.map.call(more.querySelectorAll('.mcard h3'), tx);
+    ok('Also inside: a plain list (no boxes), 8 things, Academy & Community in, On your phone out', more.classList.contains('ml') && mh.length === 8 && mh.indexOf('Academy & Community') >= 0 && !/On your phone/.test(tx(more)) && getComputedStyle(more.querySelector('.mcard')).borderTopWidth === '0px', mh);
+    var plist = D.querySelector('.plan.popular .plist'), li = plist.querySelectorAll('li');
+    ok('Journal Pro: first line, in bold, "Place trades on MT5 from Session Terminal", the three chart lines combined; 10 lines', li.length === 10 && li[0].querySelector('strong') && tx(li[0].querySelector('strong')) === 'Place trades on MT5 from Session Terminal' && /replay any day of the past year/.test(tx(li[0])) && !/Many more features/.test(tx(plist)), [li.length, tx(li[0])]);
+    ok('the trial strip says what the trial includes', /Live and Replay charts/.test(tx(D.querySelector('[data-i18n="pr.trial_desc"]'))));
+    var qs = Array.prototype.map.call(D.querySelectorAll('.faq-q summary'), tx);
+    ok('FAQ: 15 questions, the six new ones after "Can I place trades"', qs.length === 15 && /Can I place trades/.test(qs[1]) && qs[2] === 'How do I connect MT5?' && qs[4] === 'What is Replay?' && /Do I need MetaTrader 5/.test(qs[8]), qs);
+    ok('no SMC / liquidity wording on the page', !/\bSMC\b|liquidity/i.test(D.body.textContent));
+    var md = D.querySelector('meta[property="og:description"]');
+    ok('the link preview says what it is now', md && /trading journal with your MT5 built in/.test(md.getAttribute('content')), md && md.getAttribute('content'));
+    // Spanish
+    D.querySelector('.lang-sq[data-lang="es"]').click(); await W(400);
+    var es = function (k) { return tx(D.querySelector('[data-i18n="' + k + '"]')); };
+    ok('in Spanish: the hero line, Gráficos · En vivo · Replay, the price card, the new FAQ and Academia y Comunidad', /^Un diario de trading con tu MT5 integrado/.test(es('hero.lede')) && es('n5.eyebrow') === 'Gráficos · En vivo · Replay' && /^Abre operaciones en MT5 desde Session Terminal/.test(es('pr.jp1')) && es('faq.q10') === '¿Cómo conecto MT5?' && es('g4.h3') === 'Academia y Comunidad' && /Revisión de Sesión se convierte en Sesión en Vivo/.test(es('n4.p')), [es('hero.lede'), es('n5.eyebrow'), es('pr.jp1').slice(0, 50), es('faq.q10'), es('g4.h3')]);
+    var leftEn = Array.prototype.filter.call(D.querySelectorAll('section.feat [data-i18n], .more-grid [data-i18n], .plan.popular [data-i18n], .faq [data-i18n], [data-i18n="pr.trial_desc"]'), function (n) { return /^(Place trades|Connect in five|Up to 8 charts|How do I connect|Academy &|Your morning bias|Win rate, net R|Open trades live)/.test(tx(n)); }).map(tx);
+    ok('...nothing changed is left in English', !leftEn.length, leftEn);
+    ok('...no "liquidez" or "SMC" in Spanish either', !/liquidez|\bSMC\b/i.test(D.body.textContent));
+    D.querySelector('.lang-sq[data-lang="en"]').click(); await W(300);
+    ok('back to English', /^A trading journal with your MT5 built in/.test(es('hero.lede')));
+  } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
+  return JSON.stringify(out);
+})()
