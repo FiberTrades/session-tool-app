@@ -98,6 +98,9 @@
     var z2 = M().zone;
     ok('dragging its left edge moves its start back and turns Auto off (it says so)', C.miniS.auto === false && C.miniS.zA > 0 && z2.i0 < i0 && /moved by hand/.test(document.getElementById('stpr-flash').textContent), [i0, z2.i0, C.miniS.zA]);
     P._miniDialog(); await W(60); inp('detach').click(); await W(60); dlg().querySelector('[data-dok]').click(); await W(60); P._render(); await W(100); mz = pane()._mz;
+    // its right edge on the chart, not on the price scale (a press there scales the chart since 20 Oct 2026): scroll it into view
+    var pwR = r.width - pane().chart.priceScale('right').width();
+    for (var sc = 0; sc < 6 && mz && mz.x1 > pwR - 12; sc++) { pane().chart.timeScale().scrollToPosition(pane().chart.timeScale().scrollPosition() + 25, false); await W(250); P._render(); await W(100); mz = pane()._mz; }
     mev('mousedown', mz.x1, ey); mev('mousemove', mz.x1 - 120, ey, { held: true }); mev('mouseup', mz.x1 - 120, ey); await W(80);
     var z3 = M().zone;
     ok('with Start only off, its right edge sets where it ends', C.miniS.detach === false && C.miniS.zB > C.miniS.zA && z3.end != null && z3.end < pane().bars.length - 1, [C.miniS.zB, z3.end]);

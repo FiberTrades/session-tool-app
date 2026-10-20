@@ -28,7 +28,7 @@
     ok('...and the live line may join while it is open (to hear Algo Trading), without asking for prices', M.visible() === true);
     var stepEls = sec.querySelectorAll('[data-mt5c-step]'), stepN = function (n) { return sec.querySelector('[data-mt5c-step="' + n + '"]'); };
     var link = stepN(1) && stepN(1).querySelector('a.mt5c-btn');
-    ok('five steps: Get the EA (MQL5, a new tab) is next, the others to do', stepEls.length === 5 && stepN(1).querySelector('.mt5c-n.next') && !sec.querySelector('.mt5c-n.ok') && link && /mql5\.com\/en\/market\/product\/180026/.test(link.href) && link.target === '_blank', stepEls.length);
+    ok('six steps (6: Keep a year of history, 20 Oct 2026): Get the EA (MQL5, a new tab) is next, the others to do', stepEls.length === 6 && stepN(1).querySelector('.mt5c-n.next') && !sec.querySelector('.mt5c-n.ok') && link && /mql5\.com\/en\/market\/product\/180026/.test(link.href) && link.target === '_blank', stepEls.length);
     var codes = Array.prototype.map.call(sec.querySelectorAll('.mt5c-code code'), function (c) { return c.textContent; });
     ok('step 3 shows the code, step 4 both web addresses, each with Copy', codes[0] === 'st_test_mt5c_0001' && codes[1] === 'https://figozyxoyobixadhqewr.supabase.co' && codes[2] === 'https://live.sessionterminal.com' && sec.querySelectorAll('[data-mt5c-copy]').length === 3, codes);
     ok('waiting: "Waiting for your EA", no help yet', /Waiting for your EA/.test(sec.textContent) && !sec.querySelector('.mt5c-help'));
@@ -51,6 +51,11 @@
     easL['EURUSD|' + LG] = { v: '9.06', lg: LG, rl: true, al: true, at: Date.now() }; M.render(); await W(50);
     ea = sec.querySelector('[data-mt5c-login="' + LG + '"]');
     ok('its EA says hi with Algo Trading on and the relay: step 5 ticks, chips Algo Trading on + Live prices on, EA 9.06', sec.querySelectorAll('.mt5c-n.ok').length === 5 && /Algo Trading on/.test(ea.textContent) && /Live prices on/.test(ea.textContent) && /EA 9\.06/.test(ea.textContent), ea.textContent);
+    ok('step 6 (Max bars in chart): an EA before 9.07 cannot report it', /Keep a year of history/.test(stepN(6).textContent) && /Max bars in chart/.test(stepN(6).textContent) && /Unlimited/.test(stepN(6).textContent) && /Ticks itself with EA 9\.07/.test(stepN(6).textContent) && !stepN(6).querySelector('.mt5c-n.ok'), stepN(6).textContent);
+    easL['EURUSD|' + LG] = { v: '9.07', lg: LG, rl: true, al: true, mb: 100000, at: Date.now() }; M.render(); await W(50);
+    ok('...EA 9.07 on MT5\'s usual 100,000 bars: step 6 says it keeps about 3 months of 1-minute candles, not ticked (Nestor, 20 Oct 2026: "THIS NEEDS TO BE ADDED TO THE MT5 SET UP IN SETTINGS")', /MT5 90001234: keeps 100,000 bars, about 3 months of 1-minute candles/.test(stepN(6).textContent) && !stepN(6).querySelector('.mt5c-n.ok') && sec.querySelectorAll('.mt5c-n.ok').length === 5, stepN(6).textContent);
+    easL['EURUSD|' + LG] = { v: '9.07', lg: LG, rl: true, al: true, mb: 2147483647, at: Date.now() }; M.render(); await W(50);
+    ok('...set to Unlimited: step 6 ticks itself, all six done', stepN(6).querySelector('.mt5c-n.ok') && /A year or more/.test(stepN(6).textContent) && sec.querySelectorAll('.mt5c-n.ok').length === 6, stepN(6).textContent);
     easL['EURUSD|' + LG] = { v: '9.06', lg: LG, rl: false, al: false, at: Date.now() }; M.render(); await W(50);
     ea = sec.querySelector('[data-mt5c-login="' + LG + '"]');
     ok('Algo Trading off: a red chip and step 5 says press the button; no relay: Live prices slower', /Algo Trading off/.test(ea.textContent) && ea.querySelector('.mt5c-chip.off') && /Off in MT5/.test(stepN(5).textContent) && /Live prices slower/.test(ea.textContent) && !stepN(5).querySelector('.mt5c-n.ok'));

@@ -83,8 +83,21 @@ Deno.serve(async (req: Request): Promise<Response> => {
   if (tf <= 5) {
     const edge = Date.now() / 1000 - DEEP_AGE, deep = rows.filter((x) => Number(x.t) < edge).length;
     if (deep && (await dbBytes()) > DEEP_CAP) {
+      // Past the cap the old candles are not stored again - but their volume still goes onto the ones already there (an
+      // update, no new rows): that is what a volume profile asked for (Nestor, 20 Oct 2026: "yes do 1, 2 and 3").
+      let volSet = 0;
+      if (allV) {
+        try {
+          const vr = await fetch(`${SUPABASE_URL}/rest/v1/rpc/st_candles_set_v`, {
+            method: "POST",
+            headers: { "content-type": "application/json", apikey: SERVICE_KEY, authorization: `Bearer ${SERVICE_KEY}` },
+            body: JSON.stringify({ p_symbol: symbol, p_tf: tf, p_rows: rows.filter((x) => Number(x.t) < edge).map((x) => [x.t, x.v]) }),
+          });
+          if (vr.ok) volSet = Number(await vr.json()) || 0;
+        } catch { /* the volume waits for the next ask */ }
+      }
       rows = rows.filter((x) => Number(x.t) >= edge);
-      if (!rows.length) return json({ ok: true, upserted: 0, skipped: deep, reason: "storage cap" });
+      if (!rows.length) return json({ ok: true, upserted: 0, skipped: deep, vol_set: volSet, reason: "storage cap" });
     }
   }
 

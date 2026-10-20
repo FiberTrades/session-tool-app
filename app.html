@@ -77450,7 +77450,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       var hook = function (x) { return x.on('broadcast', { event: 'tick' }, onTick)
         .on('broadcast', { event: 'hi' }, function (m) {                                       // an EA has just (re)joined, or answers "who"
           // al: MT5's Algo Trading on (EA 9.06)
-          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, rl: +p.rl === 1, al: p.al == null ? null : +p.al === 1, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
+          var p = (m && m.payload) || {}; if (p.sym) { eas[p.sym] = { v: String(p.v || ''), dg: +p.dg || null, lg: p.lg != null ? String(p.lg) : null, tm: +p.tm === 1, rl: +p.rl === 1, al: p.al == null ? null : +p.al === 1, mb: p.mb == null ? null : +p.mb, at: Date.now() }; if (p.lg != null) easL[p.sym + '|' + p.lg] = eas[p.sym]; }
           if (watching) watchNow(); })
         .on('broadcast', { event: 'unwatch' }, function () { if (watching) watchNow(); })      // another window stopped; this one still looks
         .on('broadcast', { event: 'px' }, function (m) { stat.px++; try { if (window.__stLC) window.__stLC.px(m && m.payload); } catch (e) {} })
@@ -77567,6 +77567,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       // Algo Trading is MT5's own switch, the same for every chart: one EA saying off is enough
       x.al = x.live.some(function (e) { return e.al === false; }) ? false : x.live.some(function (e) { return e.al === true; }) ? true : null;
       x.rl = x.live.some(function (e) { return e.rl; });
+      x.mb = x.live.reduce(function (m, e) { return e.mb != null && (m == null || e.mb < m) ? e.mb : m; }, null);   // MT5's Max bars in chart (EA 9.07)
       // Removed here (Nestor, 19 Oct 2026: "how do you get rid of these suggestions for old inactive accounts?"): hidden until its EA checks in again
       try { var hd = ((typeof data !== 'undefined' && data && data.mt5Hide) || {})[x.lg]; x.hidden = !!hd && !x.live.length && x.at <= hd; } catch (e) { x.hidden = false; }
       return x;
@@ -77631,6 +77632,13 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       : on.length ? '<span class="mt5c-wait">' + T('MT5 hasn\u2019t answered yet: check the Algo Trading button is green.', 'MT5 a\u00fan no ha respondido: comprueba que el bot\u00f3n Algo Trading est\u00e1 verde.') + '</span>'
       : '<span class="mt5c-wait">' + T('Ticks itself when it\u2019s on', 'Se marca solo cuando est\u00e1 activado') + '</span>';
     var s14 = ever ? 'ok' : '';
+    // Max bars in chart: a year of 1-minute candles is about 375,000 bars; MT5's usual 100,000 is about 3 months. Replay asks
+    // the member's MT5 for an old day's volume, and the EA fills a year of history, only as far back as this reaches.
+    var mbs = A.filter(function (x) { return x.on && x.mb != null; }), mbLow = mbs.filter(function (x) { return x.mb < 500000; });
+    var s6 = mbs.length && !mbLow.length ? 'ok' : '';
+    var r6 = mbs.length && !mbLow.length ? '<span class="mt5c-wait on">' + OK + T('A year or more', 'Un a\u00f1o o m\u00e1s') + '</span>'
+      : mbLow.length ? '<span class="mt5c-wait off">' + esc(mbLow.map(function (x) { return 'MT5 ' + x.lg; }).join(', ')) + ': ' + T('keeps ' + mbLow[0].mb.toLocaleString('en-GB') + ' bars, about ' + Math.max(1, Math.round(mbLow[0].mb / 375000 * 12)) + ' months of 1-minute candles', 'guarda ' + mbLow[0].mb.toLocaleString('es-ES') + ' barras, unos ' + Math.max(1, Math.round(mbLow[0].mb / 375000 * 12)) + ' meses de velas de 1 minuto') + '</span>'
+      : '<span class="mt5c-wait">' + T('Ticks itself with EA 9.07 or newer', 'Se marca solo con el EA 9.07 o posterior') + '</span>';
     h += '<div class="set-h">' + (ever ? T('Set up', 'Configuraci\u00f3n') : T('Steps', 'Pasos')) + '</div><div class="set-card">'
       + step(1, ever ? 'ok' : 'next', T('Get the EA', 'Consigue el EA'), T('Minimalist Manager is on the MQL5 Market. Press Install there and it opens in your MT5.', 'Minimalist Manager est\u00e1 en el Market de MQL5. Pulsa Instalar all\u00ed y se abre en tu MT5.'),
           '<a class="mt5c-btn' + (ever ? '' : ' pri') + '" href="' + PRODUCT + '" target="_blank" rel="noopener noreferrer">' + T('Open on MQL5', 'Abrir en MQL5') + ' ' + EXT + '</a>')
@@ -77641,6 +77649,7 @@ document.addEventListener('click',function(e){var b=e.target&&e.target.closest?e
       + step(4, s14, T('Allow two web addresses', 'Permite dos direcciones web'), T('In MT5: Tools \u2192 Options \u2192 Expert Advisors. Tick <em>Allow WebRequest for listed URL</em> and add both.', 'En MT5: Herramientas \u2192 Opciones \u2192 Asesores Expertos. Marca <em>Allow WebRequest for listed URL</em> y a\u00f1ade las dos.'),
           codeRow(URLS[0], 'u0') + codeRow(URLS[1], 'u1'))
       + step(5, s5, T('Turn on Algo Trading', 'Activa Algo Trading'), T('The Algo Trading button at the top of MT5 turns green. Without it the EA can\u2019t move your stop or take partials.', 'El bot\u00f3n Algo Trading de la parte de arriba de MT5 se pone verde. Sin \u00e9l, el EA no puede mover tu stop ni cerrar parciales.'), r5)
+      + step(6, s6, T('Keep a year of history', 'Guarda un a\u00f1o de historial'), T('In MT5: Tools \u2192 Options \u2192 Charts \u2192 <em>Max bars in chart</em> \u2192 Unlimited, then restart MT5. Replay can then get the volume of any day in the past year, and the EA fills a year of candles.', 'En MT5: Herramientas \u2192 Opciones \u2192 Gr\u00e1ficos \u2192 <em>Max bars in chart</em> \u2192 Unlimited, y reinicia MT5. As\u00ed Replay obtiene el volumen de cualquier d\u00eda del \u00faltimo a\u00f1o, y el EA rellena un a\u00f1o de velas.'), r6)
       + '</div>';
     if (!ever && S.waitAt && now - S.waitAt > WAIT_HINT) h += '<div class="mt5c-help" role="status">' + T('<b>Still waiting after 3 minutes?</b> Most often it\u2019s step 4: an address missing from the list, or typed with a space. MT5\u2019s <em>Experts</em> tab (at the bottom, in the Toolbox) says why, in red. Also check the code in step 3 has no space at the end.',
       '<b>\u00bfSigues esperando tras 3 minutos?</b> Casi siempre es el paso 4: falta una direcci\u00f3n en la lista o tiene un espacio. La pesta\u00f1a <em>Expertos</em> de MT5 (abajo, en la Caja de herramientas) dice por qu\u00e9, en rojo. Comprueba tambi\u00e9n que el c\u00f3digo del paso 3 no tiene un espacio al final.') + '</div>';
@@ -86329,7 +86338,7 @@ window.__stAZ = (function () {
     if(f==null) return 'asked';
     var atf=S.tf===TF_W1?1440:S.tf, to=t+S.tf*60-1, sym=S.symbol, cov=null;
     Object.keys(TRV.asked).forEach(function(k){ var o=TRV.asked[k]; if(o.sym===sym&&o.tf===atf&&o.from<=f&&o.to>=to) cov=o; });
-    if(cov) return cov.fail?'fail':'asked';
+    if(cov) return cov.nohist?'nohist':(cov.fail?'fail':'asked');
     TRV.asked[sym+'|'+atf+'|'+f+'|'+to]={sym:sym,tf:atf,from:f,to:to,at:Date.now()};
     try{ sb.from('candle_requests').insert([{user_id:u,symbol:sym,tf:atf,from_t:f,to_t:to,note:'vol'}]).then(function(){},function(){}); }catch(_){}
     trvWatch(); return 'asked'; }
@@ -86339,7 +86348,9 @@ window.__stAZ = (function () {
         if(!o.fail&&Date.now()-o.at>600000){ o.fail=true; if(MP) MP._mini=null; }
         if(o.fail&&Date.now()-(o.last||0)<120000) continue; o.last=Date.now();
         o.busy=true; var rows=await fetchCandles(o.sym,o.tf,o.from,o.to); o.busy=false;
-        if(rows.length&&rows.every(function(b){ return b.vol!=null; })){ o.done=true; o.fail=false; trvMerge(o,rows); } }
+        if(rows.length&&rows.every(function(b){ return b.vol!=null; })){ o.done=true; o.fail=false; o.nohist=null; trvMerge(o,rows); }
+        else if(!o.nohist){ try{ var rq=await sbc().from('candle_requests').select('status,maxbars').eq('symbol',o.sym).eq('tf',o.tf).eq('from_t',o.from).eq('to_t',o.to).order('id',{ascending:false}).limit(1);
+            var rx=rq&&rq.data&&rq.data[0]; if(rx&&rx.status==='nodata'){ o.nohist=rx.maxbars||-1; o.fail=true; if(MP) MP._mini=null; } }catch(_){} } }
       if(!open){ clearInterval(TRV.t); TRV.t=0; } },20000); }
   function trvMerge(o,rows){ if(!S||S.symbol!==o.sym) return; var m={}; rows.forEach(function(b){ m[b.time]=b.vol; });
     [S.cache&&S.cache[o.tf], S.tf===o.tf?S.bars:null].forEach(function(arr){ if(arr) arr.forEach(function(b){ if(b.vol==null&&m[b.time]!=null) b.vol=m[b.time]; }); });
@@ -90189,7 +90200,7 @@ window.__stAZ = (function () {
   function volAsk(list, raw){ var sb = VOL.sb || sbc(), uid = VOL.uid || uidNow(); if (!S || !list.length) return 'asked'; if (!sb || !uid) return 'out';   // VOL.sb / VOL.uid: the tests' stand-ins
     var sym = raw || S.sym.raw, rows = [], st = 'asked';
     list.forEach(function(q){ var cov = null; Object.keys(VOL.asked).forEach(function(k){ var o = VOL.asked[k]; if (o.sym === sym && o.tf === q.tf && o.from <= q.from && o.to >= q.to) cov = o; });
-      if (cov) { if (cov.fail) st = 'fail'; return; }
+      if (cov) { if (cov.nohist) st = 'nohist'; else if (cov.fail && st !== 'nohist') st = 'fail'; return; }
       var o2 = { sym: sym, tf: q.tf, from: q.from, to: q.to, at: Date.now() }; VOL.asked[sym + '|' + q.tf + '|' + q.from + '|' + q.to] = o2;
       rows.push({ user_id: uid, symbol: sym, tf: q.tf, from_t: q.from, to_t: q.to, note: 'vol' }); });
     if (rows.length) { try { sb.from('candle_requests').insert(rows).then(function(){}, function(){}); } catch (e) {} volWatch(); }
@@ -90203,8 +90214,15 @@ window.__stAZ = (function () {
         if (o.fail && (slowDone || Date.now() - (o.last || 0) < 120000)) continue;
         if (o.fail) slowDone = true; o.last = Date.now();
         o.busy = true; var rows = await fetchCandles(o.sym, o.tf, o.from, o.to); o.busy = false;
-        if (rows.length && rows.every(function(b){ return b.vol != null; })) { o.done = true; o.fail = false; volMerge(o.sym, o.tf, rows); } }
+        if (rows.length && rows.every(function(b){ return b.vol != null; })) { o.done = true; o.fail = false; o.nohist = null; volMerge(o.sym, o.tf, rows); }
+        else if (!o.nohist && await volNoHist(o)) { panes.forEach(function(q){ q._mini = null; }); dirty(); } }
       if (!open) { clearInterval(VOL.t); VOL.t = 0; } }, 20000); }
+  // EA 9.07: the member's MT5 said it has no candles that far back (candle_requests 'nodata', with its Max bars in chart);
+  // another of their MT5s may still answer, and the volume is drawn when it does (20 Oct 2026)
+  async function volNoHist(o){ var sb = VOL.sb || sbc(); if (!sb || !sb.from) return false;
+    try { var r = await sb.from('candle_requests').select('status,maxbars').eq('symbol', o.sym).eq('tf', o.tf).eq('from_t', o.from).eq('to_t', o.to).order('id', { ascending: false }).limit(1);
+      var x = r && r.data && r.data[0]; if (x && x.status === 'nodata') { o.nohist = x.maxbars || -1; o.fail = true; return true; } } catch (e) {}
+    return false; }
   // the newest EA this member's MT5 has reported (its settings report), '' when none has
   function eaNewest(){ var best = ''; try { var rows = (window.__stEA && window.__stEA.rows) ? window.__stEA.rows() : {};
       Object.keys(rows).forEach(function(k){ var v = String((rows[k] || {}).ea_version || ''); if (v && (!best || parseFloat(v) > parseFloat(best))) best = v; }); } catch (e) {} return best; }
@@ -90222,7 +90240,8 @@ window.__stAZ = (function () {
       var tx = vp.st === 'out' ? T('Volume profile: sign in for the volume', 'Perfil de volumen: inicia sesión para el volumen')
         : (old ? T('Volume profile: needs EA 9.00 or newer in MT5 (yours is ' + ev + ')', 'Perfil de volumen: necesita el EA 9.00 o posterior en MT5 (el tuyo es ' + ev + ')')
         : (!ev ? T('Volume profile: needs the EA (9.00 or newer) running in MT5', 'Perfil de volumen: necesita el EA (9.00 o posterior) abierto en MT5')
-        : (vp.st === 'fail' ? T('Volume profile: waiting for your EA - is MT5 open?', 'Perfil de volumen: esperando a tu EA - ¿está MT5 abierto?') : T('Volume profile: asking your EA for the volume…', 'Perfil de volumen: pidiendo el volumen a tu EA…'))));
+        : (vp.st === 'nohist' ? T('Volume profile: your MT5 doesn\u2019t go back this far \u00b7 Max bars in chart \u2192 Unlimited (Settings \u2192 MT5, step 6)', 'Perfil de volumen: tu MT5 no llega tan atr\u00e1s \u00b7 Max bars in chart \u2192 Unlimited (Ajustes \u2192 MT5, paso 6)')
+        : (vp.st === 'fail' ? T('Volume profile: waiting for your EA - is MT5 open?', 'Perfil de volumen: esperando a tu EA - ¿está MT5 abierto?') : T('Volume profile: asking your EA for the volume…', 'Perfil de volumen: pidiendo el volumen a tu EA…')))));
       g.save(); g.font = "10px 'AppNum','DM Mono',monospace"; g.fillStyle = ink(0.55); g.textAlign = 'left'; g.textBaseline = 'middle';
       g.fillText(tx, Math.max(4, Math.min(x, pw - g.measureText(tx).width - 4)), ym + 14); g.restore(); return; }
     var tag = function(y, col){ if (y == null) return; var xx = Math.round(x); g.fillStyle = col; g.beginPath(); g.moveTo(xx, y); g.lineTo(xx + 5, y - 5); g.lineTo(xx + 14, y - 5); g.lineTo(xx + 14, y + 5); g.lineTo(xx + 5, y + 5); g.closePath(); g.fill(); };
@@ -92458,7 +92477,7 @@ window.__stAZ = (function () {
   window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady,
     _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _loadSyms: function(){ return loadSymbols(); }, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
-    _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _static: function(){ return staticCache; }, _volMerge: volMerge,
+    _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _volNoHist: volNoHist, _static: function(){ return staticCache; }, _volMerge: volMerge,
     // for the tests
     logShown: logShown, symName: function(raw){ var s = symBy(raw); return s ? s.name : raw; },
     _s: function(){ return S; }, _mm: function(){ return CFG.mm; }, _exec: toggleExec, _aim: function(pr){ aim(pr); linesAll(); paintPill(); }, _fire: fire, _touch: function(v){ forceTouch = v; if (S) render(); },

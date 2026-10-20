@@ -43,6 +43,7 @@
     // signed out: no volume on these candles yet, nothing to ask with (the page's own copy: the real store has since got volume
     // on some of these candles from the EA answering asks like this one - 18 Oct 2026)
     var stc = P._static(); Object.keys(stc).forEach(function (key) { if (key.split('|')[0] !== 'EURUSD') return; (stc[key].rows || []).forEach(function (b) { b.vol = null; }); (stc[key].agg || []).forEach(function (b) { b.vol = null; }); });
+    (P._s().base || []).forEach(function (b) { b.vol = null; });   // the day's own 1-minute candles too: the store has their volume since 28 Sep 2026
     var p0 = P._panes()[0]; P._miniFresh(); P._render(); await W(120);
     var M = P._mini(0);
     ok('candles without volume (stored before EA 9.00): no arrows; signed out it says to sign in', M && M.vp && M.vp.miss > 0 && M.vp.st === 'out', M && M.vp);
@@ -55,6 +56,17 @@
     var n1 = asked ? asked.length : 0; asked = null; P._miniFresh(); P._render(); await W(150);
     ok('once: drawn again, it does not ask again', asked === null && n1 === 2);
     try { clearInterval(V.t); V.t = 0; } catch (e) {}
+    // EA 9.07 (20 Oct 2026): the member's MT5 has no candles that far back - its answer reads back, and the chart says why
+    var ks = Object.keys(V.asked), o0 = V.asked[ks[0]], q0 = null;
+    V.sb = { from: function (t) { var c = { _t: t, select: function () { return c; }, eq: function (k, v) { q0 = q0 || {}; q0[k] = v; return c; }, order: function () { return c; }, limit: function () { return Promise.resolve({ data: [{ status: 'nodata', maxbars: 100000 }] }); }, insert: function () { return Promise.resolve({}); } }; return c; } };
+    var nh = await P._volNoHist(o0);
+    ok('MT5 says it has none (candle_requests nodata, its Max bars): read back for that ask', nh === true && o0.nohist === 100000 && q0 && q0.symbol === 'EURUSD' && q0.tf === o0.tf && q0.from_t === o0.from && q0.to_t === o0.to, [nh, o0.nohist, q0]);
+    var said = [], ft = CanvasRenderingContext2D.prototype.fillText; CanvasRenderingContext2D.prototype.fillText = function (s) { said.push(String(s)); return ft.apply(this, arguments); };
+    window.__stEA = window.__stEA || {}; var rowsWas = window.__stEA.rows; window.__stEA.rows = function () { return { a: { ea_version: '9.07' } }; };
+    P._miniFresh(); P._render(); await W(200); CanvasRenderingContext2D.prototype.fillText = ft; window.__stEA.rows = rowsWas;
+    M = P._mini(0);
+    ok('...the chart says why, not "is MT5 open?" (Nestor, 20 Oct 2026: "the volumen tool ... stays empty if i go back a few month")', M.vp.st === 'nohist' && said.some(function (s) { return /your MT5 doesn’t go back this far · Max bars in chart → Unlimited \(Settings → MT5, step 6\)/.test(s); }) && !said.some(function (s) { return /is MT5 open/.test(s); }), [M.vp.st, said.filter(function (s) { return /Volume profile/.test(s); })]);
+    ks.forEach(function (k) { delete V.asked[k].nohist; V.asked[k].fail = false; });
     // the volume arrives (as the EA sends it): it goes onto the candles here and the arrows are drawn
     var st = P._static(), vofb = function (b) { return Math.max(1, Math.round((b.high - b.low) * 1e5)) + (Math.round(b.close * 1e5) % 7); };
     Object.keys(st).forEach(function (key) { var e = st[key], ps = key.split('|'); if (ps[0] !== 'EURUSD') return; P._volMerge('EURUSD', +ps[2] === 720 ? 240 : (+ps[2] >= 1440 ? 1440 : +ps[2]), e.rows.map(function (b) { return { time: b.time, vol: vofb(b) }; })); });

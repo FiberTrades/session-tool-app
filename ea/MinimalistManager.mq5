@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.06"
+#property version   "9.07"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -3574,7 +3574,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.06\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.07\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3965,7 +3965,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.06\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0); }   // al: Algo Trading on (9.06)
+string LwHi(){ return StringFormat("{\"v\":\"9.07\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS)); }   // al: Algo Trading on (9.06)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -7789,7 +7789,7 @@ string AlertRead()
    string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_poll";   // v9.00: the alerts and the volume asks in one read
    string syms=_Symbol;                                                    // this chart's symbol first (its alerts), then the ones it sends
    for(int i=0;i<g_hbSymN && StringLen(syms)<400;i++) if(g_hbSym[i]!=_Symbol) syms+=","+g_hbSym[i];
-   string body=StringFormat("{\"p_token\":\"%s\",\"p_syms\":\"%s\"}",g_syncTokenEff,syms);
+   string body=StringFormat("{\"p_token\":\"%s\",\"p_syms\":\"%s\",\"p_login\":\"%I64d\"}",g_syncTokenEff,syms,AccountInfoInteger(ACCOUNT_LOGIN));   // v9.07: + the account
    char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
    char res[]; string rh;
    string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
@@ -7876,6 +7876,19 @@ void VolTake(string lst)
       g_vqSeen=GetTickCount();
      }
   }
+// v9.07: "no candles here for that ask" - the server hands it to the member's next MT5 and the chart says why
+void VolNone(string id,int maxbars)
+  {
+   int p=StringFind(InpLiveURL,"/functions/");
+   if(p<0 || StringLen(id)==0) return;
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_vol_none";
+   string body=StringFormat("{\"p_token\":\"%s\",\"p_id\":%s,\"p_maxbars\":%d}",g_syncTokenEff,id,maxbars);
+   char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
+   char res[]; string rh;
+   string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
+   ResetLastError();
+   WebRequest("POST",url,hdr,1500,post,res,rh);
+  }
 void VolDrop()
   {
    for(int k=1;k<g_vqN;k++){ g_vqId[k-1]=g_vqId[k]; g_vqSym[k-1]=g_vqSym[k]; g_vqTf[k-1]=g_vqTf[k]; g_vqFrom[k-1]=g_vqFrom[k]; g_vqTo[k-1]=g_vqTo[k]; g_vqPos[k-1]=g_vqPos[k]; g_vqFail[k-1]=g_vqFail[k]; }
@@ -7899,7 +7912,17 @@ void VolServe()
    datetime a=(datetime)(g_vqFrom[0]+SrvOffAt((datetime)g_vqFrom[0])-pad), b=(datetime)(g_vqTo[0]+SrvOffAt((datetime)g_vqTo[0])+pad);
    MqlRates r[];
    int n=CopyRates(sym,CE_TF_PER[ti],a,b,r);
-   if(n<=0){ PrintFormat("Volume profile: %s has no %d-minute candles here for that zone.",sym,CE_TF_MIN[ti]); VolDrop(); return; }
+   if(n<=0)
+     {
+      // v9.07 (Nestor, 20 Oct 2026: "the volumen tool from the indicator stays empty if i go back a few month in time"):
+      // MT5 may still be fetching that history from the broker - ask again for about 30 s before giving up; then tell
+      // Session Terminal, so another of the member's MT5s gets the ask and the chart says why instead of waiting
+      if(SeriesInfoInteger(sym,CE_TF_PER[ti],SERIES_SYNCHRONIZED)==0 && ++g_vqFail[0]<15) return;
+      int mb=(int)TerminalInfoInteger(TERMINAL_MAXBARS);
+      PrintFormat("Volume profile: %s has no %d-minute candles here for that zone - this MT5 keeps %d bars a chart (Tools > Options > Charts > Max bars in chart: Unlimited, then restart MT5, reaches a year back).",sym,CE_TF_MIN[ti],mb);
+      VolNone(g_vqId[0],mb);
+      VolDrop(); return;
+     }
    int from=g_vqPos[0], to=MathMin(n,from+CE_BATCH);
    if(from>=n){ VolDrop(); return; }
    if(!HB_Post(sym,ti,r,from,to)){ if(++g_vqFail[0]>=5) VolDrop(); return; }
