@@ -453,8 +453,11 @@
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
     check('Maximise: the charts fill the screen', document.getElementById('stpr-bg').classList.contains('show') && win.parentNode.id === 'stpr-bg' && LC.state().max);
+    var tbM = document.getElementById('lc-tb'), tbR = tbM.getBoundingClientRect();
+    check('...with MT5\'s Toolbox under the charts, on screen (20 Oct 2026: "in full screen i need to be able to see the toolbox at the bottom too")', tbM.parentNode === win && !tbM.hidden && tbR.height > 20 && tbR.bottom <= innerHeight + 1 && tbR.top > win.querySelector('.stpr-cw').getBoundingClientRect().top, [tbM.parentNode && tbM.parentNode.id, tbM.hidden, Math.round(tbR.top), Math.round(tbR.bottom), innerHeight]);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })); await W(300);
     check('Escape: back in the tab', win.parentNode.id === 'lc-host' && !document.getElementById('stpr-bg').classList.contains('show'));
+    check('...and the Toolbox back under the window in the tab', document.getElementById('lc-tb').previousElementSibling === document.getElementById('lc-host') && document.getElementById('lc-tb').parentNode.id === 'page-livecharts');
 
     // ---- Live Charts remembers each chart's zoom on this device (18 Oct 2026: "can the chart remember where i left it") ----
     await W(1500);   // the window settles after Maximise / Escape first
@@ -501,7 +504,7 @@
     var pr = document.getElementById('page-review'); if (pr) pr.classList.add('session-live-collapsed');
     for (k = 0; k < 30; k++) { await W(250); try { window.__stLiveBox.render(); } catch (e) {} if (document.querySelector('#st-livebox .slx-open')) break; }
     var ob = document.querySelector('#st-livebox .slx-open');
-    check('the Session Live chart has "Open in Live Charts"', ob && /Open in Live Charts/.test(ob.textContent), ob && ob.textContent);
+    check('the Session Live chart has "Open in Charts" (the tab is Charts since 19 Oct 2026)', ob && /Open in Charts/.test(ob.textContent) && !/Live Charts/.test(ob.textContent), ob && ob.textContent);
     var card = document.querySelector('#st-livebox .slx-tc[data-k="990077"]');
     check('its card has MT5\'s state, Move to BE and the same Close trade (done at its time)', card && card.querySelector('.stm-st.on') && !!card.querySelector('[data-tma="tobe"]') && !card.querySelector('[data-tma="half"]') && /^Closed \d\d:\d\d$/.test(card.querySelector('[data-tma="close"]').textContent), card && card.querySelector('.stm') && card.querySelector('.stm').textContent);
     if (ob) ob.click();
