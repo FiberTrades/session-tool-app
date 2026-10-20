@@ -5,6 +5,7 @@
   // the replay's moment: never a candle that ends after it. Real candles of Thu 1 Oct 2026 (EUR/USD, gold, US100).
   // Run: python tests/browser_test.py tests/practice_cmp_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var until = async function (f, ms) { for (var u = 0; u < (ms || 3000); u += 40) { try { if (f()) return true; } catch (e) {} await W(40); } return false; };   // redraws come after an async reload / on a later frame: wait for them, not a fixed time (they failed on a busy machine, 20 Oct 2026)
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   try {
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB); i++) await W(100);
@@ -58,9 +59,9 @@
     ok('chart 2 picked: its own list (nothing yet)', mn.querySelector('[data-cmpci="1"]').classList.contains('on') && !mn.querySelector('.stpr-cmpo') && /Nothing compared on chart 2 yet/.test(mn.textContent));
     await P._cmpAdd(1, 'US100.cash'); await W(300);
     ok('US100 on chart 2 alone (its 15-minute candles)', pane(1).cmp && pane(1).cmp['US100.cash'] && !pane(1).cmp['US100.cash'].none && !(pane(0).cmp && pane(0).cmp['US100.cash']) && JSON.stringify(P._cfg().cmp[1]) === JSON.stringify([{ s: 'US100.cash', c: '#f5a623' }]), P._cfg().cmp);
-    await P._cmpAdd(0, 'US100.cash'); await W(300);
+    await P._cmpAdd(0, 'US100.cash'); await until(function () { return pane(0).el.querySelectorAll('.stpr-cmpl .stpr-cmpr').length === 3; });
     var c0 = pane(0).cmp;
-    ok('a second on chart 1: its next colour (blue); two lines and their legend rows', c0 && c0.XAUUSD && c0['US100.cash'] && P._cfg().cmp[0][1].c === '#38bdf8' && pane(0).el.querySelectorAll('.stpr-cmpl .stpr-cmpr').length === 3, P._cfg().cmp[0]);
+    ok('a second on chart 1: its next colour (blue); two lines and their legend rows', c0 && c0.XAUUSD && c0['US100.cash'] && P._cfg().cmp[0][1].c === '#38bdf8' && pane(0).el.querySelectorAll('.stpr-cmpl .stpr-cmpr').length === 3, P._cfg().cmp[0].slice());
     P._cfg().cmp[0].push({ s: 'NOPESYM', c: '#c084fc' }); P._cmpDel(0, 'ZZZNONE'); await W(800);
     document.getElementById('stpr-win').click(); await W(40); P._cmpMenu(0); await W(80);
     ok('three on a chart: the menu says up to 3 and offers no more', /Up to 3 symbols on a chart/.test(mn.textContent) && !mn.querySelector('#stpr-cmpq'), mn.textContent.slice(0, 200));
@@ -74,8 +75,8 @@
     P._goto('10:00'); for (k = 0; k < 40 && !(pane(0).cmp && pane(0).cmp.XAUUSD && !pane(0).cmp.XAUUSD.none); k++) await W(150);
     ok('kept per chart: opened again, gold and US100 on chart 1, US100 on chart 2', pane(0).cmp && pane(0).cmp.XAUUSD && !pane(0).cmp.XAUUSD.none && pane(0).cmp['US100.cash'] && pane(1).cmp && pane(1).cmp['US100.cash'], [pane(0).cmp && Object.keys(pane(0).cmp), pane(1).cmp && Object.keys(pane(1).cmp)]);
     // x in the legend
-    pane(0).el.querySelector('.stpr-cmpl [data-cmpx="NOPESYM"]').click(); await W(200);
-    pane(0).el.querySelector('.stpr-cmpl [data-cmpx="XAUUSD"]').click(); await W(300);
+    pane(0).el.querySelector('.stpr-cmpl [data-cmpx="NOPESYM"]').click(); await until(function () { return !pane(0).el.querySelector('.stpr-cmpl [data-cmpid="NOPESYM"]'); });
+    pane(0).el.querySelector('.stpr-cmpl [data-cmpx="XAUUSD"]').click(); await until(function () { return !pane(0).cmp.XAUUSD && pane(0).el.querySelectorAll('.stpr-cmpl .stpr-cmpr').length === 2; });
     ok('x in the legend takes one off (its line and its row; the others stay)', !pane(0).cmp.XAUUSD && pane(0).cmp['US100.cash'] && JSON.stringify(P._cfg().cmp[0].map(function (x) { return x.s; })) === '["US100.cash"]' && pane(0).el.querySelectorAll('.stpr-cmpl .stpr-cmpr').length === 2, P._cfg().cmp[0]);
     ok('Live Charts keeps its own list (untouched)', JSON.stringify(P._cfg().cmpL) === JSON.stringify([[{ s: 'BTCUSD', c: '#f5a623' }]]), P._cfg().cmpL);
     ok('no page errors', errs.length === 0, errs);

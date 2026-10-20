@@ -4,6 +4,7 @@
   // A made-up EUR/USD short on Thu 1 Oct 2026 over the real shared candles (signed out).
   // Run: python tests/browser_test.py tests/replay_mini_e2e.js
   var W = function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); };
+  var until = async function (f, ms) { for (var u = 0; u < (ms || 3000); u += 40) { try { if (f()) return true; } catch (e) {} await W(40); } return false; };   // redraws come after an async reload / on a later frame: wait for them, not a fixed time (they failed on a busy machine, 20 Oct 2026)
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   try {
     for (var i = 0; i < 200 && !(window.__stReplay && window.__stSB && window.__stPractice); i++) await W(100);
@@ -17,11 +18,11 @@
     var flashTxt = function () { var f = document.getElementById('strp-flash'); return f && f.classList.contains('show') ? f.textContent : ''; };
     var g = document.getElementById('strp-ov').getContext('2d'), texts = [], of = g.fillText;
     g.fillText = function (t) { texts.push(String(t)); return of.apply(this, arguments); };
-    var painted = async function () { texts.length = 0; await W(120); return texts.slice(); };
+    var painted = async function () { texts.length = 0; await until(function () { return texts.length > 0; }, 2000); return texts.slice(); };
     var sw = document.getElementById('strp-mini'), set = document.getElementById('strp-miniset');
     ok('Show on chart has a Minimalist switch, off at first, no Settings yet', sw && !sw.checked && set && set.style.display === 'none');
     document.getElementById('strp-layersbtn').click(); await W(40);
-    sw.click(); await W(200);
+    sw.click(); await until(function () { var m = R._mp(); return m && m._mini && m._mini.zone && m._mz; });
     var mp = R._mp();
     ok('switched on: Settings appears, and the indicator is worked out on this chart (its range zone)', sw.checked && set.style.display !== 'none' && mp && mp._mini && mp._mini.zone && mp._mz, mp && mp._mini && mp._mini.zone);
     var tx = await painted();
@@ -44,15 +45,15 @@
     if (dlg) { dlg.querySelector('[data-dc]').click(); await W(80); }
     // ---- the zone's left edge drags (Auto goes off) ----
     var lr = S.chart.timeScale().getVisibleLogicalRange(), bi = Math.round(lr.from) + 30;
-    C.miniS = Object.assign({}, C.miniS, { auto: false, zA: S.bars[bi].time, detach: true }); R._mp()._mini = null; await W(200);
+    C.miniS = Object.assign({}, C.miniS, { auto: false, zA: S.bars[bi].time, detach: true }); R._mp()._mini = null; await until(function () { var z = R._mp()._mz; return z && z.tA === S.bars[bi].time; });
     mz = R._mp()._mz; var zA0 = C.miniS.zA;
     ok('(a zone started by hand, its left edge on screen)', mz && mz.x0 > 20 && mz.x0 < r.width - 100, mz);
     mev('mousemove', mz.x0, (mz.y0 + mz.y1) / 2); await W(40);
     ok('the mouse on its edge: the drag cursor', chart.style.cursor === 'ew-resize', chart.style.cursor);
-    mev('mousedown', mz.x0, (mz.y0 + mz.y1) / 2); mev('mousemove', mz.x0 - 40, (mz.y0 + mz.y1) / 2, { held: true }); mev('mousemove', mz.x0 - 80, (mz.y0 + mz.y1) / 2, { held: true }); mev('mouseup', mz.x0 - 80, (mz.y0 + mz.y1) / 2); await W(150);
+    mev('mousedown', mz.x0, (mz.y0 + mz.y1) / 2); mev('mousemove', mz.x0 - 40, (mz.y0 + mz.y1) / 2, { held: true }); mev('mousemove', mz.x0 - 80, (mz.y0 + mz.y1) / 2, { held: true }); mev('mouseup', mz.x0 - 80, (mz.y0 + mz.y1) / 2); await until(function () { var z = R._mp()._mz; return z && z.x0 < mz.x0 - 40; });
     ok('dragging its left edge moves the zone\'s start earlier', C.miniS.zA < zA0 && C.miniS.auto === false && R._mp()._mz.x0 < mz.x0 - 40, [zA0, C.miniS.zA]);
     // ---- the volume profile ----
-    C.miniS = Object.assign({}, C.miniS, { vpOn: true }); R._mp()._mini = null; await W(250);
+    C.miniS = Object.assign({}, C.miniS, { vpOn: true }); R._mp()._mini = null; await until(function () { var m = R._mp()._mini; return m && m.vp; });
     var vp = R._mp()._mini && R._mp()._mini.vp; tx = await painted();
     ok('Volume Profile on: worked out from the candles\' tick volume, or (signed out, volume missing) it says to sign in', vp && (vp.poc != null || (vp.miss && vp.st === 'out' && tx.some(function (t) { return /Volume profile: sign in/.test(t); }))), vp && { miss: vp.miss, st: vp.st, poc: vp.poc, peaks: vp.peaks && vp.peaks.length });
     ok('the candles carry their volume field', S.bars.slice(0, 50).every(function (b) { return 'vol' in b; }));
