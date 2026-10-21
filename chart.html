@@ -9,16 +9,30 @@
 </head>
 <body>
 <script>
-// One chart of Practice Replay in a window of its own: the app window that opened it ("Open this chart in a new window")
+// One chart of Replay or Live Charts in a window of its own: the app window that opened it ("Open this chart in a new window")
 // draws the chart in here. Opened any other way, it goes to the app.
-document.addEventListener('DOMContentLoaded', function () {
-  var o = null, P = null, m = /[?&]slot=(\d)/.exec(location.search);
-  try { o = window.opener; P = o && o.__stPractice; } catch (e) {}
-  if (!P || !P._satReady || !m) { location.replace('app.html'); return; }
-  if (!P._satReady(window, +m[1])) return;
-  // the app window closed or reloaded: this chart went with it
-  setInterval(function () { var still = false; try { still = !o.closed && o.__stPractice === P; } catch (e) {} if (!still) window.close(); }, 2000);
-});
+// It carries on by itself (Nestor, 21 Oct 2026: "i want each extrenal chart window to work individually"): it asks for its chart
+// when it loads and after its own reload; when the app window reloads it reloads too and asks the new one; when the app window
+// closes, or no app answers for 20 s, it closes.
+(function () {
+  var m = /[?&]slot=(\d)/.exec(location.search), slot = m ? +m[1] : -1, host = null, P = null, since = Date.now();
+  try { host = window.opener && window.opener.top; } catch (e) {}
+  if (!window.opener || slot < 0) { location.replace('app.html'); return; }
+  function app() { var c = [];
+    try { if (window.opener && !window.opener.closed) c.push(window.opener); } catch (e) {}
+    try { if (host && !host.closed) c.push(host); } catch (e) {}
+    for (var k = 0; k < c.length; k++) { try { var p = c[k].__stPractice; if (p && p._satReady) return p; } catch (e) {} }
+    return null; }
+  function tick() {
+    var alive = false; try { alive = (!!window.opener && !window.opener.closed) || (!!host && !host.closed); } catch (e) {}
+    if (!alive) { window.close(); return; }
+    var p = app(); if (!p || p !== P) { if (Date.now() - since > 20000) { window.close(); return; } }
+    if (!p || p === P) { if (p) since = Date.now(); return; }
+    if (P) { location.reload(); return; }   // the app window reloaded: a fresh page here, which asks the new one
+    var r = null; try { r = p._satReady(window, slot); } catch (e) {} if (r === true) { P = p; since = Date.now(); } }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick); else tick();
+  setInterval(tick, 1000);
+})();
 </script>
 </body>
 </html>

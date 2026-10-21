@@ -492,9 +492,7 @@
     window.open = function (u, n, f) { opened = [u, n, f]; return fakeW; };
     popEl.click(); await W(500); window.open = wo;
     var away = document.getElementById('lc-away');
-    var wrapHtml = ''; try { wrapHtml = await fetch(opened[0]).then(function (r) { return r.text(); }); } catch (e) {}
-    var wrapDoc = new DOMParser().parseFromString(wrapHtml, 'text/html'), lcf = wrapDoc.getElementById('lc-frame');
-    check('...it opens the app in a window of its own on Live Charts (this symbol): a page made by the app (blob:, its own zoom, 21 Oct 2026) with the app filling it in a frame; this tab says so and stops its chart', !!opened && /^blob:/.test(opened[0]) && /^<!doctype html>/i.test(wrapHtml) && !!lcf && /\?livecharts=1&sym=EURUSD$/.test(lcf.getAttribute('src')) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, lcf && lcf.getAttribute('src'), away && away.textContent]);
+    check('...it opens the app in a window of its own on Live Charts (this symbol), a page of the site (no address band in the installed app); this tab says so and stops its chart', !!opened && /\?livecharts=1&sym=EURUSD$/.test(opened[0]) && !/^blob:/.test(opened[0]) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, away && away.textContent]);
     fakeW.closed = true;
     for (k = 0; k < 60 && !(LC.state().live && !document.getElementById('lc-away')); k++) await W(250);
     check('...closing that window brings Live Charts back here', LC.state().live && !document.getElementById('lc-away'));
