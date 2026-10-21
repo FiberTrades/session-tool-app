@@ -34,13 +34,37 @@
     await W(300); bell.click(); await W(40); rows = mn.querySelectorAll('.stpr-alr');
     var hitRow = Array.prototype.filter.call(rows, function (r) { return r.querySelector('b').textContent === hi.price.toFixed(5); })[0];
     ok('reached: its row says Reached and the time', hi.hitAt && hitRow && hitRow.classList.contains('hit') && /Reached \d\d:\d\d/.test(hitRow.textContent), hitRow && hitRow.textContent);
-    // x deletes the alert, the line stays
-    var n0 = DW.list.length; hitRow.querySelector('[data-alx]').click(); await W(40);
-    ok('x: that alert is gone, its line stays, the list shows the other one', DW.list.length === n0 && hi.alert === false && mn.classList.contains('show') && mn.querySelectorAll('.stpr-alr').length === 1, mn.textContent);
+    // the bell beside a note, not on it (Nestor, 21 Oct 2026: "if you add a note to the alert it sits behind the bell"): the note is the
+    // line's label at its right end, so the bell moves left of it
+    var lo = DW.list.filter(function (d) { return d.alert && d !== hi; })[0], pn = P._panes()[0], pwB = pn.el.clientWidth - pn.chart.priceScale('right').width();
+    P._goto('08:00'); await W(200); P._drawOv(0);
+    var bx0 = (pn._bells.filter(function (q) { return q.d === hi; })[0] || {}).x;
+    hi.text = 'Take profit zone note'; P._render(); await W(120); P._drawOv(0);
+    var bx1 = (pn._bells.filter(function (q) { return q.d === hi; })[0] || {}).x;
+    ok('a note on an alert line: its bell moves left of the note (no note: by the price scale)', bx0 === pwB - 12 && bx1 < pwB - 12 - 100, [bx0, bx1, pwB]);
+    hi.text = ''; P._render(); for (k = 0; k < 400 && !hi.hitAt && P._s().now < P._s().f.close; k++) P._step(); await W(200);
+    if (mn.classList.contains('show')) { bell.click(); await W(30); }   // the list fresh: closed, then opened
+    bell.click(); await W(40); rows = mn.querySelectorAll('.stpr-alr');
+    hitRow = Array.prototype.filter.call(rows, function (r) { return r.querySelector('b').textContent === hi.price.toFixed(5); })[0];
+    // x deletes the alert and its line (Nestor, 21 Oct 2026: "if you delete the alert the alert line stays on the chart, that should be deleted too")
+    var n0 = DW.list.length; ok('x says it deletes the line too', hitRow && /Delete this alert and its line/.test(hitRow.querySelector('[data-alx]').title), hitRow && hitRow.querySelector('[data-alx]').title);
+    hitRow.querySelector('[data-alx]').click(); await W(40);
+    ok('x: that alert and its line are gone, the list shows the other one', DW.list.length === n0 - 1 && DW.list.indexOf(hi) < 0 && mn.classList.contains('show') && mn.querySelectorAll('.stpr-alr').length === 1 && /Alert and its line deleted/.test(document.getElementById('stpr-flash').textContent), mn.textContent);
     mn.querySelector('[data-alxall]').click(); await W(40);
-    ok('Delete all: none left, the lines stay, it says so; the dot goes', DW.list.length === n0 && !DW.list.some(function (d) { return d.alert; }) && /deleted/.test(document.getElementById('stpr-flash').textContent) && !bell.classList.contains('dot'));
+    ok('Delete all: none left, their lines go too, it says so; the dot goes', DW.list.length === n0 - 2 && !DW.list.some(function (d) { return d.alert; }) && /deleted, with its horizontal line/.test(document.getElementById('stpr-flash').textContent) && !bell.classList.contains('dot'), document.getElementById('stpr-flash').textContent);
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'z', ctrlKey: true, bubbles: true })); await W(40);
-    ok('Undo brings them back', DW.list.filter(function (d) { return d.alert; }).length === 1, DW.list.map(function (d) { return !!d.alert; }));
+    ok('Undo brings them back (the line with its alert)', DW.list.filter(function (d) { return d.alert; }).length === 1 && DW.list.length === n0 - 1, DW.list.map(function (d) { return !!d.alert; }));
+    // a fib's background can be turned off (Aurora, 21 Oct 2026: "the fibs background to be removeable")
+    var t1 = P._s().base[60].time, t2 = P._s().base[90].time; DW.list.push({ type: 'fib', a: { t: t1, price: px - 0.002 }, b: { t: t2, price: px + 0.002 } }); DW.sel = DW.list.length - 1; P._props(); P._render(); await W(60);
+    P._dbar().open('more'); await W(30); var fb = P._dbar().pop() && P._dbar().pop().querySelector('[data-fbg]');
+    ok("a fib's More: Background, ticked", !!fb && fb.checked && /Background/.test(fb.parentNode.textContent));
+    fb.checked = false; fb.dispatchEvent(new Event('change', { bubbles: true })); await W(40);
+    ok('unticked: the fib has no background (its levels stay)', DW.list[DW.list.length - 1].noBg === true);
+    P._dbar().open('more'); await W(30); fb = P._dbar().pop() && P._dbar().pop().querySelector('[data-fbg]');
+    ok('...and the box shows it unticked', !!fb && !fb.checked);
+    fb.checked = true; fb.dispatchEvent(new Event('change', { bubbles: true })); await W(40);
+    ok('ticked again: the background is back', !DW.list[DW.list.length - 1].noBg);
+    DW.list.pop(); DW.sel = null; P._render();
     // the + beside the crosshair's price (Nestor: "can i get one of these + signs to make it more obvious for users how to add alerts?")
     var p0 = P._panes()[0], pc0 = p0.el.querySelector('.stpr-pc'), rr = pc0.getBoundingClientRect(), pw0 = p0.el.clientWidth - p0.chart.priceScale('right').width(), yy = Math.round(rr.height * 0.35);
     var mm = function (t, x, y) { var el = document.elementFromPoint(rr.left + x, rr.top + y) || pc0; el.dispatchEvent(new MouseEvent(t, { clientX: rr.left + x, clientY: rr.top + y, bubbles: true, cancelable: true, button: 0, buttons: t === 'mousedown' ? 1 : 0 })); };
