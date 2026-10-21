@@ -488,12 +488,13 @@
     // ---- Live Charts in a window of its own (18 Oct 2026: "where is the open in a new window button?") ----
     var popEl = document.getElementById('stpr-pop');
     check('Live Charts has the open-in-a-new-window button', popEl && getComputedStyle(popEl).display !== 'none' && popEl.offsetWidth > 0);
-    var opened = null, fakeW = { closed: false, close: function () { this.closed = true; }, document: document.implementation.createHTMLDocument('') }, wo = window.open;
+    var opened = null, fakeW = { closed: false, close: function () { this.closed = true; } }, wo = window.open;
     window.open = function (u, n, f) { opened = [u, n, f]; return fakeW; };
     popEl.click(); await W(500); window.open = wo;
     var away = document.getElementById('lc-away');
-    var lcf = fakeW.document.getElementById('lc-frame');
-    check('...it opens the app in a window of its own on Live Charts (this symbol): a blank window (its own zoom, 21 Oct 2026) with the app filling it in a frame; this tab says so and stops its chart', !!opened && opened[0] === '' && !!lcf && /\?livecharts=1&sym=EURUSD$/.test(lcf.getAttribute('src')) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, lcf && lcf.getAttribute('src'), away && away.textContent]);
+    var wrapHtml = ''; try { wrapHtml = await fetch(opened[0]).then(function (r) { return r.text(); }); } catch (e) {}
+    var wrapDoc = new DOMParser().parseFromString(wrapHtml, 'text/html'), lcf = wrapDoc.getElementById('lc-frame');
+    check('...it opens the app in a window of its own on Live Charts (this symbol): a page made by the app (blob:, its own zoom, 21 Oct 2026) with the app filling it in a frame; this tab says so and stops its chart', !!opened && /^blob:/.test(opened[0]) && /^<!doctype html>/i.test(wrapHtml) && !!lcf && /\?livecharts=1&sym=EURUSD$/.test(lcf.getAttribute('src')) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, lcf && lcf.getAttribute('src'), away && away.textContent]);
     fakeW.closed = true;
     for (k = 0; k < 60 && !(LC.state().live && !document.getElementById('lc-away')); k++) await W(250);
     check('...closing that window brings Live Charts back here', LC.state().live && !document.getElementById('lc-away'));

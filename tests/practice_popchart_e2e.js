@@ -23,7 +23,7 @@
     for (k = 0; k < 120 && !(P._pops()[2] && P._pops()[2].ready && P._panes()[2] && P._panes()[2].el.ownerDocument !== document && P._panes()[2].n); k++) await W(100);
     var o = P._pops()[2]; win = o && o.w;
     var p2 = P._panes()[2];
-    ok('pressed: chart 3 opens in a new window (a blank one since 21 Oct 2026, so it keeps its own zoom) and moves there', win && win.location.href === 'about:blank' && p2.el.ownerDocument === win.document && win.document.getElementById('stpr-grid').contains(p2.el), win && win.location.href);
+    ok('pressed: chart 3 opens in a new window (a page made by the app, blob:, since 21 Oct 2026: its own zoom, the standard layout) and moves there', win && /^blob:/.test(win.location.href) && win.document.compatMode === 'CSS1Compat' && p2.el.ownerDocument === win.document && win.document.getElementById('stpr-grid').contains(p2.el), win && win.location.href);
     var g = document.getElementById('stpr-grid');
     ok('this window lays out the two it still has, side by side, bigger', g.className.indexOf('l2') >= 0 && g.querySelectorAll('.stpr-pane').length === 2 && P._panes().length === 3, g.className);
     await W(300);
@@ -41,6 +41,15 @@
     ok('pressed again: they close (Nestor: "clicking on the TF on the external window doesnt make the list go away")', !wtw.classList.contains('open'));
     win.document.querySelector('#stpr-tb2 #stpr-drawbtn').click(); await W(60);
     ok('its pencil opens the drawing tools (there and here)', document.getElementById('stpr-tb2').classList.contains('drawing') && win.document.getElementById('stpr-tb2').classList.contains('drawing'));
+    // a tools group's list opens only in the window it is opened in (21 Oct 2026: "i want them to work individually")
+    var g0 = win.document.querySelector('#stpr-tb2 .stpr-tg [data-tgrp]'), gk = g0 && g0.closest('.stpr-tg').getAttribute('data-grp');
+    if (g0) { g0.click(); await W(120); }
+    var sgw = gk && win.document.querySelector('#stpr-tb2 .stpr-tg[data-grp="' + gk + '"]'), sgm = gk && document.querySelector('#stpr-tb2 .stpr-tg[data-grp="' + gk + '"]');
+    ok('a tools group opened in that window opens there only, not in this window', !!sgw && getComputedStyle(sgw.querySelector('.stpr-tfl')).display === 'flex' && !!sgm && getComputedStyle(sgm.querySelector('.stpr-tfl')).display === 'none', [gk, sgw && getComputedStyle(sgw.querySelector('.stpr-tfl')).display, sgm && getComputedStyle(sgm.querySelector('.stpr-tfl')).display]);
+    var g1 = gk && document.querySelector('#stpr-tb2 .stpr-tg[data-grp="' + gk + '"] [data-tgrp]'); if (g1) { g1.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true })); g1.click(); await W(120); }   // pressed as a mouse does: this window is the one in use
+    sgw = gk && win.document.querySelector('#stpr-tb2 .stpr-tg[data-grp="' + gk + '"]'); sgm = gk && document.querySelector('#stpr-tb2 .stpr-tg[data-grp="' + gk + '"]');
+    ok('...and the same group pressed in this window opens here, and closes there', !!sgm && getComputedStyle(sgm.querySelector('.stpr-tfl')).display === 'flex' && !!sgw && getComputedStyle(sgw.querySelector('.stpr-tfl')).display === 'none', [sgm && getComputedStyle(sgm.querySelector('.stpr-tfl')).display, sgw && getComputedStyle(sgw.querySelector('.stpr-tfl')).display]);
+    if (g1) { document.querySelector('#stpr-tb2 .stpr-tg[data-grp="' + gk + '"] [data-tgrp]').click(); await W(80); }
     win.document.querySelector('#stpr-tb2 [data-tool="hline"]').click(); await W(40);
     ok('a tool picked there is the tool', P._dr().tool === 'hline' && win.document.querySelector('#stpr-tb2 [data-tool="hline"]').classList.contains('on'));
     win.document.querySelector('#stpr-tb2 [data-tool="hline"]').click(); await W(40);

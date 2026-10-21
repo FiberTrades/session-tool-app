@@ -87500,6 +87500,8 @@ window.__stAZ = (function () {
   .stpr-tg.open .stpr-tgc { opacity: 1; color: var(--accent); }
   .stpr-tfl { position: absolute; top: calc(100% + 6px); left: -1px; z-index: 40; display: none; flex-direction: column; min-width: 224px; padding: 4px; background: var(--bg-elev2, #1b1a21); border: 1px solid var(--border-2, #332F3C); border-radius: 9px; box-shadow: 0 16px 36px rgba(0,0,0,.6); }
   .stpr-tg.open .stpr-tfl { display: flex; }
+  .stpr-tg.open.away .stpr-tfl { display: none; } .stpr-tg.open.away .stpr-tgc { opacity: .75; color: inherit; }   /* open in another chart window, not this one (21 Oct 2026) */
+  .stpr-win .stpr-tb2 .stpr-tools > .stpr-tg.open.away:not(:has(.stpr-tgm.on)) { background: transparent; }
   .stpr-seg .stpr-tfl button { justify-content: flex-start; gap: 10px; height: 32px; min-width: 0; padding: 0 10px; border: 0; border-radius: 6px; color: #c9c6d2; font: 13px Inter, system-ui, sans-serif; text-align: left; white-space: nowrap; }
   .stpr-seg .stpr-tfl button span { flex: 1 1 auto; }
   .stpr-seg .stpr-tfl button kbd { font: 10.5px 'AppNum','DM Mono',monospace; color: #8c8996; }
@@ -90720,8 +90722,10 @@ window.__stAZ = (function () {
     box.querySelectorAll('[data-gtool]').forEach(function(m){ var g = m.getAttribute('data-gtool'), t = TG[g], src = box.querySelector('.stpr-tfl [data-tool="' + t + '"] svg'), n = TOOLN[t], nm = n ? T(n[0], n[1]) + (TKEY[t] ? ' (' + TKEY[t] + ')' : '') : '', on = TGRP[g].indexOf(DW.tool) >= 0;
       if (m._t !== t && src) { m.innerHTML = src.outerHTML; m._t = t; } if (m.title !== nm) { m.title = nm; m.setAttribute('aria-label', nm); } if (m.classList.contains('on') !== on) m.classList.toggle('on', on); });
     box.querySelectorAll('[data-tgrp]').forEach(function(c){ var n = TGN[c.getAttribute('data-tgrp')], nm = n ? T(n[0], n[1]) : ''; if (c.title !== nm) { c.title = nm; c.setAttribute('aria-label', nm); } }); }
-  function flyShut(){ var any = false; document.querySelectorAll('#stpr-tools .stpr-tg.open').forEach(function(s){ s.classList.remove('open'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); any = true; }); return any; }
-  function flyOpen(g){ var s = document.querySelector('#stpr-tools .stpr-tg[data-grp="' + g + '"]'); if (!s) return; var was = s.classList.contains('open'); flyShut(); if (was) return;
+  var FLYW = null;   // the window a tools group's list is open in (each chart window its own, 21 Oct 2026)
+  function flyShut(){ var any = false; document.querySelectorAll('#stpr-tools .stpr-tg.open').forEach(function(s){ s.classList.remove('open', 'away'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); any = true; }); FLYW = null; return any; }
+  function flyOpen(g){ var s = document.querySelector('#stpr-tools .stpr-tg[data-grp="' + g + '"]'); if (!s) return; var by = UI.w || window, was = s.classList.contains('open') && FLYW === by; flyShut(); if (was) return;   // open in another window: it opens here instead
+    FLYW = by; s.classList.toggle('away', by !== window);
     s.classList.add('open'); var c = s.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'true');
     var f = s.querySelector('.stpr-tfl'); f.style.left = ''; var r = f.getBoundingClientRect(), vw = document.documentElement.clientWidth || window.innerWidth, sh = 0;   // kept on screen (a phone)
     if (r.right > vw - 8) sh = r.right - (vw - 8); if (r.left - sh < 8) sh = r.left - 8; if (sh) f.style.left = Math.round(-1 - sh) + 'px'; }
@@ -91288,7 +91292,10 @@ window.__stAZ = (function () {
     return '<button type="button" class="stpr-popc" data-popc="' + i + '" title="' + t + '" aria-label="' + t + '">' + (popOn(i) ? POPB : POPI) + '</button>'; }
   var tbObs = null;
   function satBar(){ var src = $('stpr-tb2'); if (!src) return;
-    popDocs().forEach(function(d){ var tb = d.getElementById('stpr-tb2'), tm = tb && tb.querySelector('.stpr-tbm'); if (!tm) return; if (tb.className !== src.className) tb.className = src.className; var h = src.innerHTML.replace(/<span class="stpr-sattf" id="stpr-maintf">[\s\S]*?<\/span>/, ''); if (tm._h !== h) { tm.innerHTML = h; tm._h = h; } }); }
+    popDocs().forEach(function(d){ var tb = d.getElementById('stpr-tb2'), tm = tb && tb.querySelector('.stpr-tbm'); if (!tm) return; if (tb.className !== src.className) tb.className = src.className; var h = src.innerHTML.replace(/<span class="stpr-sattf" id="stpr-maintf">[\s\S]*?<\/span>/, '');
+      var mine = !!FLYW && FLYW !== window && (function(){ try { return FLYW.document === d; } catch (e) { return false; } })(), key = h + (mine ? '|1' : '|0');
+      if (tm._h !== key) { tm.innerHTML = h; tm._h = key;   // a tools group's open list: only in the window it was opened in
+        tm.querySelectorAll('.stpr-tg.open').forEach(function(g){ if (mine) g.classList.remove('away'); else { g.classList.remove('open', 'away'); var c = g.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); } }); } }); }
   function satBarWatch(){ if (tbObs || !window.MutationObserver) return; var src = $('stpr-tb2'); if (!src) return;
     tbObs = new MutationObserver(function(){ satBar(); }); tbObs.observe(src, { subtree: true, attributes: true, childList: true, characterData: true }); }
   function popToggle(i){ if (popOn(i)) unpop(i); else popChart(i); }
@@ -91297,23 +91304,44 @@ window.__stAZ = (function () {
     var o = POP[i]; try { if (o && o.w && !o.w.closed) { o.w.focus(); return o.w; } } catch (e) {}
     var p = panes[i], r = p ? p.el.getBoundingClientRect() : null, ww = Math.max(920, Math.round(r ? r.width : 900)), wh = Math.max(420, Math.round(r ? r.height : 600) + 48);   // + its toolbar row
     var x = Math.round((window.screenX || 0) + 40 + 28 * i), y = Math.round((window.screenY || 0) + 50 + 28 * i), w = null;
-    // a blank window this one draws into (21 Oct 2026, was chart.html): the browser keeps one zoom per website, so a chart window
-    // on the site's own address zoomed with the app; a blank one keeps its own (Nestor: "when i change the zoom in the app the
-    // external charts also change zoom, i dont want that, i want external charts to have their own zoom")
-    try { w = window.open('', 'stpr-chart-' + i, 'popup,width=' + ww + ',height=' + wh + ',left=' + x + ',top=' + y); } catch (e) {}
+    // The chart's window is a page made here (a blob: address, 21 Oct 2026), not the site's chart.html: the browser keeps one zoom
+    // per website, so a window on the site's address zoomed with the app (Nestor: "i want external charts to have their own zoom");
+    // a blob page keeps its own zoom AND the browser's standard layout (a plain blank window lays out in quirks mode - the charts
+    // shook: "now when i open external charts they are shaking"). The page asks for its chart itself (satUrl), as chart.html did.
+    try { w = window.open(satUrl(i), 'stpr-chart-' + i, 'popup,width=' + ww + ',height=' + wh + ',left=' + x + ',top=' + y); } catch (e) {}
     if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return null; }
-    POP[i] = { w: w, ready: false }; popWatch(); satOpen(w, i); return w; }
-  // the blank window gets the page chart.html used to give it - its base look, its title, and a watch that closes it when this
-  // window closes or reloads (the chart lives here) - then its chart (satReady)
-  function satOpen(w, i){ var d; try { d = w.document; } catch (e) { return false; }
-    if (!d.getElementById('stpr-satbase')) { var st = d.createElement('style'); st.id = 'stpr-satbase'; st.textContent = 'html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; }'; d.head.appendChild(st);
-      var gd = d.createElement('script'); gd.textContent = '(function(){ var o = window.opener, P = null; try { P = o && o.__stPractice; } catch (e) {} setInterval(function(){ var s = false; try { s = !!o && !o.closed && o.__stPractice === P; } catch (e) {} if (!s) window.close(); }, 2000); })();'; d.head.appendChild(gd); }
-    try { d.title = T('Chart', 'Gráfico') + ' \u00b7 Session Terminal'; } catch (e) {}
-    return satReady(w, i); }
-  // the chart's window, open: the app's look goes in, then the chart library, then the chart
+    POP[i] = { w: w, ready: false }; popWatch(); return w; }
+  // A chart window's page: it asks the app window for its chart when it loads (and after its own reload), and when the app window
+  // reloads it finds the app again and asks again - so each chart window carries on by itself (Nestor, 21 Oct 2026: "if i reload an
+  // external chart the other charts go back to 1 window ... i want each extrenal chart window to work individually"). The app it
+  // asks: its opener, or the opener's top window (the Live Charts window: the app in its frame). No app for 20 s: it closes.
+  var SATU = {};
+  function satUrl(i){ if (SATU[i]) return SATU[i];
+    var js = "(function(){ var slot = " + (+i) + ", host = null, P = null, since = Date.now();"
+      + " try { host = window.opener && window.opener.top; } catch (e) {}"
+      + " function app(){ var c = []; try { if (window.opener && !window.opener.closed) c.push(window.opener); } catch (e) {}"
+      + "   try { if (host && !host.closed) { c.push(host); var f = host.document.getElementById('lc-frame'); if (f && f.contentWindow) c.push(f.contentWindow); } } catch (e) {}"
+      + "   for (var k = 0; k < c.length; k++) { try { var p = c[k].__stPractice; if (p && p._satReady) return p; } catch (e) {} } return null; }"
+      + " function tick(){ var alive = false; try { alive = (!!window.opener && !window.opener.closed) || (!!host && !host.closed); } catch (e) {}"
+      + "   if (!alive) { window.close(); return; }"
+      + "   var p = app(); if (!p || p !== P) { if (Date.now() - since > 20000) { window.close(); return; } }"
+      + "   if (!p || p === P) { if (p) since = Date.now(); return; }"
+      + "   if (P) { var u = null; try { u = p._satUrl && p._satUrl(slot); } catch (e) {} if (u) { location.replace(u); return; } }"
+      + "   var r = null; try { r = p._satReady(window, slot); } catch (e) {} if (r === true) { P = p; since = Date.now(); } }"
+      + " if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick); else tick(); setInterval(tick, 1000); })();";
+    var h = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">'
+      + '<title>' + esc(T('Chart', 'Gráfico')) + ' \u00b7 Session Terminal</title><style>html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; }</style></head>'
+      + '<body><script>' + js + '<\/script></body></html>';
+    try { SATU[i] = URL.createObjectURL(new Blob([h], { type: 'text/html' })); } catch (e) { SATU[i] = 'chart.html?slot=' + i; }
+    return SATU[i]; }
+  // the chart's window asks for its chart: the app's look goes in, then the chart library, then the chart. null = not now (this app
+  // window is still starting): it asks again; false = no such chart here any more: it is closed
   function satReady(w, i){
     var o = POP[i];
-    if (!o || !S || !isOpen() || !(i >= 1 && i < CFG.layout)) { try { w.close(); } catch (e) {} return false; }
+    if (!S || !isOpen()) return null;
+    if (!(i >= 1 && i < CFG.layout) || phone()) { try { w.close(); } catch (e) {} return false; }
+    if (!o || o.w !== w) { try { if (o && o.w && o.w !== w && !o.w.closed) o.w.close(); } catch (e) {} o = POP[i] = { w: w, ready: false }; popWatch(); }   // a chart window from before this app window reloaded: that chart goes back in it
+    try { if (String(w.location.href).indexOf('blob:') === 0 && w.location.href !== satUrl(i)) w.history.replaceState(null, '', satUrl(i)); } catch (e) {}   // its address made by this window now, so a reload of it still works
     o.w = w; o.ready = false;
     var d = w.document, de = d.documentElement, md = document.documentElement;
     de.lang = md.lang; de.className = md.className; if (md.hasAttribute('data-theme')) de.setAttribute('data-theme', md.getAttribute('data-theme')); de.style.cssText = md.style.cssText; d.body.className = document.body.className;
@@ -91340,10 +91368,9 @@ window.__stAZ = (function () {
     satBar(); satBarWatch();
     d.addEventListener('visibilitychange', reLive);
     w.addEventListener('pagehide', function(){ satGone(i, w); }); }
-  // its window closed: the chart comes back here; reloaded: it comes back here, then goes back into the (blank again) window
+  // its window closed: the chart comes back here; reloaded: it comes back here until that window's page asks for it again
   function satGone(i, w){ var o = POP[i]; if (!o || o.w !== w || o.shut) return; o.ready = false;
-    setTimeout(function(){ var gone = true; try { gone = w.closed; } catch (e) {} if (gone && POP[i] === o) delete POP[i]; if (S && isOpen()) rebuild();
-      if (!gone) setTimeout(function(){ try { if (POP[i] === o && !w.closed && w.document && !w.document.getElementById('stpr-win')) satOpen(w, i); } catch (e) {} }, 400); }, 60); }
+    setTimeout(function(){ var gone = true; try { gone = w.closed; } catch (e) {} if (gone && POP[i] === o) delete POP[i]; if (S && isOpen()) rebuild(); }, 60); }
   function unpop(i){ if (!POP[i]) return; popShut(i); if (S && isOpen()) rebuild(); try { window.focus(); } catch (e) {} }
   function popShut(i){ var o = POP[i]; if (!o) return; o.shut = true; delete POP[i]; try { o.w.close(); } catch (e) {} }
   function popShutAll(){ Object.keys(POP).forEach(function(k){ popShut(+k); }); }
@@ -92219,23 +92246,18 @@ window.__stAZ = (function () {
   // The window is a blank one with the app (?livecharts=1) filling it in a frame (21 Oct 2026): the browser keeps one zoom per
   // website and a blank window keeps its own, so Live Charts there no longer zooms with the app (Nestor: "when i change the zoom
   // in the app the external charts also change zoom, i dont want that, i want external charts to have their own zoom")
-  function lcFrameIn(w, url){ try { w.__stLcUrl = url; var d = w.document; if (d.getElementById('lc-frame')) return true;
-      var st = d.createElement('style'); st.textContent = 'html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; } #lc-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }'; d.head.appendChild(st);
-      d.title = 'Live Charts \u00b7 Session Terminal';
-      var f = d.createElement('iframe'); f.id = 'lc-frame'; f.src = url; f.setAttribute('allow', 'fullscreen; clipboard-read; clipboard-write; autoplay'); f.setAttribute('allowfullscreen', ''); d.body.appendChild(f);
-      var sc = d.createElement('script');   // the window's title follows the app's
-      sc.textContent = "setInterval(function(){ try { var f = document.getElementById('lc-frame'), t = f && f.contentDocument && f.contentDocument.title; if (t && document.title !== t) document.title = t; } catch (e) {} }, 1000);";
-      d.head.appendChild(sc);
-      setTimeout(function(){ try { f.contentWindow.focus(); } catch (e) {} }, 900);   // the keys go to the charts from the start
-      return true; } catch (e) { return false; } }
+  function lcWrapUrl(url){   // a blob page (its own zoom, the browser's standard layout) with the app filling it; a reload keeps it
+    var h = '<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Live Charts \u00b7 Session Terminal</title>'
+      + '<style>html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; } #lc-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }</style></head>'
+      + '<body><iframe id="lc-frame" src="' + url.replace(/&/g, '&amp;').replace(/"/g, '&quot;') + '" allow="fullscreen; clipboard-read; clipboard-write; autoplay" allowfullscreen></iframe>'
+      + '<script>setInterval(function(){ try { var f = document.getElementById("lc-frame"), t = f && f.contentDocument && f.contentDocument.title; if (t && document.title !== t) document.title = t; } catch (e) {} }, 1000);'   // the title follows the app's
+      + ' setTimeout(function(){ try { document.getElementById("lc-frame").contentWindow.focus(); } catch (e) {} }, 900);<\/script></body></html>';   // the keys go to the charts
+    try { return URL.createObjectURL(new Blob([h], { type: 'text/html' })); } catch (e) { return url; } }
   function lcPopOut(){ var raw = (S && S.sym && S.sym.raw) || CFG.sym || 'EURUSD', w = null, url = location.origin + location.pathname + '?livecharts=1&sym=' + encodeURIComponent(raw);
-    try { w = window.open('', 'stlivecharts-z', 'popup,width=1400,height=920'); } catch (e) {}
+    try { w = window.open(lcWrapUrl(url), 'stlivecharts-z', 'popup,width=1400,height=920'); } catch (e) {}
     if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return; }
-    LV.popW = w; LV.popUrl = url; lcFrameIn(w, url); lcHide(); lcAwayPaint(true); clearInterval(LV.awayT);
-    LV.awayT = setInterval(function(){ if (lcAwayOn()) {   // still open; reloaded (blank again): Live Charts goes back in
-        try { if (LV.popW.document && LV.popW.document.body && !LV.popW.document.getElementById('lc-frame')) lcFrameIn(LV.popW, LV.popUrl); } catch (e) {}
-        return; }
-      clearInterval(LV.awayT); LV.popW = null; lcAwayPaint(false);   // that window was closed: back here
+    LV.popW = w; lcHide(); lcAwayPaint(true); clearInterval(LV.awayT);
+    LV.awayT = setInterval(function(){ if (lcAwayOn()) return; clearInterval(LV.awayT); LV.popW = null; lcAwayPaint(false);   // that window was closed: back here
       var tb = document.querySelector('.tab[data-page="livecharts"]'); if (tb && tb.classList.contains('active')) lcShow(); }, 1500); }
   // the window of its own: Live Charts alone, filling it, from the first paint
   function lcSolo(raw){ var win = $('stpr-win'), bg = $('stpr-bg'); if (!win || !bg) return; LV.solo = true; LV.host = $('lc-host');
@@ -92251,7 +92273,7 @@ window.__stAZ = (function () {
       else close(); }
     var win = $('stpr-win'), bg = $('stpr-bg'); win.classList.remove('lc', 'lcp'); lcTbOut(); if (win.parentNode !== bg) bg.appendChild(win); LV.inl = false;
     try { if (window.__stLiveLine && window.__stLiveLine.tickle) window.__stLiveLine.tickle(); } catch (e) {} }
-  window.__stLC = { emsg: lvEmsg, _eaMsg: function(){ return EM; }, _frameIn: lcFrameIn,
+  window.__stLC = { emsg: lvEmsg, _eaMsg: function(){ return EM; }, _wrapUrl: lcWrapUrl,
     tab: function(page){ if (page === 'livecharts') lcShow(); else lcHide(); },
     // from a Session Live card: that trade's symbol, its timeframe on the first chart
     open: function(o){ o = o || {}; if (window.__stLcAllowed && !window.__stLcAllowed()) return; try { if (o.sym) { var k = canon(o.sym), sy = (SYMS || []).filter(function(x){ return x.key === k; })[0]; LV.want = sy ? sy.raw : o.sym; }
@@ -92279,7 +92301,7 @@ window.__stAZ = (function () {
   function wire(){
     wired = true;
     $('stpr-close').addEventListener('click', close);
-    window.addEventListener('pagehide', function(){ lcViewFlush(); if (isOpen()) resumeSave(); popShutAll(); });   // a tab or window closed with it open (its chart windows go too)
+    window.addEventListener('pagehide', function(){ lcViewFlush(); if (isOpen()) resumeSave(); });   // a tab or window closed or reloaded with it open; its chart windows close themselves if it closed, and take their charts back if it reloaded (21 Oct 2026)
     document.addEventListener('visibilitychange', reLive); document.addEventListener('visibilitychange', function(){ if (document.visibilityState === 'hidden') lcViewFlush(); });
     document.addEventListener('pointerdown', function(){ UI.w = window; }, true); document.addEventListener('keydown', function(){ UI.w = window; }, true);
     $('stpr-max').addEventListener('click', function(){ if (LV.inl || LV.max) { inlineMax(!LV.max); return; } if (phone() || landPhone()) { chartMax(!$('stpr-bg').classList.contains('chartmax')); return; } CFG.max = !$('stpr-bg').classList.contains('max'); save(); setMax(CFG.max); });
@@ -92492,7 +92514,7 @@ window.__stAZ = (function () {
       setTimeout(go1, 300);
     }
   } catch (e) {}
-  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady,
+  window.__stPractice = { open: open, close: close, _lv: function(){ return LV; }, _goLive: goLive, _lvClock: function(ms){ LV.toff = ms || 0; }, _liveDay: liveDay, stats: stats, log: logAll, pull: pull, _satReady: satReady, _satUrl: satUrl,
     _pop: popChart, _unpop: unpop, _lcPop: lcPopOut, _lcSolo: lcSolo, _zoom: function(i, r){ var p = panes[i]; if (!p) return; p.handAt = Date.now(); setRange(p, r); }, _axl: function(i, k){ var p = panes[i]; return p && p.series && p.series.__stAx ? p.series.__stAx.get(k || 'cd') : null; }, _lvv: function(){ return panes.map(function(p){ try { return p.series.options().lastValueVisible; } catch (e) { return null; } }); }, _pops: function(){ return POP; }, _liveWin: liveWin, _reLive: reLive,
     _setPaneSym: setPaneSym, _ps: PS, _feeds: feeds, _loadSyms: function(){ return loadSymbols(); }, _today: goToday, _dwListOf: dwListOf, _dwRaw: function(){ return DW.raw; },
     _alertsMenu: alertsMenu, _logSync: logSync, _treeMenu: treeMenu, _lockSel: lockSel, _emojis: EMOJIS, _satBar: satBar, _mEl: mEl, _eaNewest: eaNewest, _vpCalc: vpCalc, _vol: function(){ return VOL; }, _volNoHist: volNoHist, _static: function(){ return staticCache; }, _volMerge: volMerge,
