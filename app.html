@@ -292,10 +292,31 @@ document.addEventListener('load', function(e){
    .png (the /x/ page cannot be zoomed) and shows it in the app's own viewer, which
    has click-to-zoom and grab-to-drag. Falls back to a new tab if the viewer is not
    available. Every chart in the app routes through here. */
+/* Session Terminal's own short snapshot links (Nestor, 21 Oct 2026: "why are these links so long? cant they be like the tradingview
+   ones?"): a chart snapshot is stored as chart-shots/x/<code>.png and its link is https://x.sessionterminal.com/<code>. Outside the
+   app that address is answered by a tiny app on Deno Deploy (st-links, in the same organisation as the calendar worker), which
+   sends it on to the picture; inside the app every place that reads a chart link turns it straight into the picture's address
+   (stShortImg), as it does a TradingView /x/ link. */
+window.stShortImg = function(url){
+  var m = String(url || '').match(/(?:^|\/\/)x\.sessionterminal\.com\/(?:x\/)?([A-Za-z0-9]{6,16})\/?(?:[?#]|$)/i);
+  return m ? 'https://figozyxoyobixadhqewr.supabase.co/storage/v1/object/public/chart-shots/x/' + m[1] + '.png' : null;
+};
+// uploads a snapshot under a fresh short code; resolves to its short link, or null
+window.stShotUpload = async function(sb, blob){
+  var AB = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  for (var k = 0; k < 3; k++){
+    var code = '', rnd = new Uint8Array(8);
+    try { crypto.getRandomValues(rnd); } catch (e) { for (var j = 0; j < 8; j++) rnd[j] = Math.floor(Math.random() * 256); }
+    for (var i = 0; i < 8; i++) code += AB.charAt(rnd[i] % 62);
+    try { var r = await sb.storage.from('chart-shots').upload('x/' + code + '.png', blob, { contentType: 'image/png', upsert: false });
+      if (r && !r.error) return 'https://x.sessionterminal.com/' + code; } catch (e) {}
+  }
+  return null;
+};
 window.stOpenChart = function(url){
   try{
     var m = (url || '').match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i);
-    var direct = m ? ('https://s3.tradingview.com/snapshots/' + m[1].charAt(0).toLowerCase() + '/' + m[1] + '.png') : url;
+    var direct = m ? ('https://s3.tradingview.com/snapshots/' + m[1].charAt(0).toLowerCase() + '/' + m[1] + '.png') : (window.stShortImg(url) || url);
     if(!direct) return false;
     var C = window.STCommunity;
     if(C && C.build && C.openImg){
@@ -21188,6 +21209,7 @@ try {
       const id = m[1];
       return `https://s3.tradingview.com/snapshots/${id.charAt(0).toLowerCase()}/${id}.png`;
     }
+    const sx = window.stShortImg && window.stShortImg(url); if (sx) return sx;   // our own short snapshot link
     // Any other direct http(s) URL (e.g. an uploaded chart in Supabase Storage) is used
     // as-is so it previews in-app and embeds in Discord just like a TradingView link.
     if (/^https?:\/\//i.test(url)) return url;
@@ -23582,6 +23604,7 @@ try {
     url = String(url || '').trim();
     const m = url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i);
     if (m) return 'https://s3.tradingview.com/snapshots/' + m[1].charAt(0).toLowerCase() + '/' + m[1] + '.png';
+    const sx = window.stShortImg && window.stShortImg(url); if (sx) return sx;
     return /^https?:\/\//i.test(url) ? url : '';
   }
   function _pbTradesOf(name) {
@@ -34170,6 +34193,7 @@ try {
       url = String(url || '').trim();
       var m = url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i);
       if(m) return 'https://s3.tradingview.com/snapshots/' + m[1].charAt(0).toLowerCase() + '/' + m[1] + '.png';
+      var sx = window.stShortImg && window.stShortImg(url); if(sx) return sx;
       return /^https?:\/\//i.test(url) ? url : '';
     }
     function dayLabel(x){
@@ -50833,6 +50857,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       if (!text) return null;
       var m = text.match(/tradingview\.com\/x\/([A-Za-z0-9_-]+)/i);
       if (m && m[1]) return 'https://s3.tradingview.com/snapshots/' + m[1].charAt(0).toLowerCase() + '/' + m[1] + '.png';
+      var sx = window.stShortImg && window.stShortImg(text); if (sx) return sx;
       var d = text.match(/https?:\/\/[^\s]+\.(?:png|jpe?g|webp|gif)(?:\?[^\s]*)?/i);
       return d ? d[0] : null;
     }
@@ -56555,6 +56580,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
   window.__stDeleteChart = function (url) {
     try {
       if (!url || typeof url !== "string") return Promise.resolve();
+      if (window.stShortImg && window.stShortImg(url)) url = window.stShortImg(url);   // a short snapshot link: its picture
       var marker = "/storage/v1/object/public/chart-shots/";
       var i = url.indexOf(marker);
       if (i === -1) return Promise.resolve();
@@ -58862,7 +58888,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
        .replace(/https?:\/\/[^\s<"]+/g, function(u){ var p=previewImg(u); if(p) out.push({ tok:u, pic:p }); return u; });
       return out; }
     function dropPicLinks(ex, pl){ ex=String(ex||''); pl.forEach(function(l){ ex=ex.split(l.tok).join(' '); }); return ex.replace(/\s+/g,' ').trim(); }
-    function previewImg(url){ try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(url)) return url; var yt=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/i); if(yt) return 'https://img.youtube.com/vi/'+yt[1]+'/hqdefault.jpg'; var tv=url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i); if(tv){ var id=tv[1]; return 'https://s3.tradingview.com/snapshots/'+id.charAt(0).toLowerCase()+'/'+id+'.png'; } }catch(e){} return null; }
+    function previewImg(url){ try{ if(/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(url)) return url; var sx=window.stShortImg&&window.stShortImg(url); if(sx) return sx; var yt=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/i); if(yt) return 'https://img.youtube.com/vi/'+yt[1]+'/hqdefault.jpg'; var tv=url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i); if(tv){ var id=tv[1]; return 'https://s3.tradingview.com/snapshots/'+id.charAt(0).toLowerCase()+'/'+id+'.png'; } }catch(e){} return null; }
     /* Reusable #channel / @member autocomplete for ANY composer textarea (channels + DMs).
        Pass the textarea and an empty .dcx-mention popup that lives inside a position:relative
        composer. Uses the same channel/roster lists linkify() paints from, so a tag you pick
@@ -60390,6 +60416,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     function toggleImgZoom(){ var o=G('dcx-img'); if(o) o.classList.toggle('zoomed'); }
     function openInApp(url){ if(!url) return; try{
       if(/\.(png|jpe?g|gif|webp|bmp|svg)(\?|$)/i.test(url)){ openImg(url, ''); return; }
+      var sx=window.stShortImg&&window.stShortImg(url); if(sx){ openImg(sx, url); return; }
       var tv=url.match(/tradingview\.com\/x\/([A-Za-z0-9]+)/i); if(tv){ var id=tv[1]; openImg('https://s3.tradingview.com/snapshots/'+id.charAt(0).toLowerCase()+'/'+id+'.png', url); return; }
       var yt=url.match(/(?:youtu\.be\/|youtube\.com\/(?:watch\?v=|embed\/|shorts\/))([\w-]{6,})/i); if(yt){ openView('https://www.youtube.com/embed/'+yt[1]+'?autoplay=1', url); return; }
       try{ var _a=document.createElement('a'); _a.href=url; _a.target='_blank'; _a.rel='noopener noreferrer'; document.body.appendChild(_a); _a.click(); _a.remove(); }catch(_e){ window.open(url,'_blank','noopener,noreferrer'); }
@@ -86292,9 +86319,7 @@ window.__stAZ = (function () {
     if(!u||!sb){ flash(L('Sign in to copy a link.','Inicia sesión para copiar un enlace.')); return null; }
     var cv=snapShot(); flash(L('Making the link…','Creando el enlace…'));
     var blob=await new Promise(function(res){ cv.toBlob(res,'image/png'); }); if(!blob){ flash(L('The picture could not be made.','No se pudo hacer la imagen.')); return null; }
-    var path=u+'/snap/'+Date.now()+'-'+Math.random().toString(36).slice(2,8)+'.png', url=null;
-    try{ var r=await sb.storage.from('chart-shots').upload(path,blob,{contentType:'image/png',upsert:false}); if(r&&r.error) throw r.error;
-      var pub=sb.storage.from('chart-shots').getPublicUrl(path); url=pub&&pub.data&&pub.data.publicUrl; }catch(e){ url=null; }
+    var url=null; try{ url=await window.stShotUpload(sb,blob); }catch(e){ url=null; }   // a short link, x.sessionterminal.com/<code> (21 Oct 2026)
     if(!url){ flash(L('The snapshot could not be uploaded. Try again.','No se pudo subir la captura. Inténtalo de nuevo.')); return null; }
     try{ await window.navigator.clipboard.writeText(url); flash(L('Link copied. Paste it into a bias chart, a review or a message.','Enlace copiado. Pégalo en un gráfico del sesgo, una revisión o un mensaje.')); }
     catch(e){ try{ window.prompt(L('Copy this link:','Copia este enlace:'),url); }catch(x){} }
@@ -89744,9 +89769,7 @@ window.__stAZ = (function () {
     if (!u || !sb) { flash(T('Sign in to copy a link.', 'Inicia sesión para copiar un enlace.')); return null; }
     var cv = snapShot(); flash(T('Making the link…', 'Creando el enlace…'));
     var blob = await new Promise(function(res){ cv.toBlob(res, 'image/png'); }); if (!blob) { flash(T('The picture could not be made.', 'No se pudo hacer la imagen.')); return null; }
-    var path = u + '/snap/' + Date.now() + '-' + Math.random().toString(36).slice(2, 8) + '.png', url = null;
-    try { var r = await sb.storage.from('chart-shots').upload(path, blob, { contentType: 'image/png', upsert: false }); if (r && r.error) throw r.error;
-      var pub = sb.storage.from('chart-shots').getPublicUrl(path); url = pub && pub.data && pub.data.publicUrl; } catch (e) { url = null; }
+    var url = null; try { url = await window.stShotUpload(sb, blob); } catch (e) { url = null; }   // a short link, x.sessionterminal.com/<code> (21 Oct 2026)
     if (!url) { flash(T('The snapshot could not be uploaded. Try again.', 'No se pudo subir la captura. Inténtalo de nuevo.')); return null; }
     try { var cw2 = (UI.w && !UI.w.closed) ? UI.w : window; await cw2.navigator.clipboard.writeText(url); flash(T('Link copied. Paste it into a bias chart, a review or a message.', 'Enlace copiado. Pégalo en un gráfico del sesgo, una revisión o un mensaje.')); }
     catch (e) { try { window.prompt(T('Copy this link:', 'Copia este enlace:'), url); } catch (x) {} }
