@@ -144,10 +144,20 @@
     mmBtn('pcadd').click(); await W(30);
     ok('Add P1: a P1 50% line on the open trade', S().pos.pc.length === 1 && S().pos.pc[0].pct === 50 && find('pc0') && mmIn('pc:0').value === '50', S().pos.pc);
     P._setLine('pc0', 1.13027);
+    S().playing = true;   // as if playing: the close must not stop it (21 Oct 2026)
     playOut();
-    var d1 = S().done;
+    var d1 = S().done, stillPlaying = S().playing; S().playing = false;
     ok('break-even at 1R and P1 at 1R, then the target at 09:39: +1.50R in 2 parts, the stop at the entry', d1 && d1.why === 'tp' && near(d1.r, 1.5, 0.001) && d1.parts === 2 && near(d1.sl, 1.13147, 1e-9) && hhmm(d1.exitTs) === '09:39', d1);
     ok('the result card says it', /TARGET HIT IN 2 PARTS/.test(document.getElementById('stpr-tr').textContent) && /\+1\.50R/.test(document.getElementById('stpr-tr').textContent), document.getElementById('stpr-tr').textContent.slice(0, 120));
+    // 21 Oct 2026 (Nestor: "I dont want to have to press those buttons that appear after ive taken a trade"): the replay carries on,
+    // the result is one line with no buttons, Space plays and pauses
+    var res1 = document.querySelector('#stpr-tr .stpr-res');
+    ok('...the close does not stop the replay', stillPlaying === true);
+    ok('...one line with no buttons (Keep playing / Show the rest / Next day are gone), the details on hover', res1 && !document.querySelector('#stpr-tr .stpr-acts') && /in the trade/.test(res1.getAttribute('title') || ''), res1 && res1.getAttribute('title'));
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true })); await W(40);
+    var sp1 = S().playing;
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', code: 'Space', bubbles: true })); await W(40);
+    ok('Space plays the replay and Space again pauses it', sp1 === true && S().playing === false, [sp1, S().playing]);
     // the slim arrows (16 Oct 2026, as on the live chart): the sell's entry arrow is drawn by __stArrows, the exit circle stays a library marker
     var arw = (P._panes()[0] && P._panes()[0].series.__stArw) ? P._panes()[0].series.__stArw.items : [];
     ok('the sell\'s entry is a slim pink down-arrow over its candle', arw.some(function (m) { return m.shape === 'arrowDown' && m.position === 'aboveBar' && m.color === '#f472b6'; }), arw);
