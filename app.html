@@ -91428,8 +91428,9 @@ window.__stAZ = (function () {
   //      own switch - chrome://apps > right-click > Start app when you sign in; Edge: Auto-start on device login - which only the
   //      member can turn on, so: Copy, paste, one click, and a "Done" tick); pop-ups allowed (a Copy of this site's own settings
   //      page, one dropdown, then Check: a tiny window opened with no click behind it); other screens (one Allow). ----
-  function wsrBrowser(){ var ua = navigator.userAgent || '', ed = /Edg\//.test(ua), mac = /Mac/i.test(navigator.platform || '') || /Mac OS X/.test(ua), cr = /Chrome\//.test(ua);
-    return { edge: ed, chrome: cr && !ed, mac: mac, ok: cr, apps: ed ? 'edge://apps' : 'chrome://apps', site: (ed ? 'edge' : 'chrome') + '://settings/content/siteDetails?site=https%3A%2F%2Fsessionterminal.com' }; }
+  function wsrBrowser(){ var ua = navigator.userAgent || '', ed = /Edg\//.test(ua), mac = /Mac/i.test(navigator.platform || '') || /Mac OS X/.test(ua), cr = /Chrome\/|Chromium\//.test(ua);
+    var sf = mac && !cr && /Safari\//.test(ua) && /Version\//.test(ua);   // Safari on a Mac (21 Oct 2026: "add safari steps too")
+    return { edge: ed, chrome: cr && !ed, mac: mac, safari: sf, ok: cr || sf, apps: ed ? 'edge://apps' : 'chrome://apps', site: (ed ? 'edge' : 'chrome') + '://settings/content/siteDetails?site=https%3A%2F%2Fsessionterminal.com' }; }
   function wsrInstalled(){ try { return !!window.__stInstalled || window.matchMedia('(display-mode: standalone)').matches || window.matchMedia('(display-mode: window-controls-overlay)').matches || !!navigator.standalone; } catch (e) { return false; } }
   function wsrMulti(){ try { return !!window.screen.isExtended; } catch (e) { return false; } }
   function wsrSteps(){ var o = wsrGet(), st = [];
@@ -91437,16 +91438,29 @@ window.__stAZ = (function () {
     st.push({ k: 'inst', done: wsrInstalled() });
     st.push({ k: 'boot', done: !!o.boot });
     st.push({ k: 'pop', done: o.pop === true });
-    if (wsrMulti()) st.push({ k: 'scr', done: WSR.scr === 'granted' });
+    if (wsrMulti() && !wsrBrowser().safari) st.push({ k: 'scr', done: WSR.scr === 'granted' });
     return st; }
   function wsrSetupHtml(){ var o = wsrGet(), B = wsrBrowser(), st = wsrSteps(), by = {}; st.forEach(function(x){ by[x.k] = x; });
     var row = function(x, n, title, body){ return '<div class="stpr-wsrs' + (x.done ? ' ok' : '') + '"><span class="stpr-wsrn">' + (x.done ? '\u2713' : n) + '</span><div class="stpr-wsrx"><b>' + esc(title) + '</b>' + (x.done ? '' : body) + '</div></div>'; };
     var p = function(t){ return '<p class="stpr-wsrp">' + t + '</p>'; }, code = function(c, k){ return '<span class="stpr-wsrcl"><code class="stpr-wsrc">' + esc(c) + '</code><button type="button" class="stpr-dlgbt" data-wscopy="' + k + '">' + esc(WSR.copied === k ? T('Copied', 'Copiado') : T('Copy', 'Copiar')) + '</button></span>'; };
     var wl = wsrSlots().map(function(i){ return T('chart ', 'gráfico ') + (i + 1); }), h = [], n = 0;
-    h.push('<p class="stpr-wsrp stpr-wsri">' + esc(T('Do these once on this computer. Each one turns green when it is done.', 'Hazlo una vez en este ordenador. Cada paso se pone verde cuando está hecho.')) + (B.ok ? '' : ' <b>' + esc(T('This needs Chrome or Edge.', 'Esto necesita Chrome o Edge.')) + '</b>') + '</p>');
+    h.push('<p class="stpr-wsrp stpr-wsri">' + esc(T('Do these once on this computer. Each one turns green when it is done.', 'Hazlo una vez en este ordenador. Cada paso se pone verde cuando está hecho.')) + (B.ok ? '' : ' <b>' + esc(T('This needs Chrome, Edge or Safari on a Mac.', 'Esto necesita Chrome, Edge o Safari en un Mac.')) + '</b>') + '</p>');
     h.push(row(by.win, ++n, T('Your chart windows', 'Tus ventanas de gráficos'),
       p(esc(T('Pop out the charts you want with the arrow at each chart\'s top right, and put each window where you want it.', 'Saca los gráficos que quieras con la flecha arriba a la derecha de cada uno y pon cada ventana donde quieras.')) + (wl.length ? ' ' + esc(T('Remembered: ' + wl.join(', ') + '.', 'Recordadas: ' + wl.join(', ') + '.')) : ''))
       + '<label class="stpr-wsr"><input type="checkbox" data-wson' + (o.on ? ' checked' : '') + '><span>' + esc(T('Reopen them where they were when Session Terminal starts', 'Reabrirlas donde estaban al abrir Session Terminal')) + '</span></label>'));
+    if (B.safari) {   // Safari on a Mac: its own menus (no buttons a website may press for these)
+      h.push(row(by.inst, ++n, T('Session Terminal added to your Dock', 'Session Terminal en tu Dock'),
+        p(esc(T('In Safari\'s menu bar: File \u2192 Add to Dock, then Add. Open Session Terminal from the Dock and come back here.', 'En la barra de menús de Safari: Archivo \u2192 Añadir al Dock, y Añadir. Abre Session Terminal desde el Dock y vuelve aquí.')))));
+      h.push(row(by.boot, ++n, T('It starts with your Mac', 'Se abre al encender el Mac'),
+        p(esc(T('Apple menu \u2192 System Settings \u2192 General \u2192 Login Items. Under Open at Login press +, open the Applications folder in your home folder, pick Session Terminal and press Open.', 'Menú Apple \u2192 Ajustes del Sistema \u2192 General \u2192 Ítems de inicio. En Abrir al iniciar sesión pulsa +, abre la carpeta Aplicaciones de tu carpeta de inicio, elige Session Terminal y pulsa Abrir.')))
+        + '<label class="stpr-wsr"><input type="checkbox" data-wsboot' + (o.boot ? ' checked' : '') + '><span>' + esc(T('Done', 'Hecho')) + '</span></label>'));
+      h.push(row(by.pop, ++n, T('Your charts can open by themselves', 'Tus gráficos pueden abrirse solos'),
+        p(esc(T('In Safari: Safari \u2192 Settings \u2192 Websites \u2192 Pop-up Windows, and set sessionterminal.com to Allow. When you come back here it checks by itself.', 'En Safari: Safari \u2192 Ajustes \u2192 Sitios web \u2192 Ventanas emergentes, y pon sessionterminal.com en Permitir. Al volver aquí se comprueba solo.')))
+        + '<span class="stpr-wsrcl"><button type="button" class="stpr-dlgbt ok" data-wspc' + (WSR.checking ? ' disabled' : '') + '>' + esc(WSR.checking ? T('Checking\u2026', 'Comprobando\u2026') : T('Check', 'Comprobar')) + '</button>'
+        + (o.pop === false && !WSR.checking ? '<span class="stpr-wsrbad">' + esc(T('Still blocked.', 'Sigue bloqueado.')) + '</span>' : '') + '</span>'));
+      h.push('<p class="stpr-wsrp">' + esc(T('Safari cannot be told to use your other screens, so the windows may open on your main screen. For charts on several screens, use Chrome on your Mac.', 'Safari no permite usar tus otras pantallas, así que las ventanas pueden abrirse en la pantalla principal. Para gráficos en varias pantallas, usa Chrome en tu Mac.')) + '</p>');
+      if (st.every(function(x){ return x.done; })) h.push('<p class="stpr-wsrp stpr-wsrall">' + esc(T('All set. Next time the Mac starts, Session Terminal opens on Charts with your windows where you left them.', 'Todo listo. La próxima vez que enciendas el Mac, Session Terminal se abrirá en Gráficos con tus ventanas donde las dejaste.')) + '</p>');
+      return h.join(''); }
     h.push(row(by.inst, ++n, T('Session Terminal installed as an app', 'Session Terminal instalado como aplicación'),
       window.__stInstallEvt ? p(esc(T('One click, then Install in the box that opens.', 'Un clic y luego Instalar en el cuadro que se abre.'))) + '<button type="button" class="stpr-dlgbt ok" data-wsinst>' + esc(T('Install', 'Instalar')) + '</button>'
         : p(esc(T('On sessionterminal.com in Chrome or Edge, click the install icon at the right end of the address bar. Then open Session Terminal from its own window and come back here.', 'En sessionterminal.com con Chrome o Edge, pulsa el icono de instalar al final de la barra de direcciones. Luego abre Session Terminal en su propia ventana y vuelve aquí.')))));
