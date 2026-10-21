@@ -91270,7 +91270,7 @@ window.__stAZ = (function () {
   // ---- a chart in a window of its own (Nestor, 17 Oct 2026: "on computer when more that 1 chart is open so if i have 2 3
   //      or 4 open, can these extra charts be individually open in new windows like i am able to do with tradingview? this
   //      way people that use multiple screens dont have to open the 4 charts in one screen"). Charts 2-4 get a button beside
-  //      their timeframe; the chart moves to a window (chart.html) that this one draws into, so it is still one replay with
+  //      their timeframe; the chart moves to a window (blank, since 21 Oct 2026) that this one draws into, so it is still one replay with
   //      one set of drawings, trades and settings - nothing to keep in step. That window's own chart library draws its
   //      candles (its own frames, its own screen's pixels); closing it brings the chart back here. ----
   var POPI = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5h4v4"/><path d="M13.5 2.5L8 8"/><path d="M11.5 9.5v3.2a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8V5.3a.8.8 0 0 1 .8-.8h3.2"/></svg>';
@@ -91297,10 +91297,20 @@ window.__stAZ = (function () {
     var o = POP[i]; try { if (o && o.w && !o.w.closed) { o.w.focus(); return o.w; } } catch (e) {}
     var p = panes[i], r = p ? p.el.getBoundingClientRect() : null, ww = Math.max(920, Math.round(r ? r.width : 900)), wh = Math.max(420, Math.round(r ? r.height : 600) + 48);   // + its toolbar row
     var x = Math.round((window.screenX || 0) + 40 + 28 * i), y = Math.round((window.screenY || 0) + 50 + 28 * i), w = null;
-    try { w = window.open('chart.html?slot=' + i, 'stpr-chart-' + i, 'popup,width=' + ww + ',height=' + wh + ',left=' + x + ',top=' + y); } catch (e) {}
+    // a blank window this one draws into (21 Oct 2026, was chart.html): the browser keeps one zoom per website, so a chart window
+    // on the site's own address zoomed with the app; a blank one keeps its own (Nestor: "when i change the zoom in the app the
+    // external charts also change zoom, i dont want that, i want external charts to have their own zoom")
+    try { w = window.open('', 'stpr-chart-' + i, 'popup,width=' + ww + ',height=' + wh + ',left=' + x + ',top=' + y); } catch (e) {}
     if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return null; }
-    POP[i] = { w: w, ready: false }; popWatch(); return w; }
-  // chart.html, loaded, asks for its chart: the app's look goes in, then the chart library, then the chart
+    POP[i] = { w: w, ready: false }; popWatch(); satOpen(w, i); return w; }
+  // the blank window gets the page chart.html used to give it - its base look, its title, and a watch that closes it when this
+  // window closes or reloads (the chart lives here) - then its chart (satReady)
+  function satOpen(w, i){ var d; try { d = w.document; } catch (e) { return false; }
+    if (!d.getElementById('stpr-satbase')) { var st = d.createElement('style'); st.id = 'stpr-satbase'; st.textContent = 'html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; }'; d.head.appendChild(st);
+      var gd = d.createElement('script'); gd.textContent = '(function(){ var o = window.opener, P = null; try { P = o && o.__stPractice; } catch (e) {} setInterval(function(){ var s = false; try { s = !!o && !o.closed && o.__stPractice === P; } catch (e) {} if (!s) window.close(); }, 2000); })();'; d.head.appendChild(gd); }
+    try { d.title = T('Chart', 'Gráfico') + ' \u00b7 Session Terminal'; } catch (e) {}
+    return satReady(w, i); }
+  // the chart's window, open: the app's look goes in, then the chart library, then the chart
   function satReady(w, i){
     var o = POP[i];
     if (!o || !S || !isOpen() || !(i >= 1 && i < CFG.layout)) { try { w.close(); } catch (e) {} return false; }
@@ -91330,9 +91340,10 @@ window.__stAZ = (function () {
     satBar(); satBarWatch();
     d.addEventListener('visibilitychange', reLive);
     w.addEventListener('pagehide', function(){ satGone(i, w); }); }
-  // its window closed (or reloaded - chart.html then asks again): the chart comes back here
+  // its window closed: the chart comes back here; reloaded: it comes back here, then goes back into the (blank again) window
   function satGone(i, w){ var o = POP[i]; if (!o || o.w !== w || o.shut) return; o.ready = false;
-    setTimeout(function(){ var gone = true; try { gone = w.closed; } catch (e) {} if (gone && POP[i] === o) delete POP[i]; if (S && isOpen()) rebuild(); }, 60); }
+    setTimeout(function(){ var gone = true; try { gone = w.closed; } catch (e) {} if (gone && POP[i] === o) delete POP[i]; if (S && isOpen()) rebuild();
+      if (!gone) setTimeout(function(){ try { if (POP[i] === o && !w.closed && w.document && !w.document.getElementById('stpr-win')) satOpen(w, i); } catch (e) {} }, 400); }, 60); }
   function unpop(i){ if (!POP[i]) return; popShut(i); if (S && isOpen()) rebuild(); try { window.focus(); } catch (e) {} }
   function popShut(i){ var o = POP[i]; if (!o) return; o.shut = true; delete POP[i]; try { o.w.close(); } catch (e) {} }
   function popShutAll(){ Object.keys(POP).forEach(function(k){ popShut(+k); }); }
@@ -92205,11 +92216,26 @@ window.__stAZ = (function () {
       el.addEventListener('click', function(e){ if (!(e.target.closest && e.target.closest('[data-lcback]'))) return; try { LV.popW.close(); } catch (er) {} LV.popW = null; lcAwayPaint(false); lcShow(); }); }
     var h = '<p>' + esc(T('Live Charts is open in its own window.', 'Live Charts está abierto en su propia ventana.')) + '</p><button type="button" data-lcback>' + esc(T('Show it here instead', 'Mostrarlo aquí')) + '</button>';
     if (el.innerHTML !== h) el.innerHTML = h; }
-  function lcPopOut(){ var raw = (S && S.sym && S.sym.raw) || CFG.sym || 'EURUSD', w = null;
-    try { w = window.open(location.pathname + '?livecharts=1&sym=' + encodeURIComponent(raw), 'stlivecharts', 'popup,width=1400,height=920'); } catch (e) {}
+  // The window is a blank one with the app (?livecharts=1) filling it in a frame (21 Oct 2026): the browser keeps one zoom per
+  // website and a blank window keeps its own, so Live Charts there no longer zooms with the app (Nestor: "when i change the zoom
+  // in the app the external charts also change zoom, i dont want that, i want external charts to have their own zoom")
+  function lcFrameIn(w, url){ try { w.__stLcUrl = url; var d = w.document; if (d.getElementById('lc-frame')) return true;
+      var st = d.createElement('style'); st.textContent = 'html, body { margin: 0; height: 100%; overflow: hidden; background: #121116; } #lc-frame { position: fixed; inset: 0; width: 100%; height: 100%; border: 0; display: block; }'; d.head.appendChild(st);
+      d.title = 'Live Charts \u00b7 Session Terminal';
+      var f = d.createElement('iframe'); f.id = 'lc-frame'; f.src = url; f.setAttribute('allow', 'fullscreen; clipboard-read; clipboard-write; autoplay'); f.setAttribute('allowfullscreen', ''); d.body.appendChild(f);
+      var sc = d.createElement('script');   // the window's title follows the app's
+      sc.textContent = "setInterval(function(){ try { var f = document.getElementById('lc-frame'), t = f && f.contentDocument && f.contentDocument.title; if (t && document.title !== t) document.title = t; } catch (e) {} }, 1000);";
+      d.head.appendChild(sc);
+      setTimeout(function(){ try { f.contentWindow.focus(); } catch (e) {} }, 900);   // the keys go to the charts from the start
+      return true; } catch (e) { return false; } }
+  function lcPopOut(){ var raw = (S && S.sym && S.sym.raw) || CFG.sym || 'EURUSD', w = null, url = location.origin + location.pathname + '?livecharts=1&sym=' + encodeURIComponent(raw);
+    try { w = window.open('', 'stlivecharts-z', 'popup,width=1400,height=920'); } catch (e) {}
     if (!w) { flash(T('Your browser blocked the new window. Allow pop-ups for this site and try again.', 'Tu navegador bloqueó la ventana nueva. Permite ventanas emergentes en este sitio y vuelve a intentarlo.')); return; }
-    LV.popW = w; lcHide(); lcAwayPaint(true); clearInterval(LV.awayT);
-    LV.awayT = setInterval(function(){ if (lcAwayOn()) return; clearInterval(LV.awayT); LV.popW = null; lcAwayPaint(false);   // that window was closed: back here
+    LV.popW = w; LV.popUrl = url; lcFrameIn(w, url); lcHide(); lcAwayPaint(true); clearInterval(LV.awayT);
+    LV.awayT = setInterval(function(){ if (lcAwayOn()) {   // still open; reloaded (blank again): Live Charts goes back in
+        try { if (LV.popW.document && LV.popW.document.body && !LV.popW.document.getElementById('lc-frame')) lcFrameIn(LV.popW, LV.popUrl); } catch (e) {}
+        return; }
+      clearInterval(LV.awayT); LV.popW = null; lcAwayPaint(false);   // that window was closed: back here
       var tb = document.querySelector('.tab[data-page="livecharts"]'); if (tb && tb.classList.contains('active')) lcShow(); }, 1500); }
   // the window of its own: Live Charts alone, filling it, from the first paint
   function lcSolo(raw){ var win = $('stpr-win'), bg = $('stpr-bg'); if (!win || !bg) return; LV.solo = true; LV.host = $('lc-host');
@@ -92225,7 +92251,7 @@ window.__stAZ = (function () {
       else close(); }
     var win = $('stpr-win'), bg = $('stpr-bg'); win.classList.remove('lc', 'lcp'); lcTbOut(); if (win.parentNode !== bg) bg.appendChild(win); LV.inl = false;
     try { if (window.__stLiveLine && window.__stLiveLine.tickle) window.__stLiveLine.tickle(); } catch (e) {} }
-  window.__stLC = { emsg: lvEmsg, _eaMsg: function(){ return EM; },
+  window.__stLC = { emsg: lvEmsg, _eaMsg: function(){ return EM; }, _frameIn: lcFrameIn,
     tab: function(page){ if (page === 'livecharts') lcShow(); else lcHide(); },
     // from a Session Live card: that trade's symbol, its timeframe on the first chart
     open: function(o){ o = o || {}; if (window.__stLcAllowed && !window.__stLcAllowed()) return; try { if (o.sym) { var k = canon(o.sym), sy = (SYMS || []).filter(function(x){ return x.key === k; })[0]; LV.want = sy ? sy.raw : o.sym; }

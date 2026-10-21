@@ -23,7 +23,7 @@
     for (k = 0; k < 120 && !(P._pops()[2] && P._pops()[2].ready && P._panes()[2] && P._panes()[2].el.ownerDocument !== document && P._panes()[2].n); k++) await W(100);
     var o = P._pops()[2]; win = o && o.w;
     var p2 = P._panes()[2];
-    ok('pressed: chart 3 opens in a new window (chart.html) and moves there', win && /chart\.html\?slot=2$/.test(win.location.href) && p2.el.ownerDocument === win.document && win.document.getElementById('stpr-grid').contains(p2.el), win && win.location.href);
+    ok('pressed: chart 3 opens in a new window (a blank one since 21 Oct 2026, so it keeps its own zoom) and moves there', win && win.location.href === 'about:blank' && p2.el.ownerDocument === win.document && win.document.getElementById('stpr-grid').contains(p2.el), win && win.location.href);
     var g = document.getElementById('stpr-grid');
     ok('this window lays out the two it still has, side by side, bigger', g.className.indexOf('l2') >= 0 && g.querySelectorAll('.stpr-pane').length === 2 && P._panes().length === 3, g.className);
     await W(300);
