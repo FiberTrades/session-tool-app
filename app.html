@@ -25630,14 +25630,26 @@ try {
     if (typeof bumpGreetingNonce === 'function') bumpGreetingNonce();
   });
 
+  /* The same review or trade in a fresh copy of the journal. A save from another window of the app (Live Charts' own window saves
+     every few seconds) is taken in by putting a merged copy of the journal in place, so the object the chart cards were drawn for
+     is no longer the journal's: a link pasted into a card went into that old copy - on screen, never saved, never posted (Nestor,
+     23 Oct 2026: "when i paste a chart link in review, and i post to to community this chart doesnt show up"). */
+  function _tvSameItem(a, b) { if (!a || !b) return false; if (a === b) return true; if (a.id || b.id) return !!a.id && a.id === b.id;
+    return Array.isArray(a.trades) && Array.isArray(b.trades) && (a.sessionDate || '') === (b.sessionDate || '') && (a.slotSymbol || '') === (b.slotSymbol || '') && (a.slotSession || '') === (b.slotSession || ''); }
+  // the cards on screen into the copy now in the journal, keeping the links it has that the screen does not show (another device's)
+  function _tvTakeCards(wrap, a) { var shown = Array.prototype.map.call(wrap.querySelectorAll('.tv-link-card'), function (c) { var u = c.querySelector('.tv-link-url'), n = c.querySelector('.tv-link-notes'); return { url: u ? u.value.trim() : '', notes: n ? n.value : '' }; });
+    var extra = (Array.isArray(a.tvLinks) ? a.tvLinks : []).filter(function (l) { return l && l.url && !shown.some(function (x) { return x.url === l.url; }); });
+    a.tvLinks = shown.concat(extra); }
   // Render the dynamic list of TV links for Review (per-trade — bound to active trade).
   function renderReviewTvLinks() {
     const wrap = document.getElementById('review-tv-list');
     if (!wrap) return;
     wrap.innerHTML = '';
-    const tr = getActiveReviewTrade();
+    let tr = getActiveReviewTrade();
     wrap.__tvFor = tr || null;   // which object these cards belong to - the flush checks it
     if (!tr) { return; }
+    // looked up again at every edit: the journal's copy of this trade now (_tvSameItem)
+    const live = () => { const a = getActiveReviewTrade(); if (!a || a === tr || !_tvSameItem(a, tr)) return tr; _tvTakeCards(wrap, a); tr = a; wrap.__tvFor = a; return a; };
     if (!Array.isArray(tr.tvLinks)) tr.tvLinks = [];
     const arr = tr.tvLinks.length === 0 ? [{ url: '', notes: '' }] : tr.tvLinks;
     arr.forEach((linkObj, idx) => {
@@ -25668,6 +25680,7 @@ try {
       };
       refreshPreview();
       urlInput.addEventListener('input', e => {
+        live();
         const v = e.target.value.trim();
         if (!tr.tvLinks[idx]) tr.tvLinks[idx] = { url: '', notes: '' };
         tr.tvLinks[idx].url = v;
@@ -25681,6 +25694,7 @@ try {
         saveData();
       });
       notesInput.addEventListener('input', e => {
+        live();
         const v = e.target.value;
         if (!tr.tvLinks[idx]) tr.tvLinks[idx] = { url: '', notes: '' };
         tr.tvLinks[idx].notes = v;
@@ -25688,6 +25702,7 @@ try {
         saveData();
       });
       card.querySelector('.tv-link-remove').addEventListener('click', () => {
+        live();
         if (tr.tvLinks.length > idx) tr.tvLinks.splice(idx, 1);
         saveData();
         renderReviewTvLinks();
@@ -25729,14 +25744,15 @@ try {
       var _tvWrap = document.getElementById('review-tv-list');
       /* Only cards drawn for THIS target. After a delete or a cloud adopt the cards on screen can
          belong to a different (or replaced) object, and flushing them wiped real chart links. */
-      if (_atr && _cards.length && _tvWrap && _tvWrap.__tvFor === _atr) {
+      if (_atr && _cards.length && _tvWrap && (_tvWrap.__tvFor === _atr || _tvSameItem(_tvWrap.__tvFor, _atr))) {   // (the same trade in a fresh copy of the journal too)
         var _arr = [];
         _cards.forEach(function (c) {
           var u = c.querySelector('.tv-link-url'), n = c.querySelector('.tv-link-notes');
           var url = u ? u.value.trim() : '', notes = n ? n.value : '';
           if (url || (notes && notes.trim())) _arr.push({ url: url, notes: notes });
         });
-        _atr.tvLinks = _arr;
+        if (_tvWrap.__tvFor !== _atr) (Array.isArray(_atr.tvLinks) ? _atr.tvLinks : []).forEach(function (l) { if (l && l.url && !_arr.some(function (x) { return x.url === l.url; })) _arr.push(l); });   // its links the screen does not show stay
+        _atr.tvLinks = _arr; _tvWrap.__tvFor = _atr;
       }
     } catch (e) {}
     // Trade copier: a trade copied to your other accounts is ONE trade in the post, its review written once
