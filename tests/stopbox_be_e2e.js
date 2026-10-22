@@ -35,13 +35,15 @@
     for (k = 0; k < 250 && !(P._s() && P._s().live && P._panes().length && P._panes()[0].n); k++) await W(100);
     await W(500); S = P._s(); p = P._panes()[0];
     var bar = p.bars[p.bars.length - 12], op = bar.close, rp = 0.0004;
-    var idea = { main: { symbol: S.sym.raw, direction: 'long', openedAt: bar.time * 1000, tick: { op: op, rpx: rp, sl: 0, tp: 2 } } };
+    var idea = { main: { ticket: 7001, symbol: S.sym.raw, direction: 'long', openedAt: bar.time * 1000, tick: { op: op, rpx: rp, sl: 0, tp: 2 } } };
     var L0 = window.__stLive, real = L0 && L0.openIdeas;
     if (L0) L0.openIdeas = function () { return [idea]; }; else window.__stLive = { openIdeas: function () { return [idea]; } };
     P._render(); await W(400);
     var lv = P._lines(0).map(function (l) { return l.title; }).join(',');
+    // since 22 Oct 2026 the box of a live trade is a Long / Short drawing (tradebox_e2e): its stop the original one
+    var tb = P._dr().list.filter(function (d) { return d && d.trade === 'tb:7001'; })[0];
     var xm = p.chart.timeScale().timeToCoordinate(p.bars[p.bars.length - 5].time) || 300, live = redRows(p, xm, op, op - rp);
-    ok('Live Charts: an open buy at break-even ("SL · BE" on the entry): its stop box still shows the original 1R stop, no thick line along its top', /SL · BE/.test(lv) && p._zones > 0 && live[0] > live[1] * 0.6 && edgeA(p, xm, op - rp) > 0 && edgeA(p, xm, op - rp) < 200, [lv, p._zones, live, edgeA(p, xm, op - rp)]);
+    ok('Live Charts: an open buy at break-even ("SL · BE" on the entry): its box (a position drawing) still shows the original 1R stop', /SL · BE/.test(lv) && tb && Math.abs(tb.sl - (op - rp)) < 1e-9 && live[0] > live[1] * 0.6, [lv, tb, live]);
     if (L0) L0.openIdeas = real; else delete window.__stLive;
     window.__stLcForce = false;
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }

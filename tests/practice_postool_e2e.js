@@ -69,7 +69,7 @@
     var box2 = document.querySelector('.stdb-bar');
     ok('clicked: selected, its tags and its options box show', DW.sel === 0 && isTag(tagPx(e1)) && box2 && box2.style.display !== 'none', [DW.sel, box2 && box2.style.display]);
     mev('mousedown', hx, hy); mev('mousemove', hx + 25, hy + 20, { held: true }); await W(120);
-    ok('dragged: no tags and no options box while it moves', !!DW.drag && !isTag(tagPx(e1)) && box2.style.display === 'none', [!!DW.drag, box2.style.display]);
+    ok('dragged: its tags (pips, risk / reward) show while it moves (22 Oct 2026: "i need to see the amount of pips and risk reward"), no options box', !!DW.drag && isTag(tagPx(e1)) && box2.style.display === 'none', [!!DW.drag, box2.style.display]);
     mev('mouseup', hx + 25, hy + 20); await W(120);
     ok('let go after a drag: the box stays closed (a click opens it)', !DW.drag && box2.style.display === 'none' && DW.sel === 0);
     hx = (P._xOfT(0, e1.a.t) + P._xOfT(0, e1.b.t)) / 2; hy = (P._yOf(0, e1.a.price) + P._yOf(0, e1.tp)) / 2;

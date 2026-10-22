@@ -13,9 +13,9 @@
 // draws the chart in here. Opened any other way, it goes to the app.
 // It carries on by itself (Nestor, 21 Oct 2026: "i want each extrenal chart window to work individually"): it asks for its chart
 // when it loads and after its own reload; when the app window reloads it reloads too and asks the new one; when the app window
-// closes, or no app answers for 20 s, it closes.
+// closes, or no app answers for a minute, it closes.
 (function () {
-  var m = /[?&]slot=(\d)/.exec(location.search), slot = m ? +m[1] : -1, host = null, P = null, since = Date.now();
+  var m = /[?&]slot=(\d)/.exec(location.search), slot = m ? +m[1] : -1, host = null, P = null;
   try { host = window.opener && window.opener.top; } catch (e) {}
   if (!window.opener || slot < 0) { location.replace('app.html'); return; }
   function app() { var c = [];
@@ -23,13 +23,22 @@
     try { if (host && !host.closed) c.push(host); } catch (e) {}
     for (var k = 0; k < c.length; k++) { try { var p = c[k].__stPractice; if (p && p._satReady) return p; } catch (e) {} }
     return null; }
+  // The waits are measured from when they began, not from the last look: a minimised window looks only now and then (the browser slows
+  // its timers), so after the app window reloaded its first look came long after the last one and it closed itself - its chart went back
+  // into the app window (Nestor, 22 Oct 2026: "if i reload the main one with the EA and one of the other charts is minimized after the
+  // reload it always appears back in the main external chart").
+  var missing = 0, asking = 0;   // since when no app answers here / since when the app has not taken this chart
   function tick() {
     var alive = false; try { alive = (!!window.opener && !window.opener.closed) || (!!host && !host.closed); } catch (e) {}
     if (!alive) { window.close(); return; }
-    var p = app(); if (!p || p !== P) { if (Date.now() - since > 20000) { window.close(); return; } }
-    if (!p || p === P) { if (p) since = Date.now(); return; }
+    var p = app(), now = Date.now();
+    if (!p) { if (!missing) missing = now; else if (now - missing > 60000) window.close(); return; }   // the app window reloading: wait
+    missing = 0;
+    if (p === P) return;
     if (P) { location.reload(); return; }   // the app window reloaded: a fresh page here, which asks the new one
-    var r = null; try { r = p._satReady(window, slot); } catch (e) {} if (r === true) { P = p; since = Date.now(); } }
+    if (!asking) asking = now;
+    var r = null; try { r = p._satReady(window, slot); } catch (e) {} if (r === true) { P = p; asking = 0; return; }
+    if (now - asking > 120000) window.close(); }   // an app that never takes it back (that chart is gone; false closes it at once)
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick); else tick();
   setInterval(tick, 1000);
 })();

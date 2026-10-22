@@ -450,9 +450,9 @@
     var away = [[pr.width * 0.5, pr.height * 0.5], [pr.width * 0.3, pr.height * 0.3], [pr.width * 0.7, pr.height * 0.6]].filter(function (q) { var e0 = document.elementFromPoint(pr.left + q[0], pr.top + q[1]); return e0 && pc.contains(e0) && !P._tmAt(tqi, q[0], q[1]); })[0] || [pr.width * 0.5, pr.height * 0.5];
     mv(away[0], away[1]); await W(300);
     check('...the mouse away: the card goes, and the path', cd.style.display === 'none' && !tq._tmShow, cd.style.display);
-    P._cfg().marks = false; P._render(); await W(300);
-    check('Trade marks off: the arrows are hidden and do not answer the mouse', P._arw(tqi).filter(function (m) { return m.time === kE; }).every(function (m) { return m.color === 'rgba(0,0,0,0)'; }) && !P._tmAt(tqi, xE, (hE.top + hE.bot) / 2));
-    P._cfg().marks = true; P._lvTr([]); P._render(); if (tr0) tq.chart.timeScale().setVisibleLogicalRange(tr0); await W(300);
+    P._cfg().hist = false; P._render(); await W(300);   // the arrows are Trade history since 22 Oct 2026 (Trade lines are the price lines)
+    check('Trade history off: the arrows are hidden and do not answer the mouse', P._arw(tqi).filter(function (m) { return m.time === kE; }).every(function (m) { return m.color === 'rgba(0,0,0,0)'; }) && !P._tmAt(tqi, xE, (hE.top + hE.bot) / 2));
+    P._cfg().hist = true; P._lvTr([]); P._render(); if (tr0) tq.chart.timeScale().setVisibleLogicalRange(tr0); await W(300);
 
     // ---- the bigger view and back ----
     document.getElementById('stpr-max').click(); await W(300);
