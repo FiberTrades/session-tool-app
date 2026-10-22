@@ -17,7 +17,7 @@
     ok('Trade Replay\'s timeframes end with a +', add && add.offsetWidth > 0 && seg.lastElementChild === add, seg.textContent);
     add.click(); await W(150);
     var box = document.getElementById('strp-tfbox');
-    ok('+ opens the box: Custom timeframe, a number, minutes or hours, Add, shared with Back Testing and Live Charts', box && /Custom timeframe/.test(box.textContent) && box.querySelector('#strp-tfn') && box.querySelector('[data-rtfok]') && /Shared with Back Testing/.test(box.textContent), box && box.textContent);
+    ok('+ opens the box: Custom timeframe, a number, minutes or hours, Add, shared with Back Testing and Live Charts', box && /Custom timeframe/.test(box.textContent) && box.querySelector('#strp-tfn') && box.querySelector('[data-rtfok]') && /Shared with the Charts tab/.test(box.textContent), box && box.textContent);
     box.querySelector('#strp-tfn').value = '2'; box.querySelector('[data-rtfok]').click();
     var S; for (k = 0; k < 80; k++) { await W(150); S = R._s(); if (S && S.tf === 2 && S.bars && S.bars.length > 20) break; }
     var gaps = {}; for (k = 1; k < S.bars.length; k++) { var g = S.bars[k].time - S.bars[k - 1].time; gaps[g] = (gaps[g] || 0) + 1; }

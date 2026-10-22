@@ -59,7 +59,8 @@
     mev('mousedown', cx, cy); mev('mousemove', cx + 30, cy, { held: true }); mev('mousemove', cx + 60, cy, { held: true }); tx = await painted();
     var midBox = box(), midTags = tx.some(function (t) { return /^Target: /.test(t); });
     mev('mouseup', cx + 60, cy); await W(40);
-    ok('dragging it: the options box stays shut and the tags hide; it moved by candles, stop and target with it', !midBox && !midTags && L0.a.idx > a0 && Math.abs((L0.a.price - L0.sl) / pip - 15) < 0.01 && !box(), [!!midBox, midTags, a0, L0.a.idx]);
+    // the tags show while dragging since 22 Oct 2026 (Nestor: "when i am dragging the SL or TP boxes i need to see the amount of pips and risk reward")
+    ok('dragging it: the options box stays shut and the tags show; it moved by candles, stop and target with it', !midBox && midTags && L0.a.idx > a0 && Math.abs((L0.a.price - L0.sl) / pip - 15) < 0.01 && !box(), [!!midBox, midTags, a0, L0.a.idx]);
     pz = R._posGeo(L0); click((pz.x0 + pz.x1) / 2, pz.ye - 8); await W(40);
     ok('a click on it (no move): the options box opens', !!box() && S.sel === 0);
     // the target handle

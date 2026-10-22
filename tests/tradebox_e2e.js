@@ -35,7 +35,8 @@
     var geo = P._bbox(0, d1), xNow = p.chart.timeScale().timeToCoordinate(p.bars[p.bars.length - 1].time);
     ok('...its box reaches the latest candle', geo && xNow != null && geo.x1 >= xNow - 2, [geo, xNow]);
     // it is a drawing like any other: a click on it selects it (its toolbar), and it can be moved
-    var bb = P._bbox(0, d0), h = P._hit(0, (bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2);
+    // inside the box where it is on screen: on a quiet day its 20-pip target runs far below the chart
+    var bb = P._bbox(0, d0), h = P._hit(0, (bb.x0 + bb.x1) / 2, Math.min((bb.y0 + bb.y1) / 2, bb.y0 + 12));
     ok('a click on a trade\'s box takes it like any drawing', h && list()[h.i] === d0, h);
     // the open trade closes: its box ends at the close and stays
     var xT = p.bars[p.bars.length - 3].time; idea = null;
@@ -47,7 +48,7 @@
     ok('deleted by hand, it does not come back', !trade('tb:9000') && C.tbMade['tb:9000'] === 1, Object.keys(C.tbMade));
     // Position tool off on this chart: the trade boxes go from it (and cannot be clicked there)
     C.showPer = { 0: { pos: false } }; P._render(); await W(300); bb = P._bbox(0, d1);
-    var h2 = bb ? P._hit(0, (bb.x0 + bb.x1) / 2, (bb.y0 + bb.y1) / 2) : null;
+    var h2 = bb ? P._hit(0, (bb.x0 + bb.x1) / 2, Math.min((bb.y0 + bb.y1) / 2, bb.y0 + 12)) : null;
     ok('Position tool off on the chart: its trade boxes are not on it, nor clickable', !h2 || list()[h2.i] !== d1, h2);
     C.showPer = {};
     // a box of its own colours, from its toolbar

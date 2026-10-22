@@ -67,7 +67,7 @@
     try { window.__stLiveBox.render(); } catch (e) {}
     await W(300);
     var rb = document.querySelector('.slx-rb'), rbT = rb ? rb.innerText.replace(/\s+/g, ' ') : '';
-    ok('Session Live: the Trades meter is the day\'s total, "2 of 1 today"', !rb || (/TRADES 2\s*of 1 today/i.test(rbT) && !/each/i.test(rbT) && !/EUR\/USD \d/.test(rbT)), rbT || 'board not on screen');
+    ok('Session Live: the Trades meter is the day\'s total, "2 of 1 today"', !rb || (/TRADES\s*2\s*of 1 today/i.test(rbT) && !/each/i.test(rbT) && !/EUR\/USD \d/.test(rbT)), rbT || 'board not on screen');
   } catch (e) { ok('live nudges per day', false, String(e && e.stack || e).slice(0, 300)); }
 
   // D) the challenge review: "beyond the max" is every trade after the first N of a day, whatever the symbol

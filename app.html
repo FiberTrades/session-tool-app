@@ -18216,6 +18216,32 @@ try {
   function getAllLifetimeTrades() {
     return [...data.currentSeries, ...data.history.flatMap(s => s.trades)];
   }
+  /* The saved trades and the Trade Log's trades not saved yet, one copy of each (Nestor, 22 Oct 2026, on Prop Firm Progress
+     moving the moment MT5 closes a trade: "yes do it, but if the user decides to delete that trade of the trade log later then
+     the prop firm challenge needs to know about it and the prop firm pass or fail etc."). A closed trade counts for its account
+     as soon as it is in the Trade Log, and stops counting if it leaves the Trade Log unsaved. A saved trade is counted by its
+     saved copy (the review copy points to it by seriesId, or wears the same broker ticket) - the rule journalTrades uses for
+     the nudges. An undated Trade Log row takes its review's day at noon, as saving it does. Prop Firm Progress, the pass /
+     fail verdicts and the balance the server's nudges start from all read this. */
+  function getTradesWithLog() {
+    const list = getAllLifetimeTrades(), ids = {}, tks = {}, out = list.slice();
+    const tkOf = tr => { const tk = tr && (tr.mt5Ticket || tr.position); return (tk != null && tk !== '') ? String(tk) : ''; };
+    list.forEach(tr => { if (!tr) return; if (tr.id) ids[tr.id] = 1; const tk = tkOf(tr); if (tk) tks[tk] = 1; });
+    try {
+      _reviewSlotsArr().forEach(r => {
+        if (!r || !Array.isArray(r.trades)) return;
+        const day = r.sessionDate || todayDateStr();
+        r.trades.forEach(tr => {
+          if (!tr || !tr.result || (tr.id && ids[tr.id]) || (tr.seriesId && ids[tr.seriesId])) return;
+          const tk = tkOf(tr); if (tk && tks[tk]) return;
+          if (tr.id) ids[tr.id] = 1; if (tk) tks[tk] = 1;   // in two reviews: once
+          out.push(tr.date ? tr : Object.assign({}, tr, { date: day + 'T12:00:00' }));
+        });
+      });
+    } catch (e) {}
+    return out;
+  }
+  window.__stTradesWithLog = getTradesWithLog;
 
   /* ===== Trade copier: one idea on several accounts (28 Sep 2026) =====
      The same trade taken on several of your accounts (the EA's Trade Copier - a Lead and its Follow accounts) is ONE
@@ -20812,7 +20838,8 @@ try {
     function r2(v) { return Math.round((Number(v) || 0) * 100) / 100; }
     function build() {
       var out = {}, since = Date.now() - 4 * 86400000, all = [];
-      try { all = getAllLifetimeTrades(); } catch (e) { return null; }
+      // the tickets inside `c`: the Trade Log's count in the balance now (getTradesWithLog), so the server must not add them again
+      try { all = getTradesWithLog(); } catch (e) { return null; }
       (data.accounts || []).forEach(function (acc) {
         if (!acc || !acc.id || acc.status === 'archived' || acc.demo) return;
         var st = null; try { st = window.__stAccountStats ? window.__stAccountStats(acc) : null; } catch (e) {}
@@ -55138,7 +55165,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // time-aware baseline used by the equity chart.
       // Copy-weighted: each trade contributes its net × copies, in line with the
       // rest of the app's lifetime KPIs.
-      const all = getAllLifetimeTrades();
+      // Since 22 Oct 2026 the Trade Log's unsaved trades count too: a trade MT5 closed moves the balance at once (getTradesWithLog).
+      const all = getTradesWithLog();
       const createdAtMs = acc.createdAt ? new Date(acc.createdAt).getTime() : 0;
       // Tolerate a small clock skew window — if a trade was logged a few seconds
       // before the account creation timestamp (browser races during onboarding),
@@ -81653,7 +81681,7 @@ body.st-tour-on .tab.active{background:transparent !important;border-color:#2a2a
   }
   // The account's trades, as computeAccountStats picks them: tagged to it, or untagged and dated after it was made.
   function tradesOf(acc){
-    var all = []; try{ all = getAllLifetimeTrades(); }catch(e){ return []; }
+    var all = []; try{ all = (typeof getTradesWithLog === 'function') ? getTradesWithLog() : getAllLifetimeTrades(); }catch(e){ return []; }   // the Trade Log's too (getTradesWithLog)
     var made = acc.createdAt ? new Date(acc.createdAt).getTime() : 0, SKEW = 3600000;
     return all.filter(function(t){
       if(!t || !t.date) return false;
@@ -84827,14 +84855,14 @@ window.__stAZ = (function () {
     var dir=/^(sell|short)/i.test(String(x.direction||''))?-1:1;
     var du=x.dist_unit||window.__stDU.symUnit(S.symbol); if(du!=='pips'&&du!=='points'&&du!=='ticks') du='pips';
     var pip=(n(x.unit_size)>0)?n(x.unit_size):(du==='pips'?pipOf(entry):1);
-    var sl=n(x.sl_pips)||n(x.req_sl_pips), tpR=n(x.tp_r), tp=n(x.tp_pips)||(tpR&&sl?tpR*sl:0);
+    var sl=n(x.sl_pips)||n(x.req_sl_pips), tpR=n(x.tp_r), tp=n(x.tp_pips)||(tpR&&sl?tpR*sl:0), tpReal=tp>0;
     if(!tp&&exit&&dir*(exit-entry)>0) tp=Math.abs(exit-entry)/pip;
     var SL=sl?entry-dir*sl*pip:0, TP=tp?entry+dir*tp*pip:0;
     var riskDist=sl?Math.abs(entry-SL):(Math.abs(entry-exit)||pip*10);
     var pairs=function(v){ try{ var a=v; if(typeof a==='string') a=JSON.parse(a); return (Array.isArray(a)&&a.length)?a:null; }catch(_){ return null; } };
     return { ticket:String(x.ticket), dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip,
              pa:window.__stDU.lbl(du,'a'), pU:window.__stDU.lbl(du,'U'), riskDist:riskDist, riskGbp:n(x.risk_gbp),
-             slPips:sl, tpPips:tp, entryTs:eTs, exitTs:xTs||eTs, slMovesRaw:pairs(x.sl_moves), tpMovesRaw:pairs(x.tp_moves),
+             slPips:sl, tpPips:tp, tpReal:tpReal, entryTs:eTs, exitTs:xTs||eTs, slMovesRaw:pairs(x.sl_moves), tpMovesRaw:pairs(x.tp_moves),
              pnl:(x.pnl!=null?parseFloat(x.pnl):NaN), netR:(exit?dir*(exit-entry)/riskDist:null), eBI:-1, xBI:-1 }; }
   // Bar positions on the timeframe on screen (a trade outside the loaded candles is skipped until
   // scrolling brings its candles in), then which trade is in focus.
@@ -84854,7 +84882,7 @@ window.__stAZ = (function () {
     return best||S.T0||null; }
   // Everything the replayed trade owns is read from S by the existing code (P&L panel, price lines,
   // stop/target moves, the box), so focus = copy that trade's fields into S.
-  var FOCUS_KEYS=['dir','entry','exit','SL','TP','pip','pa','pU','riskDist','riskGbp','slPips','tpPips','entryTs','exitTs','slMovesRaw','tpMovesRaw'];
+  var FOCUS_KEYS=['dir','entry','exit','SL','TP','pip','pa','pU','riskDist','riskGbp','slPips','tpPips','tpReal','pnl','entryTs','exitTs','slMovesRaw','tpMovesRaw'];
   function applyFocus(t){ if(!S||!t) return;
     var changed=(S.focus!==t); S.focus=t;
     if(t.eBI>=0){ S.eBI=t.eBI; S.xBI=t.xBI; }
@@ -84881,15 +84909,30 @@ window.__stAZ = (function () {
   function refitPrice(){ try{ chart.priceScale('right').applyOptions({autoScale:true}); }catch(_){} }
   function jumpToTrade(t){ if(!S||!t) return; pause(); S.cursor=Math.min(S.bars.length,t.eBI+1); refitPrice(); render(true,true); }
   // The header, for whichever trade is in focus - word for word what open() writes for the opened one.
+  /* Closed at its take profit (Nestor, 22 Oct 2026: "if i want a 20pips TP i expect to get a 20pips TP like i would in MT5! fix
+     this!"). The broker fills a TP at market once price reaches it, so a big order can fill a little past it - his 16.76-lot sell
+     had its TP at 1.12201 and MT5's own deal says 1.12206. The journal records a win at its target (r / pips are the TP), so the
+     replay says the same: the TP's pips and R, the money as it really came, and the fill beside it. At its TP = the exit within
+     1 pip (or 5% of the target) of the TP it had at the close; only a target that was recorded, never the exit standing in. */
+  function tpClose(t){ try{ if(!t||!(t.exit>0)||!(t.pip>0)) return null; var mv=t.tpMovesRaw, tp=(mv&&mv.length)?0:(t.tpReal?t.TP:0);
+      if(mv&&mv.length) mv.forEach(function(q){ if(!(t.exitTs>0)||+q[0]<=t.exitTs) tp=(+q[1]>0)?+q[1]:0; });
+      if(!(tp>0)||t.dir*(tp-t.entry)<=0) return null;
+      var tol=Math.max(t.pip,0.05*Math.abs(tp-t.entry)), off=t.dir*(t.exit-tp);
+      return off>=-tol?{ tp:tp, slip:off/t.pip }:null; }catch(_){ return null; } }
+  function tpNote(t,tc){ return tc?(' TP'+(Math.abs(tc.slip)>=0.05?' \u00b7 '+(tc.slip<0?'\u2212':'+')+Math.abs(tc.slip).toFixed(1)+(t.pa||'p')+L(' fill',' ejecución'):'')):''; }
   function paintHeader(t){ try{
     var sideEl=el('strp-side'); sideEl.className='strp-side '+(t.dir>0?'long':'short'); sideEl.textContent=(t.dir>0?L('↑ Long','↑ Largo'):L('↓ Short','↓ Corto'));
     var d=new Date(t.entryTs*1000), p=function(n){ return String(n).padStart(2,'0'); };
     el('strp-date').textContent=_dayName(d)+' '+d.getFullYear()+'-'+p(d.getMonth()+1)+'-'+p(d.getDate())+' · '+_hm(t.entryTs)+':'+p(d.getSeconds())+' '+_tzLabel();
-    var netR=t.exit?t.dir*(t.exit-t.entry)/t.riskDist:0;
+    var tc=tpClose(t), to=tc?tc.tp:t.exit;   // closed at its TP: the TP's pips and R (tpClose)
+    var netR=to?t.dir*(to-t.entry)/t.riskDist:0;
     var hr=el('strp-hr'); hr.className='strp-r '+(netR>0.02?'win':(netR<-0.02?'lose':'be')); hr.textContent=(netR>=0?'+':'')+netR.toFixed(2)+'R';
-    var pnl=t.pnl, pips=t.exit?(t.exit-t.entry)/t.pip*t.dir:0;
+    var pnl=t.pnl, pips=to?(to-t.entry)/t.pip*t.dir:0;
     var pnlTxt=(pnl==null||isNaN(pnl))?'':((((typeof fmtMoney==='function')?fmtMoney(pnl):((pnl>=0?'+':'')+'£'+Math.round(pnl))))+' · ');
-    el('strp-hp').textContent=pnlTxt+(pips>=0?'+':'')+pips.toFixed(1)+(t.pa||'p');
+    var hp=el('strp-hp'); hp.textContent=pnlTxt+(pips>=0?'+':'')+pips.toFixed(1)+(t.pa||'p')+tpNote(t,tc);
+    var dg=t.pip<0.001?5:(t.pip<0.1?3:2);
+    hp.title=(tc&&Math.abs(tc.slip)>=0.05)?L('Closed at its take profit '+tc.tp.toFixed(dg)+'; MT5 filled it at '+t.exit.toFixed(dg)+'. The pips and R are the TP\'s, as in your journal; the money is what really came.',
+      'Cerrada en su take profit '+tc.tp.toFixed(dg)+'; MT5 la ejecutó a '+t.exit.toFixed(dg)+'. Los pips y la R son los del TP, como en tu diario; el dinero es lo que entró de verdad.'):'';
   }catch(_){} }
   async function fetchInbox(ticket){ var sb=sbc(); if(!sb) return null;
     // In MENTOR VIEW the rows belong to the member being viewed, not to the signed-in mentor.
@@ -85035,7 +85078,7 @@ window.__stAZ = (function () {
     // TP target: a recorded target (EA tp_r/tp_pips) if there is one; otherwise the realized exit (the
     // reward actually captured). NEVER Potential/MFE — that's how far price ran, not the target.
     var tpR=_n(row.tp_r)||_n(trade&&trade._tpR)||_n(trade&&trade.tpR);
-    var tpPips=_n(row.tp_pips)||_n(trade&&trade._tpPips)||(tpR&&slPips?tpR*slPips:0);
+    var tpPips=_n(row.tp_pips)||_n(trade&&trade._tpPips)||(tpR&&slPips?tpR*slPips:0), tpReal=tpPips>0;
     if(!tpPips && exit && dir*(exit-entry)>0){ tpPips=Math.abs(exit-entry)/pip; }
     var SL=slPips? entry-dir*slPips*pip : 0;
     var TP=tpPips? entry+dir*tpPips*pip : 0;
@@ -85067,7 +85110,7 @@ window.__stAZ = (function () {
     // as a positive fact; it simply shows the original levels, exactly as it always did.
     var slMovesRaw=_pairs(row.sl_moves), tpMovesRaw=_pairs(row.tp_moves);
 
-    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, pa:_pa, pU:window.__stDU.lbl(_du,'U'), riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, spreadRaw:spreadRaw, spread:null, slMovesRaw:slMovesRaw, tpMovesRaw:tpMovesRaw, slMoves:null, tpMoves:null, tOff:0, lnSL:null, lnTP:null,
+    S={ ticket:String(ticket||''), symbol:symbol, dir:dir, entry:entry, exit:exit, SL:SL, TP:TP, pip:pip, pa:_pa, pU:window.__stDU.lbl(_du,'U'), riskDist:riskDist, riskGbp:riskGbp, slPips:slPips, tpPips:tpPips, tpReal:tpReal, pnl:parseFloat(row&&row.pnl), spreadRaw:spreadRaw, spread:null, slMovesRaw:slMovesRaw, tpMovesRaw:tpMovesRaw, slMoves:null, tpMoves:null, tOff:0, lnSL:null, lnTP:null,
         entryTs:entryTs, exitTs:exitTs, tf:1, cache:{}, bars:[], drawings:[], history:[[]], hpos:0, drag:null, sel:null, activeTool:'none', pending:null,
         cursor:0, playing:false, ms:1000, timer:null, showPos:true, showMarks:_marksPref(), eBI:0, xBI:0, rSI:0, userView:false,
         newsRows:null, newsMarks:null };
@@ -85083,8 +85126,8 @@ window.__stAZ = (function () {
     // The opened trade as a trade like any other, so focus can hand the chart to another and back.
     S.T0={ ticket:S.ticket, dir:S.dir, entry:S.entry, exit:S.exit, SL:S.SL, TP:S.TP, pip:S.pip, pa:S.pa, pU:S.pU,
            riskDist:S.riskDist, riskGbp:S.riskGbp, slPips:S.slPips, tpPips:S.tpPips, entryTs:S.entryTs, exitTs:S.exitTs,
-           slMovesRaw:S.slMovesRaw, tpMovesRaw:S.tpMovesRaw, pnl:parseFloat(row&&row.pnl), netR:netR, eBI:-1, xBI:-1, main:true };
-    S.focus=S.T0; S.trades=[S.T0];
+           slMovesRaw:S.slMovesRaw, tpMovesRaw:S.tpMovesRaw, tpReal:S.tpReal, pnl:parseFloat(row&&row.pnl), netR:netR, eBI:-1, xBI:-1, main:true };
+    S.focus=S.T0; S.trades=[S.T0]; paintHeader(S.T0);   // closed at its TP: the TP's pips and R (tpClose)
     loadOthers(S);
     // Axis badges: deliberately NOT awaited. The calendar is a garnish on the chart, so a slow or
     // failed query must never delay (or block) the replay itself; the badges simply appear a beat
@@ -85470,10 +85513,11 @@ window.__stAZ = (function () {
     var sltpInner=[slp,tpp].filter(Boolean).join(' · ');
     var sltp=sltpInner?'<span class="strp-sltp-sep"> · </span><span class="strp-sltp">'+sltpInner+'</span>':'';
     if(idx<S.eBI){ e.innerHTML=L('Waiting for entry…','Esperando entrada…')+sltp; e.className='strp-live'; return; }
-    var px=idx>=S.xBI?S.exit:S.bars[idx].close, r=S.dir*(px-S.entry)/S.riskDist, pips=S.dir*(px-S.entry)/S.pip, gbp=r*S.riskGbp;
+    var tcl=idx>=S.xBI?tpClose(S):null;   // closed at its TP: the TP's pips and R, the money as it came (tpClose)
+    var px=idx>=S.xBI?(tcl?tcl.tp:S.exit):S.bars[idx].close, r=S.dir*(px-S.entry)/S.riskDist, pips=S.dir*(px-S.entry)/S.pip, gbp=(tcl&&isFinite(S.pnl))?S.pnl:r*S.riskGbp;
     e.className='strp-live '+(r>0.02?'win':(r<-0.02?'lose':'')); var s=r>=0?'+':'';
     var money=S.riskGbp?(((typeof fmtMoney==='function')?fmtMoney(gbp):((gbp>=0?'+':'')+'£'+Math.round(gbp)))+' · '):'';
-    e.innerHTML=L('P&amp;L','P&amp;G')+' <b>'+s+r.toFixed(2)+'R</b> · '+money+s+pips.toFixed(1)+(S.pa||'p')+(idx>=S.xBI?L(' · closed',' · cerrada'):'')+sltp; }
+    e.innerHTML=L('P&amp;L','P&amp;G')+' <b>'+s+r.toFixed(2)+'R</b> · '+money+s+pips.toFixed(1)+(S.pa||'p')+(idx>=S.xBI?(tcl?L(' · closed at TP',' · cerrada en TP')+(Math.abs(tcl.slip)>=0.05?' ('+(tcl.slip<0?'\u2212':'+')+Math.abs(tcl.slip).toFixed(1)+(S.pa||'p')+L(' fill',' ejecución')+')':''):L(' · closed',' · cerrada')):'')+sltp; }
   function clock(){ el('strp-clock').textContent=_hm(S.bars[Math.min(S.cursor-1,S.bars.length-1)].time); }
 
   function xOf(i){ return chart.timeScale().logicalToCoordinate(i); }
@@ -87733,6 +87777,7 @@ window.__stAZ = (function () {
   html.stpr-lt .stpr-win .stpr-tl .stpr-mm.drop.armed { border-color: #0B8A68; box-shadow: 0 0 0 2px #0B8A68, 0 1px 2px rgba(0,0,0,.2); }
   html.stpr-lt .stpr-win .stpr-pane .stpr-cdb { text-shadow: none; color: #50535e; }
   .stpr-tl > * { pointer-events: auto; }
+  .stpr-pane.tlside .stpr-ptfw { z-index: 6; }   /* a phone on its side: the timeframe list opens over the EA panel beside it (tlBeside) */
   .stpr-tl .stpr-mm.strip { margin-left: 0; flex: none; }
   .stpr-tl .stpr-pill { position: static; max-width: none; min-width: 0; flex: 0 1 auto; pointer-events: none; }
   .stpr-pill.idle { display: none; }
@@ -89688,14 +89733,30 @@ window.__stAZ = (function () {
   // beside the charts on a computer, under them on a phone; folded, a strip in the row above the charts (they take the whole width)
   function placeMM(){
     var el = mmEl(), cw = $('stpr-cw'), win = $('stpr-win'), bar = $('stpr-tb2'), del = $('stpr-del'); if (!el || !cw) return;
-    var ph = phone(), tl = !ph && $('stpr-tl'), strip = !ph && !!CFG.mm.col && !!(bar && del), drop = !!tl && !CFG.mm.col;
+    var ph = phone() && !landTouch(), tl = !ph && $('stpr-tl'), strip = !ph && !!CFG.mm.col && !!(bar && del), drop = !!tl && !CFG.mm.col;   // a phone on its side: on the chart, beside the timeframe (tlBeside)
     el.classList.toggle('strip', strip); el.classList.toggle('drop', drop);
-    if (drop) { tlPut(tl, el); cw.classList.remove('mm'); return; }
+    if (drop) { tlPut(tl, el); cw.classList.remove('mm'); tlBeside(); return; }
     if (ph) { if (el.parentNode !== win) win.insertBefore(el, $('stpr-tr')); cw.classList.remove('mm'); }
     else if (strip) { var tl = $('stpr-tl');   // folded: at the top left of the first chart (else, with no chart yet, in the row above)
       if (tl) tlPut(tl, el); else if (del.nextElementSibling !== el) bar.insertBefore(el, del.nextSibling); cw.classList.remove('mm'); }
     else { if (el.parentNode !== cw) cw.appendChild(el); cw.classList.add('mm'); }
+    tlBeside();
   }
+  /* A phone on its side (Nestor, 22 Oct 2026: "on phone landscape move the EA next to the TF, leave the TF where it is and place
+     then EA to its right"): the chart keeps its timeframe button at its top left, and the EA panel sits on the same row just right
+     of it - not under it (his 17 Oct "move EA settings panel below the TF", which stays everywhere else) and not under the chart,
+     out of sight below the screen. A touch screen wider than tall and at most 560 px high; portrait and computers as before. */
+  function landTouch(){ try { return window.innerWidth > window.innerHeight && window.innerHeight <= 560 && ((navigator.maxTouchPoints || 0) > 0 || matchMedia('(pointer: coarse)').matches); } catch (e) { return false; } }
+  function tlBeside(){ var tl = $('stpr-tl'); if (!tl) return; var pane = tl.closest('.stpr-pane'); if (!pane) return;
+    var pf = Array.prototype.filter.call(pane.querySelectorAll('.stpr-ptfw'), function(q){ return !tl.contains(q); })[0];
+    var on = !!pf && landTouch() && !pane.classList.contains('tfbar') && !pane.classList.contains('tfrow') && !!pf.offsetWidth;
+    if (pf && !pf._tlRO && window.ResizeObserver) try { pf._tlRO = new ResizeObserver(function(){ tlBeside(); }); pf._tlRO.observe(pf); } catch (e) {}   // 1m -> 15m, the O H L C line on: the panel moves with it
+    pane.classList.toggle('tlside', on);
+    if (!on) { if (tl.style.left || tl.style.top || tl.style.maxWidth) { tl.style.left = ''; tl.style.top = ''; tl.style.maxWidth = ''; } return; }
+    var pr = pane.getBoundingClientRect(), x = 0;   // past the timeframe button, and the O H L C line when it shows
+    Array.prototype.forEach.call(pf.querySelectorAll('.stpr-tfpill, .stpr-ohlc'), function(c){ if (!c.offsetWidth || !c.offsetHeight) return; var q = c.getBoundingClientRect(); x = Math.max(x, q.right - pr.left); });
+    if (!(x > 0)) return; var lx = Math.round(x + 6);
+    tl.style.left = lx + 'px'; tl.style.top = Math.round(pf.getBoundingClientRect().top - pr.top) + 'px'; tl.style.maxWidth = 'calc(100% - ' + (lx + 142) + 'px)'; }
   // first in the first chart's top left - after chart 1's own buttons when several charts share the window
   function tlPut(tl, el){ var tp = null; for (var c = tl.firstElementChild; c; c = c.nextElementSibling) if (c.classList.contains('stpr-tlp')) { tp = c; break; }
     var want = tp ? tp.nextSibling : tl.firstChild; if (want !== el) tl.insertBefore(el, want); }
@@ -91321,11 +91382,13 @@ window.__stAZ = (function () {
       var title = side + ' · ' + name + (x.lots > 0 ? ' · ' + x.lots.toFixed(2) + ' ' + T('lots', 'lotes') : '');
       var d0 = new Date(x.eTs * 1000), d1 = x.xTs ? new Date(x.xTs * 1000) : null, sameDay = d1 && d1.toDateString() === d0.toDateString();
       var when = dshort(d0) + ' · ' + hm(x.eTs) + (d1 ? ' → ' + (sameDay ? '' : dshort(d1) + ' ') + hm(x.xTs) : '') + ' · ' + tmDur((x.xTs || nowS()) - x.eTs) + (x.open ? ' · ' + T('open', 'abierta') : '');
-      var to = x.open ? x.px : x.exit, dist = (to > 0 && x.entry > 0) ? x.dir * (to - x.entry) : NaN, Rv = lvTrR(x), grid = [];
+      var u0 = units(PS(p).sym), tc = lvTpClose(x, u0.pips || u0.pts || 0), rd = x.sl0 > 0 ? Math.abs(x.entry - x.sl0) : (x.slp > 0 ? x.slp * (u0.pips || u0.pts || 0) : 0);
+      var to = x.open ? x.px : (tc ? tc.tp : x.exit), dist = (to > 0 && x.entry > 0) ? x.dir * (to - x.entry) : NaN, Rv = (tc && rd > 0) ? dist / rd : lvTrR(x), grid = [];
       grid.push([T('Entry', 'Entrada'), x.entry.toFixed(dg), '']);
-      if (!x.open && x.exit > 0) grid.push([T('Exit', 'Salida'), x.exit.toFixed(dg), '']);
+      if (!x.open && x.exit > 0) grid.push([T('Exit', 'Salida'), x.exit.toFixed(dg) + (tc ? ' \u00b7 TP' : ''), '']);
       var res = []; if (isFinite(dist)) res.push(sg(dist) + fmtU(Math.abs(dist), su) + ' ' + uLbl(su)); if (isFinite(Rv)) res.push(sg(Rv) + Math.abs(Rv).toFixed(2) + 'R');
       if (res.length) grid.push([x.open ? T('Now', 'Ahora') : T('Result', 'Resultado'), res.join(' · '), cl(isFinite(Rv) ? Rv : dist)]);
+      if (tc && Math.abs(tc.slip) >= (u0.pips || u0.pts || 0) * 0.05) grid.push([T('TP fill', 'Ejecución TP'), sg(tc.slip) + fmtU(Math.abs(tc.slip), su) + ' ' + uLbl(su) + ' (' + tc.tp.toFixed(dg) + ' \u2192 ' + x.exit.toFixed(dg) + ')', '']);
       if (x.pnl != null && isFinite(x.pnl)) grid.push(['P&L', sg(x.pnl) + money(x.pnl), cl(x.pnl)]);
       return '<div class="strp-nc-item"><div class="strp-nc-title">' + esc(title) + '</div><div class="strp-nc-when">' + esc(when) + '</div><div class="strp-nc-grid">'
         + grid.map(function(r){ return '<div class="strp-nc-k">' + esc(r[0]) + '</div><div class="strp-nc-v' + r[2] + '">' + esc(r[1]) + '</div>'; }).join('') + '</div></div>'; };
@@ -92439,8 +92502,15 @@ window.__stAZ = (function () {
     if (!(e > 0) || !(eTs > 0)) return null;
     return { ticket: String(x.ticket), key: canon(x.symbol), dir: /^(sell|short)/i.test(String(x.direction || '')) ? -1 : 1, lots: n(x.lots), entry: e, exit: n(x.exit_price),
       eTs: eTs, xTs: xTs > 0 ? xTs : 0, pnl: (x.pnl == null || x.pnl === '') ? null : n(x.pnl), risk: n(x.risk_gbp), login: x.login != null ? String(x.login) : '',
-      sl0: mv0(x.sl_moves), tp0: mv0(x.tp_moves), slp: n(x.sl_pips), tpp: n(x.tp_pips) }; }   // the stop and target it was taken with (its trade box, tbSync)
+      sl0: mv0(x.sl_moves), tp0: mv0(x.tp_moves), tpN: mvN(x.tp_moves, xTs), slp: n(x.sl_pips), tpp: n(x.tp_pips) }; }   // the stop and target it was taken with (its trade box, tbSync); the target at the close (lvTpClose)
   function mv0(m){ try { var a = typeof m === 'string' ? JSON.parse(m) : m; return (a && a.length && +a[0][1] > 0) ? +a[0][1] : 0; } catch (e) { return 0; } }
+  function mvN(m, at){ try { var a = typeof m === 'string' ? JSON.parse(m) : m, v = 0; (a || []).forEach(function(q){ if (!(at > 0) || +q[0] <= at) v = +q[1] > 0 ? +q[1] : 0; }); return v; } catch (e) { return 0; } }
+  /* Closed at its take profit, as Trade Replay's tpClose (Nestor, 22 Oct 2026: "if i want a 20pips TP i expect to get a 20pips TP
+     like i would in MT5! fix this!"): the exit within 1 pip (or 5% of the target) of the TP it had at the close. Its card then
+     shows the TP's pips and R, as the journal records a win, with MT5's fill beside them; the money stays what really came. */
+  function lvTpClose(x, pip){ if (!x || x.open || !(x.exit > 0) || !(pip > 0)) return null;
+    var tp = x.tpN || (x.tpp > 0 ? x.entry + x.dir * x.tpp * pip : 0); if (!(tp > 0) || x.dir * (tp - x.entry) <= 0) return null;
+    var tol = Math.max(pip, 0.05 * Math.abs(tp - x.entry)), off = x.dir * (x.exit - tp); return off >= -tol ? { tp: tp, slip: off } : null; }
   // R: the money over the risk it was taken with (MT5's own figure, costs in); without a risk, nothing
   function lvTrR(x){ if (x.open) return isFinite(x.R) ? x.R : NaN; return (x.risk > 0 && x.pnl != null && isFinite(x.pnl)) ? x.pnl / x.risk : NaN; }
   // won, lost or about even (a stop at break-even closes a few pence down after costs): within 0.1R is even
@@ -92929,6 +92999,7 @@ window.__stAZ = (function () {
       if (!(DW.multi && DW.multi.indexOf(h.i) >= 0)) { DW.sel = h.i; DW.multi = null; } DW.at = p; updDel(); showCtx(p, xy.x, xy.y); }, true);
     window.addEventListener('keyup', WH.kup = function(e){ if (e.key === 'Control' && DW.snap) { DW.snap = null; dirty(); } });
     window.addEventListener('resize', function(){ try { cmpBtnPlace(); } catch (e) {} if (LOG.open) logTop(); stripThumb(); placeMM(); lcFit(); });
+    window.addEventListener('orientationchange', function(){ setTimeout(function(){ try { placeMM(); } catch (e) {} }, 300); });
     // Execution mode ends when the mouse leaves the window - off the app, onto another monitor - or the app loses the focus,
     // as the EA disarms it when the cursor leaves the chart (Nestor, 17 Oct 2026: "when the mouse goes off the screen to a
     // different monitor or outside the app the execution mode should turn off"). The panel counts as the chart, as on MT5.
@@ -93033,7 +93104,7 @@ window.__stAZ = (function () {
     ctfList: function(){ return (CFG.ctf || []).filter(function(n){ return !!TFL[n]; }).slice().sort(function(a, b){ return a - b; }); }, ctfLbl: tfLbl,
     ctfAdd: function(n){ n = Math.round(+n); if (!(n >= 1 && n <= 1440)) return false; if (TF_STD.indexOf(n) >= 0) return true; tfReg(n); if ((CFG.ctf || []).indexOf(n) < 0) { CFG.ctf = (CFG.ctf || []).concat([n]); save(); } return true; },
     ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = document.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
-    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
+    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
 
