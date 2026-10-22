@@ -88910,7 +88910,7 @@ window.__stAZ = (function () {
   }
   function finish(why, ts, price){
     var p = S.pos, r = 0, u = stopUnit(); p.closes.forEach(function(c){ r += c.r; });
-    var rec = { sym: S.sym.raw, day: S.day, tf: stepSec() / 60, dir: p.dir, entry: p.entry, exit: price, sl: p.sl, tp: p.tp, entryTs: p.entryTs, exitTs: ts,
+    var rec = { sym: S.sym.raw, day: S.day, tf: stepSec() / 60, dir: p.dir, entry: p.entry, exit: price, sl: p.sl, sl0: p.rd > 0 ? p.entry - p.dir * p.rd : p.sl, tp: p.tp, entryTs: p.entryTs, exitTs: ts,
       r: Math.round(r * 100) / 100, dist: +(r * p.rd / U(u)).toFixed(1), unit: u, why: why, mae: Math.round(p.mae * 100) / 100, parts: p.closes.length,
       money: p.rm > 0 ? Math.round(r * p.rm * 100) / 100 : null, rm: p.rm > 0 ? Math.round(p.rm * 100) / 100 : null, mfe: Math.round((p.mfe || 0) * 100) / 100, at: Date.now() };
     S.trades.push(rec); logAdd(rec); S.pos = null; S.done = rec; S.lastExitTs = ts;   // the replay carries on (no pause since 21 Oct 2026)
@@ -89149,7 +89149,7 @@ window.__stAZ = (function () {
   // past its right end, on its run (at the right edge when extended); a ray's where it leaves the chart; a zone's inside its top right
   // corner (a channel's under its upper line). Inside the plot, or not drawn.
   function bellPos(p, d, dm){ var pw = dm.pw, ph = dm.ph, ok = function(x, y){ return (x == null || y == null || !isFinite(x) || !isFinite(y) || x < -2 || x > pw + 2 || y < -2 || y > ph + 2) ? null : { x: Math.max(9, Math.min(pw - BELLX, x)), y: Math.max(9, Math.min(ph - 9, y)) }; };
-    if (d.type === 'hline') { var y0 = yOf(p, d.price); return (y0 != null && y0 >= 0 && y0 <= ph) ? { x: Math.max(9, pw - BELLX - hlNoteW(p, d)), y: y0 } : null; }
+    if (d.type === 'hline') { var y0 = yOf(p, d.price); return (y0 != null && y0 >= 0 && y0 <= ph) ? { x: Math.max(9, pw - BELLX - hlNoteW(p, d) - (alertTitle(d) ? hlTagW(p, d.price) + 2 : 0)), y: y0 } : null; }
     var a = Pt(p, d.a); if (!a) return null;
     if (d.type === 'hray') return (a.x < pw - BELLX - 4 && a.y >= 0 && a.y <= ph) ? { x: pw - BELLX, y: a.y } : null;
     var b = d.b ? Pt(p, d.b) : null; if (!b) return null;
@@ -89166,8 +89166,20 @@ window.__stAZ = (function () {
   // the width of a horizontal line's note at its right end (the chart library's label: its words and their box), so the bell sits just
   // left of it, not on it (Nestor, 21 Oct 2026: "if you add a note to the alert it sits behind the bell ... i need to be able to see the note")
   var HLNC = null;
-  function hlNoteW(p, d){ var t = alertTitle(d); if (!t) return 0; var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {}
+  function hlTextW(p, t){ if (!t) return 0; var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {}
     try { HLNC = HLNC || document.createElement('canvas').getContext('2d'); HLNC.font = (lo.fontSize || 12) + 'px ' + (lo.fontFamily || 'sans-serif'); return Math.ceil(HLNC.measureText(t).width) + 16; } catch (e) { return t.length * 7 + 16; } }
+  function hlNoteW(p, d){ return hlTextW(p, alertTitle(d)); }
+  /* A trade's own tag (SL, TP, BE, Entry...) on the same price as a horizontal line's note: the library puts both in the same place
+     and the tag covered the note (Nestor, 22 Oct 2026: "the TP is covering the label"). The tag's width there (0: none), so the note
+     is drawn just left of it (hlNoteAt) and the line's bell left of that. */
+  function hlTagW(p, price){ var y = yOf(p, price), w = 0; if (y == null) return 0;
+    (p.lines || []).forEach(function(l){ var o = null; try { o = l.options(); } catch (e) {} if (!o || !o.title || o.axisLabelVisible === false) return;
+      var ly = yOf(p, o.price); if (ly != null && Math.abs(ly - y) < 16) w = Math.max(w, hlTextW(p, o.title)); }); return w; }
+  function hlNoteAt(p, g, o, pw){ var y = yOf(p, o.p); if (y == null) return; var lo = {}; try { lo = p.chart.options().layout || {}; } catch (e) {}
+    var fs = lo.fontSize || 12, w = hlTextW(p, o.t), h = Math.ceil(fs * 17 / 12), x1 = pw - o.x - 2, x0 = x1 - w, pc = parseC(o.c), n = parseInt(pc.h.slice(1), 16);
+    g.save(); g.setLineDash([]); g.fillStyle = pc.h; g.beginPath(); if (g.roundRect) g.roundRect(Math.round(x0), Math.round(y - h / 2), Math.round(w), h, 2); else g.rect(Math.round(x0), Math.round(y - h / 2), Math.round(w), h); g.fill();
+    g.fillStyle = (0.199 * ((n >> 16) & 255) + 0.687 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 160 ? '#000000' : '#ffffff';   // the library's own rule for its labels
+    g.font = fs + 'px ' + (lo.fontFamily || 'sans-serif'); g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(o.t, (x0 + x1) / 2, y + 0.5); g.restore(); }
   function bellAt(g, x, y, col, hit){ var pc = parseC(col), c1 = hexA(pc.h, hit ? 0.42 : 1);
     g.save(); g.translate(Math.round(x), Math.round(y)); g.scale(0.85, 0.85); g.setLineDash([]); g.lineJoin = 'round';
     var body = function(){ g.beginPath(); g.moveTo(-6.2, 3.4); g.quadraticCurveTo(-3.9, 2.3, -3.9, -0.6); g.bezierCurveTo(-3.9, -4.3, -2.1, -5.5, 0, -5.5); g.bezierCurveTo(2.1, -5.5, 3.9, -4.3, 3.9, -0.6);
@@ -89258,7 +89270,7 @@ window.__stAZ = (function () {
     if (tf === 525600) pane.step = 365 * 86400;
     pane.az = AZ; panes[i] = pane; wirePane(pane); lookPane(pane);
     window.__stPriceLineBehind(series, { last: function(){ return pane.bars && pane.bars[pane.bars.length - 1]; }, color: function(b){ var L = look(); return b.close >= b.open ? L.up : L.dn; } });   // under the candles (22 Oct 2026)
-    ovHook(pane); mubOk(pane);   // the overlay painted with the candles; the Minimalist's shading under them (in that order: one paint)
+    ovHook(pane); mubOk(pane); linesBehind(pane);   // the overlay painted with the candles; under them the Minimalist's shading, then the trade's lines (in that order: one paint)
     try { window.__stAZ.wire(el, function(){ return { chart: chart, series: series, az: AZ, box: pc, hand: function(){ pane.handAt = Date.now(); }, after: dirty }; }); } catch (e) {}
     if (pw) try { pw.w.document.title = (X.ea && X.ea.raw ? X.ea.raw : X.sym.name) + ' \u00b7 ' + TFL[tf] + ' \u00b7 ' + (S.live ? T('Live', 'En vivo') : 'Replay');
       var pbg = pw.w.document.getElementById('stpr-bg'); if (pbg) pbg.classList.toggle('lcsat', !!S.live); } catch (e) {}
@@ -89354,7 +89366,7 @@ window.__stAZ = (function () {
         tput(x.eTs, x.dir > 0 ? 'belowBar' : 'aboveBar', '#f472b6', x.dir > 0 ? 'arrowUp' : 'arrowDown', x);
         if (x.xTs > 0) tput(x.xTs, x.dir > 0 ? 'aboveBar' : 'belowBar', TRC[lvTrRes(x)], x.dir > 0 ? 'arrowDown' : 'arrowUp', x); }); }
     var seen = {}; mk = mk.filter(function(m){ var k = m.time + m.shape + m.position; if (seen[k]) return false; seen[k] = 1; return true; }).sort(function(a, b){ return a.time - b.time; });
-    if (CFG.marks === false) mk.forEach(function(m){ m.color = 'rgba(0,0,0,0)'; });
+    if (!showOn(p, 'marks')) mk.forEach(function(m){ m.color = 'rgba(0,0,0,0)'; });
     window.__stArrows(p.series, mk);   // the slim arrows, as on the live chart (Nestor, 16 Oct 2026: "do that for all")
     paintLines(p);
     var btn = (p.tfw || p.el).querySelector('.stpr-tfpill'); btn.textContent = TFL[p.tf];   // just the timeframe, no arrow (Nestor, 17 Oct 2026: "remove the < from TFs")
@@ -89367,21 +89379,33 @@ window.__stAZ = (function () {
   function pvLevels(){ if (!S || !S.pv || S.pos || S.pend || S.now >= S.f.close) return null;
     var c = px(), d = S.pv.dir, rd = S.pv.rd > 0 ? S.pv.rd : stopPx(), pend = CFG.mm.ord !== 'market', e = (pend && S.pv.entry > 0) ? S.pv.entry : c, td = tgtDist(rd);
     return { dir: d, entry: e, sl: e - d * rd, tp: td ? e + d * td : 0, rd: rd, kind: pend ? CFG.mm.ord : null }; }
-  function addLine(p, price, color, style, title, key, hide){ if (!(price > 0)) return; var l = p.series.createPriceLine({ price: price, color: color, lineWidth: key ? 2 : 1, lineStyle: style, axisLabelVisible: !hide, lineVisible: !hide, title: title }); l._k = hide ? null : key; l._p = price; p.lines.push(l); }
+  function addLine(p, price, color, style, title, key, hide){ if (!(price > 0)) return; var l = p.series.createPriceLine({ price: price, color: color, lineWidth: key ? 2 : 1, lineStyle: style, axisLabelVisible: !hide, lineVisible: false, title: title });
+    l._ln = { c: color, w: key ? 2 : 1, s: style, vis: !hide }; l._k = hide ? null : key; l._p = price; p.lines.push(l); }   // its line drawn under the candles (linesBehind); its tag and price on the scale are the library's
+  /* The trade's lines - Entry, SL, TP, BE, and the ones being aimed - BEHIND the candles (Nestor, 22 Oct 2026: "also EA lines need to sit
+     behind candles too"). The library draws a price line above the candles and cannot put it under them, so its line is off and the same
+     line (colour, width, style) is drawn here on a 'bottom' layer, over the Minimalist's shading and under the candles. */
+  function lwDash(s, lw){ return s === 1 ? [lw, lw] : (s === 2 ? [2 * lw, 2 * lw] : (s === 3 ? [6 * lw, 6 * lw] : (s === 4 ? [lw, 4 * lw] : []))); }   // the library's line styles
+  function linesBehind(p){ var view = { renderer: function(){ return { draw: function(target){ var L = (p.lines || []).filter(function(l){ return l._ln && l._ln.vis; }); if (!L.length) return;
+        target.useBitmapCoordinateSpace(function(sc){ var g = sc.context, w = sc.bitmapSize.width, r = sc.verticalPixelRatio; g.save();
+          L.forEach(function(l){ var y = null; try { y = p.series.priceToCoordinate(l._p); } catch (e) {} if (y == null) return;
+            var lw = Math.max(1, Math.floor(l._ln.w * r)), Y = Math.round(y * r) + (lw % 2 ? 0.5 : 0);
+            g.strokeStyle = l._ln.c; g.lineWidth = lw; g.setLineDash(lwDash(l._ln.s, lw)); g.beginPath(); g.moveTo(0, Y); g.lineTo(w, Y); g.stroke(); });
+          g.restore(); }); } }; }, zOrder: function(){ return 'bottom'; } };
+    try { p.series.attachPrimitive({ paneViews: function(){ return [view]; }, updateAllViews: function(){} }); } catch (e) {} }
   function paintLines(p){
     p.lines.forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} }); p.lines = [];
     if (S.live) { liveLines(p); var lv1 = S.exec ? pvLevels() : null; if (lv1) pvDraw(p, lv1, stopUnit()); return; }   // Live Charts: the open trades' lines, as on the Session Live chart; and an order being aimed
     if (PS(p) !== S) return;   // another symbol's chart: the trade is chart 1's
     var su = stopUnit(), q = S.pos;
     // the EA's colours on the MT5 chart, as on the Session Live chart: BE blue, trailing steps pink dotted, partials teal dashed, used ones grey
-    if (q) { var hd = CFG.marks === false; addLine(p, q.entry, '#c0c0c0', 0, T('Entry', 'Entrada'), null, hd);
+    if (q) { var hd = !showOn(p, 'marks'); addLine(p, q.entry, '#c0c0c0', 0, T('Entry', 'Entrada'), null, hd);
       addLine(p, q.sl, '#E56767', 0, 'SL ' + fmtU(Math.abs(q.entry - q.sl), su) + ' ' + uLbl(su), 'sl', hd);
       if (q.tp) addLine(p, q.tp, '#4ECD8B', 0, 'TP ' + (Math.abs(q.tp - q.entry) / q.rd).toFixed(1) + 'R', 'tp', hd);
       if (q.be && !q.beDone) addLine(p, q.be, '#4C8DFF', 0, 'BE', 'be', hd);
       q.ts.forEach(function(st, i){ addLine(p, st.trig, st.fired ? '#5F5F6E' : '#F472B6', 1, 'T' + (i + 1), st.fired ? null : 'ts' + i, hd); });
       q.pc.forEach(function(st, i){ addLine(p, st.trig, st.fired ? '#5F5F6E' : '#5DCAA5', 2, 'P' + (i + 1) + ' ' + Math.round(st.pct) + '%', st.fired ? null : 'pc' + i, hd); });
       return; }
-    if (S.pend) { var o = S.pend, hd2 = CFG.marks === false, td2 = tgtDist(o.rd);
+    if (S.pend) { var o = S.pend, hd2 = !showOn(p, 'marks'), td2 = tgtDist(o.rd);
       addLine(p, o.entry, '#c0c0c0', 2, pendName(o), 'pent', hd2);
       addLine(p, o.entry - o.dir * o.rd, '#E56767', 0, 'SL ' + fmtU(o.rd, su) + ' ' + uLbl(su), 'psl', hd2);
       if (td2) addLine(p, o.entry + o.dir * td2, '#4ECD8B', 0, 'TP ' + (td2 / o.rd).toFixed(1) + 'R', null, hd2);
@@ -89769,11 +89793,20 @@ window.__stAZ = (function () {
     mn.querySelectorAll('[data-tpm]').forEach(function(b){ b.classList.toggle('on', +b.getAttribute('data-tpm') === TP.m); });
     var g = mn.querySelector('[data-tpgo]'); if (g) g.textContent = T('Go to ', 'Ir a las ') + p2(TP.h) + ':' + p2(TP.m);
     if (center) mn.querySelectorAll('.stpr-tpc').forEach(function(c){ var on = c.querySelector('.on'); if (on) c.scrollTop = on.offsetTop - c.clientHeight / 2 + on.offsetHeight / 2; }); }
+  /* Show on chart is each chart's own (Nestor, 22 Oct 2026: "if i switch off the position tool in one chart the other charts also
+     change, how many times do i need to say the charts need to be independent?", "and also trade marks they need to be independent"):
+     Trade marks, Position tool and Minimalist per chart (CFG.showPer[i]); a chart with none of its own follows the switches as they
+     were (CFG.marks / pos / mini). The menu is for the chart clicked last, or the chart in the window it was opened from. */
+  function showOn(p, k){ var o = p && (CFG.showPer || {})[p.i]; if (o && o[k] != null) return !!o[k]; return k === 'mini' ? !!CFG.mini : CFG[k] !== false; }
+  function showSet(p, k, v){ if (!p) return; CFG.showPer = Object.assign({}, CFG.showPer || {}); CFG.showPer[p.i] = Object.assign({}, CFG.showPer[p.i] || {}); CFG.showPer[p.i][k] = !!v; }
+  function showTgt(){ var w = UI.w; if (w && w !== window) { var q = panes.filter(function(p){ return p.el.ownerDocument === w.document; })[0]; if (q) return q; } return actPane() || panes[0] || null; }
+  var LAYP = null;   // the chart the open Show on chart menu is for
   function layersMenu(anchor, refresh){
-    var h = '<div class="stpr-tglh">' + T('Show on chart', 'Mostrar en el gráfico') + '</div>'
-      + '<label class="stpr-tgl" title="' + esc(T('Entry and exit arrows, and the Entry / SL / TP lines with their labels on the price scale', 'Flechas de entrada y salida, y las líneas Entrada / SL / TP con sus etiquetas en la escala de precios')) + '"><input type="checkbox" id="stpr-marks"' + (CFG.marks !== false ? ' checked' : '') + '> <span>' + T('Trade marks', 'Marcas de la operación') + '</span></label>'
-      + '<label class="stpr-tgl"><input type="checkbox" id="stpr-pos"' + (CFG.pos !== false ? ' checked' : '') + '> <span>' + T('Position tool', 'Herramienta de posición') + '</span></label>'
-      + '<label class="stpr-tgl" title="' + esc(T('Nestor\'s indicator from TradingView', 'El indicador de Nestor de TradingView')) + '"><input type="checkbox" id="stpr-mini"' + (CFG.mini ? ' checked' : '') + '> <span class="stpr-tglnm">Minimalist' + (CFG.mini ? '<button type="button" class="stpr-tglgear" data-miniset title="' + esc(T('Minimalist settings', 'Ajustes del Minimalist')) + '" aria-label="' + esc(T('Minimalist settings', 'Ajustes del Minimalist')) + '"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.1"/><circle cx="8" cy="8" r="4.7"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/></svg></button>' : '') + '</span></label>';   // its parts are switched in its settings window (17 Oct 2026); the gear while it is on
+    if (!(refresh && LAYP && panes.indexOf(LAYP) >= 0)) LAYP = showTgt(); var tp = LAYP;
+    var h = '<div class="stpr-tglh">' + T('Show on chart', 'Mostrar en el gráfico') + (tp && panes.length > 1 ? ' \u00b7 ' + T('chart ', 'gráfico ') + (tp.i + 1) + ' \u00b7 ' + TFL[tp.tf] : '') + '</div>'
+      + '<label class="stpr-tgl" title="' + esc(T('Entry and exit arrows, and the Entry / SL / TP lines with their labels on the price scale', 'Flechas de entrada y salida, y las líneas Entrada / SL / TP con sus etiquetas en la escala de precios')) + '"><input type="checkbox" id="stpr-marks"' + (showOn(tp, 'marks') ? ' checked' : '') + '> <span>' + T('Trade marks', 'Marcas de la operación') + '</span></label>'
+      + '<label class="stpr-tgl"><input type="checkbox" id="stpr-pos"' + (showOn(tp, 'pos') ? ' checked' : '') + '> <span>' + T('Position tool', 'Herramienta de posición') + '</span></label>'
+      + '<label class="stpr-tgl" title="' + esc(T('Nestor\'s indicator from TradingView', 'El indicador de Nestor de TradingView')) + '"><input type="checkbox" id="stpr-mini"' + (showOn(tp, 'mini') ? ' checked' : '') + '> <span class="stpr-tglnm">Minimalist' + (showOn(tp, 'mini') ? '<button type="button" class="stpr-tglgear" data-miniset title="' + esc(T('Minimalist settings', 'Ajustes del Minimalist')) + '" aria-label="' + esc(T('Minimalist settings', 'Ajustes del Minimalist')) + '"><svg viewBox="0 0 16 16" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" aria-hidden="true"><circle cx="8" cy="8" r="2.1"/><circle cx="8" cy="8" r="4.7"/><path d="M8 1.6v1.7M8 12.7v1.7M1.6 8h1.7M12.7 8h1.7M3.5 3.5l1.2 1.2M11.3 11.3l1.2 1.2M3.5 12.5l1.2-1.2M11.3 4.7l1.2-1.2"/></svg></button>' : '') + '</span></label>';   // its parts are switched in its settings window (17 Oct 2026); the gear while it is on
     if (refresh && menuFor === 'layers') { mEl().innerHTML = h; return; }   // a switch inside it: the menu stays open
     openMenu(anchor, h, 'layers');
   }
@@ -89901,7 +89934,7 @@ window.__stAZ = (function () {
     try { var cw2 = (UI.w && !UI.w.closed) ? UI.w : window; await cw2.navigator.clipboard.writeText(url); flash(T('Link copied. Paste it into a bias chart, a review or a message.', 'Enlace copiado. Pégalo en un gráfico del sesgo, una revisión o un mensaje.')); }
     catch (e) { try { window.prompt(T('Copy this link:', 'Copia este enlace:'), url); } catch (x) {} }
     return url; }
-  function layersDot(){ var b = $('stpr-layersbtn'); if (b) b.classList.toggle('dot', CFG.marks === false || CFG.pos === false); }
+  function layersDot(){ var b = $('stpr-layersbtn'); if (b) b.classList.toggle('dot', (panes.length ? panes : [null]).some(function(p){ return !showOn(p, 'marks') || !showOn(p, 'pos'); })); }   // something off on any chart
   function sesMenu(anchor){
     if (!S) return;
     var h = '<h6>' + T('Session times', 'Horario de sesiones') + '</h6><div class="stpr-sesl">' + S.f.ses.map(function(x){ return '<label><span>' + esc(T(x.en, x.es)) + '</span><input type="text" inputmode="numeric" maxlength="5" autocomplete="off" data-sesin="' + x.id + '" value="' + hm(x.at) + '"></label>'; }).join('') + '</div>'
@@ -90247,8 +90280,8 @@ window.__stAZ = (function () {
     tag(T('Stop: ', 'Stop: ') + o.sl.toFixed(dg) + ' (' + fmtUs(XF, sd, su) + ' ' + uLbl(su) + ')', yS + (yS > yE ? 12 : -12), posC('pas', 0.95));
     if (yT != null && Math.abs(yS - yT) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + (sd > 0 ? (td / sd).toFixed(2) : '-'), yE + (yT < yE ? 14 : -14), 'rgba(42,40,51,0.92)'); }
   function drawZones(p, g, dm){
-    var mine = PS(p) === S, list = S.live ? liveZones(p) : (!mine ? [] : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; }));
-    if (S.pos && mine) list.push({ e: S.pos.entry, sl: S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });
+    var mine = PS(p) === S, list = S.live ? liveZones(p) : (!mine ? [] : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl0 || t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; }));
+    if (S.pos && mine) list.push({ e: S.pos.entry, sl: S.pos.rd > 0 ? S.pos.entry - S.pos.dir * S.pos.rd : S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });   // the original stop (liveZones)
     list.forEach(function(o){ var yE = yOf(p, o.e), yS = yOf(p, o.sl), yT = o.tp ? yOf(p, o.tp) : null, xE = xAt(p, o.a), xR = xAt(p, o.b);
       if (yE == null || yS == null || xE == null || xR == null) return;
       xE = Math.max(0, Math.min(dm.pw, xE)); xR = Math.max(0, Math.min(dm.pw, xR)); var bw = xR - xE; if (bw < 1) return; p._zones++;
@@ -90266,8 +90299,11 @@ window.__stAZ = (function () {
         g.fillStyle = '#0b0a0d'; g.textAlign = 'left'; g.fillText(tx, px0 + 7, py + ph / 2 + 0.5); }
       g.restore(); }); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
-  function syncHL(p){ var want = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: alertTitle(d), s: hlStyle(d) });
+  function syncHL(p){ var want = [], ov = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) { var tx = alertTitle(d), tg = tx ? hlTagW(p, d.price) : 0;
+        if (tg) ov.push({ p: d.price, t: tx, c: dC(d), x: tg });   // beside a trade's tag: drawn here (hlNoteAt)
+        want.push({ p: d.price, c: dC(d), w: Math.max(1, Math.min(4, Math.round(dW(d)))), t: tg ? '' : tx, s: hlStyle(d) }); }
       else if (d && d.type === 'hray' && d.a && isFinite(d.a.price) && visibleOn(d, p.tf)) want.push({ p: d.a.price, c: dC(d), w: 1, t: '', s: 0, nl: 1 }); });   // a horizontal ray: its price on the scale (its line is its own: it starts where it was put)
+    var os = JSON.stringify(ov); if (os !== p._hlOvSig) { p._hlOvSig = os; p._hlOv = ov; dirty(); }
     var sig = JSON.stringify(want); if (sig === p._hlSig) return; p._hlSig = sig;
     (p.hl || []).forEach(function(l){ try { p.series.removePriceLine(l); } catch (e) {} });
     p.hl = want.map(function(o){ try { return p.series.createPriceLine({ price: o.p, color: o.c, lineWidth: o.w, lineStyle: o.s || 0, lineVisible: !o.nl, axisLabelVisible: true, title: o.t }); } catch (e) { return null; } }).filter(Boolean); }
@@ -90761,12 +90797,13 @@ window.__stAZ = (function () {
     var g = c.getContext('2d'); g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, w, h); p._kdm = dm;
     try { cmpRebase(p); cmpLegend(p); } catch (e) {}   // the compared symbols: from the first candle on screen
     g.save(); g.beginPath(); g.rect(0, 0, dm.pw, dm.ph); g.clip();
-    if (CFG.mini) { MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; } else mubSet(p, []);   // under the trades and the drawings (MINI_P: this chart's settings)
-    p._zones = 0; if (CFG.pos !== false) drawZones(p, g, dm);
+    if (showOn(p, 'mini')) { MINI_P = p; try { drawMini(p, g, dm); } catch (e) {} MINI_P = null; } else mubSet(p, []);   // under the trades and the drawings (MINI_P: this chart's settings)
+    p._zones = 0; if (showOn(p, 'pos')) drawZones(p, g, dm);
     if (p._tmShow) try { tmPath(p, g); } catch (e) {}   // a trade's card is showing: its path
     try { cdLbl(p); } catch (e) {}
     var LST = dwListFor(p), act = LST === DW.list;   // this chart's symbol's drawings; selecting and drawing only on the one in hand
     LST.forEach(function(d){ if (visibleOn(d, p.tf)) try { drawOne(p, g, d, dm.pw, false); } catch (e) {} });
+    (p._hlOv || []).forEach(function(o){ try { hlNoteAt(p, g, o, dm.pw); } catch (e) {} });   // a horizontal line's note beside a trade's tag
     p._bells = []; LST.forEach(function(d){ if (!(d && altKind(d) && d.alert && visibleOn(d, p.tf))) return; var bp = bellPos(p, d, dm);   // the bell on each alert's drawing (back 19 Oct 2026; every drawing that takes one since batch D)
       if (bp) { bellAt(g, bp.x, bp.y, dC(d), !!d.hitAt); p._bells.push({ x: bp.x, y: bp.y, hit: !!d.hitAt, price: d.type === 'hline' ? d.price : null, d: d }); } });
     if (act && DW.pending) try { drawOne(p, g, DW.pending, dm.pw, true); } catch (e) {}
@@ -91015,7 +91052,7 @@ window.__stAZ = (function () {
       dirty(); return; }
     // the Minimalist's range zone: its left edge (and its right one when it has an end) moves its start (and end) by hand
     // (Nestor, 17 Oct 2026: "i cant move the P/D zone?"); the first drag turns Auto (follow structure) off
-    var mz = CFG.mini && miniOn('zone', p) && p._mz;
+    var mz = showOn(p, 'mini') && miniOn('zone', p) && p._mz;
     if (mz && !touch && xy.y >= mz.y0 - 4 && xy.y <= mz.y1 + 4) { var o0 = ms(p), ed = Math.abs(xy.x - mz.x0) < 6 ? 'a' : (!o0.detach && Math.abs(xy.x - mz.x1) < 6 ? 'b' : null);
       if (ed) { e.stopPropagation(); e.preventDefault(); var W0 = Object.assign({}, msRaw(p));
         if (W0.auto !== false) { W0.auto = false; W0.zA = mz.tA; W0.detach = true; flash(T('Range zone moved by hand: Auto (follow structure) is off in its settings.', 'Zona del rango movida a mano: Auto está apagado en sus ajustes.')); }
@@ -91062,7 +91099,7 @@ window.__stAZ = (function () {
         if (o.sl != null && o.tp != null) { d.sl = o.sl + dp; d.tp = o.tp + dp; } }
       dirty(); return; }
     if (p && DW.tool === 'none' && !e.touches) { var xy2 = evXY(p, e), nh = newsAt(p, xy2.x, xy2.y); if (!DW.pin) newsCard(p, nh);
-      var mz2 = CFG.mini && miniOn('zone', p) && p._mz, onEdge = !!(mz2 && xy2.y >= mz2.y0 - 4 && xy2.y <= mz2.y1 + 4 && (Math.abs(xy2.x - mz2.x0) < 6 || (!ms(p).detach && Math.abs(xy2.x - mz2.x1) < 6)));
+      var mz2 = showOn(p, 'mini') && miniOn('zone', p) && p._mz, onEdge = !!(mz2 && xy2.y >= mz2.y0 - 4 && xy2.y <= mz2.y1 + 4 && (Math.abs(xy2.x - mz2.x0) < 6 || (!ms(p).detach && Math.abs(xy2.x - mz2.x1) < 6)));
       if ((DW.mzHover === p) !== onEdge) { DW.mzHover = onEdge ? p : null; dirty(); }
       var hh = hit(p, xy2.x, xy2.y), hv = hh ? hh.i : null; if (DW.hov !== hv || DW.hovP !== p) { DW.hov = hv; DW.hovP = p; dirty(); }
       var onPl = onPlus(p, xy2) ? p : null; if (DW.plusHov !== onPl) { DW.plusHov = onPl; dirty(); } if (onPl) { p.el.querySelector('.stpr-pc').style.cursor = 'pointer'; return; }
@@ -91174,7 +91211,7 @@ window.__stAZ = (function () {
     g.restore(); }
   function newsAt(p, x, y){ return newsAt0(p, x, y) || tmAt(p, x, y); }   // a news disc first, else a trade's arrow (Live Charts)
   // a trade's arrow under the mouse: drawn by __stArrows (the library's size and gap from the candle), so measured the same way
-  function tmAt(p, x, y){ if (!S || !S.live || CFG.marks === false || !(p._tmk && p._tmk.length)) return null;
+  function tmAt(p, x, y){ if (!S || !S.live || !showOn(p, 'marks') || !(p._tmk && p._tmk.length)) return null;
     var ts = p.chart.timeScale(), bs = 6; try { var a = ts.logicalToCoordinate(0), b = ts.logicalToCoordinate(1); if (a != null && b != null && b > a) bs = b - a; } catch (e) {}
     var sz = Math.min(Math.max(bs, 12), 30), gap = Math.max(Math.ceil(sz * 0.1), 3), rx = Math.max(7, sz * 0.4 + 3), best = null, bd = 1e9;
     p._tmk.forEach(function(g){ var gx = ts.timeToCoordinate(g.time); if (gx == null) return; var L = lOfT(p, g.time), bar = L == null ? null : p.bars[Math.round(L)];
@@ -91231,7 +91268,7 @@ window.__stAZ = (function () {
     c.style.setProperty('--arrow-x', Math.max(10, Math.min(W - 10, hit.x - left - 3)) + 'px');
   }
   // while its card shows: the trade's path, from the entry to the exit (or to the price now), dotted in its colour, as MT5 joins them
-  function tmPath(p, g){ var h = p._tmShow; if (!h || !h.g || CFG.marks === false) return; var tt = p._tmT || {};
+  function tmPath(p, g){ var h = p._tmShow; if (!h || !h.g || !showOn(p, 'marks')) return; var tt = p._tmT || {};
     h.g.list.forEach(function(x){ var te = tt[x.ticket + '|e'], tx = tt[x.ticket + '|x'];
       var a = (te != null && x.entry > 0) ? Pt(p, { t: te, price: x.entry }) : null, b = x.open ? ((x.px > 0) ? Pt(p, { t: p.times[p.n - 1], price: x.px }) : null) : ((tx != null && x.exit > 0) ? Pt(p, { t: tx, price: x.exit }) : null);
       if (!a) return; var col = x.open ? '#f472b6' : TRC[lvTrRes(x)];
@@ -92321,7 +92358,7 @@ window.__stAZ = (function () {
   function ltKey(r, o){ if (o.color === '#5F5F6E') return null; var t = String(o.title || ''), m, b = 'lt|' + r.ticket + '|';
     if (/^SL/.test(t)) return b + 'sl|'; if (t === 'TP') return b + 'tp|'; if (t === 'BE') return b + 'be|';
     if ((m = /^T(\d+)$/.exec(t))) return b + 'ts|' + (m[1] - 1); if ((m = /^P(\d+)/.exec(t))) return b + 'pc|' + (m[1] - 1); return null; }
-  function liveLines(p){ var hd = CFG.marks === false; lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var k = ltKey(x.r, o), mv = k && LT.k === k && LT.price > 0;
+  function liveLines(p){ var hd = !showOn(p, 'marks'); lvIdeas(PS(p).sym).forEach(function(x){ lvLevels(x).forEach(function(o){ var k = ltKey(x.r, o), mv = k && LT.k === k && LT.price > 0;
     addLine(p, mv ? LT.price : o.price, o.color, o.lineStyle, mv && LT.wait ? o.title + T(' · sending…', ' · enviando…') : o.title, k, hd); }); }); }
   // let go: a confirm box by the line, then the command to MT5 (the EA does what the same drag does there)
   function ltAsk(p, txt, cb){ var d = p.el.ownerDocument, b = p.el.querySelector('.stpr-tmc'); if (!b) { b = d.createElement('div'); b.className = 'stpr-tmc'; p.el.appendChild(b); }
@@ -92347,7 +92384,11 @@ window.__stAZ = (function () {
       // no side / symbol / R label in front (Nestor, 19 Oct 2026: "i dont need this, i have the toolbox to get this information")
       return '<div class="stpr-lvtr" data-tk="' + esc(String(r.ticket)) + '" data-side="' + (x.long ? 'buy' : 'sell') + '">' + window.__stTM.row(r) + '</div>'; }).join('');
     if (el._h !== h) { el.innerHTML = h; el._h = h; } }
-  function liveZones(p){ if (CFG.pos === false) return []; return lvIdeas(PS(p).sym).map(function(x){ var sl = null, tp = null; lvLevels(x).forEach(function(o){ if (/^SL/.test(o.title)) sl = o.price; else if (o.title === 'TP') tp = o.price; });
+  /* The position box's stop part stays at the trade's ORIGINAL stop once the stop has moved - to break-even or past it - as the risk it
+     was taken with (Nestor, 22 Oct 2026: "when SL moves to BE dont delete the SL size drawing", "i need it as reference and also to take
+     screenshots for my session review"). The SL line itself is where the stop is now. Live: the entry less 1R (tick.rpx, the first risk). */
+  function liveZones(p){ if (!showOn(p, 'pos')) return []; return lvIdeas(PS(p).sym).map(function(x){ var sl = null, tp = null; lvLevels(x).forEach(function(o){ if (/^SL/.test(o.title)) sl = o.price; else if (o.title === 'TP') tp = o.price; });
+      var rp = +x.tk.rpx; if (isFinite(rp) && rp > 0) sl = x.tk.op - (x.long ? 1 : -1) * rp;   // the original stop
       return { e: x.tk.op, sl: sl, tp: tp, a: x.at, b: S.now, r: null }; }).filter(function(o){ return o.sl != null && o.a; }); }
   function liveHeader(){ if (!S || !S.live) return; relang();
     $('stpr-symt').textContent = S.sym.name;
@@ -92389,8 +92430,11 @@ window.__stAZ = (function () {
     if (b && p.tf < 10080 && !(S.live && n >= S.f.close)) { left = keyOf(p.tf, n) + p.tf * 60 - n; if (!(left > 0 && left <= p.tf * 60)) left = null; }
     try { if (left != null) y = p.series.priceToCoordinate(b.close); } catch (e) {}
     var dm = paneDims(p); if (y == null || y < 0 || y > dm.ph) { ax.set('cd', null); cdLv(p, left == null); return; }
-    cdLv(p, false); var L = look();
-    ax.set('cd', { y: y, t: cdTxt(left), bg: b.close >= b.open ? L.up : L.dn }); }
+    /* aiming an order (execution mode) the price counts: its label is back on the scale and the time left sits just under it, as
+       TradingView stacks them (Nestor, 22 Oct 2026: "when i am in execution mode the candle count down covers the price on the
+       scale"); otherwise the time left takes the price label's place, as he asked on 19 Oct */
+    var ex = !!S.exec, fs = 11; try { fs = p.chart.options().layout.fontSize || 11; } catch (e) {} cdLv(p, ex); var L = look();
+    ax.set('cd', { y: ex ? y + Math.ceil(fs * 17 / 12) + 1 : y, t: cdTxt(left), bg: b.close >= b.open ? L.up : L.dn }); }
   function lvBadges(){ if (!S || !(S.live || S.today)) return; var n = nowS();
     panes.forEach(function(p){ var F = PS(p), dg = F.dg || F.digits, fx = (dg === 5 || dg === 3), sp = '';
       if (F.px && F.px.sp != null && lvFresh(F) && (S.live || S.follow)) sp = fx ? (Math.round(F.px.sp / Math.pow(10, 1 - dg) * 10) / 10).toFixed(1) + 'p' : (Math.round(F.px.sp / Math.pow(10, -dg) * 10) / 10).toFixed(1) + ' pts';
@@ -92699,7 +92743,7 @@ window.__stAZ = (function () {
       if (t.closest && t.closest('#stpr-sesed')) { sesMenu($('stpr-sesed')); return; }
       if (t.closest && t.closest('#stpr-goto')) { goMenu($('stpr-goto')); return; }
       if (t.closest && t.closest('#stpr-layersbtn')) { layersMenu($('stpr-layersbtn')); return; }
-      if (t.closest && t.closest('[data-miniset]')) { closeMenu(); miniDialog(); return; }
+      if (t.closest && t.closest('[data-miniset]')) { var lp = LAYP; closeMenu(); miniDialog(null, lp); return; }   // that chart's settings
       if (t.closest && t.closest('#stpr-snapbtn')) { snapMenu($('stpr-snapbtn')); return; }
       if (t.closest && t.closest('#stpr-alertsbtn')) { alertsMenu($('stpr-alertsbtn')); return; }
       if (t.closest && t.closest('#stpr-treebtn')) { treeMenu($('stpr-treebtn')); return; }
@@ -92747,8 +92791,8 @@ window.__stAZ = (function () {
     $('stpr-date').addEventListener('click', function(e){ try { e.target.showPicker(); } catch (x) {} });
     $('stpr-ses').addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-ses]'); if (b) jumpTo(b.getAttribute('data-ses')); });
     $('stpr-menu').addEventListener('change', WH.mchg = function(e){ var id = e.target.getAttribute && e.target.getAttribute('data-sesin'); if (id) setSes(id, e.target);
-      if (e.target.id === 'stpr-marks' || e.target.id === 'stpr-pos') { CFG[e.target.id === 'stpr-marks' ? 'marks' : 'pos'] = e.target.checked; save(); layersDot(); if (S) render(); dirty(); }
-      if (e.target.id === 'stpr-mini') { CFG.mini = e.target.checked; save(); layersMenu($('stpr-layersbtn'), true); dirty(); }
+      if (e.target.id === 'stpr-marks' || e.target.id === 'stpr-pos') { showSet(LAYP, e.target.id === 'stpr-marks' ? 'marks' : 'pos', e.target.checked); save(); layersDot(); if (S) render(); dirty(); }   // that chart only (showOn)
+      if (e.target.id === 'stpr-mini') { showSet(LAYP, 'mini', e.target.checked); save(); layersMenu($('stpr-layersbtn'), true); dirty(); }
       var mp = e.target.getAttribute && e.target.getAttribute('data-mini'); if (mp) { var mo = Object.assign({}, CFG.miniOff || {}); if (e.target.checked) delete mo[mp]; else mo[mp] = true; CFG.miniOff = mo; save(); dirty(); } });
     $('stpr-menu').addEventListener('click', lookClick);
     $('stpr-menu').addEventListener('input', lookInput);
@@ -92763,7 +92807,7 @@ window.__stAZ = (function () {
     document.addEventListener('mousedown', dwDown, true);
     document.addEventListener('dblclick', WH.dbl = function(e){ if (!isOpen()) return; var p = paneOf(e); if (!p) return; var xy = evXY(p, e), h = hit(p, xy.x, xy.y), d = h && DW.list[h.i];
       if (d && (d.type === 'text' || d.type === 'note')) { e.preventDefault(); e.stopPropagation(); DW.sel = h.i; DW.noProps = false; updDel(); txtEdit(p, d, false); return; }   // a price note's words too
-      var mz3 = !h && CFG.mini && miniOn('zone', p) && p._mz; if (mz3 && xy.x >= mz3.x0 && xy.x <= mz3.x1 && xy.y >= mz3.y0 && xy.y <= mz3.y1) { e.preventDefault(); e.stopPropagation(); miniDialog(null, p); } }, true);
+      var mz3 = !h && showOn(p, 'mini') && miniOn('zone', p) && p._mz; if (mz3 && xy.x >= mz3.x0 && xy.x <= mz3.x1 && xy.y >= mz3.y0 && xy.y <= mz3.y1) { e.preventDefault(); e.stopPropagation(); miniDialog(null, p); } }, true);
     window.addEventListener('mousemove', dwMove);
     window.addEventListener('mouseup', dwUp);
     document.addEventListener('touchstart', function(e){ DW.tin = !!(isOpen() && paneOf(e)); if (DW.tin) dwDown(e); }, { passive: false, capture: true });
@@ -92867,7 +92911,7 @@ window.__stAZ = (function () {
     logShown: logShown, symName: function(raw){ var s = symBy(raw); return s ? s.name : raw; },
     _s: function(){ return S; }, _mm: function(){ return CFG.mm; }, _exec: toggleExec, _aim: function(pr){ aim(pr); linesAll(); paintPill(); }, _fire: fire, _touch: function(v){ forceTouch = v; if (S) render(); },
     _settle: function(){ settleNow(); render(); }, _setLine: function(k, pr){ setLine(k, pr); settleNow(); render(); }, _lots: function(rd){ return lotsFor(rd); }, _step: step, _act: function(){ var a = actPane(); return a ? a.i : -1; }, _stepSec: function(){ return stepSec(); }, _place: place, _close: closeNow, _jump: jumpTo, _preview: setPreview, _panes: function(){ return panes; },
-    _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: o.lineVisible !== false && o.axisLabelVisible !== false }; }) : []; },
+    _lines: function(i){ var p = panes[i || 0]; return p ? p.lines.map(function(l){ var o = l.options(); return { k: l._k, p: l._p, title: o.title, vis: !!(l._ln && l._ln.vis) && o.axisLabelVisible !== false }; }) : []; },
     _yOf: function(i, pr){ var p = panes[i || 0]; return p ? p.series.priceToCoordinate(pr) : null; }, _cfg: function(){ return CFG; }, _render: function(f){ render(f); },
     _layout: setLayout, _tf: setTf, _syms: function(){ return SYMS; }, _wl: function(){ return { list: wlList(), q: WL.q, hub: hubKey() }; }, _canon: canon, _keyOf: keyOf, _paneBars: function(i){ return panes[i] ? paneBars(panes[i]) : null; },
     _dr: function(){ return DW; }, _quick: quickDraw, _copy: copySel, _paste: pasteClip, _pick: pickTool, _keyRows: keyRows, _keysMenu: function(){ keysMenu($('stpr-keysbtn')); }, _flyOpen: flyOpen, _flyShut: flyShut, _tg: function(){ return TG; },

@@ -87,12 +87,15 @@
     C.stopPx.EURUSD = 0.01; P._place(1); for (k = 0; k < 4; k++) P._step(); await settle(); P._render(); await W(150);
     ok('in a trade the position tool draws its zones on both charts', pane(0)._zones === 1 && pane(1)._zones === 1, [pane(0)._zones, pane(1)._zones]);
     var mk = document.getElementById('stpr-marks'); mk.checked = false; mk.dispatchEvent(new Event('change', { bubbles: true })); await W(80);
-    ok('Trade marks off hides the Entry / SL / TP lines and their labels (and lights the dot)', C.marks === false && P._lines(0).length >= 3 && ['Entry', 'SL', 'TP'].every(function (t) { return P._lines(0).some(function (l) { return l.title.indexOf(t) === 0; }); }) && P._lines(0).every(function (l) { return !l.vis; }) && document.getElementById('stpr-layersbtn').classList.contains('dot'), P._lines(0));
+    // that chart only (Show on chart is each chart's own since 22 Oct 2026); the other keeps its lines
+    var tm = +Object.keys(C.showPer || {}).filter(function (k) { return C.showPer[k].marks === false; })[0];
+    ok('Trade marks off hides that chart\'s Entry / SL / TP lines and their labels (and lights the dot); the other chart keeps them', isFinite(tm) && P._lines(tm).length >= 3 && ['Entry', 'SL', 'TP'].every(function (t) { return P._lines(tm).some(function (l) { return l.title.indexOf(t) === 0; }); }) && P._lines(tm).every(function (l) { return !l.vis; }) && P._lines(1 - tm).some(function (l) { return l.vis; }) && document.getElementById('stpr-layersbtn').classList.contains('dot'), [tm, P._lines(0), P._lines(1)]);
     var po = document.getElementById('stpr-pos'); po.checked = false; po.dispatchEvent(new Event('change', { bubbles: true })); await settle(); P._render(); await W(150);
-    ok('Position tool off takes the zones away', C.pos === false && pane(0)._zones === 0);
+    var tz = +Object.keys(C.showPer || {}).filter(function (k) { return C.showPer[k].pos === false; })[0];
+    ok('Position tool off takes that chart\'s zones away; the other chart keeps its own', isFinite(tz) && pane(tz)._zones === 0 && pane(1 - tz)._zones === 1, [tz, pane(0)._zones, pane(1)._zones]);
     mk.checked = true; mk.dispatchEvent(new Event('change', { bubbles: true })); po.checked = true; po.dispatchEvent(new Event('change', { bubbles: true }));
     P._close(); S().done = null; await settle(); P._render(); await W(150);
-    ok('a closed trade keeps its box, with the R it made', pane(0)._zones === 1 && C.marks === true && !document.getElementById('stpr-layersbtn').classList.contains('dot'));
+    ok('a closed trade keeps its box, with the R it made', pane(0)._zones === 1 && C.showPer[tm].marks === true && !document.getElementById('stpr-layersbtn').classList.contains('dot'));
     document.getElementById('stpr-layersbtn').click(); await W(20); C.stopPx.EURUSD = 0.0012;
 
     // drawings: one drawing on every chart, Trade Replay's options box

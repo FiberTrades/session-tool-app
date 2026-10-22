@@ -35,7 +35,7 @@
     var mi = document.getElementById('stpr-mini');
     ok('Show on chart lists Minimalist, off to begin with, its parts hidden', mi && !mi.checked && !document.querySelector('#stpr-menu [data-mini]'), document.getElementById('stpr-menu').textContent);
     mi.click(); await W(40);
-    ok('switched on: saved, the menu stays open with a Settings button (its parts are switched in its window, not here)', C.mini === true && document.getElementById('stpr-menu').classList.contains('show') && document.querySelector('#stpr-menu [data-miniset]') && !document.querySelector('#stpr-menu [data-mini]'), document.getElementById('stpr-menu').textContent);
+    ok('switched on: saved (that chart\'s own, 22 Oct 2026), the menu stays open with a Settings button (its parts are switched in its window, not here)', Object.keys(C.showPer || {}).some(function (k) { return C.showPer[k].mini === true; }) && document.getElementById('stpr-menu').classList.contains('show') && document.querySelector('#stpr-menu [data-miniset]') && !document.querySelector('#stpr-menu [data-mini]'), document.getElementById('stpr-menu').textContent);
     ok('no ICT words in the menu', !/premium|discount|kill ?zone|liquidity|order block/i.test(document.getElementById('stpr-menu').textContent));
     var M = P._mini(0), B = pane(0).bars, n = B.length;
     ok('worked out from the candles up to now only (15m)', M && M.n === n && B[n - 1].time < S().now, M && M.n);
