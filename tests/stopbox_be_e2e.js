@@ -8,6 +8,9 @@
   // red-tinted pixels of the overlay in a column of the box, between two prices
   var redRows = function (p, x, pa, pb) { var c = p.ov, d = window.devicePixelRatio || 1, g = c.getContext('2d'), ya = p.series.priceToCoordinate(pa), yb = p.series.priceToCoordinate(pb), n = 0, m = 0;
     for (var y = Math.min(ya, yb) + 3; y < Math.max(ya, yb) - 3; y += 2) { var q = g.getImageData(Math.round(x * d), Math.round(y * d), 1, 1).data; m++; if (q[3] > 0 && q[0] > q[1] + 20) n++; } return [n, m]; };
+  // the strongest red on the overlay along the box's top edge (the original stop): a solid line is opaque, the box's own edge half
+  var edgeA = function (p, x, price) { var c = p.ov, d = window.devicePixelRatio || 1, g = c.getContext('2d'), y = p.series.priceToCoordinate(price), a = 0;
+    for (var dy = -2; dy <= 2; dy++) { var q = g.getImageData(Math.round(x * d), Math.round((y + dy) * d), 1, 1).data; if (q[0] > q[1] + 20) a = Math.max(a, q[3]); } return a; };
   try {
     for (var i = 0; i < 200 && !(window.__stPractice && window.__stSB && window.__stLC); i++) await W(100);
     await W(800);
@@ -18,10 +21,12 @@
     P._goto('10:02'); P._place(1); for (k = 0; k < 8; k++) P._step(); P._render(); await W(300);
     var S = P._s(), p = P._panes()[0], pos = S.pos, sl0 = pos.entry - pos.dir * pos.rd, xMid = (p.chart.timeScale().timeToCoordinate(p.bars[p.bars.length - 4].time) || 300);
     var before = redRows(p, xMid, pos.entry, sl0);
-    ok('Replay: a buy, its stop box from the entry to the stop', before[0] > before[1] * 0.6, before);
-    pos.sl = pos.entry; pos.beDone = true; P._render(); await W(300);   // what the EA's break-even does
+    ok('Replay: a buy, its stop box from the entry to the stop, the stop\'s solid line along it', before[0] > before[1] * 0.6 && edgeA(p, xMid, sl0) > 200, [before, edgeA(p, xMid, sl0)]);
+    var y0 = p.series.priceToCoordinate(sl0); pos.sl = pos.entry; pos.beDone = true; P._render(); await W(300);   // what the EA's break-even does
     var after = redRows(p, xMid, pos.entry, sl0);
+    ok('...the chart does not jump: the original stop stays in view', Math.abs(p.series.priceToCoordinate(sl0) - y0) < 2, [y0, p.series.priceToCoordinate(sl0)]);
     ok('...stop moved to break-even: the stop box is still there, its original size', after[0] > after[1] * 0.6 && pos.sl === pos.entry, after);
+    ok('...with its thin edge only: no thick line along its top', edgeA(p, xMid, sl0) > 0 && edgeA(p, xMid, sl0) < 200, edgeA(p, xMid, sl0));
     P.close(); await W(300);
 
     // Live Charts with a stand-in trade at break-even
@@ -29,14 +34,14 @@
     document.querySelector('.tab[data-page="livecharts"]').click();
     for (k = 0; k < 250 && !(P._s() && P._s().live && P._panes().length && P._panes()[0].n); k++) await W(100);
     await W(500); S = P._s(); p = P._panes()[0];
-    var bar = p.bars[p.bars.length - 12], op = bar.close, rp = 0.0010;
+    var bar = p.bars[p.bars.length - 12], op = bar.close, rp = 0.0004;
     var idea = { main: { symbol: S.sym.raw, direction: 'long', openedAt: bar.time * 1000, tick: { op: op, rpx: rp, sl: 0, tp: 2 } } };
     var L0 = window.__stLive, real = L0 && L0.openIdeas;
     if (L0) L0.openIdeas = function () { return [idea]; }; else window.__stLive = { openIdeas: function () { return [idea]; } };
     P._render(); await W(400);
     var lv = P._lines(0).map(function (l) { return l.title; }).join(',');
     var xm = p.chart.timeScale().timeToCoordinate(p.bars[p.bars.length - 5].time) || 300, live = redRows(p, xm, op, op - rp);
-    ok('Live Charts: an open buy at break-even ("SL · BE" on the entry): its stop box still shows the original 1R stop', /SL · BE/.test(lv) && p._zones > 0 && live[0] > live[1] * 0.6, [lv, p._zones, live]);
+    ok('Live Charts: an open buy at break-even ("SL · BE" on the entry): its stop box still shows the original 1R stop, no thick line along its top', /SL · BE/.test(lv) && p._zones > 0 && live[0] > live[1] * 0.6 && edgeA(p, xm, op - rp) > 0 && edgeA(p, xm, op - rp) < 200, [lv, p._zones, live, edgeA(p, xm, op - rp)]);
     if (L0) L0.openIdeas = real; else delete window.__stLive;
     window.__stLcForce = false;
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }

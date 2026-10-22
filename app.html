@@ -89263,7 +89263,7 @@ window.__stAZ = (function () {
           return window.__stAZ.fit(H, { priceRange: { minValue: Math.min(lo, H.f.lo), maxValue: Math.max(hi, H.f.hi) }, margins: r.margins }); }
         H.f = null;
         var add = function(v){ if (v > 0) { lo = Math.min(lo, v); hi = Math.max(hi, v); } };
-        if (S.pos) { add(S.pos.sl); add(S.pos.tp); }
+        if (S.pos) { add(S.pos.sl); add(S.pos.tp); if (S.pos.rd > 0) add(S.pos.entry - S.pos.dir * S.pos.rd); }   // + the original stop: its box stays in view after break-even
         H.last = { lo: lo, hi: hi };
         return window.__stAZ.fit(H, { priceRange: { minValue: lo, maxValue: hi }, margins: r.margins }); }; })(X, AZ) });
     var pane = { i: i, src: X, tf: tf, want: want, el: el, chart: chart, series: series, _look: 1, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
@@ -90280,15 +90280,17 @@ window.__stAZ = (function () {
     tag(T('Stop: ', 'Stop: ') + o.sl.toFixed(dg) + ' (' + fmtUs(XF, sd, su) + ' ' + uLbl(su) + ')', yS + (yS > yE ? 12 : -12), posC('pas', 0.95));
     if (yT != null && Math.abs(yS - yT) > 40) tag(T('Risk/reward ', 'Riesgo/beneficio ') + (sd > 0 ? (td / sd).toFixed(2) : '-'), yE + (yT < yE ? 14 : -14), 'rgba(42,40,51,0.92)'); }
   function drawZones(p, g, dm){
-    var mine = PS(p) === S, list = S.live ? liveZones(p) : (!mine ? [] : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl0 || t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; }));
-    if (S.pos && mine) list.push({ e: S.pos.entry, sl: S.pos.rd > 0 ? S.pos.entry - S.pos.dir * S.pos.rd : S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });   // the original stop (liveZones)
+    var mine = PS(p) === S, list = S.live ? liveZones(p) : (!mine ? [] : S.trades.filter(function(t){ return t.sl && t.exitTs <= S.now; }).map(function(t){ return { e: t.entry, sl: t.sl0 || t.sl, now: t.sl, tp: t.tp, a: t.entryTs, b: t.exitTs, r: t.r }; }));
+    if (S.pos && mine) list.push({ e: S.pos.entry, sl: S.pos.rd > 0 ? S.pos.entry - S.pos.dir * S.pos.rd : S.pos.sl, now: S.pos.sl, tp: S.pos.tp, a: S.pos.entryTs, b: S.now, r: null });   // the original stop (liveZones)
     list.forEach(function(o){ var yE = yOf(p, o.e), yS = yOf(p, o.sl), yT = o.tp ? yOf(p, o.tp) : null, xE = xAt(p, o.a), xR = xAt(p, o.b);
       if (yE == null || yS == null || xE == null || xR == null) return;
       xE = Math.max(0, Math.min(dm.pw, xE)); xR = Math.max(0, Math.min(dm.pw, xR)); var bw = xR - xE; if (bw < 1) return; p._zones++;
       if (yT != null) { g.fillStyle = posC('pat', 0.13); g.fillRect(xE, Math.min(yE, yT), bw, Math.abs(yE - yT)); g.strokeStyle = posC('pat', 0.5); g.lineWidth = 1; g.strokeRect(xE + .5, Math.min(yE, yT) + .5, bw - 1, Math.abs(yE - yT) - 1); }
       g.fillStyle = posC('pas', 0.13); g.fillRect(xE, Math.min(yE, yS), bw, Math.abs(yE - yS)); g.strokeStyle = posC('pas', 0.5); g.lineWidth = 1; g.strokeRect(xE + .5, Math.min(yE, yS) + .5, bw - 1, Math.abs(yE - yS) - 1);
       g.save(); g.lineWidth = 1.4; g.setLineDash([]); var ln = function(y, c){ g.strokeStyle = c; g.beginPath(); g.moveTo(xE, y); g.lineTo(xR, y); g.stroke(); };
-      ln(yS, posC('pas', 1)); if (yT != null) ln(yT, posC('pat', 1)); ln(yE, '#f472b6');
+      // the stop's solid line only while the stop is still there: moved (break-even or past it) the box keeps its thin edge, with no thick line
+      // along its top (Nestor, 22 Oct 2026: "whats the thick line you have added to the top border of the sl box? remove that")
+      if (!(o.now != null && Math.abs(o.now - o.sl) > 1e-9)) ln(yS, posC('pas', 1)); if (yT != null) ln(yT, posC('pat', 1)); ln(yE, '#f472b6');
       zoneTags(p, g, xE, xR, yE, yS, yT, o);   // the mouse on it: its target, stop and risk / reward, as the Long / Short tool shows
       if (o.r != null) { g.font = '700 12px "AppNum","DM Mono",monospace'; g.textBaseline = 'middle';
         var tx = (o.r >= 0 ? '+' : '') + o.r.toFixed(2) + 'R', pw = g.measureText(tx).width + 14, ph = 19, top = Math.min(yE, yS, yT != null ? yT : yE), bot = Math.max(yE, yS, yT != null ? yT : yE), px0 = Math.max(2, Math.min(xE, dm.pw - pw - 2)), yMax = dm.ph - ph - 3;
@@ -92388,8 +92390,8 @@ window.__stAZ = (function () {
      was taken with (Nestor, 22 Oct 2026: "when SL moves to BE dont delete the SL size drawing", "i need it as reference and also to take
      screenshots for my session review"). The SL line itself is where the stop is now. Live: the entry less 1R (tick.rpx, the first risk). */
   function liveZones(p){ if (!showOn(p, 'pos')) return []; return lvIdeas(PS(p).sym).map(function(x){ var sl = null, tp = null; lvLevels(x).forEach(function(o){ if (/^SL/.test(o.title)) sl = o.price; else if (o.title === 'TP') tp = o.price; });
-      var rp = +x.tk.rpx; if (isFinite(rp) && rp > 0) sl = x.tk.op - (x.long ? 1 : -1) * rp;   // the original stop
-      return { e: x.tk.op, sl: sl, tp: tp, a: x.at, b: S.now, r: null }; }).filter(function(o){ return o.sl != null && o.a; }); }
+      var now = sl, rp = +x.tk.rpx; if (isFinite(rp) && rp > 0) sl = x.tk.op - (x.long ? 1 : -1) * rp;   // the original stop (now: where it is)
+      return { e: x.tk.op, sl: sl, now: now, tp: tp, a: x.at, b: S.now, r: null }; }).filter(function(o){ return o.sl != null && o.a; }); }
   function liveHeader(){ if (!S || !S.live) return; relang();
     $('stpr-symt').textContent = S.sym.name;
     var on = lvFresh(), ch = $('stpr-chip'), cx = '<i></i>' + esc(T('Live', 'En vivo')), cl = 'stpr-chip ' + (on ? 'lv' : 'lvoff'); if (ch.className !== cl) ch.className = cl; if (ch.innerHTML !== cx) ch.innerHTML = cx;
