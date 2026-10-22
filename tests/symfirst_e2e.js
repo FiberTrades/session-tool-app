@@ -23,12 +23,16 @@
     P._panes()[1].el.querySelector('[data-popc]').click();
     for (k = 0; k < 120 && !(P._pops()[1] && P._pops()[1].ready && P._panes()[1] && P._panes()[1].el.ownerDocument !== document && P._panes()[1].n); k++) await W(100);
     win = P._pops()[1] && P._pops()[1].w; await W(800);
-    var o2 = order(), ls = left('.stpr-sympill'), lp = left('#stpr-mm');
-    ok('chart 2 in its own window, one chart left here: the symbol still first, the panel right of it', o2[0] === 'symbol' && o2.indexOf('panel') === 1 && ls != null && lp != null && ls < lp, [o2, ls, lp]);
+    // since 22 Oct 2026 (Nestor: "as the main chart already has an asset picker at the top shall we get rid of the one from the chart?
+    // and move the EA left?"): chart 1 alone here has no symbol button of its own, the panel takes its place
+    var o2 = order(), lp = left('#stpr-mm'), pl = Math.round(P._panes()[0].el.getBoundingClientRect().left);
+    ok('chart 2 in its own window, one chart left here: no symbol button on chart 1 (the top one is its), the panel first, at the left', o2[0] === 'panel' && !document.querySelector('#stpr-tl .stpr-sympill') && lp != null && lp - pl < 20, [o2, lp, pl]);
     ok('...its timeframe in the top bar', !!document.querySelector('#stpr-maintf .stpr-tfpill'));
-    var sp = document.querySelector('#stpr-tl .stpr-sympill'); if (sp) sp.click(); await W(300);
-    var menu = document.querySelector('.stpr-menu.show, #stpr-menu.show, .stpr-symmenu');
-    ok('...and the symbol button still opens its symbol list', !!menu || /symbol|símbolo/i.test((document.getElementById('stpr-menu') || {}).textContent || ''), menu && menu.className);
+    ok('...the top symbol button is there', !!document.getElementById('stpr-sym') && document.getElementById('stpr-sym').offsetWidth > 0);
+    ok('...chart 2\'s window keeps its own symbol button (no top one there)', !!(win && win.document.querySelector('.stpr-sympill[data-psym="1"]')));
+    P._unpop(1); for (k = 0; k < 80 && !(P._panes()[1] && P._panes()[1].el.ownerDocument === document && P._panes()[1].n); k++) await W(100); await W(400); win = null;
+    var o3 = order();
+    ok('chart 2 back here: chart 1\'s timeframe and symbol again, then the panel', o3[0] === 'symbol+tf' && o3.indexOf('panel') === 1, o3);
   } catch (e) { ok('test ran', false, String(e && e.stack || e)); }
   try { if (win) win.close(); } catch (e) {}
   try { window.__stPractice.close(); } catch (e) {}

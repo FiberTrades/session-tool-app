@@ -18,26 +18,31 @@
   var m = /[?&]slot=(\d)/.exec(location.search), slot = m ? +m[1] : -1, host = null, P = null;
   try { host = window.opener && window.opener.top; } catch (e) {}
   if (!window.opener || slot < 0) { location.replace('app.html'); return; }
+  // Live Charts moved to a window of its own takes the chart windows already out with it (Nestor, 22 Oct 2026: "this ended up giving me
+  // 3 charts all together in 1 screen"): the app window that opened this one names that window (__stLcWin), and it is asked first.
   function app() { var c = [];
+    try { var lw = window.opener && !window.opener.closed && window.opener.__stLcWin && window.opener.__stLcWin(); if (lw && !lw.closed) c.push(lw); } catch (e) {}
     try { if (window.opener && !window.opener.closed) c.push(window.opener); } catch (e) {}
     try { if (host && !host.closed) c.push(host); } catch (e) {}
-    for (var k = 0; k < c.length; k++) { try { var p = c[k].__stPractice; if (p && p._satReady) return p; } catch (e) {} }
+    for (var k = 0; k < c.length; k++) { try { var p = c[k].__stPractice; if (p && p._satReady) return { p: p, w: c[k] }; } catch (e) {} }
     return null; }
   // The waits are measured from when they began, not from the last look: a minimised window looks only now and then (the browser slows
   // its timers), so after the app window reloaded its first look came long after the last one and it closed itself - its chart went back
   // into the app window (Nestor, 22 Oct 2026: "if i reload the main one with the EA and one of the other charts is minimized after the
   // reload it always appears back in the main external chart").
-  var missing = 0, asking = 0;   // since when no app answers here / since when the app has not taken this chart
+  var missing = 0, asking = 0, PW = null;   // since when no app answers here / since when the app has not taken this chart / the window drawing it
   function tick() {
     var alive = false; try { alive = (!!window.opener && !window.opener.closed) || (!!host && !host.closed); } catch (e) {}
     if (!alive) { window.close(); return; }
-    var p = app(), now = Date.now();
-    if (!p) { if (!missing) missing = now; else if (now - missing > 60000) window.close(); return; }   // the app window reloading: wait
+    // the window drawing this chart keeps it while it is there and still has it (another app window answering first changes nothing:
+    // the app reloading while Live Charts' window has it)
+    if (P) { var keep = false; try { keep = !!PW && !PW.closed && PW.__stPractice === P && (!P._satHas || P._satHas(window, slot)); } catch (e) {} if (keep) { missing = 0; return; } }
+    var a = app(), now = Date.now();
+    if (!a) { if (!missing) missing = now; else if (now - missing > 60000) window.close(); return; }   // the app window reloading: wait
     missing = 0;
-    if (p === P) return;
-    if (P) { location.reload(); return; }   // the app window reloaded: a fresh page here, which asks the new one
+    if (P) { location.reload(); return; }   // that window reloaded, closed or let it go: a fresh page here, which asks again
     if (!asking) asking = now;
-    var r = null; try { r = p._satReady(window, slot); } catch (e) {} if (r === true) { P = p; asking = 0; return; }
+    var r = null; try { r = a.p._satReady(window, slot); } catch (e) {} if (r === true) { P = a.p; PW = a.w; asking = 0; return; }
     if (now - asking > 120000) window.close(); }   // an app that never takes it back (that chart is gone; false closes it at once)
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', tick); else tick();
   setInterval(tick, 1000);

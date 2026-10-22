@@ -30,7 +30,7 @@
     var painted = async function () { texts.length = 0; await W(90); return texts.slice(); };
     var db = document.getElementById('strp-drawbtn'); if (db && !document.getElementById('strp-tb').classList.contains('strp-drawopen')) db.click(); await W(40);
     var tools = Array.prototype.map.call(document.querySelectorAll('#strp-tools [data-tool]'), function (b) { return b.getAttribute('data-tool'); });
-    ok('the drawing tools (in TradingView\'s groups since batch B): Emoji, Long position and Short position after Text and the price note', tools.join(',') === 'trend,ray,arrow,hline,hray,vline,channel,fib,rect,circle,pen,brush,range,text,note,emoji,long,short', tools.join(','));
+    ok('the drawing tools (in TradingView\'s groups since batch B): Emoji, Long position and Short position after Text and the price note', tools.join(',') === 'trend,ray,arrow,path,hline,hray,vline,channel,fib,rect,circle,pen,brush,range,text,note,emoji,long,short', tools.join(','));
     var rIco = document.querySelector('#strp-tools [data-tool="range"] svg');
     ok('Measure has TradingView\'s price-range icon (two lines with end dots, an arrow between)', rIco && rIco.querySelectorAll('circle').length === 2 && rIco.querySelectorAll('line').length === 3, rIco && rIco.innerHTML.slice(0, 80));
     ok('an Object tree button sits on the right, before Show on chart', document.getElementById('strp-treebtn') && document.getElementById('strp-treebtn').getBoundingClientRect().left < document.getElementById('strp-layersbtn').getBoundingClientRect().left);

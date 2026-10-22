@@ -30,7 +30,7 @@
 
     // 1. the row in groups
     var tools = document.getElementById('strp-tools'), cells = Array.prototype.filter.call(tools.children, function (e) { return e.offsetWidth > 0; });
-    ok('the tools row: 8 cells, three of them groups; all 18 tools there once', cells.length === 8 && tools.querySelectorAll('.stpr-tg').length === 3 && tools.querySelectorAll('[data-tool]').length === 18, cells.length);
+    ok('the tools row: 8 cells, three of them groups; all 19 tools there once', cells.length === 8 && tools.querySelectorAll('.stpr-tg').length === 3 && tools.querySelectorAll('[data-tool]').length === 19, cells.length);
     tools.querySelector('[data-tgrp="lines"]').click(); await W(40);
     var fl = tools.querySelector('.stpr-tg[data-grp="lines"] .stpr-tfl');
     ok('the lines group opens its list, with the keys', fl.offsetWidth > 150 && /Horizontal rayAlt\+J/.test(fl.textContent) && /Vertical lineAlt\+V/.test(fl.textContent), fl.textContent);
