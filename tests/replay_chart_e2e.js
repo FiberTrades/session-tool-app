@@ -76,7 +76,9 @@
     ok('the picture: the chart under a title line', cv && cv.width === Math.round(cr.width * dpr) && cv.height === Math.round((cr.height + 30) * dpr), cv && [cv.width, cv.height]);
     mn.querySelector('[data-snap="link"]').click(); await W(80);
     ok('Copy link signed out: it asks to sign in', /Sign in to copy a link/.test(flashTxt()) && !document.getElementById('strp-menu').classList.contains('show'), flashTxt());
-    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'S', code: 'KeyS', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true })); await W(300);
+    var _f0 = flashTxt();   // the image goes to the clipboard asynchronously: wait for its answer, not a fixed time
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'S', code: 'KeyS', ctrlKey: true, shiftKey: true, bubbles: true, cancelable: true }));
+    for (var _i = 0; _i < 30 && flashTxt() === _f0; _i++) await W(100);
     ok('Ctrl+Shift+S copies the image (or says why it could not)', /Image copied|could not be copied|cannot copy images/.test(flashTxt()), flashTxt());
     ok('no page errors', !errs.length, errs.slice(0, 3));
     R.close(); await W(200);

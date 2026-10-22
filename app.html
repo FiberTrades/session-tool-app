@@ -20269,7 +20269,10 @@ try {
      height, padding and centring, text dark or white by the colour behind it (Nestor, 19 Oct 2026: "i like how the box in the
      price scale looks for TP and SL but the crosshairs one looks off center and too skinny and too wide and the candle timer i
      want it also looking like the TP and SL ones"): the candle's time left ('cd') and the crosshair's price ('cx').
-     set(key, { y, t, bg }) or set(key, null). */
+     set(key, { y, t, bg }) or set(key, null). A selected Long / Short position (Nestor, 22 Oct 2026: "i need the position tools in
+     the app to do this on the price scale when they are clicked on", TradingView's look): its stop, entry and target ('psl', 'pe',
+     'ptp', given by price - { p, t, bg } - so they move with the scale) and set('band', { p1, p2, c }), its stop-to-target span
+     shaded in the scale behind the labels. */
   window.__stAxisLbl = function (series) {
     if (series.__stAx) return series.__stAx;
     var V = {}, req = null;
@@ -20277,12 +20280,15 @@ try {
       if (m) { var n = parseInt(m[1], 16); r = (n >> 16) & 255; g = (n >> 8) & 255; b = n & 255; }
       else { var q = /rgba?\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)/i.exec(String(c || '')); if (q) { r = +q[1]; g = +q[2]; b = +q[3]; } }
       return (0.199 * r + 0.687 * g + 0.114 * b) > 160 ? '#000000' : '#ffffff'; };   // the library's own rule for its labels
-    var views = ['cd', 'cx'].map(function (k) { return { coordinate: function () { return V[k] ? V[k].y : -10000; }, text: function () { return V[k] ? V[k].t : ''; },
-      textColor: function () { return V[k] ? fg(V[k].bg) : '#ffffff'; }, backColor: function () { return V[k] ? V[k].bg : '#2a2833'; }, visible: function () { return !!V[k]; } }; });
+    var yOf = function (o) { if (!o) return -10000; if (o.p == null) return o.y; var y = null; try { y = series.priceToCoordinate(o.p); } catch (e) {} return y == null ? -10000 : y; };
+    var views = ['psl', 'pe', 'ptp', 'cd', 'cx'].map(function (k) { return { coordinate: function () { return yOf(V[k]); }, text: function () { return V[k] ? V[k].t : ''; },
+      textColor: function () { return V[k] ? fg(V[k].bg) : '#ffffff'; }, backColor: function () { return V[k] ? V[k].bg : '#2a2833'; }, visible: function () { return !!V[k] && yOf(V[k]) > -9999; } }; });
+    var band = { renderer: function () { return { draw: function (target) { var o = V.band; if (!o) return; var y1 = yOf({ p: o.p1 }), y2 = yOf({ p: o.p2 }); if (y1 < -9999 || y2 < -9999) return;
+          target.useMediaCoordinateSpace(function (sc) { sc.context.fillStyle = o.c; sc.context.fillRect(0, Math.min(y1, y2), sc.mediaSize.width, Math.abs(y2 - y1)); }); } }; }, zOrder: function () { return 'bottom'; } };
     // only the labels on show: a hidden one (y -10000) still took part in the library's label spacing and pushed the SL / TP labels to
     // the top of the scale (Nestor, 19 Oct 2026, on the Session Live card: "why are these labels sitting up here? looks broken")
-    try { series.attachPrimitive({ priceAxisViews: function () { return views.filter(function (v) { return v.visible(); }); }, updateAllViews: function () {}, attached: function (a) { req = a.requestUpdate; }, detached: function () { req = null; } }); } catch (e) {}
-    return series.__stAx = { set: function (k, o) { var a = V[k] ? V[k].y + '|' + V[k].t + '|' + V[k].bg : '', b = o ? o.y + '|' + o.t + '|' + o.bg : ''; if (a === b) return; V[k] = o || null; try { if (req) req(); } catch (e) {} },
+    try { series.attachPrimitive({ priceAxisViews: function () { return views.filter(function (v) { return v.visible(); }); }, priceAxisPaneViews: function () { return V.band ? [band] : []; }, updateAllViews: function () {}, attached: function (a) { req = a.requestUpdate; }, detached: function () { req = null; } }); } catch (e) {}
+    return series.__stAx = { set: function (k, o) { var a = V[k] ? JSON.stringify(V[k]) : '', b = o ? JSON.stringify(o) : ''; if (a === b) return; V[k] = o || null; try { if (req) req(); } catch (e) {} },
       get: function (k) { return V[k] || null; } };
   };
   /* The current price's dotted line BEHIND the candles, not across them (Nestor, 22 Oct 2026: "can the price line not sit on top of
@@ -86118,6 +86124,12 @@ window.__stAZ = (function () {
           ctx.fillStyle='#ffffff'; ctx.textAlign='center'; ctx.fillText(_tt,_tx,_ty); } }catch(_){}
       ctx.textAlign='left'; ctx.restore(); }
     else { try{ window.__stAxisLbl(series).set('cx',null); }catch(_){} }
+    try{ var _ax=window.__stAxisLbl(series), _sd=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null), _pf=function(v){ return Number(v).toFixed(_prec()); };   /* a Long / Short clicked: its span and prices on the scale (posAxSync) */
+      if(!_sd||(_sd.type!=='long'&&_sd.type!=='short')||!_sd.a||!(_sd.a.price>0)||!visibleOn(_sd)) _sd=null;
+      _ax.set('band',_sd&&_sd.sl>0&&_sd.tp>0?{p1:_sd.sl,p2:_sd.tp,c:'rgba(41,98,255,0.25)'}:null);
+      _ax.set('psl',_sd&&_sd.sl>0?{p:_sd.sl,t:_pf(_sd.sl),bg:rzc(_sd,'psc','pas',1)}:null);
+      _ax.set('pe',_sd?{p:_sd.a.price,t:_pf(_sd.a.price),bg:'#2a2833'}:null);
+      _ax.set('ptp',_sd&&_sd.tp>0?{p:_sd.tp,t:_pf(_sd.tp),bg:rzc(_sd,'ptc','pat',1)}:null); }catch(_){}
     if(S.showPos){ drawOthers(ctx,w); drawPos(ctx,w); } S.drawings.forEach(function(d){ if(visibleOn(d)) drawOne(ctx,d,w,false); }); if(S.pending) drawOne(ctx,S.pending,w,true); if(S.meas) drawOne(ctx,S.meas.d,w,false); if(S.penning) drawPenLive(ctx,S.penning); var sel=S.drag?S.drawings[S.drag.i]:(S.sel!=null?S.drawings[S.sel]:null); if(sel&&visibleOn(sel)){ if(rlk(sel)) lockMark(ctx,sel,w); else handles(ctx,sel,w); }
     if(S.selMulti&&S.selMulti.length){ ctx.save(); ctx.strokeStyle='#f472b6'; ctx.lineWidth=1; ctx.setLineDash([3,3]);
       S.selMulti.forEach(function(i){ var bb=bboxOf(S.drawings[i],w); if(bb) ctx.strokeRect(bb.x0-3.5,bb.y0-3.5,(bb.x1-bb.x0)+7,(bb.y1-bb.y0)+7); }); ctx.restore(); }
@@ -89844,16 +89856,18 @@ window.__stAZ = (function () {
   // ---- menus: a chart's timeframe, the symbol ----
   var menuFor = null;
   var MENU_BTNS = ['stpr-cmpbtn', 'stpr-laybtn', 'stpr-del', 'stpr-keysbtn', 'stpr-treebtn', 'stpr-alertsbtn', 'stpr-snapbtn', 'stpr-layersbtn', 'stpr-lookbtn', 'stpr-sesed', 'stpr-goto'];
+  var MENUD = null, MENUA = null;   // the open menu's window and button: only that window's button is lit (satBar)
   var MH = null;   // the menu open now: this window's, or a chart window's
   function mEl(){ return (MH && MH.isConnected) ? MH : $('stpr-menu'); }
   function popDocs(){ var a = []; for (var k in POP) if (popOn(+k)) { try { a.push(POP[k].w.document); } catch (e) {} } return a; }
-  function closeMenu(){ [document].concat(popDocs()).forEach(function(d){ var m0 = d.getElementById('stpr-menu'); if (m0) m0.classList.remove('show'); }); MH = null; var m = $('stpr-menu'); menuFor = null; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', 'false'); }); document.querySelectorAll('.stpr-ptf.open').forEach(function(b){ b.classList.remove('open'); }); }
+  function closeMenu(){ [document].concat(popDocs()).forEach(function(d){ var m0 = d.getElementById('stpr-menu'); if (m0) m0.classList.remove('show'); }); MH = null; var m = $('stpr-menu'); menuFor = null; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', 'false'); }); document.querySelectorAll('.stpr-ptf.open').forEach(function(b){ b.classList.remove('open'); }); MENUD = null; MENUA = null; try { satBar(); } catch (e) {} }
   function openMenu(anchor, html, tag){
     if (menuFor === tag) { closeMenu(); return; }
     if (UI.fwd && anchor && anchor.id && UI.fwd.id === anchor.id && UI.fwd.isConnected) anchor = UI.fwd;   // asked from a chart window's toolbar: it opens there
     var hd = (anchor && anchor.ownerDocument) || document, m = hd.getElementById('stpr-menu') || $('stpr-menu'), mw = hd.getElementById('stpr-win') || $('stpr-win');
     if (MH && MH !== m) MH.classList.remove('show'); MH = m;
     m.innerHTML = html; m.classList.add('show'); menuFor = tag; MENU_BTNS.forEach(function(id){ var b = $(id); if (b) b.setAttribute('aria-expanded', b === anchor ? 'true' : 'false'); }); m.style.padding = tag === 'layers' ? '5px' : '';
+    MENUD = hd; MENUA = (anchor && anchor.id) || null; try { satBar(); } catch (e) {}   // lit in the window it opened in, and only there (Nestor, 22 Oct 2026: "when i click this button why is it getting highlighted on the top charts too?")
     var w = mw.getBoundingClientRect(), a = anchor.getBoundingClientRect();
     var left = Math.min(a.left - w.left + mw.scrollLeft, w.width - m.offsetWidth - 8), top = a.bottom - w.top + mw.scrollTop + 6;
     m.style.left = Math.max(8, left) + 'px'; m.style.top = top + 'px';
@@ -90066,7 +90080,8 @@ window.__stAZ = (function () {
     try { var cw2 = (UI.w && !UI.w.closed) ? UI.w : window; await cw2.navigator.clipboard.writeText(url); flash(T('Link copied. Paste it into a bias chart, a review or a message.', 'Enlace copiado. Pégalo en un gráfico del sesgo, una revisión o un mensaje.')); }
     catch (e) { try { window.prompt(T('Copy this link:', 'Copia este enlace:'), url); } catch (x) {} }
     return url; }
-  function layersDot(){ var b = $('stpr-layersbtn'); if (b) b.classList.toggle('dot', (panes.length ? panes : [null]).some(function(p){ return !showOn(p, 'marks') || !showOn(p, 'pos') || !showOn(p, 'hist'); })); }   // something off on any chart
+  function layersOffIn(d){ var L = panes.filter(function(p){ return p && p.el && p.el.ownerDocument === d; }); if (!L.length && d === document) L = [null]; return L.some(function(p){ return !showOn(p, 'marks') || !showOn(p, 'pos') || !showOn(p, 'hist'); }); }
+  function layersDot(){ var b = $('stpr-layersbtn'); if (b) b.classList.toggle('dot', layersOffIn(document)); try { satBar(); } catch (e) {} }   // something off on a chart of this window: each window's button its own (satBar)
   function sesMenu(anchor){
     if (!S) return;
     var h = '<h6>' + T('Session times', 'Horario de sesiones') + '</h6><div class="stpr-sesl">' + S.f.ses.map(function(x){ return '<label><span>' + esc(T(x.en, x.es)) + '</span><input type="text" inputmode="numeric" maxlength="5" autocomplete="off" data-sesin="' + x.id + '" value="' + hm(x.at) + '"></label>'; }).join('') + '</div>'
@@ -90134,7 +90149,7 @@ window.__stAZ = (function () {
   function hlStyle(d){ var st = d.dash === 'dotted' ? 1 : (d.dash === 'dashed' ? 2 : 0); if (d.alert && d.hitAt) st = st === 0 ? 2 : (st === 2 ? 3 : 4); return st; }
   function rShow(d, k){ var sh = d && d.show; return !sh || sh[k] !== false; }
   function fibLbl(lv){ var n = Number(lv); return isFinite(n) ? String(parseFloat(n.toFixed(4))) : String(lv); }
-  function visibleOn(d, tf, p){ if (CFG.dwHide) return false; if (d && d.trade && p && !showOn(p, 'pos')) return false;   // a trade's box: Position tool, per chart if (d && d.hidden) return false; if (d && d.type === 'gann') return false; if (d && d.vis) return visOK(d.vis, tf);   // the Gann box was taken out again on 17 Oct 2026 ("the fibo looks too similar")
+  function visibleOn(d, tf, p){ if (CFG.dwHide) return false; if (d && d.trade && p && !showOn(p, 'pos')) return false; if (d && d.hidden) return false; if (d && d.type === 'gann') return false; if (d && d.vis) return visOK(d.vis, tf);   // a trade's box: Position tool, per chart; the Gann box was taken out again on 17 Oct 2026 ("the fibo looks too similar"). Visibility and hidden were cut off by a comment from 22 Oct until the next commit (Nestor: "why is it still showing in 1h chart?")
     return !d || !d.tfs || !d.tfs.length || d.tfs.indexOf(tf) >= 0; }
   function clone(x){ return JSON.parse(JSON.stringify(x)); }
   var DWM = '';   // '' Back Testing, 'L|' Live Charts: each its own drawings
@@ -90432,6 +90447,16 @@ window.__stAZ = (function () {
         g.fillStyle = o.r > 0.02 ? '#4ECD8B' : (o.r < -0.02 ? '#E56767' : '#9aa0a6'); pill(px0, py, pw, ph, 5); g.fill();
         g.fillStyle = '#0b0a0d'; g.textAlign = 'left'; g.fillText(tx, px0 + 7, py + ph / 2 + 0.5); }
       g.restore(); }); }
+  /* A Long / Short position clicked (or dragged): on the price scale its stop-to-target span shaded and its stop, entry and target
+     prices in labels, as TradingView shows one (Nestor, 22 Oct 2026: "i need the position tools in the app to do this on the price
+     scale when they are clicked on"). On every chart of its symbol, as its handles. */
+  function posAxSync(p){ if (!p || !p.series) return; var d = null;
+    try { if (dwListFor(p) === DW.list) { d = DW.drag ? DW.list[DW.drag.i] : (DW.sel != null ? DW.list[DW.sel] : null); if (!d || (d.type !== 'long' && d.type !== 'short') || !d.a || !(d.a.price > 0) || !visibleOn(d, p.tf, p)) d = null; } } catch (e) { d = null; }
+    var ax = window.__stAxisLbl(p.series), dg = PS(p).digits, f = function(v){ return Number(v).toFixed(dg); };
+    ax.set('band', d && d.sl > 0 && d.tp > 0 ? { p1: d.sl, p2: d.tp, c: 'rgba(41,98,255,0.25)' } : null);
+    ax.set('psl', d && d.sl > 0 ? { p: d.sl, t: f(d.sl), bg: pzc(d, 'psc', 'pas', 1) } : null);
+    ax.set('pe', d ? { p: d.a.price, t: f(d.a.price), bg: '#2a2833' } : null);
+    ax.set('ptp', d && d.tp > 0 ? { p: d.tp, t: f(d.tp), bg: pzc(d, 'ptc', 'pat', 1) } : null); }
   // horizontal lines are drawn by the chart itself, like the trade's lines, so their price label sits on the scale
   function syncHL(p){ var want = [], ov = []; dwListFor(p).forEach(function(d){ if (d && d.type === 'hline' && isFinite(d.price) && visibleOn(d, p.tf)) { var tx = alertTitle(d), tg = tx ? hlTagW(p, d.price) : 0;
         if (tg) ov.push({ p: d.price, t: tx, c: dC(d), x: tg });   // beside a trade's tag: drawn here (hlNoteAt)
@@ -90728,7 +90753,7 @@ window.__stAZ = (function () {
         band(mid + 0.001 * R, mid - 0.001 * R, o.cMid, null);
         band(z.bot + 0.25 * R, z.bot, o.cBot, bd(o.cBot));
         if (o.marks) { var yM = Y(mid); g.fillStyle = ink(lt ? 1 : 0.8); g.textAlign = 'left';
-          if (yM != null) { g.textBaseline = 'middle'; var zt = miniDist(R); g.fillText(zt, Math.min(xb + 4, pw - g.measureText(zt).width - 4), yM); }
+          if (yM != null && xb <= pw) { g.textBaseline = 'middle'; var zt = miniDist(R); g.fillText(zt, Math.min(xb + 4, pw - g.measureText(zt).width - 4), yM); }   // with its zone: off the chart when the zone's end is (Nestor, 22 Oct 2026: "why is this number travelling with the chart drag?" - it was kept at the right edge)
           if (y0 != null) { g.textBaseline = 'top'; g.fillText('▲', xb + 3, y0 + 2); }
           if (y1 != null) { g.textBaseline = 'bottom'; g.fillText('▼', xb + 3, y1 - 2); } }
         // drawn by hand: its edges can be dragged (the left one always, the right one when it has an end)
@@ -90970,7 +90995,7 @@ window.__stAZ = (function () {
         try { var sig = ovSig(p); if (sig !== p._sig || p._ver !== DW.ver) { p._sig = sig; p._ver = DW.ver; drawOv(p); } } catch (e) {} } }; }, zOrder: function(){ return 'bottom'; } };
     try { p.series.attachPrimitive({ paneViews: function(){ return [view]; }, updateAllViews: function(){} }); } catch (e) {} }
   function frame(){ loopId = 0; if (!S || !panes.length || !isOpen()) return;   // isOpen: over the app, or in the Live Charts tab
-    panes.forEach(function(p){ try { var sig = ovSig(p); if (sig !== p._sig || p._ver !== DW.ver) { p._sig = sig; p._ver = DW.ver; drawOv(p); } syncHL(p); } catch (e) {} });
+    panes.forEach(function(p){ try { var sig = ovSig(p); if (sig !== p._sig || p._ver !== DW.ver) { p._sig = sig; p._ver = DW.ver; drawOv(p); } syncHL(p); posAxSync(p); } catch (e) {} });
     loopW = liveWin(); loopId = loopW.requestAnimationFrame(frame); }
   function startLoop(){ if (!loopId) { loopW = liveWin(); loopId = loopW.requestAnimationFrame(frame); } }
   function stopLoop(){ if (loopId) try { loopW.cancelAnimationFrame(loopId); } catch (e) {} loopId = 0; }
@@ -91693,7 +91718,9 @@ window.__stAZ = (function () {
     popDocs().forEach(function(d){ var tb = d.getElementById('stpr-tb2'), tm = tb && tb.querySelector('.stpr-tbm'); if (!tm) return; if (tb.className !== src.className) tb.className = src.className; var h = src.innerHTML.replace(/<span class="stpr-sattf" id="stpr-maintf">[\s\S]*?<\/span>/, '');
       var mine = !!FLYW && FLYW !== window && (function(){ try { return FLYW.document === d; } catch (e) { return false; } })(), key = h + (mine ? '|1' : '|0');
       if (tm._h !== key) { tm.innerHTML = h; tm._h = key;   // a tools group's open list: only in the window it was opened in
-        tm.querySelectorAll('.stpr-tg.open').forEach(function(g){ if (mine) g.classList.remove('away'); else { g.classList.remove('open', 'away'); var c = g.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); } }); } }); }
+        tm.querySelectorAll('.stpr-tg.open').forEach(function(g){ if (mine) g.classList.remove('away'); else { g.classList.remove('open', 'away'); var c = g.querySelector('[data-tgrp]'); if (c) c.setAttribute('aria-expanded', 'false'); } }); }
+      MENU_BTNS.forEach(function(id){ var mb = tm.querySelector('#' + id); if (mb) mb.setAttribute('aria-expanded', (menuFor && MENUD === d && MENUA === id) ? 'true' : 'false'); });   // the main window's open menu is not this window's
+      var lb = tm.querySelector('#stpr-layersbtn'); if (lb) lb.classList.toggle('dot', layersOffIn(d)); }); }
   function satBarWatch(){ if (tbObs || !window.MutationObserver) return; var src = $('stpr-tb2'); if (!src) return;
     tbObs = new MutationObserver(function(){ satBar(); }); tbObs.observe(src, { subtree: true, attributes: true, childList: true, characterData: true }); }
   function popToggle(i){ if (popOn(i)) unpop(i); else popChart(i); }
