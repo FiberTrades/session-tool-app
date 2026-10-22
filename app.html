@@ -87710,6 +87710,10 @@ window.__stAZ = (function () {
   @media (max-width: 760px) { .stpr-tb2.drawing .stpr-tools { display: flex; flex: 1 1 100%; } .stpr-tools button { flex: 1 1 0; min-width: 0; padding: 0; }
     .stpr-tools > .stpr-tg { flex: 1.3 1 0; min-width: 0; } .stpr-tools .stpr-tg .stpr-tgm { flex: 1 1 0; padding: 0 0 0 4px; } .stpr-tools .stpr-tg .stpr-tgc { flex: 0 0 14px; } .stpr-tools .stpr-tfl button { flex: none; height: 40px; padding: 0 12px; } }   /* a phone: the ten tools share the width (Short was cut off once Emoji came, 17 Oct 2026) */
   .stpr-ptfw { position: absolute; left: 8px; top: 8px; z-index: 5; display: flex; gap: 6px; align-items: center; }
+  .stpr-rt { position: absolute; z-index: 6; width: 26px; height: 26px; padding: 0; display: none; align-items: center; justify-content: center; border: 1px solid var(--border-2); border-radius: 6px; background: rgba(19,18,23,.92); color: var(--text); cursor: pointer; }   /* scroll to the most recent bar (rtPaint) */
+  .stpr-rt.on { display: inline-flex; } .stpr-rt svg { width: 14px; height: 14px; }
+  @media (hover: hover) { .stpr-rt:hover { border-color: var(--accent); color: var(--accent); } }
+  html.stpr-lt .stpr-rt { background: #ffffff; color: #131722; border-color: #d1d4dc; }
   /* each chart's own symbol (17 Oct 2026), beside its timeframe when there is more than one chart */
   .stpr-sympill { height: 30px; padding: 0 9px; border-radius: 8px; border: 1px solid var(--border-2); background: rgba(19,18,23,.94); color: var(--text); font-family: 'AppNum','DM Mono',monospace; font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; cursor: pointer; white-space: nowrap; }
   .stpr-sympill::after { content: ''; width: 5px; height: 5px; border-right: 1.5px solid currentColor; border-bottom: 1.5px solid currentColor; transform: translateY(-2px) rotate(45deg); opacity: .6; }
@@ -91455,8 +91459,26 @@ window.__stAZ = (function () {
     else if (/^ts\d$/.test(k)) { var st = q.ts[+k.slice(2)]; if (st) st.trig = price; }
     else if (/^pc\d$/.test(k)) { var s2 = q.pc[+k.slice(2)]; if (s2) s2.trig = price; }
   }
+  /* TradingView's "Scroll to the most recent bar" (Nestor, 22 Oct 2026: "can i when hovering around this corner see this to scroll to
+     the current price"): when a chart's latest candle is off its right edge, a button in its bottom right corner - with the mouse
+     near that corner, always on a touch screen - glides back to it at the zoom it is at (Live Charts: to its remembered margin on
+     the right). Alt+Shift+Right Arrow does it for the chart in hand. */
+  function rtOff(p){ try { var r = p.chart.timeScale().getVisibleLogicalRange(); return !!(r && p.n > 0 && r.to < p.n - 1 - 0.5); } catch (e) { return false; } }
+  function rtPaint(p){ var b = p && p._rt; if (!b) return; var on = rtOff(p) && (touchOnly() || !!p._rtNear); if (b.classList.contains('on') !== on) b.classList.toggle('on', on);
+    if (on) { var dm = paneDims(p); b.style.right = Math.round(dm.psw + 8) + 'px'; b.style.bottom = Math.round(dm.h - dm.ph + 8) + 'px'; } }
+  function rtGo(p){ if (!p || !p.chart || !(p.n > 0)) return; var r = null; try { r = p.chart.timeScale().getVisibleLogicalRange(); } catch (e) {} if (!r) return;
+    var span = r.to - r.from, last = p.n - 1, v = (S && S.live) ? lcView(p) : null, to = last + Math.max(1, v ? v.off : span * (1 - F)), from = to - span;
+    var f0 = r.from, t0 = r.to, k = 0, N = 14, w = (p.el.ownerDocument && p.el.ownerDocument.defaultView) || window;
+    var stp = function(){ k++; var q = 1 - Math.pow(1 - k / N, 3); setRange(p, { from: f0 + (from - f0) * q, to: t0 + (to - t0) * q }); if (k < N) w.requestAnimationFrame(stp); else { rtPaint(p); try { if (S && S.live) lcViewSave(p); } catch (x) {} } };
+    w.requestAnimationFrame(stp); }
   function wirePane(p){
     var el = p.el.querySelector('.stpr-pc');
+    try { var rd = p.el.ownerDocument, rt = rd.createElement('button'); rt.type = 'button'; rt.className = 'stpr-rt'; var rtt = T('Scroll to the most recent bar (Alt+Shift+\u2192)', 'Ir a la vela m\u00e1s reciente (Alt+May\u00fas+\u2192)'); rt.title = rtt; rt.setAttribute('aria-label', rtt);
+      rt.innerHTML = '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4l4 4-4 4M9 4l4 4-4 4"/></svg>'; p.el.appendChild(rt); p._rt = rt;
+      rt.addEventListener('pointerdown', function(e){ e.stopPropagation(); }); rt.addEventListener('click', function(e){ e.stopPropagation(); e.preventDefault(); rtGo(p); });
+      p.el.addEventListener('mousemove', function(e){ var rr = p.el.getBoundingClientRect(), dm = paneDims(p), x = e.clientX - rr.left, y = e.clientY - rr.top, near = x > dm.pw - 170 && x <= dm.w && y > dm.ph - 120 && y <= dm.h; if (near !== !!p._rtNear) { p._rtNear = near; rtPaint(p); } });
+      p.el.addEventListener('mouseleave', function(){ if (p._rtNear) { p._rtNear = false; rtPaint(p); } });
+      p.chart.timeScale().subscribeVisibleLogicalRangeChange(function(){ rtPaint(p); }); } catch (e) {}   // the most recent bar's button (rtPaint)
     function rel(e){ var r = el.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
     function hold(on){ try { p.chart.applyOptions({ handleScroll: !on, handleScale: !on }); } catch (x) {} }
     // the trade's SL / TP lines (and the SL / TP button's) are dragged first; drawings and the chart get everything else
@@ -93069,6 +93091,7 @@ window.__stAZ = (function () {
       if (e.key === 'Escape' && (flyShut() || measOff())) { e.preventDefault(); return; }   // then a tools group, a Shift-measure
       if (e.key === 'Escape') { hideCtx(); if (menuFor) closeMenu(); else if (LOG.open) logOpen(false); else if (DW.tool !== 'none' || DW.pending) { DW.pending = null; DW.penning = null; setTool('none'); } else if (DW.sel != null || (DW.multi && DW.multi.length)) { DW.sel = null; DW.multi = null; updDel(); } else if (S.exec) toggleExec(false); else if (S.pv) { S.pv = null; render(); } e.preventDefault(); return; }
       if (typing) return;
+      if (e.altKey && e.shiftKey && !e.ctrlKey && !e.metaKey && e.key === 'ArrowRight') { var rtp = actPane(); if (rtp) rtGo(rtp); e.preventDefault(); return; }   // TradingView's: scroll to the most recent bar (rtGo)
       // TradingView's drawing keys (batch B): Alt+H / Alt+V / Alt+J a horizontal line, a vertical line, a horizontal ray at the mouse;
       // Alt+T / Alt+R / Alt+F the trend line, the rectangle, the fib; Ctrl+C / Ctrl+V the selected drawings. By the key (e.code), so
       // Option on a Mac and other keyboard layouts work too; AltGr (Ctrl+Alt) never.
@@ -93131,7 +93154,7 @@ window.__stAZ = (function () {
     ctfList: function(){ return (CFG.ctf || []).filter(function(n){ return !!TFL[n]; }).slice().sort(function(a, b){ return a - b; }); }, ctfLbl: tfLbl,
     ctfAdd: function(n){ n = Math.round(+n); if (!(n >= 1 && n <= 1440)) return false; if (TF_STD.indexOf(n) >= 0) return true; tfReg(n); if ((CFG.ctf || []).indexOf(n) < 0) { CFG.ctf = (CFG.ctf || []).concat([n]); save(); } return true; },
     ctfDel: function(n){ if ((CFG.ctf || []).indexOf(n) < 0) return; if (S) { tfDel(n); return; } CFG.ctf = CFG.ctf.filter(function(x){ return x !== n; }); (CFG.tfs || []).forEach(function(tf, k){ if (tf === n) CFG.tfs[k] = TF_STD.filter(function(x){ return x <= n; }).pop() || 1; }); tfUnreg(n); save(); }, _tfReg: tfReg, _tfDel: tfDel, _tfAddMenu: function(i){ var b = document.querySelector('.stpr-tfadd[data-tfadd="' + (i || 0) + '"]'); if (b) tfAddMenu(i || 0, b); return !!b; }, _tfs: function(){ return { TFS: TFS.slice(0), TFL: TFL, SRC: SRC, LOOK: LOOK, SHOW: SHOW }; },
-    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
+    _lvTr: function(rows){ LTR.rows = (rows || []).map(lvTrNorm).filter(Boolean); LTR.at = Date.now(); if (S && S.live) render(); }, _tmAt: function(i, x, y){ return tmAt(panes[i || 0], x, y); }, _rtGo: function(i){ rtGo(panes[i || 0]); }, _rtOff: function(i){ return rtOff(panes[i || 0]); }, _tmCardText: function(i, tk){ var p = panes[i || 0], x = p && lvTrList(PS(p)).filter(function(q){ return q.ticket === String(tk); })[0]; if (!x) return null; var c = document.createElement('div'); tmCard(p, { g: { list: [x] }, x: 100, top: 100, bot: 110, above: true }, c); return c.textContent; }, _tmk: function(i){ var p = panes[i || 0]; return p ? p._tmk : null; }, _arw: function(i){ var p = panes[i || 0]; return (p && p.series.__stArw) ? p.series.__stArw.items : []; } };
 })();
 </script>
 
