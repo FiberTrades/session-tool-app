@@ -8526,7 +8526,7 @@ try {
     </div>
   </div>
 </div>
-<div class="modal-bg" id="new-session-modal-bg">
+<div class="modal-bg" id="new-session-modal-bg" style="z-index:100000">
   <div class="modal" style="max-width:440px;">
     <div class="modal-header">
       <div style="width:100%;text-align:center;">
@@ -14906,13 +14906,24 @@ try {
   // sites and patching each is how the fourth gets missed. Guarded on the date so a blank journal -
   // which sign-out and account-switch both push through setData - can never cancel a real prompt.
   try {
+    var _newDaySnapCloud = false;
     window.__stNewDayCloudCheck = function () {
       try {
-        if (!data || data.lastSessionDate !== new Date().toDateString()) return;
+        if (!data) return;
+        if (data.lastSessionDate !== new Date().toDateString()) {
+          /* The question is still open and the cloud journal has just replaced the local copy the "untouched since the new
+             day" reference was taken from. Taken again from what is really there now, once: a difference between the two
+             copies read as today's work, the question was skipped and yesterday's bias stayed (Nestor, 22 Oct 2026: "i didnt
+             get the message this morning to clear the bias and review, why????"). Once only, so edits made after this still
+             count as today's work and are kept. */
+          if (_pendingNewDaySession && !_newDaySnapCloud) { _newDaySnapCloud = true; _newDaySnapshot = _captureNewDaySnapshot(); }
+          return;
+        }
         if (!_pendingNewDaySession) return;
         _standDownNewDay();
       } catch (e) {}
     };
+    window.__stNewDayPending = function () { return !!_pendingNewDaySession; };   // the chart windows' start waits for the answer
   } catch (e) {}
 
   // MULTI-WINDOW SAFETY for "Clear the previous session".
@@ -26667,7 +26678,7 @@ try {
     try {
       var _slots = _biasSlotsArr();
       var _staleLeft = _slots.some(function (sl, i) { return biasSlotHasContent(sl) && !_slotIsTodaysWork(sl, i); }) || _reviewIsStale();
-      if (!_staleLeft) { _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null; try { data.lastSessionDate = new Date().toDateString(); saveData(); } catch (e) {} return; }
+      if (!_staleLeft) { _pendingNewDaySession = false; _prevSessionDateSrc = null; _newDaySnapshot = null; try { data.lastSessionDate = new Date().toDateString(); saveData(); } catch (e) {} try { var _ob = document.getElementById('new-session-modal-bg'); if (_ob) _ob.classList.remove('show'); } catch (e) {} return; }
     } catch (e) {}
     try {
       var _bodyEl = document.getElementById('new-session-body');
@@ -91506,7 +91517,11 @@ window.__stAZ = (function () {
   function wsrStart(){ var o = wsrGet(); if (!o.on || !wsrSlots().length || phone() || touchOnly() || popped || LV.solo) return;
     var tries = 0, go = function(){ tries++;
       if (!((window.currentUser || window.__stLcForce) && lcLiveOK())) { if (tries < 120) setTimeout(go, 500); return; }   // signed in, with Charts (__stLcForce: the tests' stand-in)
+      if (!window.__stLcForce && !window.__stJournalPulled && tries < 120) { setTimeout(go, 500); return; }   // the journal in first: the new-day question is decided from it
       if (lcAwayOn()) return;   // Live Charts is in a window of its own: its charts are there
+      /* The morning's "clear yesterday's bias and review?" comes first: going to Charts and opening the chart windows over the app
+         hid it (Nestor, 22 Oct 2026). Charts and the windows follow as soon as it is answered. */
+      if (window.__stNewDayPending && window.__stNewDayPending()) { setTimeout(go, 700); return; }
       var tb = document.querySelector('.tab[data-page="livecharts"]'); if (!tb) return; if (!tb.classList.contains('active')) tb.click();
       var n = 0, ready = function(){ n++; if (S && panes.length === CFG.layout && panes.every(function(p){ return p.n > 0; })) { wsrOpenAll(false); return; } if (n < 120) setTimeout(ready, 500); };
       setTimeout(ready, 800); };
