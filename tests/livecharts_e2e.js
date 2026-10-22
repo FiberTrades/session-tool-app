@@ -488,11 +488,15 @@
     // ---- Live Charts in a window of its own (18 Oct 2026: "where is the open in a new window button?") ----
     var popEl = document.getElementById('stpr-pop');
     check('Live Charts has the open-in-a-new-window button', popEl && getComputedStyle(popEl).display !== 'none' && popEl.offsetWidth > 0);
-    var opened = null, fakeW = { closed: false, close: function () { this.closed = true; } }, wo = window.open;
+    var opened = null, fakeW = { closed: false, focused: 0, close: function () { this.closed = true; }, focus: function () { this.focused++; } }, wo = window.open;
     window.open = function (u, n, f) { opened = [u, n, f]; return fakeW; };
     popEl.click(); await W(500); window.open = wo;
     var away = document.getElementById('lc-away');
     check('...it opens the app in a window of its own on Live Charts (this symbol), a page of the site (no address band in the installed app); this tab says so and stops its chart', !!opened && /\?livecharts=1&sym=EURUSD$/.test(opened[0]) && !/^blob:/.test(opened[0]) && !!away && /open in its own window/.test(away.textContent) && !P._s(), [opened, away && away.textContent]);
+    await W(900); var lvBtn = document.querySelector('#lc-mode [data-lcm="live"]'), rpBtn = document.querySelector('#lc-mode [data-lcm="replay"]');
+    check('...while it is in its own window the switch here says Live, not Replay (22 Oct 2026: "this screen says replay??")', lvBtn && lvBtn.classList.contains('on') && !rpBtn.classList.contains('on'), [lvBtn && lvBtn.className, rpBtn && rpBtn.className]);
+    lvBtn.click(); await W(200);
+    check('...and Live pressed brings that window to the front (no Switch to Live? question)', fakeW.focused > 0 && !document.getElementById('lc-ask-bg'), [fakeW.focused, !!document.getElementById('lc-ask-bg')]);
     fakeW.closed = true;
     for (k = 0; k < 60 && !(LC.state().live && !document.getElementById('lc-away')); k++) await W(250);
     check('...closing that window brings Live Charts back here', LC.state().live && !document.getElementById('lc-away'));

@@ -20231,6 +20231,26 @@ try {
     return series.__stAx = { set: function (k, o) { var a = V[k] ? V[k].y + '|' + V[k].t + '|' + V[k].bg : '', b = o ? o.y + '|' + o.t + '|' + o.bg : ''; if (a === b) return; V[k] = o || null; try { if (req) req(); } catch (e) {} },
       get: function (k) { return V[k] || null; } };
   };
+  /* The current price's dotted line BEHIND the candles, not across them (Nestor, 22 Oct 2026: "can the price line not sit on top of
+     the candles?"). The library draws its own price line above the series and has no setting to move it, so that one is turned off
+     and the same line - 1 px, dotted, in the last candle's colour - is drawn here on a 'bottom' layer, under the candles. The price's
+     label on the scale is the library's as before. opts.last() gives the last candle (else the series' last item), opts.color(bar)
+     its colour (else the series' up / down colour). */
+  window.__stPriceLineBehind = function (series, opts) {
+    if (!series || series.__stPlb) return; opts = opts || {}; var st = series.__stPlb = { req: null };
+    var clear = function (c) { return !c || c === 'transparent' || /^rgba\([^)]*,\s*0(\.0+)?\s*\)$/i.test(String(c)); };
+    var draw = function (target) {
+      var bar = null; try { bar = opts.last ? opts.last() : series.dataByIndex(1e9, -1); } catch (e) {}
+      if (!bar || bar.close == null) return; var y = null; try { y = series.priceToCoordinate(bar.close); } catch (e) {} if (y == null) return;
+      var o = {}; try { o = series.options() || {}; } catch (e) {} var up = bar.close >= bar.open, col = null;
+      try { col = opts.color ? opts.color(bar) : (bar.color || (up ? o.upColor : o.downColor)); } catch (e) {}
+      if (clear(col)) col = up ? (o.wickUpColor || o.borderUpColor || '#4ECD8B') : (o.wickDownColor || o.borderDownColor || '#E56767');
+      target.useBitmapCoordinateSpace(function (sc) { var g = sc.context, w = sc.bitmapSize.width, lw = Math.max(1, Math.floor(sc.verticalPixelRatio)), Y = Math.round(y * sc.verticalPixelRatio) + (lw % 2 ? 0.5 : 0);
+        g.save(); g.strokeStyle = col; g.lineWidth = lw; g.setLineDash([lw, lw]); g.beginPath(); g.moveTo(0, Y); g.lineTo(w, Y); g.stroke(); g.restore(); }); };
+    var view = { renderer: function () { return { draw: draw }; }, zOrder: function () { return 'bottom'; } };
+    try { series.attachPrimitive({ paneViews: function () { return [view]; }, updateAllViews: function () {}, attached: function (p) { st.req = p.requestUpdate; }, detached: function () { st.req = null; } });
+      series.applyOptions({ priceLineVisible: false }); } catch (e) {}   // only once the line here is in place
+  };
   window.__stArrows = function (series, marks) {
     var NARROW = 0.8;
     var odd = function (v) { var c = Math.ceil(v); return c % 2 === 0 ? c - 1 : c; };
@@ -20546,6 +20566,7 @@ try {
           autoscaleInfoProvider: function (orig) { var r = orig(); if (!r || !c.rng) return r;
             return { priceRange: { minValue: Math.min(r.priceRange.minValue, c.rng[0]), maxValue: Math.max(r.priceRange.maxValue, c.rng[1]) }, margins: r.margins }; } });
         c.cx = window.__stCx(c.chart, c.series);
+        try { window.__stPriceLineBehind(c.series); } catch (e) {}   // the price line under the candles (22 Oct 2026)
         lookCard(c);
         try { c.chart.timeScale().subscribeVisibleLogicalRangeChange(function () { paintCd(c); }); } catch (e) {}   // the timer follows the price when the chart moves
         later();
@@ -85092,6 +85113,7 @@ window.__stAZ = (function () {
     S.az={yz:1};   /* the wheel over the price scale (window.__stAZ) */
     series=S.series=chart.addCandlestickSeries({upColor:'#4ECD8B',downColor:'#E56767',borderVisible:false,wickUpColor:'#4ECD8B',wickDownColor:'#E56767',priceLineVisible:true,priceLineStyle:1,priceLineWidth:1,lastValueVisible:true,priceFormat:{type:'price',precision:_prec(),minMove:Math.pow(10,-_prec())},
       autoscaleInfoProvider:function(o){ var r=o(); return (window.__stAZ&&S&&S.az)?window.__stAZ.fit(S.az,r):r; }});
+    try{ window.__stPriceLineBehind(series); }catch(e){}   /* the price line under the candles (22 Oct 2026) */
     try{ window.__stAZ.wire(chartEl.parentNode||chartEl,function(){ return (S&&S.chart&&S.series&&S.az)?{chart:S.chart,series:S.series,az:S.az,box:chartEl,hand:function(){ trHandAt=Date.now(); }}:null; }); }catch(e){}
     lookApply();   /* Chart settings (shared with Practice Replay) */
     // ONE line per level, all solid, and the SL/TP lines are the ones that MOVE. There used to
@@ -89183,6 +89205,7 @@ window.__stAZ = (function () {
       var pane = { i: i, src: X, tf: tf, want: want, el: el, chart: chart, series: series, _look: 1, lines: [], static: [], n: 0, times: [], step: Math.min(tf, 525600) * 60, ov: el.querySelector('.stpr-ov'), card: el.querySelector('.strp-newscard') };
       if (tf === 525600) pane.step = 365 * 86400;
       pane.az = AZ; panes.push(pane); wirePane(pane); lookPane(pane);
+      window.__stPriceLineBehind(series, { last: function(){ return pane.bars && pane.bars[pane.bars.length - 1]; }, color: function(b){ var L = look(); return b.close >= b.open ? L.up : L.dn; } });   // under the candles (22 Oct 2026)
       try { window.__stAZ.wire(el, function(){ return { chart: chart, series: series, az: AZ, box: pc, hand: function(){ pane.handAt = Date.now(); }, after: dirty }; }); } catch (e) {}
       if (pw) try { pw.w.document.title = (X.ea && X.ea.raw ? X.ea.raw : X.sym.name) + ' \u00b7 ' + TFL[tf] + ' \u00b7 ' + (S.live ? T('Live', 'En vivo') : 'Replay');
         var pbg = pw.w.document.getElementById('stpr-bg'); if (pbg) pbg.classList.toggle('lcsat', !!S.live); } catch (e) {}
@@ -92403,7 +92426,7 @@ window.__stAZ = (function () {
     var rs = CFG.resume;
     (async function(){ if (rs && rs.day && rs.sym && Date.now() - (rs.at || 0) < 60 * 864e5) { var ok = await go(rs.sym, rs.day, rs.now || 0, true); if (ok) return; } await latestDay(CFG.sym || 'EURUSD'); })();
     lcModePaint(); }
-  function lcModePaint(){ var box = $('lc-mode'), pg = $('page-livecharts'), wn = $('stpr-win'); if (!box) return; var live = !!(S && S.live) || !!(wn && wn.classList.contains('lc')), ok = lcLiveOK();   // the window's mode, even while its prices load
+  function lcModePaint(){ var box = $('lc-mode'), pg = $('page-livecharts'), wn = $('stpr-win'); if (!box) return; var live = lcAwayOn() || !!(S && S.live) || !!(wn && wn.classList.contains('lc')), ok = lcLiveOK();   // Live Charts in its own window is Live too (Nestor, 22 Oct 2026: "why when i open the chart in a new window in LIVE this screen says replay??")   // the window's mode, even while its prices load
     if (box.hidden !== !ok) box.hidden = !ok;
     if (pg) pg.classList.toggle('lcm-replay', !live);
     box.querySelectorAll('[data-lcm]').forEach(function(b){ var on = (b.getAttribute('data-lcm') === 'live') === live; b.classList.toggle('on', on); b.setAttribute('aria-selected', on ? 'true' : 'false'); });
@@ -92418,12 +92441,16 @@ window.__stAZ = (function () {
                           : T('Your live charts stop while you replay a past day. Trades there are practice only: nothing is sent to MT5.', 'Tus gráficos en vivo se paran mientras repites un día pasado. Las operaciones allí son de práctica: nada se envía a MT5.')) + '</p>'
       + '<div class="lc-ask-b"><button type="button" data-lca="0">' + esc(toLive ? T('Stay in Replay', 'Seguir en Replay') : T('Stay on Live', 'Seguir en vivo')) + '</button><button type="button" data-lca="1" class="go' + (toLive ? ' lv' : '') + '">' + esc(toLive ? T('Switch to Live', 'Pasar a En vivo') : T('Switch to Replay', 'Pasar a Replay')) + '</button></div></div>';
     document.body.appendChild(bg);
-    var done = function(yes){ bg.remove(); document.removeEventListener('keydown', key, true); if (!yes) return; if (toLive) { LV.mode = 'live'; resumeSave(); lvBack(); } else lcReplayStart(); setTimeout(lcModePaint, 50); };
+    var done = function(yes){ bg.remove(); document.removeEventListener('keydown', key, true); if (!yes) return; if (toLive) { LV.mode = 'live'; resumeSave(); lvBack(); }
+      else { if (lcAwayOn()) { try { LV.popW.close(); } catch (e) {} LV.popW = null; clearInterval(LV.awayT); lcAwayPaint(false); } lcReplayStart(); }   // its own window closes: Replay here
+      setTimeout(lcModePaint, 50); };
     var key = function(e){ if (e.key === 'Escape') { e.stopPropagation(); done(false); } };
     document.addEventListener('keydown', key, true);
     bg.addEventListener('click', function(e){ var b = e.target.closest && e.target.closest('[data-lca]'); if (b) done(b.getAttribute('data-lca') === '1'); });
     try { bg.querySelector('[data-lca="1"]').focus(); } catch (e) {} }
-  document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('#lc-mode [data-lcm]'); if (!b || b.classList.contains('on')) return; lcAsk(b.getAttribute('data-lcm') === 'live'); });
+  document.addEventListener('click', function(e){ var b = e.target && e.target.closest && e.target.closest('#lc-mode [data-lcm]'); if (!b) return;
+    if (lcAwayOn() && b.getAttribute('data-lcm') === 'live') { try { LV.popW.focus(); } catch (x) {} return; }   // it is live in its own window: there
+    if (b.classList.contains('on')) return; lcAsk(b.getAttribute('data-lcm') === 'live'); });
   setInterval(function(){ try { if (LV.inl || LV.max || $('page-livecharts').classList.contains('active')) lcModePaint(); } catch (e) {} }, 700);
   // ---- Live Charts in a window of its own (Nestor, 18 Oct 2026: "where is the open in a new window button? otherwise i wont be
   //      able to use the rest of the app during using the live charts"): the app opens again in that window with Live
