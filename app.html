@@ -13083,7 +13083,11 @@ try {
       // signed-out copy of the app (a local preview, own storage, audio allowed without a
       // click). The stored token rather than currentUser alone, so a signed-in user whose
       // profile is still loading - or whose token refresh is failing - still hears it.
-      const _voiceMute = (function () { try { return _isDetachedWindow() || !_voiceSignedIn(); } catch (e) { return false; } })();
+      /* ...and only the window that holds the voice (_holdsVoice). Any other app window - the Live Charts window
+         (?livecharts=1) is a whole second app - could reach the boundary first, spend the once-a-day claim, and then
+         fireSessionAlert would not speak because it is not the voice window: the same silence as the detached windows above
+         (Nestor, 22 Oct 2026: "i didnt hear the session live chime today!!" - the 08:00 claim was taken, nothing was heard). */
+      const _voiceMute = (function () { try { return _isDetachedWindow() || !_voiceSignedIn() || !_holdsVoice(); } catch (e) { return false; } })();
       const _endedToday = endedSessionsToday();   // sessions you finished early today (by index)
       for (let i = 0; i < ss.length && !_voiceMute; i++) {
         const sMins = _mins(ss[i].start), eMins = _mins(ss[i].end);
@@ -14267,16 +14271,21 @@ try {
   // parameter list above - which the comment there explicitly asks callers not to do. The new-day
   // prompt uses it: a view should not ask to clear the session.
   try { window.__stIsDetachedWindow = _isDetachedWindow; } catch (e) {}
+  try { window.__stHoldsVoice = function () { return _holdsVoice(); }; } catch (e) {}   // for the tests
 
+  // Can this window make a sound? A browser keeps a page silent (speech and audio) until it has been clicked or typed in once;
+  // a window the app opened by itself at sign-in has not (22 Oct 2026).
+  function _canSound() { try { return !navigator.userActivation || !!navigator.userActivation.hasBeenActive; } catch (e) { return true; } }
   function _holdsVoice() {
     if (_isDetachedWindow()) return false;
     try {
-      const now = Date.now();
+      const now = Date.now(), me = _canSound();
       const raw = localStorage.getItem(_VOICE_KEY);
       const o = raw ? JSON.parse(raw) : null;
-      // Free, stale, or already ours -> take it and refresh the claim.
-      if (!o || !o.id || (now - (o.t || 0)) > _VOICE_TTL || o.id === _VOICE_ID) {
-        localStorage.setItem(_VOICE_KEY, JSON.stringify({ id: _VOICE_ID, t: now }));
+      // Free, stale, or already ours -> take it and refresh the claim. Also when the window holding it cannot make a sound
+      // (never clicked in) and this one can: the voice goes where it will be heard.
+      if (!o || !o.id || (now - (o.t || 0)) > _VOICE_TTL || o.id === _VOICE_ID || (me && o.a === false)) {
+        localStorage.setItem(_VOICE_KEY, JSON.stringify({ id: _VOICE_ID, t: now, a: me }));
         return true;
       }
       return false;   // another window has it and is alive
