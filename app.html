@@ -44,6 +44,10 @@
   }catch(e){} }, 4000);
 }catch(e){}</script>
 <script>
+/* The app's two-language helper, up here so start-up code can use it. It was only defined some 57 000 lines down, and the
+   Trade Log's tabs, drawn during start-up, called it first whenever a copied trade sat next to another trade: the throw
+   stopped the rest of start-up (found 22 Oct 2026). Defined again, the same, further down. */
+window._stT = function(en, es){ return (document.documentElement.lang === 'es') ? es : en; };
 /* A GIF is already showing at full size and it animates - opening it in the zoom
    viewer gains nothing, so GIFs are treated as not clickable. */
 /* The zoom applied to the whole document (the detached chat windows' - 110% + control), 1 elsewhere.
@@ -14374,6 +14378,7 @@ try {
     defaultData: function () { return defaultData(); },
     clearLocal: function () {
       try { localStorage.removeItem('st_cloud_base'); localStorage.removeItem('st_cloud_base_tag'); } catch (e) {}
+      window.__stStoredBase = null;   // nothing left that it describes (_stLsWriteJournal)
       // Wipe the journal from EVERY key loadData() can restore from (current + legacy), so a
       // cleared cache can't be resurrected from an old key on the next load. This is essential
       // for account isolation: removing only the v3 key let loadData() re-import the old copy.
@@ -14867,8 +14872,11 @@ try {
   function biasSig(b){ b=b||{}; var a=[b.mode||'',b.structure||'',b.structureLtf||'',b.location||'',b.locationLtf||'',b.direction||'',b.directionLtf||'',(b.notes||'').trim(),(Array.isArray(b.tvLinks)?b.tvLinks.map(function(l){return (l&&l.url)||'';}):[])]; if(b.news) a.push('news:'+b.news); return JSON.stringify(a); }
   function _isTodayIso(s){ try{ var t=(typeof todayDateStr==='function')?todayDateStr():new Date().toISOString().slice(0,10); return String(s||'').slice(0,10)===t; }catch(e){ return false; } }
   function _biasSlotsArr(){ return (Array.isArray(data.biasSlots)&&data.biasSlots.length)?data.biasSlots:[data.bias||{}]; }
-  function _captureNewDaySnapshot(){ try{ var rs={}; _reviewSlotsArr().forEach(function(r){ if(r) rs[reviewSlotKey(r)]=JSON.stringify(r.trades||[]); }); return { sigs:_biasSlotsArr().map(biasSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]), reviewSigs: rs }; }catch(e){ return null; } }
-  function _slotIsTodaysWork(sl, idx){ if(!sl) return false; if(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)) return true; if(_newDaySnapshot&&_newDaySnapshot.sigs&&idx!=null&&_newDaySnapshot.sigs[idx]!=null&&biasSig(sl)!==_newDaySnapshot.sigs[idx]) return true; return false; }
+  /* "Changed since the new day began?" without the empty chart-link boxes: the bias on screen is padded to two of them after
+     the snapshot is taken, and a bias saved with fewer read as edited today, so the morning question was skipped. */
+  function _ndSig(b){ try{ var c=Object.assign({}, b||{}); if(Array.isArray(c.tvLinks)) c.tvLinks=c.tvLinks.filter(function(l){ return l&&l.url; }); return biasSig(c); }catch(e){ return biasSig(b); } }
+  function _captureNewDaySnapshot(){ try{ var rs={}; _reviewSlotsArr().forEach(function(r){ if(r) rs[reviewSlotKey(r)]=JSON.stringify(r.trades||[]); }); return { sigs:_biasSlotsArr().map(_ndSig), reviewSig: JSON.stringify((data.review&&data.review.trades)||[]), reviewSigs: rs }; }catch(e){ return null; } }
+  function _slotIsTodaysWork(sl, idx){ if(!sl) return false; if(_isTodayIso(sl.copiedAt)||_isTodayIso(sl.date)) return true; if(_newDaySnapshot&&_newDaySnapshot.sigs&&idx!=null&&_newDaySnapshot.sigs[idx]!=null&&_ndSig(sl)!==_newDaySnapshot.sigs[idx]) return true; return false; }
   // Does the review hold work done TODAY? Either it was sent today, or it's stamped today
   // and its trade rows have changed since the new day was detected. Used both by the reset
   // itself and by the prompt's safety net, so "is there anything stale left?" and "what
@@ -14939,6 +14947,7 @@ try {
       } catch (e) {}
     };
     window.__stNewDayPending = function () { return !!_pendingNewDaySession; };   // the chart windows' start waits for the answer
+    window.__stNewDayAfterPull = function () { if (_pendingNewDaySession) showNewDaySessionPrompt(); };   // the question waited for the journal (showNewDaySessionPrompt)
   } catch (e) {}
 
   // MULTI-WINDOW SAFETY for "Clear the previous session".
@@ -18073,6 +18082,10 @@ try {
        changes: the pair in storage always comes from one tab's write. */
     try {
       var cb = (window.STCloud && typeof window.STCloud.cloudBase === 'function') ? window.STCloud.cloudBase() : null;
+      /* Not pulled yet (signed out, still starting): the journal still descends from the version it was loaded with. Dropping
+         the note here meant a reload before the first pull - a run-out sign-in reloads the page - left the next page without
+         one, and its first sync chose one whole journal over the other instead of merging (Troy, 22 Oct 2026). */
+      if (!cb && window.__stStoredBase) cb = window.__stStoredBase;
       if (cb) {
         var tag = cb.uat + '|' + __ST_TAB_ID;
         if (localStorage.getItem('st_cloud_base_tag') !== tag) {
@@ -26707,6 +26720,10 @@ try {
   }
   function showNewDaySessionPrompt() {
     if (!_pendingNewDaySession) return;
+    /* Not on the sign-in screen, and not before this account's journal is in from the cloud: the copy on the device can be
+       days old. Troy's iPhone (22 Oct 2026) asked over the sign-in screen from its 19-Oct copy; he answered, signed in, and
+       that copy went up over three days of his journal. Asked once the journal has arrived (__stNewDayAfterPull). */
+    try { if (!window.__stJournalPulled || document.querySelector('.stc-gate.open')) return; } catch (e) {}
     // Safety net: if no UNTOUCHED prior-day content remains, roll the day over silently instead of
     // showing a prompt that could wipe today's work. This MUST test the same things that armed the
     // prompt (bias OR review) -- a bias-only test let a posted bias cancel a prompt that yesterday's
@@ -74543,6 +74560,7 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
     sb.from('journals').select('data, updated_at').eq('user_id', currentUser.id).maybeSingle().then(function (r) {
       _mergeBusyAt = 0;   // the download is in; what follows runs to completion before anything else
       if (r.error) { accStatus(tt('syncErr')); return; }
+      try { window.__stStoredBase = null; } catch (e) {}   // the cloud is known from here on; writes note its version (_stLsWriteJournal)
       // The cloud copy has been pulled — greetings may now generate (and will reuse any
       // greeting a prior device cached in data._greetSync). Re-render after this tick so the
       // just-applied synced cache is picked up. See STAI's __stGreetSyncReady gate.
@@ -74551,6 +74569,8 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
            the tour's "have I seen this?" among them - waits for this rather than for auth, which
            resolves much earlier on a phone. */
         try{ window.__stJournalPulled = true; }catch(e){}
+        // The morning question waited for this; asked after the merge below has run (it may already be answered elsewhere).
+        setTimeout(function () { try { if (window.__stNewDayAfterPull) window.__stNewDayAfterPull(); } catch (e) {} }, 0);
         var _wasReady = window.__stGreetSyncReady; window.__stGreetSyncReady = true;
         if (!_wasReady) setTimeout(function () { try { if (window.STAI && window.STAI.enhanceGreeting) { var b = document.getElementById('bias-greeting'); if (b) window.STAI.enhanceGreeting(b, 'bias'); } if (typeof refreshAllSurfaces === 'function') refreshAllSurfaces(); } catch (e) {} }, 0);
       } catch (e) {}
@@ -74687,8 +74707,12 @@ ALL|Daylight Saving Time Shift|pol|N|2Y|||Clocks change in this country: its sch
       // this device's fresh morning bias / today's logged review.
       var _lClear = _clearStamp(local), _cClear = _clearStamp(cloud);
       if (_cClear !== _lClear && !_oldLocal) {
-        if (_cClear > _lClear) {
-          _stSlog('pull: newer new-day clear in the cloud - adopting it');
+        /* The cloud was already cleared today: it is taken whichever clear is newer. Two clears on one day mean this copy was
+           behind when it cleared (the first clear had rolled the day in the cloud), so putting it up over the cloud put back an
+           old journal - Troy's iPhone, 22 Oct 2026: its 19-Oct copy cleared at 09:07 went up over everything since, three days
+           of bias history among it. This device's work of today still comes along (the fresher-bias/review/school merges). */
+        if (_cClear > _lClear || _cClear > 0) {
+          _stSlog(_cClear > _lClear ? 'pull: newer new-day clear in the cloud - adopting it' : 'pull: the cloud was already cleared today - taking it, with today\'s work from here');
           // The cloud carries a newer clear (e.g. cleared on another device): adopt it, reload once —
           // but keep any of THIS device's today-dated bias/review by folding it into the cleared copy.
           takeSnapshot('pre-sync', local);

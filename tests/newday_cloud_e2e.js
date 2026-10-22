@@ -19,8 +19,15 @@
     // the local copy at load: yesterday's bias, the day not handled yet -> the question is armed from it
     data.biasSlots = [JSON.parse(JSON.stringify(slot))]; data.activeBiasSlot = 0; data.bias = data.biasSlots[0];
     data.lastSessionDate = y.toDateString();
-    recheckNewDayOnResume(); await W(300);
-    ok('the new day asks about yesterday\'s bias', shown() && window.__stNewDayPending(), [shown(), data.lastSessionDate]);
+    // signed out, or the journal not in from the cloud yet: armed, not asked - the copy on the device can be days old (Troy's
+    // iPhone, 22 Oct 2026: asked over the sign-in screen from its 19-Oct copy, and that copy then went up over his journal)
+    var gate = document.querySelector('.stc-gate');
+    window.__stJournalPulled = false; recheckNewDayOnResume(); await W(300);
+    ok('the journal not in from the cloud yet: the question waits (armed, not on screen)', !shown() && window.__stNewDayPending(), [shown(), window.__stNewDayPending()]);
+    window.__stJournalPulled = true; if (gate) gate.classList.add('open'); recheckNewDayOnResume(); await W(300);
+    ok('on the sign-in screen: not asked over it', !shown() && window.__stNewDayPending(), [shown(), window.__stNewDayPending()]);
+    if (gate) gate.classList.remove('open'); window.__stNewDayAfterPull(); await W(300);
+    ok('signed in with the journal in: the new day asks about yesterday\'s bias', shown() && window.__stNewDayPending(), [shown(), data.lastSessionDate]);
     ok('...on top of everything (above full-screen charts at 9000)', +getComputedStyle(modal()).zIndex >= 100000, getComputedStyle(modal()).zIndex);
     document.getElementById('new-session-modal-bg').classList.remove('show');   // as if it were covered and not seen yet
     // the cloud journal arrives: the same bias, one chart link spelled differently (the copies differ)

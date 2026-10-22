@@ -7,6 +7,8 @@
   await W(3000);
   var out = [], ok = function (name, cond, got) { out.push({ name: name, ok: !!cond, got: got === undefined ? null : got }); };
   var css = document.createElement('style'); css.textContent = '.st-tour-ov, .st-welcome, .stc-gate, #lp-front, #st-demo-bar, #onboarding-modal-bg, [class^="st-tour"] { display: none !important; }'; document.head.appendChild(css);
+  // as for a member: signed in, the journal in from the cloud (the new-day question waits for both since 22 Oct 2026)
+  window.__stJournalPulled = true; document.querySelectorAll('.stc-gate.open').forEach(function (g) { g.classList.remove('open'); });
   var keep = JSON.stringify({ s: data.settings, bs: data.biasSlots, rs: data.reviewSlots, abs: data.activeBiasSlot, ars: data.activeReviewSlot, lsd: data.lastSessionDate, bh: data.biasHistory });
   var modal = function () { return document.getElementById('new-session-modal-bg'); };
   var shown = function () { var m = modal(); return !!(m && m.classList.contains('show')); };
