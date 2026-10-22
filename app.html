@@ -15217,7 +15217,9 @@ try {
     } else {
       try { localStorage.removeItem('st_mv_payload'); } catch (e) {}   // clear any stale view payload on a normal load
     }
-    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { _stReadStoredBase(); _stReadLastWriter(); _stKinLoaded(raw); return persist(migrate(JSON.parse(raw))); } } catch (e) {}
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) { _stReadStoredBase(); _stReadLastWriter();
+      var _rk = _stReloadMine(raw); if (_rk) { var _ro = migrate(JSON.parse(_stReloadKeep(raw, _rk))); __stReloadJ = JSON.stringify(_ro); __stLocalBase = __stReloadJ; return _ro; }   // written (as this tab's) once the tab has its id (__ST_TAB_ID)
+      _stKinLoaded(raw); return persist(migrate(JSON.parse(raw))); } } catch (e) {}
     for (const oldKey of OLD_KEYS) {
       try { const v = localStorage.getItem(oldKey); if (v) return persist(migrate(JSON.parse(v))); } catch (e) {}
     }
@@ -18018,6 +18020,37 @@ try {
     var k = (__stKnown || []).filter(function (x) { return x.f !== f; });
     k.unshift({ f: f, s: s }); __stKnown = k.slice(0, 4);
   }
+  /* A tab reloading keeps its last save in its own sessionStorage (st_reload_j: the journal, the saves it was made from, the
+     cloud version it descends from) - a store no other tab can write. The shared one can be written over while the page reloads:
+     another tab that has not yet heard of this tab's last save writes its own older copy in that moment (it hears of a write a
+     moment late), and the reloaded page then loaded that copy and its last change was gone - the "after a reload" checks of
+     tests/sync_e2e.py, failing more often by 22 Oct 2026 (Nestor: "if you think it needs doing just do it"). Now the page
+     loading sees the stored copy was not made from its last save, and takes its own back: merged with the other copy from the
+     last journal both had when it can tell which, else its own as it was (the other tab then merges it in by the usual rule).
+     A restore, a copy of the app from before the merge, another account, or the stored copy already holding this tab's save:
+     the stored copy stands, as before. */
+  var __stReloadJ;   // no value here: loadData() runs first and may set it
+  function _stReloadMine(raw) {
+    var o = null; try { o = JSON.parse(sessionStorage.getItem('st_reload_j') || 'null'); sessionStorage.removeItem('st_reload_j'); } catch (e) { return null; }
+    try {
+      if (!o || typeof o.s !== 'string' || !(Date.now() - (o.at || 0) < 120000) || o.s === raw) return null;
+      var w = localStorage.getItem('st_last_write_tab') || '', u = localStorage.getItem('st_last_write_uid') || '';
+      if (!/~v2$/.test(w) || w === 'restore~v2' || localStorage.getItem('st_forcePush') || (o.uid || '') !== u) return null;
+      var note = (localStorage.getItem('st_last_write_from') || '').split(',');
+      if (note[0] === _stFp(raw) && note.indexOf(_stFp(o.s)) >= 0) return null;   // made from this tab's last save: it holds it
+      return o;
+    } catch (e) { return null; }
+  }
+  function _stReloadKeep(raw, o) {
+    var note = (localStorage.getItem('st_last_write_from') || '').split(','), base = null, J = o.s;
+    if (note[0] === _stFp(raw)) (o.known || []).some(function (x) { if (x && typeof x.s === 'string' && note.indexOf(x.f) >= 0) { base = x.s; return true; } return false; });
+    if (base !== null) { try { J = JSON.stringify(_stMerge3(JSON.parse(base), JSON.parse(o.s), JSON.parse(raw), [], [])); } catch (e) { J = o.s; base = null; } }
+    __stKin = (o.kin || []).slice(0, 60); if (base !== null) _stKinAdd(note);   // this tab's own history back, and what the other copy was made from
+    __stKnown = []; (o.known || []).slice().reverse().forEach(function (x) { if (x && typeof x.s === 'string') _stKnow(x.f, x.s); }); _stKnow(_stFp(o.s), o.s); __stShared = __stKnown[0];
+    if (o.cb && o.cb.uat && typeof o.cb.str === 'string') window.__stStoredBase = o.cb;   // the cloud version this tab's copy descends from
+    _stSlog('tab: reloaded - another tab saved without this tab\'s last save meanwhile; ' + (base !== null ? 'merged from the last journal both had' : 'this tab\'s copy kept (the other tab merges it in)'));
+    return J;
+  }
   function _stKinLoaded(raw) {                  // a page starts from the stored journal, and from what that was made from
     try {
       var f = _stFp(raw), note = (localStorage.getItem('st_last_write_from') || '').split(',');
@@ -18191,6 +18224,13 @@ try {
   // '~v2': this tab merges (see _stMerge3). A copy of the app from before 29 Sep 2026 writes the journal without
   // merging and its ids have no mark - _stAbsorbOtherTab and the first load of a page use that to tell them apart.
   const __ST_TAB_ID = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2) + '~v2';
+  if (__stReloadJ) { try { _stLsWriteJournal(__stReloadJ, true); __stWroteOnce = true; } catch (e) {} __stReloadJ = null; }   // this tab's copy kept at its reload (_stReloadKeep)
+  window.addEventListener('pagehide', function () {
+    try { if (window.__MV || typeof __stLocalBase !== 'string') return;
+      var cb = null; try { cb = (window.STCloud && typeof window.STCloud.cloudBase === 'function') ? window.STCloud.cloudBase() : null; } catch (e) {} if (!cb) cb = window.__stStoredBase || null;
+      var o = { s: __stLocalBase, kin: __stKin || [], known: (__stKnown || []).filter(function (x) { return x && x.s !== __stLocalBase; }).slice(0, 2), cb: cb, uid: _stWriterUid(), at: Date.now() };
+      try { sessionStorage.setItem('st_reload_j', JSON.stringify(o)); } catch (e) { o.known = []; try { sessionStorage.setItem('st_reload_j', JSON.stringify(o)); } catch (x) {} }   // too big with the older ones: this tab's own alone
+    } catch (e) {} });
   function saveData() {
     if (window.__MV) return;                  // mentor view is read-only — never persist
     // The example journal ends the moment the member's own journal begins (a balance, MT5, a trade of their own).

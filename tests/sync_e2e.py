@@ -421,6 +421,67 @@ def det(A, A2, check, ev, wait):
     s1 = _json.loads(ev(A, state))
     check('after a reload: tab 1 ends with both changes', s1['three'] == 'three' and s1['four'] == 'four', s1)
 
+    # ---- The same race, decided (22 Oct 2026): tab 1's new page is held until tab 2 - its view behind - has saved its older copy,
+    # ---- after tab 1's last save, so the reloaded page finds that copy every time (above it happens only when tab 2's 5 s save
+    # ---- falls inside the reload). Tab 1 keeps its last change in its own sessionStorage and takes it back.
+    state2 = r"""(() => JSON.stringify({ five: data.settings.e2eDet5 || null, six: data.settings.e2eDet6 || null,
+      log: (window.__stSyncLog || []).filter(l => / tab: /.test(l)).slice(-3) }))()"""
+    for _ in range(12):
+        ev(A, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        ev(A2, "(() => { STCloud.save(); return true; })()")
+        _time.sleep(0.3)
+        a = ev(A, "JSON.stringify(data.settings) + '|' + (localStorage.getItem('fiberTradesData_v3') === JSON.stringify(data))")
+        b = ev(A2, "JSON.stringify(data.settings) + '|' + (localStorage.getItem('fiberTradesData_v3') === JSON.stringify(data))")
+        if a == b and a.endswith('|true'):
+            break
+    check('held reload: the two tabs agree before it starts', a == b and a.endswith('|true'), [a[-60:], b[-60:]])
+    ev(A2, FREEZE_JS)
+    ev(A, "(() => { data.settings.e2eDet5 = 'five'; STCloud.save(); return true; })()")
+    held = reload_held(A, lambda: ev(A2, "(() => { STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()"))
+    _time.sleep(1)
+    ok = wait(A, READY_JS, 40)
+    ev(A, bt.PRELUDE)
+    s1 = _json.loads(ev(A, state2))
+    check('held reload: tab 2 wrote its older copy while tab 1 reloaded', held, held)
+    check('held reload: tab 1 came back with its own change', ok and s1['five'] == 'five', s1)
+    id2 = ev(A2, "(() => { data.settings.e2eDet6 = 'six'; STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    ev(A2, "(() => { window.__e2eThaw(); return true; })()")
+    wait(A, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id2), 10)
+    id1 = ev(A, "(() => { STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    wait(A2, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id1), 10)
+    id2 = ev(A2, "(() => { STCloud.save(); return localStorage.getItem('st_last_write_tab'); })()")
+    s2 = _json.loads(ev(A2, state2))
+    check('held reload: tab 2 ends with both changes', s2['five'] == 'five' and s2['six'] == 'six', s2)
+    wait(A, "(() => localStorage.getItem('st_last_write_tab') === %s)()" % _json.dumps(id2), 10)
+    ev(A, "(() => { STCloud.save(); return true; })()")
+    s1 = _json.loads(ev(A, state2))
+    check('held reload: tab 1 ends with both changes', s1['five'] == 'five' and s1['six'] == 'six', s1)
+
+
+def reload_held(A, during):
+    # Tab A reloaded and its new page paused at its very first line: the old page is gone (its last save and its pagehide
+    # done) and the new one has read nothing yet - the moment another tab's late write does the damage. `during` runs
+    # there; then the page goes on. Returns what `during` returned.
+    import time as _time
+    A.call('Debugger.enable')
+    sid = A.call('Page.addScriptToEvaluateOnNewDocument', source='debugger;').get('identifier')
+    A.id += 1
+    A._send({'id': A.id, 'method': 'Page.reload', 'params': {'ignoreCache': True}})
+    paused, end = False, _time.time() + 20
+    while not paused and _time.time() < end:
+        m = A._recv()
+        if m.get('method') == 'Debugger.paused':
+            paused = True
+    out = during() if paused else None
+    try:
+        A.call('Page.removeScriptToEvaluateOnNewDocument', identifier=sid)
+    except Exception:
+        pass
+    A.call('Debugger.resume')
+    A.call('Debugger.disable')
+    return out
+
 
 def main():
     edge = next((p for p in bt.EDGE_PATHS if os.path.exists(p)), None)
