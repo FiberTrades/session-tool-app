@@ -1,10 +1,13 @@
-"""Live Charts sent to a window of its own takes the chart windows already out with it (Nestor, 22 Oct 2026: with charts 2 and 3 out
-in windows of their own, opening Live Charts in its own window "ended up giving me 3 charts all together in 1 screen ... there is still
-a chart that shouldnt be there anymore in the app").
+"""Live Charts sent to a window of its own takes the chart windows already out with it, and every hand-over is seamless (Nestor,
+22 Oct 2026: with charts 2 and 3 out in windows of their own, opening Live Charts in its own window "ended up giving me 3 charts all
+together in 1 screen ... there is still a chart that shouldnt be there anymore in the app"; then "it looks cheaply built as when you
+close the main chart the other screens go black for a couple of seconds ... i see the 3 charts inside the app then it turns to just
+the one").
 
 The app shows Live Charts with three charts; charts 2 and 3 go into windows of their own; then Live Charts goes into a window of its
-own. That window must show chart 1 only, with charts 2 and 3 still in the same two windows; the app must show no chart. Reloading the
-app must leave all of that alone, and "Show it here instead" must bring Live Charts back to the app with charts 2 and 3 still out.
+own; the app is reloaded; "Show it here instead"; Live Charts to its own window again; that window closed by hand. Throughout, every
+chart window is sampled several times a second: it must always show a chart (never blank) and never reload, and the window taking the
+charts over must never build charts 2 and 3 inside itself first.
     python tests/lc_handover_run.py            (the app as it is)
     python tests/lc_handover_run.py old.html   (another copy of the app, served from the repo, to see the old behaviour)
 """
@@ -12,7 +15,7 @@ import functools, http.server, json, os, shutil, subprocess, sys, tempfile, thre
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import browser_test as bt
 import faulthandler
-faulthandler.cancel_dump_traceback_later(); faulthandler.dump_traceback_later(500, exit=True)
+faulthandler.cancel_dump_traceback_later(); faulthandler.dump_traceback_later(600, exit=True)
 
 PAGE = sys.argv[1] if len(sys.argv) > 1 else 'app.html'
 HIDE = """(function(){ try { var lp = document.getElementById('lp-front'); if (lp) lp.style.display = 'none';
@@ -22,7 +25,11 @@ WHERE = """JSON.stringify((function(){ var P = window.__stPractice, s = P && P._
   return { live: !!(s && s.live), solo: !!(P && P._lv().solo), inl: !!(P && P._lv().inl), n: ps.length, away: !!document.getElementById('lc-away'),
     here: ps.filter(function(p){ return p.el.ownerDocument === document; }).map(function(p){ return p.i; }),
     out: ps.filter(function(p){ var q = o[p.i]; return !!(q && q.ready && q.w && !q.w.closed && p.el.ownerDocument === q.w.document && p.n > 0); }).map(function(p){ return p.i; }),
-    panesInDoc: Array.prototype.filter.call(document.querySelectorAll('.stpr-pane'), function(e){ return e.offsetWidth > 0 && e.offsetHeight > 0; }).length, pill0: !!document.querySelector('.stpr-pane[data-i="0"] .stpr-sympill, #stpr-tl .stpr-sympill') }; })())"""
+    panesInDoc: Array.prototype.filter.call(document.querySelectorAll('.stpr-pane'), function(e){ return e.offsetWidth > 0 && e.offsetHeight > 0; }).length,
+    pill0: !!document.querySelector('.stpr-pane[data-i="0"] .stpr-sympill, #stpr-tl .stpr-sympill') }; })())"""
+# a chart window: how many charts it shows (canvases of a real size), whether it was reloaded (the mark goes), leftover pictures
+CW = """JSON.stringify((function(){ var cv = Array.prototype.filter.call(document.querySelectorAll('canvas'), function(c){ var r = c.getBoundingClientRect(); return r.width > 100 && r.height > 100 && getComputedStyle(c).visibility !== 'hidden'; });
+  return { cv: cv.length, mark: window.__mark || 0, bgs: document.querySelectorAll('#stpr-bg').length }; })())"""
 
 
 def main():
@@ -51,13 +58,46 @@ def main():
             try: v = ev(c, js)
             except Exception: v = None
             if v: return v
-            time.sleep(0.5)
+            time.sleep(0.25)
         return v
     def where(c):
         try: return json.loads(ev(c, WHERE) or '{}')
         except Exception: return {}
     def charts():
-        return sorted([(t['id'], t.get('url', '').split('/')[-1]) for t in targets() if 'chart.html' in t.get('url', '')])
+        return sorted([t['id'] for t in targets() if 'chart.html' in t.get('url', '')])
+    CWC = {}
+    def cw(tid):
+        if tid not in CWC:
+            t = next((x for x in targets() if x['id'] == tid), None)
+            if not t: return None
+            c = bt.CDP(t['webSocketDebuggerUrl']); c.call('Runtime.enable'); CWC[tid] = c
+        try: return json.loads(ev(CWC[tid], CW) or '{}')
+        except Exception: return None
+    def mark(ids):
+        for tid in ids:
+            cw(tid); ev(CWC[tid], 'window.__mark = 1; 1')
+    # watch a hand-over: every chart window always shows a chart and is not reloaded; the taking window never has more than chart 1
+    def watch(name, ids, taker, secs, done_js):
+        blank, reloaded, most, t1, ok_at = [], [], 0, time.time(), None
+        while time.time() - t1 < secs:
+            for tid in ids:
+                s = cw(tid)
+                if not s or s.get('cv', 0) < 1: blank.append((round(time.time() - t1, 2), tid[-4:], s))
+                if s and not s.get('mark'): reloaded.append((round(time.time() - t1, 2), tid[-4:]))
+            if taker is not None:
+                w = where(taker)
+                if w.get('live'): most = max(most, len(w.get('here') or []))
+            if ok_at is None:
+                try:
+                    if ev(taker if taker is not None else M, done_js): ok_at = time.time() - t1
+                except Exception: pass
+            elif time.time() - t1 > ok_at + 1.5: break
+            time.sleep(0.12)
+        print('    (%s: done after %s s; blank samples %d; reloads %d; most charts in the taking window %d)' % (name, round(ok_at, 1) if ok_at is not None else '-', len(blank), len(set(r[1] for r in reloaded)), most))
+        check(name + ': every chart window kept showing a chart', not blank, blank[:4])
+        check(name + ': no chart window reloaded', not reloaded, reloaded[:4])
+        if taker is not None: check(name + ': the window taking over never had more than chart 1 in it', most <= 1, most)
+        return ok_at
     try:
         pages = []
         for _ in range(80):
@@ -82,56 +122,63 @@ def main():
         until(M, "(function(){ var o = window.__stPractice._pops()[1]; return !!(o && o.ready && window.__stPractice._panes()[1].n); })()", 60)
         ev(M, 'window.__stPractice._pop(2); 1', gesture=True)
         until(M, "(function(){ var o = window.__stPractice._pops()[2]; return !!(o && o.ready && window.__stPractice._panes()[2].n); })()", 60)
-        w0 = where(M); cw0 = charts()
-        check('the app: chart 1 here, charts 2 and 3 in two windows of their own', w0.get('here') == [0] and w0.get('out') == [1, 2] and len(cw0) == 2, [w0, cw0])
+        w0 = where(M); ids = charts()
+        check('the app: chart 1 here, charts 2 and 3 in two windows of their own', w0.get('here') == [0] and w0.get('out') == [1, 2] and len(ids) == 2, [w0, ids])
         check('...chart 1 alone here: no symbol button of its own on it (the one at the top is its)', w0.get('pill0') is False, w0)
+        mark(ids)
 
-        # Live Charts in a window of its own
+        # 1. Live Charts in a window of its own
         ev(M, 'window.__stPractice._lcPop(); 1', gesture=True)
         lc = None
-        for _ in range(60):
+        for _ in range(80):
             lc = next((t for t in targets() if 'livecharts=1' in t.get('url', '')), None)
             if lc: break
-            time.sleep(0.5)
+            time.sleep(0.1)
         L = bt.CDP(lc['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
         L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;'); ev(L, 'window.__stLcForce = true; 1')
-        t1 = time.time(); most = 0; first = None; done = None
-        while time.time() - t1 < 60:
-            w = where(L)
-            if w.get('live'):
-                if first is None: first = time.time()
-                most = max(most, len(w.get('here') or []))
-                if w.get('here') == [0] and w.get('out') == [1, 2]: done = time.time(); break
-            time.sleep(0.25)
+        done = "(function(){ var w = %s; w = JSON.parse(w); return w.live && w.here.join() === '0' && w.out.join() === '1,2'; })()" % WHERE
+        watch('Live Charts to its own window', ids, L, 40, done)
         wl = where(L)
         check("Live Charts' window: chart 1 there, charts 2 and 3 in their windows", wl.get('solo') and wl.get('here') == [0] and wl.get('out') == [1, 2], wl)
-        print('    (charts in Live Charts\' window while the windows changed over: up to %d, for %.1f s)' % (most, (done - first) if (done and first) else -1))
-        cw1 = charts()
-        check('still two chart windows, the same two', cw1 == cw0, [cw0, cw1])
+        check('still two chart windows, the same two', charts() == ids, [ids, charts()])
         wm = where(M)
         check('the app: no chart of its own left (it says Live Charts is open in its own window)', wm.get('away') and not wm.get('live') and wm.get('panesInDoc') == 0 and not wm.get('out'), wm)
+        time.sleep(0.6)
+        check('...the still pictures gone from the chart windows (one chart window page each)', all((cw(t) or {}).get('bgs') == 1 for t in ids), [cw(t) for t in ids])
 
-        # the app reloaded: nothing moves
-        M.call('Page.reload'); time.sleep(0.5)
-        bad = []
-        t2 = time.time()
-        while time.time() - t2 < 12:
-            w = where(L)
-            if not (w.get('here') == [0] and w.get('out') == [1, 2]): bad.append(w)
-            time.sleep(0.5)
+        # 2. the app reloaded: nothing moves
+        M.call('Page.reload'); time.sleep(0.3)
+        watch('the app reloaded', ids, None, 10, 'false')
         until(M, '!!(window.__stPractice && window.__stLC && window.__stSB)'); ev(M, HIDE)
         ev(M, """(function(){ var t = document.querySelector('.tab[data-page="livecharts"]'); if (!t.classList.contains('active')) t.click(); return 1; })()"""); time.sleep(3)
-        check("the app reloaded: Live Charts' window kept chart 1, its two chart windows kept theirs, the whole time", not bad and where(L).get('out') == [1, 2], bad[:3])
-        check('...the same two chart windows', charts() == cw0, charts())
+        check("...Live Charts' window still has charts 2 and 3 in their windows", where(L).get('out') == [1, 2], where(L))
         wm2 = where(M)
         check('...the reloaded app: still no chart of its own', wm2.get('away') and not wm2.get('live') and wm2.get('panesInDoc') == 0, wm2)
 
-        # "Show it here instead": Live Charts back in the app, charts 2 and 3 still in their windows
+        # 3. "Show it here instead": Live Charts back in the app, charts 2 and 3 still in their windows
         ev(M, "document.querySelector('#lc-away [data-lcback]').click(); 1", gesture=True)
-        ok = until(M, "(function(){ var w = %s; w = JSON.parse(w); return w.live && w.inl && !w.away && w.here.join() === '0' && w.out.join() === '1,2'; })()" % WHERE, 60)
-        check('Show it here instead: Live Charts back in the app, chart 1 here, charts 2 and 3 still in their windows', ok, where(M))
-        time.sleep(1.5)
-        check("...Live Charts' window closed, the same two chart windows", not any('livecharts=1' in t.get('url', '') for t in targets()) and charts() == cw0, [[t.get('url') for t in targets()], cw0])
+        done_m = "(function(){ var w = %s; w = JSON.parse(w); return w.live && w.inl && !w.away && w.here.join() === '0' && w.out.join() === '1,2'; })()" % WHERE
+        watch('Show it here instead', ids, M, 40, done_m)
+        check('...Live Charts back in the app, chart 1 here, charts 2 and 3 still in their windows', ev(M, done_m), where(M))
+        time.sleep(1)
+        check("...Live Charts' window closed, the same two chart windows", not any('livecharts=1' in t.get('url', '') for t in targets()) and charts() == ids, [[t.get('url') for t in targets()], ids])
+
+        # 4. to its own window again, then that window closed by hand (its X)
+        ev(M, 'window.__stPractice._lcPop(); 1', gesture=True)
+        lc = None
+        for _ in range(80):
+            lc = next((t for t in targets() if 'livecharts=1' in t.get('url', '')), None)
+            if lc: break
+            time.sleep(0.1)
+        L = bt.CDP(lc['webSocketDebuggerUrl']); L.call('Page.enable'); L.call('Runtime.enable')
+        L.call('Page.addScriptToEvaluateOnNewDocument', source='window.__stLcForce = true;'); ev(L, 'window.__stLcForce = true; 1')
+        watch('Live Charts to its own window again', ids, L, 40, done)
+        ev(L, 'window.close(); 1')
+        watch("Live Charts' window closed by hand", ids, M, 40, done_m)
+        check('...Live Charts back in the app with charts 2 and 3 still in their windows', ev(M, done_m), where(M))
+        if os.environ.get('LCH_DEBUG'):
+            print('DEBUG targets', [t.get('url', '')[-40:] for t in targets()])
+            print('DEBUG app', ev(M, "JSON.stringify((function(){ var lv = window.__stPractice._lv(), w = lv.popW, st = 'none'; try { st = w ? (w.closed ? 'closed' : 'open') : 'none'; } catch (e) { st = 'err'; } return { popW: st, awayT: !!lv.awayT, seen: lv.seenAt, tab: (document.querySelector('.tab[data-page=\"livecharts\"]') || {}).className, expect: lv.expect }; })())"))
     except Exception as e:
         import traceback; traceback.print_exc(); check('test ran', False, str(e))
     finally:

@@ -35,7 +35,7 @@
     // ---- the watchlist at the top ----
     document.getElementById('stpr-sym').click(); await W(200);
     var menu = document.querySelector('#stpr-menu.show');
-    ok('the symbol button opens the watchlist: Symbol, Last, Chg, Chg%', menu && /Watchlist/.test(menu.textContent) && /Symbol\s*Last\s*Chg\s*Chg%/.test(menu.querySelector('.stpr-wlc').textContent) && /open it on every chart/.test(document.getElementById('stpr-wlf').textContent), menu && menu.textContent.slice(0, 120));
+    ok('the symbol button opens the watchlist: Symbol, Last, Chg, Chg%', menu && /Watchlist/.test(menu.textContent) && /Symbol\s*Last\s*Chg\s*Chg%/.test(menu.querySelector('.stpr-wlc').textContent) && /open it on chart 1/.test(document.getElementById('stpr-wlf').textContent), menu && menu.textContent.slice(0, 120));
     for (k = 0; k < 40 && !/\d\.\d{5}/.test((document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"]') || {}).textContent || ''); k++) await W(150);
     var er = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"]'), gr = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]');
     for (k = 0; k < 40 && !(gr && /\d,\d{3}\.\d{2}/.test(gr.textContent)); k++) { await W(150); gr = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]'); }
@@ -52,9 +52,9 @@
     pick.click(); await W(300);
     ok('picked: back on the list', !!document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]') && (C.wl || []).indexOf('XAUUSD') >= 0, C.wl);
 
-    // ---- the top button: every chart ----
+    // ---- the top button: chart 1's, the other charts keep theirs (Nestor, 22 Oct 2026: "The top picker now changes every chart. i dont want this") ----
     document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]').click(); await waitKeys('XAUUSD,XAUUSD');
-    ok('the top button\'s XAUUSD turns every chart to gold, on the same day', keys() === 'XAUUSD,XAUUSD' && P._s().day === '2026-10-01' && pane(0).n > 10 && pane(1).n > 10 && !(C.syms || []).some(Boolean), [keys(), P._s().day, C.syms]);
+    ok('the top button\'s XAUUSD turns chart 1 to gold, on the same day (chart 2 was on gold already)', keys() === 'XAUUSD,XAUUSD' && P._s().day === '2026-10-01' && pane(0).n > 10 && pane(1).n > 10, [keys(), P._s().day, C.syms]);
     ok('gold\'s prices read with its own decimals', pane(0).series.options().priceFormat.precision === P._s().digits && P._s().digits < 5, P._s().digits);
 
     // ---- chart 1's own button: chart 1 alone ----
@@ -63,6 +63,15 @@
     ok('chart 1\'s button opens the watchlist for chart 1', m1 && /Chart 1 · watchlist/.test(m1.textContent), m1 && m1.textContent.slice(0, 60));
     m1.querySelector('.stpr-wlr[data-sym="EURUSD"][data-si="0"]').click(); await waitKeys('EURUSD,XAUUSD');
     ok('...EURUSD there changes chart 1 only: chart 2 keeps gold', keys() === 'EURUSD,XAUUSD', keys());
+    document.querySelectorAll('#stpr-grid .stpr-sympill')[1].click(); await W(250);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"][data-si="1"]').click(); await waitKeys('EURUSD,EURUSD');
+    document.getElementById('stpr-sym').click(); await W(250);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"]').click(); await waitKeys('XAUUSD,EURUSD');
+    ok('the top button changes chart 1 only: both on EURUSD, its gold leaves chart 2 on EURUSD', keys() === 'XAUUSD,EURUSD', [keys(), C.syms]);
+    document.getElementById('stpr-sym').click(); await W(250);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"]').click(); await waitKeys('EURUSD,EURUSD');
+    document.querySelectorAll('#stpr-grid .stpr-sympill')[1].click(); await W(250);
+    document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="XAUUSD"][data-si="1"]').click(); await waitKeys('EURUSD,XAUUSD');
 
     // ---- more charts follow chart 1 ----
     await P._layout(4); for (k = 0; k < 80 && !(P._panes().length === 4 && pane(3).n); k++) await W(100); await W(300);

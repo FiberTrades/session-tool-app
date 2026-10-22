@@ -206,6 +206,14 @@ def main():
             cdp.call('Browser.grantPermissions', permissions=['clipboardReadWrite', 'clipboardSanitizedWrite'], origin='http://127.0.0.1:%d' % web_port)
         except Exception:
             pass
+        mob = os.environ.get('E2E_MOBILE', '')   # e.g. 375x812: a phone's screen, with touch (22 Oct 2026)
+        if mob:
+            try:
+                mw, mh = [int(v) for v in mob.lower().split('x')]
+                cdp.call('Emulation.setDeviceMetricsOverride', width=mw, height=mh, deviceScaleFactor=2, mobile=True)
+                cdp.call('Emulation.setTouchEmulationEnabled', enabled=True, maxTouchPoints=5)
+            except Exception:
+                pass
         app = os.environ.get('E2E_APP', 'app.html')   # another file name runs the same test against an older copy
         cdp.call('Page.navigate', url='http://127.0.0.1:%d/%s?e2e=%d' % (web_port, app, random.randint(1, 10 ** 9)))
         time.sleep(2)

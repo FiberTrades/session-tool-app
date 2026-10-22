@@ -226,9 +226,16 @@
     document.getElementById('stpr-sym').click(); await W(120);
     var gbtn = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym]'), function (b) { return /XAUUSD/.test(b.textContent); })[0];
     check('the symbol button\'s list marks what streams live from MT5 (a green dot)', gbtn && !!gbtn.querySelector('b i'), gbtn && gbtn.innerHTML.slice(0, 160));
+    // since 22 Oct 2026 the top button is chart 1's (Nestor: "The top picker now changes every chart. i dont want this"): chart 2 its own button
+    var keysNow = function () { return P._panes().map(function (q) { return P._ps(q).sym.key; }).join(','); };
+    var pick2 = async function (re, want) { var pl = document.querySelector('#lc-host .stpr-sympill[data-psym="1"]'); if (!pl) return; pl.click(); await W(250);
+      var r2 = Array.prototype.filter.call(document.querySelectorAll('#stpr-menu.show [data-sym][data-si="1"]'), function (b) { return re.test(b.textContent); })[0]; if (r2) r2.click();
+      for (var j = 0; j < 120 && keysNow() !== want; j++) await W(250); await W(400); };
     gbtn.click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && /XAU|GOLD/.test(st.sym) && st.fresh && st.px && st.gotHist) break; }
     var ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
+    check('the top button is chart 1\'s: chart 1 turns to gold, chart 2 keeps EUR/USD', ks.join(',') === 'XAUUSD,EURUSD', ks);
+    await pick2(/^XAUUSD/, 'XAUUSD,XAUUSD'); ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
     check('both charts are gold now, live from its own EA', ks.join(',') === 'XAUUSD,XAUUSD' && st.fresh && st.px && st.px.b > 1000 && st.gotHist, [ks, st.px, st.gotHist]);
     for (k = 0; k < 20; k++) { await W(300); if (/^2000\|XAUUSD\|/.test(LN.state().key)) break; }
     check('"watch" names gold only (a trade still open on EUR/USD: every 2 s)', /^2000\|XAUUSD\|/.test(LN.state().key), LN.state().key);
@@ -259,6 +266,7 @@
     check('...but Live Charts lists it, by its MT5 name, live (its own EA)', bbtn && /^BTCUSD/.test(bbtn.textContent) && !!bbtn.querySelector('b i'), bbtn && bbtn.textContent);
     if (bbtn) bbtn.click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'BTCUSD' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
+    await pick2(/^BTCUSD/, 'BTCUSD,BTCUSD');
     ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
     check('both charts are Bitcoin, live, with the minutes its EA sent', ks.join(',') === 'BTCUSD,BTCUSD' && st.fresh && st.px && st.px.b > 10000 && st.gotHist && st.base > 100, [ks, st.px, st.gotHist, st.base]);
     await W(800);
@@ -302,6 +310,7 @@
     check('picked: USDJPY is on the list, and saved', P._wl().list.indexOf('USDJPY') >= 0 && (P._cfg().wl || []).indexOf('USDJPY') >= 0 && !!document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]'), P._cfg().wl);
     document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]').click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'USDJPY' && st.fresh && st.px && st.gotHist && st.base > 100) break; }
+    await pick2(/^USDJPY/, 'USDJPY,USDJPY');
     ks = P._panes().map(function (q) { return P._ps(q).sym.key; });
     check('USDJPY opens on every chart with no MT5 chart of its own: the hub sends its prices and minutes', ks.join(',') === 'USDJPY,USDJPY' && st.fresh && st.px && st.px.b > 100 && st.gotHist && st.base > 100 && P._feeds()[0].ea && P._feeds()[0].ea.hub === 'EURUSD|90001234', [ks, st.px, st.base, P._feeds()[0].ea]);
     check('...in its own digits (3)', P._feeds()[0].digits === 3 || P._feeds()[0].dg === 3, [P._feeds()[0].digits, P._feeds()[0].dg]);
@@ -310,6 +319,7 @@
     document.getElementById('stpr-sym').click(); await W(200);
     document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="EURUSD"]').click();
     for (k = 0; k < 120; k++) { await W(250); st = LC.state(); if (st.live && st.sym === 'EURUSD' && st.fresh) break; }
+    await pick2(/^EURUSD/, 'EURUSD,EURUSD');   // chart 2 back with chart 1
     document.getElementById('stpr-sym').click(); await W(200);
     var ux = document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"] [data-wlx]'); if (ux) ux.click(); await W(200);
     check('back on EURUSD; × takes USDJPY off the list', st.sym === 'EURUSD' && P._wl().list.indexOf('USDJPY') < 0 && !document.querySelector('#stpr-menu.show .stpr-wlr[data-sym="USDJPY"]'), P._wl().list);
