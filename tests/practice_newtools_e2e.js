@@ -164,8 +164,8 @@
     DW.sel = DW.list.indexOf(cn); P._props(); await W(20);
     bar().querySelector('[data-db="fill"]').click(); await W(20); pop().querySelector('[data-pc="#f4c05a"]').click(); await W(20); DB.closePop();
     bar().querySelector('[data-db="tpl"]').click(); await W(20);
-    ok('Templates on a channel: Save template as..., Set this look as the default for parallel channels', /Save template as/.test(pop().textContent) && /default for parallel channels/.test(pop().textContent), pop().textContent);
-    pop().querySelector('[data-tp="setdef"]').click(); await W(30);
+    ok('Templates on a channel: Reset to default, Save template as...', /Save template as/.test(pop().textContent) && /Reset to default/.test(pop().textContent), pop().textContent);
+    DB.closePop();   // (its look is remembered for new channels as it is changed, 22 Oct 2026)
     DW.sel = null; P._props(); await pick('channel'); click(X + 200, 200); mev('mousemove', X + 280, 190); click(X + 280, 190); mev('mousemove', X + 250, 160); click(X + 250, 160);   // on the chart, left of its price scale await W(80);
     var cn2 = last();
     ok('a new channel takes that default: the fill, the middle line', cn2.type === 'channel' && /244,192,90/.test(cn2.fill) && cn2.mid === true && C.ddef.channel && C.ddef.channel.mid === true, cn2);

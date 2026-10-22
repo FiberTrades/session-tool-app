@@ -93,7 +93,7 @@ Deno.serve(async (req) => {
   // 1. Resolve the sync_token to an account (same as ingest-trade).
   const { data: prof, error: pErr } = await admin
     .from("profiles")
-    .select("id, is_paid, created_at, trial_days")
+    .select("id, is_paid, created_at, trial_days, trial_ended_at")
     .eq("sync_token", String(token))
     .maybeSingle();
   if (pErr)  return json({ error: "profile lookup failed" }, 500);
@@ -107,7 +107,8 @@ Deno.serve(async (req) => {
   if (prof.is_paid !== true) {
     const created = prof.created_at ? Date.parse(String(prof.created_at)) : NaN;
     const days = Number(prof.trial_days) > 0 ? Number(prof.trial_days) : TRIAL_DAYS;
-    const expired = Number.isFinite(created) && Date.now() >= created + days * 86400000;
+    const ended = prof.trial_ended_at ? Date.parse(String(prof.trial_ended_at)) : NaN;   // ended early by the admin (profiles.trial_ended_at, Settings > Business > End trial, 22 Oct 2026)
+    const expired = (Number.isFinite(created) && Date.now() >= created + days * 86400000) || (Number.isFinite(ended) && Date.now() >= ended);
     if (expired) return json({ error: "live status requires a paid plan" }, 402);
   }
 

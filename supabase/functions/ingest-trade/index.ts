@@ -338,7 +338,7 @@ async function resolveSyncUser(
 ): Promise<{ userId: string } | { error: string; status: number }> {
   const { data: prof, error: pErr } = await admin
     .from("profiles")
-    .select("id, is_paid, created_at")
+    .select("id, is_paid, created_at, trial_ended_at")
     .eq("sync_token", token)
     .maybeSingle();
   if (pErr)  return { error: "profile lookup failed", status: 500 };
@@ -352,8 +352,10 @@ async function resolveSyncUser(
     // the app showing someone a working sync panel while the server silently drops
     // every trade. The token is still a per-account secret, so nothing is opened up
     // to the world; at worst one malformed profile keeps syncing.
-    const expired = Number.isFinite(created) &&
-                    Date.now() >= created + TRIAL_DAYS * 86400000;
+    const ended = prof.trial_ended_at ? Date.parse(String(prof.trial_ended_at)) : NaN;   // ended early by the admin (profiles.trial_ended_at, Settings > Business > End trial, 22 Oct 2026)
+    const expired = (Number.isFinite(created) &&
+                    Date.now() >= created + TRIAL_DAYS * 86400000) ||
+                    (Number.isFinite(ended) && Date.now() >= ended);
     if (expired) {
       // 402 Payment Required: the EA simply stops syncing once the trial is over.
       return { error: "auto-sync requires a paid plan", status: 402 };

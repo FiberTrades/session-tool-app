@@ -1,7 +1,7 @@
 (async function () {
   // The drawing toolbar, Back Testing (Nestor, 19 Oct 2026: "build all the tradingview suggestions! i love them!!"): TradingView's
   // floating bar over the selected drawing in place of the vertical options box; Templates per tool (his own, none built in;
-  // Save template as..., Apply default, Set this look as the default, a tool's default on every new drawing of it, synced with
+  // Save template as..., Reset to default, every change remembered as the tool's look for new drawings of it, synced with
   // the chart settings); colours from the chart settings' 30 with an opacity and a custom one; a rectangle's own fill, its
   // words inside it, extend left / right and a middle line; solid / dashed / dotted lines; Hide all / Lock all drawings beside
   // undo / redo / the bin. Drawings made before look exactly as they did. Real EUR/USD candles of Thu 1 Oct 2026.
@@ -80,7 +80,7 @@
 
     // 7. Templates: his own, none built in
     bar().querySelector('[data-db="tpl"]').click(); await W(30);
-    ok('Templates: Save template as..., Apply default, Set this look as the default for rectangles; none yet', /Save template as/.test(pop().textContent) && /Apply default/.test(pop().textContent) && /Set this look as the default for rectangles/.test(pop().textContent) && /Your rectangle templates/i.test(pop().textContent) && !pop().querySelector('[data-tpa]') && /None yet/.test(pop().textContent), pop().textContent);
+    ok('Templates: Reset to default, Save template as...; none yet', /Save template as/.test(pop().textContent) && /Reset to default/.test(pop().textContent) && /Your rectangle templates/i.test(pop().textContent) && !pop().querySelector('[data-tpa]') && /None yet/.test(pop().textContent), pop().textContent);
     pop().querySelector('[data-tp="save"]').click(); await W(60);
     var dlg = document.querySelector('.stdb-dlg'), nmI = dlg && dlg.querySelector('[data-tpn]'), sv = dlg && dlg.querySelector('[data-tps]');
     ok('Save template as...: its window - a name, "Use it for new rectangles", Cancel / Save (Save waits for a name)', dlg && /Save template/.test(dlg.textContent) && nmI && document.activeElement === nmI && /Use it for new rectangles/.test(dlg.textContent) && sv.disabled && /Cancel/i.test(dlg.textContent), dlg && dlg.textContent);
@@ -96,24 +96,26 @@
     bar().querySelector('[data-db="tpl"]').click(); await W(30);
     ok('its Templates list: Yellow zone ✓ default, a swatch, ×', pop().querySelector('[data-tpa="0"]') && /Yellow zone/.test(pop().textContent) && /✓ default/.test(pop().textContent) && pop().querySelector('[data-tpa="0"] .stdb-sw') && pop().querySelector('[data-tpx="0"]'), pop().textContent);
     DB.closePop();
-    // plain again, then Apply default / a template
+    // a change on it is remembered for new rectangles (Nestor, 22 Oct 2026: "any changes to an object the app should remember those alterations for future")
     window.__stDrawBar.applyLook(d1, {}); P._props(); await W(20);
-    bar().querySelector('[data-db="tpl"]').click(); await W(20); pop().querySelector('[data-tp="apply"]').click(); await W(30);
-    ok('Apply default puts the default look on the selected one', d1.fill === 'rgba(244,192,90,0.3)' && d1.dash === 'dashed' && DB.popK() === null);
     bar().querySelector('[data-db="line"]').click(); await W(20); pop().querySelector('[data-pc="#E56767"]').click(); DB.closePop(); await W(20);
+    ok('a change on a rectangle is remembered for new rectangles, with the chart settings (synced)', C.ddef.rect && C.ddef.rect.color === '#E56767' && !C.ddef.rect.fill && JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').ddef.rect.color === '#E56767', C.ddef.rect);
+    var d2 = await draw2('rect', X0, 400, X1, 440);
+    ok('...a new one takes it', d2.color === '#E56767' && !d2.fill, d2);
+    DW.list.splice(DW.list.indexOf(d2), 1); DW.sel = DW.list.indexOf(d1); P._props(); await W(20);
     bar().querySelector('[data-db="tpl"]').click(); await W(20); pop().querySelector('[data-tp="save"]').click(); await W(40);
     dlg = document.querySelector('.stdb-dlg'); nmI = dlg.querySelector('[data-tpn]'); nmI.value = 'Red'; nmI.dispatchEvent(new Event('input', { bubbles: true }));
     nmI.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); await W(40);
-    ok('Enter saves too; not ticked, the default stays', C.dtpl.rect.length === 2 && C.dtpl.rect[1].n === 'Red' && C.dtpl.rect[1].l.color === '#E56767' && C.ddef.rect.color !== '#E56767');
+    ok('Enter saves too', C.dtpl.rect.length === 2 && C.dtpl.rect[1].n === 'Red' && C.dtpl.rect[1].l.color === '#E56767');
     window.__stDrawBar.applyLook(d1, {}); P._props(); bar().querySelector('[data-db="tpl"]').click(); await W(20);
-    pop().querySelector('[data-tpa="1"]').click(); await W(30);
-    ok('a template from the list goes on it', d1.color === '#E56767' && d1.fill === 'rgba(244,192,90,0.3)' && /Template applied: Red/.test(document.getElementById('stpr-flash').textContent));
-    bar().querySelector('[data-db="tpl"]').click(); await W(20); pop().querySelector('[data-tp="setdef"]').click(); await W(30);
-    ok('Set this look as the default for rectangles: Red is the default now (✓ moves to it)', C.ddef.rect.color === '#E56767' && (bar().querySelector('[data-db="tpl"]').click(), /Red\s*✓ default/.test(pop().textContent.replace(/×/g, ''))), pop().textContent);
-    pop().querySelector('[data-tpx="0"]').click(); await W(30);
-    ok('× deletes a template (the menu stays open)', C.dtpl.rect.length === 1 && C.dtpl.rect[0].n === 'Red' && DB.popK() === 'tpl' && /Template deleted: Yellow zone/.test(document.getElementById('stpr-flash').textContent));
-    pop().querySelector('[data-tp="resetdef"]').click(); await W(30);
-    ok('back to the app\'s look for new rectangles', !C.ddef.rect);
+    ok('Templates: Reset to default first, then Save template as...; no default to set by hand', pop().querySelector('.stdb-it').getAttribute('data-tp') === 'reset' && /Reset to default/.test(pop().textContent) && !pop().querySelector('[data-tp="setdef"]') && !pop().querySelector('[data-tp="apply"]'), pop().textContent);
+    pop().querySelector('[data-tpa="0"]').click(); await W(30);
+    ok('a template from the list goes on it, and new rectangles take it (✓ default)', d1.fill === 'rgba(244,192,90,0.3)' && d1.dash === 'dashed' && C.ddef.rect.fill === 'rgba(244,192,90,0.3)' && /Template applied: Yellow zone/.test(document.getElementById('stpr-flash').textContent)
+      && (bar().querySelector('[data-db="tpl"]').click(), /Yellow zone\s*✓ default/.test(pop().textContent.replace(/×/g, ''))), pop().textContent);
+    pop().querySelector('[data-tpx="1"]').click(); await W(30);
+    ok('× deletes a template (the menu stays open)', C.dtpl.rect.length === 1 && C.dtpl.rect[0].n === 'Yellow zone' && DB.popK() === 'tpl' && /Template deleted: Red/.test(document.getElementById('stpr-flash').textContent));
+    pop().querySelector('[data-tp="reset"]').click(); await W(30);
+    ok('Reset to default: the app\'s look on it and on new rectangles', !C.ddef.rect && !d1.fill && !d1.dash && !d1.color && !d1.mid && /app's look is back/.test(document.getElementById('stpr-flash').textContent), d1);
     DW.list.splice(1, 1); DW.sel = null; P._props();
 
     // 8. a tool picked, nothing selected: the same bar at the top of the chart sets the next one's look

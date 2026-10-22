@@ -37,8 +37,7 @@
     var rr = { x0: Math.min(R._bbox(d0).x0, R._bbox(d0).x1), y0: R._bbox(d0).y0, y1: R._bbox(d0).y1, x1: R._bbox(d0).x1 }, fp = px(rr.x0 + 30, rr.y0 + 8), mp = 0;
     for (var xx = Math.round(rr.x0 + 4); xx < rr.x0 + 60; xx++) { var c = px(xx, Math.round((rr.y0 + rr.y1) / 2)); if (c[0] > 200 && c[2] > 150 && c[3] > 150) mp++; }
     ok('applied: its pink 20% fill, dashed border, a dotted middle line', d0.color === '#f472b6' && d0.fill === 'rgba(244,114,182,0.2)' && d0.mid === true && Math.abs(fp[0] - 244) <= 4 && Math.abs(fp[3] - 51) <= 3 && mp > 3 && mp < 56, [fp, mp]);
-    bar().querySelector('[data-db="tpl"]').click(); await W(20); pop().querySelector('[data-tp="setdef"]').click(); await W(30);
-    ok('Set this look as the default: kept in Back Testing\'s settings (synced), so new rectangles there take it too', PC.ddef.rect && PC.ddef.rect.color === '#f472b6' && JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').ddef.rect.fill === 'rgba(244,114,182,0.2)');
+    ok('applied, it is remembered as the look of new rectangles: kept in Back Testing\'s settings (synced), so new rectangles there take it too', PC.ddef.rect && PC.ddef.rect.color === '#f472b6' && JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').ddef.rect.fill === 'rgba(244,114,182,0.2)');
     S.sel = null; S.noProps = false; R._dbar().hide();
     document.querySelector('#strp-tools [data-tool="rect"]').click(); await W(20); click(X0, Y1 + 40); await W(30); mev('mousemove', X1, Y1 + 90); await W(30); click(X1, Y1 + 90); await W(80);
     var d1 = S.drawings[1];

@@ -76,11 +76,16 @@
     redraw(); await W(60);
     // the quarter of the zone that is on screen (its far end can sit beyond the price scale)
     var zR = M.zone.top - M.zone.bot, zTop = P._yOf(0, M.zone.top - zR * 0.125), zx = Math.max(10, P._xOfT(0, B[M.zone.i0].time) + 4) / 2 + P._xOfT(0, B[n - 1].time) / 2, onTop = zTop > 5;
-    var zy = onTop ? zTop : P._yOf(0, M.zone.bot + zR * 0.125), zp = px(0, zx, zy);
-    ok('drawn: the ' + (onTop ? 'top quarter of the zone is tinted pink' : 'bottom quarter of the zone is tinted cyan'), zp[3] > 10 && (onTop ? zp[0] > zp[2] : zp[2] > zp[0]), [zp, zx, zy]);
+    var zy = onTop ? zTop : P._yOf(0, M.zone.bot + zR * 0.125);
+    // the zone's shading is under the candles since 22 Oct 2026 (on the chart's own canvas, not the overlay): the chart's picture,
+    // tinted pixels along that row of the zone
+    var tintRow = function () { var cv = pane(0).chart.takeScreenshot(), d = cv.width / pane(0).el.querySelector('.stpr-pc').clientWidth, g = cv.getContext('2d'), n0 = 0, x0 = Math.max(10, P._xOfT(0, B[M.zone.i0].time) + 4), x1 = P._xOfT(0, B[n - 1].time);
+      for (var x = x0; x < x1; x += 2) { var q = g.getImageData(Math.round(x * d), Math.round(zy * d), 1, 1).data; if ((onTop ? q[0] - q[2] > 12 : q[2] - q[0] > 12) && Math.max(q[0], q[1], q[2]) < 90) n0++; } return n0; };
+    var zp = tintRow();
+    ok('drawn: the ' + (onTop ? 'top quarter of the zone is tinted pink' : 'bottom quarter of the zone is tinted cyan') + ', under the candles', zp > 10 && pane(0).series.__stMub && pane(0).series.__stMub.list.length >= 3, [zp, zx, zy]);
     P._miniDialog(); await W(60); document.querySelector('.stpr-dlg [data-k="part.zone"]').click(); await W(40); document.querySelector('.stpr-dlg [data-dok]').click(); await W(40); redraw(); await W(60);
-    var zp2 = px(0, zx, zy);
-    ok('the P/D Zone switched off in its settings: saved, the tint is gone', C.miniOff.zone === true && zp2[3] === 0, zp2);
+    await W(80); var zp2 = tintRow();
+    ok('the P/D Zone switched off in its settings: saved, the tint is gone', C.miniOff.zone === true && zp2 === 0, zp2);
     P._miniDialog(); await W(60); document.querySelector('.stpr-dlg [data-k="part.zone"]').click(); await W(40); document.querySelector('.stpr-dlg [data-dok]').click(); await W(40);
     ok('and back on', !C.miniOff.zone);
     var M1 = P._mini(1);
