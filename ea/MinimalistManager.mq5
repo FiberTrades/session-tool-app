@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.08"
+#property version   "9.09"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -669,7 +669,7 @@ ulong  g_flashUntil=0;
 bool   g_onVps=false;          // this terminal is the MT5 VPS (TERMINAL_VPS)
 bool   g_aside=false;          // the VPS copy of this account is running: this copy does nothing
 bool   g_vpsHold=false;        // the first ask failed and this account had a VPS copy today: aside until an answer comes
-uint   g_vpsT0=0;              // when this copy started (GetTickCount): it asks every minute for its first 15 minutes
+uint   g_vpsT0=0;              // v9.09: when this copy started (GetTickCount): it asks every minute for its first 15 minutes
 string AsideMsg(){ return "Your EA runs on your MT5 VPS, so this copy stands aside. Trade from Session Terminal or with MT5's own buttons."; }
 void DrawHint();
 void LwMsg(string m);                 // v9.06: the message to Session Terminal as well (defined with the live line)
@@ -3588,7 +3588,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.08\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.09\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3979,7 +3979,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.08\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.09\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -7591,7 +7591,7 @@ void AsideTick(bool start)
    double chk=GlobalVariableCheck(VpsKey("chk")) ? GlobalVariableGet(VpsKey("chk")) : 0.0;
    double seen=GlobalVariableCheck(VpsKey("seen")) ? GlobalVariableGet(VpsKey("seen")) : 0.0;
    if(start) g_vpsT0=GetTickCount();
-   // every minute once this account has had a VPS copy, and for the first 15 minutes after a start (Nestor's first 9.08, 23 Oct 2026:
+   // v9.09: every minute once this account has had a VPS copy, and for the first 15 minutes after a start (Nestor's first 9.08, 23 Oct 2026:
    // compiled on the PC, then migrated - the PC copy started a minute before the VPS one, heard "never", and would only have asked
    // again 10 minutes later); else every 10
    int every=((seen>0 && t-seen<86400) || GetTickCount()-g_vpsT0<900000) ? 60 : 600;
@@ -8086,7 +8086,7 @@ void OnTimer()
    static uint s_lblTick=0;
    if((++s_lblTick)%4==0 && LabelsFollowChart()) ChartRedraw();
    // v8.80 trade copier; v8.85 40x a second, so a copy lands a moment after the lead's trade.
-   // v9.08: nothing from a copy standing aside for the MT5 VPS - except a Lead's copier: it only writes the Lead's trades to a file on
+   // v9.08: nothing from a copy standing aside for the MT5 VPS - v9.09: except a Lead's copier: it only writes the Lead's trades to a file on
    // this PC, for Follow accounts in other MT5s here, which the VPS copy can't reach (the copier works between MT5s on one computer)
    if(!g_aside || g_copyRole==CR_LEAD) CopierTick();
    LwService();                             // v8.98: the live line to Session Terminal (keeps it, heartbeats, streams while watched; shut while aside)
