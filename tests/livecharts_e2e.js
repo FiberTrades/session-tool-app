@@ -467,6 +467,25 @@
     for (k = 0; k < 80; k++) { await W(250); st = LC.state(); if (st.live && st.ea && String(st.ea.lg) === '90001234' && st.fresh && st.px && Math.abs(st.px.b - pxA) < 0.002) break; }
     for (k = 0; k < 40 && !/555001/.test(document.getElementById('lc-tb').textContent); k++) await W(250);
     check('back to FTMO 70K Challenge · 90001234: its prices, its name, its Toolbox again', String(st.ea.lg) === '90001234' && Math.abs(st.px.b - pxA) < 0.002 && /FTMO 70K Challenge · 90001234/.test(document.querySelector('#stpr-mm .stpr-mm-an').textContent) && /555001/.test(document.getElementById('lc-tb').textContent), [st.ea, st.px]);
+    // Follow beside another account in this list (EA 9.10; Nestor, 23 Oct 2026, pointing at it: "how can i make this account the follow from the app?")
+    var eaF = LC.state().ea, kF = eaF.raw + '|' + eaF.lg, stF = LC._lvset()[kF], eLf = LN.easL(), ekF = Object.keys(eLf), vF = ekF.map(function (k) { return eLf[k].v; });
+    document.querySelector('#stpr-mm [data-mm="acct"]').click(); await W(1900);   // opening it asks every EA to say hi (and send its settings)
+    LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, LC._lvset()[kF] || stF, { copy_role: 'lead', copy_followers: 0 }) }); await W(150);
+    var amF = document.getElementById('stpr-menu'); amF.innerHTML = LC._accHtml(false); await W(50);
+    check('with 90001234 the Lead: a Follow button beside MT5 · 90007777 only (not the Lead, not the account on screen) - greyed with an EA before 9.10', amF.querySelectorAll('[data-lvfollow]').length === 1 && !!amF.querySelector('[data-lvfollow="90007777"][disabled]') && /9\.10/.test(amF.querySelector('[data-lvfollow]').title) && /Settings → MT5/.test(amF.textContent), amF.innerHTML.slice(0, 400));
+    var rpcF = window.__stSB.rpc, sndF = LN._send, callsF = [], pokesF = [], cuF = window.currentUser;
+    window.currentUser = cuF || { id: '00000000-0000-0000-0000-0000000c0de7' };
+    window.__stSB.rpc = function (fn, a) { callsF.push([fn, a]); return Promise.resolve({ data: 1792723362, error: null }); };
+    LN._send = function (ev, p) { pokesF.push([ev, p]); return sndF.apply(this, arguments); };
+    try {
+      ekF.forEach(function (k) { eLf[k].v = '9.10'; }); amF.innerHTML = LC._accHtml(false); await W(50);
+      var fbt = amF.querySelector('[data-lvfollow="90007777"]');
+      check('...EA 9.10: the button can be pressed', !!fbt && !fbt.disabled && fbt.textContent === 'Follow', fbt && fbt.outerHTML);
+      fbt.click(); await W(200);
+      check('...pressed: saved as Follow for 90007777 (st_copy_wish), its EAs poked, the button says "Asked HH:MM", and the chart stays on 90001234', callsF.length === 1 && callsF[0][1].p_login === '90007777' && callsF[0][1].p_role === 'follow' && pokesF.some(function (q) { return q[0] === 'role' && q[1].lg === 90007777; }) && /Asked \d\d:\d\d/.test((amF.querySelector('[data-lvfollow="90007777"]') || {}).textContent || '') && String(LC.state().ea.lg) === '90001234', [callsF, (amF.querySelector('[data-lvfollow]') || {}).textContent]);
+    } finally { window.__stSB.rpc = rpcF; LN._send = sndF; window.currentUser = cuF; window.__stCopyWish._clear(); ekF.forEach(function (k, i) { eLf[k].v = vF[i]; }); }
+    document.body.click(); await W(100);
+    LC.set({ s: eaF.raw, lg: eaF.lg, st: Object.assign({}, stF, { copy_role: 'off', copy_followers: 0 }) }); await W(150);
     check('...and no sound or voice setting anywhere ("remove all these options and have the chime as default")', !document.getElementById('set-fillvoice') && !/Order filled/.test((document.querySelector('.settings-section[data-section="profile"]') || {}).textContent || ''));
 
     // ---- the member's closed trades: an entry and an exit arrow, and a card on hover (Nestor, 19 Oct 2026: "i should see 2 arrows the
