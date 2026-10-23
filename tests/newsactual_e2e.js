@@ -18,7 +18,7 @@
     document.querySelector('.tab[data-page="livecharts"]').click();
     for (i = 0; i < 250 && !(P._s() && P._s().live && P._panes().length && P._panes()[0].n > 50); i++) await W(100);
     await W(800);
-    var S = P._s(), p = P._panes()[0], N = P._news();
+    var S = P._s(), p = P._panes()[0], N = P._newsState();
     var at = new Date(Math.min(Date.now(), S.now * 1000) - 5 * 60000); at.setSeconds(0, 0);
     N.key = S.day; N.at = Date.now();
     N.rows = [{ at: at.toISOString().replace('.000Z', '+00:00'), currency: 'USD', title: 'Test CPI m/m', impact: 'High', forecast: '0.3%', previous: '0.2%', actual: null }];
