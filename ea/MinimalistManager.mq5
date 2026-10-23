@@ -8086,7 +8086,9 @@ void OnTimer()
    static uint s_lblTick=0;
    if((++s_lblTick)%4==0 && LabelsFollowChart()) ChartRedraw();
    // v8.80 trade copier; v8.85 40x a second, so a copy lands a moment after the lead's trade.
-   if(!g_aside) CopierTick();               // v9.08: nothing from a copy standing aside for the MT5 VPS
+   // v9.08: nothing from a copy standing aside for the MT5 VPS - except a Lead's copier: it only writes the Lead's trades to a file on
+   // this PC, for Follow accounts in other MT5s here, which the VPS copy can't reach (the copier works between MT5s on one computer)
+   if(!g_aside || g_copyRole==CR_LEAD) CopierTick();
    LwService();                             // v8.98: the live line to Session Terminal (keeps it, heartbeats, streams while watched; shut while aside)
    // Everything below is once-a-second work, exactly as before the timer went to 100ms.
    static uint s_lastSec=0;

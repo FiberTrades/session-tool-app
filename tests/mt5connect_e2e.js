@@ -61,6 +61,15 @@
     ok('Trading several accounts? (moved here from the import window): Show how opens the Trade Copier steps', /Trading several accounts\?/.test(sec.textContent) && sec.querySelector('.mt5c-more') && /Trade Copier/.test(sec.querySelector('.mt5c-more').textContent) && /same code and both web addresses/.test(sec.querySelector('.mt5c-more').textContent));
     sec.querySelector('[data-mt5c-copier]').click(); await W(50);
     ok('...and Hide folds it', !sec.querySelector('.mt5c-more'));
+    // Run it with your PC off: MetaQuotes' VPS step by step (Nestor, 23 Oct 2026: "a step by step on how to buy and set up a VPS for users")
+    sec.querySelector('[data-mt5c-vps]').click(); await W(50);
+    var vm = sec.querySelector('.mt5c-more'), vli = vm ? vm.querySelectorAll('.mt5c-ol li') : [];
+    ok('Run it with your PC off: Show how opens seven numbered steps - MQL5 sign-in first, App trading at first, risk again in Live Charts, auto-renewal, the copier note',
+      /Run it with your PC off/.test(sec.textContent) && vli.length === 7 && /Community/.test(vli[0].textContent) && /App trading at first/.test(vli[2].textContent) && /Migrate experts/.test(vli[3].textContent)
+      && /Live Charts/.test(vli[4].textContent) && /aside: VPS/.test(vli[5].textContent) && /auto-renewal/.test(vli[6].textContent) && /Trade Copier/.test(vm.textContent) && !!vm.querySelector('a[href*="mql5.com"]'), [vli.length]);
+    ok('...nothing in it wider than the window (phones too)', Array.prototype.every.call(vm.querySelectorAll('li, p'), function (e) { return e.scrollWidth <= e.clientWidth + 1; }) && document.documentElement.scrollWidth <= window.innerWidth + 1, [document.documentElement.scrollWidth, window.innerWidth]);
+    sec.querySelector('[data-mt5c-vps]').click(); await W(50);
+    ok('...and Hide folds it', !sec.querySelector('.mt5c-more'));
 
     // ---- the EA checks in ----
     window.__stEA.apply({ login: +LG, symbol: 'EURUSD', ea_version: '9.05', updated_at: new Date().toISOString(), settings: { unit: 'pips' } });
