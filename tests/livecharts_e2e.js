@@ -365,6 +365,27 @@
       await W(900);
       check('...and nothing is sent again', asked === 1, asked);
     } finally { window.__stTM.acct = acct0; }
+    // the Trade Copier's role from Live Charts' panel (EA 9.10; Nestor, 23 Oct 2026: "can you not add this in the app so its easier in the EA panel?")
+    var cpb = function () { return document.querySelector('#stpr-mm [data-mm="cprole"]'); }, mmTxt = function () { return document.getElementById('stpr-mm').textContent; };
+    var eks3 = Object.keys(eL), v3 = eks3.map(function (k) { return eL[k].v; });
+    P._render(); await W(150);
+    check('the EA panel has a Trade copier card; with an EA before 9.10 its role shows but is set in MT5', /Trade copier/.test(mmTxt()) && !cpb() && /EA 9\.10/.test(mmTxt()), mmTxt().slice(-300));
+    var ea3 = LC.state().ea, v3e = ea3.v, k3 = ea3.raw + '|' + ea3.lg;   // the chart's EA (S.ea) - what the panel reads
+    eks3.forEach(function (k) { eL[k].v = '9.10'; }); ea3.v = '9.10'; P._render(); await W(150);
+    var rpc1 = window.__stSB.rpc, snd1 = LN._send, calls1 = [], pokes1 = [], cu1 = window.currentUser;
+    window.currentUser = cu1 || { id: '00000000-0000-0000-0000-0000000c0de6' };   // saving a role needs a member signed in (a stand-in)
+    window.__stSB.rpc = function (fn, a) { calls1.push([fn, a]); return Promise.resolve({ data: 1792723362, error: null }); };
+    LN._send = function (ev, p) { pokes1.push([ev, p]); return snd1.apply(this, arguments); };
+    try {
+      check('EA 9.10: Role Off, a button', cpb() && cpb().textContent === 'Off', cpb() && cpb().textContent);
+      cpb().click(); await W(100);
+      check('pressed: Lead at once, "Sending..." - nothing sent yet (it waits a moment for another press)', cpb().textContent === 'Lead' && /Sending/.test(mmTxt()) && calls1.length === 0, [cpb().textContent, calls1.length]);
+      await W(1200);
+      check('...then saved for that account (st_copy_wish, lead) and its EAs poked on the live line; "Asked HH:MM"', calls1.length === 1 && calls1[0][0] === 'st_copy_wish' && calls1[0][1].p_role === 'lead' && calls1[0][1].p_login === String(ea3.lg) && pokes1.some(function (q) { return q[0] === 'role' && q[1].lg === +ea3.lg; }) && /Asked \d\d:\d\d/.test(mmTxt()), [calls1, pokes1.map(function (q) { return q[0]; })]);
+      var st3 = LC._lvset()[k3]; LC.set({ s: ea3.raw, lg: ea3.lg, st: Object.assign({}, st3, { copy_role: 'lead', copy_followers: 1 }) }); await W(150);
+      check('the EA reports Lead: the card says Lead, "Set HH:MM" in green, and LEAD beside the account', cpb().textContent === 'Lead' && /Set \d\d:\d\d/.test(mmTxt()) && !!document.querySelector('#stpr-mm .stpr-mm-ok') && !!document.querySelector('#stpr-mm .stpr-mm-acc .stpr-mm-role.lead'), mmTxt().slice(-200));
+      LC.set({ s: ea3.raw, lg: ea3.lg, st: Object.assign({}, st3, { copy_role: 'off', copy_followers: 0 }) }); await W(100);
+    } finally { window.__stSB.rpc = rpc1; LN._send = snd1; window.currentUser = cu1; window.__stCopyWish._clear(); eks3.forEach(function (k, i) { eL[k].v = v3[i]; }); ea3.v = v3e; P._render(); await W(100); }
     var ch0 = LC._chimes();
     document.dispatchEvent(new KeyboardEvent('keydown', { key: 'o', bubbles: true })); await W(200);
     check('the execution key arms it on Live Charts: the stop, entry and target lines where the order would go', P._s().exec && P._lines(0).some(function (l) { return /^SL /.test(l.title || l.t || ''); }), P._lines(0).map(function (l) { return l.title || l.t; }));

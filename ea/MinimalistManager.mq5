@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.09"
+#property version   "9.10"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -670,6 +670,7 @@ bool   g_onVps=false;          // this terminal is the MT5 VPS (TERMINAL_VPS)
 bool   g_aside=false;          // the VPS copy of this account is running: this copy does nothing
 bool   g_vpsHold=false;        // the first ask failed and this account had a VPS copy today: aside until an answer comes
 uint   g_vpsT0=0;              // v9.09: when this copy started (GetTickCount): it asks every minute for its first 15 minutes
+string VpsKey(string f);       // v9.10: below, with AsideTick (the live line's "role" poke uses it)
 string AsideMsg(){ return "Your EA runs on your MT5 VPS, so this copy stands aside. Trade from Session Terminal or with MT5's own buttons."; }
 void DrawHint();
 void LwMsg(string m);                 // v9.06: the message to Session Terminal as well (defined with the live line)
@@ -3588,7 +3589,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.09\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.10\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3979,7 +3980,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.09\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
+string LwHi(){ return StringFormat("{\"v\":\"9.10\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4508,6 +4509,7 @@ void LwOnText(string s)
    else if(StringFind(s,"\"event\":\"unwatch\"")>=0){ g_lwWatchAt=0; g_lwFastAt=0; g_lwMidAt=0; g_lwSymAt=0; g_hubAt=0; g_wlAt=0; g_acWant=0; }   // another window still watching says so again
    else if(StringFind(s,"\"event\":\"who\"")>=0){ LwText(LwBroadcast("hi",LwHi())); LwSetSend(true); }   // a window that joined after this chart (v9.02: + the settings)
    else if(StringFind(s,"\"event\":\"cmd\"")>=0) LwCmd(s);   // trade management from the app
+   else if(StringFind(s,"\"event\":\"role\"")>=0){ if(LwNum(s,"\"lg\":",0)==AccountInfoInteger(ACCOUNT_LOGIN)) GlobalVariableSet(VpsKey("chk"),0.0); }   // v9.10: the copier role set in the app - asked at once (AsideTick)
    else if(StringFind(s,"\"event\":\"hist\"")>=0)   // v9.01: + tf; v9.02: + another symbol, asked of the hub ("by")
      {
       string hs=LwStr(s,"\"sym\":\"");
@@ -7539,12 +7541,43 @@ void CopierTick()
 #define VPS_ALIVE   300        // seconds: a VPS copy heard this recently is running
 #define VPS_REPORT  120        // seconds between the VPS copy's reports
 string VpsKey(string f){ return "MM_VPS_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+f; }
-// the VPS copy reporting: 0 when heard; any other copy asking: seconds since the VPS copy was last heard, -1 never; -2 no answer
+// v9.10 (Nestor, 23 Oct 2026: "can you not add this in the app so its easier in the EA panel?" - the Trade Copier's role, set
+// only on the panel in MT5 until then): the role the member picked in Session Terminal (Live Charts' EA panel, Settings > MT5)
+// comes with the VPS check (st_ea_vps2) - so it also reaches a copy standing aside for the MT5 VPS, which feeds the Follow
+// accounts on its PC and has no live line. A wish newer than the last one applied on this MT5 is applied once; one over a day
+// old is for an MT5 that was running then, not a new one. Follow is never set on the VPS (no other MT5 there to copy).
+void CopyWish(string role,long at)
+  {
+   if(at<=0 || (role!="off" && role!="lead" && role!="follow") || AccountInfoInteger(ACCOUNT_LOGIN)<=0) return;
+   string k="MMC_WISH_"+CpLogin();
+   if(GlobalVariableCheck(k) && GlobalVariableGet(k)>=(double)at) return;
+   GlobalVariableSet(k,(double)at);
+   if((long)TimeGMT()-at>86400) return;
+   ENUM_COPY_ROLE r=(role=="lead") ? CR_LEAD : ((role=="follow") ? CR_FOLLOW : CR_OFF);
+   if(r==CR_FOLLOW && g_onVps){ Print("COPIER: Follow is not set on the MT5 VPS - a Follow account copies a Lead in another MT5 on the same computer."); return; }
+   if(r==g_copyRole) return;
+   Print("COPIER: role set in Session Terminal.");
+   CopySetRole(r);
+  }
+// The account's copier role as set on any chart of it here (CopySetRole keeps it in a terminal global variable): a chart standing
+// aside runs no copier tick, so it is brought into line here
+void CpRoleSync()
+  {
+   if(AccountInfoInteger(ACCOUNT_LOGIN)<=0) return;
+   string k="MMC_ROLE_"+CpLogin();
+   ENUM_COPY_ROLE want=GlobalVariableCheck(k) ? (ENUM_COPY_ROLE)(int)GlobalVariableGet(k) : CR_OFF;
+   if(want==g_copyRole) return;
+   g_copyRole=want; g_roleAtMs=GetTickCount64(); g_ownF=false;
+   if(want==CR_FOLLOW){ CpLoadMaps(); CpPickLead(); }
+   BuildPanel();
+  }
+// the VPS copy reporting: 0 when heard; any other copy asking: seconds since the VPS copy was last heard, -1 never; -2 no answer.
+// v9.10: the answer also carries the copier role set in the app ("<age>|<role>|<when>"), applied by CopyWish
 int VpsCall(bool report)
   {
    int p=StringFind(InpLiveURL,"/functions/");
    if(p<0) return -2;
-   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_vps";
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_vps2";
    string body=StringFormat("{\"p_token\":\"%s\",\"p_login\":\"%I64d\",\"p_vps\":%s}",g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),report ? "true" : "false");
    char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
    char res[]; string rh;
@@ -7552,9 +7585,12 @@ int VpsCall(bool report)
    int code=WebRequest("POST",url,hdr,1500,post,res,rh);
    if(code!=200) return -2;
    string r=CharArrayToString(res,0,WHOLE_ARRAY,CP_UTF8);
-   StringTrimLeft(r); StringTrimRight(r);
+   StringReplace(r,"\"",""); StringTrimLeft(r); StringTrimRight(r);
    if(StringLen(r)==0 || r=="null") return -2;
-   return (int)StringToInteger(r);
+   string f[]; int nf=StringSplit(r,'|',f);
+   if(nf<1) return -2;
+   if(nf>=3) CopyWish(f[1],(long)StringToInteger(f[2]));
+   return (int)StringToInteger(f[0]);
   }
 void AsideSet(bool on)
   {
@@ -7594,7 +7630,7 @@ void AsideTick(bool start)
    // v9.09: every minute once this account has had a VPS copy, and for the first 15 minutes after a start (Nestor's first 9.08, 23 Oct 2026:
    // compiled on the PC, then migrated - the PC copy started a minute before the VPS one, heard "never", and would only have asked
    // again 10 minutes later); else every 10
-   int every=((seen>0 && t-seen<86400) || GetTickCount()-g_vpsT0<900000) ? 60 : 600;
+   int every=((seen>0 && t-seen<86400) || GetTickCount()-g_vpsT0<900000 || g_copyRole!=CR_OFF) ? 60 : 600;   // v9.10: + the copier in use
    if(start || t-chk>=every)
      {
       GlobalVariableSet(VpsKey("chk"),t);
@@ -8096,7 +8132,7 @@ void OnTimer()
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
    AsideTick(false);                        // v9.08: the VPS copy reports; any other copy asks whether to stand aside
-   if(g_aside){ DrawInfoReadout(); AccountLabel(false); if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint(); ChartRedraw(); return; }
+   if(g_aside){ CpRoleSync(); DrawInfoReadout(); AccountLabel(false); if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint(); ChartRedraw(); return; }   // v9.10: + CpRoleSync
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
    LiveBarsAll();                           // v8.89: the live chart's candles, as the trade's timeframe starts a new one (before the tick that shows it)
    LiveTickAll();                           // v8.88: the open trade's running result for Session Terminal (every 2 s at most since v8.90)

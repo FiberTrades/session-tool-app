@@ -96,6 +96,25 @@
       sel = sec.querySelector('select[data-mt5c-acc="' + LG + '"]'); sel.value = ''; sel.dispatchEvent(new Event('change', { bubbles: true })); await W(80);
       ok('...and "Not linked" removes the link', !(LG in (data.mt5LoginMap || {})));
     } else ok('Trades go into: no journal account to pick (skipped)', true);
+    // ---- the Trade Copier's role from here (EA 9.10; Nestor, 23 Oct 2026: "can you not add this in the app so its easier in the EA panel?") ----
+    var rsel = sec.querySelector('select[data-mt5c-role="' + LG + '"]');
+    ok('Copier: an EA before 9.10 can\'t be set from here - the picker is there, greyed, and says so', !!rsel && rsel.disabled && /9\.10/.test(rsel.closest('label').title), rsel && rsel.outerHTML);
+    easL['EURUSD|' + LG] = { v: '9.10', lg: LG, rl: true, al: true, at: Date.now() }; M.render(); await W(50);
+    var rpc0 = window.__stSB.rpc, sent0 = window.__stLiveLine._send, calls = [], pokes = [];
+    window.__stSB.rpc = function (fn, args) { calls.push([fn, args]); return Promise.resolve({ data: 1792723362, error: null }); };
+    window.__stLiveLine._send = function (ev, p) { pokes.push([ev, p]); };
+    try {
+      rsel = sec.querySelector('select[data-mt5c-role="' + LG + '"]'); rsel.value = 'follow'; rsel.dispatchEvent(new Event('change', { bubbles: true })); await W(150);
+      ok('EA 9.10: picking Follow saves it for the account (st_copy_wish) and pokes its EAs on the live line', !rsel.disabled && calls.length === 1 && calls[0][0] === 'st_copy_wish' && calls[0][1].p_login === LG && calls[0][1].p_role === 'follow' && pokes.some(function (q) { return q[0] === 'role' && q[1].lg === +LG; }), [calls, pokes]);
+      var ea2 = sec.querySelector('[data-mt5c-login="' + LG + '"]');
+      ok('...its line says it was asked, and the picker shows Follow while the EA switches', /Copier: asked/.test(ea2.textContent) && sec.querySelector('select[data-mt5c-role="' + LG + '"]').value === 'follow', ea2.textContent);
+      window.__stEA.apply({ login: +LG, symbol: 'EURUSD', ea_version: '9.10', updated_at: new Date().toISOString(), settings: { unit: 'pips', copy_role: 'follow', copy_lead: '' } }); M.render(); await W(50);
+      ea2 = sec.querySelector('[data-mt5c-login="' + LG + '"]');
+      ok('...the EA reports Follow: the picker stays on Follow and the "asked" note goes', !/Copier: asked/.test(ea2.textContent) && sec.querySelector('select[data-mt5c-role="' + LG + '"]').value === 'follow', ea2.textContent);
+      var rb = ea2.getBoundingClientRect(), sb2 = sec.querySelector('select[data-mt5c-role="' + LG + '"]').getBoundingClientRect();
+      ok('...the line with both pickers fits (phones too): nothing past its right edge, no sideways scroll', sb2.right <= rb.right + 1 && document.documentElement.scrollWidth <= window.innerWidth + 1, [sb2.right, rb.right, document.documentElement.scrollWidth, window.innerWidth]);
+    } finally { window.__stSB.rpc = rpc0; window.__stLiveLine._send = sent0; window.__stCopyWish._clear(); }
+    window.__stEA.apply({ login: +LG, symbol: 'EURUSD', ea_version: '9.10', updated_at: new Date().toISOString(), settings: { unit: 'pips', copy_role: 'off' } }); M.render(); await W(50);
     await W(1800);   // the card follows on the next tick (every 1.5 s)
     ok('connected: the Session Bias card is gone', card.hidden);
     // ---- old MT5 accounts (Nestor, 19 Oct 2026: "how do you get rid of these suggestions for old inactive accounts?") ----
