@@ -187,6 +187,17 @@
     window.__stEA.apply({ login: '541419576', symbol: 'EURUSD', settings: { copy_role: 'lead', copy_followers: 1, risk_money: 500 }, updated_at: nowIso });
     window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: { copy_role: 'follow', risk_money: 70 }, updated_at: nowIso });
     check('copier is on (both EAs report their role)', window.__stEA.copier().on === true, window.__stEA.copier());
+    // the Lead's EA on the MT5 VPS (23 Oct 2026): it reports no role (the VPS knows no Follow accounts); its copy on the PC feeds two
+    // Follow accounts there, which name it - still a Lead and its copies, on 3 accounts
+    window.__stEA.apply({ login: '541419576', symbol: 'EURUSD', settings: { copy_role: 'off', copy_followers: 0, risk_money: 500 }, updated_at: nowIso });
+    window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: { copy_role: 'follow', copy_lead: '541419576', risk_money: 70 }, updated_at: nowIso });
+    window.__stEA.apply({ login: '1514994373', symbol: 'EURUSD', settings: { copy_role: 'follow', copy_lead: '541419576', risk_money: 70 }, updated_at: nowIso });
+    var cpv = window.__stEA.copier();
+    check('Lead on the MT5 VPS, two Follow accounts on the PC naming it: copier on, 3 accounts', cpv.on === true && cpv.accounts === 3, cpv);
+    window.__stEA.apply({ login: '1514994373', symbol: 'EURUSD', settings: { copy_role: 'off', risk_money: 70 }, updated_at: nowIso });
+    window.__stEA.apply({ login: '541419576', symbol: 'EURUSD', settings: { copy_role: 'lead', copy_followers: 1, risk_money: 500 }, updated_at: nowIso });
+    window.__stEA.apply({ login: '1514778904', symbol: 'EURUSD', settings: { copy_role: 'follow', risk_money: 70 }, updated_at: nowIso });
+    check('...and back as before: the Lead reporting itself, 2 accounts', window.__stEA.copier().accounts === 2, window.__stEA.copier());
     var T0 = Date.now() - 60000;
     var L = { ticket: 171267984, direction: 'long', symbol: 'EURUSD', lots: 16.55, risk: 500 };
     var F = { ticket: 552520521, direction: 'long', symbol: 'EURUSD', lots: 2.1, risk: 63.44 };
