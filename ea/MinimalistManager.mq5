@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Minimalist Manager"
 #property link      "https://www.mql5.com"
-#property version   "9.07"
+#property version   "9.08"
 #property description "Minimalist manual trade manager: risk-based lot sizing,"
 #property description "hover-to-set stop with min/max clamp, single take-profit,"
 #property description "and a draggable break-even line. Discretionary tool -"
@@ -665,6 +665,11 @@ bool GetEntryDir(int &dir,double &entry,double &slPrice,double &slDist)
 // so only its tail showed - and it stayed until execution mode next changed.
 string g_flashMsg="";
 ulong  g_flashUntil=0;
+// v9.08: this account's EA running on MetaQuotes' VPS makes this copy stand aside (AsideTick, before OnInit)
+bool   g_onVps=false;          // this terminal is the MT5 VPS (TERMINAL_VPS)
+bool   g_aside=false;          // the VPS copy of this account is running: this copy does nothing
+bool   g_vpsHold=false;        // the first ask failed and this account had a VPS copy today: aside until an answer comes
+string AsideMsg(){ return "Your EA runs on your MT5 VPS, so this copy stands aside. Trade from Session Terminal or with MT5's own buttons."; }
 void DrawHint();
 void LwMsg(string m);                 // v9.06: the message to Session Terminal as well (defined with the live line)
 void Flash(string msg)
@@ -712,6 +717,7 @@ void DrawHint()
       if(GetTickCount64()<g_flashUntil){ HintLines("",g_flashMsg,COL_PANEL_WARN); return; }
       g_flashMsg="";
      }
+   if(g_aside){ HintLines("","Your EA is running on your MT5 VPS - this copy stands aside: no trading, nothing sent",COL_PANEL_WARN); return; }   // v9.08
    if(!g_active){ HintLines("","",clrNONE); return; }   // no lines: all three taken away
    string msg = g_execMode
               ? "Left-click mouse to execute a trade"
@@ -1104,6 +1110,7 @@ bool DayLimitReached()
 
 void PlaceTrade()
   {
+   if(g_aside){ Flash(AsideMsg()); return; }   // v9.08: the MT5 VPS copy trades this account
    if(!TerminalInfoInteger(TERMINAL_TRADE_ALLOWED) || !MQLInfoInteger(MQL_TRADE_ALLOWED))
      { Flash("Trading not allowed - enable Algo Trading."); Warn("Trading not allowed (Algo Trading off)."); return; }
    if(DayLimitReached())
@@ -1474,6 +1481,7 @@ void BreakEvenAll()
   }
 void CancelPending()
   {
+   if(g_aside){ Flash(AsideMsg()); return; }   // v9.08
    for(int i=OrdersTotal()-1;i>=0;i--)
      {
       ulong tk=OrderGetTicket(i);
@@ -1485,6 +1493,7 @@ void CancelPending()
   }
 void CloseAll()
   {
+   if(g_aside){ Flash(AsideMsg()); return; }   // v9.08
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i);
@@ -1497,6 +1506,7 @@ void CloseAll()
   }
 void RiskOffHalf()
   {
+   if(g_aside){ Flash(AsideMsg()); return; }   // v9.08
    for(int i=PositionsTotal()-1;i>=0;i--)
      {
       ulong tk=PositionGetTicket(i);
@@ -1516,7 +1526,7 @@ void RiskOffHalf()
 // the order type before turning it on). No g_active guard here.
 void SwitchOrderKind(){ g_orderKind=(ENUM_ORDER_KIND)(((int)g_orderKind+1)%3); if(g_execMode) ShowExecutionLines(); BuildPanel(); }
 void CycleRiskMode(){ g_riskMode=(ENUM_RISK_MODE)(((int)g_riskMode+1)%3); BuildPanel(); }
-void ToggleExecMode(){ if(!g_active) return; if(!g_execMode && g_copyRole==CR_FOLLOW){ Warn("Follow account: execution mode stays off - trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash(_Symbol+" daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Execution stays off until your next day."); Warn(_Symbol+" daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
+void ToggleExecMode(){ if(!g_active) return; if(g_aside){ Flash(AsideMsg()); return; } if(!g_execMode && g_copyRole==CR_FOLLOW){ Warn("Follow account: execution mode stays off - trade on the Lead."); return; } if(!g_execMode && DayLimitReached()){ Flash(_Symbol+" daily limit reached ("+IntegerToString(g_maxTradesDay)+((g_maxTradesDay==1) ? " trade" : " trades")+"). Execution stays off until your next day."); Warn(_Symbol+" daily trade limit reached - execution disabled."); return; } g_execMode=!g_execMode; if(g_execMode) ShowExecutionLines(); else HideExecutionLines(); BuildPanel(); }
 
 //==================================================================
 //  TRAILING STOPS
@@ -2784,7 +2794,10 @@ void BuildPanel()
    mkLabel (PP+"L_SYNC",labelX,ry+6,"Status",COL_PANEL_LBL,8);
    if(StringLen(g_syncTokenEff)>0)
      {
-      mkLabel (PP+"V_SYNC",labelX+58,ry+6,"ON "+SyncTokenMasked(),COL_PANEL_ACC,8);
+      // v9.08: "VPS" on the MT5 VPS; "aside: VPS" on a copy standing aside for it
+      mkLabel (PP+"V_SYNC",labelX+58,ry+6,g_aside ? "aside: VPS" : ((g_onVps ? "VPS " : "ON ")+SyncTokenMasked()),g_aside ? COL_PANEL_WARN : COL_PANEL_ACC,8);
+      ObjectSetString(0,PP+"V_SYNC",OBJPROP_TOOLTIP,g_aside ? "This account's EA is running on your MT5 VPS, so this copy does nothing - no trade management, no orders, nothing sent to Session Terminal. It takes over by itself if the VPS copy stops."
+                                                            : (g_onVps ? "Running on your MT5 VPS: a copy of this EA on your PC stands aside while this one runs." : "Sync is on"));
       mkButton(PP+"SYNCCLR",box1,ry+2,BW,CH,"clear",COL_PANEL_BTN,COL_PANEL_BTX);
      }
    else
@@ -3574,7 +3587,7 @@ void LiveSettingsTick()
    // never counted as a change (the server ignores it when comparing).
    double riskNow=(g_riskMode==RISK_PERCENT) ? CurrentBalance()*g_riskPercent/100.0
                  : ((g_riskMode==RISK_AMOUNT) ? g_riskAmount : 0.0);
-   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.07\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
+   LiveEnqueue(StringFormat("{\"event\":\"settings\",\"token\":\"%s\",\"login\":\"%I64d\",\"symbol\":\"%s\",\"ea_version\":\"9.08\",\"settings\":{%s,\"risk_money\":%s,\"trades_today\":%d,\"currency\":\"%s\"}}",
                             g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),_Symbol,body,DoubleToString(riskNow,2),g_tradesToday,AccountInfoString(ACCOUNT_CURRENCY)));
   }
 // v8.86 (Nestor, 2 Oct 2026: "nudges for when my trade gets moved to BE, TP hit, SL hit, taken out for BE"):
@@ -3965,7 +3978,7 @@ void LwOpen()
 // v9.06: MT5's Algo Trading button (and this EA's own "Allow Algo Trading") - off, no order can be placed, from here or from the app
 bool AlgoOn(){ return TerminalInfoInteger(TERMINAL_TRADE_ALLOWED)!=0 && MQLInfoInteger(MQL_TRADE_ALLOWED)!=0; }
 int  g_lwAl=-1;                       // v9.06: Algo Trading as last told to the app
-string LwHi(){ return StringFormat("{\"v\":\"9.07\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS)); }   // al: Algo Trading on (9.06)
+string LwHi(){ return StringFormat("{\"v\":\"9.08\",\"sym\":\"%s\",\"dg\":%d,\"lg\":%I64d,\"tm\":%d,\"rl\":%d,\"al\":%d,\"mb\":%d,\"vp\":%d}",_Symbol,_Digits,AccountInfoInteger(ACCOUNT_LOGIN),AppTradeOn()?1:0,g_lwRelay?1:0,AlgoOn()?1:0,TerminalInfoInteger(TERMINAL_MAXBARS),g_onVps?1:0); }   // al: Algo Trading on (9.06); vp: on the MT5 VPS (9.08)
 // v9.06 (Nestor, 19 Oct 2026: "whatever messages appear in MT5 i need to also see them in the app"): every message this EA writes on its
 // chart (Flash) goes to Session Terminal too, which shows it on Live Charts. Only while the line is up; nothing is queued.
 void LwMsg(string m)
@@ -4551,7 +4564,7 @@ void LwPump()
 // every 25 s, and stream while a window watches.
 void LwService()
   {
-   if(g_lwOff || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0)
+   if(g_lwOff || g_aside || StringLen(g_syncTokenEff)==0 || g_copyRole==CR_FOLLOW || MQLInfoInteger(MQL_TESTER)!=0)   // v9.08: + standing aside
      { if(g_lw!=INVALID_HANDLE) LwClose(); return; }
    if(!LwRelayWanted() && LwBraked())   // today's live updates on Supabase are used up: tell the app, close the line, 2-second updates until midnight UTC
      {
@@ -7512,6 +7525,87 @@ void CopierTick()
   }
 
 //==================================================================
+//  v9.08  STANDING ASIDE FOR THE MT5 VPS
+//==================================================================
+// Nestor, 23 Oct 2026 - his EA moved to MetaQuotes' VPS that night, and he said "ok" to "make the EA on your PC step aside by itself
+// whenever the VPS copy is running, so you could open MT5 on the PC any time". Algo Trading off on the PC stops its trading but not
+// the EA: it still sent prices, synced trades and answered the app, so one account's two copies did everything twice, and with Algo
+// Trading on they could both move a stop or take a partial. Now the copy on the VPS (TERMINAL_VPS) tells Session Terminal it is
+// running every 2 minutes (st_ea_vps); a copy anywhere else on the same account asks (every minute once the account has had a VPS
+// copy, else every 10), and while the VPS copy was heard in the last 5 minutes it stands aside: no trade management, no orders,
+// nothing sent, its live line shut - the panel's Status and the chart's line say so. When the VPS copy goes quiet (stopped,
+// expired) it takes over again by itself, within about 6 minutes. One chart per account asks; the others read its answer.
+#define VPS_ALIVE   300        // seconds: a VPS copy heard this recently is running
+#define VPS_REPORT  120        // seconds between the VPS copy's reports
+string VpsKey(string f){ return "MM_VPS_"+IntegerToString(AccountInfoInteger(ACCOUNT_LOGIN))+"_"+f; }
+// the VPS copy reporting: 0 when heard; any other copy asking: seconds since the VPS copy was last heard, -1 never; -2 no answer
+int VpsCall(bool report)
+  {
+   int p=StringFind(InpLiveURL,"/functions/");
+   if(p<0) return -2;
+   string url=StringSubstr(InpLiveURL,0,p)+"/rest/v1/rpc/st_ea_vps";
+   string body=StringFormat("{\"p_token\":\"%s\",\"p_login\":\"%I64d\",\"p_vps\":%s}",g_syncTokenEff,AccountInfoInteger(ACCOUNT_LOGIN),report ? "true" : "false");
+   char post[]; StringToCharArray(body,post,0,StringLen(body),CP_UTF8);
+   char res[]; string rh;
+   string hdr="Content-Type: application/json\r\napikey: "+SYNC_KEY+"\r\n";
+   int code=WebRequest("POST",url,hdr,1500,post,res,rh);
+   if(code!=200) return -2;
+   string r=CharArrayToString(res,0,WHOLE_ARRAY,CP_UTF8);
+   StringTrimLeft(r); StringTrimRight(r);
+   if(StringLen(r)==0 || r=="null") return -2;
+   return (int)StringToInteger(r);
+  }
+void AsideSet(bool on)
+  {
+   if(on==g_aside) return;
+   g_aside=on;
+   if(on)
+     {
+      g_execMode=false; HideAllVisuals();
+      Print("Session Terminal: this account's EA is running on your MT5 VPS - this copy stands aside (no trade management, no orders, nothing sent) while it runs.");
+     }
+   else
+     {
+      g_syncCatchupPending=(StringLen(g_syncTokenEff)>0);   // whatever happened meanwhile, as after a reconnect
+      Print("Session Terminal: the MT5 VPS copy of this EA has gone quiet - this copy takes over.");
+     }
+   BuildPanel(); DrawHint(); ChartRedraw();
+  }
+// At the start and once a second (OnTimer): the VPS copy reports, any other copy asks when due
+void AsideTick(bool start)
+  {
+   if(g_onVps || StringLen(g_syncTokenEff)==0 || MQLInfoInteger(MQL_TESTER)!=0 || AccountInfoInteger(ACCOUNT_LOGIN)<=0)
+     {
+      AsideSet(false);
+      if(!g_onVps || StringLen(g_syncTokenEff)==0 || AccountInfoInteger(ACCOUNT_LOGIN)<=0) return;
+      double tv=(double)TimeGMT(), cv=GlobalVariableCheck(VpsKey("chk")) ? GlobalVariableGet(VpsKey("chk")) : 0.0;
+      if(tv-cv>=VPS_REPORT)
+        {
+         GlobalVariableSet(VpsKey("chk"),tv);
+         if(VpsCall(true)<0) GlobalVariableSet(VpsKey("chk"),tv-VPS_REPORT+30);   // not heard: again in 30 seconds
+        }
+      return;
+     }
+   double t=(double)TimeGMT();
+   double chk=GlobalVariableCheck(VpsKey("chk")) ? GlobalVariableGet(VpsKey("chk")) : 0.0;
+   double seen=GlobalVariableCheck(VpsKey("seen")) ? GlobalVariableGet(VpsKey("seen")) : 0.0;
+   int every=(seen>0 && t-seen<86400) ? 60 : 600;
+   if(start || t-chk>=every)
+     {
+      GlobalVariableSet(VpsKey("chk"),t);
+      int age=VpsCall(false);
+      if(age==-2){ if(start && seen>0 && t-seen<86400) g_vpsHold=true; }   // no answer: as we were (at the start: aside if it had a VPS copy today)
+      else
+        {
+         g_vpsHold=false;
+         seen=(age>=0) ? t-age : 0.0;
+         GlobalVariableSet(VpsKey("seen"),seen);
+        }
+     }
+   AsideSet(g_vpsHold || (seen>0 && t-seen<VPS_ALIVE));
+  }
+
+//==================================================================
 //  STANDARD EVENT HANDLERS
 //==================================================================
 int OnInit()
@@ -7639,6 +7733,10 @@ int OnInit()
    CE_CatchupOnce();   // Trade Replay: one-time backfill of recent already-synced trades
    CE_Sweep();         // Trade Replay: resume/queue candle exports
    HB_Load(); HB_AddSymbol(_Symbol); HB_ScanSymbols();   // v8.7: deep replay history for what you trade
+
+   g_onVps=(TerminalInfoInteger(TERMINAL_VPS)!=0);   // v9.08: on MetaQuotes' VPS this copy reports; anywhere else it stands aside while that one runs
+   if(g_onVps) Print("Session Terminal: running on your MT5 VPS - a copy of this EA on your PC stands aside while this one runs.");
+   AsideTick(true);
 
    return INIT_SUCCEEDED;
   }
@@ -7983,13 +8081,15 @@ void OnTimer()
    static uint s_lblTick=0;
    if((++s_lblTick)%4==0 && LabelsFollowChart()) ChartRedraw();
    // v8.80 trade copier; v8.85 40x a second, so a copy lands a moment after the lead's trade.
-   CopierTick();
-   LwService();                             // v8.98: the live line to Session Terminal (keeps it, heartbeats, streams while watched)
+   if(!g_aside) CopierTick();               // v9.08: nothing from a copy standing aside for the MT5 VPS
+   LwService();                             // v8.98: the live line to Session Terminal (keeps it, heartbeats, streams while watched; shut while aside)
    // Everything below is once-a-second work, exactly as before the timer went to 100ms.
    static uint s_lastSec=0;
    uint _nowMs=GetTickCount();
    if(s_lastSec!=0 && _nowMs-s_lastSec<1000) return;
    s_lastSec=_nowMs;
+   AsideTick(false);                        // v9.08: the VPS copy reports; any other copy asks whether to stand aside
+   if(g_aside){ DrawInfoReadout(); AccountLabel(false); if(g_flashMsg!="" && GetTickCount64()>=g_flashUntil) DrawHint(); ChartRedraw(); return; }
    if(SyncPositionLines()) ChartRedraw();   // v8.87: a stop / target moved outside the EA, in a quiet market or with the EA off
    LiveBarsAll();                           // v8.89: the live chart's candles, as the trade's timeframe starts a new one (before the tick that shows it)
    LiveTickAll();                           // v8.88: the open trade's running result for Session Terminal (every 2 s at most since v8.90)
@@ -8146,6 +8246,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
                         const MqlTradeRequest &request,
                         const MqlTradeResult &result)
   {
+   if(g_aside) return;   // v9.08: the MT5 VPS copy of this EA syncs, counts and copies this account's trades
    if(g_copyRole==CR_LEAD) CopyLeadTick();   // v8.80: tell the follow accounts at once, not on the next timer
    if(trans.type==TRADE_TRANSACTION_POSITION && SyncPositionLines()) ChartRedraw();   // v8.87: stop / target changed anywhere
    if(g_maxTradesDay>0 && trans.type==TRADE_TRANSACTION_DEAL_ADD){ ulong _dk=trans.deal; if(_dk!=0 && HistoryDealSelect(_dk) && (long)HistoryDealGetInteger(_dk,DEAL_ENTRY)==DEAL_ENTRY_IN){ RefreshDayCount(); if(g_tradesToday>=g_maxTradesDay && g_active){ g_active=false; g_execMode=false; g_pausedByLimit=true; ClearEntryLines(); UpdateManageLine(); BuildPanel(); SaveState(); } } }
@@ -8220,6 +8321,7 @@ void OnTradeTransaction(const MqlTradeTransaction &trans,
 void OnTick()
   {
    g_lastTickMs=GetTickCount();
+   if(g_aside){ DrawInfoReadout(); return; }   // v9.08: standing aside - the MT5 VPS copy manages this account's trades
    AlertCheck();                     // v8.99: price alerts from Session Terminal (a few comparisons; sends nothing itself)
    DrawInfoReadout();                // updates spread + countdown labels (no redraw inside)
    SyncTrackMFE();                   // grow favourable-peak for POT BE R-P (runs even when visuals off)

@@ -345,6 +345,14 @@
     check('a change in the panel goes to the EA ("cfg", signed) and stays: risk 300.00', P._cfg().mm.riskAmt === 300 && document.querySelector('#stpr-mm [data-mmi="rval"]').value === '300.00' && (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt === practiceRisk, [P._cfg().mm.riskAmt, document.querySelector('#stpr-mm [data-mmi="rval"]').value, (JSON.parse(localStorage.getItem('st_practice_cfg') || '{}').mm || {}).riskAmt, practiceRisk]);
     // the EA refusing a change (App trading off - Nestor's VPS copy, 23 Oct 2026): the panel goes back to what the EA has, it never keeps
     // showing the typed value (it read £500 while the EA risked £50)
+    // EA 9.08 says in its "hi" when it runs on MetaQuotes' VPS: VPS beside the account (Nestor's EA moved there on 23 Oct 2026)
+    var eL = window.__stLiveLine.easL(), eks = Object.keys(eL);
+    eks.forEach(function (k) { eL[k].vp = true; }); P._render(); await W(200);
+    var vtag = document.querySelector('#stpr-mm .stpr-mm-acc .stpr-mm-role.vps');
+    var vb = vtag && vtag.getBoundingClientRect(), mb = document.getElementById('stpr-mm').getBoundingClientRect(), nb = vtag && vtag.parentElement.querySelector('.stpr-mm-an').getBoundingClientRect();
+    check('an EA on the MT5 VPS: VPS beside the account in the panel, inside it (the name gives way)', eks.length > 0 && !!vtag && vtag.textContent === 'VPS' && /MT5 VPS/.test(vtag.title) && vb.width > 10 && vb.right <= mb.right + 1 && nb.width > 40, [eks, vb && [vb.left, vb.right, vb.width], [mb.left, mb.right], nb && nb.width]);
+    eks.forEach(function (k) { eL[k].vp = false; }); P._render(); await W(200);
+    check('...and none for an EA on a PC', !document.querySelector('#stpr-mm .stpr-mm-acc .stpr-mm-role.vps'), null);
     await W(2500);   // the 300 on its way (0.5 s) and the EA's settings back with it, before the EA here starts refusing
     var acct0 = window.__stTM.acct, asked = 0; window.__stTM.acct = function (o) { if (o && o.a === 'cfg') { asked++; return Promise.resolve({ ok: false, why: 'off' }); } return acct0.apply(this, arguments); };
     try {
