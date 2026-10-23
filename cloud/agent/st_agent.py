@@ -139,8 +139,14 @@ def inputs(acc, e):
 
 
 def symbols(acc):
-    """The charts to open: every symbol the account's EA ran on in the last 30 days (cloud-agent's "eas"), each with its
-    own settings, plus any symbol named for it in /etc/st-agent/extra-symbols.json ({"<login>": ["XAUUSD"]}); else EURUSD."""
+    """The charts to open: the member's own list when they chose one (cloud_mt5.symbols, 23 Oct 2026 - his 70K got a
+    BTCUSD chart he had closed on his PC), each with that symbol's last settings or else the account's; otherwise every
+    symbol the account's EA ran on in the last 30 days (cloud-agent's "eas"), each with its own settings, plus any symbol
+    named for it in /etc/st-agent/extra-symbols.json ({"<login>": ["XAUUSD"]}); else EURUSD."""
+    own = acc.get("symbols")
+    if own:
+        by = {x.get("symbol"): x.get("settings") for x in (acc.get("eas") or [])}
+        return [(sym, by.get(sym) or acc.get("ea")) for sym in own]
     out = [(x.get("symbol"), x.get("settings")) for x in (acc.get("eas") or []) if x.get("symbol")]
     try:
         extra = json.load(open("/etc/st-agent/extra-symbols.json")).get(str(acc["login"]), [])
@@ -320,7 +326,7 @@ def launch(acc):
           ["xvfb-run", "-a", "-s", "-screen 0 1280x800x24", "/opt/st/run-in-x.sh", WINE, os.path.join(ad, "terminal64.exe"), "/portable",
            "/config:" + win_ini]
     s["proc"] = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
-    s["started"], s["ini"] = time.time(), ini
+    s["started"], s["ini"], s["syms"] = time.time(), ini, [x[0] for x in symbols(acc)]
     report(acc, "starting", "MT5 is starting")
 
 
@@ -428,6 +434,14 @@ def tick():
             launch(a)
         else:
             s.setdefault("started", time.time())  # adopted after an agent restart: the EA gets the same grace as a fresh start
+            want = [x[0] for x in symbols(a)]
+            if s.setdefault("syms", want) != want and not fx_paused():
+                # the member changed the charts: MT5 opens its chart set at start, so start it again - while prices run, as
+                # an EA before 9.12 started without a fresh price sent its candles minutes late
+                report(a, "starting", "Opening your new charts")
+                stop(a)
+                s["syms"] = want
+                continue
             check(a)
     # anything else under members/ - a removed account's prefix, the Common folder of a member with no account left
     keep = {prefix_of(a) for a in accounts} | {common_of(a) for a in accounts} | {x.get("dir") for x in state.values()}

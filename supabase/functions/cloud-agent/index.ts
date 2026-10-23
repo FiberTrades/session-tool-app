@@ -40,7 +40,7 @@ Deno.serve(async (req) => {
     const host = new URL(req.url).searchParams.get("host") || "";
     if (!/^[a-z0-9-]{1,32}$/.test(host)) return json({ error: "bad host" }, 400);
     const { data: rows, error } = await admin.from("cloud_mt5")
-      .select("id,user_id,login,server,enc_password,app_trading,status").eq("host_id", host);
+      .select("id,user_id,login,server,enc_password,app_trading,status,symbols").eq("host_id", host);
     if (error) return json({ error: error.message }, 500);
     const users = [...new Set((rows || []).map((r) => r.user_id))];
     const tokens: Record<string, string> = {}, tzs: Record<string, string> = {};
@@ -78,6 +78,7 @@ Deno.serve(async (req) => {
         token: tokens[r.user_id] || null, tz: tzs[r.user_id] || "Europe/London",
         ea: (eaOf[r.user_id + "|" + r.login] as { settings?: unknown } | undefined)?.settings || null,
         eas: easOf[r.user_id + "|" + r.login] || [],
+        symbols: Array.isArray(r.symbols) && r.symbols.length ? r.symbols : null,   // the member's own chart list (23 Oct 2026); null = all of "eas"
       })),
     });
   }

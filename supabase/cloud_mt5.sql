@@ -62,3 +62,21 @@ revoke all on function public.st_cloud_watch_due() from anon, authenticated;
 -- st_minute_tick (live only, not mirrored in the repo) gained one block, before its calendar-sync block:
 --   if public.st_cloud_watch_due() then net.http_post(nudge-cron, {"mode":"cloud"}) - nudge-cron's cloudWatch() pushes
 --   "isn't answering" / the agent's error / "running again" (kind 'cloud', always sent except in quiet hours).
+
+-- The charts a cloud MT5 opens, chosen by its member (23 Oct 2026, Nestor: "remove BTCUSD"). Null = every symbol its EA
+-- reported from in the last 30 days, as before. The agent starts the MT5 again when the list changes (while prices run).
+alter table public.cloud_mt5 add column if not exists symbols text[];
+
+create or replace function public.st_cloud_set_symbols(p_id uuid, p_symbols text[]) returns boolean
+language plpgsql security definer set search_path to 'public' as $$
+declare v text[];
+begin
+  select array_agg(s order by o) into v from (
+    select distinct on (s) s, o from unnest(coalesce(p_symbols, '{}'::text[])) with ordinality u(s, o)
+     where s ~ '^[A-Za-z0-9._#+-]{1,32}$' order by s, o) x;
+  if coalesce(array_length(v, 1), 0) > 20 then raise exception 'at most 20 charts'; end if;
+  update public.cloud_mt5 set symbols = v where id = p_id and user_id = auth.uid();
+  return found;
+end $$;
+revoke all on function public.st_cloud_set_symbols(uuid, text[]) from public, anon;
+grant execute on function public.st_cloud_set_symbols(uuid, text[]) to authenticated;
